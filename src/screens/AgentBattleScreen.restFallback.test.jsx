@@ -55,6 +55,13 @@ vi.mock('../config/featureFlags', async (importOriginal) => ({
   // Phase A: the controller stays dark here — this suite characterizes the
   // shipped tabbed screen (the controller has its own render suite).
   isBattleViewControllerOn: () => false,
+  // Mocked EXPLICITLY, not left to the flag's default (review lens 3 F2, and
+  // the smoke branch that found the three files it missed).
+  // isCharacterPaneOn() calls isBattleViewControllerOn() INSIDE featureFlags,
+  // so a vi.mock of the controller never reaches it — on the day the pane flag
+  // flips, this suite would see the pane on with the controller state it asked
+  // for, which is not the state it means to test.
+  isCharacterPaneOn: () => false,
 }));
 // Market-data service: never hit in SSR (poll is an effect), but stub the module
 // so no real network/cache graph loads.

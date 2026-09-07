@@ -14,7 +14,7 @@ import useAgentBattleId from '../hooks/useAgentBattleId';
 import useAgentBattle from '../hooks/useAgentBattle';
 import AnimatedScore from '../components/shared/AnimatedScore';
 import { AgentPresenceMount } from '../components/AgentPresence';
-import { isAgentPresenceOn, isMatchupsBackdropOn, isBattleViewControllerOn } from '../config/featureFlags';
+import { isAgentPresenceOn, isMatchupsBackdropOn, isBattleViewControllerOn, isCharacterPaneOn } from '../config/featureFlags';
 import { TAB_KEYS, tabLabels } from './agentBattleTabs';
 // Battle View controller, Phase A (BATTLE_VIEW_CONTROLLER_ENABLED — dark).
 // Everything imported from ./battleView renders ONLY under the flag; flag-off
@@ -39,7 +39,19 @@ import useContentStable from './battleView/useContentStable';
 import ChatSheet from './battleView/ChatSheet';
 import { PeekStrip } from './battleView/PeekStrip';
 import { derivePeekLine } from './battleView/derivePeekLine';
-import { useChatSheet, useViewportHeight, isSheetOpen, SHEET_PEEK_PX, SHEET_DETENT } from './battleView/useChatSheet';
+import { useChatSheet, useViewportHeight, viewportInsetFrom, isSheetOpen, SHEET_PEEK_PX, SHEET_DETENT } from './battleView/useChatSheet';
+import { computeTugOfWarWidth } from './battleView/computeTugOfWarWidth';
+import ArenaHeader from './battleView/ArenaHeader';
+import CharacterAvatar from './battleView/CharacterAvatar';
+import CharacterPane, { ARCHETYPE_MIN_VIEWPORT_PX } from './battleView/CharacterPane';
+import PaneBench from './battleView/PaneBench';
+import PaneTape from './battleView/PaneTape';
+import PaneOverflow from './battleView/PaneOverflow';
+import { selectBench } from './battleView/selectBench';
+import { useCharacterPane, PANE_SECTION } from './battleView/useCharacterPane';
+import { useBaggerMoment } from './battleView/useBaggerMoment';
+import { baggerMomentFacts, persistedMaxMultiplier, BAGGER_LINE } from './battleView/deriveBaggerMoment';
+import { deriveBubble, baggerBubble } from './battleView/deriveBubble';
 import { cssVar } from '../theme/cssTokens';
 import { motionToken } from '../theme/motion';
 // PRESERVED FOR POST-LAUNCH (2026-05-19): authority mode UX is auto-pilot only at launch.
@@ -127,28 +139,42 @@ function computeDayLabel(timing) {
   return `Day ${current} of ${total}`;
 }
 
-function computeTugOfWarWidth(myScore, oppScore) {
-  const total = Math.abs(myScore) + Math.abs(oppScore);
-  if (total === 0) return 50;
-  return Math.max(10, Math.min(90, (Math.abs(myScore) / total) * 100));
-}
-
 // ─── Responsive hook ──────────────────────────────────────────────────────────
 
-function useIsDesktop() {
-  const [isDesktop, setIsDesktop] = useState(
-    typeof window !== 'undefined' && window.innerWidth >= 768
+/**
+ * One min-width query. `useIsDesktop` is this at 768; the pane asks a second
+ * one at ARCHETYPE_MIN_VIEWPORT_PX for the founder's F2 ordering ruling.
+ *
+ * Semantics are unchanged from the hook this generalises — seeded from
+ * `innerWidth`, then driven by `change` alone, with no mount-time resync. That
+ * is deliberate: `useIsDesktop` runs on the flag-off path too, and this is a
+ * generalisation, not a fix.
+ */
+function useMinWidth(px) {
+  const [matches, setMatches] = useState(
+    typeof window !== 'undefined' && window.innerWidth >= px
   );
   React.useEffect(() => {
-    const mq = window.matchMedia('(min-width: 768px)');
-    const handler = (e) => setIsDesktop(e.matches);
+    const mq = window.matchMedia(`(min-width: ${px}px)`);
+    const handler = (e) => setMatches(e.matches);
     mq.addEventListener('change', handler);
     return () => mq.removeEventListener('change', handler);
-  }, []);
-  return isDesktop;
+  }, [px]);
+  return matches;
+}
+
+function useIsDesktop() {
+  return useMinWidth(768);
 }
 
 const staggerSpring = { type: 'spring', stiffness: 200, damping: 20 };
+
+/**
+ * A3.1 — the board's bottom reservation under the pane flag: the avatar's own
+ * hit target (48) plus its inset from the bottom (14) plus a row's breathing
+ * room. Pane-off the board still reserves SHEET_PEEK_PX + 32 for the sheet.
+ */
+const AVATAR_CLEARANCE_PX = 96;
 
 // ─── Tier Header ──────────────────────────────────────────────────────────────
 
@@ -483,6 +509,12 @@ function SectionLabel({ children }) {
 export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom }) {
   const { tokens } = useTheme();
   const isDesktop = useIsDesktop();
+  // F2's ruled ordering (the founder, after the review): the archetype line is
+  // the FIRST thing to go when the pane cannot hold name + archetype + control.
+  // A second min-width query beside the first — the pane is a fixed fraction of
+  // the viewport, so a viewport query is a faithful proxy for its width, and
+  // the repo has no container-query idiom to reach for instead.
+  const paneHasArchetypeRoom = useMinWidth(ARCHETYPE_MIN_VIEWPORT_PX);
 
   // Battle View controller (Phase A), LIVE since the 2026-09-04 flip. Read at
   // RENDER scope, never module scope (the featureFlags mock hazard). The
@@ -491,6 +523,10 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // consumer seam, so rollback is one literal in featureFlags.js and the
   // flag-off suites keep mocking this call, not the constant.
   const controllerOn = isBattleViewControllerOn();
+  // A3: the character pane. ONE accessor at render scope beside the controller's
+  // (never the constant — the Pass 1 vi.mock hazard), read by every A3 branch so
+  // pane-off renders the A2 containers exactly as merged (D-93).
+  const paneOn = isCharacterPaneOn();
   const prefersReducedMotion = useReducedMotion();
   const reducedMotion = Boolean(prefersReducedMotion);
   // A coarse clock for the turn line: once a minute or on visibilitychange,
@@ -529,6 +565,11 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // A2.4 (review L2-F4): which desktop chat control should take focus after
   // the next collapse or expand, resolved in an effect once it has rendered.
   const [pendingChatFocus, setPendingChatFocus] = useState(null);
+  // A3.2 (review lens 2 F3 / lens 5 F2): the CURRENT mark, for the focus
+  // hand-off after a collapse. The mark the player pressed to open the pane is
+  // unmounted while the pane is open (ruling 4 — no second mark on the board),
+  // so a captured node cannot be focused back; the one that reappears can.
+  const characterMarkRef = useRef(null);
   const collapseControlRef = useRef(null);
   const expandControlRef = useRef(null);
   // D-89: the evaluation `Read the full check` names. The handler is defined
@@ -549,11 +590,39 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // itself — which is what makes the detent survive a breakpoint crossing by
   // construction. Each shell OPENS at its own default: the phone at peek (the
   // board is the page), the desktop at half (the column is the layout).
-  const sheet = useChatSheet(controllerOn, isDesktop ? SHEET_DETENT.HALF : SHEET_DETENT.PEEK);
-  const chatOpen = isSheetOpen(sheet.detent);
+  //
+  // A3.2 (hazard 44): the pane DISABLES this hook rather than skipping it —
+  // hooks stay unconditional, and a disabled sheet reads peek and resets to
+  // peek, so nothing A2 can render open beneath the pane.
+  const sheet = useChatSheet(controllerOn && !paneOn, isDesktop ? SHEET_DETENT.HALF : SHEET_DETENT.PEEK);
+  // A3.2 (D-93): two states and a section, not three detents. `lockScroll` is
+  // the mobile shell only — there the pane covers the board; on desktop it is a
+  // column beside a board that must keep scrolling.
+  const pane = useCharacterPane(paneOn, { lockScroll: !isDesktop, openByDefault: isDesktop });
+  // "Is the conversation on screen?" — the one question every door and the
+  // unread mark ask. Under the pane it is the pane, open on Chat.
+  const chatOpen = paneOn
+    ? (pane.open && pane.section === PANE_SECTION.CHAT)
+    : isSheetOpen(sheet.detent);
+  // A3 F1 (the founder's smoke). "Is the RIGHT COLUMN showing?" — a DIFFERENT
+  // question from `chatOpen`, and the two coincide only pane-off. Under the
+  // pane the right column is the PANE, which holds Bench and Tape as well as
+  // the chat; `chatOpen` narrows to the Chat section, so on Bench and Tape it
+  // answered "no" and the desktop layout flipped to a column — the pane
+  // dropped BELOW the board and only Chat stayed beside it. That is the whole
+  // of F1. The two LAYOUT sites ask this; every other `chatOpen` reader really
+  // does mean the conversation (the unread mark, the sheet doors, the chat's
+  // own chrome) and is left alone.
+  const rightColumnOpen = paneOn ? pane.open : chatOpen;
   // The visible viewport height sizes the mobile sheet's detents AND the
   // desktop page (a fixed 100vh is the large viewport on iOS — review L2-F11).
   const viewportHeight = useViewportHeight(controllerOn);
+  // F3: how much layout viewport the browser's chrome is covering. `position:
+  // fixed` anchors to the LAYOUT viewport, so the phone's mark needs this or it
+  // hides behind iOS's toolbar. Derived from viewportHeight rather than
+  // subscribed separately, so it refreshes on exactly the renders that hook
+  // already causes.
+  const viewportInset = viewportInsetFrom(viewportHeight);
   const [gameTapeOpen, setGameTapeOpen] = useState(false);
   // The mark of what the chat has SEEN: the feed's length AND its newest
   // entry's stamp. The server caps the feed (100 entries, sliced on every
@@ -865,6 +934,25 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     };
   }, [playerPortfolioSource, enrichAsset]);
 
+  // A3.6 (D-97) — THE PLAYER'S BOOK, FLAT, each piece carrying the tier whose
+  // row it sits in. Two consumers need exactly this: the bagger watch (which
+  // iterates the CURRENT book, never the history map — a swapped-out piece
+  // keeps its history entry and would otherwise announce a bagger for a piece
+  // the player no longer holds) and the bubble's lookup by symbol.
+  //
+  // The tier travels WITH the piece because enrichAsset takes it as an argument
+  // and does not return it, so `asset.tier` is whatever the persisted entry
+  // happened to carry. The board knows; this keeps what the board knows.
+  const playerBook = useMemo(() => {
+    const out = [];
+    for (const key of ['star', 'core', 'support']) {
+      for (const asset of enrichedPlayerPortfolio[key] || []) {
+        if (asset && asset.symbol && !asset.isCash) out.push({ asset, tier: key, symbol: asset.symbol });
+      }
+    }
+    return out;
+  }, [enrichedPlayerPortfolio]);
+
   const enrichedOpponentPortfolio = useMemo(() => {
     const p = opponentPortfolioSource;
     if (!p) return { star: [], core: [], support: [] };
@@ -1125,8 +1213,12 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     // may be far up a long tape and the reader was promised the whole check.
     // One call for both shells — since ruling 7 the detent is one thing, and
     // FULL is an open detent on the desktop too, which renders the column.
-    sheet.setDetent(SHEET_DETENT.FULL, invoker);
-  }, [sheet.setDetent]);
+    // Under the pane, "at FULL" has no meaning: the pane is open or it is not,
+    // and Chat is the section this door names. The landing on the card is the
+    // chat's own (`openCheck`), unchanged on both paths.
+    if (paneOn) pane.openPane(PANE_SECTION.CHAT, invoker);
+    else sheet.setDetent(SHEET_DETENT.FULL, invoker);
+  }, [paneOn, pane.openPane, sheet.setDetent]);
   const handleAskFollowUp = useCallback((symbol) => {
     // The invoking control, captured synchronously so the mobile sheet can
     // hand focus back to it on collapse (A4).
@@ -1145,8 +1237,9 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     // this one on the old rule was the inconsistency that fix meant to close.
     // Open, then let the chat's prefill effect focus the textarea inside it
     // (F13's draft rule stands, on both shells).
-    if (!chatOpen) sheet.open(invoker);
-  }, [chatOpen, sheet.open]);
+    if (paneOn) pane.openPane(PANE_SECTION.CHAT, invoker);
+    else if (!chatOpen) sheet.open(invoker);
+  }, [paneOn, pane.openPane, chatOpen, sheet.open]);
   const handleComposerPrefillConsumed = useCallback(() => setComposerPrefill(null), []);
 
   // The landing for the door above now lives in the CHAT (D-89), beside the
@@ -1178,8 +1271,9 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     // …and the chat has to be ON SCREEN for a filter to mean anything
     // (review L2-F2): since A2.4 the DESKTOP can be collapsed too, so the
     // question is the detent's, not the breakpoint's.
-    if (!chatOpen) sheet.open(invoker);
-  }, [chatOpen, sheet.open]);
+    if (paneOn) pane.openPane(PANE_SECTION.CHAT, invoker);
+    else if (!chatOpen) sheet.open(invoker);
+  }, [paneOn, pane.openPane, chatOpen, sheet.open]);
   const handleClearScope = useCallback(() => setScopeSymbol(null), []);
 
   // A2.3 (review L2-F7): the scope clears itself when its piece leaves the
@@ -1203,16 +1297,44 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // had a return-focus contract for this transition since A4 (review CR4);
   // this is the desktop's.
   const handleExpandChat = useCallback(() => {
+    if (paneOn) {
+      // The avatar and its bubble are the pane's doors. The invoker is captured
+      // here so the pane can hand focus back to the mark it came from.
+      const invoker = typeof document !== 'undefined' ? document.activeElement : null;
+      // No section named: this is the EXPAND case, and the pane restores what
+      // was last shown (D-93).
+      pane.openPane(null, invoker);
+      return;
+    }
     sheet.open(null);
     setPendingChatFocus('collapse');
-  }, [sheet.open]);
+  }, [paneOn, pane.openPane, sheet.open]);
+  // The bubble's door: the conversation, at the stream the bubble is quoting.
+  const handleOpenPaneOnChat = useCallback(() => {
+    const invoker = typeof document !== 'undefined' ? document.activeElement : null;
+    pane.openPane(PANE_SECTION.CHAT, invoker);
+  }, [pane.openPane]);
   const handleCollapseChat = useCallback(() => {
+    if (paneOn) {
+      pane.close();
+      // The A2.4 rule (review L2-F4), which the first draft skipped on this
+      // path: each control lives inside the chrome the other renders, so a
+      // keyboard user who collapses must be handed the control that replaces
+      // the one that just vanished — here, the mark coming back onto the board.
+      setPendingChatFocus('mark');
+      return;
+    }
     sheet.collapse();
     setPendingChatFocus('expand');
-  }, [sheet.collapse]);
+  }, [paneOn, pane.close, sheet.collapse]);
   useEffect(() => {
     if (!pendingChatFocus) return;
-    const target = pendingChatFocus === 'expand' ? expandControlRef.current : collapseControlRef.current;
+    // 'mark' is the pane's own case, on BOTH shells: collapsing on desktop and
+    // closing on the phone both put the mark back on the board, and that is
+    // where the player's place now is.
+    const target = pendingChatFocus === 'mark'
+      ? characterMarkRef.current
+      : (pendingChatFocus === 'expand' ? expandControlRef.current : collapseControlRef.current);
     target?.focus?.();
     setPendingChatFocus(null);
   }, [pendingChatFocus]);
@@ -1305,6 +1427,80 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     [controllerOn, recordedTape, openCheck?.id],
   );
 
+  // A3.3 (D-92): the bench roster and what the DECIDER said about each name at
+  // the last check that carries words. Pure, off the subscribed doc; null
+  // unless the pane is on.
+  //
+  // IT LIVES HERE, ABOVE THE `loading` EARLY RETURN, and that is not a style
+  // choice. A3.3 first placed it below, next to the pane element it feeds —
+  // which made it a CONDITIONAL HOOK (hazard 44). Every real mount renders
+  // loading (battle null) and then loaded on the SAME fiber, so the second
+  // render called one more hook than the first and React threw "Rendered more
+  // hooks than during the previous render" — on the pane-OFF path too, which is
+  // the shipped configuration. Nothing caught it: no suite renders the loading
+  // state, the goldens are single-pass renderToString, and `vite build` does not
+  // run the lint rule that names it. Review lens 2 did.
+  const benchState = useMemo(
+    () => (paneOn ? selectBench(agentBattle) : null),
+    [paneOn, agentBattle],
+  );
+
+  // A3.1 (D-98): the character's one line — the newest tape entry the CHARACTER
+  // said, as a kind eyebrow and a line, both taken whole from the helpers the
+  // stream renders. Same list AND the same fold, with the same pin, as the peek
+  // line above, so the bubble and the stream cannot name one moment two ways
+  // (§9; the fold was missing until the review — lens 1 F1). Null unless the
+  // pane is on.
+  const tapeBubble = useMemo(
+    () => (paneOn ? deriveBubble(recordedTape, openCheck?.id ?? null) : null),
+    [paneOn, recordedTape, openCheck?.id],
+  );
+
+  // ── The bagger moment (A3.6, D-97) ────────────────────────────────────────
+  //
+  // Watches the PERSISTED peak per held piece and announces a crossing once.
+  // The pure comparison and the reasons are in deriveBaggerMoment.js; the two
+  // lifetimes are in the hook. Disabled pane-off, and seeded — never fired — on
+  // the first snapshot.
+  const baggerMoment = useBaggerMoment(paneOn, agentBattle, playerBook, { paneOpen: pane.open });
+
+  /**
+   * The row's `Bagger hit · {mult}× banked`, for one piece.
+   *
+   * A FACT, NOT AN EVENT: it asks the persisted peak, not the moment, so it is
+   * there for a player who opens the app an hour after the crossing — which is
+   * what `banked` promises. The row's live-merged badge is untouched (ruling 7):
+   * the badge may light a tick early from a websocket price, this line waits for
+   * the record.
+   */
+  const baggerFooterFor = (asset, tierKey) => {
+    if (!paneOn || !asset || asset.isCash || !asset.symbol) return null;
+    if (persistedMaxMultiplier(agentBattle, asset.symbol) < BAGGER_LINE) return null;
+    const facts = baggerMomentFacts(asset, tierKey);
+    return facts ? BATTLE_VIEW_COPY.baggerFooter(facts.mult) : null;
+  };
+
+  // THE BUBBLE'S SECOND SOURCE (handover §7). `Bagger · {sym} hit {pct}` is not
+  // a tape entry and carries no unread count, so it cannot come from
+  // deriveBubble — it is keyed on the persisted crossing instead, and it is
+  // `standalone` because there is no count to gate it on. It takes precedence
+  // over the tape's line while it stands: a bagger is the loudest thing that can
+  // happen to a piece, and the tape's line will still be there behind it.
+  const momentBubble = useMemo(() => {
+    if (!paneOn || !baggerMoment.bubbleSymbol) return null;
+    const held = playerBook.find((p) => p.symbol === baggerMoment.bubbleSymbol);
+    const facts = held ? baggerMomentFacts(held.asset, held.tier) : null;
+    const line = facts ? BATTLE_VIEW_COPY.baggerBubble(baggerMoment.bubbleSymbol, facts.pct) : null;
+    // No line means a missing baseATR or tier — say nothing rather than guess.
+    if (!line) return null;
+    // ONE CONSTRUCTION SITE for a bubble (hazard 43). Built inline here, this
+    // object silently lacked `eyebrowColor` and the eyebrow rendered in the
+    // button's UA foreground on a near-black bubble — see deriveBubble's note.
+    return baggerBubble(baggerMoment.bubbleSymbol, line, BATTLE_VIEW_COPY.baggerEyebrow, baggerMoment.seq);
+  }, [paneOn, baggerMoment.bubbleSymbol, baggerMoment.seq, playerBook]);
+
+  const paneBubble = momentBubble || tapeBubble;
+
   // ── The unread mark (A4, hazard 14; re-sourced flip-prep item 4) ──────────
   //
   // IT COUNTS WHAT THE TAPE RENDERS. Under the flag the `statusFeed` no longer
@@ -1373,6 +1569,26 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     ? (tapeCount > seenFeed.length
       || (seenFeed.stamp != null && newestTapeStamp != null && newestTapeStamp !== seenFeed.stamp))
     : statusFeed.length > lastSeenFeedLengthRef.current;
+  // A3.1: the avatar's badge counts unseen tape entries, never the raw feed
+  // (D-88). The stamp rule above still decides WHETHER anything is unread — a
+  // cap roll can leave the length flat while entries arrive.
+  //
+  // IT NEVER COUNTS THE PLAYER'S OWN WORDS (founder ruling Sep 4, on the
+  // review's open question 5). `deriveChatMessages` writes an exchange WHOLE —
+  // the player's half and the character's answer arrive together — so one reply
+  // landing while the pane sat on Bench read `2 new` for one event. The count is
+  // now the agent halves and the records among the new entries; the player's
+  // half is a tape entry and is never a thing to catch up on.
+  const paneUnread = (() => {
+    if (!paneOn || !hasNewFeedEntries) return 0;
+    const list = Array.isArray(recordedTape) ? recordedTape : [];
+    const tail = list.slice(Math.max(0, Math.min(seenFeed.length, list.length)));
+    // The cap-roll case: the STAMP is what detected the arrival and the tail is
+    // empty, so one is the honest floor. Everywhere else the filtered count is
+    // the truth, including a legitimate zero.
+    if (tail.length === 0) return 1;
+    return tail.filter((entry) => entry?.role !== 'user').length;
+  })();
   const hasCommandDot = hasPendingProposal || hasNewFeedEntries;
   const commandDotColor = hasPendingProposal ? '#f59e0b' : '#5eead4';
 
@@ -1455,6 +1671,18 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               // dollars cannot come from two sources (BUILD_RULES §9). Absent
               // flag-off, so the shipped row markup is byte-identical.
               {...(controllerOn ? { showCurrentPrice: true } : {})}
+              // A3.6 (D-97) — the bagger moment. Spread the same way the
+              // price is, so flag-off markup is byte-identical.
+              //
+              // REDUCED MOTION IS DECIDED HERE, not in the row: the seed says
+              // "reduced motion renders the tag and footer with no burst", and
+              // the cleanest way to keep that promise is never to ask for the
+              // burst. The footer is unaffected — it is text.
+              {...(paneOn ? {
+                baggerBurst: !reducedMotion && baggerMoment.burst.has(leftAsset?.symbol),
+                baggerFooter: baggerFooterFor(leftAsset, tier.key),
+                reducedMotion,
+              } : {})}
               {...(whyable ? {
                 onWhy: (asset) => handleWhyToggle(rowKey, asset),
                 whyOpen: isWhyOpen,
@@ -1552,6 +1780,14 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       // A2.3: the scoped stream and the way out of it.
       scopeSymbol={scopeSymbol}
       onClearScope={handleClearScope}
+      // A3.2 (D-93): inside the composer under the pane, above the stream
+      // otherwise. Flag-off and pane-off are byte-identical — the chat golden
+      // proves it.
+      scopeInComposer={paneOn}
+      // A3.6 (D-97): the arrival fade, pane-only — the chat is the card's other
+      // home and one arrival fades in each place it is rendered, once.
+      tradeFadeIn={paneOn}
+      reducedMotion={reducedMotion}
       openCheck={openCheck}
       controllerLayout
       // Item 11: the controller's own line when a send never reaches the
@@ -1562,7 +1798,67 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       // draft grows (review CR3).
       // A2.4: at peek the chat is its composer — on both shells now, since the
       // desktop strip is the same collapsed state.
-      listCollapsed={!chatOpen}
+      //
+      // A3.2: never collapsed under the pane. `listCollapsed` was the peek
+      // detent's way of showing the composer alone; the pane has no peek, and
+      // hiding the stream is the SECTION's job (the panel it sits in gets
+      // `display: none` when Bench or Tape shows). Collapsing it here as well
+      // would hide the chat inside a visible Chat section.
+      listCollapsed={paneOn ? false : !chatOpen}
+    />
+  ) : null;
+
+  // A3.1 / F3 — THE MARK, built once, rendered at exactly ONE point per shell,
+  // for the same reason the pane is. The two shells anchor it differently (the
+  // desktop board column vs the visual viewport) and that is the ONLY
+  // difference: one element definition means the phone can never drift from the
+  // desktop in what the mark shows, only in where it stands.
+  const characterMark = paneOn ? (
+    <CharacterAvatar
+      markRef={characterMarkRef}
+      agentBattle={agentBattle}
+      playerScore={displayPlayerScore}
+      opponentScore={displayOpponentScore}
+      bubble={paneBubble}
+      unread={paneUnread}
+      onOpen={handleExpandChat}
+      onOpenBubble={handleOpenPaneOnChat}
+      isDesktop={isDesktop}
+      viewportInset={viewportInset}
+      reducedMotion={reducedMotion}
+    />
+  ) : null;
+
+  // A3.2 — THE PANE, built once and rendered at exactly ONE point per shell
+  // (the desktop column or the mobile overlay, never both). `chat` above is the
+  // single AgentChat element and it is handed in here, so "one AgentChat per
+  // layout" (rulings §3.10) holds by construction rather than by a count.
+  //
+  const characterPane = paneOn ? (
+    <CharacterPane
+      agentBattle={agentBattle}
+      playerScore={displayPlayerScore}
+      opponentScore={displayOpponentScore}
+      open={pane.open}
+      section={pane.section}
+      onSelectSection={pane.setSection}
+      onClose={handleCollapseChat}
+      isDesktop={isDesktop}
+      showArchetype={isDesktop && paneHasArchetypeRoom}
+      reducedMotion={reducedMotion}
+      chat={chat}
+      overflow={<PaneOverflow />}
+      bench={<PaneBench bench={benchState} />}
+      tape={(
+        <PaneTape
+          battleId={agentBattleId}
+          tapeEntries={tapeEntries}
+          statusFeed={statusFeed}
+          feedBookmarks={feedBookmarks}
+          tokens={tokens}
+          reducedMotion={reducedMotion}
+        />
+      )}
     />
   ) : null;
 
@@ -1655,9 +1951,15 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       )}
 
       {/* ═══ PERSISTENT TOP SECTION ═══ */}
+      {/* HAZARD 39. This section is opaque at z3 over the BaggerBombBackground
+          canvas at z1, which is why the shipped header has never shown a star.
+          The arena header IS the starfield's floor (D-96), so under the pane
+          flag the fill drops to a translucent scrim and the existing canvas
+          shows through — no second starfield is mounted, and the ambient drift
+          stays exactly what it is today. Pane-off keeps the opaque fill. */}
       <div style={{
         flexShrink: 0,
-        background: tokens.bgAgent || '#1C1A27',
+        background: paneOn ? 'rgba(var(--ft-shadow-rgb), 0.42)' : (tokens.bgAgent || '#1C1A27'),
         position: 'relative',
         zIndex: 3,
         ...(controllerOn && gameTapeOpen ? { visibility: 'hidden' } : {}),
@@ -1695,7 +1997,11 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                 it reflects). This chrome cluster keeps the watchlist chip + status dot. */}
             {/* Phase 5B2 — read-only equipped-watchlist indicator (Q7c).
                 Sourced from the frozen agentContext.equippedWatchlist snapshot. */}
-            {getEquippedWatchlistLabel(agentBattle?.agentContext?.equippedWatchlist) && (
+            {/* The watchlist chip (shipped, flag-independent until now).
+                A3.5 (D-94): NOT RENDERED under the pane — its bare name lives
+                in Bench's subtitle, from the same field. Pane-off keeps it, and
+                the controller-on golden pins that. */}
+            {!paneOn && getEquippedWatchlistLabel(agentBattle?.agentContext?.equippedWatchlist) && (
               <span style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -1711,12 +2017,17 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                 border: '1px solid rgba(94,234,212,0.24)',
               }}>
                 <Bookmark size={10} />
-                {getEquippedWatchlistLabel(agentBattle.agentContext.equippedWatchlist)}
+                {!paneOn && getEquippedWatchlistLabel(agentBattle.agentContext.equippedWatchlist)}
               </span>
             )}
 
-            {/* Game Tape (A4, controller flag): the one header link. */}
-            {controllerOn && (
+            {/* Game Tape (A4, controller flag): the one header link.
+                A3.4 (D-94): NOT RENDERED under the pane, where Tape is a
+                section. `gameTapeOpen` then stays false for the life of the
+                mount and its five consumers — the backdrop, the top section,
+                the layout, the sheet and chatVisible — are inert without an
+                edit to any of them. */}
+            {controllerOn && !paneOn && (
               <button
                 ref={gameTapeLinkRef}
                 type="button"
@@ -1772,22 +2083,41 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
           </div>
         </div>
 
-        {/* Score header */}
-        <ScoreHeader
-          agentBattle={agentBattle}
-          tokens={tokens}
-          isDesktop={isDesktop}
-          playerScore={displayPlayerScore}
-          opponentScore={displayOpponentScore}
-          statusFeed={statusFeed}
-          turnLine={turnLine}
-          landingKey={landingKey}
-          rowCount={rowCount}
-          reducedMotion={reducedMotion}
-          onOpenBook={controllerOn ? handleBookWhyToggle : null}
-          bookOpen={bookWhyOpen}
-          bookName={controllerOn ? BATTLE_VIEW_COPY.whyBookName : null}
-        />
+        {/* Score header — the arena under the pane flag (A3.0, D-96), the
+            shipped header otherwise. The else-arm is the A2 JSX untouched, and
+            AgentBattleScreen.paneOff.golden.test.jsx holds it to that. */}
+        {paneOn ? (
+          <ArenaHeader
+            agentBattle={agentBattle}
+            isDesktop={isDesktop}
+            playerScore={displayPlayerScore}
+            opponentScore={displayOpponentScore}
+            dayLabel={computeDayLabel(agentBattle?.timing)}
+            turnLine={turnLine}
+            landingKey={landingKey}
+            rowCount={rowCount}
+            reducedMotion={reducedMotion}
+            onOpenBook={handleBookWhyToggle}
+            bookOpen={bookWhyOpen}
+            bookName={BATTLE_VIEW_COPY.whyBookName}
+          />
+        ) : (
+          <ScoreHeader
+            agentBattle={agentBattle}
+            tokens={tokens}
+            isDesktop={isDesktop}
+            playerScore={displayPlayerScore}
+            opponentScore={displayOpponentScore}
+            statusFeed={statusFeed}
+            turnLine={turnLine}
+            landingKey={landingKey}
+            rowCount={rowCount}
+            reducedMotion={reducedMotion}
+            onOpenBook={controllerOn ? handleBookWhyToggle : null}
+            bookOpen={bookWhyOpen}
+            bookName={controllerOn ? BATTLE_VIEW_COPY.whyBookName : null}
+          />
+        )}
 
         {/* Book-level Why? (Phase A, controller flag): the latest decision for
             the whole book, then This turn (A3), then the one door. */}
@@ -1839,11 +2169,19 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
            the board as the page; the chat as a non-modal sheet (ChatSheet). */
         <div
           data-layout={isDesktop ? 'desktop' : 'mobile'}
+          // A3.2: on the phone the pane opens OVER the board, so the board
+          // beneath it is dimmed and taken out of the accessibility tree —
+          // the mock's choice and the seed's ruling 3. On desktop the pane is
+          // a column beside a board that stays live, so neither applies.
+          {...(paneOn && !isDesktop && pane.open ? { 'aria-hidden': 'true', 'data-board-dimmed': '1' } : {})}
           style={{
             flex: 1,
             minHeight: 0,
             display: 'flex',
             flexDirection: 'row',
+            ...(paneOn && !isDesktop && pane.open
+              ? { filter: 'brightness(0.55) saturate(0.7)', pointerEvents: 'none' }
+              : {}),
             // A2.4: collapsed, the desktop chat column sits on its own line
             // beneath a full-width board — as a COLUMN, not as a wrapped row
             // (review RB-F12, then RA-F7). Either way the chat keeps ONE
@@ -1868,7 +2206,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
             // jsdom does no layout, so what the rows below can hold is the
             // style contract — the direction and both children's flex — not
             // the pixels. The pixels want the founder's smoke.
-            ...(isDesktop && !chatOpen ? { flexDirection: 'column' } : {}),
+            ...(isDesktop && !rightColumnOpen ? { flexDirection: 'column' } : {}),
             position: 'relative',
             zIndex: 2,
             ...(gameTapeOpen ? { visibility: 'hidden' } : {}),
@@ -1887,28 +2225,98 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               // `minHeight: 0` is what gives the scroller inside it a definite
               // height to bound against (review RA-F7). `0 0 100%` here would
               // be a basis of 100% of the HEIGHT under a column direction.
-              flex: chatOpen ? '3 1 0%' : '1 1 0%',
+              flex: rightColumnOpen ? '3 1 0%' : '1 1 0%',
               minWidth: 0,
               minHeight: 0,
               display: 'flex',
               flexDirection: 'column',
+              // A3.1: the avatar is absolutely positioned INSIDE this column,
+              // so the column has to be its containing block. The layout
+              // container has `position: relative`; this one did not.
+              ...(paneOn ? { position: 'relative' } : {}),
             } : {
               flex: '1 1 auto',
               minWidth: 0,
-              paddingBottom: SHEET_PEEK_PX + 32,
+              // A3.1 (D-93): under the pane the sheet is on its way out and the
+              // board reserves the AVATAR's clearance instead of the sheet's
+              // peek, so the last row can scroll clear of the mark. Pane-off
+              // keeps the sheet's reservation exactly as merged.
+              // F3 NARROWED WHAT THIS BUYS on the phone — see CharacterAvatar's
+              // note: a viewport-fixed mark is cleared at the scroll END, not
+              // at every scroll position.
+              paddingBottom: paneOn ? AVATAR_CLEARANCE_PX : SHEET_PEEK_PX + 32,
+              // F3: no `position: relative` here any more. It existed only to be
+              // the phone mark's containing block, and the phone's mark is now
+              // fixed to the viewport at the root. Dropping it returns this
+              // column to exactly the shipped pane-off shape — which never had
+              // it — so no other absolute descendant can move.
             }}
           >
             <div
               data-board-scroll={isDesktop ? '1' : undefined}
-              style={isDesktop ? { flex: 1, minHeight: 0, overflowY: 'auto', paddingBottom: 24 } : undefined}
+              // A3.1 (review lens 5 F6): the DESKTOP scroller reserves the mark's
+              // clearance too. The first draft reserved it on the phone only, so
+              // at scroll end the last row's controls sat under the mark and its
+              // bubble — the exact thing brief §2.1 promises will not happen, on
+              // the shell where the pane can be folded away and the mark is the
+              // only door back.
+              style={isDesktop
+                ? { flex: 1, minHeight: 0, overflowY: 'auto', paddingBottom: paneOn ? AVATAR_CLEARANCE_PX : 24 }
+                : undefined}
             >
               {/* This turn (Phase A) — its one home, above the board. */}
               {thisTurnStrip}
               {boardRows}
               {closedTrades}
             </div>
+            {/* The character (A3.1, D-91). One mark per layout, inside the board
+                column and above its scroller, so it stays put while the board
+                scrolls. */}
+            {/* A3.2 (the seed's ruling 4): while the pane is open the character
+                stands in the pane's HEADER, and there is no second mark on the
+                board's corner. Collapsed, it comes back here.
+
+                F3: DESKTOP ONLY. The desktop board column IS the mark's
+                containing block and its scroller lives inside, so absolute
+                here is right. The phone's board column is not a scroller — the
+                page is — so the same markup put the mark at the bottom of the
+                board's CONTENT, off screen until you scrolled to the end. The
+                phone's mark is rendered at the root instead, fixed to the
+                viewport; see the note there. */}
+            {paneOn && isDesktop && !pane.open && characterMark}
           </div>
-          {isDesktop && (
+          {/* ONE CHILD SLOT, not two (A3.2). The pane and the A2 column are
+              branches of a single expression, deliberately: React derives
+              useId from a child's position among its siblings, so adding the
+              pane as a SECOND slot renamed the sheet's aria-controls target
+              from _R_4_ to _R_5_ — a real change to the pane-OFF render, which
+              the controller-on golden caught. A branch inside one slot leaves
+              every sibling index where it was. */}
+          {isDesktop && (paneOn ? (
+            /* A3.2 (D-93) — THE PANE IS THE DESKTOP'S RIGHT COLUMN. Collapsed,
+               it is `display: none` — HIDDEN, never unmounted, which the review
+               fixed and this comment kept describing the old way — and the
+               board takes the full width with the mark floating on it (the
+               brief's state 2). That is the pane's
+               whole "two states, not three detents": there is no strip left
+               behind, because the mark and its bubble are what the strip was
+               for. The chat still has ONE tree position — inside this pane, on
+               both shells (hazard 45). */
+            <div
+              id={CHAT_COLUMN_ID}
+              data-chat-column="1"
+              data-chat-collapsed={pane.open ? 'false' : 'true'}
+              style={pane.open
+                ? { flex: '2 1 0%', minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }
+                // COLLAPSED IS HIDDEN, NOT ABSENT (hazard 45). The column keeps
+                // its place in the tree so the chat inside it keeps its draft,
+                // its in-flight send and its scroll; `display: none` is what
+                // gives the board the full width.
+                : { display: 'none' }}
+            >
+              {characterPane}
+            </div>
+          ) : (
             /* THE CHAT'S ONE HOME ON THE DESKTOP (A2.4, review L2-F1 / L5-F7).
                Collapsed and open are the SAME element with different chrome
                and a different flex basis — never two tree positions. React
@@ -1986,7 +2394,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               )}
               {chat}
             </div>
-          )}
+          ))}
         </div>
       ) : (
       /* ═══ TAB CONTENT (flag-off: the shipped tabbed screen) ═══ */
@@ -2103,7 +2511,51 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
           would be painted over by the header (`z-index: 3`) at the full
           detent. Here it stacks at the root, above the header, below the
           Game Tape overlay — and hides with the page while the tape is up. */}
-      {controllerOn && !isDesktop && (
+      {/* A3.2 (D-93) — the phone's pane: full height OVER the dimmed board, with
+          a close that returns to the mark. Not a third detent and not a pushed
+          page (the seed's ruling 3). Rendered OUTSIDE the layout container for
+          the same stacking reason the sheet is (review CR1), and in the SAME
+          child slot the sheet occupies — see the desktop column's note on
+          useId. */}
+      {!isDesktop && (paneOn ? (
+        // A FRAGMENT, not a second child slot (the useId note on the desktop
+        // column). The pane-OFF arm below keeps its position among this root's
+        // children either way, so the golden's tree is untouched; only the
+        // pane-ON arm gains the mark.
+        <>
+        {/* F3 — THE PHONE'S MARK, FIXED TO THE VIEWPORT, at the ROOT.
+            Rendered here rather than inside the board column for two reasons.
+            The board column is not the phone's scroller (the page is), so an
+            absolute mark hung at `bottom` sat at the end of the board's
+            CONTENT — the founder's report. And a `fixed` descendant is trapped
+            by any ancestor with a filter or a transform, which the layout
+            container acquires the moment the pane opens; at the root there is
+            no such ancestor to be trapped by.
+            Two gates the board column used to give it for free, now explicit:
+            the mark hides while the Game Tape is up (the layout container did
+            that with `visibility: hidden`), and it is absent while the pane is
+            open (the character stands in the pane's header instead). */}
+        {!pane.open && !gameTapeOpen && characterMark}
+        <div
+          data-pane-overlay="1"
+          data-pane-open={pane.open ? 'true' : 'false'}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 40,
+            // Closed is HIDDEN, not absent, for the same reason the desktop
+            // column is (hazard 45): the chat inside keeps its draft. `display:
+            // none` also takes the fixed layer out of the way of the board
+            // beneath it.
+            display: pane.open ? 'flex' : 'none',
+            flexDirection: 'column',
+            background: `rgba(${cssVar('shadow-rgb')}, 0.55)`,
+          }}
+        >
+          {characterPane}
+        </div>
+        </>
+      ) : controllerOn && (
         <ChatSheet
           detent={sheet.detent}
           onDetentChange={sheet.setDetent}
@@ -2118,7 +2570,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
         >
           {chat}
         </ChatSheet>
-      )}
+      ))}
 
       {gameTapeOverlay}
 

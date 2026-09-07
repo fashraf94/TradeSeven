@@ -77,6 +77,20 @@ const GUARDED_FILES = [
   'src/screens/battleView/useChatSheet.js',
   'src/screens/battleView/useCoarseNow.js',
   'src/screens/battleView/useContentStable.js',
+  // Battle View character pane, Phase A3 — token-only from birth (D-96).
+  'src/screens/battleView/ArenaHeader.jsx',
+  'src/screens/battleView/computeTugOfWarWidth.js',
+  'src/screens/battleView/CharacterAvatar.jsx',
+  'src/screens/battleView/deriveBubble.js',
+  'src/screens/battleView/CharacterPane.jsx',
+  'src/screens/battleView/useCharacterPane.js',
+  'src/screens/battleView/PaneBench.jsx',
+  'src/screens/battleView/selectBench.js',
+  'src/screens/battleView/PaneTape.jsx',
+  // A3.6 (D-97) — the bagger moment.
+  'src/screens/battleView/deriveBaggerMoment.js',
+  'src/screens/battleView/useBaggerMoment.js',
+  'src/screens/battleView/PaneOverflow.jsx',
 ];
 
 /**

@@ -119,7 +119,7 @@ import DashboardDesktop from './components/Dashboard/DashboardDesktop';
 import CommandDashboard from './components/Dashboard/CommandDashboard';
 import CommandDashboardDesktop from './components/Dashboard/CommandDashboardDesktop';
 import { excludeVoidedGroupBattles } from './utils/commandCenterLiveBattles';
-import { COMMAND_DASHBOARD_ENABLED, COMMAND_DASHBOARD_DESKTOP_ENABLED, TOURNAMENT_TAB_ENABLED, CORRELATION_LAB_ENABLED, isDeployCeremonyOn, isStarfieldOn, isStarfieldMobileOn, isDeploySkyCouplingOn } from './config/featureFlags';
+import { COMMAND_DASHBOARD_ENABLED, COMMAND_DASHBOARD_DESKTOP_ENABLED, TOURNAMENT_TAB_ENABLED, CORRELATION_LAB_ENABLED, isDeployCeremonyOn, isStarfieldOn, isStarfieldMobileOn, isDeploySkyCouplingOn, isCharacterPaneOn } from './config/featureFlags';
 import { pickCeremonyEntry } from './components/Dashboard/deployCeremony/ceremonyData';
 // Delight Layer Task 2: the battle-weather starfield. Mounted ONLY at the two
 // dashboard sites below, each behind its own flag; every other DesktopBackground
@@ -12378,7 +12378,15 @@ export default function PortfolioDuel() {
         />
       )}
 
-      {/* ClashBot Bug Reporter — persistent floating widget on all screens when logged in */}
+      {/* ClashBot Bug Reporter — persistent floating widget on all screens when logged in.
+          Battle View A3.5 (D-95): the floating button is WITHHELD on the agent
+          Battle View while the character pane is on, because the character's
+          mark stands in exactly that corner (hazard 36). The widget itself
+          stays mounted — the pane's `···` overflow opens this one through
+          CLASHBOT_OPEN_EVENT, and a second widget would double the panel and
+          its cooldown. The seam is here, at the MOUNT, so neither the widget
+          nor the Battle View needs to know about the other. This file is
+          imported by no test; `vite build` is its only check (BUILD_RULES §2). */}
       {user && (
         <ClashBotWidget
           user={user}
@@ -12387,6 +12395,7 @@ export default function PortfolioDuel() {
           currentBattle={currentBattle}
           colors={colors}
           isDesktop={isDesktop}
+          hidden={isCharacterPaneOn() && screen === 'battle' && currentBattle?.agentDeployed === true}
         />
       )}
     </>

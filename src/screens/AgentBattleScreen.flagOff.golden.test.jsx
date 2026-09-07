@@ -44,6 +44,12 @@ vi.mock('../config/featureFlags', async (importOriginal) => ({
   isMatchupsBackdropOn: () => false,
   // THE CONTROLLER OFF — the whole point of this file.
   isBattleViewControllerOn: () => false,
+  // Mocked EXPLICITLY, not left to the flag's default (review lens 3 F2).
+  // isCharacterPaneOn() calls isBattleViewControllerOn() INSIDE featureFlags,
+  // so a vi.mock of the controller never reaches it — on the day the pane flag
+  // flips, this suite would see controllerOn=false with paneOn=true, a state
+  // the screen can never be in, and red for a reason that is not a defect.
+  isCharacterPaneOn: () => false,
 }));
 vi.mock('../services/eodhdAPI', () => ({
   stockAPI: {
@@ -60,6 +66,12 @@ vi.mock('../hooks/useAgentBattle', async () => {
 import AgentBattleScreen from './AgentBattleScreen';
 import AgentChat from '../components/Agent/AgentChat';
 
+// THE ONE NORMALISATION, stated (review lens 3). "Byte for byte" below means
+// byte for byte MODULO React's `<!-- -->` text-node separators — 62 of them in
+// this page — which are stripped from the render AND were stripped at capture.
+// They are hydration boundaries: moving one changes the shipped HTML without
+// reddening this file. Everything else, including every attribute, every space
+// and every generated id, is compared exactly.
 const strip = (h) => h.replace(/<!-- -->/g, '');
 const golden = (name) => readFileSync(new URL(`./__golden__/${name}`, import.meta.url), 'utf8');
 

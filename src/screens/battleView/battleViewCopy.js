@@ -504,6 +504,156 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // concurrency branch. Flag-off keeps the shipped string until bug 2's own PR.
   chatSendFailed: 'The character couldn\'t answer just now',
 
+  // ── The arena header (A3.0, D-96) ──────────────────────────────────────────
+  // The score header becomes the arena: the player's side tinted --ft-teal, the
+  // CPU's --ft-copper, the tug-of-war bar as the seam between them.
+  //
+  // `VS` sits in the CENTRE slot so the accessible reading order is player →
+  // VS → CPU, which is the order the eye takes and the order the scores mean.
+  // Upper case, against the arena mock's lower-case `vs`: this is a scoreboard,
+  // and the header's own name row is already upper case.
+  //
+  // `Tap for the book` is a NEW visible string. The book tap surface has shipped
+  // since Phase A with an aria-label and nothing a sighted player could read —
+  // the whole book's Why? was discoverable only by trying the header. Desktop
+  // only: on a phone the header is tighter and the turn line has the row to
+  // itself.
+  arenaVs: 'VS',
+  arenaBookHint: 'Tap for the book',
+
+  // ── The character (A3.1, D-91 / D-98) ──────────────────────────────────────
+  // The avatar is the ONE door to the conversation, so its accessible name says
+  // what it opens, not what it is drawn as. The unread count rides that name
+  // rather than living only in a badge — a badge is a shape, and a shape is not
+  // a name.
+  //
+  // `{n} new` is the badge's own label (the seed's string). It never counts raw
+  // feed actions: the number is the difference between what the TAPE renders and
+  // what the reader has seen (D-88).
+  paneName: 'The agent\'s pane',
+  paneOpen: 'Open the agent\'s pane',
+  paneUnread: (n) => `${n} new`,
+  paneOpenName: (n) => (n > 0
+    ? `${BATTLE_VIEW_COPY.paneOpen} · ${BATTLE_VIEW_COPY.paneUnread(n)}`
+    : BATTLE_VIEW_COPY.paneOpen),
+  // The bubble is a second door onto the same pane. Its name leads with the
+  // kind it is showing, so a screen reader hears WHAT landed before it hears
+  // what the control does; a bubble with no kind word (a folded run) names the
+  // action alone rather than an empty prefix.
+  paneBubbleName: (eyebrow) => (eyebrow
+    ? `${eyebrow} · ${BATTLE_VIEW_COPY.paneOpen.toLowerCase()}`
+    : BATTLE_VIEW_COPY.paneOpen),
+
+  // ── The pane (A3.2, D-91 / D-93) ───────────────────────────────────────────
+  // Three sections, three words. They are the tabs' visible labels AND their
+  // accessible names — a segmented control is a real tablist here, so the word
+  // the eye reads is the word a screen reader announces.
+  paneSectionChat: 'Chat',
+  paneSectionBench: 'Bench',
+  paneSectionTape: 'Tape',
+  // The way out, named for what it does on the shell it appears on. Desktop
+  // COLLAPSES (the board takes the full width, the pane is still there); mobile
+  // CLOSES (the pane was covering the board). Two words because they are two
+  // different promises — the A2 containers' longer strings (`Collapse the
+  // chat`, `Open the chat`) named a chat; these name a place.
+  paneCollapse: 'Collapse',
+  paneClose: 'Close',
+  // The overflow's control (A3.5 fills it). Named for what it holds, not for
+  // the three dots it is drawn as.
+  paneMore: 'More',
+  // A3.5 (D-95): the overflow holds `Report a bug` ALONE. The mock's title
+  // offers `Read · Equip · Report a bug`; Read and Equip are not built. The
+  // string is the widget's own aria-label (ClashBotWidget.jsx), taken from copy
+  // here rather than left as a literal in two places.
+  paneReportBug: 'Report a bug',
+
+  // ── Bench (A3.3, D-92) ─────────────────────────────────────────────────────
+  // `Not named at the {t} check` (notNamedAtCheck) already exists and is REUSED
+  // — Bench is not allowed a second way of naming a check (D-83), and the
+  // heading below takes its slot from the same `slotLabel`.
+  //
+  // The absence line is a truthful state, not an error: no entry today carries
+  // words at all. It is deliberately NOT "the agent has not checked yet" —
+  // ticks may well have run; what is absent is WORDS.
+  benchNoCheck: 'No check yet today',
+  // The heading over the names the decider named — the SLOT OF THE CHECK
+  // ACTUALLY USED, not "the last check" (founder ruling Sep 4, on the review's
+  // open question 2). Under the scan-back the words may come from a check that
+  // is not the last one: the turn line can say `Checked 1:00 PM` while these
+  // sentences are the 12:45 check's, and a heading that said "the last check"
+  // was then simply false.
+  //
+  // ONE string, not two. The first draft paired `Named at the last check` with
+  // a separate `At the {t} check` line beneath it, which said "check" twice in
+  // two lines — the stutter review L5-F7 found in its own shape. The slot lives
+  // in the heading now and the second line is gone.
+  benchNamed: (iso) => {
+    const t = slotLabel(iso);
+    return t ? `Named at the ${t} check` : null;
+  },
+  // The section's subtitle: the equipped watchlist's BARE name. The header's
+  // chip prefixes it with `Watchlist: ` (watchlistEquipUI.getEquippedWatchlistLabel);
+  // here the section heading already says Bench, so the prefix would stutter.
+  benchWatchlist: (name) => (name ? `${name} · equipped` : null),
+  // The rest of the roster — the names this check did not mention.
+  benchRest: 'The rest of the roster',
+
+  // ── Tape (A3.4, D-94) ──────────────────────────────────────────────────────
+  // The shipped Game Tape's content, moved into the pane and simplified: trade
+  // cards, bookmarks, the activity log. The Time / P&L / Tier sort controls are
+  // dropped (the seed), and so is the overlay's `Back to the battle` — there is
+  // nothing to go back FROM once Tape is a section rather than a page.
+  tapeTrades: 'Trades',
+  tapeNoTrades: 'No trades yet',
+  // THE BOOKMARK DOT'S NEW HOME (the founder's ruling on §4 #12). The header
+  // link's dot said only "there is at least one"; as a section header it can
+  // say how many, which is the same fact with the number restored. Nowhere on
+  // the board.
+  tapeBookmarks: (n) => (n > 0 ? `Bookmarks · ${n}` : 'Bookmarks'),
+  tapeNoBookmarks: 'No bookmarks yet',
+  // The shipped Game Tape's own fallback for a bookmarked entry that carries
+  // no words (GameTapeView.jsx:413) — kept identical so one bookmark cannot
+  // read two ways across the two surfaces.
+  tapeBookmarkNoDetail: 'No details available',
+  tapeUnbookmark: 'Remove this bookmark',
+  tapeActivityLog: 'Activity log',
+  tapeActivityShow: 'Show the activity log',
+  tapeActivityHide: 'Hide the activity log',
+
+  // ── The bagger moment (A3.6, D-97) ─────────────────────────────────────────
+  // Two strings, both from PERSISTED scoring, both about one crossing.
+  //
+  // `{mult}` is the row's CONVICTION TIER multiplier — 2× star, 1.5× core, 1×
+  // support (CONVICTION_MULTIPLIERS) — the founder's ruling 8: it is the number
+  // the player is playing for, not the threshold multiplier that shares the
+  // word. `banked` is not a promise: the persisted peak is monotonic within the
+  // day, so the bonus cannot be taken back by a later fall.
+  //
+  // `{pct}` is the bagger LINE, `+{baseATR}%` (ruling 9) — the persisted
+  // threshold the row reads at that price, the same number deriveTierPrices
+  // turns into `Bagger $`. Not the piece's current percent, which is a live
+  // value and would disagree with the line the moment the price moved again.
+  //
+  // The tier suffix is `×` (U+00D7), matching CONVICTION_MULTIPLIERS' own
+  // display everywhere else, and the multiplier is written without a trailing
+  // zero: `2×`, `1.5×`, `1×`.
+  //
+  // The PERCENT keeps its decimal — `+3.0%`, not `+3%` (review lens 5). Every
+  // other percent in this view carries one (computeProximity.js:213-215), and
+  // one number in a family reading differently is the seam a reader trips on.
+  baggerFooter: (mult) => {
+    if (typeof mult !== 'number' || !Number.isFinite(mult) || mult <= 0) return null;
+    return `Bagger hit · ${Number(mult.toFixed(2))}\u00d7 banked`;
+  },
+  baggerBubble: (symbol, pct) => {
+    if (typeof symbol !== 'string' || !symbol.trim()) return null;
+    if (typeof pct !== 'number' || !Number.isFinite(pct) || pct <= 0) return null;
+    return `Bagger · ${symbol.trim()} hit +${pct.toFixed(1)}%`;
+  },
+  // The bubble's own eyebrow, so it reads as a RECORD like the tape's cards do
+  // rather than as speech (D-98: the kind carries its colour as text).
+  baggerEyebrow: 'Bagger',
+
   // ── The layout (A4) ────────────────────────────────────────────────────────
   // Game Tape is ONE header link that opens the shipped view full-screen; the
   // way back names the page it returns to. No `···` menu (rulings §2.5).

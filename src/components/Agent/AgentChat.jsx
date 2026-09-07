@@ -17,7 +17,7 @@ import { OPENER_LAZY_FALLBACK_ENABLED } from '../../config/featureFlags';
 // its error strings would trip it).
 import { BATTLE_VIEW_COPY } from '../../screens/battleView/battleViewCopy';
 import { deriveChatMessages } from './deriveChatMessages';
-import { TradeCard, CheckCard, CheckRunLine } from '../../screens/battleView/TapeCards';
+import { TradeCard, CheckCard, CheckRunLine, SPEECH_EYEBROW_COLOR } from '../../screens/battleView/TapeCards';
 import { collapseQuietChecks, TAPE_KIND } from '../../screens/battleView/buildTape';
 import { scopeTape } from '../../screens/battleView/scopeTape';
 import { cssVar } from '../../theme/cssTokens';
@@ -299,7 +299,15 @@ function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSendi
         <div
           data-tape-kind-eyebrow={kindEyebrow}
           style={{
-            color: cssVar('text-muted'),
+            // THE SHARED CONSTANT, not a second `cssVar('text-muted')` (review
+            // lens 4 F11). D-98's agreement was structural only between
+            // TapeCards and deriveBubble; the CHAT's own speech eyebrow was
+            // still an independent literal, so a drift here — the exact gated
+            // change the ruling describes — survived every suite but the
+            // pane-off byte golden, which is the wrong instrument for a pane-ON
+            // agreement. Identical value, so flag-off is byte-identical; what
+            // changes is that the three surfaces now read ONE source.
+            color: SPEECH_EYEBROW_COLOR,
             fontSize: 10,
             fontWeight: 700,
             letterSpacing: '0.08em',
@@ -504,6 +512,17 @@ export default function AgentChat({
   // both are null flag-off, where the stream is the shipped one.
   scopeSymbol = null,
   onClearScope = null,
+  // A3.2 (D-93): under the character pane the scope chip lives INSIDE the
+  // composer, as the mock shows — the pane's Chat section is a conversation
+  // with a field at the bottom, and a filter chip floating above the stream
+  // read as a banner there. Passed on the FLAG, beside controllerCopy, never
+  // inferred from controllerLayout: where the chip sits and how the layout is
+  // built are two rulings. FALSE keeps the shipped position byte for byte.
+  scopeInComposer = false,
+  // A3.6 (D-97): the trade card's arrival fade. Absent (false) flag-off and
+  // pane-off, where the card renders as the plain div the goldens photograph.
+  tradeFadeIn = false,
+  reducedMotion = false,
   // Phase A2 flip-prep (D-89): the check card `Read the full check` asked for.
   // `{ id, nonce }` — the id is `buildTape`'s own `checkEntryId`, so the card
   // the screen names and the card the builder stamps cannot drift; the nonce
@@ -1124,6 +1143,39 @@ export default function AgentChat({
 
   // ── Shared JSX fragments ──────────────────────────────────────────────────
 
+  // ONE CHIP, TWO HOMES (A3.2). Built here so the two placements cannot drift
+  // into two different chips; `scopeShown` is the shipped gate, unchanged —
+  // gated on the TAPE rather than on the caller, because flag-off the filter
+  // below cannot run and a chip would name a scope that is not applied.
+  const scopeShown = Array.isArray(tapeEntries) && Boolean(scopeSymbol) && typeof onClearScope === 'function';
+  const scopeChip = scopeShown ? (
+    <button
+      type="button"
+      data-tape-scope={scopeSymbol}
+      aria-label={BATTLE_VIEW_COPY.scopeChipName(scopeSymbol)}
+      onClick={onClearScope}
+      style={{
+        background: 'transparent',
+        border: `1px solid ${cssVar('teal')}`,
+        color: cssVar('teal'),
+        borderRadius: 14,
+        padding: '3px 10px',
+        fontSize: 11.5,
+        fontWeight: 700,
+        letterSpacing: '0.02em',
+        cursor: 'pointer',
+        // ONLY in the composer (review lens 3 F1 / lens 5 F8). Hoisting the chip
+        // to serve two homes carried this one declaration into the A2 position
+        // too, so pane-off stopped being byte-identical the moment a scope was
+        // active — invisible to the golden, which photographs an unscoped first
+        // paint. In the composer it stops the chip being squeezed by the field.
+        ...(scopeInComposer ? { flexShrink: 0 } : {}),
+      }}
+    >
+      {BATTLE_VIEW_COPY.scopeChip(scopeSymbol)}
+    </button>
+  ) : null;
+
   const chatContent = (
     <>
       {/* ── The piece scope (A2.3, D-73) ─────────────────────────────────
@@ -1134,27 +1186,9 @@ export default function AgentChat({
           unscoped, and gated on the TAPE rather than on the caller: flag-off
           the filter below cannot run, so a chip would name a scope that is
           not applied. */}
-      {Array.isArray(tapeEntries) && scopeSymbol && typeof onClearScope === 'function' && (
+      {scopeShown && !scopeInComposer && (
         <div style={{ padding: '8px 12px 0', display: 'flex' }}>
-          <button
-            type="button"
-            data-tape-scope={scopeSymbol}
-            aria-label={BATTLE_VIEW_COPY.scopeChipName(scopeSymbol)}
-            onClick={onClearScope}
-            style={{
-              background: 'transparent',
-              border: `1px solid ${cssVar('teal')}`,
-              color: cssVar('teal'),
-              borderRadius: 14,
-              padding: '3px 10px',
-              fontSize: 11.5,
-              fontWeight: 700,
-              letterSpacing: '0.02em',
-              cursor: 'pointer',
-            }}
-          >
-            {BATTLE_VIEW_COPY.scopeChip(scopeSymbol)}
-          </button>
+          {scopeChip}
         </div>
       )}
 
@@ -1241,7 +1275,7 @@ export default function AgentChat({
               // Under the flag the card carries the tier, the banked points and
               // the motive with its author named — everything the slim line
               // could not (D-72). The `↳ from directive` echo rides the card.
-              body = <TradeCard key={item.id} entry={item} startExpanded={openCheckId === item.id} />;
+              body = <TradeCard key={item.id} entry={item} startExpanded={openCheckId === item.id} fadeIn={tradeFadeIn} reducedMotion={reducedMotion} />;
             } else if (item._type === 'trade') {
               const isDirectiveLinked = !!item.directiveThreadId;
               body = (
@@ -1350,7 +1384,11 @@ export default function AgentChat({
         padding: '8px 12px 12px',
         borderTop: '1px solid rgba(255,255,255,0.06)',
         alignItems: 'flex-end',
+        // The chip wraps above the field on a narrow pane rather than squeezing
+        // it; the field keeps growing with the draft either way.
+        ...(scopeInComposer ? { flexWrap: 'wrap' } : {}),
       }}>
+        {scopeInComposer && scopeChip}
         <textarea
           ref={textareaRef}
           value={inputText}

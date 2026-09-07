@@ -17,6 +17,12 @@ import DataStrike from '../shared/DataStrike';
 // copy string module from a shipped component is safe: the value is read only
 // on the flag path and the module is pure.
 import { BATTLE_VIEW_COPY } from '../../screens/battleView/battleViewCopy';
+// A3.6 (D-97): the bagger moment's paint. Both are absent flag-off — the props
+// below default to off and the row renders exactly as it ships. `cssVar` and
+// `motionToken` rather than a hex and a literal: this file is on neither guard
+// list, so the RULES (BUILD_RULES §10, §11) are what hold here, not a test.
+import { cssVar } from '../../theme/cssTokens';
+import { motionToken } from '../../theme/motion';
 
 const DEFAULT_HISTORY = { maxMultiplier: 0, minMultiplier: 0 };
 
@@ -623,6 +629,18 @@ export default function TacticalRow({
   whyId = null,
   // A2 (D-85): the player's current price on the row. Absent flag-off.
   showCurrentPrice = false,
+  // A3.6 (D-97) — THE BAGGER MOMENT. Both absent flag-off.
+  //
+  // `baggerBurst` is an EVENT: true only for the moment's window, and the
+  // screen never sets it under reduced motion, so "reduced motion renders the
+  // footer with no burst" needs no branch here.
+  //
+  // `baggerFooter` is a FACT about persisted scoring, so it does not come and
+  // go with the burst — a line that says `banked` must not depend on whether
+  // this tab was open when the tick landed.
+  baggerBurst = false,
+  baggerFooter = null,
+  reducedMotion = false,
 }) {
   // The left side's proximity, computed ONCE here and handed to both the
   // label (through AssetSide) and the Why? panel — never derived twice beside
@@ -647,8 +665,34 @@ export default function TacticalRow({
         backgroundColor: 'rgba(22, 27, 34, 0.25)',
         borderBottom: `1px solid ${HOLO_COLORS.borderSubtle}`,
         minHeight: '120px',
+        // The wash below needs a containing block, and ONLY while it exists:
+        // adding this unconditionally would change the shipped row's inline
+        // style, which the flag-off goldens photograph byte for byte.
+        ...(baggerBurst ? { position: 'relative' } : {}),
       }}
     >
+      {/* THE BURST (A3.6, D-97). One shot: a wash in the player's accent that
+          fades to nothing and is then gone. It is `aria-hidden` and
+          `pointer-events: none` — the news is in the footer and the bubble,
+          both of which are text; this is only the thing that catches the eye.
+          The seed's ceiling is 700 ms and the screen holds the window that
+          long; the PAINT is `smooth` (300 ms) inside it, after which the wash
+          sits at zero until the window closes. */}
+      {baggerBurst && (
+        <motion.div
+          data-bagger-burst="1"
+          aria-hidden="true"
+          initial={{ opacity: 0.5 }}
+          animate={{ opacity: 0 }}
+          transition={motionToken('smooth', { reducedMotion })}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            pointerEvents: 'none',
+            background: `rgba(var(--ft-teal-rgb), 0.35)`,
+          }}
+        />
+      )}
       {/* Left Asset (Player) */}
       <AssetSide
         asset={leftAsset}
@@ -684,6 +728,26 @@ export default function TacticalRow({
         dimmed={opponentDimmed}
       />
     </motion.div>
+    {/* THE FOOTER (A3.6, D-97). Persisted scoring, so it stays — the burst is
+        the event, this is the record of it. Beneath the row rather than inside
+        a side, because it is about the player's piece and the row is where the
+        player's piece is. */}
+    {baggerFooter ? (
+      <div
+        data-bagger-footer="1"
+        style={{
+          padding: '5px 12px',
+          fontSize: 11,
+          fontWeight: 700,
+          letterSpacing: '0.06em',
+          color: cssVar('teal'),
+          background: `rgba(var(--ft-teal-rgb), 0.08)`,
+          borderBottom: `1px solid ${HOLO_COLORS.borderSubtle}`,
+        }}
+      >
+        {baggerFooter}
+      </div>
+    ) : null}
     {/* Why? — expands in place beneath the row, inside the tier map, with the
         SAME proximity the row just rendered. Absent flag-off. */}
     {renderWhy ? (
@@ -736,6 +800,9 @@ TacticalRow.propTypes = {
   whyName: PropTypes.string,
   whyId: PropTypes.string,
   showCurrentPrice: PropTypes.bool,
+  baggerBurst: PropTypes.bool,
+  baggerFooter: PropTypes.string,
+  reducedMotion: PropTypes.bool,
 };
 
 TacticalRow.defaultProps = {

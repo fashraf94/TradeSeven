@@ -40,6 +40,15 @@ vi.mock('../config/featureFlags', async (importOriginal) => ({
   isMatchupsBackdropOn: () => false,
   // Read at render time by the screen, so one module can be toggled per test.
   isBattleViewControllerOn: () => flagState.on,
+  // Mocked EXPLICITLY, not left to the flag's default (review lens 3 F2, and
+  // the smoke branch that found the three files it missed). isCharacterPaneOn()
+  // calls isBattleViewControllerOn() INSIDE featureFlags, so a vi.mock of the
+  // controller never reaches it: with the pane flag lit, this suite would see
+  // the pane on while it toggles the controller beneath it, which is not a
+  // state the screen can be in and not what these rows test. This file is
+  // about the A2 controller render; the pane's own suite is
+  // AgentBattleScreen.pane.jsdom.test.jsx.
+  isCharacterPaneOn: () => false,
 }));
 vi.mock('../services/eodhdAPI', () => ({
   stockAPI: {

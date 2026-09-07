@@ -1,0 +1,1698 @@
+// @vitest-environment jsdom
+//
+// src/screens/AgentBattleScreen.pane.jsdom.test.jsx
+//
+// Phase A3 — the screen MOUNTED with the character pane on. The sibling
+// AgentBattleScreen.paneOff.golden.test.jsx guards the else-arm (pane-off is
+// the A2 render, byte for byte); this file guards the then-arm.
+//
+// It grows one describe block per build phase. A3.0 is the arena header.
+//
+// Harness: AgentBattleScreen.controller.jsdom.test.jsx, with isCharacterPaneOn
+// mocked true alongside the controller.
+
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import React, { act } from 'react';
+import { createRoot } from 'react-dom/client';
+import { readFileSync } from 'node:fs';
+
+vi.mock('../firebase/config', () => ({ db: {}, auth: {}, default: {} }));
+vi.mock('firebase/auth', () => ({ getAuth: vi.fn(() => ({ currentUser: null })) }));
+vi.mock('../services/agentService', () => ({ submitDailyGrades: vi.fn(), addFeedBookmark: vi.fn(), removeFeedBookmark: vi.fn() }));
+
+vi.mock('../contexts/ThemeContext', () => {
+  const tokens = new Proxy({}, { get: () => '#000000' });
+  return { useTheme: () => ({ tokens }), ThemeProvider: ({ children }) => children };
+});
+vi.mock('../hooks/useAgentBattleId', () => ({ default: () => ({ agentBattleId: null, loading: false }) }));
+// A LIVE PRICE, drivable. Ruling 7's two clocks cannot be told apart without
+// one: the row's badge reads enrichAsset's LIVE-merged history and the A3.6
+// additions read the persisted peak, and with no price the two can only ever
+// agree. See the two-clocks row in the A3.6 describe.
+let PRICES = {};
+vi.mock('../hooks/useWebSocketPrices', () => ({
+  useWebSocketPrices: () => ({ prices: PRICES, status: 'disconnected' }),
+}));
+vi.mock('../config/featureFlags', async (importOriginal) => ({
+  ...(await importOriginal()),
+  isAgentPresenceOn: () => false,
+  isMatchupsBackdropOn: () => false,
+  isBattleViewControllerOn: () => true,
+  // THE PANE ON — what this file is for. The flag itself ships false; mocking
+  // the ACCESSOR (never the constant) is the seam the flag docstring names.
+  isCharacterPaneOn: () => true,
+}));
+vi.mock('../services/eodhdAPI', () => ({
+  stockAPI: {
+    getMultipleStockPrices: vi.fn(async () => ({})),
+    getMultipleCryptoPrices: vi.fn(async () => ({})),
+  },
+  POPULAR_CRYPTO: [],
+}));
+vi.mock('../components/Agent/LiveActivityPanel', () => ({ default: () => null, BreakthroughAlerts: () => null }));
+
+const LIVE_DOC = {
+  id: 'ab-1',
+  status: 'active',
+  activatedAt: '2026-09-01T13:30:00.000Z',
+  agentContext: { agentName: 'Aurora', archetype: 'degen', equippedWatchlist: { name: 'Energy leaders', tickers: ['DVN'] } },
+  scoreState: { currentScore: 12, opponentScore: 3, tradeCount: 1, evaluationCount: 5, lastScoredAt: '2026-09-01T16:47:00.000Z' },
+  timing: { tradingDays: ['d1', 'd2', 'd3'], currentTradingDay: 2 },
+  portfolio: {
+    star: [{ symbol: 'AAPL' }, { symbol: 'SLB' }],
+    core: [{ symbol: 'NVDA' }],
+    support: [],
+    startingPrices: { AAPL: 150, NVDA: 900, MU: 90 },
+    bench: { stocks: [{ symbol: 'NOW' }, { symbol: 'TSLA' }], crypto: null },
+  },
+  watchlist: { hotBench: ['CRWD'] },
+  agentContext2: null,
+  opponent: { portfolio: { star: [{ symbol: 'AMD' }], core: [], support: [] } },
+  evaluations: [
+    { evalId: 'eval_005', timestamp: '2026-09-01T16:47:02.000Z', decision: 'HOLD', rationale: 'Holding the book. NOW would need +7.4% more to lock in the bonus.', haikuError: null },
+  ],
+  trades: [],
+  statusFeed: [],
+  chatExchanges: [],
+};
+
+let DOC = LIVE_DOC;
+const withDoc = (over) => { DOC = { ...LIVE_DOC, ...over }; };
+let FEED = [];
+let BOOKMARKS = [];
+vi.mock('../hooks/useAgentBattle', () => ({
+  default: () => ({
+    battle: DOC, statusFeed: FEED, executionMode: 'copilot', pendingProposal: null,
+    strategyPreset: 'balanced', gameplanMeeting: null, chatExchanges: DOC.chatExchanges,
+    feedBookmarks: BOOKMARKS, loading: false,
+  }),
+}));
+
+import AgentBattleScreen from './AgentBattleScreen';
+import { removeFeedBookmark } from '../services/agentService';
+import { SHEET_PEEK_PX } from './battleView/useChatSheet';
+
+const BATTLE = {
+  agentId: 'agent-1', agentBattleId: 'ab-1',
+  creator: { portfolio: { star: [{ symbol: 'AAPL' }, { symbol: 'MU' }], core: [{ symbol: 'NVDA' }], support: [] } },
+  opponent: { portfolio: { star: [{ symbol: 'MSFT' }], core: [], support: [] } },
+  state: { startingPrices: { AAPL: 150, NVDA: 900, MU: 90 } },
+};
+
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};
+
+let container;
+let root;
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-09-01T17:00:00.000Z'));
+  DOC = LIVE_DOC;
+  FEED = [];
+  BOOKMARKS = [];
+  PRICES = {};
+  setShell(true);
+  container = document.createElement('div');
+  document.body.appendChild(container);
+  root = createRoot(container);
+});
+afterEach(() => {
+  act(() => root.unmount());
+  container.remove();
+  vi.useRealTimers();
+});
+
+/**
+ * The breakpoint, both halves of it: useIsDesktop seeds from window.innerWidth
+ * at MOUNT and then listens on matchMedia, so a test that sets only one of the
+ * two gets a shell that disagrees with itself.
+ */
+// framer latches `prefers-reduced-motion` in MODULE scope on the first
+// useReducedMotion call, so only the FIRST value asked for in a file has any
+// effect. A later row asking for a different one would assert silently under
+// the latched value — a row that cannot fail under the defect it names, which
+// is the exact shape this whole review hunts. So the knob refuses instead of
+// lying, and the remedy it names is what the bagger's reduced-motion rows
+// already do: a file of their own.
+let reducedMotionLatched = null;
+
+const setShell = (isDesktop, { reducedMotion = false } = {}) => {
+  if (reducedMotionLatched === null) reducedMotionLatched = reducedMotion;
+  else if (reducedMotionLatched !== reducedMotion) {
+    throw new Error(
+      `setShell: this file is latched to reducedMotion=${reducedMotionLatched}. `
+      + 'framer reads the preference once per module, so a row asking for the other '
+      + 'value here would silently assert under the latched one. Put it in its own '
+      + 'file (see AgentBattleScreen.bagger.reducedMotion.jsdom.test.jsx).',
+    );
+  }
+  Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: isDesktop ? 1280 : 480 });
+  // ANSWER EACH QUERY ON ITS OWN TERMS (A3.6). This used to return `isDesktop`
+  // to every query, so framer's useReducedMotion — which asks for
+  // `(prefers-reduced-motion: reduce)` — read TRUE on every desktop row and
+  // FALSE on every mobile one. Harmless while nothing asserted on motion; the
+  // moment the bagger burst did, "reduced motion renders no burst" would have
+  // been proved by the shell rather than by the setting.
+  // ANSWER EACH min-width QUERY ON ITS OWN TERMS. There are now two — 768 for
+  // the shell and ARCHETYPE_MIN_VIEWPORT_PX for the archetype line's room — so
+  // returning `isDesktop` to both would have said "roomy" at 768.
+  window.matchMedia = (query) => {
+    const q = String(query);
+    if (q.includes('prefers-reduced-motion')) {
+      return { matches: reducedMotion, addEventListener() {}, removeEventListener() {} };
+    }
+    const min = /min-width:\s*(\d+)px/.exec(q);
+    const width = isDesktop ? 1280 : 480;
+    return {
+      matches: min ? width >= Number(min[1]) : isDesktop,
+      addEventListener() {},
+      removeEventListener() {},
+    };
+  };
+};
+
+const mount = () => act(() => {
+  root.render(<AgentBattleScreen battle={BATTLE} user={{ uid: 'u1' }} onBack={() => {}} onOpenFilmRoom={null} />);
+});
+
+/**
+ * Open the pane, whatever the shell's opening default is. Desktop opens WITH
+ * the pane showing (the brief's resting working state, §5 deliverable 1), so
+ * there is no mark to press; the phone starts closed.
+ */
+const paneIsOpen = () => container.querySelector('[data-character-pane]')?.getAttribute('data-pane-open') === 'true';
+const openPane = () => {
+  if (paneIsOpen()) return;
+  act(() => {
+    container.querySelector('[data-character-mark]')
+      .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  });
+};
+const closePane = () => act(() => {
+  container.querySelector('[data-pane-close]')
+    .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+});
+const selectTab = (section) => act(() => {
+  container.querySelector(`[data-pane-tab="${section}"]`)
+    .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+});
+
+describe('A3.0 — the arena replaces the shipped header under the pane flag (D-96)', () => {
+  it('mounts the arena header, and exactly one of it', () => {
+    mount();
+    expect(container.querySelectorAll('[data-arena-header]')).toHaveLength(1);
+    expect(container.querySelector('[data-arena-bar]')).toBeTruthy();
+  });
+
+  it('keeps ONE book tap surface — the arena\'s, not a second one beside it', () => {
+    // The shipped ScoreHeader also renders data-why-book-toggle. If the branch
+    // were an insertion rather than a swap, both would mount and the panel's
+    // close (which finds the control by attribute) would hand focus to whichever
+    // came first.
+    mount();
+    expect(container.querySelectorAll('[data-why-book-toggle]')).toHaveLength(1);
+    expect(container.querySelector('[data-arena-header] [data-why-book-toggle]')).toBeTruthy();
+  });
+
+  it('carries the turn line inside the arena, not beside it', () => {
+    mount();
+    const line = container.querySelector('[data-turn-state]');
+    expect(line).toBeTruthy();
+    expect(container.querySelector('[data-arena-header]').contains(line)).toBe(true);
+  });
+
+  it('lets the starfield through: the top section is no longer opaque (hazard 39)', () => {
+    // The arena is the floor. The persistent top section paints an opaque
+    // bgAgent pane-off; under the flag it drops to a scrim so the existing
+    // BaggerBombBackground canvas at z1 is visible through it. Read off the
+    // element's own inline style — the token is not resolved in this harness,
+    // so the assertion is that the VALUE changed shape, not its computed colour.
+    mount();
+    const top = container.querySelector('[data-arena-header]').closest('div[style*="z-index"]');
+    expect(top).toBeTruthy();
+    expect(top.style.background).toContain('--ft-shadow-rgb');
+    expect(top.style.background).not.toContain('#1C1A27');
+  });
+
+  it('renders the day label the screen derives, not one the header re-derives (§9)', () => {
+    // computeDayLabel lives in the screen and is passed in. The arena must not
+    // grow its own copy of that arithmetic off `timing`.
+    mount();
+    expect(container.querySelector('[data-arena-header]').textContent).toContain('Day 2 of 3');
+  });
+});
+
+describe('A3.1 — the character on the board (D-91, D-98)', () => {
+  it('mounts exactly one mark, inside the board column, when the pane is folded', () => {
+    // Desktop OPENS with the pane showing (the brief's resting working state),
+    // and the character then stands in the pane's header — no second mark on
+    // the board (the seed's ruling 4). Collapsed, it comes back onto the board.
+    mount();
+    // Open, the character stands in the pane's HEADER and the board carries no
+    // mark at all (the seed's ruling 4). The header's own face is the presence
+    // mount, which every screen harness mocks off — so zero here is the ruling,
+    // not an absence of rendering: the pane itself is present.
+    expect(container.querySelector('[data-character-pane]')).toBeTruthy();
+    expect(container.querySelectorAll('[data-character-mark]')).toHaveLength(0);
+    closePane();
+    const marks = container.querySelectorAll('[data-character-mark]');
+    expect(marks).toHaveLength(1);
+    expect(container.querySelector('[data-board]').contains(marks[0])).toBe(true);
+  });
+
+  it('the board reserves the mark\'s clearance instead of the sheet\'s peek (D-93)', () => {
+    mount();
+    // matchMedia is stubbed true here, so this is the DESKTOP branch: the
+    // column takes `position: relative` so the absolutely-positioned mark has a
+    // containing block, and the mobile branch swaps the padding. Both are the
+    // paneOn arm of the same conditional.
+    const board = container.querySelector('[data-board]');
+    expect(board.style.position).toBe('relative');
+  });
+
+  it('MOBILE: the reservation is the mark\'s clearance, and it clears the mark', () => {
+    // Added after the review's SURVIVOR PROBE (BUILD_RULES §2): changing
+    // AVATAR_CLEARANCE_PX from 96 to 500 left all 4156 rows green, which proved
+    // the harness can report a survivor AND that this value was guarded by
+    // nothing. The brief's §2.1 promise — the board reserves the space so the
+    // mark never rests over a row's tap targets — was unenforced.
+    //
+    // The row is stated as that promise rather than as the literal: the
+    // reservation must clear the mark's own 48px target plus its 14px inset,
+    // and must not be the sheet's (SHEET_PEEK_PX + 32 = 108 today), which is
+    // what the pane retires.
+    setShell(false);
+    mount();
+    const board = container.querySelector('[data-board]');
+    const reserved = parseInt(board.style.paddingBottom, 10);
+    expect(reserved).toBeGreaterThanOrEqual(48 + 14);
+    // …and it is NOT the sheet's reservation, which the pane retires. The
+    // comment claimed this; the assertion did not, so keeping SHEET_PEEK_PX + 32
+    // under the pane survived (review lens 4 F10).
+    expect(reserved).not.toBe(SHEET_PEEK_PX + 32);
+    // F3 CHANGED THE OTHER HALF OF THIS ROW. The reservation stays — the board
+    // still has to scroll clear of the mark — but the mark is no longer INSIDE
+    // the column on the phone: it is fixed to the viewport, at the root. The
+    // old assertion (`board.contains(mark)`) was the defect written down as a
+    // guarantee, so it is replaced by the property F3 actually wants.
+    const mark = container.querySelector('[data-character-mark]');
+    expect(mark).toBeTruthy();
+    expect(board.contains(mark)).toBe(false);
+  });
+
+  it('speaks the newest RECORDED entry when something is unread, and clears on open', () => {
+    // MOBILE, deliberately. On desktop the A2 chat column opens at HALF by
+    // default, so `chatVisible` is true on the first paint and the effect marks
+    // everything seen before a count can exist — correct behaviour, and the
+    // reason the pane's own closed-by-default machine (A3.2) is what finally
+    // makes the desktop count meaningful. The phone starts at peek, so the
+    // unread path is live there today.
+    setShell(false);
+    // The tape is unseen on a fresh mount (the A4 rule kept in flip-prep), so
+    // the mark carries a count and the character has a line.
+    mount();
+    const mark = container.querySelector('[data-character-mark]');
+    expect(mark.getAttribute('data-unread')).toBeTruthy();
+    const bubble = container.querySelector('[data-character-bubble]');
+    expect(bubble).toBeTruthy();
+    // The eyebrow is the check CARD's own label, not a second one.
+    expect(bubble.textContent).toContain('Status check');
+
+    // Opening the pane marks it seen. The mark itself retires INTO the pane's
+    // header while the pane is open (the seed's ruling 4 — no second mark on
+    // the board), so what is asserted here is that the board's mark and its
+    // bubble are both gone, not that the badge cleared on a mark still there.
+    act(() => { mark.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
+    expect(container.querySelector('[data-character-pane]')).toBeTruthy();
+    expect(container.querySelector('[data-character-avatar]')).toBeNull();
+    expect(container.querySelector('[data-character-bubble]')).toBeNull();
+
+    // …and closing it brings the mark back with nothing unread.
+    act(() => {
+      container.querySelector('[data-pane-close]')
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    expect(container.querySelector('[data-character-mark]').getAttribute('data-unread')).toBeNull();
+    expect(container.querySelector('[data-character-bubble]')).toBeNull();
+  });
+
+  it('says nothing when the tape has nothing the character said', () => {
+    withDoc({ evaluations: [], chatExchanges: [], trades: [] });
+    mount();
+    closePane();
+    expect(container.querySelector('[data-character-mark]')).toBeTruthy();
+    expect(container.querySelector('[data-character-bubble]')).toBeNull();
+    expect(container.querySelector('[data-character-mark]').getAttribute('data-unread')).toBeNull();
+  });
+
+  it('a TIMER alone creates no bubble — only a tape change can (D-97)', () => {
+    // The seed's row. Mount with an empty tape, advance the clock past several
+    // cron slots, re-render: still nothing. The only input that can produce a
+    // bubble is a new entry.
+    withDoc({ evaluations: [], chatExchanges: [], trades: [] });
+    mount();
+    expect(container.querySelector('[data-character-bubble]')).toBeNull();
+    act(() => { vi.setSystemTime(new Date('2026-09-01T18:30:00.000Z')); });
+    mount();
+    expect(container.querySelector('[data-character-bubble]')).toBeNull();
+  });
+
+  it('the bubble and the mark are both doors onto the same pane', () => {
+    setShell(false);
+    mount();
+    const bubble = container.querySelector('[data-character-bubble]');
+    expect(bubble.tagName).toBe('BUTTON');
+    act(() => { bubble.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
+    expect(container.querySelector('[data-character-pane]')).toBeTruthy();
+  });
+});
+
+describe('A3.2 — the pane replaces the strip and the sheet (D-93)', () => {
+  it('DESKTOP: no strip and no sheet — the pane is the column', () => {
+    mount();
+    // Folded: the board is full width and the mark floats on it.
+    closePane();
+    expect(container.querySelector('[data-character-avatar]')).toBeTruthy();
+    expect(container.querySelector('[data-chat-sheet]')).toBeNull();
+    openPane();
+    expect(container.querySelector('[data-character-pane]')).toBeTruthy();
+    expect(container.querySelector('[data-pane-shell]').getAttribute('data-pane-shell')).toBe('desktop');
+    // The A2 containers are gone under the flag, both of them.
+    expect(container.querySelector('[data-chat-sheet]')).toBeNull();
+    expect(container.querySelector('[data-peek-line]')).toBeNull();
+    expect(container.querySelector('[data-chat-collapse]')).toBeNull();
+  });
+
+  it('MOBILE: the pane covers a dimmed board, and the board leaves the a11y tree', () => {
+    setShell(false);
+    mount();
+    openPane();
+    const overlay = container.querySelector('[data-pane-overlay]');
+    expect(overlay).toBeTruthy();
+    expect(overlay.contains(container.querySelector('[data-character-pane]'))).toBe(true);
+    const layout = container.querySelector('[data-layout]');
+    expect(layout.getAttribute('aria-hidden')).toBe('true');
+    expect(layout.getAttribute('data-board-dimmed')).toBe('1');
+    expect(layout.style.filter).toContain('brightness');
+  });
+
+  it('locks the body only on the shell where the pane covers the board', () => {
+    setShell(false);
+    mount();
+    openPane();
+    expect(document.body.style.overflow).toBe('hidden');
+    act(() => {
+      container.querySelector('[data-pane-close]')
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    expect(document.body.style.overflow).toBe('');
+  });
+
+  it('EXACTLY ONE AgentChat, in ONE tree position, across every section', () => {
+    // Hazard 45 / rulings §3.10. The chat holds a draft, an in-flight send and
+    // a scroll position; a component that changes tree position remounts and
+    // loses all three. So Bench and Tape HIDE the Chat panel — they never
+    // unmount it — and the node identity is the assertion, not the count alone.
+    mount();
+    openPane();
+    const chatPanel = container.querySelector('[data-pane-section="chat"]');
+    const chatNode = chatPanel.firstElementChild;
+    expect(container.querySelectorAll('[data-chat-layout="controller"]')).toHaveLength(1);
+
+    act(() => {
+      container.querySelector('[data-pane-tab="bench"]')
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    const after = container.querySelector('[data-pane-section="chat"]');
+    expect(after.hidden).toBe(true);
+    expect(after.firstElementChild).toBe(chatNode);   // the SAME node, not a remount
+    expect(container.querySelectorAll('[data-chat-layout="controller"]')).toHaveLength(1);
+
+    act(() => {
+      container.querySelector('[data-pane-tab="chat"]')
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    expect(container.querySelector('[data-pane-section="chat"]').hidden).toBe(false);
+    expect(container.querySelector('[data-pane-section="chat"]').firstElementChild).toBe(chatNode);
+  });
+
+  it('the segmented control is a REAL tablist, wired both ways', () => {
+    mount();
+    openPane();
+    const list = container.querySelector('[role="tablist"]');
+    expect(list).toBeTruthy();
+    const tabs = [...container.querySelectorAll('[role="tab"]')];
+    expect(tabs.map((t) => t.textContent)).toEqual(['Chat', 'Bench', 'Tape']);
+    for (const tab of tabs) {
+      const panel = container.querySelector(`#${tab.getAttribute('aria-controls')}`);
+      expect(panel, `${tab.textContent} points at no panel`).toBeTruthy();
+      expect(panel.getAttribute('role')).toBe('tabpanel');
+      expect(panel.getAttribute('aria-labelledby')).toBe(tab.id);
+    }
+    // Only the selected tab is in the tab order.
+    expect(tabs.filter((t) => t.getAttribute('tabindex') === '0')).toHaveLength(1);
+    expect(tabs.find((t) => t.getAttribute('aria-selected') === 'true').textContent).toBe('Chat');
+  });
+
+  it('arrow keys move between tabs, and wrap', () => {
+    mount();
+    openPane();
+    const list = container.querySelector('[role="tablist"]');
+    const press = (key) => act(() => {
+      list.dispatchEvent(new window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+    });
+    const selected = () => container.querySelector('[role="tab"][aria-selected="true"]').textContent;
+    press('ArrowRight'); expect(selected()).toBe('Bench');
+    press('ArrowRight'); expect(selected()).toBe('Tape');
+    press('ArrowRight'); expect(selected()).toBe('Chat');
+    press('ArrowLeft'); expect(selected()).toBe('Tape');
+    press('Home'); expect(selected()).toBe('Chat');
+    press('End'); expect(selected()).toBe('Tape');
+  });
+
+  it('collapse remembers the section; expand puts the reader back', () => {
+    mount();
+    openPane();
+    act(() => {
+      container.querySelector('[data-pane-tab="tape"]')
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    closePane();
+    // HIDDEN, NOT ABSENT (hazard 45). The first draft unmounted here, which is
+    // what lost the draft; the pane keeps its tree position and `display: none`
+    // is what gives the board the full width.
+    expect(container.querySelector('[data-character-pane]')).toBeTruthy();
+    expect(container.querySelector('[data-character-pane]').getAttribute('data-pane-open')).toBe('false');
+    expect(container.querySelector('[data-character-pane]').hidden).toBe(true);
+    openPane();
+    expect(container.querySelector('[role="tab"][aria-selected="true"]').textContent).toBe('Tape');
+  });
+
+  it('A ROW DOOR opens the pane on CHAT, whatever section was last shown', () => {
+    // This row was VACUOUS until the review (lens 4 F1): it clicked the BOOK
+    // TOGGLE — `handleBookWhyToggle`, which opens the WhyPanel and never calls
+    // pane.openPane — and asserted `[data-why-open-check] || [data-why-book-toggle]`,
+    // where the second is the control it had just clicked and is always there.
+    // Doors that opened the REMEMBERED section, and doors that did nothing at
+    // all under the pane, both passed all 42 rows and a 975-row broad set.
+    //
+    // It now presses a real door and reads the pane's own state.
+    mount();
+    openPane();
+    selectTab('bench');
+    closePane();
+    expect(paneIsOpen()).toBe(false);
+
+    // The row's Why? panel, then its `In the chat · n` door.
+    const row = [...container.querySelectorAll('[role="button"][aria-expanded]')]
+      .find((el) => el.querySelector('[data-why-label]'));
+    expect(row, 'a player row with a Why? door').toBeTruthy();
+    act(() => { row.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
+    const door = [...container.querySelectorAll('button')]
+      .find((b) => /In the chat/.test(b.textContent || ''));
+    expect(door, 'the scope door').toBeTruthy();
+    act(() => { door.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
+
+    // The door NAMES Chat, and a named section beats the remembered Bench.
+    expect(paneIsOpen()).toBe(true);
+    expect(container.querySelector('[role="tab"][aria-selected="true"]').textContent).toBe('Chat');
+    expect(container.querySelector('[data-pane-section="chat"]').hidden).toBe(false);
+  });
+
+  it('the pane names itself, and carries the character at its head', () => {
+    mount();
+    openPane();
+    const region = container.querySelector('[data-character-pane]');
+    expect(region.getAttribute('role')).toBe('region');
+    expect(region.getAttribute('aria-label')).toBe("The agent's pane");
+    expect(container.querySelector('[data-pane-header]').textContent).toContain('Aurora');
+  });
+
+  // Two rows rather than one: the shell has to be set BEFORE the mount.
+  // useIsDesktop seeds from window.innerWidth at mount and then subscribes to
+  // the matchMedia object it saw then, so re-rendering the same root after
+  // swapping the stub leaves the component on its original shell.
+  it('DESKTOP: the way out COLLAPSES — the pane stays, the board grows', () => {
+    mount();
+    openPane();
+    expect(container.querySelector('[data-pane-close]').getAttribute('aria-label')).toBe('Collapse');
+  });
+
+  it('MOBILE: the way out CLOSES — the pane was covering the board', () => {
+    setShell(false);
+    mount();
+    openPane();
+    expect(container.querySelector('[data-pane-close]').getAttribute('aria-label')).toBe('Close');
+  });
+});
+
+describe('A3.3 — Bench quotes the decider only (D-92)', () => {
+  const openPaneOn = (section) => { openPane(); selectTab(section); };
+
+  it('renders the decider\'s sentence as a card, with its name as a chip', () => {
+    mount();
+    openPaneOn('bench');
+    const bench = container.querySelector('[data-pane-bench]');
+    expect(bench).toBeTruthy();
+    const card = bench.querySelector('[data-bench-card="0"]');
+    expect(card).toBeTruthy();
+    expect(card.textContent).toContain('NOW would need +7.4% more to lock in the bonus.');
+    expect(card.getAttribute('data-bench-card-symbols')).toBe('NOW');
+    expect(card.querySelector('[data-bench-chip="NOW"]')).toBeTruthy();
+    // TSLA and CRWD and DVN are on the bench but unnamed by this check: chips
+    // in the roster row, not cards.
+    const rest = bench.querySelector('[data-bench-rest-group]');
+    for (const sym of ['TSLA', 'CRWD', 'DVN']) {
+      expect(rest.querySelector(`[data-bench-chip="${sym}"]`), sym).toBeTruthy();
+    }
+    expect(bench.querySelector('[data-bench-rest-line]').textContent).toContain('Not named at the');
+  });
+
+  it('ONE CARD, THREE CHIPS, when one sentence names three (the shape fix)', () => {
+    withDoc({ evaluations: [{
+      evalId: 'eval_005',
+      timestamp: '2026-09-01T16:47:02.000Z',
+      decision: 'HOLD',
+      rationale: 'NOW, TSLA and CRWD are all within a print of a swap.',
+      haikuError: null,
+    }] });
+    mount();
+    openPaneOn('bench');
+    const bench = container.querySelector('[data-pane-bench]');
+    const cards = bench.querySelectorAll('[data-bench-card]');
+    // The defect rendered THREE cards, the same sentence in each.
+    expect(cards).toHaveLength(1);
+    expect(cards[0].querySelectorAll('[data-bench-chip]')).toHaveLength(3);
+    expect(cards[0].getAttribute('data-bench-card-symbols')).toBe('NOW TSLA CRWD');
+    // The sentence appears ONCE in the whole section.
+    const hits = bench.textContent.split('within a print of a swap').length - 1;
+    expect(hits).toBe(1);
+  });
+
+  it('the roster is ONE row of chips, not a row per name', () => {
+    mount();
+    openPaneOn('bench');
+    const bench = container.querySelector('[data-pane-bench]');
+    const group = bench.querySelectorAll('[data-bench-rest-group]');
+    expect(group).toHaveLength(1);
+    expect(bench.querySelectorAll('[data-bench-rest-line]')).toHaveLength(1);
+    // The chips are all siblings of one another — one wrapped row, which is
+    // what `flexWrap` makes of them, not n stacked rows.
+    const chips = [...group[0].querySelectorAll('[data-bench-chip]')];
+    expect(chips.length).toBeGreaterThan(1);
+    const parents = new Set(chips.map((c) => c.parentElement));
+    expect(parents.size).toBe(1);
+    expect(parents.values().next().value.style.flexWrap).toBe('wrap');
+  });
+
+  it('RENDERS the D-80 authorship line under the sentences', () => {
+    // The review (lens 4) found `data-bench-footer` asserted by NO test in the
+    // repo, on either side: the selector's own row was vacuous and the element
+    // never rendered here, because every fixture in this file produces a null
+    // footer. Bench is the fourth surface to quote a rationale and the only one
+    // that was going to do it unattributed — which is the whole of D-80.
+    withDoc({ evaluations: [{
+      evalId: 'eval_005',
+      timestamp: '2026-09-01T16:47:02.000Z',
+      decision: 'HOLD',
+      downgraded: true,
+      rationale: 'NOW would need +7.4% more to lock in the bonus.',
+      haikuError: null,
+    }] });
+    mount();
+    openPaneOn('bench');
+    const footer = container.querySelector('[data-bench-footer]');
+    expect(footer).toBeTruthy();
+    expect(footer.textContent).toBe("The agent's own words · the system held it");
+    // …under the card, not floating above it.
+    const bench = container.querySelector('[data-pane-bench]');
+    const order = [...bench.querySelectorAll('[data-bench-card], [data-bench-footer]')];
+    expect(order[0].getAttribute('data-bench-card')).toBe('0');
+    expect(order[1]).toBe(footer);
+  });
+
+  it('renders NO authorship line when the check carries none', () => {
+    // The counter-row: a plain decided check has no footer, and an element that
+    // always rendered would be as wrong as one that never did.
+    mount();
+    openPaneOn('bench');
+    expect(container.querySelector('[data-bench-card]')).toBeTruthy();
+    expect(container.querySelector('[data-bench-footer]')).toBeNull();
+  });
+
+  it('carries the equipped watchlist\'s bare name as the subtitle', () => {
+    mount();
+    openPaneOn('bench');
+    const subtitle = container.querySelector('[data-bench-watchlist]');
+    expect(subtitle.textContent).toBe('Energy leaders · equipped');
+    // The header's chip prefix does not follow it in.
+    expect(subtitle.textContent).not.toContain('Watchlist:');
+  });
+
+  it('names no piece that has a row on the board', () => {
+    mount();
+    openPaneOn('bench');
+    const bench = container.querySelector('[data-pane-bench]');
+    for (const held of ['AAPL', 'SLB', 'NVDA']) {
+      expect(bench.querySelector(`[data-bench-chip="${held}"]`), `${held} has a row`).toBeNull();
+    }
+  });
+
+  it('the Chat keeps its node while Bench shows (hazard 45)', () => {
+    mount();
+    openPane();
+    const chatNode = container.querySelector('[data-pane-section="chat"]').firstElementChild;
+    selectTab('bench');
+    expect(container.querySelector('[data-pane-section="chat"]').firstElementChild).toBe(chatNode);
+  });
+
+  it('says `No check yet today` when nothing today carries words', () => {
+    // The outage as the CRON writes it — a placeholder sentence plus
+    // `haikuError`, never `rationale: null` (review lens 4 FX2).
+    withDoc({ evaluations: [{
+      evalId: 'e',
+      timestamp: '2026-09-01T16:47:02.000Z',
+      decision: 'HOLD',
+      rationale: 'Haiku call failed — defaulting to HOLD',
+      haikuError: { failureClass: 'timeout' },
+    }] });
+    mount();
+    openPaneOn('bench');
+    const bench = container.querySelector('[data-pane-bench]');
+    expect(bench.querySelector('[data-bench-absent]').textContent).toBe('No check yet today');
+    // The roster still renders, without a slot to not-name it at.
+    expect(bench.querySelector('[data-bench-chip="NOW"]')).toBeTruthy();
+    expect(bench.textContent).not.toContain('Not named at the');
+    expect(bench.querySelector('[data-bench-rest-line]').textContent).toBe('The rest of the roster');
+  });
+
+  it('leaves an EMPTY slot for assignments — no placeholder UI', () => {
+    mount();
+    openPaneOn('bench');
+    const slot = container.querySelector('[data-bench-assignments]');
+    expect(slot).toBeTruthy();
+    expect(slot.textContent).toBe('');
+    expect(container.querySelector('[data-pane-bench]').textContent).not.toContain('Assignments');
+  });
+
+  it('renders no per-name percent — there is no source for one', () => {
+    mount();
+    openPaneOn('bench');
+    const chip = container.querySelector('[data-bench-rest-group] [data-bench-chip="TSLA"]');
+    expect(chip.textContent).toBe('TSLA');
+    expect(chip.textContent).not.toMatch(/%/);
+  });
+});
+
+describe('A3.4 — Tape is a pane section (D-94)', () => {
+  const openPaneOn = (section) => { openPane(); selectTab(section); };
+
+  it('the header link and the overlay are not rendered under the pane', () => {
+    mount();
+    expect(container.querySelector('[data-game-tape-link]')).toBeNull();
+    expect(container.querySelector('[data-game-tape]')).toBeNull();
+    // …and the board carries no bookmark dot either — the dot's new home is
+    // Tape's own section header.
+    expect(container.querySelector('[data-game-tape-dot]')).toBeNull();
+  });
+
+  it('renders the trade cards the CHAT renders, not GameTapeView\'s own rows', () => {
+    withDoc({
+      trades: [{
+        symbolOut: 'GILD', symbolIn: 'MOS', tier: 'core',
+        swappedOutAt: '2026-09-01T15:02:00.000Z',
+        exitReason: 'haiku_decision', rationale: 'GILD rolled over; MOS leads materials.',
+      }],
+    });
+    mount();
+    openPaneOn('tape');
+    const tape = container.querySelector('[data-pane-tape]');
+    expect(tape).toBeTruthy();
+    // TapeCards' own marker — the same component the Chat section uses.
+    expect(tape.querySelector('[data-tape-kind="trade"]')).toBeTruthy();
+    expect(tape.querySelector('[data-tape-pair="GILD-MOS"]')).toBeTruthy();
+  });
+
+  it('drops the Time / P&L / Tier sort controls', () => {
+    mount();
+    openPaneOn('tape');
+    const text = container.querySelector('[data-pane-tape]').textContent;
+    for (const filter of ['P&L', 'Tier', 'Time']) {
+      expect(text, `${filter} came across`).not.toContain(filter);
+    }
+  });
+
+  it('THE BOOKMARK DOT BECOMES A COUNT on this section\'s header', () => {
+    FEED = [
+      { id: 'f1', timestamp: '2026-09-01T15:00:00.000Z', message: 'Woken by a price drop' },
+      { id: 'f2', timestamp: '2026-09-01T15:30:00.000Z', message: 'Swap executed' },
+    ];
+    BOOKMARKS = ['f1', 'f2'];
+    mount();
+    openPaneOn('tape');
+    const header = container.querySelector('[data-tape-bookmarks-count]');
+    expect(header.getAttribute('data-tape-bookmarks-count')).toBe('2');
+    expect(header.textContent).toBe('Bookmarks · 2');
+    expect(container.querySelector('[data-tape-bookmark="f1"]')).toBeTruthy();
+  });
+
+  it('says Bookmarks with no count, and why, when there are none', () => {
+    mount();
+    openPaneOn('tape');
+    expect(container.querySelector('[data-tape-bookmarks-count]').textContent).toBe('Bookmarks');
+    expect(container.querySelector('[data-pane-tape]').textContent).toContain('No bookmarks yet');
+  });
+
+  it('keeps the shipped bookmark control — a MOVED client write, not a new one', () => {
+    FEED = [{ id: 'f1', timestamp: '2026-09-01T15:00:00.000Z', message: 'Woken by a price drop' }];
+    BOOKMARKS = ['f1'];
+    mount();
+    openPaneOn('tape');
+    const row = container.querySelector('[data-tape-bookmark="f1"]');
+    const remove = row.querySelector('button[aria-label="Remove this bookmark"]');
+    expect(remove).toBeTruthy();
+    act(() => { remove.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
+    expect(removeFeedBookmark).toHaveBeenCalledWith('ab-1', 'f1');
+  });
+
+  it('the activity log is collapsed by default, as the shipped view mounts it', () => {
+    mount();
+    openPaneOn('tape');
+    const toggle = container.querySelector('[data-tape-log-toggle]');
+    expect(toggle.getAttribute('data-tape-log-toggle')).toBe('closed');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    act(() => { toggle.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
+    expect(container.querySelector('[data-tape-log-toggle]').getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('the Chat keeps its node while Tape shows (hazard 45)', () => {
+    mount();
+    openPane();
+    const chatNode = container.querySelector('[data-pane-section="chat"]').firstElementChild;
+    selectTab('tape');
+    expect(container.querySelector('[data-pane-section="chat"]').firstElementChild).toBe(chatNode);
+  });
+});
+
+describe('A3.5 — the declutter (D-94, D-95)', () => {
+  it('the watchlist chip leaves the header; its name lives in Bench', () => {
+    mount();
+    // The chip has been flag-INDEPENDENT since it shipped — it rendered
+    // flag-off and controller-on alike — so this is the first thing that ever
+    // took it off the header.
+    expect(container.textContent).not.toContain('Watchlist:');
+    openPane();
+    act(() => {
+      container.querySelector('[data-pane-tab="bench"]')
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    expect(container.querySelector('[data-bench-watchlist]').textContent).toContain('Energy leaders');
+  });
+
+  it('the overflow holds `Report a bug` ALONE', () => {
+    mount();
+    openPane();
+    const toggle = container.querySelector('[data-pane-overflow-toggle]');
+    expect(toggle.getAttribute('aria-label')).toBe('More');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    act(() => { toggle.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
+    const menu = container.querySelector('[role="menu"]');
+    expect(menu).toBeTruthy();
+    const items = menu.querySelectorAll('[role="menuitem"]');
+    expect(items).toHaveLength(1);
+    expect(items[0].textContent).toBe('Report a bug');
+    // The mock's other two are not built.
+    expect(menu.textContent).not.toContain('Read');
+    expect(menu.textContent).not.toContain('Equip');
+  });
+
+  it('the overflow DISPATCHES rather than mounting a second widget', () => {
+    // A second ClashBotWidget inside the pane would double the panel and its
+    // cooldown state (hazard 36). The door is an event onto the ONE widget the
+    // App mounts.
+    mount();
+    openPane();
+    const heard = [];
+    const listener = () => heard.push(1);
+    window.addEventListener('clashbot:open', listener);
+    act(() => {
+      container.querySelector('[data-pane-overflow-toggle]')
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    act(() => {
+      container.querySelector('[data-pane-report-bug]')
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    window.removeEventListener('clashbot:open', listener);
+    expect(heard).toHaveLength(1);
+    // …and the menu closes behind it.
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+  });
+
+  it('no bug button is rendered inside the battle view itself', () => {
+    // The withholding happens at the App mount, which this suite does not
+    // render. What it CAN assert is that the pane never grew one of its own.
+    mount();
+    openPane();
+    expect(container.querySelector('button[aria-label="Report a bug"]')).toBeNull();
+  });
+});
+
+// ─── Review fixes (five-lens §2 review, September 4 2026) ──────────────────
+//
+// Every row here fails under the defect the build shipped before the review.
+// They are the review's own repros, inverted to the contract.
+
+describe('Review — hazard 45 across COLLAPSE, not only across sections', () => {
+  const typeDraft = (text) => {
+    const box = container.querySelector('textarea');
+    expect(box, 'the composer must be reachable inside the pane').toBeTruthy();
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+      setter.call(box, text);
+      box.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    return box;
+  };
+
+  it('DESKTOP: a half-typed message survives collapse → expand', () => {
+    // The defect (review lens 2 F2 / lens 5 F1): the pane, and the AgentChat
+    // inside it, were UNMOUNTED while collapsed. The draft read '' on expand.
+    // Hazard 45 names this transition verbatim, and the A2 column it replaces
+    // kept the draft.
+    mount();
+    openPane();
+    const before = typeDraft('half a message');
+    expect(before.value).toBe('half a message');
+    closePane();
+    openPane();
+    const after = container.querySelector('textarea');
+    expect(after).toBe(before);                  // the same node, not a remount
+    expect(after.value).toBe('half a message');  // …and the draft with it
+  });
+
+  it('MOBILE: the same, across close → reopen', () => {
+    setShell(false);
+    mount();
+    openPane();
+    const before = typeDraft('half a message');
+    closePane();
+    openPane();
+    const after = container.querySelector('textarea');
+    expect(after).toBe(before);
+    expect(after.value).toBe('half a message');
+  });
+
+  it('the chat is ONE node across collapse AND a section change, together', () => {
+    mount();
+    openPane();
+    const chatNode = container.querySelector('[data-pane-section="chat"]').firstElementChild;
+    selectTab('bench');
+    closePane();
+    openPane();
+    selectTab('chat');
+    expect(container.querySelector('[data-pane-section="chat"]').firstElementChild).toBe(chatNode);
+    expect(container.querySelectorAll('[data-chat-layout="controller"]')).toHaveLength(1);
+  });
+});
+
+describe('Review — focus is handed on, never dropped', () => {
+  it('MOBILE: opening moves focus INTO the region', () => {
+    setShell(false);
+    mount();
+    openPane();
+    const region = container.querySelector('[data-character-pane]');
+    expect(region.contains(document.activeElement) || document.activeElement === region).toBe(true);
+  });
+
+  it('MOBILE: closing returns focus to the mark that comes back', () => {
+    // The defect (lens 2 F3 / lens 5 F2): the captured invoker was the mark,
+    // which UNMOUNTS while the pane is open, so focusing it was a no-op on a
+    // detached node and the player landed on document.body. The hand-off now
+    // reaches the mark that reappears.
+    setShell(false);
+    mount();
+    openPane();
+    closePane();
+    expect(document.activeElement).toBe(container.querySelector('[data-character-mark]'));
+  });
+
+  it('DESKTOP: collapsing hands focus to the mark, not to the body', () => {
+    // A2.4's review L2-F4 rule, which the pane path skipped: each control lives
+    // inside the chrome the other renders, so a keyboard user who collapses
+    // must be handed the control that replaces the one that vanished.
+    mount();
+    openPane();
+    closePane();
+    expect(document.activeElement).toBe(container.querySelector('[data-character-mark]'));
+  });
+
+  it('the mount pass does not steal focus (the Game Tape\'s CR6 rule)', () => {
+    // Desktop opens WITH the pane showing. That first paint must not pull focus
+    // into the region — only a player-driven open does.
+    mount();
+    expect(paneIsOpen()).toBe(true);
+    expect(document.activeElement === document.body || document.activeElement === null).toBe(true);
+  });
+});
+
+describe('Review — the desktop resting state is the pane OPEN (brief §5 #1)', () => {
+  it('DESKTOP opens with the pane showing, on Chat', () => {
+    mount();
+    expect(paneIsOpen()).toBe(true);
+    expect(container.querySelector('[role="tab"][aria-selected="true"]').textContent).toBe('Chat');
+  });
+
+  it('MOBILE opens with the board, and the pane closed over nothing', () => {
+    setShell(false);
+    mount();
+    expect(paneIsOpen()).toBe(false);
+    expect(container.querySelector('[data-character-mark]')).toBeTruthy();
+    // …and the closed overlay is inert: hidden, so it cannot cover the board.
+    expect(container.querySelector('[data-pane-overlay]').style.display).toBe('none');
+  });
+});
+
+describe('Review lens 4 F12 — the ruled behaviours nothing was guarding', () => {
+  // Each row here kills a mutation the review ran that survived all 42 rows of
+  // this suite AND a 975-row broad set. Together they were the argument that the
+  // pane's sections were guarded "by presence of markers, not by the rulings'
+  // negative space".
+
+  it('the scope chip is INSIDE the composer under the pane (D-93)', () => {
+    // M50: `scopeInComposer={false}` survived everything.
+    // The scope door only scopes when the tape actually mentions the piece
+    // (`count > 0`), so the check has to name a piece that has a row.
+    withDoc({
+      evaluations: [{
+        evalId: 'eval_005', timestamp: '2026-09-01T16:47:02.000Z', decision: 'HOLD',
+        rationale: 'AAPL is holding its own relative to the market.', haikuError: null,
+      }],
+    });
+    mount();
+    openPane();
+    const row = [...container.querySelectorAll('[role="button"][aria-expanded]')]
+      .find((el) => el.querySelector('[data-why-label]') && (el.textContent || '').includes('AAPL'));
+    expect(row, 'AAPL\'s row').toBeTruthy();
+    act(() => { row.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
+    const door = [...container.querySelectorAll('button')]
+      .find((b) => /In the chat/.test(b.textContent || ''));
+    expect(door, 'the scope door').toBeTruthy();
+    act(() => { door.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
+    const chip = container.querySelector('[data-tape-scope]');
+    expect(chip, 'the scope chip').toBeTruthy();
+    // The composer's row is the chip's parent under the pane; above the stream
+    // it is a lone div that holds no textarea.
+    expect(chip.parentElement.querySelector('textarea'), 'the chip rides with the field').toBeTruthy();
+  });
+
+  it('the character stands in the PANE HEADER while the pane is open (ruling 4)', () => {
+    // M52: never rendering the pane header's mount survived, because presence is
+    // mocked off in every screen harness. The header's SLOT is what this reads.
+    mount();
+    openPane();
+    const header = container.querySelector('[data-pane-header]');
+    expect(header).toBeTruthy();
+    expect(header.querySelector('[data-pane-tablist]')).toBeTruthy();
+    // …and the board's own mark is gone while it is (the other half of ruling 4).
+    expect(container.querySelector('[data-character-mark]')).toBeNull();
+  });
+
+  it('the body lock is the MOBILE shell\'s only (D-93)', () => {
+    // M64: `lockScroll: true` on both shells survived, because no row opened the
+    // pane on desktop and looked.
+    mount();                       // desktop, and the pane opens with it
+    expect(paneIsOpen()).toBe(true);
+    expect(document.body.style.overflow).toBe('');
+  });
+
+  it('the overflow closes on Escape', () => {
+    // M16: deleting the Escape handler survived.
+    mount();
+    openPane();
+    act(() => {
+      container.querySelector('[data-pane-overflow-toggle]')
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    expect(container.querySelector('[role="menu"]')).toBeTruthy();
+    act(() => { window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+  });
+
+  it('Tape renders TRADES as cards — not every entry it is handed', () => {
+    // M30: rendering every object entry as a TradeCard survived, because the
+    // fixture's tape held only trades to find.
+    withDoc({
+      trades: [{
+        symbolOut: 'GILD', symbolIn: 'MOS', tier: 'core',
+        swappedOutAt: '2026-09-01T15:02:00.000Z',
+        exitReason: 'haiku_decision', rationale: 'GILD rolled over.',
+      }],
+      evaluations: [
+        { evalId: 'c1', timestamp: '2026-09-01T16:00:00.000Z', decision: 'HOLD', rationale: 'Holding.' },
+        { evalId: 'c2', timestamp: '2026-09-01T16:47:02.000Z', decision: 'HOLD', rationale: 'Still holding.' },
+      ],
+    });
+    mount();
+    openPane();
+    selectTab('tape');
+    const tape = container.querySelector('[data-pane-tape]');
+    // One trade in, one trade card out — the checks stay in the Chat stream.
+    expect(tape.querySelectorAll('[data-tape-kind="trade"]')).toHaveLength(1);
+    expect(tape.querySelectorAll('[data-tape-kind="check"]')).toHaveLength(0);
+  });
+
+  it('bookmarks read newest-first, and the count is the RESOLVED list', () => {
+    // M31 (order dropped) and M57 (count from raw feedBookmarks) both survived.
+    FEED = [
+      { id: 'f1', timestamp: '2026-09-01T15:00:00.000Z', message: 'older' },
+      { id: 'f2', timestamp: '2026-09-01T15:30:00.000Z', message: 'newer' },
+    ];
+    // A bookmark id with no entry behind it: the count must not include it.
+    BOOKMARKS = ['f1', 'f2', 'f-gone'];
+    mount();
+    openPane();
+    selectTab('tape');
+    expect(container.querySelector('[data-tape-bookmarks-count]').getAttribute('data-tape-bookmarks-count')).toBe('2');
+    const ids = [...container.querySelectorAll('[data-tape-bookmark]')]
+      .map((el) => el.getAttribute('data-tape-bookmark'));
+    expect(ids).toEqual(['f2', 'f1']);   // newest first, as the shipped view orders them
+  });
+});
+
+// ─── The founder's five rulings, September 4 2026 ──────────────────────────
+
+describe('Ruling 2 — Bench\'s heading names the check ACTUALLY USED', () => {
+  const openBench = () => { openPane(); selectTab('bench'); };
+
+  it('names the scanned-back slot, not the last check', () => {
+    // The scan-back reaches past an outage tick, so the words can be the 12:45
+    // check's while the turn line says 1:00 PM. `Named at the last check` was
+    // then simply false.
+    withDoc({
+      scoreState: { ...LIVE_DOC.scoreState, lastScoredAt: '2026-09-01T17:00:00.000Z' },
+      evaluations: [
+        { evalId: 'e1', timestamp: '2026-09-01T16:45:00.000Z', decision: 'HOLD', rationale: 'NOW would need +7.4% more to lock in the bonus.' },
+        { evalId: 'e2', timestamp: '2026-09-01T17:00:00.000Z', decision: 'HOLD', rationale: 'Haiku call failed — defaulting to HOLD', haikuError: { failureClass: 'timeout' } },
+      ],
+    });
+    mount();
+    openBench();
+    const slot = container.querySelector('[data-bench-slot]');
+    expect(slot.textContent).toBe('Named at the 12:45 PM check');
+    expect(slot.textContent).not.toContain('the last check');
+  });
+
+  it('says "check" ONCE PER SECTION — never once per name', () => {
+    // Ruling 2 gave the named section one heading carrying its slot. The shape
+    // fix does the same for the roster: `Not named at the {t} check` is a LINE,
+    // said once, not a suffix repeated beside every name — which was n copies
+    // of one fact, and the same shredding the sentences suffered.
+    mount();
+    openBench();
+    const bench = container.querySelector('[data-pane-bench]');
+
+    const slot = container.querySelectorAll('[data-bench-slot]');
+    expect(slot).toHaveLength(1);
+    expect(slot[0].textContent.match(/check/g) || []).toHaveLength(1);
+    // The separate `At the {t} check` line ruling 2 retired stays retired.
+    expect(bench.textContent).not.toContain('At the ');
+
+    const restLine = container.querySelectorAll('[data-bench-rest-line]');
+    expect(restLine).toHaveLength(1);
+    expect(restLine[0].textContent.match(/check/g) || []).toHaveLength(1);
+
+    // …and the names beside it are BARE chips. Three of them, and the word
+    // appears twice in the whole section — once per heading, never per name.
+    const chips = container.querySelectorAll('[data-bench-rest-group] [data-bench-chip]');
+    expect(chips.length).toBeGreaterThan(1);
+    for (const chip of chips) expect(chip.textContent).not.toContain('check');
+    expect(bench.textContent.match(/check/g) || []).toHaveLength(2);
+  });
+
+  it('renders no heading at all when there is no slot to name', () => {
+    withDoc({ evaluations: [] });
+    mount();
+    openBench();
+    expect(container.querySelector('[data-bench-slot]')).toBeNull();
+    expect(container.querySelector('[data-bench-absent]').textContent).toBe('No check yet today');
+  });
+});
+
+describe('Ruling 5 — the badge never counts the player\'s own words', () => {
+  it('ONE reply landing while the pane is elsewhere reads `1 new`, not `2`', () => {
+    // deriveChatMessages writes an exchange WHOLE: the player's half and the
+    // character's answer arrive together, so the first build read `2 new` for
+    // one event.
+    setShell(false);
+    withDoc({
+      chatExchanges: [{
+        userMessage: 'protect the lead',
+        agentResponse: 'Understood — holding the energy slot.',
+        messageType: 'user_initiated',
+        timestamp: '2026-09-01T16:50:00.000Z',
+      }],
+      evaluations: [],
+      trades: [],
+    });
+    mount();
+    const mark = container.querySelector('[data-character-mark]');
+    expect(mark.getAttribute('data-unread')).toBe('1');
+    expect(mark.getAttribute('aria-label')).toContain('1 new');
+  });
+
+  it('counts records and the character\'s speech, and nothing of the player\'s', () => {
+    setShell(false);
+    withDoc({
+      chatExchanges: [
+        { userMessage: 'protect the lead', agentResponse: 'Understood.', messageType: 'user_initiated', timestamp: '2026-09-01T16:50:00.000Z' },
+        { userMessage: 'and the bench?', agentResponse: 'NOW is the one to watch.', messageType: 'user_initiated', timestamp: '2026-09-01T16:52:00.000Z' },
+      ],
+      evaluations: [{ evalId: 'e1', timestamp: '2026-09-01T16:47:02.000Z', decision: 'HOLD', rationale: 'Holding the book.' }],
+      trades: [],
+    });
+    mount();
+    // Two answers + one check card = 3; the two player halves are not events to
+    // catch up on.
+    expect(container.querySelector('[data-character-mark]').getAttribute('data-unread')).toBe('3');
+  });
+
+  it('the bubble and the badge agree about whose words they are', () => {
+    // The bubble already refuses the player's words (brief §4.5); the badge now
+    // refuses to count them. A player-only tail would otherwise show a count
+    // with nothing behind it.
+    setShell(false);
+    withDoc({
+      chatExchanges: [{ userMessage: 'protect the lead', agentResponse: 'Understood.', messageType: 'user_initiated', timestamp: '2026-09-01T16:50:00.000Z' }],
+      evaluations: [],
+      trades: [],
+    });
+    mount();
+    expect(container.querySelector('[data-character-bubble]').textContent).toContain('Understood.');
+    expect(container.querySelector('[data-character-mark]').getAttribute('data-unread')).toBe('1');
+  });
+});
+
+describe('Ruling 4 — `Tap for the book` is desktop-only, and the door survives it', () => {
+  it('MOBILE: no visible hint, and the header still NAMES the door', () => {
+    // Sustained toward the mock. What must not go with the hint is the door
+    // itself: on a phone the header's accessible name is the only thing that
+    // says the book is reachable.
+    setShell(false);
+    mount();
+    const header = container.querySelector('[data-arena-header]');
+    expect(header.textContent).not.toContain('Tap for the book');
+    const toggle = header.querySelector('[data-why-book-toggle]');
+    expect(toggle.getAttribute('aria-label')).toBe('Why? · the whole book');
+    expect(toggle.getAttribute('role')).toBe('button');
+    expect(toggle.getAttribute('tabindex')).toBe('0');
+  });
+
+  it('DESKTOP: the hint is there too', () => {
+    mount();
+    expect(container.querySelector('[data-arena-header]').textContent).toContain('Tap for the book');
+  });
+});
+
+describe('Smoke F1 — every section is the desktop RIGHT COLUMN, not a block below the board', () => {
+  // The founder's first smoke: Bench and Tape rendered BELOW the board on the
+  // desktop and only Chat stayed in the right column. The cause was a single
+  // question asked wrong — the layout container and the board column both read
+  // `chatOpen`, which under the pane means "open AND on Chat", so selecting
+  // Bench flipped the container to `flexDirection: column` and dropped the pane
+  // onto the second line. `rightColumnOpen` is the question they meant.
+  //
+  // jsdom does no layout, so the contract is the STYLE: the container's
+  // direction and the board's flex. Containment and the chat's survival are
+  // asserted in the SAME rows rather than in rows of their own, deliberately —
+  // they hold under the F1 defect too (a column below the board is still a
+  // column), so a row carrying only those could not fail under the defect it
+  // is named for, which BUILD_RULES §2 does not count as a guard.
+
+  for (const section of ['chat', 'bench', 'tape']) {
+    it(`is a ROW with ${section} selected, in the column, chat still mounted`, () => {
+      mount();
+      openPane();
+      selectTab(section);
+      const layout = container.querySelector('[data-layout]');
+      expect(layout.getAttribute('data-layout')).toBe('desktop');
+      // The two that bite: the defect read `column` and `1 1 0%` here for
+      // bench and tape.
+      expect(layout.style.flexDirection).toBe('row');
+      expect(container.querySelector('[data-board]').style.flex).toBe('3 1 0%');
+
+      const column = container.querySelector('[data-chat-column]');
+      const panel = container.querySelector(`[data-pane-section="${section}"]`);
+      expect(column.contains(panel)).toBe(true);
+      expect(container.querySelector('[data-board]').contains(panel)).toBe(false);
+      expect(column.getAttribute('data-chat-collapsed')).toBe('false');
+      // Hazard 45 holds across the fix: one chat, mounted, on every tab.
+      expect(container.querySelectorAll('[data-chat-layout="controller"]')).toHaveLength(1);
+    });
+  }
+
+  it('COLLAPSED is still the full-width board on its own line — the fix does not widen', () => {
+    // rightColumnOpen must track pane.open, so folding the pane keeps A2.4's
+    // ruled collapsed picture: a single-line COLUMN whose board bounds its own
+    // scroller. A fix that hardcoded `row` would take this row down.
+    mount();
+    closePane();
+    const layout = container.querySelector('[data-layout]');
+    expect(layout.style.flexDirection).toBe('column');
+    expect(container.querySelector('[data-board]').style.flex).toBe('1 1 0%');
+    expect(container.querySelector('[data-chat-column]').style.display).toBe('none');
+  });
+});
+
+describe('Smoke F1 — the boundary: `rightColumnOpen` is NOT "the chat is on screen"', () => {
+  // Review lens 2 F4, a SURVIVOR: `chatVisible` correctly stayed on `chatOpen`
+  // when the two layout sites moved to `rightColumnOpen`, but nothing tested
+  // that it had to. Moving it too passed 168 rows — while silently marking an
+  // agent's answer as read because the player happened to be sitting on Bench,
+  // so the mark would show nothing on collapse and the answer would never be
+  // announced. `chatVisible` is the SEEN marker; being on Bench is not reading.
+
+  it('an answer arriving while the pane sits on BENCH is still unread on collapse', () => {
+    setShell(false);
+    withDoc({ chatExchanges: [] });
+    mount();
+    openPane();
+    selectTab('bench');
+    // The answer lands while the player is looking at the bench.
+    withDoc({ chatExchanges: [
+      { id: 'x1', role: 'assistant', content: 'NOW is one bad print from a swap.', timestamp: '2026-09-01T16:50:00.000Z' },
+    ] });
+    act(() => {
+      root.render(<AgentBattleScreen battle={BATTLE} user={{ uid: 'u1' }} onBack={() => {}} onOpenFilmRoom={null} />);
+    });
+    closePane();
+    const mark = container.querySelector('[data-character-mark]');
+    expect(mark).toBeTruthy();
+    expect(mark.getAttribute('data-unread')).toBe('1');
+  });
+
+  it('…and reading it on CHAT does clear it — the marker still works', () => {
+    // The other half: a guard that only proves "never marks read" would pass
+    // with the marker broken entirely.
+    setShell(false);
+    withDoc({ chatExchanges: [
+      { id: 'x1', role: 'assistant', content: 'NOW is one bad print from a swap.', timestamp: '2026-09-01T16:50:00.000Z' },
+    ] });
+    mount();
+    openPane();                       // opens on Chat
+    closePane();
+    expect(container.querySelector('[data-character-mark]').getAttribute('data-unread')).toBeNull();
+  });
+});
+
+describe('Smoke F3 — the phone\'s mark is fixed to the viewport, not parked in the board', () => {
+  // The founder's smoke: "the mobile avatar sits in the scrolling board, not
+  // the viewport." The phone's board column is not a scroller — the PAGE is —
+  // so a mark absolutely positioned at its `bottom` sat at the end of the
+  // board's CONTENT, off screen until you scrolled all the way down. It is the
+  // one door back into the pane, so being reachable only at the bottom of the
+  // board is the whole failure.
+
+  it('MOBILE: fixed, at the root, outside the scrolling board', () => {
+    setShell(false);
+    mount();
+    const avatar = container.querySelector('[data-character-avatar]');
+    expect(avatar).toBeTruthy();
+    // The fix itself.
+    expect(avatar.style.position).toBe('fixed');
+    expect(avatar.getAttribute('data-avatar-anchor')).toBe('viewport');
+    // …and it is not a descendant of the board it used to scroll away with.
+    expect(container.querySelector('[data-board]').contains(avatar)).toBe(false);
+    expect(container.querySelector('[data-layout]').contains(avatar)).toBe(false);
+    // Clear of the app's bottom nav (BottomNav.jsx:57 — z 50).
+    expect(Number(avatar.style.zIndex)).toBeGreaterThan(50);
+  });
+
+  it('DESKTOP: still absolute inside the board column, which is its scroller\'s parent', () => {
+    // The desktop was never broken and must not be "fixed" too: there the
+    // column IS the containing block and the scroller lives inside it, so the
+    // mark already stays put while the board scrolls.
+    setShell(true);
+    mount();
+    closePane();
+    const avatar = container.querySelector('[data-character-avatar]');
+    expect(avatar.style.position).toBe('absolute');
+    expect(avatar.getAttribute('data-avatar-anchor')).toBe('column');
+    expect(container.querySelector('[data-board]').contains(avatar)).toBe(true);
+  });
+
+  it('the bubble travels with the mark — it is inside the fixed container', () => {
+    // "The bubble travels with it" is by construction, not by a second
+    // position: the bubble is a sibling INSIDE the mark's container.
+    setShell(false);
+    FEED = [];
+    DOC = { ...LIVE_DOC, chatExchanges: [
+      { id: 'x1', role: 'assistant', content: 'NOW is one bad print from a swap.', timestamp: '2026-09-01T16:50:00.000Z' },
+    ] };
+    mount();
+    const avatar = container.querySelector('[data-character-avatar]');
+    const bubble = container.querySelector('[data-character-bubble]');
+    expect(bubble).toBeTruthy();
+    expect(avatar.contains(bubble)).toBe(true);
+    expect(bubble.style.position).toBe('');   // it is in flow, beside the mark
+  });
+
+  it('lifts off the browser chrome the visual viewport reports', () => {
+    // A2.4's rule, one step on: `fixed` anchors to the LAYOUT viewport, so
+    // without this offset the mark hides behind iOS's toolbar. 120px of chrome
+    // → the mark stands 120px higher than its plain inset.
+    setShell(false);
+    const inner = window.innerHeight;
+    window.visualViewport = { height: inner - 120, addEventListener() {}, removeEventListener() {} };
+    try {
+      mount();
+      const avatar = container.querySelector('[data-character-avatar]');
+      expect(avatar.style.bottom).toBe(`${14 + 120}px`);
+    } finally {
+      delete window.visualViewport;
+    }
+  });
+
+  it('reads as the plain inset where there is no visual viewport', () => {
+    setShell(false);
+    expect(window.visualViewport).toBeUndefined();
+    mount();
+    expect(container.querySelector('[data-character-avatar]').style.bottom).toBe('14px');
+  });
+
+  it('carries the Game Tape gate the board column used to give it for free', () => {
+    // A SOURCE ROW, deliberately (review lens 4, VAC3). The behavioural version
+    // asserted the tape was down while never turning it on, and deleting the
+    // gate left it green — a row that cannot fail under the defect it names.
+    //
+    // It cannot be turned on: under the pane no door to the Game Tape renders
+    // at all (the header link is `controllerOn && !paneOn`, and the chat's
+    // trade cards take the TradeCard branch rather than the TradeTickerCard one
+    // that carries `onTradeClick`), so `gameTapeOpen` is unreachable here. The
+    // gate is belt-and-braces against that changing — the board column used to
+    // supply it for free, because the layout container hides with
+    // `visibility: hidden` and the mark went with it. At the root it has to be
+    // written, and this is what checks it is still written.
+    // A plain path, not `import.meta.url`: under the jsdom environment that is
+    // not a file URL and readFileSync refuses it. vitest runs from the repo root.
+    const src = readFileSync('src/screens/AgentBattleScreen.jsx', 'utf8');
+    expect(src).toContain('{!pane.open && !gameTapeOpen && characterMark}');
+    // …and the mark does render when the tape is down, which is every state
+    // this suite can reach.
+    setShell(false);
+    mount();
+    expect(container.querySelector('[data-character-mark]')).toBeTruthy();
+    expect(container.querySelector('[data-game-tape]')).toBeNull();
+  });
+});
+
+describe('A3.6 — the bagger moment (D-97)', () => {
+  // The seed's three: fires once per crossing, a re-render does not re-fire,
+  // and reduced motion renders the footer with no burst. Plus the one the
+  // rulings add: never on mount.
+  //
+  // NO TIMING IS ASSERTED (hazard 47). Every row below reads an attribute or a
+  // rendered string. The burst's window belongs to the hook and is not a claim
+  // any of these rows make.
+
+  // NVDA sits in `core`, so its banked line is the 1.5× tier. The doc carries no
+  // scoring.thresholds, so baseATR is enrichAsset's DEFAULT_THRESHOLD (2.5).
+  const withHistory = (max) => withDoc({ thresholdHistory: { NVDA: { maxMultiplier: max } } });
+  const rerender = () => act(() => {
+    root.render(<AgentBattleScreen battle={BATTLE} user={{ uid: 'u1' }} onBack={() => {}} onOpenFilmRoom={null} />);
+  });
+  const burst = () => container.querySelectorAll('[data-bagger-burst]');
+  const footers = () => [...container.querySelectorAll('[data-bagger-footer]')].map((n) => n.textContent);
+
+  it('NEVER ON MOUNT: a piece already over the line does not burst, but IS banked', () => {
+    // The seed's whole point. The footer is a FACT about persisted scoring, so
+    // a player opening the app an hour later still sees what was banked; the
+    // burst is the EVENT, and that one already happened.
+    setShell(false);
+    withHistory(1.6);
+    mount();
+    expect(burst()).toHaveLength(0);
+    expect(container.querySelector('[data-character-bubble]')?.textContent || '').not.toContain('Bagger ·');
+    expect(footers()).toEqual(['Bagger hit · 1.5× banked']);
+  });
+
+  it('a crossing between two snapshots bursts the row and speaks the line', () => {
+    setShell(false);
+    withHistory(0.8);
+    mount();
+    expect(burst()).toHaveLength(0);
+    expect(footers()).toEqual([]);
+
+    withHistory(1.1);
+    rerender();
+    expect(burst()).toHaveLength(1);
+    expect(footers()).toEqual(['Bagger hit · 1.5× banked']);
+    const bubble = container.querySelector('[data-character-bubble]');
+    // Ruling 9: the line is the BAGGER LINE (+baseATR%), not the piece's live
+    // percent — the live number would disagree the moment the price moved.
+    expect(bubble.textContent).toContain('Bagger · NVDA hit +2.5%');
+    expect(bubble.getAttribute('data-bubble-kind')).toBe('Bagger');
+  });
+
+  it('A RE-RENDER DOES NOT RE-FIRE: the same doc, compared again, is silent', () => {
+    setShell(false);
+    withHistory(0.8);
+    mount();
+    withHistory(1.1);
+    rerender();
+    expect(burst()).toHaveLength(1);
+
+    // NODE IDENTITY is the assertion. The bubble is keyed on the
+    // announcement's id (`bagger:{sym}:{seq}`), so a SECOND announcement mounts
+    // a new element while a re-render of the same one does not. The footer is a
+    // pure function of the doc and is identical either way — asserting only
+    // that, as this row first did, proved nothing at all.
+    const bubbleNode = () => container.querySelector('[data-character-bubble]');
+    const first = bubbleNode();
+    expect(first).toBeTruthy();
+
+    // Same doc VALUE, a new object — the shape every Firestore snapshot has.
+    withHistory(1.1);
+    rerender();
+    expect(bubbleNode()).toBe(first);
+
+    // …and a HIGHER peak, still past the line: monotonic, already announced.
+    withHistory(1.4);
+    rerender();
+    expect(bubbleNode()).toBe(first);
+    expect(footers()).toEqual(['Bagger hit · 1.5× banked']);
+  });
+
+  // REDUCED MOTION lives in its own file, and has to. framer-motion latches
+  // `prefersReducedMotion` in MODULE scope on the first useReducedMotion call
+  // (utils/reduced-motion/index.mjs:10, guarded by hasReducedMotionListener),
+  // so whichever row in this file mounts first decides the setting for every
+  // row after it. A row here would be proved by the file's ordering rather
+  // than by the preference. See AgentBattleScreen.bagger.reducedMotion.jsdom.test.jsx.
+
+  it('SPEAKS WITH THE COUNT AT ZERO — the bagger bubble is not gated on unread', () => {
+    // A SURVIVOR the first mutation run found in MY rows, not in the code:
+    // dropping the `standalone` gate in CharacterAvatar left all 109 green,
+    // because every other bagger row happened to have unread entries and the
+    // bubble showed for that reason instead. `Bagger · {sym} hit {pct}` is not
+    // a tape entry and carries no count (handover §7), so the one state that
+    // proves the rule is the one where the reader is caught up.
+    setShell(false);
+    withHistory(0.8);
+    mount();
+    openPane();     // reading the chat marks the tape seen…
+    closePane();    // …and the mark comes back with nothing owing.
+    expect(container.querySelector('[data-character-mark]').getAttribute('data-unread')).toBeNull();
+
+    withHistory(1.1);
+    rerender();
+    const bubble = container.querySelector('[data-character-bubble]');
+    expect(bubble).toBeTruthy();
+    expect(bubble.textContent).toContain('Bagger · NVDA hit +2.5%');
+    // …and it is still the caught-up state: the bagger brought no count with it.
+    expect(container.querySelector('[data-character-mark]').getAttribute('data-unread')).toBeNull();
+  });
+
+  it('the burst is decoration: hidden from assistive tech and deaf to the pointer', () => {
+    setShell(false);
+    withHistory(0.8);
+    mount();
+    withHistory(1.1);
+    rerender();
+    const wash = burst()[0];
+    expect(wash.getAttribute('aria-hidden')).toBe('true');
+    expect(wash.style.pointerEvents).toBe('none');
+    // The news itself is text, in two places.
+    expect(footers()).toHaveLength(1);
+  });
+
+  it('the ROW\'s badge is untouched — the burst is the persisted-only addition (ruling 7)', () => {
+    // Two clocks, deliberately. enrichAsset merges the persisted peak with the
+    // LIVE multiplier for the badge, so it can light a tick early; this keys on
+    // the record. A row that made them one source would fire on a flicker.
+    setShell(false);
+    withHistory(0.8);
+    mount();
+    withHistory(1.1);
+    rerender();
+    expect(container.querySelector('[data-bagger-burst]')).toBeTruthy();
+    expect(container.querySelector('[data-bagger-footer]')).toBeTruthy();
+  });
+
+  it('reads the PERSISTED peak and NOTHING else — the line, exactly', () => {
+    // Prices are identical across the two renders, so the ONE thing that
+    // differs is a single persisted field — and the footer and the burst turn
+    // on exactly AT the line, which no other mounted row pins (every other
+    // fixture uses 1.1 or 1.6 against a line of 1.0).
+    setShell(false);
+    withHistory(0.99);
+    mount();
+    expect(footers()).toEqual([]);
+    expect(burst()).toHaveLength(0);
+
+    withHistory(1.0);
+    rerender();
+    expect(footers()).toEqual(['Bagger hit · 1.5× banked']);
+    expect(burst()).toHaveLength(1);
+  });
+
+  it('TWO CLOCKS: the row\'s badge may be lit while the record is not (ruling 7)', () => {
+    // The row this replaces was titled for ruling 7 and never looked at
+    // anything ruling 7 is about — and worse, making the badge and the burst
+    // read ONE source (the exact defect its comment described) left the whole
+    // file green, because with no live price the two clocks can never disagree.
+    //
+    // So drive the live one. NVDA enters at 900 with baseATR 2.5, so 925 is
+    // +2.78% — a live multiplier of 1.11, past the bagger line and short of the
+    // double — while the persisted peak stays at 0. The shipped row lights; the
+    // A3.6 additions do not.
+    setShell(false);
+    PRICES = { NVDA: 925 };
+    withHistory(0);
+    mount();
+
+    const board = container.querySelector('[data-board]');
+    // The live clock has PASSED the bagger line: the row's proximity label has
+    // moved on to the next tier, which it only does once the bagger is crossed
+    // on the merged history. Before the price it read `2.5% to Bagger`.
+    // (`to Double` is NVDA's alone here — the other three pieces are flat and
+    // still read `2.5% to Bagger`, which is the contrast that makes the point.)
+    expect(board.textContent).toContain('to Double');
+    expect(footers()).toEqual([]);                        // the record, silent
+    expect(burst()).toHaveLength(0);
+    expect(container.querySelector('[data-character-bubble]')?.textContent || '')
+      .not.toContain('Bagger ·');
+
+    // …and when the cron finally records it, the additions arrive — without the
+    // price moving at all.
+    withHistory(1.4);
+    rerender();
+    expect(footers()).toEqual(['Bagger hit · 1.5× banked']);
+    expect(burst()).toHaveLength(1);
+  });
+
+  it('shows nothing for a piece the player no longer holds (the screen\'s own half)', () => {
+    // The cron never deletes a history entry, so walking the map instead of the
+    // book would announce a bagger for a piece with no row to burst. THE GUARD
+    // FOR THAT IS AT THE PURE SEAM — deriveBaggerMoment.test.js's "a piece the
+    // player no longer holds never announces" — and the review confirmed this
+    // mounted row adds none of its own: the screen defends the same thing twice
+    // (the burst is per-row, and the bubble does its own playerBook lookup), so
+    // the map-walk is invisible in the DOM. Kept, and retitled, because that
+    // second defence is worth pinning; it is not the derivation's guard.
+    setShell(false);
+    withDoc({ thresholdHistory: { GILD: { maxMultiplier: 0.4 } } });
+    mount();
+    withDoc({ thresholdHistory: { GILD: { maxMultiplier: 1.9 } } });
+    rerender();
+    expect(burst()).toHaveLength(0);
+    expect(footers()).toEqual([]);
+    expect(container.querySelector('[data-character-bubble]')?.textContent || '').not.toContain('Bagger ·');
+  });
+
+  it('the eyebrow is PAINTED — a token colour, not the button\'s default', () => {
+    // Replaces a row that claimed to prove the flag gate and could not: this
+    // file mocks isCharacterPaneOn TRUE throughout, so "none of it renders
+    // while the pane is off" asserted the opposite of its own title. The gate
+    // IS guarded — by the two goldens, which go red with `Bagger hit` in the
+    // diff if the paneOn spread is removed — so what was missing here is this:
+    // the review found the bubble built inline with no eyebrowColor at all,
+    // rendering `Bagger` in the button's UA foreground on a near-black bubble.
+    setShell(false);
+    withHistory(0.8);
+    mount();
+    withHistory(1.1);
+    rerender();
+    const eyebrow = container.querySelector('[data-character-bubble] [data-bubble-eyebrow]');
+    expect(eyebrow).toBeTruthy();
+    expect(eyebrow.textContent).toBe('Bagger');
+    expect(eyebrow.style.color).toMatch(/^var\(--ft-/);
+  });
+
+  it('DESKTOP behaves the same — the moment is not a phone feature', () => {
+    setShell(true);
+    withHistory(0.8);
+    mount();
+    withHistory(1.1);
+    rerender();
+    expect(burst()).toHaveLength(1);
+    expect(footers()).toEqual(['Bagger hit · 1.5× banked']);
+  });
+});
+
+describe('A3.6 — the trade card\'s arrival fade', () => {
+  // The shape buildTape actually reads (the A3.4 rows' fixture): the stamp is
+  // `swappedOutAt`, not `timestamp`. A fixture the builder drops yields no card
+  // at all, and every row below would then compare two nulls and pass.
+  const TRADE = {
+    symbolOut: 'GILD', symbolIn: 'MOS', tier: 'core',
+    swappedOutAt: '2026-09-01T15:02:00.000Z',
+    exitReason: 'haiku_decision',
+    rationale: 'GILD rolled over; MOS leads materials.',
+  };
+
+  it('fades the card in BOTH homes, once per mount, and only under the pane', () => {
+    // Once per mount, in both places (handover §7). It is only safe because the
+    // pane is HIDDEN rather than unmounted on collapse: before that fix every
+    // expand remounted the card and replayed the fade.
+    withDoc({ trades: [TRADE] });
+    mount();
+    openPane();
+    const inChat = container.querySelectorAll('[data-pane-section="chat"] [data-tape-kind="trade"]');
+    selectTab('tape');
+    const inTape = container.querySelectorAll('[data-pane-section="tape"] [data-tape-kind="trade"]');
+    expect(inChat).toHaveLength(1);
+    expect(inTape).toHaveLength(1);
+    // framer writes the `initial` opacity onto the element, so a card that is
+    // fading is readable without asserting on time (hazard 47). A plain `div`
+    // — the pane-off shape the goldens photograph — carries no opacity at all.
+    for (const card of [inChat[0], inTape[0]]) {
+      expect(card.style.opacity).not.toBe('');
+    }
+  });
+
+  it('the SAME card survives a tab change without remounting — one fade, not three', () => {
+    // Node identity is the assertion: a remount would be a new node, and a new
+    // node fades again. This is the hazard-45 rule doing double duty.
+    withDoc({ trades: [TRADE] });
+    mount();
+    openPane();
+    const before = container.querySelector('[data-pane-section="chat"] [data-tape-kind="trade"]');
+    expect(before).toBeTruthy();       // else the row below compares two nulls
+    selectTab('tape');
+    selectTab('bench');
+    selectTab('chat');
+    expect(container.querySelector('[data-pane-section="chat"] [data-tape-kind="trade"]')).toBe(before);
+  });
+
+  it('…and survives a COLLAPSE, which is what makes a mount-keyed one-shot safe', () => {
+    withDoc({ trades: [TRADE] });
+    mount();
+    openPane();
+    const before = container.querySelector('[data-pane-section="chat"] [data-tape-kind="trade"]');
+    expect(before).toBeTruthy();
+    closePane();
+    openPane();
+    expect(container.querySelector('[data-pane-section="chat"] [data-tape-kind="trade"]')).toBe(before);
+  });
+});

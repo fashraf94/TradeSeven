@@ -43,11 +43,22 @@
 // about the battle and never leaves the component.
 
 import React, { useState } from 'react';
+import { motion } from 'framer-motion';
 import { cssVar } from '../../theme/cssTokens';
+import { motionToken } from '../../theme/motion';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
 import { WHY_KIND, parseEmphasis } from './selectWhyState';
 
-const LABEL_COLOR = {
+/**
+ * THE ONE SOURCE FOR WHAT COLOUR A KIND IS (D-98, hazard 43).
+ *
+ * Exported since A3.1 because the character's speech bubble carries the same
+ * kind eyebrows this file renders, and a second map over there would be the §9
+ * two-sources bug with colours instead of numbers: the bubble and the card
+ * would eventually paint one kind two ways, on the same page, for the same
+ * entry. deriveBubble imports these three rather than restating them.
+ */
+export const LABEL_COLOR = {
   [WHY_KIND.DOWNGRADED]: cssVar('amber'),
   [WHY_KIND.FAILED]: cssVar('amber'),
   [WHY_KIND.GUARDRAIL_FAILED]: cssVar('amber'),
@@ -55,6 +66,35 @@ const LABEL_COLOR = {
   [WHY_KIND.HELD]: cssVar('text-secondary'),
   [WHY_KIND.ABSENT]: cssVar('text-muted'),
 };
+
+/** A trade card's eyebrow — teal wherever it is rendered (see TradeCard below). */
+export const TRADE_EYEBROW_COLOR = cssVar('teal');
+
+/**
+ * A directive card's eyebrow. AgentChat renders that card with a raw '#5EEAD4'
+ * (:130, an unguarded file and a pre-existing literal) — the same value
+ * --ft-teal carries. Named here so the bubble consumes the token rather than a
+ * fourth copy of the hex; re-pointing AgentChat's literal at it is a flag-off
+ * change and belongs to the cleanup PR, not to A3.
+ */
+export const DIRECTIVE_EYEBROW_COLOR = cssVar('teal');
+
+/**
+ * The character's own speech, in the stream and in the bubble. This is the
+ * value AgentChat.jsx:302 already gives every kind eyebrow it renders, so the
+ * two surfaces agree about speech without AgentChat changing at all.
+ */
+export const SPEECH_EYEBROW_COLOR = cssVar('text-muted');
+
+/**
+ * A3.6 (D-97) — the bagger moment's eyebrow. It lives HERE, with the other
+ * three, because this file is the one source for what colour a kind is
+ * (hazard 43) — even though no bagger CARD renders in the stream today. The
+ * moment is a record, so it takes the game's own bagger token rather than the
+ * records' teal: teal is the player's side and the trade card's, and a bagger
+ * is neither of those things.
+ */
+export const BAGGER_EYEBROW_COLOR = cssVar('game-baggerbomb');
 
 const mono = {
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
@@ -177,11 +217,64 @@ function RecordProse({ text, firstSentence, startExpanded = false }) {
  * An executed swap: when, the pair, the tier, what was banked, the motive —
  * and whose words the motive is.
  */
-export function TradeCard({ entry, startExpanded = false }) {
+export function TradeCard({ entry, startExpanded = false, fadeIn = false, reducedMotion = false }) {
   if (!entry) return null;
   const banked = COPY.banked(entry.lockedPoints);
+  // A3.6 (D-97) — THE ARRIVAL FADE, once per mount.
+  //
+  // A PLAIN `div` UNLESS ASKED (`fadeIn` is false everywhere but the pane).
+  //
+  // BE PRECISE ABOUT WHAT THE GOLDENS PROVE HERE — the review caught this
+  // comment overclaiming. What is golden-proven is the `fadeProps` ternary:
+  // making it unconditional writes an inline opacity into the SSR output and
+  // reds the pane-off golden. The `Tag` ternary is NOT: with `fadeProps` empty,
+  // `motion.div` and `div` serialise identically, so collapsing `Tag` to an
+  // unconditional `motion.div` leaves both goldens green — it would ship a
+  // framer VisualElement per trade card on the live path for no visual gain and
+  // no test signal. `Tag` is defence in depth, unphotographed; keep it, and do
+  // not trust a golden to catch its removal.
+  //
+  // The flag-OFF goldens cannot see this component at all: flag-off falls to
+  // AgentChat's TradeTickerCard branch (`AgentChat.jsx:1274` gates TradeCard on
+  // `Array.isArray(tapeEntries)`), so `data-tape-kind="trade"` appears in
+  // exactly one photograph — the controller-on / pane-off one.
+  //
+  // ONCE PER MOUNT is the whole mechanism, and it is only safe because the pane
+  // is HIDDEN rather than unmounted on collapse (review lens 5): before that
+  // fix, every expand remounted this card and replayed the fade. The card is
+  // keyed on `entry.id` at both call sites, so a re-render never remounts it
+  // either.
+  //
+  // RULED, AND KEPT AS BUILT (the founder, after the review). "Once per mount"
+  // is the mechanism, and these are its two consequences, both put to the
+  // founder and both accepted:
+  //
+  //   1. A page LOAD is a mount, so the cards already on the tape fade in
+  //      together on arrival at the screen.
+  //   2. All three pane sections mount whenever the pane does, and on the phone
+  //      the pane renders (hidden) even while closed. So a trade landing while
+  //      the pane is shut fades BOTH copies out of sight, and opening the pane
+  //      re-uses the same node — there is nothing left to play. The review
+  //      measured this: the fade is seen in the desktop's resting state (the
+  //      pane open on Chat, which is the brief's own §5 deliverable 1) and
+  //      nowhere else; Tape's duplicate card is structurally unwatchable,
+  //      because it always mounts behind the Chat section.
+  //
+  // The alternative — fading on first SIGHT rather than first mount — is a
+  // different mechanism, and it collides with hazard 45: making the card animate
+  // when its section is selected means remounting it, which is what the pane
+  // being hidden-not-unmounted exists to prevent. Not a change to make quietly.
+  const Tag = fadeIn ? motion.div : 'div';
+  const fadeProps = fadeIn
+    ? {
+      initial: { opacity: 0 },
+      animate: { opacity: 1 },
+      transition: motionToken('fade', { reducedMotion }),
+    }
+    : {};
   return (
-    <div
+    <Tag
+      {...fadeProps}
       data-tape-kind="trade"
       data-tape-pair={`${entry.symbolOut ?? ''}-${entry.symbolIn ?? ''}`}
       // D-89 (review L5-F1): a trade card is a landing target too. On a tick
@@ -195,7 +288,7 @@ export function TradeCard({ entry, startExpanded = false }) {
     >
       {entry.fromDirective && <div style={{ ...footnote, color: cssVar('teal') }}>{COPY.fromDirective}</div>}
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-        <div style={{ ...eyebrow, color: cssVar('teal') }}>
+        <div style={{ ...eyebrow, color: TRADE_EYEBROW_COLOR }}>
           {COPY.tradeCardLine(entry.at, entry.symbolOut, entry.symbolIn, entry.tier)}
         </div>
         {banked && <div style={{ ...mono, fontSize: 11.5, color: cssVar('text-secondary') }}>{banked}</div>}
@@ -204,7 +297,7 @@ export function TradeCard({ entry, startExpanded = false }) {
       {entry.motive && (
         <div style={footnote}>{entry.motiveIsAgent ? COPY.motiveAgent : COPY.motiveSystem}</div>
       )}
-    </div>
+    </Tag>
   );
 }
 

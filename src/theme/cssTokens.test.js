@@ -68,13 +68,18 @@ describe('defines-all-tokens (A1)', () => {
     ).toEqual([]);
   });
 
-  it('has a baseline that covers the whole locked list — 37 tokens', () => {
-    expect(Object.keys(BASELINE)).toHaveLength(37);
+  it('has a baseline that covers the whole locked list — 39 tokens', () => {
+    // 37 at the Delight Task 1 lock; 39 since Battle View A3.0, which added
+    // --ft-copper and --ft-copper-rgb (D-96). That was a TOKEN ADDITION of a
+    // value the repo already shipped twice under legacy names (CMD.copper,
+    // DARK_TOKENS.warmCopper), not a new colour — but the count is pinned so
+    // that even an addition has to be a deliberate, reviewed line.
+    expect(Object.keys(BASELINE)).toHaveLength(39);
   });
 });
 
 describe('parity-with-baseline (A2)', () => {
-  // Ruling R-A2w: hex rows are STRICT string equality; the 8 RGB triplet rows are
+  // Ruling R-A2w: hex rows are STRICT string equality; the 9 RGB triplet rows are
   // whitespace-insensitive, because jsdom collapses the space after each comma
   // while browsers preserve it.
   const hexRows = Object.entries(BASELINE).filter(([n, v]) => !isAlias(v) && !isTriplet(n));
@@ -93,11 +98,14 @@ describe('parity-with-baseline (A2)', () => {
     expect(canonTriplet(rawProp(name))).toBe(canonTriplet(expected));
   });
 
-  it('guards the comparator split itself — 22 strict rows, 8 triplet rows', () => {
+  it('guards the comparator split itself — 23 strict rows, 9 triplet rows', () => {
     // If this drifts, someone added a token without deciding which comparator it
     // belongs under, and one of the two it.each blocks above silently skipped it.
+    // A3.0 took these from 22/8 to 23/9 — one hex (--ft-copper) and one triplet
+    // (--ft-copper-rgb), landed together so the arena can compose rgba() from the
+    // same value it paints solid.
     expect({ strict: hexRows.length, triplets: tripletRows.length })
-      .toEqual({ strict: 22, triplets: 8 });
+      .toEqual({ strict: 23, triplets: 9 });
   });
 });
 

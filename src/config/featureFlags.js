@@ -2027,3 +2027,46 @@ export const BATTLE_VIEW_CONTROLLER_ENABLED = true;
 export function isBattleViewControllerOn() {
   return BATTLE_VIEW_CONTROLLER_ENABLED;
 }
+
+/**
+ * Battle View character pane — Phase A3, the character IS the controller
+ * (D-91). The agent's mark stops being decoration on the score header and
+ * becomes the one door to the conversation: it floats on the board, it speaks
+ * once when the tape gains an entry, and it opens a pane holding Chat, Bench
+ * and Tape. The bottom strip and the three-detent sheet retire behind it
+ * (D-93, superseding D-74).
+ *
+ * When FALSE (DEFAULT, merge-dark), the Battle View renders Phase A2 exactly
+ * as merged — the desktop PeekStrip column, the mobile ChatSheet, the header's
+ * Game Tape link and watchlist chip, the global bug widget. Every A3 branch is
+ * `paneOn ? <new> : <the A2 JSX as merged>`, so pane-off is byte-identical and
+ * has its own golden (agentBattleScreen.controllerOn.paneOff.html), captured
+ * from the pre-build commit 8e63ea65.
+ *
+ * NESTED on the controller, deliberately: the pane replaces containers the
+ * controller introduced, so it can only mean anything where the controller is
+ * live. Reading the pane flag alone would light a pane over the shipped tabbed
+ * screen, which has no board column to float an avatar on.
+ *
+ * No query-string override. The controller's `?battleViewController=1` was
+ * deleted in the same commit that flipped it (the `?fuseHero=1` precedent, and
+ * the `?leagueLiveOrb=1` lesson behind it); this runway does not re-open that
+ * door. The founder's A3.5 smoke uses the Phase 0 §7 pattern instead.
+ *
+ * Read it at RENDER scope through isCharacterPaneOn() below, never as a
+ * module-scope const (the Pass 1 hazard: 15 of 56 featureFlags vi.mock sites
+ * use a bare factory with no importOriginal spread).
+ */
+// Pinned by: characterPaneFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const BATTLE_VIEW_CHARACTER_PANE_ENABLED = false;
+
+/**
+ * The ONE home for the character-pane gate: the controller AND the pane flag.
+ *
+ * The conjunction lives here rather than at the call sites so the screen reads
+ * one accessor beside isBattleViewControllerOn() and a test can mock either
+ * state without reconstructing the nesting.
+ */
+export function isCharacterPaneOn() {
+  return isBattleViewControllerOn() && BATTLE_VIEW_CHARACTER_PANE_ENABLED;
+}
