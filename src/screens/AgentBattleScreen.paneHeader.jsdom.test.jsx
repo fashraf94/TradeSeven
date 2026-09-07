@@ -88,6 +88,12 @@ vi.mock('../hooks/useAgentBattle', () => ({
 }));
 
 import AgentBattleScreen from './AgentBattleScreen';
+import {
+  ARCHETYPE_MIN_VIEWPORT_PX,
+  PANE_HEADER_FIXED_PX,
+  PANE_ARCHETYPE_MIN_PX,
+  PANE_VIEWPORT_SHARE,
+} from './battleView/CharacterPane';
 
 const BATTLE = {
   agentId: 'agent-1', agentBattleId: 'ab-1',
@@ -116,9 +122,19 @@ afterEach(() => {
 
 /** Both halves of the breakpoint: useIsDesktop seeds from innerWidth at mount, then listens. */
 const setWidth = (px) => {
-  const desktop = px >= 1024;
   Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: px });
-  window.matchMedia = () => ({ matches: desktop, addEventListener() {}, removeEventListener() {} });
+  // EACH QUERY ON ITS OWN TERMS. There are two min-width queries now — 768 for
+  // the shell, ARCHETYPE_MIN_VIEWPORT_PX for the archetype line's room — and a
+  // harness that answered one boolean to both would have made the ordering row
+  // below pass at any width.
+  window.matchMedia = (query) => {
+    const min = /min-width:\s*(\d+)px/.exec(String(query));
+    return {
+      matches: min ? px >= Number(min[1]) : px >= 768,
+      addEventListener() {},
+      removeEventListener() {},
+    };
+  };
 };
 const mount = () => act(() => {
   root.render(<AgentBattleScreen battle={BATTLE} user={{ uid: 'u1' }} onBack={() => {}} onOpenFilmRoom={null} />);
@@ -199,6 +215,70 @@ describe('Smoke F2 — 1280 px: the face is boxed, the name is whole', () => {
     mount();
     openPane();
     expect(container.querySelector('[data-pane-archetype]')).toBeTruthy();
+  });
+});
+
+describe('F2\'s ruled ORDERING — the archetype goes first, the name keeps its room', () => {
+  // The founder's ruling after the review. The first build read "on narrow
+  // widths the archetype line hides first, then the name wraps" as the
+  // desktop/mobile shell split, which is the INVERSE on a narrow desktop: the
+  // archetype stayed and the name gave way. The review measured the cost at the
+  // real breakpoint (768 — an iPad in portrait is a "desktop" and opens the pane
+  // by default): the identity column collapsed to nothing, the name became a
+  // vertical stack of single letters, the archetype's `nowrap` text painted over
+  // the tabs, and the controls ran past the header's edge.
+  //
+  // These rows IMPORT the breakpoint and its parts rather than restating a
+  // number, so the arithmetic and the behaviour cannot drift apart.
+
+  it('derives the breakpoint from the header\'s own parts', () => {
+    expect(ARCHETYPE_MIN_VIEWPORT_PX).toBe(
+      Math.ceil((PANE_HEADER_FIXED_PX + PANE_ARCHETYPE_MIN_PX) / PANE_VIEWPORT_SHARE),
+    );
+    // …and it sits ABOVE the shell breakpoint, or the ruling would be a no-op:
+    // every desktop would be roomy and the line would never go first.
+    expect(ARCHETYPE_MIN_VIEWPORT_PX).toBeGreaterThan(768);
+  });
+
+  it('HIDES the archetype one pixel below the line, and keeps the name whole', () => {
+    // The ruling in one row: the archetype is gone, and the name — which is
+    // what the first build sacrificed instead — is untouched and untruncated.
+    setWidth(ARCHETYPE_MIN_VIEWPORT_PX - 1);
+    mount();
+    openPane();
+    expect(container.querySelector('[data-pane-shell]').getAttribute('data-pane-shell')).toBe('desktop');
+    expect(container.querySelector('[data-pane-archetype]')).toBeNull();
+    expectNeverTruncates(container.querySelector('[data-pane-agent-name]'));
+  });
+
+  it('SHOWS it one pixel above the line', () => {
+    // The counter-row: a gate that always hid would pass the row above.
+    setWidth(ARCHETYPE_MIN_VIEWPORT_PX);
+    mount();
+    openPane();
+    expect(container.querySelector('[data-pane-archetype]')).toBeTruthy();
+    expectNeverTruncates(container.querySelector('[data-pane-agent-name]'));
+  });
+
+  it('is STILL a desktop at the width where the line goes — the shell did not move', () => {
+    // The seam is a SECOND query beside the shell gate, not a wider shell. If
+    // the fix had simply raised the desktop breakpoint, the pane would become a
+    // mobile overlay at 1024 and the whole layout would change with it.
+    setWidth(1024);
+    mount();
+    openPane();
+    expect(container.querySelector('[data-pane-shell]').getAttribute('data-pane-shell')).toBe('desktop');
+    expect(container.querySelector('[data-pane-archetype]')).toBeNull();
+    expect(container.querySelector('[data-chat-column]')).toBeTruthy();
+    expect(container.querySelector('[data-pane-overlay]')).toBeNull();
+  });
+
+  it('the phone never shows it, at any width below the shell', () => {
+    setWidth(390);
+    mount();
+    openPane();
+    expect(container.querySelector('[data-pane-shell]').getAttribute('data-pane-shell')).toBe('mobile');
+    expect(container.querySelector('[data-pane-archetype]')).toBeNull();
   });
 });
 

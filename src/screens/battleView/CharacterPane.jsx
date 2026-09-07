@@ -69,6 +69,45 @@ const panelId = (section) => `pane-panel-${section}`;
 /** The header face's box, in px. One literal, named once (the F2 box). */
 const PANE_FACE_PX = 36;
 
+/* ---------------------------------------------------------------------------
+   WHEN THE ARCHETYPE LINE HAS ROOM (the founder's ruling on F2's ordering).
+   ---------------------------------------------------------------------------
+   F2 ruled: "on narrow widths the archetype line hides first, then the name
+   wraps." The first build read that as the desktop/mobile shell split, which is
+   the INVERSE on a narrow desktop — the archetype stayed and the name gave way.
+   The review measured what that costs at the real breakpoint (768, not 1024,
+   so an iPad in portrait is a "desktop" and opens the pane by default): the
+   identity column collapses to 0 px, the agent's name becomes a vertical stack
+   of single letters, the archetype's `nowrap` text paints over the tabs, and
+   the controls group runs past the header's edge.
+
+   The seam is still the shell gate — a second min-width query beside the first,
+   NOT a container query (the repo has no such idiom and jsdom does no layout).
+   The pane is a fixed FRACTION of the viewport, which is what makes a viewport
+   query a faithful proxy for the pane's own width.
+
+   The breakpoint is DERIVED, not chosen, so a reader can check it and a test can
+   import it rather than restating a number: */
+
+/** The header's fixed cost: 28 padding + 36 face + 20 gaps + 243 controls. */
+export const PANE_HEADER_FIXED_PX = 327;
+
+/** The widest archetype display name at `nowrap` — `Fundamental Investor`. */
+export const PANE_ARCHETYPE_MIN_PX = 141;
+
+/** The pane's share of the row: `flex: 2` beside a board at `flex: 3`. */
+export const PANE_VIEWPORT_SHARE = 0.4;
+
+/**
+ * The viewport width at which the pane can hold the name AND the archetype AND
+ * the segmented control. Below it the ARCHETYPE goes first — which is the whole
+ * of the ruling — and the name keeps its room. Below the plain desktop
+ * breakpoint the phone's header takes over and the line is gone anyway.
+ */
+export const ARCHETYPE_MIN_VIEWPORT_PX = Math.ceil(
+  (PANE_HEADER_FIXED_PX + PANE_ARCHETYPE_MIN_PX) / PANE_VIEWPORT_SHARE,
+);
+
 /** The label span every control wraps its text in (hazard 48). */
 const labelSpan = (size = 12, weight = 700) => ({
   fontSize: size,
@@ -140,6 +179,11 @@ function SegmentedControl({ section, onSelect }) {
 
 export default function CharacterPane({
   agentBattle = null,
+  // Whether the archetype line has room (the founder's ruling on F2). Decided
+  // by the SCREEN, from the same shell gate that decides `isDesktop`, so this
+  // component stays free of media queries and a test can drive the contract
+  // directly. Default false: the line is the first thing to go.
+  showArchetype = false,
   // The pair the BOARD IS SHOWING — see CharacterAvatar's note (lens 1 F6).
   playerScore = null,
   opponentScore = null,
@@ -283,15 +327,15 @@ export default function CharacterPane({
             {agentName}
           </span>
           {/* The archetype's DISPLAY name, from the one map that owns it — the
-              persisted code-id never reaches the screen. Desktop only: the
-              phone's header has the sections and the close to fit.
-              F2's "the archetype line hides first, then the name wraps" is this
-              gate. It is a SHELL split, not a width query: the repo has no
-              container-query idiom, and the pane's width is a fixed share of
-              its shell, so the shell is the width. A genuinely narrow desktop
-              pane keeps the line and wraps the name instead — stated here
-              rather than left to be discovered. */}
-          {isDesktop && archetype && (
+              persisted code-id never reaches the screen.
+              THE FIRST THING TO GO (F2's ruled ordering). It renders only where
+              the pane can hold it beside the name and the control; below that
+              width it hides and the name keeps its room, which is the order the
+              ruling asks for. The screen decides, from the same shell gate that
+              decides `isDesktop` — see ARCHETYPE_MIN_VIEWPORT_PX above for the
+              arithmetic. The phone never shows it: its header has the sections
+              and the close to fit. */}
+          {showArchetype && archetype && (
             <span
               data-pane-archetype="1"
               style={{

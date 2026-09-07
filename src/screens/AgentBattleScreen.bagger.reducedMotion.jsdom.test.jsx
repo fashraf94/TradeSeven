@@ -132,11 +132,22 @@ const setShell = (isDesktop, { reducedMotion = true } = {}) => {
   // FALSE on every mobile one. Harmless while nothing asserted on motion; the
   // moment the bagger burst did, "reduced motion renders no burst" would have
   // been proved by the shell rather than by the setting.
-  window.matchMedia = (query) => ({
-    matches: String(query).includes('prefers-reduced-motion') ? reducedMotion : isDesktop,
-    addEventListener() {},
-    removeEventListener() {},
-  });
+  // ANSWER EACH min-width QUERY ON ITS OWN TERMS. There are now two — 768 for
+  // the shell and ARCHETYPE_MIN_VIEWPORT_PX for the archetype line's room — so
+  // returning `isDesktop` to both would have said "roomy" at 768.
+  window.matchMedia = (query) => {
+    const q = String(query);
+    if (q.includes('prefers-reduced-motion')) {
+      return { matches: reducedMotion, addEventListener() {}, removeEventListener() {} };
+    }
+    const min = /min-width:\s*(\d+)px/.exec(q);
+    const width = isDesktop ? 1280 : 480;
+    return {
+      matches: min ? width >= Number(min[1]) : isDesktop,
+      addEventListener() {},
+      removeEventListener() {},
+    };
+  };
 };
 
 const mount = () => act(() => {

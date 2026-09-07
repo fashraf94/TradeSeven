@@ -43,7 +43,7 @@ import { useChatSheet, useViewportHeight, viewportInsetFrom, isSheetOpen, SHEET_
 import { computeTugOfWarWidth } from './battleView/computeTugOfWarWidth';
 import ArenaHeader from './battleView/ArenaHeader';
 import CharacterAvatar from './battleView/CharacterAvatar';
-import CharacterPane from './battleView/CharacterPane';
+import CharacterPane, { ARCHETYPE_MIN_VIEWPORT_PX } from './battleView/CharacterPane';
 import PaneBench from './battleView/PaneBench';
 import PaneTape from './battleView/PaneTape';
 import PaneOverflow from './battleView/PaneOverflow';
@@ -141,17 +141,30 @@ function computeDayLabel(timing) {
 
 // ─── Responsive hook ──────────────────────────────────────────────────────────
 
-function useIsDesktop() {
-  const [isDesktop, setIsDesktop] = useState(
-    typeof window !== 'undefined' && window.innerWidth >= 768
+/**
+ * One min-width query. `useIsDesktop` is this at 768; the pane asks a second
+ * one at ARCHETYPE_MIN_VIEWPORT_PX for the founder's F2 ordering ruling.
+ *
+ * Semantics are unchanged from the hook this generalises — seeded from
+ * `innerWidth`, then driven by `change` alone, with no mount-time resync. That
+ * is deliberate: `useIsDesktop` runs on the flag-off path too, and this is a
+ * generalisation, not a fix.
+ */
+function useMinWidth(px) {
+  const [matches, setMatches] = useState(
+    typeof window !== 'undefined' && window.innerWidth >= px
   );
   React.useEffect(() => {
-    const mq = window.matchMedia('(min-width: 768px)');
-    const handler = (e) => setIsDesktop(e.matches);
+    const mq = window.matchMedia(`(min-width: ${px}px)`);
+    const handler = (e) => setMatches(e.matches);
     mq.addEventListener('change', handler);
     return () => mq.removeEventListener('change', handler);
-  }, []);
-  return isDesktop;
+  }, [px]);
+  return matches;
+}
+
+function useIsDesktop() {
+  return useMinWidth(768);
 }
 
 const staggerSpring = { type: 'spring', stiffness: 200, damping: 20 };
@@ -496,6 +509,12 @@ function SectionLabel({ children }) {
 export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom }) {
   const { tokens } = useTheme();
   const isDesktop = useIsDesktop();
+  // F2's ruled ordering (the founder, after the review): the archetype line is
+  // the FIRST thing to go when the pane cannot hold name + archetype + control.
+  // A second min-width query beside the first — the pane is a fixed fraction of
+  // the viewport, so a viewport query is a faithful proxy for its width, and
+  // the repo has no container-query idiom to reach for instead.
+  const paneHasArchetypeRoom = useMinWidth(ARCHETYPE_MIN_VIEWPORT_PX);
 
   // Battle View controller (Phase A), LIVE since the 2026-09-04 flip. Read at
   // RENDER scope, never module scope (the featureFlags mock hazard). The
@@ -1825,6 +1844,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       onSelectSection={pane.setSection}
       onClose={handleCollapseChat}
       isDesktop={isDesktop}
+      showArchetype={isDesktop && paneHasArchetypeRoom}
       reducedMotion={reducedMotion}
       chat={chat}
       overflow={<PaneOverflow />}
