@@ -115,6 +115,14 @@ describe('bubbleFor — every string is the stream\'s own', () => {
     expect(b.isRecord).toBe(false);
   });
 
+  it('a holding note wears the holding word (voice-layer grounding spec §5)', () => {
+    const item = speech({ _anticipationDirection: 'potential_exit' });
+    const b = bubbleFor(item);
+    expect(b.eyebrow).toBe(COPY.tapeKindEyebrow('anticipation', false, 'potential_exit'));
+    expect(b.eyebrow).toBe('Holding note');
+    expect(b.line).toBe(item.text);
+  });
+
   it('an unlabelled kind keeps its words and wears no eyebrow (the map\'s rule)', () => {
     // `auto_debrief` is deliberately absent from tapeKindEyebrow's map: an
     // unknown type renders NO eyebrow rather than a guessed one (D-86).

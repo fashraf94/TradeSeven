@@ -597,3 +597,67 @@ export function findGuardedVocabulary(text) {
   }
   return hits;
 }
+
+// ==================== §5 — THE ANTICIPATION NOTE, code-composed ====================
+//
+// Under the flag the check's note is composed by CODE from the decider's
+// candidate (spec §5, R4/F1): the EVENT only — symbol, direction, slot — and,
+// when it passes the reply lint, the signal the decider recorded. No model
+// call; no `threshold` (the action clause stays withheld until the fenced
+// contract changes — spec §2's list); no scratchpad; `suggestedActions: null`
+// (hazard 28).
+
+/**
+ * The reply lint (spec §9 gate 1), applied IN CODE to the signal clause before
+ * the write (hazard 22, Phase 0 item 1 constraint 1): `signalSummary` is a
+ * description by contract, not by validation, so an action sentence written
+ * into it is dropped rather than voiced.
+ */
+export const REPLY_LINT_RE = /I'll rotate|I'm rotating|eyeing|watching|keep an eye|I'd consider[^.]*\bswap/i;
+
+export function passesReplyLint(text) {
+  return typeof text === 'string' && !REPLY_LINT_RE.test(text);
+}
+
+/** `At the 11:15 AM check my trading process flagged NOW on the bench as a potential entry.` */
+export function composeAnticipationNote({ symbol, direction, slot, signalSummary }) {
+  const where = direction === 'potential_entry'
+    ? `${symbol} on the bench as a potential entry`
+    : direction === 'potential_exit'
+      ? `${symbol} in the book as a potential exit`
+      : `${symbol}`;
+  const check = slot ? `At the ${slot} check` : 'At the last check';
+  let text = `${check} my trading process flagged ${where}.`;
+  const signal = typeof signalSummary === 'string' ? signalSummary.trim() : '';
+  if (signal && passesReplyLint(signal)) {
+    const clause = /[.!?]$/.test(signal) ? signal : `${signal}.`;
+    text += ` The signal it recorded: ${clause}`;
+  }
+  return text;
+}
+
+/** One note per (symbol, direction) per ET day (hazard 27) — the key. */
+export function anticipationDedupeKey(symbol, direction, etDay) {
+  return `${symbol ?? ''}|${direction ?? ''}|${etDay ?? ''}`;
+}
+
+/**
+ * The IN-PROCESS pass (hazard 27): one tick can queue two candidates for the
+ * same name; keep the first per (symbol, direction), in queue order. The
+ * per-candidate pass against the doc's existing exchanges happens at the
+ * write site (voiceLayerAnticipation.js), which is where the ET day is known.
+ */
+export function dedupeAnticipationQueue(pending) {
+  if (!Array.isArray(pending)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const item of pending) {
+    const c = item?.candidate;
+    if (!c || !c.symbol) continue;
+    const key = anticipationDedupeKey(c.symbol, c.direction || null, 'tick');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}

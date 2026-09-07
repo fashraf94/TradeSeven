@@ -215,7 +215,7 @@ describe('D-84 — four kinds in one stream', () => {
       .toContain('DVN is closing on the bench line.');
   });
 
-  it('`Bench note` is the BENCH\'s word — a `potential_exit` note is not one (review L1-F1)', () => {
+  it('`Bench note` is the BENCH\'s word; a `potential_exit` note is a `Holding note` (review L1-F1; grounding spec §5)', () => {
     // `anticipationCandidates[].direction` is a required enum on the eval
     // schema: `potential_entry` is a bench candidate worth bringing in;
     // `potential_exit` is an ACTIVE HOLDING whose signal profile degraded
@@ -234,15 +234,16 @@ describe('D-84 — four kinds in one stream', () => {
       tapeEntries: [],
     });
 
-    // The ruled case gets the ruled word…
+    // The bench case gets the bench's word…
     expect(anticipation('potential_entry')).toContain('data-tape-kind-eyebrow="Bench note"');
-    // …and the other gets NOTHING, by the same rule an unknown type does. A
-    // word for it has to be ruled before it reaches the screen; inventing one
-    // here would be the guess.
+    // …and the holding case now gets ITS word — `Holding note`, ruled by the
+    // voice-layer grounding spec §5 (the Sep 7 founder adoption). Until that
+    // ruling it rendered nothing, by the same rule an unknown type does.
     const exitNote = anticipation('potential_exit');
     expect(exitNote).toContain('if it loses the 20-day');
-    expect(exitNote).not.toContain('data-tape-kind-eyebrow');
-    // A record with no direction at all is not a bench note either.
+    expect(exitNote).toContain('data-tape-kind-eyebrow="Holding note"');
+    expect(exitNote).not.toContain('data-tape-kind-eyebrow="Bench note"');
+    // A record with no direction at all is neither.
     expect(anticipation(null)).not.toContain('data-tape-kind-eyebrow');
     expect(anticipation(undefined)).not.toContain('data-tape-kind-eyebrow');
   });

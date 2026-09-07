@@ -197,6 +197,7 @@ describe('flag-off, through the SCREEN: the tape never reaches the shipped chat 
       // eyebrow would have gone unseen.
       'Status check ·',
       'Bench note',
+      'Holding note',
       'Trade note',
       'Opener',
     ]) {

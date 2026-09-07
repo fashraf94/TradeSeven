@@ -76,7 +76,10 @@ import { TEMPO_DIAL_BANDS } from '../_utils/tempoDialBands.js';
 // NO-EDIT).
 import { clampHftConfig, resolveTempoDial, desiredTempoOf } from '../_utils/tempoDialClamp.js';
 import { buildSwapProvenance } from '../_utils/swapProvenance.js';
-import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED, LEARNING_L1_CAPTURE_ENABLED, LEARNING_L1_CAPTURE_EXPANSION_ENABLED, REGIME_STAMP_ENABLED, PROFIT_TARGET_EXECUTOR_ENABLED } from '../../src/config/featureFlags.js';
+import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED, LEARNING_L1_CAPTURE_ENABLED, LEARNING_L1_CAPTURE_EXPANSION_ENABLED, REGIME_STAMP_ENABLED, PROFIT_TARGET_EXECUTOR_ENABLED, getVoiceGroundingMode } from '../../src/config/featureFlags.js';
+// Voice-layer grounding §5 (hazard 27): the in-process dedupe of one tick's
+// anticipation queue, applied only when the note is code-composed.
+import { dedupeAnticipationQueue } from '../_utils/voiceLayerGrounding.js';
 // Corpus Capture Patch W3 — pure regimeAtStart stamp helpers (write-once /
 // flag / shape semantics live there so they are behaviorally unit-testable).
 import { shouldStampRegime, buildRegimeAtStart } from '../_utils/regimeStamp.js';
@@ -2855,14 +2858,21 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     if (pendingAnticipations.length > 0) {
       const remainingBudget = TIME_BUDGET_MS - (Date.now() - cronStartTime);
       if (remainingBudget > 12_000) {
+        // Voice-layer grounding §5 (hazard 27): under 'on' for the owner the
+        // note is code-composed and one tick may not write two notes for one
+        // (symbol, direction) — dedupe the queue in-process BEFORE the
+        // per-candidate read-then-write. The model path is untouched.
+        const ownerGrounded = getVoiceGroundingMode(battle.ownerId) === 'on';
+        const queue = ownerGrounded ? dedupeAnticipationQueue(pendingAnticipations) : pendingAnticipations;
         await Promise.allSettled(
-          pendingAnticipations.map((a) =>
+          queue.map((a) =>
             generateAnticipation({
               db,
               battleId: battle.id,
               agentId: battle.agentId,
               anticipationCandidate: a.candidate,
               evalId: a.evalId,
+              ownerId: battle.ownerId || null,
             })
           )
         );

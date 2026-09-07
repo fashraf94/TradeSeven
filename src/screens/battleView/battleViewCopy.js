@@ -361,8 +361,15 @@ export const BATTLE_VIEW_COPY = Object.freeze({
     // reaches the screen, and inventing one here would be the guess. Recorded
     // for the founder; a direction-aware pair is one line when there is a
     // second word to use.
+    //
+    // THE SECOND WORD IS NOW RULED (voice-layer grounding spec §5, the Sep 7
+    // founder adoption): a `potential_exit` note is about a piece in the
+    // player's OWN BOOK, and its word is `Holding note`. A record with no
+    // direction still gets nothing.
     if (messageType === 'anticipation') {
-      return anticipationDirection === 'potential_entry' ? 'Bench note' : null;
+      if (anticipationDirection === 'potential_entry') return 'Bench note';
+      if (anticipationDirection === 'potential_exit') return 'Holding note';
+      return null;
     }
     if (messageType === 'trade_narration') return 'Trade note';
     // `Reply` is a claim about a PAIR — the player wrote and the character
