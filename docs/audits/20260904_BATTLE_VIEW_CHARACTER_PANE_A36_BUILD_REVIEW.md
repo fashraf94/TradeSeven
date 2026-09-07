@@ -145,32 +145,100 @@ One finding was **investigated and deliberately not "fixed"**: `selectBench`'s `
 
 ## 7. The refutation pass
 
-**STATUS: RUNNING at the time this file was committed.** BUILD_RULES §2 requires
-every finding to be handed to a reviewer instructed to refute it with a concrete
-repro; that agent is working now, and its verdicts land in the next commit to
-this file. The record is committed at this point rather than held because the
-session's container has already restarted once mid-run and taken background work
-with it.
+BUILD_RULES §2: *"Every finding is handed to a reviewer instructed to refute it with a concrete repro. Findings that survive are CONFIRMED; the rest are recorded as REFUTED, with the reasoning — a review that never refutes itself has not been run adversarially."*
 
-The claims put to it, each with an instruction to DISPROVE rather than confirm:
+Seven claims went to a sixth agent whose only instruction was to **disprove** them. Where a claim concerned a real browser rather than jsdom it worked from the **production bundle** (`vite build` → `dist/assets/index-*.css`) driven in **Chromium 1194** via `playwright-core`, not from jsdom.
 
-| # | Claim under attack |
+**Score: 3 CONFIRMED · 4 AMENDED · 0 fully refuted.** The two it attacked hardest and could not break are A3 and B1 — and **B1 is the one whose severity this review had *understated*.**
+
+**A ceiling on every severity below, recorded once:** the flag ships false (`featureFlags.js:2061`), and every surface here is gated on `isCharacterPaneOn()`. Nothing in this section describes something a player sees today; "on every load" and its cousins are true of the flag-on build.
+
+| # | Claim | Verdict |
+|---|---|---|
+| A1 | The seed fix is complete | **AMENDED** |
+| A2 | The `tierMultiplier` route is live | **AMENDED** |
+| A3 | The eyebrow was invisible | **CONFIRMED** |
+| A4 | `viewportInsetFrom` was wrong twice | **AMENDED** |
+| B1 | F2's ordering is not implemented | **CONFIRMED, and understated** |
+| B2 | The arrival fade is nearly never seen | **AMENDED** |
+| B3 | The clearance no longer delivers §2.1 | **CONFIRMED** |
+
+### A1 — the bagger seed · AMENDED
+The named defect is real and the fix kills it: the pre-fix hook against the screen's true ordering gives `{"burst":["AAPL","NVDA"],"bubble":"AAPL"}`; post-fix, `{"burst":[],"bubble":null}`.
+
+**But the guard is narrower than its comment claims.** Three latent re-announce doors survive — a book that *grows* after the seed, a book that empties and refills (`seenRef` is overwritten with `{}` on the empty pass), and a *different battle* swapped onto the same fiber through the `battle: null` gap, where `if (!battle) return;` preserves battle A's map. None is reachable through the shipped screen (`livePlayerPortfolio` is complete on the seed pass, and every `setCurrentBattle` in `App.jsx` is paired with a `setScreen` that unmounts the view), so they are latent, not live — but the comment presents the condition as complete and it is not: it is *the first non-empty book wins, forever*.
+
+**And the fix suppresses one real crossing**: doc present, book empty, then the book fills on the same tick a piece crosses → nothing announced. `deriveBaggerMoment.js:89-91` states the opposite doctrine in as many words. Narrow (a real swap-in writes a zero-reset entry) but it is two files of one feature disagreeing.
+
+### A2 — the dropped `tierMultiplier` · AMENDED — the defect is real, the route is dead
+`tierMultiplier` **is** on the enriched asset (`enrichAsset` returns `{ ...asset }`), and mounted with a stamped star piece the footer renders `1× banked` where the pre-fix expression gave `2` — so the §9 disagreement was genuine and is genuinely closed.
+
+**But a flat6 star piece cannot reach this footer.** The stamp exists only where `flatMultiplier != null`, i.e. `gameMode: 'baggerbomb_tournament'`, and `BattleViewScreen.jsx:30-40` routes exactly those to `LeagueBattleViewConnected` *before* the `agentDeployed` branch, with `LEAGUE_BATTLEVIEW_ROUTING_ENABLED` true. **The headline scenario cannot occur through this screen.** The fix is a correct §9 alignment on an unreachable path.
+
+Two things the refuter surfaced in passing, both recorded as debts (§9):
+- `featureFlags.js:257-259` — the routing flag's flip was written `= true;` instead of the `true || (…)` its docstring prescribes, leaving an orphaned expression statement. The value is right; the code no longer says what it means.
+- `baggerBombUtils.js:596` — the bagger bonus is **+15 flat, not scaled by conviction**. `tierMultiplier` scales only `basePoints`. So `Bagger hit · 2× banked` names a multiplier that was not applied to the thing the line is about. Ruling 8 rules exactly this wording ("the number the player is playing for"), so it stands as ruled — but it is the same one-row-two-sources family, still open beside the fix.
+
+### A3 — the colourless eyebrow · CONFIRMED, measured
+The refutation it went looking for was Tailwind Preflight's `button { color: inherit }`, which would have made the eyebrow inherit a legible colour and the finding a non-event. **It is not in the shipped bundle** — Tailwind 4.1.16 with `@tailwind base;` emits no preflight (`grep -c "color:inherit" dist/assets/index-*.css` → `0`). The only button rule repo-wide is the 16px font-size guard, so the UA `button { color: ButtonText }` stands and resolves light.
+
+Real Chromium, production CSS, the actual SSR output:
+
+| | contrast on the bubble |
 |---|---|
-| A1 | The seed fix is complete — no false announcement survives, and no real crossing is suppressed |
-| A2 | `tierMultiplier` is genuinely present on the enriched asset, and the tournament route into this screen is live |
-| A3 | The colourless eyebrow was genuinely *invisible*, not merely unstyled |
-| A4 | The `offsetTop` reasoning matches how iOS reports the visual viewport, and returning 0 at any zoom is right |
-| B1 | F2's narrow-desktop case is reachable in practice — with the pane's real width at 1024px computed, not asserted |
-| B2 | The arrival fade is unseen in the common case, including on the desktop where the pane opens by default |
-| B3 | A viewport-fixed mark genuinely costs brief §2.1's promise, rather than merely overlapping visually |
+| pre-fix eyebrow (black on `rgb(2,3,3)`) | **1.02 : 1** |
+| post-fix (`#f59e0b`) | 9.62 : 1 |
+| the line beside it | 14.01 : 1 |
 
----
+Invisible is the correct word; the line 20px below it proves the omission was specific to the eyebrow.
+
+### A4 — `viewportInsetFrom` · AMENDED — right in direction, half of it inert
+The pinch-zoom half survives and is a large improvement (at `innerHeight 800 / visual 378 / scale 2` the old expression returns **422**, the new one **0**).
+
+**The `offsetTop` half almost never fires, and the docstring is wrong about why.** Per CSSOM-View, `offsetTop` changes fire **`scroll`**, not `resize`, and `useViewportHeight` registers `resize` only — and even adding a scroll listener would not help, because the state is the *height*, so an unchanged height is a React bail-out. The row that pins this tests the **function** at a reading the app can never re-render with.
+
+**And returning 0 at any zoom breaks the chrome case**: at 2× with a 44px toolbar up the mark goes back under the toolbar. Bounded (0 is far better than 422), but the comment's *"a zoomed page has no chrome offset worth correcting for"* is an assertion, not a result. `scale < 1` is reachable (`maximum-scale=5.0, user-scalable=yes`) and disables the helper entirely.
+
+### B1 — F2's ordering · CONFIRMED, and this review understated it
+The gate is byte-identical to `3543abc0`; only the comment and the `data-pane-*` attributes changed around it.
+
+**The reachability attack failed decisively.** The breakpoint is **`min-width: 768px`**, not 1024 — so an iPad in portrait is a "desktop" and `openByDefault: isDesktop` opens the pane there. Measured in Chromium with the production CSS: the row has no gap and no horizontal padding, so the pane is exactly **2/5 of the viewport**, and the header's fixed cost is **326.7px** (28 padding + 36 face + 20 gaps + 242.7 controls).
+
+| viewport | pane | identity column | the name | the archetype |
+|---|---|---|---|---|
+| **768** | 307.2 | **0 px** | **14 lines**, one letter each | paints over the controls; **controls overflow the header by 7.7px** |
+| 1022 | 409 | 81.3 px | 2 lines | still overflows onto the controls |
+| 1150 | 460 | 132.3 px | 1 line | fits |
+
+So at the width the task named the name wraps while the archetype stays — the inverse of the ruling, as claimed. **At the real breakpoint the failure is worse than "the wrong thing hid":** the identity column is annihilated. `flexShrink: 0` on the controls is what guarantees it — with negative free space the name is the only thing that can give, and it gives everything.
+
+### B2 — the arrival fade · AMENDED — the mechanism is exact, "nearly never" is not
+Every structural claim holds, measured on the real screen: all three sections mount whenever the pane does; on mobile the pane renders hidden while closed; a trade landing then fades both copies out of sight; opening the pane re-uses the **same node**.
+
+**But the headline is wrong.** `openByDefault: isDesktop` plus a default section of Chat means the desktop's resting state — the brief's own §5 deliverable 1 — has the Chat section **visible**, and a trade arriving there mounts a fresh card in view and the fade plays. That is the common desktop case, not an edge.
+
+**The claim that survives:** the fade is unseen on mobile whenever the pane is shut, on either shell whenever the reader is on Bench or Tape, and *always* for Tape's duplicate card, which mounts behind Chat and can never be watched arriving.
+
+### B3 — `AVATAR_CLEARANCE_PX` · CONFIRMED, hit-tested
+The proposed refutation — `pointerEvents: 'none'` on the container — is true and does not save it: the mark's **button** is `pointerEvents: 'auto'` with a 48×48 minimum, fixed to the viewport.
+
+The refuter dumped the real mobile DOM, loaded it into Chromium at 390×844 with the production CSS, and sampled a 7×7 grid over the mark at nine scroll positions, asking `elementsFromPoint` what sits beneath:
+
+```
+scrollY=  0  blocked=['chip:"ORCL"']      scrollY=295  blocked=['chip:"CRM"']
+scrollY=118  blocked=['chip:"IBM"']       scrollY=354  blocked=['BUTTON[role=button]']
+scrollY=413  blocked=['BUTTON[role=button]']   scrollY=472  blocked=[]   ← the scroll END
+```
+
+At **five of nine positions** a real tap target is under the mark and the mark is on top: opponent symbol chips (`onSymbolClick` → the research modal) and a `<button>`. Those taps are **captured, not merely overlapped**. Only at the scroll end is the box clear — which is exactly, and only, what the reservation still buys, and what the amended comment now says it buys.
 
 ## 8. NOT DONE, and why — for the founder
 
 Two items are recorded as incomplete rather than quietly shipped.
 
 ### 8.1 F2's ordering is not implemented
+
+> **DISPOSITION (founder, after this record): RULED AND BUILT.** The archetype line now hides first, on a second `min-width` query derived from the header's own arithmetic. See the handover, and commit `20524c7c`. The analysis below is left as it stood when the review closed.
 > *"on narrow widths the archetype line hides first, then the name wraps"*
 
 The gate is `isDesktop && archetype`, **unchanged since `3543abc0`** — only the comment above it is new. That is a shell split, not a width query: on a genuinely narrow *desktop* pane the archetype line stays and the name wraps, which is the inverse of the ruling. The repo has no container-query idiom and jsdom does no layout, so implementing the real ordering means introducing one and testing it in a browser.
@@ -178,6 +246,8 @@ The gate is `isDesktop && archetype`, **unchanged since `3543abc0`** — only th
 **This needs a line, not a comment.** §7 carries the refuter's arithmetic on how reachable the narrow-desktop case actually is.
 
 ### 8.2 The arrival fade is mostly not seen
+
+> **DISPOSITION (founder, after this record): "once per mount" STANDS AS BUILT.** No code change; both consequences are now recorded at the mechanism itself (`TapeCards.jsx`), and §7's B2 amends "nearly never" to the accurate claim. Commit `2d6ee6e3`.
 All three pane sections are mounted whenever the pane is mounted, and on mobile the pane renders (hidden) even when closed. So a trade landing while the pane is shut mounts and fades both cards **invisibly**; opening the pane shows the same node with nothing to play.
 
 "Once per mount" is what the ruling says and what was built. If the intent was "once per first sight", that is a different mechanism — and it collides with hazard 45, because making the card fade when its section is selected would remount it.
@@ -192,5 +262,7 @@ Also recorded, from the build's own note: a page **load** is a mount, so the car
 2. **`TacticalRow.jsx` is on neither guard list** and now paints `rgba(var(--ft-teal-rgb), …)`, `cssVar('teal')` and `motionToken('smooth')`. Compliant by rule (§10, §11) and verified by hand, but hazard 42's shape one file over: the next such addition has nothing mechanical to stop it.
 3. **Pre-existing lint in `TacticalRow.jsx`** — two `react-hooks/rules-of-hooks` errors and an unused `allocationLabel`, all present at `3543abc0`. Not made live by this session's props.
 4. **Repo-wide eslint false positive**: `'motion' is defined but never used` fires on every file using `motion.div`. It is a config problem, not a code one, and it buries real findings.
-5. Phase 0 §8's four debts and the previous handover's five are unchanged.
-6. **`useSessionCompositeTrail.test.jsx` fails standalone** — reproduces at `8e63ea65`, predates this branch. A task card is queued.
+5. **`featureFlags.js:257-259`** — `LEAGUE_BATTLEVIEW_ROUTING_ENABLED`'s flip was written `= true;` where its own docstring prescribes `true || (…)`, leaving an orphaned expression statement below it. The value is correct; the code no longer says what it means. Found by the refuter while proving A2's route dead.
+6. **The bagger bonus is flat (+15), not scaled by conviction** (`baggerBombUtils.js:596`) — `tierMultiplier` scales `basePoints` only. `Bagger hit · {mult}× banked` therefore names a multiplier that was not applied to the bonus the line is about. Ruling 8 rules this wording deliberately ("the number the player is playing for"), so it stands — recorded because it is the same one-row-two-sources family as the fix beside it.
+7. Phase 0 §8's four debts and the previous handover's five are unchanged.
+8. **`useSessionCompositeTrail.test.jsx` fails standalone** — reproduces at `8e63ea65`, predates this branch. A task card is queued.
