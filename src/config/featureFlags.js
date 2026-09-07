@@ -2036,12 +2036,16 @@ export function isBattleViewControllerOn() {
  * and Tape. The bottom strip and the three-detent sheet retire behind it
  * (D-93, superseding D-74).
  *
- * When FALSE (DEFAULT, merge-dark), the Battle View renders Phase A2 exactly
- * as merged — the desktop PeekStrip column, the mobile ChatSheet, the header's
- * Game Tape link and watchlist chip, the global bug widget. Every A3 branch is
- * `paneOn ? <new> : <the A2 JSX as merged>`, so pane-off is byte-identical and
- * has its own golden (agentBattleScreen.controllerOn.paneOff.html), captured
- * from the pre-build commit 8e63ea65.
+ * LIVE (DEFAULT true) since the flip, in its own one-line PR after the
+ * founder's A3.5 preview smoke on `smoke/character-pane`. FALSE is now the
+ * ROLLBACK, and it is one literal above: with it false the Battle View renders
+ * Phase A2 exactly as merged — the desktop PeekStrip column, the mobile
+ * ChatSheet, the header's Game Tape link and watchlist chip, the global bug
+ * widget. Every A3 branch is `paneOn ? <new> : <the A2 JSX as merged>`, so
+ * pane-off stays byte-identical and keeps its own golden
+ * (agentBattleScreen.controllerOn.paneOff.html), captured from the pre-build
+ * commit 8e63ea65 and asserted through a forced-false mock — so the flip leaves
+ * that file guarding the fallback rather than following the flag to the pane.
  *
  * NESTED on the controller, deliberately: the pane replaces containers the
  * controller introduced, so it can only mean anything where the controller is
@@ -2051,14 +2055,14 @@ export function isBattleViewControllerOn() {
  * No query-string override. The controller's `?battleViewController=1` was
  * deleted in the same commit that flipped it (the `?fuseHero=1` precedent, and
  * the `?leagueLiveOrb=1` lesson behind it); this runway does not re-open that
- * door. The founder's A3.5 smoke uses the Phase 0 §7 pattern instead.
+ * door. The founder's A3.5 smoke used the Phase 0 §7 pattern instead.
  *
  * Read it at RENDER scope through isCharacterPaneOn() below, never as a
  * module-scope const (the Pass 1 hazard: 15 of 56 featureFlags vi.mock sites
  * use a bare factory with no importOriginal spread).
  */
 // Pinned by: characterPaneFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const BATTLE_VIEW_CHARACTER_PANE_ENABLED = false;
+export const BATTLE_VIEW_CHARACTER_PANE_ENABLED = true;
 
 /**
  * The ONE home for the character-pane gate: the controller AND the pane flag.
