@@ -31,6 +31,7 @@ vi.mock('../../services/agentService', () => ({ submitDailyGrades: vi.fn() }));
 vi.mock('./LiveActivityPanel', () => ({ default: () => null, BreakthroughAlerts: () => null }));
 
 import AgentChat from './AgentChat';
+import { OPENER_LAZY_FALLBACK_ENABLED } from '../../config/featureFlags';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};
@@ -126,6 +127,13 @@ describe('what the chat then sends', () => {
     root = createRoot(container);
     await render({ battleId: 'ab-send-3', agentId: 'agent-send-3' });
     expect(openerCalls(spy)).toHaveLength(1);
+  });
+
+  it('the flag is the outer gate, and it ships TRUE (the live-state pin)', () => {
+    // The value pin BUILD_RULES §2 asks a flip commit to reconcile — pointed at
+    // from the flag's definition, so flagPinGuard.test.js keeps the pair honest
+    // and a walk-back reds here with a file:line rather than silently.
+    expect(OPENER_LAZY_FALLBACK_ENABLED).toBe(true);
   });
 
   it('an existing first_message means nothing to backfill', async () => {

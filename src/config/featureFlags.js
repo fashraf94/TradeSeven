@@ -1097,8 +1097,9 @@ export const REGIME_STAMP_ENABLED = true;
  * truncated body fails JSON parse, and the try/catch swallows it (non-blocking by
  * design) — so tiered battles intermittently open with a silent timeline.
  *
- * When FALSE (default), behavior is byte-identical to today: the client makes no
- * ensure-opener call and POST /api/agent/ensure-opener no-ops. When TRUE, the
+ * LIVE — TRUE since the flip PR that followed the dark build's preview smoke.
+ * When FALSE, behavior is byte-identical to the pre-build state: the client makes
+ * no ensure-opener call and POST /api/agent/ensure-opener no-ops. When TRUE, the
  * Command Center chat (AgentChat) checks on mount whether a first_message exists
  * and, if not, calls the non-fenced POST /api/agent/ensure-opener, which
  * regenerates the opener with a patient (~40s) budget + one deadline-bounded retry
@@ -1106,9 +1107,13 @@ export const REGIME_STAMP_ENABLED = true;
  * never silent. Late-open (chat already has content, no opener) is a deliberate
  * no-op. The fenced deploy path is untouched.
  *
- * Built/merged DARK; flip in a one-line follow-up PR after a Vercel preview smoke
- * (the SCOUTING_BOARD_ENABLED precedent) — never in the build PR.
+ * Built/merged DARK and flipped in a one-line follow-up PR after a Vercel preview
+ * smoke (the SCOUTING_BOARD_ENABLED precedent) — never in the build PR. That flip
+ * left this docstring and ensure-opener.js's header calling FALSE the default,
+ * which is the stale-header class BUILD_RULES §2 and §6 both name; both now say
+ * what the value is.
  */
+// Pinned by: src/components/Agent/AgentChat.ensureOpener.jsdom.test.jsx (the live-state pin — update the assertion in the flip commit if this is ever walked back).
 export const OPENER_LAZY_FALLBACK_ENABLED = true;
 
 /**

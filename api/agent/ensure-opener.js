@@ -9,7 +9,12 @@
 // deterministic floor, so a fresh-deploy chat is never silent — WITHOUT editing
 // the fenced deploy path (it only CALLS the shared non-fenced builders).
 //
-// Flag-gated (OPENER_LAZY_FALLBACK_ENABLED, default false → 200 no-op).
+// Flag-gated (OPENER_LAZY_FALLBACK_ENABLED). The flag DEFAULTS TO TRUE
+// (featureFlags.js:1112) — it was built and merged dark and flipped in its own
+// follow-up PR after the preview smoke, and this header outlived the flip by
+// still calling `false` the default. It is the kill switch, not the shipped
+// state: set to false the route is a 200 `{ status: 'disabled' }` no-op and the
+// client makes no call at all.
 //
 // Decision tree (after auth + ownership, active battle):
 //   - a first_message already exists       → { status:'already_present' }  (no write)
