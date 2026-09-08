@@ -171,9 +171,9 @@ describe('ensure-opener decision tree', () => {
     expect(res.statusCode).toBe(403);
     expect(res.body.error).toBe('agent_battle_mismatch');
     // The guarantee this row was written for is intact and stronger: the agent
-    // doc is still resolved from battle.agentId — proved by the ABSENT row
-    // below, which opens with no body id at all — and a body id can no longer
-    // be sent without matching it.
+    // doc is still resolved from battle.agentId (the MATCH row below opens with
+    // the battle's own id and never with the body's), and a body id can no
+    // longer be sent without matching it — nor omitted.
   });
 });
 
@@ -212,15 +212,17 @@ describe('ensure-opener guards', () => {
     expect(state.updates).toHaveLength(0);
   });
 
-  it('422 when the battle has no agentId (early open)', async () => {
+  it('a battle with no agentId is refused by the binding check, before the 422 branch', async () => {
     state.battle.agentId = undefined;
     const res = mkRes();
-    // The body names no agent — the shipped client's shape (AgentChat.jsx sends
-    // `{ battleId }`). A body that DID name one would be refused earlier now,
-    // by the binding check below, so this row keeps guarding the 422 branch
-    // rather than silently moving to a 403.
-    await handler(mkReq({ battleId: 'b1' }), res);
-    expect(res.statusCode).toBe(422);
+    // The 422 branch ('battle has no agentId') is now UNREACHABLE through the
+    // handler and this row says so rather than pretending to guard it: the
+    // binding check is unconditional, and a battle whose own agentId is absent
+    // can match no body id at all, so every such call stops at the 403. The
+    // branch stays as defence in depth against a future reordering.
+    await handler(mkReq({ battleId: 'b1', agentId: 'a1' }), res);
+    expect(res.statusCode).toBe(403);
+    expect(res.body.error).toBe('agent_battle_mismatch');
     expect(state.updates).toHaveLength(0);
   });
 });
@@ -249,13 +251,27 @@ describe('ensure-opener — the agent must belong to this battle', () => {
     expect(state.updates).toHaveLength(1);
   });
 
-  it('ABSENT: no agentId in the body is not a mismatch — the shipped client\'s call is unchanged', async () => {
+  it('ABSENT: a body with no agentId is refused too — the check is UNCONDITIONAL', async () => {
+    // Both shipped callers send the battle's own agentId now (AgentChat.jsx,
+    // mounted by the Battle View controller column and by the arena's Command
+    // Center tab), so an absent id is no longer the shipped shape — it is a
+    // caller that has not proved which agent it means. The conditional branch
+    // that waved it through is gone; nothing is generated and nothing written.
     gemma.callGemmaVoice.mockResolvedValue('{"response":"Deployed."}');
     gemma.parseVoiceLayerResponse.mockReturnValue({ response: 'Deployed.' });
     const res = mkRes();
     await handler(mkReq({ battleId: 'b1' }), res);
-    expect(res.statusCode).toBe(200);
-    expect(res.body.status).toBe('generated');
-    expect(state.updates).toHaveLength(1);
+    expect(res.statusCode).toBe(403);
+    expect(res.body.error).toBe('agent_battle_mismatch');
+    expect(gemma.callGemmaVoice).not.toHaveBeenCalled();
+    expect(state.updates).toHaveLength(0);
+  });
+
+  it('an EMPTY-STRING agentId is refused as well (the predicate takes no falsy id)', async () => {
+    const res = mkRes();
+    await handler(mkReq({ battleId: 'b1', agentId: '' }), res);
+    expect(res.statusCode).toBe(403);
+    expect(res.body.error).toBe('agent_battle_mismatch');
+    expect(state.updates).toHaveLength(0);
   });
 });

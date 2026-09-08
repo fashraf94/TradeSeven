@@ -86,10 +86,15 @@ const abortingGemma = () => {
 };
 const exchangeWritten = () => db.updates.find((u) => u.data.chatExchanges)?.data.chatExchanges.__arrayUnion;
 
+// Every body here carries `{ battleId, agentId }` — the shape BOTH shipped
+// callers send (AgentChat.jsx, mounted by the Battle View controller column and
+// by the arena's Command Center tab). The route's agent-belongs-to-this-battle
+// check is unconditional, so a body without the id is a 403 and never reaches
+// the grounding branches these rows are about.
 describe('ensure-opener under the grounding flag', () => {
   it("asks the accessor once, with the owner's uid (the ownership check precedes it, so the caller's and the owner's uid are one here)", async () => {
     generatedGemma();
-    await handler({ method: 'POST', body: { battleId: 'b1' } }, mkRes());
+    await handler({ method: 'POST', body: { battleId: 'b1', agentId: 'a1' } }, mkRes());
     expect(state.calls).toEqual(['owner-1']);
   });
 
@@ -97,7 +102,7 @@ describe('ensure-opener under the grounding flag', () => {
     state.mode = 'on';
     generatedGemma();
     const res = mkRes();
-    await handler({ method: 'POST', body: { battleId: 'b1' } }, res);
+    await handler({ method: 'POST', body: { battleId: 'b1', agentId: 'a1' } }, res);
     expect(res.body.status).toBe('generated');
     expect(state.firstMessageArgs[0].grounded).toBe(true);
     const ex = exchangeWritten();
@@ -109,7 +114,7 @@ describe('ensure-opener under the grounding flag', () => {
     state.mode = 'on';
     abortingGemma();
     const res = mkRes();
-    await handler({ method: 'POST', body: { battleId: 'b1' } }, res);
+    await handler({ method: 'POST', body: { battleId: 'b1', agentId: 'a1' } }, res);
     expect(res.body.status).toBe('floored');
     expect(state.templateArgs[0].grounded).toBe(true);
     expect(exchangeWritten().groundingVersion).toBe(1);
@@ -118,7 +123,7 @@ describe('ensure-opener under the grounding flag', () => {
   it.each(['off', 'shadow'])("'%s': the shipped opener — not grounded, no marker on the exchange", async (mode) => {
     state.mode = mode;
     generatedGemma();
-    await handler({ method: 'POST', body: { battleId: 'b1' } }, mkRes());
+    await handler({ method: 'POST', body: { battleId: 'b1', agentId: 'a1' } }, mkRes());
     expect(state.firstMessageArgs[0].grounded).toBe(false);
     const ex = exchangeWritten();
     expect(ex.messageType).toBe('first_message');
@@ -127,7 +132,7 @@ describe('ensure-opener under the grounding flag', () => {
 
   it("'off' + floored: the shipped floor — the builder is asked for grounded: false", async () => {
     abortingGemma();
-    await handler({ method: 'POST', body: { battleId: 'b1' } }, mkRes());
+    await handler({ method: 'POST', body: { battleId: 'b1', agentId: 'a1' } }, mkRes());
     expect(state.templateArgs[0].grounded).toBe(false);
     expect('groundingVersion' in exchangeWritten()).toBe(false);
   });

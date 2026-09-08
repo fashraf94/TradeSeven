@@ -19,12 +19,15 @@
 // never drag a dependency into a route's graph.
 //
 // WHAT THIS FILE OWNS is only "does this id name this battle's agent". Whether
-// an id is REQUIRED is the route's own stance and stays at the call site:
-//   - chat.js and file-directive.js already 400 on a missing `agentId`, so the
-//     check is unconditional there;
-//   - ensure-opener.js resolves the agent from the battle and its shipped
-//     client sends `{ battleId }` alone, so an ABSENT id is not a mismatch —
-//     only a PRESENT id naming a different agent is.
+// an id is REQUIRED is the route's own stance and stays at the call site — and
+// all three routes now take the same stance:
+//   - chat.js and file-directive.js 400 on a missing `agentId`, so the check is
+//     unconditional there;
+//   - ensure-opener.js resolves the agent from the battle doc, so a missing id
+//     costs it nothing to answer — but both of its shipped callers send one
+//     (AgentChat.jsx, mounted by the Battle View controller column and by the
+//     arena's Command Center tab), so its check is unconditional too and an
+//     ABSENT id is refused as a mismatch rather than waved through.
 
 /** The error code every route returns on a mismatch (`file-directive.js` shipped it first). */
 export const AGENT_BATTLE_MISMATCH = 'agent_battle_mismatch';

@@ -685,10 +685,19 @@ export default function AgentChat({
   // every server outcome (generated / floored / no_action_needed) leaves the
   // battle marked and a tab remount never re-POSTs. The server is idempotent and
   // transaction-guarded, so even a stray double-fire cannot duplicate the opener.
+  //
+  // BOTH MOUNTS SEND `agentId` (the Battle View controller column and the
+  // arena's Command Center tab both hand this component the battle's own
+  // `agentBattle.agentId` — AgentBattleScreen.jsx:1781 / :2473), so the route's
+  // agent-belongs-to-this-battle check is unconditional there, as it already is
+  // on the chat and filing routes. The id is the battle's, never a guess: an
+  // absent one is now a 403, so the effect waits for the subscribed doc rather
+  // than firing without it and burning the one-shot on a refusal.
   useEffect(() => {
     if (!OPENER_LAZY_FALLBACK_ENABLED) return;
     if (battleStatus !== 'active') return;
-    if (!battleId) return; // the server resolves the agent from the battle doc — no agentId needed here
+    if (!battleId) return;
+    if (!agentId) return; // the doc has not landed yet — see the binding note above
     if (attemptedOpenerBattleIds.has(battleId)) return;
     const hasFirstMessage = (chatExchanges || []).some(
       ex => ex && ex.messageType === 'first_message',
@@ -707,7 +716,7 @@ export default function AgentChat({
         await fetch('/api/agent/ensure-opener', {
           method: 'POST',
           headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ battleId }),
+          body: JSON.stringify({ battleId, agentId }),
         });
         // Ignore the response — the Firestore listener repaints chatExchanges when
         // the write lands. No optimistic insert, no ordering change.
@@ -717,7 +726,7 @@ export default function AgentChat({
         // already failed independently.
       }
     })();
-  }, [chatExchanges, battleId, battleStatus]);
+  }, [chatExchanges, battleId, agentId, battleStatus]);
 
   // ── 30s timeout for in-flight bubbles ─────────────────────────────────────
   // Per spec §4.5 refinement: if an optimistic user bubble has been pending
