@@ -15,6 +15,11 @@ import { resolveBudgetDay, readAgentChatBudget, chargeAgentChatBudget } from '..
 // run the literal legacy normalizeDirective path → byte-identical.
 import { gateDirective, renderDirectiveStatus } from '../_utils/directiveGate.js';
 import { getEffectiveArchetype } from '../_utils/directiveIdentity.js';
+// The agent-belongs-to-this-battle check the deterministic filing route has
+// carried since it shipped (file-directive.js check 3), now shared rather than
+// re-typed: ownership proves the battle is the caller's, not that the agent
+// they named is the one this battle is bound to.
+import { agentBelongsToBattle, AGENT_BATTLE_MISMATCH } from '../_utils/agentBattleBinding.js';
 import { ARCHETYPE_INTEGRITY_MODE, LEAGUE_AGENT_CHAT_ENABLED, getVoiceGroundingMode } from '../../src/config/featureFlags.js';
 // Voice-layer grounding (VOICE_LAYER_GROUNDING_SPEC_V1_2): the per-caller mode
 // is read at CALL time through getVoiceGroundingMode(uid); under 'on' (battle
@@ -267,6 +272,17 @@ export default async function handler(req, res) {
     // 7. Verify ownership
     if (battle.ownerId !== user.uid) {
       return res.status(403).json({ error: 'Not authorized to chat in this battle' });
+    }
+
+    // 7b. Verify the agent belongs to THIS battle. `agentId` is required above,
+    //     so the check is unconditional — the same stance file-directive.js
+    //     takes, through the same predicate. Checked here, at the first point
+    //     the battle doc is known, so a mismatched id never reaches the agent
+    //     read at step 10 and no prompt is ever assembled from the wrong agent.
+    //     Every legitimate caller sends the battle's own agent; a body naming a
+    //     different one is refused in every mode, review included.
+    if (!agentBelongsToBattle(battle, agentId)) {
+      return res.status(403).json({ error: AGENT_BATTLE_MISMATCH });
     }
 
     // 8. Mode detection (with bounded client override)

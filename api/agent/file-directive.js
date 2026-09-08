@@ -19,9 +19,10 @@
 //      is gated itself, not only the chip (404 at 'off' for this caller);
 //   1. the authenticated owner (the uid from the token, never the body);
 //   2. the battle is active;
-//   3. the agent belongs to this battle — a check the chat route never made
-//      (Phase 0 §5 item 4; discrepancy 15): this route carries it from the
-//      start, and never copies chat.js's absence of it;
+//   3. the agent belongs to this battle (Phase 0 §5 item 4; discrepancy 15) —
+//      the check this route carried from the start and the chat route did not.
+//      It is now the SHARED `agentBelongsToBattle` (agentBattleBinding.js),
+//      which chat.js and ensure-opener.js call too: one predicate, not three;
 //   4. the current directive's thread id equals expectedDirectiveThreadId;
 //   5. the adjustment id is permitted for the SERVER-DERIVED archetype
 //      (getEffectiveArchetype: the battle's frozen snapshot, else the agent's)
@@ -75,6 +76,9 @@ import { randomUUID } from 'node:crypto';
 import { getVoiceGroundingMode } from '../../src/config/featureFlags.js';
 import { isValidAdjustmentId, getCanonicalText, getCanonicalTextVersion } from '../../src/data/archetypeAdjustments.js';
 import { getEffectiveArchetype } from '../_utils/directiveIdentity.js';
+// The agent-belongs-to-this-battle predicate, now shared with the chat route
+// and the lazy opener (agentBattleBinding.js) rather than inline here.
+import { agentBelongsToBattle, AGENT_BATTLE_MISMATCH } from '../_utils/agentBattleBinding.js';
 import { TOURNAMENT_GAME_MODE } from '../../src/constants/leagueTournament.js';
 import {
   resolveBudgetDay,
@@ -180,7 +184,7 @@ export default async function handler(req, res) {
       // Check 2 — the battle is active.
       if (battle.status !== 'active') return { kind: 'battle_not_active' };
       // Check 3 — the agent belongs to this battle.
-      if (battle.agentId !== agentId) return { kind: 'forbidden_agent' };
+      if (!agentBelongsToBattle(battle, agentId)) return { kind: 'forbidden_agent' };
       // Check 4 — the client's belief about the current directive.
       const currentThreadId = typeof battle.directive?.directiveThreadId === 'string' && battle.directive.directiveThreadId
         ? battle.directive.directiveThreadId
@@ -282,7 +286,7 @@ export default async function handler(req, res) {
       case 'forbidden_owner':
         return res.status(403).json({ error: 'Not authorized to file in this battle' });
       case 'forbidden_agent':
-        return res.status(403).json({ error: 'agent_battle_mismatch' });
+        return res.status(403).json({ error: AGENT_BATTLE_MISMATCH });
       case 'battle_not_active':
         return res.status(400).json({ error: 'battle_not_active', message: 'This battle has ended.' });
       case 'conflict':

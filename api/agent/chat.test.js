@@ -229,6 +229,10 @@ const VALID_AGENT = {
 
 const VALID_BATTLE = {
   ownerId: 'test-user',
+  // The battle's own agent, set once at creation (agentBattleService.js:105).
+  // Every row in this file posts `agentId: 'agent-1'`, which is what the
+  // agent-binding check at chat.js step 7b now requires them to.
+  agentId: 'agent-1',
   status: 'active',
   gameMode: 'standard',
   chatBudgetUsed: 0,
@@ -965,6 +969,51 @@ describe('agent/chat — the turn deadline handed to the directive gate is wired
 });
 
 // ==================== Voice-layer grounding — the chat turn under the flag (G2) ====================
+
+describe('agent/chat — the agent must belong to this battle (step 7b)', () => {
+  // Ownership proves the battle is the caller's; it does not prove the agent
+  // they named is the one this battle is bound to. A caller who owns two
+  // battles could name battle A and agent B, and every read below step 7 would
+  // answer for the wrong agent. `POST /api/agent/file-directive` has carried
+  // this check since it shipped; these two rows are the chat route's.
+  const post = async (body, battleOverrides = {}) => {
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: { ...VALID_BATTLE, ...battleOverrides } });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi', ...body });
+    await handler(req, res);
+    return { res, fixture };
+  };
+
+  it('MISMATCH: a body naming an agent this battle is not bound to → 403, no model call, no write', async () => {
+    let calls = 0;
+    callGemmaVoiceImpl.current = async () => { calls++; return '{"response":"hi"}'; };
+
+    const { res, fixture } = await post({ agentId: 'agent-2' });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.body.error).toBe('agent_battle_mismatch');
+    // Refused before step 10's agent read and step 15's voice call: nothing was
+    // assembled from the wrong agent and nothing was persisted.
+    expect(calls).toBe(0);
+    expect(voiceLayerArgs.current).toEqual([]);
+    expect(fixture.written.updateCalls).toEqual([]);
+    expect(shadowLogCalls.current).toEqual([]);
+  });
+
+  it('MATCH: the battle\'s own agent answers exactly as before', async () => {
+    const { res, fixture } = await post({});
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.agentMessage).toBe('hi');
+    expect(fixture.written.updateCalls.length).toBeGreaterThan(0);
+  });
+
+  it('a battle doc carrying no agentId binds nothing, so every id is a mismatch', async () => {
+    const { res } = await post({}, { agentId: undefined });
+    expect(res.statusCode).toBe(403);
+    expect(res.body.error).toBe('agent_battle_mismatch');
+  });
+});
 
 describe('agent/chat — voice-layer grounding: the grounded turn (spec §3.4, ruling 23)', () => {
   const GROUNDED_ANTICIPATION = {

@@ -198,7 +198,7 @@ describe('file-directive — the eight checks, each falsifiable', () => {
     expect(res.body.error).toBe('battle_not_active');
   });
 
-  it("check 3: the agent must belong to this battle — the check chat.js never made", async () => {
+  it("check 3: the agent must belong to this battle — now the shared predicate chat.js and ensure-opener.js call too", async () => {
     state.agent = { __id: 'agent-2', archetype: 'diversifier' };
     const res = await post({ ...BODY, agentId: 'agent-2' });
     expect(res.statusCode).toBe(403);
