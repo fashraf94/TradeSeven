@@ -2109,13 +2109,24 @@ export function isCharacterPaneOn() {
  * its own one-line PR (BUILD_RULES §2). Rollback is the same literal, walked
  * back.
  *
+ * CURRENT STATE — 'shadow' (walk step 1, from 'off'; Sep 8 2026). Every caller
+ * still RECEIVES the shipped prompt, so the sent bytes are the off goldens;
+ * what changes is that chat.js assembles the grounded prompt beside it and both
+ * ride the shadow record (chat.js:313 gates that on `!== 'off'`). Two non-chat
+ * surfaces read `!== 'off'` too and come alive at this step, by design: the
+ * voice-layer cache cron mirrors `fundamentals` onto the cached briefs
+ * (§3.5, voice-layer-cache.js:819 — the shipped prompt ignores the field, which
+ * is why the off goldens' fixture carries one), and POST /api/agent/file-directive
+ * stops 404ing (§10, file-directive.js:152 — no chip mints a filing until 'on',
+ * chat.js:709). Everything else compares `=== 'on'` and is unchanged here.
+ *
  * Read it at CALL time through getVoiceGroundingMode(uid) below, never as a
  * module-scope const in a consumer (the isCharacterPaneOn rule: many
  * featureFlags vi.mock sites use a bare factory with no importOriginal
  * spread).
  */
 // Pinned by: voiceGroundingFlags.test.js (a STRING enum — pinned directly, outside flagPinGuard's `*_ENABLED` scan; this value and the pin move together — BUILD_RULES §2).
-export const VOICE_GROUNDING_MODE = 'off';
+export const VOICE_GROUNDING_MODE = 'shadow';
 
 /** The four founder-walked states, in walk order. */
 export const VOICE_GROUNDING_MODES = Object.freeze(['off', 'shadow', 'canary', 'on']);

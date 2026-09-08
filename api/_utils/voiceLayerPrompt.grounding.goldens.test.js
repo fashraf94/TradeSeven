@@ -4,10 +4,12 @@
 // goldens"; the Sep 7 rulings §1: "captured AFTER the ATR pick, from that
 // commit").
 //
-// THE DARK CONTRACT. With VOICE_GROUNDING_MODE 'off' (its live value) every
-// prompt the arc touches is BYTE-IDENTICAL to the pre-grounding assembly. The
-// bytes live in __fixtures__/voiceGroundingOffGoldens.json, captured by running
-// THIS file in regeneration mode inside a `git archive 70ba90a1` snapshot tree
+// THE DARK CONTRACT. With VOICE_GROUNDING_MODE 'off' — and at 'shadow', the
+// live value, which assembles the grounded prompt but still SENDS this one —
+// every prompt the arc touches is BYTE-IDENTICAL to the pre-grounding
+// assembly. The bytes live in __fixtures__/voiceGroundingOffGoldens.json,
+// captured by running THIS file in regeneration mode inside a
+// `git archive 70ba90a1` snapshot tree
 // — 70ba90a1 is the cherry-pick of the ATR fix (40008de8) onto this branch, the
 // last commit before any grounding edit touched the prompt module — so the
 // goldens are the untouched module's own output, not a copy of what the
