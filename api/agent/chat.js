@@ -6,7 +6,8 @@ import { callGemmaVoice, parseVoiceLayerResponse } from '../_utils/gemmaClient.j
 import { FieldValue } from 'firebase-admin/firestore';
 import { logConversation } from '../_utils/shadowLogger.js';
 // The platform's keep-alive for work that must outlive the response
-// (api/agent/equip-bundle.js and six sibling routes already use it). Off Vercel
+// (api/agent/equip-bundle.js and nine sibling routes in api/agent/ already use
+// it; twenty modules repo-wide). Off Vercel
 // it is a silent no-op, so this handler DETECTS the runtime hook rather than
 // trusting the call — see captureConversation below.
 import { waitUntil } from '@vercel/functions';
@@ -56,7 +57,11 @@ export const config = { maxDuration: 30 };
 //
 //   maxDuration        30s  the platform ceiling (above)
 //   TURN_DEADLINE_MS   24s  every model call must be DONE by here, leaving ~6s
-//                           for the awaited Firestore writes after the gate
+//                           for the awaited Firestore writes after the gate —
+//                           shared, since Sep 8 2026, with the shadow record's
+//                           settle (SHADOW_LOG_CAP_MS, clamped to
+//                           SHADOW_SETTLE_DEADLINE_MS so it can only ever take
+//                           what the writes have not already spent)
 //   GEMMA_TIMEOUT_MS   19s  the first (and only guaranteed) voice call
 //
 // The whole budget has to hold at once:
@@ -86,25 +91,38 @@ export const TURN_DEADLINE_MS = 24_000;
 
 // ==================== THE SHADOW RECORD'S DURABILITY ====================
 //
-// The three conversation records this handler writes are catalog events, and
-// BUILD_RULES §5 forbids fire-and-forget for those — "the shadow logger's
-// silent multi-week data loss is the cautionary tale". All three were
-// `logConversation({…}).catch(() => {})`: the promise was started and the
-// handler returned its response immediately, so on Vercel the invocation could
-// be FROZEN mid-write and the record simply never landed. Nothing surfaced —
-// not a log line, not a status — which is the exact shape of the loss the rule
-// was written about.
+// WHAT THIS IS NOT. These three GCS records are NOT the catalog event for a
+// chat turn — the awaited `chatExchanges` write at step 19 is (Signal Capture
+// Rider #7 / #9; the comments on the exchange record below say so, and
+// chat.test.js's Catalog #9 block says it again). That write was compliant
+// before this block existed and is untouched by it. So this is a durability
+// improvement to the shadow TRAINING stream, not a BUILD_RULES §5 remedy, and
+// it does not make the four sibling handlers that still write the same
+// `conversations` stream fire-and-forget into violations.
 //
-// TWO WAYS TO FINISH THE WRITE, in preference order:
+// WHY BOTHER, THEN: §5's cautionary tale — "the shadow logger's silent
+// multi-week data loss" — is about exactly this logger. All three records were
+// `logConversation({…}).catch(() => {})`: the promise was started and the
+// handler returned immediately, so on Vercel the invocation could be FROZEN
+// mid-write and the record simply never landed, with nothing surfaced — not a
+// log line, not a status. A stream whose whole purpose is diagnosing turns is
+// worth finishing rather than dropping.
+//
+// TWO WAYS TO GIVE THE WRITE A CHANCE TO FINISH, in preference order:
 //
 //   1. `waitUntil` — the platform keeps the invocation alive past the response,
-//      so the record completes and the user waits for nothing. This is the
-//      right answer wherever it exists.
+//      so the write continues and the user waits for nothing. BEST-EFFORT, NOT
+//      A GUARANTEE: it is still bounded by maxDuration, so a write needing
+//      longer than the invocation has left is killed with it — and, because the
+//      chain never settles, without even the not-persisted warning below.
 //   2. An AWAITED write bounded by SHADOW_LOG_CAP_MS, settled AFTER the
 //      response has been composed, everywhere else (local `vercel dev`, the
-//      test env, any runtime without the hook). The cap is the whole point: a
-//      slow or hanging GCS write can cost the turn at most two seconds, and a
-//      response that is already fully composed cannot be changed by it.
+//      test env, any runtime without the hook). What the cap bounds is the
+//      COST: a slow or hanging GCS write can delay the turn by at most two
+//      seconds, and a response already fully composed cannot be changed by it.
+//      What the cap does NOT do is save the record — on expiry the write is
+//      abandoned exactly as it was before, and the one warning line at settle
+//      is its only trace. The residual loss window is smaller, not closed.
 //
 // `waitUntil` from @vercel/functions is a no-op off-platform — it resolves the
 // request context through `Symbol.for('@vercel/request-context')` and calls
@@ -119,9 +137,22 @@ export const TURN_DEADLINE_MS = 24_000;
 // FALSE and never throws when GCS is disabled (no GCS_CREDENTIALS) or the write
 // was swallowed. That stays — a missing credential must not 500 a chat turn.
 // But it stops being SILENT AT THE CALL SITE: a record that did not persist
-// gets one warning line naming the turn, so a credential outage is visible in
+// gets one warning line naming the BATTLE, so a credential outage is visible in
 // this route's own logs instead of only in the logger's.
-const SHADOW_LOG_CAP_MS = 2_000;
+// Exported so chat.timeout.test.js guards the real values rather than a copy of
+// them: this cap is spent INSIDE the same maxDuration as the model call and the
+// awaited Firestore writes, so it is part of the timing system above, not an
+// independent setting.
+export const SHADOW_LOG_CAP_MS = 2_000;
+// …and the absolute ceiling the cap is clamped against, measured from
+// turnStartMs like every other deadline in this handler (the model call at the
+// Math.min below, the gate's own budget). An unclamped relative timer armed at
+// the TAIL of the request is a quantity with no relationship to maxDuration:
+// the awaited Firestore writes have already spent an unknown part of the
+// window by then, so a flat 2s can be the difference between answering and a
+// platform kill — which is the bare gateway 504, with no shadow log and no
+// honest client string, that the budget above exists to avoid.
+export const SHADOW_SETTLE_DEADLINE_MS = 28_000; // maxDuration:30 less 2s of platform margin
 const VERCEL_REQUEST_CONTEXT = Symbol.for('@vercel/request-context');
 
 /** The runtime's keep-alive hook, or null when this runtime has none. */
@@ -154,9 +185,19 @@ function captureConversation(record) {
       console.warn('[VoiceLayer] shadow conversation record threw — battle:', record?.battleId ?? null, '|', err?.message || err);
       return false;
     });
-  if (hasRuntimeWaitUntil()) {
-    waitUntil(write);
-    return null;
+  try {
+    if (hasRuntimeWaitUntil()) {
+      waitUntil(write);
+      return null;
+    }
+  } catch (err) {
+    // The runtime hook is the ONE thing in this function outside the promise
+    // chain, so it is the one thing that can break the "never throws" contract
+    // above — and a throw here escapes the HANDLER's catch block too, because
+    // that catch block is itself a caller. The turn would then answer with
+    // nothing at all. Fall through instead: the caller settles the same promise
+    // under the cap, so the record is not dropped either.
+    console.warn('[VoiceLayer] runtime waitUntil hook unusable — settling in-request instead:', err?.message || err);
   }
   return write;
 }
@@ -166,14 +207,21 @@ function captureConversation(record) {
  * response is composed, so what the user receives cannot depend on the logger —
  * only, at worst, two seconds of when they receive it.
  */
-async function settleConversationRecord(pending) {
+async function settleConversationRecord(pending, turnStartMs, battleId = null) {
   if (!pending) return;
+  // CLAMPED TO THE ABSOLUTE DEADLINE, exactly as the model call is: whatever
+  // the awaited writes above have already spent comes out of this cap, and a
+  // turn that is already at the ceiling waits zero.
+  const capMs = Math.max(0, Math.min(
+    SHADOW_LOG_CAP_MS,
+    turnStartMs + SHADOW_SETTLE_DEADLINE_MS - Date.now(),
+  ));
   let timer = null;
   const capped = new Promise((resolve) => {
     timer = setTimeout(() => {
-      console.warn(`[VoiceLayer] shadow conversation record still writing after ${SHADOW_LOG_CAP_MS}ms — responding anyway`);
+      console.warn(`[VoiceLayer] shadow conversation record still writing after ${capMs}ms — responding anyway — battle:`, battleId ?? null);
       resolve(false);
-    }, SHADOW_LOG_CAP_MS);
+    }, capMs);
   });
   try {
     await Promise.race([pending, capped]);
@@ -316,7 +364,9 @@ export default async function handler(req, res) {
   // Turn deadline anchor (Phase E1). Stamped at invocation so the gate's repair
   // budget is measured against true elapsed time vs maxDuration:30 —
   // TURN_DEADLINE_MS leaves ~6s headroom for the awaited Firestore writes after
-  // the gate returns.
+  // the gate returns — and, since Sep 8 2026, for the shadow record's settle,
+  // which is clamped to turnStartMs + SHADOW_SETTLE_DEADLINE_MS so it can only
+  // spend what those writes have not.
   const turnStartMs = Date.now();
   // Declared at handler scope: the voice call lives inside the try, but the
   // catch block's shadow record needs the elapsed time too. null = the turn
@@ -735,7 +785,7 @@ export default async function handler(req, res) {
         // Voice-layer grounding §9 (G6): the mode, both prompts and both history
         // windows, under any mode but 'off' (absent = the shipped record).
         ...(groundingRecord || {}),
-      }));
+      }), turnStartMs, battleId);
       return res.status(502).json({
         error: 'gemma_invalid_shape',
         errorReason: `parse_${parsed.errorReason}`,
@@ -993,7 +1043,7 @@ export default async function handler(req, res) {
     //     League `remaining` included — so the shadow record is settled now,
     //     under the cap. Nothing below this line can change what the client
     //     receives; at worst it changes when, by at most SHADOW_LOG_CAP_MS.
-    await settleConversationRecord(conversationCapture);
+    await settleConversationRecord(conversationCapture, turnStartMs, battleId);
     return res.status(200).json(clientResponse);
   } catch (error) {
     const isAbort = error?.name === 'AbortError';
@@ -1004,7 +1054,8 @@ export default async function handler(req, res) {
     }
 
     // Shadow log the failure (closes the diagnostic gap identified in the
-    // snag-bug investigation). Best-effort — never blocks the response.
+    // snag-bug investigation). Bounded, not best-effort: see the durability note
+    // below — this write is settled before the failure response goes.
     // Captures the user message, error reason, abort flag, and a truncated
     // error message so production can correlate first-message failure
     // patterns to specific Gemma / OpenRouter / Firestore failures.
@@ -1037,7 +1088,7 @@ export default async function handler(req, res) {
       // Voice-layer grounding §9 (G6): the mode, both prompts and both history
       // windows, under any mode but 'off' (absent = the shipped record).
       ...(groundingRecord || {}),
-    }));
+    }), turnStartMs, battleId);
 
     if (isAbort) {
       return res.status(504).json({ error: 'Agent response timed out. Try again.' });

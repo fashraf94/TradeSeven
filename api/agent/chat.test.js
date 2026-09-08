@@ -163,11 +163,8 @@ vi.mock('firebase-admin/firestore', () => ({
 }));
 
 // Dependency-surface guard (BUILD_RULES §4): this file's import of the module under test is the runtime guard that its api → src imports stay Node-clean. Never mock it.
-const { default: handler, GEMMA_TIMEOUT_MS, TURN_DEADLINE_MS } = await import('./chat.js');
-// The cap is not exported (it is an internal of the durability wrapper); this
-// is the value the module's own comment and its warning line both name, held
-// here so a row can measure against it and a source tripwire keeps it honest.
-const SHADOW_LOG_CAP_MS_PIN = 2_000;
+const { default: handler, GEMMA_TIMEOUT_MS, TURN_DEADLINE_MS, SHADOW_LOG_CAP_MS, SHADOW_SETTLE_DEADLINE_MS } = await import('./chat.js');
+
 
 // ==================== Test fixture helpers ====================
 
@@ -478,7 +475,8 @@ describe('agent/chat — catch-block shadow logging (gap closure)', () => {
 
 describe('agent/chat — Catalog #9 round-boundary Film Room tagging', () => {
   // The durable chatExchanges write (api/agent/chat.js) is the catalog-event
-  // surface; the fire-and-forget shadow log is NOT. A tournament battle's
+  // surface; the GCS shadow log is NOT (it is durable now — see THE SHADOW
+  // RECORD'S DURABILITY — but durable is not the same as being the catalog). A tournament battle's
   // review exchanges carry groupId so round-boundary analysis can join
   // groupId → the group doc (bracketGameId/roundNumber are intentionally NOT
   // stamped on the battle doc — that's fenced createAgentBattle doc-shape).
@@ -501,7 +499,8 @@ describe('agent/chat — Catalog #9 round-boundary Film Room tagging', () => {
     const exchange = exchangeFromWrite(fixture.written);
     expect(exchange).toBeTruthy();
     expect(exchange.groupId).toBe('group-xyz'); // rides the awaited write
-    // The tag is signal capture only — never the fire-and-forget shadow log.
+    // The tag is signal capture only — it rides the durable chatExchanges
+    // write, never the GCS shadow record.
     expect(shadowLogCalls.current[0].groupId).toBeUndefined();
   });
 
@@ -1386,12 +1385,15 @@ describe('agent/chat — voice-layer grounding: the shadow assembly (spec §9, G
 
 // ==================== THE SHADOW RECORD'S DURABILITY ====================
 //
-// BUILD_RULES §5: catalog events persist through an awaited in-request write or
-// the queue-flag pattern — never fire-and-forget, because the shadow logger's
-// silent multi-week data loss is the cautionary tale. All three conversation
-// records here were `.catch(() => {})`, so on Vercel the invocation could be
-// frozen mid-write with nothing said. These rows hold the two ways the handler
-// now finishes the write, and the cap that keeps the second one honest.
+// NOT a §5 catalog claim: the catalog event for a chat turn is the awaited
+// `chatExchanges` write (see the Catalog #9 block above, which says the GCS
+// shadow log is NOT the catalog surface). What §5 does supply is the reason to
+// care — "the shadow logger's silent multi-week data loss is the cautionary
+// tale" is about this logger. All three conversation records here were
+// `.catch(() => {})`, so on Vercel the invocation could be frozen mid-write
+// with nothing said. These rows hold the two ways the handler now gives the
+// write a chance to finish, the cap that bounds what the second one costs, and
+// the clamp that keeps the cap from spending budget the awaited writes need.
 describe('agent/chat — the shadow record finishes before the function can be frozen', () => {
   const REQUEST_CONTEXT = Symbol.for('@vercel/request-context');
   // The REAL @vercel/functions waitUntil resolves this symbol and calls
@@ -1478,7 +1480,12 @@ describe('agent/chat — the shadow record finishes before the function can be f
     expect(done).toBe(true);            // released AT the cap, not later
     expect(res.statusCode).toBe(200);
     expect(res.body.agentMessage).toBe('hello there');
-    expect(warn.mock.calls.filter(([m]) => String(m).includes('still writing after 2000ms'))).toHaveLength(1);
+    const capLines = warn.mock.calls.filter(([m]) => String(m).includes('still writing after'));
+    expect(capLines).toHaveLength(1);
+    expect(capLines[0][0]).toContain(`after ${SHADOW_LOG_CAP_MS}ms`);
+    // …and it names the battle, like its two siblings: an unattributable line is
+    // the same silence one step removed.
+    expect(capLines[0]).toContain('battle-1');
   });
 
   it('with the runtime hook installed the write is handed to waitUntil — no wait at all, even for a hung logger', async () => {
@@ -1490,7 +1497,60 @@ describe('agent/chat — the shadow record finishes before the function can be f
     const elapsedMs = Date.now() - startedAt;
     expect(res.statusCode).toBe(200);
     expect(waited).toHaveLength(1);                 // the platform owns the write
-    expect(elapsedMs).toBeLessThan(SHADOW_LOG_CAP_MS_PIN / 2); // and the turn never paid the cap
+    expect(elapsedMs).toBeLessThan(SHADOW_LOG_CAP_MS / 2); // and the turn never paid the cap
+  });
+
+  it('the cap is CLAMPED to the absolute deadline — a turn already at the ceiling waits zero', async () => {
+    // The cap is spent at the tail, after the awaited Firestore writes. Unclamped,
+    // a flat 2s there is 2s the writes' headroom no longer has, and on a turn that
+    // is already near maxDuration it is the difference between answering and a
+    // platform kill (a bare gateway 504 — no shadow log, no honest client string).
+    shadowLog.impl = () => new Promise(() => {});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.useFakeTimers();
+    // Burn the whole settle window before the handler ever reaches the settle:
+    // the prologue takes longer than SHADOW_SETTLE_DEADLINE_MS.
+    authDelayMs.current = SHADOW_SETTLE_DEADLINE_MS + 1_000;
+    const { req, res } = okTurn();
+    let done = false;
+    const turn = handler(req, res).then(() => { done = true; });
+    await vi.advanceTimersByTimeAsync(authDelayMs.current);
+    // The prologue is over; the settle must now cost NOTHING rather than 2s.
+    // 100ms is generous for the remaining awaits and far short of the unclamped
+    // cap, so an unclamped settle leaves `done` false here.
+    await vi.advanceTimersByTimeAsync(100);
+    expect(done).toBe(true);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.agentMessage).toBe('hello there');
+    // A zero-length cap still reports the loss — and reports it as zero, not 2000.
+    const capLines = warn.mock.calls.filter(([m]) => String(m).includes('still writing after'));
+    expect(capLines).toHaveLength(1);
+    expect(capLines[0][0]).toContain('after 0ms');
+  });
+
+  it('a runtime hook that THROWS cannot leave the turn with no response — it falls back to the in-request settle', async () => {
+    // captureConversation is called FROM the handler's catch block, so a throw
+    // escaping it escapes the catch too and the handler answers with nothing at
+    // all. The hook is the one statement in that function outside the promise
+    // chain, so it is the one that has to be contained.
+    globalThis[REQUEST_CONTEXT] = { get: () => ({ waitUntil: () => { throw new Error('invocation already ended'); } }) };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { req, res } = okTurn();
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.agentMessage).toBe('hello there');
+    expect(warn.mock.calls.filter(([m]) => String(m).includes('runtime waitUntil hook unusable'))).toHaveLength(1);
+    // The record is not dropped by the fallback — it is settled in-request.
+    expect(shadowLogCalls.current).toHaveLength(1);
+  });
+
+  it('a request context whose get() throws is contained the same way', async () => {
+    globalThis[REQUEST_CONTEXT] = { get: () => { throw new Error('context store unavailable'); } };
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { req, res } = okTurn();
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(shadowLogCalls.current).toHaveLength(1);
   });
 
   it('a record that did NOT persist is reported, once, and never fails the turn', async () => {
@@ -1516,14 +1576,19 @@ describe('agent/chat — the shadow record finishes before the function can be f
     expect(warn.mock.calls.filter(([m]) => String(m).includes('shadow conversation record threw'))).toHaveLength(1);
   });
 
-  it('SOURCE TRIPWIRE — the cap this file measures against is the cap the handler ships', () => {
-    const src = readFileSync(new URL('./chat.js', import.meta.url), 'utf8');
-    expect(src).toContain(`const SHADOW_LOG_CAP_MS = ${String(SHADOW_LOG_CAP_MS_PIN).replace('000', '_000')};`);
-    // …and all three sites go through the wrapper: no line in the file OPENS a
-    // bare `logConversation({` record again (the wrapper's own call passes the
-    // record it was handed, and the header quotes the retired shape in prose).
-    expect(src.split('\n').filter((l) => /^\s*logConversation\(\{/.test(l))).toEqual([]);
-    expect(src.match(/captureConversation\(\{/g)).toHaveLength(3); // the three sites
+  it('the retired shape cannot come back: exactly ONE logConversation call site, inside the wrapper', () => {
+    // Structural, over the source with COMMENTS STRIPPED — the header quotes the
+    // retired `logConversation({…}).catch(() => {})` shape in prose, and a
+    // tripwire that a decoy comment can satisfy (or that a reflow can red) is
+    // not a guard. Anchoring on line starts was the earlier mistake: `void
+    // logConversation({…})` and `return logConversation({…})` both slipped it.
+    const src = readFileSync(new URL('./chat.js', import.meta.url), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:])\/\/.*$/gm, '$1');
+    expect(src.match(/\blogConversation\s*\(/g)).toHaveLength(1); // the wrapper's own call
+    expect(src).toContain('.then(() => logConversation(record))');
+    expect(src).not.toMatch(/\.catch\(\(\)\s*=>\s*\{\}\)/);  // no fire-and-forget anywhere
+    expect(src.match(/captureConversation\s*\(\{/g)).toHaveLength(3); // the three record sites
   });
 
   it('a persisted record says nothing (the warning is a signal, not noise)', async () => {
