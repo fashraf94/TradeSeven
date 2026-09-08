@@ -48,10 +48,10 @@ function fnBody(name) {
 }
 
 describe('Voice-layer grounding flag — the pin (BUILD_RULES §2, ruling 3)', () => {
-  it("ships DARK: 'off' — every prompt byte-identical (the goldens hold the bytes)", () => {
+  it("walk step 1: 'shadow' — both prompts assembled, the SHIPPED one still sent (the goldens hold its bytes)", () => {
     // THE ROW THAT MOVES WITH THE WALK. 'off' → 'shadow' → 'canary' → 'on',
     // each in its own founder PR, each updating this literal in the same commit.
-    expect(VOICE_GROUNDING_MODE).toBe('off');
+    expect(VOICE_GROUNDING_MODE).toBe('shadow');
   });
 
   it('the live value is one of the four walked states', () => {
@@ -59,7 +59,7 @@ describe('Voice-layer grounding flag — the pin (BUILD_RULES §2, ruling 3)', (
     expect(VOICE_GROUNDING_MODES).toContain(VOICE_GROUNDING_MODE);
   });
 
-  it('the accessor resolves the LIVE value for any caller (off today: nobody is grounded)', () => {
+  it('the accessor resolves the LIVE value for any caller (shadow today: nobody receives the grounded prompt)', () => {
     // Holds in every state by the resolver's contract; asserted against the
     // live literal so this row never becomes a second pin.
     expect(getVoiceGroundingMode('any-uid')).toBe(resolveVoiceGroundingMode(VOICE_GROUNDING_MODE, 'any-uid', undefined));
