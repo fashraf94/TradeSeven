@@ -30,6 +30,8 @@ import { logDecision, logFirstMessage } from '../_utils/shadowLogger.js';
 import { buildFirstMessagePrompt, getAgentPhase } from '../_utils/voiceLayerPrompt.js';
 import { TERM_TOKENS } from '../_utils/termUniverse.js';
 import { callGemmaVoice, parseVoiceLayerResponse } from '../_utils/gemmaClient.js';
+// Voice-layer grounding (§7-authorized one-key fence contact, Sep 8): the opener's gate.
+import { getVoiceGroundingMode } from '../../src/config/featureFlags.js';
 // Deploy Ceremony (Amendment A §4.6) — pure, dependency-free brief-excerpt
 // selector for the deployProgress telemetry. Node-clean, imports nothing fenced.
 import { selectBriefExcerpt } from '../_utils/deployCeremonyExcerpt.js';
@@ -1577,6 +1579,8 @@ async function generateFirstMessageOnDeploy({ db, agentData, battleId }) {
         currentPhase,
         supportedTerms: TERM_TOKENS,
         executionMode: battle.executionMode || 'autopilot',
+        // §7 one-key fence contact (Sep 8): the same gate the lazy opener resolves.
+        grounded: getVoiceGroundingMode(battle.ownerId) === 'on',
       });
     } catch (err) {
       errorStep = 'prompt_build';
