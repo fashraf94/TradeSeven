@@ -9,7 +9,12 @@
 // deterministic floor, so a fresh-deploy chat is never silent — WITHOUT editing
 // the fenced deploy path (it only CALLS the shared non-fenced builders).
 //
-// Flag-gated (OPENER_LAZY_FALLBACK_ENABLED, default false → 200 no-op).
+// Flag-gated (OPENER_LAZY_FALLBACK_ENABLED). The flag DEFAULTS TO TRUE
+// (featureFlags.js:1117) — it was built and merged dark and flipped in its own
+// follow-up PR after the preview smoke, and this header outlived the flip by
+// still calling `false` the default. It is the kill switch, not the shipped
+// state: set to false the route is a 200 `{ status: 'disabled' }` no-op and the
+// client makes no call at all.
 //
 // Decision tree (after auth + ownership, active battle):
 //   - a first_message already exists       → { status:'already_present' }  (no write)
@@ -33,7 +38,8 @@ import { OPENER_LAZY_FALLBACK_ENABLED, getVoiceGroundingMode } from '../../src/c
 import { GROUNDING_VERSION } from '../_utils/voiceLayerGrounding.js';
 // The agent-belongs-to-this-battle check the deterministic filing route has
 // carried since it shipped (file-directive.js check 3), shared rather than
-// re-typed (agentBattleBinding.js).
+// re-typed (agentBattleBinding.js). Unconditional here as of the clients'
+// agentId send.
 import { agentBelongsToBattle, AGENT_BATTLE_MISMATCH } from '../_utils/agentBattleBinding.js';
 
 // Patient Gemma call ⇒ a longer function budget than a plain write endpoint.
@@ -141,11 +147,12 @@ export default async function handler(req, res) {
 
   // The agent is still resolved AUTHORITATIVELY from the battle doc below — a
   // caller cannot fold an arbitrary agent into their opener, and never could.
-  // `agentId` is read here only to be VERIFIED: the shipped client sends
-  // `{ battleId }` alone (AgentChat.jsx), so an absent id is not a mismatch and
-  // its behaviour is unchanged; an id that names a DIFFERENT agent is now
-  // refused rather than silently ignored, so a caller cannot come away
-  // believing it opened that agent's conversation.
+  // `agentId` is read here only to be VERIFIED, and BOTH shipped clients now
+  // send it (AgentChat.jsx, mounted by the Battle View controller column and by
+  // the arena's Command Center tab — AgentBattleScreen.jsx:1781 / :2473), so the
+  // binding check below is unconditional like chat.js's and file-directive.js's:
+  // an id naming a different agent AND an absent id are both refused, and a
+  // caller cannot come away believing it opened that agent's conversation.
   const { battleId, agentId } = req.body || {};
   if (!battleId) {
     return res.status(400).json({ error: 'battleId is required' });
@@ -165,10 +172,10 @@ export default async function handler(req, res) {
     if (battle.ownerId !== user.uid) {
       return res.status(403).json({ error: 'Not authorized' });
     }
-    // The agent binding — only when the caller named one (see the body read
-    // above). Ownership proves the battle is theirs, not that the agent they
-    // named is this battle's.
-    if (agentId !== undefined && !agentBelongsToBattle(battle, agentId)) {
+    // The agent binding — UNCONDITIONAL (see the body read above). Ownership
+    // proves the battle is theirs, not that the agent they named is this
+    // battle's, and a caller that names none has not proved it either.
+    if (!agentBelongsToBattle(battle, agentId)) {
       return res.status(403).json({ error: AGENT_BATTLE_MISMATCH });
     }
     // Only backfill live battles.
@@ -193,7 +200,7 @@ export default async function handler(req, res) {
     }
 
     // (3) Empty chat (early open) → generate. Resolve the agent doc AUTHORITATIVELY
-    //     from the battle's own top-level agentId (agentBattleService.js:105) — never
+    //     from the battle's own top-level agentId (agentBattleService.js:130) — never
     //     a client-supplied id.
     if (!battle.agentId) {
       return res.status(422).json({ error: 'battle has no agentId' });

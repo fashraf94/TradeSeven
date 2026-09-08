@@ -218,6 +218,14 @@ describe('decisionRecord — the rules', () => {
     expect(filingFailureLine(409)).toBe(FILING_CONFLICT_LINE);
     expect(filingFailureLine(429)).toBe(FILING_BUDGET_LINE);
     expect(filingFailureLine(422)).toBe(FILING_REJECTED_LINE);
+    // 404 — the route does not exist for this caller (file-directive.js check
+    // 7). It shares the 422 line rather than the catch-all: a chip minted while
+    // the caller resolved 'on' is PERSISTED on the exchange and no client reads
+    // the mode, so after a canary abort every tap 404s — and `just now` would
+    // promise a retry that can never work. Both causes are pre-write, so the
+    // `nothing was filed` clause is attestable for both (D-90).
+    expect(filingFailureLine(404)).toBe(FILING_REJECTED_LINE);
+    expect(filingFailureLine(404)).toContain('nothing was filed');
     expect(filingFailureLine(500)).toBe(FILING_FAILED_LINE);
     expect(filingFailureLine(undefined)).toBe(FILING_FAILED_LINE);
     expect(FILING_CONFLICT_LINE).toBe('The current directive changed before this could be filed — nothing was filed.');

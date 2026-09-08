@@ -15,7 +15,7 @@
 // constant guards nothing.
 
 import { describe, it, expect } from 'vitest';
-import { config, GEMMA_TIMEOUT_MS, TURN_DEADLINE_MS } from './chat.js';
+import { config, GEMMA_TIMEOUT_MS, TURN_DEADLINE_MS, SHADOW_LOG_CAP_MS, SHADOW_SETTLE_DEADLINE_MS } from './chat.js';
 
 const MAX_DURATION_MS = config.maxDuration * 1000;
 
@@ -45,8 +45,27 @@ describe('agent/chat — turn timing budget', () => {
   it('the turn deadline leaves at least 5s inside maxDuration for the awaited writes', () => {
     // chat.js stamps turnStartMs at invocation and hands the gate
     // turnStartMs + TURN_DEADLINE_MS; everything after the gate — the battle-doc
-    // update and the budget charge — is awaited and must fit in what is left.
+    // update, the budget charge and the shadow record's settle — is awaited and
+    // must fit in what is left.
     expect(MAX_DURATION_MS - TURN_DEADLINE_MS).toBeGreaterThanOrEqual(5_000);
+  });
+
+  it('the shadow settle is a FOURTH member of the system, and it is clamped rather than additive', () => {
+    // Added Sep 8 2026 with the shadow record's durability wrapper. The cap is
+    // spent at the TAIL, after the awaited Firestore writes, so a flat 2s on top
+    // of a 6s allowance would be a 33% cut to the writes' headroom that nothing
+    // could see. It is clamped to an ABSOLUTE deadline instead, so it can only
+    // ever take what the writes have not already spent — the same discipline
+    // chat.js applies to the model call.
+    expect(SHADOW_LOG_CAP_MS).toBe(2_000);
+    expect(SHADOW_SETTLE_DEADLINE_MS).toBe(28_000);
+    // The clamp must bite INSIDE maxDuration, with margin for composing and
+    // sending the response after it returns.
+    expect(SHADOW_SETTLE_DEADLINE_MS).toBeLessThan(MAX_DURATION_MS);
+    expect(MAX_DURATION_MS - SHADOW_SETTLE_DEADLINE_MS).toBeGreaterThanOrEqual(2_000);
+    // …and the cap must be able to run in full on a turn that finished its
+    // model call at the deadline, or it would be dead weight on every normal turn.
+    expect(TURN_DEADLINE_MS + SHADOW_LOG_CAP_MS).toBeLessThanOrEqual(SHADOW_SETTLE_DEADLINE_MS);
   });
 
   it('rejects the 25s the sibling Gemma callers use', () => {

@@ -211,6 +211,112 @@ export function motiveAuthorLabel(text, source = null) {
   return isEngineAuthoredMotive(text, source) ? MOTIVE_SYSTEM : MOTIVE_AGENT;
 }
 
+const cleanText = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
+
+// ── A motive as it is RENDERED (D-80, ruling 1) ─────────────────────────────
+// The words the three ruled guardrail types are called by. C1 says render the
+// engine's motive verbatim; hazard 29 / D-64 say a machinery-provenance code
+// never reaches a reader. The ruling separates them: the guardrail TYPE is a
+// fact a reader can read, so it is translated into the words that guardrail is
+// called by, and the sentence keeps its shape — everything after the colon is
+// untouched. Any OTHER token — `guardrail_max_sector_weight`, the cron's own
+// `hard` fallback, anything added later — loses the parenthetical entirely,
+// because a code with no ruled words is not a fact anyone can read.
+//
+// The three words are NOT invented here: they are the founder's existing
+// taxonomy in src/components/League/battleArena/leagueSwapLedger.js:63-69,
+// where the same three `exitReason` stamps already render for the League swap
+// ledger. A source tripwire in TapeCards.render.test.jsx keeps the two tables
+// in step; battleViewCopy.js re-exposes this table under its shipped name
+// (`BATTLE_VIEW_COPY.guardrailTypeWords`), so the pane's consumers are
+// unchanged.
+export const GUARDRAIL_TYPE_WORDS = Object.freeze({
+  guardrail_stopLoss: 'stop-loss',
+  guardrail_trailingStop: 'trailing stop',
+  guardrail_profitTarget: 'profit target',
+});
+
+/**
+ * The cron's provenance parenthetical, at the head of a forced exit's
+ * rationale: `Guardrail override (guardrail_stopLoss): …`
+ * (agent-evaluate.js:2124, composing agentGuardrails.js's own
+ * `guardrail_${forcedType}` sourceNote).
+ *
+ * ANCHORED to the `Guardrail override` prefix, deliberately, rather than
+ * matching any bracketed token anywhere in an engine sentence: that one
+ * composition site is the only place a code is spliced into prose, and a
+ * looser rule would eat the numbers the guardrail module's own statusMessage
+ * carries — `… breached on GILD (-9.24%).` — or the `(R11)` the suppression
+ * pass writes. The token shape is identifier-only for the same reason.
+ */
+const GUARDRAIL_CODE_PARENTHETICAL = /^(\s*Guardrail override)\s*\(\s*([A-Za-z][A-Za-z0-9_]*)\s*\)/;
+
+/**
+ * The cron's composed prefix wrapping a body that already opens with the same
+ * words (review RB-F2). Anchored, and it requires the SECOND `Guardrail
+ * override` to start the body — so it only ever removes a duplicate, never a
+ * sentence the guardrail wrote about something else.
+ */
+const GUARDRAIL_DOUBLED_PREFIX = /^(\s*Guardrail override\s*(?:\([^)]*\))?\s*:\s*)(Guardrail override\s*:)/;
+
+/**
+ * A motive as it is RENDERED (D-80, ruling 1) — the one renderer the Battle
+ * View and the narrator SHARE, so the trade card, the check card, `This piece
+ * today`, the book panel, the grounded prompt's YOUR RECORD block and its
+ * RECENT TRADES lines cannot show one sentence two ways (BUILD_RULES §9). It
+ * lives here, beside the motive-author rule, for the reason that rule does
+ * (voice-grounding hazard 26): the server renders the same check the pane
+ * renders and cannot import the pane's modules.
+ *
+ * NOT every surface, and the enumeration above is the honest list: the League
+ * Tournament pane (src/components/Tournament/Flat6BattleView.jsx:328) still
+ * renders `evaluations[].rationale` and `.hypothesis` as stored bytes and is
+ * not on this renderer. It is live — a League owner sees the cron's code and
+ * its doubled prefix there today — and putting it on this renderer changes what
+ * a player reads, so it is a separate, founder-gated change, not a sweep.
+ *
+ * The model's own words pass through untouched (C1) — VERBATIM IS AN
+ * AGENT-AUTHORED PROPERTY: only an ENGINE-authored sentence is rewritten, and
+ * its provenance parenthetical becomes the guardrail's plain words, or is
+ * dropped when the token has none. Everything after the colon is the engine's
+ * sentence, verbatim.
+ *
+ * ONLY AN ENGINE MOTIVE IS REWRITTEN, and that is true BY CONSTRUCTION rather
+ * than by a second conjunct: the pattern's anchor, `Guardrail override`, IS
+ * `ENGINE_MOTIVE_PREFIXES[0]`, so any text the pattern can match is already
+ * engine-authored under the rule above. An `isEngineAuthoredMotive` gate in
+ * front of it could never fire — a conjunct that cannot fail is not a guard,
+ * and this module does not ship one. `selectWhyState.test.js` pins the two
+ * strings together so a rename of the prefix reds rather than silently
+ * unhooking the translation.
+ *
+ * @param {string|null} text  the persisted rationale
+ */
+export function renderMotive(text) {
+  const cleaned = cleanText(text);
+  if (cleaned == null) return null;
+  // THE CRON'S PREFIX IS REDUNDANT WHENEVER THE GUARDRAIL WROTE THE BODY
+  // (review RB-F2). agent-evaluate.js:2124 composes
+  // `Guardrail override (${sourceNote}): ${overrideNote}` — and on a forced
+  // exit `overrideNote` IS agentGuardrails.js's own statusMessage, which
+  // already begins `Guardrail override: ` and already carries the guardrail's
+  // name in plain words (`stop-loss at 8%`, `trailing stop at 8% from peak`,
+  // `profit target at 8%`, agentGuardrails.js:530-537). Translating the token
+  // in place therefore produced a stutter on 100% of forced exits —
+  // `Guardrail override (stop-loss): Guardrail override: stop-loss at 8%
+  // breached on GILD …` — and D-84's first-sentence collapse then spent the
+  // card on the preamble and hid `Forcing exit → MOS.` behind `Read more`.
+  //
+  // So when the body restates the prefix, the cron's wrapper goes and the
+  // guardrail's own sentence stands alone. Still verbatim engine text, still
+  // no code on the screen, and it is what ruling 1's `…` was eliding.
+  const deduped = cleaned.replace(GUARDRAIL_DOUBLED_PREFIX, '$2');
+  return deduped.replace(GUARDRAIL_CODE_PARENTHETICAL, (match, prefix, token) => {
+    const words = GUARDRAIL_TYPE_WORDS[token];
+    return words ? `${prefix} (${words})` : prefix;
+  });
+}
+
 // ── The plan at deploy (D-76) — the C1 gates ────────────────────────────────
 // Three SYSTEM strings share the deploy plan's keys, and rendering any of them
 // under the agent's name would put words in its mouth that no model wrote:
@@ -226,8 +332,6 @@ export function motiveAuthorLabel(text, source = null) {
 //       are genuinely the model's.
 export const FALLBACK_STRATEGY_PREFIX = 'Algorithmic selection';
 export const FALLBACK_BRIEF_PREFIX = 'Automated selection based on';
-
-const cleanText = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
 
 /**
  * Gates (a) and (b): true when the WHOLE plan is a system artefact and must
@@ -294,18 +398,35 @@ export const filedLabel = (timeText) => (timeText ? `Filed ${timeText}` : 'Filed
 export const NO_CHANGE_STATUS_LINE = 'No change made to your strategy this turn.';
 
 // A filing's failure lines say only what the client can be held to (the D-90
-// rule): a 409 / 429 / 422 comes back BEFORE any write (the transaction
-// returns before it updates), so those may say nothing was filed; a network
-// failure or a 5xx cannot make that claim.
+// rule): a 404 / 409 / 429 / 422 comes back BEFORE any write (the route's own
+// flag is checked before any read; the transaction returns before it updates),
+// so those may say nothing was filed; a network failure or a 5xx cannot make
+// that claim.
 export const FILING_CONFLICT_LINE = 'The current directive changed before this could be filed — nothing was filed.';
 export const FILING_BUDGET_LINE = 'No messages left to file with — nothing was filed.';
 export const FILING_REJECTED_LINE = 'That option is no longer on the menu — nothing was filed.';
 export const FILING_FAILED_LINE = 'The directive could not be filed just now.';
 
-/** The failure line for a filing response's HTTP status. */
+/**
+ * The failure line for a filing response's HTTP status.
+ *
+ * 404 SHARES THE 422 LINE, DELIBERATELY. The route does not exist for a caller
+ * the grounding accessor does not resolve to 'on' (file-directive.js check 7),
+ * and a chip minted while they DID resolve 'on' outlives that: it is persisted
+ * on the exchange, and no client reads the mode, so a canary abort or a
+ * walk-back leaves a live-looking chip whose every tap 404s. The catch-all
+ * `FILING_FAILED_LINE` says "just now" — it promises a retry that can never
+ * work, and on a battle whose chat budget is spent no later exchange arrives to
+ * retire the chip. `no longer on the menu — nothing was filed` is true of both
+ * causes and is the honest half of what the client can be held to: the option
+ * is not available to this caller, and every 404 path here (the flag, a missing
+ * battle, a missing agent) returns before any write, so the clause is
+ * attestable. A distinct sentence for the two causes is a copy request, not an
+ * inline change.
+ */
 export function filingFailureLine(status) {
   if (status === 409) return FILING_CONFLICT_LINE;
   if (status === 429) return FILING_BUDGET_LINE;
-  if (status === 422) return FILING_REJECTED_LINE;
+  if (status === 422 || status === 404) return FILING_REJECTED_LINE;
   return FILING_FAILED_LINE;
 }

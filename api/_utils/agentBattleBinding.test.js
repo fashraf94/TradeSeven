@@ -2,10 +2,13 @@
 //
 // The shared agent-belongs-to-this-battle predicate. The three routes that call
 // it (chat.js, ensure-opener.js, file-directive.js) each carry a mismatch row
-// and a match row, but every one of them validates or presence-guards `agentId`
-// BEFORE the call — so the predicate's own type and emptiness guard is
-// unreachable from any route row, and a mutation reducing it to a bare
-// `battle?.agentId === agentId` survived all 97 of them. This file is that
+// and a match row. chat.js and file-directive.js 400 on a missing `agentId`
+// before the call; ensure-opener.js guards only `battleId` and reaches the call
+// with an absent id, which the predicate itself refuses. Either way, no route
+// row supplies a battle doc whose OWN `agentId` is nullish — the only input on
+// which the real predicate and a bare `battle?.agentId === agentId` diverge —
+// so the predicate's type and emptiness guard is unreachable from all of them,
+// and that mutation survives every route row in the repo. This file is that
 // guard's row.
 //
 // Dependency-surface guard (BUILD_RULES §4): this file's import of the module

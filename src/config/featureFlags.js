@@ -1097,8 +1097,9 @@ export const REGIME_STAMP_ENABLED = true;
  * truncated body fails JSON parse, and the try/catch swallows it (non-blocking by
  * design) — so tiered battles intermittently open with a silent timeline.
  *
- * When FALSE (default), behavior is byte-identical to today: the client makes no
- * ensure-opener call and POST /api/agent/ensure-opener no-ops. When TRUE, the
+ * LIVE — TRUE since the flip PR that followed the dark build's preview smoke.
+ * When FALSE, behavior is byte-identical to the pre-build state: the client makes
+ * no ensure-opener call and POST /api/agent/ensure-opener no-ops. When TRUE, the
  * Command Center chat (AgentChat) checks on mount whether a first_message exists
  * and, if not, calls the non-fenced POST /api/agent/ensure-opener, which
  * regenerates the opener with a patient (~40s) budget + one deadline-bounded retry
@@ -1106,9 +1107,13 @@ export const REGIME_STAMP_ENABLED = true;
  * never silent. Late-open (chat already has content, no opener) is a deliberate
  * no-op. The fenced deploy path is untouched.
  *
- * Built/merged DARK; flip in a one-line follow-up PR after a Vercel preview smoke
- * (the SCOUTING_BOARD_ENABLED precedent) — never in the build PR.
+ * Built/merged DARK and flipped in a one-line follow-up PR after a Vercel preview
+ * smoke (the SCOUTING_BOARD_ENABLED precedent) — never in the build PR. That flip
+ * left this docstring and ensure-opener.js's header calling FALSE the default,
+ * which is the stale-header class BUILD_RULES §2 and §6 both name; both now say
+ * what the value is.
  */
+// Pinned by: src/components/Agent/AgentChat.ensureOpener.jsdom.test.jsx (the live-state pin — update the assertion in the flip commit if this is ever walked back).
 export const OPENER_LAZY_FALLBACK_ENABLED = true;
 
 /**
@@ -2112,13 +2117,16 @@ export function isCharacterPaneOn() {
  * CURRENT STATE — 'shadow' (walk step 1, from 'off'; Sep 8 2026). Every caller
  * still RECEIVES the shipped prompt, so the sent bytes are the off goldens;
  * what changes is that chat.js assembles the grounded prompt beside it and both
- * ride the shadow record (chat.js:313 gates that on `!== 'off'`). Two non-chat
- * surfaces read `!== 'off'` too and come alive at this step, by design: the
+ * ride the shadow record (chat.js:416 gates that on `!== 'off'`). ONE non-chat
+ * surface reads `!== 'off'` too and comes alive at this step, by design: the
  * voice-layer cache cron mirrors `fundamentals` onto the cached briefs
  * (§3.5, voice-layer-cache.js:819 — the shipped prompt ignores the field, which
- * is why the off goldens' fixture carries one), and POST /api/agent/file-directive
- * stops 404ing (§10, file-directive.js:152 — no chip mints a filing until 'on',
- * chat.js:709). Everything else compares `=== 'on'` and is unchanged here.
+ * is why the off goldens' fixture carries one). POST /api/agent/file-directive
+ * does NOT come alive here: its gate compares `=== 'on'`, the same resolution
+ * that mints the chips (chat.js:409), so the filing surface and the minting
+ * surface walk together rather than the route standing open at 'shadow' with
+ * nothing minted to file. Everything else compares `=== 'on'` too and is
+ * unchanged here.
  *
  * Read it at CALL time through getVoiceGroundingMode(uid) below, never as a
  * module-scope const in a consumer (the isCharacterPaneOn rule: many

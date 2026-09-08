@@ -16,7 +16,9 @@
 // ONE TRANSACTION (M4; the P-1a/b/c requirement lands here first), re-reading
 // and verifying, in order:
 //   7. the route's flag — checked FIRST, before any read: the mutating route
-//      is gated itself, not only the chip (404 at 'off' for this caller);
+//      is gated itself, not only the chip. It is live only for a caller the
+//      accessor resolves to 'on' — the SAME resolution that mints the chips
+//      (chat.js) — and 404s at every other resolution, 'shadow' included;
 //   1. the authenticated owner (the uid from the token, never the body);
 //   2. the battle is active;
 //   3. the agent belongs to this battle (Phase 0 §5 item 4; discrepancy 15) —
@@ -147,9 +149,27 @@ export default async function handler(req, res) {
   const user = await requireAuth(req, res);
   if (!user) return;
 
-  // Check 7 — the route's own flag, per caller, at call time. 'off' → the
-  // route does not exist for this caller (spec §10: "the route 404s at 'off'").
-  if (getVoiceGroundingMode(user.uid) === 'off') {
+  // Check 7 — the route's own flag, per caller, at call time. The route exists
+  // only for a caller the accessor resolves to 'on'; every other resolution is
+  // a 404, before any read.
+  //
+  // THE SAME RESOLUTION THAT MINTS THE CHIPS (BUILD_RULES §9). A chip is minted
+  // only on a grounded turn — chat.js:409 `groundingMode === 'on' && mode ===
+  // 'battle'` — so at 'off' and at 'shadow' no chip exists to file, and a route
+  // that answered there was reachable by nothing the product mints. Binding the
+  // gate to the same resolved value means the filing surface and the minting
+  // surface cannot come alive at different steps of the walk. 'canary' never
+  // reaches here as itself: getVoiceGroundingMode resolves it to 'on' for an
+  // allowlisted uid and to 'shadow' for everyone else, so an allowlisted caller
+  // — who does get chips — gets the route too, and nobody else does.
+  //
+  // (The earlier gate was `!== 'off'`, from spec §6.1's "the route's flag
+  // (VOICE_GROUNDING_MODE ≠ 'off')", spec §10's "the route 404s at 'off'" and
+  // D-104's "live when the mode ≠ 'off'". Founder ruling, this build: the route
+  // follows the chips. Those three sites are records of the Sep 7 ruling and
+  // are amended by the design chat, not from here — §6.1 is the one that states
+  // the gate as a live contract and is reported for that amendment.)
+  if (getVoiceGroundingMode(user.uid) !== 'on') {
     return res.status(404).json({ error: 'not_found' });
   }
 

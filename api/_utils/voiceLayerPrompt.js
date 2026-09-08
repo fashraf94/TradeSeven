@@ -18,6 +18,15 @@ import { getArchetypeLabel } from './agentArchetypeConfig.js';
 import { getArchetypeZones, getAllowlist } from '../../src/data/archetypeAdjustments.js';
 import { getEffectiveArchetype } from './directiveIdentity.js';
 import { ARCHETYPE_INTEGRITY_MODE } from '../../src/config/featureFlags.js';
+// The pane's motive renderer (D-80) — the SAME translator the grounded YOUR
+// RECORD block renders `evaluations[].rationale` through (voiceLayerGrounding.js).
+// `trades[].rationale` is the SAME cron string: agent-evaluate.js:2245 and :2640
+// both take `haikuResult.rationale` from the composition at :2124. Rendering one
+// of them and not the other put ONE swap in the prompt twice, in two different
+// sentences, one of them carrying the machinery-provenance code the narrator
+// could then quote at a player whose screen never contains it (BUILD_RULES §9;
+// hazard 29). Zero-import module, imported under BUILD_RULES §4.
+import { renderMotive } from '../../src/data/decisionRecord.js';
 // Release 2 PR-c — the shared control resolution (see buildActiveDirectiveBlock).
 import { resolveControls } from './controlPromptRenderer.js';
 // Voice-layer grounding (VOICE_LAYER_GROUNDING_SPEC_V1_2) — everything the
@@ -975,7 +984,11 @@ function buildConvictionsBlock(convictions, consolidatedInsight) {
   return block;
 }
 
-export function buildBattleState(battle) {
+// `grounded` (voice-layer grounding): RECENT TRADES renders each motive through
+// the pane's translator. DEFAULT FALSE, so the flag-off assembly is byte-identical
+// — the pre-grounding surface keeps the stored bytes it has always carried, and
+// the off goldens hold.
+export function buildBattleState(battle, { grounded = false } = {}) {
   if (!battle) return 'No active battle. This is a strategy session.';
 
   const marketState = getMarketState();
@@ -992,7 +1005,7 @@ export function buildBattleState(battle) {
   if (trades.length > 0) {
     const recent = trades.slice(-5);
     tradeBlock = `\n\nRECENT TRADES (${trades.length} total):\n` + recent.map(t =>
-      `- ${t.action || 'SWAP'}: ${t.symbolOut} → ${t.symbolIn} (${t.tier || 'unknown'} tier) | ${t.rationale || t.trigger || 'N/A'}`
+      `- ${t.action || 'SWAP'}: ${t.symbolOut} → ${t.symbolIn} (${t.tier || 'unknown'} tier) | ${(grounded ? renderMotive(t.rationale) : t.rationale) || t.trigger || 'N/A'}`
     ).join('\n');
   }
 
@@ -3018,8 +3031,11 @@ You've been working together for ${gamesPlayed} games (${wins}W-${losses}L). You
   const marketContext = buildMarketSnapshotContext(marketSnapshot);
 
   // Block 5: Battle State (BOTTOM — high attention). Under the flag this is
-  // also where RECEIPTS live: the RECENT TRADES lines are unchanged (§3.2).
-  const battleState = buildBattleState(battle);
+  // also where RECEIPTS live. The RECENT TRADES lines keep their SHAPE (§3.2);
+  // what changes under `grounded` is that each motive goes through the same
+  // translator YOUR RECORD uses, so one swap cannot appear twice in one prompt
+  // in two different sentences.
+  const battleState = buildBattleState(battle, { grounded });
 
   // Block 5.5 (grounded only): the narrator's OWN earlier messages that carry
   // the grounding marker — conversation, not decision evidence (§3.4).
