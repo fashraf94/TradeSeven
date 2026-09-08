@@ -1385,15 +1385,15 @@ describe('agent/chat — voice-layer grounding: the shadow assembly (spec §9, G
 
 // ==================== THE SHADOW RECORD'S DURABILITY ====================
 //
-// NOT a §5 catalog claim: the catalog event for a chat turn is the awaited
-// `chatExchanges` write (see the Catalog #9 block above, which says the GCS
-// shadow log is NOT the catalog surface). What §5 does supply is the reason to
-// care — "the shadow logger's silent multi-week data loss is the cautionary
-// tale" is about this logger. All three conversation records here were
-// `.catch(() => {})`, so on Vercel the invocation could be frozen mid-write
-// with nothing said. These rows hold the two ways the handler now gives the
-// write a chance to finish, the cap that bounds what the second one costs, and
-// the clamp that keeps the cap from spending budget the awaited writes need.
+// NOT a §5 catalog claim: these records are NOT catalog events — the durable
+// `chatExchanges` write is (see the Catalog #9 block above), and the
+// Implementation Spec §2 rules the shadow logger out of that role in as many
+// words. §5 PERMITS fire-and-forget here. They are settled anyway because two
+// of the three are the only trace a failed turn leaves and a frozen invocation
+// dropped them silently — §5's cautionary tale, not its rule. These rows hold
+// the two ways the handler now gives the write a chance to finish, the cap that
+// bounds what the second one costs, and the clamp that keeps the cap from
+// spending budget the awaited writes need.
 describe('agent/chat — the shadow record finishes before the function can be frozen', () => {
   const REQUEST_CONTEXT = Symbol.for('@vercel/request-context');
   // The REAL @vercel/functions waitUntil resolves this symbol and calls
@@ -1513,7 +1513,7 @@ describe('agent/chat — the shadow record finishes before the function can be f
     authDelayMs.current = SHADOW_SETTLE_DEADLINE_MS + 1_000;
     const { req, res } = okTurn();
     let done = false;
-    const turn = handler(req, res).then(() => { done = true; });
+    handler(req, res).then(() => { done = true; });
     await vi.advanceTimersByTimeAsync(authDelayMs.current);
     // The prologue is over; the settle must now cost NOTHING rather than 2s.
     // 100ms is generous for the remaining awaits and far short of the unclamped

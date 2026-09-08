@@ -80,26 +80,37 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SCREEN = readFileSync(path.join(HERE, '..', '..', 'screens', 'AgentBattleScreen.jsx'), 'utf8');
 const MOUNTS = SCREEN.split('<AgentChat').slice(1);
 
+// The window is the whole JSX opening element: up to the `/>` that CLOSES it,
+// which is the only one at the start of a line. Splitting on the first `>`
+// instead truncated the arena mount after nine lines — at the `>` inside
+// `onSwitchToGameTape={() => …}` — so ten of its nineteen props fell outside the
+// window and a prop moved below it read as absent.
+const openingElement = (mount) => mount.split(/\n\s*\/>/)[0];
+// Whitespace-insensitive: a prop wrapped across lines is the same prop, and a
+// row that reds on a reflow is noise rather than a guard.
+const squash = (block) => block.replace(/\/\/[^\n]*/g, '').replace(/\s+/g, '');
+const passes = (block, attr, value) => squash(block).includes(`${attr}={${value}}`);
+
+const MOUNT_LABELS = ['the Battle View controller column', 'the arena Command Center tab'];
+
 describe('the two callers each hand the battle\'s agentId to the chat', () => {
   it('AgentBattleScreen mounts AgentChat exactly twice — the Battle View controller column and the arena Command Center tab', () => {
     expect(MOUNTS).toHaveLength(2);
   });
 
-  it.each([
-    ['the Battle View controller column', 0],
-    ['the arena Command Center tab', 1],
-  ])('%s passes agentId={agentBattle?.agentId} beside battleId', (_label, index) => {
-    // The window is the whole JSX opening element: up to the `/>` that CLOSES
-    // it, which is the only one at the start of a line. Splitting on the first
-    // `>` instead truncated mount 1 after nine lines — at the `>` inside
-    // `onSwitchToGameTape={() => …}` — so a prop moved below it read as absent.
-    const props = MOUNTS[index].split(/\n\s*\/>/)[0];
-    expect(props).toContain('battleId={agentBattleId}');
-    expect(props).toContain('agentId={agentBattle?.agentId}');
-    // The window really is the element, not a fragment of it: every mount ends
-    // with the chat's own props, so a truncated window would fail this too.
-    expect(props).toContain('chatExchanges={chatExchanges}');
-  });
+  // Driven off MOUNTS, not off a fixed pair: a third mount added without the
+  // prop reds HERE as well as on the count above, rather than only being counted.
+  it.each(MOUNTS.map((_m, i) => [MOUNT_LABELS[i] ?? `an unnamed mount #${i}`, i]))(
+    '%s passes agentId={agentBattle?.agentId} beside battleId',
+    (_label, index) => {
+      const props = openingElement(MOUNTS[index]);
+      expect(passes(props, 'battleId', 'agentBattleId'), 'battleId not passed at this mount').toBe(true);
+      expect(passes(props, 'agentId', 'agentBattle?.agentId'), 'agentId not passed at this mount').toBe(true);
+      // The window really is the element, not a fragment of it: every mount ends
+      // with the chat's own props, so a truncated window would fail this too.
+      expect(passes(props, 'chatExchanges', 'chatExchanges')).toBe(true);
+    },
+  );
 });
 
 describe('what the chat then sends', () => {

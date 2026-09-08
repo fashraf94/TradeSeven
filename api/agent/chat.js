@@ -6,8 +6,8 @@ import { callGemmaVoice, parseVoiceLayerResponse } from '../_utils/gemmaClient.j
 import { FieldValue } from 'firebase-admin/firestore';
 import { logConversation } from '../_utils/shadowLogger.js';
 // The platform's keep-alive for work that must outlive the response
-// (api/agent/equip-bundle.js and nine sibling routes in api/agent/ already use
-// it; twenty modules repo-wide). Off Vercel
+// (api/agent/equip-bundle.js and eight sibling routes in api/agent/ already
+// use it; twenty modules repo-wide). Off Vercel
 // it is a silent no-op, so this handler DETECTS the runtime hook rather than
 // trusting the call — see captureConversation below.
 import { waitUntil } from '@vercel/functions';
@@ -94,19 +94,25 @@ export const TURN_DEADLINE_MS = 24_000;
 // WHAT THIS IS NOT. These three GCS records are NOT the catalog event for a
 // chat turn — the awaited `chatExchanges` write at step 19 is (Signal Capture
 // Rider #7 / #9; the comments on the exchange record below say so, and
-// chat.test.js's Catalog #9 block says it again). That write was compliant
-// before this block existed and is untouched by it. So this is a durability
-// improvement to the shadow TRAINING stream, not a BUILD_RULES §5 remedy, and
-// it does not make the four sibling handlers that still write the same
-// `conversations` stream fire-and-forget into violations.
+// chat.test.js's Catalog #9 block says it again). The Implementation Spec §2
+// settles it in its own words — "Nothing rides the fire-and-forget shadow
+// logger" — and the Sep 7 Phase 0 report ruled on THIS write by name: "the
+// write is fire-and-forget (permitted — BUILD_RULES §5 binds catalog events
+// only)". So §5 PERMITS `.catch(() => {})` here, the durable write it does
+// bind was compliant before this block existed and is untouched by it, and the
+// four sibling handlers still writing this stream fire-and-forget are not in
+// violation either. This is a durability improvement, not a §5 remedy.
 //
-// WHY BOTHER, THEN: §5's cautionary tale — "the shadow logger's silent
-// multi-week data loss" — is about exactly this logger. All three records were
-// `logConversation({…}).catch(() => {})`: the promise was started and the
-// handler returned immediately, so on Vercel the invocation could be FROZEN
-// mid-write and the record simply never landed, with nothing surfaced — not a
-// log line, not a status. A stream whose whole purpose is diagnosing turns is
-// worth finishing rather than dropping.
+// WHY BOTHER, THEN: on §5's cautionary tale rather than its rule — "the shadow
+// logger's silent multi-week data loss" is about exactly this logger. TWO of
+// the three records are the only trace a failed turn leaves (the 502 parse
+// failure and the 504/500 catch path, neither of which writes an exchange), and
+// the third is what the grounding harness samples out of `shadow/conversations/`
+// — the Phase 0 report's own caution is that "a lost record silently thins the
+// harness sample". All three were `logConversation({…}).catch(() => {})`: the
+// promise was started and the handler returned immediately, so a FROZEN Vercel
+// invocation dropped any of them with nothing surfaced — not a log line, not a
+// status.
 //
 // TWO WAYS TO GIVE THE WRITE A CHANCE TO FINISH, in preference order:
 //

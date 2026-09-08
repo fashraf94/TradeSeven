@@ -15,7 +15,7 @@
 |---|---|---|---|
 | D1-1 | The assembled grounded prompt still shipped `guardrail_stopLoss` — RECENT TRADES prints `trades[].rationale` raw, the same cron string YOUR RECORD renders translated | **blocking** | **CONFIRMED — fixed** (`488e0c2c`) |
 | D4-1 | The 2s shadow-settle cap was the only unclamped timeout in the handler; measured 30,400ms against a 30,000ms ceiling | blocking → **material** on refutation | **CONFIRMED (narrowed) — fixed** (`4d8100d0`) |
-| D6-1 | The durability block claimed these GCS records are §5 catalog events; the catalog names `chatExchanges[]`, and the same file said so twice | material | **CONFIRMED — fixed** |
+| D6-1 | The durability block claimed these GCS records are §5 catalog events; the catalog names `chatExchanges[]`, and the same file said so twice | material | **CONFIRMED — fixed.** Refutation found the two anchors that settle it: Implementation Spec §2 says "Nothing rides the fire-and-forget shadow logger", and the Sep 7 Phase 0 report ruled on this exact write — "permitted — BUILD_RULES §5 binds catalog events only". §5 *permits* what commit 5 changed; it is fixed on the cautionary tale, not the rule. |
 | D4-3 | `captureConversation` documented "never throws" while calling the runtime hook outside any try/catch — a throw escapes the handler's catch and answers with nothing | material | **CONFIRMED (trigger hypothetical) — fixed** |
 | D4-5 | `waitUntil` "so the record completes" overstates a best-effort hook; the cap's residual loss window never stated | material | **CONFIRMED as prose — fixed** |
 | D3-1 | A chip minted at 'on' outlives a walk-back; every tap 404s into a line promising a retry that cannot work | material → **narrowed** ("permanently" refuted; D-90 sub-claim refuted) | **CONFIRMED (narrowed) — fixed** |
@@ -81,6 +81,16 @@ Every finding was then handed to a **refuting** reviewer with instructions to br
 | Flag pin honest | flag flipped to false | RED (actionable `file:line`) |
 
 `vite build` — the only check that catches a syntax error in `App.jsx`, since no test imports it — run explicitly: **exit 0**.
+
+### Corrections the refuters made to the fixes themselves
+
+The refutation pass was not only a filter on findings; it corrected three things in the repairs:
+
+- **The `waitUntil` precedent count was still wrong after the first fix.** "Six sibling routes" became "nine"; the real figure is **eight** (nine files in `api/agent/` use it, and `equip-bundle.js` is one of them). Corrected.
+- **The §5 framing was true but unanchored.** The rewrite asserted these are not catalog events without citing what makes that so. It now quotes Implementation Spec §2 and the Phase 0 ruling on this write by name, so the claim is checkable rather than merely asserted.
+- **The repaired mount-site window was still brittle in one direction.** Splitting on the closing `/>` fixed the arrow-function truncation and the prop-reorder false positive, but a prop *wrapped across lines* still read as absent. The match is whitespace-insensitive now, and `it.each` is driven off the discovered mounts rather than a fixed pair — so a third unpropped mount reds on its own row as well as on the count. Verified green on a reflow, red on a deletion at either mount, red twice on a third mount.
+
+One claim in an earlier commit message did not survive: `voiceLayerGrounding.js`'s IMPORTS paragraph was described as "ending mid-sentence". It was a complete sentence on a short line — the signature of an in-place deletion, not a truncation. The substantive half (a four-import list enumerated as three, which dropped `archetypeAdjustments.js` out of the §4 guard's stated scope) stands and is fixed.
 
 ---
 
