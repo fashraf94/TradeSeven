@@ -57,6 +57,9 @@ const GUARDED = [
   path.join(HERE, '..', 'ManageStation.jsx'),
   path.join(HERE, '..', '..', '..', 'adapters', 'baggerbombAdapter.js'),
   path.join(HERE, '..', '..', '..', 'hooks', 'useCommandCenterSync.js'),
+  // The decision record's shared vocabulary (voice-grounding hazard 26): the
+  // Battle View strings the narrator's YOUR RECORD block renders too.
+  path.join(HERE, '..', '..', '..', 'data', 'decisionRecord.js'),
   ...BATTLE_VIEW_SOURCES,
 ];
 

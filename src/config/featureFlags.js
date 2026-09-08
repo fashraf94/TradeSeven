@@ -2074,3 +2074,101 @@ export const BATTLE_VIEW_CHARACTER_PANE_ENABLED = true;
 export function isCharacterPaneOn() {
   return isBattleViewControllerOn() && BATTLE_VIEW_CHARACTER_PANE_ENABLED;
 }
+
+/**
+ * Voice-layer grounding — the narrator gains INPUTS, not authority
+ * (docs/design/VOICE_LAYER_GROUNDING_SPEC_V1_2.md §9; the Sep 7 rulings,
+ * docs/audits/20260907_VOICE_GROUNDING_BUILD_PHASE0_REPORT.md §4 items 2–4).
+ *
+ * A STRING tri-state, not a boolean gate — the ARCHETYPE_INTEGRITY_MODE /
+ * SECTOR_CAP_MODE house shape (ruling D1), walked by the FOUNDER, never in a
+ * build PR. What each state guarantees:
+ *
+ *   'off'     — every prompt byte-identical to the pre-grounding assembly.
+ *               voiceLayerPrompt.grounding.goldens.test.js holds the bytes,
+ *               captured from 70ba90a1 (the post-ATR-fix commit) and asserted
+ *               against every surface the arc touches.
+ *   'shadow'  — chat.js assembles BOTH prompts, SENDS THE OLD ONE, and logs
+ *               both (with the history and this mode) to shadow/conversations.
+ *               Proves assembly and token size on real battles; nothing else.
+ *   'canary'  — the NEW prompt is sent to the uids in the environment's
+ *               VOICE_GROUNDING_CANARY_UIDS (comma-separated; unset or empty
+ *               = NOBODY — it fails closed); everyone else stays on the
+ *               'shadow' behaviour. The uid list is an ENV VAR and never a
+ *               repo constant — the MANDATE_FOUNDER_UIDS precedent
+ *               (api/mandate/create.js:18-20): the founder's uid stays out of
+ *               the repo, and this file is imported by the client bundle.
+ *   'on'      — the new prompt for everyone.
+ *
+ * THE PIN. The flag-pin guard (flagPinGuard.test.js) tracks only
+ * `*_ENABLED = true|false`, so a string enum is invisible to it and CANNOT
+ * sit in DARK_BY_DESIGN (its integrity test fails any key outside that map).
+ * This flag is therefore pinned DIRECTLY in voiceGroundingFlags.test.js — the
+ * MANDATE_TRANSPORT_MODE precedent — with no boolean companion (ruling 3).
+ * Each walk step ('off' → 'shadow' → 'canary' → 'on') reconciles that pin in
+ * its own one-line PR (BUILD_RULES §2). Rollback is the same literal, walked
+ * back.
+ *
+ * Read it at CALL time through getVoiceGroundingMode(uid) below, never as a
+ * module-scope const in a consumer (the isCharacterPaneOn rule: many
+ * featureFlags vi.mock sites use a bare factory with no importOriginal
+ * spread).
+ */
+// Pinned by: voiceGroundingFlags.test.js (a STRING enum — pinned directly, outside flagPinGuard's `*_ENABLED` scan; this value and the pin move together — BUILD_RULES §2).
+export const VOICE_GROUNDING_MODE = 'off';
+
+/** The four founder-walked states, in walk order. */
+export const VOICE_GROUNDING_MODES = Object.freeze(['off', 'shadow', 'canary', 'on']);
+
+/**
+ * The canary allowlist, parsed from the raw env value at CALL time (never
+ * cached, never a constant): comma-separated uids, trimmed, empties dropped.
+ * Unset / empty / whitespace → [] → nobody. Pure and exported so the
+ * fail-closed property is directly testable without touching process.env.
+ */
+export function parseVoiceGroundingCanaryUids(raw) {
+  if (typeof raw !== 'string') return [];
+  return raw.split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+/**
+ * The EFFECTIVE grounding mode for one caller, as a pure function of the
+ * flag, the caller's uid and the raw canary list. 'canary' never leaves this
+ * function: it resolves to 'on' for an allowlisted uid and to 'shadow' for
+ * everyone else (the old prompt is still what they receive; assembly of the
+ * new one keeps being measured). A mode outside VOICE_GROUNDING_MODES — a
+ * typo on the walk — resolves to 'off', the only state that changes nothing.
+ *
+ * @param {string} mode        the flag value
+ * @param {string|null} uid    the authenticated caller (from the token, never
+ *                             the body); null / undefined never matches
+ * @param {string|undefined} rawCanaryUids  process.env.VOICE_GROUNDING_CANARY_UIDS
+ * @returns {'off'|'shadow'|'on'}
+ */
+export function resolveVoiceGroundingMode(mode, uid, rawCanaryUids) {
+  if (mode === 'canary') {
+    const allow = parseVoiceGroundingCanaryUids(rawCanaryUids);
+    return typeof uid === 'string' && uid && allow.includes(uid) ? 'on' : 'shadow';
+  }
+  if (mode === 'shadow' || mode === 'on') return mode;
+  return 'off';
+}
+
+/**
+ * The ONE home for the grounding gate — read at CALL time, per caller.
+ *
+ * The env read happens INSIDE the call (ruling 2: "parsed at call time inside
+ * getVoiceGroundingMode(uid)"), so a deploy that sets the variable takes
+ * effect on the next request with no module reload, and a runtime without
+ * `process` (this module is in the client bundle; the client never needs this
+ * accessor) reads an empty list rather than throwing.
+ *
+ * @param {string|null} uid  the authenticated caller's uid
+ * @returns {'off'|'shadow'|'on'}
+ */
+export function getVoiceGroundingMode(uid) {
+  // globalThis.process: undefined in the browser bundle (this file is client
+  // code too), the real process on the server — no `process` global is named.
+  const raw = globalThis.process?.env?.VOICE_GROUNDING_CANARY_UIDS;
+  return resolveVoiceGroundingMode(VOICE_GROUNDING_MODE, uid, raw);
+}

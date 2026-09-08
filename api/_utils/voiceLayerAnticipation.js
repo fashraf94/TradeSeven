@@ -30,6 +30,18 @@ import {
   getAgentPhase,
 } from './voiceLayerPrompt.js';
 import { TERM_TOKENS } from './termUniverse.js';
+// Voice-layer grounding §5 — under 'on' for the battle's owner the note is
+// composed by CODE from the decider's candidate: the event (symbol,
+// direction, slot) and, lint permitting, the recorded signal. No model call.
+import { getVoiceGroundingMode } from '../../src/config/featureFlags.js';
+import { formatEtDate } from './tournamentTime.js';
+import { etSlotTime } from '../../src/components/Dashboard/desk/deskCopy.js';
+import {
+  GROUNDING_VERSION,
+  composeAnticipationNote,
+  anticipationDedupeKey,
+  passesReplyLint,
+} from './voiceLayerGrounding.js';
 
 // Failure modes (each logged but never thrown):
 //   - read_context: fresh battle / agent / market / DRB / cache fetch failed,
@@ -40,12 +52,115 @@ import { TERM_TOKENS } from './termUniverse.js';
 //   - parse: parseVoiceLayerResponse returned parseError
 //   - empty_response: parsed.response missing/non-string
 //   - firestore_write: battleRef.update() failed
+/**
+ * Whether the doc already carries a note for this (symbol, direction) on this
+ * ET day (hazard 27) — the per-candidate pass, keyed with formatEtDate, never
+ * a UTC slice. Exported for its own rows.
+ */
+export function anticipationAlreadyNoted(chatExchanges, { symbol, direction, etDay }) {
+  if (!Array.isArray(chatExchanges)) return false;
+  const key = anticipationDedupeKey(symbol, direction, etDay);
+  return chatExchanges.some((ex) => {
+    if (!ex || ex.messageType !== 'anticipation' || !ex.anticipationContext) return false;
+    const ts = ex.timestamp?.toDate?.() ?? (ex.timestamp ? new Date(ex.timestamp) : null);
+    if (!ts || Number.isNaN(ts.getTime())) return false;
+    return anticipationDedupeKey(ex.anticipationContext.symbol, ex.anticipationContext.direction ?? null, formatEtDate(ts)) === key;
+  });
+}
+
+// The grounded write (spec §5). Reads nothing beyond the battle the caller
+// already fetched; writes ONE exchange or nothing. Throws only on the
+// Firestore write, which the caller's catch logs like every other step.
+async function composeGroundedAnticipation({ battleRef, battle, battleId, agentId, anticipationCandidate, evalId }) {
+  const now = new Date();
+  const symbol = anticipationCandidate.symbol;
+  const direction = anticipationCandidate.direction || null;
+  const etDay = formatEtDate(now);
+
+  if (anticipationAlreadyNoted(battle.chatExchanges, { symbol, direction, etDay })) {
+    logAnticipation({
+      agentId: agentId || null,
+      battleId,
+      anticipationSource: 'haiku',
+      composed: 'code',
+      success: false,
+      errorStep: 'grounding_dedupe',
+      errorReason: `already_noted_${etDay}`,
+      candidate: { symbol, direction, signalSummary: anticipationCandidate.signalSummary || null, threshold: anticipationCandidate.threshold || null },
+      evalId: evalId || null,
+    }).catch(() => {});
+    return;
+  }
+
+  // The check's slot (D-83), from the evaluation entry this candidate rode in
+  // on; the dispatch instant's slot when the entry is not on the doc yet.
+  const evaluation = Array.isArray(battle.evaluations) && evalId
+    ? battle.evaluations.find((e) => e && e.evalId === evalId) || null
+    : null;
+  const slot = etSlotTime(evaluation?.timestamp ?? now.toISOString());
+  const signalSummary = typeof anticipationCandidate.signalSummary === 'string' ? anticipationCandidate.signalSummary : null;
+  const agentMessage = composeAnticipationNote({ symbol, direction, slot, signalSummary });
+
+  const exchange = {
+    userMessage: null,
+    agentResponse: agentMessage,
+    scratchpad: null,
+    hasDirective: false,
+    directive: null,
+    suggestedActions: null,
+    elicitationTarget: 'anticipation',
+    timestamp: now.toISOString(),
+    mode: 'battle',
+    messageType: 'anticipation',
+    anticipationSource: 'haiku',
+    // §3.4 (M3): the top-level marker every grounded exchange carries.
+    groundingVersion: GROUNDING_VERSION,
+    // §5: provenance only — no `threshold`, no `signalSummary` (the clause is
+    // in the text, lint permitting); the slot the pane's eyebrows can name.
+    anticipationContext: {
+      symbol,
+      direction,
+      evaluationId: evalId || null,
+      slot,
+    },
+  };
+
+  await battleRef.update({ chatExchanges: FieldValue.arrayUnion(exchange) });
+
+  logAnticipation({
+    agentId: agentId || null,
+    battleId,
+    archetype: battle.agentContext?.archetype || null,
+    executionMode: battle.executionMode || 'autopilot',
+    anticipationSource: 'haiku',
+    composed: 'code',
+    systemPrompt: null,
+    rawResponse: null,
+    parsed: { response: agentMessage, scratchpad: null },
+    exchange,
+    candidate: {
+      symbol,
+      direction,
+      signalSummary: anticipationCandidate.signalSummary || null,
+      threshold: anticipationCandidate.threshold || null,
+      signalSource: anticipationCandidate.signalSource || null,
+    },
+    signalClauseDropped: Boolean(signalSummary && signalSummary.trim() && !passesReplyLint(signalSummary)),
+    evalId: evalId || null,
+    success: true,
+  }).catch(() => {});
+}
+
 export async function generateAnticipation({
   db,
   battleId,
   agentId,
   anticipationCandidate,
   evalId,
+  // The battle owner's uid, when the caller has it (agent-evaluate.js does):
+  // lets the grounding gate answer before the four context reads the model
+  // path needs. Absent, the gate answers after the battle read.
+  ownerId = null,
 }) {
   let errorStep = null;
   let errorReason = null;
@@ -65,6 +180,31 @@ export async function generateAnticipation({
     }
 
     const battleRef = db.collection('agentBattles').doc(battleId);
+
+    // Voice-layer grounding §5 — decided from the owner when the caller passed
+    // it: the grounded note needs the battle doc only (the slot, the dedupe
+    // pass), never the agent / market / DRB / cache reads or the model.
+    const groundedByOwner = ownerId ? getVoiceGroundingMode(ownerId) === 'on' : null;
+    if (groundedByOwner === true) {
+      let battleDocSnap;
+      try {
+        battleDocSnap = await battleRef.get();
+      } catch (err) {
+        errorStep = 'read_context';
+        errorReason = err.message;
+        throw err;
+      }
+      if (!battleDocSnap.exists) {
+        errorStep = 'read_context';
+        errorReason = 'battle_not_found';
+        throw new Error(`Battle ${battleId} not found at anticipation time`);
+      }
+      const groundedBattle = battleDocSnap.data();
+      groundedBattle.id = battleDocSnap.id;
+      errorStep = 'firestore_write';
+      await composeGroundedAnticipation({ battleRef, battle: groundedBattle, battleId, agentId, anticipationCandidate, evalId });
+      return;
+    }
 
     // Parallel fetch — fresh battle, agent doc, market context, DRB,
     // voice-layer cache. Same five sources as trade narration so the
@@ -113,6 +253,14 @@ export async function generateAnticipation({
         errorReason = err.message;
       }
       throw err;
+    }
+
+    // Voice-layer grounding §5 — the same gate, answered from the doc when the
+    // caller did not pass the owner: still before any model call.
+    if (groundedByOwner === null && getVoiceGroundingMode(battle.ownerId) === 'on') {
+      errorStep = 'firestore_write';
+      await composeGroundedAnticipation({ battleRef, battle, battleId, agentId, anticipationCandidate, evalId });
+      return;
     }
 
     // Build the anticipation system prompt.

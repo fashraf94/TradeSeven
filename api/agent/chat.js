@@ -15,11 +15,26 @@ import { resolveBudgetDay, readAgentChatBudget, chargeAgentChatBudget } from '..
 // run the literal legacy normalizeDirective path → byte-identical.
 import { gateDirective, renderDirectiveStatus } from '../_utils/directiveGate.js';
 import { getEffectiveArchetype } from '../_utils/directiveIdentity.js';
-import { ARCHETYPE_INTEGRITY_MODE, LEAGUE_AGENT_CHAT_ENABLED } from '../../src/config/featureFlags.js';
+import { ARCHETYPE_INTEGRITY_MODE, LEAGUE_AGENT_CHAT_ENABLED, getVoiceGroundingMode } from '../../src/config/featureFlags.js';
+// Voice-layer grounding (VOICE_LAYER_GROUNDING_SPEC_V1_2): the per-caller mode
+// is read at CALL time through getVoiceGroundingMode(uid); under 'on' (battle
+// mode) the grounded prompt and the grounded history window are what the model
+// receives, and the exchange carries the top-level marker.
+import {
+  GROUNDING_VERSION,
+  buildGroundedConversationHistory,
+  GROUNDED_ELICITATION_INSTRUCTIONS,
+  normalizeSuggestedActions,
+} from '../_utils/voiceLayerGrounding.js';
 // Archetype Integrity — Phase E2 (capabilities manifest → USER LEVERS hand-off).
 // Flag-gated, battle-only; the manifest is built only when the feature is ON.
 import { buildCapabilitiesManifest } from '../_utils/agentCapabilitiesManifest.js';
 import { getTournamentClaimWindow, formatEtDate } from '../_utils/tournamentTime.js';
+// The ONE shape of a persisted directive and the per-battle chat budget —
+// shared with the deterministic filing route (voice-layer grounding §6.1), so
+// the two writers cannot drift (BUILD_RULES §9). The output here is unchanged
+// field for field; chat.test.js's ENFORCE and flag-OFF rows pin it.
+import { buildDirectiveRecord, buildDirectiveSlot, BATTLE_CHAT_BUDGET } from '../_utils/directiveFiling.js';
 
 export const config = { maxDuration: 30 };
 
@@ -61,7 +76,9 @@ export const TURN_DEADLINE_MS = 24_000;
 
 // ==================== ELICITATION TARGET ====================
 
-const ELICITATION_INSTRUCTIONS = {
+// Exported (read-only) so the grounding vocabulary guard can prove the two
+// lines it replaces are real (voiceLayerPrompt.grounding.test.js).
+export const ELICITATION_INSTRUCTIONS = {
   risk_appetite: "Create an opening for the user to reveal their comfort with risk. Present options that range from safe to aggressive.",
   concentration_tolerance: "Present a concentrated vs diversified choice. The user's preference reveals their position-sizing philosophy.",
   sector_convictions: "Mention 2-3 different sectors in your options. Note which sector the user gravitates toward or avoids.",
@@ -87,7 +104,10 @@ const DIMENSIONS = [
   'competitive_focus', 'learning_orientation',
 ];
 
-function selectElicitationTarget(partnerProfile, recentTargets = []) {
+// `instructions` — the table to read the instruction from. The default is the
+// shipped table; the grounded turn passes the shipped table with the two
+// grounded lines laid over it (site 27 of the vocabulary guard).
+function selectElicitationTarget(partnerProfile, recentTargets = [], instructions = ELICITATION_INSTRUCTIONS) {
   const candidates = DIMENSIONS
     .filter(d => !recentTargets.includes(d))
     .map(d => ({
@@ -100,7 +120,7 @@ function selectElicitationTarget(partnerProfile, recentTargets = []) {
 
   return {
     dimension: target.dimension,
-    instruction: ELICITATION_INSTRUCTIONS[target.dimension],
+    instruction: instructions[target.dimension],
   };
 }
 
@@ -168,8 +188,12 @@ function detectMode(battle) {
   return isReviewForToday(latestReview) ? 'review' : 'battle';
 }
 
+// The shadow record's note when the COUNTERPART assembly (the prompt this
+// turn does not send) throws — recorded, never thrown (spec §9, review R-05).
+const describeAssemblyError = (err) => String(err?.message || err || 'unknown').slice(0, 300);
+
 const MODE_BUDGET = {
-  battle: { field: 'chatBudgetUsed', limit: 10 },
+  battle: { field: BATTLE_CHAT_BUDGET.field, limit: BATTLE_CHAT_BUDGET.limit },
   review: { field: 'reviewBudgetUsed', limit: 5 },
 };
 
@@ -190,6 +214,11 @@ export default async function handler(req, res) {
   // catch block's shadow record needs the elapsed time too. null = the turn
   // failed before the model was ever called.
   let gemmaLatencyMs = null;
+  // Voice-layer grounding §9 (G6) — the shadow record's grounding fields (the
+  // mode, both prompts, both history windows), hoisted so the catch site's
+  // record carries whatever had been assembled when the turn failed. Null
+  // under 'off': the shipped record, byte for byte.
+  let groundingRecord = null;
 
   // 1. Security middleware
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 10, windowMs: 60000 } })) {
@@ -252,6 +281,21 @@ export default async function handler(req, res) {
     } else {
       mode = detectMode(battle);
     }
+
+    // 8b. Voice-layer grounding — the per-caller mode, read at CALL time
+    //     (never module scope). `grounded` is true only when the NEW prompt is
+    //     what this turn SENDS: 'on', battle mode. Review mode keeps its own
+    //     prompt untouched (the grounding arc is the live-play narrator).
+    const groundingMode = getVoiceGroundingMode(user.uid);
+    const grounded = groundingMode === 'on' && mode === 'battle';
+    // §9 'shadow' (G6): under any mode but 'off', in battle mode, BOTH prompts
+    // are assembled — the shipped one and the grounded one — and both ride the
+    // shadow record with the mode, so the paired harness (§9 gate 1) replays
+    // old vs new from real turns. What is SENT is the resolved mode's: 'on'
+    // the new, 'shadow' the old. 'off' assembles only the shipped prompt (the
+    // off goldens hold, byte for byte).
+    const shadowAssembly = groundingMode !== 'off' && mode === 'battle';
+    if (shadowAssembly) groundingRecord = { voiceGroundingMode: groundingMode };
 
     // 9. Battle status check (mode-aware: review mode is valid on completed battles)
     if (battle.status !== 'active' && mode !== 'review') {
@@ -391,11 +435,23 @@ export default async function handler(req, res) {
       console.error('[VoiceLayer] Failed to fetch market context:', err.message);
     }
 
-    // 12. Compute elicitation target
-    const elicitationTarget = selectElicitationTarget(
-      agent.partnerProfile,
-      battle.recentElicitationTargets || [],
-    );
+    // 12. Compute elicitation target — the DIMENSION once (the shipped
+    //     selection), the instruction from the table each prompt reads: the
+    //     shipped table, or the shipped table with the two grounded lines laid
+    //     over it (site 27 of the vocabulary guard). Both prompts of a shadow
+    //     turn target the same dimension, so the pair differs only in what the
+    //     grounding changes.
+    const elicitationTargetOld = selectElicitationTarget(agent.partnerProfile, battle.recentElicitationTargets || []);
+    const elicitationTargetNew = shadowAssembly
+      ? {
+          dimension: elicitationTargetOld.dimension,
+          instruction: { ...ELICITATION_INSTRUCTIONS, ...GROUNDED_ELICITATION_INSTRUCTIONS }[elicitationTargetOld.dimension],
+        }
+      : null;
+    // The turn reads only the DIMENSION below (the exchange, the shadow record,
+    // the recent-targets window); each prompt takes its own instruction inside
+    // buildPrompt(g), so the shipped selection is the one name (review R-34).
+    const elicitationTarget = elicitationTargetOld;
 
     // 13. Build conversation history — last 10 exchanges as messages.
     // Agent-initiated exchanges (first_message, auto_debrief,
@@ -411,24 +467,70 @@ export default async function handler(req, res) {
     const previousExchanges = (battle.chatExchanges || [])
       .slice(-10)
       .filter(ex => typeof ex?.userMessage === 'string' && ex.userMessage.length > 0);
-    const conversationHistory = previousExchanges.flatMap(ex => [
+    // Voice-layer grounding §3.4: under the flag the window has ONE rule —
+    // user-initiated pairs, tagged by messageType; agent-initiated exchanges
+    // ride the system prompt when they carry the grounding marker (legacy
+    // proactive exchanges stay excluded). The legacy filter above is the
+    // shipped path, byte for byte.
+    const conversationHistoryOld = previousExchanges.flatMap(ex => [
       { role: 'user', content: ex.userMessage },
       { role: 'assistant', content: ex.agentResponse || ex.agentMessage || '' },
     ]);
+    // The grounded window: SENT under 'on' — a throw there fails the turn, as
+    // any failure of the sent prompt does. Under 'shadow' it is the
+    // COUNTERPART, built for the record only, so a failure is RECORDED on the
+    // shadow record and never reaches the shipped turn (spec §9: 'shadow'
+    // proves assembly and nothing else — review R-05).
+    let conversationHistoryNew = null;
+    let counterpartError = null;
+    if (grounded) {
+      conversationHistoryNew = buildGroundedConversationHistory(battle.chatExchanges);
+    } else if (shadowAssembly) {
+      try {
+        conversationHistoryNew = buildGroundedConversationHistory(battle.chatExchanges);
+      } catch (err) {
+        counterpartError = describeAssemblyError(err);
+      }
+    }
+    const conversationHistory = grounded ? conversationHistoryNew : conversationHistoryOld;
 
-    // 14. Build system prompt
-    const systemPrompt = buildVoiceLayerPrompt({
+    // 14. Build the system prompt — the one this turn SENDS first, then (under
+    //     any mode but 'off') its counterpart for the shadow record (§9, G6).
+    const buildPrompt = (g) => buildVoiceLayerPrompt({
       agent,
       battle,
-      elicitationTarget,
-      conversationHistory,
+      elicitationTarget: g ? elicitationTargetNew : elicitationTargetOld,
+      conversationHistory: g ? conversationHistoryNew : conversationHistoryOld,
       anchorContext,
       marketSnapshot,
       mode,
       dailyReviews: battle.dailyReviews || [],
       dailyGrades: battle.dailyGrades || [],
       capabilitiesManifest,
+      grounded: g,
     });
+    const systemPrompt = buildPrompt(grounded);
+    if (shadowAssembly) {
+      // The counterpart (the prompt this turn does NOT send) is built for the
+      // record only: a failure is recorded, never a 500 on the shipped turn.
+      let counterpart = null;
+      if (!counterpartError) {
+        try {
+          counterpart = buildPrompt(!grounded);
+        } catch (err) {
+          counterpartError = describeAssemblyError(err);
+        }
+      }
+      if (counterpartError) console.error('[VoiceLayer] shadow assembly failed (recorded, turn continues):', counterpartError);
+      groundingRecord = {
+        ...groundingRecord,
+        systemPromptOld: grounded ? counterpart : systemPrompt,
+        systemPromptNew: grounded ? systemPrompt : counterpart,
+        conversationHistoryOld,
+        conversationHistoryNew,
+        ...(counterpartError ? { shadowAssemblyError: counterpartError } : {}),
+      };
+    }
 
     // 15. Call OpenRouter (Gemma 4) — with the GEMMA_TIMEOUT_MS budget, CLAMPED
     //     to the absolute turn deadline.
@@ -508,6 +610,9 @@ export default async function handler(req, res) {
         errorReason: `parse_${parsed.errorReason}`,
         rawGemmaContent: String(parsed.rawText || '').slice(0, 2000),
         gemmaLatencyMs,
+        // Voice-layer grounding §9 (G6): the mode, both prompts and both history
+        // windows, under any mode but 'off' (absent = the shipped record).
+        ...(groundingRecord || {}),
       }).catch(() => {});
       return res.status(502).json({
         error: 'gemma_invalid_shape',
@@ -579,13 +684,23 @@ export default async function handler(req, res) {
         }
       : null;
 
+    // Voice-layer grounding §6.2 — chips minted by id. Under the grounded prompt
+    // the model's chips are { kind:'directive', id } | { kind:'ask', text }; the
+    // server rewrites a directive chip's text to the canonical text of the
+    // SERVER-DERIVED archetype's menu and drops an off-menu id, so a chip's
+    // `Files:` label is true by mechanism. The shipped path keeps the model's
+    // strings untouched.
+    const suggestedActions = grounded
+      ? normalizeSuggestedActions(parsed.suggestedActions, getEffectiveArchetype(battle, agent))
+      : (parsed.suggestedActions || null);
+
     // 18. Map to client contract
     const clientResponse = {
       agentMessage: parsed.response,
       extractedRule: normalizedDirective
         ? { text: normalizedDirective.text, targetType: 'general', targetValue: null, rationale: normalizedDirective.text }
         : null,
-      suggestedActions: parsed.suggestedActions || null,
+      suggestedActions,
       exchangeNumber: currentBudget + 1,
       budgetTotal: budgetLimit,
       scratchpad: cleanScratchpad,
@@ -618,7 +733,7 @@ export default async function handler(req, res) {
       agentMessage: parsed.response,
       scratchpad: cleanScratchpad,
       directive: normalizedDirective,
-      suggestedActions: parsed.suggestedActions || null,
+      suggestedActions,
       elicitationTarget: elicitationTarget.dimension,
       anchorContext: anchorContext || null,
       hasDirective: effectiveHasDirective,
@@ -627,6 +742,9 @@ export default async function handler(req, res) {
       tokenUsage: null,
       mode,
       gemmaLatencyMs,
+      // Voice-layer grounding §9 (G6): the mode, both prompts and both history
+      // windows, under any mode but 'off' (absent = the shipped record).
+      ...(groundingRecord || {}),
     }).catch(() => {});
 
     // 19. Write exchange to battle doc
@@ -637,29 +755,33 @@ export default async function handler(req, res) {
     //     tool output → statusFeed entries → the frontend trade card indicator.
     const directiveThreadId = (effectiveHasDirective && normalizedDirective) ? randomUUID() : null;
 
+    // Voice-layer grounding §6.3 — the grounded turn tells the client what it
+    // is and what the battle's CURRENT directive thread is after this turn:
+    // this turn's, when it filed one; otherwise the slot's as read — the same
+    // raw slot file-directive's check 4 compares against — so a chip filing's
+    // `expectedDirectiveThreadId` is the server's last word, never a guess.
+    // Absent on the shipped path: the flag-off clientResponse is byte-identical.
+    if (grounded) {
+      clientResponse.grounded = true;
+      clientResponse.currentDirectiveThreadId = directiveThreadId
+        ?? (typeof battle.directive?.directiveThreadId === 'string' && battle.directive.directiveThreadId
+          ? battle.directive.directiveThreadId
+          : null);
+    }
+
     const exchange = {
       userMessage: sanitizedMessage,
       agentResponse: parsed.response,
       scratchpad: cleanScratchpad,
       hasDirective: effectiveHasDirective,
+      // The shipped record, from the ONE shape (directiveFiling.js): Release 2's
+      // additive id+version ride it only when the gate minted them, so the
+      // legacy (flag-off) path keeps its exact pre-Release-2 shape.
       directive: directiveThreadId
-        ? {
-            text: normalizedDirective.text,
-            expiry: normalizedDirective.expiry || 'end_of_battle',
-            directiveThreadId,
-            // Release 2 (spec Phase 1 item 5) — additive id+version from the
-            // gate, so directive-vs-lean opposition binds to both
-            // canonicalTextVersions. Present ONLY when the gate minted them:
-            // the legacy (flag-off) normalizeDirective path writes its exact
-            // pre-Release-2 shape, keeping the OFF state byte-identical.
-            ...(normalizedDirective.adjustmentId != null ? {
-              adjustmentId: normalizedDirective.adjustmentId,
-              canonicalTextVersion: normalizedDirective.canonicalTextVersion ?? null,
-            } : {}),
-          }
+        ? buildDirectiveRecord(normalizedDirective, directiveThreadId)
         : null,
       directiveThreadId,
-      suggestedActions: parsed.suggestedActions || null,
+      suggestedActions,
       elicitationTarget: elicitationTarget.dimension,
       timestamp: new Date().toISOString(),
       mode,
@@ -679,6 +801,11 @@ export default async function handler(req, res) {
       // chatExchanges write, NOT a fire-and-forget log). Stamped on the EXCHANGE,
       // never as a new battle-doc key (no createAgentBattle doc-shape contact).
       ...(gateOutcome ? { archetypeGate: gateOutcome } : {}),
+      // Voice-layer grounding §3.4 (M3): every exchange produced under the
+      // grounding contract carries the TOP-LEVEL marker, so the history window
+      // has one rule. Absent when the shipped prompt was sent (off / shadow):
+      // the persisted shape is unchanged there.
+      ...(grounded ? { groundingVersion: GROUNDING_VERSION } : {}),
     };
 
     const recentTargets = [...(battle.recentElicitationTargets || []), elicitationTarget.dimension].slice(-3);
@@ -691,19 +818,9 @@ export default async function handler(req, res) {
       // createAgentBattle field + the Catalog #9 durable record — unchanged.)
       ...(!isLeagueAsk ? { [budgetField]: FieldValue.increment(1) } : {}),
       recentElicitationTargets: recentTargets,
+      // The slot, from the same ONE shape (see the exchange record above).
       ...(directiveThreadId ? {
-        directive: {
-          text: normalizedDirective.text,
-          expiry: normalizedDirective.expiry || 'end_of_battle',
-          directiveThreadId,
-          createdAt: new Date().toISOString(),
-          // Release 2 (spec Phase 1 item 5) — see the exchange record above
-          // (gate-minted only; the flag-off legacy shape stays byte-identical).
-          ...(normalizedDirective.adjustmentId != null ? {
-            adjustmentId: normalizedDirective.adjustmentId,
-            canonicalTextVersion: normalizedDirective.canonicalTextVersion ?? null,
-          } : {}),
-        },
+        directive: buildDirectiveSlot(normalizedDirective, directiveThreadId, new Date().toISOString()),
       } : {}),
     });
 
@@ -780,6 +897,9 @@ export default async function handler(req, res) {
       errorReason: isAbort ? 'gemma_timeout' : 'handler_exception',
       errorMessage: String(error?.message || error || '').slice(0, 500),
       gemmaLatencyMs,
+      // Voice-layer grounding §9 (G6): the mode, both prompts and both history
+      // windows, under any mode but 'off' (absent = the shipped record).
+      ...(groundingRecord || {}),
     }).catch(() => {});
 
     if (isAbort) {

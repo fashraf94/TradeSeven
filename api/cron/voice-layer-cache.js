@@ -21,6 +21,11 @@ import {
 import { getWireFlags } from '../_utils/wireFlags.js';
 import { resolveWireMarketDate, priorTradingSessions } from '../_utils/wireCalendar.js';
 import { fetchAgentSafeWireDays, resolveAgentSafeEntries } from '../_utils/agentSafeWireEntry.js';
+// Voice-layer grounding §3.5 — the fundamentals mirror rides the brief only
+// while the battle owner's mode is not 'off' (shadow assembles the new prompt
+// too), so a flag-off cache doc stays field-wise byte-identical (the newsLines
+// precedent). Read at call time per battle, never module scope.
+import { getVoiceGroundingMode } from '../../src/config/featureFlags.js';
 
 export const config = { maxDuration: 60 };
 
@@ -109,7 +114,11 @@ async function fetchBulkPrices(symbols) {
 // price.change_p IS thresholdPriceChange, so this is zero-cost. Falls back to
 // entry-relative change when thresholdPriceChange is unavailable. Short
 // positions negate the multiplier (matches canonical lines 117-129).
-export function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScoresMap, thresholdHistory = {}, startingPrices = {}, intradayMomentumMap = {}) {
+// `options.fundamentals` (voice-layer grounding §3.5): copy the `fundamentals`
+// mirror the rankings entry already holds onto the brief — zero added reads,
+// null-honest (absent when the entry carries none). Default false → the
+// shipped brief, field for field.
+export function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScoresMap, thresholdHistory = {}, startingPrices = {}, intradayMomentumMap = {}, options = {}) {
   if (!portfolio) return [];
   const briefs = [];
 
@@ -303,6 +312,11 @@ export function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScore
       // distinguish "no data this cycle" from "field missing".
       brief.intraday = intradayMomentumMap[symbol] || null;
 
+      // Voice-layer grounding §3.5 — the mirror, when asked for and present.
+      if (options.fundamentals === true && ranking?.fundamentals && typeof ranking.fundamentals === 'object') {
+        brief.fundamentals = ranking.fundamentals;
+      }
+
       briefs.push(brief);
     });
   });
@@ -320,7 +334,7 @@ export function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScore
 // We also retain entries when priceMap data is missing (degraded brief with
 // price: null) — relevant for crypto bench, where EODHD US-equity feed has no
 // data, and for newly-warm symbols not yet covered by today's bulk pull.
-export function buildBenchBriefs(portfolio, priceMap, rankingsMap, techScoresMap, now = new Date()) {
+export function buildBenchBriefs(portfolio, priceMap, rankingsMap, techScoresMap, now = new Date(), options = {}) {
   const bench = portfolio?.bench;
   if (!bench) return [];
 
@@ -461,6 +475,11 @@ export function buildBenchBriefs(portfolio, priceMap, rankingsMap, techScoresMap
     };
     if (trendSummary) brief.trendSummary = trendSummary;
     if (momentumSummary) brief.momentumSummary = momentumSummary;
+
+    // Voice-layer grounding §3.5 — see buildPortfolioBriefs.
+    if (options.fundamentals === true && ranking?.fundamentals && typeof ranking.fundamentals === 'object') {
+      brief.fundamentals = ranking.fundamentals;
+    }
 
     briefs.push(brief);
   }
@@ -795,6 +814,9 @@ export default async function handler(req, res) {
       const portfolioSyms = battlePortfolioSymbols.get(battle.id) || new Set();
 
       const intradayMomentumMap = battle.cronState?.intradayMomentum || {};
+      // Voice-layer grounding §3.5 — per battle, at call time: the mirror rides
+      // the brief whenever the owner's mode is not 'off'.
+      const briefOptions = { fundamentals: getVoiceGroundingMode(battle.ownerId) !== 'off' };
       const portfolioBriefs = buildPortfolioBriefs(
         battle.portfolio,
         priceMap,
@@ -803,8 +825,9 @@ export default async function handler(req, res) {
         battle.thresholdHistory || {},
         battle.startingPrices || {},
         intradayMomentumMap,
+        briefOptions,
       );
-      const benchBriefs = buildBenchBriefs(battle.portfolio, priceMap, rankingsMap, techScoresMap);
+      const benchBriefs = buildBenchBriefs(battle.portfolio, priceMap, rankingsMap, techScoresMap, undefined, briefOptions);
       const scoutAlerts = buildScoutAlerts(battle.watchlist, rankingsMap, techScoresMap, archetype, portfolioSyms);
       const mcBlock = buildMarketContextBlock(marketContext);
 

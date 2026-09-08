@@ -20,6 +20,26 @@ import { getEffectiveArchetype } from './directiveIdentity.js';
 import { ARCHETYPE_INTEGRITY_MODE } from '../../src/config/featureFlags.js';
 // Release 2 PR-c — the shared control resolution (see buildActiveDirectiveBlock).
 import { resolveControls } from './controlPromptRenderer.js';
+// Voice-layer grounding (VOICE_LAYER_GROUNDING_SPEC_V1_2) — everything the
+// grounded prompt renders that the pre-grounding prompt does not. Consumed
+// ONLY under `grounded: true`, so the flag-off assembly is the untouched
+// module (voiceLayerPrompt.grounding.goldens.test.js holds it to the byte).
+import {
+  buildYourRecordBlock,
+  CURRENT_CONTEXT_HEADING,
+  CONTEXT_VINTAGE_SENTENCE,
+  buildFundamentalsLine,
+  buildEarlierMessagesBlock,
+  buildPlanAtDeployBlock,
+  buildGroundedIdentity,
+  GROUNDED_PHASE_RULES,
+  GROUNDED_PHASE_EXAMPLES,
+  GROUNDED_CONFIRMATION_EXAMPLE,
+  GROUNDED_THIRD_PATH_RULE,
+  GROUNDED_FIRST_MESSAGE_IDENTITY_TAIL,
+  GROUNDED_FIRST_MESSAGE_INSTRUCTIONS,
+  GROUNDED_OUTPUT_FORMAT,
+} from './voiceLayerGrounding.js';
 
 // ==================== STATIC CONSTANTS ====================
 
@@ -1683,7 +1703,9 @@ export function detectTradeProvenance(trade, proposalHistory) {
   return 'autopilot';
 }
 
-export function buildPortfolioBriefsBlock(marketSnapshot) {
+// `grounded` (voice-layer grounding §3.5): append the cache's fundamentals
+// mirror as one null-honest line per name. Default false → the shipped bytes.
+export function buildPortfolioBriefsBlock(marketSnapshot, { grounded = false } = {}) {
   if (!marketSnapshot?.portfolioBriefs?.length) return null;
 
   const freshnessNote = marketSnapshot.dataFreshness?.prices === 'websocket'
@@ -1727,13 +1749,18 @@ export function buildPortfolioBriefsBlock(marketSnapshot) {
       entry += `\nBadges earned: ${b.existingBadges.join(', ')}`;
     }
 
+    if (grounded) {
+      const fundamentalsLine = buildFundamentalsLine(b.fundamentals);
+      if (fundamentalsLine) entry += `\n${fundamentalsLine}`;
+    }
+
     return entry;
   });
 
   return `YOUR PORTFOLIO${freshnessNote}\n${lines.join('\n\n')}`;
 }
 
-export function buildBenchBriefsBlock(marketSnapshot) {
+export function buildBenchBriefsBlock(marketSnapshot, { grounded = false } = {}) {
   if (!marketSnapshot?.benchBriefs?.length) return null;
 
   const lines = marketSnapshot.benchBriefs.map(b => {
@@ -1756,6 +1783,11 @@ export function buildBenchBriefsBlock(marketSnapshot) {
 
     const signalsLine = buildSignalsLine(b);
     if (signalsLine) extra.push(signalsLine);
+
+    if (grounded) {
+      const fundamentalsLine = buildFundamentalsLine(b.fundamentals);
+      if (fundamentalsLine) extra.push(fundamentalsLine);
+    }
 
     return extra.length ? `${header}\n${extra.join('\n')}` : header;
   });
@@ -2622,6 +2654,12 @@ export function buildVoiceLayerPrompt({
   // flag-gated: consumed solely by the USER LEVERS block under the archetypeBlock
   // guard, so the null default keeps flag-OFF byte-identical.
   capabilitiesManifest = null,
+  // Voice-layer grounding (VOICE_LAYER_GROUNDING_SPEC_V1_2 §3-§4) — the
+  // narrator gains inputs, not authority. BATTLE mode only; the caller resolves
+  // getVoiceGroundingMode(uid) and passes true only when the NEW prompt is what
+  // this assembly is for ('on', or the shadow copy). Default false → the
+  // untouched assembly, byte for byte (the goldens).
+  grounded = false,
 }) {
   const stats = agent?.stats || {};
   const gamesPlayed = stats.gamesPlayed || 0;
@@ -2920,8 +2958,20 @@ RIGHT NOW you are in WATCHLIST DIALOGUE MODE — there is no active battle, no W
   }
   // ── End Set-Analysis Mode branch ────────────────────────────
 
-  // Block 1: Identity (TOP — high attention)
-  const identity = `You are ${agent.name}, a competitive fantasy trading agent on FantasyTrades. Your archetype is ${getArchetypeLabel(agent.archetype)}. You and the user are PARTNERS — two people at a trading desk. You bring the research and market reads; they bring intuition and the final call. Neither of you is above the other.
+  // Block 1: Identity (TOP — high attention). Under the grounding flag the
+  // frame is spec §3.1: the process decides and records; the narrator reads
+  // the record and the context, in the past tense, and never says what it
+  // will do to a position.
+  const identity = grounded
+    ? buildGroundedIdentity({
+        name: agent.name,
+        archetypeLabel: getArchetypeLabel(agent.archetype),
+        gamesPlayed,
+        wins,
+        losses,
+        phase,
+      })
+    : `You are ${agent.name}, a competitive fantasy trading agent on FantasyTrades. Your archetype is ${getArchetypeLabel(agent.archetype)}. You and the user are PARTNERS — two people at a trading desk. You bring the research and market reads; they bring intuition and the final call. Neither of you is above the other.
 
 You have opinions and you share them directly. You push back when you disagree. You're casual — talk like a sharp friend who happens to be great with markets, not like a financial advisor or an assistant. When you don't know something or aren't sure, say so honestly.
 
@@ -2936,11 +2986,21 @@ You've been working together for ${gamesPlayed} games (${wins}W-${losses}L). You
   // Block 3.5: Anchor (MIDDLE — low attention)
   const anchor = anchorContext || 'No market data available. Focus on game state and partner preferences.';
 
+  // Block 3.6 (grounded only): YOUR RECORD — the decider's persisted checks,
+  // code-rendered (spec §3.2), with the current directive resolved through the
+  // SAME reader the narration block uses (resolveEffectiveDirective, §9).
+  const yourRecord = grounded
+    ? buildYourRecordBlock({
+        evaluations: battle?.evaluations,
+        directive: resolveEffectiveDirective(battle?.directive, battle),
+      })
+    : null;
+
   // Block 4A: Portfolio Briefs from voiceLayerCache (MIDDLE — reference material)
-  const portfolioBriefs = buildPortfolioBriefsBlock(marketSnapshot);
+  const portfolioBriefs = buildPortfolioBriefsBlock(marketSnapshot, { grounded });
 
   // Block 4A-bench: Bench Briefs from voiceLayerCache (MIDDLE — reference material)
-  const benchBriefs = buildBenchBriefsBlock(marketSnapshot);
+  const benchBriefs = buildBenchBriefsBlock(marketSnapshot, { grounded });
 
   // Block 4A-wire: Wire newsLines from voiceLayerCache (MIDDLE — reference
   // material). Phase 2 N1.3 — BATTLE FALL-THROUGH ONLY, and registered in
@@ -2957,17 +3017,24 @@ You've been working together for ${gamesPlayed} games (${wins}W-${losses}L). You
   // Block 4C: Enhanced Market Context from voiceLayerCache (MIDDLE — reference material)
   const marketContext = buildMarketSnapshotContext(marketSnapshot);
 
-  // Block 5: Battle State (BOTTOM — high attention)
+  // Block 5: Battle State (BOTTOM — high attention). Under the flag this is
+  // also where RECEIPTS live: the RECENT TRADES lines are unchanged (§3.2).
   const battleState = buildBattleState(battle);
 
+  // Block 5.5 (grounded only): the narrator's OWN earlier messages that carry
+  // the grounding marker — conversation, not decision evidence (§3.4).
+  const earlierMessages = grounded ? buildEarlierMessagesBlock(battle?.chatExchanges) : null;
+
   // Few-Shot Example (BOTTOM — high attention)
-  const fewShot = PHASE_EXAMPLES[phase] + '\n\n' + CONFIRMATION_EXAMPLE;
+  const fewShot = grounded
+    ? GROUNDED_PHASE_EXAMPLES[phase] + '\n\n' + GROUNDED_CONFIRMATION_EXAMPLE
+    : PHASE_EXAMPLES[phase] + '\n\n' + CONFIRMATION_EXAMPLE;
 
   // Elicitation Target (BOTTOM — high attention)
   const elicitation = `ELICITATION TARGET (internal — do not mention this to the user):\n${elicitationTarget.instruction}`;
 
   // Block 6: Phase Rules (BOTTOM — LAST block, highest attention)
-  const phaseRules = PHASE_RULES[phase];
+  const phaseRules = grounded ? GROUNDED_PHASE_RULES[phase] : PHASE_RULES[phase];
 
   // Phase D — resolve the archetype-integrity persona block ONCE; its truthiness
   // is the single guard for BOTH the proposal append and the persona push, so the
@@ -2975,11 +3042,12 @@ You've been working together for ${gamesPlayed} games (${wins}W-${losses}L). You
   // OFF or unknown archetype → the assembled sequence below is byte-identical.
   const archetypeBlock = buildArchetypeIntegrityBlock(battle, agent);
 
-  // Assemble in U-shaped attention order
+  // Assemble in U-shaped attention order. Under the flag the output format
+  // mints chips by id (§6.2) — battle mode only; review keeps the shipped one.
   const blocks = [
     identity,        // Block 1   (TOP)
     GAME_MECHANICS,  // Block 1.5 (TOP)
-    OUTPUT_FORMAT,   // Block 7   (TOP)
+    grounded ? GROUNDED_OUTPUT_FORMAT : OUTPUT_FORMAT,   // Block 7   (TOP)
   ];
   // Phase D — battle-only proposal-schema append, adjacent to OUTPUT_FORMAT. NOT
   // an edit to the shared OUTPUT_FORMAT const (that would leak into review — C3).
@@ -2989,14 +3057,19 @@ You've been working together for ${gamesPlayed} games (${wins}W-${losses}L). You
     convictions,     // Block 3   (MIDDLE)
     anchor,          // Block 3.5 (MIDDLE)
   );
+  if (yourRecord) blocks.push(yourRecord); // Block 3.6 (grounded only)
 
-  // Blocks 4A-4C: Market snapshot data (MIDDLE — only if cache exists)
+  // Blocks 4A-4C: Market snapshot data (MIDDLE — only if cache exists). Under
+  // the flag they render under ONE heading (§3.3) and the DATA_CONFIDENCE_RULE
+  // carries the vintage sentence.
+  const hasContextBlocks = Boolean(portfolioBriefs || benchBriefs || newsLine || scoutAlerts || marketContext);
+  if (grounded && hasContextBlocks) blocks.push(CURRENT_CONTEXT_HEADING);
   if (portfolioBriefs) blocks.push(portfolioBriefs);
   if (benchBriefs) blocks.push(benchBriefs);
   if (newsLine) blocks.push(newsLine); // N1.3 — battle fall-through only
   if (scoutAlerts) blocks.push(scoutAlerts);
   if (marketContext) blocks.push(marketContext);
-  if (marketSnapshot) blocks.push(DATA_CONFIDENCE_RULE);
+  if (marketSnapshot) blocks.push(grounded ? `${DATA_CONFIDENCE_RULE}\n${CONTEXT_VINTAGE_SENTENCE}` : DATA_CONFIDENCE_RULE);
 
   // Phase D — archetype-integrity persona + third-path + two-leg signal framing
   // (flag-gated, battle-only; placed next to the rendered briefs the two-leg
@@ -3004,10 +3077,11 @@ You've been working together for ${gamesPlayed} games (${wins}W-${losses}L). You
   // Phase E2 — the USER LEVERS block sits between THIRD_PATH_RULE and the two-leg
   // rule so the model reads "hand off to a real lever" immediately beside the list
   // of levers that actually exist this turn.
-  if (archetypeBlock) blocks.push(archetypeBlock, THIRD_PATH_RULE, buildUserLeversBlock(capabilitiesManifest), TWO_LEG_SIGNAL_RULE);
+  if (archetypeBlock) blocks.push(archetypeBlock, grounded ? GROUNDED_THIRD_PATH_RULE : THIRD_PATH_RULE, buildUserLeversBlock(capabilitiesManifest), TWO_LEG_SIGNAL_RULE);
 
+  blocks.push(battleState); // Block 5   (BOTTOM)
+  if (earlierMessages) blocks.push(earlierMessages); // Block 5.5 (grounded only)
   blocks.push(
-    battleState,     // Block 5   (BOTTOM)
     fewShot,         // Few-Shot  (BOTTOM)
     elicitation,     // Elicitation (BOTTOM)
     phaseRules,      // Block 6   (BOTTOM — LAST)
@@ -3144,6 +3218,10 @@ export function buildFirstMessagePrompt({
   supportedTerms,
   // Phase 1 Voice Layer Rework — authority-mode plumbing. NOT branched on today.
   executionMode = 'autopilot', // eslint-disable-line no-unused-vars
+  // Voice-layer grounding §7 — the opener names the book and the deploy
+  // reason on the record; no plan, no forecast. Default false → the shipped
+  // bytes. The caller resolves getVoiceGroundingMode(battle.ownerId).
+  grounded = false,
 }) {
   const stats = agent?.stats || {};
   const gamesPlayed = stats.gamesPlayed || 0;
@@ -3152,7 +3230,13 @@ export function buildFirstMessagePrompt({
   const phase = currentPhase || getAgentPhase(gamesPlayed);
 
   // Block 1: Identity (deploy-moment framing)
-  const identity = `You are ${agent?.name || 'Gemma'}, a competitive fantasy trading agent on FantasyTrades. Your archetype is ${getArchetypeLabel(agent?.archetype)}. You and the user are PARTNERS — two people at a trading desk. You bring the research and market reads; they bring intuition and the final call.
+  const identity = grounded
+    ? `You are ${agent?.name || 'Gemma'}, a ${getArchetypeLabel(agent?.archetype)}. Your trades are decided by your trading process at each scheduled 15-minute check and recorded; you did not author them, and between checks no trading decision is made. You and the user are partners at a trading desk: you read the record aloud in your own voice; they bring intuition and the final call.
+
+You've been working together for ${gamesPlayed} games (${wins}W-${losses}L).
+
+${GROUNDED_FIRST_MESSAGE_IDENTITY_TAIL}`
+    : `You are ${agent?.name || 'Gemma'}, a competitive fantasy trading agent on FantasyTrades. Your archetype is ${getArchetypeLabel(agent?.archetype)}. You and the user are PARTNERS — two people at a trading desk. You bring the research and market reads; they bring intuition and the final call.
 
 You've been working together for ${gamesPlayed} games (${wins}W-${losses}L).
 
@@ -3176,19 +3260,25 @@ RIGHT NOW you have JUST been deployed — a new battle was created moments ago a
   // freshly-created battle.
   const deployedPortfolio = buildDeployedPortfolioBlock(battle);
 
+  // Block 3.7 (grounded only): THE PLAN AT DEPLOY (D-76) — the persisted
+  // deploy brief behind the pane's C1 gates; null when nothing honest exists.
+  const planAtDeploy = grounded ? buildPlanAtDeployBlock(battle) : null;
+
   // Blocks 4A-4C: Market snapshot — typically NULL on a fresh deploy because
   // voice-layer-cache.js hasn't ticked yet. The CACHE-COLD RULE in
   // FIRST_MESSAGE_INSTRUCTIONS forbids technical-indicator citation when these
   // blocks are absent. If a cache happens to exist, include the briefs so the
   // model has the option to reference them.
-  const portfolioBriefs = buildPortfolioBriefsBlock(marketSnapshot);
-  const benchBriefs = buildBenchBriefsBlock(marketSnapshot);
+  const portfolioBriefs = buildPortfolioBriefsBlock(marketSnapshot, { grounded });
+  const benchBriefs = buildBenchBriefsBlock(marketSnapshot, { grounded });
   const scoutAlerts = buildScoutAlertsBlock(marketSnapshot);
   const marketContext = buildMarketSnapshotContext(marketSnapshot);
 
   // Block 6: Phase Rules — phase-aware tone calibration (Discovery tentative,
-  // Mastery confident). Reused unchanged.
-  const phaseRules = PHASE_RULES[phase] || PHASE_RULES.discovery;
+  // Mastery confident). Reused unchanged; the grounded rules under the flag.
+  const phaseRules = grounded
+    ? (GROUNDED_PHASE_RULES[phase] || GROUNDED_PHASE_RULES.discovery)
+    : (PHASE_RULES[phase] || PHASE_RULES.discovery);
 
   // U-shaped attention order: identity + output format + first-message
   // instructions at TOP/BOTTOM; partner/convictions/anchor in MIDDLE.
@@ -3202,7 +3292,14 @@ RIGHT NOW you have JUST been deployed — a new battle was created moments ago a
   ];
 
   if (deployedPortfolio) blocks.push(deployedPortfolio); // Block 3.6 (MIDDLE)
+  if (planAtDeploy) blocks.push(planAtDeploy);           // Block 3.7 (grounded only)
 
+  // Under the flag the cache blocks render under the ONE heading (§3.3 / §3.5:
+  // the fundamentals line lives "under CURRENT CONTEXT only") and the
+  // DATA_CONFIDENCE_RULE carries the vintage sentence — the battle assembly's
+  // rule, applied here too (review R-15). Off: the shipped blocks, byte for byte.
+  const hasContextBlocks = Boolean(portfolioBriefs || benchBriefs || scoutAlerts || marketContext);
+  if (grounded && hasContextBlocks) blocks.push(CURRENT_CONTEXT_HEADING);
   if (portfolioBriefs) blocks.push(portfolioBriefs);
   if (benchBriefs) blocks.push(benchBriefs);
   if (scoutAlerts) blocks.push(scoutAlerts);
@@ -3213,10 +3310,10 @@ RIGHT NOW you have JUST been deployed — a new battle was created moments ago a
   const supportedTermsBlock = buildSupportedTermsBlock(supportedTerms);
   if (supportedTermsBlock) blocks.push(supportedTermsBlock);
 
-  if (marketSnapshot) blocks.push(DATA_CONFIDENCE_RULE);
+  if (marketSnapshot) blocks.push(grounded ? `${DATA_CONFIDENCE_RULE}\n${CONTEXT_VINTAGE_SENTENCE}` : DATA_CONFIDENCE_RULE);
 
   blocks.push(
-    FIRST_MESSAGE_INSTRUCTIONS, // First-message contract (BOTTOM)
+    grounded ? GROUNDED_FIRST_MESSAGE_INSTRUCTIONS : FIRST_MESSAGE_INSTRUCTIONS, // First-message contract (BOTTOM)
     phaseRules,                 // Phase Rules (BOTTOM — LAST)
   );
 
@@ -3356,14 +3453,23 @@ function buildSwapContextBlock({ closedTrade, provenance, rationale }) {
 // render in the voice narration while the eval prompt suppresses it (the
 // BUILD_RULES §9 one-source rule, applied across prompt surfaces). The
 // voice-format TEXT stays local; only the render/suppress DECISION is shared.
-function buildActiveDirectiveBlock(directive, battle) {
+// The ONE render/suppress decision for a persisted directive on every voice
+// surface (BUILD_RULES §9): expiry via isDirectiveActive, then the eval
+// assembly's own resolution (mode gate + no-resurrection kill set). Returns
+// the directive when it is in force, else null. The narration block below and
+// the grounded YOUR RECORD block (voice-layer grounding §3.2) both read it.
+function resolveEffectiveDirective(directive, battle) {
   if (!isDirectiveActive(directive, battle)) return null;
   const resolution = resolveControls({
     modes: { archetypeIntegrityMode: ARCHETYPE_INTEGRITY_MODE },
     directive,
     controlEpochLog: battle?.controlEpochLog,
   });
-  if (!resolution.directive.effective) return null;
+  return resolution.directive.effective ? directive : null;
+}
+
+function buildActiveDirectiveBlock(directive, battle) {
+  if (!resolveEffectiveDirective(directive, battle)) return null;
 
   return `ACTIVE COACH DIRECTIVE (what the user has you working on right now):
 "${String(directive.text).trim()}"

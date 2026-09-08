@@ -29,7 +29,8 @@ import { buildFirstMessagePrompt, getAgentPhase } from '../_utils/voiceLayerProm
 import { TERM_TOKENS } from '../_utils/termUniverse.js';
 import { callGemmaVoice, parseVoiceLayerResponse } from '../_utils/gemmaClient.js';
 import { buildTemplateOpener } from '../_utils/openerTemplateFloor.js';
-import { OPENER_LAZY_FALLBACK_ENABLED } from '../../src/config/featureFlags.js';
+import { OPENER_LAZY_FALLBACK_ENABLED, getVoiceGroundingMode } from '../../src/config/featureFlags.js';
+import { GROUNDING_VERSION } from '../_utils/voiceLayerGrounding.js';
 
 // Patient Gemma call ⇒ a longer function budget than a plain write endpoint.
 // 60s matches decide.js and voice-layer-cache.js.
@@ -84,8 +85,12 @@ async function attemptGemmaOpener({ systemPrompt, abortMs }) {
   }
 }
 
-// Exact shape of the deploy-time first_message exchange (decide.js:1313-1324).
-function buildExchange({ agentResponse, scratchpad = null }) {
+// Exact shape of the deploy-time first_message exchange (decide.js:1629-1640
+// at HEAD — the shape the fenced writer stamps), plus the voice-layer
+// grounding marker when this opener was produced under the grounding contract
+// (spec §3.4, M3): the ONE writer the arc can stamp — the deploy-time opener
+// is fenced and stays out of the history window (Sep 7 ruling 4).
+function buildExchange({ agentResponse, scratchpad = null, grounded = false }) {
   return {
     userMessage: null,
     agentResponse,
@@ -97,6 +102,7 @@ function buildExchange({ agentResponse, scratchpad = null }) {
     timestamp: new Date().toISOString(),
     mode: 'battle',
     messageType: 'first_message',
+    ...(grounded ? { groundingVersion: GROUNDING_VERSION } : {}),
   };
 }
 
@@ -157,6 +163,11 @@ export default async function handler(req, res) {
     }
 
     const exchanges = Array.isArray(battle.chatExchanges) ? battle.chatExchanges : [];
+
+    // Voice-layer grounding — resolved for the battle's OWNER at call time:
+    // under 'on' the generated opener uses the §7 contract, the floor stops
+    // after the archetype sentence, and the exchange carries the marker.
+    const grounded = getVoiceGroundingMode(battle.ownerId) === 'on';
 
     // (1) opener already present → nothing to do.
     if (hasOpener(exchanges)) {
@@ -222,6 +233,7 @@ export default async function handler(req, res) {
         currentPhase: getAgentPhase(agentData?.stats?.gamesPlayed || 0),
         supportedTerms: TERM_TOKENS,
         executionMode: battle.executionMode || 'autopilot',
+        grounded,
       });
     } catch (err) {
       // Should not happen (defensive builder), but never let it sink the opener —
@@ -255,10 +267,10 @@ export default async function handler(req, res) {
     let floored = false;
     let exchange;
     if (generated) {
-      exchange = buildExchange({ agentResponse: generated.agentResponse, scratchpad: generated.scratchpad });
+      exchange = buildExchange({ agentResponse: generated.agentResponse, scratchpad: generated.scratchpad, grounded });
     } else {
       floored = true;
-      exchange = buildExchange({ agentResponse: buildTemplateOpener({ agent: agentData, battle }) });
+      exchange = buildExchange({ agentResponse: buildTemplateOpener({ agent: agentData, battle, grounded }), grounded });
     }
     const statusEntry = buildStatusEntry();
 

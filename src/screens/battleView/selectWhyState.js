@@ -18,6 +18,26 @@
 import { isDecidedAt, toMillis } from './deriveTurnLine';
 import { toIso } from '../../adapters/baggerbombAdapter';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
+// The motive-author rule and the thrown-swap prefix are SHARED with the
+// narrator's record (voice-grounding hazard 26): they live in the zero-import
+// src/data/decisionRecord.js and are re-exported here under their shipped
+// names, so the panel, the tape and the narrator cannot disagree about whose
+// words a sentence is.
+import {
+  SWAP_FAILED_PREFIX,
+  swapDidNotGoThrough,
+  ENGINE_MOTIVE_PREFIXES,
+  TEXT_DECIDES_SOURCES,
+  isEngineAuthoredMotive,
+  GUARDRAIL_SOURCE_PREFIX,
+  GUARDRAIL_FORCED_EXIT,
+  guardrailForcedExit,
+} from '../../data/decisionRecord';
+
+export {
+  SWAP_FAILED_PREFIX, ENGINE_MOTIVE_PREFIXES, TEXT_DECIDES_SOURCES, isEngineAuthoredMotive,
+  GUARDRAIL_SOURCE_PREFIX, GUARDRAIL_FORCED_EXIT, guardrailForcedExit,
+};
 
 export const WHY_KIND = Object.freeze({
   ABSENT: 'absent',
@@ -33,117 +53,24 @@ export const WHY_KIND = Object.freeze({
  * executeSwapServer threw (`validationErrors.push(`Swap execution failed:
  * ${swapErr.message}`)`) — the one downgrade that no guardrail caused (D-66).
  */
-export const SWAP_FAILED_PREFIX = 'Swap execution failed';
+// (SWAP_FAILED_PREFIX and swapDidNotGoThrough: imported above, one source.)
 
-const swapDidNotGoThrough = (evaluation) => {
-  const first = Array.isArray(evaluation.validationErrors) ? evaluation.validationErrors[0] : null;
-  return typeof first === 'string' && first.startsWith(SWAP_FAILED_PREFIX);
-};
-
-/**
- * The prefix agentGuardrails.js stamps on `sourceNote` for every guardrail
- * verdict it authors (`guardrail_${forcedType}`, `guardrail_max_sector_weight`).
- * NOT sufficient on its own: the `reinforced_haiku` branch stamps the same
- * prefix while the rationale stays the AGENT's argument (agentGuardrails.js
- * ~468-497) — hence the third conjunct below.
- */
-export const GUARDRAIL_SOURCE_PREFIX = 'guardrail_';
+// The fifth state's gate (D-70) — GUARDRAIL_SOURCE_PREFIX, GUARDRAIL_FORCED_EXIT
+// and guardrailForcedExit — now lives in src/data/decisionRecord.js beside the
+// motive-author rule (its docstring travelled with it), because the narrator's
+// YOUR RECORD block applies the same gate on the server (review R-01: the two
+// surfaces had two selectors and disagreed on this state). Re-exported above
+// under the shipped names; every consumer and every pin is unchanged.
 
 /**
- * The action agentGuardrails.js stamps on the override entry when the guardrail
- * itself chose the pair (`{ action: 'forced_exit', symbol, replacementSymbol }`).
- * This is what separates "the guardrail called for this swap" from "the agent
- * argued for a swap and a guardrail agreed" (`reinforced_haiku`).
+ * THE ONE MOTIVE-AUTHOR RULE (D-72 ruling 5, BUILD_RULES §9) — `ENGINE_MOTIVE_PREFIXES`,
+ * `TEXT_DECIDES_SOURCES` and `isEngineAuthoredMotive` — now lives in
+ * src/data/decisionRecord.js (its docstring travelled with it), because the
+ * narrator's YOUR RECORD block applies the same rule on the server and the
+ * client module cannot be imported there (voice-grounding hazard 26). They are
+ * re-exported above under their shipped names; every consumer and every pin
+ * in selectWhyState.test.js / buildTape.test.js reads them as before.
  */
-export const GUARDRAIL_FORCED_EXIT = 'forced_exit';
-
-/**
- * The persisted three-conjunct gate for the fifth state (D-70, Phase 0 §3):
- * `downgraded` (checked by the caller) ∧ a `guardrail_` sourceNote ∧ a
- * `forced_exit` override. Returns the override — the pair lives on it, because
- * the entry's own `symbolOut` / `symbolIn` are null on a downgraded HOLD
- * (agent-evaluate.js ~2634-2635) — or null when the gate does not hold.
- */
-export function guardrailForcedExit(evaluation) {
-  const note = evaluation?.guardrailSourceNote;
-  if (typeof note !== 'string' || !note.startsWith(GUARDRAIL_SOURCE_PREFIX)) return null;
-  const overrides = evaluation?.guardrailOverrides;
-  if (!Array.isArray(overrides)) return null;
-  return overrides.find((o) => o && o.action === GUARDRAIL_FORCED_EXIT) || null;
-}
-
-/**
- * THE ONE MOTIVE-AUTHOR RULE (D-72 ruling 5, BUILD_RULES §9).
- *
- * Whether a rationale was written by the ENGINE rather than the model. Three
- * shapes, all of them the cron's or the guardrail module's own sentence:
- *
- *   `Guardrail override (…): …`  agent-evaluate.js OVERWRITES haikuResult's
- *                                rationale when a guardrail forces the pair.
- *   `Guardrail override: …`      agentGuardrails.js's own statusMessage, which
- *                                the R11 suppression pass persists verbatim.
- *   `Risk manager: …`            the risk loop's trade rationale.
- *   `Deterministic guardrail …`  R11's fallback when statusMessage is null.
- *
- * THE TEXT IS THE DISCRIMINATOR, NOT THE TRADE'S `source` (A2 review L1-F3 /
- * L1-F4). `source` records who chose the EXIT, which is a different question
- * from who wrote the SENTENCE, and it is wrong in both directions:
- *   · a guardrail-forced swap that EXECUTES leaves `downgraded` false, so the
- *     panel and the check card — which have no `source` at all — rendered the
- *     cron's sentence as the agent's words;
- *   · on the `reinforced_haiku` path (agentGuardrails.js ~468-497) the
- *     guardrail agrees with a swap the model argued for and leaves its
- *     rationale untouched, but the cron still stamps `source: 'guardrail'` —
- *     which labelled the model's own first-person prose as the system's.
- * One rule, one text, consumed by the panel, the check card and the trade
- * card alike, so the tape cannot contradict itself about one tick.
- *
- * The prefixes are pinned against their writers by source tripwires in
- * selectWhyState.test.js and buildTape.test.js: a reworded server string reds
- * a row rather than silently re-attributing a sentence.
- */
-export const ENGINE_MOTIVE_PREFIXES = Object.freeze([
-  'Guardrail override',
-  'Risk manager:',
-  'Deterministic guardrail enforcement',
-]);
-
-/**
- * The two `trades[].source` values under which the TEXT is the only reliable
- * answer, so the prefixes above decide alone:
- *
- *   `haiku`     the model wrote the rationale — UNLESS the cron overwrote it
- *               on a forced exit, which the prefixes catch.
- *   `guardrail` ambiguous by construction: a forced exit's rationale is the
- *               cron's sentence (a prefix), while a `reinforced_haiku` swap
- *               keeps the model's own argument under the same source.
- *
- * Every OTHER source composes its own sentence and is engine-authored whatever
- * the text looks like — `risk_manager`, `archetype`, and `gameplan_meeting`,
- * whose rotation rationale is a template with no fixed prefix at all
- * (`${sym} down ${pct}%, ${sym2} (${sector}) has tech score ${n}.`,
- * agent-evaluate.js ~4056). Listing the two EXCEPTIONS rather than the engine
- * sources is what keeps the default safe: a source added to the cron after
- * today is engine-authored here until someone deliberately says otherwise,
- * and under-crediting the agent is the smaller error under C1.
- */
-export const TEXT_DECIDES_SOURCES = Object.freeze(['haiku', 'guardrail']);
-
-/**
- * @param {string|null} text    the rationale
- * @param {string|null} [source] `trades[].source` where the caller has one.
- *   ABSENT on an `evaluations[]` entry — the panel and the check card read a
- *   record that carries no provenance field at all, so there the text is the
- *   only signal and is used alone.
- */
-export function isEngineAuthoredMotive(text, source = null) {
-  if (typeof text === 'string') {
-    const trimmed = text.trimStart();
-    if (ENGINE_MOTIVE_PREFIXES.some((prefix) => trimmed.startsWith(prefix))) return true;
-  }
-  if (source == null) return false;
-  return !TEXT_DECIDES_SOURCES.includes(source);
-}
 
 const cleanText = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
 

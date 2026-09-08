@@ -40,6 +40,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+// Dependency-surface guard (BUILD_RULES §4): this file's import of the module under test is the runtime guard that its api → src imports stay Node-clean. Never mock it.
 import { findReviewPendingBattles, processBattleReview, releaseReviewPending, REVIEW_PENDING_LIMIT } from './agent-batch-review.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));

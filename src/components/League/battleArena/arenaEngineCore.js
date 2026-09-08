@@ -13,6 +13,12 @@
 // DETERMINISM: keys are a monotonic counter threaded through state — never
 // Date.now()/Math.random() — so a replay is reproducible and the test is stable.
 
+// Voice-layer grounding §6.3 — the arena's `Filed {time}` label is the Battle
+// View's (decisionRecord.js + deskCopy.js, both zero-import): one copy source,
+// never a second spelling. Both are node-clean, so this core stays so.
+import { filedLabel } from '../../../data/decisionRecord';
+import { etTime } from '../../Dashboard/desk/deskCopy';
+
 /** Seed the voice lane: the greeting (oldest) under the live script, newest first. */
 export function seedVoiceLines(voice) {
   const live = Array.isArray(voice?.live) ? voice.live.map((l, i) => ({ ...l, _k: i + 1 })) : [];
@@ -34,6 +40,15 @@ export function makeEngineState(voice) {
     // server reports it — NEVER computed client-side) and the in-flight guard.
     remaining: null,
     asking: false,
+    // Voice-layer grounding §6.2 / §6.3 (flag-gated): the chips the last grounded
+    // answer MINTED (server-normalized; [] when none), the filing in-flight guard,
+    // the last filing's failure line (null when none), and the client's belief
+    // about the battle's CURRENT directive thread — server-fed (the last grounded
+    // answer's or filing's word), never a guess.
+    chips: [],
+    filing: false,
+    filingError: null,
+    currentDirectiveThreadId: null,
     _key: 100,      // monotonic key source (deterministic)
   };
 }
@@ -101,7 +116,7 @@ export function applyAsk(state, qa) {
 /** Live two-way ask, step 1: mark a request in flight (the dock shows a thinking
  * state and disables send until the answer / exhausted / failure lands). */
 export function applyAsking(state) {
-  return state.asking ? state : { ...state, asking: true };
+  return state.asking ? state : { ...state, asking: true, filingError: null };
 }
 
 /**
@@ -110,14 +125,72 @@ export function applyAsking(state) {
  * a failure line so the dock can offer a retry affordance. The answer text comes
  * straight from the server (data.agentMessage) — the lane never fabricates it.
  */
-export function applyAnswer(state, { q, text, error = false } = {}) {
+export function applyAnswer(state, { q, text, error = false, statusLine = null, chips = null, currentDirectiveThreadId } = {}) {
   const key = state._key + 1;
-  const line = { kind: 'answer', q: q || '', text: text || '', t: 'now', active: true, error: !!error, _k: key };
+  const line = {
+    kind: 'answer', q: q || '', text: text || '', t: 'now', active: true, error: !!error,
+    // Voice-layer grounding §6.3 — the code-owned status line rides the answer
+    // line (a grounded null-write turn); absent otherwise, so the shipped line
+    // shape is untouched.
+    ...(statusLine ? { statusLine } : {}),
+    _k: key,
+  };
   return {
     ...state,
     lines: [line, ...state.lines.map((l) => ({ ...l, active: false }))],
     asking: false,
+    // A real answer REPLACES the minted chips (none when the server minted none);
+    // a failure keeps the last set, so a retry is still one tap away.
+    chips: error ? state.chips : (Array.isArray(chips) ? chips : []),
+    // The belief moves only on the server's word (undefined = no word given).
+    currentDirectiveThreadId: currentDirectiveThreadId === undefined ? state.currentDirectiveThreadId : currentDirectiveThreadId,
     _key: key,
+  };
+}
+
+/** Chip filing (voice-layer grounding §6.3), step 1: mark a filing in flight (the
+ * minted chips disable until the receipt or the failure line lands). */
+export function applyFiling(state) {
+  return state.filing ? state : { ...state, filing: true, filingError: null };
+}
+
+/**
+ * Chip filing, step 2 (success): prepend the RECEIPT — the canonical text the
+ * route wrote, labelled with the Battle View's `Filed {time}` — clear the
+ * in-flight flag, retire the minted chips (the option was taken), and adopt the
+ * filed thread as the current-directive belief. Nothing here is the client's
+ * claim: text, time and thread all come from the route's response (the record
+ * it wrote), after the write.
+ */
+export function applyFiled(state, { text, createdAt, directiveThreadId } = {}) {
+  const key = state._key + 1;
+  const line = { kind: 'directive', text: text || '', t: filedLabel(etTime(createdAt)), active: false, _k: key };
+  return {
+    ...state,
+    lines: [line, ...state.lines.map((l) => ({ ...l, active: false }))],
+    filing: false,
+    filingError: null,
+    chips: [],
+    currentDirectiveThreadId: typeof directiveThreadId === 'string' && directiveThreadId
+      ? directiveThreadId
+      : state.currentDirectiveThreadId,
+    _key: key,
+  };
+}
+
+/**
+ * Chip filing, step 2 (failure): hold the ruled failure line (the dock renders
+ * it under the chips — it is the system's line, not the agent's voice, so it
+ * never enters the lane) and clear the in-flight flag; the chips stay so a
+ * retry is one tap. A 409 names the server's current thread, which becomes
+ * the belief so the retry files against the truth.
+ */
+export function applyFilingFailed(state, { line, currentDirectiveThreadId } = {}) {
+  return {
+    ...state,
+    filing: false,
+    filingError: line || null,
+    currentDirectiveThreadId: currentDirectiveThreadId === undefined ? state.currentDirectiveThreadId : currentDirectiveThreadId,
   };
 }
 

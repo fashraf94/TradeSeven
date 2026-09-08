@@ -7,8 +7,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   seedVoiceLines, makeEngineState, applyBeat, applyFlip, applyAsk, clearBeat, tickClock,
-  applyAsking, applyAnswer, setRemaining,
+  applyAsking, applyAnswer, setRemaining, applyFiling, applyFiled, applyFilingFailed,
 } from './arenaEngineCore';
+import { filedLabel, FILING_CONFLICT_LINE } from '../../../data/decisionRecord';
+import { etTime } from '../../Dashboard/desk/deskCopy';
 
 const VOICE = {
   greet: { kind: 'greeting', text: 'live' },
@@ -135,5 +137,83 @@ describe('clearBeat / tickClock', () => {
     expect(tickClock(10)).toBe(9);
     expect(tickClock(1)).toBe(0);
     expect(tickClock(0)).toBe(0);
+  });
+});
+
+// ==================== Voice-layer grounding §6.2 / §6.3 — chips and the filing ====================
+
+describe('chip reducers (applyAnswer chips + belief · applyFiling / applyFiled / applyFilingFailed)', () => {
+  const CHIPS = [{ kind: 'directive', id: 'DV-02', text: 'Widen the spread (target more sectors)' }, { kind: 'ask', text: 'Why?' }];
+
+  it('initial state: no chips, no filing, no failure line, no belief', () => {
+    const s = makeEngineState(VOICE);
+    expect(s.chips).toEqual([]);
+    expect(s.filing).toBe(false);
+    expect(s.filingError).toBeNull();
+    expect(s.currentDirectiveThreadId).toBeNull();
+  });
+
+  it('a shipped answer (no chips, no belief) leaves the line shape and the belief untouched', () => {
+    const s = applyAnswer(applyAsking(makeEngineState(VOICE)), { q: 'plan?', text: 'semis' });
+    expect(Object.keys(s.lines[0]).sort()).toEqual(['_k', 'active', 'error', 'kind', 'q', 't', 'text']);
+    expect(s.chips).toEqual([]);
+    expect(s.currentDirectiveThreadId).toBeNull();
+  });
+
+  it('a grounded answer carries the minted chips, the status line and the server\'s belief', () => {
+    const s = applyAnswer(makeEngineState(VOICE), { q: 'plan?', text: 'two ways', chips: CHIPS, statusLine: 'No change made to your strategy this turn.', currentDirectiveThreadId: 'thread-A' });
+    expect(s.chips).toBe(CHIPS);
+    expect(s.lines[0].statusLine).toBe('No change made to your strategy this turn.');
+    expect(s.currentDirectiveThreadId).toBe('thread-A');
+    // The next real answer REPLACES the chips (none minted → none shown) and can
+    // move the belief to null (this turn filed nothing and the slot is empty).
+    const s2 = applyAnswer(s, { q: 'and?', text: 'holding', currentDirectiveThreadId: null });
+    expect(s2.chips).toEqual([]);
+    expect(s2.currentDirectiveThreadId).toBeNull();
+    expect('statusLine' in s2.lines[0]).toBe(false);
+  });
+
+  it('a FAILED answer keeps the last chips and the belief (a retry is one tap away)', () => {
+    const s = applyAnswer(makeEngineState(VOICE), { q: 'plan?', text: 'two ways', chips: CHIPS, currentDirectiveThreadId: 'thread-A' });
+    const failed = applyAnswer(s, { q: 'again?', text: 'try again', error: true });
+    expect(failed.chips).toBe(CHIPS);
+    expect(failed.currentDirectiveThreadId).toBe('thread-A');
+  });
+
+  it('applyFiling marks the filing in flight (idempotent) and clears the last failure line', () => {
+    const s0 = { ...makeEngineState(VOICE), filingError: 'stale' };
+    const s1 = applyFiling(s0);
+    expect(s1.filing).toBe(true);
+    expect(s1.filingError).toBeNull();
+    expect(applyFiling(s1)).toBe(s1);
+  });
+
+  it('applyFiled prepends the RECEIPT — the route\'s text, the Battle View\'s `Filed {time}` — retires the chips, adopts the thread', () => {
+    const s0 = applyAnswer(makeEngineState(VOICE), { q: 'plan?', text: 'two ways', chips: CHIPS, currentDirectiveThreadId: null });
+    const s = applyFiled(applyFiling(s0), { text: 'Widen the spread (target more sectors)', createdAt: '2026-09-08T15:20:00.000Z', directiveThreadId: 'thread-B' });
+    expect(s.filing).toBe(false);
+    expect(s.chips).toEqual([]);
+    expect(s.currentDirectiveThreadId).toBe('thread-B');
+    expect(s.lines[0]).toMatchObject({ kind: 'directive', text: 'Widen the spread (target more sectors)', active: false });
+    expect(s.lines[0].t).toBe(filedLabel(etTime('2026-09-08T15:20:00.000Z')));
+    expect(s.lines[0].t).toBe('Filed 11:20 AM');
+    expect(s.lines.slice(1).every((l) => !l.active)).toBe(true);
+    expect(s._key).toBe(s0._key + 1);
+  });
+
+  it('applyFilingFailed holds the ruled line (never in the lane), keeps the chips; a 409 moves the belief to the server\'s', () => {
+    const s0 = applyAnswer(makeEngineState(VOICE), { q: 'plan?', text: 'two ways', chips: CHIPS, currentDirectiveThreadId: 'thread-A' });
+    const lanes = s0.lines.length;
+    const f = applyFilingFailed(applyFiling(s0), { line: FILING_CONFLICT_LINE, currentDirectiveThreadId: 'thread-C' });
+    expect(f.filing).toBe(false);
+    expect(f.filingError).toBe(FILING_CONFLICT_LINE);
+    expect(f.lines).toHaveLength(lanes);
+    expect(f.chips).toBe(CHIPS);
+    expect(f.currentDirectiveThreadId).toBe('thread-C');
+    // No word from the server → the belief stays.
+    const g = applyFilingFailed(applyFiling(s0), { line: 'x' });
+    expect(g.currentDirectiveThreadId).toBe('thread-A');
+    // A new ask clears the failure line.
+    expect(applyAsking(f).filingError).toBeNull();
   });
 });

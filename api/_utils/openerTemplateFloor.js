@@ -50,9 +50,12 @@ function humanList(items) {
  * @param {Object} [params]
  * @param {Object} [params.agent]  the agent doc (archetype fallback source)
  * @param {Object} [params.battle] the agentBattles doc (portfolio + agentContext)
+ * @param {boolean} [params.grounded] voice-layer grounding on for this battle's
+ *   owner (getVoiceGroundingMode === 'on'): the template stops after the
+ *   archetype sentence (spec §7). Default false → the shipped string.
  * @returns {string} the agentResponse text for a first_message exchange
  */
-export function buildTemplateOpener({ agent, battle } = {}) {
+export function buildTemplateOpener({ agent, battle, grounded = false } = {}) {
   // Only accept a non-empty STRING archetype code — a non-string (malformed doc)
   // would make getArchetypeLabel echo it back and render "[object Object]".
   const rawArchetype = battle?.agentContext?.archetype ?? agent?.archetype;
@@ -74,6 +77,13 @@ export function buildTemplateOpener({ agent, battle } = {}) {
     ? `I've built the book around ${humanList(bookParts)}. `
     : '';
 
+  // Voice-layer grounding §7 (H19): under the flag the template ends after the
+  // archetype sentence. The last sentence promised continuous flagging that
+  // only the per-check, budget-gated anticipation path could deliver, and
+  // invited an assignment nothing persists — a promise nothing keeps.
+  if (grounded) {
+    return `Hey — we're live. ${book}I'm running this as a ${label}, so I'll be ${posture}.`;
+  }
   return (
     `Hey — we're live. ${book}`
     + `I'm running this as a ${label}, so I'll be ${posture}. `

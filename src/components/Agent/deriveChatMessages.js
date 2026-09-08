@@ -24,6 +24,8 @@
 // carries `suggestedActions: null`. Both are pinned by name in
 // `deriveChatMessages.test.js` instead.
 
+import { GROUNDING_VERSION, DIRECTIVE_FILED_MESSAGE_TYPE } from '../../data/decisionRecord';
+
 /**
  * @param {Array|null} chatExchanges  the subscribed doc's exchanges
  * @returns {Array<object>} message items, oldest first, two per user-initiated
@@ -88,6 +90,15 @@ export function deriveChatMessages(chatExchanges) {
       // only see the type, and a note about a piece in the player's own book
       // was labelled `Bench note`.
       _anticipationDirection: ex.anticipationContext?.direction ?? null,
+      // Voice-layer grounding §6.3: the no-change status line renders ONLY from
+      // a persisted exchange produced under the grounding contract on which the
+      // gate ran and wrote no directive — never from a reply body in flight,
+      // never on a legacy exchange (there the status was the prose's claim).
+      _grounded: ex.groundingVersion === GROUNDING_VERSION,
+      _gateRan: Boolean(ex.archetypeGate),
+      // A chip filing's audit exchange: no narrator words — the ExecutionCard
+      // is its whole render, so the bubble body is skipped (review R-04).
+      _filed: ex.messageType === DIRECTIVE_FILED_MESSAGE_TYPE,
       mode: ex.mode || 'battle',
       timestamp: ts,
       _serverIndex: i,

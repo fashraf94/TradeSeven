@@ -106,4 +106,21 @@ describe('deriveChatMessages — two halves, or one', () => {
     expect(deriveChatMessages([])).toEqual([]);
     expect(deriveChatMessages(undefined)).toEqual([]);
   });
+
+  it('the grounding marker and the gate record are carried as booleans on the agent half (voice-layer grounding §6.3)', () => {
+    const gate = { classification: 'core_conflict', selectedAdjustmentId: null, status: 'no_change', repairUsed: false };
+    const [, grounded] = deriveChatMessages([{ userMessage: 'a', agentResponse: 'b', groundingVersion: 1, archetypeGate: gate, timestamp: AT }]);
+    expect(grounded._grounded).toBe(true);
+    expect(grounded._gateRan).toBe(true);
+    // A legacy exchange (no marker), and a grounded one on which the gate never ran.
+    const [, legacy] = deriveChatMessages([{ userMessage: 'a', agentResponse: 'b', archetypeGate: gate, timestamp: AT }]);
+    expect(legacy._grounded).toBe(false);
+    expect(legacy._gateRan).toBe(true);
+    const [, ungated] = deriveChatMessages([{ userMessage: 'a', agentResponse: 'b', groundingVersion: 1, timestamp: AT }]);
+    expect(ungated._grounded).toBe(true);
+    expect(ungated._gateRan).toBe(false);
+    // Only version 1 is the contract; a future version is not silently this one.
+    const [, v2] = deriveChatMessages([{ userMessage: 'a', agentResponse: 'b', groundingVersion: 2, timestamp: AT }]);
+    expect(v2._grounded).toBe(false);
+  });
 });

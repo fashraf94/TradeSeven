@@ -32,6 +32,34 @@
 
 import { etTime } from '../../components/Dashboard/desk/deskCopy';
 import { slotLabel } from './deriveTurnLine';
+// The persisted decision record's SHARED vocabulary (voice-grounding hazard
+// 26): the strings the narrator's YOUR RECORD block renders too live in the
+// zero-import src/data/decisionRecord.js and are re-exposed here under their
+// shipped names, so the pane and the narrator cannot disagree about one check.
+import {
+  WOKEN_BY_TYPE,
+  wokenBy as recordWokenBy,
+  NO_DECISION,
+  NO_DECISION_OUTAGE,
+  NO_DECISION_INCOMPLETE,
+  HELD_LABEL,
+  swappedLabel as recordSwappedLabel,
+  DOWNGRADED_LABEL,
+  FAILED_LABEL,
+  MOTIVE_AGENT,
+  MOTIVE_SYSTEM,
+  tierLabel as recordTierLabel,
+  planAtDeployLabel,
+  filesChip as recordFilesChip,
+  filedLabel,
+  NO_CHANGE_STATUS_LINE,
+  FILING_CONFLICT_LINE,
+  FILING_BUDGET_LINE,
+  FILING_REJECTED_LINE,
+  FILING_FAILED_LINE,
+  filingFailureLine as recordFilingFailureLine,
+  GUARDRAIL_FORCED_FAILED_LABEL,
+} from '../../data/decisionRecord';
 
 /**
  * "Sep 1" — an ET calendar date, for a fact that is about a DAY (the deploy)
@@ -63,10 +91,7 @@ const etDate = (raw) => {
  * suite is green. Loud and correct beats silent and broken; it is not clean.
  */
 function tierLabel(tier) {
-  if (tier === 'star') return 'Star';
-  if (tier === 'core') return 'Core';
-  if (tier === 'support') return 'Support';
-  return null;
+  return recordTierLabel(tier);
 }
 
 const money = (value) => {
@@ -143,25 +168,8 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // An UNKNOWN type still renders NOTHING — never a raw type string. The gate
   // is the only writer, and a tenth type added there arrives here unruled and
   // silent until it has its own sentence.
-  wokenByType: Object.freeze({
-    price_drop: 'Woken by a price drop',
-    forced_open: 'Woken by the first check of the battle',
-    forced_close: 'Woken by the final hour',
-    threshold_proximity: 'Woken by a piece near a scoring tier',
-    bench_outperformance: 'Woken by a bench name outrunning the book',
-    vwap_deviation: 'Woken by a move away from the day\'s average price',
-    bandwidth_squeeze: 'Woken by a volatility squeeze',
-    nr7_contraction: 'Woken by a narrow-range day',
-    news_catalyst: 'Woken by a news story on a piece',
-  }),
-  wokenBy: (triggers) => {
-    if (!Array.isArray(triggers)) return null;
-    for (const type of triggers) {
-      const line = BATTLE_VIEW_COPY.wokenByType[type];
-      if (line) return line;
-    }
-    return null;
-  },
+  wokenByType: WOKEN_BY_TYPE,
+  wokenBy: (triggers) => recordWokenBy(triggers),
 
   // ── The guardrail's provenance code, in plain words (A2.3, D-80, ruling 1) ─
   // The cron composes a forced exit's rationale as
@@ -205,10 +213,7 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // as history; an undated `The plan at deploy` is a string the ruling does
   // not contain, and the honest branch is the one `tierPrices` already takes
   // when its inputs are missing: render nothing rather than something weaker.
-  planAtDeploy: (iso) => {
-    const d = etDate(iso);
-    return d ? `The plan at deploy · ${d}` : null;
-  },
+  planAtDeploy: (iso) => planAtDeployLabel(etDate(iso)),
   // A row shows only its TIER's rationale, and only the sentences of it that
   // name the row's piece. The label says "tier" out loud, because the sentence
   // was written about the tier — never about this position alone.
@@ -228,7 +233,7 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // The three decision states, in the order the panel branches: downgraded
   // FIRST (hazard 2 — a swap the model argued for that a guardrail held still
   // carries a swap rationale), then the decision.
-  downgradedLabel: 'Argued for a swap · held by a guardrail',
+  downgradedLabel: DOWNGRADED_LABEL,
   downgradedFooter: 'The agent\'s own words · the system held it',
 
   // The FOURTH state (A4.0, D-66). `downgraded === true` is also stamped when
@@ -236,7 +241,7 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // `Swap execution failed: …`) — no guardrail held anything; the swap the
   // agent argued for simply did not go through. selectWhyState.js branches
   // on that prefix, so the guardrail label never over-claims on this path.
-  failedLabel: 'Argued for a swap · it did not go through',
+  failedLabel: FAILED_LABEL,
   failedFooter: 'The agent\'s own words · the position stayed as it was',
 
   // The FIFTH state (A2.0, D-70). A guardrail — not the agent — called for the
@@ -247,27 +252,27 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // words that tick read `Argued for a swap · The agent's own words` over text
   // the agent never wrote (A4 handover item 21). The subject is the guardrail
   // and the footer names whose reason follows.
-  guardrailForcedFailedLabel: 'A guardrail called for a swap · it did not go through',
+  guardrailForcedFailedLabel: GUARDRAIL_FORCED_FAILED_LABEL,
   guardrailForcedFailedFooter: 'The guardrail\'s reason · the position stayed as it was',
-  heldLabel: 'Held',
-  swappedLabel: (symbolOut, symbolIn) => `Swapped · ${symbolOut ?? '—'} → ${symbolIn ?? '—'}`,
+  heldLabel: HELD_LABEL,
+  swappedLabel: (symbolOut, symbolIn) => recordSwappedLabel(symbolOut, symbolIn),
 
   // The absence state is a real state, not a failure (honesty rule 7): the
   // tick ran (lastScoredAt advanced) and recorded no evaluation entry.
-  noDecision: 'No decision recorded at this check',
+  noDecision: NO_DECISION,
   // The more specific absence (A4.0, D-65): the latest entry carries
   // `haikuError` with `failureClass: 'timeout'` — the model call timed out
   // and the tick defaulted to HOLD with the system's placeholder words. The
   // fact is persisted on the entry itself; the label states it and nothing
   // more. Every other outage class takes the class-neutral line below (D-69).
-  noDecisionOutage: 'No decision recorded at this check · the evaluation timed out',
+  noDecisionOutage: NO_DECISION_OUTAGE,
   // Every OTHER outage class (A2.0, D-69): `budget_skipped`, `truncated_response`,
   // an HTTP status, an error's class name, `unknown`. The tick recorded an entry
   // whose words are the cron's placeholder, so a decision is still absent — but
   // "timed out" would name a verb the evidence does not support (honesty rule 8,
   // A4 review L1-F1). `did not complete` is true of every class including the
   // timeout; the timeout keeps the more specific line above.
-  noDecisionIncomplete: 'No decision recorded at this check · the evaluation did not complete',
+  noDecisionIncomplete: NO_DECISION_INCOMPLETE,
 
   // Trades on this piece today — the section heading; each line is the swap
   // receipt's own time, symbols and reason (engine text, verbatim).
@@ -349,7 +354,7 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // `auto_debrief` is deliberately absent: it already has the shipped
   // `Post-Market Debrief` eyebrow (RENDER_CONFIG), and one exchange with two
   // eyebrows is worse than one with none.
-  tapeKindEyebrow: (messageType, hasUserHalf, anticipationDirection = null) => {
+  tapeKindEyebrow: (messageType, hasUserHalf, anticipationDirection = null, grounded = false) => {
     if (messageType === 'first_message') return 'Opener';
     // `Bench note` IS the bench's word, and the record splits the kind in two
     // (review L1-F1). `anticipationCandidates[].direction` is a required enum:
@@ -365,8 +370,19 @@ export const BATTLE_VIEW_COPY = Object.freeze({
     // reaches the screen, and inventing one here would be the guess. Recorded
     // for the founder; a direction-aware pair is one line when there is a
     // second word to use.
+    //
+    // THE SECOND WORD IS NOW RULED (voice-layer grounding spec §5, the Sep 7
+    // founder adoption): a `potential_exit` note is about a piece in the
+    // player's OWN BOOK, and its word is `Holding note` — for a note produced
+    // UNDER THE GROUNDING CONTRACT (`grounded`: the exchange carries the
+    // marker). A legacy, model-written exit note keeps no eyebrow, exactly as
+    // shipped, so the flag-off page is byte-identical and the word is never
+    // put on a forecast the retired prompt wrote (review R-02). A record with
+    // no direction still gets nothing.
     if (messageType === 'anticipation') {
-      return anticipationDirection === 'potential_entry' ? 'Bench note' : null;
+      if (anticipationDirection === 'potential_entry') return 'Bench note';
+      if (anticipationDirection === 'potential_exit') return grounded ? 'Holding note' : null;
+      return null;
     }
     if (messageType === 'trade_narration') return 'Trade note';
     // `Reply` is a claim about a PAIR — the player wrote and the character
@@ -396,8 +412,8 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // the risk loop, the guardrail path and the R11 pass; only the model's own
   // swap carries the agent's argument. An unlabelled system sentence under
   // the agent's name is the C1 failure this pair exists to prevent.
-  motiveAgent: 'The agent\'s own words',
-  motiveSystem: 'The system\'s reason',
+  motiveAgent: MOTIVE_AGENT,
+  motiveSystem: MOTIVE_SYSTEM,
   // The shipped echo on a swap the model attributed to a directive (D-51's
   // `Acted`, unchanged wording).
   fromDirective: '↳ from directive',
@@ -445,10 +461,7 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // filing EXCHANGE's timestamp. No "for the ~{t} check" — filed is not heard
   // (hazard 3). Empty is a truthful state, stamped with the adapter's next.
   thisTurn: 'This turn',
-  filed: (iso) => {
-    const t = etTime(iso);
-    return t ? `Filed ${t}` : 'Filed';
-  },
+  filed: (iso) => filedLabel(etTime(iso)),
   nothingQueued: (nextIso) => {
     const next = slotLabel(nextIso);
     return next ? `Nothing queued · next check ~${next}` : 'Nothing queued';
@@ -696,6 +709,17 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // book — a short name instead of the whole visible content of each.
   whyName: (symbol) => `Why? ${symbol}`,
   whyBookName: 'Why? · the whole book',
+
+  // ── Filing a directive by chip (voice-layer grounding §6.2 / §6.3) ─────────
+  // A directive chip says what it FILES; a filing's outcome says only what the
+  // client can be held to. ONE source with the League arena (decisionRecord.js).
+  filesChip: (text) => recordFilesChip(text),
+  noChangeStatusLine: NO_CHANGE_STATUS_LINE,
+  filingConflict: FILING_CONFLICT_LINE,
+  filingBudget: FILING_BUDGET_LINE,
+  filingRejected: FILING_REJECTED_LINE,
+  filingFailed: FILING_FAILED_LINE,
+  filingFailureLine: (status) => recordFilingFailureLine(status),
 
   receiptLine: (receipt) => {
     if (!receipt || typeof receipt !== 'object') return null;

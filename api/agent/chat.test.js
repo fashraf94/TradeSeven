@@ -21,6 +21,8 @@ const {
   archetypeFlag,
   voiceLayerArgs,
   leagueChatFlag,
+  grounding,
+  promptBuilder,
   budget,
 } = vi.hoisted(() => ({
   authReturnValue: { current: { uid: 'test-user' } },
@@ -33,6 +35,13 @@ const {
   voiceLayerArgs: { current: [] }, // Phase E2 — capture buildVoiceLayerPrompt args
   // League arena two-way ask — the kill-switch flag + a controllable budget module.
   leagueChatFlag: { on: false },
+  // Voice-layer grounding — the per-caller accessor, controllable per test;
+  // the uids it was asked about are captured (the route must ask for the
+  // TOKEN's uid, never the body's).
+  grounding: { mode: 'off', calls: [] },
+  // The prompt-builder stub: distinguishable per build (old / new), and a
+  // per-test way to make one side THROW (the shadow-assembly rows).
+  promptBuilder: { throwWhen: null },
   budget: {
     resolveImpl: () => ({ groupId: 'group-xyz', dayN: 1 }),
     readImpl: async () => ({ count: 0, remaining: 10 }),
@@ -73,7 +82,12 @@ vi.mock('../_utils/shadowLogger.js', () => ({
 }));
 
 vi.mock('../_utils/voiceLayerPrompt.js', () => ({
-  buildVoiceLayerPrompt: (args) => { voiceLayerArgs.current.push(args); return 'system-prompt-stub'; },
+  buildVoiceLayerPrompt: (args) => {
+    voiceLayerArgs.current.push(args);
+    if (promptBuilder.throwWhen && promptBuilder.throwWhen(args)) throw new Error(`builder exploded (grounded=${args.grounded})`);
+    // Distinguishable per build, so the shadow record's two prompts are two (review R-06).
+    return `system-prompt-stub:${args.grounded ? 'new' : 'old'}`;
+  },
 }));
 
 // Phase E2 — deterministic ET-clock helpers so the manifest's claim-window /
@@ -118,6 +132,7 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   get ARCHETYPE_INTEGRITY_MODE() { return archetypeFlag.mode; },
   get LEAGUE_AGENT_CHAT_ENABLED() { return leagueChatFlag.on; },
+  getVoiceGroundingMode: (uid) => { grounding.calls.push(uid); return grounding.mode; },
 }));
 
 // The per-day budget module is exercised in agentChatBudget.test.js; here it is
@@ -137,6 +152,7 @@ vi.mock('firebase-admin/firestore', () => ({
   },
 }));
 
+// Dependency-surface guard (BUILD_RULES §4): this file's import of the module under test is the runtime guard that its api → src imports stay Node-clean. Never mock it.
 const { default: handler, GEMMA_TIMEOUT_MS, TURN_DEADLINE_MS } = await import('./chat.js');
 
 // ==================== Test fixture helpers ====================
@@ -234,6 +250,9 @@ beforeEach(() => {
   archetypeFlag.mode = 'off';
   voiceLayerArgs.current = [];
   leagueChatFlag.on = false;
+  grounding.mode = 'off';
+  grounding.calls = [];
+  promptBuilder.throwWhen = null;
   budget.resolveImpl = () => ({ groupId: 'group-xyz', dayN: 1 });
   budget.readImpl = async () => ({ count: 0, remaining: 10 });
   budget.chargeImpl = async () => ({ charged: true, remaining: 9, count: 1 });
@@ -942,5 +961,361 @@ describe('agent/chat — the turn deadline handed to the directive gate is wired
     // Absolute, and exactly TURN_DEADLINE_MS from the turn's start — the gate
     // clamps its repair against this, so a wrong value silently un-budgets it.
     expect(gateArgs.current[0].deadlineMs - turnStart).toBe(TURN_DEADLINE_MS);
+  });
+});
+
+// ==================== Voice-layer grounding — the chat turn under the flag (G2) ====================
+
+describe('agent/chat — voice-layer grounding: the grounded turn (spec §3.4, ruling 23)', () => {
+  const GROUNDED_ANTICIPATION = {
+    userMessage: null, agentResponse: 'At the 11:15 AM check my trading process flagged NOW on the bench as a potential entry.',
+    messageType: 'anticipation', timestamp: '2026-09-08T15:16:00.000Z', mode: 'battle', groundingVersion: 1,
+  };
+  const LEGACY_ANTICIPATION = {
+    userMessage: null, agentResponse: 'Eyeing AVGO on the bench.', messageType: 'anticipation', timestamp: '2026-09-08T14:16:00.000Z', mode: 'battle',
+  };
+  const USER_PAIR = { userMessage: 'How are we looking?', agentResponse: 'CF is carrying the book.', timestamp: '2026-09-08T14:05:00.000Z', mode: 'battle' };
+  const HISTORY_BATTLE = { ...VALID_BATTLE, chatExchanges: [LEGACY_ANTICIPATION, USER_PAIR, GROUNDED_ANTICIPATION] };
+  // Every dimension confident except time_of_day_preference → it is the target.
+  const PROFILE_TARGETING_TIME = Object.fromEntries(
+    ['risk_appetite', 'concentration_tolerance', 'sector_convictions', 'loss_reaction', 'win_reaction', 'tier_philosophy', 'momentum_vs_value',
+      'news_sensitivity', 'macro_awareness', 'communication_frequency', 'autonomy_preference', 'feedback_style', 'competitive_focus', 'learning_orientation']
+      .map((d) => [d, { value: 'x', confidence: 0.9 }]),
+  );
+  let gemmaOpts;
+  const run = async (battle, body = {}) => {
+    gemmaOpts = [];
+    callGemmaVoiceImpl.current = async (opts) => { gemmaOpts.push(opts); return '{"response":"ok"}'; };
+    const fixture = makeFakeFirestore({ agent: { ...VALID_AGENT, partnerProfile: PROFILE_TARGETING_TIME }, battle });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi', ...body });
+    await handler(req, res);
+    return { res, written: fixture.written };
+  };
+  const exchangeOf = (written) => written.updateCalls.find(c => c.updates?.chatExchanges?.__op === 'arrayUnion').updates.chatExchanges.items[0];
+
+  it("asks the accessor once, with the caller's uid, at call time (the owner check precedes it, so the token's and the owner's uid are one here)", async () => {
+    await run(VALID_BATTLE);
+    expect(grounding.calls).toEqual(['test-user']);
+  });
+
+  it("'off': the shipped path — prompt not grounded, legacy history, no marker on the exchange", async () => {
+    grounding.mode = 'off';
+    const { res, written } = await run(HISTORY_BATTLE);
+    expect(res.statusCode).toBe(200);
+    expect(voiceLayerArgs.current[0].grounded).toBe(false);
+    expect(voiceLayerArgs.current[0].elicitationTarget.instruction).toContain("'act now at open' vs 'wait for confirmation'");
+    // The legacy filter: only the user pair, untagged, exactly as shipped.
+    expect(gemmaOpts[0].conversationHistory).toEqual([
+      { role: 'user', content: 'How are we looking?' },
+      { role: 'assistant', content: 'CF is carrying the book.' },
+    ]);
+    expect('groundingVersion' in exchangeOf(written)).toBe(false);
+  });
+
+  it("'shadow' (G2): still the shipped path for what is SENT — grounded is false, no marker", async () => {
+    grounding.mode = 'shadow';
+    const { written } = await run(HISTORY_BATTLE);
+    expect(voiceLayerArgs.current[0].grounded).toBe(false);
+    expect('groundingVersion' in exchangeOf(written)).toBe(false);
+  });
+
+  it("'on': the grounded prompt is built, the grounded history is sent (tagged pairs only), the exchange carries the marker", async () => {
+    grounding.mode = 'on';
+    const { res, written } = await run(HISTORY_BATTLE);
+    expect(res.statusCode).toBe(200);
+    expect(voiceLayerArgs.current[0].grounded).toBe(true);
+    // Site 27: the grounded elicitation line replaces the discovered one.
+    expect(voiceLayerArgs.current[0].elicitationTarget.dimension).toBe('time_of_day_preference');
+    expect(voiceLayerArgs.current[0].elicitationTarget.instruction).toContain("'file it before the next check'");
+    expect(voiceLayerArgs.current[0].elicitationTarget.instruction).not.toContain("'act now at open'");
+    // The history window: the user pair, tagged by its code-default type; the
+    // grounded anticipation rides the system prompt (the builder gets the
+    // battle), and the legacy one is nowhere.
+    expect(gemmaOpts[0].conversationHistory).toEqual([
+      { role: 'user', content: 'How are we looking?' },
+      { role: 'assistant', content: '[user_initiated] CF is carrying the book.' },
+    ]);
+    expect(voiceLayerArgs.current[0].battle.chatExchanges).toContain(GROUNDED_ANTICIPATION);
+    const ex = exchangeOf(written);
+    expect(ex.groundingVersion).toBe(1);
+    // The persisted shape is otherwise the shipped one: no messageType (ruling 23).
+    expect('messageType' in ex).toBe(false);
+  });
+
+  it("'on' in REVIEW mode: not grounded — the review prompt is untouched by this arc", async () => {
+    grounding.mode = 'on';
+    const { res, written } = await run({ ...VALID_BATTLE, status: 'completed' }, { mode: 'review' });
+    expect(res.statusCode).toBe(200);
+    expect(voiceLayerArgs.current[0].mode).toBe('review');
+    expect(voiceLayerArgs.current[0].grounded).toBe(false);
+    expect('groundingVersion' in exchangeOf(written)).toBe(false);
+  });
+
+  it("'on': a League ask is grounded too — one endpoint, one prompt (spec §8)", async () => {
+    grounding.mode = 'on';
+    leagueChatFlag.on = true;
+    const { res, written } = await run({ ...VALID_BATTLE, gameMode: TOURNAMENT_GAME_MODE, groupId: 'group-xyz' }, { leagueAsk: true });
+    expect(res.statusCode).toBe(200);
+    expect(voiceLayerArgs.current[0].grounded).toBe(true);
+    expect(exchangeOf(written).groundingVersion).toBe(1);
+  });
+});
+
+// ==================== Voice-layer grounding — chips minted by id (G5, spec §6.2 / §6.3) ====================
+
+describe('agent/chat — voice-layer grounding: chips minted by id (spec §6.2 / §6.3)', () => {
+  const MOMENTUM_AGENT = { ...VALID_AGENT, archetype: 'momentum_chaser' };
+  const MODEL_CHIPS = [
+    { kind: 'directive', id: 'TF-02', text: 'whatever the model wrote' },
+    { kind: 'directive', id: 'DV-02' },          // another archetype's menu → dropped
+    { kind: 'directive', id: 'TF-02' },          // duplicate → dropped
+    { kind: 'ask', text: 'Why confirmation?' },
+    'Show me the checks',                        // legacy string → a question
+    { kind: 'weather', text: 'sunny' },          // unknown kind → dropped
+  ];
+  const run = async (battle, body = {}, agent = MOMENTUM_AGENT) => {
+    callGemmaVoiceImpl.current = async () => JSON.stringify({ response: 'Two ways to shape the next checks.', suggestedActions: MODEL_CHIPS });
+    const fixture = makeFakeFirestore({ agent, battle });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'What would you file?', ...body });
+    await handler(req, res);
+    return { res, written: fixture.written };
+  };
+  const exchangeOf = (written) => written.updateCalls.find(c => c.updates?.chatExchanges?.__op === 'arrayUnion').updates.chatExchanges.items[0];
+
+  it("'on': the chips are normalized by the SERVER-DERIVED archetype — canonical text, off-menu/duplicate/unknown dropped — on the response, the exchange and the shadow log", async () => {
+    grounding.mode = 'on';
+    const { res, written } = await run(VALID_BATTLE);
+    expect(res.statusCode).toBe(200);
+    const expected = [
+      { kind: 'directive', id: 'TF-02', text: 'Require stronger confirmation before entering' },
+      { kind: 'ask', text: 'Why confirmation?' },
+      { kind: 'ask', text: 'Show me the checks' },
+    ];
+    expect(res.body.suggestedActions).toEqual(expected);
+    expect(exchangeOf(written).suggestedActions).toEqual(expected);
+    expect(shadowLogCalls.current[0].suggestedActions).toEqual(expected);
+  });
+
+  it("'on': the response says it is grounded and carries the CURRENT directive thread — the slot's when this turn filed nothing, this turn's when it did", async () => {
+    grounding.mode = 'on';
+    const slot = { text: 'Require stronger confirmation before entering', directiveThreadId: 'thread-tf02-0001', createdAt: '2026-09-08T15:20:00.000Z', expiry: 'end_of_battle' };
+    const { res } = await run({ ...VALID_BATTLE, directive: slot });
+    expect(res.body.grounded).toBe(true);
+    expect(res.body.currentDirectiveThreadId).toBe('thread-tf02-0001');
+    // No slot → null (the belief the client must send for a first filing).
+    const { res: none } = await run(VALID_BATTLE);
+    expect(none.body.currentDirectiveThreadId).toBeNull();
+    // This turn files → its own thread, which is also the exchange's and the slot's.
+    callGemmaVoiceImpl.current = async () => JSON.stringify({ response: 'Filed.', hasDirective: true, directive: { text: 'Require stronger confirmation before entering', expiry: 'end_of_battle' } });
+    const fixture = makeFakeFirestore({ agent: MOMENTUM_AGENT, battle: VALID_BATTLE });
+    activeFirestore = fixture.db;
+    const { req, res: filed } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'Do it.' });
+    await handler(req, filed);
+    expect(filed.statusCode).toBe(200);
+    expect(filed.body.currentDirectiveThreadId).toBe(exchangeOf(fixture.written).directiveThreadId);
+    expect(filed.body.currentDirectiveThreadId).toEqual(expect.any(String));
+  });
+
+  it("the archetype is the BATTLE's frozen snapshot when it has one — a diversifier snapshot over a momentum_chaser agent doc keeps DV-02 and drops TF-02 (review R-07)", async () => {
+    grounding.mode = 'on';
+    const { res } = await run({ ...VALID_BATTLE, agentContext: { archetype: 'diversifier' } });
+    expect(res.body.suggestedActions).toEqual([
+      { kind: 'directive', id: 'DV-02', text: 'Widen the spread (target more sectors)' },
+      { kind: 'ask', text: 'Why confirmation?' },
+      { kind: 'ask', text: 'Show me the checks' },
+    ]);
+  });
+
+  it("'on' with an archetype that has no menu: every directive chip is dropped, the questions stay", async () => {
+    grounding.mode = 'on';
+    const { res } = await run(VALID_BATTLE, {}, VALID_AGENT); // 'strategist' — no allowlist
+    expect(res.body.suggestedActions).toEqual([
+      { kind: 'ask', text: 'Why confirmation?' },
+      { kind: 'ask', text: 'Show me the checks' },
+    ]);
+  });
+
+  it("'off' / 'shadow': the model's chips pass through untouched and the response gains no field", async () => {
+    for (const mode of ['off', 'shadow']) {
+      grounding.mode = mode;
+      const { res, written } = await run(VALID_BATTLE);
+      expect(res.statusCode).toBe(200);
+      expect(res.body.suggestedActions).toEqual(MODEL_CHIPS);
+      expect(exchangeOf(written).suggestedActions).toEqual(MODEL_CHIPS);
+      expect('grounded' in res.body).toBe(false);
+      expect('currentDirectiveThreadId' in res.body).toBe(false);
+    }
+  });
+});
+
+// ==================== Voice-layer grounding — the shadow assembly (G6, spec §9) ====================
+
+describe('agent/chat — voice-layer grounding: the shadow assembly (spec §9, G6)', () => {
+  const GROUNDED_ANTICIPATION = {
+    userMessage: null, agentResponse: 'At the 11:15 AM check my trading process flagged NOW on the bench as a potential entry.',
+    messageType: 'anticipation', timestamp: '2026-09-08T15:16:00.000Z', mode: 'battle', groundingVersion: 1,
+  };
+  const LEGACY_ANTICIPATION = {
+    userMessage: null, agentResponse: 'Eyeing AVGO on the bench.', messageType: 'anticipation', timestamp: '2026-09-08T14:16:00.000Z', mode: 'battle',
+  };
+  const USER_PAIR = { userMessage: 'How are we looking?', agentResponse: 'CF is carrying the book.', timestamp: '2026-09-08T14:05:00.000Z', mode: 'battle' };
+  const HISTORY_BATTLE = { ...VALID_BATTLE, chatExchanges: [LEGACY_ANTICIPATION, USER_PAIR, GROUNDED_ANTICIPATION] };
+  const LEGACY_WINDOW = [
+    { role: 'user', content: 'How are we looking?' },
+    { role: 'assistant', content: 'CF is carrying the book.' },
+  ];
+  const GROUNDED_WINDOW = [
+    { role: 'user', content: 'How are we looking?' },
+    { role: 'assistant', content: '[user_initiated] CF is carrying the book.' },
+  ];
+  const PROFILE_TARGETING_TIME = Object.fromEntries(
+    ['risk_appetite', 'concentration_tolerance', 'sector_convictions', 'loss_reaction', 'win_reaction', 'tier_philosophy', 'momentum_vs_value',
+      'news_sensitivity', 'macro_awareness', 'communication_frequency', 'autonomy_preference', 'feedback_style', 'competitive_focus', 'learning_orientation']
+      .map((d) => [d, { value: 'x', confidence: 0.9 }]),
+  );
+  let gemmaOpts;
+  const run = async (battle, body = {}) => {
+    gemmaOpts = [];
+    callGemmaVoiceImpl.current = async (opts) => { gemmaOpts.push(opts); return '{"response":"ok"}'; };
+    const fixture = makeFakeFirestore({ agent: { ...VALID_AGENT, partnerProfile: PROFILE_TARGETING_TIME }, battle });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi', ...body });
+    await handler(req, res);
+    return { res, written: fixture.written };
+  };
+  const exchangeOf = (written) => written.updateCalls.find(c => c.updates?.chatExchanges?.__op === 'arrayUnion').updates.chatExchanges.items[0];
+  const GROUNDING_FIELDS = ['voiceGroundingMode', 'systemPromptOld', 'systemPromptNew', 'conversationHistoryOld', 'conversationHistoryNew'];
+
+  it("'shadow': both prompts assembled — the shipped one SENT (built first), the grounded counterpart second — both on the record with the mode and both windows; no marker on the exchange", async () => {
+    grounding.mode = 'shadow';
+    const { res, written } = await run(HISTORY_BATTLE);
+    expect(res.statusCode).toBe(200);
+    const [sent, counterpart] = voiceLayerArgs.current;
+    expect(voiceLayerArgs.current).toHaveLength(2);
+    expect(sent.grounded).toBe(false);
+    expect(counterpart.grounded).toBe(true);
+    // The same dimension, each prompt's own instruction table (site 27).
+    expect(counterpart.elicitationTarget.dimension).toBe('time_of_day_preference');
+    expect(sent.elicitationTarget.dimension).toBe('time_of_day_preference');
+    expect(sent.elicitationTarget.instruction).toContain("'act now at open'");
+    expect(counterpart.elicitationTarget.instruction).toContain("'file it before the next check'");
+    // Each prompt's own history window; the model got the shipped one.
+    expect(sent.conversationHistory).toEqual(LEGACY_WINDOW);
+    expect(counterpart.conversationHistory).toEqual(GROUNDED_WINDOW);
+    expect(gemmaOpts).toHaveLength(1);
+    expect(gemmaOpts[0].conversationHistory).toEqual(LEGACY_WINDOW);
+    // The record: the mode, both prompts, both windows.
+    const record = shadowLogCalls.current[0];
+    expect(record.voiceGroundingMode).toBe('shadow');
+    expect(record.systemPromptOld).toBe('system-prompt-stub:old');
+    expect(record.systemPromptNew).toBe('system-prompt-stub:new');
+    expect(gemmaOpts[0].systemPrompt).toBe('system-prompt-stub:old');
+    expect(record.conversationHistoryOld).toEqual(LEGACY_WINDOW);
+    expect(record.conversationHistoryNew).toEqual(GROUNDED_WINDOW);
+    expect(record.turnError).toBeUndefined();
+    // Sent the old → the exchange is the shipped shape.
+    expect('groundingVersion' in exchangeOf(written)).toBe(false);
+  });
+
+  it("'on': the grounded prompt SENT (built first), the shipped counterpart second; the record says 'on' and carries both", async () => {
+    grounding.mode = 'on';
+    const { written } = await run(HISTORY_BATTLE);
+    const [sent, counterpart] = voiceLayerArgs.current;
+    expect(voiceLayerArgs.current).toHaveLength(2);
+    expect(sent.grounded).toBe(true);
+    expect(counterpart.grounded).toBe(false);
+    expect(sent.conversationHistory).toEqual(GROUNDED_WINDOW);
+    expect(counterpart.conversationHistory).toEqual(LEGACY_WINDOW);
+    expect(counterpart.elicitationTarget.instruction).toContain("'act now at open'");
+    expect(gemmaOpts[0].conversationHistory).toEqual(GROUNDED_WINDOW);
+    const record = shadowLogCalls.current[0];
+    expect(record.voiceGroundingMode).toBe('on');
+    expect(record.systemPromptOld).toBe('system-prompt-stub:old');
+    expect(record.systemPromptNew).toBe('system-prompt-stub:new');
+    expect(gemmaOpts[0].systemPrompt).toBe('system-prompt-stub:new');
+    expect(record.conversationHistoryOld).toEqual(LEGACY_WINDOW);
+    expect(record.conversationHistoryNew).toEqual(GROUNDED_WINDOW);
+    expect(exchangeOf(written).groundingVersion).toBe(1);
+  });
+
+  it("'shadow': a COUNTERPART assembly that throws is recorded and the shipped turn goes on — 200, the old prompt sent (review R-05)", async () => {
+    grounding.mode = 'shadow';
+    promptBuilder.throwWhen = (args) => args.grounded === true;
+    const { res, written } = await run(HISTORY_BATTLE);
+    expect(res.statusCode).toBe(200);
+    expect(gemmaOpts).toHaveLength(1);
+    expect(gemmaOpts[0].systemPrompt).toBe('system-prompt-stub:old');
+    expect('groundingVersion' in exchangeOf(written)).toBe(false);
+    const record = shadowLogCalls.current[0];
+    expect(record.voiceGroundingMode).toBe('shadow');
+    expect(record.systemPromptOld).toBe('system-prompt-stub:old');
+    expect(record.systemPromptNew).toBeNull();
+    expect(record.conversationHistoryNew).toEqual(GROUNDED_WINDOW);
+    expect(record.shadowAssemblyError).toContain('builder exploded (grounded=true)');
+  });
+
+  it("'on': the OLD counterpart throwing is recorded, the grounded turn goes on; the SENT (grounded) prompt throwing still fails the turn", async () => {
+    grounding.mode = 'on';
+    promptBuilder.throwWhen = (args) => args.grounded === false;
+    const { res } = await run(HISTORY_BATTLE);
+    expect(res.statusCode).toBe(200);
+    expect(gemmaOpts[0].systemPrompt).toBe('system-prompt-stub:new');
+    expect(shadowLogCalls.current[0].systemPromptOld).toBeNull();
+    expect(shadowLogCalls.current[0].shadowAssemblyError).toContain('grounded=false');
+    // The sent side is never guarded: a broken grounded prompt must not be silently swapped for the old one.
+    promptBuilder.throwWhen = (args) => args.grounded === true;
+    const { res: failed } = await run(HISTORY_BATTLE);
+    expect(failed.statusCode).toBe(500);
+    expect(gemmaOpts).toHaveLength(0);
+  });
+
+  it("'off': ONE build, and the record carries none of the five fields — the shipped record, byte for byte", async () => {
+    grounding.mode = 'off';
+    await run(HISTORY_BATTLE);
+    expect(voiceLayerArgs.current).toHaveLength(1);
+    expect(voiceLayerArgs.current[0].grounded).toBe(false);
+    for (const field of GROUNDING_FIELDS) expect(field in shadowLogCalls.current[0]).toBe(false);
+  });
+
+  it("'shadow' in REVIEW mode: one build, no grounding fields — the review prompt is untouched by this arc", async () => {
+    grounding.mode = 'shadow';
+    const { res } = await run({ ...HISTORY_BATTLE, status: 'completed' }, { mode: 'review' });
+    expect(res.statusCode).toBe(200);
+    expect(voiceLayerArgs.current).toHaveLength(1);
+    expect(voiceLayerArgs.current[0].mode).toBe('review');
+    for (const field of GROUNDING_FIELDS) expect(field in shadowLogCalls.current[0]).toBe(false);
+  });
+
+  it("a turn that fails AFTER assembly (a parse failure, a thrown call) still records the mode and both prompts", async () => {
+    grounding.mode = 'shadow';
+    // The 502 parse path.
+    await run(HISTORY_BATTLE);
+    shadowLogCalls.current = [];
+    callGemmaVoiceImpl.current = async () => 'I have hit a snag';
+    parseVoiceLayerResponseImpl.current = (c) => ({ parseError: true, errorReason: 'plaintext_passthrough', rawText: c });
+    let fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: HISTORY_BATTLE });
+    activeFirestore = fixture.db;
+    let rr = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi' });
+    await handler(rr.req, rr.res);
+    expect(rr.res.statusCode).toBe(502);
+    expect(shadowLogCalls.current[0].turnError).toBe(true);
+    expect(shadowLogCalls.current[0].voiceGroundingMode).toBe('shadow');
+    expect(shadowLogCalls.current[0].systemPromptNew).toBe('system-prompt-stub:new');
+    expect(shadowLogCalls.current[0].conversationHistoryNew).toEqual(GROUNDED_WINDOW);
+    // The catch path (the call threw after the prompts were built).
+    shadowLogCalls.current = [];
+    parseVoiceLayerResponseImpl.current = (c) => JSON.parse(c);
+    callGemmaVoiceImpl.current = async () => { throw new Error('boom'); };
+    fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: HISTORY_BATTLE });
+    activeFirestore = fixture.db;
+    rr = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi' });
+    await handler(rr.req, rr.res);
+    expect(rr.res.statusCode).toBe(500);
+    expect(shadowLogCalls.current[0].errorReason).toBe('handler_exception');
+    expect(shadowLogCalls.current[0].voiceGroundingMode).toBe('shadow');
+    expect(shadowLogCalls.current[0].systemPromptOld).toBe('system-prompt-stub:old');
+    expect(shadowLogCalls.current[0].conversationHistoryOld).toEqual(LEGACY_WINDOW);
   });
 });
