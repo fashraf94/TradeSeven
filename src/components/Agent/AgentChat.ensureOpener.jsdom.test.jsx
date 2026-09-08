@@ -89,10 +89,16 @@ describe('the two callers each hand the battle\'s agentId to the chat', () => {
     ['the Battle View controller column', 0],
     ['the arena Command Center tab', 1],
   ])('%s passes agentId={agentBattle?.agentId} beside battleId', (_label, index) => {
-    // The props block ends at the first `/>` or `>` that closes the opener.
-    const props = MOUNTS[index].split(/\/?>/)[0];
+    // The window is the whole JSX opening element: up to the `/>` that CLOSES
+    // it, which is the only one at the start of a line. Splitting on the first
+    // `>` instead truncated mount 1 after nine lines — at the `>` inside
+    // `onSwitchToGameTape={() => …}` — so a prop moved below it read as absent.
+    const props = MOUNTS[index].split(/\n\s*\/>/)[0];
     expect(props).toContain('battleId={agentBattleId}');
     expect(props).toContain('agentId={agentBattle?.agentId}');
+    // The window really is the element, not a fragment of it: every mount ends
+    // with the chat's own props, so a truncated window would fail this too.
+    expect(props).toContain('chatExchanges={chatExchanges}');
   });
 });
 

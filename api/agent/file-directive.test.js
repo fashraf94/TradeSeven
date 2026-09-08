@@ -32,6 +32,7 @@ const state = vi.hoisted(() => ({
   gemmaCalls: [],
   injectBeforeCommit: null,
   attempts: 0,
+  reads: 0,
   committed: [],
 }));
 
@@ -69,6 +70,11 @@ vi.mock('firebase-admin/firestore', () => ({
 // ---- the fake Firestore ----
 function docSnap(data, id) { return { exists: data != null, id, data: () => (data == null ? undefined : { ...data }) }; }
 function readDoc(col, id) {
+  // EVERY read goes through here — the plain `.get()` path and the transaction's
+  // `tx.get` alike — so `state.reads` is what "before any read" is measured
+  // against. `state.attempts` counts transactions only, which a read placed
+  // ahead of the gate would slip past.
+  state.reads += 1;
   if (col === 'agentBattles') return docSnap(state.battle && state.battle.__id === id ? state.battle : null, id);
   if (col === 'agents') return docSnap(state.agent && state.agent.__id === id ? state.agent : null, id);
   if (col === 'tournamentGroups') return docSnap(state.group, id);
@@ -150,6 +156,7 @@ beforeEach(() => {
   state.gemmaCalls = [];
   state.injectBeforeCommit = null;
   state.attempts = 0;
+  state.reads = 0;
   state.committed = [];
 });
 
@@ -165,7 +172,23 @@ describe('file-directive — the gate and the body', () => {
     expect(res.body.error).toBe('not_found');
     expect(state.modeCalls).toEqual(['owner-1']);
     expect(state.attempts).toBe(0);
+    expect(state.reads).toBe(0);        // not one document was fetched
     expect(state.committed).toEqual([]);
+  });
+
+  it("check 7 is checked FIRST — a malformed body from a non-'on' caller still 404s, never a 400 that describes the route", async () => {
+    // The `attempts` assertion above proves "before any read"; it cannot see
+    // the ORDER against the body-validation branches, which a valid body
+    // satisfies from either position. Move the gate below them and this row
+    // reds: the route would answer a caller it does not exist for with a 400
+    // naming its own required fields.
+    state.mode = 'shadow';
+    expect((await post({})).statusCode).toBe(404);
+    expect((await post({ agentId: 'agent-1', battleId: 'battle-1', adjustmentId: 'DV-02' })).statusCode).toBe(404);
+    expect(state.attempts).toBe(0);
+    // …and at 'on' the same malformed bodies get the body contract, not a 404.
+    state.mode = 'on';
+    expect((await post({})).statusCode).toBe(400);
   });
 
   it("'canary' for a uid that is NOT on the allowlist: 404 — canary resolves to 'shadow' there", async () => {
@@ -174,6 +197,7 @@ describe('file-directive — the gate and the body', () => {
     const res = await post(BODY);
     expect(res.statusCode).toBe(404);
     expect(state.attempts).toBe(0);
+    expect(state.reads).toBe(0);
     expect(state.committed).toEqual([]);
     // Fail-closed: an unset / empty list is nobody, not everybody.
     state.canaryUids = '';

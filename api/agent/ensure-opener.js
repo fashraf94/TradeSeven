@@ -10,7 +10,7 @@
 // the fenced deploy path (it only CALLS the shared non-fenced builders).
 //
 // Flag-gated (OPENER_LAZY_FALLBACK_ENABLED). The flag DEFAULTS TO TRUE
-// (featureFlags.js:1112) — it was built and merged dark and flipped in its own
+// (featureFlags.js:1117) — it was built and merged dark and flipped in its own
 // follow-up PR after the preview smoke, and this header outlived the flip by
 // still calling `false` the default. It is the kill switch, not the shipped
 // state: set to false the route is a 200 `{ status: 'disabled' }` no-op and the
@@ -200,7 +200,7 @@ export default async function handler(req, res) {
     }
 
     // (3) Empty chat (early open) → generate. Resolve the agent doc AUTHORITATIVELY
-    //     from the battle's own top-level agentId (agentBattleService.js:105) — never
+    //     from the battle's own top-level agentId (agentBattleService.js:130) — never
     //     a client-supplied id.
     if (!battle.agentId) {
       return res.status(422).json({ error: 'battle has no agentId' });

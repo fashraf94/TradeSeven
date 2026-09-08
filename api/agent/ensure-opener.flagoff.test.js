@@ -6,7 +6,8 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('../_utils/security.js', () => ({ applySecurityMiddleware: () => false }));
 vi.mock('../_utils/authMiddleware.js', () => ({ requireAuth: vi.fn(async () => ({ uid: 'x' })) }));
 
-// Real featureFlags module (Node-clean guard), flag forced OFF (its default).
+// Real featureFlags module (Node-clean guard), flag forced OFF — the KILL
+// SWITCH, not the default: the shipped value is true (featureFlags.js:1117).
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   OPENER_LAZY_FALLBACK_ENABLED: false,

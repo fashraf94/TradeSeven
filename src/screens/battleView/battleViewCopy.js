@@ -175,7 +175,7 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // ── The guardrail's provenance code, in plain words (A2.3, D-80, ruling 1) ─
   // The cron composes a forced exit's rationale as
   // `Guardrail override (${result.sourceNote || 'hard'}): ${overrideNote}`
-  // (api/cron/agent-evaluate.js:2121), so the guardrail module's own
+  // (api/cron/agent-evaluate.js:2124), so the guardrail module's own
   // `guardrail_${forcedType}` token (api/_utils/agentGuardrails.js:495 / :558)
   // rides INSIDE the sentence C1 renders verbatim. The table that translates
   // it, the ruling that separates the two rules, and the reason the three
@@ -324,7 +324,7 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   //
   // FROM THE PERSISTED TYPE, NEVER FROM THE TEXT. Every value below is one the
   // server writes on the exchange itself — `first_message` (decide.js:1639,
-  // ensure-opener.js:99), `anticipation` (voiceLayerAnticipation.js:200),
+  // ensure-opener.js:114), `anticipation` (voiceLayerAnticipation.js:200),
   // `trade_narration` (voiceLayerTradeNarration.js:203) — so an eyebrow is a
   // fact about the record rather than a reading of the prose. Guessing from
   // the words is exactly the class of inference hazard 24 forbids elsewhere on

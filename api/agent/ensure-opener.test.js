@@ -267,11 +267,21 @@ describe('ensure-opener — the agent must belong to this battle', () => {
     expect(state.updates).toHaveLength(0);
   });
 
-  it('an EMPTY-STRING agentId is refused as well (the predicate takes no falsy id)', async () => {
+  it('an EMPTY-STRING agentId is refused as well — including against a battle whose own agentId is empty', async () => {
     const res = mkRes();
     await handler(mkReq({ battleId: 'b1', agentId: '' }), res);
     expect(res.statusCode).toBe(403);
     expect(res.body.error).toBe('agent_battle_mismatch');
+    expect(state.updates).toHaveLength(0);
+    // The case that actually reaches the predicate's FALSY guard rather than its
+    // equality: '' === '' is true, so only `agentId.length > 0` refuses this.
+    // Without that conjunct a battle doc with an empty agentId would accept any
+    // caller who also sent none.
+    state.battle.agentId = '';
+    const res2 = mkRes();
+    await handler(mkReq({ battleId: 'b1', agentId: '' }), res2);
+    expect(res2.statusCode).toBe(403);
+    expect(res2.body.error).toBe('agent_battle_mismatch');
     expect(state.updates).toHaveLength(0);
   });
 });

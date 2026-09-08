@@ -2117,13 +2117,13 @@ export function isCharacterPaneOn() {
  * CURRENT STATE — 'shadow' (walk step 1, from 'off'; Sep 8 2026). Every caller
  * still RECEIVES the shipped prompt, so the sent bytes are the off goldens;
  * what changes is that chat.js assembles the grounded prompt beside it and both
- * ride the shadow record (chat.js:313 gates that on `!== 'off'`). ONE non-chat
+ * ride the shadow record (chat.js:416 gates that on `!== 'off'`). ONE non-chat
  * surface reads `!== 'off'` too and comes alive at this step, by design: the
  * voice-layer cache cron mirrors `fundamentals` onto the cached briefs
  * (§3.5, voice-layer-cache.js:819 — the shipped prompt ignores the field, which
  * is why the off goldens' fixture carries one). POST /api/agent/file-directive
  * does NOT come alive here: its gate compares `=== 'on'`, the same resolution
- * that mints the chips (chat.js:306), so the filing surface and the minting
+ * that mints the chips (chat.js:409), so the filing surface and the minting
  * surface walk together rather than the route standing open at 'shadow' with
  * nothing minted to file. Everything else compares `=== 'on'` too and is
  * unchanged here.

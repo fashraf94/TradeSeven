@@ -5,12 +5,13 @@
 // `battleId`.
 //
 // `POST /api/agent/file-directive` carried this check from the start (its
-// header calls it "a check the chat route never made"); `chat.js` and
+// header calls it "the check this route carried from the start and the chat
+// route did not"); `chat.js` and
 // `ensure-opener.js` did not. Ownership alone is not the same guarantee: a
 // caller who owns TWO battles could name battle A and agent B, and every route
 // that then reads `agents/{body.agentId}` would answer for an agent that is not
 // the one this battle is bound to. The battle doc's top-level `agentId` is set
-// once at creation (`createAgentBattle`, agentBattleService.js:105) and is
+// once at creation (`createAgentBattle`, agentBattleService.js:130) and is
 // never rewritten, so it is the authority on which agent a battle belongs to.
 //
 // This module is the SHARED helper rather than a third copy of the same
