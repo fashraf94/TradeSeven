@@ -210,6 +210,11 @@ export default async function handler(req, res) {
   // catch block's shadow record needs the elapsed time too. null = the turn
   // failed before the model was ever called.
   let gemmaLatencyMs = null;
+  // Voice-layer grounding §9 (G6) — the shadow record's grounding fields (the
+  // mode, both prompts, both history windows), hoisted so the catch site's
+  // record carries whatever had been assembled when the turn failed. Null
+  // under 'off': the shipped record, byte for byte.
+  let groundingRecord = null;
 
   // 1. Security middleware
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 10, windowMs: 60000 } })) {
@@ -279,6 +284,14 @@ export default async function handler(req, res) {
     //     prompt untouched (the grounding arc is the live-play narrator).
     const groundingMode = getVoiceGroundingMode(user.uid);
     const grounded = groundingMode === 'on' && mode === 'battle';
+    // §9 'shadow' (G6): under any mode but 'off', in battle mode, BOTH prompts
+    // are assembled — the shipped one and the grounded one — and both ride the
+    // shadow record with the mode, so the paired harness (§9 gate 1) replays
+    // old vs new from real turns. What is SENT is the resolved mode's: 'on'
+    // the new, 'shadow' the old. 'off' assembles only the shipped prompt (the
+    // off goldens hold, byte for byte).
+    const shadowAssembly = groundingMode !== 'off' && mode === 'battle';
+    if (shadowAssembly) groundingRecord = { voiceGroundingMode: groundingMode };
 
     // 9. Battle status check (mode-aware: review mode is valid on completed battles)
     if (battle.status !== 'active' && mode !== 'review') {
@@ -418,12 +431,20 @@ export default async function handler(req, res) {
       console.error('[VoiceLayer] Failed to fetch market context:', err.message);
     }
 
-    // 12. Compute elicitation target
-    const elicitationTarget = selectElicitationTarget(
-      agent.partnerProfile,
-      battle.recentElicitationTargets || [],
-      grounded ? { ...ELICITATION_INSTRUCTIONS, ...GROUNDED_ELICITATION_INSTRUCTIONS } : ELICITATION_INSTRUCTIONS,
-    );
+    // 12. Compute elicitation target — the DIMENSION once (the shipped
+    //     selection), the instruction from the table each prompt reads: the
+    //     shipped table, or the shipped table with the two grounded lines laid
+    //     over it (site 27 of the vocabulary guard). Both prompts of a shadow
+    //     turn target the same dimension, so the pair differs only in what the
+    //     grounding changes.
+    const elicitationTargetOld = selectElicitationTarget(agent.partnerProfile, battle.recentElicitationTargets || []);
+    const elicitationTargetNew = shadowAssembly
+      ? {
+          dimension: elicitationTargetOld.dimension,
+          instruction: { ...ELICITATION_INSTRUCTIONS, ...GROUNDED_ELICITATION_INSTRUCTIONS }[elicitationTargetOld.dimension],
+        }
+      : null;
+    const elicitationTarget = grounded ? elicitationTargetNew : elicitationTargetOld;
 
     // 13. Build conversation history — last 10 exchanges as messages.
     // Agent-initiated exchanges (first_message, auto_debrief,
@@ -444,27 +465,39 @@ export default async function handler(req, res) {
     // ride the system prompt when they carry the grounding marker (legacy
     // proactive exchanges stay excluded). The legacy filter above is the
     // shipped path, byte for byte.
-    const conversationHistory = grounded
-      ? buildGroundedConversationHistory(battle.chatExchanges)
-      : previousExchanges.flatMap(ex => [
-          { role: 'user', content: ex.userMessage },
-          { role: 'assistant', content: ex.agentResponse || ex.agentMessage || '' },
-        ]);
+    const conversationHistoryOld = previousExchanges.flatMap(ex => [
+      { role: 'user', content: ex.userMessage },
+      { role: 'assistant', content: ex.agentResponse || ex.agentMessage || '' },
+    ]);
+    const conversationHistoryNew = shadowAssembly ? buildGroundedConversationHistory(battle.chatExchanges) : null;
+    const conversationHistory = grounded ? conversationHistoryNew : conversationHistoryOld;
 
-    // 14. Build system prompt
-    const systemPrompt = buildVoiceLayerPrompt({
+    // 14. Build the system prompt — the one this turn SENDS first, then (under
+    //     any mode but 'off') its counterpart for the shadow record (§9, G6).
+    const buildPrompt = (g) => buildVoiceLayerPrompt({
       agent,
       battle,
-      elicitationTarget,
-      conversationHistory,
+      elicitationTarget: g ? elicitationTargetNew : elicitationTargetOld,
+      conversationHistory: g ? conversationHistoryNew : conversationHistoryOld,
       anchorContext,
       marketSnapshot,
       mode,
       dailyReviews: battle.dailyReviews || [],
       dailyGrades: battle.dailyGrades || [],
       capabilitiesManifest,
-      grounded,
+      grounded: g,
     });
+    const systemPrompt = buildPrompt(grounded);
+    if (shadowAssembly) {
+      const counterpart = buildPrompt(!grounded);
+      groundingRecord = {
+        ...groundingRecord,
+        systemPromptOld: grounded ? counterpart : systemPrompt,
+        systemPromptNew: grounded ? systemPrompt : counterpart,
+        conversationHistoryOld,
+        conversationHistoryNew,
+      };
+    }
 
     // 15. Call OpenRouter (Gemma 4) — with the GEMMA_TIMEOUT_MS budget, CLAMPED
     //     to the absolute turn deadline.
@@ -544,6 +577,9 @@ export default async function handler(req, res) {
         errorReason: `parse_${parsed.errorReason}`,
         rawGemmaContent: String(parsed.rawText || '').slice(0, 2000),
         gemmaLatencyMs,
+        // Voice-layer grounding §9 (G6): the mode, both prompts and both history
+        // windows, under any mode but 'off' (absent = the shipped record).
+        ...(groundingRecord || {}),
       }).catch(() => {});
       return res.status(502).json({
         error: 'gemma_invalid_shape',
@@ -673,6 +709,9 @@ export default async function handler(req, res) {
       tokenUsage: null,
       mode,
       gemmaLatencyMs,
+      // Voice-layer grounding §9 (G6): the mode, both prompts and both history
+      // windows, under any mode but 'off' (absent = the shipped record).
+      ...(groundingRecord || {}),
     }).catch(() => {});
 
     // 19. Write exchange to battle doc
@@ -825,6 +864,9 @@ export default async function handler(req, res) {
       errorReason: isAbort ? 'gemma_timeout' : 'handler_exception',
       errorMessage: String(error?.message || error || '').slice(0, 500),
       gemmaLatencyMs,
+      // Voice-layer grounding §9 (G6): the mode, both prompts and both history
+      // windows, under any mode but 'off' (absent = the shipped record).
+      ...(groundingRecord || {}),
     }).catch(() => {});
 
     if (isAbort) {

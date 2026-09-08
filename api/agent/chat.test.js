@@ -1128,3 +1128,138 @@ describe('agent/chat — voice-layer grounding: chips minted by id (spec §6.2 /
     }
   });
 });
+
+// ==================== Voice-layer grounding — the shadow assembly (G6, spec §9) ====================
+
+describe('agent/chat — voice-layer grounding: the shadow assembly (spec §9, G6)', () => {
+  const GROUNDED_ANTICIPATION = {
+    userMessage: null, agentResponse: 'At the 11:15 AM check my trading process flagged NOW on the bench as a potential entry.',
+    messageType: 'anticipation', timestamp: '2026-09-08T15:16:00.000Z', mode: 'battle', groundingVersion: 1,
+  };
+  const LEGACY_ANTICIPATION = {
+    userMessage: null, agentResponse: 'Eyeing AVGO on the bench.', messageType: 'anticipation', timestamp: '2026-09-08T14:16:00.000Z', mode: 'battle',
+  };
+  const USER_PAIR = { userMessage: 'How are we looking?', agentResponse: 'CF is carrying the book.', timestamp: '2026-09-08T14:05:00.000Z', mode: 'battle' };
+  const HISTORY_BATTLE = { ...VALID_BATTLE, chatExchanges: [LEGACY_ANTICIPATION, USER_PAIR, GROUNDED_ANTICIPATION] };
+  const LEGACY_WINDOW = [
+    { role: 'user', content: 'How are we looking?' },
+    { role: 'assistant', content: 'CF is carrying the book.' },
+  ];
+  const GROUNDED_WINDOW = [
+    { role: 'user', content: 'How are we looking?' },
+    { role: 'assistant', content: '[user_initiated] CF is carrying the book.' },
+  ];
+  const PROFILE_TARGETING_TIME = Object.fromEntries(
+    ['risk_appetite', 'concentration_tolerance', 'sector_convictions', 'loss_reaction', 'win_reaction', 'tier_philosophy', 'momentum_vs_value',
+      'news_sensitivity', 'macro_awareness', 'communication_frequency', 'autonomy_preference', 'feedback_style', 'competitive_focus', 'learning_orientation']
+      .map((d) => [d, { value: 'x', confidence: 0.9 }]),
+  );
+  let gemmaOpts;
+  const run = async (battle, body = {}) => {
+    gemmaOpts = [];
+    callGemmaVoiceImpl.current = async (opts) => { gemmaOpts.push(opts); return '{"response":"ok"}'; };
+    const fixture = makeFakeFirestore({ agent: { ...VALID_AGENT, partnerProfile: PROFILE_TARGETING_TIME }, battle });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi', ...body });
+    await handler(req, res);
+    return { res, written: fixture.written };
+  };
+  const exchangeOf = (written) => written.updateCalls.find(c => c.updates?.chatExchanges?.__op === 'arrayUnion').updates.chatExchanges.items[0];
+  const GROUNDING_FIELDS = ['voiceGroundingMode', 'systemPromptOld', 'systemPromptNew', 'conversationHistoryOld', 'conversationHistoryNew'];
+
+  it("'shadow': both prompts assembled — the shipped one SENT (built first), the grounded counterpart second — both on the record with the mode and both windows; no marker on the exchange", async () => {
+    grounding.mode = 'shadow';
+    const { res, written } = await run(HISTORY_BATTLE);
+    expect(res.statusCode).toBe(200);
+    const [sent, counterpart] = voiceLayerArgs.current;
+    expect(voiceLayerArgs.current).toHaveLength(2);
+    expect(sent.grounded).toBe(false);
+    expect(counterpart.grounded).toBe(true);
+    // The same dimension, each prompt's own instruction table (site 27).
+    expect(counterpart.elicitationTarget.dimension).toBe('time_of_day_preference');
+    expect(sent.elicitationTarget.dimension).toBe('time_of_day_preference');
+    expect(sent.elicitationTarget.instruction).toContain("'act now at open'");
+    expect(counterpart.elicitationTarget.instruction).toContain("'file it before the next check'");
+    // Each prompt's own history window; the model got the shipped one.
+    expect(sent.conversationHistory).toEqual(LEGACY_WINDOW);
+    expect(counterpart.conversationHistory).toEqual(GROUNDED_WINDOW);
+    expect(gemmaOpts).toHaveLength(1);
+    expect(gemmaOpts[0].conversationHistory).toEqual(LEGACY_WINDOW);
+    // The record: the mode, both prompts, both windows.
+    const record = shadowLogCalls.current[0];
+    expect(record.voiceGroundingMode).toBe('shadow');
+    expect(record.systemPromptOld).toBe('system-prompt-stub');
+    expect(record.systemPromptNew).toBe('system-prompt-stub');
+    expect(record.conversationHistoryOld).toEqual(LEGACY_WINDOW);
+    expect(record.conversationHistoryNew).toEqual(GROUNDED_WINDOW);
+    expect(record.turnError).toBeUndefined();
+    // Sent the old → the exchange is the shipped shape.
+    expect('groundingVersion' in exchangeOf(written)).toBe(false);
+  });
+
+  it("'on': the grounded prompt SENT (built first), the shipped counterpart second; the record says 'on' and carries both", async () => {
+    grounding.mode = 'on';
+    const { written } = await run(HISTORY_BATTLE);
+    const [sent, counterpart] = voiceLayerArgs.current;
+    expect(voiceLayerArgs.current).toHaveLength(2);
+    expect(sent.grounded).toBe(true);
+    expect(counterpart.grounded).toBe(false);
+    expect(sent.conversationHistory).toEqual(GROUNDED_WINDOW);
+    expect(counterpart.conversationHistory).toEqual(LEGACY_WINDOW);
+    expect(counterpart.elicitationTarget.instruction).toContain("'act now at open'");
+    expect(gemmaOpts[0].conversationHistory).toEqual(GROUNDED_WINDOW);
+    const record = shadowLogCalls.current[0];
+    expect(record.voiceGroundingMode).toBe('on');
+    expect(record.conversationHistoryOld).toEqual(LEGACY_WINDOW);
+    expect(record.conversationHistoryNew).toEqual(GROUNDED_WINDOW);
+    expect(exchangeOf(written).groundingVersion).toBe(1);
+  });
+
+  it("'off': ONE build, and the record carries none of the five fields — the shipped record, byte for byte", async () => {
+    grounding.mode = 'off';
+    await run(HISTORY_BATTLE);
+    expect(voiceLayerArgs.current).toHaveLength(1);
+    expect(voiceLayerArgs.current[0].grounded).toBe(false);
+    for (const field of GROUNDING_FIELDS) expect(field in shadowLogCalls.current[0]).toBe(false);
+  });
+
+  it("'shadow' in REVIEW mode: one build, no grounding fields — the review prompt is untouched by this arc", async () => {
+    grounding.mode = 'shadow';
+    const { res } = await run({ ...HISTORY_BATTLE, status: 'completed' }, { mode: 'review' });
+    expect(res.statusCode).toBe(200);
+    expect(voiceLayerArgs.current).toHaveLength(1);
+    expect(voiceLayerArgs.current[0].mode).toBe('review');
+    for (const field of GROUNDING_FIELDS) expect(field in shadowLogCalls.current[0]).toBe(false);
+  });
+
+  it("a turn that fails AFTER assembly (a parse failure, a thrown call) still records the mode and both prompts", async () => {
+    grounding.mode = 'shadow';
+    // The 502 parse path.
+    await run(HISTORY_BATTLE);
+    shadowLogCalls.current = [];
+    callGemmaVoiceImpl.current = async () => 'I have hit a snag';
+    parseVoiceLayerResponseImpl.current = (c) => ({ parseError: true, errorReason: 'plaintext_passthrough', rawText: c });
+    let fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: HISTORY_BATTLE });
+    activeFirestore = fixture.db;
+    let rr = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi' });
+    await handler(rr.req, rr.res);
+    expect(rr.res.statusCode).toBe(502);
+    expect(shadowLogCalls.current[0].turnError).toBe(true);
+    expect(shadowLogCalls.current[0].voiceGroundingMode).toBe('shadow');
+    expect(shadowLogCalls.current[0].systemPromptNew).toBe('system-prompt-stub');
+    expect(shadowLogCalls.current[0].conversationHistoryNew).toEqual(GROUNDED_WINDOW);
+    // The catch path (the call threw after the prompts were built).
+    shadowLogCalls.current = [];
+    parseVoiceLayerResponseImpl.current = (c) => JSON.parse(c);
+    callGemmaVoiceImpl.current = async () => { throw new Error('boom'); };
+    fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: HISTORY_BATTLE });
+    activeFirestore = fixture.db;
+    rr = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi' });
+    await handler(rr.req, rr.res);
+    expect(rr.res.statusCode).toBe(500);
+    expect(shadowLogCalls.current[0].errorReason).toBe('handler_exception');
+    expect(shadowLogCalls.current[0].voiceGroundingMode).toBe('shadow');
+    expect(shadowLogCalls.current[0].systemPromptOld).toBe('system-prompt-stub');
+    expect(shadowLogCalls.current[0].conversationHistoryOld).toEqual(LEGACY_WINDOW);
+  });
+});
