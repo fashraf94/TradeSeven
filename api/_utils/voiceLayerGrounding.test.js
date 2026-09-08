@@ -13,7 +13,8 @@
 //
 // Dependency-surface guard (BUILD_RULES §4): this file's REAL import of the
 // module is the runtime guard that its api→src imports (deskCopy.js,
-// decisionRecord.js, agentGameModes.js) stay Node-clean. Never mock it.
+// decisionRecord.js, agentGameModes.js, archetypeAdjustments.js) stay
+// Node-clean. Never mock it.
 
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import {
@@ -135,8 +136,15 @@ describe('§3.2 — one check, rendered', () => {
     // The engine's sentence, through the pane's translator (D-80): the
     // machinery-provenance code becomes the words the guardrail is called by,
     // and everything after the colon is the engine's own bytes.
-    expect(lines[1]).toBe(`  Rationale — ${MOTIVE_SYSTEM}: ${renderMotive(byId('eval_003').rationale)}`);
-    expect(lines[1]).toContain('Guardrail override (stop-loss): stop-loss at 8% breached on GILD (-9.24%). Forcing exit → MOS.');
+    // The whole line as a LITERAL — computing the expectation with the function
+    // under test would survive a translator that returns its input unchanged.
+    expect(lines[1]).toBe('  Rationale — The system\'s reason: Guardrail override (stop-loss): stop-loss at 8% breached on GILD (-9.24%). Forcing exit → MOS.');
+    // …and the author label's TEXT is pinned here, not just its constant: an
+    // engine sentence relabelled as the agent's own words is the C1 hazard these
+    // rows exist for, and `${MOTIVE_SYSTEM}` alone cannot see it.
+    expect(MOTIVE_SYSTEM).toBe('The system\'s reason');
+    expect(MOTIVE_AGENT).toBe('The agent\'s own words');
+    expect(MOTIVE_SYSTEM).not.toBe(MOTIVE_AGENT);
     // The cron's own `Hypothesis: deterministic guardrail enforcement — …` is
     // the system's sentence, not a forecast the check made: withheld exactly
     // where the rationale is engine-authored (review R-12).

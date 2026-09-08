@@ -48,9 +48,11 @@
 // 26): the slot formatter, the nine `Woken by …` sentences, the absence
 // labels, the author labels, the motive translator and the deploy gates are
 // the pane's strings and the pane's rules, so the pane and the narrator cannot
-// disagree about one check. agentGameModes.js
-// imports only the zero-import schema module. The test file's real import of
-// this module is the dependency-surface guard — never mock it.
+// disagree about one check. agentGameModes.js imports only the zero-import
+// schema module, and archetypeAdjustments.js (§6.2's allowlist helpers, the
+// §2.3-ratcheted table — see the import below) is zero-import too. All four
+// api→src imports are Node-clean; the test file's real import of THIS module
+// is the dependency-surface guard that keeps them so — never mock it.
 
 import { etSlotTime, etTime } from '../../src/components/Dashboard/desk/deskCopy.js';
 import {
@@ -203,10 +205,19 @@ export function renderRecordEntry(evaluation) {
   // pattern's anchor IS `ENGINE_MOTIVE_PREFIXES[0]`). What the rewrite removes
   // is the cron's machinery-provenance code: `Guardrail override
   // (guardrail_stopLoss): …` reaches the model as `Guardrail override
-  // (stop-loss): …`, and an unruled token loses the parenthetical entirely, so
-  // no `guardrail_*` identifier is ever in the prompt for the narrator to
-  // quote back at a player. The markers the model reads (`**`) survive: the
-  // translation touches the code parenthetical alone.
+  // (stop-loss): …`, and an unruled token loses the parenthetical entirely.
+  // The markers the model reads (`**`) survive: the translation touches the
+  // code parenthetical alone.
+  //
+  // THIS BLOCK IS NOT THE WHOLE PROMPT. The same swap appears again in
+  // voiceLayerPrompt.js's RECENT TRADES lines, from `trades[].rationale` —
+  // the SAME cron string (agent-evaluate.js:2245 and :2640 both take
+  // `haikuResult.rationale`) — and that block renders it through this same
+  // translator under `grounded`, for the same reason. The claim "no
+  // `guardrail_*` identifier is in the grounded prompt" is true of the
+  // ASSEMBLED prompt and is asserted there
+  // (voiceLayerPrompt.grounding.test.js), not here: a row over this block
+  // alone could not see the other half, and for a while did not.
   //
   // AUTHORSHIP IS READ FROM THE RAW FIELD, not from this one — deriving
   // "whose words" from a string this line has already rewritten is the drift

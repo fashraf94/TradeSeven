@@ -204,6 +204,57 @@ describe('§3.2 — YOUR RECORD in the assembled prompt', () => {
   it('a battle with no evaluations still renders the block (a truthful absence)', () => {
     expect(battlePrompt({ battle: makeBattle({ evaluations: [] }) })).toContain('No check has been recorded yet.');
   });
+
+  it('THE CODE NEVER REACHES THE ASSEMBLED PROMPT — not YOUR RECORD, not RECENT TRADES, not anywhere', () => {
+    // The record block alone is not the claim. One guardrail-forced swap is in
+    // the prompt TWICE — as the check that decided it (evaluations[]) and as the
+    // trade it produced (trades[]) — and both carry the SAME cron string
+    // (agent-evaluate.js:2245 / :2640). Asserting over `buildYourRecordBlock`
+    // could not see the second one, and the second one shipped the raw
+    // `guardrail_stopLoss` into every grounded prompt: one swap, two sentences,
+    // one of them a machinery code the narrator could quote at a player whose
+    // screen never contains it. This row is over the WHOLE assembled prompt.
+    const text = battlePrompt();
+    expect(text).not.toContain('guardrail_');
+    // …and the swap is still there, in the words the pane shows for it.
+    expect(text).toContain('Guardrail override (stop-loss): stop-loss at 8% breached on GILD (-9.24%). Forcing exit → MOS.');
+    expect(text).toContain('- SWAP: GILD → MOS (core tier) | Guardrail override (stop-loss):');
+    // The PRODUCTION shape — the cron wraps agentGuardrails' own statusMessage,
+    // which already opens `Guardrail override: `, so 100% of real forced exits
+    // carry the doubled prefix the fixture's undoubled string does not. Both
+    // the record and the trade line must collapse it the same way.
+    const doubled = 'Guardrail override (guardrail_stopLoss): Guardrail override: stop-loss at 8% breached on GILD (-9.24%). Forcing exit → MOS.';
+    const real = battlePrompt({
+      battle: makeBattle({
+        evaluations: makeBattle().evaluations.map((e) => (e.evalId === 'eval_003' ? { ...e, rationale: doubled } : e)),
+        trades: makeBattle().trades.map((t) => (t.evaluationId === 'eval_003' ? { ...t, rationale: doubled } : t)),
+      }),
+    });
+    expect(real).not.toContain('guardrail_');
+    expect(real).not.toContain('Guardrail override (guardrail_stopLoss): Guardrail override:');
+    expect(real).toContain('Guardrail override: stop-loss at 8% breached on GILD (-9.24%). Forcing exit → MOS.');
+    // The third cron-producible shape — `reinforced_haiku` with no statusMessage,
+    // where the cron falls back to `hard threshold breach` and NO dedupe fires.
+    // This is the one that actually reaches the three-word table.
+    const fallback = 'Guardrail override (guardrail_trailingStop): hard threshold breach';
+    const viaTable = battlePrompt({
+      battle: makeBattle({
+        trades: makeBattle().trades.map((t) => (t.evaluationId === 'eval_003' ? { ...t, rationale: fallback } : t)),
+        evaluations: makeBattle().evaluations.map((e) => (e.evalId === 'eval_003' ? { ...e, rationale: fallback } : e)),
+      }),
+    });
+    expect(viaTable).not.toContain('guardrail_');
+    expect(viaTable).toContain('Guardrail override (trailing stop): hard threshold breach');
+  });
+
+  it('the OFF prompt is untouched — the raw bytes are the frozen pre-grounding contract', () => {
+    // The fix is grounded-only BY CONSTRUCTION (buildBattleState's `grounded`
+    // defaults false). The off surface keeps the stored rationale it has always
+    // carried; changing it would move the goldens, which is a different act.
+    const off = battlePrompt({ grounded: false });
+    expect(off).toContain('guardrail_stopLoss');
+    expect(off).not.toContain(RECORD_HEADING);
+  });
 });
 
 describe('§3.3 / §3.5 — CURRENT CONTEXT', () => {

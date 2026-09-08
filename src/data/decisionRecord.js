@@ -239,7 +239,7 @@ export const GUARDRAIL_TYPE_WORDS = Object.freeze({
 /**
  * The cron's provenance parenthetical, at the head of a forced exit's
  * rationale: `Guardrail override (guardrail_stopLoss): …`
- * (agent-evaluate.js:2121, composing agentGuardrails.js's own
+ * (agent-evaluate.js:2124, composing agentGuardrails.js's own
  * `guardrail_${forcedType}` sourceNote).
  *
  * ANCHORED to the `Guardrail override` prefix, deliberately, rather than
@@ -260,12 +260,20 @@ const GUARDRAIL_CODE_PARENTHETICAL = /^(\s*Guardrail override)\s*\(\s*([A-Za-z][
 const GUARDRAIL_DOUBLED_PREFIX = /^(\s*Guardrail override\s*(?:\([^)]*\))?\s*:\s*)(Guardrail override\s*:)/;
 
 /**
- * A motive as it is RENDERED (D-80, ruling 1) — the ONE place a rationale
- * becomes read text, so the trade card, the check card, `This piece today`,
- * the book panel and the narrator's YOUR RECORD block cannot show one sentence
- * two ways (BUILD_RULES §9). It lives here, beside the motive-author rule, for
- * the reason that rule does (voice-grounding hazard 26): the server renders
- * the same check the pane renders and cannot import the pane's modules.
+ * A motive as it is RENDERED (D-80, ruling 1) — the one renderer the Battle
+ * View and the narrator SHARE, so the trade card, the check card, `This piece
+ * today`, the book panel, the grounded prompt's YOUR RECORD block and its
+ * RECENT TRADES lines cannot show one sentence two ways (BUILD_RULES §9). It
+ * lives here, beside the motive-author rule, for the reason that rule does
+ * (voice-grounding hazard 26): the server renders the same check the pane
+ * renders and cannot import the pane's modules.
+ *
+ * NOT every surface, and the enumeration above is the honest list: the League
+ * Tournament pane (src/components/Tournament/Flat6BattleView.jsx:328) still
+ * renders `evaluations[].rationale` and `.hypothesis` as stored bytes and is
+ * not on this renderer. It is live — a League owner sees the cron's code and
+ * its doubled prefix there today — and putting it on this renderer changes what
+ * a player reads, so it is a separate, founder-gated change, not a sweep.
  *
  * The model's own words pass through untouched (C1) — VERBATIM IS AN
  * AGENT-AUTHORED PROPERTY: only an ENGINE-authored sentence is rewritten, and
@@ -288,7 +296,7 @@ export function renderMotive(text) {
   const cleaned = cleanText(text);
   if (cleaned == null) return null;
   // THE CRON'S PREFIX IS REDUNDANT WHENEVER THE GUARDRAIL WROTE THE BODY
-  // (review RB-F2). agent-evaluate.js:2121 composes
+  // (review RB-F2). agent-evaluate.js:2124 composes
   // `Guardrail override (${sourceNote}): ${overrideNote}` — and on a forced
   // exit `overrideNote` IS agentGuardrails.js's own statusMessage, which
   // already begins `Guardrail override: ` and already carries the guardrail's
@@ -390,18 +398,35 @@ export const filedLabel = (timeText) => (timeText ? `Filed ${timeText}` : 'Filed
 export const NO_CHANGE_STATUS_LINE = 'No change made to your strategy this turn.';
 
 // A filing's failure lines say only what the client can be held to (the D-90
-// rule): a 409 / 429 / 422 comes back BEFORE any write (the transaction
-// returns before it updates), so those may say nothing was filed; a network
-// failure or a 5xx cannot make that claim.
+// rule): a 404 / 409 / 429 / 422 comes back BEFORE any write (the route's own
+// flag is checked before any read; the transaction returns before it updates),
+// so those may say nothing was filed; a network failure or a 5xx cannot make
+// that claim.
 export const FILING_CONFLICT_LINE = 'The current directive changed before this could be filed — nothing was filed.';
 export const FILING_BUDGET_LINE = 'No messages left to file with — nothing was filed.';
 export const FILING_REJECTED_LINE = 'That option is no longer on the menu — nothing was filed.';
 export const FILING_FAILED_LINE = 'The directive could not be filed just now.';
 
-/** The failure line for a filing response's HTTP status. */
+/**
+ * The failure line for a filing response's HTTP status.
+ *
+ * 404 SHARES THE 422 LINE, DELIBERATELY. The route does not exist for a caller
+ * the grounding accessor does not resolve to 'on' (file-directive.js check 7),
+ * and a chip minted while they DID resolve 'on' outlives that: it is persisted
+ * on the exchange, and no client reads the mode, so a canary abort or a
+ * walk-back leaves a live-looking chip whose every tap 404s. The catch-all
+ * `FILING_FAILED_LINE` says "just now" — it promises a retry that can never
+ * work, and on a battle whose chat budget is spent no later exchange arrives to
+ * retire the chip. `no longer on the menu — nothing was filed` is true of both
+ * causes and is the honest half of what the client can be held to: the option
+ * is not available to this caller, and every 404 path here (the flag, a missing
+ * battle, a missing agent) returns before any write, so the clause is
+ * attestable. A distinct sentence for the two causes is a copy request, not an
+ * inline change.
+ */
 export function filingFailureLine(status) {
   if (status === 409) return FILING_CONFLICT_LINE;
   if (status === 429) return FILING_BUDGET_LINE;
-  if (status === 422) return FILING_REJECTED_LINE;
+  if (status === 422 || status === 404) return FILING_REJECTED_LINE;
   return FILING_FAILED_LINE;
 }
