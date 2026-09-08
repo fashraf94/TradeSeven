@@ -1,7 +1,9 @@
 // api/_utils/voiceLayerGrounding.test.js
 //
 // Voice-layer grounding — the grounded prompt's own pieces, behaviourally
-// (spec §10): YOUR RECORD byte-verbatim; the rationale rule printed; the
+// (spec §10): YOUR RECORD through the pane's motive translator — the agent's
+// bytes verbatim, an engine sentence's provenance code never raw; the
+// rationale rule printed; the
 // hypothesis present / omitted / deduped through the §3.2a normalizer (the
 // known bold-vs-field pair); the outage lines for a failed tick (hazard 25);
 // the author of every quoted rationale (D-72); the directive line present /
@@ -59,6 +61,7 @@ import {
   GUARDRAIL_FORCED_FAILED_LABEL,
   GROUNDING_VERSION as SHARED_GROUNDING_VERSION,
   DIRECTIVE_FILED_MESSAGE_TYPE,
+  renderMotive,
 } from '../../src/data/decisionRecord.js';
 import { FROZEN_NOW, EVALUATIONS, CHAT_EXCHANGES, makeBattle, makeTournamentBattle } from './__fixtures__/voiceGroundingFixtures.js';
 
@@ -129,12 +132,61 @@ describe('§3.2 — one check, rendered', () => {
   it('a guardrail-forced swap that EXECUTED: the words are quoted, and the author is the system (D-72)', () => {
     const lines = renderRecordEntry(byId('eval_003'));
     expect(lines[0]).toBe(`[11:00 AM check] · Swapped · GILD → MOS (Core) · ${WOKEN_BY_TYPE.price_drop}`);
-    expect(lines[1]).toBe(`  Rationale — ${MOTIVE_SYSTEM}: ${byId('eval_003').rationale}`);
+    // The engine's sentence, through the pane's translator (D-80): the
+    // machinery-provenance code becomes the words the guardrail is called by,
+    // and everything after the colon is the engine's own bytes.
+    expect(lines[1]).toBe(`  Rationale — ${MOTIVE_SYSTEM}: ${renderMotive(byId('eval_003').rationale)}`);
+    expect(lines[1]).toContain('Guardrail override (stop-loss): stop-loss at 8% breached on GILD (-9.24%). Forcing exit → MOS.');
     // The cron's own `Hypothesis: deterministic guardrail enforcement — …` is
     // the system's sentence, not a forecast the check made: withheld exactly
     // where the rationale is engine-authored (review R-12).
     expect(byId('eval_003').hypothesis).toMatch(/^Hypothesis: deterministic guardrail enforcement/);
     expect(lines).toHaveLength(2);
+  });
+
+  it('THE CODE NEVER REACHES THE PROMPT (D-80, hazard 29): a `guardrail_stopLoss` rationale renders translated, everywhere the block is built', () => {
+    // The fixture IS the cron's shape (agent-evaluate.js:2121 composing
+    // agentGuardrails.js's `guardrail_${forcedType}` sourceNote), so this row
+    // fails the moment the record renders the stored bytes again.
+    const raw = byId('eval_003').rationale;
+    expect(raw).toContain('guardrail_stopLoss');
+    const entry = renderRecordEntry(byId('eval_003')).join('\n');
+    expect(entry).not.toContain('guardrail_stopLoss');
+    expect(entry).not.toContain('guardrail_');
+    const block = buildYourRecordBlock({ evaluations: EVALUATIONS, directive: null });
+    expect(block).not.toContain('guardrail_');
+    // An UNRULED token loses the parenthetical entirely rather than printing a
+    // code with no ruled words — the cron's own `hard` fallback included.
+    const unruled = renderRecordEntry({
+      timestamp: byId('eval_003').timestamp, decision: 'HOLD',
+      rationale: 'Guardrail override (guardrail_max_sector_weight): sector cap breached. Forcing exit → MOS.',
+    }).join('\n');
+    expect(unruled).toContain('Guardrail override: sector cap breached. Forcing exit → MOS.');
+    expect(unruled).not.toContain('guardrail_max_sector_weight');
+    const hard = renderRecordEntry({
+      timestamp: byId('eval_003').timestamp, decision: 'HOLD',
+      rationale: 'Guardrail override (hard): hard threshold breach.',
+    }).join('\n');
+    expect(hard).toContain('Guardrail override: hard threshold breach.');
+    expect(hard).not.toContain('(hard)');
+  });
+
+  it('VERBATIM IS AN AGENT-AUTHORED PROPERTY (C1): the model\'s own bytes pass through untouched, brackets included', () => {
+    // The translator's anchor is `ENGINE_MOTIVE_PREFIXES[0]`, so a model
+    // sentence keeps every bracket it typed — including one that LOOKS like a
+    // code — and the risk loop's own sentence keeps its bytes too.
+    const agent = renderRecordEntry({
+      timestamp: byId('eval_003').timestamp, decision: 'HOLD',
+      rationale: 'GILD (stopLoss territory, by my read) has stalled at the 200-day.',
+    });
+    expect(agent[1]).toBe(`  Rationale — ${MOTIVE_AGENT}: GILD (stopLoss territory, by my read) has stalled at the 200-day.`);
+    const risk = renderRecordEntry({
+      timestamp: byId('eval_003').timestamp, decision: 'HOLD',
+      rationale: 'Risk manager: exposure trimmed to the sector cap (-9.24%).',
+    });
+    expect(risk[1]).toBe(`  Rationale — ${MOTIVE_SYSTEM}: Risk manager: exposure trimmed to the sector cap (-9.24%).`);
+    // …and the record's own fixture bytes, markers included, still ride.
+    expect(renderRecordEntry(byId('eval_005'))[1]).toContain('**Hypothesis: CF will break out');
   });
 
   it('the FIFTH state (D-70): a guardrail-forced exit whose execution THREW gets the pane\'s sentence, never the agent\'s (review R-01)', () => {

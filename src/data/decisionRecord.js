@@ -211,6 +211,104 @@ export function motiveAuthorLabel(text, source = null) {
   return isEngineAuthoredMotive(text, source) ? MOTIVE_SYSTEM : MOTIVE_AGENT;
 }
 
+const cleanText = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
+
+// ── A motive as it is RENDERED (D-80, ruling 1) ─────────────────────────────
+// The words the three ruled guardrail types are called by. C1 says render the
+// engine's motive verbatim; hazard 29 / D-64 say a machinery-provenance code
+// never reaches a reader. The ruling separates them: the guardrail TYPE is a
+// fact a reader can read, so it is translated into the words that guardrail is
+// called by, and the sentence keeps its shape — everything after the colon is
+// untouched. Any OTHER token — `guardrail_max_sector_weight`, the cron's own
+// `hard` fallback, anything added later — loses the parenthetical entirely,
+// because a code with no ruled words is not a fact anyone can read.
+//
+// The three words are NOT invented here: they are the founder's existing
+// taxonomy in src/components/League/battleArena/leagueSwapLedger.js:63-69,
+// where the same three `exitReason` stamps already render for the League swap
+// ledger. A source tripwire in TapeCards.render.test.jsx keeps the two tables
+// in step; battleViewCopy.js re-exposes this table under its shipped name
+// (`BATTLE_VIEW_COPY.guardrailTypeWords`), so the pane's consumers are
+// unchanged.
+export const GUARDRAIL_TYPE_WORDS = Object.freeze({
+  guardrail_stopLoss: 'stop-loss',
+  guardrail_trailingStop: 'trailing stop',
+  guardrail_profitTarget: 'profit target',
+});
+
+/**
+ * The cron's provenance parenthetical, at the head of a forced exit's
+ * rationale: `Guardrail override (guardrail_stopLoss): …`
+ * (agent-evaluate.js:2121, composing agentGuardrails.js's own
+ * `guardrail_${forcedType}` sourceNote).
+ *
+ * ANCHORED to the `Guardrail override` prefix, deliberately, rather than
+ * matching any bracketed token anywhere in an engine sentence: that one
+ * composition site is the only place a code is spliced into prose, and a
+ * looser rule would eat the numbers the guardrail module's own statusMessage
+ * carries — `… breached on GILD (-9.24%).` — or the `(R11)` the suppression
+ * pass writes. The token shape is identifier-only for the same reason.
+ */
+const GUARDRAIL_CODE_PARENTHETICAL = /^(\s*Guardrail override)\s*\(\s*([A-Za-z][A-Za-z0-9_]*)\s*\)/;
+
+/**
+ * The cron's composed prefix wrapping a body that already opens with the same
+ * words (review RB-F2). Anchored, and it requires the SECOND `Guardrail
+ * override` to start the body — so it only ever removes a duplicate, never a
+ * sentence the guardrail wrote about something else.
+ */
+const GUARDRAIL_DOUBLED_PREFIX = /^(\s*Guardrail override\s*(?:\([^)]*\))?\s*:\s*)(Guardrail override\s*:)/;
+
+/**
+ * A motive as it is RENDERED (D-80, ruling 1) — the ONE place a rationale
+ * becomes read text, so the trade card, the check card, `This piece today`,
+ * the book panel and the narrator's YOUR RECORD block cannot show one sentence
+ * two ways (BUILD_RULES §9). It lives here, beside the motive-author rule, for
+ * the reason that rule does (voice-grounding hazard 26): the server renders
+ * the same check the pane renders and cannot import the pane's modules.
+ *
+ * The model's own words pass through untouched (C1) — VERBATIM IS AN
+ * AGENT-AUTHORED PROPERTY: only an ENGINE-authored sentence is rewritten, and
+ * its provenance parenthetical becomes the guardrail's plain words, or is
+ * dropped when the token has none. Everything after the colon is the engine's
+ * sentence, verbatim.
+ *
+ * ONLY AN ENGINE MOTIVE IS REWRITTEN, and that is true BY CONSTRUCTION rather
+ * than by a second conjunct: the pattern's anchor, `Guardrail override`, IS
+ * `ENGINE_MOTIVE_PREFIXES[0]`, so any text the pattern can match is already
+ * engine-authored under the rule above. An `isEngineAuthoredMotive` gate in
+ * front of it could never fire — a conjunct that cannot fail is not a guard,
+ * and this module does not ship one. `selectWhyState.test.js` pins the two
+ * strings together so a rename of the prefix reds rather than silently
+ * unhooking the translation.
+ *
+ * @param {string|null} text  the persisted rationale
+ */
+export function renderMotive(text) {
+  const cleaned = cleanText(text);
+  if (cleaned == null) return null;
+  // THE CRON'S PREFIX IS REDUNDANT WHENEVER THE GUARDRAIL WROTE THE BODY
+  // (review RB-F2). agent-evaluate.js:2121 composes
+  // `Guardrail override (${sourceNote}): ${overrideNote}` — and on a forced
+  // exit `overrideNote` IS agentGuardrails.js's own statusMessage, which
+  // already begins `Guardrail override: ` and already carries the guardrail's
+  // name in plain words (`stop-loss at 8%`, `trailing stop at 8% from peak`,
+  // `profit target at 8%`, agentGuardrails.js:530-537). Translating the token
+  // in place therefore produced a stutter on 100% of forced exits —
+  // `Guardrail override (stop-loss): Guardrail override: stop-loss at 8%
+  // breached on GILD …` — and D-84's first-sentence collapse then spent the
+  // card on the preamble and hid `Forcing exit → MOS.` behind `Read more`.
+  //
+  // So when the body restates the prefix, the cron's wrapper goes and the
+  // guardrail's own sentence stands alone. Still verbatim engine text, still
+  // no code on the screen, and it is what ruling 1's `…` was eliding.
+  const deduped = cleaned.replace(GUARDRAIL_DOUBLED_PREFIX, '$2');
+  return deduped.replace(GUARDRAIL_CODE_PARENTHETICAL, (match, prefix, token) => {
+    const words = GUARDRAIL_TYPE_WORDS[token];
+    return words ? `${prefix} (${words})` : prefix;
+  });
+}
+
 // ── The plan at deploy (D-76) — the C1 gates ────────────────────────────────
 // Three SYSTEM strings share the deploy plan's keys, and rendering any of them
 // under the agent's name would put words in its mouth that no model wrote:
@@ -226,8 +324,6 @@ export function motiveAuthorLabel(text, source = null) {
 //       are genuinely the model's.
 export const FALLBACK_STRATEGY_PREFIX = 'Algorithmic selection';
 export const FALLBACK_BRIEF_PREFIX = 'Automated selection based on';
-
-const cleanText = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
 
 /**
  * Gates (a) and (b): true when the WHOLE plan is a system artefact and must

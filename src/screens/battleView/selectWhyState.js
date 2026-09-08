@@ -32,11 +32,12 @@ import {
   GUARDRAIL_SOURCE_PREFIX,
   GUARDRAIL_FORCED_EXIT,
   guardrailForcedExit,
+  renderMotive,
 } from '../../data/decisionRecord';
 
 export {
   SWAP_FAILED_PREFIX, ENGINE_MOTIVE_PREFIXES, TEXT_DECIDES_SOURCES, isEngineAuthoredMotive,
-  GUARDRAIL_SOURCE_PREFIX, GUARDRAIL_FORCED_EXIT, guardrailForcedExit,
+  GUARDRAIL_SOURCE_PREFIX, GUARDRAIL_FORCED_EXIT, guardrailForcedExit, renderMotive,
 };
 
 export const WHY_KIND = Object.freeze({
@@ -75,74 +76,16 @@ export const WHY_KIND = Object.freeze({
 const cleanText = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
 
 /**
- * The cron's provenance parenthetical, at the head of a forced exit's
- * rationale: `Guardrail override (guardrail_stopLoss): …`
- * (agent-evaluate.js:2121, composing agentGuardrails.js's own
- * `guardrail_${forcedType}` sourceNote).
- *
- * ANCHORED to the `Guardrail override` prefix, deliberately, rather than
- * matching any bracketed token anywhere in an engine sentence: that one
- * composition site is the only place a code is spliced into prose, and a
- * looser rule would eat the numbers the guardrail module's own statusMessage
- * carries — `… breached on GILD (-9.24%).` — or the `(R11)` the suppression
- * pass writes. The token shape is identifier-only for the same reason.
+ * A motive as it is RENDERED (D-80, ruling 1) — `renderMotive`, its two
+ * anchored patterns and the three ruled guardrail words — now lives in
+ * src/data/decisionRecord.js (its docstrings travelled with it), because the
+ * narrator's YOUR RECORD block renders the same rationale on the server and
+ * the client module cannot be imported there (voice-grounding hazard 26). It
+ * is re-exported above under its shipped name; every consumer and every pin in
+ * selectWhyState.test.js / buildTape.test.js / TapeCards.render.test.jsx reads
+ * it as before, and `BATTLE_VIEW_COPY.guardrailTypeWords` still names the
+ * table (battleViewCopy.js re-exposes it).
  */
-const GUARDRAIL_CODE_PARENTHETICAL = /^(\s*Guardrail override)\s*\(\s*([A-Za-z][A-Za-z0-9_]*)\s*\)/;
-
-/**
- * The cron's composed prefix wrapping a body that already opens with the same
- * words (review RB-F2). Anchored, and it requires the SECOND `Guardrail
- * override` to start the body — so it only ever removes a duplicate, never a
- * sentence the guardrail wrote about something else.
- */
-const GUARDRAIL_DOUBLED_PREFIX = /^(\s*Guardrail override\s*(?:\([^)]*\))?\s*:\s*)(Guardrail override\s*:)/;
-
-/**
- * A motive as it is RENDERED (D-80, ruling 1) — the one place a rationale
- * becomes display text, so the trade card, the check card, `This piece today`
- * and the book panel cannot show one sentence two ways (BUILD_RULES §9).
- *
- * The model's own words pass through untouched (C1). An ENGINE-authored
- * sentence has its provenance parenthetical translated into the guardrail's
- * plain words, or dropped when the token has none — see
- * `BATTLE_VIEW_COPY.guardrailTypeWords` for why, and for where the three words
- * come from. Everything after the colon is the engine's sentence, verbatim.
- *
- * ONLY AN ENGINE MOTIVE IS REWRITTEN, and that is true BY CONSTRUCTION rather
- * than by a second conjunct: the pattern's anchor, `Guardrail override`, IS
- * `ENGINE_MOTIVE_PREFIXES[0]`, so any text the pattern can match is already
- * engine-authored under the rule above. An `isEngineAuthoredMotive` gate in
- * front of it could never fire — a conjunct that cannot fail is not a guard,
- * and this module does not ship one. `selectWhyState.test.js` pins the two
- * strings together so a rename of the prefix reds rather than silently
- * unhooking the translation.
- *
- * @param {string|null} text  the persisted rationale
- */
-export function renderMotive(text) {
-  const cleaned = cleanText(text);
-  if (cleaned == null) return null;
-  // THE CRON'S PREFIX IS REDUNDANT WHENEVER THE GUARDRAIL WROTE THE BODY
-  // (review RB-F2). agent-evaluate.js:2121 composes
-  // `Guardrail override (${sourceNote}): ${overrideNote}` — and on a forced
-  // exit `overrideNote` IS agentGuardrails.js's own statusMessage, which
-  // already begins `Guardrail override: ` and already carries the guardrail's
-  // name in plain words (`stop-loss at 8%`, `trailing stop at 8% from peak`,
-  // `profit target at 8%`, agentGuardrails.js:530-537). Translating the token
-  // in place therefore produced a stutter on 100% of forced exits —
-  // `Guardrail override (stop-loss): Guardrail override: stop-loss at 8%
-  // breached on GILD …` — and D-84's first-sentence collapse then spent the
-  // card on the preamble and hid `Forcing exit → MOS.` behind `Read more`.
-  //
-  // So when the body restates the prefix, the cron's wrapper goes and the
-  // guardrail's own sentence stands alone. Still verbatim engine text, still
-  // no code on the screen, and it is what ruling 1's `…` was eliding.
-  const deduped = cleaned.replace(GUARDRAIL_DOUBLED_PREFIX, '$2');
-  return deduped.replace(GUARDRAIL_CODE_PARENTHETICAL, (match, prefix, token) => {
-    const words = COPY.guardrailTypeWords[token];
-    return words ? `${prefix} (${words})` : prefix;
-  });
-}
 
 /**
  * @param {object|null} evaluation  the latest evaluations[] entry, or null

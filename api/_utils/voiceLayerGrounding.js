@@ -11,7 +11,9 @@
 //
 //   · YOUR RECORD (§3.2) — the decider's persisted `evaluations[]`, code-
 //     rendered: the slot (D-83), the state, why it was woken (D-81), the
-//     rationale BYTES with their author named (D-72), the hypothesis field
+//     rationale through the pane's own translator with its author named
+//     (D-72 / D-80 — the agent's words verbatim, an engine sentence's
+//     machinery-provenance code translated or dropped), the hypothesis field
 //     when present and not already inside the rationale (§3.2a), the outage
 //     lines for a failed tick (D-65 / D-69 — never the cron's placeholder as
 //     the agent's words, hazard 25), and the current directive line.
@@ -44,8 +46,9 @@
 // IMPORTS. deskCopy.js (zero-import) and decisionRecord.js (zero-import) are
 // the client's own copy, imported under BUILD_RULES §4 — never copied (hazard
 // 26): the slot formatter, the nine `Woken by …` sentences, the absence
-// labels, the author labels and the deploy gates are the pane's strings, so
-// the pane and the narrator cannot disagree about one check. agentGameModes.js
+// labels, the author labels, the motive translator and the deploy gates are
+// the pane's strings and the pane's rules, so the pane and the narrator cannot
+// disagree about one check. agentGameModes.js
 // imports only the zero-import schema module. The test file's real import of
 // this module is the dependency-surface guard — never mock it.
 
@@ -68,6 +71,7 @@ import {
   guardrailForcedExit,
   GUARDRAIL_FORCED_FAILED_LABEL,
   isEngineAuthoredMotive,
+  renderMotive,
 } from '../../src/data/decisionRecord.js';
 import { FLAT6_GAME_MODE } from '../../src/constants/agentGameModes.js';
 // §6.2 — chips minted by id: the allowlist helpers, called directly (the
@@ -190,9 +194,26 @@ export function renderRecordEntry(evaluation) {
   }
 
   const lines = [[slotText, recordStateLabel(evaluation), woken].filter(Boolean).join(' · ')];
-  if (isNonEmptyString(evaluation.rationale)) {
-    // The stored bytes, verbatim — no stripping; the model reads the `**`.
-    lines.push(`  Rationale — ${motiveAuthorLabel(evaluation.rationale)}: ${evaluation.rationale}`);
+  // THE MOTIVE IS RENDERED, NOT RAW (D-80, ruling 1) — through the SAME
+  // translator the pane renders it through (decisionRecord.js `renderMotive`,
+  // re-exported by selectWhyState.js), so one check cannot get two sentences
+  // (BUILD_RULES §9). VERBATIM IS AN AGENT-AUTHORED PROPERTY: the model's own
+  // words pass through untouched, and only an ENGINE-authored sentence — the
+  // guardrail and risk-manager paths — is rewritten, by construction (the
+  // pattern's anchor IS `ENGINE_MOTIVE_PREFIXES[0]`). What the rewrite removes
+  // is the cron's machinery-provenance code: `Guardrail override
+  // (guardrail_stopLoss): …` reaches the model as `Guardrail override
+  // (stop-loss): …`, and an unruled token loses the parenthetical entirely, so
+  // no `guardrail_*` identifier is ever in the prompt for the narrator to
+  // quote back at a player. The markers the model reads (`**`) survive: the
+  // translation touches the code parenthetical alone.
+  //
+  // AUTHORSHIP IS READ FROM THE RAW FIELD, not from this one — deriving
+  // "whose words" from a string this line has already rewritten is the drift
+  // BUILD_RULES §9 forbids, and the pane's selector does the same.
+  const motive = renderMotive(evaluation.rationale);
+  if (isNonEmptyString(motive)) {
+    lines.push(`  Rationale — ${motiveAuthorLabel(evaluation.rationale)}: ${motive}`);
   }
   // The hypothesis line is the DECIDER's forecast, recorded and graded later.
   // On the guardrail path the cron writes its own `Hypothesis: deterministic
