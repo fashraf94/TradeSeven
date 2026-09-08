@@ -150,9 +150,10 @@ Six test files were de facto BUILD_RULES §4 dependency-surface guards with no g
 Appended September 8, 2026, in the same PR that commits Sol's two passes to
 `docs/audits/` (below). These are the five items the handover's §6 carried out
 of the build; this section records **where each one now stands**, and — for the
-three the build had to settle in order to ship — **what the build took, and the
-one line that reverses it**. Two remain open: they are founder rulings, and
-nothing in this build made them.
+two the build had to settle in order to ship — **what the build took**, with the
+one-line reversal named where one exists. Two remain open: they are founder
+rulings, and nothing in this build made them. The fifth is deferred, not
+settled: nothing renders both spellings today, so nothing disagrees yet.
 
 The authority wording follows Sol's own governance note (PASS2, §"There is also
 one governance wording issue"): an advisory pass does not create founder
@@ -161,10 +162,10 @@ reversible; **open** means awaiting the founder.
 
 | # | Item | Status | Disposition of record |
 |---|---|---|---|
-| 1 | **The deploy-time opener stays the OLD prompt under `'on'`** | **OPEN — founder ruling** | Fenced `api/agent/decide.js` calls `buildFirstMessagePrompt` with no `grounded`, and `ensure-opener` returns `already_present` whenever that opener exists, so the fenced opener is the common case and carries guard sites 1, 2, 3, 13–17, 29, 30 ("watching", "you go first…"). Spec §4/§7's "no 'watching' in the opener" therefore holds for the LAZY opener only. The two paths open to the founder are a **§7-gated one-key fence change** (pass `grounded` into the `buildFirstMessagePrompt` call in `decide.js`) or an **accepted gap** recorded as such. Not fixable inside a non-fenced build; ruling 4 (the history window) is met by mechanism either way. |
+| 1 | **The deploy-time opener stays the OLD prompt under `'on'`** | **OPEN — founder ruling** | Fenced `api/agent/decide.js` calls `buildFirstMessagePrompt` with no `grounded`, and `ensure-opener` returns `already_present` whenever that opener exists, so the fenced opener is the common case and carries guard sites **1, 13–17, 29, 30 in every phase, plus the phase block's own — 2, 3 in discovery, 4–6 in refinement, 7, 8 in mastery** ("watching", "you go first…"). *(This corrects §6 item 1 above and the handover §6, which both give the discovery list unqualified: sites 2 and 3 live only in `DISCOVERY_RULES`, and which sites ride along depends on `getAgentPhase(gamesPlayed)`. Measured by running the shipped `findGuardedVocabulary` over the real `buildFirstMessagePrompt` output per phase; the GROUNDED first-message prompt returns zero hits.)* Spec §4/§7's "no 'watching' in the opener" therefore holds for the LAZY opener only — which IS the live path, `OPENER_LAZY_FALLBACK_ENABLED = true`. The two paths open to the founder are a **§7-gated two-line fence change** (pass `grounded` into the `buildFirstMessagePrompt` call in `decide.js` — the key AND a `getVoiceGroundingMode` import that file does not yet have, unlike `ensure-opener.js`) or an **accepted gap** recorded as such. Not fixable inside a non-fenced build; ruling 4 (the history window) is met by mechanism either way. |
 | 2 | **D-80 vs spec §3.2 — rationale bytes on the narrator's path** | **OPEN — founder ruling** | YOUR RECORD quotes the rationale BYTES verbatim (spec §3.2's own rule: "verbatim means bytes"), provenance code included — `Guardrail override (guardrail_stopLoss): …`. D-80 says a machinery-provenance code never reaches the screen, and the pane maps it through `renderMotive`. The prompt is not the screen, but under `'on'` the narrator can now voice `guardrail_stopLoss`. **Bytes, or the pane's `renderMotive` mapping** — one or the other, and the harness's per-pair rationale column (`api/scripts/voice-grounding-harness.js`) is where the founder can see what the model does with them before deciding. |
 | 3 | **`Holding note` gating** | **TAKEN IN THE BUILD** | Gated on the grounded exchange: the eyebrow renders only for an exchange carrying the grounding marker, so the flag-off page is byte-identical and legacy model forecasts are never retroactively relabelled. Review row: §5's `AMENDED — R-02` (fact confirmed; severity a founder decision). **Reverses in one line** in `src/screens/battleView/battleViewCopy.js` if the retroactive relabel is what the founder wants. |
-| 4 | **No review-mode gate on the deterministic route** | **TAKEN IN THE BUILD** | `POST /api/agent/file-directive` requires an ACTIVE battle (check 2) and nothing more. A directive filed after the close is in front of the trading process at the NEXT check, which is what a directive is; the chat route's strip is a REVIEW-mode gate (closed market AND today's review), not a live-play gate. Review row: §5's `AMENDED — R-20`. **Recorded in the route header, not gated** — the decision is in `api/agent/file-directive.js`'s "TWO DECISIONS RECORDED (a)". |
+| 4 | **No review-mode gate on the deterministic route** | **TAKEN IN THE BUILD** | `POST /api/agent/file-directive` adds no LIVENESS gate beyond an ACTIVE battle (check 2) — its other seven in-transaction checks all stand. A directive filed after the close is in front of the trading process at the NEXT check, which is what a directive is; the chat route's strip is a REVIEW-mode gate, not a live-play gate, and review mode is entered either by auto-detection (a closed market AND today's review) or by the client's bounded `mode: 'review'` override — the Film Room path, which needs neither. Review row: §5's `AMENDED — R-20`. **Recorded in the route header, not gated** — the decision is in `api/agent/file-directive.js`'s "TWO DECISIONS RECORDED (a)". |
 | 5 | **The hypothesis label's two spellings** | **DEFERRED — no drift today** | The prompt's spelling (spec §3.2, built: `HYPOTHESIS_LABEL` in `api/_utils/voiceLayerGrounding.js`) and the pane's (spec §11, A3.7 unbuilt) differ. Nothing renders both today, so nothing disagrees. **Reconcile when A3.7 lands**, by moving the label into the zero-import `src/data/decisionRecord.js` — the same one-home move every other shared string in this arc took. |
 
 Two items from §6 of THIS record are not in the table above because they are not
@@ -186,7 +187,9 @@ Sol's two passes are committed alongside this section, byte-exact as received:
 Their dispositions are the spec's own Appendix B and Appendix C
 (`docs/design/VOICE_LAYER_GROUNDING_SPEC_V1_2.md`); the build against those
 dispositions is §§1–7 above. PASS2's M1 (raw rationale still carries forward
-language) is the one whose closure is a MEASUREMENT rather than a code change —
-the rationale rule is printed beside the block, and the hostile fixture and the
-scored forward-language dimension it asked for live in
-`api/scripts/voice-grounding-harness.js`, run at spec §9 gate 1.
+language) is the one that closes in two halves: the code half shipped in the
+build — `RATIONALE_RULE` is printed beside the block
+(`api/_utils/voiceLayerGrounding.js`), byte-identical to the wording Sol asked
+for — and the measurement half is what PROVES it, the hostile fixture and the
+scored forward-language dimension that live in
+`api/scripts/voice-grounding-harness.js` and run at spec §9 gate 1.
