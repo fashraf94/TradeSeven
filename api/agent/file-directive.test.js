@@ -4,7 +4,9 @@
 // grounding §6.1; spec §10's rows): filed / replaced-prior / rejected /
 // conflict (a stale expectedDirectiveThreadId) / budget-exhausted; the
 // transaction's eight checks each falsifiable; a concurrent double-tap
-// charges once; the route 404s at 'off'; the persisted shape equals the
+// charges once; the route is live only where the caller resolves 'on' and 404s
+// everywhere else ('off', 'shadow', and 'canary' for a uid off the allowlist);
+// the persisted shape equals the
 // shipped write's; no model call; the budget is server-derived from the
 // battle's game mode (ruling 6, D-105) and charged inside the same
 // transaction.
@@ -19,6 +21,7 @@ import { TOURNAMENT_GAME_MODE } from '../../src/constants/leagueTournament.js';
 
 const state = vi.hoisted(() => ({
   mode: 'on',
+  canaryUids: '',
   modeCalls: [],
   uid: 'owner-1',
   battle: null,
@@ -34,10 +37,20 @@ const state = vi.hoisted(() => ({
 
 vi.mock('../_utils/security.js', () => ({ applySecurityMiddleware: () => false }));
 vi.mock('../_utils/authMiddleware.js', () => ({ requireAuth: async () => ({ uid: state.uid }) }));
-vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
-  ...(await importOriginal()),
-  getVoiceGroundingMode: (uid) => { state.modeCalls.push(uid); return state.mode; },
-}));
+// The accessor is stubbed only to make the FLAG VALUE and the canary list
+// settable per row — the RESOLUTION itself is the real one (featureFlags.js's
+// resolveVoiceGroundingMode), so the 'canary' rows exercise the shipped
+// allowlist rule rather than a test double's idea of it.
+vi.mock('../../src/config/featureFlags.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    getVoiceGroundingMode: (uid) => {
+      state.modeCalls.push(uid);
+      return actual.resolveVoiceGroundingMode(state.mode, uid, state.canaryUids);
+    },
+  };
+});
 vi.mock('../_utils/agentChatBudget.js', async (importOriginal) => ({
   ...(await importOriginal()),
   resolveBudgetDay: async (_db, battle) => state.resolveImpl(battle),
@@ -126,6 +139,7 @@ const budgetWrites = () => state.committed.filter((w) => w.col === 'agentChatBud
 
 beforeEach(() => {
   state.mode = 'on';
+  state.canaryUids = '';
   state.modeCalls = [];
   state.uid = 'owner-1';
   state.battle = makeBattle();
@@ -140,17 +154,48 @@ beforeEach(() => {
 });
 
 describe('file-directive — the gate and the body', () => {
-  it("check 7: the route does not exist at 'off' for this caller — 404 before any read", async () => {
-    state.mode = 'off';
+  // Check 7 follows the CHIPS: the route is live only for a caller the accessor
+  // resolves to 'on' — the same value chat.js requires before it mints a chip
+  // (`groundingMode === 'on' && mode === 'battle'`). At every other resolution
+  // nothing the product mints can reach this route, so it does not exist there.
+  it.each(['off', 'shadow'])("check 7: the route does not exist at '%s' for this caller — 404 before any read", async (mode) => {
+    state.mode = mode;
     const res = await post(BODY);
     expect(res.statusCode).toBe(404);
+    expect(res.body.error).toBe('not_found');
     expect(state.modeCalls).toEqual(['owner-1']);
     expect(state.attempts).toBe(0);
+    expect(state.committed).toEqual([]);
   });
 
-  it.each(['shadow', 'on'])("'%s': the route is live", async (mode) => {
-    state.mode = mode;
-    expect((await post(BODY)).statusCode).toBe(200);
+  it("'canary' for a uid that is NOT on the allowlist: 404 — canary resolves to 'shadow' there", async () => {
+    state.mode = 'canary';
+    state.canaryUids = 'someone-else,another-one';
+    const res = await post(BODY);
+    expect(res.statusCode).toBe(404);
+    expect(state.attempts).toBe(0);
+    expect(state.committed).toEqual([]);
+    // Fail-closed: an unset / empty list is nobody, not everybody.
+    state.canaryUids = '';
+    expect((await post(BODY)).statusCode).toBe(404);
+    state.canaryUids = undefined;
+    expect((await post(BODY)).statusCode).toBe(404);
+  });
+
+  it("'canary' for an ALLOWLISTED uid: live — the caller who gets the chips gets the route", async () => {
+    state.mode = 'canary';
+    state.canaryUids = ' other-uid , owner-1 ';
+    const res = await post(BODY);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.status).toBe(FILING_STATUS.FILED);
+    expect(state.modeCalls).toEqual(['owner-1']); // the TOKEN's uid, never the body's
+  });
+
+  it("'on': live for everyone", async () => {
+    state.mode = 'on';
+    const res = await post(BODY);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.status).toBe(FILING_STATUS.FILED);
   });
 
   it('405 on non-POST', async () => {
