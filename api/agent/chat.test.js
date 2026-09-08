@@ -8,6 +8,7 @@
 // review lessons, etc.). Those are exercised by manual / E2E tests.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { TOURNAMENT_GAME_MODE, GROUP_STATUS } from '../../src/constants/leagueTournament.js';
 
 // ==================== HOISTED MOCK STATE ====================
@@ -18,6 +19,7 @@ const {
   callGemmaVoiceImpl,
   parseVoiceLayerResponseImpl,
   shadowLogCalls,
+  shadowLog,
   archetypeFlag,
   voiceLayerArgs,
   leagueChatFlag,
@@ -31,6 +33,9 @@ const {
   callGemmaVoiceImpl: { current: async () => '{"response":"hi"}' },
   parseVoiceLayerResponseImpl: { current: (c) => JSON.parse(c) },
   shadowLogCalls: { current: [] },
+  // The logger's RESULT, per row: true = persisted, false = the GCS-disabled /
+  // swallowed-write no-op, a never-settling promise = a hanging write.
+  shadowLog: { impl: async () => true },
   archetypeFlag: { mode: 'off' },
   voiceLayerArgs: { current: [] }, // Phase E2 — capture buildVoiceLayerPrompt args
   // League arena two-way ask — the kill-switch flag + a controllable budget module.
@@ -75,9 +80,14 @@ vi.mock('../_utils/authMiddleware.js', () => ({
   },
 }));
 
+// The REAL logger resolves to a boolean and never throws (shadowLogger.js);
+// this double keeps that contract and makes the result settable per row, so the
+// handler's durability wrapper can be driven through persisted / not-persisted /
+// still-writing without a GCS fake.
 vi.mock('../_utils/shadowLogger.js', () => ({
-  logConversation: async (record) => {
+  logConversation: (record) => {
     shadowLogCalls.current.push(record);
+    return shadowLog.impl(record);
   },
 }));
 
@@ -154,6 +164,10 @@ vi.mock('firebase-admin/firestore', () => ({
 
 // Dependency-surface guard (BUILD_RULES §4): this file's import of the module under test is the runtime guard that its api → src imports stay Node-clean. Never mock it.
 const { default: handler, GEMMA_TIMEOUT_MS, TURN_DEADLINE_MS } = await import('./chat.js');
+// The cap is not exported (it is an internal of the durability wrapper); this
+// is the value the module's own comment and its warning line both name, held
+// here so a row can measure against it and a source tripwire keeps it honest.
+const SHADOW_LOG_CAP_MS_PIN = 2_000;
 
 // ==================== Test fixture helpers ====================
 
@@ -250,6 +264,7 @@ beforeEach(() => {
   callGemmaVoiceImpl.current = async () => '{"response":"hi"}';
   parseVoiceLayerResponseImpl.current = (c) => JSON.parse(c);
   shadowLogCalls.current = [];
+  shadowLog.impl = async () => true;
   activeFirestore = null;
   archetypeFlag.mode = 'off';
   voiceLayerArgs.current = [];
@@ -1366,5 +1381,156 @@ describe('agent/chat — voice-layer grounding: the shadow assembly (spec §9, G
     expect(shadowLogCalls.current[0].voiceGroundingMode).toBe('shadow');
     expect(shadowLogCalls.current[0].systemPromptOld).toBe('system-prompt-stub:old');
     expect(shadowLogCalls.current[0].conversationHistoryOld).toEqual(LEGACY_WINDOW);
+  });
+});
+
+// ==================== THE SHADOW RECORD'S DURABILITY ====================
+//
+// BUILD_RULES §5: catalog events persist through an awaited in-request write or
+// the queue-flag pattern — never fire-and-forget, because the shadow logger's
+// silent multi-week data loss is the cautionary tale. All three conversation
+// records here were `.catch(() => {})`, so on Vercel the invocation could be
+// frozen mid-write with nothing said. These rows hold the two ways the handler
+// now finishes the write, and the cap that keeps the second one honest.
+describe('agent/chat — the shadow record finishes before the function can be frozen', () => {
+  const REQUEST_CONTEXT = Symbol.for('@vercel/request-context');
+  // The REAL @vercel/functions waitUntil resolves this symbol and calls
+  // `context.waitUntil?.(promise)` (its get-context.js), so installing a context
+  // here drives the shipped package rather than a double of it — and with no
+  // context installed, the package's own no-op is what the fallback path is
+  // measured against.
+  const installRequestContext = () => {
+    const waited = [];
+    globalThis[REQUEST_CONTEXT] = { get: () => ({ waitUntil: (p) => { waited.push(p); return undefined; } }) };
+    return waited;
+  };
+  afterEach(() => {
+    delete globalThis[REQUEST_CONTEXT];
+    vi.useRealTimers();
+  });
+
+  const okTurn = () => {
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: VALID_BATTLE });
+    activeFirestore = fixture.db;
+    callGemmaVoiceImpl.current = async () => '{"response":"hello there"}';
+    return { fixture, ...makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi' }) };
+  };
+
+  it('a normal turn: the record is WRITTEN by the time the handler returns (not merely started)', async () => {
+    let persistedAt = null;
+    shadowLog.impl = async () => {
+      await new Promise((r) => setTimeout(r, 5)); // a write that takes real time
+      persistedAt = 'settled';
+      return true;
+    };
+    const { req, res, fixture } = okTurn();
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.agentMessage).toBe('hello there');
+    expect(shadowLogCalls.current).toHaveLength(1);
+    // The point of the whole change: a fire-and-forget call leaves this null.
+    expect(persistedAt).toBe('settled');
+    expect(fixture.written.updateCalls).toHaveLength(1);
+  });
+
+  it('the 502 parse path and the catch path settle their records too — all three sites', async () => {
+    const settled = [];
+    shadowLog.impl = async (record) => {
+      await new Promise((r) => setTimeout(r, 5));
+      settled.push(record.errorReason ?? 'ok');
+      return true;
+    };
+    // (1) the parse failure → 502
+    let fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: VALID_BATTLE });
+    activeFirestore = fixture.db;
+    callGemmaVoiceImpl.current = async () => 'I have hit a snag';
+    parseVoiceLayerResponseImpl.current = (c) => ({ parseError: true, errorReason: 'plaintext_passthrough', rawText: c });
+    let rr = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi' });
+    await handler(rr.req, rr.res);
+    expect(rr.res.statusCode).toBe(502);
+    expect(settled).toEqual(['parse_plaintext_passthrough']);
+
+    // (2) the handler exception → 500
+    parseVoiceLayerResponseImpl.current = (c) => JSON.parse(c);
+    callGemmaVoiceImpl.current = async () => { throw new Error('boom'); };
+    fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: VALID_BATTLE });
+    activeFirestore = fixture.db;
+    rr = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi' });
+    await handler(rr.req, rr.res);
+    expect(rr.res.statusCode).toBe(500);
+    expect(settled).toEqual(['parse_plaintext_passthrough', 'handler_exception']);
+  });
+
+  it('a SLOW logger cannot delay the response past the 2s cap', async () => {
+    // A write that never settles — a hung GCS call, the worst case the cap
+    // exists for. The turn must still answer, and answer at the cap.
+    shadowLog.impl = () => new Promise(() => {});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.useFakeTimers();
+    const { req, res } = okTurn();
+    let done = false;
+    const turn = handler(req, res).then(() => { done = true; });
+
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(done).toBe(false);           // still inside the cap
+    await vi.advanceTimersByTimeAsync(1);
+    await turn;
+    expect(done).toBe(true);            // released AT the cap, not later
+    expect(res.statusCode).toBe(200);
+    expect(res.body.agentMessage).toBe('hello there');
+    expect(warn.mock.calls.filter(([m]) => String(m).includes('still writing after 2000ms'))).toHaveLength(1);
+  });
+
+  it('with the runtime hook installed the write is handed to waitUntil — no wait at all, even for a hung logger', async () => {
+    const waited = installRequestContext();
+    shadowLog.impl = () => new Promise(() => {});
+    const { req, res } = okTurn();
+    const startedAt = Date.now();
+    await handler(req, res);
+    const elapsedMs = Date.now() - startedAt;
+    expect(res.statusCode).toBe(200);
+    expect(waited).toHaveLength(1);                 // the platform owns the write
+    expect(elapsedMs).toBeLessThan(SHADOW_LOG_CAP_MS_PIN / 2); // and the turn never paid the cap
+  });
+
+  it('a record that did NOT persist is reported, once, and never fails the turn', async () => {
+    // The logger's silent no-op stays: no GCS_CREDENTIALS → false, never a
+    // throw, never a 500. What is new is that the handler says so — one line.
+    shadowLog.impl = async () => false;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { req, res } = okTurn();
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.agentMessage).toBe('hello there');
+    const lines = warn.mock.calls.filter(([m]) => String(m).includes('shadow conversation record NOT persisted'));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('battle-1');
+  });
+
+  it('a logger that THROWS is contained too — reported, no unhandled rejection, turn unchanged', async () => {
+    shadowLog.impl = async () => { throw new Error('gcs exploded'); };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { req, res } = okTurn();
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(warn.mock.calls.filter(([m]) => String(m).includes('shadow conversation record threw'))).toHaveLength(1);
+  });
+
+  it('SOURCE TRIPWIRE — the cap this file measures against is the cap the handler ships', () => {
+    const src = readFileSync(new URL('./chat.js', import.meta.url), 'utf8');
+    expect(src).toContain(`const SHADOW_LOG_CAP_MS = ${String(SHADOW_LOG_CAP_MS_PIN).replace('000', '_000')};`);
+    // …and all three sites go through the wrapper: no line in the file OPENS a
+    // bare `logConversation({` record again (the wrapper's own call passes the
+    // record it was handed, and the header quotes the retired shape in prose).
+    expect(src.split('\n').filter((l) => /^\s*logConversation\(\{/.test(l))).toEqual([]);
+    expect(src.match(/captureConversation\(\{/g)).toHaveLength(3); // the three sites
+  });
+
+  it('a persisted record says nothing (the warning is a signal, not noise)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { req, res } = okTurn();
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(warn.mock.calls.filter(([m]) => String(m).includes('shadow conversation record'))).toHaveLength(0);
   });
 });

@@ -5,6 +5,11 @@ import { buildVoiceLayerPrompt } from '../_utils/voiceLayerPrompt.js';
 import { callGemmaVoice, parseVoiceLayerResponse } from '../_utils/gemmaClient.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { logConversation } from '../_utils/shadowLogger.js';
+// The platform's keep-alive for work that must outlive the response
+// (api/agent/equip-bundle.js and six sibling routes already use it). Off Vercel
+// it is a silent no-op, so this handler DETECTS the runtime hook rather than
+// trusting the call — see captureConversation below.
+import { waitUntil } from '@vercel/functions';
 import { getMarketState } from '../_utils/marketSchedule.js';
 import { randomUUID } from 'node:crypto';
 import { TOURNAMENT_GAME_MODE, TOURNAMENT_GROUPS_COLLECTION } from '../../src/constants/leagueTournament.js';
@@ -78,6 +83,104 @@ export const config = { maxDuration: 30 };
 // them — a pinned constant that a test re-declares guards nothing.
 export const GEMMA_TIMEOUT_MS = 19_000;
 export const TURN_DEADLINE_MS = 24_000;
+
+// ==================== THE SHADOW RECORD'S DURABILITY ====================
+//
+// The three conversation records this handler writes are catalog events, and
+// BUILD_RULES §5 forbids fire-and-forget for those — "the shadow logger's
+// silent multi-week data loss is the cautionary tale". All three were
+// `logConversation({…}).catch(() => {})`: the promise was started and the
+// handler returned its response immediately, so on Vercel the invocation could
+// be FROZEN mid-write and the record simply never landed. Nothing surfaced —
+// not a log line, not a status — which is the exact shape of the loss the rule
+// was written about.
+//
+// TWO WAYS TO FINISH THE WRITE, in preference order:
+//
+//   1. `waitUntil` — the platform keeps the invocation alive past the response,
+//      so the record completes and the user waits for nothing. This is the
+//      right answer wherever it exists.
+//   2. An AWAITED write bounded by SHADOW_LOG_CAP_MS, settled AFTER the
+//      response has been composed, everywhere else (local `vercel dev`, the
+//      test env, any runtime without the hook). The cap is the whole point: a
+//      slow or hanging GCS write can cost the turn at most two seconds, and a
+//      response that is already fully composed cannot be changed by it.
+//
+// `waitUntil` from @vercel/functions is a no-op off-platform — it resolves the
+// request context through `Symbol.for('@vercel/request-context')` and calls
+// `context.waitUntil?.(promise)`, so with no context it returns undefined and
+// drops the promise on the floor. Calling it unconditionally would therefore
+// reproduce fire-and-forget everywhere the hook is absent, which is why the
+// hook is DETECTED (through the same symbol the package reads) rather than
+// assumed. The symbol is the package's public contract with the runtime
+// (@vercel/functions/get-context.js), not an internal of this handler.
+//
+// WHAT THE LOGGER STILL DOES, and what this adds: `logConversation` resolves
+// FALSE and never throws when GCS is disabled (no GCS_CREDENTIALS) or the write
+// was swallowed. That stays — a missing credential must not 500 a chat turn.
+// But it stops being SILENT AT THE CALL SITE: a record that did not persist
+// gets one warning line naming the turn, so a credential outage is visible in
+// this route's own logs instead of only in the logger's.
+const SHADOW_LOG_CAP_MS = 2_000;
+const VERCEL_REQUEST_CONTEXT = Symbol.for('@vercel/request-context');
+
+/** The runtime's keep-alive hook, or null when this runtime has none. */
+function hasRuntimeWaitUntil() {
+  return typeof globalThis[VERCEL_REQUEST_CONTEXT]?.get?.()?.waitUntil === 'function';
+}
+
+/**
+ * Start one conversation record's write and make sure it can finish.
+ *
+ * @returns {Promise|null} null when the runtime owns the write (case 1); the
+ *   promise the caller must hand to `settleConversationRecord` before returning
+ *   its response (case 2). Never throws, whatever the logger does.
+ */
+function captureConversation(record) {
+  const write = Promise.resolve()
+    .then(() => logConversation(record))
+    .then((persisted) => {
+      // Report only (BUILD_RULES §5): the turn is not failed by a lost record,
+      // but the loss is never silent again.
+      if (persisted !== true) {
+        console.warn('[VoiceLayer] shadow conversation record NOT persisted (GCS disabled or write swallowed) — battle:', record?.battleId ?? null);
+      }
+      return persisted === true;
+    })
+    .catch((err) => {
+      // The logger's contract says it never rejects; if that ever changes, a
+      // rejected write must not become an unhandled rejection that kills the
+      // function after the response has gone.
+      console.warn('[VoiceLayer] shadow conversation record threw — battle:', record?.battleId ?? null, '|', err?.message || err);
+      return false;
+    });
+  if (hasRuntimeWaitUntil()) {
+    waitUntil(write);
+    return null;
+  }
+  return write;
+}
+
+/**
+ * Settle a capture the runtime did not take, under the cap. Called AFTER the
+ * response is composed, so what the user receives cannot depend on the logger —
+ * only, at worst, two seconds of when they receive it.
+ */
+async function settleConversationRecord(pending) {
+  if (!pending) return;
+  let timer = null;
+  const capped = new Promise((resolve) => {
+    timer = setTimeout(() => {
+      console.warn(`[VoiceLayer] shadow conversation record still writing after ${SHADOW_LOG_CAP_MS}ms — responding anyway`);
+      resolve(false);
+    }, SHADOW_LOG_CAP_MS);
+  });
+  try {
+    await Promise.race([pending, capped]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 // ==================== ELICITATION TARGET ====================
 
@@ -605,7 +708,10 @@ export default async function handler(req, res) {
         '| raw:',
         String(parsed.rawText || '').slice(0, 300),
       );
-      logConversation({
+      // Durability (see THE SHADOW RECORD'S DURABILITY): the 502 body below is
+      // a fixed literal, so the response is already composed — the write is
+      // settled here, under the cap, before it goes.
+      await settleConversationRecord(captureConversation({
         userId: user.uid,
         agentId,
         battleId,
@@ -629,7 +735,7 @@ export default async function handler(req, res) {
         // Voice-layer grounding §9 (G6): the mode, both prompts and both history
         // windows, under any mode but 'off' (absent = the shipped record).
         ...(groundingRecord || {}),
-      }).catch(() => {});
+      }));
       return res.status(502).json({
         error: 'gemma_invalid_shape',
         errorReason: `parse_${parsed.errorReason}`,
@@ -737,8 +843,13 @@ export default async function handler(req, res) {
         : {}),
     };
 
-    // Shadow log (fire-and-forget)
-    logConversation({
+    // Shadow log — STARTED here, where the record's fields are what this turn
+    // decided, and SETTLED at step 21 once the response is composed (see THE
+    // SHADOW RECORD'S DURABILITY). Composing it here rather than at the return
+    // keeps the record's content exactly what it has always been: a throw
+    // between here and the return still produces the catch block's turnError
+    // record beside this one, as it always did.
+    const conversationCapture = captureConversation({
       userId: user.uid,
       agentId,
       battleId,
@@ -761,7 +872,7 @@ export default async function handler(req, res) {
       // Voice-layer grounding §9 (G6): the mode, both prompts and both history
       // windows, under any mode but 'off' (absent = the shipped record).
       ...(groundingRecord || {}),
-    }).catch(() => {});
+    });
 
     // 19. Write exchange to battle doc
     //     When a directive is locked in, generate a threadId (UUID) that links
@@ -878,6 +989,11 @@ export default async function handler(req, res) {
     }
 
     // 21. Return response
+    //     The response is composed — every field, the grounded pair and the
+    //     League `remaining` included — so the shadow record is settled now,
+    //     under the cap. Nothing below this line can change what the client
+    //     receives; at worst it changes when, by at most SHADOW_LOG_CAP_MS.
+    await settleConversationRecord(conversationCapture);
     return res.status(200).json(clientResponse);
   } catch (error) {
     const isAbort = error?.name === 'AbortError';
@@ -892,7 +1008,12 @@ export default async function handler(req, res) {
     // Captures the user message, error reason, abort flag, and a truncated
     // error message so production can correlate first-message failure
     // patterns to specific Gemma / OpenRouter / Firestore failures.
-    logConversation({
+    // Durability (see THE SHADOW RECORD'S DURABILITY): the failure body below is
+    // a fixed literal — the response is composed — so the write is settled here,
+    // under the cap, before the 504/500 goes. This is the record a timed-out
+    // turn is diagnosed from; it is the last one that should be lost to a
+    // freeze.
+    await settleConversationRecord(captureConversation({
       userId: user.uid,
       agentId,
       battleId,
@@ -916,7 +1037,7 @@ export default async function handler(req, res) {
       // Voice-layer grounding §9 (G6): the mode, both prompts and both history
       // windows, under any mode but 'off' (absent = the shipped record).
       ...(groundingRecord || {}),
-    }).catch(() => {});
+    }));
 
     if (isAbort) {
       return res.status(504).json({ error: 'Agent response timed out. Try again.' });
