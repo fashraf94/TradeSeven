@@ -210,7 +210,8 @@ export function ArenaMobile({ state, mode, headline = 'mult', onBack = null, dat
           </div>
         ) : (
           <AgentDock compact live lines={eng.lines} archName={D.voice.arch} ask={D.ask} onAsk={eng.askAgent}
-            askLive={eng.askLive} remaining={eng.remaining} asking={eng.asking} chatReady={eng.chatReady} style={{ marginTop: 6 }} />
+            askLive={eng.askLive} remaining={eng.remaining} asking={eng.asking} chatReady={eng.chatReady}
+            chips={eng.chips} fileLive={eng.fileLive} filing={eng.filing} filingError={eng.filingError} style={{ marginTop: 6 }} />
         )}
       </div>
 

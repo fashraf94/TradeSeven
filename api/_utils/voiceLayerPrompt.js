@@ -38,6 +38,7 @@ import {
   GROUNDED_THIRD_PATH_RULE,
   GROUNDED_FIRST_MESSAGE_IDENTITY_TAIL,
   GROUNDED_FIRST_MESSAGE_INSTRUCTIONS,
+  GROUNDED_OUTPUT_FORMAT,
 } from './voiceLayerGrounding.js';
 
 // ==================== STATIC CONSTANTS ====================
@@ -3041,11 +3042,12 @@ You've been working together for ${gamesPlayed} games (${wins}W-${losses}L). You
   // OFF or unknown archetype → the assembled sequence below is byte-identical.
   const archetypeBlock = buildArchetypeIntegrityBlock(battle, agent);
 
-  // Assemble in U-shaped attention order
+  // Assemble in U-shaped attention order. Under the flag the output format
+  // mints chips by id (§6.2) — battle mode only; review keeps the shipped one.
   const blocks = [
     identity,        // Block 1   (TOP)
     GAME_MECHANICS,  // Block 1.5 (TOP)
-    OUTPUT_FORMAT,   // Block 7   (TOP)
+    grounded ? GROUNDED_OUTPUT_FORMAT : OUTPUT_FORMAT,   // Block 7   (TOP)
   ];
   // Phase D — battle-only proposal-schema append, adjacent to OUTPUT_FORMAT. NOT
   // an edit to the shared OUTPUT_FORMAT const (that would leak into review — C3).

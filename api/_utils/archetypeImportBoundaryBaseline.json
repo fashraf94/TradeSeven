@@ -22,6 +22,7 @@
   "api/_utils/tournamentCpu.js",
   "api/_utils/trainingLifecycle.js",
   "api/_utils/trainingLoadoutSpec.js",
+  "api/_utils/voiceLayerGrounding.js",
   "api/_utils/voiceLayerPrompt.js",
   "api/agent/change-archetype.js",
   "api/agent/create-profile.js",

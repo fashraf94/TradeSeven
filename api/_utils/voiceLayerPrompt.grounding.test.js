@@ -64,6 +64,7 @@ import {
   CURRENT_DIRECTIVE_HEADING,
   EARLIER_MESSAGES_HEADING,
   GROUNDED_ELICITATION_INSTRUCTIONS,
+  GROUNDED_OUTPUT_FORMAT,
 } from './voiceLayerGrounding.js';
 import { ELICITATION_INSTRUCTIONS } from '../agent/chat.js';
 import { FORBIDDEN_SIGNALS } from './__fixtures__/promptHonestyRegistry.js';
@@ -341,5 +342,23 @@ describe('the grounded elicitation lines (site 27)', () => {
       if (k in GROUNDED_ELICITATION_INSTRUCTIONS) expect(merged[k]).not.toBe(ELICITATION_INSTRUCTIONS[k]);
       else expect(merged[k]).toBe(ELICITATION_INSTRUCTIONS[k]);
     }
+  });
+});
+
+describe('§6.2 — the output format mints chips by id, battle mode only', () => {
+  const CHIP_RULE = 'An option that FILES a directive must be a menu item by id';
+  it('the grounded battle prompt carries the grounded output format; the off battle prompt and the review prompt do not', () => {
+    for (const [, games] of PHASES) {
+      const on = battlePrompt({ games });
+      expect(on).toContain(GROUNDED_OUTPUT_FORMAT);
+      expect(on).toContain(CHIP_RULE);
+      const off = battlePrompt({ games, grounded: false });
+      expect(off).not.toContain(CHIP_RULE);
+      expect(off).toContain('"suggestedActions": null OR ["Action Button 1", "Action Button 2", "Action Button 3"]');
+      expect(on).not.toContain('"Action Button 1"');
+    }
+    // Review mode is untouched by this arc even when handed grounded: true.
+    const review = battlePrompt({ extra: { mode: 'review' }, battle: makeBattle({ status: 'completed' }) });
+    expect(review).not.toContain(CHIP_RULE);
   });
 });

@@ -50,6 +50,14 @@ import {
   MOTIVE_SYSTEM,
   tierLabel as recordTierLabel,
   planAtDeployLabel,
+  filesChip as recordFilesChip,
+  filedLabel,
+  NO_CHANGE_STATUS_LINE,
+  FILING_CONFLICT_LINE,
+  FILING_BUDGET_LINE,
+  FILING_REJECTED_LINE,
+  FILING_FAILED_LINE,
+  filingFailureLine as recordFilingFailureLine,
 } from '../../data/decisionRecord';
 
 /**
@@ -448,10 +456,7 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // filing EXCHANGE's timestamp. No "for the ~{t} check" — filed is not heard
   // (hazard 3). Empty is a truthful state, stamped with the adapter's next.
   thisTurn: 'This turn',
-  filed: (iso) => {
-    const t = etTime(iso);
-    return t ? `Filed ${t}` : 'Filed';
-  },
+  filed: (iso) => filedLabel(etTime(iso)),
   nothingQueued: (nextIso) => {
     const next = slotLabel(nextIso);
     return next ? `Nothing queued · next check ~${next}` : 'Nothing queued';
@@ -699,6 +704,17 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // book — a short name instead of the whole visible content of each.
   whyName: (symbol) => `Why? ${symbol}`,
   whyBookName: 'Why? · the whole book',
+
+  // ── Filing a directive by chip (voice-layer grounding §6.2 / §6.3) ─────────
+  // A directive chip says what it FILES; a filing's outcome says only what the
+  // client can be held to. ONE source with the League arena (decisionRecord.js).
+  filesChip: (text) => recordFilesChip(text),
+  noChangeStatusLine: NO_CHANGE_STATUS_LINE,
+  filingConflict: FILING_CONFLICT_LINE,
+  filingBudget: FILING_BUDGET_LINE,
+  filingRejected: FILING_REJECTED_LINE,
+  filingFailed: FILING_FAILED_LINE,
+  filingFailureLine: (status) => recordFilingFailureLine(status),
 
   receiptLine: (receipt) => {
     if (!receipt || typeof receipt !== 'object') return null;

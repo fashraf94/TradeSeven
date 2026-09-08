@@ -40,6 +40,8 @@ import {
   buildPlanAtDeployBlock,
   GROUNDING_VOCABULARY_GUARD,
   findGuardedVocabulary,
+  GROUNDED_OUTPUT_FORMAT,
+  normalizeSuggestedActions,
 } from './voiceLayerGrounding.js';
 import {
   MOTIVE_AGENT,
@@ -317,5 +319,48 @@ describe('the vocabulary guard — 30 sites, each with a real phrase', () => {
     ]);
     expect(findGuardedVocabulary('The record shows the 11:30 check held.')).toEqual([]);
     expect(findGuardedVocabulary(null)).toEqual([]);
+  });
+});
+
+// ==================== §6.2 — chips minted by id ====================
+
+describe('§6.2 — the grounded output format and the server\'s rewrite of the chips', () => {
+  it('asks for a directive chip BY ID from the menu and a question as the only other kind', () => {
+    expect(GROUNDED_OUTPUT_FORMAT).toContain('{ "kind": "directive", "id": "<one id from YOUR MENU>" }');
+    expect(GROUNDED_OUTPUT_FORMAT).toContain('{ "kind": "ask", "text": "A question the user can send you next" }');
+    expect(GROUNDED_OUTPUT_FORMAT).toContain('its text is the item\'s canonical text, which the system writes, never you');
+    expect(GROUNDED_OUTPUT_FORMAT).toContain('If YOUR MENU is not in this prompt, every option is a question.');
+    // The shipped rules it must keep (the JSON contract, the no-numbers rule, the commit rule).
+    for (const kept of ['_scratchpad MUST come first', 'NEVER quote raw data numbers', 'Never generate suggested actions on a directive-commit response', 'You MUST return valid JSON in every response']) {
+      expect(GROUNDED_OUTPUT_FORMAT).toContain(kept);
+    }
+    expect(findGuardedVocabulary(GROUNDED_OUTPUT_FORMAT)).toEqual([]);
+  });
+
+  it('rewrites a directive chip\'s text to the canonical text of the SERVER-DERIVED archetype\'s menu', () => {
+    expect(normalizeSuggestedActions([{ kind: 'directive', id: 'TF-02', text: 'the model\'s own words' }], 'momentum_chaser')).toEqual([
+      { kind: 'directive', id: 'TF-02', text: 'Require stronger confirmation before entering' },
+    ]);
+    expect(normalizeSuggestedActions([{ kind: 'directive', id: ' DV-02 ' }], 'diversifier')).toEqual([
+      { kind: 'directive', id: 'DV-02', text: 'Widen the spread (target more sectors)' },
+    ]);
+  });
+
+  it('drops an off-menu id, a duplicate, an unknown kind, an empty text, and a missing archetype — null when nothing survives', () => {
+    expect(normalizeSuggestedActions([{ kind: 'directive', id: 'DV-02' }], 'momentum_chaser')).toBeNull();
+    expect(normalizeSuggestedActions([{ kind: 'directive', id: 'TF-02' }, { kind: 'directive', id: 'TF-02' }], 'momentum_chaser')).toHaveLength(1);
+    expect(normalizeSuggestedActions([{ kind: 'weather', text: 'sunny' }, { kind: 'ask', text: '   ' }, '', null, 42], 'momentum_chaser')).toBeNull();
+    expect(normalizeSuggestedActions([{ kind: 'directive', id: 'TF-02' }], null)).toBeNull();
+    expect(normalizeSuggestedActions([{ kind: 'directive', id: 'TF-02' }], 'strategist')).toBeNull();
+    expect(normalizeSuggestedActions(null, 'momentum_chaser')).toBeNull();
+    expect(normalizeSuggestedActions('TF-02', 'momentum_chaser')).toBeNull();
+  });
+
+  it('a string is a question (the legacy shape), an ask chip keeps its text trimmed, order is preserved', () => {
+    expect(normalizeSuggestedActions(['  Show me the checks ', { kind: 'ask', text: ' Why? ' }, { kind: 'directive', id: 'TF-01' }], 'momentum_chaser')).toEqual([
+      { kind: 'ask', text: 'Show me the checks' },
+      { kind: 'ask', text: 'Why?' },
+      { kind: 'directive', id: 'TF-01', text: 'Prefer fresh breakouts over extended / late-stage entries' },
+    ]);
   });
 });

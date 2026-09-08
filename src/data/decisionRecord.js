@@ -225,3 +225,41 @@ export function deployBriefText(agentContext) {
 
 /** The plan-at-deploy label: every label carries the deploy date (D-76), or nothing. */
 export const planAtDeployLabel = (etDateText) => (etDateText ? `The plan at deploy · ${etDateText}` : null);
+
+// ── Filing a directive — the strings both surfaces render (voice-layer grounding §6) ──
+// The Battle View chat and the League arena both mint directive chips and
+// both file through POST /api/agent/file-directive; the words are ONE source
+// here so the two surfaces cannot disagree about what a chip does or what
+// a filing's outcome was.
+
+/** A directive chip's label: what it FILES, by mechanism (§6.2). */
+export const FILES_CHIP_PREFIX = 'Files: ';
+export const filesChip = (text) => (typeof text === 'string' && text ? `${FILES_CHIP_PREFIX}${text}` : null);
+
+/** The D-51 receipt word with its time, or the bare word — `Filed 11:20 AM`. */
+export const filedLabel = (timeText) => (timeText ? `Filed ${timeText}` : 'Filed');
+
+/**
+ * The code-owned no-change status (Phase H backstop; directiveGate.js
+ * re-exports it): a null-write turn ALWAYS reports no change, whatever the
+ * prose said. Rendered by the clients only from the persisted exchange
+ * (§6.3: after the write, never from the reply).
+ */
+export const NO_CHANGE_STATUS_LINE = 'No change made to your strategy this turn.';
+
+// A filing's failure lines say only what the client can be held to (the D-90
+// rule): a 409 / 429 / 422 comes back BEFORE any write (the transaction
+// returns before it updates), so those may say nothing was filed; a network
+// failure or a 5xx cannot make that claim.
+export const FILING_CONFLICT_LINE = 'The current directive changed before this could be filed — nothing was filed.';
+export const FILING_BUDGET_LINE = 'No messages left to file with — nothing was filed.';
+export const FILING_REJECTED_LINE = 'That option is no longer on the menu — nothing was filed.';
+export const FILING_FAILED_LINE = 'The directive could not be filed just now.';
+
+/** The failure line for a filing response's HTTP status. */
+export function filingFailureLine(status) {
+  if (status === 409) return FILING_CONFLICT_LINE;
+  if (status === 429) return FILING_BUDGET_LINE;
+  if (status === 422) return FILING_REJECTED_LINE;
+  return FILING_FAILED_LINE;
+}

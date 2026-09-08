@@ -65,6 +65,11 @@ import {
   planAtDeployLabel,
 } from '../../src/data/decisionRecord.js';
 import { FLAT6_GAME_MODE } from '../../src/constants/agentGameModes.js';
+// §6.2 — chips minted by id: the allowlist helpers, called directly (the
+// gate's internals are private — discrepancy 5). This makes the module a
+// direct importer of archetypeAdjustments.js, recorded in
+// archetypeImportBoundaryBaseline.json in the same commit (§2.3 ratchet).
+import { isValidAdjustmentId, getCanonicalText } from '../../src/data/archetypeAdjustments.js';
 
 /** Stamped top-level on every exchange produced under the grounding contract (§3.4, M3). */
 export const GROUNDING_VERSION = 1;
@@ -664,4 +669,85 @@ export function dedupeAnticipationQueue(pending) {
     out.push(item);
   }
   return out;
+}
+
+// ==================== §6.2 — CHIPS MINTED BY ID ====================
+//
+// Under the flag the battle-mode OUTPUT_FORMAT asks for options in two
+// kinds: a directive by ID from YOUR MENU (its text is the system's canonical
+// text — the model never writes it) or a question. The server rewrites a
+// directive chip's text to canonical and DROPS an off-menu id, so a chip's
+// `Files:` label is true by mechanism (R3/F2): what it files is what the
+// route will file, and nothing else can be tapped into existence.
+
+export const GROUNDED_OUTPUT_FORMAT = `RESPONSE FORMAT — You MUST respond with valid JSON only. No markdown, no backticks, no preamble.
+
+{
+  "_scratchpad": "Brief internal reasoning (2-3 sentences). Map YOUR RECORD, CURRENT CONTEXT and the server's elicitation target to a read. Formulate the read before writing the response. This field is logged but never shown to the user.",
+  "response": "Your conversational message to the user. Concise: 2-4 sentences for casual exchanges, up to a short paragraph for strategic discussions.",
+  "hasDirective": true or false,
+  "directive": null OR {
+    "text": "Cold, concise strategic preference for the trading process to weigh at its checks. Strip personality — just strategic essence.",
+    "expiry": "end_of_battle" or "3_games"
+  },
+  "suggestedActions": null OR [
+    { "kind": "directive", "id": "<one id from YOUR MENU>" },
+    { "kind": "ask", "text": "A question the user can send you next" }
+  ],
+  "_lesson": null OR {
+    "text": "A specific pattern worth remembering, written as a takeaway the agent could learn from. 1-2 sentences.",
+    "sourceTrade": "TICKER symbol or trade id if applicable, else null"
+  },
+  "_forgeSuggestion": null OR {
+    "text": "A concrete, testable rule the user has asked to codify for the Forge. 1-2 sentences.",
+    "sourceTrade": "TICKER symbol or trade id if applicable, else null"
+  }
+}
+
+RULES:
+- _scratchpad MUST come first. Think before you speak.
+- A directive should ONLY be extracted when the user expresses strategic intent — a preference, instruction, opinion about stocks/sectors/risk, or a change in approach. Casual reactions ("haha", "nice") do NOT generate directives.
+- suggestedActions should present 2-3 genuinely different strategic choices as tappable buttons. An option that FILES a directive must be a menu item by id — kind "directive", the id exactly as it appears in YOUR MENU; its text is the item's canonical text, which the system writes, never you. Any other option is a question — kind "ask" — that the user can send you. If YOUR MENU is not in this prompt, every option is a question. IMPORTANT: Set suggestedActions to null when the user has confirmed a direction and you're committing the directive. Never generate suggested actions on a directive-commit response.
+- _lesson and _forgeSuggestion are REVIEW MODE ONLY. In battle mode and workshop mode they MUST be null. See the phase rules for when to use each.
+- NEVER quote raw data numbers in your response. Synthesize into narrative: say "NVDA is pushing toward its scoring threshold" not "NVDA is at 0.98 ATR." Say "momentum has been strong this week" not "Technical Score is 87."
+- KEEP IT TIGHT. Your response should be 2-4 sentences maximum. Only go to 5-6 sentences if the user asked a detailed strategic question. Your first message of a battle should be a short, punchy headline read of the record — not a full analysis. Save the depth for when they ask for it.
+- You MUST return valid JSON in every response, no exceptions. NEVER output plain text outside the JSON structure. If you encounter confusion, the user's message is unclear, or you don't have enough context to take a confident position, still return the full JSON structure with your clarifying question or honest uncertainty in the \`response\` field.`;
+
+/**
+ * The server's rewrite of the model's chips (§6.2). Accepts the grounded
+ * shape ({ kind, id | text }) and the legacy string shape (a string is a
+ * question). A directive chip must name an id on the SERVER-DERIVED
+ * archetype's menu; its text is replaced with the canonical text; an
+ * off-menu id, an unknown kind, an empty text, or a duplicate id is dropped.
+ * Null when nothing survives — the shipped "no chips" value.
+ *
+ * @returns {Array<{kind:'directive', id:string, text:string}|{kind:'ask', text:string}>|null}
+ */
+export function normalizeSuggestedActions(raw, archetype) {
+  if (!Array.isArray(raw)) return null;
+  const out = [];
+  const seenIds = new Set();
+  for (const item of raw) {
+    if (typeof item === 'string') {
+      const text = item.trim();
+      if (text) out.push({ kind: 'ask', text });
+      continue;
+    }
+    if (!item || typeof item !== 'object') continue;
+    if (item.kind === 'ask') {
+      const text = typeof item.text === 'string' ? item.text.trim() : '';
+      if (text) out.push({ kind: 'ask', text });
+      continue;
+    }
+    if (item.kind === 'directive') {
+      const id = typeof item.id === 'string' ? item.id.trim() : '';
+      if (!id || seenIds.has(id) || !archetype || !isValidAdjustmentId(archetype, id)) continue;
+      const text = getCanonicalText(archetype, id);
+      if (!text) continue;
+      seenIds.add(id);
+      out.push({ kind: 'directive', id, text });
+    }
+    // any other kind: dropped
+  }
+  return out.length ? out : null;
 }

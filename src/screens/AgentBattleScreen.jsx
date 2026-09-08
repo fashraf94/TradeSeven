@@ -1796,6 +1796,9 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       composerPrefill={composerPrefill}
       onComposerPrefillConsumed={handleComposerPrefillConsumed}
       receipts={receipts}
+      // Voice-layer grounding §6.3: the client's belief about the CURRENT
+      // directive for a chip filing — the subscribed doc's slot, never a guess.
+      currentDirectiveThreadId={agentBattle?.directive?.directiveThreadId ?? null}
       // A2.2: the tape's trade and check cards, merged into the chat's one
       // timeline. Built above from the subscribed doc; null flag-off.
       tapeEntries={tapeEntries}
@@ -2491,6 +2494,9 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                 composerPrefill={controllerOn ? composerPrefill : null}
                 onComposerPrefillConsumed={controllerOn ? handleComposerPrefillConsumed : null}
                 receipts={receipts}
+                // Voice-layer grounding §6.3: the client's belief about the CURRENT
+                // directive for a chip filing — the subscribed doc's slot, never a guess.
+                currentDirectiveThreadId={agentBattle?.directive?.directiveThreadId ?? null}
                 // A2.2: null flag-off, so this shipped mount keeps the slim
                 // trade line byte for byte (the tabbed tree is not rendered
                 // under the flag — the controller layout replaces it).

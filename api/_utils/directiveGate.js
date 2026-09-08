@@ -18,6 +18,11 @@
 
 import { getAllowlist, isValidAdjustmentId, getCanonicalText, getCanonicalTextVersion } from '../../src/data/archetypeAdjustments.js';
 import { parseVoiceLayerResponse } from './gemmaClient.js';
+// The no-change status line lives in the zero-import src/data/decisionRecord.js
+// (voice-layer grounding §6.3): the clients render it from the persisted
+// exchange, so the string is ONE source for the server's response and both
+// surfaces. Re-exported here under its shipped name.
+import { NO_CHANGE_STATUS_LINE } from '../../src/data/decisionRecord.js';
 
 // The one-shot repair-retry is BUDGET-AWARE. chat.js clears the first call's
 // abort timer the instant it resolves, so the parent signal alone would never bound
@@ -44,7 +49,7 @@ export const NO_CHANGE_FALLBACK_LINE = "Talked it through — I didn't change my
 // This is what makes "claimed-a-change-but-wrote-null" a STRUCTURAL zero. We do NOT
 // touch or strip the prose (the R1-rejected path) — the status sits ALONGSIDE it as
 // the truth the client surfaces; the prose stays the natural conversation.
-export const NO_CHANGE_STATUS_LINE = 'No change made to your strategy this turn.';
+export { NO_CHANGE_STATUS_LINE };
 
 export function renderDirectiveStatus(hasDirective) {
   return hasDirective

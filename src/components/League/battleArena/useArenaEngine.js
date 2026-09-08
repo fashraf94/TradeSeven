@@ -18,8 +18,11 @@
 import React from 'react';
 import {
   makeEngineState, applyBeat, applyFlip, applyAsk, applyAsking, applyAnswer, setRemaining,
-  clearBeat, tickClock,
+  clearBeat, tickClock, applyFiling, applyFiled, applyFilingFailed,
 } from './arenaEngineCore';
+// Voice-layer grounding §6.3 — the filing failure lines are the Battle View's
+// (decisionRecord.js, zero-import): one copy source, never a second spelling.
+import { FILING_FAILED_LINE, filingFailureLine } from '../../../data/decisionRecord';
 import { beatKey, firstUnseenBeat } from './arenaBeatDiff';
 import { LEAGUE_AGENT_CHAT_ENABLED } from '../../../config/featureFlags';
 
@@ -97,9 +100,64 @@ export function useArenaEngine({
         return;
       }
       // Success OR the in-voice exhausted 200 — both carry agentMessage + remaining.
-      setEng((s) => setRemaining(applyAnswer(s, { q: text, text: data.agentMessage }), data.remaining));
+      // A GROUNDED answer (voice-layer grounding §6.2 / §6.3) also carries the
+      // server-minted chips, the code-owned status line and the battle's current
+      // directive thread; the shipped answer carries none of them, and the lane's
+      // line shape stays the shipped one.
+      const grounded = data.grounded === true;
+      setEng((s) => setRemaining(applyAnswer(s, {
+        q: text,
+        text: data.agentMessage,
+        statusLine: grounded ? (data.directiveStatusLine || null) : null,
+        chips: grounded && Array.isArray(data.suggestedActions) ? data.suggestedActions : [],
+        currentDirectiveThreadId: grounded ? (data.currentDirectiveThreadId ?? null) : undefined,
+      }), data.remaining));
     } catch {
       setEng((s) => applyAnswer(s, { q: text, text: ASK_FAILED_LINE, error: true }));
+    } finally {
+      inFlightRef.current = false;
+    }
+  }, [chatReady, agentId, battleId]);
+
+  // ── the chip FILING (voice-layer grounding §6.3): the deterministic route, with
+  //    the chip's id and the client's belief about the current directive — server-fed
+  //    (the last grounded answer's or filing's word), read at send time through a ref
+  //    so the callback never closes over a stale belief. The receipt is rendered from
+  //    the route's response (the record it wrote, after the write); a failure renders
+  //    only the ruled line. Never the ask path. ──
+  const beliefRef = React.useRef(null);
+  beliefRef.current = eng.currentDirectiveThreadId;
+
+  const fileLive = React.useCallback(async (adjustmentId) => {
+    const id = String(adjustmentId ?? '').trim();
+    if (!chatReady || !id || inFlightRef.current) return;
+    inFlightRef.current = true;
+    setEng((s) => applyFiling(s));
+    try {
+      const fetchWithAuth = await loadAuthedFetch();
+      const res = await fetchWithAuth('/api/agent/file-directive', {
+        method: 'POST',
+        body: JSON.stringify({ agentId, battleId, adjustmentId: id, expectedDirectiveThreadId: beliefRef.current }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.directive?.text) {
+        setEng((s) => setRemaining(applyFilingFailed(s, {
+          line: filingFailureLine(res.status),
+          // A 409 names the server's current thread: adopt it, so the retry files
+          // against the truth. Any other failure leaves the belief alone.
+          currentDirectiveThreadId: res.status === 409 && Object.prototype.hasOwnProperty.call(data, 'currentDirectiveThreadId')
+            ? (data.currentDirectiveThreadId ?? null)
+            : undefined,
+        }), res.status === 429 ? data.remaining : undefined));
+        return;
+      }
+      setEng((s) => setRemaining(applyFiled(s, {
+        text: data.directive.text,
+        createdAt: data.directive.createdAt,
+        directiveThreadId: data.directive.directiveThreadId,
+      }), data.remaining));
+    } catch {
+      setEng((s) => applyFilingFailed(s, { line: FILING_FAILED_LINE }));
     } finally {
       inFlightRef.current = false;
     }
@@ -191,5 +249,11 @@ export function useArenaEngine({
     chatReady,
     remaining: eng.remaining,
     asking: eng.asking,
+    // chip filing (voice-layer grounding §6.2 / §6.3; [] / inert when not grounded)
+    chips: eng.chips,
+    fileLive,
+    filing: eng.filing,
+    filingError: eng.filingError,
+    currentDirectiveThreadId: eng.currentDirectiveThreadId,
   };
 }

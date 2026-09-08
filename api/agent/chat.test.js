@@ -1050,3 +1050,81 @@ describe('agent/chat — voice-layer grounding: the grounded turn (spec §3.4, r
     expect(exchangeOf(written).groundingVersion).toBe(1);
   });
 });
+
+// ==================== Voice-layer grounding — chips minted by id (G5, spec §6.2 / §6.3) ====================
+
+describe('agent/chat — voice-layer grounding: chips minted by id (spec §6.2 / §6.3)', () => {
+  const MOMENTUM_AGENT = { ...VALID_AGENT, archetype: 'momentum_chaser' };
+  const MODEL_CHIPS = [
+    { kind: 'directive', id: 'TF-02', text: 'whatever the model wrote' },
+    { kind: 'directive', id: 'DV-02' },          // another archetype's menu → dropped
+    { kind: 'directive', id: 'TF-02' },          // duplicate → dropped
+    { kind: 'ask', text: 'Why confirmation?' },
+    'Show me the checks',                        // legacy string → a question
+    { kind: 'weather', text: 'sunny' },          // unknown kind → dropped
+  ];
+  const run = async (battle, body = {}, agent = MOMENTUM_AGENT) => {
+    callGemmaVoiceImpl.current = async () => JSON.stringify({ response: 'Two ways to shape the next checks.', suggestedActions: MODEL_CHIPS });
+    const fixture = makeFakeFirestore({ agent, battle });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'What would you file?', ...body });
+    await handler(req, res);
+    return { res, written: fixture.written };
+  };
+  const exchangeOf = (written) => written.updateCalls.find(c => c.updates?.chatExchanges?.__op === 'arrayUnion').updates.chatExchanges.items[0];
+
+  it("'on': the chips are normalized by the SERVER-DERIVED archetype — canonical text, off-menu/duplicate/unknown dropped — on the response, the exchange and the shadow log", async () => {
+    grounding.mode = 'on';
+    const { res, written } = await run(VALID_BATTLE);
+    expect(res.statusCode).toBe(200);
+    const expected = [
+      { kind: 'directive', id: 'TF-02', text: 'Require stronger confirmation before entering' },
+      { kind: 'ask', text: 'Why confirmation?' },
+      { kind: 'ask', text: 'Show me the checks' },
+    ];
+    expect(res.body.suggestedActions).toEqual(expected);
+    expect(exchangeOf(written).suggestedActions).toEqual(expected);
+    expect(shadowLogCalls.current[0].suggestedActions).toEqual(expected);
+  });
+
+  it("'on': the response says it is grounded and carries the CURRENT directive thread — the slot's when this turn filed nothing, this turn's when it did", async () => {
+    grounding.mode = 'on';
+    const slot = { text: 'Require stronger confirmation before entering', directiveThreadId: 'thread-tf02-0001', createdAt: '2026-09-08T15:20:00.000Z', expiry: 'end_of_battle' };
+    const { res } = await run({ ...VALID_BATTLE, directive: slot });
+    expect(res.body.grounded).toBe(true);
+    expect(res.body.currentDirectiveThreadId).toBe('thread-tf02-0001');
+    // No slot → null (the belief the client must send for a first filing).
+    const { res: none } = await run(VALID_BATTLE);
+    expect(none.body.currentDirectiveThreadId).toBeNull();
+    // This turn files → its own thread, which is also the exchange's and the slot's.
+    callGemmaVoiceImpl.current = async () => JSON.stringify({ response: 'Filed.', hasDirective: true, directive: { text: 'Require stronger confirmation before entering', expiry: 'end_of_battle' } });
+    const fixture = makeFakeFirestore({ agent: MOMENTUM_AGENT, battle: VALID_BATTLE });
+    activeFirestore = fixture.db;
+    const { req, res: filed } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'Do it.' });
+    await handler(req, filed);
+    expect(filed.statusCode).toBe(200);
+    expect(filed.body.currentDirectiveThreadId).toBe(exchangeOf(fixture.written).directiveThreadId);
+    expect(filed.body.currentDirectiveThreadId).toEqual(expect.any(String));
+  });
+
+  it("'on' with an archetype that has no menu: every directive chip is dropped, the questions stay", async () => {
+    grounding.mode = 'on';
+    const { res } = await run(VALID_BATTLE, {}, VALID_AGENT); // 'strategist' — no allowlist
+    expect(res.body.suggestedActions).toEqual([
+      { kind: 'ask', text: 'Why confirmation?' },
+      { kind: 'ask', text: 'Show me the checks' },
+    ]);
+  });
+
+  it("'off' / 'shadow': the model's chips pass through untouched and the response gains no field", async () => {
+    for (const mode of ['off', 'shadow']) {
+      grounding.mode = mode;
+      const { res, written } = await run(VALID_BATTLE);
+      expect(res.statusCode).toBe(200);
+      expect(res.body.suggestedActions).toEqual(MODEL_CHIPS);
+      expect(exchangeOf(written).suggestedActions).toEqual(MODEL_CHIPS);
+      expect('grounded' in res.body).toBe(false);
+      expect('currentDirectiveThreadId' in res.body).toBe(false);
+    }
+  });
+});

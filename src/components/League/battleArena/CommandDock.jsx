@@ -21,6 +21,9 @@ import { ArenaOrb, MeterKey } from './ArenaPrimitives';
 import { OWN_AGENT, OWN_YOU, ST_GOOD, ST_BAD } from './arenaTheme';
 import { prefersReducedMotion } from './arenaEngineCore';
 import { useArenaFlips } from './useArenaFlips';
+// Voice-layer grounding §6.2 — a minted directive chip's `Files: …` label is the
+// Battle View's (decisionRecord.js, zero-import): one copy source.
+import { filesChip } from '../../../data/decisionRecord';
 
 function ordinal(n) {
   const s = ['th', 'st', 'nd', 'rd'];
@@ -29,6 +32,16 @@ function ordinal(n) {
 }
 
 const bumpFor = (beatStar, tk) => (beatStar && beatStar.tk === tk ? beatStar.key : 0);
+
+// A minted chip's label (voice-layer grounding §6.2): a directive chip reads
+// `Files: {canonical text}`; an ask chip reads its question; anything else
+// renders nothing rather than a guess.
+function mintedLabel(chip) {
+  if (!chip || typeof chip !== 'object') return null;
+  if (chip.kind === 'directive') return chip.id && typeof chip.text === 'string' && chip.text ? filesChip(chip.text) : null;
+  if (chip.kind === 'ask') return typeof chip.text === 'string' && chip.text ? chip.text : null;
+  return null;
+}
 
 // the agent's recent landed move ("swapped SOFI → MSTR · 1h ago"). Reused by the
 // mobile Agent-Portfolio panel; returns null when there's no move (live data's
@@ -230,7 +243,8 @@ export function DockYourThree({ stars, dormant, complete, state, wire, wireClock
 // page-scrolls with no clip, so nothing there is ever below a fold (and its well is not
 // a scroll container, so the answer-scroll effect below is desktop-only).
 export function AgentDock({ lines, archName, live, ask, onAsk, compact = false, style,
-  askLive = null, remaining = null, asking = false, chatReady = false }) {
+  askLive = null, remaining = null, asking = false, chatReady = false,
+  chips = [], fileLive = null, filing = false, filingError = null }) {
   const c = OWN_AGENT;
   const [asked, setAsked] = React.useState([]);
   const handleAsk = (i) => { if (!asked.includes(i)) setAsked((a) => [...a, i]); onAsk(i); };
@@ -309,6 +323,38 @@ export function AgentDock({ lines, archName, live, ask, onAsk, compact = false, 
           </button>
         );
       })}
+      {/* Voice-layer grounding §6.2 — the chips the last grounded answer MINTED
+          (server-normalized: a directive chip's text is the canonical text of a
+          menu item; an ask chip is a question). Live path only, and [] when the
+          answer was the shipped one, so the pills above are byte-identical.
+          A directive tap goes to the FILING path with its id — never the ask
+          path. Both kinds disable while an ask or a filing is in flight. */}
+      {chatOn && (chips || []).map((chip, i) => {
+        const label = mintedLabel(chip);
+        if (!label) return null;
+        const directive = chip.kind === 'directive';
+        const busy = asking || filing;
+        const onTap = () => {
+          if (busy) return;
+          if (directive) { if (typeof fileLive === 'function') fileLive(chip.id); return; }
+          askLive(chip.text);
+        };
+        return (
+          <button key={`minted-${chip.kind}-${directive ? chip.id : chip.text}-${i}`} className="bv2-tap" data-chip-kind={chip.kind}
+            onClick={onTap} disabled={busy}
+            style={{ all: 'unset', cursor: busy ? 'default' : 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 11px', borderRadius: 999,
+              opacity: busy ? 0.5 : 1,
+              background: directive ? alpha(c, 0.1) : LTOKENS.surface, border: `1px solid ${directive ? alpha(c, 0.4) : LTOKENS.hair2}` }}>
+            <Mono style={{ fontSize: 11, fontWeight: 600, color: directive ? c : LTOKENS.ink2 }}>{label}</Mono>
+          </button>
+        );
+      })}
+      {/* the last filing's ruled failure line (§6.3) — the system's, under the
+          chips, never in the agent's lane; cleared by the next tap. */}
+      {chatOn && filingError && (
+        <Mono data-directive-status="filing_failed" style={{ flexBasis: '100%', fontSize: 10.5, color: ST_BAD }}>{filingError}</Mono>
+      )}
     </div>
   );
 
@@ -385,7 +431,8 @@ export function AgentDock({ lines, archName, live, ask, onAsk, compact = false, 
 export function DockStatePanel({ state, mode, eng, archName, voice, pod, ask, youRank, onFilm, style, voided = false }) {
   if (state === 'live') {
     return <AgentDock lines={eng.lines} archName={archName} live ask={ask} onAsk={eng.askAgent}
-      askLive={eng.askLive} remaining={eng.remaining} asking={eng.asking} chatReady={eng.chatReady} style={style} />;
+      askLive={eng.askLive} remaining={eng.remaining} asking={eng.asking} chatReady={eng.chatReady}
+      chips={eng.chips} fileLive={eng.fileLive} filing={eng.filing} filingError={eng.filingError} style={style} />;
   }
   if (state === 'awaiting') {
     return (

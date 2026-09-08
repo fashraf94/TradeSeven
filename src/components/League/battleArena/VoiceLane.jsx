@@ -6,8 +6,12 @@
 // re-skinned onto the shared League palette + glyph set.
 //
 // Line shape (from the engine / Phase-1 voice script):
-//   { kind, text, t?, ticker?, q?, active?, _k }
-// kind ∈ greeting | trade | anticipation | read | answer.
+//   { kind, text, t?, ticker?, q?, active?, statusLine?, _k }
+// kind ∈ greeting | trade | anticipation | read | answer | directive.
+// `directive` (voice-layer grounding §6.3) is a chip filing's RECEIPT: the
+// canonical text the route wrote, `t` = the Battle View's `Filed {time}`; it is
+// the system's record, so it never types itself in. `statusLine` rides an
+// answer line that was a grounded null-write turn (the code-owned status).
 
 import React from 'react';
 import { Mono, Eyebrow, Tag } from '../LeagueParts';
@@ -23,6 +27,7 @@ function LaneGlyph({ kind, color, size = 12 }) {
     case 'trade': return <LIcon name="bolt" size={size} color={color} stroke={2} />;
     case 'anticipation': return <Icon name="eye" size={size} color={color} stroke={2} />;
     case 'answer': return <Icon name="chat" size={size} color={color} stroke={2} />;
+    case 'directive': return <LIcon name="flag" size={size} color={color} stroke={2} />;
     case 'read':
     default: return <LIcon name="pulse" size={size} color={color} stroke={2} />;
   }
@@ -70,6 +75,9 @@ function VoiceLine({ line, color, prominent, active }) {
             <span className="bv2-caret" style={{ display: 'inline-block', width: 2, height: '1em', background: color, marginLeft: 2, transform: 'translateY(2px)' }} />
           )}
         </div>
+        {line.statusLine && (
+          <div data-directive-status="no_change" style={{ fontSize: 11, color: LTOKENS.ink3, marginTop: 4 }}>{line.statusLine}</div>
+        )}
       </div>
     </div>
   );

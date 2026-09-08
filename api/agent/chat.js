@@ -24,6 +24,7 @@ import {
   GROUNDING_VERSION,
   buildGroundedConversationHistory,
   GROUNDED_ELICITATION_INSTRUCTIONS,
+  normalizeSuggestedActions,
 } from '../_utils/voiceLayerGrounding.js';
 // Archetype Integrity — Phase E2 (capabilities manifest → USER LEVERS hand-off).
 // Flag-gated, battle-only; the manifest is built only when the feature is ON.
@@ -614,13 +615,23 @@ export default async function handler(req, res) {
         }
       : null;
 
+    // Voice-layer grounding §6.2 — chips minted by id. Under the grounded prompt
+    // the model's chips are { kind:'directive', id } | { kind:'ask', text }; the
+    // server rewrites a directive chip's text to the canonical text of the
+    // SERVER-DERIVED archetype's menu and drops an off-menu id, so a chip's
+    // `Files:` label is true by mechanism. The shipped path keeps the model's
+    // strings untouched.
+    const suggestedActions = grounded
+      ? normalizeSuggestedActions(parsed.suggestedActions, getEffectiveArchetype(battle, agent))
+      : (parsed.suggestedActions || null);
+
     // 18. Map to client contract
     const clientResponse = {
       agentMessage: parsed.response,
       extractedRule: normalizedDirective
         ? { text: normalizedDirective.text, targetType: 'general', targetValue: null, rationale: normalizedDirective.text }
         : null,
-      suggestedActions: parsed.suggestedActions || null,
+      suggestedActions,
       exchangeNumber: currentBudget + 1,
       budgetTotal: budgetLimit,
       scratchpad: cleanScratchpad,
@@ -653,7 +664,7 @@ export default async function handler(req, res) {
       agentMessage: parsed.response,
       scratchpad: cleanScratchpad,
       directive: normalizedDirective,
-      suggestedActions: parsed.suggestedActions || null,
+      suggestedActions,
       elicitationTarget: elicitationTarget.dimension,
       anchorContext: anchorContext || null,
       hasDirective: effectiveHasDirective,
@@ -672,6 +683,20 @@ export default async function handler(req, res) {
     //     tool output → statusFeed entries → the frontend trade card indicator.
     const directiveThreadId = (effectiveHasDirective && normalizedDirective) ? randomUUID() : null;
 
+    // Voice-layer grounding §6.3 — the grounded turn tells the client what it
+    // is and what the battle's CURRENT directive thread is after this turn:
+    // this turn's, when it filed one; otherwise the slot's as read — the same
+    // raw slot file-directive's check 4 compares against — so a chip filing's
+    // `expectedDirectiveThreadId` is the server's last word, never a guess.
+    // Absent on the shipped path: the flag-off clientResponse is byte-identical.
+    if (grounded) {
+      clientResponse.grounded = true;
+      clientResponse.currentDirectiveThreadId = directiveThreadId
+        ?? (typeof battle.directive?.directiveThreadId === 'string' && battle.directive.directiveThreadId
+          ? battle.directive.directiveThreadId
+          : null);
+    }
+
     const exchange = {
       userMessage: sanitizedMessage,
       agentResponse: parsed.response,
@@ -684,7 +709,7 @@ export default async function handler(req, res) {
         ? buildDirectiveRecord(normalizedDirective, directiveThreadId)
         : null,
       directiveThreadId,
-      suggestedActions: parsed.suggestedActions || null,
+      suggestedActions,
       elicitationTarget: elicitationTarget.dimension,
       timestamp: new Date().toISOString(),
       mode,

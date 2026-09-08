@@ -88,6 +88,12 @@ export function deriveChatMessages(chatExchanges) {
       // only see the type, and a note about a piece in the player's own book
       // was labelled `Bench note`.
       _anticipationDirection: ex.anticipationContext?.direction ?? null,
+      // Voice-layer grounding §6.3: the no-change status line renders ONLY from
+      // a persisted exchange produced under the grounding contract on which the
+      // gate ran and wrote no directive — never from a reply body in flight,
+      // never on a legacy exchange (there the status was the prose's claim).
+      _grounded: ex.groundingVersion === 1,
+      _gateRan: Boolean(ex.archetypeGate),
       mode: ex.mode || 'battle',
       timestamp: ts,
       _serverIndex: i,

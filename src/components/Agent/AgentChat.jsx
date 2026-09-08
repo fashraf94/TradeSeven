@@ -66,7 +66,11 @@ function TypingIndicator() {
   );
 }
 
-function ActionButton({ text, onClick, disabled }) {
+// `action` (voice-layer grounding §6.2): the PAYLOAD the tap hands back, when
+// it is not the label — a minted chip is `{ kind: 'directive', id, text }` or
+// `{ kind: 'ask', text }`, and its label is derived. Absent (the shipped
+// string chips), the label IS the payload, byte for byte.
+function ActionButton({ text, action, onClick, disabled }) {
   const [hovered, setHovered] = useState(false);
   return (
     <motion.button
@@ -76,7 +80,7 @@ function ActionButton({ text, onClick, disabled }) {
       whileTap={{ scale: 0.95 }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      onClick={() => onClick(text)}
+      onClick={() => onClick(action !== undefined ? action : text)}
       disabled={disabled}
       style={{
         background: hovered ? 'rgba(94, 234, 212, 0.08)' : 'transparent',
@@ -93,6 +97,17 @@ function ActionButton({ text, onClick, disabled }) {
       {text}
     </motion.button>
   );
+}
+
+// A chip's label (voice-layer grounding §6.2). A string is the shipped chip; a
+// minted `directive` chip reads `Files: {canonical text}`; an `ask` chip reads
+// its question. Anything else renders nothing rather than `[object Object]`.
+function chipLabel(action) {
+  if (typeof action === 'string') return action;
+  if (!action || typeof action !== 'object') return null;
+  if (action.kind === 'directive') return BATTLE_VIEW_COPY.filesChip(action.text);
+  if (action.kind === 'ask') return typeof action.text === 'string' && action.text ? action.text : null;
+  return null;
 }
 
 // `receipt` (Phase A, controller flag): undefined flag-off — the shipped card,
@@ -345,6 +360,17 @@ function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSendi
       }}>
         {renderMessageWithEntities(message.text, onSymbolClick, knownTickers)}
       </div>
+      {/* Voice-layer grounding §6.3 — the code-owned no-change status, from the
+          PERSISTED exchange: a grounded turn on which the gate ran and wrote no
+          directive. Never from the reply body; never on a legacy exchange. */}
+      {message._grounded && message._gateRan && !message.hasDirective ? (
+        <div
+          data-directive-status="no_change"
+          style={{ fontSize: 11, color: 'rgba(255, 255, 255, 0.55)', marginTop: 6, paddingLeft: 4 }}
+        >
+          {BATTLE_VIEW_COPY.noChangeStatusLine}
+        </div>
+      ) : null}
       {message.hasDirective && message.directive ? (
         <ExecutionCard
           directive={message.directive}
@@ -354,9 +380,21 @@ function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSendi
         />
       ) : isLastAgent && message.suggestedActions?.length > 0 && !isSending ? (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8, paddingLeft: 4 }}>
-          {message.suggestedActions.map((action, i) => (
-            <ActionButton key={i} text={action} onClick={onActionClick} disabled={isSending} />
-          ))}
+          {message.suggestedActions.map((action, i) => {
+            // A minted chip (voice-layer grounding §6.2) says what it FILES;
+            // a string chip is the shipped question, byte for byte.
+            const label = chipLabel(action);
+            if (!label) return null;
+            return (
+              <ActionButton
+                key={i}
+                text={label}
+                action={typeof action === 'string' ? undefined : action}
+                onClick={onActionClick}
+                disabled={isSending}
+              />
+            );
+          })}
         </div>
       ) : null}
     </motion.div>
@@ -529,6 +567,11 @@ export default function AgentChat({
   // re-fires the scroll when the SAME card is asked for twice, exactly as the
   // book panel's tick used to. Null flag-off and whenever nothing is pending.
   openCheck = null,
+  // Voice-layer grounding §6.1: the client's BELIEF about the current
+  // directive — `battle.directive.directiveThreadId` off the subscribed doc,
+  // null when none — sent with every chip filing as expectedDirectiveThreadId.
+  // A stale belief is a conflict the server refuses, never a silent overwrite.
+  currentDirectiveThreadId = null,
 }) {
   // Phase 1 Voice Layer Rework (spec §4.5): chat exchanges are now derived
   // reactively from the chatExchanges prop so Firestore-initiated writes
@@ -925,10 +968,58 @@ export default function AgentChat({
     }
   }
 
+  // ── File a directive by chip (voice-layer grounding §6.1 / §6.3) ───────────
+  //
+  // The tap calls the deterministic route with the chip's id — never the chat
+  // route — and renders NOTHING from the response: the Firestore listener
+  // delivers the audit exchange the route wrote, and the card's `Filed {time}`
+  // receipt is derived from it (deriveReceipts, hazard 19). Only a failure has
+  // a line here, and it says only what the client can be held to.
+
+  async function fileDirective(adjustmentId) {
+    if (!adjustmentId || isSending) return;
+    setError(null);
+    setIsSending(true);
+    try {
+      const user = getAuth().currentUser;
+      if (!user) {
+        setError('Session expired. Please refresh.');
+        return;
+      }
+      const idToken = await user.getIdToken();
+      const res = await fetch('/api/agent/file-directive', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${idToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ agentId, battleId, adjustmentId, expectedDirectiveThreadId: currentDirectiveThreadId }),
+      });
+      if (!res.ok) {
+        if (res.status === 401) setError('Session expired. Please refresh.');
+        else setError(BATTLE_VIEW_COPY.filingFailureLine(res.status));
+      }
+    } catch {
+      setError(BATTLE_VIEW_COPY.filingFailed);
+    } finally {
+      setIsSending(false);
+    }
+  }
+
   // ── Handle action button click ─────────────────────────────────────────────
 
-  function handleActionClick(actionText) {
-    sendMessage(actionText);
+  function handleActionClick(action) {
+    if (typeof action === 'string') {
+      sendMessage(action);
+      return;
+    }
+    if (action?.kind === 'ask') {
+      sendMessage(action.text);
+      return;
+    }
+    if (action?.kind === 'directive') {
+      fileDirective(action.id);
+    }
   }
 
   // ── Handle keyboard ────────────────────────────────────────────────────────
