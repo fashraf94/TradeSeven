@@ -142,3 +142,51 @@ Six test files were de facto BUILD_RULES §4 dependency-surface guards with no g
 - **The protected-store scan had been red since G4** (two write sites in the route's transaction, unlisted). The full suite after G6 caught it; the targeted runs after G3 and G4 had not included the scan. The allowlist entry was added by amending G4 before anything was pushed — the entry belongs with the writer — and every test figure in this record and the handover is a FULL-suite figure.
 - **Lens 4's mutation parser** mislabelled every kill as a survivor on my first pass of the fix rows; the red row names in the same output proved the kills, and the two mutations with no red row were re-run with real defects (a read after the writes; a strip inside the builder) and killed.
 - **The hook test** could not mock the lazily-imported `fetchWithAuth` (the runner evaluated the real module for the second dynamic import); it mocks the token read under it and stubs global `fetch` instead, which observes every request as the network sees it.
+
+---
+
+## 8. Post-build rulings — the five founder items (handover §6)
+
+Appended September 8, 2026, in the same PR that commits Sol's two passes to
+`docs/audits/` (below). These are the five items the handover's §6 carried out
+of the build; this section records **where each one now stands**, and — for the
+three the build had to settle in order to ship — **what the build took, and the
+one line that reverses it**. Two remain open: they are founder rulings, and
+nothing in this build made them.
+
+The authority wording follows Sol's own governance note (PASS2, §"There is also
+one governance wording issue"): an advisory pass does not create founder
+rulings. **Taken in the build** below means a build decision recorded and
+reversible; **open** means awaiting the founder.
+
+| # | Item | Status | Disposition of record |
+|---|---|---|---|
+| 1 | **The deploy-time opener stays the OLD prompt under `'on'`** | **OPEN — founder ruling** | Fenced `api/agent/decide.js` calls `buildFirstMessagePrompt` with no `grounded`, and `ensure-opener` returns `already_present` whenever that opener exists, so the fenced opener is the common case and carries guard sites 1, 2, 3, 13–17, 29, 30 ("watching", "you go first…"). Spec §4/§7's "no 'watching' in the opener" therefore holds for the LAZY opener only. The two paths open to the founder are a **§7-gated one-key fence change** (pass `grounded` into the `buildFirstMessagePrompt` call in `decide.js`) or an **accepted gap** recorded as such. Not fixable inside a non-fenced build; ruling 4 (the history window) is met by mechanism either way. |
+| 2 | **D-80 vs spec §3.2 — rationale bytes on the narrator's path** | **OPEN — founder ruling** | YOUR RECORD quotes the rationale BYTES verbatim (spec §3.2's own rule: "verbatim means bytes"), provenance code included — `Guardrail override (guardrail_stopLoss): …`. D-80 says a machinery-provenance code never reaches the screen, and the pane maps it through `renderMotive`. The prompt is not the screen, but under `'on'` the narrator can now voice `guardrail_stopLoss`. **Bytes, or the pane's `renderMotive` mapping** — one or the other, and the harness's per-pair rationale column (`api/scripts/voice-grounding-harness.js`) is where the founder can see what the model does with them before deciding. |
+| 3 | **`Holding note` gating** | **TAKEN IN THE BUILD** | Gated on the grounded exchange: the eyebrow renders only for an exchange carrying the grounding marker, so the flag-off page is byte-identical and legacy model forecasts are never retroactively relabelled. Review row: §5's `AMENDED — R-02` (fact confirmed; severity a founder decision). **Reverses in one line** in `src/screens/battleView/battleViewCopy.js` if the retroactive relabel is what the founder wants. |
+| 4 | **No review-mode gate on the deterministic route** | **TAKEN IN THE BUILD** | `POST /api/agent/file-directive` requires an ACTIVE battle (check 2) and nothing more. A directive filed after the close is in front of the trading process at the NEXT check, which is what a directive is; the chat route's strip is a REVIEW-mode gate (closed market AND today's review), not a live-play gate. Review row: §5's `AMENDED — R-20`. **Recorded in the route header, not gated** — the decision is in `api/agent/file-directive.js`'s "TWO DECISIONS RECORDED (a)". |
+| 5 | **The hypothesis label's two spellings** | **DEFERRED — no drift today** | The prompt's spelling (spec §3.2, built: `HYPOTHESIS_LABEL` in `api/_utils/voiceLayerGrounding.js`) and the pane's (spec §11, A3.7 unbuilt) differ. Nothing renders both today, so nothing disagrees. **Reconcile when A3.7 lands**, by moving the label into the zero-import `src/data/decisionRecord.js` — the same one-home move every other shared string in this arc took. |
+
+Two items from §6 of THIS record are not in the table above because they are not
+founder items: spec §3.2's one-entry record fallback (`RECORD_WINDOW` stays 3
+until the paired harness has measured — the harness this PR adds is what
+measures it) and `FILING_STATUS`'s body words having no client consumer (both
+clients render by HTTP status; recorded in the route header as the client
+contract).
+
+### The reviews this record answers
+
+Sol's two passes are committed alongside this section, byte-exact as received:
+
+| File | Pass | Verdict |
+|---|---|---|
+| `docs/audits/20260907_SOL_REVIEW_VOICE_GROUNDING_PASS1.md` | Blind adversarial review of Spec V1 | **STOP** — 2 BLOCKER · 8 MAJOR (F1 the action-bearing `threshold`; F2 `Files:` unbacked by the click path) |
+| `docs/audits/20260907_SOL_REVIEW_VOICE_GROUNDING_PASS2.md` | Confirm pass on V1.1 | **PROCEED WITH CORRECTIONS** — 0 BLOCKER · 5 MAJOR · 3 minor/governance |
+
+Their dispositions are the spec's own Appendix B and Appendix C
+(`docs/design/VOICE_LAYER_GROUNDING_SPEC_V1_2.md`); the build against those
+dispositions is §§1–7 above. PASS2's M1 (raw rationale still carries forward
+language) is the one whose closure is a MEASUREMENT rather than a code change —
+the rationale rule is printed beside the block, and the hostile fixture and the
+scored forward-language dimension it asked for live in
+`api/scripts/voice-grounding-harness.js`, run at spec §9 gate 1.
