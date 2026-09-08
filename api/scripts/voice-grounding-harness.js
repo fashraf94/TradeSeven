@@ -22,11 +22,18 @@
 //
 // WHAT IT SENDS. Each pair is replayed TWICE — once with the old prompt and
 // its window, once with the new — through the SHIPPED client
-// (`callGemmaVoice` in api/_utils/gemmaClient.js) under the SHIPPED per-call
-// budget (`GEMMA_TIMEOUT_MS`, imported from api/agent/chat.js). Nothing about
-// the request shape is restated here, so "a timeout" in this report means what
-// it means in production. Neither replay writes anything: no Firestore, no
+// (`callGemmaVoice` in api/_utils/gemmaClient.js). Nothing about the request
+// shape is restated here. Neither replay writes anything: no Firestore, no
 // shadow log, no battle doc.
+//
+// THE BUDGET IS THE NOMINAL ONE, and that is a stated limit rather than an
+// equivalence. The default is the shipped `GEMMA_TIMEOUT_MS` imported from
+// api/agent/chat.js, but production CLAMPS it to what remains of the absolute
+// turn deadline (`Math.min(GEMMA_TIMEOUT_MS, turnStartMs + TURN_DEADLINE_MS -
+// Date.now())`), so a real turn with a 5s prologue aborts at 14s, not 19s.
+// This harness has no prologue, so its timeout rate is an OPTIMISTIC LOWER
+// BOUND on production's. `--budget-ms` replays at whatever budget the founder
+// wants to gate on; the report prints the number it used and says this.
 //
 // THE HOSTILE PAIR. Spec §3.2's fixture — a rationale that itself contains
 // `Hypothesis:`, "I'll rotate" and "if X then I would swap" — is assembled
@@ -43,6 +50,9 @@
 //   --pairs N         how many real turns to replay (default 20 — the gate's floor)
 //   --out PATH        where to write the markdown report
 //                     (default docs/audits/<UTC date>_VOICE_GROUNDING_PAIRED_HARNESS.md)
+//   --budget-ms N     per-call abort budget for the replay (default: the shipped
+//                     GEMMA_TIMEOUT_MS, which production clamps BELOW by the
+//                     turn's prologue — see THE BUDGET above)
 //   --dry-run         select and assemble everything, call NO model. The report
 //                     is written, marked DRY RUN, with the scorers run over each
 //                     record's PERSISTED reply so the scoring is exercised on
@@ -57,7 +67,7 @@
 // check, the selection and the percentile summary — are unit-tested in
 // voice-grounding-harness.test.js. The network half is behind --dry-run.
 
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, realpathSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -66,7 +76,9 @@ import { callGemmaVoice, parseVoiceLayerResponse } from '../_utils/gemmaClient.j
 // declares its own timeout measures its own timeout (chat.timeout.test.js).
 import { GEMMA_TIMEOUT_MS } from '../agent/chat.js';
 // The shipped reply lint (spec §9 gate 1) and the record renderer's own labels.
-import { REPLY_LINT_RE } from '../_utils/voiceLayerGrounding.js';
+import {
+  REPLY_LINT_RE, RATIONALE_RULE, CURRENT_DIRECTIVE_HEADING, NO_DIRECTIVE_LINE, HYPOTHESIS_LABEL,
+} from '../_utils/voiceLayerGrounding.js';
 import { MOTIVE_AGENT, MOTIVE_SYSTEM } from '../../src/data/decisionRecord.js';
 import { buildVoiceLayerPrompt } from '../_utils/voiceLayerPrompt.js';
 import {
@@ -102,8 +114,36 @@ export function replyLintHits(text) {
 // The prompt's own rationale line (voiceLayerGrounding.js renderRecordEntry):
 //   `  Rationale — {The agent's own words|The system's reason}: {bytes}`
 // Built from the exported labels so a reworded label cannot silently empty this.
+// `renderRecordEntry` emits the stored bytes VERBATIM (no stripping), and
+// `evaluation.rationale` is free model text — a newline inside it is possible,
+// and `(.*)$` under /m would have truncated the extraction at the first one,
+// silently scoring only the rationale's first line. Capture lazily to whatever
+// starts next: another record entry (`[12:45 PM check]`), the hypothesis line,
+// a blank line, or the true end of the string — `$(?![\s\S])`, because under
+// /m a bare `$` matches every LINE end and would truncate at the first newline
+// exactly as `(.*)$` did.
+// Where a rationale ENDS. Derived from the renderer's own block constants
+// rather than guessed, so a reworded heading cannot silently make this
+// over-capture (BUILD_RULES §9 — one source, not a parallel copy):
+//   • the next record entry              `[12:30 PM check] …`
+//   • the entry's own hypothesis line    `  Hypothesis recorded at this check…`
+//   • the rule printed beside the block  `RATIONALE RULE: …`
+//   • the directive block or its absence `CURRENT DIRECTIVE …`
+//   • a blank line, or the TRUE end of the string — `$(?![\s\S])`, because
+//     under /m a bare `$` matches every LINE end and would truncate at the
+//     first newline exactly as `(.*)$` did.
+const RATIONALE_BOUNDARIES = [
+  String.raw`\n\[`,
+  `\\n {2}${escapeRegExp(HYPOTHESIS_LABEL)}`,
+  `\\n${escapeRegExp(RATIONALE_RULE.split(':')[0])}`,
+  `\\n${escapeRegExp(CURRENT_DIRECTIVE_HEADING.split(/[(:]/)[0].trim())}`,
+  `\\n${escapeRegExp(NO_DIRECTIVE_LINE.split(':')[0])}`,
+  String.raw`\n\n`,
+  String.raw`$(?![\s\S])`,
+].join('|');
+
 const RATIONALE_LINE_RE = new RegExp(
-  `^ {2}Rationale — (?:${[MOTIVE_AGENT, MOTIVE_SYSTEM].map(escapeRegExp).join('|')}): (.*)$`,
+  `^ {2}Rationale — (?:${[MOTIVE_AGENT, MOTIVE_SYSTEM].map(escapeRegExp).join('|')}): ([\\s\\S]*?)(?=${RATIONALE_BOUNDARIES})`,
   'gm',
 );
 
@@ -122,7 +162,26 @@ export function extractRecordRationales(systemPrompt) {
  * lint: the lint guards the narrator's OWN sentences, this finds the clauses
  * the DECIDER wrote that the narrator must not repeat (the rationale rule).
  */
-export const FORWARD_MARKER_RE = /\bhypothesis\s*:|\bi(?:'|’)?ll\b|\bi will\b|\bi(?:'|’)?d\b|\bi would\b|\bif\b[^.!?]*\bthen\b|\bexpect(?:s|ed|ing)?\b|\bplan(?:s|ning)? to\b|\bintend(?:s|ing)? to\b|\bgoing to\b|\bwould (?:rotate|swap|buy|sell|add|trim|exit|enter)\b/i;
+export const FORWARD_MARKER_RE = new RegExp([
+  String.raw`\bhypothesis\s*:`,
+  // The apostrophe is REQUIRED. Optional, `\bi(?:'|’)?ll\b` also matched the
+  // plain words "ill" and "id", so "The exit was ill-timed" and "Trade id 4471"
+  // scored as forward language — and a false positive is worse than a miss
+  // here: it inflates the clause set the OLD control column is scored against
+  // too, and tells the founder a historical sentence is a promise.
+  String.raw`\bi['’](?:ll|d)\b`,
+  String.raw`\b(?:i|we) (?:will|would)\b`,
+  // Both conditional shapes: "if X then Y" and the comma form "if X, Y".
+  String.raw`\bif\b[^.!?]*\bthen\b`,
+  String.raw`\bif\b[^.!?]*,`,
+  String.raw`\bexpect(?:s|ed|ing)?\b`,
+  String.raw`\bplan(?:s|ning)? to\b`,
+  String.raw`\bplan is to\b`,
+  String.raw`\bintend(?:s|ing)? to\b`,
+  String.raw`\bgoing to\b`,
+  String.raw`\bwould (?:rotate|swap|buy|sell|add|trim|exit|enter)\b`,
+  String.raw`\bnext check (?:will|swaps|rotates|buys|sells)\b`,
+].join('|'), 'i');
 
 const EMPHASIS_RE = [/\*\*([^*]+)\*\*/g, /\*([^*]+)\*/g, /(?<!\w)_([^_]+)_(?!\w)/g];
 
@@ -148,6 +207,14 @@ export function extractForwardClauses(rationale) {
   return rationale
     .split(/(?<=[.!?])\s+/)
     .map((s) => s.trim())
+    // The trailing terminator is STRIPPED. `normalizeForEcho` keeps `.` (so a
+    // price like $145.50 survives), which glued the full stop to the clause's
+    // last word — so an exact match required the reply to end its sentence at
+    // the same word, and for a clause of five words or fewer the shingle
+    // fallback IS the exact check, i.e. no fallback at all. "I'll rotate."
+    // therefore scored ZERO against a reply that said "I'll rotate the support
+    // slot as soon as breadth widens."
+    .map((s) => s.replace(/[.!?]+$/, '').trim())
     .filter((s) => s && FORWARD_MARKER_RE.test(s));
 }
 
@@ -194,15 +261,50 @@ export function rationaleForwardEchoes(rationales, reply, { shingle = 5 } = {}) 
 
 // ==================== PURE — schema adherence ====================
 
-/** The keys GROUNDED_OUTPUT_FORMAT (and the shipped format before it) requires. */
-export const REQUIRED_REPLY_KEYS = Object.freeze(['response', 'hasDirective']);
+/**
+ * The keys BOTH output formats require. `_scratchpad` is in the list because
+ * both carry the explicit rule "_scratchpad MUST come first"
+ * (voiceLayerGrounding.js GROUNDED_OUTPUT_FORMAT, voiceLayerPrompt.js's
+ * shipped one) — a reply that omits it is not the shape the prompt demanded,
+ * and gate 1's "schema adherence" that cannot see that is measuring nothing.
+ */
+export const REQUIRED_REPLY_KEYS = Object.freeze(['_scratchpad', 'response', 'hasDirective']);
+
+/**
+ * A grounded `suggestedActions` entry: a directive BY ID (its text is the
+ * server's canonical text, never the model's) or a question (§6.2). The legacy
+ * string chip is exactly what the grounded format replaces, so on the grounded
+ * side a string is a REGRESSION, not a tolerated shape — which is the whole
+ * point of checking adherence against the NEW prompt.
+ */
+function groundedActionsFault(actions) {
+  if (actions === null || actions === undefined) return null;
+  if (!Array.isArray(actions)) return 'suggestedActions_not_array';
+  for (const item of actions) {
+    if (typeof item === 'string') return 'suggestedActions_legacy_string_chip';
+    if (!item || typeof item !== 'object') return 'suggestedActions_bad_entry';
+    if (item.kind === 'directive') {
+      if (typeof item.id !== 'string' || !item.id.trim()) return 'directive_chip_without_id';
+    } else if (item.kind === 'ask') {
+      if (typeof item.text !== 'string' || !item.text.trim()) return 'ask_chip_without_text';
+    } else {
+      return 'suggestedActions_unknown_kind';
+    }
+  }
+  return null;
+}
 
 /**
  * Did the model return the shape the prompt demanded? `parsed` is whatever
  * parseVoiceLayerResponse returned, so a tier-4 parse failure is a schema
  * failure with the parser's own reason.
+ *
+ * `grounded` turns on the checks that only the NEW format makes: the chip
+ * shape §6.2 introduced. Without it the four shapes gate 1 exists to catch —
+ * a missing scratchpad, `hasDirective:true` with no directive, legacy string
+ * chips, a directive chip with no id — all scored `valid`.
  */
-export function schemaAdherence(parsed) {
+export function schemaAdherence(parsed, { grounded = false } = {}) {
   if (!parsed || typeof parsed !== 'object') return { valid: false, reason: 'not_an_object', missing: [...REQUIRED_REPLY_KEYS] };
   if (parsed.parseError === true) return { valid: false, reason: `parse_${parsed.errorReason || 'unknown'}`, missing: [...REQUIRED_REPLY_KEYS] };
   const missing = REQUIRED_REPLY_KEYS.filter((k) => parsed[k] === undefined);
@@ -211,6 +313,15 @@ export function schemaAdherence(parsed) {
     return { valid: false, reason: 'empty_response', missing: [] };
   }
   if (typeof parsed.hasDirective !== 'boolean') return { valid: false, reason: 'hasDirective_not_boolean', missing: [] };
+  // A reply that CLAIMS a directive and ships none is the exact false receipt
+  // the arc exists to prevent (spec §6.3: the receipt is bound to the write).
+  if (parsed.hasDirective === true && (!parsed.directive || typeof parsed.directive !== 'object')) {
+    return { valid: false, reason: 'hasDirective_without_directive', missing: [] };
+  }
+  if (grounded) {
+    const fault = groundedActionsFault(parsed.suggestedActions);
+    if (fault) return { valid: false, reason: fault, missing: [] };
+  }
   return { valid: true, reason: null, missing: [] };
 }
 
@@ -244,6 +355,18 @@ export function selectPairs(records, { limit = DEFAULT_PAIRS } = {}) {
     .slice(0, Math.max(0, limit));
 }
 
+/**
+ * Which side actually produced the persisted reply. Under `'shadow'` — the mode
+ * this harness's own header names — chat.js:290 gives `grounded=false` and
+ * SENDS the old prompt, so `agentMessage` is the OLD prompt's reply. Under
+ * `'canary'`/`'on'` it is the new one's. Attributing it to both columns (the
+ * first cut of the dry run did) printed identical replies and identical lint
+ * counts side by side and called one of them the grounded prompt's.
+ */
+export function persistedReplySide(voiceGroundingMode) {
+  return voiceGroundingMode === 'on' || voiceGroundingMode === 'canary' ? 'new' : 'old';
+}
+
 /** The shadow record → the two sides of one replay. */
 export function pairFromRecord(record, index) {
   return {
@@ -253,6 +376,7 @@ export function pairFromRecord(record, index) {
     voiceGroundingMode: record.voiceGroundingMode || null,
     userMessage: record.userMessage,
     persistedReply: typeof record.agentMessage === 'string' ? record.agentMessage : null,
+    persistedReplySide: persistedReplySide(record.voiceGroundingMode),
     persistedTimeout: isRecordTimeout(record),
     old: { systemPrompt: record.systemPromptOld, conversationHistory: record.conversationHistoryOld || [] },
     new: { systemPrompt: record.systemPromptNew, conversationHistory: record.conversationHistoryNew || [] },
@@ -318,6 +442,7 @@ export function buildHostilePair() {
     voiceGroundingMode: null,
     userMessage: HOSTILE_USER_MESSAGE,
     persistedReply: null,
+    persistedReplySide: 'old',
     persistedTimeout: false,
     old: { systemPrompt: build(false), conversationHistory: [] },
     new: { systemPrompt: build(true), conversationHistory: [] },
@@ -337,7 +462,7 @@ export function buildHostilePair() {
  * would make its column vacuous. Scored against the same clauses it becomes a
  * control — an echo on the old side came from somewhere other than the record.
  */
-export function scoreSide({ systemPrompt, call, rationales: given, parse = parseVoiceLayerResponse }) {
+export function scoreSide({ systemPrompt, call, rationales: given, grounded = false, parse = parseVoiceLayerResponse }) {
   const rationales = Array.isArray(given) ? given : extractRecordRationales(systemPrompt);
   const base = {
     promptChars: typeof systemPrompt === 'string' ? systemPrompt.length : 0,
@@ -353,7 +478,7 @@ export function scoreSide({ systemPrompt, call, rationales: given, parse = parse
   return {
     ...base,
     reply: text,
-    schema: parsed ? schemaAdherence(parsed) : { valid: null, reason: call?.skipped ? 'not_called' : (call?.timedOut ? 'timed_out' : 'no_response'), missing: [] },
+    schema: parsed ? schemaAdherence(parsed, { grounded }) : { valid: null, reason: call?.skipped ? 'not_called' : (call?.timedOut ? 'timed_out' : 'no_response'), missing: [] },
     lintHits: replyLintHits(text),
     echoes: rationaleForwardEchoes(rationales, text),
   };
@@ -365,16 +490,27 @@ export function scoreSide({ systemPrompt, call, rationales: given, parse = parse
 export function summarizeSide(sides) {
   const list = (Array.isArray(sides) ? sides : []).filter(Boolean);
   const called = list.filter((s) => !s.skipped);
-  const latencies = called.filter((s) => !s.timedOut && typeof s.latencyMs === 'number').map((s) => s.latencyMs);
+  const timeouts = called.filter((s) => s.timedOut).length;
+  // A rejected call (401 / 429 / 5xx) also carries a latencyMs — the time to
+  // the REJECTION. Counting it as a response time is how a run in which every
+  // new-prompt call failed reads as a large latency WIN: fast rejections, no
+  // timeouts, and a schema column of 0/0 that nothing draws attention to. Both
+  // the timed-out and the errored replays are excluded, and the errors get a
+  // row of their own so a failed run cannot look like a fast one.
+  const errors = called.filter((s) => !s.timedOut && s.error).length;
+  const answered = called.filter((s) => !s.timedOut && !s.error);
+  const latencies = answered.filter((s) => typeof s.latencyMs === 'number').map((s) => s.latencyMs);
   const schemaChecked = called.filter((s) => s.schema && typeof s.schema.valid === 'boolean');
   const schemaValid = schemaChecked.filter((s) => s.schema.valid).length;
-  const timeouts = called.filter((s) => s.timedOut).length;
   return {
     pairs: list.length,
     called: called.length,
+    answered: answered.length,
     latency: latencyPercentiles(latencies),
     timeouts,
     timeoutRate: called.length ? timeouts / called.length : null,
+    errors,
+    errorRate: called.length ? errors / called.length : null,
     schemaChecked: schemaChecked.length,
     schemaValid,
     schemaAdherenceRate: schemaChecked.length ? schemaValid / schemaChecked.length : null,
@@ -395,7 +531,7 @@ const rate = (v) => (v === null || v === undefined ? '—' : `${(v * 100).toFixe
  * The founder's read (spec §9 gate 2): the summary table, then every pair with
  * the two replies side by side and what each scored.
  */
-export function renderReport({ pairs, results, dryRun, range, generatedAt, pairFloor = DEFAULT_PAIRS }) {
+export function renderReport({ pairs, results, dryRun, range, generatedAt, pairFloor = DEFAULT_PAIRS, budgetMs = GEMMA_TIMEOUT_MS }) {
   const oldSummary = summarizeSide(results.map((r) => r.old));
   const newSummary = summarizeSide(results.map((r) => r.new));
   const realPairs = pairs.filter((p) => p.source === 'shadow').length;
@@ -406,10 +542,10 @@ export function renderReport({ pairs, results, dryRun, range, generatedAt, pairF
   out.push(`**Generated:** ${generatedAt}`);
   out.push(`**Shadow range:** ${range.fromKey} → ${range.toKey} (UTC date keys, \`shadow/${STREAM}/\`)`);
   out.push(`**Pairs:** ${realPairs} real turn(s) + ${pairs.length - realPairs} hostile fixture — floor is ${pairFloor} real turns.`);
-  out.push(`**Per-call budget:** ${GEMMA_TIMEOUT_MS} ms — the shipped \`GEMMA_TIMEOUT_MS\` (api/agent/chat.js), imported not restated.`);
+  out.push(`**Per-call budget:** ${budgetMs} ms${budgetMs === GEMMA_TIMEOUT_MS ? ' — the shipped `GEMMA_TIMEOUT_MS` (api/agent/chat.js), imported not restated' : ` (\`--budget-ms\`; the shipped nominal is ${GEMMA_TIMEOUT_MS} ms)`}. Production CLAMPS this to what remains of the turn deadline, so a real turn with a 5s prologue aborts sooner — the timeout rate below is an optimistic lower bound on production's.`);
   if (dryRun) {
     out.push('');
-    out.push('> **DRY RUN — no model was called.** The pairs were selected and both prompts assembled; the scorers below ran over each turn\'s PERSISTED reply, so a `new` column reads `not called`. Re-run without `--dry-run` for the gate.');
+    out.push('> **DRY RUN — no model was called.** The pairs were selected and both prompts assembled; the scorers ran over each turn\'s PERSISTED reply, shown in the column that actually produced it — under `shadow` the OLD prompt is the one that was sent (chat.js), so the grounded column is empty. Re-run without `--dry-run` for the gate.');
   }
   out.push('');
   out.push('## 1. The gate\'s numbers');
@@ -417,15 +553,17 @@ export function renderReport({ pairs, results, dryRun, range, generatedAt, pairF
   out.push('| Measure | Old prompt (shipped) | New prompt (grounded) |');
   out.push('|---|---|---|');
   out.push(`| Replays sent | ${oldSummary.called} / ${oldSummary.pairs} | ${newSummary.called} / ${newSummary.pairs} |`);
+  out.push(`| Replays ANSWERED | ${oldSummary.answered} | ${newSummary.answered} |`);
   out.push(`| Latency p50 | ${num(oldSummary.latency.p50, ' ms')} | ${num(newSummary.latency.p50, ' ms')} |`);
   out.push(`| Latency p95 | ${num(oldSummary.latency.p95, ' ms')} | ${num(newSummary.latency.p95, ' ms')} |`);
   out.push(`| Latency max | ${num(oldSummary.latency.max, ' ms')} | ${num(newSummary.latency.max, ' ms')} |`);
   out.push(`| Timeouts | ${oldSummary.timeouts} (${rate(oldSummary.timeoutRate)}) | ${newSummary.timeouts} (${rate(newSummary.timeoutRate)}) |`);
+  out.push(`| Transport errors | ${oldSummary.errors} (${rate(oldSummary.errorRate)}) | ${newSummary.errors} (${rate(newSummary.errorRate)}) |`);
   out.push(`| Schema adherence | ${oldSummary.schemaValid}/${oldSummary.schemaChecked} (${rate(oldSummary.schemaAdherenceRate)}) | ${newSummary.schemaValid}/${newSummary.schemaChecked} (${rate(newSummary.schemaAdherenceRate)}) |`);
   out.push(`| Reply-lint hits | ${oldSummary.lintHits} across ${oldSummary.pairsWithLintHit} pair(s) | ${newSummary.lintHits} across ${newSummary.pairsWithLintHit} pair(s) |`);
   out.push(`| Rationale forward echoes | ${oldSummary.rationaleEchoes} across ${oldSummary.pairsWithEcho} pair(s) | ${newSummary.rationaleEchoes} across ${newSummary.pairsWithEcho} pair(s) |`);
   out.push('');
-  out.push('- **Latency** excludes timed-out replays (an abort is the budget, not a response time). Percentiles are linear-interpolation quantiles.');
+  out.push('- **Latency** is over the ANSWERED replays only. A timed-out replay measures the budget and a rejected one (401/429/5xx) measures the time to the rejection; neither is a response time, so both are excluded and counted in their own rows instead. Read the two rows above the latency before reading the latency. Percentiles are linear-interpolation quantiles.');
   out.push('- **Reply lint** is the shipped `REPLY_LINT_RE` (`I\'ll rotate|I\'m rotating|eyeing|watching|keep an eye|I\'d consider … swap`), counted here rather than enforced — spec §9 asks for it as a measurement.');
   out.push('- **Rationale forward echoes** = forward-bearing clauses taken from the rationales the GROUNDED prompt carried, found repeated in the reply (exact, or a 5-word run). Both columns are scored against the same clauses: the old prompt carries no YOUR RECORD, so its column is a control — an echo there came from somewhere other than the record. It measures repetition, not paraphrase; gate 2 is the founder\'s read.');
   out.push('');
@@ -508,19 +646,27 @@ export async function replay({ systemPrompt, conversationHistory, userMessage, t
 }
 
 /** Replay every pair, old then new. `--dry-run` swaps the call for a skip. */
-export async function runPairs(pairs, { dryRun, call = callGemmaVoice, onPair } = {}) {
+export async function runPairs(pairs, { dryRun, call = callGemmaVoice, onPair, timeoutMs = GEMMA_TIMEOUT_MS } = {}) {
   const results = [];
   for (const pair of pairs) {
+    // In a dry run the ONE persisted reply belongs to the side that produced
+    // it, and the other side is honestly empty.
     const runSide = async (side) => (dryRun
-      ? { skipped: true, text: pair.persistedReply || '', latencyMs: null, timedOut: pair.persistedTimeout, error: null }
-      : replay({ ...pair[side], userMessage: pair.userMessage, call }));
+      ? {
+        skipped: true,
+        text: side === pair.persistedReplySide ? (pair.persistedReply || '') : '',
+        latencyMs: null,
+        timedOut: side === pair.persistedReplySide ? pair.persistedTimeout : false,
+        error: null,
+      }
+      : replay({ ...pair[side], userMessage: pair.userMessage, call, timeoutMs }));
     const oldCall = await runSide('old');
     const newCall = await runSide('new');
     // One clause set for both sides — see scoreSide's note on the control.
     const rationales = extractRecordRationales(pair.new.systemPrompt);
     results.push({
-      old: scoreSide({ systemPrompt: pair.old.systemPrompt, call: oldCall, rationales }),
-      new: scoreSide({ systemPrompt: pair.new.systemPrompt, call: newCall, rationales }),
+      old: scoreSide({ systemPrompt: pair.old.systemPrompt, call: oldCall, rationales, grounded: false }),
+      new: scoreSide({ systemPrompt: pair.new.systemPrompt, call: newCall, rationales, grounded: true }),
     });
     if (onPair) onPair(pair, results[results.length - 1]);
   }
@@ -531,17 +677,21 @@ export async function runPairs(pairs, { dryRun, call = callGemmaVoice, onPair } 
 
 export function parseHarnessArgs(argv, now = new Date()) {
   const passthrough = [];
-  const opts = { pairs: DEFAULT_PAIRS, out: null, dryRun: false };
+  const opts = { pairs: DEFAULT_PAIRS, out: null, dryRun: false, budgetMs: GEMMA_TIMEOUT_MS };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--dry-run') { opts.dryRun = true; continue; }
-    if (arg === '--pairs' || arg === '--out') {
+    if (arg === '--pairs' || arg === '--out' || arg === '--budget-ms') {
       const value = argv[++i];
       if (value === undefined) throw new Error(`${arg} requires a value`);
       if (arg === '--pairs') {
         const n = Number(value);
         if (!Number.isInteger(n) || n < 1) throw new Error(`--pairs must be a positive integer: ${value}`);
         opts.pairs = n;
+      } else if (arg === '--budget-ms') {
+        const n = Number(value);
+        if (!Number.isInteger(n) || n < 1) throw new Error(`--budget-ms must be a positive integer: ${value}`);
+        opts.budgetMs = n;
       } else {
         opts.out = value;
       }
@@ -563,7 +713,7 @@ async function main(argv = process.argv.slice(2)) {
     args = parseHarnessArgs(argv);
   } catch (err) {
     console.error(`[voice-grounding-harness] ${err.message}`);
-    console.error('Usage: node --env-file=.env.local api/scripts/voice-grounding-harness.js [--days N | --from YYYY-MM-DD [--to YYYY-MM-DD]] [--pairs N] [--out PATH] [--dry-run]');
+    console.error('Usage: node --env-file=.env.local api/scripts/voice-grounding-harness.js [--days N | --from YYYY-MM-DD [--to YYYY-MM-DD]] [--pairs N] [--out PATH] [--budget-ms N] [--dry-run]');
     process.exitCode = 1;
     return;
   }
@@ -574,11 +724,34 @@ async function main(argv = process.argv.slice(2)) {
     return;
   }
 
+  // The output directory is created BEFORE anything is spent. At the default
+  // --pairs 20 a live run is 42 model calls of up to the budget each; losing
+  // all of them to a typo in --out, discovered only at the write, is not a
+  // failure this script gets to have.
+  try {
+    mkdirSync(dirname(args.out), { recursive: true });
+  } catch (err) {
+    console.error(`[voice-grounding-harness] --out ${args.out} is not writable: ${err.message}`);
+    process.exitCode = 1;
+    return;
+  }
+
   // A live run needs the shadow corpus. A DRY RUN does not: with no
   // credentials it still assembles and scores the hostile pair, which is the
   // half that needs no production data — and the floor check below still says
-  // the gate is not met.
-  const bucket = getBucket();
+  // the gate is not met. A MALFORMED credential is the same story: it must not
+  // kill the dry run the header promises works without one.
+  let bucket = null;
+  try {
+    bucket = getBucket();
+  } catch (err) {
+    if (!args.dryRun) {
+      console.error(`[voice-grounding-harness] ${err.message}`);
+      process.exitCode = 1;
+      return;
+    }
+    console.warn(`[voice-grounding-harness] ${err.message} — dry run continues without the corpus`);
+  }
   if (!bucket && !args.dryRun) {
     console.error('[voice-grounding-harness] GCS_CREDENTIALS not set — cannot read the shadow stream');
     process.exitCode = 1;
@@ -587,22 +760,31 @@ async function main(argv = process.argv.slice(2)) {
 
   const dateKeys = dateKeysInRange(args.fromKey, args.toKey);
   let selected = [];
+  let readFailed = false;
   if (bucket) {
     console.log(`\n[voice-grounding-harness] scanning ${dateKeys.length} day(s) of shadow/${STREAM}/ for paired records…`);
-    const { byDay } = await readRange(bucket, dateKeys);
-    const records = dateKeys.flatMap((k) => byDay[k] || []);
-    selected = selectPairs(records, { limit: args.pairs });
-    console.log(`[voice-grounding-harness] ${records.length} record(s) read · ${selected.length} carry both prompts`);
+    let seen = 0;
+    // Streamed and trimmed per day (readRange's `onDay`): only the newest
+    // `--pairs` survive, so a busy range is not held in memory to keep 20.
+    const read = await readRange(bucket, dateKeys, {
+      onDay: (dateKey, records) => {
+        seen += records.length;
+        selected = selectPairs([...selected, ...records], { limit: args.pairs });
+      },
+    });
+    readFailed = read.daysFailed > 0 && read.daysRead === 0;
+    console.log(`[voice-grounding-harness] ${seen} record(s) read · ${selected.length} carry both prompts${read.daysFailed ? ` · ${read.daysFailed} day(s) COULD NOT BE LISTED` : ''}`);
   } else {
-    console.warn('[voice-grounding-harness] GCS_CREDENTIALS not set — dry run continues with the hostile fixture only');
+    console.warn('[voice-grounding-harness] no shadow corpus — the run is the hostile fixture only');
   }
 
   const pairs = [...selected.map(pairFromRecord), buildHostilePair()];
-  console.log(`[voice-grounding-harness] replaying ${pairs.length} pair(s) × 2 prompts${args.dryRun ? ' — DRY RUN, no model called' : ''}…`);
+  console.log(`[voice-grounding-harness] replaying ${pairs.length} pair(s) × 2 prompts${args.dryRun ? ' — DRY RUN, no model called' : ` at ${args.budgetMs}ms`}…`);
 
   const results = await runPairs(pairs, {
     dryRun: args.dryRun,
-    onPair: (pair, r) => console.log(`  ${pair.id}: old ${r.old.timedOut ? 'TIMEOUT' : `${r.old.latencyMs ?? '—'}ms`} · new ${r.new.timedOut ? 'TIMEOUT' : `${r.new.latencyMs ?? '—'}ms`}`),
+    timeoutMs: args.budgetMs,
+    onPair: (pair, r) => console.log(`  ${pair.id}: old ${sideLine(r.old)} · new ${sideLine(r.new)}`),
   });
 
   const report = renderReport({
@@ -612,18 +794,59 @@ async function main(argv = process.argv.slice(2)) {
     range: { fromKey: args.fromKey, toKey: args.toKey },
     generatedAt: new Date().toISOString(),
     pairFloor: args.pairs,
+    budgetMs: args.budgetMs,
   });
-  mkdirSync(dirname(args.out), { recursive: true });
-  writeFileSync(args.out, `${report}\n`, 'utf8');
-  console.log(`\n[voice-grounding-harness] report written to ${args.out}\n`);
+  try {
+    writeFileSync(args.out, `${report}\n`, 'utf8');
+    console.log(`\n[voice-grounding-harness] report written to ${args.out}\n`);
+  } catch (err) {
+    // The replays are spent; the report is the only thing left. Print it
+    // rather than lose it to a write failure.
+    console.error(`[voice-grounding-harness] could not write ${args.out}: ${err.message} — the report follows on stdout\n`);
+    console.log(report);
+    process.exitCode = 1;
+  }
 
+  // Every way this run can fail to be the gate, said out loud and in the exit code.
+  const newSide = summarizeSide(results.map((r) => r.new));
+  if (readFailed) {
+    console.error('[voice-grounding-harness] READ FAILED: no day in the range could be listed — no real pair was selected.');
+    process.exitCode = 1;
+  }
   if (selected.length < args.pairs) {
     console.error(`[voice-grounding-harness] GATE NOT MET: ${selected.length} paired record(s) found, ${args.pairs} required. Leave 'shadow' running longer, or widen --days.`);
     process.exitCode = 1;
   }
+  if (!args.dryRun && newSide.answered === 0) {
+    console.error(`[voice-grounding-harness] GATE NOT MET: not one new-prompt replay was answered (${newSide.timeouts} timed out, ${newSide.errors} rejected). The latency figures are meaningless.`);
+    process.exitCode = 1;
+  } else if (!args.dryRun && newSide.errors > 0) {
+    console.warn(`[voice-grounding-harness] ${newSide.errors} of ${newSide.called} new-prompt replays were REJECTED and are excluded from the latency.`);
+  }
 }
 
-const invokedDirectly = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+/** One pair's console line — a timeout and a rejection are not a latency. */
+function sideLine(side) {
+  if (side.timedOut) return 'TIMEOUT';
+  if (side.error) return `ERROR (${side.error.slice(0, 40)})`;
+  return `${side.latencyMs ?? '—'}ms`;
+}
+
+// realpath BOTH sides: Node realpaths the ESM main module for `import.meta.url`
+// but leaves `process.argv[1]` as the caller spelled it, so any symlinked
+// component — the script, a `~/bin` shim, a repo under a symlinked home,
+// macOS's /tmp → /private/tmp — makes the equality false and the CLI exit 0
+// having silently done nothing. A no-op that looks like a clean run is the
+// worst failure a founder-run gate can have.
+const invokedDirectly = (() => {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return import.meta.url === pathToFileURL(realpathSync(entry)).href;
+  } catch {
+    return import.meta.url === pathToFileURL(entry).href;
+  }
+})();
 if (invokedDirectly) {
   main().catch((err) => {
     console.error('[voice-grounding-harness] fatal:', err);

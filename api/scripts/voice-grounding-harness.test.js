@@ -65,6 +65,15 @@ describe('voice-grounding-harness — replyLintHits', () => {
     expect(replyLintHits(text)).toHaveLength(1);
     expect(replyLintHits(text)).toHaveLength(1);
   });
+
+  it('is CASE-INSENSITIVE — a reply that opens a sentence with the phrase still counts', () => {
+    // Every other fixture happens to match the pattern's own casing, so
+    // dropping the `i` flag left 60/60 green while a reply beginning
+    // "Watching AVGO…" silently stopped counting.
+    expect(replyLintHits('Watching AVGO into the close.')).toEqual(['Watching']);
+    expect(replyLintHits("I'M ROTATING out of CF.")).toEqual(["I'M ROTATING"]);
+    expect(replyLintHits('KEEP AN EYE on the bench.')).toEqual(['KEEP AN EYE']);
+  });
 });
 
 // ==================== the rationale, out of the prompt ====================
@@ -116,6 +125,65 @@ describe('voice-grounding-harness — extractForwardClauses', () => {
     expect(extractForwardClauses('Held the book: CF led its sector and the bench did not outrank it.')).toEqual([]);
   });
 
+  it('catches every marker in the set, not only the three the hostile fixture uses', () => {
+    // Deleting five of the markers left 60/60 green: only `Hypothesis:`,
+    // "I'll" and "if … then" were ever exercised. One row per form.
+    const forward = [
+      'Hypothesis: CF breaks out before the close',
+      "I'll rotate the support slot",
+      "I'd swap AVGO into Core",
+      'I will rotate the support slot',
+      'I would swap AVGO into Core',
+      'We will rotate the support slot',
+      'If AVGO clears its 20-day then I act',
+      'If AVGO clears its 20-day, the slot changes',
+      'I expect AVGO to lead into the close',
+      'The plan is to rotate the support slot',
+      'I plan to rotate the support slot',
+      'I intend to rotate the support slot',
+      'I am going to rotate the support slot',
+      'The book would swap AVGO for NOW',
+      'The next check will reprice the book',
+    ];
+    for (const sentence of forward) {
+      expect(extractForwardClauses(`${sentence}.`), sentence).toEqual([sentence]);
+    }
+  });
+
+  it('does NOT fire on the plain words "ill" and "id" — a false positive is worse than a miss', () => {
+    // The apostrophe used to be optional, so `\bi(?:\'|’)?ll\b` matched "ill".
+    // A false positive inflates the clause set the OLD control column is scored
+    // against too, and tells the founder a historical sentence is a promise.
+    expect(extractForwardClauses('The exit was ill-timed and the book bled into the close.')).toEqual([]);
+    expect(extractForwardClauses('Trade id 4471 was reconciled against the ledger.')).toEqual([]);
+    expect(extractForwardClauses('The fill was ill served by the spread.')).toEqual([]);
+  });
+
+  it('strips the clause\'s terminator, so a short clause can match mid-sentence', () => {
+    // normalizeForEcho keeps `.` (so $145.50 survives), which glued the full
+    // stop to the clause's last word: an exact match then required the reply to
+    // END its sentence at the same word, and for a clause of <= 5 words the
+    // shingle fallback IS the exact check. "I'll rotate." scored ZERO against
+    // a reply that repeated it verbatim and kept going.
+    expect(extractForwardClauses("I'll rotate.")).toEqual(["I'll rotate"]);
+    expect(rationaleForwardEchoes(["I'll rotate."], "I'll rotate the support slot as soon as breadth widens.").hitCount).toBe(1);
+    expect(rationaleForwardEchoes(['I will swap AVGO.'], 'The note says I will swap AVGO into Core at the next check.').hitCount).toBe(1);
+  });
+
+  it('reads a MULTI-LINE rationale whole — the record renders the stored bytes verbatim', () => {
+    const prompt = [
+      'YOUR RECORD',
+      `  Rationale — ${MOTIVE_AGENT}: Held the book into the close.`,
+      "I'll rotate the support slot the moment breadth widens.",
+      '',
+      'CURRENT DIRECTIVE: none filed.',
+    ].join('\n');
+    const [rationale] = extractRecordRationales(prompt);
+    expect(rationale).toContain('Held the book into the close.');
+    expect(rationale).toContain("I'll rotate the support slot");
+    expect(rationaleForwardEchoes([rationale], "I'll rotate the support slot the moment breadth widens.").hitCount).toBe(1);
+  });
+
   it('is empty for a non-string or blank rationale', () => {
     expect(extractForwardClauses(null)).toEqual([]);
     expect(extractForwardClauses('   ')).toEqual([]);
@@ -130,6 +198,18 @@ describe('voice-grounding-harness — normalizeForEcho / shingles', () => {
 
   it('is empty for a non-string', () => {
     expect(normalizeForEcho(undefined)).toBe('');
+  });
+
+  it('strips the emphasis WRAPPER, not just its characters — adjacent emphasis joins', () => {
+    // Deleting the emphasis pass left 60/60 green because the punctuation
+    // flattener turns `**X**` into ` X ` anyway when it stands alone. It
+    // diverges when the emphasis is glued to its neighbours, which is exactly
+    // how the stored rationale writes it.
+    expect(normalizeForEcho('the **bold**text case')).toBe('the boldtext case');
+    expect(normalizeForEcho('rotate **into**Core now')).toBe('rotate intocore now');
+    // Standing alone the flattener would mask the missing strip (`**X**` → ` X `),
+    // which is why the two rows above are glued.
+    expect(normalizeForEcho('rotate **into Core** now')).toBe('rotate into core now');
   });
 
   it('shingles a normalized string into n-word runs', () => {
@@ -187,7 +267,42 @@ describe('voice-grounding-harness — rationaleForwardEchoes (the scored dimensi
 
 describe('voice-grounding-harness — schemaAdherence', () => {
   it('accepts the shape the output format demands', () => {
-    expect(schemaAdherence({ response: 'hi', hasDirective: false })).toEqual({ valid: true, reason: null, missing: [] });
+    expect(schemaAdherence({ _scratchpad: 'read', response: 'hi', hasDirective: false })).toEqual({ valid: true, reason: null, missing: [] });
+  });
+
+  it('requires _scratchpad — both formats say it MUST come first', () => {
+    expect(schemaAdherence({ response: 'hi', hasDirective: false }))
+      .toMatchObject({ valid: false, reason: 'missing_keys', missing: ['_scratchpad'] });
+  });
+
+  it('a reply that CLAIMS a directive and ships none is invalid', () => {
+    expect(schemaAdherence({ _scratchpad: 'r', response: 'Filed it.', hasDirective: true, directive: null }))
+      .toMatchObject({ valid: false, reason: 'hasDirective_without_directive' });
+    expect(schemaAdherence({ _scratchpad: 'r', response: 'Filed it.', hasDirective: true, directive: { text: 'x', expiry: 'end_of_battle' } }).valid).toBe(true);
+  });
+
+  it('on the GROUNDED side a legacy string chip is a regression, not a tolerated shape', () => {
+    const legacy = { _scratchpad: 'r', response: 'Two options.', hasDirective: false, suggestedActions: ['Widen the spread', 'Stay concentrated'] };
+    // §6.2 replaced string chips with `{kind, id|text}`. The old prompt still
+    // asks for strings, so the old side must accept what the new side rejects.
+    expect(schemaAdherence(legacy, { grounded: false }).valid).toBe(true);
+    expect(schemaAdherence(legacy, { grounded: true }))
+      .toMatchObject({ valid: false, reason: 'suggestedActions_legacy_string_chip' });
+  });
+
+  it('a grounded directive chip must name an id; an ask chip must carry text', () => {
+    const g = { grounded: true };
+    expect(schemaAdherence({ _scratchpad: 'r', response: 'x', hasDirective: false, suggestedActions: [{ kind: 'directive' }] }, g))
+      .toMatchObject({ valid: false, reason: 'directive_chip_without_id' });
+    expect(schemaAdherence({ _scratchpad: 'r', response: 'x', hasDirective: false, suggestedActions: [{ kind: 'ask', text: '  ' }] }, g))
+      .toMatchObject({ valid: false, reason: 'ask_chip_without_text' });
+    expect(schemaAdherence({ _scratchpad: 'r', response: 'x', hasDirective: false, suggestedActions: [{ kind: 'nope' }] }, g))
+      .toMatchObject({ valid: false, reason: 'suggestedActions_unknown_kind' });
+    expect(schemaAdherence({ _scratchpad: 'r', response: 'x', hasDirective: false, suggestedActions: 'chips' }, g))
+      .toMatchObject({ valid: false, reason: 'suggestedActions_not_array' });
+    // The shapes the grounded format DOES want.
+    expect(schemaAdherence({ _scratchpad: 'r', response: 'x', hasDirective: false, suggestedActions: [{ kind: 'directive', id: 'DV-02' }, { kind: 'ask', text: 'Why?' }] }, g).valid).toBe(true);
+    expect(schemaAdherence({ _scratchpad: 'r', response: 'x', hasDirective: false, suggestedActions: null }, g).valid).toBe(true);
   });
 
   it('names a tier-4 parse failure with the parser\'s own reason', () => {
@@ -196,9 +311,9 @@ describe('voice-grounding-harness — schemaAdherence', () => {
   });
 
   it('names the missing keys, the empty response, and the wrong type', () => {
-    expect(schemaAdherence({ response: 'hi' })).toMatchObject({ valid: false, reason: 'missing_keys', missing: ['hasDirective'] });
-    expect(schemaAdherence({ response: '   ', hasDirective: false })).toMatchObject({ valid: false, reason: 'empty_response' });
-    expect(schemaAdherence({ response: 'hi', hasDirective: 'yes' })).toMatchObject({ valid: false, reason: 'hasDirective_not_boolean' });
+    expect(schemaAdherence({ _scratchpad: 'r', response: 'hi' })).toMatchObject({ valid: false, reason: 'missing_keys', missing: ['hasDirective'] });
+    expect(schemaAdherence({ _scratchpad: 'r', response: '   ', hasDirective: false })).toMatchObject({ valid: false, reason: 'empty_response' });
+    expect(schemaAdherence({ _scratchpad: 'r', response: 'hi', hasDirective: 'yes' })).toMatchObject({ valid: false, reason: 'hasDirective_not_boolean' });
     expect(schemaAdherence(null)).toMatchObject({ valid: false, reason: 'not_an_object', missing: [...REQUIRED_REPLY_KEYS] });
   });
 
@@ -322,7 +437,7 @@ describe('voice-grounding-harness — scoreSide', () => {
   it('scores a good reply: valid schema, no lint, no echo', () => {
     const side = scoreSide({
       systemPrompt: PROMPT_WITH_HOSTILE,
-      call: { raw: JSON.stringify({ response: 'At the 12:45 check the process held the book.', hasDirective: false }), latencyMs: 3200, timedOut: false },
+      call: { raw: JSON.stringify({ _scratchpad: 'read', response: 'At the 12:45 check the process held the book.', hasDirective: false }), latencyMs: 3200, timedOut: false },
     });
     expect(side.schema.valid).toBe(true);
     expect(side.lintHits).toEqual([]);
@@ -335,7 +450,7 @@ describe('voice-grounding-harness — scoreSide', () => {
   it('scores a bad reply: the lint fires AND the rationale\'s clause is repeated', () => {
     const side = scoreSide({
       systemPrompt: PROMPT_WITH_HOSTILE,
-      call: { raw: JSON.stringify({ response: "I'll rotate the support slot the moment breadth widens.", hasDirective: false }), latencyMs: 4100, timedOut: false },
+      call: { raw: JSON.stringify({ _scratchpad: 'read', response: "I'll rotate the support slot the moment breadth widens.", hasDirective: false }), latencyMs: 4100, timedOut: false },
     });
     expect(side.lintHits).toEqual(["I'll rotate"]);
     expect(side.echoes.hitCount).toBe(1);
@@ -365,7 +480,7 @@ describe('voice-grounding-harness — scoreSide', () => {
     // The old prompt carries no YOUR RECORD, so on its own it would score nothing.
     const own = scoreSide({
       systemPrompt: 'OLD PROMPT, no record block',
-      call: { raw: JSON.stringify({ response: "I'll rotate the support slot the moment breadth widens.", hasDirective: false }), latencyMs: 900, timedOut: false },
+      call: { raw: JSON.stringify({ _scratchpad: 'read', response: "I'll rotate the support slot the moment breadth widens.", hasDirective: false }), latencyMs: 900, timedOut: false },
     });
     expect(own.echoes.clauses).toEqual([]);
     expect(own.echoes.hitCount).toBe(0);
@@ -373,7 +488,7 @@ describe('voice-grounding-harness — scoreSide', () => {
     const controlled = scoreSide({
       systemPrompt: 'OLD PROMPT, no record block',
       rationales: [HOSTILE_RATIONALE],
-      call: { raw: JSON.stringify({ response: "I'll rotate the support slot the moment breadth widens.", hasDirective: false }), latencyMs: 900, timedOut: false },
+      call: { raw: JSON.stringify({ _scratchpad: 'read', response: "I'll rotate the support slot the moment breadth widens.", hasDirective: false }), latencyMs: 900, timedOut: false },
     });
     expect(controlled.echoes.clauses).toHaveLength(3);
     expect(controlled.echoes.hitCount).toBe(1);
@@ -381,7 +496,7 @@ describe('voice-grounding-harness — scoreSide', () => {
 });
 
 describe('voice-grounding-harness — summarizeSide', () => {
-  const good = (ms) => scoreSide({ systemPrompt: PROMPT_WITH_HOSTILE, call: { raw: JSON.stringify({ response: 'held the book', hasDirective: false }), latencyMs: ms, timedOut: false } });
+  const good = (ms) => scoreSide({ systemPrompt: PROMPT_WITH_HOSTILE, call: { raw: JSON.stringify({ _scratchpad: 'read', response: 'held the book', hasDirective: false }), latencyMs: ms, timedOut: false } });
   const bad = () => scoreSide({ systemPrompt: PROMPT_WITH_HOSTILE, call: { raw: 'not json at all', latencyMs: 2500, timedOut: false } });
   const timedOut = () => scoreSide({ systemPrompt: PROMPT_WITH_HOSTILE, call: { raw: null, latencyMs: 19000, timedOut: true, error: 'timeout' } });
 
@@ -401,13 +516,42 @@ describe('voice-grounding-harness — summarizeSide', () => {
   it('counts lint hits and rationale echoes over pairs as well as in total', () => {
     const echoed = scoreSide({
       systemPrompt: PROMPT_WITH_HOSTILE,
-      call: { raw: JSON.stringify({ response: "I'll rotate the support slot the moment breadth widens, and I'm rotating now.", hasDirective: false }), latencyMs: 900, timedOut: false },
+      call: { raw: JSON.stringify({ _scratchpad: 'read', response: "I'll rotate the support slot the moment breadth widens, and I'm rotating now.", hasDirective: false }), latencyMs: 900, timedOut: false },
     });
     const s = summarizeSide([good(1000), echoed]);
     expect(s.lintHits).toBe(2);
     expect(s.pairsWithLintHit).toBe(1);
     expect(s.rationaleEchoes).toBe(1);
     expect(s.pairsWithEcho).toBe(1);
+  });
+
+  it('counts a pair with EXACTLY ONE lint hit — the boundary the fixture never crossed', () => {
+    // `lintHits.length > 0` → `> 1` survived: the only lint-bearing fixture
+    // carried two hits, so "12 hits across 0 pair(s)" was invisible.
+    const one = scoreSide({ systemPrompt: PROMPT_WITH_HOSTILE, call: { raw: JSON.stringify({ _scratchpad: 'r', response: 'Watching AVGO.', hasDirective: false }), latencyMs: 900, timedOut: false } });
+    expect(one.lintHits).toHaveLength(1);
+    const s = summarizeSide([one]);
+    expect(s.lintHits).toBe(1);
+    expect(s.pairsWithLintHit).toBe(1);
+  });
+
+  it('counts a pair with EXACTLY ONE rationale echo', () => {
+    const one = scoreSide({ systemPrompt: PROMPT_WITH_HOSTILE, call: { raw: JSON.stringify({ _scratchpad: 'r', response: 'Hypothesis: CF breaks out above its 2x ATR line before the close and banks the bonus tier.', hasDirective: false }), latencyMs: 900, timedOut: false } });
+    expect(one.echoes.hitCount).toBe(1);
+    const s = summarizeSide([one]);
+    expect(s.rationaleEchoes).toBe(1);
+    expect(s.pairsWithEcho).toBe(1);
+  });
+
+  it('a DRY RUN still counts lint hits and echoes — they are its only two numbers', () => {
+    // `list.reduce` → `called.reduce` survived: in a dry run every side is
+    // skipped, so the two numbers a dry run exists to produce would silently
+    // read 0 for every run.
+    const skipped = scoreSide({ systemPrompt: PROMPT_WITH_HOSTILE, call: { skipped: true, text: "I'm rotating out of CF, watching AVGO." } });
+    const s = summarizeSide([skipped]);
+    expect(s.called).toBe(0);
+    expect(s.lintHits).toBe(2);
+    expect(s.pairsWithLintHit).toBe(1);
   });
 
   it('a dry run reports zero called and a null rate rather than a divide by zero', () => {
@@ -427,13 +571,13 @@ describe('voice-grounding-harness — summarizeSide', () => {
 
 describe('voice-grounding-harness — replay / runPairs', () => {
   it('replay sends the shipped request shape and times the call', async () => {
-    const call = vi.fn(async () => '{"response":"ok","hasDirective":false}');
+    const call = vi.fn(async () => '{"_scratchpad":"r","response":"ok","hasDirective":false}');
     const out = await replay({ systemPrompt: 'SP', conversationHistory: [{ role: 'user', content: 'x' }], userMessage: 'hi', call });
     expect(call).toHaveBeenCalledTimes(1);
     const args = call.mock.calls[0][0];
     expect(args).toMatchObject({ systemPrompt: 'SP', userMessage: 'hi', conversationHistory: [{ role: 'user', content: 'x' }] });
     expect(args.signal).toBeInstanceOf(AbortSignal);
-    expect(out).toMatchObject({ raw: '{"response":"ok","hasDirective":false}', timedOut: false, error: null });
+    expect(out).toMatchObject({ raw: '{"_scratchpad":"r","response":"ok","hasDirective":false}', timedOut: false, error: null });
     expect(typeof out.latencyMs).toBe('number');
   });
 
@@ -453,14 +597,14 @@ describe('voice-grounding-harness — replay / runPairs', () => {
   it('replay arms the SHIPPED per-call budget by default', async () => {
     // The default is imported from the handler, never restated here.
     expect(GEMMA_TIMEOUT_MS).toBeGreaterThan(0);
-    const call = vi.fn(async ({ signal }) => { expect(signal.aborted).toBe(false); return '{"response":"ok","hasDirective":false}'; });
+    const call = vi.fn(async ({ signal }) => { expect(signal.aborted).toBe(false); return '{"_scratchpad":"r","response":"ok","hasDirective":false}'; });
     await replay({ systemPrompt: 'SP', conversationHistory: [], userMessage: 'hi', call });
     expect(call).toHaveBeenCalled();
   });
 
   it('runPairs replays BOTH prompts per pair, old then new', async () => {
     const seen = [];
-    const call = vi.fn(async ({ systemPrompt }) => { seen.push(systemPrompt); return '{"response":"ok","hasDirective":false}'; });
+    const call = vi.fn(async ({ systemPrompt }) => { seen.push(systemPrompt); return '{"_scratchpad":"r","response":"ok","hasDirective":false}'; });
     const pairs = [pairFromRecord(shadowRecord(), 0)];
     const results = await runPairs(pairs, { call });
     expect(seen).toEqual(['OLD PROMPT', 'NEW PROMPT']);
@@ -470,7 +614,7 @@ describe('voice-grounding-harness — replay / runPairs', () => {
 
   it('runPairs scores both sides against the GROUNDED prompt\'s clauses', async () => {
     const record = shadowRecord({ systemPromptNew: `YOUR RECORD\n  Rationale — ${MOTIVE_AGENT}: ${HOSTILE_RATIONALE}` });
-    const call = async () => JSON.stringify({ response: "I'll rotate the support slot the moment breadth widens.", hasDirective: false });
+    const call = async () => JSON.stringify({ _scratchpad: 'read', response: "I'll rotate the support slot the moment breadth widens.", hasDirective: false });
     const [result] = await runPairs([pairFromRecord(record, 0)], { call });
     // The old prompt carries no record block; without the shared clause set its
     // column would be vacuous. Same clauses → a real control.
@@ -480,26 +624,162 @@ describe('voice-grounding-harness — replay / runPairs', () => {
     expect(result.new.echoes.hitCount).toBe(1);
   });
 
-  it('--dry-run calls NO model and scores the persisted reply instead', async () => {
+  it('--dry-run calls NO model and scores the persisted reply in the column that PRODUCED it', async () => {
     const call = vi.fn();
+    // voiceGroundingMode 'shadow' → chat.js sent the OLD prompt, so the
+    // persisted reply is the old side's. Scoring it as both columns (the first
+    // cut did) printed identical replies and identical lint counts and called
+    // one of them the grounded prompt's.
     const pairs = [pairFromRecord(shadowRecord({ agentMessage: "I'm rotating out of CF." }), 0)];
+    expect(pairs[0].persistedReplySide).toBe('old');
     const results = await runPairs(pairs, { dryRun: true, call });
     expect(call).not.toHaveBeenCalled();
+    expect(results[0].old.skipped).toBe(true);
     expect(results[0].new.skipped).toBe(true);
-    expect(results[0].new.lintHits).toEqual(["I'm rotating"]);
+    expect(results[0].old.lintHits).toEqual(["I'm rotating"]);
+    expect(results[0].new.lintHits).toEqual([]);   // the grounded prompt produced nothing
+    expect(results[0].new.reply).toBe('');
     expect(results[0].new.latencyMs).toBeNull();
+  });
+
+  it("--dry-run attributes a canary/'on' record's reply to the GROUNDED column", async () => {
+    const pairs = [pairFromRecord(shadowRecord({ voiceGroundingMode: 'on', agentMessage: 'watching AVGO' }), 0)];
+    expect(pairs[0].persistedReplySide).toBe('new');
+    const results = await runPairs(pairs, { dryRun: true, call: vi.fn() });
+    expect(results[0].new.lintHits).toEqual(['watching']);
+    expect(results[0].old.lintHits).toEqual([]);
+  });
+
+  it('--dry-run does not double-count a production timeout across both columns', async () => {
+    const pairs = [pairFromRecord(shadowRecord({ turnError: true, errorReason: 'gemma_timeout' }), 0)];
+    const results = await runPairs(pairs, { dryRun: true, call: vi.fn() });
+    expect(results[0].old.timedOut).toBe(true);
+    expect(results[0].new.timedOut).toBe(false);
   });
 });
 
 // ==================== the report ====================
 
+describe('voice-grounding-harness — a REJECTED replay is not a latency sample (lens 2, P1)', () => {
+  const rejected = (ms) => scoreSide({
+    systemPrompt: PROMPT_WITH_HOSTILE,
+    call: { raw: null, latencyMs: ms, timedOut: false, error: 'OpenRouter 429: rate limited' },
+  });
+  const answered = (ms) => scoreSide({
+    systemPrompt: PROMPT_WITH_HOSTILE,
+    call: { raw: JSON.stringify({ _scratchpad: 'read', response: 'held the book', hasDirective: false }), latencyMs: ms, timedOut: false },
+  });
+
+  it('a run where EVERY call was rejected reports no latency at all — not a fast one', () => {
+    // The defect this row exists for: a rejection carries a latencyMs (the time
+    // to the rejection, ~120ms) and timedOut:false, so counting it produced a
+    // believable 11x latency "win" on a run in which nothing was answered.
+    const s = summarizeSide([rejected(120), rejected(121), rejected(119)]);
+    expect(s.called).toBe(3);
+    expect(s.answered).toBe(0);
+    expect(s.latency).toEqual({ samples: 0, p50: null, p95: null, max: null });
+    expect(s.errors).toBe(3);
+    expect(s.errorRate).toBe(1);
+  });
+
+  it('a rejection mixed into a real run moves neither the p50 nor the max', () => {
+    const clean = summarizeSide([answered(2000), answered(4000)]);
+    const withRejection = summarizeSide([answered(2000), answered(4000), rejected(80)]);
+    expect(withRejection.latency).toEqual(clean.latency);
+    expect(withRejection.latency.p50).toBe(3000);
+    expect(withRejection.errors).toBe(1);
+    expect(withRejection.answered).toBe(2);
+    expect(withRejection.called).toBe(3);
+  });
+
+  it('a timeout counts as a timeout and NOT as an error — two different rows', () => {
+    const timedOut = scoreSide({ systemPrompt: PROMPT_WITH_HOSTILE, call: { raw: null, latencyMs: 19000, timedOut: true, error: 'timeout' } });
+    const s = summarizeSide([answered(2000), timedOut, rejected(80)]);
+    expect(s.timeouts).toBe(1);
+    expect(s.errors).toBe(1);
+    expect(s.answered).toBe(1);
+    expect(s.latency.samples).toBe(1);
+  });
+
+  it('the report carries the ANSWERED and transport-error rows beside the latency', async () => {
+    const pairs = [buildHostilePair()];
+    const call = async () => { throw new Error('OpenRouter 429: rate limited'); };
+    const results = await runPairs(pairs, { call });
+    const report = renderReport({ pairs, results, dryRun: false, range: { fromKey: '2026-09-01', toKey: '2026-09-08' }, generatedAt: NOW.toISOString() });
+    expect(report).toContain('| Replays ANSWERED | 0 | 0 |');
+    expect(report).toContain('| Transport errors | 1 (100.0%) | 1 (100.0%) |');
+    expect(report).toContain('| Latency p50 | — | — |');
+  });
+});
+
+describe('voice-grounding-harness — the budget is the nominal one, and says so (lens 2, #7)', () => {
+  it('--budget-ms overrides the shipped default and is what replay arms', async () => {
+    expect(parseHarnessArgs(['--budget-ms', '14000'], NOW).budgetMs).toBe(14000);
+    expect(parseHarnessArgs([], NOW).budgetMs).toBe(GEMMA_TIMEOUT_MS);
+    expect(() => parseHarnessArgs(['--budget-ms', '0'], NOW)).toThrow(/positive integer/);
+    expect(() => parseHarnessArgs(['--budget-ms'], NOW)).toThrow(/requires a value/);
+
+    let aborted = null;
+    const call = vi.fn(async ({ signal }) => {
+      aborted = await new Promise((resolve) => { signal.addEventListener('abort', () => resolve(true), { once: true }); setTimeout(() => resolve(false), 30); });
+      if (aborted) { const e = new Error('aborted'); e.name = 'AbortError'; throw e; }
+      return '{"_scratchpad":"r","response":"ok","hasDirective":false}';
+    });
+    const out = await replay({ systemPrompt: 'SP', conversationHistory: [], userMessage: 'hi', timeoutMs: 5, call });
+    expect(out.timedOut).toBe(true);
+  });
+
+  it('the report prints the budget it used and states that production clamps below it', async () => {
+    const pairs = [buildHostilePair()];
+    const results = await runPairs(pairs, { dryRun: true });
+    const dflt = renderReport({ pairs, results, dryRun: true, range: { fromKey: '2026-09-01', toKey: '2026-09-08' }, generatedAt: NOW.toISOString() });
+    expect(dflt).toContain(`${GEMMA_TIMEOUT_MS} ms`);
+    expect(dflt).toContain('Production CLAMPS this');
+    expect(dflt).toContain('optimistic lower bound');
+
+    const custom = renderReport({ pairs, results, dryRun: true, range: { fromKey: '2026-09-01', toKey: '2026-09-08' }, generatedAt: NOW.toISOString(), budgetMs: 14000 });
+    expect(custom).toContain('14000 ms (`--budget-ms`');
+    expect(custom).toContain(`the shipped nominal is ${GEMMA_TIMEOUT_MS} ms`);
+  });
+
+  it('runPairs hands the budget to every replay', async () => {
+    const budgets = [];
+    const call = vi.fn(async () => '{"_scratchpad":"r","response":"ok","hasDirective":false}');
+    const originalSetTimeout = globalThis.setTimeout;
+    vi.spyOn(globalThis, 'setTimeout').mockImplementation((fn, ms, ...rest) => { budgets.push(ms); return originalSetTimeout(fn, ms, ...rest); });
+    await runPairs([pairFromRecord(shadowRecord(), 0)], { call, timeoutMs: 1234 });
+    vi.restoreAllMocks();
+    expect(budgets.filter((b) => b === 1234)).toHaveLength(2); // old side and new side
+  });
+});
+
 describe('voice-grounding-harness — renderReport', () => {
   async function build({ dryRun = false, reply = 'At the 12:45 check the process held the book.' } = {}) {
     const pairs = [pairFromRecord(shadowRecord({ agentMessage: reply }), 0), buildHostilePair()];
-    const call = async () => JSON.stringify({ response: reply, hasDirective: false });
+    const call = async () => JSON.stringify({ _scratchpad: 'read', response: reply, hasDirective: false });
     const results = await runPairs(pairs, { dryRun, call });
     return renderReport({ pairs, results, dryRun, range: { fromKey: '2026-09-01', toKey: '2026-09-08' }, generatedAt: NOW.toISOString(), pairFloor: 20 });
   }
+
+  it('puts the OLD prompt\'s numbers in the old column and the NEW prompt\'s in the new', async () => {
+    // Swapping oldSummary/newSummary in renderReport survived: the rows only
+    // asserted that the labels exist. The gate's decision table could print the
+    // shipped prompt's latency under "New prompt (grounded)".
+    const pairs = [pairFromRecord(shadowRecord(), 0)];
+    // The old side answers in 0ms-ish and is valid; the new side is REJECTED,
+    // so the two columns cannot be confused for one another.
+    const call = async ({ systemPrompt }) => {
+      if (systemPrompt === 'NEW PROMPT') throw new Error('OpenRouter 429: rate limited');
+      return JSON.stringify({ _scratchpad: 'r', response: 'held the book', hasDirective: false });
+    };
+    const results = await runPairs(pairs, { call });
+    const report = renderReport({ pairs, results, dryRun: false, range: { fromKey: '2026-09-01', toKey: '2026-09-08' }, generatedAt: NOW.toISOString() });
+    const row = (label) => report.split('\n').find((l) => l.startsWith(`| ${label} |`)).split('|').map((c) => c.trim());
+    expect(row('Replays ANSWERED')).toEqual(['', 'Replays ANSWERED', '1', '0', '']);
+    expect(row('Transport errors')).toEqual(['', 'Transport errors', '0 (0.0%)', '1 (100.0%)', '']);
+    expect(row('Schema adherence')[2]).toBe('1/1 (100.0%)');
+    expect(row('Schema adherence')[3]).toBe('0/0 (—)');
+  });
 
   it('leads with the gate\'s numbers for both prompts', async () => {
     const report = await build();

@@ -45,6 +45,7 @@
 
 import { Storage } from '@google-cloud/storage';
 import { pathToFileURL } from 'node:url';
+import { realpathSync } from 'node:fs';
 // The one quantile implementation in the tree (linear interpolation, pure,
 // null on an empty sample). Imported, never copied.
 import { quantile } from '../_utils/learning/measureCorpus.js';
@@ -73,11 +74,21 @@ export function isDateKey(value) {
   return Number.isFinite(ms) && utcDateKey(ms) === value;
 }
 
-/** `daysAgo` days before `now`, as a UTC date key. */
+/**
+ * `daysAgo` days before `now`, as a UTC date key.
+ *
+ * EPOCH arithmetic over the UTC day key, not `Date` mutation. `setUTCDate`
+ * would be correct too — but `setDate`/`getDate` is one keystroke away and
+ * behaves IDENTICALLY on a UTC machine, so a local-time slip is invisible to
+ * every test a UTC CI runner can run, and shows up only as a silent off-by-one
+ * DAY on a founder's laptop across a DST boundary. Removing the mutable-Date
+ * step removes the mutation class rather than trying to guard it, and it is the
+ * same `+= 86_400_000` walk `dateKeysInRange` already uses (BUILD_RULES §9 —
+ * one way to move a day, not two).
+ */
 export function dateKeyForOffset(daysAgo, now = new Date()) {
-  const d = new Date(now);
-  d.setUTCDate(d.getUTCDate() - daysAgo);
-  return utcDateKey(d);
+  const startOfDayUtc = Date.parse(`${utcDateKey(now)}T00:00:00.000Z`);
+  return utcDateKey(startOfDayUtc - daysAgo * 86_400_000);
 }
 
 /** Every UTC date key from `fromKey` to `toKey` inclusive, ascending. Empty when reversed. */
@@ -143,6 +154,28 @@ export function isTurnError(record) {
   return record?.turnError === true;
 }
 
+/**
+ * IS THIS A VOICE TURN? The `conversations` stream has FOUR writers, not one:
+ * api/agent/chat.js (the battle voice turn — three call sites) plus
+ * api/forge/watchlist-analysis.js (`gameMode:'set_analysis'`),
+ * api/forge/workshop-chat.js (`'workshop'`, two sites) and
+ * api/screener/chat.js (`'research'`). The other three stamp no
+ * `gemmaLatencyMs`, so they never moved a percentile — but they landed in
+ * `records`, in `turnErrors`, and in the DENOMINATOR of `timeoutRate`, which
+ * is the headline number the timeout change is judged on. A day with 20 voice
+ * turns (2 timed out) and 85 workshop/research turns reported 1.9% where the
+ * truth was 10.0%, and the error grows silently with unrelated product traffic.
+ *
+ * The discriminator is `battleId`: chat.js is the only writer that sets a real
+ * one; the other three hard-code `battleId: null`
+ * (watchlist-analysis.js:573, workshop-chat.js:447/593, screener/chat.js:401).
+ * Everything the excluded records would have contributed is reported as
+ * `otherStreamRecords` rather than dropped in silence.
+ */
+export function isVoiceTurnRecord(record) {
+  return typeof record?.battleId === 'string' && record.battleId.length > 0;
+}
+
 /** The abort turn — the 504, `errorReason: 'gemma_timeout'`. */
 export function isTimeout(record) {
   return record?.errorReason === TIMEOUT_ERROR_REASON;
@@ -168,11 +201,22 @@ export function latencyPercentiles(values) {
 }
 
 /**
- * One bucket's summary. `all` spans every record carrying a latency; `ok`
- * excludes the errored turns (a timeout's latency is the abort budget).
+ * One bucket's summary, over the VOICE TURNS only (isVoiceTurnRecord).
+ *
+ * `all` spans every voice turn carrying a latency. `answered` excludes ONLY the
+ * aborts: a timed-out turn's `gemmaLatencyMs` is the abort budget, not a
+ * response time. It deliberately KEEPS the other errored turns — chat.js files
+ * `turnError: true` on the parse-failure path (the model answered in full, just
+ * not in JSON: chat.js:592-613) and on the catch path for a throw AFTER a
+ * successful call (`handler_exception`, chat.js:879-901), and both of those
+ * ARE the model's own response time, typically the slow tail. Excluding them
+ * (the first cut of this file did) read p95 3,760 ms where the truth was
+ * ~11,750 ms — and this is the baseline gate 1's harness is compared against,
+ * so the whole comparison would inherit the error.
  */
 export function summarize(records) {
-  const list = Array.isArray(records) ? records.filter((r) => r && typeof r === 'object') : [];
+  const raw = Array.isArray(records) ? records.filter((r) => r && typeof r === 'object') : [];
+  const list = raw.filter(isVoiceTurnRecord);
   const all = [];
   const ok = [];
   let timeouts = 0;
@@ -183,16 +227,47 @@ export function summarize(records) {
     const ms = latencyOf(record);
     if (ms === null) continue;
     all.push(ms);
-    if (!isTurnError(record)) ok.push(ms);
+    if (!isTimeout(record)) ok.push(ms);
   }
   return {
     records: list.length,
+    otherStreamRecords: raw.length - list.length,
     withLatency: all.length,
     all: latencyPercentiles(all),
     ok: latencyPercentiles(ok),
     timeouts,
     timeoutRate: list.length ? timeouts / list.length : null,
     turnErrors,
+    // The raw millisecond samples, kept so the OVERALL row can be recomputed
+    // from the per-day summaries instead of from a second pass over every
+    // record — numbers, not the ~52 KB records they came from.
+    samples: { all, ok },
+  };
+}
+
+/** The header the `ok` column carries, so its meaning cannot drift from its label. */
+export const ANSWERED_LABEL = 'latency(answered)';
+
+/**
+ * The OVERALL row, from the per-day summaries. Percentiles are recomputed over
+ * the pooled samples — never averaged, which is not what a percentile is.
+ */
+export function mergeSummaries(summaries) {
+  const list = (Array.isArray(summaries) ? summaries : []).filter(Boolean);
+  const all = list.flatMap((s) => s.samples?.all || []);
+  const ok = list.flatMap((s) => s.samples?.ok || []);
+  const records = list.reduce((n, s) => n + s.records, 0);
+  const timeouts = list.reduce((n, s) => n + s.timeouts, 0);
+  return {
+    records,
+    otherStreamRecords: list.reduce((n, s) => n + (s.otherStreamRecords || 0), 0),
+    withLatency: all.length,
+    all: latencyPercentiles(all),
+    ok: latencyPercentiles(ok),
+    timeouts,
+    timeoutRate: records ? timeouts / records : null,
+    turnErrors: list.reduce((n, s) => n + s.turnErrors, 0),
+    samples: { all, ok },
   };
 }
 
@@ -204,8 +279,7 @@ export function summarize(records) {
 export function summarizeByDay(byDay, dateKeys) {
   const keys = Array.isArray(dateKeys) ? dateKeys : Object.keys(byDay || {}).sort();
   const perDay = keys.map((dateKey) => ({ dateKey, ...summarize(byDay?.[dateKey] || []) }));
-  const overall = summarize(keys.flatMap((k) => byDay?.[k] || []));
-  return { perDay, overall };
+  return { perDay, overall: mergeSummaries(perDay) };
 }
 
 // ==================== PURE — the report ====================
@@ -214,42 +288,67 @@ const cell = (v, suffix = '') => (v === null || v === undefined ? '—' : `${v}$
 const pct = (rate) => (rate === null || rate === undefined ? '—' : `${(rate * 100).toFixed(1)}%`);
 
 /** The console table. `formatReport(summarizeByDay(...))`. */
-export function formatReport({ perDay, overall, fromKey, toKey }) {
+export function formatReport({ perDay, overall, fromKey, toKey, read = null }) {
   const lines = [];
   lines.push(`gemma_latency — shadow/${STREAM}/ ${fromKey} → ${toKey} (UTC date keys)`);
   lines.push('');
-  lines.push('  day          records  latency(all)  p50     p95     max     latency(ok)  p50     p95     max     timeouts');
+  lines.push(`  day          turns  latency(all)  p50     p95     max     ${ANSWERED_LABEL}  p50     p95     max     timeouts`);
   const row = (label, s) => {
     lines.push([
       `  ${label.padEnd(11)}`,
-      String(s.records).padStart(7),
+      String(s.records).padStart(5),
       String(s.all.samples).padStart(14),
       cell(s.all.p50).padStart(7),
       cell(s.all.p95).padStart(7),
       cell(s.all.max).padStart(7),
-      String(s.ok.samples).padStart(13),
+      String(s.ok.samples).padStart(ANSWERED_LABEL.length + 2),
       cell(s.ok.p50).padStart(7),
       cell(s.ok.p95).padStart(7),
       cell(s.ok.max).padStart(7),
       `${String(s.timeouts).padStart(9)} (${pct(s.timeoutRate)})`,
     ].join(''));
   };
+  // Each row is rendered from its OWN summary; `perDay.map` rather than a loop
+  // that could reach for `overall` by accident.
   for (const day of perDay) row(day.dateKey, day);
   lines.push('');
   row('OVERALL', overall);
   lines.push('');
-  lines.push('  latency(all) = every record carrying gemmaLatencyMs, timed-out turns included.');
-  lines.push('  latency(ok)  = the turns that did not error — the model\'s own response time.');
+  lines.push('  turns        = the battle voice turns (api/agent/chat.js). The `conversations` stream also');
+  lines.push('                 carries workshop / research / set-analysis turns from three other endpoints;');
+  lines.push(`                 ${overall.otherStreamRecords ?? 0} such record(s) in this range are excluded from every figure above.`);
+  lines.push('  latency(all) = every voice turn carrying gemmaLatencyMs, timed-out turns included.');
+  lines.push(`  ${ANSWERED_LABEL} = the turns the model actually answered — aborts excluded, parse failures and`);
+  lines.push('                 post-call exceptions KEPT, because those are response times too (and the slow tail).');
   lines.push('  Milliseconds. Percentiles are linear-interpolation quantiles (measureCorpus.js).');
+  if (read) {
+    lines.push('');
+    lines.push(`  ${read.filesRead} file(s) read${read.filesFailed ? `, ${read.filesFailed} FAILED to download` : ''}.`);
+    if (read.daysFailed) {
+      lines.push(`  ${read.daysFailed} of ${read.daysFailed + read.daysRead} day(s) COULD NOT BE LISTED — their rows above are a read failure, not an absence of traffic.`);
+    }
+  }
   return lines.join('\n');
 }
 
 // ==================== IMPURE — the read ====================
 
+/**
+ * The bucket, or null when GCS_CREDENTIALS is unset. A credential that is SET
+ * but not parseable throws with a sentence rather than a raw SyntaxError stack
+ * — "unset" and "malformed" are different operator problems and must not look
+ * the same.
+ */
 export function getBucket() {
   const creds = process.env.GCS_CREDENTIALS;
   if (!creds) return null;
-  const storage = new Storage({ projectId: PROJECT_ID, credentials: JSON.parse(creds) });
+  let credentials;
+  try {
+    credentials = JSON.parse(creds);
+  } catch {
+    throw new Error('GCS_CREDENTIALS is set but is not valid JSON — it must be the JSON-stringified service account (same as shadowLogger.js)');
+  }
+  const storage = new Storage({ projectId: PROJECT_ID, credentials });
   return storage.bucket(BUCKET_NAME);
 }
 
@@ -269,30 +368,53 @@ export async function downloadJsonl(file) {
   }).filter(Boolean);
 }
 
-/** Read every record in the range, keyed by UTC day. Per-day read failures are reported, never fatal. */
-export async function readRange(bucket, dateKeys, { stream = STREAM, onProgress } = {}) {
+/**
+ * Read every record in the range, keyed by UTC day. A per-day listing failure
+ * and a per-file download failure are both isolated — the other days and files
+ * still produce their rows — but they are COUNTED and returned, because a read
+ * where every day failed is otherwise byte-identical to a range with no
+ * traffic: all zeros, and the p50 this script exists to produce silently
+ * absent rather than flagged.
+ *
+ * `onDay(dateKey, records)` streams each day out as it lands. When supplied,
+ * the records are NOT retained — a paired shadow record carries both assembled
+ * prompts (~52 KB), so a busy week is a gigabyte held to keep a summary.
+ *
+ * @returns {{byDay:object, filesRead:number, filesFailed:number, daysFailed:number, daysRead:number}}
+ */
+export async function readRange(bucket, dateKeys, { stream = STREAM, onProgress, onDay } = {}) {
   const byDay = {};
   let filesRead = 0;
+  let filesFailed = 0;
+  let daysFailed = 0;
   for (const dateKey of dateKeys) {
-    byDay[dateKey] = [];
+    const dayRecords = [];
+    if (!onDay) byDay[dateKey] = dayRecords;
     let files;
     try {
       files = await listDayFiles(bucket, dateKey, stream);
     } catch (err) {
+      daysFailed++;
       console.error(`[gemma-latency-report] list ${stream}/${dateKey} failed: ${err.message}`);
+      if (onDay) onDay(dateKey, dayRecords);
       continue;
     }
     for (const file of files) {
-      filesRead++;
       try {
-        byDay[dateKey].push(...await downloadJsonl(file));
+        const records = await downloadJsonl(file);
+        // Counted AFTER the await: a file that failed to download was attempted,
+        // not read, and `filesRead` is what a reader checks coverage against.
+        filesRead++;
+        dayRecords.push(...records);
       } catch (err) {
+        filesFailed++;
         console.error(`[gemma-latency-report] download ${file.name} failed: ${err.message}`);
       }
     }
-    if (onProgress) onProgress(dateKey, byDay[dateKey].length);
+    if (onDay) onDay(dateKey, dayRecords);
+    if (onProgress) onProgress(dateKey, dayRecords.length);
   }
-  return { byDay, filesRead };
+  return { byDay, filesRead, filesFailed, daysFailed, daysRead: dateKeys.length - daysFailed };
 }
 
 async function main(argv = process.argv.slice(2)) {
@@ -306,7 +428,16 @@ async function main(argv = process.argv.slice(2)) {
     return;
   }
 
-  const bucket = getBucket();
+  let bucket;
+  try {
+    bucket = getBucket();
+  } catch (err) {
+    // A malformed credential is an operator problem with a fix; it gets the
+    // sentence, not a stack.
+    console.error(`[gemma-latency-report] ${err.message}`);
+    process.exitCode = 1;
+    return;
+  }
   if (!bucket) {
     console.error('[gemma-latency-report] GCS_CREDENTIALS not set — cannot read the shadow stream');
     process.exitCode = 1;
@@ -317,20 +448,56 @@ async function main(argv = process.argv.slice(2)) {
   if (!args.json) {
     console.log(`\n[gemma-latency-report] reading ${dateKeys.length} day(s) from gs://${BUCKET_NAME}/shadow/${STREAM}/\n`);
   }
-  const { byDay, filesRead } = await readRange(bucket, dateKeys);
-  const { perDay, overall } = summarizeByDay(byDay, dateKeys);
+  // Streamed: each day is summarized and released rather than held to the end
+  // of the range (readRange's `onDay` contract).
+  const perDay = [];
+  const read = await readRange(bucket, dateKeys, {
+    onDay: (dateKey, records) => perDay.push({ dateKey, ...summarize(records) }),
+  });
+  const overall = mergeSummaries(perDay);
 
   if (args.json) {
-    console.log(JSON.stringify({ from: args.fromKey, to: args.toKey, filesRead, perDay, overall }, null, 2));
-    return;
+    console.log(JSON.stringify({
+      from: args.fromKey,
+      to: args.toKey,
+      filesRead: read.filesRead,
+      filesFailed: read.filesFailed,
+      daysFailed: read.daysFailed,
+      daysRead: read.daysRead,
+      perDay,
+      overall,
+    }, null, 2));
+  } else {
+    console.log(formatReport({ perDay, overall, fromKey: args.fromKey, toKey: args.toKey, read }));
+    console.log('');
   }
-  console.log(formatReport({ perDay, overall, fromKey: args.fromKey, toKey: args.toKey }));
-  console.log(`\n  ${filesRead} file(s) read.\n`);
+
+  // A read where EVERY day failed is not a completed read. Zeros that came
+  // from a broken credential must not exit 0 beside zeros that came from a
+  // quiet week — a consumer redirecting --json to a file sees only the numbers.
+  if (read.daysFailed > 0 && read.daysRead === 0) {
+    console.error(`[gemma-latency-report] READ FAILED: none of the ${read.daysFailed} day(s) could be listed. The figures above are empty because nothing was read.`);
+    process.exitCode = 1;
+  }
 }
 
 // Only when RUN — importing this module (the unit test, the paired harness)
 // must never start a read.
-const invokedDirectly = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+// realpath BOTH sides: Node realpaths the ESM main module for `import.meta.url`
+// but leaves `process.argv[1]` as the caller spelled it, so any symlinked
+// component — the script, a `~/bin` shim, a repo under a symlinked home,
+// macOS's /tmp → /private/tmp — makes the equality false and the CLI exit 0
+// having silently done nothing. A no-op that looks like a clean run is the
+// worst failure a founder-run gate can have.
+const invokedDirectly = (() => {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return import.meta.url === pathToFileURL(realpathSync(entry)).href;
+  } catch {
+    return import.meta.url === pathToFileURL(entry).href;
+  }
+})();
 if (invokedDirectly) {
   main().catch((err) => {
     console.error('[gemma-latency-report] fatal:', err);
