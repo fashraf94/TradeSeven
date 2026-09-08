@@ -3294,6 +3294,12 @@ RIGHT NOW you have JUST been deployed — a new battle was created moments ago a
   if (deployedPortfolio) blocks.push(deployedPortfolio); // Block 3.6 (MIDDLE)
   if (planAtDeploy) blocks.push(planAtDeploy);           // Block 3.7 (grounded only)
 
+  // Under the flag the cache blocks render under the ONE heading (§3.3 / §3.5:
+  // the fundamentals line lives "under CURRENT CONTEXT only") and the
+  // DATA_CONFIDENCE_RULE carries the vintage sentence — the battle assembly's
+  // rule, applied here too (review R-15). Off: the shipped blocks, byte for byte.
+  const hasContextBlocks = Boolean(portfolioBriefs || benchBriefs || scoutAlerts || marketContext);
+  if (grounded && hasContextBlocks) blocks.push(CURRENT_CONTEXT_HEADING);
   if (portfolioBriefs) blocks.push(portfolioBriefs);
   if (benchBriefs) blocks.push(benchBriefs);
   if (scoutAlerts) blocks.push(scoutAlerts);
@@ -3304,7 +3310,7 @@ RIGHT NOW you have JUST been deployed — a new battle was created moments ago a
   const supportedTermsBlock = buildSupportedTermsBlock(supportedTerms);
   if (supportedTermsBlock) blocks.push(supportedTermsBlock);
 
-  if (marketSnapshot) blocks.push(DATA_CONFIDENCE_RULE);
+  if (marketSnapshot) blocks.push(grounded ? `${DATA_CONFIDENCE_RULE}\n${CONTEXT_VINTAGE_SENTENCE}` : DATA_CONFIDENCE_RULE);
 
   blocks.push(
     grounded ? GROUNDED_FIRST_MESSAGE_INSTRUCTIONS : FIRST_MESSAGE_INSTRUCTIONS, // First-message contract (BOTTOM)

@@ -22,6 +22,7 @@ const {
   voiceLayerArgs,
   leagueChatFlag,
   grounding,
+  promptBuilder,
   budget,
 } = vi.hoisted(() => ({
   authReturnValue: { current: { uid: 'test-user' } },
@@ -38,6 +39,9 @@ const {
   // the uids it was asked about are captured (the route must ask for the
   // TOKEN's uid, never the body's).
   grounding: { mode: 'off', calls: [] },
+  // The prompt-builder stub: distinguishable per build (old / new), and a
+  // per-test way to make one side THROW (the shadow-assembly rows).
+  promptBuilder: { throwWhen: null },
   budget: {
     resolveImpl: () => ({ groupId: 'group-xyz', dayN: 1 }),
     readImpl: async () => ({ count: 0, remaining: 10 }),
@@ -78,7 +82,12 @@ vi.mock('../_utils/shadowLogger.js', () => ({
 }));
 
 vi.mock('../_utils/voiceLayerPrompt.js', () => ({
-  buildVoiceLayerPrompt: (args) => { voiceLayerArgs.current.push(args); return 'system-prompt-stub'; },
+  buildVoiceLayerPrompt: (args) => {
+    voiceLayerArgs.current.push(args);
+    if (promptBuilder.throwWhen && promptBuilder.throwWhen(args)) throw new Error(`builder exploded (grounded=${args.grounded})`);
+    // Distinguishable per build, so the shadow record's two prompts are two (review R-06).
+    return `system-prompt-stub:${args.grounded ? 'new' : 'old'}`;
+  },
 }));
 
 // Phase E2 — deterministic ET-clock helpers so the manifest's claim-window /
@@ -143,6 +152,7 @@ vi.mock('firebase-admin/firestore', () => ({
   },
 }));
 
+// Dependency-surface guard (BUILD_RULES §4): this file's import of the module under test is the runtime guard that its api → src imports stay Node-clean. Never mock it.
 const { default: handler, GEMMA_TIMEOUT_MS, TURN_DEADLINE_MS } = await import('./chat.js');
 
 // ==================== Test fixture helpers ====================
@@ -242,6 +252,7 @@ beforeEach(() => {
   leagueChatFlag.on = false;
   grounding.mode = 'off';
   grounding.calls = [];
+  promptBuilder.throwWhen = null;
   budget.resolveImpl = () => ({ groupId: 'group-xyz', dayN: 1 });
   budget.readImpl = async () => ({ count: 0, remaining: 10 });
   budget.chargeImpl = async () => ({ charged: true, remaining: 9, count: 1 });
@@ -983,7 +994,7 @@ describe('agent/chat — voice-layer grounding: the grounded turn (spec §3.4, r
   };
   const exchangeOf = (written) => written.updateCalls.find(c => c.updates?.chatExchanges?.__op === 'arrayUnion').updates.chatExchanges.items[0];
 
-  it("asks the accessor for the TOKEN's uid, at call time", async () => {
+  it("asks the accessor once, with the caller's uid, at call time (the owner check precedes it, so the token's and the owner's uid are one here)", async () => {
     await run(VALID_BATTLE);
     expect(grounding.calls).toEqual(['test-user']);
   });
@@ -1107,6 +1118,16 @@ describe('agent/chat — voice-layer grounding: chips minted by id (spec §6.2 /
     expect(filed.body.currentDirectiveThreadId).toEqual(expect.any(String));
   });
 
+  it("the archetype is the BATTLE's frozen snapshot when it has one — a diversifier snapshot over a momentum_chaser agent doc keeps DV-02 and drops TF-02 (review R-07)", async () => {
+    grounding.mode = 'on';
+    const { res } = await run({ ...VALID_BATTLE, agentContext: { archetype: 'diversifier' } });
+    expect(res.body.suggestedActions).toEqual([
+      { kind: 'directive', id: 'DV-02', text: 'Widen the spread (target more sectors)' },
+      { kind: 'ask', text: 'Why confirmation?' },
+      { kind: 'ask', text: 'Show me the checks' },
+    ]);
+  });
+
   it("'on' with an archetype that has no menu: every directive chip is dropped, the questions stay", async () => {
     grounding.mode = 'on';
     const { res } = await run(VALID_BATTLE, {}, VALID_AGENT); // 'strategist' — no allowlist
@@ -1188,8 +1209,9 @@ describe('agent/chat — voice-layer grounding: the shadow assembly (spec §9, G
     // The record: the mode, both prompts, both windows.
     const record = shadowLogCalls.current[0];
     expect(record.voiceGroundingMode).toBe('shadow');
-    expect(record.systemPromptOld).toBe('system-prompt-stub');
-    expect(record.systemPromptNew).toBe('system-prompt-stub');
+    expect(record.systemPromptOld).toBe('system-prompt-stub:old');
+    expect(record.systemPromptNew).toBe('system-prompt-stub:new');
+    expect(gemmaOpts[0].systemPrompt).toBe('system-prompt-stub:old');
     expect(record.conversationHistoryOld).toEqual(LEGACY_WINDOW);
     expect(record.conversationHistoryNew).toEqual(GROUNDED_WINDOW);
     expect(record.turnError).toBeUndefined();
@@ -1210,9 +1232,43 @@ describe('agent/chat — voice-layer grounding: the shadow assembly (spec §9, G
     expect(gemmaOpts[0].conversationHistory).toEqual(GROUNDED_WINDOW);
     const record = shadowLogCalls.current[0];
     expect(record.voiceGroundingMode).toBe('on');
+    expect(record.systemPromptOld).toBe('system-prompt-stub:old');
+    expect(record.systemPromptNew).toBe('system-prompt-stub:new');
+    expect(gemmaOpts[0].systemPrompt).toBe('system-prompt-stub:new');
     expect(record.conversationHistoryOld).toEqual(LEGACY_WINDOW);
     expect(record.conversationHistoryNew).toEqual(GROUNDED_WINDOW);
     expect(exchangeOf(written).groundingVersion).toBe(1);
+  });
+
+  it("'shadow': a COUNTERPART assembly that throws is recorded and the shipped turn goes on — 200, the old prompt sent (review R-05)", async () => {
+    grounding.mode = 'shadow';
+    promptBuilder.throwWhen = (args) => args.grounded === true;
+    const { res, written } = await run(HISTORY_BATTLE);
+    expect(res.statusCode).toBe(200);
+    expect(gemmaOpts).toHaveLength(1);
+    expect(gemmaOpts[0].systemPrompt).toBe('system-prompt-stub:old');
+    expect('groundingVersion' in exchangeOf(written)).toBe(false);
+    const record = shadowLogCalls.current[0];
+    expect(record.voiceGroundingMode).toBe('shadow');
+    expect(record.systemPromptOld).toBe('system-prompt-stub:old');
+    expect(record.systemPromptNew).toBeNull();
+    expect(record.conversationHistoryNew).toEqual(GROUNDED_WINDOW);
+    expect(record.shadowAssemblyError).toContain('builder exploded (grounded=true)');
+  });
+
+  it("'on': the OLD counterpart throwing is recorded, the grounded turn goes on; the SENT (grounded) prompt throwing still fails the turn", async () => {
+    grounding.mode = 'on';
+    promptBuilder.throwWhen = (args) => args.grounded === false;
+    const { res } = await run(HISTORY_BATTLE);
+    expect(res.statusCode).toBe(200);
+    expect(gemmaOpts[0].systemPrompt).toBe('system-prompt-stub:new');
+    expect(shadowLogCalls.current[0].systemPromptOld).toBeNull();
+    expect(shadowLogCalls.current[0].shadowAssemblyError).toContain('grounded=false');
+    // The sent side is never guarded: a broken grounded prompt must not be silently swapped for the old one.
+    promptBuilder.throwWhen = (args) => args.grounded === true;
+    const { res: failed } = await run(HISTORY_BATTLE);
+    expect(failed.statusCode).toBe(500);
+    expect(gemmaOpts).toHaveLength(0);
   });
 
   it("'off': ONE build, and the record carries none of the five fields — the shipped record, byte for byte", async () => {
@@ -1246,7 +1302,7 @@ describe('agent/chat — voice-layer grounding: the shadow assembly (spec §9, G
     expect(rr.res.statusCode).toBe(502);
     expect(shadowLogCalls.current[0].turnError).toBe(true);
     expect(shadowLogCalls.current[0].voiceGroundingMode).toBe('shadow');
-    expect(shadowLogCalls.current[0].systemPromptNew).toBe('system-prompt-stub');
+    expect(shadowLogCalls.current[0].systemPromptNew).toBe('system-prompt-stub:new');
     expect(shadowLogCalls.current[0].conversationHistoryNew).toEqual(GROUNDED_WINDOW);
     // The catch path (the call threw after the prompts were built).
     shadowLogCalls.current = [];
@@ -1259,7 +1315,7 @@ describe('agent/chat — voice-layer grounding: the shadow assembly (spec §9, G
     expect(rr.res.statusCode).toBe(500);
     expect(shadowLogCalls.current[0].errorReason).toBe('handler_exception');
     expect(shadowLogCalls.current[0].voiceGroundingMode).toBe('shadow');
-    expect(shadowLogCalls.current[0].systemPromptOld).toBe('system-prompt-stub');
+    expect(shadowLogCalls.current[0].systemPromptOld).toBe('system-prompt-stub:old');
     expect(shadowLogCalls.current[0].conversationHistoryOld).toEqual(LEGACY_WINDOW);
   });
 });

@@ -284,6 +284,9 @@ function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSendi
       messageType,
       message._hasUserHalf,
       message._anticipationDirection ?? null,
+      // The exit note's word is for a note produced under the grounding
+      // contract only (review R-02); a legacy exit note wears nothing.
+      message._grounded === true,
     )
     : null;
   return (
@@ -345,21 +348,27 @@ function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSendi
       }}>
         {agentName}
       </div>
-      <div style={{
-        background: '#15171E',
-        borderLeft: `3px solid ${accent}`,
-        borderTop: label ? `1px solid ${accent}` : 'none',
-        borderRadius: '0 12px 12px 12px',
-        padding: '10px 14px',
-        maxWidth: '85%',
-        color: '#FFFFFF',
-        fontSize: 14,
-        lineHeight: '1.5',
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-word',
-      }}>
-        {renderMessageWithEntities(message.text, onSymbolClick, knownTickers)}
-      </div>
+      {/* A chip filing's audit exchange (`directive_filed`) carries no
+          narrator words: the ExecutionCard below is its whole render, so the
+          empty bubble body is skipped — keyed on the persisted type, never on
+          the text being empty (review R-04). */}
+      {message._filed ? null : (
+        <div style={{
+          background: '#15171E',
+          borderLeft: `3px solid ${accent}`,
+          borderTop: label ? `1px solid ${accent}` : 'none',
+          borderRadius: '0 12px 12px 12px',
+          padding: '10px 14px',
+          maxWidth: '85%',
+          color: '#FFFFFF',
+          fontSize: 14,
+          lineHeight: '1.5',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+        }}>
+          {renderMessageWithEntities(message.text, onSymbolClick, knownTickers)}
+        </div>
+      )}
       {/* Voice-layer grounding §6.3 — the code-owned no-change status, from the
           PERSISTED exchange: a grounded turn on which the gate ran and wrote no
           directive. Never from the reply body; never on a legacy exchange. */}
@@ -583,6 +592,14 @@ export default function AgentChat({
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState(null);
+  // Voice-layer grounding §6.3 (review R-18): the thread a chip filing's 200
+  // named, held until the subscribed doc's slot catches up. While it is
+  // pending the belief for a further filing is the server's word (never the
+  // stale prop) and the chips stay hidden, so a second tap cannot re-post the
+  // belief the listener has not delivered yet.
+  const [pendingFiledThreadId, setPendingFiledThreadId] = useState(null);
+  const filingPending = pendingFiledThreadId !== null && currentDirectiveThreadId !== pendingFiledThreadId;
+  const directiveBelief = filingPending ? pendingFiledThreadId : currentDirectiveThreadId;
   const [activeSubTab, setActiveSubTab] = useState('chat');
   const messagesEndRef = useRef(null);
   // A2.3: the scroll area, and where the WHOLE tape was when the player
@@ -993,12 +1010,19 @@ export default function AgentChat({
           'Authorization': `Bearer ${idToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ agentId, battleId, adjustmentId, expectedDirectiveThreadId: currentDirectiveThreadId }),
+        body: JSON.stringify({ agentId, battleId, adjustmentId, expectedDirectiveThreadId: directiveBelief }),
       });
       if (!res.ok) {
         if (res.status === 401) setError('Session expired. Please refresh.');
         else setError(BATTLE_VIEW_COPY.filingFailureLine(res.status));
+        return;
       }
+      // Nothing from the response is RENDERED (the receipt comes from the
+      // exchange the route wrote); the filed thread is only held as the
+      // belief until the listener delivers it.
+      const data = await res.json().catch(() => ({}));
+      const filedThreadId = data?.directive?.directiveThreadId;
+      if (typeof filedThreadId === 'string' && filedThreadId) setPendingFiledThreadId(filedThreadId);
     } catch {
       setError(BATTLE_VIEW_COPY.filingFailed);
     } finally {
@@ -1404,7 +1428,9 @@ export default function AgentChat({
                   agentName={agentName}
                   isLastAgent={item.id === lastAgentId}
                   onActionClick={handleActionClick}
-                  isSending={isSending}
+                  // The chips also stay hidden while a filing's thread is
+                  // pending on the listener (review R-18).
+                  isSending={isSending || filingPending}
                   onSymbolClick={onSymbolClick}
                   knownTickers={knownTickers}
                   receipts={receipts}

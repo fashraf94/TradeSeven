@@ -188,6 +188,10 @@ function detectMode(battle) {
   return isReviewForToday(latestReview) ? 'review' : 'battle';
 }
 
+// The shadow record's note when the COUNTERPART assembly (the prompt this
+// turn does not send) throws — recorded, never thrown (spec §9, review R-05).
+const describeAssemblyError = (err) => String(err?.message || err || 'unknown').slice(0, 300);
+
 const MODE_BUDGET = {
   battle: { field: BATTLE_CHAT_BUDGET.field, limit: BATTLE_CHAT_BUDGET.limit },
   review: { field: 'reviewBudgetUsed', limit: 5 },
@@ -444,7 +448,10 @@ export default async function handler(req, res) {
           instruction: { ...ELICITATION_INSTRUCTIONS, ...GROUNDED_ELICITATION_INSTRUCTIONS }[elicitationTargetOld.dimension],
         }
       : null;
-    const elicitationTarget = grounded ? elicitationTargetNew : elicitationTargetOld;
+    // The turn reads only the DIMENSION below (the exchange, the shadow record,
+    // the recent-targets window); each prompt takes its own instruction inside
+    // buildPrompt(g), so the shipped selection is the one name (review R-34).
+    const elicitationTarget = elicitationTargetOld;
 
     // 13. Build conversation history — last 10 exchanges as messages.
     // Agent-initiated exchanges (first_message, auto_debrief,
@@ -469,7 +476,22 @@ export default async function handler(req, res) {
       { role: 'user', content: ex.userMessage },
       { role: 'assistant', content: ex.agentResponse || ex.agentMessage || '' },
     ]);
-    const conversationHistoryNew = shadowAssembly ? buildGroundedConversationHistory(battle.chatExchanges) : null;
+    // The grounded window: SENT under 'on' — a throw there fails the turn, as
+    // any failure of the sent prompt does. Under 'shadow' it is the
+    // COUNTERPART, built for the record only, so a failure is RECORDED on the
+    // shadow record and never reaches the shipped turn (spec §9: 'shadow'
+    // proves assembly and nothing else — review R-05).
+    let conversationHistoryNew = null;
+    let counterpartError = null;
+    if (grounded) {
+      conversationHistoryNew = buildGroundedConversationHistory(battle.chatExchanges);
+    } else if (shadowAssembly) {
+      try {
+        conversationHistoryNew = buildGroundedConversationHistory(battle.chatExchanges);
+      } catch (err) {
+        counterpartError = describeAssemblyError(err);
+      }
+    }
     const conversationHistory = grounded ? conversationHistoryNew : conversationHistoryOld;
 
     // 14. Build the system prompt — the one this turn SENDS first, then (under
@@ -489,13 +511,24 @@ export default async function handler(req, res) {
     });
     const systemPrompt = buildPrompt(grounded);
     if (shadowAssembly) {
-      const counterpart = buildPrompt(!grounded);
+      // The counterpart (the prompt this turn does NOT send) is built for the
+      // record only: a failure is recorded, never a 500 on the shipped turn.
+      let counterpart = null;
+      if (!counterpartError) {
+        try {
+          counterpart = buildPrompt(!grounded);
+        } catch (err) {
+          counterpartError = describeAssemblyError(err);
+        }
+      }
+      if (counterpartError) console.error('[VoiceLayer] shadow assembly failed (recorded, turn continues):', counterpartError);
       groundingRecord = {
         ...groundingRecord,
         systemPromptOld: grounded ? counterpart : systemPrompt,
         systemPromptNew: grounded ? systemPrompt : counterpart,
         conversationHistoryOld,
         conversationHistoryNew,
+        ...(counterpartError ? { shadowAssemblyError: counterpartError } : {}),
       };
     }
 

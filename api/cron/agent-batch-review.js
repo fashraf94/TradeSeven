@@ -133,6 +133,30 @@ export async function releaseReviewPending(db, battleId) {
   }
 }
 
+/**
+ * The auto-debrief exchange — the fifth agent-initiated writer (voice-layer
+ * grounding §3.4, M3). Pure and exported so the stamp is proved by BEHAVIOUR
+ * (agent-batch-review.grounding.test.js), not by a source row: under 'on' for
+ * the battle's OWNER, read at call time, the top-level `groundingVersion`
+ * marker rides the exchange; otherwise the persisted shape is the shipped one.
+ */
+export function buildDebriefExchange({ agentMessage, scratchpad, suggestedActions, ownerId }) {
+  return {
+    userMessage: null,
+    agentResponse: agentMessage,
+    scratchpad,
+    hasDirective: false,
+    directive: null,
+    suggestedActions,
+    elicitationTarget: 'review_debrief',
+    timestamp: new Date().toISOString(),
+    mode: 'review',
+    messageType: 'auto_debrief',
+    isAutoDebrief: true,
+    ...(getVoiceGroundingMode(ownerId) === 'on' ? { groundingVersion: GROUNDING_VERSION } : {}),
+  };
+}
+
 export async function processBattleReview(db, battle, { clearReviewPending = false } = {}) {
   const currentDay = getCurrentTradingDayServer(battle.timing?.tradingDays);
   const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
@@ -384,20 +408,12 @@ ${directiveLines}`;
         // identifies the type. isAutoDebrief: true is preserved as a defensive
         // read-fallback for any frontend path that still reads the legacy flag —
         // AgentChat.jsx reads messageType first and falls back to isAutoDebrief.
-        const exchange = {
-          userMessage: null,
-          agentResponse: agentMessage,
+        const exchange = buildDebriefExchange({
+          agentMessage,
           scratchpad: cleanScratchpad,
-          hasDirective: false,
-          directive: null,
           suggestedActions: parsed.suggestedActions || null,
-          elicitationTarget: 'review_debrief',
-          timestamp: new Date().toISOString(),
-          mode: 'review',
-          messageType: 'auto_debrief',
-          isAutoDebrief: true,
-          ...(getVoiceGroundingMode(battle.ownerId) === 'on' ? { groundingVersion: GROUNDING_VERSION } : {}),
-        };
+          ownerId: battle.ownerId,
+        });
 
         await battleRef.update({
           chatExchanges: FieldValue.arrayUnion(exchange),

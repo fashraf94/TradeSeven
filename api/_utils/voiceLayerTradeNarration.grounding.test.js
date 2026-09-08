@@ -29,6 +29,7 @@ vi.mock('./voiceLayerPrompt.js', () => ({
 vi.mock('./termUniverse.js', () => ({ TERM_TOKENS: [] }));
 vi.mock('firebase-admin/firestore', () => ({ FieldValue: { arrayUnion: (v) => ({ __arrayUnion: v }) } }));
 
+// Dependency-surface guard (BUILD_RULES §4): this file's import of the module under test is the runtime guard that its api → src imports stay Node-clean. Never mock it.
 const { generateTradeNarration } = await import('./voiceLayerTradeNarration.js');
 
 const BATTLE = { ownerId: 'owner-1', agentId: 'agent-1', status: 'active', portfolio: { star: [], core: [], support: [] }, trades: [] };

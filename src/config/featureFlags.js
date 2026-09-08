@@ -2110,7 +2110,7 @@ export function isCharacterPaneOn() {
  * back.
  *
  * Read it at CALL time through getVoiceGroundingMode(uid) below, never as a
- * module-scope const in a consumer (the isCharacterPaneOn rule: 15 of 56
+ * module-scope const in a consumer (the isCharacterPaneOn rule: many
  * featureFlags vi.mock sites use a bare factory with no importOriginal
  * spread).
  */

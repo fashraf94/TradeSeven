@@ -87,7 +87,7 @@ const abortingGemma = () => {
 const exchangeWritten = () => db.updates.find((u) => u.data.chatExchanges)?.data.chatExchanges.__arrayUnion;
 
 describe('ensure-opener under the grounding flag', () => {
-  it("asks the accessor for the BATTLE OWNER's uid", async () => {
+  it("asks the accessor once, with the owner's uid (the ownership check precedes it, so the caller's and the owner's uid are one here)", async () => {
     generatedGemma();
     await handler({ method: 'POST', body: { battleId: 'b1' } }, mkRes());
     expect(state.calls).toEqual(['owner-1']);

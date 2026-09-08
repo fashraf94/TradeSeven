@@ -326,6 +326,19 @@ describe('§7 — the opener', () => {
     expect(t).toContain('If no plan is recorded in this prompt, say the book is set');
   });
 
+  it('with a cache at deploy, the grounded opener puts the briefs under CURRENT CONTEXT and carries the vintage sentence — the battle assembly\'s rule (review R-15); off keeps neither', () => {
+    const on = firstMessagePrompt({ marketSnapshot: makeMarketSnapshot() });
+    expect(on).toContain(CURRENT_CONTEXT_HEADING);
+    expect(on.indexOf(CURRENT_CONTEXT_HEADING)).toBeLessThan(on.indexOf('Fundamentals (as of'));
+    expect(on).toContain(CONTEXT_VINTAGE_SENTENCE);
+    const off = firstMessagePrompt({ grounded: false, marketSnapshot: makeMarketSnapshot() });
+    expect(off).not.toContain(CURRENT_CONTEXT_HEADING);
+    expect(off).not.toContain(CONTEXT_VINTAGE_SENTENCE);
+    expect(off).not.toContain('Fundamentals (as of');
+    // No cache → no heading, even grounded.
+    expect(firstMessagePrompt({ marketSnapshot: null })).not.toContain(CURRENT_CONTEXT_HEADING);
+  });
+
   it('the off first-message prompt is the shipped one', () => {
     const text = firstMessagePrompt({ grounded: false });
     expect(text).toContain('Show that you\'ve done your prep');

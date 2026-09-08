@@ -29,9 +29,15 @@ import {
   ENGINE_MOTIVE_PREFIXES,
   TEXT_DECIDES_SOURCES,
   isEngineAuthoredMotive,
+  GUARDRAIL_SOURCE_PREFIX,
+  GUARDRAIL_FORCED_EXIT,
+  guardrailForcedExit,
 } from '../../data/decisionRecord';
 
-export { SWAP_FAILED_PREFIX, ENGINE_MOTIVE_PREFIXES, TEXT_DECIDES_SOURCES, isEngineAuthoredMotive };
+export {
+  SWAP_FAILED_PREFIX, ENGINE_MOTIVE_PREFIXES, TEXT_DECIDES_SOURCES, isEngineAuthoredMotive,
+  GUARDRAIL_SOURCE_PREFIX, GUARDRAIL_FORCED_EXIT, guardrailForcedExit,
+};
 
 export const WHY_KIND = Object.freeze({
   ABSENT: 'absent',
@@ -49,37 +55,12 @@ export const WHY_KIND = Object.freeze({
  */
 // (SWAP_FAILED_PREFIX and swapDidNotGoThrough: imported above, one source.)
 
-/**
- * The prefix agentGuardrails.js stamps on `sourceNote` for every guardrail
- * verdict it authors (`guardrail_${forcedType}`, `guardrail_max_sector_weight`).
- * NOT sufficient on its own: the `reinforced_haiku` branch stamps the same
- * prefix while the rationale stays the AGENT's argument (agentGuardrails.js
- * ~468-497) — hence the third conjunct below.
- */
-export const GUARDRAIL_SOURCE_PREFIX = 'guardrail_';
-
-/**
- * The action agentGuardrails.js stamps on the override entry when the guardrail
- * itself chose the pair (`{ action: 'forced_exit', symbol, replacementSymbol }`).
- * This is what separates "the guardrail called for this swap" from "the agent
- * argued for a swap and a guardrail agreed" (`reinforced_haiku`).
- */
-export const GUARDRAIL_FORCED_EXIT = 'forced_exit';
-
-/**
- * The persisted three-conjunct gate for the fifth state (D-70, Phase 0 §3):
- * `downgraded` (checked by the caller) ∧ a `guardrail_` sourceNote ∧ a
- * `forced_exit` override. Returns the override — the pair lives on it, because
- * the entry's own `symbolOut` / `symbolIn` are null on a downgraded HOLD
- * (agent-evaluate.js ~2634-2635) — or null when the gate does not hold.
- */
-export function guardrailForcedExit(evaluation) {
-  const note = evaluation?.guardrailSourceNote;
-  if (typeof note !== 'string' || !note.startsWith(GUARDRAIL_SOURCE_PREFIX)) return null;
-  const overrides = evaluation?.guardrailOverrides;
-  if (!Array.isArray(overrides)) return null;
-  return overrides.find((o) => o && o.action === GUARDRAIL_FORCED_EXIT) || null;
-}
+// The fifth state's gate (D-70) — GUARDRAIL_SOURCE_PREFIX, GUARDRAIL_FORCED_EXIT
+// and guardrailForcedExit — now lives in src/data/decisionRecord.js beside the
+// motive-author rule (its docstring travelled with it), because the narrator's
+// YOUR RECORD block applies the same gate on the server (review R-01: the two
+// surfaces had two selectors and disagreed on this state). Re-exported above
+// under the shipped names; every consumer and every pin is unchanged.
 
 /**
  * THE ONE MOTIVE-AUTHOR RULE (D-72 ruling 5, BUILD_RULES §9) — `ENGINE_MOTIVE_PREFIXES`,

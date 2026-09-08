@@ -81,7 +81,13 @@ const db = {
       state.attempts += 1;
       const buffer = [];
       const tx = {
-        get: async (ref) => readDoc(ref.__col, ref.__id),
+        // Firestore's contract: every read precedes every write in a
+        // transaction. The fake enforces it (review R-29), so a `tx.get`
+        // moved after a `tx.update` / `tx.set` reds here, not in production.
+        get: async (ref) => {
+          if (buffer.length > 0) throw new Error('transaction read after write');
+          return readDoc(ref.__col, ref.__id);
+        },
         update: (ref, data) => buffer.push({ col: ref.__col, id: ref.__id, data, op: 'update' }),
         set: (ref, data, opts) => buffer.push({ col: ref.__col, id: ref.__id, data, opts, op: 'set' }),
       };
@@ -100,6 +106,7 @@ const db = {
 };
 vi.mock('../_utils/firebaseAdmin.js', () => ({ getFirebaseAdmin: () => db }));
 
+// Dependency-surface guard (BUILD_RULES §4): this file's import of the module under test is the runtime guard that its api → src imports stay Node-clean. Never mock it.
 const { default: handler, buildFiledExchange, FILING_STATUS } = await import('./file-directive.js');
 const { buildDirectiveSlot, buildDirectiveRecord, BATTLE_CHAT_BUDGET } = await import('../_utils/directiveFiling.js');
 
@@ -267,7 +274,7 @@ describe('file-directive — filed, replaced-prior, and the persisted shape', ()
     expect(Object.keys(w.data).sort()).toEqual(['chatBudgetUsed', 'chatExchanges', 'directive']);
     expect(w.data.chatBudgetUsed).toBe(3);
 
-    // The slot: the shipped enforce-path shape (chat.js:694-707 at HEAD).
+    // The slot: the shipped enforce-path shape — buildDirectiveSlot in directiveFiling.js, the ONE shape chat.js writes at its step 19 (review R-37).
     const slot = w.data.directive;
     expect(Object.keys(slot).sort()).toEqual(['adjustmentId', 'canonicalTextVersion', 'createdAt', 'directiveThreadId', 'expiry', 'text']);
     expect(slot).toMatchObject({ text: DV02, expiry: 'end_of_battle', adjustmentId: 'DV-02', canonicalTextVersion: 1 });
@@ -298,6 +305,15 @@ describe('file-directive — filed, replaced-prior, and the persisted shape', ()
     expect(res.body.replacedDirectiveThreadId).toBe('thread-A');
     expect(res.body.directive.directiveThreadId).not.toBe('thread-A');
     // D-18 latest-wins by construction: the whole slot is set.
+    expect(battleWrite().data.directive.text).toBe(DV02);
+  });
+
+  it('replaced-prior: a LEGACY slot with text but no thread id is replaced too — reported as such, with no thread to name (review R-19)', async () => {
+    state.battle = makeBattle({ directive: { text: 'Old lean, pre-thread-id', expiry: 'end_of_battle' } });
+    const res = await post(BODY);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.status).toBe(FILING_STATUS.REPLACED_PRIOR);
+    expect(res.body.replacedDirectiveThreadId).toBeNull();
     expect(battleWrite().data.directive.text).toBe(DV02);
   });
 

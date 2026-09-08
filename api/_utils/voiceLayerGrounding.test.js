@@ -42,6 +42,10 @@ import {
   findGuardedVocabulary,
   GROUNDED_OUTPUT_FORMAT,
   normalizeSuggestedActions,
+  displayHypothesis,
+  GROUNDED_DISCOVERY_EXAMPLE,
+  GROUNDED_REFINEMENT_EXAMPLE,
+  GROUNDED_MASTERY_EXAMPLE,
 } from './voiceLayerGrounding.js';
 import {
   MOTIVE_AGENT,
@@ -51,6 +55,10 @@ import {
   DOWNGRADED_LABEL,
   FAILED_LABEL,
   WOKEN_BY_TYPE,
+  HELD_LABEL,
+  GUARDRAIL_FORCED_FAILED_LABEL,
+  GROUNDING_VERSION as SHARED_GROUNDING_VERSION,
+  DIRECTIVE_FILED_MESSAGE_TYPE,
 } from '../../src/data/decisionRecord.js';
 import { FROZEN_NOW, EVALUATIONS, CHAT_EXCHANGES, makeBattle, makeTournamentBattle } from './__fixtures__/voiceGroundingFixtures.js';
 
@@ -60,6 +68,12 @@ afterAll(() => { vi.useRealTimers(); });
 const byId = (id) => EVALUATIONS.find((e) => e.evalId === id);
 
 describe('§3.2a — the duplicate normalizer (detection only)', () => {
+  it('an underscore INSIDE an identifier is not emphasis: the wrapper is anchored at word boundaries (review R-14)', () => {
+    expect(normalizeForDuplicate('threshold_proximity on NOW_and_TSLA')).toBe('threshold_proximity on NOW_and_TSLA');
+    expect(normalizeForDuplicate('a _real_ emphasis')).toBe('a real emphasis');
+    expect(rationaleCarriesHypothesis('a_b c CF_x will break out', 'CF_x will break out')).toBe(true);
+  });
+
   it('strips emphasis wrappers, collapses whitespace, trims, and drops one leading Hypothesis:', () => {
     expect(normalizeForDuplicate('**Hypothesis:   CF will   break out.**')).toBe('CF will break out.');
     expect(normalizeForDuplicate('Hypothesis: CF will break out.')).toBe('CF will break out.');
@@ -103,7 +117,11 @@ describe('§3.2 — one check, rendered', () => {
     const lines = renderRecordEntry(byId('eval_004'));
     expect(lines[0]).toBe(`[11:15 AM check] · Swapped · KO → AVGO (Support) · ${WOKEN_BY_TYPE.bench_outperformance}`);
     expect(lines[1]).toBe(`  Rationale — ${MOTIVE_AGENT}: ${byId('eval_004').rationale}`);
-    expect(lines[2]).toBe(`  ${HYPOTHESIS_LABEL}: ${byId('eval_004').hypothesis}`);
+    // The field's own leading `Hypothesis:` is dropped for display — the label
+    // already says it (review R-12); the bytes after it are verbatim.
+    expect(byId('eval_004').hypothesis.startsWith('Hypothesis: ')).toBe(true);
+    expect(lines[2]).toBe(`  ${HYPOTHESIS_LABEL}: AVGO closes above its 20-day within two sessions and holds the support slot.`);
+    expect(displayHypothesis('**Bold** claim')).toBe('**Bold** claim');
     // Never voiced as the narrator's forecast: the label names the check and the grading.
     expect(HYPOTHESIS_LABEL).toBe('Hypothesis recorded at this check (graded after the battle)');
   });
@@ -112,6 +130,35 @@ describe('§3.2 — one check, rendered', () => {
     const lines = renderRecordEntry(byId('eval_003'));
     expect(lines[0]).toBe(`[11:00 AM check] · Swapped · GILD → MOS (Core) · ${WOKEN_BY_TYPE.price_drop}`);
     expect(lines[1]).toBe(`  Rationale — ${MOTIVE_SYSTEM}: ${byId('eval_003').rationale}`);
+    // The cron's own `Hypothesis: deterministic guardrail enforcement — …` is
+    // the system's sentence, not a forecast the check made: withheld exactly
+    // where the rationale is engine-authored (review R-12).
+    expect(byId('eval_003').hypothesis).toMatch(/^Hypothesis: deterministic guardrail enforcement/);
+    expect(lines).toHaveLength(2);
+  });
+
+  it('the FIFTH state (D-70): a guardrail-forced exit whose execution THREW gets the pane\'s sentence, never the agent\'s (review R-01)', () => {
+    // The cron's shape (agent-evaluate.js): the forced exit materialized into the
+    // result, `downgraded` + the thrown-swap prefix from executeSwapServer, and
+    // the guardrail's own provenance on the entry.
+    const forcedThrew = {
+      ...byId('eval_003'), decision: 'HOLD', downgraded: true, symbolOut: null, symbolIn: null,
+      validationErrors: ['Swap execution failed: executeSwapServer timed out'],
+      guardrailSourceNote: 'guardrail_stopLoss',
+      guardrailOverrides: [{ action: 'forced_exit', symbol: 'GILD', replacementSymbol: 'MOS' }],
+    };
+    expect(recordStateLabel(forcedThrew)).toBe(GUARDRAIL_FORCED_FAILED_LABEL);
+    expect(renderRecordEntry(forcedThrew)[0]).toBe(`[11:00 AM check] · ${GUARDRAIL_FORCED_FAILED_LABEL} · ${WOKEN_BY_TYPE.price_drop}`);
+    // `reinforced_haiku` — the agent argued, a guardrail agreed, the execution
+    // threw: no forced_exit override, so those ARE the agent's words (the fourth state).
+    const reinforced = { ...forcedThrew, guardrailSourceNote: 'guardrail_reinforced_haiku', guardrailOverrides: [{ action: 'reinforced_haiku' }] };
+    expect(recordStateLabel(reinforced)).toBe(FAILED_LABEL);
+    // A forced exit that EXECUTED is not downgraded: the ordinary swap sentence, the system as author.
+    expect(recordStateLabel(byId('eval_003'))).toBe('Swapped · GILD → MOS (Core)');
+  });
+
+  it('a PROPOSAL held the position at the check — `Held`, never a swap (review R-11)', () => {
+    expect(recordStateLabel({ ...byId('eval_004'), decision: 'PROPOSAL' })).toBe(HELD_LABEL);
   });
 
   it('a timed-out tick renders the D-65 absence line and NEVER the cron placeholder as the agent\'s words (hazard 25)', () => {
@@ -250,14 +297,24 @@ describe('§3.4 — the history window', () => {
     expect(lines[1]).toBe('[anticipation · 10:16 AM] Eyeing AVGO on the bench. If it holds the 20-day I would rotate it into Core.');
   });
 
-  it('a chip filing (no narrator words) renders as the directive it filed, quoted', () => {
+  it('a chip filing never enters the block — the USER tapped it, so it is not one the narrator started; the CURRENT DIRECTIVE line carries what it filed (review R-13)', () => {
     const filed = {
-      userMessage: null, agentResponse: '', hasDirective: true, messageType: 'directive_filed', source: 'chip',
+      userMessage: null, agentResponse: '', hasDirective: true, messageType: DIRECTIVE_FILED_MESSAGE_TYPE, source: 'chip',
       directive: { text: 'Widen the spread (target more sectors)', expiry: 'end_of_battle', directiveThreadId: 't-1', adjustmentId: 'DV-02', canonicalTextVersion: 1 },
       directiveThreadId: 't-1', timestamp: '2026-09-08T15:20:00.000Z', groundingVersion: GROUNDING_VERSION,
     };
-    const block = buildEarlierMessagesBlock([filed]);
-    expect(block.split('\n')[1]).toBe('[directive_filed · 11:20 AM] "Widen the spread (target more sectors)"');
+    expect(buildEarlierMessagesBlock([filed])).toBeNull();
+    expect(selectHistoryWindow([filed]).pairs).toEqual([]);
+    // Beside a grounded note, only the note is the narrator's.
+    const block = buildEarlierMessagesBlock([grounded(CHAT_EXCHANGES[2]), filed]);
+    expect(block.split('\n')).toHaveLength(2);
+    expect(block).not.toContain('Widen the spread');
+  });
+
+  it('the marker version and the filing type are the SHARED constants (decisionRecord.js), never a second literal', () => {
+    expect(GROUNDING_VERSION).toBe(SHARED_GROUNDING_VERSION);
+    expect(GROUNDING_VERSION).toBe(1);
+    expect(DIRECTIVE_FILED_MESSAGE_TYPE).toBe('directive_filed');
   });
 
   it('a legacy proactive exchange (no marker) never reaches the block; none → null', () => {
@@ -362,5 +419,26 @@ describe('§6.2 — the grounded output format and the server\'s rewrite of the 
       { kind: 'ask', text: 'Why?' },
       { kind: 'directive', id: 'TF-01', text: 'Prefer fresh breakouts over extended / late-stage entries' },
     ]);
+  });
+});
+
+describe('§4 — the grounded few-shot examples mint no filing claim (review R-03)', () => {
+  const chipsOf = (example) => {
+    const json = example.slice(example.lastIndexOf('Agent: {') + 'Agent: '.length);
+    return JSON.parse(json).suggestedActions;
+  };
+  it('every chip in every example is a QUESTION object — never a string, never `File: …`, never a menu id the archetype may not have', () => {
+    for (const example of [GROUNDED_REFINEMENT_EXAMPLE, GROUNDED_MASTERY_EXAMPLE]) {
+      const chips = chipsOf(example);
+      expect(Array.isArray(chips) && chips.length >= 2).toBe(true);
+      for (const chip of chips) {
+        expect(typeof chip).toBe('object');
+        expect(chip.kind).toBe('ask');
+        expect(chip.text).not.toMatch(/^Files?:/);
+      }
+      // Normalized, they stay questions: nothing here can be tapped into a filing.
+      expect(normalizeSuggestedActions(chips, 'momentum_chaser').every((c) => c.kind === 'ask')).toBe(true);
+    }
+    expect(chipsOf(GROUNDED_DISCOVERY_EXAMPLE)).toBeNull();
   });
 });

@@ -42,6 +42,20 @@ import {
   FALLBACK_STRATEGY_PREFIX,
   FALLBACK_BRIEF_PREFIX,
   deployPlanSuppressed,
+  GROUNDING_VERSION,
+  DIRECTIVE_FILED_MESSAGE_TYPE,
+  GUARDRAIL_SOURCE_PREFIX,
+  GUARDRAIL_FORCED_EXIT,
+  GUARDRAIL_FORCED_FAILED_LABEL,
+  guardrailForcedExit,
+  filesChip,
+  filedLabel,
+  NO_CHANGE_STATUS_LINE,
+  FILING_CONFLICT_LINE,
+  FILING_BUDGET_LINE,
+  FILING_REJECTED_LINE,
+  FILING_FAILED_LINE,
+  filingFailureLine,
   deployBriefText,
   planAtDeployLabel,
 } from './decisionRecord.js';
@@ -192,5 +206,45 @@ describe('decisionRecord — the rules', () => {
     expect(planAtDeployLabel('Sep 8')).toBe('The plan at deploy · Sep 8');
     expect(planAtDeployLabel(null)).toBeNull();
     expect(planAtDeployLabel('')).toBeNull();
+  });
+
+  it('the filing strings — the chip label, the receipt word, the no-change line and the four failure lines — are these bytes (review R-10 / R-31)', () => {
+    expect(filesChip('Widen the spread (target more sectors)')).toBe('Files: Widen the spread (target more sectors)');
+    expect(filesChip('')).toBeNull();
+    expect(filesChip(null)).toBeNull();
+    expect(filedLabel('11:20 AM')).toBe('Filed 11:20 AM');
+    expect(filedLabel(null)).toBe('Filed');
+    expect(NO_CHANGE_STATUS_LINE).toBe('No change made to your strategy this turn.');
+    expect(filingFailureLine(409)).toBe(FILING_CONFLICT_LINE);
+    expect(filingFailureLine(429)).toBe(FILING_BUDGET_LINE);
+    expect(filingFailureLine(422)).toBe(FILING_REJECTED_LINE);
+    expect(filingFailureLine(500)).toBe(FILING_FAILED_LINE);
+    expect(filingFailureLine(undefined)).toBe(FILING_FAILED_LINE);
+    expect(FILING_CONFLICT_LINE).toBe('The current directive changed before this could be filed — nothing was filed.');
+    expect(FILING_BUDGET_LINE).toBe('No messages left to file with — nothing was filed.');
+    expect(FILING_REJECTED_LINE).toBe('That option is no longer on the menu — nothing was filed.');
+    // The D-90 rule: a 5xx / network failure never claims nothing was filed.
+    expect(FILING_FAILED_LINE).toBe('The directive could not be filed just now.');
+    expect(FILING_FAILED_LINE).not.toContain('nothing was filed');
+    expect(BATTLE_VIEW_COPY.filesChip('X')).toBe(filesChip('X'));
+    expect(BATTLE_VIEW_COPY.filingFailureLine(409)).toBe(FILING_CONFLICT_LINE);
+  });
+
+  it('the grounding marker version and the filing type are ONE constant each (review R-22)', () => {
+    expect(GROUNDING_VERSION).toBe(1);
+    expect(DIRECTIVE_FILED_MESSAGE_TYPE).toBe('directive_filed');
+  });
+
+  it('the fifth state (D-70): the three-conjunct gate and its sentence, shared by the pane and the narrator (review R-01)', () => {
+    expect(GUARDRAIL_SOURCE_PREFIX).toBe('guardrail_');
+    expect(GUARDRAIL_FORCED_EXIT).toBe('forced_exit');
+    expect(GUARDRAIL_FORCED_FAILED_LABEL).toBe('A guardrail called for a swap · it did not go through');
+    expect(BATTLE_VIEW_COPY.guardrailForcedFailedLabel).toBe(GUARDRAIL_FORCED_FAILED_LABEL);
+    const forced = { guardrailSourceNote: 'guardrail_stopLoss', guardrailOverrides: [{ action: 'forced_exit', symbol: 'GILD', replacementSymbol: 'MOS' }] };
+    expect(guardrailForcedExit(forced)).toEqual({ action: 'forced_exit', symbol: 'GILD', replacementSymbol: 'MOS' });
+    expect(guardrailForcedExit({ ...forced, guardrailSourceNote: 'haiku' })).toBeNull();
+    expect(guardrailForcedExit({ ...forced, guardrailOverrides: [{ action: 'reinforced_haiku' }] })).toBeNull();
+    expect(guardrailForcedExit({ ...forced, guardrailOverrides: null })).toBeNull();
+    expect(guardrailForcedExit(null)).toBeNull();
   });
 });

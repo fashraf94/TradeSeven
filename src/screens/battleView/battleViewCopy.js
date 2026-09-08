@@ -58,6 +58,7 @@ import {
   FILING_REJECTED_LINE,
   FILING_FAILED_LINE,
   filingFailureLine as recordFilingFailureLine,
+  GUARDRAIL_FORCED_FAILED_LABEL,
 } from '../../data/decisionRecord';
 
 /**
@@ -251,7 +252,7 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // words that tick read `Argued for a swap · The agent's own words` over text
   // the agent never wrote (A4 handover item 21). The subject is the guardrail
   // and the footer names whose reason follows.
-  guardrailForcedFailedLabel: 'A guardrail called for a swap · it did not go through',
+  guardrailForcedFailedLabel: GUARDRAIL_FORCED_FAILED_LABEL,
   guardrailForcedFailedFooter: 'The guardrail\'s reason · the position stayed as it was',
   heldLabel: HELD_LABEL,
   swappedLabel: (symbolOut, symbolIn) => recordSwappedLabel(symbolOut, symbolIn),
@@ -353,7 +354,7 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // `auto_debrief` is deliberately absent: it already has the shipped
   // `Post-Market Debrief` eyebrow (RENDER_CONFIG), and one exchange with two
   // eyebrows is worse than one with none.
-  tapeKindEyebrow: (messageType, hasUserHalf, anticipationDirection = null) => {
+  tapeKindEyebrow: (messageType, hasUserHalf, anticipationDirection = null, grounded = false) => {
     if (messageType === 'first_message') return 'Opener';
     // `Bench note` IS the bench's word, and the record splits the kind in two
     // (review L1-F1). `anticipationCandidates[].direction` is a required enum:
@@ -372,11 +373,15 @@ export const BATTLE_VIEW_COPY = Object.freeze({
     //
     // THE SECOND WORD IS NOW RULED (voice-layer grounding spec §5, the Sep 7
     // founder adoption): a `potential_exit` note is about a piece in the
-    // player's OWN BOOK, and its word is `Holding note`. A record with no
-    // direction still gets nothing.
+    // player's OWN BOOK, and its word is `Holding note` — for a note produced
+    // UNDER THE GROUNDING CONTRACT (`grounded`: the exchange carries the
+    // marker). A legacy, model-written exit note keeps no eyebrow, exactly as
+    // shipped, so the flag-off page is byte-identical and the word is never
+    // put on a forecast the retired prompt wrote (review R-02). A record with
+    // no direction still gets nothing.
     if (messageType === 'anticipation') {
       if (anticipationDirection === 'potential_entry') return 'Bench note';
-      if (anticipationDirection === 'potential_exit') return 'Holding note';
+      if (anticipationDirection === 'potential_exit') return grounded ? 'Holding note' : null;
       return null;
     }
     if (messageType === 'trade_narration') return 'Trade note';

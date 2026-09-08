@@ -28,6 +28,7 @@ vi.mock('./voiceLayerPrompt.js', () => ({
 vi.mock('./termUniverse.js', () => ({ TERM_TOKENS: [] }));
 vi.mock('firebase-admin/firestore', () => ({ FieldValue: { arrayUnion: (v) => ({ __arrayUnion: v }) } }));
 
+// Dependency-surface guard (BUILD_RULES §4): this file's import of the module under test is the runtime guard that its api → src imports stay Node-clean. Never mock it.
 const { generateAnticipation, anticipationAlreadyNoted } = await import('./voiceLayerAnticipation.js');
 const { dedupeAnticipationQueue, composeAnticipationNote, passesReplyLint, REPLY_LINT_RE } = await import('./voiceLayerGrounding.js');
 
@@ -240,7 +241,9 @@ describe('the dispatch site (agent-evaluate.js) — source rows', () => {
     const src = readFileSync(new URL('../cron/agent-evaluate.js', import.meta.url), 'utf8');
     expect(src).toContain("const ownerGrounded = getVoiceGroundingMode(battle.ownerId) === 'on';");
     expect(src).toContain('const queue = ownerGrounded ? dedupeAnticipationQueue(pendingAnticipations) : pendingAnticipations;');
-    expect(src).toContain('ownerId: battle.ownerId || null,');
+    // BOTH dispatch sites — the narration's and the anticipation's — pass the
+    // owner; a `toContain` would be satisfied by either one alone (review R-08).
+    expect(src.split('ownerId: battle.ownerId || null,').length - 1).toBe(2);
     expect(src.split('generateAnticipation({').length - 1).toBe(1);
   });
 });

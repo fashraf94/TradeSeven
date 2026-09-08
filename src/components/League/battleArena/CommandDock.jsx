@@ -253,15 +253,20 @@ export function AgentDock({ lines, archName, live, ask, onAsk, compact = false, 
   // (chatReady from the engine). Otherwise this is today's stub — decorative box,
   // canned chip echoes — byte-identical.
   const chatOn = chatReady && typeof askLive === 'function';
+  // One in-flight guard for the whole affordance: an ask OR a chip filing
+  // (they share the hook's request slot) disables the composer, the fixed
+  // pills and the minted chips together, so a question typed during a filing
+  // is never silently dropped (review R-16).
+  const busy = asking || filing;
   const [draft, setDraft] = React.useState('');
   const submitDraft = () => {
     const t = draft.trim();
-    if (!t || asking) return;
+    if (!t || busy) return;
     setDraft('');
     askLive(t);
   };
   const tapChip = (i, qa) => {
-    if (chatOn) { if (!asking) askLive(qa.q); return; }
+    if (chatOn) { if (!busy) askLive(qa.q); return; }
     handleAsk(i);
   };
 
@@ -279,7 +284,9 @@ export function AgentDock({ lines, archName, live, ask, onAsk, compact = false, 
   const newestKey = lines && lines.length ? lines[0]._k : null;
   const newestKind = lines && lines.length ? lines[0].kind : null;
   React.useEffect(() => {
-    if (compact || newestKind !== 'answer') return;
+    // An ANSWER or a filing's RECEIPT (kind 'directive', review R-21) — both
+    // land at the top of the lane and both must be brought into view.
+    if (compact || (newestKind !== 'answer' && newestKind !== 'directive')) return;
     const well = wellRef.current; const voice = voiceRef.current;
     if (!well || !voice) return;
     well.scrollTop = voice.offsetTop - well.offsetTop;
@@ -313,11 +320,11 @@ export function AgentDock({ lines, archName, live, ask, onAsk, compact = false, 
       {(ask || []).map((qa, i) => {
         const on = !chatOn && asked.includes(i); // stub-only "asked" highlight
         return (
-          <button key={qa.q} className="bv2-tap" onClick={() => tapChip(i, qa)} disabled={chatOn && asking}
-            style={{ all: 'unset', cursor: chatOn && asking ? 'default' : 'pointer',
+          <button key={qa.q} className="bv2-tap" onClick={() => tapChip(i, qa)} disabled={chatOn && busy}
+            style={{ all: 'unset', cursor: chatOn && busy ? 'default' : 'pointer',
               display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 11px', borderRadius: 999,
               // opacity only under the live path — keeps the flag-off stub chip byte-identical
-              opacity: chatOn ? (asking ? 0.5 : 1) : undefined,
+              opacity: chatOn ? (busy ? 0.5 : 1) : undefined,
               background: on ? alpha(c, 0.1) : LTOKENS.surface, border: `1px solid ${on ? alpha(c, 0.4) : LTOKENS.hair2}` }}>
             <Mono style={{ fontSize: 11, fontWeight: 600, color: on ? c : LTOKENS.ink2 }}>{qa.q}</Mono>
           </button>
@@ -333,7 +340,6 @@ export function AgentDock({ lines, archName, live, ask, onAsk, compact = false, 
         const label = mintedLabel(chip);
         if (!label) return null;
         const directive = chip.kind === 'directive';
-        const busy = asking || filing;
         const onTap = () => {
           if (busy) return;
           if (directive) { if (typeof fileLive === 'function') fileLive(chip.id); return; }
@@ -360,19 +366,19 @@ export function AgentDock({ lines, archName, live, ask, onAsk, compact = false, 
 
   // composer (input + send) — fixed height; the ONLY thing pinned in the desktop footer.
   const composer = chatOn ? (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 13px', borderRadius: 11, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}`, opacity: asking ? 0.6 : 1 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 13px', borderRadius: 11, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}`, opacity: busy ? 0.6 : 1 }}>
       <input
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submitDraft(); } }}
-        disabled={asking}
-        placeholder={asking ? 'Thinking…' : 'Ask anything…'}
+        disabled={busy}
+        placeholder={asking ? 'Thinking…' : filing ? 'Filing…' : 'Ask anything…'}
         maxLength={2000}
         style={{ all: 'unset', flex: 1, minWidth: 0, fontFamily: 'inherit', fontSize: 11.5, color: LTOKENS.ink }}
       />
-      <button className="bv2-tap" onClick={submitDraft} disabled={asking || !draft.trim()} aria-label="Send"
-        style={{ all: 'unset', cursor: asking || !draft.trim() ? 'default' : 'pointer', width: 26, height: 26, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: alpha(c, draft.trim() && !asking ? 0.14 : 0.06), border: `1px solid ${alpha(c, draft.trim() && !asking ? 0.36 : 0.18)}` }}>
+      <button className="bv2-tap" onClick={submitDraft} disabled={busy || !draft.trim()} aria-label="Send"
+        style={{ all: 'unset', cursor: busy || !draft.trim() ? 'default' : 'pointer', width: 26, height: 26, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: alpha(c, draft.trim() && !busy ? 0.14 : 0.06), border: `1px solid ${alpha(c, draft.trim() && !busy ? 0.36 : 0.18)}` }}>
         <LIcon name="arrowUp" size={13} color={c} stroke={2.2} />
       </button>
     </div>

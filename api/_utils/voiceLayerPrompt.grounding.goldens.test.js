@@ -72,6 +72,10 @@ import {
   getAgentPhase,
 } from './voiceLayerPrompt.js';
 import { buildTemplateOpener } from './openerTemplateFloor.js';
+// The shipped elicitation table (15 strings, one sent every battle turn): pinned
+// as bytes here because the goldens above render the FIXTURE's copy of one line
+// (review R-25). The table was byte-identical before and after the build.
+import { ELICITATION_INSTRUCTIONS } from '../agent/chat.js';
 import {
   FROZEN_NOW,
   makeAgent,
@@ -210,6 +214,7 @@ function renderAll() {
     })),
     'templateOpener.full': buildTemplateOpener({ agent: DISCOVERY_AGENT, battle: makeBattle() }),
     'templateOpener.emptyBook.unknownArchetype': buildTemplateOpener({ agent: makeAgent({ archetype: 'strategist' }), battle: makeBattle({ portfolio: { star: [], core: [], support: [] }, agentContext: {} }) }),
+    'elicitation.table': Object.entries(ELICITATION_INSTRUCTIONS).map(([dimension, instruction]) => `${dimension}: ${instruction}`).join('\n'),
   };
 }
 
@@ -255,6 +260,7 @@ describe("Voice-layer grounding — 'off' is byte-identical to the pre-grounding
     'anticipation.discovery.noCache.exit',
     'templateOpener.full',
     'templateOpener.emptyBook.unknownArchetype',
+    'elicitation.table',
   ];
 
   it.each(KEYS)('%s — byte-identical', (key) => {

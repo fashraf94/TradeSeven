@@ -13,7 +13,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AgentDock } from './CommandDock';
-import { filesChip } from '../../../data/decisionRecord';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 if (typeof window.matchMedia !== 'function') {
@@ -33,6 +32,8 @@ afterEach(() => {
 });
 
 const DV02 = 'Widen the spread (target more sectors)';
+// The LITERAL label — never derived through filesChip (review R-10).
+const FILES_DV02 = `Files: ${DV02}`;
 const CHIPS = [{ kind: 'directive', id: 'DV-02', text: DV02 }, { kind: 'ask', text: 'Why the spread?' }];
 const ASK = [{ q: "What's your plan from here?" }];
 const LINES = [{ kind: 'read', text: 'holding the line', _k: 1 }];
@@ -46,17 +47,17 @@ const click = (b) => act(() => { b.dispatchEvent(new MouseEvent('click', { bubbl
 describe('the arena dock — minted chips', () => {
   it('renders `Files: …` for a directive chip and the question for an ask chip, beside the fixed chips (live path)', () => {
     render({ chatReady: true, askLive: () => {}, chips: CHIPS, fileLive: () => {} });
-    expect(button(filesChip(DV02))).toBeTruthy();
+    expect(button(FILES_DV02)).toBeTruthy();
     expect(button('Why the spread?')).toBeTruthy();
     expect(button("What's your plan from here?")).toBeTruthy();
-    expect(button(filesChip(DV02)).getAttribute('data-chip-kind')).toBe('directive');
+    expect(button(FILES_DV02).getAttribute('data-chip-kind')).toBe('directive');
   });
 
   it('a directive chip calls fileLive with its id — never askLive; an ask chip calls askLive with its text', () => {
     const askLive = vi.fn();
     const fileLive = vi.fn();
     render({ chatReady: true, askLive, chips: CHIPS, fileLive });
-    click(button(filesChip(DV02)));
+    click(button(FILES_DV02));
     expect(fileLive).toHaveBeenCalledWith('DV-02');
     expect(askLive).not.toHaveBeenCalled();
     click(button('Why the spread?'));
@@ -67,16 +68,31 @@ describe('the arena dock — minted chips', () => {
   it('is disabled while a filing or an ask is in flight', () => {
     const fileLive = vi.fn();
     render({ chatReady: true, askLive: () => {}, chips: CHIPS, fileLive, filing: true });
-    expect(button(filesChip(DV02)).disabled).toBe(true);
-    click(button(filesChip(DV02)));
+    expect(button(FILES_DV02).disabled).toBe(true);
+    click(button(FILES_DV02));
     expect(fileLive).not.toHaveBeenCalled();
     render({ chatReady: true, askLive: () => {}, chips: CHIPS, fileLive, asking: true });
-    expect(button(filesChip(DV02)).disabled).toBe(true);
+    expect(button(FILES_DV02).disabled).toBe(true);
+  });
+
+  it('a filing in flight disables the composer, the fixed pills and the minted chips together — a typed question is never dropped (review R-16)', () => {
+    const askLive = vi.fn();
+    render({ chatReady: true, askLive, chips: CHIPS, fileLive: () => {}, filing: true });
+    const input = container.querySelector('input');
+    expect(input.disabled).toBe(true);
+    expect(input.placeholder).toBe('Filing…');
+    expect(button("What's your plan from here?").disabled).toBe(true);
+    click(button("What's your plan from here?"));
+    expect(askLive).not.toHaveBeenCalled();
+    // Not filing, not asking: everything is live again.
+    render({ chatReady: true, askLive, chips: CHIPS, fileLive: () => {}, filing: false });
+    expect(container.querySelector('input').disabled).toBe(false);
+    expect(container.querySelector('input').placeholder).toBe('Ask anything…');
   });
 
   it('flag-off (the stub dock): no minted chip renders even when handed some', () => {
     render({ chatReady: false, chips: CHIPS });
-    expect(button(filesChip(DV02))).toBeUndefined();
+    expect(button(FILES_DV02)).toBeUndefined();
     expect(container.textContent).not.toContain('Files:');
   });
 

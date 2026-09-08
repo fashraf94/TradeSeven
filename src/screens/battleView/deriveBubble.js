@@ -161,7 +161,7 @@ export function bubbleFor(item) {
       // The underscore fields are deriveChatMessages' own (`_hasUserHalf`,
       // `_anticipationDirection`) — the same two the chat's eyebrow reads, so
       // one exchange cannot be labelled two ways.
-      eyebrow: COPY.tapeKindEyebrow(item.messageType, item._hasUserHalf, item._anticipationDirection ?? null),
+      eyebrow: COPY.tapeKindEyebrow(item.messageType, item._hasUserHalf, item._anticipationDirection ?? null, item._grounded === true),
       line: text,
       eyebrowColor: SPEECH_EYEBROW_COLOR,
       isRecord: false,

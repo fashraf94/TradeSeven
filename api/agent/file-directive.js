@@ -37,6 +37,15 @@
 //      doc with an explicit in-transaction count. The client never picks a
 //      budget. Spec §6.4: a filing charges one message — the scarce resource
 //      is influence, not inference.
+//
+// TWO DECISIONS RECORDED (review R-20, R-39). (a) No review-mode gate: a
+// directive filed after the close is in front of the process at the NEXT
+// check, which is what a directive is; the chat route strips directives in
+// REVIEW mode because the review is a different conversation, not because
+// filing is invalid after the session — the battle must be active (check 2),
+// nothing more. (b) The HTTP status is the client contract: both clients
+// render the ruled line by status code (409 / 422 / 429 / other); the body's
+// `status` word (FILING_STATUS) is the record's vocabulary, for logs and tests.
 // Then it writes, in the same transaction: the directive to `battle.directive`
 // (D-18 latest-wins; the shipped enforce-path shape via directiveFiling.js,
 // never a parallel schema) and ONE audit exchange carrying `directiveThreadId`
@@ -76,6 +85,7 @@ import {
 import { toIso } from '../_utils/tournamentTime.js';
 import { buildDirectiveRecord, buildDirectiveSlot, BATTLE_CHAT_BUDGET } from '../_utils/directiveFiling.js';
 import { GROUNDING_VERSION } from '../_utils/voiceLayerGrounding.js';
+import { DIRECTIVE_FILED_MESSAGE_TYPE } from '../../src/data/decisionRecord.js';
 
 // A transaction over two docs and no model: a plain write endpoint's budget.
 export const config = { maxDuration: 10 };
@@ -89,7 +99,7 @@ export const FILING_STATUS = Object.freeze({
   BUDGET_EXHAUSTED: 'budget-exhausted',
 });
 
-export const FILED_MESSAGE_TYPE = 'directive_filed';
+export const FILED_MESSAGE_TYPE = DIRECTIVE_FILED_MESSAGE_TYPE; // ONE name (decisionRecord.js): the clients and the narrator's history window key on it too
 export const FILED_SOURCE = 'chip';
 
 const nonEmpty = (v) => typeof v === 'string' && v.trim().length > 0;
@@ -254,7 +264,10 @@ export default async function handler(req, res) {
 
       return {
         kind: 'filed',
-        status: currentThreadId ? FILING_STATUS.REPLACED_PRIOR : FILING_STATUS.FILED,
+        // `replaced-prior` whenever a directive WAS current — a legacy slot with
+        // text but no thread id (pre-Phase-7) is replaced too, even though no
+        // thread can be named for it (review R-19).
+        status: (currentThreadId || nonEmpty(battle.directive?.text)) ? FILING_STATUS.REPLACED_PRIOR : FILING_STATUS.FILED,
         directive: slot,
         replacedDirectiveThreadId: currentThreadId,
         remaining,

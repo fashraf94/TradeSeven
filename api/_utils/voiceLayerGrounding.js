@@ -32,7 +32,7 @@
 //   · THE GROUNDED PROSE — the identity frame (§3.1), the phase rules and
 //     examples (§4), the third-path rule, the elicitation lines the discovery
 //     listed (site 27), the first-message contract (§7).
-//   · THE VOCABULARY GUARD — the 30 strings (rulings §3, discrepancy 12) no
+//   · THE VOCABULARY GUARD — the 30 sites (35 phrases) (rulings §3, discrepancy 12) no
 //     grounded prompt may contain; voiceLayerPrompt.grounding.test.js asserts
 //     each is absent from every grounded surface AND present in the off
 //     surface it names, so the guard can fail.
@@ -63,6 +63,11 @@ import {
   deployPlanSuppressed,
   deployBriefText,
   planAtDeployLabel,
+  GROUNDING_VERSION,
+  DIRECTIVE_FILED_MESSAGE_TYPE,
+  guardrailForcedExit,
+  GUARDRAIL_FORCED_FAILED_LABEL,
+  isEngineAuthoredMotive,
 } from '../../src/data/decisionRecord.js';
 import { FLAT6_GAME_MODE } from '../../src/constants/agentGameModes.js';
 // §6.2 — chips minted by id: the allowlist helpers, called directly (the
@@ -71,8 +76,12 @@ import { FLAT6_GAME_MODE } from '../../src/constants/agentGameModes.js';
 // archetypeImportBoundaryBaseline.json in the same commit (§2.3 ratchet).
 import { isValidAdjustmentId, getCanonicalText } from '../../src/data/archetypeAdjustments.js';
 
-/** Stamped top-level on every exchange produced under the grounding contract (§3.4, M3). */
-export const GROUNDING_VERSION = 1;
+/**
+ * Stamped top-level on every exchange produced under the grounding contract
+ * (§3.4, M3). The constant's ONE home is the zero-import decisionRecord.js —
+ * the client's reader imports it too — re-exported here for the writers.
+ */
+export { GROUNDING_VERSION };
 
 /** YOUR RECORD renders this many checks, newest first (§3.2: three, measured ~442 tokens). */
 export const RECORD_WINDOW = 3;
@@ -93,10 +102,15 @@ const isNonEmptyString = (v) => typeof v === 'string' && v.length > 0;
 // collapse whitespace → trim → remove one leading `Hypothesis:` (any case,
 // with or without the bold) → compare the remainders.
 
+// The `_…_` wrapper is anchored at word boundaries, as Markdown reads it, so an
+// underscore INSIDE an identifier (`threshold_proximity`, `NOW_and_TSLA`) is
+// never taken for emphasis — otherwise two sides whose underscore pairing
+// differed could miss the duplicate and the hypothesis would render twice
+// (review R-14).
 const EMPHASIS_WRAPPERS = [
   /\*\*([^*]+)\*\*/g,
   /\*([^*]+)\*/g,
-  /_([^_]+)_/g,
+  /(?<!\w)_([^_]+)_(?!\w)/g,
 ];
 
 export function normalizeForDuplicate(text) {
@@ -134,12 +148,22 @@ export const RATIONALE_RULE = `RATIONALE RULE: Rationale is historical decider t
 export const CURRENT_DIRECTIVE_HEADING = 'CURRENT DIRECTIVE (filed to the trading process; in front of it at each check while current — it may or may not act on it)';
 export const NO_DIRECTIVE_LINE = 'CURRENT DIRECTIVE: none filed.';
 
-/** The persisted state of one check, as a label (D-66, D-70 in the pane's order). */
+/**
+ * The persisted state of one check, as a label — the pane's selector
+ * (selectWhyState.js), in the pane's order, over the SAME shared gates
+ * (decisionRecord.js), so one check cannot get two sentences (BUILD_RULES §9).
+ * The fifth state (D-70) is checked FIRST inside the downgraded branch: a
+ * guardrail-forced exit whose execution threw carries the thrown-swap prefix
+ * too, and the fourth state's words would credit the agent with an argument
+ * the cron overwrote (review R-01). A PROPOSAL held the position at the check
+ * pending an approval, so it is `Held`, never a swap (review R-11).
+ */
 export function recordStateLabel(evaluation) {
   if (evaluation?.downgraded === true) {
+    if (guardrailForcedExit(evaluation)) return GUARDRAIL_FORCED_FAILED_LABEL;
     return swapDidNotGoThrough(evaluation) ? FAILED_LABEL : DOWNGRADED_LABEL;
   }
-  if (evaluation?.decision === 'SWAP' || evaluation?.decision === 'PROPOSAL') {
+  if (evaluation?.decision === 'SWAP') {
     const tier = tierLabel(evaluation.tier);
     const pair = swappedLabel(evaluation.symbolOut, evaluation.symbolIn);
     return tier ? `${pair} (${tier})` : pair;
@@ -170,10 +194,26 @@ export function renderRecordEntry(evaluation) {
     // The stored bytes, verbatim — no stripping; the model reads the `**`.
     lines.push(`  Rationale — ${motiveAuthorLabel(evaluation.rationale)}: ${evaluation.rationale}`);
   }
-  if (isNonEmptyString(evaluation.hypothesis) && !rationaleCarriesHypothesis(evaluation.rationale, evaluation.hypothesis)) {
-    lines.push(`  ${HYPOTHESIS_LABEL}: ${evaluation.hypothesis}`);
+  // The hypothesis line is the DECIDER's forecast, recorded and graded later.
+  // On the guardrail path the cron writes its own `Hypothesis: deterministic
+  // guardrail enforcement — …` beside its own rationale (agent-evaluate.js);
+  // that is the system's sentence, not a forecast the check made, so it is
+  // withheld exactly where the rationale is engine-authored (review R-12). The
+  // field's own leading `Hypothesis:` is dropped for display — the label
+  // already says it (the detection above strips it the same way).
+  if (
+    isNonEmptyString(evaluation.hypothesis)
+    && !isEngineAuthoredMotive(evaluation.rationale)
+    && !rationaleCarriesHypothesis(evaluation.rationale, evaluation.hypothesis)
+  ) {
+    lines.push(`  ${HYPOTHESIS_LABEL}: ${displayHypothesis(evaluation.hypothesis)}`);
   }
   return lines;
+}
+
+/** The hypothesis field as the record shows it: one leading `Hypothesis:` label dropped, bytes otherwise verbatim. */
+export function displayHypothesis(hypothesis) {
+  return String(hypothesis).replace(/^\s*hypothesis:\s*/i, '');
 }
 
 /**
@@ -251,7 +291,7 @@ export function buildFundamentalsLine(fundamentals) {
 
 // ==================== §3.4 — THE HISTORY WINDOW ====================
 
-/** The chat turn's messageType, by code default (ruling 23; the client's resolveMessageType). */
+/** The chat turn's messageType, by code default (hazard 23 (Phase 0 §3); the client's resolveMessageType). */
 export function historyMessageType(exchange) {
   if (isNonEmptyString(exchange?.messageType)) return exchange.messageType;
   return exchange?.isAutoDebrief ? 'auto_debrief' : 'user_initiated';
@@ -272,14 +312,13 @@ export function selectHistoryWindow(chatExchanges, { window = HISTORY_WINDOW } =
     const agentText = ex.agentResponse || ex.agentMessage || '';
     if (isNonEmptyString(ex.userMessage)) {
       pairs.push({ type, userMessage: ex.userMessage, agentText });
-    } else if (ex.groundingVersion === GROUNDING_VERSION) {
-      // A chip filing (file-directive.js) carries no narrator words: the
-      // ExecutionCard shows the directive. In the window it reads as the
-      // directive it filed, quoted — never invented prose.
-      const text = agentText || (ex.hasDirective && isNonEmptyString(ex.directive?.text) ? `"${ex.directive.text}"` : '');
-      agentLines.push({ type, text, timestamp: ex.timestamp ?? null });
+    } else if (ex.groundingVersion === GROUNDING_VERSION && type !== DIRECTIVE_FILED_MESSAGE_TYPE) {
+      agentLines.push({ type, text: agentText, timestamp: ex.timestamp ?? null });
     }
-    // else: a legacy proactive exchange (no marker) — excluded.
+    // else: a legacy proactive exchange (no marker) — excluded; or a chip
+    // filing (file-directive.js), which carries no narrator words — the USER
+    // tapped it, so it is not one of "the ones you started", and the CURRENT
+    // DIRECTIVE line already carries what it filed (review R-13).
   }
   return { pairs, agentLines };
 }
@@ -456,6 +495,14 @@ export const GROUNDED_PHASE_RULES = Object.freeze({
 });
 
 // ==================== §4 — THE FEW-SHOT EXAMPLES, grounded ====================
+//
+// The examples' chips are QUESTIONS (`kind: 'ask'`), never a filing: the
+// examples are phase-keyed and shown to every archetype, so a literal menu id
+// in one would teach id-guessing off another archetype's menu, and a string
+// chip reading `File: …` would be an ask chip wearing a filing's claim (review
+// R-03 — Sol's F2 re-created by the prompt's own example). The by-id shape a
+// filing option takes is stated once, in GROUNDED_OUTPUT_FORMAT, against the
+// menu the prompt actually carries.
 
 export const GROUNDED_DISCOVERY_EXAMPLE = `EXAMPLE OF A GOOD DISCOVERY EXCHANGE:
 Agent: "The 11:15 check rotated the support slot into AVGO on relative strength, and the context has semis leading — NVDA above all its averages, AVGO out of a 3-day base. Two things we could put in front of the process: (1) file 'Narrow to the single strongest sector(s)' and let it lean on semis; (2) file 'Widen the spread (target more sectors)' and pick up the energy exposure we're missing. Two totally different bets. Which do you want filed?"
@@ -463,10 +510,10 @@ User: "Option 1. When semis are moving I want to ride it, not hedge."
 Agent: {"_scratchpad": "User chose concentration over diversification when momentum is confirmed. Strong signal for concentration_tolerance=high_when_momentum_confirmed. Server target was sector_conviction — user implicitly confirmed tech/semis conviction.", "response": "Noted — the interface will show what was filed, and the process reads it at its next check.", "hasDirective": true, "directive": {"text": "Narrow to the single strongest sector(s)", "expiry": "end_of_battle"}, "suggestedActions": null}`;
 
 export const GROUNDED_REFINEMENT_EXAMPLE = `EXAMPLE OF A GOOD REFINEMENT EXCHANGE:
-Agent: {"_scratchpad": "Server target: loss_reaction. The record shows a hold through a fading setup; presenting the two filings the rules support. User's response reveals whether they trust conviction over base rates when the downside is tangible.", "response": "The 11:30 check held the book with breadth narrowing — last two times we saw this exact pattern, the move faded by lunch, and the record shows the book held both times: won once, lost 12 points the other. Two things we could file: 'Require stronger confirmation before entering' if you want the process tighter, or nothing, and let its standing rules run. Which way?", "hasDirective": false, "directive": null, "suggestedActions": ["File: Require stronger confirmation before entering", "Leave the standing rules as they are", "Show me the 11:30 check's reasoning"]}`;
+Agent: {"_scratchpad": "Server target: loss_reaction. The record shows a hold through a fading setup; presenting the two filings the rules support. User's response reveals whether they trust conviction over base rates when the downside is tangible.", "response": "The 11:30 check held the book with breadth narrowing — last two times we saw this exact pattern, the move faded by lunch, and the record shows the book held both times: won once, lost 12 points the other. Two things we could file: 'Require stronger confirmation before entering' if you want the process tighter, or nothing, and let its standing rules run. Which way?", "hasDirective": false, "directive": null, "suggestedActions": [{"kind": "ask", "text": "What would 'Require stronger confirmation before entering' change at the next check?"}, {"kind": "ask", "text": "Leave the standing rules as they are"}, {"kind": "ask", "text": "Show me the 11:30 check's reasoning"}]}`;
 
 export const GROUNDED_MASTERY_EXAMPLE = `EXAMPLE OF A GOOD MASTERY EXCHANGE:
-Agent: {"_scratchpad": "Server target: time_of_day_preference. The record's last check held; one filing to recommend. User's reaction reveals urgency preference.", "response": "Here's the record: the 11:15 check rotated the support slot into AVGO and the 11:30 check held. The context is risk-on, breadth strong, semis leading again, and NVDA sits 1.2% under its Level 2 line. The one thing I'd put in front of the process is 'Narrow to the single strongest sector(s)' — it makes the book double-semis, more concentrated than we usually run, but the setup's clean. File it before the next check, or wait for the 10:30 confirmation?", "hasDirective": false, "directive": null, "suggestedActions": ["File: Narrow to the single strongest sector(s)", "Wait for the 10:30 confirmation", "Keep the spread — I want the diversification"]}`;
+Agent: {"_scratchpad": "Server target: time_of_day_preference. The record's last check held; one filing to recommend. User's reaction reveals urgency preference.", "response": "Here's the record: the 11:15 check rotated the support slot into AVGO and the 11:30 check held. The context is risk-on, breadth strong, semis leading again, and NVDA sits 1.2% under its Level 2 line. The one thing I'd put in front of the process is 'Narrow to the single strongest sector(s)' — it makes the book double-semis, more concentrated than we usually run, but the setup's clean. File it before the next check, or wait for the 10:30 confirmation?", "hasDirective": false, "directive": null, "suggestedActions": [{"kind": "ask", "text": "What would 'Narrow to the single strongest sector(s)' change at the next check?"}, {"kind": "ask", "text": "Wait for the 10:30 confirmation"}, {"kind": "ask", "text": "Keep the spread — I want the diversification"}]}`;
 
 export const GROUNDED_CONFIRMATION_EXAMPLE = `EXAMPLE — Confirmation Response:
 User: "Hunt for a tech breakout"
@@ -553,7 +600,7 @@ Portfolio-composition focused:
 LENGTH:
 Hard cap 5 sentences. Target 2-4.`;
 
-// ==================== THE VOCABULARY GUARD — the 30 strings ====================
+// ==================== THE VOCABULARY GUARD — the 30 sites (35 phrases) ====================
 //
 // One entry per site the discovery (§2.C8) and the Phase 0 report (§2 item 3)
 // list: the 27 numbered sites, the unnumbered trade-narration line (28), and

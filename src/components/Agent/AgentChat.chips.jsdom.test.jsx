@@ -28,9 +28,12 @@ import { BATTLE_VIEW_COPY as COPY } from '../../screens/battleView/battleViewCop
 import {
   FILING_CONFLICT_LINE,
   FILING_BUDGET_LINE,
+  FILING_REJECTED_LINE,
   FILING_FAILED_LINE,
   NO_CHANGE_STATUS_LINE,
+  DIRECTIVE_FILED_MESSAGE_TYPE,
 } from '../../data/decisionRecord';
+import { deriveReceipts } from '../../screens/battleView/deriveReceipts';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};
@@ -52,6 +55,8 @@ afterEach(() => {
 });
 
 const DV02 = 'Widen the spread (target more sectors)';
+// The LITERAL label — never derived through filesChip, so a dropped prefix reds here (review R-10).
+const FILES_DV02 = `Files: ${DV02}`;
 const MINTED = [
   { kind: 'directive', id: 'DV-02', text: DV02 },
   { kind: 'ask', text: 'Why the spread?' },
@@ -82,7 +87,7 @@ const jsonResponse = (status, body = {}) => ({ ok: status >= 200 && status < 300
 describe('chips minted by id — the labels', () => {
   it('a directive chip reads `Files: {canonical text}`; an ask chip reads its question; a string chip is the shipped chip', () => {
     render({ chatExchanges: [lastAgentMessage({ suggestedActions: [...MINTED, 'Show me the checks'] })] });
-    expect(chipButton(COPY.filesChip(DV02))).toBeTruthy();
+    expect(chipButton(FILES_DV02)).toBeTruthy();
     expect(chipButton('Why the spread?')).toBeTruthy();
     expect(chipButton('Show me the checks')).toBeTruthy();
     expect(container.textContent).not.toContain('[object Object]');
@@ -99,7 +104,7 @@ describe('chips minted by id — the taps', () => {
   it('a directive chip hits /api/agent/file-directive with its id and the current belief — never the chat route', async () => {
     const fetchSpy = stubFetch(async () => jsonResponse(200, { status: 'filed', directive: { text: DV02 }, remaining: 7 }));
     render({ chatExchanges: [lastAgentMessage()], currentDirectiveThreadId: 'thread-A' });
-    await click(chipButton(COPY.filesChip(DV02)));
+    await click(chipButton(FILES_DV02));
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const [url, init] = fetchSpy.mock.calls[0];
     expect(url).toBe('/api/agent/file-directive');
@@ -111,10 +116,26 @@ describe('chips minted by id — the taps', () => {
     expect(container.querySelector('[style*="EF4444"]')).toBeNull();
   });
 
+  it('after a 200 the filed thread is the belief and the chips stay hidden until the subscribed slot catches up (review R-18)', async () => {
+    const fetchSpy = stubFetch(async () => jsonResponse(200, { status: 'filed', directive: { text: DV02, directiveThreadId: 'thread-B' }, remaining: 7 }));
+    render({ chatExchanges: [lastAgentMessage()], currentDirectiveThreadId: 'thread-A' });
+    await click(chipButton(FILES_DV02));
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    // The chips are gone: a second tap cannot re-post the stale belief.
+    expect(chipButton(FILES_DV02)).toBeUndefined();
+    expect(chipButton('Why the spread?')).toBeUndefined();
+    // The listener delivers the slot → the chips are back (the fixture's last exchange still carries them).
+    render({ chatExchanges: [lastAgentMessage()], currentDirectiveThreadId: 'thread-B' });
+    expect(chipButton(FILES_DV02)).toBeTruthy();
+    // A further filing sends the caught-up belief.
+    await click(chipButton(FILES_DV02));
+    expect(JSON.parse(fetchSpy.mock.calls[1][1].body).expectedDirectiveThreadId).toBe('thread-B');
+  });
+
   it('with no current directive the belief sent is null', async () => {
     const fetchSpy = stubFetch(async () => jsonResponse(200, { status: 'filed', directive: { text: DV02 } }));
     render({ chatExchanges: [lastAgentMessage()] });
-    await click(chipButton(COPY.filesChip(DV02)));
+    await click(chipButton(FILES_DV02));
     expect(JSON.parse(fetchSpy.mock.calls[0][1].body).expectedDirectiveThreadId).toBeNull();
   });
 
@@ -134,18 +155,19 @@ describe('chips minted by id — the taps', () => {
   it.each([
     [409, FILING_CONFLICT_LINE],
     [429, FILING_BUDGET_LINE],
+    [422, FILING_REJECTED_LINE],
     [500, FILING_FAILED_LINE],
   ])('a %s renders its ruled line and nothing else', async (status, line) => {
     stubFetch(async () => jsonResponse(status, { error: 'x' }));
     render({ chatExchanges: [lastAgentMessage()] });
-    await click(chipButton(COPY.filesChip(DV02)));
+    await click(chipButton(FILES_DV02));
     expect(container.textContent).toContain(line);
   });
 
   it('a 5xx / thrown request never claims nothing was filed (the D-90 rule)', async () => {
     stubFetch(async () => { throw new TypeError('Failed to fetch'); });
     render({ chatExchanges: [lastAgentMessage()] });
-    await click(chipButton(COPY.filesChip(DV02)));
+    await click(chipButton(FILES_DV02));
     expect(container.textContent).toContain(FILING_FAILED_LINE);
     expect(container.textContent).not.toContain('nothing was filed');
   });
@@ -166,5 +188,23 @@ describe('the no-change status line (§6.3) — from the persisted exchange only
     expect(container.querySelector('[data-directive-status]')).toBeNull();
     render({ chatExchanges: [{ ...nullWrite, groundingVersion: 1, archetypeGate: undefined }] });
     expect(container.querySelector('[data-directive-status]')).toBeNull();
+  });
+});
+
+describe('the filed exchange on the Battle View (§6.3 — one "Filed", one path)', () => {
+  it('renders the ExecutionCard with the receipt derived from the exchange, and NO empty speech bubble above it (review R-04)', () => {
+    const filed = {
+      userMessage: null, agentResponse: '', hasDirective: true, messageType: DIRECTIVE_FILED_MESSAGE_TYPE, source: 'chip',
+      directive: { text: DV02, expiry: 'end_of_battle', directiveThreadId: 't-1', adjustmentId: 'DV-02', canonicalTextVersion: 1 },
+      directiveThreadId: 't-1', timestamp: '2026-09-08T15:31:00.000Z', groundingVersion: 1, elicitationTarget: 'directive_filed', mode: 'battle',
+    };
+    const exchanges = [{ userMessage: 'What would you file?', agentResponse: 'Two ways.', timestamp: '2026-09-08T15:05:00.000Z', mode: 'battle' }, filed];
+    render({ chatExchanges: exchanges, receipts: deriveReceipts(exchanges, 'active'), currentDirectiveThreadId: 't-1' });
+    expect(container.textContent).toContain(COPY.filed('2026-09-08T15:31:00.000Z'));
+    expect(container.textContent).toContain('Filed 11:31 AM');
+    expect(container.textContent).toContain(DV02);
+    // Exactly one speech bubble body (the agent's "Two ways."), none for the filing.
+    const bodies = [...container.querySelectorAll('div')].filter((d) => d.getAttribute('style')?.includes('border-radius: 0 12px 12px 12px'));
+    expect(bodies.map((d) => d.textContent)).toEqual(['Two ways.']);
   });
 });

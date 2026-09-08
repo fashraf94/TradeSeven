@@ -95,6 +95,36 @@ export const FAILED_LABEL = 'Argued for a swap · it did not go through';
  */
 export const SWAP_FAILED_PREFIX = 'Swap execution failed';
 
+/**
+ * The FIFTH state (D-70) — a guardrail-FORCED exit whose execution threw.
+ * Its gate is three persisted conjuncts, stricter than the fourth state's
+ * string prefix, and the two overlap: such an entry carries the
+ * SWAP_FAILED_PREFIX as well, and under the fourth state's words would credit
+ * the agent with an argument the cron overwrote. `reinforced_haiku` (the agent
+ * argued, a guardrail agreed) fails the third conjunct and keeps the fourth
+ * state, which is correct: those ARE the agent's words. Shared by the pane
+ * (selectWhyState.js re-exports these under their shipped names) and the
+ * narrator's YOUR RECORD, so one check cannot get two sentences (BUILD_RULES
+ * §9; review R-01).
+ */
+export const GUARDRAIL_SOURCE_PREFIX = 'guardrail_';
+export const GUARDRAIL_FORCED_EXIT = 'forced_exit';
+export const GUARDRAIL_FORCED_FAILED_LABEL = 'A guardrail called for a swap · it did not go through';
+
+/**
+ * The persisted three-conjunct gate for the fifth state: `downgraded`
+ * (checked by the caller) ∧ a `guardrail_` sourceNote ∧ a `forced_exit`
+ * override. Returns the override — the pair lives on it, because the entry's
+ * own `symbolOut` / `symbolIn` are null on a downgraded HOLD — or null.
+ */
+export function guardrailForcedExit(evaluation) {
+  const note = evaluation?.guardrailSourceNote;
+  if (typeof note !== 'string' || !note.startsWith(GUARDRAIL_SOURCE_PREFIX)) return null;
+  const overrides = evaluation?.guardrailOverrides;
+  if (!Array.isArray(overrides)) return null;
+  return overrides.find((o) => o && o.action === GUARDRAIL_FORCED_EXIT) || null;
+}
+
 /** D-66: a downgraded entry whose first validation error is the thrown-swap prefix. */
 export function swapDidNotGoThrough(evaluation) {
   const first = Array.isArray(evaluation?.validationErrors) ? evaluation.validationErrors[0] : null;
@@ -231,6 +261,22 @@ export const planAtDeployLabel = (etDateText) => (etDateText ? `The plan at depl
 // both file through POST /api/agent/file-directive; the words are ONE source
 // here so the two surfaces cannot disagree about what a chip does or what
 // a filing's outcome was.
+
+/**
+ * Stamped top-level on every exchange produced under the voice-layer grounding
+ * contract (spec §3.4, M3). ONE home for the version: the server's writers
+ * (through voiceLayerGrounding.js) and the client's reader
+ * (deriveChatMessages.js) both import it, so neither carries a literal.
+ */
+export const GROUNDING_VERSION = 1;
+
+/**
+ * The persisted `messageType` of a chip filing's audit exchange (spec §6.3,
+ * file-directive.js). It carries no narrator words — the ExecutionCard is its
+ * whole render — so the chat skips its bubble body and the narrator's history
+ * block leaves it out; both key on this one name.
+ */
+export const DIRECTIVE_FILED_MESSAGE_TYPE = 'directive_filed';
 
 /** A directive chip's label: what it FILES, by mechanism (§6.2). */
 export const FILES_CHIP_PREFIX = 'Files: ';

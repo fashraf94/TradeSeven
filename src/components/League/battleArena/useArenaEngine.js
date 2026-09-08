@@ -175,7 +175,15 @@ export function useArenaEngine({
 
   // Clear a stale counter the instant the battle identity changes (a new game-day's
   // battle doc, or switching groups) so the dock never shows the prior battle's count.
-  React.useEffect(() => { setEng((s) => (s.remaining == null ? s : { ...s, remaining: null })); }, [battleId]);
+  // The chips, the belief and the last failure line are the prior battle's too
+  // (review R-17): a tap in the new battle must never post the old belief.
+  React.useEffect(() => {
+    setEng((s) => (
+      s.remaining == null && s.chips.length === 0 && s.currentDirectiveThreadId == null && s.filingError == null
+        ? s
+        : { ...s, remaining: null, chips: [], currentDirectiveThreadId: null, filingError: null }
+    ));
+  }, [battleId]);
 
   // On open (live only), fetch the true "N left today" so the counter is never a
   // client guess — it reflects any questions already spent earlier today.

@@ -5,35 +5,56 @@
 // the battle's owner it stamps the top-level `groundingVersion: 1` marker
 // like the others (rulings §3: "review mode, harmless, consistent").
 //
-// SOURCE ROWS, stated as such. processBattleReview drives a Haiku review and
-// a Gemma debrief behind two live clients and the batch-review suite exercises
-// only its queue logic; a behavioural row here would mean standing up both
-// clients for one spread. The rows below pin the three facts the stamp needs
-// — the accessor is imported, the marker constant is imported (never a
-// literal), and the exchange literal spreads the stamp under the owner's
-// mode — so a reworded writer reds rather than silently dropping the marker.
+// The exchange is built by the exported, pure `buildDebriefExchange`, so the
+// stamp is proved by BEHAVIOUR under each mode (review R-32 — the earlier
+// source rows could not fail under a writer that stripped the marker before
+// the write); one source row pins that the handler calls it with the OWNER.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
+const { grounding } = vi.hoisted(() => ({ grounding: { mode: 'off', calls: [] } }));
+vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  getVoiceGroundingMode: (uid) => { grounding.calls.push(uid); return grounding.mode; },
+}));
+
+// Dependency-surface guard (BUILD_RULES §4): this file's import of the module under test is the runtime guard that its api → src imports stay Node-clean. Never mock it.
+const { buildDebriefExchange } = await import('./agent-batch-review.js');
+
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(HERE, 'agent-batch-review.js'), 'utf8');
+const ARGS = { agentMessage: 'The day in review.', scratchpad: 'clean', suggestedActions: null, ownerId: 'owner-1' };
 
-describe('agent-batch-review — the auto-debrief stamps the grounding marker under the flag (source rows)', () => {
-  it('imports the per-caller accessor and the marker constant', () => {
-    expect(SRC).toContain("import { getVoiceGroundingMode } from '../../src/config/featureFlags.js';");
-    expect(SRC).toContain("import { GROUNDING_VERSION } from '../_utils/voiceLayerGrounding.js';");
+beforeEach(() => { grounding.mode = 'off'; grounding.calls = []; });
+
+describe('agent-batch-review — the auto-debrief exchange (writer 5)', () => {
+  it("'on' for the OWNER: the exchange carries the top-level marker", () => {
+    grounding.mode = 'on';
+    const ex = buildDebriefExchange(ARGS);
+    expect(ex.groundingVersion).toBe(1);
+    expect(grounding.calls).toEqual(['owner-1']);
+    expect(ex).toMatchObject({ userMessage: null, agentResponse: 'The day in review.', messageType: 'auto_debrief', isAutoDebrief: true, mode: 'review', hasDirective: false, directive: null });
   });
 
-  it("the auto_debrief exchange spreads the marker under the OWNER's mode, at call time, and nowhere else", () => {
-    const exchangeStart = SRC.indexOf("messageType: 'auto_debrief',");
-    expect(exchangeStart).toBeGreaterThan(0);
-    const literal = SRC.slice(exchangeStart, SRC.indexOf('};', exchangeStart));
-    expect(literal).toContain("...(getVoiceGroundingMode(battle.ownerId) === 'on' ? { groundingVersion: GROUNDING_VERSION } : {}),");
-    expect(SRC.split('groundingVersion').length - 1).toBe(1);
-    // Never a module-scope read of the mode.
+  it.each(['off', 'shadow'])("'%s': the shipped shape — no marker key at all", (mode) => {
+    grounding.mode = mode;
+    const ex = buildDebriefExchange(ARGS);
+    expect('groundingVersion' in ex).toBe(false);
+    expect(Object.keys(ex).sort()).toEqual(['agentResponse', 'directive', 'elicitationTarget', 'hasDirective', 'isAutoDebrief', 'messageType', 'mode', 'scratchpad', 'suggestedActions', 'timestamp', 'userMessage']);
+  });
+
+  it('the handler builds the written exchange through it, with the battle OWNER, and no other marker literal exists (source row)', () => {
+    expect(SRC).toContain("import { getVoiceGroundingMode } from '../../src/config/featureFlags.js';");
+    expect(SRC).toContain("import { GROUNDING_VERSION } from '../_utils/voiceLayerGrounding.js';");
+    // ONE call site (the definition is the other occurrence of the name).
+    expect(SRC.split('const exchange = buildDebriefExchange({').length - 1).toBe(1);
+    expect(SRC).toMatch(/buildDebriefExchange\(\{[^}]*ownerId: battle\.ownerId,/s);
+    // The marker is written in ONE place, from the constant — never a literal `1`.
+    expect(SRC.split('groundingVersion: GROUNDING_VERSION').length - 1).toBe(1);
+    expect(SRC).not.toMatch(/groundingVersion:\s*1\b/);
     expect(SRC).not.toMatch(/^const .*getVoiceGroundingMode\(/m);
   });
 });

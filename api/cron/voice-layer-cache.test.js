@@ -2,6 +2,7 @@
 // Tier 0 Item 1: bench data exposure — buildBenchBriefs unit tests.
 
 import { describe, it, expect } from 'vitest';
+// Dependency-surface guard (BUILD_RULES §4): this file's import of the module under test is the runtime guard that its api → src imports stay Node-clean. Never mock it.
 import { buildBenchBriefs, buildMarketContextBlock, buildPortfolioBriefs, buildScoutAlerts } from './voice-layer-cache.js';
 // The renderer these briefs are actually fed to — imported so the ATR unit
 // guard below covers the writer AND the surface the founder reads.
@@ -1321,8 +1322,22 @@ describe('buildPortfolioBriefs / buildBenchBriefs — the fundamentals mirror (v
   });
 
   it('is null-honest: an entry with no mirror gets no key, never null or a default', () => {
-    const rankingsMap = { AMD: fullRanking(), PLTR: { ...fullRanking(), fundamentals: 'garbage' } };
+    // Both builders, both conjuncts: AMD (the portfolio side) carries a NON-OBJECT
+    // mirror too, so the type guard is exercised on both sites (review R-09).
+    const rankingsMap = { AMD: { ...fullRanking(), fundamentals: 'garbage' }, PLTR: { ...fullRanking(), fundamentals: 'garbage' } };
     expect('fundamentals' in buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScoresMap, {}, {}, {}, { fundamentals: true })[0]).toBe(false);
     expect('fundamentals' in buildBenchBriefs(portfolio, priceMap, rankingsMap, techScoresMap, FROZEN_NOW, { fundamentals: true })[0]).toBe(false);
+  });
+});
+
+describe('the handler asks for the mirror only when the owner\'s mode is not off (source rows — review R-24)', () => {
+  it('derives ONE briefOptions from the per-caller accessor at call time and hands it to BOTH builders', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('./voice-layer-cache.js', import.meta.url), 'utf8');
+    expect(src).toContain("const briefOptions = { fundamentals: getVoiceGroundingMode(battle.ownerId) !== 'off' };");
+    expect(src.split('getVoiceGroundingMode(').length - 1).toBe(1);
+    expect(src).not.toMatch(/^const .*getVoiceGroundingMode\(/m);
+    expect(src).toMatch(/buildPortfolioBriefs\([^;]*briefOptions/s);
+    expect(src).toMatch(/buildBenchBriefs\([^;]*briefOptions/s);
   });
 });

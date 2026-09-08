@@ -40,8 +40,10 @@ const CODE = SRC
   .replace(/(^|[^:])\/\/.*$/gm, '$1');
 
 /** The body of a named export function, from its signature to its closing brace. */
+// Over the comment-stripped CODE, so a read moved into a comment cannot satisfy
+// a source row (review R-30).
 function fnBody(name) {
-  const body = SRC.slice(SRC.indexOf(`export function ${name}`));
+  const body = CODE.slice(CODE.indexOf(`export function ${name}`));
   return body.slice(0, body.indexOf('\n}') + 2);
 }
 
