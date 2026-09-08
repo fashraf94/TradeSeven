@@ -31,6 +31,10 @@ import { callGemmaVoice, parseVoiceLayerResponse } from '../_utils/gemmaClient.j
 import { buildTemplateOpener } from '../_utils/openerTemplateFloor.js';
 import { OPENER_LAZY_FALLBACK_ENABLED, getVoiceGroundingMode } from '../../src/config/featureFlags.js';
 import { GROUNDING_VERSION } from '../_utils/voiceLayerGrounding.js';
+// The agent-belongs-to-this-battle check the deterministic filing route has
+// carried since it shipped (file-directive.js check 3), shared rather than
+// re-typed (agentBattleBinding.js).
+import { agentBelongsToBattle, AGENT_BATTLE_MISMATCH } from '../_utils/agentBattleBinding.js';
 
 // Patient Gemma call ⇒ a longer function budget than a plain write endpoint.
 // 60s matches decide.js and voice-layer-cache.js.
@@ -135,10 +139,14 @@ export default async function handler(req, res) {
   const user = await requireAuth(req, res);
   if (!user) return;
 
-  // agentId is intentionally NOT read from the body — the agent is resolved
-  // authoritatively from the battle doc below, so a caller cannot fold an
-  // arbitrary agent into their opener.
-  const { battleId } = req.body || {};
+  // The agent is still resolved AUTHORITATIVELY from the battle doc below — a
+  // caller cannot fold an arbitrary agent into their opener, and never could.
+  // `agentId` is read here only to be VERIFIED: the shipped client sends
+  // `{ battleId }` alone (AgentChat.jsx), so an absent id is not a mismatch and
+  // its behaviour is unchanged; an id that names a DIFFERENT agent is now
+  // refused rather than silently ignored, so a caller cannot come away
+  // believing it opened that agent's conversation.
+  const { battleId, agentId } = req.body || {};
   if (!battleId) {
     return res.status(400).json({ error: 'battleId is required' });
   }
@@ -156,6 +164,12 @@ export default async function handler(req, res) {
     // Ownership — verified uid from the Firebase token, not a client header.
     if (battle.ownerId !== user.uid) {
       return res.status(403).json({ error: 'Not authorized' });
+    }
+    // The agent binding — only when the caller named one (see the body read
+    // above). Ownership proves the battle is theirs, not that the agent they
+    // named is this battle's.
+    if (agentId !== undefined && !agentBelongsToBattle(battle, agentId)) {
+      return res.status(403).json({ error: AGENT_BATTLE_MISMATCH });
     }
     // Only backfill live battles.
     if (battle.status !== 'active') {

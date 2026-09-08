@@ -161,13 +161,19 @@ describe('ensure-opener decision tree', () => {
     expect(state.updates).toHaveLength(0);
   });
 
-  it('resolves the agent from the battle doc, IGNORING a client-supplied agentId', async () => {
-    gemma.callGemmaVoice.mockResolvedValue('{"response":"Hi"}');
-    gemma.parseVoiceLayerResponse.mockReturnValue({ response: 'Hi' });
+  it('a client-supplied agentId naming another agent is REFUSED, not ignored', async () => {
     const res = mkRes();
-    // battle.agentId is 'a1'; a malicious client passes a different id — must be ignored.
+    // battle.agentId is 'a1'; a client passes a different id. This row used to
+    // assert the id was IGNORED and the opener generated anyway; the agent
+    // binding check supersedes that — silently opening a different agent's name
+    // than the caller asked for is the wrong answer to a wrong request.
     await handler(mkReq({ battleId: 'b1', agentId: 'evil-arbitrary-id' }), res);
-    expect(res.body.status).toBe('generated'); // used battle.agentId='a1', not the body id
+    expect(res.statusCode).toBe(403);
+    expect(res.body.error).toBe('agent_battle_mismatch');
+    // The guarantee this row was written for is intact and stronger: the agent
+    // doc is still resolved from battle.agentId — proved by the ABSENT row
+    // below, which opens with no body id at all — and a body id can no longer
+    // be sent without matching it.
   });
 });
 
@@ -209,8 +215,47 @@ describe('ensure-opener guards', () => {
   it('422 when the battle has no agentId (early open)', async () => {
     state.battle.agentId = undefined;
     const res = mkRes();
-    await handler(mkReq(), res);
+    // The body names no agent — the shipped client's shape (AgentChat.jsx sends
+    // `{ battleId }`). A body that DID name one would be refused earlier now,
+    // by the binding check below, so this row keeps guarding the 422 branch
+    // rather than silently moving to a 403.
+    await handler(mkReq({ battleId: 'b1' }), res);
     expect(res.statusCode).toBe(422);
     expect(state.updates).toHaveLength(0);
+  });
+});
+
+describe('ensure-opener — the agent must belong to this battle', () => {
+  // Ownership proves the battle is the caller's; it does not prove the agent
+  // they named is the one this battle is bound to. `POST /api/agent/file-directive`
+  // has carried this check since it shipped; these rows are the lazy opener's,
+  // through the same shared predicate (agentBattleBinding.js).
+  it('MISMATCH: a body naming another agent → 403, no Gemma call, no write', async () => {
+    const res = mkRes();
+    await handler(mkReq({ battleId: 'b1', agentId: 'a2' }), res);
+    expect(res.statusCode).toBe(403);
+    expect(res.body.error).toBe('agent_battle_mismatch');
+    expect(gemma.callGemmaVoice).not.toHaveBeenCalled();
+    expect(state.updates).toHaveLength(0);
+  });
+
+  it('MATCH: the battle\'s own agent opens exactly as before', async () => {
+    gemma.callGemmaVoice.mockResolvedValue('{"response":"Deployed."}');
+    gemma.parseVoiceLayerResponse.mockReturnValue({ response: 'Deployed.' });
+    const res = mkRes();
+    await handler(mkReq({ battleId: 'b1', agentId: 'a1' }), res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.status).toBe('generated');
+    expect(state.updates).toHaveLength(1);
+  });
+
+  it('ABSENT: no agentId in the body is not a mismatch — the shipped client\'s call is unchanged', async () => {
+    gemma.callGemmaVoice.mockResolvedValue('{"response":"Deployed."}');
+    gemma.parseVoiceLayerResponse.mockReturnValue({ response: 'Deployed.' });
+    const res = mkRes();
+    await handler(mkReq({ battleId: 'b1' }), res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.status).toBe('generated');
+    expect(state.updates).toHaveLength(1);
   });
 });
