@@ -29,11 +29,13 @@
 // THE BUDGET IS THE NOMINAL ONE, and that is a stated limit rather than an
 // equivalence. The default is the shipped `GEMMA_TIMEOUT_MS` imported from
 // api/agent/chat.js, but production CLAMPS it to what remains of the absolute
-// turn deadline (`Math.min(GEMMA_TIMEOUT_MS, turnStartMs + TURN_DEADLINE_MS -
-// Date.now())`), so a real turn with a 5s prologue aborts at 14s, not 19s.
-// This harness has no prologue, so its timeout rate is an OPTIMISTIC LOWER
-// BOUND on production's. `--budget-ms` replays at whatever budget the founder
-// wants to gate on; the report prints the number it used and says this.
+// turn deadline: `Math.max(0, Math.min(GEMMA_TIMEOUT_MS, turnStartMs +
+// TURN_DEADLINE_MS - Date.now()))`. The clamp BEGINS to bite once the prologue
+// exceeds TURN_DEADLINE_MS - GEMMA_TIMEOUT_MS (5s at the shipped 24s/19s), so a
+// turn with a 10s prologue aborts at 14s where this harness would allow 19s.
+// The harness has no prologue at all, so its timeout rate is an OPTIMISTIC
+// LOWER BOUND on production's. `--budget-ms` replays at whatever budget the
+// founder wants to gate on; the report prints the number it used and says this.
 //
 // THE HOSTILE PAIR. Spec §3.2's fixture — a rationale that itself contains
 // `Hypothesis:`, "I'll rotate" and "if X then I would swap" — is assembled
@@ -74,7 +76,7 @@ import { pathToFileURL } from 'node:url';
 import { callGemmaVoice, parseVoiceLayerResponse } from '../_utils/gemmaClient.js';
 // The shipped per-call budget, imported rather than restated: a harness that
 // declares its own timeout measures its own timeout (chat.timeout.test.js).
-import { GEMMA_TIMEOUT_MS } from '../agent/chat.js';
+import { GEMMA_TIMEOUT_MS, TURN_DEADLINE_MS } from '../agent/chat.js';
 // The shipped reply lint (spec §9 gate 1) and the record renderer's own labels.
 import {
   REPLY_LINT_RE, RATIONALE_RULE, CURRENT_DIRECTIVE_HEADING, NO_DIRECTIVE_LINE, HYPOTHESIS_LABEL,
@@ -162,6 +164,13 @@ export function extractRecordRationales(systemPrompt) {
  * lint: the lint guards the narrator's OWN sentences, this finds the clauses
  * the DECIDER wrote that the narrator must not repeat (the rationale rule).
  */
+/**
+ * The run of consecutive words a near-repetition must share. ONE home: the
+ * scorer's default and the sentence the report prints about it are the same
+ * constant, so the number and its description cannot disagree (BUILD_RULES §9).
+ */
+export const ECHO_SHINGLE = 5;
+
 export const FORWARD_MARKER_RE = new RegExp([
   String.raw`\bhypothesis\s*:`,
   // The apostrophe is REQUIRED. Optional, `\bi(?:'|’)?ll\b` also matched the
@@ -239,7 +248,7 @@ export function shingles(normalized, n) {
  *
  * @returns {{clauses:string[], hits:Array<{clause:string, kind:'exact'|'shingle', evidence:string}>, hitCount:number}}
  */
-export function rationaleForwardEchoes(rationales, reply, { shingle = 5 } = {}) {
+export function rationaleForwardEchoes(rationales, reply, { shingle = ECHO_SHINGLE } = {}) {
   const list = (Array.isArray(rationales) ? rationales : [rationales]).filter((r) => typeof r === 'string' && r.trim());
   const clauses = [...new Set(list.flatMap(extractForwardClauses))];
   const haystack = normalizeForEcho(reply);
@@ -313,10 +322,20 @@ export function schemaAdherence(parsed, { grounded = false } = {}) {
     return { valid: false, reason: 'empty_response', missing: [] };
   }
   if (typeof parsed.hasDirective !== 'boolean') return { valid: false, reason: 'hasDirective_not_boolean', missing: [] };
-  // A reply that CLAIMS a directive and ships none is the exact false receipt
-  // the arc exists to prevent (spec §6.3: the receipt is bound to the write).
-  if (parsed.hasDirective === true && (!parsed.directive || typeof parsed.directive !== 'object')) {
-    return { valid: false, reason: 'hasDirective_without_directive', missing: [] };
+  // A reply that CLAIMS a directive is scored against what production would
+  // actually do with it (`normalizeDirective`, chat.js:143-151), so each reason
+  // is TRUE of the case it names:
+  //   • nothing usable at all, or an object with no `text` → normalizeDirective
+  //     returns null and the turn files nothing: the false receipt spec §6.3
+  //     exists to prevent.
+  //   • a bare STRING → a deviation from both output formats, which show only
+  //     the object — but production DOES accept and file it, so it is a format
+  //     miss, not a false receipt, and it must not be reported as one.
+  if (parsed.hasDirective === true) {
+    const d = parsed.directive;
+    if (typeof d === 'string' && d.trim()) return { valid: false, reason: 'directive_not_an_object', missing: [] };
+    if (!d || typeof d !== 'object') return { valid: false, reason: 'hasDirective_without_directive', missing: [] };
+    if (typeof d.text !== 'string' || !d.text.trim()) return { valid: false, reason: 'directive_without_text', missing: [] };
   }
   if (grounded) {
     const fault = groundedActionsFault(parsed.suggestedActions);
@@ -356,15 +375,22 @@ export function selectPairs(records, { limit = DEFAULT_PAIRS } = {}) {
 }
 
 /**
- * Which side actually produced the persisted reply. Under `'shadow'` — the mode
- * this harness's own header names — chat.js:290 gives `grounded=false` and
- * SENDS the old prompt, so `agentMessage` is the OLD prompt's reply. Under
- * `'canary'`/`'on'` it is the new one's. Attributing it to both columns (the
- * first cut of the dry run did) printed identical replies and identical lint
- * counts side by side and called one of them the grounded prompt's.
+ * Which side actually produced the persisted reply. The record carries the
+ * RESOLVED mode (chat.js stamps `getVoiceGroundingMode(uid)`), and resolution
+ * only ever yields `'off' | 'shadow' | 'on'` — a `'canary'` FLAG resolves to
+ * `'on'` for an allowlisted uid and `'shadow'` for everyone else
+ * (`resolveVoiceGroundingMode`, featureFlags.js). So `'canary'` is not a value
+ * that can appear here, and testing for it would encode the wrong rule: under
+ * the canary flag a NON-allowlisted caller is sent the OLD prompt.
+ *
+ * Under `'shadow'` chat.js gives `grounded=false` and SENDS the old prompt, so
+ * `agentMessage` is the OLD prompt's reply; under `'on'` it is the new one's.
+ * Attributing it to both columns (the first cut of the dry run did) printed
+ * identical replies and identical lint counts side by side and called one of
+ * them the grounded prompt's.
  */
 export function persistedReplySide(voiceGroundingMode) {
-  return voiceGroundingMode === 'on' || voiceGroundingMode === 'canary' ? 'new' : 'old';
+  return voiceGroundingMode === 'on' ? 'new' : 'old';
 }
 
 /** The shadow record → the two sides of one replay. */
@@ -542,7 +568,7 @@ export function renderReport({ pairs, results, dryRun, range, generatedAt, pairF
   out.push(`**Generated:** ${generatedAt}`);
   out.push(`**Shadow range:** ${range.fromKey} → ${range.toKey} (UTC date keys, \`shadow/${STREAM}/\`)`);
   out.push(`**Pairs:** ${realPairs} real turn(s) + ${pairs.length - realPairs} hostile fixture — floor is ${pairFloor} real turns.`);
-  out.push(`**Per-call budget:** ${budgetMs} ms${budgetMs === GEMMA_TIMEOUT_MS ? ' — the shipped `GEMMA_TIMEOUT_MS` (api/agent/chat.js), imported not restated' : ` (\`--budget-ms\`; the shipped nominal is ${GEMMA_TIMEOUT_MS} ms)`}. Production CLAMPS this to what remains of the turn deadline, so a real turn with a 5s prologue aborts sooner — the timeout rate below is an optimistic lower bound on production's.`);
+  out.push(`**Per-call budget:** ${budgetMs} ms${budgetMs === GEMMA_TIMEOUT_MS ? ' — the shipped `GEMMA_TIMEOUT_MS` (api/agent/chat.js), imported not restated' : ` (\`--budget-ms\`; the shipped nominal is ${GEMMA_TIMEOUT_MS} ms)`}. Production CLAMPS this to what remains of the turn deadline, so a turn whose prologue exceeds ${TURN_DEADLINE_MS - GEMMA_TIMEOUT_MS} ms (\`TURN_DEADLINE_MS - GEMMA_TIMEOUT_MS\`) aborts sooner than this — the timeout rate below is an optimistic lower bound on production's.`);
   if (dryRun) {
     out.push('');
     out.push('> **DRY RUN — no model was called.** The pairs were selected and both prompts assembled; the scorers ran over each turn\'s PERSISTED reply, shown in the column that actually produced it — under `shadow` the OLD prompt is the one that was sent (chat.js), so the grounded column is empty. Re-run without `--dry-run` for the gate.');
@@ -564,8 +590,11 @@ export function renderReport({ pairs, results, dryRun, range, generatedAt, pairF
   out.push(`| Rationale forward echoes | ${oldSummary.rationaleEchoes} across ${oldSummary.pairsWithEcho} pair(s) | ${newSummary.rationaleEchoes} across ${newSummary.pairsWithEcho} pair(s) |`);
   out.push('');
   out.push('- **Latency** is over the ANSWERED replays only. A timed-out replay measures the budget and a rejected one (401/429/5xx) measures the time to the rejection; neither is a response time, so both are excluded and counted in their own rows instead. Read the two rows above the latency before reading the latency. Percentiles are linear-interpolation quantiles.');
-  out.push('- **Reply lint** is the shipped `REPLY_LINT_RE` (`I\'ll rotate|I\'m rotating|eyeing|watching|keep an eye|I\'d consider … swap`), counted here rather than enforced — spec §9 asks for it as a measurement.');
-  out.push('- **Rationale forward echoes** = forward-bearing clauses taken from the rationales the GROUNDED prompt carried, found repeated in the reply (exact, or a 5-word run). Both columns are scored against the same clauses: the old prompt carries no YOUR RECORD, so its column is a control — an echo there came from somewhere other than the record. It measures repetition, not paraphrase; gate 2 is the founder\'s read.');
+  // The pattern and the window are INTERPOLATED, never retyped: a hand-copied
+  // phrase list is a label that goes stale while the number beside it moves,
+  // which is the display-agreement rule (BUILD_RULES §9) applied to a report.
+  out.push(`- **Reply lint** is the shipped \`REPLY_LINT_RE\` (\`${REPLY_LINT_RE.source}\`), counted here rather than enforced — spec §9 asks for it as a measurement.`);
+  out.push(`- **Rationale forward echoes** = forward-bearing clauses taken from the rationales the GROUNDED prompt carried, found repeated in the reply (exact, or a run of ${ECHO_SHINGLE} consecutive words). Both columns are scored against the same clauses: the old prompt carries no YOUR RECORD, so its column is a control — an echo there came from somewhere other than the record. It measures repetition, not paraphrase; gate 2 is the founder's read.`);
   out.push('');
   out.push('## 2. The pairs, side by side');
 

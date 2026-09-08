@@ -13,12 +13,15 @@
 import { describe, it, expect, vi } from 'vitest';
 import { REPLY_LINT_RE } from '../_utils/voiceLayerGrounding.js';
 import { MOTIVE_AGENT, MOTIVE_SYSTEM } from '../../src/data/decisionRecord.js';
-import { GEMMA_TIMEOUT_MS } from '../agent/chat.js';
+import { GEMMA_TIMEOUT_MS, TURN_DEADLINE_MS } from '../agent/chat.js';
+import { resolveVoiceGroundingMode } from '../../src/config/featureFlags.js';
 import {
   DEFAULT_PAIRS,
   HOSTILE_RATIONALE,
   HOSTILE_USER_MESSAGE,
   REQUIRED_REPLY_KEYS,
+  ECHO_SHINGLE,
+  persistedReplySide,
   replyLintHits,
   extractRecordRationales,
   extractForwardClauses,
@@ -281,6 +284,19 @@ describe('voice-grounding-harness — schemaAdherence', () => {
     expect(schemaAdherence({ _scratchpad: 'r', response: 'Filed it.', hasDirective: true, directive: { text: 'x', expiry: 'end_of_battle' } }).valid).toBe(true);
   });
 
+  it('each directive reason is TRUE of the case it names — production files a string', () => {
+    // chat.js's normalizeDirective ACCEPTS a bare string and files it, so
+    // calling that "hasDirective_without_directive" was a lie about what
+    // happened: it is a format deviation, not a false receipt.
+    expect(schemaAdherence({ _scratchpad: 'r', response: 'Filed it.', hasDirective: true, directive: 'Lean toward semis with confirmed volume.' }))
+      .toMatchObject({ valid: false, reason: 'directive_not_an_object' });
+    // An object with no text IS a false receipt — normalizeDirective returns null.
+    expect(schemaAdherence({ _scratchpad: 'r', response: 'Filed it.', hasDirective: true, directive: { expiry: 'end_of_battle' } }))
+      .toMatchObject({ valid: false, reason: 'directive_without_text' });
+    expect(schemaAdherence({ _scratchpad: 'r', response: 'Filed it.', hasDirective: true, directive: '   ' }))
+      .toMatchObject({ valid: false, reason: 'hasDirective_without_directive' });
+  });
+
   it('on the GROUNDED side a legacy string chip is a regression, not a tolerated shape', () => {
     const legacy = { _scratchpad: 'r', response: 'Two options.', hasDirective: false, suggestedActions: ['Widen the spread', 'Stay concentrated'] };
     // §6.2 replaced string chips with `{kind, id|text}`. The old prompt still
@@ -393,6 +409,21 @@ describe('voice-grounding-harness — selection', () => {
 });
 
 // ==================== the hostile pair ====================
+
+describe('voice-grounding-harness — persistedReplySide (lens 3, #4)', () => {
+  it('keys on the RESOLVED mode, which is never "canary"', () => {
+    // chat.js stamps getVoiceGroundingMode(uid), and resolution only ever
+    // yields off | shadow | on. A 'canary' branch would encode the WRONG rule:
+    // under the canary flag a non-allowlisted caller is sent the OLD prompt.
+    expect(resolveVoiceGroundingMode('canary', 'uid-1', 'uid-1')).toBe('on');
+    expect(resolveVoiceGroundingMode('canary', 'uid-2', 'uid-1')).toBe('shadow');
+    expect(persistedReplySide('on')).toBe('new');
+    expect(persistedReplySide('shadow')).toBe('old');
+    expect(persistedReplySide(null)).toBe('old');
+    // The value that cannot reach here must not be treated as the new side.
+    expect(persistedReplySide('canary')).toBe('old');
+  });
+});
 
 describe('voice-grounding-harness — the hostile rationale fixture (spec §3.2)', () => {
   it('the rationale carries all three forms Sol\'s confirm pass named', () => {
@@ -727,6 +758,28 @@ describe('voice-grounding-harness — the budget is the nominal one, and says so
     });
     const out = await replay({ systemPrompt: 'SP', conversationHistory: [], userMessage: 'hi', timeoutMs: 5, call });
     expect(out.timedOut).toBe(true);
+  });
+
+  it('the report DERIVES the lint pattern and the shingle window, never retypes them', async () => {
+    // A hand-copied phrase list is a label that goes stale while the number
+    // beside it moves — the display-agreement rule applied to a report.
+    const pairs = [buildHostilePair()];
+    const results = await runPairs(pairs, { dryRun: true });
+    const report = renderReport({ pairs, results, dryRun: true, range: { fromKey: '2026-09-01', toKey: '2026-09-08' }, generatedAt: NOW.toISOString() });
+    expect(report).toContain(`\`${REPLY_LINT_RE.source}\``);
+    expect(report).toContain(`a run of ${ECHO_SHINGLE} consecutive words`);
+    expect(ECHO_SHINGLE).toBe(5);
+  });
+
+  it('the report states the clamp threshold arithmetically, not as a wrong worked example', async () => {
+    // 24000 - 19000 = 5000: a 5s prologue is where the clamp BEGINS to bite,
+    // not where it produces 14s. The earlier text said a 5s prologue aborts at
+    // 14s, which is a 10s prologue's answer.
+    const pairs = [buildHostilePair()];
+    const results = await runPairs(pairs, { dryRun: true });
+    const report = renderReport({ pairs, results, dryRun: true, range: { fromKey: '2026-09-01', toKey: '2026-09-08' }, generatedAt: NOW.toISOString() });
+    expect(report).toContain(`exceeds ${TURN_DEADLINE_MS - GEMMA_TIMEOUT_MS} ms`);
+    expect(report).not.toMatch(/5s prologue aborts at 14s/);
   });
 
   it('the report prints the budget it used and states that production clamps below it', async () => {
