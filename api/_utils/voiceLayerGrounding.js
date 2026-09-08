@@ -46,10 +46,11 @@
 // IMPORTS. deskCopy.js (zero-import) and decisionRecord.js (zero-import) are
 // the client's own copy, imported under BUILD_RULES §4 — never copied (hazard
 // 26): the slot formatter, the nine `Woken by …` sentences, the absence
-// labels, the author labels, the motive translator and the deploy gates are
-// the pane's strings and the pane's rules, so the pane and the narrator cannot
-// disagree about one check. agentGameModes.js imports only the zero-import
-// schema module, and archetypeAdjustments.js (§6.2's allowlist helpers, the
+// labels, the author labels, the motive translator, the D-99 hypothesis label
+// and its §3.2a duplicate gate, and the deploy gates are the pane's strings and
+// the pane's rules, so the pane and the narrator cannot disagree about one
+// check. agentGameModes.js imports only the zero-import schema module, and
+// archetypeAdjustments.js (§6.2's allowlist helpers, the
 // §2.3-ratcheted table — see the import below) is zero-import too. All four
 // api→src imports are Node-clean; the test file's real import of THIS module
 // is the dependency-surface guard that keeps them so — never mock it.
@@ -72,8 +73,12 @@ import {
   DIRECTIVE_FILED_MESSAGE_TYPE,
   guardrailForcedExit,
   GUARDRAIL_FORCED_FAILED_LABEL,
-  isEngineAuthoredMotive,
   renderMotive,
+  normalizeForDuplicate,
+  rationaleCarriesHypothesis,
+  HYPOTHESIS_LABEL,
+  displayHypothesis,
+  renderHypothesis,
 } from '../../src/data/decisionRecord.js';
 import { FLAT6_GAME_MODE } from '../../src/constants/agentGameModes.js';
 // §6.2 — chips minted by id: the allowlist helpers, called directly (the
@@ -97,56 +102,22 @@ export const HISTORY_WINDOW = 10;
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.length > 0;
 
-// ==================== §3.2a — THE DUPLICATE NORMALIZER ====================
+// ============ §3.2a / D-99 — THE HYPOTHESIS RULE, RE-EXPORTED ============
 //
-// FOR DETECTION ONLY. Stored and displayed bytes are never modified: the
-// rationale is quoted verbatim, markers included (§3.2 "verbatim means
-// bytes"); this normalizer decides only whether the `hypothesis` FIELD is
-// already inside it, so the record never renders the prediction twice.
-//
-// For each side: strip Markdown emphasis wrappers (`**…**`, `*…*`, `_…_`) →
-// collapse whitespace → trim → remove one leading `Hypothesis:` (any case,
-// with or without the bold) → compare the remainders.
-
-// The `_…_` wrapper is anchored at word boundaries, as Markdown reads it, so an
-// underscore INSIDE an identifier (`threshold_proximity`, `NOW_and_TSLA`) is
-// never taken for emphasis — otherwise two sides whose underscore pairing
-// differed could miss the duplicate and the hypothesis would render twice
-// (review R-14).
-const EMPHASIS_WRAPPERS = [
-  /\*\*([^*]+)\*\*/g,
-  /\*([^*]+)\*/g,
-  /(?<!\w)_([^_]+)_(?!\w)/g,
-];
-
-export function normalizeForDuplicate(text) {
-  if (typeof text !== 'string') return '';
-  let out = text;
-  for (const re of EMPHASIS_WRAPPERS) out = out.replace(re, '$1');
-  out = out.replace(/\s+/g, ' ').trim();
-  out = out.replace(/^hypothesis:\s*/i, '');
-  return out;
-}
-
-/**
- * True when the rationale already carries the hypothesis under the §3.2a
- * normalizer — as the whole text or as a passage inside it (the known pair:
- * field `Hypothesis: CF will break out…` vs the rationale's trailing
- * `**Hypothesis: CF will break out…**`).
- */
-export function rationaleCarriesHypothesis(rationale, hypothesis) {
-  const h = normalizeForDuplicate(hypothesis);
-  if (!h) return false;
-  const r = normalizeForDuplicate(rationale);
-  if (!r) return false;
-  return r === h || r.includes(h);
-}
+// The duplicate normalizer, the label and the D-99 gate now live in the
+// zero-import decisionRecord.js and are re-exported here under their shipped
+// names, so nothing that consumed them changed. They moved because the League
+// Tournament pane renders the same field (D-99: "the label moves to
+// src/data/decisionRecord.js"), and a second copy of the rule is the drift
+// class BUILD_RULES §4 forbids — the pane and the narrator would eventually
+// suppress a different duplicate. Behaviour here is unchanged to the byte:
+// `renderRecordEntry` below composes the same line from the same gate.
+export { normalizeForDuplicate, rationaleCarriesHypothesis, HYPOTHESIS_LABEL, displayHypothesis };
 
 // ==================== §3.2 — YOUR RECORD ====================
 
 export const RECORD_HEADING = `YOUR RECORD (the last ${RECORD_WINDOW} checks, newest first — history, not a plan)`;
 export const RECORD_EMPTY_LINE = 'No check has been recorded yet.';
-export const HYPOTHESIS_LABEL = 'Hypothesis recorded at this check (graded after the battle)';
 
 // M1 — printed beside the block, verbatim from the spec.
 export const RATIONALE_RULE = `RATIONALE RULE: Rationale is historical decider text. It may contain forward-looking language produced by the decision prompt. When explaining a completed decision, quote only the part describing the completed decision and its observed reason. Never repeat a hypothesis, future action, action condition, intended trade, or plan from inside rationale.`;
@@ -226,26 +197,22 @@ export function renderRecordEntry(evaluation) {
   if (isNonEmptyString(motive)) {
     lines.push(`  Rationale — ${motiveAuthorLabel(evaluation.rationale)}: ${motive}`);
   }
-  // The hypothesis line is the DECIDER's forecast, recorded and graded later.
-  // On the guardrail path the cron writes its own `Hypothesis: deterministic
-  // guardrail enforcement — …` beside its own rationale (agent-evaluate.js);
-  // that is the system's sentence, not a forecast the check made, so it is
-  // withheld exactly where the rationale is engine-authored (review R-12). The
-  // field's own leading `Hypothesis:` is dropped for display — the label
-  // already says it (the detection above strips it the same way).
-  if (
-    isNonEmptyString(evaluation.hypothesis)
-    && !isEngineAuthoredMotive(evaluation.rationale)
-    && !rationaleCarriesHypothesis(evaluation.rationale, evaluation.hypothesis)
-  ) {
-    lines.push(`  ${HYPOTHESIS_LABEL}: ${displayHypothesis(evaluation.hypothesis)}`);
+  // The hypothesis line is the DECIDER's forecast, recorded and graded later,
+  // through the SAME three-conjunct gate the League Tournament pane renders it
+  // through (decisionRecord.js `renderHypothesis`), so one check cannot get two
+  // sentences (BUILD_RULES §9). The gate withholds the field where the
+  // rationale is engine-authored — on the guardrail path the cron writes its
+  // own `Hypothesis: deterministic guardrail enforcement — …` beside its own
+  // rationale (agent-evaluate.js), and that is the system's sentence, not a
+  // forecast the check made (review R-12) — and where the rationale already
+  // carries it (§3.2a). The field's own leading `Hypothesis:` is dropped for
+  // display; the label already says it, and the detection strips it the same
+  // way. Only the FRAME is this module's: the two-space prompt indent.
+  const hypothesis = renderHypothesis(evaluation);
+  if (hypothesis !== null) {
+    lines.push(`  ${HYPOTHESIS_LABEL}: ${hypothesis}`);
   }
   return lines;
-}
-
-/** The hypothesis field as the record shows it: one leading `Hypothesis:` label dropped, bytes otherwise verbatim. */
-export function displayHypothesis(hypothesis) {
-  return String(hypothesis).replace(/^\s*hypothesis:\s*/i, '');
 }
 
 /**

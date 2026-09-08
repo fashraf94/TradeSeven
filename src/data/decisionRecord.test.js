@@ -58,6 +58,12 @@ import {
   filingFailureLine,
   deployBriefText,
   planAtDeployLabel,
+  HYPOTHESIS_LABEL,
+  normalizeForDuplicate,
+  rationaleCarriesHypothesis,
+  displayHypothesis,
+  renderHypothesis,
+  renderMotive,
 } from './decisionRecord.js';
 import { BATTLE_VIEW_COPY } from '../screens/battleView/battleViewCopy';
 import * as whyState from '../screens/battleView/selectWhyState';
@@ -128,6 +134,38 @@ describe('decisionRecord — the client modules re-export, never re-declare (one
     expect(why).not.toContain("export function isEngineAuthoredMotive");
     expect(plan).not.toContain("export const FALLBACK_STRATEGY_PREFIX =");
     expect(plan).not.toContain("export const FALLBACK_BRIEF_PREFIX =");
+  });
+
+  // The D-99 hypothesis rule moved HERE from the server when the League
+  // Tournament pane landed it (D-99: "the label moves to
+  // src/data/decisionRecord.js"). voiceLayerGrounding.js re-exports the four
+  // names under their shipped spellings, so its consumers and its own test are
+  // unchanged — this row is the tripwire that keeps it a re-export. Read as
+  // SOURCE rather than imported: this is a client test, and pulling the api
+  // module into its graph would put the server's whole import surface behind
+  // every run here.
+  it('voiceLayerGrounding re-exports the hypothesis rule, never re-declares it', () => {
+    const grounding = read('api/_utils/voiceLayerGrounding.js');
+    expect(grounding).toContain("from '../../src/data/decisionRecord.js'");
+    expect(grounding).toContain('export { normalizeForDuplicate, rationaleCarriesHypothesis, HYPOTHESIS_LABEL, displayHypothesis };');
+    expect(grounding).not.toContain('export const HYPOTHESIS_LABEL =');
+    expect(grounding).not.toContain('export function normalizeForDuplicate');
+    expect(grounding).not.toContain('export function rationaleCarriesHypothesis');
+    expect(grounding).not.toContain('export function displayHypothesis');
+    expect(grounding).not.toContain("'Hypothesis recorded at this check");
+  });
+
+  // The pane the move was for. A source row, not a behaviour row — the five
+  // mount-path rows in Flat6BattleView.recordRendering.jsdom.test.jsx prove
+  // what a player sees; this one proves the pane has no second renderer to
+  // drift to.
+  it('the League Tournament pane renders through this module, not its own copy', () => {
+    const pane = read('src/components/Tournament/Flat6BattleView.jsx');
+    expect(pane).toContain("from '../../data/decisionRecord'");
+    expect(pane).toContain('renderMotive(e.rationale)');
+    expect(pane).toContain('renderHypothesis(e)');
+    expect(pane).not.toContain('{e.rationale}');
+    expect(pane).not.toContain('{e.hypothesis}');
   });
 });
 
@@ -254,5 +292,67 @@ describe('decisionRecord — the rules', () => {
     expect(guardrailForcedExit({ ...forced, guardrailOverrides: [{ action: 'reinforced_haiku' }] })).toBeNull();
     expect(guardrailForcedExit({ ...forced, guardrailOverrides: null })).toBeNull();
     expect(guardrailForcedExit(null)).toBeNull();
+  });
+});
+
+describe('decisionRecord — the hypothesis field (D-99 / §3.2a)', () => {
+  it('the label states BOTH halves of the amendment: recorded, and not yet graded', () => {
+    // Hazard 29 said never render the hypothesis at all. D-99 amends that on
+    // the strength of this label: the prediction is history, and its outcome
+    // is not in. A label that dropped either half would put a live forecast in
+    // the agent's mouth, which is what hazard 29 was protecting against.
+    expect(HYPOTHESIS_LABEL).toBe('Hypothesis recorded at this check (graded after the battle)');
+  });
+
+  it('normalizes for DETECTION only — emphasis, whitespace and one label head', () => {
+    expect(normalizeForDuplicate('**Hypothesis:   CF will   break out.**')).toBe('CF will break out.');
+    expect(normalizeForDuplicate('_hypothesis:_ *CF* will break out.')).toBe('CF will break out.');
+    // An underscore inside an identifier is not emphasis (review R-14).
+    expect(normalizeForDuplicate('threshold_proximity on NOW_and_TSLA')).toBe('threshold_proximity on NOW_and_TSLA');
+    expect(normalizeForDuplicate(null)).toBe('');
+  });
+
+  it('catches the known bold-vs-field duplicate, and only a real one', () => {
+    const hypothesis = 'Hypothesis: CF will break out.';
+    expect(rationaleCarriesHypothesis(`Held. **${hypothesis}**`, hypothesis)).toBe(true);
+    expect(rationaleCarriesHypothesis('Held on strength.', hypothesis)).toBe(false);
+    expect(rationaleCarriesHypothesis('Held on strength.', '')).toBe(false);
+  });
+
+  it('drops the field\'s own label head for display, bytes otherwise verbatim', () => {
+    expect(displayHypothesis('Hypothesis: CF breaks out.')).toBe('CF breaks out.');
+    expect(displayHypothesis('**Bold** claim')).toBe('**Bold** claim');
+  });
+
+  it('renderHypothesis gates on all three conjuncts, and on nothing else', () => {
+    const hypothesis = 'Hypothesis: AVGO closes above its 20-day.';
+
+    // Present, the agent's own, not already said → it shows, head dropped.
+    expect(renderHypothesis({ rationale: 'Adding on the breakout.', hypothesis }))
+      .toBe('AVGO closes above its 20-day.');
+
+    // Absent.
+    expect(renderHypothesis({ rationale: 'Adding on the breakout.', hypothesis: null })).toBeNull();
+    expect(renderHypothesis({ rationale: 'Adding on the breakout.' })).toBeNull();
+    expect(renderHypothesis(null)).toBeNull();
+
+    // Already inside the rationale (§3.2a) — rendered once, not twice.
+    expect(renderHypothesis({ rationale: `Held. **${hypothesis}**`, hypothesis })).toBeNull();
+
+    // ENGINE-authored rationale: the cron writes its own hypothesis beside its
+    // own sentence, and that is not a forecast the check made (review R-12).
+    expect(renderHypothesis({
+      rationale: 'Guardrail override (guardrail_stopLoss): Guardrail override: stop-loss at 8% breached on GILD (-9.24%).',
+      hypothesis: 'Hypothesis: deterministic guardrail enforcement — stop-loss at 8% breached on GILD (-9.24%).',
+    })).toBeNull();
+    expect(renderHypothesis({ rationale: 'Risk manager: trimming exposure.', hypothesis })).toBeNull();
+  });
+
+  it('renderMotive strips the cron machinery the League pane used to show raw', () => {
+    // The two shapes agent-evaluate.js:2124 composes, end to end.
+    const status = 'Guardrail override: stop-loss at 8% breached on GILD (-9.24%). Forcing exit → MOS.';
+    expect(renderMotive(`Guardrail override (guardrail_stopLoss): ${status}`)).toBe(status);
+    expect(renderMotive('Guardrail override (guardrail_max_sector_weight): Sector cap reached on energy.'))
+      .toBe('Guardrail override: Sector cap reached on energy.');
   });
 });

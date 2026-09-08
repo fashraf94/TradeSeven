@@ -2,7 +2,8 @@
 //
 // THE PERSISTED DECISION RECORD'S SHARED VOCABULARY — one source for the
 // client (the Battle View: battleViewCopy.js, selectWhyState.js,
-// selectDeployPlan.js) and the server (the grounded narrator prompt,
+// selectDeployPlan.js; and the League Tournament pane: Flat6BattleView.jsx)
+// and the server (the grounded narrator prompt,
 // api/_utils/voiceLayerGrounding.js).
 //
 // WHY IT LIVES HERE (voice-grounding hazard 26, the Sep 7 rulings §3). The
@@ -26,7 +27,9 @@
 // The rules the strings encode are the Battle View's — D-65 / D-69 (the
 // absence lines), D-72 (whose words), D-76 (the plan at deploy is history),
 // D-81 (why the decider was woken), D-83 (a check is named by its slot; the
-// formatter itself stays in deskCopy.js) — and the honesty rules in
+// formatter itself stays in deskCopy.js), D-80 ruling 1 (a motive as it is
+// rendered) and D-99 (the hypothesis field, with its §3.2a duplicate rule) —
+// and the honesty rules in
 // deskCopy.js: scoreboard language, no agent verbs between checks, a proven
 // state or nothing, the agent's own words only. deskHonesty.test.js scans
 // this file like every other Battle View source.
@@ -261,19 +264,21 @@ const GUARDRAIL_DOUBLED_PREFIX = /^(\s*Guardrail override\s*(?:\([^)]*\))?\s*:\s
 
 /**
  * A motive as it is RENDERED (D-80, ruling 1) — the one renderer the Battle
- * View and the narrator SHARE, so the trade card, the check card, `This piece
- * today`, the book panel, the grounded prompt's YOUR RECORD block and its
- * RECENT TRADES lines cannot show one sentence two ways (BUILD_RULES §9). It
- * lives here, beside the motive-author rule, for the reason that rule does
+ * View, the League Tournament pane and the narrator SHARE, so the trade card,
+ * the check card, `This piece today`, the book panel, the League pane's `The
+ * agent's read` and the grounded prompt's YOUR RECORD block and its RECENT
+ * TRADES lines cannot show one sentence two ways (BUILD_RULES §9). It lives
+ * here, beside the motive-author rule, for the reason that rule does
  * (voice-grounding hazard 26): the server renders the same check the pane
  * renders and cannot import the pane's modules.
  *
- * NOT every surface, and the enumeration above is the honest list: the League
- * Tournament pane (src/components/Tournament/Flat6BattleView.jsx:328) still
- * renders `evaluations[].rationale` and `.hypothesis` as stored bytes and is
- * not on this renderer. It is live — a League owner sees the cron's code and
- * its doubled prefix there today — and putting it on this renderer changes what
- * a player reads, so it is a separate, founder-gated change, not a sweep.
+ * The enumeration above is the whole list, and it is now closed: the League
+ * Tournament pane (src/components/Tournament/Flat6BattleView.jsx) rendered
+ * `evaluations[].rationale` and `.hypothesis` as STORED BYTES on all five of
+ * its mount paths until this renderer took them — a League owner read the
+ * cron's `guardrail_stopLoss` code and its doubled `Guardrail override:`
+ * prefix off the screen. No exception replaces it: a surface that shows a
+ * persisted motive shows it through this function.
  *
  * The model's own words pass through untouched (C1) — VERBATIM IS AN
  * AGENT-AUTHORED PROPERTY: only an ENGINE-authored sentence is rewritten, and
@@ -315,6 +320,105 @@ export function renderMotive(text) {
     const words = GUARDRAIL_TYPE_WORDS[token];
     return words ? `${prefix} (${words})` : prefix;
   });
+}
+
+// ── The hypothesis field (D-99) — the label and the §3.2a duplicate rule ────
+// D-99 amends hazard 29's "never render hypothesis": the field DOES render,
+// under one rule — only when present, only when the rationale does not already
+// carry it, never where the rationale is engine-authored, and never as a
+// forecast anyone is making now. The label carries the whole amendment: the
+// prediction is HISTORY (`recorded at this check`) and its outcome is not in
+// yet (`graded after the battle`).
+//
+// These four moved here from api/_utils/voiceLayerGrounding.js, which now
+// imports them back and re-exports them under their shipped names, so nothing
+// that consumed them changed. That is D-99's own instruction — "when [the
+// pane's rendering] lands the label moves to src/data/decisionRecord.js" — and
+// the reason is this module's reason: the pane and the narrator render the same
+// check, and one check cannot get two sentences (BUILD_RULES §9). The pane that
+// landed it is the League Tournament pane, not the A3.7 character pane the
+// ruling anticipated; the destination is the same either way, and A3.7 finds
+// the label already here.
+
+// The `_…_` wrapper is anchored at word boundaries, as Markdown reads it, so an
+// underscore INSIDE an identifier (`threshold_proximity`, `NOW_and_TSLA`) is
+// never taken for emphasis — otherwise two sides whose underscore pairing
+// differed could miss the duplicate and the hypothesis would render twice
+// (review R-14).
+const EMPHASIS_WRAPPERS = [
+  /\*\*([^*]+)\*\*/g,
+  /\*([^*]+)\*/g,
+  /(?<!\w)_([^_]+)_(?!\w)/g,
+];
+
+/**
+ * §3.2a — THE DUPLICATE NORMALIZER, FOR DETECTION ONLY. Stored and displayed
+ * bytes are never modified: the rationale is quoted verbatim, markers included
+ * (§3.2 "verbatim means bytes"); this decides only whether the `hypothesis`
+ * FIELD is already inside it, so the record never renders the prediction twice.
+ *
+ * For each side: strip Markdown emphasis wrappers (`**…**`, `*…*`, `_…_`) →
+ * collapse whitespace → trim → remove one leading `Hypothesis:` (any case, with
+ * or without the bold) → compare the remainders.
+ */
+export function normalizeForDuplicate(text) {
+  if (typeof text !== 'string') return '';
+  let out = text;
+  for (const re of EMPHASIS_WRAPPERS) out = out.replace(re, '$1');
+  out = out.replace(/\s+/g, ' ').trim();
+  out = out.replace(/^hypothesis:\s*/i, '');
+  return out;
+}
+
+/**
+ * True when the rationale already carries the hypothesis under the §3.2a
+ * normalizer — as the whole text or as a passage inside it (the known pair:
+ * field `Hypothesis: CF will break out…` vs the rationale's trailing
+ * `**Hypothesis: CF will break out…**`).
+ */
+export function rationaleCarriesHypothesis(rationale, hypothesis) {
+  const h = normalizeForDuplicate(hypothesis);
+  if (!h) return false;
+  const r = normalizeForDuplicate(rationale);
+  if (!r) return false;
+  return r === h || r.includes(h);
+}
+
+/** D-99's label. The prediction is history; its grade is not in yet. */
+export const HYPOTHESIS_LABEL = 'Hypothesis recorded at this check (graded after the battle)';
+
+/** The hypothesis field as the record shows it: one leading `Hypothesis:` label dropped, bytes otherwise verbatim. */
+export function displayHypothesis(hypothesis) {
+  return String(hypothesis).replace(/^\s*hypothesis:\s*/i, '');
+}
+
+/**
+ * THE D-99 GATE, in one place — the hypothesis a check gets to show, or null.
+ * Returns the DISPLAY text only; the caller supplies `HYPOTHESIS_LABEL` in its
+ * own frame (the prompt indents a line, the pane sets a style), because the
+ * frame is the only part the two surfaces do not share.
+ *
+ * Three conjuncts, each ruled:
+ *   · the field is present at all;
+ *   · the rationale is not ENGINE-authored — on the guardrail path the cron
+ *     writes its own `Hypothesis: deterministic guardrail enforcement — …`
+ *     beside its own rationale, and that is the system's sentence, not a
+ *     forecast the check made (review R-12);
+ *   · the rationale does not already carry it (§3.2a), so the known
+ *     bold-vs-field pair renders once, not twice.
+ *
+ * AUTHORSHIP IS READ FROM THE RAW RATIONALE, never from a rendered one — the
+ * same rule renderMotive's callers follow, for the same reason (BUILD_RULES §9).
+ *
+ * @param {object|null} evaluation  one persisted `evaluations[]` entry
+ */
+export function renderHypothesis(evaluation) {
+  const hypothesis = evaluation?.hypothesis;
+  if (typeof hypothesis !== 'string' || hypothesis.length === 0) return null;
+  const rationale = evaluation?.rationale;
+  if (isEngineAuthoredMotive(rationale)) return null;
+  if (rationaleCarriesHypothesis(rationale, hypothesis)) return null;
+  return displayHypothesis(hypothesis);
 }
 
 // ── The plan at deploy (D-76) — the C1 gates ────────────────────────────────
