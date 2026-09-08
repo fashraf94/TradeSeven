@@ -3,6 +3,9 @@
 
 import { describe, it, expect } from 'vitest';
 import { buildBenchBriefs, buildMarketContextBlock, buildPortfolioBriefs, buildScoutAlerts } from './voice-layer-cache.js';
+// The renderer these briefs are actually fed to — imported so the ATR unit
+// guard below covers the writer AND the surface the founder reads.
+import { buildHeaderLine } from '../_utils/voiceLayerPrompt.js';
 
 // ==================== FIXTURES ====================
 
@@ -45,8 +48,11 @@ function fullTechScore({
   };
 }
 
-function fullRanking({ technicalScore = 70, technicalRank = 25, atrPercentile = 0.55 } = {}) {
-  return { technicalScore, technicalRank, atrPercentile };
+// Mirrors the real stockRankings entry shape: the 0-1 cross-sectional rank at
+// top level (compute-index-intelligence.js:1210) and the percent-of-price ATR
+// under techRaw (:1222). The two are different units and never interchangeable.
+function fullRanking({ technicalScore = 70, technicalRank = 25, atrPercentile = 0.55, atrPercent = 2.3 } = {}) {
+  return { technicalScore, technicalRank, atrPercentile, techRaw: { atrPercent } };
 }
 
 const STOCK_AMD = { symbol: 'AMD', name: 'AMD', baseATR: 3.0, isCrypto: false, sector: 'Technology' };
@@ -92,7 +98,9 @@ describe('buildBenchBriefs — full data path', () => {
       sector: 'Technology',
       cooldownUntil: null,
       cooldownActive: false,
-      atrPercent: 0.55,
+      // Percent-of-price ATR from techRaw — NOT the 0.55 percentile.
+      atrPercent: 2.3,
+      atrPercentile: 0.55,
     });
     expect(briefs[0].trendSummary).toContain('Strong uptrend');
     expect(briefs[0].trendSummary).toContain('RS vs SPY rising');
@@ -117,6 +125,7 @@ describe('buildBenchBriefs — degraded data paths', () => {
       technicalRank: null,
       rsPercentile: null,
       atrPercent: null,
+      atrPercentile: null,
       sector: 'Technology',
       cooldownUntil: null,
       cooldownActive: false,
@@ -856,8 +865,9 @@ describe('buildPortfolioBriefs — sessionDate propagation (Fix v2)', () => {
 // ==================== F3.1 — SENTINEL-ZERO CLEANUP ====================
 
 // Portfolio and bench writers must agree on the missing-data sentinel.
-// Cron writes explicit null for missing technicalScore / atrPercent so
-// renderers can distinguish "no data" from legitimate bottom-decile values.
+// Cron writes explicit null for missing technicalScore / atrPercent /
+// atrPercentile so renderers can distinguish "no data" from legitimate
+// bottom-decile values.
 
 describe('buildPortfolioBriefs — null sentinel for missing technicalScore / atrPercent (F3.1)', () => {
   it('writes null technicalScore when both ranking and techScore are missing', () => {
@@ -869,12 +879,39 @@ describe('buildPortfolioBriefs — null sentinel for missing technicalScore / at
     expect(briefs[0].technicalScore).toBeNull();
   });
 
-  it('writes null atrPercent when ranking lacks atrPercentile', () => {
+  it('writes null atrPercent and null atrPercentile when the ranking is missing', () => {
     const stock = activeStock({ symbol: 'AAPL' });
     const priceMap = { AAPL: priceFromMultiplier(0.3, 2.5) };
     const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, {}, {}, {});
 
     expect(briefs[0].atrPercent).toBeNull();
+    expect(briefs[0].atrPercentile).toBeNull();
+  });
+
+  // The percentile is present but the raw ATR is not: the percentile must NOT
+  // leak into atrPercent as a substitute (that is the 0.71 -> "ATR 0.71%" bug).
+  it('writes null atrPercent when the ranking carries only a percentile', () => {
+    const stock = activeStock({ symbol: 'AAPL' });
+    const priceMap = { AAPL: priceFromMultiplier(0.3, 2.5) };
+    const rankingsMap = { AAPL: { technicalScore: 50, technicalRank: 100, atrPercentile: 0.71 } };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, rankingsMap, {}, {}, {});
+
+    expect(briefs[0].atrPercent).toBeNull();
+    expect(briefs[0].atrPercentile).toBe(0.71);
+  });
+
+  // Falls back to the stockTechnicalScores doc, which carries the same raw
+  // reading at top level (compute-index-intelligence.js:953).
+  it('falls back to techScore.atrPercent when the ranking has no techRaw', () => {
+    const stock = activeStock({ symbol: 'AAPL' });
+    const priceMap = { AAPL: priceFromMultiplier(0.3, 2.5) };
+    const rankingsMap = { AAPL: { technicalScore: 50, technicalRank: 100, atrPercentile: 0.71 } };
+    const techScoresMap = { AAPL: fullTechScore({ technicalScore: 50 }) };
+    techScoresMap.AAPL.atrPercent = 2.3;
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, rankingsMap, techScoresMap, {}, {});
+
+    expect(briefs[0].atrPercent).toBe(2.3);
+    expect(briefs[0].atrPercentile).toBe(0.71);
   });
 
   it('preserves legitimate technicalScore: 0 (does not coerce to null)', () => {
@@ -886,10 +923,20 @@ describe('buildPortfolioBriefs — null sentinel for missing technicalScore / at
     expect(briefs[0].technicalScore).toBe(0);
   });
 
-  it('preserves legitimate atrPercentile: 0 (rounded to atrPercent: 0, not null)', () => {
+  it('preserves legitimate atrPercentile: 0 (least volatile name, not null)', () => {
     const stock = activeStock({ symbol: 'AAPL' });
     const priceMap = { AAPL: priceFromMultiplier(0.3, 2.5) };
-    const rankingsMap = { AAPL: { technicalScore: 50, technicalRank: 100, atrPercentile: 0 } };
+    const rankingsMap = { AAPL: { technicalScore: 50, technicalRank: 100, atrPercentile: 0, techRaw: { atrPercent: 0.4 } } };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, rankingsMap, {}, {}, {});
+
+    expect(briefs[0].atrPercentile).toBe(0);
+    expect(briefs[0].atrPercent).toBe(0.4);
+  });
+
+  it('preserves legitimate atrPercent: 0 (does not coerce to null)', () => {
+    const stock = activeStock({ symbol: 'AAPL' });
+    const priceMap = { AAPL: priceFromMultiplier(0.3, 2.5) };
+    const rankingsMap = { AAPL: { technicalScore: 50, technicalRank: 100, atrPercentile: 0.55, techRaw: { atrPercent: 0 } } };
     const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, rankingsMap, {}, {}, {});
 
     expect(briefs[0].atrPercent).toBe(0);
@@ -910,6 +957,8 @@ describe('buildPortfolioBriefs — null sentinel for missing technicalScore / at
     expect(benchBriefs[0].technicalScore).toBeNull();
     expect(portfolioBriefs[0].atrPercent).toBeNull();
     expect(benchBriefs[0].atrPercent).toBeNull();
+    expect(portfolioBriefs[0].atrPercentile).toBeNull();
+    expect(benchBriefs[0].atrPercentile).toBeNull();
   });
 
   it('does not emit thresholdNote when atrPercentile is null', () => {
@@ -918,6 +967,69 @@ describe('buildPortfolioBriefs — null sentinel for missing technicalScore / at
     const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, {}, {}, {});
 
     expect(briefs[0].thresholdNote).toBeNull();
+  });
+});
+
+// ==================== ATR UNIT INTEGRITY (cache -> render) ====================
+
+// The brief carries two ATR readings in two different units. They used to share
+// the single field `atrPercent`, which was fed the 0-1 percentile — so a
+// 71st-percentile name rendered as "ATR 0.71%" on every voice surface. This
+// block imports the renderer the cron actually feeds, so the guard covers the
+// whole path rather than the writer alone.
+
+describe('ATR unit integrity — brief writers -> buildHeaderLine', () => {
+  const RANKING_071_23 = {
+    technicalScore: 75,
+    technicalRank: 12,
+    sectorName: 'Technology',
+    sectorTechnicalTotal: 71,
+    atrPercentile: 0.71,          // 0-1 cross-sectional rank
+    techRaw: { atrPercent: 2.3 }, // percent of price
+  };
+
+  it('portfolio brief renders "ATR 2.3%" from the raw ATR, never "ATR 0.71%"', () => {
+    const stock = activeStock({ symbol: 'AAPL', baseATR: 2.5 });
+    const priceMap = { AAPL: priceFromMultiplier(0.3, 2.5) };
+    const briefs = buildPortfolioBriefs(
+      activePortfolio(stock), priceMap, { AAPL: RANKING_071_23 }, {}, {}, {},
+    );
+
+    expect(briefs[0].atrPercent).toBe(2.3);
+    expect(briefs[0].atrPercentile).toBe(0.71);
+
+    const header = buildHeaderLine(briefs[0]);
+    expect(header).toContain('ATR 2.3%');
+    expect(header).toContain('ATR 71st %ile');
+    expect(header).not.toContain('ATR 0.71%');
+  });
+
+  it('bench brief renders "ATR 2.3%" from the raw ATR, never "ATR 0.71%"', () => {
+    const portfolio = { bench: { stocks: [STOCK_AMD], crypto: null } };
+    const priceMap = { AMD: fullPrice(150.5, 2.34) };
+    const briefs = buildBenchBriefs(
+      portfolio, priceMap, { AMD: RANKING_071_23 }, { AMD: fullTechScore() }, FROZEN_NOW,
+    );
+
+    expect(briefs[0].atrPercent).toBe(2.3);
+    expect(briefs[0].atrPercentile).toBe(0.71);
+
+    const header = buildHeaderLine(briefs[0]);
+    expect(header).toContain('ATR 2.3%');
+    expect(header).toContain('ATR 71st %ile');
+    expect(header).not.toContain('ATR 0.71%');
+  });
+
+  // The scout-alert row already read the percentile correctly and must not move.
+  it('the scout alert game_fit row is unchanged — still "ATR percentile 71%."', () => {
+    const watchlist = { active: [{ symbol: 'AAPL' }] };
+    const rankingsMap = {
+      AAPL: { ...RANKING_071_23, baggerBombFit: 90, baggerBombRank: 5, compositeScore: 88 },
+    };
+    const alerts = buildScoutAlerts(watchlist, rankingsMap, {}, 'momentum_chaser', new Set());
+
+    const fit = alerts.find(a => a.type === 'game_fit');
+    expect(fit.detail).toContain('ATR percentile 71%.');
   });
 });
 
