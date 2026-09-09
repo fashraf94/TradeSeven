@@ -2191,3 +2191,43 @@ export function getVoiceGroundingMode(uid) {
   const raw = globalThis.process?.env?.VOICE_GROUNDING_CANARY_UIDS;
   return resolveVoiceGroundingMode(VOICE_GROUNDING_MODE, uid, raw);
 }
+
+/**
+ * Phase B — THE TICK STAMPS (docs/design/PHASE_B_TICK_STAMPS_SPEC_V1.md §1;
+ * discovery docs/audits/20260908_PHASE_B_TICK_STAMPS_PHASE0_DISCOVERY.md;
+ * ledger D-110 → D-113). ONE server flag for the three stamps the evaluation
+ * cron writes onto every decided check's own `evaluations[]` entry, AFTER the
+ * decision, from objects the tick already holds (api/cron/agent-evaluate.js,
+ * the entry composition; the pure composer is api/_utils/tickStamps.js):
+ *   heard      — { directiveThreadId, suppressed } from the cron's own
+ *                resolveControls call on the in-memory battle: the thread was
+ *                in the decider's prompt at this check (never that it acted).
+ *   evidence   — nine fields per held position + one vintages block per entry:
+ *                what the decider saw at that check, code-composed.
+ *   candidates — the decider's own anticipation output, four fields plus tag.
+ * None changes a decision; the fenced decider reads a fixed whitelist of the
+ * entry (formatRecentEvals) and is inert to the new keys (pinned).
+ *
+ * FALSE at merge (D-113): merge dark → the founder flips it in its own PR
+ * after B1 merges → the first stamped check on production is the smoke (crons
+ * do not run on preview). When FALSE the composed entry is BYTE-IDENTICAL to
+ * today's (the golden in agent-evaluate.tickStamps.flagOff.test.js) and no
+ * extra work runs at the stamp site. Clients render on PRESENCE of the keys,
+ * never on this flag — nothing client-side reads it.
+ *
+ * Read at CALL time at the ONE splice in agent-evaluate.js (`if
+ * (TICK_STAMPS_ENABLED)` inside processAgentBattle, never a module-scope
+ * derivation), so a hermetic featureFlags mock with an explicit value governs
+ * every test tick, and a bare-factory mock that omits the name resolves
+ * `undefined` → off (the isCharacterPaneOn rule: a plain boolean, not an
+ * accessor, so a bare factory can never throw on it).
+ *
+ * FLIP MAP (the flip PR reconciles these in the SAME commit — BUILD_RULES §2):
+ *   • src/config/tickStampsFlags.test.js — the dark pin row moves to true;
+ *   • src/config/flagPinGuard.test.js — drop TICK_STAMPS_ENABLED from
+ *     DARK_BY_DESIGN (its integrity test reds if a lit flag is left listed).
+ *   The flag-off golden suite mocks this flag to an explicit false and does
+ *   NOT move; the flag-on suite mocks it true and does not move either.
+ */
+// Pinned by: tickStampsFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const TICK_STAMPS_ENABLED = false;

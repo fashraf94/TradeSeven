@@ -76,10 +76,16 @@ import { TEMPO_DIAL_BANDS } from '../_utils/tempoDialBands.js';
 // NO-EDIT).
 import { clampHftConfig, resolveTempoDial, desiredTempoOf } from '../_utils/tempoDialClamp.js';
 import { buildSwapProvenance } from '../_utils/swapProvenance.js';
-import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED, LEARNING_L1_CAPTURE_ENABLED, LEARNING_L1_CAPTURE_EXPANSION_ENABLED, REGIME_STAMP_ENABLED, PROFIT_TARGET_EXECUTOR_ENABLED, getVoiceGroundingMode } from '../../src/config/featureFlags.js';
+import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED, LEARNING_L1_CAPTURE_ENABLED, LEARNING_L1_CAPTURE_EXPANSION_ENABLED, REGIME_STAMP_ENABLED, PROFIT_TARGET_EXECUTOR_ENABLED, TICK_STAMPS_ENABLED, getVoiceGroundingMode } from '../../src/config/featureFlags.js';
 // Voice-layer grounding §5 (hazard 27): the in-process dedupe of one tick's
 // anticipation queue, applied only when the note is code-composed.
 import { dedupeAnticipationQueue } from '../_utils/voiceLayerGrounding.js';
+// Phase B — the tick stamps (D-110 → D-113): the pure, zero-import composer
+// for the three facts every decided check leaves on its own entry (Heard, the
+// evidence, the candidates), spliced at the entry composition below under
+// TICK_STAMPS_ENABLED. Read, never edited: the fenced assembler's directive
+// resolution is re-run here on the same in-memory object, never re-read.
+import { composeTickStamps } from '../_utils/tickStamps.js';
 // Corpus Capture Patch W3 — pure regimeAtStart stamp helpers (write-once /
 // flag / shape semantics live there so they are behaviorally unit-testable).
 import { shouldStampRegime, buildRegimeAtStart } from '../_utils/regimeStamp.js';
@@ -2669,6 +2675,54 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       // from an engine outage in the eval history.
       haikuError: haikuFailure ? { ...haikuFailure, evalId } : null,
     };
+
+    // ---- Phase B — the tick stamps (D-110 → D-113) ----
+    // Three more facts on this check's own record, composed AFTER the decision
+    // from objects this tick already holds, under ONE server flag read at call
+    // time. Flag off: `evaluation` is untouched — byte-identical to the golden
+    // in agent-evaluate.tickStamps.flagOff.test.js. Keys on the entry only,
+    // riding `evaluations` into the finalUpdate below — never a top-level
+    // battle key (V2 hazard 9). The composer (api/_utils/tickStamps.js) owns
+    // the haikuAttempted gate: a budget_skipped tick never built the prompt
+    // (the Haiku call is skipped above, before buildLiveContextBlock), so
+    // nothing was heard or seen and every stamp is absent on that entry.
+    if (TICK_STAMPS_ENABLED) {
+      // Heard (D-110): the SAME pure resolution the fenced assembler ran when
+      // it rendered the directive block (agentEvalPromptAssembly.js,
+      // buildLiveContextBlock — this argument list is pinned byte-for-byte
+      // against that call in agent-evaluate.tickStamps.pins.test.js), on the
+      // SAME in-memory `battle` the prompt was rendered from. NEVER a doc
+      // re-read: a filing that landed on the doc during this tick was not in
+      // the prompt, and the stamp must name the thread that was. Never the
+      // model's echo (`ignoredDirectiveIds` / `directiveThreadId` above are
+      // self-report — the basis of Acted, not Heard).
+      const controlResolution = resolveControls({
+        modes: {
+          archetypeIntegrityMode: ARCHETYPE_INTEGRITY_MODE,
+          standingLeansEnabled: STANDING_LEANS_ENABLED,
+        },
+        directive: isDirectiveActive(battle?.directive, battle) ? battle.directive : null,
+        standingLeans: battle.agentContext?.standingLeans,
+        leanOverrides: battle.leanOverrides,
+        controlEpochLog: battle.controlEpochLog,
+      });
+      // The rankings doc's computedAt is this tick's vintage for bbPct / nr7 —
+      // the same snapshot the hotBench rebuild consumed above; no new I/O.
+      const rankingsComputedAtMs = (rankingsResult.status === 'fulfilled' && rankingsResult.value.exists)
+        ? (rankingsResult.value.data()?.computedAt?.toMillis?.() ?? null)
+        : null;
+      Object.assign(evaluation, composeTickStamps({
+        haikuAttempted,
+        controlResolution,
+        anticipationCandidates: haikuResult?.anticipationCandidates,
+        assetScores,
+        prices,
+        momentumData,
+        stockRegimes,
+        riskStatus,
+        rankingsComputedAtMs,
+      }));
+    }
 
     // Surface the degraded tick on the status feed — a silent fallback HOLD is
     // indistinguishable from a deliberate one without this. Rides the existing
