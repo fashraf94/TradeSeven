@@ -122,6 +122,39 @@ function ExecutionCard({ directive, receipt }) {
   const controllerReceipts = receipt !== undefined;
   const receiptLine = controllerReceipts ? BATTLE_VIEW_COPY.receiptLine(receipt) : null;
   const receiptState = receipt?.state || null;
+  // Phase B (seed §1): the record's own second line — `Heard at the {slot}
+  // check`, or the reasonless `Not heard at this check`, or nothing at all
+  // when no stamped entry names this thread (the mid-tick filing, and every
+  // pre-flip battle). Presence-gated: no stamp, no line.
+  const heardLine = controllerReceipts ? BATTLE_VIEW_COPY.heardLine(receipt) : null;
+  // The Phase A receipt row, built once so it renders identically whether or
+  // not a Heard line stacks beneath it.
+  const receiptRow = (
+    <div
+      data-receipt={receiptState}
+      style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+    >
+      <span
+        aria-hidden="true"
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: '50%',
+          display: 'block',
+          background: receiptState === 'filed' ? cssVar('teal') : 'transparent',
+          border: `1px solid ${cssVar('teal')}`,
+          opacity: receiptState === 'filed' ? 1 : 0.5,
+        }}
+      />
+      <span style={{
+        fontSize: 12,
+        color: receiptState === 'filed' ? cssVar('teal') : cssVar('text-secondary'),
+        fontVariantNumeric: 'tabular-nums',
+      }}>
+        {receiptLine}
+      </span>
+    </div>
+  );
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}
@@ -162,31 +195,34 @@ function ExecutionCard({ directive, receipt }) {
       </div>
       {controllerReceipts ? (
         // The receipt line: still, stamped, proven — or nothing at all.
+        //
+        // PHASE B ADDS NO WRAPPER WHEN IT ADDS NO LINE. The Heard line needs
+        // the two rows stacked, but a column wrapper rendered unconditionally
+        // would change the pane-off / pre-flip markup — and D-113's whole
+        // promise is that an unstamped battle renders byte-identically to
+        // Phase A. So the receipt row is built once and the wrapper appears
+        // only alongside a Heard line. The A2 first-paint golden
+        // (AgentBattleScreen.paneOff.golden.test.jsx) is what proves it.
         receiptLine ? (
-          <div
-            data-receipt={receiptState}
-            style={{ display: 'flex', alignItems: 'center', gap: 8 }}
-          >
-            <span
-              aria-hidden="true"
-              style={{
-                width: 6,
-                height: 6,
-                borderRadius: '50%',
-                display: 'block',
-                background: receiptState === 'filed' ? cssVar('teal') : 'transparent',
-                border: `1px solid ${cssVar('teal')}`,
-                opacity: receiptState === 'filed' ? 1 : 0.5,
-              }}
-            />
-            <span style={{
-              fontSize: 12,
-              color: receiptState === 'filed' ? cssVar('teal') : cssVar('text-secondary'),
-              fontVariantNumeric: 'tabular-nums',
-            }}>
-              {receiptLine}
-            </span>
-          </div>
+          heardLine ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {receiptRow}
+              {/* The record's own line, beneath Filed. Indented to the receipt
+                  text (6px dot + 8px gap) so it reads as a second fact about
+                  the same filing, not a second receipt state. */}
+              <div
+                data-heard={receipt?.heard?.heard ? 'heard' : 'not-heard'}
+                style={{
+                  paddingLeft: 14,
+                  fontSize: 11.5,
+                  color: cssVar('text-secondary'),
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                {heardLine}
+              </div>
+            </div>
+          ) : receiptRow
         ) : null
       ) : (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

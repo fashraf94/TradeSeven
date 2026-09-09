@@ -81,3 +81,34 @@ The Direct menu (placement ruled: the Chat section beside the `Files:` chips, no
 2. **The evidence stamp under C1.** Engine-computed inputs the decider was shown, stamped after the decision, labelled *what the check saw*. Attack: is that decision-path output, or a new claim about the decider's mind? Does putting it in the narrator's YOUR RECORD beside the decider's words invite the model to reason *from* it as if it were its own evidence — and is the §3.1 frame enough?
 
 *Three facts on every check's record, written by the hand that writes the record.*
+
+---
+
+## 8. V1.1 — errata (added Sep 9, after the B1 server build and Sol's rendering pass)
+
+**The spec text above is V1 as written, byte-exact. It was committed before the
+build and is deliberately NOT rewritten in place** — this block is the
+correction of record, and where the two disagree, this block wins. Every item
+traces to a finding in `docs/audits/20260909_PHASE_B_B1_SERVER_STAMPS_REVIEW.md`
+or to Sol's pass (`docs/audits/20260909_SOL_REVIEW_PHASE_B_TICK_STAMPS_PASS.md`).
+The ledger rows D-110 → D-115 carry the same amendments.
+
+| § | V1 says | Correction | Why |
+|---|---|---|---|
+| §1.2 | Heard is "gated on `haikuAttempted === true`" | **Gated on the prompt having been BUILT and handed to the transport** (`promptBuilt`) | `haikuAttempted` is set BEFORE the prompt is built, so a builder throw would have stamped a prompt that never existed (review A-4 / B-1). |
+| §1.2 | the Heard stamp is "67 bytes" | **47–74 bytes**, by thread-id length | Review C-4. |
+| §1.3 | "**Shape, per held position (seven)**" listing NINE fields including `rsPct` | **EIGHT fields**: `px`, `chg`, `atrX`, `vwapDev`, `bbPct`, `nr7`, `regime`, `risk`. `rsPct` is not stamped | The prompt renders `rsPercentile` for BENCH names only (`buildBenchTechnicalBlock`); a held name's technical read reaches the decider as the `regime` word, which IS stamped (review A-2). The prose count "(seven)" was wrong against its own nine-item list; both are superseded by eight. |
+| §1.3 | `chg` unspecified, discovery B8 read it as the quote's session change | **`chg` is the ACTIVE POSITIONS row's Gain% from ENTRY** | The label decided it: the stamp must be the number the decider's own row rendered (review A-1 / C-3). Sol M-3 pins the copy: every render says *since entry*. |
+| §1.3 | `vintages` carries `tech: 'daily'` and `fund: 'weekly'` | **`techAt`** — the newest `updatedAt` across the held book's technical docs, an ISO INSTANT — and **`fundAsOf`**, a UTC calendar date | Those technical docs are rewritten hourly during RTH, so no cadence word fits (review A-3); `fundAsOf` is the FUNDAMENTALS block's own header date across held plus non-crypto bench, proved equal to the rendered header (A-6). Sol M-2 pins the copy: `techAt` is named as a stamp, never as freshness. |
+| §1.4 | candidates are "stamped beside `hypothesis`" | **Trailing keys**, after `haikuError` | Review C-4. |
+| §1.4 | (silent on a cap) | **The stamp is UNCAPPED; a first-five cap is a spec-level rule, built in B2** | The dispatch queue is equally uncapped and the fenced instruction expects 1–3 per day (review B-5). |
+| §1.5 | "the nine fields, compact" in YOUR RECORD | **The eight**, with the risk carve-out | As §1.3. |
+| §1.5 | Heard renders on the card; open question whether it says *why not* | **It does not.** A withheld directive gets the reasonless, system-owned `Not heard at this check` on the card, and NOTHING at all in the narrator's voice | Sol M-1, answering §7.1: the character never received the withheld directive, so a first-person explanation attributes a pre-prompt resolver event to it. The four reasons stay in telemetry. |
+| §1.5 | the evidence is rendered under one "what the decider saw" heading | **`risk` is carved out of the blanket claim.** `HOLD` is silent there; a non-HOLD action renders; the stored `reason` CODE is never rendered as seen text | Sol B-1 (the blocker): on an all-HOLD tick the prompt renders no RISK STATUS block at all, and for a LOCK the prompt carried the `detail` sentence while the stamp keeps the compact code. |
+| §1.3 | (silent) | **A null metric renders NOTHING** — never 0, never a placeholder — and there is no ninth slot, no `RS unavailable` and no completeness rule | Sol m-1. |
+| §6 | — | **D-110 → D-115 appended to the ledger** with these amendments | `docs/audits/COMMAND_CENTER_BATTLE_SYNC_DESIGN_FRAMEWORK_V1_2.md`. |
+
+**Two further items recorded, not corrections to this spec:**
+
+- **The evidence and vintages share Heard's gate** (build decision; Reviewer A endorsed). The label is the claim — "what the decider saw" is false on a tick that never built a prompt — and the readers are presence-gated, so the alternative would be a different product claim needing its own label.
+- **Discovery hazard 20 is moot** (review C-7, refuted by V2): `runShadowTickCapture`'s envelope never carries the evaluation entry, so the stamps do not enlarge the shadow capture.

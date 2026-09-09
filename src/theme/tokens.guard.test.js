@@ -66,6 +66,10 @@ const GUARDED_FILES = [
   'src/screens/battleView/battleViewCopy.js',
   'src/screens/battleView/buildTape.js',
   'src/screens/battleView/deriveReceipts.js',
+  // Phase B (B1 client half): the two new pure selectors — added here in the
+  // same commit that created them, so hazard 34's silence cannot open.
+  'src/screens/battleView/deriveHeard.js',
+  'src/screens/battleView/selectEvidence.js',
   'src/screens/battleView/deriveTurnLine.js',
   'src/screens/battleView/selectDeployPlan.js',
   'src/screens/battleView/selectSymbolRoster.js',

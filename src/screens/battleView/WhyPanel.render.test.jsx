@@ -13,6 +13,7 @@ import { describe, it, expect } from 'vitest';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
 import WhyPanel from './WhyPanel.jsx';
+import { selectEvidence } from './selectEvidence';
 import { selectWhyState, selectTradesForSymbol, WHY_KIND } from './selectWhyState';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
 
@@ -554,5 +555,133 @@ describe('Why? V2 — the plan at deploy (A2.1b, D-76)', () => {
     const html = renderRow(HELD, { deployPlan: PLAN, deployPlanForSymbol: FOR_SLB });
     expect(html.indexOf('From the 12:45 PM check')).toBeLessThan(html.indexOf('At deploy · Star tier'));
     expect(html.indexOf('At deploy · Star tier')).toBeLessThan(html.indexOf('Entry $34.10'));
+  });
+});
+
+// ── Phase B (B1 client half, seed §2): What the check saw ───────────────────
+// The section is presence-gated on the stamp, absent whole without one, and
+// carries the two Sol carve-outs into the rendered markup.
+describe('Phase B — what the check saw', () => {
+  const EV_FULL = {
+    px: 123.6, chg: 2.57, atrX: 0.83, vwapDev: 0.95, bbPct: 15, nr7: true,
+    regime: 'directional_expansion', risk: { action: 'LOCK', reason: 'threshold_proximity' },
+  };
+  const VINTAGES = {
+    quote: 'tick', vwap: 'tick',
+    techAt: '2026-09-01T18:29:55.000Z', fundAsOf: '2026-09-08', rankingsAt: '2026-09-01T18:30:00.000Z',
+  };
+  const stamped = (evidence, vintages = VINTAGES) => ({ ...HELD, evidence: { SLB: evidence }, vintages });
+  const withEvidence = (evidence, vintages = VINTAGES) => renderRow(stamped(evidence, vintages), {
+    evidence: selectEvidence(stamped(evidence, vintages), 'SLB', LAST),
+  });
+
+  it('renders the heading with the CHECK\'s slot and all eight facts', () => {
+    const html = withEvidence(EV_FULL);
+    expect(html).toContain('data-evidence="seen"');
+    // TS is 12:47:02 PM ET; the slot floor makes the check 12:45 PM (D-83).
+    expect(html).toContain('What the 12:45 PM check saw');
+    for (const fact of [
+      'Price $123.60', 'Gain since entry +2.57%', 'ATR multiple 0.83×',
+      'VWAP deviation +0.95%', 'Bollinger width 15th %ile', 'NR7',
+      'Regime directional_expansion', 'Risk LOCK',
+    ]) {
+      expect(html).toContain(fact);
+    }
+  });
+
+  it('the provenance line names its fields and never promises freshness (Sol M-2)', () => {
+    const html = withEvidence(EV_FULL);
+    expect(html).toContain('Fundamentals block as of Sep 8');
+    expect(html).toContain('Latest held technical stamp · 2:29 PM');
+    expect(html).toContain('Rankings as of 2:30 PM');
+    for (const overclaim of ['Technical data as of', 'Technicals updated', 'Data current at']) {
+      expect(html).not.toContain(overclaim);
+    }
+  });
+
+  it('RISK HOLD IS SILENT under the "saw" heading (Sol B-1)', () => {
+    const html = withEvidence({ ...EV_FULL, risk: { action: 'HOLD' } });
+    expect(html).toContain('data-evidence="seen"');
+    expect(html).not.toContain('Risk HOLD');
+    // The rest of the evidence is untouched by the carve-out.
+    expect(html).toContain('Price $123.60');
+  });
+
+  it('the risk REASON CODE never reaches the markup', () => {
+    const html = withEvidence(EV_FULL);
+    expect(html).toContain('Risk LOCK');
+    expect(html).not.toContain('threshold_proximity');
+  });
+
+  it('NO STAMP → NO SECTION, and the panel is byte-identical to Phase A', () => {
+    // Review V-1: `renderRow(HELD)` vs `renderRow(HELD, { evidence: null })`
+    // was a tautology — null is the prop default. The real comparison is a
+    // STAMPED entry selected against a stale check (so the selector returns
+    // null) versus the Phase A panel: same entry, same props, no section.
+    const base = renderRow(HELD);
+    const staleSelected = renderRow(stamped(EV_FULL), {
+      evidence: selectEvidence(stamped(EV_FULL), 'SLB', '2026-09-01T17:30:00.000Z'),
+    });
+    expect(staleSelected).toBe(base);
+    expect(staleSelected).not.toContain('data-evidence');
+    expect(staleSelected).not.toContain('check saw');
+  });
+
+  it('an all-null stamp renders no section — no placeholder, no empty heading', () => {
+    const html = withEvidence({
+      px: null, chg: null, atrX: null, vwapDev: null, bbPct: null, nr7: null, regime: null, risk: null,
+    });
+    expect(html).not.toContain('data-evidence');
+    expect(html).not.toContain('check saw');
+  });
+
+  it('no rsPct slot and no "RS unavailable" anywhere (Sol m-1)', () => {
+    const html = withEvidence({ ...EV_FULL, rsPct: 72 });
+    expect(html).not.toContain('RS unavailable');
+    expect(html).not.toContain('RS percentile');
+    expect(html).not.toContain('72');
+  });
+
+  it('the section never claims causality — no because, caused, so it, considered', () => {
+    const html = withEvidence(EV_FULL);
+    const captured = html.match(/data-evidence="seen"[\s\S]*?<\/div><\/div>/);
+    expect(captured).not.toBeNull();   // fail loud, never match '' (review V-7)
+    const section = captured[0].toLowerCase();
+    for (const phrase of ['because', 'caused', 'considered', 'noticed', 'understood', 'used your directive']) {
+      expect(section).not.toContain(phrase);
+    }
+  });
+
+  // Review B-6, BUILD_RULES §9. `selectWhyState` floors `lastScoredAt`;
+  // `selectEvidence` carries the entry's own timestamp. On a tick that
+  // straddles a quarter-hour boundary the two floor to DIFFERENT slots, and
+  // one panel said `At the 12:15 PM check` above `What the 12:30 PM check
+  // saw`. The heading is bound to the panel's own instant, so one panel names
+  // one check by construction.
+  it('ONE PANEL NAMES ONE CHECK, even when the tick straddles a slot boundary', () => {
+    const SCORED = '2026-09-01T16:29:55.000Z'; // 12:29:55 PM ET → the 12:15 slot
+    const ENTRY_AT = '2026-09-01T16:30:12.000Z'; // 12:30:12 PM ET → the 12:30 slot
+    const straddle = { ...HELD, timestamp: ENTRY_AT, evidence: { SLB: EV_FULL }, vintages: VINTAGES };
+    const html = strip(renderToString(
+      <WhyPanel
+        symbol="SLB"
+        state={selectWhyState(straddle, 'SLB', SCORED)}
+        proximity={PROXIMITY}
+        entryPrice={34.1}
+        trades={[]}
+        onAskFollowUp={() => {}}
+        evidence={selectEvidence(straddle, 'SLB', SCORED)}
+      />,
+    ));
+    expect(html).toContain('data-evidence="seen"');
+    // Both headings name the SAME check — the panel's own.
+    expect(html).toContain('From the 12:15 PM check');
+    expect(html).toContain('What the 12:15 PM check saw');
+    expect(html).not.toContain('12:30 PM check');
+  });
+
+  it('the BOOK panel never shows evidence — it is a per-piece fact', () => {
+    const html = renderBook(HELD, { evidence: selectEvidence(stamped(EV_FULL), 'SLB', LAST) });
+    expect(html).not.toContain('data-evidence');
   });
 });

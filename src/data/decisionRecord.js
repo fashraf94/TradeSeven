@@ -493,6 +493,76 @@ export const filesChip = (text) => (typeof text === 'string' && text ? `${FILES_
 /** The D-51 receipt word with its time, or the bare word — `Filed 11:20 AM`. */
 export const filedLabel = (timeText) => (timeText ? `Filed ${timeText}` : 'Filed');
 
+// ── Heard (Phase B, D-110) ──────────────────────────────────────────────────
+// The receipt's SECOND line, beneath `Filed {time}`, and the one claim the
+// tick stamp supports: this thread was in the decider's prompt at that check.
+// Never considered, used, noticed, understood, or decided because — the verb
+// is not upgraded on any surface, and `deskHonesty.test.js` bans the upgrades.
+//
+// A check is named by its SLOT (D-83), never the exact minute, so this takes
+// already-formatted slot text: the formatter lives in deskCopy.js and this
+// module is zero-import on purpose (hazard 26). `filedLabel` takes its time
+// the same way, and for the same reason — Filed names an EXCHANGE and keeps
+// its minute; Heard names a CHECK and gets the slot.
+
+/** `Heard at the 12:45 check` — the thread was in the decider's prompt there. */
+export const heardLabel = (slotText) => (slotText ? `Heard at the ${slotText} check` : null);
+
+/**
+ * The negative receipt, SYSTEM-OWNED AND REASONLESS (Sol M-1).
+ *
+ * A directive existed and the assembler withheld it, so it was not in the
+ * prompt. The four resolver reasons — `malformed`, `mode_not_enforce`,
+ * `epoch_killed`, `unknown` — never reach a surface: the character never
+ * received the withheld directive, so explaining the withholding in its voice
+ * would attribute a pre-prompt resolver event to the character. Diagnostics
+ * belong in telemetry. No slot either: this is a flat statement of absence,
+ * not a stamped fact about a named check.
+ */
+export const NOT_HEARD_LINE = 'Not heard at this check';
+
+/**
+ * Every directive thread the record proves was — or was not — in front of the
+ * decider, LAST ENTRY PER THREAD WINS.
+ *
+ * SHARED BY THE PANE AND THE NARRATOR (hazard 26, BUILD_RULES §9). The Battle
+ * View's `deriveHeard` wraps this; the grounded YOUR RECORD block reads it
+ * directly. Two walks of one record is how the card's line and the prompt's
+ * line would start disagreeing about one check.
+ *
+ * `at` IS NORMALIZED TO AN ISO INSTANT HERE, not left raw (review D-1). A
+ * persisted timestamp can arrive as an ISO string, a Firestore Timestamp, a
+ * `{seconds}` shape, a Date or a number, and the pane absorbed that union
+ * through `toIso` while the narrator called its slot formatter on the raw
+ * value — so a Timestamp-shaped stamp rendered `Heard at the 12:45 PM check`
+ * on the card and dropped the suffix from the prompt entirely. Absorbing it
+ * ONCE, in the walk both surfaces share, removes the divergence by
+ * construction rather than by fixing the caller that happened to be wrong.
+ *
+ * A stamp is admitted only in the two shapes the server actually writes: a
+ * `null` suppression (Heard) or a non-empty string one (not Heard). Anything
+ * else makes NO claim — "Not heard" is a claim too, and an unrecognised stamp
+ * does not prove it.
+ *
+ * @param {Array} evaluations  battle.evaluations, in write order
+ * @returns {{ [directiveThreadId: string]: { at: *, heard: boolean } }}
+ */
+export function heardStamps(evaluations) {
+  const out = {};
+  if (!Array.isArray(evaluations)) return out;
+  for (const evaluation of evaluations) {
+    const stamp = evaluation?.heard;
+    if (!stamp || typeof stamp !== 'object') continue;
+    const threadId = stamp.directiveThreadId;
+    if (typeof threadId !== 'string' || !threadId) continue;
+    const { suppressed } = stamp;
+    const heard = suppressed === null;
+    if (!heard && !(typeof suppressed === 'string' && suppressed)) continue;
+    out[threadId] = { at: toIsoInstant(evaluation.timestamp), heard };
+  }
+  return out;
+}
+
 /**
  * The code-owned no-change status (Phase H backstop; directiveGate.js
  * re-exports it): a null-write turn ALWAYS reports no change, whatever the
@@ -533,4 +603,216 @@ export function filingFailureLine(status) {
   if (status === 429) return FILING_BUDGET_LINE;
   if (status === 422 || status === 404) return FILING_REJECTED_LINE;
   return FILING_FAILED_LINE;
+}
+
+// ── The evidence — "what the check saw" (Phase B, D-111) ────────────────────
+//
+// THE SECOND VERB, AND ITS EXACT LIMIT. `Saw` = THIS VALUE WAS RENDERED FOR
+// THIS HELD NAME IN THE DECIDER'S PROMPT AT THAT CHECK. It is not "the decider
+// noticed it", not "weighed it", and above all not "decided because of it":
+// the stamps prove VISIBILITY, never CAUSALITY. No surface may say a value
+// caused a hold or a swap (Sol's claims audit — "These facts caused the HOLD"
+// and "The decider saw X, so it held" both FAIL).
+//
+// Shared with the narrator's YOUR RECORD block (hazard 26): the pane and the
+// prompt render one check's evidence with ONE set of labels, so they cannot
+// drift into two vocabularies for one fact.
+//
+// EIGHT FIELDS MEANS EIGHT (Sol m-1). The shipped set is exactly px, chg,
+// atrX, vwapDev, bbPct, nr7, regime, risk. `rsPct` was REMOVED server-side
+// because held names never received it in the rendered prompt (it renders for
+// bench names only), so there is no ninth slot, no "RS unavailable"
+// placeholder and no completeness rule anywhere. Its absence is structural.
+// A null metric renders NOTHING — never 0, never a dash, never a placeholder.
+
+/**
+ * The four regime words the decider's prompt actually prints
+ * (`STOCK REGIMES: NVDA=directional_expansion, …` — the raw token, both in the
+ * strategy legend and on the live line). The evidence claim is "this is what
+ * the prompt rendered", so the token IS the honest render and translating it
+ * to a friendlier word would show something the decider never saw (§9).
+ *
+ * An unrecognised value renders NOTHING rather than a raw string — the D-81
+ * precedent for unruled trigger types, for the same reason: a token this
+ * module has no sentence for is not a fact a player can read.
+ */
+export const REGIME_WORDS = Object.freeze([
+  'directional_expansion',
+  'directional_contraction',
+  'choppy',
+  'distressed',
+]);
+
+export const regimeWord = (value) => (
+  typeof value === 'string' && REGIME_WORDS.includes(value) ? value : null
+);
+
+/**
+ * The risk manager's verdict words, as the RISK STATUS block prints them
+ * (`agentRiskManager.js`; read, never edited). `HOLD` is absent BY RULE, not
+ * by omission — Sol B-1: on an all-HOLD tick the prompt renders no RISK STATUS
+ * block at all, so HOLD is a verdict the decider saw by the block's ABSENCE
+ * and must stay silent under a "saw" heading.
+ *
+ * A CLOSED LIST, for the reason `regimeWord` and `WOKEN_BY_TYPE` are closed
+ * (D-81, review A-4): a new action added to the fenced risk manager would
+ * otherwise reach a player surface as a raw machinery token, unruled and
+ * unread by anyone. It arrives SILENT until it has its own sentence here.
+ */
+export const RISK_WORDS = Object.freeze([
+  'LOCK',
+  'SWAP_OUT',
+  'TRAIL_STOP',
+  'EMERGENCY_SWAP',
+]);
+
+export const riskWord = (value) => (
+  typeof value === 'string' && RISK_WORDS.includes(value) ? value : null
+);
+
+/** `What the 12:45 check saw` — takes formatted slot text (this module is zero-import). */
+export const evidenceHeading = (slotText) => (slotText ? `What the ${slotText} check saw` : null);
+
+/**
+ * A persisted instant as an ISO string, from any shape a Firestore document
+ * can carry: an ISO string, a Timestamp (`toMillis` or `toDate`), a
+ * `{ seconds }` pair, a Date, or epoch ms. null when it is none of those.
+ *
+ * The client's `toIso` (baggerbombAdapter) absorbs the same union; this is its
+ * zero-import twin, needed because `api/` reads this module under plain Node
+ * and the adapter's graph is not Node-clean.
+ */
+export function toIsoInstant(raw) {
+  if (raw == null) return null;
+  if (typeof raw === 'string') return Number.isNaN(new Date(raw).getTime()) ? null : raw;
+  let ms = null;
+  if (typeof raw === 'number') ms = raw;
+  else if (typeof raw.toMillis === 'function') ms = raw.toMillis();
+  else if (typeof raw.toDate === 'function') ms = raw.toDate()?.getTime?.() ?? null;
+  else if (raw instanceof Date) ms = raw.getTime();
+  else if (typeof raw.seconds === 'number') ms = raw.seconds * 1000;
+  if (typeof ms !== 'number' || !Number.isFinite(ms)) return null;
+  return new Date(ms).toISOString();
+}
+
+/** An instant's ET calendar day, as a comparable key; null when unparseable. */
+const etDay = (iso) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+};
+/** `Aug 29` — an instant's ET date, for a vintage that is not from today. */
+const etShortDate = (iso) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric' });
+};
+
+const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+/** `+2.57` / `-1.20` — the sign is always explicit on a change-like number. */
+const signed = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}`;
+/** `15th` · `21st` · `12th` — 11/12/13 take `th` whatever their last digit. */
+const ordinal = (n) => {
+  const rem100 = n % 100;
+  if (rem100 >= 11 && rem100 <= 13) return `${n}th`;
+  return `${n}${['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;
+};
+
+/**
+ * The eight evidence fields as rendered facts, in a fixed order, NULLS DROPPED.
+ *
+ * Two carve-outs, both Sol's, and both about not over-claiming:
+ *
+ *   `chg` IS ALWAYS LABELLED SINCE ENTRY (Sol M-3). The field is the ACTIVE
+ *   POSITIONS row's Gain% from ENTRY, not today's move and not the session
+ *   change. `Change +2.57%`, `Move +2.57%` and `+2.57% today` all misread it,
+ *   and the abbreviated key makes that misreading easy for a future renderer —
+ *   so the words "since entry" are part of the label, and §5's copy guard bans
+ *   `changed` / `moved` / `today` beside it.
+ *
+ *   `risk` IS CARVED OUT OF THE BLANKET "SAW" CLAIM (Sol B-1, the BLOCKER).
+ *   On an all-HOLD tick the prompt renders NO RISK STATUS block at all — the
+ *   block prints only when some position is non-HOLD — so `{ action: 'HOLD' }`
+ *   is the engine's verdict conveyed by the block's ABSENCE, not by a line the
+ *   decider read. Rendering "Risk HOLD" under a "what the decider saw" heading
+ *   would claim a line that was never there, so HOLD IS SILENT HERE. A
+ *   non-HOLD action IS supportable and renders. The stored `reason` CODE is
+ *   never rendered as seen text either: for a LOCK the prompt carried the
+ *   human-readable `detail` sentence while the stamp keeps the compact code,
+ *   so "I saw threshold_proximity" is false. The code stays out of this list.
+ *
+ * @param {Object|null} evidence  one held position's stamp
+ * @returns {string[]}            zero or more rendered facts
+ */
+export function evidenceFactLines(evidence) {
+  if (!evidence || typeof evidence !== 'object') return [];
+  const out = [];
+  const px = num(evidence.px);
+  if (px != null) out.push(`Price $${px.toFixed(2)}`);
+  const chg = num(evidence.chg);
+  if (chg != null) out.push(`Gain since entry ${signed(chg)}%`);
+  const atrX = num(evidence.atrX);
+  if (atrX != null) out.push(`ATR multiple ${atrX.toFixed(2)}×`);
+  const vwapDev = num(evidence.vwapDev);
+  if (vwapDev != null) out.push(`VWAP deviation ${signed(vwapDev)}%`);
+  const bbPct = num(evidence.bbPct);
+  if (bbPct != null) out.push(`Bollinger width ${ordinal(Math.round(bbPct))} %ile`);
+  // NR7 is a FLAG: the prompt printed "NR7: YES" or nothing. `false` is not a
+  // fact the player needs and `null` is no reading at all — both stay silent.
+  if (evidence.nr7 === true) out.push('NR7');
+  const regime = regimeWord(evidence.regime);
+  if (regime) out.push(`Regime ${regime}`);
+  const action = riskWord(evidence.risk?.action);
+  if (action) out.push(`Risk ${action}`);
+  return out;
+}
+
+/**
+ * The provenance line beneath the evidence — PROVENANCE DETAIL, never a
+ * freshness promise (Sol M-2).
+ *
+ * `techAt` is the newest `updatedAt` among the HELD technical documents. It
+ * does NOT prove every held symbol's technical context carries that stamp, so
+ * "Technical data as of 10:30", "Technicals updated 10:30" and "Data current
+ * at 10:30" all overclaim; the honest phrasing names the field for what it is.
+ * `fundAsOf` is the FUNDAMENTALS block's own header date across held plus
+ * non-crypto bench — not a per-symbol timestamp, and it does not date the
+ * eight evidence values. §5's guard bans "technical data as of" outright.
+ *
+ * `fundAsOf` is a UTC CALENDAR DATE (`YYYY-MM-DD`), so it is formatted in UTC:
+ * running it through an ET formatter would render Sep 8 as Sep 7.
+ *
+ * @param {Object|null} vintages  the entry's one vintages block
+ * @param {(iso: string) => string|null} timeText  the caller's instant formatter
+ */
+export function provenanceLine(vintages, timeText, checkIso = null) {
+  if (!vintages || typeof vintages !== 'object') return null;
+  // An instant on a DIFFERENT ET day from the check carries its date (review
+  // A-3). `etTime` is time-only, so a rankings doc from a missed overnight run
+  // rendered as "Rankings as of 7:00 AM" — three days stale and reading as a
+  // time later today, which is the M-2 overclaim wearing a different hat. The
+  // TIME still comes from the caller's own formatter (§9); only the day prefix
+  // is added here, and only when the days differ.
+  const stamp = (iso) => {
+    const t = timeText(iso);
+    if (!t) return null;
+    const day = etDay(iso);
+    const checkDay = checkIso ? etDay(checkIso) : null;
+    if (!day || !checkDay || day === checkDay) return t;
+    return `${etShortDate(iso)} ${t}`;
+  };
+  const parts = [];
+  const fundAsOf = typeof vintages.fundAsOf === 'string' ? vintages.fundAsOf : null;
+  if (fundAsOf && /^\d{4}-\d{2}-\d{2}$/.test(fundAsOf)) {
+    const d = new Date(`${fundAsOf}T00:00:00Z`);
+    if (!Number.isNaN(d.getTime())) {
+      const day = d.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' });
+      parts.push(`Fundamentals block as of ${day}`);
+    }
+  }
+  const tech = typeof vintages.techAt === 'string' ? stamp(vintages.techAt) : null;
+  if (tech) parts.push(`Latest held technical stamp · ${tech}`);
+  const rankings = typeof vintages.rankingsAt === 'string' ? stamp(vintages.rankingsAt) : null;
+  if (rankings) parts.push(`Rankings as of ${rankings}`);
+  return parts.length ? parts.join(' · ') : null;
 }

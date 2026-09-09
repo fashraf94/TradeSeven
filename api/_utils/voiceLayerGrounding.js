@@ -79,6 +79,9 @@ import {
   HYPOTHESIS_LABEL,
   displayHypothesis,
   renderHypothesis,
+  heardStamps,
+  evidenceFactLines,
+  provenanceLine,
 } from '../../src/data/decisionRecord.js';
 import { FLAT6_GAME_MODE } from '../../src/constants/agentGameModes.js';
 // §6.2 — chips minted by id: the allowlist helpers, called directly (the
@@ -96,6 +99,32 @@ export { GROUNDING_VERSION };
 
 /** YOUR RECORD renders this many checks, newest first (§3.2: three, measured ~442 tokens). */
 export const RECORD_WINDOW = 3;
+
+// Phase B (seed §4). The evidence rides the record entries, but the record is
+// three checks deep and a held book can be seven names, so the block has a
+// ceiling: build all three, and if the evidence's own cost exceeds the budget,
+// it rides the NEWEST ENTRY ONLY. The newest check is the one a player asks
+// about, so a truncation keeps the useful half rather than thinning all three
+// into uselessness.
+//
+// The budget is the spec's target (§1.5: ≤ 300 tokens for three entries) and
+// the estimate is the standard four-characters-per-token approximation — an
+// ESTIMATE, deliberately: the exact count depends on a tokenizer this module
+// does not have, and the fallback only has to fire before the block grows
+// unreasonable, not at a precise boundary.
+//
+// THE FALLBACK HAS A FLOOR, AND IT IS MEASURED (review B-7). One entry costs
+// roughly 74 estimated tokens at one held name, 161 at three, 247 at five,
+// 291 at six and 334 at SEVEN — so a full seven-name book on the newest entry
+// alone lands ~11 % over this budget, and the fallback cannot go lower without
+// removing the evidence from the record entirely, which is the thing §4 exists
+// to add. The seed's rule stops at one entry deliberately; the overage is
+// recorded here rather than papered over, and a second-stage fallback is a
+// spec-level decision, not this build's to make.
+export const EVIDENCE_TOKEN_BUDGET = 300;
+export const EVIDENCE_FALLBACK_WINDOW = 1;
+export const EVIDENCE_HEADING = 'What this check saw:';
+const estimateTokens = (text) => Math.ceil(text.length / 4);
 
 /** The history window: the last N exchanges of any kind (§3.4). */
 export const HISTORY_WINDOW = 10;
@@ -156,14 +185,58 @@ export function recordStateLabel(evaluation) {
  * failed — defaulting to HOLD"), and quoting it under YOUR RECORD would put the
  * cron's words in the agent's mouth (hazard 25, D-65 / D-69).
  */
-export function renderRecordEntry(evaluation) {
+/**
+ * The evidence lines for one record entry — one compact line per held
+ * position, then the provenance triplet once.
+ *
+ * THE SAME LABELS AS THE PANE (hazard 26, BUILD_RULES §9): the field lines and
+ * the provenance line come from `evidenceFactLines` / `provenanceLine` in
+ * decisionRecord.js, which is what Why?'s "What the check saw" renders too.
+ * One check cannot get two vocabularies.
+ *
+ * The risk carve-out travels with them: HOLD is silent (the prompt rendered no
+ * RISK STATUS block on an all-HOLD tick) and the stored reason CODE is never
+ * presented as text the decider saw. `chg` is spelled "Gain since entry".
+ *
+ * The symbols are iterated in the STAMP's own order, which is the order the
+ * decider's ACTIVE POSITIONS CSV rendered them in.
+ */
+export function renderEvidenceLines(evaluation) {
+  const evidence = evaluation?.evidence;
+  if (!evidence || typeof evidence !== 'object') return [];
+  const lines = [];
+  for (const symbol of Object.keys(evidence)) {
+    const facts = evidenceFactLines(evidence[symbol]);
+    if (facts.length === 0) continue;
+    lines.push(`    ${symbol} — ${facts.join(' · ')}`);
+  }
+  if (lines.length === 0) return [];
+  const provenance = provenanceLine(evaluation.vintages, etTime, evaluation.timestamp);
+  return [
+    `  ${EVIDENCE_HEADING}`,
+    ...lines,
+    ...(provenance ? [`    ${provenance}`] : []),
+  ];
+}
+
+export function renderRecordEntry(evaluation, { withEvidence = true } = {}) {
   if (!evaluation || typeof evaluation !== 'object') return [];
   const slot = etSlotTime(evaluation.timestamp);
   const slotText = slot ? `[${slot} check]` : '[check]';
   const woken = wokenBy(evaluation.triggers);
 
   if (evaluation.haikuError) {
-    return [[slotText, noDecisionLine(evaluation.haikuError), woken].filter(Boolean).join(' · ')];
+    // AN OUTAGE ENTRY CAN STILL CARRY EVIDENCE (review B-4). `promptBuilt` is
+    // set after the prompt is built and before the transport call, so a
+    // timed-out or truncated tick has true stamps and no decision — the server
+    // says so explicitly. The pane already renders them under
+    // `No decision recorded at this check`; the narrator returned early and
+    // rendered none, so one record answered two ways and a player could see
+    // four facts on screen that the character's own record did not have
+    // (hazard 26 / §9 — the drift both modules share decisionRecord.js to
+    // prevent). What the check SAW does not depend on whether it decided.
+    const absence = [slotText, noDecisionLine(evaluation.haikuError), woken].filter(Boolean).join(' · ');
+    return withEvidence ? [absence, ...renderEvidenceLines(evaluation)] : [absence];
   }
 
   const lines = [[slotText, recordStateLabel(evaluation), woken].filter(Boolean).join(' · ')];
@@ -212,6 +285,10 @@ export function renderRecordEntry(evaluation) {
   if (hypothesis !== null) {
     lines.push(`  ${HYPOTHESIS_LABEL}: ${hypothesis}`);
   }
+  // Phase B (seed §4): what the decider's prompt RENDERED at this check.
+  // Presence-gated — an entry with no stamp adds nothing and the block is
+  // byte-identical to what it is today.
+  if (withEvidence) lines.push(...renderEvidenceLines(evaluation));
   return lines;
 }
 
@@ -221,11 +298,18 @@ export function renderRecordEntry(evaluation) {
  * isDirectiveActive + resolveControls, the one reader every prompt surface
  * shares; BUILD_RULES §9) or null.
  */
-export function renderCurrentDirective(directive) {
+export function renderCurrentDirective(directive, heardSlot = null) {
   if (!directive || !isNonEmptyString(directive.text)) return NO_DIRECTIVE_LINE;
   const filedAt = etTime(directive.createdAt);
   const stamp = filedAt ? ` — filed ${filedAt}` : '';
-  return `${CURRENT_DIRECTIVE_HEADING}\n  "${directive.text}"${stamp}`;
+  // Phase B (seed §4): the record's Heard fact, and ONLY the positive one.
+  // When the thread was withheld the line is UNCHANGED — no negative, no
+  // reason. The narrator never explains a suppression: the character never
+  // received the withheld directive, so a first-person account of why it did
+  // not arrive attributes a pre-prompt resolver event to the character (Sol
+  // M-1). Absence of the suffix is the whole treatment.
+  const heard = heardSlot ? ` · heard at the ${heardSlot} check` : '';
+  return `${CURRENT_DIRECTIVE_HEADING}\n  "${directive.text}"${stamp}${heard}`;
 }
 
 /**
@@ -240,10 +324,34 @@ export function renderCurrentDirective(directive) {
 export function buildYourRecordBlock({ evaluations, directive }) {
   const list = Array.isArray(evaluations) ? evaluations.filter((e) => e && typeof e === 'object') : [];
   const recent = list.slice(-RECORD_WINDOW).reverse();
-  const body = recent.length
-    ? recent.flatMap(renderRecordEntry).join('\n')
-    : RECORD_EMPTY_LINE;
-  return [RECORD_HEADING, body, RATIONALE_RULE, renderCurrentDirective(directive)].join('\n\n');
+
+  // Phase B (seed §4) — the evidence's own ceiling. Build the block with the
+  // evidence on every entry; if the evidence alone costs more than the budget,
+  // rebuild with it on the NEWEST entry only. Measured on the evidence's
+  // CONTRIBUTION (the full body minus the body without it), so the rationale's
+  // own length can never push the evidence off the record.
+  const bodyOf = (evidenceWindow) => recent
+    .flatMap((entry, i) => renderRecordEntry(entry, { withEvidence: i < evidenceWindow }))
+    .join('\n');
+  let body;
+  if (!recent.length) {
+    body = RECORD_EMPTY_LINE;
+  } else {
+    const full = bodyOf(recent.length);
+    const bare = bodyOf(0);
+    body = estimateTokens(full) - estimateTokens(bare) > EVIDENCE_TOKEN_BUDGET
+      ? bodyOf(EVIDENCE_FALLBACK_WINDOW)
+      : full;
+  }
+
+  // The Heard fact for the CURRENT thread, from the same shared walk the
+  // Battle View's receipts use (hazard 26): last entry per thread wins, and a
+  // suppressed stamp is not Heard and adds nothing to the line.
+  const threadId = typeof directive?.directiveThreadId === 'string' ? directive.directiveThreadId : null;
+  const stamp = threadId ? heardStamps(list)[threadId] : null;
+  const heardSlot = stamp && stamp.heard ? etSlotTime(stamp.at) : null;
+
+  return [RECORD_HEADING, body, RATIONALE_RULE, renderCurrentDirective(directive, heardSlot)].join('\n\n');
 }
 
 // ==================== §3.3 / §3.5 — CURRENT CONTEXT ====================
@@ -386,6 +494,7 @@ const GROUNDED_SHARED_RULES = `THE GROUNDING RULES (they outrank everything belo
 - CLOSING: You may lay out the options the record and the rules support; you do not say which will be taken. Close by asking which option the user wants filed, or with one question about what they are seeing.
 - TENSE: decisions live in the past tense and come from YOUR RECORD. The future exists only as cadence ("at the next check the process evaluates the evidence under its rules and any current directive") — never as a specific action, a trade, a rotation, a threshold or a trigger you will act on.
 - ATTRIBUTION: the rationale in YOUR RECORD was written by the trading process (or, where labelled, by the system's rules) at that check. Quote what it decided and the observed reason; never restate a hypothesis, an action condition or an intended trade from it as your own intention. A directive is filed to the process; it may or may not act on it, and you never say that it will.
+- WHAT A CHECK SAW: the values under "What this check saw" are values rendered to the trading process at that check. They do not explain the decision; do not say a value caused a hold or a swap. "Heard at the {t} check" means the directive was in front of the process at that check — never that it was considered, used, or acted on.
 - NEVER say "On it / Done / Locked in / I'll rotate / I'm rotating / I'll rebalance / I'll tighten"; never name a position you will act on; never state a condition that would make you act.`;
 
 const GROUNDED_TONE_DATA = `DATA CONFIDENCE:

@@ -14,9 +14,14 @@
 //   2. NO AGENT VERBS between checks. The agent acts at confirmed checks and
 //      does nothing in between; nothing here implies otherwise.
 //   3. RECEIPTS ARE PROVEN OR ABSENT (D-51): `Filed · Acted · Replaced ·
-//      Expired`. Filed is not heard; heard is not will-do. No `Heard`,
-//      `Holding`, `Declined`, `Honored`, `Superseded` (those are Phase B or
-//      never).
+//      Expired`, and — since Phase B — `Heard`. Filed is not heard; heard is
+//      not will-do. `Heard` is now PROVEN and therefore allowed, with its
+//      claim fixed at exactly one thing (D-110): the thread was in the
+//      decider's prompt at that check, proven by the cron's own stamp. It is
+//      never upgraded to considered, used, noticed, understood or decided
+//      because, and a withheld directive gets the reasonless system line
+//      (`NOT_HEARD_LINE`), never one of the four resolver words. `Holding`,
+//      `Declined`, `Honored`, `Superseded` remain unproven and stay out.
 //   4. THE AGENT'S OWN WORDS ONLY (C1): Why? quotes `rationale` verbatim and
 //      never paraphrases it; the labels around it are scoreboard facts.
 //
@@ -53,6 +58,12 @@ import {
   planAtDeployLabel,
   filesChip as recordFilesChip,
   filedLabel,
+  heardLabel,
+  NOT_HEARD_LINE,
+  evidenceHeading,
+  evidenceFactLines,
+  provenanceLine,
+  regimeWord,
   NO_CHANGE_STATUS_LINE,
   FILING_CONFLICT_LINE,
   FILING_BUDGET_LINE,
@@ -467,6 +478,63 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   },
   expired: 'Expired',
 
+  // ── Heard (Phase B, seed §1; D-110) ───────────────────────────────────────
+  // The receipt's second line. `Heard at the {slot} check` when the record
+  // proves the thread was in the decider's prompt at that check; the flat,
+  // reasonless `Not heard at this check` when a directive existed and the
+  // assembler withheld it (Sol M-1 — the four suppression words are telemetry,
+  // never copy); NOTHING when no entry names the thread at all, which is the
+  // honest answer for a filing that landed mid-tick and will be stamped on the
+  // NEXT check.
+  //
+  // The slot goes through `slotLabel` like every other label that names a
+  // check (D-83) — the same formatter the tape and the turn line use, so one
+  // tick is called one thing everywhere (BUILD_RULES §9).
+  heard: (iso) => heardLabel(slotLabel(iso)),
+  notHeard: NOT_HEARD_LINE,
+
+  /**
+   * The second line for a receipt carrying a Heard stamp, or null.
+   * Takes the whole receipt so the card and the strip cannot disagree about
+   * which of the three outcomes they are in.
+   */
+  // ── What the check saw (Phase B, seed §2; D-111) ──────────────────────────
+  // The evidence the decider's prompt rendered for this held piece, under a
+  // heading that names the CHECK by its slot (D-83). The eight labels, the
+  // `chg` carve-out and the risk carve-out all live in decisionRecord.js so
+  // the narrator's record renders one check with one vocabulary (hazard 26).
+  //
+  // The provenance line is DETAIL, not a freshness promise: `techAt` is the
+  // newest held technical document's stamp, `fundAsOf` the FUNDAMENTALS
+  // block's own header date. Both name themselves; neither claims the eight
+  // values are current as of anything (Sol M-2). These are DOCUMENT INSTANTS,
+  // not checks, so they keep their exact minute like `tradeLine` and `filed`
+  // — only a CHECK is named by its slot.
+  evidenceHeading: (iso) => evidenceHeading(slotLabel(iso)),
+  evidenceFacts: (evidence) => evidenceFactLines(evidence),
+  // The check's own instant goes with it, so a vintage from another ET day
+  // carries its date rather than reading as a time later today (review A-3).
+  evidenceProvenance: (vintages, checkIso = null) => provenanceLine(vintages, etTime, checkIso),
+  regimeWord: (value) => regimeWord(value),
+
+  // BENEATH `Filed {time}` — AND ONLY THERE (the seed's own wording; review
+  // A-2). The negative is DEICTIC: `Not heard at this check` names no slot, so
+  // on a scrollback card for a thread that has since been Replaced it reads as
+  // a claim about the LATEST check — one where that thread was not the
+  // directive at all and the record says nothing about it. The positive names
+  // its own check and would be true anywhere, but the two lines stay together:
+  // a receipt shows one Heard treatment or none, never a rule that depends on
+  // which way the answer came out. A replaced directive's honest receipt is
+  // `Replaced {t}`, which the card already carries.
+  heardLine: (receipt) => {
+    if (receipt?.state !== 'filed') return null;
+    const stamp = receipt.heard;
+    if (!stamp || typeof stamp !== 'object') return null;
+    if (stamp.heard === true) return BATTLE_VIEW_COPY.heard(stamp.at);
+    if (stamp.heard === false) return BATTLE_VIEW_COPY.notHeard;
+    return null;
+  },
+
   // ── The chat's send failure (A2.3, addendum item 11) ──────────────────────
   // The shipped line is `Agent is thinking too hard. Try again.` — an agent
   // verb (honesty rule 2) on a sentence that is not even about the agent: the
@@ -594,6 +662,15 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   benchWatchlist: (name) => (name ? `${name} · equipped` : null),
   // The rest of the roster — the names this check did not mention.
   benchRest: 'The rest of the roster',
+  // Phase B (seed §3, D-112): THE FACT OF THE FLAG, and nothing else. The
+  // decider's own anticipation output named this bench name as a potential
+  // entry at this check. Not "the agent is eyeing it", not "about to buy it",
+  // not why — `signalSummary` and `threshold` are persisted and never render
+  // here (D-103). One word, and it is a past fact about a check that has
+  // already run, so it carries no forecast (the C1 rule the whole surface is
+  // built on: distance to a scoring tier is a fact, distance to a TRADE is a
+  // forecast and never ships).
+  benchFlaggedChip: 'Flagged',
 
   // ── Tape (A3.4, D-94) ──────────────────────────────────────────────────────
   // The shipped Game Tape's content, moved into the pane and simplified: trade

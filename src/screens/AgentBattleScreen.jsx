@@ -30,10 +30,12 @@ import LandingWash from './battleView/LandingWash';
 import TurnLine from './battleView/TurnLine';
 import WhyPanel from './battleView/WhyPanel';
 import { selectWhyState, selectTradesForSymbol, deriveTierPrices } from './battleView/selectWhyState';
+import { selectEvidence } from './battleView/selectEvidence';
 import { selectDeployPlan, selectDeployPlanForSymbol } from './battleView/selectDeployPlan';
 import { buildTape, checkEntryId } from './battleView/buildTape';
 import { BATTLE_VIEW_COPY } from './battleView/battleViewCopy';
 import { deriveReceipts } from './battleView/deriveReceipts';
+import { deriveHeard } from './battleView/deriveHeard';
 import ThisTurnStrip from './battleView/ThisTurnStrip';
 import useContentStable from './battleView/useContentStable';
 import ChatSheet from './battleView/ChatSheet';
@@ -1379,9 +1381,18 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // ── Receipts + This turn (Phase A, controller flag) ───────────────────────
   // Pure, from the subscribed doc; the chat and the strip only render what
   // they are handed. Null flag-off, so AgentChat keeps its shipped card.
+  // Phase B (seed §1): the receipt gains the record's Heard stamp for its own
+  // thread, so the card and the strip read ONE object. Presence-gated, never
+  // flag-gated (D-113) — with no stamped entry `heard` is null on every
+  // receipt and both surfaces render exactly what they render today.
   const receipts = useMemo(() => {
     if (!controllerOn || !agentBattle) return null;
-    return deriveReceipts(chatExchanges, agentBattle.directive ?? null, agentBattle.status ?? null);
+    const base = deriveReceipts(chatExchanges, agentBattle.directive ?? null, agentBattle.status ?? null);
+    const heardByThread = deriveHeard(agentBattle.evaluations);
+    for (const threadId of Object.keys(base)) {
+      base[threadId] = { ...base[threadId], heard: heardByThread[threadId] ?? null };
+    }
+    return base;
   }, [controllerOn, agentBattle, chatExchanges]);
   // ── The tape (A2.2, D-72) ─────────────────────────────────────────────────
   // Built ONCE here, from the subscribed doc, and passed down: the chat merges
@@ -1720,6 +1731,9 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                     key={`why-${rowKey}`}
                     symbol={leftAsset.symbol}
                     state={selectWhyState(latestDecision, leftAsset.symbol, lastScoredAt)}
+                    // Phase B (seed §2): presence-gated — null until the
+                    // server flag flips and an entry carries the stamp.
+                    evidence={selectEvidence(latestDecision, leftAsset.symbol, lastScoredAt)}
                     proximity={proximity}
                     entryPrice={leftAsset.openPrice ?? null}
                     heldSince={leftAsset.swappedInAt || agentBattle?.activatedAt || null}

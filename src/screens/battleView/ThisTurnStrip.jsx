@@ -27,6 +27,10 @@ export default function ThisTurnStrip({ directive = null, receipts = null, battl
   const text = typeof directive?.text === 'string' && directive.text.trim() ? directive.text : null;
   const queued = Boolean(threadId && text);
   const filedAt = queued ? (receipts?.[threadId]?.at ?? null) : null;
+  // Phase B: presence-gated — the receipt carries the record's Heard stamp for
+  // this thread only when a stamped entry named it.
+  const heardStamp = queued ? (receipts?.[threadId]?.heard ?? null) : null;
+  const heardLine = queued ? COPY.heardLine(receipts?.[threadId] ?? null) : null;
 
   return (
     <div
@@ -49,20 +53,40 @@ export default function ThisTurnStrip({ directive = null, receipts = null, battl
         {COPY.thisTurn}
       </div>
       {queued ? (
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-          <span style={{
-            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-            fontVariantNumeric: 'tabular-nums',
-            fontSize: 11,
-            color: cssVar('teal'),
-            whiteSpace: 'nowrap',
-          }}>
-            {COPY.filed(filedAt)}
-          </span>
-          <span style={{ fontSize: 12.5, color: cssVar('text-primary'), lineHeight: 1.4 }}>
-            {text}
-          </span>
-        </div>
+        <>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+              fontVariantNumeric: 'tabular-nums',
+              fontSize: 11,
+              color: cssVar('teal'),
+              whiteSpace: 'nowrap',
+            }}>
+              {COPY.filed(filedAt)}
+            </span>
+            <span style={{ fontSize: 12.5, color: cssVar('text-primary'), lineHeight: 1.4 }}>
+              {text}
+            </span>
+          </div>
+          {/* Phase B (seed §1): the record's Heard line for THIS thread, or
+              the reasonless negative, or nothing when no stamped entry names
+              it. Still no "for the ~{t} check" (hazard 3) — Heard is a proven
+              PAST fact about a check that already ran, never a promise about
+              the next one. */}
+          {heardLine ? (
+            <div
+              data-heard={heardStamp?.heard ? 'heard' : 'not-heard'}
+              style={{
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                fontVariantNumeric: 'tabular-nums',
+                fontSize: 10.5,
+                color: cssVar('text-secondary'),
+              }}
+            >
+              {heardLine}
+            </div>
+          ) : null}
+        </>
       ) : (
         <div style={{
           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
