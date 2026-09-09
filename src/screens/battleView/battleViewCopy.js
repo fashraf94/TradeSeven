@@ -650,6 +650,15 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   benchWatchlist: (name) => (name ? `${name} · equipped` : null),
   // The rest of the roster — the names this check did not mention.
   benchRest: 'The rest of the roster',
+  // Phase B (seed §3, D-112): THE FACT OF THE FLAG, and nothing else. The
+  // decider's own anticipation output named this bench name as a potential
+  // entry at this check. Not "the agent is eyeing it", not "about to buy it",
+  // not why — `signalSummary` and `threshold` are persisted and never render
+  // here (D-103). One word, and it is a past fact about a check that has
+  // already run, so it carries no forecast (the C1 rule the whole surface is
+  // built on: distance to a scoring tier is a fact, distance to a TRADE is a
+  // forecast and never ships).
+  benchFlaggedChip: 'Flagged',
 
   // ── Tape (A3.4, D-94) ──────────────────────────────────────────────────────
   // The shipped Game Tape's content, moved into the pane and simplified: trade

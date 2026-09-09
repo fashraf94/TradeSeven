@@ -8,7 +8,7 @@
 // book subtraction the roster depends on.
 
 import { describe, it, expect } from 'vitest';
-import { selectBench, selectBenchRoster, selectLastDecidedWithWords, selectBookSymbols } from './selectBench';
+import { selectBench, selectBenchRoster, selectLastDecidedWithWords, selectBookSymbols, selectFlagged } from './selectBench';
 import { selectWhyState, WHY_KIND } from './selectWhyState';
 
 const doc = (over = {}) => ({
@@ -349,5 +349,115 @@ describe('the invariant the ABSENT skip rests on (review lens 4)', () => {
       expect(why.kind).toBe(WHY_KIND.ABSENT);
       expect(why.rationale).toBeNull();
     }
+  });
+});
+
+// ── Phase B (B1 client half, seed §3): the flag ─────────────────────────────
+// The decider's own anticipation output named a bench name as a potential
+// entry at this check. Bench renders THE FACT OF THE FLAG and nothing behind
+// it: no signalSummary, no threshold, no reason (D-103).
+describe('Phase B — the candidates flag', () => {
+  const entry = (candidates) => ({
+    evalId: 'e1',
+    timestamp: '2026-09-01T16:45:00.000Z',
+    decision: 'HOLD',
+    rationale: 'The book is steady.',
+    candidates,
+  });
+
+  it('a flagged roster name MOVES from the rest into the named group', () => {
+    const out = selectBench(doc({
+      evaluations: [entry([{ symbol: 'NOW', direction: 'potential_entry', signalSummary: 'vol surge', threshold: '2.1x RVOL' }])],
+    }));
+    expect(out.flagged).toEqual(['NOW']);
+    expect(out.rest).not.toContain('NOW');
+    // Every other roster name is untouched.
+    expect(out.rest).toContain('TSLA');
+  });
+
+  it('only `potential_entry` — a potential_exit names a BOOK piece, not a bench name', () => {
+    const out = selectBench(doc({
+      evaluations: [entry([
+        { symbol: 'NOW', direction: 'potential_exit' },
+        { symbol: 'TSLA', direction: 'potential_entry' },
+      ])],
+    }));
+    expect(out.flagged).toEqual(['TSLA']);
+    expect(out.rest).toContain('NOW');
+  });
+
+  it('a candidate OFF the roster is ignored — the book and unknown names never enter', () => {
+    const out = selectBench(doc({
+      evaluations: [entry([
+        { symbol: 'AAPL', direction: 'potential_entry' },   // in the book
+        { symbol: 'ZZZZ', direction: 'potential_entry' },   // nowhere
+      ])],
+    }));
+    expect(out.flagged).toEqual([]);
+  });
+
+  it('ROSTER ORDER, not the model\'s order, and deduped', () => {
+    // The roster is bench stocks (NOW, TSLA), crypto (BTC-USD), then hot bench
+    // (CRWD), then the watchlist (DVN) — AAPL is in the book.
+    const out = selectBench(doc({
+      evaluations: [entry([
+        { symbol: 'DVN', direction: 'potential_entry' },
+        { symbol: 'NOW', direction: 'potential_entry' },
+        { symbol: 'NOW', direction: 'potential_entry' },
+        { symbol: 'CRWD', direction: 'potential_entry' },
+      ])],
+    }));
+    expect(out.flagged).toEqual(['NOW', 'CRWD', 'DVN']);
+  });
+
+  it('a name already carried by a SENTENCE stays there — never printed twice', () => {
+    const out = selectBench(doc({
+      evaluations: [{
+        evalId: 'e1',
+        timestamp: '2026-09-01T16:45:00.000Z',
+        decision: 'HOLD',
+        rationale: 'NOW would need +7.4% more to lock in the bonus.',
+        candidates: [{ symbol: 'NOW', direction: 'potential_entry' }],
+      }],
+    }));
+    expect(out.cards[0].symbols).toContain('NOW');
+    expect(out.flagged).toEqual([]);
+    expect(out.rest).not.toContain('NOW');
+  });
+
+  it('NO CANDIDATES STAMP → no flagged names, and the roster is untouched', () => {
+    const base = selectBench(doc());
+    expect(base.flagged).toEqual([]);
+    // The pre-Phase-B shape: every unspoken name is still "rest".
+    expect(base.rest).toContain('CRWD');
+  });
+
+  it('the absence state carries an empty flagged list, not undefined', () => {
+    const out = selectBench(doc({ evaluations: [] }));
+    expect(out.flagged).toEqual([]);
+    expect(out.slotIso).toBeNull();
+  });
+
+  it('THE SELECTOR CARRIES NO SIGNAL TEXT — the fact of the flag is the whole payload', () => {
+    const out = selectBench(doc({
+      evaluations: [entry([{
+        symbol: 'NOW', direction: 'potential_entry',
+        signalSummary: 'BB squeeze + volume surge', threshold: '2.1x RVOL', signalSource: 'wire',
+      }])],
+    }));
+    // `flagged` is a list of STRINGS: there is no field for a signal to ride.
+    expect(out.flagged).toEqual(['NOW']);
+    const serialised = JSON.stringify(out);
+    for (const leak of ['BB squeeze', 'volume surge', '2.1x RVOL', 'wire']) {
+      expect(serialised).not.toContain(leak);
+    }
+  });
+
+  it('selectFlagged tolerates junk without inventing a name', () => {
+    expect(selectFlagged(null, ['NOW'])).toEqual([]);
+    expect(selectFlagged([], ['NOW'])).toEqual([]);
+    expect(selectFlagged([null, 42, 'NOW', {}], ['NOW'])).toEqual([]);
+    expect(selectFlagged([{ symbol: '  ', direction: 'potential_entry' }], ['NOW'])).toEqual([]);
+    expect(selectFlagged([{ symbol: 'NOW', direction: 'potential_entry' }], [])).toEqual([]);
   });
 });

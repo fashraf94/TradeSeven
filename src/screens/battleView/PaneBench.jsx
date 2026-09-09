@@ -27,6 +27,12 @@
 // The selector hands this component finished text; there is no arithmetic here
 // and no second reading of the doc.
 
+// PHASE B (seed §3) — a name the check FLAGGED as a potential entry joins the
+// named group with a `Flagged` chip, instead of sitting in the rest of the
+// roster. The fact of the flag only: no signal text, no threshold, no reason
+// (D-103). Presence-gated like every other Phase B surface — no candidates
+// stamp, no flagged names, and the section renders exactly as it does today.
+
 import React from 'react';
 import { cssVar } from '../../theme/cssTokens';
 import { parseEmphasis } from './selectWhyState';
@@ -94,7 +100,7 @@ function Chip({ symbol, spokenFor = false }) {
 
 export default function PaneBench({ bench = null }) {
   if (!bench) return null;
-  const { slotIso, cards, rest, watchlistName, footer } = bench;
+  const { slotIso, cards, flagged = [], rest, watchlistName, footer } = bench;
   const subtitle = COPY.benchWatchlist(watchlistName);
   const namedHeading = COPY.benchNamed(slotIso);
 
@@ -119,7 +125,7 @@ export default function PaneBench({ bench = null }) {
 
       {/* THE SENTENCES, in the rationale's own order, under the slot they came
           from. One card each; the names it mentions ride on it. */}
-      {cards.length > 0 && (
+      {(cards.length > 0 || flagged.length > 0) && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {/* The slot of the check ACTUALLY USED (founder ruling Sep 4). Under
               the scan-back that need not be the last check, and one heading
@@ -149,6 +155,35 @@ export default function PaneBench({ bench = null }) {
               </div>
             </div>
           ))}
+          {/* THE FLAG (Phase B, seed §3). Names this check flagged as potential
+              entries but spoke no sentence about — the fact of the flag, with
+              no signal text behind it. */}
+          {flagged.length > 0 && (
+            <div data-bench-flagged="1" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 5 }}>
+              {flagged.map((symbol) => (
+                <span key={symbol} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <Chip symbol={symbol} spokenFor />
+                  <span
+                    data-bench-flag-chip={symbol}
+                    style={{
+                      ...mono,
+                      fontSize: 9.5,
+                      fontWeight: 700,
+                      letterSpacing: '0.06em',
+                      textTransform: 'uppercase',
+                      padding: '2px 5px',
+                      borderRadius: 3,
+                      color: cssVar('text-muted'),
+                      border: `1px solid rgba(var(--ft-scrim-rgb), 0.14)`,
+                    }}
+                  >
+                    {COPY.benchFlaggedChip}
+                  </span>
+                </span>
+              ))}
+            </div>
+          )}
+
           {/* WHOSE WORDS (D-80). The check and trade cards carry this line
               under the same sentences; Bench is the fourth surface to quote a
               rationale and must not be the one that leaves it unattributed. */}

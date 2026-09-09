@@ -42,6 +42,22 @@
 // on every surface (D-83), so the label here is the label the card and the turn
 // line use for the same tick.
 
+// PHASE B (seed §3) — THE FLAG. The same entry's `candidates` stamp carries the
+// names the decider's own anticipation output flagged as potential entries
+// (D-112). A flagged bench name moves OUT of "the rest of the roster" and into
+// the `Named at the {t} check` group with a `Flagged` chip.
+//
+// THE FACT OF THE FLAG, AND NOTHING ELSE. `signalSummary` and `threshold` are
+// persisted but never render here: `threshold` is never rendered in the
+// narrator's voice at all (D-103), and `signalSummary` renders only through the
+// lint-checked composer in voiceLayerAnticipation.js. Bench renders neither —
+// no signal text, no reason, no score. A name was flagged; that is the claim.
+//
+// The candidates come from THE SAME ENTRY the words came from, not from a
+// separately-chosen "latest" one, so the group's single heading names one
+// check for both halves of it. An entry that recorded a decision carries both;
+// an outage tick carries neither and the scan-back walks past it.
+
 import { splitSentences, namesSymbol, selectWhyState, WHY_KIND } from './selectWhyState';
 
 const TIERS = ['star', 'core', 'support'];
@@ -171,11 +187,38 @@ export function selectLastDecidedWithWords(battle) {
  * @returns {{
  *   slotIso: string|null,          the check whose words these are (null = absence)
  *   cards: Array<{text: string, symbols: string[]}>,  sentence order, one per sentence
+ *   flagged: string[],             roster names the check flagged (Phase B, D-112)
  *   rest: string[],                the roster no sentence named
  *   watchlistName: string|null,    the equipped watchlist's bare name
  *   footer: string|null,           whose words these are (D-80)
  * }}
  */
+/**
+ * The bench names this check's decider flagged as potential entries — the
+ * ROSTER ∩ the entry's `potential_entry` candidates, in roster order, deduped.
+ *
+ * `direction === 'potential_entry'` only: a `potential_exit` names a name in
+ * the BOOK, which has a row of its own and is not a bench name (and the roster
+ * intersection already excludes it).
+ *
+ * @param {Array|undefined} candidates  the entry's candidates stamp
+ * @param {string[]} roster             the bench roster, in doc order
+ * @returns {string[]}
+ */
+export function selectFlagged(candidates, roster) {
+  if (!Array.isArray(candidates) || !Array.isArray(roster) || roster.length === 0) return [];
+  const flagged = new Set();
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== 'object') continue;
+    if (candidate.direction !== 'potential_entry') continue;
+    const symbol = typeof candidate.symbol === 'string' ? candidate.symbol.trim() : null;
+    if (symbol) flagged.add(symbol);
+  }
+  // Roster order, never the candidates' order: a bench name must not move
+  // between renders because the model listed it in a different position.
+  return roster.filter((symbol) => flagged.has(symbol));
+}
+
 export function selectBench(battle) {
   const roster = selectBenchRoster(battle);
   const rawName = battle?.agentContext?.equippedWatchlist?.name;
@@ -185,7 +228,7 @@ export function selectBench(battle) {
   if (!decided) {
     // ABSENCE. No entry carries the decider's words — every bench name is
     // "rest", and the caller renders the absence line above them.
-    return { slotIso: null, cards: [], rest: roster, watchlistName, footer: null };
+    return { slotIso: null, cards: [], flagged: [], rest: roster, watchlistName, footer: null };
   }
 
   // ONE split for the whole roster, over the DISPLAY text — then ONE pass over
@@ -204,13 +247,23 @@ export function selectBench(battle) {
     for (const symbol of symbols) spokenFor.add(symbol);
     cards.push({ text, symbols });
   }
+  // Phase B: the names this check FLAGGED but did not speak a sentence about.
+  // A name already carried by a sentence stays on that sentence — it is
+  // already in the named group, and a second entry for it would print one name
+  // twice under one heading.
+  const flagged = selectFlagged(decided.entry.candidates, roster)
+    .filter((symbol) => !spokenFor.has(symbol));
+  const flaggedSet = new Set(flagged);
+
   // The rest keeps ROSTER order too, so a name does not move between renders
-  // because a sentence elsewhere changed.
-  const rest = roster.filter((symbol) => !spokenFor.has(symbol));
+  // because a sentence elsewhere changed. A flagged name has MOVED to the
+  // named group (seed §3) and is no longer part of the rest.
+  const rest = roster.filter((symbol) => !spokenFor.has(symbol) && !flaggedSet.has(symbol));
 
   return {
     slotIso: decided.entry.timestamp ?? null,
     cards,
+    flagged,
     rest,
     watchlistName,
     // WHOSE WORDS (D-80 / review L5-F2, the rule the check and trade cards
