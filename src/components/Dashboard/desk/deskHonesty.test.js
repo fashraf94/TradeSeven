@@ -167,6 +167,11 @@ const NARRATOR_EXEMPT = new Set(['considered', 'caused']);
 const NARRATOR_EXEMPT_SENTENCES = [
   'They do not explain the decision; do not say a value caused a hold or a swap.',
   'never that it was considered, used, or acted on',
+  // Phase C §5 (D-121) — the research rule must NAME the inference it forbids
+  // ("this card explains the decision") in order to forbid it, exactly as the
+  // two above do. Sentence-scoped like them: `caused` stays banned everywhere
+  // else in that file, including the PLATFORM RESEARCH heading beside it.
+  'never say it explains or caused any decision on the record',
 ];
 
 // AgentChat.jsx RENDERS THE HEARD LINE, so it is a Phase B surface and answers
