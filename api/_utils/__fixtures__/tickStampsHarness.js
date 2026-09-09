@@ -21,12 +21,23 @@
 // snapshot `data()` returns a fresh deep copy. So a test can mutate THE DOC
 // mid-tick (the mid-tick filing fixture) and observe that the cron's in-memory
 // `battle` — the object the prompt was rendered from — is what the stamp names.
+//
+// THE RECORDED WRITE is a deep copy taken AT THE MOMENT OF THE WRITE (review
+// D-1): `db.__updates` holds what Firestore would have received, so a stamp
+// applied to `evaluation` after `battleRef.update(finalUpdate)` is invisible
+// to the recorded payload exactly as it would be in production. And, like the
+// Admin SDK with `ignoreUndefinedProperties` unset, the mock write REJECTS any
+// `undefined` value in the payload (review D-9) — every end-to-end row guards
+// the whole finalUpdate against a stray `undefined` for free.
 
 export const FROZEN_NOW = '2026-09-09T15:00:00.000Z'; // Wed Sep 9 2026, 11:00 AM ET (market open)
 export const FROZEN_DAY_ET = '2026-09-09';
 export const RANKINGS_COMPUTED_AT_MS = Date.UTC(2026, 8, 9, 14, 30, 0); // 10:30 ET today — an intraday recompute
-export const FUND_COMPUTED_AT_MS = Date.UTC(2026, 8, 4, 6, 15, 0);      // Fri Sep 4, 06:15 UTC
+export const TECH_UPDATED_AT_MS = Date.UTC(2026, 8, 9, 14, 29, 55);     // the same intraday run wrote the technical docs 5 s earlier
+export const FUND_COMPUTED_AT_MS = Date.UTC(2026, 8, 4, 6, 15, 0);      // Fri Sep 4, 06:15 UTC — the newest HELD fundamentals vintage
 export const FUND_COMPUTED_AT_OLDER_MS = Date.UTC(2026, 8, 1, 6, 15, 0); // an older per-ticker vintage (mixed-vintage case)
+export const FUND_COMPUTED_AT_BENCH_MS = Date.UTC(2026, 8, 8, 6, 15, 0); // bench AMD is FRESHER than any held name — the FUNDAMENTALS
+                                                                          // block's header date (held + bench) is this one
 
 export const OLD_THREAD = 'thread-tf02-0001';   // the directive on the battle when the tick begins
 export const NEWER_THREAD = 'thread-tf02-0002'; // a filing that lands on the DOC mid-tick
@@ -217,7 +228,7 @@ export function makeRankingsDoc() {
         fundamentals: { computedAt: FUND_COMPUTED_AT_MS, trailingPE: { value: 26.3 }, marketCapClass: 'large' } }),
       // BTC: no ranking row at all — the null-honesty case for bbPct / nr7.
       rankingRow('AMD', { bBandwidthPercentile: 20, nr7Flag: true, dailyRange: 4.4, sectorName: 'Technology',
-        fundamentals: { computedAt: FUND_COMPUTED_AT_MS, trailingPE: { value: 45.0 }, marketCapClass: 'large' } }),
+        fundamentals: { computedAt: FUND_COMPUTED_AT_BENCH_MS, trailingPE: { value: 45.0 }, marketCapClass: 'large' } }),
       rankingRow('JPM', { bBandwidthPercentile: 60, nr7Flag: false, dailyRange: 2.2, sectorName: 'Financial Services',
         fundamentals: { computedAt: FUND_COMPUTED_AT_MS, trailingPE: { value: 12.4 }, marketCapClass: 'large' } }),
     ],
@@ -226,13 +237,17 @@ export function makeRankingsDoc() {
 
 /**
  * stockTechnicalScores docs (classifyStockRegime inputs + the rsPercentile the
- * bench block renders). Regimes by construction of the classifier:
+ * BENCH block renders; each carries the writer's `updatedAt` serverTimestamp —
+ * a Firestore Timestamp in production, a { toMillis } stand-in here — which
+ * is the vintage `vintages.techAt` stamps). Regimes by construction of the
+ * classifier:
  *   NVDA directional_expansion · TSLA distressed · MSFT directional_contraction
  *   AMZN choppy · KO choppy · PG directional_contraction · BTC — NO DOC (null case)
  *   AMD / JPM (bench) carry docs so the harness proves bench regimes are NOT stamped.
  */
 export function makeTechDocs() {
-  return {
+  const updatedAt = { toMillis: () => TECH_UPDATED_AT_MS };
+  return Object.fromEntries(Object.entries({
     NVDA: { atrPercent: 4.2, factors: { aboveSMA20: true, aboveSMA50: true, aboveSMA200: true, rsi: 62, macdHistogram: 0.4, macdAboveSignal: true, upDayVolRatio: 1.5, rsPercentile: 88 } },
     TSLA: { atrPercent: 4.8, factors: { aboveSMA20: false, aboveSMA50: true, aboveSMA200: true, rsi: 41, macdHistogram: -0.6, macdAboveSignal: false, upDayVolRatio: 0.9, rsPercentile: 35 } },
     MSFT: { atrPercent: 1.4, factors: { aboveSMA20: true, aboveSMA50: true, aboveSMA200: true, rsi: 55, macdHistogram: 0.1, macdAboveSignal: true, upDayVolRatio: 1.0, rsPercentile: 64 } },
@@ -241,7 +256,7 @@ export function makeTechDocs() {
     PG: { atrPercent: 1.0, factors: { aboveSMA20: true, aboveSMA50: true, aboveSMA200: true, rsi: 52, macdHistogram: 0.02, macdAboveSignal: true, upDayVolRatio: 1.0, rsPercentile: 47 } },
     AMD: { atrPercent: 4.5, factors: { aboveSMA20: true, aboveSMA50: true, aboveSMA200: true, rsi: 66, macdHistogram: 0.5, macdAboveSignal: true, upDayVolRatio: 1.4, rsPercentile: 91 } },
     JPM: { atrPercent: 1.3, factors: { aboveSMA20: true, aboveSMA50: true, aboveSMA200: true, rsi: 57, macdHistogram: 0.05, macdAboveSignal: true, upDayVolRatio: 1.0, rsPercentile: 58 } },
-  };
+  }).map(([symbol, doc]) => [symbol, { symbol, ...doc, updatedAt }]));
 }
 
 /**
@@ -278,6 +293,22 @@ export function makeHoldResult(overrides = {}) {
     trade_reasoning: null,
     ...overrides,
   };
+}
+
+/** The model's autopilot SWAP tool input: KO (support) out, AMD (bench) in. */
+export function makeSwapResult(overrides = {}) {
+  return makeHoldResult({
+    decision: 'SWAP',
+    symbolOut: 'KO',
+    symbolIn: 'AMD',
+    tier: 'support',
+    rationale: 'KO has gone dead money while the semis keep leading; AMD\'s relative strength is the cleanest on the bench and volume confirmed the push. Rotating the support slot into strength.',
+    hypothesis: 'Hypothesis: AMD closes above its 20-day within two sessions and holds the support slot.',
+    conviction: 72,
+    riskAssessment: 'medium',
+    status_feed_update: 'Rotating KO → AMD in support: relative strength and confirming volume.',
+    ...overrides,
+  });
 }
 
 /** The model's raw anticipation items: one full (with the `rationale` the stamp must cut), one minimal, one the queue drops (no symbol). */
@@ -330,6 +361,19 @@ export function deepClone(v) {
 
 /** A firebase FieldValue sentinel (arrayUnion / increment / …) — not applied by this store. */
 const isFieldValue = (v) => !!v && typeof v === 'object' && typeof v.isEqual === 'function';
+
+/** The SDK's rule: no `undefined` anywhere in a write (sentinels are leaves). Throws with the offending paths. */
+function assertWritable(payload, what) {
+  const bad = [];
+  const walk = (v, path) => {
+    if (v === undefined) { bad.push(path || '<root>'); return; }
+    if (v === null || typeof v !== 'object' || isFieldValue(v)) return;
+    if (Array.isArray(v)) v.forEach((x, i) => walk(x, `${path}[${i}]`));
+    else for (const [k, x] of Object.entries(v)) walk(x, path ? `${path}.${k}` : k);
+  };
+  walk(payload, '');
+  if (bad.length) throw new Error(`tick harness: ${what} carries undefined (Firestore rejects it) at ${bad.join(', ')}`);
+}
 
 function setPath(obj, dotted, value) {
   const parts = dotted.split('.');
@@ -385,7 +429,8 @@ export function makeTickDb({ battle, rankingsDoc = null, techDocs = {}, marketCo
     },
     async update(payload) {
       if (col !== 'agentBattles') throw new Error(`tick harness: unexpected update on ${col}/${id}`);
-      updates.push(payload);
+      assertWritable(payload, `update(${col}/${id})`);
+      updates.push(deepClone(payload));
       applyUpdate(store.battle, payload);
     },
   });
@@ -413,7 +458,11 @@ export function makeTickDb({ battle, rankingsDoc = null, techDocs = {}, marketCo
     async runTransaction(cb) {
       return cb({
         get: (ref) => ref.get(),
-        update: (ref, payload) => { updates.push(payload); applyUpdate(store.battle, payload); },
+        update: (ref, payload) => {
+          assertWritable(payload, `transaction.update(${ref.path})`);
+          updates.push(deepClone(payload));
+          applyUpdate(store.battle, payload);
+        },
       });
     },
     __store: store,

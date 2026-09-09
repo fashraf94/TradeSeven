@@ -14,13 +14,14 @@
 // pinning a flag obliges its docstring to name this file, so an unrelated flag
 // added here "as context" would couple its future flip to this arc.
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import { TICK_STAMPS_ENABLED } from './featureFlags.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+const REPO = path.resolve(HERE, '..', '..');
 const SRC = readFileSync(path.join(HERE, 'featureFlags.js'), 'utf8');
 
 describe('Phase B tick stamps flag — the pin (BUILD_RULES §2)', () => {
@@ -29,16 +30,34 @@ describe('Phase B tick stamps flag — the pin (BUILD_RULES §2)', () => {
     expect(TICK_STAMPS_ENABLED).toBe(false);
   });
 
-  it('is a plain boolean export (a bare-factory featureFlags mock resolves it undefined → off, never a throw)', () => {
+  it('is a plain boolean export the flag-pin guard can scan', () => {
     expect(typeof TICK_STAMPS_ENABLED).toBe('boolean');
     expect(SRC).toMatch(/^export const TICK_STAMPS_ENABLED = (true|false);$/m);
   });
 
-  it('its docstring names this pinning suite and the flip map (kept honest by flagPinGuard item 4)', () => {
+  it('every cron suite that imports agent-evaluate.js AND mocks featureFlags.js spreads importOriginal — a bare factory omitting this name would THROW at the gate under vitest (review C-1 / B-2), so no such suite may exist', () => {
+    const cronDir = path.join(REPO, 'api', 'cron');
+    const offenders = [];
+    let checked = 0;
+    for (const name of readdirSync(cronDir)) {
+      if (!/\.test\.js$/.test(name)) continue;
+      const text = readFileSync(path.join(cronDir, name), 'utf8');
+      if (!/agent-evaluate\.js['"]/.test(text)) continue;            // only suites that reach the cron's flag read
+      if (!/vi\.mock\(\s*['"][^'"]*featureFlags\.js['"]/.test(text)) continue; // …and double the flags module at all
+      checked++;
+      if (!/vi\.mock\(\s*['"][^'"]*featureFlags\.js['"]\s*,\s*async\s*\(\s*importOriginal\s*\)/.test(text)) offenders.push(name);
+    }
+    expect(checked, "the scan must see the tickStamps cron suites' flag mocks").toBeGreaterThanOrEqual(3);
+    expect(offenders, `bare-factory featureFlags mocks in cron suites that drive agent-evaluate.js: ${offenders.join(', ')}`).toEqual([]);
+  });
+
+  it('its docstring names this pinning suite, the flip map, and the true bare-factory rule', () => {
     const idx = SRC.indexOf('export const TICK_STAMPS_ENABLED');
-    const window = SRC.slice(Math.max(0, idx - 3000), idx);
+    const window = SRC.slice(Math.max(0, idx - 4000), idx);
     expect(window).toContain('Pinned by: tickStampsFlags.test.js');
     expect(window).toContain('FLIP MAP');
     expect(window).toContain('DARK_BY_DESIGN');
+    expect(window).toContain('THROWS on access');
+    expect(window).not.toMatch(/never throw/);
   });
 });

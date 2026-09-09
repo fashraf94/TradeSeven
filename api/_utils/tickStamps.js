@@ -20,19 +20,28 @@
 //                no directive was active. NEVER from the model's echo
 //                (`ignoredDirectiveIds` / `directiveThreadId` on the entry are
 //                self-report — the basis of Acted, never of Heard).
-//   evidence   — per held position, the nine numbers the decider's own prompt
-//                showed for it (D-111): { px, chg, atrX, vwapDev, bbPct, nr7,
-//                rsPct, regime, risk }. Code-composed from the tick's objects;
-//                `risk` carries `reason` only when non-HOLD. Bench evidence,
-//                story ids and the fundamentals fields are cut by ruling;
-//                `risk`, `atrX`, `vwapDev` are never cut (the three the cache
-//                cannot reproduce). Every render labels it "what the decider
-//                saw at the {slot} check" — distinct from the narrator's
-//                CURRENT CONTEXT (a different vintage by declaration).
-//   vintages   — ONE block per entry (never per field): the cadence words for
-//                the quote / VWAP / technical sources plus two DATES — the
-//                fundamentals vintage as a UTC date (`fundAsOf`, never a
-//                cadence word) and the rankings doc's computedAt (`rankingsAt`).
+//   evidence   — per held position, the numbers the decider's own prompt
+//                RENDERED for it (D-111): { px, chg, atrX, vwapDev, bbPct, nr7,
+//                regime, risk }. Code-composed from the tick's objects; `risk`
+//                carries `reason` only when non-HOLD. Bench evidence, story
+//                ids and the fundamentals fields are cut by ruling; `risk`,
+//                `atrX`, `vwapDev` are never cut (the three the cache cannot
+//                reproduce). The ruled `rsPct` is NOT stamped (review A-2): the
+//                prompt renders `rsPercentile` for BENCH names only
+//                (buildBenchTechnicalBlock); a held name's technical read
+//                reaches the decider as the `regime` word, which IS stamped.
+//                Every render labels it "what the decider saw at the {slot}
+//                check" — distinct from the narrator's CURRENT CONTEXT (a
+//                different vintage by declaration).
+//   vintages   — ONE block per entry (never per field): `quote` / `vwap` are
+//                fetched this tick ('tick' — true by construction); the three
+//                doc-borne sources carry INSTANTS or DATES, never a cadence
+//                word the stamp cannot support — `techAt` (the newest held
+//                stockTechnicalScores `updatedAt`; those docs are rewritten
+//                hourly during RTH, so 'daily' would be false — review A-3),
+//                `fundAsOf` (the fundamentals vintage as a UTC date, the
+//                FUNDAMENTALS block's own header rule) and `rankingsAt` (the
+//                stockRankings doc's computedAt).
 //   candidates — the decider's own anticipation output (D-112): the four
 //                required tool fields plus the optional `signalSource` tag;
 //                `rationale` cut. Persisted here, rendered ONLY through the
@@ -43,24 +52,43 @@
 // optional key is OMITTED, never `undefined` — Firestore rejects `undefined`
 // (ignoreUndefinedProperties is unset), so one stray `undefined` in a stamp
 // would fail the cron's ENTIRE finalUpdate. Numbers are stored at the precision
-// the prompt rendered (two decimals for px / chg / atrX / vwapDev — BUILD_RULES
-// §9: the stamp IS the rendered number, never a parallel source).
+// the prompt rendered, BY THE RENDERER'S OWN PRIMITIVE — `Number(v.toFixed(2))`
+// for px / chg / atrX / vwapDev, the same `toFixed(2)` the CSV and the momentum
+// snapshot print (BUILD_RULES §9: the stamp IS the rendered number, never a
+// parallel rounding — `Math.round(v*100)/100` disagrees with `toFixed(2)` on
+// ~0.4 % of inputs, review A-5 / C-2).
+//
+// Two honesty notes for readers of the `risk` field (review A-7 / A-8): for a
+// LOCK the prompt renders the verdict's `detail` sentence while the stamp keeps
+// the `reason` CODE (`threshold_proximity`) — the same verdict, the compact
+// form; and on an all-HOLD tick the prompt renders no RISK STATUS block at all
+// (it prints only when some position is non-HOLD), so `{ action: 'HOLD' }` is
+// the engine's verdict the decider saw by the block's ABSENCE, not by a line.
+// And `suppressed: 'malformed'` is reachable from the cron only through a
+// type-corrupt directive (a non-string truthy `text`): the shared
+// `isDirectiveActive` pre-gate strips an id-less or text-less directive before
+// the resolver sees it, so that case arrives as NO directive and the key is
+// simply absent (review A-10).
 //
 // The flag (TICK_STAMPS_ENABLED) is read at the ONE splice in
 // api/cron/agent-evaluate.js, at call time; this module never reads a flag.
-// The `haikuAttempted` gate lives HERE so it is unit-testable: a budget_skipped
-// tick writes an entry without ever building the prompt (agent-evaluate.js
-// skips the Haiku call before buildLiveContextBlock), so nothing was heard and
-// nothing was seen — every stamp is absent on that entry (spec §1.2 for Heard;
-// carried to the evidence because its label is "what the decider saw").
+// The `promptBuilt` gate lives HERE so it is unit-testable: the cron sets it
+// only after the three prompt parts have been built and immediately before the
+// transport call (review A-4 / B-1 — `haikuAttempted` alone is set BEFORE the
+// build, so a builder throw would have stamped a prompt that never existed). A
+// budget_skipped tick never builds the prompt; a builder throw never finishes
+// it; on both nothing was heard and nothing was seen — every stamp is absent
+// (spec §1.2 for Heard; carried to the evidence because its label is "what the
+// decider saw"). A timed-out or truncated tick DID build and send the prompt —
+// the stamps are true there with no decision.
 
 export const TICK_STAMP_KEYS = Object.freeze(['heard', 'evidence', 'vintages', 'candidates']);
 
 export const EVIDENCE_FIELDS = Object.freeze([
-  'px', 'chg', 'atrX', 'vwapDev', 'bbPct', 'nr7', 'rsPct', 'regime', 'risk',
+  'px', 'chg', 'atrX', 'vwapDev', 'bbPct', 'nr7', 'regime', 'risk',
 ]);
 
-export const VINTAGE_FIELDS = Object.freeze(['quote', 'vwap', 'tech', 'fundAsOf', 'rankingsAt']);
+export const VINTAGE_FIELDS = Object.freeze(['quote', 'vwap', 'techAt', 'fundAsOf', 'rankingsAt']);
 
 export const CANDIDATE_FIELDS = Object.freeze([
   'symbol', 'direction', 'signalSummary', 'threshold', 'signalSource',
@@ -69,7 +97,9 @@ export const CANDIDATE_FIELDS = Object.freeze([
 /** The three `suppressed` values a directive can carry (controlPromptRenderer.js reasons for target 'directive'). */
 export const HEARD_SUPPRESSED_REASONS = Object.freeze(['malformed', 'mode_not_enforce', 'epoch_killed']);
 
-const round2 = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v * 100) / 100 : null);
+// The renderer's own primitive (`toFixed(2)`), never `Math.round(v*100)/100`;
+// `|| 0` folds a negative zero (`(-0.001).toFixed(2)` → "-0.00") to 0.
+const round2 = (v) => (typeof v === 'number' && Number.isFinite(v) ? (Number(v.toFixed(2)) || 0) : null);
 const numOrNull = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const strOrNull = (v) => (typeof v === 'string' && v ? v : null);
 
@@ -125,26 +155,29 @@ function composeRisk(verdict) {
 }
 
 /**
- * The evidence stamp: one nine-field record per HELD position, keyed by symbol,
- * iterated from `assetScores` — the very rows the decider's ACTIVE POSITIONS
- * CSV rendered (buildPortfolioCSV maps assetScores), so the stamped set is the
- * rendered set by construction: no bench name can enter.
+ * The evidence stamp: one eight-field record per HELD position, keyed by
+ * symbol, iterated from `assetScores` — the very rows the decider's ACTIVE
+ * POSITIONS CSV rendered (buildPortfolioCSV maps assetScores), so the stamped
+ * set is the rendered set by construction: no bench name can enter.
  *
- * Sources (all objects in processAgentBattle scope at the entry):
- *   px      prices[sym].current            (the CSV's $Current, 2dp)
- *   chg     prices[sym].changePercent      (the quote's session change % — the
- *                                           risk manager's dailyPct input; the
- *                                           bench CSV's Daily% column; 2dp)
- *   atrX    assetScores[i].multiplier      (the CSV's ATR Mult, 2dp — the
- *                                           decider's own proximity number)
- *   vwapDev momentumData.vwap[sym].vwapDeviation   (INTRADAY MOMENTUM, 2dp)
- *   bbPct   momentumData.rankings[sym].bBandwidthPercentile
- *   nr7     momentumData.rankings[sym].nr7Flag (boolean; null when no ranking row)
- *   rsPct   momentumData.techScoresMap[sym].factors.rsPercentile
- *   regime  stockRegimes[sym]              (the per-stock regime line)
+ * Sources — each the value a RENDERED line carried for the held name (all
+ * objects in processAgentBattle scope at the entry):
+ *   px      prices[sym].current            (the CSV's $Current, toFixed(2))
+ *   chg     assetScores[i].priceChange     (the CSV's Gain% — the position's
+ *                                           change from ENTRY, formatPct 2dp;
+ *                                           NOT the quote's session change,
+ *                                           which the prompt renders for bench
+ *                                           names only — review A-1 / C-3)
+ *   atrX    assetScores[i].multiplier      (the CSV's ATR Mult, toFixed(2) —
+ *                                           the decider's own proximity number)
+ *   vwapDev momentumData.vwap[sym].vwapDeviation   (INTRADAY MOMENTUM, toFixed(2))
+ *   bbPct   momentumData.rankings[sym].bBandwidthPercentile  (INTRADAY MOMENTUM)
+ *   nr7     momentumData.rankings[sym].nr7Flag (INTRADAY MOMENTUM's "NR7: YES";
+ *                                           boolean; null when no ranking row)
+ *   regime  stockRegimes[sym]              (the STOCK REGIMES line)
  *   risk    riskStatus[sym]                (RISK STATUS — action, + reason when non-HOLD)
  *
- * @returns {Object<string, {px, chg, atrX, vwapDev, bbPct, nr7, rsPct, regime, risk}>}
+ * @returns {Object<string, {px, chg, atrX, vwapDev, bbPct, nr7, regime, risk}>}
  */
 export function composeEvidenceStamp({ assetScores, prices, momentumData, stockRegimes, riskStatus }) {
   const evidence = {};
@@ -154,15 +187,13 @@ export function composeEvidenceStamp({ assetScores, prices, momentumData, stockR
     const quote = prices?.[sym] || null;
     const vwapInfo = momentumData?.vwap?.[sym] || null;
     const rankInfo = momentumData?.rankings?.[sym] || null;
-    const tech = momentumData?.techScoresMap?.[sym] || null;
     evidence[sym] = {
       px: round2(quote?.current),
-      chg: round2(quote?.changePercent),
+      chg: round2(score.priceChange),
       atrX: round2(score.multiplier),
       vwapDev: round2(vwapInfo?.vwapDeviation),
       bbPct: numOrNull(rankInfo?.bBandwidthPercentile),
       nr7: rankInfo ? rankInfo.nr7Flag === true : null,
-      rsPct: numOrNull(tech?.factors?.rsPercentile),
       regime: strOrNull(stockRegimes?.[sym]),
       risk: composeRisk(riskStatus?.[sym]),
     };
@@ -170,32 +201,62 @@ export function composeEvidenceStamp({ assetScores, prices, momentumData, stockR
   return evidence;
 }
 
+/** The newest epoch-ms among `values` (each through toMs); null when none. */
+function newestMs(values) {
+  let out = null;
+  for (const v of values) {
+    const ms = toMs(v);
+    if (ms != null && (out == null || ms > out)) out = ms;
+  }
+  return out;
+}
+
 /**
- * The vintages block — ONE per entry. Cadence words for the three per-tick /
- * daily sources; DATES for the two doc-borne vintages:
- *   fundAsOf    the NEWEST fundamentals `computedAt` across the held book, as a
- *               UTC calendar date (YYYY-MM-DD) — the same "as of" rule the
- *               decider's FUNDAMENTALS block applies to its own vintage line.
- *               A date, never a cadence word: the mirror's refresh cadence is
- *               the producer's business, and a word would be a claim the stamp
- *               cannot support. null when no held symbol carries one.
+ * The vintages block — ONE per entry. Two cadence words that are true by
+ * construction (the quote and the VWAP are fetched and computed this tick) and
+ * three doc-borne vintages as INSTANTS or DATES:
+ *   techAt      the NEWEST `updatedAt` across the held book's stockTechnicalScores
+ *               docs (the source of `regime`), as an ISO instant. Those docs are
+ *               rewritten hourly during RTH by compute-index-intelligence
+ *               (?mode=intraday), so no cadence word fits — review A-3.
+ *   fundAsOf    the NEWEST fundamentals `computedAt` across the HELD BOOK PLUS
+ *               THE NON-CRYPTO BENCH, as a UTC calendar date (YYYY-MM-DD) —
+ *               EXACTLY the decider's FUNDAMENTALS block's header rule
+ *               (buildFundamentalsBlock collects held + bench, one newest day,
+ *               "Fundamentals data as of {day}"; review A-6), so the stamp
+ *               equals the rendered header date by construction (§9). A date,
+ *               never a cadence word. null when nothing carries one.
  *   rankingsAt  the stockRankings doc's computedAt as an ISO instant (the
  *               intraday-recomputed source behind bbPct / nr7). null when the
  *               doc carried none.
  *
- * @param {{heldSymbols: string[], rankingsMap?: Object, rankingsComputedAtMs?: number|null}} p
+ * @param {Object} p
+ * @param {string[]} p.heldSymbols          the stamped (rendered) held symbols
+ * @param {Array<{symbol: string, isCrypto?: boolean}>} [p.benchAssets]
+ *   flattenBenchServer(battle.portfolio.bench) at the stamp site — the same
+ *   bench the FUNDAMENTALS block flattened
+ * @param {Object} [p.rankingsMap]          symbol → stockRankings entry
+ * @param {Object} [p.techScoresMap]        symbol → stockTechnicalScores doc
+ * @param {number|{toMillis: Function}|null} [p.rankingsComputedAtMs]
  */
-export function composeVintages({ heldSymbols, rankingsMap, rankingsComputedAtMs }) {
-  let fundMs = null;
-  for (const sym of Array.isArray(heldSymbols) ? heldSymbols : []) {
-    const ms = toMs(rankingsMap?.[sym]?.fundamentals?.computedAt);
-    if (ms != null && (fundMs == null || ms > fundMs)) fundMs = ms;
+export function composeVintages({ heldSymbols, benchAssets, rankingsMap, techScoresMap, rankingsComputedAtMs }) {
+  const held = Array.isArray(heldSymbols) ? heldSymbols.filter((s) => typeof s === 'string' && s) : [];
+  // The FUNDAMENTALS block's own symbol set: every held name, then each bench
+  // asset that has a symbol, is not crypto and was not already seen.
+  const fundSymbols = [...held];
+  const seen = new Set(held);
+  for (const asset of Array.isArray(benchAssets) ? benchAssets : []) {
+    if (!asset?.symbol || asset.isCrypto || seen.has(asset.symbol)) continue;
+    seen.add(asset.symbol);
+    fundSymbols.push(asset.symbol);
   }
+  const techMs = newestMs(held.map((sym) => techScoresMap?.[sym]?.updatedAt));
+  const fundMs = newestMs(fundSymbols.map((sym) => rankingsMap?.[sym]?.fundamentals?.computedAt));
   const rankMs = toMs(rankingsComputedAtMs);
   return {
     quote: 'tick',
     vwap: 'tick',
-    tech: 'daily',
+    techAt: techMs == null ? null : new Date(techMs).toISOString(),
     fundAsOf: fundMs == null ? null : new Date(fundMs).toISOString().slice(0, 10),
     rankingsAt: rankMs == null ? null : new Date(rankMs).toISOString(),
   };
@@ -232,13 +293,14 @@ export function composeCandidatesStamp(anticipationCandidates) {
  * The three stamps for one entry, as the object the cron spreads onto the
  * composed `evaluation` (keys only — never a top-level battle key).
  *
- * Gate: `haikuAttempted === true` — the prompt was built and sent (a timed-out
- * or truncated tick still rendered it, so Heard and the evidence are true
- * there with no decision); a budget_skipped tick never built it, so every key
- * is absent ({}).
+ * Gate: `promptBuilt === true` — the cron sets it only after the prompt's three
+ * parts were built, immediately before the transport call. A timed-out or
+ * truncated tick built and sent the prompt, so Heard and the evidence are true
+ * there with no decision; a budget_skipped tick never built it and a builder
+ * throw never finished it, so every key is absent ({}).
  *
  * @param {Object} p
- * @param {boolean} p.haikuAttempted           agent-evaluate.js's own flag for this tick
+ * @param {boolean} p.promptBuilt              agent-evaluate.js's own flag for this tick
  * @param {Object} p.controlResolution         the cron's resolveControls() result (same
  *                                             argument list as the fenced assembler, on the
  *                                             in-memory battle)
@@ -248,10 +310,12 @@ export function composeCandidatesStamp(anticipationCandidates) {
  * @param {Object} p.momentumData              { vwap, rankings, rankingsMap, techScoresMap, … }
  * @param {Object} p.stockRegimes              per-symbol regime words
  * @param {Object} p.riskStatus                per-symbol risk verdicts
+ * @param {Array}  [p.benchAssets]             flattenBenchServer(battle.portfolio.bench) — the
+ *                                             FUNDAMENTALS block's bench set (for fundAsOf)
  * @param {number|null} [p.rankingsComputedAtMs] the stockRankings doc's computedAt (ms)
  */
 export function composeTickStamps({
-  haikuAttempted,
+  promptBuilt,
   controlResolution,
   anticipationCandidates,
   assetScores,
@@ -259,16 +323,19 @@ export function composeTickStamps({
   momentumData,
   stockRegimes,
   riskStatus,
+  benchAssets = [],
   rankingsComputedAtMs = null,
 }) {
-  if (haikuAttempted !== true) return {};
+  if (promptBuilt !== true) return {};
   const stamps = {};
   const heard = deriveHeardStamp(controlResolution);
   if (heard) stamps.heard = heard;
   stamps.evidence = composeEvidenceStamp({ assetScores, prices, momentumData, stockRegimes, riskStatus });
   stamps.vintages = composeVintages({
     heldSymbols: Object.keys(stamps.evidence),
+    benchAssets,
     rankingsMap: momentumData?.rankingsMap,
+    techScoresMap: momentumData?.techScoresMap,
     rankingsComputedAtMs,
   });
   const candidates = composeCandidatesStamp(anticipationCandidates);

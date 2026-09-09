@@ -36,6 +36,157 @@
     "cronState.lastTickTimestamp",
     "cronState.vwapFireGuard"
   ],
+  "finalUpdate": {
+    "scoreState.activeScore": 33,
+    "scoreState.bankedScore": 0,
+    "scoreState.currentScore": 33,
+    "scoreState.opponentScore": 0,
+    "scoreState.lastScoredAt": "2026-09-09T15:00:00.000Z",
+    "scoreState.peakScore": 33,
+    "scoreState.peakScoreAt": "2026-09-09T15:00:00.000Z",
+    "thresholdHistory.NVDA": {
+      "maxMultiplier": 0.776335162628833,
+      "minMultiplier": 0
+    },
+    "thresholdHistory.TSLA": {
+      "maxMultiplier": 0,
+      "minMultiplier": -0.5197920831667322
+    },
+    "thresholdHistory.MSFT": {
+      "maxMultiplier": 0.29525032092426334,
+      "minMultiplier": 0
+    },
+    "thresholdHistory.AMZN": {
+      "maxMultiplier": 0.29484029484029206,
+      "minMultiplier": 0
+    },
+    "thresholdHistory.KO": {
+      "maxMultiplier": 0,
+      "minMultiplier": -0.29231218941830284
+    },
+    "thresholdHistory.PG": {
+      "maxMultiplier": 0.4839685420447567,
+      "minMultiplier": 0
+    },
+    "thresholdHistory.BTC": {
+      "maxMultiplier": 0.13432835820895522,
+      "minMultiplier": 0
+    },
+    "evaluations": [
+      {
+        "evalId": "eval_001",
+        "timestamp": "2026-09-09T15:00:00.000Z",
+        "day": 1,
+        "battlePhase": "EARLY",
+        "decision": "HOLD",
+        "symbolOut": null,
+        "symbolIn": null,
+        "tier": null,
+        "rationale": "NVDA is pressing its first ATR line with the sector leading; nothing on the bench outranks what I hold. Holding the book as it stands.",
+        "hypothesis": "Hypothesis: NVDA clears +1x ATR before the close and holds the star slot.",
+        "conviction": 58,
+        "riskAssessment": "low",
+        "ignoredDirectiveIds": [],
+        "directiveThreadId": null,
+        "trade_reasoning": null,
+        "citedForgeRules": [],
+        "overriddenForgeRules": [],
+        "triggers": [
+          "forced_open"
+        ],
+        "scores": {
+          "active": 33,
+          "banked": 0,
+          "total": 33
+        },
+        "validationErrors": [],
+        "downgraded": false,
+        "marketPosture": "selective",
+        "guardrailOverrides": [],
+        "guardrailSourceNote": null,
+        "haikuError": null
+      }
+    ],
+    "statusFeed": [
+      {
+        "timestamp": "2026-09-09T15:00:00.000Z",
+        "message": "Holding the book — NVDA leading, TSLA on watch.",
+        "pvpContext": null,
+        "action": "hold",
+        "regime": null,
+        "score": 33,
+        "citedRules": [],
+        "citedForgeRules": [],
+        "triggeredBy": "forced_open",
+        "source": "haiku",
+        "evalId": "eval_001",
+        "symbolOut": null,
+        "symbolIn": null,
+        "directiveThreadId": null,
+        "trade_reasoning": null
+      }
+    ],
+    "scoreState.evaluationCount": 1,
+    "scoreState.holdCount": 1,
+    "cronState.lastTriggeredAt": "2026-09-09T15:00:00.000Z",
+    "cronState.totalHaikuCalls": 1,
+    "cronState.lastEvalStartedAt": "2026-09-09T15:00:00.000Z",
+    "cronState.totalTokens.input": 4321,
+    "cronState.totalTokens.output": 210,
+    "cronState.consecutiveHolds": 1,
+    "cronState.consecutiveEvalFailures": 0,
+    "cronState.lastEvaluatedAt": "2026-09-09T15:00:00.000Z",
+    "cronState.evaluatingAt": null,
+    "cronState.vwapTicks": {
+      "NVDA": 0,
+      "TSLA": 0,
+      "MSFT": 0,
+      "AMZN": 0,
+      "KO": 0,
+      "PG": 0,
+      "BTC": 0
+    },
+    "cronState.intradayMomentum": {
+      "NVDA": {
+        "vwap": 122.2435,
+        "currentPrice": 123.4,
+        "vwapDeviation": 0.946,
+        "sma20_5m": null,
+        "sessionDate": "2026-09-09"
+      }
+    },
+    "cronState.stagnationTicks": {
+      "NVDA": 0,
+      "TSLA": 0,
+      "MSFT": 0,
+      "AMZN": 0,
+      "KO": 0,
+      "PG": 0,
+      "BTC": 0
+    },
+    "cronState.lastTickPrice": {
+      "NVDA": 123.4,
+      "TSLA": 244.9,
+      "MSFT": 412.3,
+      "AMZN": 186.2,
+      "KO": 62,
+      "PG": 166.1,
+      "BTC": 67450
+    },
+    "cronState.lastTickTimestamp": {
+      "NVDA": 1788966000000,
+      "TSLA": 1788966000000,
+      "MSFT": 1788966000000,
+      "AMZN": 1788966000000,
+      "KO": 1788966000000,
+      "PG": 1788966000000,
+      "BTC": 1788966000000
+    },
+    "cronState.vwapFireGuard": {
+      "date": "2026-09-09",
+      "count": 0
+    }
+  },
   "entry": {
     "evalId": "eval_001",
     "timestamp": "2026-09-09T15:00:00.000Z",

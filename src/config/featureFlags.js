@@ -2216,11 +2216,15 @@ export function getVoiceGroundingMode(uid) {
  * never on this flag — nothing client-side reads it.
  *
  * Read at CALL time at the ONE splice in agent-evaluate.js (`if
- * (TICK_STAMPS_ENABLED)` inside processAgentBattle, never a module-scope
- * derivation), so a hermetic featureFlags mock with an explicit value governs
- * every test tick, and a bare-factory mock that omits the name resolves
- * `undefined` → off (the isCharacterPaneOn rule: a plain boolean, not an
- * accessor, so a bare factory can never throw on it).
+ * (TICK_STAMPS_ENABLED && promptBuilt)` inside processAgentBattle, inside the
+ * stamp block's fail-safe — never a module-scope derivation), so a hermetic
+ * featureFlags mock with an explicit value governs every test tick. A
+ * bare-factory mock that OMITS the name does not resolve to off: under vitest a
+ * missing export on a factory mock THROWS on access (the v2dispatch.bareMock
+ * precedent), so every suite that drives processAgentBattle spreads
+ * `importOriginal` in its featureFlags mock — tickStampsFlags.test.js pins that
+ * for the cron suites — and the read sits inside the fail-safe so even such a
+ * throw could never cost a tick its write (review C-1 / B-2).
  *
  * FLIP MAP (the flip PR reconciles these in the SAME commit — BUILD_RULES §2):
  *   • src/config/tickStampsFlags.test.js — the dark pin row moves to true;

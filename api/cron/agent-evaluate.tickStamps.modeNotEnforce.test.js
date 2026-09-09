@@ -1,16 +1,18 @@
-// api/cron/agent-evaluate.tickStamps.failSafe.test.js
+// api/cron/agent-evaluate.tickStamps.modeNotEnforce.test.js
 //
-// Phase B — the tick stamps: THE FAIL-SAFE. The stamps are additive facts; a
-// fault inside the composer must never cost the tick its write — the scores,
-// the evaluation entry and the eval-lock release all ride the one finalUpdate
-// after the stamp site. This suite mocks the composer to THROW and proves the
-// real processAgentBattle still writes the entry (unstamped, the 25 pre-Phase-B
-// keys), releases the lock, and logs the fault loud — the regimeAtStart /
-// control-epoch precedent ("tick continues"). Same harness as the flag-on suite.
+// Phase B — the tick stamps: `suppressed: 'mode_not_enforce'` END TO END
+// (spec §1.2 "suppressed on each of the three reasons"; discovery hazard 17).
+// Under any ARCHETYPE_INTEGRITY_MODE but 'enforce' the fenced assembler
+// withholds every directive; the SAME resolution the cron re-runs at the stamp
+// site says so — the stamp carries the thread with `suppressed:
+// 'mode_not_enforce'`, and the prompt the model received carries no directive
+// block. NOT Heard: a client must not say so. One file, because the mode is a
+// module-scope string on featureFlags.js and a hermetic mock is per file.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   FROZEN_NOW,
+  OLD_THREAD,
   PRE_PHASE_B_ENTRY_KEYS,
   makeTickBattle,
   makePriceTable,
@@ -52,11 +54,11 @@ vi.mock('../_utils/shadowLogger.js', async (importOriginal) => ({
   logVisionTransition: vi.fn(async () => false),
   logAnticipation: vi.fn(async () => false),
 }));
-vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({ ...(await importOriginal()), TICK_STAMPS_ENABLED: true }));
-// THE FAULT: the composer explodes on every call.
-vi.mock('../_utils/tickStamps.js', async (importOriginal) => ({
+// THE MODE — 'observe' (the live constant is 'enforce'); the stamps flag on.
+vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
-  composeTickStamps: () => { throw new Error('stamp composer exploded (test fault)'); },
+  TICK_STAMPS_ENABLED: true,
+  ARCHETYPE_INTEGRITY_MODE: 'observe',
 }));
 
 const { processAgentBattle } = await import('./agent-evaluate.js');
@@ -70,33 +72,26 @@ beforeEach(() => {
   mocks.fetchIntradayBatch.mockReset();
   mocks.fetchIntradayBatch.mockImplementation(async () => ({ NVDA: makeIntradayCandles() }));
   mocks.create.mockReset();
-  mocks.create.mockImplementation(async () => makeToolUseResponse(makeHoldResult()));
+  vi.spyOn(console, 'log').mockImplementation(() => {});
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
-describe('Phase B tick stamps — the fail-safe: a composer fault never costs the tick its write', () => {
-  it('the entry is written UNSTAMPED with the 25 pre-Phase-B keys, the lock is released, and the fault is logged loud', async () => {
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+describe("Phase B tick stamps — suppressed: 'mode_not_enforce' end to end (hazard 17)", () => {
+  it('under observe the assembler withholds the directive and the stamp says so — the thread is named, suppressed, NOT Heard', async () => {
+    let promptSeen = null;
+    mocks.create.mockImplementation(async (request) => { promptSeen = request.messages[2].content; return makeToolUseResponse(makeHoldResult()); });
     const battle = makeTickBattle();
     const db = makeTickDb({ battle, rankingsDoc: makeRankingsDoc(), techDocs: makeTechDocs() });
-    const summary = { evaluated: 0, held: 0, triggered: 0, skipped: 0 };
-
-    await expect(processAgentBattle(db, battle, summary, Date.now(), new Map(), { everEnabled: false })).resolves.toBeUndefined();
-
+    const summary = { evaluated: 0, held: 0, triggered: 0, skipped: 0, swapped: 0 };
+    await processAgentBattle(db, battle, summary, Date.now(), new Map(), { everEnabled: false });
     const finalUpdate = db.__updates.find((u) => Array.isArray(u.evaluations));
-    expect(finalUpdate, 'the finalUpdate must still be written').toBeTruthy();
     const entry = finalUpdate.evaluations[finalUpdate.evaluations.length - 1];
-    expect(Object.keys(entry)).toEqual([...PRE_PHASE_B_ENTRY_KEYS]);
-    for (const key of ['heard', 'evidence', 'vintages', 'candidates']) expect(entry).not.toHaveProperty(key);
-    expect(entry.decision).toBe('HOLD');
-    expect(entry.haikuError).toBeNull();
-    expect(finalUpdate['cronState.evaluatingAt']).toBeNull();
-    expect(summary.evaluated).toBe(1);
-    // loud, attributable, and naming the consequence
-    const logged = errorSpy.mock.calls.map((c) => c.join(' ')).find((line) => line.includes('tick stamps failed'));
-    expect(logged).toBeTruthy();
-    expect(logged).toContain('battle-tick-1');
-    expect(logged).toContain('entry written unstamped');
-    expect(logged).toContain('stamp composer exploded');
+
+    expect(entry.heard).toEqual({ directiveThreadId: OLD_THREAD, suppressed: 'mode_not_enforce' });
+    expect(promptSeen).not.toContain('Require stronger confirmation before entering');
+    expect(Object.keys(entry)).toEqual([...PRE_PHASE_B_ENTRY_KEYS, 'heard', 'evidence', 'vintages']);
+    // the directive is still on the battle — data kept, rendering suppressed (the D-52 contract)
+    expect(battle.directive.directiveThreadId).toBe(OLD_THREAD);
   });
 });
