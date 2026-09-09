@@ -74,7 +74,7 @@ function Sentence({ text }) {
  * roster row it is one it did not (muted). Nothing else differs — a chip is a
  * chip, so the eye reads the roster as the same kind of thing as the named.
  */
-function Chip({ symbol, spokenFor = false, onShowIt = null, researchUsed = 0 }) {
+function Chip({ symbol, spokenFor = false, onShowIt = null, researchUsed = 0, researchPending = false }) {
   // Phase C §1 — THE BENCH CHIP CARRIES THE SAME DOOR. With a handler it is a
   // button; without one it is the shipped `<span>`, byte for byte, which is
   // what it stays while SHOW_IT_ENABLED is dark. The VISIBLE label is the
@@ -83,7 +83,7 @@ function Chip({ symbol, spokenFor = false, onShowIt = null, researchUsed = 0 }) 
   // accessible name, which is where the scopeDoorName rule already puts what a
   // control does. Exhausted disables it, exactly as the panel's door.
   const door = typeof onShowIt === 'function';
-  const enabled = door && researchDoorEnabled(researchUsed);
+  const enabled = door && !researchPending && researchDoorEnabled(researchUsed);
   const Tag = door ? 'button' : 'span';
   return (
     <Tag
@@ -120,10 +120,10 @@ function Chip({ symbol, spokenFor = false, onShowIt = null, researchUsed = 0 }) 
   );
 }
 
-export default function PaneBench({ bench = null, onShowIt = null, researchUsed = 0 }) {
+export default function PaneBench({ bench = null, onShowIt = null, researchUsed = 0, researchPending = false }) {
   if (!bench) return null;
   // One place decides what every chip on this pane is (BUILD_RULES §9).
-  const door = { onShowIt, researchUsed };
+  const door = { onShowIt, researchUsed, researchPending };
   const { slotIso, cards, flagged = [], rest, watchlistName, footer } = bench;
   const subtitle = COPY.benchWatchlist(watchlistName);
   const namedHeading = COPY.benchNamed(slotIso);

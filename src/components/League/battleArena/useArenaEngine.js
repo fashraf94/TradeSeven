@@ -163,27 +163,21 @@ export function useArenaEngine({
     }
   }, [chatReady, agentId, battleId]);
 
-  // ── Show it (Phase C §1 / §2) ─────────────────────────────────────────────
+  // ── Show it is NOT offered on this surface (Phase C §1; review F-3) ─────────
   //
-  // The deterministic route with the chip's server-validated symbol, never the
-  // ask path. The arena renders NOTHING from the response — the card lives in
-  // the battle doc the arena subscribes to — and the message counter is left
-  // exactly where it was, because research charges no message (D-118). No
-  // optimistic count is kept here at all, so nothing survives a failed route
-  // (Sol C-2).
-  const showItLive = React.useCallback(async (symbol) => {
-    const wanted = String(symbol ?? '').trim();
-    if (!chatReady || !wanted || inFlightRef.current) return;
-    inFlightRef.current = true;
-    try {
-      const fetchWithAuth = await loadAuthedFetch();
-      await fetchWithAuth('/api/agent/research', {
-        method: 'POST',
-        body: JSON.stringify({ agentId, battleId, symbol: wanted }),
-      });
-    } catch { /* the arena's card comes from the subscribed doc; a failed read leaves it absent */ }
-    finally { inFlightRef.current = false; }
-  }, [chatReady, agentId, battleId]);
+  // The arena's transcript is `eng.lines`, built only by `applyAnswer` and
+  // `applyFiled`. It does not read `chatExchanges`, so there is NO code path on
+  // this surface that can render a research card — a tap here would spend one of
+  // three scarce reads and show the player nothing, ever.
+  //
+  // So the dock does not label or tap a research chip at all (CommandDock.jsx),
+  // and this hook exposes no handler. The same rule the Equip door follows: the
+  // product never offers a door it cannot open. Wiring the League surface needs
+  // its own card rendering first, and that is a separate build.
+  //
+  // A research chip can still ARRIVE here — the server mints chips for the
+  // grounded turn regardless of which client asked — and the dock drops it,
+  // which is the same thing it does with any kind it cannot render.
 
   const fetchRemaining = React.useCallback(async () => {
     if (!chatReady) return;
@@ -275,8 +269,6 @@ export function useArenaEngine({
     askAgent,
     // two-way ask (flag-gated; inert in preview / when off)
     askLive,
-    // Phase C §1 — the research tap (inert until a research chip is minted)
-    showItLive,
     fetchRemaining,
     chatReady,
     remaining: eng.remaining,

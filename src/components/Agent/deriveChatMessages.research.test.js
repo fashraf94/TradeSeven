@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import { deriveChatMessages } from './deriveChatMessages';
 import { BATTLE_VIEW_COPY } from '../../screens/battleView/battleViewCopy';
-import { messageNamesSymbol } from '../../screens/battleView/scopeTape';
+import { messageNamesSymbol, mergeRecordedTape, scopeTape, countMentions } from '../../screens/battleView/scopeTape';
 
 const CARD = { symbol: 'MPC', eyebrow: 'Research', platformDataLabel: 'Platform data · not what the check saw' };
 const RESEARCH = {
@@ -73,5 +73,22 @@ describe('the scope', () => {
     const item = { _type: 'message', text: 'what about NVDA', _researchSymbol: null };
     expect(messageNamesSymbol(item, 'NVDA', roster)).toBe(true);
     expect(messageNamesSymbol(item, 'MPC', roster)).toBe(false);
+  });
+
+  it('END TO END: the card survives the merge and lands in its piece’s scoped tape', () => {
+    // The screen's real path: derive → merge → scope. `mergeRecordedTape`
+    // spreads the message, so `_researchSymbol` has to survive it for the
+    // filter and the `In the chat · n` count to see the card at all.
+    const items = mergeRecordedTape(
+      deriveChatMessages([{ messageType: 'user_initiated', userMessage: 'hi', agentResponse: 'hey' }, RESEARCH]),
+      [],
+    );
+    const scoped = scopeTape(items, 'MPC', roster);
+    expect(scoped).toHaveLength(1);
+    expect(scoped[0]._research).toBe(CARD);
+    // …and it is NOT in another piece's scope.
+    expect(scopeTape(items, 'NVDA', roster)).toHaveLength(0);
+    // The door's number is that same list's length, by construction.
+    expect(countMentions(items, 'MPC', roster)).toBe(1);
   });
 });

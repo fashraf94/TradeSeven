@@ -26,9 +26,16 @@ vi.mock('../_utils/security.js', () => ({ applySecurityMiddleware: () => false }
 vi.mock('../_utils/authMiddleware.js', () => ({ requireAuth: async () => ({ uid: 'owner-1' }) }));
 // EXPLICIT FALSE, not the ambient value: this suite asserts the OFF state, and
 // it must keep asserting it after the founder's flip PR flips the real one.
+// `isShowItOn` is defined INSIDE featureFlags.js and closes over the module's own
+// binding, so spreading `importOriginal()` re-exports the ORIGINAL accessor and
+// the `SHOW_IT_ENABLED: false` override never reaches it (review D-1/D-2 — the
+// same trap captureFlagOffGolden.test.jsx documents for `isCharacterPaneOn`).
+// Overriding the accessor too is what makes this suite hermetic, and what makes
+// the flag's FLIP MAP claim — that this file does NOT move on the flip — true.
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   SHOW_IT_ENABLED: false,
+  isShowItOn: () => false,
 }));
 vi.mock('../_utils/marketDataCache.js', () => ({
   getStockAnalysisData: async () => { state.marketCalls += 1; return { daily: [], price: {} }; },

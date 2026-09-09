@@ -33,8 +33,16 @@
 //
 // NO MESSAGE IS CHARGED (D-118). The message budget is for influence; a
 // research read is not influence, and it has its own scarcity. Neither
-// `chatBudgetUsed` nor the League day store is touched — nothing here writes to
-// a protected store, so `compositionProtectedStoresAllowlist.json` is unchanged.
+// `chatBudgetUsed` nor the League day store is touched, and the only field any
+// write here touches is `chatExchanges`.
+//
+// `agentBattles` is NOT a composition-protected store — but this route's
+// `tx.update` is handle-form, which the deny-by-default scanner resolves as
+// `unresolved`, so it carries an entry in
+// `compositionProtectedStoresAllowlist.json` with a note saying exactly that
+// (review C-7: an earlier draft of this header claimed the file was untouched,
+// which was false and would have told a future reader the fence surface was
+// clean when the branch's first hunk is that file).
 
 import { randomUUID } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
@@ -74,6 +82,34 @@ export const RESEARCH_STATUS = Object.freeze({
 });
 
 const nonEmpty = (v) => typeof v === 'string' && v.trim().length > 0;
+const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+/** Already on the agent's equipped watchlist — Equip has nothing to offer (spec §3). */
+function isAlreadyEquipped(battle, symbol) {
+  const tickers = battle?.agentContext?.equippedWatchlist?.tickers;
+  if (!Array.isArray(tickers)) return false;
+  const wanted = String(symbol).toUpperCase();
+  return tickers.some((t) => typeof t === 'string' && t.trim().toUpperCase() === wanted);
+}
+
+/** A Firestore document id: one path segment, no `/`, no `.` traversal. */
+const DOC_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+const isValidDocId = (v) => typeof v === 'string' && DOC_ID_RE.test(v);
+
+/** The longest ticker the platform admits, with room to spare (watchlistEquip.js caps at 12). */
+export const MAX_SYMBOL_LENGTH = 16;
+
+/**
+ * The charset a symbol must satisfy BEFORE it reaches an outbound URL.
+ *
+ * The universe check already resolves the client's bytes to the DOC's own
+ * spelling, and the battle-creation choke point (`watchlistEquip.js`) constrains
+ * that to `[A-Z0-9.-]`. This assertion makes the route self-contained rather
+ * than dependent on a distant module staying strict (review E-8): the string
+ * that reaches `getStockAnalysisData` — and therefore the EODHD URL, which does
+ * no encoding of its own — is checked here.
+ */
+const TICKER_RE = /^[A-Za-z0-9.-]{1,16}$/;
 
 /**
  * The fundamentals mirror for one name: the cache brief first (it rides every
@@ -83,18 +119,26 @@ const nonEmpty = (v) => typeof v === 'string' && v.trim().length > 0;
  * 15), which is exactly why the second read exists; when both are empty the card
  * simply has no fundamentals section.
  */
-export async function readFundamentals(db, battleId, symbol) {
+export async function readCacheBrief(db, battleId, symbol) {
   try {
     const cacheSnap = await db.collection('voiceLayerCache').doc(battleId).get();
-    if (cacheSnap.exists) {
-      const cache = cacheSnap.data() || {};
-      const briefs = [...(cache.portfolioBriefs || []), ...(cache.benchBriefs || [])];
-      const brief = briefs.find((b) => b && b.symbol === symbol);
-      if (brief?.fundamentals) return brief.fundamentals;
-    }
+    if (!cacheSnap.exists) return { brief: null, updatedAt: null };
+    const cache = cacheSnap.data() || {};
+    const briefs = [...(cache.portfolioBriefs || []), ...(cache.benchBriefs || [])];
+    const brief = briefs.find((b) => b && b.symbol === symbol) || null;
+    const ts = cache.updatedAt;
+    const updatedAt = typeof ts?.toDate === 'function' ? ts.toDate().toISOString()
+      : typeof ts === 'string' ? ts
+        : typeof ts === 'number' ? new Date(ts).toISOString() : null;
+    return { brief, updatedAt };
   } catch (err) {
     console.warn(`[agent/research] cache read failed for ${symbol}:`, err.message);
+    return { brief: null, updatedAt: null };
   }
+}
+
+export async function readFundamentals(db, brief, symbol) {
+  if (brief?.fundamentals) return brief.fundamentals;
   try {
     const snap = await db.collection('indexIntelligence').doc('stockRankings').get();
     if (!snap.exists) return null;
@@ -115,18 +159,22 @@ export async function readFundamentals(db, battleId, symbol) {
  */
 export async function readTechnicals(symbol) {
   try {
-    const data = await getStockAnalysisData(symbol, { fields: ['daily', 'price'] });
+    // `daily` ONLY (review A-7b / E-2, discovery hazard 2). The `price` field is
+    // uncached EODHD on EVERY call, so requesting it made "no EODHD call unless
+    // the cache is cold" (spec §6) and the route's own "A READ, NOT A FETCH"
+    // false, and made a research tap cost a billed external call per request
+    // whether or not it won the cap. The daily series is L1-cached 5 min and
+    // L2-cached 4 h; the quote comes from the cache brief instead (see below).
+    const data = await getStockAnalysisData(symbol, { fields: ['daily'] });
     const daily = data?.daily || null;
     return {
       indicators: daily ? calculateAllIndicators(daily) : null,
-      price: {
-        ...(data?.price || {}),
-        candleDate: Array.isArray(daily) && daily.length ? daily[0]?.date ?? null : null,
-      },
+      lastClose: Array.isArray(daily) && daily.length ? daily[0]?.close ?? null : null,
+      candleDate: Array.isArray(daily) && daily.length ? daily[0]?.date ?? null : null,
     };
   } catch (err) {
     console.warn(`[agent/research] market data fetch failed for ${symbol}:`, err.message);
-    return { indicators: null, price: null };
+    return { indicators: null, lastClose: null, candleDate: null };
   }
 }
 
@@ -137,25 +185,45 @@ export default async function handler(req, res) {
   // 2. Method.
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  // 3. THE FLAG, read at call time. Dark ⇒ the route does not exist.
-  if (!SHOW_IT_ENABLED) return res.status(404).json({ error: 'Not found' });
-
-  // 4. Auth — the uid comes from the token.
+  // 3. Auth — the uid comes from the token, never the body.
   const user = await requireAuth(req, res);
   if (!user) return;
 
+  // 4. THE FLAG, read at call time. Dark ⇒ the route does not exist.
+  //
+  // AFTER auth, deliberately (review E-3): the flag's 404 in front of the auth
+  // check answers an ANONYMOUS caller differently while dark (404) and while
+  // lit (401), which is a free oracle on an unreleased feature's rollout state.
+  // file-directive.js auths first for the same reason.
+  if (!SHOW_IT_ENABLED) return res.status(404).json({ error: 'Not found' });
+
   // 5. Body.
+  //
+  // THREE SHAPES, NOT ONE (review E-4 / E-5). Presence is not enough:
+  //   · an id with a `/` in it either THROWS synchronously out of
+  //     `collection().doc()` (an odd component count) or silently resolves to
+  //     an arbitrary NESTED document — and the same string is reused as the
+  //     voiceLayerCache doc id. equip-watchlist.js validates its ids before
+  //     touching Firestore; this route now does too.
+  //   · `symbol` is free text from the client and was echoed back verbatim in
+  //     the 404 body with no length cap — the only uncapped free-text field in
+  //     this route family (chat.js caps its message at 2000 chars).
   const body = req.body || {};
   const { agentId, battleId, symbol } = body;
   if (!nonEmpty(agentId) || !nonEmpty(battleId) || !nonEmpty(symbol)) {
     return res.status(400).json({ error: 'agentId, battleId and symbol are required' });
   }
+  if (!isValidDocId(agentId) || !isValidDocId(battleId)) {
+    return res.status(400).json({ error: 'agentId and battleId must be document ids' });
+  }
+  const requestedSymbol = String(symbol).trim().slice(0, MAX_SYMBOL_LENGTH);
 
   const db = getFirebaseAdmin();
-  const battleRef = db.collection('agentBattles').doc(battleId);
 
   let battle;
+  let battleRef;
   try {
+    battleRef = db.collection('agentBattles').doc(battleId);
     const snap = await battleRef.get();
     if (!snap.exists) return res.status(404).json({ error: 'Battle not found' });
     battle = snap.data();
@@ -172,8 +240,10 @@ export default async function handler(req, res) {
   // 8. The universe check. A name that has LEFT the universe (the hot bench is
   //    rebuilt mid-tick) gets an honest 404 rather than a card about a name the
   //    battle no longer holds.
-  const canonical = canonicalUniverseSymbol(battle, symbol);
-  if (!canonical) return res.status(404).json({ error: `${String(symbol).trim()} is not in this battle` });
+  const canonical = canonicalUniverseSymbol(battle, requestedSymbol);
+  if (!canonical || !TICKER_RE.test(canonical)) {
+    return res.status(404).json({ error: `${requestedSymbol} is not in this battle` });
+  }
 
   // 9. The cap, pre-checked. NOT authorization — the transaction below re-reads
   //    it and is the authority (Sol C-2).
@@ -189,10 +259,19 @@ export default async function handler(req, res) {
 
   // 10-11. The two data paths, in parallel — neither depends on the other.
   const place = universePlace(battle, canonical);
-  const [{ indicators, price }, fundamentals] = await Promise.all([
+  const [{ indicators, lastClose, candleDate }, { brief, updatedAt }] = await Promise.all([
     readTechnicals(canonical),
-    readFundamentals(db, battleId, canonical),
+    readCacheBrief(db, battleId, canonical),
   ]);
+  const fundamentals = await readFundamentals(db, brief, canonical);
+
+  // THE QUOTE: the cache's own 15-minute price, at the cache doc's vintage, when
+  // the battle has a brief for this name; otherwise the newest daily close,
+  // labelled as a close. Two sources, never mixed, each carrying its own date —
+  // and neither costs an external call (hazard 2).
+  const quote = num(brief?.price) !== null && updatedAt
+    ? { current: brief.price, asOf: updatedAt, candleDate }
+    : { current: lastClose, fromClose: true, candleDate };
 
   // 12. The card, in code. The position is the book's own row when the name is
   //     held — the flattener the board and the debate route both read.
@@ -203,14 +282,19 @@ export default async function handler(req, res) {
     symbol: canonical,
     place,
     position,
-    // The row's own held-since fallback, so the card and the board agree.
+    // The row's own held-since fallback, and the battle's starting price — the
+    // second half of the canonical entry-price derivation (review A-2).
     deployedAt: battle.activatedAt ?? null,
+    startingPrice: battle.portfolio?.startingPrices?.[canonical] ?? battle.startingPrices?.[canonical] ?? null,
     indicators,
-    price,
+    price: quote,
     fundamentals,
-    // D-54's forward path, with hazard 7's exception: Equip is offered only for
-    // a name that is NOT already on the board or the bench the agent can reach.
-    equipAvailable: place === UNIVERSE_PLACE.WATCHLIST,
+    // D-54's forward path. Spec §3: Equip is offered "when the name is not
+    // already equipped" — and `universePlace` returns WATCHLIST for the hot
+    // bench AND for the equipped watchlist, so `place` alone offered Equip on
+    // names that are already equipped (review A-4). The membership check is the
+    // rule; hazard 7's rival-held names are out of the roster upstream.
+    equipAvailable: place === UNIVERSE_PLACE.WATCHLIST && !isAlreadyEquipped(battle, canonical),
   });
 
   // 13. One transaction: the count is re-read HERE, and the append happens in
@@ -221,6 +305,17 @@ export default async function handler(req, res) {
       const snap = await tx.get(battleRef);
       if (!snap.exists) return { kind: 'battle_not_found' };
       const fresh = snap.data();
+      // EVERY GATE IS RE-CHECKED HERE, NOT JUST THE CAP (review C-5 / E-1).
+      // The pre-read above is separated from this commit by the data reads, and
+      // `agent-evaluate` flips a battle to `completed` on its own schedule — so
+      // re-reading only the count appended a card to a settled battle whenever a
+      // tap and the close cron overlapped. file-directive.js makes all four
+      // checks inside its transaction; this now does the same, and the route's
+      // claim to be authoritative is true of every gate rather than one.
+      if (fresh.ownerId !== user.uid) return { kind: 'forbidden' };
+      if (fresh.status !== 'active') return { kind: 'not_active' };
+      if (!agentBelongsToBattle(fresh, agentId)) return { kind: 'forbidden' };
+      if (!canonicalUniverseSymbol(fresh, canonical)) return { kind: 'left_universe' };
       const used = countResearchUsed(fresh.chatExchanges);
       if (used >= RESEARCH_CAP) return { kind: 'exhausted', used };
 
@@ -230,6 +325,11 @@ export default async function handler(req, res) {
     });
 
     if (outcome.kind === 'battle_not_found') return res.status(404).json({ error: 'Battle not found' });
+    if (outcome.kind === 'forbidden') return res.status(403).json({ error: 'Forbidden' });
+    if (outcome.kind === 'not_active') return res.status(409).json({ error: 'Battle is not active' });
+    if (outcome.kind === 'left_universe') {
+      return res.status(404).json({ error: `${canonical} is not in this battle` });
+    }
     if (outcome.kind === 'exhausted') {
       return res.status(409).json({
         status: RESEARCH_STATUS.EXHAUSTED,

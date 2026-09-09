@@ -96,6 +96,7 @@ import { isValidAdjustmentId, getCanonicalText } from '../../src/data/archetypeA
 // never be mocked — it explodes in the Node test env if a browser dep ever
 // enters the graph.
 import { canonicalUniverseSymbol } from '../../src/data/battleUniverse.js';
+import { RESEARCH_CAP, countResearchUsed } from '../../src/data/researchCap.js';
 
 /**
  * Stamped top-level on every exchange produced under the grounding contract
@@ -417,7 +418,15 @@ export function historyMessageType(exchange) {
  * in write order.
  */
 export function selectHistoryWindow(chatExchanges, { window = HISTORY_WINDOW } = {}) {
-  const recent = Array.isArray(chatExchanges) ? chatExchanges.slice(-window) : [];
+  // THE RESEARCH CARDS COME OUT BEFORE THE SLICE (review B-7). They are not
+  // conversation, so counting them against the window would let three taps cost
+  // three turns of the history the window exists to carry. They are excluded
+  // again inside the loop — see below — because that exclusion is the D-121
+  // guarantee and must not depend on this line staying here.
+  const all = Array.isArray(chatExchanges) ? chatExchanges : [];
+  const recent = all
+    .filter((ex) => !(ex && typeof ex === 'object' && historyMessageType(ex) === RESEARCH_MESSAGE_TYPE))
+    .slice(-window);
   const pairs = [];
   const agentLines = [];
   for (const ex of recent) {
@@ -547,7 +556,31 @@ export function buildPlatformResearchBlock(chatExchanges, { window = HISTORY_WIN
 // provoke — a verdict about the name, or a claim about what the process will do
 // with the platform's numbers.
 
-export const RESEARCH_REPLY_LINT_RE = /\b(?:should (?:I|we|you)|(?:I|we)(?:'m| am| are)? going to|(?:I|we)(?:'ll| will))\b|\b(?:I|we)(?:'d| would)\s+(?:buy|sell|hold|exit|swap|rotate|equip|take|add)\b|\b(?:buy|sell|short) (?:it|this|that|now|here)\b|\bworth (?:buying|selling|holding|owning)\b|\btime to (?:buy|sell|exit|cut)\b/i;
+// THREE FAMILIES, EACH FROM A BULLET OF THE RULE ABOVE — and none of them a bare
+// modal (review B-2, B-3). An earlier draft matched `should I` and `I'll` on
+// their own, which withheld "I'll walk you through the card" and "Should I show
+// you the fundamentals?" — innocent narration — while passing "That's a buy at
+// these levels", "The process will trim it", "I looked it up" and "Expect a
+// bounce". Precision matters in both directions: a lint that withholds honest
+// sentences teaches the reader the line is noise, and one that misses the
+// breaches it names is decoration.
+
+/** 1. A VERDICT about the name. */
+const RESEARCH_LINT_VERDICT = /\b(?:buy|sell|short|exit|dump|add to|trim)\s+(?:it|this|that|them|now|here|more)\b|\b(?:it|that|this)(?:'s| is)\s+a\s+(?:buy|sell|short|hold|add)\b|\bworth\s+(?:buying|selling|shorting|holding|owning|adding)\b|\btime to\s+(?:buy|sell|exit|cut|trim|add)\b|\b(?:I|we)(?:'d| would|'ll| will| am going to| going to)\s+(?:buy|sell|short|hold|exit|swap|rotate|equip|trim|add|cut)\b|\b(?:cheap|expensive|undervalued|overvalued)\s+(?:enough\s+)?to\s+(?:buy|own|add)\b|\bshould\s+(?:I|we)\s+(?:put|add|buy|sell|take|hold|exit|swap|rotate|equip|cut|trim)\b/i;
+
+/** 2. A FORECAST, or a claim about what the trading process will do — in any person. */
+// The SUBJECT here is the process, never the speaker: first-person trading
+// intent is the verdict family's, and folding `I|we` in here made "I'll keep the
+// read tight" a breach (review B-3's own example).
+const RESEARCH_LINT_FORECAST = /\b(?:the\s+)?(?:process|system|agent|it)\s*(?:'ll|\s+will)\s+(?:trim|cut|rotate|swap|exit|buy|sell|add|drop|take|act)\b|\bit(?:'ll| will)\s+(?:get\s+)?(?:rotated|cut|trimmed|swapped|sold|bought|dropped)\b|\bexpect\s+(?:a|an|the|it|more|further)\b|\b(?:should|likely to|going to)\s+(?:bounce|break|rally|fall|drop|run|reverse)\b|\bif\s+it\s+(?:breaks|holds|fades|drops|rallies)[^.]*\b(?:I|we)(?:'m| am|'ll| will)\b/i;
+
+/** 3. AN ATTRIBUTION the card cannot bear: the narrator's own, or the check's. */
+const RESEARCH_LINT_ATTRIBUTION = /\b(?:I|we)\s+(?:looked\s+(?:it|this|that|them)?\s*up|ran\s+(?:the|those|these)?\s*(?:numbers|figures|analysis)|pulled\s+(?:the|those|these)|checked\s+(?:it|this|that|them)|dug\s+into)\b|\bmy\s+(?:evidence|analysis|research|check)\b|\b(?:what|that(?:'s| is) what)\s+(?:my|the)\s+check\s+saw\b|\bthose\s+numbers\s+were\s+my\b|\b(?:I|we)\s+saw\s+(?:it|this|that|those)\s+at\s+the\b/i;
+
+export const RESEARCH_REPLY_LINT_RE = new RegExp(
+  [RESEARCH_LINT_VERDICT.source, RESEARCH_LINT_FORECAST.source, RESEARCH_LINT_ATTRIBUTION.source].join('|'),
+  'i',
+);
 
 /**
  * A research follow-up's reply passes when it breaks NEITHER lint: the shipped
@@ -564,7 +597,7 @@ export function passesResearchReplyLint(text) {
  * breach is not voiced, and the turn says plainly that it was withheld rather
  * than pretending the character said something else.
  */
-export const RESEARCH_LINT_WITHHELD_LINE = "That answer didn't hold to the card, so it wasn't sent. The card above is the platform's data at its labelled dates.";
+export const RESEARCH_LINT_WITHHELD_LINE = "That answer didn't hold to the rules this conversation runs under, so it wasn't sent. Ask again and I'll stick to what the record and the platform's own dated data say.";
 
 // ==================== D-76 — THE PLAN AT DEPLOY (the opener) ====================
 
@@ -1030,7 +1063,13 @@ export function normalizeSuggestedActions(raw, archetype, options = {}) {
     // sends is what the doc holds; a name outside the universe, a duplicate, or
     // a research chip on a battle the caller did not hand over is dropped.
     if (item.kind === 'research') {
-      if (!battle) continue;
+      // NO CHIP FOR A READ THAT CANNOT BE SPENT. Neither the model nor this
+      // module was cap-aware, so after the third card the character kept
+      // offering `Show it · MPC` and the tap answered 409 — a chip whose label
+      // is a promise the route will refuse (the `Files:` chip's own rule, §6.2:
+      // what it says it does is what the route will do, and nothing else can be
+      // tapped into existence).
+      if (!battle || countResearchUsed(battle.chatExchanges) >= RESEARCH_CAP) continue;
       const symbol = canonicalUniverseSymbol(battle, item.symbol);
       if (!symbol || seenSymbols.has(symbol)) continue;
       seenSymbols.add(symbol);
@@ -1059,5 +1098,5 @@ export const RESEARCH_CHIP_BLOCK = `THE THIRD OPTION KIND — "research":
 
 - It offers to SHOW the user the platform's own data on that name: the technicals the platform computes and the fundamentals on the rankings mirror, dated and attributed, composed by the system.
 - You are offering a screen, not an answer. Do NOT say what the card will show, do NOT preview a number, and do NOT describe the name's setup to justify the offer.
-- The symbol must be a name in this battle — a piece on the board or a name on the bench. A name the battle does not hold is dropped by the server and the option disappears.
+- The symbol must be a name in this battle — a piece on the board, a name on the bench, or a name on the watchlist in front of the agent. A name the battle does not hold is dropped by the server and the option disappears.
 - It is not a recommendation to buy, sell, hold or exit, and offering it says nothing about what the trading process will do.`;

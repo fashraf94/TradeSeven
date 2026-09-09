@@ -553,6 +553,16 @@ export function fundamentalsLabel(computedDate) {
 export const STANDING_ON_BENCH = 'On the bench';
 export const STANDING_ON_WATCHLIST = 'On the watchlist';
 
+/**
+ * The standing section's own provenance (review B-4). A held name's tier, entry
+ * price and held-since are the TRADING PROCESS's own execution facts — the
+ * record's, not the platform's — so they cannot sit unlabelled on a card headed
+ * `Platform data · not what the check saw`. This is the fifth string, and it
+ * exists because the card puts one section of a different class beside two of
+ * platform data; D-119's rule is that each section carries its own provenance.
+ */
+export const STANDING_PROVENANCE = 'From the record · the board’s own numbers';
+
 /** A directive chip's label: what it FILES, by mechanism (§6.2). */
 export const FILES_CHIP_PREFIX = 'Files: ';
 export const filesChip = (text) => (typeof text === 'string' && text ? `${FILES_CHIP_PREFIX}${text}` : null);

@@ -1626,7 +1626,7 @@ describe('agent/chat — the research follow-up reply lint (Phase C §5)', () =>
     standing: { place: 'bench', line: 'On the bench', facts: [] },
   };
   const RESEARCH_EXCHANGE = { messageType: 'research', symbol: 'MPC', card: CARD, agentResponse: '', timestamp: '2026-09-09T14:00:00.000Z' };
-  const WITHHELD = "That answer didn't hold to the card, so it wasn't sent. The card above is the platform's data at its labelled dates.";
+  const WITHHELD = "That answer didn't hold to the rules this conversation runs under, so it wasn't sent. Ask again and I'll stick to what the record and the platform's own dated data say.";
 
   const run = async (reply, { cards = [RESEARCH_EXCHANGE], chips = ['Tell me more'] } = {}) => {
     callGemmaVoiceImpl.current = async () => JSON.stringify({ response: reply, suggestedActions: chips });
@@ -1661,6 +1661,44 @@ describe('agent/chat — the research follow-up reply lint (Phase C §5)', () =>
     // The record says WHY the line is there, rather than leaving it looking
     // like a sentence the character chose.
     expect(exchange.researchLint).toBe('withheld');
+  });
+
+  it('WITHHOLDS THE WHOLE TURN: no directive is filed from a sentence that was not sent (review B-1)', async () => {
+    grounding.mode = 'on';
+    showIt.on = true;
+    callGemmaVoiceImpl.current = async () => JSON.stringify({
+      response: 'Cheap against the sector — I would buy it here.',
+      hasDirective: true,
+      directive: { text: 'Lean into refiners on valuation', expiry: 'end_of_battle' },
+    });
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: { ...VALID_BATTLE, chatExchanges: [RESEARCH_EXCHANGE] } });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'what do you think?' });
+    await handler(req, res);
+    const union = fixture.written.updateCalls.find(c => c.updates?.chatExchanges?.__op === 'arrayUnion');
+    const exchange = union.updates.chatExchanges.items[0];
+
+    expect(res.body.agentMessage).toBe(WITHHELD);
+    expect(res.body.extractedRule).toBeNull();
+    expect(res.body.hasDirective).toBe(false);
+    expect(res.body.directive).toBeNull();
+    expect(exchange.hasDirective).toBe(false);
+    expect(exchange.directive).toBeNull();
+    expect(exchange.directiveThreadId).toBeNull();
+    // …and no directive SLOT is written onto the battle either.
+    const slotWrite = fixture.written.updateCalls.find(c => c.updates?.directive);
+    expect(slotWrite).toBeUndefined();
+  });
+
+  it('the shadow record keeps the MODEL’s own text, not the code-authored line (review B-6)', async () => {
+    grounding.mode = 'on';
+    showIt.on = true;
+    const breach = 'Cheap against the sector — I would buy it here.';
+    await run(breach);
+    const record = shadowLogCalls.current[0];
+    expect(record.agentMessage).toBe(breach);
+    expect(record.researchLint).toBe('withheld');
+    expect(record.researchLintSent).toBe(WITHHELD);
   });
 
   it('the same verdict is UNTOUCHED on a battle with no research card — the lint is scoped', async () => {

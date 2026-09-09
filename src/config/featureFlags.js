@@ -2262,6 +2262,18 @@ export const TICK_STAMPS_ENABLED = false;
  * PLATFORM RESEARCH block is grounded-only by construction (it is assembled only
  * on the grounded path) and is inert while no research exchange exists.
  *
+ * FLIP ORDER — READ THIS BEFORE FLIPPING (review B-5). The card is code-composed
+ * platform data and needs no narrator, so this flag is deliberately independent
+ * of VOICE_GROUNDING_MODE. But the FOLLOW-UP is not: the PLATFORM RESEARCH block,
+ * the research rule and the reply lint all ride the GROUNDED prompt, and
+ * `grounded` is false for every caller while the mode is 'shadow'. Flipping this
+ * alone therefore ships the card and its doors WITHOUT the D-121 machinery — the
+ * character cannot see the card at all (both history builders exclude it
+ * structurally, so it honestly says it has no data on the name), but it cannot
+ * discuss it either. The intended sequence is VOICE_GROUNDING_MODE -> 'on'
+ * first, then this flag. Flipping earlier is a product limitation, not a
+ * dishonesty.
+ *
  * FLIP MAP (the flip PR reconciles these in the SAME commit — BUILD_RULES §2):
  *   • src/config/showItFlags.test.js — the dark pin row moves to true;
  *   • src/config/flagPinGuard.test.js — drop SHOW_IT_ENABLED from

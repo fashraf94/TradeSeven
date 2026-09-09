@@ -73,10 +73,24 @@ describe('5. the enabled / disabled contract — the door', () => {
     expect(door().disabled).toBe(true);
   });
 
-  it('the exhausted door still RENDERS — what a player has spent is a true thing to say', () => {
+  it('the exhausted door still RENDERS, and says so in its ACCESSIBLE NAME (review F-8)', () => {
     renderPanel({ onShowIt: () => {}, researchUsed: RESEARCH_CAP });
     expect(door()).toBeTruthy();
+    // `title` alone never reaches a keyboard user (a disabled button is out of
+    // the tab order), an AT pairing that prefers aria-label, or touch.
+    expect(door().getAttribute('aria-label')).toContain('All 3 reads used in this battle.');
     expect(door().getAttribute('title')).toBe('All 3 reads used in this battle.');
+    // …and the ENABLED door's name does not carry it.
+    renderPanel({ onShowIt: () => {}, researchUsed: 2 });
+    expect(door().getAttribute('aria-label')).not.toContain('All 3 reads used');
+  });
+
+  it('a tap already IN FLIGHT disables the door — one 2-15 s route, one tap (review F-2)', () => {
+    const calls = [];
+    renderPanel({ onShowIt: (s) => calls.push(s), researchUsed: 0, researchPending: true });
+    expect(door().disabled).toBe(true);
+    act(() => door().dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    expect(calls).toEqual([]);
   });
 
   it('a tap on an exhausted door calls nothing', () => {
@@ -123,6 +137,14 @@ describe('5. the same contract on the bench chip', () => {
     }
   });
 
+  it('the bench chip is disabled while a tap is in flight too', () => {
+    const calls = [];
+    renderBench({ onShowIt: (s) => calls.push(s), researchUsed: 0, researchPending: true });
+    expect(chip().disabled).toBe(true);
+    act(() => chip().dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    expect(calls).toEqual([]);
+  });
+
   it('is disabled when exhausted, and taps nothing then', () => {
     const calls = [];
     renderBench({ onShowIt: (s) => calls.push(s), researchUsed: RESEARCH_CAP });
@@ -151,18 +173,23 @@ describe('4. no optimistic client increment survives a failed route', () => {
   it('TRIPWIRE: neither caller keeps a research count — the number comes from the subscribed doc', () => {
     const screen = read('src/screens/AgentBattleScreen.jsx');
     // The count is derived, in one place, from the doc the screen subscribes to.
-    expect(screen).toContain('const researchUsed = countResearchUsed(agentBattle?.chatExchanges)');
+    expect(screen).toContain('countResearchUsed(agentBattle?.chatExchanges)');
+    // …and it does no work at all while the flag is dark (review D-3).
+    expect(screen).toContain('showItOn ? countResearchUsed(agentBattle?.chatExchanges) : 0');
     // …and nothing anywhere holds it in state or moves it by hand.
     expect(screen).not.toMatch(/setResearchUsed|researchUsed\s*\+\s*1|useState\([^)]*researchUsed/);
     for (const rel of ['src/components/Agent/AgentChat.jsx', 'src/components/League/battleArena/useArenaEngine.js']) {
       const src = read(rel);
       expect(src, `${rel} must keep no research count`).not.toMatch(/researchUsed|researchRemaining|setResearchRemaining/);
     }
+    // The screen's ONLY research state is the in-flight flag, which is not a
+    // count and cannot stand in for one (review C-3 / F-2).
+    expect(screen).toContain('const [researchPending, setResearchPending] = useState(false)');
   });
 
   it('TRIPWIRE: the display function is the ONE source for the door’s integer', () => {
     const copy = read('src/screens/battleView/battleViewCopy.js');
-    expect(copy).toContain("import { RESEARCH_CAP, researchDoorOrdinal } from '../../data/researchCap'");
+    expect(copy).toMatch(/import \{[^}]*RESEARCH_CAP[^}]*researchDoorOrdinal[^}]*\} from '\.\.\/\.\.\/data\/researchCap'/);
     // No hand-written ratio anywhere in the copy module's CODE. Line comments
     // are stripped first — the section's own docstring quotes the door's shape
     // to explain it, which is documentation, not a second source.

@@ -20,7 +20,7 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
 
 // Dependency-surface guard (BUILD_RULES §4). Never mock it.
 const { buildVoiceLayerPrompt } = await import('./voiceLayerPrompt.js');
-const { EARLIER_MESSAGES_HEADING, PLATFORM_RESEARCH_HEADING } = await import('./voiceLayerGrounding.js');
+const { EARLIER_MESSAGES_HEADING, PLATFORM_RESEARCH_HEADING, buildGroundedConversationHistory } = await import('./voiceLayerGrounding.js');
 
 const CARD = {
   symbol: 'MPC',
@@ -49,7 +49,18 @@ const build = (chatExchanges, opts = {}) => buildVoiceLayerPrompt({
   ...opts,
 });
 
-const research = { messageType: 'research', symbol: 'MPC', card: CARD, agentResponse: '', timestamp: '2026-09-09T14:00:00.000Z' };
+// Adversarial, for the reason given in voiceLayerGrounding.platformResearch.test.js:
+// a card the history window would otherwise ADMIT, so the byte-identity and
+// acceptance rows below fail if the exclusion is removed.
+const research = {
+  messageType: 'research',
+  symbol: 'MPC',
+  card: CARD,
+  userMessage: 'Show it · MPC',
+  agentResponse: 'MPC trades at 14.2 times earnings.',
+  groundingVersion: 1,
+  timestamp: '2026-09-09T14:00:00.000Z',
+};
 const proactive = { messageType: 'anticipation', agentResponse: 'At the 11:15 check my trading process flagged NOW.', groundingVersion: 1, timestamp: '2026-09-09T15:15:00.000Z' };
 
 beforeEach(() => { state.showIt = false; });
@@ -129,5 +140,14 @@ describe('THE THREE ACCEPTANCE PROMPTS, end to end (Sol C-1)', () => {
     // block. A second occurrence would mean a second channel carried it.
     expect(prompt.split('P/E 14.2 · sector median 19.6')).toHaveLength(2);
     expect(prompt.split('RSI 62.4 · neutral')).toHaveLength(2);
+
+    // THE SECOND CHANNEL (review F-4): the model receives a MESSAGES ARRAY as
+    // well as this prompt, and a card admitted to `pairs` would ride that
+    // instead — invisibly to any assertion on the prompt string alone. This is
+    // the assertion that fails if the exclusion is removed.
+    const history = buildGroundedConversationHistory([research, typed]);
+    expect(JSON.stringify(history)).not.toMatch(/Show it · MPC|14\.2 times earnings/);
+    expect(history.some((m) => m.role === 'user' && m.content === question)).toBe(true);
+    expect(history).toHaveLength(2);            // the typed pair only
   });
 });

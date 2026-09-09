@@ -40,7 +40,25 @@ const CARD = {
   fundamentals: { facts: ['P/E 14.2 · sector median 19.6'], label: 'Fundamentals · as of Sep 5' },
   standing: { place: 'bench', line: 'On the bench', facts: [] },
 };
-const RESEARCH_EXCHANGE = { messageType: 'research', symbol: 'MPC', card: CARD, agentResponse: '', timestamp: '2026-09-09T14:00:00.000Z' };
+// THE FIXTURE IS ADVERSARIAL ON PURPOSE (review F-4). The route writes a card
+// with no `userMessage`, an empty `agentResponse` and no marker — which
+// `selectHistoryWindow` would drop INCIDENTALLY, on the empty-text and
+// missing-marker branches, whether or not the D-121 exclusion existed. Every row
+// below would then have passed with the exclusion deleted, which is exactly the
+// "a row that cannot fail is not a guard" trap. So the fixture carries all three
+// properties that WOULD admit it: a user half, narrator words and the marker.
+// Only `messageType` keeps it out, which is the claim under test.
+//
+// The route's actual shape is asserted where it is written (research.test.js).
+const RESEARCH_EXCHANGE = {
+  messageType: 'research',
+  symbol: 'MPC',
+  card: CARD,
+  userMessage: 'Show it · MPC',
+  agentResponse: 'MPC trades at 14.2 times earnings against a sector median of 19.6.',
+  groundingVersion: 1,
+  timestamp: '2026-09-09T14:00:00.000Z',
+};
 const TYPED = { messageType: 'user_initiated', userMessage: 'what did you see?', agentResponse: 'The record shows the 11:15 check held.', groundingVersion: GROUNDING_VERSION };
 const PROACTIVE = { messageType: 'anticipation', agentResponse: 'At the 11:15 check my trading process flagged NOW.', groundingVersion: GROUNDING_VERSION, timestamp: '2026-09-09T15:15:00.000Z' };
 
@@ -66,9 +84,13 @@ describe('2 + 3. the card never enters the history window (Sol C-1)', () => {
   });
 
   it('EARLIER MESSAGES never mentions the card, its symbol or its numbers', () => {
-    const block = buildEarlierMessagesBlock([RESEARCH_EXCHANGE, PROACTIVE]);
-    expect(block).not.toMatch(/MPC|Research|P\/E|RSI|Platform data/);
-    expect(buildEarlierMessagesBlock([RESEARCH_EXCHANGE])).toBeNull();
+    // The adversarial variant for THIS block: no user half, so without the
+    // exclusion it would land in `agentLines` on the strength of its marker.
+    const narrated = { ...RESEARCH_EXCHANGE, userMessage: undefined };
+    const block = buildEarlierMessagesBlock([narrated, PROACTIVE]);
+    expect(block).not.toMatch(/MPC|Research|P\/E|14\.2|Platform data/);
+    expect(buildEarlierMessagesBlock([narrated])).toBeNull();
+    expect(selectHistoryWindow([narrated]).agentLines).toEqual([]);
   });
 
   it('the model’s conversation history never carries it either', () => {
@@ -147,10 +169,41 @@ describe('the research follow-up’s reply lint (item 13 — a build item, not a
     }
   });
 
-  it('the withheld line says what happened and points back at the card', () => {
+  it('the withheld line is TRUE on any turn it can fire on (review B-3)', () => {
+    // It fires on any grounded turn while a card is in the window, not only on a
+    // turn about the card — so it must not assert that the answer was about the
+    // card. It says what happened and what will be stuck to instead.
     expect(RESEARCH_LINT_WITHHELD_LINE).toMatch(/wasn't sent/);
-    expect(RESEARCH_LINT_WITHHELD_LINE).toMatch(/platform's data at its labelled dates/);
+    expect(RESEARCH_LINT_WITHHELD_LINE).not.toMatch(/the card above/i);
+    expect(RESEARCH_LINT_WITHHELD_LINE).toMatch(/record and the platform's own dated data/);
+    // And it must not itself trip the lint that produced it.
     expect(passesResearchReplyLint(RESEARCH_LINT_WITHHELD_LINE)).toBe(true);
+  });
+
+  it('the three FAMILIES are each covered, and innocent narration passes (review B-2 / B-3)', () => {
+    // A lint that misses the breaches it names is decoration; one that withholds
+    // honest sentences teaches the reader the line is noise.
+    const breaches = [
+      "That's a buy at these levels.",                       // verdict
+      'Worth buying at that multiple.',
+      'Should I put it in the book? Yes.',
+      'The process will trim it at the next check.',          // forecast
+      "It'll get rotated out if it keeps fading.",
+      'Expect a bounce off the 50-day.',
+      'If it breaks the 20-day I am cutting it.',
+      'I looked it up and the P/E came back at 14.2.',        // attribution
+      'I ran the numbers on MPC and that is what my check saw.',
+      'Those numbers were my evidence for holding it.',
+    ];
+    const innocent = [
+      "I'll walk you through the card: the technicals are dated Sep 8 and the fundamentals Sep 5.",
+      'Should I show you the fundamentals section as well?',
+      "I'll keep the read tight: the record shows the 11:15 check held the book.",
+      'The 11:15 check held the book; nothing was recorded about MPC.',
+      'What would you like me to file?',
+    ];
+    for (const t of breaches) expect(passesResearchReplyLint(t), `missed: ${t}`).toBe(false);
+    for (const t of innocent) expect(passesResearchReplyLint(t), `false positive: ${t}`).toBe(true);
   });
 });
 

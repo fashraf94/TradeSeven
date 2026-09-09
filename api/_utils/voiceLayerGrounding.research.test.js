@@ -71,6 +71,28 @@ describe('the universe check (hazard 6 — never trust a model-supplied symbol)'
   });
 });
 
+describe('the cap, at the mint (review B, closing note)', () => {
+  const spent = (n) => ({ ...BATTLE, chatExchanges: Array.from({ length: n }, () => ({ messageType: 'research' })) });
+
+  it('mints a research chip while a read is left', () => {
+    expect(normalizeSuggestedActions(research('MPC'), 'analyst', { battle: spent(2) }))
+      .toEqual([{ kind: 'research', symbol: 'MPC' }]);
+  });
+
+  it('DROPS it once the cap is spent — a chip is never a promise the route will refuse', () => {
+    expect(normalizeSuggestedActions(research('MPC'), 'analyst', { battle: spent(3) })).toBeNull();
+    expect(normalizeSuggestedActions(research('MPC'), 'analyst', { battle: spent(4) })).toBeNull();
+  });
+
+  it('the OTHER kinds still mint when the research cap is spent', () => {
+    expect(normalizeSuggestedActions(
+      ['What moved semis?', { kind: 'research', symbol: 'MPC' }],
+      'analyst',
+      { battle: spent(3) },
+    )).toEqual([{ kind: 'ask', text: 'What moved semis?' }]);
+  });
+});
+
 describe('the other kinds are untouched', () => {
   it('an ask chip and a bare string still normalize exactly as they did', () => {
     expect(normalizeSuggestedActions(['What moved semis?'], 'analyst', { battle: BATTLE }))

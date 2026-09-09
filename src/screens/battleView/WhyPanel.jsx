@@ -149,6 +149,9 @@ export default function WhyPanel({
   // SHOW_IT_ENABLED is dark, and the door is then absent whole.
   onShowIt = null,
   researchUsed = 0,
+  // A tap already in flight: the door disables through the SAME contract the
+  // exhausted state uses, so a 2-15 s route cannot be tapped twice (review F-2).
+  researchPending = false,
   // D-89 — the book panel's close. The panel is a DISCLOSURE the score header
   // owns: the header carries the `aria-expanded`, so the way out has to hand
   // focus back to it or a keyboard reader is stranded on a region that has no
@@ -551,7 +554,7 @@ export default function WhyPanel({
               data-why-showit={symbol}
               aria-label={COPY.showItDoorName(symbol, researchUsed)}
               title={researchDoorEnabled(researchUsed) ? undefined : COPY.showItExhausted}
-              disabled={!researchDoorEnabled(researchUsed)}
+              disabled={researchPending || !researchDoorEnabled(researchUsed)}
               onClick={() => onShowIt(symbol)}
               style={{
                 background: 'transparent',
@@ -561,8 +564,8 @@ export default function WhyPanel({
                 padding: '6px 12px',
                 fontSize: 12,
                 fontWeight: 600,
-                cursor: researchDoorEnabled(researchUsed) ? 'pointer' : 'default',
-                opacity: researchDoorEnabled(researchUsed) ? 1 : 0.5,
+                cursor: researchPending || !researchDoorEnabled(researchUsed) ? 'default' : 'pointer',
+                opacity: researchPending || !researchDoorEnabled(researchUsed) ? 0.5 : 1,
               }}
             >
               {COPY.showItDoor(researchUsed)}

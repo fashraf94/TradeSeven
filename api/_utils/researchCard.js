@@ -35,26 +35,27 @@ import {
   fundamentalsLabel,
   STANDING_ON_BENCH,
   STANDING_ON_WATCHLIST,
+  STANDING_PROVENANCE,
 } from '../../src/data/decisionRecord.js';
 import { UNIVERSE_PLACE } from '../../src/data/battleUniverse.js';
 import { vintageDate } from './voiceLayerGrounding.js';
-import { etTime } from '../../src/components/Dashboard/desk/deskCopy.js';
+// `etStamp` — "Fri 3:45 PM ET" — not `etTime`'s bare "3:45 PM" (review A-3). The
+// card is persisted in the tape and re-read days later, and a Friday close read
+// on a Sunday must not say "this afternoon". The card is the one surface that
+// exists to be trusted about vintage.
+import { etStamp } from '../../src/components/Dashboard/desk/deskCopy.js';
 
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
-const money = (v) => (num(v) === null ? null : `$${v.toFixed(2)}`);
+// 0 is NOT a price: `marketDataCache` uses it as its own no-data sentinel
+// (`current: data.close || data.previousClose || 0`), so admitting it would
+// print `Last $0.00` as though it were a quote — the hazard-1 class this module
+// exists to prevent, one level down (review A-7a).
+const money = (v) => (num(v) === null || v <= 0 ? null : `$${v.toFixed(2)}`);
 
-/**
- * EODHD's real-time `timestamp` IS UNIX SECONDS (marketDataCache.js:602 passes
- * `data.timestamp` straight through), and `new Date(seconds)` is 1970 — a quote
- * time of `7:00 PM` on a January night in 1970, printed as this afternoon's. The
- * unit is disambiguated by magnitude, which is the only thing the field carries:
- * anything below 1e12 cannot be a millisecond instant in this century.
- */
-export function quoteInstant(timestamp) {
-  const t = num(timestamp);
-  if (t === null || t <= 0) return null;
-  return new Date(t < 1e12 ? t * 1000 : t).toISOString();
-}
+// `quoteInstant` (the EODHD seconds-vs-milliseconds disambiguator) came OUT with
+// the uncached real-time fetch it existed for: the card no longer reads
+// `price.timestamp`, so a function guarding a field nobody passes would be dead
+// code pretending to be a guard.
 
 /**
  * The candle date, as a CALENDAR DATE.
@@ -77,20 +78,49 @@ export function candleDateLabel(raw) {
   return vintageDate(raw ?? null);
 }
 
+// ==================== BUILD_RULES §9 — THE WORD COMES FROM THE PRINTED NUMBER ====================
+//
+// `calculateRSI` returns `value` ROUNDED to 2dp and `zone` derived from the RAW
+// value; `calculateATR` and `calculateVolumeProfile` split the same way. So a raw
+// RSI of 69.9997 arrives as `{ value: 70, zone: 'neutral' }`, and a card printing
+// both prints the overbought threshold value beside the neutral word — the
+// "RSI-rounds-before-zoning" family §9 is named after, on the first surface that
+// renders a number and its word together.
+//
+// The words below are therefore re-derived HERE, from the value the card
+// actually prints. The thresholds are the upstream functions' own, restated at
+// the one place the pair is rendered; the upstream `zone`/`regime`/`tier` fields
+// are deliberately NOT used. Fixing it upstream would change what the decider
+// and the debate route see, which is out of this build's scope.
+
+// The thresholds are the upstream functions' OWN, copied exactly
+// (technicalCalculations.js `calculateRSI`, `calculateATR`,
+// `calculateVolumeProfile`) — the only change is the value they are applied to.
+const rsiZone = (v) => (v >= 70 ? 'overbought' : v <= 30 ? 'oversold' : 'neutral');
+const atrRegime = (v) => (v > 4 ? 'extreme' : v > 3 ? 'high' : v > 1.5 ? 'normal' : 'low');
+const volumeTier = (v) => (
+  v > 4 ? 'CLIMAX'
+    : v >= 2.5 ? 'INSTITUTIONAL'
+      : v >= 1.25 ? 'ELEVATED'
+        : v >= 0.75 ? 'NORMAL'
+          : v >= 0.5 ? 'LOW'
+            : 'VERY_LOW'
+);
+
 /**
  * The technicals section: one fact string per indicator the platform actually
  * computed. A null indicator contributes NOTHING — no line, no placeholder, no
  * "N/A". Returns null when the whole set is unavailable.
  */
 export function composeTechnicals(indicators, price) {
-  // `price` is marketDataCache's own object — `current`, `timestamp`, `fallback`
-  // (marketDataCache.js:594-617) — with `candleDate` added by the route from
-  // `daily[0].date`, the newest candle the indicators were computed over.
+  // `price` is the ROUTE's composed quote: `{ current, asOf }` from the cache
+  // brief, or `{ current, fromClose: true }` from the newest daily close, plus
+  // `candleDate` — the candle the indicators were computed over.
   const facts = [];
   const i = indicators || {};
 
   const rsi = num(i.rsi?.value);
-  if (rsi !== null) facts.push(`RSI ${rsi}${i.rsi?.zone ? ` · ${i.rsi.zone}` : ''}`);
+  if (rsi !== null) facts.push(`RSI ${rsi} · ${rsiZone(rsi)}`);
 
   // MACD: the VALUES, never a sign word derived from a default (hazard 1).
   if (num(i.macd?.histogram) !== null) {
@@ -112,22 +142,25 @@ export function composeTechnicals(indicators, price) {
   }
 
   const atr = num(i.atr?.percent);
-  if (atr !== null) facts.push(`ATR ${atr}%${i.atr?.regime ? ` · ${i.atr.regime}` : ''}`);
+  if (atr !== null) facts.push(`ATR ${atr}% · ${atrRegime(atr)}`);
 
   const vp = i.volumeProfile;
-  if (num(vp?.ratio) !== null) facts.push(`Volume ${vp.ratio}×${vp.tier ? ` · ${vp.tier}` : ''}`);
+  if (num(vp?.ratio) !== null) facts.push(`Volume ${vp.ratio}× · ${volumeTier(vp.ratio)}`);
 
-  // The quote is its own fact and says when it is a FALLBACK to the daily close
-  // rather than a live print (marketDataCache.js:611-617) — the honest version
-  // of the undated price debate.js:142 prints.
+  // The quote, from ONE of two sources, each carrying its own date and never
+  // mixed: the cache's 15-minute price at the cache doc's vintage, or the newest
+  // daily close said to be a close. Neither costs an external call (hazard 2).
   const last = money(price?.current);
-  if (last) facts.push(price?.fallback ? `Last ${last} · daily close` : `Last ${last}`);
+  if (last) facts.push(price?.fromClose ? `Last ${last} · daily close` : `Last ${last}`);
 
   if (facts.length === 0) return null;
   return {
     facts,
     label: technicalsLabel({
-      quoteTime: price?.fallback ? null : etTime(quoteInstant(price?.timestamp)),
+      // `etStamp`, not `etTime` (review A-3): a weekday and a zone, because this
+      // card is persisted and re-read days later, and a Friday close must not
+      // read as "this afternoon" on a Sunday.
+      quoteTime: price?.fromClose ? null : etStamp(price?.asOf ?? null),
       indicatorDate: candleDateLabel(price?.candleDate ?? null),
     }),
   };
@@ -154,7 +187,11 @@ export function composeFundamentals(fundamentals) {
   if (num(f.priceBookMRQ) !== null) facts.push(`P/B ${f.priceBookMRQ}`);
   if (num(f.revenueGrowthPct) !== null) facts.push(`Revenue growth ${f.revenueGrowthPct}%`);
   if (typeof f.marketCapClass === 'string' && f.marketCapClass) facts.push(`${f.marketCapClass}-cap`);
-  if (num(f.earningsRevisions30d) !== null) facts.push(`EPS revisions 30d ${f.earningsRevisions30d}`);
+  // The unit and the sign, as `buildFundamentalsLine` and `fundamentalsRender`
+  // both render the SAME field — a bare number reads as a count (review A-6).
+  if (num(f.earningsRevisions30d) !== null) {
+    facts.push(`EPS revisions 30d ${f.earningsRevisions30d > 0 ? '+' : ''}${f.earningsRevisions30d}%`);
+  }
   if (num(f.beatRate) !== null) facts.push(`Beat rate ${f.beatRate}%`);
   if (num(f.surpriseMagPercentile) !== null) facts.push(`Surprise magnitude ${f.surpriseMagPercentile}th pctile`);
 
@@ -168,23 +205,30 @@ export function composeFundamentals(fundamentals) {
  * no P&L is derived here, because the row's P&L is the row's) — or the ruled
  * absence line for a bench or watchlist name.
  */
-export function composeStanding(place, position, deployedAt = null) {
-  if (place === UNIVERSE_PLACE.BENCH) return { place, line: STANDING_ON_BENCH, facts: [] };
-  if (place === UNIVERSE_PLACE.WATCHLIST) return { place, line: STANDING_ON_WATCHLIST, facts: [] };
+export function composeStanding(place, position, deployedAt = null, startingPrice = null) {
+  if (place === UNIVERSE_PLACE.BENCH) return { place, line: STANDING_ON_BENCH, facts: [], provenance: null };
+  if (place === UNIVERSE_PLACE.WATCHLIST) return { place, line: STANDING_ON_WATCHLIST, facts: [], provenance: null };
   if (place !== UNIVERSE_PLACE.BOOK) return null;
 
   const facts = [];
   if (typeof position?.tier === 'string' && position.tier) facts.push(position.tier);
-  // THE ROW'S OWN TWO FIELDS, in the row's own precedence: the board renders
-  // `entryPrice={leftAsset.openPrice}` and `heldSince={leftAsset.swappedInAt ||
-  // battle.activatedAt}` (AgentBattleScreen.jsx). Reading a different field, or
-  // falling back differently, is how a card and the row it sits beside come to
-  // print two entry prices for one piece (BUILD_RULES §9).
-  const entry = money(position?.openPrice ?? position?.entryPrice ?? null);
+  // THE ENTRY PRICE IS `swapPrice`, THEN THE BATTLE'S STARTING PRICE (review A-2).
+  //
+  // `openPrice` is a CLIENT-SIDE derivation (`enrichAsset` in
+  // AgentBattleScreen.jsx) and appears on no persisted asset: reading it printed
+  // no entry price at all, for any name, ever — and the tests could not see that
+  // because their fixtures invented the field. The canonical server derivation is
+  // `asset.swapPrice || battle.portfolio.startingPrices[symbol]`
+  // (agentEvalPromptAssembly.js), and it is what the board's own row resolves to.
+  const entry = money(position?.swapPrice ?? startingPrice ?? null);
   if (entry) facts.push(`Entry ${entry}`);
-  const since = etTime(position?.swappedInAt ?? deployedAt ?? null);
+  const since = etStamp(position?.swappedInAt ?? deployedAt ?? null);
   if (since) facts.push(`Held since ${since}`);
-  return { place, line: null, facts };
+  // THE STANDING IS THE RECORD'S, NOT THE PLATFORM'S (review B-4). An entry price
+  // is the trading process's own execution fact, so it cannot sit unlabelled
+  // beside data headed "not what the check saw". Its provenance says whose it is;
+  // the prompt block drops the section entirely for the same reason.
+  return { place, line: null, facts, provenance: facts.length ? STANDING_PROVENANCE : null };
 }
 
 /**
@@ -198,6 +242,7 @@ export function composeResearchCard({
   place,
   position = null,
   deployedAt = null,
+  startingPrice = null,
   indicators = null,
   price = null,
   fundamentals = null,
@@ -211,7 +256,7 @@ export function composeResearchCard({
     platformDataLabel: PLATFORM_DATA_LABEL,
     technicals: composeTechnicals(indicators, price),
     fundamentals: composeFundamentals(fundamentals),
-    standing: composeStanding(place, position, deployedAt),
+    standing: composeStanding(place, position, deployedAt, startingPrice),
     // §3's door. D-54's forward path is Equip; hazard 7 is why this is a FLAG the
     // route computes rather than a promise the card makes: a name a rival agent
     // holds is kept out of the bench, so "Equip" is offered only where the route

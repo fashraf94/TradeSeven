@@ -32,6 +32,7 @@ const state = vi.hoisted(() => ({
   attempts: 0,
   committed: [],
   injectBeforeCommit: null,
+  pauseInTx: null,
 }));
 
 vi.mock('../_utils/security.js', () => ({ applySecurityMiddleware: () => false }));
@@ -50,7 +51,14 @@ vi.mock('firebase-admin/firestore', () => ({
   FieldValue: { arrayUnion: (...items) => ({ __op: 'arrayUnion', items }) },
 }));
 
-function docSnap(data, id) { return { exists: data != null, id, data: () => (data == null ? undefined : { ...data }) }; }
+// A SNAPSHOT IS TAKEN AT READ TIME, not when `data()` is called. The first draft
+// spread the LIVE battle inside `data()`, so a parked transaction still saw
+// writes that landed while it was parked — which quietly made the concurrency
+// row untestable (it read the post-commit doc and refused for the wrong reason).
+function docSnap(data, id) {
+  const frozen = data == null ? null : { ...data };
+  return { exists: frozen != null, id, data: () => (frozen == null ? undefined : frozen) };
+}
 function readDoc(col, id) {
   state.reads += 1;
   if (col === 'agentBattles') return docSnap(state.battle && state.battle.__id === id ? state.battle : null, id);
@@ -64,16 +72,35 @@ function applyWrite(w) {
     else b[k] = v;
   }
 }
+// THE FAKE MODELS FIRESTORE'S READ-SET CONFLICT DETECTION (review C-4 / E-6).
+//
+// The first draft of this harness committed every transaction body
+// unconditionally, so "two simultaneous taps" could not distinguish the
+// in-transaction re-read from the pre-check: eight genuinely interleaved bodies
+// all read the same count and all committed. A real Firestore transaction
+// serialises on the documents it READ — if any of them changed between the read
+// and the commit, the commit is rejected and the body re-runs. `docVersion`
+// below is that: every write bumps it, every `tx.get` records it, and a commit
+// whose recorded version is stale is discarded and retried.
+let docVersion = 0;
 const db = {
   collection: (col) => ({ doc: (id) => ({ __col: col, __id: id, get: async () => readDoc(col, id) }) }),
   runTransaction: async (fn) => {
-    for (let attempt = 1; attempt <= 3; attempt += 1) {
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
       state.attempts += 1;
       const buffer = [];
+      const readVersions = new Map();
       const tx = {
         get: async (ref) => {
           if (buffer.length > 0) throw new Error('transaction read after write');
-          return readDoc(ref.__col, ref.__id);
+          readVersions.set(`${ref.__col}/${ref.__id}`, docVersion);
+          // The snapshot is taken FIRST, then the body is parked: a transaction
+          // that reads and only then discovers the doc moved is the interleaving
+          // worth testing. Parking before the read would just hand it the
+          // already-updated doc, which proves nothing about the precondition.
+          const snap = readDoc(ref.__col, ref.__id);
+          if (state.pauseInTx) { const p = state.pauseInTx; state.pauseInTx = null; await p(); }
+          return snap;
         },
         update: (ref, data) => buffer.push({ col: ref.__col, id: ref.__id, data, op: 'update' }),
       };
@@ -83,10 +110,12 @@ const db = {
         state.injectBeforeCommit = null;
         continue;
       }
-      // The commit itself can fail — a contention exhaustion, a permission
-      // error, an outage. Nothing in the buffer lands when it does.
       if (state.txThrows) throw new Error('commit failed');
+      // The precondition: nothing this body READ may have moved under it.
+      const stale = buffer.length > 0 && [...readVersions.values()].some((v) => v !== docVersion);
+      if (stale) continue;                       // discard the buffer, re-run
       for (const w of buffer) { applyWrite(w); state.committed.push(w); }
+      if (buffer.length > 0) docVersion += 1;
       return result;
     }
     throw new Error('transaction contention exhausted');
@@ -121,20 +150,44 @@ beforeEach(() => {
   state.attempts = 0;
   state.committed = [];
   state.injectBeforeCommit = null;
+  state.pauseInTx = null;
+  docVersion = 0;
 });
 
 describe('1. two simultaneous taps with ONE slot remaining produce ONE card', () => {
-  it('the loser is told exhausted; the doc holds exactly three', async () => {
+  it('GENUINELY CONCURRENT: both taps are in flight together, one card is written', async () => {
     state.battle = makeBattle(2);            // one slot left
-    // Both requests pass the PRE-CHECK (each sees used = 2) and both fetch.
-    // The second one's transaction lands after the first one's write.
+    // Tap A is suspended INSIDE its transaction, after its read. Tap B then runs
+    // start to finish and commits. A resumes: its commit is rejected because the
+    // doc moved under its read, its body re-runs, and the re-read finds the cap
+    // spent. This is the interleaving Sol's test names, and it exercises the
+    // in-transaction re-read rather than the pre-check.
+    let release;
+    let signalParked;
+    const held = new Promise((r) => { release = r; });
+    const parked = new Promise((r) => { signalParked = r; });
+    state.pauseInTx = () => { signalParked(); return held; };
+
+    const a = post();
+    await parked;                            // A is INSIDE its transaction, after its read
+    const b = await post();                  // B runs start to finish and commits
+    release();
+    const first = await a;                   // A resumes into a doc that moved
+
+    expect(b.statusCode).toBe(200);
+    expect(first.statusCode).toBe(409);
+    expect(first.body.status).toBe(RESEARCH_STATUS.EXHAUSTED);
+    expect(state.attempts).toBeGreaterThanOrEqual(3);   // A really did re-run
+    expect(used()).toBe(RESEARCH_CAP);
+  });
+
+  it('sequentially, the second tap is refused too — the doc holds exactly three', async () => {
+    state.battle = makeBattle(2);
     const first = await post();
     const second = await post();
-
     expect(first.statusCode).toBe(200);
     expect(first.body.used).toBe(3);
     expect(second.statusCode).toBe(409);
-    expect(second.body.status).toBe(RESEARCH_STATUS.EXHAUSTED);
     expect(used()).toBe(RESEARCH_CAP);
   });
 
@@ -176,9 +229,11 @@ describe('2. a failed transaction consumes NO slot', () => {
 });
 
 describe('3. two browser tabs cannot create a fourth card', () => {
-  it('four taps against one battle leave exactly three cards, whatever order they arrive in', async () => {
-    const results = [];
-    for (let i = 0; i < 4; i += 1) results.push(await post());
+  it('four taps IN FLIGHT AT ONCE leave exactly three cards', async () => {
+    // No pre-check can save this one: all four requests read the battle before
+    // any of them commits, so every one of them passes the fast-fail. Only the
+    // transaction's read-set precondition keeps the fourth out.
+    const results = await Promise.all([post(), post(), post(), post()]);
     expect(results.filter((r) => r.statusCode === 200)).toHaveLength(RESEARCH_CAP);
     expect(results.filter((r) => r.statusCode === 409)).toHaveLength(1);
     expect(used()).toBe(RESEARCH_CAP);

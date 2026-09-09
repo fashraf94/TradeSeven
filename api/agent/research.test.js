@@ -134,7 +134,7 @@ function makeBattle(over = {}) {
     gameMode: 'baggerbomb_agent',
     activatedAt: '2026-09-08T13:30:00.000Z',
     portfolio: {
-      star: [{ symbol: 'NVDA', openPrice: 141.02, swappedInAt: '2026-09-08T15:15:00.000Z' }],
+      star: [{ symbol: 'NVDA', swapPrice: 141.02, swappedInAt: '2026-09-08T15:15:00.000Z' }],
       core: [], support: [],
       bench: { stocks: [{ symbol: 'MPC' }] },
     },
@@ -152,12 +152,13 @@ beforeEach(() => {
   state.showIt = true;
   state.uid = 'owner-1';
   state.battle = makeBattle();
-  state.marketData = { daily: DAILY, price: { current: 151.27, timestamp: 1788962400 } };
+  state.marketData = { daily: DAILY };
   state.marketThrows = false;
   state.marketCalls = [];
   state.cacheDoc = {
-    portfolioBriefs: [{ symbol: 'NVDA', fundamentals: { trailingPE: { value: 40 }, computedAt: Date.UTC(2026, 8, 5) } }],
-    benchBriefs: [{ symbol: 'MPC', fundamentals: { trailingPE: { value: 14.2, sectorMedian: 19.6 }, computedAt: Date.UTC(2026, 8, 5) } }],
+    updatedAt: '2026-09-11T20:00:00.000Z',
+    portfolioBriefs: [{ symbol: 'NVDA', price: 141.9, fundamentals: { trailingPE: { value: 40 }, computedAt: Date.UTC(2026, 8, 5) } }],
+    benchBriefs: [{ symbol: 'MPC', price: 151.27, fundamentals: { trailingPE: { value: 14.2, sectorMedian: 19.6 }, computedAt: Date.UTC(2026, 8, 5) } }],
   };
   state.rankingsDoc = { stocks: [{ symbol: 'RKLB', fundamentals: { revenueGrowthPct: 31.2, computedAt: Date.UTC(2026, 8, 5) } }] };
   state.gemmaCalls = [];
@@ -259,9 +260,25 @@ describe('the cap', () => {
 });
 
 describe('the data reads', () => {
-  it('asks the warm technicals path for the daily series and the quote — debate.js’s own call', async () => {
+  it('asks for the DAILY SERIES ONLY — the price field is uncached EODHD (hazard 2, review A-7b)', async () => {
     await post(BODY);
-    expect(state.marketCalls).toEqual([{ symbol: 'MPC', opts: { fields: ['daily', 'price'] } }]);
+    expect(state.marketCalls).toEqual([{ symbol: 'MPC', opts: { fields: ['daily'] } }]);
+    // Spec §6: "no EODHD call unless the cache is cold". Requesting `price`
+    // made that false on every single tap.
+    expect(JSON.stringify(state.marketCalls)).not.toMatch(/price/);
+  });
+
+  it('takes the QUOTE from the cache brief, at the cache doc’s vintage', async () => {
+    const res = await post(BODY);
+    expect(res.body.card.technicals.facts).toContain('Last $151.27');
+    expect(res.body.card.technicals.label).toMatch(/last quote \w{3} \d{1,2}:\d{2} [AP]M ET/);
+  });
+
+  it('falls back to the newest daily CLOSE, said to be a close, when the battle has no brief for the name', async () => {
+    state.cacheDoc = null;
+    const res = await post(BODY);
+    expect(res.body.card.technicals.facts.join(' ')).toMatch(/· daily close/);
+    expect(res.body.card.technicals.label).not.toMatch(/last quote/);
   });
 
   it('takes the fundamentals off the cache brief and never calls the screener', async () => {
@@ -283,12 +300,24 @@ describe('the data reads', () => {
     expect(res.body.card.fundamentals).toBeNull();
   });
 
-  it('still writes a card when the market data path fails outright', async () => {
+  it('still writes a card when the market data path fails outright — with the CACHED quote and no indicators', async () => {
     state.marketThrows = true;
     const res = await post(BODY);
     expect(res.statusCode).toBe(200);
-    expect(res.body.card.technicals).toBeNull();
+    // No indicators (the daily series never arrived) but the cache's own dated
+    // quote is still a true thing to show, and it says when it is from.
+    expect(res.body.card.technicals.facts).toEqual(['Last $151.27']);
+    expect(res.body.card.technicals.label).toMatch(/last quote/);
+    expect(res.body.card.technicals.label).not.toMatch(/daily indicators/);
     expect(res.body.card.standing.line).toBe('On the bench');
+  });
+
+  it('has NO technicals section at all when neither the series nor a cached quote exists', async () => {
+    state.marketThrows = true;
+    state.cacheDoc = null;
+    const res = await post(BODY);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.card.technicals).toBeNull();
   });
 });
 
@@ -319,10 +348,23 @@ describe('the card and the exchange', () => {
     expect(res.body.card.platformDataLabel).toBe('Platform data · not what the check saw');
   });
 
-  it('renders the standing from the ROW for a held name', async () => {
+  it('renders the standing from the position’s REAL persisted fields (review A-2)', async () => {
     const res = await post({ ...BODY, symbol: 'NVDA' });
     expect(res.body.card.standing.place).toBe('book');
     expect(res.body.card.standing.facts).toEqual(expect.arrayContaining(['star', 'Entry $141.02']));
+    expect(res.body.card.standing.provenance).toBe('From the record · the board’s own numbers');
+  });
+
+  it('an ORIGINAL position takes the battle’s starting price, not nothing (review A-2)', async () => {
+    state.battle = makeBattle({
+      portfolio: {
+        star: [{ symbol: 'NVDA' }], core: [], support: [],
+        bench: { stocks: [{ symbol: 'MPC' }] },
+        startingPrices: { NVDA: 118.44 },
+      },
+    });
+    const res = await post({ ...BODY, symbol: 'NVDA' });
+    expect(res.body.card.standing.facts).toContain('Entry $118.44');
   });
 
   it('omits MACD and SMA50 on the shipped short window rather than printing a default (hazard 1)', async () => {
