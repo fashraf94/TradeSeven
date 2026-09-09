@@ -493,6 +493,34 @@ export const filesChip = (text) => (typeof text === 'string' && text ? `${FILES_
 /** The D-51 receipt word with its time, or the bare word — `Filed 11:20 AM`. */
 export const filedLabel = (timeText) => (timeText ? `Filed ${timeText}` : 'Filed');
 
+// ── Heard (Phase B, D-110) ──────────────────────────────────────────────────
+// The receipt's SECOND line, beneath `Filed {time}`, and the one claim the
+// tick stamp supports: this thread was in the decider's prompt at that check.
+// Never considered, used, noticed, understood, or decided because — the verb
+// is not upgraded on any surface, and `deskHonesty.test.js` bans the upgrades.
+//
+// A check is named by its SLOT (D-83), never the exact minute, so this takes
+// already-formatted slot text: the formatter lives in deskCopy.js and this
+// module is zero-import on purpose (hazard 26). `filedLabel` takes its time
+// the same way, and for the same reason — Filed names an EXCHANGE and keeps
+// its minute; Heard names a CHECK and gets the slot.
+
+/** `Heard at the 12:45 check` — the thread was in the decider's prompt there. */
+export const heardLabel = (slotText) => (slotText ? `Heard at the ${slotText} check` : null);
+
+/**
+ * The negative receipt, SYSTEM-OWNED AND REASONLESS (Sol M-1).
+ *
+ * A directive existed and the assembler withheld it, so it was not in the
+ * prompt. The four resolver reasons — `malformed`, `mode_not_enforce`,
+ * `epoch_killed`, `unknown` — never reach a surface: the character never
+ * received the withheld directive, so explaining the withholding in its voice
+ * would attribute a pre-prompt resolver event to the character. Diagnostics
+ * belong in telemetry. No slot either: this is a flat statement of absence,
+ * not a stamped fact about a named check.
+ */
+export const NOT_HEARD_LINE = 'Not heard at this check';
+
 /**
  * The code-owned no-change status (Phase H backstop; directiveGate.js
  * re-exports it): a null-write turn ALWAYS reports no change, whatever the

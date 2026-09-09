@@ -80,10 +80,82 @@ describe('under the flag — receipts on the directive cards', () => {
     expect(html).not.toContain('DIRECTIVE LOCKED IN');
   });
 
-  it('the vocabulary is D-51 — no Heard, Holding, Declined, Honored, Superseded', () => {
+  // AMENDED IN PHASE B (B1 client half, seed §1). `Heard` left this list
+  // because the record now PROVES it: the cron stamps the entry with the
+  // thread that was in the decider's prompt at that check (D-110), from its
+  // own resolveControls call. The other four are still unproven and still out.
+  //
+  // The amendment is narrow on purpose. Heard renders ONLY from a stamp, so a
+  // receipt with no stamp — every battle before the flag flips, and every
+  // mid-tick filing — still shows no Heard line at all, which is what this row
+  // now pins: the vocabulary did not open, it gained one proven word whose
+  // absence is still the default.
+  it('the vocabulary is D-51 + Phase B — the four unproven words stay out, and Heard needs a stamp', () => {
     const html = render({ receipts: deriveReceipts(EXCHANGES, DIRECTIVE, 'active') });
-    for (const word of ['Heard', 'Holding', 'Declined', 'Honored', 'Superseded']) {
+    for (const word of ['Holding', 'Declined', 'Honored', 'Superseded']) {
       expect(html).not.toContain(word);
+    }
+    // No `heard` key on these receipts (deriveReceipts alone, no stamped
+    // entries) → no Heard line and no negative line either.
+    expect(html).not.toContain('Heard');
+    expect(html).not.toContain('Not heard');
+    expect(html).not.toContain('data-heard');
+  });
+});
+
+// ── Phase B (B1 client half, seed §1): the Heard line ───────────────────────
+// The receipt's SECOND line. Presence-gated: the stamp comes from the record,
+// so a receipt without one renders nothing — which is also the mid-tick case.
+describe('Phase B — the Heard line beneath Filed', () => {
+  const withHeard = (stamp, threadId = 't-2') => {
+    const receipts = deriveReceipts(EXCHANGES, DIRECTIVE, 'active');
+    for (const id of Object.keys(receipts)) {
+      receipts[id] = { ...receipts[id], heard: id === threadId ? stamp : null };
+    }
+    return receipts;
+  };
+
+  it('a heard thread reads `Heard at the {slot} check` — the SLOT, never the exact minute', () => {
+    // T1 is 11:31 AM ET; the slot floor makes the check 11:30 AM (D-83).
+    const html = render({ receipts: withHeard({ at: T1, heard: true }) });
+    expect(html).toContain('Heard at the 11:30 AM check');
+    expect(html).toContain('data-heard="heard"');
+    // The filing keeps its own exact minute — Filed names an exchange.
+    expect(html).toContain('Filed 12:58 PM');
+    expect(html).not.toContain('Heard at the 11:31 AM check');
+  });
+
+  it('a withheld directive reads the flat system line, with NO reason word (Sol M-1)', () => {
+    for (const reason of ['malformed', 'mode_not_enforce', 'epoch_killed', 'unknown']) {
+      const html = render({ receipts: withHeard({ at: T1, heard: false, reason }) });
+      expect(html).toContain('Not heard at this check');
+      expect(html).toContain('data-heard="not-heard"');
+      expect(html).not.toContain(reason);
+      // And never the positive claim on a withheld directive.
+      expect(html).not.toContain('Heard at the');
+    }
+  });
+
+  it('NO STAMP, NO LINE — the mid-tick filing and every pre-flip battle', () => {
+    const html = render({ receipts: withHeard(null, 'none') });
+    expect(html).not.toContain('data-heard');
+    expect(html).not.toContain('Heard at the');
+    expect(html).not.toContain('Not heard');
+    // The Phase A receipt is untouched by the absence.
+    expect(html).toContain('Filed 12:58 PM');
+    expect(html).toContain('Replaced 12:58 PM');
+  });
+
+  it('the verb is never upgraded — no considered, used, noticed, understood, because', () => {
+    // Scoped to the RENDERED HEARD LINE, not the whole chat: the fixture's own
+    // agent reply is "Understood." and that is dialogue, not copy. The
+    // source-level ban across every copy module is §5's guard
+    // (deskHonesty.test.js); this row pins what this line itself says.
+    const html = render({ receipts: withHeard({ at: T1, heard: true }) });
+    const line = (html.match(/data-heard="[^"]*"[^>]*>([^<]*)</) || [])[1];
+    expect(line).toBe('Heard at the 11:30 AM check');
+    for (const phrase of ['considered', 'used your directive', 'noticed', 'understood', 'decided because', 'caused']) {
+      expect(line.toLowerCase()).not.toContain(phrase);
     }
   });
 });

@@ -14,9 +14,14 @@
 //   2. NO AGENT VERBS between checks. The agent acts at confirmed checks and
 //      does nothing in between; nothing here implies otherwise.
 //   3. RECEIPTS ARE PROVEN OR ABSENT (D-51): `Filed · Acted · Replaced ·
-//      Expired`. Filed is not heard; heard is not will-do. No `Heard`,
-//      `Holding`, `Declined`, `Honored`, `Superseded` (those are Phase B or
-//      never).
+//      Expired`, and — since Phase B — `Heard`. Filed is not heard; heard is
+//      not will-do. `Heard` is now PROVEN and therefore allowed, with its
+//      claim fixed at exactly one thing (D-110): the thread was in the
+//      decider's prompt at that check, proven by the cron's own stamp. It is
+//      never upgraded to considered, used, noticed, understood or decided
+//      because, and a withheld directive gets the reasonless system line
+//      (`NOT_HEARD_LINE`), never one of the four resolver words. `Holding`,
+//      `Declined`, `Honored`, `Superseded` remain unproven and stay out.
 //   4. THE AGENT'S OWN WORDS ONLY (C1): Why? quotes `rationale` verbatim and
 //      never paraphrases it; the labels around it are scoreboard facts.
 //
@@ -53,6 +58,8 @@ import {
   planAtDeployLabel,
   filesChip as recordFilesChip,
   filedLabel,
+  heardLabel,
+  NOT_HEARD_LINE,
   NO_CHANGE_STATUS_LINE,
   FILING_CONFLICT_LINE,
   FILING_BUDGET_LINE,
@@ -466,6 +473,34 @@ export const BATTLE_VIEW_COPY = Object.freeze({
     return t ? `Replaced ${t}` : 'Replaced';
   },
   expired: 'Expired',
+
+  // ── Heard (Phase B, seed §1; D-110) ───────────────────────────────────────
+  // The receipt's second line. `Heard at the {slot} check` when the record
+  // proves the thread was in the decider's prompt at that check; the flat,
+  // reasonless `Not heard at this check` when a directive existed and the
+  // assembler withheld it (Sol M-1 — the four suppression words are telemetry,
+  // never copy); NOTHING when no entry names the thread at all, which is the
+  // honest answer for a filing that landed mid-tick and will be stamped on the
+  // NEXT check.
+  //
+  // The slot goes through `slotLabel` like every other label that names a
+  // check (D-83) — the same formatter the tape and the turn line use, so one
+  // tick is called one thing everywhere (BUILD_RULES §9).
+  heard: (iso) => heardLabel(slotLabel(iso)),
+  notHeard: NOT_HEARD_LINE,
+
+  /**
+   * The second line for a receipt carrying a Heard stamp, or null.
+   * Takes the whole receipt so the card and the strip cannot disagree about
+   * which of the three outcomes they are in.
+   */
+  heardLine: (receipt) => {
+    const stamp = receipt?.heard;
+    if (!stamp || typeof stamp !== 'object') return null;
+    if (stamp.heard === true) return BATTLE_VIEW_COPY.heard(stamp.at);
+    if (stamp.heard === false) return BATTLE_VIEW_COPY.notHeard;
+    return null;
+  },
 
   // ── The chat's send failure (A2.3, addendum item 11) ──────────────────────
   // The shipped line is `Agent is thinking too hard. Try again.` — an agent

@@ -55,11 +55,49 @@ describe('ThisTurnStrip', () => {
     expect(html).not.toContain('11:31');
   });
 
-  it('names the strip and nothing else — no agent verb', () => {
+  // Phase B amended the last term: `heard` is no longer banned outright, it is
+  // PRESENCE-GATED. These receipts carry no stamp, so its absence here proves
+  // the gate rather than a vocabulary ban (the Heard rows are below).
+  it('names the strip and nothing else — no agent verb, and no Heard without a stamp', () => {
     const html = render({ directive: DIRECTIVE, receipts: deriveReceipts(EXCHANGES, DIRECTIVE, 'active'), battleStatus: 'active', turn: TURN }).toLowerCase();
     expect(html).toContain('this turn');
     for (const term of ['watching', 'thinking', 'analyzing', 'about to', 'considering', 'heard']) {
       expect(html).not.toContain(term);
     }
+  });
+});
+
+// ── Phase B (B1 client half, seed §1) ───────────────────────────────────────
+describe('This turn — the Heard line', () => {
+  const receiptsWith = (stamp) => {
+    const receipts = deriveReceipts(EXCHANGES, DIRECTIVE, 'active');
+    receipts['t-1'] = { ...receipts['t-1'], heard: stamp };
+    return receipts;
+  };
+
+  it('a heard directive reads `Heard at the {slot} check` beneath Filed — the slot, not the minute', () => {
+    const html = render({ directive: DIRECTIVE, receipts: receiptsWith({ at: T1, heard: true }), battleStatus: 'active', turn: TURN });
+    expect(html).toContain('Filed 11:31 AM');            // the exchange's minute
+    expect(html).toContain('Heard at the 11:30 AM check'); // the check's slot
+    expect(html).toContain('data-heard="heard"');
+    // Still no promise about the NEXT check (hazard 3).
+    expect(html).not.toContain('for the');
+  });
+
+  it('a withheld directive reads the flat line and never the reason', () => {
+    for (const reason of ['malformed', 'mode_not_enforce', 'epoch_killed', 'unknown']) {
+      const html = render({ directive: DIRECTIVE, receipts: receiptsWith({ at: T1, heard: false, reason }), battleStatus: 'active', turn: TURN });
+      expect(html).toContain('Not heard at this check');
+      expect(html).toContain('data-heard="not-heard"');
+      expect(html).not.toContain(reason);
+      expect(html).not.toContain('Heard at the');
+    }
+  });
+
+  it('no stamp → no line, and the strip is byte-identical to Phase A', () => {
+    const base = render({ directive: DIRECTIVE, receipts: deriveReceipts(EXCHANGES, DIRECTIVE, 'active'), battleStatus: 'active', turn: TURN });
+    const withNull = render({ directive: DIRECTIVE, receipts: receiptsWith(null), battleStatus: 'active', turn: TURN });
+    expect(withNull).toBe(base);
+    expect(withNull).not.toContain('data-heard');
   });
 });
