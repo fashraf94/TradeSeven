@@ -250,7 +250,10 @@ describe('the screen joins the record to Why? (review B-2)', () => {
     expect(html()).toContain('What the 12:45 PM check saw');
     expect(html()).toContain('Price $44.12');
     expect(html()).toContain('Gain since entry +2.57%');
-    expect(html()).toContain('Regime directional_expansion');
+    // The shared word on the panel, the raw token on its `title` — one map in
+    // decisionRecord.js feeds this, both Agent feeds, and the narrator's line.
+    expect(html()).toContain('Regime · Expanding');
+    expect(html()).toContain('title="directional_expansion"');
     expect(html()).toContain('Risk LOCK');
   });
 

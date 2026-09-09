@@ -583,10 +583,39 @@ describe('Phase B — what the check saw', () => {
     for (const fact of [
       'Price $123.60', 'Gain since entry +2.57%', 'ATR multiple 0.83×',
       'VWAP deviation +0.95%', 'Bollinger width 15th %ile', 'NR7',
-      'Regime directional_expansion', 'Risk LOCK',
+      'Regime · Expanding', 'Risk LOCK',
     ]) {
       expect(html).toContain(fact);
     }
+  });
+
+  // The regime is the ONE translated fact. The player reads the shared word;
+  // the raw token the prompt printed rides the same element's `title`, so the
+  // honest render is one hover away and cannot drift from the word above it
+  // (BUILD_RULES §9). Every other label IS the prompt's own text and carries
+  // no title at all.
+  it('the regime fact reads the shared word and carries the raw token as its title', () => {
+    const html = withEvidence(EV_FULL);
+    expect(html).toContain('title="directional_expansion"');
+    // The token is on the attribute and NOWHERE in the text.
+    expect(html).not.toContain('>Regime directional_expansion<');
+    // One title on the fact row, not eight.
+    expect((html.match(/title="/g) || []).length).toBe(1);
+  });
+
+  it('each of the four regimes renders its own word and its own token', () => {
+    for (const [token, word] of Object.entries({
+      directional_expansion: 'Expanding', directional_contraction: 'Contracting',
+      choppy: 'Choppy', distressed: 'Distressed',
+    })) {
+      const html = withEvidence({ ...EV_FULL, regime: token });
+      expect(html).toContain(`Regime · ${word}`);
+      expect(html).toContain(`title="${token}"`);
+    }
+    // An unruled token renders no regime fact and no title (D-81).
+    const unruled = withEvidence({ ...EV_FULL, regime: 'risk_on' });
+    expect(unruled).not.toContain('Regime');
+    expect(unruled).not.toContain('title="');
   });
 
   it('the provenance line names its fields and never promises freshness (Sol M-2)', () => {

@@ -201,6 +201,10 @@ export default function WhyPanel({
   // pane and the narrator's record cannot drift apart. Nulls are already
   // dropped by `evidenceFacts` — an empty list means nothing was rendered for
   // this piece and the section stays away entirely.
+  //
+  // These are ENTRIES, not strings: one walk in decisionRecord.js produces
+  // both this list and the narrator's, so the panel's `Regime · Expanding` and
+  // the prompt's `Regime directional_expansion` name one token.
   const evidenceFacts = evidence ? COPY.evidenceFacts(evidence.evidence) : [];
   // THE PANEL NAMES ONE CHECK (review B-6, BUILD_RULES §9). The heading takes
   // `state.checkedAt` — the same instant the panel's own header floors — not
@@ -469,16 +473,24 @@ export default function WhyPanel({
           <div data-evidence="seen" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={eyebrow}>{evidenceHeading}</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}>
+              {/* `label` is the line a player reads; `title` is the raw
+                  machine token it translates, on the SAME element, so the
+                  honest render of what the prompt printed is one hover away
+                  and cannot drift from the word above it (BUILD_RULES §9).
+                  Only the regime fact carries one — every other label IS the
+                  prompt's own text, and `title={undefined}` emits no
+                  attribute. */}
               {evidenceFacts.map((fact) => (
                 <span
-                  key={fact}
+                  key={fact.text}
+                  title={fact.title ?? undefined}
                   style={{
                     fontSize: 12,
                     color: cssVar('text-secondary'),
                     fontVariantNumeric: 'tabular-nums',
                   }}
                 >
-                  {fact}
+                  {fact.label}
                 </span>
               ))}
             </div>

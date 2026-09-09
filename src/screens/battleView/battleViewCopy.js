@@ -65,9 +65,10 @@ import {
   heardLabel,
   NOT_HEARD_LINE,
   evidenceHeading,
-  evidenceFactLines,
+  evidenceFacts as recordEvidenceFacts,
   provenanceLine,
   regimeWord,
+  regimeLabel as recordRegimeLabel,
   NO_CHANGE_STATUS_LINE,
   FILING_CONFLICT_LINE,
   FILING_BUDGET_LINE,
@@ -572,11 +573,19 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // not checks, so they keep their exact minute like `tradeLine` and `filed`
   // — only a CHECK is named by its slot.
   evidenceHeading: (iso) => evidenceHeading(slotLabel(iso)),
-  evidenceFacts: (evidence) => evidenceFactLines(evidence),
+  // The panel's facts, as ENTRIES rather than strings: `text` is the line the
+  // decider's prompt printed, `label` the line a player reads, `title` the raw
+  // token a translated label stands for. One walk feeds this and the
+  // narrator's `evidenceFactLines` (decisionRecord.js), so the panel's regime
+  // word and the prompt's regime token are the same token by construction.
+  evidenceFacts: (evidence) => recordEvidenceFacts(evidence),
   // The check's own instant goes with it, so a vintage from another ET day
   // carries its date rather than reading as a time later today (review A-3).
   evidenceProvenance: (vintages, checkIso = null) => provenanceLine(vintages, etTime, checkIso),
   regimeWord: (value) => regimeWord(value),
+  // `Expanding` — the shared player-facing word for a regime token, from the
+  // one REGIME_LABELS map the two Agent feeds read too.
+  regimeLabel: (value) => recordRegimeLabel(value),
 
   // THE POSITIVE TRAVELS, THE NEGATIVE STAYS PUT — the split review A-2 did
   // not make, and the reason A-2 itself gave for the scoping.

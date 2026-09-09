@@ -703,26 +703,52 @@ export function filingFailureLine(status) {
 // A null metric renders NOTHING — never 0, never a dash, never a placeholder.
 
 /**
- * The four regime words the decider's prompt actually prints
- * (`STOCK REGIMES: NVDA=directional_expansion, …` — the raw token, both in the
- * strategy legend and on the live line). The evidence claim is "this is what
- * the prompt rendered", so the token IS the honest render and translating it
- * to a friendlier word would show something the decider never saw (§9).
+ * THE ONE REGIME VOCABULARY — the four tokens the decider's prompt prints
+ * (`STOCK REGIMES: NVDA=directional_expansion, …`, both in the strategy legend
+ * and on the live line), each beside the one word a player reads for it.
+ *
+ * ONE SOURCE, THREE SURFACES (BUILD_RULES §9). This map was declared three
+ * times in `src/` with the same four pairs — `AgentActivityFeed.jsx:23`,
+ * `StatusFeedTimeline.jsx:18`, and nowhere for the Why? panel, which printed
+ * the token instead. Three copies of one vocabulary is how two feeds and a
+ * panel start calling one regime two things; the map lives here, in the
+ * zero-import copy module both the client and `api/` already read, and every
+ * surface takes its word from it.
+ *
+ * THE TOKEN IS NEVER LOST — it is what the prompt rendered, and the evidence
+ * claim is "this is what the check saw". So the narrator's record keeps
+ * printing the token verbatim (`evidenceFactLines`), and the panel — which has
+ * a place to put it that a prompt does not — carries it on the label's `title`
+ * attribute. The player reads `Regime · Expanding`; the raw render is one
+ * hover away, on the same element, derived from the same token.
  *
  * An unrecognised value renders NOTHING rather than a raw string — the D-81
  * precedent for unruled trigger types, for the same reason: a token this
  * module has no sentence for is not a fact a player can read.
  */
-export const REGIME_WORDS = Object.freeze([
-  'directional_expansion',
-  'directional_contraction',
-  'choppy',
-  'distressed',
-]);
+export const REGIME_LABELS = Object.freeze({
+  directional_expansion: 'Expanding',
+  directional_contraction: 'Contracting',
+  choppy: 'Choppy',
+  distressed: 'Distressed',
+});
+
+/**
+ * The closed list, DERIVED from the labels rather than declared beside them:
+ * a token with no word and a word with no token are the same drift, and the
+ * only way to add either is to add the pair.
+ */
+export const REGIME_WORDS = Object.freeze(Object.keys(REGIME_LABELS));
 
 export const regimeWord = (value) => (
   typeof value === 'string' && REGIME_WORDS.includes(value) ? value : null
 );
+
+/** `Expanding` — the player's word for a ruled token, else null. */
+export const regimeLabel = (value) => {
+  const token = regimeWord(value);
+  return token ? REGIME_LABELS[token] : null;
+};
 
 /**
  * The risk manager's verdict words, as the RISK STATUS block prints them
@@ -818,30 +844,54 @@ const ordinal = (n) => {
  *   human-readable `detail` sentence while the stamp keeps the compact code,
  *   so "I saw threshold_proximity" is false. The code stays out of this list.
  *
+ * ONE WALK, TWO RENDERS (BUILD_RULES §9). `evidenceFacts` is the walk and
+ * `evidenceFactLines` is its narrator-facing projection — `.map(f => f.text)`,
+ * so the prompt's line cannot drift from the panel's list by construction
+ * rather than by two functions kept in step. `text` is what the decider's
+ * prompt printed; `label` is what a player reads, and differs from `text` only
+ * where this module has a word for a machine token; `title` is the token that
+ * label translates, for a surface that can carry it (the panel's `title`
+ * attribute), and is null wherever label IS the text.
+ *
+ * @param {Object|null} evidence  one held position's stamp
+ * @returns {Array<{ text: string, label: string, title: string|null }>}
+ */
+export function evidenceFacts(evidence) {
+  if (!evidence || typeof evidence !== 'object') return [];
+  const out = [];
+  const fact = (text, { label = text, title = null } = {}) => out.push({ text, label, title });
+  const px = num(evidence.px);
+  if (px != null) fact(`Price $${px.toFixed(2)}`);
+  const chg = num(evidence.chg);
+  if (chg != null) fact(`Gain since entry ${signed(chg)}%`);
+  const atrX = num(evidence.atrX);
+  if (atrX != null) fact(`ATR multiple ${atrX.toFixed(2)}×`);
+  const vwapDev = num(evidence.vwapDev);
+  if (vwapDev != null) fact(`VWAP deviation ${signed(vwapDev)}%`);
+  const bbPct = num(evidence.bbPct);
+  if (bbPct != null) fact(`Bollinger width ${ordinal(Math.round(bbPct))} %ile`);
+  // NR7 is a FLAG: the prompt printed "NR7: YES" or nothing. `false` is not a
+  // fact the player needs and `null` is no reading at all — both stay silent.
+  if (evidence.nr7 === true) fact('NR7');
+  const regime = regimeWord(evidence.regime);
+  // The only translated fact: `Regime directional_expansion` is what the prompt
+  // rendered and stays the `text`; `Regime · Expanding` is what a player reads,
+  // and the token it translates rides along so the panel can show both.
+  if (regime) fact(`Regime ${regime}`, { label: `Regime · ${REGIME_LABELS[regime]}`, title: regime });
+  const action = riskWord(evidence.risk?.action);
+  if (action) fact(`Risk ${action}`);
+  return out;
+}
+
+/**
+ * The same facts as the lines the decider's prompt printed — the narrator's
+ * YOUR RECORD block renders these verbatim, tokens and all.
+ *
  * @param {Object|null} evidence  one held position's stamp
  * @returns {string[]}            zero or more rendered facts
  */
 export function evidenceFactLines(evidence) {
-  if (!evidence || typeof evidence !== 'object') return [];
-  const out = [];
-  const px = num(evidence.px);
-  if (px != null) out.push(`Price $${px.toFixed(2)}`);
-  const chg = num(evidence.chg);
-  if (chg != null) out.push(`Gain since entry ${signed(chg)}%`);
-  const atrX = num(evidence.atrX);
-  if (atrX != null) out.push(`ATR multiple ${atrX.toFixed(2)}×`);
-  const vwapDev = num(evidence.vwapDev);
-  if (vwapDev != null) out.push(`VWAP deviation ${signed(vwapDev)}%`);
-  const bbPct = num(evidence.bbPct);
-  if (bbPct != null) out.push(`Bollinger width ${ordinal(Math.round(bbPct))} %ile`);
-  // NR7 is a FLAG: the prompt printed "NR7: YES" or nothing. `false` is not a
-  // fact the player needs and `null` is no reading at all — both stay silent.
-  if (evidence.nr7 === true) out.push('NR7');
-  const regime = regimeWord(evidence.regime);
-  if (regime) out.push(`Regime ${regime}`);
-  const action = riskWord(evidence.risk?.action);
-  if (action) out.push(`Risk ${action}`);
-  return out;
+  return evidenceFacts(evidence).map((entry) => entry.text);
 }
 
 /**

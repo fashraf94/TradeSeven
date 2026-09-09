@@ -13,10 +13,13 @@ import { describe, it, expect } from 'vitest';
 import { selectEvidence } from './selectEvidence';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
 import {
+  evidenceFacts,
   evidenceFactLines,
   evidenceHeading,
   provenanceLine,
   regimeWord,
+  regimeLabel,
+  REGIME_LABELS,
   REGIME_WORDS,
   riskWord,
   RISK_WORDS,
@@ -128,6 +131,45 @@ describe('the eight fields — exactly eight, and each says what it is', () => {
     expect(pct(13)).toBe('Bollinger width 13th %ile');
     expect(pct(21)).toBe('Bollinger width 21st %ile');
     expect(pct(100)).toBe('Bollinger width 100th %ile');
+  });
+
+  // ── One walk, two renders (BUILD_RULES §9) ───────────────────────────────
+  //
+  // `evidenceFacts` is the walk; `evidenceFactLines` is `.map(f => f.text)`.
+  // The narrator's YOUR RECORD block renders the LINES and must keep printing
+  // the token the decider's prompt printed — the evidence claim is "this is
+  // what the check saw", and a friendlier word would show something it never
+  // saw. The panel renders the ENTRIES and shows the player's word with the
+  // token on its `title`. One walk means the two can't name different tokens.
+  it('the lines are the entries\' `text`, in order — the narrator sees no change', () => {
+    expect(evidenceFactLines(FULL)).toEqual(evidenceFacts(FULL).map((f) => f.text));
+    // …and the regime line among them is still the raw token, byte for byte.
+    expect(evidenceFactLines(FULL)).toContain('Regime directional_expansion');
+    expect(evidenceFactLines(FULL)).not.toContain('Regime · Expanding');
+  });
+
+  it('only the regime entry is translated — every other label IS its text, with no title', () => {
+    for (const fact of evidenceFacts(FULL)) {
+      if (fact.title) {
+        expect(fact.text).toBe('Regime directional_expansion');
+        expect(fact.label).toBe('Regime · Expanding');
+        expect(fact.title).toBe('directional_expansion');
+      } else {
+        expect(fact.label).toBe(fact.text);
+        expect(fact.title).toBeNull();
+      }
+    }
+    expect(evidenceFacts(FULL).filter((f) => f.title)).toHaveLength(1);
+  });
+
+  it('the panel\'s word comes from the ONE map — the same one both Agent feeds read', () => {
+    for (const token of REGIME_WORDS) {
+      const [fact] = evidenceFacts({ regime: token });
+      expect(fact.label).toBe(`Regime · ${REGIME_LABELS[token]}`);
+      expect(fact.label).toBe(`Regime · ${regimeLabel(token)}`);
+      expect(fact.title).toBe(token);
+      expect(fact.text).toBe(`Regime ${token}`);
+    }
   });
 
   it('the regime is the RAW TOKEN the prompt printed; an unruled value renders nothing', () => {

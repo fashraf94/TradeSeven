@@ -6,8 +6,14 @@ import {
   MessageSquare, Eye, ClipboardList,
 } from 'lucide-react';
 import GameplanMeetingCard from './GameplanMeetingCard';
+// The four regime words come from the ONE map (BUILD_RULES §9). This file and
+// StatusFeedTimeline.jsx each declared their own copy of the same four pairs,
+// and the Why? panel had none and printed the raw token — three surfaces, one
+// vocabulary, no single place to change it. decisionRecord.js is zero-import
+// and already the copy source both the client and `api/` read.
+import { REGIME_LABELS } from '../../data/decisionRecord';
 
-// ── Label Maps (mirrored from StatusFeedTimeline) ─────────────────────────────
+// ── Label Maps (strategy + colours; regime is shared) ─────────────────────────
 
 const STRATEGY_LABELS = {
   volatility_squeeze: 'Squeeze',
@@ -18,13 +24,6 @@ const STRATEGY_LABELS = {
   bust_avoidance: 'Bust Guard',
   vwap_failure: 'VWAP Fail',
   threshold_lock: 'Locked',
-};
-
-const REGIME_LABELS = {
-  directional_expansion: 'Expanding',
-  directional_contraction: 'Contracting',
-  choppy: 'Choppy',
-  distressed: 'Distressed',
 };
 
 const REGIME_COLORS = {

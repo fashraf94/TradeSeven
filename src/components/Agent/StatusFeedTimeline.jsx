@@ -1,6 +1,9 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowRightLeft, ShieldAlert, Lock, MessageSquare } from 'lucide-react';
+// One regime vocabulary, shared with AgentActivityFeed and the Why? panel
+// (BUILD_RULES §9) — see the note in decisionRecord.js.
+import { REGIME_LABELS } from '../../data/decisionRecord';
 
 // ── Label Maps ─────────────────────────────────────────────
 
@@ -13,13 +16,6 @@ const STRATEGY_LABELS = {
   bust_avoidance: 'Bust Guard',
   vwap_failure: 'VWAP Fail',
   threshold_lock: 'Locked',
-};
-
-const REGIME_LABELS = {
-  directional_expansion: 'Expanding',
-  directional_contraction: 'Contracting',
-  choppy: 'Choppy',
-  distressed: 'Distressed',
 };
 
 const REGIME_COLORS = {
