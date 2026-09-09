@@ -102,9 +102,25 @@ describe('This turn — the Heard line', () => {
   });
 
   it('no stamp → no line, and the strip is byte-identical to Phase A', () => {
+    // THE `toBe` ALONE CANNOT FAIL (review B-3): both sides render the current
+    // component, so a fragment turned into a wrapper div would appear on both.
+    // The ELEMENT COUNT is the guard that bites — Phase B's `<>…</>` adds no
+    // DOM node, so an unstamped strip must have exactly the divs Phase A had,
+    // and a stamped one exactly one more.
     const base = render({ directive: DIRECTIVE, receipts: deriveReceipts(EXCHANGES, DIRECTIVE, 'active'), battleStatus: 'active', turn: TURN });
     const withNull = render({ directive: DIRECTIVE, receipts: receiptsWith(null), battleStatus: 'active', turn: TURN });
+    // ABSOLUTE, not relative (review B-3b): comparing two renders of the SAME
+    // component counts the mutation on both sides and passes. Phase B's
+    // `<>…</>` adds no DOM node, so the unstamped strip has exactly the three
+    // divs Phase A had — the strip, its eyebrow, and the filed row — and a
+    // wrapper element anywhere in that path makes it four.
+    const divs = (html) => (html.match(/<div/g) || []).length;
     expect(withNull).toBe(base);
     expect(withNull).not.toContain('data-heard');
+    expect(divs(base)).toBe(3);
+    expect(divs(withNull)).toBe(3);
+    // One more, and only one, once the Heard line has something to add.
+    expect(divs(render({ directive: DIRECTIVE, receipts: receiptsWith({ at: T1, heard: true }), battleStatus: 'active', turn: TURN })))
+      .toBe(4);
   });
 });

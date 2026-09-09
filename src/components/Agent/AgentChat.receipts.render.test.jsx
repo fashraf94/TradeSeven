@@ -148,11 +148,23 @@ describe('Phase B — the Heard line beneath Filed', () => {
 
   it('AND NO WRAPPER EITHER — an unstamped card is BYTE-IDENTICAL to Phase A (D-113)', () => {
     // The first build stacked the two rows in a column wrapper that rendered
-    // unconditionally, so a pre-flip battle got a div it never had. The A2
-    // first-paint golden caught it; this row is the local guard, so the next
-    // person sees the failure here rather than in a screen-level photograph.
+    // unconditionally, so a pre-flip battle got a div it never had.
+    //
+    // THE `toBe` ALONE CANNOT FAIL (review B-3): both sides render the CURRENT
+    // component, and `heard: null` versus no `heard` key take the same branch,
+    // so an unconditional wrapper would appear on both and the comparison
+    // would still pass. It is kept because it pins the two inputs as
+    // equivalent, but the guard that bites is the structural one below: the
+    // stacking wrapper has a signature, and an unstamped card must not carry
+    // it. (The whole-screen proof remains
+    // AgentBattleScreen.paneOff.golden.test.jsx.)
     const phaseA = render({ receipts: deriveReceipts(EXCHANGES, DIRECTIVE, 'active') });
-    expect(render({ receipts: withHeard(null, 'none') })).toBe(phaseA);
+    const unstamped = render({ receipts: withHeard(null, 'none') });
+    expect(unstamped).toBe(phaseA);
+    expect(unstamped).not.toContain('flex-direction:column;gap:4px');
+    // …and it DOES appear once the Heard line gives it something to stack.
+    expect(render({ receipts: withHeard({ at: T1, heard: true }) }))
+      .toContain('flex-direction:column;gap:4px');
   });
 
   // Review A-2. The seed puts the second line "beneath `Filed {time}`", and

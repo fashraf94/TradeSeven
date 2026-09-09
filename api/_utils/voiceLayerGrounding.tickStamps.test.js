@@ -95,6 +95,29 @@ describe('the evidence lines — the pane\'s labels, in the prompt', () => {
     expect(withRs).not.toContain('RS');
   });
 
+  // Review B-4. `promptBuilt` is set after the prompt is built and before the
+  // transport call, so a timed-out tick has TRUE stamps and no decision. The
+  // pane renders them under `No decision recorded at this check`; the narrator
+  // returned early on `haikuError` and rendered none, so one record answered
+  // two ways.
+  it('AN OUTAGE ENTRY STILL CARRIES ITS EVIDENCE — the pane and the record agree', () => {
+    const outage = stamped(T3, { haikuError: { failureClass: 'timeout' }, rationale: 'Haiku call failed — defaulting to HOLD' });
+    const lines = renderRecordEntry(outage);
+    expect(lines[0]).toContain('No decision recorded at this check');
+    expect(lines).toContain(`  ${EVIDENCE_HEADING}`);
+    expect(lines.join('\n')).toContain('NVDA — Price $123.60 · Gain since entry +2.57%');
+    // The cron's placeholder rationale is still NOT quoted (hazard 25, D-65).
+    expect(lines.join('\n')).not.toContain('Haiku call failed');
+    // What the check SAW does not depend on whether it decided.
+    expect(renderRecordEntry(outage, { withEvidence: false })).toHaveLength(1);
+  });
+
+  it('an outage entry with NO stamp is still the bare absence line', () => {
+    const lines = renderRecordEntry(entry(T3, { haikuError: { failureClass: 'timeout' } }));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('No decision recorded at this check');
+  });
+
   it('NO STAMP → NO LINES, and the record entry is byte-identical to today', () => {
     expect(renderEvidenceLines(entry(T3))).toEqual([]);
     expect(renderRecordEntry(entry(T3))).toEqual(renderRecordEntry(entry(T3), { withEvidence: false }));

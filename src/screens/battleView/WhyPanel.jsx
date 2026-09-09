@@ -187,9 +187,16 @@ export default function WhyPanel({
   // dropped by `evidenceFacts` — an empty list means nothing was rendered for
   // this piece and the section stays away entirely.
   const evidenceFacts = evidence ? COPY.evidenceFacts(evidence.evidence) : [];
-  const evidenceHeading = evidence && evidenceFacts.length ? COPY.evidenceHeading(evidence.checkedAt) : null;
+  // THE PANEL NAMES ONE CHECK (review B-6, BUILD_RULES §9). The heading takes
+  // `state.checkedAt` — the same instant the panel's own header floors — not
+  // the entry's timestamp. `selectEvidence` has already refused any entry not
+  // joined to this check, so the two always mean the same tick; but they floor
+  // to a slot independently, and a tick that straddles a quarter-hour boundary
+  // made one panel say `At the 10:15 AM check` above `What the 10:30 AM check
+  // saw`. Bound to one source by construction, that cannot happen.
+  const evidenceHeading = evidence && evidenceFacts.length ? COPY.evidenceHeading(state.checkedAt) : null;
   const evidenceProvenance = evidence && evidenceFacts.length
-    ? COPY.evidenceProvenance(evidence.vintages, evidence.checkedAt)
+    ? COPY.evidenceProvenance(evidence.vintages, state.checkedAt)
     : null;
 
   // The row shows only the sentences that name this piece. Two empty cases,

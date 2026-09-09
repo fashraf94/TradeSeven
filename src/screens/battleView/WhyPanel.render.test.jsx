@@ -652,6 +652,34 @@ describe('Phase B — what the check saw', () => {
     }
   });
 
+  // Review B-6, BUILD_RULES §9. `selectWhyState` floors `lastScoredAt`;
+  // `selectEvidence` carries the entry's own timestamp. On a tick that
+  // straddles a quarter-hour boundary the two floor to DIFFERENT slots, and
+  // one panel said `At the 12:15 PM check` above `What the 12:30 PM check
+  // saw`. The heading is bound to the panel's own instant, so one panel names
+  // one check by construction.
+  it('ONE PANEL NAMES ONE CHECK, even when the tick straddles a slot boundary', () => {
+    const SCORED = '2026-09-01T16:29:55.000Z'; // 12:29:55 PM ET → the 12:15 slot
+    const ENTRY_AT = '2026-09-01T16:30:12.000Z'; // 12:30:12 PM ET → the 12:30 slot
+    const straddle = { ...HELD, timestamp: ENTRY_AT, evidence: { SLB: EV_FULL }, vintages: VINTAGES };
+    const html = strip(renderToString(
+      <WhyPanel
+        symbol="SLB"
+        state={selectWhyState(straddle, 'SLB', SCORED)}
+        proximity={PROXIMITY}
+        entryPrice={34.1}
+        trades={[]}
+        onAskFollowUp={() => {}}
+        evidence={selectEvidence(straddle, 'SLB', SCORED)}
+      />,
+    ));
+    expect(html).toContain('data-evidence="seen"');
+    // Both headings name the SAME check — the panel's own.
+    expect(html).toContain('From the 12:15 PM check');
+    expect(html).toContain('What the 12:15 PM check saw');
+    expect(html).not.toContain('12:30 PM check');
+  });
+
   it('the BOOK panel never shows evidence — it is a per-piece fact', () => {
     const html = renderBook(HELD, { evidence: selectEvidence(stamped(EV_FULL), 'SLB', LAST) });
     expect(html).not.toContain('data-evidence');

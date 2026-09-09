@@ -112,6 +112,15 @@ export const RECORD_WINDOW = 3;
 // ESTIMATE, deliberately: the exact count depends on a tokenizer this module
 // does not have, and the fallback only has to fire before the block grows
 // unreasonable, not at a precise boundary.
+//
+// THE FALLBACK HAS A FLOOR, AND IT IS MEASURED (review B-7). One entry costs
+// roughly 74 estimated tokens at one held name, 161 at three, 247 at five,
+// 291 at six and 334 at SEVEN — so a full seven-name book on the newest entry
+// alone lands ~11 % over this budget, and the fallback cannot go lower without
+// removing the evidence from the record entirely, which is the thing §4 exists
+// to add. The seed's rule stops at one entry deliberately; the overage is
+// recorded here rather than papered over, and a second-stage fallback is a
+// spec-level decision, not this build's to make.
 export const EVIDENCE_TOKEN_BUDGET = 300;
 export const EVIDENCE_FALLBACK_WINDOW = 1;
 export const EVIDENCE_HEADING = 'What this check saw:';
@@ -217,7 +226,17 @@ export function renderRecordEntry(evaluation, { withEvidence = true } = {}) {
   const woken = wokenBy(evaluation.triggers);
 
   if (evaluation.haikuError) {
-    return [[slotText, noDecisionLine(evaluation.haikuError), woken].filter(Boolean).join(' · ')];
+    // AN OUTAGE ENTRY CAN STILL CARRY EVIDENCE (review B-4). `promptBuilt` is
+    // set after the prompt is built and before the transport call, so a
+    // timed-out or truncated tick has true stamps and no decision — the server
+    // says so explicitly. The pane already renders them under
+    // `No decision recorded at this check`; the narrator returned early and
+    // rendered none, so one record answered two ways and a player could see
+    // four facts on screen that the character's own record did not have
+    // (hazard 26 / §9 — the drift both modules share decisionRecord.js to
+    // prevent). What the check SAW does not depend on whether it decided.
+    const absence = [slotText, noDecisionLine(evaluation.haikuError), woken].filter(Boolean).join(' · ');
+    return withEvidence ? [absence, ...renderEvidenceLines(evaluation)] : [absence];
   }
 
   const lines = [[slotText, recordStateLabel(evaluation), woken].filter(Boolean).join(' · ')];
