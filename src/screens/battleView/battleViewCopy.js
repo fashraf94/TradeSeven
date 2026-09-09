@@ -37,6 +37,10 @@
 
 import { etTime } from '../../components/Dashboard/desk/deskCopy';
 import { slotLabel } from './deriveTurnLine';
+// Phase C §1 — the door's integer comes from the ONE cap display function
+// (D-122): server, client and tests share it, so `Show it · 1 of 3` cannot
+// drift from what the route enforces (BUILD_RULES §9).
+import { RESEARCH_CAP, researchDoorOrdinal, researchDoorEnabled } from '../../data/researchCap';
 // The persisted decision record's SHARED vocabulary (voice-grounding hazard
 // 26): the strings the narrator's YOUR RECORD block renders too live in the
 // zero-import src/data/decisionRecord.js and are re-exposed here under their
@@ -317,6 +321,54 @@ export const BATTLE_VIEW_COPY = Object.freeze({
     ? `Show the ${symbol} messages · ${n} in the chat`
     : null),
   scopeChipName: (symbol) => (symbol ? `Showing ${symbol} only · show the whole tape` : null),
+
+  // ── Show it (Phase C §1, D-116 / D-122) ───────────────────────────────────
+  //
+  // THE SECOND VERB. Tap a name and the platform shows you what it knows. Two
+  // surfaces wear the words and they are deliberately different:
+  //
+  //   · the CHIP the character offers in the conversation names the NAME
+  //     (`Show it · MPC`) — the chip's whole job is to say which piece;
+  //   · the DOOR on a piece's own panel names the COST (`Show it · 1 of 3`),
+  //     the D-31 cost-before-the-tap idiom `Ask a follow-up · 1 message` uses,
+  //     because the panel is already about that piece and the scarce thing is
+  //     the read.
+  //
+  // The door's integer is the ORDINAL OF THE NEXT CARD from the one shared
+  // display function (src/data/researchCap.js, D-122) — never a second count
+  // (BUILD_RULES §9). The exhausted door reads `3 of 3` exactly as the last
+  // enabled one does and is distinguished by being disabled, so the text is
+  // read off `used` alone and the enabled state off `researchDoorEnabled`.
+  showItChip: (symbol) => (typeof symbol === 'string' && symbol.trim() ? `Show it · ${symbol.trim()}` : null),
+  showItDoor: (used) => `Show it · ${researchDoorOrdinal(used)} of ${RESEARCH_CAP}`,
+  // The ACCESSIBLE name (the scopeDoorName rule): the visible label reads as a
+  // ratio, so a screen reader would announce two numbers where a read is about
+  // to be spent. Named for the ACTION and for the name it acts on.
+  // The exhausted state rides the NAME, not a `title` (review F-8). `aria-label`
+  // wins the accessible-name computation, so a `title` beside it is a
+  // description many AT pairings never announce; a `disabled` button is out of
+  // the tab order, so a keyboard user cannot focus it to surface a tooltip; and
+  // `title` never appears on touch at all. Without this, those users learn the
+  // door is spent only from `opacity: 0.5` and a tap that does nothing — which
+  // is indistinguishable from a broken button.
+  showItDoorName: (symbol, used) => {
+    const s = typeof symbol === 'string' ? symbol.trim() : '';
+    if (!s) return null;
+    const base = `Show the platform's data on ${s} · read ${researchDoorOrdinal(used)} of ${RESEARCH_CAP}`;
+    return researchDoorEnabled(used) ? base : `${base} — ${BATTLE_VIEW_COPY.showItExhausted}`;
+  },
+  // The exhausted door's own line — the only place the three-of-three state
+  // says anything the enabled door does not. It states the fact, never a
+  // remedy the platform does not have.
+  showItExhausted: 'All 3 reads used in this battle.',
+  // The one failure line the client can be held to (the filingFailureLine
+  // rule): it says the read did not happen and nothing about why the platform
+  // thinks that.
+  showItFailed: 'That read didn\u2019t come back. Try again.',
+  // D-54's forward path, as a word on the card. `Equip` is the shipped verb for
+  // putting a name in front of the agent; the card offers it and never promises
+  // what the process will do with it.
+  showItEquip: 'Equip',
   // What the scoped stream announces when the filter lands or lifts. A live
   // region, so it is spoken without moving focus — which the door does not
   // move to the stream anyway (it goes to the composer, with the prefill).
@@ -380,6 +432,15 @@ export const BATTLE_VIEW_COPY = Object.freeze({
       return null;
     }
     if (messageType === 'trade_narration') return 'Trade note';
+    // `research` is DELIBERATELY ABSENT from this map, exactly as `auto_debrief`
+    // is: the research card carries its OWN `Research` eyebrow, composed onto it
+    // by the server (decisionRecord.js RESEARCH_EYEBROW), and one exchange with
+    // two eyebrows is worse than one with none — a second one here would also be
+    // a second source for the same word (BUILD_RULES §9). An explicit `return
+    // null` for it was REMOVED (review F-7): the fall-through already returns
+    // null for every unnamed type, so the line could not fail under its own
+    // deletion, and §2 says a branch that cannot fail is not a guard. The rule
+    // lives here, in the same place `auto_debrief`'s does.
     // `Reply` is a claim about a PAIR — the player wrote and the character
     // answered — so it needs the user half to exist. `deriveChatMessages`
     // defaults a legacy exchange with no type to `user_initiated`, and one of

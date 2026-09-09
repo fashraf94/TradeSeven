@@ -71,6 +71,7 @@ import {
   planAtDeployLabel,
   GROUNDING_VERSION,
   DIRECTIVE_FILED_MESSAGE_TYPE,
+  RESEARCH_MESSAGE_TYPE,
   guardrailForcedExit,
   GUARDRAIL_FORCED_FAILED_LABEL,
   renderMotive,
@@ -89,6 +90,13 @@ import { FLAT6_GAME_MODE } from '../../src/constants/agentGameModes.js';
 // direct importer of archetypeAdjustments.js, recorded in
 // archetypeImportBoundaryBaseline.json in the same commit (§2.3 ratchet).
 import { isValidAdjustmentId, getCanonicalText } from '../../src/data/archetypeAdjustments.js';
+// Phase C §1 — the research chip's universe check. `src/data/battleUniverse.js`
+// is ZERO-IMPORT and therefore Node-clean by construction (BUILD_RULES §4); the
+// test file's import of THIS module is the dependency-surface guard and must
+// never be mocked — it explodes in the Node test env if a browser dep ever
+// enters the graph.
+import { canonicalUniverseSymbol } from '../../src/data/battleUniverse.js';
+import { RESEARCH_CAP, countResearchUsed } from '../../src/data/researchCap.js';
 
 /**
  * Stamped top-level on every exchange produced under the grounding contract
@@ -410,12 +418,34 @@ export function historyMessageType(exchange) {
  * in write order.
  */
 export function selectHistoryWindow(chatExchanges, { window = HISTORY_WINDOW } = {}) {
-  const recent = Array.isArray(chatExchanges) ? chatExchanges.slice(-window) : [];
+  // THE RESEARCH CARDS COME OUT BEFORE THE SLICE (review B-7). They are not
+  // conversation, so counting them against the window would let three taps cost
+  // three turns of the history the window exists to carry. They are excluded
+  // again inside the loop — see below — because that exclusion is the D-121
+  // guarantee and must not depend on this line staying here.
+  const all = Array.isArray(chatExchanges) ? chatExchanges : [];
+  const recent = all
+    .filter((ex) => !(ex && typeof ex === 'object' && historyMessageType(ex) === RESEARCH_MESSAGE_TYPE))
+    .slice(-window);
   const pairs = [];
   const agentLines = [];
   for (const ex of recent) {
     if (!ex || typeof ex !== 'object') continue;
     const type = historyMessageType(ex);
+    // PHASE C §5 / D-121 (Sol C-1, BLOCKER) — A RESEARCH CARD IS NEVER HISTORY.
+    //
+    // It is platform data, and this block's heading tells the model these are
+    // ITS OWN EARLIER MESSAGES. A card admitted here would arrive with the
+    // structure saying "you said this" while a prose rule elsewhere said "the
+    // platform holds this" — contradictory signals, and the structure is the
+    // one the model reads as fact. A prose rule cannot repair a history role.
+    //
+    // The exclusion is FIRST and UNCONDITIONAL, ahead of both branches: the
+    // `userMessage` branch does not consult `groundingVersion`, so leaving the
+    // marker off the exchange (which the route also does) would not on its own
+    // keep a card out of `pairs`. The card reaches the prompt through
+    // buildPlatformResearchBlock and nowhere else.
+    if (type === RESEARCH_MESSAGE_TYPE) continue;
     const agentText = ex.agentResponse || ex.agentMessage || '';
     if (isNonEmptyString(ex.userMessage)) {
       pairs.push({ type, userMessage: ex.userMessage, agentText });
@@ -451,6 +481,123 @@ export function buildEarlierMessagesBlock(chatExchanges) {
   });
   return `${EARLIER_MESSAGES_HEADING}\n${lines.join('\n')}`;
 }
+
+// ============ PHASE C §5 / D-121 — THE PLATFORM RESEARCH BLOCK ============
+//
+// THE ONE ENTRANCE a research card has to the grounded prompt (Sol C-1).
+//
+// The card is persisted (spec §3) so a follow-up can be answered about it, and
+// `selectHistoryWindow` excludes it structurally so it can never arrive as the
+// character's own earlier words. It arrives HERE instead, under its own heading,
+// with the symbol, the sections' own dates and the platform-data label intact —
+// the same provenance the player is reading on screen, so the character and the
+// player are looking at one labelled thing.
+//
+// THE RULE TRAVELS WITH THE BLOCK, not with the shared rules. Spec §5 put the
+// line in GROUNDED_SHARED_RULES; carrying it here instead is strictly stronger
+// and is why the deviation is deliberate: a rule about a card is present exactly
+// when a card is, so it can never govern a prompt that has none — and the
+// grounded prompt is byte-identical while SHOW_IT_ENABLED is dark, which a line
+// added to the shared rules would not have been.
+//
+// It also carries the ONE CARVE-OUT the number rule needs (hazard 5): the
+// OUTPUT_FORMAT says "NEVER quote raw data numbers", and a research card IS
+// numbers. Without the carve-out the model either paraphrases numbers it was
+// told not to quote or refuses to answer about the card in front of it.
+
+export const PLATFORM_RESEARCH_HEADING = 'PLATFORM RESEARCH — data the PLATFORM holds, shown to the user on a card at the dates below. NOT your earlier words, NOT what the trading process saw at any check, NOT evidence for any decision.';
+
+export const PLATFORM_RESEARCH_RULE = `THE RESEARCH RULE:
+- A research card is the platform's data at its labelled date. You may describe it, and you may read ITS OWN numbers aloud with their labels and dates — that is the one exception to never quoting raw data numbers, and it extends to nothing else in this prompt.
+- You do not recommend, forecast, or state what the trading process will do with it.
+- It is not yours and it is not the check's: never say you saw it, looked it up, ran it, or that it was your evidence, and never say it explains or caused any decision on the record.
+- If the user asks about a name with no card here, you have no card for it — say so.`;
+
+/** One card, rendered for the prompt: the symbol, then each section with its own label. */
+function renderResearchCard(card) {
+  if (!card || typeof card !== 'object') return null;
+  const lines = [`  ${card.symbol ?? '—'} — ${card.platformDataLabel ?? ''}`.trimEnd()];
+  for (const key of ['technicals', 'fundamentals']) {
+    const section = card[key];
+    if (!section || !Array.isArray(section.facts) || section.facts.length === 0) continue;
+    lines.push(`    ${section.label}: ${section.facts.join(' · ')}`);
+  }
+  const standing = card.standing;
+  if (standing) {
+    const text = standing.line || (Array.isArray(standing.facts) ? standing.facts.join(' · ') : '');
+    if (text) lines.push(`    Standing: ${text}`);
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Every research card inside the history window, in write order, as one typed
+ * block — or null when the battle has none, in which case the prompt gains
+ * nothing at all and neither the heading nor the rule appears.
+ */
+export function buildPlatformResearchBlock(chatExchanges, { window = HISTORY_WINDOW } = {}) {
+  const recent = Array.isArray(chatExchanges) ? chatExchanges.slice(-window) : [];
+  const rendered = recent
+    .filter((ex) => ex && typeof ex === 'object' && historyMessageType(ex) === RESEARCH_MESSAGE_TYPE)
+    .map((ex) => renderResearchCard(ex.card))
+    .filter(Boolean);
+  if (rendered.length === 0) return null;
+  return [PLATFORM_RESEARCH_HEADING, ...rendered, PLATFORM_RESEARCH_RULE].join('\n');
+}
+
+// ============ PHASE C §5 — THE REPLY LINT, ON A RESEARCH FOLLOW-UP ============
+//
+// The discovery (item 13) found the reply lint applied IN CODE only to the
+// anticipation clause and to no chat reply, so "a research reply passes through
+// it" was a build item, not a reuse. This is that item, scoped as the spec
+// scopes it: research follow-ups only.
+//
+// The shipped REPLY_LINT_RE's verbs plus the research verbs the card must never
+// provoke — a verdict about the name, or a claim about what the process will do
+// with the platform's numbers.
+
+// THREE FAMILIES, EACH FROM A BULLET OF THE RULE ABOVE — and none of them a bare
+// modal (review B-2, B-3). An earlier draft matched `should I` and `I'll` on
+// their own, which withheld "I'll walk you through the card" and "Should I show
+// you the fundamentals?" — innocent narration — while passing "That's a buy at
+// these levels", "The process will trim it", "I looked it up" and "Expect a
+// bounce". Precision matters in both directions: a lint that withholds honest
+// sentences teaches the reader the line is noise, and one that misses the
+// breaches it names is decoration.
+
+/** 1. A VERDICT about the name. */
+const RESEARCH_LINT_VERDICT = /\b(?:buy|sell|short|exit|dump|add to|trim)\s+(?:it|this|that|them|now|here|more)\b|\b(?:it|that|this)(?:'s| is)\s+a\s+(?:buy|sell|short|hold|add)\b|\bworth\s+(?:buying|selling|shorting|holding|owning|adding)\b|\btime to\s+(?:buy|sell|exit|cut|trim|add)\b|\b(?:I|we)(?:'d| would|'ll| will| am going to| going to)\s+(?:buy|sell|short|hold|exit|swap|rotate|equip|trim|add|cut)\b|\b(?:cheap|expensive|undervalued|overvalued)\s+(?:enough\s+)?to\s+(?:buy|own|add)\b|\bshould\s+(?:I|we)\s+(?:put|add|buy|sell|take|hold|exit|swap|rotate|equip|cut|trim)\b/i;
+
+/** 2. A FORECAST, or a claim about what the trading process will do — in any person. */
+// The SUBJECT here is the process, never the speaker: first-person trading
+// intent is the verdict family's, and folding `I|we` in here made "I'll keep the
+// read tight" a breach (review B-3's own example).
+const RESEARCH_LINT_FORECAST = /\b(?:the\s+)?(?:process|system|agent|it)\s*(?:'ll|\s+will)\s+(?:trim|cut|rotate|swap|exit|buy|sell|add|drop|take|act)\b|\bit(?:'ll| will)\s+(?:get\s+)?(?:rotated|cut|trimmed|swapped|sold|bought|dropped)\b|\bexpect\s+(?:a|an|the|it|more|further)\b|\b(?:should|likely to|going to)\s+(?:bounce|break|rally|fall|drop|run|reverse)\b|\bif\s+it\s+(?:breaks|holds|fades|drops|rallies)[^.]*\b(?:I|we)(?:'m| am|'ll| will)\b/i;
+
+/** 3. AN ATTRIBUTION the card cannot bear: the narrator's own, or the check's. */
+const RESEARCH_LINT_ATTRIBUTION = /\b(?:I|we)\s+(?:looked\s+(?:it|this|that|them)?\s*up|ran\s+(?:the|those|these)?\s*(?:numbers|figures|analysis)|pulled\s+(?:the|those|these)|checked\s+(?:it|this|that|them)|dug\s+into)\b|\bmy\s+(?:evidence|analysis|research|check)\b|\b(?:what|that(?:'s| is) what)\s+(?:my|the)\s+check\s+saw\b|\bthose\s+numbers\s+were\s+my\b|\b(?:I|we)\s+saw\s+(?:it|this|that|those)\s+at\s+the\b/i;
+
+export const RESEARCH_REPLY_LINT_RE = new RegExp(
+  [RESEARCH_LINT_VERDICT.source, RESEARCH_LINT_FORECAST.source, RESEARCH_LINT_ATTRIBUTION.source].join('|'),
+  'i',
+);
+
+/**
+ * A research follow-up's reply passes when it breaks NEITHER lint: the shipped
+ * anticipation lint (the "I'll rotate / eyeing / watching" family) nor the
+ * verdict family above.
+ */
+export function passesResearchReplyLint(text) {
+  return passesReplyLint(text) && !(typeof text === 'string' && RESEARCH_REPLY_LINT_RE.test(text));
+}
+
+/**
+ * What the RECORD says when a reply about a card failed the lint. A code-owned
+ * truth the model cannot override (the renderDirectiveStatus precedent): the
+ * breach is not voiced, and the turn says plainly that it was withheld rather
+ * than pretending the character said something else.
+ */
+export const RESEARCH_LINT_WITHHELD_LINE = "That answer didn't hold to the rules this conversation runs under, so it wasn't sent. Ask again and I'll stick to what the record and the platform's own dated data say.";
 
 // ==================== D-76 — THE PLAN AT DEPLOY (the opener) ====================
 
@@ -878,10 +1025,16 @@ RULES:
  *
  * @returns {Array<{kind:'directive', id:string, text:string}|{kind:'ask', text:string}>|null}
  */
-export function normalizeSuggestedActions(raw, archetype) {
+export function normalizeSuggestedActions(raw, archetype, options = {}) {
   if (!Array.isArray(raw)) return null;
+  // Phase C §1 — the research chip. `battle` arrives ONLY when the caller has
+  // resolved SHOW_IT_ENABLED on (chat.js reads the flag at call time), so this
+  // module needs no flag of its own and a research chip is dropped exactly as
+  // any other unknown kind while the flag is dark.
+  const battle = options && typeof options === 'object' ? options.battle : null;
   const out = [];
   const seenIds = new Set();
+  const seenSymbols = new Set();
   for (const item of raw) {
     if (typeof item === 'string') {
       const text = item.trim();
@@ -901,8 +1054,49 @@ export function normalizeSuggestedActions(raw, archetype) {
       if (!text) continue;
       seenIds.add(id);
       out.push({ kind: 'directive', id, text });
+      continue;
+    }
+    // Phase C §1 (D-116) — a research chip is a STRUCTURED REQUEST, validated
+    // against the battle's universe exactly as a directive id is validated
+    // against the menu (hazard 6: never trust a client- or model-supplied
+    // symbol). The chip carries the UNIVERSE'S OWN spelling, so what the tap
+    // sends is what the doc holds; a name outside the universe, a duplicate, or
+    // a research chip on a battle the caller did not hand over is dropped.
+    if (item.kind === 'research') {
+      // NO CHIP FOR A READ THAT CANNOT BE SPENT. Neither the model nor this
+      // module was cap-aware, so after the third card the character kept
+      // offering `Show it · MPC` and the tap answered 409 — a chip whose label
+      // is a promise the route will refuse (the `Files:` chip's own rule, §6.2:
+      // what it says it does is what the route will do, and nothing else can be
+      // tapped into existence).
+      if (!battle || countResearchUsed(battle.chatExchanges) >= RESEARCH_CAP) continue;
+      const symbol = canonicalUniverseSymbol(battle, item.symbol);
+      if (!symbol || seenSymbols.has(symbol)) continue;
+      seenSymbols.add(symbol);
+      out.push({ kind: 'research', symbol });
+      continue;
     }
     // any other kind: dropped
   }
   return out.length ? out : null;
 }
+
+// ==================== §1 (Phase C) — THE RESEARCH CHIP, OFFERED ====================
+//
+// The third kind is offered to the model in its OWN block, appended next to
+// GROUNDED_OUTPUT_FORMAT under SHOW_IT_ENABLED — never as an edit to the shared
+// OUTPUT_FORMAT const, which would change the grounded prompt's bytes while the
+// flag is dark (the ARCHETYPE_PROPOSAL_BLOCK precedent, review C3).
+//
+// The model may only NAME a name. It never composes the card, never says what
+// the card will show, and never earns a research chip by classifying a typed
+// question as research — `research_only` stays the post-call label it is today
+// (D-116).
+
+export const RESEARCH_CHIP_BLOCK = `THE THIRD OPTION KIND — "research":
+{ "kind": "research", "symbol": "<one ticker from this battle's book or bench>" }
+
+- It offers to SHOW the user the platform's own data on that name: the technicals the platform computes and the fundamentals on the rankings mirror, dated and attributed, composed by the system.
+- You are offering a screen, not an answer. Do NOT say what the card will show, do NOT preview a number, and do NOT describe the name's setup to justify the offer.
+- The symbol must be a name in this battle — a piece on the board, a name on the bench, or a name on the watchlist in front of the agent. A name the battle does not hold is dropped by the server and the option disappears.
+- It is not a recommendation to buy, sell, hold or exit, and offering it says nothing about what the trading process will do.`;

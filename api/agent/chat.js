@@ -20,13 +20,19 @@ import { resolveBudgetDay, readAgentChatBudget, chargeAgentChatBudget } from '..
 // Archetype Integrity — Phase E1 (the deterministic gate). Flag-gated; OFF/review
 // run the literal legacy normalizeDirective path → byte-identical.
 import { gateDirective, renderDirectiveStatus } from '../_utils/directiveGate.js';
+// Phase C / D-121 — the persisted research type, so BOTH history builders key on
+// the same name and neither excludes a card by accident.
+import { RESEARCH_MESSAGE_TYPE } from '../../src/data/decisionRecord.js';
 import { getEffectiveArchetype } from '../_utils/directiveIdentity.js';
 // The agent-belongs-to-this-battle check the deterministic filing route has
 // carried since it shipped (file-directive.js check 3), now shared rather than
 // re-typed: ownership proves the battle is the caller's, not that the agent
 // they named is the one this battle is bound to.
 import { agentBelongsToBattle, AGENT_BATTLE_MISMATCH } from '../_utils/agentBattleBinding.js';
-import { ARCHETYPE_INTEGRITY_MODE, LEAGUE_AGENT_CHAT_ENABLED, getVoiceGroundingMode } from '../../src/config/featureFlags.js';
+// SHOW_IT_ENABLED (Phase C §1) rides the SAME featureFlags import: a second
+// import statement for one module is a second thing to keep in step with every
+// vi.mock site. Read at CALL time at the one splice below.
+import { ARCHETYPE_INTEGRITY_MODE, LEAGUE_AGENT_CHAT_ENABLED, getVoiceGroundingMode, SHOW_IT_ENABLED } from '../../src/config/featureFlags.js';
 // Voice-layer grounding (VOICE_LAYER_GROUNDING_SPEC_V1_2): the per-caller mode
 // is read at CALL time through getVoiceGroundingMode(uid); under 'on' (battle
 // mode) the grounded prompt and the grounded history window are what the model
@@ -36,6 +42,11 @@ import {
   buildGroundedConversationHistory,
   GROUNDED_ELICITATION_INSTRUCTIONS,
   normalizeSuggestedActions,
+  // Phase C §5 — the research follow-up's lint and the line that replaces a
+  // reply that fails it.
+  buildPlatformResearchBlock,
+  passesResearchReplyLint,
+  RESEARCH_LINT_WITHHELD_LINE,
 } from '../_utils/voiceLayerGrounding.js';
 // Archetype Integrity — Phase E2 (capabilities manifest → USER LEVERS hand-off).
 // Flag-gated, battle-only; the manifest is built only when the feature is ON.
@@ -639,7 +650,15 @@ export default async function handler(req, res) {
     // assistant half would produce assistant→assistant sequences that
     // crash the chat call. __REVIEW_START__ (Phase 1 auto-debrief
     // sentinel) is a non-empty string so it survives the filter.
+    // PHASE C / D-121 part 3 (review B-8): the research exclusion is STRUCTURAL
+    // here too. This is the builder every caller is on while VOICE_GROUNDING_MODE
+    // is not 'on', so it is the one that would actually carry a card into a
+    // prompt today — and it excluded one only INCIDENTALLY, because
+    // `buildResearchExchange` happens to write no `userMessage`. Adding that
+    // field for any reason would have re-admitted the card, which is the exact
+    // "a refactor cannot re-admit it by dropping a marker" the ruling forbids.
     const previousExchanges = (battle.chatExchanges || [])
+      .filter(ex => ex?.messageType !== RESEARCH_MESSAGE_TYPE)
       .slice(-10)
       .filter(ex => typeof ex?.userMessage === 'string' && ex.userMessage.length > 0);
     // Voice-layer grounding §3.4: under the flag the window has ONE rule —
@@ -868,22 +887,64 @@ export default async function handler(req, res) {
     // SERVER-DERIVED archetype's menu and drops an off-menu id, so a chip's
     // `Files:` label is true by mechanism. The shipped path keeps the model's
     // strings untouched.
+    // Phase C §1 — the research chip. The battle is handed to the normalizer
+    // ONLY when SHOW_IT_ENABLED resolves on (read here, at call time), so a
+    // `{ kind:'research', symbol }` the model emits while the flag is dark is
+    // dropped as any other unknown kind is. With the battle in hand the symbol
+    // is validated against the battle's universe — book ∪ bench ∪ hot bench ∪
+    // the equipped watchlist — exactly as a directive id is validated against
+    // the menu (D-116).
     const suggestedActions = grounded
-      ? normalizeSuggestedActions(parsed.suggestedActions, getEffectiveArchetype(battle, agent))
+      ? normalizeSuggestedActions(
+        parsed.suggestedActions,
+        getEffectiveArchetype(battle, agent),
+        SHOW_IT_ENABLED ? { battle } : {},
+      )
       : (parsed.suggestedActions || null);
+
+    // 17b. PHASE C §5 — THE REPLY LINT, ON A RESEARCH FOLLOW-UP.
+    //
+    // The discovery (item 13) found the lint applied IN CODE only to the
+    // anticipation clause and to no chat reply, so this is a build item, not a
+    // reuse — and it is scoped as the spec scopes it: only a turn whose prompt
+    // actually carried a PLATFORM RESEARCH block can fail it, so no other reply
+    // in the product changes behaviour, and none can while the flag is dark.
+    //
+    // A BREACH IS NOT VOICED. The reply is withheld and replaced by a
+    // code-owned line — a truth-of-record the model cannot override, the
+    // renderDirectiveStatus precedent — rather than shipped with a verdict in
+    // it and a rule beside it saying there should not be one.
+    const researchFollowUp = grounded
+      && SHOW_IT_ENABLED
+      && buildPlatformResearchBlock(battle?.chatExchanges) !== null;
+    const researchLintFailed = researchFollowUp && !passesResearchReplyLint(parsed.response);
+    // THE WHOLE TURN IS WITHHELD, NOT JUST ITS WORDS (review B-1). Clearing the
+    // response while leaving the directive intact filed a strategic instruction
+    // EXTRACTED FROM THE WITHHELD SENTENCE — the process would have read at its
+    // next check a directive whose only source was a sentence the platform
+    // judged unfit to show the user, beside a line saying nothing was sent.
+    const withheldModelText = researchLintFailed ? parsed.response : null;
+    if (researchLintFailed) {
+      console.warn(`[VoiceLayer] research reply lint WITHHELD a reply (battle ${battleId})`);
+      parsed.response = RESEARCH_LINT_WITHHELD_LINE;
+      parsed.suggestedActions = null;
+    }
+    const lintedSuggestedActions = researchLintFailed ? null : suggestedActions;
+    const lintedDirective = researchLintFailed ? null : normalizedDirective;
+    const lintedHasDirective = researchLintFailed ? false : effectiveHasDirective;
 
     // 18. Map to client contract
     const clientResponse = {
       agentMessage: parsed.response,
-      extractedRule: normalizedDirective
-        ? { text: normalizedDirective.text, targetType: 'general', targetValue: null, rationale: normalizedDirective.text }
+      extractedRule: lintedDirective
+        ? { text: lintedDirective.text, targetType: 'general', targetValue: null, rationale: lintedDirective.text }
         : null,
-      suggestedActions,
+      suggestedActions: lintedSuggestedActions,
       exchangeNumber: currentBudget + 1,
       budgetTotal: budgetLimit,
       scratchpad: cleanScratchpad,
-      hasDirective: effectiveHasDirective,
-      directive: normalizedDirective,
+      hasDirective: lintedHasDirective,
+      directive: lintedDirective,
       lesson: lesson ? { id: lesson.id, text: lesson.text } : null,
       forgeSuggestion: forgeSuggestion ? { id: forgeSuggestion.id, text: forgeSuggestion.text } : null,
       mode,
@@ -895,7 +956,7 @@ export default async function handler(req, res) {
       // makes prose-honesty structural). directiveFallback is the E1 conversational
       // no-change line on a failed-repair turn (null otherwise). Frontend deferred.
       ...(gateOutcome
-        ? { ...renderDirectiveStatus(effectiveHasDirective), directiveFallback: gateFallbackLine }
+        ? { ...renderDirectiveStatus(lintedHasDirective), directiveFallback: gateFallbackLine }
         : {}),
     };
 
@@ -913,10 +974,15 @@ export default async function handler(req, res) {
       gameMode: battle.gameMode || null,
       exchangeNumber: currentBudget + 1,
       userMessage: sanitizedMessage,
-      agentMessage: parsed.response,
+      // THE MODEL'S OWN TEXT, not the code-authored replacement (review B-6).
+      // Writing the withheld line here would seed the honesty corpus with a
+      // platform-written sentence attributed to Gemma, and would discard the
+      // one artefact a breach is worth recording: what the model actually said.
+      agentMessage: withheldModelText ?? parsed.response,
+      ...(researchLintFailed ? { researchLint: 'withheld', researchLintSent: RESEARCH_LINT_WITHHELD_LINE } : {}),
       scratchpad: cleanScratchpad,
-      directive: normalizedDirective,
-      suggestedActions,
+      directive: lintedDirective,
+      suggestedActions: lintedSuggestedActions,
       elicitationTarget: elicitationTarget.dimension,
       anchorContext: anchorContext || null,
       hasDirective: effectiveHasDirective,
@@ -936,7 +1002,7 @@ export default async function handler(req, res) {
     //     threadId is stamped on the chat exchange, on the battle's single
     //     active-directive slot, and eventually flows through Haiku's eval
     //     tool output → statusFeed entries → the frontend trade card indicator.
-    const directiveThreadId = (effectiveHasDirective && normalizedDirective) ? randomUUID() : null;
+    const directiveThreadId = (lintedHasDirective && lintedDirective) ? randomUUID() : null;
 
     // Voice-layer grounding §6.3 — the grounded turn tells the client what it
     // is and what the battle's CURRENT directive thread is after this turn:
@@ -956,15 +1022,15 @@ export default async function handler(req, res) {
       userMessage: sanitizedMessage,
       agentResponse: parsed.response,
       scratchpad: cleanScratchpad,
-      hasDirective: effectiveHasDirective,
+      hasDirective: lintedHasDirective,
       // The shipped record, from the ONE shape (directiveFiling.js): Release 2's
       // additive id+version ride it only when the gate minted them, so the
       // legacy (flag-off) path keeps its exact pre-Release-2 shape.
       directive: directiveThreadId
-        ? buildDirectiveRecord(normalizedDirective, directiveThreadId)
+        ? buildDirectiveRecord(lintedDirective, directiveThreadId)
         : null,
       directiveThreadId,
-      suggestedActions,
+      suggestedActions: lintedSuggestedActions,
       elicitationTarget: elicitationTarget.dimension,
       timestamp: new Date().toISOString(),
       mode,
@@ -984,6 +1050,11 @@ export default async function handler(req, res) {
       // chatExchanges write, NOT a fire-and-forget log). Stamped on the EXCHANGE,
       // never as a new battle-doc key (no createAgentBattle doc-shape contact).
       ...(gateOutcome ? { archetypeGate: gateOutcome } : {}),
+      // Phase C §5 — the record says the reply was WITHHELD by the lint, so
+      // scrollback shows a code-owned line that is explained rather than a
+      // sentence the character appears to have chosen. Absent on every other
+      // turn, so no shape moves while the flag is dark.
+      ...(researchLintFailed ? { researchLint: 'withheld' } : {}),
       // Voice-layer grounding §3.4 (M3): every exchange produced under the
       // grounding contract carries the TOP-LEVEL marker, so the history window
       // has one rule. Absent when the shipped prompt was sent (off / shadow):
@@ -1003,7 +1074,7 @@ export default async function handler(req, res) {
       recentElicitationTargets: recentTargets,
       // The slot, from the same ONE shape (see the exchange record above).
       ...(directiveThreadId ? {
-        directive: buildDirectiveSlot(normalizedDirective, directiveThreadId, new Date().toISOString()),
+        directive: buildDirectiveSlot(lintedDirective, directiveThreadId, new Date().toISOString()),
       } : {}),
     });
 

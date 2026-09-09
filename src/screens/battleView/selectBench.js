@@ -59,66 +59,15 @@
 // an outage tick carries neither and the scan-back walks past it.
 
 import { splitSentences, namesSymbol, selectWhyState, WHY_KIND } from './selectWhyState';
+import { selectBenchRoster } from '../../data/battleUniverse';
 
-const TIERS = ['star', 'core', 'support'];
-
-/** A symbol from either persisted shape: a bare string, or `{ symbol }`. */
-function symbolOf(entry) {
-  if (typeof entry === 'string') return entry.trim() || null;
-  const symbol = entry?.symbol;
-  return typeof symbol === 'string' && symbol.trim() ? symbol.trim() : null;
-}
-
-function pushAll(into, list) {
-  if (!Array.isArray(list)) return;
-  for (const entry of list) {
-    const symbol = symbolOf(entry);
-    if (symbol) into.push(symbol);
-  }
-}
-
-/** The book: every piece with a row on the board. */
-export function selectBookSymbols(battle) {
-  const book = new Set();
-  const portfolio = battle?.portfolio;
-  for (const tier of TIERS) {
-    if (!Array.isArray(portfolio?.[tier])) continue;
-    for (const entry of portfolio[tier]) {
-      const symbol = symbolOf(entry);
-      if (symbol) book.add(symbol);
-    }
-  }
-  return book;
-}
-
-/**
- * The bench roster: the three bench lists minus the book, deduped, IN LIST
- * ORDER (persisted bench first, then the hot bench, then the equipped
- * watchlist) — the order the doc carries, never re-sorted, because a bench
- * re-ordered by this module would disagree with every other reading of it.
- *
- * @param {object|null} battle
- * @returns {string[]}
- */
-export function selectBenchRoster(battle) {
-  if (!battle || typeof battle !== 'object') return [];
-  const ordered = [];
-  pushAll(ordered, battle.portfolio?.bench?.stocks);
-  const crypto = symbolOf(battle.portfolio?.bench?.crypto);
-  if (crypto) ordered.push(crypto);
-  pushAll(ordered, battle.watchlist?.hotBench);
-  pushAll(ordered, battle.agentContext?.equippedWatchlist?.tickers);
-
-  const book = selectBookSymbols(battle);
-  const seen = new Set();
-  const roster = [];
-  for (const symbol of ordered) {
-    if (book.has(symbol) || seen.has(symbol)) continue;
-    seen.add(symbol);
-    roster.push(symbol);
-  }
-  return roster;
-}
+// THE UNIVERSE'S TWO SELECTORS live in the zero-import `src/data/battleUniverse.js`
+// and are re-exported here under their shipped names — the Phase C research
+// route validates a requested symbol against the SAME union, and `api/` cannot
+// import this module (its chain reaches `components/Dashboard/desk/deskCopy`,
+// BUILD_RULES §4's Node-clean condition). One derivation, two readers: the
+// bench the player sees and the universe the server admits (BUILD_RULES §9).
+export { selectBookSymbols, selectBenchRoster } from '../../data/battleUniverse';
 
 /**
  * The last `evaluations[]` entry that carries the DECIDER's own words, however

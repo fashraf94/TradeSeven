@@ -40,6 +40,10 @@ function mintedLabel(chip) {
   if (!chip || typeof chip !== 'object') return null;
   if (chip.kind === 'directive') return chip.id && typeof chip.text === 'string' && chip.text ? filesChip(chip.text) : null;
   if (chip.kind === 'ask') return typeof chip.text === 'string' && chip.text ? chip.text : null;
+  // Phase C §1 — a `research` chip is DROPPED on this surface (review F-3): the
+  // arena has no code path that can render a research card, so labelling one
+  // here would offer a tap that spends a scarce read and shows nothing. Falls
+  // through to the same `null` any unknown kind gets.
   return null;
 }
 
@@ -346,7 +350,7 @@ export function AgentDock({ lines, archName, live, ask, onAsk, compact = false, 
           askLive(chip.text);
         };
         return (
-          <button key={`minted-${chip.kind}-${directive ? chip.id : chip.text}-${i}`} className="bv2-tap" data-chip-kind={chip.kind}
+          <button key={`minted-${chip.kind}-${chip.id || chip.symbol || chip.text}-${i}`} className="bv2-tap" data-chip-kind={chip.kind}
             onClick={onTap} disabled={busy}
             style={{ all: 'unset', cursor: busy ? 'default' : 'pointer',
               display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 11px', borderRadius: 999,

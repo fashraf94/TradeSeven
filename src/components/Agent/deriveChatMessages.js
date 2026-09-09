@@ -24,7 +24,7 @@
 // carries `suggestedActions: null`. Both are pinned by name in
 // `deriveChatMessages.test.js` instead.
 
-import { GROUNDING_VERSION, DIRECTIVE_FILED_MESSAGE_TYPE } from '../../data/decisionRecord';
+import { GROUNDING_VERSION, DIRECTIVE_FILED_MESSAGE_TYPE, RESEARCH_MESSAGE_TYPE } from '../../data/decisionRecord';
 
 /**
  * @param {Array|null} chatExchanges  the subscribed doc's exchanges
@@ -99,6 +99,14 @@ export function deriveChatMessages(chatExchanges) {
       // A chip filing's audit exchange: no narrator words — the ExecutionCard
       // is its whole render, so the bubble body is skipped (review R-04).
       _filed: ex.messageType === DIRECTIVE_FILED_MESSAGE_TYPE,
+      // Phase C §3 — the research card, as the server composed it. Carried, not
+      // recomposed: every string on it is the platform's own (BUILD_RULES §9).
+      // Like a chip filing, this exchange has no narrator words, so the bubble
+      // body is skipped and the card is its whole render.
+      _research: ex.messageType === RESEARCH_MESSAGE_TYPE ? (ex.card || null) : null,
+      // The card's scope is a FACT on the record, not a detection over prose —
+      // the card names one piece by construction (scopeTape.js).
+      _researchSymbol: ex.messageType === RESEARCH_MESSAGE_TYPE ? (ex.symbol || null) : null,
       mode: ex.mode || 'battle',
       timestamp: ts,
       _serverIndex: i,

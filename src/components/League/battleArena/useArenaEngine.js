@@ -163,6 +163,22 @@ export function useArenaEngine({
     }
   }, [chatReady, agentId, battleId]);
 
+  // ── Show it is NOT offered on this surface (Phase C §1; review F-3) ─────────
+  //
+  // The arena's transcript is `eng.lines`, built only by `applyAnswer` and
+  // `applyFiled`. It does not read `chatExchanges`, so there is NO code path on
+  // this surface that can render a research card — a tap here would spend one of
+  // three scarce reads and show the player nothing, ever.
+  //
+  // So the dock does not label or tap a research chip at all (CommandDock.jsx),
+  // and this hook exposes no handler. The same rule the Equip door follows: the
+  // product never offers a door it cannot open. Wiring the League surface needs
+  // its own card rendering first, and that is a separate build.
+  //
+  // A research chip can still ARRIVE here — the server mints chips for the
+  // grounded turn regardless of which client asked — and the dock drops it,
+  // which is the same thing it does with any kind it cannot render.
+
   const fetchRemaining = React.useCallback(async () => {
     if (!chatReady) return;
     try {

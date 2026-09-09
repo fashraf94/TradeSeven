@@ -23,6 +23,7 @@ const {
   archetypeFlag,
   voiceLayerArgs,
   leagueChatFlag,
+  showIt,
   grounding,
   promptBuilder,
   budget,
@@ -40,6 +41,8 @@ const {
   voiceLayerArgs: { current: [] }, // Phase E2 — capture buildVoiceLayerPrompt args
   // League arena two-way ask — the kill-switch flag + a controllable budget module.
   leagueChatFlag: { on: false },
+  // Phase C §1/§5 — SHOW_IT_ENABLED, settable per row; the real value is false.
+  showIt: { on: false },
   // Voice-layer grounding — the per-caller accessor, controllable per test;
   // the uids it was asked about are captured (the route must ask for the
   // TOKEN's uid, never the body's).
@@ -143,6 +146,9 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   get ARCHETYPE_INTEGRITY_MODE() { return archetypeFlag.mode; },
   get LEAGUE_AGENT_CHAT_ENABLED() { return leagueChatFlag.on; },
   getVoiceGroundingMode: (uid) => { grounding.calls.push(uid); return grounding.mode; },
+  // Phase C §1/§5 — SHOW_IT_ENABLED, settable per row. The real value is false
+  // (dark), which is what every pre-existing row keeps.
+  get SHOW_IT_ENABLED() { return showIt.on; },
 }));
 
 // The per-day budget module is exercised in agentChatBudget.test.js; here it is
@@ -266,6 +272,7 @@ beforeEach(() => {
   archetypeFlag.mode = 'off';
   voiceLayerArgs.current = [];
   leagueChatFlag.on = false;
+  showIt.on = false;
   grounding.mode = 'off';
   grounding.calls = [];
   promptBuilder.throwWhen = null;
@@ -1597,5 +1604,127 @@ describe('agent/chat — the shadow record finishes before the function can be f
     await handler(req, res);
     expect(res.statusCode).toBe(200);
     expect(warn.mock.calls.filter(([m]) => String(m).includes('shadow conversation record'))).toHaveLength(0);
+  });
+});
+
+// ============================================================================
+// Phase C §5 — THE RESEARCH FOLLOW-UP'S REPLY LINT (D-121; discovery item 13)
+//
+// The lint is applied IN CODE, on the route, to a turn whose prompt actually
+// carried a PLATFORM RESEARCH block — and to no other turn in the product. A
+// breach is WITHHELD, not voiced: the reply is replaced by a code-owned line
+// (the renderDirectiveStatus precedent) and the record says so.
+// ============================================================================
+
+describe('agent/chat — the research follow-up reply lint (Phase C §5)', () => {
+  const CARD = {
+    symbol: 'MPC',
+    eyebrow: 'Research',
+    platformDataLabel: 'Platform data · not what the check saw',
+    technicals: { facts: ['RSI 62.4 · neutral'], label: 'Technicals · daily indicators as of Sep 8' },
+    fundamentals: { facts: ['P/E 14.2 · sector median 19.6'], label: 'Fundamentals · as of Sep 5' },
+    standing: { place: 'bench', line: 'On the bench', facts: [] },
+  };
+  const RESEARCH_EXCHANGE = { messageType: 'research', symbol: 'MPC', card: CARD, agentResponse: '', timestamp: '2026-09-09T14:00:00.000Z' };
+  const WITHHELD = "That answer didn't hold to the rules this conversation runs under, so it wasn't sent. Ask again and I'll stick to what the record and the platform's own dated data say.";
+
+  const run = async (reply, { cards = [RESEARCH_EXCHANGE], chips = ['Tell me more'] } = {}) => {
+    callGemmaVoiceImpl.current = async () => JSON.stringify({ response: reply, suggestedActions: chips });
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: { ...VALID_BATTLE, chatExchanges: cards } });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'what do you think about those numbers?' });
+    await handler(req, res);
+    const union = fixture.written.updateCalls.find(c => c.updates?.chatExchanges?.__op === 'arrayUnion');
+    return { res, exchange: union?.updates.chatExchanges.items[0] ?? null };
+  };
+
+  it('a reply that describes the card at its dates is sent unchanged', async () => {
+    grounding.mode = 'on';
+    showIt.on = true;
+    const good = 'The card puts MPC at a P/E of 14.2 against a sector median of 19.6, as of Sep 5.';
+    const { res, exchange } = await run(good);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.agentMessage).toBe(good);
+    expect(exchange.agentResponse).toBe(good);
+    expect(exchange.researchLint).toBeUndefined();
+  });
+
+  it('a VERDICT is withheld — the response, the exchange and the chips all', async () => {
+    grounding.mode = 'on';
+    showIt.on = true;
+    const { res, exchange } = await run('Cheap against the sector — I would buy it here.');
+    expect(res.statusCode).toBe(200);
+    expect(res.body.agentMessage).toBe(WITHHELD);
+    expect(res.body.suggestedActions).toBeNull();
+    expect(exchange.agentResponse).toBe(WITHHELD);
+    expect(exchange.suggestedActions).toBeNull();
+    // The record says WHY the line is there, rather than leaving it looking
+    // like a sentence the character chose.
+    expect(exchange.researchLint).toBe('withheld');
+  });
+
+  it('WITHHOLDS THE WHOLE TURN: no directive is filed from a sentence that was not sent (review B-1)', async () => {
+    grounding.mode = 'on';
+    showIt.on = true;
+    callGemmaVoiceImpl.current = async () => JSON.stringify({
+      response: 'Cheap against the sector — I would buy it here.',
+      hasDirective: true,
+      directive: { text: 'Lean into refiners on valuation', expiry: 'end_of_battle' },
+    });
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: { ...VALID_BATTLE, chatExchanges: [RESEARCH_EXCHANGE] } });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'what do you think?' });
+    await handler(req, res);
+    const union = fixture.written.updateCalls.find(c => c.updates?.chatExchanges?.__op === 'arrayUnion');
+    const exchange = union.updates.chatExchanges.items[0];
+
+    expect(res.body.agentMessage).toBe(WITHHELD);
+    expect(res.body.extractedRule).toBeNull();
+    expect(res.body.hasDirective).toBe(false);
+    expect(res.body.directive).toBeNull();
+    expect(exchange.hasDirective).toBe(false);
+    expect(exchange.directive).toBeNull();
+    expect(exchange.directiveThreadId).toBeNull();
+    // …and no directive SLOT is written onto the battle either.
+    const slotWrite = fixture.written.updateCalls.find(c => c.updates?.directive);
+    expect(slotWrite).toBeUndefined();
+  });
+
+  it('the shadow record keeps the MODEL’s own text, not the code-authored line (review B-6)', async () => {
+    grounding.mode = 'on';
+    showIt.on = true;
+    const breach = 'Cheap against the sector — I would buy it here.';
+    await run(breach);
+    const record = shadowLogCalls.current[0];
+    expect(record.agentMessage).toBe(breach);
+    expect(record.researchLint).toBe('withheld');
+    expect(record.researchLintSent).toBe(WITHHELD);
+  });
+
+  it('the same verdict is UNTOUCHED on a battle with no research card — the lint is scoped', async () => {
+    grounding.mode = 'on';
+    showIt.on = true;
+    const verdict = 'Cheap against the sector — I would buy it here.';
+    const { res, exchange } = await run(verdict, { cards: [] });
+    expect(res.body.agentMessage).toBe(verdict);
+    expect(exchange.researchLint).toBeUndefined();
+  });
+
+  it('and is UNTOUCHED while the flag is dark, card or no card', async () => {
+    grounding.mode = 'on';
+    showIt.on = false;
+    const verdict = 'Cheap against the sector — I would buy it here.';
+    const { res, exchange } = await run(verdict);
+    expect(res.body.agentMessage).toBe(verdict);
+    expect(exchange.researchLint).toBeUndefined();
+  });
+
+  it('and is UNTOUCHED on an ungrounded turn', async () => {
+    grounding.mode = 'off';
+    showIt.on = true;
+    const verdict = 'Cheap against the sector — I would buy it here.';
+    const { res, exchange } = await run(verdict);
+    expect(res.body.agentMessage).toBe(verdict);
+    expect(exchange.researchLint).toBeUndefined();
   });
 });

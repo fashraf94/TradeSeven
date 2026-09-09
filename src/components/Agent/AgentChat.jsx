@@ -17,6 +17,9 @@ import { OPENER_LAZY_FALLBACK_ENABLED } from '../../config/featureFlags';
 // its error strings would trip it).
 import { BATTLE_VIEW_COPY } from '../../screens/battleView/battleViewCopy';
 import { deriveChatMessages } from './deriveChatMessages';
+// Phase C §3 — the research card's whole render. Absent unless an exchange
+// carries one, so nothing changes while SHOW_IT_ENABLED is dark.
+import ResearchCard from './ResearchCard';
 import { TradeCard, CheckCard, CheckRunLine, SPEECH_EYEBROW_COLOR } from '../../screens/battleView/TapeCards';
 import { collapseQuietChecks, TAPE_KIND } from '../../screens/battleView/buildTape';
 import { scopeTape } from '../../screens/battleView/scopeTape';
@@ -107,6 +110,12 @@ function chipLabel(action) {
   if (!action || typeof action !== 'object') return null;
   if (action.kind === 'directive') return BATTLE_VIEW_COPY.filesChip(action.text);
   if (action.kind === 'ask') return typeof action.text === 'string' && action.text ? action.text : null;
+  // Phase C §1 — the research chip names the NAME (`Show it · MPC`). It reaches
+  // the client only when the server minted it, and the server mints it only
+  // under SHOW_IT_ENABLED with the symbol validated against the battle's
+  // universe (D-116), so the client renders what it is handed and validates
+  // nothing of its own.
+  if (action.kind === 'research') return BATTLE_VIEW_COPY.showItChip(action.symbol);
   return null;
 }
 
@@ -388,7 +397,10 @@ function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSendi
           narrator words: the ExecutionCard below is its whole render, so the
           empty bubble body is skipped — keyed on the persisted type, never on
           the text being empty (review R-04). */}
-      {message._filed ? null : (
+      {/* Phase C §3 — a research card's exchange carries no narrator words
+          either: the card below is its whole render. Same rule, same shape as
+          the chip filing above it, keyed on the persisted type. */}
+      {message._filed || message._research ? null : (
         <div style={{
           background: '#15171E',
           borderLeft: `3px solid ${accent}`,
@@ -405,6 +417,7 @@ function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSendi
           {renderMessageWithEntities(message.text, onSymbolClick, knownTickers)}
         </div>
       )}
+      {message._research ? <ResearchCard card={message._research} /> : null}
       {/* Voice-layer grounding §6.3 — the code-owned no-change status, from the
           PERSISTED exchange: a grounded turn on which the gate ran and wrote no
           directive. Never from the reply body; never on a legacy exchange. */}
@@ -1075,6 +1088,51 @@ export default function AgentChat({
     }
   }
 
+  // ── Show it (Phase C §1 / §2) ─────────────────────────────────────────────
+  //
+  // The same discipline as the filing above: the tap calls the deterministic
+  // route with the symbol and renders NOTHING from the response — the Firestore
+  // listener delivers the `research` exchange the route wrote, and the card is
+  // rendered from that. Only a failure has a line here.
+  //
+  // NO OPTIMISTIC INCREMENT (Sol C-2): the door's count is derived from the
+  // subscribed doc, so a route that failed leaves the count exactly where it
+  // was. The client never treats its own displayed count as authorization —
+  // the route re-reads it inside its transaction and is the authority.
+
+  async function showIt(symbol) {
+    const wanted = typeof symbol === 'string' ? symbol.trim() : '';
+    if (!wanted || isSending) return;
+    setError(null);
+    setIsSending(true);
+    try {
+      const user = getAuth().currentUser;
+      if (!user) {
+        setError('Session expired. Please refresh.');
+        return;
+      }
+      const idToken = await user.getIdToken();
+      const res = await fetch('/api/agent/research', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${idToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ agentId, battleId, symbol: wanted }),
+      });
+      if (!res.ok) {
+        if (res.status === 401) setError('Session expired. Please refresh.');
+        else if (res.status === 409) setError(BATTLE_VIEW_COPY.showItExhausted);
+        else setError(BATTLE_VIEW_COPY.showItFailed);
+        return;
+      }
+    } catch {
+      setError(BATTLE_VIEW_COPY.showItFailed);
+    } finally {
+      setIsSending(false);
+    }
+  }
+
   // ── Handle action button click ─────────────────────────────────────────────
 
   function handleActionClick(action) {
@@ -1088,6 +1146,14 @@ export default function AgentChat({
     }
     if (action?.kind === 'directive') {
       fileDirective(action.id);
+      return;
+    }
+    // Phase C §1 — the research tap goes to the RESEARCH ROUTE, never to the
+    // chat route (the directive chip's own rule): a research card is a
+    // code-composed read, not a message, and sending its symbol as text would
+    // spend a message to get a model's guess instead (D-116, D-118).
+    if (action?.kind === 'research') {
+      showIt(action.symbol);
     }
   }
 

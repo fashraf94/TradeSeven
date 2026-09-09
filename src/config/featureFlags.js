@@ -2235,3 +2235,68 @@ export function getVoiceGroundingMode(uid) {
  */
 // Pinned by: tickStampsFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const TICK_STAMPS_ENABLED = false;
+
+/**
+ * PHASE C — SHOW IT (spec V1 §6 / V1.1 ruling 4, ledger D-116 → D-122).
+ *
+ * ONE flag for the second verb: the research path. When it resolves ON —
+ *   · POST /api/agent/research answers (it 404s while this is false, so the
+ *     route does not exist as far as any caller is concerned);
+ *   · a `{ kind: 'research', symbol }` chip survives normalizeSuggestedActions
+ *     and the grounded OUTPUT_FORMAT offers the model the third kind;
+ *   · the Why? panel's third door, the Bench chip's door and the conversation's
+ *     research chip render.
+ * When it is false every one of those is absent — no chip label, no door, no
+ * route, and the grounded prompt is byte-identical to today's.
+ *
+ * FALSE at merge (V1.1 §E): Phase C merges dark and the founder flips it in its
+ * own one-line PR after the build merges. Vercel preview is the smoke surface;
+ * production exists only after the founder merges and deploys.
+ *
+ * Read at CALL time inside the function that gates on it — never a module-scope
+ * derivation — so a hermetic featureFlags mock with an explicit value governs
+ * every test (the TICK_STAMPS_ENABLED / isCharacterPaneOn rule).
+ *
+ * NOT a VOICE_GROUNDING_MODE gate. The research card is code-composed platform
+ * data with no model call, so it does not wait on the voice walk; the narrator's
+ * PLATFORM RESEARCH block is grounded-only by construction (it is assembled only
+ * on the grounded path) and is inert while no research exchange exists.
+ *
+ * FLIP ORDER — READ THIS BEFORE FLIPPING (review B-5). The card is code-composed
+ * platform data and needs no narrator, so this flag is deliberately independent
+ * of VOICE_GROUNDING_MODE. But the FOLLOW-UP is not: the PLATFORM RESEARCH block,
+ * the research rule and the reply lint all ride the GROUNDED prompt, and
+ * `grounded` is false for every caller while the mode is 'shadow'. Flipping this
+ * alone therefore ships the card and its doors WITHOUT the D-121 machinery — the
+ * character cannot see the card at all (both history builders exclude it
+ * structurally, so it honestly says it has no data on the name), but it cannot
+ * discuss it either. The intended sequence is VOICE_GROUNDING_MODE -> 'on'
+ * first, then this flag. Flipping earlier is a product limitation, not a
+ * dishonesty.
+ *
+ * FLIP MAP (the flip PR reconciles these in the SAME commit — BUILD_RULES §2):
+ *   • src/config/showItFlags.test.js — the dark pin row moves to true;
+ *   • src/config/flagPinGuard.test.js — drop SHOW_IT_ENABLED from
+ *     DARK_BY_DESIGN (its integrity test reds if a lit flag is left listed).
+ *   The flag-off darkness suite (api/agent/research.dark.test.js) mocks this
+ *   flag to an explicit false and does NOT move.
+ */
+// Pinned by: showItFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const SHOW_IT_ENABLED = false;
+
+/**
+ * The ONE client-side gate for the Show it doors (Phase C §1 / §6).
+ *
+ * The doors live on the Battle View controller's surfaces — the Why? panel and
+ * the Bench pane — so the gate is the controller AND the flag, the conjunction
+ * living here beside isCharacterPaneOn() rather than at the call sites. Read at
+ * RENDER scope through this accessor, never as the bare constant: many
+ * featureFlags vi.mock sites use a bare factory with no importOriginal spread,
+ * and a missing export THROWS on access under vitest.
+ *
+ * The SERVER does not go through here — the route and the chip normalizer read
+ * SHOW_IT_ENABLED directly, at call time, because neither has a controller.
+ */
+export function isShowItOn() {
+  return isBattleViewControllerOn() && SHOW_IT_ENABLED;
+}

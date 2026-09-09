@@ -486,6 +486,83 @@ export const GROUNDING_VERSION = 1;
  */
 export const DIRECTIVE_FILED_MESSAGE_TYPE = 'directive_filed';
 
+/**
+ * The persisted `messageType` of a research card's exchange (Phase C, spec §3;
+ * api/agent/research.js). It is PLATFORM DATA, not narrator speech and not the
+ * decider's evidence, and its identity is structural on three surfaces that all
+ * key on this one name (D-121):
+ *
+ *   · the cap counts exchanges carrying it (§4 — no new battle-doc key);
+ *   · the narrator's history window EXCLUDES it, the way it excludes a chip
+ *     filing, so the card can never re-enter the prompt as the character's own
+ *     earlier words (Sol C-1);
+ *   · the grounded prompt admits it only through the typed PLATFORM RESEARCH
+ *     block, which reads exchanges by this type.
+ *
+ * A research exchange carries NO `groundingVersion` — not 1, not 0. It is not a
+ * grounded narrator turn and must never be counted as one.
+ */
+export const RESEARCH_MESSAGE_TYPE = 'research';
+
+// ==================== PHASE C §3 — THE RESEARCH CARD'S OWN WORDS ====================
+//
+// Four strings, here in the zero-import module for the same reason the record's
+// vocabulary is: the SERVER composes them onto the persisted card and the CLIENT
+// renders what it was handed, so a label and its number can never come from two
+// sources (BUILD_RULES §9).
+//
+// THE PLATFORM-DATA LABEL IS THE POINT (D-119, Sol C-4). Phase B's evidence
+// section is footed `What this check saw`; this is what the platform knows and
+// the decider did NOT necessarily see. The two vocabularies never share a
+// section, and each section carries its own provenance. The label TRAVELS WITH
+// THE CARD — it is a field of the composed card, not a page-level legend — so a
+// player reading the numbers cannot be looking at a screen where some other
+// header governs them.
+//
+// The enforceable claim is that narrow one. "Never be confused with it" is
+// stronger than the build can prove and is not what the tests assert.
+
+/** The card's eyebrow. */
+export const RESEARCH_EYEBROW = 'Research';
+
+/** The first on-screen platform-data label (D-119). */
+export const PLATFORM_DATA_LABEL = 'Platform data · not what the check saw';
+
+/**
+ * `Technicals · last quote 3:42 PM · daily indicators as of Sep 8` — null-honest
+ * in its own clauses: a vintage the data does not carry is a clause that is not
+ * written, never an "unknown" or a cadence word.
+ */
+export function technicalsLabel({ quoteTime = null, indicatorDate = null } = {}) {
+  const parts = ['Technicals'];
+  if (quoteTime) parts.push(`last quote ${quoteTime}`);
+  if (indicatorDate) parts.push(`daily indicators as of ${indicatorDate}`);
+  return parts.join(' · ');
+}
+
+/**
+ * `Fundamentals · as of Sep 5` — A DATE, NEVER A CADENCE WORD (hazard 13: the
+ * mirror moves with a WEEKDAY cron, so "weekly" is false). No date, no label:
+ * an undated fundamentals section is one the card does not print.
+ */
+export function fundamentalsLabel(computedDate) {
+  return computedDate ? `Fundamentals · as of ${computedDate}` : null;
+}
+
+/** The standing, when the name is not held. The two absence states, ruled. */
+export const STANDING_ON_BENCH = 'On the bench';
+export const STANDING_ON_WATCHLIST = 'On the watchlist';
+
+/**
+ * The standing section's own provenance (review B-4). A held name's tier, entry
+ * price and held-since are the TRADING PROCESS's own execution facts — the
+ * record's, not the platform's — so they cannot sit unlabelled on a card headed
+ * `Platform data · not what the check saw`. This is the fifth string, and it
+ * exists because the card puts one section of a different class beside two of
+ * platform data; D-119's rule is that each section carries its own provenance.
+ */
+export const STANDING_PROVENANCE = 'From the record · the board’s own numbers';
+
 /** A directive chip's label: what it FILES, by mechanism (§6.2). */
 export const FILES_CHIP_PREFIX = 'Files: ';
 export const filesChip = (text) => (typeof text === 'string' && text ? `${FILES_CHIP_PREFIX}${text}` : null);
