@@ -283,10 +283,24 @@ describe('heardLine — the copy layer\'s half of "Not heard is a claim too" (re
     expect(COPY.heardLine(null)).toBeNull();
   });
 
-  it('and only beneath `Filed` — a replaced or expired receipt gets no line (review A-2 / D-2)', () => {
+  // THE ASYMMETRY, AT THE COPY LAYER. The positive names its own check and is
+  // true wherever it is read; the negative names none and borrows the
+  // reader's, so it can only mean the latest one.
+  it('the DEICTIC negative stays on the current card — every other state gets no line', () => {
     const stamp = { at: '2026-09-01T15:31:00.000Z', heard: false };
     for (const state of ['replaced', 'expired', undefined]) {
       expect(COPY.heardLine({ state, at: null, heard: stamp })).toBeNull();
+    }
+    // …and it is the STATE doing that, not the stamp: the same receipt under
+    // `filed` renders. Without this the row above passes on a heardLine that
+    // returned null for everything.
+    expect(COPY.heardLine({ state: 'filed', at: null, heard: stamp })).toBe('Not heard at this check');
+  });
+
+  it('the POSITIVE travels — it names its own check, so every card state renders it', () => {
+    const stamp = { at: '2026-09-01T15:31:00.000Z', heard: true };
+    for (const state of ['filed', 'replaced', 'expired', undefined]) {
+      expect(COPY.heardLine({ state, at: null, heard: stamp })).toBe('Heard at the 11:30 AM check');
     }
   });
 });

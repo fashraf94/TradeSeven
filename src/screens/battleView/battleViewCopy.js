@@ -578,21 +578,33 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   evidenceProvenance: (vintages, checkIso = null) => provenanceLine(vintages, etTime, checkIso),
   regimeWord: (value) => regimeWord(value),
 
-  // BENEATH `Filed {time}` — AND ONLY THERE (the seed's own wording; review
-  // A-2). The negative is DEICTIC: `Not heard at this check` names no slot, so
-  // on a scrollback card for a thread that has since been Replaced it reads as
-  // a claim about the LATEST check — one where that thread was not the
-  // directive at all and the record says nothing about it. The positive names
-  // its own check and would be true anywhere, but the two lines stay together:
-  // a receipt shows one Heard treatment or none, never a rule that depends on
-  // which way the answer came out. A replaced directive's honest receipt is
-  // `Replaced {t}`, which the card already carries.
+  // THE POSITIVE TRAVELS, THE NEGATIVE STAYS PUT — the split review A-2 did
+  // not make, and the reason A-2 itself gave for the scoping.
+  //
+  // `Heard at the {slot} check` NAMES ITS OWN CHECK. A thread that was in the
+  // decider's prompt at the 12:45 check was in it at 12:45 whatever the card
+  // now reads, so the line is true wherever it is read and the scrollback card
+  // is exactly where that past fact is worth keeping: the receipt above it
+  // says the directive is no longer the one in the slot, and this says it was
+  // heard while it was. So the positive renders on ANY directive card whose
+  // thread carries a null-suppression stamp — Replaced and Expired included.
+  //
+  // `Not heard at this check` is DEICTIC: it names no slot, so `this check`
+  // can only mean the LATEST one. On a Replaced or Expired card that reading
+  // is false — at the latest check the thread was not the directive at all and
+  // the record says nothing about it — so the negative stays on the CURRENT
+  // card, the `filed` receipt, exactly where A-2 put it. A replaced
+  // directive's honest receipt for the latest check is `Replaced {t}`, which
+  // the card already carries.
+  //
+  // The two are not symmetric because the two SENTENCES are not: one carries
+  // its check with it and one borrows the reader's. That is the rule, not
+  // which way the answer came out.
   heardLine: (receipt) => {
-    if (receipt?.state !== 'filed') return null;
-    const stamp = receipt.heard;
+    const stamp = receipt?.heard;
     if (!stamp || typeof stamp !== 'object') return null;
     if (stamp.heard === true) return BATTLE_VIEW_COPY.heard(stamp.at);
-    if (stamp.heard === false) return BATTLE_VIEW_COPY.notHeard;
+    if (stamp.heard === false && receipt.state === 'filed') return BATTLE_VIEW_COPY.notHeard;
     return null;
   },
 
