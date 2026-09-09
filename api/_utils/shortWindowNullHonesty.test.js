@@ -16,11 +16,17 @@
 // through the REAL `calculateAllIndicators` — no hand-written null fixture can
 // prove the minimums, only pin an assumption about them.
 //
+// The last describe block is D-120's OTHER half: the window the platform
+// actually requests. Rendering nothing is only honest while there is nothing to
+// render — once the fetch clears MACD's minimum the same renderers must print
+// the real reading, and these rows pin the fetch that makes that true.
+//
 // This file's un-mocked import of each module under test is also the
 // BUILD_RULES §4 dependency-surface guard for those modules' import graphs.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { calculateAllIndicators } from './technicalCalculations.js';
+import { fetchDailyOHLCV, DAILY_WINDOW_CALENDAR_DAYS } from './marketDataCache.js';
 import { composeTechnicals } from './researchCard.js';
 import { buildPortfolioBriefsBlock, buildBenchBriefsBlock } from './voiceLayerPrompt.js';
 import { buildPortfolioBriefs } from '../cron/voice-layer-cache.js';
@@ -208,5 +214,122 @@ describe('the voice-layer cache briefs — buildPortfolioBriefs → buildPortfol
       expect(out).not.toContain('Trend:');
       expect(out).not.toContain('Momentum:');
     }
+  });
+});
+
+// ============================================================================
+// D-120, the fetch-widening half
+// ============================================================================
+
+// `getStockAnalysisData` reaches EODHD for `daily` through exactly one call
+// site, and the technicals path computes over whatever that call returns
+// (marketDataCache.js `fetchTechnicals`; api/agent/research.js and
+// api/agent/debate.js call `calculateAllIndicators` on it themselves). So the
+// window in this URL is the window every MACD in the product is computed over.
+describe('the daily window getStockAnalysisData requests', () => {
+  const ORIGINAL_KEY = process.env.EODHD_API_KEY;
+  const DAY_MS = 86_400_000;
+
+  beforeEach(() => { process.env.EODHD_API_KEY = 'test-token'; });
+  afterEach(() => {
+    if (ORIGINAL_KEY === undefined) delete process.env.EODHD_API_KEY;
+    else process.env.EODHD_API_KEY = ORIGINAL_KEY;
+    vi.unstubAllGlobals();
+  });
+
+  // Weekdays in the inclusive span [from, from + windowDays]. The NYSE closes
+  // on at most 10 days in a WHOLE year, so a span with W weekdays trades on at
+  // least W - 10 days no matter where in the calendar it falls — no holiday
+  // table needed, and no seasonal hole for the guarantee to fall through.
+  function weekdaysInWindow(startUtcMs, windowDays) {
+    let n = 0;
+    for (let i = 0; i <= windowDays; i++) {
+      const day = new Date(startUtcMs + i * DAY_MS).getUTCDay();
+      if (day !== 0 && day !== 6) n++;
+    }
+    return n;
+  }
+
+  const MACD_MIN_CANDLES = 35;   // technicalCalculations.js:195, slow + signal
+  const MAX_MARKET_HOLIDAYS_PER_YEAR = 10;
+
+  it('the fetch asks EODHD for DAILY_WINDOW_CALENDAR_DAYS back — the URL, not the intent', async () => {
+    const fetchSpy = vi.fn(() => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) }));
+    vi.stubGlobal('fetch', fetchSpy);
+
+    await fetchDailyOHLCV('AAPL.US', 'test-token');
+
+    const url = fetchSpy.mock.calls[0][0];
+    const from = /[?&]from=(\d{4}-\d{2}-\d{2})/.exec(url)?.[1];
+    expect(from).toBeTruthy();
+
+    const expected = new Date();
+    expected.setDate(expected.getDate() - DAILY_WINDOW_CALENDAR_DAYS);
+    expect(from).toBe(expected.toISOString().split('T')[0]);
+    expect(url).toContain('period=d');
+    expect(url).toContain('order=d');
+  });
+
+  it('that window clears MACD\'s 35-candle minimum from EVERY start date in a year', () => {
+    const start = Date.UTC(2026, 0, 1);
+    let worst = Infinity;
+    for (let d = 0; d < 365; d++) {
+      const weekdays = weekdaysInWindow(start + d * DAY_MS, DAILY_WINDOW_CALENDAR_DAYS);
+      worst = Math.min(worst, weekdays - MAX_MARKET_HOLIDAYS_PER_YEAR);
+    }
+    expect(worst).toBeGreaterThanOrEqual(MACD_MIN_CANDLES);
+    // And with room — a window that only just clears would flicker whenever a
+    // holiday cluster lands inside it.
+    expect(worst).toBeGreaterThanOrEqual(MACD_MIN_CANDLES + 10);
+  });
+
+  it('the SHIPPED 30-day window did not — the guarantee is this constant, not arithmetic that any value passes', () => {
+    const start = Date.UTC(2026, 0, 1);
+    let best = -Infinity;
+    for (let d = 0; d < 365; d++) {
+      best = Math.max(best, weekdaysInWindow(start + d * DAY_MS, 30));
+    }
+    // Even at its most generous, and even with ZERO holidays, 30 calendar days
+    // never reaches 35 trading days. This is why MACD was null for everyone.
+    expect(best).toBeLessThan(MACD_MIN_CANDLES);
+  });
+
+  it('MACD IS COMPUTED on what the widened fetch returns — the whole point of D-120', async () => {
+    // An EODHD `/eod/` response for the requested range: every weekday from
+    // `from` to today, in the newest-first order the URL asks for.
+    const rows = [];
+    const today = new Date();
+    for (let i = 0; i <= DAILY_WINDOW_CALENDAR_DAYS; i++) {
+      const d = new Date(today.getTime() - i * DAY_MS);
+      if (d.getUTCDay() === 0 || d.getUTCDay() === 6) continue;
+      const close = 100 + i * 0.3 + Math.sin(i / 4);
+      rows.push({
+        date: d.toISOString().split('T')[0],
+        open: close - 0.3, high: close + 1, low: close - 1,
+        close, adjusted_close: close, volume: 4_000_000 + (i % 5) * 100_000,
+      });
+    }
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({
+      ok: true, status: 200, json: () => Promise.resolve(rows),
+    })));
+
+    const daily = await fetchDailyOHLCV('AAPL.US', 'test-token');
+    expect(daily.length).toBeGreaterThanOrEqual(MACD_MIN_CANDLES);
+
+    const indicators = calculateAllIndicators(daily);
+    expect(indicators.macd).not.toBeNull();
+    expect(indicators.macd.macd).toEqual(expect.any(Number));
+    expect(indicators.macd.signal).toEqual(expect.any(Number));
+    expect(indicators.macd.histogram).toEqual(expect.any(Number));
+    // SMA50/EMA50 clear their 50-candle minimum on this window too; SMA200
+    // needs ~290 calendar days and stays honestly null.
+    expect(indicators.sma.sma50).toEqual(expect.any(Number));
+    expect(indicators.ema.ema50).toEqual(expect.any(Number));
+    expect(indicators.sma.sma200).toBeNull();
+
+    // And the renderers now have something true to say.
+    expect(composeTechnicalSnapshot(indicators, 151.27)).toContain('MACD histogram:');
+    expect(composeTechnicals(indicators, { current: 151.27, candleDate: daily[0].date }).facts.join('\n'))
+      .toContain('MACD ');
   });
 });

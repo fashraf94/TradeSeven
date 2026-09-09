@@ -108,15 +108,22 @@ The card carries its `equip` flag and the component renders the door — **but n
 ### 5.2 `debate.js` is untouched (spec §2's phrase "its own guard widened to the universe")
 What Phase C needed from that route was its **data path**, and the research route carries its own universe check instead. Widening the debate route's guard would widen the reach of the very prompt §0 says must never reach a reader — its eleven forecasting lines, its conviction score, its `suggestedAction` — and hazard 8 says never to widen it without a test, of which it has none. Its entry point is also unwired at HEAD. A row in `research.dark.test.js` pins that it stays untouched. **If the founder meant the literal widening, it is a separate task with its own tests.**
 
-### 5.3 The short-window indicators (D-120)
-The card renders **nothing** for MACD, SMA50, SMA200 and EMA50, because the shipped 30-calendar-day fetch never reaches their minimums. That is the null-honest half of D-120, done. The other half — widening the fetch — is the separate live-bug task the discovery filed, and is not in this branch.
+### 5.3 The short-window indicators (D-120) — **CLOSED, September 9, 2026**
+As shipped in this branch, the card rendered **nothing** for MACD, SMA50, SMA200 and EMA50, because the 30-calendar-day fetch never reached their minimums. That was the null-honest half of D-120, done here. Both remaining halves landed in the follow-up branch `claude/exciting-maxwell-040mvv`:
+
+- **The renderers.** `debate.js` was still printing the constant `MACD histogram: negative` and an `N/A` SMA line (§5.5 filed it); the voice-layer cache's portfolio brief was still publishing `Downtrend. Below major SMAs.` off an *absent* SMA flag, and its prompt block interpolated both summaries unconditionally. All three are null-honest now, matching this card's rule and the bench brief's existing guard.
+- **The fetch.** `fetchDailyOHLCV`'s window is now `DAILY_WINDOW_CALENDAR_DAYS = 90` (`api/_utils/marketDataCache.js:242`), read by the one `daily` call site in `getStockAnalysisData` (`:507`, cache key `SYMBOL_daily`). 90 calendar days holds ~64 weekdays; the NYSE closes at most 10 days in a *whole year*, so the window clears MACD's 35-candle minimum — and SMA50's 50 — from every start date in the calendar, with margin. SMA200 needs ~290 calendar days and stays null by design.
+
+**Cost of the widening.** No additional API call: the same single `/eod/` request per symbol per cache miss, with an earlier `from`. What grows is the payload and its cache document — **~21 rows → ~62 rows, about 2.6 KB → 7.8 KB per symbol per fetch (≈ +5 KB, ~3×)** at roughly 110 bytes per mapped row. Estimated, not measured: this session has no EODHD credentials, per the same disclosure as §1. The L1 (5 min) and L2 (4 h) cache TTLs are unchanged, so fetch *frequency* is unchanged; the Firestore `marketDataCache` documents for `daily` grow by the same ~3×.
+
+**The cache key is deliberately not versioned.** `SYMBOL_daily` is read directly outside the module (`compute-institutional-intelligence.js:213` takes the newest close off it) and `getCachedData` derives the TTL type from the key's last underscore segment, so the name is a contract. It does not need versioning: there is exactly one window, so every write under the key is that window's payload. The only narrower payloads are this deploy's predecessors; they age out on the daily TTL (4 h, frozen to the next open while the market is closed), and until they do the technicals computed off them are simply null and every renderer stays silent. The widened window is delayed one TTL cycle, never misreported.
 
 ### 5.4 Two follow-ups the review named
 - **The route writes no shadow record**, so a research tap is invisible to telemetry. Hazard 12 warns specifically against reusing `gameMode: 'research'` for it, so it wants its own small design rather than a copy.
 - **A failed tap has no error surface on the two Battle View doors.** The in-flight guard removed the damaging case (a double-spend of a scarce read); the remaining gap is that a 409 or a 500 is silent. `AgentChat`'s own chip path already has the three-branch error line to copy from.
 
 ### 5.5 Four items the discovery filed for separate tasking
-Untouched here, as §3 requires: `debate.js`'s constant `MACD histogram: negative`; `reviewBudgetUsed` written to the battle doc but not declared by `createAgentBattle`; `debate.js`'s `'balanced'` archetype default; the `file-directive.js:157` comment drift.
+Untouched here, as §3 requires: `debate.js`'s constant `MACD histogram: negative`; `reviewBudgetUsed` written to the battle doc but not declared by `createAgentBattle`; `debate.js`'s `'balanced'` archetype default; the `file-directive.js:157` comment drift. **The first of the four is closed** — see §5.3; the other three still stand.
 
 ---
 

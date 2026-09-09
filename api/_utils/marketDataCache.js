@@ -215,10 +215,41 @@ function getApiKey() {
 }
 
 /**
- * Fetch 30 days of daily OHLCV data
+ * The daily OHLCV window, in CALENDAR days — the range every technicals
+ * consumer of this feed is computed over.
+ *
+ * D-120. The shipped 30 calendar days is ~21 trading rows: below
+ * `calculateMACD`'s 35-row minimum (`slow + signal`,
+ * technicalCalculations.js:195) and below `calculateSMA(closes, 50)`'s 50
+ * (`:20`). So `calculateAllIndicators` returned `macd: null`, `sma50: null` and
+ * `ema50: null` for EVERY symbol on EVERY call — not a data gap, an arithmetic
+ * one, and the reason the research card and `debate.js` had nothing to print.
+ *
+ * 90 is the smallest round window that clears BOTH minimums in every season.
+ * ~64 weekdays fall in 90 calendar days, and the worst US-market holiday
+ * cluster in such a span (Thanksgiving → Christmas → New Year → MLK, five
+ * closures) still leaves ~59 trading rows. 60 days would clear MACD's 35 by
+ * about three rows, and 75 would land ON SMA50's 50 — an indicator that
+ * flickers in and out with the calendar is worse than one honestly absent.
+ * SMA200 needs 200 rows (~290 calendar days) and stays null by design; the
+ * renderers say nothing about it.
+ *
+ * COST: no additional API call — the SAME `/eod/` request with an earlier
+ * `from`. What grows is the response and its cache document, ~21 rows to ~62,
+ * roughly 2.6 KB to 7.8 KB per symbol per fetch (~110 bytes per mapped row),
+ * behind the unchanged L1 (5 min) and L2 (4 h) caches.
  */
-async function fetchDailyOHLCV(eohdSymbol, apiKey) {
-  const from = getDateDaysAgo(30);
+export const DAILY_WINDOW_CALENDAR_DAYS = 90;
+
+/**
+ * Fetch the daily OHLCV window (DAILY_WINDOW_CALENDAR_DAYS calendar days back).
+ *
+ * Exported for its URL shape, the way `fetchIntradayCandles` is: the `from`
+ * this builds is the only thing standing between the technicals path and a
+ * permanently null MACD, so it is asserted directly rather than inferred.
+ */
+export async function fetchDailyOHLCV(eohdSymbol, apiKey) {
+  const from = getDateDaysAgo(DAILY_WINDOW_CALENDAR_DAYS);
   const url = `${API_BASE}/eod/${eohdSymbol}?api_token=${apiKey}&fmt=json&period=d&order=d&from=${from}`;
 
   console.log(`[MarketDataCache] Fetching daily OHLCV for ${eohdSymbol}`);
@@ -460,6 +491,19 @@ export async function getStockAnalysisData(symbol, options = {}) {
   // Fetch non-technical fields in parallel
   const nonTechnicalFields = requestedFields.filter(f => f !== 'technicals');
   const fetches = nonTechnicalFields.map(async (fieldType) => {
+    // CACHE KEY — `SYMBOL_daily`, deliberately NOT versioned by window (D-120).
+    // Two reasons. `getCachedData` derives the TTL type from the key's last
+    // underscore segment (:131), so a `_w90` suffix would have to sit mid-key;
+    // and `SYMBOL_daily` is read directly outside this module
+    // (compute-institutional-intelligence.js:213 takes the newest close off it),
+    // so the name is a contract, not a private detail — version it only
+    // alongside that reader. Nothing needs versioning here anyway: there is
+    // exactly ONE window, so every write under this key is that window's
+    // payload. The only narrower payloads are the previous deploy's, they age
+    // out on the daily TTL (4 h, frozen to the next open while the market is
+    // closed), and until they do the technicals computed off them are simply
+    // null and every renderer stays silent. The widened window is delayed for
+    // one TTL cycle, never misreported.
     const docKey = `${clean}_${fieldType}`;
     const ttlMs = CACHE_TTL[fieldType];
 
