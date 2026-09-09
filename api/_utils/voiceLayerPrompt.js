@@ -2310,7 +2310,7 @@ Volatility / setup:
 - atrPercentile (0-1) — relative volatility, 1 = most volatile
 - dailyRange (number)
 - nr7Flag (boolean) — true = a narrow-range-7 (tight, coiled) bar
-- bBandwidthPercentile (0-1) — Bollinger bandwidth percentile
+- bBandwidthPercentile (0-100) — Bollinger bandwidth percentile, 0 = tightest bands in the universe (a squeeze), 100 = widest
 - sma200_position (signed number) — percent distance from the 200-day SMA
 - trend (string) — multi-timeframe trend label
 - recentAction (string) — recent candle/behavior label
