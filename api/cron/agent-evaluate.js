@@ -2687,41 +2687,49 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // (the Haiku call is skipped above, before buildLiveContextBlock), so
     // nothing was heard or seen and every stamp is absent on that entry.
     if (TICK_STAMPS_ENABLED) {
-      // Heard (D-110): the SAME pure resolution the fenced assembler ran when
-      // it rendered the directive block (agentEvalPromptAssembly.js,
-      // buildLiveContextBlock — this argument list is pinned byte-for-byte
-      // against that call in agent-evaluate.tickStamps.pins.test.js), on the
-      // SAME in-memory `battle` the prompt was rendered from. NEVER a doc
-      // re-read: a filing that landed on the doc during this tick was not in
-      // the prompt, and the stamp must name the thread that was. Never the
-      // model's echo (`ignoredDirectiveIds` / `directiveThreadId` above are
-      // self-report — the basis of Acted, not Heard).
-      const controlResolution = resolveControls({
-        modes: {
-          archetypeIntegrityMode: ARCHETYPE_INTEGRITY_MODE,
-          standingLeansEnabled: STANDING_LEANS_ENABLED,
-        },
-        directive: isDirectiveActive(battle?.directive, battle) ? battle.directive : null,
-        standingLeans: battle.agentContext?.standingLeans,
-        leanOverrides: battle.leanOverrides,
-        controlEpochLog: battle.controlEpochLog,
-      });
-      // The rankings doc's computedAt is this tick's vintage for bbPct / nr7 —
-      // the same snapshot the hotBench rebuild consumed above; no new I/O.
-      const rankingsComputedAtMs = (rankingsResult.status === 'fulfilled' && rankingsResult.value.exists)
-        ? (rankingsResult.value.data()?.computedAt?.toMillis?.() ?? null)
-        : null;
-      Object.assign(evaluation, composeTickStamps({
-        haikuAttempted,
-        controlResolution,
-        anticipationCandidates: haikuResult?.anticipationCandidates,
-        assetScores,
-        prices,
-        momentumData,
-        stockRegimes,
-        riskStatus,
-        rankingsComputedAtMs,
-      }));
+      try {
+        // Heard (D-110): the SAME pure resolution the fenced assembler ran when
+        // it rendered the directive block (agentEvalPromptAssembly.js,
+        // buildLiveContextBlock — this argument list is pinned byte-for-byte
+        // against that call in agent-evaluate.tickStamps.pins.test.js), on the
+        // SAME in-memory `battle` the prompt was rendered from. NEVER a doc
+        // re-read: a filing that landed on the doc during this tick was not in
+        // the prompt, and the stamp must name the thread that was. Never the
+        // model's echo (`ignoredDirectiveIds` / `directiveThreadId` above are
+        // self-report — the basis of Acted, not Heard).
+        const controlResolution = resolveControls({
+          modes: {
+            archetypeIntegrityMode: ARCHETYPE_INTEGRITY_MODE,
+            standingLeansEnabled: STANDING_LEANS_ENABLED,
+          },
+          directive: isDirectiveActive(battle?.directive, battle) ? battle.directive : null,
+          standingLeans: battle.agentContext?.standingLeans,
+          leanOverrides: battle.leanOverrides,
+          controlEpochLog: battle.controlEpochLog,
+        });
+        // The rankings doc's computedAt is this tick's vintage for bbPct / nr7 —
+        // the same snapshot the hotBench rebuild consumed above; no new I/O.
+        const rankingsComputedAtMs = (rankingsResult.status === 'fulfilled' && rankingsResult.value.exists)
+          ? (rankingsResult.value.data()?.computedAt?.toMillis?.() ?? null)
+          : null;
+        Object.assign(evaluation, composeTickStamps({
+          haikuAttempted,
+          controlResolution,
+          anticipationCandidates: haikuResult?.anticipationCandidates,
+          assetScores,
+          prices,
+          momentumData,
+          stockRegimes,
+          riskStatus,
+          rankingsComputedAtMs,
+        }));
+      } catch (stampErr) {
+        // Fail-safe (the regimeAtStart / control-epoch precedent): the stamps
+        // are additive facts and must never cost the tick its write — the
+        // scores, the entry and the lock release all ride the finalUpdate
+        // below. Logged loud; the entry goes out unstamped.
+        console.error(`${LOG_PREFIX} tick stamps failed for battle ${battle.id} (entry written unstamped; tick continues):`, stampErr?.message || stampErr);
+      }
     }
 
     // Surface the degraded tick on the status feed — a silent fallback HOLD is
