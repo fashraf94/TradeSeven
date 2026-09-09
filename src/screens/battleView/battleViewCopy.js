@@ -46,6 +46,7 @@ import { RESEARCH_CAP, researchDoorOrdinal } from '../../data/researchCap';
 // zero-import src/data/decisionRecord.js and are re-exposed here under their
 // shipped names, so the pane and the narrator cannot disagree about one check.
 import {
+  RESEARCH_MESSAGE_TYPE,
   WOKEN_BY_TYPE,
   wokenBy as recordWokenBy,
   NO_DECISION,
@@ -355,6 +356,10 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // rule): it says the read did not happen and nothing about why the platform
   // thinks that.
   showItFailed: 'That read didn\u2019t come back. Try again.',
+  // D-54's forward path, as a word on the card. `Equip` is the shipped verb for
+  // putting a name in front of the agent; the card offers it and never promises
+  // what the process will do with it.
+  showItEquip: 'Equip',
   // What the scoped stream announces when the filter lands or lifts. A live
   // region, so it is spoken without moving focus — which the door does not
   // move to the stream anyway (it goes to the composer, with the prefill).
@@ -418,6 +423,12 @@ export const BATTLE_VIEW_COPY = Object.freeze({
       return null;
     }
     if (messageType === 'trade_narration') return 'Trade note';
+    // `research` is DELIBERATELY ABSENT, for the `auto_debrief` reason: the
+    // research card carries its OWN `Research` eyebrow, composed onto it by the
+    // server (decisionRecord.js RESEARCH_EYEBROW), and one exchange with two
+    // eyebrows is worse than one with none. Returning a second one here would
+    // also be a second source for the same word (BUILD_RULES §9).
+    if (messageType === RESEARCH_MESSAGE_TYPE) return null;
     // `Reply` is a claim about a PAIR — the player wrote and the character
     // answered — so it needs the user half to exist. `deriveChatMessages`
     // defaults a legacy exchange with no type to `user_initiated`, and one of

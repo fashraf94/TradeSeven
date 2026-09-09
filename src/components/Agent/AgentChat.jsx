@@ -17,6 +17,9 @@ import { OPENER_LAZY_FALLBACK_ENABLED } from '../../config/featureFlags';
 // its error strings would trip it).
 import { BATTLE_VIEW_COPY } from '../../screens/battleView/battleViewCopy';
 import { deriveChatMessages } from './deriveChatMessages';
+// Phase C §3 — the research card's whole render. Absent unless an exchange
+// carries one, so nothing changes while SHOW_IT_ENABLED is dark.
+import ResearchCard from './ResearchCard';
 import { TradeCard, CheckCard, CheckRunLine, SPEECH_EYEBROW_COLOR } from '../../screens/battleView/TapeCards';
 import { collapseQuietChecks, TAPE_KIND } from '../../screens/battleView/buildTape';
 import { scopeTape } from '../../screens/battleView/scopeTape';
@@ -394,7 +397,10 @@ function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSendi
           narrator words: the ExecutionCard below is its whole render, so the
           empty bubble body is skipped — keyed on the persisted type, never on
           the text being empty (review R-04). */}
-      {message._filed ? null : (
+      {/* Phase C §3 — a research card's exchange carries no narrator words
+          either: the card below is its whole render. Same rule, same shape as
+          the chip filing above it, keyed on the persisted type. */}
+      {message._filed || message._research ? null : (
         <div style={{
           background: '#15171E',
           borderLeft: `3px solid ${accent}`,
@@ -411,6 +417,7 @@ function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSendi
           {renderMessageWithEntities(message.text, onSymbolClick, knownTickers)}
         </div>
       )}
+      {message._research ? <ResearchCard card={message._research} /> : null}
       {/* Voice-layer grounding §6.3 — the code-owned no-change status, from the
           PERSISTED exchange: a grounded turn on which the gate ran and wrote no
           directive. Never from the reply body; never on a legacy exchange. */}

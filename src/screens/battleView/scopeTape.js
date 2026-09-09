@@ -61,6 +61,11 @@ export const TAPE_MESSAGE = 'message';
 /** A message item (or a raw exchange half): the detector's question. */
 export function messageNamesSymbol(item, symbol, knownTickers) {
   if (!symbol) return false;
+  // Phase C §3 — a research card is SCOPED BY ITS RECORD, not by the detector.
+  // Its text is empty (nobody narrated it), so a prose scan would drop the one
+  // card in the tape that is unambiguously about a single piece; the exchange
+  // carries that piece's symbol as a fact, so the scope reads the fact.
+  if (item?._researchSymbol && item._researchSymbol === symbol) return true;
   if (findKnownTickers(item?.text, knownTickers).includes(symbol)) return true;
   // A directive card rides its agent message; the directive's own text is
   // part of what that message says about a piece.
