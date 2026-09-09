@@ -36,6 +36,7 @@
 // `chatBudgetUsed` nor the League day store is touched — nothing here writes to
 // a protected store, so `compositionProtectedStoresAllowlist.json` is unchanged.
 
+import { randomUUID } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
@@ -265,9 +266,20 @@ export default async function handler(req, res) {
  * NO `agentResponse` — the character did not speak this turn (V1: the card is
  * not narrated). NO `suggestedActions` (hazard 4).
  */
-export function buildResearchExchange({ card, symbol, agentId, now = new Date() }) {
+export function buildResearchExchange({ card, symbol, agentId, now = new Date(), researchId = randomUUID() }) {
   return {
     messageType: RESEARCH_MESSAGE_TYPE,
+    // THE UNIQUE ID IS LOAD-BEARING, not decoration (review CO-1).
+    // `FieldValue.arrayUnion` does not append an element that is already
+    // present by DEEP EQUALITY. Every other field of two cards for the same
+    // symbol can coincide — same symbol, same agent, the same card composed off
+    // the same warm cache, and an ISO timestamp is only millisecond-precise —
+    // so two concurrent taps could produce deep-equal objects, the second write
+    // would be a silent no-op, and the route would report a slot spent that the
+    // doc does not hold. `file-directive.js` avoids this by construction, since
+    // every filed exchange carries a randomUUID directiveThreadId; this is the
+    // same guarantee, made explicit.
+    researchId,
     symbol,
     agentId: agentId ?? null,
     card,

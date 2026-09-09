@@ -363,6 +363,7 @@ describe('buildResearchExchange — the shape, directly', () => {
     });
     expect(ex).toEqual({
       messageType: 'research',
+      researchId: expect.any(String),
       symbol: 'MPC',
       agentId: 'agent-1',
       card: { symbol: 'MPC' },
@@ -370,5 +371,17 @@ describe('buildResearchExchange — the shape, directly', () => {
       suggestedActions: null,
       timestamp: '2026-09-09T14:00:00.000Z',
     });
+  });
+
+  it('CO-1: two exchanges for the SAME symbol at the SAME instant are NOT deep-equal', () => {
+    // arrayUnion drops an element it considers already present. Without the id
+    // these two would be one array element, and the route would report a slot
+    // spent that the doc does not hold.
+    const args = { card: { symbol: 'MPC' }, symbol: 'MPC', agentId: 'agent-1', now: new Date('2026-09-09T14:00:00.000Z') };
+    const a = buildResearchExchange(args);
+    const b = buildResearchExchange(args);
+    expect(a).not.toEqual(b);
+    expect(a.researchId).not.toBe(b.researchId);
+    expect(a.researchId).toMatch(/^[0-9a-f-]{36}$/);
   });
 });
