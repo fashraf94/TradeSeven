@@ -76,10 +76,16 @@ import { TEMPO_DIAL_BANDS } from '../_utils/tempoDialBands.js';
 // NO-EDIT).
 import { clampHftConfig, resolveTempoDial, desiredTempoOf } from '../_utils/tempoDialClamp.js';
 import { buildSwapProvenance } from '../_utils/swapProvenance.js';
-import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED, LEARNING_L1_CAPTURE_ENABLED, LEARNING_L1_CAPTURE_EXPANSION_ENABLED, REGIME_STAMP_ENABLED, PROFIT_TARGET_EXECUTOR_ENABLED, getVoiceGroundingMode } from '../../src/config/featureFlags.js';
+import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED, LEARNING_L1_CAPTURE_ENABLED, LEARNING_L1_CAPTURE_EXPANSION_ENABLED, REGIME_STAMP_ENABLED, PROFIT_TARGET_EXECUTOR_ENABLED, TICK_STAMPS_ENABLED, getVoiceGroundingMode } from '../../src/config/featureFlags.js';
 // Voice-layer grounding §5 (hazard 27): the in-process dedupe of one tick's
 // anticipation queue, applied only when the note is code-composed.
 import { dedupeAnticipationQueue } from '../_utils/voiceLayerGrounding.js';
+// Phase B — the tick stamps (D-110 → D-113): the pure, zero-import composer
+// for the three facts every decided check leaves on its own entry (Heard, the
+// evidence, the candidates), spliced at the entry composition below under
+// TICK_STAMPS_ENABLED. Read, never edited: the fenced assembler's directive
+// resolution is re-run here on the same in-memory object, never re-read.
+import { composeTickStamps } from '../_utils/tickStamps.js';
 // Corpus Capture Patch W3 — pure regimeAtStart stamp helpers (write-once /
 // flag / shape semantics live there so they are behaviorally unit-testable).
 import { shouldStampRegime, buildRegimeAtStart } from '../_utils/regimeStamp.js';
@@ -1959,6 +1965,12 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // statusFeed entry, the shadow log, and the disclosure counter.
     let haikuFailure = null;
     let haikuAttempted = false;
+    // Phase B (D-110): true only once the prompt's three parts are BUILT and
+    // about to be sent — set immediately before anthropic.messages.create.
+    // `haikuAttempted` alone is set before the build, so a builder throw would
+    // otherwise stamp a prompt that never existed (review A-4 / B-1). The tick
+    // stamps gate on this, never on haikuAttempted.
+    let promptBuilt = false;
 
     // Pre-call budget guard: a late-run battle must never start a call whose
     // hard-abort ceiling (22s) plus post-call work (parallel narration dispatch
@@ -1986,24 +1998,35 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       const abortCtrl = new AbortController();
       const hardAbort = setTimeout(() => abortCtrl.abort(), HAIKU_CALL_CEILING_MS);
       try {
+        // The prompt's three parts, built in the order the request carries
+        // them (system → identity → live context) — the same builders, the
+        // same argument lists, the same order as when they sat inline in the
+        // request literal; only the hoist is new (Phase B, review A-4 / B-1):
+        // `promptBuilt` flips AFTER the build and BEFORE the transport call, so
+        // the tick stamps' one claim — "this was in the decider's prompt at
+        // this check" — is gated on the prompt actually existing. A builder
+        // throw lands in the catch below as a Haiku failure with promptBuilt
+        // still false (no stamp); a transport timeout after this line leaves
+        // it true (the prompt was built and sent — Heard with no decision).
+        // DR-13 (STOP-A ruling A1): the RAW archetype code-id rides as the
+        // 4th arg — `archetype` above is the display-cased label (:1881)
+        // and must never be the identity-block key.
+        const systemPrompt = buildEvalSystemPrompt(agentName, archetype, battle.gameMode, ctx.archetype);
+        const identityBlock = buildAgentIdentityBlock(battle);
+        const liveContextBlock = await buildLiveContextBlock(
+          battle, prices, macroPrices, assetScores,
+          triggers, news, battle.evaluations, momentumData, presetConfig
+        );
+        promptBuilt = true;
         const response = await anthropic.messages.create({
           model: EVAL_MODEL_ID,
           max_tokens: EVAL_MAX_OUTPUT_TOKENS,
           temperature: 0.4,
-          // DR-13 (STOP-A ruling A1): the RAW archetype code-id rides as the
-          // 4th arg — `archetype` above is the display-cased label (:1881)
-          // and must never be the identity-block key.
-          system: buildEvalSystemPrompt(agentName, archetype, battle.gameMode, ctx.archetype),
+          system: systemPrompt,
           messages: [
-            { role: 'user', content: buildAgentIdentityBlock(battle) },
+            { role: 'user', content: identityBlock },
             { role: 'assistant', content: 'I understand my identity and strategic context. Show me the live battle state.' },
-            {
-              role: 'user',
-              content: await buildLiveContextBlock(
-                battle, prices, macroPrices, assetScores,
-                triggers, news, battle.evaluations, momentumData, presetConfig
-              ),
-            },
+            { role: 'user', content: liveContextBlock },
           ],
           tools: [TRADE_DECISION_TOOL],
           tool_choice: { type: 'tool', name: 'submit_trade_decision' },
@@ -2669,6 +2692,71 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       // from an engine outage in the eval history.
       haikuError: haikuFailure ? { ...haikuFailure, evalId } : null,
     };
+
+    // ---- Phase B — the tick stamps (D-110 → D-113) ----
+    // Three more facts on this check's own record, composed AFTER the decision
+    // from objects this tick already holds, under ONE server flag read at call
+    // time. Flag off: `evaluation` is untouched — byte-identical to the golden
+    // in agent-evaluate.tickStamps.flagOff.test.js. Keys on the entry only,
+    // riding `evaluations` into the finalUpdate below — never a top-level
+    // battle key (V2 hazard 9). Gated on `promptBuilt` (set above, after the
+    // prompt's parts were built and before the transport call): a
+    // budget_skipped tick never built the prompt and a builder throw never
+    // finished it, so nothing was heard or seen and every stamp is absent on
+    // those entries — and no stamp work runs there either (review B-3). The
+    // composer re-applies the same gate so the rule is unit-tested. The flag
+    // read sits inside the fail-safe too: a stale hermetic featureFlags mock
+    // that omits the name THROWS on access under vitest (review C-1 / B-2),
+    // and even that must never cost the tick its write.
+    try {
+      if (TICK_STAMPS_ENABLED && promptBuilt) {
+        // Heard (D-110): the SAME pure resolution the fenced assembler ran when
+        // it rendered the directive block (agentEvalPromptAssembly.js,
+        // buildLiveContextBlock — this argument list is pinned byte-for-byte
+        // against that call in agent-evaluate.tickStamps.pins.test.js), on the
+        // SAME in-memory `battle` the prompt was rendered from. NEVER a doc
+        // re-read: a filing that landed on the doc during this tick was not in
+        // the prompt, and the stamp must name the thread that was. Never the
+        // model's echo (`ignoredDirectiveIds` / `directiveThreadId` above are
+        // self-report — the basis of Acted, not Heard).
+        const controlResolution = resolveControls({
+          modes: {
+            archetypeIntegrityMode: ARCHETYPE_INTEGRITY_MODE,
+            standingLeansEnabled: STANDING_LEANS_ENABLED,
+          },
+          directive: isDirectiveActive(battle?.directive, battle) ? battle.directive : null,
+          standingLeans: battle.agentContext?.standingLeans,
+          leanOverrides: battle.leanOverrides,
+          controlEpochLog: battle.controlEpochLog,
+        });
+        // The rankings doc's computedAt is this tick's vintage for bbPct / nr7 —
+        // the same snapshot the hotBench rebuild consumed above; no new I/O.
+        const rankingsComputedAtMs = (rankingsResult.status === 'fulfilled' && rankingsResult.value.exists)
+          ? (rankingsResult.value.data()?.computedAt?.toMillis?.() ?? null)
+          : null;
+        Object.assign(evaluation, composeTickStamps({
+          promptBuilt,
+          controlResolution,
+          anticipationCandidates: haikuResult?.anticipationCandidates,
+          assetScores,
+          prices,
+          momentumData,
+          stockRegimes,
+          riskStatus,
+          // The FUNDAMENTALS block's own bench set (flattenBenchServer on the
+          // same bench it flattened at prompt time) — fundAsOf follows that
+          // block's header rule exactly (review A-6).
+          benchAssets: flattenBenchServer(battle.portfolio?.bench),
+          rankingsComputedAtMs,
+        }));
+      }
+    } catch (stampErr) {
+      // Fail-safe (the regimeAtStart / control-epoch precedent): the stamps
+      // are additive facts and must never cost the tick its write — the
+      // scores, the entry and the lock release all ride the finalUpdate
+      // below. Logged loud; the entry goes out unstamped.
+      console.error(`${LOG_PREFIX} tick stamps failed for battle ${battle.id} (entry written unstamped; tick continues):`, stampErr?.message || stampErr);
+    }
 
     // Surface the degraded tick on the status feed — a silent fallback HOLD is
     // indistinguishable from a deliberate one without this. Rides the existing
