@@ -41,6 +41,9 @@ describe('ThisTurnStrip', () => {
   // is unresolved and check-bound", and a past-tense `Heard at the {slot}
   // check` belongs on the scrollback card, not here. If either invariant ever
   // moves, this row fails instead of the strip quietly gaining a past fact.
+  // …and it stays this file's rule after the negative gained its slot: BOTH
+  // verdicts now travel across card states (battleViewCopy `heardLine`), so
+  // the `filed` gate here is the strip's alone, and it is the only one left.
   it('a non-`filed` receipt puts NO Heard line on the strip, positive or negative', () => {
     for (const state of ['replaced', 'expired']) {
       for (const heard of [{ at: T1, heard: true }, { at: T1, heard: false }]) {
@@ -52,7 +55,7 @@ describe('ThisTurnStrip', () => {
         });
         expect(html).not.toContain('data-heard');
         expect(html).not.toContain('Heard at the');
-        expect(html).not.toContain('Not heard at this check');
+        expect(html).not.toContain('Not heard at the');
       }
     }
     // …and the same stamp under `filed` DOES render, so the row above is the
@@ -128,7 +131,7 @@ describe('This turn — the Heard line', () => {
       const html = render({ directive: DIRECTIVE, receipts: receiptsWith({ at: T1, heard: false, reason }), battleStatus: 'active', turn: TURN });
       expect(html).toContain('data-heard="not-heard"');
       const line = (html.match(/data-heard="[^"]*"[^>]*>([^<]*)</) || [])[1];
-      expect(line).toBe('Not heard at this check');
+      expect(line).toBe('Not heard at the 11:30 AM check');
       expect(html).not.toContain(reason);
       expect(html).not.toContain('Heard at the');
     }

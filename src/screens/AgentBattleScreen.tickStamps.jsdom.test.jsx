@@ -180,12 +180,16 @@ describe('the screen joins the record to the receipts (review B-1)', () => {
     expect(html()).toContain('Filed 11:31 AM');
   });
 
-  it('a WITHHELD stamp puts the reasonless negative there, and never the reason', () => {
+  it('a WITHHELD stamp puts the reasonless negative there, naming the same slot', () => {
     DOC = { ...BASE_DOC, evaluations: [{ ...BASE_DOC.evaluations[0], ...STAMPS, heard: { directiveThreadId: 't-1', suppressed: 'epoch_killed' } }] };
     mount();
     expect(html()).toContain('data-heard="not-heard"');
-    expect(html()).toContain('Not heard at this check');
+    // The CHECK's slot (12:45), the same one the positive above names — the
+    // stamp is the source for both, so a withholding is dated exactly as a
+    // hearing is.
+    expect(html()).toContain('Not heard at the 12:45 PM check');
     expect(html()).not.toContain('epoch_killed');
+    expect(html()).not.toContain('at this check');
   });
 
   it('THE JOIN IS THE THING UNDER TEST — an unstamped doc renders no Heard line', () => {
@@ -225,16 +229,19 @@ describe('the screen joins the record to the receipts (review B-1)', () => {
     expect(strip, 'the This turn strip').toBeTruthy();
     expect(strip.textContent).toContain('Heard at the 12:45 PM check');
     expect(strip.textContent).not.toContain('Not heard');
-    // …and t-1's replaced card carries no NEGATIVE line: the deictic sentence
-    // has no check to mean on a scrollback card (review A-2). The POSITIVE
-    // does travel there — the row below is the one that proves it, and this
-    // row must not be read as saying otherwise.
-    expect(html()).not.toContain('data-heard="not-heard"');
-    expect(html()).not.toContain('Not heard at this check');
+    // …and t-1's replaced card carries ITS OWN verdict, dated to ITS OWN
+    // check: the 12:15 entry withheld it, and that sentence is true on a
+    // scrollback card because it names the check it is about. The row below is
+    // the same fixture with that one stamp flipped positive, and the two land
+    // identically — which is the symmetry, proved over a replaced thread.
+    expect(html()).toContain('data-heard="not-heard"');
+    expect(html()).toContain('Not heard at the 12:15 PM check');
     expect(html()).toContain('Replaced 12:00 PM');
+    // The strip is still the current thread's, and still the positive.
+    expect(strip.textContent).not.toContain('Not heard');
   });
 
-  // THE JOIN, FOR THE WIDENED POSITIVE (review C-2). The component-level rows
+  // THE JOIN, FOR THE WIDENED VERDICTS (review C-2). The component-level rows
   // in AgentChat.receipts.render.test.jsx inject the stamp by hand into the
   // receipts map; nothing proved a REAL document travelling the whole way —
   // `deriveHeard` over the evaluations, `deriveReceipts` over the exchanges,
@@ -263,10 +270,12 @@ describe('the screen joins the record to the receipts (review B-1)', () => {
     // The displaced card keeps its receipt AND gains the past fact.
     expect(html()).toContain('Replaced 12:00 PM');
     expect(html()).toContain('Heard at the 12:15 PM check');
-    // Two stamped threads, two positive lines, no negative anywhere.
+    // Two stamped threads, two positive lines, no negative anywhere. The row
+    // above is this fixture with t-1's suppression flipped: it lands on the
+    // same card, at the same slot, and differs by the one word.
     expect((html().match(/data-heard="heard"/g) || []).length).toBeGreaterThanOrEqual(2);
     expect(html()).not.toContain('data-heard="not-heard"');
-    expect(html()).not.toContain('Not heard at this check');
+    expect(html()).not.toContain('Not heard at the');
   });
 
   it('the stamp reaches the receipt for ITS OWN thread, never another', () => {

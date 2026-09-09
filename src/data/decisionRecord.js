@@ -576,27 +576,44 @@ export const filedLabel = (timeText) => (timeText ? `Filed ${timeText}` : 'Filed
 // Never considered, used, noticed, understood, or decided because — the verb
 // is not upgraded on any surface, and `deskHonesty.test.js` bans the upgrades.
 //
-// A check is named by its SLOT (D-83), never the exact minute, so this takes
-// already-formatted slot text: the formatter lives in deskCopy.js and this
-// module is zero-import on purpose (hazard 26). `filedLabel` takes its time
-// the same way, and for the same reason — Filed names an EXCHANGE and keeps
-// its minute; Heard names a CHECK and gets the slot.
+// A check is named by its SLOT (D-83), never the exact minute, so both labels
+// take already-formatted slot text: the formatter lives in deskCopy.js and
+// this module is zero-import on purpose (hazard 26). `filedLabel` takes its
+// time the same way, and for the same reason — Filed names an EXCHANGE and
+// keeps its minute; Heard and Not heard name a CHECK and get the slot.
 
 /** `Heard at the 12:45 check` — the thread was in the decider's prompt there. */
 export const heardLabel = (slotText) => (slotText ? `Heard at the ${slotText} check` : null);
 
 /**
- * The negative receipt, SYSTEM-OWNED AND REASONLESS (Sol M-1).
+ * The negative receipt — SYSTEM-OWNED AND REASONLESS (Sol M-1), and it NAMES
+ * ITS OWN CHECK exactly as the positive does.
  *
  * A directive existed and the assembler withheld it, so it was not in the
- * prompt. The four resolver reasons — `malformed`, `mode_not_enforce`,
- * `epoch_killed`, `unknown` — never reach a surface: the character never
- * received the withheld directive, so explaining the withholding in its voice
- * would attribute a pre-prompt resolver event to the character. Diagnostics
- * belong in telemetry. No slot either: this is a flat statement of absence,
- * not a stamped fact about a named check.
+ * prompt AT THAT CHECK. The four resolver reasons — `malformed`,
+ * `mode_not_enforce`, `epoch_killed`, `unknown` — never reach a surface: the
+ * character never received the withheld directive, so explaining the
+ * withholding in its voice would attribute a pre-prompt resolver event to the
+ * character. Diagnostics belong in telemetry. The slot is not a reason; it is
+ * the check the stamp was written at, which is the same fact the positive
+ * carries.
+ *
+ * THE SLOT IS WHY THIS LINE TRAVELS. It shipped as `Not heard at this check` —
+ * DEICTIC: it named no slot, so `this check` could only mean the LATEST one,
+ * and on a Replaced or Expired card that reading is false (at the latest check
+ * the thread was not the directive at all, and the record says nothing about
+ * it). The fix that followed treated the symptom by scoping the line to the
+ * current card. Naming the slot removes the cause instead: `Not heard at the
+ * 12:15 check` is true wherever it is read, for the same reason `Heard at the
+ * 12:15 check` is. Both verdicts are past facts about one named check, so the
+ * two sentences are now one shape with one word different — and the receipt
+ * layer no longer needs a rule about which card may carry which.
+ *
+ * NO SLOT, NO LINE — `heardLabel`'s rule, for `heardLabel`'s reason (D-83): a
+ * check is named by its slot, and a stamp whose entry carries no usable
+ * timestamp has no check to name. Silence, never a fallback to the deixis.
  */
-export const NOT_HEARD_LINE = 'Not heard at this check';
+export const notHeardLabel = (slotText) => (slotText ? `Not heard at the ${slotText} check` : null);
 
 /**
  * Every directive thread the record proves was — or was not — in front of the

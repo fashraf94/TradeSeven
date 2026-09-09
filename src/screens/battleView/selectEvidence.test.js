@@ -306,11 +306,21 @@ describe('the heading and the provenance line (Sol M-2)', () => {
 describe('heardLine — the copy layer\'s half of "Not heard is a claim too" (review C-8)', () => {
   const filed = (heard) => ({ state: 'filed', at: '2026-09-01T15:31:00.000Z', heard });
 
-  it('renders each verdict from a well-formed stamp', () => {
+  it('renders each verdict from a well-formed stamp, each naming the SLOT', () => {
     expect(COPY.heardLine(filed({ at: '2026-09-01T15:31:00.000Z', heard: true })))
       .toBe('Heard at the 11:30 AM check');
     expect(COPY.heardLine(filed({ at: '2026-09-01T15:31:00.000Z', heard: false })))
-      .toBe('Not heard at this check');
+      .toBe('Not heard at the 11:30 AM check');
+  });
+
+  it('a stamp with NO instant renders neither verdict — a check is named by its slot', () => {
+    // `heardStamps` writes `at: null` when the entry's timestamp is
+    // unparseable. The positive already fell silent there; the negative used
+    // to print the deictic sentence, which is the exact reading this change
+    // removes. Both are silent now.
+    for (const heard of [true, false]) {
+      expect(COPY.heardLine(filed({ at: null, heard }))).toBeNull();
+    }
   });
 
   it('an UNRECOGNISED stamp makes NO claim — defence in depth behind the walk', () => {
@@ -325,18 +335,28 @@ describe('heardLine — the copy layer\'s half of "Not heard is a claim too" (re
     expect(COPY.heardLine(null)).toBeNull();
   });
 
-  // THE ASYMMETRY, AT THE COPY LAYER. The positive names its own check and is
-  // true wherever it is read; the negative names none and borrows the
-  // reader's, so it can only mean the latest one.
-  it('the DEICTIC negative stays on the current card — every other state gets no line', () => {
+  // THE SYMMETRY, AT THE COPY LAYER. Both verdicts name their own check, so
+  // both are true wherever they are read and neither is scoped to a state.
+  // The scoping that stood here was a fact about the deictic SENTENCE, not
+  // about the negative verdict, and it went with the deixis.
+  it('the NEGATIVE travels too — every card state renders it, none suppresses it', () => {
     const stamp = { at: '2026-09-01T15:31:00.000Z', heard: false };
-    for (const state of ['replaced', 'expired', undefined]) {
-      expect(COPY.heardLine({ state, at: null, heard: stamp })).toBeNull();
+    for (const state of ['filed', 'replaced', 'expired', undefined]) {
+      expect(COPY.heardLine({ state, at: null, heard: stamp })).toBe('Not heard at the 11:30 AM check');
     }
-    // …and it is the STATE doing that, not the stamp: the same receipt under
-    // `filed` renders. Without this the row above passes on a heardLine that
-    // returned null for everything.
-    expect(COPY.heardLine({ state: 'filed', at: null, heard: stamp })).toBe('Not heard at this check');
+  });
+
+  // The receipt's `at` is the FILING's instant and the stamp's `at` is the
+  // CHECK's; the line takes the stamp's. Pinned because the two sit on one
+  // object and a reader that reached for the wrong one would still render a
+  // plausible-looking time.
+  it('the slot comes from the STAMP, never from the receipt beside it', () => {
+    const line = COPY.heardLine({
+      state: 'replaced',
+      at: '2026-09-01T17:02:00.000Z',                       // 1:02 PM ET
+      heard: { at: '2026-09-01T15:31:00.000Z', heard: false }, // 11:31 → 11:30 slot
+    });
+    expect(line).toBe('Not heard at the 11:30 AM check');
   });
 
   it('the POSITIVE travels — it names its own check, so every card state renders it', () => {
