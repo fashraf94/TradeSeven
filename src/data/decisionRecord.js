@@ -522,6 +522,41 @@ export const heardLabel = (slotText) => (slotText ? `Heard at the ${slotText} ch
 export const NOT_HEARD_LINE = 'Not heard at this check';
 
 /**
+ * Every directive thread the record proves was — or was not — in front of the
+ * decider, LAST ENTRY PER THREAD WINS.
+ *
+ * SHARED BY THE PANE AND THE NARRATOR (hazard 26, BUILD_RULES §9). The Battle
+ * View's `deriveHeard` wraps this and converts the timestamp; the grounded
+ * YOUR RECORD block reads it directly. Two walks of one record is how the
+ * card's line and the prompt's line would start disagreeing about one check.
+ * The timestamp is returned RAW so each caller formats it with its own
+ * formatter — this module stays zero-import.
+ *
+ * A stamp is admitted only in the two shapes the server actually writes: a
+ * `null` suppression (Heard) or a non-empty string one (not Heard). Anything
+ * else makes NO claim — "Not heard" is a claim too, and an unrecognised stamp
+ * does not prove it.
+ *
+ * @param {Array} evaluations  battle.evaluations, in write order
+ * @returns {{ [directiveThreadId: string]: { at: *, heard: boolean } }}
+ */
+export function heardStamps(evaluations) {
+  const out = {};
+  if (!Array.isArray(evaluations)) return out;
+  for (const evaluation of evaluations) {
+    const stamp = evaluation?.heard;
+    if (!stamp || typeof stamp !== 'object') continue;
+    const threadId = stamp.directiveThreadId;
+    if (typeof threadId !== 'string' || !threadId) continue;
+    const { suppressed } = stamp;
+    const heard = suppressed === null;
+    if (!heard && !(typeof suppressed === 'string' && suppressed)) continue;
+    out[threadId] = { at: evaluation.timestamp ?? null, heard };
+  }
+  return out;
+}
+
+/**
  * The code-owned no-change status (Phase H backstop; directiveGate.js
  * re-exports it): a null-write turn ALWAYS reports no change, whatever the
  * prose said. Rendered by the clients only from the persisted exchange

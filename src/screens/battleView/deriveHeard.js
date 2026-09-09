@@ -39,6 +39,13 @@
 // thread keeps its last Heard as a past fact.
 
 import { toIso } from '../../adapters/baggerbombAdapter';
+// THE WALK ITSELF IS SHARED (hazard 26, BUILD_RULES §9): the grounded
+// narrator's YOUR RECORD block reads the same stamps for the same threads, so
+// the walk lives in the zero-import src/data/decisionRecord.js and this module
+// only converts its raw timestamp into the ISO the copy layer formats. Two
+// walks of one record is how the card's line and the prompt's line would start
+// disagreeing about one check.
+import { heardStamps } from '../../data/decisionRecord';
 
 /**
  * Every directive thread the record proves was — or was not — in front of the
@@ -59,17 +66,8 @@ import { toIso } from '../../adapters/baggerbombAdapter';
  */
 export function deriveHeard(evaluations) {
   const out = {};
-  if (!Array.isArray(evaluations)) return out;
-  for (const evaluation of evaluations) {
-    const stamp = evaluation?.heard;
-    if (!stamp || typeof stamp !== 'object') continue;
-    const threadId = stamp.directiveThreadId;
-    if (typeof threadId !== 'string' || !threadId) continue;
-    const { suppressed } = stamp;
-    const heard = suppressed === null;
-    // Not Heard is a claim; only the server's own suppression strings prove it.
-    if (!heard && !(typeof suppressed === 'string' && suppressed)) continue;
-    out[threadId] = { at: toIso(evaluation.timestamp), heard };
+  for (const [threadId, stamp] of Object.entries(heardStamps(evaluations))) {
+    out[threadId] = { at: toIso(stamp.at), heard: stamp.heard };
   }
   return out;
 }
