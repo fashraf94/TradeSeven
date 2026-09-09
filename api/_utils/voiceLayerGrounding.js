@@ -81,6 +81,7 @@ import {
   displayHypothesis,
   renderHypothesis,
   heardStamps,
+  heardLabel,
   evidenceFactLines,
   provenanceLine,
 } from '../../src/data/decisionRecord.js';
@@ -316,7 +317,22 @@ export function renderCurrentDirective(directive, heardSlot = null) {
   // received the withheld directive, so a first-person account of why it did
   // not arrive attributes a pre-prompt resolver event to the character (Sol
   // M-1). Absence of the suffix is the whole treatment.
-  const heard = heardSlot ? ` · heard at the ${heardSlot} check` : '';
+  //
+  // THE SENTENCE IS `heardLabel`'s, NOT THIS MODULE'S (hazard 26, BUILD_RULES
+  // §9). This line used to declare its own `heard at the ${slot} check` — a
+  // second copy of the pane's `Heard at the {slot} check`, for one fact, in
+  // the module whose whole reason for importing decisionRecord.js is that
+  // copying its strings into api/ is the drift class §4 forbids. It reads the
+  // label now; the two sentences moved apart the moment someone edited one.
+  //
+  // ONLY THE FRAME IS THIS MODULE'S, exactly as it is for the two-space prompt
+  // indent above: the ` · ` separator, and the sentence position. The label is
+  // a line that STARTS a receipt on a card; here it CONTINUES a line that
+  // began with the directive's own text, so it takes the lower-case opening
+  // its position calls for. Nothing else about it is touched, and the prompt's
+  // bytes are what they were.
+  const label = heardLabel(heardSlot);
+  const heard = label ? ` · ${label.charAt(0).toLowerCase()}${label.slice(1)}` : '';
   return `${CURRENT_DIRECTIVE_HEADING}\n  "${directive.text}"${stamp}${heard}`;
 }
 
