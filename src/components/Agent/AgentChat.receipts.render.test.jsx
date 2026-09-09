@@ -146,6 +146,15 @@ describe('Phase B — the Heard line beneath Filed', () => {
     expect(html).toContain('Replaced 12:58 PM');
   });
 
+  it('AND NO WRAPPER EITHER — an unstamped card is BYTE-IDENTICAL to Phase A (D-113)', () => {
+    // The first build stacked the two rows in a column wrapper that rendered
+    // unconditionally, so a pre-flip battle got a div it never had. The A2
+    // first-paint golden caught it; this row is the local guard, so the next
+    // person sees the failure here rather than in a screen-level photograph.
+    const phaseA = render({ receipts: deriveReceipts(EXCHANGES, DIRECTIVE, 'active') });
+    expect(render({ receipts: withHeard(null, 'none') })).toBe(phaseA);
+  });
+
   it('the verb is never upgraded — no considered, used, noticed, understood, because', () => {
     // Scoped to the RENDERED HEARD LINE, not the whole chat: the fixture's own
     // agent reply is "Understood." and that is dialogue, not copy. The

@@ -57,6 +57,8 @@
     "src/screens/battleView/battleViewCopy.js": {},
     "src/screens/battleView/buildTape.js": {},
     "src/screens/battleView/deriveReceipts.js": {},
+    "src/screens/battleView/deriveHeard.js": {},
+    "src/screens/battleView/selectEvidence.js": {},
     "src/screens/battleView/deriveTurnLine.js": {},
     "src/screens/battleView/selectDeployPlan.js": {},
     "src/screens/battleView/selectSymbolRoster.js": {},
