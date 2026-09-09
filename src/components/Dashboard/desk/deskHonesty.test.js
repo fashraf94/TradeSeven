@@ -29,12 +29,52 @@
 // opens"), which this pass does not touch. The Desk introduces no new use, and
 // the exemption is scoped to that file so it cannot spread.
 
+// PHASE B (B1 client half, seed §5) — THE TWO VERBS, AND THEIR UPGRADES.
+//
+// Phase B lets two new claims onto the surfaces: `Heard` (this thread was in
+// the decider's prompt at that check) and `Saw` (this value was rendered for
+// this held name in that prompt). Both are proven by the cron's own stamps.
+// Neither may be upgraded, and the whole third failure this file now guards is
+// THE SILENT UPGRADE OF A PROVEN VERB: "heard" quietly becoming "considered",
+// "saw" quietly becoming "noticed" or "decided because".
+//
+// The upgrades are banned outright. Two families need scoping instead, and
+// the scoping is the point rather than a weakness:
+//
+//   `changed` / `moved` / `today` are banned BESIDE `chg` ONLY. The field is
+//   the position's gain SINCE ENTRY, and those three words would make it read
+//   as today's move (Sol M-3) — but they are all legitimate elsewhere ("This
+//   piece today", "No check yet today", "The current directive changed before
+//   this could be filed"). So the guard reads the RENDERED evidence, not the
+//   file, and pins the label instead of outlawing three ordinary words.
+//
+//   `considered` / `caused` are banned in the client copy, where they can only
+//   be an upgrade — and are checked on the narrator's RENDERED RECORD rather
+//   than in voiceLayerGrounding.js's source, because that file's grounding
+//   rules must NAME both words in order to forbid them to the model. A guard
+//   that scanned the source would ban the sentence that enforces the rule.
+//
+// The suppression words (`malformed`, `mode_not_enforce`, `epoch_killed`,
+// `unknown`) are banned everywhere on both surfaces: they are resolver
+// diagnostics, and a negative receipt is system-owned and reasonless (Sol M-1).
+
 import { describe, it, expect } from 'vitest';
+// Phase B: the scoped guards read RENDERED copy rather than source text, so
+// they import the renderers themselves. Both are zero-import / Node-clean; the
+// import is also the dependency-surface guard (BUILD_RULES §4).
+import { evidenceFactLines } from '../../../data/decisionRecord.js';
+import { buildYourRecordBlock, renderEvidenceLines } from '../../../../api/_utils/voiceLayerGrounding.js';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+
+/** One held position's full eight-field stamp, for the rendered-copy guards. */
+const FULL_EVIDENCE = Object.freeze({
+  px: 123.6, chg: 2.57, atrX: 0.83, vwapDev: 0.95, bbPct: 15, nr7: true,
+  regime: 'directional_expansion', risk: { action: 'LOCK', reason: 'threshold_proximity' },
+});
 
 // Every source file that can put a string on a Command Center Sync surface.
 // The two dashboard shells DUPLICATE their copy rather than share it
@@ -75,6 +115,49 @@ const FORBIDDEN = [
   'eyeing',
   'considering',
 ];
+
+// ── Phase B (seed §5): the upgrades of the two proven verbs ────────────────
+// `Heard` and `Saw` are the only verbs the stamps support. Each of these would
+// claim something the record cannot prove.
+//
+// A SEPARATE LIST, and deliberately so. The Phase A agent verbs above are
+// scanned in the CLIENT copy only: the narrator's own module names several of
+// them on purpose — its off-surface vocabulary guard tabulates the phrases it
+// hunts for, and `REPLY_LINT_RE` matches `eyeing|watching` by design. Scanning
+// that file for them would be exactly backwards. This list is the one that
+// travels to the narrator.
+const PHASE_B_FORBIDDEN = [
+  'considered',
+  'used your directive',
+  'noticed',
+  'understood',
+  'decided because',
+  'caused',
+  // Sol M-2: `techAt` is the newest HELD technical document's stamp, not a
+  // freshness promise for every held symbol's technical context.
+  'technical data as of',
+  // Sol m-1: held names never received rsPct in the rendered prompt, so there
+  // is no ninth field, no placeholder and no completeness rule.
+  'rsPct',
+  'rsPercentile',
+  'RS percentile',
+  'RS unavailable',
+  // Sol M-1: the four suppression reasons are telemetry, never copy.
+  'malformed',
+  'mode_not_enforce',
+  'epoch_killed',
+  'unknown',
+];
+
+// The client copy answers to both lists.
+FORBIDDEN.push(...PHASE_B_FORBIDDEN);
+
+// The narrator's own source carries the SAFE SUBSET only — every term above
+// except the two its grounding rules must name in order to forbid them
+// (`considered`, `caused`) — and its record renderer is guarded on its
+// RENDERED OUTPUT below, which is the stronger check anyway.
+const NARRATOR_SOURCE = path.join(HERE, '..', '..', '..', '..', 'api', '_utils', 'voiceLayerGrounding.js');
+const NARRATOR_EXEMPT = new Set(['considered', 'caused']);
 
 /**
  * Comments are stripped before matching. The prose above and in each guarded
@@ -214,5 +297,94 @@ describe('the posture line is discrete, never continuous', () => {
     const { DESK_COPY } = await import('./deskCopy.js');
     expect(DESK_COPY.postureClosed({ weekdayIndex: 2, hour: 9, minute: 30 }, null)).toBe('Market closed · next check Tue 9:30 AM ET');
     expect(DESK_COPY.postureClosed(null, null)).toBe('Market closed');
+  });
+});
+
+// ── Phase B (seed §5): the guard follows the copy where scoping is needed ───
+
+describe('Phase B — the narrator\'s source carries the safe subset', () => {
+  for (const term of PHASE_B_FORBIDDEN.filter((t) => !NARRATOR_EXEMPT.has(t))) {
+    it(`api/_utils/voiceLayerGrounding.js contains no "${term}"`, () => {
+      const re = new RegExp(`\\b${term.replace(/ /g, '\\s+')}\\b`, 'i');
+      expect(strippedSource(NARRATOR_SOURCE)).not.toMatch(re);
+    });
+  }
+
+  it('the two exempt terms are exempt ONLY because the rules must forbid them to the model', () => {
+    const source = strippedSource(NARRATOR_SOURCE);
+    // If this stops being true the exemption is stale and should be deleted
+    // rather than quietly carried (the LiveActivityPanel precedent).
+    expect(source).toContain('do not say a value caused a hold or a swap');
+    expect(source).toContain('never that it was considered, used, or acted on');
+  });
+});
+
+describe('Phase B — `chg` is labelled SINCE ENTRY wherever it renders (Sol M-3)', () => {
+  // Scoped, not global: "today" and "changed" are legitimate elsewhere on this
+  // surface ("This piece today", "The current directive changed before this
+  // could be filed"). What must never happen is those words landing beside the
+  // gain-since-entry number, where they would read as today's move.
+  const CHG_FORBIDDEN = ['changed', 'moved', 'today', 'change', 'move', 'session'];
+
+  it('the rendered fact says "Gain since entry" and none of the misreadings', () => {
+    const line = evidenceFactLines({ chg: 2.57 })[0];
+    expect(line).toBe('Gain since entry +2.57%');
+    for (const term of CHG_FORBIDDEN) {
+      expect(line.toLowerCase()).not.toMatch(new RegExp(`\\b${term}\\b`));
+    }
+  });
+
+  it('and in the full eight-field render, on both surfaces', () => {
+    const facts = evidenceFactLines(FULL_EVIDENCE).join(' · ');
+    expect(facts).toContain('Gain since entry +2.57%');
+    for (const term of CHG_FORBIDDEN) {
+      expect(facts.toLowerCase()).not.toMatch(new RegExp(`\\b${term}\\b`));
+    }
+  });
+});
+
+describe('Phase B — the narrator\'s RECORD RENDERER, on its rendered output', () => {
+  const ENTRY = {
+    evalId: 'e1', timestamp: '2026-09-01T16:45:00.000Z', decision: 'HOLD',
+    rationale: 'Held the book into the afternoon.',
+    evidence: { NVDA: FULL_EVIDENCE, TSLA: { px: 250, chg: -1.2, regime: 'choppy', risk: { action: 'HOLD' } } },
+    vintages: {
+      quote: 'tick', vwap: 'tick',
+      techAt: '2026-09-01T18:29:55.000Z', fundAsOf: '2026-09-08', rankingsAt: '2026-09-01T18:30:00.000Z',
+    },
+  };
+  const DIRECTIVE = { text: 'Protect the lead', directiveThreadId: 't-1', createdAt: '2026-09-01T15:31:00.000Z' };
+
+  const rendered = (heard) => buildYourRecordBlock({
+    evaluations: [{ ...ENTRY, ...(heard ? { heard } : {}) }],
+    directive: DIRECTIVE,
+  });
+
+  // PHASE_B_FORBIDDEN only: the block renders `rationale` VERBATIM (C1), and
+  // the decider's own words may legitimately contain a Phase A verb. What must
+  // never appear is a word this phase's own rendering could have introduced.
+  for (const term of PHASE_B_FORBIDDEN) {
+    it(`the rendered record contains no "${term}"`, () => {
+      const re = new RegExp(`\\b${term.replace(/ /g, '\\s+')}\\b`, 'i');
+      // Heard, withheld, and unstamped — the three shapes the block can take.
+      expect(rendered({ directiveThreadId: 't-1', suppressed: null })).not.toMatch(re);
+      expect(rendered({ directiveThreadId: 't-1', suppressed: 'epoch_killed' })).not.toMatch(re);
+      expect(rendered(null)).not.toMatch(re);
+    });
+  }
+
+  it('the record\'s own evidence lines carry the SINCE ENTRY label too', () => {
+    const lines = renderEvidenceLines(ENTRY).join('\n');
+    expect(lines).toContain('Gain since entry +2.57%');
+    expect(lines).toContain('Gain since entry -1.20%');
+    for (const term of ['changed', 'moved', 'today']) {
+      expect(lines.toLowerCase()).not.toMatch(new RegExp(`\\b${term}\\b`));
+    }
+  });
+
+  it('a withheld directive produces NO negative line and NO reason in the prompt', () => {
+    const block = rendered({ directiveThreadId: 't-1', suppressed: 'mode_not_enforce' });
+    expect(block).not.toContain('heard at the');
+    expect(block).not.toContain('Not heard');
   });
 });
