@@ -37,6 +37,9 @@ import React from 'react';
 import { cssVar } from '../../theme/cssTokens';
 import { parseEmphasis } from './selectWhyState';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
+// Phase C §1 — the door's enabled state, from the ONE cap display function
+// (D-122). This pane counts nothing itself.
+import { researchDoorEnabled } from '../../data/researchCap';
 
 const mono = {
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
@@ -71,11 +74,29 @@ function Sentence({ text }) {
  * roster row it is one it did not (muted). Nothing else differs — a chip is a
  * chip, so the eye reads the roster as the same kind of thing as the named.
  */
-function Chip({ symbol, spokenFor = false }) {
+function Chip({ symbol, spokenFor = false, onShowIt = null, researchUsed = 0 }) {
+  // Phase C §1 — THE BENCH CHIP CARRIES THE SAME DOOR. With a handler it is a
+  // button; without one it is the shipped `<span>`, byte for byte, which is
+  // what it stays while SHOW_IT_ENABLED is dark. The VISIBLE label is the
+  // symbol either way — a chip is a chip, and the roster has to keep reading as
+  // one bench rather than a row of ratios — so the door's cost lives in the
+  // accessible name, which is where the scopeDoorName rule already puts what a
+  // control does. Exhausted disables it, exactly as the panel's door.
+  const door = typeof onShowIt === 'function';
+  const enabled = door && researchDoorEnabled(researchUsed);
+  const Tag = door ? 'button' : 'span';
   return (
-    <span
+    <Tag
       data-bench-chip={symbol}
       data-bench-chip-named={spokenFor ? 'true' : 'false'}
+      {...(door ? {
+        type: 'button',
+        'data-bench-chip-door': 'showit',
+        'aria-label': COPY.showItDoorName(symbol, researchUsed),
+        title: enabled ? undefined : COPY.showItExhausted,
+        disabled: !enabled,
+        onClick: () => onShowIt(symbol),
+      } : {})}
       style={{
         ...mono,
         fontSize: 11,
@@ -91,15 +112,18 @@ function Chip({ symbol, spokenFor = false }) {
         border: `1px solid ${spokenFor
           ? `rgba(var(--ft-teal-rgb), 0.34)`
           : `rgba(var(--ft-scrim-rgb), 0.10)`}`,
+        ...(door ? { cursor: enabled ? 'pointer' : 'default', opacity: enabled ? 1 : 0.5 } : null),
       }}
     >
       {symbol}
-    </span>
+    </Tag>
   );
 }
 
-export default function PaneBench({ bench = null }) {
+export default function PaneBench({ bench = null, onShowIt = null, researchUsed = 0 }) {
   if (!bench) return null;
+  // One place decides what every chip on this pane is (BUILD_RULES §9).
+  const door = { onShowIt, researchUsed };
   const { slotIso, cards, flagged = [], rest, watchlistName, footer } = bench;
   const subtitle = COPY.benchWatchlist(watchlistName);
   const namedHeading = COPY.benchNamed(slotIso);
@@ -151,7 +175,7 @@ export default function PaneBench({ bench = null }) {
                 <Sentence text={text} />
               </span>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                {symbols.map((symbol) => <Chip key={symbol} symbol={symbol} spokenFor />)}
+                {symbols.map((symbol) => <Chip key={symbol} symbol={symbol} spokenFor {...door} />)}
               </div>
             </div>
           ))}
@@ -162,7 +186,7 @@ export default function PaneBench({ bench = null }) {
             <div data-bench-flagged="1" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 5 }}>
               {flagged.map((symbol) => (
                 <span key={symbol} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                  <Chip symbol={symbol} spokenFor />
+                  <Chip symbol={symbol} spokenFor {...door} />
                   <span
                     data-bench-flag-chip={symbol}
                     style={{
@@ -222,7 +246,7 @@ export default function PaneBench({ bench = null }) {
             {(slotIso && COPY.notNamedAtCheck(slotIso)) || COPY.benchRest}
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-            {rest.map((symbol) => <Chip key={symbol} symbol={symbol} />)}
+            {rest.map((symbol) => <Chip key={symbol} symbol={symbol} {...door} />)}
           </div>
         </div>
       )}

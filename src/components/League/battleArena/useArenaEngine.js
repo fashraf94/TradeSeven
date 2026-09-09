@@ -163,6 +163,28 @@ export function useArenaEngine({
     }
   }, [chatReady, agentId, battleId]);
 
+  // ── Show it (Phase C §1 / §2) ─────────────────────────────────────────────
+  //
+  // The deterministic route with the chip's server-validated symbol, never the
+  // ask path. The arena renders NOTHING from the response — the card lives in
+  // the battle doc the arena subscribes to — and the message counter is left
+  // exactly where it was, because research charges no message (D-118). No
+  // optimistic count is kept here at all, so nothing survives a failed route
+  // (Sol C-2).
+  const showItLive = React.useCallback(async (symbol) => {
+    const wanted = String(symbol ?? '').trim();
+    if (!chatReady || !wanted || inFlightRef.current) return;
+    inFlightRef.current = true;
+    try {
+      const fetchWithAuth = await loadAuthedFetch();
+      await fetchWithAuth('/api/agent/research', {
+        method: 'POST',
+        body: JSON.stringify({ agentId, battleId, symbol: wanted }),
+      });
+    } catch { /* the arena's card comes from the subscribed doc; a failed read leaves it absent */ }
+    finally { inFlightRef.current = false; }
+  }, [chatReady, agentId, battleId]);
+
   const fetchRemaining = React.useCallback(async () => {
     if (!chatReady) return;
     try {
@@ -253,6 +275,8 @@ export function useArenaEngine({
     askAgent,
     // two-way ask (flag-gated; inert in preview / when off)
     askLive,
+    // Phase C §1 — the research tap (inert until a research chip is minted)
+    showItLive,
     fetchRemaining,
     chatReady,
     remaining: eng.remaining,

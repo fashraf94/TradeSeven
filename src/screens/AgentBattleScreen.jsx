@@ -14,7 +14,10 @@ import useAgentBattleId from '../hooks/useAgentBattleId';
 import useAgentBattle from '../hooks/useAgentBattle';
 import AnimatedScore from '../components/shared/AnimatedScore';
 import { AgentPresenceMount } from '../components/AgentPresence';
-import { isAgentPresenceOn, isMatchupsBackdropOn, isBattleViewControllerOn, isCharacterPaneOn } from '../config/featureFlags';
+import { isAgentPresenceOn, isMatchupsBackdropOn, isBattleViewControllerOn, isCharacterPaneOn, isShowItOn } from '../config/featureFlags';
+import { getAuth } from 'firebase/auth';
+// Phase C §1 — the door's count, from the ONE cap display function (D-122).
+import { countResearchUsed } from '../data/researchCap';
 import { TAB_KEYS, tabLabels } from './agentBattleTabs';
 // Battle View controller, Phase A (BATTLE_VIEW_CONTROLLER_ENABLED — dark).
 // Everything imported from ./battleView renders ONLY under the flag; flag-off
@@ -529,6 +532,10 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // (never the constant — the Pass 1 vi.mock hazard), read by every A3 branch so
   // pane-off renders the A2 containers exactly as merged (D-93).
   const paneOn = isCharacterPaneOn();
+  // Phase C §1 — the Show it doors. Same rule as the two above: the ACCESSOR at
+  // render scope, never the constant. Dark today, so every door below is absent
+  // whole and the two panels render exactly as they do at HEAD.
+  const showItOn = isShowItOn();
   const prefersReducedMotion = useReducedMotion();
   const reducedMotion = Boolean(prefersReducedMotion);
   // A coarse clock for the turn line: once a minute or on visibilitychange,
@@ -1244,6 +1251,33 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   }, [paneOn, pane.openPane, chatOpen, sheet.open]);
   const handleComposerPrefillConsumed = useCallback(() => setComposerPrefill(null), []);
 
+  // ── Show it (Phase C §1 / §2) ─────────────────────────────────────────────
+  //
+  // The door calls the deterministic route with the piece's symbol and renders
+  // NOTHING from the response: the card is the `research` exchange the route
+  // writes, and it arrives through the same battle subscription every other
+  // card does. No optimistic count is kept — the door's number is derived from
+  // the subscribed doc below, so a route that failed leaves it where it was and
+  // the route stays the authority under a race (Sol C-2).
+  const handleShowIt = useCallback(async (symbol) => {
+    const wanted = typeof symbol === 'string' ? symbol.trim() : '';
+    if (!wanted || !agentBattle?.id || !agentBattle?.agentId) return;
+    try {
+      const user = getAuth().currentUser;
+      if (!user) return;
+      const idToken = await user.getIdToken();
+      await fetch('/api/agent/research', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agentId: agentBattle.agentId, battleId: agentBattle.id, symbol: wanted }),
+      });
+    } catch { /* the card comes from the subscribed doc; a failed read leaves it absent */ }
+  }, [agentBattle?.id, agentBattle?.agentId]);
+
+  // The cap's count, from the ONE display function (D-122) over the subscribed
+  // doc — the same count the route re-reads inside its transaction.
+  const researchUsed = countResearchUsed(agentBattle?.chatExchanges);
+
   // The landing for the door above now lives in the CHAT (D-89), beside the
   // card it lands on — `AgentChat`'s `openCheck` layout effect. It has to: the
   // card may be inside a fold on the render that requests it, so the scroll
@@ -1752,6 +1786,10 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                     // this panel only renders when its row is the open one.
                     mentionCount={mentionCount}
                     onScopeToPiece={handleScopeToPiece}
+                    // Phase C §1: the third door. Null flag-off, so the door row
+                    // is the two-door row it is today.
+                    onShowIt={showItOn ? handleShowIt : null}
+                    researchUsed={researchUsed}
                     reducedMotion={reducedMotion}
                     headingId={`why-${rowKey}-heading`}
                   />
@@ -1887,7 +1925,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       reducedMotion={reducedMotion}
       chat={chat}
       overflow={<PaneOverflow />}
-      bench={<PaneBench bench={benchState} />}
+      bench={<PaneBench bench={benchState} onShowIt={showItOn ? handleShowIt : null} researchUsed={researchUsed} />}
       tape={(
         <PaneTape
           battleId={agentBattleId}

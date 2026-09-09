@@ -37,6 +37,10 @@
 
 import { etTime } from '../../components/Dashboard/desk/deskCopy';
 import { slotLabel } from './deriveTurnLine';
+// Phase C §1 — the door's integer comes from the ONE cap display function
+// (D-122): server, client and tests share it, so `Show it · 1 of 3` cannot
+// drift from what the route enforces (BUILD_RULES §9).
+import { RESEARCH_CAP, researchDoorOrdinal } from '../../data/researchCap';
 // The persisted decision record's SHARED vocabulary (voice-grounding hazard
 // 26): the strings the narrator's YOUR RECORD block renders too live in the
 // zero-import src/data/decisionRecord.js and are re-exposed here under their
@@ -317,6 +321,40 @@ export const BATTLE_VIEW_COPY = Object.freeze({
     ? `Show the ${symbol} messages · ${n} in the chat`
     : null),
   scopeChipName: (symbol) => (symbol ? `Showing ${symbol} only · show the whole tape` : null),
+
+  // ── Show it (Phase C §1, D-116 / D-122) ───────────────────────────────────
+  //
+  // THE SECOND VERB. Tap a name and the platform shows you what it knows. Two
+  // surfaces wear the words and they are deliberately different:
+  //
+  //   · the CHIP the character offers in the conversation names the NAME
+  //     (`Show it · MPC`) — the chip's whole job is to say which piece;
+  //   · the DOOR on a piece's own panel names the COST (`Show it · 1 of 3`),
+  //     the D-31 cost-before-the-tap idiom `Ask a follow-up · 1 message` uses,
+  //     because the panel is already about that piece and the scarce thing is
+  //     the read.
+  //
+  // The door's integer is the ORDINAL OF THE NEXT CARD from the one shared
+  // display function (src/data/researchCap.js, D-122) — never a second count
+  // (BUILD_RULES §9). The exhausted door reads `3 of 3` exactly as the last
+  // enabled one does and is distinguished by being disabled, so the text is
+  // read off `used` alone and the enabled state off `researchDoorEnabled`.
+  showItChip: (symbol) => (typeof symbol === 'string' && symbol.trim() ? `Show it · ${symbol.trim()}` : null),
+  showItDoor: (used) => `Show it · ${researchDoorOrdinal(used)} of ${RESEARCH_CAP}`,
+  // The ACCESSIBLE name (the scopeDoorName rule): the visible label reads as a
+  // ratio, so a screen reader would announce two numbers where a read is about
+  // to be spent. Named for the ACTION and for the name it acts on.
+  showItDoorName: (symbol, used) => (typeof symbol === 'string' && symbol.trim()
+    ? `Show the platform's data on ${symbol.trim()} · read ${researchDoorOrdinal(used)} of ${RESEARCH_CAP}`
+    : null),
+  // The exhausted door's own line — the only place the three-of-three state
+  // says anything the enabled door does not. It states the fact, never a
+  // remedy the platform does not have.
+  showItExhausted: 'All 3 reads used in this battle.',
+  // The one failure line the client can be held to (the filingFailureLine
+  // rule): it says the read did not happen and nothing about why the platform
+  // thinks that.
+  showItFailed: 'That read didn\u2019t come back. Try again.',
   // What the scoped stream announces when the filter lands or lifts. A live
   // region, so it is spoken without moving focus — which the door does not
   // move to the stream anyway (it goes to the composer, with the prefill).

@@ -40,6 +40,9 @@ import { motion } from 'framer-motion';
 import { cssVar } from '../../theme/cssTokens';
 import { motionToken } from '../../theme/motion';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
+// Phase C §1 — the door's enabled state, from the ONE cap display function the
+// route enforces against (D-122). The panel derives no count of its own.
+import { researchDoorEnabled } from '../../data/researchCap';
 import { WHY_KIND, emphasizeSymbol, extractSentences, splitSentences, parseEmphasis } from './selectWhyState';
 
 const LABEL_COLOR = {
@@ -137,6 +140,15 @@ export default function WhyPanel({
   // pre-flip battle, and on any tick that never built a prompt: the section is
   // then absent WHOLE, never a placeholder.
   evidence = null,
+  // Phase C §1 (D-116 / D-122): the THIRD DOOR. `onShowIt` is the handler that
+  // calls the research route with this piece's symbol; `researchUsed` is the
+  // count of research cards already persisted on the battle, from which the
+  // ONE shared display function derives both the door's integer and whether it
+  // is enabled (src/data/researchCap.js) — the panel counts nothing itself.
+  // Both absent on the book panel (the door is a PIECE's) and while
+  // SHOW_IT_ENABLED is dark, and the door is then absent whole.
+  onShowIt = null,
+  researchUsed = 0,
   // D-89 — the book panel's close. The panel is a DISCLOSURE the score header
   // owns: the header carries the `aria-expanded`, so the way out has to hand
   // focus back to it or a keyboard reader is stranded on a region that has no
@@ -527,6 +539,35 @@ export default function WhyPanel({
           {/* Zero still renders (seed §A2.3): `In the chat · 0` is a true
               thing to say about a piece, and the tap opens the whole tape at
               the piece's prefill rather than an empty one. */}
+          {/* Show it (Phase C §1) — the piece's own door, in the same row and
+              the same cost-before-the-tap idiom as the follow-up beside it.
+              The exhausted door still RENDERS and reads `3 of 3`: what a
+              player has spent is a true thing to say about the battle, and
+              hiding it would answer "can I still?" by making the question
+              disappear. It is disabled, and only then does it carry a line. */}
+          {!isBook && typeof onShowIt === 'function' && (
+            <button
+              type="button"
+              data-why-showit={symbol}
+              aria-label={COPY.showItDoorName(symbol, researchUsed)}
+              title={researchDoorEnabled(researchUsed) ? undefined : COPY.showItExhausted}
+              disabled={!researchDoorEnabled(researchUsed)}
+              onClick={() => onShowIt(symbol)}
+              style={{
+                background: 'transparent',
+                border: `1px solid ${cssVar('text-muted')}`,
+                color: cssVar('text-secondary'),
+                borderRadius: 16,
+                padding: '6px 12px',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: researchDoorEnabled(researchUsed) ? 'pointer' : 'default',
+                opacity: researchDoorEnabled(researchUsed) ? 1 : 0.5,
+              }}
+            >
+              {COPY.showItDoor(researchUsed)}
+            </button>
+          )}
           {!isBook && typeof onScopeToPiece === 'function' && COPY.inTheChat(mentionCount) && (
             <button
               type="button"

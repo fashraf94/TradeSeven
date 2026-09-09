@@ -95,6 +95,8 @@ const DARK_BY_DESIGN = {
     'Spec 1 rollover sweep (§5.3) — built P4; flips only after a founder preview smoke',
   TICK_STAMPS_ENABLED:
     'Phase B — the three tick stamps (Heard / the evidence / the candidates) on the evaluation entry (D-113); built dark in B1, flips in the founder\'s own PR after B1 merges — the first stamped production check is the smoke (crons do not run on preview); flag-off entry byte-identical (agent-evaluate.tickStamps.flagOff.test.js)',
+  SHOW_IT_ENABLED:
+    'Phase C — Show it, the research path (D-116 → D-122): the route, the research chip and the three doors. Built dark; flips in the founder\'s own one-line PR after the build merges, with Vercel preview as the smoke surface. Flag-off the route 404s, no chip label resolves and the grounded prompt is byte-identical (research.dark.test.js)',
   // PROFIT_TARGET_EXECUTOR_ENABLED intentionally ABSENT: it flipped true in the
   // Asks 1+3 joint-flip PR (R10: the executor + R11 suppression pass light WITH
   // Ask 1's enforcement-true prompt copy — never alone). The deliberate flip

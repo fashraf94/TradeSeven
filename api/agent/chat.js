@@ -26,7 +26,10 @@ import { getEffectiveArchetype } from '../_utils/directiveIdentity.js';
 // re-typed: ownership proves the battle is the caller's, not that the agent
 // they named is the one this battle is bound to.
 import { agentBelongsToBattle, AGENT_BATTLE_MISMATCH } from '../_utils/agentBattleBinding.js';
-import { ARCHETYPE_INTEGRITY_MODE, LEAGUE_AGENT_CHAT_ENABLED, getVoiceGroundingMode } from '../../src/config/featureFlags.js';
+// SHOW_IT_ENABLED (Phase C §1) rides the SAME featureFlags import: a second
+// import statement for one module is a second thing to keep in step with every
+// vi.mock site. Read at CALL time at the one splice below.
+import { ARCHETYPE_INTEGRITY_MODE, LEAGUE_AGENT_CHAT_ENABLED, getVoiceGroundingMode, SHOW_IT_ENABLED } from '../../src/config/featureFlags.js';
 // Voice-layer grounding (VOICE_LAYER_GROUNDING_SPEC_V1_2): the per-caller mode
 // is read at CALL time through getVoiceGroundingMode(uid); under 'on' (battle
 // mode) the grounded prompt and the grounded history window are what the model
@@ -868,8 +871,19 @@ export default async function handler(req, res) {
     // SERVER-DERIVED archetype's menu and drops an off-menu id, so a chip's
     // `Files:` label is true by mechanism. The shipped path keeps the model's
     // strings untouched.
+    // Phase C §1 — the research chip. The battle is handed to the normalizer
+    // ONLY when SHOW_IT_ENABLED resolves on (read here, at call time), so a
+    // `{ kind:'research', symbol }` the model emits while the flag is dark is
+    // dropped as any other unknown kind is. With the battle in hand the symbol
+    // is validated against the battle's universe — book ∪ bench ∪ hot bench ∪
+    // the equipped watchlist — exactly as a directive id is validated against
+    // the menu (D-116).
     const suggestedActions = grounded
-      ? normalizeSuggestedActions(parsed.suggestedActions, getEffectiveArchetype(battle, agent))
+      ? normalizeSuggestedActions(
+        parsed.suggestedActions,
+        getEffectiveArchetype(battle, agent),
+        SHOW_IT_ENABLED ? { battle } : {},
+      )
       : (parsed.suggestedActions || null);
 
     // 18. Map to client contract

@@ -89,6 +89,12 @@ import { FLAT6_GAME_MODE } from '../../src/constants/agentGameModes.js';
 // direct importer of archetypeAdjustments.js, recorded in
 // archetypeImportBoundaryBaseline.json in the same commit (§2.3 ratchet).
 import { isValidAdjustmentId, getCanonicalText } from '../../src/data/archetypeAdjustments.js';
+// Phase C §1 — the research chip's universe check. `src/data/battleUniverse.js`
+// is ZERO-IMPORT and therefore Node-clean by construction (BUILD_RULES §4); the
+// test file's import of THIS module is the dependency-surface guard and must
+// never be mocked — it explodes in the Node test env if a browser dep ever
+// enters the graph.
+import { canonicalUniverseSymbol } from '../../src/data/battleUniverse.js';
 
 /**
  * Stamped top-level on every exchange produced under the grounding contract
@@ -878,10 +884,16 @@ RULES:
  *
  * @returns {Array<{kind:'directive', id:string, text:string}|{kind:'ask', text:string}>|null}
  */
-export function normalizeSuggestedActions(raw, archetype) {
+export function normalizeSuggestedActions(raw, archetype, options = {}) {
   if (!Array.isArray(raw)) return null;
+  // Phase C §1 — the research chip. `battle` arrives ONLY when the caller has
+  // resolved SHOW_IT_ENABLED on (chat.js reads the flag at call time), so this
+  // module needs no flag of its own and a research chip is dropped exactly as
+  // any other unknown kind while the flag is dark.
+  const battle = options && typeof options === 'object' ? options.battle : null;
   const out = [];
   const seenIds = new Set();
+  const seenSymbols = new Set();
   for (const item of raw) {
     if (typeof item === 'string') {
       const text = item.trim();
@@ -901,8 +913,43 @@ export function normalizeSuggestedActions(raw, archetype) {
       if (!text) continue;
       seenIds.add(id);
       out.push({ kind: 'directive', id, text });
+      continue;
+    }
+    // Phase C §1 (D-116) — a research chip is a STRUCTURED REQUEST, validated
+    // against the battle's universe exactly as a directive id is validated
+    // against the menu (hazard 6: never trust a client- or model-supplied
+    // symbol). The chip carries the UNIVERSE'S OWN spelling, so what the tap
+    // sends is what the doc holds; a name outside the universe, a duplicate, or
+    // a research chip on a battle the caller did not hand over is dropped.
+    if (item.kind === 'research') {
+      if (!battle) continue;
+      const symbol = canonicalUniverseSymbol(battle, item.symbol);
+      if (!symbol || seenSymbols.has(symbol)) continue;
+      seenSymbols.add(symbol);
+      out.push({ kind: 'research', symbol });
+      continue;
     }
     // any other kind: dropped
   }
   return out.length ? out : null;
 }
+
+// ==================== §1 (Phase C) — THE RESEARCH CHIP, OFFERED ====================
+//
+// The third kind is offered to the model in its OWN block, appended next to
+// GROUNDED_OUTPUT_FORMAT under SHOW_IT_ENABLED — never as an edit to the shared
+// OUTPUT_FORMAT const, which would change the grounded prompt's bytes while the
+// flag is dark (the ARCHETYPE_PROPOSAL_BLOCK precedent, review C3).
+//
+// The model may only NAME a name. It never composes the card, never says what
+// the card will show, and never earns a research chip by classifying a typed
+// question as research — `research_only` stays the post-call label it is today
+// (D-116).
+
+export const RESEARCH_CHIP_BLOCK = `THE THIRD OPTION KIND — "research":
+{ "kind": "research", "symbol": "<one ticker from this battle's book or bench>" }
+
+- It offers to SHOW the user the platform's own data on that name: the technicals the platform computes and the fundamentals on the rankings mirror, dated and attributed, composed by the system.
+- You are offering a screen, not an answer. Do NOT say what the card will show, do NOT preview a number, and do NOT describe the name's setup to justify the offer.
+- The symbol must be a name in this battle — a piece on the board or a name on the bench. A name the battle does not hold is dropped by the server and the option disappears.
+- It is not a recommendation to buy, sell, hold or exit, and offering it says nothing about what the trading process will do.`;

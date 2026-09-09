@@ -24,6 +24,9 @@ import { useArenaFlips } from './useArenaFlips';
 // Voice-layer grounding §6.2 — a minted directive chip's `Files: …` label is the
 // Battle View's (decisionRecord.js, zero-import): one copy source.
 import { filesChip } from '../../../data/decisionRecord';
+// Phase C §1 — the research chip's label, from the ONE copy module the Battle
+// View's chip uses, so the two surfaces cannot word the same chip differently.
+import { BATTLE_VIEW_COPY } from '../../../screens/battleView/battleViewCopy';
 
 function ordinal(n) {
   const s = ['th', 'st', 'nd', 'rd'];
@@ -40,6 +43,9 @@ function mintedLabel(chip) {
   if (!chip || typeof chip !== 'object') return null;
   if (chip.kind === 'directive') return chip.id && typeof chip.text === 'string' && chip.text ? filesChip(chip.text) : null;
   if (chip.kind === 'ask') return typeof chip.text === 'string' && chip.text ? chip.text : null;
+  // Phase C §1 — the research chip (`Show it · MPC`). Server-minted and
+  // server-validated under SHOW_IT_ENABLED; nothing is validated here.
+  if (chip.kind === 'research') return BATTLE_VIEW_COPY.showItChip(chip.symbol);
   return null;
 }
 
@@ -244,7 +250,7 @@ export function DockYourThree({ stars, dormant, complete, state, wire, wireClock
 // a scroll container, so the answer-scroll effect below is desktop-only).
 export function AgentDock({ lines, archName, live, ask, onAsk, compact = false, style,
   askLive = null, remaining = null, asking = false, chatReady = false,
-  chips = [], fileLive = null, filing = false, filingError = null }) {
+  chips = [], fileLive = null, filing = false, filingError = null, showItLive = null }) {
   const c = OWN_AGENT;
   const [asked, setAsked] = React.useState([]);
   const handleAsk = (i) => { if (!asked.includes(i)) setAsked((a) => [...a, i]); onAsk(i); };
@@ -343,10 +349,13 @@ export function AgentDock({ lines, archName, live, ask, onAsk, compact = false, 
         const onTap = () => {
           if (busy) return;
           if (directive) { if (typeof fileLive === 'function') fileLive(chip.id); return; }
+          // Phase C §1 — the research tap goes to the RESEARCH ROUTE, never the
+          // ask path: a card is a code-composed read, not a message (D-118).
+          if (chip.kind === 'research') { if (typeof showItLive === 'function') showItLive(chip.symbol); return; }
           askLive(chip.text);
         };
         return (
-          <button key={`minted-${chip.kind}-${directive ? chip.id : chip.text}-${i}`} className="bv2-tap" data-chip-kind={chip.kind}
+          <button key={`minted-${chip.kind}-${chip.id || chip.symbol || chip.text}-${i}`} className="bv2-tap" data-chip-kind={chip.kind}
             onClick={onTap} disabled={busy}
             style={{ all: 'unset', cursor: busy ? 'default' : 'pointer',
               display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 11px', borderRadius: 999,
@@ -438,7 +447,8 @@ export function DockStatePanel({ state, mode, eng, archName, voice, pod, ask, yo
   if (state === 'live') {
     return <AgentDock lines={eng.lines} archName={archName} live ask={ask} onAsk={eng.askAgent}
       askLive={eng.askLive} remaining={eng.remaining} asking={eng.asking} chatReady={eng.chatReady}
-      chips={eng.chips} fileLive={eng.fileLive} filing={eng.filing} filingError={eng.filingError} style={style} />;
+      chips={eng.chips} fileLive={eng.fileLive} filing={eng.filing} filingError={eng.filingError}
+      showItLive={eng.showItLive} style={style} />;
   }
   if (state === 'awaiting') {
     return (

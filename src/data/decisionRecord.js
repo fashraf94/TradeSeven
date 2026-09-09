@@ -486,6 +486,24 @@ export const GROUNDING_VERSION = 1;
  */
 export const DIRECTIVE_FILED_MESSAGE_TYPE = 'directive_filed';
 
+/**
+ * The persisted `messageType` of a research card's exchange (Phase C, spec §3;
+ * api/agent/research.js). It is PLATFORM DATA, not narrator speech and not the
+ * decider's evidence, and its identity is structural on three surfaces that all
+ * key on this one name (D-121):
+ *
+ *   · the cap counts exchanges carrying it (§4 — no new battle-doc key);
+ *   · the narrator's history window EXCLUDES it, the way it excludes a chip
+ *     filing, so the card can never re-enter the prompt as the character's own
+ *     earlier words (Sol C-1);
+ *   · the grounded prompt admits it only through the typed PLATFORM RESEARCH
+ *     block, which reads exchanges by this type.
+ *
+ * A research exchange carries NO `groundingVersion` — not 1, not 0. It is not a
+ * grounded narrator turn and must never be counted as one.
+ */
+export const RESEARCH_MESSAGE_TYPE = 'research';
+
 /** A directive chip's label: what it FILES, by mechanism (§6.2). */
 export const FILES_CHIP_PREFIX = 'Files: ';
 export const filesChip = (text) => (typeof text === 'string' && text ? `${FILES_CHIP_PREFIX}${text}` : null);

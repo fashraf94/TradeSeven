@@ -17,7 +17,7 @@ import { getArchetypeLabel } from './agentArchetypeConfig.js';
 // is the BUILD_RULES §4 dependency-surface guard.
 import { getArchetypeZones, getAllowlist } from '../../src/data/archetypeAdjustments.js';
 import { getEffectiveArchetype } from './directiveIdentity.js';
-import { ARCHETYPE_INTEGRITY_MODE } from '../../src/config/featureFlags.js';
+import { ARCHETYPE_INTEGRITY_MODE, SHOW_IT_ENABLED } from '../../src/config/featureFlags.js';
 // The pane's motive renderer (D-80) — the SAME translator the grounded YOUR
 // RECORD block renders `evaluations[].rationale` through (voiceLayerGrounding.js).
 // `trades[].rationale` is the SAME cron string: agent-evaluate.js:2245 and :2640
@@ -48,6 +48,7 @@ import {
   GROUNDED_FIRST_MESSAGE_IDENTITY_TAIL,
   GROUNDED_FIRST_MESSAGE_INSTRUCTIONS,
   GROUNDED_OUTPUT_FORMAT,
+  RESEARCH_CHIP_BLOCK,
 } from './voiceLayerGrounding.js';
 
 // ==================== STATIC CONSTANTS ====================
@@ -3068,6 +3069,11 @@ You've been working together for ${gamesPlayed} games (${wins}W-${losses}L). You
   // Phase D — battle-only proposal-schema append, adjacent to OUTPUT_FORMAT. NOT
   // an edit to the shared OUTPUT_FORMAT const (that would leak into review — C3).
   if (archetypeBlock) blocks.push(ARCHETYPE_PROPOSAL_BLOCK);
+  // Phase C §1 — the research chip's third kind, offered the same way and for
+  // the same reason: an append, so the grounded prompt is byte-identical while
+  // SHOW_IT_ENABLED is dark. Grounded + battle only — the review turn mints no
+  // chips, and the flag is read HERE, at call time.
+  if (grounded && mode !== 'review' && SHOW_IT_ENABLED) blocks.push(RESEARCH_CHIP_BLOCK);
   blocks.push(
     partnerModel,    // Block 2   (MIDDLE)
     convictions,     // Block 3   (MIDDLE)
