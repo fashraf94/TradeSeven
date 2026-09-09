@@ -10,6 +10,9 @@
     "api/_utils/mandateUniverseSnapshot.js::bumpUpstreamCounter::set::unresolved": "SPEC1 Phase 2 (PR #745). ONE tx.set writing the non-protected mandateUpstreamCalls/{date} daily upstream-call counter (Q5). The collection is a literal, but the scanner cannot resolve a tx.set(ref,…) handle-form argument (only callee-base ref.set() chains), and the atomic read-modify-write — which fires the quota alert exactly once at the crossing — must not be dropped; allowlisted per the guard's human-review rule. The sibling ensureUniverseSnapshot / ensureDailySnapshot writes were made RESOLVABLE by inlining their literal collections at the callee-base ref.set(), so they carry NO allowlist entry.",
     "api/cron/mandate-evaluate.js::handler::call:acquireLease#1 / call:releaseLease#1": "SPEC1 Phase 2 (PR #745). B3-EXT one-hop helper call sites: the handler passes mandateRef (arg index 1 = docSnap.ref from the active-book sweep query) into the lease helpers above. Each is ONE call. The ref is query-derived → resolves to unresolved; the helpers write the non-protected mandates/{id}.lease field stated above."
   },
+  "_notes_phase_c_show_it": {
+    "api/agent/research.js::handler::update::unresolved": "PHASE C §2/§4 (Show it). ONE tx.update inside the route's single runTransaction, writing agentBattles/{battleId}.chatExchanges via FieldValue.arrayUnion — the research card's exchange, and NOTHING else (the route charges no message and writes no counter key: D-118). NOT a composition-protected store. Unresolved for the standard handle-form reason — tx.update(battleRef, …) takes a DocumentReference variable and the scanner does not trace ref-args for transaction-handle writes — and the transaction is what makes the cap authoritative under a race (Sol C-2), so it must not be restructured to inline a literal. Human-reviewed and allowlisted per the guard's own rule."
+  },
   "allowedWriteSites": {
     "api/_utils/__fixtures__/wireFirestoreFake.js::createFirestoreFake::set::unresolved": 1,
     "api/_utils/agentChatBudget.js::chargeAgentChatBudget::set::unresolved": 1,
@@ -172,6 +175,7 @@
     "api/agent/equip-bundle.js::handler::update::unresolved": 1,
     "api/agent/equip-lean.js::handler::call:txUpdateAgentSettings#1::agents": 1,
     "api/agent/equip-watchlist.js::handler::call:txUpdateAgentSettings#1::agents": 1,
+    "api/agent/research.js::handler::update::unresolved": 1,
     "api/agent/reflect.js::appendMemoryReflectionForwardTx::update::unresolved": 1,
     "api/agent/reflect.js::claimConsolidationMilestone::update::unresolved": 1,
     "api/agent/reflect.js::generateReflection::call:appendMemoryReflectionForwardTx#1::agents": 1,

@@ -39,6 +39,11 @@ import {
   buildGroundedConversationHistory,
   GROUNDED_ELICITATION_INSTRUCTIONS,
   normalizeSuggestedActions,
+  // Phase C §5 — the research follow-up's lint and the line that replaces a
+  // reply that fails it.
+  buildPlatformResearchBlock,
+  passesResearchReplyLint,
+  RESEARCH_LINT_WITHHELD_LINE,
 } from '../_utils/voiceLayerGrounding.js';
 // Archetype Integrity — Phase E2 (capabilities manifest → USER LEVERS hand-off).
 // Flag-gated, battle-only; the manifest is built only when the feature is ON.
@@ -886,13 +891,36 @@ export default async function handler(req, res) {
       )
       : (parsed.suggestedActions || null);
 
+    // 17b. PHASE C §5 — THE REPLY LINT, ON A RESEARCH FOLLOW-UP.
+    //
+    // The discovery (item 13) found the lint applied IN CODE only to the
+    // anticipation clause and to no chat reply, so this is a build item, not a
+    // reuse — and it is scoped as the spec scopes it: only a turn whose prompt
+    // actually carried a PLATFORM RESEARCH block can fail it, so no other reply
+    // in the product changes behaviour, and none can while the flag is dark.
+    //
+    // A BREACH IS NOT VOICED. The reply is withheld and replaced by a
+    // code-owned line — a truth-of-record the model cannot override, the
+    // renderDirectiveStatus precedent — rather than shipped with a verdict in
+    // it and a rule beside it saying there should not be one.
+    const researchFollowUp = grounded
+      && SHOW_IT_ENABLED
+      && buildPlatformResearchBlock(battle?.chatExchanges) !== null;
+    const researchLintFailed = researchFollowUp && !passesResearchReplyLint(parsed.response);
+    if (researchLintFailed) {
+      console.warn(`[VoiceLayer] research reply lint WITHHELD a reply (battle ${battleId})`);
+      parsed.response = RESEARCH_LINT_WITHHELD_LINE;
+      parsed.suggestedActions = null;
+    }
+    const lintedSuggestedActions = researchLintFailed ? null : suggestedActions;
+
     // 18. Map to client contract
     const clientResponse = {
       agentMessage: parsed.response,
       extractedRule: normalizedDirective
         ? { text: normalizedDirective.text, targetType: 'general', targetValue: null, rationale: normalizedDirective.text }
         : null,
-      suggestedActions,
+      suggestedActions: lintedSuggestedActions,
       exchangeNumber: currentBudget + 1,
       budgetTotal: budgetLimit,
       scratchpad: cleanScratchpad,
@@ -930,7 +958,7 @@ export default async function handler(req, res) {
       agentMessage: parsed.response,
       scratchpad: cleanScratchpad,
       directive: normalizedDirective,
-      suggestedActions,
+      suggestedActions: lintedSuggestedActions,
       elicitationTarget: elicitationTarget.dimension,
       anchorContext: anchorContext || null,
       hasDirective: effectiveHasDirective,
@@ -978,7 +1006,7 @@ export default async function handler(req, res) {
         ? buildDirectiveRecord(normalizedDirective, directiveThreadId)
         : null,
       directiveThreadId,
-      suggestedActions,
+      suggestedActions: lintedSuggestedActions,
       elicitationTarget: elicitationTarget.dimension,
       timestamp: new Date().toISOString(),
       mode,
@@ -998,6 +1026,11 @@ export default async function handler(req, res) {
       // chatExchanges write, NOT a fire-and-forget log). Stamped on the EXCHANGE,
       // never as a new battle-doc key (no createAgentBattle doc-shape contact).
       ...(gateOutcome ? { archetypeGate: gateOutcome } : {}),
+      // Phase C §5 — the record says the reply was WITHHELD by the lint, so
+      // scrollback shows a code-owned line that is explained rather than a
+      // sentence the character appears to have chosen. Absent on every other
+      // turn, so no shape moves while the flag is dark.
+      ...(researchLintFailed ? { researchLint: 'withheld' } : {}),
       // Voice-layer grounding §3.4 (M3): every exchange produced under the
       // grounding contract carries the TOP-LEVEL marker, so the history window
       // has one rule. Absent when the shipped prompt was sent (off / shadow):

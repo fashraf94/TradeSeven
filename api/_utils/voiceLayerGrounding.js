@@ -71,6 +71,7 @@ import {
   planAtDeployLabel,
   GROUNDING_VERSION,
   DIRECTIVE_FILED_MESSAGE_TYPE,
+  RESEARCH_MESSAGE_TYPE,
   guardrailForcedExit,
   GUARDRAIL_FORCED_FAILED_LABEL,
   renderMotive,
@@ -422,6 +423,20 @@ export function selectHistoryWindow(chatExchanges, { window = HISTORY_WINDOW } =
   for (const ex of recent) {
     if (!ex || typeof ex !== 'object') continue;
     const type = historyMessageType(ex);
+    // PHASE C §5 / D-121 (Sol C-1, BLOCKER) — A RESEARCH CARD IS NEVER HISTORY.
+    //
+    // It is platform data, and this block's heading tells the model these are
+    // ITS OWN EARLIER MESSAGES. A card admitted here would arrive with the
+    // structure saying "you said this" while a prose rule elsewhere said "the
+    // platform holds this" — contradictory signals, and the structure is the
+    // one the model reads as fact. A prose rule cannot repair a history role.
+    //
+    // The exclusion is FIRST and UNCONDITIONAL, ahead of both branches: the
+    // `userMessage` branch does not consult `groundingVersion`, so leaving the
+    // marker off the exchange (which the route also does) would not on its own
+    // keep a card out of `pairs`. The card reaches the prompt through
+    // buildPlatformResearchBlock and nowhere else.
+    if (type === RESEARCH_MESSAGE_TYPE) continue;
     const agentText = ex.agentResponse || ex.agentMessage || '';
     if (isNonEmptyString(ex.userMessage)) {
       pairs.push({ type, userMessage: ex.userMessage, agentText });
@@ -457,6 +472,99 @@ export function buildEarlierMessagesBlock(chatExchanges) {
   });
   return `${EARLIER_MESSAGES_HEADING}\n${lines.join('\n')}`;
 }
+
+// ============ PHASE C §5 / D-121 — THE PLATFORM RESEARCH BLOCK ============
+//
+// THE ONE ENTRANCE a research card has to the grounded prompt (Sol C-1).
+//
+// The card is persisted (spec §3) so a follow-up can be answered about it, and
+// `selectHistoryWindow` excludes it structurally so it can never arrive as the
+// character's own earlier words. It arrives HERE instead, under its own heading,
+// with the symbol, the sections' own dates and the platform-data label intact —
+// the same provenance the player is reading on screen, so the character and the
+// player are looking at one labelled thing.
+//
+// THE RULE TRAVELS WITH THE BLOCK, not with the shared rules. Spec §5 put the
+// line in GROUNDED_SHARED_RULES; carrying it here instead is strictly stronger
+// and is why the deviation is deliberate: a rule about a card is present exactly
+// when a card is, so it can never govern a prompt that has none — and the
+// grounded prompt is byte-identical while SHOW_IT_ENABLED is dark, which a line
+// added to the shared rules would not have been.
+//
+// It also carries the ONE CARVE-OUT the number rule needs (hazard 5): the
+// OUTPUT_FORMAT says "NEVER quote raw data numbers", and a research card IS
+// numbers. Without the carve-out the model either paraphrases numbers it was
+// told not to quote or refuses to answer about the card in front of it.
+
+export const PLATFORM_RESEARCH_HEADING = 'PLATFORM RESEARCH — data the PLATFORM holds, shown to the user on a card at the dates below. NOT your earlier words, NOT what the trading process saw at any check, NOT evidence for any decision.';
+
+export const PLATFORM_RESEARCH_RULE = `THE RESEARCH RULE:
+- A research card is the platform's data at its labelled date. You may describe it, and you may read ITS OWN numbers aloud with their labels and dates — that is the one exception to never quoting raw data numbers, and it extends to nothing else in this prompt.
+- You do not recommend, forecast, or state what the trading process will do with it.
+- It is not yours and it is not the check's: never say you saw it, looked it up, ran it, or that it was your evidence, and never say it explains or caused any decision on the record.
+- If the user asks about a name with no card here, you have no card for it — say so.`;
+
+/** One card, rendered for the prompt: the symbol, then each section with its own label. */
+function renderResearchCard(card) {
+  if (!card || typeof card !== 'object') return null;
+  const lines = [`  ${card.symbol ?? '—'} — ${card.platformDataLabel ?? ''}`.trimEnd()];
+  for (const key of ['technicals', 'fundamentals']) {
+    const section = card[key];
+    if (!section || !Array.isArray(section.facts) || section.facts.length === 0) continue;
+    lines.push(`    ${section.label}: ${section.facts.join(' · ')}`);
+  }
+  const standing = card.standing;
+  if (standing) {
+    const text = standing.line || (Array.isArray(standing.facts) ? standing.facts.join(' · ') : '');
+    if (text) lines.push(`    Standing: ${text}`);
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Every research card inside the history window, in write order, as one typed
+ * block — or null when the battle has none, in which case the prompt gains
+ * nothing at all and neither the heading nor the rule appears.
+ */
+export function buildPlatformResearchBlock(chatExchanges, { window = HISTORY_WINDOW } = {}) {
+  const recent = Array.isArray(chatExchanges) ? chatExchanges.slice(-window) : [];
+  const rendered = recent
+    .filter((ex) => ex && typeof ex === 'object' && historyMessageType(ex) === RESEARCH_MESSAGE_TYPE)
+    .map((ex) => renderResearchCard(ex.card))
+    .filter(Boolean);
+  if (rendered.length === 0) return null;
+  return [PLATFORM_RESEARCH_HEADING, ...rendered, PLATFORM_RESEARCH_RULE].join('\n');
+}
+
+// ============ PHASE C §5 — THE REPLY LINT, ON A RESEARCH FOLLOW-UP ============
+//
+// The discovery (item 13) found the reply lint applied IN CODE only to the
+// anticipation clause and to no chat reply, so "a research reply passes through
+// it" was a build item, not a reuse. This is that item, scoped as the spec
+// scopes it: research follow-ups only.
+//
+// The shipped REPLY_LINT_RE's verbs plus the research verbs the card must never
+// provoke — a verdict about the name, or a claim about what the process will do
+// with the platform's numbers.
+
+export const RESEARCH_REPLY_LINT_RE = /\b(?:should (?:I|we|you)|(?:I|we)(?:'m| am| are)? going to|(?:I|we)(?:'ll| will))\b|\b(?:I|we)(?:'d| would)\s+(?:buy|sell|hold|exit|swap|rotate|equip|take|add)\b|\b(?:buy|sell|short) (?:it|this|that|now|here)\b|\bworth (?:buying|selling|holding|owning)\b|\btime to (?:buy|sell|exit|cut)\b/i;
+
+/**
+ * A research follow-up's reply passes when it breaks NEITHER lint: the shipped
+ * anticipation lint (the "I'll rotate / eyeing / watching" family) nor the
+ * verdict family above.
+ */
+export function passesResearchReplyLint(text) {
+  return passesReplyLint(text) && !(typeof text === 'string' && RESEARCH_REPLY_LINT_RE.test(text));
+}
+
+/**
+ * What the RECORD says when a reply about a card failed the lint. A code-owned
+ * truth the model cannot override (the renderDirectiveStatus precedent): the
+ * breach is not voiced, and the turn says plainly that it was withheld rather
+ * than pretending the character said something else.
+ */
+export const RESEARCH_LINT_WITHHELD_LINE = "That answer didn't hold to the card, so it wasn't sent. The card above is the platform's data at its labelled dates.";
 
 // ==================== D-76 — THE PLAN AT DEPLOY (the opener) ====================
 

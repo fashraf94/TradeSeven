@@ -30,7 +30,7 @@
 // (or the count the route returned) and never from an optimistic increment that
 // survived a failed request.
 
-import { RESEARCH_MESSAGE_TYPE } from './decisionRecord';
+import { RESEARCH_MESSAGE_TYPE } from './decisionRecord.js';
 
 /** Three per battle (spec §4). */
 export const RESEARCH_CAP = 3;

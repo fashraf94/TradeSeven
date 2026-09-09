@@ -49,6 +49,7 @@ import {
   GROUNDED_FIRST_MESSAGE_INSTRUCTIONS,
   GROUNDED_OUTPUT_FORMAT,
   RESEARCH_CHIP_BLOCK,
+  buildPlatformResearchBlock,
 } from './voiceLayerGrounding.js';
 
 // ==================== STATIC CONSTANTS ====================
@@ -3042,6 +3043,16 @@ You've been working together for ${gamesPlayed} games (${wins}W-${losses}L). You
   // the grounding marker — conversation, not decision evidence (§3.4).
   const earlierMessages = grounded ? buildEarlierMessagesBlock(battle?.chatExchanges) : null;
 
+  // Block 5.4 (Phase C §5 / D-121): the research cards in the window, under
+  // their OWN typed heading with their own dates and the platform-data label —
+  // the ONE entrance a card has to this prompt (Sol C-1). Never in 5.5: that
+  // block's heading says "your earlier messages", and a card admitted there
+  // would be read as the character's own words. Null when the battle holds no
+  // card, and gated so the prompt is byte-identical while the flag is dark.
+  const platformResearch = grounded && SHOW_IT_ENABLED
+    ? buildPlatformResearchBlock(battle?.chatExchanges)
+    : null;
+
   // Few-Shot Example (BOTTOM — high attention)
   const fewShot = grounded
     ? GROUNDED_PHASE_EXAMPLES[phase] + '\n\n' + GROUNDED_CONFIRMATION_EXAMPLE
@@ -3102,6 +3113,7 @@ You've been working together for ${gamesPlayed} games (${wins}W-${losses}L). You
   if (archetypeBlock) blocks.push(archetypeBlock, grounded ? GROUNDED_THIRD_PATH_RULE : THIRD_PATH_RULE, buildUserLeversBlock(capabilitiesManifest), TWO_LEG_SIGNAL_RULE);
 
   blocks.push(battleState); // Block 5   (BOTTOM)
+  if (platformResearch) blocks.push(platformResearch); // Block 5.4 (Phase C, flag-gated)
   if (earlierMessages) blocks.push(earlierMessages); // Block 5.5 (grounded only)
   blocks.push(
     fewShot,         // Few-Shot  (BOTTOM)
