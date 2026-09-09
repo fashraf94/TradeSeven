@@ -25,6 +25,7 @@ import WhyPanel from './WhyPanel';
 import PaneBench from './PaneBench';
 import { WHY_KIND } from './selectWhyState';
 import { RESEARCH_CAP, researchDoorEnabled, researchDoorOrdinal } from '../../data/researchCap';
+import { RESEARCH_FAILED_LINE } from '../../data/decisionRecord';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..', '..');
@@ -49,9 +50,12 @@ const renderPanel = (props) => act(() => root.render(
   <WhyPanel symbol="MPC" state={STATE} headingId="h" {...props} />,
 ));
 const BENCH = { slotIso: null, cards: [], flagged: [], rest: ['MPC'], watchlistName: null, footer: null };
+const ROSTER = { ...BENCH, rest: ['MPC', 'SLB', 'NVDA'] };
 const renderBench = (props) => act(() => root.render(<PaneBench bench={BENCH} {...props} />));
 const door = () => container.querySelector('[data-why-showit="MPC"]');
 const chip = () => container.querySelector('[data-bench-chip="MPC"]');
+const doorError = () => container.querySelector('[data-why-showit-error="MPC"]');
+const chipError = () => container.querySelector('[data-bench-showit-error="MPC"]');
 
 describe('5. the enabled / disabled contract — the door', () => {
   it('prints the ordinal of the NEXT read and is enabled while one is left', () => {
@@ -182,9 +186,11 @@ describe('4. no optimistic client increment survives a failed route', () => {
       const src = read(rel);
       expect(src, `${rel} must keep no research count`).not.toMatch(/researchUsed|researchRemaining|setResearchRemaining/);
     }
-    // The screen's ONLY research state is the in-flight flag, which is not a
-    // count and cannot stand in for one (review C-3 / F-2).
+    // The screen's research state is the in-flight flag and the refused
+    // symbol. NEITHER is a count and neither can stand in for one (review
+    // C-3 / F-2, and the refusal section at the bottom of this file).
     expect(screen).toContain('const [researchPending, setResearchPending] = useState(false)');
+    expect(screen).toContain('const [researchError, setResearchError] = useState(null)');
   });
 
   it('TRIPWIRE: the display function is the ONE source for the door’s integer', () => {
@@ -199,5 +205,125 @@ describe('4. no optimistic client increment survives a failed route', () => {
     // the ordinal and this row fails).
     expect(researchDoorOrdinal(0)).toBe(1);
     expect(researchDoorEnabled(RESEARCH_CAP)).toBe(false);
+  });
+});
+
+// ── THE REFUSED TAP (Phase C) ───────────────────────────────────────────────
+//
+// A refused tap moves NOTHING the doors can see: the count comes from the
+// subscribed doc and no card was written, so the only signal was a button that
+// did nothing — indistinguishable from a broken one, which is the reading
+// review F-8 removed from the exhausted state. The doors now say so.
+//
+// The line claims `no use spent`, and that clause is why it is scoped to a
+// refusal the route ANSWERED (decisionRecord.js `RESEARCH_FAILED_LINE`); the
+// screen's half of that scoping is the tripwire at the bottom, because the
+// doors are pure and render what they are handed.
+//
+// `researchError` is the SYMBOL, never a boolean: one failed tap on MPC must
+// not put a line beside every name on the bench, or on the next piece's panel.
+describe('the doors’ error state — the panel’s door', () => {
+  it('renders the refusal line, and its cost clause, beside the door', () => {
+    renderPanel({ onShowIt: () => {}, researchUsed: 1, researchError: 'MPC' });
+    expect(doorError()).toBeTruthy();
+    expect(doorError().textContent).toBe(RESEARCH_FAILED_LINE);
+    expect(doorError().textContent).toBe('Couldn’t load the card · no use spent');
+    // Announced on insertion — it answers a tap the player just made.
+    expect(doorError().getAttribute('role')).toBe('alert');
+    // The door is unmoved: same integer, still enabled, still the retry.
+    expect(door().textContent).toBe('Show it · 2 of 3');
+    expect(door().disabled).toBe(false);
+  });
+
+  it('is ABSENT with no error, and clears when the next tap clears the prop', () => {
+    renderPanel({ onShowIt: () => {}, researchUsed: 1, researchError: 'MPC' });
+    expect(doorError()).toBeTruthy();
+    // The screen nulls it as the next tap starts; the panel renders that.
+    renderPanel({ onShowIt: () => {}, researchUsed: 1, researchError: null });
+    expect(doorError()).toBeNull();
+    expect(container.textContent).not.toContain('no use spent');
+  });
+
+  it('belongs to the NAME it was about — another piece’s refusal says nothing here', () => {
+    renderPanel({ onShowIt: () => {}, researchUsed: 1, researchError: 'SLB' });
+    expect(doorError()).toBeNull();
+    expect(container.textContent).not.toContain('no use spent');
+  });
+
+  it('cannot appear on the flag-dark page — no door, no failure to report', () => {
+    renderPanel({ onShowIt: null, researchUsed: 1, researchError: 'MPC' });
+    expect(doorError()).toBeNull();
+    expect(container.textContent).not.toContain('no use spent');
+  });
+});
+
+describe('the doors’ error state — the bench chip', () => {
+  it('renders the same line, from the same string, beside the chip that failed', () => {
+    renderBench({ onShowIt: () => {}, researchUsed: 1, researchError: 'MPC' });
+    expect(chipError()).toBeTruthy();
+    expect(chipError().textContent).toBe(RESEARCH_FAILED_LINE);
+    expect(chipError().getAttribute('role')).toBe('alert');
+    // The chip stays a chip: the symbol is still its whole visible label.
+    expect(chip().textContent).toBe('MPC');
+    expect(chip().disabled).toBe(false);
+  });
+
+  it('ONE chip, not the roster — the other names on the bench say nothing', () => {
+    renderBench({ bench: ROSTER, onShowIt: () => {}, researchUsed: 1, researchError: 'MPC' });
+    expect(container.querySelectorAll('[data-bench-showit-error]')).toHaveLength(1);
+    expect(chipError()).toBeTruthy();
+    expect(container.querySelector('[data-bench-showit-error="SLB"]')).toBeNull();
+    expect(container.querySelector('[data-bench-showit-error="NVDA"]')).toBeNull();
+  });
+
+  it('NO FAILURE, NO WRAPPER — the chip is byte-identical to its no-error render', () => {
+    renderBench({ onShowIt: () => {}, researchUsed: 1 });
+    const clean = container.innerHTML;
+    renderBench({ onShowIt: () => {}, researchUsed: 1, researchError: null });
+    expect(container.innerHTML).toBe(clean);
+    renderBench({ onShowIt: () => {}, researchUsed: 1, researchError: 'SLB' });
+    expect(container.innerHTML).toBe(clean);
+    // …and the wrapper DOES appear once there is something to stack beside it,
+    // so the comparison above is not passing on a component that never renders
+    // the line at all.
+    renderBench({ onShowIt: () => {}, researchUsed: 1, researchError: 'MPC' });
+    expect(container.innerHTML).not.toBe(clean);
+  });
+
+  it('the flag-dark span carries no failure either', () => {
+    renderBench({ researchError: 'MPC' });
+    expect(chip().tagName).toBe('SPAN');
+    expect(chipError()).toBeNull();
+  });
+});
+
+describe('the screen’s half: when the line is set, and when it clears', () => {
+  it('TRIPWIRE: set only on a refusal the route ANSWERED, cleared by the next tap', () => {
+    const screen = read('src/screens/AgentBattleScreen.jsx');
+    // The state is the SYMBOL, so a refusal belongs to the name it was about.
+    expect(screen).toContain('const [researchError, setResearchError] = useState(null)');
+    // Cleared as the tap starts — the tap is the retry, so the old line is
+    // stale the moment another one begins.
+    expect(screen).toMatch(/setResearchPending\(true\);\s*\n\s*setResearchError\(null\);/);
+    // Set on an ANSWERED refusal…
+    expect(screen).toContain('if (!res.ok) setResearchError(wanted);');
+    // …and NOT in the catch: a request that never came back has no response,
+    // so its commit may have landed with the reply lost, and `no use spent`
+    // would be a claim the client cannot be held to (the D-90 split
+    // `filingFailureLine` draws). The catch stays comment-only.
+    const catchBlock = screen.slice(screen.indexOf('if (!res.ok) setResearchError(wanted);'));
+    const body = catchBlock.slice(catchBlock.indexOf('} catch'), catchBlock.indexOf('finally'));
+    expect(body).not.toContain('setResearchError');
+  });
+
+  it('TRIPWIRE: the error is not a second count, and both doors are handed it', () => {
+    const screen = read('src/screens/AgentBattleScreen.jsx');
+    // It holds a symbol, never a number: the door's integer still comes from
+    // the subscribed doc alone (the section above).
+    expect(screen).not.toMatch(/setResearchError\(\s*\d/);
+    expect(screen).not.toMatch(/researchError\s*\+\s*1/);
+    // Both surfaces receive it — a door that cannot report its own refusal is
+    // the state this section exists to remove.
+    expect((screen.match(/researchError=\{researchError\}/g) || []).length).toBe(2);
   });
 });

@@ -1265,23 +1265,49 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // scarce reads on a duplicate card, with nothing on screen to say a request was
   // out. The ref stops the re-entry; the state gives the doors the affordance,
   // through the `disabled` contract they already carry for the exhausted state.
+  //
+  // AND A REFUSAL IS SAID OUT LOUD, at the door that was tapped. The doors
+  // render from the subscribed doc, so a refused tap moved nothing: the count
+  // stayed put, no card arrived, and the only signal was a button that did
+  // nothing — which is indistinguishable from a broken one, the same reading
+  // review F-8 removed from the exhausted state. `researchError` holds the
+  // SYMBOL the route refused (never a boolean): the failure belongs to the
+  // name it was about, so a refusal on MPC says nothing on SLB's panel.
+  //
+  // SET ONLY WHEN THE ROUTE ANSWERED. The line claims `no use spent`, and that
+  // is attestable for every status this route returns — each one comes back
+  // before its transaction commits, or from a branch that never appended — but
+  // NOT for a request that never came back, whose commit may have landed with
+  // the reply lost (decisionRecord.js `RESEARCH_FAILED_LINE`; the D-90 split
+  // `filingFailureLine` draws). A thrown fetch stays silent, exactly as today.
+  // The no-user branch DOES say it: nothing was sent, so nothing was spent, and
+  // that branch is the one tap that would otherwise do nothing at all.
+  //
+  // CLEARED BY THE NEXT TAP, not by a timer and not by the response: the tap is
+  // the retry, so the line is stale the moment another one starts.
   const showItInFlight = useRef(false);
   const [researchPending, setResearchPending] = useState(false);
+  const [researchError, setResearchError] = useState(null);
   const handleShowIt = useCallback(async (symbol) => {
     const wanted = typeof symbol === 'string' ? symbol.trim() : '';
     if (!wanted || showItInFlight.current || !agentBattle?.id || !agentBattle?.agentId) return;
     showItInFlight.current = true;
     setResearchPending(true);
+    setResearchError(null);
     try {
       const user = getAuth().currentUser;
-      if (!user) return;
+      if (!user) {
+        setResearchError(wanted);
+        return;
+      }
       const idToken = await user.getIdToken();
-      await fetch('/api/agent/research', {
+      const res = await fetch('/api/agent/research', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ agentId: agentBattle.agentId, battleId: agentBattle.id, symbol: wanted }),
       });
-    } catch { /* the card comes from the subscribed doc; a failed read leaves it absent */ }
+      if (!res.ok) setResearchError(wanted);
+    } catch { /* the card comes from the subscribed doc; a read that never came back claims nothing */ }
     finally {
       showItInFlight.current = false;
       setResearchPending(false);
@@ -1808,6 +1834,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                     onShowIt={showItOn ? handleShowIt : null}
                     researchUsed={researchUsed}
                     researchPending={researchPending}
+                    researchError={researchError}
                     reducedMotion={reducedMotion}
                     headingId={`why-${rowKey}-heading`}
                   />
@@ -1943,7 +1970,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       reducedMotion={reducedMotion}
       chat={chat}
       overflow={<PaneOverflow />}
-      bench={<PaneBench bench={benchState} onShowIt={showItOn ? handleShowIt : null} researchUsed={researchUsed} researchPending={researchPending} />}
+      bench={<PaneBench bench={benchState} onShowIt={showItOn ? handleShowIt : null} researchUsed={researchUsed} researchPending={researchPending} researchError={researchError} />}
       tape={(
         <PaneTape
           battleId={agentBattleId}

@@ -676,6 +676,41 @@ export const FILING_REJECTED_LINE = 'That option is no longer on the menu — no
 export const FILING_FAILED_LINE = 'The directive could not be filed just now.';
 
 /**
+ * THE SHOW-IT DOOR'S FAILURE LINE (Phase C §1) — and the cost clause is
+ * ATTESTABLE, which is the whole reason it can be said.
+ *
+ * `no use spent` is a claim about the three scarce reads, and the D-90 rule
+ * above governs it: a client may say only what it can be held to. The research
+ * route can be held to this. Every refusal it ANSWERS WITH returns before its
+ * one transaction commits, or from a branch of that transaction that never
+ * called `tx.update` — the flag's 404, the body's 400, owner/binding 403, the
+ * universe 404, not-active and exhausted 409s, the rate limiter's 429, auth's
+ * 401, and both 500s (the battle read fails before the transaction exists; the
+ * transaction's own catch means the commit threw, and a transaction that throws
+ * writes nothing). So a refusal that reaches the client is proof no card was
+ * written, and no card written is no slot consumed: the route's count is
+ * `countResearchUsed(chatExchanges)`, re-read inside the same commit that
+ * appends (api/agent/research.js, §13 and its header).
+ *
+ * WHAT THIS LINE MAY NOT BE SAID ABOUT: a request that never came back. A fetch
+ * that throws has NO response, so the commit may have happened and the reply
+ * been lost — `no use spent` would be false, and the subscribed card would
+ * arrive to contradict `couldn't load` in the same breath. That is exactly the
+ * split `filingFailureLine` draws, and the caller keeps to it: it sets this
+ * line only when the route answered (AgentBattleScreen.jsx `handleShowIt`).
+ *
+ * WHY THE COST IS ON THE LINE AT ALL. The door reads `Show it · 2 of 3` before
+ * the tap; the scarce thing is named in the control, so silence after a failed
+ * tap leaves the player counting reads they still have. Saying nothing was
+ * spent is the one fact the failure is about.
+ *
+ * NO REMEDY AND NO REASON — the `showItExhausted` rule: the platform has no
+ * retry to promise (the next tap is the retry, and it is right there), and the
+ * status that produced this is diagnostics.
+ */
+export const RESEARCH_FAILED_LINE = 'Couldn’t load the card · no use spent';
+
+/**
  * The failure line for a filing response's HTTP status.
  *
  * 404 SHARES THE 422 LINE, DELIBERATELY. The route does not exist for a caller

@@ -152,6 +152,12 @@ export default function WhyPanel({
   // A tap already in flight: the door disables through the SAME contract the
   // exhausted state uses, so a 2-15 s route cannot be tapped twice (review F-2).
   researchPending = false,
+  // The SYMBOL whose last tap the route refused, or null — never a boolean.
+  // The screen holds one tap at a time, but its error outlives the tap, and a
+  // player who taps MPC, gets a refusal and then opens SLB's panel must not
+  // read a failure about MPC there. The failure belongs to the name it was
+  // about, so the door compares rather than trusting a flag.
+  researchError = null,
   // D-89 — the book panel's close. The panel is a DISCLOSURE the score header
   // owns: the header carries the `aria-expanded`, so the way out has to hand
   // focus back to it or a keyboard reader is stranded on a region that has no
@@ -593,6 +599,29 @@ export default function WhyPanel({
             >
               {COPY.showItDoor(researchUsed)}
             </button>
+          )}
+          {/* THE DOOR'S FAILURE, beside the door (Phase C). It renders only
+              when the ROUTE ANSWERED and refused — never on a request that
+              never came back, whose commit may have landed with the reply lost
+              (decisionRecord.js `RESEARCH_FAILED_LINE`). `role="alert"` rather
+              than the chat's persistent polite region: this appears in answer
+              to a tap the player just made, and an assertive region IS
+              announced on insertion, which is the one thing a `status` region
+              mounted with its content cannot be relied on to do. It clears
+              when the next tap does — the screen owns that, and this renders
+              what it is handed.
+
+              GATED ON THE DOOR, not on the error alone: with no handler there
+              is no door, no tap and therefore no refusal to report, so the
+              flag-dark page stays the two-door page it is today. */}
+          {!isBook && typeof onShowIt === 'function' && researchError === symbol && (
+            <span
+              data-why-showit-error={symbol}
+              role="alert"
+              style={{ fontSize: 11.5, color: cssVar('text-muted') }}
+            >
+              {COPY.showItDoorFailed}
+            </span>
           )}
           {!isBook && typeof onScopeToPiece === 'function' && COPY.inTheChat(mentionCount) && (
             <button

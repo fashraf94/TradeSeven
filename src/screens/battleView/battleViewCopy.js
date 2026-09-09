@@ -73,6 +73,7 @@ import {
   FILING_BUDGET_LINE,
   FILING_REJECTED_LINE,
   FILING_FAILED_LINE,
+  RESEARCH_FAILED_LINE,
   filingFailureLine as recordFilingFailureLine,
   GUARDRAIL_FORCED_FAILED_LABEL,
 } from '../../data/decisionRecord';
@@ -365,6 +366,15 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // rule): it says the read did not happen and nothing about why the platform
   // thinks that.
   showItFailed: 'That read didn\u2019t come back. Try again.',
+  // THE DOOR'S OWN failure line, which is a different sentence because the
+  // door is a different surface. The chip's line above sits in the CHAT, in
+  // the composer's error slot, where `Try again.` names the retry a player
+  // cannot see. The door IS the retry — it is right there, still enabled, and
+  // still reading `Show it · 2 of 3` — so what the player needs from it is not
+  // an instruction but the state of the count that door just named. The cost
+  // clause is attestable against the route's transaction; the rule and the one
+  // failure it may NOT be said about are in decisionRecord.js.
+  showItDoorFailed: RESEARCH_FAILED_LINE,
   // D-54's forward path, as a word on the card. `Equip` is the shipped verb for
   // putting a name in front of the agent; the card offers it and never promises
   // what the process will do with it.

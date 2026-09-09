@@ -74,7 +74,10 @@ function Sentence({ text }) {
  * roster row it is one it did not (muted). Nothing else differs — a chip is a
  * chip, so the eye reads the roster as the same kind of thing as the named.
  */
-function Chip({ symbol, spokenFor = false, onShowIt = null, researchUsed = 0, researchPending = false }) {
+function Chip({
+  symbol, spokenFor = false, onShowIt = null,
+  researchUsed = 0, researchPending = false, researchError = null,
+}) {
   // Phase C §1 — THE BENCH CHIP CARRIES THE SAME DOOR. With a handler it is a
   // button; without one it is the shipped `<span>`, byte for byte, which is
   // what it stays while SHOW_IT_ENABLED is dark. The VISIBLE label is the
@@ -85,7 +88,12 @@ function Chip({ symbol, spokenFor = false, onShowIt = null, researchUsed = 0, re
   const door = typeof onShowIt === 'function';
   const enabled = door && !researchPending && researchDoorEnabled(researchUsed);
   const Tag = door ? 'button' : 'span';
-  return (
+  // THE FAILURE IS THIS CHIP'S OR NOBODY'S. `researchError` is the SYMBOL the
+  // route refused, so the roster's other chips say nothing — one failed tap on
+  // MPC must not put a line beside every name on the bench. Compared, never
+  // read as a flag.
+  const failed = door && researchError === symbol;
+  const chip = (
     <Tag
       data-bench-chip={symbol}
       data-bench-chip-named={spokenFor ? 'true' : 'false'}
@@ -118,12 +126,32 @@ function Chip({ symbol, spokenFor = false, onShowIt = null, researchUsed = 0, re
       {symbol}
     </Tag>
   );
+  // NO FAILURE, NO WRAPPER — the chip is what it is today, byte for byte, on
+  // every render but the one that failed (the D-113 presence rule the Heard
+  // line is built on). The wrapper is the `Flagged` chip's own shape, so a
+  // name and the thing said about it stay one unit when the row wraps.
+  if (!failed) return chip;
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+      {chip}
+      <span
+        data-bench-showit-error={symbol}
+        role="alert"
+        style={{ ...mono, fontSize: 10, color: cssVar('text-muted') }}
+      >
+        {COPY.showItDoorFailed}
+      </span>
+    </span>
+  );
 }
 
-export default function PaneBench({ bench = null, onShowIt = null, researchUsed = 0, researchPending = false }) {
+export default function PaneBench({
+  bench = null, onShowIt = null,
+  researchUsed = 0, researchPending = false, researchError = null,
+}) {
   if (!bench) return null;
   // One place decides what every chip on this pane is (BUILD_RULES §9).
-  const door = { onShowIt, researchUsed, researchPending };
+  const door = { onShowIt, researchUsed, researchPending, researchError };
   const { slotIso, cards, flagged = [], rest, watchlistName, footer } = bench;
   const subtitle = COPY.benchWatchlist(watchlistName);
   const namedHeading = COPY.benchNamed(slotIso);
