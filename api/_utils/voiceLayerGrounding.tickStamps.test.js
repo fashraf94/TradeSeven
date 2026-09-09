@@ -111,14 +111,20 @@ describe('the CURRENT DIRECTIVE line gains the Heard fact', () => {
   });
 
   it('A SUPPRESSED THREAD LEAVES THE LINE UNCHANGED — no negative, no reason (Sol M-1)', () => {
+    // The line is pinned EXACTLY and the bans are CASE-INSENSITIVE (review
+    // C-1). The prompt's own register is lowercase, so a negative written to
+    // match it — ` · not heard at this check` — slips a case-sensitive
+    // `not.toContain('Not heard')`; and any appended clause slips a
+    // `toContain` of the prefix. The exact line is the only assertion that
+    // catches both.
+    const line = (block) => block.split('\n').find((l) => l.includes('Protect the lead'));
     for (const reason of ['malformed', 'mode_not_enforce', 'epoch_killed', 'unknown']) {
       const block = buildYourRecordBlock({
         evaluations: [stamped(T3, { heard: { directiveThreadId: 't-1', suppressed: reason } })],
         directive: DIRECTIVE,
       });
-      expect(block).toContain('"Protect the lead" — filed 11:31 AM');
-      expect(block).not.toContain('heard at the');
-      expect(block).not.toContain('Not heard');
+      expect(line(block)).toBe('  "Protect the lead" — filed 11:31 AM');
+      expect(block.toLowerCase()).not.toContain('heard');
       expect(block).not.toContain(reason);
     }
   });
@@ -143,8 +149,16 @@ describe('the CURRENT DIRECTIVE line gains the Heard fact', () => {
   });
 
   it('no stamp at all → the shipped line, byte for byte', () => {
-    expect(renderCurrentDirective(DIRECTIVE)).toBe(renderCurrentDirective(DIRECTIVE, null));
-    expect(renderCurrentDirective(DIRECTIVE)).not.toContain('heard');
+    // Review V-2: comparing `renderCurrentDirective(D)` with
+    // `renderCurrentDirective(D, null)` was a tautology — null is the default.
+    // The real comparison is the whole BLOCK with and without a stamped entry.
+    const unstamped = buildYourRecordBlock({ evaluations: [stamped(T3)], directive: DIRECTIVE });
+    const shipped = buildYourRecordBlock({
+      evaluations: [{ ...stamped(T3), heard: undefined }], directive: DIRECTIVE,
+    });
+    expect(unstamped).toBe(shipped);
+    expect(unstamped.toLowerCase()).not.toContain('heard');
+    expect(renderCurrentDirective(DIRECTIVE)).toBe(`${renderCurrentDirective(DIRECTIVE, null)}`);
   });
 });
 
@@ -188,6 +202,9 @@ describe('the token budget — the evidence rides the newest entry when it costs
 
 describe('the grounded rules name the limit of both verbs', () => {
   it('every phase carries the "what a check saw" rule', () => {
+    // Review C-10: a for-of over an empty object passes silently. Pin the
+    // count first, the way deskHonesty pins BATTLE_VIEW_SOURCES.length.
+    expect(Object.keys(GROUNDED_PHASE_RULES).length).toBeGreaterThanOrEqual(3);
     for (const rules of Object.values(GROUNDED_PHASE_RULES)) {
       expect(rules).toContain('They do not explain the decision; do not say a value caused a hold or a swap.');
       expect(rules).toContain('never that it was considered, used, or acted on');

@@ -614,11 +614,17 @@ describe('Phase B — what the check saw', () => {
   });
 
   it('NO STAMP → NO SECTION, and the panel is byte-identical to Phase A', () => {
+    // Review V-1: `renderRow(HELD)` vs `renderRow(HELD, { evidence: null })`
+    // was a tautology — null is the prop default. The real comparison is a
+    // STAMPED entry selected against a stale check (so the selector returns
+    // null) versus the Phase A panel: same entry, same props, no section.
     const base = renderRow(HELD);
-    const unstamped = renderRow(HELD, { evidence: null });
-    expect(unstamped).toBe(base);
-    expect(unstamped).not.toContain('data-evidence');
-    expect(unstamped).not.toContain('check saw');
+    const staleSelected = renderRow(stamped(EV_FULL), {
+      evidence: selectEvidence(stamped(EV_FULL), 'SLB', '2026-09-01T17:30:00.000Z'),
+    });
+    expect(staleSelected).toBe(base);
+    expect(staleSelected).not.toContain('data-evidence');
+    expect(staleSelected).not.toContain('check saw');
   });
 
   it('an all-null stamp renders no section — no placeholder, no empty heading', () => {
@@ -638,7 +644,9 @@ describe('Phase B — what the check saw', () => {
 
   it('the section never claims causality — no because, caused, so it, considered', () => {
     const html = withEvidence(EV_FULL);
-    const section = (html.match(/data-evidence="seen"[\s\S]*?<\/div><\/div>/) || [''])[0].toLowerCase();
+    const captured = html.match(/data-evidence="seen"[\s\S]*?<\/div><\/div>/);
+    expect(captured).not.toBeNull();   // fail loud, never match '' (review V-7)
+    const section = captured[0].toLowerCase();
     for (const phrase of ['because', 'caused', 'considered', 'noticed', 'understood', 'used your directive']) {
       expect(section).not.toContain(phrase);
     }

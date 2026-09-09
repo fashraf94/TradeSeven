@@ -188,7 +188,9 @@ export default function WhyPanel({
   // this piece and the section stays away entirely.
   const evidenceFacts = evidence ? COPY.evidenceFacts(evidence.evidence) : [];
   const evidenceHeading = evidence && evidenceFacts.length ? COPY.evidenceHeading(evidence.checkedAt) : null;
-  const evidenceProvenance = evidence && evidenceFacts.length ? COPY.evidenceProvenance(evidence.vintages) : null;
+  const evidenceProvenance = evidence && evidenceFacts.length
+    ? COPY.evidenceProvenance(evidence.vintages, evidence.checkedAt)
+    : null;
 
   // The row shows only the sentences that name this piece. Two empty cases,
   // and they are different states: no words at all (the label already says

@@ -155,6 +155,36 @@ describe('Phase B — the Heard line beneath Filed', () => {
     expect(render({ receipts: withHeard(null, 'none') })).toBe(phaseA);
   });
 
+  // Review A-2. The seed puts the second line "beneath `Filed {time}`", and
+  // that scoping is load-bearing: `Not heard at this check` names NO slot, so
+  // on a scrollback card for a thread that has since been Replaced it reads as
+  // a claim about the LATEST check — one where that thread was not the
+  // directive at all and the record says nothing about it. The two lines stay
+  // together, so a receipt shows one Heard treatment or none.
+  it('a REPLACED card carries no Heard line — the deictic negative has no check to mean', () => {
+    // t-1 is the replaced thread; give it a withheld stamp of its own.
+    const html = render({ receipts: withHeard({ at: T1, heard: false }, 't-1') });
+    expect(html).toContain('Replaced 12:58 PM');
+    expect(html).not.toContain('Not heard at this check');
+    expect(html).not.toContain('data-heard');
+  });
+
+  it('nor does a replaced card carry the POSITIVE line', () => {
+    const html = render({ receipts: withHeard({ at: T1, heard: true }, 't-1') });
+    expect(html).toContain('Replaced 12:58 PM');
+    expect(html).not.toContain('Heard at the');
+  });
+
+  it('an EXPIRED card carries no Heard line either', () => {
+    const receipts = deriveReceipts(EXCHANGES, DIRECTIVE, 'completed');
+    for (const id of Object.keys(receipts)) {
+      receipts[id] = { ...receipts[id], heard: { at: T1, heard: false } };
+    }
+    const html = render({ receipts, battleStatus: 'completed' });
+    expect(html).toContain('>Expired<');
+    expect(html).not.toContain('Not heard at this check');
+  });
+
   it('the verb is never upgraded — no considered, used, noticed, understood, because', () => {
     // Scoped to the RENDERED HEARD LINE, not the whole chat: the fixture's own
     // agent reply is "Understood." and that is dialogue, not copy. The

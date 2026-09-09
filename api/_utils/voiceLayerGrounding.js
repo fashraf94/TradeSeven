@@ -202,7 +202,7 @@ export function renderEvidenceLines(evaluation) {
     lines.push(`    ${symbol} — ${facts.join(' · ')}`);
   }
   if (lines.length === 0) return [];
-  const provenance = provenanceLine(evaluation.vintages, etTime);
+  const provenance = provenanceLine(evaluation.vintages, etTime, evaluation.timestamp);
   return [
     `  ${EVIDENCE_HEADING}`,
     ...lines,

@@ -53,8 +53,11 @@ describe('PaneBench — the flag (Phase B)', () => {
     expect(html).toContain('data-bench-chip="TSLA"');
     expect(html).toContain('data-bench-chip="CRWD"');
     // ...and NOW is in the named half of the section, not the muted one.
-    const restGroup = (html.match(/data-bench-rest-group[\s\S]*$/) || [''])[0];
-    expect(restGroup).not.toContain('data-bench-chip="NOW"');
+    // Fail-loud capture (review V-7): a `|| ['']` fallback makes every
+    // assertion after it pass if the markup ever moves.
+    const restGroup = html.match(/data-bench-rest-group[\s\S]*$/);
+    expect(restGroup).not.toBeNull();
+    expect(restGroup[0]).not.toContain('data-bench-chip="NOW"');
   });
 
   it('NO SIGNAL TEXT reaches the DOM — not the summary, not the threshold, not the source', () => {
@@ -93,6 +96,36 @@ describe('PaneBench — the flag (Phase B)', () => {
     // And the unflagged roster still holds every unspoken name.
     expect(before).toContain('data-bench-chip="NOW"');
     expect(render(doc({ candidates: [] }))).toBe(before);
+  });
+
+  // Review A-1. The whose-words footer is an authorship claim about QUOTED
+  // TEXT. Phase B widened the named-group gate to admit a flag with no
+  // sentence; the footer's gate did not widen with it, so a group holding only
+  // a `Flagged` chip would have carried "The agent's own words" over a bench
+  // name the agent wrote nothing about.
+  it('a FLAGGED-ONLY group carries NO whose-words footer', () => {
+    const html = render({
+      ...doc({
+        // A downgraded entry gives selectWhyState a non-null footer...
+        downgraded: true, decision: 'SWAP', symbolOut: 'AAPL', symbolIn: 'AVGO',
+        // ...while the rationale names no bench symbol, so there are no cards.
+        rationale: 'Rotating the star slot into AVGO on relative strength.',
+        candidates: [{ symbol: 'NOW', direction: 'potential_entry' }],
+      }),
+    });
+    expect(html).toContain('data-bench-flagged="1"');
+    expect(html).not.toContain('data-bench-card="0"');
+    expect(html).not.toContain('data-bench-footer');
+    expect(html).not.toContain("The agent's own words");
+  });
+
+  it('but a group WITH a quoted sentence still carries it (D-80 unbroken)', () => {
+    const html = render(doc({
+      downgraded: true, decision: 'SWAP', symbolOut: 'AAPL', symbolIn: 'AVGO',
+      rationale: 'NOW would need +7.4% more to lock in the bonus.',
+    }));
+    expect(html).toContain('data-bench-card="0"');
+    expect(html).toContain('data-bench-footer="1"');
   });
 
   it('a name the check SPOKE about keeps its sentence and gains no second chip', () => {

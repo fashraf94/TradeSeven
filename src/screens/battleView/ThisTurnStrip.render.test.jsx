@@ -78,8 +78,14 @@ describe('This turn — the Heard line', () => {
   it('a heard directive reads `Heard at the {slot} check` beneath Filed — the slot, not the minute', () => {
     const html = render({ directive: DIRECTIVE, receipts: receiptsWith({ at: T1, heard: true }), battleStatus: 'active', turn: TURN });
     expect(html).toContain('Filed 11:31 AM');            // the exchange's minute
-    expect(html).toContain('Heard at the 11:30 AM check'); // the check's slot
     expect(html).toContain('data-heard="heard"');
+    // THE WHOLE LINE, not a prefix (review C-3). `toContain` passes on
+    // `Heard at the 11:30 AM check and acted on it`; only an exact pin fails
+    // on an appended clause, and an appended clause is exactly how the verb
+    // gets upgraded. The capture uses the fail-loud form — `(… || [])[1]` then
+    // `toBe` — so a markup change reddens instead of silently matching '' (V-7).
+    const line = (html.match(/data-heard="[^"]*"[^>]*>([^<]*)</) || [])[1];
+    expect(line).toBe('Heard at the 11:30 AM check');
     // Still no promise about the NEXT check (hazard 3).
     expect(html).not.toContain('for the');
   });
@@ -87,8 +93,9 @@ describe('This turn — the Heard line', () => {
   it('a withheld directive reads the flat line and never the reason', () => {
     for (const reason of ['malformed', 'mode_not_enforce', 'epoch_killed', 'unknown']) {
       const html = render({ directive: DIRECTIVE, receipts: receiptsWith({ at: T1, heard: false, reason }), battleStatus: 'active', turn: TURN });
-      expect(html).toContain('Not heard at this check');
       expect(html).toContain('data-heard="not-heard"');
+      const line = (html.match(/data-heard="[^"]*"[^>]*>([^<]*)</) || [])[1];
+      expect(line).toBe('Not heard at this check');
       expect(html).not.toContain(reason);
       expect(html).not.toContain('Heard at the');
     }

@@ -38,13 +38,12 @@
 // is honest to say nothing, and the receipt appears one check later. The older
 // thread keeps its last Heard as a past fact.
 
-import { toIso } from '../../adapters/baggerbombAdapter';
 // THE WALK ITSELF IS SHARED (hazard 26, BUILD_RULES §9): the grounded
 // narrator's YOUR RECORD block reads the same stamps for the same threads, so
 // the walk lives in the zero-import src/data/decisionRecord.js and this module
-// only converts its raw timestamp into the ISO the copy layer formats. Two
-// walks of one record is how the card's line and the prompt's line would start
-// disagreeing about one check.
+// normalizes the timestamp there too (review D-1), so both surfaces absorb the
+// persisted-instant union identically. Two walks of one record is how the
+// card's line and the prompt's line would start disagreeing about one check.
 import { heardStamps } from '../../data/decisionRecord';
 
 /**
@@ -65,11 +64,7 @@ import { heardStamps } from '../../data/decisionRecord';
  *   layer and never as an exact minute.
  */
 export function deriveHeard(evaluations) {
-  const out = {};
-  for (const [threadId, stamp] of Object.entries(heardStamps(evaluations))) {
-    out[threadId] = { at: toIso(stamp.at), heard: stamp.heard };
-  }
-  return out;
+  return heardStamps(evaluations);
 }
 
 export default deriveHeard;

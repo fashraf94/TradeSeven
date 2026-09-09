@@ -186,8 +186,15 @@ export default function PaneBench({ bench = null }) {
 
           {/* WHOSE WORDS (D-80). The check and trade cards carry this line
               under the same sentences; Bench is the fourth surface to quote a
-              rationale and must not be the one that leaves it unattributed. */}
-          {footer && (
+              rationale and must not be the one that leaves it unattributed.
+              GATED ON THE CARDS, NOT ON THE GROUP (review A-1): the line is an
+              authorship claim about QUOTED TEXT, and a group holding only a
+              `Flagged` chip quotes nothing — "The agent's own words" over a
+              bench name the agent wrote nothing about is the exact
+              mis-attribution D-80 exists to prevent. Phase B widened the
+              group's gate to admit a flag with no sentence; this gate did not
+              widen with it. */}
+          {cards.length > 0 && footer && (
             <div data-bench-footer="1" style={{ ...mono, fontSize: 10, color: cssVar('text-muted') }}>
               {footer}
             </div>

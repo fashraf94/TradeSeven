@@ -512,11 +512,23 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // — only a CHECK is named by its slot.
   evidenceHeading: (iso) => evidenceHeading(slotLabel(iso)),
   evidenceFacts: (evidence) => evidenceFactLines(evidence),
-  evidenceProvenance: (vintages) => provenanceLine(vintages, etTime),
+  // The check's own instant goes with it, so a vintage from another ET day
+  // carries its date rather than reading as a time later today (review A-3).
+  evidenceProvenance: (vintages, checkIso = null) => provenanceLine(vintages, etTime, checkIso),
   regimeWord: (value) => regimeWord(value),
 
+  // BENEATH `Filed {time}` — AND ONLY THERE (the seed's own wording; review
+  // A-2). The negative is DEICTIC: `Not heard at this check` names no slot, so
+  // on a scrollback card for a thread that has since been Replaced it reads as
+  // a claim about the LATEST check — one where that thread was not the
+  // directive at all and the record says nothing about it. The positive names
+  // its own check and would be true anywhere, but the two lines stay together:
+  // a receipt shows one Heard treatment or none, never a rule that depends on
+  // which way the answer came out. A replaced directive's honest receipt is
+  // `Replaced {t}`, which the card already carries.
   heardLine: (receipt) => {
-    const stamp = receipt?.heard;
+    if (receipt?.state !== 'filed') return null;
+    const stamp = receipt.heard;
     if (!stamp || typeof stamp !== 'object') return null;
     if (stamp.heard === true) return BATTLE_VIEW_COPY.heard(stamp.at);
     if (stamp.heard === false) return BATTLE_VIEW_COPY.notHeard;

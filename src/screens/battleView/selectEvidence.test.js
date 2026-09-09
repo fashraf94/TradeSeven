@@ -11,12 +11,15 @@
 
 import { describe, it, expect } from 'vitest';
 import { selectEvidence } from './selectEvidence';
+import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
 import {
   evidenceFactLines,
   evidenceHeading,
   provenanceLine,
   regimeWord,
   REGIME_WORDS,
+  riskWord,
+  RISK_WORDS,
 } from '../../data/decisionRecord';
 
 const T = '2026-09-01T15:31:00.000Z';
@@ -167,6 +170,26 @@ describe('the risk carve-out (Sol B-1, the BLOCKER)', () => {
     expect(evidenceFactLines({ risk: {} })).toEqual([]);
     expect(evidenceFactLines({ risk: { action: '' } })).toEqual([]);
   });
+
+  // Review A-4: the risk action is a CLOSED vocabulary, for the reason
+  // `regimeWord` and `WOKEN_BY_TYPE` are closed (D-81). A new action added to
+  // the fenced risk manager must arrive SILENT, not as a raw machinery token
+  // on a player surface.
+  it('the four ruled non-HOLD verdicts render, and HOLD is absent BY RULE', () => {
+    for (const word of RISK_WORDS) {
+      expect(riskWord(word)).toBe(word);
+      expect(evidenceFactLines({ risk: { action: word } })).toEqual([`Risk ${word}`]);
+    }
+    expect(RISK_WORDS).not.toContain('HOLD');
+    expect(riskWord('HOLD')).toBeNull();
+  });
+
+  it('an UNRULED action renders nothing — never a raw token', () => {
+    for (const unruled of ['BRAND_NEW', 'WARNING', 'hold', 'Lock', 'SWAP', '']) {
+      expect(riskWord(unruled)).toBeNull();
+      expect(evidenceFactLines({ px: 100, risk: { action: unruled } })).toEqual(['Price $100.00']);
+    }
+  });
 });
 
 describe('the heading and the provenance line (Sol M-2)', () => {
@@ -205,5 +228,65 @@ describe('the heading and the provenance line (Sol M-2)', () => {
   it('a malformed fundAsOf is dropped rather than guessed at', () => {
     expect(provenanceLine({ fundAsOf: 'weekly' }, timeText)).toBeNull();
     expect(provenanceLine({ fundAsOf: '2026-13-45' }, timeText)).toBeNull();
+  });
+
+  // Review A-3. `etTime` is time-only. A rankings doc from a missed overnight
+  // run rendered as "Rankings as of 7:00 AM" — days stale, reading as a time
+  // later TODAY. That is the M-2 overclaim wearing a different hat.
+  it('an instant from ANOTHER ET day carries its date', () => {
+    const check = '2026-09-01T13:45:00.000Z'; // 9:45 AM ET, Sep 1
+    const line = provenanceLine(
+      { techAt: '2026-08-29T20:05:00.000Z', rankingsAt: '2026-08-31T11:00:00.000Z' },
+      timeText, check,
+    );
+    expect(line).toBe('Latest held technical stamp · Aug 29 4:05 PM · Rankings as of Aug 31 7:00 AM');
+  });
+
+  it('an instant on the CHECK\'s own ET day keeps the bare time', () => {
+    const check = '2026-09-01T18:45:00.000Z';
+    expect(provenanceLine({ techAt: '2026-09-01T18:29:55.000Z' }, timeText, check))
+      .toBe('Latest held technical stamp · 2:29 PM');
+  });
+
+  it('with no check instant to compare against, the bare time stands', () => {
+    expect(provenanceLine({ techAt: '2026-08-29T20:05:00.000Z' }, timeText))
+      .toBe('Latest held technical stamp · 4:05 PM');
+  });
+
+  it('the ET DAY decides, not UTC — a late-evening ET instant is still that day', () => {
+    // 2026-09-02T01:30:00Z is Sep 1, 9:30 PM ET: the same ET day as the check,
+    // a different UTC day. A UTC comparison would wrongly stamp it "Sep 2".
+    expect(provenanceLine({ techAt: '2026-09-02T01:30:00.000Z' }, timeText, '2026-09-01T18:45:00.000Z'))
+      .toBe('Latest held technical stamp · 9:30 PM');
+  });
+});
+
+describe('heardLine — the copy layer\'s half of "Not heard is a claim too" (review C-8)', () => {
+  const filed = (heard) => ({ state: 'filed', at: '2026-09-01T15:31:00.000Z', heard });
+
+  it('renders each verdict from a well-formed stamp', () => {
+    expect(COPY.heardLine(filed({ at: '2026-09-01T15:31:00.000Z', heard: true })))
+      .toBe('Heard at the 11:30 AM check');
+    expect(COPY.heardLine(filed({ at: '2026-09-01T15:31:00.000Z', heard: false })))
+      .toBe('Not heard at this check');
+  });
+
+  it('an UNRECOGNISED stamp makes NO claim — defence in depth behind the walk', () => {
+    // `heardStamps` guarantees a strict boolean today, so this branch is a
+    // second line rather than a live bug — but the rule "Not heard is a claim
+    // too" was pinned only at the derivation layer, and the copy layer is
+    // where a future caller would hand in something looser.
+    for (const bad of [{ heard: 'yes' }, { heard: 1 }, { heard: null }, {}, 'x', 42]) {
+      expect(COPY.heardLine(filed(bad))).toBeNull();
+    }
+    expect(COPY.heardLine(filed(null))).toBeNull();
+    expect(COPY.heardLine(null)).toBeNull();
+  });
+
+  it('and only beneath `Filed` — a replaced or expired receipt gets no line (review A-2 / D-2)', () => {
+    const stamp = { at: '2026-09-01T15:31:00.000Z', heard: false };
+    for (const state of ['replaced', 'expired', undefined]) {
+      expect(COPY.heardLine({ state, at: null, heard: stamp })).toBeNull();
+    }
   });
 });

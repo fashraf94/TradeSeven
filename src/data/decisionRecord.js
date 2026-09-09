@@ -526,11 +526,18 @@ export const NOT_HEARD_LINE = 'Not heard at this check';
  * decider, LAST ENTRY PER THREAD WINS.
  *
  * SHARED BY THE PANE AND THE NARRATOR (hazard 26, BUILD_RULES §9). The Battle
- * View's `deriveHeard` wraps this and converts the timestamp; the grounded
- * YOUR RECORD block reads it directly. Two walks of one record is how the
- * card's line and the prompt's line would start disagreeing about one check.
- * The timestamp is returned RAW so each caller formats it with its own
- * formatter — this module stays zero-import.
+ * View's `deriveHeard` wraps this; the grounded YOUR RECORD block reads it
+ * directly. Two walks of one record is how the card's line and the prompt's
+ * line would start disagreeing about one check.
+ *
+ * `at` IS NORMALIZED TO AN ISO INSTANT HERE, not left raw (review D-1). A
+ * persisted timestamp can arrive as an ISO string, a Firestore Timestamp, a
+ * `{seconds}` shape, a Date or a number, and the pane absorbed that union
+ * through `toIso` while the narrator called its slot formatter on the raw
+ * value — so a Timestamp-shaped stamp rendered `Heard at the 12:45 PM check`
+ * on the card and dropped the suffix from the prompt entirely. Absorbing it
+ * ONCE, in the walk both surfaces share, removes the divergence by
+ * construction rather than by fixing the caller that happened to be wrong.
  *
  * A stamp is admitted only in the two shapes the server actually writes: a
  * `null` suppression (Heard) or a non-empty string one (not Heard). Anything
@@ -551,7 +558,7 @@ export function heardStamps(evaluations) {
     const { suppressed } = stamp;
     const heard = suppressed === null;
     if (!heard && !(typeof suppressed === 'string' && suppressed)) continue;
-    out[threadId] = { at: evaluation.timestamp ?? null, heard };
+    out[threadId] = { at: toIsoInstant(evaluation.timestamp), heard };
   }
   return out;
 }
@@ -640,8 +647,66 @@ export const regimeWord = (value) => (
   typeof value === 'string' && REGIME_WORDS.includes(value) ? value : null
 );
 
+/**
+ * The risk manager's verdict words, as the RISK STATUS block prints them
+ * (`agentRiskManager.js`; read, never edited). `HOLD` is absent BY RULE, not
+ * by omission — Sol B-1: on an all-HOLD tick the prompt renders no RISK STATUS
+ * block at all, so HOLD is a verdict the decider saw by the block's ABSENCE
+ * and must stay silent under a "saw" heading.
+ *
+ * A CLOSED LIST, for the reason `regimeWord` and `WOKEN_BY_TYPE` are closed
+ * (D-81, review A-4): a new action added to the fenced risk manager would
+ * otherwise reach a player surface as a raw machinery token, unruled and
+ * unread by anyone. It arrives SILENT until it has its own sentence here.
+ */
+export const RISK_WORDS = Object.freeze([
+  'LOCK',
+  'SWAP_OUT',
+  'TRAIL_STOP',
+  'EMERGENCY_SWAP',
+]);
+
+export const riskWord = (value) => (
+  typeof value === 'string' && RISK_WORDS.includes(value) ? value : null
+);
+
 /** `What the 12:45 check saw` — takes formatted slot text (this module is zero-import). */
 export const evidenceHeading = (slotText) => (slotText ? `What the ${slotText} check saw` : null);
+
+/**
+ * A persisted instant as an ISO string, from any shape a Firestore document
+ * can carry: an ISO string, a Timestamp (`toMillis` or `toDate`), a
+ * `{ seconds }` pair, a Date, or epoch ms. null when it is none of those.
+ *
+ * The client's `toIso` (baggerbombAdapter) absorbs the same union; this is its
+ * zero-import twin, needed because `api/` reads this module under plain Node
+ * and the adapter's graph is not Node-clean.
+ */
+export function toIsoInstant(raw) {
+  if (raw == null) return null;
+  if (typeof raw === 'string') return Number.isNaN(new Date(raw).getTime()) ? null : raw;
+  let ms = null;
+  if (typeof raw === 'number') ms = raw;
+  else if (typeof raw.toMillis === 'function') ms = raw.toMillis();
+  else if (typeof raw.toDate === 'function') ms = raw.toDate()?.getTime?.() ?? null;
+  else if (raw instanceof Date) ms = raw.getTime();
+  else if (typeof raw.seconds === 'number') ms = raw.seconds * 1000;
+  if (typeof ms !== 'number' || !Number.isFinite(ms)) return null;
+  return new Date(ms).toISOString();
+}
+
+/** An instant's ET calendar day, as a comparable key; null when unparseable. */
+const etDay = (iso) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+};
+/** `Aug 29` — an instant's ET date, for a vintage that is not from today. */
+const etShortDate = (iso) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric' });
+};
 
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 /** `+2.57` / `-1.20` — the sign is always explicit on a change-like number. */
@@ -697,8 +762,8 @@ export function evidenceFactLines(evidence) {
   if (evidence.nr7 === true) out.push('NR7');
   const regime = regimeWord(evidence.regime);
   if (regime) out.push(`Regime ${regime}`);
-  const action = typeof evidence.risk?.action === 'string' ? evidence.risk.action : null;
-  if (action && action !== 'HOLD') out.push(`Risk ${action}`);
+  const action = riskWord(evidence.risk?.action);
+  if (action) out.push(`Risk ${action}`);
   return out;
 }
 
@@ -720,8 +785,22 @@ export function evidenceFactLines(evidence) {
  * @param {Object|null} vintages  the entry's one vintages block
  * @param {(iso: string) => string|null} timeText  the caller's instant formatter
  */
-export function provenanceLine(vintages, timeText) {
+export function provenanceLine(vintages, timeText, checkIso = null) {
   if (!vintages || typeof vintages !== 'object') return null;
+  // An instant on a DIFFERENT ET day from the check carries its date (review
+  // A-3). `etTime` is time-only, so a rankings doc from a missed overnight run
+  // rendered as "Rankings as of 7:00 AM" — three days stale and reading as a
+  // time later today, which is the M-2 overclaim wearing a different hat. The
+  // TIME still comes from the caller's own formatter (§9); only the day prefix
+  // is added here, and only when the days differ.
+  const stamp = (iso) => {
+    const t = timeText(iso);
+    if (!t) return null;
+    const day = etDay(iso);
+    const checkDay = checkIso ? etDay(checkIso) : null;
+    if (!day || !checkDay || day === checkDay) return t;
+    return `${etShortDate(iso)} ${t}`;
+  };
   const parts = [];
   const fundAsOf = typeof vintages.fundAsOf === 'string' ? vintages.fundAsOf : null;
   if (fundAsOf && /^\d{4}-\d{2}-\d{2}$/.test(fundAsOf)) {
@@ -731,9 +810,9 @@ export function provenanceLine(vintages, timeText) {
       parts.push(`Fundamentals block as of ${day}`);
     }
   }
-  const tech = typeof vintages.techAt === 'string' ? timeText(vintages.techAt) : null;
+  const tech = typeof vintages.techAt === 'string' ? stamp(vintages.techAt) : null;
   if (tech) parts.push(`Latest held technical stamp · ${tech}`);
-  const rankings = typeof vintages.rankingsAt === 'string' ? timeText(vintages.rankingsAt) : null;
+  const rankings = typeof vintages.rankingsAt === 'string' ? stamp(vintages.rankingsAt) : null;
   if (rankings) parts.push(`Rankings as of ${rankings}`);
   return parts.length ? parts.join(' · ') : null;
 }

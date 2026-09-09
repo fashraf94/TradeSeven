@@ -10,6 +10,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { deriveHeard } from './deriveHeard';
+import { heardStamps, heardLabel, NOT_HEARD_LINE } from '../../data/decisionRecord';
 
 const T1 = '2026-09-09T14:02:00.000Z';
 const T2 = '2026-09-09T14:17:00.000Z';
@@ -104,5 +105,71 @@ describe('absence is absence — no stamp, no claim (D-113, presence-gated)', ()
   it('a missing timestamp still records the verdict, with a null slot', () => {
     const out = deriveHeard([{ heard: { directiveThreadId: 'thread-a', suppressed: null } }]);
     expect(out['thread-a']).toEqual({ at: null, heard: true });
+  });
+});
+
+// ── Review gaps closed after the §2 adversarial pass ────────────────────────
+
+describe('the persisted-instant union (review D-1 / C-7)', () => {
+  // `at` is normalized ONCE, in the shared walk, so the pane and the narrator
+  // absorb the same shapes. Before this the pane went through `toIso` and the
+  // narrator did not: a Firestore Timestamp rendered on the card and vanished
+  // from the prompt. Every fixture above is already an ISO string, so the
+  // conversion had no guard at all — these rows are it.
+  const ISO = '2026-09-09T14:02:00.000Z';
+  const stamp = { directiveThreadId: 'thread-a', suppressed: null };
+
+  it('absorbs a Firestore Timestamp (toMillis), a {seconds} pair, a Date and epoch ms', () => {
+    const ms = Date.parse(ISO);
+    for (const raw of [
+      { toMillis: () => ms },
+      { toDate: () => new Date(ms) },
+      { seconds: ms / 1000 },
+      new Date(ms),
+      ms,
+      ISO,
+    ]) {
+      expect(deriveHeard([{ timestamp: raw, heard: stamp }])['thread-a']).toEqual({ at: ISO, heard: true });
+    }
+  });
+
+  it('an unparseable timestamp yields a null slot, never a guessed one', () => {
+    for (const raw of ['not-a-date', {}, NaN, Infinity, true]) {
+      expect(deriveHeard([{ timestamp: raw, heard: stamp }])['thread-a']).toEqual({ at: null, heard: true });
+    }
+  });
+
+  it('the walk and its wrapper return the SAME object — one normalization, not two', () => {
+    const evaluations = [{ timestamp: { toMillis: () => Date.parse(ISO) }, heard: stamp }];
+    expect(deriveHeard(evaluations)).toEqual(heardStamps(evaluations));
+  });
+});
+
+describe('the shared walk\'s own output shape (review C-9)', () => {
+  it('carries EXACTLY `at` and `heard` — no reason field for a renderer to find', () => {
+    const out = heardStamps([{
+      timestamp: '2026-09-09T14:02:00.000Z',
+      heard: { directiveThreadId: 'thread-a', suppressed: 'epoch_killed' },
+    }]);
+    // The suppression reason is dropped at the WALK, not merely unread
+    // downstream: a future renderer spreading this object finds nothing to leak.
+    expect(Object.keys(out['thread-a']).sort()).toEqual(['at', 'heard']);
+    expect(JSON.stringify(out)).not.toContain('epoch_killed');
+  });
+});
+
+describe('the copy layer\'s own guards (review C-6 / C-8)', () => {
+  it('heardLabel needs a slot — no slot, no line, never a bare "Heard"', () => {
+    // Reachable: `heardStamps` sets `at: null` for an unparseable timestamp,
+    // and the row above pins that state. This is what the surface does with it.
+    for (const empty of [null, undefined, '']) expect(heardLabel(empty)).toBeNull();
+    expect(heardLabel('12:45 PM')).toBe('Heard at the 12:45 PM check');
+  });
+
+  it('the negative line is a fixed, reasonless sentence', () => {
+    expect(NOT_HEARD_LINE).toBe('Not heard at this check');
+    for (const reason of ['malformed', 'mode_not_enforce', 'epoch_killed', 'unknown']) {
+      expect(NOT_HEARD_LINE).not.toContain(reason);
+    }
   });
 });

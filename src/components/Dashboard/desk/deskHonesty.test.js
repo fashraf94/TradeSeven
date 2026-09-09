@@ -157,7 +157,26 @@ FORBIDDEN.push(...PHASE_B_FORBIDDEN);
 // (`considered`, `caused`) — and its record renderer is guarded on its
 // RENDERED OUTPUT below, which is the stronger check anyway.
 const NARRATOR_SOURCE = path.join(HERE, '..', '..', '..', '..', 'api', '_utils', 'voiceLayerGrounding.js');
+
+// The two terms the narrator's own rules must NAME in order to forbid them to
+// the model. The exemption is SENTENCE-SCOPED, not file-scoped (review C-4):
+// the two rule sentences are removed before the scan, so the words are still
+// banned everywhere else in that file — including CURRENT_CONTEXT_HEADING and
+// the phase prose, which the model reads just as attentively.
 const NARRATOR_EXEMPT = new Set(['considered', 'caused']);
+const NARRATOR_EXEMPT_SENTENCES = [
+  'They do not explain the decision; do not say a value caused a hold or a swap.',
+  'never that it was considered, used, or acted on',
+];
+
+// AgentChat.jsx RENDERS THE HEARD LINE, so it is a Phase B surface and answers
+// to PHASE_B_FORBIDDEN (review C-2 — it sat outside every copy guard). It does
+// NOT join the Phase A list: it still carries the long-shipped flag-off string
+// "Agent is thinking too hard", which is Phase A's to retire in its own PR, and
+// dragging it in here would relitigate that rather than guard this phase.
+const PHASE_B_ONLY_SOURCES = [
+  path.join(HERE, '..', '..', 'Agent', 'AgentChat.jsx'),
+];
 
 /**
  * Comments are stripped before matching. The prose above and in each guarded
@@ -302,21 +321,46 @@ describe('the posture line is discrete, never continuous', () => {
 
 // ── Phase B (seed §5): the guard follows the copy where scoping is needed ───
 
-describe('Phase B — the narrator\'s source carries the safe subset', () => {
-  for (const term of PHASE_B_FORBIDDEN.filter((t) => !NARRATOR_EXEMPT.has(t))) {
-    it(`api/_utils/voiceLayerGrounding.js contains no "${term}"`, () => {
+describe('Phase B — the narrator\'s source, with the exemption sentence-scoped', () => {
+  // The two rule sentences are cut out, then EVERY Phase B term is scanned —
+  // including `considered` and `caused`, which may appear in those sentences
+  // and nowhere else (review C-4: a file-wide exemption let both words into
+  // CURRENT_CONTEXT_HEADING and the phase prose with nothing firing).
+  const narratorScannable = () => {
+    let source = strippedSource(NARRATOR_SOURCE);
+    for (const sentence of NARRATOR_EXEMPT_SENTENCES) source = source.split(sentence).join(' ');
+    return source;
+  };
+
+  for (const term of PHASE_B_FORBIDDEN) {
+    it(`api/_utils/voiceLayerGrounding.js contains no "${term}" outside its own rules`, () => {
       const re = new RegExp(`\\b${term.replace(/ /g, '\\s+')}\\b`, 'i');
-      expect(strippedSource(NARRATOR_SOURCE)).not.toMatch(re);
+      expect(narratorScannable()).not.toMatch(re);
     });
   }
 
-  it('the two exempt terms are exempt ONLY because the rules must forbid them to the model', () => {
-    const source = strippedSource(NARRATOR_SOURCE);
+  it('the exemption is EARNED — both sentences are still in the file, verbatim', () => {
     // If this stops being true the exemption is stale and should be deleted
-    // rather than quietly carried (the LiveActivityPanel precedent).
-    expect(source).toContain('do not say a value caused a hold or a swap');
-    expect(source).toContain('never that it was considered, used, or acted on');
+    // rather than quietly carried (the LiveActivityPanel precedent). It also
+    // proves the cut above actually cuts something, so the scan is not
+    // trivially passing on an unmodified source.
+    const source = strippedSource(NARRATOR_SOURCE);
+    for (const sentence of NARRATOR_EXEMPT_SENTENCES) expect(source).toContain(sentence);
+    expect(narratorScannable().length).toBeLessThan(source.length);
+    expect(NARRATOR_EXEMPT.size).toBe(2);
   });
+});
+
+describe('Phase B — AgentChat.jsx renders the Heard line and answers to the list', () => {
+  for (const file of PHASE_B_ONLY_SOURCES) {
+    const rel = path.relative(path.join(HERE, '..', '..', '..', '..'), file);
+    for (const term of PHASE_B_FORBIDDEN) {
+      it(`${rel} contains no "${term}"`, () => {
+        const re = new RegExp(`\\b${term.replace(/ /g, '\\s+')}\\b`, 'i');
+        expect(strippedSource(file)).not.toMatch(re);
+      });
+    }
+  }
 });
 
 describe('Phase B — `chg` is labelled SINCE ENTRY wherever it renders (Sol M-3)', () => {
@@ -384,7 +428,11 @@ describe('Phase B — the narrator\'s RECORD RENDERER, on its rendered output', 
 
   it('a withheld directive produces NO negative line and NO reason in the prompt', () => {
     const block = rendered({ directiveThreadId: 't-1', suppressed: 'mode_not_enforce' });
-    expect(block).not.toContain('heard at the');
-    expect(block).not.toContain('Not heard');
+    // CASE-INSENSITIVE (review C-1). The prompt's register is lowercase
+    // (` · heard at the {slot} check`), so a negative written to match it —
+    // ` · not heard at this check` — slips a case-sensitive `not.toContain`
+    // entirely. The word `heard` in any casing is the thing being banned here.
+    expect(block.toLowerCase()).not.toContain('heard at the');
+    expect(block.toLowerCase()).not.toContain('not heard');
   });
 });
