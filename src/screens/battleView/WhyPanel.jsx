@@ -479,11 +479,22 @@ export default function WhyPanel({
                   and cannot drift from the word above it (BUILD_RULES §9).
                   Only the regime fact carries one — every other label IS the
                   prompt's own text, and `title={undefined}` emits no
-                  attribute. */}
+                  attribute.
+
+                  AND THE TOKEN IS SPOKEN, not only hovered. `title` never
+                  appears on touch, a `<span>` is not focusable so a keyboard
+                  user cannot surface it, and AT announces text content over
+                  `title` — so without a name the raw render reaches a mouse
+                  and nobody else, which is the one thing the translation
+                  promised not to do. The name carries BOTH halves (it wins the
+                  accessible-name computation, so it must not replace the word
+                  with the token), and comes from the same walk as the label
+                  above it. */}
               {evidenceFacts.map((fact) => (
                 <span
                   key={fact.text}
                   title={fact.title ?? undefined}
+                  aria-label={fact.ariaLabel ?? undefined}
                   style={{
                     fontSize: 12,
                     color: cssVar('text-secondary'),

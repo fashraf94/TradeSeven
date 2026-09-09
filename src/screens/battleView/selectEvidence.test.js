@@ -19,6 +19,7 @@ import {
   provenanceLine,
   regimeWord,
   regimeLabel,
+  regimeAnnouncement,
   REGIME_LABELS,
   REGIME_WORDS,
   riskWord,
@@ -148,18 +149,41 @@ describe('the eight fields — exactly eight, and each says what it is', () => {
     expect(evidenceFactLines(FULL)).not.toContain('Regime · Expanding');
   });
 
-  it('only the regime entry is translated — every other label IS its text, with no title', () => {
+  it('only the regime entry is translated — every other label IS its text, unnamed and untitled', () => {
     for (const fact of evidenceFacts(FULL)) {
       if (fact.title) {
         expect(fact.text).toBe('Regime directional_expansion');
         expect(fact.label).toBe('Regime · Expanding');
         expect(fact.title).toBe('directional_expansion');
+        // A translated fact carries a SPOKEN form too: `title` reaches a
+        // hovering mouse and nobody else, so the token would otherwise be
+        // lost to touch, to the keyboard and to AT.
+        expect(fact.ariaLabel).toBe('Regime Expanding, token directional_expansion');
       } else {
         expect(fact.label).toBe(fact.text);
         expect(fact.title).toBeNull();
+        // Nothing a `title` would have hidden, so nothing to name: the label
+        // IS the prompt's own text and the text content says all of it.
+        expect(fact.ariaLabel).toBeNull();
       }
     }
     expect(evidenceFacts(FULL).filter((f) => f.title)).toHaveLength(1);
+    expect(evidenceFacts(FULL).filter((f) => f.ariaLabel)).toHaveLength(1);
+  });
+
+  it('the spoken form carries BOTH halves, from the same map the word came from', () => {
+    // `aria-label` WINS the accessible-name computation, so a name of the
+    // token alone would replace the player's word rather than extend it.
+    for (const token of REGIME_WORDS) {
+      expect(regimeAnnouncement(token)).toBe(`Regime ${REGIME_LABELS[token]}, token ${token}`);
+      expect(regimeAnnouncement(token)).toContain(regimeLabel(token));
+      expect(regimeAnnouncement(token)).toContain(token);
+      expect(evidenceFacts({ regime: token })[0].ariaLabel).toBe(regimeAnnouncement(token));
+    }
+    // The closed list rules this too — an unruled token has no word to speak.
+    for (const bad of ['risk_on', 'constructor', '__proto__', '', null, 42]) {
+      expect(regimeAnnouncement(bad)).toBeNull();
+    }
   });
 
   it('the panel\'s word comes from the ONE map — the same one both Agent feeds read', () => {

@@ -636,6 +636,42 @@ describe('Phase B — what the check saw', () => {
     }
   });
 
+  // THE TOKEN IS SPOKEN, NOT ONLY HOVERED (the showItDoorName rule, review F-8,
+  // applied to a fact). `title` reaches a hovering mouse and nobody else: it
+  // never appears on touch, a `<span>` is not focusable, and AT announces text
+  // content over `title`. Without a name the translation loses the token for
+  // every non-mouse reader — the one thing the shared map's docstring promises
+  // it does not do. The name carries BOTH halves because `aria-label` WINS the
+  // accessible-name computation: a name of the token alone would replace the
+  // player's word rather than extend it.
+  it('the regime span is NAMED with both halves — the word and the raw token', () => {
+    const html = withEvidence(EV_FULL);
+    expect(html).toContain('aria-label="Regime Expanding, token directional_expansion"');
+    // The `·` is a visual separator and is not part of the spoken sentence.
+    expect(html).not.toContain('aria-label="Regime · Expanding');
+    // One name among the eight facts, not eight: every other label IS the
+    // prompt's own text, so there is nothing a `title` would have hidden.
+    expect((evidenceBlock(html).match(/aria-label="/g) || []).length).toBe(1);
+    // …and the name sits on the SAME element as the word and the title, so
+    // the three cannot come to name different regimes (BUILD_RULES §9).
+    expect(html).toMatch(
+      /title="directional_expansion" aria-label="Regime Expanding, token directional_expansion"[^>]*>Regime · Expanding</,
+    );
+  });
+
+  it('each of the four regimes is named with its own word and its own token', () => {
+    for (const [token, word] of Object.entries({
+      directional_expansion: 'Expanding', directional_contraction: 'Contracting',
+      choppy: 'Choppy', distressed: 'Distressed',
+    })) {
+      expect(withEvidence({ ...EV_FULL, regime: token }))
+        .toContain(`aria-label="Regime ${word}, token ${token}"`);
+    }
+    // An unruled token renders no fact at all, so there is no name either.
+    expect(evidenceBlock(withEvidence({ ...EV_FULL, regime: 'risk_on' })))
+      .not.toContain('aria-label="');
+  });
+
   it('the provenance line names its fields and never promises freshness (Sol M-2)', () => {
     const html = withEvidence(EV_FULL);
     expect(html).toContain('Fundamentals block as of Sep 8');

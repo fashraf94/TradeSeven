@@ -773,6 +773,34 @@ export const regimeLabel = (value) => {
 };
 
 /**
+ * `Regime Expanding, token directional_expansion` — the regime fact's ACCESSIBLE
+ * NAME, carrying both halves in one announcement.
+ *
+ * WHY THE `title` IS NOT ENOUGH (the showItDoorName rule, review F-8, applied
+ * to a fact instead of a control). The token rides the panel's `title`
+ * attribute, and `title` is a HOVER affordance: it never appears on touch, a
+ * non-interactive `<span>` is not in the tab order so a keyboard user cannot
+ * surface it, and screen readers announce an element's text content over its
+ * `title`. So the sighted mouse user gets the raw render one hover away and
+ * everybody else gets `Regime · Expanding` with the token simply gone — which
+ * is the one thing the translation promised not to do (the map's own docstring:
+ * THE TOKEN IS NEVER LOST).
+ *
+ * `aria-label` wins the accessible-name computation, so it must carry the WORD
+ * as well as the token — a name of the token alone would replace the sentence
+ * the sighted reader gets rather than extend it. The `·` is a visual separator
+ * and is not spoken; the comma is what makes the two halves one read sentence.
+ *
+ * ONE SOURCE, like the label and the title beside it (BUILD_RULES §9): the word
+ * comes from `REGIME_LABELS` and the token is the value that keyed it, so the
+ * spoken sentence cannot name a different regime from the printed one.
+ */
+export const regimeAnnouncement = (value) => {
+  const token = regimeWord(value);
+  return token ? `Regime ${REGIME_LABELS[token]}, token ${token}` : null;
+};
+
+/**
  * The risk manager's verdict words, as the RISK STATUS block prints them
  * (`agentRiskManager.js`; read, never edited). `HOLD` is absent BY RULE, not
  * by omission — Sol B-1: on an all-HOLD tick the prompt renders no RISK STATUS
@@ -873,15 +901,20 @@ const ordinal = (n) => {
  * prompt printed; `label` is what a player reads, and differs from `text` only
  * where this module has a word for a machine token; `title` is the token that
  * label translates, for a surface that can carry it (the panel's `title`
- * attribute), and is null wherever label IS the text.
+ * attribute), and is null wherever label IS the text; `ariaLabel` is the
+ * spoken form of a translated fact — both halves in one sentence, because
+ * `title` reaches only a hovering mouse (`regimeAnnouncement`) — and is null
+ * wherever there is nothing a `title` would have hidden.
  *
  * @param {Object|null} evidence  one held position's stamp
- * @returns {Array<{ text: string, label: string, title: string|null }>}
+ * @returns {Array<{ text: string, label: string, title: string|null, ariaLabel: string|null }>}
  */
 export function evidenceFacts(evidence) {
   if (!evidence || typeof evidence !== 'object') return [];
   const out = [];
-  const fact = (text, { label = text, title = null } = {}) => out.push({ text, label, title });
+  const fact = (text, { label = text, title = null, ariaLabel = null } = {}) => (
+    out.push({ text, label, title, ariaLabel })
+  );
   const px = num(evidence.px);
   if (px != null) fact(`Price $${px.toFixed(2)}`);
   const chg = num(evidence.chg);
@@ -898,8 +931,16 @@ export function evidenceFacts(evidence) {
   const regime = regimeWord(evidence.regime);
   // The only translated fact: `Regime directional_expansion` is what the prompt
   // rendered and stays the `text`; `Regime · Expanding` is what a player reads,
-  // and the token it translates rides along so the panel can show both.
-  if (regime) fact(`Regime ${regime}`, { label: `Regime · ${REGIME_LABELS[regime]}`, title: regime });
+  // and the token it translates rides along so the panel can show both — on
+  // the `title` for a hovering mouse, and in the accessible name for everyone
+  // else, which is the only one of the two that touch and AT can reach.
+  if (regime) {
+    fact(`Regime ${regime}`, {
+      label: `Regime · ${REGIME_LABELS[regime]}`,
+      title: regime,
+      ariaLabel: regimeAnnouncement(regime),
+    });
+  }
   const action = riskWord(evidence.risk?.action);
   if (action) fact(`Risk ${action}`);
   return out;
