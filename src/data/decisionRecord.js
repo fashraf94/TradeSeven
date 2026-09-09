@@ -562,3 +562,143 @@ export function filingFailureLine(status) {
   if (status === 422 || status === 404) return FILING_REJECTED_LINE;
   return FILING_FAILED_LINE;
 }
+
+// ── The evidence — "what the check saw" (Phase B, D-111) ────────────────────
+//
+// THE SECOND VERB, AND ITS EXACT LIMIT. `Saw` = THIS VALUE WAS RENDERED FOR
+// THIS HELD NAME IN THE DECIDER'S PROMPT AT THAT CHECK. It is not "the decider
+// noticed it", not "weighed it", and above all not "decided because of it":
+// the stamps prove VISIBILITY, never CAUSALITY. No surface may say a value
+// caused a hold or a swap (Sol's claims audit — "These facts caused the HOLD"
+// and "The decider saw X, so it held" both FAIL).
+//
+// Shared with the narrator's YOUR RECORD block (hazard 26): the pane and the
+// prompt render one check's evidence with ONE set of labels, so they cannot
+// drift into two vocabularies for one fact.
+//
+// EIGHT FIELDS MEANS EIGHT (Sol m-1). The shipped set is exactly px, chg,
+// atrX, vwapDev, bbPct, nr7, regime, risk. `rsPct` was REMOVED server-side
+// because held names never received it in the rendered prompt (it renders for
+// bench names only), so there is no ninth slot, no "RS unavailable"
+// placeholder and no completeness rule anywhere. Its absence is structural.
+// A null metric renders NOTHING — never 0, never a dash, never a placeholder.
+
+/**
+ * The four regime words the decider's prompt actually prints
+ * (`STOCK REGIMES: NVDA=directional_expansion, …` — the raw token, both in the
+ * strategy legend and on the live line). The evidence claim is "this is what
+ * the prompt rendered", so the token IS the honest render and translating it
+ * to a friendlier word would show something the decider never saw (§9).
+ *
+ * An unrecognised value renders NOTHING rather than a raw string — the D-81
+ * precedent for unruled trigger types, for the same reason: a token this
+ * module has no sentence for is not a fact a player can read.
+ */
+export const REGIME_WORDS = Object.freeze([
+  'directional_expansion',
+  'directional_contraction',
+  'choppy',
+  'distressed',
+]);
+
+export const regimeWord = (value) => (
+  typeof value === 'string' && REGIME_WORDS.includes(value) ? value : null
+);
+
+/** `What the 12:45 check saw` — takes formatted slot text (this module is zero-import). */
+export const evidenceHeading = (slotText) => (slotText ? `What the ${slotText} check saw` : null);
+
+const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+/** `+2.57` / `-1.20` — the sign is always explicit on a change-like number. */
+const signed = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}`;
+/** `15th` · `21st` · `12th` — 11/12/13 take `th` whatever their last digit. */
+const ordinal = (n) => {
+  const rem100 = n % 100;
+  if (rem100 >= 11 && rem100 <= 13) return `${n}th`;
+  return `${n}${['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;
+};
+
+/**
+ * The eight evidence fields as rendered facts, in a fixed order, NULLS DROPPED.
+ *
+ * Two carve-outs, both Sol's, and both about not over-claiming:
+ *
+ *   `chg` IS ALWAYS LABELLED SINCE ENTRY (Sol M-3). The field is the ACTIVE
+ *   POSITIONS row's Gain% from ENTRY, not today's move and not the session
+ *   change. `Change +2.57%`, `Move +2.57%` and `+2.57% today` all misread it,
+ *   and the abbreviated key makes that misreading easy for a future renderer —
+ *   so the words "since entry" are part of the label, and §5's copy guard bans
+ *   `changed` / `moved` / `today` beside it.
+ *
+ *   `risk` IS CARVED OUT OF THE BLANKET "SAW" CLAIM (Sol B-1, the BLOCKER).
+ *   On an all-HOLD tick the prompt renders NO RISK STATUS block at all — the
+ *   block prints only when some position is non-HOLD — so `{ action: 'HOLD' }`
+ *   is the engine's verdict conveyed by the block's ABSENCE, not by a line the
+ *   decider read. Rendering "Risk HOLD" under a "what the decider saw" heading
+ *   would claim a line that was never there, so HOLD IS SILENT HERE. A
+ *   non-HOLD action IS supportable and renders. The stored `reason` CODE is
+ *   never rendered as seen text either: for a LOCK the prompt carried the
+ *   human-readable `detail` sentence while the stamp keeps the compact code,
+ *   so "I saw threshold_proximity" is false. The code stays out of this list.
+ *
+ * @param {Object|null} evidence  one held position's stamp
+ * @returns {string[]}            zero or more rendered facts
+ */
+export function evidenceFactLines(evidence) {
+  if (!evidence || typeof evidence !== 'object') return [];
+  const out = [];
+  const px = num(evidence.px);
+  if (px != null) out.push(`Price $${px.toFixed(2)}`);
+  const chg = num(evidence.chg);
+  if (chg != null) out.push(`Gain since entry ${signed(chg)}%`);
+  const atrX = num(evidence.atrX);
+  if (atrX != null) out.push(`ATR multiple ${atrX.toFixed(2)}×`);
+  const vwapDev = num(evidence.vwapDev);
+  if (vwapDev != null) out.push(`VWAP deviation ${signed(vwapDev)}%`);
+  const bbPct = num(evidence.bbPct);
+  if (bbPct != null) out.push(`Bollinger width ${ordinal(Math.round(bbPct))} %ile`);
+  // NR7 is a FLAG: the prompt printed "NR7: YES" or nothing. `false` is not a
+  // fact the player needs and `null` is no reading at all — both stay silent.
+  if (evidence.nr7 === true) out.push('NR7');
+  const regime = regimeWord(evidence.regime);
+  if (regime) out.push(`Regime ${regime}`);
+  const action = typeof evidence.risk?.action === 'string' ? evidence.risk.action : null;
+  if (action && action !== 'HOLD') out.push(`Risk ${action}`);
+  return out;
+}
+
+/**
+ * The provenance line beneath the evidence — PROVENANCE DETAIL, never a
+ * freshness promise (Sol M-2).
+ *
+ * `techAt` is the newest `updatedAt` among the HELD technical documents. It
+ * does NOT prove every held symbol's technical context carries that stamp, so
+ * "Technical data as of 10:30", "Technicals updated 10:30" and "Data current
+ * at 10:30" all overclaim; the honest phrasing names the field for what it is.
+ * `fundAsOf` is the FUNDAMENTALS block's own header date across held plus
+ * non-crypto bench — not a per-symbol timestamp, and it does not date the
+ * eight evidence values. §5's guard bans "technical data as of" outright.
+ *
+ * `fundAsOf` is a UTC CALENDAR DATE (`YYYY-MM-DD`), so it is formatted in UTC:
+ * running it through an ET formatter would render Sep 8 as Sep 7.
+ *
+ * @param {Object|null} vintages  the entry's one vintages block
+ * @param {(iso: string) => string|null} timeText  the caller's instant formatter
+ */
+export function provenanceLine(vintages, timeText) {
+  if (!vintages || typeof vintages !== 'object') return null;
+  const parts = [];
+  const fundAsOf = typeof vintages.fundAsOf === 'string' ? vintages.fundAsOf : null;
+  if (fundAsOf && /^\d{4}-\d{2}-\d{2}$/.test(fundAsOf)) {
+    const d = new Date(`${fundAsOf}T00:00:00Z`);
+    if (!Number.isNaN(d.getTime())) {
+      const day = d.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' });
+      parts.push(`Fundamentals block as of ${day}`);
+    }
+  }
+  const tech = typeof vintages.techAt === 'string' ? timeText(vintages.techAt) : null;
+  if (tech) parts.push(`Latest held technical stamp · ${tech}`);
+  const rankings = typeof vintages.rankingsAt === 'string' ? timeText(vintages.rankingsAt) : null;
+  if (rankings) parts.push(`Rankings as of ${rankings}`);
+  return parts.length ? parts.join(' · ') : null;
+}

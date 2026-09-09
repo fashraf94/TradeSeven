@@ -60,6 +60,10 @@ import {
   filedLabel,
   heardLabel,
   NOT_HEARD_LINE,
+  evidenceHeading,
+  evidenceFactLines,
+  provenanceLine,
+  regimeWord,
   NO_CHANGE_STATUS_LINE,
   FILING_CONFLICT_LINE,
   FILING_BUDGET_LINE,
@@ -494,6 +498,23 @@ export const BATTLE_VIEW_COPY = Object.freeze({
    * Takes the whole receipt so the card and the strip cannot disagree about
    * which of the three outcomes they are in.
    */
+  // ── What the check saw (Phase B, seed §2; D-111) ──────────────────────────
+  // The evidence the decider's prompt rendered for this held piece, under a
+  // heading that names the CHECK by its slot (D-83). The eight labels, the
+  // `chg` carve-out and the risk carve-out all live in decisionRecord.js so
+  // the narrator's record renders one check with one vocabulary (hazard 26).
+  //
+  // The provenance line is DETAIL, not a freshness promise: `techAt` is the
+  // newest held technical document's stamp, `fundAsOf` the FUNDAMENTALS
+  // block's own header date. Both name themselves; neither claims the eight
+  // values are current as of anything (Sol M-2). These are DOCUMENT INSTANTS,
+  // not checks, so they keep their exact minute like `tradeLine` and `filed`
+  // — only a CHECK is named by its slot.
+  evidenceHeading: (iso) => evidenceHeading(slotLabel(iso)),
+  evidenceFacts: (evidence) => evidenceFactLines(evidence),
+  evidenceProvenance: (vintages) => provenanceLine(vintages, etTime),
+  regimeWord: (value) => regimeWord(value),
+
   heardLine: (receipt) => {
     const stamp = receipt?.heard;
     if (!stamp || typeof stamp !== 'object') return null;

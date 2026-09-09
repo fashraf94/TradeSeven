@@ -30,6 +30,7 @@ import LandingWash from './battleView/LandingWash';
 import TurnLine from './battleView/TurnLine';
 import WhyPanel from './battleView/WhyPanel';
 import { selectWhyState, selectTradesForSymbol, deriveTierPrices } from './battleView/selectWhyState';
+import { selectEvidence } from './battleView/selectEvidence';
 import { selectDeployPlan, selectDeployPlanForSymbol } from './battleView/selectDeployPlan';
 import { buildTape, checkEntryId } from './battleView/buildTape';
 import { BATTLE_VIEW_COPY } from './battleView/battleViewCopy';
@@ -1730,6 +1731,9 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                     key={`why-${rowKey}`}
                     symbol={leftAsset.symbol}
                     state={selectWhyState(latestDecision, leftAsset.symbol, lastScoredAt)}
+                    // Phase B (seed §2): presence-gated — null until the
+                    // server flag flips and an entry carries the stamp.
+                    evidence={selectEvidence(latestDecision, leftAsset.symbol, lastScoredAt)}
                     proximity={proximity}
                     entryPrice={leftAsset.openPrice ?? null}
                     heldSince={leftAsset.swappedInAt || agentBattle?.activatedAt || null}

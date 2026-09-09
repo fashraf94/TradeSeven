@@ -131,6 +131,12 @@ export default function WhyPanel({
   // never derives it. Both null on the book panel and flag-off.
   mentionCount = null,
   onScopeToPiece = null,
+  // Phase B (seed §2): what the decider's prompt RENDERED for this piece at
+  // the last decided check — `selectEvidence(...)` or null. The panel renders
+  // what it is handed and derives nothing. Null on the book panel, on every
+  // pre-flip battle, and on any tick that never built a prompt: the section is
+  // then absent WHOLE, never a placeholder.
+  evidence = null,
   // D-89 — the book panel's close. The panel is a DISCLOSURE the score header
   // owns: the header carries the `aria-expanded`, so the way out has to hand
   // focus back to it or a keyboard reader is stranded on a region that has no
@@ -174,6 +180,15 @@ export default function WhyPanel({
   // Why this tick ran (D-78) — from the persisted trigger TYPES only; an
   // unruled type renders nothing at all rather than a raw string.
   const wokenBy = COPY.wokenBy(state.triggers);
+
+  // What the check saw (Phase B). The heading names the CHECK by its slot; the
+  // facts and the provenance line are copy-owned (decisionRecord.js), so the
+  // pane and the narrator's record cannot drift apart. Nulls are already
+  // dropped by `evidenceFacts` — an empty list means nothing was rendered for
+  // this piece and the section stays away entirely.
+  const evidenceFacts = evidence ? COPY.evidenceFacts(evidence.evidence) : [];
+  const evidenceHeading = evidence && evidenceFacts.length ? COPY.evidenceHeading(evidence.checkedAt) : null;
+  const evidenceProvenance = evidence && evidenceFacts.length ? COPY.evidenceProvenance(evidence.vintages) : null;
 
   // The row shows only the sentences that name this piece. Two empty cases,
   // and they are different states: no words at all (the label already says
@@ -421,6 +436,35 @@ export default function WhyPanel({
             </div>
           )}
         </div>
+
+        {/* 3b. What the check saw (Phase B, seed §2) — the values the decider's
+               prompt rendered for this piece at that check. VISIBILITY, never
+               causality: nothing here says a value caused the decision above
+               it. Absent whole without a stamp. */}
+        {!isBook && evidenceHeading && (
+          <div data-evidence="seen" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={eyebrow}>{evidenceHeading}</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}>
+              {evidenceFacts.map((fact) => (
+                <span
+                  key={fact}
+                  style={{
+                    fontSize: 12,
+                    color: cssVar('text-secondary'),
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {fact}
+                </span>
+              ))}
+            </div>
+            {evidenceProvenance && (
+              <div style={{ fontSize: 10.5, color: cssVar('text-muted'), letterSpacing: '0.02em' }}>
+                {evidenceProvenance}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* 4. The plan at deploy — history, never a current decision. The row
                shows its TIER's sentences that name it; the book shows the
