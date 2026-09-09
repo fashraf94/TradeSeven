@@ -31,10 +31,18 @@ function getAnthropicClient() {
  *
  * A missing reading now contributes NO segment — never a sign word derived from
  * a default, never `N/A` standing in for a value. Same rule, same reason as the
- * research card's `composeTechnicals` (researchCard.js:115), which reads the
+ * research card's `composeTechnicals` (researchCard.js:119), which reads the
  * same `calculateAllIndicators` output.
  *
- * Byte-identical to the previous block when every reading is present.
+ * Byte-identical to the previous block for every present reading EXCEPT an
+ * exactly-zero histogram, which read `negative` before and reads `flat` now —
+ * the one deliberate value change, pinned by a test.
+ *
+ * The §9 claim here covers what THIS function composes: each label is derived
+ * from the same value the segment is gated on. It does not extend to
+ * `calculateRSI`/`calculateATR`, which round their value but band their zone
+ * word off the unrounded one (technicalCalculations.js:93-96, :312-321) — a
+ * pre-existing member of the §9 display-disagreement family, filed separately.
  *
  * @param {object|null} technicals - `calculateAllIndicators` output
  * @param {number|null} currentPrice - the live quote, or null
@@ -78,6 +86,29 @@ export function composeTechnicalSnapshot(technicals, currentPrice) {
   if (context.length) lines.push(context.join(' | '));
 
   return lines.length ? lines.join('\n') : null;
+}
+
+/**
+ * The TECHNICAL SNAPSHOT block as it reaches the prompt, including its trailing
+ * separator. Always returns a block — never an empty string.
+ *
+ * Omitting the readings is only half of honest. The system prompt asks the
+ * model to defend "with specific indicators" and its response schema REQUIRES a
+ * `citedIndicators` array, which the route returns unfiltered and
+ * `DebateModal` renders as chips beside the answer. A prompt carrying no
+ * readings AND no explanation is therefore an invitation to invent them — the
+ * review's finding. So the absence is stated out loud.
+ *
+ * The notice is a statement about AVAILABILITY, not a value: no number, no
+ * `N/A`, no sign word, nothing an agent could cite as a reading.
+ *
+ * @param {string|null} snapshot - `composeTechnicalSnapshot` output
+ * @returns {string}
+ */
+export function composeTechnicalsBlock(snapshot) {
+  if (snapshot) return `TECHNICAL SNAPSHOT:\n${snapshot}\n\n`;
+  return 'TECHNICAL SNAPSHOT:\nNo technical readings were available for this symbol on this request. '
+    + 'Do not cite any indicator, and leave citedIndicators empty.\n\n';
 }
 
 const VALID_STANCES = [
@@ -183,6 +214,8 @@ export default async function handler(req, res) {
 
     const technicalSnapshot = composeTechnicalSnapshot(technicals, currentPrice);
 
+    const technicalsBlock = composeTechnicalsBlock(technicalSnapshot);
+
     const systemPrompt = `You are ${agentName}, a ${archetype} AI trading agent in a BaggerBomb battle on FantasyTrades. Your Coach is challenging one of your positions. Defend your analysis with specific indicators, or acknowledge if the Coach has a valid point.
 
 Respond ONLY with valid JSON (no markdown, no backticks):
@@ -197,7 +230,7 @@ Respond ONLY with valid JSON (no markdown, no backticks):
     const userMessage = `POSITION DATA:
 Symbol: ${targetSymbol} | Tier: ${position.tier} | Entry: $${entryPrice || 'N/A'} | Current: $${currentPrice || 'N/A'} | P&L: ${pnlPct}%
 
-${technicalSnapshot ? `TECHNICAL SNAPSHOT:\n${technicalSnapshot}\n\n` : ''}YOUR DIRECTIVES:
+${technicalsBlock}YOUR DIRECTIVES:
 ${directives}
 
 COACH'S CHALLENGE:

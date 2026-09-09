@@ -29,8 +29,9 @@ import { calculateAllIndicators } from './technicalCalculations.js';
 import { fetchDailyOHLCV, DAILY_WINDOW_CALENDAR_DAYS } from './marketDataCache.js';
 import { composeTechnicals } from './researchCard.js';
 import { buildPortfolioBriefsBlock, buildBenchBriefsBlock } from './voiceLayerPrompt.js';
-import { buildPortfolioBriefs } from '../cron/voice-layer-cache.js';
-import { composeTechnicalSnapshot } from '../agent/debate.js';
+import { buildPortfolioBriefs, buildBenchBriefs } from '../cron/voice-layer-cache.js';
+import { computeTechnicalScore } from './indexIntelligence.js';
+import { composeTechnicalSnapshot, composeTechnicalsBlock } from '../agent/debate.js';
 
 // A deterministic, gently trending OHLCV series, newest-first — the order
 // `calculateAllIndicators` documents. The wobble keeps ATR, Bollinger and the
@@ -122,6 +123,24 @@ describe('debate.js — composeTechnicalSnapshot', () => {
     expect(out).toContain('RSI(14):');
   });
 
+  it('nothing computed ⇒ the block SAYS SO, so the model cannot quietly invent citations', () => {
+    // The prompt's schema requires `citedIndicators` and the route renders them
+    // as chips; silence here was an invitation to fabricate.
+    const block = composeTechnicalsBlock(composeTechnicalSnapshot(null, null));
+    expect(block).toContain('No technical readings were available');
+    expect(block).toContain('leave citedIndicators empty');
+    // Still not a VALUE: no placeholder anywhere in it.
+    expect(block).not.toContain('N/A');
+    expect(block).not.toContain('negative');
+    expect(block).not.toContain('undefined');
+  });
+
+  it('and when readings exist the block carries them, with the original spacing', () => {
+    const snapshot = composeTechnicalSnapshot(LONG, QUOTE);
+    expect(composeTechnicalsBlock(snapshot)).toBe(`TECHNICAL SNAPSHOT:\n${snapshot}\n\n`);
+    expect(composeTechnicalsBlock(snapshot)).not.toContain('No technical readings');
+  });
+
   it('nothing computed ⇒ null, so the caller omits the whole block', () => {
     expect(composeTechnicalSnapshot(null, QUOTE)).toBeNull();
     expect(composeTechnicalSnapshot({}, QUOTE)).toBeNull();
@@ -168,6 +187,11 @@ describe('the voice-layer cache briefs — buildPortfolioBriefs → buildPortfol
       volumeConfirmation: 12,
       factors: {
         aboveSMA20: true, aboveSMA50: true, aboveSMA200: true,
+        // The averages and the MACD state the cron writes beside the flags
+        // (indexIntelligence.js:392-394, :400) — both null-honest, and both
+        // what the brief writers actually gate on.
+        sma20: 148, sma50: 140, sma200: 120,
+        macdAboveSignal: true, macdHistogram: 0.4,
         rsPercentile: 82, upDayVolRatio: 1.8,
       },
     },
@@ -206,13 +230,105 @@ describe('the voice-layer cache briefs — buildPortfolioBriefs → buildPortfol
     expect(out).toContain('Momentum: RSI healthy, not extended. MACD expanding. Volume 1.8x avg.');
   });
 
-  it('the portfolio path now matches the bench path it was diverging from', () => {
-    const briefs = build(NO_TECH);
-    const asPortfolio = buildPortfolioBriefsBlock({ portfolioBriefs: briefs });
-    const asBench = buildBenchBriefsBlock({ benchBriefs: briefs });
-    for (const out of [asPortfolio, asBench]) {
-      expect(out).not.toContain('Trend:');
-      expect(out).not.toContain('Momentum:');
+  // THE FIXTURE THAT CAUGHT THE FIRST FIX. A hand-written `{}` only exercises
+  // the missing-DOCUMENT case, which the code already handled; the live defect
+  // was a document the cron really writes for a thin-history symbol, where
+  // `aboveSMA50` is the boolean `false` while `sma50` is null. Build it with
+  // the real scorer so the shape cannot drift from what production persists.
+  function thinHistoryTechScore() {
+    const closes = Array.from({ length: 25 }, (_, i) => 100 - i * 0.5);
+    return computeTechnicalScore({
+      closes,
+      highs: closes.map((c) => c + 1),
+      lows: closes.map((c) => c - 1),
+      volumes: closes.map(() => 1e6),
+      spyCloses: closes,
+      rsPercentile: 50,
+      rsTrend: 'flat',
+      // 25 rows: sma20 exists, sma50/sma200/macd do not.
+      technicals: { rsi: null, sma20: 101, sma50: null, sma200: null, macd: null },
+      sectorRSPercentile: null,
+    });
+  }
+
+  it('a THIN-HISTORY doc from the real scorer stores aboveSMA50=false with sma50=null', () => {
+    const t = thinHistoryTechScore();
+    expect(t.factors.aboveSMA50).toBe(false);
+    expect(typeof t.factors.aboveSMA50).toBe('boolean');   // a typeof guard cannot see this
+    expect(t.factors.sma50).toBeNull();                    // the reading itself is honest
+    expect(t.factors.sma200).toBeNull();
+    expect(t.factors.macdAboveSignal).toBeNull();
+    // The neutral defaults that are indistinguishable from measurements:
+    expect(t.macdScore).toBe(6);
+  });
+
+  it('no 50- or 200-day average ⇒ NO trend sentence — never "Downtrend. Below major SMAs."', () => {
+    const [brief] = build({ NVDA: thinHistoryTechScore() });
+    expect('trendSummary' in brief).toBe(false);
+    const out = buildPortfolioBriefsBlock({ portfolioBriefs: build({ NVDA: thinHistoryTechScore() }) });
+    expect(out).not.toContain('Downtrend');
+    expect(out).not.toContain('Trend:');
+  });
+
+  it('no computed MACD ⇒ no MACD phrase, from the defaulted macdScore of 6', () => {
+    const [brief] = build({ NVDA: thinHistoryTechScore() });
+    expect(brief.momentumSummary ?? '').not.toContain('MACD');
+  });
+
+  // Fewer than 20 daily rows: `computeTechnicalScore` never enters its volume
+  // branch (indexIntelligence.js:327) and the sub-score stays at the hardcoded
+  // default of 6. `6 < 8` used to take the else-branch and publish a verdict on
+  // a ratio that was never measured.
+  function tinyHistoryTechScore() {
+    const closes = Array.from({ length: 15 }, (_, i) => 100 - i * 0.5);
+    return computeTechnicalScore({
+      closes,
+      highs: closes.map((c) => c + 1),
+      lows: closes.map((c) => c - 1),
+      volumes: closes.map(() => 1e6),
+      spyCloses: closes,
+      rsPercentile: 50,
+      rsTrend: 'flat',
+      technicals: { rsi: null, sma20: 101, sma50: null, sma200: null, macd: null },
+      sectorRSPercentile: null,
+    });
+  }
+
+  it('a DEFAULTED volume score says nothing — never "Volume subdued." off an unmeasured ratio', () => {
+    const t = tinyHistoryTechScore();
+    expect(t.volumeConfirmation).toBe(6);              // the default, not a measurement
+    const [brief] = build({ NVDA: t });
+    expect(brief.momentumSummary ?? '').not.toContain('Volume');
+    const out = buildPortfolioBriefsBlock({ portfolioBriefs: build({ NVDA: t }) });
+    expect(out).not.toContain('Volume subdued');
+  });
+
+  it('a MEASURED low volume score still speaks — the fix suppresses the default, not the signal', () => {
+    const t = thinHistoryTechScore();
+    expect(t.volumeConfirmation).toBe(3);              // measured over 25 rows
+    const [brief] = build({ NVDA: t });
+    expect(brief.momentumSummary).toContain('Volume subdued.');
+  });
+
+  // The real parity row: BOTH WRITERS, not one writer through two renderers.
+  it('the portfolio and bench WRITERS agree, on the same input, at every history length', () => {
+    const portfolio = { core: [{ symbol: 'NVDA', tier: 'core', baseATR: 0 }] };
+    const bench = { bench: { stocks: [{ symbol: 'NVDA', sector: 'Technology' }] } };
+    const rankings = { NVDA: { technicalRank: 3 } };
+
+    for (const techScores of [NO_TECH, { NVDA: thinHistoryTechScore() }, FULL_TECH]) {
+      const [p] = buildPortfolioBriefs(portfolio, priceMap, rankings, techScores, {}, {}, {});
+      const [b] = buildBenchBriefs(bench, priceMap, rankings, techScores, undefined, {});
+      expect(p.trendSummary).toBe(b.trendSummary);
+      expect(p.momentumSummary).toBe(b.momentumSummary);
+      expect(p.rsPercentile).toBe(b.rsPercentile);
+
+      // …and the two renderers agree on what they make of it.
+      const pOut = buildPortfolioBriefsBlock({ portfolioBriefs: [p] });
+      const bOut = buildBenchBriefsBlock({ benchBriefs: [b] });
+      for (const line of ['Trend:', 'Momentum:', 'Downtrend', 'Volume subdued', 'RS 50th %ile']) {
+        expect(pOut.includes(line)).toBe(bOut.includes(line));
+      }
     }
   });
 });
@@ -257,15 +373,22 @@ describe('the daily window getStockAnalysisData requests', () => {
     const fetchSpy = vi.fn(() => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) }));
     vi.stubGlobal('fetch', fetchSpy);
 
-    await fetchDailyOHLCV('AAPL.US', 'test-token');
+    // Freeze the clock: `expected` used to be a SECOND `new Date()` taken after
+    // the awaited call, so a run straddling midnight reddened this row with no
+    // code change.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-09T13:00:00.000Z'));
+    try {
+      await fetchDailyOHLCV('AAPL.US', 'test-token');
+    } finally {
+      vi.useRealTimers();
+    }
 
     const url = fetchSpy.mock.calls[0][0];
     const from = /[?&]from=(\d{4}-\d{2}-\d{2})/.exec(url)?.[1];
     expect(from).toBeTruthy();
-
-    const expected = new Date();
-    expected.setDate(expected.getDate() - DAILY_WINDOW_CALENDAR_DAYS);
-    expect(from).toBe(expected.toISOString().split('T')[0]);
+    // 2026-09-09 minus 90 days.
+    expect(from).toBe('2026-06-11');
     expect(url).toContain('period=d');
     expect(url).toContain('order=d');
   });

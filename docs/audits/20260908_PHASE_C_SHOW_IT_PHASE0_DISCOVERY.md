@@ -59,7 +59,7 @@
 **The book-only guard.** `:84-90`: `portfolio = battle.portfolio || agent.lastDecision?.portfolio`, `flattenPortfolioServer(portfolio)` flattens `star`, `core`, `support` and nothing else (`agentScoring.js:36-51`, fenced, cite only), 404 `Position X not found in portfolio`. `flattenBenchServer` (`:57-69`) is exported and un-imported here. The book is seven slots (`src/utils/baggerBombUtils.js:480-482`: 2 + 2 + 3).
 
 **The data fetch.** `:96` `getStockAnalysisData(targetSymbol, { fields: ['daily', 'price'] })`:
-- `daily` = EOD OHLCV from `getDateDaysAgo(30)` — **30 calendar days** (`api/_utils/marketDataCache.js:220-222`, `:92-96`), newest first, `close = adjusted_close` (`:239`). Cached L1 in-memory 5 min (`:41`), L2 Firestore `marketDataCache` 4 h (`:31`), TTL stretched to the next open when the market is closed (`marketSchedule.js:345-354`). Cold: one EODHD call; the module header's own figure is "2-4 seconds for multiple API calls per query" (`:8-10`, ASSUMED — never measured in the repo).
+- `daily` = EOD OHLCV from `getDateDaysAgo(DAILY_WINDOW_CALENDAR_DAYS)` — **90 calendar days** (`api/_utils/marketDataCache.js:242`, `:251-252`, `:92-96`). *(Was 30 calendar days at `:220-222` when this discovery was written; D-120 widened it Sep 9 2026 so MACD's 35-candle and SMA50's 50-candle minimums are reached — see `20260909_PHASE_C_SHOW_IT_BUILD_REPORT.md` §5.3. Both original line anchors have since drifted.)* Newest first, `close = adjusted_close` (`:239`). Cached L1 in-memory 5 min (`:41`), L2 Firestore `marketDataCache` 4 h (`:31`), TTL stretched to the next open when the market is closed (`marketSchedule.js:345-354`). Cold: one EODHD call; the module header's own figure is "2-4 seconds for multiple API calls per query" (`:8-10`, ASSUMED — never measured in the repo).
 - `price` = EODHD real-time, **fetched on every call, never cached** (`:529-531`, `:587-603`); on failure falls back to `daily[0].close` with `fallback: true` (`:611-617`).
 - The L2 `_technicals` cache path (`fetchTechnicals`, `:539-566`) is **not used**: `'technicals'` is not requested, so the indicators are recomputed in-request at `:106`.
 
@@ -316,7 +316,7 @@ Per step of the research call. **Nothing below was measured against a live servi
 
 | Fact on the card | The field that exists | Where it is rendered today | Status |
 |---|---|---|---|
-| Technicals' source | EODHD EOD (`marketDataCache.js:222`), 30 calendar days (`:221`) | nowhere | FOUND (data) / NOT FOUND (label) |
+| Technicals' source | EODHD EOD (`marketDataCache.js:252`), **90** calendar days (`:242`) — 30 at the time of this discovery, widened by D-120 Sep 9 2026 | nowhere | FOUND (data) / NOT FOUND (label) |
 | Last candle date | `daily[0].date` (`:235`) | nowhere | FOUND / NOT FOUND |
 | Cache state of the daily series | `cacheStatus.daily ∈ hit \| fresh \| stale_fallback` (`:471`, `:500`, `:513`), `staleData`, `staleFields` (`:453-454`), `fetchedAt` (`:450`) | nowhere | FOUND / NOT FOUND |
 | Indicators' vintage | `calculatedAt`, `dataPoints` (`technicalCalculations.js:506-507`) | nowhere | FOUND / NOT FOUND |

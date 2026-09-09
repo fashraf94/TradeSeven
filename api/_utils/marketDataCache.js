@@ -226,18 +226,33 @@ function getApiKey() {
  * one, and the reason the research card and `debate.js` had nothing to print.
  *
  * 90 is the smallest round window that clears BOTH minimums in every season.
- * ~64 weekdays fall in 90 calendar days, and the worst US-market holiday
- * cluster in such a span (Thanksgiving → Christmas → New Year → MLK, five
- * closures) still leaves ~59 trading rows. 60 days would clear MACD's 35 by
+ * The inclusive [from, today] span is 91 days = exactly 13 weeks = exactly 65
+ * weekdays from EVERY start date in the calendar, and the NYSE closes at most
+ * ten days in a whole year, so the window never yields fewer than 55 trading
+ * rows whatever the season. 60 days would clear MACD's 35 by
  * about three rows, and 75 would land ON SMA50's 50 — an indicator that
  * flickers in and out with the calendar is worse than one honestly absent.
  * SMA200 needs 200 rows (~290 calendar days) and stays null by design; the
  * renderers say nothing about it.
  *
  * COST: no additional API call — the SAME `/eod/` request with an earlier
- * `from`. What grows is the response and its cache document, ~21 rows to ~62,
- * roughly 2.6 KB to 7.8 KB per symbol per fetch (~110 bytes per mapped row),
- * behind the unchanged L1 (5 min) and L2 (4 h) caches.
+ * `from`. What grows is the response and its cache document: ~21 rows to ~62,
+ * roughly 2.3 KB to 6.8 KB per symbol per fetch at ~110 bytes per mapped row
+ * (`{date, open, high, low, close, rawClose, volume}`). TTLs are unchanged, so
+ * fetch FREQUENCY is unchanged. The largest single consumer of the increase is
+ * compute-institutional-intelligence.js:213, which batch-reads the `_daily`
+ * document for all 239 tickers at once: ~490 KB to ~1.6 MB per run.
+ *
+ * NOT ONLY THE NULLS CHANGE. `calculateRSI` and `calculateEMA`
+ * (technicalCalculations.js:61-95, :32-47) seed on the OLDEST bars and smooth
+ * forward across the whole series, so their output depends on series LENGTH,
+ * not just on the newest bars — unlike SMA/Bollinger/ATR, which read the newest
+ * end only. Widening therefore also MOVES RSI and EMA values that were already
+ * rendering (measured: up to ~10 RSI points on identical recent prices, enough
+ * to cross the 30/70 zone boundary). The longer warm-up is the more accurate
+ * reading — 21 bars left ~60% of the weight on the seed — but it is a value
+ * change, not only a null-to-value change, and it lands in persisted research
+ * cards. Disclosed in the handover rather than left to be discovered.
  */
 export const DAILY_WINDOW_CALENDAR_DAYS = 90;
 
@@ -500,10 +515,24 @@ export async function getStockAnalysisData(symbol, options = {}) {
     // alongside that reader. Nothing needs versioning here anyway: there is
     // exactly ONE window, so every write under this key is that window's
     // payload. The only narrower payloads are the previous deploy's, they age
-    // out on the daily TTL (4 h, frozen to the next open while the market is
-    // closed), and until they do the technicals computed off them are simply
-    // null and every renderer stays silent. The widened window is delayed for
-    // one TTL cycle, never misreported.
+    // out on the daily TTL (4 h, and `getEffectiveTTLMs` freezes it to the next
+    // open while the market is closed).
+    //
+    // Two honest limits on that bound, both found in review:
+    //   · It is not one TTL cycle but up to two. `SYMBOL_technicals` (`:583`)
+    //     is a SECOND unversioned document holding the DERIVED indicator set;
+    //     on a hit `result.daily` is never consulted, so an old technicals doc
+    //     serves its own TTL and can then be recomputed off a still-frozen
+    //     narrow daily doc. `api/agent/research.js` requests `['daily']` only,
+    //     which refreshes one and not the other, so the two documents can
+    //     disagree for a symbol at one instant.
+    //   · While a narrow payload is served, MACD/SMA50 are indeed null and the
+    //     renderers stay silent — but RSI and EMA come back with DIFFERENT
+    //     VALUES, not nulls (see the window comment above). Those are not
+    //     misreported as anything they are not, but they are not "silent"
+    //     either.
+    // Both resolve on the next full refresh. Neither is worth versioning a doc
+    // key that is a cross-module contract.
     const docKey = `${clean}_${fieldType}`;
     const ttlMs = CACHE_TTL[fieldType];
 

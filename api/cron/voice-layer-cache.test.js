@@ -42,6 +42,13 @@ function fullTechScore({
       aboveSMA200: true,
       aboveSMA50: true,
       aboveSMA20: true,
+      // The cron writes the averages alongside the flags
+      // (indexIntelligence.js:392-394); the brief writers gate on them.
+      sma200: 120, sma50: 140, sma20: 148,
+      // Null-honest in the same document (indexIntelligence.js:400); the MACD
+      // phrase rides it rather than the defaulted `macdScore`.
+      macdAboveSignal: true,
+      macdHistogram: 0.4,
       rsPercentile: 80,
       upDayVolRatio: 1.8,
       ...factors,
@@ -568,7 +575,7 @@ describe('buildPortfolioBriefs — threshold proximity (Tier 0 Item 4)', () => {
       rsiContext: 8,
       macdScore: 9,
       volumeConfirmation: 9,
-      factors: { aboveSMA200: true, aboveSMA50: true, aboveSMA20: true, rsPercentile: 80, upDayVolRatio: 1.8 },
+      factors: { aboveSMA200: true, aboveSMA50: true, aboveSMA20: true, sma200: 120, sma50: 140, sma20: 148, rsPercentile: 80, upDayVolRatio: 1.8 },
     } };
     const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, rankingsMap, techScoresMap, {}, {});
 
@@ -690,7 +697,7 @@ describe('buildPortfolioBriefs — intraday momentum overlay (Phase 3)', () => {
       rsiContext: 8,
       macdScore: 9,
       volumeConfirmation: 9,
-      factors: { aboveSMA200: true, aboveSMA50: true, aboveSMA20: true, rsPercentile: 80, upDayVolRatio: 1.8 },
+      factors: { aboveSMA200: true, aboveSMA50: true, aboveSMA20: true, sma200: 120, sma50: 140, sma20: 148, rsPercentile: 80, upDayVolRatio: 1.8 },
     } };
     const intradayMap = {
       AAPL: intradayPayload({ vwap: 200.0, currentPrice: 201.0, vwapDeviation: 0.5, sma20_5m: 200.5 }),
@@ -1075,7 +1082,9 @@ describe('buildScoutAlerts — null-safe technicalScore predicate (F3.1)', () =>
     expect(surge.detail).not.toContain('null');
   });
 
-  it('game_fit alert reads "ATR percentile N/A." when atrPercentile is missing', () => {
+  // D-120: this row used to pin `'ATR percentile N/A.'` — a test asserting the
+  // defect. An absent reading is an absent CLAUSE; 'N/A' is never a value.
+  it('game_fit alert OMITS the ATR clause when atrPercentile is missing', () => {
     const rankingsMap = {
       XYZ: { baggerBombFit: 90, baggerBombRank: 5, compositeScore: 75 },
     };
@@ -1083,7 +1092,17 @@ describe('buildScoutAlerts — null-safe technicalScore predicate (F3.1)', () =>
 
     const fit = alerts.find(a => a.type === 'game_fit');
     expect(fit).toBeDefined();
-    expect(fit.detail).toContain('ATR percentile N/A.');
+    expect(fit.detail).not.toContain('N/A');
+    expect(fit.detail).not.toContain('ATR percentile');
+    expect(fit.detail).toBe('Composite score 75.');
+  });
+
+  it('game_fit alert omits the composite clause too when that score is missing', () => {
+    const rankingsMap = { XYZ: { baggerBombFit: 90, baggerBombRank: 5, atrPercentile: 0.4 } };
+    const fit = buildScoutAlerts(watchlist(['XYZ']), rankingsMap, {}, 'all', new Set())
+      .find(a => a.type === 'game_fit');
+    expect(fit.detail).toBe('ATR percentile 40%.');
+    expect(fit.detail).not.toContain('N/A');
   });
 
   it('game_fit alert shows 0% when atrPercentile is the legitimate value 0', () => {
@@ -1258,6 +1277,7 @@ describe('buildBenchBriefs — Phase 5A field propagation', () => {
           aboveSMA200: true,
           aboveSMA50: true,
           aboveSMA20: true,
+          sma200: 120, sma50: 140, sma20: 148,
           rsPercentile: 80,
           upDayVolRatio: 1.8,
           macdFreshBullishCross: true,

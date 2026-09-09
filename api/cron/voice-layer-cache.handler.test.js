@@ -94,6 +94,7 @@ const TECH_SCORE = (over = {}) => ({
   volumeConfirmation: 9,
   factors: {
     aboveSMA200: true, aboveSMA50: true, aboveSMA20: true,
+    sma200: 120, sma50: 140, sma20: 148,
     rsPercentile: 80, upDayVolRatio: 1.8,
     ...over.factors,
   },
