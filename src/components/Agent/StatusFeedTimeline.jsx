@@ -2,8 +2,13 @@ import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowRightLeft, ShieldAlert, Lock, MessageSquare } from 'lucide-react';
 // One regime vocabulary, shared with AgentActivityFeed and the Why? panel
-// (BUILD_RULES §9) — see the note in decisionRecord.js.
-import { REGIME_LABELS } from '../../data/decisionRecord';
+// (BUILD_RULES §9) — see the note in decisionRecord.js. Gated through the
+// `regimeLabel` accessor, not a raw map lookup, so an Object.prototype key
+// cannot open the gate (see the longer note in AgentActivityFeed.jsx).
+//
+// NOTE: this file is not on a live path — its only importer is
+// AgentStrategyTab.ARCHIVED.jsx, which nothing imports.
+import { regimeLabel } from '../../data/decisionRecord';
 
 // ── Label Maps ─────────────────────────────────────────────
 
@@ -205,9 +210,9 @@ const FeedEntry = ({ entry, tokens, onChallenge }) => {
         ))}
 
         {/* Regime pill */}
-        {entry.regime && REGIME_LABELS[entry.regime] && (
+        {entry.regime && regimeLabel(entry.regime) && (
           <Pill
-            label={REGIME_LABELS[entry.regime]}
+            label={regimeLabel(entry.regime)}
             color={REGIME_COLORS[entry.regime] || tokens.textMuted}
             tokens={tokens}
           />

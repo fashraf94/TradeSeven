@@ -33,6 +33,39 @@ describe('ThisTurnStrip', () => {
     expect(html).not.toContain('1:02');
   });
 
+  // Review C-1. `COPY.heardLine` has TWO callers, and the widened positive was
+  // reasoned about only for the scrollback card. `deriveReceipts` never hands
+  // the strip a non-`filed` receipt today (the slot thread is `currentId`, and
+  // the strip returns null on `completed`), so this is unreachable — which is
+  // exactly why it is worth pinning: the strip's whole contract is "only what
+  // is unresolved and check-bound", and a past-tense `Heard at the {slot}
+  // check` belongs on the scrollback card, not here. If either invariant ever
+  // moves, this row fails instead of the strip quietly gaining a past fact.
+  it('a non-`filed` receipt puts NO Heard line on the strip, positive or negative', () => {
+    for (const state of ['replaced', 'expired']) {
+      for (const heard of [{ at: T1, heard: true }, { at: T1, heard: false }]) {
+        const html = render({
+          directive: DIRECTIVE,
+          receipts: { 't-1': { state, at: T1, heard } },
+          battleStatus: 'active',
+          turn: TURN,
+        });
+        expect(html).not.toContain('data-heard');
+        expect(html).not.toContain('Heard at the');
+        expect(html).not.toContain('Not heard at this check');
+      }
+    }
+    // …and the same stamp under `filed` DOES render, so the row above is the
+    // state doing the work and not a helper that renders nothing.
+    const filed = render({
+      directive: DIRECTIVE,
+      receipts: { 't-1': { state: 'filed', at: T1, heard: { at: T1, heard: true } } },
+      battleStatus: 'active',
+      turn: TURN,
+    });
+    expect(filed).toContain('Heard at the 11:30 AM check');
+  });
+
   it('empty: `Nothing queued · next check ~{t}` with the adapter\'s next', () => {
     const html = render({ directive: null, receipts: {}, battleStatus: 'active', turn: TURN });
     expect(html).toContain('Nothing queued · next check ~1:00 PM');

@@ -707,13 +707,18 @@ export function filingFailureLine(status) {
  * (`STOCK REGIMES: NVDA=directional_expansion, …`, both in the strategy legend
  * and on the live line), each beside the one word a player reads for it.
  *
- * ONE SOURCE, THREE SURFACES (BUILD_RULES §9). This map was declared three
- * times in `src/` with the same four pairs — `AgentActivityFeed.jsx:23`,
- * `StatusFeedTimeline.jsx:18`, and nowhere for the Why? panel, which printed
- * the token instead. Three copies of one vocabulary is how two feeds and a
- * panel start calling one regime two things; the map lives here, in the
- * zero-import copy module both the client and `api/` already read, and every
- * surface takes its word from it.
+ * ONE SOURCE (BUILD_RULES §9). This map was declared twice in `src/` with the
+ * same four pairs — `AgentActivityFeed.jsx:23` and `StatusFeedTimeline.jsx:18`
+ * — and nowhere for the Why? panel, which printed the raw token instead.
+ * Copies of one vocabulary are how a feed and a panel start calling one regime
+ * two things; the map lives here, in the zero-import copy module both the
+ * client and `api/` already read, and every surface takes its word from it.
+ *
+ * TWO CONSUMERS, ONE OF THEM LIVE. `AgentActivityFeed` is on the live path
+ * (AgentBattleScreen → PaneTape / GameTapeView); `StatusFeedTimeline` is
+ * reached only from `AgentStrategyTab.ARCHIVED.jsx`, which nothing imports. It
+ * is re-pointed here for consistency, and its test rows pin a dead file — said
+ * plainly so the count is not read as reach.
  *
  * THE TOKEN IS NEVER LOST — it is what the prompt rendered, and the evidence
  * claim is "this is what the check saw". So the narrator's record keeps

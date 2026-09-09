@@ -221,9 +221,10 @@ function ExecutionCard({ directive, receipt }) {
           heardLine ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {receiptRow}
-              {/* The record's own line, beneath Filed. Indented to the receipt
-                  text (6px dot + 8px gap) so it reads as a second fact about
-                  the same filing, not a second receipt state. */}
+              {/* The record's own line, beneath the receipt — whichever of
+                  `Filed` / `Replaced` / `Expired` that row carries. Indented to
+                  the receipt text (6px dot + 8px gap) so it reads as a second
+                  fact about the same filing, not a second receipt state. */}
               <div
                 data-heard={receipt?.heard?.heard ? 'heard' : 'not-heard'}
                 style={{

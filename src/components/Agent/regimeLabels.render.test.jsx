@@ -32,6 +32,11 @@ import AgentActivityFeed from './AgentActivityFeed';
 import StatusFeedTimeline from './StatusFeedTimeline';
 import { REGIME_LABELS, REGIME_WORDS, regimeLabel } from '../../data/decisionRecord';
 
+// Of the two feeds only AgentActivityFeed is on a live path (AgentBattleScreen
+// → PaneTape / GameTapeView). StatusFeedTimeline is reached only from
+// AgentStrategyTab.ARCHIVED.jsx, which nothing imports — its rows below pin a
+// dead file, and are kept so the two stay identical if it is ever revived.
+
 /** The literal both files declared before the re-point. Byte for byte. */
 const SHIPPED_REGIME_LABELS = {
   directional_expansion: 'Expanding',
@@ -51,6 +56,15 @@ const entry = (regime) => ({
   action: 'swap', symbolOut: 'CRM', symbolIn: 'DVN', message: 'Swapped CRM for DVN.', regime,
 });
 const strip = (h) => h.replace(/<!-- -->/g, '');
+
+// THE PROTOTYPE KEYS ARE THE POINT (review C-5). Both feeds used to gate on a
+// bare `REGIME_LABELS[entry.regime]`, which is truthy for every
+// Object.prototype key: `regime: 'constructor'` resolved the label to a
+// FUNCTION and threw inside `hexToRgba` before any colour fallback could fire.
+// Gating on `regimeLabel` tests the closed list instead, so the feeds and the
+// Why? panel agree on which tokens are ruled. `risk_on` alone never proved
+// that — it is unruled AND absent from the prototype.
+const UNRULED = ['risk_on', 'constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__'];
 
 describe('the shared map IS the shipped map', () => {
   it('four pairs, the same four words, in the same order', () => {
@@ -81,10 +95,12 @@ describe('AgentActivityFeed — byte-identical after the re-point', () => {
     }
   });
 
-  it('an unruled token renders no regime pill at all (the shipped guard)', () => {
-    const html = render('risk_on');
-    expect(html).not.toContain('risk_on');
-    for (const word of Object.values(SHIPPED_REGIME_LABELS)) expect(html).not.toContain(`>${word}<`);
+  it('an unruled token renders no regime pill — INCLUDING a prototype key', () => {
+    for (const unruled of UNRULED) {
+      const html = render(unruled);
+      expect(html).not.toContain(unruled);
+      for (const word of Object.values(SHIPPED_REGIME_LABELS)) expect(html).not.toContain(`>${word}<`);
+    }
   });
 });
 
@@ -101,9 +117,11 @@ describe('StatusFeedTimeline — byte-identical after the re-point', () => {
     }
   });
 
-  it('an unruled token renders no regime pill at all (the shipped guard)', () => {
-    const html = render('risk_on');
-    expect(html).not.toContain('risk_on');
-    for (const word of Object.values(SHIPPED_REGIME_LABELS)) expect(html).not.toContain(`>${word}<`);
+  it('an unruled token renders no regime pill — INCLUDING a prototype key', () => {
+    for (const unruled of UNRULED) {
+      const html = render(unruled);
+      expect(html).not.toContain(unruled);
+      for (const word of Object.values(SHIPPED_REGIME_LABELS)) expect(html).not.toContain(`>${word}<`);
+    }
   });
 });

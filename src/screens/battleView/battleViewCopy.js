@@ -68,7 +68,6 @@ import {
   evidenceFacts as recordEvidenceFacts,
   provenanceLine,
   regimeWord,
-  regimeLabel as recordRegimeLabel,
   NO_CHANGE_STATUS_LINE,
   FILING_CONFLICT_LINE,
   FILING_BUDGET_LINE,
@@ -583,9 +582,6 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // carries its date rather than reading as a time later today (review A-3).
   evidenceProvenance: (vintages, checkIso = null) => provenanceLine(vintages, etTime, checkIso),
   regimeWord: (value) => regimeWord(value),
-  // `Expanding` — the shared player-facing word for a regime token, from the
-  // one REGIME_LABELS map the two Agent feeds read too.
-  regimeLabel: (value) => recordRegimeLabel(value),
 
   // THE POSITIVE TRAVELS, THE NEGATIVE STAYS PUT — the split review A-2 did
   // not make, and the reason A-2 itself gave for the scoping.
@@ -616,6 +612,26 @@ export const BATTLE_VIEW_COPY = Object.freeze({
     if (stamp.heard === false && receipt.state === 'filed') return BATTLE_VIEW_COPY.notHeard;
     return null;
   },
+
+  /**
+   * The *This turn* strip's Heard line — THE CURRENT CARD'S TREATMENT, ALWAYS.
+   *
+   * The widening above is a rule about DIRECTIVE CARDS, where a displaced
+   * thread's card is scrollback and a past fact about it is worth keeping. The
+   * strip is not a card: it holds only what is unresolved and check-bound, and
+   * presence in it is itself a claim that something is outstanding for the
+   * next check. A past-tense `Heard at the {slot} check` about a thread that
+   * is no longer the directive would contradict that contract.
+   *
+   * `deriveReceipts` never hands the strip a non-`filed` receipt today — the
+   * slot's thread is `currentId`, and the strip returns null on `completed` —
+   * so this is a contract made structural rather than a live fix (review C-1).
+   * It lives here, beside the card's rule, so each surface still has exactly
+   * one place that decides (BUILD_RULES §9).
+   */
+  thisTurnHeardLine: (receipt) => (
+    receipt?.state === 'filed' ? BATTLE_VIEW_COPY.heardLine(receipt) : null
+  ),
 
   // ── The chat's send failure (A2.3, addendum item 11) ──────────────────────
   // The shipped line is `Agent is thinking too hard. Try again.` — an agent
