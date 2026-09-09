@@ -40,6 +40,10 @@ import {
   isFlat6ActivationDay,
 } from '../../utils/flat6BattleEnrichment';
 import { BAGGER_TIERS } from '../../constants/baggerBombScoring';
+// The persisted record's SHARED renderer (BUILD_RULES §9) — the same functions
+// the Battle View's check card and the narrator's YOUR RECORD block render a
+// check through, so this pane cannot show one check a second way.
+import { renderMotive, renderHypothesis, HYPOTHESIS_LABEL } from '../../data/decisionRecord';
 
 const PRICE_POLL_INTERVAL = 60000;
 const FEED_LIMIT = 8;
@@ -193,10 +197,37 @@ export default function Flat6BattleView({
   // at completion = the Film Room unlock).
   const whyConcealed = battle._whyConcealed === true;
   const monologue = ctx.innerMonologue || null;
+  // WHAT A PLAYER READS IS THE RENDERED RECORD, NEVER THE STORED BYTES.
+  // `evaluations[].rationale` is not always the agent's sentence: on the
+  // guardrail, risk-loop and R11 paths the cron writes it, and its own
+  // composition carries a machinery-provenance code and, on 100% of forced
+  // exits, a doubled prefix — `Guardrail override (guardrail_stopLoss):
+  // Guardrail override: stop-loss at 8% breached on GILD (-9.24%).`. Rendered
+  // raw, a League owner read `guardrail_stopLoss` off this screen (D-64 /
+  // hazard 29: a code with no ruled words is not a fact anyone can read).
+  // `renderMotive` translates the code into the words that guardrail is called
+  // by, or drops the parenthetical when the token has none, and collapses the
+  // stutter — and it leaves the MODEL's own words untouched, to the byte, which
+  // is the point: verbatim is an agent-authored property (C1).
+  //
+  // `renderHypothesis` is D-99's gate: the forecast shows only when it is
+  // present, is not the cron's own, and is not already inside the rationale
+  // (§3.2a) — so the known bold-vs-field pair renders once, under a label that
+  // says the prediction is history and its grade is not in yet.
+  //
+  // The empty filter runs LAST as well as first: an entry can carry bytes and
+  // still render nothing (a whitespace rationale, a hypothesis the rationale
+  // already made), and an empty bordered row is not a check anyone can read.
   const recentWhy = (battle.evaluations || [])
     .filter((e) => e && (e.rationale || e.hypothesis))
     .slice(-3)
-    .reverse();
+    .reverse()
+    .map((e, i) => ({
+      key: e.evalId || `why-${i}`,
+      motive: renderMotive(e.rationale),
+      hypothesis: renderHypothesis(e),
+    }))
+    .filter((row) => row.motive || row.hypothesis);
 
   const card = {
     background: tokens.bgCard, border: `1px solid ${tokens.borderDivider}`,
@@ -323,10 +354,14 @@ export default function Flat6BattleView({
               {monologue?.strategy && (
                 <p style={{ fontSize: 12, lineHeight: 1.5, color: tokens.textSecondary, margin: 0 }}>{monologue.strategy}</p>
               )}
-              {recentWhy.length > 0 && recentWhy.map((e, i) => (
-                <div key={e.evalId || i} style={{ fontSize: 11, color: tokens.textMuted, borderTop: `1px solid ${tokens.borderDivider}`, paddingTop: 6 }}>
-                  {e.rationale && <div>{e.rationale}</div>}
-                  {e.hypothesis && <div style={{ fontStyle: 'italic', color: tokens.textFaint }}>{e.hypothesis}</div>}
+              {recentWhy.length > 0 && recentWhy.map((row) => (
+                <div key={row.key} style={{ fontSize: 11, color: tokens.textMuted, borderTop: `1px solid ${tokens.borderDivider}`, paddingTop: 6 }}>
+                  {row.motive && <div>{row.motive}</div>}
+                  {row.hypothesis && (
+                    <div style={{ fontStyle: 'italic', color: tokens.textFaint }}>
+                      {HYPOTHESIS_LABEL}: {row.hypothesis}
+                    </div>
+                  )}
                 </div>
               ))}
               {!monologue?.strategy && recentWhy.length === 0 && (
