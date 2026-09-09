@@ -1727,7 +1727,13 @@ export function buildPortfolioBriefsBlock(marketSnapshot, { grounded = false } =
     ? '' : ' (Prices as of last cache refresh, not real-time.)';
 
   const lines = marketSnapshot.portfolioBriefs.map(b => {
-    let entry = `${buildHeaderLine(b)}\nTrend: ${b.trendSummary}\nMomentum: ${b.momentumSummary}`;
+    // D-120: conditional, exactly as the bench block below (:1797-1798). The
+    // cron omits a summary it could not honestly compute, and an omitted field
+    // interpolated unconditionally rendered the literal `Trend: undefined`.
+    // Byte-identical when both summaries are present.
+    let entry = buildHeaderLine(b);
+    if (b.trendSummary) entry += `\nTrend: ${b.trendSummary}`;
+    if (b.momentumSummary) entry += `\nMomentum: ${b.momentumSummary}`;
 
     const levelsLine = buildLevelsLine(b);
     if (levelsLine) entry += `\n${levelsLine}`;

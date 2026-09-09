@@ -18,6 +18,68 @@ function getAnthropicClient() {
   return anthropicClient;
 }
 
+/**
+ * The TECHNICAL SNAPSHOT block, null-honest (D-120; BUILD_RULES §9).
+ *
+ * `calculateAllIndicators` returns null for every indicator whose minimum the
+ * daily window does not reach — MACD needs 35 candles (`slow + signal`,
+ * technicalCalculations.js:195) and SMA50 needs 50 (`:20`). The shipped daily
+ * window reaches neither, and the defaults this block used to carry turned that
+ * absence into claims: `|| { histogram: 0 }` rendered EVERY short window as
+ * `MACD histogram: negative`, and `price > sma50` off a `currentPrice || 0`
+ * fallback rendered `Above SMA50: false` with no quote at all.
+ *
+ * A missing reading now contributes NO segment — never a sign word derived from
+ * a default, never `N/A` standing in for a value. Same rule, same reason as the
+ * research card's `composeTechnicals` (researchCard.js:115), which reads the
+ * same `calculateAllIndicators` output.
+ *
+ * Byte-identical to the previous block when every reading is present.
+ *
+ * @param {object|null} technicals - `calculateAllIndicators` output
+ * @param {number|null} currentPrice - the live quote, or null
+ * @returns {string|null} The block's lines, or null when nothing was computed.
+ */
+export function composeTechnicalSnapshot(technicals, currentPrice) {
+  const t = technicals || {};
+  const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  const price = num(currentPrice);
+  const lines = [];
+
+  // RSI + MACD. The histogram's sign word is derived from the SAME number the
+  // segment is gated on (§9), and an exactly-flat histogram reads 'flat' — 0 is
+  // not negative.
+  const momentum = [];
+  const rsi = num(t.rsi?.value);
+  if (rsi !== null) momentum.push(`RSI(14): ${rsi} (${t.rsi.zone})`);
+  const histogram = num(t.macd?.histogram);
+  if (histogram !== null) {
+    const sign = histogram > 0 ? 'positive' : histogram < 0 ? 'negative' : 'flat';
+    momentum.push(`MACD histogram: ${sign}`);
+  }
+  if (momentum.length) lines.push(momentum.join(' | '));
+
+  // "Above SMAn" needs BOTH the average and a real quote. Without a price there
+  // is no comparison to report — only a fabricated one.
+  const smas = [];
+  if (price !== null) {
+    for (const [key, label] of [['sma20', 'SMA20'], ['sma50', 'SMA50']]) {
+      const v = num(t.sma?.[key]);
+      if (v !== null) smas.push(`Above ${label}: ${price > v}`);
+    }
+  }
+  if (smas.length) lines.push(smas.join(' | '));
+
+  const context = [];
+  const atrPercent = num(t.atr?.percent);
+  if (atrPercent !== null) context.push(`ATR: ${atrPercent}% (${t.atr.regime})`);
+  const tier = t.volumeProfile?.tier;
+  if (typeof tier === 'string' && tier) context.push(`Volume: ${tier}`);
+  if (context.length) lines.push(context.join(' | '));
+
+  return lines.length ? lines.join('\n') : null;
+}
+
 const VALID_STANCES = [
   'overvalued',
   'bad_timing',
@@ -119,13 +181,7 @@ export default async function handler(req, res) {
     // archetype integrity is on (byte-identical when off).
     const directives = renderLegacyDirectives(agent.directives, (d, i) => `${i + 1}. ${d}`);
 
-    const rsi = technicals?.rsi || { value: 'N/A', zone: 'unknown' };
-    const macd = technicals?.macd || { histogram: 0 };
-    const sma20 = technicals?.sma?.sma20 || null;
-    const sma50 = technicals?.sma?.sma50 || null;
-    const atr = technicals?.atr || { percent: 'N/A', regime: 'unknown' };
-    const volumeProfile = technicals?.volumeProfile || { tier: 'unknown' };
-    const price = currentPrice || 0;
+    const technicalSnapshot = composeTechnicalSnapshot(technicals, currentPrice);
 
     const systemPrompt = `You are ${agentName}, a ${archetype} AI trading agent in a BaggerBomb battle on FantasyTrades. Your Coach is challenging one of your positions. Defend your analysis with specific indicators, or acknowledge if the Coach has a valid point.
 
@@ -141,12 +197,7 @@ Respond ONLY with valid JSON (no markdown, no backticks):
     const userMessage = `POSITION DATA:
 Symbol: ${targetSymbol} | Tier: ${position.tier} | Entry: $${entryPrice || 'N/A'} | Current: $${currentPrice || 'N/A'} | P&L: ${pnlPct}%
 
-TECHNICAL SNAPSHOT:
-RSI(14): ${rsi.value} (${rsi.zone}) | MACD histogram: ${macd.histogram > 0 ? 'positive' : 'negative'}
-Above SMA20: ${sma20 !== null ? price > sma20 : 'N/A'} | Above SMA50: ${sma50 !== null ? price > sma50 : 'N/A'}
-ATR: ${atr.percent}% (${atr.regime}) | Volume: ${volumeProfile.tier}
-
-YOUR DIRECTIVES:
+${technicalSnapshot ? `TECHNICAL SNAPSHOT:\n${technicalSnapshot}\n\n` : ''}YOUR DIRECTIVES:
 ${directives}
 
 COACH'S CHALLENGE:

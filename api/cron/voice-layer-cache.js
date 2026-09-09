@@ -142,49 +142,80 @@ export function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScore
       const factors = techScore?.factors || {};
       const rsPercentile = factors.rsPercentile ?? 50;
 
-      // Trend summary from SMA alignment
-      const aboveSMA200 = factors.aboveSMA200 === true;
-      const aboveSMA50 = factors.aboveSMA50 === true;
-      const aboveSMA20 = factors.aboveSMA20 === true;
+      // Trend summary from SMA alignment — emit only when factors carry SMA
+      // flags. D-120 / BUILD_RULES §9: an ABSENT flag is not `false`. A symbol
+      // with no stockTechnicalScores doc (or one whose daily window never
+      // reached SMA50's 50 candles, technicalCalculations.js:20) has `factors`
+      // = {}, and the unguarded chain below fell all the way through to
+      // 'Downtrend. Below major SMAs.' — a bearish claim about a reading the
+      // platform never computed. `buildBenchBriefs` has always guarded this;
+      // the portfolio path now matches it exactly. Byte-identical whenever the
+      // flags are present.
+      let trendSummary;
+      if (
+        typeof factors.aboveSMA200 === 'boolean' ||
+        typeof factors.aboveSMA50 === 'boolean' ||
+        typeof factors.aboveSMA20 === 'boolean'
+      ) {
+        const aboveSMA200 = factors.aboveSMA200 === true;
+        const aboveSMA50 = factors.aboveSMA50 === true;
+        const aboveSMA20 = factors.aboveSMA20 === true;
 
-      let trendSummary = '';
-      if (aboveSMA200 && aboveSMA50 && aboveSMA20) {
-        trendSummary = 'Strong uptrend. Above all major SMAs.';
-      } else if (aboveSMA50 && aboveSMA20) {
-        trendSummary = 'Moderate uptrend. Above 20 and 50-day SMAs.';
-      } else if (aboveSMA20) {
-        trendSummary = 'Short-term bounce. Above 20-day SMA only.';
-      } else {
-        trendSummary = 'Downtrend. Below major SMAs.';
-      }
-
-      if (rsPercentile >= 75) trendSummary += ' RS vs SPY rising.';
-      else if (rsPercentile <= 25) trendSummary += ' RS vs SPY declining.';
-
-      // Momentum summary from RSI + MACD + volume factor scores
-      const rsiContext = techScore?.rsiContext ?? 4;
-      const macdScore = techScore?.macdScore ?? 6;
-      const volumeConfirmation = techScore?.volumeConfirmation ?? 6;
-
-      let momentumParts = [];
-      if (rsiContext >= 7) momentumParts.push('RSI healthy, not extended.');
-      else if (rsiContext <= 3) momentumParts.push('RSI weak or overbought.');
-
-      if (macdScore >= 8) momentumParts.push('MACD expanding.');
-      else if (macdScore <= 4) momentumParts.push('MACD contracting.');
-
-      if (volumeConfirmation >= 8) {
-        const volRatio = factors.upDayVolRatio;
-        if (volRatio != null) {
-          momentumParts.push(`Volume ${volRatio.toFixed(1)}x avg.`);
+        if (aboveSMA200 && aboveSMA50 && aboveSMA20) {
+          trendSummary = 'Strong uptrend. Above all major SMAs.';
+        } else if (aboveSMA50 && aboveSMA20) {
+          trendSummary = 'Moderate uptrend. Above 20 and 50-day SMAs.';
+        } else if (aboveSMA20) {
+          trendSummary = 'Short-term bounce. Above 20-day SMA only.';
         } else {
-          momentumParts.push('Volume confirming.');
+          trendSummary = 'Downtrend. Below major SMAs.';
         }
-      } else {
-        momentumParts.push('Volume subdued.');
+
+        if (rsPercentile >= 75) trendSummary += ' RS vs SPY rising.';
+        else if (rsPercentile <= 25) trendSummary += ' RS vs SPY declining.';
       }
 
-      const momentumSummary = momentumParts.join(' ');
+      // Momentum summary from RSI + MACD + volume factor scores — same rule.
+      // The old `?? 6` MACD default happened to land between the two
+      // thresholds and so printed nothing, but the matching volume default did
+      // not: a symbol with no techScore at all was described as
+      // 'Volume subdued.'. Each phrase is now gated on its own reading.
+      let momentumSummary;
+      if (techScore && (
+        techScore.rsiContext != null ||
+        techScore.macdScore != null ||
+        techScore.volumeConfirmation != null
+      )) {
+        const momentumParts = [];
+
+        const rsiContext = techScore.rsiContext;
+        if (typeof rsiContext === 'number') {
+          if (rsiContext >= 7) momentumParts.push('RSI healthy, not extended.');
+          else if (rsiContext <= 3) momentumParts.push('RSI weak or overbought.');
+        }
+
+        const macdScore = techScore.macdScore;
+        if (typeof macdScore === 'number') {
+          if (macdScore >= 8) momentumParts.push('MACD expanding.');
+          else if (macdScore <= 4) momentumParts.push('MACD contracting.');
+        }
+
+        const volumeConfirmation = techScore.volumeConfirmation;
+        if (typeof volumeConfirmation === 'number') {
+          if (volumeConfirmation >= 8) {
+            const volRatio = factors.upDayVolRatio;
+            if (volRatio != null) {
+              momentumParts.push(`Volume ${volRatio.toFixed(1)}x avg.`);
+            } else {
+              momentumParts.push('Volume confirming.');
+            }
+          } else {
+            momentumParts.push('Volume subdued.');
+          }
+        }
+
+        if (momentumParts.length > 0) momentumSummary = momentumParts.join(' ');
+      }
 
       // Threshold proximity note (qualitative, ATR-rank-based — distinct from
       // quantitative thresholdProximity below). F3.1: null sentinel — the
@@ -224,8 +255,6 @@ export function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScore
         technicalScore,
         technicalRank,
         rsPercentile: Math.round(rsPercentile),
-        trendSummary,
-        momentumSummary,
         supportLevel: null,
         resistanceLevel: null,
         thresholdNote,
@@ -256,6 +285,13 @@ export function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScore
         divergence: rankingMomentum?.divergence ?? null,
         lastCandlePattern: rankingRecent?.lastCandlePattern ?? null,
       };
+
+      // D-120: absent summaries are ABSENT FIELDS, not empty strings —
+      // Firestore rejects `undefined`, and the renderer reads presence
+      // (voiceLayerPrompt.js `buildPortfolioBriefsBlock`). Same two lines as
+      // buildBenchBriefs.
+      if (trendSummary) brief.trendSummary = trendSummary;
+      if (momentumSummary) brief.momentumSummary = momentumSummary;
 
       // Tier 0 Item 4: thresholdProximity + existingBadges
       const baseATR = stock.baseATR;
