@@ -167,13 +167,19 @@ describe('Phase B — the Heard line beneath Filed', () => {
       .toContain('flex-direction:column;gap:4px');
   });
 
-  // Review A-2. The seed puts the second line "beneath `Filed {time}`", and
-  // that scoping is load-bearing: `Not heard at this check` names NO slot, so
-  // on a scrollback card for a thread that has since been Replaced it reads as
-  // a claim about the LATEST check — one where that thread was not the
-  // directive at all and the record says nothing about it. The two lines stay
-  // together, so a receipt shows one Heard treatment or none.
-  it('a REPLACED card carries no Heard line — the deictic negative has no check to mean', () => {
+  // ── One row per card state (review A-2, amended) ─────────────────────────
+  //
+  // A-2 scoped BOTH lines to `Filed` because the negative is deictic: `Not
+  // heard at this check` names NO slot, so on a scrollback card for a thread
+  // that has since been Replaced it reads as a claim about the LATEST check —
+  // one where that thread was not the directive at all and the record says
+  // nothing about it. That reason holds, and it is a reason about the NEGATIVE
+  // only: `Heard at the {slot} check` names its own check and is true wherever
+  // it is read. So the positive travels to every card state and the negative
+  // stays on the current card. Six rows — three states × two verdicts.
+
+  // Filed × the two verdicts are the two rows above. Replaced:
+  it('a REPLACED card carries no NEGATIVE line — the deictic line has no check to mean', () => {
     // t-1 is the replaced thread; give it a withheld stamp of its own.
     const html = render({ receipts: withHeard({ at: T1, heard: false }, 't-1') });
     expect(html).toContain('Replaced 12:58 PM');
@@ -181,13 +187,20 @@ describe('Phase B — the Heard line beneath Filed', () => {
     expect(html).not.toContain('data-heard');
   });
 
-  it('nor does a replaced card carry the POSITIVE line', () => {
+  it('a REPLACED card DOES carry the positive — it names its own check, and that check ran', () => {
     const html = render({ receipts: withHeard({ at: T1, heard: true }, 't-1') });
     expect(html).toContain('Replaced 12:58 PM');
-    expect(html).not.toContain('Heard at the');
+    expect(html).toContain('Heard at the 11:30 AM check');
+    expect(html).toContain('data-heard="heard"');
+    // The receipt above it is unchanged: the card says the directive was
+    // displaced AND that it was in front of the decider while it stood.
+    expect(html).toContain('data-receipt="replaced"');
+    // The current card carries no line of its own — only t-1 was stamped.
+    expect((html.match(/data-heard=/g) || []).length).toBe(1);
   });
 
-  it('an EXPIRED card carries no Heard line either', () => {
+  // Expired:
+  it('an EXPIRED card carries no NEGATIVE line either', () => {
     const receipts = deriveReceipts(EXCHANGES, DIRECTIVE, 'completed');
     for (const id of Object.keys(receipts)) {
       receipts[id] = { ...receipts[id], heard: { at: T1, heard: false } };
@@ -195,6 +208,21 @@ describe('Phase B — the Heard line beneath Filed', () => {
     const html = render({ receipts, battleStatus: 'completed' });
     expect(html).toContain('>Expired<');
     expect(html).not.toContain('Not heard at this check');
+    expect(html).not.toContain('data-heard');
+  });
+
+  it('an EXPIRED card DOES carry the positive — the battle closed, the check still ran', () => {
+    const receipts = deriveReceipts(EXCHANGES, DIRECTIVE, 'completed');
+    for (const id of Object.keys(receipts)) {
+      receipts[id] = { ...receipts[id], heard: { at: T1, heard: true } };
+    }
+    const html = render({ receipts, battleStatus: 'completed' });
+    expect(html).toContain('>Expired<');
+    expect(html).toContain('Heard at the 11:30 AM check');
+    expect(html).toContain('data-heard="heard"');
+    // Both cards are stamped here, so both carry it: the replaced one too.
+    expect(html).toContain('Replaced 12:58 PM');
+    expect((html.match(/data-heard="heard"/g) || []).length).toBe(2);
   });
 
   it('the verb is never upgraded — no considered, used, noticed, understood, because', () => {

@@ -6,8 +6,22 @@ import {
   MessageSquare, Eye, ClipboardList,
 } from 'lucide-react';
 import GameplanMeetingCard from './GameplanMeetingCard';
+// The four regime words come from the ONE map (BUILD_RULES §9). This file and
+// StatusFeedTimeline.jsx each declared their own copy of the same four pairs,
+// and the Why? panel had none and printed the raw token — one vocabulary, no
+// single place to change it. decisionRecord.js is zero-import and already the
+// copy source both the client and `api/` read. (Of the two feeds only this one
+// is live: StatusFeedTimeline is reached solely from AgentStrategyTab.ARCHIVED,
+// which nothing imports. It is re-pointed for consistency, not for reach.)
+//
+// `regimeLabel` RATHER THAN THE MAP ITSELF, and the accessor is the point: a
+// bare `REGIME_LABELS[entry.regime]` gate is truthy for every Object.prototype
+// key, so `regime: 'constructor'` resolved to a function and threw in
+// `hexToRgba` before any fallback could fire. The accessor tests the closed
+// list, so the feeds and the Why? panel now agree on which tokens are ruled.
+import { regimeLabel } from '../../data/decisionRecord';
 
-// ── Label Maps (mirrored from StatusFeedTimeline) ─────────────────────────────
+// ── Label Maps (strategy + colours; regime is shared) ─────────────────────────
 
 const STRATEGY_LABELS = {
   volatility_squeeze: 'Squeeze',
@@ -18,13 +32,6 @@ const STRATEGY_LABELS = {
   bust_avoidance: 'Bust Guard',
   vwap_failure: 'VWAP Fail',
   threshold_lock: 'Locked',
-};
-
-const REGIME_LABELS = {
-  directional_expansion: 'Expanding',
-  directional_contraction: 'Contracting',
-  choppy: 'Choppy',
-  distressed: 'Distressed',
 };
 
 const REGIME_COLORS = {
@@ -419,9 +426,9 @@ const HighTierCard = ({
           ))}
 
           {/* Regime pill */}
-          {entry.regime && REGIME_LABELS[entry.regime] && (
+          {entry.regime && regimeLabel(entry.regime) && (
             <Pill
-              label={REGIME_LABELS[entry.regime]}
+              label={regimeLabel(entry.regime)}
               color={REGIME_COLORS[entry.regime] || tokens.textMuted}
             />
           )}

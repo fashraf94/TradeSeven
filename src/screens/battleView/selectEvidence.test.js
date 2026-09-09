@@ -13,10 +13,13 @@ import { describe, it, expect } from 'vitest';
 import { selectEvidence } from './selectEvidence';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
 import {
+  evidenceFacts,
   evidenceFactLines,
   evidenceHeading,
   provenanceLine,
   regimeWord,
+  regimeLabel,
+  REGIME_LABELS,
   REGIME_WORDS,
   riskWord,
   RISK_WORDS,
@@ -128,6 +131,45 @@ describe('the eight fields — exactly eight, and each says what it is', () => {
     expect(pct(13)).toBe('Bollinger width 13th %ile');
     expect(pct(21)).toBe('Bollinger width 21st %ile');
     expect(pct(100)).toBe('Bollinger width 100th %ile');
+  });
+
+  // ── One walk, two renders (BUILD_RULES §9) ───────────────────────────────
+  //
+  // `evidenceFacts` is the walk; `evidenceFactLines` is `.map(f => f.text)`.
+  // The narrator's YOUR RECORD block renders the LINES and must keep printing
+  // the token the decider's prompt printed — the evidence claim is "this is
+  // what the check saw", and a friendlier word would show something it never
+  // saw. The panel renders the ENTRIES and shows the player's word with the
+  // token on its `title`. One walk means the two can't name different tokens.
+  it('the lines are the entries\' `text`, in order — the narrator sees no change', () => {
+    expect(evidenceFactLines(FULL)).toEqual(evidenceFacts(FULL).map((f) => f.text));
+    // …and the regime line among them is still the raw token, byte for byte.
+    expect(evidenceFactLines(FULL)).toContain('Regime directional_expansion');
+    expect(evidenceFactLines(FULL)).not.toContain('Regime · Expanding');
+  });
+
+  it('only the regime entry is translated — every other label IS its text, with no title', () => {
+    for (const fact of evidenceFacts(FULL)) {
+      if (fact.title) {
+        expect(fact.text).toBe('Regime directional_expansion');
+        expect(fact.label).toBe('Regime · Expanding');
+        expect(fact.title).toBe('directional_expansion');
+      } else {
+        expect(fact.label).toBe(fact.text);
+        expect(fact.title).toBeNull();
+      }
+    }
+    expect(evidenceFacts(FULL).filter((f) => f.title)).toHaveLength(1);
+  });
+
+  it('the panel\'s word comes from the ONE map — the same one both Agent feeds read', () => {
+    for (const token of REGIME_WORDS) {
+      const [fact] = evidenceFacts({ regime: token });
+      expect(fact.label).toBe(`Regime · ${REGIME_LABELS[token]}`);
+      expect(fact.label).toBe(`Regime · ${regimeLabel(token)}`);
+      expect(fact.title).toBe(token);
+      expect(fact.text).toBe(`Regime ${token}`);
+    }
   });
 
   it('the regime is the RAW TOKEN the prompt printed; an unruled value renders nothing', () => {
@@ -283,10 +325,24 @@ describe('heardLine — the copy layer\'s half of "Not heard is a claim too" (re
     expect(COPY.heardLine(null)).toBeNull();
   });
 
-  it('and only beneath `Filed` — a replaced or expired receipt gets no line (review A-2 / D-2)', () => {
+  // THE ASYMMETRY, AT THE COPY LAYER. The positive names its own check and is
+  // true wherever it is read; the negative names none and borrows the
+  // reader's, so it can only mean the latest one.
+  it('the DEICTIC negative stays on the current card — every other state gets no line', () => {
     const stamp = { at: '2026-09-01T15:31:00.000Z', heard: false };
     for (const state of ['replaced', 'expired', undefined]) {
       expect(COPY.heardLine({ state, at: null, heard: stamp })).toBeNull();
+    }
+    // …and it is the STATE doing that, not the stamp: the same receipt under
+    // `filed` renders. Without this the row above passes on a heardLine that
+    // returned null for everything.
+    expect(COPY.heardLine({ state: 'filed', at: null, heard: stamp })).toBe('Not heard at this check');
+  });
+
+  it('the POSITIVE travels — it names its own check, so every card state renders it', () => {
+    const stamp = { at: '2026-09-01T15:31:00.000Z', heard: true };
+    for (const state of ['filed', 'replaced', 'expired', undefined]) {
+      expect(COPY.heardLine({ state, at: null, heard: stamp })).toBe('Heard at the 11:30 AM check');
     }
   });
 });

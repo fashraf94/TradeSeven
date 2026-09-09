@@ -135,6 +135,11 @@ function ExecutionCard({ directive, receipt }) {
   // check`, or the reasonless `Not heard at this check`, or nothing at all
   // when no stamped entry names this thread (the mid-tick filing, and every
   // pre-flip battle). Presence-gated: no stamp, no line.
+  //
+  // WHICH of the two a scrollback card may show is the copy layer's rule, not
+  // this card's: the positive names its own check and renders on any card
+  // state (Replaced and Expired included), the deictic negative renders only
+  // on the current one. The card renders whatever it is handed.
   const heardLine = controllerReceipts ? BATTLE_VIEW_COPY.heardLine(receipt) : null;
   // The Phase A receipt row, built once so it renders identically whether or
   // not a Heard line stacks beneath it.
@@ -216,9 +221,10 @@ function ExecutionCard({ directive, receipt }) {
           heardLine ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {receiptRow}
-              {/* The record's own line, beneath Filed. Indented to the receipt
-                  text (6px dot + 8px gap) so it reads as a second fact about
-                  the same filing, not a second receipt state. */}
+              {/* The record's own line, beneath the receipt — whichever of
+                  `Filed` / `Replaced` / `Expired` that row carries. Indented to
+                  the receipt text (6px dot + 8px gap) so it reads as a second
+                  fact about the same filing, not a second receipt state. */}
               <div
                 data-heard={receipt?.heard?.heard ? 'heard' : 'not-heard'}
                 style={{

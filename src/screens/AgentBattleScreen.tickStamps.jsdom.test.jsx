@@ -225,11 +225,48 @@ describe('the screen joins the record to the receipts (review B-1)', () => {
     expect(strip, 'the This turn strip').toBeTruthy();
     expect(strip.textContent).toContain('Heard at the 12:45 PM check');
     expect(strip.textContent).not.toContain('Not heard');
-    // …and t-1's replaced card carries no Heard line at all (review A-2 / D-2:
-    // the deictic negative has no check to mean on a scrollback card).
+    // …and t-1's replaced card carries no NEGATIVE line: the deictic sentence
+    // has no check to mean on a scrollback card (review A-2). The POSITIVE
+    // does travel there — the row below is the one that proves it, and this
+    // row must not be read as saying otherwise.
     expect(html()).not.toContain('data-heard="not-heard"');
     expect(html()).not.toContain('Not heard at this check');
     expect(html()).toContain('Replaced 12:00 PM');
+  });
+
+  // THE JOIN, FOR THE WIDENED POSITIVE (review C-2). The component-level rows
+  // in AgentChat.receipts.render.test.jsx inject the stamp by hand into the
+  // receipts map; nothing proved a REAL document travelling the whole way —
+  // `deriveHeard` over the evaluations, `deriveReceipts` over the exchanges,
+  // the two joined in the screen — and landing on a card the walk itself
+  // marked `replaced`. Same fixture as the row above with one byte changed:
+  // t-1's stamp is a null suppression rather than a withholding.
+  it('a REPLACED card carries the positive when the record stamped that thread heard', () => {
+    const T2_FILED = '2026-09-01T16:00:00.000Z'; // 12:00 PM ET
+    const EX2 = {
+      userMessage: 'lean into tech', agentResponse: 'Understood.', hasDirective: true,
+      directive: { text: 'Lean into tech strength', expiry: 'end_of_battle', directiveThreadId: 't-2' },
+      directiveThreadId: 't-2', timestamp: T2_FILED,
+    };
+    DOC = {
+      ...BASE_DOC,
+      directive: { text: 'Lean into tech strength', expiry: 'end_of_battle', directiveThreadId: 't-2', createdAt: T2_FILED },
+      chatExchanges: [EXCHANGE, EX2],
+      evaluations: [
+        // t-1 WAS in the prompt at the 12:15 check, before t-2 displaced it.
+        { evalId: 'e-a', timestamp: '2026-09-01T16:15:00.000Z', decision: 'HOLD', haikuError: null,
+          rationale: 'Holding.', heard: { directiveThreadId: 't-1', suppressed: null } },
+        { ...BASE_DOC.evaluations[0], ...STAMPS, heard: { directiveThreadId: 't-2', suppressed: null } },
+      ],
+    };
+    mount();
+    // The displaced card keeps its receipt AND gains the past fact.
+    expect(html()).toContain('Replaced 12:00 PM');
+    expect(html()).toContain('Heard at the 12:15 PM check');
+    // Two stamped threads, two positive lines, no negative anywhere.
+    expect((html().match(/data-heard="heard"/g) || []).length).toBeGreaterThanOrEqual(2);
+    expect(html()).not.toContain('data-heard="not-heard"');
+    expect(html()).not.toContain('Not heard at this check');
   });
 
   it('the stamp reaches the receipt for ITS OWN thread, never another', () => {
@@ -250,7 +287,10 @@ describe('the screen joins the record to Why? (review B-2)', () => {
     expect(html()).toContain('What the 12:45 PM check saw');
     expect(html()).toContain('Price $44.12');
     expect(html()).toContain('Gain since entry +2.57%');
-    expect(html()).toContain('Regime directional_expansion');
+    // The shared word on the panel, the raw token on its `title` — one map in
+    // decisionRecord.js feeds this, both Agent feeds, and the narrator's line.
+    expect(html()).toContain('Regime · Expanding');
+    expect(html()).toContain('title="directional_expansion"');
     expect(html()).toContain('Risk LOCK');
   });
 

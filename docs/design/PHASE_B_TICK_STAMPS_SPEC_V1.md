@@ -112,3 +112,22 @@ The ledger rows D-110 → D-115 carry the same amendments.
 
 - **The evidence and vintages share Heard's gate** (build decision; Reviewer A endorsed). The label is the claim — "what the decider saw" is false on a tick that never built a prompt — and the readers are presence-gated, so the alternative would be a different product claim needing its own label.
 - **Discovery hazard 20 is moot** (review C-7, refuted by V2): `runShadowTickCapture`'s envelope never carries the evaluation entry, so the stamps do not enlarge the shadow capture.
+
+---
+
+## 9. V1.2 — amendments (added Sep 9, the Heard-scope + regime-label build)
+
+**As with §8, the spec text above is not rewritten in place** — this block is
+the correction of record for the two behaviour changes below, and where they
+disagree, this block wins. Both trace to
+`docs/audits/20260909_HEARD_SCOPE_REGIME_LABEL_BUILD_REVIEW.md`.
+
+| § | V1 (as amended by §8) says | Correction | Why |
+|---|---|---|---|
+| §1.5 | `ExecutionCard` and *This turn* show `Heard at the {slot} check` **beneath `Filed {time}`** — i.e. on the current directive's card only (the disposition recorded as review A-2 / D-2) | **The POSITIVE renders on any directive card whose thread carries a null-suppression stamp — Replaced and Expired included. The DEICTIC NEGATIVE `Not heard at this check` stays on the current card.** *This turn* is unchanged: it is not a directive card and keeps the current-card treatment for both lines | A-2's reason is a reason about the negative only. `Not heard at this check` names no slot, so on a scrollback card "this check" can only mean the latest one — at which the thread was not the directive and the record says nothing. `Heard at the {slot} check` names its own check and is true wherever it is read, and the scrollback card is where that past fact is worth keeping. The two sentences are not symmetric, so the rule is not either. |
+| §1.5 | Why? renders the regime as the **raw token** (`Regime directional_expansion`) — "the token IS the honest render" (recorded as D-3, a design call) | **Why? renders the shared player-facing label (`Regime · Expanding`) from the one `REGIME_LABELS` map in `decisionRecord.js`, with the raw token on the same element's `title` attribute.** The narrator's YOUR RECORD block is UNCHANGED and still prints the token verbatim | D-3 was recorded as an open design call, not a ruling. One walk (`evidenceFacts`) now produces both renders, so the panel's word and the prompt's token cannot name different regimes; the token is not lost, it moves to an attribute the prompt has no equivalent for. **Known limit:** `title` is a hover affordance, so on touch and to assistive tech the token is present but unreachable — recorded in the audit §5.2, unresolved. |
+
+**Recorded, not corrections to this spec:**
+
+- **The scrollback's Heard record is now one-sided** — a withheld thread's line disappears when a later filing displaces it, a heard thread's line persists. A consequence of the split above, not a defect; the self-naming negative (`Not heard at the {slot} check`) is the one-line alternative if the asymmetry is unwanted. Audit §5.1.
+- **`REGIME_LABELS` had two prior declarations** (`AgentActivityFeed.jsx`, `StatusFeedTimeline.jsx`), both now re-pointed at the shared map. Only `AgentActivityFeed` is on a live path; `StatusFeedTimeline` is reached solely from `AgentStrategyTab.ARCHIVED.jsx`, which nothing imports.

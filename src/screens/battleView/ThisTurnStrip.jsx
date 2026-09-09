@@ -30,7 +30,10 @@ export default function ThisTurnStrip({ directive = null, receipts = null, battl
   // Phase B: presence-gated — the receipt carries the record's Heard stamp for
   // this thread only when a stamped entry named it.
   const heardStamp = queued ? (receipts?.[threadId]?.heard ?? null) : null;
-  const heardLine = queued ? COPY.heardLine(receipts?.[threadId] ?? null) : null;
+  // The STRIP's accessor, not the card's: the widened positive is a
+  // directive-card rule, and the strip carries the current card's treatment
+  // only (see `thisTurnHeardLine` in battleViewCopy.js).
+  const heardLine = queued ? COPY.thisTurnHeardLine(receipts?.[threadId] ?? null) : null;
 
   return (
     <div
