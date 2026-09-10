@@ -2,13 +2,16 @@
 //
 // Phase B — the tick stamps: THE FLAG PIN (BUILD_RULES §2).
 //
-// TICK_STAMPS_ENABLED ships FALSE by design (spec §1.1 / §4, D-113): B1 merges
-// dark, the founder flips it in its own one-line PR after B1 merges, and the
-// first stamped production check is the smoke. The flag-pin guard
-// (flagPinGuard.test.js) tracks this row against the live value and, because
-// the flag sits in DARK_BY_DESIGN there, an accidental flip fails loudly with
-// the runway note; a DELIBERATE flip moves the first row below to `true` and
-// drops the DARK_BY_DESIGN entry in the same commit.
+// TICK_STAMPS_ENABLED is LIT. It shipped FALSE by design (spec §1.1 / §4,
+// D-113): B1 merged dark, and the founder flipped it in its own one-line PR
+// after B1 merged, so the first stamped production check is the smoke. The
+// flag-pin guard (flagPinGuard.test.js) tracks this row against the live value
+// and couples the three lines the flip moves, all in that one commit: the flag
+// itself, the first row below to `true`, and the DARK_BY_DESIGN entry, dropped.
+//
+// The tripwire did not retire, it turned around. Pinned TRUE, the row below is
+// now what turns an accidental ROLLBACK into a loud failure naming this file —
+// and a deliberate one moves the same three lines back.
 //
 // Deliberately pins ONLY this flag (the characterPaneFlags.test.js precedent):
 // pinning a flag obliges its docstring to name this file, so an unrelated flag
@@ -25,9 +28,10 @@ const REPO = path.resolve(HERE, '..', '..');
 const SRC = readFileSync(path.join(HERE, 'featureFlags.js'), 'utf8');
 
 describe('Phase B tick stamps flag — the pin (BUILD_RULES §2)', () => {
-  it('ships DARK: TICK_STAMPS_ENABLED is false at merge (D-113 — the founder flips it in its own PR after B1 merges)', () => {
-    // THE ROW THAT MOVES WITH THE FLIP, in the flip PR's own commit.
-    expect(TICK_STAMPS_ENABLED).toBe(false);
+  it('is LIT: TICK_STAMPS_ENABLED is true (D-113 — the founder flipped it in its own PR after B1 merged)', () => {
+    // THE ROW THAT MOVED WITH THE FLIP, in the flip PR's own commit; a rollback
+    // moves it back, together with the DARK_BY_DESIGN entry.
+    expect(TICK_STAMPS_ENABLED).toBe(true);
   });
 
   it('is a plain boolean export the flag-pin guard can scan', () => {
