@@ -74,7 +74,10 @@ function Sentence({ text }) {
  * roster row it is one it did not (muted). Nothing else differs — a chip is a
  * chip, so the eye reads the roster as the same kind of thing as the named.
  */
-function Chip({ symbol, spokenFor = false, onShowIt = null, researchUsed = 0, researchPending = false }) {
+function Chip({
+  symbol, spokenFor = false, onShowIt = null,
+  researchUsed = 0, researchPending = false, errorSymbol = null,
+}) {
   // Phase C §1 — THE BENCH CHIP CARRIES THE SAME DOOR. With a handler it is a
   // button; without one it is the shipped `<span>`, byte for byte, which is
   // what it stays while SHOW_IT_ENABLED is dark. The VISIBLE label is the
@@ -85,6 +88,21 @@ function Chip({ symbol, spokenFor = false, onShowIt = null, researchUsed = 0, re
   const door = typeof onShowIt === 'function';
   const enabled = door && !researchPending && researchDoorEnabled(researchUsed);
   const Tag = door ? 'button' : 'span';
+  // THE CHIP NEVER CHANGES SHAPE, AND THAT IS A FIX (§2 review, B4/B5/A3).
+  // The failure line used to render HERE, inside a wrapper this component
+  // returned instead of the chip. Three things were wrong with that, and all
+  // three are properties of putting it here rather than of the line itself:
+  //   · the root element went `button` → `span`, so React unmounted the button
+  //     and a keyboard user's focus was dumped to `<body>` at the instant
+  //     `role="alert"` fired;
+  //   · a name the check spoke for in TWO sentences renders TWO chips
+  //     (selectBench emits one card per sentence), so one tap printed and
+  //     announced the same line twice;
+  //   · on a FLAGGED name the wrapper spliced the line between the symbol and
+  //     its badge — `MPC … Flagged` became `MPC <failure> Flagged`.
+  // The line now renders ONCE, at the group level below, and the chip only
+  // points at it (`aria-describedby`), so a keyboard user who tabs to the chip
+  // hears the failure as its description instead of nothing at all.
   return (
     <Tag
       data-bench-chip={symbol}
@@ -93,6 +111,11 @@ function Chip({ symbol, spokenFor = false, onShowIt = null, researchUsed = 0, re
         type: 'button',
         'data-bench-chip-door': 'showit',
         'aria-label': COPY.showItDoorName(symbol, researchUsed),
+        // ONLY the failed name's chips point at the line. Every chip takes
+        // the same door props, so this is compared per chip rather than
+        // handed down already decided — the roster's other names describe
+        // nothing.
+        'aria-describedby': errorSymbol === symbol ? errorId(symbol) : undefined,
         title: enabled ? undefined : COPY.showItExhausted,
         disabled: !enabled,
         onClick: () => onShowIt(symbol),
@@ -120,11 +143,62 @@ function Chip({ symbol, spokenFor = false, onShowIt = null, researchUsed = 0, re
   );
 }
 
-export default function PaneBench({ bench = null, onShowIt = null, researchUsed = 0, researchPending = false }) {
+/** The id the failed symbol's line carries, and the chips point at. */
+const errorId = (symbol) => `bench-showit-error-${symbol}`;
+
+/**
+ * The failed tap's line — ONE per pane, in the group where that name first
+ * appears (§2 review, A3/B3/B4/B5).
+ *
+ * The bench can show one name in several places at once: on every sentence the
+ * check spoke it in, in the flagged group, or in the roster row. The failure is
+ * a fact about ONE TAP, so it is said once. The chips for that name all point
+ * at it, which is also what gives a keyboard user the failure at all.
+ */
+function ShowItFailure({ researchError }) {
+  const { symbol, attested } = researchError;
+  return (
+    <div
+      id={errorId(symbol)}
+      data-bench-showit-error={symbol}
+      data-bench-showit-attested={attested ? 'true' : 'false'}
+      role="alert"
+      style={{ ...mono, fontSize: 10, color: cssVar('text-muted') }}
+    >
+      {COPY.showItDoorFailed(attested)}
+    </div>
+  );
+}
+
+export default function PaneBench({
+  bench = null, onShowIt = null,
+  researchUsed = 0, researchPending = false, researchError = null,
+}) {
   if (!bench) return null;
-  // One place decides what every chip on this pane is (BUILD_RULES §9).
-  const door = { onShowIt, researchUsed, researchPending };
   const { slotIso, cards, flagged = [], rest, watchlistName, footer } = bench;
+  // WHERE THE ONE FAILURE LINE GOES: the group the failed name first appears
+  // in, reading order. A name can be on several sentences, in the flagged
+  // group and in the roster all at once; the failure is about one tap, so it
+  // is said once, in the first place the eye meets that name. Absent whole
+  // when the name is not on this bench (it may have been a Why? panel's tap).
+  // GATED ON THE DOOR, like the panel's line: with no handler there is no door,
+  // no tap and therefore no failure to report, and the flag-dark bench stays
+  // the row of plain spans it is today.
+  const failedSymbol = typeof onShowIt === 'function' && typeof researchError?.symbol === 'string'
+    ? researchError.symbol
+    : null;
+  const inNamed = Boolean(failedSymbol) && (
+    cards.some((c) => c.symbols.includes(failedSymbol)) || flagged.includes(failedSymbol)
+  );
+  const inRest = Boolean(failedSymbol) && !inNamed && rest.includes(failedSymbol);
+  // One place decides what every chip on this pane is (BUILD_RULES §9). The
+  // chips carry no error state of their own — only a pointer to the one line.
+  const door = {
+    onShowIt,
+    researchUsed,
+    researchPending,
+    errorSymbol: (inNamed || inRest) ? failedSymbol : null,
+  };
   const subtitle = COPY.benchWatchlist(watchlistName);
   const namedHeading = COPY.benchNamed(slotIso);
 
@@ -223,6 +297,8 @@ export default function PaneBench({ bench = null, onShowIt = null, researchUsed 
               {footer}
             </div>
           )}
+
+          {inNamed && <ShowItFailure researchError={researchError} />}
         </div>
       )}
 
@@ -248,6 +324,8 @@ export default function PaneBench({ bench = null, onShowIt = null, researchUsed 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
             {rest.map((symbol) => <Chip key={symbol} symbol={symbol} {...door} />)}
           </div>
+
+          {inRest && <ShowItFailure researchError={researchError} />}
         </div>
       )}
 

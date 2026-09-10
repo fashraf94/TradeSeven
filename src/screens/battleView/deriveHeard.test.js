@@ -10,7 +10,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { deriveHeard } from './deriveHeard';
-import { heardStamps, heardLabel, NOT_HEARD_LINE } from '../../data/decisionRecord';
+import { heardStamps, heardLabel, notHeardLabel } from '../../data/decisionRecord';
 
 const T1 = '2026-09-09T14:02:00.000Z';
 const T2 = '2026-09-09T14:17:00.000Z';
@@ -166,10 +166,29 @@ describe('the copy layer\'s own guards (review C-6 / C-8)', () => {
     expect(heardLabel('12:45 PM')).toBe('Heard at the 12:45 PM check');
   });
 
-  it('the negative line is a fixed, reasonless sentence', () => {
-    expect(NOT_HEARD_LINE).toBe('Not heard at this check');
+  it('the negative NAMES ITS CHECK, and is still reasonless', () => {
+    // One sentence shape with one word different — which is what lets the
+    // receipt layer render both verdicts on any card state. The slot is not a
+    // reason: it is the stamp's own instant, the same one the positive names.
+    expect(notHeardLabel('12:45 PM')).toBe('Not heard at the 12:45 PM check');
     for (const reason of ['malformed', 'mode_not_enforce', 'epoch_killed', 'unknown']) {
-      expect(NOT_HEARD_LINE).not.toContain(reason);
+      expect(notHeardLabel('12:45 PM')).not.toContain(reason);
     }
+    // The deixis is GONE, not merely unused — a surface cannot reach for it.
+    expect(notHeardLabel('12:45 PM')).not.toContain('this check');
+  });
+
+  it('the negative needs a slot too — no slot, no line, never the deictic fallback', () => {
+    // Reachable for the same reason the positive's row is: `heardStamps` sets
+    // `at: null` for an unparseable timestamp. Before this the surface printed
+    // `Not heard at this check` there, which is the one reading the widening
+    // exists to remove; silence is the honest answer.
+    for (const empty of [null, undefined, '']) expect(notHeardLabel(empty)).toBeNull();
+  });
+
+  it('the two verdicts differ by ONE WORD over one slot — the symmetry, pinned', () => {
+    // Mutation guard for the shape: a negative that stops naming its check, or
+    // a positive that starts borrowing the reader's, fails here first.
+    expect(notHeardLabel('12:45 PM')).toBe(`Not ${heardLabel('12:45 PM').replace('Heard', 'heard')}`);
   });
 });

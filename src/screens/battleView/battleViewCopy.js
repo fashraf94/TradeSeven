@@ -20,7 +20,7 @@
 //      decider's prompt at that check, proven by the cron's own stamp. It is
 //      never upgraded to considered, used, noticed, understood or decided
 //      because, and a withheld directive gets the reasonless system line
-//      (`NOT_HEARD_LINE`), never one of the four resolver words. `Holding`,
+//      (`notHeardLabel`), never one of the four resolver words. `Holding`,
 //      `Declined`, `Honored`, `Superseded` remain unproven and stay out.
 //   4. THE AGENT'S OWN WORDS ONLY (C1): Why? quotes `rationale` verbatim and
 //      never paraphrases it; the labels around it are scoreboard facts.
@@ -63,7 +63,7 @@ import {
   filesChip as recordFilesChip,
   filedLabel,
   heardLabel,
-  NOT_HEARD_LINE,
+  notHeardLabel,
   evidenceHeading,
   evidenceFacts as recordEvidenceFacts,
   provenanceLine,
@@ -73,6 +73,8 @@ import {
   FILING_BUDGET_LINE,
   FILING_REJECTED_LINE,
   FILING_FAILED_LINE,
+  RESEARCH_UNREACHABLE_LINE,
+  researchFailureLine as recordResearchFailureLine,
   filingFailureLine as recordFilingFailureLine,
   GUARDRAIL_FORCED_FAILED_LABEL,
 } from '../../data/decisionRecord';
@@ -363,8 +365,25 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   showItExhausted: 'All 3 reads used in this battle.',
   // The one failure line the client can be held to (the filingFailureLine
   // rule): it says the read did not happen and nothing about why the platform
-  // thinks that.
-  showItFailed: 'That read didn\u2019t come back. Try again.',
+  // thinks that. THE SENTENCE IS THE DOOR'S TOO, declared once
+  // (decisionRecord.js `RESEARCH_UNREACHABLE_LINE`) — `Try again.` is the
+  // CHAT's own clause, because the chip's error sits in the composer's slot
+  // where the retry has to be named. Byte-identical to the shipped string.
+  showItFailed: `${RESEARCH_UNREACHABLE_LINE} Try again.`,
+  // THE DOOR'S OWN failure, and WHICH sentence it is depends on what the
+  // failure proves. The door is a different surface from the chip above: it IS
+  // the retry — right there, still enabled, still reading `Show it · 2 of 3` —
+  // so what the player needs from it is not an instruction but the state of
+  // the count that door just named.
+  //
+  // A refusal the route ATTESTED (its body carried `noCardWritten`, which only
+  // its pre-transaction paths do) proves no card was written and therefore no
+  // slot consumed, and the line says so. Anything else — an unattested
+  // refusal, a platform 504, a request that never came back — proves only that
+  // no read came back, and the line says only that. The D-90 split, made by
+  // one function in decisionRecord.js so the two doors cannot answer
+  // differently. (The chat's chip is not on it yet — see that docstring.)
+  showItDoorFailed: (attested) => recordResearchFailureLine(attested),
   // D-54's forward path, as a word on the card. `Equip` is the shipped verb for
   // putting a name in front of the agent; the card offers it and never promises
   // what the process will do with it.
@@ -541,18 +560,22 @@ export const BATTLE_VIEW_COPY = Object.freeze({
 
   // ── Heard (Phase B, seed §1; D-110) ───────────────────────────────────────
   // The receipt's second line. `Heard at the {slot} check` when the record
-  // proves the thread was in the decider's prompt at that check; the flat,
-  // reasonless `Not heard at this check` when a directive existed and the
-  // assembler withheld it (Sol M-1 — the four suppression words are telemetry,
-  // never copy); NOTHING when no entry names the thread at all, which is the
-  // honest answer for a filing that landed mid-tick and will be stamped on the
-  // NEXT check.
+  // proves the thread was in the decider's prompt at that check; the
+  // reasonless `Not heard at the {slot} check` when a directive existed and
+  // the assembler withheld it (Sol M-1 — the four suppression words are
+  // telemetry, never copy); NOTHING when no entry names the thread at all,
+  // which is the honest answer for a filing that landed mid-tick and will be
+  // stamped on the NEXT check.
+  //
+  // BOTH take the same slot from the same stamp. The negative was deictic
+  // (`Not heard at this check`) and is not any more, which is what lets the
+  // two verdicts share one rule below instead of one each.
   //
   // The slot goes through `slotLabel` like every other label that names a
   // check (D-83) — the same formatter the tape and the turn line use, so one
   // tick is called one thing everywhere (BUILD_RULES §9).
   heard: (iso) => heardLabel(slotLabel(iso)),
-  notHeard: NOT_HEARD_LINE,
+  notHeard: (iso) => notHeardLabel(slotLabel(iso)),
 
   /**
    * The second line for a receipt carrying a Heard stamp, or null.
@@ -583,33 +606,31 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   evidenceProvenance: (vintages, checkIso = null) => provenanceLine(vintages, etTime, checkIso),
   regimeWord: (value) => regimeWord(value),
 
-  // THE POSITIVE TRAVELS, THE NEGATIVE STAYS PUT — the split review A-2 did
-  // not make, and the reason A-2 itself gave for the scoping.
+  // BOTH VERDICTS TRAVEL, BECAUSE BOTH NOW NAME THEIR OWN CHECK.
   //
-  // `Heard at the {slot} check` NAMES ITS OWN CHECK. A thread that was in the
-  // decider's prompt at the 12:45 check was in it at 12:45 whatever the card
-  // now reads, so the line is true wherever it is read and the scrollback card
-  // is exactly where that past fact is worth keeping: the receipt above it
-  // says the directive is no longer the one in the slot, and this says it was
-  // heard while it was. So the positive renders on ANY directive card whose
-  // thread carries a null-suppression stamp — Replaced and Expired included.
+  // A stamped sentence is a past fact about ONE named check: the thread was in
+  // the decider's prompt at the 12:45 check, or it was not. Either way the
+  // sentence is true wherever it is read — and the scrollback card is exactly
+  // where that past fact is worth keeping, because the receipt above it says
+  // only what became of the directive, never what the decider was handed while
+  // it stood. So the line renders on ANY directive card whose thread carries a
+  // stamp: Filed, Replaced and Expired alike.
   //
-  // `Not heard at this check` is DEICTIC: it names no slot, so `this check`
-  // can only mean the LATEST one. On a Replaced or Expired card that reading
-  // is false — at the latest check the thread was not the directive at all and
-  // the record says nothing about it — so the negative stays on the CURRENT
-  // card, the `filed` receipt, exactly where A-2 put it. A replaced
-  // directive's honest receipt for the latest check is `Replaced {t}`, which
-  // the card already carries.
+  // The asymmetry that stood here was a fact about the SENTENCES, not about
+  // the verdicts. `Not heard at this check` was DEICTIC — it named no slot, so
+  // `this check` could only mean the LATEST one, which on a Replaced or
+  // Expired card is a check the record says nothing about — and it was scoped
+  // to the `filed` receipt for that reason. `notHeardLabel` names the slot, so
+  // the reason is gone and the scoping went with it (decisionRecord.js). One
+  // sentence shape, one rule, one word different.
   //
-  // The two are not symmetric because the two SENTENCES are not: one carries
-  // its check with it and one borrows the reader's. That is the rule, not
-  // which way the answer came out.
+  // The state gate that remains is the STRIP's, below, and it is a different
+  // rule for a different reason.
   heardLine: (receipt) => {
     const stamp = receipt?.heard;
     if (!stamp || typeof stamp !== 'object') return null;
     if (stamp.heard === true) return BATTLE_VIEW_COPY.heard(stamp.at);
-    if (stamp.heard === false && receipt.state === 'filed') return BATTLE_VIEW_COPY.notHeard;
+    if (stamp.heard === false) return BATTLE_VIEW_COPY.notHeard(stamp.at);
     return null;
   },
 
@@ -620,8 +641,10 @@ export const BATTLE_VIEW_COPY = Object.freeze({
    * thread's card is scrollback and a past fact about it is worth keeping. The
    * strip is not a card: it holds only what is unresolved and check-bound, and
    * presence in it is itself a claim that something is outstanding for the
-   * next check. A past-tense `Heard at the {slot} check` about a thread that
-   * is no longer the directive would contradict that contract.
+   * next check. A past-tense line about a thread that is no longer the
+   * directive — `Heard at the {slot} check` or `Not heard at the {slot} check`
+   * — would contradict that contract, so the strip keeps the `filed` gate the
+   * cards no longer need.
    *
    * `deriveReceipts` never hands the strip a non-`filed` receipt today — the
    * slot's thread is `currentId`, and the strip returns null on `completed` —

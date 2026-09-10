@@ -19,6 +19,7 @@ import {
   provenanceLine,
   regimeWord,
   regimeLabel,
+  regimeAnnouncement,
   REGIME_LABELS,
   REGIME_WORDS,
   riskWord,
@@ -148,18 +149,41 @@ describe('the eight fields — exactly eight, and each says what it is', () => {
     expect(evidenceFactLines(FULL)).not.toContain('Regime · Expanding');
   });
 
-  it('only the regime entry is translated — every other label IS its text, with no title', () => {
+  it('only the regime entry is translated — every other label IS its text, unnamed and untitled', () => {
     for (const fact of evidenceFacts(FULL)) {
       if (fact.title) {
         expect(fact.text).toBe('Regime directional_expansion');
         expect(fact.label).toBe('Regime · Expanding');
         expect(fact.title).toBe('directional_expansion');
+        // A translated fact carries a SPOKEN form too: `title` reaches a
+        // hovering mouse and nobody else, so the token would otherwise be
+        // lost to touch, to the keyboard and to AT.
+        expect(fact.ariaLabel).toBe('Regime Expanding, token directional_expansion');
       } else {
         expect(fact.label).toBe(fact.text);
         expect(fact.title).toBeNull();
+        // Nothing a `title` would have hidden, so nothing to name: the label
+        // IS the prompt's own text and the text content says all of it.
+        expect(fact.ariaLabel).toBeNull();
       }
     }
     expect(evidenceFacts(FULL).filter((f) => f.title)).toHaveLength(1);
+    expect(evidenceFacts(FULL).filter((f) => f.ariaLabel)).toHaveLength(1);
+  });
+
+  it('the spoken form carries BOTH halves, from the same map the word came from', () => {
+    // `aria-label` WINS the accessible-name computation, so a name of the
+    // token alone would replace the player's word rather than extend it.
+    for (const token of REGIME_WORDS) {
+      expect(regimeAnnouncement(token)).toBe(`Regime ${REGIME_LABELS[token]}, token ${token}`);
+      expect(regimeAnnouncement(token)).toContain(regimeLabel(token));
+      expect(regimeAnnouncement(token)).toContain(token);
+      expect(evidenceFacts({ regime: token })[0].ariaLabel).toBe(regimeAnnouncement(token));
+    }
+    // The closed list rules this too — an unruled token has no word to speak.
+    for (const bad of ['risk_on', 'constructor', '__proto__', '', null, 42]) {
+      expect(regimeAnnouncement(bad)).toBeNull();
+    }
   });
 
   it('the panel\'s word comes from the ONE map — the same one both Agent feeds read', () => {
@@ -306,11 +330,21 @@ describe('the heading and the provenance line (Sol M-2)', () => {
 describe('heardLine — the copy layer\'s half of "Not heard is a claim too" (review C-8)', () => {
   const filed = (heard) => ({ state: 'filed', at: '2026-09-01T15:31:00.000Z', heard });
 
-  it('renders each verdict from a well-formed stamp', () => {
+  it('renders each verdict from a well-formed stamp, each naming the SLOT', () => {
     expect(COPY.heardLine(filed({ at: '2026-09-01T15:31:00.000Z', heard: true })))
       .toBe('Heard at the 11:30 AM check');
     expect(COPY.heardLine(filed({ at: '2026-09-01T15:31:00.000Z', heard: false })))
-      .toBe('Not heard at this check');
+      .toBe('Not heard at the 11:30 AM check');
+  });
+
+  it('a stamp with NO instant renders neither verdict — a check is named by its slot', () => {
+    // `heardStamps` writes `at: null` when the entry's timestamp is
+    // unparseable. The positive already fell silent there; the negative used
+    // to print the deictic sentence, which is the exact reading this change
+    // removes. Both are silent now.
+    for (const heard of [true, false]) {
+      expect(COPY.heardLine(filed({ at: null, heard }))).toBeNull();
+    }
   });
 
   it('an UNRECOGNISED stamp makes NO claim — defence in depth behind the walk', () => {
@@ -325,18 +359,28 @@ describe('heardLine — the copy layer\'s half of "Not heard is a claim too" (re
     expect(COPY.heardLine(null)).toBeNull();
   });
 
-  // THE ASYMMETRY, AT THE COPY LAYER. The positive names its own check and is
-  // true wherever it is read; the negative names none and borrows the
-  // reader's, so it can only mean the latest one.
-  it('the DEICTIC negative stays on the current card — every other state gets no line', () => {
+  // THE SYMMETRY, AT THE COPY LAYER. Both verdicts name their own check, so
+  // both are true wherever they are read and neither is scoped to a state.
+  // The scoping that stood here was a fact about the deictic SENTENCE, not
+  // about the negative verdict, and it went with the deixis.
+  it('the NEGATIVE travels too — every card state renders it, none suppresses it', () => {
     const stamp = { at: '2026-09-01T15:31:00.000Z', heard: false };
-    for (const state of ['replaced', 'expired', undefined]) {
-      expect(COPY.heardLine({ state, at: null, heard: stamp })).toBeNull();
+    for (const state of ['filed', 'replaced', 'expired', undefined]) {
+      expect(COPY.heardLine({ state, at: null, heard: stamp })).toBe('Not heard at the 11:30 AM check');
     }
-    // …and it is the STATE doing that, not the stamp: the same receipt under
-    // `filed` renders. Without this the row above passes on a heardLine that
-    // returned null for everything.
-    expect(COPY.heardLine({ state: 'filed', at: null, heard: stamp })).toBe('Not heard at this check');
+  });
+
+  // The receipt's `at` is the FILING's instant and the stamp's `at` is the
+  // CHECK's; the line takes the stamp's. Pinned because the two sit on one
+  // object and a reader that reached for the wrong one would still render a
+  // plausible-looking time.
+  it('the slot comes from the STAMP, never from the receipt beside it', () => {
+    const line = COPY.heardLine({
+      state: 'replaced',
+      at: '2026-09-01T17:02:00.000Z',                       // 1:02 PM ET
+      heard: { at: '2026-09-01T15:31:00.000Z', heard: false }, // 11:31 → 11:30 slot
+    });
+    expect(line).toBe('Not heard at the 11:30 AM check');
   });
 
   it('the POSITIVE travels — it names its own check, so every card state renders it', () => {

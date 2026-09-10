@@ -15,7 +15,11 @@
 // falls back to the newest entry, and an unstamped record is byte-identical to
 // what ships today.
 
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
+import { heardLabel } from '../../src/data/decisionRecord.js';
 import {
   buildYourRecordBlock,
   renderRecordEntry,
@@ -131,6 +135,58 @@ describe('the CURRENT DIRECTIVE line gains the Heard fact', () => {
       directive: DIRECTIVE,
     });
     expect(block).toContain('"Protect the lead" — filed 11:31 AM · heard at the 12:45 PM check');
+  });
+
+  // ── ONE SENTENCE, ONE SOURCE (hazard 26, BUILD_RULES §9) ──────────────────
+  //
+  // The suffix used to be this module's own `heard at the ${slot} check` — a
+  // second copy of the pane's `Heard at the {slot} check`, declared in the
+  // module whose reason for importing decisionRecord.js at all is that copying
+  // its strings into api/ is the drift class §4 forbids. It reads `heardLabel`
+  // now. These two rows are the bytes: the FIRST pins the line as literal text
+  // (so the change is proven to have moved nothing), the SECOND derives the
+  // same line from `heardLabel` (so a future edit to the label moves the
+  // narrator with it instead of leaving the two to disagree). Neither is
+  // redundant — drop the literal and a broken label passes; drop the derived
+  // one and a re-copied string passes.
+  it('the suffix IS `heardLabel`, in this line\'s own sentence position', () => {
+    const block = buildYourRecordBlock({
+      evaluations: [stamped(T3, { heard: { directiveThreadId: 't-1', suppressed: null } })],
+      directive: DIRECTIVE,
+    });
+    const label = heardLabel('12:45 PM');
+    expect(label).toBe('Heard at the 12:45 PM check');
+    // Only the FRAME is the narrator's: the ` · ` separator, and the opening
+    // letter the mid-line position calls for. Everything after it is the
+    // label, byte for byte.
+    const suffix = ` · ${label.charAt(0).toLowerCase()}${label.slice(1)}`;
+    expect(block).toContain(`"Protect the lead" — filed 11:31 AM${suffix}`);
+  });
+
+  it('TRIPWIRE: the module declares no sentence of its own for this fact', () => {
+    const source = readFileSync(
+      path.join(path.dirname(fileURLToPath(import.meta.url)), 'voiceLayerGrounding.js'), 'utf8',
+    );
+    // COMMENTS ARE STRIPPED FIRST, the deskHonesty.test.js rule: the prose
+    // above the call quotes the copy it deleted in order to say what was
+    // deleted, and a guard that scanned comments would ban the note explaining
+    // itself. What ships to the model is string literals and template code.
+    //
+    // THEN THE ONE SENTENCE THAT MUST SHIP, the NARRATOR_EXEMPT_SENTENCES rule
+    // (deskHonesty.test.js): the grounding rules NAME the line in order to
+    // teach the model what it claims, so that sentence is removed before the
+    // scan rather than the whole file being exempted.
+    const code = source
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:])\/\/.*$/gm, '$1')
+      .replace('"Heard at the {t} check" means the directive was in front of the process at that check', '');
+    // THE SENTENCE, NOT ONE SPELLING OF IT (§2 review, C4). This banned
+    // `heard at the ${` — an INTERPOLATED copy — and a copy built by
+    // CONCATENATION (`' · heard at the ' + slot + ' check'`) matched nothing
+    // and went green across 646 files. The words are what must not be
+    // re-declared here, however they are assembled.
+    expect(code).not.toMatch(/heard at the/i);
+    expect(code).toContain('heardLabel(heardSlot)');
   });
 
   it('A SUPPRESSED THREAD LEAVES THE LINE UNCHANGED — no negative, no reason (Sol M-1)', () => {

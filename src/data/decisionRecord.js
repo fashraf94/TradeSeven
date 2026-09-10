@@ -576,27 +576,44 @@ export const filedLabel = (timeText) => (timeText ? `Filed ${timeText}` : 'Filed
 // Never considered, used, noticed, understood, or decided because — the verb
 // is not upgraded on any surface, and `deskHonesty.test.js` bans the upgrades.
 //
-// A check is named by its SLOT (D-83), never the exact minute, so this takes
-// already-formatted slot text: the formatter lives in deskCopy.js and this
-// module is zero-import on purpose (hazard 26). `filedLabel` takes its time
-// the same way, and for the same reason — Filed names an EXCHANGE and keeps
-// its minute; Heard names a CHECK and gets the slot.
+// A check is named by its SLOT (D-83), never the exact minute, so both labels
+// take already-formatted slot text: the formatter lives in deskCopy.js and
+// this module is zero-import on purpose (hazard 26). `filedLabel` takes its
+// time the same way, and for the same reason — Filed names an EXCHANGE and
+// keeps its minute; Heard and Not heard name a CHECK and get the slot.
 
 /** `Heard at the 12:45 check` — the thread was in the decider's prompt there. */
 export const heardLabel = (slotText) => (slotText ? `Heard at the ${slotText} check` : null);
 
 /**
- * The negative receipt, SYSTEM-OWNED AND REASONLESS (Sol M-1).
+ * The negative receipt — SYSTEM-OWNED AND REASONLESS (Sol M-1), and it NAMES
+ * ITS OWN CHECK exactly as the positive does.
  *
  * A directive existed and the assembler withheld it, so it was not in the
- * prompt. The four resolver reasons — `malformed`, `mode_not_enforce`,
- * `epoch_killed`, `unknown` — never reach a surface: the character never
- * received the withheld directive, so explaining the withholding in its voice
- * would attribute a pre-prompt resolver event to the character. Diagnostics
- * belong in telemetry. No slot either: this is a flat statement of absence,
- * not a stamped fact about a named check.
+ * prompt AT THAT CHECK. The four resolver reasons — `malformed`,
+ * `mode_not_enforce`, `epoch_killed`, `unknown` — never reach a surface: the
+ * character never received the withheld directive, so explaining the
+ * withholding in its voice would attribute a pre-prompt resolver event to the
+ * character. Diagnostics belong in telemetry. The slot is not a reason; it is
+ * the check the stamp was written at, which is the same fact the positive
+ * carries.
+ *
+ * THE SLOT IS WHY THIS LINE TRAVELS. It shipped as `Not heard at this check` —
+ * DEICTIC: it named no slot, so `this check` could only mean the LATEST one,
+ * and on a Replaced or Expired card that reading is false (at the latest check
+ * the thread was not the directive at all, and the record says nothing about
+ * it). The fix that followed treated the symptom by scoping the line to the
+ * current card. Naming the slot removes the cause instead: `Not heard at the
+ * 12:15 check` is true wherever it is read, for the same reason `Heard at the
+ * 12:15 check` is. Both verdicts are past facts about one named check, so the
+ * two sentences are now one shape with one word different — and the receipt
+ * layer no longer needs a rule about which card may carry which.
+ *
+ * NO SLOT, NO LINE — `heardLabel`'s rule, for `heardLabel`'s reason (D-83): a
+ * check is named by its slot, and a stamp whose entry carries no usable
+ * timestamp has no check to name. Silence, never a fallback to the deixis.
  */
-export const NOT_HEARD_LINE = 'Not heard at this check';
+export const notHeardLabel = (slotText) => (slotText ? `Not heard at the ${slotText} check` : null);
 
 /**
  * Every directive thread the record proves was — or was not — in front of the
@@ -657,6 +674,97 @@ export const FILING_CONFLICT_LINE = 'The current directive changed before this c
 export const FILING_BUDGET_LINE = 'No messages left to file with — nothing was filed.';
 export const FILING_REJECTED_LINE = 'That option is no longer on the menu — nothing was filed.';
 export const FILING_FAILED_LINE = 'The directive could not be filed just now.';
+
+/**
+ * THE SHOW-IT DOOR'S FAILURE LINE (Phase C §1) — and the cost clause is
+ * ATTESTABLE, which is the whole reason it can be said.
+ *
+ * `no use spent` is a claim about the three scarce reads, and the D-90 rule
+ * above governs it: a client may say only what it can be held to. THE ROUTE IS
+ * THE ONLY PARTY THAT KNOWS, so the route says it: every refusal answered from
+ * before `db.runTransaction` is opened carries `noCardWritten` in its body
+ * (api/agent/research.js `NO_CARD_WRITTEN`), and that field — not the HTTP
+ * status, and not `res.ok` — is what this line is gated on. No card written is
+ * no slot consumed: the route's count is `countResearchUsed(chatExchanges)`,
+ * re-read inside the same commit that appends.
+ *
+ * AN EARLIER DRAFT OF THIS DOCSTRING INFERRED IT FROM THE STATUS LIST, AND WAS
+ * WRONG (§2 review, finding A1 — CONFIRMED against a rebuilt harness). Three
+ * ways a non-2xx reaches the client with a card on the document:
+ *   · `runTransaction` RETRIES. The library re-runs the body on a retryable
+ *     commit error, so a commit that LANDS whose reply is lost re-runs against
+ *     a fresh read holding its own card — on the last slot that is `exhausted`
+ *     → 409, with a slot spent.
+ *   · the 200 is sent INSIDE the try whose catch answers 500, so anything
+ *     throwing after the commit answers 500 with the card written. This repo
+ *     has already paid for that exact shape once: it is why `api/agent/chat.js`
+ *     lost its `· nothing was sent` clause (battleViewCopy.js, A2 review RB-F4).
+ *   · a platform 502/504 at the route's `maxDuration: 15` is a response the
+ *     route never authored at all.
+ * None of the three carries the field, so none of the three gets this line.
+ *
+ * WHAT THIS LINE MAY NOT BE SAID ABOUT, therefore: any failure the route did
+ * not attest — the three above, and a request that never came back at all. They
+ * take the SECOND line below, which claims nothing. The gate FAILS CLOSED: a
+ * refusal path added to the route without the field gets the claimless line by
+ * default, which is the direction honesty needs it to fail.
+ *
+ * WHY THE COST IS ON THE LINE AT ALL. The door reads `Show it · 2 of 3` before
+ * the tap; the scarce thing is named in the control, so silence after a failed
+ * tap leaves the player counting reads they still have. Saying nothing was
+ * spent is the one fact the failure is about.
+ *
+ * NO REMEDY AND NO REASON — the `showItExhausted` rule: the platform has no
+ * retry to promise (the next tap is the retry, and it is right there), and the
+ * status that produced this is diagnostics.
+ */
+export const RESEARCH_FAILED_LINE = 'Couldn’t load the card · no use spent';
+
+/**
+ * The OTHER half of the door's failure, for the tap whose request never came
+ * back — and it says exactly one thing, about the read alone.
+ *
+ * No response arrived. That is all the client knows: the commit may have landed
+ * with the reply lost, or nothing may have left the device. So this sentence
+ * makes NO claim about the three reads in either direction — not that one was
+ * spent, not that none was. `no use spent` would be a claim the client cannot
+ * be held to (the D-90 rule), and `one use spent` would be the same claim
+ * pointing the other way. The count on the door beside it stays derived from
+ * the subscribed doc, which is the only thing that can answer the question, and
+ * it answers it one snapshot later if a card did land.
+ *
+ * SHARED WITH THE CHAT CHIP'S LINE, one sentence with one home (BUILD_RULES
+ * §9). `battleViewCopy.showItFailed` is this sentence plus `Try again.`: the
+ * chip's error sits in the composer's slot, where the retry is a thing the
+ * player must be told how to reach, and the door IS the retry — right there,
+ * still enabled, still reading its count. The added clause is visibly the
+ * chat's, and the sentence they share is declared once.
+ */
+export const RESEARCH_UNREACHABLE_LINE = 'That read didn’t come back.';
+
+/**
+ * The door's failure line, by WHETHER THE ROUTE ATTESTED THAT NOTHING WAS
+ * WRITTEN — the shape `filingFailureLine` uses for the same reason (D-90):
+ * what a client may say about a failure is decided by what the failure PROVES,
+ * and one function decides it.
+ *
+ * `attested === true` means the response carried `noCardWritten` from a path
+ * that provably precedes the route's transaction. Anything else — an
+ * unattested refusal, a platform status, a request that never came back —
+ * proves only that no read came back, and takes the claimless line.
+ *
+ * ONE CAVEAT WORTH WRITING DOWN: `AgentChat.showIt` (the chat's research chip)
+ * does NOT read this function yet. It keeps a hand-rolled status map that
+ * predates this branch, and correcting it means correcting the 409 collision
+ * behind it — the route answers 409 for both `exhausted` and `not active`, and
+ * the chat calls both "All 3 reads used in this battle." That is a
+ * pre-existing defect filed for separate tasking (§2 review, B9 / A6(i)); this
+ * docstring does not claim the third surface is on the selector, because it is
+ * not.
+ */
+export const researchFailureLine = (attested) => (
+  attested ? RESEARCH_FAILED_LINE : RESEARCH_UNREACHABLE_LINE
+);
 
 /**
  * The failure line for a filing response's HTTP status.
@@ -753,6 +861,34 @@ export const regimeWord = (value) => (
 export const regimeLabel = (value) => {
   const token = regimeWord(value);
   return token ? REGIME_LABELS[token] : null;
+};
+
+/**
+ * `Regime Expanding, token directional_expansion` — the regime fact's ACCESSIBLE
+ * NAME, carrying both halves in one announcement.
+ *
+ * WHY THE `title` IS NOT ENOUGH (the showItDoorName rule, review F-8, applied
+ * to a fact instead of a control). The token rides the panel's `title`
+ * attribute, and `title` is a HOVER affordance: it never appears on touch, a
+ * non-interactive `<span>` is not in the tab order so a keyboard user cannot
+ * surface it, and screen readers announce an element's text content over its
+ * `title`. So the sighted mouse user gets the raw render one hover away and
+ * everybody else gets `Regime · Expanding` with the token simply gone — which
+ * is the one thing the translation promised not to do (the map's own docstring:
+ * THE TOKEN IS NEVER LOST).
+ *
+ * `aria-label` wins the accessible-name computation, so it must carry the WORD
+ * as well as the token — a name of the token alone would replace the sentence
+ * the sighted reader gets rather than extend it. The `·` is a visual separator
+ * and is not spoken; the comma is what makes the two halves one read sentence.
+ *
+ * ONE SOURCE, like the label and the title beside it (BUILD_RULES §9): the word
+ * comes from `REGIME_LABELS` and the token is the value that keyed it, so the
+ * spoken sentence cannot name a different regime from the printed one.
+ */
+export const regimeAnnouncement = (value) => {
+  const token = regimeWord(value);
+  return token ? `Regime ${REGIME_LABELS[token]}, token ${token}` : null;
 };
 
 /**
@@ -856,15 +992,20 @@ const ordinal = (n) => {
  * prompt printed; `label` is what a player reads, and differs from `text` only
  * where this module has a word for a machine token; `title` is the token that
  * label translates, for a surface that can carry it (the panel's `title`
- * attribute), and is null wherever label IS the text.
+ * attribute), and is null wherever label IS the text; `ariaLabel` is the
+ * spoken form of a translated fact — both halves in one sentence, because
+ * `title` reaches only a hovering mouse (`regimeAnnouncement`) — and is null
+ * wherever there is nothing a `title` would have hidden.
  *
  * @param {Object|null} evidence  one held position's stamp
- * @returns {Array<{ text: string, label: string, title: string|null }>}
+ * @returns {Array<{ text: string, label: string, title: string|null, ariaLabel: string|null }>}
  */
 export function evidenceFacts(evidence) {
   if (!evidence || typeof evidence !== 'object') return [];
   const out = [];
-  const fact = (text, { label = text, title = null } = {}) => out.push({ text, label, title });
+  const fact = (text, { label = text, title = null, ariaLabel = null } = {}) => (
+    out.push({ text, label, title, ariaLabel })
+  );
   const px = num(evidence.px);
   if (px != null) fact(`Price $${px.toFixed(2)}`);
   const chg = num(evidence.chg);
@@ -881,8 +1022,16 @@ export function evidenceFacts(evidence) {
   const regime = regimeWord(evidence.regime);
   // The only translated fact: `Regime directional_expansion` is what the prompt
   // rendered and stays the `text`; `Regime · Expanding` is what a player reads,
-  // and the token it translates rides along so the panel can show both.
-  if (regime) fact(`Regime ${regime}`, { label: `Regime · ${REGIME_LABELS[regime]}`, title: regime });
+  // and the token it translates rides along so the panel can show both — on
+  // the `title` for a hovering mouse, and in the accessible name for everyone
+  // else, which is the only one of the two that touch and AT can reach.
+  if (regime) {
+    fact(`Regime ${regime}`, {
+      label: `Regime · ${REGIME_LABELS[regime]}`,
+      title: regime,
+      ariaLabel: regimeAnnouncement(regime),
+    });
+  }
   const action = riskWord(evidence.risk?.action);
   if (action) fact(`Risk ${action}`);
   return out;

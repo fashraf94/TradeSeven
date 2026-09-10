@@ -125,14 +125,35 @@ describe('Phase B — the Heard line beneath Filed', () => {
     expect(html).not.toContain('Heard at the 11:31 AM check');
   });
 
-  it('a withheld directive reads the flat system line, with NO reason word (Sol M-1)', () => {
+  it('a withheld directive names its check too, with NO reason word (Sol M-1)', () => {
     for (const reason of ['malformed', 'mode_not_enforce', 'epoch_killed', 'unknown']) {
       const html = render({ receipts: withHeard({ at: T1, heard: false, reason }) });
-      expect(html).toContain('Not heard at this check');
+      expect(html).toContain('Not heard at the 11:30 AM check');
       expect(html).toContain('data-heard="not-heard"');
       expect(html).not.toContain(reason);
-      // And never the positive claim on a withheld directive.
+      // The slot is the STAMP's, not the filing's minute beside it.
+      expect(html).toContain('Filed 12:58 PM');
+      expect(html).not.toContain('Not heard at the 11:31 AM check');
+      // And never the positive claim on a withheld directive. Case-sensitive:
+      // `Not heard at the` carries a lowercase h and does not match this.
       expect(html).not.toContain('Heard at the');
+    }
+  });
+
+  it('the deictic sentence is GONE from the surface, not merely unreachable', () => {
+    for (const heard of [true, false]) {
+      expect(render({ receipts: withHeard({ at: T1, heard }) })).not.toContain('at this check');
+    }
+  });
+
+  it('a stamp with NO instant renders neither verdict — a check is named by its slot', () => {
+    // `heardStamps` writes `at: null` for an unparseable entry timestamp. The
+    // positive was already silent there; the negative used to print the
+    // deictic line, which is the reading this change removes.
+    for (const heard of [true, false]) {
+      const html = render({ receipts: withHeard({ at: null, heard }) });
+      expect(html).not.toContain('data-heard');
+      expect(html).toContain('Filed 12:58 PM');
     }
   });
 
@@ -167,24 +188,75 @@ describe('Phase B — the Heard line beneath Filed', () => {
       .toContain('flex-direction:column;gap:4px');
   });
 
-  // ── One row per card state (review A-2, amended) ─────────────────────────
+  // ── One row per card state (review A-2, amended twice) ───────────────────
   //
-  // A-2 scoped BOTH lines to `Filed` because the negative is deictic: `Not
-  // heard at this check` names NO slot, so on a scrollback card for a thread
-  // that has since been Replaced it reads as a claim about the LATEST check —
+  // A-2 scoped BOTH lines to `Filed` because the negative was DEICTIC: `Not
+  // heard at this check` named NO slot, so on a scrollback card for a thread
+  // that had since been Replaced it read as a claim about the LATEST check —
   // one where that thread was not the directive at all and the record says
-  // nothing about it. That reason holds, and it is a reason about the NEGATIVE
-  // only: `Heard at the {slot} check` names its own check and is true wherever
-  // it is read. So the positive travels to every card state and the negative
-  // stays on the current card. Six rows — three states × two verdicts.
+  // nothing about it. The first amendment kept that scoping and freed the
+  // positive, which names its own check.
+  //
+  // `notHeardLabel` now names the slot, so the reason the scoping existed is
+  // gone and the scoping went with it. BOTH verdicts are past facts about one
+  // named check, true wherever they are read. Six rows — three states × two
+  // verdicts — and the three pairs now say the same thing, which is the
+  // symmetry itself.
+
+  // ── Containment, not co-occurrence (§2 review, C6) ───────────────────────
+  //
+  // These rows used to say "the receipt above it is unchanged" in prose and
+  // assert only that `data-receipt="replaced"` and one `data-heard` appeared
+  // SOMEWHERE in the document. Swapping the two cards' stamps kept every one
+  // of those assertions true while printing a scrollback thread's verdict on
+  // the CURRENT card — the precise misreading the slot-bearing sentence exists
+  // to prevent. The card now names its thread, and these read inside it.
+  // THE CARD IS BOUNDED BY ITS OWN RECEIPT, and no production markup was added
+  // to make that possible: `data-receipt` is one per card, the Heard line is
+  // the sibling stacked beneath it, and the next `data-receipt` starts the next
+  // card. Slicing between them is the containment these rows were missing.
+  const cardFor = (html, receiptState) => {
+    const at = html.indexOf(`data-receipt="${receiptState}"`);
+    expect(at, `a card whose receipt is ${receiptState}`).toBeGreaterThan(-1);
+    const next = html.indexOf('data-receipt="', at + 1);
+    return html.slice(at, next === -1 ? undefined : next);
+  };
 
   // Filed × the two verdicts are the two rows above. Replaced:
-  it('a REPLACED card carries no NEGATIVE line — the deictic line has no check to mean', () => {
+  it('a REPLACED card DOES carry the negative — ON THAT CARD, beneath that receipt', () => {
     // t-1 is the replaced thread; give it a withheld stamp of its own.
     const html = render({ receipts: withHeard({ at: T1, heard: false }, 't-1') });
-    expect(html).toContain('Replaced 12:58 PM');
-    expect(html).not.toContain('Not heard at this check');
-    expect(html).not.toContain('data-heard');
+    const replaced = cardFor(html, 'replaced');
+    expect(replaced).toContain('Replaced 12:58 PM');
+    expect(replaced).toContain('data-receipt="replaced"');
+    // The line is INSIDE the displaced card: the card says the directive was
+    // displaced AND that it was not in front of the decider while it stood.
+    expect(replaced).toContain('Not heard at the 11:30 AM check');
+    expect(replaced).toContain('data-heard="not-heard"');
+    // …and the CURRENT card carries none of it — only t-1 was stamped.
+    expect(cardFor(html, 'filed')).not.toContain('data-heard');
+    expect((html.match(/data-heard=/g) || []).length).toBe(1);
+  });
+
+  // THE SYMMETRY, OVER ONE REPLACED THREAD. Same fixture, same card, one field
+  // flipped: the two verdicts differ by one word and by nothing else — not by
+  // which card may carry them, not by whether a slot is named. A regression
+  // that re-scopes either verdict breaks the pair here first.
+  it('SYMMETRY: over one replaced thread the two verdicts are one sentence, one word apart', () => {
+    const lineIn = (card) => (card.match(/data-heard="[^"]*"[^>]*>([^<]*)</) || [])[1];
+    const positive = cardFor(render({ receipts: withHeard({ at: T1, heard: true }, 't-1') }), 'replaced');
+    const negative = cardFor(render({ receipts: withHeard({ at: T1, heard: false }, 't-1') }), 'replaced');
+    expect(lineIn(positive)).toBe('Heard at the 11:30 AM check');
+    expect(lineIn(negative)).toBe('Not heard at the 11:30 AM check');
+    expect(lineIn(negative)).toBe(`Not ${lineIn(positive).replace('Heard', 'heard')}`);
+    // Both land on the SAME card — t-1's — with the same receipt above them.
+    for (const card of [positive, negative]) {
+      expect(card).toContain('data-receipt="replaced"');
+      expect((card.match(/data-heard=/g) || []).length).toBe(1);
+    }
+    // The chunk STARTS at the replaced receipt, so a line inside it is a line
+    // on that card — not merely one that exists somewhere in the document.
+    expect(positive).not.toContain('data-receipt="filed"');
   });
 
   it('a REPLACED card DOES carry the positive — it names its own check, and that check ran', () => {
@@ -200,15 +272,22 @@ describe('Phase B — the Heard line beneath Filed', () => {
   });
 
   // Expired:
-  it('an EXPIRED card carries no NEGATIVE line either', () => {
+  it('an EXPIRED card carries the negative too — the battle closed, the check still ran', () => {
     const receipts = deriveReceipts(EXCHANGES, DIRECTIVE, 'completed');
     for (const id of Object.keys(receipts)) {
       receipts[id] = { ...receipts[id], heard: { at: T1, heard: false } };
     }
     const html = render({ receipts, battleStatus: 'completed' });
     expect(html).toContain('>Expired<');
-    expect(html).not.toContain('Not heard at this check');
-    expect(html).not.toContain('data-heard');
+    // Both cards are stamped here, so EACH carries its own line — the same
+    // count the positive's row below asserts, which is the symmetry at the
+    // screen's own scale, now checked per card rather than per document.
+    for (const state of ['replaced', 'expired']) {
+      expect(cardFor(html, state)).toContain('Not heard at the 11:30 AM check');
+      expect(cardFor(html, state)).toContain('data-heard="not-heard"');
+    }
+    expect((html.match(/data-heard="not-heard"/g) || []).length).toBe(2);
+    expect(html).not.toContain('data-heard="heard"');
   });
 
   it('an EXPIRED card DOES carry the positive — the battle closed, the check still ran', () => {

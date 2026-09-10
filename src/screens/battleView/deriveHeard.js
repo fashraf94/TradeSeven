@@ -25,7 +25,9 @@
 // the withheld directive, so a first-person "I didn't hear this because it was
 // epoch-killed" attributes knowledge of a pre-prompt event to the character AND
 // upgrades the verb in the same breath. The negative receipt is system-owned
-// and reasonless — `NOT_HEARD_LINE` — and the reason stays in telemetry.
+// and reasonless — `notHeardLabel` — and the reason stays in telemetry. It
+// names the check it was written at, exactly as the positive does; the SLOT is
+// not a reason, it is the stamp's own instant (D-83).
 //
 // PRESENCE-GATED, never flag-gated (D-113): no stamp, no line. Pre-flip
 // entries, every `budget_skipped` entry and any entry whose prompt build threw

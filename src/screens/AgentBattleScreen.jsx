@@ -1265,23 +1265,63 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // scarce reads on a duplicate card, with nothing on screen to say a request was
   // out. The ref stops the re-entry; the state gives the doors the affordance,
   // through the `disabled` contract they already carry for the exhausted state.
+  //
+  // AND A FAILURE IS SAID OUT LOUD, at the door that was tapped. The doors
+  // render from the subscribed doc, so a failed tap moved nothing: the count
+  // stayed put, no card arrived, and the only signal was a button that did
+  // nothing — which is indistinguishable from a broken one, the same reading
+  // review F-8 removed from the exhausted state. `researchError` holds
+  // `{ symbol, answered }` (never a boolean): the failure belongs to the name
+  // it was about, so a failure on MPC says nothing on SLB's panel.
+  //
+  // `attested` IS THE WHOLE HONESTY GATE, and it is a fact the ROUTE reports,
+  // not one this screen infers — the copy layer turns it into a sentence
+  // (decisionRecord.js `researchFailureLine`, the shape `filingFailureLine`
+  // uses for the same reason). It is TRUE only when the response body carries
+  // `noCardWritten`, which only the route's pre-transaction refusals do.
+  //
+  // IT USED TO BE `!res.ok`, AND THAT WAS WRONG (§2 review, A1). A non-2xx can
+  // reach this client with a card already on the document — a retried
+  // transaction whose first commit landed, a throw after the commit answered
+  // 500, a platform 504 the route never authored. None of those carries the
+  // field, so all three now take the claimless line, and so does a request
+  // that never came back at all. The no-user branch is unattested for the same
+  // reason it reports at all: nothing was sent, so nothing came back.
+  //
+  // CLEARED BY THE NEXT TAP — the tap is the retry, so the line is stale the
+  // moment another one starts — AND BY THE RECORD ITSELF, below.
   const showItInFlight = useRef(false);
   const [researchPending, setResearchPending] = useState(false);
+  const [researchError, setResearchError] = useState(null);
   const handleShowIt = useCallback(async (symbol) => {
     const wanted = typeof symbol === 'string' ? symbol.trim() : '';
     if (!wanted || showItInFlight.current || !agentBattle?.id || !agentBattle?.agentId) return;
     showItInFlight.current = true;
     setResearchPending(true);
+    setResearchError(null);
     try {
       const user = getAuth().currentUser;
-      if (!user) return;
+      if (!user) {
+        setResearchError({ symbol: wanted, attested: false });
+        return;
+      }
       const idToken = await user.getIdToken();
-      await fetch('/api/agent/research', {
+      const res = await fetch('/api/agent/research', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ agentId: agentBattle.agentId, battleId: agentBattle.id, symbol: wanted }),
       });
-    } catch { /* the card comes from the subscribed doc; a failed read leaves it absent */ }
+      if (!res.ok) {
+        // The BODY decides, never the status: a parse that fails, a body with
+        // no field, a platform response with no body of ours — all unattested.
+        const failure = await res.json().catch(() => null);
+        setResearchError({ symbol: wanted, attested: failure?.noCardWritten === true });
+      }
+    } catch {
+      // The card comes from the subscribed doc, and this tap has no answer at
+      // all — so the door says the read did not come back and stops there.
+      setResearchError({ symbol: wanted, attested: false });
+    }
     finally {
       showItInFlight.current = false;
       setResearchPending(false);
@@ -1294,6 +1334,20 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // per render of a screen that re-renders on price ticks, for a number no door
   // reads while the flag is dark.
   const researchUsed = showItOn ? countResearchUsed(agentBattle?.chatExchanges) : 0;
+
+  // AND THE RECORD CLEARS IT (§2 review, A4/B8). A failure line is a claim
+  // about ONE tap, and the subscribed doc is the only thing that can refute it:
+  // when the research count moves, a card landed, and both sentences are then
+  // false — `no use spent` beside a door that has advanced, or `didn't come
+  // back` beside the card that did. The count moving is exactly that signal, so
+  // it retires the line. A battle change retires it for the plainer reason that
+  // it belongs to a different game.
+  //
+  // Setting the error cannot re-trigger this: `researchUsed` is derived from
+  // the subscribed document and no local state feeds it.
+  useEffect(() => {
+    setResearchError(null);
+  }, [researchUsed, agentBattle?.id]);
 
   // The landing for the door above now lives in the CHAT (D-89), beside the
   // card it lands on — `AgentChat`'s `openCheck` layout effect. It has to: the
@@ -1808,6 +1862,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                     onShowIt={showItOn ? handleShowIt : null}
                     researchUsed={researchUsed}
                     researchPending={researchPending}
+                    researchError={researchError}
                     reducedMotion={reducedMotion}
                     headingId={`why-${rowKey}-heading`}
                   />
@@ -1943,7 +1998,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       reducedMotion={reducedMotion}
       chat={chat}
       overflow={<PaneOverflow />}
-      bench={<PaneBench bench={benchState} onShowIt={showItOn ? handleShowIt : null} researchUsed={researchUsed} researchPending={researchPending} />}
+      bench={<PaneBench bench={benchState} onShowIt={showItOn ? handleShowIt : null} researchUsed={researchUsed} researchPending={researchPending} researchError={researchError} />}
       tape={(
         <PaneTape
           battleId={agentBattleId}

@@ -57,6 +57,9 @@ const LABEL_COLOR = {
   [WHY_KIND.ABSENT]: cssVar('text-muted'),
 };
 
+/** The failure line's id — the door points at it, so focus can reach it. */
+const SHOW_IT_ERROR_ID = 'why-showit-error';
+
 const eyebrow = {
   fontSize: 9.5,
   fontWeight: 700,
@@ -152,6 +155,14 @@ export default function WhyPanel({
   // A tap already in flight: the door disables through the SAME contract the
   // exhausted state uses, so a 2-15 s route cannot be tapped twice (review F-2).
   researchPending = false,
+  // The last tap that failed, as `{ symbol, attested }` — never a boolean.
+  // The SYMBOL because the failure belongs to the name it was about: the screen
+  // holds one tap at a time, but its error outlives the tap, and a player who
+  // taps MPC, gets a failure and then opens SLB's panel must not read it there.
+  // `attested` because WHICH sentence the door may say is decided by what the
+  // failure PROVES — whether the route's body said nothing was written. The
+  // copy layer maps it; this panel only passes it on.
+  researchError = null,
   // D-89 — the book panel's close. The panel is a DISCLOSURE the score header
   // owns: the header carries the `aria-expanded`, so the way out has to hand
   // focus back to it or a keyboard reader is stranded on a region that has no
@@ -479,11 +490,32 @@ export default function WhyPanel({
                   and cannot drift from the word above it (BUILD_RULES §9).
                   Only the regime fact carries one — every other label IS the
                   prompt's own text, and `title={undefined}` emits no
-                  attribute. */}
+                  attribute.
+
+                  AND THE TOKEN IS SPOKEN, not only hovered. `title` never
+                  appears on touch, a `<span>` is not focusable so a keyboard
+                  user cannot surface it, and AT announces text content over
+                  `title` — so without a name the raw render reaches a mouse
+                  and nobody else, which is the one thing the translation
+                  promised not to do. The name carries BOTH halves (it wins the
+                  accessible-name computation, so it must not replace the word
+                  with the token), and comes from the same walk as the label
+                  above it. */}
               {evidenceFacts.map((fact) => (
                 <span
                   key={fact.text}
+                  // `role="img"` is not decoration — it is what makes the name
+                  // above LEGAL (§2 review, A5/B7). A bare <span> maps to ARIA
+                  // `generic`, where naming is PROHIBITED, so `aria-label` on
+                  // it may be dropped outright and the whole point of the name
+                  // with it. This repo already names atomic spans this way at
+                  // three sites (ResultCard.jsx:71, EntrySelector.jsx:297,
+                  // CorrelationLab.jsx:679). Only the named fact takes it: an
+                  // unnamed span keeps `generic`, which is correct for text
+                  // that says all of itself.
+                  role={fact.ariaLabel ? 'img' : undefined}
                   title={fact.title ?? undefined}
+                  aria-label={fact.ariaLabel ?? undefined}
                   style={{
                     fontSize: 12,
                     color: cssVar('text-secondary'),
@@ -565,6 +597,11 @@ export default function WhyPanel({
               type="button"
               data-why-showit={symbol}
               aria-label={COPY.showItDoorName(symbol, researchUsed)}
+              // The alert announces itself on insertion; this is what a
+              // keyboard user gets when they tab BACK to the door afterwards
+              // (§2 review, A5b). Without it the door's name says nothing
+              // about the failure and the line is unreachable by focus.
+              aria-describedby={researchError?.symbol === symbol ? SHOW_IT_ERROR_ID : undefined}
               title={researchDoorEnabled(researchUsed) ? undefined : COPY.showItExhausted}
               disabled={researchPending || !researchDoorEnabled(researchUsed)}
               onClick={() => onShowIt(symbol)}
@@ -582,6 +619,32 @@ export default function WhyPanel({
             >
               {COPY.showItDoor(researchUsed)}
             </button>
+          )}
+          {/* THE DOOR'S FAILURE, beside the door (Phase C). WHICH sentence is
+              the copy layer's call, from what the failure proves: an answered
+              refusal proves no slot was consumed and says so, a request that
+              never came back proves only that, and says only that
+              (decisionRecord.js `researchFailureLine`). `role="alert"` rather
+              than the chat's persistent polite region: this appears in answer
+              to a tap the player just made, and an assertive region IS
+              announced on insertion, which is the one thing a `status` region
+              mounted with its content cannot be relied on to do. It clears
+              when the next tap does — the screen owns that, and this renders
+              what it is handed.
+
+              GATED ON THE DOOR, not on the error alone: with no handler there
+              is no door, no tap and therefore no refusal to report, so the
+              flag-dark page stays the two-door page it is today. */}
+          {!isBook && typeof onShowIt === 'function' && researchError?.symbol === symbol && (
+            <span
+              id={SHOW_IT_ERROR_ID}
+              data-why-showit-error={symbol}
+              data-why-showit-attested={researchError.attested ? 'true' : 'false'}
+              role="alert"
+              style={{ fontSize: 11.5, color: cssVar('text-muted') }}
+            >
+              {COPY.showItDoorFailed(researchError.attested)}
+            </span>
           )}
           {!isBook && typeof onScopeToPiece === 'function' && COPY.inTheChat(mentionCount) && (
             <button
