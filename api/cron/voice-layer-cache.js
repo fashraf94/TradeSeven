@@ -118,6 +118,17 @@ async function fetchBulkPrices(symbols) {
 // mirror the rankings entry already holds onto the brief — zero added reads,
 // null-honest (absent when the entry carries none). Default false → the
 // shipped brief, field for field.
+// A persisted `aboveSMAn` flag is only a READING when the average behind it
+// exists. `computeTechnicalScore` writes `technicals.smaN !== null && price >
+// smaN` (indexIntelligence.js:288-290), so a missing average is stored as the
+// boolean `false` — indistinguishable, by type, from a measured "below". The
+// averages themselves ARE stored null-honestly (`:392-394`), so both brief
+// writers gate on this pair. ONE definition, shared, so the two paths cannot
+// drift apart again (BUILD_RULES §9).
+function smaRead(flag, value) {
+  return typeof flag === 'boolean' && value != null;
+}
+
 export function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScoresMap, thresholdHistory = {}, startingPrices = {}, intradayMomentumMap = {}, options = {}) {
   if (!portfolio) return [];
   const briefs = [];
@@ -140,51 +151,118 @@ export function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScore
       const technicalScore = ranking?.technicalScore ?? techScore?.technicalScore ?? null;
       const technicalRank = ranking?.technicalRank ?? 0;
       const factors = techScore?.factors || {};
-      const rsPercentile = factors.rsPercentile ?? 50;
+      // (The `factors.rsPercentile ?? 50` default that used to live here is
+      //  gone: both its readers — the trend suffix and the brief field — now
+      //  ride the raw reading, so the imputed 50 had no honest use left.)
 
-      // Trend summary from SMA alignment
-      const aboveSMA200 = factors.aboveSMA200 === true;
-      const aboveSMA50 = factors.aboveSMA50 === true;
-      const aboveSMA20 = factors.aboveSMA20 === true;
+      // Trend summary from SMA alignment — gated on the READINGS, not on the
+      // booleans derived from them (D-120 / BUILD_RULES §9).
+      //
+      // `computeTechnicalScore` writes `aboveSMA50 = technicals.sma50 !== null
+      // && currentPrice > technicals.sma50` (indexIntelligence.js:289), so a
+      // MISSING 50-day average is persisted as the boolean `false`, not as an
+      // absent field. A `typeof === 'boolean'` guard therefore passes for every
+      // real document and suppresses nothing: a thin-history symbol
+      // (sma50/sma200 null, technicalCalculations.js:20) still fell through the
+      // chain to 'Downtrend. Below major SMAs.' — a bearish claim about two
+      // averages that do not exist. The review caught this; the first guard was
+      // inert for the exact case it was written for.
+      //
+      // The averages THEMSELVES are null-honest in the same document
+      // (indexIntelligence.js:392-394), so the claim now binds to them. All
+      // four sentences below speak about the whole 20/50/200 stack — including
+      // 'Above 20-day SMA only', which is a claim about the other two — so all
+      // three readings must exist before any of them may be said. Byte-identical
+      // for every full-history symbol.
+      let trendSummary;
+      if (
+        smaRead(factors.aboveSMA200, factors.sma200) &&
+        smaRead(factors.aboveSMA50, factors.sma50) &&
+        smaRead(factors.aboveSMA20, factors.sma20)
+      ) {
+        const aboveSMA200 = factors.aboveSMA200 === true;
+        const aboveSMA50 = factors.aboveSMA50 === true;
+        const aboveSMA20 = factors.aboveSMA20 === true;
 
-      let trendSummary = '';
-      if (aboveSMA200 && aboveSMA50 && aboveSMA20) {
-        trendSummary = 'Strong uptrend. Above all major SMAs.';
-      } else if (aboveSMA50 && aboveSMA20) {
-        trendSummary = 'Moderate uptrend. Above 20 and 50-day SMAs.';
-      } else if (aboveSMA20) {
-        trendSummary = 'Short-term bounce. Above 20-day SMA only.';
-      } else {
-        trendSummary = 'Downtrend. Below major SMAs.';
-      }
-
-      if (rsPercentile >= 75) trendSummary += ' RS vs SPY rising.';
-      else if (rsPercentile <= 25) trendSummary += ' RS vs SPY declining.';
-
-      // Momentum summary from RSI + MACD + volume factor scores
-      const rsiContext = techScore?.rsiContext ?? 4;
-      const macdScore = techScore?.macdScore ?? 6;
-      const volumeConfirmation = techScore?.volumeConfirmation ?? 6;
-
-      let momentumParts = [];
-      if (rsiContext >= 7) momentumParts.push('RSI healthy, not extended.');
-      else if (rsiContext <= 3) momentumParts.push('RSI weak or overbought.');
-
-      if (macdScore >= 8) momentumParts.push('MACD expanding.');
-      else if (macdScore <= 4) momentumParts.push('MACD contracting.');
-
-      if (volumeConfirmation >= 8) {
-        const volRatio = factors.upDayVolRatio;
-        if (volRatio != null) {
-          momentumParts.push(`Volume ${volRatio.toFixed(1)}x avg.`);
+        if (aboveSMA200 && aboveSMA50 && aboveSMA20) {
+          trendSummary = 'Strong uptrend. Above all major SMAs.';
+        } else if (aboveSMA50 && aboveSMA20) {
+          trendSummary = 'Moderate uptrend. Above 20 and 50-day SMAs.';
+        } else if (aboveSMA20) {
+          trendSummary = 'Short-term bounce. Above 20-day SMA only.';
         } else {
-          momentumParts.push('Volume confirming.');
+          trendSummary = 'Downtrend. Below major SMAs.';
         }
-      } else {
-        momentumParts.push('Volume subdued.');
+
+        // The RS clause rides the RAW reading, as the bench path does (`:423`):
+        // the `?? 50` default below is an imputed number, not a measurement.
+        const rs = factors.rsPercentile;
+        if (typeof rs === 'number') {
+          if (rs >= 75) trendSummary += ' RS vs SPY rising.';
+          else if (rs <= 25) trendSummary += ' RS vs SPY declining.';
+        }
       }
 
-      const momentumSummary = momentumParts.join(' ');
+      // Momentum summary — same rule, same reason. `computeTechnicalScore`
+      // seeds each of these three sub-scores with a hardcoded NEUTRAL DEFAULT
+      // (`macdScore = 6` at indexIntelligence.js:296, `volumeConfirmation = 6`
+      // at `:326`, `rsiContext = 4` at `:353`) and only replaces it when the
+      // underlying data exists. Every one is therefore a number in every
+      // document, so a `typeof === 'number'` guard suppresses nothing either.
+      //
+      // Two of the three defaults are harmlessly silent — 4 and 6 both fall
+      // between their phrase thresholds. The volume default did NOT: `6 < 8`
+      // took the else-branch and published 'Volume subdued.' about a ratio the
+      // scorer never measured (a symbol with fewer than 20 daily rows,
+      // indexIntelligence.js:327). Each phrase now needs positive evidence:
+      //
+      //   · Volume speaks only at the two ends the scorer reaches ONLY from
+      //     real data (12/9 → confirming, 3 → subdued). The ambiguous middle —
+      //     6, which is both the default and a real 1.0–1.2 ratio — now says
+      //     nothing, exactly as the RSI phrase already did. THIS is the
+      //     behaviour change: a symbol with fewer than 20 daily rows scores a
+      //     defaulted 6 and was being called 'Volume subdued.'
+      //   · MACD additionally rides `factors.macdAboveSignal`, which IS
+      //     null-honest (`indexIntelligence.js:400` — `macd ? … : null`).
+      //     BE HONEST ABOUT THIS ONE: it changes nothing today. `macdScore`
+      //     leaves its default of 6 only inside `if (macd && …)`
+      //     (indexIntelligence.js:298), so a banded 8+/4- already implies MACD
+      //     was computed, and 6 falls between the thresholds. The condition is
+      //     belt-and-braces so that a future change to that default cannot
+      //     silently start fabricating a MACD verdict — no test pins it,
+      //     because no input can currently tell the two versions apart.
+      let momentumSummary;
+      if (techScore) {
+        const momentumParts = [];
+
+        const rsiContext = techScore.rsiContext;
+        if (typeof rsiContext === 'number') {
+          if (rsiContext >= 7) momentumParts.push('RSI healthy, not extended.');
+          else if (rsiContext <= 3) momentumParts.push('RSI weak or overbought.');
+        }
+
+        const macdScore = techScore.macdScore;
+        if (typeof macdScore === 'number' && factors.macdAboveSignal != null) {
+          if (macdScore >= 8) momentumParts.push('MACD expanding.');
+          else if (macdScore <= 4) momentumParts.push('MACD contracting.');
+        }
+
+        const volumeConfirmation = techScore.volumeConfirmation;
+        if (typeof volumeConfirmation === 'number') {
+          if (volumeConfirmation >= 8) {
+            const volRatio = factors.upDayVolRatio;
+            if (volRatio != null) {
+              momentumParts.push(`Volume ${volRatio.toFixed(1)}x avg.`);
+            } else {
+              momentumParts.push('Volume confirming.');
+            }
+          } else if (volumeConfirmation <= 3) {
+            momentumParts.push('Volume subdued.');
+          }
+        }
+
+        if (momentumParts.length > 0) momentumSummary = momentumParts.join(' ');
+      }
 
       // Threshold proximity note (qualitative, ATR-rank-based — distinct from
       // quantitative thresholdProximity below). F3.1: null sentinel — the
@@ -223,9 +301,13 @@ export function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScore
         changePercent: Math.round(changePercent * 100) / 100,
         technicalScore,
         technicalRank,
-        rsPercentile: Math.round(rsPercentile),
-        trendSummary,
-        momentumSummary,
+        // Null-honest, as the bench writer already is (`:480-482`): the `?? 50`
+        // above is an imputed default and publishing it rendered
+        // "RS 50th %ile" into the prompt for symbols with no technical-score
+        // document at all.
+        rsPercentile: typeof factors.rsPercentile === 'number'
+          ? Math.round(factors.rsPercentile)
+          : null,
         supportLevel: null,
         resistanceLevel: null,
         thresholdNote,
@@ -256,6 +338,13 @@ export function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScore
         divergence: rankingMomentum?.divergence ?? null,
         lastCandlePattern: rankingRecent?.lastCandlePattern ?? null,
       };
+
+      // D-120: absent summaries are ABSENT FIELDS, not empty strings —
+      // Firestore rejects `undefined`, and the renderer reads presence
+      // (voiceLayerPrompt.js `buildPortfolioBriefsBlock`). Same two lines as
+      // buildBenchBriefs.
+      if (trendSummary) brief.trendSummary = trendSummary;
+      if (momentumSummary) brief.momentumSummary = momentumSummary;
 
       // Tier 0 Item 4: thresholdProximity + existingBadges
       const baseATR = stock.baseATR;
@@ -364,12 +453,16 @@ export function buildBenchBriefs(portfolio, priceMap, rankingsMap, techScoresMap
     // above — same sourcing and same reason as buildPortfolioBriefs.
     const atrPercentRaw = ranking?.techRaw?.atrPercent ?? techScore?.atrPercent ?? null;
 
-    // Trend summary: emit only when factors carry SMA flags
+    // Trend summary — gated on the READINGS, identical rule and identical
+    // reason to buildPortfolioBriefs above. The `typeof === 'boolean'` form
+    // this replaces only ever caught the missing-DOCUMENT case: a thin-history
+    // symbol whose sma50/sma200 are null still carries both flags as `false`
+    // and published 'Downtrend. Below major SMAs.' from here too.
     let trendSummary;
     if (factors && (
-      typeof factors.aboveSMA200 === 'boolean' ||
-      typeof factors.aboveSMA50 === 'boolean' ||
-      typeof factors.aboveSMA20 === 'boolean'
+      smaRead(factors.aboveSMA200, factors.sma200) &&
+      smaRead(factors.aboveSMA50, factors.sma50) &&
+      smaRead(factors.aboveSMA20, factors.sma20)
     )) {
       const aboveSMA200 = factors.aboveSMA200 === true;
       const aboveSMA50 = factors.aboveSMA50 === true;
@@ -390,13 +483,12 @@ export function buildBenchBriefs(portfolio, priceMap, rankingsMap, techScoresMap
       }
     }
 
-    // Momentum summary: emit only when techScore carries the underlying scores
+    // Momentum summary — identical rule to buildPortfolioBriefs above: MACD
+    // rides the null-honest `factors.macdAboveSignal`, and volume speaks only
+    // at the two ends the scorer reaches from real data, never from its
+    // hardcoded neutral 6.
     let momentumSummary;
-    if (techScore && (
-      techScore.rsiContext != null ||
-      techScore.macdScore != null ||
-      techScore.volumeConfirmation != null
-    )) {
+    if (techScore) {
       const parts = [];
       const rsiContext = techScore.rsiContext;
       if (typeof rsiContext === 'number') {
@@ -404,7 +496,7 @@ export function buildBenchBriefs(portfolio, priceMap, rankingsMap, techScoresMap
         else if (rsiContext <= 3) parts.push('RSI weak or overbought.');
       }
       const macdScore = techScore.macdScore;
-      if (typeof macdScore === 'number') {
+      if (typeof macdScore === 'number' && factors?.macdAboveSignal != null) {
         if (macdScore >= 8) parts.push('MACD expanding.');
         else if (macdScore <= 4) parts.push('MACD contracting.');
       }
@@ -414,7 +506,7 @@ export function buildBenchBriefs(portfolio, priceMap, rankingsMap, techScoresMap
           const volRatio = factors?.upDayVolRatio;
           if (volRatio != null) parts.push(`Volume ${volRatio.toFixed(1)}x avg.`);
           else parts.push('Volume confirming.');
-        } else {
+        } else if (volumeConfirmation <= 3) {
           parts.push('Volume subdued.');
         }
       }
@@ -534,21 +626,33 @@ export function buildScoutAlerts(watchlist, rankingsMap, techScoresMap, archetyp
         symbol,
         type: 'volume_surge',
         headline: `${symbol} unusual volume — volume score ${volumeConfirmation}/12`,
-        detail: `${scoreClause}${rsPercentile >= 60 ? 'RS supportive.' : 'RS neutral or weak.'} ${(techScore?.macdScore ?? 0) >= 8 ? 'MACD expanding.' : ''}`.trim(),
+        // D-120: the RS verdict rides the RAW reading. `rsPercentile` below is
+        // `factors.rsPercentile ?? 50`, so an unmeasured symbol was being
+        // called 'RS neutral or weak.' — a verdict on a number that does not
+        // exist. Omitted now, as the MACD clause beside it already omits.
+        detail: `${scoreClause}${typeof factors.rsPercentile === 'number'
+          ? (factors.rsPercentile >= 60 ? 'RS supportive.' : 'RS neutral or weak.')
+          : ''} ${(techScore?.macdScore ?? 0) >= 8 ? 'MACD expanding.' : ''}`.trim(),
         relevance: 'all',
       });
     }
 
     // Game fit: high BaggerBomb fit
     if (ranking?.baggerBombFit >= 85 && ranking?.baggerBombRank <= 15) {
+      // D-120: an absent reading is an absent CLAUSE. Both of these printed
+      // the literal string 'N/A' as if it were a value — the exact placeholder
+      // this arc removes everywhere else.
       const atrClause = typeof ranking?.atrPercentile === 'number'
         ? `ATR percentile ${Math.round(ranking.atrPercentile * 100)}%.`
-        : 'ATR percentile N/A.';
+        : '';
+      const compositeClause = ranking.compositeScore != null
+        ? `Composite score ${ranking.compositeScore}.`
+        : '';
       alerts.push({
         symbol,
         type: 'game_fit',
         headline: `${symbol} BaggerBomb Fit #${ranking.baggerBombRank} — high scoring potential`,
-        detail: `Composite score ${ranking.compositeScore ?? 'N/A'}. ${atrClause}`,
+        detail: `${compositeClause} ${atrClause}`.trim(),
         relevance: 'all',
       });
     }

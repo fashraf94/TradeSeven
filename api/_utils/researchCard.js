@@ -9,12 +9,16 @@
 // THREE RULES, EACH PAID FOR BY A FINDING:
 //
 //   1. NULL-HONEST, EVERYWHERE (C-20 / hazard 1). An indicator whose window is
-//      short renders NOTHING. `debate.js:145` prints `MACD histogram: negative`
-//      on every call because its 30-calendar-day window never reaches MACD's
-//      35-candle minimum and `0 > 0` is false — a default rendered as data. The
-//      same short window reaches this composer, and the same indicators arrive
-//      null; here they are simply absent lines. Widening the fetch is D-120's
-//      separate fix and is NOT done here.
+//      short renders NOTHING. The finding that paid for this rule: `debate.js`
+//      printed `MACD histogram: negative` on every call, because its
+//      30-calendar-day window never reached MACD's 35-candle minimum and
+//      `0 > 0` is false — a default rendered as data. The same window reached
+//      this composer and the same indicators arrived null; here they were
+//      simply absent lines. D-120 has since fixed both halves — `debate.js`
+//      composes its snapshot null-honestly too, and the fetch is widened to 90
+//      calendar days (marketDataCache.js:242) — but the rule outlives the fix:
+//      SMA200 still needs ~290 days, and any future short window must render
+//      nothing rather than a placeholder.
 //   2. EVERY SECTION CARRIES ITS OWN PROVENANCE, and the two data classes never
 //      share one (D-119). Technicals are labelled with the quote time and the
 //      candle date; fundamentals with the mirror's `computedAt` DATE — never a

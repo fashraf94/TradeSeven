@@ -38,7 +38,7 @@ function makeStocks() {
       fundamentalScore: 88, fundamentalRank: 2,
       technicalScore: 90, technicalRank: 1, sectorTechnicalRank: 1, sectorTechnicalTotal: 30,
       compositeScore: 92, baggerBombFit: 95, baggerBombRank: 1,
-      atrPercentile: 0.88, dailyRange: 5.2, nr7Flag: false, bBandwidthPercentile: 0.7,
+      atrPercentile: 0.88, dailyRange: 5.2, nr7Flag: false, bBandwidthPercentile: 70,
       momentumScore: 80, momentumRank: 1, sma200_position: 12.5, trend: 'up', recentAction: 'breakout',
       return1W: 4.2, return1M: 12.4, return3M: 25.0, returnYTD: 40.0, return12M: 80.0,
       momentumFactors: {
@@ -53,7 +53,7 @@ function makeStocks() {
       fundamentalScore: 80, fundamentalRank: 5,
       technicalScore: 75, technicalRank: 8, sectorTechnicalRank: 4, sectorTechnicalTotal: 30,
       compositeScore: 78, baggerBombFit: 60, baggerBombRank: 12,
-      atrPercentile: 0.45, dailyRange: 2.1, nr7Flag: true, bBandwidthPercentile: 0.3,
+      atrPercentile: 0.45, dailyRange: 2.1, nr7Flag: true, bBandwidthPercentile: 30,
       momentumScore: 55, momentumRank: 20, sma200_position: 4.0, trend: 'up', recentAction: 'consolidating',
       return1W: 1.1, return1M: 3.2, return3M: 8.0, returnYTD: 15.0, return12M: 30.0,
       momentumFactors: {
@@ -69,7 +69,7 @@ function makeStocks() {
       fundamentalScore: 50, fundamentalRank: 30,
       technicalScore: 40, technicalRank: 40, sectorTechnicalRank: 12, sectorTechnicalTotal: 30,
       compositeScore: 45, baggerBombFit: null, baggerBombRank: undefined,
-      atrPercentile: 0.20, dailyRange: 1.0, nr7Flag: false, bBandwidthPercentile: 0.1,
+      atrPercentile: 0.20, dailyRange: 1.0, nr7Flag: false, bBandwidthPercentile: 10,
       momentumScore: null, momentumRank: null, sma200_position: -3.0, trend: 'down', recentAction: 'breakdown',
       return1W: -2.5, return1M: -8.0, return3M: 5.0, returnYTD: -3.0, return12M: 10.0,
       momentumFactors: null,
@@ -92,7 +92,7 @@ function makeStocks() {
       fundamentalScore: 70, fundamentalRank: 10,
       technicalScore: 65, technicalRank: 15, sectorTechnicalRank: 3, sectorTechnicalTotal: 22,
       compositeScore: 68, baggerBombFit: 72, baggerBombRank: 6,
-      atrPercentile: 0.60, dailyRange: 3.0, nr7Flag: true, bBandwidthPercentile: 0.5,
+      atrPercentile: 0.60, dailyRange: 3.0, nr7Flag: true, bBandwidthPercentile: 50,
       momentumScore: 62, momentumRank: 9, sma200_position: 8.0, trend: 'up', recentAction: 'pullback',
       return1W: 0.5, return1M: -1.5, return3M: -10.0, returnYTD: 6.0, return12M: -5.0,
       momentumFactors: {

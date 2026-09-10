@@ -153,9 +153,12 @@ export async function readFundamentals(db, brief, symbol) {
 /**
  * The technicals: the SAME path debate.js uses (`getStockAnalysisData` +
  * `calculateAllIndicators`), its book-only guard replaced by the universe check
- * above. The window is the shipped 30 calendar days, so MACD, SMA50, SMA200 and
- * EMA50 arrive NULL and the card omits them — D-120's separate fix widens the
- * fetch; this build renders nothing rather than a placeholder (hazard 1).
+ * above. D-120 widened that window to `DAILY_WINDOW_CALENDAR_DAYS` = 90
+ * calendar days (marketDataCache.js:242), which clears MACD's 35-candle
+ * minimum and SMA50's 50 in every season, so both now arrive with values.
+ * SMA200 needs ~290 calendar days and still arrives NULL — and the card omits
+ * it, as it omits anything the platform did not compute (hazard 1). Nothing
+ * here renders a placeholder either way.
  */
 export async function readTechnicals(symbol) {
   try {

@@ -38,10 +38,23 @@ const SCORE_KEY_TO_TYPE = Object.freeze({
   momentumScore: 'momentum',
 });
 
-// The only fields the engine documents as 0–1 (voiceLayerPrompt.js field ref).
-// Every other numeric field (scores 0–100, arch_scores 0–100, ranks, ranges) is
-// already human-scaled — these two get ×100 for a readable headline.
-const UNIT_INTERVAL_FIELDS = new Set(['atrPercentile', 'bBandwidthPercentile']);
+// The 0–1 fields, taken from THE CRON THAT WRITES THEM rather than from prose
+// about them. `atrPercentile` is written as `idx / (n - 1)` rounded to two
+// decimals — a unit interval (api/cron/compute-index-intelligence.js:1113
+// and :1210). Everything else the engine exposes (scores 0–100, arch_scores
+// 0–100, ranks, ranges, percentiles) is already human-scaled, so this one field
+// gets ×100 for a readable headline.
+//
+// `bBandwidthPercentile` was on this list and is NOT a unit interval: the SAME
+// cron writes it as `Math.round((idx / (n - 1)) * 100)`, i.e. 0–100 (`:1125`,
+// persisted at `:1227`). Ranking a screen by it therefore rendered the 88th
+// percentile as "8800" and normalized every bar in the list against that. The
+// field reference the old comment cited said "(0-1)" and was simply wrong; it
+// is corrected in the same commit. The rest of the codebase already reads the
+// cron's unit — the fenced eval assembler bands it at `<= 20` / `>= 80`
+// (agentEvalPromptAssembly.js:1844) and the trigger gate at `<= 20`
+// (agentTriggerGate.js:140).
+const UNIT_INTERVAL_FIELDS = new Set(['atrPercentile']);
 
 const DEFAULT_RANK_FIELD = 'compositeScore';
 

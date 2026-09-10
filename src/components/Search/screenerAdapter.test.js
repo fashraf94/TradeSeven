@@ -79,9 +79,40 @@ describe('headlineValue', () => {
     const r = makeResult({ arch_scores: { degen: 73.4 } });
     expect(headlineValue(r, 'arch_scores.degen')).toBe(73.4);
   });
-  it('scales the documented 0–1 fields ×100', () => {
+  it('scales atrPercentile — the one field the cron writes as a unit interval', () => {
+    // compute-index-intelligence.js:1113/:1210 — `idx / (n - 1)`, two decimals.
+    expect(headlineValue({ atrPercentile: 0 }, 'atrPercentile')).toBeCloseTo(0);
     expect(headlineValue({ atrPercentile: 0.82 }, 'atrPercentile')).toBeCloseTo(82);
-    expect(headlineValue({ bBandwidthPercentile: 0.5 }, 'bBandwidthPercentile')).toBeCloseTo(50);
+    expect(headlineValue({ atrPercentile: 1 }, 'atrPercentile')).toBeCloseTo(100);
+  });
+
+  // THE UNIT FIXTURE. `bBandwidthPercentile` is written by
+  // compute-index-intelligence.js:1125 as `Math.round((idx / (n - 1)) * 100)`
+  // and persisted at :1227 — 0–100, both ends inclusive. The adapter used to
+  // classify it as a unit interval and multiply by 100, so the top of the scale
+  // rendered as 10000 and the bar normalized against it. Pin BOTH ENDS of the
+  // cron's scale, and the interior, so no future ×100 can slip back in.
+  it('passes bBandwidthPercentile through RAW — 0 and 100 are the cron\'s ends', () => {
+    expect(headlineValue({ bBandwidthPercentile: 0 }, 'bBandwidthPercentile')).toBe(0);
+    expect(headlineValue({ bBandwidthPercentile: 12 }, 'bBandwidthPercentile')).toBe(12);
+    expect(headlineValue({ bBandwidthPercentile: 50 }, 'bBandwidthPercentile')).toBe(50);
+    expect(headlineValue({ bBandwidthPercentile: 88 }, 'bBandwidthPercentile')).toBe(88);
+    expect(headlineValue({ bBandwidthPercentile: 100 }, 'bBandwidthPercentile')).toBe(100);
+    // The defect in one line: the 88th percentile was rendered as 8800.
+    expect(headlineValue({ bBandwidthPercentile: 88 }, 'bBandwidthPercentile')).not.toBe(8800);
+  });
+
+  it('a bandwidth-ranked screen keeps its bars on the 0–100 scale', () => {
+    const spec = { rankBy: { field: 'bBandwidthPercentile', direction: 'asc' }, limit: 10 };
+    const { rows, maxScore, type } = buildRankRows([
+      makeResult({ symbol: 'KO', bBandwidthPercentile: 12 }),
+      makeResult({ symbol: 'TSLA', bBandwidthPercentile: 88 }),
+    ], spec);
+    // maxScore drives the bar width for every row; at ×100 it was 8800 and the
+    // squeeze row rendered as a sliver of a bar that meant nothing.
+    expect(maxScore).toBe(88);
+    expect(rows[0].stock[TYPE_TO_SCORE_KEY[type]]).toBe(12);
+    expect(rows[1].stock[TYPE_TO_SCORE_KEY[type]]).toBe(88);
   });
   it('coerces null / non-numeric to 0', () => {
     expect(headlineValue(makeResult(), 'technicalScore')).toBe(0);

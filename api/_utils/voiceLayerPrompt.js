@@ -1727,7 +1727,13 @@ export function buildPortfolioBriefsBlock(marketSnapshot, { grounded = false } =
     ? '' : ' (Prices as of last cache refresh, not real-time.)';
 
   const lines = marketSnapshot.portfolioBriefs.map(b => {
-    let entry = `${buildHeaderLine(b)}\nTrend: ${b.trendSummary}\nMomentum: ${b.momentumSummary}`;
+    // D-120: conditional, exactly as the bench block below (:1797-1798). The
+    // cron omits a summary it could not honestly compute, and an omitted field
+    // interpolated unconditionally rendered the literal `Trend: undefined`.
+    // Byte-identical when both summaries are present.
+    let entry = buildHeaderLine(b);
+    if (b.trendSummary) entry += `\nTrend: ${b.trendSummary}`;
+    if (b.momentumSummary) entry += `\nMomentum: ${b.momentumSummary}`;
 
     const levelsLine = buildLevelsLine(b);
     if (levelsLine) entry += `\n${levelsLine}`;
@@ -2304,7 +2310,7 @@ Volatility / setup:
 - atrPercentile (0-1) — relative volatility, 1 = most volatile
 - dailyRange (number)
 - nr7Flag (boolean) — true = a narrow-range-7 (tight, coiled) bar
-- bBandwidthPercentile (0-1) — Bollinger bandwidth percentile
+- bBandwidthPercentile (0-100) — Bollinger bandwidth percentile, 0 = tightest bands in the universe, 100 = widest
 - sma200_position (signed number) — percent distance from the 200-day SMA
 - trend (string) — multi-timeframe trend label
 - recentAction (string) — recent candle/behavior label

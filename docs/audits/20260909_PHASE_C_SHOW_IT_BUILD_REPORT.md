@@ -20,7 +20,7 @@
 | 5 | Was any fenced file edited? | **NO.** `flattenPortfolioServer` is CALLED (§1-permitted), as `debate.js` already does. |
 | 6 | Full suite / `vite build`? | **Green** — 649 files, 12,223 tests; `vite build` clean. |
 | 7 | Did the review find real defects? | **Yes — 16, and three of the build's own test batteries were largely vacuous.** The card never printed an entry price; the reply lint caught none of the breaches it named while withholding innocent sentences; a withheld turn still filed its directive; the route billed an external call on every tap. All fixed. Read §7. |
-| 8 | Anything left undone? | **Five items**, all named in §5: the per-name Equip mechanism, `debate.js`'s guard, D-120's fetch widening, the route's shadow record, and an error surface on the doors. |
+| 8 | Anything left undone? | **Five items at the time of writing**, all named in §5: the per-name Equip mechanism, `debate.js`'s guard, D-120's fetch widening, the route's shadow record, and an error surface on the doors. **Two are now closed** (Sep 9, 2026, branch `claude/exciting-maxwell-040mvv`): D-120's fetch widening AND `debate.js`'s `MACD histogram: negative` constant — see §5.3. **Three remain.** |
 
 ---
 
@@ -108,15 +108,26 @@ The card carries its `equip` flag and the component renders the door — **but n
 ### 5.2 `debate.js` is untouched (spec §2's phrase "its own guard widened to the universe")
 What Phase C needed from that route was its **data path**, and the research route carries its own universe check instead. Widening the debate route's guard would widen the reach of the very prompt §0 says must never reach a reader — its eleven forecasting lines, its conviction score, its `suggestedAction` — and hazard 8 says never to widen it without a test, of which it has none. Its entry point is also unwired at HEAD. A row in `research.dark.test.js` pins that it stays untouched. **If the founder meant the literal widening, it is a separate task with its own tests.**
 
-### 5.3 The short-window indicators (D-120)
-The card renders **nothing** for MACD, SMA50, SMA200 and EMA50, because the shipped 30-calendar-day fetch never reaches their minimums. That is the null-honest half of D-120, done. The other half — widening the fetch — is the separate live-bug task the discovery filed, and is not in this branch.
+### 5.3 The short-window indicators (D-120) — **CLOSED, September 9, 2026**
+As shipped in this branch, the card rendered **nothing** for MACD, SMA50, SMA200 and EMA50, because the 30-calendar-day fetch never reached their minimums. That was the null-honest half of D-120, done here. Both remaining halves landed in the follow-up branch `claude/exciting-maxwell-040mvv`:
+
+- **The renderers.** `debate.js` was still printing the constant `MACD histogram: negative` and an `N/A` SMA line (§5.5 filed it); the voice-layer cache's portfolio brief was still publishing `Downtrend. Below major SMAs.` off an *absent* SMA flag, and its prompt block interpolated both summaries unconditionally. All three are null-honest now, matching this card's rule and the bench brief's existing guard.
+- **The fetch.** `fetchDailyOHLCV`'s window is now `DAILY_WINDOW_CALENDAR_DAYS = 90` (`api/_utils/marketDataCache.js:242`), read by the one `daily` call site in `getStockAnalysisData` (`:507`, cache key `SYMBOL_daily`). 90 calendar days holds ~64 weekdays; the NYSE closes at most 10 days in a *whole year*, so the window clears MACD's 35-candle minimum — and SMA50's 50 — from every start date in the calendar, with margin. SMA200 needs ~290 calendar days and stays null by design.
+
+**Cost of the widening.** No additional API call: the same single `/eod/` request per symbol per cache miss, with an earlier `from`. What grows is the payload and its cache document — **~21 rows → ~62 rows, about 2.3 KB → 6.8 KB per symbol per fetch (≈ +4.5 KB, ~3×)** at ~110 bytes per mapped row (`{date, open, high, low, close, rawClose, volume}`). The largest single consumer of that increase is `compute-institutional-intelligence.js:213`, which batch-reads the `_daily` document for **all 239 tickers at once**: ~490 KB → ~1.6 MB per run, in a handler already declaring `maxDuration: 120`. Cache TTLs are unchanged, so fetch *frequency* is unchanged. Estimated, not measured: this session has no EODHD credentials, per the same disclosure as §1.
+
+**The widening also MOVES two indicators that were never null — disclose this before the first deploy.** `calculateRSI` and `calculateEMA` seed on the *oldest* bars and smooth forward across the whole series, so their output depends on how many bars precede the recent ones; SMA20, Bollinger and ATR read the newest end only and are unaffected. Measured on identical recent prices with only the window changed: **RSI moved up to ~10 points, enough to cross the 30/70 zone boundary in both directions** (e.g. `67.56 neutral → 73.45 overbought`). The longer warm-up is the *more accurate* reading — at 21 bars roughly 60% of the weight still sat on the seed — but it is a value change, not merely a null-to-value change, and it lands in **persisted research cards** that §5.3's own rule says are "re-read days later". Two cards for the same symbol on consecutive days across the deploy can legitimately disagree on RSI and its zone word with no market move behind it. No card carries a window marker; giving it one is a separate, filed item.
+
+**The cache key is deliberately not versioned.** `SYMBOL_daily` is read directly outside the module (`compute-institutional-intelligence.js:213` takes the newest close off it) and `getCachedData` derives the TTL type from the key's last underscore segment, so the name is a contract. It does not need versioning: there is exactly one window, so every write under the key is that window's payload. The only narrower payloads are this deploy's predecessors, and they age out on the daily TTL (4 h, frozen to the next open while the market is closed).
+
+Two honest limits on that bound, both surfaced by the §2 review and now written at the code: it is **up to two TTL cycles, not one** — `SYMBOL_technicals` is a second unversioned document holding the *derived* indicator set, refreshed independently (a `fields: ['daily']` request refreshes one and not the other, so the two can disagree for a symbol at one instant) — and while a narrow payload is served, MACD/SMA50 are indeed null and the renderers stay silent, but **RSI and EMA come back with different values, not nulls**. Neither is misreported as something it is not; both resolve on the next full refresh.
 
 ### 5.4 Two follow-ups the review named
 - **The route writes no shadow record**, so a research tap is invisible to telemetry. Hazard 12 warns specifically against reusing `gameMode: 'research'` for it, so it wants its own small design rather than a copy.
 - **A failed tap has no error surface on the two Battle View doors.** The in-flight guard removed the damaging case (a double-spend of a scarce read); the remaining gap is that a 409 or a 500 is silent. `AgentChat`'s own chip path already has the three-branch error line to copy from.
 
 ### 5.5 Four items the discovery filed for separate tasking
-Untouched here, as §3 requires: `debate.js`'s constant `MACD histogram: negative`; `reviewBudgetUsed` written to the battle doc but not declared by `createAgentBattle`; `debate.js`'s `'balanced'` archetype default; the `file-directive.js:157` comment drift.
+Untouched here, as §3 requires: `debate.js`'s constant `MACD histogram: negative`; `reviewBudgetUsed` written to the battle doc but not declared by `createAgentBattle`; `debate.js`'s `'balanced'` archetype default; the `file-directive.js:157` comment drift. **The first of the four is closed** — see §5.3; the other three still stand.
 
 ---
 
