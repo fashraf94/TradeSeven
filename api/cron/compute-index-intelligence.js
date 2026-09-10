@@ -142,12 +142,23 @@ async function fetchOHLCV(eohdSymbol, daysBack = 252) {
   }
 
   // EODHD returns oldest-first. Reverse to newest-first for our calculations.
+  //
+  // `close` stays ADJUSTED — RS, momentum, ATR, Bollinger and the MACD/RSI
+  // series are all return-series questions, and the adjusted close is the right
+  // basis for every one of them. `rawClose` is the UNADJUSTED print of the same
+  // bar, carried alongside for the one question that is NOT a return question:
+  // is today's live price above its own moving average? That comparison needs
+  // both sides on the tape's basis (`resolveSmaBasis`, indexIntelligence.js) —
+  // the same raw-vs-raw rule Guard 1 and Guard 2 already apply to baselines
+  // (decide.js:1050-1054, baselineValidation.js:158-160). Mirrors the field
+  // marketDataCache.js:333-337 added on the other daily feed for exactly this.
   const ohlcv = data.reverse().map(d => ({
     date: d.date,
     open: d.open,
     high: d.high,
     low: d.low,
     close: d.adjusted_close,
+    rawClose: d.close,
     volume: d.volume || 0,
   }));
 
@@ -246,6 +257,11 @@ export function injectIntradayBar(ohlcv, quote, todayStr) {
     high: Math.max(qHigh !== null && qHigh > 0 ? qHigh : price, price),
     low: Math.min(qLow !== null && qLow > 0 ? qLow : price, price),
     close: price,
+    // A real-time quote is the price the tape is printing, so it is unadjusted
+    // by construction: `close` and `rawClose` are the same number here, and
+    // that identity is the whole reason the raw series is comparable to a live
+    // price while the adjusted one is not.
+    rawClose: price,
     volume: avgVol,
   };
 
@@ -892,6 +908,11 @@ export default async function handler(req, res) {
 
         const rsPercentile = rsPercentileMap[d.sym] ?? 50;
         const sectorRSPercentile = sectorRSMap[d.sym] ?? null;
+        // The unadjusted series, for the price-vs-SMA flags only. `?? o.close`
+        // covers a bar mapped before `rawClose` existed (a cached payload) —
+        // `resolveSmaBasis` re-checks the whole series and falls back to the
+        // adjusted comparison unless every value is finite.
+        const rawCloses = d.ohlcv.map(o => o.rawClose ?? o.close);
         const scoreResult = computeTechnicalScore({
           closes,
           highs,
@@ -902,11 +923,19 @@ export default async function handler(req, res) {
           rsTrend: d.rsTrend,
           technicals: { rsi, sma20, sma50, sma200, macd: macdEnhanced },
           sectorRSPercentile,
+          rawCloses,
         });
 
         const currentPrice = closes[0];
-        const sma200_position = (sma200 !== null && currentPrice != null)
-          ? Number((((currentPrice - sma200) / sma200) * 100).toFixed(2))
+        // The averages the flags were derived from (`resolveSmaBasis`), so
+        // everything this loop says about price-vs-average comes from ONE
+        // source and cannot disagree with `factors.aboveSMAn` (BUILD_RULES §9).
+        // `sma200_position` is shipped in the SAME `smaStack` object as
+        // `aboveSMA200` (buildTechnicalSnapshot.js:73-79), so a split basis
+        // here would put a contradiction inside one payload.
+        const smaBasis = scoreResult.factors;
+        const sma200_position = (smaBasis.sma200 !== null && currentPrice != null)
+          ? Number((((currentPrice - smaBasis.sma200) / smaBasis.sma200) * 100).toFixed(2))
           : null;
 
         // Phase 2A — pivot levels from prior-day OHLC (index 1 = yesterday in
@@ -915,10 +944,13 @@ export default async function handler(req, res) {
 
         // Phase 2A — multi-timeframe trend classification from existing daily
         // SMAs. Each field is 'up' | 'down' | null (null when SMA unavailable).
+        // Same averages as the flags: `classifyTrend` IS the price-vs-SMA
+        // comparison under another name, so the two must not be computed off
+        // two bases (§9).
         const trend = {
-          shortTerm: classifyTrend(currentPrice, sma20),
-          intermediate: classifyTrend(currentPrice, sma50),
-          longTerm: classifyTrend(currentPrice, sma200),
+          shortTerm: classifyTrend(currentPrice, smaBasis.sma20),
+          intermediate: classifyTrend(currentPrice, smaBasis.sma50),
+          longTerm: classifyTrend(currentPrice, smaBasis.sma200),
         };
 
         // Phase 2A — swing high/low detection + nearest S/R cluster derivation.

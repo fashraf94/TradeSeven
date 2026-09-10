@@ -111,6 +111,52 @@ export function composeTechnicalsBlock(snapshot) {
     + 'Do not cite any indicator, and leave citedIndicators empty.\n\n';
 }
 
+/**
+ * The POSITION DATA line, null-honest (BUILD_RULES §9) — the same rule as
+ * `composeTechnicalSnapshot` above, applied to the other half of the prompt.
+ *
+ * `Entry: $${entryPrice || 'N/A'}` and `Current: $${currentPrice || 'N/A'}`
+ * rendered the literal `Entry: $N/A` / `Current: $N/A` — and `P&L: N/A%` with
+ * them, since the P&L is computed from exactly those two numbers. Those are
+ * the same placeholders this arc removed from the research card
+ * (researchCard.js:119) and from the technicals block: a stand-in that LOOKS
+ * like a field with a value. The system prompt asks the agent to defend its
+ * position "with specific data" and its response schema requires
+ * `citedIndicators`, so a labelled blank is an invitation to fill it in.
+ *
+ * A missing reading now contributes NO clause. Symbol and tier are
+ * unconditional because they always exist — `flattenPortfolioServer` sets
+ * `tier` on every position it returns (agentScoring.js:40-48), so a guard on
+ * them would be an assertion nothing can fail.
+ *
+ * A non-positive entry price is not an entry price: it cannot anchor a P&L
+ * (division by zero), and it is the shape `position.entryPrice || … || null`
+ * already collapses to null anyway. Same for the quote.
+ *
+ * @param {object} args
+ * @param {string} args.symbol
+ * @param {string} args.tier
+ * @param {number|null} args.entryPrice - the position's entry, or null
+ * @param {number|null} args.currentPrice - the live quote, or null
+ * @returns {string} the line, with only the clauses that have a value behind them
+ */
+export function composePositionLine({ symbol, tier, entryPrice, currentPrice }) {
+  const price = (v) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null);
+  const entry = price(entryPrice);
+  const current = price(currentPrice);
+
+  const clauses = [`Symbol: ${symbol}`, `Tier: ${tier}`];
+  if (entry !== null) clauses.push(`Entry: $${entry}`);
+  if (current !== null) clauses.push(`Current: $${current}`);
+  // The P&L is derived from the two clauses above, so it is present exactly
+  // when both of them are — one source, no third way to be missing (§9).
+  if (entry !== null && current !== null) {
+    clauses.push(`P&L: ${(((current - entry) / entry) * 100).toFixed(2)}%`);
+  }
+
+  return clauses.join(' | ');
+}
+
 const VALID_STANCES = [
   'overvalued',
   'bad_timing',
@@ -199,11 +245,7 @@ export default async function handler(req, res) {
       technicals = calculateAllIndicators(daily);
     }
 
-    // Compute P&L
     const entryPrice = position.entryPrice || battle.startingPrices?.[targetSymbol] || null;
-    const pnlPct = entryPrice && currentPrice
-      ? (((currentPrice - entryPrice) / entryPrice) * 100).toFixed(2)
-      : 'N/A';
 
     // 11. Build prompt
     const agentName = agent.name || 'Agent';
@@ -227,8 +269,15 @@ Respond ONLY with valid JSON (no markdown, no backticks):
   "suggestedAction": "hold" | "consider_exit" | null
 }`;
 
+    const positionLine = composePositionLine({
+      symbol: targetSymbol,
+      tier: position.tier,
+      entryPrice,
+      currentPrice,
+    });
+
     const userMessage = `POSITION DATA:
-Symbol: ${targetSymbol} | Tier: ${position.tier} | Entry: $${entryPrice || 'N/A'} | Current: $${currentPrice || 'N/A'} | P&L: ${pnlPct}%
+${positionLine}
 
 ${technicalsBlock}YOUR DIRECTIVES:
 ${directives}

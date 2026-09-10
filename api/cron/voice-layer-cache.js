@@ -119,11 +119,12 @@ async function fetchBulkPrices(symbols) {
 // null-honest (absent when the entry carries none). Default false → the
 // shipped brief, field for field.
 // A persisted `aboveSMAn` flag is only a READING when the average behind it
-// exists. `computeTechnicalScore` writes `technicals.smaN !== null && price >
-// smaN` (indexIntelligence.js:288-290), so a missing average is stored as the
-// boolean `false` — indistinguishable, by type, from a measured "below". The
-// averages themselves ARE stored null-honestly (`:392-394`), so both brief
-// writers gate on this pair. ONE definition, shared, so the two paths cannot
+// exists. `computeTechnicalScore` writes `smaBasis.smaN !== null && price >
+// smaBasis.smaN` (indexIntelligence.js:424-426), so a missing average is stored
+// as the boolean `false` — indistinguishable, by type, from a measured "below".
+// The averages themselves ARE stored null-honestly (`:532-534`), and are the
+// same ones the flags were derived from, so both brief writers gate on this
+// pair. ONE definition, shared, so the two paths cannot
 // drift apart again (BUILD_RULES §9).
 function smaRead(flag, value) {
   return typeof flag === 'boolean' && value != null;
@@ -158,8 +159,8 @@ export function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScore
       // Trend summary from SMA alignment — gated on the READINGS, not on the
       // booleans derived from them (D-120 / BUILD_RULES §9).
       //
-      // `computeTechnicalScore` writes `aboveSMA50 = technicals.sma50 !== null
-      // && currentPrice > technicals.sma50` (indexIntelligence.js:289), so a
+      // `computeTechnicalScore` writes `aboveSMA50 = smaBasis.sma50 !== null
+      // && smaBasis.price > smaBasis.sma50` (indexIntelligence.js:425), so a
       // MISSING 50-day average is persisted as the boolean `false`, not as an
       // absent field. A `typeof === 'boolean'` guard therefore passes for every
       // real document and suppresses nothing: a thin-history symbol
@@ -169,7 +170,7 @@ export function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScore
       // inert for the exact case it was written for.
       //
       // The averages THEMSELVES are null-honest in the same document
-      // (indexIntelligence.js:392-394), so the claim now binds to them. All
+      // (indexIntelligence.js:532-534), so the claim now binds to them. All
       // four sentences below speak about the whole 20/50/200 stack — including
       // 'Above 20-day SMA only', which is a claim about the other two — so all
       // three readings must exist before any of them may be said. Byte-identical
@@ -205,8 +206,8 @@ export function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScore
 
       // Momentum summary — same rule, same reason. `computeTechnicalScore`
       // seeds each of these three sub-scores with a hardcoded NEUTRAL DEFAULT
-      // (`macdScore = 6` at indexIntelligence.js:296, `volumeConfirmation = 6`
-      // at `:326`, `rsiContext = 4` at `:353`) and only replaces it when the
+      // (`macdScore = 6` at indexIntelligence.js:432, `volumeConfirmation = 6`
+      // at `:463`, `rsiContext = 4` at `:489`) and only replaces it when the
       // underlying data exists. Every one is therefore a number in every
       // document, so a `typeof === 'number'` guard suppresses nothing either.
       //
@@ -214,7 +215,7 @@ export function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScore
       // between their phrase thresholds. The volume default did NOT: `6 < 8`
       // took the else-branch and published 'Volume subdued.' about a ratio the
       // scorer never measured (a symbol with fewer than 20 daily rows,
-      // indexIntelligence.js:327). Each phrase now needs positive evidence:
+      // indexIntelligence.js:464). Each phrase now needs positive evidence:
       //
       //   · Volume speaks only at the two ends the scorer reaches ONLY from
       //     real data (12/9 → confirming, 3 → subdued). The ambiguous middle —
@@ -223,10 +224,10 @@ export function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScore
       //     behaviour change: a symbol with fewer than 20 daily rows scores a
       //     defaulted 6 and was being called 'Volume subdued.'
       //   · MACD additionally rides `factors.macdAboveSignal`, which IS
-      //     null-honest (`indexIntelligence.js:400` — `macd ? … : null`).
+      //     null-honest (`indexIntelligence.js:539` — `macd ? … : null`).
       //     BE HONEST ABOUT THIS ONE: it changes nothing today. `macdScore`
       //     leaves its default of 6 only inside `if (macd && …)`
-      //     (indexIntelligence.js:298), so a banded 8+/4- already implies MACD
+      //     (indexIntelligence.js:434), so a banded 8+/4- already implies MACD
       //     was computed, and 6 falls between the thresholds. The condition is
       //     belt-and-braces so that a future change to that default cannot
       //     silently start fabricating a MACD verdict — no test pins it,

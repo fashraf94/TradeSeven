@@ -257,6 +257,92 @@ function getApiKey() {
 export const DAILY_WINDOW_CALENDAR_DAYS = 90;
 
 /**
+ * One EODHD field → a finite number, or null.
+ *
+ * EODHD returns numbers for a normal session but is not contractually numeric:
+ * a field can come back null, absent, or as a string (`injectIntradayBar`
+ * already coerces quote strings for exactly this reason,
+ * compute-index-intelligence.js:197-200). `null` is the dangerous one, because
+ * JavaScript's `+` coerces it to 0 SILENTLY: `calculateSMA` sums with
+ * `reduce((a, b) => a + b, 0)` (technicalCalculations.js:22) and
+ * `calculateEMA`/`calculateMACD` seed the same way (`:40`, `:194`), so ONE null
+ * close in the window does not produce `null`, `NaN`, or a thrown error — it
+ * produces a finite average that is wrong by close/period, and every renderer
+ * downstream prints it as a measurement. That is the failure this function
+ * exists to make impossible.
+ *
+ * @param {*} v
+ * @returns {number|null}
+ */
+function toFiniteNumber(v) {
+  const n = typeof v === 'number' ? v : parseFloat(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Map an EODHD `/eod/` payload to our daily-bar shape, validating numerically.
+ *
+ * A row whose `close`, `high` or `low` is not a finite number is DROPPED — not
+ * kept with a zero, not kept with a null, not kept with a NaN. Those three
+ * fields are the ones `calculateAllIndicators` reads into its `closes`/`highs`/
+ * `lows` arrays (technicalCalculations.js:500-502), so an unusable one of them
+ * makes the whole BAR unusable; the honest series is the one without it.
+ * Dropping preserves the D-120 guarantee too: 90 calendar days yields ≥55
+ * trading rows, so shedding the rare bad bar still clears MACD's 35-row and
+ * SMA50's 50-row minimums, and a symbol that sheds enough rows to fall below
+ * them goes null-honest by the D-120 path rather than reporting a wrong number.
+ *
+ * `open`, `rawClose` and `volume` are validated the same way but are NOT part
+ * of the drop criterion — no indicator in `calculateAllIndicators` reads
+ * `open`, `rawClose` is consumed through a `??` fallback to `close`
+ * (decide.js:1053-1054, baselineValidation.js:238-239), and
+ * `calculateVolumeProfile` already filters its lookback on `v > 0`
+ * (technicalCalculations.js:342). Each becomes null rather than `undefined`
+ * when the feed omits it, so the absence is a value the readers can test.
+ *
+ * `close` keeps the shipped `adjusted_close`-preferred-with-raw-fallback
+ * precedence exactly, including its falsy-0 fallthrough: a 0 adjusted_close
+ * still falls through to the raw close, which for an equity bar is the safer
+ * of the two readings. (`fetchDriverSeries.js:60-69` deliberately uses `??`
+ * instead — that path wants the 0 preserved for single-print detection. The
+ * two are different questions, and this one is not being changed here.)
+ *
+ * @param {Array} data - the raw `/eod/` array
+ * @returns {{rows: Array, dropped: number}}
+ */
+export function mapDailyRows(data) {
+  const rows = [];
+  let dropped = 0;
+
+  for (const d of data) {
+    const close = toFiniteNumber(d?.adjusted_close) || toFiniteNumber(d?.close);
+    const high = toFiniteNumber(d?.high);
+    const low = toFiniteNumber(d?.low);
+
+    if (close === null || high === null || low === null) {
+      dropped++;
+      continue;
+    }
+
+    rows.push({
+      date: d.date,
+      open: toFiniteNumber(d.open),
+      high,
+      low,
+      close,
+      // Unadjusted close, preserved alongside the split/dividend-adjusted
+      // `close`. A real-time previousClose is unadjusted, so baseline checks
+      // compare it raw-vs-raw (api/_utils/baselineValidation.js, Guard 2) —
+      // splits/dividends then cannot cause a false fire.
+      rawClose: toFiniteNumber(d.close),
+      volume: toFiniteNumber(d.volume),
+    });
+  }
+
+  return { rows, dropped };
+}
+
+/**
  * Fetch the daily OHLCV window (DAILY_WINDOW_CALENDAR_DAYS calendar days back).
  *
  * Exported for its URL shape, the way `fetchIntradayCandles` is: the `from`
@@ -277,19 +363,15 @@ export async function fetchDailyOHLCV(eohdSymbol, apiKey) {
   const data = await response.json();
   if (!Array.isArray(data)) return [];
 
-  return data.map(d => ({
-    date: d.date,
-    open: d.open,
-    high: d.high,
-    low: d.low,
-    close: d.adjusted_close || d.close,
-    // Unadjusted close, preserved alongside the split/dividend-adjusted `close`.
-    // A real-time previousClose is unadjusted, so baseline checks compare it
-    // raw-vs-raw (api/_utils/baselineValidation.js, Guard 2) — splits/dividends
-    // then cannot cause a false fire.
-    rawClose: d.close,
-    volume: d.volume,
-  }));
+  const { rows, dropped } = mapDailyRows(data);
+  // The drop count, per fetch. A dropped row is a row the indicators will
+  // never see, so it is never silent — a symbol that starts shedding rows is
+  // visible in the function logs before its readings drift.
+  console.log(
+    `[MarketDataCache] Daily OHLCV for ${eohdSymbol}: ${rows.length} rows kept, ${dropped} dropped`
+  );
+
+  return rows;
 }
 
 /**
