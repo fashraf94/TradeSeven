@@ -698,6 +698,7 @@ export const FILING_FAILED_LINE = 'The directive could not be filed just now.';
  * arrive to contradict `couldn't load` in the same breath. That is exactly the
  * split `filingFailureLine` draws, and the caller keeps to it: it sets this
  * line only when the route answered (AgentBattleScreen.jsx `handleShowIt`).
+ * The unreachable case gets the SECOND line below, which claims nothing.
  *
  * WHY THE COST IS ON THE LINE AT ALL. The door reads `Show it · 2 of 3` before
  * the tap; the scarce thing is named in the control, so silence after a failed
@@ -709,6 +710,42 @@ export const FILING_FAILED_LINE = 'The directive could not be filed just now.';
  * status that produced this is diagnostics.
  */
 export const RESEARCH_FAILED_LINE = 'Couldn’t load the card · no use spent';
+
+/**
+ * The OTHER half of the door's failure, for the tap whose request never came
+ * back — and it says exactly one thing, about the read alone.
+ *
+ * No response arrived. That is all the client knows: the commit may have landed
+ * with the reply lost, or nothing may have left the device. So this sentence
+ * makes NO claim about the three reads in either direction — not that one was
+ * spent, not that none was. `no use spent` would be a claim the client cannot
+ * be held to (the D-90 rule), and `one use spent` would be the same claim
+ * pointing the other way. The count on the door beside it stays derived from
+ * the subscribed doc, which is the only thing that can answer the question, and
+ * it answers it one snapshot later if a card did land.
+ *
+ * SHARED WITH THE CHAT CHIP'S LINE, one sentence with one home (BUILD_RULES
+ * §9). `battleViewCopy.showItFailed` is this sentence plus `Try again.`: the
+ * chip's error sits in the composer's slot, where the retry is a thing the
+ * player must be told how to reach, and the door IS the retry — right there,
+ * still enabled, still reading its count. The added clause is visibly the
+ * chat's, and the sentence they share is declared once.
+ */
+export const RESEARCH_UNREACHABLE_LINE = 'That read didn’t come back.';
+
+/**
+ * The door's failure line, by WHETHER THE ROUTE ANSWERED — the shape
+ * `filingFailureLine` uses for the same reason (D-90): what a client may say
+ * about a failure is decided by what the failure proves, and one function
+ * decides it so two surfaces cannot answer differently.
+ *
+ * `answered === true` means a response arrived and refused, which is proof no
+ * card was written and therefore no slot consumed. Anything else — a thrown
+ * fetch, a request never sent — proves only that no read came back.
+ */
+export const researchFailureLine = (answered) => (
+  answered ? RESEARCH_FAILED_LINE : RESEARCH_UNREACHABLE_LINE
+);
 
 /**
  * The failure line for a filing response's HTTP status.

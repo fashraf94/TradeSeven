@@ -88,11 +88,12 @@ function Chip({
   const door = typeof onShowIt === 'function';
   const enabled = door && !researchPending && researchDoorEnabled(researchUsed);
   const Tag = door ? 'button' : 'span';
-  // THE FAILURE IS THIS CHIP'S OR NOBODY'S. `researchError` is the SYMBOL the
-  // route refused, so the roster's other chips say nothing — one failed tap on
-  // MPC must not put a line beside every name on the bench. Compared, never
-  // read as a flag.
-  const failed = door && researchError === symbol;
+  // THE FAILURE IS THIS CHIP'S OR NOBODY'S. `researchError` names the SYMBOL
+  // whose tap failed, so the roster's other chips say nothing — one failed tap
+  // on MPC must not put a line beside every name on the bench. Compared, never
+  // read as a flag. `answered` rides along and decides WHICH sentence, in the
+  // copy layer (decisionRecord.js `researchFailureLine`).
+  const failed = door && researchError?.symbol === symbol;
   const chip = (
     <Tag
       data-bench-chip={symbol}
@@ -136,10 +137,11 @@ function Chip({
       {chip}
       <span
         data-bench-showit-error={symbol}
+        data-bench-showit-answered={researchError.answered ? 'true' : 'false'}
         role="alert"
         style={{ ...mono, fontSize: 10, color: cssVar('text-muted') }}
       >
-        {COPY.showItDoorFailed}
+        {COPY.showItDoorFailed(researchError.answered)}
       </span>
     </span>
   );

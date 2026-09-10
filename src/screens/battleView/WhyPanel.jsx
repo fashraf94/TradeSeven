@@ -152,11 +152,12 @@ export default function WhyPanel({
   // A tap already in flight: the door disables through the SAME contract the
   // exhausted state uses, so a 2-15 s route cannot be tapped twice (review F-2).
   researchPending = false,
-  // The SYMBOL whose last tap the route refused, or null — never a boolean.
-  // The screen holds one tap at a time, but its error outlives the tap, and a
-  // player who taps MPC, gets a refusal and then opens SLB's panel must not
-  // read a failure about MPC there. The failure belongs to the name it was
-  // about, so the door compares rather than trusting a flag.
+  // The last tap that failed, as `{ symbol, answered }` — never a boolean.
+  // The SYMBOL because the failure belongs to the name it was about: the screen
+  // holds one tap at a time, but its error outlives the tap, and a player who
+  // taps MPC, gets a failure and then opens SLB's panel must not read it there.
+  // `answered` because WHICH sentence the door may say is decided by what the
+  // failure proves — the copy layer maps it, this panel only passes it on.
   researchError = null,
   // D-89 — the book panel's close. The panel is a DISCLOSURE the score header
   // owns: the header carries the `aria-expanded`, so the way out has to hand
@@ -600,10 +601,11 @@ export default function WhyPanel({
               {COPY.showItDoor(researchUsed)}
             </button>
           )}
-          {/* THE DOOR'S FAILURE, beside the door (Phase C). It renders only
-              when the ROUTE ANSWERED and refused — never on a request that
-              never came back, whose commit may have landed with the reply lost
-              (decisionRecord.js `RESEARCH_FAILED_LINE`). `role="alert"` rather
+          {/* THE DOOR'S FAILURE, beside the door (Phase C). WHICH sentence is
+              the copy layer's call, from what the failure proves: an answered
+              refusal proves no slot was consumed and says so, a request that
+              never came back proves only that, and says only that
+              (decisionRecord.js `researchFailureLine`). `role="alert"` rather
               than the chat's persistent polite region: this appears in answer
               to a tap the player just made, and an assertive region IS
               announced on insertion, which is the one thing a `status` region
@@ -614,13 +616,14 @@ export default function WhyPanel({
               GATED ON THE DOOR, not on the error alone: with no handler there
               is no door, no tap and therefore no refusal to report, so the
               flag-dark page stays the two-door page it is today. */}
-          {!isBook && typeof onShowIt === 'function' && researchError === symbol && (
+          {!isBook && typeof onShowIt === 'function' && researchError?.symbol === symbol && (
             <span
               data-why-showit-error={symbol}
+              data-why-showit-answered={researchError.answered ? 'true' : 'false'}
               role="alert"
               style={{ fontSize: 11.5, color: cssVar('text-muted') }}
             >
-              {COPY.showItDoorFailed}
+              {COPY.showItDoorFailed(researchError.answered)}
             </span>
           )}
           {!isBook && typeof onScopeToPiece === 'function' && COPY.inTheChat(mentionCount) && (

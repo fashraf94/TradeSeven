@@ -1266,22 +1266,25 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // out. The ref stops the re-entry; the state gives the doors the affordance,
   // through the `disabled` contract they already carry for the exhausted state.
   //
-  // AND A REFUSAL IS SAID OUT LOUD, at the door that was tapped. The doors
-  // render from the subscribed doc, so a refused tap moved nothing: the count
+  // AND A FAILURE IS SAID OUT LOUD, at the door that was tapped. The doors
+  // render from the subscribed doc, so a failed tap moved nothing: the count
   // stayed put, no card arrived, and the only signal was a button that did
   // nothing — which is indistinguishable from a broken one, the same reading
-  // review F-8 removed from the exhausted state. `researchError` holds the
-  // SYMBOL the route refused (never a boolean): the failure belongs to the
-  // name it was about, so a refusal on MPC says nothing on SLB's panel.
+  // review F-8 removed from the exhausted state. `researchError` holds
+  // `{ symbol, answered }` (never a boolean): the failure belongs to the name
+  // it was about, so a failure on MPC says nothing on SLB's panel.
   //
-  // SET ONLY WHEN THE ROUTE ANSWERED. The line claims `no use spent`, and that
-  // is attestable for every status this route returns — each one comes back
-  // before its transaction commits, or from a branch that never appended — but
-  // NOT for a request that never came back, whose commit may have landed with
-  // the reply lost (decisionRecord.js `RESEARCH_FAILED_LINE`; the D-90 split
-  // `filingFailureLine` draws). A thrown fetch stays silent, exactly as today.
-  // The no-user branch DOES say it: nothing was sent, so nothing was spent, and
-  // that branch is the one tap that would otherwise do nothing at all.
+  // `answered` IS THE WHOLE HONESTY GATE, and it is a fact about the request,
+  // not a piece of copy — the copy layer turns it into a sentence
+  // (decisionRecord.js `researchFailureLine`, the shape `filingFailureLine`
+  // uses for the same reason). TRUE means a response arrived and refused, which
+  // is attestable proof no card was written and no slot consumed: every status
+  // this route returns comes back before its transaction commits, or from a
+  // branch that never appended. FALSE means no response arrived at all — the
+  // commit may have landed with the reply lost, or nothing may have left the
+  // device — and the line then claims nothing about the count in either
+  // direction. The no-user branch is `answered: false` for the same reason it
+  // reports at all: nothing was sent, so nothing came back.
   //
   // CLEARED BY THE NEXT TAP, not by a timer and not by the response: the tap is
   // the retry, so the line is stale the moment another one starts.
@@ -1297,7 +1300,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     try {
       const user = getAuth().currentUser;
       if (!user) {
-        setResearchError(wanted);
+        setResearchError({ symbol: wanted, answered: false });
         return;
       }
       const idToken = await user.getIdToken();
@@ -1306,8 +1309,12 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
         headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ agentId: agentBattle.agentId, battleId: agentBattle.id, symbol: wanted }),
       });
-      if (!res.ok) setResearchError(wanted);
-    } catch { /* the card comes from the subscribed doc; a read that never came back claims nothing */ }
+      if (!res.ok) setResearchError({ symbol: wanted, answered: true });
+    } catch {
+      // The card comes from the subscribed doc, and this tap has no answer at
+      // all — so the door says the read did not come back and stops there.
+      setResearchError({ symbol: wanted, answered: false });
+    }
     finally {
       showItInFlight.current = false;
       setResearchPending(false);
