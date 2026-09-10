@@ -680,25 +680,34 @@ export const FILING_FAILED_LINE = 'The directive could not be filed just now.';
  * ATTESTABLE, which is the whole reason it can be said.
  *
  * `no use spent` is a claim about the three scarce reads, and the D-90 rule
- * above governs it: a client may say only what it can be held to. The research
- * route can be held to this. Every refusal it ANSWERS WITH returns before its
- * one transaction commits, or from a branch of that transaction that never
- * called `tx.update` — the flag's 404, the body's 400, owner/binding 403, the
- * universe 404, not-active and exhausted 409s, the rate limiter's 429, auth's
- * 401, and both 500s (the battle read fails before the transaction exists; the
- * transaction's own catch means the commit threw, and a transaction that throws
- * writes nothing). So a refusal that reaches the client is proof no card was
- * written, and no card written is no slot consumed: the route's count is
- * `countResearchUsed(chatExchanges)`, re-read inside the same commit that
- * appends (api/agent/research.js, §13 and its header).
+ * above governs it: a client may say only what it can be held to. THE ROUTE IS
+ * THE ONLY PARTY THAT KNOWS, so the route says it: every refusal answered from
+ * before `db.runTransaction` is opened carries `noCardWritten` in its body
+ * (api/agent/research.js `NO_CARD_WRITTEN`), and that field — not the HTTP
+ * status, and not `res.ok` — is what this line is gated on. No card written is
+ * no slot consumed: the route's count is `countResearchUsed(chatExchanges)`,
+ * re-read inside the same commit that appends.
  *
- * WHAT THIS LINE MAY NOT BE SAID ABOUT: a request that never came back. A fetch
- * that throws has NO response, so the commit may have happened and the reply
- * been lost — `no use spent` would be false, and the subscribed card would
- * arrive to contradict `couldn't load` in the same breath. That is exactly the
- * split `filingFailureLine` draws, and the caller keeps to it: it sets this
- * line only when the route answered (AgentBattleScreen.jsx `handleShowIt`).
- * The unreachable case gets the SECOND line below, which claims nothing.
+ * AN EARLIER DRAFT OF THIS DOCSTRING INFERRED IT FROM THE STATUS LIST, AND WAS
+ * WRONG (§2 review, finding A1 — CONFIRMED against a rebuilt harness). Three
+ * ways a non-2xx reaches the client with a card on the document:
+ *   · `runTransaction` RETRIES. The library re-runs the body on a retryable
+ *     commit error, so a commit that LANDS whose reply is lost re-runs against
+ *     a fresh read holding its own card — on the last slot that is `exhausted`
+ *     → 409, with a slot spent.
+ *   · the 200 is sent INSIDE the try whose catch answers 500, so anything
+ *     throwing after the commit answers 500 with the card written. This repo
+ *     has already paid for that exact shape once: it is why `api/agent/chat.js`
+ *     lost its `· nothing was sent` clause (battleViewCopy.js, A2 review RB-F4).
+ *   · a platform 502/504 at the route's `maxDuration: 15` is a response the
+ *     route never authored at all.
+ * None of the three carries the field, so none of the three gets this line.
+ *
+ * WHAT THIS LINE MAY NOT BE SAID ABOUT, therefore: any failure the route did
+ * not attest — the three above, and a request that never came back at all. They
+ * take the SECOND line below, which claims nothing. The gate FAILS CLOSED: a
+ * refusal path added to the route without the field gets the claimless line by
+ * default, which is the direction honesty needs it to fail.
  *
  * WHY THE COST IS ON THE LINE AT ALL. The door reads `Show it · 2 of 3` before
  * the tap; the scarce thing is named in the control, so silence after a failed
@@ -734,17 +743,27 @@ export const RESEARCH_FAILED_LINE = 'Couldn’t load the card · no use spent';
 export const RESEARCH_UNREACHABLE_LINE = 'That read didn’t come back.';
 
 /**
- * The door's failure line, by WHETHER THE ROUTE ANSWERED — the shape
- * `filingFailureLine` uses for the same reason (D-90): what a client may say
- * about a failure is decided by what the failure proves, and one function
- * decides it so two surfaces cannot answer differently.
+ * The door's failure line, by WHETHER THE ROUTE ATTESTED THAT NOTHING WAS
+ * WRITTEN — the shape `filingFailureLine` uses for the same reason (D-90):
+ * what a client may say about a failure is decided by what the failure PROVES,
+ * and one function decides it.
  *
- * `answered === true` means a response arrived and refused, which is proof no
- * card was written and therefore no slot consumed. Anything else — a thrown
- * fetch, a request never sent — proves only that no read came back.
+ * `attested === true` means the response carried `noCardWritten` from a path
+ * that provably precedes the route's transaction. Anything else — an
+ * unattested refusal, a platform status, a request that never came back —
+ * proves only that no read came back, and takes the claimless line.
+ *
+ * ONE CAVEAT WORTH WRITING DOWN: `AgentChat.showIt` (the chat's research chip)
+ * does NOT read this function yet. It keeps a hand-rolled status map that
+ * predates this branch, and correcting it means correcting the 409 collision
+ * behind it — the route answers 409 for both `exhausted` and `not active`, and
+ * the chat calls both "All 3 reads used in this battle." That is a
+ * pre-existing defect filed for separate tasking (§2 review, B9 / A6(i)); this
+ * docstring does not claim the third surface is on the selector, because it is
+ * not.
  */
-export const researchFailureLine = (answered) => (
-  answered ? RESEARCH_FAILED_LINE : RESEARCH_UNREACHABLE_LINE
+export const researchFailureLine = (attested) => (
+  attested ? RESEARCH_FAILED_LINE : RESEARCH_UNREACHABLE_LINE
 );
 
 /**

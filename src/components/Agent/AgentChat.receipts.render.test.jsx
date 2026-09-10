@@ -203,17 +203,38 @@ describe('Phase B — the Heard line beneath Filed', () => {
   // verdicts — and the three pairs now say the same thing, which is the
   // symmetry itself.
 
+  // ── Containment, not co-occurrence (§2 review, C6) ───────────────────────
+  //
+  // These rows used to say "the receipt above it is unchanged" in prose and
+  // assert only that `data-receipt="replaced"` and one `data-heard` appeared
+  // SOMEWHERE in the document. Swapping the two cards' stamps kept every one
+  // of those assertions true while printing a scrollback thread's verdict on
+  // the CURRENT card — the precise misreading the slot-bearing sentence exists
+  // to prevent. The card now names its thread, and these read inside it.
+  // THE CARD IS BOUNDED BY ITS OWN RECEIPT, and no production markup was added
+  // to make that possible: `data-receipt` is one per card, the Heard line is
+  // the sibling stacked beneath it, and the next `data-receipt` starts the next
+  // card. Slicing between them is the containment these rows were missing.
+  const cardFor = (html, receiptState) => {
+    const at = html.indexOf(`data-receipt="${receiptState}"`);
+    expect(at, `a card whose receipt is ${receiptState}`).toBeGreaterThan(-1);
+    const next = html.indexOf('data-receipt="', at + 1);
+    return html.slice(at, next === -1 ? undefined : next);
+  };
+
   // Filed × the two verdicts are the two rows above. Replaced:
-  it('a REPLACED card DOES carry the negative — it names its own check, and that check ran', () => {
+  it('a REPLACED card DOES carry the negative — ON THAT CARD, beneath that receipt', () => {
     // t-1 is the replaced thread; give it a withheld stamp of its own.
     const html = render({ receipts: withHeard({ at: T1, heard: false }, 't-1') });
-    expect(html).toContain('Replaced 12:58 PM');
-    expect(html).toContain('Not heard at the 11:30 AM check');
-    expect(html).toContain('data-heard="not-heard"');
-    // The receipt above it is unchanged: the card says the directive was
+    const replaced = cardFor(html, 'replaced');
+    expect(replaced).toContain('Replaced 12:58 PM');
+    expect(replaced).toContain('data-receipt="replaced"');
+    // The line is INSIDE the displaced card: the card says the directive was
     // displaced AND that it was not in front of the decider while it stood.
-    expect(html).toContain('data-receipt="replaced"');
-    // The current card carries no line of its own — only t-1 was stamped.
+    expect(replaced).toContain('Not heard at the 11:30 AM check');
+    expect(replaced).toContain('data-heard="not-heard"');
+    // …and the CURRENT card carries none of it — only t-1 was stamped.
+    expect(cardFor(html, 'filed')).not.toContain('data-heard');
     expect((html.match(/data-heard=/g) || []).length).toBe(1);
   });
 
@@ -222,17 +243,20 @@ describe('Phase B — the Heard line beneath Filed', () => {
   // which card may carry them, not by whether a slot is named. A regression
   // that re-scopes either verdict breaks the pair here first.
   it('SYMMETRY: over one replaced thread the two verdicts are one sentence, one word apart', () => {
-    const lineOf = (html) => (html.match(/data-heard="[^"]*"[^>]*>([^<]*)</) || [])[1];
-    const positive = render({ receipts: withHeard({ at: T1, heard: true }, 't-1') });
-    const negative = render({ receipts: withHeard({ at: T1, heard: false }, 't-1') });
-    expect(lineOf(positive)).toBe('Heard at the 11:30 AM check');
-    expect(lineOf(negative)).toBe('Not heard at the 11:30 AM check');
-    expect(lineOf(negative)).toBe(`Not ${lineOf(positive).replace('Heard', 'heard')}`);
-    // Both land on the SAME card, with the same receipt above them.
-    for (const html of [positive, negative]) {
-      expect(html).toContain('data-receipt="replaced"');
-      expect((html.match(/data-heard=/g) || []).length).toBe(1);
+    const lineIn = (card) => (card.match(/data-heard="[^"]*"[^>]*>([^<]*)</) || [])[1];
+    const positive = cardFor(render({ receipts: withHeard({ at: T1, heard: true }, 't-1') }), 'replaced');
+    const negative = cardFor(render({ receipts: withHeard({ at: T1, heard: false }, 't-1') }), 'replaced');
+    expect(lineIn(positive)).toBe('Heard at the 11:30 AM check');
+    expect(lineIn(negative)).toBe('Not heard at the 11:30 AM check');
+    expect(lineIn(negative)).toBe(`Not ${lineIn(positive).replace('Heard', 'heard')}`);
+    // Both land on the SAME card — t-1's — with the same receipt above them.
+    for (const card of [positive, negative]) {
+      expect(card).toContain('data-receipt="replaced"');
+      expect((card.match(/data-heard=/g) || []).length).toBe(1);
     }
+    // The chunk STARTS at the replaced receipt, so a line inside it is a line
+    // on that card — not merely one that exists somewhere in the document.
+    expect(positive).not.toContain('data-receipt="filed"');
   });
 
   it('a REPLACED card DOES carry the positive — it names its own check, and that check ran', () => {
@@ -255,10 +279,13 @@ describe('Phase B — the Heard line beneath Filed', () => {
     }
     const html = render({ receipts, battleStatus: 'completed' });
     expect(html).toContain('>Expired<');
-    expect(html).toContain('Not heard at the 11:30 AM check');
-    // Both cards are stamped here, so both carry it — the same count the
-    // positive's row below asserts, which is the symmetry at the screen's own
-    // scale.
+    // Both cards are stamped here, so EACH carries its own line — the same
+    // count the positive's row below asserts, which is the symmetry at the
+    // screen's own scale, now checked per card rather than per document.
+    for (const state of ['replaced', 'expired']) {
+      expect(cardFor(html, state)).toContain('Not heard at the 11:30 AM check');
+      expect(cardFor(html, state)).toContain('data-heard="not-heard"');
+    }
     expect((html.match(/data-heard="not-heard"/g) || []).length).toBe(2);
     expect(html).not.toContain('data-heard="heard"');
   });

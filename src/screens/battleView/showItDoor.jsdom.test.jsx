@@ -51,7 +51,32 @@ const renderPanel = (props) => act(() => root.render(
   <WhyPanel symbol="MPC" state={STATE} headingId="h" {...props} />,
 ));
 const BENCH = { slotIso: null, cards: [], flagged: [], rest: ['MPC'], watchlistName: null, footer: null };
-const ROSTER = { ...BENCH, rest: ['MPC', 'SLB', 'NVDA'] };
+// EVERY CHIP SITE, AND NAMES THAT OVERLAP AS SUBSTRINGS (§2 review, C5/C9).
+// `PaneBench` renders chips in three places — on the sentences the check spoke
+// them in, in the `Flagged` group, and in the roster row — and every fixture
+// here used to populate only `rest`, so a defect that dropped the door from the
+// first two was invisible. `MP` beside `MPC` is the other half: with three
+// names sharing no substring, a match written `includes` instead of `===`
+// passed everything.
+const ROSTER = {
+  slotIso: '2026-09-09T16:15:00.000Z',
+  cards: [{ text: 'MPC is holding its base.', symbols: ['MPC'] }],
+  flagged: ['SLB'],
+  rest: ['MP', 'NVDA'],
+  watchlistName: null,
+  footer: 'The agent’s own words',
+};
+/** One name on TWO sentences — what `selectBench` emits for a rationale that
+ *  mentions it twice, and the shape no fixture here could reach before. */
+const TWICE_NAMED = {
+  ...ROSTER,
+  cards: [
+    { text: 'MPC is holding its base.', symbols: ['MPC'] },
+    { text: 'MPC and NVDA both look extended.', symbols: ['MPC', 'NVDA'] },
+  ],
+  flagged: [],
+  rest: [],
+};
 const renderBench = (props) => act(() => root.render(<PaneBench bench={BENCH} {...props} />));
 const door = () => container.querySelector('[data-why-showit="MPC"]');
 const chip = () => container.querySelector('[data-bench-chip="MPC"]');
@@ -163,6 +188,8 @@ describe('5. the same contract on the bench chip', () => {
   });
 });
 
+// The two TRIPWIRE rows that stood here moved to the bottom of this file,
+// beside the note recording what a source grep can and cannot prove.
 describe('4. no optimistic client increment survives a failed route', () => {
   it('the door renders from the count it is HANDED — it holds no state of its own', () => {
     // Re-rendering with the same count after a failed tap cannot move the door,
@@ -175,38 +202,6 @@ describe('4. no optimistic client increment survives a failed route', () => {
     expect(door().textContent).toBe('Show it · 2 of 3');   // unmoved by two taps
   });
 
-  it('TRIPWIRE: neither caller keeps a research count — the number comes from the subscribed doc', () => {
-    const screen = read('src/screens/AgentBattleScreen.jsx');
-    // The count is derived, in one place, from the doc the screen subscribes to.
-    expect(screen).toContain('countResearchUsed(agentBattle?.chatExchanges)');
-    // …and it does no work at all while the flag is dark (review D-3).
-    expect(screen).toContain('showItOn ? countResearchUsed(agentBattle?.chatExchanges) : 0');
-    // …and nothing anywhere holds it in state or moves it by hand.
-    expect(screen).not.toMatch(/setResearchUsed|researchUsed\s*\+\s*1|useState\([^)]*researchUsed/);
-    for (const rel of ['src/components/Agent/AgentChat.jsx', 'src/components/League/battleArena/useArenaEngine.js']) {
-      const src = read(rel);
-      expect(src, `${rel} must keep no research count`).not.toMatch(/researchUsed|researchRemaining|setResearchRemaining/);
-    }
-    // The screen's research state is the in-flight flag and the refused
-    // symbol. NEITHER is a count and neither can stand in for one (review
-    // C-3 / F-2, and the refusal section at the bottom of this file).
-    expect(screen).toContain('const [researchPending, setResearchPending] = useState(false)');
-    expect(screen).toContain('const [researchError, setResearchError] = useState(null)');
-  });
-
-  it('TRIPWIRE: the display function is the ONE source for the door’s integer', () => {
-    const copy = read('src/screens/battleView/battleViewCopy.js');
-    expect(copy).toMatch(/import \{[^}]*RESEARCH_CAP[^}]*researchDoorOrdinal[^}]*\} from '\.\.\/\.\.\/data\/researchCap'/);
-    // No hand-written ratio anywhere in the copy module's CODE. Line comments
-    // are stripped first — the section's own docstring quotes the door's shape
-    // to explain it, which is documentation, not a second source.
-    const code = copy.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
-    expect(code).not.toMatch(/Show it · \d+ of \d+/);
-    // And the function itself is what the door prints (mutation-checked: change
-    // the ordinal and this row fails).
-    expect(researchDoorOrdinal(0)).toBe(1);
-    expect(researchDoorEnabled(RESEARCH_CAP)).toBe(false);
-  });
 });
 
 // ── THE FAILED TAP (Phase C) ────────────────────────────────────────────────
@@ -225,15 +220,15 @@ describe('4. no optimistic client increment survives a failed route', () => {
 // is the tripwire at the bottom; the doors are pure and render what they are
 // handed.
 //
-// `researchError` is `{ symbol, answered }`, never a boolean: one failed tap on
+// `researchError` is `{ symbol, attested }`, never a boolean: one failed tap on
 // MPC must not put a line beside every name on the bench, or on the next
 // piece's panel.
-const REFUSED = { symbol: 'MPC', answered: true };
-const UNREACHED = { symbol: 'MPC', answered: false };
+const ATTESTED = { symbol: 'MPC', attested: true };
+const UNATTESTED = { symbol: 'MPC', attested: false };
 
 describe('the doors’ error state — the panel’s door', () => {
   it('renders the refusal line, and its cost clause, beside the door', () => {
-    renderPanel({ onShowIt: () => {}, researchUsed: 1, researchError: REFUSED });
+    renderPanel({ onShowIt: () => {}, researchUsed: 1, researchError: ATTESTED });
     expect(doorError()).toBeTruthy();
     expect(doorError().textContent).toBe(RESEARCH_FAILED_LINE);
     expect(doorError().textContent).toBe('Couldn’t load the card · no use spent');
@@ -245,7 +240,7 @@ describe('the doors’ error state — the panel’s door', () => {
   });
 
   it('a tap that never came back says SO, and says nothing about the count', () => {
-    renderPanel({ onShowIt: () => {}, researchUsed: 1, researchError: UNREACHED });
+    renderPanel({ onShowIt: () => {}, researchUsed: 1, researchError: UNATTESTED });
     expect(doorError().textContent).toBe(RESEARCH_UNREACHABLE_LINE);
     expect(doorError().textContent).toBe('That read didn’t come back.');
     // THE WHOLE POINT: no cost clause, in either direction. The commit may have
@@ -260,19 +255,19 @@ describe('the doors’ error state — the panel’s door', () => {
     expect(doorError().getAttribute('role')).toBe('alert');
   });
 
-  it('the two sentences are told apart by `answered` ALONE, same symbol, same door', () => {
+  it('the two sentences are told apart by `attested` ALONE, same symbol, same door', () => {
     // Mutation guard for the gate itself: one field differs between these two
     // renders, and it is the field that decides what the client may claim.
-    renderPanel({ onShowIt: () => {}, researchUsed: 1, researchError: REFUSED });
+    renderPanel({ onShowIt: () => {}, researchUsed: 1, researchError: ATTESTED });
     const refused = doorError().textContent;
-    expect(doorError().getAttribute('data-why-showit-answered')).toBe('true');
-    renderPanel({ onShowIt: () => {}, researchUsed: 1, researchError: UNREACHED });
+    expect(doorError().getAttribute('data-why-showit-attested')).toBe('true');
+    renderPanel({ onShowIt: () => {}, researchUsed: 1, researchError: UNATTESTED });
     expect(doorError().textContent).not.toBe(refused);
-    expect(doorError().getAttribute('data-why-showit-answered')).toBe('false');
+    expect(doorError().getAttribute('data-why-showit-attested')).toBe('false');
   });
 
   it('is ABSENT with no error, and clears when the next tap clears the prop', () => {
-    for (const error of [REFUSED, UNREACHED]) {
+    for (const error of [ATTESTED, UNATTESTED]) {
       renderPanel({ onShowIt: () => {}, researchUsed: 1, researchError: error });
       expect(doorError()).toBeTruthy();
       // The screen nulls it as the next tap starts; the panel renders that.
@@ -284,8 +279,8 @@ describe('the doors’ error state — the panel’s door', () => {
   });
 
   it('belongs to the NAME it was about — another piece’s failure says nothing here', () => {
-    for (const answered of [true, false]) {
-      renderPanel({ onShowIt: () => {}, researchUsed: 1, researchError: { symbol: 'SLB', answered } });
+    for (const attested of [true, false]) {
+      renderPanel({ onShowIt: () => {}, researchUsed: 1, researchError: { symbol: 'SLB', attested } });
       expect(doorError()).toBeNull();
       expect(container.textContent).not.toContain('no use spent');
       expect(container.textContent).not.toContain('come back');
@@ -293,7 +288,7 @@ describe('the doors’ error state — the panel’s door', () => {
   });
 
   it('cannot appear on the flag-dark page — no door, no failure to report', () => {
-    for (const error of [REFUSED, UNREACHED]) {
+    for (const error of [ATTESTED, UNATTESTED]) {
       renderPanel({ onShowIt: null, researchUsed: 1, researchError: error });
       expect(doorError()).toBeNull();
       expect(container.textContent).not.toContain('no use spent');
@@ -303,8 +298,8 @@ describe('the doors’ error state — the panel’s door', () => {
 });
 
 describe('the doors’ error state — the bench chip', () => {
-  it('renders the same line, from the same string, beside the chip that failed', () => {
-    renderBench({ onShowIt: () => {}, researchUsed: 1, researchError: REFUSED });
+  it('renders the same line, from the same string, for the chip that failed', () => {
+    renderBench({ onShowIt: () => {}, researchUsed: 1, researchError: ATTESTED });
     expect(chipError()).toBeTruthy();
     expect(chipError().textContent).toBe(RESEARCH_FAILED_LINE);
     expect(chipError().getAttribute('role')).toBe('alert');
@@ -314,17 +309,28 @@ describe('the doors’ error state — the bench chip', () => {
   });
 
   it('a tap that never came back says SO here too, and claims no count', () => {
-    renderBench({ onShowIt: () => {}, researchUsed: 1, researchError: UNREACHED });
+    renderBench({ onShowIt: () => {}, researchUsed: 1, researchError: UNATTESTED });
     expect(chipError().textContent).toBe(RESEARCH_UNREACHABLE_LINE);
     expect(chipError().textContent).not.toMatch(/\buse\b/);
     expect(chipError().textContent).not.toContain('Try again');
     expect(chip().disabled).toBe(false);
   });
 
+  it('the two sentences are told apart by `attested` here too (§2 review, C8)', () => {
+    // The panel's twin was pinned and the bench's was not, so freezing this
+    // attribute was silent. Both are pinned now.
+    renderBench({ onShowIt: () => {}, researchUsed: 1, researchError: ATTESTED });
+    expect(chipError().getAttribute('data-bench-showit-attested')).toBe('true');
+    const attested = chipError().textContent;
+    renderBench({ onShowIt: () => {}, researchUsed: 1, researchError: UNATTESTED });
+    expect(chipError().getAttribute('data-bench-showit-attested')).toBe('false');
+    expect(chipError().textContent).not.toBe(attested);
+  });
+
   it('BOTH DOORS SAY ONE THING PER CASE — the chip and the panel cannot drift', () => {
     // The two surfaces read the same function (BUILD_RULES §9). A copy of the
     // sentence on one of them fails here, whichever one it is.
-    for (const error of [REFUSED, UNREACHED]) {
+    for (const error of [ATTESTED, UNATTESTED]) {
       renderBench({ onShowIt: () => {}, researchUsed: 1, researchError: error });
       const onChip = chipError().textContent;
       renderPanel({ onShowIt: () => {}, researchUsed: 1, researchError: error });
@@ -332,34 +338,91 @@ describe('the doors’ error state — the bench chip', () => {
     }
   });
 
-  it('ONE chip, not the roster — the other names on the bench say nothing', () => {
-    for (const error of [REFUSED, UNREACHED]) {
-      renderBench({ bench: ROSTER, onShowIt: () => {}, researchUsed: 1, researchError: error });
-      expect(container.querySelectorAll('[data-bench-showit-error]')).toHaveLength(1);
-      expect(chipError()).toBeTruthy();
-      expect(container.querySelector('[data-bench-showit-error="SLB"]')).toBeNull();
-      expect(container.querySelector('[data-bench-showit-error="NVDA"]')).toBeNull();
+  // ── The shapes the old fixtures could not reach (§2 review, A3/B3, B5, C5) ─
+
+  it('ONE LINE for a name the check spoke TWICE — one tap is one alert', () => {
+    // `selectBench` emits one card per SENTENCE, so a name mentioned twice
+    // renders two chips. The line used to live inside the chip, so one tap
+    // printed and announced it twice. It is said once, at the group.
+    renderBench({ bench: TWICE_NAMED, onShowIt: () => {}, researchUsed: 1, researchError: ATTESTED });
+    expect(container.querySelectorAll('[data-bench-chip="MPC"]')).toHaveLength(2);
+    expect(container.querySelectorAll('[data-bench-showit-error]')).toHaveLength(1);
+    expect(container.querySelectorAll('[role="alert"]')).toHaveLength(1);
+    // …and BOTH chips point at that one line, so either one a keyboard user
+    // lands on describes the failure.
+    for (const el of container.querySelectorAll('[data-bench-chip="MPC"]')) {
+      expect(el.getAttribute('aria-describedby')).toBe(chipError().getAttribute('id'));
     }
   });
 
-  it('NO FAILURE, NO WRAPPER — the chip is byte-identical to its no-error render', () => {
-    renderBench({ onShowIt: () => {}, researchUsed: 1 });
-    const clean = container.innerHTML;
-    renderBench({ onShowIt: () => {}, researchUsed: 1, researchError: null });
-    expect(container.innerHTML).toBe(clean);
-    renderBench({ onShowIt: () => {}, researchUsed: 1, researchError: { symbol: 'SLB', answered: true } });
-    expect(container.innerHTML).toBe(clean);
-    // …and the wrapper DOES appear once there is something to stack beside it,
-    // so the comparison above is not passing on a component that never renders
-    // the line at all — for either sentence.
-    for (const error of [REFUSED, UNREACHED]) {
-      renderBench({ onShowIt: () => {}, researchUsed: 1, researchError: error });
-      expect(container.innerHTML).not.toBe(clean);
+  it('a FLAGGED name keeps its badge — the line is not spliced through it', () => {
+    // The failure wrapper used to sit between the symbol and its `Flagged`
+    // badge, so the group read `MPC <failure> Flagged`.
+    const flaggedFail = { symbol: 'SLB', attested: true };
+    renderBench({ bench: ROSTER, onShowIt: () => {}, researchUsed: 1, researchError: flaggedFail });
+    const group = container.querySelector('[data-bench-flagged="1"]');
+    expect(group.textContent).toBe('SLBFlagged');
+    // The line is in the group, after it — never inside the name's own unit.
+    const err = container.querySelector('[data-bench-showit-error="SLB"]');
+    expect(err).toBeTruthy();
+    expect(group.contains(err)).toBe(false);
+  });
+
+  it('EVERY chip site carries the door, not just the roster (§2 review, C5)', () => {
+    // Sentence-card chips, flagged chips and roster chips all take the same
+    // door props; every fixture here used to populate `rest` alone.
+    renderBench({ bench: ROSTER, onShowIt: () => {}, researchUsed: 1 });
+    for (const symbol of ['MPC', 'SLB', 'MP', 'NVDA']) {
+      const el = container.querySelector(`[data-bench-chip="${symbol}"]`);
+      expect(el, `a chip for ${symbol}`).toBeTruthy();
+      expect(el.getAttribute('data-bench-chip-door'), `${symbol} is a door`).toBe('showit');
     }
+    // …and a failure on the sentence-card name lands in the named group.
+    renderBench({ bench: ROSTER, onShowIt: () => {}, researchUsed: 1, researchError: ATTESTED });
+    expect(container.querySelectorAll('[data-bench-showit-error]')).toHaveLength(1);
+  });
+
+  it('the match is IDENTITY, not a substring — BOTH directions (§2 review, C9)', () => {
+    // `MP` and `MPC` share a prefix, which `ROSTER` exists to provide: with
+    // three names sharing no substring, a match written `includes` passed
+    // everything. Both orderings are checked, because only one of them is the
+    // dangerous one and a row that tests the safe one proves nothing.
+    //
+    // The failure is on MPC: a chip named MP must not light.
+    renderBench({ bench: ROSTER, onShowIt: () => {}, researchUsed: 1, researchError: ATTESTED });
+    expect(container.querySelector('[data-bench-chip="MPC"]').getAttribute('aria-describedby')).toBeTruthy();
+    expect(container.querySelector('[data-bench-chip="MP"]').getAttribute('aria-describedby')).toBeNull();
+    // …and the failure on MP: a chip named MPC must not light.
+    renderBench({ bench: ROSTER, onShowIt: () => {}, researchUsed: 1, researchError: { symbol: 'MP', attested: true } });
+    expect(container.querySelector('[data-bench-chip="MP"]').getAttribute('aria-describedby')).toBeTruthy();
+    expect(container.querySelector('[data-bench-chip="MPC"]').getAttribute('aria-describedby')).toBeNull();
+    expect(container.querySelector('[data-bench-showit-error="MP"]')).toBeTruthy();
+    expect(container.querySelector('[data-bench-showit-error="MPC"]')).toBeNull();
+  });
+
+  it('a name that is not on this bench at all puts no line on it', () => {
+    renderBench({ bench: ROSTER, onShowIt: () => {}, researchUsed: 1, researchError: { symbol: 'AAPL', attested: true } });
+    expect(container.querySelectorAll('[data-bench-showit-error]')).toHaveLength(0);
+  });
+
+  it('THE CHIP IS BYTE-IDENTICAL WITH OR WITHOUT A FAILURE (§2 review, B4/C7)', () => {
+    // The old row compared whole-container HTML against itself, so a wrapper
+    // on EVERY chip was in both sides and invisible. This compares the CHIP,
+    // across the transition that used to swap its element type and drop a
+    // keyboard user's focus to <body>.
+    renderBench({ onShowIt: () => {}, researchUsed: 1 });
+    const clean = chip().outerHTML;
+    const node = chip();
+    renderBench({ onShowIt: () => {}, researchUsed: 1, researchError: ATTESTED });
+    expect(chip()).toBe(node);                          // the same DOM node
+    expect(chip().tagName).toBe('BUTTON');
+    // Only the describedby pointer differs — the chip gained no wrapper.
+    expect(chip().outerHTML.replace(/ aria-describedby="[^"]*"/, '')).toBe(clean);
+    expect(chipError()).toBeTruthy();
   });
 
   it('the flag-dark span carries no failure either', () => {
-    for (const error of [REFUSED, UNREACHED]) {
+    for (const error of [ATTESTED, UNATTESTED]) {
       renderBench({ researchError: error });
       expect(chip().tagName).toBe('SPAN');
       expect(chipError()).toBeNull();
@@ -396,35 +459,40 @@ describe('one sentence, two surfaces (BUILD_RULES §9)', () => {
   });
 });
 
-describe('the screen’s half: which sentence is set, and when it clears', () => {
-  it('TRIPWIRE: `answered` is TRUE only where a response arrived', () => {
+describe('the screen’s half — now behavioural, not a grep', () => {
+  // THE ROWS THAT MATTER MOVED (§2 review, F2). This file renders the two
+  // doors directly; it cannot see `handleShowIt`, and the source greps that
+  // used to stand in for it were proven worthless — a stray clear in the
+  // handler's `finally` and a prop relocated onto an unrelated component were
+  // each silent across all 12,266 tests. Both now redden
+  // `AgentBattleScreen.showIt.jsdom.test.jsx`, which mounts the screen, taps
+  // the doors and stubs the route.
+  //
+  // What is left here is the one thing a source read is honestly good for: the
+  // doors keep no count of their own (Sol C-2's requirement 4).
+  it('TRIPWIRE: neither door’s caller keeps a research count', () => {
     const screen = read('src/screens/AgentBattleScreen.jsx');
-    // The state names the symbol AND what the failure proves.
-    expect(screen).toContain('const [researchError, setResearchError] = useState(null)');
-    // Cleared as the tap starts — the tap is the retry, so the old line is
-    // stale the moment another one begins.
-    expect(screen).toMatch(/setResearchPending\(true\);\s*\n\s*setResearchError\(null\);/);
-    // The ONLY `answered: true` in the handler is the one guarded by `!res.ok`
-    // — i.e. a response object exists. Everything else is `answered: false`.
-    expect(screen).toContain("if (!res.ok) setResearchError({ symbol: wanted, answered: true });");
-    expect((screen.match(/answered: true/g) || []).length).toBe(1);
-    // The catch and the no-user branch both claim nothing about the count.
-    expect((screen.match(/setResearchError\(\{ symbol: wanted, answered: false \}\)/g) || []).length).toBe(2);
-    // …and the catch is no longer silent: a tap with no answer still reports.
-    const handler = screen.slice(screen.indexOf('const handleShowIt'));
-    const catchBody = handler.slice(handler.indexOf('} catch'), handler.indexOf('finally'));
-    expect(catchBody).toContain('answered: false');
-    expect(catchBody).not.toContain('answered: true');
-  });
-
-  it('TRIPWIRE: the error is not a second count, and both doors are handed it', () => {
-    const screen = read('src/screens/AgentBattleScreen.jsx');
-    // It holds a symbol and a boolean, never a number: the door's integer
-    // still comes from the subscribed doc alone (the section above).
+    // The count is derived, in one place, from the doc the screen subscribes to.
+    expect(screen).toContain('countResearchUsed(agentBattle?.chatExchanges)');
+    expect(screen).toContain('showItOn ? countResearchUsed(agentBattle?.chatExchanges) : 0');
+    expect(screen).not.toMatch(/setResearchUsed|researchUsed\s*\+\s*1|useState\([^)]*researchUsed/);
+    // The failure state holds a symbol and a boolean, never a number.
     expect(screen).not.toMatch(/setResearchError\(\s*\d/);
     expect(screen).not.toMatch(/researchError\s*\+\s*1/);
-    // Both surfaces receive it — a door that cannot report its own failure is
-    // the state this section exists to remove.
-    expect((screen.match(/researchError=\{researchError\}/g) || []).length).toBe(2);
+    for (const rel of ['src/components/Agent/AgentChat.jsx', 'src/components/League/battleArena/useArenaEngine.js']) {
+      expect(read(rel), `${rel} must keep no research count`).not.toMatch(/researchUsed|researchRemaining|setResearchRemaining/);
+    }
+  });
+
+  it('TRIPWIRE: the display function is the ONE source for the door’s integer', () => {
+    const copy = read('src/screens/battleView/battleViewCopy.js');
+    expect(copy).toMatch(/import \{[^}]*RESEARCH_CAP[^}]*researchDoorOrdinal[^}]*\} from '\.\.\/\.\.\/data\/researchCap'/);
+    // No hand-written ratio anywhere in the copy module's CODE. Line comments
+    // are stripped first — the section's own docstring quotes the door's shape
+    // to explain it, which is documentation, not a second source.
+    const code = copy.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+    expect(code).not.toMatch(/Show it · \d+ of \d+/);
+    expect(researchDoorOrdinal(0)).toBe(1);
+    expect(researchDoorEnabled(RESEARCH_CAP)).toBe(false);
   });
 });

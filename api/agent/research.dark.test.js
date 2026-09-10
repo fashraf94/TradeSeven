@@ -72,7 +72,10 @@ describe('the route does not exist', () => {
     const res = mkRes();
     await handler({ method: 'POST', body: { agentId: 'agent-1', battleId: 'battle-1', symbol: 'MPC' } }, res);
     expect(res.statusCode).toBe(404);
-    expect(res.body).toEqual({ error: 'Not found' });
+    // The flag's 404 is a PRE-TRANSACTION refusal, so it carries the
+    // attestation the Show-it doors' cost clause is gated on (§2 review, A1):
+    // nothing was written, and the route is the only party that can say so.
+    expect(res.body).toEqual({ noCardWritten: true, error: 'Not found' });
     expect(state.reads).toBe(0);
     expect(state.marketCalls).toBe(0);
   });
@@ -150,10 +153,45 @@ describe('§6 — the cost and the cron budget', () => {
   });
 
   it('opens exactly ONE transaction, and its only write is chatExchanges', () => {
-    const src = read('api/agent/research.js');
+    // COMMENTS STRIPPED FIRST (the deskHonesty.test.js rule). This counted raw
+    // occurrences, so the docstring that explains WHY the transaction's own
+    // refusals carry no attestation — which has to name `runTransaction` to
+    // explain it — reddened a row about how many transactions the route opens.
+    const src = read('api/agent/research.js')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:])\/\/.*$/gm, '$1');
     expect(src.match(/runTransaction/g)).toHaveLength(1);
     expect(src.match(/tx\.update\(/g)).toHaveLength(1);
     expect(src).toContain('tx.update(battleRef, { chatExchanges: FieldValue.arrayUnion(exchange) })');
+  });
+
+  // ── The attestation's own contract (§2 review, A1) ───────────────────────
+  //
+  // The Show-it doors say `no use spent` only when the body carries
+  // `noCardWritten`, and this is the rule that makes that safe: the field is on
+  // every refusal answered BEFORE the transaction is opened, and on NONE of the
+  // ones answered from inside or after it — because `runTransaction` retries,
+  // and a commit that landed whose reply was lost re-runs against a document
+  // that already holds its own card.
+  it('the attestation is on the pre-transaction refusals, and on none of the rest', () => {
+    // Comments stripped: the prose below the transaction NAMES the constant in
+    // order to say why it is absent there, which is documentation, not a use.
+    const src = read('api/agent/research.js')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:])\/\/.*$/gm, '$1');
+    const txAt = src.indexOf('await db.runTransaction');
+    expect(txAt, 'the transaction').toBeGreaterThan(-1);
+    const before = src.slice(0, txAt);
+    const after = src.slice(txAt);
+    // Every refusal above the transaction attests…
+    const refusalsBefore = before.match(/return res\.status\((?!200)\d+\)/g) || [];
+    expect(refusalsBefore.length).toBeGreaterThan(5);
+    for (const [i, chunk] of before.split('return res.status(').slice(1).entries()) {
+      if (chunk.startsWith('200')) continue;
+      expect(chunk.slice(0, 200), `pre-transaction refusal ${i} attests`).toContain('NO_CARD_WRITTEN');
+    }
+    // …and nothing below it does, the catch included.
+    expect(after).not.toContain('NO_CARD_WRITTEN');
   });
 
   it('debate.js is UNTOUCHED — its book-only guard and its forecasting prompt stay where they are', () => {

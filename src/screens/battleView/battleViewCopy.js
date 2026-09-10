@@ -376,12 +376,14 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // so what the player needs from it is not an instruction but the state of
   // the count that door just named.
   //
-  // An ANSWERED refusal proves no card was written and therefore no slot
-  // consumed, and the line says so. A request that never came back proves only
-  // that no read came back, and the line says only that — the D-90 split, made
-  // by one function in decisionRecord.js so two doors cannot answer
-  // differently.
-  showItDoorFailed: (answered) => recordResearchFailureLine(answered),
+  // A refusal the route ATTESTED (its body carried `noCardWritten`, which only
+  // its pre-transaction paths do) proves no card was written and therefore no
+  // slot consumed, and the line says so. Anything else — an unattested
+  // refusal, a platform 504, a request that never came back — proves only that
+  // no read came back, and the line says only that. The D-90 split, made by
+  // one function in decisionRecord.js so the two doors cannot answer
+  // differently. (The chat's chip is not on it yet — see that docstring.)
+  showItDoorFailed: (attested) => recordResearchFailureLine(attested),
   // D-54's forward path, as a word on the card. `Equip` is the shipped verb for
   // putting a name in front of the agent; the card offers it and never promises
   // what the process will do with it.

@@ -57,6 +57,9 @@ const LABEL_COLOR = {
   [WHY_KIND.ABSENT]: cssVar('text-muted'),
 };
 
+/** The failure line's id — the door points at it, so focus can reach it. */
+const SHOW_IT_ERROR_ID = 'why-showit-error';
+
 const eyebrow = {
   fontSize: 9.5,
   fontWeight: 700,
@@ -152,12 +155,13 @@ export default function WhyPanel({
   // A tap already in flight: the door disables through the SAME contract the
   // exhausted state uses, so a 2-15 s route cannot be tapped twice (review F-2).
   researchPending = false,
-  // The last tap that failed, as `{ symbol, answered }` — never a boolean.
+  // The last tap that failed, as `{ symbol, attested }` — never a boolean.
   // The SYMBOL because the failure belongs to the name it was about: the screen
   // holds one tap at a time, but its error outlives the tap, and a player who
   // taps MPC, gets a failure and then opens SLB's panel must not read it there.
-  // `answered` because WHICH sentence the door may say is decided by what the
-  // failure proves — the copy layer maps it, this panel only passes it on.
+  // `attested` because WHICH sentence the door may say is decided by what the
+  // failure PROVES — whether the route's body said nothing was written. The
+  // copy layer maps it; this panel only passes it on.
   researchError = null,
   // D-89 — the book panel's close. The panel is a DISCLOSURE the score header
   // owns: the header carries the `aria-expanded`, so the way out has to hand
@@ -500,6 +504,16 @@ export default function WhyPanel({
               {evidenceFacts.map((fact) => (
                 <span
                   key={fact.text}
+                  // `role="img"` is not decoration — it is what makes the name
+                  // above LEGAL (§2 review, A5/B7). A bare <span> maps to ARIA
+                  // `generic`, where naming is PROHIBITED, so `aria-label` on
+                  // it may be dropped outright and the whole point of the name
+                  // with it. This repo already names atomic spans this way at
+                  // three sites (ResultCard.jsx:71, EntrySelector.jsx:297,
+                  // CorrelationLab.jsx:679). Only the named fact takes it: an
+                  // unnamed span keeps `generic`, which is correct for text
+                  // that says all of itself.
+                  role={fact.ariaLabel ? 'img' : undefined}
                   title={fact.title ?? undefined}
                   aria-label={fact.ariaLabel ?? undefined}
                   style={{
@@ -583,6 +597,11 @@ export default function WhyPanel({
               type="button"
               data-why-showit={symbol}
               aria-label={COPY.showItDoorName(symbol, researchUsed)}
+              // The alert announces itself on insertion; this is what a
+              // keyboard user gets when they tab BACK to the door afterwards
+              // (§2 review, A5b). Without it the door's name says nothing
+              // about the failure and the line is unreachable by focus.
+              aria-describedby={researchError?.symbol === symbol ? SHOW_IT_ERROR_ID : undefined}
               title={researchDoorEnabled(researchUsed) ? undefined : COPY.showItExhausted}
               disabled={researchPending || !researchDoorEnabled(researchUsed)}
               onClick={() => onShowIt(symbol)}
@@ -618,12 +637,13 @@ export default function WhyPanel({
               flag-dark page stays the two-door page it is today. */}
           {!isBook && typeof onShowIt === 'function' && researchError?.symbol === symbol && (
             <span
+              id={SHOW_IT_ERROR_ID}
               data-why-showit-error={symbol}
-              data-why-showit-answered={researchError.answered ? 'true' : 'false'}
+              data-why-showit-attested={researchError.attested ? 'true' : 'false'}
               role="alert"
               style={{ fontSize: 11.5, color: cssVar('text-muted') }}
             >
-              {COPY.showItDoorFailed(researchError.answered)}
+              {COPY.showItDoorFailed(researchError.attested)}
             </span>
           )}
           {!isBook && typeof onScopeToPiece === 'function' && COPY.inTheChat(mentionCount) && (

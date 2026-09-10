@@ -178,12 +178,37 @@ export async function readTechnicals(symbol) {
   }
 }
 
+/**
+ * THE PRE-TRANSACTION ATTESTATION (review §2, finding A1 — the one the client
+ * may build a cost claim on).
+ *
+ * A refusal answered from BEFORE `db.runTransaction` is opened proves, of its
+ * own construction, that this request wrote nothing and therefore consumed no
+ * slot. Those bodies carry this field, and the Show-it doors say `no use spent`
+ * only when they see it (`src/data/decisionRecord.js researchFailureLine`).
+ *
+ * IT IS NOT ON THE TRANSACTION'S OWN REFUSALS, AND THAT IS THE POINT.
+ * `runTransaction` RETRIES: `@google-cloud/firestore` re-runs the body on a
+ * retryable commit error (UNAVAILABLE, DEADLINE_EXCEEDED, INTERNAL, …), and a
+ * commit that LANDS whose reply is lost re-runs against a fresh read that now
+ * contains its own card — which on the last slot returns `exhausted` → 409
+ * with a slot spent. The `catch` below is the same shape: it also covers the
+ * `res.json()` after a committed write, the defect this repo already paid for
+ * on `api/agent/chat.js` (the `· nothing was sent` clause, deleted for it).
+ * Neither can attest anything, so neither says it, and a platform 502/504 —
+ * which carries no body of ours at all — says nothing by construction.
+ *
+ * The client falls back to a claimless sentence wherever the field is absent,
+ * so a new refusal path added without it is SAFE by default.
+ */
+export const NO_CARD_WRITTEN = Object.freeze({ noCardWritten: true });
+
 export default async function handler(req, res) {
   // 1. Security middleware + rate limit (the debate route's shape: a data read).
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 10, windowMs: 60000 } })) return;
 
   // 2. Method.
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method !== 'POST') return res.status(405).json({ ...NO_CARD_WRITTEN, error: 'Method not allowed' });
 
   // 3. Auth — the uid comes from the token, never the body.
   const user = await requireAuth(req, res);
@@ -195,7 +220,7 @@ export default async function handler(req, res) {
   // check answers an ANONYMOUS caller differently while dark (404) and while
   // lit (401), which is a free oracle on an unreleased feature's rollout state.
   // file-directive.js auths first for the same reason.
-  if (!SHOW_IT_ENABLED) return res.status(404).json({ error: 'Not found' });
+  if (!SHOW_IT_ENABLED) return res.status(404).json({ ...NO_CARD_WRITTEN, error: 'Not found' });
 
   // 5. Body.
   //
@@ -211,10 +236,10 @@ export default async function handler(req, res) {
   const body = req.body || {};
   const { agentId, battleId, symbol } = body;
   if (!nonEmpty(agentId) || !nonEmpty(battleId) || !nonEmpty(symbol)) {
-    return res.status(400).json({ error: 'agentId, battleId and symbol are required' });
+    return res.status(400).json({ ...NO_CARD_WRITTEN, error: 'agentId, battleId and symbol are required' });
   }
   if (!isValidDocId(agentId) || !isValidDocId(battleId)) {
-    return res.status(400).json({ error: 'agentId and battleId must be document ids' });
+    return res.status(400).json({ ...NO_CARD_WRITTEN, error: 'agentId and battleId must be document ids' });
   }
   const requestedSymbol = String(symbol).trim().slice(0, MAX_SYMBOL_LENGTH);
 
@@ -225,24 +250,26 @@ export default async function handler(req, res) {
   try {
     battleRef = db.collection('agentBattles').doc(battleId);
     const snap = await battleRef.get();
-    if (!snap.exists) return res.status(404).json({ error: 'Battle not found' });
+    if (!snap.exists) return res.status(404).json({ ...NO_CARD_WRITTEN, error: 'Battle not found' });
     battle = snap.data();
   } catch (err) {
     console.error('[agent/research] battle read failed:', err.message);
-    return res.status(500).json({ error: 'Research failed' });
+    // Before the transaction exists — this 500 CAN attest. The one at the
+    // bottom cannot, and does not.
+    return res.status(500).json({ ...NO_CARD_WRITTEN, error: 'Research failed' });
   }
 
   // 6-7. Owner, active, and the agent's binding — the shared predicate.
-  if (battle.ownerId !== user.uid) return res.status(403).json({ error: 'Forbidden' });
-  if (battle.status !== 'active') return res.status(409).json({ error: 'Battle is not active' });
-  if (!agentBelongsToBattle(battle, agentId)) return res.status(403).json({ error: 'Forbidden' });
+  if (battle.ownerId !== user.uid) return res.status(403).json({ ...NO_CARD_WRITTEN, error: 'Forbidden' });
+  if (battle.status !== 'active') return res.status(409).json({ ...NO_CARD_WRITTEN, error: 'Battle is not active' });
+  if (!agentBelongsToBattle(battle, agentId)) return res.status(403).json({ ...NO_CARD_WRITTEN, error: 'Forbidden' });
 
   // 8. The universe check. A name that has LEFT the universe (the hot bench is
   //    rebuilt mid-tick) gets an honest 404 rather than a card about a name the
   //    battle no longer holds.
   const canonical = canonicalUniverseSymbol(battle, requestedSymbol);
   if (!canonical || !TICKER_RE.test(canonical)) {
-    return res.status(404).json({ error: `${requestedSymbol} is not in this battle` });
+    return res.status(404).json({ ...NO_CARD_WRITTEN, error: `${requestedSymbol} is not in this battle` });
   }
 
   // 9. The cap, pre-checked. NOT authorization — the transaction below re-reads
@@ -250,6 +277,7 @@ export default async function handler(req, res) {
   const usedBefore = countResearchUsed(battle.chatExchanges);
   if (usedBefore >= RESEARCH_CAP) {
     return res.status(409).json({
+      ...NO_CARD_WRITTEN,
       status: RESEARCH_STATUS.EXHAUSTED,
       used: usedBefore,
       remaining: 0,
@@ -324,6 +352,10 @@ export default async function handler(req, res) {
       return { kind: 'shown', used: used + 1, exchange };
     });
 
+    // NO ATTESTATION BELOW THIS LINE. These refusals come from a transaction
+    // that may have been RETRIED after a commit that landed (see
+    // NO_CARD_WRITTEN above), so none of them proves this request wrote
+    // nothing — and the doors fall back to the claimless sentence.
     if (outcome.kind === 'battle_not_found') return res.status(404).json({ error: 'Battle not found' });
     if (outcome.kind === 'forbidden') return res.status(403).json({ error: 'Forbidden' });
     if (outcome.kind === 'not_active') return res.status(409).json({ error: 'Battle is not active' });
@@ -350,6 +382,9 @@ export default async function handler(req, res) {
     });
   } catch (err) {
     console.error('[agent/research] transaction failed:', err.message);
+    // Deliberately unattested: this catch also covers a throw AFTER the commit
+    // landed (the `res.json()` shape that cost `api/agent/chat.js` its
+    // `· nothing was sent` clause), so it cannot claim nothing was written.
     return res.status(500).json({ error: 'Research failed' });
   }
 }

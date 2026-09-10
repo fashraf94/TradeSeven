@@ -161,8 +161,6 @@ describe('the CURRENT DIRECTIVE line gains the Heard fact', () => {
     // label, byte for byte.
     const suffix = ` · ${label.charAt(0).toLowerCase()}${label.slice(1)}`;
     expect(block).toContain(`"Protect the lead" — filed 11:31 AM${suffix}`);
-    // …and the line differs from the card's ONLY by that frame.
-    expect(suffix.slice(3)).toBe(label.replace('Heard', 'heard'));
   });
 
   it('TRIPWIRE: the module declares no sentence of its own for this fact', () => {
@@ -173,16 +171,21 @@ describe('the CURRENT DIRECTIVE line gains the Heard fact', () => {
     // above the call quotes the copy it deleted in order to say what was
     // deleted, and a guard that scanned comments would ban the note explaining
     // itself. What ships to the model is string literals and template code.
+    //
+    // THEN THE ONE SENTENCE THAT MUST SHIP, the NARRATOR_EXEMPT_SENTENCES rule
+    // (deskHonesty.test.js): the grounding rules NAME the line in order to
+    // teach the model what it claims, so that sentence is removed before the
+    // scan rather than the whole file being exempted.
     const code = source
       .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/(^|[^:])\/\/.*$/gm, '$1');
-    // Scoped to an INTERPOLATED copy of the sentence, not to the words. The
-    // grounding rules must NAME the line to explain what it claims — `"Heard
-    // at the {t} check" means the directive was in front of the process` —
-    // and that sentence ships, so banning the words would ban the rule that
-    // teaches them. A re-declared copy is the thing being banned, and a copy
-    // needs the slot interpolated into it.
-    expect(code).not.toMatch(/heard at the \$\{/i);
+      .replace(/(^|[^:])\/\/.*$/gm, '$1')
+      .replace('"Heard at the {t} check" means the directive was in front of the process at that check', '');
+    // THE SENTENCE, NOT ONE SPELLING OF IT (§2 review, C4). This banned
+    // `heard at the ${` — an INTERPOLATED copy — and a copy built by
+    // CONCATENATION (`' · heard at the ' + slot + ' check'`) matched nothing
+    // and went green across 646 files. The words are what must not be
+    // re-declared here, however they are assembled.
+    expect(code).not.toMatch(/heard at the/i);
     expect(code).toContain('heardLabel(heardSlot)');
   });
 
