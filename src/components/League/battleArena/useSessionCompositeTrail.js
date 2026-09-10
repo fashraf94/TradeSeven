@@ -44,6 +44,14 @@
 // reading whatever each upstream last delivered. A regular output cadence over
 // ragged inputs is the correct trade (A3.2).
 //
+// ── ONE CLOCK, INJECTED (`trailNow`) ────────────────────────────────────────
+// The trail stamps three different instants — the seed's ET day anchor, each
+// appended snapshot, and the head — and ALL THREE resolve through `trailNow`
+// below, the only place in this module that touches `Date`. A caller that
+// injects `nowFn` therefore owns every instant the trail stamps, with no
+// reading left over that could fall through to the ambient clock. Why that
+// matters, in an incident rather than in principle, is written on `trailNow`.
+//
 // ── THE HEAD IS NOT A SAMPLE (§9) ───────────────────────────────────────────
 // A regular output cadence is right for the LINE. It is wrong for the NUMBER.
 // The tip value, the crown and the cut are statements about NOW, and sourcing
@@ -192,6 +200,39 @@ export function appendTrailSnapshot(prev, { ids, scoresAtLast, seatLive, t, capa
 }
 
 /**
+ * THE ONE CLOCK — every instant this module stamps, and the only `Date` read in
+ * the file.
+ *
+ * These three readings were three separate `(nowFn || Date.now)()` expressions:
+ * the seed's ET day anchor, the timer's snapshot `t`, and the head's `t`. Three
+ * expressions is three chances for a reading to slip past an injected clock,
+ * and the ET-day guard in `appendTrailSnapshot` compares the day of a SAMPLE
+ * against the day the SEED was anchored on — so a trail anchored by one clock
+ * and stamped by another drops every sample it holds the moment the two land on
+ * different ET days, which is a state neither the caller nor a test can see
+ * coming.
+ *
+ * Not hypothetical: it is the 03:52-UTC CI flake. With no clock injected, every
+ * reading fell through to the ambient `Date.now` — which under fake timers is
+ * seeded from the REAL wall clock (vitest installs its clock at `Date.now()`) —
+ * so a run that started in the few minutes before 00:00 America/New_York
+ * crossed the day boundary partway through a test, rolled the trail away, and
+ * failed a row that passed at every other hour. Same code, green at 14:30 and
+ * red at 03:52.
+ *
+ * One function closes that class: injecting a clock is now all-or-nothing.
+ * Pinned by the "takes every instant from the ONE injected clock" row in
+ * useSessionCompositeTrail.test.jsx, which mutation-fails on each of the three
+ * call sites independently.
+ *
+ * @param {(() => number)|null|undefined} nowFn - the injected clock, if any
+ * @returns {number} epoch ms
+ */
+export function trailNow(nowFn) {
+  return typeof nowFn === 'function' ? nowFn() : Date.now();
+}
+
+/**
  * The React wrapper: one timer, latest-inputs-by-ref, no persistence.
  *
  * Inputs come from buildArenaModel (`scoresAtLast` / `seatLive` / `seatBanked`),
@@ -206,7 +247,9 @@ export function appendTrailSnapshot(prev, { ids, scoresAtLast, seatLive, t, capa
  * @param {boolean} args.enabled - accumulate only while the round is live AND the fuse is on
  * @param {number} [args.intervalMs]
  * @param {number} [args.capacity]
- * @param {() => number} [args.nowFn] - injectable clock (tests)
+ * @param {() => number} [args.nowFn] - THE clock (see `trailNow`): inject it and
+ *        every instant the trail stamps is yours; omit it and all three are
+ *        ambient. Never one and not the others.
  * @returns {{ seeds: Object, samples: Object, ticks: number, head: Object|null }}
  */
 export function useSessionCompositeTrail({
@@ -226,7 +269,7 @@ export function useSessionCompositeTrail({
   // a fresh-but-equal object identity each render does not.
   const seedKey = (ids || []).join(',');
   React.useEffect(() => {
-    setTrail(emptyTrail(seedKey ? { ...seatBanked } : {}, etDayKey((nowFn || Date.now)())));
+    setTrail(emptyTrail(seedKey ? { ...seatBanked } : {}, etDayKey(trailNow(nowFn))));
     // seatBanked is intentionally read at seat-set change only: the seed is the
     // banked CLOSE, which does not move intraday. Re-seeding on every banked
     // object identity would reset the trail each render.
@@ -237,7 +280,7 @@ export function useSessionCompositeTrail({
     if (!enabled || !seedKey) return undefined;
     const tick = () => {
       const cur = latest.current;
-      const t = (cur.nowFn || Date.now)();
+      const t = trailNow(cur.nowFn);
       setTrail((prev) => appendTrailSnapshot(prev, {
         ids: cur.ids, scoresAtLast: cur.scoresAtLast, seatLive: cur.seatLive, t,
         capacity: cur.capacity, seeds: cur.seatBanked,
@@ -254,7 +297,7 @@ export function useSessionCompositeTrail({
   // with the fuse dark nothing accumulates AND nothing is resolved.
   const head = React.useMemo(
     () => (enabled
-      ? trailHead(trail, { ids, scoresAtLast, seatLive, t: (nowFn || Date.now)() })
+      ? trailHead(trail, { ids, scoresAtLast, seatLive, t: trailNow(nowFn) })
       : null),
     [enabled, trail, ids, scoresAtLast, seatLive, nowFn],
   );

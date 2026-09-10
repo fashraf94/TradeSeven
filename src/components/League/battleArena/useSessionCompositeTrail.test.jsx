@@ -24,6 +24,24 @@ const IDS = [YOU, 'r1', 'r2', 'r3'];
 const BANKED = { [YOU]: 10, r1: 20, r2: 30, r3: 40 };
 const TICK = 60_000;
 
+// ── THE PINNED SESSION CLOCK ────────────────────────────────────────────────
+// Tue 2026-06-16, 16:30Z = 12:30 ET — mid-session, market open (the anchor
+// heroStripAgreement.test.jsx already uses for the same hook).
+//
+// It is pinned because vitest installs its fake clock at the REAL `Date.now()`
+// (FakeTimers.useFakeTimers → `now: this._fakingDate || Date.now()`), so an
+// unpinned run inherits whatever hour CI happened to start at — while the rows
+// below simulate up to twelve minutes, which is enough to walk across 00:00
+// America/New_York and trip the trail's ET-day roll. That is the 03:52-UTC
+// flake: the same code green at 14:30 and red at 03:52, because at 03:52 the
+// tenth tick of "the trail never extends past the newest real sample" landed on
+// the next ET day, rolled the trail, and left `samples[YOU]` undefined.
+//
+// Pinning inside a known session removes the hour of day from the inputs. It is
+// the harness half of the fix; the code half is `trailNow` (the hook now takes
+// EVERY instant from one injectable source, so pinning the clock pins the hook).
+const RTH_NOON = Date.parse('2026-06-16T16:30:00.000Z');
+
 // Mirrors buildArenaModel's sampling loop, using the REAL resolver + predicate.
 function resolve({ youLiveScore = null, liveComposites = null } = {}) {
   const scoresAtLast = {};
@@ -55,7 +73,7 @@ function advance(ms) {
   act(() => { vi.advanceTimersByTime(ms); });
 }
 
-beforeEach(() => { vi.useFakeTimers(); });
+beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(RTH_NOON); });
 afterEach(() => {
   if (root) act(() => root.unmount());
   root = null; container = null; latest = null;
@@ -238,6 +256,34 @@ describe('useSessionCompositeTrail — seed, capacity, gating, hygiene', () => {
 
     expect(latest.samples[YOU]).toHaveLength(afterLive);
     expect(latest.ticks).toBe(2);
+  });
+
+  it('takes every instant from the ONE injected clock — the ambient one cannot roll the day', () => {
+    // The 03:52-UTC flake, as a row. The AMBIENT clock is parked two minutes
+    // before 00:00 ET and walks across it during the advance; the INJECTED
+    // clock sits mid-session on the day before, and never leaves it. Any one of
+    // the hook's three time readings — the seed's day anchor, the tick stamp,
+    // the head — that slipped past `nowFn` would read the ambient day, disagree
+    // with the other two, and roll the trail away mid-test.
+    //
+    // Mutation-checked one site at a time: pointing the seed at `Date.now()`
+    // breaks the dayKey row, the head breaks the head.t row, the tick breaks
+    // the ticks/samples rows. All three are asserted here on purpose.
+    vi.setSystemTime(Date.parse('2026-06-18T03:58:00.000Z')); // 23:58 ET, two minutes to midnight
+    let injected = RTH_NOON;
+    const nowFn = () => injected;                             // ONE stable identity
+
+    mount({ ...resolve({ youLiveScore: 12, liveComposites: { r1: 21, r2: 31, r3: 41 } }), nowFn });
+    expect(latest.dayKey).toBe('2026-06-16');       // the seed anchored on the injected day
+    expect(latest.head.t).toBe(RTH_NOON);           // …and so did the head
+
+    for (let k = 0; k < 4; k++) { injected += TICK; advance(TICK); }
+
+    expect(latest.ticks).toBe(4);                   // four ticks, no roll swallowing any
+    expect(latest.samples[YOU]).toHaveLength(4);
+    expect(latest.samples[YOU].map((s) => s.t))
+      .toEqual([1, 2, 3, 4].map((k) => RTH_NOON + k * TICK));
+    expect(latest.dayKey).toBe('2026-06-16');       // still the injected day, hours from any boundary
   });
 });
 
