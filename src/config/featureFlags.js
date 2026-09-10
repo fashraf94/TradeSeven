@@ -2208,12 +2208,13 @@ export function getVoiceGroundingMode(uid) {
  * None changes a decision; the fenced decider reads a fixed whitelist of the
  * entry (formatRecentEvals) and is inert to the new keys (pinned).
  *
- * FALSE at merge (D-113): merge dark → the founder flips it in its own PR
- * after B1 merges → the first stamped check on production is the smoke (crons
- * do not run on preview). When FALSE the composed entry is BYTE-IDENTICAL to
- * today's (the golden in agent-evaluate.tickStamps.flagOff.test.js) and no
- * extra work runs at the stamp site. Clients render on PRESENCE of the keys,
- * never on this flag — nothing client-side reads it.
+ * LIVE since the flip (D-113): B1 merged dark and the founder flipped it here,
+ * in its own PR, so the first stamped check on production is the smoke (crons
+ * do not run on preview). FALSE is now the ROLLBACK, one literal on the export
+ * below: with it false the composed entry is BYTE-IDENTICAL to the pre-B1 entry
+ * (the golden in agent-evaluate.tickStamps.flagOff.test.js) and no extra work
+ * runs at the stamp site. Clients render on PRESENCE of the keys, never on this
+ * flag — nothing client-side reads it, so no client file moved at the flip.
  *
  * Read at CALL time at the ONE splice in agent-evaluate.js (`if
  * (TICK_STAMPS_ENABLED && promptBuilt)` inside processAgentBattle, inside the
@@ -2234,7 +2235,7 @@ export function getVoiceGroundingMode(uid) {
  *   NOT move; the flag-on suite mocks it true and does not move either.
  */
 // Pinned by: tickStampsFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const TICK_STAMPS_ENABLED = false;
+export const TICK_STAMPS_ENABLED = true;
 
 /**
  * PHASE C — SHOW IT (spec V1 §6 / V1.1 ruling 4, ledger D-116 → D-122).

@@ -93,8 +93,15 @@ const DARK_BY_DESIGN = {
   // Rollover and dormancy stay dark below.
   MANDATE_ROLLOVER_ENABLED:
     'Spec 1 rollover sweep (§5.3) — built P4; flips only after a founder preview smoke',
-  TICK_STAMPS_ENABLED:
-    'Phase B — the three tick stamps (Heard / the evidence / the candidates) on the evaluation entry (D-113); built dark in B1, flips in the founder\'s own PR after B1 merges — the first stamped production check is the smoke (crons do not run on preview); flag-off entry byte-identical (agent-evaluate.tickStamps.flagOff.test.js)',
+  // TICK_STAMPS_ENABLED intentionally ABSENT: it flipped true on 2026-09-10
+  // (src/config/featureFlags.js) in the founder's own PR after B1 merged — the
+  // deliberate flip drops it here in the same change, per the guard's own "if
+  // DELIBERATE" instruction. Re-adding it while it ships true fails the
+  // DARK_BY_DESIGN integrity test below. Its pin in tickStampsFlags.test.js now
+  // asserts the live true value. The smoke is the first stamped PRODUCTION
+  // check: crons do not run on preview, so this flip shows nothing until the
+  // founder merges and deploys. The flag-off golden keeps its own explicit
+  // false mock and did not move with the flip.
   SHOW_IT_ENABLED:
     'Phase C — Show it, the research path (D-116 → D-122): the route, the research chip and the three doors. Built dark; flips in the founder\'s own one-line PR after the build merges, with Vercel preview as the smoke surface. Flag-off the route 404s, no chip label resolves and the grounded prompt is byte-identical (research.dark.test.js)',
   // PROFIT_TARGET_EXECUTOR_ENABLED intentionally ABSENT: it flipped true in the
