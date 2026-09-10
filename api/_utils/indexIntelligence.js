@@ -2,6 +2,8 @@
 // Pure computation helpers for Index Intelligence.
 // No API calls, no Firestore — just math and classification logic.
 
+import { calculateSMA } from './technicalCalculations.js';
+
 // Tunable thresholds — adjust these to change classification sensitivity.
 const THRESHOLDS = {
   leadershipSpread: 0.3,        // % difference to detect index leadership
@@ -240,6 +242,133 @@ export function computeRSTrend(stockCloses, spyCloses, lookback = 10) {
 }
 
 /**
+ * The largest ratio between the biggest and smallest adjustment factor a window
+ * may carry before its raw closes stop being comparable to each other.
+ *
+ * The factor is `adjusted / raw` per bar; it moves at every corporate action.
+ * A DIVIDEND moves it by the payout — under 1% for an ordinary quarterly payer,
+ * a few percent even across a year of them. A SPLIT moves it by the split
+ * ratio, and the smallest ratio in common use is 5:4 = 1.25. 1.15 sits in the
+ * gap: above any plausible run of dividends, below any split.
+ */
+const SPLIT_FACTOR_SPREAD = 1.15;
+
+/**
+ * Does this window re-denominate the share, rather than just distribute cash?
+ *
+ * Across a split the RAW closes are not comparable to each other — $200 before
+ * a 2:1 and $100 after are the same ownership — so their average is not a price
+ * anything can be above or below. The ADJUSTED series is the correct basis
+ * there, and is what the shipped comparison already used. Below the threshold
+ * the only corporate actions in the window are distributions, where the raw
+ * closes ARE comparable and the adjusted ones are the distorted pair.
+ *
+ * Unmeasurable (a zero or non-finite factor) counts as carrying one: falling
+ * back is always the shipped behaviour, never a new failure.
+ */
+function windowIsRedenominated(closes, rawCloses, period) {
+  let min = Infinity;
+  let max = -Infinity;
+  for (let i = 0; i < period; i++) {
+    const raw = rawCloses[i];
+    const factor = raw > 0 ? closes[i] / raw : NaN;
+    if (!Number.isFinite(factor) || factor <= 0) return true;
+    if (factor < min) min = factor;
+    if (factor > max) max = factor;
+  }
+  return max / min > SPLIT_FACTOR_SPREAD;
+}
+
+/**
+ * Pick the ONE basis each price-vs-SMA flag is computed on: price and average
+ * from the same series, or neither.
+ *
+ * The defect. `fetchOHLCV` maps `close: d.adjusted_close`
+ * (compute-index-intelligence.js:150) — the split/dividend-ADJUSTED close, in
+ * which every bar dated on or before an ex-date is scaled DOWN by the payout.
+ * `injectIntradayBar` then splices today's real-time quote onto the front of
+ * that array (`:229-254`), and a real-time quote is UNADJUSTED by construction:
+ * it is the price the tape is printing. So `currentPrice > technicals.sma50`
+ * compared a raw number against an average made of adjusted ones. One ordinary
+ * quarterly ex-date inside the window pulls the bars before it down by the
+ * payout, which lands the average ~0.3–1% low for a typical payer — and the
+ * flag reads "above" for every price in that gap. Dividend adjustment only ever
+ * scales bars DOWN, so the error is one-signed: systematically BULLISH, four
+ * times a year per payer, with no reading in the output that shows it happened.
+ *
+ * The rule is the repo's, not a new one. Guard 1 takes the UNADJUSTED
+ * `rawClose` for exactly this reason — "so a split/dividend can't skew the
+ * raw-vs-raw comparison (same basis as Guard 2)" (decide.js:1050-1054) — and
+ * Guard 2 prefers `refRawClose` over `refAdjClose` on the same grounds
+ * (baselineValidation.js:158-160, :238-239). A live price is compared to a raw
+ * reference, or to nothing. This is that precedent applied to the averages.
+ *
+ * The basis is chosen PER PERIOD, because the question is a property of the
+ * window and not of the symbol: a 20-day window is almost never re-denominated
+ * even in the quarter a stock splits, so its flag stays on the honest basis
+ * while the 200-day one falls back. Each average returned here is the one
+ * published in `factors`, so the boolean and the number a reader might pair
+ * can never disagree (BUILD_RULES §9).
+ *
+ * Degrades to the shipped behaviour, byte for byte, whenever the raw series is
+ * missing, a different length, or carries a non-finite value — a caller that
+ * has only the adjusted series is no worse off than before, and a half-built
+ * raw series never silently becomes half a comparison.
+ *
+ * KNOWN RESIDUAL, stated on purpose: in a window that IS re-denominated the
+ * shipped dividend skew survives, because the adjusted series is the only one
+ * of the two that is internally comparable there. Removing it needs a
+ * split-only-adjusted series (separating the split jumps in the factor from the
+ * dividend ones and re-applying only the former), which is a larger change than
+ * this one and is not attempted here.
+ *
+ * @param {object} args
+ * @param {number[]} args.closes - adjusted closes, newest-first
+ * @param {number[]} [args.rawCloses] - unadjusted closes, same order and length
+ * @param {object} args.technicals - pre-computed { sma20, sma50, sma200 } off `closes`
+ * @returns {{price: number, sma20: number|null, sma50: number|null, sma200: number|null,
+ *            basis: {sma20: string, sma50: string, sma200: string}}}
+ */
+export function resolveSmaBasis({ closes, rawCloses, technicals }) {
+  const t = technicals || {};
+  // The shipped comparison: the live quote at index 0 against averages the
+  // caller computed over the adjusted series.
+  const shipped = {
+    price: Array.isArray(closes) ? closes[0] : undefined,
+    sma20: t.sma20 ?? null,
+    sma50: t.sma50 ?? null,
+    sma200: t.sma200 ?? null,
+    basis: { sma20: 'adjusted', sma50: 'adjusted', sma200: 'adjusted' },
+  };
+
+  const usable = Array.isArray(rawCloses)
+    && Array.isArray(closes)
+    && rawCloses.length === closes.length
+    && rawCloses.length > 0
+    && rawCloses.every((v) => Number.isFinite(v))
+    && closes.every((v) => Number.isFinite(v));
+
+  if (!usable) return shipped;
+
+  // Index 0 carries no corporate action after it, so the raw and adjusted
+  // closes agree there: the price was never the wrong number. The averages
+  // were.
+  const out = { price: rawCloses[0], basis: {} };
+  for (const period of [20, 50, 200]) {
+    const key = `sma${period}`;
+    if (rawCloses.length < period || windowIsRedenominated(closes, rawCloses, period)) {
+      out[key] = shipped[key];
+      out.basis[key] = shipped.basis[key];
+    } else {
+      out[key] = calculateSMA(rawCloses, period);
+      out.basis[key] = 'raw';
+    }
+  }
+  return out;
+}
+
+
+/**
  * Compute the full Technical Score for a single stock.
  *
  * 7 Factors (RS Trend Direction removed, Sector RS + MACD added):
@@ -261,6 +390,9 @@ export function computeRSTrend(stockCloses, spyCloses, lookback = 10) {
  * @param {string} params.rsTrend - Pre-computed RS trend ('rising'|'flat'|'falling')
  * @param {object} params.technicals - Pre-computed indicators { rsi, sma20, sma50, sma200, macd }
  * @param {number|null} [params.sectorRSPercentile] - RS vs sector ETF percentile (0-100)
+ * @param {number[]} [params.rawCloses] - UNADJUSTED closes (newest-first), same
+ *   length and order as `closes`. When present the price-vs-SMA flags are
+ *   computed on it instead — see `resolveSmaBasis`. Absent → unchanged.
  * @returns {object} Technical score breakdown
  */
 export function computeTechnicalScore({
@@ -273,6 +405,7 @@ export function computeTechnicalScore({
   rsTrend,
   technicals,
   sectorRSPercentile,
+  rawCloses,
 }) {
   const currentPrice = closes[0];
 
@@ -284,10 +417,13 @@ export function computeTechnicalScore({
   const sectorRSScore = Math.round((sectorRSPct / 100) * 15);
 
   // --- SMA Score (out of 18) ---
+  // Price and average on ONE basis — see `resolveSmaBasis` for why the
+  // adjusted series and a live quote are not comparable.
+  const smaBasis = resolveSmaBasis({ closes, rawCloses, technicals });
   let smaScore = 0;
-  const aboveSMA200 = technicals.sma200 !== null && currentPrice > technicals.sma200;
-  const aboveSMA50 = technicals.sma50 !== null && currentPrice > technicals.sma50;
-  const aboveSMA20 = technicals.sma20 !== null && currentPrice > technicals.sma20;
+  const aboveSMA200 = smaBasis.sma200 !== null && smaBasis.price > smaBasis.sma200;
+  const aboveSMA50 = smaBasis.sma50 !== null && smaBasis.price > smaBasis.sma50;
+  const aboveSMA20 = smaBasis.sma20 !== null && smaBasis.price > smaBasis.sma20;
   if (aboveSMA200) smaScore += 8;
   if (aboveSMA50) smaScore += 6;
   if (aboveSMA20) smaScore += 4;
@@ -390,9 +526,12 @@ export function computeTechnicalScore({
       aboveSMA20,
       aboveSMA50,
       aboveSMA200,
-      sma20: technicals.sma20 ?? null,
-      sma50: technicals.sma50 ?? null,
-      sma200: technicals.sma200 ?? null,
+      // The averages the flags above were actually derived from — one source
+      // for the boolean and the number, so a reader that pairs them cannot be
+      // shown a disagreement (BUILD_RULES §9).
+      sma20: smaBasis.sma20,
+      sma50: smaBasis.sma50,
+      sma200: smaBasis.sma200,
       distTo52wkHigh: Number(distToHigh.toFixed(1)),
       upDayVolRatio: Number(upDayVolRatio.toFixed(2)),
       rsi: rsiValue,
