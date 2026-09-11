@@ -10,7 +10,12 @@
 // the percentile math. Never mock it.
 
 import { describe, it, expect, afterEach } from 'vitest';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { ACCEPTED_FORMS_MESSAGE, CREDENTIALS_ENV, CREDENTIALS_FILE_ENV } from '../_utils/gcsCredentials.js';
 import {
+  BUCKET_NAME,
   DEFAULT_DAYS,
   mergeSummaries,
   readRange,
@@ -403,18 +408,62 @@ describe('gemma-latency-report — readRange: failures are isolated AND counted'
 });
 
 describe('gemma-latency-report — getBucket', () => {
-  const KEY = 'GCS_CREDENTIALS';
-  const saved = process.env[KEY];
-  afterEach(() => { if (saved === undefined) delete process.env[KEY]; else process.env[KEY] = saved; });
+  // getBucket delegates to the ONE credential loader (api/_utils/gcsCredentials.js)
+  // that shadowLogger.js writes the stream with. The loader's own forms are
+  // exhaustively covered in gcsCredentials.test.js; these rows prove THIS script
+  // is actually wired to it — all three forms reach a bucket here, and the
+  // loader's sentence is what an operator sees from this entry point.
+  const saved = { env: process.env[CREDENTIALS_ENV], file: process.env[CREDENTIALS_FILE_ENV] };
+  const tempDirs = [];
+  const SERVICE_ACCOUNT = JSON.stringify({
+    type: 'service_account',
+    project_id: 'macro-nuance-474602-f5',
+    client_email: 'reader@macro-nuance-474602-f5.iam.gserviceaccount.com',
+  });
+
+  function writeCredentialFile(contents) {
+    const dir = mkdtempSync(join(tmpdir(), 'gemma-creds-'));
+    tempDirs.push(dir);
+    const abs = join(dir, 'sa.json');
+    writeFileSync(abs, contents, 'utf8');
+    return abs;
+  }
+
+  afterEach(() => {
+    for (const [key, value] of [[CREDENTIALS_ENV, saved.env], [CREDENTIALS_FILE_ENV, saved.file]]) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+    while (tempDirs.length) rmSync(tempDirs.pop(), { recursive: true, force: true });
+  });
 
   it('unset is null — the caller decides whether that is fatal', () => {
-    delete process.env[KEY];
+    delete process.env[CREDENTIALS_ENV];
+    delete process.env[CREDENTIALS_FILE_ENV];
     expect(getBucket()).toBeNull();
   });
 
-  it('SET but unparseable throws a sentence, never a raw SyntaxError', () => {
-    process.env[KEY] = 'not-json';
-    expect(() => getBucket()).toThrow(/GCS_CREDENTIALS is set but is not valid JSON/);
+  it('GCS_CREDENTIALS as service-account JSON reaches the bucket (form 1, unchanged)', () => {
+    delete process.env[CREDENTIALS_FILE_ENV];
+    process.env[CREDENTIALS_ENV] = SERVICE_ACCOUNT;
+    expect(getBucket().name).toBe(BUCKET_NAME);
+  });
+
+  it('GCS_CREDENTIALS base64-encoded reaches the SAME bucket (form 2)', () => {
+    delete process.env[CREDENTIALS_FILE_ENV];
+    process.env[CREDENTIALS_ENV] = Buffer.from(SERVICE_ACCOUNT, 'utf8').toString('base64');
+    expect(getBucket().name).toBe(BUCKET_NAME);
+  });
+
+  it('GCS_CREDENTIALS_FILE reaches the SAME bucket (form 3)', () => {
+    delete process.env[CREDENTIALS_ENV];
+    process.env[CREDENTIALS_FILE_ENV] = writeCredentialFile(SERVICE_ACCOUNT);
+    expect(getBucket().name).toBe(BUCKET_NAME);
+  });
+
+  it('SET but unloadable throws the one sentence naming all three forms, never a raw SyntaxError', () => {
+    delete process.env[CREDENTIALS_FILE_ENV];
+    process.env[CREDENTIALS_ENV] = 'not-json';
+    expect(() => getBucket()).toThrow(ACCEPTED_FORMS_MESSAGE);
     // The distinction that matters: "unset" and "malformed" are different
     // operator problems and must not both surface as an absent bucket.
     expect(() => getBucket()).not.toThrow(SyntaxError);

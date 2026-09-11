@@ -32,8 +32,11 @@
 //
 //   --from/--to and --days are mutually exclusive.
 //
-// Requires env:
-//   GCS_CREDENTIALS (JSON-stringified service account, same as shadowLogger.js)
+// Requires env (any ONE of the three forms the shared loader accepts, same as
+// shadowLogger.js — api/_utils/gcsCredentials.js):
+//   GCS_CREDENTIALS       the JSON-stringified service account, or
+//   GCS_CREDENTIALS       that same JSON base64-encoded, or
+//   GCS_CREDENTIALS_FILE  a path to the service-account JSON file
 //
 // Exit codes: 0 on a completed read; 1 on a usage error or missing credentials.
 //
@@ -49,6 +52,9 @@ import { realpathSync } from 'node:fs';
 // The one quantile implementation in the tree (linear interpolation, pure,
 // null on an empty sample). Imported, never copied.
 import { quantile } from '../_utils/learning/measureCorpus.js';
+// The one credential loader, shared with the shadow stream's WRITER so the
+// reader and the writer can never disagree about what a credential is.
+import { loadGcsCredentials, CREDENTIALS_ENV, CREDENTIALS_FILE_ENV } from '../_utils/gcsCredentials.js';
 
 export const BUCKET_NAME = 'fantasytrades';
 export const PROJECT_ID = 'macro-nuance-474602-f5';
@@ -334,20 +340,15 @@ export function formatReport({ perDay, overall, fromKey, toKey, read = null }) {
 // ==================== IMPURE — the read ====================
 
 /**
- * The bucket, or null when GCS_CREDENTIALS is unset. A credential that is SET
- * but not parseable throws with a sentence rather than a raw SyntaxError stack
- * — "unset" and "malformed" are different operator problems and must not look
- * the same.
+ * The bucket, or null when NEITHER credential variable is set. A credential that
+ * is SET but not loadable throws with a sentence naming all three accepted forms
+ * rather than a raw SyntaxError stack — "unset" and "malformed" are different
+ * operator problems and must not look the same. Both behaviours now come from
+ * the shared loader, so the scripts and shadowLogger.js cannot drift apart.
  */
 export function getBucket() {
-  const creds = process.env.GCS_CREDENTIALS;
-  if (!creds) return null;
-  let credentials;
-  try {
-    credentials = JSON.parse(creds);
-  } catch {
-    throw new Error('GCS_CREDENTIALS is set but is not valid JSON — it must be the JSON-stringified service account (same as shadowLogger.js)');
-  }
+  const credentials = loadGcsCredentials();
+  if (!credentials) return null;
   const storage = new Storage({ projectId: PROJECT_ID, credentials });
   return storage.bucket(BUCKET_NAME);
 }
@@ -439,7 +440,7 @@ async function main(argv = process.argv.slice(2)) {
     return;
   }
   if (!bucket) {
-    console.error('[gemma-latency-report] GCS_CREDENTIALS not set — cannot read the shadow stream');
+    console.error(`[gemma-latency-report] neither ${CREDENTIALS_ENV} nor ${CREDENTIALS_FILE_ENV} is set — cannot read the shadow stream`);
     process.exitCode = 1;
     return;
   }

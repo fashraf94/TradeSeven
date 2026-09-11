@@ -60,7 +60,10 @@
 //                     record's PERSISTED reply so the scoring is exercised on
 //                     real production text. Needs no OPENROUTER_API_KEY.
 //
-// Requires env: GCS_CREDENTIALS; OPENROUTER_API_KEY unless --dry-run.
+// Requires env: the shadow-stream credential in any ONE of the three forms the
+// shared loader accepts (api/_utils/gcsCredentials.js) — GCS_CREDENTIALS as the
+// service-account JSON, GCS_CREDENTIALS as that JSON base64-encoded, or
+// GCS_CREDENTIALS_FILE as a path to it; plus OPENROUTER_API_KEY unless --dry-run.
 //
 // Exit codes: 0 on a completed run; 1 on a usage error, missing credentials, or
 // fewer than --pairs pairs found (the gate's floor is not met — say so loudly).
@@ -93,6 +96,9 @@ import {
   STREAM, getBucket, readRange, dateKeysInRange, parseArgs as parseRangeArgs,
   latencyPercentiles, utcDateKey, isTimeout as isRecordTimeout,
 } from './gemma-latency-report.js';
+// Named here only so the "not set" report below names the same two variables the
+// shared loader actually reads — one source for the names, never a restatement.
+import { CREDENTIALS_ENV, CREDENTIALS_FILE_ENV } from '../_utils/gcsCredentials.js';
 
 /** The gate's floor: "≥ 20 real turns". */
 export const DEFAULT_PAIRS = 20;
@@ -782,7 +788,7 @@ async function main(argv = process.argv.slice(2)) {
     console.warn(`[voice-grounding-harness] ${err.message} — dry run continues without the corpus`);
   }
   if (!bucket && !args.dryRun) {
-    console.error('[voice-grounding-harness] GCS_CREDENTIALS not set — cannot read the shadow stream');
+    console.error(`[voice-grounding-harness] neither ${CREDENTIALS_ENV} nor ${CREDENTIALS_FILE_ENV} is set — cannot read the shadow stream`);
     process.exitCode = 1;
     return;
   }

@@ -14,6 +14,10 @@
 // multi-week data loss is the cautionary tale.)
 
 import { Storage } from '@google-cloud/storage';
+// The one credential loader (BUILD_RULES §4 — never a local copy of shared
+// logic): GCS_CREDENTIALS as JSON, GCS_CREDENTIALS as base64-encoded JSON, or
+// GCS_CREDENTIALS_FILE as a path to the service-account JSON.
+import { loadGcsCredentials, CREDENTIALS_ENV, CREDENTIALS_FILE_ENV } from './gcsCredentials.js';
 
 const BUCKET_NAME = 'fantasytrades';
 
@@ -22,16 +26,27 @@ let bucketInstance = null;
 function getGCSBucket() {
   if (bucketInstance) return bucketInstance;
 
-  const creds = process.env.GCS_CREDENTIALS;
-  if (!creds) {
-    console.warn('[ShadowLogger] GCS_CREDENTIALS not set — shadow logging disabled');
+  // The loader's two outcomes are DIFFERENT operator problems and keep their
+  // existing, different reports: unset → the disabled warning (shadow logging is
+  // simply off); set-but-unloadable → the init error, carrying the one sentence
+  // that names all three accepted forms. Both still return null, and the throw
+  // is caught here — this module NEVER throws (the file-header contract).
+  let credentials;
+  try {
+    credentials = loadGcsCredentials();
+  } catch (err) {
+    console.error('[ShadowLogger] Init failed:', err.message);
+    return null;
+  }
+  if (!credentials) {
+    console.warn(`[ShadowLogger] ${CREDENTIALS_ENV} / ${CREDENTIALS_FILE_ENV} not set — shadow logging disabled`);
     return null;
   }
 
   try {
     const storage = new Storage({
       projectId: 'macro-nuance-474602-f5',
-      credentials: JSON.parse(creds),
+      credentials,
     });
     bucketInstance = storage.bucket(BUCKET_NAME);
     return bucketInstance;
