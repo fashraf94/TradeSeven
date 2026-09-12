@@ -60,9 +60,11 @@ describe('Backing Beta PR 0 eligibility attestation flag — the pin (BUILD_RULE
     // green suite. Inert while dark (the placeholders are expected then, and
     // counsel's copy lands in its own PR BEFORE the flip); on the day of the
     // flip it reds with the remedy if that PR has not landed.
-    const placeholders = (CONSTANTS_SRC.match(/COUNSEL: replace before flip/g) || []).length;
+    // Marker LINES (the `// ` comment form), so prose that names the phrase
+    // never trips a lit flag; `expect.soft` so both remedies surface at once.
+    const placeholders = (CONSTANTS_SRC.match(/^\s*\/\/ COUNSEL: replace before flip$/gm) || []).length;
     if (!ELIGIBILITY_ATTESTATION_ENABLED) return;
-    expect(placeholders, 'ELIGIBILITY_ATTESTATION_ENABLED is true but src/constants/eligibility.js still carries COUNSEL placeholders — counsel\'s copy lands BEFORE the flip (spec V1.3 §11 gate 1); revert the flag or land the copy PR first').toBe(0);
-    expect(TERMS_VERSION, 'ELIGIBILITY_ATTESTATION_ENABLED is true but TERMS_VERSION is still the draft tag — counsel ratifies the terms version BEFORE the flip (spec V1.3 §11 gate 1)').not.toMatch(/-draft$/);
+    expect.soft(placeholders, 'ELIGIBILITY_ATTESTATION_ENABLED is true but src/constants/eligibility.js still carries COUNSEL placeholder lines — counsel\'s copy lands BEFORE the flip (spec V1.3 §11 gate 1); revert the flag or land the copy PR first').toBe(0);
+    expect.soft(TERMS_VERSION, 'ELIGIBILITY_ATTESTATION_ENABLED is true but TERMS_VERSION is still the draft tag — counsel ratifies the terms version BEFORE the flip (spec V1.3 §11 gate 1)').not.toMatch(/-draft$/);
   });
 });

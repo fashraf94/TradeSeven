@@ -14,10 +14,15 @@
 // COPY MAP (the counsel-copy PR, which lands BEFORE the flip, reconciles these
 // in the SAME commit — the BUILD_RULES §2 flip-map discipline applied to copy):
 //   • src/constants/eligibility.test.js — the TERMS_VERSION literal row moves to
-//     the ratified version, and the "exactly two markers" row moves to zero;
-//   • the two COUNSEL markers below are DELETED with the placeholder strings
-//     they mark (src/config/eligibilityFlags.test.js reds a lit flag that
-//     still carries either marker or a `-draft` TERMS_VERSION).
+//     the ratified version; the marker-count row moves from 2 to 0 and its two
+//     positional "marker directly above each string" rows are dropped;
+//   • api/eligibility/attest.test.js — the dependency-surface row's
+//     TERMS_VERSION literal moves to the ratified version too;
+//   • the two COUNSEL marker comment lines below are DELETED with the
+//     placeholder strings they mark (src/config/eligibilityFlags.test.js reds
+//     a lit flag that still carries either marker line or a `-draft`
+//     TERMS_VERSION; the tripwire counts marker LINES, so prose may name the
+//     phrase without tripping it).
 
 /**
  * The terms version the attestation endpoint accepts (api/eligibility/attest.js

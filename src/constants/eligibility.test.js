@@ -37,8 +37,10 @@ describe('eligibility constants — the export shape', () => {
     expect(SRC).not.toMatch(/\brequire\(/);
   });
 
-  it('marks each placeholder string for counsel — exactly two markers, one directly above each string', () => {
-    expect(SRC.match(/\/\/ COUNSEL: replace before flip/g)).toHaveLength(2);
+  it('marks each placeholder string for counsel — exactly two marker lines, one directly above each string', () => {
+    // Marker LINES (the `// ` comment form), null-safe at zero: the counsel-copy
+    // PR moves this row from 2 to 0 and drops the two positional rows below.
+    expect((SRC.match(/^\s*\/\/ COUNSEL: replace before flip$/gm) || []).length).toBe(2);
     expect(SRC).toMatch(/\/\/ COUNSEL: replace before flip\n\s*adult: '/);
     expect(SRC).toMatch(/\/\/ COUNSEL: replace before flip\n\s*terms: '/);
   });
