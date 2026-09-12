@@ -10,6 +10,14 @@
 // terms version (§11 gate 1); the build ships them marked for replacement and
 // the flip PR (ELIGIBILITY_ATTESTATION_ENABLED) does not go out until they are
 // replaced. Nothing here is legal copy, and this module makes no legal claim.
+//
+// COPY MAP (the counsel-copy PR, which lands BEFORE the flip, reconciles these
+// in the SAME commit — the BUILD_RULES §2 flip-map discipline applied to copy):
+//   • src/constants/eligibility.test.js — the TERMS_VERSION literal row moves to
+//     the ratified version, and the "exactly two markers" row moves to zero;
+//   • the two COUNSEL markers below are DELETED with the placeholder strings
+//     they mark (src/config/eligibilityFlags.test.js reds a lit flag that
+//     still carries either marker or a `-draft` TERMS_VERSION).
 
 /**
  * The terms version the attestation endpoint accepts (api/eligibility/attest.js

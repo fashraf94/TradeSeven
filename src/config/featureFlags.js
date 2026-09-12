@@ -2323,8 +2323,10 @@ export function isShowItOn() {
  * FALSE at merge (§11 gates 1–2, §12): PR 0 merges dark. Before the flip,
  * counsel's copy replaces the two `COUNSEL: replace before flip` placeholders
  * in src/constants/eligibility.js and TERMS_VERSION becomes the ratified
- * version; the rules block is deployed. The flip PR then flips this flag
- * TOGETHER WITH BACKING_BETA_ENABLED after every §11 gate — never a build PR.
+ * version (its COPY MAP names the rows that move; eligibilityFlags.test.js
+ * reds a lit flag that still carries either); the rules block is deployed.
+ * The flip PR then flips this flag TOGETHER WITH BACKING_BETA_ENABLED after
+ * every §11 gate — never a build PR.
  *
  * Read at CALL time inside the handler that gates on it — never a module-scope
  * derivation — so a hermetic featureFlags mock with an explicit value governs

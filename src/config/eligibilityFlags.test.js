@@ -20,9 +20,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import { ELIGIBILITY_ATTESTATION_ENABLED } from './featureFlags.js';
+import { TERMS_VERSION } from '../constants/eligibility.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(HERE, 'featureFlags.js'), 'utf8');
+const CONSTANTS_SRC = readFileSync(path.join(HERE, '..', 'constants', 'eligibility.js'), 'utf8');
 
 describe('Backing Beta PR 0 eligibility attestation flag — the pin (BUILD_RULES §2)', () => {
   it('ships DARK: ELIGIBILITY_ATTESTATION_ENABLED is false at merge (spec V1.3 §12 — the flip PR flips it after every §11 gate)', () => {
@@ -48,5 +50,19 @@ describe('Backing Beta PR 0 eligibility attestation flag — the pin (BUILD_RULE
     expect(window).toContain('DARK_BY_DESIGN');
     // The route's darkness is the flag's whole promise; the docstring says so.
     expect(window).toContain('404s');
+  });
+
+  it('cannot light over placeholder copy: a true flag requires the COUNSEL markers gone and a non-draft TERMS_VERSION (§11 gate 1)', () => {
+    // THE GATE-1 TRIPWIRE (review F-B1). The FLIP MAP couples the flip to the
+    // pin and the DARK_BY_DESIGN entry mechanically; this row couples it to the
+    // one precondition spec V1.3 §11 gate 1 makes binding — counsel's copy —
+    // so the flip PR cannot ship the placeholders behind a lit flag with a
+    // green suite. Inert while dark (the placeholders are expected then, and
+    // counsel's copy lands in its own PR BEFORE the flip); on the day of the
+    // flip it reds with the remedy if that PR has not landed.
+    const placeholders = (CONSTANTS_SRC.match(/COUNSEL: replace before flip/g) || []).length;
+    if (!ELIGIBILITY_ATTESTATION_ENABLED) return;
+    expect(placeholders, 'ELIGIBILITY_ATTESTATION_ENABLED is true but src/constants/eligibility.js still carries COUNSEL placeholders — counsel\'s copy lands BEFORE the flip (spec V1.3 §11 gate 1); revert the flag or land the copy PR first').toBe(0);
+    expect(TERMS_VERSION, 'ELIGIBILITY_ATTESTATION_ENABLED is true but TERMS_VERSION is still the draft tag — counsel ratifies the terms version BEFORE the flip (spec V1.3 §11 gate 1)').not.toMatch(/-draft$/);
   });
 });
