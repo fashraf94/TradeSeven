@@ -50,7 +50,12 @@ describe('compute-index-intelligence — Phase A axis block wiring', () => {
   });
 
   it('derives axes on the PERSISTED-SHAPE entries: after the compositeScore sort, before the arch_scores loop (P-10)', () => {
-    const sortIdx = at('return b.compositeScore - a.compositeScore;');
+    // Anchor refreshed in lockstep with the cron (the tripwire working as
+    // designed): the hand-rolled `== null` ladder became the shared
+    // `finiteLast` comparator, which orders nulls last exactly as before and
+    // additionally keeps a NaN out of the subtraction. The ORDERING this row
+    // asserts is unchanged.
+    const sortIdx = at("rankingStocks.sort(finiteLast(s => s.compositeScore, 'desc'));");
     const axesIdx = at('const axesList = deriveAxes(rankingStocks);');
     const attachIdx = at('rankingStocks.forEach((stock, i) => { stock.axes = axesList[i]; });');
     const medianIdx = at('const universeMedianReturn1W = computeUniverseMedianReturn1W(rankingStocks);');
