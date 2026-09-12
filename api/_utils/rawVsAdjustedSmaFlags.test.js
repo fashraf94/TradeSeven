@@ -2,13 +2,17 @@
 //
 // The price-vs-SMA flags compare like with like.
 //
-// `fetchOHLCV` maps `close: d.adjusted_close` (compute-index-intelligence.js:150)
-// and `injectIntradayBar` splices today's real-time quote onto the front of that
-// array (`:229-254`). A real-time quote is the price the tape is printing —
+// `fetchOHLCV` maps its daily rows through `mapDailyRows`
+// (compute-index-intelligence.js:174), whose `close` is the ADJUSTED close, and
+// `injectIntradayBar` splices today's real-time quote onto the front of that
+// array (`:258-289`). A real-time quote is the price the tape is printing —
 // unadjusted — so `currentPrice > technicals.sma50` compared a RAW number with
 // an average made of ADJUSTED ones. One ordinary quarterly ex-date inside the
 // window scales every bar dated on or before it down by the payout, which lands
 // the average low and reads "above" for every price in the gap.
+//
+// Citation refreshed at the index-intelligence hygiene build (Phase 0 finding
+// O-5): the two line anchors above had drifted from `:150` / `:229-254`.
 //
 // The rule applied here is the repo's own: Guard 1 takes the UNADJUSTED
 // `rawClose` "so a split/dividend can't skew the raw-vs-raw comparison (same

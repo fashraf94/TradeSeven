@@ -40,7 +40,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { mapDailyRows } from '../_utils/marketDataCache.js';
-import { computeTechnicalScore, computeRS } from '../_utils/indexIntelligence.js';
+import { computeTechnicalScore, computeRS, classifyRegime, resolveSmaBasis } from '../_utils/indexIntelligence.js';
 import {
   calculateSMA,
   calculateRSI,
@@ -560,11 +560,11 @@ describe('A-4 — the stockRankings payload and the persisted basis', () => {
   });
   afterEach(() => {
     vi.unstubAllGlobals();
-    delete process.env.VERCEL_GIT_COMMIT_SHA;
+    delete globalThis.process.env.VERCEL_GIT_COMMIT_SHA;
   });
 
   it('carries deploySha (the env value when set) and droppedRows', async () => {
-    process.env.VERCEL_GIT_COMMIT_SHA = 'deadbeefcafe';
+    globalThis.process.env.VERCEL_GIT_COMMIT_SHA = 'deadbeefcafe';
     const res = await runHandler();
     expect(res.code).toBe(200);
 
@@ -580,7 +580,7 @@ describe('A-4 — the stockRankings payload and the persisted basis', () => {
   }, 30_000);
 
   it('carries deploySha: null when the env var is absent, and counts real drops', async () => {
-    delete process.env.VERCEL_GIT_COMMIT_SHA;
+    delete globalThis.process.env.VERCEL_GIT_COMMIT_SHA;
     // Poison one bar on one ticker; it must be counted, not hidden.
     vi.stubGlobal('fetch', vi.fn(async (url) => {
       const sym = decodeURIComponent(String(url).split('/eod/')[1].split('?')[0]);
@@ -619,4 +619,232 @@ describe('A-4 — the stockRankings payload and the persisted basis', () => {
       expect(aapl.factors).toHaveProperty(key);
     }
   }, 30_000);
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// PART B — the index SMA basis
+// ══════════════════════════════════════════════════════════════════════════
+//
+// #833 gave the 239-name stock universe one rule: the price and the average it
+// is compared against come from the SAME series, or neither. The five index
+// documents never got it. `computeIndexTechnicals` computed sma20/50/200 on the
+// ADJUSTED closes and compared `currentPrice > smaVal` against them — while
+// intraday mode splices a RAW live quote into `closes[0]` for indices too.
+// Dividend adjustment only ever scales bars DOWN, so the error is one-signed:
+// systematically BULLISH, four times a year per payer, and it propagates into
+// `classifyRegime` → `breadthComposite`/`breadthTier` → `marketContext` → the
+// eval cron and the Daily Regime Brief.
+//
+// The fixture is the one #833 used (rawVsAdjustedSmaFlags.test.js:42-60,
+// re-derived here for the bar shape `computeIndexTechnicals` takes): a real
+// dividend, with the adjusted series DERIVED from the raw one the way EODHD
+// derives `adjusted_close`. A hand-written pair could only pin an assumption.
+
+const SESSIONS = 59;
+const FLAT_PRICE = 100;
+const DIVIDEND = 1;
+const EX_DATE_INDEX = 30;        // bars 30..N are on or before the ex-date
+const LIVE_QUOTE = 99.7;
+const FACTOR = (FLAT_PRICE - DIVIDEND) / FLAT_PRICE;
+
+// Newest-first raw closes: what the tape printed, plus the live quote at 0.
+const rawSeries = (sessions = SESSIONS) =>
+  [LIVE_QUOTE, ...Array.from({ length: sessions }, () => FLAT_PRICE)];
+
+// The same bars as EODHD's `adjusted_close`. Index 0 is the live quote, which
+// is never adjusted — it has not been through a corporate action yet.
+const adjustedFrom = (raw, exIndex = EX_DATE_INDEX) =>
+  raw.map((c, i) => (i >= exIndex ? Number((c * FACTOR).toFixed(4)) : c));
+
+// Newest-first bars in the shape the cron's mapper produces.
+const barsFrom = (adj, raw) => adj.map((close, i) => ({
+  date: new Date(Date.UTC(2026, 5, 15) - i * 86_400_000).toISOString().slice(0, 10),
+  open: close,
+  high: close + 0.5,
+  low: close - 0.5,
+  close,
+  rawClose: raw[i],
+  volume: 1e6,
+}));
+
+describe('B-1 — the index SMA basis', () => {
+  const raw = rawSeries();
+  const adj = adjustedFrom(raw);
+
+  it('the cron resolves the index averages through resolveSmaBasis', async () => {
+    expect(SOURCE).toMatch(/^\s+resolveSmaBasis,$/m);
+    expect(SOURCE).toContain('const rawCloses = ohlcv.map(o => o.rawClose ?? o.close);');
+    expect(SOURCE).toContain('const smaBasis = resolveSmaBasis({');
+    expect(SOURCE).toContain('sma20: smaInfo(smaBasis.sma20),');
+    expect(SOURCE).toContain('sma50: smaInfo(smaBasis.sma50),');
+    expect(SOURCE).toContain('sma200: smaInfo(smaBasis.sma200),');
+  });
+
+  it('with raw closes present the averages resolve RAW, and the comparison lands where the shipped one did not', async () => {
+    const { computeIndexTechnicals } = await import('./compute-index-intelligence.js');
+    const got = computeIndexTechnicals(barsFrom(adj, raw), 'S&P 500');
+
+    // Raw 50-day average: the stock has gone nowhere, so it is ~the flat price.
+    expect(got.sma50.value).toBe(Number(calculateSMA(raw, 50).toFixed(2)));
+    expect(got.basis.sma50).toBe('raw');
+    // 99.70 is BELOW its own 50-day average. That is the honest reading.
+    expect(got.sma50.position).toBe('below');
+
+    // MUTATION CHECK — the shipped comparison, on the adjusted average.
+    const shippedSma50 = calculateSMA(adj, 50);
+    expect(Number(shippedSma50.toFixed(2))).not.toBe(got.sma50.value);
+    expect(shippedSma50).toBeLessThan(LIVE_QUOTE);          // reads "above"
+    expect(calculateSMA(raw, 50)).toBeGreaterThan(LIVE_QUOTE); // truly "below"
+    // The gap is the payout: one ordinary ~1% quarterly dividend.
+    expect(calculateSMA(raw, 50) - shippedSma50).toBeCloseTo(0.4, 2);
+
+    // The 20-day window has no ex-date in it, so both bases agree — the basis
+    // is chosen PER PERIOD, not per symbol.
+    expect(got.basis.sma20).toBe('raw');
+    expect(got.sma20.value).toBe(Number(calculateSMA(raw, 20).toFixed(2)));
+    expect(Number(calculateSMA(adj, 20).toFixed(2))).toBe(got.sma20.value);
+
+    // 60 bars is short of 200, so that period falls back and stays null.
+    expect(got.basis.sma200).toBe('adjusted');
+    expect(got.sma200.value).toBeNull();
+
+    // §9: position, distance and the published price all come from one price
+    // and the average published beside them.
+    expect(got.sma50.distance)
+      .toBe(Number((((got.price - got.sma50.value) / got.sma50.value) * 100).toFixed(2)));
+  });
+
+  it('a re-denominated (split) window falls back to the SHIPPED result, byte for byte', async () => {
+    const { computeIndexTechnicals } = await import('./compute-index-intelligence.js');
+
+    // A 2:1 split 25 sessions back: the raw print before it is double the raw
+    // print after, so the raw closes in the 50-day window are not comparable to
+    // each other and their average is not a price anything can be above.
+    const splitRaw = raw.map((c, i) => (i >= 25 ? c * 2 : c));
+    const got = computeIndexTechnicals(barsFrom(adj, splitRaw), 'S&P 500');
+
+    expect(got.basis.sma50).toBe('adjusted');               // guard fired
+    expect(got.sma50.value).toBe(Number(calculateSMA(adj, 50).toFixed(2)));
+
+    // Byte for byte the shipped document: falling back is never a new failure.
+    const shipped = { ...got, sma20: null, sma50: null, sma200: null, basis: null };
+    const reference = computeIndexTechnicals(
+      barsFrom(adj, adj), 'S&P 500');                        // no raw series delta
+    expect(shipped).toEqual({ ...reference, sma20: null, sma50: null, sma200: null, basis: null });
+    expect(got.sma50).toEqual({
+      value: Number(calculateSMA(adj, 50).toFixed(2)),
+      position: LIVE_QUOTE > calculateSMA(adj, 50) ? 'above' : 'below',
+      distance: Number((((LIVE_QUOTE - calculateSMA(adj, 50)) / calculateSMA(adj, 50)) * 100).toFixed(2)),
+    });
+  });
+
+  it('a missing rawClose takes that bar\'s adjusted close — the shipped stock-path contract', async () => {
+    const { computeIndexTechnicals } = await import('./compute-index-intelligence.js');
+    // `ohlcv.map(o => o.rawClose ?? o.close)` is the stock path's expression,
+    // carried over unchanged. It covers a bar mapped before `rawClose` existed,
+    // and it means a bar with no raw print contributes its ADJUSTED close to the
+    // raw window rather than voiding the whole symbol. The deviation is one bar
+    // of the payout, bounded and below the 1.15 split guard — NOT a defect this
+    // build introduces, and noted in the build report for separate tasking.
+    const holed = raw.map((c, i) => (i === 12 ? null : c));
+    const got = computeIndexTechnicals(barsFrom(adj, holed), 'S&P 500');
+    expect(got.basis.sma50).toBe('raw');
+    const substituted = raw.map((c, i) => (i === 12 ? adj[12] : c));
+    expect(got.sma50.value).toBe(Number(calculateSMA(substituted, 50).toFixed(2)));
+  });
+
+  it('resolveSmaBasis still degrades to the shipped comparison on a genuinely unusable raw series', async () => {
+    const { computeIndexTechnicals } = await import('./compute-index-intelligence.js');
+    // Bars carrying NEITHER a raw close nor a usable adjusted one: the `??`
+    // resolves to undefined, `rawCloses.every(Number.isFinite)` fails, and the
+    // whole symbol reverts to the shipped adjusted comparison byte for byte.
+    const bars = barsFrom(adj, raw).map((b, i) =>
+      (i === 12 ? { ...b, rawClose: null, close: null } : b));
+    const got = computeIndexTechnicals(bars, 'S&P 500');
+    expect(got.basis).toEqual({ sma20: 'adjusted', sma50: 'adjusted', sma200: 'adjusted' });
+
+    // And a raw series of the wrong length degrades the same way — asserted on
+    // `resolveSmaBasis` directly, since the cron always passes a same-length map.
+    const shipped = resolveSmaBasis({
+      closes: adj,
+      rawCloses: raw.slice(0, 10),
+      technicals: { sma20: calculateSMA(adj, 20), sma50: calculateSMA(adj, 50), sma200: null },
+    });
+    expect(shipped.basis).toEqual({ sma20: 'adjusted', sma50: 'adjusted', sma200: 'adjusted' });
+    expect(shipped.sma50).toBe(calculateSMA(adj, 50));
+  });
+});
+
+describe('B-2 — the regime label the market context ships', () => {
+  // 260 sessions so SMA200 exists. Same dividend construction; the ex-date sits
+  // inside BOTH the 50- and the 200-day windows, which is where the two bases
+  // disagree about the 50/200 boundary classifyRegime reads.
+  const raw = rawSeries(260);
+  const adj = adjustedFrom(raw);
+
+  it('classifyRegime receives the RAW-resolved values, and the label changes', async () => {
+    const { computeIndexTechnicals } = await import('./compute-index-intelligence.js');
+    const spyT = computeIndexTechnicals(barsFrom(adj, raw), 'S&P 500');
+
+    // The seam, reproduced verbatim from compute-index-intelligence.js:788 —
+    // the three arguments are exactly the fields computeIndexTechnicals
+    // publishes, so this IS the call the handler makes.
+    expect(SOURCE).toContain('regime = classifyRegime(spyT.price, spyT.sma50.value, spyT.sma200.value);');
+    const got = classifyRegime(spyT.price, spyT.sma50.value, spyT.sma200.value);
+
+    // THE ASSERTION, first, so it is what fails under the defect: the label the
+    // whole market context ships. MUTATION CHECK alongside it — the shipped
+    // adjusted averages, and the label they produced.
+    const shipped = classifyRegime(
+      spyT.price,
+      Number(calculateSMA(adj, 50).toFixed(2)),
+      Number(calculateSMA(adj, 200).toFixed(2)),
+    );
+    expect(shipped.regime).toBe('bull');       // the one-signed bullish skew
+    expect(got.regime).toBe('bear');           // the right number
+    expect(got.regime).not.toBe(shipped.regime);
+
+    // And the values it received are the raw-resolved ones.
+    expect(spyT.sma50.value).toBe(Number(calculateSMA(raw, 50).toFixed(2)));
+    expect(spyT.sma200.value).toBe(Number(calculateSMA(raw, 200).toFixed(2)));
+    expect(spyT.basis.sma50).toBe('raw');
+    expect(spyT.basis.sma200).toBe('raw');
+  });
+
+  it('the downstream shapes are unchanged — only the values move', async () => {
+    const { computeIndexTechnicals } = await import('./compute-index-intelligence.js');
+    const spyT = computeIndexTechnicals(barsFrom(adj, raw), 'S&P 500');
+    for (const key of ['name', 'price', 'change', 'changePercent', 'ytdReturn',
+      'sma20', 'sma50', 'sma200', 'rsi', 'macd', 'atr', 'volumeRatio', 'range52w']) {
+      expect(spyT).toHaveProperty(key);
+    }
+    for (const key of ['value', 'position', 'distance']) {
+      expect(spyT.sma50).toHaveProperty(key);
+    }
+    // B-2 additive field only.
+    expect(Object.keys(spyT.basis).sort()).toEqual(['sma20', 'sma200', 'sma50']);
+  });
+});
+
+describe('B-3 — what each index document resolves to on the handler fixture', () => {
+  beforeEach(() => { getFirestoreMock.db = makeDb(); });
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it('every index document carries a basis, and says why', async () => {
+    stubEodhd();                                   // 40 bars, adjusted === raw
+    expect((await runHandler()).code).toBe(200);
+
+    for (const sym of ['SPY', 'QQQ', 'DIA', 'IWM', 'RSP']) {
+      const doc = getFirestoreMock.db.store.get(`indexIntelligence/${sym}`);
+      expect(doc).toBeDefined();
+      // adjusted === raw on every bar ⇒ factor spread 1.0, under the 1.15 split
+      // guard ⇒ the 20-day window resolves RAW.
+      expect(doc.basis.sma20).toBe('raw');
+      // 40 bars < 50 and < 200 ⇒ those two periods fall back and stay null.
+      expect(doc.basis.sma50).toBe('adjusted');
+      expect(doc.basis.sma200).toBe('adjusted');
+      expect(doc.sma50.value).toBeNull();
+      expect(doc.sma200.value).toBeNull();
+    }
+  });
 });

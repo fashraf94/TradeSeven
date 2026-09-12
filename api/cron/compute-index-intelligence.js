@@ -38,6 +38,7 @@ import {
   computeRS,
   computeRSTrend,
   computeTechnicalScore,
+  resolveSmaBasis,
 } from '../_utils/indexIntelligence.js';
 // The ONE daily-row mapper. `fetchOHLCV` below used to carry a second, weaker
 // copy of this mapping — `close: d.adjusted_close` with no finite check and no
@@ -340,11 +341,18 @@ async function fetchRealtimeQuotes(eodhdSymbols, batchSize = 20, delayMs = 300) 
 // Per-Index Technical Computation
 // ───────────────────────────────────────────────
 
-function computeIndexTechnicals(ohlcv, name) {
+// Exported for the same reason `injectIntradayBar` is: the handler is not, so
+// the index technicals are proven directly rather than through a transcription.
+export function computeIndexTechnicals(ohlcv, name) {
   const closes = ohlcv.map(d => d.close);
   const highs = ohlcv.map(d => d.high);
   const lows = ohlcv.map(d => d.low);
   const volumes = ohlcv.map(d => d.volume);
+  // The unadjusted series, for the price-vs-SMA comparison only. `?? o.close`
+  // covers a bar mapped before `rawClose` existed (a cached payload) —
+  // `resolveSmaBasis` re-checks the whole series and falls back to the adjusted
+  // comparison unless every value is finite. Same expression as the stock path.
+  const rawCloses = ohlcv.map(o => o.rawClose ?? o.close);
 
   const currentPrice = closes[0];
   const prevClose = closes.length > 1 ? closes[1] : currentPrice;
@@ -356,6 +364,30 @@ function computeIndexTechnicals(ohlcv, name) {
   const sma50Val = calculateSMA(closes, 50);
   const sma200Val = calculateSMA(closes, 200);
 
+  // The five index documents get the same rule the 239 stocks got in #833:
+  // price and average from ONE series, or neither. `closes` is the
+  // split/dividend-ADJUSTED series, in which every bar dated on or before an
+  // ex-date is scaled down by the payout — while `currentPrice` is index 0,
+  // which carries no corporate action after it and which intraday mode replaces
+  // outright with a live quote (`injectIntradayBar`), unadjusted by
+  // construction. So `currentPrice > smaVal` compared a raw number against an
+  // average of adjusted ones, and dividend adjustment only ever scales bars
+  // DOWN: the error is one-signed, systematically BULLISH, four times a year per
+  // payer. SPY pays ~1.3%/yr quarterly. `resolveSmaBasis` re-derives each
+  // average on the raw series where the window permits, behind the 1.15
+  // split-spread guard, and returns the SHIPPED average byte for byte wherever
+  // raw is not safe — a re-denominated (split) window, a length mismatch, or any
+  // non-finite raw close.
+  const smaBasis = resolveSmaBasis({
+    closes,
+    rawCloses,
+    technicals: { sma20: sma20Val, sma50: sma50Val, sma200: sma200Val },
+  });
+
+  // One price against those averages: `position` and `distance` are derived from
+  // the same two numbers as each other and as the `price` field published below,
+  // which is also what `classifyRegime` reads — so nothing in this document can
+  // disagree with anything else in it (BUILD_RULES §9).
   function smaInfo(smaVal) {
     if (smaVal === null) return { value: null, position: 'unknown', distance: 0 };
     const dist = ((currentPrice - smaVal) / smaVal) * 100;
@@ -412,9 +444,13 @@ function computeIndexTechnicals(ohlcv, name) {
     change: Number(change.toFixed(2)),
     changePercent: Number(changePercent.toFixed(2)),
     ytdReturn,
-    sma20: smaInfo(sma20Val),
-    sma50: smaInfo(sma50Val),
-    sma200: smaInfo(sma200Val),
+    sma20: smaInfo(smaBasis.sma20),
+    sma50: smaInfo(smaBasis.sma50),
+    sma200: smaInfo(smaBasis.sma200),
+    // WHICH series each average above came from, per period — the same field
+    // the stock documents carry in `factors.basis`. Makes the split-guard
+    // fallback readable instead of silent.
+    basis: smaBasis.basis,
     rsi: rsi || { value: null, zone: 'unknown' },
     macd: macd ? { signal: macdSignal, histogram: macd.histogram } : { signal: 'unknown', histogram: 0 },
     atr: atr || { value: null, regime: 'unknown' },
