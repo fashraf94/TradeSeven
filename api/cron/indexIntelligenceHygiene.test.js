@@ -112,7 +112,7 @@ function scoreOf(rows) {
       macd: calculateMACD(closes),
     },
     sectorRSPercentile: null,
-    rawCloses: rows.map(o => o.rawClose ?? o.close),
+    rawCloses: rows.map(o => o.rawClose ?? null),   // the cron's expression
   });
 }
 
@@ -672,7 +672,11 @@ describe('B-1 — the index SMA basis', () => {
 
   it('the cron resolves the index averages through resolveSmaBasis', async () => {
     expect(SOURCE).toMatch(/^\s+resolveSmaBasis,$/m);
-    expect(SOURCE).toContain('const rawCloses = ohlcv.map(o => o.rawClose ?? o.close);');
+    // Both raw-series sites, index and stock, pinned together: `?? null`, never
+    // `?? o.close` — see the comment at each site for why the difference matters.
+    expect(SOURCE).toContain('const rawCloses = ohlcv.map(o => o.rawClose ?? null);');
+    expect(SOURCE).toContain('const rawCloses = d.ohlcv.map(o => o.rawClose ?? null);');
+    expect(SOURCE).not.toContain('o.rawClose ?? o.close');
     expect(SOURCE).toContain('const smaBasis = resolveSmaBasis({');
     expect(SOURCE).toContain('sma20: smaInfo(smaBasis.sma20),');
     expect(SOURCE).toContain('sma50: smaInfo(smaBasis.sma50),');
@@ -737,40 +741,52 @@ describe('B-1 — the index SMA basis', () => {
     });
   });
 
-  it('a missing rawClose takes that bar\'s adjusted close — the shipped stock-path contract', async () => {
+  it('a missing rawClose falls the WHOLE symbol back to adjusted, and basis says so', async () => {
     const { computeIndexTechnicals } = await import('./compute-index-intelligence.js');
-    // `ohlcv.map(o => o.rawClose ?? o.close)` is the stock path's expression,
-    // carried over unchanged. It covers a bar mapped before `rawClose` existed,
-    // and it means a bar with no raw print contributes its ADJUSTED close to the
-    // raw window rather than voiding the whole symbol. The deviation is one bar
-    // of the payout, bounded and below the 1.15 split guard — NOT a defect this
-    // build introduces, and noted in the build report for separate tasking.
-    const holed = raw.map((c, i) => (i === 12 ? null : c));
+    // `mapDailyRows` already yields `rawClose: null` for a non-finite raw print
+    // (marketDataCache.js:337), so `o.rawClose ?? null` hands `resolveSmaBasis`
+    // a series it can judge: one null fails `rawCloses.every(Number.isFinite)`
+    // (indexIntelligence.js:348) and EVERY period reverts to the shipped
+    // adjusted comparison — which `basis` then reports.
+    // The hole sits at bar 35 — INSIDE the 50-day window and PAST the ex-date,
+    // so the adjusted and raw closes genuinely differ there. (At a bar before
+    // the ex-date they are the same number and the substitution below would be
+    // invisible, which is exactly how this stayed unnoticed.)
+    const HOLE = 35;
+    const holed = raw.map((c, i) => (i === HOLE ? null : c));
     const got = computeIndexTechnicals(barsFrom(adj, holed), 'S&P 500');
-    expect(got.basis.sma50).toBe('raw');
-    const substituted = raw.map((c, i) => (i === 12 ? adj[12] : c));
-    expect(got.sma50.value).toBe(Number(calculateSMA(substituted, 50).toFixed(2)));
+
+    // EVERY period, not just the one containing the hole: the usability check is
+    // over the whole series (indexIntelligence.js:344-351), so the 20-day window
+    // reverts too even though bar 35 is nowhere near it.
+    expect(got.basis).toEqual({ sma20: 'adjusted', sma50: 'adjusted', sma200: 'adjusted' });
+    expect(got.sma50.value).toBe(Number(calculateSMA(adj, 50).toFixed(2)));
+    expect(got.sma20.value).toBe(Number(calculateSMA(adj, 20).toFixed(2)));
+
+    // MUTATION CHECK — what `?? o.close` did instead: it substituted that bar's
+    // ADJUSTED close into the RAW window, so the symbol stayed on a 'raw' basis
+    // computed from a series that was not entirely raw, and nothing said so.
+    const substituted = raw.map((c, i) => (i === HOLE ? adj[HOLE] : c));
+    const mixed = Number(calculateSMA(substituted, 50).toFixed(2));
+    expect(adj[HOLE]).not.toBe(raw[HOLE]);                          // the bar really differs
+    expect(mixed).not.toBe(got.sma50.value);                        // not the adjusted average
+    expect(mixed).not.toBe(Number(calculateSMA(raw, 50).toFixed(2))); // nor the raw one
   });
 
-  it('resolveSmaBasis still degrades to the shipped comparison on a genuinely unusable raw series', async () => {
-    const { computeIndexTechnicals } = await import('./compute-index-intelligence.js');
-    // Bars carrying NEITHER a raw close nor a usable adjusted one: the `??`
-    // resolves to undefined, `rawCloses.every(Number.isFinite)` fails, and the
-    // whole symbol reverts to the shipped adjusted comparison byte for byte.
-    const bars = barsFrom(adj, raw).map((b, i) =>
-      (i === 12 ? { ...b, rawClose: null, close: null } : b));
-    const got = computeIndexTechnicals(bars, 'S&P 500');
-    expect(got.basis).toEqual({ sma20: 'adjusted', sma50: 'adjusted', sma200: 'adjusted' });
-
-    // And a raw series of the wrong length degrades the same way — asserted on
-    // `resolveSmaBasis` directly, since the cron always passes a same-length map.
-    const shipped = resolveSmaBasis({
-      closes: adj,
-      rawCloses: raw.slice(0, 10),
-      technicals: { sma20: calculateSMA(adj, 20), sma50: calculateSMA(adj, 50), sma200: null },
-    });
-    expect(shipped.basis).toEqual({ sma20: 'adjusted', sma50: 'adjusted', sma200: 'adjusted' });
-    expect(shipped.sma50).toBe(calculateSMA(adj, 50));
+  it('the other two degradations — a wrong-length and an absent raw series — also revert to shipped', async () => {
+    // The null case belongs to the row above; these are the two remaining
+    // branches of `resolveSmaBasis`'s usability check (indexIntelligence.js:344-351),
+    // asserted on it directly because the cron always passes a same-length map
+    // built by the one expression pinned above.
+    const technicals = {
+      sma20: calculateSMA(adj, 20), sma50: calculateSMA(adj, 50), sma200: null,
+    };
+    for (const rawCloses of [raw.slice(0, 10), undefined]) {
+      const shipped = resolveSmaBasis({ closes: adj, rawCloses, technicals });
+      expect(shipped.basis).toEqual({ sma20: 'adjusted', sma50: 'adjusted', sma200: 'adjusted' });
+      expect(shipped.sma50).toBe(calculateSMA(adj, 50));
+      expect(shipped.price).toBe(adj[0]);
+    }
   });
 });
 

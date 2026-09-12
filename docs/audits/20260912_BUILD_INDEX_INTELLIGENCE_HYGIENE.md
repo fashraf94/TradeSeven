@@ -9,19 +9,19 @@
 | Measure | Cumulative branch diff vs `origin/main` | §2 threshold | Verdict |
 |---|---|---|---|
 | Files | **9** | ≥10 | under |
-| **Insertions** | **1,947** | **≥1,500** | **REACHED** |
-| Deletions | 59 | — | — |
-| Total changed lines | 2,006 | — | — |
+| **Insertions** | **2,059** | **≥1,500** | **REACHED** |
+| Deletions | 64 | — | — |
+| Total changed lines | 2,123 | — | — |
 
-The threshold was already reached at **1,525 insertions / 8 files** before this report was written; the report itself takes it to 1,947 / 9.
+The threshold was reached at **1,525 insertions / 8 files** before this report existed; the report and the O-6 addendum take it to 2,059 / 9.
 
 **BUILD_RULES §2 makes a multi-lens adversarial review mandatory at this threshold, and this session has NOT run one.** The prompt's instruction at the threshold is "STOP and report", not "run the review", so I stopped at the point the count crossed and wrote this instead. The review is the founder's to commission before merge.
 
 Three things the founder should weigh when ruling:
 
-- **901 of the 1,947 insertions are Markdown, not code** — 478 the cherry-picked Phase 0 report (`docs/audits/20260912_PHASE0_CRON_MAPPER.md`, prescribed as commit 1, a read-only discovery artifact) and 423 this document.
-- **850 more are the test battery**, which the prompt required to show every guard failing under its defect first.
-- **The production diff is 168 lines across two files**: 161 in `compute-index-intelligence.js` and 7 in `indexIntelligence.js`, most of them comment. Excluding both Markdown files the build is **1,046 insertions / 59 deletions across 7 files**.
+- **982 of the 2,059 insertions are Markdown, not code** — 478 the cherry-picked Phase 0 report (`docs/audits/20260912_PHASE0_CRON_MAPPER.md`, prescribed as commit 1, a read-only discovery artifact) and 504 this document.
+- **865 more are the test battery**, which the prompt required to show every guard failing under its defect first.
+- **The production diff is 188 lines across two files**: 181 in `compute-index-intelligence.js` and 7 in `indexIntelligence.js`, most of them comment. Excluding both Markdown files the build is **1,077 insertions / 64 deletions across 7 files**.
 
 One §2 element I ran anyway, because it is cheap and it is the only check that catches a syntax error no test would: **`npx vite build` → exit 0, "✓ built in 22.83s".**
 
@@ -66,16 +66,16 @@ One §2 element I ran anyway, because it is cheap and it is the only check that 
 ## `git diff --stat origin/main`
 
 ```
- api/_utils/__fixtures__/eodPayload.js              |  43 ++
+ api/_utils/__fixtures__/eodPayload.js              |  43 +
  api/_utils/dailyRowHygiene.test.js                 |  28 +-
  api/_utils/indexIntelligence.js                    |   7 +
  api/_utils/rawVsAdjustedSmaFlags.test.js           |  10 +-
  api/cron/compute-index-intelligence.axes.test.js   |   7 +-
- api/cron/compute-index-intelligence.js             | 161 +++-
- api/cron/indexIntelligenceHygiene.test.js          | 849 +++++++++++++++++++++
- .../20260912_BUILD_INDEX_INTELLIGENCE_HYGIENE.md   | 423 ++++++++++
+ api/cron/compute-index-intelligence.js             | 181 ++++-
+ api/cron/indexIntelligenceHygiene.test.js          | 865 +++++++++++++++++++++
+ .../20260912_BUILD_INDEX_INTELLIGENCE_HYGIENE.md   | 504 ++++++++++++
  docs/audits/20260912_PHASE0_CRON_MAPPER.md         | 478 ++++++++++++
- 9 files changed, 1947 insertions(+), 59 deletions(-)
+ 9 files changed, 2059 insertions(+), 64 deletions(-)
 ```
 
 **Assertion, as asked:** no `src/config/featureFlags.js`, no `DARK_BY_DESIGN`, no §1-fenced file appears in that list. VERIFIED by grep over the staged diff at each commit.
@@ -201,7 +201,7 @@ Shapes unchanged by construction; the readers are named-field:
 
 ## Tests
 
-**New file: `api/cron/indexIntelligenceHygiene.test.js` (849 lines, 26 rows).** One file for both parts, deliberately: it kept the branch at 8 files instead of 10, under the §2 file threshold.
+**New file: `api/cron/indexIntelligenceHygiene.test.js` (865 lines, 26 rows).** One file for both parts, deliberately: it kept the branch at 8 files instead of 10, under the §2 file threshold.
 
 **Fixture move.** `eodPayload` was not exported, so it moved to `api/_utils/__fixtures__/eodPayload.js` and both batteries import it. The function body is byte-for-byte the one that lived at `dailyRowHygiene.test.js:36-52`; `eodPayloadOldestFirst(n)` is added beside it because the cron's endpoint is oldest-first (`:146` carries no `order=`). A test-only move, not a deviation, as the prompt allows.
 
@@ -336,7 +336,7 @@ Post-change: **26 passed, exit 0.**
 | **Lint on the touched files, before** (at `origin/main`, via a detached worktree) | **9 errors**, 0 warnings — `indexIntelligence.js` 2 (`no-unused-vars` on pre-existing params `lows`, `spyCloses`), `compute-index-intelligence.js` 7 (6 × `no-undef` on bare `process`, 1 × `no-unused-vars` on pre-existing `range252`) |
 | **Lint on the touched files, after** (all 7, including the 2 new files) | **9 errors**, 0 warnings — **did not rise.** Same 9 lines, all pre-existing. The two new files contribute 0 |
 | `npm run lint` repo-wide | **1,615 errors / 119 warnings** — red at HEAD, as known. Not changed by this build |
-| **Diff threshold** | 9 files / **1,947 insertions** (1,525 / 8 files before this report) — **the 1,500-line half is REACHED. STOPPED and reported** (top of this document) |
+| **Diff threshold** | 9 files / **2,059 insertions** (1,525 / 8 files before this report) — **the 1,500-line half is REACHED. STOPPED and reported** (top of this document) |
 | **`git diff --stat` fence assertion** | No `src/config/featureFlags.js`, no `DARK_BY_DESIGN`, no §1-fenced file. VERIFIED |
 
 The last full-suite run was taken after the final test edit. Both pre-change runs above were taken with the production files reverted and restored byte-for-byte from a scratchpad copy; the tree was re-verified clean against the committed state afterwards.
@@ -357,11 +357,11 @@ Two, both recorded rather than improvised. Neither changes what was built.
 
 ## Reported for separate tasking (BUILD_RULES §3 — found, not fixed)
 
-**O-6 (new) — `?? o.close` means a missing `rawClose` silently contributes an ADJUSTED close to the "raw" window.** `ohlcv.map(o => o.rawClose ?? o.close)` is the shipped stock-path expression (prompt B1 prescribed it verbatim, and Part B now uses it for indices too). Its comment claims `resolveSmaBasis` "falls back to the adjusted comparison unless every value is finite" — but the `??` means a null `rawClose` never *reaches* `resolveSmaBasis` as non-finite; it arrives as that bar's adjusted close. After Part A the `close` side is always finite, so the degradation guard at `indexIntelligence.js:348-349` can no longer fire on this path at all. The error is bounded — one bar of the payout in a 50- or 200-bar window, and it does not trip the 1.15 spread guard — and it is **pre-existing on the stock path, not introduced here**. Pinned honestly by the B-1 row `a missing rawClose takes that bar's adjusted close`. Worth its own one-line task (`o.rawClose ?? null`, with the length/finite guard then doing the work the comment already claims).
+**O-6 — CLOSED by the addendum commit.** See the addendum section at the end of this document. It was: `?? o.close` meant a missing `rawClose` silently contributed an ADJUSTED close to the "raw" window, so the degradation guard at `indexIntelligence.js:348` could never fire on this path. Fixed at both raw-series sites.
 
 **O-7 (new) — the index path still has no minimum-series-length guard.** Stocks have `ohlcv.length < 50` (`:840`), SPY has one (`:826`), sector ETFs have one (`:866`). Indices have none. Part A removes the crash that used to result (`closes[0]` is now always finite, so `:426`'s `.toFixed` cannot throw), but a symbol reduced to very few bars would still produce a document of mostly-null technicals rather than being skipped. Not caused by, and not in scope for, this build.
 
-Phase 0's O-2 (twelve other `/eod/` mappers), O-4 (no time budget) and the §7 bundle were out of scope and were not touched. O-1 **is** Part B and is now closed. O-3 **is** A3 and is now closed. O-5 is done: `rawVsAdjustedSmaFlags.test.js:5-15`, refreshed to `:174` and `:258-289`, nothing more.
+Phase 0's O-2 (twelve other `/eod/` mappers), O-4 (no time budget) and the §7 bundle were out of scope and were not touched. O-1 **is** Part B and is now closed. O-3 **is** A3 and is now closed. O-5 is done: `rawVsAdjustedSmaFlags.test.js:5-15`, refreshed to `:174` and `:258-289`, nothing more. **O-6 is closed by the addendum below.** O-7 remains open.
 
 ---
 
@@ -370,6 +370,8 @@ Phase 0's O-2 (twelve other `/eod/` mappers), O-4 (no time budget) and the §7 b
 > **Part A — the universe feed's daily rows now pass through the same finite-row mapper as the research path.** On a clean day the numbers are identical. A poisoned row is dropped rather than zeroed: that symbol's RS reads one bar stale instead of the whole universe re-ranking, and the raw-basis SMA flags now work for a symbol that had a bad bar.
 >
 > **Part B — the five index documents now resolve their SMAs raw-against-raw like the 239 stocks.** SPY/QQQ/DIA/IWM/RSP comparisons, and with them the market regime, breadth tier, `marketContext`, the eval cron's regime and the Daily Regime Brief, may change on landing — from a one-signed bullish skew to the right number.
+>
+> **O-6 —** a window with a missing raw print resolves adjusted, and `basis` says so.
 
 Two further facts the PR should carry, from Phase 0:
 
@@ -414,10 +416,89 @@ Crons do not run on Vercel preview (BUILD_RULES §6), so **the first production 
 
 ## What the founder has to decide before merge
 
-1. **The §2 review.** The cumulative diff reaches 1,947 insertions (1,525 before this report), over the 1,500-line half of the threshold, so BUILD_RULES §2 makes a multi-lens adversarial review mandatory. **This session did not run one** — the prompt's instruction at the threshold was "STOP and report". The mitigating facts are at the top of this document: 901 of those lines are Markdown and 849 are the test battery; the production diff is 168 lines across two files. `vite build` was run anyway (exit 0).
+1. **The §2 review.** The cumulative diff reaches 2,059 insertions (1,525 before this report), over the 1,500-line half of the threshold, so BUILD_RULES §2 makes a multi-lens adversarial review mandatory. **This session did not run one** — the prompt's instruction at the threshold was "STOP and report". The mitigating facts are at the top of this document: 982 of those lines are Markdown and 865 are the test battery; the production diff is 188 lines across two files. `vite build` was run anyway (exit 0).
 2. **The A3 comparator-vs-filter reading** on the four payload-bearing sorts (argued under A3). A literal filter there would delete a degraded symbol's document; I ordered non-finite entries last instead, which sheds nothing. Four lines to change if the founder wants the literal form.
 3. **Part B moves the regime label**, and the disclosure paragraph for the PR body is above, ready to paste.
 
 ## What is not in this build
 
-O-2 (twelve other `/eod/` mappers — a consolidation task), O-4 (the cron has no time budget — its own task), the §7 bundle, and any fenced file. Two new findings, **O-6** (the `?? o.close` fallback quietly substitutes an adjusted close into the raw window — pre-existing on the stock path) and **O-7** (the index path still has no minimum-series-length guard), are written up above for separate tasking and were **not** fixed here.
+O-2 (twelve other `/eod/` mappers — a consolidation task), O-4 (the cron has no time budget — its own task), the §7 bundle, and any fenced file. **O-6 was fixed by the addendum commit** (below). **O-7** (the index path still has no minimum-series-length guard) is written up above for separate tasking and was **not** fixed here.
+
+---
+
+# Addendum — O-6 closed
+
+One commit after the report, on the same branch, at founder direction.
+
+## What it was
+
+`ohlcv.map(o => o.rawClose ?? o.close)` at both raw-series sites. `mapDailyRows` yields `rawClose: null` when the raw print is not a finite number (`marketDataCache.js:337`), but the `??` caught that null and substituted **the same bar's adjusted close** — so the "raw" window contained an adjusted bar, the symbol still reported a `'raw'` basis it no longer had, and `resolveSmaBasis`'s degradation guard (`indexIntelligence.js:344-351`) could never fire on this path. After Part A the `close` side is always finite, which made the substitution certain rather than merely possible.
+
+The comment at each site claimed the opposite — "falls back to the adjusted comparison unless every value is finite" — describing a guard the `??` had already disarmed.
+
+## The change
+
+| Site | `file:line` (after) | Before | After |
+|---|---|---|---|
+| **Index path** | `api/cron/compute-index-intelligence.js:360` | `ohlcv.map(o => o.rawClose ?? o.close)` | **`ohlcv.map(o => o.rawClose ?? null)`** |
+| **Stock path** | `api/cron/compute-index-intelligence.js:1017` | `d.ohlcv.map(o => o.rawClose ?? o.close)` | **`d.ohlcv.map(o => o.rawClose ?? null)`** |
+
+The comment at each site (`:351-359`, `:1008-1016`) now says what actually happens: `mapDailyRows` already yields null for a non-finite raw print, so a missing raw close must reach `resolveSmaBasis` **as a missing value**; one null fails `rawCloses.every(Number.isFinite)` (`indexIntelligence.js:348`) and **every period** reverts to the shipped adjusted comparison — which `basis` reports.
+
+The `?? o.close` form was originally justified as covering "a bar mapped before `rawClose` existed (a cached payload)". That case does not exist on either path: both are fed exclusively by `fetchOHLCV` → `mapDailyRows` on every run (`:810` for indices, `fetchBatch(ALL_TICKERS)` → `rsData` for stocks), and `injectIntradayBar` always sets `rawClose: price` (`:282`). There is no cache read. VERIFIED by grep over every `rawClose` producer and consumer in `api/` and `src/`.
+
+**Out of scope and unchanged:** `decide.js:1054` and `baselineValidation.js:238-239` also read `rawClose` through a `??` fallback, but those are single-bar Guard 1 / Guard 2 reads, not window reads — a different question, and `decide.js` is §1-fenced. `marketDataCache.js:295-297`'s docstring cites exactly those two call sites and therefore stays accurate; it was not touched.
+
+## The test
+
+The B-1 row `a missing rawClose takes that bar's adjusted close` is flipped to `a missing rawClose falls the WHOLE symbol back to adjusted, and basis says so`, and asserts:
+
+- `basis` is `{sma20: 'adjusted', sma50: 'adjusted', sma200: 'adjusted'}` — **every** period, including the 20-day window that does not contain the holed bar, because the usability check is over the whole series;
+- both published averages equal the adjusted ones;
+- **mutation check**: the reading `?? o.close` produced was **neither** the raw average **nor** the adjusted one — a third number from a mixed series, with nothing in the document saying so.
+
+The hole sits at **bar 35**, inside the 50-day window and **past** the ex-date, so the adjusted and raw closes genuinely differ there. At a bar before the ex-date they are the same number and the substitution is invisible — which is how this went unnoticed in the first place. The earlier version of this row held the hole at bar 12 and its mutation check could not bite; that is corrected.
+
+Two supporting changes, in lockstep:
+
+- The B-1 wiring row now pins **both** sites and asserts `o.rawClose ?? o.close` appears **nowhere** in the cron, so a regression at either site fails here.
+- The row that previously covered "a genuinely unusable raw series" became a duplicate of the flipped row and now covers only the two branches the flipped row does not: a wrong-length raw series and an absent one.
+- The test file's own `scoreOf` helper, which reproduces the cron's stock-path call shape, moved to `?? null` with it.
+
+### Shown failing first, against the `?? o.close` expression
+
+```
+× the cron resolves the index averages through resolveSmaBasis
+× a missing rawClose falls the WHOLE symbol back to adjusted, and basis says so
+
+FAIL  B-1 > the cron resolves the index averages through resolveSmaBasis
+AssertionError: expected '// api/cron/compute-index-intelligenc…' to contain 'const rawCloses = ohlcv.map(o => o.ra…'
+
+FAIL  B-1 > a missing rawClose falls the WHOLE symbol back to adjusted, and basis says so
+AssertionError: expected { sma20: 'raw', sma50: 'raw', …(1) } to deeply equal { sma20: 'adjusted', …(2) }
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 24 passed (26)
+```
+
+Post-change: **26 passed, exit 0.**
+
+## Verification
+
+| Check | Result |
+|---|---|
+| **Full suite** — `npx vitest run`, exit code asserted, not piped through `tail`/`head` | `Test Files 656 passed \| 3 skipped (659)` / `Tests 12385 passed \| 64 skipped (12449)` / `Duration 124.84s` — **exit 0** |
+| `npx vite build` | `✓ built in 23.51s` — **exit 0** |
+| **Lint on the touched files** | **9 errors, 0 warnings — identical to the `origin/main` baseline.** Parity held |
+| Fence | No fenced file, no `src/config/featureFlags.js`, no `DARK_BY_DESIGN` in the addendum diff |
+| Files touched | **2** — `compute-index-intelligence.js` (production), `indexIntelligenceHygiene.test.js` (tests). No new file |
+
+## Behaviour change, stated plainly
+
+On a clean day: **nothing.** Every `rawClose` is finite, the `??` never fires, and both expressions produce the identical array — so the Part A byte-identical-numbers invariant is untouched.
+
+On a day where one bar's raw print is missing while its adjusted close is present: that symbol now resolves **`adjusted` on all three periods** instead of `raw` on a quietly mixed series. The reading moves by at most the payout carried by the window, and `basis` now names which series produced it.
+
+## Disclosure clause — append to the PR body
+
+> A window with a missing raw print resolves adjusted, and `basis` says so.

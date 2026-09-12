@@ -348,11 +348,16 @@ export function computeIndexTechnicals(ohlcv, name) {
   const highs = ohlcv.map(d => d.high);
   const lows = ohlcv.map(d => d.low);
   const volumes = ohlcv.map(d => d.volume);
-  // The unadjusted series, for the price-vs-SMA comparison only. `?? o.close`
-  // covers a bar mapped before `rawClose` existed (a cached payload) —
-  // `resolveSmaBasis` re-checks the whole series and falls back to the adjusted
-  // comparison unless every value is finite. Same expression as the stock path.
-  const rawCloses = ohlcv.map(o => o.rawClose ?? o.close);
+  // The unadjusted series, for the price-vs-SMA comparison only. `?? null`, not
+  // `?? o.close`: `mapDailyRows` already yields `rawClose: null` when the raw
+  // print is not a finite number (marketDataCache.js:337), so a missing raw
+  // close must reach `resolveSmaBasis` AS a missing value. Substituting the
+  // adjusted close there would put an adjusted bar inside the raw window and
+  // leave the symbol reporting a 'raw' basis it no longer has. One null now
+  // fails `rawCloses.every(Number.isFinite)` (indexIntelligence.js:348) and
+  // EVERY period reverts to the shipped adjusted comparison — which `basis`
+  // reports. Same expression as the stock path.
+  const rawCloses = ohlcv.map(o => o.rawClose ?? null);
 
   const currentPrice = closes[0];
   const prevClose = closes.length > 1 ? closes[1] : currentPrice;
@@ -1000,11 +1005,16 @@ export default async function handler(req, res) {
 
         const rsPercentile = rsPercentileMap[d.sym] ?? 50;
         const sectorRSPercentile = sectorRSMap[d.sym] ?? null;
-        // The unadjusted series, for the price-vs-SMA flags only. `?? o.close`
-        // covers a bar mapped before `rawClose` existed (a cached payload) —
-        // `resolveSmaBasis` re-checks the whole series and falls back to the
-        // adjusted comparison unless every value is finite.
-        const rawCloses = d.ohlcv.map(o => o.rawClose ?? o.close);
+        // The unadjusted series, for the price-vs-SMA flags only. `?? null`, not
+        // `?? o.close`: `mapDailyRows` already yields `rawClose: null` when the
+        // raw print is not a finite number (marketDataCache.js:337), so a
+        // missing raw close must reach `resolveSmaBasis` AS a missing value.
+        // Substituting the adjusted close there would put an adjusted bar
+        // inside the raw window and leave the symbol reporting a 'raw' basis it
+        // no longer has. One null now fails `rawCloses.every(Number.isFinite)`
+        // (indexIntelligence.js:348) and EVERY period reverts to the shipped
+        // adjusted comparison — which `factors.basis` reports.
+        const rawCloses = d.ohlcv.map(o => o.rawClose ?? null);
         const scoreResult = computeTechnicalScore({
           closes,
           highs,
