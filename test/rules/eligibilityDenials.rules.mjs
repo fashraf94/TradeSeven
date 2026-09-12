@@ -34,7 +34,7 @@ import {
   assertFails,
   assertSucceeds,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, where, documentId, getDocs } from 'firebase/firestore';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const RULES_PATH = process.env.COMPOSITION_RULES_TEXT_PATH
@@ -123,6 +123,29 @@ describe('eligibility/{uid} — READ is owner-only', () => {
   it("a non-owner's read of an ABSENT doc is denied too — no existence oracle", async () => {
     await assertFails(getDoc(doc(asOther(), FRESH_DOC)));
     await assertFails(getDoc(doc(asAnon(), FRESH_DOC)));
+  });
+});
+
+describe('eligibility/{uid} — LIST is owner-only too (`allow read` grants get AND list — review F-C1)', () => {
+  // A get-only suite cannot fail under `allow list: if request.auth != null`
+  // (BUILD_RULES §2: a row that cannot fail under the defect it names is not a
+  // guard). These rows pin the list verb: the engine admits a list only when
+  // the query PROVES uid == userId for every possible result.
+  it('an unfiltered collection list is denied for everyone, the owner included', async () => {
+    await assertFails(getDocs(collection(asOwner(), 'eligibility')));
+    await assertFails(getDocs(collection(asOther(), 'eligibility')));
+    await assertFails(getDocs(collection(asPrivileged(), 'eligibility')));
+    await assertFails(getDocs(collection(asAnon(), 'eligibility')));
+  });
+
+  it("a documentId() query for another user's doc is denied", async () => {
+    await assertFails(getDocs(query(collection(asOther(), 'eligibility'), where(documentId(), '==', OWNER_UID))));
+    await assertFails(getDocs(query(collection(asPrivileged(), 'eligibility'), where(documentId(), '==', OWNER_UID))));
+    await assertFails(getDocs(query(collection(asAnon(), 'eligibility'), where(documentId(), '==', OWNER_UID))));
+  });
+
+  it("POSITIVE CONTROL — the owner's documentId() query for their own doc succeeds", async () => {
+    await assertSucceeds(getDocs(query(collection(asOwner(), 'eligibility'), where(documentId(), '==', OWNER_UID))));
   });
 });
 

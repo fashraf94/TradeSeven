@@ -104,7 +104,27 @@ function listSources(dirRel) {
   return out;
 }
 const SOURCES = [...listSources('api'), ...listSources('src')];
-const importersOf = (re) => SOURCES.filter((rel) => re.test(read(rel))).sort();
+
+// Every non-test source that imports `targetRel`, with each import specifier
+// RESOLVED against the importing file's own directory — so PR 2's sibling
+// `./eligibility.js` inside api/_utils/ counts exactly like the route's
+// `../_utils/eligibility.js` (review F-A1: a path-substring regex could not
+// see the sibling spelling, so the row could not fail under the case it names).
+const IMPORT_FROM_RE = /\bfrom\s+['"]([^'"]+)['"]/g;
+const IMPORT_CALL_RE = /\bimport\(\s*['"]([^'"]+)['"]\s*\)/g;
+function importersOf(targetRel) {
+  const target = path.join(REPO, targetRel);
+  return SOURCES.filter((rel) => {
+    const src = read(rel);
+    const dir = path.dirname(path.join(REPO, rel));
+    for (const re of [IMPORT_FROM_RE, IMPORT_CALL_RE]) {
+      for (const m of src.matchAll(re)) {
+        if (m[1].startsWith('.') && path.resolve(dir, m[1]) === target) return true;
+      }
+    }
+    return false;
+  }).sort();
+}
 
 describe('nothing else reaches it (PR 0)', () => {
   it("no route calls the read side — the route imports only eligibilityRef; requireEligibility's first caller is PR 2", () => {
@@ -112,14 +132,23 @@ describe('nothing else reaches it (PR 0)', () => {
     // alone. PR 2 (backingEligibility.js → requireEligibility) adds the second
     // importer and moves this row deliberately; until then the gate is
     // reachable through no door.
-    expect(importersOf(/from\s+['"][^'"]*\/_utils\/eligibility\.js['"]/)).toEqual(['api/eligibility/attest.js']);
+    expect(importersOf('api/_utils/eligibility.js')).toEqual(['api/eligibility/attest.js']);
     const code = read('api/eligibility/attest.js').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
     expect(code).toContain("import { eligibilityRef } from '../_utils/eligibility.js';");
     expect(code).not.toMatch(/requireEligibility|getEligibility/);
   });
 
   it('the route is the only importer of the constants — no UI ships in PR 0 (the AttestationStep is PR 4)', () => {
-    expect(importersOf(/from\s+['"][^'"]*\/constants\/eligibility\.js['"]/)).toEqual(['api/eligibility/attest.js']);
+    expect(importersOf('src/constants/eligibility.js')).toEqual(['api/eligibility/attest.js']);
+  });
+
+  it('the importer walk is not vacuous — it resolves a sibling `./x.js` and a parent `../_utils/x.js` spelling alike', () => {
+    // firebaseAdmin.js is imported as `./firebaseAdmin.js` by authMiddleware.js
+    // (sibling) and as `../_utils/firebaseAdmin.js` by the route (parent); a
+    // walker blind to either spelling fails here before it can pass vacuously above.
+    const importers = importersOf('api/_utils/firebaseAdmin.js');
+    expect(importers).toContain('api/_utils/authMiddleware.js');
+    expect(importers).toContain('api/eligibility/attest.js');
   });
 
   it('the route reads the flag at CALL time, never at module scope, and there is no accessor to miss', () => {

@@ -15,8 +15,11 @@
  * The terms version the attestation endpoint accepts (api/eligibility/attest.js
  * validates the client's `termsVersion` against it — any other value is a 400)
  * and the value it records on the doc. Counsel's ratified version replaces this
- * draft tag before the flip; a later terms revision bumps it again, which is
- * what invalidates stale clients.
+ * draft tag before the flip. A later terms revision bumps it again, which
+ * refuses stale client REQUESTS (400) — it does not touch attestations already
+ * recorded: the endpoint returns an existing doc unchanged (spec §12), so
+ * whether a revision needs re-acceptance is a §11 gate-1 / PR 2 decision,
+ * not built here.
  */
 export const TERMS_VERSION = 'beta-2026-09-draft';
 
