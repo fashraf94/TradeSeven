@@ -468,7 +468,6 @@ describe('A-3 — an index row with no closes: a 500 before, a completed run aft
     expect(qqq.sma20.value).toBeGreaterThan(0);
     // Its unpoisoned siblings are untouched.
     expect(getFirestoreMock.db.store.get('indexIntelligence/SPY').price).toBeGreaterThan(0);
-    expect(res.body.droppedRows ?? null).not.toBe(undefined);
   });
 
   it('MUTATION CHECK — the same payload through the pre-change mapper throws at :394', () => {
