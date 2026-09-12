@@ -14,6 +14,20 @@
 export const HAIKU_CALL_CEILING_MS = 22_000;
 export const HAIKU_POST_CALL_ALLOWANCE_MS = 12_000;
 
+// Prompt-build ceiling (Sep 2026 transport hygiene). The backstop above is now
+// armed AFTER the prompt is built, so the build needs a bound of its own: a
+// hung Firestore read inside fetchInstitutionalContext would otherwise hold the
+// serial battle loop until Vercel kills the function at 300s, taking every
+// later battle's tick and this battle's write with it. A typical build is
+// sub-second; an agent with institutional rules adds ⌈(held+bench)/10⌉
+// sequential Firestore batches, which is the only shape that gets near this.
+// REVISIT once `buildMs` has a week of production data.
+export const PROMPT_BUILD_CEILING_MS = 10_000;
+
+// The name the prompt-build race's rejection carries. ONE source, shared by the
+// thrower (agent-evaluate.js) and the two matchers below, so they cannot drift.
+export const PROMPT_BUILD_TIMEOUT_ERROR_NAME = 'PromptBuildTimeoutError';
+
 // The mid-battle eval model — ONE exported source (P2 code-review finding:
 // the literal had grown three copies — the live messages.create call plus
 // the two behavior-record envelope capture sites — and the envelope exists
@@ -36,9 +50,16 @@ export const EVAL_MAX_OUTPUT_TOKENS = 2048;
 /**
  * Classify a Haiku transport failure for instrumentation (Phase 2).
  *
+ * 'build_timeout' (Sep 2026) is the ONE class that names a failure before the
+ * call: the prompt build blew PROMPT_BUILD_CEILING_MS and no request was ever
+ * sent. It is checked FIRST so a future message change there can never fall
+ * into the timeout arm below.
+ *
  * 'timeout' covers: the SDK's per-request timeout after zero retries
  * (APIConnectionTimeoutError), the cron's 22s AbortController backstop
- * (APIUserAbortError), native AbortError, and timeout-shaped messages.
+ * (APIUserAbortError), native AbortError, and timeout-shaped messages. The two
+ * stay ONE class — every consumer of the class is unchanged; which of them
+ * fired is carried separately by classifyTimeoutKind below.
  * HTTP errors classify by status ('429', '529', ...); everything else by
  * constructor/class name (e.g. 'APIConnectionError', 'TypeError').
  *
@@ -49,6 +70,10 @@ export function classifyHaikuFailure(err) {
   if (!err) return 'unknown';
   const ctorName = err.constructor?.name || '';
   const msg = String(err.message || '');
+
+  if (ctorName === PROMPT_BUILD_TIMEOUT_ERROR_NAME || err.name === PROMPT_BUILD_TIMEOUT_ERROR_NAME) {
+    return 'build_timeout';
+  }
 
   if (
     ctorName === 'APIConnectionTimeoutError' ||
@@ -65,14 +90,57 @@ export function classifyHaikuFailure(err) {
 }
 
 /**
- * Pre-call budget guard (Phase 1.2): may a 20s-ceiling Haiku call start now
+ * WHICH timeout fired — the split classifyHaikuFailure deliberately does not
+ * make (Sep 2026 transport hygiene; Phase 0 §3.3 recorded that by failureClass
+ * alone the two were indistinguishable, and only haikuError.message separated
+ * them).
+ *
+ *   'sdk'      — the SDK's own per-request timeout (20s). APIConnectionTimeoutError,
+ *                message 'Request timed out.'
+ *   'backstop' — the cron's AbortController ceiling (22s). APIUserAbortError,
+ *                a native AbortError, message 'Request was aborted.'
+ *   null       — not a transport timeout at all (a build timeout, a status
+ *                error, a truncated response, anything else).
+ *
+ * Keyed on constructor.name first, per the module header's SDK quirk: the SDK's
+ * error classes leave `.name` at 'Error'. Persisted as haikuError.timeoutKind;
+ * every existing reader of failureClass is untouched.
+ *
+ * @param {Error|null|undefined} err
+ * @returns {'sdk'|'backstop'|null}
+ */
+export function classifyTimeoutKind(err) {
+  if (!err) return null;
+  const ctorName = err.constructor?.name || '';
+  const msg = String(err.message || '');
+
+  // The build ceiling is not a transport timeout — checked first so its message
+  // can never be read as one.
+  if (ctorName === PROMPT_BUILD_TIMEOUT_ERROR_NAME || err.name === PROMPT_BUILD_TIMEOUT_ERROR_NAME) return null;
+
+  if (ctorName === 'APIConnectionTimeoutError' || /timed? ?out/i.test(msg)) return 'sdk';
+  if (ctorName === 'APIUserAbortError' || err.name === 'AbortError' || /request was aborted/i.test(msg)) return 'backstop';
+  return null;
+}
+
+/**
+ * Pre-call budget guard (Phase 1.2): may the evaluation engine start now
  * without risking the function's kill window and losing the awaited
- * finalUpdate? Required remaining = call ceiling (22s hard abort) + post-call
- * allowance (12s) = 34s against TIME_BUDGET_MS.
+ * finalUpdate?
+ *
+ * Required remaining = prompt-build ceiling (10s) + call ceiling (22s hard
+ * abort) + post-call allowance (12s) = 44s against TIME_BUDGET_MS. It was 34s
+ * until Sep 2026, when the backstop moved to after the build: the build is now
+ * a bounded phase that runs SEQUENTIALLY BEFORE the call rather than inside its
+ * ceiling, so the guard must reserve room for it. The requirement is the sum of
+ * the three named constants and never a literal — a future ceiling change moves
+ * it here, once. `budget_skipped` semantics are unchanged: the engine was never
+ * attempted, the normal write path still runs.
  *
  * @param {Object} p
  * @param {number} p.elapsedMs - ms since the cron handler started
  * @param {number} p.timeBudgetMs - the handler's soft budget (TIME_BUDGET_MS)
+ * @param {number} [p.promptBuildCeilingMs]
  * @param {number} [p.callCeilingMs]
  * @param {number} [p.postCallAllowanceMs]
  * @returns {{ proceed: boolean, remainingMs: number, requiredMs: number }}
@@ -80,11 +148,12 @@ export function classifyHaikuFailure(err) {
 export function shouldStartHaikuCall({
   elapsedMs,
   timeBudgetMs,
+  promptBuildCeilingMs = PROMPT_BUILD_CEILING_MS,
   callCeilingMs = HAIKU_CALL_CEILING_MS,
   postCallAllowanceMs = HAIKU_POST_CALL_ALLOWANCE_MS,
 }) {
   const remainingMs = timeBudgetMs - elapsedMs;
-  const requiredMs = callCeilingMs + postCallAllowanceMs;
+  const requiredMs = promptBuildCeilingMs + callCeilingMs + postCallAllowanceMs;
   return { proceed: remainingMs >= requiredMs, remainingMs, requiredMs };
 }
 

@@ -47,7 +47,13 @@ export const HELD = Object.freeze(['NVDA', 'TSLA', 'MSFT', 'AMZN', 'KO', 'PG', '
 /** The bench: never stamped. */
 export const BENCH = Object.freeze(['AMD', 'JPM']);
 
-/** The 25 keys the cron composed on every entry BEFORE Phase B (agent-evaluate.js `const evaluation = {…}`), in source order. */
+/**
+ * The 25 keys the cron composed on every entry BEFORE Phase B (agent-evaluate.js
+ * `const evaluation = {…}`), in source order. This list is FROZEN HISTORY: it is
+ * what `tickStampsEntryGolden.flagOff.json` was captured from (origin/main @
+ * 4a8ae54a), so it must keep matching that artifact exactly and must never grow.
+ * Live entries are BASE_ENTRY_KEYS below.
+ */
 export const PRE_PHASE_B_ENTRY_KEYS = Object.freeze([
   'evalId', 'timestamp', 'day', 'battlePhase', 'decision', 'symbolOut', 'symbolIn', 'tier',
   'rationale', 'hypothesis', 'conviction', 'riskAssessment', 'ignoredDirectiveIds',
@@ -55,6 +61,20 @@ export const PRE_PHASE_B_ENTRY_KEYS = Object.freeze([
   'scores', 'validationErrors', 'downgraded', 'marketPosture', 'guardrailOverrides',
   'guardrailSourceNote', 'haikuError',
 ]);
+
+/**
+ * Transport hygiene (Sep 12, 2026) — the three flat timing fields the cron now
+ * composes in that same `const evaluation = {…}` literal, after `haikuError`.
+ * ADDITIVE and UNCONDITIONAL: they ride every entry, flag on or off, stamped or
+ * not, which is why they sit here and not with the four Phase B stamp keys
+ * (those are Object.assign'd on afterwards, under TICK_STAMPS_ENABLED &&
+ * promptBuilt). Under the harness's frozen clock every Date.now() pair is zero,
+ * so their values are deterministic: 0 / 0 / FROZEN_NOW.
+ */
+export const TIMING_ENTRY_KEYS = Object.freeze(['promptBuiltAt', 'buildMs', 'callMs']);
+
+/** Every key the cron composes ITSELF, in source order — the entry before any stamp is assigned. */
+export const BASE_ENTRY_KEYS = Object.freeze([...PRE_PHASE_B_ENTRY_KEYS, ...TIMING_ENTRY_KEYS]);
 
 export function makeDirective(overrides = {}) {
   return {

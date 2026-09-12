@@ -13,7 +13,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   FROZEN_NOW,
   OLD_THREAD,
-  PRE_PHASE_B_ENTRY_KEYS,
+  BASE_ENTRY_KEYS,
   makeTickBattle,
   makePriceTable,
   makeRankingsDoc,
@@ -90,7 +90,7 @@ describe("Phase B tick stamps — suppressed: 'mode_not_enforce' end to end (haz
 
     expect(entry.heard).toEqual({ directiveThreadId: OLD_THREAD, suppressed: 'mode_not_enforce' });
     expect(promptSeen).not.toContain('Require stronger confirmation before entering');
-    expect(Object.keys(entry)).toEqual([...PRE_PHASE_B_ENTRY_KEYS, 'heard', 'evidence', 'vintages']);
+    expect(Object.keys(entry)).toEqual([...BASE_ENTRY_KEYS, 'heard', 'evidence', 'vintages']);
     // the directive is still on the battle — data kept, rendering suppressed (the D-52 contract)
     expect(battle.directive.directiveThreadId).toBe(OLD_THREAD);
   });

@@ -40,6 +40,7 @@ import {
   OLD_THREAD,
   NEWER_THREAD,
   PRE_PHASE_B_ENTRY_KEYS,
+  BASE_ENTRY_KEYS,
   makeTickBattle,
   makeDirective,
   makePriceTable,
@@ -170,7 +171,7 @@ describe('flag ON — Heard (D-110): the thread that was in the decider\'s promp
   it('is absent when no directive is active — the evidence and vintages still ride', async () => {
     const { entry } = await runTick({ battle: makeTickBattle({ directive: null }) });
     expect(entry).not.toHaveProperty('heard');
-    expect(Object.keys(entry)).toEqual([...PRE_PHASE_B_ENTRY_KEYS, 'evidence', 'vintages']);
+    expect(Object.keys(entry)).toEqual([...BASE_ENTRY_KEYS, 'evidence', 'vintages']);
     expect(Object.keys(entry.evidence)).toEqual([...HELD]);
   });
 
@@ -180,7 +181,11 @@ describe('flag ON — Heard (D-110): the thread that was in the decider\'s promp
     expect(summary.triggered).toBe(1);
     expect(entry.haikuError?.failureClass).toBe('budget_skipped');
     expect(entry.decision).toBe('HOLD');
-    expect(Object.keys(entry)).toEqual([...PRE_PHASE_B_ENTRY_KEYS]);
+    expect(Object.keys(entry)).toEqual([...BASE_ENTRY_KEYS]);
+    // …and the engine never ran at all, so all three timings are null.
+    expect(entry.promptBuiltAt).toBeNull();
+    expect(entry.buildMs).toBeNull();
+    expect(entry.callMs).toBeNull();
     for (const key of ['heard', 'evidence', 'vintages', 'candidates']) expect(entry).not.toHaveProperty(key);
   });
 
@@ -367,7 +372,7 @@ describe('flag ON — the candidates (D-112): the decider\'s own output, persist
 describe('flag ON — the write: additive keys on the entry, nothing else moves', () => {
   it('the entry is the 25 pre-Phase-B keys — byte-identical to the flag-off golden — followed by the stamps, in order; the persisted DOC carries the same stamped entry', async () => {
     const { entry, db } = await runTick({ result: makeHoldResult({ anticipationCandidates: makeAnticipationCandidates() }) });
-    expect(Object.keys(entry)).toEqual([...PRE_PHASE_B_ENTRY_KEYS, 'heard', 'evidence', 'vintages', 'candidates']);
+    expect(Object.keys(entry)).toEqual([...BASE_ENTRY_KEYS, 'heard', 'evidence', 'vintages', 'candidates']);
     expect(JSON.stringify(pick(entry, PRE_PHASE_B_ENTRY_KEYS))).toBe(JSON.stringify(GOLDEN.entry));
     // the store — what Firestore holds after the write — carries the stamped entry too (review D-1)
     const persisted = db.__store.battle.evaluations[db.__store.battle.evaluations.length - 1];

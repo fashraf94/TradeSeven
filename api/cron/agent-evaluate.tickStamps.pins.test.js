@@ -23,7 +23,11 @@
 //      not the rendered one — discovery A2 / hazard 3).
 //   4. THE DECIDER'S WHITELIST. formatRecentEvals reads a fixed set of entry
 //      keys and agentTriggerGate reads evaluations.length only, so no stamp can
-//      ever leak into the decider's prompt through the record (spec §1.6).
+//      ever leak into the decider's prompt through the record (spec §1.6). The
+//      whitelist is the pin for EVERY additive entry field, not just the four
+//      stamps: the Sep 12 2026 transport-hygiene timings (promptBuiltAt /
+//      buildMs / callMs) and haikuError.timeoutKind are held to the same rule —
+//      the prompt is byte-identical with them and without them.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -205,15 +209,25 @@ describe('pin 3 — no doc re-read between the prompt build and the stamp (disco
 
 describe('pin 4 — the fenced decider is inert to the new keys (spec §1.6)', () => {
   const WHITELIST = ['decision', 'evalId', 'hypothesis', 'rationale', 'symbolIn', 'symbolOut', 'tier', 'timestamp'];
+  // Transport hygiene (Sep 12, 2026): the three flat timing fields the cron now
+  // composes on every entry, plus the timeoutKind it adds inside haikuError.
+  // `haikuError` is not on the whitelist at all, so its contents are already
+  // unreachable — the key is listed so the source rows below say so out loud.
+  const TIMING_KEYS = ['promptBuiltAt', 'buildMs', 'callMs'];
+  const ADDITIVE_KEYS = [...TICK_STAMP_KEYS, ...TIMING_KEYS, 'timeoutKind', 'haikuError'];
 
   it('formatRecentEvals reads exactly the eight whitelisted entry keys by dot access and reads the entry no other way (no bracket, destructuring, spread or whole-object pass)', () => {
     const body = fnSource(FENCED, 'formatRecentEvals');
     const reads = [...new Set([...body.matchAll(/\bev\.(\w+)/g)].map((m) => m[1]))].sort();
     expect(reads).toEqual(WHITELIST);
-    for (const key of TICK_STAMP_KEYS) expect(body, `formatRecentEvals must not read "${key}"`).not.toContain(key);
+    for (const key of ADDITIVE_KEYS) expect(body, `formatRecentEvals must not read "${key}"`).not.toContain(key);
     expect(body).not.toMatch(/\bev\s*\[/);
     expect(body).not.toMatch(/\{[^}]*\}\s*=\s*ev\b/);
     expect(body).not.toMatch(/\.\.\.ev\b|JSON\.stringify\(ev\b|Object\.(keys|values|entries)\(ev\b/);
+    // anti-vacuous: the whitelist and the additive set are disjoint, so the
+    // loop above is a real exclusion and not a list of words already absent
+    // from any function that reads anything at all.
+    for (const key of ADDITIVE_KEYS) expect(WHITELIST).not.toContain(key);
   });
 
   it('battle.evaluations reaches the fenced assembler through that ONE call and no other form of read', () => {
@@ -248,6 +262,52 @@ describe('pin 4 — the fenced decider is inert to the new keys (spec §1.6)', (
     expect(Object.keys(stamped[0])).toEqual(expect.arrayContaining(['heard', 'evidence', 'vintages', 'candidates']));
     expect(formatRecentEvals(stamped, 3)).toBe(formatRecentEvals(plain, 3));
     expect(formatRecentEvals(stamped, 3)).not.toContain(OLD_THREAD);
+  });
+
+  it('behavioural twin (transport hygiene): the prompt is BYTE-IDENTICAL for entries carrying promptBuiltAt / buildMs / callMs / haikuError.timeoutKind and entries without them', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-09T15:00:00.000Z'));
+    const plain = EVALUATIONS.map((e) => ({ ...e }));
+    // Production shapes, not placeholders: a check that built and called, a
+    // check whose build blew its ceiling (no call), and a transport timeout
+    // carrying the new timeoutKind inside the existing haikuError.
+    // …applied to the LAST THREE entries — the window formatRecentEvals renders.
+    const VARIANTS = [
+      (e) => ({ ...e, promptBuiltAt: '2026-09-09T14:59:58.000Z', buildMs: 412, callMs: 6_231 }),
+      (e) => ({
+        ...e,
+        haikuError: { failureClass: 'build_timeout', message: 'prompt build exceeded 10000 ms', timestamp: '2026-09-09T14:59:50.000Z', timeoutKind: null, evalId: e.evalId },
+        promptBuiltAt: null,
+        buildMs: 10_004,
+        callMs: null,
+      }),
+      (e) => ({
+        ...e,
+        haikuError: { failureClass: 'timeout', message: 'Request timed out.', timestamp: '2026-09-09T14:59:40.000Z', timeoutKind: 'sdk', evalId: e.evalId },
+        promptBuiltAt: '2026-09-09T14:59:19.000Z',
+        buildMs: 688,
+        callMs: 20_003,
+      }),
+    ];
+    const firstVariant = plain.length - VARIANTS.length;
+    expect(firstVariant, 'the fixture must carry at least the three rendered entries').toBeGreaterThanOrEqual(0);
+    const timed = plain.map((e, i) => (i >= firstVariant ? VARIANTS[i - firstVariant](e) : e));
+    // the fields really are on the three entries that get rendered (anti-vacuous)
+    const rendered3 = timed.slice(-3);
+    expect(rendered3.map((e) => e.buildMs)).toEqual([412, 10_004, 688]);
+    expect(rendered3.map((e) => e.callMs)).toEqual([6_231, null, 20_003]);
+    expect(rendered3.map((e) => (e.haikuError ? [e.haikuError.failureClass, e.haikuError.timeoutKind] : null)))
+      .toEqual([null, ['build_timeout', null], ['timeout', 'sdk']]);
+    expect(formatRecentEvals(timed, 3)).toBe(formatRecentEvals(plain, 3));
+    // and nothing from the new fields appears anywhere in the rendered block
+    const rendered = formatRecentEvals(timed, 3);
+    // anti-vacuous: the block is real — a renderer that returned '' would pass
+    // the byte-identity and every exclusion below without proving anything.
+    expect(rendered.length).toBeGreaterThan(80);
+    for (const e of timed.slice(-3)) expect(rendered).toContain(e.evalId);
+    for (const needle of ['promptBuiltAt', 'buildMs', 'callMs', 'timeoutKind', 'build_timeout', '10004', '20003', '6231']) {
+      expect(rendered, `the decider's block must not contain "${needle}"`).not.toContain(needle);
+    }
   });
 
   it('agentTriggerGate reads evaluations.length only; a stamped history triggers identically', () => {
