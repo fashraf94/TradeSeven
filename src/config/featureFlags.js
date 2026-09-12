@@ -2301,3 +2301,43 @@ export const SHOW_IT_ENABLED = false;
 export function isShowItOn() {
   return isBattleViewControllerOn() && SHOW_IT_ENABLED;
 }
+
+/**
+ * BACKING BETA — PR 0: ELIGIBILITY ATTESTATION (spec V1.3 §5 / §6 / §8 / §12
+ * PR 0; ruling D-z). A PLATFORM PRIMITIVE, not a backing feature: the first
+ * age, terms or consent state the platform has ever held (addendum §2 Q3 —
+ * nothing existed). `users/{uid}` is owner-writable, so the attestation lives
+ * in its own server-written `eligibility/{uid}` doc under a `write: if false`
+ * rule (the tournamentRanks pattern); it is an attestation, not verification.
+ *
+ * ONE flag for the ONE door. When it resolves ON —
+ *   · POST /api/eligibility/attest answers (it 404s while this is false, AFTER
+ *     auth — the SHOW_IT_ENABLED / research.js shape — so the route does not
+ *     exist as far as any caller is concerned).
+ * That route is the only thing this flag governs. While it is false the route
+ * is absent, and nothing else is reachable either: PR 0 ships no UI (the
+ * AttestationStep lands in PR 4 at the backing entry), no existing endpoint
+ * calls the read helper (api/_utils/eligibility.js — its first caller is PR 2),
+ * and the `eligibility` rules block is inert until deployed via the Console.
+ *
+ * FALSE at merge (§11 gates 1–2, §12): PR 0 merges dark. Before the flip,
+ * counsel's copy replaces the two `COUNSEL: replace before flip` placeholders
+ * in src/constants/eligibility.js and TERMS_VERSION becomes the ratified
+ * version; the rules block is deployed. The flip PR then flips this flag
+ * TOGETHER WITH BACKING_BETA_ENABLED after every §11 gate — never a build PR.
+ *
+ * Read at CALL time inside the handler that gates on it — never a module-scope
+ * derivation — so a hermetic featureFlags mock with an explicit value governs
+ * every test (the TICK_STAMPS_ENABLED / SHOW_IT_ENABLED rule). No accessor:
+ * the server reads the bare constant, and there is no client gate in PR 0.
+ *
+ * FLIP MAP (the flip PR reconciles these in the SAME commit — BUILD_RULES §2):
+ *   • src/config/eligibilityFlags.test.js — the dark pin row moves to true;
+ *   • src/config/flagPinGuard.test.js — drop ELIGIBILITY_ATTESTATION_ENABLED
+ *     from DARK_BY_DESIGN (its integrity test reds if a lit flag is left listed).
+ *   The flag-off darkness suite (api/eligibility/attest.dark.test.js) mocks
+ *   this flag to an explicit false and does NOT move; the lit suite
+ *   (api/eligibility/attest.test.js) mocks it per row and does not move either.
+ */
+// Pinned by: eligibilityFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const ELIGIBILITY_ATTESTATION_ENABLED = false;

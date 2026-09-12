@@ -149,6 +149,8 @@ const DARK_BY_DESIGN = {
   // battleViewControllerFlags.test.js now asserts the live true value.
   // COMMAND_CENTER_SYNC_ENABLED (the dashboard Desk) is a SEPARATE runway and
   // stays listed below — this flip said nothing about it.
+  ELIGIBILITY_ATTESTATION_ENABLED:
+    'Backing Beta PR 0 — the eligibility attestation route (spec V1.3 §12, D-z), a platform primitive built dark; flips with BACKING_BETA_ENABLED in the founder\'s own flip PR after every §11 gate (counsel\'s copy in place, the eligibility rules deployed), never a build PR. Flag-off the route 404s after auth (attest.dark.test.js)',
 };
 
 // ── Build the live flag → value map from the source modules ──────────────────

@@ -570,6 +570,21 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Backing Beta PR 0: eligibility/{uid} — the server-written eligibility
+    // attestation (spec V1.3 §6 / §8, ruling D-z; addendum §2 Q3). The first
+    // age / terms / consent state the platform holds. Deliberately does NOT
+    // live on users/{uid} — that doc is owner-writable, so a flag there would
+    // be client-writable and not authoritative (the career-rank precedent
+    // above). OWNER-read only (the userMeta shape — it is the user's own
+    // consent record, not a public surface); all mutation stays Admin SDK
+    // (POST /api/eligibility/attest, the one writer) — never a client write,
+    // the owner included. Same manual Console-deploy caveat as above; inert
+    // until deployed and until ELIGIBILITY_ATTESTATION_ENABLED flips.
+    match /eligibility/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow create, update, delete: if false;
+    }
+
     // P10: self-serve lobby waiting-pool docs — the front door before a group
     // exists (the tournamentGroups pattern verbatim: authenticated reads for
     // the "who's waiting" / own-lobby surface; all mutation is Admin SDK via
