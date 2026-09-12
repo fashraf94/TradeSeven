@@ -158,9 +158,14 @@ describe('nothing else reaches it (PR 0)', () => {
     // explain it, which is documentation, not a read.
     const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
     expect(code.match(/ELIGIBILITY_ATTESTATION_ENABLED/g)).toHaveLength(2); // the import and the one call-time read
-    // No `isEligibilityAttestationOn`-style accessor exists for this flag, so a
-    // hermetic mock of the constant is the whole story (the SHOW_IT trap).
-    expect(read('src/config/featureFlags.js')).not.toMatch(/export function \w*[Ee]ligibility\w*\(/);
+    // No accessor exists for this flag, so a hermetic mock of the constant is
+    // the whole story (the SHOW_IT trap). Pinned by COUNT, not by name (review
+    // F-D1: a name regex was spelling-bound): comment-stripped, featureFlags.js
+    // mentions the identifier exactly once — its own export — so any accessor
+    // or derivation that reads it, whatever it is called, reds this row.
+    const flagsCode = read('src/config/featureFlags.js').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+    expect(flagsCode.match(/ELIGIBILITY_ATTESTATION_ENABLED/g),
+      'something in featureFlags.js reads the flag besides its own export — an accessor or derivation a hermetic mock of the constant cannot see').toHaveLength(1);
   });
 
   it('adds no cron entry (spec §7: zero new crons)', () => {
