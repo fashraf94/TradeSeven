@@ -104,13 +104,18 @@ function makeFakeDb({ failCreateWith = null } = {}) {
 }
 
 describe('P2.6 activation', () => {
-  it('SHADOW_ASSEMBLY_ENABLED is ON — the deliberate flag-flip this suite guards', () => {
-    // Flipped false→true in the founder flag-flip PR (Phase 2 flip sequence:
-    // manifest-write first `335e38de`, shadow-assembly second — capture is
-    // manifest-anchored and skips pre-manifest battles). Reverting the flag
-    // is likewise a deliberate act: it must edit this assertion in the same
-    // commit, exactly as the flip did.
-    expect(SHADOW_ASSEMBLY_ENABLED).toBe(true);
+  it('SHADOW_ASSEMBLY_ENABLED is OFF — the deliberate flip-off this suite guards', () => {
+    // Flipped false→true in the Phase 2 activation PR #671 (2026-07-24), then
+    // true→false on 2026-09-12: the DR-10 stage-1 corpus has exactly one
+    // consumer (the offline scripts/paired-eval-harness.js, run once on
+    // 2026-07-31 for the DR-13 identity-block flip, which shipped), the
+    // manifest-read migration it was built to gate has no build, and the
+    // capture sat on three unbounded awaits before the battle write. The
+    // historical corpus is preserved and stays queryable by that harness.
+    // Re-flipping is likewise a deliberate act: it must edit this assertion
+    // AND drop the DARK_BY_DESIGN entry (src/config/flagPinGuard.test.js) in
+    // the same commit, exactly as this flip did.
+    expect(SHADOW_ASSEMBLY_ENABLED).toBe(false);
   });
 });
 
