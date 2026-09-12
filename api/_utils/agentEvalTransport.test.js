@@ -141,6 +141,31 @@ describe('classifyTimeoutKind', () => {
     expect(classifyHaikuFailure(backstop)).toBe('timeout');
   });
 
+  it('a build timeout stays null even when its MESSAGE is timeout-shaped — the name guard, not the fall-through, is what holds', () => {
+    // Anti-vacuity (review lens A, finding A1): the shipped ceiling message
+    // ('prompt build exceeded 10000 ms') matches neither regex, so the plain
+    // build-timeout case would return null with or without the name guard at
+    // the top of classifyTimeoutKind. This row is the one that makes that guard
+    // load-bearing: same name, a message that DOES match /timed? ?out/i.
+    const err = Object.assign(new Error('prompt build timed out'), { name: PROMPT_BUILD_TIMEOUT_ERROR_NAME });
+    expect(/timed? ?out/i.test(err.message)).toBe(true);
+    expect(classifyTimeoutKind(err)).toBeNull();
+    expect(classifyHaikuFailure(err)).toBe('build_timeout');
+  });
+
+  it('the CLASS check beats the message check: a backstop abort whose message mentions a timeout is still backstop', () => {
+    // Review lens D, finding D4. The class is the strong signal; the messages
+    // are only a fallback for an SDK build that stops exporting the classes.
+    // Interleaving them mis-read the one discrimination this function exists for.
+    const abortWithTimeoutWords = new APIUserAbortError();
+    abortWithTimeoutWords.message = 'Request was aborted due to timeout';
+    expect(classifyTimeoutKind(abortWithTimeoutWords)).toBe('backstop');
+
+    const nativeAbort = new Error('The operation timed out and was aborted');
+    nativeAbort.name = 'AbortError';
+    expect(classifyTimeoutKind(nativeAbort)).toBe('backstop');
+  });
+
   it('everything that is not a transport timeout is null — build timeout, statuses, connection error, TypeError, nullish', () => {
     expect(classifyTimeoutKind(promptBuildTimeout())).toBeNull();
     expect(classifyTimeoutKind(new RateLimitError())).toBeNull();

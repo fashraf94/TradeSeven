@@ -21,6 +21,14 @@ export const HAIKU_POST_CALL_ALLOWANCE_MS = 12_000;
 // later battle's tick and this battle's write with it. A typical build is
 // sub-second; an agent with institutional rules adds ⌈(held+bench)/10⌉
 // sequential Firestore batches, which is the only shape that gets near this.
+//
+// SCOPE, stated so this is not read as more than it is: it bounds the DECIDER'S
+// build only — the one call whose result is sent to the model. The shadow
+// capture rebuilds the same block twice more per tick (shadowAssemblyCapture.js
+// buildShadowDiffRecord, both awaited before battleRef.update), and those two
+// are NOT bounded by this constant. A Firestore hang there still costs the
+// write. Bounding them is a separate task; it is not fixed here.
+//
 // REVISIT once `buildMs` has a week of production data.
 export const PROMPT_BUILD_CEILING_MS = 10_000;
 
@@ -118,8 +126,16 @@ export function classifyTimeoutKind(err) {
   // can never be read as one.
   if (ctorName === PROMPT_BUILD_TIMEOUT_ERROR_NAME || err.name === PROMPT_BUILD_TIMEOUT_ERROR_NAME) return null;
 
-  if (ctorName === 'APIConnectionTimeoutError' || /timed? ?out/i.test(msg)) return 'sdk';
-  if (ctorName === 'APIUserAbortError' || err.name === 'AbortError' || /request was aborted/i.test(msg)) return 'backstop';
+  // BOTH class checks before EITHER message check. The class is the strong
+  // signal and the messages are the fallback for an SDK build that stops
+  // exporting them; interleaving the two mis-reads a backstop abort whose
+  // message happens to mention a timeout ('Request was aborted due to
+  // timeout') as 'sdk' — the exact discrimination this function exists for.
+  if (ctorName === 'APIConnectionTimeoutError') return 'sdk';
+  if (ctorName === 'APIUserAbortError' || err.name === 'AbortError') return 'backstop';
+
+  if (/request was aborted/i.test(msg)) return 'backstop';
+  if (/timed? ?out/i.test(msg)) return 'sdk';
   return null;
 }
 

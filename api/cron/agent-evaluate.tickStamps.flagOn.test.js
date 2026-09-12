@@ -186,6 +186,11 @@ describe('flag ON — Heard (D-110): the thread that was in the decider\'s promp
     expect(entry.promptBuiltAt).toBeNull();
     expect(entry.buildMs).toBeNull();
     expect(entry.callMs).toBeNull();
+    // The receipt's SHAPE: budget_skipped is one of the two haikuError literals
+    // (the other is truncated_response) that carry timeoutKind as an explicit
+    // null so every producer yields ONE shape. Nothing else asserted that.
+    expect(Object.keys(entry.haikuError)).toEqual(['failureClass', 'message', 'timestamp', 'timeoutKind', 'evalId']);
+    expect(entry.haikuError.timeoutKind).toBeNull();
     for (const key of ['heard', 'evidence', 'vintages', 'candidates']) expect(entry).not.toHaveProperty(key);
   });
 

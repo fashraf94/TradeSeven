@@ -176,6 +176,13 @@ describe('Phase B tick stamps — flag OFF: the write is byte-identical to the p
     const golden = JSON.parse(readFileSync(GOLDEN_PATH, 'utf8'));
     // JSON.stringify preserves key order, so these are byte comparisons of the
     // serialized write, not structural toEquals.
+    // ORDER first, and on the LIVE entry (review lens C, finding C4): `pick`
+    // iterates the key list, so it re-imposes the golden's order on whatever it
+    // is handed — reordering two keys in the cron's entry literal would slip
+    // straight through the byte comparison below. This row is what keeps the
+    // "keys, order, bytes" in the title true.
+    expect(Object.keys(entry).filter((k) => PRE_PHASE_B_ENTRY_KEYS.includes(k)))
+      .toEqual([...PRE_PHASE_B_ENTRY_KEYS]);
     expect(JSON.stringify(withoutTiming(entry))).toBe(JSON.stringify(golden.entry));
     expect(JSON.stringify(goldenUpdate)).toBe(JSON.stringify(golden.finalUpdate));
     // …and the timing fields ARE on the live entry, flag off (anti-vacuous: the

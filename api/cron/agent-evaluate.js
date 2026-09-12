@@ -2124,12 +2124,25 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           // WHICH transport timeout fired — the split failureClass deliberately
           // does not make (every consumer of the class is unchanged). null for a
           // build timeout and for every non-timeout failure.
-          timeoutKind: classifyTimeoutKind(err),
+          //
+          // GATED ON callMs: the kind describes THE CALL, so it may only be
+          // claimed when a call actually ran (callMs is set in the finally
+          // around messages.create and stays null otherwise). Without this, a
+          // build-phase failure whose message happens to be timeout-shaped —
+          // gaxios' 'Total timeout of 60000ms exceeded' on a stalled token
+          // refresh, a socket's 'connect ETIMEDOUT' — would be recorded as
+          // timeoutKind 'sdk', asserting that the SDK's 20s per-request timeout
+          // fired on a request that was never sent.
+          timeoutKind: callMs === null ? null : classifyTimeoutKind(err),
         };
         console.error(`${LOG_PREFIX} Haiku call failed for battle ${battle.id} [${haikuFailure.failureClass}]:`, err.message);
         // Default to HOLD on timeout or error
       } finally {
-        // clearTimeout(null) is a no-op: either timer may never have been armed.
+        // hardAbort may never have been armed (a build failure returns before
+        // it); clearTimeout(null) is a no-op. buildTimer, by contrast, is armed
+        // synchronously while the race array is evaluated, so it is always set
+        // by the time anything can throw — its clear here is belt-and-braces
+        // behind the winner's own .finally above.
         clearTimeout(buildTimer);
         clearTimeout(hardAbort);
       }
@@ -2859,8 +2872,13 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       agentId: battle.agentId,
       userId: battle.ownerId || null,
       // Join keys (Sep 2026): the shadow record could only be matched back to
-      // its evaluations[] entry by ORDER — the forensics gap Phase 0 hit. These
-      // two are the entry's own identity, so the join is by value.
+      // its evaluations[] entry by ORDER — the forensics gap Phase 0 hit.
+      // `timestamp` is the unique one and is what the join should key on:
+      // `evalId` is derived from evaluations.length + 1 against an array capped
+      // at 150 (below), so on a battle past 150 checks every later entry is
+      // eval_151. That collision is pre-existing and is NOT fixed here — it is
+      // reported for separate tasking; evalId rides along as the human-readable
+      // half of the pair, never as the key.
       evalId,
       timestamp: evaluation.timestamp,
       battlePhase: phase,
@@ -2907,7 +2925,12 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       'cronState.lastTriggeredAt': now,
       // totalHaikuCalls counts ATTEMPTS — a budget_skipped tick never started a
       // call, so it does not increment (semantic fidelity for the token-vs-call
-      // forensics that exposed the June 11 outage).
+      // forensics that exposed the June 11 outage). The contrast is with
+      // budget_skipped ONLY: a tick that entered the engine path and failed
+      // before the request — a builder throw, or a build_timeout — DOES
+      // increment, and has since the June fix. So this counter minus the
+      // responded calls is "attempts that produced no tokens", which includes
+      // build-phase failures; it is not a count of requests put on the wire.
       'cronState.totalHaikuCalls': (battle.cronState?.totalHaikuCalls || 0) + (haikuAttempted ? 1 : 0),
       // Fair-rotation signal (budget-starvation mitigation): the last tick this
       // battle actually STARTED a Haiku call. Written ONLY on a real attempt so

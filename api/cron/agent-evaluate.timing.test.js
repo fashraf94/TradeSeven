@@ -58,6 +58,8 @@ const mocks = vi.hoisted(() => ({
   logEvaluation: vi.fn(async () => false),
   // Milliseconds the doubled buildLiveContextBlock takes; null = never resolves.
   buildDelayMs: 0,
+  // An error the doubled builder throws instead of returning (null = none).
+  liveBlockError: null,
   // The prompt-build ceiling the cron sees. Defaults to the production value;
   // §4.1 raises it so the placement, not the ceiling, decides that row.
   buildCeilingMs: null,
@@ -105,6 +107,7 @@ vi.mock('../_utils/agentEvalPromptAssembly.js', async (importOriginal) => {
     buildLiveContextBlock: async (...args) => {
       if (mocks.buildDelayMs === null) return new Promise(() => {}); // never resolves
       if (mocks.buildDelayMs > 0) await new Promise((r) => setTimeout(r, mocks.buildDelayMs));
+      if (mocks.liveBlockError) throw mocks.liveBlockError;
       return real.buildLiveContextBlock(...args);
     },
   };
@@ -123,10 +126,13 @@ vi.mock('../_utils/agentEvalTransport.js', async (importOriginal) => {
 });
 
 const { processAgentBattle } = await import('./agent-evaluate.js');
-const {
-  PROMPT_BUILD_CEILING_MS,
-  HAIKU_CALL_CEILING_MS,
-} = await import('../_utils/agentEvalTransport.js');
+// The MODULE NAMESPACE, deliberately not destructured: the ceiling is a getter
+// (below), so a destructured const would freeze the real value at module init
+// and an anti-vacuity guard written against it could never observe an override
+// — which is exactly what review lens C found (C3). Read through the namespace
+// and the guard sees what the CRON sees.
+const TRANSPORT = await import('../_utils/agentEvalTransport.js');
+const { HAIKU_CALL_CEILING_MS } = TRANSPORT;
 
 const REAL_BUILD_CEILING_MS = 10_000;
 const REAL_CALL_CEILING_MS = 22_000;
@@ -170,15 +176,17 @@ async function runTick({ battle = makeTickBattle(), advanceMs = 400_000 } = {}) 
   const db = makeTickDb({ battle, rankingsDoc: makeRankingsDoc(), techDocs: makeTechDocs() });
   const summary = { evaluated: 0, held: 0, triggered: 0, skipped: 0, swapped: 0 };
 
+  // No `settled` flag: a handler attached here would always have run by the
+  // time it could be asserted, so it proves nothing (review lens C, C5). The
+  // real guard against a tick that never ends is vitest's own testTimeout —
+  // which is exactly how this file fails against the pre-change cron.
   const running = processAgentBattle(db, battle, summary, Date.now(), new Map(), { everEnabled: false });
-  let settled = false;
-  running.then(() => { settled = true; }, () => { settled = true; });
   await vi.advanceTimersByTimeAsync(advanceMs);
   await running;
 
   const finalUpdate = db.__updates.find((u) => Array.isArray(u.evaluations)) || null;
   return {
-    db, summary, settled, finalUpdate,
+    db, summary, finalUpdate,
     entry: finalUpdate ? finalUpdate.evaluations[finalUpdate.evaluations.length - 1] : null,
   };
 }
@@ -193,6 +201,7 @@ beforeEach(() => {
   mocks.logEvaluation.mockClear();
   mocks.buildDelayMs = 0;
   mocks.buildCeilingMs = null;
+  mocks.liveBlockError = null;
   vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -251,6 +260,65 @@ describe('§4.1 — the abort backstop is armed AFTER the prompt is built', () =
     expect(entry.haikuError.failureClass).toBe('timeout');
     expect(entry.haikuError.timeoutKind).toBe('backstop');
     expect(entry.callMs).toBe(REAL_CALL_CEILING_MS);
+    // Review lens A, finding A4: the `if (buildMs === null)` guard in the catch
+    // is the only thing stopping buildMs from absorbing the CALL's wall time on
+    // a call-phase failure — i.e. from answering "build or call?" wrongly in
+    // exactly the case the field exists for. Without it this reads 43 500.
+    expect(entry.buildMs).toBe(BUILD_MS);
+  });
+
+  it("the SDK's own timeout is recorded as 'sdk', end to end — the common production path, not just the backstop", async () => {
+    // Review lens C, finding C6: the SDK is doubled, so `timeout: 20_000` is
+    // inert in every test and only the cron's 22s backstop can fire. In
+    // production the SDK's own timeout fires FIRST, so this row drives the
+    // shape the SDK throws (0.71.2: constructor APIConnectionTimeoutError,
+    // `.name` left at 'Error', message 'Request timed out.') through the real
+    // processAgentBattle and asserts what the record says about it.
+    mocks.create.mockImplementation(async () => {
+      await new Promise((r) => setTimeout(r, 20_000));
+      const err = new Error('Request timed out.');
+      Object.defineProperty(err.constructor, 'name', { value: 'APIConnectionTimeoutError', configurable: true });
+      throw err;
+    });
+    const { entry } = await runTick();
+    expect(entry.haikuError.failureClass).toBe('timeout');
+    expect(entry.haikuError.timeoutKind).toBe('sdk');
+    expect(entry.callMs).toBe(20_000);      // the call DID run — the kind is earned
+    expect(entry.buildMs).toBe(BUILD_MS);
+    expect(entry.promptBuiltAt).not.toBeNull();
+  });
+
+  it('a truncated response records honest timings and the same receipt shape — the third haikuError producer', async () => {
+    // Review lens C, finding C2 / M17: truncated_response is the other receipt
+    // built from a LITERAL rather than from the catch, and no cron-level row
+    // drove it, so its `timeoutKind: null` could vanish silently. A response
+    // DID arrive here, so callMs is real and the class is not a timeout.
+    mocks.create.mockImplementation(async (_body, opts) => {
+      calls.push({ startedAt: Date.now(), abortedAtCallTime: opts.signal.aborted, abortedAfterMs: null });
+      await new Promise((r) => setTimeout(r, 3_000));
+      return { usage: { input_tokens: 4321, output_tokens: 2048 }, stop_reason: 'max_tokens', content: [] };
+    });
+    const { entry } = await runTick();
+    expect(entry.haikuError.failureClass).toBe('truncated_response');
+    expect(Object.keys(entry.haikuError)).toEqual(['failureClass', 'message', 'timestamp', 'timeoutKind', 'evalId']);
+    expect(entry.haikuError.timeoutKind).toBeNull();
+    expect(entry.callMs).toBe(3_000);
+    expect(entry.buildMs).toBe(BUILD_MS);
+    expect(entry.promptBuiltAt).not.toBeNull();
+  });
+
+  it('a BUILD failure whose message is timeout-shaped is never recorded as a transport timeout kind', async () => {
+    // Review lenses A/B/D (A2 / B1 / D4). The build's own Firestore path can
+    // throw gaxios' 'Total timeout of …ms exceeded' on a stalled token refresh.
+    // failureClass 'timeout' there is pre-existing; claiming the SDK's 20s
+    // per-request timeout fired on a request that was never sent is not.
+    mocks.buildDelayMs = 0;
+    mocks.liveBlockError = new Error('Total timeout of 60000ms exceeded before any response was received');
+    const { entry } = await runTick();
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(entry.callMs).toBeNull();
+    expect(entry.promptBuiltAt).toBeNull();
+    expect(entry.haikuError.timeoutKind).toBeNull();  // never 'sdk'
   });
 });
 
@@ -261,11 +329,15 @@ describe('§4.2 — the prompt build is bounded on its own ceiling', () => {
   });
 
   it('a build that never resolves ends the tick at the ceiling as build_timeout: no call, nothing stamped, the entry written, the streak incremented', async () => {
-    expect(PROMPT_BUILD_CEILING_MS).toBe(REAL_BUILD_CEILING_MS); // the production value, not a test override
-    const { entry, finalUpdate, summary, settled } = await runTick();
+    // Through the namespace, so this really does observe a test override (C3).
+    expect(TRANSPORT.PROMPT_BUILD_CEILING_MS).toBe(REAL_BUILD_CEILING_MS);
+    expect(mocks.buildCeilingMs).toBeNull();
+    const { entry, finalUpdate, summary } = await runTick();
 
     // The tick ENDED — it did not hold the serial loop to the 300s kill window.
-    expect(settled).toBe(true);
+    // The guard for that is vitest's own 5 000 ms testTimeout, not an assertion:
+    // against the pre-change cron this row does not fail on a value, it fails
+    // with `Test timed out in 5000ms` (review lens C, C5).
     expect(finalUpdate, 'the entry must still be written').toBeTruthy();
     expect(summary.evaluated).toBe(1); // counted, like any other degraded tick
 
@@ -285,6 +357,11 @@ describe('§4.2 — the prompt build is bounded on its own ceiling', () => {
     // promptBuilt stayed false, so NOTHING was stamped (the existing rule).
     expect(Object.keys(entry)).toEqual([...BASE_ENTRY_KEYS]);
     for (const key of ['heard', 'evidence', 'vintages', 'candidates']) expect(entry).not.toHaveProperty(key);
+
+    // The receipt's SHAPE, not just its class (C2 / D8): the two literal-built
+    // receipts (budget_skipped, truncated_response) carry timeoutKind as an
+    // explicit null, and nothing else asserted that they still do.
+    expect(Object.keys(entry.haikuError)).toEqual(['failureClass', 'message', 'timestamp', 'timeoutKind', 'evalId']);
 
     // A build timeout is the eval path failing, not a scheduling choice.
     expect(finalUpdate['cronState.consecutiveEvalFailures']).toBe(1);
@@ -313,6 +390,19 @@ describe('§4.2 — the prompt build is bounded on its own ceiling', () => {
     expect(entry.haikuError).toBeNull();
     expect(entry.buildMs).toBe(REAL_BUILD_CEILING_MS - 1);
     expect(entry.promptBuiltAt).not.toBeNull();
+  });
+
+  it('AT the ceiling exactly, the build wins — the tie is pinned, not left to race-array order', async () => {
+    // Review lens A, finding A3: at the exact tie the winner is decided by the
+    // order of the two Promise.race elements (buildPrompt() is invoked, and its
+    // timers queued, before buildTimer is armed). Swapping them reads as an
+    // identical refactor and silently flips a 10 000 ms build from "proceeds to
+    // the call" to build_timeout. The ceiling is a ceiling, so <= passes.
+    mocks.buildDelayMs = REAL_BUILD_CEILING_MS;
+    const { entry } = await runTick();
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+    expect(entry.haikuError).toBeNull();
+    expect(entry.buildMs).toBe(REAL_BUILD_CEILING_MS);
   });
 });
 
