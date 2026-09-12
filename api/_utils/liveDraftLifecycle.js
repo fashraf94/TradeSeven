@@ -69,6 +69,9 @@ import {
   DRAFT_SUBCOLLECTION,
   DRAFT_STATE_DOC_ID,
 } from '../../src/constants/leagueTournament.js';
+// Zero-import pure-data slot config (BUILD_RULES §4) — the ONE home for whether
+// a slot is on the board; the fire gate reads it rather than re-listing ids.
+import { isSlotIdDisabled } from '../../src/config/liveDraftSlots.js';
 
 const LOG_PREFIX = '[LiveDraftLifecycle]';
 
@@ -100,7 +103,15 @@ function draftStateRef(db, groupId) {
 // precedent); the isLiveDraft + scheduledDraftAt filter runs in memory.
 
 /** FORMING slot groups whose scheduled fire instant has arrived (ISO strings
- *  compare chronologically). These are the pods to fire this pass. */
+ *  compare chronologically). These are the pods to fire this pass.
+ *
+ *  DISABLED-SLOT SKIP (N1 mitigation, 2026-09-12): a group claimed BEFORE its
+ *  slot was disabled is still sitting in FORMING with its fire instant stamped,
+ *  so closing the claim door alone would not stop it — this is the gate that
+ *  does. Keyed on `isSlotIdDisabled`, i.e. it skips ONLY a slot the founder
+ *  explicitly disabled; a group whose `slotId` is absent or unrecognized keeps
+ *  its pre-existing behavior exactly (fail-open, no byte-change). The skip is
+ *  logged, never silent — a pod that stops firing must say so. */
 export async function findDueSlotGroups(db, now = new Date()) {
   const nowIso = toIso(now);
   const snap = await db.collection(TOURNAMENT_GROUPS_COLLECTION).where('status', '==', GROUP_STATUS.FORMING).get();
@@ -108,6 +119,10 @@ export async function findDueSlotGroups(db, now = new Date()) {
   snap.forEach((d) => {
     const data = d.data();
     if (data.isLiveDraft === true && typeof data.scheduledDraftAt === 'string' && data.scheduledDraftAt <= nowIso) {
+      if (isSlotIdDisabled(data.slotId)) {
+        console.log(`${LOG_PREFIX} ${d.id}: slot '${data.slotId}' is DISABLED — due pod NOT fired (see liveDraftSlots.js).`);
+        return;
+      }
       due.push({ id: d.id, ...data });
     }
   });

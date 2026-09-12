@@ -160,6 +160,29 @@ describe('slot-* endpoints — claim → schedule → release', () => {
     expect(res.body.error).toBe('unknown_slot');
   });
 
+  // ── N1 mitigation: the disabled slot, end to end through the endpoints ──
+  it('rejects a DISABLED slot with 409 slot_disabled (not 400 unknown_slot)', async () => {
+    const res = mockRes();
+    await claimHandler(req('POST', { slotId: 'mon-0845' }), res);
+    expect(res.statusCode).toBe(409);
+    expect(res.body.error).toBe('slot_disabled');
+    // the id is KNOWN — it must not be mistaken for a bad request
+    expect(res.body.error).not.toBe('unknown_slot');
+    // and nothing was created for it
+    expect(h.db._store.has('tournamentGroups/lds_mon-0845_2026-07-13')).toBe(false);
+  });
+
+  it('schedule still LISTS the disabled slot, marked enabled:false', async () => {
+    const res = mockRes();
+    await scheduleHandler(req('GET'), res);
+    expect(res.statusCode).toBe(200);
+    const mon = res.body.slots.find((s) => s.slotId === 'mon-0845');
+    expect(mon).toBeDefined();          // reported, not omitted
+    expect(mon.enabled).toBe(false);
+    const wed = res.body.slots.find((s) => s.slotId === 'wed-1900');
+    expect(wed.enabled).toBe(true);
+  });
+
   it('schedule returns the week’s slots with counts', async () => {
     await claimHandler(req('POST', { slotId: 'wed-1900', displayName: 'Ada' }), mockRes());
     const res = mockRes();

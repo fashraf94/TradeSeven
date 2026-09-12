@@ -33,6 +33,31 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 const fetchBatchQuotes = vi.fn();
 vi.mock('./tournamentPrices.js', () => ({ fetchBatchQuotes: (...a) => fetchBatchQuotes(...a) }));
 
+// EXPLICIT ENABLED-SLOT FIXTURE (N1 mitigation, 2026-09-12). `mon-0845` ships
+// DISABLED (liveDraftSlots.js `enabled: false`) so no new pod can enter the N1
+// stranded path. This e2e's job is the LIFECYCLE proof — the S3 pre-open margin
+// and the byte-identity of a slot-born pod — which must keep holding for the day
+// the slot is re-enabled after fix B. So the fixture re-enables it for this file
+// ONLY, explicitly, rather than deleting the coverage: the config module is
+// re-exported verbatim with `enabled` stripped from every slot, so the helpers
+// under test are the REAL ones running against an all-enabled board.
+// NOT the BUILD_RULES §4 dependency-surface guard — that is this file's real
+// import of the live-draft modules below, which is never mocked.
+vi.mock('../../src/config/liveDraftSlots.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  const slots = Object.freeze(actual.LIVE_DRAFT_SLOTS.map(({ enabled, ...rest }) => Object.freeze(rest)));
+  const slotById = (id) => slots.find((s) => s.id === id) ?? null;
+  return {
+    ...actual,
+    LIVE_DRAFT_SLOTS: slots,
+    slotById,
+    isKnownSlotId: (id) => typeof id === 'string' && slots.some((s) => s.id === id),
+    isSlotEnabled: (slot) => slot != null && slot.enabled !== false,
+    isSlotIdEnabled: (id) => slotById(id) != null,
+    isSlotIdDisabled: () => false,
+  };
+});
+
 import {
   claimSlotSeat,
   releaseSlotSeat,
@@ -351,6 +376,10 @@ describe('Competitive Live Draft — full-lifecycle capstone (the byte-identity 
   });
 
   // ── the Monday-8:45 margin — an abandoned pre-open draft is in BATTLE by 9:30 ──
+  // Runs against the explicit enabled-slot fixture at the top of this file: in
+  // production mon-0845 is disabled (N1 mitigation) and this claim would be
+  // refused with slot_disabled. The margin proof is preserved deliberately — it
+  // is the acceptance bar for re-enabling the slot after fix B.
   it('a Monday-8:45 pre-open abandoned draft completes INLINE to BATTLE (before the 9:30 open)', async () => {
     const { db, store } = seededDb(['human-1']);
     const MON_ID = slotGroupId('mon-0845', '2026-07-13');
