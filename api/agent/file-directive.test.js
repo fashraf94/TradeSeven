@@ -401,21 +401,14 @@ describe('file-directive — filed, replaced-prior, and the persisted shape', ()
     expect(shared).toContain("from './directiveFiling.js'");
     expect(shared).toContain('buildDirectiveRecord(');
     expect(shared).toContain('buildDirectiveSlot(');
-    for (const src of [route]) {
+    for (const src of [chat, route]) {
       expect(src).toContain("from '../_utils/directiveTransaction.js'");
       expect(src).toContain('runDirectiveTransaction(');
-      // The route no longer builds the record or the slot itself…
+      // Neither route builds the record or the slot itself any more — the
+      // shared transaction does, once, for both.
       expect(src).not.toContain('buildDirectiveRecord(');
       expect(src).not.toContain('buildDirectiveSlot(');
-    }
-    // chat.js still calls the two builders directly at this commit; commit B
-    // moves it onto the shared module and this row moves it into the loop
-    // above. Either way the shape has exactly one definition.
-    expect(chat).toContain("from '../_utils/directiveFiling.js'");
-    expect(chat).toContain('buildDirectiveRecord(');
-    expect(chat).toContain('buildDirectiveSlot(');
-    for (const src of [chat, route]) {
-      // Neither route re-inlines the pre-directiveFiling.js literal.
+      // …and neither re-inlines the pre-directiveFiling.js literal.
       expect(src).not.toContain("expiry: normalizedDirective.expiry || 'end_of_battle'");
     }
     // …and the shape itself, as the shipped ENFORCE row in chat.test.js photographs it.

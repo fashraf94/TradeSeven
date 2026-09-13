@@ -109,6 +109,9 @@ vi.mock('../_utils/voiceLayerPrompt.js', () => ({
 vi.mock('../_utils/tournamentTime.js', () => ({
   getTournamentClaimWindow: () => ({ isOpen: true, etTime: '12:00', reason: null }),
   formatEtDate: () => '2026-06-26',
+  // B2 — the shared filing transaction stamps the League counter's updatedAt
+  // through this helper, so the mock must carry it too.
+  toIso: (d) => new Date(d).toISOString(),
 }));
 
 // Pass-through spy on the directive gate. importOriginal keeps the REAL
@@ -156,6 +159,11 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
 // without a second Firestore fake. Calls are captured for no-charge assertions.
 vi.mock('../_utils/agentChatBudget.js', () => ({
   AGENT_CHAT_DAILY_LIMIT: 10,
+  // B2: the shared filing transaction reads and writes the per-day doc ITSELF
+  // (cross-document, in the same transaction), so the key helpers are real
+  // here while the group-read/day derivation stays driveable per row.
+  AGENT_CHAT_BUDGET_COLLECTION: 'agentChatBudget',
+  agentChatBudgetDocId: (groupId, uid, dayN) => `${groupId}_${uid}_${dayN}`,
   resolveBudgetDay: async (_db, battle) => { budget.resolveCalls.push(battle); return budget.resolveImpl(battle); },
   readAgentChatBudget: async (_db, args) => { budget.readCalls.push(args); return budget.readImpl(args); },
   chargeAgentChatBudget: async (_db, args) => { budget.chargeCalls.push(args); return budget.chargeImpl(args); },
@@ -178,8 +186,26 @@ function makeFakeFirestore({
   agent, battle, marketCtx = null, drb = null, voiceCache = null,
   // Phase E2 — tournament group + pending-claims aggregate, with injectable failures.
   group = null, pendingClaimCount = 0, groupReadError = false, claimsReadError = false,
+  // B2 — the shared filing transaction's own surface: the League per-day counter
+  // docs it reads and writes, and a one-shot contention barrier (the
+  // `db.setBarrier` two-writer shape from api/_utils/mandateEscape.test.js) that
+  // lets another writer land between the transaction's reads and its commit.
+  budgetDocs = {},
 }) {
-  const written = { setCalls: [], updateCalls: [] };
+  const written = { setCalls: [], updateCalls: [], txAttempts: 0 };
+  // The battle the fake SERVES, so a committed write is visible to the next read
+  // (a transaction retry re-reads) without ever mutating the shared fixture
+  // object the caller passed in.
+  const battleState = battle
+    ? {
+      ...battle,
+      ...(Array.isArray(battle.chatExchanges) ? { chatExchanges: [...battle.chatExchanges] } : {}),
+      ...(Array.isArray(battle.recentElicitationTargets) ? { recentElicitationTargets: [...battle.recentElicitationTargets] } : {}),
+    }
+    : null;
+  const budgetState = { ...budgetDocs };
+  const barrier = { current: null };
+  const failCommit = { current: null };
 
   // The claims aggregate query: .where().where().count().get() → { data: () => ({ count }) }.
   const claimsQuery = {
@@ -197,9 +223,18 @@ function makeFakeFirestore({
       const docId = idArg || `auto-${Math.random().toString(36).slice(2, 8)}`;
       return {
         id: docId,
+        __col: name,
         get: async () => {
           if (name === 'agents') return { exists: !!agent, data: () => agent };
-          if (name === 'agentBattles') return { exists: !!battle, data: () => battle };
+          // A SNAPSHOT per read, as Firestore's is: a write that lands between
+          // the pre-model read and the transaction must be invisible to the
+          // value the handler already holds, or the contention rows below
+          // cannot be written at all.
+          if (name === 'agentBattles') return { exists: !!battleState, data: () => ({ ...battleState }) };
+          if (name === 'agentChatBudget') {
+            const doc = budgetState[docId];
+            return { exists: !!doc, data: () => doc };
+          }
           if (name === 'indexIntelligence' && docId === 'marketContext') {
             return { exists: !!marketCtx, data: () => marketCtx };
           }
@@ -223,7 +258,66 @@ function makeFakeFirestore({
     },
   });
 
-  return { db: { collection }, written };
+  // Apply a committed write to the served documents, so a retry (and any later
+  // read) sees what landed. The recorded call keeps the RAW ops, which is what
+  // every assertion in this file reads.
+  const applyWrite = (w) => {
+    if (w.kind === 'update' && w.col === 'agentBattles' && battleState) {
+      for (const [k, v] of Object.entries(w.data)) {
+        if (v && v.__op === 'arrayUnion') battleState[k] = [...(battleState[k] || []), ...v.items];
+        else if (v && v.__op === 'increment') battleState[k] = (battleState[k] || 0) + v.n;
+        else battleState[k] = v;
+      }
+    } else if (w.kind === 'set' && w.col === 'agentChatBudget') {
+      budgetState[w.id] = { ...(budgetState[w.id] || {}), ...w.data };
+    }
+  };
+
+  const db = {
+    collection,
+    // The contention seam: the callback runs after the body's reads and before
+    // its commit, then the buffer is discarded and the body re-runs against the
+    // changed documents — Firestore's own retry, made deterministic.
+    setBarrier: (fn) => { barrier.current = fn; },
+    // Refuse the commit when the predicate matches the buffered writes.
+    failCommitWhen: (fn) => { failCommit.current = fn; },
+    runTransaction: async (fn) => {
+      for (let attempt = 1; attempt <= 5; attempt += 1) {
+        written.txAttempts += 1;
+        const buffer = [];
+        const tx = {
+          // Firestore's contract: every read precedes every write.
+          get: async (ref) => {
+            if (buffer.length > 0) throw new Error('transaction read after write');
+            return ref.get();
+          },
+          update: (ref, data) => buffer.push({ kind: 'update', col: ref.__col, id: ref.id, data }),
+          set: (ref, data, opts) => buffer.push({ kind: 'set', col: ref.__col, id: ref.id, data, opts }),
+        };
+        const result = await fn(tx);
+        if (failCommit.current && failCommit.current(buffer)) {
+          // Firestore's atomicity: the commit is refused and NOT ONE of the
+          // buffered writes lands.
+          throw new Error('transaction commit failed');
+        }
+        if (barrier.current) {
+          const hit = barrier.current;
+          barrier.current = null;
+          await hit();
+          continue; // the buffer is discarded; the body re-runs against the changed doc
+        }
+        for (const w of buffer) {
+          applyWrite(w);
+          if (w.kind === 'update') written.updateCalls.push({ id: w.id, updates: w.data });
+          else written.setCalls.push({ id: w.id, data: w.data, opts: w.opts });
+        }
+        return result;
+      }
+      throw new Error('transaction contention exhausted');
+    },
+  };
+
+  return { db, written, battleState, budgetState };
 }
 
 function makeReqRes(body) {
@@ -548,16 +642,27 @@ describe('agent/chat — League arena per-day ask (leagueAsk + LEAGUE_AGENT_CHAT
     // Not even the day resolver runs; the legacy per-battle increment runs; no `remaining`.
     expect(budget.resolveCalls).toHaveLength(0);
     expect(budget.chargeCalls).toHaveLength(0);
-    expect(mainUpdate(fixture.written).updates.chatBudgetUsed).toEqual({ __op: 'increment', n: 1 });
+    // B2 / D-105: an EXPLICIT in-transaction count, never FieldValue.increment.
+    // The battle was seeded at chatBudgetUsed 0, so the write is a literal 1.
+    expect(mainUpdate(fixture.written).updates.chatBudgetUsed).toBe(1);
     expect('remaining' in res.body).toBe(false);
   });
 
-  it('flag ON: a League ask bypasses the per-battle budget and charges the per-day store', async () => {
+  // B2 / spec ruling 5: "The League charge moves inside the same transaction
+  // (cross-document; D-105)." It used to be a SECOND transaction after the
+  // battle write (chargeAgentChatBudget) whose failure was caught and
+  // swallowed. The charge is now the filing transaction's own `tx.set` on
+  // agentChatBudget/{groupId}_{uid}_{dayN}, so the row reads the WRITE rather
+  // than a mocked charge helper's return.
+  it('flag ON: a League ask bypasses the per-battle budget and charges the per-day store — in the SAME transaction', async () => {
     leagueChatFlag.on = true;
     budget.resolveImpl = () => KEY;
     budget.readImpl = async () => ({ count: 4, remaining: 6 });
-    budget.chargeImpl = async () => ({ charged: true, remaining: 5, count: 5 });
-    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: TOURNEY_BATTLE });
+    const fixture = makeFakeFirestore({
+      agent: VALID_AGENT,
+      battle: TOURNEY_BATTLE,
+      budgetDocs: { 'group-xyz_test-user_1': { groupId: 'group-xyz', uid: 'test-user', dayN: 1, count: 4 } },
+    });
     activeFirestore = fixture.db;
 
     const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'whats the plan', leagueAsk: true });
@@ -565,11 +670,17 @@ describe('agent/chat — League arena per-day ask (leagueAsk + LEAGUE_AGENT_CHAT
 
     expect(res.statusCode).toBe(200);
     expect(res.body.agentMessage).toBe('hi');
-    // Server-authoritative remaining flows back to the counter.
+    // Server-authoritative remaining flows back to the counter, from the count
+    // the TRANSACTION read (4 → 5 of 10 → 5 left).
     expect(res.body.remaining).toBe(5);
-    // The per-day store was charged ONCE, keyed on the resolved game-day + group + uid.
-    expect(budget.chargeCalls).toHaveLength(1);
-    expect(budget.chargeCalls[0]).toMatchObject({ groupId: 'group-xyz', uid: 'test-user', dayN: 1 });
+    // The per-day store was charged ONCE, keyed on the resolved game-day + group
+    // + uid, by an explicit count — and the old second transaction is gone.
+    expect(budget.chargeCalls).toHaveLength(0);
+    expect(fixture.written.setCalls).toHaveLength(1);
+    expect(fixture.written.setCalls[0].id).toBe('group-xyz_test-user_1');
+    expect(fixture.written.setCalls[0].data).toMatchObject({ groupId: 'group-xyz', uid: 'test-user', dayN: 1, count: 5 });
+    // ONE transaction — the battle write and the charge committed together.
+    expect(fixture.written.txAttempts).toBe(1);
     // The exchange is still written durably, but the per-battle counter is NOT touched.
     const upd = mainUpdate(fixture.written).updates;
     expect(upd.chatExchanges.__op).toBe('arrayUnion');
@@ -643,7 +754,8 @@ describe('agent/chat — League arena per-day ask (leagueAsk + LEAGUE_AGENT_CHAT
     expect(res.statusCode).toBe(200);
     expect(budget.resolveCalls).toHaveLength(0);
     expect(budget.chargeCalls).toHaveLength(0);
-    expect(mainUpdate(fixture.written).updates.chatBudgetUsed).toEqual({ __op: 'increment', n: 1 });
+    // B2 / D-105: an EXPLICIT in-transaction count, never FieldValue.increment.
+    expect(mainUpdate(fixture.written).updates.chatBudgetUsed).toBe(1);
     expect('remaining' in res.body).toBe(false);
   });
 });
@@ -1595,7 +1707,11 @@ describe('agent/chat — the shadow record finishes before the function can be f
     expect(src.match(/\blogConversation\s*\(/g)).toHaveLength(1); // the wrapper's own call
     expect(src).toContain('.then(() => logConversation(record))');
     expect(src).not.toMatch(/\.catch\(\(\)\s*=>\s*\{\}\)/);  // no fire-and-forget anywhere
-    expect(src.match(/captureConversation\s*\(\{/g)).toHaveLength(3); // the three record sites
+    // B2 adds a FOURTH record site: a refusal decided inside the filing
+    // transaction returns rather than throwing, so the turnError row the catch
+    // block used to produce for that case is written explicitly beside the
+    // composed record. Four sites, still one logConversation call.
+    expect(src.match(/captureConversation\s*\(\{/g)).toHaveLength(4);
   });
 
   it('a persisted record says nothing (the warning is a signal, not noise)', async () => {
@@ -1726,5 +1842,242 @@ describe('agent/chat — the research follow-up reply lint (Phase C §5)', () =>
     const { res, exchange } = await run(verdict);
     expect(res.body.agentMessage).toBe(verdict);
     expect(exchange.researchLint).toBeUndefined();
+  });
+});
+
+// ============================================================================
+// B2 — THE SHARED FILING TRANSACTION (PHASE_B_TICK_STAMPS_SPEC_V1.md §2)
+//
+// The typed path's durable write used to be a single unconditioned
+// `battleRef.update()` ~630 lines after the only battle read. Every row here
+// names the defect it guards (Phase 0 §2.4) and fails against the pre-change
+// route — each was run against it first.
+// ============================================================================
+
+describe('agent/chat — B2: the write is a transaction (spec §2)', () => {
+  const TOURNEY_BATTLE = { ...VALID_BATTLE, gameMode: TOURNAMENT_GAME_MODE, groupId: 'group-xyz' };
+
+  const mainUpdate = (written) => written.updateCalls.find(c => c.updates?.chatExchanges?.__op === 'arrayUnion');
+  const post = (body) => makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hold the line', ...body });
+
+  // B-1 — Phase 0 §2.4(a): "The write is not conditioned on the battle still
+  // being open." `battle.status` was read once, ~630 lines and one model call
+  // before the write, and the write carried no precondition — so a typed turn
+  // that overlapped the close cron landed a directive in a COMPLETED battle.
+  // research.js:341-345 states the same hazard for its own route in so many
+  // words: "agent-evaluate flips a battle to `completed` on its own schedule".
+  it('B-1 (a): a battle the close cron completes DURING the model call is refused INSIDE the transaction — nothing written', async () => {
+    grounding.mode = 'on';
+    archetypeFlag.mode = 'enforce';
+    const fixture = makeFakeFirestore({ agent: { ...VALID_AGENT, archetype: 'diversifier' }, battle: VALID_BATTLE });
+    activeFirestore = fixture.db;
+    // The close cron lands while the model is answering — after the pre-model
+    // status check at step 9 has already passed.
+    callGemmaVoiceImpl.current = async () => {
+      fixture.battleState.status = 'completed';
+      return JSON.stringify({ response: 'widening out', _archetypeProposal: { classification: 'in_archetype', selectedAdjustmentId: 'DV-02' } });
+    };
+
+    const { req, res } = post({});
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toBe('battle_not_active');
+    // NOTHING persisted: no exchange, no directive slot, no charge.
+    expect(fixture.written.updateCalls).toHaveLength(0);
+    expect(fixture.written.setCalls).toHaveLength(0);
+    expect(fixture.battleState.chatExchanges).toHaveLength(0);
+    expect(fixture.battleState.directive).toBeUndefined();
+    expect(fixture.battleState.chatBudgetUsed).toBe(0);
+  });
+
+  it('B-1b: review mode is still valid on a completed battle — the in-transaction check follows step 9s own rule', async () => {
+    const fixture = makeFakeFirestore({
+      agent: VALID_AGENT,
+      battle: { ...VALID_BATTLE, status: 'completed', reviewBudgetUsed: 0 },
+    });
+    activeFirestore = fixture.db;
+
+    const { req, res } = post({ mode: 'review' });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(mainUpdate(fixture.written).updates.reviewBudgetUsed).toBe(1);
+  });
+
+  // B-2 — Phase 0 §2.4(b) + (e1): the budget check read a pre-model snapshot and
+  // the charge was `FieldValue.increment(1)` — a blind server-side increment
+  // with no read-back and no cap comparison, which D-105 names as forbidden.
+  // Two turns starting in the same model-call window both read used = 9, both
+  // passed, both incremented → 11 of 10.
+  //
+  // The two-writer shape is api/_utils/mandateEscape.test.js:137-152's: a
+  // barrier lands the other writer between this transaction's reads and its
+  // commit, and the body re-runs against the changed document.
+  it('B-2 (b, e1): two turns that both read used = 9 → the eleventh COMMITS with overBudget, and the doc reads 10', async () => {
+    const fixture = makeFakeFirestore({
+      agent: VALID_AGENT,
+      battle: { ...VALID_BATTLE, chatBudgetUsed: 9 },
+    });
+    activeFirestore = fixture.db;
+    // The other turn commits its tenth message inside this one's window.
+    fixture.db.setBarrier(async () => { fixture.battleState.chatBudgetUsed = 10; });
+
+    const { req, res } = post({});
+    await handler(req, res);
+
+    // Ruling 5: "a race that produces an eleventh COMMITS and stamps
+    // `overBudget: true` on the exchange — never fail a turn after the model
+    // answered."
+    expect(res.statusCode).toBe(200);
+    expect(fixture.written.txAttempts).toBe(2);       // the retry re-read the doc
+    const upd = mainUpdate(fixture.written).updates;
+    expect(upd.chatExchanges.items[0].overBudget).toBe(true);
+    // …and the cap is authoritative: the eleventh does not increment.
+    expect('chatBudgetUsed' in upd).toBe(false);
+    expect(fixture.battleState.chatBudgetUsed).toBe(10);
+    // D-105, in terms: an explicit count, never FieldValue.increment.
+    const raw = readFileSync(new URL('./chat.js', import.meta.url), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:])\/\/.*$/gm, '$1');
+    expect(raw).not.toContain('FieldValue.increment(1)');
+  });
+
+  it('B-2b: a turn within budget charges exactly one, counted from the IN-TRANSACTION read', async () => {
+    const fixture = makeFakeFirestore({
+      agent: VALID_AGENT,
+      battle: { ...VALID_BATTLE, chatBudgetUsed: 3 },
+    });
+    activeFirestore = fixture.db;
+    // Another turn lands its own message inside this one's window: the retry
+    // re-reads 4, so this turn writes 5 — not the 4 a pre-model count would.
+    fixture.db.setBarrier(async () => { fixture.battleState.chatBudgetUsed = 4; });
+
+    const { req, res } = post({});
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(mainUpdate(fixture.written).updates.chatBudgetUsed).toBe(5);
+    expect(mainUpdate(fixture.written).updates.chatExchanges.items[0].overBudget).toBeUndefined();
+  });
+
+  // B-3 — Phase 0 §2.4(e2): "A typed filing can persist while charging nothing
+  // (League)." The exchange write and the League charge were separate
+  // transactions, the charge was second, and its failure was caught and
+  // swallowed at chat.js:1111-1115 — a filing that landed and cost nothing.
+  it('B-3 (e2): a League charge that fails takes the whole filing with it — nothing persists', async () => {
+    leagueChatFlag.on = true;
+    budget.resolveImpl = () => ({ groupId: 'group-xyz', dayN: 1 });
+    budget.readImpl = async () => ({ count: 1, remaining: 9 });
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: TOURNEY_BATTLE });
+    activeFirestore = fixture.db;
+    // The cross-document commit is refused: Firestore lands NEITHER write.
+    fixture.db.failCommitWhen((buffer) => buffer.some((w) => w.col === 'agentChatBudget'));
+
+    const { req, res } = post({ leagueAsk: true });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(500);
+    // The whole filing is gone — not the exchange without the charge.
+    expect(fixture.written.updateCalls).toHaveLength(0);
+    expect(fixture.written.setCalls).toHaveLength(0);
+    expect(fixture.battleState.chatExchanges).toHaveLength(0);
+    expect(fixture.budgetState['group-xyz_test-user_1']).toBeUndefined();
+    // The second transaction is gone from the route entirely.
+    expect(budget.chargeCalls).toHaveLength(0);
+    const raw = readFileSync(new URL('./chat.js', import.meta.url), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:])\/\/.*$/gm, '$1');
+    expect(raw).not.toContain('chargeAgentChatBudget(');
+  });
+
+  // B-4 — Phase 0 §2.4(e3): "The typed path has no conflict detection at all."
+  // A typed directive silently overwrote a chip filing that landed during the
+  // model call and no surface was told. Spec ruling 4 rules this deliberately:
+  // latest-wins files anyway; the outcome records the ACTUAL replaced thread
+  // from the in-transaction read.
+  it('B-4 (e3): a chip filing that lands during the model call is REPLACED, not refused (ruling 4 latest-wins)', async () => {
+    grounding.mode = 'on';
+    archetypeFlag.mode = 'enforce';
+    const fixture = makeFakeFirestore({ agent: { ...VALID_AGENT, archetype: 'diversifier' }, battle: VALID_BATTLE });
+    activeFirestore = fixture.db;
+    callGemmaVoiceImpl.current = async () => {
+      // The player tapped a chip while the model was answering.
+      fixture.battleState.directive = {
+        text: 'Tighten the spread', expiry: 'end_of_battle', directiveThreadId: 'chip-thread-1', createdAt: 'now',
+      };
+      return JSON.stringify({ response: 'widening out', _archetypeProposal: { classification: 'in_archetype', selectedAdjustmentId: 'DV-02' } });
+    };
+
+    const { req, res } = post({});
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const upd = mainUpdate(fixture.written).updates;
+    // It FILED — the typed turn is not refused after the model answered.
+    expect(upd.directive.directiveThreadId).toEqual(expect.any(String));
+    expect(upd.directive.directiveThreadId).not.toBe('chip-thread-1');
+    expect(upd.directive.adjustmentId).toBe('DV-02');
+    // …and the current-thread answer is this turn's, not the chip's.
+    expect(res.body.currentDirectiveThreadId).toBe(upd.directive.directiveThreadId);
+  });
+
+  it('B-4b: a turn that replaces the directive the caller ALREADY knew about is not reported as a surprise', async () => {
+    grounding.mode = 'on';
+    archetypeFlag.mode = 'enforce';
+    const known = { text: 'Tighten the spread', expiry: 'end_of_battle', directiveThreadId: 'known-thread', createdAt: 'now' };
+    const fixture = makeFakeFirestore({
+      agent: { ...VALID_AGENT, archetype: 'diversifier' },
+      battle: { ...VALID_BATTLE, directive: known },
+    });
+    activeFirestore = fixture.db;
+    callGemmaVoiceImpl.current = async () => JSON.stringify({ response: 'widening out', _archetypeProposal: { classification: 'in_archetype', selectedAdjustmentId: 'DV-02' } });
+
+    const { req, res } = post({});
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(mainUpdate(fixture.written).updates.directive.directiveThreadId).not.toBe('known-thread');
+  });
+
+  it('B-4c: a turn that files NO directive leaves the slot alone and still answers the current thread', async () => {
+    grounding.mode = 'on';
+    const fixture = makeFakeFirestore({
+      agent: VALID_AGENT,
+      battle: { ...VALID_BATTLE, directive: { text: 'standing', expiry: 'end_of_battle', directiveThreadId: 'standing-1', createdAt: 'now' } },
+    });
+    activeFirestore = fixture.db;
+
+    const { req, res } = post({});
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect('directive' in mainUpdate(fixture.written).updates).toBe(false);
+    expect(res.body.currentDirectiveThreadId).toBe('standing-1');
+  });
+
+  // The belief the client feeds straight back into file-directive's check 4.
+  // The pre-change route answered it from the PRE-MODEL slot — a value a whole
+  // model call old — so a chip filed during the call left the chat holding a
+  // thread id the server had already replaced, and its next tap 409'd.
+  it('B-4d (e3): with no directive filed this turn, the current-thread answer is the slot the COMMITTING attempt read', async () => {
+    grounding.mode = 'on';
+    const fixture = makeFakeFirestore({
+      agent: VALID_AGENT,
+      battle: { ...VALID_BATTLE, directive: { text: 'standing', expiry: 'end_of_battle', directiveThreadId: 'standing-1', createdAt: 'now' } },
+    });
+    activeFirestore = fixture.db;
+    callGemmaVoiceImpl.current = async () => {
+      fixture.battleState.directive = {
+        text: 'Tighten the spread', expiry: 'end_of_battle', directiveThreadId: 'chip-thread-1', createdAt: 'now',
+      };
+      return '{"response":"noted"}';
+    };
+
+    const { req, res } = post({});
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.currentDirectiveThreadId).toBe('chip-thread-1');
   });
 });

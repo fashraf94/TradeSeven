@@ -313,6 +313,11 @@ export async function runDirectiveTransaction(db, {
       // The ACTUAL replaced thread, from the in-transaction read (ruling 4) —
       // null when this turn filed no directive, because nothing was replaced.
       replacedDirectiveThreadId: normalized ? currentThreadId : null,
+      // The slot as it was when the transaction that committed read it. The
+      // typed route answers `currentDirectiveThreadId` from this, so what it
+      // tells the client is the server's last word rather than a guess made
+      // one model call ago.
+      priorDirectiveThreadId: currentThreadId,
       // …and whether the caller's belief was already stale when it got here.
       // The chip never sees this (it refuses instead); the typed route uses it
       // to tell the player a filing they never saw has just been replaced.

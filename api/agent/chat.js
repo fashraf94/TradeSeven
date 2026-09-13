@@ -16,7 +16,7 @@ import { randomUUID } from 'node:crypto';
 import { TOURNAMENT_GAME_MODE, TOURNAMENT_GROUPS_COLLECTION } from '../../src/constants/leagueTournament.js';
 // League arena two-way ask — the per-day question budget (server-authoritative,
 // its OWN collection; NEVER a battle-doc field). Scoped to the League ask only.
-import { resolveBudgetDay, readAgentChatBudget, chargeAgentChatBudget } from '../_utils/agentChatBudget.js';
+import { resolveBudgetDay, readAgentChatBudget } from '../_utils/agentChatBudget.js';
 // Archetype Integrity — Phase E1 (the deterministic gate). Flag-gated; OFF/review
 // run the literal legacy normalizeDirective path → byte-identical.
 import { gateDirective, renderDirectiveStatus } from '../_utils/directiveGate.js';
@@ -56,7 +56,19 @@ import { getTournamentClaimWindow, formatEtDate } from '../_utils/tournamentTime
 // shared with the deterministic filing route (voice-layer grounding §6.1), so
 // the two writers cannot drift (BUILD_RULES §9). The output here is unchanged
 // field for field; chat.test.js's ENFORCE and flag-OFF rows pin it.
-import { buildDirectiveRecord, buildDirectiveSlot, BATTLE_CHAT_BUDGET } from '../_utils/directiveFiling.js';
+import { BATTLE_CHAT_BUDGET } from '../_utils/directiveFiling.js';
+// B2 (PHASE_B_TICK_STAMPS_SPEC_V1.md §2): the typed turn's durable write is now
+// the SAME transaction the chip route files through. The battle's status and the
+// message budget are re-read INSIDE it — the read at step 6 is a whole model call
+// old by the time we get here — the count is explicit (D-105: never
+// FieldValue.increment), and the League charge is cross-document in the same
+// transaction rather than a second one whose failure was swallowed.
+import {
+  runDirectiveTransaction,
+  DIRECTIVE_CONFLICT_POLICY,
+  DIRECTIVE_BUDGET_POLICY,
+  DIRECTIVE_OUTCOME,
+} from '../_utils/directiveTransaction.js';
 
 export const config = { maxDuration: 30 };
 
@@ -244,6 +256,42 @@ async function settleConversationRecord(pending, turnStartMs, battleId = null) {
     await Promise.race([pending, capped]);
   } finally {
     clearTimeout(timer);
+  }
+}
+
+/**
+ * Map a refusal the SHARED FILING TRANSACTION decided (B2, spec §2) onto this
+ * route's existing response shapes.
+ *
+ * Every one of these is a precondition the route already checked before the
+ * model call — the battle exists, the caller owns it, the agent is bound to it,
+ * the battle is active. They are re-checked INSIDE the write because the read
+ * they were first checked against is a whole model call old: `agent-evaluate`
+ * flips a battle to `completed` on its own schedule, and a tap that overlaps
+ * the close cron used to land a directive in a settled battle. So the shapes
+ * are deliberately the pre-model ones — a caller cannot tell which side of the
+ * model a refusal came from, and does not need to.
+ *
+ * `conflict`, `rejected` and `budget_exhausted` are unreachable from this route
+ * by construction (it selects replace-and-report + commit-over-budget, and its
+ * `resolveDirective` never rejects); they fall to the default, which is the
+ * honest answer for an outcome this route does not know how to name.
+ */
+function respondFilingRefused(res, outcome) {
+  switch (outcome.kind) {
+    case DIRECTIVE_OUTCOME.BATTLE_NOT_FOUND:
+      return res.status(404).json({ error: 'Battle not found' });
+    case DIRECTIVE_OUTCOME.FORBIDDEN_OWNER:
+      return res.status(403).json({ error: 'Not authorized to chat in this battle' });
+    case DIRECTIVE_OUTCOME.FORBIDDEN_AGENT:
+      return res.status(403).json({ error: AGENT_BATTLE_MISMATCH });
+    case DIRECTIVE_OUTCOME.BATTLE_NOT_ACTIVE:
+      return res.status(400).json({
+        error: 'battle_not_active',
+        message: 'This battle has ended. Start a new battle to chat with your agent.',
+      });
+    default:
+      return res.status(500).json({ error: 'Agent unavailable. Try again in a moment.' });
   }
 }
 
@@ -996,87 +1044,175 @@ export default async function handler(req, res) {
       ...(groundingRecord || {}),
     });
 
-    // 19. Write exchange to battle doc
-    //     When a directive is locked in, generate a threadId (UUID) that links
-    //     this directive to any trades Haiku later executes under it. The
-    //     threadId is stamped on the chat exchange, on the battle's single
-    //     active-directive slot, and eventually flows through Haiku's eval
-    //     tool output → statusFeed entries → the frontend trade card indicator.
-    const directiveThreadId = (lintedHasDirective && lintedDirective) ? randomUUID() : null;
+    // 19. THE DURABLE WRITE — one transaction, shared with the chip route
+    //     (B2, PHASE_B_TICK_STAMPS_SPEC_V1.md §2).
+    //
+    //     WHAT CHANGED AND WHY. This used to be a single unconditioned
+    //     `battleRef.update()` ~630 lines after the only battle read, carrying
+    //     `FieldValue.increment(1)` for the budget — so a turn that overlapped
+    //     the close cron landed a directive in a completed battle, two turns
+    //     in the same model-call window could both spend the tenth message,
+    //     and the League charge was a SECOND transaction whose failure was
+    //     swallowed (a filing that landed and cost nothing). The module
+    //     re-reads `battle.status`, `battle[budgetField]` and the League
+    //     budget doc inside the write, counts explicitly (D-105), and charges
+    //     in the same transaction.
+    //
+    //     The thread id that links this directive to the trades Haiku later
+    //     executes under it is minted INSIDE the transaction now — so it is
+    //     minted on the attempt that commits, and a retry cannot leave a
+    //     stranded id behind. It is stamped on the exchange, on the battle's
+    //     single active-directive slot, and flows on through Haiku's eval tool
+    //     output → statusFeed entries → the frontend trade card indicator.
+    //
+    //     CONFLICT SEMANTICS (spec ruling 4): `replace-and-report`. A chip
+    //     filing that landed during the model call is no longer overwritten in
+    //     silence — the turn still files (the user typed a sentence and a model
+    //     answered it; refusing after that spends the turn for nothing), and
+    //     the outcome names the thread it ACTUALLY replaced, read inside the
+    //     transaction. The chip route keeps `reject`, because its tap was made
+    //     against a screen that is no longer true and no model was called.
+    //
+    //     THE BUDGET (spec ruling 5): the pre-call check at step 11 stays, so a
+    //     player never waits twenty seconds for a 429; the charge is the
+    //     transaction's, and a race that produces an eleventh COMMITS with
+    //     `overBudget: true` on the exchange rather than failing a turn the
+    //     model already answered. The eleventh does not increment: the counter
+    //     still reads ten, which is what makes the cap authoritative.
+    //
+    //     The slot as read at the TURN'S START is the expectation: the same raw
+    //     slot file-directive's check 4 compares against.
+    const expectedDirectiveThreadId = typeof battle.directive?.directiveThreadId === 'string' && battle.directive.directiveThreadId
+      ? battle.directive.directiveThreadId
+      : null;
+
+    const outcome = await runDirectiveTransaction(db, {
+      battleRef,
+      agentId,
+      uid: user.uid,
+      // The agent doc was read at step 10 and this turn's directive does not
+      // depend on it, so the transaction does not re-read it. The
+      // agent-belongs-to-this-battle predicate needs only the battle and IS
+      // re-checked inside.
+      readAgent: false,
+      // Review mode is valid on a completed battle (step 9's own rule), so the
+      // in-transaction status check follows the same one.
+      requireActive: mode !== 'review',
+      expectedDirectiveThreadId,
+      conflictPolicy: DIRECTIVE_CONFLICT_POLICY.REPLACE_AND_REPORT,
+      budgetPolicy: DIRECTIVE_BUDGET_POLICY.COMMIT_OVER_BUDGET,
+      // The gate already minted this turn's directive (or the legacy
+      // normalizeDirective path did, at ARCHETYPE_INTEGRITY_MODE 'off'). Most
+      // turns file none: the exchange and the charge still land, the slot is
+      // untouched.
+      resolveDirective: () => ({
+        normalized: (lintedHasDirective && lintedDirective) ? lintedDirective : null,
+      }),
+      // Which store this turn charges is the REQUEST's decision here, not the
+      // battle's: a tournament battle asked WITHOUT `leagueAsk` charges the
+      // per-battle counter, exactly as it did before. That is why the module
+      // takes a predicate rather than deriving it from `gameMode` as the chip
+      // route does.
+      isLeagueBudget: () => isLeagueAsk,
+      battleBudget: { field: budgetField, limit: budgetLimit },
+      buildExchange: ({ battle: current, directiveRecord, directiveThreadId, createdAt, overBudget }) => ({
+        userMessage: sanitizedMessage,
+        agentResponse: parsed.response,
+        scratchpad: cleanScratchpad,
+        hasDirective: lintedHasDirective,
+        // The shipped record, from the ONE shape (directiveFiling.js, through
+        // the shared transaction): Release 2's additive id+version ride it only
+        // when the gate minted them, so the legacy (flag-off) path keeps its
+        // exact pre-Release-2 shape.
+        directive: directiveRecord,
+        directiveThreadId,
+        suggestedActions: lintedSuggestedActions,
+        elicitationTarget: elicitationTarget.dimension,
+        timestamp: createdAt,
+        mode,
+        // Catalog #9 (Signal Capture Rider) — round-boundary Film Room tagging.
+        // Stamp the group onto each tournament review exchange so round-boundary
+        // analysis can recover bracketGameId/roundNumber downstream by joining
+        // groupId → the group doc. Those two are deliberately NOT stamped on the
+        // battle doc: that is createAgentBattle doc-shape = fence contact = STOP
+        // (founder ruling, P8 — tag-only with groupId). This rides the awaited
+        // durable chatExchanges write, never the fire-and-forget shadow
+        // log. Pattern-A field-spread; tiered battles carry no groupId, so it is
+        // omitted for them (the joint-stamp contract pairs gameMode + groupId).
+        ...(current.gameMode === TOURNAMENT_GAME_MODE && current.groupId
+          ? { groupId: current.groupId }
+          : {}),
+        // Phase E1 — OBSERVE/ENFORCE durable gate record (CF-3: rides this awaited
+        // chatExchanges write, NOT a fire-and-forget log). Stamped on the EXCHANGE,
+        // never as a new battle-doc key (no createAgentBattle doc-shape contact).
+        ...(gateOutcome ? { archetypeGate: gateOutcome } : {}),
+        // Phase C §5 — the record says the reply was WITHHELD by the lint, so
+        // scrollback shows a code-owned line that is explained rather than a
+        // sentence the character appears to have chosen. Absent on every other
+        // turn, so no shape moves while the flag is dark.
+        ...(researchLintFailed ? { researchLint: 'withheld' } : {}),
+        // Spec ruling 5 — the eleventh of ten. Present ONLY on a turn the
+        // in-transaction count found already at the cap, so no shape moves on
+        // any turn that is within budget.
+        ...(overBudget ? { overBudget: true } : {}),
+        // Voice-layer grounding §3.4 (M3): every exchange produced under the
+        // grounding contract carries the TOP-LEVEL marker, so the history window
+        // has one rule. Absent when the shipped prompt was sent (off / shadow):
+        // the persisted shape is unchanged there.
+        ...(grounded ? { groundingVersion: GROUNDING_VERSION } : {}),
+      }),
+      // The elicitation ring is read from the IN-TRANSACTION battle, not from
+      // the snapshot taken before the model call: the write is a transaction
+      // now, and computing one of its fields from a twenty-second-old read is
+      // how a concurrent turn's target gets clobbered on the retry.
+      buildBattleUpdate: (current) => ({
+        recentElicitationTargets: [...(current.recentElicitationTargets || []), elicitationTarget.dimension].slice(-3),
+      }),
+    });
+
+    if (outcome.kind !== DIRECTIVE_OUTCOME.FILED) {
+      // A refusal decided INSIDE the transaction: nothing persisted, nothing
+      // charged, and the module says so. The turn reached the model, so the
+      // record it produced is still the diagnostic corpus's — settled here
+      // beside a turnError row naming the refusal, which is the same pair a
+      // throw at this point would have produced.
+      await settleConversationRecord(conversationCapture, turnStartMs, battleId);
+      await settleConversationRecord(captureConversation({
+        userId: user.uid,
+        agentId,
+        battleId,
+        archetype: agent.archetype || null,
+        gameMode: battle.gameMode || null,
+        exchangeNumber: currentBudget + 1,
+        userMessage: sanitizedMessage,
+        agentMessage: null,
+        scratchpad: null,
+        directive: null,
+        suggestedActions: null,
+        elicitationTarget: elicitationTarget.dimension,
+        anchorContext: anchorContext || null,
+        hasDirective: false,
+        tokenUsage: null,
+        mode,
+        turnError: true,
+        errorReason: `filing_${outcome.reason}`,
+        gemmaLatencyMs,
+        ...(groundingRecord || {}),
+      }), turnStartMs, battleId);
+      return respondFilingRefused(res, outcome);
+    }
 
     // Voice-layer grounding §6.3 — the grounded turn tells the client what it
     // is and what the battle's CURRENT directive thread is after this turn:
-    // this turn's, when it filed one; otherwise the slot's as read — the same
-    // raw slot file-directive's check 4 compares against — so a chip filing's
-    // `expectedDirectiveThreadId` is the server's last word, never a guess.
+    // this turn's, when it filed one; otherwise the slot's as the COMMITTING
+    // attempt read it — the same raw slot file-directive's check 4 compares
+    // against, so a chip filing's `expectedDirectiveThreadId` is the server's
+    // last word, never a guess.
     // Absent on the shipped path: the flag-off clientResponse is byte-identical.
     if (grounded) {
       clientResponse.grounded = true;
-      clientResponse.currentDirectiveThreadId = directiveThreadId
-        ?? (typeof battle.directive?.directiveThreadId === 'string' && battle.directive.directiveThreadId
-          ? battle.directive.directiveThreadId
-          : null);
+      clientResponse.currentDirectiveThreadId = outcome.directiveThreadId ?? outcome.priorDirectiveThreadId;
     }
-
-    const exchange = {
-      userMessage: sanitizedMessage,
-      agentResponse: parsed.response,
-      scratchpad: cleanScratchpad,
-      hasDirective: lintedHasDirective,
-      // The shipped record, from the ONE shape (directiveFiling.js): Release 2's
-      // additive id+version ride it only when the gate minted them, so the
-      // legacy (flag-off) path keeps its exact pre-Release-2 shape.
-      directive: directiveThreadId
-        ? buildDirectiveRecord(lintedDirective, directiveThreadId)
-        : null,
-      directiveThreadId,
-      suggestedActions: lintedSuggestedActions,
-      elicitationTarget: elicitationTarget.dimension,
-      timestamp: new Date().toISOString(),
-      mode,
-      // Catalog #9 (Signal Capture Rider) — round-boundary Film Room tagging.
-      // Stamp the group onto each tournament review exchange so round-boundary
-      // analysis can recover bracketGameId/roundNumber downstream by joining
-      // groupId → the group doc. Those two are deliberately NOT stamped on the
-      // battle doc: that is createAgentBattle doc-shape = fence contact = STOP
-      // (founder ruling, P8 — tag-only with groupId). This rides the awaited
-      // durable chatExchanges write below, never the fire-and-forget shadow
-      // log. Pattern-A field-spread; tiered battles carry no groupId, so it is
-      // omitted for them (the joint-stamp contract pairs gameMode + groupId).
-      ...(battle.gameMode === TOURNAMENT_GAME_MODE && battle.groupId
-        ? { groupId: battle.groupId }
-        : {}),
-      // Phase E1 — OBSERVE/ENFORCE durable gate record (CF-3: rides this awaited
-      // chatExchanges write, NOT a fire-and-forget log). Stamped on the EXCHANGE,
-      // never as a new battle-doc key (no createAgentBattle doc-shape contact).
-      ...(gateOutcome ? { archetypeGate: gateOutcome } : {}),
-      // Phase C §5 — the record says the reply was WITHHELD by the lint, so
-      // scrollback shows a code-owned line that is explained rather than a
-      // sentence the character appears to have chosen. Absent on every other
-      // turn, so no shape moves while the flag is dark.
-      ...(researchLintFailed ? { researchLint: 'withheld' } : {}),
-      // Voice-layer grounding §3.4 (M3): every exchange produced under the
-      // grounding contract carries the TOP-LEVEL marker, so the history window
-      // has one rule. Absent when the shipped prompt was sent (off / shadow):
-      // the persisted shape is unchanged there.
-      ...(grounded ? { groundingVersion: GROUNDING_VERSION } : {}),
-    };
-
-    const recentTargets = [...(battle.recentElicitationTargets || []), elicitationTarget.dimension].slice(-3);
-
-    await battleRef.update({
-      chatExchanges: FieldValue.arrayUnion(exchange),
-      // The League arena ask does NOT touch the per-battle counter — it charges its
-      // own per-day store (below). Omitting the increment here is what keeps the two
-      // budgets from double-counting. (chatExchanges stays: it is the sanctioned
-      // createAgentBattle field + the Catalog #9 durable record — unchanged.)
-      ...(!isLeagueAsk ? { [budgetField]: FieldValue.increment(1) } : {}),
-      recentElicitationTargets: recentTargets,
-      // The slot, from the same ONE shape (see the exchange record above).
-      ...(directiveThreadId ? {
-        directive: buildDirectiveSlot(lintedDirective, directiveThreadId, new Date().toISOString()),
-      } : {}),
-    });
 
     // 20. (removed) Directives are now battle-scoped only. Previously we
     //     also appended to `agents/{agentId}.directives[]`, but Phase 4
@@ -1093,26 +1229,21 @@ export default async function handler(req, res) {
       await db.collection('agents').doc(agentId).update(agentUpdate);
     }
 
-    // 20c. League arena per-day CHARGE — transactional, own collection, and only
-    //      HERE: this line is past every 502/504/500 return, so a failed/timed-out
-    //      ask can never reach it ("failed calls don't charge"). Increment only on a
-    //      successful answer. The authoritative post-charge `remaining` is added to
-    //      the response ONLY for a League ask (omission idiom → existing callers'
-    //      response stays byte-identical). leagueBudgetKey null => fail-open path
-    //      (group/dayN was unavailable): answered for free, counter left untouched.
-    if (isLeagueAsk && leagueBudgetKey) {
-      try {
-        const { remaining } = await chargeAgentChatBudget(db, {
-          groupId: leagueBudgetKey.groupId,
-          uid: user.uid,
-          dayN: leagueBudgetKey.dayN,
-        });
-        clientResponse.remaining = remaining;
-      } catch (err) {
-        // The answer already succeeded — a charge failure must not 500 the turn.
-        // Leave `remaining` unset so the client keeps its last-known counter.
-        console.warn('[LeagueChat] budget charge failed after a successful answer:', err?.message);
-      }
+    // 20c. (moved) League arena per-day CHARGE — it is INSIDE the transaction at
+    //      step 19 now (spec ruling 5: "The League charge moves inside the same
+    //      transaction (cross-document; D-105)"). It used to be a SECOND
+    //      transaction here, after the battle write, with its failure caught
+    //      and swallowed — a filing that landed and cost nothing. Nothing is
+    //      past a 502/504/500 any more because nothing needs to be: the charge
+    //      commits with the exchange or neither does.
+    //
+    //      The authoritative post-charge `remaining` is still added to the
+    //      response ONLY for a League ask (omission idiom → existing callers'
+    //      response stays byte-identical), and an unkeyable budget still
+    //      fail-opens: the module leaves `remaining` null, the answer is free,
+    //      and the client keeps its last-known counter.
+    if (isLeagueAsk && outcome.remaining !== null) {
+      clientResponse.remaining = outcome.remaining;
     }
 
     // 21. Return response
