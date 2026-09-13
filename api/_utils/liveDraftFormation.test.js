@@ -186,6 +186,22 @@ describe('nextSlotFireInstant — DST-safe slot resolution', () => {
     expect(isSlotIdDisabled(undefined)).toBe(false);
   });
 
+  it('a MALFORMED `enabled` value fails SAFE (reads disabled, never silently live)', () => {
+    // The footgun this guards: someone disabling a slot writes `enabled: null`
+    // or `enabled: 'false'`. A `!== false` predicate would call all of these
+    // ENABLED and ship a live slot while the author believed it was off.
+    for (const bad of [null, 0, '', 'false', 'no', NaN]) {
+      expect(isSlotEnabled({ id: 'x', enabled: bad })).toBe(false);
+    }
+    // Only an absent field or a literal `true` means enabled.
+    expect(isSlotEnabled({ id: 'x' })).toBe(true);
+    expect(isSlotEnabled({ id: 'x', enabled: undefined })).toBe(true);
+    expect(isSlotEnabled({ id: 'x', enabled: true })).toBe(true);
+    // Truthy-but-not-true is NOT a way to force a slot on.
+    expect(isSlotEnabled({ id: 'x', enabled: 1 })).toBe(false);
+    expect(isSlotEnabled({ id: 'x', enabled: 'true' })).toBe(false);
+  });
+
   it('WINTER/EST: Wed 7pm ET resolves to 00:00 UTC (next day)', () => {
     const { fireIso, fireEtDate } = nextSlotFireInstant(slotById('wed-1900'), new Date('2026-02-04T12:00:00.000Z'));
     expect(fireIso).toBe('2026-02-05T00:00:00.000Z');
@@ -382,9 +398,21 @@ describe('claimSlotSeat / releaseSlotSeat — transactional seat lifecycle', () 
     // Refused BEFORE any read or write: the lazy get-or-create never ran, so no
     // occurrence group exists for the disabled slot to strand anyone in.
     expect(store.size).toBe(before);
-    // Distinct from unknown_slot — the id is real, just off the board.
-    await expect(claimSlotSeat(db, { slotId: 'mon-0845', odUserId: 'userA', now: NOW }))
-      .rejects.not.toThrow(sentinel('unknown_slot'));
+  });
+
+  // Distinct from unknown_slot — the id is real and reserved, just off the board.
+  // Asserted by COMPARING the two refusals rather than with a `.not.toThrow` on
+  // the disabled one: once the positive assertion above pins the message with
+  // ^...$, "and it is not the other message" is a tautology of the same call and
+  // can never fail independently. This row compares two DIFFERENT calls, so it
+  // genuinely fails if the two cases ever collapse into one error.
+  it('slot_disabled and unknown_slot are DIFFERENT refusals (a real id is never "not on the schedule")', async () => {
+    const { db } = makeDb();
+    const disabledErr = await claimSlotSeat(db, { slotId: 'mon-0845', odUserId: 'userA', now: NOW }).catch((e) => e);
+    const unknownErr = await claimSlotSeat(db, { slotId: 'totally-not-a-slot', odUserId: 'userA', now: NOW }).catch((e) => e);
+    expect(disabledErr.message).toMatch(sentinel('slot_disabled'));
+    expect(unknownErr.message).toMatch(sentinel('unknown_slot'));
+    expect(disabledErr.message).not.toBe(unknownErr.message);
   });
 
   it('release frees a seat; a non-last release does NOT delete the group', async () => {

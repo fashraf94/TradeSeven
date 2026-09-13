@@ -74,12 +74,20 @@ export function isKnownSlotId(id) {
   return typeof id === 'string' && LIVE_DRAFT_SLOTS.some((s) => s.id === id);
 }
 
-/** Is this slot claimable/fireable? DEFAULT-ENABLED: only an explicit
- *  `enabled: false` disables, so a slot definition without the field behaves
- *  exactly as it did before the field existed. A null/absent slot is NOT
- *  enabled (an unknown id can never be claimed). */
+/** Is this slot claimable/fireable? DEFAULT-ENABLED: an ABSENT `enabled` means
+ *  enabled, so a slot definition without the field behaves exactly as it did
+ *  before the field existed. A null/absent slot is NOT enabled (an unknown id
+ *  can never be claimed).
+ *
+ *  FAIL-SAFE on a malformed value: only `undefined` and `true` read as enabled.
+ *  A typo'd disable — `enabled: null`, `enabled: 0`, `enabled: 'false'` — reads
+ *  as DISABLED rather than silently shipping an enabled slot. Writing
+ *  `slot.enabled !== false` here would invert that: the author would believe
+ *  they had taken a slot off the board while it stayed live. For a safety
+ *  mechanism, the wrong guess must be the harmless one. */
 export function isSlotEnabled(slot) {
-  return slot != null && slot.enabled !== false;
+  if (slot == null) return false;
+  return slot.enabled === undefined || slot.enabled === true;
 }
 
 /** `isSlotEnabled` by id — false for an unknown id. Callers that hold a group
@@ -88,11 +96,13 @@ export function isSlotIdEnabled(id) {
   return isSlotEnabled(slotById(id));
 }
 
-/** True only when `id` names a KNOWN slot that is explicitly disabled. The
- *  fire path skips on THIS, never on `!isSlotIdEnabled`, so a group carrying an
- *  absent or unrecognized `slotId` keeps its pre-existing behavior exactly
- *  (fail-open) while a founder-disabled slot is fail-closed. */
+/** True only when `id` names a KNOWN slot that is not enabled. The fire path
+ *  skips on THIS, never on `!isSlotIdEnabled`, so a group carrying an absent or
+ *  unrecognized `slotId` keeps its pre-existing behavior exactly (fail-open)
+ *  while a founder-disabled slot is fail-closed. Derived from isSlotEnabled
+ *  rather than re-testing `=== false`, so the two can never disagree about what
+ *  "disabled" means. */
 export function isSlotIdDisabled(id) {
   const slot = slotById(id);
-  return slot != null && slot.enabled === false;
+  return slot != null && !isSlotEnabled(slot);
 }

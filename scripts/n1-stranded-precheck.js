@@ -80,14 +80,35 @@ const MUTATORS = new Set([
   'batch', 'bulkWriter', 'runTransaction', 'recursiveDelete', 'withConverter',
 ]);
 
-/** Wrap a Firestore handle so any mutating call THROWS instead of writing.
- *  Returned refs/queries are wrapped too, so the guarantee survives chaining.
- *  Promises are passed through unwrapped (a snapshot is already inert). */
+// ESCAPE HATCHES (review finding, 2026-09-12). These are GETTERS, not methods,
+// that hand back a live, unwrapped SDK object from which `.set()` is reachable
+// again — `ref.parent.doc(x).set()`, `ref.firestore.collection(y).doc(z).delete()`,
+// `(await ref.get()).ref.set()`. Blocking a property access rather than a call is
+// the only way to close them, and this script never needs any of the three.
+const ESCAPES = new Set(['parent', 'firestore', 'ref']);
+
+/** Wrap a Firestore handle so any write path THROWS instead of writing.
+ *
+ *  WHAT THIS GUARANTEES, precisely: every mutator NAME in MUTATORS and every
+ *  escape-hatch GETTER in ESCAPES throws on access, on the handle and on every
+ *  ref/query/collection reachable from it by chaining. That covers every write
+ *  path this script could take.
+ *
+ *  WHAT IT DOES NOT: a Promise result is passed through unwrapped (a snapshot is
+ *  inert data), so an object obtained by awaiting — a DocumentSnapshot, a
+ *  QuerySnapshot, the array from `listDocuments()` — is not itself proxied. Its
+ *  `.ref` is blocked on the wrapped side, and this script only ever reads
+ *  `.exists` / `.data()` / `.size` / `.forEach` off a snapshot, so there is no
+ *  live write path. Stated plainly because "mechanically read-only" should mean
+ *  something checkable, not a vibe. */
 function readOnly(target, path = 'db') {
   return new Proxy(target, {
     get(t, prop) {
       if (typeof prop === 'string' && MUTATORS.has(prop)) {
         throw new Error(`READ-ONLY VIOLATION: ${path}.${prop}() — n1-stranded-precheck must never write.`);
+      }
+      if (typeof prop === 'string' && ESCAPES.has(prop)) {
+        throw new Error(`READ-ONLY VIOLATION: ${path}.${prop} is a write-capable escape hatch — n1-stranded-precheck must never reach it.`);
       }
       // No receiver: Firestore classes use private fields, and forwarding the
       // proxy as `this` to a getter would throw.
@@ -114,15 +135,22 @@ function inspectDailyScores(dailyScores) {
   const carriedOn = present.filter((k) => dailyScores[k].agentScoresCarried === true);
   const agentPointsByDay = {};
   let allZero = present.length > 0;
+  let anyMissing = false;
   for (const k of present) {
     const cs = dailyScores[k].closeScores || {};
     const values = Object.values(cs).map((e) => e?.agentPoints);
     agentPointsByDay[k] = values;
-    if (!values.length || values.some((v) => v !== 0)) allZero = false;
+    // An ABSENT agentPoints is reported separately rather than silently counted
+    // as non-zero: the real writer (computeBankingUpdate) always stamps a number,
+    // so a missing key means a corrupted/legacy doc, not a scored agent. Treating
+    // `undefined !== 0` as "the agent scored" would hide a genuinely stranded pod.
+    if (values.some((v) => v === undefined)) anyMissing = true;
+    if (!values.length || values.some((v) => v !== 0 && v !== undefined)) allZero = false;
   }
   return {
     daysBanked: present.length,
     allAgentPointsZero: allZero,
+    agentPointsMissingSomewhere: anyMissing,
     carriedDays: carriedOn,
     noCarryStamp: carriedOn.length === 0,
     agentPointsByDay,
@@ -164,6 +192,12 @@ async function inspectGroup(db, etDate) {
   const stateSnap = await db.collection('tournamentOrchestrator').doc('state').get();
   const markerKey = `${etDate}:monday_pipeline`;
   const marker = stateSnap.exists ? (stateSnap.data().duties?.[markerKey] ?? null) : null;
+  // CAVEAT on this cell (review finding): `resolvedAt` is stamped at the draft
+  // handoff, which for the normal Mon-08:45 pre-open path IS the instant the pod
+  // reached `battle` (same transaction). But a pod that landed in AWAITING_OPEN
+  // first carries the EARLIER sub-transition instant, so this cell can read "no"
+  // for a pod that is genuinely stranded. Corroborating, never decisive — the
+  // verdict does not hinge on part 5 alone.
   const markerBeforeResolve = marker?.completedAt && resolvedAt
     ? marker.completedAt < resolvedAt
     : null;
@@ -185,9 +219,28 @@ async function inspectGroup(db, etDate) {
   };
   const partsHeld = Object.values(signature).filter(Boolean).length;
 
+  // STATUS GATE — the correction that stops this script condemning healthy pods.
+  // Parts 1-3 are all ABSENCE of downstream artifacts, and absence is equally
+  // true for a pod that simply HAS NOT RUN YET. A brand-new FORMING pod (empty
+  // dailyScores, no streams, no battles) trips exactly parts 1-3 every single
+  // time — so an ungated `partsHeld >= 3` would label the upcoming Monday's own
+  // freshly-claimed pod "TREAT AS STRANDED" and then hand over the command to
+  // expire it, destroying a healthy pod real people are sitting in.
+  // "Stranded" is only a meaningful claim once the pod actually reached its
+  // battle week: that is where the agent layer SHOULD exist and does not.
+  const PLAYED = ['battle', 'complete', 'voided'];
+  const reachedBattle = PLAYED.includes(g.status);
+  const verdict = !reachedBattle
+    ? (g.status === 'forming' ? 'not_started'
+      : g.status === 'drafting' ? 'mid_draft'
+      : g.status === 'awaiting_open' ? 'awaiting_open'
+      : 'pre_battle')
+    : (partsHeld >= 3 ? 'stranded' : 'healthy');
+  const stranded = verdict === 'stranded';
+
   // Ranks are only meaningful once the week actually finalized.
   let ranks = [];
-  if (partsHeld >= 3 && members.length) {
+  if (stranded && members.length) {
     ranks = await Promise.all(members.map(async (odUserId) => {
       const id = rankDocId(odUserId, { dev: g.isDev === true });
       const rs = await db.collection(TOURNAMENT_RANKS_COLLECTION).doc(id).get();
@@ -224,7 +277,7 @@ async function inspectGroup(db, etDate) {
     markerKey,
     markerCompletedAt: marker?.completedAt ?? null,
     markerBeforeResolve,
-    signature, partsHeld,
+    signature, partsHeld, verdict, stranded, reachedBattle,
     ranks,
   };
 }
@@ -238,7 +291,7 @@ const pad = (s, n) => String(s ?? '').padEnd(n);
 
 function printTable(rows) {
   console.log('');
-  console.log('DATE        GROUP ID                       EXISTS STATUS       DEV  SEATS  SIGNATURE(1-5)  STRANDED');
+  console.log('DATE        GROUP ID                       EXISTS STATUS       DEV  SEATS  SIGNATURE(1-5)  VERDICT');
   console.log('----------- ------------------------------ ------ ------------ ---- ------ --------------- --------');
   for (const r of rows) {
     if (!r.exists) {
@@ -248,14 +301,22 @@ function printTable(rows) {
     const s = r.signature;
     const sig = [s.p1_noAgentBattles, s.p2_noAgentBoards, s.p3_noAgentDraftStream, s.p4_silentZeroAgentPoints, s.p5_markerSetBeforeResolve]
       .map((b) => (b ? '#' : '.')).join(' ');
-    const stranded = r.partsHeld >= 3 ? `${r.partsHeld}/5 YES` : `${r.partsHeld}/5`;
-    console.log(`${pad(r.etDate, 11)} ${pad(r.groupId, 30)} ${pad(YES, 6)} ${pad(r.status, 12)} ${pad(r.isDev ? YES : NO, 4)} ${pad(r.members.length, 6)} ${pad(sig, 15)} ${stranded}`);
+    const VERDICT_LABEL = {
+      stranded: 'STRANDED', healthy: 'healthy', not_started: 'not started',
+      mid_draft: 'MID-DRAFT', awaiting_open: 'pre-open', pre_battle: 'pre-battle',
+    };
+    // Signature cells are only meaningful once the pod reached its battle week.
+    const sigCell = r.reachedBattle ? sig : 'n/a (not played)';
+    console.log(`${pad(r.etDate, 11)} ${pad(r.groupId, 30)} ${pad(YES, 6)} ${pad(r.status, 12)} ${pad(r.isDev ? YES : NO, 4)} ${pad(r.members.length, 6)} ${pad(sigCell, 15)} ${VERDICT_LABEL[r.verdict]}`);
   }
   console.log('');
   console.log('  SIGNATURE key ("#" = the stranded condition holds, "." = it does not):');
   console.log('    1 no agent battles   2 no agent boards   3 no agent-draft stream');
   console.log('    4 all banked agentPoints 0 with NO agentScoresCarried stamp (the silent part)');
   console.log('    5 Monday duty marker completed BEFORE the pod resolved its draft');
+  console.log('  The signature is only EVALUATED for a pod that reached its battle week.');
+  console.log('  Parts 1-3 are absences, and a pod that never fired has them all — so a');
+  console.log('  not-yet-played pod reads "n/a", never "stranded". It is not evidence of harm.');
 }
 
 function printDetail(r) {
@@ -293,7 +354,15 @@ function printDetail(r) {
   console.log(`         completedAt = ${r.markerCompletedAt ?? '(no marker recorded)'}`);
   console.log(`         set before the pod resolved? ${mark(r.markerBeforeResolve)}  -> ${mark(r.signature.p5_markerSetBeforeResolve)}`);
   console.log('');
-  console.log(`  VERDICT: ${r.partsHeld}/5 parts hold${r.partsHeld >= 3 ? ' — TREAT AS STRANDED' : ''}`);
+  const VERDICT_TEXT = {
+    stranded:      `STRANDED — ${r.partsHeld}/5 parts hold on a pod that reached its battle week`,
+    healthy:       `HEALTHY — reached battle and its agent layer is present (${r.partsHeld}/5)`,
+    not_started:   'NOT STARTED — still forming, never fired. CANNOT be stranded; the missing agent layer is simply not due yet.',
+    mid_draft:     'MID-DRAFT — drafting right now. Not stranded yet; see the decision note in the summary.',
+    awaiting_open: 'PRE-OPEN — draft done, waiting for its Monday open. Not stranded yet.',
+    pre_battle:    'PRE-BATTLE — has not reached its battle week. Not stranded.',
+  };
+  console.log(`  VERDICT: ${VERDICT_TEXT[r.verdict]}`);
 
   if (r.ranks.length) {
     console.log('');
@@ -323,7 +392,7 @@ async function main() {
   for (const r of rows) printDetail(r);
 
   const existing = rows.filter((r) => r.exists);
-  const stranded = existing.filter((r) => r.partsHeld >= 3);
+  const stranded = existing.filter((r) => r.verdict === 'stranded');
   const humansAffected = new Set();
   const rpApplied = [];
   for (const r of stranded) {
@@ -360,6 +429,25 @@ async function main() {
         console.log('No rank has been applied for these pods yet — their week has not finalized.');
       }
     }
+    // A pod caught mid-draft is the one state the disable does NOT stop: the
+    // fire gate covers FORMING -> DRAFTING, but the drive/pick paths carry a
+    // DRAFTING pod to BATTLE unguarded (deliberate — never strand a human
+    // mid-draft). Call it out loudly; it is the only case needing a judgement
+    // call rather than just leaving the pod parked.
+    const drafting = existing.filter((r) => r.status === 'drafting');
+    if (drafting.length) {
+      console.log('');
+      console.log('*** MID-DRAFT RIGHT NOW — NEEDS A DECISION ***');
+      for (const r of drafting) {
+        console.log(`  - ${r.groupId}  ${r.members.length} seat(s): ${r.players.map((p) => p.odUserId).join(', ') || '(none)'}`);
+      }
+      console.log('  Disabling the slot does NOT stop a draft already in flight: the drive cron and');
+      console.log('  the human pick endpoint will still carry it to `battle`, and it will then hit N1');
+      console.log('  (no agent layer all week). The expire script REFUSES a drafting pod on purpose —');
+      console.log('  killing a live draft with humans seated is worse than letting it finish. Decide');
+      console.log('  whether to let it play a user-only week or to void it after it lands in battle.');
+    }
+
     const forming = existing.filter((r) => r.status === 'forming');
     if (forming.length) {
       console.log('');

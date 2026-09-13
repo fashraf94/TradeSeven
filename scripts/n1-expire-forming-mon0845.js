@@ -19,10 +19,20 @@
 // And it writes ONLY with an explicit --apply. Without it, this is a dry run
 // that prints exactly what it would do.
 //
-// `forming -> expired` is a legal transition (tournamentGroupService.js
-// LEGAL_TRANSITIONS) and `transitionStatus` re-asserts it INSIDE its
-// transaction, so a pod that advanced between the read below and the commit
-// cannot be silently retro-expired into an illegal state.
+// WHY expireGroup AND NOT transitionStatus (review finding, 2026-09-12). The
+// pre-read above happens OUTSIDE the write transaction, and BOTH `forming ->
+// expired` and `drafting -> expired` are legal (LEGAL_TRANSITIONS,
+// tournamentGroupService.js:52-53) — so `transitionStatus` would cheerfully
+// expire a pod that started drafting in the window between the dry run and the
+// apply, silently killing a live draft with humans seated. `expireGroup` takes
+// the three preconditions that close it BY CONSTRUCTION inside the transaction:
+//   expectedStatus          — the pod is still `forming`;
+//   expectedUpdatedAt       — the group doc has not moved (e.g. a seat joined);
+//   expectedProgressVersion — NO draft activity at all (a mid-draft pick writes
+//                             only the draft/state sibling, so updatedAt alone
+//                             cannot see it — this is the pin that matters).
+// On any mismatch it writes NOTHING and reports why; re-run the pre-check for
+// fresh pins. This is the lifecycle-void-apply.js + voidGroup pattern.
 //
 // RUN ORDER (do not skip step 1):
 //   1. node scripts/n1-stranded-precheck.js          # read-only; decide
@@ -36,7 +46,7 @@
 // MUST be imported before firebaseAdmin.js — loads .env.local as a side effect.
 import { requireFirebaseCreds } from './loadLocalEnv.js';
 import { getFirebaseAdmin } from '../api/_utils/firebaseAdmin.js';
-import { transitionStatus } from '../api/_utils/tournamentGroupService.js';
+import { expireGroup } from '../api/_utils/tournamentGroupService.js';
 import { GROUP_STATUS, TOURNAMENT_GROUPS_COLLECTION } from '../src/constants/leagueTournament.js';
 
 const EXPECTED_SLOT_ID = 'mon-0845';
@@ -100,9 +110,19 @@ async function main() {
       'This script is scoped to the N1 slot only.');
   }
 
+  // The three preconditions, captured from THIS read and pinned into the write.
+  const expectedStatus = g.status;
+  const expectedUpdatedAt = g.updatedAt ?? null;
+  const expectedProgressVersion = g.progressVersion || 0;
+
   console.log(`  WILL DO: transition status '${GROUP_STATUS.FORMING}' -> '${GROUP_STATUS.EXPIRED}' on this ONE group.`);
   console.log('  WILL NOT: touch any other group, any rank doc, any banking record, or any seat.');
   console.log(`  EFFECT  : the ${members.length} claimant(s) above lose this parked seat; the pod is terminal.`);
+  console.log('');
+  console.log('  PINNED PRECONDITIONS (the write is refused if any has moved):');
+  console.log(`    expectedStatus          : ${expectedStatus}`);
+  console.log(`    expectedUpdatedAt       : ${expectedUpdatedAt ?? '(none)'}`);
+  console.log(`    expectedProgressVersion : ${expectedProgressVersion}`);
   console.log('');
 
   if (!apply) {
@@ -111,8 +131,22 @@ async function main() {
   }
 
   const nowIso = new Date().toISOString();
-  const to = await transitionStatus(db, groupId, GROUP_STATUS.EXPIRED, nowIso);
-  console.log(`EXPIRED. status is now '${to}' (at ${nowIso}). The pod is terminal and can never fire.`);
+  const res = await expireGroup(db, groupId, {
+    reason: 'n1_mitigation_slot_disabled',
+    by: 'founder_manual',
+    now: nowIso,
+    expectedStatus,
+    expectedUpdatedAt,
+    expectedProgressVersion,
+  });
+  console.log('result:', JSON.stringify(res));
+  if (res.expired) {
+    console.log(`EXPIRED at ${nowIso}. The pod is terminal and can never fire.`);
+  } else {
+    console.log(`NOT expired (reason: ${res.reason}). NOTHING was written — the pod moved since the read above`);
+    console.log('(a seat joined, or the draft started). Re-run the pre-check and look again before retrying.');
+    process.exitCode = 4;
+  }
 }
 
 main().then(() => process.exit(0)).catch((err) => {

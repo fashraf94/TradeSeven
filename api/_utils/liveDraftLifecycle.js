@@ -129,7 +129,19 @@ export async function findDueSlotGroups(db, now = new Date()) {
   return due;
 }
 
-/** DRAFTING slot groups — the pods whose overdue turns this pass may autopick. */
+/** DRAFTING slot groups — the pods whose overdue turns this pass may autopick.
+ *
+ *  DELIBERATELY NOT DISABLED-SLOT-GATED (N1 mitigation scope limit, 2026-09-12).
+ *  The disable closes FORMING -> DRAFTING (findDueSlotGroups above), so no NEW
+ *  pod can reach this query for a disabled slot. A pod ALREADY in DRAFTING when
+ *  the disable deploys is still carried to completion here, and by the human
+ *  pick path (applyCompetitivePick), and will then hit N1 — because abandoning a
+ *  live draft with humans seated mid-pick is the worse failure. That window is
+ *  bounded: a draft completes in ~5 minutes (the S3 margin), so it exists only
+ *  if a deploy lands inside one. scripts/n1-stranded-precheck.js reports a
+ *  DRAFTING pod explicitly so the case is never silent, and the expire script
+ *  refuses one on purpose. Closing it properly belongs to the N1 pipeline fix,
+ *  which makes reaching `battle` safe instead of blocking it. */
 export async function findDraftingSlotGroups(db) {
   const snap = await db.collection(TOURNAMENT_GROUPS_COLLECTION).where('status', '==', GROUP_STATUS.DRAFTING).get();
   const groups = [];

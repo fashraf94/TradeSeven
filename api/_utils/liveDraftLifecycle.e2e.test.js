@@ -41,20 +41,29 @@ vi.mock('./tournamentPrices.js', () => ({ fetchBatchQuotes: (...a) => fetchBatch
 // ONLY, explicitly, rather than deleting the coverage: the config module is
 // re-exported verbatim with `enabled` stripped from every slot, so the helpers
 // under test are the REAL ones running against an all-enabled board.
-// NOT the BUILD_RULES §4 dependency-surface guard — that is this file's real
-// import of the live-draft modules below, which is never mocked.
+// NOT the BUILD_RULES §4 dependency-surface guard: `importOriginal()` below still
+// loads and executes the real module (so the "explodes on a browser-only
+// transitive import" property is intact), and the unmocked guard for the
+// liveDraftLifecycle.js -> liveDraftSlots.js edge lives in the sibling
+// liveDraftLifecycle.test.js, which mocks nothing at all.
+//
+// This fixture overrides only the DATA (the slot list, with `enabled` stripped)
+// and the two id-keyed helpers that must resolve through the patched lookup. The
+// PREDICATE itself stays the REAL `isSlotEnabled`, so a regression in production
+// enable/disable logic fails this e2e instead of hiding behind a stub.
 vi.mock('../../src/config/liveDraftSlots.js', async (importOriginal) => {
   const actual = await importOriginal();
   const slots = Object.freeze(actual.LIVE_DRAFT_SLOTS.map(({ enabled, ...rest }) => Object.freeze(rest)));
   const slotById = (id) => slots.find((s) => s.id === id) ?? null;
   return {
-    ...actual,
+    ...actual, // isSlotEnabled / isKnownSlotId inherited REAL — never re-implemented here
     LIVE_DRAFT_SLOTS: slots,
     slotById,
-    isKnownSlotId: (id) => typeof id === 'string' && slots.some((s) => s.id === id),
-    isSlotEnabled: (slot) => slot != null && slot.enabled !== false,
-    isSlotIdEnabled: (id) => slotById(id) != null,
-    isSlotIdDisabled: () => false,
+    isSlotIdEnabled: (id) => actual.isSlotEnabled(slotById(id)),
+    isSlotIdDisabled: (id) => {
+      const slot = slotById(id);
+      return slot != null && !actual.isSlotEnabled(slot);
+    },
   };
 });
 
