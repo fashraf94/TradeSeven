@@ -606,6 +606,7 @@ Every row is a place where `docs/design/PHASE_B_TICK_STAMPS_SPEC_V1.md` and the 
 | **E-6** | `:53` — *"committed then threw (persisted **and charged**)"* | The parenthetical describes the ordinary case. A committed turn can be `charged: false` — a League filing whose game day would not resolve (fail-open) and an over-budget eleventh both persist without costing a message. The build reports the outcome's **actual** `charged`, not a hardcoded true (test C-1f). |
 | **E-7** | `:52` — the League charge cites `chat.js`'s second transaction implicitly | Phase 0 §2.4(e2) gives its anchor as `:1103-1116`, correct at `c35f9a5`; it is now deleted. |
 
+| **E-9** | `:53` — ruling 7 names **three** outcomes; the transaction can produce a **fourth**, and §7 of this report filed it for a ruling. | **Ruled Sep 13, 2026 — and the fourth position is now narrower, not gone.** The body recognises its own landed commit whenever the filing carried a thread id and answers the outcome that commit produced (§7-A), so what used to be unknowable is known on every directive-filing path. `attestThrown`'s `persisted: null, charged: null` (`directiveTransaction.js:174`) **stays**, for the case that remains genuinely unknown: a transaction that threw with **no commit reported** — the HTTP layer holds no outcome to answer with. So does the in-body refusal's `null`/`null` (`:267`): the evidence proves a commit LANDED, and its absence is not made into a proof that none did. The spec still does not name the encoding; this row is where it is written down. |
 | **E-8** | Phase 0 §3.2 — *"**Seven** client sites infer cost or persistence from an HTTP status"* | **Eight.** `src/components/FilmRoom/FilmRoomChat.jsx` posts `mode: 'review'` to the same `POST /api/agent/chat`, is mounted unflagged from `FilmRoomScreen.jsx`, rolled the optimistic bubble back on **any** non-ok status and claimed the agent could not be reached. Found by this build's own adversarial review (lens C, finding C-8), not by the census. Fixed in commit F, with its own mounted suite. The census's *verdict* stands — the seven it lists were correctly classified — but its count was one short, and "four fixed, two deferred" was a split over an incomplete set. |
 
 Also recorded, not an errata: Phase 0 §0.1's caution about `claude/flip-shadow-assembly-off` editing `featureFlags.js`. **That branch has not merged** — `origin/main` is still `c35f9a5`, and this build does not read or edit `featureFlags.js` at all.
@@ -633,15 +634,16 @@ Enumerated per the prompt. Nothing below was improvised silently.
 | **D-14** | `src/components/FilmRoom/FilmRoomChat.jsx` and its new suite are in the diff; the prompt's Commit D names only `decisionRecord.js`, `useArenaEngine.js` and `AgentChat.jsx`. | It is an **eighth** client of the same route, missed by Phase 0's census (errata E-8) and found by this build's own review. It made the same status-only claim on the same body the build exists to fix. Shipping with it unfixed would have made the PR disclosure — *"the client no longer infers either from a status"* — false. Two contained changes (`landed` gating the rollback and the line) plus a mounted suite. |
 | **D-15** | Flag-OFF behaviour changes in one place: an attested-`persisted` failure renders no line even with `controllerCopy` off, where it used to render the shipped *"Agent is thinking too hard. Try again."* | A failure line is a claim, and a turn the route says landed did not fail. A flag is a copy switch; it is not a licence to tell a flag-off player their message was lost when the server says it was not. Every other flag-off body is byte-identical (row D-1f covers three of them explicitly), and row D-1f2 pins the one exception with this reasoning. |
 | **D-12** | The League budget key is resolved **inside** the transaction, not carried from the pre-model read. | `chat.js:531` still resolves it for the early exhausted gate, but the charge now uses the module's own `resolveBudgetDay` (`directiveTransaction.js:268`) — which is what ruling 2 names as one of the four in-transaction re-reads. Consequence: a group read that fails pre-model and succeeds at the write now charges (it answered free before), and the reverse now answers free. Both are "the in-transaction read is the authority", the same principle as the rest of the build. The fail-open contract itself is unchanged: no key, no charge, never a placeholder day. |
-| **D-11** | A fourth attestation shape — `persisted: null, charged: null` — that §2 does not name. | §7. Reported for a founder ruling rather than settled here. |
+| **D-11** | A fourth attestation shape — `persisted: null, charged: null` — that §2 does not name. | §7. Reported for a founder ruling rather than settled here — **ruled Sep 13; see §7-A and errata E-9.** |
+| **D-17 … D-22** | Six further deviations, from the two commits the addendum adds. | Stated in full in **§7-A** (D-17 A-1's retarget and A-2's status expectation, D-18 A-2d's fixture, D-19 the `afterCommit` seam) and **§11-A** (D-20 the kill-switch gate, D-21 the chip route's repointed predicate, D-22 the store's conjunction). Listed here so this table is not silently short. |
 
 ---
 
 ## 10. Disclosure for the PR body
 
-*(The founder pastes this. It is the prompt's text, unchanged except where the build made a clause more precise — the two changes are marked.)*
+*(The founder pastes this. It is the prompt's text, unchanged except where the build made a clause more precise — the two changes are marked. **The bold clause was added by the addendum's second ruling (§11-A); the paragraph is otherwise as the build left it.**)*
 
-> The typed directive path now files through the same transaction as the chip path: the battle's status and the message budget are re-read inside the write, the budget is an explicit in-transaction count (D-105 — the `FieldValue.increment` is gone), the League charge is atomic with the filing, and a typed directive that replaces a chip filing says so. Every response from both routes attests whether the directive persisted and whether a message was charged; the client no longer infers either from a status — a filing that landed can no longer be shown as a failure, and a failure can no longer be shown as free. The Bench shows the first five flagged candidates; the record keeps all of them. Nothing the decider sees changes.
+> The typed directive path now files through the same transaction as the chip path: the battle's status and the message budget are re-read inside the write, the budget is an explicit in-transaction count (D-105 — the `FieldValue.increment` is gone), the League charge is atomic with the filing, and a typed directive that replaces a chip filing says so. **The budget policy is the battle's; a request cannot choose it.** Every response from both routes attests whether the directive persisted and whether a message was charged; the client no longer infers either from a status — a filing that landed can no longer be shown as a failure, and a failure can no longer be shown as free. The Bench shows the first five flagged candidates; the record keeps all of them. Nothing the decider sees changes.
 >
 > *(Two additions the build makes explicit. There is a fourth case the spec does not name — a commit that landed whose reply was lost; the route says it does not know (`persisted: null`) rather than claiming it did not happen, and the clients treat an unknown as no claim. And the Film Room's chat is an eighth client of the same route that the Phase 0 census missed; it reads the attestation too. See §6, §7 and §8 of the build report.)*
 
@@ -680,3 +682,381 @@ Enumerated per the prompt. Nothing below was improvised silently.
 
 **Push. No PR — the founder opens PRs. No merge. STOP.**
 
+---
+---
+
+# Addendum — the two rulings, built
+
+**Date:** September 13, 2026 · **Branch:** `claude/b2-directive-transaction`, continued ·
+**Head at this addendum:** `e0f5d53d` (three commits on top of the report's `6ccf9e60`: the two rulings, then the pass that closed what Lens D found) ·
+**Fetch recorded (BUILD_RULES §3):** `git fetch origin` ran as the first command of this session, before any comparison against a remote; it brought the container's remote-tracking refs current (555 remote branches, `origin/main` at `1c4a8d3b` — **two** commits past the `c35f9a5` this branch was cut from: `8cc0d178` *"chore(lint): declare Node globals"* and its merge, touching `eslint.config.js` and one doc, and **neither touches a file in this diff** (`comm -12` on the two name-only lists is empty). That is the branch §5.3 recorded as unmerged; it has merged since, so the 601 tree-wide `'process' is not defined` errors §5.3 describes are `main`'s history now, not its present. This branch is still cut from `c35f9a5` and carries the pre-merge `eslint.config.js`, so §A.3's lint numbers are measured against that, like §5.3's.)
+**Fence (BUILD_RULES §1), first line as before:** **none of the six files these three commits touch is on the §1 fence.** A programmatic check of `git diff 6ccf9e60..HEAD` against all eleven fenced paths returns **zero hits**; `src/config/featureFlags.js` and `api/_utils/tickStamps.js` are ABSENT from the diff; `DARK_BY_DESIGN` appears on zero code lines.
+**Flag:** none. Both commits ship unflagged, on the same P-1 precedent as B2 itself.
+
+| # | What | Verdict |
+|---|---|---|
+| 1 | §7 — the ambiguous commit | **Ruled and built.** The no-op. §7-A. |
+| 2 | §11 item 2 — the `leagueAsk` bypass | **Ruled and closed.** §11-A. |
+| 3 | Fence | **No contact.** Zero fenced paths; no new battle-doc key. |
+| 4 | The ENFORCE and flag-OFF pins | **Byte-identical by hash** at `c35f9a5`, `6ccf9e60` and this head. §A.3. |
+| 5 | Lens D, scoped to these two commits | §A.2. |
+| 6 | Full suite | **12,477 passed / 64 skipped, zero failures**, five runs. Exit 0 in four; the fifth exited 1 on a pre-existing client teardown race this branch does not touch. §A.3. |
+
+---
+
+## §7-A — the ambiguous commit: ruled, and built
+
+**The ruling.** *"Build the no-op. In `directiveTransaction.js` the body checks whether the pre-minted `directiveThreadId` is already on the document (the slot, or an exchange carrying it top-level). If it is, the prior attempt's commit landed: return the committed outcome — `persisted: true`, charged as the document shows — without writing. Both policies, both routes."*
+
+### What it is
+
+The thread id is minted once per **call** (`directiveTransaction.js:249`, the hoist review finding A-2 already required). That makes it this call's **signature**. Not because the *field* is private — a migration or another filing writes `directiveThreadId` too — but because this **value** is a v4 UUID minted for this call moments earlier, so no other writer can be holding it, and the only path from the mint to the document is this call's own `tx.update`. So finding it inside the body proves exactly one thing — an earlier attempt of this call committed.
+
+| Piece | Anchor | What it does |
+|---|---|---|
+| the recognition rule | `api/_utils/directiveTransaction.js:135` | `directiveThreadOnDocument(battle, id)` — the slot, or an exchange carrying it top-level. Exported, because if this predicate is wrong the no-op is wrong. |
+| check 0 | `:305` | on a re-run, and only with the committing attempt's outcome in hand, returns it and writes nothing. |
+| the stash | `:419` | the committing attempt records its own outcome after buffering its writes and before returning. |
+
+**Why it is above every other check.** A commit that landed is a fact. Below check 1 or check 2 a battle that has since completed or changed hands would turn a filing that persisted into a refusal claiming it did not — the exact defect ruling 7 exists to remove. Above them, the answer is also the same under both policies, which is what "both policies, both routes" requires: `reject` would otherwise re-read its own new thread id and answer `conflict`, and `replace-and-report` would file a second directive and charge a second message.
+
+**Why it answers with the stashed outcome rather than re-deriving one.** The committing attempt already computed `charged`, `remaining`, `replacedDirectiveThreadId`, `priorDirectiveThreadId` and `staleExpectation` from the document as it was when that attempt read it. Re-deriving them on the re-run would read a document a concurrent writer may have touched since — and three of those five (what the filing replaced, what was prior, whether the caller's belief was stale) are **not recoverable** after the write has landed. The stash is the only source that tells the truth. The invariant that makes it safe is stated where it is relied on: the body buffers its writes and sets `committedOutcome` before it returns, so evidence on the document cannot exist without it. Both conditions are required; if the impossible case ever arose the code falls through to today's behaviour rather than to a fabricated receipt.
+
+### §7's four-position table, now
+
+| Position | §2 names it? | Before | Now |
+|---|---|---|---|
+| threw before the transaction | yes | nothing persisted, nothing charged | unchanged |
+| refused inside it | yes | nothing persisted, nothing charged | unchanged |
+| committed, then threw | yes | it persisted; it charged what it charged | unchanged |
+| **the transaction itself threw** | **no** | **it could not tell** | **it can tell, whenever the filing carried a thread id — and does. Where it cannot (below), it still says so rather than guessing.** |
+
+### What it does NOT cover, measured rather than assumed
+
+A turn that files **no directive** writes no thread id (`directiveTransaction.js:392` — `normalized ? mintedThreadId : null`), so it leaves this call no signature and its re-run cannot recognise its own commit. The exchange still dedupes — the mint and the instant are hoisted, so `arrayUnion`'s set semantics apply — but the **count still moves twice**, exactly as it did at `c35f9a5` under `FieldValue.increment(1)`. **Row A-2f pins it**, at the case that still has it: one exchange on the document, `chatBudgetUsed` up by two.
+
+Making that case recognisable would mean stamping a per-call id on **every** exchange, including the common no-directive turn — a change to the persisted shape that the ENFORCE and flag-OFF pins forbid (§A.3). That is a founder call, not a reviewer's: **filed, not built.**
+
+### Two conservatisms deliberately left alone
+
+- **`attestThrown`'s `null` / `null` stays** (`directiveTransaction.js:174`). It answers for a transaction that threw with **no commit reported** — the HTTP layer holds no outcome, so the route genuinely does not know. Ruling 7's fourth position survives, narrower: see errata **E-9** in §8.
+- **The in-body refusal's `null` / `null` stays** (`:267`). The evidence proves a commit **landed**; its absence is not turned into a proof that none did. For a filing that carries a thread id the check would in principle support that stronger claim, but §2 does not rule on it and inventing it would be the improvisation the original prompt forbids. **Filed.** Row A-1 on the chip route was retargeted from a self-commit re-run (where check 0 now answers instead) to a **contention** re-run, so the conservatism keeps a guard that can still fail under it.
+
+### The rows
+
+| Row | File | What it holds | Against the pre-ruling module |
+|---|---|---|---|
+| **A-2d** | `chat.test.js` | the ambiguous commit costs ONE message, not two | `AssertionError: expected 4 to be 3` |
+| **A-2e** | `chat.test.js` | the re-run buffers nothing — ONE battle write reaches the store | `expected [ … ] to have a length of 1 but got 2` |
+| **A-2f** | `chat.test.js` | the residual, at the no-directive turn | passes before and after — an invariance row, mutation-checked |
+| **A-2e** | `file-directive.test.js` | a retry after its own landed commit answers `persisted: true`, not conflict | `AssertionError: expected 409 to be 200` |
+| **A-2g** | `file-directive.test.js` | the no-op reports what the commit CHARGED — a fail-open filing says `charged: false` | — (new case) |
+| **A-2h** | `file-directive.test.js` | the slot replaced since: the EXCHANGE is the surviving evidence | — (new case) |
+| **A-2** (chip half) | `file-directive.test.js` | still writes nothing twice — its status expectation moved from 409 to the ONE battle write, because the CAS no longer decides it | passes before (its claim was true by the CAS) |
+| **A-1** | `file-directive.test.js` | a refusal on a contention re-run still says it does not know | passes before — a preserved guard, mutation-checked |
+| five rows | `file-directive.test.js` | the recognition rule itself: the slot alone, an exchange alone, a foreign id, the empty-id floor, an empty document | — (new) |
+| **A-2i** | `file-directive.test.js` | our exchange need not be LAST — a narration write lands on top and the evidence still holds | — (Lens D, F-4) |
+| **A-2j / A-2k** | `file-directive.test.js` | the battle COMPLETED / CHANGED HANDS between the commit and the re-run — still `persisted: true` | — (Lens D, F-3) |
+| **A-2l** | `file-directive.test.js` | the no-op reports the thread it ACTUALLY replaced, not the one its own commit installed | — (Lens D, F-6) |
+
+**The empty-id row is the one that would be catastrophic if it went.** A no-directive turn carries `directiveThreadId: null` on its exchange; if an empty id could match, every such turn on a battle that ever held a directive would "recognise" a commit it never made and answer for a filing that never happened. The body always passes a minted UUID, so it is the predicate's floor rather than a reachable path — pinned because it is the difference between a no-op and a lie.
+
+### The mutations (coordinator's pass; Lens D's own are §A.2)
+
+| # | Mutation | Result |
+|---|---|---|
+| M-1 | the no-op never fires (predicate always false) | **8 failed** — killed |
+| M-2 | the recogniser checks only the SLOT | **2 failed** — killed |
+| M-3 | the recogniser checks only the EXCHANGES | **1 failed** — killed |
+| M-4 | the no-op hardcodes `charged: true` | **1 failed** — killed |
+| M-5 | the empty-id floor removed | **1 failed** — killed |
+| M-6 | check 0 moved BELOW the writes | **5 failed** — killed |
+| **CONTROL** | the `attempt > 1` guard dropped | **153 passed — SURVIVOR, as predicted** |
+
+The control is the harness's proof that it reports survivors, and it is also a true statement about the code: `attempt > 1` is a cheap skip, not a correctness condition — the id cannot be on the document on the first attempt, because it was minted for this call moments earlier. It is kept because it makes the intent legible and skips an array scan on every ordinary turn. **Lens D reached the same conclusion independently** (finding F-5, its mutations D-M3 and D-M4), and went further: it also drove the case the second conjunct guards against — an attempt that reaches the end of the body, setting `committedOutcome`, whose buffer is then discarded — and confirmed the stale outcome does not leak.
+
+**Eight further mutations, eight kills, in the pass that closed Lens D's findings** (`e0f5d53d`); the table is in §A.2.
+
+### Deviations
+
+| # | Deviation | Reason |
+|---|---|---|
+| **D-17** | Row **A-1** (chip) was retargeted, and row **A-2 (the chip half)** changed its status expectation. | Both pinned behaviour the ruling deliberately changes: a 409 over the route's own landed commit. A-2's own claim (nothing written twice) is unchanged and now asserted on the writes rather than on the status the CAS used to produce; A-1's claim is unchanged and moved to a re-run that check 0 does not answer, so the `null`/`null` conservatism keeps a falsifiable guard. |
+| **D-18** | **A-2d's fixture became a directive-filing turn.** | The ruling's recognition rule is the thread id, and the row is asked to assert the count moves by one under it. A turn that files nothing leaves no id, so at the old fixture the row could not hold what it now names. The old fixture's measurement did not disappear — it is row **A-2f**, at the case that still has the residual. |
+| **D-19** | The chip suite's fake gained an **`afterCommit`** seam. | Row A-2h needs a competing write that lands *after* this call's commit, which no existing seam could produce (`injectBeforeCommit` discards the buffer; `applyThenRetry` lands it and re-runs). Four lines, mirroring `injectBeforeCommit`. |
+
+---
+
+## §11-A — the `leagueAsk` bypass: ruled, and closed
+
+**The ruling.** *"In scope: the budget policy is the battle's, never the request's. Derive `isLeagueBudget` from the battle document; a request whose `leagueAsk` disagrees is refused 400, attested `persisted: false`, `charged: false`, `reason: 'mode_mismatch'`, nothing written, no model call."*
+
+### The bypass, measured against the pre-fix route
+
+A standard battle seeded at `chatBudgetUsed: 10` — its ten already spent — asked ten times with `leagueAsk: true`:
+
+```
+PROBE statuses          : 200 200 200 200 200 200 200 200 200 200
+PROBE persisted/charged : true/false
+PROBE model calls       : true
+PROBE transactions      : 10
+PROBE exchange writes   : 10
+PROBE League charges    : 0
+PROBE chatBudgetUsed    : 10  (seeded 10 — the counter never moved)
+```
+
+Ten model calls, ten filings, nothing charged anywhere. The mechanism, both halves in the request's hands: the pre-model cap at step 11a is skipped for any `leagueAsk` body, and the filing transaction's League branch calls `resolveBudgetDay`, which returns **null** for a non-tournament battle — the fail-open contract — so the charge is a no-op. Free, for ever.
+
+### What closed it
+
+| Piece | Anchor | What it does |
+|---|---|---|
+| the policy, one home | `api/_utils/agentChatBudget.js:64` | `isLeagueBudgetBattle(battle)` — `gameMode === TOURNAMENT_GAME_MODE`. `groupId` is deliberately not part of it: a tournament battle with no group is still a League battle and fail-opens through `resolveBudgetDay` exactly as it always has. |
+| …and `resolveBudgetDay` gates on it | `:90` | so the key and the policy cannot drift. |
+| the refusal | `api/agent/chat.js:503` | step 7c: `isLeagueAsk && !isLeagueBudgetBattle(battle)` → 400, `mode_mismatch`, `...NOTHING_FILED`. |
+| the store, re-read | `chat.js:1143` | `(current) => isLeagueAsk && isLeagueBudgetBattle(current)` — from the in-transaction battle, like every other precondition (ruling 2). |
+| the chip route | `api/agent/file-directive.js:245` | the same predicate, where an inline literal used to be. |
+
+**Why a 400 and not a silent downgrade** to the per-battle counter: a client that believes it is spending the League's ten should be told it is not, rather than quietly spending something else. It is the same principle as ruling 7 — say what happened, never let the caller infer it.
+
+**Where it sits.** Below checks 7 and 7b (a caller who does not own this battle learns that, not what game mode it is) and above the mode detection, the market reads, the model call and every write. Row A-3 asserts all of it: no model call, `txAttempts` 0, no update, no set, the counter untouched, and the day resolver never reached.
+
+### The rows
+
+| Row | What it holds | Against the pre-fix route |
+|---|---|---|
+| **A-3** | ten sends at `chatBudgetUsed: 10` on a standard battle with `leagueAsk` — refused, nothing written | `AssertionError: expected 200 to be 400` |
+| **A-3b** | a League battle is UNCHANGED — the policies agree, the ask is served and charges the per-day store | passes before and after (that is the claim) |
+| **A-3c** | a League battle asked WITHOUT `leagueAsk` still charges the per-battle counter | passes before and after |
+| **A-3d** | FLAG OFF — the kill-switch still reverts to today | passes before and after |
+| **A-3e** | the store is re-read INSIDE the transaction — a battle that stops being a League battle mid-turn charges, never free | — (new case) |
+| **A-3f** | review mode gets no carve-out — a `mode: 'review'` `leagueAsk` on a standard battle is refused too | — (Lens D, F-10) |
+| **A-3g** | …and 7c is above the status check — a COMPLETED standard battle answers `mode_mismatch` | — (Lens D, F-10) |
+| **A-3h** | …and BELOW checks 7 / 7b — a caller who does not own the battle learns that, not its game mode | — (Lens D, F-11) |
+
+| # | Mutation | Result |
+|---|---|---|
+| N-1 | the mismatch refusal deleted (the bypass restored) | **1 failed** (A-3) — killed |
+| N-2 | the refusal fires on the WRONG side | **8 failed** — killed |
+| N-3 | every battle is a League battle | **11 failed** — killed |
+| N-4 | the refusal loses its attestation | **1 failed** (A-3) — killed |
+| N-5 | the store reverts to the REQUEST's decision | **1 failed** (A-3e) — killed |
+| N-6 | the refusal drops its kill-switch gate | **1 failed** (A-3d) — killed |
+
+Each is killed by the row that names it, which is the property a row-per-claim suite should have.
+
+### A finding about the suite itself
+
+`chat.test.js` mocked `agentChatBudget.js` with a hand-written object whose `resolveBudgetDay` returned a key for **any** battle. The real one returns null for a non-tournament battle — that null **is** the fail-open half of the bypass — so no row in that file could see the defect even in principle. The mock is now a spread of the real module with only its three IO functions faked, so the limit, the collection, the doc-id shape and `isLeagueBudgetBattle` all come through from production code. Three copies of production constants left the test file with it. **This is why the bypass survived 173 rows**, and it is worth more than the fix: a mock that models the thing generously cannot fail the way the thing does.
+
+### Deviations
+
+| # | Deviation | Reason |
+|---|---|---|
+| **D-20** | The refusal is gated on `isLeagueAsk` (which carries `LEAGUE_AGENT_CHAT_ENABLED`), not on the raw `req.body.leagueAsk`. | With the flag off, no request can choose the League policy at all — `isLeagueAsk` is false for every body — so there is nothing to disagree with and the invariant holds trivially. Gating on the raw field would change flag-off behaviour, which is the one thing a kill-switch must not do (`chat.js:437-439`: *"flag-off reverts to today's stub"*). Row **A-3d** pins it; mutation **N-6** is that mutation, and it dies there. |
+| **D-21** | `file-directive.js:245` was repointed at the shared predicate — a line the ruling did not name. | Behaviour-identical (the literal it replaces is the predicate's body), and it is the whole point of the ruling: two literals in two files is how a policy drifts, and this bypass is what that drift cost. Leaving the chip route on its own copy would have made "one home" false in the same commit that claims it. |
+| **D-22** | `isLeagueBudget` is `isLeagueAsk && isLeagueBudgetBattle(current)`, not `isLeagueBudgetBattle(current)` alone. | A tournament battle asked **without** `leagueAsk` charges the per-battle counter, exactly as it has always done — that is the Battle View's ordinary turn on a tournament battle, and row **A-3c** pins it. What a request can no longer do is claim a policy the battle does not have; step 7c refuses that above. The conjunction also means a battle that stops being a League battle between the pre-model read and the write charges the per-battle counter rather than fail-opening free (row **A-3e**), which is the direction the whole build leans: the in-transaction read is the authority. |
+
+### The disclosure gains its clause
+
+§10's paragraph is unchanged except for the sentence the ruling prescribes, added after the budget clause: **"the budget policy is the battle's; a request cannot choose it."** The full text is in §10 above, marked as the addendum's addition.
+
+---
+
+## §A.2 — Lens D, scoped to the two commits
+
+### The setup
+
+One reviewer, one **path-distinct `git archive fba41401` extraction** under the session scratchpad with `node_modules` symlinked, **read-only on git and on the shared working tree** (BUILD_RULES §2, founder ruling Sep 2 2026). It verified its own isolation on the way out: all six scope files `md5`-identical to `git show fba41401:<path>`, its tree 193/193 green, and no write issued against `/home/user/TradeSeven`.
+
+It was given the two commits and nothing else, and told that its job is not to read code and opine but to **break it and see whether the suite notices**.
+
+**37 mutations, 25 kills, 12 survivors.** All twelve kills the build reported (M-1…M-6, N-1…N-6) reproduce independently.
+
+### The verdict
+
+**Neither commit is unsound.** Every correctness attack came back clean:
+
+- **Can check 0 fire when it should not?** No. Probe P-1 drove an attempt that reached the end of the body — setting `committedOutcome` — whose buffer was then discarded by contention, with the battle completed underneath. The answer is `battle_not_active`, `persisted: null`, nothing committed: **the stale outcome does not leak**. A foreign document is never recognised (P-7), and the two multi-attempt orderings (discard → land → no-op, and land → no-op → discard → no-op) stay consistent (P-6, P-8).
+- **Does the stash tell the truth?** Yes, and re-deriving instead does not — which is now row A-2l.
+- **Can a request still reach the League store on a battle that is not a League battle?** Not by review mode, not by a completed battle, not by the chip route, not with the flag off. One configuration remains: a tournament battle with no `groupId` — **F-12**, below.
+- **Did commit 2 change anything for a caller that does not send `leagueAsk`?** **Provably not.** The reviewer reverted both refactor sites to their pre-commit literals and ran a truth table over thirteen battle shapes: two rows differ, both a `null` battle at `file-directive.js:245`, unreachable because `directiveTransaction.js:276` refuses `!battleSnap.exists` first — and the new form is the safer of the two (`false` where the literal threw).
+
+### The findings, and what happened to each
+
+| # | Finding | Class | Disposition |
+|---|---|---|---|
+| **F-1** | `file-directive.test.js` **A-2 (the chip half)** is green with check 0 deleted — on this route the CAS refuses the re-run before any write and produces a byte-identical document. Its comment claimed it showed otherwise. | **row defect** | **Fixed** (commit `e0f5d53d`). The comment now states what it holds — the count — and points at A-2e, which can tell check 0 from the CAS because only one of them answers 200. |
+| **F-2** | `chat.test.js` **A-2e** counted only writes carrying `chatExchanges`, so a no-op that returned the right outcome and still buffered an unrelated `tx.update` stayed green — against its own title. | **row defect** | **Fixed.** It counts every battle write now. Its chip-route sibling already did. |
+| **F-4** | The exchange half is a `some` scan and nothing pinned it: narrowed to the last element, the whole suite stayed green. **The scenario is live** — `voiceLayerAnticipation.js:128` and `:367` append to `chatExchanges` with `arrayUnion` **outside any transaction**, so a narration write landing between our commit and the re-run leaves our exchange not-last. | unguarded, live | **Row A-2i.** |
+| **F-3** | Check 0's comment gives three reasons it sits above every other check; only the third ("directive replaced since") had a row. Moved below checks 1/2/3 the suite stayed green. | unguarded | **Rows A-2j** (completed) **and A-2k** (changed hands). |
+| **F-6** | `charged` and `remaining` were pinned on the no-op path; the four replaced-thread fields were not, and re-deriving them stayed green. They are the ones that cannot be recovered after the write lands — the re-run reads its OWN id as current, so a re-derivation reports the filing as having replaced **itself**. | unguarded | **Row A-2l.** |
+| **F-9** | The empty-id floor row asked only a document holding `null`, so the blank-string half of `nonEmpty` was unfalsifiable; a floor relaxed to `!= null` survived. | unguarded | **Fixed** — the row asks each empty form against a document holding it. |
+| **F-10 / F-11** | Step 7c's placement carried three claims and one row (`resolveCalls` is 0, which pins it above step 11b only). Sunk below the mode detection, the status check, the agent read and the cap — green. Carved out for review mode — green. Hoisted above the ownership check — green. | unguarded | **Rows A-3f, A-3g, A-3h.** A later review-mode carve-out is exactly how this bug class arrives. |
+| **F-8** | The exchange half is an **unenforced contract on every caller's `buildExchange`**: a caller that omitted the top-level id would, with its slot replaced between commit and re-run, answer 409 over a filing that persisted and charged. Both shipped callers comply. | unguarded coupling | **Written into the module** (`directiveTransaction.js:135`), with the `some`-not-last reason beside it. Not enforced in code: a runtime assertion on the caller's object is a new failure mode on the write path, which is a founder call. |
+| **F-5** | Check 0's two conjuncts are individually unguarded, and **`attempt > 1` is dead**: `committedOutcome` is `null` on attempt 1, so it can never decide. | correct, dead | **Kept, and said plainly.** The build's own harness found the same thing — it is this addendum's CONTROL mutation, predicted to survive and recorded as surviving. It is a legible cheap skip, not a correctness condition, and the comment beside it says so. |
+| **F-7** | The no-op's `remaining` is knowingly **stale**: attempt 1 charges a League day 4→5, a concurrent ask takes the doc to 8, the re-run still answers `remaining: 5` while two are actually left. It reaches the wire at `chat.js:1297`/`:1373`. | unguarded design tension | **FILED — §A.4 item 1.** It is the cost of answering with the committing attempt's outcome, which is the same choice that makes the other four fields truthful. Re-reading only `remaining` would mix two instants in one body — a §9 display-agreement problem of its own. A founder call, not a reviewer's. |
+| **F-12** | **`groupId` is not part of the predicate, and the configuration that admits reproduces the §11-A defect verbatim.** On a tournament battle with no `groupId`, a `leagueAsk` turn skips the per-battle cap at step 11a and fail-opens here: three sends at `chatBudgetUsed: 10` answer 200, write three exchanges, move no counter. The only thing preventing it in production is the joint-stamp hard error at **`api/_utils/agentBattleService.js:96-98`** — a **§1-fenced** file, cited nowhere and asserted by no row. | **real residual** | **Written into `agentChatBudget.js:64` with the measurement and the fenced anchor, and FILED — §A.4 item 2.** Not fixed: adding `groupId` to the predicate changes the fail-open contract for a League battle whose group read merely FAILED, which is a different case and a founder call (BUILD_RULES §3). |
+| **F-13** | Nothing asserted that the two routes share the predicate — reverting both refactor sites left 193 green. | no defect | Recorded. The differential above is the stronger evidence, and it is what lets the disclosure say commit 2 changes nothing for a caller that does not send `leagueAsk`. |
+
+### The survivor proof
+
+The reviewer predicted ten survivors and observed ten, plus two it had not predicted (`chat.test.js` A-2e's half of D-M12, and the review-mode carve-out) — which is the proof that matters, because a harness that only confirms its own predictions has not been shown to report anything it did not expect. Its cleanest paired evidence is one row under two mutations of the same line:
+
+```
+=== MUTATION D-M2: the exchange half inspects ONLY the LAST exchange
+--- total=193 failed=0
+*** NO TEST FAILED — SURVIVOR ***
+--- restored & green (193 tests)
+
+=== MUTATION D-M10: the exchange half reads the NESTED id
+--- total=193 failed=1
+  FAIL: directiveTransaction — this call's own signature on the document
+        an EXCHANGE alone is evidence — the slot replaced since, or never written
+        AssertionError: expected false to be true
+--- restored & green (193 tests)
+```
+
+### The closing pass, and its own mutations
+
+Commit `e0f5d53d` closed F-1, F-2, F-3, F-4, F-6, F-9, F-10 and F-11, and wrote F-8 and F-12 into the code they belong to. Every row it added or changed was then mutation-checked:
+
+| # | Mutation | Result |
+|---|---|---|
+| P-1 | the exchange scan narrowed to the LAST element | **1 failed** (A-2i) — killed |
+| P-2 | check 0 moved BELOW checks 1/2/3 | **7 failed** (A-2e ×2, A-2i, A-2j, A-2k, A-2l, A-2g) — killed |
+| P-3 | the no-op returns the right outcome and still buffers one write | **3 failed** (A-2 chip half, A-2e, A-2g) — killed |
+| P-4 | the no-op re-derives the replaced-thread report | **1 failed** (A-2l) — killed |
+| P-5 | the empty-id floor relaxed to `!= null` | **1 failed** — killed |
+| P-6 | 7c sunk below the mode detection, the status check and the cap | **2 failed** (A-3, A-3g) — killed |
+| P-7 | 7c carved out for review mode | **1 failed** (A-3f) — killed |
+| P-8 | 7c hoisted ABOVE the ownership check | **1 failed** (A-3h) — killed |
+| **CONTROL** | a comment reworded inside check 0 | **165 passed — SURVIVOR, as predicted** |
+
+**P-3 is the one worth reading twice.** It kills `A-2 (the chip half)` — which is the proof that F-1's disposition is right: the row does guard the count, exactly as its corrected comment now claims, and no more.
+
+### What Lens D did NOT find
+
+No correctness defect in either commit. No fence contact. No path by which check 0 answers for a call that did not commit. No behaviour change for a caller that does not send `leagueAsk`. The findings are, without exception, about **what the suite proves** rather than about what the code does — which is the failure mode this build has hit twice now (the Sep 10 review's "a grep in test's clothing", and this addendum's own battle-blind budget mock), and the reason the lens is worth running on 500 lines.
+
+---
+
+## §A.3 — Verification
+
+### The full suite, with the exit code asserted
+
+Never piped through `tail` or `head` — written to a file, the exit code captured from `$?`, the same command §5.1 used:
+
+```
+$ npx vitest run --reporter=dot > full_final.txt 2>&1; echo "VITEST_EXIT_CODE=$?"
+ Test Files  656 passed | 3 skipped (659)
+      Tests  12477 passed | 64 skipped (12541)
+```
+
+**Zero test failures on every run.** Against the report's head `6ccf9e60` (12,455 passed / 64 skipped): **+22 tests, no new file, nothing newly skipped.** Twenty-two is exactly the number of rows this addendum adds, which is the arithmetic worth checking rather than asserting — fifteen from the two ruling commits (commit 1: A-2e and A-2f in `chat.test.js`, A-2e / A-2g / A-2h and the five recognition-rule rows in `file-directive.test.js`; commit 2: A-3 … A-3e), and seven more from the Lens D closing pass (A-2i, A-2j, A-2k, A-2l, A-3f, A-3g, A-3h). A-2d was flipped in place and A-2 / A-1 / the empty-id row were changed in place, so no row was deleted and the total moves by exactly the number added.
+
+### The exit code — one run in five was not 0, and it is not this branch's
+
+Stated rather than quoted selectively, because a "suite green" claim is worth only as much as its worst run.
+
+| Run | head | exit | failures | unhandled |
+|---|---|---|---|---|
+| 1 | `fba41401` | **0** | 0 | 0 |
+| 2 | `e0f5d53d` | **1** | **0** | **2** |
+| 3 | `e0f5d53d` | **0** | 0 | 0 |
+| 4 | `e0f5d53d` | **0** | 0 | 0 |
+| 5 | `e0f5d53d` | **0** | 0 | 0 |
+| baseline | `6ccf9e60` | **0** | 0 | 0 |
+
+Run 2's exit 1 came from vitest's **unhandled-error** channel, not from a failing test — all 656 files passed in that run too:
+
+```
+⎯⎯⎯⎯⎯ Uncaught Exception ⎯⎯⎯⎯⎯
+ReferenceError: window is not defined
+ ❯ resolveUpdatePriority node_modules/react-dom/cjs/react-dom-client.development.js:1308:7
+ ❯ dispatchSetState node_modules/react-dom/cjs/react-dom-client.development.js:9126:14
+ ❯ Timeout._onTimeout src/components/shared/AnimatedScore.jsx:55:26
+     55|         setTimeout(() => setFlash(null), 300);
+This error originated in "src/screens/AgentBattleScreen.showIt.jsdom.test.jsx"
+```
+
+A 300 ms flash-reset timer in `AnimatedScore` fires after its jsdom environment has been torn down, and React reaches for `window`. **Neither file is touched by this branch** — `git diff --name-only 6ccf9e60..HEAD -- src/` is empty, and neither has a commit here — and the suite file passes cleanly in isolation, three runs of three. What this addendum can do is shift *when* things run: it adds 22 rows to two `api/` files, and in a parallel runner that is enough to change whether an unrelated 300 ms timer lands before or after its environment is destroyed.
+
+So: **a pre-existing latent teardown race in client code, surfaced load-dependently, not introduced here.** One clean baseline run does not prove it cannot happen at `6ccf9e60` — a race is not disproved by a single sample, and this record will not claim it is. **Filed, not fixed** (§A.4 item 4): it is in `src/`, outside both rulings, and the fix is a cleanup effect in a component neither commit touches.
+
+**The honest summary line:** zero test failures in five full runs at this head; the suite exited 0 in four of them and 1 in the fifth, on an unhandled error from a component this branch does not touch.
+
+### `vite build`
+
+BUILD_RULES §2 — no test in the repo imports `App.jsx`, so the build is the only check that catches a syntax error there. Neither commit touches a `src/` file, which makes this a formality rather than a risk; it is run and recorded anyway, because "it cannot have broken" is the reasoning that lets a build break.
+
+```
+$ npx vite build; echo "VITE_BUILD_EXIT=$?"
+✓ built in 25.85s
+VITE_BUILD_EXIT=0
+```
+
+### Lint — no rise on any touched file
+
+Measured on a path-distinct `git archive 6ccf9e60` extraction and on this head, per file, `--format json`:
+
+| File | at `6ccf9e60` | at `e0f5d53d` |
+|---|---|---|
+| `api/_utils/agentChatBudget.js` | 0 errors, 0 warnings | 0, 0 |
+| `api/_utils/directiveTransaction.js` | 0, 0 | 0, 0 |
+| `api/agent/chat.js` | 0, 0 | 0, 0 |
+| `api/agent/chat.test.js` | 0, 0 | 0, 0 |
+| `api/agent/file-directive.js` | 0, 0 | 0, 0 |
+| `api/agent/file-directive.test.js` | 0, 0 | 0, 0 |
+
+Both columns are measured against the **pre-merge** `eslint.config.js` this branch carries, so they are comparable to §5.3's. (`claude/lint-node-globals` has merged into `main` since §5.3 was written — see the preamble.)
+
+### The pins that must not move
+
+Hashed programmatically: the row's own line plus the fourteen that follow it, `sha256`, at three revisions — the base this branch was cut from, the head the report describes, and the head that ships.
+
+| Pin (`api/agent/chat.test.js`) | `c35f9a5` | `6ccf9e60` | `e0f5d53d` |
+|---|---|---|---|
+| `flag-OFF is the legacy path: no gate fields, model directive flows through (keystone regression)` | `13c56a91e8888b1e` | `13c56a91e8888b1e` | `13c56a91e8888b1e` |
+| `ENFORCE valid id → canonical verbatim + threadId + write` | `13e809c3d326987b` | `13e809c3d326987b` | `13e809c3d326987b` |
+
+**Byte-identical at all three.** This is also the reason §7-A's residual is filed rather than fixed: stamping a per-call id on every exchange — the only way to make a no-directive turn recognise its own commit — would move both of these.
+
+### The fence, programmatically
+
+```
+=== §1 FENCE CHECK over the two commits (6ccf9e60..HEAD) ===
+fenced paths in the diff: 0  (of 11 checked)
+ABSENT: src/config/featureFlags.js
+ABSENT: api/_utils/tickStamps.js
+DARK_BY_DESIGN lines in the code diff: 0
+--- files changed ---
+api/_utils/agentChatBudget.js
+api/_utils/directiveTransaction.js
+api/agent/chat.js
+api/agent/chat.test.js
+api/agent/file-directive.js
+api/agent/file-directive.test.js
+```
+
+Six files, 628 insertions / 39 deletions — **below the BUILD_RULES §2 review threshold in both directions** (≥10 files OR ≥1500 lines) on these two commits alone. The cumulative branch diff is far past it, and was reviewed in §6; the scoped Lens D pass in §A.2 is the addendum's own, run because the prompt commissioned it rather than because the threshold compelled it — and it earned its keep, at 500 lines, by finding two rows that were not guards for the claims they announced and a residual free pass (§A.4 item 2) that neither ruling covered.
+
+**No new battle-doc key.** `isLeagueBudgetBattle` only *reads* `gameMode`; the refusal writes nothing at all; check 0's whole purpose is to write nothing. The `createAgentBattle` doc shape is untouched as a concept as well as as a file.
+
+---
+
+## §A.4 — Filed for separate tasking (BUILD_RULES §3 — found, not fixed)
+
+Four new items, on top of §11's six. Each is stated where a reader of the code will meet it, not only here.
+
+**1. The no-op's `remaining` is knowingly stale under a concurrent charge.** (Lens D, F-7.) Attempt 1 charges a League day 4 → 5; another of the player's asks takes the day doc to 8; the ambiguous commit's re-run answers `remaining: 5` while two are actually left, and `chat.js:1297` / `:1373` put that on the wire. It is the cost of answering with the committing attempt's outcome — the same choice that makes `replacedDirectiveThreadId` and the other three truthful (row A-2l), because those cannot be recovered from the document afterwards at all. Re-reading only `remaining` would compose one body from two instants, which is a §9 display-agreement problem in its own right. **The trade is a founder call.** Both halves of it are now pinned: A-2e asserts the stashed `remaining`, and this row is the reason it is stashed.
+
+**2. A tournament battle with NO `groupId` still has the §11-A free pass.** (Lens D, F-12 — the sharpest thing the pass turned up.) `isLeagueBudgetBattle` is `gameMode === TOURNAMENT_GAME_MODE`, so such a battle IS a League battle; its `leagueAsk` turns skip the per-battle cap at step 11a, find no keyable day, and fail open. Measured on the shipped code: three sends at `chatBudgetUsed: 10` answer 200, write three exchanges, and move no counter on either store — the §11-A defect verbatim, for a configuration the ruling's refusal does not cover because the request and the battle *agree*.
+
+What stands between that and production is **`api/_utils/agentBattleService.js:96-98`**, the joint-stamp contract, which hard-errors when a tournament battle is created without a `groupId`. That file is **§1-fenced**. So the safety of a non-fenced budget decision rests on a fenced creation invariant that the budget code cannot enforce, could not previously cite, and no row asserts. The comment at `agentChatBudget.js:64` now names it, with the measurement.
+
+**Not fixed, deliberately.** Adding `groupId` to the predicate would also change the answer for a League battle whose group read merely *failed* — the fail-open contract, which exists on purpose and is pinned by `file-directive.test.js`'s unkeyable-budget row and `chat.test.js`'s FAIL-OPEN row. Distinguishing "no group, ever" from "group unreadable right now" is a policy question with a product answer, and BUILD_RULES §3 says a bug found outside the task is reported, not fixed. **It is the highest-severity item on this branch.**
+
+**3. The exchange half of the recognition rule is an unenforced contract on callers.** (Lens D, F-8.) A `buildExchange` that omits the top-level `directiveThreadId` gets no evidence from the exchange, and — with its slot replaced between commit and re-run — answers 409 over a filing that persisted and charged. Both shipped callers comply and are guarded per-caller; `directiveTransaction.js:135` now states the contract. Enforcing it in code means asserting on the caller's object on the write path, which is a new failure mode there: a founder call, filed rather than taken.
+
+**4. A latent jsdom teardown race in `AnimatedScore`, surfaced by load.** `src/components/shared/AnimatedScore.jsx:55` schedules `setTimeout(() => setFlash(null), 300)` and no effect clears it on unmount, so under a full parallel run the timer can fire after its jsdom environment is destroyed and React throws `ReferenceError: window is not defined`. It reached vitest's unhandled-error channel once in five full runs at this head (§A.3), failing **no test** but taking the process exit to 1. Neither the component nor the suite it surfaced in (`src/screens/AgentBattleScreen.showIt.jsdom.test.jsx`) is touched by this branch, and the suite file passes cleanly in isolation. The fix is a cleanup return in the effect that owns the timer. **Out of scope both ways** — it is in `src/`, and neither ruling goes near it — so it is reported, not fixed (BUILD_RULES §3). Worth tasking: an intermittent non-zero exit with zero failing tests is the kind of thing that gets re-run away rather than fixed, and it can mask a real unhandled error later.
