@@ -150,10 +150,25 @@ export function selectLastDecidedWithWords(battle) {
  * the BOOK, which has a row of its own and is not a bench name (and the roster
  * intersection already excludes it).
  *
+ * THE FIRST-FIVE CAP LIVES HERE, AT THE READ (D-112, built in B2). The record
+ * carries what the decider produced; the pane shows five. Capping at the WRITE
+ * would discard candidates 6+ on an order nothing in the repo claims is ranked
+ * (`composeCandidatesStamp` preserves the model's array order exactly), and a
+ * stamp that is a silent truncation cannot support the claim the stamps exist
+ * for — `Saw` = THIS VALUE WAS RENDERED FOR THIS HELD NAME IN THE DECIDER'S
+ * PROMPT AT THAT CHECK. A record that drops the decider's sixth name is a
+ * record that says less than the decider said.
+ *
+ * It is applied AFTER the roster intersection, so the five are five names the
+ * pane could actually show — not five candidates of which two were never on
+ * the bench. `tickStamps.js` is untouched: no write-side bound.
+ *
  * @param {Array|undefined} candidates  the entry's candidates stamp
  * @param {string[]} roster             the bench roster, in doc order
  * @returns {string[]}
  */
+export const FLAGGED_DISPLAY_CAP = 5;
+
 export function selectFlagged(candidates, roster) {
   if (!Array.isArray(candidates) || !Array.isArray(roster) || roster.length === 0) return [];
   const flagged = new Set();
@@ -165,7 +180,7 @@ export function selectFlagged(candidates, roster) {
   }
   // Roster order, never the candidates' order: a bench name must not move
   // between renders because the model listed it in a different position.
-  return roster.filter((symbol) => flagged.has(symbol));
+  return roster.filter((symbol) => flagged.has(symbol)).slice(0, FLAGGED_DISPLAY_CAP);
 }
 
 export function selectBench(battle) {

@@ -137,3 +137,59 @@ describe('PaneBench — the flag (Phase B)', () => {
     expect(html).not.toContain('data-bench-flagged="1"');
   });
 });
+
+// ============================================================================
+// B2 (D-112) — THE FIRST-FIVE CAP, AT THE READ
+//
+// "a first-five cap is a spec-level rule and is built in B2" (D-112). It is
+// built at the READ, in selectFlagged, after the roster intersection: the
+// record carries what the decider produced, and the pane shows five. Mounted —
+// the markup is the whole claim.
+// ============================================================================
+
+describe('PaneBench — the first-five cap (B2, D-112)', () => {
+  const SIX = ['NOW', 'TSLA', 'CRWD', 'PLTR', 'SMCI', 'ARM'];
+  const sixDoc = () => {
+    const d = doc({ candidates: SIX.map((symbol) => ({ symbol, direction: 'potential_entry' })) });
+    // A roster wide enough to hold all six, so the intersection is not what caps.
+    d.portfolio.bench = { stocks: SIX.map((symbol) => ({ symbol })), crypto: null };
+    d.watchlist = { hotBench: [] };
+    return d;
+  };
+
+  it('E-1: six flagged names on the stamp render FIVE chips', () => {
+    const html = render(sixDoc());
+    const chips = [...html.matchAll(/data-bench-flag-chip="([A-Z]+)"/g)].map((m) => m[1]);
+    expect(chips).toHaveLength(5);
+    // The first five in ROSTER order — the order selectFlagged already used.
+    expect(chips).toEqual(SIX.slice(0, 5));
+    expect(html).not.toContain('data-bench-flag-chip="ARM"');
+  });
+
+  it('E-1b: the sixth name is still on the record — the cap is the surface\'s, not the write\'s', () => {
+    const battle = sixDoc();
+    // The input selectFlagged is given still holds all six…
+    expect(battle.evaluations[0].candidates.map((c) => c.symbol)).toEqual(SIX);
+    // …and the sixth is not lost to the pane either: it drops out of the
+    // flagged group and stays in the roster's rest, which is the honest place
+    // for a name the surface is not naming at this check.
+    const html = render(battle);
+    expect(html).toContain('data-bench-chip="ARM"');
+  });
+
+  it('E-1c: five or fewer is untouched — the cap only ever removes a sixth', () => {
+    const battle = sixDoc();
+    battle.evaluations[0].candidates = SIX.slice(0, 5).map((symbol) => ({ symbol, direction: 'potential_entry' }));
+    const chips = [...render(battle).matchAll(/data-bench-flag-chip="([A-Z]+)"/g)].map((m) => m[1]);
+    expect(chips).toEqual(SIX.slice(0, 5));
+  });
+
+  it('E-1d: the cap is a NAMED constant, and it is five', async () => {
+    const { FLAGGED_DISPLAY_CAP, selectFlagged } = await import('./selectBench');
+    expect(FLAGGED_DISPLAY_CAP).toBe(5);
+    // …and it is applied AFTER the roster intersection: a candidate that is not
+    // on the bench must not consume one of the five.
+    const candidates = ['OFF1', 'OFF2', ...SIX].map((symbol) => ({ symbol, direction: 'potential_entry' }));
+    expect(selectFlagged(candidates, SIX)).toEqual(SIX.slice(0, 5));
+  });
+});
