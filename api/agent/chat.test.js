@@ -2398,3 +2398,242 @@ describe('agent/chat — B2: a commit that landed and lost its reply', () => {
     expect(upd.chatExchanges.items[0].timestamp).toBe(upd.directive.createdAt);
   });
 });
+
+// ============================================================================
+// B2 — THE CLAIMS THE MUTATING LENS FOUND UNGUARDED (review lens D)
+//
+// Every row below closes a mutation that SURVIVED the suite. Each one is a
+// claim this build makes in prose or in a comment and had no test behind it.
+// ============================================================================
+
+describe('agent/chat — B2: the claims lens D found unguarded', () => {
+  const mainUpdate = (written) => written.updateCalls.find(c => c.updates?.chatExchanges?.__op === 'arrayUnion');
+  const post = (body) => makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hold the line', ...body });
+
+  // D-1, the sharpest: ruling 5 keeps the pre-model check "so a player never
+  // waits twenty seconds for a 429" — and because the transaction now runs
+  // COMMIT_OVER_BUDGET and never refuses, this check is the ONLY enforcement of
+  // the ten-message cap on the typed route. Deleting it left the suite green
+  // and answered 200 with a committed exchange.
+  it('D-1: the pre-model cap is the cap — at ten used, 403 before any model call and nothing written', async () => {
+    let gemmaCalled = false;
+    callGemmaVoiceImpl.current = async () => { gemmaCalled = true; return '{"response":"should not run"}'; };
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: { ...VALID_BATTLE, chatBudgetUsed: 10 } });
+    activeFirestore = fixture.db;
+
+    const { req, res } = post({});
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(403);
+    expect(res.body.error).toBe('chat_budget_exceeded');
+    expect(gemmaCalled).toBe(false);
+    expect(fixture.written.updateCalls).toHaveLength(0);
+    expect(fixture.written.txAttempts).toBe(0);
+    // …and it attests, because it is above the transaction.
+    expect(res.body.persisted).toBe(false);
+    expect(res.body.charged).toBe(false);
+  });
+
+  it('D-1b: the boundary is >=, not > — the tenth message is the last one', async () => {
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: { ...VALID_BATTLE, chatBudgetUsed: 9 } });
+    activeFirestore = fixture.db;
+    const { req, res } = post({});
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(mainUpdate(fixture.written).updates.chatBudgetUsed).toBe(10);
+  });
+
+  it('D-1c: review mode has its own cap, and its own 429 shape', async () => {
+    const fixture = makeFakeFirestore({
+      agent: VALID_AGENT,
+      battle: { ...VALID_BATTLE, status: 'completed', reviewBudgetUsed: 5 },
+    });
+    activeFirestore = fixture.db;
+    const { req, res } = post({ mode: 'review' });
+    await handler(req, res);
+    expect(res.statusCode).toBe(429);
+    expect(res.body.error).toBe('budget_exceeded');
+    expect(fixture.written.updateCalls).toHaveLength(0);
+  });
+
+  it('D-1d: a League ask BYPASSES the per-battle cap, as it always has', async () => {
+    leagueChatFlag.on = true;
+    budget.resolveImpl = () => ({ groupId: 'group-xyz', dayN: 1 });
+    budget.readImpl = async () => ({ count: 0, remaining: 10 });
+    const fixture = makeFakeFirestore({
+      agent: VALID_AGENT,
+      battle: { ...VALID_BATTLE, gameMode: TOURNAMENT_GAME_MODE, groupId: 'group-xyz', chatBudgetUsed: 10 },
+    });
+    activeFirestore = fixture.db;
+    const { req, res } = post({ leagueAsk: true });
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
+  });
+
+  // D-2: `replacedDirectiveThreadId: normalized ? … : null` and
+  // `staleExpectation: !!normalized && …` both survived, individually and
+  // together — because every replacedThreadId row filed a directive. A turn
+  // that files NOTHING must not claim it replaced anything: the chip's
+  // directive is still the live slot, and the line would be false.
+  it('D-2: a turn that files NO directive never claims it replaced one', async () => {
+    grounding.mode = 'on';
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: VALID_BATTLE });
+    activeFirestore = fixture.db;
+    callGemmaVoiceImpl.current = async () => {
+      // A chip lands mid-model-call: the slot moves from null to the chip's.
+      fixture.battleState.directive = {
+        text: 'Tighten the spread', expiry: 'end_of_battle', directiveThreadId: 'chip-thread-1', createdAt: 'now',
+      };
+      return '{"response":"noted"}';
+    };
+
+    const { req, res } = post({});
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    // The belief IS updated — that is B-4d — but nothing was replaced.
+    expect(res.body.currentDirectiveThreadId).toBe('chip-thread-1');
+    expect('replacedThreadId' in res.body).toBe(false);
+    // …and the chip's directive is untouched on the document.
+    expect(fixture.battleState.directive.directiveThreadId).toBe('chip-thread-1');
+  });
+
+  // D-3: `charged: committed.charged` → `charged: true` survived, because the
+  // only committed-then-threw rows charged. An over-budget eleventh or a
+  // fail-open League filing that throws after the commit must not claim a
+  // message was spent — the arena decrements on `charged`, so the player would
+  // lose one they never spent. This is the charged-is-not-persisted
+  // distinction ruling 7 exists to make.
+  it('D-3: a committed-then-threw turn that cost NOTHING says charged: false', async () => {
+    const fixture = makeFakeFirestore({
+      agent: VALID_AGENT,
+      // Review mode on a completed battle, at the cap: the eleventh commits
+      // with overBudget and does not increment…
+      battle: { ...VALID_BATTLE, status: 'completed', reviewBudgetUsed: 4 },
+      agentUpdateError: true, // …and the post-commit `agents` write throws.
+    });
+    activeFirestore = fixture.db;
+    fixture.db.setBarrier(async () => { fixture.battleState.reviewBudgetUsed = 5; });
+    callGemmaVoiceImpl.current = async () => JSON.stringify({
+      response: 'that was the lesson', _lesson: { text: 'size down into a downgrade' },
+    });
+
+    const { req, res } = post({ mode: 'review' });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(500);
+    expect(res.body.persisted).toBe(true);
+    expect(res.body.charged).toBe(false);          // it landed and cost nothing
+    expect(fixture.battleState.reviewBudgetUsed).toBe(5);
+    expect(fixture.battleState.chatExchanges[0].overBudget).toBe(true);
+  });
+
+  // D-4: the elicitation ring had ZERO assertions anywhere, so reading it from
+  // the pre-model snapshot instead of the in-transaction battle — the exact
+  // defect the code's own comment names — survived, and so did dropping its
+  // size cap. The concurrent write REASSIGNS the array: the fake's per-read
+  // snapshot is shallow, so pushing to it would alias and pass vacuously.
+  it('D-4: the elicitation ring is read from the IN-TRANSACTION battle, and keeps its last three', async () => {
+    const fixture = makeFakeFirestore({
+      agent: VALID_AGENT,
+      battle: { ...VALID_BATTLE, recentElicitationTargets: [] },
+    });
+    activeFirestore = fixture.db;
+    // Another turn lands its own targets inside this one's window.
+    fixture.db.setBarrier(async () => { fixture.battleState.recentElicitationTargets = ['alpha', 'beta', 'gamma']; });
+
+    const { req, res } = post({});
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const written = mainUpdate(fixture.written).updates.recentElicitationTargets;
+    // The concurrent turn's two most recent survive, and this turn's is last…
+    expect(written).toHaveLength(3);
+    expect(written.slice(0, 2)).toEqual(['beta', 'gamma']);
+    // …so nothing was clobbered by a twenty-second-old read.
+    expect(written).not.toEqual(['beta', 'gamma', 'alpha']);
+  });
+
+  // D-5: the refusal branch's shadow records had no assertions, so the reason
+  // could be flattened, the error flag cleared, or the composed record dropped
+  // — all silently. BUILD_RULES §5 surface.
+  it('D-5: an in-transaction refusal writes BOTH shadow records, and the turnError names the refusal', async () => {
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: VALID_BATTLE });
+    activeFirestore = fixture.db;
+    callGemmaVoiceImpl.current = async () => { fixture.battleState.status = 'completed'; return '{"response":"hi"}'; };
+
+    const { req, res } = post({});
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(400);
+    // The composed record (the turn DID reach the model) plus the turnError row
+    // — the same pair a throw at this point has always produced.
+    expect(shadowLogCalls.current).toHaveLength(2);
+    expect(shadowLogCalls.current[0].turnError).toBeUndefined();
+    expect(shadowLogCalls.current[0].agentMessage).toBe('hi');
+    expect(shadowLogCalls.current[1].turnError).toBe(true);
+    expect(shadowLogCalls.current[1].errorReason).toBe('filing_battle_not_active');
+  });
+
+  // D-6: lens B's finding B-5 fix (a refusal PROVED false, so a later throw
+  // must not downgrade it to unknown) shipped with no guard.
+  it('D-6: a throw AFTER an in-transaction refusal still attests the proven false', async () => {
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: VALID_BATTLE });
+    activeFirestore = fixture.db;
+    callGemmaVoiceImpl.current = async () => { fixture.battleState.status = 'completed'; return '{"response":"hi"}'; };
+
+    // The refusal's own response serialization fails; the catch answers.
+    const { req } = post({});
+    let thrown = false;
+    const res = {
+      statusCode: null,
+      body: null,
+      status(c) { this.statusCode = c; return this; },
+      json(b) {
+        if (!thrown) { thrown = true; throw new Error('response serialization failed'); }
+        this.body = b;
+        return this;
+      },
+    };
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(500);
+    expect(res.body.persisted).toBe(false);   // proven, not unknown
+    expect(res.body.charged).toBe(false);
+  });
+
+  // The fake's arrayUnion dedupe must be CONDITIONAL. A fake that deduped
+  // everything passed every A-2 row — so the documented KNOWN LIMIT (a retry
+  // that crosses the cap composes a DIFFERENT element, which must not dedupe)
+  // was unpinned. This row makes the limit executable.
+  it('D-7: the dedupe is CONDITIONAL — a retry that changes the exchange lands two', async () => {
+    const fixture = makeFakeFirestore({
+      agent: VALID_AGENT,
+      battle: { ...VALID_BATTLE, chatBudgetUsed: 9 },
+    });
+    activeFirestore = fixture.db;
+    // The first attempt is within budget (overBudget absent); the re-run reads
+    // its own committed count and is over, so `overBudget: true` rides the
+    // second element and the two are not equal.
+    fixture.db.applyThenRetry();
+
+    const { req, res } = post({});
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(fixture.battleState.chatExchanges).toHaveLength(2);
+    expect(fixture.battleState.chatExchanges[0].overBudget).toBeUndefined();
+    expect(fixture.battleState.chatExchanges[1].overBudget).toBe(true);
+  });
+
+  // The fake's read-before-write guard (the R-29 rule) had never been shown to
+  // fire in either suite, so its claim was untested.
+  it('D-8: the fake ENFORCES Firestore\'s read-before-write contract', async () => {
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: VALID_BATTLE });
+    activeFirestore = fixture.db;
+    await expect(fixture.db.runTransaction(async (tx) => {
+      tx.update({ __col: 'agentBattles', id: 'battle-1' }, { chatBudgetUsed: 1 });
+      await tx.get({ __col: 'agentBattles', id: 'battle-1', get: async () => ({ exists: true, data: () => ({}) }) });
+    })).rejects.toThrow('transaction read after write');
+  });
+});

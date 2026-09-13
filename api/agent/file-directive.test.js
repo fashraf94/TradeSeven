@@ -82,9 +82,14 @@ function readDoc(col, id) {
   return docSnap(null, id);
 }
 // Firestore's arrayUnion is SET semantics on deep equality: "each specified
-// element that doesn't already exist in the array will be added". The concat
-// this fake used to do made a re-run of the body look like a duplicate even for
-// a byte-identical element — the exact property the hoisted mint relies on.
+// element that doesn't already exist in the array will be added".
+//
+// INERT ON THIS ROUTE, BY CONSTRUCTION — and said so rather than left implying
+// otherwise (review lens D): the CAS refuses attempt 2 before any write, so
+// `arrayUnion` is called at most once here and mutating this helper in either
+// direction changes nothing. It is modelled anyway so the two fakes agree on
+// what Firestore does; the property it guards is load-bearing on the CHAT
+// route, where `replace-and-report` does not refuse (api/agent/chat.test.js).
 const sameElement = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 function arrayUnion(existing, items) {
   const next = [...(existing || [])];
@@ -661,5 +666,38 @@ describe('file-directive — the commit-then-throw body carries what it committe
     expect(res.body.directive.text).toBe(DV02);
     expect(res.body.directive.directiveThreadId).toBe(state.battle.directive.directiveThreadId);
     expect(res.body.remaining).toBe(BATTLE_CHAT_BUDGET.limit - 3);
+  });
+});
+
+describe('file-directive — the claims lens D found unguarded', () => {
+  // D-7: the commit-then-throw receipt reported the wrong status when the
+  // filing had REPLACED a prior directive — the one distinction the chip's
+  // receipt strip draws. The only commit-then-throw row used a fresh filing.
+  it('D-7: a throw after a REPLACING commit reports `replaced-prior`, not `filed`', async () => {
+    state.battle = makeBattle({ directive: { text: 'Old lean', expiry: 'end_of_battle', directiveThreadId: 'thread-A' } });
+    const res = await post({ ...BODY, expectedDirectiveThreadId: 'thread-A' }, { breakResponse: true });
+    expect(res.statusCode).toBe(500);
+    expect(res.body.persisted).toBe(true);
+    expect(res.body.status).toBe(FILING_STATUS.REPLACED_PRIOR);
+    expect(res.body.replacedDirectiveThreadId).toBe('thread-A');
+  });
+
+  // D-6: lens B's finding B-5 fix on this route, which shipped with no guard.
+  it('D-6: a throw after an in-transaction REFUSAL still attests the proven false', async () => {
+    state.battle = makeBattle({ directive: { text: 'x', expiry: 'end_of_battle', directiveThreadId: 'thread-A' } });
+    const res = await post(BODY, { breakResponse: true }); // expects null while A is current → conflict
+    expect(res.statusCode).toBe(500);
+    expect(res.body.persisted).toBe(false);
+    expect(res.body.charged).toBe(false);
+    expect(state.committed).toEqual([]);
+  });
+
+  // The fake's read-before-write guard (review R-29) had never been shown to
+  // fire on any row, so its claim was untested in both suites.
+  it('D-8: the fake ENFORCES Firestore\'s read-before-write contract', async () => {
+    await expect(db.runTransaction(async (tx) => {
+      tx.update({ __col: 'agentBattles', __id: 'battle-1' }, { chatBudgetUsed: 1 });
+      await tx.get({ __col: 'agentBattles', __id: 'battle-1' });
+    })).rejects.toThrow('transaction read after write');
   });
 });
