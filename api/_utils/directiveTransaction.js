@@ -129,6 +129,18 @@ const normalizeCount = (raw) => (Number.isFinite(raw) && raw > 0 ? Math.floor(ra
  * can overwrite the slot after our commit, leaving the exchange as the only
  * surviving evidence.
  *
+ * THE CONTRACT THIS PLACES ON EVERY CALLER'S `buildExchange`, stated because
+ * nothing enforces it (adversarial review, Lens D, finding F-8): an exchange
+ * that files a directive MUST carry `directiveThreadId` TOP-LEVEL. Both shipped
+ * callers do (`chat.js`'s composed exchange and `file-directive.js`'s
+ * `buildFiledExchange`), and each has rows on it. A third caller that omitted
+ * it would get no evidence from the exchange, and — if the slot were replaced
+ * between its commit and its re-run — would answer 409 over a filing of its own
+ * that persisted and charged, which is the defect the no-op exists to remove.
+ * The scan is a `some`, not a look at the last element: a narration write
+ * (`voiceLayerAnticipation.js:128`, `:367`) appends to `chatExchanges` outside
+ * any transaction, so our element is not reliably last (row A-2i).
+ *
  * Exported for its rows, and because the recognition rule is the whole of the
  * no-op: if this predicate is wrong, the no-op is wrong.
  */

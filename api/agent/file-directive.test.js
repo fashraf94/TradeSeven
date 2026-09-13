@@ -612,8 +612,14 @@ describe('file-directive — a commit that landed and lost its reply', () => {
     expect(state.battle.chatExchanges).toHaveLength(1);
     expect(state.battle.chatExchanges[0].directiveThreadId).toBe(state.battle.directive.directiveThreadId);
     // ONE battle write and ONE charge reached the store, from the attempt that
-    // committed. The re-run buffered nothing at all (check 0 returns above
-    // every write), where before the ruling it was the CAS that stopped it.
+    // committed.
+    //
+    // WHAT THIS ROW CANNOT SHOW (Lens D, finding F-1): that check 0 is what
+    // stopped the second write. Delete check 0 and this route's CAS refuses the
+    // re-run before any write, producing a byte-identical document — so the row
+    // stays green. It guards the COUNT, which is worth guarding on both sides of
+    // the ruling; A-2e below is the row that can tell check 0 from the CAS,
+    // because only one of them answers 200.
     expect(state.committed.filter((w) => w.col === 'agentBattles')).toHaveLength(1);
     expect(state.battle.chatBudgetUsed).toBe(3);
   });
@@ -637,6 +643,74 @@ describe('file-directive — a commit that landed and lost its reply', () => {
     expect(res.body.directive.directiveThreadId).toBe(state.battle.directive.directiveThreadId);
     expect(res.body.directive.text).toBe(DV02);
     expect(res.body.remaining).toBe(7);   // 10 - (2 + 1), counted by the attempt that charged
+  });
+
+  // F-4 (Lens D): the exchange half is a SCAN, and nothing pinned that it is.
+  // With it narrowed to the last element the whole suite stayed green — and the
+  // scenario is live: `api/_utils/voiceLayerAnticipation.js:128` and `:367`
+  // append to `chatExchanges` with `arrayUnion` OUTSIDE any transaction, so a
+  // narration write landing between this call's commit and its re-run leaves
+  // our exchange not-last. Narrowed, that re-run reads a foreign slot, fails
+  // its CAS and 409s over a filing that persisted and charged.
+  it('A-2i: our exchange need not be LAST — a narration write lands on top and the evidence still holds', async () => {
+    state.applyThenRetry = true;
+    state.afterCommit = () => {
+      state.battle.chatExchanges.push({ messageType: 'anticipation', directiveThreadId: null, timestamp: 'later' });
+      state.battle.directive = { text: 'someone else', directiveThreadId: 'thread-OTHER', expiry: 'end_of_battle' };
+    };
+    const res = await post(BODY);
+    expect(state.attempts).toBe(2);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.persisted).toBe(true);
+    // Ours is at index 0, the newcomer at index 1.
+    expect(state.battle.chatExchanges).toHaveLength(2);
+    expect(state.battle.chatExchanges.at(-1).messageType).toBe('anticipation');
+    expect(state.battle.chatBudgetUsed).toBe(3);
+  });
+
+  // F-3 (Lens D): the module's own comment gives THREE reasons check 0 sits
+  // above every other check — "a battle that has completed, changed hands or had
+  // its directive replaced since". Only the third had a row (A-2h); moved below
+  // checks 1/2/3 the suite stayed green. These are the other two. Each is a
+  // filing that landed being told it did not.
+  it('A-2j: the battle COMPLETED between the commit and the re-run — still persisted: true, not battle_not_active', async () => {
+    state.applyThenRetry = true;
+    state.afterCommit = () => { state.battle.status = 'completed'; };
+    const res = await post(BODY);
+    expect(state.attempts).toBe(2);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.persisted).toBe(true);
+    expect(res.body.charged).toBe(true);
+    expect(state.battle.chatExchanges).toHaveLength(1);
+  });
+
+  it('A-2k: the battle CHANGED HANDS between the commit and the re-run — still persisted: true, not a 403', async () => {
+    state.applyThenRetry = true;
+    state.afterCommit = () => { state.battle.ownerId = 'someone-else'; };
+    const res = await post(BODY);
+    expect(state.attempts).toBe(2);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.persisted).toBe(true);
+    expect(state.battle.chatBudgetUsed).toBe(3);
+  });
+
+  // F-6 (Lens D): `charged` and `remaining` were pinned on the no-op path; the
+  // four fields that say WHAT THIS FILING REPLACED were not, and re-deriving
+  // them on the re-run stayed green. They are the ones that cannot be recovered
+  // after the write lands — the re-run reads its OWN id as the current thread,
+  // so a re-derivation reports the filing as having replaced itself.
+  it('A-2l: the no-op reports the thread it ACTUALLY replaced, not the one its own commit installed', async () => {
+    state.battle = makeBattle({ directive: { text: 'the old one', directiveThreadId: 'thread-A', expiry: 'end_of_battle' } });
+    state.applyThenRetry = true;
+    const res = await post({ ...BODY, expectedDirectiveThreadId: 'thread-A' });
+    expect(state.attempts).toBe(2);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.status).toBe(FILING_STATUS.REPLACED_PRIOR);
+    expect(res.body.replacedDirectiveThreadId).toBe('thread-A');
+    // …and the slot on the document is this filing's own, which is exactly what
+    // a re-derivation would have reported instead.
+    expect(state.battle.directive.directiveThreadId).not.toBe('thread-A');
+    expect(res.body.directive.directiveThreadId).toBe(state.battle.directive.directiveThreadId);
   });
 
   // "charged as the document shows" — the no-op reports what the committing
@@ -746,8 +820,14 @@ describe('directiveTransaction — this call\'s own signature on the document', 
   // predicate's own floor rather than a reachable path — pinned because it is
   // the difference between a no-op and a lie.)
   it('an empty id is never evidence, whatever the document holds', () => {
-    const battle = { directive: { directiveThreadId: null }, chatExchanges: [EX(), EX()] };
-    for (const id of [null, undefined, '', '   ']) expect(directiveThreadOnDocument(battle, id)).toBe(false);
+    // Asked against documents holding each empty form in turn, not only `null`
+    // (Lens D, finding F-9): against a null-only document the blank-string half
+    // of `nonEmpty` is unfalsifiable, and a floor relaxed to `!= null` — which
+    // would make `''` a matching id — stayed green.
+    for (const held of [null, undefined, '', '   ']) {
+      const battle = { directive: { directiveThreadId: held }, chatExchanges: [EX({ directiveThreadId: held }), EX()] };
+      for (const id of [null, undefined, '', '   ']) expect(directiveThreadOnDocument(battle, id)).toBe(false);
+    }
   });
 
   it('a document with no exchanges and no slot is not evidence', () => {

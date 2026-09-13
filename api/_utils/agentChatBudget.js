@@ -60,6 +60,20 @@ export const AGENT_CHAT_DAILY_LIMIT = 10;
  * `groupId` is deliberately NOT part of it: a tournament battle with no group
  * is still a League battle, and it fail-opens through `resolveBudgetDay` below
  * exactly as it always has.
+ *
+ * WHAT THAT ADMITS, written down rather than left to be discovered (adversarial
+ * review, Lens D, finding F-12). For a tournament battle with NO `groupId`, a
+ * `leagueAsk` turn skips the per-battle cap at chat.js step 11a, finds no
+ * keyable day here, and fail-opens — which is the §11-A bypass again, for a
+ * battle this predicate calls a League battle. Measured: three sends at
+ * `chatBudgetUsed: 10` answer 200, write three exchanges and move no counter.
+ * The only thing standing between that and production is the joint-stamp
+ * contract at `api/_utils/agentBattleService.js:96-98`, which hard-errors when a
+ * tournament battle is created without a `groupId` — a §1-FENCED file, so this
+ * module cannot enforce it and must not pretend to. Adding `groupId` here would
+ * change the fail-open contract for a League battle whose group read merely
+ * FAILED, which is a different case and a founder call. FILED, not fixed
+ * (BUILD_RULES §3): build report §A.2, finding F-12.
  */
 export function isLeagueBudgetBattle(battle) {
   return battle?.gameMode === TOURNAMENT_GAME_MODE;

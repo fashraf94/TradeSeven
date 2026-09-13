@@ -859,6 +859,60 @@ describe('agent/chat — League arena per-day ask (leagueAsk + LEAGUE_AGENT_CHAT
     expect(budget.resolveCalls).toHaveLength(0);
   });
 
+  // F-10 / F-11 (Lens D): step 7c's PLACEMENT carried three claims and one row.
+  // `expect(budget.resolveCalls).toHaveLength(0)` pins it above step 11b and
+  // nothing else — sunk below the mode detection, the status check, the agent
+  // read and the per-battle cap, the suite stayed green, and so did a carve-out
+  // that exempted review mode. A later review-mode exemption is exactly how this
+  // bug class arrives.
+  it('A-3f: review mode gets no carve-out — a mode: review leagueAsk on a standard battle is refused too', async () => {
+    leagueChatFlag.on = true;
+    let gemmaCalled = false;
+    callGemmaVoiceImpl.current = async () => { gemmaCalled = true; return '{"response":"should not run"}'; };
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: { ...VALID_BATTLE, reviewBudgetUsed: 5 } });
+    activeFirestore = fixture.db;
+
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'tape?', leagueAsk: true, mode: 'review' });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.reason).toBe('mode_mismatch');
+    expect(gemmaCalled).toBe(false);
+    expect(fixture.written.updateCalls).toEqual([]);
+  });
+
+  it('A-3g: …and it is above the status check — a COMPLETED standard battle answers mode_mismatch, not battle_not_active', async () => {
+    leagueChatFlag.on = true;
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: { ...VALID_BATTLE, status: 'completed' } });
+    activeFirestore = fixture.db;
+
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi', leagueAsk: true });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.reason).toBe('mode_mismatch');
+  });
+
+  it('A-3h: …and BELOW checks 7 / 7b — a caller who does not own the battle learns that, not its game mode', async () => {
+    leagueChatFlag.on = true;
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: { ...VALID_BATTLE, ownerId: 'someone-else' } });
+    activeFirestore = fixture.db;
+
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi', leagueAsk: true });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(403);
+    expect(res.body.reason).toBe('forbidden_owner');
+
+    // …and the same for an agent that is not this battle's.
+    const f2 = makeFakeFirestore({ agent: VALID_AGENT, battle: VALID_BATTLE });
+    activeFirestore = f2.db;
+    const r2 = makeReqRes({ agentId: 'agent-9', battleId: 'battle-1', message: 'hi', leagueAsk: true });
+    await handler(r2.req, r2.res);
+    expect(r2.res.statusCode).toBe(403);
+    expect(r2.res.body.reason).toBe('forbidden_agent');
+  });
+
   it('A-3e: the store is re-read INSIDE the transaction — a battle that stops being a League battle mid-turn charges, never free', async () => {
     leagueChatFlag.on = true;
     budget.resolveImpl = (b) => (b.gameMode === TOURNAMENT_GAME_MODE ? KEY : null);
@@ -2516,6 +2570,11 @@ describe('agent/chat — B2: a commit that landed and lost its reply', () => {
   // …and the write half of the same claim, separately: the re-run reaches NO
   // write at all. A row that only counted messages would stay green if check 0
   // moved below the writes.
+  //
+  // It counts EVERY write to the battle doc, not only the one carrying
+  // `chatExchanges` (Lens D, finding F-2): filtered on that key the row stayed
+  // green under a no-op that returned the right outcome and still buffered an
+  // unrelated `tx.update` — which is the defect the title names.
   it('A-2e: the re-run buffers nothing — ONE battle write reaches the store', async () => {
     callGemmaVoiceImpl.current = async () => JSON.stringify({
       response: 'ok', hasDirective: true, directive: { text: 'lean tech', expiry: 'end_of_battle' },
@@ -2528,7 +2587,7 @@ describe('agent/chat — B2: a commit that landed and lost its reply', () => {
     await handler(req, res);
 
     expect(res.statusCode).toBe(200);
-    expect(fixture.written.updateCalls.filter((c) => c.updates?.chatExchanges)).toHaveLength(1);
+    expect(fixture.written.updateCalls.filter((c) => c.id === 'battle-1')).toHaveLength(1);
   });
 
   // THE LIMIT THE RULING LEAVES, measured rather than assumed — the row A-2d
