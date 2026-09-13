@@ -118,6 +118,28 @@ const nonEmpty = (v) => typeof v === 'string' && v.trim().length > 0;
 const normalizeCount = (raw) => (Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 0);
 
 /**
+ * Is this call's minted thread id ALREADY on the battle document — the slot, or
+ * an exchange carrying it top-level?
+ *
+ * The id is minted once per CALL (never per attempt), from `randomUUID`, and
+ * nothing else in the system can produce it. So finding it on the document
+ * inside the transaction body is proof of exactly one thing: an earlier attempt
+ * of THIS call committed. Both places are checked because the two writes land
+ * together but do not stay together — a concurrent `replace-and-report` filing
+ * can overwrite the slot after our commit, leaving the exchange as the only
+ * surviving evidence.
+ *
+ * Exported for its rows, and because the recognition rule is the whole of the
+ * no-op: if this predicate is wrong, the no-op is wrong.
+ */
+export function directiveThreadOnDocument(battle, directiveThreadId) {
+  if (!battle || !nonEmpty(directiveThreadId)) return false;
+  if (battle.directive?.directiveThreadId === directiveThreadId) return true;
+  const exchanges = Array.isArray(battle.chatExchanges) ? battle.chatExchanges : [];
+  return exchanges.some((e) => e?.directiveThreadId === directiveThreadId);
+}
+
+/**
  * The attestation every outcome carries (spec ruling 7). `persisted` and
  * `charged` are facts about THIS transaction, and only the transaction can
  * know them: a refusal decided inside the body wrote nothing, and a commit
@@ -220,16 +242,25 @@ export async function runDirectiveTransaction(db, {
   // byte-identical if the caller's `buildExchange` is. It is, on every field
   // but `overBudget`, which is read from the document — so a retry that crosses
   // the cap between attempts composes a different element and the dedupe does
-  // not apply. The residual double-charge on a landed-but-unacknowledged commit
-  // is the same one the pre-B2 `FieldValue.increment(1)` had and is the
-  // idempotency work Phase 0 §6.5 scopes to Build 2; see the build report §7.
+  // not apply.
+  //
+  // …and the id is also this call's SIGNATURE on the document, which is what
+  // the no-op below recognises. See the block at the top of the body.
   const mintedThreadId = randomUUID();
   const now = new Date();
   const createdAt = now.toISOString();
   // Which attempt this is. A refusal decided on a RE-RUN cannot prove that
   // nothing landed — the re-run may be reading this transaction's OWN commit
-  // (finding A-1) — so it says so instead of claiming `false`.
+  // (finding A-1) — so it says so instead of claiming `false`. It STAYS after
+  // the no-op below, because the no-op only proves a commit landed when the
+  // filing carried a thread id: a turn that files no directive leaves this
+  // call no signature, and a refusal on its re-run still cannot know.
   let attempt = 0;
+  // The outcome the attempt that COMMITTED computed. The body buffers its
+  // writes and sets this immediately before it returns, so a commit that
+  // landed cannot exist without it — which is what lets the no-op answer with
+  // what the write actually did rather than re-deriving it from the document.
+  let committedOutcome = null;
 
   return db.runTransaction(async (tx) => {
     attempt += 1;
@@ -245,6 +276,35 @@ export async function runDirectiveTransaction(db, {
     const battleSnap = await tx.get(battleRef);
     if (!battleSnap.exists) return refusal(DIRECTIVE_OUTCOME.BATTLE_NOT_FOUND);
     const battle = battleSnap.data();
+
+    // ---- CHECK 0 — THE COMMIT THAT ALREADY LANDED (founder ruling on the
+    // build report's §7; §7-A). `runTransaction` re-runs the body on a
+    // retryable commit error, and a commit that LANDED whose reply was lost
+    // surfaces as exactly that. On a re-run, the minted id is this call's own
+    // signature on the document — nothing else can write it — so finding it
+    // proves the prior attempt committed. The outcome is therefore already
+    // settled, and the only correct thing to do is report it and WRITE NOTHING.
+    //
+    // It is above every other check, deliberately. A commit that landed is a
+    // fact; a battle that has completed, changed hands or had its directive
+    // replaced since must not turn a filing that persisted into a refusal
+    // claiming it did not. This is also what makes the answer the same under
+    // BOTH conflict policies: `reject` would otherwise re-read its own new
+    // thread id and answer `conflict` (a 409 whose own commit had filed and
+    // charged), and `replace-and-report` would file a SECOND directive and
+    // charge a second message.
+    //
+    // It answers with the outcome the committing attempt computed, so
+    // `charged`, `remaining` and the replaced-thread report are what the write
+    // that landed actually did rather than a re-derivation from a document
+    // another writer may have touched since. Both conditions are required, and
+    // the invariant ties them: the body buffers its writes and sets
+    // `committedOutcome` before it returns, so evidence on the document cannot
+    // exist without it. If it somehow did, this falls through to today's
+    // behaviour rather than to a fabricated receipt.
+    if (attempt > 1 && committedOutcome && directiveThreadOnDocument(battle, mintedThreadId)) {
+      return committedOutcome;
+    }
 
     // Check 1 — the authenticated owner.
     if (battle.ownerId !== uid) return refusal(DIRECTIVE_OUTCOME.FORBIDDEN_OWNER);
@@ -353,7 +413,10 @@ export async function runDirectiveTransaction(db, {
     });
     commitBudget();
 
-    return {
+    // Stashed BEFORE the return, and after the writes are buffered: a commit
+    // can only land for a body that got this far, so check 0 above can rely on
+    // this being the outcome of the attempt whose writes it is looking at.
+    committedOutcome = {
       kind: DIRECTIVE_OUTCOME.FILED,
       // Ruling 7: this side of the commit is known here. `charged` is false on
       // a fail-open League filing (no keyable day) and on an over-budget
@@ -382,5 +445,6 @@ export async function runDirectiveTransaction(db, {
       overBudget,
       remaining,
     };
+    return committedOutcome;
   });
 }

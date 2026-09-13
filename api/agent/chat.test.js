@@ -2362,14 +2362,14 @@ describe('agent/chat — B2: a commit that landed and lost its reply', () => {
     expect(res.body.currentDirectiveThreadId).toBe(fixture.battleState.directive.directiveThreadId);
   });
 
-  // The residual, measured rather than assumed: the exchange dedupes, the
-  // thread id is one, but the COUNT still moves twice, because `used + 1` is
-  // read fresh on the attempt that re-runs. That is the same non-idempotence
-  // the pre-B2 `FieldValue.increment(1)` had under an RPC retry, and removing
-  // it needs the "no-op when the body finds its own key" branch Phase 0 §6.5
-  // scopes to Build 2. Pinned so the limit is a measured number in the record
-  // rather than a sentence in a report.
-  it('A-2d: the KNOWN RESIDUAL — the count still moves twice on an ambiguous commit', async () => {
+  // THE RULING (build report §7-A). The body recognises its OWN minted thread
+  // id on the document — check 0, above every other check — and returns the
+  // outcome that commit produced without writing. The count that used to move
+  // twice here moves once, because the second attempt buffers nothing at all.
+  it('A-2d: the ambiguous commit costs ONE message, not two', async () => {
+    callGemmaVoiceImpl.current = async () => JSON.stringify({
+      response: 'ok', hasDirective: true, directive: { text: 'lean tech', expiry: 'end_of_battle' },
+    });
     const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: { ...VALID_BATTLE, chatBudgetUsed: 2 } });
     activeFirestore = fixture.db;
     fixture.db.applyThenRetry();
@@ -2378,8 +2378,57 @@ describe('agent/chat — B2: a commit that landed and lost its reply', () => {
     await handler(req, res);
 
     expect(res.statusCode).toBe(200);
+    expect(fixture.written.txAttempts).toBe(2);
     expect(fixture.battleState.chatExchanges).toHaveLength(1);   // one turn…
-    expect(fixture.battleState.chatBudgetUsed).toBe(4);          // …two messages. The residual.
+    expect(fixture.battleState.chatBudgetUsed).toBe(3);          // …one message.
+    // …and the answer is the committing attempt's own outcome: it attests the
+    // filing that landed, and the document carries exactly one thread id —
+    // the slot's and the exchange's are the same one, nothing stranded.
+    expect(res.body.persisted).toBe(true);
+    expect(res.body.charged).toBe(true);
+    expect(fixture.battleState.directive.directiveThreadId)
+      .toBe(fixture.battleState.chatExchanges[0].directiveThreadId);
+  });
+
+  // …and the write half of the same claim, separately: the re-run reaches NO
+  // write at all. A row that only counted messages would stay green if check 0
+  // moved below the writes.
+  it('A-2e: the re-run buffers nothing — ONE battle write reaches the store', async () => {
+    callGemmaVoiceImpl.current = async () => JSON.stringify({
+      response: 'ok', hasDirective: true, directive: { text: 'lean tech', expiry: 'end_of_battle' },
+    });
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: { ...VALID_BATTLE, chatBudgetUsed: 2 } });
+    activeFirestore = fixture.db;
+    fixture.db.applyThenRetry();
+
+    const { req, res } = post({});
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(fixture.written.updateCalls.filter((c) => c.updates?.chatExchanges)).toHaveLength(1);
+  });
+
+  // THE LIMIT THE RULING LEAVES, measured rather than assumed — the row A-2d
+  // used to be, kept at the case that still has it. Check 0 recognises this
+  // call's commit by the thread id it FILED, and a turn that files no directive
+  // writes none, so it leaves no signature and the re-run cannot know. The
+  // exchange still dedupes (the mint and the instant are hoisted above the
+  // body, finding A-2); the COUNT still moves twice, exactly as it did at
+  // c35f9a5 under `FieldValue.increment(1)`. Making this case recognisable
+  // would mean stamping a per-call id on every exchange — a persisted-shape
+  // change the ENFORCE and flag-OFF pins forbid — so §7-A files it.
+  it('A-2f: the KNOWN RESIDUAL — a turn that files NO directive leaves no signature, and counts twice', async () => {
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: { ...VALID_BATTLE, chatBudgetUsed: 2 } });
+    activeFirestore = fixture.db;
+    fixture.db.applyThenRetry();
+
+    const { req, res } = post({});
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(fixture.battleState.chatExchanges).toHaveLength(1);            // one turn…
+    expect(fixture.battleState.chatExchanges[0].directiveThreadId).toBeNull();  // …no signature…
+    expect(fixture.battleState.chatBudgetUsed).toBe(4);                   // …two messages. The residual.
   });
 
   it('A-2c: the timestamp and the slot createdAt are ONE instant, stable across attempts', async () => {

@@ -31,6 +31,10 @@ const state = vi.hoisted(() => ({
   resolveImpl: () => ({ groupId: 'group-xyz', dayN: 3 }),
   gemmaCalls: [],
   injectBeforeCommit: null,
+  // …and its mirror image: a competing write that lands AFTER this call's own
+  // commit did, which is what leaves the exchange as the only surviving
+  // evidence of it (the ambiguous commit's second-order case).
+  afterCommit: null,
   attempts: 0,
   reads: 0,
   committed: [],
@@ -140,6 +144,7 @@ const db = {
         // CANCELLED: the codes that mean "the commit may have landed".
         state.applyThenRetry = false;
         for (const w of buffer) { applyWrite(w); state.committed.push(w); }
+        if (state.afterCommit) { state.afterCommit(); state.afterCommit = null; }
         continue;
       }
       for (const w of buffer) { applyWrite(w); state.committed.push(w); }
@@ -153,6 +158,7 @@ vi.mock('../_utils/firebaseAdmin.js', () => ({ getFirebaseAdmin: () => db }));
 // Dependency-surface guard (BUILD_RULES §4): this file's import of the module under test is the runtime guard that its api → src imports stay Node-clean. Never mock it.
 const { default: handler, buildFiledExchange, FILING_STATUS } = await import('./file-directive.js');
 const { buildDirectiveSlot, buildDirectiveRecord, BATTLE_CHAT_BUDGET } = await import('../_utils/directiveFiling.js');
+const { directiveThreadOnDocument } = await import('../_utils/directiveTransaction.js');
 
 const mkRes = () => ({ statusCode: null, body: null, status(c) { this.statusCode = c; return this; }, json(b) { this.body = b; return this; } });
 // `breakResponse` makes the FIRST res.json() throw — the one thing that can
@@ -201,6 +207,7 @@ beforeEach(() => {
   state.resolveImpl = () => ({ groupId: 'group-xyz', dayN: 3 });
   state.gemmaCalls = [];
   state.injectBeforeCommit = null;
+  state.afterCommit = null;
   state.applyThenRetry = false;
   state.attempts = 0;
   state.reads = 0;
@@ -599,25 +606,100 @@ describe('file-directive — a commit that landed and lost its reply', () => {
   // routes separable.
   it('A-2 (the chip half): the re-run writes nothing twice, and strands no thread id', async () => {
     state.applyThenRetry = true;
-    const res = await post(BODY);
+    await post(BODY);
     expect(state.attempts).toBe(2);
     // Exactly one exchange, carrying exactly one thread id — the slot's.
     expect(state.battle.chatExchanges).toHaveLength(1);
     expect(state.battle.chatExchanges[0].directiveThreadId).toBe(state.battle.directive.directiveThreadId);
-    expect(res.statusCode).toBe(409); // the CAS sees its own id and refuses to write again
+    // ONE battle write and ONE charge reached the store, from the attempt that
+    // committed. The re-run buffered nothing at all (check 0 returns above
+    // every write), where before the ruling it was the CAS that stopped it.
+    expect(state.committed.filter((w) => w.col === 'agentBattles')).toHaveLength(1);
+    expect(state.battle.chatBudgetUsed).toBe(3);
   });
 
-  // A-1: that 409 is produced by a body that is re-reading its OWN landed
-  // commit. It must not claim nothing was filed — the whole point of ruling 7.
-  it('A-1: a refusal decided on a RE-RUN says it does not know, never `false`', async () => {
+  // THE RULING (build report §7-A). Before it, that re-run answered 409 —
+  // a refusal whose OWN transaction had filed the directive and spent the
+  // message. The CAS made the WRITE safe; it never made the ANSWER true. The
+  // body now recognises its own minted id on the document and reports the
+  // outcome that commit produced.
+  it('A-2e: a retry after its own landed commit answers persisted: true, not conflict', async () => {
     state.applyThenRetry = true;
     const res = await post(BODY);
+    expect(state.attempts).toBe(2);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.persisted).toBe(true);
+    expect(res.body.charged).toBe(true);
+    expect(res.body.error).toBeUndefined();
+    // The receipt is the one the commit produced — the filed slot, its status
+    // word and the authoritative remaining — not a re-derivation.
+    expect(res.body.status).toBe(FILING_STATUS.FILED);
+    expect(res.body.directive.directiveThreadId).toBe(state.battle.directive.directiveThreadId);
+    expect(res.body.directive.text).toBe(DV02);
+    expect(res.body.remaining).toBe(7);   // 10 - (2 + 1), counted by the attempt that charged
+  });
+
+  // "charged as the document shows" — the no-op reports what the committing
+  // attempt ACTUALLY charged, never a hardcoded `true` beside `persisted`. A
+  // League filing whose game day will not resolve persists and costs nothing
+  // (the fail-open contract), so its ambiguous commit must answer
+  // `charged: false` and a null remaining, exactly as the 200 it lost did.
+  it('A-2g: the no-op reports what the commit CHARGED — a fail-open filing says charged: false', async () => {
+    state.battle = makeBattle({ gameMode: TOURNAMENT_GAME_MODE, groupId: 'group-xyz', chatBudgetUsed: 7 });
+    state.resolveImpl = () => null;
+    state.applyThenRetry = true;
+    const res = await post(BODY);
+    expect(state.attempts).toBe(2);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.persisted).toBe(true);
+    expect(res.body.charged).toBe(false);
+    expect(res.body.remaining).toBeNull();
+    expect(budgetWrites()).toEqual([]);
+    expect(state.committed.filter((w) => w.col === 'agentBattles')).toHaveLength(1);
+  });
+
+  // THE OTHER HALF OF THE RECOGNITION RULE. The commit lands, and a concurrent
+  // `replace-and-report` filing overwrites the SLOT before the re-run reads it
+  // — so the slot now names a thread this call never minted, and the exchange
+  // is the only surviving evidence. Without the exchange half of the check the
+  // re-run reads a foreign slot, fails its CAS and answers 409 for a filing of
+  // its own that persisted and charged: the exact defect the ruling removes,
+  // one concurrent writer later.
+  it('A-2h: the slot replaced since, the EXCHANGE is the evidence — still persisted: true', async () => {
+    state.applyThenRetry = true;
+    state.afterCommit = () => {
+      state.battle.directive = { text: 'someone else', directiveThreadId: 'thread-OTHER', expiry: 'end_of_battle' };
+    };
+    const res = await post(BODY);
+    expect(state.attempts).toBe(2);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.persisted).toBe(true);
+    expect(res.body.charged).toBe(true);
+    // One exchange, one charge — the re-run wrote nothing over the winner.
+    expect(state.battle.chatExchanges).toHaveLength(1);
+    expect(state.battle.chatBudgetUsed).toBe(3);
+    expect(state.battle.directive.directiveThreadId).toBe('thread-OTHER');
+  });
+
+  // A-1 is the OTHER kind of re-run: the buffer was discarded by contention,
+  // so this call has no signature anywhere on the document and check 0 cannot
+  // fire. The refusal still says it does not know. That conservatism is
+  // deliberately UNCHANGED by the ruling: the evidence proves a commit LANDED,
+  // and its absence is not made into a proof that none did (§7-A files the
+  // tightening rather than building it).
+  it('A-1: a refusal decided on a RE-RUN says it does not know, never `false`', async () => {
+    state.injectBeforeCommit = () => {
+      state.battle.directive = { text: 'x', directiveThreadId: 'thread-OTHER', expiry: 'end_of_battle' };
+    };
+    const res = await post(BODY);
+    expect(state.attempts).toBe(2);
     expect(res.statusCode).toBe(409);
     expect(res.body.persisted).toBeNull();
     expect(res.body.charged).toBeNull();
-    // …and the filing really did land and really did charge.
-    expect(state.battle.chatExchanges).toHaveLength(1);
-    expect(state.battle.chatBudgetUsed).toBe(3);
+    expect(res.body.currentDirectiveThreadId).toBe('thread-OTHER');
+    // …and nothing of THIS call's landed: no evidence, and no write.
+    expect(state.committed).toEqual([]);
+    expect(state.battle.chatBudgetUsed).toBe(2);
   });
 
   it('A-1b: a FIRST-attempt refusal still proves `false` — the honest claim is not weakened', async () => {
@@ -627,6 +709,51 @@ describe('file-directive — a commit that landed and lost its reply', () => {
     expect(state.attempts).toBe(1);
     expect(res.body.persisted).toBe(false);
     expect(res.body.charged).toBe(false);
+  });
+});
+
+// ============================================================================
+// B2 — THE RECOGNITION RULE ITSELF (build report §7-A)
+//
+// The no-op is only as good as this predicate: it is the whole of "the prior
+// attempt's commit landed". The route rows above prove the transaction USES
+// it; these prove what it means, at each of the two places the ruling names.
+// ============================================================================
+
+describe('directiveTransaction — this call\'s own signature on the document', () => {
+  const EX = (over = {}) => ({ userMessage: null, hasDirective: true, directiveThreadId: null, ...over });
+
+  it('the SLOT alone is evidence — an exchange shape that carries no id top-level still no-ops', () => {
+    const battle = { directive: { directiveThreadId: 'mine' }, chatExchanges: [EX()] };
+    expect(directiveThreadOnDocument(battle, 'mine')).toBe(true);
+  });
+
+  it('an EXCHANGE alone is evidence — the slot replaced since, or never written', () => {
+    expect(directiveThreadOnDocument({ directive: null, chatExchanges: [EX({ directiveThreadId: 'mine' })] }, 'mine')).toBe(true);
+    expect(directiveThreadOnDocument({ directive: { directiveThreadId: 'theirs' }, chatExchanges: [EX({ directiveThreadId: 'mine' })] }, 'mine')).toBe(true);
+  });
+
+  it('another filing\'s id is not evidence — the recognition is per CALL, not per battle', () => {
+    const battle = { directive: { directiveThreadId: 'theirs' }, chatExchanges: [EX({ directiveThreadId: 'theirs' })] };
+    expect(directiveThreadOnDocument(battle, 'mine')).toBe(false);
+  });
+
+  // The one that would be catastrophic: a turn that files no directive carries
+  // `directiveThreadId: null` on its exchange and leaves the slot untouched. An
+  // empty id must never match, or every no-directive turn on a battle that has
+  // ever had one would "recognise" a commit it never made and answer a filing
+  // that never happened. (The body always passes a minted UUID, so this is the
+  // predicate's own floor rather than a reachable path — pinned because it is
+  // the difference between a no-op and a lie.)
+  it('an empty id is never evidence, whatever the document holds', () => {
+    const battle = { directive: { directiveThreadId: null }, chatExchanges: [EX(), EX()] };
+    for (const id of [null, undefined, '', '   ']) expect(directiveThreadOnDocument(battle, id)).toBe(false);
+  });
+
+  it('a document with no exchanges and no slot is not evidence', () => {
+    expect(directiveThreadOnDocument({}, 'mine')).toBe(false);
+    expect(directiveThreadOnDocument({ chatExchanges: null }, 'mine')).toBe(false);
+    expect(directiveThreadOnDocument(null, 'mine')).toBe(false);
   });
 });
 
