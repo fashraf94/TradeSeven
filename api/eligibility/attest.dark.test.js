@@ -164,8 +164,8 @@ describe('nothing else reaches it (PR 0)', () => {
     // mentions the identifier exactly once — its own export — so any accessor
     // or derivation that reads it, whatever it is called, reds this row.
     const flagsCode = read('src/config/featureFlags.js').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
-    expect(flagsCode.match(/ELIGIBILITY_ATTESTATION_ENABLED/g),
-      'something in featureFlags.js reads the flag besides its own export — an accessor or derivation a hermetic mock of the constant cannot see').toHaveLength(1);
+    expect(flagsCode.match(/\bELIGIBILITY_ATTESTATION_ENABLED\b/g),
+      'something in featureFlags.js reads the flag besides its own export — an accessor or derivation a hermetic mock of the constant cannot see; override the accessor in this suite\'s featureFlags mock too (the research.dark.test.js isShowItOn precedent) and move this count in the same commit').toHaveLength(1);
   });
 
   it('adds no cron entry (spec §7: zero new crons)', () => {
