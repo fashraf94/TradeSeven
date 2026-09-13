@@ -8,9 +8,12 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 // Archetype Phase 2 P2.6 (non-fenced): shadow assembly + behavior-record
-// envelope plumbing, DARK behind SHADOW_ASSEMBLY_ENABLED=false — the two
-// flag-gated call sites below are never entered while dark and the tick is
-// byte-identical. Assembly-only (no second LLM call — Spec DR-10 stage 1).
+// envelope plumbing. DARK since 2026-09-12 (SHADOW_ASSEMBLY_ENABLED=false):
+// the THREE flag-gated call sites below — the per-tick runShadowTickCapture,
+// the completion-time receiptCoverage stamp, and writeBattleSettlementRecord
+// — are never entered, so the tick rebuilds no shadow prompt and writes no
+// shadowDiffs doc before battleRef.update. Nothing the decider sees changes;
+// the historical corpus is preserved (rationale: src/config/featureFlags.js).
 import { SHADOW_ASSEMBLY_ENABLED } from '../../src/config/featureFlags.js';
 import { runShadowTickCapture, writeBattleSettlementRecord } from '../_utils/shadowAssemblyCapture.js';
 import { isMarketOpen, getETDate, formatDateString } from '../_utils/marketSchedule.js';

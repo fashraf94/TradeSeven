@@ -1,9 +1,21 @@
 // api/_utils/shadowAssemblyCapture.js
 //
 // Archetype Architecture Phase 2 (P2.6) — shadow assembly + behavior-record
-// envelope plumbing. NON-FENCED module riding the agent-evaluate tick; DARK
-// behind SHADOW_ASSEMBLY_ENABLED=false (the wiring never calls in here when
-// the flag is false — zero reads, zero writes, byte-identical ticks).
+// envelope plumbing. NON-FENCED module riding the agent-evaluate tick. DARK
+// since 2026-09-12: SHADOW_ASSEMBLY_ENABLED=false, so the wiring never calls
+// in here — zero reads, zero writes, no new shadowDiffs documents. It shipped
+// TRUE from 2026-07-24 to 2026-09-12 and the corpus it wrote is PRESERVED and
+// still queryable by scripts/paired-eval-harness.js. It was turned off because
+// that harness is its only consumer (run once, 2026-07-31, for the DR-13 flip,
+// which shipped), the manifest-read migration this corpus was built to gate
+// has no build, and the capture sat on three unbounded awaits before the
+// battle write — full rationale at the flag (src/config/featureFlags.js).
+//
+// CORPUS CAVEAT (Phase 0 §7, docs/audits/20260912_PHASE0_SHADOW_ASSEMBLY.md):
+// the "live" side of every historical document is a REBUILD performed HERE —
+// after the tick's swaps and after the lock transaction refreshed the battle —
+// not the string that was sent to the decider. Read the 530 documents as a
+// structural live-vs-manifest diff, never as the prompt the model saw.
 //
 // Spec DR-10 stage 1 (assembly shadow — structural, NO LLM call):
 //   Per battle per tick, build the manifest-derived prompt pair by calling

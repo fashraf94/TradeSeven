@@ -1331,21 +1331,38 @@ export const MANIFEST_WRITE_ENABLED = true;
  * riding the non-fenced agent-evaluate tick; Spec DR-10 stage 1 + A-1 +
  * §6.3/§6.4).
  *
- * When FALSE (DEFAULT, merge-dark), the tick never calls into the capture
- * module — no shadow prompts, no shadowDiffs writes, no gate aggregates, no
- * settlement records, no receiptCoverage stamp: byte-identical ticks and
- * settlements. When TRUE (preview smoke only in Phase 2), each battle-tick
- * with a manifest builds the A-1 envelope once, writes the awaited
- * create-only shadow diff to agentBattles/{id}/shadowDiffs/{tickId}
- * (assembly-only — NO second LLM call; near-free vs the eval budget), rides
- * the §6.3 aggregates on the existing finalUpdate, and completeBattle
- * attaches the §6.4 battleSettlements record post-commit with the
- * receiptCoverage retry marker. Pre-manifest battles are skipped entirely
- * (the envelope is manifest-anchored; no envelope-less record ever exists).
- * Flip only via a deliberate founder flag-flip PR — never in a build PR.
+ * DARK since 2026-09-12 (this flip). It shipped TRUE from 2026-07-24 (PR
+ * #671) until then, accumulating the DR-10 stage-1 corpus: per battle-tick,
+ * the three eval-prompt parts built twice — once from the live agentContext,
+ * once with the manifest's frozen layers overlaid — diffed, and written
+ * awaited to agentBattles/{id}/shadowDiffs/{tickId}, with the §6.3 gate
+ * aggregates riding finalUpdate and the §6.4 battleSettlements record at
+ * completion.
+ *
+ * WHY IT IS OFF: the corpus has exactly one consumer — the offline
+ * scripts/paired-eval-harness.js, run once (2026-07-31) for the DR-13
+ * identity-block flip, which shipped. The manifest-read migration the corpus
+ * was built to gate has no build and was re-routed by the composition arc
+ * (the advisory read edge went through the fenced assembler, not the shadow's
+ * projection); api/ and src/ have zero readers; the gate aggregates and
+ * settlement records were never read by anything. The capture cost three
+ * deadline-less awaits — two buildLiveContextBlock calls and the shadowDiffs
+ * .create() — sequenced before battleRef.update(finalUpdate), where a hang
+ * takes this battle's write and every later battle in the serial loop.
+ *
+ * When FALSE (today), the tick never calls into the capture module — no
+ * shadow prompts, no shadowDiffs writes, no gate-aggregate growth, no
+ * settlement records, no receiptCoverage stamp. Nothing the decider sees
+ * changes: its own prompt, call, decision, swaps, stamps and record are
+ * untouched.
+ *
+ * The historical corpus is PRESERVED and stays queryable by the harness (530
+ * shadowDiffs / 78 battleSettlements at the 2026-08-20 census). A re-flip
+ * needs the DARK_BY_DESIGN ceremony (src/config/flagPinGuard.test.js) and is
+ * its own deliberate founder flag-flip PR — never a build PR.
  */
 // Pinned by: shadowAssemblyCapture.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const SHADOW_ASSEMBLY_ENABLED = true;
+export const SHADOW_ASSEMBLY_ENABLED = false;
 
 /**
  * Deploy Ceremony Phase 2 (client) — the three-act deploy experience:

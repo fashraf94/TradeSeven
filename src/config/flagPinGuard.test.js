@@ -149,6 +149,9 @@ const DARK_BY_DESIGN = {
   // battleViewControllerFlags.test.js now asserts the live true value.
   // COMMAND_CENTER_SYNC_ENABLED (the dashboard Desk) is a SEPARATE runway and
   // stays listed below — this flip said nothing about it.
+
+  SHADOW_ASSEMBLY_ENABLED:
+    'DR-10 stage-1 shadow corpus — dark since 2026-09-12: its only consumer (the offline scripts/paired-eval-harness.js) ran once for the DR-13 flip, the manifest-read migration it was built to gate has no build, and the capture cost three unbounded awaits before the battle write. The historical corpus stays queryable. A re-flip needs a fresh-corpus brief that also bounds the capture, in its own founder flip PR',
 };
 
 // ── Build the live flag → value map from the source modules ──────────────────
