@@ -93,12 +93,13 @@ import { BATTLE_CHAT_BUDGET } from '../_utils/directiveFiling.js';
 // behaviour is unchanged — it selects the two policies it always had.
 import {
   runDirectiveTransaction,
+  attestThrown,
   DIRECTIVE_CONFLICT_POLICY,
   DIRECTIVE_BUDGET_POLICY,
   DIRECTIVE_OUTCOME,
 } from '../_utils/directiveTransaction.js';
 import { GROUNDING_VERSION } from '../_utils/voiceLayerGrounding.js';
-import { DIRECTIVE_FILED_MESSAGE_TYPE } from '../../src/data/decisionRecord.js';
+import { DIRECTIVE_FILED_MESSAGE_TYPE, NOTHING_FILED } from '../../src/data/decisionRecord.js';
 
 // A transaction over two docs and no model: a plain write endpoint's budget.
 export const config = { maxDuration: 10 };
@@ -149,7 +150,7 @@ export default async function handler(req, res) {
     return;
   }
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return res.status(405).json({ ...NOTHING_FILED, reason: 'method_not_allowed', error: 'Method not allowed' });
   }
 
   const user = await requireAuth(req, res);
@@ -176,29 +177,34 @@ export default async function handler(req, res) {
   // are amended by the design chat, not from here — §6.1 is the one that states
   // the gate as a live contract and is reported for that amendment.)
   if (getVoiceGroundingMode(user.uid) !== 'on') {
-    return res.status(404).json({ error: 'not_found' });
+    return res.status(404).json({ ...NOTHING_FILED, reason: 'not_found', error: 'not_found' });
   }
 
   const body = req.body || {};
   const { agentId, battleId, adjustmentId } = body;
   if (!nonEmpty(agentId) || !nonEmpty(battleId) || !nonEmpty(adjustmentId)) {
-    return res.status(400).json({ error: 'agentId, battleId, and adjustmentId are required' });
+    return res.status(400).json({ ...NOTHING_FILED, reason: 'bad_request', error: 'agentId, battleId, and adjustmentId are required' });
   }
   // Nullable AND required: the key must be present; its value is null (no
   // current directive) or the thread id the client believes is current.
   if (!Object.prototype.hasOwnProperty.call(body, 'expectedDirectiveThreadId')) {
-    return res.status(400).json({ error: 'expectedDirectiveThreadId is required (null when no directive is current)' });
+    return res.status(400).json({ ...NOTHING_FILED, reason: 'bad_request', error: 'expectedDirectiveThreadId is required (null when no directive is current)' });
   }
   const expectedDirectiveThreadId = body.expectedDirectiveThreadId;
   if (expectedDirectiveThreadId !== null && !nonEmpty(expectedDirectiveThreadId)) {
-    return res.status(400).json({ error: 'expectedDirectiveThreadId must be null or a thread id' });
+    return res.status(400).json({ ...NOTHING_FILED, reason: 'bad_request', error: 'expectedDirectiveThreadId must be null or a thread id' });
   }
 
   const db = getFirebaseAdmin();
   const battleRef = db.collection('agentBattles').doc(battleId);
   const agentRef = db.collection('agents').doc(agentId);
+  // Ruling 7's third shape: set when the transaction commits, so the catch can
+  // tell a filing that never happened from one that did and whose reply failed.
+  let committed = null;
+  let filingAttempted = false;
 
   try {
+    filingAttempted = true;
     const outcome = await runDirectiveTransaction(db, {
       battleRef,
       agentRef,
@@ -243,41 +249,63 @@ export default async function handler(req, res) {
       }),
     });
 
+    // Ruling 7 (B2): every path says what it cost. Each refusal below is the
+    // TRANSACTION's own — it decided them and wrote nothing, so the attestation
+    // is the outcome's, not a guess made from the status the client receives.
+    // `reason` is deliberately the same word on both routes, so a client that
+    // learns the vocabulary once reads both.
+    const attestation = { persisted: outcome.persisted, charged: outcome.charged, reason: outcome.reason };
+    if (outcome.kind === DIRECTIVE_OUTCOME.FILED) committed = outcome;
     switch (outcome.kind) {
       case DIRECTIVE_OUTCOME.BATTLE_NOT_FOUND:
-        return res.status(404).json({ error: 'Battle not found' });
+        return res.status(404).json({ ...attestation, error: 'Battle not found' });
       case DIRECTIVE_OUTCOME.AGENT_NOT_FOUND:
-        return res.status(404).json({ error: 'Agent not found' });
+        return res.status(404).json({ ...attestation, error: 'Agent not found' });
       case DIRECTIVE_OUTCOME.FORBIDDEN_OWNER:
-        return res.status(403).json({ error: 'Not authorized to file in this battle' });
+        return res.status(403).json({ ...attestation, error: 'Not authorized to file in this battle' });
       case DIRECTIVE_OUTCOME.FORBIDDEN_AGENT:
-        return res.status(403).json({ error: AGENT_BATTLE_MISMATCH });
+        return res.status(403).json({ ...attestation, error: AGENT_BATTLE_MISMATCH });
       case DIRECTIVE_OUTCOME.BATTLE_NOT_ACTIVE:
-        return res.status(400).json({ error: 'battle_not_active', message: 'This battle has ended.' });
+        return res.status(400).json({ ...attestation, error: 'battle_not_active', message: 'This battle has ended.' });
       case DIRECTIVE_OUTCOME.CONFLICT:
         return res.status(409).json({
+          ...attestation,
           error: 'conflict',
           status: FILING_STATUS.CONFLICT,
           currentDirectiveThreadId: outcome.currentDirectiveThreadId,
         });
       case DIRECTIVE_OUTCOME.REJECTED:
-        return res.status(422).json({ error: 'rejected', status: FILING_STATUS.REJECTED, reason: 'off_menu' });
+        // `reason: 'off_menu'` is this route's own, older word for the same
+        // slot and the clients already read it; the outcome's `rejected` is
+        // carried beside it rather than overwriting a shipped string.
+        return res.status(422).json({ ...attestation, error: 'rejected', status: FILING_STATUS.REJECTED, reason: 'off_menu' });
       case DIRECTIVE_OUTCOME.BUDGET_EXHAUSTED:
-        return res.status(429).json({ error: 'budget_exhausted', status: FILING_STATUS.BUDGET_EXHAUSTED, remaining: 0 });
+        return res.status(429).json({ ...attestation, error: 'budget_exhausted', status: FILING_STATUS.BUDGET_EXHAUSTED, remaining: 0 });
       case DIRECTIVE_OUTCOME.FILED:
         // After the commit — never before (spec §6.3: the receipt is bound to
         // the write).
         return res.status(200).json({
+          ...attestation,
           status: outcome.replacedPrior ? FILING_STATUS.REPLACED_PRIOR : FILING_STATUS.FILED,
           directive: outcome.directive,
           replacedDirectiveThreadId: outcome.replacedDirectiveThreadId,
           remaining: outcome.remaining,
         });
       default:
-        return res.status(500).json({ error: 'Unexpected filing outcome' });
+        return res.status(500).json({ ...attestation, error: 'Unexpected filing outcome' });
     }
   } catch (error) {
     console.error('[FileDirective] Error:', error?.message || error);
-    return res.status(500).json({ error: 'Could not file the directive. Try again in a moment.' });
+    // The one path here that can follow a landed commit — the response's own
+    // serialization. Ruling 7's third shape: if the transaction committed, the
+    // directive IS filed and the message IS spent, whatever this status says.
+    return res.status(500).json({
+      ...attestThrown({
+        committed,
+        attempted: filingAttempted,
+        reason: committed ? 'failed_after_commit' : 'handler_exception',
+      }),
+      error: 'Could not file the directive. Try again in a moment.',
+    });
   }
 }

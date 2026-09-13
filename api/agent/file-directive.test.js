@@ -279,7 +279,11 @@ describe('file-directive — the eight checks, each falsifiable', () => {
     state.battle = makeBattle({ directive: { text: 'x', directiveThreadId: 'thread-A', expiry: 'end_of_battle' } });
     const res = await post(BODY);
     expect(res.statusCode).toBe(409);
-    expect(res.body).toEqual({ error: 'conflict', status: FILING_STATUS.CONFLICT, currentDirectiveThreadId: 'thread-A' });
+    // B2 ruling 7: the body now also attests. Nothing else about it moved.
+    expect(res.body).toEqual({
+      persisted: false, charged: false, reason: 'conflict',
+      error: 'conflict', status: FILING_STATUS.CONFLICT, currentDirectiveThreadId: 'thread-A',
+    });
     expect(state.committed).toEqual([]);
   });
 
@@ -296,7 +300,12 @@ describe('file-directive — the eight checks, each falsifiable', () => {
     // TF-02 is Trend Follower's; the battle's frozen snapshot says diversifier.
     let res = await post({ ...BODY, adjustmentId: 'TF-02' });
     expect(res.statusCode).toBe(422);
-    expect(res.body).toEqual({ error: 'rejected', status: FILING_STATUS.REJECTED, reason: 'off_menu' });
+    // `reason: 'off_menu'` is this route's own, older word for the same slot and
+    // the clients already read it; it stands, and the attestation rides beside.
+    expect(res.body).toEqual({
+      persisted: false, charged: false,
+      error: 'rejected', status: FILING_STATUS.REJECTED, reason: 'off_menu',
+    });
     res = await post({ ...BODY, adjustmentId: 'DV-99' });
     expect(res.statusCode).toBe(422);
     // The battle snapshot wins over the agent doc (directiveIdentity.js CF-1).
@@ -323,7 +332,10 @@ describe('file-directive — the eight checks, each falsifiable', () => {
     state.battle = makeBattle({ chatBudgetUsed: BATTLE_CHAT_BUDGET.limit });
     const res = await post(BODY);
     expect(res.statusCode).toBe(429);
-    expect(res.body).toEqual({ error: 'budget_exhausted', status: FILING_STATUS.BUDGET_EXHAUSTED, remaining: 0 });
+    expect(res.body).toEqual({
+      persisted: false, charged: false, reason: 'budget_exhausted',
+      error: 'budget_exhausted', status: FILING_STATUS.BUDGET_EXHAUSTED, remaining: 0,
+    });
     expect(state.committed).toEqual([]);
   });
 });

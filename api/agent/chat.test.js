@@ -191,6 +191,9 @@ function makeFakeFirestore({
   // `db.setBarrier` two-writer shape from api/_utils/mandateEscape.test.js) that
   // lets another writer land between the transaction's reads and its commit.
   budgetDocs = {},
+  // …and a way to make the POST-COMMIT `agents` write at step 20b throw, which
+  // is what ruling 7's third shape (committed, then threw) needs to be reached.
+  agentUpdateError = false,
 }) {
   const written = { setCalls: [], updateCalls: [], txAttempts: 0 };
   // The battle the fake SERVES, so a committed write is visible to the next read
@@ -251,6 +254,7 @@ function makeFakeFirestore({
           return { exists: false, data: () => null };
         },
         update: async (updates) => {
+          if (name === 'agents' && agentUpdateError) throw new Error('agents write failed');
           written.updateCalls.push({ id: docId, updates });
         },
         collection: (subName) => (subName === 'claims' ? claimsQuery : { where: () => ({}) }),
@@ -2079,5 +2083,189 @@ describe('agent/chat — B2: the write is a transaction (spec §2)', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.body.currentDirectiveThreadId).toBe('chip-thread-1');
+  });
+});
+
+// ============================================================================
+// B2 — THE ATTESTATION (spec §2 ruling 7)
+//
+// "the handler knows three outcomes — threw before the transaction (nothing
+// persisted, nothing charged), rejected inside it (same), committed then threw
+// (persisted and charged); the error body carries `persisted` / `charged`."
+// ============================================================================
+
+describe('agent/chat — B2: every response attests persisted / charged (ruling 7)', () => {
+  const mainUpdate = (written) => written.updateCalls.find(c => c.updates?.chatExchanges?.__op === 'arrayUnion');
+  const post = (body) => makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hold the line', ...body });
+
+  it('C-1a: THREW BEFORE the transaction — a timed-out model call attests false / false', async () => {
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: VALID_BATTLE });
+    activeFirestore = fixture.db;
+    callGemmaVoiceImpl.current = async () => { const e = new Error('aborted'); e.name = 'AbortError'; throw e; };
+
+    const { req, res } = post({});
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(504);
+    expect(res.body.persisted).toBe(false);
+    expect(res.body.charged).toBe(false);
+    expect(res.body.reason).toBe('gemma_timeout');
+    expect(fixture.written.updateCalls).toHaveLength(0);
+  });
+
+  it('C-1b: REFUSED INSIDE the transaction — the closed battle attests false / false with the reason', async () => {
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: VALID_BATTLE });
+    activeFirestore = fixture.db;
+    callGemmaVoiceImpl.current = async () => { fixture.battleState.status = 'completed'; return '{"response":"hi"}'; };
+
+    const { req, res } = post({});
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.persisted).toBe(false);
+    expect(res.body.charged).toBe(false);
+    expect(res.body.reason).toBe('battle_not_active');
+    expect(fixture.written.updateCalls).toHaveLength(0);
+  });
+
+  // THE ROW THAT PROVES THE FIX. Phase 0 §2.4(c-inverse): three awaits sat
+  // after the landed write inside the same `try`, so a throw in any of them
+  // answered 504/500 for a filing that persisted and charged — and
+  // battleViewCopy.js:671-681 records the founder's own smoke of exactly this
+  // ("`1/10` and 'nothing was sent' on screen together").
+  it('C-1c: COMMITTED THEN THREW — the doc holds the exchange and the charge, and the body says so', async () => {
+    const fixture = makeFakeFirestore({
+      agent: VALID_AGENT,
+      battle: { ...VALID_BATTLE, status: 'completed', reviewBudgetUsed: 1 },
+      // The post-commit `agents` write at step 20b fails.
+      agentUpdateError: true,
+    });
+    activeFirestore = fixture.db;
+    callGemmaVoiceImpl.current = async () => JSON.stringify({
+      response: 'that was the lesson', _lesson: { text: 'size down into a downgrade' },
+    });
+
+    const { req, res } = post({ mode: 'review' });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(500);
+    // The body tells the truth about a turn that DID happen.
+    expect(res.body.persisted).toBe(true);
+    expect(res.body.charged).toBe(true);
+    expect(res.body.reason).toBe('failed_after_commit');
+    // …and the document agrees: the exchange landed and the message was spent.
+    expect(mainUpdate(fixture.written)).toBeTruthy();
+    expect(mainUpdate(fixture.written).updates.reviewBudgetUsed).toBe(2);
+    expect(fixture.battleState.chatExchanges).toHaveLength(1);
+    expect(fixture.battleState.reviewBudgetUsed).toBe(2);
+  });
+
+  it('C-1d: the transaction itself throwing says it does NOT KNOW — never a false claim', async () => {
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: VALID_BATTLE });
+    activeFirestore = fixture.db;
+    // A commit that fails is indistinguishable from one that landed and lost
+    // its reply: runTransaction retries, and only the route knows it cannot
+    // tell. It says so rather than claiming nothing happened.
+    fixture.db.failCommitWhen(() => true);
+
+    const { req, res } = post({});
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(500);
+    expect(res.body.persisted).toBeNull();
+    expect(res.body.charged).toBeNull();
+    expect(res.body.reason).toBe('handler_exception');
+  });
+
+  it('C-1e: a clean success attests persisted / charged too', async () => {
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: VALID_BATTLE });
+    activeFirestore = fixture.db;
+
+    const { req, res } = post({});
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.persisted).toBe(true);
+    expect(res.body.charged).toBe(true);
+    expect(res.body.reason).toBeNull();
+  });
+
+  it('C-1f: a filing that lands and costs NOTHING says so — charged is not persisted', async () => {
+    // The League fail-open: no keyable game day, so the answer is free.
+    leagueChatFlag.on = true;
+    budget.resolveImpl = () => null;
+    const fixture = makeFakeFirestore({
+      agent: VALID_AGENT,
+      battle: { ...VALID_BATTLE, gameMode: TOURNAMENT_GAME_MODE, groupId: 'group-xyz' },
+    });
+    activeFirestore = fixture.db;
+
+    const { req, res } = post({ leagueAsk: true });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.persisted).toBe(true);
+    expect(res.body.charged).toBe(false);
+  });
+
+  // C-2 — Phase 0 §2.4(e4): "the 502 at :814 is post-model, pre-write — and is
+  // the one failure status that is honestly attestable today… A free correct
+  // answer the contract currently throws away."
+  it('C-2 (e4): the 502 parse path is post-model and PRE-write — it attests false / false', async () => {
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: VALID_BATTLE });
+    activeFirestore = fixture.db;
+    callGemmaVoiceImpl.current = async () => 'I have hit a snag, could you repeat the question?';
+    parseVoiceLayerResponseImpl.current = (c) => ({ parseError: true, errorReason: 'plaintext_passthrough', rawText: c });
+
+    const { req, res } = post({});
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(502);
+    expect(res.body.persisted).toBe(false);
+    expect(res.body.charged).toBe(false);
+    expect(res.body.reason).toBe('parse_plaintext_passthrough');
+    expect(fixture.written.updateCalls).toHaveLength(0);
+  });
+
+  // B-4's report half (Phase 0 §2.4 e3, ruling 4): "the outcome records the
+  // ACTUAL replaced thread from the in-transaction read." The typed path used
+  // to overwrite a chip filing in silence and no surface was told.
+  it('C-1g (e3): a typed filing that replaced a chip filing NAMES the thread it replaced', async () => {
+    grounding.mode = 'on';
+    archetypeFlag.mode = 'enforce';
+    const fixture = makeFakeFirestore({ agent: { ...VALID_AGENT, archetype: 'diversifier' }, battle: VALID_BATTLE });
+    activeFirestore = fixture.db;
+    callGemmaVoiceImpl.current = async () => {
+      fixture.battleState.directive = {
+        text: 'Tighten the spread', expiry: 'end_of_battle', directiveThreadId: 'chip-thread-1', createdAt: 'now',
+      };
+      return JSON.stringify({ response: 'widening out', _archetypeProposal: { classification: 'in_archetype', selectedAdjustmentId: 'DV-02' } });
+    };
+
+    const { req, res } = post({});
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.persisted).toBe(true);
+    expect(res.body.replacedThreadId).toBe('chip-thread-1');
+  });
+
+  it('C-1h: replacing the directive the caller ALREADY knew about carries no replacedThreadId', async () => {
+    grounding.mode = 'on';
+    archetypeFlag.mode = 'enforce';
+    const fixture = makeFakeFirestore({
+      agent: { ...VALID_AGENT, archetype: 'diversifier' },
+      battle: { ...VALID_BATTLE, directive: { text: 'Tighten', expiry: 'end_of_battle', directiveThreadId: 'known-1', createdAt: 'now' } },
+    });
+    activeFirestore = fixture.db;
+    callGemmaVoiceImpl.current = async () => JSON.stringify({
+      response: 'widening out', _archetypeProposal: { classification: 'in_archetype', selectedAdjustmentId: 'DV-02' },
+    });
+
+    const { req, res } = post({});
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect('replacedThreadId' in res.body).toBe(false);
   });
 });

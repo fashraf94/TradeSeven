@@ -204,3 +204,87 @@ describe('§6 — the cost and the cron budget', () => {
     expect(src).not.toMatch(/battleUniverse|canonicalUniverseSymbol|flattenBenchServer/);
   });
 });
+
+// ============================================================================
+// B2 — THE SAME RULE, ON THE TWO DIRECTIVE ROUTES (spec §2 ruling 7)
+//
+// The invariant above is the research route's: a claim about cost or
+// persistence is only made where it is PROVABLE. B2 gives the directive routes
+// the same vocabulary (`persisted` / `charged` / `reason`, named once in
+// src/data/decisionRecord.js), so the structural rule extends to them — a
+// refusal answered from ABOVE the filing transaction proves of its own
+// construction that nothing landed and nothing was spent, and nothing below
+// the transaction may claim that, because below it the route either knows it
+// committed or knows it cannot tell.
+//
+// Per the Sep 10 review's second headline, this walks SOURCE and is therefore
+// not a substitute for a behavioural row — it guards a structural property a
+// mounted test cannot express. The behavioural rows sit beside it, in
+// api/agent/chat.test.js ("every response attests persisted / charged") and
+// api/agent/file-directive.test.js.
+// ============================================================================
+
+describe('B2 — the filing attestation is on the pre-transaction refusals, and on none of the rest', () => {
+  const ROUTES = ['api/agent/chat.js', 'api/agent/file-directive.js'];
+  // Comments stripped first (the deskHonesty.test.js rule, and the same trap
+  // the research row above documents): both routes NAME the constant in prose
+  // in order to explain where it may and may not appear.
+  const code = (rel) => read(rel)
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+
+  it.each(ROUTES)('%s: every refusal ABOVE the filing transaction attests', (rel) => {
+    const src = code(rel);
+    const txAt = src.indexOf('runDirectiveTransaction(db');
+    expect(txAt, 'the filing transaction').toBeGreaterThan(-1);
+    const before = src.slice(0, txAt);
+    const refusals = before.split('return res.status(').slice(1);
+    // The route has a real refusal surface above the write — a rule with
+    // nothing to police is not a guard.
+    expect(refusals.filter((c) => !c.startsWith('200')).length).toBeGreaterThan(3);
+    for (const [i, chunk] of refusals.entries()) {
+      // The League zero state is a 200 that filed nothing; it attests too, so
+      // it is not skipped the way the research row skips its 200s.
+      expect(chunk.slice(0, 260), `${rel}: pre-transaction refusal ${i} attests`).toContain('NOTHING_FILED');
+    }
+  });
+
+  it.each(ROUTES)('%s: nothing BELOW the transaction claims false / false', (rel) => {
+    const src = code(rel);
+    const after = src.slice(src.indexOf('runDirectiveTransaction(db'));
+    // Below the write there are exactly two honest positions, and neither is a
+    // literal: the outcome's own attestation (it refused, so it knows), and
+    // attestThrown (which knows whether the commit happened, and says `null`
+    // when it cannot tell).
+    // BOTH FORMS. The first cut of this row matched only the object-literal
+    // `persisted: false`, and the mutation check walked straight past a
+    // `clientResponse.persisted = false` assignment — a row that cannot fail
+    // under the defect it names is not a guard (BUILD_RULES §2).
+    expect(after).not.toContain('NOTHING_FILED');
+    expect(after).not.toMatch(/persisted\s*[:=]\s*false/);
+    expect(after).not.toMatch(/charged\s*[:=]\s*false/);
+  });
+
+  it('the vocabulary has ONE home, and both routes read it from there', () => {
+    for (const rel of ROUTES) {
+      expect(code(rel)).toContain("NOTHING_FILED } from '../../src/data/decisionRecord.js'");
+    }
+    const vocab = read('src/data/decisionRecord.js');
+    expect(vocab).toContain('export const NOTHING_FILED');
+    expect(vocab).toContain('export const CHAT_NOT_SENT_CLAUSE');
+    expect(vocab).toContain('export const attestsPersisted');
+    expect(vocab).toContain('export const attestsCharged');
+  });
+
+  it('the unknown side of an ambiguous commit is `null`, never `false` (the one §2 does not name)', () => {
+    const shared = read('api/_utils/directiveTransaction.js')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:])\/\/.*$/gm, '$1');
+    expect(shared).toContain('if (attempted) return { persisted: null, charged: null, reason };');
+    // …and the two reader helpers test for an explicit true/false, so an
+    // unknown reads as no claim on either side.
+    const vocab = read('src/data/decisionRecord.js');
+    expect(vocab).toContain('body?.persisted === true');
+    expect(vocab).toContain('body?.charged === true');
+  });
+});

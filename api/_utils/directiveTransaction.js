@@ -135,6 +135,34 @@ const refusal = (kind, extra = {}) => ({
 });
 
 /**
+ * Ruling 7's failure attestation, decided by WHERE the throw happened — which
+ * is the only thing that makes `persisted` knowable.
+ *
+ * §2 names three outcomes: "threw BEFORE the transaction (nothing persisted,
+ * nothing charged), rejected inside it (same), committed then threw (persisted
+ * and charged)". The first and third are what the two `false` and `true`
+ * branches below say.
+ *
+ * THE FOURTH POSITION IS THE ONE §2 DOES NOT NAME, and it is not invented away
+ * here. When the transaction itself threw, the route does not know which side
+ * of the commit it is on: `runTransaction` retries, and a commit that LANDED
+ * whose reply was lost surfaces as a retryable error — exactly the hazard
+ * `research.js:193-200` writes down for its own route. Claiming `false` there
+ * would be the same defect this whole vocabulary exists to remove, one layer
+ * down. So it says it does not know (`null`, never `false`), and both reader
+ * helpers in `decisionRecord.js` test for `=== true` / `=== false`, so an
+ * unknown reads as no claim on either side. Reported for a founder ruling
+ * rather than settled here.
+ *
+ * @param {{ committed: object|null, attempted: boolean, reason: string }} at
+ */
+export function attestThrown({ committed = null, attempted = false, reason }) {
+  if (committed) return { persisted: true, charged: committed.charged, reason };
+  if (attempted) return { persisted: null, charged: null, reason };
+  return { persisted: false, charged: false, reason };
+}
+
+/**
  * Run the filing transaction.
  *
  * @param {object} db                       the Firestore admin handle

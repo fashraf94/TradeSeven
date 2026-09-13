@@ -22,7 +22,7 @@ import { resolveBudgetDay, readAgentChatBudget } from '../_utils/agentChatBudget
 import { gateDirective, renderDirectiveStatus } from '../_utils/directiveGate.js';
 // Phase C / D-121 — the persisted research type, so BOTH history builders key on
 // the same name and neither excludes a card by accident.
-import { RESEARCH_MESSAGE_TYPE } from '../../src/data/decisionRecord.js';
+import { RESEARCH_MESSAGE_TYPE, NOTHING_FILED } from '../../src/data/decisionRecord.js';
 import { getEffectiveArchetype } from '../_utils/directiveIdentity.js';
 // The agent-belongs-to-this-battle check the deterministic filing route has
 // carried since it shipped (file-directive.js check 3), now shared rather than
@@ -65,6 +65,7 @@ import { BATTLE_CHAT_BUDGET } from '../_utils/directiveFiling.js';
 // transaction rather than a second one whose failure was swallowed.
 import {
   runDirectiveTransaction,
+  attestThrown,
   DIRECTIVE_CONFLICT_POLICY,
   DIRECTIVE_BUDGET_POLICY,
   DIRECTIVE_OUTCOME,
@@ -259,42 +260,6 @@ async function settleConversationRecord(pending, turnStartMs, battleId = null) {
   }
 }
 
-/**
- * Map a refusal the SHARED FILING TRANSACTION decided (B2, spec §2) onto this
- * route's existing response shapes.
- *
- * Every one of these is a precondition the route already checked before the
- * model call — the battle exists, the caller owns it, the agent is bound to it,
- * the battle is active. They are re-checked INSIDE the write because the read
- * they were first checked against is a whole model call old: `agent-evaluate`
- * flips a battle to `completed` on its own schedule, and a tap that overlaps
- * the close cron used to land a directive in a settled battle. So the shapes
- * are deliberately the pre-model ones — a caller cannot tell which side of the
- * model a refusal came from, and does not need to.
- *
- * `conflict`, `rejected` and `budget_exhausted` are unreachable from this route
- * by construction (it selects replace-and-report + commit-over-budget, and its
- * `resolveDirective` never rejects); they fall to the default, which is the
- * honest answer for an outcome this route does not know how to name.
- */
-function respondFilingRefused(res, outcome) {
-  switch (outcome.kind) {
-    case DIRECTIVE_OUTCOME.BATTLE_NOT_FOUND:
-      return res.status(404).json({ error: 'Battle not found' });
-    case DIRECTIVE_OUTCOME.FORBIDDEN_OWNER:
-      return res.status(403).json({ error: 'Not authorized to chat in this battle' });
-    case DIRECTIVE_OUTCOME.FORBIDDEN_AGENT:
-      return res.status(403).json({ error: AGENT_BATTLE_MISMATCH });
-    case DIRECTIVE_OUTCOME.BATTLE_NOT_ACTIVE:
-      return res.status(400).json({
-        error: 'battle_not_active',
-        message: 'This battle has ended. Start a new battle to chat with your agent.',
-      });
-    default:
-      return res.status(500).json({ error: 'Agent unavailable. Try again in a moment.' });
-  }
-}
-
 // ==================== ELICITATION TARGET ====================
 
 // Exported (read-only) so the grounding vocabulary guard can prove the two
@@ -442,6 +407,14 @@ export default async function handler(req, res) {
   // record carries whatever had been assembled when the turn failed. Null
   // under 'off': the shipped record, byte for byte.
   let groundingRecord = null;
+  // Ruling 7's third shape. Set the moment the filing transaction COMMITS, so
+  // the catch block below can tell "nothing happened" from "it happened and
+  // something after it failed" — the distinction no party but this route can
+  // make, and the one the 500/504 used to throw away.
+  let committed = null;
+  // …and whether the transaction was ENTERED at all, which is what separates a
+  // throw §2 can attest (`before the transaction`) from one it cannot.
+  let filingAttempted = false;
 
   // 1. Security middleware
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 10, windowMs: 60000 } })) {
@@ -450,7 +423,7 @@ export default async function handler(req, res) {
 
   // 2. Method check
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return res.status(405).json({ ...NOTHING_FILED, reason: 'method_not_allowed', error: 'Method not allowed' });
   }
 
   // 3. Auth
@@ -466,14 +439,14 @@ export default async function handler(req, res) {
   const isLeagueAsk = req.body.leagueAsk === true && LEAGUE_AGENT_CHAT_ENABLED === true;
 
   if (!agentId || !battleId || !message) {
-    return res.status(400).json({ error: 'agentId, battleId, and message are required' });
+    return res.status(400).json({ ...NOTHING_FILED, reason: 'bad_request', error: 'agentId, battleId, and message are required' });
   }
 
   // 5. Sanitize message
   const sanitizedMessage = String(message).slice(0, 2000).replace(/[\n\r\t]/g, ' ').replace(/[<>{}]/g, '').trim();
 
   if (!sanitizedMessage) {
-    return res.status(400).json({ error: 'Message cannot be empty' });
+    return res.status(400).json({ ...NOTHING_FILED, reason: 'bad_request', error: 'Message cannot be empty' });
   }
 
   const db = getFirebaseAdmin();
@@ -483,13 +456,13 @@ export default async function handler(req, res) {
     const battleRef = db.collection('agentBattles').doc(battleId);
     const battleDoc = await battleRef.get();
     if (!battleDoc.exists) {
-      return res.status(404).json({ error: 'Battle not found' });
+      return res.status(404).json({ ...NOTHING_FILED, reason: 'battle_not_found', error: 'Battle not found' });
     }
     const battle = battleDoc.data();
 
     // 7. Verify ownership
     if (battle.ownerId !== user.uid) {
-      return res.status(403).json({ error: 'Not authorized to chat in this battle' });
+      return res.status(403).json({ ...NOTHING_FILED, reason: 'forbidden_owner', error: 'Not authorized to chat in this battle' });
     }
 
     // 7b. Verify the agent belongs to THIS battle. `agentId` is required above,
@@ -500,7 +473,7 @@ export default async function handler(req, res) {
     //     Every legitimate caller sends the battle's own agent; a body naming a
     //     different one is refused in every mode, review included.
     if (!agentBelongsToBattle(battle, agentId)) {
-      return res.status(403).json({ error: AGENT_BATTLE_MISMATCH });
+      return res.status(403).json({ ...NOTHING_FILED, reason: 'forbidden_agent', error: AGENT_BATTLE_MISMATCH });
     }
 
     // 8. Mode detection (with bounded client override)
@@ -534,6 +507,8 @@ export default async function handler(req, res) {
     // 9. Battle status check (mode-aware: review mode is valid on completed battles)
     if (battle.status !== 'active' && mode !== 'review') {
       return res.status(400).json({
+        ...NOTHING_FILED,
+        reason: 'battle_not_active',
         error: 'battle_not_active',
         message: 'This battle has ended. Start a new battle to chat with your agent.',
       });
@@ -542,7 +517,7 @@ export default async function handler(req, res) {
     // 10. Read agent doc
     const agentDoc = await db.collection('agents').doc(agentId).get();
     if (!agentDoc.exists) {
-      return res.status(404).json({ error: 'Agent not found' });
+      return res.status(404).json({ ...NOTHING_FILED, reason: 'agent_not_found', error: 'Agent not found' });
     }
     const agent = agentDoc.data();
 
@@ -557,6 +532,8 @@ export default async function handler(req, res) {
       if (mode === 'review') {
         // New error shape for new mode — frontend (Phase 6) will consume this.
         return res.status(429).json({
+          ...NOTHING_FILED,
+          reason: 'budget_exceeded',
           error: 'budget_exceeded',
           mode,
           message: "We've been through the tape thoroughly. Let's pick it back up tomorrow.",
@@ -564,6 +541,8 @@ export default async function handler(req, res) {
       }
       // Preserve existing battle-mode error shape for frontend backward compat.
       return res.status(403).json({
+        ...NOTHING_FILED,
+        reason: 'chat_budget_exceeded',
         error: 'chat_budget_exceeded',
         message: "We've had a solid session. Let's let things play out and regroup later.",
       });
@@ -583,6 +562,10 @@ export default async function handler(req, res) {
           // At zero: NO agent call, NO charge. A 200 in-voice line so the client renders
           // it as a normal agent message (the designed zero state) — never an error shape.
           return res.status(200).json({
+            // A 200, but nothing was filed and nothing was spent — the designed
+            // zero state is an in-voice line, not a turn.
+            ...NOTHING_FILED,
+            reason: 'league_exhausted',
             agentMessage: LEAGUE_EXHAUSTED_LINE,
             mode,
             leagueAsk: true,
@@ -859,7 +842,13 @@ export default async function handler(req, res) {
         // windows, under any mode but 'off' (absent = the shipped record).
         ...(groundingRecord || {}),
       }), turnStartMs, battleId);
+      // (Phase 0 §2.4 e4) POST-MODEL, PRE-WRITE. This return sits above the
+      // transaction, so it proves of its own construction that nothing
+      // persisted and nothing was charged — the one failure status that was
+      // already attestable and carried no attestation.
       return res.status(502).json({
+        ...NOTHING_FILED,
+        reason: `parse_${parsed.errorReason}`,
         error: 'gemma_invalid_shape',
         errorReason: `parse_${parsed.errorReason}`,
         message: 'Agent returned an unexpected response. Try again.',
@@ -1086,6 +1075,7 @@ export default async function handler(req, res) {
       ? battle.directive.directiveThreadId
       : null;
 
+    filingAttempted = true;
     const outcome = await runDirectiveTransaction(db, {
       battleRef,
       agentId,
@@ -1170,6 +1160,8 @@ export default async function handler(req, res) {
       }),
     });
 
+    if (outcome.kind === DIRECTIVE_OUTCOME.FILED) committed = outcome;
+
     if (outcome.kind !== DIRECTIVE_OUTCOME.FILED) {
       // A refusal decided INSIDE the transaction: nothing persisted, nothing
       // charged, and the module says so. The turn reached the model, so the
@@ -1212,6 +1204,20 @@ export default async function handler(req, res) {
     if (grounded) {
       clientResponse.grounded = true;
       clientResponse.currentDirectiveThreadId = outcome.directiveThreadId ?? outcome.priorDirectiveThreadId;
+    }
+
+    // Ruling 7, the success half: the route says what it did, so no client has
+    // to infer it. `charged` is NOT `persisted` — a fail-open League filing and
+    // an over-budget eleventh both land without costing a message.
+    clientResponse.persisted = true;
+    clientResponse.charged = outcome.charged;
+    clientResponse.reason = null;
+    // Ruling 4's report half (Phase 0 §2.4 e3). Present ONLY when this filing
+    // replaced a thread the caller did not know was there — a chip filed during
+    // the model call. Replacing the directive the caller already knew about is
+    // ordinary latest-wins and says nothing new, so it carries no line.
+    if (outcome.staleExpectation && outcome.replacedDirectiveThreadId) {
+      clientResponse.replacedThreadId = outcome.replacedDirectiveThreadId;
     }
 
     // 20. (removed) Directives are now battle-scoped only. Previously we
@@ -1298,9 +1304,65 @@ export default async function handler(req, res) {
       ...(groundingRecord || {}),
     }), turnStartMs, battleId);
 
+    // Ruling 7. THREW BEFORE THE TRANSACTION → nothing persisted, nothing
+    // charged. COMMITTED AND THEN THREW → persisted, with the reason naming
+    // what failed afterwards: the `agents` write at step 20b, the shadow
+    // record's settle, or the serialization of the response itself. That case
+    // used to answer a bare 500/504, and both clients read it as a turn that
+    // never happened — the exchange was on the document and the message was
+    // spent.
+    const attestation = attestThrown({
+      committed,
+      attempted: filingAttempted,
+      reason: committed
+        ? (isAbort ? 'timed_out_after_commit' : 'failed_after_commit')
+        : (isAbort ? 'gemma_timeout' : 'handler_exception'),
+    });
+
     if (isAbort) {
-      return res.status(504).json({ error: 'Agent response timed out. Try again.' });
+      return res.status(504).json({ ...attestation, error: 'Agent response timed out. Try again.' });
     }
-    return res.status(500).json({ error: 'Agent unavailable. Try again in a moment.' });
+    return res.status(500).json({ ...attestation, error: 'Agent unavailable. Try again in a moment.' });
+  }
+}
+
+/**
+ * Map a refusal the SHARED FILING TRANSACTION decided (B2, spec §2) onto this
+ * route's existing response shapes.
+ *
+ * Every one of these is a precondition the route already checked before the
+ * model call — the battle exists, the caller owns it, the agent is bound to it,
+ * the battle is active. They are re-checked INSIDE the write because the read
+ * they were first checked against is a whole model call old: `agent-evaluate`
+ * flips a battle to `completed` on its own schedule, and a tap that overlaps
+ * the close cron used to land a directive in a settled battle. So the shapes
+ * are deliberately the pre-model ones — a caller cannot tell which side of the
+ * model a refusal came from, and does not need to.
+ *
+ * `conflict`, `rejected` and `budget_exhausted` are unreachable from this route
+ * by construction (it selects replace-and-report + commit-over-budget, and its
+ * `resolveDirective` never rejects); they fall to the default, which is the
+ * honest answer for an outcome this route does not know how to name.
+ */
+function respondFilingRefused(res, outcome) {
+  // Ruling 7's second shape: REFUSED INSIDE the transaction. The module decided
+  // it, so the module says what it cost — `persisted: false, charged: false`
+  // with the refusal named — rather than the handler guessing from a status.
+  const attestation = { persisted: outcome.persisted, charged: outcome.charged, reason: outcome.reason };
+  switch (outcome.kind) {
+    case DIRECTIVE_OUTCOME.BATTLE_NOT_FOUND:
+      return res.status(404).json({ ...attestation, error: 'Battle not found' });
+    case DIRECTIVE_OUTCOME.FORBIDDEN_OWNER:
+      return res.status(403).json({ ...attestation, error: 'Not authorized to chat in this battle' });
+    case DIRECTIVE_OUTCOME.FORBIDDEN_AGENT:
+      return res.status(403).json({ ...attestation, error: AGENT_BATTLE_MISMATCH });
+    case DIRECTIVE_OUTCOME.BATTLE_NOT_ACTIVE:
+      return res.status(400).json({
+        ...attestation,
+        error: 'battle_not_active',
+        message: 'This battle has ended. Start a new battle to chat with your agent.',
+      });
+    default:
+      return res.status(500).json({ ...attestation, error: 'Agent unavailable. Try again in a moment.' });
   }
 }

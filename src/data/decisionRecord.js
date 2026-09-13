@@ -766,6 +766,62 @@ export const researchFailureLine = (attested) => (
   attested ? RESEARCH_FAILED_LINE : RESEARCH_UNREACHABLE_LINE
 );
 
+// ── The filing attestation (Phase B / B2, spec §2 ruling 7) ─────────────────
+//
+// THE ROUTE IS THE ONLY PARTY THAT CAN KNOW. A client reading an HTTP status
+// can tell that something went wrong; it cannot tell whether the exchange
+// landed or whether a message was spent, because those are facts about which
+// side of a commit the failure happened on. Every response from both directive
+// routes now says so in the body, success and failure alike:
+//
+//   persisted  the exchange (and the directive slot, when the turn filed one)
+//              is on the battle document
+//   charged    a message was counted against a budget — the per-battle counter
+//              or the League per-day store
+//   reason     what refused, or what failed after the commit; null on a clean
+//              success
+//
+// THREE SHAPES, which is what ruling 7 enumerates: threw BEFORE the transaction
+// → nothing persisted, nothing charged; refused INSIDE it → the same, with the
+// reason; committed and THEN threw → persisted, with the reason naming what
+// failed afterwards. The third is the one the vocabulary exists for: it used to
+// answer 500 or 504 with nothing on it, and both clients read that as a turn
+// that never happened.
+//
+// `charged` is NOT `persisted`. A filing can land and cost nothing — a League
+// battle whose game day could not be resolved files for free (fail-open), and
+// an eleventh message under a race commits with `overBudget` without
+// incrementing the counter (ruling 5). A surface that wants to move a counter
+// reads `charged`; a surface that wants to say a directive is filed reads
+// `persisted`. Reading either from a status code is the defect this replaces.
+//
+// Build 2 (the Show-it door) inherits this vocabulary rather than inventing a
+// second one; `researchFailureLine` above is the same rule in its earlier,
+// research-shaped form (`noCardWritten`).
+
+/** The pre-transaction / refused-inside attestation: nothing landed, nothing cost. */
+export const NOTHING_FILED = Object.freeze({ persisted: false, charged: false });
+
+/**
+ * Did the exchange land? TRUE only when the route SAID so — never inferred, and
+ * never true for a body that carries no attestation at all (an unattested
+ * failure proves nothing, so it takes the claimless reading).
+ */
+export const attestsPersisted = (body) => body?.persisted === true;
+
+/** Was a message spent? Same rule, same reason. */
+export const attestsCharged = (body) => body?.charged === true;
+
+/**
+ * The clause that came back. It was deleted from the send-failure line because
+ * the client could not prove it (battleViewCopy.js: "`nothing was sent` comes
+ * back when the server attests to it, and that attestation rides the P-1
+ * concurrency branch" — this is that branch). It is appended ONLY to a failure
+ * the route attested `persisted: false` on, which is the only case in which it
+ * is true.
+ */
+export const CHAT_NOT_SENT_CLAUSE = ' · nothing was sent';
+
 /**
  * The failure line for a filing response's HTTP status.
  *
