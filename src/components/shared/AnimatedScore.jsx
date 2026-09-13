@@ -15,6 +15,17 @@ export default function AnimatedScore({
   const [flash, setFlash] = useState(null);
   const prev = useRef(null);
   const mounted = useRef(false);
+  const flashTimer = useRef(null);
+
+  // F1: the flash-clear below is the component's only timer, and it outlived
+  // the component — unmounting inside its 300 ms window left it armed to call
+  // setFlash on unmounted state. Held in a ref and cleared here.
+  //
+  // Empty deps ON PURPOSE, so this cleanup runs only on UNMOUNT. Hanging it on
+  // the [value] effect instead would also cancel a pending clear on every value
+  // change, and the sub-0.01 early-return path below arms no replacement — that
+  // would strand an on-screen flash lit until the next material change.
+  useEffect(() => () => clearTimeout(flashTimer.current), []);
 
   useEffect(() => {
     const target = parseFloat(value) || 0;
@@ -52,7 +63,7 @@ export default function AnimatedScore({
       if (p < 1) requestAnimationFrame(tick);
       else {
         prev.current = target;
-        setTimeout(() => setFlash(null), 300);
+        flashTimer.current = setTimeout(() => setFlash(null), 300);
       }
     };
     requestAnimationFrame(tick);
