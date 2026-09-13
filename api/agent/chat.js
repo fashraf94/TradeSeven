@@ -16,7 +16,7 @@ import { randomUUID } from 'node:crypto';
 import { TOURNAMENT_GAME_MODE, TOURNAMENT_GROUPS_COLLECTION } from '../../src/constants/leagueTournament.js';
 // League arena two-way ask — the per-day question budget (server-authoritative,
 // its OWN collection; NEVER a battle-doc field). Scoped to the League ask only.
-import { resolveBudgetDay, readAgentChatBudget } from '../_utils/agentChatBudget.js';
+import { resolveBudgetDay, readAgentChatBudget, isLeagueBudgetBattle } from '../_utils/agentChatBudget.js';
 // Archetype Integrity — Phase E1 (the deterministic gate). Flag-gated; OFF/review
 // run the literal legacy normalizeDirective path → byte-identical.
 import { gateDirective, renderDirectiveStatus } from '../_utils/directiveGate.js';
@@ -474,6 +474,39 @@ export default async function handler(req, res) {
     //     different one is refused in every mode, review included.
     if (!agentBelongsToBattle(battle, agentId)) {
       return res.status(403).json({ ...NOTHING_FILED, reason: 'forbidden_agent', error: AGENT_BATTLE_MISMATCH });
+    }
+
+    // 7c. THE BUDGET POLICY IS THE BATTLE'S, NEVER THE REQUEST'S (founder
+    //     ruling on the build report's §11 item 2; §11-A). `leagueAsk` used to
+    //     select the store on its own, and on a battle that is not a League
+    //     battle that was a free pass: it skipped the per-battle cap at step
+    //     11a, and the filing transaction's League branch found no keyable game
+    //     day (`resolveBudgetDay` returns null for a non-tournament battle) and
+    //     fail-opened. Ten sends on a battle already at ten answered 200, filed
+    //     ten exchanges and moved no counter on either store.
+    //
+    //     The store is derived from the battle document now — one predicate,
+    //     shared with the chip route — and a request whose `leagueAsk`
+    //     disagrees with it is refused HERE: above the mode detection, the
+    //     model call and every write, so nothing is spent proving the point. A
+    //     400 rather than a silent downgrade to the per-battle counter, because
+    //     a client that believes it is spending the League's ten should be told
+    //     it is not, rather than quietly spending something else.
+    //
+    //     It sits below checks 7/7b deliberately: a caller who does not own
+    //     this battle learns that, not what game mode it is.
+    //
+    //     Gated on `isLeagueAsk`, which carries the kill-switch: with
+    //     LEAGUE_AGENT_CHAT_ENABLED off no request can choose the League policy
+    //     at all, so there is nothing to disagree with and flag-off stays what
+    //     it is today (row A-3d).
+    if (isLeagueAsk && !isLeagueBudgetBattle(battle)) {
+      return res.status(400).json({
+        ...NOTHING_FILED,
+        reason: 'mode_mismatch',
+        error: 'mode_mismatch',
+        message: 'This battle does not use the League question budget.',
+      });
     }
 
     // 8. Mode detection (with bounded client override)
@@ -1098,12 +1131,16 @@ export default async function handler(req, res) {
       resolveDirective: () => ({
         normalized: (lintedHasDirective && lintedDirective) ? lintedDirective : null,
       }),
-      // Which store this turn charges is the REQUEST's decision here, not the
-      // battle's: a tournament battle asked WITHOUT `leagueAsk` charges the
-      // per-battle counter, exactly as it did before. That is why the module
-      // takes a predicate rather than deriving it from `gameMode` as the chip
-      // route does.
-      isLeagueBudget: () => isLeagueAsk,
+      // Which store this turn charges is the BATTLE's decision (§11-A), read
+      // again here from the in-transaction document like every other
+      // precondition. `isLeagueAsk` remains the other half of the conjunction
+      // because a tournament battle asked WITHOUT `leagueAsk` charges the
+      // per-battle counter, exactly as it did before — what a request can no
+      // longer do is claim the League policy for a battle that does not have
+      // it (step 7c refuses that above), and if a battle somehow stopped being
+      // a League battle between the pre-model read and the write, the charge
+      // falls back to the per-battle counter rather than fail-opening free.
+      isLeagueBudget: (current) => isLeagueAsk && isLeagueBudgetBattle(current),
       battleBudget: { field: budgetField, limit: budgetLimit },
       buildExchange: ({ battle: current, directiveRecord, directiveThreadId, createdAt, overBudget }) => ({
         userMessage: sanitizedMessage,

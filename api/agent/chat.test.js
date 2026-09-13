@@ -157,13 +157,15 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
 // The per-day budget module is exercised in agentChatBudget.test.js; here it is
 // mocked so these tests assert chat.js's BRANCHING (bypass / gate / charge / fail-open)
 // without a second Firestore fake. Calls are captured for no-charge assertions.
-vi.mock('../_utils/agentChatBudget.js', () => ({
-  AGENT_CHAT_DAILY_LIMIT: 10,
-  // B2: the shared filing transaction reads and writes the per-day doc ITSELF
-  // (cross-document, in the same transaction), so the key helpers are real
-  // here while the group-read/day derivation stays driveable per row.
-  AGENT_CHAT_BUDGET_COLLECTION: 'agentChatBudget',
-  agentChatBudgetDocId: (groupId, uid, dayN) => `${groupId}_${uid}_${dayN}`,
+// ONLY THE THREE IO FUNCTIONS ARE FAKED. Everything else — the limit, the
+// collection, the doc-id shape and `isLeagueBudgetBattle` — comes through from
+// the real module, so no row can pass against a copy of a policy the route
+// reads from production code (§11-A: the budget policy has ONE home). The three
+// below stay driveable because each does a group/doc read this suite has no
+// Firestore for; B2's filing transaction reads and writes the per-day doc
+// itself, cross-document, in the same transaction.
+vi.mock('../_utils/agentChatBudget.js', async (importOriginal) => ({
+  ...(await importOriginal()),
   resolveBudgetDay: async (_db, battle) => { budget.resolveCalls.push(battle); return budget.resolveImpl(battle); },
   readAgentChatBudget: async (_db, args) => { budget.readCalls.push(args); return budget.readImpl(args); },
   chargeAgentChatBudget: async (_db, args) => { budget.chargeCalls.push(args); return budget.chargeImpl(args); },
@@ -772,6 +774,127 @@ describe('agent/chat — League arena per-day ask (leagueAsk + LEAGUE_AGENT_CHAT
     const upd = mainUpdate(fixture.written).updates;
     expect('chatBudgetUsed' in upd).toBe(false);
     expect('remaining' in res.body).toBe(false); // no authoritative update → client keeps its count
+  });
+
+  // ==========================================================================
+  // A-3 — THE BUDGET POLICY IS THE BATTLE'S, NEVER THE REQUEST'S
+  // (founder ruling on the build report's §11 item 2; §11-A.)
+  //
+  // `leagueAsk` used to select the store on its own. On a battle that is not a
+  // League battle that was a free pass: it skipped the per-battle cap at step
+  // 11a, and the transaction's League branch found no keyable game day and
+  // fail-opened — so the ask cost nothing, for ever. The row below is the
+  // measured bypass: ten sends on a battle whose ten were already spent.
+  // ==========================================================================
+
+  it('A-3: ten sends at chatBudgetUsed 10 on a STANDARD battle with leagueAsk — refused, and nothing is written', async () => {
+    leagueChatFlag.on = true;
+    // The shared mock's default `resolveBudgetDay` hands back a key for ANY
+    // battle, which is not what the real one does (`agentChatBudget.js:69` —
+    // a non-tournament battle has no key at all) and is part of why this
+    // bypass was invisible to the suite. This row drives it by the real rule.
+    budget.resolveImpl = (b) => (b.gameMode === TOURNAMENT_GAME_MODE ? KEY : null);
+    let gemmaCalled = false;
+    callGemmaVoiceImpl.current = async () => { gemmaCalled = true; return '{"response":"should not run"}'; };
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: { ...VALID_BATTLE, chatBudgetUsed: 10 } });
+    activeFirestore = fixture.db;
+
+    for (let i = 0; i < 10; i += 1) {
+      const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: `ask ${i}`, leagueAsk: true });
+      await handler(req, res);
+      expect(res.statusCode).toBe(400);
+      expect(res.body.reason).toBe('mode_mismatch');
+      // Ruling 7's vocabulary: the refusal is above every read and every write,
+      // so both halves are PROVEN false, never unknown.
+      expect(res.body.persisted).toBe(false);
+      expect(res.body.charged).toBe(false);
+    }
+
+    // No model call, no transaction, no write on either store — and the
+    // per-battle counter the request tried to step around is untouched.
+    expect(gemmaCalled).toBe(false);
+    expect(fixture.written.txAttempts).toBe(0);
+    expect(fixture.written.updateCalls).toEqual([]);
+    expect(fixture.written.setCalls).toEqual([]);
+    expect(fixture.battleState.chatBudgetUsed).toBe(10);
+    // …and the day resolver never ran: the refusal is above the budget entirely.
+    expect(budget.resolveCalls).toHaveLength(0);
+    expect(budget.readCalls).toHaveLength(0);
+  });
+
+  it('A-3b: a LEAGUE battle is UNCHANGED — the policies agree, so the ask is served and charged', async () => {
+    leagueChatFlag.on = true;
+    budget.resolveImpl = () => KEY;
+    budget.readImpl = async () => ({ count: 4, remaining: 6 });
+    const fixture = makeFakeFirestore({
+      agent: VALID_AGENT,
+      battle: TOURNEY_BATTLE,
+      budgetDocs: { 'group-xyz_test-user_1': { groupId: 'group-xyz', uid: 'test-user', dayN: 1, count: 4 } },
+    });
+    activeFirestore = fixture.db;
+
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'whats the plan', leagueAsk: true });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.remaining).toBe(5);
+    expect(fixture.written.setCalls[0].data).toMatchObject({ count: 5 });
+    expect('chatBudgetUsed' in mainUpdate(fixture.written).updates).toBe(false);
+  });
+
+  it('A-3c: a League battle asked WITHOUT leagueAsk still charges the per-battle counter — the request did not have to ask', async () => {
+    leagueChatFlag.on = true;
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: TOURNEY_BATTLE });
+    activeFirestore = fixture.db;
+
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi' });
+    await handler(req, res);
+
+    // The refusal is for a request that CLAIMS the League policy on a battle
+    // that does not have it — not for the Battle View's ordinary turn on a
+    // tournament battle, which has always charged the per-battle counter and
+    // still does.
+    expect(res.statusCode).toBe(200);
+    expect(mainUpdate(fixture.written).updates.chatBudgetUsed).toBe(1);
+    expect(budget.resolveCalls).toHaveLength(0);
+  });
+
+  it('A-3e: the store is re-read INSIDE the transaction — a battle that stops being a League battle mid-turn charges, never free', async () => {
+    leagueChatFlag.on = true;
+    budget.resolveImpl = (b) => (b.gameMode === TOURNAMENT_GAME_MODE ? KEY : null);
+    budget.readImpl = async () => ({ count: 4, remaining: 6 });
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: TOURNEY_BATTLE });
+    activeFirestore = fixture.db;
+    // Between the transaction's reads and its commit, the battle is no longer a
+    // League battle. Ruling 2 re-reads every precondition inside the write, and
+    // the store is one: the turn falls back to the per-battle counter rather
+    // than down the League branch, where an unkeyable day would have made it
+    // free. Derived from the REQUEST, this row answers free.
+    fixture.db.setBarrier(async () => { fixture.battleState.gameMode = 'standard'; });
+
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'plan?', leagueAsk: true });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(fixture.written.txAttempts).toBe(2);
+    expect(mainUpdate(fixture.written).updates.chatBudgetUsed).toBe(1);  // charged, not free
+    expect(fixture.written.setCalls).toEqual([]);                        // and not to the League store
+    expect(res.body.charged).toBe(true);
+  });
+
+  it('A-3d: FLAG OFF — the kill-switch still reverts to today: leagueAsk on a standard battle is ignored, not refused', async () => {
+    leagueChatFlag.on = false;
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: VALID_BATTLE }); // gameMode 'standard'
+    activeFirestore = fixture.db;
+
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi', leagueAsk: true });
+    await handler(req, res);
+
+    // With the flag off no request can choose the League policy at all, so
+    // there is nothing for `leagueAsk` to disagree WITH. The legacy per-battle
+    // path runs, exactly as it does today.
+    expect(res.statusCode).toBe(200);
+    expect(mainUpdate(fixture.written).updates.chatBudgetUsed).toBe(1);
   });
 
   it('existing-chat untouched: a standard (non-League) ask is byte-identical (no remaining field)', async () => {

@@ -86,6 +86,7 @@ import { getEffectiveArchetype } from '../_utils/directiveIdentity.js';
 import { AGENT_BATTLE_MISMATCH } from '../_utils/agentBattleBinding.js';
 import { TOURNAMENT_GAME_MODE } from '../../src/constants/leagueTournament.js';
 import { BATTLE_CHAT_BUDGET } from '../_utils/directiveFiling.js';
+import { isLeagueBudgetBattle } from '../_utils/agentChatBudget.js';
 // B2 (PHASE_B_TICK_STAMPS_SPEC_V1.md §2): the transaction below USED to live in
 // this file at :196-299. It now lives in the sibling both routes import, so the
 // typed route files through the same preconditions, the same explicit
@@ -238,8 +239,10 @@ export default async function handler(req, res) {
         };
       },
       // Check 8's store, SERVER-DERIVED from the battle's game mode (ruling 6,
-      // D-105) — the client never picks a budget.
-      isLeagueBudget: (battle) => battle.gameMode === TOURNAMENT_GAME_MODE,
+      // D-105) — the client never picks a budget. Through the shared predicate
+      // since §11-A, so this route and the chat route cannot drift on what a
+      // League battle is.
+      isLeagueBudget: isLeagueBudgetBattle,
       battleBudget: BATTLE_CHAT_BUDGET,
       buildExchange: ({ battle, directiveRecord, directiveThreadId, createdAt }) => buildFiledExchange({
         record: directiveRecord,

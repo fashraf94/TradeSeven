@@ -44,6 +44,27 @@ export const AGENT_CHAT_BUDGET_COLLECTION = 'agentChatBudget';
 // 10 questions per game-day, hard reset each day, no rollover (founder decision).
 export const AGENT_CHAT_DAILY_LIMIT = 10;
 
+/**
+ * WHICH BUDGET A BATTLE'S CHAT IS CHARGED AGAINST — a property of the BATTLE,
+ * never of the request that asks (founder ruling; build report §11-A). A League
+ * tournament battle's asks are charged to the per-day store in this module;
+ * every other battle's to the per-battle counter on the battle doc.
+ *
+ * ONE home, because two literals in two files is how a policy drifts
+ * (BUILD_RULES §9): `resolveBudgetDay` gates its key on it, the chip route
+ * derives its store from it, and the chat route refuses a request whose
+ * `leagueAsk` disagrees with it. Before that ruling the chat route read the
+ * REQUEST instead — and a `leagueAsk` on a non-tournament battle selected this
+ * store, found no keyable day, fail-opened, and answered for free for ever.
+ *
+ * `groupId` is deliberately NOT part of it: a tournament battle with no group
+ * is still a League battle, and it fail-opens through `resolveBudgetDay` below
+ * exactly as it always has.
+ */
+export function isLeagueBudgetBattle(battle) {
+  return battle?.gameMode === TOURNAMENT_GAME_MODE;
+}
+
 /** The counter doc id: a flat composite key so it never contends with the group/
  * battle transactional writers. `${groupId}_${uid}_${dayN}`. */
 export function agentChatBudgetDocId(groupId, uid, dayN) {
@@ -66,7 +87,7 @@ function budgetRef(db, groupId, uid, dayN) {
  * can never drift on the key. This is the module's only group-doc read.
  */
 export async function resolveBudgetDay(db, battle) {
-  if (!battle || battle.gameMode !== TOURNAMENT_GAME_MODE || !battle.groupId) return null;
+  if (!isLeagueBudgetBattle(battle) || !battle.groupId) return null;
   try {
     const snap = await db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(battle.groupId).get();
     const group = snap.exists ? snap.data() : null;
