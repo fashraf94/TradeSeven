@@ -6,6 +6,13 @@ import {
   RENDER_CONFIG,
   resolveMessageType,
 } from '../../utils/renderMessageWithEntities';
+// B2 (spec §2 ruling 7): whether the turn landed is the route's to say. This is
+// the EIGHTH client of POST /api/agent/chat — the census in the B2 Phase 0
+// discovery (§3.2) listed seven and missed this one, found by the build's own
+// adversarial review (lens C, finding C8). It posts `mode: 'review'`, which the
+// shared filing transaction commits exactly as it commits a battle turn, so it
+// can receive the same commit-then-throw body every other caller can.
+import { attestsPersisted } from '../../data/decisionRecord';
 
 const REVIEW_BUDGET_LIMIT = 5;
 
@@ -284,8 +291,19 @@ export default function FilmRoomChat({
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        setInFlight((prev) => prev.filter((m) => m.id !== userMsg.id && m.id !== typingMsg.id));
-        if (res.status === 401) {
+        // A turn the route attested PERSISTED is a turn that happened: the
+        // exchange — the character's reply included — is on the battle document
+        // and the listener will deliver it. Keep the optimistic bubble (the
+        // success path's own rule, three lines below) and say nothing, rather
+        // than rolling back a message that was sent and claiming the agent
+        // could not be reached.
+        const landed = attestsPersisted(data);
+        setInFlight((prev) => prev.filter((m) => (
+          m.id !== typingMsg.id && (landed || m.id !== userMsg.id)
+        )));
+        if (landed) {
+          setError(null);
+        } else if (res.status === 401) {
           setError('Session expired. Please refresh.');
         } else if (data.error === 'budget_exceeded' || data.error === 'chat_budget_exceeded') {
           setError(data.message || "You've used all 5 review messages for this battle.");
@@ -303,6 +321,9 @@ export default function FilmRoomChat({
       // Firestore listener confirms the matching exchange landed.
       setInFlight((prev) => prev.filter((m) => m.id !== typingMsg.id));
     } catch {
+      // NO BODY, so no attestation: the request never came back, which proves
+      // nothing about whether the write did. The line stays a reachability
+      // claim only here, where it is the one thing the client CAN see.
       setInFlight((prev) => prev.filter((m) => m.id !== userMsg.id && m.id !== typingMsg.id));
       setError('Could not reach the agent. Try again.');
     } finally {

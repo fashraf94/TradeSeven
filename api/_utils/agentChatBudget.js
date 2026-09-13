@@ -22,10 +22,19 @@
 // TWO ENTRY POINTS, deliberately separate (the spec's control flow):
 //   - readAgentChatBudget:   a plain read for the EARLY exhausted gate (before the
 //                            agent call) and the on-open counter fetch. No charge.
-//   - chargeAgentChatBudget: a transactional read-check-increment run ONLY AFTER a
-//                            successfully parsed answer. The transaction's fresh
-//                            in-tx read is the double-spend guard (two concurrent
-//                            successful asks can never push the count past the cap).
+//   - chargeAgentChatBudget: a transactional read-check-increment. SINCE B2 IT HAS
+//                            NO PRODUCTION CALLER (adversarial review, lens A,
+//                            finding A-5): the charge moved INSIDE the filing
+//                            transaction (`api/_utils/directiveTransaction.js`,
+//                            spec §2 ruling 5) so it commits with the exchange or
+//                            neither does. The helper is retained — its shape IS
+//                            the shape that moved, and its own suite still pins
+//                            the read-check-increment and the soft cap — but a
+//                            header calling it the live charge would be exactly
+//                            the stale-header defect BUILD_RULES §6 warns about.
+//                            The rule it encodes still holds: the fresh in-tx read
+//                            is the double-spend guard, and at/over the cap it does
+//                            NOT increment.
 
 import { toIso, formatEtDate } from './tournamentTime.js';
 import { TOURNAMENT_GAME_MODE, TOURNAMENT_GROUPS_COLLECTION, deriveCurrentTradingDay } from '../../src/constants/leagueTournament.js';

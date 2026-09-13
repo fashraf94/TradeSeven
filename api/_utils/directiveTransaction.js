@@ -93,8 +93,8 @@ export const DIRECTIVE_CONFLICT_POLICY = Object.freeze({
  * COMMIT_OVER_BUDGET — the typed turn's (spec ruling 5): "a race that produces
  * an eleventh COMMITS and stamps `overBudget: true` on the exchange — never
  * fail a turn after the model answered." The count is NOT incremented past the
- * cap (the soft cap `chargeAgentChatBudget` already keeps for the League
- * store): an eleventh exchange lands, and the counter still reads ten.
+ * cap (the soft cap `agentChatBudget.js`'s own charge helper documents for the
+ * League store): an eleventh exchange lands, and the counter still reads ten.
  */
 export const DIRECTIVE_BUDGET_POLICY = Object.freeze({
   REJECT: 'reject',
@@ -126,13 +126,6 @@ const normalizeCount = (raw) => (Number.isFinite(raw) && raw > 0 ? Math.floor(ra
  * (committed, then something after the commit threw) is the HTTP layer's,
  * because only it knows what ran after `runTransaction` returned.
  */
-const refusal = (kind, extra = {}) => ({
-  kind,
-  persisted: false,
-  charged: false,
-  reason: kind,
-  ...extra,
-});
 
 /**
  * Ruling 7's failure attestation, decided by WHERE the throw happened — which
@@ -213,7 +206,41 @@ export async function runDirectiveTransaction(db, {
   buildExchange,
   buildBattleUpdate = null,
 }) {
+  // ONE id and ONE instant per CALL, not per attempt (review lens A, finding
+  // A-2). `runTransaction` re-runs the body on a retryable commit error — and a
+  // commit that LANDED whose reply was lost surfaces as exactly that. Minting
+  // inside the body made the exchange a DIFFERENT object on each attempt, so
+  // `arrayUnion` appended it twice and the second attempt stranded the first
+  // thread id on a persisted exchange. Minting once per call restores the
+  // property the pre-B2 write had for free: the element is byte-identical
+  // across attempts, and `arrayUnion` is set-semantics on deep equality, so a
+  // re-run cannot duplicate the turn.
+  //
+  // KNOWN LIMIT, stated rather than papered over: the element is only
+  // byte-identical if the caller's `buildExchange` is. It is, on every field
+  // but `overBudget`, which is read from the document — so a retry that crosses
+  // the cap between attempts composes a different element and the dedupe does
+  // not apply. The residual double-charge on a landed-but-unacknowledged commit
+  // is the same one the pre-B2 `FieldValue.increment(1)` had and is the
+  // idempotency work Phase 0 §6.5 scopes to Build 2; see the build report §7.
+  const mintedThreadId = randomUUID();
+  const now = new Date();
+  const createdAt = now.toISOString();
+  // Which attempt this is. A refusal decided on a RE-RUN cannot prove that
+  // nothing landed — the re-run may be reading this transaction's OWN commit
+  // (finding A-1) — so it says so instead of claiming `false`.
+  let attempt = 0;
+
   return db.runTransaction(async (tx) => {
+    attempt += 1;
+    const refusal = (kind, extra = {}) => ({
+      kind,
+      persisted: attempt > 1 ? null : false,
+      charged: attempt > 1 ? null : false,
+      reason: kind,
+      ...extra,
+    });
+
     // ---- reads (all before any write — Firestore's transaction contract) ----
     const battleSnap = await tx.get(battleRef);
     if (!battleSnap.exists) return refusal(DIRECTIVE_OUTCOME.BATTLE_NOT_FOUND);
@@ -254,7 +281,6 @@ export async function runDirectiveTransaction(db, {
     const normalized = resolved?.normalized ?? null;
 
     // Check 8 — the budget, from the store the caller named.
-    const now = new Date();
     const isLeague = isLeagueBudget(battle);
     let remaining = null;
     let charged = false;
@@ -303,8 +329,7 @@ export async function runDirectiveTransaction(db, {
     }
 
     // ---- the write ----
-    const directiveThreadId = normalized ? randomUUID() : null;
-    const createdAt = now.toISOString();
+    const directiveThreadId = normalized ? mintedThreadId : null;
     const directiveRecord = normalized ? buildDirectiveRecord(normalized, directiveThreadId) : null;
     const slot = normalized ? buildDirectiveSlot(normalized, directiveThreadId, createdAt) : null;
     const exchange = buildExchange({
@@ -316,11 +341,15 @@ export async function runDirectiveTransaction(db, {
       overBudget,
     });
 
+    // The caller's extra keys are spread FIRST (review lens A, finding A-6): a
+    // `buildBattleUpdate` that happened to return `directive` or the budget
+    // field would otherwise silently override the two keys this module owns.
+    // The module's own writes win by construction, not by convention.
     tx.update(battleRef, {
+      ...(buildBattleUpdate ? buildBattleUpdate(battle) : {}),
       chatExchanges: FieldValue.arrayUnion(exchange),
       ...(slot ? { directive: slot } : {}),
       ...battleBudgetUpdate,
-      ...(buildBattleUpdate ? buildBattleUpdate(battle) : {}),
     });
     commitBudget();
 

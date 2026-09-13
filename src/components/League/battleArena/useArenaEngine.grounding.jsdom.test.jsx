@@ -213,14 +213,30 @@ describe('useArenaEngine — B2: the counter follows `charged`, never the status
     expect(latest.remaining).toBe(2);
   });
 
-  it('D-1o: a chip filing whose body attests PERSISTED is not rendered as a failed filing', async () => {
+  // Lens C, finding C4 (and lens B, B-2): an attested-persisted body with
+  // nothing else on it made the arena render NOTHING — no receipt, chips still
+  // tappable, belief stale — and this lane cannot recover, because it does not
+  // read `chatExchanges` at all. The next tap would post the stale belief and
+  // 409 against the player's own invisible filing. The route now sends the
+  // receipt fields with the failure, so the filing lands exactly as on a 200.
+  it('D-1o: a chip filing whose body attests PERSISTED LANDS — receipt, belief and counter', async () => {
     fetchMock.impl = async (url) => (url === '/api/agent/file-directive'
-      ? json(500, { persisted: true, charged: true, reason: 'failed_after_commit' })
+      ? json(500, {
+        persisted: true, charged: true, reason: 'failed_after_commit',
+        status: 'filed',
+        directive: { text: 'Widen the spread (target more sectors)', createdAt: '2026-09-13T15:05:00.000Z', directiveThreadId: 'thread-B' },
+        replacedDirectiveThreadId: null,
+        remaining: 6,
+      })
       : json(200, BUDGET));
     await act(async () => { await latest.fileLive('DV-02'); });
-    // No claim that the filing failed — the exchange is on the document and the
-    // subscribed doc will deliver the receipt.
     expect(latest.filingError).toBeNull();
+    // The receipt is rendered from the route's own response, as on a 200…
+    expect(latest.lines[0]).toMatchObject({ kind: 'directive', text: 'Widen the spread (target more sectors)' });
+    // …the belief advances, so the next tap cannot post a stale one…
+    expect(latest.currentDirectiveThreadId).toBe('thread-B');
+    // …and the counter is the server's own number.
+    expect(latest.remaining).toBe(6);
   });
 
   it('D-1p: …while an unattested chip failure keeps its ruled line', async () => {

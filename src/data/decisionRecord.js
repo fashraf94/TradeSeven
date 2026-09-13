@@ -823,12 +823,19 @@ export const attestsCharged = (body) => body?.charged === true;
 export const CHAT_NOT_SENT_CLAUSE = ' · nothing was sent';
 
 /**
- * Its mirror, and the half that could never be said before: the turn's
- * exchange IS on the battle document — what failed came after the write. Same
- * rule, opposite sign; appended only to a failure the route attested
- * `persisted: true` on.
+ * ITS MIRROR IS SILENCE, NOT A SECOND CLAUSE (adversarial review, lens C
+ * finding C1). The first draft appended `· your message was sent` to
+ * `chatSendFailed` — `The character couldn't answer just now`. But a
+ * `persisted: true` failure means the transaction COMMITTED, and the exchange
+ * it committed carries `agentResponse`: the character DID answer, and the
+ * listener renders that answer beside a sentence saying it could not. Two
+ * clauses of one line, from two sources, disagreeing — the §9 family exactly.
+ *
+ * So a landed turn gets no failure line at all, which is also what the chip
+ * route does (`filingFailureLine` returns null for the same body): the turn
+ * happened, the record is the receipt, and there is nothing the client can
+ * honestly add.
  */
-export const CHAT_SENT_CLAUSE = ' · your message was sent';
 
 /**
  * The failure line for a filing response's HTTP status.
@@ -847,6 +854,16 @@ export const CHAT_SENT_CLAUSE = ' · your message was sent';
  * attestable. A distinct sentence for the two causes is a copy request, not an
  * inline change.
  */
+/**
+ * The line for a filing the route said it CANNOT VOUCH FOR (`persisted: null`
+ * — the ambiguous commit, §7 of the B2 build report). Every other line in this
+ * family ends in a definite negative (`nothing was filed`), and giving one of
+ * them to a body that says *unknown* is the same defect one layer down
+ * (adversarial review, lens C finding C5). This says what is true — it did not
+ * come back — and points at the thing that does know.
+ */
+export const FILING_UNKNOWN_LINE = 'That filing didn’t come back — check the card before filing again.';
+
 export function filingFailureLine(status, body) {
   // B2 (spec ruling 7): A FAILURE THE ROUTE ATTESTED PERSISTED IS NOT A FILING
   // FAILURE. The filing landed and the message was spent; what failed came
@@ -856,6 +873,10 @@ export function filingFailureLine(status, body) {
   // `false`, an unknown, a response with no attestation at all) falls through
   // to the status map, which is what it has always been.
   if (attestsPersisted(body)) return null;
+  // …and an EXPLICIT unknown is not a denial either (lens C, finding C5). Only
+  // a body carrying no attestation at all falls through to the status map,
+  // which is where it has always fallen.
+  if (body && body.persisted === null) return FILING_UNKNOWN_LINE;
   if (status === 409) return FILING_CONFLICT_LINE;
   if (status === 429) return FILING_BUDGET_LINE;
   if (status === 422 || status === 404) return FILING_REJECTED_LINE;

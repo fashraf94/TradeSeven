@@ -273,16 +273,38 @@ describe('B2 — the send-failure line reads the attestation, never the status',
     expect([...container.querySelectorAll('div')].filter((el) => el.textContent === 'protect the lead')).toHaveLength(0);
   });
 
-  it('D-1b: a `persisted: true` body renders the FILED state — never the failed one', async () => {
+  // Lens C, finding C1: the first draft appended `· your message was sent` to
+  // `The character couldn't answer just now`. A `persisted: true` body means
+  // the transaction COMMITTED — and the exchange it committed carries
+  // `agentResponse`, so the character DID answer and the listener renders that
+  // answer beside a sentence saying it could not. A landed turn gets NO line.
+  it('D-1b: a `persisted: true` body renders the FILED state — no failure line at all', async () => {
     stubFetch(async () => jsonResponse(500, { persisted: true, charged: true, reason: 'failed_after_commit', error: 'Agent unavailable.' }));
     render({ controllerCopy: true });
     await send('protect the lead');
-    // The line says the message went. It never says it did not.
-    expect(container.textContent).toContain(`${RULED}${' · your message was sent'}`);
+    expect(container.textContent).not.toContain(RULED);
+    expect(container.textContent).not.toContain(SHIPPED);
     expect(container.textContent).not.toContain(DROPPED_CLAUSE);
+    expect(container.textContent).not.toContain(SENT_CLAUSE);
     // The optimistic bubble STAYS: the exchange is on the document and the
     // listener will reconcile it, exactly as on a success.
     expect([...container.querySelectorAll('div')].filter((el) => el.textContent === 'protect the lead').length).toBeGreaterThan(0);
+  });
+
+  it('D-1b2: …and the reply the turn committed can render beside it without contradiction', async () => {
+    stubFetch(async () => jsonResponse(500, { persisted: true, charged: true, reason: 'failed_after_commit' }));
+    render({ controllerCopy: true });
+    await send('protect the lead');
+    // The listener delivers the exchange the transaction wrote.
+    render({
+      controllerCopy: true,
+      chatExchanges: [{
+        userMessage: 'protect the lead', agentResponse: 'Widening the stop and holding the rest.',
+        timestamp: '2026-09-13T15:05:00.000Z', mode: 'battle',
+      }],
+    });
+    expect(container.textContent).toContain('Widening the stop and holding the rest.');
+    expect(container.textContent).not.toContain(RULED);
   });
 
   it('D-1c: a body with NO attestation claims neither half', async () => {
@@ -312,20 +334,37 @@ describe('B2 — the send-failure line reads the attestation, never the status',
     expect(container.textContent).not.toContain(SENT_CLAUSE);
   });
 
-  it('D-1f: FLAG OFF — an attested body changes nothing; the shipped string, byte for byte', async () => {
-    stubFetch(async () => jsonResponse(500, { persisted: true, charged: true, reason: 'failed_after_commit' }));
-    render();
-    await send();
-    expect(container.textContent).toContain(SHIPPED);
-    expect(container.textContent).not.toContain(RULED);
-    expect(container.textContent).not.toContain(SENT_CLAUSE);
+  it('D-1f: FLAG OFF — the shipped string, byte for byte, on every body that does not attest a landing', async () => {
+    for (const body of [{ error: 'internal' }, { persisted: false, charged: false, reason: 'handler_exception' }, { persisted: null, charged: null, reason: 'handler_exception' }]) {
+      stubFetch(async () => jsonResponse(500, body));
+      render();
+      await send();
+      expect(container.textContent).toContain(SHIPPED);
+      expect(container.textContent).not.toContain(RULED);
+      expect(container.textContent).not.toContain(SENT_CLAUSE);
+    }
   });
 
-  it('D-1g: the two clauses are the record module\'s, not literals in the component', () => {
+  // The one flag-off behaviour this build DOES change, and deliberately: a
+  // failure line is a claim, and a turn the route says landed did not fail. A
+  // flag is a copy switch, not a licence to tell a flag-off player their
+  // message was lost when the server says it was not.
+  it('D-1f2: FLAG OFF — an attested landing still renders no failure line', async () => {
+    stubFetch(async () => jsonResponse(500, { persisted: true, charged: true, reason: 'failed_after_commit' }));
+    render();
+    await send('protect the lead');
+    expect(container.textContent).not.toContain(SHIPPED);
+    expect(container.textContent).not.toContain(RULED);
+    expect([...container.querySelectorAll('div')].filter((el) => el.textContent === 'protect the lead').length).toBeGreaterThan(0);
+  });
+
+  it('D-1g: the clause is the record module\'s, not a literal in the component', () => {
     expect(COPY.chatSendFailedLine({ persisted: false })).toBe(`${RULED} · nothing was sent`);
-    expect(COPY.chatSendFailedLine({ persisted: true })).toBe(`${RULED} · your message was sent`);
+    expect(COPY.chatSendFailedLine({ persisted: true })).toBeNull();
     expect(COPY.chatSendFailedLine(null)).toBe(RULED);
     expect(COPY.chatSendFailedLine({ persisted: null })).toBe(RULED);
+    // There is no positive clause to drift — silence is the mirror (C1).
+    expect(JSON.stringify(COPY)).not.toContain('your message was sent');
   });
 });
 
@@ -350,6 +389,42 @@ describe('B2 — a typed filing that replaced a chip filing says so, once', () =
     await send();
     expect(container.querySelector('[data-testid="chat-notice"]')).toBeNull();
     expect(container.textContent).not.toContain(COPY.replacedEarlierDirective);
+  });
+
+  // Lens B/C, findings B-1/C2: `setNotice` had no `null` caller anywhere, so the
+  // line outlived its turn and sat beside a later failure the route attested
+  // was never sent — a sentence about a replaced directive next to one saying
+  // nothing was sent. BUILD_RULES §9, from two sources.
+  it('D-1t: the notice belongs to its TURN — a later clean send clears it', async () => {
+    stubFetch(async () => jsonResponse(200, { agentMessage: 'ok', persisted: true, charged: true, replacedThreadId: 'chip-thread-1' }));
+    render({ controllerCopy: true });
+    await send('first');
+    expect(container.querySelector('[data-testid="chat-notice"]')).toBeTruthy();
+
+    stubFetch(async () => jsonResponse(200, { agentMessage: 'ok', persisted: true, charged: true }));
+    await send('second');
+    expect(container.querySelector('[data-testid="chat-notice"]')).toBeNull();
+  });
+
+  it('D-1u: …and a later FAILED send clears it too — never beside `nothing was sent`', async () => {
+    stubFetch(async () => jsonResponse(200, { agentMessage: 'ok', persisted: true, charged: true, replacedThreadId: 'chip-thread-1' }));
+    render({ controllerCopy: true });
+    await send('first');
+    expect(container.querySelector('[data-testid="chat-notice"]')).toBeTruthy();
+
+    stubFetch(async () => jsonResponse(500, { persisted: false, charged: false, reason: 'handler_exception' }));
+    await send('second');
+    expect(container.textContent).toContain(DROPPED_CLAUSE);
+    expect(container.textContent).not.toContain(COPY.replacedEarlierDirective);
+  });
+
+  it('D-1v: …and it does not follow the player into another battle', async () => {
+    stubFetch(async () => jsonResponse(200, { agentMessage: 'ok', persisted: true, charged: true, replacedThreadId: 'chip-thread-1' }));
+    render({ controllerCopy: true });
+    await send('first');
+    expect(container.querySelector('[data-testid="chat-notice"]')).toBeTruthy();
+    render({ controllerCopy: true, battleId: 'ab-2' });
+    expect(container.querySelector('[data-testid="chat-notice"]')).toBeNull();
   });
 
   it('D-1j: it is a NOTICE, not a failure — never in the red error slot', async () => {

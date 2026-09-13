@@ -80,7 +80,7 @@ import {
   // record module and read here, so the Battle View and the League arena
   // cannot end up with two spellings of one claim.
   CHAT_NOT_SENT_CLAUSE,
-  CHAT_SENT_CLAUSE,
+  FILING_UNKNOWN_LINE,
   attestsPersisted,
   GUARDRAIL_FORCED_FAILED_LABEL,
 } from '../../data/decisionRecord';
@@ -911,6 +911,7 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // PERSISTED is not a filing failure and gets no line at all (the exchange the
   // listener is about to deliver is the receipt).
   filingFailureLine: (status, body) => recordFilingFailureLine(status, body),
+  filingUnknown: FILING_UNKNOWN_LINE,
 
   // ── The send-failure line, by WHAT THE ROUTE ATTESTED (B2, spec ruling 7) ──
   //
@@ -922,15 +923,19 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // route says so:
   //
   //   persisted === false  the exchange did not land → `· nothing was sent`
-  //   persisted === true   it landed and something after the write failed →
-  //                        `· your message was sent`
+  //   persisted === true   it landed, and the character's reply landed with it
+  //                        → NO LINE AT ALL (there is no failure to report)
   //   anything else        an unattested failure, a network drop, an ambiguous
   //                        commit → the bare line, which claims nothing
   //
   // The third is not a gap: it is the same claimless default `researchFailureLine`
   // takes, so a new failure path added without an attestation is SAFE by default.
   chatSendFailedLine: (body) => {
-    if (attestsPersisted(body)) return `${BATTLE_VIEW_COPY.chatSendFailed}${CHAT_SENT_CLAUSE}`;
+    // A landed turn has NO failure line (lens C, finding C1): the character
+    // answered — its reply is on the exchange the transaction committed — so
+    // the sentence "the character couldn't answer" is false beside it, and the
+    // listener is about to render the answer that proves it false.
+    if (attestsPersisted(body)) return null;
     if (body?.persisted === false) return `${BATTLE_VIEW_COPY.chatSendFailed}${CHAT_NOT_SENT_CLAUSE}`;
     return BATTLE_VIEW_COPY.chatSendFailed;
   },

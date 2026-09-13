@@ -184,12 +184,37 @@ describe('PaneBench — the first-five cap (B2, D-112)', () => {
     expect(chips).toEqual(SIX.slice(0, 5));
   });
 
-  it('E-1d: the cap is a NAMED constant, and it is five', async () => {
-    const { FLAGGED_DISPLAY_CAP, selectFlagged } = await import('./selectBench');
+  it('E-1d: the cap is a NAMED constant, it is five, and `selectFlagged` itself is UNCAPPED', async () => {
+    const { FLAGGED_DISPLAY_CAP, selectFlagged, selectBench } = await import('./selectBench');
     expect(FLAGGED_DISPLAY_CAP).toBe(5);
-    // …and it is applied AFTER the roster intersection: a candidate that is not
-    // on the bench must not consume one of the five.
+    // The intersection helper reports every flagged roster name — the cap is a
+    // DISPLAY rule and belongs at the display's selection point, not here.
     const candidates = ['OFF1', 'OFF2', ...SIX].map((symbol) => ({ symbol, direction: 'potential_entry' }));
-    expect(selectFlagged(candidates, SIX)).toEqual(SIX.slice(0, 5));
+    expect(selectFlagged(candidates, SIX)).toEqual(SIX);
+    // …and an off-roster candidate still never consumes a slot.
+    expect(selectBench(sixDoc()).flagged).toEqual(SIX.slice(0, 5));
+  });
+
+  // C-3 / C-10: the row that pins the cap's PLACEMENT. It was first written
+  // inside `selectFlagged`, before the spoken-for filter, so a name a sentence
+  // already carried consumed one of the five and produced no chip — the pane
+  // rendered two chips and dropped a sixth that would have fit. Moving the
+  // slice back reds this row; the four rows above it all stay green, which is
+  // why it exists.
+  it('E-1e: a name a sentence already speaks for does NOT consume a cap slot', () => {
+    const battle = sixDoc();
+    battle.evaluations[0].rationale = 'NOW, TSLA and CRWD are the ones to watch here.';
+    const html = render(battle);
+    const chips = [...html.matchAll(/data-bench-flag-chip="([A-Z]+)"/g)].map((m) => m[1]);
+    // Three of the six are spoken for, so the flagged group shows the other
+    // three — every one of them, including the sixth name.
+    expect(chips).toEqual(['PLTR', 'SMCI', 'ARM']);
+  });
+
+  it('E-1f: …and the cap still bites when six names are ALL unspoken', () => {
+    const battle = sixDoc();
+    battle.evaluations[0].rationale = 'The book is steady.';
+    const chips = [...render(battle).matchAll(/data-bench-flag-chip="([A-Z]+)"/g)].map((m) => m[1]);
+    expect(chips).toEqual(SIX.slice(0, 5));
   });
 });

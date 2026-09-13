@@ -81,11 +81,21 @@ function readDoc(col, id) {
   if (col === 'agentChatBudget') return docSnap(state.budgetDocs[id] ?? null, id);
   return docSnap(null, id);
 }
+// Firestore's arrayUnion is SET semantics on deep equality: "each specified
+// element that doesn't already exist in the array will be added". The concat
+// this fake used to do made a re-run of the body look like a duplicate even for
+// a byte-identical element — the exact property the hoisted mint relies on.
+const sameElement = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+function arrayUnion(existing, items) {
+  const next = [...(existing || [])];
+  for (const item of items) if (!next.some((e) => sameElement(e, item))) next.push(item);
+  return next;
+}
 function applyWrite(w) {
   if (w.col === 'agentBattles') {
     const b = state.battle;
     for (const [k, v] of Object.entries(w.data)) {
-      if (v && v.__op === 'arrayUnion') b[k] = [...(b[k] || []), ...v.items];
+      if (v && v.__op === 'arrayUnion') b[k] = arrayUnion(b[k], v.items);
       else if (v && v.__op === 'increment') b[k] = (b[k] || 0) + v.n;
       else b[k] = v;
     }
@@ -117,6 +127,16 @@ const db = {
         state.injectBeforeCommit = null;
         continue; // the buffer is discarded; the body re-runs against the changed doc
       }
+      if (state.applyThenRetry && attempt === 1) {
+        // THE AMBIGUOUS COMMIT (review lens A, finding A-2). The commit LANDS
+        // and its reply is lost, so the SDK re-runs the body — which now reads
+        // this transaction's own write. @google-cloud/firestore does exactly
+        // this on UNKNOWN / UNAVAILABLE / DEADLINE_EXCEEDED / INTERNAL /
+        // CANCELLED: the codes that mean "the commit may have landed".
+        state.applyThenRetry = false;
+        for (const w of buffer) { applyWrite(w); state.committed.push(w); }
+        continue;
+      }
       for (const w of buffer) { applyWrite(w); state.committed.push(w); }
       return result;
     }
@@ -130,7 +150,28 @@ const { default: handler, buildFiledExchange, FILING_STATUS } = await import('./
 const { buildDirectiveSlot, buildDirectiveRecord, BATTLE_CHAT_BUDGET } = await import('../_utils/directiveFiling.js');
 
 const mkRes = () => ({ statusCode: null, body: null, status(c) { this.statusCode = c; return this; }, json(b) { this.body = b; return this; } });
-const post = async (body) => { const res = mkRes(); await handler({ method: 'POST', body }, res); return res; };
+// `breakResponse` makes the FIRST res.json() throw — the one thing that can
+// fail after this route's commit (its own serialization), which is ruling 7's
+// third outcome. The second call (from the catch) succeeds, so the row can read
+// the body the catch produced.
+const mkBrokenRes = () => {
+  let thrown = false;
+  return {
+    statusCode: null,
+    body: null,
+    status(c) { this.statusCode = c; return this; },
+    json(b) {
+      if (!thrown) { thrown = true; throw new Error('response serialization failed'); }
+      this.body = b;
+      return this;
+    },
+  };
+};
+const post = async (body, { breakResponse = false } = {}) => {
+  const res = breakResponse ? mkBrokenRes() : mkRes();
+  await handler({ method: 'POST', body }, res);
+  return res;
+};
 const BODY = { agentId: 'agent-1', battleId: 'battle-1', adjustmentId: 'DV-02', expectedDirectiveThreadId: null };
 const DV02 = 'Widen the spread (target more sectors)';
 
@@ -155,6 +196,7 @@ beforeEach(() => {
   state.resolveImpl = () => ({ groupId: 'group-xyz', dayN: 3 });
   state.gemmaCalls = [];
   state.injectBeforeCommit = null;
+  state.applyThenRetry = false;
   state.attempts = 0;
   state.reads = 0;
   state.committed = [];
@@ -532,5 +574,92 @@ describe('file-directive — concurrency: a double-tap charges once', () => {
     expect(res.statusCode).toBe(429);
     expect(state.battle.chatBudgetUsed).toBe(10);
     expect(state.committed).toEqual([]);
+  });
+});
+
+// ============================================================================
+// B2 — THE AMBIGUOUS COMMIT AND THE CHECK ORDER (adversarial review, lens A)
+//
+// `runTransaction` re-runs the body on a retryable commit error, and a commit
+// that LANDED whose reply was lost surfaces as exactly that. These rows pin
+// what the re-run must and must not do.
+// ============================================================================
+
+describe('file-directive — a commit that landed and lost its reply', () => {
+  // THIS ROUTE IS PROTECTED BY ITS CAS, and that is why the duplicate half of
+  // finding A-2 is pinned on the CHAT route (api/agent/chat.test.js), where
+  // `replace-and-report` does not refuse and the defect is falsifiable. The row
+  // here holds the other half of the same claim: the re-run writes nothing a
+  // second time, which is what Phase 0 §6.3 asserts and what makes the two
+  // routes separable.
+  it('A-2 (the chip half): the re-run writes nothing twice, and strands no thread id', async () => {
+    state.applyThenRetry = true;
+    const res = await post(BODY);
+    expect(state.attempts).toBe(2);
+    // Exactly one exchange, carrying exactly one thread id — the slot's.
+    expect(state.battle.chatExchanges).toHaveLength(1);
+    expect(state.battle.chatExchanges[0].directiveThreadId).toBe(state.battle.directive.directiveThreadId);
+    expect(res.statusCode).toBe(409); // the CAS sees its own id and refuses to write again
+  });
+
+  // A-1: that 409 is produced by a body that is re-reading its OWN landed
+  // commit. It must not claim nothing was filed — the whole point of ruling 7.
+  it('A-1: a refusal decided on a RE-RUN says it does not know, never `false`', async () => {
+    state.applyThenRetry = true;
+    const res = await post(BODY);
+    expect(res.statusCode).toBe(409);
+    expect(res.body.persisted).toBeNull();
+    expect(res.body.charged).toBeNull();
+    // …and the filing really did land and really did charge.
+    expect(state.battle.chatExchanges).toHaveLength(1);
+    expect(state.battle.chatBudgetUsed).toBe(3);
+  });
+
+  it('A-1b: a FIRST-attempt refusal still proves `false` — the honest claim is not weakened', async () => {
+    state.battle = makeBattle({ directive: { text: 'x', directiveThreadId: 'thread-A', expiry: 'end_of_battle' } });
+    const res = await post(BODY);
+    expect(res.statusCode).toBe(409);
+    expect(state.attempts).toBe(1);
+    expect(res.body.persisted).toBe(false);
+    expect(res.body.charged).toBe(false);
+  });
+});
+
+describe('file-directive — the check order the extraction must preserve', () => {
+  // A-4: the chip suite did not pin that check 4 (the CAS) runs BEFORE the
+  // agent read, so moving the agent read above it stayed green — an
+  // unguarded corner of the "its suite is the proof" claim.
+  it('A-4: check 4 runs BEFORE the agent doc is read — a stale belief 409s even with no agent doc', async () => {
+    state.battle = makeBattle({ directive: { text: 'x', directiveThreadId: 'thread-A', expiry: 'end_of_battle' } });
+    state.agent = null; // the agent doc is gone
+    const res = await post(BODY);
+    // The CONFLICT wins: the belief was checked first, so the caller is told
+    // what actually changed rather than that their agent vanished.
+    expect(res.statusCode).toBe(409);
+    expect(res.body.currentDirectiveThreadId).toBe('thread-A');
+  });
+
+  it('A-4b: …and with a MATCHING belief the missing agent doc is what answers', async () => {
+    state.agent = null;
+    const res = await post(BODY);
+    expect(res.statusCode).toBe(404);
+    expect(res.body.error).toBe('Agent not found');
+  });
+});
+
+describe('file-directive — the commit-then-throw body carries what it committed', () => {
+  // B-2 / C-4 / C-7: a body that says `persisted: true` and nothing else is
+  // unusable — the chips never retire, the arena renders nothing, the belief
+  // stays stale and the next tap 409s against the player's own filing.
+  it('B-2: a throw after the commit answers 500 WITH the directive, the replaced thread and the counter', async () => {
+    const res = await post(BODY, { breakResponse: true });
+    expect(res.statusCode).toBe(500);
+    expect(res.body.persisted).toBe(true);
+    expect(res.body.charged).toBe(true);
+    expect(res.body.reason).toBe('failed_after_commit');
+    expect(res.body.status).toBe(FILING_STATUS.FILED);
+    expect(res.body.directive.text).toBe(DV02);
+    expect(res.body.directive.directiveThreadId).toBe(state.battle.directive.directiveThreadId);
+    expect(res.body.remaining).toBe(BATTLE_CHAT_BUDGET.limit - 3);
   });
 });

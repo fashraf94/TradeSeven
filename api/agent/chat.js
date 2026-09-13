@@ -1161,6 +1161,11 @@ export default async function handler(req, res) {
     });
 
     if (outcome.kind === DIRECTIVE_OUTCOME.FILED) committed = outcome;
+    // The transaction returned, so it is no longer the unknown `attestThrown`
+    // treats an in-flight filing as (review lens B, finding B-5): the outcome
+    // already proved which side of the commit it is on, and a throw from here
+    // on must not downgrade that proof to "I don't know".
+    else filingAttempted = false;
 
     if (outcome.kind !== DIRECTIVE_OUTCOME.FILED) {
       // A refusal decided INSIDE the transaction: nothing persisted, nothing
@@ -1200,7 +1205,11 @@ export default async function handler(req, res) {
     // attempt read it — the same raw slot file-directive's check 4 compares
     // against, so a chip filing's `expectedDirectiveThreadId` is the server's
     // last word, never a guess.
-    // Absent on the shipped path: the flag-off clientResponse is byte-identical.
+    // Absent on the shipped path — the grounded PAIR is, as it always was.
+    // (The clientResponse as a whole is NOT byte-identical any more, and
+    // deliberately so: ruling 7's three attestation keys are added to EVERY
+    // 200, flag-off included, three lines below. Review lens B, finding B-4 —
+    // this comment used to claim the whole body was unchanged.)
     if (grounded) {
       clientResponse.grounded = true;
       clientResponse.currentDirectiveThreadId = outcome.directiveThreadId ?? outcome.priorDirectiveThreadId;
@@ -1319,10 +1328,17 @@ export default async function handler(req, res) {
         : (isAbort ? 'gemma_timeout' : 'handler_exception'),
     });
 
+    // A committed turn knows its own post-charge counter, so the League client
+    // does not have to guess it from a failure (the arena's counter follows
+    // `charged`, and an exact `remaining` is better than a decrement).
+    const body = {
+      ...attestation,
+      ...(committed && isLeagueAsk && committed.remaining !== null ? { remaining: committed.remaining } : {}),
+    };
     if (isAbort) {
-      return res.status(504).json({ ...attestation, error: 'Agent response timed out. Try again.' });
+      return res.status(504).json({ ...body, error: 'Agent response timed out. Try again.' });
     }
-    return res.status(500).json({ ...attestation, error: 'Agent unavailable. Try again in a moment.' });
+    return res.status(500).json({ ...body, error: 'Agent unavailable. Try again in a moment.' });
   }
 }
 

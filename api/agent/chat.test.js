@@ -209,6 +209,7 @@ function makeFakeFirestore({
   const budgetState = { ...budgetDocs };
   const barrier = { current: null };
   const failCommit = { current: null };
+  const applyThenRetry = { current: false };
 
   // The claims aggregate query: .where().where().count().get() → { data: () => ({ count }) }.
   const claimsQuery = {
@@ -265,10 +266,21 @@ function makeFakeFirestore({
   // Apply a committed write to the served documents, so a retry (and any later
   // read) sees what landed. The recorded call keeps the RAW ops, which is what
   // every assertion in this file reads.
+  // Firestore's arrayUnion is SET semantics on deep equality: "each specified
+  // element that doesn't already exist in the array will be added". The naive
+  // concat this fake used to do made a re-run of a transaction body look like a
+  // duplicate even when the element was byte-identical — which is exactly the
+  // property the hoisted mint relies on, so the fake has to model it.
+  const sameElement = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const arrayUnion = (existing, items) => {
+    const next = [...(existing || [])];
+    for (const item of items) if (!next.some((e) => sameElement(e, item))) next.push(item);
+    return next;
+  };
   const applyWrite = (w) => {
     if (w.kind === 'update' && w.col === 'agentBattles' && battleState) {
       for (const [k, v] of Object.entries(w.data)) {
-        if (v && v.__op === 'arrayUnion') battleState[k] = [...(battleState[k] || []), ...v.items];
+        if (v && v.__op === 'arrayUnion') battleState[k] = arrayUnion(battleState[k], v.items);
         else if (v && v.__op === 'increment') battleState[k] = (battleState[k] || 0) + v.n;
         else battleState[k] = v;
       }
@@ -285,6 +297,8 @@ function makeFakeFirestore({
     setBarrier: (fn) => { barrier.current = fn; },
     // Refuse the commit when the predicate matches the buffered writes.
     failCommitWhen: (fn) => { failCommit.current = fn; },
+    // Land the first attempt's writes and re-run the body anyway.
+    applyThenRetry: () => { applyThenRetry.current = true; },
     runTransaction: async (fn) => {
       for (let attempt = 1; attempt <= 5; attempt += 1) {
         written.txAttempts += 1;
@@ -299,6 +313,19 @@ function makeFakeFirestore({
           set: (ref, data, opts) => buffer.push({ kind: 'set', col: ref.__col, id: ref.id, data, opts }),
         };
         const result = await fn(tx);
+        if (applyThenRetry.current) {
+          // THE AMBIGUOUS COMMIT (review lens A, finding A-2): the commit LANDS
+          // and its reply is lost, so the SDK re-runs the body — which now
+          // reads this transaction's own write. @google-cloud/firestore does
+          // exactly this on the codes that mean "the commit may have landed".
+          applyThenRetry.current = false;
+          for (const w of buffer) {
+            applyWrite(w);
+            if (w.kind === 'update') written.updateCalls.push({ id: w.id, updates: w.data });
+            else written.setCalls.push({ id: w.id, data: w.data, opts: w.opts });
+          }
+          continue;
+        }
         if (failCommit.current && failCommit.current(buffer)) {
           // Firestore's atomicity: the commit is refused and NOT ONE of the
           // buffered writes lands.
@@ -761,6 +788,16 @@ describe('agent/chat — League arena per-day ask (leagueAsk + LEAGUE_AGENT_CHAT
     // B2 / D-105: an EXPLICIT in-transaction count, never FieldValue.increment.
     expect(mainUpdate(fixture.written).updates.chatBudgetUsed).toBe(1);
     expect('remaining' in res.body).toBe(false);
+    // THE KEY SET, not a handful of keys (review lens B, finding B-4). This row
+    // called itself "byte-identical" while asserting only individual members,
+    // so it stayed green through a three-key body change. The set is pinned
+    // here so the next one cannot be silent — including B2's own three, which
+    // ruling 7 adds to EVERY 200, flag-off included.
+    expect(Object.keys(res.body).sort()).toEqual([
+      'agentMessage', 'budgetTotal', 'charged', 'directive', 'exchangeNumber',
+      'extractedRule', 'forgeSuggestion', 'hasDirective', 'lesson', 'mode',
+      'persisted', 'reason', 'scratchpad', 'suggestedActions',
+    ]);
   });
 });
 
@@ -2267,5 +2304,97 @@ describe('agent/chat — B2: every response attests persisted / charged (ruling 
 
     expect(res.statusCode).toBe(200);
     expect('replacedThreadId' in res.body).toBe(false);
+  });
+});
+
+// ============================================================================
+// B2 — THE AMBIGUOUS COMMIT ON THE TYPED ROUTE (adversarial review, lens A,
+// finding A-2)
+//
+// `runTransaction` re-runs the body on a retryable commit error, and a commit
+// that LANDED whose reply was lost surfaces as exactly that. The chip route is
+// protected by its CAS (Phase 0 §6.3); the typed route's `replace-and-report`
+// is NOT, so the re-run re-files. Minting the thread id and the instant INSIDE
+// the body made the exchange a different object on each attempt, so
+// `arrayUnion` appended it twice and the first id was stranded on a persisted
+// exchange — a REGRESSION against c35f9a5, where the element was fully
+// materialized before the call and the append was idempotent. The mint is
+// hoisted above the transaction; these rows hold that.
+// ============================================================================
+
+describe('agent/chat — B2: a commit that landed and lost its reply', () => {
+  const mainUpdate = (written) => written.updateCalls.find(c => c.updates?.chatExchanges?.__op === 'arrayUnion');
+  const post = (body) => makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hold the line', ...body });
+
+  it('A-2: the re-run appends ONE exchange, not two', async () => {
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: { ...VALID_BATTLE, chatBudgetUsed: 2 } });
+    activeFirestore = fixture.db;
+    fixture.db.applyThenRetry();
+
+    const { req, res } = post({});
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(fixture.written.txAttempts).toBe(2);
+    // ONE exchange on the document — arrayUnion dedupes a byte-identical element.
+    expect(fixture.battleState.chatExchanges).toHaveLength(1);
+  });
+
+  it('A-2b: …with ONE thread id, so a directive filed on the re-run strands nothing', async () => {
+    grounding.mode = 'on';
+    archetypeFlag.mode = 'enforce';
+    const fixture = makeFakeFirestore({ agent: { ...VALID_AGENT, archetype: 'diversifier' }, battle: VALID_BATTLE });
+    activeFirestore = fixture.db;
+    callGemmaVoiceImpl.current = async () => JSON.stringify({
+      response: 'widening out', _archetypeProposal: { classification: 'in_archetype', selectedAdjustmentId: 'DV-02' },
+    });
+    fixture.db.applyThenRetry();
+
+    const { req, res } = post({});
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(fixture.battleState.chatExchanges).toHaveLength(1);
+    const ids = new Set(fixture.battleState.chatExchanges.map((e) => e.directiveThreadId));
+    expect(ids.size).toBe(1);
+    // The slot names the one exchange that exists — no orphan.
+    expect(fixture.battleState.directive.directiveThreadId).toBe(fixture.battleState.chatExchanges[0].directiveThreadId);
+    expect(res.body.currentDirectiveThreadId).toBe(fixture.battleState.directive.directiveThreadId);
+  });
+
+  // The residual, measured rather than assumed: the exchange dedupes, the
+  // thread id is one, but the COUNT still moves twice, because `used + 1` is
+  // read fresh on the attempt that re-runs. That is the same non-idempotence
+  // the pre-B2 `FieldValue.increment(1)` had under an RPC retry, and removing
+  // it needs the "no-op when the body finds its own key" branch Phase 0 §6.5
+  // scopes to Build 2. Pinned so the limit is a measured number in the record
+  // rather than a sentence in a report.
+  it('A-2d: the KNOWN RESIDUAL — the count still moves twice on an ambiguous commit', async () => {
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: { ...VALID_BATTLE, chatBudgetUsed: 2 } });
+    activeFirestore = fixture.db;
+    fixture.db.applyThenRetry();
+
+    const { req, res } = post({});
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(fixture.battleState.chatExchanges).toHaveLength(1);   // one turn…
+    expect(fixture.battleState.chatBudgetUsed).toBe(4);          // …two messages. The residual.
+  });
+
+  it('A-2c: the timestamp and the slot createdAt are ONE instant, stable across attempts', async () => {
+    grounding.mode = 'on';
+    archetypeFlag.mode = 'enforce';
+    const fixture = makeFakeFirestore({ agent: { ...VALID_AGENT, archetype: 'diversifier' }, battle: VALID_BATTLE });
+    activeFirestore = fixture.db;
+    callGemmaVoiceImpl.current = async () => JSON.stringify({
+      response: 'widening out', _archetypeProposal: { classification: 'in_archetype', selectedAdjustmentId: 'DV-02' },
+    });
+    fixture.db.applyThenRetry();
+
+    const { req } = post({});
+    await handler(req, makeReqRes({}).res);
+    const upd = mainUpdate(fixture.written).updates;
+    expect(upd.chatExchanges.items[0].timestamp).toBe(upd.directive.createdAt);
   });
 });

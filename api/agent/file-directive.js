@@ -256,6 +256,11 @@ export default async function handler(req, res) {
     // learns the vocabulary once reads both.
     const attestation = { persisted: outcome.persisted, charged: outcome.charged, reason: outcome.reason };
     if (outcome.kind === DIRECTIVE_OUTCOME.FILED) committed = outcome;
+    // The transaction returned, so it is no longer the unknown `attestThrown`
+    // treats an in-flight filing as (review lens B, finding B-5): a throw from
+    // here on is a serialization failure, and the outcome above already knows
+    // which side of the commit it is on.
+    else filingAttempted = false;
     switch (outcome.kind) {
       case DIRECTIVE_OUTCOME.BATTLE_NOT_FOUND:
         return res.status(404).json({ ...attestation, error: 'Battle not found' });
@@ -275,9 +280,13 @@ export default async function handler(req, res) {
           currentDirectiveThreadId: outcome.currentDirectiveThreadId,
         });
       case DIRECTIVE_OUTCOME.REJECTED:
-        // `reason: 'off_menu'` is this route's own, older word for the same
-        // slot and the clients already read it; the outcome's `rejected` is
-        // carried beside it rather than overwriting a shipped string.
+        // THE ONE PLACE `reason` IS NOT THE ATTESTATION'S WORD. `off_menu` is
+        // this route's own, older value for that key and the shipped contract
+        // pins it, so it is written LAST and the outcome's `rejected` is
+        // OVERWRITTEN, not carried (review lens B, finding B-3 — an earlier
+        // comment here claimed otherwise). Nothing reads the lost word; the
+        // attestation's load-bearing half is `persisted`/`charged`, which
+        // survive. Recorded so the 422's vocabulary exception is deliberate.
         return res.status(422).json({ ...attestation, error: 'rejected', status: FILING_STATUS.REJECTED, reason: 'off_menu' });
       case DIRECTIVE_OUTCOME.BUDGET_EXHAUSTED:
         return res.status(429).json({ ...attestation, error: 'budget_exhausted', status: FILING_STATUS.BUDGET_EXHAUSTED, remaining: 0 });
@@ -299,12 +308,25 @@ export default async function handler(req, res) {
     // The one path here that can follow a landed commit — the response's own
     // serialization. Ruling 7's third shape: if the transaction committed, the
     // directive IS filed and the message IS spent, whatever this status says.
+    // IT CARRIES WHAT IT COMMITTED (review lenses A/B/C: B-2, C-4, C-7). A body
+    // that says `persisted: true` and nothing else is unusable: the chat's chips
+    // never retire, the arena — which does not read `chatExchanges` at all —
+    // renders nothing, the client's belief stays stale, and the next tap 409s
+    // against the player's own invisible filing. If the transaction told us it
+    // committed, it also told us WHAT it committed, so the receipt fields ride
+    // the failure exactly as they ride the 200.
     return res.status(500).json({
       ...attestThrown({
         committed,
         attempted: filingAttempted,
         reason: committed ? 'failed_after_commit' : 'handler_exception',
       }),
+      ...(committed ? {
+        status: committed.replacedPrior ? FILING_STATUS.REPLACED_PRIOR : FILING_STATUS.FILED,
+        directive: committed.directive,
+        replacedDirectiveThreadId: committed.replacedDirectiveThreadId,
+        remaining: committed.remaining,
+      } : {}),
       error: 'Could not file the directive. Try again in a moment.',
     });
   }

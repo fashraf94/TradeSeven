@@ -171,14 +171,24 @@ export function useArenaEngine({
         body: JSON.stringify({ agentId, battleId, adjustmentId: id, expectedDirectiveThreadId: beliefRef.current }),
       });
       const data = await res.json().catch(() => ({}));
-      // B2: a non-ok response whose body attests `persisted: true` filed the
-      // directive — what failed came after the commit. It carries no directive
-      // text to render a receipt from, so the lane keeps its claimless line
-      // rather than saying the filing failed; `filingFailureLine` returns null
-      // for exactly that body and the engine's own fallback covers it.
-      if (!res.ok || !data.directive?.text) {
+      // B2: a non-ok response whose body attests `persisted: true` FILED the
+      // directive — what failed came after the commit — and the route now sends
+      // the receipt fields with it, so the branch below lands the filing exactly
+      // as a 200 does. That matters here more than in the chat: this lane does
+      // NOT read `chatExchanges` (see the note on the subscribed-doc props
+      // below), so a filing it does not render from the response is one it can
+      // never recover, and the next tap would post a stale belief against a slot
+      // the server has already moved (adversarial review, lens C finding C4).
+      // A FILING IS A FILING WHOEVER THE STATUS SAYS FAILED. A 200 says it
+      // landed; so does a non-ok body that attests `persisted: true`, and that
+      // body now carries the same receipt fields the 200 does.
+      const filed = (res.ok || attestsPersisted(data)) && !!data.directive?.text;
+      if (!filed) {
         setEng((s) => setRemaining(applyFilingFailed(s, {
-          line: filingFailureLine(res.status, data) ?? (attestsPersisted(data) ? null : FILING_FAILED_LINE),
+          // `filingFailureLine` returns null only for an attested-persisted
+          // body — which cannot reach here any more, since such a body carries
+          // its directive. Kept as the honest default rather than a dead arm.
+          line: filingFailureLine(res.status, data) ?? null,
           // A 409 names the server's current thread: adopt it, so the retry files
           // against the truth. Any other failure leaves the belief alone.
           currentDirectiveThreadId: res.status === 409 && Object.prototype.hasOwnProperty.call(data, 'currentDirectiveThreadId')

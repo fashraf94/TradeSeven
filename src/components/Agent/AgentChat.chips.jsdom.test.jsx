@@ -185,10 +185,18 @@ describe('chips minted by id — the taps', () => {
     }
   });
 
+  // Lens B/C, findings B-2/C-7: this row used to pin a body neither route could
+  // send — the commit-then-throw catch carried the attestation and nothing
+  // else, so the chips never retired and the next tap re-posted the stale
+  // belief. The route now sends the receipt fields with the failure; the
+  // fixture below is the body it actually produces.
   it('D-1r: …and the filed thread becomes the belief, so the chips retire as they do on a 200', async () => {
     const fetchSpy = stubFetch(async () => jsonResponse(500, {
       persisted: true, charged: true, reason: 'failed_after_commit',
-      directive: { text: DV02, directiveThreadId: 'thread-B' },
+      status: 'filed',
+      directive: { text: DV02, createdAt: '2026-09-13T15:05:00.000Z', directiveThreadId: 'thread-B' },
+      replacedDirectiveThreadId: null,
+      remaining: 6,
     }));
     render({ chatExchanges: [lastAgentMessage()], currentDirectiveThreadId: 'thread-A' });
     await click(chipButton(FILES_DV02));
@@ -201,6 +209,21 @@ describe('chips minted by id — the taps', () => {
     render({ chatExchanges: [lastAgentMessage()] });
     await click(chipButton(FILES_DV02));
     expect(container.textContent).toContain(FILING_FAILED_LINE);
+  });
+
+  // Lens C, finding C5: an AMBIGUOUS commit says `persisted: null`. Every other
+  // line in this family ends in a definite negative, and giving one of them to a
+  // body that says *unknown* is the same defect one layer down. The chat half
+  // already took the claimless line for the same body; this is its counterpart.
+  it.each([500, 409, 429, 422])('D-1w: a %s that attests an UNKNOWN commit gets the claimless line, never a denial', async (status) => {
+    stubFetch(async () => jsonResponse(status, { persisted: null, charged: null, reason: 'handler_exception' }));
+    render({ chatExchanges: [lastAgentMessage()] });
+    await click(chipButton(FILES_DV02));
+    expect(container.textContent).toContain(COPY.filingUnknown);
+    expect(container.textContent).not.toContain('nothing was filed');
+    for (const line of [FILING_CONFLICT_LINE, FILING_BUDGET_LINE, FILING_REJECTED_LINE, FILING_FAILED_LINE]) {
+      expect(container.textContent).not.toContain(line);
+    }
   });
 });
 

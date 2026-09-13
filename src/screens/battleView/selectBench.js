@@ -150,22 +150,25 @@ export function selectLastDecidedWithWords(battle) {
  * the BOOK, which has a row of its own and is not a bench name (and the roster
  * intersection already excludes it).
  *
- * THE FIRST-FIVE CAP LIVES HERE, AT THE READ (D-112, built in B2). The record
- * carries what the decider produced; the pane shows five. Capping at the WRITE
- * would discard candidates 6+ on an order nothing in the repo claims is ranked
- * (`composeCandidatesStamp` preserves the model's array order exactly), and a
- * stamp that is a silent truncation cannot support the claim the stamps exist
- * for — `Saw` = THIS VALUE WAS RENDERED FOR THIS HELD NAME IN THE DECIDER'S
- * PROMPT AT THAT CHECK. A record that drops the decider's sixth name is a
- * record that says less than the decider said.
- *
- * It is applied AFTER the roster intersection, so the five are five names the
- * pane could actually show — not five candidates of which two were never on
- * the bench. `tickStamps.js` is untouched: no write-side bound.
+ * UNCAPPED, deliberately. The first-five cap (D-112) is a DISPLAY rule and it
+ * lives at the display's own selection point, in `selectBench` below — see the
+ * note there for why it cannot live here.
  *
  * @param {Array|undefined} candidates  the entry's candidates stamp
  * @param {string[]} roster             the bench roster, in doc order
  * @returns {string[]}
+ */
+/**
+ * THE FIRST-FIVE CAP (D-112, built in B2) — a DISPLAY rule, at the read.
+ *
+ * The record carries what the decider produced; the pane shows five. Capping at
+ * the WRITE would discard candidates 6+ on an order nothing in the repo claims
+ * is ranked (`composeCandidatesStamp` preserves the model's array order
+ * exactly), and a stamp that is a silent truncation cannot support the claim
+ * the stamps exist for — `Saw` = THIS VALUE WAS RENDERED FOR THIS HELD NAME IN
+ * THE DECIDER'S PROMPT AT THAT CHECK. A record that drops the decider's sixth
+ * name is a record that says less than the decider said. `tickStamps.js` is
+ * untouched: no write-side bound.
  */
 export const FLAGGED_DISPLAY_CAP = 5;
 
@@ -180,7 +183,7 @@ export function selectFlagged(candidates, roster) {
   }
   // Roster order, never the candidates' order: a bench name must not move
   // between renders because the model listed it in a different position.
-  return roster.filter((symbol) => flagged.has(symbol)).slice(0, FLAGGED_DISPLAY_CAP);
+  return roster.filter((symbol) => flagged.has(symbol));
 }
 
 export function selectBench(battle) {
@@ -215,8 +218,18 @@ export function selectBench(battle) {
   // A name already carried by a sentence stays on that sentence — it is
   // already in the named group, and a second entry for it would print one name
   // twice under one heading.
+  // THE CAP IS APPLIED LAST, after BOTH filters (adversarial review, lens C
+  // finding C3). It was first written inside `selectFlagged`, right after the
+  // roster intersection — and a name a sentence already speaks for then
+  // consumed one of the five and produced no chip, so a check that flagged six
+  // names of which three were spoken for rendered TWO chips and dropped a sixth
+  // that would have fit. The cap's own rationale is that the five are five
+  // names the pane could actually show; a spoken-for name is exactly as
+  // invisible in this group as an off-roster one, so it must not take a slot
+  // either.
   const flagged = selectFlagged(decided.entry.candidates, roster)
-    .filter((symbol) => !spokenFor.has(symbol));
+    .filter((symbol) => !spokenFor.has(symbol))
+    .slice(0, FLAGGED_DISPLAY_CAP);
   const flaggedSet = new Set(flagged);
 
   // The rest keeps ROSTER order too, so a name does not move between renders

@@ -977,6 +977,12 @@ export default function AgentChat({
     ? BATTLE_VIEW_COPY.chatSendFailedLine(body)
     : 'Agent is thinking too hard. Try again.');
 
+  // A notice belongs to a battle as well as to a turn: the arena hook resets its
+  // equivalent state on a battle change (useArenaEngine.js, review R-17) and
+  // this had no counterpart, so a replaced-directive line followed the player
+  // into the next battle (lens C, finding C2).
+  useEffect(() => { setNotice(null); }, [battleId]);
+
   async function sendMessage(text) {
     if (!text.trim() || isSending || activeBudgetUsed >= activeBudgetLimit) return;
 
@@ -999,6 +1005,11 @@ export default function AgentChat({
     setInFlightMessages(prev => [...prev, userMsg, typingMsg]);
     setInputText('');
     setError(null);
+    // …and the notice, which belongs to the turn that raised it (lens B/C,
+    // findings B-1/C2). Left standing it outlived its turn and sat beside a
+    // later failure the route attested was never sent — a sentence about a
+    // replaced directive next to one saying nothing was sent.
+    setNotice(null);
     setIsSending(true);
 
     try {
@@ -1031,12 +1042,16 @@ export default function AgentChat({
           m.id !== typingId && (landed || m.id !== userMsg.id)
         )));
 
-        if (res.status === 401) {
+        if (landed) {
+          // THE TURN HAPPENED (lens C, finding C1). The transaction committed,
+          // and the exchange it committed carries the character's reply — the
+          // listener is about to render it. There is no failure to report, so
+          // nothing is reported, exactly as the chip route does for the same
+          // body. Checked BEFORE the 401 arm: a landed turn whose token expired
+          // on the way back still landed.
+          setError(null);
+        } else if (res.status === 401) {
           setError('Session expired. Please refresh.');
-        } else if (landed) {
-          // A filing whose follow-up failed. The line says what the record
-          // proves — the message went — and nothing about the agent.
-          setError(sendFailedCopy(data));
         } else if (data.error === 'budget_exceeded' || data.error === 'chat_budget_exceeded') {
           // Server-side budget cap — use the message from the server when provided
           // so the copy matches the current mode (battle vs review).
@@ -1052,6 +1067,7 @@ export default function AgentChat({
         }
         return;
       }
+
 
       // B2 (ruling 4): a typed directive that replaced a chip filing the player
       // never saw land says so, once. A NOTICE, not an error — nothing failed.
@@ -1090,6 +1106,7 @@ export default function AgentChat({
   async function fileDirective(adjustmentId) {
     if (!adjustmentId || isSending) return;
     setError(null);
+    setNotice(null);
     setIsSending(true);
     try {
       const user = getAuth().currentUser;
@@ -1146,6 +1163,7 @@ export default function AgentChat({
     const wanted = typeof symbol === 'string' ? symbol.trim() : '';
     if (!wanted || isSending) return;
     setError(null);
+    setNotice(null);
     setIsSending(true);
     try {
       const user = getAuth().currentUser;
