@@ -76,6 +76,12 @@ import {
   RESEARCH_UNREACHABLE_LINE,
   researchFailureLine as recordResearchFailureLine,
   filingFailureLine as recordFilingFailureLine,
+  // B2 (spec §2 ruling 7) — the attestation vocabulary, named once in the
+  // record module and read here, so the Battle View and the League arena
+  // cannot end up with two spellings of one claim.
+  CHAT_NOT_SENT_CLAUSE,
+  CHAT_SENT_CLAUSE,
+  attestsPersisted,
   GUARDRAIL_FORCED_FAILED_LABEL,
 } from '../../data/decisionRecord';
 
@@ -901,7 +907,42 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   filingBudget: FILING_BUDGET_LINE,
   filingRejected: FILING_REJECTED_LINE,
   filingFailed: FILING_FAILED_LINE,
-  filingFailureLine: (status) => recordFilingFailureLine(status),
+  // The body is now part of the decision: a failure the route attested
+  // PERSISTED is not a filing failure and gets no line at all (the exchange the
+  // listener is about to deliver is the receipt).
+  filingFailureLine: (status, body) => recordFilingFailureLine(status, body),
+
+  // ── The send-failure line, by WHAT THE ROUTE ATTESTED (B2, spec ruling 7) ──
+  //
+  // THREE STATES, because the route has three answers and the shipped line had
+  // room for one. The clause above (`chatSendFailed`) explains why the second
+  // half was deleted: the client could not prove it, and `1/10` with "nothing
+  // was sent" on screen together was a real founder smoke. It comes back here
+  // in the only form that was ever honest — appended when, and only when, the
+  // route says so:
+  //
+  //   persisted === false  the exchange did not land → `· nothing was sent`
+  //   persisted === true   it landed and something after the write failed →
+  //                        `· your message was sent`
+  //   anything else        an unattested failure, a network drop, an ambiguous
+  //                        commit → the bare line, which claims nothing
+  //
+  // The third is not a gap: it is the same claimless default `researchFailureLine`
+  // takes, so a new failure path added without an attestation is SAFE by default.
+  chatSendFailedLine: (body) => {
+    if (attestsPersisted(body)) return `${BATTLE_VIEW_COPY.chatSendFailed}${CHAT_SENT_CLAUSE}`;
+    if (body?.persisted === false) return `${BATTLE_VIEW_COPY.chatSendFailed}${CHAT_NOT_SENT_CLAUSE}`;
+    return BATTLE_VIEW_COPY.chatSendFailed;
+  },
+
+  // ── A typed directive that replaced one the player never saw land ─────────
+  //
+  // Ruling 4 files latest-wins and REPORTS what was replaced. Before B2 the
+  // typed path overwrote a chip filing that landed during the model call and no
+  // surface was told — the player's chip receipt simply became `Replaced` with
+  // nothing to explain it. This is the sentence that explains it, and it says
+  // only what the record proves: one slot, latest wins.
+  replacedEarlierDirective: 'This replaced the directive you filed just before it.',
 
   receiptLine: (receipt) => {
     if (!receipt || typeof receipt !== 'object') return null;

@@ -823,6 +823,14 @@ export const attestsCharged = (body) => body?.charged === true;
 export const CHAT_NOT_SENT_CLAUSE = ' · nothing was sent';
 
 /**
+ * Its mirror, and the half that could never be said before: the turn's
+ * exchange IS on the battle document — what failed came after the write. Same
+ * rule, opposite sign; appended only to a failure the route attested
+ * `persisted: true` on.
+ */
+export const CHAT_SENT_CLAUSE = ' · your message was sent';
+
+/**
  * The failure line for a filing response's HTTP status.
  *
  * 404 SHARES THE 422 LINE, DELIBERATELY. The route does not exist for a caller
@@ -839,7 +847,15 @@ export const CHAT_NOT_SENT_CLAUSE = ' · nothing was sent';
  * attestable. A distinct sentence for the two causes is a copy request, not an
  * inline change.
  */
-export function filingFailureLine(status) {
+export function filingFailureLine(status, body) {
+  // B2 (spec ruling 7): A FAILURE THE ROUTE ATTESTED PERSISTED IS NOT A FILING
+  // FAILURE. The filing landed and the message was spent; what failed came
+  // after the commit, and the exchange the listener is about to deliver is the
+  // receipt. `null` = say nothing, which is the only honest line for it — the
+  // caller renders the filed state instead. Every other body (an attested
+  // `false`, an unknown, a response with no attestation at all) falls through
+  // to the status map, which is what it has always been.
+  if (attestsPersisted(body)) return null;
   if (status === 409) return FILING_CONFLICT_LINE;
   if (status === 429) return FILING_BUDGET_LINE;
   if (status === 422 || status === 404) return FILING_REJECTED_LINE;

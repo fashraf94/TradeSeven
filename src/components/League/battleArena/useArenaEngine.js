@@ -22,7 +22,7 @@ import {
 } from './arenaEngineCore';
 // Voice-layer grounding §6.3 — the filing failure lines are the Battle View's
 // (decisionRecord.js, zero-import): one copy source, never a second spelling.
-import { FILING_FAILED_LINE, filingFailureLine } from '../../../data/decisionRecord';
+import { FILING_FAILED_LINE, filingFailureLine, attestsCharged, attestsPersisted } from '../../../data/decisionRecord';
 import { beatKey, firstUnseenBeat } from './arenaBeatDiff';
 import { LEAGUE_AGENT_CHAT_ENABLED } from '../../../config/featureFlags';
 
@@ -30,13 +30,34 @@ const BEAT_DWELL_MS = 4400;
 const SEEN_CAP = 500; // bound the live seen-set across a long session
 
 // The in-voice failure line (a hiccup reaching the agent). NOT an error banner — it
-// renders as a normal agent message and the input stays open for a retry, and the
-// server never charged (the count is unchanged).
+// renders as a normal agent message and the input stays open for a retry.
+//
+// (B2: the clause that used to end this comment — "and the server never charged
+// (the count is unchanged)" — is gone. It was a COST CLAIM made from an HTTP
+// status, and it was false whenever the route threw after its write landed. The
+// counter now follows `charged` from the body, which is the only party that
+// knows.)
 const ASK_FAILED_LINE = "Couldn't get through to me just then — give it another shot.";
 
 // Lazy-load the authed-fetch helper so this hook's static import graph stays node-clean
 // (the SSR smoke test never loads firebase). Module-cached, so both callers share it.
 const loadAuthedFetch = () => import('../../../utils/fetchWithAuth').then((m) => m.fetchWithAuth);
+
+/**
+ * What the counter should read after a FAILED call, from what the route
+ * attested (B2, spec ruling 7). A body carrying its own authoritative
+ * `remaining` wins; otherwise an attested `charged: true` spends one, and
+ * anything else — an attested false, an unknown, no attestation at all —
+ * returns undefined, which `setRemaining` treats as "leave it alone".
+ *
+ * Read from the STATE inside the updater, never from a closed-over `eng`: two
+ * failures in flight would both decrement from the same stale number.
+ */
+const chargedRemaining = (body, current) => {
+  if (Number.isFinite(body?.remaining)) return body.remaining;
+  if (attestsCharged(body) && Number.isFinite(current)) return Math.max(0, current - 1);
+  return undefined;
+};
 
 export function useArenaEngine({
   active, voice, beats, ask, closeStart = 0, wireStart = 0, beatInterval = 7600,
@@ -93,10 +114,20 @@ export function useArenaEngine({
       });
       const data = await res.json().catch(() => ({}));
       // A non-ok status OR a 200 with no answer text (malformed body) both surface the
-      // in-voice retry line — never a blank agent bubble. The server did NOT charge on
-      // either, so the counter is left untouched.
+      // in-voice retry line — never a blank agent bubble.
+      //
+      // THE COUNTER FOLLOWS THE ROUTE, NOT THE STATUS (B2, spec ruling 7:
+      // "the arena reads the same field and drops its 'not charged' claim").
+      // A turn that committed and then threw spent a message; a turn that
+      // refused before the write did not; an unattested failure proves neither,
+      // and `setRemaining` is a no-op for a non-finite value, so the count is
+      // left exactly where it was in that case — as a fact about what the
+      // client knows, not a claim about what the server did.
       if (!res.ok || !data.agentMessage) {
-        setEng((s) => applyAnswer(s, { q: text, text: ASK_FAILED_LINE, error: true }));
+        setEng((s) => setRemaining(
+          applyAnswer(s, { q: text, text: ASK_FAILED_LINE, error: true }),
+          chargedRemaining(data, s.remaining),
+        ));
         return;
       }
       // Success OR the in-voice exhausted 200 — both carry agentMessage + remaining.
@@ -140,15 +171,20 @@ export function useArenaEngine({
         body: JSON.stringify({ agentId, battleId, adjustmentId: id, expectedDirectiveThreadId: beliefRef.current }),
       });
       const data = await res.json().catch(() => ({}));
+      // B2: a non-ok response whose body attests `persisted: true` filed the
+      // directive — what failed came after the commit. It carries no directive
+      // text to render a receipt from, so the lane keeps its claimless line
+      // rather than saying the filing failed; `filingFailureLine` returns null
+      // for exactly that body and the engine's own fallback covers it.
       if (!res.ok || !data.directive?.text) {
         setEng((s) => setRemaining(applyFilingFailed(s, {
-          line: filingFailureLine(res.status),
+          line: filingFailureLine(res.status, data) ?? (attestsPersisted(data) ? null : FILING_FAILED_LINE),
           // A 409 names the server's current thread: adopt it, so the retry files
           // against the truth. Any other failure leaves the belief alone.
           currentDirectiveThreadId: res.status === 409 && Object.prototype.hasOwnProperty.call(data, 'currentDirectiveThreadId')
             ? (data.currentDirectiveThreadId ?? null)
             : undefined,
-        }), res.status === 429 ? data.remaining : undefined));
+        }), res.status === 429 ? data.remaining : chargedRemaining(data, s.remaining)));
         return;
       }
       setEng((s) => setRemaining(applyFiled(s, {

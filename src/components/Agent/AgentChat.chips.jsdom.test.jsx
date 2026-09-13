@@ -171,6 +171,37 @@ describe('chips minted by id — the taps', () => {
     expect(container.textContent).toContain(FILING_FAILED_LINE);
     expect(container.textContent).not.toContain('nothing was filed');
   });
+
+  // ── B2 (spec §2 ruling 7) ────────────────────────────────────────────────
+  // The 500 this route can answer AFTER its commit is the one case where a
+  // status is exactly backwards: the directive IS filed and the message IS
+  // spent. The line is now gated on what the route attested, never on `res.ok`.
+  it('D-1q: a 500 whose body attests PERSISTED renders NO failure line — the filing landed', async () => {
+    stubFetch(async () => jsonResponse(500, { persisted: true, charged: true, reason: 'failed_after_commit' }));
+    render({ chatExchanges: [lastAgentMessage()] });
+    await click(chipButton(FILES_DV02));
+    for (const line of [FILING_FAILED_LINE, FILING_CONFLICT_LINE, FILING_BUDGET_LINE, FILING_REJECTED_LINE]) {
+      expect(container.textContent).not.toContain(line);
+    }
+  });
+
+  it('D-1r: …and the filed thread becomes the belief, so the chips retire as they do on a 200', async () => {
+    const fetchSpy = stubFetch(async () => jsonResponse(500, {
+      persisted: true, charged: true, reason: 'failed_after_commit',
+      directive: { text: DV02, directiveThreadId: 'thread-B' },
+    }));
+    render({ chatExchanges: [lastAgentMessage()], currentDirectiveThreadId: 'thread-A' });
+    await click(chipButton(FILES_DV02));
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(chipButton(FILES_DV02)).toBeUndefined();
+  });
+
+  it('D-1s: an attested `persisted: false` 500 keeps its ruled line', async () => {
+    stubFetch(async () => jsonResponse(500, { persisted: false, charged: false, reason: 'handler_exception' }));
+    render({ chatExchanges: [lastAgentMessage()] });
+    await click(chipButton(FILES_DV02));
+    expect(container.textContent).toContain(FILING_FAILED_LINE);
+  });
 });
 
 describe('the no-change status line (§6.3) — from the persisted exchange only', () => {

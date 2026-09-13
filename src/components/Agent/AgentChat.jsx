@@ -24,6 +24,10 @@ import { TradeCard, CheckCard, CheckRunLine, SPEECH_EYEBROW_COLOR } from '../../
 import { collapseQuietChecks, TAPE_KIND } from '../../screens/battleView/buildTape';
 import { scopeTape } from '../../screens/battleView/scopeTape';
 import { cssVar } from '../../theme/cssTokens';
+// B2 (spec §2 ruling 7): whether a turn landed and whether a message was spent
+// are the route's to say. The two readers are the record module's, so the chat,
+// the arena and the Show-it door cannot end up with three spellings of one claim.
+import { attestsPersisted } from '../../data/decisionRecord';
 
 // "Didn't respond" means the proposal hit its deadline without the user
 // approving or vetoing. In strategist mode, agent-evaluate.js writes
@@ -646,6 +650,10 @@ export default function AgentChat({
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState(null);
+  // B2 (ruling 4): a one-line NOTICE — something happened that the player
+  // should know about and that did not fail. Kept apart from `error` so the
+  // red failure styling never carries a sentence about a successful turn.
+  const [notice, setNotice] = useState(null);
   // Voice-layer grounding §6.3 (review R-18): the thread a chip filing's 200
   // named, held until the subscribed doc's slot catches up. While it is
   // pending the belief for a further filing is the server's word (never the
@@ -960,9 +968,14 @@ export default function AgentChat({
   // 11). One expression, so the two failure branches below — an unhandled
   // server status and a thrown request — cannot drift apart, which is exactly
   // what the shipped pair did nothing to prevent.
-  const sendFailedCopy = controllerCopy
-    ? BATTLE_VIEW_COPY.chatSendFailed
-    : 'Agent is thinking too hard. Try again.';
+  // B2 (spec ruling 7): the line now reads the ROUTE'S ATTESTATION, not the
+  // status. `chatSendFailedLine` appends `· nothing was sent` only when the
+  // body says `persisted: false`, `· your message was sent` when it says the
+  // exchange landed, and neither when nothing was attested — which is the case
+  // a thrown request falls into, because a network drop cannot prove either.
+  const sendFailedCopy = (body) => (controllerCopy
+    ? BATTLE_VIEW_COPY.chatSendFailedLine(body)
+    : 'Agent is thinking too hard. Try again.');
 
   async function sendMessage(text) {
     if (!text.trim() || isSending || activeBudgetUsed >= activeBudgetLimit) return;
@@ -1008,12 +1021,22 @@ export default function AgentChat({
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        // Drop both the typing indicator AND the optimistic user bubble — the
-        // exchange didn't land. Server-side error UI takes over via setError.
-        setInFlightMessages(prev => prev.filter(m => m.id !== typingId && m.id !== userMsg.id));
+        // B2: WHICH in-flight items to drop is a question about whether the
+        // exchange landed, and only the route can answer it. An attested
+        // `persisted: true` failure IS a turn — the listener will deliver the
+        // exchange — so the optimistic user bubble stays and reconciliation
+        // matches it, exactly as on a success. Everything else drops both.
+        const landed = attestsPersisted(data);
+        setInFlightMessages(prev => prev.filter(m => (
+          m.id !== typingId && (landed || m.id !== userMsg.id)
+        )));
 
         if (res.status === 401) {
           setError('Session expired. Please refresh.');
+        } else if (landed) {
+          // A filing whose follow-up failed. The line says what the record
+          // proves — the message went — and nothing about the agent.
+          setError(sendFailedCopy(data));
         } else if (data.error === 'budget_exceeded' || data.error === 'chat_budget_exceeded') {
           // Server-side budget cap — use the message from the server when provided
           // so the copy matches the current mode (battle vs review).
@@ -1025,9 +1048,15 @@ export default function AgentChat({
         } else if (res.status === 504) {
           setError('Agent took too long. Try again.');
         } else {
-          setError(sendFailedCopy);
+          setError(sendFailedCopy(data));
         }
         return;
+      }
+
+      // B2 (ruling 4): a typed directive that replaced a chip filing the player
+      // never saw land says so, once. A NOTICE, not an error — nothing failed.
+      if (typeof data.replacedThreadId === 'string' && data.replacedThreadId) {
+        setNotice(BATTLE_VIEW_COPY.replacedEarlierDirective);
       }
 
       // 2. On success: drop only the typing indicator. The user bubble stays
@@ -1040,9 +1069,11 @@ export default function AgentChat({
       // the server's Firestore write propagates back via the snapshot listener
       // in useAgentBattle → new props → updated display.
     } catch (err) {
-      // Network error — drop both in-flight items so the user can retry.
+      // Network error — drop both in-flight items so the user can retry. NO
+      // BODY, so no attestation: the line claims neither half (B2). A request
+      // that never came back cannot prove the write did not happen.
       setInFlightMessages(prev => prev.filter(m => m.id !== typingId && m.id !== userMsg.id));
-      setError(sendFailedCopy);
+      setError(sendFailedCopy(null));
     } finally {
       setIsSending(false);
     }
@@ -1075,15 +1106,21 @@ export default function AgentChat({
         },
         body: JSON.stringify({ agentId, battleId, adjustmentId, expectedDirectiveThreadId: directiveBelief }),
       });
+      // B2: the BODY is read first, because whether this failed is a question
+      // the body answers and the status does not. A non-ok response that
+      // attests `persisted: true` filed the directive — what failed came after
+      // the commit — so it renders no failure line at all and the listener
+      // delivers the receipt as usual (`filingFailureLine` returns null for
+      // exactly that body).
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         if (res.status === 401) setError('Session expired. Please refresh.');
-        else setError(BATTLE_VIEW_COPY.filingFailureLine(res.status));
-        return;
+        else setError(BATTLE_VIEW_COPY.filingFailureLine(res.status, data));
+        if (!attestsPersisted(data)) return;
       }
       // Nothing from the response is RENDERED (the receipt comes from the
       // exchange the route wrote); the filed thread is only held as the
       // belief until the listener delivers it.
-      const data = await res.json().catch(() => ({}));
       const filedThreadId = data?.directive?.directiveThreadId;
       if (typeof filedThreadId === 'string' && filedThreadId) setPendingFiledThreadId(filedThreadId);
     } catch {
@@ -1579,6 +1616,19 @@ export default function AgentChat({
           fontSize: 13,
         }}>
           {error}
+        </div>
+      )}
+
+      {notice && (
+        <div
+          data-testid="chat-notice"
+          style={{
+            padding: '6px 16px',
+            color: SPEECH_EYEBROW_COLOR,
+            fontSize: 13,
+          }}
+        >
+          {notice}
         </div>
       )}
 

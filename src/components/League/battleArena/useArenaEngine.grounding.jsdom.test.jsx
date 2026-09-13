@@ -14,7 +14,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { FILING_CONFLICT_LINE, FILING_BUDGET_LINE, filedLabel } from '../../../data/decisionRecord';
+import { FILING_CONFLICT_LINE, FILING_BUDGET_LINE, FILING_FAILED_LINE, filedLabel } from '../../../data/decisionRecord';
 import { etTime } from '../../Dashboard/desk/deskCopy';
 
 // The hook lazy-imports the REAL fetchWithAuth (its static graph stays
@@ -144,5 +144,88 @@ describe('useArenaEngine — the grounded answer and the chip filing', () => {
     expect(latest.chips).toEqual([]);
     expect(latest.currentDirectiveThreadId).toBeNull();
     expect(latest.filingError).toBeNull();
+  });
+});
+
+// ============================================================================
+// B2 (spec §2 ruling 7) — THE COUNTER FOLLOWS THE ROUTE, NOT THE STATUS
+//
+// The hook carried the claim in so many words: "The server did NOT charge on
+// either, so the counter is left untouched" (`useArenaEngine.js:95-97`, the
+// site the spec names). It was false whenever `api/agent/chat.js` threw after
+// its write landed — the exchange was on the document and the message was
+// spent. The comment and the claim are gone; `charged` from the body decides.
+//
+// MOUNTED, on real response shapes — no source greps (the Sep 10 review's
+// second headline). This is the hook's own mounted home; ArenaMobile renders
+// AgentDock with a `remaining` PROP and never opens a request, so a row there
+// could not fail under the defect.
+// ============================================================================
+
+describe('useArenaEngine — B2: the counter follows `charged`, never the status', () => {
+  it('D-1k: a failure that attests `charged: true` SPENDS one — the counter moves', async () => {
+    fetchMock.impl = async (url) => (url === '/api/agent/chat'
+      ? json(200, { agentMessage: 'Holding.', remaining: 6 })
+      : json(200, BUDGET));
+    await act(async () => { await latest.askLive('plan?'); });
+    expect(latest.remaining).toBe(6);
+
+    // …then a turn that committed and threw: 500, and the message was spent.
+    fetchMock.impl = async (url) => (url === '/api/agent/chat'
+      ? json(500, { persisted: true, charged: true, reason: 'failed_after_commit' })
+      : json(200, BUDGET));
+    await act(async () => { await latest.askLive('and now?'); });
+    expect(latest.lines[0]).toMatchObject({ error: true });
+    expect(latest.remaining).toBe(5);
+  });
+
+  it('D-1l: a failure that attests `charged: false` leaves the counter alone', async () => {
+    fetchMock.impl = async (url) => (url === '/api/agent/chat'
+      ? json(200, { agentMessage: 'Holding.', remaining: 6 })
+      : json(200, BUDGET));
+    await act(async () => { await latest.askLive('plan?'); });
+    expect(latest.remaining).toBe(6);
+
+    fetchMock.impl = async (url) => (url === '/api/agent/chat'
+      ? json(400, { persisted: false, charged: false, reason: 'battle_not_active' })
+      : json(200, BUDGET));
+    await act(async () => { await latest.askLive('and now?'); });
+    expect(latest.remaining).toBe(6);
+  });
+
+  it('D-1m: an UNATTESTED failure leaves the counter alone too — and claims nothing', async () => {
+    fetchMock.impl = async (url) => (url === '/api/agent/chat'
+      ? json(200, { agentMessage: 'Holding.', remaining: 6 })
+      : json(200, BUDGET));
+    await act(async () => { await latest.askLive('plan?'); });
+
+    fetchMock.impl = async (url) => (url === '/api/agent/chat' ? json(500, {}) : json(200, BUDGET));
+    await act(async () => { await latest.askLive('and now?'); });
+    expect(latest.remaining).toBe(6);
+    expect(latest.lines[0]).toMatchObject({ error: true });
+  });
+
+  it('D-1n: a body carrying its own authoritative `remaining` still wins', async () => {
+    fetchMock.impl = async (url) => (url === '/api/agent/chat'
+      ? json(500, { persisted: true, charged: true, reason: 'failed_after_commit', remaining: 2 })
+      : json(200, BUDGET));
+    await act(async () => { await latest.askLive('plan?'); });
+    expect(latest.remaining).toBe(2);
+  });
+
+  it('D-1o: a chip filing whose body attests PERSISTED is not rendered as a failed filing', async () => {
+    fetchMock.impl = async (url) => (url === '/api/agent/file-directive'
+      ? json(500, { persisted: true, charged: true, reason: 'failed_after_commit' })
+      : json(200, BUDGET));
+    await act(async () => { await latest.fileLive('DV-02'); });
+    // No claim that the filing failed — the exchange is on the document and the
+    // subscribed doc will deliver the receipt.
+    expect(latest.filingError).toBeNull();
+  });
+
+  it('D-1p: …while an unattested chip failure keeps its ruled line', async () => {
+    fetchMock.impl = async (url) => (url === '/api/agent/file-directive' ? json(500, {}) : json(200, BUDGET));
+    await act(async () => { await latest.fileLive('DV-02'); });
+    expect(latest.filingError).toBe(FILING_FAILED_LINE);
   });
 });

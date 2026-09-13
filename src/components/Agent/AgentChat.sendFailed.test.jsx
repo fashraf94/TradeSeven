@@ -246,3 +246,119 @@ describe('item 11 — the send-failure line under the flag', () => {
     expect(COPY.chatSendFailed).not.toContain('’');
   });
 });
+
+// ============================================================================
+// B2 (spec §2 ruling 7) — THE CLAUSE COMES BACK, ON THE ROUTE'S WORD
+//
+// The header above ends "The clause comes back when the server attests to it,
+// on the P-1 concurrency branch." This is that branch. Three bodies, three
+// lines, and the one that matters is the middle: a 500 whose body says the
+// exchange LANDED must not render as a turn that never happened — that is the
+// exact founder smoke (`1/10` and "nothing was sent" on screen together) the
+// clause was deleted for.
+//
+// Real response shapes, mounted, no source greps (the Sep 10 review's second
+// headline).
+// ============================================================================
+
+describe('B2 — the send-failure line reads the attestation, never the status', () => {
+  const SENT_CLAUSE = 'your message was sent';
+
+  it('D-1a: a `persisted: false` body renders the FAILED state — the clause comes back', async () => {
+    stubFetch(async () => jsonResponse(500, { persisted: false, charged: false, reason: 'handler_exception', error: 'Agent unavailable.' }));
+    render({ controllerCopy: true });
+    await send('protect the lead');
+    expect(container.textContent).toContain(`${RULED}${' · nothing was sent'}`);
+    // …and the optimistic bubble is rolled back, because nothing landed.
+    expect([...container.querySelectorAll('div')].filter((el) => el.textContent === 'protect the lead')).toHaveLength(0);
+  });
+
+  it('D-1b: a `persisted: true` body renders the FILED state — never the failed one', async () => {
+    stubFetch(async () => jsonResponse(500, { persisted: true, charged: true, reason: 'failed_after_commit', error: 'Agent unavailable.' }));
+    render({ controllerCopy: true });
+    await send('protect the lead');
+    // The line says the message went. It never says it did not.
+    expect(container.textContent).toContain(`${RULED}${' · your message was sent'}`);
+    expect(container.textContent).not.toContain(DROPPED_CLAUSE);
+    // The optimistic bubble STAYS: the exchange is on the document and the
+    // listener will reconcile it, exactly as on a success.
+    expect([...container.querySelectorAll('div')].filter((el) => el.textContent === 'protect the lead').length).toBeGreaterThan(0);
+  });
+
+  it('D-1c: a body with NO attestation claims neither half', async () => {
+    stubFetch(async () => jsonResponse(500, { error: 'internal' }));
+    render({ controllerCopy: true });
+    await send();
+    expect(container.textContent).toContain(RULED);
+    expect(container.textContent).not.toContain(DROPPED_CLAUSE);
+    expect(container.textContent).not.toContain(SENT_CLAUSE);
+  });
+
+  it('D-1d: an AMBIGUOUS commit (`persisted: null`) claims neither half either', async () => {
+    stubFetch(async () => jsonResponse(500, { persisted: null, charged: null, reason: 'handler_exception' }));
+    render({ controllerCopy: true });
+    await send();
+    expect(container.textContent).toContain(RULED);
+    expect(container.textContent).not.toContain(DROPPED_CLAUSE);
+    expect(container.textContent).not.toContain(SENT_CLAUSE);
+  });
+
+  it('D-1e: a thrown request has no body, so it claims neither half', async () => {
+    stubFetch(async () => { throw new TypeError('Failed to fetch'); });
+    render({ controllerCopy: true });
+    await send();
+    expect(container.textContent).toContain(RULED);
+    expect(container.textContent).not.toContain(DROPPED_CLAUSE);
+    expect(container.textContent).not.toContain(SENT_CLAUSE);
+  });
+
+  it('D-1f: FLAG OFF — an attested body changes nothing; the shipped string, byte for byte', async () => {
+    stubFetch(async () => jsonResponse(500, { persisted: true, charged: true, reason: 'failed_after_commit' }));
+    render();
+    await send();
+    expect(container.textContent).toContain(SHIPPED);
+    expect(container.textContent).not.toContain(RULED);
+    expect(container.textContent).not.toContain(SENT_CLAUSE);
+  });
+
+  it('D-1g: the two clauses are the record module\'s, not literals in the component', () => {
+    expect(COPY.chatSendFailedLine({ persisted: false })).toBe(`${RULED} · nothing was sent`);
+    expect(COPY.chatSendFailedLine({ persisted: true })).toBe(`${RULED} · your message was sent`);
+    expect(COPY.chatSendFailedLine(null)).toBe(RULED);
+    expect(COPY.chatSendFailedLine({ persisted: null })).toBe(RULED);
+  });
+});
+
+// ============================================================================
+// B2 (ruling 4) — the replaced-directive notice
+// ============================================================================
+
+describe('B2 — a typed filing that replaced a chip filing says so, once', () => {
+  it('D-1h: the line renders from `replacedThreadId` on the body', async () => {
+    stubFetch(async () => jsonResponse(200, {
+      agentMessage: 'widening out', persisted: true, charged: true, reason: null, replacedThreadId: 'chip-thread-1',
+    }));
+    render({ controllerCopy: true });
+    await send();
+    expect(container.querySelector('[data-testid="chat-notice"]')).toBeTruthy();
+    expect(container.textContent).toContain(COPY.replacedEarlierDirective);
+  });
+
+  it('D-1i: …and not on a turn that replaced nothing the player had not seen', async () => {
+    stubFetch(async () => jsonResponse(200, { agentMessage: 'noted', persisted: true, charged: true, reason: null }));
+    render({ controllerCopy: true });
+    await send();
+    expect(container.querySelector('[data-testid="chat-notice"]')).toBeNull();
+    expect(container.textContent).not.toContain(COPY.replacedEarlierDirective);
+  });
+
+  it('D-1j: it is a NOTICE, not a failure — never in the red error slot', async () => {
+    stubFetch(async () => jsonResponse(200, {
+      agentMessage: 'widening out', persisted: true, charged: true, reason: null, replacedThreadId: 'chip-thread-1',
+    }));
+    render({ controllerCopy: true });
+    await send();
+    const red = container.querySelector('[style*="EF4444"]');
+    expect(red === null || !red.textContent.includes(COPY.replacedEarlierDirective)).toBe(true);
+  });
+});
