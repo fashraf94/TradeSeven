@@ -386,14 +386,36 @@ describe('file-directive — filed, replaced-prior, and the persisted shape', ()
     expect(battleWrite().data.directive.text).toBe(DV02);
   });
 
-  it('the persisted shape IS the chat turn\'s shape: both writers build it from directiveFiling.js (one function, not two literals)', async () => {
+  // B2 (spec §2): the shape's ONE home moved INWARD, not sideways. Both routes
+  // used to call the two builders themselves; they now reach them through the
+  // single transaction both import, which is the stronger form of the same
+  // invariant — there is now one CALLER of the builders, not two. The row
+  // follows the shape to its new home and keeps its teeth: the shared module
+  // imports directiveFiling.js and calls both builders, each route reaches it
+  // through that module, and neither route re-inlines the legacy literal.
+  it('the persisted shape IS the chat turn\'s shape: ONE module builds it for both writers (one function, not two literals)', async () => {
     const { readFileSync } = await import('node:fs');
     const chat = readFileSync(new URL('./chat.js', import.meta.url), 'utf8');
     const route = readFileSync(new URL('./file-directive.js', import.meta.url), 'utf8');
+    const shared = readFileSync(new URL('../_utils/directiveTransaction.js', import.meta.url), 'utf8');
+    expect(shared).toContain("from './directiveFiling.js'");
+    expect(shared).toContain('buildDirectiveRecord(');
+    expect(shared).toContain('buildDirectiveSlot(');
+    for (const src of [route]) {
+      expect(src).toContain("from '../_utils/directiveTransaction.js'");
+      expect(src).toContain('runDirectiveTransaction(');
+      // The route no longer builds the record or the slot itself…
+      expect(src).not.toContain('buildDirectiveRecord(');
+      expect(src).not.toContain('buildDirectiveSlot(');
+    }
+    // chat.js still calls the two builders directly at this commit; commit B
+    // moves it onto the shared module and this row moves it into the loop
+    // above. Either way the shape has exactly one definition.
+    expect(chat).toContain("from '../_utils/directiveFiling.js'");
+    expect(chat).toContain('buildDirectiveRecord(');
+    expect(chat).toContain('buildDirectiveSlot(');
     for (const src of [chat, route]) {
-      expect(src).toContain("from '../_utils/directiveFiling.js'");
-      expect(src).toContain('buildDirectiveRecord(');
-      expect(src).toContain('buildDirectiveSlot(');
+      // Neither route re-inlines the pre-directiveFiling.js literal.
       expect(src).not.toContain("expiry: normalizedDirective.expiry || 'end_of_battle'");
     }
     // …and the shape itself, as the shipped ENFORCE row in chat.test.js photographs it.

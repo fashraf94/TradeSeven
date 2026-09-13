@@ -14,7 +14,11 @@
 // (null = none). A stale belief is a `conflict`, never a silent overwrite.
 //
 // ONE TRANSACTION (M4; the P-1a/b/c requirement lands here first), re-reading
-// and verifying, in order:
+// and verifying, in order. SINCE B2 the transaction itself lives in
+// `api/_utils/directiveTransaction.js` (spec §2) and the typed route files
+// through the same one; this route's behaviour is unchanged — it selects
+// `conflict: reject` and `budget: reject`, which is what it always did. Checks
+// 5 and 6 stay in this file because the allowlist helpers are its import.
 //   7. the route's flag — checked FIRST, before any read: the mutating route
 //      is gated itself, not only the chip. It is live only for a caller the
 //      accessor resolves to 'on' — the SAME resolution that mints the chips
@@ -73,23 +77,26 @@
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
-import { FieldValue } from 'firebase-admin/firestore';
-import { randomUUID } from 'node:crypto';
 import { getVoiceGroundingMode } from '../../src/config/featureFlags.js';
 import { isValidAdjustmentId, getCanonicalText, getCanonicalTextVersion } from '../../src/data/archetypeAdjustments.js';
 import { getEffectiveArchetype } from '../_utils/directiveIdentity.js';
 // The agent-belongs-to-this-battle predicate, now shared with the chat route
-// and the lazy opener (agentBattleBinding.js) rather than inline here.
-import { agentBelongsToBattle, AGENT_BATTLE_MISMATCH } from '../_utils/agentBattleBinding.js';
+// and the lazy opener (agentBattleBinding.js) rather than inline here — and,
+// since B2, re-checked INSIDE the transaction by directiveTransaction.js.
+import { AGENT_BATTLE_MISMATCH } from '../_utils/agentBattleBinding.js';
 import { TOURNAMENT_GAME_MODE } from '../../src/constants/leagueTournament.js';
+import { BATTLE_CHAT_BUDGET } from '../_utils/directiveFiling.js';
+// B2 (PHASE_B_TICK_STAMPS_SPEC_V1.md §2): the transaction below USED to live in
+// this file at :196-299. It now lives in the sibling both routes import, so the
+// typed route files through the same preconditions, the same explicit
+// in-transaction count and the same cross-document League charge. This route's
+// behaviour is unchanged — it selects the two policies it always had.
 import {
-  resolveBudgetDay,
-  agentChatBudgetDocId,
-  AGENT_CHAT_BUDGET_COLLECTION,
-  AGENT_CHAT_DAILY_LIMIT,
-} from '../_utils/agentChatBudget.js';
-import { toIso } from '../_utils/tournamentTime.js';
-import { buildDirectiveRecord, buildDirectiveSlot, BATTLE_CHAT_BUDGET } from '../_utils/directiveFiling.js';
+  runDirectiveTransaction,
+  DIRECTIVE_CONFLICT_POLICY,
+  DIRECTIVE_BUDGET_POLICY,
+  DIRECTIVE_OUTCOME,
+} from '../_utils/directiveTransaction.js';
 import { GROUNDING_VERSION } from '../_utils/voiceLayerGrounding.js';
 import { DIRECTIVE_FILED_MESSAGE_TYPE } from '../../src/data/decisionRecord.js';
 
@@ -109,7 +116,6 @@ export const FILED_MESSAGE_TYPE = DIRECTIVE_FILED_MESSAGE_TYPE; // ONE name (dec
 export const FILED_SOURCE = 'chip';
 
 const nonEmpty = (v) => typeof v === 'string' && v.trim().length > 0;
-const normalizeCount = (raw) => (Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 0);
 
 /**
  * The audit exchange (§6.1 as amended by hazards 18 and 19). Agent-initiated
@@ -193,137 +199,76 @@ export default async function handler(req, res) {
   const agentRef = db.collection('agents').doc(agentId);
 
   try {
-    const outcome = await db.runTransaction(async (tx) => {
-      // ---- reads (all before any write — Firestore's transaction contract) ----
-      const battleSnap = await tx.get(battleRef);
-      if (!battleSnap.exists) return { kind: 'battle_not_found' };
-      const battle = battleSnap.data();
-
-      // Check 1 — the authenticated owner.
-      if (battle.ownerId !== user.uid) return { kind: 'forbidden_owner' };
-      // Check 2 — the battle is active.
-      if (battle.status !== 'active') return { kind: 'battle_not_active' };
-      // Check 3 — the agent belongs to this battle.
-      if (!agentBelongsToBattle(battle, agentId)) return { kind: 'forbidden_agent' };
-      // Check 4 — the client's belief about the current directive.
-      const currentThreadId = typeof battle.directive?.directiveThreadId === 'string' && battle.directive.directiveThreadId
-        ? battle.directive.directiveThreadId
-        : null;
-      if (currentThreadId !== expectedDirectiveThreadId) {
-        return { kind: 'conflict', currentDirectiveThreadId: currentThreadId };
-      }
-
-      const agentSnap = await tx.get(agentRef);
-      if (!agentSnap.exists) return { kind: 'agent_not_found' };
-      const agent = agentSnap.data();
-
-      // Check 5 — permitted for the SERVER-DERIVED archetype (no fallback: an
-      // unknown archetype has no allowlist and files nothing).
-      const archetype = getEffectiveArchetype(battle, agent);
-      if (!archetype || !isValidAdjustmentId(archetype, adjustmentId)) {
-        return { kind: 'rejected', archetype: archetype ?? null };
-      }
-      // Check 6 — the canonical text, server-side.
-      const text = getCanonicalText(archetype, adjustmentId);
-      if (!text) return { kind: 'rejected', archetype };
-
-      // Check 8 — the budget, derived from the battle's game mode.
-      const now = new Date();
-      const isLeague = battle.gameMode === TOURNAMENT_GAME_MODE;
-      let remaining = null;
-      let commitBudget = () => {};
-      let battleBudgetUpdate = {};
-      if (isLeague) {
-        // The League store: the group read derives the game day (the same
-        // index the daily close writes); null = unkeyable → FAIL-OPEN, the
-        // chat route's own contract (file for free, never a placeholder day).
-        const key = await resolveBudgetDay(db, battle);
-        if (key) {
-          const budgetRef = db.collection(AGENT_CHAT_BUDGET_COLLECTION).doc(agentChatBudgetDocId(key.groupId, user.uid, key.dayN));
-          const budgetSnap = await tx.get(budgetRef);
-          const count = budgetSnap.exists ? normalizeCount(budgetSnap.data()?.count) : 0;
-          if (count >= AGENT_CHAT_DAILY_LIMIT) return { kind: 'budget_exhausted' };
-          const next = count + 1;
-          remaining = Math.max(0, AGENT_CHAT_DAILY_LIMIT - next);
-          commitBudget = () => tx.set(budgetRef, {
-            groupId: key.groupId,
-            uid: user.uid,
-            dayN: key.dayN,
-            count: next,
-            updatedAt: toIso(now),
-          }, { merge: true });
+    const outcome = await runDirectiveTransaction(db, {
+      battleRef,
+      agentRef,
+      agentId,
+      uid: user.uid,
+      // Checks 1-4, 8 and the writes are the module's. This route keeps the two
+      // policies it has always had: a stale belief is a `conflict` (the tap was
+      // made against a screen that is no longer true, and no model was called,
+      // so refusing costs nothing), and a spent budget is a refusal for the
+      // same reason.
+      expectedDirectiveThreadId,
+      conflictPolicy: DIRECTIVE_CONFLICT_POLICY.REJECT,
+      budgetPolicy: DIRECTIVE_BUDGET_POLICY.REJECT,
+      // Checks 5 and 6 stay HERE, against the in-transaction battle and agent:
+      // the allowlist helpers are this route's import (Spec §2.3), and the
+      // canonical text is the server's, never the client's.
+      resolveDirective: (battle, agent) => {
+        const archetype = getEffectiveArchetype(battle, agent);
+        if (!archetype || !isValidAdjustmentId(archetype, adjustmentId)) {
+          return { rejected: { archetype: archetype ?? null } };
         }
-      } else {
-        const used = normalizeCount(battle[BATTLE_CHAT_BUDGET.field]);
-        if (used >= BATTLE_CHAT_BUDGET.limit) return { kind: 'budget_exhausted' };
-        remaining = Math.max(0, BATTLE_CHAT_BUDGET.limit - (used + 1));
-        // An explicit count, not FieldValue.increment: the in-transaction
-        // read is what makes the cap authoritative under a race.
-        battleBudgetUpdate = { [BATTLE_CHAT_BUDGET.field]: used + 1 };
-      }
-
-      // ---- the write ----
-      const directiveThreadId = randomUUID();
-      const createdAt = now.toISOString();
-      const normalized = {
-        text,
-        expiry: 'end_of_battle',
-        adjustmentId,
-        canonicalTextVersion: getCanonicalTextVersion(archetype, adjustmentId),
-      };
-      const slot = buildDirectiveSlot(normalized, directiveThreadId, createdAt);
-      const exchange = buildFiledExchange({
-        record: buildDirectiveRecord(normalized, directiveThreadId),
+        const text = getCanonicalText(archetype, adjustmentId);
+        if (!text) return { rejected: { archetype } };
+        return {
+          normalized: {
+            text,
+            expiry: 'end_of_battle',
+            adjustmentId,
+            canonicalTextVersion: getCanonicalTextVersion(archetype, adjustmentId),
+          },
+        };
+      },
+      // Check 8's store, SERVER-DERIVED from the battle's game mode (ruling 6,
+      // D-105) — the client never picks a budget.
+      isLeagueBudget: (battle) => battle.gameMode === TOURNAMENT_GAME_MODE,
+      battleBudget: BATTLE_CHAT_BUDGET,
+      buildExchange: ({ battle, directiveRecord, directiveThreadId, createdAt }) => buildFiledExchange({
+        record: directiveRecord,
         directiveThreadId,
         createdAt,
-        groupId: isLeague && battle.groupId ? battle.groupId : null,
-      });
-
-      tx.update(battleRef, {
-        chatExchanges: FieldValue.arrayUnion(exchange),
-        directive: slot,
-        ...battleBudgetUpdate,
-      });
-      commitBudget();
-
-      return {
-        kind: 'filed',
-        // `replaced-prior` whenever a directive WAS current — a legacy slot with
-        // text but no thread id (pre-Phase-7) is replaced too, even though no
-        // thread can be named for it (review R-19).
-        status: (currentThreadId || nonEmpty(battle.directive?.text)) ? FILING_STATUS.REPLACED_PRIOR : FILING_STATUS.FILED,
-        directive: slot,
-        replacedDirectiveThreadId: currentThreadId,
-        remaining,
-      };
+        groupId: battle.gameMode === TOURNAMENT_GAME_MODE && battle.groupId ? battle.groupId : null,
+      }),
     });
 
     switch (outcome.kind) {
-      case 'battle_not_found':
+      case DIRECTIVE_OUTCOME.BATTLE_NOT_FOUND:
         return res.status(404).json({ error: 'Battle not found' });
-      case 'agent_not_found':
+      case DIRECTIVE_OUTCOME.AGENT_NOT_FOUND:
         return res.status(404).json({ error: 'Agent not found' });
-      case 'forbidden_owner':
+      case DIRECTIVE_OUTCOME.FORBIDDEN_OWNER:
         return res.status(403).json({ error: 'Not authorized to file in this battle' });
-      case 'forbidden_agent':
+      case DIRECTIVE_OUTCOME.FORBIDDEN_AGENT:
         return res.status(403).json({ error: AGENT_BATTLE_MISMATCH });
-      case 'battle_not_active':
+      case DIRECTIVE_OUTCOME.BATTLE_NOT_ACTIVE:
         return res.status(400).json({ error: 'battle_not_active', message: 'This battle has ended.' });
-      case 'conflict':
+      case DIRECTIVE_OUTCOME.CONFLICT:
         return res.status(409).json({
           error: 'conflict',
           status: FILING_STATUS.CONFLICT,
           currentDirectiveThreadId: outcome.currentDirectiveThreadId,
         });
-      case 'rejected':
+      case DIRECTIVE_OUTCOME.REJECTED:
         return res.status(422).json({ error: 'rejected', status: FILING_STATUS.REJECTED, reason: 'off_menu' });
-      case 'budget_exhausted':
+      case DIRECTIVE_OUTCOME.BUDGET_EXHAUSTED:
         return res.status(429).json({ error: 'budget_exhausted', status: FILING_STATUS.BUDGET_EXHAUSTED, remaining: 0 });
-      case 'filed':
+      case DIRECTIVE_OUTCOME.FILED:
         // After the commit — never before (spec §6.3: the receipt is bound to
         // the write).
         return res.status(200).json({
-          status: outcome.status,
+          status: outcome.replacedPrior ? FILING_STATUS.REPLACED_PRIOR : FILING_STATUS.FILED,
           directive: outcome.directive,
           replacedDirectiveThreadId: outcome.replacedDirectiveThreadId,
           remaining: outcome.remaining,
