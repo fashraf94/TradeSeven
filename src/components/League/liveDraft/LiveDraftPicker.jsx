@@ -56,20 +56,29 @@ export default function LiveDraftPicker({ tokens, currentUserId, displayName = n
       ) : (
         slots.map((slot) => {
           const mine = (slot.seats || []).some((s) => s.odUserId === currentUserId);
+          // Default-enabled, matching the server (liveDraftSlots.js): only an
+          // explicit `false` closes the door, so a payload from before the field
+          // existed still renders a claimable row. A seated user keeps their
+          // Leave button on a disabled slot — never strand someone in a slot
+          // that was taken off the board under them.
+          const disabled = slot.enabled === false;
+          const claimable = !pending && !slot.isFull && !disabled;
           return (
-            <div key={slot.slotId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, background: tokens.bgCard, border: `1px solid ${mine ? tokens.medalGold : tokens.borderDivider}`, borderRadius: 12, padding: '12px 14px' }}>
+            <div key={slot.slotId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, background: tokens.bgCard, border: `1px solid ${mine ? tokens.medalGold : tokens.borderDivider}`, borderRadius: 12, padding: '12px 14px', opacity: disabled && !mine ? 0.55 : 1 }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontWeight: 700 }}>{slot.label}</div>
                 <div style={{ fontSize: 12, color: tokens.textMuted }}>
-                  {slot.humanCount === 0 ? 'No one yet — be the first' : `${slot.humanCount} human${slot.humanCount === 1 ? '' : 's'} waiting`}
-                  {slot.isFull ? ' · full' : ''}
+                  {disabled
+                    ? 'Unavailable right now'
+                    : slot.humanCount === 0 ? 'No one yet — be the first' : `${slot.humanCount} human${slot.humanCount === 1 ? '' : 's'} waiting`}
+                  {!disabled && slot.isFull ? ' · full' : ''}
                 </div>
               </div>
               {mine ? (
                 <button onClick={() => run(() => releaseSlot({ groupId: slot.groupId }))} disabled={pending} style={ghostBtn(tokens, !pending)}>Leave</button>
               ) : (
-                <button onClick={() => run(() => claimSlot({ slotId: slot.slotId, displayName }), { entered: true })} disabled={pending || slot.isFull} style={primaryBtn(tokens, !pending && !slot.isFull)}>
-                  {slot.isFull ? 'Full' : 'Claim seat'}
+                <button onClick={() => run(() => claimSlot({ slotId: slot.slotId, displayName }), { entered: true })} disabled={!claimable} style={primaryBtn(tokens, claimable)}>
+                  {disabled ? 'Unavailable' : slot.isFull ? 'Full' : 'Claim seat'}
                 </button>
               )}
             </div>
