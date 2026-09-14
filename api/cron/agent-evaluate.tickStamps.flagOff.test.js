@@ -34,6 +34,8 @@ import { fileURLToPath } from 'node:url';
 import {
   FROZEN_NOW,
   PRE_PHASE_B_ENTRY_KEYS,
+  BASE_ENTRY_KEYS,
+  TIMING_ENTRY_KEYS,
   makeTickBattle,
   makePriceTable,
   makeRankingsDoc,
@@ -97,6 +99,9 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
 const { processAgentBattle } = await import('./agent-evaluate.js');
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+/** The named keys of `obj`, in KEY-LIST order (the flagOn suite's idiom). */
+const pick = (obj, keys) => Object.fromEntries(keys.filter((k) => k in obj).map((k) => [k, obj[k]]));
+
 const GOLDEN_PATH = resolve(HERE, '../_utils/__fixtures__/tickStampsEntryGolden.flagOff.json');
 // globalThis.process: the featureFlags.js idiom — the repo's ESLint globals are the browser set.
 const ENV = globalThis.process?.env || {};
@@ -147,13 +152,23 @@ describe('Phase B tick stamps — flag OFF: the write is byte-identical to the p
 
   it('the entry AND the whole finalUpdate are byte-identical to the golden captured before the stamp code existed (keys, order, bytes)', async () => {
     const { entry, finalUpdate } = await runTick();
+    // The golden is a FROZEN CAPTURE of the pre-Phase-B tree (origin/main @
+    // 4a8ae54a). The three transport-hygiene timing fields (Sep 12, 2026) are
+    // unconditional — they ride every entry, flag on or off — and postdate the
+    // capture, so they are lifted off BOTH SIDES of the comparison and out of
+    // any regeneration: what is asserted is that NOTHING ELSE moved (same 25
+    // keys, same order, same bytes), which is exactly the flag-off guarantee.
+    // `pick` preserves PRE_PHASE_B_ENTRY_KEYS order by construction — it
+    // iterates the key list, not the entry.
+    const withoutTiming = (e) => pick(e, PRE_PHASE_B_ENTRY_KEYS);
+    const goldenUpdate = { ...finalUpdate, evaluations: finalUpdate.evaluations.map(withoutTiming) };
     if (GENERATE) {
       writeFileSync(GOLDEN_PATH, `${JSON.stringify({
         capturedFrom: 'origin/main @ 4a8ae54a — agent-evaluate.js before any Phase B stamp code; harness tickStampsHarness.js',
         frozenNow: FROZEN_NOW,
         finalUpdateKeys: Object.keys(finalUpdate),
-        finalUpdate,
-        entry,
+        finalUpdate: goldenUpdate,
+        entry: withoutTiming(entry),
       }, null, 2)}\n`);
       throw new Error(`golden regenerated at ${GOLDEN_PATH} — this generating run fails on purpose; re-run WITHOUT GENERATE_TICK_STAMPS_GOLDEN to verify`);
     }
@@ -161,15 +176,29 @@ describe('Phase B tick stamps — flag OFF: the write is byte-identical to the p
     const golden = JSON.parse(readFileSync(GOLDEN_PATH, 'utf8'));
     // JSON.stringify preserves key order, so these are byte comparisons of the
     // serialized write, not structural toEquals.
-    expect(JSON.stringify(entry)).toBe(JSON.stringify(golden.entry));
-    expect(JSON.stringify(finalUpdate)).toBe(JSON.stringify(golden.finalUpdate));
+    // ORDER first, and on the LIVE entry (review lens C, finding C4): `pick`
+    // iterates the key list, so it re-imposes the golden's order on whatever it
+    // is handed — reordering two keys in the cron's entry literal would slip
+    // straight through the byte comparison below. This row is what keeps the
+    // "keys, order, bytes" in the title true.
+    expect(Object.keys(entry).filter((k) => PRE_PHASE_B_ENTRY_KEYS.includes(k)))
+      .toEqual([...PRE_PHASE_B_ENTRY_KEYS]);
+    expect(JSON.stringify(withoutTiming(entry))).toBe(JSON.stringify(golden.entry));
+    expect(JSON.stringify(goldenUpdate)).toBe(JSON.stringify(golden.finalUpdate));
+    // …and the timing fields ARE on the live entry, flag off (anti-vacuous: the
+    // comparison above would pass just as well had they silently vanished).
+    expect(Object.keys(entry).filter((k) => !PRE_PHASE_B_ENTRY_KEYS.includes(k)))
+      .toEqual([...TIMING_ENTRY_KEYS]);
+    expect(entry.promptBuiltAt).toBe(FROZEN_NOW);
+    expect(entry.buildMs).toBe(0);
+    expect(entry.callMs).toBe(0);
     // No new TOP-LEVEL battle key rides the final update either (V2 hazard 9).
     expect(Object.keys(finalUpdate)).toEqual(golden.finalUpdateKeys);
   });
 
-  it('the entry carries exactly the 25 pre-Phase-B keys, in source order, and none of the four stamp keys', async () => {
+  it('the entry carries exactly the cron-composed base keys, in source order, and none of the four stamp keys', async () => {
     const { entry } = await runTick();
-    expect(Object.keys(entry)).toEqual([...PRE_PHASE_B_ENTRY_KEYS]);
+    expect(Object.keys(entry)).toEqual([...BASE_ENTRY_KEYS]);
     for (const key of ['heard', 'evidence', 'vintages', 'candidates']) {
       expect(entry, `flag-off entry must not carry "${key}"`).not.toHaveProperty(key);
     }

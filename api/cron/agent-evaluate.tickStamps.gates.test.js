@@ -21,7 +21,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   FROZEN_NOW,
   OLD_THREAD,
-  PRE_PHASE_B_ENTRY_KEYS,
+  BASE_ENTRY_KEYS,
   makeTickBattle,
   makePriceTable,
   makeRankingsDoc,
@@ -146,7 +146,7 @@ const loggedLine = (needle) => errorSpy.mock.calls.map((c) => c.join(' ')).find(
 
 function expectUnstampedWrite({ entry, finalUpdate, summary }) {
   expect(finalUpdate, 'the finalUpdate must still be written').toBeTruthy();
-  expect(Object.keys(entry)).toEqual([...PRE_PHASE_B_ENTRY_KEYS]);
+  expect(Object.keys(entry)).toEqual([...BASE_ENTRY_KEYS]);
   for (const key of ['heard', 'evidence', 'vintages', 'candidates']) expect(entry).not.toHaveProperty(key);
   expect(finalUpdate['cronState.evaluatingAt']).toBeNull();
   expect(summary.evaluated).toBe(1);
@@ -190,7 +190,7 @@ describe('Phase B tick stamps — the prompt gate: no prompt, no stamp', () => {
     // the attempt DID start (totalHaikuCalls counts attempts) …
     expect(run.finalUpdate['cronState.totalHaikuCalls']).toBe(1);
     // … but the prompt never existed, so nothing was heard or seen
-    expect(Object.keys(run.entry)).toEqual([...PRE_PHASE_B_ENTRY_KEYS]);
+    expect(Object.keys(run.entry)).toEqual([...BASE_ENTRY_KEYS]);
     for (const key of ['heard', 'evidence', 'vintages', 'candidates']) expect(run.entry).not.toHaveProperty(key);
     expect(JSON.stringify(run.entry)).not.toContain(OLD_THREAD);
     // and nothing was logged as a stamp failure — the gate, not the fail-safe, held

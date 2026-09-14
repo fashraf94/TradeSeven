@@ -106,7 +106,7 @@ import { resolveModeConfig } from '../../src/constants/agentGameModes.js';
 // and resolveRecordTargetId (pure, given the in-tx clone doc — the settlement)
 // share one rule: casual clone → parent, everything else → self (byte-identical).
 import { resolveAttributionAgentId, resolveRecordTargetId } from '../_utils/casualClone.js';
-import { classifyHaikuFailure, shouldStartHaikuCall, nextConsecutiveEvalFailures, HAIKU_CALL_CEILING_MS, EVAL_MODEL_ID, EVAL_MAX_OUTPUT_TOKENS } from '../_utils/agentEvalTransport.js';
+import { classifyHaikuFailure, classifyTimeoutKind, shouldStartHaikuCall, nextConsecutiveEvalFailures, HAIKU_CALL_CEILING_MS, PROMPT_BUILD_CEILING_MS, PROMPT_BUILD_TIMEOUT_ERROR_NAME, EVAL_MODEL_ID, EVAL_MAX_OUTPUT_TOKENS } from '../_utils/agentEvalTransport.js';
 import { logBattlePattern } from '../_utils/battlePatternLogger.js';
 import { runCanonicalOpenSweep } from '../_utils/canonicalOpenSweep.js';
 import { logEvaluation, logVisionTransition, logAnticipation } from '../_utils/shadowLogger.js';
@@ -1960,9 +1960,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     let inputTokens = 0;
     let outputTokens = 0;
     // Transport-failure record for this tick (null on success). failureClass ∈
-    // 'timeout' | 'truncated_response' | 'budget_skipped' | String(status|name).
-    // Consumed below by the evaluation record, cronErrors, the eval_degraded
-    // statusFeed entry, the shadow log, and the disclosure counter.
+    // 'timeout' | 'build_timeout' | 'truncated_response' | 'budget_skipped' |
+    // String(status|name). Consumed below by the evaluation record, cronErrors,
+    // the eval_degraded statusFeed entry, the shadow log, and the disclosure
+    // counter.
     let haikuFailure = null;
     let haikuAttempted = false;
     // Phase B (D-110): true only once the prompt's three parts are BUILT and
@@ -1971,33 +1972,45 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // otherwise stamp a prompt that never existed (review A-4 / B-1). The tick
     // stamps gate on this, never on haikuAttempted.
     let promptBuilt = false;
+    // Transport-hygiene timing (Sep 2026) — three additive facts the entry
+    // carries so the record can tell a slow BUILD from a slow CALL, which it
+    // could not before (Phase 0 §3.1: no field measured either). Date.now()
+    // pairs, nothing fancier. Each stays null when its phase never ran.
+    let promptBuiltAt = null;
+    let buildMs = null;
+    let callMs = null;
 
-    // Pre-call budget guard: a late-run battle must never start a call whose
-    // hard-abort ceiling (22s) plus post-call work (parallel narration dispatch
-    // ≤10s + the awaited finalUpdate — the same 12s allowance the anticipation
-    // gate uses) could push the function past TIME_BUDGET_MS / the 60s kill
-    // window and lose the finalUpdate. The handler-level deferral can't express
-    // this: by now the battle's risk swaps and score writes have already
-    // happened mid-function — we skip only the Haiku call and keep the normal
-    // write path.
+    // Pre-call budget guard: a late-run battle must never start the evaluation
+    // engine when its bounded phases — the 10s prompt-build ceiling, then the
+    // 22s hard-abort call ceiling, then post-call work (parallel narration
+    // dispatch ≤10s + the awaited finalUpdate, the same 12s allowance the
+    // anticipation gate uses) — could push the function past TIME_BUDGET_MS /
+    // the kill window and lose the finalUpdate. 44s, the sum of the three named
+    // constants in agentEvalTransport.js (34s until Sep 2026, when the build
+    // became a bounded phase BEFORE the call rather than time stolen from
+    // inside its ceiling). The handler-level deferral can't express this: by
+    // now the battle's risk swaps and score writes have already happened
+    // mid-function — we skip only the Haiku call and keep the normal write
+    // path. It still runs ONCE, before the build.
     const budget = shouldStartHaikuCall({ elapsedMs: Date.now() - cronStartTime, timeBudgetMs: TIME_BUDGET_MS });
     if (!budget.proceed) {
       haikuFailure = {
         failureClass: 'budget_skipped',
         message: `cron budget too low to start Haiku call (${Math.round(budget.remainingMs / 1000)}s remaining, ${Math.round(budget.requiredMs / 1000)}s required)`,
         timestamp: new Date().toISOString(),
+        timeoutKind: null,
       };
       console.warn(`${LOG_PREFIX} Haiku call skipped for battle ${battle.id}: ${haikuFailure.message}`);
     } else {
       haikuAttempted = true;
-      // L1 transport: SDK-native per-request timeout (20s) replaces the old
-      // bare Promise.race — the SDK aborts its underlying fetch at `timeout`
-      // (verified v0.71.2 fetchWithTimeout), so the losing request is genuinely
-      // cancelled, never orphaned server-side billing unrecorded tokens. The
-      // AbortController is a defense-in-depth backstop 2s above it.
-      const abortCtrl = new AbortController();
-      const hardAbort = setTimeout(() => abortCtrl.abort(), HAIKU_CALL_CEILING_MS);
+      // Both timers are declared BEFORE the try so the finally can clear them
+      // whatever fails — including a build that dies before the call's backstop
+      // is ever armed.
+      let buildTimer = null;
+      let hardAbort = null;
+      const buildStartedAt = Date.now();
       try {
+        // ---- Phase 1: the prompt build, bounded on its OWN ceiling ----
         // The prompt's three parts, built in the order the request carries
         // them (system → identity → live context) — the same builders, the
         // same argument lists, the same order as when they sat inline in the
@@ -2011,26 +2024,73 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         // DR-13 (STOP-A ruling A1): the RAW archetype code-id rides as the
         // 4th arg — `archetype` above is the display-cased label (:1881)
         // and must never be the identity-block key.
-        const systemPrompt = buildEvalSystemPrompt(agentName, archetype, battle.gameMode, ctx.archetype);
-        const identityBlock = buildAgentIdentityBlock(battle);
-        const liveContextBlock = await buildLiveContextBlock(
-          battle, prices, macroPrices, assetScores,
-          triggers, news, battle.evaluations, momentumData, presetConfig
-        );
+        //
+        // A RACE, not an AbortController: buildLiveContextBlock's cost is
+        // sequential Firestore batches inside fetchInstitutionalContext, and a
+        // Firestore read is neither billed by duration nor harmful when
+        // orphaned (the June precedent for the EODHD GETs). The loser is simply
+        // abandoned; the winner clears the timer in its own finally, so no
+        // timer dangles into the next battle either way.
+        const buildPrompt = async () => {
+          const systemPrompt = buildEvalSystemPrompt(agentName, archetype, battle.gameMode, ctx.archetype);
+          const identityBlock = buildAgentIdentityBlock(battle);
+          const liveContextBlock = await buildLiveContextBlock(
+            battle, prices, macroPrices, assetScores,
+            triggers, news, battle.evaluations, momentumData, presetConfig
+          );
+          return { systemPrompt, identityBlock, liveContextBlock };
+        };
+        const built = await Promise.race([
+          buildPrompt().finally(() => { clearTimeout(buildTimer); }),
+          new Promise((_, reject) => {
+            buildTimer = setTimeout(() => {
+              const err = new Error(`prompt build exceeded ${PROMPT_BUILD_CEILING_MS} ms`);
+              err.name = PROMPT_BUILD_TIMEOUT_ERROR_NAME;
+              reject(err);
+            }, PROMPT_BUILD_CEILING_MS);
+          }),
+        ]);
+        buildMs = Date.now() - buildStartedAt;
         promptBuilt = true;
-        const response = await anthropic.messages.create({
-          model: EVAL_MODEL_ID,
-          max_tokens: EVAL_MAX_OUTPUT_TOKENS,
-          temperature: 0.4,
-          system: systemPrompt,
-          messages: [
-            { role: 'user', content: identityBlock },
-            { role: 'assistant', content: 'I understand my identity and strategic context. Show me the live battle state.' },
-            { role: 'user', content: liveContextBlock },
-          ],
-          tools: [TRADE_DECISION_TOOL],
-          tool_choice: { type: 'tool', name: 'submit_trade_decision' },
-        }, { timeout: 20_000, signal: abortCtrl.signal });
+        promptBuiltAt = new Date().toISOString();
+        const { systemPrompt, identityBlock, liveContextBlock } = built;
+
+        // ---- Phase 2: the call, and ONLY now the backstop ----
+        // L1 transport: SDK-native per-request timeout (20s) replaces the old
+        // bare Promise.race — the SDK aborts its underlying fetch at `timeout`
+        // (verified v0.71.2 fetchWithTimeout), so the losing request is genuinely
+        // cancelled, never orphaned server-side billing unrecorded tokens. The
+        // AbortController is a defense-in-depth backstop 2s above it.
+        //
+        // ARMED HERE, not before the build (Sep 2026 transport hygiene; the
+        // placement dates to June 11 and Phase 0 §3.1 steps 8–12 measured its
+        // cost). Armed before the build, prompt-assembly time was charged
+        // against the 22s ceiling: the call's effective ceiling was 22s − the
+        // build, and any build over 2s fired the backstop before the SDK's own
+        // 20s timeout could — so the backstop was not a backstop. Both timers
+        // now measure the same interval from the same instant.
+        const abortCtrl = new AbortController();
+        hardAbort = setTimeout(() => abortCtrl.abort(), HAIKU_CALL_CEILING_MS);
+        const callStartedAt = Date.now();
+        let response;
+        try {
+          response = await anthropic.messages.create({
+            model: EVAL_MODEL_ID,
+            max_tokens: EVAL_MAX_OUTPUT_TOKENS,
+            temperature: 0.4,
+            system: systemPrompt,
+            messages: [
+              { role: 'user', content: identityBlock },
+              { role: 'assistant', content: 'I understand my identity and strategic context. Show me the live battle state.' },
+              { role: 'user', content: liveContextBlock },
+            ],
+            tools: [TRADE_DECISION_TOOL],
+            tool_choice: { type: 'tool', name: 'submit_trade_decision' },
+          }, { timeout: 20_000, signal: abortCtrl.signal });
+        } finally {
+          // Return OR throw — the honest wall time the call actually got.
+          callMs = Date.now() - callStartedAt;
+        }
 
         inputTokens = response.usage?.input_tokens || 0;
         outputTokens = response.usage?.output_tokens || 0;
@@ -2048,18 +2108,42 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             failureClass: 'truncated_response',
             message: `response received but tool input missing/unusable (stop_reason=${response.stop_reason || 'unknown'})`,
             timestamp: new Date().toISOString(),
+            timeoutKind: null,
           };
           console.warn(`${LOG_PREFIX} Haiku response unusable for battle ${battle.id}: ${haikuFailure.message}`);
         }
       } catch (err) {
+        // The build's own elapsed when it was the BUILD that failed (the race
+        // rejected, or a builder threw): promptBuilt is still false there, so
+        // buildMs is the only measure of what the tick spent before giving up.
+        if (buildMs === null) buildMs = Date.now() - buildStartedAt;
         haikuFailure = {
           failureClass: classifyHaikuFailure(err),
           message: String(err?.message || '').slice(0, 200),
           timestamp: new Date().toISOString(),
+          // WHICH transport timeout fired — the split failureClass deliberately
+          // does not make (every consumer of the class is unchanged). null for a
+          // build timeout and for every non-timeout failure.
+          //
+          // GATED ON callMs: the kind describes THE CALL, so it may only be
+          // claimed when a call actually ran (callMs is set in the finally
+          // around messages.create and stays null otherwise). Without this, a
+          // build-phase failure whose message happens to be timeout-shaped —
+          // gaxios' 'Total timeout of 60000ms exceeded' on a stalled token
+          // refresh, a socket's 'connect ETIMEDOUT' — would be recorded as
+          // timeoutKind 'sdk', asserting that the SDK's 20s per-request timeout
+          // fired on a request that was never sent.
+          timeoutKind: callMs === null ? null : classifyTimeoutKind(err),
         };
         console.error(`${LOG_PREFIX} Haiku call failed for battle ${battle.id} [${haikuFailure.failureClass}]:`, err.message);
         // Default to HOLD on timeout or error
       } finally {
+        // hardAbort may never have been armed (a build failure returns before
+        // it); clearTimeout(null) is a no-op. buildTimer, by contrast, is armed
+        // synchronously while the race array is evaluated, so it is always set
+        // by the time anything can throw — its clear here is belt-and-braces
+        // behind the winner's own .finally above.
+        clearTimeout(buildTimer);
         clearTimeout(hardAbort);
       }
     }
@@ -2687,10 +2771,19 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       guardrailOverrides,
       guardrailSourceNote,
       // Haiku eval reliability fix (June 2026): transport-failure receipt.
-      // null on success; { failureClass, message, timestamp, evalId } when the
-      // tick degraded to a fallback HOLD — distinguishes a deliberate HOLD
-      // from an engine outage in the eval history.
+      // null on success; { failureClass, message, timestamp, timeoutKind,
+      // evalId } when the tick degraded to a fallback HOLD — distinguishes a
+      // deliberate HOLD from an engine outage in the eval history.
       haikuError: haikuFailure ? { ...haikuFailure, evalId } : null,
+      // Transport-hygiene timing (Sep 2026) — ADDITIVE and flat. None of the
+      // three reaches the decider: formatRecentEvals reads a fixed eight-key
+      // whitelist, pinned in agent-evaluate.tickStamps.pins.test.js.
+      //   promptBuiltAt — when the prompt was finished, or null (never built)
+      //   buildMs       — the build's wall time, or null (the build never ran)
+      //   callMs        — messages.create start → return or throw, or null (no call)
+      promptBuiltAt,
+      buildMs,
+      callMs,
     };
 
     // ---- Phase B — the tick stamps (D-110 → D-113) ----
@@ -2778,6 +2871,16 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       battleId: battle.id,
       agentId: battle.agentId,
       userId: battle.ownerId || null,
+      // Join keys (Sep 2026): the shadow record could only be matched back to
+      // its evaluations[] entry by ORDER — the forensics gap Phase 0 hit.
+      // `timestamp` is the unique one and is what the join should key on:
+      // `evalId` is derived from evaluations.length + 1 against an array capped
+      // at 150 (below), so on a battle past 150 checks every later entry is
+      // eval_151. That collision is pre-existing and is NOT fixed here — it is
+      // reported for separate tasking; evalId rides along as the human-readable
+      // half of the pair, never as the key.
+      evalId,
+      timestamp: evaluation.timestamp,
       battlePhase: phase,
       decision,
       symbolOut: evaluation.symbolOut,
@@ -2795,6 +2898,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       // pipeline (null on success). logEvaluation is a passthrough to the GCS
       // shadow stream, so no shadowLogger.js change is needed.
       failureClass: haikuFailure?.failureClass || null,
+      // The same two timings the entry carries, so a week of shadow records
+      // answers "build or call?" without reading every battle doc.
+      buildMs: evaluation.buildMs,
+      callMs: evaluation.callMs,
     }).catch(() => {});
 
     // ---- Write everything ----
@@ -2818,7 +2925,12 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       'cronState.lastTriggeredAt': now,
       // totalHaikuCalls counts ATTEMPTS — a budget_skipped tick never started a
       // call, so it does not increment (semantic fidelity for the token-vs-call
-      // forensics that exposed the June 11 outage).
+      // forensics that exposed the June 11 outage). The contrast is with
+      // budget_skipped ONLY: a tick that entered the engine path and failed
+      // before the request — a builder throw, or a build_timeout — DOES
+      // increment, and has since the June fix. So this counter minus the
+      // responded calls is "attempts that produced no tokens", which includes
+      // build-phase failures; it is not a count of requests put on the wire.
       'cronState.totalHaikuCalls': (battle.cronState?.totalHaikuCalls || 0) + (haikuAttempted ? 1 : 0),
       // Fair-rotation signal (budget-starvation mitigation): the last tick this
       // battle actually STARTED a Haiku call. Written ONLY on a real attempt so
