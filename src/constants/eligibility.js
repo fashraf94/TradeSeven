@@ -1,0 +1,50 @@
+// src/constants/eligibility.js
+//
+// Backing Beta PR 0 — Eligibility attestation constants (spec V1.3 §5, §11
+// gate 1, §12 PR 0; ruling D-z). ZERO IMPORTS by construction: api/ consumes
+// this module under the revised import rule (BUILD_RULES §4), so its
+// transitive surface must stay Node-clean — the co-located test's real import
+// is the dependency-surface guard and locks the zero-import property.
+//
+// EVERY STRING HERE IS A PLACEHOLDER. Counsel owns the attestation copy and the
+// terms version (§11 gate 1); the build ships them marked for replacement and
+// the flip PR (ELIGIBILITY_ATTESTATION_ENABLED) does not go out until they are
+// replaced. Nothing here is legal copy, and this module makes no legal claim.
+//
+// COPY MAP (the counsel-copy PR, which lands BEFORE the flip, reconciles these
+// in the SAME commit — the BUILD_RULES §2 flip-map discipline applied to copy):
+//   • src/constants/eligibility.test.js — the TERMS_VERSION literal row moves to
+//     the ratified version; the marker-count row moves from 2 to 0 and its two
+//     positional "marker directly above each string" rows are dropped;
+//   • api/eligibility/attest.test.js — the dependency-surface row's
+//     TERMS_VERSION literal moves to the ratified version too;
+//   • the two COUNSEL marker comment lines below are DELETED with the
+//     placeholder strings they mark (src/config/eligibilityFlags.test.js reds
+//     a lit flag that still carries either marker line or a `-draft`
+//     TERMS_VERSION; the tripwire counts marker LINES, so prose may name the
+//     phrase without tripping it).
+
+/**
+ * The terms version the attestation endpoint accepts (api/eligibility/attest.js
+ * validates the client's `termsVersion` against it — any other value is a 400)
+ * and the value it records on the doc. Counsel's ratified version replaces this
+ * draft tag before the flip. A later terms revision bumps it again, which
+ * refuses stale client REQUESTS (400) — it does not touch attestations already
+ * recorded: the endpoint returns an existing doc unchanged (spec §12), so
+ * whether a revision needs re-acceptance is a §11 gate-1 / PR 2 decision,
+ * not built here.
+ */
+export const TERMS_VERSION = 'beta-2026-09-draft';
+
+/**
+ * The two attestation strings the PR 4 AttestationStep renders beside its
+ * controls: an 18-or-older confirmation and a beta-terms acceptance. The
+ * endpoint records that both were affirmed (§8: an attestation, not
+ * verification). Placeholders — not legal copy.
+ */
+export const ATTESTATION_COPY = Object.freeze({
+  // COUNSEL: replace before flip
+  adult: 'I confirm that I am 18 years of age or older.',
+  // COUNSEL: replace before flip
+  terms: 'I have read and accept the FantasyTrades Backing Beta terms.',
+});

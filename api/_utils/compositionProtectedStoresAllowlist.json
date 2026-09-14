@@ -13,6 +13,9 @@
   "_notes_phase_c_show_it": {
     "api/agent/research.js::handler::update::unresolved": "PHASE C §2/§4 (Show it). ONE tx.update inside the route's single runTransaction, writing agentBattles/{battleId}.chatExchanges via FieldValue.arrayUnion — the research card's exchange, and NOTHING else (the route charges no message and writes no counter key: D-118). NOT a composition-protected store. Unresolved for the standard handle-form reason — tx.update(battleRef, …) takes a DocumentReference variable and the scanner does not trace ref-args for transaction-handle writes — and the transaction is what makes the cap authoritative under a race (Sol C-2), so it must not be restructured to inline a literal. Human-reviewed and allowlisted per the guard's own rule."
   },
+  "_notes_backing_beta_pr0": {
+    "api/eligibility/attest.js::handler::set::unresolved": "BACKING BETA PR 0 (spec V1.3 §12 PR 0, D-z). ONE tx.set inside the route's single runTransaction, writing eligibility/{uid} — the four-field §6 attestation doc, whole-doc, create-if-absent (an existing doc is returned unchanged) — and NOTHING else. NOT a composition-protected store. Unresolved for the standard handle-form reason — tx.set(ref, …) takes a DocumentReference variable (the helper's eligibilityRef) and the scanner does not trace ref-args for transaction-handle writes — and the transaction is what makes two racing first taps yield ONE attestation with ONE timestamp of record, so it must not be restructured to a bare set. Human-reviewed and allowlisted per the guard's own rule; the route's lit suite pins the write shape and count."
+  },
   "allowedWriteSites": {
     "api/_utils/__fixtures__/wireFirestoreFake.js::createFirestoreFake::set::unresolved": 1,
     "api/_utils/agentChatBudget.js::chargeAgentChatBudget::set::unresolved": 1,
@@ -216,6 +219,7 @@
     "api/earnings/resolve-tournament.js::handler::update::unresolved": 4,
     "api/earnings/sync-queue.js::handler::set::unresolved": 1,
     "api/earnings/sync-queue.js::handler::update::unresolved": 1,
+    "api/eligibility/attest.js::handler::set::unresolved": 1,
     "api/fantasytimes/backfill-visuals.js::handler::update::unresolved": 1,
     "api/fantasytimes/cleanup.js::handler::delete::unresolved": 2,
     "api/fantasytimes/cleanup.js::handler::update::unresolved": 1,
