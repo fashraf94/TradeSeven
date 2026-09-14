@@ -38,7 +38,15 @@ import {
   computeRS,
   computeRSTrend,
   computeTechnicalScore,
+  resolveSmaBasis,
 } from '../_utils/indexIntelligence.js';
+// The ONE daily-row mapper. `fetchOHLCV` below used to carry a second, weaker
+// copy of this mapping — `close: d.adjusted_close` with no finite check and no
+// raw fallback — so a null close entered every sum as a silent 0 and an absent
+// one entered the cross-sectional RS sort as NaN. Importing the research path's
+// mapper makes the universe feed and the research feed one contract
+// (BUILD_RULES §4: never a local copy of the math).
+import { mapDailyRows } from '../_utils/marketDataCache.js';
 import { STOCK_UNIVERSE, ALL_TICKERS, TICKER_TO_SECTOR, TICKER_TO_INDUSTRY, TECHNICAL_FACTOR_WEIGHTS } from '../_utils/rankingConfig.js';
 import { computeGameModeFits, assignGameModeRanks } from '../_utils/gameModeScoring.js';
 import { computeMomentumRankings } from '../_utils/momentumScoring.js';
@@ -93,6 +101,12 @@ const SECTOR_ETFS = Object.entries(STOCK_UNIVERSE).map(([id, s]) => ({
 // warm-container safety.
 let intradayQuotes = null;
 
+// Rows the mapper shed this run, summed across all 256 symbols. Persisted on
+// the stockRankings doc so the founder reads one number instead of grepping 256
+// log lines; `0` on a normal day. Reset every invocation, same warm-container
+// reason as `intradayQuotes`.
+let droppedRows = 0;
+
 // ───────────────────────────────────────────────
 // Logging
 // ───────────────────────────────────────────────
@@ -141,7 +155,10 @@ async function fetchOHLCV(eohdSymbol, daysBack = 252) {
     throw new Error(`EODHD ${eohdSymbol}: empty response`);
   }
 
-  // EODHD returns oldest-first. Reverse to newest-first for our calculations.
+  // EODHD returns oldest-first here (this URL carries no `order=` param, unlike
+  // `fetchDailyOHLCV`'s `&order=d`), so reverse to newest-first for our
+  // calculations. Dropping is per-row and order-agnostic, so mapping then
+  // reversing is identical to reversing then mapping.
   //
   // `close` stays ADJUSTED — RS, momentum, ATR, Bollinger and the MACD/RSI
   // series are all return-series questions, and the adjusted close is the right
@@ -150,17 +167,18 @@ async function fetchOHLCV(eohdSymbol, daysBack = 252) {
   // is today's live price above its own moving average? That comparison needs
   // both sides on the tape's basis (`resolveSmaBasis`, indexIntelligence.js) —
   // the same raw-vs-raw rule Guard 1 and Guard 2 already apply to baselines
-  // (decide.js:1050-1054, baselineValidation.js:158-160). Mirrors the field
-  // marketDataCache.js:333-337 added on the other daily feed for exactly this.
-  const ohlcv = data.reverse().map(d => ({
-    date: d.date,
-    open: d.open,
-    high: d.high,
-    low: d.low,
-    close: d.adjusted_close,
-    rawClose: d.close,
-    volume: d.volume || 0,
-  }));
+  // (decide.js:1050-1054, baselineValidation.js:158-160). `mapDailyRows`
+  // (marketDataCache.js:313) maps BOTH fields — `close` adjusted-preferred with
+  // a raw fallback, `rawClose` raw — and DROPS a row whose close/high/low is
+  // not a finite number rather than letting it sum as a silent 0.
+  const { rows, dropped } = mapDailyRows(data);
+  const ohlcv = rows.reverse();
+  droppedRows += dropped;
+  // Per symbol, every run (marketDataCache.js:370-372 pattern). A dropped row is
+  // a row the indicators will never see, so it is never silent: a symbol that
+  // starts shedding rows is visible in the function logs before its readings
+  // drift.
+  log(`${eohdSymbol}: ${ohlcv.length} kept, ${dropped} dropped`);
 
   // Intraday mode: splice today's live price onto the front so downstream
   // technicals/RS/momentum reflect the current session. No-op (returns the EOD
@@ -323,11 +341,23 @@ async function fetchRealtimeQuotes(eodhdSymbols, batchSize = 20, delayMs = 300) 
 // Per-Index Technical Computation
 // ───────────────────────────────────────────────
 
-function computeIndexTechnicals(ohlcv, name) {
+// Exported for the same reason `injectIntradayBar` is: the handler is not, so
+// the index technicals are proven directly rather than through a transcription.
+export function computeIndexTechnicals(ohlcv, name) {
   const closes = ohlcv.map(d => d.close);
   const highs = ohlcv.map(d => d.high);
   const lows = ohlcv.map(d => d.low);
   const volumes = ohlcv.map(d => d.volume);
+  // The unadjusted series, for the price-vs-SMA comparison only. `?? null`, not
+  // `?? o.close`: `mapDailyRows` already yields `rawClose: null` when the raw
+  // print is not a finite number (marketDataCache.js:337), so a missing raw
+  // close must reach `resolveSmaBasis` AS a missing value. Substituting the
+  // adjusted close there would put an adjusted bar inside the raw window and
+  // leave the symbol reporting a 'raw' basis it no longer has. One null now
+  // fails `rawCloses.every(Number.isFinite)` (indexIntelligence.js:348) and
+  // EVERY period reverts to the shipped adjusted comparison — which `basis`
+  // reports. Same expression as the stock path.
+  const rawCloses = ohlcv.map(o => o.rawClose ?? null);
 
   const currentPrice = closes[0];
   const prevClose = closes.length > 1 ? closes[1] : currentPrice;
@@ -339,6 +369,30 @@ function computeIndexTechnicals(ohlcv, name) {
   const sma50Val = calculateSMA(closes, 50);
   const sma200Val = calculateSMA(closes, 200);
 
+  // The five index documents get the same rule the 239 stocks got in #833:
+  // price and average from ONE series, or neither. `closes` is the
+  // split/dividend-ADJUSTED series, in which every bar dated on or before an
+  // ex-date is scaled down by the payout — while `currentPrice` is index 0,
+  // which carries no corporate action after it and which intraday mode replaces
+  // outright with a live quote (`injectIntradayBar`), unadjusted by
+  // construction. So `currentPrice > smaVal` compared a raw number against an
+  // average of adjusted ones, and dividend adjustment only ever scales bars
+  // DOWN: the error is one-signed, systematically BULLISH, four times a year per
+  // payer. SPY pays ~1.3%/yr quarterly. `resolveSmaBasis` re-derives each
+  // average on the raw series where the window permits, behind the 1.15
+  // split-spread guard, and returns the SHIPPED average byte for byte wherever
+  // raw is not safe — a re-denominated (split) window, a length mismatch, or any
+  // non-finite raw close.
+  const smaBasis = resolveSmaBasis({
+    closes,
+    rawCloses,
+    technicals: { sma20: sma20Val, sma50: sma50Val, sma200: sma200Val },
+  });
+
+  // One price against those averages: `position` and `distance` are derived from
+  // the same two numbers as each other and as the `price` field published below,
+  // which is also what `classifyRegime` reads — so nothing in this document can
+  // disagree with anything else in it (BUILD_RULES §9).
   function smaInfo(smaVal) {
     if (smaVal === null) return { value: null, position: 'unknown', distance: 0 };
     const dist = ((currentPrice - smaVal) / smaVal) * 100;
@@ -395,9 +449,13 @@ function computeIndexTechnicals(ohlcv, name) {
     change: Number(change.toFixed(2)),
     changePercent: Number(changePercent.toFixed(2)),
     ytdReturn,
-    sma20: smaInfo(sma20Val),
-    sma50: smaInfo(sma50Val),
-    sma200: smaInfo(sma200Val),
+    sma20: smaInfo(smaBasis.sma20),
+    sma50: smaInfo(smaBasis.sma50),
+    sma200: smaInfo(smaBasis.sma200),
+    // WHICH series each average above came from, per period — the same field
+    // the stock documents carry in `factors.basis`. Makes the split-guard
+    // fallback readable instead of silent.
+    basis: smaBasis.basis,
     rsi: rsi || { value: null, zone: 'unknown' },
     macd: macd ? { signal: macdSignal, histogram: macd.histogram } : { signal: 'unknown', histogram: 0 },
     atr: atr || { value: null, regime: 'unknown' },
@@ -418,6 +476,35 @@ function computeIndexTechnicals(ohlcv, name) {
 // (trivially bumpable to 5). Used for both the inclusion gate and the per-metric
 // non-null-count gate.
 export const MIN_INDUSTRY_SIZE = 4;
+
+/**
+ * The comparator shape every cross-sectional sort in this file uses: a
+ * non-finite metric can never displace a finite one, and two non-finite
+ * entries hold their relative order.
+ *
+ * Transitivity is a PRECONDITION of `Array.prototype.sort`, not a nicety. A
+ * comparator that returns NaN — which is exactly what `NaN - 5` returns —
+ * leaves the WHOLE array in an unspecified order, so one poisoned symbol does
+ * not merely rank itself wrongly: measured at the real universe size (239), one
+ * NaN `rs20.change` gave up to 237 of the other 238 symbols a different
+ * percentile than they had earned. Ordering non-finite entries last is the
+ * shape `rankingStocks`'s compositeScore sort already uses for nulls; this
+ * generalizes it so the re-rank is structurally impossible whatever future path
+ * produces a non-finite number (Phase 0 finding O-3).
+ *
+ * Sheds nothing: the entry keeps its place in the array and its document, it
+ * simply cannot reorder the entries that do have a number.
+ */
+function finiteLast(get, direction = 'desc') {
+  return (a, b) => {
+    const av = get(a);
+    const bv = get(b);
+    const aOk = Number.isFinite(av);
+    const bOk = Number.isFinite(bv);
+    if (!aOk || !bOk) return aOk === bOk ? 0 : (aOk ? -1 : 1);
+    return direction === 'asc' ? av - bv : bv - av;
+  };
+}
 
 // Null-safe median — mirrors api/cron/compute-rankings.js:97 (sorted, upper-middle
 // element, null on empty). Callers pass only finite numbers.
@@ -633,6 +720,7 @@ export default async function handler(req, res) {
   let snapshotWritten = null;
   // Reset module-level intraday state every invocation (warm-container safety).
   intradayQuotes = null;
+  droppedRows = 0;
   log(`Starting index intelligence computation... (mode=${intraday ? 'intraday' : 'premarket'})`);
 
   try {
@@ -715,7 +803,7 @@ export default async function handler(req, res) {
         log(`  ✗ Fetch failed: ${errMsg}`);
       }
     }
-    sectorSnapshot.sort((a, b) => b.changePercent - a.changePercent);
+    sectorSnapshot.sort(finiteLast(s => s.changePercent, 'desc'));
     log(`  ✓ Indexes: ${Object.keys(indexData).length}/5, TNX: ${tnxData ? 'yes' : 'no'}, Sectors: ${sectorSnapshot.length}/11`);
     markStage('fetchIndexSectorData');
 
@@ -820,9 +908,17 @@ export default async function handler(req, res) {
         rsData.push({ sym, ohlcv, closes, rs20, rs50, rsTrend, rsTrendSlope });
       }
 
-      // Sort by RS20 change to compute percentiles
+      // Sort by RS20 change to compute percentiles.
+      //
+      // The filter tests the NUMBER, not just the object. `filter(d => d.rs20)`
+      // alone is a truthiness check on a container: `{value: NaN, change: NaN}`
+      // is truthy, so a non-finite change reached the comparator, which then
+      // returned NaN and broke sort transitivity — measured on the real
+      // universe size, one NaN re-ranked up to 237 of the other 238 symbols.
+      // The mapper fix removes today's route to that number; this makes the
+      // failure structurally impossible whatever future path produces one.
       const sortedByRS = [...rsData]
-        .filter(d => d.rs20)
+        .filter(d => d.rs20 && Number.isFinite(d.rs20.change))
         .sort((a, b) => (a.rs20.change) - (b.rs20.change));
 
       const rsPercentileMap = {};
@@ -839,7 +935,8 @@ export default async function handler(req, res) {
         if (!sectorId || !sectorETFCloses[sectorId] || sectorETFCloses[sectorId].length < 22) continue;
         const etfCloses = sectorETFCloses[sectorId];
         const sectorRS = computeRS(d.closes, etfCloses, 20);
-        if (sectorRS) {
+        // Same guard as the universe sort above: the number, not the container.
+        if (sectorRS && Number.isFinite(sectorRS.change)) {
           if (!sectorRSGroups[sectorId]) sectorRSGroups[sectorId] = [];
           sectorRSGroups[sectorId].push({ sym: d.sym, rsChange: sectorRS.change });
         }
@@ -908,11 +1005,16 @@ export default async function handler(req, res) {
 
         const rsPercentile = rsPercentileMap[d.sym] ?? 50;
         const sectorRSPercentile = sectorRSMap[d.sym] ?? null;
-        // The unadjusted series, for the price-vs-SMA flags only. `?? o.close`
-        // covers a bar mapped before `rawClose` existed (a cached payload) —
-        // `resolveSmaBasis` re-checks the whole series and falls back to the
-        // adjusted comparison unless every value is finite.
-        const rawCloses = d.ohlcv.map(o => o.rawClose ?? o.close);
+        // The unadjusted series, for the price-vs-SMA flags only. `?? null`, not
+        // `?? o.close`: `mapDailyRows` already yields `rawClose: null` when the
+        // raw print is not a finite number (marketDataCache.js:337), so a
+        // missing raw close must reach `resolveSmaBasis` AS a missing value.
+        // Substituting the adjusted close there would put an adjusted bar
+        // inside the raw window and leave the symbol reporting a 'raw' basis it
+        // no longer has. One null now fails `rawCloses.every(Number.isFinite)`
+        // (indexIntelligence.js:348) and EVERY period reverts to the shipped
+        // adjusted comparison — which `factors.basis` reports.
+        const rawCloses = d.ohlcv.map(o => o.rawClose ?? null);
         const scoreResult = computeTechnicalScore({
           closes,
           highs,
@@ -1001,7 +1103,7 @@ export default async function handler(req, res) {
       }
 
       // Sort by technicalScore desc and assign ranks
-      stockScores.sort((a, b) => b.technicalScore - a.technicalScore);
+      stockScores.sort(finiteLast(s => s.technicalScore, 'desc'));
       stockScores.forEach((s, idx) => {
         s.technicalRank = idx + 1;
       });
@@ -1015,7 +1117,7 @@ export default async function handler(req, res) {
         sectorGroups[sid].push(stock);
       }
       for (const [, sectorStocks] of Object.entries(sectorGroups)) {
-        sectorStocks.sort((a, b) => b.technicalScore - a.technicalScore);
+        sectorStocks.sort(finiteLast(s => s.technicalScore, 'desc'));
         sectorStocks.forEach((stock, index) => {
           stock.sectorTechnicalRank = index + 1;
           stock.sectorTechnicalTotal = sectorStocks.length;
@@ -1137,7 +1239,7 @@ export default async function handler(req, res) {
 
       // Compute ATR percentiles across all stocks for game-mode scoring
       const atrValues = stockScores
-        .filter(s => s.atrPercent != null)
+        .filter(s => Number.isFinite(s.atrPercent))
         .map(s => ({ sym: s.symbol, atr: s.atrPercent }))
         .sort((a, b) => a.atr - b.atr);
       const atrPercentileMap = {};
@@ -1149,7 +1251,7 @@ export default async function handler(req, res) {
 
       // Compute Bollinger bandwidth percentiles across all stocks
       const bwValues = stockScores
-        .filter(s => s.bBandwidth != null)
+        .filter(s => Number.isFinite(s.bBandwidth))
         .map(s => ({ sym: s.symbol, bw: s.bBandwidth }))
         .sort((a, b) => a.bw - b.bw);
       const bBandwidthPercentileMap = {};
@@ -1289,13 +1391,11 @@ export default async function handler(req, res) {
       // Assign game-mode ranks
       assignGameModeRanks(rankingStocks);
 
-      // Sort by compositeScore descending (nulls last)
-      rankingStocks.sort((a, b) => {
-        if (a.compositeScore == null && b.compositeScore == null) return 0;
-        if (a.compositeScore == null) return 1;
-        if (b.compositeScore == null) return -1;
-        return b.compositeScore - a.compositeScore;
-      });
+      // Sort by compositeScore descending (nulls — and any other non-finite
+      // value — last). The hand-rolled `== null` ladder this replaces was the
+      // shape `finiteLast` generalizes, but it tested only for null: a NaN
+      // compositeScore passed all three ladder rungs and reached `b - a`.
+      rankingStocks.sort(finiteLast(s => s.compositeScore, 'desc'));
       markStage('assembleRankings');
 
       // Archetype Rank V2 — Phase A (spec §2 / §5): the additive `axes` block,
@@ -1376,6 +1476,15 @@ export default async function handler(req, res) {
         axes_universe_size: rankingStocks.length,
         universe_median_return1W: universeMedianReturn1W,
         arch_scores_version: 1,
+        // Which CODE produced this feed. `computedAt` answers "when", which is
+        // not the same question: on a clean day the corrected mapper's numbers
+        // are identical to the old mapper's, so a timestamp alone cannot show
+        // the fix is live. Same expression as agent-evaluate.js:1325; this cron
+        // already reads the variable for rankingSnapshots.codeHead below.
+        deploySha: globalThis.process?.env?.VERCEL_GIT_COMMIT_SHA || null,
+        // Rows the mapper shed across all 256 symbols this run. `0` on a normal
+        // day — a non-zero value is the detector the feed never had.
+        droppedRows,
         computedAt: FieldValue.serverTimestamp(),
         // Freshness horizon for consumers: intraday docs go stale within ~75min
         // (hourly cadence + slack); the pre-market baseline holds for the day.
