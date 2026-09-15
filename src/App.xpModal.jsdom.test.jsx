@@ -235,13 +235,24 @@ describe('A1 — the app-level XP progress modal', () => {
     await act(async () => { chip.click(); });
 
     const text = container.textContent;
+    /** Trimmed text of every element matching `sel` — for EXACT comparisons. */
+    const texts = (sel) =>
+      Array.from(container.querySelectorAll(sel)).map((n) => n.textContent.trim());
 
     // xpForNextLevel — the denominator, rendered verbatim beside user.xp.
     expect(text).toContain('6000 / 10000 XP');
-    // xpNeeded — 10000 - 6000.
-    expect(text).toContain('4000 XP to next rank');
-    // nextRank — the entry after 'Trader' in the ranks ladder.
-    expect(text).toContain('Expert');
+
+    // xpNeeded — 10000 - 6000. Asserted as the EXACT text of its own <p>, not
+    // as a substring of the container: the mutation pass (§7.4 M4) showed a
+    // `toContain` here survives flipping the subtraction, because the mutant
+    // renders '-4000 XP to next rank', which still CONTAINS the expected
+    // string. An exact element match kills that mutant.
+    expect(texts('p')).toContain('4000 XP to next rank');
+
+    // nextRank — the entry after 'Trader' in the ranks ladder. Also exact:
+    // 'Expert' appears nowhere else in the modal, but a substring match over
+    // the whole app's text is not something to rely on.
+    expect(texts('p')).toContain('Expert');
   }, 120000);
 
   it('drives the XP bar width from xpProgress', async () => {
