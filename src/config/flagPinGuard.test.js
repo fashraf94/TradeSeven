@@ -151,6 +151,8 @@ const DARK_BY_DESIGN = {
   // stays listed below — this flip said nothing about it.
   ELIGIBILITY_ATTESTATION_ENABLED:
     'Backing Beta PR 0 — the eligibility attestation route (spec V1.3 §12, D-z), a platform primitive built dark; flips with BACKING_BETA_ENABLED in the founder\'s own flip PR after every §11 gate (counsel\'s copy in place, the eligibility rules deployed), never a build PR. Flag-off the route 404s after auth (attest.dark.test.js)',
+  BACKING_BETA_ENABLED:
+    'Backing Beta PR 1–5 — the whole backing layer (spec V1.3 §12), built dark across five PRs; flips with ELIGIBILITY_ATTESTATION_ENABLED in the founder\'s own flip PR after every §11 gate (as amended by Amendment A §A7), never a build PR. PR 1 adds NO door — foundation only (constants, week helper, wallet/ledger primitives, rules, indexes), so nothing reads the flag yet; the routes that 404 flag-off arrive in PR 2–5',
 };
 
 // ── Build the live flag → value map from the source modules ──────────────────
