@@ -23,9 +23,36 @@ const StonkOptionsPosition = ({
     return calculateLiveValue(contract, currentPrice);
   }, [contract, currentPrice]);
 
-  if (!contract || !valuation) return null;
+  // Progress to strike (0% = at entry, 100% = at strike).
+  //
+  // ABOVE THE EARLY RETURN, deliberately. `valuation` is null until
+  // `currentPrice` arrives, and the arena feeds prices in live
+  // (`currentPrice={prices[contract.symbol]}`, optionsArena/
+  // StonkOptionsArenaV2.jsx:1194) — so the early return fires on the card's
+  // first renders and stops firing the moment a price lands. That is a flip
+  // between renders of the SAME mounted card, and a hook below the return
+  // changed the hook count on exactly that render.
+  //
+  // Guarded inside so it computes nothing until there is a contract to
+  // measure.
+  // Lifted with the memo so the bar, the colour, the icon and the
+  // above/below-strike copy all read ONE binding, exactly as they did when
+  // `isCall` was a memo dep. Deriving it twice would be the BUILD_RULES §9
+  // two-source shape: the bar could disagree with the arrow beside it.
+  const isCall = contract?.direction === 'call';
 
-  const isCall = contract.direction === 'call';
+  const progressToStrike = useMemo(() => {
+    if (!contract) return 0;
+    const totalDistance = Math.abs(contract.strike - contract.entryPrice);
+    const currentDistance = isCall
+      ? currentPrice - contract.entryPrice
+      : contract.entryPrice - currentPrice;
+
+    if (totalDistance === 0) return 100;
+    return Math.min(150, Math.max(-50, (currentDistance / totalDistance) * 100));
+  }, [contract, currentPrice, isCall]);
+
+  if (!contract || !valuation) return null;
   const directionColor = isCall ? '#10b981' : '#ef4444';
   const DirectionIcon = isCall ? TrendingUp : TrendingDown;
 
@@ -43,17 +70,6 @@ const StonkOptionsPosition = ({
   };
 
   const statusStyle = getStatusStyle();
-
-  // Progress to strike (0% = at entry, 100% = at strike)
-  const progressToStrike = useMemo(() => {
-    const totalDistance = Math.abs(contract.strike - contract.entryPrice);
-    const currentDistance = isCall
-      ? currentPrice - contract.entryPrice
-      : contract.entryPrice - currentPrice;
-
-    if (totalDistance === 0) return 100;
-    return Math.min(150, Math.max(-50, (currentDistance / totalDistance) * 100));
-  }, [contract, currentPrice, isCall]);
 
   // Compact view for lists
   if (compact) {

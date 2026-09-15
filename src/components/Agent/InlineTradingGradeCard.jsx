@@ -121,6 +121,22 @@ function InlineTradingGradeCard({
 }) {
   const [localGrade, setLocalGrade] = useState(currentGrade || null);
 
+  // Keep local state in sync when the parent updates `currentGrade` (e.g.,
+  // after a successful Firestore round-trip or a rollback).
+  //
+  // ABOVE THE EARLY RETURN so the hook count does not depend on `trade`.
+  // The `!trade` guard moves into the body rather than into the deps on
+  // purpose: adding `trade` to the dep array would re-run the sync every
+  // time the parent rebuilds its trades array, which would stomp an
+  // optimistic grade with the not-yet-round-tripped `currentGrade` and
+  // visibly revert the player's pick. Deps therefore stay exactly as they
+  // were, and the effect still does nothing without a trade.
+  useEffect(() => {
+    if (!trade) return;
+    setLocalGrade(currentGrade || null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentGrade]);
+
   if (!trade) return null;
 
   const amber = tokens.amber || '#f59e0b';
@@ -155,12 +171,6 @@ function InlineTradingGradeCard({
       onGrade(tradeId, letter);
     }
   };
-
-  // Keep local state in sync when the parent updates `currentGrade` (e.g.,
-  // after a successful Firestore round-trip or a rollback).
-  useEffect(() => {
-    setLocalGrade(currentGrade || null);
-  }, [currentGrade]);
 
   const selected = localGrade;
 

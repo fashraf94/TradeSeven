@@ -525,8 +525,11 @@ export default function EditorialStory({
   onResearch,
   showVisual = true,
 }) {
-  if (!story) return null;
-
+  // ABOVE THE EARLY RETURN so the hook count does not depend on `story`.
+  // Both effects already no-op without a rendered node — each one bails on
+  // `!storyRef.current`, and the ref is only ever attached by the markup
+  // below the return — so moving them up changes nothing about when their
+  // bodies do work, and their dep arrays are untouched.
   const storyRef = useRef(null);
 
   const handleClick = () => {
@@ -557,6 +560,8 @@ export default function EditorialStory({
       return () => clearTimeout(timer);
     }
   }, [isExpanded]);
+
+  if (!story) return null;
 
   return (
     <motion.div ref={storyRef} layout transition={{ layout: { duration: 0.3, ease: [0.4, 0, 0.2, 1] } }}>

@@ -539,17 +539,24 @@ export default function ReporterDesk({
   onStorySelect,
   onResearch,
 }) {
-  if (!reporter || !REPORTER_COLORS[reporter]) return null;
-
+  // ABOVE THE EARLY RETURN so the hook count does not depend on `reporter`.
+  // The bail moves into the body with it: this memo is the one site of the
+  // nineteen whose body had no guard of its own, so without this line moving
+  // it up would make it run on a path where it never ran — and it is not
+  // total over its input (a malformed `stories` would throw where the
+  // component used to return null). Deps unchanged.
   // Sort stories by publishedAt descending (memoized)
-  const sorted = useMemo(() =>
-    [...(stories || [])].sort((a, b) => {
+  const sorted = useMemo(() => {
+    if (!reporter || !REPORTER_COLORS[reporter]) return [];
+    return [...(stories || [])].sort((a, b) => {
       const aMs = a.publishedAt?._seconds ? a.publishedAt._seconds * 1000 : new Date(a.publishedAt || 0).getTime();
       const bMs = b.publishedAt?._seconds ? b.publishedAt._seconds * 1000 : new Date(b.publishedAt || 0).getTime();
       return bMs - aMs;
-    }),
-    [stories]
-  );
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stories]);
+
+  if (!reporter || !REPORTER_COLORS[reporter]) return null;
 
   return (
     <div style={{ paddingTop: isDesktop ? 32 : 16 }}>

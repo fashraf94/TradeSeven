@@ -8293,8 +8293,13 @@ export default function PortfolioDuel() {
   // SPOTLIGHT TOUR COMPONENT - v10 (Bug fixes + fallback mode)
   // ============================================
   const SpotlightTour = () => {
-    if (!showSpotlightTour) return null;
-
+    // ALL FIVE HOOKS ABOVE THE EARLY RETURN, which now sits below them.
+    // `showSpotlightTour` is app state that flips every time the tour opens
+    // or closes, so a hook after the return made the hook count depend on it.
+    // Both effects keep their dep arrays and take the condition INTO the body
+    // instead — they have real side effects on the window (one scrolls it,
+    // one binds a global Escape handler), so running them with the tour shut
+    // would be a behaviour change, not just wasted work.
     const currentStep = TOUR_STEPS[tourStep];
     const [spotlightRect, setSpotlightRect] = useState(null);
     const [tooltipPos, setTooltipPos] = useState({ top: 0, arrowTop: 0, arrowDirection: 'up' });
@@ -8303,6 +8308,8 @@ export default function PortfolioDuel() {
     // NO SCROLL LOCK - user can scroll freely
 
     useEffect(() => {
+      // Scrolls the window; must not fire while the tour is closed.
+      if (!showSpotlightTour) return;
       setIsReady(false);
       setSpotlightRect(null);
 
@@ -8370,10 +8377,13 @@ export default function PortfolioDuel() {
 
         setIsReady(true);
       }, TOUR_CONSTANTS.ANIMATION_DELAY);
-    }, [tourStep, currentStep]);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [tourStep, currentStep, showSpotlightTour]);
 
     // Escape key to close tour
     useEffect(() => {
+      // Binds a global key handler; must not bind while the tour is closed.
+      if (!showSpotlightTour) return;
       const handleKeyDown = (e) => {
         if (e.key === 'Escape') {
           setShowSpotlightTour(false);
@@ -8382,7 +8392,9 @@ export default function PortfolioDuel() {
       };
       window.addEventListener('keydown', handleKeyDown);
       return () => window.removeEventListener('keydown', handleKeyDown);
-    }, []);
+    }, [showSpotlightTour]);
+
+    if (!showSpotlightTour) return null;
 
     const handleNext = () => {
       if (tourStep < TOUR_STEPS.length - 1) setTourStep(tourStep + 1);
@@ -8731,14 +8743,6 @@ export default function PortfolioDuel() {
     });
 
     const hasActiveBattle = activeBattlesWithData.length > 0;
-
-    // XP calculation for modal
-    const xpForNextLevel = 10000;
-    const xpProgress = (user.xp / xpForNextLevel) * 100;
-    const xpNeeded = xpForNextLevel - user.xp;
-    const ranks = ['Rookie', 'Apprentice', 'Trader', 'Expert', 'Master', 'Legend'];
-    const currentRankIndex = ranks.indexOf(user.rank);
-    const nextRank = currentRankIndex < ranks.length - 1 ? ranks[currentRankIndex + 1] : 'Max Rank';
 
     // ═══════════════════════════════════════════════════════════
     // MOBILE: The Loop — unified battle feed
@@ -10015,6 +10019,54 @@ export default function PortfolioDuel() {
     );
   }
 
+  // XP calculation for the app-level XP progress modal, which renders in THIS
+  // scope (the `showXPModal &&` block in the unified return below).
+  //
+  // These six lines lived inside getScreenContent's `screen === 'dashboard'`
+  // branch — a SIBLING scope, ~1,800 lines from the only code that reads them.
+  // Nothing inside getScreenContent ever did: the modal was moved out from
+  // under them and the declarations stayed behind. At the point of use they
+  // were not in the scope chain, so the modal threw a ReferenceError and
+  // unmounted the React tree the instant a player opened it
+  // (docs/audits/20260913_LINT_NODE_GLOBALS.md §7 A1).
+  //
+  // DECLARED ABOVE the getScreenContent() call below, not after it. Nothing in
+  // that function reads them today, but declaring them after the call would
+  // leave the next edit that does read one — the dashboard renders the rank
+  // chip, so it is the natural place — hitting a temporal-dead-zone
+  // ReferenceError instead of a value. Above the call costs nothing.
+  //
+  // `user` is null until auth resolves (contexts/UserContext.jsx:60), and it
+  // can also go null mid-session while `screen` is still 'dashboard' (a failed
+  // getUserData read is delivered as a sign-out: firebase/authService.js:265,
+  // contexts/UserContext.jsx:75). This scope runs on every render, so the
+  // reads are guarded where getScreenContent's dashboard branch dereferenced
+  // `user` unguarded.
+  //
+  // ONE LADDER. Everything the modal says about rank comes from
+  // getRankProgress, which reads the rungs and thresholds out of
+  // services/battleTimer.js — the SAME module that assigns the rank on
+  // battle settlement (:5453). This block used to carry its own six-rung
+  // literal that shared two rungs with the real four, so `indexOf` returned
+  // -1 for the two commonest production ranks and the modal named 'Rookie'
+  // as the next rung; past 10,000 XP it counted down through zero
+  // (docs/audits/20260915_BUILD_CRASH_CLASS_A1_A4.md §8 F1 / F4). Deriving
+  // heading, next rung and XP-to-next from one call means they cannot
+  // disagree with each other or with the rank the game awards
+  // (BUILD_RULES §9).
+  const rankProgress = battleTimer.getRankProgress(user ? user.xp : 0);
+
+  // WHAT `xpForNextLevel` MEANS IS NOT RESOLVED HERE, deliberately: it is a
+  // flat 10,000 that matches no rung threshold, and deciding whether it is a
+  // level track or a rank track is its own task. The bar therefore keeps
+  // today's expression, and it cannot exceed 100%: every rung below the top
+  // requires xp < 5,000, so the expression is under 50% there, and at the
+  // top rung the bar is full by ruling rather than by arithmetic.
+  const xpForNextLevel = 10000;
+  const xpProgress = rankProgress.isMaxRank
+    ? 100
+    : (user ? (user.xp / xpForNextLevel) * 100 : 0);
+
   const screenContent = getScreenContent();
 
   // ============================================
@@ -10023,7 +10075,14 @@ export default function PortfolioDuel() {
   return (
     <>
       {/* Temporary diagnostic banner for mobile detection verification */}
-      {process.env.NODE_ENV === 'development' && (
+      {/* import.meta.env.DEV, not process.env.NODE_ENV: `process` does not
+          exist in a browser, so the old read was a genuine `no-undef` — one
+          of the last two standing between this repo and the interim lint
+          gate. Vite substituted it at build time, so the shipped bundle was
+          never wrong; this makes the source honest about where it runs.
+          DEV is false for `vite build` exactly as NODE_ENV was not
+          'development', so the banner stays out of production. */}
+      {import.meta.env.DEV && (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0,
           background: isMobile ? 'green' : 'red',
@@ -10433,7 +10492,15 @@ export default function PortfolioDuel() {
       )}
 
       {/* ========== XP PROGRESS MODAL (extracted from dashboard) ========== */}
-      {showXPModal && (
+      {/* Gated on `user` as well as the flag: the modal reads user.rank,
+          user.level and user.xp unguarded below, and `user` can go null while
+          the modal is OPEN (a failed getUserData read is delivered as a
+          sign-out — firebase/authService.js:265, contexts/UserContext.jsx:75),
+          which threw a TypeError and unmounted the tree. Nothing else changes:
+          the only control that opens this modal is the Rank chip, which itself
+          renders only when `user` is set, so every render that painted before
+          still paints. */}
+      {showXPModal && user && (
         <div
           onClick={() => setShowXPModal(false)}
           style={{
@@ -10525,7 +10592,7 @@ export default function PortfolioDuel() {
                 textTransform: 'uppercase',
                 letterSpacing: '2px'
               }}>
-                {user.rank}
+                {rankProgress.rank}
               </h2>
               <p style={{ fontSize: '14px', color: colors.textSecondary, margin: 0 }}>
                 Level {user.level}
@@ -10571,12 +10638,23 @@ export default function PortfolioDuel() {
               padding: '16px',
               textAlign: 'center'
             }}>
-              <p style={{ fontSize: '14px', color: colors.textSecondary, margin: '0 0 8px 0' }}>
-                {xpNeeded} XP to next rank
-              </p>
-              <p style={{ fontSize: '18px', fontWeight: '600', color: colors.green, margin: 0 }}>
-                {nextRank}
-              </p>
+              {/* Founder ruling: at the top rung there is no next rank, so
+                  the modal says so rather than inventing a rung or counting
+                  down to one. No label, no number, bar already full above. */}
+              {rankProgress.isMaxRank ? (
+                <p style={{ fontSize: '18px', fontWeight: '600', color: colors.green, margin: 0 }}>
+                  Max rank reached
+                </p>
+              ) : (
+                <>
+                  <p style={{ fontSize: '14px', color: colors.textSecondary, margin: '0 0 8px 0' }}>
+                    {rankProgress.xpToNextRank} XP to next rank
+                  </p>
+                  <p style={{ fontSize: '18px', fontWeight: '600', color: colors.green, margin: 0 }}>
+                    {rankProgress.nextRank}
+                  </p>
+                </>
+              )}
             </div>
           </motion.div>
         </div>

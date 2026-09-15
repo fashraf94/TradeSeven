@@ -88,6 +88,74 @@ function AssetSide({
   }, [proximity, !!asset, asset?.isCash, asset?.priceChange, asset?.thresholdPriceChange, asset?.baseATR, asset?.history, asset?.dailyLevels, asset?.currentPrice]);
   const resolvedProximity = proximity ?? ownProximity;
 
+  // Destructured here, above the early returns, so the two memos below can be
+  // too. `asset ?? {}` keeps the `= default` semantics exactly: a default
+  // applies only for `undefined`, so a null `baseATR` still falls through to
+  // `baseATR > 0 === false` the way it did when this read `= asset`.
+  const {
+    symbol,
+    priceChange = 0,
+    thresholdPriceChange,
+    baseATR = 2.5,
+    // DEFAULT_HISTORY, not a fresh literal: `history` is a dep of
+    // thresholdHeat, and hoisting this destructure above the early returns
+    // made it reachable on every empty-slot and cash-slot render, where a new
+    // object identity each time would invalidate the memo on every render.
+    // Same value, and the same constant proximityInputs already uses (:40).
+    history = DEFAULT_HISTORY,
+    points = 0,
+    badges = [],
+  } = asset ?? {};
+
+  // ABOVE THE EARLY RETURNS, for the same reason ownProximity is: `asset`
+  // flips between renders of the SAME mounted row — an empty slot fills when
+  // a pick lands, and a cash slot becomes a position on a swap — so a hook
+  // below `if (!asset)` / `if (asset.isCash)` changed the hook count on
+  // exactly the render that matters most on this surface. On the two early-
+  // return paths both memos now compute a cheap value nothing reads.
+  // Threshold heat: compute proximity ratio for radiance + text warming
+  const thresholdHeat = useMemo(() => {
+    const multiplier = baseATR > 0 ? priceChange / baseATR : 0;
+    // Neutral zone: no heat when near zero
+    if (Math.abs(multiplier) < THRESHOLD_HEAT.neutralZone) {
+      return { proximityRatio: 1, direction: 'neutral' };
+    }
+
+    const positiveThresholds = [1.0, 1.5, 2.0];
+    const negativeThresholds = [-1.0, -1.5, -2.0];
+    const maxReached = history?.maxMultiplier || 0;
+    const minReached = history?.minMultiplier || 0;
+
+    if (multiplier > 0) {
+      // Find nearest uncrossed positive threshold
+      const target = positiveThresholds.find(t => maxReached < t);
+      if (!target) return { proximityRatio: 1, direction: 'positive' }; // all crossed
+      const distanceRemaining = target - multiplier;
+      if (distanceRemaining <= 0) return { proximityRatio: 0, direction: 'positive' };
+      const proximityRatio = distanceRemaining / target;
+      return { proximityRatio, direction: 'positive' };
+    } else {
+      // Find nearest uncrossed negative threshold (more negative)
+      const target = negativeThresholds.find(t => minReached > t);
+      if (!target) return { proximityRatio: 1, direction: 'negative' }; // all crossed
+      const distanceRemaining = multiplier - target; // both negative, result is positive
+      if (distanceRemaining <= 0) return { proximityRatio: 0, direction: 'negative' };
+      const proximityRatio = distanceRemaining / Math.abs(target);
+      return { proximityRatio, direction: 'negative' };
+    }
+  }, [priceChange, baseATR, history]);
+
+  // Compute radiance opacity from proximity ratio
+  const radianceOpacity = useMemo(() => {
+    const { proximityRatio } = thresholdHeat;
+    if (proximityRatio > THRESHOLD_HEAT.triggerProximity) return 0;
+    if (proximityRatio < THRESHOLD_HEAT.breathingProximity) return 1.0;
+    // Linear interpolation: 0.25→0.10 maps to 0→0.8
+    const range = THRESHOLD_HEAT.triggerProximity - THRESHOLD_HEAT.breathingProximity;
+    return ((THRESHOLD_HEAT.triggerProximity - proximityRatio) / range) * 0.8;
+  }, [thresholdHeat]);
+
+
   if (!asset) {
     // Empty slot placeholder
     return (
@@ -164,58 +232,6 @@ function AssetSide({
       </div>
     );
   }
-
-  const {
-    symbol,
-    priceChange = 0,
-    thresholdPriceChange,
-    baseATR = 2.5,
-    history = { maxMultiplier: 0, minMultiplier: 0 },
-    points = 0,
-    badges = [],
-  } = asset;
-
-  // Threshold heat: compute proximity ratio for radiance + text warming
-  const thresholdHeat = useMemo(() => {
-    const multiplier = baseATR > 0 ? priceChange / baseATR : 0;
-    // Neutral zone: no heat when near zero
-    if (Math.abs(multiplier) < THRESHOLD_HEAT.neutralZone) {
-      return { proximityRatio: 1, direction: 'neutral' };
-    }
-
-    const positiveThresholds = [1.0, 1.5, 2.0];
-    const negativeThresholds = [-1.0, -1.5, -2.0];
-    const maxReached = history?.maxMultiplier || 0;
-    const minReached = history?.minMultiplier || 0;
-
-    if (multiplier > 0) {
-      // Find nearest uncrossed positive threshold
-      const target = positiveThresholds.find(t => maxReached < t);
-      if (!target) return { proximityRatio: 1, direction: 'positive' }; // all crossed
-      const distanceRemaining = target - multiplier;
-      if (distanceRemaining <= 0) return { proximityRatio: 0, direction: 'positive' };
-      const proximityRatio = distanceRemaining / target;
-      return { proximityRatio, direction: 'positive' };
-    } else {
-      // Find nearest uncrossed negative threshold (more negative)
-      const target = negativeThresholds.find(t => minReached > t);
-      if (!target) return { proximityRatio: 1, direction: 'negative' }; // all crossed
-      const distanceRemaining = multiplier - target; // both negative, result is positive
-      if (distanceRemaining <= 0) return { proximityRatio: 0, direction: 'negative' };
-      const proximityRatio = distanceRemaining / Math.abs(target);
-      return { proximityRatio, direction: 'negative' };
-    }
-  }, [priceChange, baseATR, history]);
-
-  // Compute radiance opacity from proximity ratio
-  const radianceOpacity = useMemo(() => {
-    const { proximityRatio } = thresholdHeat;
-    if (proximityRatio > THRESHOLD_HEAT.triggerProximity) return 0;
-    if (proximityRatio < THRESHOLD_HEAT.breathingProximity) return 1.0;
-    // Linear interpolation: 0.25→0.10 maps to 0→0.8
-    const range = THRESHOLD_HEAT.triggerProximity - THRESHOLD_HEAT.breathingProximity;
-    return ((THRESHOLD_HEAT.triggerProximity - proximityRatio) / range) * 0.8;
-  }, [thresholdHeat]);
 
   const isPositive = priceChange >= 0;
   const priceColor = priceChange === 0

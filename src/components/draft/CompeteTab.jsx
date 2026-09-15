@@ -499,11 +499,13 @@ function PillarRow({ pillar, pillarData, isExpanded, onToggle, isMobile }) {
 function SectorLeaderboard({ data, currentSymbol, onNavigateToStock, isMobile }) {
   const [showAll, setShowAll] = useState(false);
   const leaderboard = data.leaderboard;
-  if (!leaderboard?.length) return null;
-
   const upperSymbol = currentSymbol?.toUpperCase();
 
+  // ABOVE THE EARLY RETURN below so the hook count does not depend on the
+  // leaderboard's length. The `!leaderboard?.length` bail moves into the body
+  // so the memo does no work on that path, and the dep array is unchanged.
   const visibleEntries = useMemo(() => {
+    if (!leaderboard?.length) return leaderboard;
     if (showAll || leaderboard.length <= 10) return leaderboard;
 
     const top5 = leaderboard.slice(0, 5);
@@ -527,6 +529,8 @@ function SectorLeaderboard({ data, currentSymbol, onNavigateToStock, isMobile })
     result.push(...bottom2.filter(e => e.ticker !== currentEntry.ticker));
     return result;
   }, [leaderboard, showAll, upperSymbol]);
+
+  if (!leaderboard?.length) return null;
 
   return (
     <div style={{ marginTop: '12px' }}>
