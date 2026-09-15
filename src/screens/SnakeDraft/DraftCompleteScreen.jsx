@@ -472,7 +472,6 @@ const DraftCompleteScreen = ({
     );
   }
 
-
   // Calculate total picks
   const totalPicks = grid.flat().filter(Boolean).length;
 

@@ -8378,7 +8378,7 @@ export default function PortfolioDuel() {
         setIsReady(true);
       }, TOUR_CONSTANTS.ANIMATION_DELAY);
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [tourStep, currentStep]);
+    }, [tourStep, currentStep, showSpotlightTour]);
 
     // Escape key to close tour
     useEffect(() => {
@@ -8392,8 +8392,7 @@ export default function PortfolioDuel() {
       };
       window.addEventListener('keydown', handleKeyDown);
       return () => window.removeEventListener('keydown', handleKeyDown);
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [showSpotlightTour]);
 
     if (!showSpotlightTour) return null;
 
@@ -10020,8 +10019,6 @@ export default function PortfolioDuel() {
     );
   }
 
-  const screenContent = getScreenContent();
-
   // XP calculation for the app-level XP progress modal, which renders in THIS
   // scope (the `showXPModal &&` block in the unified return below).
   //
@@ -10033,19 +10030,29 @@ export default function PortfolioDuel() {
   // unmounted the React tree the instant a player opened it
   // (docs/audits/20260913_LINT_NODE_GLOBALS.md §7 A1).
   //
-  // `user` is null until auth resolves (contexts/UserContext.jsx:60) and this
-  // scope runs on every render, so the reads are guarded — getScreenContent's
-  // dashboard branch could dereference `user` unguarded, this scope cannot.
-  // The guarded values are never what the modal shows: it opens only from the
-  // Rank chip in the desktop stats bar, which itself renders only when `user`
-  // is set. For every reachable case the results are identical to the
-  // originals, including `indexOf` returning -1 for an unknown rank.
+  // DECLARED ABOVE the getScreenContent() call below, not after it. Nothing in
+  // that function reads them today, but declaring them after the call would
+  // leave the next edit that does read one — the dashboard renders the rank
+  // chip, so it is the natural place — hitting a temporal-dead-zone
+  // ReferenceError instead of a value. Above the call costs nothing.
+  //
+  // `user` is null until auth resolves (contexts/UserContext.jsx:60), and it
+  // can also go null mid-session while `screen` is still 'dashboard' (a failed
+  // getUserData read is delivered as a sign-out: firebase/authService.js:265,
+  // contexts/UserContext.jsx:75). This scope runs on every render, so the
+  // reads are guarded where getScreenContent's dashboard branch dereferenced
+  // `user` unguarded. For every `user`-truthy input the results are identical
+  // to the originals, including `indexOf` returning -1 for a rank that is not
+  // in the list. For `user === null` they differ deliberately: the originals
+  // threw a TypeError, which is the behaviour being removed.
   const xpForNextLevel = 10000;
   const xpProgress = user ? (user.xp / xpForNextLevel) * 100 : 0;
   const xpNeeded = user ? xpForNextLevel - user.xp : xpForNextLevel;
   const ranks = ['Rookie', 'Apprentice', 'Trader', 'Expert', 'Master', 'Legend'];
   const currentRankIndex = user ? ranks.indexOf(user.rank) : -1;
   const nextRank = currentRankIndex < ranks.length - 1 ? ranks[currentRankIndex + 1] : 'Max Rank';
+
+  const screenContent = getScreenContent();
 
   // ============================================
   // UNIFIED RETURN — EarningsGame (always mounted) + active screen + ClashBot widget

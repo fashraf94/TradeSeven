@@ -102,6 +102,20 @@ const { stockAPIStub, USER } = vi.hoisted(() => ({
   // The authenticated user the modal reads. Level 3 "Trader", 6,000 XP —
   // chosen so all four values are distinct and non-trivial: 60% progress,
   // 4,000 XP needed, next rank "Expert".
+  //
+  // "Trader" IS NOT A RANK THE APP CAN ASSIGN, and that is not an oversight
+  // in the fixture — it is a defect in the modal, recorded for separate
+  // tasking. determineRank (services/battleTimer.js:265-270) only ever
+  // returns Beginner / Veteran / Expert / Master, and new accounts start at
+  // 'Beginner' (firebase/authService.js:72); the modal carries its own
+  // six-rung ladder (App.jsx `ranks`) that shares only Expert and Master with
+  // it. So for a real account `indexOf` returns -1 and the modal names
+  // "Rookie" as the next rank. This file exists to guard the SCOPE fix — that
+  // the modal renders at all instead of throwing a ReferenceError — and it
+  // asserts what the modal's own code intends. It deliberately does not pin
+  // the ladder, which is a BUILD_RULES §9 display-agreement fix with a
+  // product decision in it (what the rungs are, what "XP to next" means above
+  // 10,000 XP, where Master caps).
   USER: {
     uid: 'u1',
     id: 'u1',

@@ -34,24 +34,25 @@ const StonkOptionsPosition = ({
   // changed the hook count on exactly that render.
   //
   // Guarded inside so it computes nothing until there is a contract to
-  // measure. `isCall` was a dep but is a pure function of `contract`, so it
-  // is derived in the body instead; for every render that paints, the value
-  // is identical to the pre-lift one.
+  // measure.
+  // Lifted with the memo so the bar, the colour, the icon and the
+  // above/below-strike copy all read ONE binding, exactly as they did when
+  // `isCall` was a memo dep. Deriving it twice would be the BUILD_RULES §9
+  // two-source shape: the bar could disagree with the arrow beside it.
+  const isCall = contract?.direction === 'call';
+
   const progressToStrike = useMemo(() => {
     if (!contract) return 0;
-    const isCallDirection = contract.direction === 'call';
     const totalDistance = Math.abs(contract.strike - contract.entryPrice);
-    const currentDistance = isCallDirection
+    const currentDistance = isCall
       ? currentPrice - contract.entryPrice
       : contract.entryPrice - currentPrice;
 
     if (totalDistance === 0) return 100;
     return Math.min(150, Math.max(-50, (currentDistance / totalDistance) * 100));
-  }, [contract, currentPrice]);
+  }, [contract, currentPrice, isCall]);
 
   if (!contract || !valuation) return null;
-
-  const isCall = contract.direction === 'call';
   const directionColor = isCall ? '#10b981' : '#ef4444';
   const DirectionIcon = isCall ? TrendingUp : TrendingDown;
 
