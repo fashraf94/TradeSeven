@@ -10075,7 +10075,14 @@ export default function PortfolioDuel() {
   return (
     <>
       {/* Temporary diagnostic banner for mobile detection verification */}
-      {process.env.NODE_ENV === 'development' && (
+      {/* import.meta.env.DEV, not process.env.NODE_ENV: `process` does not
+          exist in a browser, so the old read was a genuine `no-undef` — one
+          of the last two standing between this repo and the interim lint
+          gate. Vite substituted it at build time, so the shipped bundle was
+          never wrong; this makes the source honest about where it runs.
+          DEV is false for `vite build` exactly as NODE_ENV was not
+          'development', so the banner stays out of production. */}
+      {import.meta.env.DEV && (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0,
           background: isMobile ? 'green' : 'red',

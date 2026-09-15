@@ -499,3 +499,327 @@ Open a Snake Draft → watch `TacticalRow` rows and `DraftBattleScreenV2` render
 
 ---
 
+
+---
+
+# ADDENDUM — September 15, 2026
+
+Two commits on the same branch, after the record above. They close the two
+things §6 and §8 F1 left for the founder, both now ruled on.
+
+| | |
+|---|---|
+| `1c4bf1b3` | **F1 + F4** — one rank ladder, and every surface reads it |
+| *(this commit)* | **§6-A** — the interim gate, landed green |
+
+---
+
+## §F1-A. One ladder, one source
+
+### F1-A.1 What was wrong
+
+Three places carried the same four thresholds, and one of them had drifted
+to a different list entirely:
+
+| Place | Ladder it used |
+|---|---|
+| `determineRank` — **assigns** the rank on settlement (`src/App.jsx:5453`) | Beginner / Veteran / Expert / Master |
+| `ProfileScreen.jsx:29` — inlined ternary chain | the same four, duplicated |
+| The XP modal — its own literal | **Rookie / Apprentice / Trader / Expert / Master / Legend** |
+
+The modal's list shared two rungs with the real four. `indexOf(user.rank)`
+therefore returned **-1** for Beginner and Veteran — the two commonest
+production ranks — and `ranks[-1 + 1]` is `'Rookie'`, so the modal told
+almost every player their next rank was one the game cannot award. And
+because "XP to next rank" measured against a flat `xpForNextLevel = 10000`
+rather than the next threshold, past 10,000 XP it counted **down through
+zero** and the bar animated past 100%.
+
+### F1-A.2 The fix
+
+`RANK_LADDER` in `src/services/battleTimer.js` is now the only place the
+rungs and their thresholds exist:
+
+```js
+export const RANK_LADDER = [
+  { rank: 'Beginner', minXp: 0 },
+  { rank: 'Veteran', minXp: 500 },
+  { rank: 'Expert', minXp: 2000 },
+  { rank: 'Master', minXp: 5000 },
+];
+```
+
+- **`determineRank`** reads it top-down — the same order the hardcoded chain
+  tested in. Verified **identical over 19 inputs**, including `NaN`, `null`,
+  `undefined`, a numeric string and both infinities. It is a refactor, not a
+  behaviour change; the rank the game assigns is untouched.
+- **`getRankProgress(xp)`** returns `{ rank, nextRank, xpToNextRank, isMaxRank }`
+  from one call. The modal's heading, its next-rung label and its number all
+  come from that one object, so they cannot disagree with each other or with
+  the rank the game awards — the §9 binding, by construction rather than by
+  care.
+- **`xpToNextRank` is positive by construction.** `determineRank` only
+  returns rung *i* when xp is below rung *i+1*'s threshold, so
+  `next.minXp - xp` is always > 0. The negative countdown is not fixed by a
+  clamp; it is unreachable.
+- **`ProfileScreen.jsx`** calls `determineRank(user.xp || 0)` — exactly
+  equivalent to the chain it replaces.
+
+**Founder ruling on the top rung, implemented:** at max rank the modal shows
+**"Max rank reached"** — no next-rung label, no XP-to-next number, bar full.
+`nextRank` and `xpToNextRank` are `null` rather than a placeholder string,
+so a caller cannot render `'Max Rank'` into a slot that reads like a rank,
+which is how the old ladder looked plausible.
+
+**What is NOT resolved here, deliberately.** What `xpForNextLevel` *means*
+is a separate question — it is a flat 10,000 that matches no rung threshold,
+and whether it is a level track or a rank track is its own decision. The bar
+keeps today's expression and the comment at the site says so. It cannot
+exceed 100%: every rung below the top requires xp < 5,000, so the expression
+is under 50% there, and at the top rung the bar is full by ruling rather
+than by arithmetic.
+
+### F1-A.3 The table, now
+
+The record's §8 F1 table re-run against the fix. Compare the "before"
+column with §8 F1 above.
+
+| xp | rank the game assigns | modal's next rung — before → **after** | XP to next — before → **after** | bar |
+|---:|---|---|---|---:|
+| 0 | Beginner | Rookie → **Veteran** | 10000 → **500** | 0% |
+| 500 | Veteran | Rookie → **Expert** | 9500 → **1500** | 5% |
+| 1999 | Veteran | Rookie → **Expert** | 8001 → **1** | 19.99% |
+| 2000 | Expert | Master → **Master** ✓ | 8000 → **3000** | 20% |
+| 5000 | Master | Legend → **(none)** | 5000 → **(none)** | **100%** |
+| 12000 | Master | Legend → **(none)** | **-2000** → **(none)** | **120% → 100%** |
+
+### F1-A.4 Tests, shown failing first
+
+Six rows in `src/App.xpModal.jsdom.test.jsx`, one per table row, mounted
+through the real player path. Every assertion is an **exact** string match
+on the modal's own `<h2>`/`<p>` elements — never `toContain`, because §7.4
+M4 already showed a substring match passes for a negated value, which is
+the precise defect these rows exist to catch. Every row also asserts *no
+negative figure anywhere* and *no width above 100%*.
+
+Against the unfixed modal all six fail:
+
+```
+AssertionError: the XP-to-next-rung figure: expected [ …(5) ] to include '500 XP to next rank'
+AssertionError: the XP-to-next-rung figure: expected [ …(5) ] to include '1500 XP to next rank'
+AssertionError: the XP-to-next-rung figure: expected [ …(5) ] to include '1 XP to next rank'
+AssertionError: the XP-to-next-rung figure: expected [ …(5) ] to include '3000 XP to next rank'
+AssertionError: the max-rank line: expected [ …(5) ] to include 'Max rank reached'
+```
+
+A seventh file, `src/rankLadder.singleSource.jsdom.test.jsx`, guards the
+source contract directly (21 rows, no mount needed) and **mounts
+ProfileScreen** across the same table, so the next private copy reddens on
+the first threshold it gets wrong.
+
+### F1-A.5 Mutation check — every row is a guard
+
+Ten mutants, **8 killed**. Each of the six table rows is killed by at least
+one, which is what the ruling asked for.
+
+| id | Mutation | Verdict | Rows it killed |
+|---|---|---|---|
+| N1 | Veteran threshold 500 → 400 | **KILLED** | 0 XP |
+| N2 | Expert threshold 2000 → 2500 | **KILLED** | 4 rows |
+| N3 | Master threshold 5000 → 4000 | **KILLED** | 2 rows |
+| N4 | rename a rung, Veteran → Rookie | **KILLED** | 3 rows |
+| N5 | `xpToNextRank` sign flipped — the old negative countdown | **KILLED** | 5 rows |
+| N6 | `isMaxRank` never true — the ruling removed | **KILLED** | both max rows |
+| N7 | `determineRank` scans bottom-up (off-by-one rung) | **KILLED** | 4 rows |
+| N8 | heading back to the persisted `user.rank` | *survived → now **KILLED*** | see below |
+| N9 | bar not forced full at max rank — the >100% defect | **KILLED** | 12000 XP |
+| N10 | ProfileScreen back to its own inlined copy | **SURVIVED**, correctly | — |
+
+**The two survivors were acted on, not excused.**
+
+- **N8 survived** because every row fed a *consistent* `(xp, rank)` pair —
+  which is all the app ever writes, since settlement sets
+  `rank = determineRank(xp)`. No such row can tell the two sources apart. A
+  row now feeds an **inconsistent** pair (5,000 XP with a stale
+  `rank: 'Beginner'`) and asserts the modal shows **Master**: the §9 binding
+  pinned. N8 is now killed.
+- **N10 still survives, and should.** Re-inlining a copy that is
+  behaviourally *identical* is a duplication, not a defect — no behavioural
+  test can see it, and one that claimed to would be lying. The mutant that
+  matters is a copy that **drifts**: N11 (the same inlined chain with
+  Veteran at 900 instead of 500) is **KILLED** by the new ProfileScreen
+  rows. That is the F4 failure mode, and it is caught.
+
+---
+
+## §6-A. The interim gate — landed, green
+
+§6 above stopped: `no-undef` stood at 2 after Commits A and B, and the
+instruction was not to land a gate that starts red. The founder ruled
+**option 2 then option 1's rule set**, so:
+
+### 6-A.1 The two `no-undef` are gone
+
+`src/App.jsx` (the mobile-detection diagnostic banner) and
+`src/components/ErrorBoundary.jsx:227` (the dev-only error detail block) now
+read **`import.meta.env.DEV`** instead of `process.env.NODE_ENV`.
+
+This is the honest form: `process` does not exist in a browser, which is why
+those reads were genuine `no-undef`. Vite was substituting the expression at
+build time, so the shipped bundle was never wrong — §6.1 above established
+that with a `grep` over a clean build. `import.meta.env.DEV` is false for
+`vite build` exactly as `NODE_ENV` was not `'development'`, so neither block
+reaches production. The source now says where it runs.
+
+### 6-A.2 Both rules at zero — checked before the gate was written
+
+```
+repo-wide errors: 873 | warnings: 119
+no-undef: 0
+react-hooks/rules-of-hooks: 0
+```
+
+The gate was only written after that read. Had either been non-zero the
+instruction was to STOP, and this section would say so instead.
+
+### 6-A.3 What landed
+
+- **`eslint.gate.config.js`** — imports `eslint.config.js` and switches off
+  every rule except the two, forcing both to `error`. It *derives* rather
+  than restates, because the base config carries the file globs, the
+  browser/Node globals unions and the parser options that decide whether
+  `no-undef` is even meaningful for a file; a second copy of those would
+  drift, which is the same mistake F4 was.
+- **`npm run lint:gate`** — `eslint . --config eslint.gate.config.js --max-warnings 0`.
+- **A workflow step** in `.github/workflows/tests.yml`, placed **before** the
+  unit suite: it takes under a minute, and both classes it catches are ones
+  the suite can miss — nothing imported `App.jsx` until this arc, and a
+  conditional hook only throws on the one render path that flips it.
+
+**Two deliberate exclusions, both stated in the config:**
+
+1. `scripts/composition/cells_C5.js` and `cells_C7.js` are ignored **by the
+   gate only**. They are bare object-literal fragments that ESLint cannot
+   parse, so they report a parse error rather than any rule result — the A5
+   finding, where the record already notes they are "invisible to every
+   rule, permanently". A parse error is neither of the two rules, and
+   ignoring them costs nothing that was not already lost. `npm run lint`
+   still reports them. Fixing them is A5's own task.
+2. `reportUnusedDisableDirectives` is off **in the gate config only**.
+   Switching ~65 rules off makes every `eslint-disable` aimed at one of them
+   look unused — 69 of them — which is an artifact of the narrow rule set,
+   not a finding. `npm run lint` still reports the genuinely unused ones.
+
+### 6-A.4 The gate is proven to fail
+
+A green gate that cannot catch its own defect classes is decoration.
+BUILD_RULES §2's mutation standard applies to it too:
+
+| | Mutation | Gate |
+|---|---|---|
+| G1 | re-introduce A1 — the modal reads an undeclared identifier | **CAUGHT**, exit 1, `'xpForNextLevel' is not defined` ×2 |
+| G2 | re-introduce A4 — a hook back below `TacticalRow`'s early return | **CAUGHT**, exit 1, `React Hook "useMemo" is called conditionally` ×2 |
+| G3 | a **brand-new** conditional hook in `DesktopBackground.jsx`, a file neither A1 nor A4 touched | **CAUGHT**, exit 1 |
+
+G3 is the one that matters for the future: the gate stops the 902nd error
+of these two classes anywhere in the repo, not just a regression of the
+sites this arc fixed.
+
+**What is still not gated:** the other 873 errors and 119 warnings. Widening
+is one rule at a time, each time it reaches zero. The next candidates are in
+the lint record's §7(c).
+
+---
+## §V-A. Verification of the addendum
+
+Re-run at the addendum's final commit, not inherited from §9.
+
+### V-A.1 Full suite — three runs at the CI worker count
+
+| # | Command | Exit | Test files | Tests |
+|---|---|---:|---|---|
+| 1 | `npm run test:run -- --maxWorkers=2` | **0** | 666 passed, 3 skipped (669) | 12,507 passed, 64 skipped, **0 failed** |
+| 2 | same | **0** | 666 passed, 3 skipped (669) | 12,507 passed, 64 skipped, **0 failed** |
+| 3 | same | **0** | 666 passed, 3 skipped (669) | 12,507 passed, 64 skipped, **0 failed** |
+
+Durations 202.87s / 202.09s / 200.55s. Identical counts across all three.
+
+Against §9.1's 665 files / 12,479 tests: **+1 file** (`rankLadder.singleSource.jsdom.test.jsx`) and **+28 rows** — 21 there, 7 added to `App.xpModal.jsdom.test.jsx` (six table rows plus the stale-rank row).
+
+This run also clears the one risk the `import.meta.env.DEV` conversion carried: vitest sets `DEV` **true** in test mode, where `process.env.NODE_ENV` was `'test'` and so never `'development'`. The diagnostic banner and the ErrorBoundary detail block therefore render under test now when they did not before. Three green runs say nothing depended on their absence. Production is unaffected — `DEV` is false for `vite build`.
+
+### V-A.2 Lint — before and after the addendum
+
+| | After the A1/A4 arc (§9.2) | After this addendum | Δ |
+|---|---:|---:|---:|
+| Repo-wide errors | 875 | **873** | −2 |
+| Repo-wide warnings | 119 | **119** | 0 |
+| `no-undef` | 2 | **0** | **−2** |
+| `react-hooks/rules-of-hooks` | 0 | **0** | 0 |
+
+Both −2 are the converted `process.env.NODE_ENV` reads. Nothing else moved: the ladder work is a refactor plus a render-branch, and added no lint error.
+
+Against the branch's base `fd470b16`: **901 → 873 errors**, `no-undef` **6 → 0**, `rules-of-hooks` **19 → 0**.
+
+### V-A.3 Gate and build
+
+- `npm run lint:gate` → **exit 0**.
+- `npx vite build` → **exit 0**. `dist/` removed afterwards; it is gitignored.
+
+### V-A.4 Fence and flags, re-checked
+
+`git diff --name-only origin/main` still touches no `api/` path, so no BUILD_RULES §1 fenced file is in the diff. No `featureFlags.js`. No `DARK_BY_DESIGN`. `package.json` changes by exactly one line (the `lint:gate` script); no dependency was added — the gate config imports the base config and the `globals`/plugin packages already present.
+
+---
+
+## §11-A. Disclosure for the PR body — rewritten
+
+§11 above is superseded. It carried two caveats: the gate line was false,
+and the modal's rank ladder was wrong. Both are now resolved, so the
+disclosure is a single block again, with nothing to strike:
+
+> Fixes two crash-class defects the lint cleanup made visible: the XP modal
+> referenced four values outside their scope and unmounted the app the
+> moment it rendered; nineteen React hooks across eleven files were called
+> conditionally, which crashes the component whenever the condition changes
+> between renders. No visual change on any path that worked. The XP modal
+> now renders, and its rank matches the one the game assigns. CI now gates
+> on the two lint rules that catch these classes.
+
+Both of the previously-required amendments are retired:
+
+- **The gate line is true again.** `no-undef` and
+  `react-hooks/rules-of-hooks` are both at zero repo-wide, `npm run lint:gate`
+  runs them in CI ahead of the unit suite, and the gate is proven to fail on
+  a re-introduced A1, a re-introduced A4, and a brand-new conditional hook in
+  an untouched file (§6-A.4).
+- **The F1 caveat is retired**, not just softened. The modal no longer shows
+  a rank the game cannot award, and the "XP to next rank" figure is positive
+  by construction rather than by clamp (§F1-A).
+
+One thing a reviewer should still know, and it is not a caveat on this
+branch: `xpForNextLevel` — the flat 10,000 the progress bar measures against
+— matches no rung threshold, and what it is supposed to mean was left open
+deliberately (§F1-A.2). The bar cannot misreport (it is under 50% below the
+top rung and full at it), but the number beside it, "`{xp}` / 10000 XP", is
+still measuring against a figure nothing else in the ladder uses.
+
+---
+
+## §12-A. Smoke — what the addendum adds to the list
+
+§12's list stands. Two additions, and the first supersedes §12's step 1 caveat:
+
+**1 — The XP modal, now correct** (was: "expect the next-rank label to be wrong").
+Rank chip → the modal opens. The heading is the rank the game assigns, the
+next rung is the real one above it, and the XP figure counts *up* to that
+rung's threshold. **F1 is fixed, so there is nothing wrong to expect.** On an
+account at or above 5,000 XP the modal should read **"Max rank reached"**
+with a full bar and no number.
+
+**8 — Profile screen.** Open it and check the rank matches what the XP modal
+and the stats-bar chip show. All three now come from the same ladder; this is
+the human check that they agree on a real account.
+
+Nothing about the gate needs a preview smoke — it runs in CI on the PR, and
+its own failure modes are proven in §6-A.4.
