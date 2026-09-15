@@ -100,31 +100,25 @@ const { stockAPIStub, USER } = vi.hoisted(() => ({
     getPopularStocks: async () => [],
     getPopularCrypto: async () => [],
   },
-  // The authenticated user the modal reads. Level 3 "Trader", 6,000 XP —
-  // chosen so all four values are distinct and non-trivial: 60% progress,
-  // 4,000 XP needed, next rank "Expert".
+  // The authenticated user the modal reads. Level 3 Expert on 2,000 XP —
+  // an (xp, rank) pair the game can actually produce: determineRank(2000)
+  // IS 'Expert' (services/battleTimer.js). Chosen so every derived value is
+  // distinct and non-trivial: 20% bar, 3,000 XP to the next rung, next rung
+  // 'Master'.
   //
-  // "Trader" IS NOT A RANK THE APP CAN ASSIGN, and that is not an oversight
-  // in the fixture — it is a defect in the modal, recorded for separate
-  // tasking. determineRank (services/battleTimer.js:265-270) only ever
-  // returns Beginner / Veteran / Expert / Master, and new accounts start at
-  // 'Beginner' (firebase/authService.js:72); the modal carries its own
-  // six-rung ladder (App.jsx `ranks`) that shares only Expert and Master with
-  // it. So for a real account `indexOf` returns -1 and the modal names
-  // "Rookie" as the next rank. This file exists to guard the SCOPE fix — that
-  // the modal renders at all instead of throwing a ReferenceError — and it
-  // asserts what the modal's own code intends. It deliberately does not pin
-  // the ladder, which is a BUILD_RULES §9 display-agreement fix with a
-  // product decision in it (what the rungs are, what "XP to next" means above
-  // 10,000 XP, where Master caps).
+  // This fixture used to be `{ xp: 6000, rank: 'Trader' }`, a pair the app
+  // cannot produce, because the modal carried its own six-rung ladder that
+  // shared only two rungs with the real one (record §8 F1 / F4). That ladder
+  // is gone: the modal now reads the rungs and thresholds from the same
+  // module that ASSIGNS a rank, so the fixture has to be honest too.
   USER: {
     uid: 'u1',
     id: 'u1',
     username: 'tester',
     email: 'tester@example.com',
-    xp: 6000,
+    xp: 2000,
     level: 3,
-    rank: 'Trader',
+    rank: 'Expert',
     wins: 7,
     losses: 2,
   },
@@ -217,10 +211,14 @@ afterEach(async () => {
   vi.clearAllMocks();
 });
 
-/** The Rank chip in the desktop bottom stats bar — the player's way in. */
+/**
+ * The Rank chip in the desktop bottom stats bar — the player's way in.
+ * Matched on '(Lvl ' rather than on a rank name, so the ladder rows below
+ * can drive it with any rank without the selector needing to know which.
+ */
 const rankChip = () =>
-  Array.from(container.querySelectorAll('button')).find(
-    (b) => b.textContent.includes('Trader') && b.textContent.includes('Lvl 3')
+  Array.from(container.querySelectorAll('button')).find((b) =>
+    b.textContent.includes('(Lvl ')
   );
 
 describe('A1 — the app-level XP progress modal', () => {
@@ -240,19 +238,18 @@ describe('A1 — the app-level XP progress modal', () => {
       Array.from(container.querySelectorAll(sel)).map((n) => n.textContent.trim());
 
     // xpForNextLevel — the denominator, rendered verbatim beside user.xp.
-    expect(text).toContain('6000 / 10000 XP');
+    expect(text).toContain('2000 / 10000 XP');
 
     // xpNeeded — 10000 - 6000. Asserted as the EXACT text of its own <p>, not
     // as a substring of the container: the mutation pass (§7.4 M4) showed a
     // `toContain` here survives flipping the subtraction, because the mutant
     // renders '-4000 XP to next rank', which still CONTAINS the expected
     // string. An exact element match kills that mutant.
-    expect(texts('p')).toContain('4000 XP to next rank');
+    expect(texts('p')).toContain('3000 XP to next rank');
 
-    // nextRank — the entry after 'Trader' in the ranks ladder. Also exact:
-    // 'Expert' appears nowhere else in the modal, but a substring match over
-    // the whole app's text is not something to rely on.
-    expect(texts('p')).toContain('Expert');
+    // The next rung above Expert on the real ladder. Also exact: a substring
+    // match over the whole app's text is not something to rely on.
+    expect(texts('p')).toContain('Master');
   }, 120000);
 
   it('drives the XP bar width from xpProgress', async () => {
@@ -273,9 +270,9 @@ describe('A1 — the app-level XP progress modal', () => {
       .map((d) => d.style.width)
       .filter(Boolean);
 
-    // (6000 / 10000) * 100 = 60. Assert on the bar's own node rather than the
-    // container text, so the row cannot pass on a coincidental "60" elsewhere.
-    expect(widths, 'the XP progress bar settled at 60% width').toContain('60%');
+    // (2000 / 10000) * 100 = 20. Assert on the bar's own node rather than the
+    // container text, so the row cannot pass on a coincidental "20" elsewhere.
+    expect(widths, 'the XP progress bar settled at 20% width').toContain('20%');
   }, 120000);
 
   // Found by the §2 review (lens A A-3, lens C C-1) while this fix was in
@@ -290,7 +287,7 @@ describe('A1 — the app-level XP progress modal', () => {
     const chip = rankChip();
     expect(chip, 'the Rank chip in the desktop bottom stats bar').toBeTruthy();
     await act(async () => { chip.click(); });
-    expect(container.textContent).toContain('6000 / 10000 XP');
+    expect(container.textContent).toContain('2000 / 10000 XP');
 
     // A failed getUserData read, delivered as a sign-out, with the modal up.
     session.user = null;
@@ -298,6 +295,113 @@ describe('A1 — the app-level XP progress modal', () => {
 
     // Pre-fix: TypeError: Cannot read properties of null (reading 'rank').
     // Post-fix: the modal simply stops rendering and the app stays mounted.
-    expect(container.textContent).not.toContain('6000 / 10000 XP');
+    expect(container.textContent).not.toContain('2000 / 10000 XP');
   }, 120000);
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────
+// F1 / F4 — ONE LADDER, AND THE MODAL READS IT.
+//
+// The record's §8 F1 table, row for row. Before this fix the modal carried
+// its own six-rung literal (Rookie / Apprentice / Trader / Expert / Master /
+// Legend) that shared only two rungs with the one the game assigns
+// (Beginner / Veteran / Expert / Master, services/battleTimer.js). So
+// `indexOf(user.rank)` returned -1 for the two commonest production ranks
+// and the modal named 'Rookie' as the next rung; above 10,000 XP the
+// "XP to next rank" figure counted DOWN past zero and the bar animated past
+// 100%.
+//
+// Each row is a real (xp, determineRank(xp)) pair. Every one asserts the
+// EXACT rendered string, never toContain — the mutation pass (record §7.4
+// M4) showed a substring match passes for a negated value, which is the
+// precise defect these rows exist to catch.
+//
+// Founder ruling on the top rung: at max rank the modal shows
+// "Max rank reached" — no next-rung label, no XP-to-next number, bar full.
+
+const LADDER_ROWS = [
+  { xp: 0,     rank: 'Beginner', next: 'Veteran', xpToNext: 500,  bar: '0%' },
+  { xp: 500,   rank: 'Veteran',  next: 'Expert',  xpToNext: 1500, bar: '5%' },
+  { xp: 1999,  rank: 'Veteran',  next: 'Expert',  xpToNext: 1,    bar: '19.99%' },
+  { xp: 2000,  rank: 'Expert',   next: 'Master',  xpToNext: 3000, bar: '20%' },
+  { xp: 5000,  rank: 'Master',   next: null,      xpToNext: null, bar: '100%' },
+  { xp: 12000, rank: 'Master',   next: null,      xpToNext: null, bar: '100%' },
+];
+
+describe('F1/F4 — the XP modal reads the ladder the game assigns', () => {
+  /** Open the modal for a given (xp, rank) pair and hand back what it shows. */
+  const openModalFor = async ({ xp, rank }) => {
+    session.user = { ...USER, xp, rank };
+    await act(async () => { root.render(<Mounted />); });
+    const chip = rankChip();
+    expect(chip, 'the Rank chip in the desktop bottom stats bar').toBeTruthy();
+    await act(async () => { chip.click(); });
+    // Let the bar's framer animation settle before reading its width.
+    await act(async () => { await new Promise((r) => setTimeout(r, 1400)); });
+    return {
+      headings: Array.from(container.querySelectorAll('h2')).map((n) => n.textContent.trim()),
+      paras: Array.from(container.querySelectorAll('p')).map((n) => n.textContent.trim()),
+      widths: Array.from(container.querySelectorAll('div'))
+        .map((d) => d.style.width)
+        .filter(Boolean),
+    };
+  };
+
+  // Kills the mutant that points the heading back at the persisted
+  // `user.rank` (record §F1-A, N8). Every other row feeds a consistent
+  // (xp, rank) pair — which is all the app ever writes, since settlement
+  // sets rank = determineRank(xp) at App.jsx:5453 — so no other row can
+  // tell the two sources apart. This one feeds an INCONSISTENT pair and
+  // pins the §9 binding: what the modal says about rank is derived from
+  // xp, the same input the number beside it comes from.
+  it('derives the heading from XP, not from a stale persisted rank', async () => {
+    const { headings, paras } = await openModalFor({ xp: 5000, rank: 'Beginner' });
+    expect(headings, 'the assigned rank for 5000 XP').toContain('Master');
+    expect(headings, 'not the stale persisted field').not.toContain('Beginner');
+    expect(paras, 'and the rest of the modal agrees with it').toContain('Max rank reached');
+  }, 120000);
+
+  for (const row of LADDER_ROWS) {
+    const label = row.next
+      ? `${row.xp} XP is ${row.rank}, ${row.xpToNext} from ${row.next}`
+      : `${row.xp} XP is ${row.rank} — max rank`;
+
+    it(label, async () => {
+      const { headings, paras, widths } = await openModalFor(row);
+
+      // The heading is the rank the GAME assigns, not a rung from a private
+      // ladder. Exact match: 'Master' must not be satisfied by 'Max rank'.
+      expect(headings, 'the modal heading names the assigned rank')
+        .toContain(row.rank);
+
+      if (row.next) {
+        expect(paras, 'the XP-to-next-rung figure')
+          .toContain(`${row.xpToNext} XP to next rank`);
+        expect(paras, 'the next rung on the assigned ladder').toContain(row.next);
+        expect(paras, 'a non-max rank must not claim to be maxed')
+          .not.toContain('Max rank reached');
+      } else {
+        // Founder ruling: no label, no number, at the top rung.
+        expect(paras, 'the max-rank line').toContain('Max rank reached');
+        expect(
+          paras.filter((t) => t.includes('XP to next rank')),
+          'no XP-to-next line at max rank'
+        ).toEqual([]);
+      }
+
+      // THE TWO THINGS THE OLD LADDER GOT WRONG, asserted on every row:
+      // never a negative figure, never a bar past 100%.
+      expect(
+        paras.filter((t) => /-\d/.test(t) && t.includes('XP to next rank')),
+        'no negative XP-to-next figure'
+      ).toEqual([]);
+      expect(widths, 'the bar settled at its expected width').toContain(row.bar);
+      for (const w of widths) {
+        if (w.endsWith('%')) {
+          expect(parseFloat(w), `no width above 100% (saw ${w})`).toBeLessThanOrEqual(100);
+        }
+      }
+    }, 120000);
+  }
 });

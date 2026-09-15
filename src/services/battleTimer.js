@@ -258,15 +258,65 @@ export function calculateXP(won, margin) {
 }
 
 /**
+ * THE RANK LADDER — the single source for both the rungs and their
+ * thresholds, ascending.
+ *
+ * This is the only place either exists. It is exported because three
+ * surfaces need the same answer and used to each carry their own copy:
+ * determineRank below (which ASSIGNS the rank on battle settlement), the
+ * app-level XP progress modal, and ProfileScreen's stat block. The modal's
+ * copy had drifted to a different six-rung list entirely — it shared only
+ * two rungs with this one, so it named ranks the game cannot award and its
+ * "XP to next rank" figure went negative past 10,000 XP
+ * (docs/audits/20260915_BUILD_CRASH_CLASS_A1_A4.md §8 F1 / F4).
+ *
+ * Adding or retuning a rung is a one-line edit here and nowhere else.
+ */
+export const RANK_LADDER = [
+  { rank: 'Beginner', minXp: 0 },
+  { rank: 'Veteran', minXp: 500 },
+  { rank: 'Expert', minXp: 2000 },
+  { rank: 'Master', minXp: 5000 },
+];
+
+/**
  * Check if user should rank up based on XP
  * @param {number} xp - Current XP
  * @returns {string} - New rank
  */
 export function determineRank(xp) {
-  if (xp >= 5000) return 'Master';
-  if (xp >= 2000) return 'Expert';
-  if (xp >= 500) return 'Veteran';
-  return 'Beginner';
+  // Top rung down, which is the same order the hardcoded chain used to test
+  // in — so every input lands on the rung it always did, including a NaN or
+  // undefined xp, where no comparison holds and the floor rung wins.
+  for (let i = RANK_LADDER.length - 1; i > 0; i--) {
+    if (xp >= RANK_LADDER[i].minXp) return RANK_LADDER[i].rank;
+  }
+  return RANK_LADDER[0].rank;
+}
+
+/**
+ * Where a player sits on the ladder, and what is above them — everything a
+ * surface needs to describe rank progress, derived from ONE input so the
+ * pieces cannot disagree with each other or with the assigned rank
+ * (BUILD_RULES §9).
+ *
+ * `xpToNextRank` is positive by construction: determineRank only returns
+ * rung i when xp is below rung i+1's threshold. At the top rung there is no
+ * next rung, and both `nextRank` and `xpToNextRank` are null rather than a
+ * placeholder a caller might render.
+ *
+ * @param {number} xp - Current XP
+ * @returns {{rank: string, nextRank: string|null, xpToNextRank: number|null, isMaxRank: boolean}}
+ */
+export function getRankProgress(xp) {
+  const rank = determineRank(xp);
+  const next = RANK_LADDER[RANK_LADDER.findIndex((r) => r.rank === rank) + 1] || null;
+  return {
+    rank,
+    nextRank: next ? next.rank : null,
+    xpToNextRank: next ? next.minXp - xp : null,
+    isMaxRank: next === null,
+  };
 }
 
 // =====================================================
@@ -371,6 +421,8 @@ export default {
   determineWinner,
   calculateXP,
   determineRank,
+  getRankProgress,
+  RANK_LADDER,
   processCompletedBattle,
   getBattleTimes,
   formatDate,
