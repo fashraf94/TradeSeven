@@ -97,7 +97,12 @@ function AssetSide({
     priceChange = 0,
     thresholdPriceChange,
     baseATR = 2.5,
-    history = { maxMultiplier: 0, minMultiplier: 0 },
+    // DEFAULT_HISTORY, not a fresh literal: `history` is a dep of
+    // thresholdHeat, and hoisting this destructure above the early returns
+    // made it reachable on every empty-slot and cash-slot render, where a new
+    // object identity each time would invalidate the memo on every render.
+    // Same value, and the same constant proximityInputs already uses (:40).
+    history = DEFAULT_HISTORY,
     points = 0,
     badges = [],
   } = asset ?? {};

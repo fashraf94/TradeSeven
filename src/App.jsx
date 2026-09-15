@@ -10470,7 +10470,15 @@ export default function PortfolioDuel() {
       )}
 
       {/* ========== XP PROGRESS MODAL (extracted from dashboard) ========== */}
-      {showXPModal && (
+      {/* Gated on `user` as well as the flag: the modal reads user.rank,
+          user.level and user.xp unguarded below, and `user` can go null while
+          the modal is OPEN (a failed getUserData read is delivered as a
+          sign-out — firebase/authService.js:265, contexts/UserContext.jsx:75),
+          which threw a TypeError and unmounted the tree. Nothing else changes:
+          the only control that opens this modal is the Rank chip, which itself
+          renders only when `user` is set, so every render that painted before
+          still paints. */}
+      {showXPModal && user && (
         <div
           onClick={() => setShowXPModal(false)}
           style={{

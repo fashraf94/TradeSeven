@@ -29,8 +29,11 @@
 // the same shape of flip moves it 1 <-> 2 and crashes in both directions.
 //
 // The remaining 15 are STATIC — the condition is fixed for the component's
-// life — and the lint rule at zero is their guard. The per-site
-// classification is in the build record.
+// life. Their guard is `react-hooks/rules-of-hooks` at zero — and that rule
+// is NOT RUN BY CI today (neither workflow runs `npm run lint`), so it is a
+// guard a human has to run, not a check that will stop a regression. Closing
+// that is the interim gate the build record's §6 leaves as the founder's
+// call. The per-site classification is in that record.
 //
 // SHOWN FAILING FIRST. Against the pre-fix tree every row here fails with
 // React's own hook-order error, e.g.
@@ -132,7 +135,9 @@ describe('A4 — flip-able conditional hooks survive the flip', () => {
       <StonkOptionsPosition contract={CONTRACT} currentPrice={205} />,
       <StonkOptionsPosition contract={CONTRACT} currentPrice={undefined} />
     );
-    expect(container.textContent).toBe('');
+    // The row's real guard is act() rethrowing React's hook-order error; this
+    // asserts the card is actually gone rather than merely textless.
+    expect(container.querySelector('div')).toBeNull();
   });
 
   // ── Sites 7-8: src/components/BaggerBomb/TacticalRow.jsx:179, 211 ────────

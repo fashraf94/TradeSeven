@@ -98,6 +98,7 @@ const { stockAPIStub, USER } = vi.hoisted(() => ({
     searchStocks: async () => [],
     getQuote: async () => null,
     getPopularStocks: async () => [],
+    getPopularCrypto: async () => [],
   },
   // The authenticated user the modal reads. Level 3 "Trader", 6,000 XP —
   // chosen so all four values are distinct and non-trivial: 60% progress,
@@ -142,9 +143,14 @@ vi.mock('./services/eodhdAPI', () => ({
 }));
 vi.mock('./services/wsCacheBridge', () => ({ startWsCacheBridge: vi.fn(() => () => {}) }));
 
+// Mutable so a row can drop the user mid-session the way a failed
+// getUserData read does (firebase/authService.js:265 delivers it as a
+// sign-out). Reset in beforeEach.
+const session = vi.hoisted(() => ({ user: null }));
+
 vi.mock('./contexts/UserContext', () => ({
   useUser: () => ({
-    user: USER,
+    user: session.user,
     login: vi.fn(), register: vi.fn(), loginWithGoogle: vi.fn(),
     logout: vi.fn(), updateUser: vi.fn(), forgotPassword: vi.fn(),
     loading: false, authLoading: false,
@@ -193,6 +199,7 @@ let container;
 let root;
 
 beforeEach(() => {
+  session.user = USER;
   // No test in this file should reach the network; if one does, fail loudly
   // rather than hang on a real socket.
   vi.stubGlobal('fetch', vi.fn(async () => {
@@ -239,14 +246,16 @@ describe('A1 — the app-level XP progress modal', () => {
 
   it('drives the XP bar width from xpProgress', async () => {
     await act(async () => { root.render(<Mounted />); });
-    await act(async () => { rankChip().click(); });
 
-    // (6000 / 10000) * 100 = 60. Assert on the bar's own node rather than the
-    // container text, so the row cannot pass on a coincidental "60" elsewhere.
+    const chip = rankChip();
+    expect(chip, 'the Rank chip in the desktop bottom stats bar').toBeTruthy();
+    await act(async () => { chip.click(); });
+
     // The bar is a framer-motion div animating `width` from 0 to
-    // `${xpProgress}%` over 0.8s (App.jsx:10555). Let it settle rather than
-    // stubbing framer out: stubbing `motion` app-wide would change how dozens
-    // of unrelated components in this tree render.
+    // `${xpProgress}%` over 0.8s. Let it settle rather than stubbing framer
+    // out: stubbing `motion` app-wide would change how dozens of unrelated
+    // components in this tree render. Measured: the bar reaches 60% at
+    // t~810ms and holds, so 1400ms carries ~590ms of slack.
     await act(async () => { await new Promise((r) => setTimeout(r, 1400)); });
 
     const widths = Array.from(container.querySelectorAll('div'))
@@ -256,5 +265,28 @@ describe('A1 — the app-level XP progress modal', () => {
     // (6000 / 10000) * 100 = 60. Assert on the bar's own node rather than the
     // container text, so the row cannot pass on a coincidental "60" elsewhere.
     expect(widths, 'the XP progress bar settled at 60% width').toContain('60%');
+  }, 120000);
+
+  // Found by the §2 review (lens A A-3, lens C C-1) while this fix was in
+  // flight. The modal reads user.rank / user.level / user.xp unguarded, and
+  // was gated on `showXPModal` alone — which nothing resets on sign-out. So
+  // a user going null WHILE THE MODAL IS OPEN threw a TypeError and unmounted
+  // the tree: the same crash class A1 exists to remove, through the same
+  // modal, one input away from the one A1's own guards already handle.
+  it('survives the user going null while the modal is open', async () => {
+    await act(async () => { root.render(<Mounted />); });
+
+    const chip = rankChip();
+    expect(chip, 'the Rank chip in the desktop bottom stats bar').toBeTruthy();
+    await act(async () => { chip.click(); });
+    expect(container.textContent).toContain('6000 / 10000 XP');
+
+    // A failed getUserData read, delivered as a sign-out, with the modal up.
+    session.user = null;
+    await act(async () => { root.render(<Mounted />); });
+
+    // Pre-fix: TypeError: Cannot read properties of null (reading 'rank').
+    // Post-fix: the modal simply stops rendering and the app stays mounted.
+    expect(container.textContent).not.toContain('6000 / 10000 XP');
   }, 120000);
 });
