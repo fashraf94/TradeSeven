@@ -8732,14 +8732,6 @@ export default function PortfolioDuel() {
 
     const hasActiveBattle = activeBattlesWithData.length > 0;
 
-    // XP calculation for modal
-    const xpForNextLevel = 10000;
-    const xpProgress = (user.xp / xpForNextLevel) * 100;
-    const xpNeeded = xpForNextLevel - user.xp;
-    const ranks = ['Rookie', 'Apprentice', 'Trader', 'Expert', 'Master', 'Legend'];
-    const currentRankIndex = ranks.indexOf(user.rank);
-    const nextRank = currentRankIndex < ranks.length - 1 ? ranks[currentRankIndex + 1] : 'Max Rank';
-
     // ═══════════════════════════════════════════════════════════
     // MOBILE: The Loop — unified battle feed
     // ═══════════════════════════════════════════════════════════
@@ -10016,6 +10008,31 @@ export default function PortfolioDuel() {
   }
 
   const screenContent = getScreenContent();
+
+  // XP calculation for the app-level XP progress modal, which renders in THIS
+  // scope (the `showXPModal &&` block in the unified return below).
+  //
+  // These six lines lived inside getScreenContent's `screen === 'dashboard'`
+  // branch — a SIBLING scope, ~1,800 lines from the only code that reads them.
+  // Nothing inside getScreenContent ever did: the modal was moved out from
+  // under them and the declarations stayed behind. At the point of use they
+  // were not in the scope chain, so the modal threw a ReferenceError and
+  // unmounted the React tree the instant a player opened it
+  // (docs/audits/20260913_LINT_NODE_GLOBALS.md §7 A1).
+  //
+  // `user` is null until auth resolves (contexts/UserContext.jsx:60) and this
+  // scope runs on every render, so the reads are guarded — getScreenContent's
+  // dashboard branch could dereference `user` unguarded, this scope cannot.
+  // The guarded values are never what the modal shows: it opens only from the
+  // Rank chip in the desktop stats bar, which itself renders only when `user`
+  // is set. For every reachable case the results are identical to the
+  // originals, including `indexOf` returning -1 for an unknown rank.
+  const xpForNextLevel = 10000;
+  const xpProgress = user ? (user.xp / xpForNextLevel) * 100 : 0;
+  const xpNeeded = user ? xpForNextLevel - user.xp : xpForNextLevel;
+  const ranks = ['Rookie', 'Apprentice', 'Trader', 'Expert', 'Master', 'Legend'];
+  const currentRankIndex = user ? ranks.indexOf(user.rank) : -1;
+  const nextRank = currentRankIndex < ranks.length - 1 ? ranks[currentRankIndex + 1] : 'Max Rank';
 
   // ============================================
   // UNIFIED RETURN — EarningsGame (always mounted) + active screen + ClashBot widget
