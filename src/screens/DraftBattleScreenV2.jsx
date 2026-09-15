@@ -965,6 +965,15 @@ const DraftBattleScreenV2 = ({
     calculateStandings();
   };
 
+  // Find my player for the Command Console (memoized).
+  // ABOVE THE SAFETY CHECK below so the hook count does not depend on
+  // `currentDraft`. Reads component state (`standings`), not the prop, and
+  // keeps its dep array — on the no-draft path it now scans an empty array
+  // nothing reads.
+  const userStanding = useMemo(() => {
+    return standings.find(p => p.isMe) || null;
+  }, [standings]);
+
   // ============================================
   // SAFETY CHECK - No draft
   // ============================================
@@ -1001,11 +1010,6 @@ const DraftBattleScreenV2 = ({
       </div>
     );
   }
-
-  // Find my player for the Command Console (memoized)
-  const userStanding = useMemo(() => {
-    return standings.find(p => p.isMe) || null;
-  }, [standings]);
 
   // ============================================
   // RENDER

@@ -8293,8 +8293,13 @@ export default function PortfolioDuel() {
   // SPOTLIGHT TOUR COMPONENT - v10 (Bug fixes + fallback mode)
   // ============================================
   const SpotlightTour = () => {
-    if (!showSpotlightTour) return null;
-
+    // ALL FIVE HOOKS ABOVE THE EARLY RETURN, which now sits below them.
+    // `showSpotlightTour` is app state that flips every time the tour opens
+    // or closes, so a hook after the return made the hook count depend on it.
+    // Both effects keep their dep arrays and take the condition INTO the body
+    // instead — they have real side effects on the window (one scrolls it,
+    // one binds a global Escape handler), so running them with the tour shut
+    // would be a behaviour change, not just wasted work.
     const currentStep = TOUR_STEPS[tourStep];
     const [spotlightRect, setSpotlightRect] = useState(null);
     const [tooltipPos, setTooltipPos] = useState({ top: 0, arrowTop: 0, arrowDirection: 'up' });
@@ -8303,6 +8308,8 @@ export default function PortfolioDuel() {
     // NO SCROLL LOCK - user can scroll freely
 
     useEffect(() => {
+      // Scrolls the window; must not fire while the tour is closed.
+      if (!showSpotlightTour) return;
       setIsReady(false);
       setSpotlightRect(null);
 
@@ -8370,10 +8377,13 @@ export default function PortfolioDuel() {
 
         setIsReady(true);
       }, TOUR_CONSTANTS.ANIMATION_DELAY);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [tourStep, currentStep]);
 
     // Escape key to close tour
     useEffect(() => {
+      // Binds a global key handler; must not bind while the tour is closed.
+      if (!showSpotlightTour) return;
       const handleKeyDown = (e) => {
         if (e.key === 'Escape') {
           setShowSpotlightTour(false);
@@ -8382,7 +8392,10 @@ export default function PortfolioDuel() {
       };
       window.addEventListener('keydown', handleKeyDown);
       return () => window.removeEventListener('keydown', handleKeyDown);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    if (!showSpotlightTour) return null;
 
     const handleNext = () => {
       if (tourStep < TOUR_STEPS.length - 1) setTourStep(tourStep + 1);

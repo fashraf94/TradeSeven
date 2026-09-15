@@ -539,8 +539,9 @@ export default function ReporterDesk({
   onStorySelect,
   onResearch,
 }) {
-  if (!reporter || !REPORTER_COLORS[reporter]) return null;
-
+  // ABOVE THE EARLY RETURN so the hook count does not depend on `reporter`.
+  // Pure sort over the `stories` prop with the same deps; on the guarded path
+  // it now sorts an array nothing reads.
   // Sort stories by publishedAt descending (memoized)
   const sorted = useMemo(() =>
     [...(stories || [])].sort((a, b) => {
@@ -550,6 +551,8 @@ export default function ReporterDesk({
     }),
     [stories]
   );
+
+  if (!reporter || !REPORTER_COLORS[reporter]) return null;
 
   return (
     <div style={{ paddingTop: isDesktop ? 32 : 16 }}>

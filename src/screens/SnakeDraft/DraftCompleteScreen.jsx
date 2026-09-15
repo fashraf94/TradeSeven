@@ -426,6 +426,16 @@ const DraftCompleteScreen = ({
   onNavigate
 }) => {
   // Safety check - if no draft data, show fallback
+  const currentUserId = user?.odUserId || user?.username;
+
+  // Build grid matrix using useMemo for performance.
+  // ABOVE THE EARLY RETURN below so the hook count does not depend on
+  // `currentDraft`. buildGridMatrix already tolerates a null draft (it reads
+  // through `draft?.`), and on the no-draft path the result is never read.
+  const { grid, playerOrder } = useMemo(() => {
+    return buildGridMatrix(currentDraft, currentUserId);
+  }, [currentDraft, currentUserId]);
+
   if (!currentDraft) {
     return (
       <div style={containerStyle}>
@@ -462,12 +472,6 @@ const DraftCompleteScreen = ({
     );
   }
 
-  const currentUserId = user?.odUserId || user?.username;
-
-  // Build grid matrix using useMemo for performance
-  const { grid, playerOrder } = useMemo(() => {
-    return buildGridMatrix(currentDraft, currentUserId);
-  }, [currentDraft, currentUserId]);
 
   // Calculate total picks
   const totalPicks = grid.flat().filter(Boolean).length;
