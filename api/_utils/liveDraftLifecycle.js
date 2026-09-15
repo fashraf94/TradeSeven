@@ -360,6 +360,9 @@ export async function driveSlotDraftAutopick(db, groupId, { now = new Date() } =
       const anchor = effectiveBattleAnchor(group, now);
       const { target, groupUpdate, streamDoc } = computeHandoffWrites(group, completeState, now, {
         startAnchor: { anchorEtDate: anchor.anchorEtDate, anchorIso: anchor.anchorIso },
+        // The week that goes WITH that anchor — fresh when the guard restamped,
+        // so the activation compare never reads the stale Monday still on the doc.
+        battleStartWeek: anchor.battleStartWeek,
       });
       if (anchor.restamped) {
         groupUpdate.battleStartWeek = anchor.battleStartWeek;
@@ -455,6 +458,9 @@ export async function applyCompetitivePick(db, groupId, { odUserId, symbol = nul
       const anchor = effectiveBattleAnchor(group, now);
       const { target, groupUpdate, streamDoc } = computeHandoffWrites(group, completeState, now, {
         startAnchor: { anchorEtDate: anchor.anchorEtDate, anchorIso: anchor.anchorIso },
+        // The week that goes WITH that anchor — fresh when the guard restamped,
+        // so the activation compare never reads the stale Monday still on the doc.
+        battleStartWeek: anchor.battleStartWeek,
       });
       if (anchor.restamped) {
         groupUpdate.battleStartWeek = anchor.battleStartWeek;

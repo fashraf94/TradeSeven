@@ -12,6 +12,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   nextMarketOpenAnchor,
+  computeHandoffWrites,
   flipAwaitingOpenPods,
   completeBankedTrainingPods,
   applyTrainingPick,
@@ -153,6 +154,66 @@ describe('flipAwaitingOpenPods', () => {
     expect(writeLog.length).toBe(writesAfterFirst);
   });
 
+  // ========== HOLIDAY-WEEK ACTIVATION (the Labor Day 2026 gap) ==========
+  // Labor Day 2026 is Mon Sept 7 (marketSchedule.js NYSE_HOLIDAYS_2026), so a
+  // slot pod anchored to that battle week carries mondayEtDate 2026-09-07 and an
+  // anchorEtDate walked forward to Tue 2026-09-08. Gated on the walked-forward
+  // anchor, the pod sat in AWAITING_OPEN through its own Monday — invisible to
+  // the Monday pipeline, which is the ONLY writer of streams/agentDraft.
+  const laborDayPod = (extra = {}) => awaitingPod('2026-09-08', {
+    isTraining: false,
+    isLiveDraft: true,
+    battleStartWeek: { mondayEtDate: '2026-09-07', anchorEtDate: '2026-09-08', anchorIso: '2026-09-08T13:30:00.000Z' },
+    ...extra,
+  });
+  const LABOR_DAY_MON_AM = new Date('2026-09-07T12:00:00.000Z'); // 08:00 EDT, Mon Sept 7
+
+  it('HOLIDAY WEEK: a pod whose anchor was walked off the holiday Monday activates ON that Monday', async () => {
+    const { db, store } = makeDb({ 'tournamentGroups/p1': laborDayPod() });
+    const r = await flipAwaitingOpenPods(db, { now: LABOR_DAY_MON_AM });
+    expect(r).toMatchObject({ flipped: 1, pending: 0 });
+    // BATTLE on the holiday Monday itself is what puts it in the Monday
+    // pipeline's FORMING+BATTLE fetch, so its agent draft resolves that tick.
+    expect(store.get('tournamentGroups/p1').status).toBe(GROUP_STATUS.BATTLE);
+    // The first TRADING day is untouched — only the activation day moved.
+    expect(store.get('tournamentGroups/p1').startAnchor.anchorEtDate).toBe('2026-09-08');
+  });
+
+  it('HOLIDAY WEEK: still NOT a loosening — a pod anchored to a FUTURE week does not activate', async () => {
+    const { db, store } = makeDb({
+      'tournamentGroups/next-week': laborDayPod({
+        startAnchor: { anchorEtDate: '2026-09-14', anchorIso: '2026-09-14T13:30:00.000Z' },
+        battleStartWeek: { mondayEtDate: '2026-09-14', anchorEtDate: '2026-09-14', anchorIso: '2026-09-14T13:30:00.000Z' },
+      }),
+    });
+    const r = await flipAwaitingOpenPods(db, { now: LABOR_DAY_MON_AM });
+    expect(r).toMatchObject({ flipped: 0, pending: 1 });
+    expect(store.get('tournamentGroups/next-week').status).toBe(GROUP_STATUS.AWAITING_OPEN);
+  });
+
+  it('HOLIDAY WEEK: a NORMAL week is byte-identical — mondayEtDate === anchorEtDate, so nothing moves', async () => {
+    // Mon 2026-09-14 is a trading day: the anchor is never walked forward.
+    const pod = awaitingPod('2026-09-14', {
+      isTraining: false,
+      isLiveDraft: true,
+      battleStartWeek: { mondayEtDate: '2026-09-14', anchorEtDate: '2026-09-14', anchorIso: '2026-09-14T13:30:00.000Z' },
+    });
+    const { db, store } = makeDb({ 'tournamentGroups/p1': pod });
+    expect((await flipAwaitingOpenPods(db, { now: new Date('2026-09-11T12:00:00.000Z') })).flipped).toBe(0); // Fri before
+    expect((await flipAwaitingOpenPods(db, { now: new Date('2026-09-14T12:00:00.000Z') })).flipped).toBe(1); // the Monday
+    expect(store.get('tournamentGroups/p1').status).toBe(GROUP_STATUS.BATTLE);
+  });
+
+  it('HOLIDAY WEEK: a TRAINING pod carries no battle week, so it still gates on its own anchor', async () => {
+    // Rolling training pods start on ANY day; their anchor IS their start day.
+    // Walking them back to a Monday would start them days early.
+    const { db, store } = makeDb({ 'tournamentGroups/t1': awaitingPod('2026-09-09') }); // Wed anchor
+    expect((await flipAwaitingOpenPods(db, { now: LABOR_DAY_MON_AM })).flipped).toBe(0); // Mon: not yet
+    expect(store.get('tournamentGroups/t1').status).toBe(GROUP_STATUS.AWAITING_OPEN);
+    expect((await flipAwaitingOpenPods(db, { now: new Date('2026-09-09T13:00:00.000Z') })).flipped).toBe(1);
+    expect(store.get('tournamentGroups/t1').status).toBe(GROUP_STATUS.BATTLE);
+  });
+
   it('ranked inertness: a BATTLE/FORMING group is never swept (AWAITING_OPEN is training-only)', async () => {
     const { db, store } = makeDb({
       'tournamentGroups/ranked-battle': { status: GROUP_STATUS.BATTLE, players: FOUR_PLAYERS },
@@ -162,6 +223,56 @@ describe('flipAwaitingOpenPods', () => {
     expect(r).toMatchObject({ swept: 0, flipped: 0 });
     expect(store.get('tournamentGroups/ranked-battle').status).toBe(GROUP_STATUS.BATTLE);
     expect(store.get('tournamentGroups/ranked-forming').status).toBe(GROUP_STATUS.FORMING);
+  });
+});
+
+// ==================== HANDOFF ACTIVATION (the week/anchor pairing) ====================
+
+describe('computeHandoffWrites — the inline completion-flip activates on the battle WEEK', () => {
+  const state = { picksByUser: {}, taken: [], pool: [], events: [] };
+  const group = { players: FOUR_PLAYERS, roundNumber: 1 };
+  const LABOR_DAY_MON = new Date('2026-09-07T12:00:00.000Z'); // 08:00 EDT, Mon Sept 7
+
+  it('a holiday-shifted slot pod completing ON its holiday Monday lands in BATTLE, not AWAITING_OPEN', () => {
+    const { target } = computeHandoffWrites(group, state, LABOR_DAY_MON, {
+      startAnchor: { anchorEtDate: '2026-09-08', anchorIso: '2026-09-08T13:30:00.000Z' },
+      battleStartWeek: { mondayEtDate: '2026-09-07', anchorEtDate: '2026-09-08', anchorIso: '2026-09-08T13:30:00.000Z' },
+    });
+    expect(target).toBe(GROUP_STATUS.BATTLE);
+  });
+
+  it('a future-week pod completing today still waits in AWAITING_OPEN', () => {
+    const { target } = computeHandoffWrites(group, state, LABOR_DAY_MON, {
+      startAnchor: { anchorEtDate: '2026-09-14', anchorIso: '2026-09-14T13:30:00.000Z' },
+      battleStartWeek: { mondayEtDate: '2026-09-14', anchorEtDate: '2026-09-14', anchorIso: '2026-09-14T13:30:00.000Z' },
+    });
+    expect(target).toBe(GROUP_STATUS.AWAITING_OPEN);
+  });
+
+  it('the STALE-ANCHOR pairing holds: the passed week wins over a stale one still on the group doc', () => {
+    // effectiveBattleAnchor re-derived a fresh (future) week because the stamped
+    // one was past; the caller writes groupUpdate.battleStartWeek AFTER this
+    // call, so `group` still carries the stale Monday. Reading the doc here
+    // would compare against a PAST Monday and flip a late pod straight to BATTLE
+    // on the wrong week — exactly what the stale-anchor guard exists to prevent.
+    const staleGroup = {
+      ...group,
+      battleStartWeek: { mondayEtDate: '2026-08-31', anchorEtDate: '2026-08-31', anchorIso: '2026-08-31T13:30:00.000Z' },
+    };
+    const { target } = computeHandoffWrites(staleGroup, state, LABOR_DAY_MON, {
+      startAnchor: { anchorEtDate: '2026-09-14', anchorIso: '2026-09-14T13:30:00.000Z' },
+      battleStartWeek: { mondayEtDate: '2026-09-14', anchorEtDate: '2026-09-14', anchorIso: '2026-09-14T13:30:00.000Z' },
+    });
+    expect(target).toBe(GROUP_STATUS.AWAITING_OPEN);
+  });
+
+  it('TRAINING (no override at all): unchanged — the next-market-open anchor decides', () => {
+    // Fri 2026-09-11 14:00 ET is after the open, so the anchor is Mon 09-14 and
+    // the pod waits; a pre-open instant on a trading day lands in BATTLE.
+    expect(computeHandoffWrites(group, state, new Date('2026-09-11T18:00:00.000Z')).target)
+      .toBe(GROUP_STATUS.AWAITING_OPEN);
+    expect(computeHandoffWrites(group, state, new Date('2026-09-11T13:00:00.000Z')).target)
+      .toBe(GROUP_STATUS.BATTLE);
   });
 });
 

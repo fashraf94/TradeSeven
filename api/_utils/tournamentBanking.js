@@ -43,7 +43,7 @@ import {
 } from '../../src/constants/leagueTournament.js';
 import { scoreLeg, scorePick, resolveBaseATR, loadAtrPercentiles } from './tournamentUserScoring.js';
 import { fetchBatchQuotes } from './tournamentPrices.js';
-import { formatEtDate } from './tournamentTime.js';
+import { formatEtDate, etDateWeekday } from './tournamentTime.js';
 import { isCryptoSymbol } from './marketDataCache.js';
 import { canonicalOpenKey } from './canonicalOpen.js';
 
@@ -111,7 +111,7 @@ export async function fetchGroupAgentScores(db, groupId) {
  * @param {Object|null} [opts.atrPercentiles] - loadAtrPercentiles result
  * @param {string} opts.recordedBy - 'cron' | 'manual'
  * @param {Object|null} [opts.agentScores] - fetchGroupAgentScores().byOwner
- * @returns {{skipped: true, reason: string, dayKey?: string} | {skipped: false,
+ * @returns {{skipped: true, reason: string, dayKey?: string, recordedDate?: string|null} | {skipped: false,
  *   dayKey: string, dayN: number, dayEntry: Object, players: Array,
  *   waiverPriority: string[], warnings: string[]}}
  */
@@ -133,8 +133,18 @@ export function computeBankingUpdate(group, quotes, { nowIso, etDate, atrPercent
   // one. Sits in the pure function so every caller inherits it; the skip
   // returns before any settlement work, and bankGroup's skip path commits zero
   // writes. dayKey names the latest banked day (the already_recorded idiom).
+  // R-1 discriminator: the clamp also carries the day the week actually banked.
+  // The operator's question on a clamp line is "is the finalizer wedged, or was
+  // this week simply short?", and the answer is in that date's weekday — but the
+  // caller cannot recover it from `dayKey` alone. Returned here so the log site
+  // says it without a second read.
   if ((latest?.dayN || 0) >= WEEK_DAYS_REQUIRED) {
-    return { skipped: true, reason: 'week_complete_clamp', dayKey: `day${latest.dayN}` };
+    return {
+      skipped: true,
+      reason: 'week_complete_clamp',
+      dayKey: `day${latest.dayN}`,
+      recordedDate: latest.entry?.recordedDate ?? null,
+    };
   }
 
   const dayN = (latest?.dayN || 0) + 1;
@@ -460,11 +470,31 @@ export async function bankAllTournamentGroups(db, { now = new Date() } = {}) {
       // skipped++ is exactly what bought three days of blindness on the zombie
       // cohort. No new cron/persistence/alert surface — this rides the run log.
       if (result.reason === 'week_complete_clamp') {
+        // R-1 + the holiday-week discriminator. The original line states the
+        // condition but carries no due-date, so it read identically for a wedged
+        // finalizer and for a perfectly healthy holiday spillover — an operator
+        // was sent to "investigate the advancement freeze" for a group that was
+        // merely waiting for Friday. The added clause names the day the week
+        // banked and its weekday, which is the tell: a Mon–Thu day-5 date is
+        // structurally a holiday-short week. It does NOT claim the wait is
+        // benign — advancement now routes on every weekday evening
+        // (getDutyForInstant), so a tick has necessarily passed since that bank
+        // and the clamp is a real freeze whichever weekday it names. The
+        // historical reading is kept because the log outlives the change.
+        const bankedOn = result.recordedDate;
+        const bankedWeekday = etDateWeekday(bankedOn);
+        const bankedClause = bankedOn
+          ? `${result.dayKey} banked ${bankedOn}${bankedWeekday ? ` (${bankedWeekday})` : ''} — ` +
+            `a Mon–Thu date marks a holiday-short week whose fifth day rolled into the next week ` +
+            `(historically a benign spillover awaiting the Friday-only finalizer), a Fri date a ` +
+            `same-week stall; advancement now runs EVERY weekday evening, so an advancement tick ` +
+            `has already passed since that bank either way.`
+          : `${result.dayKey} has no recordedDate on the group doc — schema drift, investigate that too.`;
         console.error(
           `[TournamentBanking] group ${group.id} clamped (week_complete_clamp): week fully banked at ` +
           `${result.dayKey}/${WEEK_DAYS_REQUIRED} but status is still BATTLE — the finalizer appears STALLED; ` +
           `investigate the advancement freeze for this group. (Distinct condition: a "final snapshot ` +
-          `degraded — needs MANUAL REVIEW" line from advancement means §7.2, not a stall.)`,
+          `degraded — needs MANUAL REVIEW" line from advancement means §7.2, not a stall.) ${bankedClause}`,
         );
       }
       // Warnings die with the invocation unless said here (code review:

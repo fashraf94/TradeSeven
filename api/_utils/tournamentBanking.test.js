@@ -685,13 +685,15 @@ function bankedThroughDay(n, overrides = {}) {
 
 describe('computeBankingUpdate — L-B Guard 1: never banks past WEEK_DAYS_REQUIRED', () => {
   it('a fully banked week (day 5) skips with week_complete_clamp — a stalled finalizer pauses the week', () => {
+    // recordedDate rides the clamp so the R-1 log can name the day the week
+    // actually banked (the spillover-vs-stall discriminator) without a re-read.
     expect(computeBankingUpdate(bankedThroughDay(5), QUOTES, OPTS))
-      .toEqual({ skipped: true, reason: 'week_complete_clamp', dayKey: 'day5' });
+      .toEqual({ skipped: true, reason: 'week_complete_clamp', dayKey: 'day5', recordedDate: '2026-06-05' });
   });
 
   it('the REAL zombie shape (day 8 already on disk) still clamps — never banks day9', () => {
     expect(computeBankingUpdate(bankedThroughDay(8), QUOTES, OPTS))
-      .toEqual({ skipped: true, reason: 'week_complete_clamp', dayKey: 'day8' });
+      .toEqual({ skipped: true, reason: 'week_complete_clamp', dayKey: 'day8', recordedDate: '2026-06-08' });
   });
 
   it('boundary: day 4 still banks day5 — the clamp never under-banks the legitimate final day', () => {
@@ -761,6 +763,81 @@ describe('computeBankingUpdate — L-B Guard 1: never banks past WEEK_DAYS_REQUI
       const logged = errSpy.mock.calls.map(args => args.join(' ')).join('\n');
       expect(logged).not.toContain('week_complete_clamp');
       expect(logged).not.toContain('STALLED');
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
+
+  // ===== R-1 DISCRIMINATOR (holiday-week fix) =====
+  // The line stated the condition but carried no date, so it read identically
+  // for a wedged finalizer and for a healthy holiday spillover — an operator was
+  // sent to "investigate the advancement freeze" for a group that was merely
+  // waiting for Friday. The added clause names the day the week actually banked
+  // and its weekday, which is the tell. It does NOT retract `appears STALLED`:
+  // advancement now routes every weekday evening, so a tick has necessarily
+  // passed since that bank and the clamp is a real freeze either way.
+
+  it('R-1 discriminator: the clamp line names the day-5 recordedDate and its WEEKDAY, alongside the verbatim STALLED', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      // bankedThroughDay stamps day5 on 2026-06-05 — a FRIDAY, i.e. a same-week
+      // stall rather than a holiday-short week rolling into the next.
+      const stalled = bankedThroughDay(5, {
+        players: battleGroup().players.map(p => ({ ...p, picks: [] })),
+      });
+      const { db } = makeDb({ groupDoc: stalled, queryDocs: [{ id: 'g-full-week', data: stalled }] });
+      await bankAllTournamentGroups(db, { now: NOW });
+      const clamp = errSpy.mock.calls
+        .map(args => args.join(' '))
+        .find(line => line.includes('week_complete_clamp'));
+
+      expect(clamp).toContain('appears STALLED');   // the R-1 contract, unchanged
+      expect(clamp).toContain('2026-06-05');        // the day the week actually banked
+      expect(clamp).toContain('(Fri)');             // ...and its weekday — the tell
+      expect(clamp).toContain('Mon–Thu');           // the spillover reading, stated
+      expect(clamp).toContain('EVERY weekday evening'); // ...and why it no longer excuses this
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
+
+  it('R-1 discriminator: a MONDAY day-5 date is named as such (the holiday-short-week shape)', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const spillover = bankedThroughDay(5, {
+        players: battleGroup().players.map(p => ({ ...p, picks: [] })),
+      });
+      spillover.dailyScores.day5.recordedDate = '2026-09-14'; // Mon after Labor Day week
+      const { db } = makeDb({ groupDoc: spillover, queryDocs: [{ id: 'g-spillover', data: spillover }] });
+      await bankAllTournamentGroups(db, { now: NOW });
+      const clamp = errSpy.mock.calls
+        .map(args => args.join(' '))
+        .find(line => line.includes('week_complete_clamp'));
+
+      expect(clamp).toContain('2026-09-14 (Mon)');
+      expect(clamp).toContain('appears STALLED');
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
+
+  it('R-1 discriminator: a MISSING day-5 recordedDate says so rather than printing a blank date', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const drifted = bankedThroughDay(5, {
+        players: battleGroup().players.map(p => ({ ...p, picks: [] })),
+      });
+      delete drifted.dailyScores.day5.recordedDate;
+      const { db } = makeDb({ groupDoc: drifted, queryDocs: [{ id: 'g-drift', data: drifted }] });
+      await bankAllTournamentGroups(db, { now: NOW });
+      const clamp = errSpy.mock.calls
+        .map(args => args.join(' '))
+        .find(line => line.includes('week_complete_clamp'));
+
+      expect(clamp).toContain('no recordedDate');
+      expect(clamp).toContain('appears STALLED');
+      expect(clamp).not.toContain('undefined');
+      expect(clamp).not.toContain('null');
     } finally {
       errSpy.mockRestore();
     }

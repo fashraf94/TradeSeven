@@ -23,7 +23,9 @@
 //       is already today (the R1 inline completion-flip, shared predicate with
 //       the morning sweep). Idempotent via assertTransition.
 //   (d) AWAITING-OPEN FLIP (flipAwaitingOpenPods) — an orchestrator weekday-
-//       MORNING sweep flips a pod to BATTLE once its anchor DATE has arrived.
+//       MORNING sweep flips a pod to BATTLE once its ACTIVATION DATE has arrived
+//       — the start of its battle WEEK (battleStartWeek.mondayEtDate) for a slot
+//       pod, its next-market-open anchor for a training pod (activationEtDate).
 //       DATE-based, never timestamp-based: the orchestrator morning window is
 //       pre-open in EST (UTC 11-14 = 06:00-09:00 ET), so a timestamp compare
 //       would never trip in winter and the pod would start a day late.
@@ -160,14 +162,50 @@ export function nextMarketOpenAnchor(now = new Date()) {
 }
 
 /**
- * The SHARED date-based flip predicate (R1): has the start anchor's date
- * arrived by `nowEtDate` ('YYYY-MM-DD' strings compare lexicographically in
- * date order; flip on or after the anchor date, catch-up safe). The morning
- * AWAITING_OPEN sweep AND the inline completion-flip both read this — one copy.
+ * The ET date a pod ACTIVATES on — the day its battle WEEK starts, which is not
+ * always its first TRADING day.
+ *
+ * A competitive slot pod carries a battleStartWeek (liveDraftFormation.js:317)
+ * whose anchorEtDate is walked forward off a holiday Monday (:204-205) while
+ * mondayEtDate stays the calendar Monday. The Monday pipeline — the ONLY writer
+ * of streams/agentDraft — fetches FORMING + BATTLE on that calendar Monday
+ * (tournamentOrchestrator.js:514-527), so a pod gated on the walked-forward
+ * anchor is invisible to it: its agent draft never resolves, and the Tue–Fri
+ * catch-up that reads that stream (buildIncumbentSeats) cannot fire either,
+ * because Monday is the stream's only writer. Labor Day 2026 cost one pod four
+ * days of agent layer exactly this way. So a pod WITH a battle week activates
+ * on mondayEtDate.
+ *
+ * A pod with NO battle week — every TRAINING pod; nextMarketOpenAnchor returns
+ * only { anchorEtDate, anchorIso } — keeps startAnchor.anchorEtDate, which IS
+ * its intended start day. Byte-identical on a normal week, where mondayEtDate
+ * === anchorEtDate.
+ *
+ * This is NOT a loosening: a pod anchored to a FUTURE week still does not
+ * activate (its mondayEtDate is still ahead of today), and the
+ * never-start-early / never-on-a-stale-date guarantee lives untouched in
+ * effectiveBattleAnchor's stale-anchor guard (liveDraftFormation.js:240-251),
+ * which decides WHICH week gets stamped before this predicate ever sees it.
  */
-function anchorDateReached(startAnchor, nowEtDate) {
+function activationEtDate(battleStartWeek, startAnchor) {
+  const mondayEtDate = battleStartWeek?.mondayEtDate;
+  if (typeof mondayEtDate === 'string' && mondayEtDate.length > 0) return mondayEtDate;
   const anchorEtDate = startAnchor?.anchorEtDate;
-  return typeof anchorEtDate === 'string' && nowEtDate >= anchorEtDate;
+  return typeof anchorEtDate === 'string' ? anchorEtDate : null;
+}
+
+/**
+ * The SHARED date-based flip predicate (R1): has the pod's ACTIVATION date
+ * (activationEtDate above) arrived by `nowEtDate` ('YYYY-MM-DD' strings compare
+ * lexicographically in date order; flip on or after that date, catch-up safe).
+ * The morning AWAITING_OPEN sweep AND the inline completion-flip both read this
+ * — one copy. `battleStartWeek` must be the week that goes WITH `startAnchor`:
+ * at a completion site that re-derived a stale anchor, that is the FRESH week
+ * from effectiveBattleAnchor, not the stale one still on the group doc.
+ */
+function anchorDateReached(battleStartWeek, startAnchor, nowEtDate) {
+  const activateOn = activationEtDate(battleStartWeek, startAnchor);
+  return typeof activateOn === 'string' && nowEtDate >= activateOn;
 }
 
 // ==================== LIVE-DRAFT STATE (sibling doc) ====================
@@ -327,7 +365,10 @@ export function advanceCpuSeats(acc, { group, state, fromIndex }) {
 /** Build the transition-only handoff writes from a completed live state. Pure;
  *  picks are materialized via the SAME createPickState the resolver uses, so the
  *  resulting pod is byte-identical downstream to a Slice 1 resolved pod. */
-export function computeHandoffWrites(group, state, now, { startAnchor: startAnchorOverride = null } = {}) {
+export function computeHandoffWrites(group, state, now, {
+  startAnchor: startAnchorOverride = null,
+  battleStartWeek: battleStartWeekOverride = null,
+} = {}) {
   const nowIso = toIso(now);
   const nowEtDate = getEtParts(now).date;
   const picksByUser = state.picksByUser || {};
@@ -347,9 +388,17 @@ export function computeHandoffWrites(group, state, now, { startAnchor: startAnch
   // "battle starts the next Monday-open"; training passes nothing → the
   // next-market-open-any-day anchor (byte-identical to before).
   const startAnchor = startAnchorOverride || nextMarketOpenAnchor(now);
-  // R1 inline completion-flip: a today-anchor draft lands straight in BATTLE
-  // (DRAFTING→BATTLE is legal); a future-anchor draft waits in AWAITING_OPEN.
-  const target = anchorDateReached(startAnchor, nowEtDate) ? GROUP_STATUS.BATTLE : GROUP_STATUS.AWAITING_OPEN;
+  // The battle WEEK that goes with that anchor — the activation date is its
+  // mondayEtDate (see activationEtDate). A completion site that re-derived a
+  // stale anchor passes the FRESH week here; reading group.battleStartWeek
+  // instead would compare against the stale (past) Monday and flip a late pod
+  // straight to BATTLE on the wrong week — the exact thing the stale-anchor
+  // guard exists to prevent. Training passes neither → next-market-open anchor,
+  // no week, byte-identical to before.
+  const battleStartWeek = battleStartWeekOverride || group?.battleStartWeek || null;
+  // R1 inline completion-flip: a pod whose week has started lands straight in
+  // BATTLE (DRAFTING→BATTLE is legal); a future-week draft waits in AWAITING_OPEN.
+  const target = anchorDateReached(battleStartWeek, startAnchor, nowEtDate) ? GROUP_STATUS.BATTLE : GROUP_STATUS.AWAITING_OPEN;
   return {
     target,
     startAnchor,
@@ -579,8 +628,10 @@ export async function completeTrainingDraft(db, groupId, { now = new Date() } = 
 // ==================== (d) AWAITING-OPEN FLIP ====================
 
 /**
- * Flip AWAITING_OPEN pods to BATTLE once their anchor DATE has arrived (current
- * ET date ≥ pod.startAnchor.anchorEtDate). SHARED across modes BY DESIGN: it does
+ * Flip AWAITING_OPEN pods to BATTLE once their ACTIVATION date has arrived
+ * (current ET date ≥ the pod's battleStartWeek.mondayEtDate, or — for a pod with
+ * no battle week — its startAnchor.anchorEtDate; see activationEtDate). SHARED
+ * across modes BY DESIGN: it does
  * NOT filter isTraining, so it flips BOTH training pods AND — behind
  * LEAGUE_LIVE_DRAFT — competitive slot pods, which reach BATTLE ONLY via this
  * flip (do NOT add an isTraining filter, or slot pods would strand in
@@ -595,11 +646,11 @@ export async function flipAwaitingOpenPods(db, { now = new Date(), includeDev = 
   const summary = { swept: pods.length, flipped: 0, pending: 0, errors: 0 };
 
   for (const pod of pods) {
-    if (anchorDateReached(pod.startAnchor, nowEtDate)) {
+    if (anchorDateReached(pod.battleStartWeek, pod.startAnchor, nowEtDate)) {
       try {
         await transitionStatus(db, pod.id, GROUP_STATUS.BATTLE, nowIso);
         summary.flipped++;
-        console.log(`${LOG_PREFIX} flipped ${pod.isLiveDraft === true ? 'competitive' : 'training'} pod ${pod.id} awaiting_open → battle (anchor ${pod.startAnchor?.anchorEtDate}, now ${nowEtDate})`);
+        console.log(`${LOG_PREFIX} flipped ${pod.isLiveDraft === true ? 'competitive' : 'training'} pod ${pod.id} awaiting_open → battle (activates ${activationEtDate(pod.battleStartWeek, pod.startAnchor)}, first trading day ${pod.startAnchor?.anchorEtDate}, now ${nowEtDate})`);
       } catch (err) {
         summary.errors++;
         console.error(`${LOG_PREFIX} flip failed for ${pod.id}: ${err.message}`);
