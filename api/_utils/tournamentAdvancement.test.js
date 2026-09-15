@@ -40,6 +40,8 @@ import {
 } from '../../src/constants/leagueTournament.js';
 
 const NOW = new Date('2026-06-19T22:30:00.000Z'); // Friday 18:30 ET
+// Tue 2026-06-16 18:30 ET — the weekday a holiday-short week's day 5 can land on.
+const TUE_EVENING = new Date('2026-06-16T22:30:00.000Z');
 const NOW_ISO = NOW.toISOString();
 
 beforeEach(() => {
@@ -307,6 +309,33 @@ describe('banking pending (the loud no-op until day-5 is banked)', () => {
     expect(bracket.rounds.r2).toBeUndefined();
     expect(summary.composedGroups).toEqual([]);
     expect(writeLog.some(([, path]) => path === 'tournamentGroups/b-r2-g1')).toBe(false);
+  });
+
+  // ===== FINALIZE ON BANKED, NOT ON FRIDAY (holiday-week fix) =====
+  // A week is five BANKED days, not five calendar days (tournamentBanking.js
+  // counts banked days), so a holiday-short week banks its fifth day on the
+  // FOLLOWING Monday. Under the Friday-only route that group then sat in BATTLE
+  // for the rest of the week — deploying daily, clamping nightly, and reading
+  // "Day 6 of 5" on the arena — until the Friday evening tick came round.
+
+  it('a FULLY BANKED week seals on a TUESDAY evening — the finalizer routes on banked-ness, not the weekday', async () => {
+    const { db, store } = seededBracketDb(); // both groups banked through day 5
+    const summary = await runFridayAdvancement(db, { now: TUE_EVENING });
+
+    expect(summary.bankingPending).toBe(0);
+    expect(summary.gamesLocked).toBe(2);
+    expect(store.get('tournamentGroups/b-r1-g1').status).toBe(GROUP_STATUS.COMPLETE);
+    expect(store.get('tournamentGroups/b-r1-g2').status).toBe(GROUP_STATUS.COMPLETE);
+    expect(store.get('tournamentBrackets/b').rounds.r1.lockedAt).toBeTruthy();
+  });
+
+  it('FOUR banked days do NOT seal — not even on a Friday', async () => {
+    const { db, store } = seededBracketDb({ g2DailyScores: bankedWeek([{}, {}, {}, {}]) });
+    const summary = await runFridayAdvancement(db, { now: NOW }); // Friday 18:30 ET
+
+    expect(summary.bankingPending).toBe(1);
+    expect(store.get('tournamentGroups/b-r1-g2').status).toBe(GROUP_STATUS.BATTLE);
+    expect(store.get('tournamentBrackets/b').rounds.r1.lockedAt).toBeNull();
   });
 });
 

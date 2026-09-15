@@ -50,9 +50,21 @@ export const LIVE_DRAFT_SLOTS = Object.freeze([
   // DISABLED 2026-09-12 — N1 mitigation. A pod that reaches `battle` after the
   // Monday duty marker is set gets no agent layer all week, and nothing notices
   // (N1 discovery report, verdict CONFIRMED; root cause tournamentOrchestrator.js
-  // :519-526). This slot is the only currently-reachable trigger. RE-ENABLE
-  // CONDITION: fix B (the inline flip hands the pod to the agent pipeline) merged
-  // AND smoked on a real Monday. Do not re-enable on the strength of this PR.
+  // :514-527 — the Monday pipeline fetches FORMING + BATTLE only).
+  //
+  // NOT the only reachable trigger — that claim was FALSE and is corrected here
+  // (holiday-week discovery, 2026-09-15). A SECOND path reaches the same failure
+  // on any week whose Monday is an NYSE holiday: deriveBattleStartWeek walks the
+  // anchor forward off the holiday (liveDraftFormation.js:204-205), so a pod from
+  // ANY of the three enabled slots above activated on the Tuesday, after that
+  // Monday's pipeline had already run. `lds_wed-1900_2026-09-02` (Labor Day) is
+  // that case and lost four days of agent layer to it. Fixed by activating on the
+  // battle week's Monday (trainingLifecycle.js activationEtDate).
+  //
+  // RE-ENABLE CONDITION: fix B (the inline flip hands the pod to the agent
+  // pipeline) merged AND smoked on a real Monday, AND the holiday-Monday path
+  // covered — otherwise the same bug returns on `wed-1900` at MLK 2027
+  // (2027-01-18). Do not re-enable on the strength of this PR.
   Object.freeze({ id: 'mon-0845', label: 'Mon 8:45am ET', weekday: 'Mon', hourEt: 8, minuteEt: 45, enabled: false }),
 ]);
 
