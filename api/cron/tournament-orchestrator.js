@@ -8,7 +8,9 @@
 // api/_utils/tournamentOrchestrator.js.
 //
 // Schedule (vercel.json): */10 11,12,13,14,21,22,23 * * 1-5 — both DST arms
-// of the ET morning + Friday-evening windows; the ET-aware dispatcher routes
+// of the ET morning + evening windows (the evening ticks route to advancement
+// on EVERY weekday, not only Friday: a holiday-short week banks its fifth day
+// on the following Monday and must seal that night); the ET-aware dispatcher routes
 // each tick (or quiet-skips it). Crons do not run on Vercel preview — the
 // founder smoke path is POST /api/tournament/run-duty; production
 // verification is unit tests on the guard logic + observation of the first

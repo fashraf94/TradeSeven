@@ -389,13 +389,17 @@ export function computeHandoffWrites(group, state, now, {
   // next-market-open-any-day anchor (byte-identical to before).
   const startAnchor = startAnchorOverride || nextMarketOpenAnchor(now);
   // The battle WEEK that goes with that anchor — the activation date is its
-  // mondayEtDate (see activationEtDate). A completion site that re-derived a
-  // stale anchor passes the FRESH week here; reading group.battleStartWeek
-  // instead would compare against the stale (past) Monday and flip a late pod
-  // straight to BATTLE on the wrong week — the exact thing the stale-anchor
-  // guard exists to prevent. Training passes neither → next-market-open anchor,
-  // no week, byte-identical to before.
-  const battleStartWeek = battleStartWeekOverride || group?.battleStartWeek || null;
+  // mondayEtDate (see activationEtDate). ONLY the override is read, NEVER
+  // group.battleStartWeek: the week and the anchor must be the pair the caller
+  // vetted together. The two slot-completion sites derive both through
+  // effectiveBattleAnchor and pass the FRESH week, so a pod completing late is
+  // re-anchored forward, not activated on the stale Monday still on its doc.
+  // Every other caller passes neither and gets the next-market-open anchor with
+  // no week — byte-identical to before this predicate learned about weeks, and
+  // deliberately so: api/tournament/training-pick.js has no mode guard, so a
+  // competitive pod CAN reach the inline handoff there, and a doc-read fallback
+  // would flip such a pod straight into BATTLE on a week that has already gone.
+  const battleStartWeek = battleStartWeekOverride || null;
   // R1 inline completion-flip: a pod whose week has started lands straight in
   // BATTLE (DRAFTING→BATTLE is legal); a future-week draft waits in AWAITING_OPEN.
   const target = anchorDateReached(battleStartWeek, startAnchor, nowEtDate) ? GROUP_STATUS.BATTLE : GROUP_STATUS.AWAITING_OPEN;

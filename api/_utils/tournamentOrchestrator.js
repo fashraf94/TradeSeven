@@ -1,8 +1,8 @@
 // api/_utils/tournamentOrchestrator.js
 //
 // P3b — the Tournament Orchestrator (Spec §1.3; founder Ruling A, verbatim).
-// One cron entry (vercel.json: */10 over the morning + Friday-evening UTC
-// hour set, Mon–Fri) feeds this ET-aware dispatcher, which routes every tick
+// One cron entry (vercel.json: */10 over the morning + evening UTC hour set,
+// Mon–Fri) feeds this ET-aware dispatcher, which routes every tick
 // through the ruled duty table:
 //
 //   Mon morning   → advancement catch-up check, then the per-group Monday
@@ -116,7 +116,7 @@ export const DUTY = Object.freeze({
   SKIP: 'skip',
 });
 
-const MORNING_END_MIN = 12 * 60; // ET noon splits morning duties from the Friday-evening duty
+const MORNING_END_MIN = 12 * 60; // ET noon splits the morning duties from the evening advancement duty
 
 // ==================== DISPATCH (pure) ====================
 
@@ -580,7 +580,23 @@ export async function runMondayPipeline(db, {
     deferredBoards: 0,   // finding #5 fallback: auto-commit couldn't heal
     refusedSynthetic: 0, // P3a contract: synthetic > 0 on a real group
     drafted: 0,
-    deployDeferredMarketClosed: 0, // holiday Monday: draft resolved, deploy left to Tue–Fri
+    // NEVER DEPLOY INTO A CLOSED MARKET. createAgentBattle stamps
+    // timing.tradingDays from getNextMarketClose (agentBattleService.js:119,
+    // :377), which on a closed day skips forward to the NEXT trading day — so a
+    // battle created on a holiday is a battle for TOMORROW, opened with today's
+    // stale (previous-session) baselines instead of the trading day's own.
+    //
+    // It does NOT double-count. decide.js:711-727 refuses to create a second
+    // battle while the agent holds an active, unexpired one, so the next trading
+    // day's fan-out returns battleCreated:false and exactly one battle exists per
+    // trading day either way. What that costs instead is a WASTED DECISION: both
+    // model calls (strategy + portfolio) run before that check, so the discarded
+    // call is paid for in full, per agent, per closed day.
+    //
+    // So: resolve the draft, skip the deploy, let the first trading day open the
+    // battle with its own baselines. Same guard in runWeekdayFanout for the
+    // Tue–Fri holidays (Thanksgiving, Christmas, New Year's).
+    deployDeferredMarketClosed: 0,
     deploys: { deployed: 0, skipped: 0, gated: 0, skippedExisting: 0, emptySeats: 0, cooled: 0, failed: 0, deferred: 0 },
     deferredToNextTick: 0,
     errors: 0,
@@ -678,25 +694,13 @@ export async function runMondayPipeline(db, {
         continue;
       }
 
-      // A NON-TRADING Monday is not a deploy day. createAgentBattle stamps
-      // timing.tradingDays from getNextMarketClose (agentBattleService.js:119,
-      // :377), which on a closed market skips to the NEXT trading day — the same
-      // day tomorrow's WEEKDAY_FANOUT targets. fanOutDeploys' natural guard keys
-      // on the battle's createdAt ET date, not on the target trading day, so it
-      // does NOT catch that collision; and fetchGroupAgentScores SUMS
-      // scoreState.currentScore across every battle stamped with the groupId
-      // (tournamentBanking.js:61-88), so the week's FIRST TRADING DAY would be
-      // counted TWICE in agentPoints and in the sealed composite. Irreversible
-      // once the week finalizes.
-      //
-      // So a holiday Monday resolves the draft (steps 1–3: the durable artifact,
-      // and precisely what a holiday-shifted pod used to be missing entirely) and
-      // leaves the deploy to the first trading day, where buildIncumbentSeats'
-      // seatsFromDraftStream fallback — written for exactly "an agent with NO
-      // battle yet" — picks it up. NOT an error: the duty's Monday job is done,
-      // so the marker is still set and the tick does not re-run all morning.
-      // Reachable today by every ranked group on a holiday Monday, not just a
-      // holiday-shifted slot pod.
+      // A NON-TRADING Monday is not a deploy day — see deployDeferredMarketClosed
+      // above for why. Steps 1–3 still run, so the draft stream (the durable
+      // artifact a holiday-shifted pod used to be missing entirely) is written
+      // and the Tue–Fri catch-up deploys the drafted six on the first trading
+      // day. NOT an error: the duty's Monday job is done, so the marker is still
+      // set and the tick does not re-run all morning. Reachable today by every
+      // ranked group on a holiday Monday, not just a holiday-shifted slot pod.
       if (!tradingDay) {
         summary.deployDeferredMarketClosed++;
         console.log(`${LOG_PREFIX} group ${group.id}: Monday pipeline done — drafted six per agent; deploy DEFERRED (${etDate} is not a trading day) — the Tue–Fri incumbent catch-up deploys the drafted six on the first trading day`);
@@ -730,11 +734,26 @@ export async function runWeekdayFanout(db, {
     groups: groups.length,
     noBattles: 0,
     mondayCatchupSeats: 0,
+    deployDeferredMarketClosed: 0,
     deploys: { deployed: 0, skipped: 0, gated: 0, skippedExisting: 0, emptySeats: 0, cooled: 0, failed: 0, deferred: 0 },
     deferredToNextTick: 0,
     errors: 0,
   };
   if (groups.length === 0) return summary;
+
+  // Vercel crons are holiday-blind (`* * 1-5`), so a Tue–Fri NYSE holiday —
+  // Thanksgiving, Christmas, New Year's — fires this duty into a closed market.
+  // Deploying there opens tomorrow's battle a day early on today's stale
+  // baselines and burns a decision decide.js then discards (the full reasoning
+  // sits on deployDeferredMarketClosed in runMondayPipeline; this is the same
+  // guard on the other four weekdays). Placed AFTER the group read so the
+  // summary still reports what was live, and so the duty keeps its ONE
+  // eligibility fetch (p4Flips.test.js counts those call sites).
+  if (!isEtTradingDay(now)) {
+    summary.deployDeferredMarketClosed = groups.length;
+    console.log(`${LOG_PREFIX} ${formatEtDate(now)} is not a trading day — incumbent fan-out DEFERRED for ${groups.length} group(s); the next trading day redeploys them`);
+    return summary;
+  }
 
   const dutyState = state ?? await readOrchestratorState(db);
   // Shared with the same-tick training-activation sweep (when the tick passes
@@ -1016,6 +1035,13 @@ function markerSummary(duty, summary) {
       // Surfaced so the "incomplete (resumes next tick)" log line shows the
       // freeze explicitly (duty summaries must say what actually happened).
       frozen: summary.frozen ?? 0,
+      // Ditto for banking-pending, and now load-bearing: advancement routes on
+      // every weekday evening, so Mon–Thu in a NORMAL week is structurally
+      // unsatisfiable (nothing has banked five days yet) and every tick logs
+      // "incomplete". Without this count those lines are indistinguishable from
+      // a genuinely wedged Friday. bankingPending === groups is the benign
+      // mid-week shape; bankingPending 0 with the marker still withheld is not.
+      bankingPending: summary.bankingPending ?? 0,
     };
   }
   return {

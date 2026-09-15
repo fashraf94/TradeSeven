@@ -266,6 +266,24 @@ describe('computeHandoffWrites — the inline completion-flip activates on the b
     expect(target).toBe(GROUP_STATUS.AWAITING_OPEN);
   });
 
+  it('NO override: the group doc\'s own week is never read — the next-market-open anchor still decides', () => {
+    // Review finding: api/tournament/training-pick.js carries no mode guard, so
+    // a COMPETITIVE pod (which does carry a battleStartWeek) can reach the
+    // inline handoff, where nothing runs effectiveBattleAnchor first. A doc-read
+    // fallback would activate it on a Monday that has already gone. Pre-open on
+    // Fri 2026-09-11 → the anchor is that same day, so the honest answer is
+    // BATTLE-today, never "BATTLE because a dead week's Monday is in the past".
+    const deadWeekGroup = {
+      ...group,
+      battleStartWeek: { mondayEtDate: '2026-08-31', anchorEtDate: '2026-08-31', anchorIso: '2026-08-31T13:30:00.000Z' },
+    };
+    // After the open on a Friday → next open is the following Monday → waits.
+    expect(computeHandoffWrites(deadWeekGroup, state, new Date('2026-09-11T18:00:00.000Z')).target)
+      .toBe(GROUP_STATUS.AWAITING_OPEN);
+    expect(computeHandoffWrites(deadWeekGroup, state, new Date('2026-09-11T18:00:00.000Z')).startAnchor.anchorEtDate)
+      .toBe('2026-09-14');
+  });
+
   it('TRAINING (no override at all): unchanged — the next-market-open anchor decides', () => {
     // Fri 2026-09-11 14:00 ET is after the open, so the anchor is Mon 09-14 and
     // the pod waits; a pre-open instant on a trading day lands in BATTLE.

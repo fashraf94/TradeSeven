@@ -922,12 +922,12 @@ describe('a NON-TRADING Monday: the draft resolves, the deploy waits for the fir
     }
   }
 
-  it('the holiday Monday and the Tuesday after it BOTH target the Tuesday close (the collision this guard removes)', () => {
-    // Not a behavior assertion — the premise. A battle created on the closed
-    // Monday is stamped with TOMORROW's trading day, the very day tomorrow's
-    // fan-out battle targets, and fetchGroupAgentScores SUMS currentScore across
-    // every battle sharing a groupId (tournamentBanking.js:61-88). Two battles,
-    // one trading day, double-counted agentPoints.
+  it('a battle created on the closed Monday is stamped for TOMORROW — the premise this guard rests on', () => {
+    // Not a behavior assertion — the premise, driven through the real calendar.
+    // A battle opened on the holiday carries the NEXT trading day, so it is
+    // tomorrow's battle opened a day early on today's stale baselines. It does
+    // not double-count (decide.js refuses a second battle while one is active),
+    // but the next day's fan-out then pays for a full discarded decision.
     expect(targetTradingDayAt(LABOR_DAY_MON)).toBe('2026-09-08');
     expect(targetTradingDayAt(TUE_AFTER)).toBe('2026-09-08');
   });
@@ -985,12 +985,49 @@ describe('a NON-TRADING Monday: the draft resolves, the deploy waits for the fir
     expect(tue.mondayCatchupSeats).toBe(4);    // all four seated from Monday's stream
     expect(tue.deploys.deployed).toBe(4);
 
-    // THE INVARIANT. Without the Monday deploy guard this is 8 calls collapsing
-    // to 4 distinct keys — each agent holding two battles for 2026-09-08, whose
-    // scores fetchGroupAgentScores would add together.
+    // THE INVARIANT: one battle per agent per trading day, group-wide. Without
+    // the Monday guard this run issues EIGHT deploy calls, all four Monday ones
+    // targeting the same 2026-09-08 as their Tuesday twin. In production
+    // decide.js:711-727 would refuse the second half (so no duplicate battle is
+    // ever written) — but only after paying for both model calls on each, and
+    // the surviving battle is still the one opened on the closed day. The call
+    // count is what this row pins; the refusal is decide.js's own contract.
     expect(battles).toHaveLength(4);
     expect(new Set(battles).size).toBe(battles.length);
     expect(new Set(battles.map(k => k.split('@')[1]))).toEqual(new Set([TUE_TARGET]));
+  });
+
+  it('the SAME guard holds on a Tue–Fri holiday — the weekday fan-out defers too (Thanksgiving)', async () => {
+    // Vercel crons are holiday-blind (`* * 1-5`), so Thu 2026-11-26 fires the
+    // weekday duty into a closed market. Guarding only Monday would have left
+    // Thanksgiving, Christmas and New Year's deploying into it.
+    const group = { ...formingCpuGroup(), status: GROUP_STATUS.BATTLE };
+    const { db } = makeDb({ 'tournamentGroups/b-r1-g2': group });
+    const fetchImpl = vi.fn(async () => ({ ok: true }));
+    const THANKSGIVING = new Date('2026-11-26T12:10:00.000Z'); // 07:10 EST, market CLOSED
+
+    const summary = await runWeekdayFanout(db, { now: THANKSGIVING, deployEnabled: true, pacingMs: 0, fetchImpl });
+    expect(summary.groups).toBe(1);                      // the group set is still read
+    expect(summary.deployDeferredMarketClosed).toBe(1);
+    expect(summary.deploys.deployed).toBe(0);
+    expect(summary.deploys.emptySeats).toBe(0);          // a deferral is not the empty-fan-out failure
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(isDutySatisfied(DUTY.WEEKDAY_FANOUT, summary)).toBe(true);
+  });
+
+  it('a normal TRADING Tue–Fri is unchanged — the weekday fan-out still runs', async () => {
+    const group = { ...formingCpuGroup(), status: GROUP_STATUS.BATTLE };
+    const { db } = makeDb({
+      'tournamentGroups/b-r1-g2': group,
+      'tournamentGroups/b-r1-g2/streams/agentDraft': {
+        picksByAgent: { [cpuAgentDocId(4)]: ['NVDA', 'AMD', 'TSLA', 'META', 'AAPL', 'MSFT'] },
+        events: [{ agentId: cpuAgentDocId(4), odUserId: 'cpu-4' }],
+      },
+    });
+    const fetchImpl = vi.fn(async () => ({ ok: true }));
+    const summary = await runWeekdayFanout(db, { now: new Date('2026-11-25T12:10:00.000Z'), deployEnabled: true, pacingMs: 0, fetchImpl }); // Wed, open
+    expect(summary.deployDeferredMarketClosed).toBe(0);
+    expect(summary.deploys.deployed).toBe(1);
   });
 });
 
@@ -1013,6 +1050,27 @@ describe('runOrchestratorTick — routing, markers, inertness', () => {
     const result = await runOrchestratorTick(db, { now: new Date('2026-06-16T22:30:00.000Z') }); // Tue 18:30 EDT
     expect(result.duty).toBe(DUTY.FRIDAY_ADVANCEMENT);
     expect(logSpy.mock.calls.map(c => c.join(' ')).some(l => l.includes('duty=friday_advancement — dispatching'))).toBe(true);
+  });
+
+  it('a Mon–Thu evening that is merely NOT YET BANKED says so in its incomplete line', async () => {
+    // Advancement now routes every weekday evening, so Mon–Thu in a normal week
+    // is structurally unsatisfiable — nothing has banked five days yet — and
+    // every one of that evening's ticks logs "incomplete (resumes next tick)".
+    // Without bankingPending in the summary those lines read identically to a
+    // genuinely wedged Friday, which is the signal they would drown.
+    // Base-layer (no bracketGameId) so advancement takes the banking-pending
+    // no-op rather than a bracket path that needs a bracket doc.
+    const { bracketGameId, ...baseLayer } = formingCpuGroup();
+    const { db } = makeDb({
+      'tournamentGroups/base-1': { ...baseLayer, status: GROUP_STATUS.BATTLE },
+      'indexIntelligence/stockRankings': { stocks: STOCKS },
+    });
+    const result = await runOrchestratorTick(db, { now: new Date('2026-06-17T22:30:00.000Z') }); // Wed 18:30 EDT
+    expect(result.duty).toBe(DUTY.FRIDAY_ADVANCEMENT);
+    expect(result.complete).toBe(false);
+    const line = logSpy.mock.calls.map(c => c.join(' ')).find(l => l.includes('incomplete (resumes next tick)'));
+    expect(line).toBeTruthy();
+    expect(line).toContain('"bankingPending":1');
   });
 
   it('zero-group duty ticks log the quiet skip and write nothing — no marker', async () => {
