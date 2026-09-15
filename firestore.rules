@@ -585,6 +585,102 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // ═══════════════════════════════════════════
+    // Backing Beta PR 1: the four backing collections (spec V1.3 §6;
+    // rulings D-k, D-v, D-w, D-x). ALL SERVER-WRITTEN, ALL `write: if false` —
+    // the tournamentRanks pattern verbatim. Every mutation is Admin SDK, inside
+    // the single transactions PR 2 and PR 3 own; a client never writes a stake,
+    // a wallet entry, a pool counter or a telemetry event, because a client
+    // that could would be asserting a fact the server had not (§9).
+    // Same manual Console-deploy caveat as above; inert until deployed and
+    // until BACKING_BETA_ENABLED flips.
+    // ═══════════════════════════════════════════
+
+    // backingWallets/{walletId} — the user's own allowance, record and ledger
+    // (§6). OWNER-READ only (the userMeta / eligibility shape): net BP is
+    // PRIVATE in the beta and there is no public ranked backer leaderboard
+    // (D-v), so no authed-read path to another user's wallet exists to be
+    // aggregated into one.
+    //
+    // THE DEV NAMESPACE (§6, ruling A-4 mirrored from rank): dev groups route
+    // to `dev-{uid}` wallet ids. The second clause reads a `dev-` id back to
+    // its OWNER and to nobody else — note the direction: it compares the
+    // WHOLE id against 'dev-' + the caller's uid, so a user cannot read
+    // `dev-someone-else` and a user literally named `dev-x` cannot read
+    // another's wallet by prefix accident.
+    function ownsBackingWallet(walletId) {
+      return request.auth != null
+        && (walletId == request.auth.uid || walletId == 'dev-' + request.auth.uid);
+    }
+
+    match /backingWallets/{walletId} {
+      allow read: if ownsBackingWallet(walletId);
+      allow create, update, delete: if false;
+    }
+
+    // The ledger beneath it — same owner, same denial. Matched explicitly
+    // rather than by a `{document=**}` wildcard, so the subcollection's access
+    // is a decision on the page and not a consequence of one.
+    match /backingWallets/{walletId}/entries/{entryId} {
+      allow read: if ownsBackingWallet(walletId);
+      allow create, update, delete: if false;
+    }
+
+    // backingPools/{groupId} — the sealed pot (§3, §6). AUTHED-READ, the
+    // tournamentGroups pattern: the pool strip shows the pot total, the unique
+    // backer count and progress toward validity to any signed-in spectator.
+    // What must stay sealed is NOT hidden by this rule — it is simply not in
+    // this document: per-team shares and pays x live in the `private`
+    // subcollection below until close, when the server copies the revealed
+    // values up (§3).
+    match /backingPools/{groupId} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if false;
+    }
+
+    // backingPools/{groupId}/private/{doc} — per-team stake totals and the
+    // backers map WHILE SEALED (§6). NO CLIENT READ, ever: this is the document
+    // whose exposure would turn a sealed pool into a live crowd signal (§3),
+    // which is the one property the design depends on. Server-only, both ways.
+    match /backingPools/{groupId}/private/{doc} {
+      allow read: if false;
+      allow create, update, delete: if false;
+    }
+
+    // backingStakes/{stakeId} — one doc per stake (§6). Readable ONLY by the
+    // backer who placed it: "your own stakes" is the only stake-level fact the
+    // open pool exposes (§3). Note the shape — the guard is on the DOCUMENT's
+    // userId, not on the id — so a `get` of another user's stake is denied and
+    // a LIST is admitted only when the query itself proves `userId == uid`
+    // (the composite index (userId, weekKey) serves exactly that query).
+    //
+    // INDEXES — the DUAL-WRITE NOTE (FIRESTORE_INDEX_DRIFT_CLEANUP.md; the
+    // agentBattles (ownerId, status, completedAt) and tournamentGroups
+    // (baseLayerWeek, updatedAt) precedents). Two composites for this
+    // collection are committed to firestore.indexes.json in this PR —
+    // backingStakes (userId ASC, weekKey ASC) for "my stakes this week" and
+    // (groupId ASC, status ASC) for a pool's live stakes at close — AND must
+    // ALSO be created MANUALLY in the Firebase Console at merge prep:
+    // `firebase deploy --only firestore:indexes` is unsafe while the file is in
+    // its known drifted state (13+ production-only indexes it would prompt to
+    // delete, plus one malformed entry that returns HTTP 400). Committed here
+    // and Console-created there — dual-write, unavoidable until that cleanup
+    // workstream lands. ZERO new indexes for the pod list (§6, addendum Q5): it
+    // reuses tournamentGroups (baseLayerWeek, updatedAt) with in-memory filters.
+    match /backingStakes/{stakeId} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create, update, delete: if false;
+    }
+
+    // backingEvents/{eventId} — the telemetry sink (§10, D-p). NO CLIENT READ:
+    // it is research data, written server-side by POST /api/backing/event on a
+    // fixed allowlist, and nothing in the product reads it back. A readable
+    // funnel would also be a live crowd signal by another route.
+    match /backingEvents/{eventId} {
+      allow read: if false;
+      allow create, update, delete: if false;
+    }
+
     // P10: self-serve lobby waiting-pool docs — the front door before a group
     // exists (the tournamentGroups pattern verbatim: authenticated reads for
     // the "who's waiting" / own-lobby surface; all mutation is Admin SDK via
