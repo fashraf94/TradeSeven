@@ -603,14 +603,28 @@ service cloud.firestore {
     // aggregated into one.
     //
     // THE DEV NAMESPACE (§6, ruling A-4 mirrored from rank): dev groups route
-    // to `dev-{uid}` wallet ids. The second clause reads a `dev-` id back to
-    // its OWNER and to nobody else — note the direction: it compares the
-    // WHOLE id against 'dev-' + the caller's uid, so a user cannot read
-    // `dev-someone-else` and a user literally named `dev-x` cannot read
-    // another's wallet by prefix accident.
+    // to `dev-{uid}` wallet ids. Two clauses, and BOTH guards matter:
+    //
+    //   · clause 2 reads a `dev-` id back to the uid it belongs to. It compares
+    //     the WHOLE id against 'dev-' + the caller's uid — not a prefix — so a
+    //     user cannot reach `dev-someone-else`.
+    //   · clause 1 EXCLUDES `dev-`-prefixed ids from the plain-uid path. Without
+    //     that exclusion the two clauses overlap: `backingWallets/dev-x` would be
+    //     readable both as x's DEV wallet and as the PRODUCTION wallet of a user
+    //     whose uid is literally `dev-x`, and the rule could not tell which one
+    //     it was serving. The writer refuses such a uid outright
+    //     (`walletIdFor`, api/_utils/backingWallet.js — typed `invalid_uid`), so
+    //     no such production wallet can exist; this clause is the rules-side half
+    //     of that same invariant, stated here because a rule must stand on its
+    //     own and cannot consult the writer.
+    //
+    // No reachable uid trips either guard: Firebase Auth mints 28-char
+    // alphanumerics with no hyphen. The operator custom-token path can mint one,
+    // and there both halves fail closed.
     function ownsBackingWallet(walletId) {
       return request.auth != null
-        && (walletId == request.auth.uid || walletId == 'dev-' + request.auth.uid);
+        && ((walletId == request.auth.uid && !walletId.matches('^dev-.*'))
+            || walletId == 'dev-' + request.auth.uid);
     }
 
     match /backingWallets/{walletId} {

@@ -41,13 +41,13 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { beforeAll, afterAll, beforeEach, describe, it } from 'vitest';
+import { beforeAll, afterAll, beforeEach, describe, it, expect } from 'vitest';
 import {
   initializeTestEnvironment,
   assertFails,
   assertSucceeds,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, where, documentId, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, collectionGroup, query, where, documentId, getDocs } from 'firebase/firestore';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const RULES_PATH = process.env.COMPOSITION_RULES_TEXT_PATH
@@ -203,11 +203,15 @@ describe('backingWallets/{walletId} — OWNER-READ, including the dev namespace 
     // prefix-shaped rule would let `dev-lookalike-4` reach `dev-lookalike-4-x`
     // or, worse, admit `dev-` ids generally.
     await seed(`backingWallets/${DEVNAME_UID}`, wallet(DEVNAME_UID));
-    await assertSucceeds(getDoc(doc(asDevName(), `backingWallets/${DEVNAME_UID}`)));
     await assertFails(getDoc(doc(asDevName(), WALLET)));
     await assertFails(getDoc(doc(asDevName(), DEV_WALLET)));
     // And the reverse direction: the real owner cannot read the lookalike's.
     await assertFails(getDoc(doc(asOwner(), `backingWallets/${DEVNAME_UID}`)));
+    // Nor can the `dev-`-named user read the doc AT their own uid: that id lives
+    // in the dev namespace (it is `lookalike-4`'s dev wallet), and clause 1
+    // excludes `dev-` ids precisely so one document never serves two people.
+    // The writer refuses to mint such a wallet at all (walletIdFor).
+    await assertFails(getDoc(doc(asDevName(), `backingWallets/${DEVNAME_UID}`)));
   });
 
   it('an unfiltered wallet LIST is denied for everyone, the owner included', async () => {
@@ -232,6 +236,64 @@ describe('backingWallets/{walletId} — OWNER-READ, including the dev namespace 
       await assertFails(setDoc(doc(fs, WALLET), { careerNet: 10_000 }, { merge: true }), label);
       await assertFails(deleteDoc(doc(fs, WALLET)), label);
       await assertFails(updateDoc(doc(fs, DEV_WALLET), { allowanceRemaining: 999999 }), label);
+    }
+  });
+});
+
+// ============================================================================
+describe('the dev-namespace COLLISION direction — `dev-{uid}` means ONE thing (§6)', () => {
+  // The direction the prefix-accident row above does NOT cover, and the reason
+  // clause 1 of ownsBackingWallet excludes `dev-` ids. `backingWallets/dev-X` is
+  // reachable two ways — as X's DEV wallet (clause 2) and as the PRODUCTION
+  // wallet of a user whose uid is literally `dev-X` (clause 1) — and if both
+  // clauses admitted it, one document would serve two people.
+  const COLLIDING = `dev-${OTHER_UID}`; // a uid that is ALSO OTHER_UID's dev id
+  const asColliding = () => testEnv.authenticatedContext(COLLIDING).firestore();
+
+  it('a `dev-`-prefixed uid CANNOT read the doc at its own uid — that id belongs to the dev namespace', async () => {
+    await seed(`backingWallets/${COLLIDING}`, wallet(COLLIDING));
+    await assertFails(getDoc(doc(asColliding(), `backingWallets/${COLLIDING}`)));
+    await assertFails(getDocs(collection(asColliding(), `backingWallets/${COLLIDING}/entries`)));
+  });
+
+  it('the plain uid still reaches its OWN dev wallet at the same path (clause 2 is intact)', async () => {
+    // The positive control that stops the exclusion from being over-broad: the
+    // dev namespace must still work for the user it belongs to.
+    await seed(`backingWallets/${COLLIDING}`, wallet(OTHER_UID));
+    await assertSucceeds(getDoc(doc(asOther(), `backingWallets/${COLLIDING}`)));
+  });
+
+  it('an ordinary uid still reads its own production wallet (clause 1 is intact)', async () => {
+    await assertSucceeds(getDoc(doc(asOwner(), WALLET)));
+  });
+
+  it('the WRITER refuses such a uid outright, so no colliding production wallet can exist', async () => {
+    // The rules half above cannot consult the writer, so the two halves are
+    // pinned separately and must agree: api/_utils/backingWallet.js throws
+    // `invalid_uid` for a uid already inside the dev namespace.
+    const { walletIdFor } = await import('../../api/_utils/backingWallet.js');
+    expect(() => walletIdFor(COLLIDING)).toThrow(/dev namespace/);
+    expect(walletIdFor(OTHER_UID, { dev: true })).toBe(COLLIDING);
+  });
+});
+
+// ============================================================================
+describe('COLLECTION-GROUP queries cannot bypass the path-scoped rules', () => {
+  // `collectionGroup` is the one verb that ignores the document path, so it is
+  // the verb most likely to defeat a rule written per-path. Firestore admits it
+  // only via a recursive-wildcard rule (`match /{p=**}/entries/{id}`), and this
+  // ruleset authors none — these rows pin that absence, which is exactly what a
+  // future "convenience" wildcard would break.
+  it('nobody reaches another user\'s ledger through collectionGroup("entries")', async () => {
+    for (const [label, ctx] of ALL_CONTEXTS) {
+      await assertFails(getDocs(collectionGroup(ctx(), 'entries')), label);
+      await assertFails(getDocs(query(collectionGroup(ctx(), 'entries'), where('weekKey', '==', WEEK))), label);
+    }
+  });
+
+  it('nobody reaches a sealed pool\'s private totals through collectionGroup("private")', async () => {
+    for (const [label, ctx] of ALL_CONTEXTS) {
+      await assertFails(getDocs(collectionGroup(ctx(), 'private')), label);
     }
   });
 });
@@ -354,10 +416,13 @@ describe('backingStakes/{stakeId} — owner-read on the DOCUMENT\'s userId (§3,
 
   it('a query that proves userId == uid is admitted, with or without the week filter', async () => {
     await assertSucceeds(getDocs(query(collection(asOwner(), 'backingStakes'), where('userId', '==', OWNER_UID))));
+    // WITH the week filter — the shape the committed (userId ASC, weekKey ASC)
+    // composite serves, so the row exercises the query the index exists for.
+    // (The emulator does not require the composite; these rows prove the RULE.)
     await assertSucceeds(getDocs(query(
       collection(asOwner(), 'backingStakes'),
       where('userId', '==', OWNER_UID),
-      where('groupId', '==', GROUP),
+      where('weekKey', '==', WEEK),
     )));
   });
 

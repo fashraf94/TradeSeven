@@ -29,6 +29,7 @@ import {
   currentBackingWeek,
   POOL_INELIGIBLE,
 } from './backingWeek.js';
+import * as WEEK_MODULE from './backingWeek.js';
 import { deriveBattleStartWeek } from './liveDraftFormation.js';
 import { POOL_MIN_WINDOW_MS } from '../../src/constants/backing.js';
 
@@ -124,10 +125,16 @@ describe('backingWeekFor — Monday 00:00 ET → Sunday 23:59:59 ET (§2)', () =
   it('a holiday Monday does not move the close (§4)', () => {
     const holiday = backingWeekFor('2026-09-07'); // Labor Day
     expect(holiday.closeIso).toBe('2026-09-07T03:59:59.000Z'); // Sun 2026-09-06 23:59:59 EDT
-    // Had the close been keyed on the TRADING anchor (Tue 2026-09-08) it would
-    // land a day later — the defect this row exists to catch.
-    expect(backingWeekFor('2026-09-08').closeIso).toBe('2026-09-08T03:59:59.000Z');
     expect(holiday.weekKey).toBe('2026-W37');
+    // The defect this row exists to catch is keying the week on the TRADING
+    // ANCHOR instead of the Monday. `deriveBattleStartWeek` really does walk the
+    // anchor forward here (asserted below), and the Monday guard now makes the
+    // mistake UNREPRESENTABLE rather than merely wrong: the anchor is a Tuesday,
+    // so it is refused outright instead of yielding a close a day late.
+    const derived = deriveBattleStartWeek('2026-09-02T16:00:00.000Z');
+    expect(derived.mondayEtDate).toBe('2026-09-07');
+    expect(derived.anchorEtDate).toBe('2026-09-08');
+    expect(backingWeekFor(derived.anchorEtDate)).toBeNull();
   });
 
   it('an ordinary week is 7 days minus one second of real time', () => {
@@ -177,6 +184,24 @@ describe('backingWeekFor — Monday 00:00 ET → Sunday 23:59:59 ET (§2)', () =
     for (const bad of [null, undefined, '', '2026-W39', '2026-9-7', 'Monday', 42, {}]) {
       expect(backingWeekFor(bad)).toBeNull();
     }
+  });
+
+  it('refuses a date-SHAPED string that is not a real calendar date', () => {
+    // The regex admits these; only the round-trip catches them. Unguarded, they
+    // produce a SILENT wrong window (2026-13-45 normalises to 2027-02-14) or, at
+    // the extreme, an Invalid Date that throws out of the ET formatter.
+    for (const bad of ['2026-13-45', '2026-02-30', '0000-00-00', '9999-99-99']) {
+      expect(backingWeekFor(bad), bad).toBeNull();
+    }
+  });
+
+  it('refuses a real date that is NOT a Monday — the exported contract is enforced, not just documented', () => {
+    // A Sunday would otherwise yield a Sun→Sat span labelled with the PREVIOUS
+    // ISO week: a wrong weekKey with no error, handed to PR 2 and PR 3.
+    for (const notMonday of ['2026-09-20', '2026-09-22', '2026-09-19']) {
+      expect(backingWeekFor(notMonday), notMonday).toBeNull();
+    }
+    expect(backingWeekFor('2026-09-21')).not.toBeNull(); // the Monday still works
   });
 });
 
@@ -238,9 +263,11 @@ describe('opensAtFor — the later of formation and the week start (§4)', () =>
   });
 
   it('a pod formed BEFORE its backing week opens at the week start, not at formation', () => {
-    // A slot pod claimed nine days out. Opening at formation would let a stake
-    // be drawn from the PREVIOUS week's allowance (§2).
-    const pod = slotPod('wed-1900', '2026-09-16T23:00:00.000Z', '2026-09-07T13:00:00.000Z');
+    // A slot pod claimed 5.4 days out — inside the claim door, since
+    // `nextSlotFireInstant` only ever targets the slot's NEXT occurrence, so a
+    // real `createdAt` is always strictly within 7 days of the fire. Opening at
+    // formation would let a stake be drawn from the PREVIOUS week's allowance (§2).
+    const pod = slotPod('wed-1900', '2026-09-16T23:00:00.000Z', '2026-09-11T13:00:00.000Z');
     expect(opensAtFor(pod)).toBe('2026-09-14T04:00:00.000Z');
   });
 
@@ -350,11 +377,13 @@ describe('poolEligible — the §4 predicate', () => {
   });
 
   it('the 24-hour test measures from OPENS-AT when the pod formed before its week', () => {
-    // Claimed nine days out and read the same day: the window is measured from
-    // the week start, not from `now`, so the pod is eligible rather than being
-    // credited with nine phantom days.
-    const pod = slotPod('wed-1900', '2026-09-16T23:00:00.000Z', '2026-09-07T13:00:00.000Z');
-    const verdict = poolEligible(pod, at('2026-09-07T13:00:00.000Z'));
+    // Claimed 5.4 days out (inside the real claim door) and read the same day:
+    // the window is measured from the week start, not from `now`, so the pod is
+    // eligible rather than being credited with phantom pre-week days. This is
+    // also why the verdict is STABLE — the pre-open answer equals the at-open
+    // answer, so `poolEligible` never flips false→true as the week arrives.
+    const pod = slotPod('wed-1900', '2026-09-16T23:00:00.000Z', '2026-09-11T13:00:00.000Z');
+    const verdict = poolEligible(pod, at('2026-09-11T13:00:00.000Z'));
     expect(verdict.opensAt).toBe('2026-09-14T04:00:00.000Z');
     expect(verdict.msRemaining).toBe(
       new Date('2026-09-16T23:00:00.000Z').getTime() - new Date('2026-09-14T04:00:00.000Z').getTime(),
@@ -452,7 +481,7 @@ describe('currentBackingWeek — the week the wallet grants for (§2, D-h)', () 
     });
   });
 
-  it('`now` always falls inside [startIso, closeIso] — the invariant the allowance rides on', () => {
+  it('`now` falls inside [startIso, closeIso] — inclusive to the last WHOLE SECOND, the convention the allowance rides on', () => {
     // Walk a full year at six-hour steps across both DST transitions. If the
     // week ever failed to contain `now`, a wallet could be granted twice in one
     // week or not at all in another.
@@ -491,9 +520,126 @@ describe('currentBackingWeek — the week the wallet grants for (§2, D-h)', () 
     expect(currentBackingWeek(null)).toBeNull();
   });
 
-  it('defaults to the real clock and returns a well-formed week', () => {
+  it('defaults to the REAL clock — not a frozen instant', () => {
+    // A shape check (`/^\d{4}-W\d{2}$/`, start < close) passes for ANY
+    // well-formed week, so it cannot tell the real clock from a hardcoded
+    // constant. Pinning the default against an explicit `new Date()` can.
+    const now = new Date();
+    expect(currentBackingWeek()).toEqual(currentBackingWeek(now));
     const week = currentBackingWeek();
-    expect(week.weekKey).toMatch(/^\d{4}-W\d{2}$/);
-    expect(new Date(week.startIso).getTime()).toBeLessThan(new Date(week.closeIso).getTime());
+    expect(new Date(week.startIso).getTime()).toBeLessThanOrEqual(now.getTime());
+    expect(new Date(week.closeIso).getTime()).toBeGreaterThanOrEqual(now.getTime());
+  });
+
+  it('the week boundary is exact to the SECOND — sampled where the defect lives', () => {
+    // The 6-hour sweeps above cannot observe a boundary defined to the second,
+    // so they are blind to an off-by-one in the advance or a `<`/`<=` flip.
+    // These probe the four instants either side of a real boundary.
+    const close = new Date('2026-09-21T03:59:59.000Z').getTime();
+    expect(currentBackingWeek(new Date(close - 1)).weekKey).toBe('2026-W39');
+    expect(currentBackingWeek(new Date(close)).weekKey).toBe('2026-W39');
+    expect(currentBackingWeek(new Date(close + 1)).weekKey).toBe('2026-W40');
+    expect(currentBackingWeek(new Date(close + 1_000)).weekKey).toBe('2026-W40');
+  });
+
+  it('a calendar year yields exactly the ISO weeks it has — an off-by-one in the advance is visible', () => {
+    // `toBeGreaterThan(50)` admits both a correct year (52-53) and a 6-day
+    // advance (53), so it could not fail under the defect it looks like it
+    // guards. 2026 is a 53-week ISO year; stepping the real boundaries gives
+    // exactly the weeks whose battle Mondays fall in the range.
+    const seen = [];
+    let cursor = new Date('2026-01-01T12:00:00.000Z');
+    const end = new Date('2027-01-01T12:00:00.000Z').getTime();
+    while (cursor.getTime() < end) {
+      const week = currentBackingWeek(cursor);
+      seen.push(week.weekKey);
+      cursor = new Date(new Date(week.closeIso).getTime() + 1); // the next week's first instant
+    }
+    expect(new Set(seen).size).toBe(seen.length); // never repeats
+    expect(seen.length).toBe(53);
+    // Labelled by the BATTLE Monday, so the week lived over New Year 2026 (a
+    // Thursday) is funded for Mon 2026-01-05 = 2026-W02, not W01.
+    expect(seen[0]).toBe('2026-W02');
+    expect(seen[seen.length - 1]).toBe('2027-W01');
+  });
+});
+
+
+// ============================================================================
+describe('the module contract itself — surface, wire words, and the branches no fixture reaches', () => {
+  it('POOL_INELIGIBLE pins its six WIRE VALUES, not just its keys', () => {
+    // PR 2 renders these strings. Module and tests both read POOL_INELIGIBLE.*,
+    // which is the right one-source discipline — but it means renaming every
+    // value reds nothing. This row is the missing half: the literals.
+    expect(POOL_INELIGIBLE).toEqual({
+      NOT_FORMING: 'not_forming',
+      DEV_POD: 'dev_pod',
+      TRAINING_POD: 'training_pod',
+      SLOT_EXCLUDED: 'slot_excluded',
+      NO_BATTLE_MONDAY: 'no_battle_monday',
+      WINDOW_TOO_SHORT: 'window_too_short',
+    });
+    expect(Object.isFrozen(POOL_INELIGIBLE)).toBe(true);
+  });
+
+  it('exports exactly the PR 1 surface', () => {
+    expect(Object.keys(WEEK_MODULE).sort()).toEqual([
+      'POOL_INELIGIBLE',
+      'backingWeekFor',
+      'battleMondayEtDateFor',
+      'closesAtFor',
+      'currentBackingWeek',
+      'opensAtFor',
+      'poolEligible',
+    ]);
+  });
+
+  it('`isDev` / `isTraining` are STRICT — only an explicit `true` excludes a pod', () => {
+    // The fail-safe direction, and the same property the wallet suite pins for
+    // walletIdFor. Relaxing `=== true` to truthiness would silently drop real
+    // pods whose flag carries a stray string or number.
+    const created = '2026-09-15T18:00:00.000Z';
+    const NOW = at(created);
+    for (const truthy of [1, 'true', 'false', {}, []]) {
+      expect(poolEligible(lobbyPod(created, { isDev: truthy }), NOW).eligible, `isDev=${JSON.stringify(truthy)}`).toBe(true);
+      expect(poolEligible(lobbyPod(created, { isTraining: truthy }), NOW).eligible, `isTraining=${JSON.stringify(truthy)}`).toBe(true);
+    }
+    expect(poolEligible(lobbyPod(created, { isDev: true }), NOW).eligible).toBe(false);
+    expect(poolEligible(lobbyPod(created, { isTraining: true }), NOW).eligible).toBe(false);
+  });
+
+  it('an unreadable `now` refuses fail-closed rather than throwing or guessing', () => {
+    // The branch is unreachable from a server caller (`now` defaults to the
+    // clock), so without this row it is dead code: replacing it with a throw
+    // reddened nothing. It deliberately reuses `no_battle_monday` — see the
+    // comment at the branch — so the reason is pinned here too.
+    const pod = lobbyPod('2026-09-15T18:00:00.000Z');
+    for (const bad of [new Date('nope'), 'x', {}, NaN, Infinity]) {
+      expect(poolEligible(pod, bad), String(bad)).toEqual({
+        eligible: false, reason: POOL_INELIGIBLE.NO_BATTLE_MONDAY,
+      });
+    }
+  });
+
+  it('an EXACT clock/fire tie closes on the CLOCK — the tie-break "the earlier of" leaves open', () => {
+    // At a tie `closesAt` is identical either way but `closeReason` is a §9
+    // display word, so the tie-break must be pinned rather than incidental.
+    const clockClose = '2026-09-21T03:59:59.000Z';
+    const pod = { ...slotPod('sun-1900', '2026-09-20T23:00:00.000Z', '2026-09-14T13:00:00.000Z'), scheduledDraftAt: clockClose };
+    expect(closesAtFor(pod)).toEqual({ closesAt: clockClose, closeReason: 'clock' });
+    // One millisecond earlier and it is a fire close.
+    const earlier = new Date(new Date(clockClose).getTime() - 1).toISOString();
+    expect(closesAtFor({ ...pod, scheduledDraftAt: earlier })).toEqual({ closesAt: earlier, closeReason: 'fire' });
+  });
+
+  it('an instant may be epoch MILLISECONDS, and an out-of-range number is refused, never thrown', () => {
+    // JS Dates are valid only within ±8.64e15 ms; a merely-finite number past
+    // that makes `new Date(ms).toISOString()` throw a RangeError out of what is
+    // documented as a total function.
+    expect(battleMondayEtDateFor({ createdAt: new Date('2026-09-15T18:00:00.000Z').getTime() })).toBe('2026-09-21');
+    for (const bad of [8.64e15 + 1, -8.64e15 - 1, Infinity, -Infinity, NaN]) {
+      expect(battleMondayEtDateFor({ createdAt: bad }), String(bad)).toBeNull();
+      expect(() => poolEligible({ status: 'forming', createdAt: bad }, at('2026-09-15T18:00:00.000Z'))).not.toThrow();
+    }
   });
 });

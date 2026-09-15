@@ -34,8 +34,19 @@
 // ET calendar arithmetic ('YYYY-MM-DD' via UTC-noon) is kept local, the
 // liveDraftFormation.js / trainingLifecycle.js precedent stated in that file's
 // own header: "pure date math, not scoring". The HOLIDAY LIST and the Monday
-// RULE are both reused, never re-copied — the only thing duplicated here is a
-// three-line date shift.
+// RULE are both reused, never re-copied. What IS duplicated: two private ET-date
+// helpers (~9 lines — `etDateToUtcNoon` and `addEtDays`, the latter with
+// `utcDateToEtString` inlined), because liveDraftFormation.js does not EXPORT
+// them; everything it does export — `deriveBattleStartWeek`,
+// `deriveBaseLayerWeek`, `etWallClockInstantIso` — is imported, not
+// re-implemented. Repo-wide that makes two copies of each, the same count the
+// trainingLifecycle precedent already carries.
+//
+// NAMING NOTE, inherited: `etDateToUtcNoon` actually returns UTC MIDNIGHT
+// (`Date.UTC(y, m-1, d)`), in both this copy and the original. The DST-immunity
+// the comment claims is real — it comes from operating wholly in UTC getters and
+// setters, not from a noon probe — but the name is inaccurate. Renaming belongs
+// with the original, in its own change (BUILD_RULES §3).
 //
 // Imports the zero-import constants module from src/ under the revised June
 // 2026 import rule (BUILD_RULES §4); the co-located test's real import of THIS
@@ -46,6 +57,24 @@ import { deriveBattleStartWeek, deriveBaseLayerWeek, etWallClockInstantIso } fro
 import { POOL_EXCLUDED_SLOT_IDS, POOL_MIN_WINDOW_MS } from '../../src/constants/backing.js';
 
 const ET_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Is this a REAL ET calendar date, not merely a date-SHAPED string? The regex
+ * above admits '2026-13-45' and '2026-02-30'; both would sail through the UTC
+ * arithmetic below and produce a silently wrong window (and '9999-99-99' would
+ * overflow into an Invalid Date and throw out of the ET formatter). The
+ * round-trip is the cheapest total check: normalize by zero days and require
+ * the string back unchanged.
+ *
+ * Unreachable in production today — `tournamentGroups` is `write: if false` for
+ * every client (firestore.rules) and every `battleStartWeek` writer derives the
+ * date through `deriveBattleStartWeek`, which cannot emit a non-calendar date —
+ * so this guards the Admin-SDK/seeder/Console path and keeps the module's own
+ * promise (a malformed pod gets NO POOL, never a guessed one) literally true.
+ */
+function isRealEtDate(etDate) {
+  return typeof etDate === 'string' && ET_DATE_RE.test(etDate) && addEtDays(etDate, 0) === etDate;
+}
 
 /**
  * The reasons `poolEligible` returns. Plain strings PR 2 surfaces; exported so
@@ -76,16 +105,31 @@ function addEtDays(etDate, n) {
   return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
 }
 
-/** An instant-ish value → epoch ms, or NaN. Never throws. */
-function msOf(value) {
-  if (value == null) return NaN;
-  if (value instanceof Date) return value.getTime();
-  if (typeof value === 'number') return value;
-  if (typeof value === 'string') return new Date(value).getTime();
-  return NaN;
+/** Day-of-week for an ET calendar date: 0=Sun … 6=Sat (timezone-independent). */
+function etDateDow(etDate) {
+  return etDateToUtcNoon(etDate).getUTCDay();
 }
 
-/** An instant-ish value → ISO string, or null. Never throws. */
+/**
+ * An instant-ish value → epoch ms, or NaN. NEVER THROWS, and that includes the
+ * out-of-RANGE case: JavaScript Dates are valid only within ±8.64e15 ms, and a
+ * finite number past that makes `new Date(ms).toISOString()` throw a RangeError.
+ * Finiteness alone is therefore not enough to call a number an instant.
+ */
+const MAX_TIME_MS = 8.64e15;
+function msOf(value) {
+  if (value == null) return NaN;
+  const ms = value instanceof Date
+    ? value.getTime()
+    : typeof value === 'number'
+      ? value
+      : typeof value === 'string'
+        ? new Date(value).getTime()
+        : NaN;
+  return Number.isFinite(ms) && Math.abs(ms) <= MAX_TIME_MS ? ms : NaN;
+}
+
+/** An instant-ish value → ISO string, or null. Never throws (see `msOf`). */
 function isoOf(value) {
   const ms = msOf(value);
   return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
@@ -131,15 +175,26 @@ function etDayEndIso(etDate) {
  */
 export function battleMondayEtDateFor(group) {
   const stamped = group?.battleStartWeek?.mondayEtDate;
-  if (typeof stamped === 'string' && ET_DATE_RE.test(stamped)) return stamped;
+  if (isRealEtDate(stamped)) return stamped;
 
-  const createdIso = isoOf(group?.createdAt);
-  if (createdIso == null) return null;
+  // The FALLBACK INSTANT is the pod's own anchor, not simply `createdAt`: for a
+  // live-draft pod the writer derives `battleStartWeek` from the FIRE instant
+  // (`nextSlotFireInstant` → `deriveBattleStartWeek`, liveDraftFormation.js), so
+  // deriving from the CLAIM instant here would land a week early for any claim
+  // made before the slot's own weekday. A stamp-less live-draft pod cannot exist
+  // today — `buildInitialSlotGroupDoc` stamps `battleStartWeek` in the same
+  // transaction that creates the doc, and clients cannot write `tournamentGroups`
+  // at all — so this is belt, not braces; it is here so the belt agrees with the
+  // writer rather than with the lobby rule.
+  const anchorIso = group?.isLiveDraft === true
+    ? (isoOf(group?.scheduledDraftAt) ?? isoOf(group?.createdAt))
+    : isoOf(group?.createdAt);
+  if (anchorIso == null) return null;
   try {
-    const { mondayEtDate } = deriveBattleStartWeek(createdIso);
-    return typeof mondayEtDate === 'string' && ET_DATE_RE.test(mondayEtDate) ? mondayEtDate : null;
+    const { mondayEtDate } = deriveBattleStartWeek(anchorIso);
+    return isRealEtDate(mondayEtDate) ? mondayEtDate : null;
   } catch {
-    // A createdAt the ET formatter cannot read is a malformed pod, not a crash
+    // An anchor the ET formatter cannot read is a malformed pod, not a crash
     // for the caller: the pod simply gets no pool.
     return null;
   }
@@ -158,11 +213,18 @@ export function battleMondayEtDateFor(group) {
  * backing happens, which is what makes "every stake on a pool is drawn from the
  * same allowance" (§2) true.
  *
- * @param {string} mondayEtDate 'YYYY-MM-DD', the battle Monday.
+ * @param {string} mondayEtDate 'YYYY-MM-DD', the battle Monday. REQUIRED to be a
+ *   real calendar date AND a Monday — enforced, not merely documented. Both
+ *   in-module callers already satisfy it (a stamped or `deriveBattleStartWeek`-
+ *   derived Monday, or `sunday + 1`), but this is exported for PR 2 and PR 3,
+ *   and a non-Monday would silently yield a Sun→Sat span labelled with the
+ *   PREVIOUS ISO week — a wrong `weekKey` with no error. A contract a caller
+ *   cannot violate is worth two lines (the flag-pin discipline, applied to an
+ *   argument).
  * @returns {{weekKey: string, startIso: string, closeIso: string}|null}
  */
 export function backingWeekFor(mondayEtDate) {
-  if (typeof mondayEtDate !== 'string' || !ET_DATE_RE.test(mondayEtDate)) return null;
+  if (!isRealEtDate(mondayEtDate) || etDateDow(mondayEtDate) !== 1) return null;
   const startEtDate = addEtDays(mondayEtDate, -7); // the Monday before
   const closeEtDate = addEtDays(mondayEtDate, -1); // the Sunday before
   return {
@@ -309,6 +371,11 @@ export function poolEligible(group, now = new Date()) {
   const close = closesAtFor(group);
   const opensAt = opensAtFor(group);
   const nowMs = msOf(now);
+  // An UNREADABLE `now` is a CALLER bug, not a property of the pod — the Monday
+  // above was derived fine. It deliberately reuses `no_battle_monday` rather
+  // than growing POOL_INELIGIBLE: that vocabulary is frozen and PR 2 surfaces it
+  // verbatim, and one predicate keeps one reason per refusal (§9). Fail-closed,
+  // and unreachable from any server caller — `now` defaults to the server clock.
   if (!Number.isFinite(nowMs)) return { eligible: false, reason: POOL_INELIGIBLE.NO_BATTLE_MONDAY };
 
   const fromMs = Math.max(nowMs, new Date(opensAt).getTime());

@@ -38,10 +38,15 @@
 // `appliedEntries` on the wallet doc is the once-only guard, exactly as
 // `appliedGroups` is on a rank doc (tournamentRank.js). Keeping the guard on the
 // PARENT doc rather than on the entry is what lets the primitives stay
-// read-free and therefore composable. The map grows by at most ~60 keys a week
-// (one allowance, at most ALLOWANCE_BP/MIN_STAKE_BP = 20 stakes, and one payout
-// or refund each), which is the same unbounded-but-small shape `appliedGroups`
-// already carries in production.
+// read-free and therefore composable.
+//
+// GROWTH, stated precisely so nobody has to re-derive it: at most 42 keys a week
+// — 1 allowance + 1 expiry + ALLOWANCE_BP/MIN_STAKE_BP = 20 stakes + one payout
+// or refund each — i.e. ~3.5 KB/week worst case, ~14 KiB across the four-week
+// beta §10 decides on, against Firestore's 1 MiB document limit. Uncapped like
+// `appliedGroups`, but an order of magnitude faster-growing than it (that map
+// gains ~1 key/week), so this is a bound worth revisiting before any long-lived
+// season, not a shape to copy blindly.
 //
 // DEV NAMESPACE (§6, ruling A-4 mirrored from rank): `isDev` groups route to
 // `dev-{uid}` wallet ids, so a smoke week can never move a real record. The
@@ -62,7 +67,6 @@
 // module is the dependency-surface guard (it explodes in the Node test env if a
 // browser dep ever enters the graph) — never mock it.
 
-import { toIso } from './tournamentTime.js';
 import { currentBackingWeek } from './backingWeek.js';
 import { ALLOWANCE_BP } from '../../src/constants/backing.js';
 
@@ -110,6 +114,33 @@ export function walletIdFor(uid, { dev = false } = {}) {
   if (typeof uid !== 'string' || uid.length === 0) {
     throw new BackingLedgerError('invalid_uid', 'walletIdFor: a non-empty uid is required');
   }
+  // A uid ALREADY INSIDE the dev namespace is refused, because `dev-{uid}` and a
+  // raw uid share one id space: `walletIdFor('x', { dev: true })` and
+  // `walletIdFor('dev-x')` name the SAME document, so a uid literally spelled
+  // `dev-x` would have its production wallet collide with x's dev wallet — two
+  // people's ledgers in one doc, and an owner-read rule that cannot tell them
+  // apart. Refusing here is what makes the id's meaning unambiguous by
+  // construction, which the firestore.rules `ownsBackingWallet` clause relies on.
+  //
+  // Zero false-positive cost: this product mints uids only through Firebase Auth
+  // (email/password, Google, anonymous — src/firebase/authService.js), which are
+  // 28-char alphanumerics containing no hyphen, so no reachable uid trips this.
+  // It is the operator-minted custom-token path (scripts/ws1-observe-walk.js
+  // --uid) that can produce one, and there a loud refusal is the right answer.
+  //
+  // This deliberately DIVERGES from `rankDocId` / `leaderboardDocId`, which carry
+  // the same id shape without the refusal — and can, because `tournamentRanks`
+  // and `tournamentLeaderboards` are authed-read-ALL, so they have no owner
+  // scoping to subvert. `backingWallets` is the first collection to combine a
+  // `dev-` id scheme with an OWNER-scoped read. The mapping for every uid either
+  // function accepts is still identical, so the namespaces do not drift; the
+  // siblings are reported for separate tasking (BUILD_RULES §3).
+  if (uid.startsWith('dev-')) {
+    throw new BackingLedgerError(
+      'invalid_uid',
+      `walletIdFor: a uid inside the dev namespace has an ambiguous wallet id (${uid}) — refused`,
+    );
+  }
   return dev === true ? `dev-${uid}` : uid;
 }
 
@@ -127,22 +158,114 @@ export function walletRef(db, uid, { dev = false } = {}) {
  * header).
  */
 export async function readWallet(tx, ref) {
+  // A re-read RESETS this transaction's remembered state for this wallet.
+  // Firestore reuses one Transaction object across retry attempts, so without
+  // this a retried settlement would build on the discarded attempt's state.
+  forgetWallet(tx, ref?.path);
   const snap = await tx.get(ref);
   return snap.exists ? snap.data() : null;
 }
 
 // ==================== INTERNALS ====================
 
-/** The wallet doc as the primitives see it: absent fields read as their zero. */
+/**
+ * The wallet doc as the primitives see it.
+ *
+ * CARRIES EVERY FIELD THIS MODULE DOES NOT OWN. `commitWallet` writes the whole
+ * document (`tx.set`, no merge — the tournamentRank idiom), so anything absent
+ * from this object is DESTROYED on the next write. §6's wallet row includes
+ * `trainerStats` {season, career} — the private trainer beta-stats PR 5 writes to
+ * this same document (D-w) — and `seasons.{m}` carries `poolsBacked`/`poolsWon`/
+ * `weeksPlayed` beside `net`. Spreading the original first means a second writer's
+ * fields ride through untouched instead of being erased by the first allowance
+ * grant of a new week. The rank doc gets away with the same idiom only because it
+ * has exactly one writer; this one does not.
+ *
+ * NUMERICS ARE COERCED TO INTEGERS, not merely checked for finiteness: BP is
+ * integer-only (§3), and a fractional cache from a corrupt doc would otherwise
+ * mint fractional BP through every later arithmetic step. `allowanceRemaining`
+ * rounds DOWN and floors at 0 — flooring can only ever under-credit, and the 0
+ * floor stops a negative cache from reading as spendable headroom past
+ * `debitStake`'s `< 0` guard. `careerNet` rounds to nearest: it is a record, not
+ * a spend limit, so the nearest integer is the most faithful repair. Neither is
+ * a substitute for the ledger, which stays the source of truth (§6).
+ */
 function normalize(walletDoc) {
+  const base = walletDoc && typeof walletDoc === 'object' && !Array.isArray(walletDoc) ? walletDoc : {};
+  const remaining = Number.isFinite(base.allowanceRemaining) ? Math.floor(base.allowanceRemaining) : 0;
+  const seasons = base.seasons && typeof base.seasons === 'object' && !Array.isArray(base.seasons) ? base.seasons : {};
+  const applied = base.appliedEntries && typeof base.appliedEntries === 'object' && !Array.isArray(base.appliedEntries)
+    ? base.appliedEntries
+    : {};
   return {
-    lastAllowanceWeek: typeof walletDoc?.lastAllowanceWeek === 'string' ? walletDoc.lastAllowanceWeek : null,
-    allowanceRemaining: Number.isFinite(walletDoc?.allowanceRemaining) ? walletDoc.allowanceRemaining : 0,
-    careerNet: Number.isFinite(walletDoc?.careerNet) ? walletDoc.careerNet : 0,
-    seasons: walletDoc?.seasons && typeof walletDoc.seasons === 'object' ? walletDoc.seasons : {},
-    appliedEntries: walletDoc?.appliedEntries && typeof walletDoc.appliedEntries === 'object' ? walletDoc.appliedEntries : {},
-    createdAt: typeof walletDoc?.createdAt === 'string' ? walletDoc.createdAt : null,
+    ...base,
+    lastAllowanceWeek: typeof base.lastAllowanceWeek === 'string' ? base.lastAllowanceWeek : null,
+    allowanceRemaining: remaining > 0 ? remaining : 0,
+    careerNet: Number.isFinite(base.careerNet) ? Math.round(base.careerNet) : 0,
+    seasons,
+    appliedEntries: applied,
+    createdAt: typeof base.createdAt === 'string' ? base.createdAt : null,
   };
+}
+
+// ==================== THE IN-TRANSACTION WALLET STATE ====================
+
+/**
+ * `tx` → (wallet doc path → the state this module last wrote in that transaction).
+ *
+ * WHY THIS EXISTS. Every primitive commits the WHOLE wallet doc, so two
+ * primitives composed in one transaction must each build on the previous one's
+ * result. The header tells callers to thread the returned wallet, but a contract
+ * enforced only by prose fails silently and expensively: a caller that passes the
+ * stale doc twice re-mints spent allowance, inflates `careerNet`, and drops the
+ * first entry's `appliedEntries` key while its entry document still commits —
+ * which un-guards that entry id for replay. PR 3's settlement (§3/§7 void or pay
+ * EVERY stake of a pool at once, §2 allows two stakes per pod) is exactly the
+ * shape that would trip it. So the module resolves the latest state itself and
+ * the contract becomes mechanical (BUILD_RULES §9: bind by construction).
+ *
+ * KEYED ON (tx, ref.path), NOT ON tx. PR 3 settles many backers' wallets inside
+ * one transaction; keying on `tx` alone would make every wallet after the first
+ * read another wallet's state.
+ *
+ * `readWallet` CLEARS its own entry, and that reset is load-bearing. Firestore
+ * reuses ONE Transaction object across retry attempts, so a retried settlement
+ * would otherwise see the DISCARDED attempt's `appliedEntries`, take the replay
+ * path, and write nothing — silently losing a payout while the ledger re-fold
+ * still reported zero violations. A retry re-reads, so a re-read resets.
+ */
+const TX_WALLET_STATE = new WeakMap();
+
+// These three take the wallet's PATH STRING (never the DocumentReference), name
+// their payload `nextState` rather than `doc`, and call the transaction `scope`
+// rather than `tx`. They touch a Map, not
+// Firestore — but the B3-EXT write scanner treats ANY parameter matching
+// /^(ref|doc)$|Ref$|Doc$/ as ref evidence and any argument matching
+// /^(tx|txn|transaction|batch|writeBatch)$/ as a transaction handle, so a
+// helper taking `(tx, ref, doc)` and calling `.set(` is classified as an
+// unresolved Firestore write site (compositionProtectedStoresScan.js:79,198,
+// 325-332) even when the `.set` is a Map's. Naming them for what they
+// actually are keeps that census honest — an allowlist entry here would assert
+// a Firestore write that does not exist — and is the narrower dependency
+// besides: none of the three needs anything off the ref but its path.
+
+/** The state this module last wrote for `path` in `scope`, else the caller's doc. */
+function latestFor(scope, path, walletDoc) {
+  const seen = TX_WALLET_STATE.get(scope)?.get(path);
+  return seen !== undefined ? seen : walletDoc;
+}
+
+function rememberWallet(scope, path, nextState) {
+  let byPath = TX_WALLET_STATE.get(scope);
+  if (byPath === undefined) {
+    byPath = new Map();
+    TX_WALLET_STATE.set(scope, byPath);
+  }
+  byPath.set(path, nextState);
+}
+
+function forgetWallet(scope, path) {
+  TX_WALLET_STATE.get(scope)?.delete(path);
 }
 
 /** A positive integer BP amount, or a typed refusal. BP is integer-only (§3). */
@@ -153,10 +276,34 @@ function requireAmount(amount, what) {
   return amount;
 }
 
+/**
+ * A readable instant, or a typed refusal. `toIso` throws a bare RangeError on an
+ * Invalid Date and silently maps `0`/`null` to the epoch — and `at` is the only
+ * audit timestamp the ledger carries, so a 1970 stamp is a silent wrong answer
+ * where a throw is owed. PR 2's endpoint reads `.code` / `instanceof`, so the
+ * refusal must be typed like every other one here.
+ */
+function requireInstant(now, where) {
+  const ms = now instanceof Date ? now.getTime() : (typeof now === 'string' ? new Date(now).getTime() : NaN);
+  if (!Number.isFinite(ms)) {
+    throw new BackingLedgerError('invalid_now', `${where}: a readable Date or ISO instant is required, got ${JSON.stringify(now)}`);
+  }
+  return new Date(ms).toISOString();
+}
+
 /** A non-empty string id, or a typed refusal. */
 function requireId(value, where, field) {
   if (typeof value !== 'string' || value.length === 0) {
     throw new BackingLedgerError('invalid_id', `${where}: a non-empty ${field} is required, got ${JSON.stringify(value)}`);
+  }
+  // A `/` would split the entry id into extra path segments and make
+  // `.doc(entryId)` an odd-segment path — the Admin SDK throws an UNTYPED error
+  // there, inside the caller's transaction, losing the whole stake. Every id
+  // here is server-minted today, so this is belt: it keeps the refusal typed.
+  // (`.` and `..` are safe precisely because every entry id carries a `type:`
+  // prefix, so the id is never bare.)
+  if (value.includes('/')) {
+    throw new BackingLedgerError('invalid_id', `${where}: ${field} must not contain "/", got ${JSON.stringify(value)}`);
   }
   return value;
 }
@@ -183,6 +330,7 @@ function writeEntry(tx, ref, entryId, fields) {
 function commitWallet(tx, ref, next, nowIso) {
   const doc = { ...next, updatedAt: nowIso, createdAt: next.createdAt ?? nowIso };
   tx.set(ref, doc);
+  rememberWallet(tx, ref?.path, doc);
   return doc;
 }
 
@@ -214,22 +362,47 @@ function commitWallet(tx, ref, next, nowIso) {
  */
 export function ensureAllowance(tx, ref, walletDoc, weekKey, now = new Date()) {
   requireId(weekKey, 'ensureAllowance', 'weekKey');
-  const nowIso = toIso(now);
-  const current = normalize(walletDoc);
+  const nowIso = requireInstant(now, 'ensureAllowance');
+  const resolved = latestFor(tx, ref?.path, walletDoc);
+  const current = normalize(resolved);
   const entryId = `${ENTRY_TYPES.ALLOWANCE}:${weekKey}`;
 
+  // ALREADY GRANTED — either the entry is on the ledger, or the wallet is
+  // already keyed to this week. The SECOND arm matters: a wallet whose
+  // `lastAllowanceWeek` is this week but whose `allowance:` entry is missing is
+  // a doc that was reset out of band, and granting again would REFILL it
+  // mid-week with no entry recording the BP that vanished. Fail closed.
   if (current.appliedEntries[entryId] !== undefined) {
-    return { wallet: walletDoc ?? current, granted: false, expired: 0 };
+    return { wallet: resolved ?? current, granted: false, expired: 0 };
+  }
+  if (current.lastAllowanceWeek === weekKey) {
+    throw new BackingLedgerError(
+      'allowance_state_anomaly',
+      `ensureAllowance: wallet is already keyed to ${weekKey} but carries no ${entryId} entry — refusing to re-grant (the ledger is the record, §6)`,
+    );
+  }
+  // NEVER GO BACKWARDS. Week keys are `YYYY-Www`, zero-padded, so lexical order
+  // is chronological. A stale key would expire the LIVE week, re-key the wallet
+  // to a dead one, and lock every stake for the live week out of
+  // `debitStake` forever — and the §6 cache/ledger re-fold is BLIND to it,
+  // because the cache still matches the (wrong) current week's entries.
+  if (current.lastAllowanceWeek !== null && weekKey < current.lastAllowanceWeek) {
+    throw new BackingLedgerError(
+      'week_out_of_order',
+      `ensureAllowance: wallet is on ${current.lastAllowanceWeek}; refusing to grant the earlier week ${weekKey}`,
+    );
   }
 
   const appliedEntries = { ...current.appliedEntries };
 
   // (1) The prior week's remainder expires — recorded, never silently dropped.
   let expired = 0;
-  if (current.lastAllowanceWeek !== null && current.lastAllowanceWeek !== weekKey && current.allowanceRemaining > 0) {
-    expired = current.allowanceRemaining;
+  if (current.lastAllowanceWeek !== null && current.allowanceRemaining > 0) {
     const expiryId = `${ENTRY_TYPES.EXPIRY}:${current.lastAllowanceWeek}`;
     if (appliedEntries[expiryId] === undefined) {
+      // `expired` is assigned INSIDE the guard, so the returned figure only ever
+      // names BP that an entry actually records (§10 may report it).
+      expired = current.allowanceRemaining;
       writeEntry(tx, ref, expiryId, {
         type: ENTRY_TYPES.EXPIRY,
         delta: -expired,
@@ -279,12 +452,23 @@ export function ensureAllowance(tx, ref, walletDoc, weekKey, now = new Date()) {
  * DOES NOT write a season bucket. §2 attributes net BP to the ET month of the
  * pod's FIRST BANKED DAY — the ladder's own `monthKeyForGroup` — which does not
  * exist when the stake is placed (the pod has not battled). PR 3 supplies that
- * key at settlement, where `creditPayout` / `creditRefund` carry it. The
- * consequence, stated rather than hidden: `careerNet` and
- * `Σ seasons.*.net` differ by the stakes not yet settled, and a stake that ends
- * LOST is never attributed to a month at all. How PR 3 closes that — most
- * likely by settling losers through this same ledger with the pool's monthKey —
- * is a PR 3 decision, and PR 1 deliberately does not invent the primitive.
+ * key at settlement, where `creditPayout` / `creditRefund` carry it.
+ *
+ * THE CONSEQUENCE, STATED EXACTLY, because it constrains PR 3. `seasons.{m}.net`
+ * is the sum of the CREDITS attributed to month m — it is NOT §2's Net BP for
+ * that month. The two differ by Σ ALL stakes, PERMANENTLY, not by "the stakes
+ * not yet settled": a stake never receives a month attribution at all, settled
+ * or not. A backer who staked 1,000 and won 650 has `careerNet -350` and
+ * `seasons.{m}.net 650`. §5 renders "Net BP (season)", so PR 5 must not render
+ * this field as that number without PR 3 closing the gap first.
+ *
+ * AND PR 1's PRIMITIVES CANNOT CLOSE IT, which is why this is written down
+ * rather than deferred silently: `creditPayout(amount: 0)` is refused
+ * (`invalid_amount`), there is no zero/negative credit, and `debitStake` takes no
+ * `monthKey`. PR 3 needs either a new month-attributing primitive for the stake
+ * side (including the LOST path, which has no credit at all) or a `stakeAmount`
+ * argument on the two credits. That is a founder/PR-3 decision; PR 1 does not
+ * invent the primitive, and does not pretend the gap is a timing artifact.
  *
  * REFUSES (typed, never silent):
  *   · a debit that would take `allowanceRemaining` below zero —
@@ -303,12 +487,13 @@ export function debitStake(tx, ref, walletDoc, { stakeId, amount, weekKey, now }
   requireId(stakeId, 'debitStake', 'stakeId');
   requireId(weekKey, 'debitStake', 'weekKey');
   requireAmount(amount, 'debitStake');
-  const nowIso = toIso(now ?? new Date());
-  const current = normalize(walletDoc);
+  const nowIso = requireInstant(now ?? new Date(), 'debitStake');
+  const resolved = latestFor(tx, ref?.path, walletDoc);
+  const current = normalize(resolved);
   const entryId = `${ENTRY_TYPES.STAKE}:${stakeId}`;
 
   if (current.appliedEntries[entryId] !== undefined) {
-    return { wallet: walletDoc ?? current, applied: false, replay: true };
+    return { wallet: resolved ?? current, applied: false, replay: true };
   }
   if (current.lastAllowanceWeek !== weekKey) {
     throw new BackingLedgerError(
@@ -349,12 +534,13 @@ function credit(type, tx, ref, walletDoc, { stakeId, groupId, amount, monthKey, 
   requireId(groupId, where, 'groupId');
   requireId(monthKey, where, 'monthKey');
   requireAmount(amount, where);
-  const nowIso = toIso(now ?? new Date());
-  const current = normalize(walletDoc);
+  const nowIso = requireInstant(now ?? new Date(), where);
+  const resolved = latestFor(tx, ref?.path, walletDoc);
+  const current = normalize(resolved);
   const entryId = `${type}:${stakeId}`;
 
   if (current.appliedEntries[entryId] !== undefined) {
-    return { wallet: walletDoc ?? current, applied: false, replay: true };
+    return { wallet: resolved ?? current, applied: false, replay: true };
   }
 
   writeEntry(tx, ref, entryId, {
