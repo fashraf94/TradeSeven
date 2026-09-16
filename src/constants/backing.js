@@ -25,10 +25,15 @@
 // NOTHING HERE IS LEGAL COPY and nothing here makes a legal claim. §11 gate 1
 // is counsel's jurisdictional review of the economy these numbers describe;
 // the lexicon guard (§9) is a brand rule and establishes nothing about legal
-// status. Unlike PR 0's placeholder attestation strings, the two copy blocks
-// below are the SPEC'S OWN VERBATIM WORDING (§5 fine print, §4/§3 disclosures)
-// and carry no COUNSEL marker: counsel may still revise them at gate 1, but
-// they are not shipped as drafts awaiting a fill-in.
+// status. Unlike PR 0's placeholder attestation strings, the copy blocks below
+// are the SPEC'S OWN VERBATIM WORDING (§5 fine print, §4/§3 disclosures, and
+// Amendment B §B6's two pool-strip states) and carry no COUNSEL marker:
+// counsel may still revise them at gate 1, but they are not shipped as drafts
+// awaiting a fill-in.
+//
+// PR 2b (Amendment B §B6) ADDS `POOL_STRIP` and nothing else here. The economy
+// and the validity floors are untouched: sealing the open pool changes what is
+// PUBLISHED about a pool, never what makes one valid.
 
 // ==================== ECONOMY (§2 — D-a, D-f, D-h) ====================
 
@@ -171,3 +176,41 @@ export const FORBIDDEN_TERMS = Object.freeze([
   'win money',
   'gamble',
 ]);
+
+/**
+ * THE POOL STRIP, both open states (Amendment B §B6). Two blocks, because the
+ * open pool has exactly two things it may say about itself: it is below the
+ * floor and needs support, or it has qualified and has stopped saying anything
+ * further (§B2 — once both thresholds are met the public signals FREEZE until
+ * close).
+ *
+ * WHY THERE IS NO POT LINE HERE, and why that is not an omission to be fixed:
+ * §B5 moves `potTotal` off the public pool document entirely, so no surface can
+ * render one while a pool is open. The strip has no pot string because there is
+ * no pot fact to bind it to (BUILD_RULES §9 — a label is derived from exactly
+ * what the payload carries, never from a parallel source).
+ *
+ * `{count}` and `{floor}` are filled from the API's own `backerProgress`
+ * object and `{amount}` from the viewer's own stakes — the values the response
+ * carries, not a re-derivation. The count is ALREADY CAPPED at the floor by the
+ * writer (`publicProgressFrom`, api/_utils/backingPools.js), so the below-floor
+ * line can never render "Backers 5 of 3": there is no such number to render.
+ *
+ * PR 4 renders these; this PR ships no component (§12 PR 4 is the surface PR).
+ * Verbatim from §B6, which is why the rows in the co-located test assert
+ * literals.
+ */
+export const POOL_STRIP = Object.freeze({
+  belowFloor: Object.freeze({
+    headline: 'Pool needs support',
+    backers: 'Backers {count} of {floor}',
+    teamSpread: 'Team spread: needs another team',
+  }),
+  qualified: Object.freeze({
+    headline: 'Pool qualified',
+    backers: 'Backers: threshold met',
+    teamSpread: 'Team spread: threshold met',
+  }),
+  /** Shared by both states — the viewer's own stakes are visible throughout (§B2). */
+  yourBacking: 'Your backing: {amount} BP',
+});

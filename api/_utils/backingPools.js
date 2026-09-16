@@ -5,6 +5,15 @@
 // close order, §4 window, §6 collection shapes, §7 the lazy close and the
 // refund paths; rulings D-d, D-e, D-j, D-n, D-q, D-x, D-y).
 //
+// PR 2b — THE OPEN POOL IS SEALED (Amendment B §B2/§B5, D-q amended). While a
+// pool is OPEN its public document publishes threshold-capped validity progress
+// and nothing else about the book: `backerProgress { count, floor, met }` with
+// the count capped at `VALIDITY_MIN_BACKERS`, and `teamSpread { met }` as a
+// boolean. `potTotal`, `uniqueBackers` and `teamsBacked` are NOT on the public
+// document at all while open — they live in `private/totals` beside the
+// per-team totals — and the close copies all three back up as part of the §3
+// step 4 reveal. `publicProgressFrom` is the one implementation of the cap.
+//
 // `backingPools/{groupId}`, `dev-{groupId}` in the dev namespace — the PR 1
 // wallet-id rule verbatim (`walletIdFor`, backingWallet.js), so a smoke pod can
 // never write a production pool. The refusal of a groupId that already begins
@@ -34,11 +43,15 @@
 //       `insufficient`; on `insufficient` every remaining stake is voided
 //       (`voidReason: 'insufficient'`);
 //   (4) REVEAL — the per-team totals are copied into the public doc as
-//       `teams[].stakeTotal` / `teams[].backerCount`, and `humanTeams` is
-//       stamped.
+//       `teams[].stakeTotal` / `teams[].backerCount`, `humanTeams` is stamped,
+//       and (Amendment B §B5) `potTotal`, `uniqueBackers` and `teamsBacked`
+//       come up from `private/totals` while the capped open-state pair
+//       (`backerProgress`, `teamSpread`) comes off.
 // Step 2 before step 3 is the whole point: validity is judged on the stakes
-// that SURVIVE, never on the ones a departed seat left behind. `closePool.test.js`
-// asserts the order itself, not merely its outcome.
+// that SURVIVE, never on the ones a departed seat left behind. `backingPools.test.js`
+// asserts the order itself, not merely its outcome. Step 3 reads the TRUE
+// counts — the capped public pair is a threshold signal, not a count, and is
+// also a pre-step-2 snapshot (Amendment B §B5).
 //
 // THE TOTALS ARE RECOMPUTED FROM THE STAKES AT CLOSE, not read out of
 // `private/totals`. §6 is explicit that balances derive from the ledger and a
@@ -58,9 +71,13 @@
 // voided `group_deleted`. `ensureClosed` builds the tombstone that path needs.
 //
 // THE SEALED HALF LIVES IN A SUBCOLLECTION, NOT IN A HIDDEN FIELD (§3, §6).
-// Rules cannot hide fields, so per-team totals and the backers map sit under
+// Rules cannot hide fields, so per-team totals, the backers map and — since
+// Amendment B §B5 — the pot and the exact counts sit under
 // `backingPools/{poolId}/private/totals`, which no client may read. The public
-// doc carries only what an open pool may show.
+// doc carries only what an open pool may show. The move is NOT a display
+// change and could not have been one: the public doc is authed-read, so a
+// number left on it is streamable by any signed-in user however the interface
+// chooses to render it (§B5).
 //
 // Imports the zero-import constants module from src/ under the revised June 2026
 // import rule (BUILD_RULES §4); the co-located test's real import of THIS module
@@ -355,12 +372,84 @@ export function buildOpenPool(group, now, { eligibility }) {
     closeReason: eligibility.closeReason,
     baseLayerWeek: typeof group.baseLayerWeek === 'string' ? group.baseLayerWeek : null,
     isDev: group.isDev === true,
-    potTotal: 0,
-    uniqueBackers: 0,
-    teamsBacked: 0,
+    // THE CAPPED PAIR, AND NOTHING ELSE ABOUT THE BOOK (Amendment B §B2/§B5).
+    // `potTotal`, `uniqueBackers` and `teamsBacked` are NOT on this document —
+    // they open at zero in `private/totals`, which no client may read. A pool
+    // opens below both floors, so both signals open unmet.
+    ...publicProgressFrom({ uniqueBackers: 0, teamsBacked: 0 }),
     createdAt: nowIso,
     updatedAt: nowIso,
   };
+}
+
+/**
+ * THE CAP (Amendment B §B2) — the ONE place true totals become public signals.
+ *
+ * `backingPools/{poolId}` is authed-read, so it is an `onSnapshot` STREAM to
+ * every signed-in user, not a poll. At beta pod sizes one pot delta is usually
+ * one person's stake, and a pot delta landing together with a backer increment
+ * or a team-spread change lets an observer — best of all one who has already
+ * staked and can subtract their own contribution — reconstruct the book (§B1;
+ * the PR 2 review record's finding 13, which this is the fix for). So the
+ * public document carries progress toward the floors and NOTHING above them:
+ *
+ *   · `backerProgress.count` is `min(uniqueBackers, VALIDITY_MIN_BACKERS)` —
+ *     it reaches the floor and STOPS. There is no fourth value to publish, so
+ *     a fourth backer is not a number the client can be told (§B2's "Never 4,
+ *     5, 6").
+ *   · `teamSpread` is a BOOLEAN ONLY. A raw `teamsBacked` in a 2-human-team
+ *     pod names which team took a stake by arithmetic — the exact leak §B1
+ *     describes — so the count does not leave `private/totals` at all.
+ *
+ * ONCE BOTH ARE MET THIS FUNCTION IS CONSTANT for every further stake, which is
+ * what lets the stake transaction skip its public write entirely
+ * (`publicProgressChanged` below, backing-stake.js WRITE 6). That is the whole
+ * point of the amendment: above the floor, the public document does not move.
+ *
+ * The two residual signals §B3 accepts — the spread flipping unmet → met, and
+ * at most two sub-floor backer ticks — are exactly what remains, and they carry
+ * no amount. §B4: below the floor a spectator is told what the pool needs,
+ * because thin-pool risk outranks further sealing; at and above it, nothing.
+ *
+ * @param {{uniqueBackers?: number, teamsBacked?: number}} totals the TRUE
+ *   counts, as `totalsFromBackers` / `totalsFromStakes` derive them.
+ */
+export function publicProgressFrom(totals) {
+  const uniqueBackers = Number.isFinite(totals?.uniqueBackers) ? totals.uniqueBackers : 0;
+  const teamsBacked = Number.isFinite(totals?.teamsBacked) ? totals.teamsBacked : 0;
+  return {
+    backerProgress: {
+      count: Math.min(uniqueBackers, VALIDITY_MIN_BACKERS),
+      floor: VALIDITY_MIN_BACKERS,
+      met: uniqueBackers >= VALIDITY_MIN_BACKERS,
+    },
+    teamSpread: { met: teamsBacked >= VALIDITY_MIN_TEAMS },
+  };
+}
+
+/**
+ * Would writing `progress` change what this pool document PUBLISHES?
+ *
+ * The freeze in §B2 is a property of the DOCUMENT, not of the render: a client
+ * streams `backingPools/{poolId}` directly, so an `updatedAt` bump on an
+ * otherwise identical document is itself a published fact — "someone just
+ * staked" — and the stream carries it. A stake whose capped values are
+ * unchanged therefore writes the public document NOT AT ALL, and the snapshot
+ * a spectator holds is byte-identical across it.
+ *
+ * ABOVE THE FLOOR THIS IS ALWAYS FALSE, which is §B2's requirement. It is also
+ * false for a sub-floor stake that moves nothing public (a second stake by a
+ * backer already counted, on a team already spread) — deliberately stronger
+ * than the letter of §B2, because §B3 lists the residual signals EXHAUSTIVELY
+ * and a bare `updatedAt` tick is not among the two it accepts.
+ */
+export function publicProgressChanged(pool, progress) {
+  const was = pool?.backerProgress;
+  const now = progress?.backerProgress;
+  return was?.count !== now?.count
+    || was?.floor !== now?.floor
+    || was?.met !== now?.met
+    || pool?.teamSpread?.met !== progress?.teamSpread?.met;
 }
 
 /**
@@ -481,6 +570,20 @@ export async function closePool(db, group, now = new Date()) {
     }
 
     // ---------- (3) VALIDITY ON WHAT REMAINS (§3 step 3) ----------
+    // THE TRUE COUNTS, NEVER THE CAPPED PUBLIC ONES (Amendment B §B5). The
+    // public document carries `backerProgress` / `teamSpread`, which are
+    // THRESHOLD SIGNALS and not counts: `backerProgress.count` stops at the
+    // floor, and `teamSpread` has no count at all. Judging a close on them
+    // would be wrong twice over — they are also the LAST OPEN-STATE snapshot,
+    // folded before step 2 voided a departed seat's stakes, so a pool whose
+    // spread only ever existed through a seat that has now left would read
+    // `met` and close `closed` on one surviving team.
+    //
+    // These are derived from the SURVIVING STAKES, which is the truth
+    // `private/totals` caches: §6 makes the stake documents the ledger and the
+    // sealed doc its cache, and step 4 below re-derives the cache from this
+    // same pass. So validity reads the ledger — strictly the same numbers the
+    // sealed doc is about to hold, and immune to any drift it had accumulated.
     const backers = new Set(surviving.map((s) => s.userId));
     const teamsBacked = new Set(surviving.map((s) => s.teamOdUserId));
     const valid = backers.size >= VALIDITY_MIN_BACKERS && teamsBacked.size >= VALIDITY_MIN_TEAMS;
@@ -595,17 +698,32 @@ export async function closePool(db, group, now = new Date()) {
       backerCount: totals.byTeam[team.odUserId]?.backerCount ?? 0,
     }));
 
+    //
+    // THE REVEAL IS WHERE THE POT COMES BACK (Amendment B §B5). While the pool
+    // was open, `potTotal`, `uniqueBackers` and `teamsBacked` lived ONLY in
+    // `private/totals`; the close copies all three up to the public document,
+    // from the very object the statement above wrote into that sealed doc, so
+    // the revealed numbers and the sealed cache are one source by construction
+    // (§9) rather than two reads that agree today.
     const closedPool = {
       ...pool,
       status,
       teams,
       humanTeams: frozenTeams.filter((t) => !t.isCpu).length,
-      potTotal: totals.potTotal,
-      uniqueBackers: totals.uniqueBackers,
-      teamsBacked: totals.teamsBacked,
+      potTotal: totals.private.potTotal,
+      uniqueBackers: totals.private.uniqueBackers,
+      teamsBacked: totals.private.teamsBacked,
       closedAt: nowIso,
       updatedAt: nowIso,
     };
+    // AND THE CAPPED PAIR DOES NOT SURVIVE IT. `backerProgress` / `teamSpread`
+    // exist to seal an OPEN pool; once the exact counts are published they are
+    // a second, coarser source for the same fact — `count: 3` sitting beside
+    // `uniqueBackers: 5` is precisely the drift §9 forbids. Deleted from the
+    // whole-doc `tx.set` payload, so the reveal leaves exactly one answer to
+    // "how many backers" on the document.
+    delete closedPool.backerProgress;
+    delete closedPool.teamSpread;
     tx.set(ref, closedPool);
 
     return { closed: true, status, pool: closedPool, voided: voids.length, refunded };
@@ -652,12 +770,21 @@ export function totalsFromBackers(backers) {
       potTotal += amount;
     }
   }
+  const uniqueBackers = Object.keys(backers ?? {}).length;
+  const teamsBacked = Object.keys(byTeam).length;
   return {
     byTeam,
     potTotal,
-    uniqueBackers: Object.keys(backers ?? {}).length,
-    teamsBacked: Object.keys(byTeam).length,
-    private: { backers: backers ?? {}, byTeam },
+    uniqueBackers,
+    teamsBacked,
+    // THE SEALED CACHE NOW CARRIES THE POT AND THE EXACT COUNTS (Amendment B
+    // §B5). They used to live on the public document; they live here, beside
+    // the per-team totals that were already sealed, because `private/*` is the
+    // one place no client may read. `backers` remains the cache's ONE stored
+    // structure and everything else on this object is derived from it in this
+    // function, so the sealed numbers cannot drift from the amounts that make
+    // them up — and the close and (PR 3) settlement read the pot from here.
+    private: { backers: backers ?? {}, byTeam, potTotal, uniqueBackers, teamsBacked },
   };
 }
 

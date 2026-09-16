@@ -35,12 +35,14 @@
 // Mon 08:45 slot (D-x — no honest window). Adding any of them to the query would
 // need a new composite, which §6 rules out.
 //
-// SEALED WHILE OPEN, AND THE TEST SAYS SO (§3). An OPEN pool's projection carries
-// the pot total, the unique backer count, progress toward validity, the close,
-// and the VIEWER'S OWN stakes — and nothing else. Per-team stake totals and
-// pays × are not merely omitted from the render: they are absent from the
-// response, asserted by a row in the co-located suite rather than left to
-// review. A CLOSED / INSUFFICIENT / RESOLVED pool reveals its per-team shares,
+// SEALED WHILE OPEN, AND THE TEST SAYS SO (§3, Amendment B §B2). An OPEN pool's
+// projection carries the THRESHOLD-CAPPED validity signals (`backerProgress`,
+// `teamSpread`), the close, the live teams and the VIEWER'S OWN stakes — and
+// nothing else. No pot total, no exact backer or team count, no per-team stake
+// total, no pays ×. They are not merely omitted from the render: they are
+// absent from the response, asserted by a row that walks the whole open-pool
+// body BY KEY NAME rather than spot-checking one field. A CLOSED / INSUFFICIENT
+// / RESOLVED pool reveals the pot, the exact counts and its per-team shares,
 // because §3 says the reveal happens at close.
 //
 // THE TWO LAZY JOBS RIDE HERE (§4, §7). An eligible pod with no pool gets one
@@ -115,6 +117,53 @@ export function podListWeek(now = new Date()) {
  * `paysX` is never computed here: PR 3 writes it at settlement and this reads
  * whatever the doc holds, which for an open pool is nothing.
  */
+/**
+ * THE OPEN-POOL HALF of the seal (Amendment B §B2) — read straight off the
+ * public document, never re-derived.
+ *
+ * `backerProgress` and `teamSpread` are written by `publicProgressFrom`
+ * (api/_utils/backingPools.js), which is the ONE place the cap is applied. This
+ * function does not re-apply it and must not: a second cap here would be a
+ * second source for the same rule, and the rule's whole point is that the
+ * DOCUMENT is sealed — `backingPools/{poolId}` is authed-read, so a client
+ * streams it directly and an endpoint-side clamp would conceal nothing (§B5).
+ * The fallbacks below are for a document that carries no pair at all — a pool
+ * opened before this PR, or a terminal pool projected through this branch.
+ */
+function cappedPoolProgress(pool) {
+  const progress = pool?.backerProgress;
+  return {
+    backerProgress: {
+      count: Number.isFinite(progress?.count) ? progress.count : 0,
+      floor: Number.isFinite(progress?.floor) ? progress.floor : VALIDITY_MIN_BACKERS,
+      met: progress?.met === true,
+    },
+    teamSpread: { met: pool?.teamSpread?.met === true },
+  };
+}
+
+/**
+ * THE REVEALED HALF — the pot and the exact counts the close copied up from
+ * `private/totals` (§3 step 4, Amendment B §B5). Unchanged from PR 2: once a
+ * pool has closed there is nothing left to seal, and `validity` stays the
+ * count-against-a-floor shape §3 asks for rather than a verdict.
+ */
+function revealedPoolFigures(pool) {
+  const uniqueBackers = Number.isFinite(pool?.uniqueBackers) ? pool.uniqueBackers : 0;
+  return {
+    potTotal: Number.isFinite(pool?.potTotal) ? pool.potTotal : 0,
+    uniqueBackers,
+    // PROGRESS TOWARD VALIDITY, never a pre-close verdict (§3): the list shows
+    // "backers n of 3 · teams n of 2" and nothing that reads as an outcome.
+    validity: {
+      backers: uniqueBackers,
+      minBackers: VALIDITY_MIN_BACKERS,
+      teams: Number.isFinite(pool?.teamsBacked) ? pool.teamsBacked : 0,
+      minTeams: VALIDITY_MIN_TEAMS,
+    },
+  };
+}
+
 export function projectPod(group, pool, { viewerUid, myStakes = [] }) {
   const open = pool != null && pool.status === POOL_STATUS.OPEN;
   const revealed = pool != null && REVEALED_STATUSES.has(pool.status);
@@ -157,16 +206,11 @@ export function projectPod(group, pool, { viewerUid, myStakes = [] }) {
     teams,
     pool: pool == null ? null : {
       status: pool.status,
-      potTotal: Number.isFinite(pool.potTotal) ? pool.potTotal : 0,
-      uniqueBackers: Number.isFinite(pool.uniqueBackers) ? pool.uniqueBackers : 0,
-      // PROGRESS TOWARD VALIDITY, never a pre-close verdict (§3): the list shows
-      // "backers n of 3 · teams n of 2" and nothing that reads as an outcome.
-      validity: {
-        backers: Number.isFinite(pool.uniqueBackers) ? pool.uniqueBackers : 0,
-        minBackers: VALIDITY_MIN_BACKERS,
-        teams: Number.isFinite(pool.teamsBacked) ? pool.teamsBacked : 0,
-        minTeams: VALIDITY_MIN_TEAMS,
-      },
+      // THE SPLIT (Amendment B §B2). Revealed: the pot, the exact counts and
+      // the per-team figures above. Not revealed: the threshold-capped pair,
+      // and NOTHING ELSE about the book — no pot key, no exact-count key, not
+      // even as a zero, because a key that exists is a key a client can watch.
+      ...(revealed ? revealedPoolFigures(pool) : cappedPoolProgress(pool)),
       closesAt: pool.closesAt ?? null,
       closeReason: pool.closeReason ?? null,
     },

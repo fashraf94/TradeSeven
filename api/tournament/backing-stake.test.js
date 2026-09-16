@@ -37,7 +37,9 @@ let DB = null;
 vi.mock('../_utils/firebaseAdmin.js', () => ({ getFirebaseAdmin: () => DB.db }));
 
 const { default: handler, stakeIdFor, stakeRefFor, stakeMetaRefFor, MAX_REQUEST_ID_LEN } = await import('./backing-stake.js');
-const { MIN_STAKE_BP, PER_TEAM_CAP_BP, ALLOWANCE_BP } = await import('../../src/constants/backing.js');
+const {
+  MIN_STAKE_BP, PER_TEAM_CAP_BP, ALLOWANCE_BP, VALIDITY_MIN_BACKERS,
+} = await import('../../src/constants/backing.js');
 const { TERMS_VERSION } = await import('../../src/constants/eligibility.js');
 const { ELIGIBILITY_COLLECTION } = await import('../_utils/eligibility.js');
 const { BACKING_INELIGIBLE } = await import('../_utils/backingEligibility.js');
@@ -178,9 +180,10 @@ const pool = (over = {}) => ({
   closeReason: 'clock',
   baseLayerWeek: WEEK,
   isDev: false,
-  potTotal: 0,
-  uniqueBackers: 0,
-  teamsBacked: 0,
+  // The capped open-state pair (Amendment B §B2). The pot and the exact counts
+  // are in `private/totals`, which no client may read.
+  backerProgress: { count: 0, floor: VALIDITY_MIN_BACKERS, met: false },
+  teamSpread: { met: false },
   createdAt: '2026-09-22T14:00:00.000Z',
   updatedAt: '2026-09-22T14:00:00.000Z',
   ...over,
@@ -221,6 +224,8 @@ const stakeDoc = (store, id) => store.get(`${BACKING_STAKES_COLLECTION}/${id}`);
 const metaDoc = (store, id) => store.get(`${BACKING_STAKES_COLLECTION}/${id}/private/meta`);
 const poolDoc = (store) => store.get(`${BACKING_POOLS_COLLECTION}/${GROUP_ID}`);
 const walletDoc = (store, uid = UID) => store.get(`${BACKING_WALLETS_COLLECTION}/${uid}`);
+/** The sealed doc the pot and the exact counts moved into (Amendment B §B5). */
+const totalsDoc = (store) => store.get(`${BACKING_POOLS_COLLECTION}/${GROUP_ID}/private/totals`);
 
 beforeEach(() => {
   state.flag = true;
@@ -332,8 +337,18 @@ describe('the happy path — the §6 stake, the sealed meta, the counters', () =
       status: STAKE_STATUS.LIVE,
     });
 
-    // The pool's public counters, and the allowance granted lazily this week.
-    expect(poolDoc(DB.store)).toMatchObject({ potTotal: 100, uniqueBackers: 1, teamsBacked: 1 });
+    // THE SPLIT (Amendment B §B5): the TRUE totals in the sealed doc, the
+    // CAPPED signals on the public one — and no pot or exact count on the
+    // public one at all.
+    expect(totalsDoc(DB.store)).toMatchObject({ potTotal: 100, uniqueBackers: 1, teamsBacked: 1 });
+    expect(poolDoc(DB.store)).toMatchObject({
+      backerProgress: { count: 1, floor: VALIDITY_MIN_BACKERS, met: false },
+      teamSpread: { met: false },
+    });
+    expect(poolDoc(DB.store)).not.toHaveProperty('potTotal');
+    expect(poolDoc(DB.store)).not.toHaveProperty('uniqueBackers');
+    expect(poolDoc(DB.store)).not.toHaveProperty('teamsBacked');
+    // And the allowance granted lazily this week.
     expect(walletDoc(DB.store)).toMatchObject({
       lastAllowanceWeek: WEEK,
       allowanceRemaining: ALLOWANCE_BP - 100,
@@ -346,7 +361,9 @@ describe('the happy path — the §6 stake, the sealed meta, the counters', () =
       replay: false,
       stake: { id, ...stakeDoc(DB.store, id) },
       pool: {
-        status: 'open', potTotal: 100, uniqueBackers: 1, teamsBacked: 1,
+        status: 'open',
+        backerProgress: { count: 1, floor: VALIDITY_MIN_BACKERS, met: false },
+        teamSpread: { met: false },
         closesAt: CLOSE_ISO, closeReason: 'clock',
       },
       allowanceRemaining: ALLOWANCE_BP - 100,
@@ -458,29 +475,155 @@ describe('the happy path — the §6 stake, the sealed meta, the counters', () =
     expect(stakeDoc(DB.store, stakeIdFor(UID, 'req-1')).hashAtStake).toBeNull();
   });
 
-  it('the reply is SEALED: no per-team total, no pays × (§3)', async () => {
+  it('the reply is SEALED: no pot, no exact count, no per-team total, no pays × (§3, §B2)', async () => {
     await post(VALID());
     const res = await post({ ...VALID(), requestId: 'req-2', teamOdUserId: 'od-b', amount: 250 });
     const body = JSON.stringify(res.body);
     expect(Object.keys(res.body.pool).sort())
-      .toEqual(['closeReason', 'closesAt', 'potTotal', 'status', 'teamsBacked', 'uniqueBackers']);
+      .toEqual(['backerProgress', 'closeReason', 'closesAt', 'status', 'teamSpread']);
     expect(body).not.toContain('paysX');
     expect(body).not.toContain('byTeam');
-    expect(body).not.toContain('backers');
-    // The pot moved, but WHERE the BP sits is not in the answer.
-    expect(res.body.pool.potTotal).toBe(350);
+    expect(body).not.toContain('potTotal');
+    expect(body).not.toContain('uniqueBackers');
+    expect(body).not.toContain('teamsBacked');
+    // THE BACKER WHO JUST STAKED IS THE BEST-PLACED OBSERVER (§B1) — they can
+    // subtract their own 350 from anything they are told — so the confirmation
+    // is the one reply that must not carry the pot. 350 BP is in this pool and
+    // the answer does not say so.
+    expect(body).not.toContain('350');
+    expect(res.body.stake.amount).toBe(250);   // their OWN stake, still theirs (§B2)
   });
 
-  it('the sealed totals doc holds the per-backer map the public doc is derived from', async () => {
+  it('the sealed totals doc holds the pot, the exact counts and the per-backer map (§B5)', async () => {
     await post(VALID());
     await post({ ...VALID(), requestId: 'req-2', teamOdUserId: 'od-b', amount: 250 });
-    const totals = DB.store.get(`${BACKING_POOLS_COLLECTION}/${GROUP_ID}/private/totals`);
+    const totals = totalsDoc(DB.store);
     expect(totals.backers[UID]).toEqual({ total: 350, byTeam: { 'od-a': 100, 'od-b': 250 } });
     expect(totals.byTeam).toEqual({
       'od-a': { stakeTotal: 100, backerCount: 1 },
       'od-b': { stakeTotal: 250, backerCount: 1 },
     });
-    expect(poolDoc(DB.store)).toMatchObject({ potTotal: 350, uniqueBackers: 1, teamsBacked: 2 });
+    // The three fields Amendment B MOVED here, beside the per-team totals that
+    // were already sealed. PR 3's settlement reads the pot from this document.
+    expect(totals).toMatchObject({ potTotal: 350, uniqueBackers: 1, teamsBacked: 2 });
+    // And they are not on the public document.
+    for (const moved of ['potTotal', 'uniqueBackers', 'teamsBacked']) {
+      expect(poolDoc(DB.store), `${moved} is still public`).not.toHaveProperty(moved);
+    }
+  });
+});
+
+// ============================================================================
+describe('THE FREEZE — above the floor the public document does not move (§B2)', () => {
+  /**
+   * §B2's central claim, asserted as the byte-level property it is: once both
+   * thresholds are met, an above-threshold stake produces NO public change of
+   * any kind. Not a smaller change, not a later one — none.
+   *
+   * `backingPools/{poolId}` is authed-read and therefore an `onSnapshot`
+   * STREAM, so this is the difference between a spectator learning nothing and
+   * a spectator learning that someone staked at 14:03 (§B1).
+   */
+  const OTHERS = ['u-1', 'u-2', 'u-3', 'u-4'];
+
+  beforeEach(() => {
+    // Four attested backers besides the fixture's own, none of them seated —
+    // §8's own-pod rule is account-level, so a seat holder could not stake here.
+    const attested = {};
+    for (const uid of OTHERS) {
+      attested[`${ELIGIBILITY_COLLECTION}/${uid}`] = {
+        adultAttestedAt: '2026-09-14T13:30:00.000Z', termsVersion: TERMS_VERSION,
+        acceptedAt: '2026-09-14T13:30:00.000Z', source: 'backing_beta',
+      };
+      // …and a completed battle each — the §A3 "has played" gate.
+      attested[`agentBattles/b-${uid}`] = {
+        ownerId: uid, status: 'completed', completedAt: '2026-09-01T20:00:00.000Z',
+      };
+    }
+    DB = makeVersionedDb(world(attested));
+  });
+
+  const stakeBy = async (uid, requestId, teamOdUserId, amount) => {
+    state.uid = uid;
+    try {
+      return await post({ ...VALID(), requestId, teamOdUserId, amount });
+    } finally {
+      state.uid = UID;
+    }
+  };
+
+  /** Three backers over two teams — both floors met, the pool qualified. */
+  const qualify = async () => {
+    await stakeBy('u-1', 'q-1', 'od-a', 100);
+    await stakeBy('u-2', 'q-2', 'od-b', 100);
+    await stakeBy('u-3', 'q-3', 'od-a', 100);
+  };
+
+  it('a stake PAST THE FLOOR leaves the public document byte-identical', async () => {
+    await qualify();
+    const before = structuredClone(poolDoc(DB.store));
+    expect(before).toMatchObject({
+      backerProgress: { count: VALIDITY_MIN_BACKERS, floor: VALIDITY_MIN_BACKERS, met: true },
+      teamSpread: { met: true },
+    });
+
+    // A FOURTH backer, a fresh team, 500 BP — the largest public move a single
+    // stake could make, if the document published anything.
+    const res = await stakeBy('u-4', 'q-4', 'od-b', 500);
+    expect(res.statusCode).toBe(200);
+
+    const after = poolDoc(DB.store);
+    expect(JSON.stringify(after)).toBe(JSON.stringify(before));
+    expect(after).toEqual(before);
+    // Including `updatedAt`: a bare timestamp bump on a streamed document
+    // publishes "someone just staked", which §B3's list of accepted residual
+    // signals does not include.
+    expect(after.updatedAt).toBe(before.updatedAt);
+
+    // The stake really did land — the SEALED doc moved, so this is a seal and
+    // not a dropped write.
+    expect(totalsDoc(DB.store)).toMatchObject({ potTotal: 800, uniqueBackers: 4, teamsBacked: 2 });
+  });
+
+  it('and the pool document is not written AT ALL — the write is skipped, not repeated', async () => {
+    await qualify();
+    DB.writeLog.length = 0;
+    await stakeBy('u-4', 'q-4', 'od-b', 500);
+    const poolPath = `${BACKING_POOLS_COLLECTION}/${GROUP_ID}`;
+    expect(DB.writeLog.map(([, path]) => path)).not.toContain(poolPath);
+    // The sealed doc, the stake, its meta and the wallet were all written.
+    expect(DB.writeLog.map(([, path]) => path)).toContain(`${poolPath}/private/totals`);
+  });
+
+  it('BELOW the floor it still moves — §B4: the rescue signal outranks the seal', async () => {
+    await stakeBy('u-1', 'q-1', 'od-a', 100);
+    const first = structuredClone(poolDoc(DB.store));
+    expect(first.backerProgress).toEqual({ count: 1, floor: VALIDITY_MIN_BACKERS, met: false });
+
+    await stakeBy('u-2', 'q-2', 'od-b', 100);
+    const second = poolDoc(DB.store);
+    // Two of §B3's accepted residual signals, and nothing else: one sub-floor
+    // backer tick, and the spread flipping unmet → met.
+    expect(second.backerProgress).toEqual({ count: 2, floor: VALIDITY_MIN_BACKERS, met: false });
+    expect(second.teamSpread).toEqual({ met: true });
+    expect(first.teamSpread).toEqual({ met: false });
+  });
+
+  it('a sub-floor stake that moves NOTHING public writes nothing public either', async () => {
+    // Deliberately stronger than the letter of §B2, which freezes the signals
+    // only once both thresholds are met: §B3 lists the accepted residual
+    // signals EXHAUSTIVELY, and "the document was touched" is not one of them.
+    // The same backer, the same team, a second stake — no counter moves.
+    await stakeBy('u-1', 'q-1', 'od-a', 100);
+    const before = structuredClone(poolDoc(DB.store));
+    DB.writeLog.length = 0;
+
+    await stakeBy('u-1', 'q-2', 'od-a', 200);
+
+    expect(poolDoc(DB.store)).toEqual(before);
+    expect(DB.writeLog.map(([, path]) => path))
+      .not.toContain(`${BACKING_POOLS_COLLECTION}/${GROUP_ID}`);
+    expect(totalsDoc(DB.store)).toMatchObject({ potTotal: 300, uniqueBackers: 1, teamsBacked: 1 });
   });
 });
 
@@ -705,7 +848,7 @@ describe('the cap and the allowance (§2, §8)', () => {
     expect((await post({ ...VALID(), amount: 500 })).statusCode).toBe(200);
     const res = await post({ ...VALID(), requestId: 'req-2', teamOdUserId: 'od-b', amount: 500 });
     expect(res.statusCode).toBe(200);
-    expect(poolDoc(DB.store).potTotal).toBe(1000);
+    expect(totalsDoc(DB.store).potTotal).toBe(1000);
   });
 
   it('a VOIDED stake no longer counts against the cap', async () => {
@@ -730,7 +873,7 @@ describe('the cap and the allowance (§2, §8)', () => {
     // never returned.
     expect(res.statusCode).toBe(409);
     expect(res.body).toEqual({ error: 'insufficient_allowance' });
-    expect(poolDoc(DB.store).potTotal).toBe(1000);
+    expect(totalsDoc(DB.store).potTotal).toBe(1000);
   });
 
   it('grants the week\'s allowance lazily on the first stake (§2, D-h)', async () => {
@@ -793,7 +936,7 @@ describe('idempotency and the race (§8)', () => {
     expect(replay.body.replay).toBe(true);
     expect(replay.body.stake).toEqual(first.body.stake);
     expect(DB.writeLog.length).toBe(writesAfterFirst);
-    expect(poolDoc(DB.store).potTotal).toBe(100);
+    expect(totalsDoc(DB.store).potTotal).toBe(100);
     expect(walletDoc(DB.store).allowanceRemaining).toBe(ALLOWANCE_BP - 100);
   });
 
@@ -808,7 +951,7 @@ describe('idempotency and the race (§8)', () => {
   it('a DIFFERENT requestId is a DIFFERENT stake, even for the same team and amount', async () => {
     await post(VALID());
     await post({ ...VALID(), requestId: 'req-2' });
-    expect(poolDoc(DB.store).potTotal).toBe(200);
+    expect(totalsDoc(DB.store).potTotal).toBe(200);
     expect(stakeIdFor(UID, 'req-1')).not.toBe(stakeIdFor(UID, 'req-2'));
   });
 
@@ -832,7 +975,7 @@ describe('idempotency and the race (§8)', () => {
     // Exactly one of them created it; the other replayed.
     expect([a.body.replay, b.body.replay].filter(Boolean)).toHaveLength(1);
     expect(DB.stats.conflicts).toBeGreaterThan(0);   // they really did contend
-    expect(poolDoc(DB.store).potTotal).toBe(100);
+    expect(totalsDoc(DB.store).potTotal).toBe(100);
     expect(walletDoc(DB.store).allowanceRemaining).toBe(ALLOWANCE_BP - 100);
     expect(DB.writeLog.filter(([, p]) => p === `${BACKING_STAKES_COLLECTION}/${stakeIdFor(UID, 'req-1')}`))
       .toHaveLength(1);
@@ -850,9 +993,9 @@ describe('idempotency and the race (§8)', () => {
     // other, which is what a non-transactional read-modify-write would produce.
     expect(walletDoc(DB.store).allowanceRemaining).toBe(ALLOWANCE_BP - 800);
     expect(walletDoc(DB.store).careerNet).toBe(-800);
-    expect(poolDoc(DB.store).potTotal).toBe(800);
-    expect(poolDoc(DB.store).uniqueBackers).toBe(1);
-    expect(poolDoc(DB.store).teamsBacked).toBe(2);
+    expect(totalsDoc(DB.store).potTotal).toBe(800);
+    expect(totalsDoc(DB.store).uniqueBackers).toBe(1);
+    expect(totalsDoc(DB.store).teamsBacked).toBe(2);
   });
 
   it('two simultaneous submissions CANNOT breach the per-team cap together', async () => {
@@ -865,7 +1008,7 @@ describe('idempotency and the race (§8)', () => {
     expect(codes).toEqual([200, 409]);
     const refused = [a, b].find((r) => r.statusCode === 409);
     expect(refused.body.error).toBe('per_team_cap');
-    expect(poolDoc(DB.store).potTotal).toBe(300);
+    expect(totalsDoc(DB.store).potTotal).toBe(300);
   });
 
   it('a close racing a stake cannot both land — the POOL DOCUMENT serializes them', async () => {
@@ -970,14 +1113,14 @@ describe('the replay is a replay of THIS request (§8)', () => {
     // second time, and reset the admin's exclusion.
     const id = stakeIdFor(UID, 'req-1');
     await post(VALID());
-    const potAfterFirst = poolDoc(DB.store).potTotal;
+    const potAfterFirst = totalsDoc(DB.store).potTotal;
     DB.store.set(`${BACKING_STAKES_COLLECTION}/${id}/private/meta`, { ...metaDoc(DB.store, id), excluded: true });
     DB.store.delete(`${BACKING_STAKES_COLLECTION}/${id}`);          // the admin delete
 
     const res = await post(VALID());
     expect(res.statusCode).toBe(409);
     expect(res.body).toEqual({ error: 'stake_already_spent' });
-    expect(poolDoc(DB.store).potTotal).toBe(potAfterFirst);          // pot not re-inflated
+    expect(totalsDoc(DB.store).potTotal).toBe(potAfterFirst);          // pot not re-inflated
     expect(metaDoc(DB.store, id).excluded).toBe(true);               // exclusion survives
     expect(walletDoc(DB.store).allowanceRemaining).toBe(ALLOWANCE_BP - 100);
   });

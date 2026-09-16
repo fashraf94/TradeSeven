@@ -59,25 +59,40 @@ const group = (id, over = {}) => ({
   __id: id,
 });
 
-const pool = (groupId, over = {}) => ({
-  groupId,
-  status: POOL_STATUS.OPEN,
-  formationPath: 'lobby',
-  slotId: null,
-  battleMondayEtDate: MONDAY,
-  backingWeekStart: '2026-09-21T04:00:00.000Z',
-  opensAt: '2026-09-22T13:00:00.000Z',
-  closesAt: CLOSE_ISO,
-  closeReason: 'clock',
-  baseLayerWeek: WEEK,
-  isDev: false,
-  potTotal: 0,
-  uniqueBackers: 0,
-  teamsBacked: 0,
-  createdAt: '2026-09-22T13:00:00.000Z',
-  updatedAt: '2026-09-22T13:00:00.000Z',
-  ...over,
-});
+/**
+ * A pool document, in the shape the WRITERS actually write (Amendment B §B5):
+ * an OPEN pool carries the capped `backerProgress` / `teamSpread` pair and no
+ * pot or exact count; a terminal pool carries the revealed pot and counts and
+ * no capped pair, because `closePool` deletes it at the reveal. The helper
+ * mirrors that split rather than handing every fixture both halves — a fixture
+ * carrying a shape no writer produces would let the projection's branches pass
+ * against documents that cannot exist.
+ */
+const pool = (groupId, over = {}) => {
+  const doc = {
+    groupId,
+    status: POOL_STATUS.OPEN,
+    formationPath: 'lobby',
+    slotId: null,
+    battleMondayEtDate: MONDAY,
+    backingWeekStart: '2026-09-21T04:00:00.000Z',
+    opensAt: '2026-09-22T13:00:00.000Z',
+    closesAt: CLOSE_ISO,
+    closeReason: 'clock',
+    baseLayerWeek: WEEK,
+    isDev: false,
+    backerProgress: { count: 0, floor: VALIDITY_MIN_BACKERS, met: false },
+    teamSpread: { met: false },
+    createdAt: '2026-09-22T13:00:00.000Z',
+    updatedAt: '2026-09-22T13:00:00.000Z',
+    ...over,
+  };
+  if (doc.status !== POOL_STATUS.OPEN) {
+    delete doc.backerProgress;
+    delete doc.teamSpread;
+  }
+  return doc;
+};
 
 function seed(groups = [], extra = {}) {
   const initial = { ...extra };
@@ -202,7 +217,11 @@ describe('the lazy jobs ride here (§4, §7)', () => {
     DB = seed([group('g1')]);
     const res = await get();
     expect(res.body.pods[0].pool).toMatchObject({
-      status: POOL_STATUS.OPEN, potTotal: 0, uniqueBackers: 0, closesAt: CLOSE_ISO, closeReason: 'clock',
+      status: POOL_STATUS.OPEN,
+      backerProgress: { count: 0, floor: VALIDITY_MIN_BACKERS, met: false },
+      teamSpread: { met: false },
+      closesAt: CLOSE_ISO,
+      closeReason: 'clock',
     });
     expect(DB.store.get(`${BACKING_POOLS_COLLECTION}/g1`).status).toBe(POOL_STATUS.OPEN);
   });
@@ -281,10 +300,16 @@ describe('the lazy jobs ride here (§4, §7)', () => {
 describe('THE SEAL — an OPEN pool reveals no per-team total and no pays × (§3)', () => {
   it('omits stakeTotal, backerCount and paysX from every open pod, in the whole body', async () => {
     DB = seed([group('g1')], {
-      [`${BACKING_POOLS_COLLECTION}/g1`]: pool('g1', { potTotal: 1200, uniqueBackers: 4, teamsBacked: 3 }),
+      // Four backers across three teams, and the capped pair the writer would
+      // have stamped for them (Amendment B §B2 — 3 of 3, met).
+      [`${BACKING_POOLS_COLLECTION}/g1`]: pool('g1', {
+        backerProgress: { count: VALIDITY_MIN_BACKERS, floor: VALIDITY_MIN_BACKERS, met: true },
+        teamSpread: { met: true },
+      }),
       [`${BACKING_POOLS_COLLECTION}/g1/private/totals`]: {
         backers: { 'someone-else': { total: 600, byTeam: { 'od-a': 600 } } },
         byTeam: { 'od-a': { stakeTotal: 600, backerCount: 1 } },
+        potTotal: 1200, uniqueBackers: 4, teamsBacked: 3,
       },
     });
     const res = await get();
@@ -297,25 +322,107 @@ describe('THE SEAL — an OPEN pool reveals no per-team total and no pays × (§
     for (const team of res.body.pods[0].teams) {
       expect(Object.keys(team).sort()).toEqual(['backable', 'isCpu', 'isOwnSeat', 'odUserId']);
     }
-    // What an open pool MAY show (§3): the pot, the backer count, progress.
+    // What an open pool MAY show (§3, Amendment B §B2): the CAPPED validity
+    // signals, the close — and nothing about the book. Four backers are on this
+    // pool; the count it publishes is 3, because 3 is the floor and there is no
+    // fourth value to publish.
     expect(res.body.pods[0].pool).toEqual({
       status: 'open',
-      potTotal: 1200,
-      uniqueBackers: 4,
-      validity: { backers: 4, minBackers: VALIDITY_MIN_BACKERS, teams: 3, minTeams: VALIDITY_MIN_TEAMS },
+      backerProgress: { count: VALIDITY_MIN_BACKERS, floor: VALIDITY_MIN_BACKERS, met: true },
+      teamSpread: { met: true },
       closesAt: CLOSE_ISO,
       closeReason: 'clock',
     });
   });
 
-  it('progress toward validity is a COUNT against a floor, never a verdict (§3)', async () => {
+  it('NO POT AND NO EXACT-COUNT KEY anywhere in an open pod, by key name (Amendment B §B2)', async () => {
+    // THE SEAL, ASSERTED AS A PROPERTY OF THE WHOLE BODY rather than of one
+    // field. A spot check on `pool.potTotal` passes the day the pot reappears
+    // one level down — inside `validity`, inside a team, inside a future
+    // summary object — so this WALKS the open pod's response and fails on the
+    // KEY NAME wherever it sits, at any depth.
+    //
+    // The pool document is seeded with everything the amendment moved, exactly
+    // as a pre-amendment document would still carry it, so the row measures the
+    // PROJECTION rather than an empty fixture.
     DB = seed([group('g1')], {
-      [`${BACKING_POOLS_COLLECTION}/g1`]: pool('g1', { uniqueBackers: 2, teamsBacked: 1 }),
+      [`${BACKING_POOLS_COLLECTION}/g1`]: pool('g1', {
+        potTotal: 1200,
+        uniqueBackers: 4,
+        teamsBacked: 3,
+        backerProgress: { count: 3, floor: VALIDITY_MIN_BACKERS, met: true },
+        teamSpread: { met: true },
+      }),
+      [`${BACKING_POOLS_COLLECTION}/g1/private/totals`]: {
+        backers: { 'someone-else': { total: 1200, byTeam: { 'od-a': 1200 } } },
+        byTeam: { 'od-a': { stakeTotal: 1200, backerCount: 1 } },
+        potTotal: 1200, uniqueBackers: 4, teamsBacked: 3,
+      },
     });
-    const { validity } = (await get()).body.pods[0].pool;
-    expect(validity).toEqual({ backers: 2, minBackers: 3, teams: 1, minTeams: 2 });
-    // No boolean, no word: the client renders "backers 2 of 3 · teams 1 of 2".
-    expect(JSON.stringify(validity)).not.toMatch(/valid|insufficient|true|false/);
+    const openPod = (await get()).body.pods.find((p) => p.groupId === 'g1');
+    expect(openPod.pool.status).toBe('open');   // the fixture is actually open
+
+    const keysAtEveryDepth = (node, into = new Set()) => {
+      if (Array.isArray(node)) { for (const item of node) keysAtEveryDepth(item, into); return into; }
+      if (node === null || typeof node !== 'object') return into;
+      for (const [key, value] of Object.entries(node)) {
+        into.add(key);
+        keysAtEveryDepth(value, into);
+      }
+      return into;
+    };
+    const keys = keysAtEveryDepth(openPod);
+
+    // Every key the amendment took off an open pool, plus the sealed cache's
+    // own field names — so a projection that ever reached into `private/totals`
+    // fails here too.
+    for (const sealed of [
+      'potTotal', 'uniqueBackers', 'teamsBacked', 'validity',
+      'stakeTotal', 'backerCount', 'paysX', 'byTeam', 'backers',
+    ]) {
+      expect(keys.has(sealed), `an OPEN pod published "${sealed}" (Amendment B §B2)`).toBe(false);
+    }
+    // And the positive half: what IS there is the capped pair, the close, the
+    // live teams and the viewer's own stakes.
+    expect(Object.keys(openPod.pool).sort())
+      .toEqual(['backerProgress', 'closeReason', 'closesAt', 'status', 'teamSpread']);
+    expect(keys.has('myStakes')).toBe(true);
+    expect(keys.has('teams')).toBe(true);
+  });
+
+  it('the backer count STOPS at the floor — 3 of 3, never 4 of 3 (§B2)', async () => {
+    DB = seed([group('g1')], {
+      [`${BACKING_POOLS_COLLECTION}/g1`]: pool('g1', {
+        backerProgress: { count: VALIDITY_MIN_BACKERS, floor: VALIDITY_MIN_BACKERS, met: true },
+        teamSpread: { met: true },
+      }),
+    });
+    const { backerProgress } = (await get()).body.pods[0].pool;
+    expect(backerProgress.count).toBeLessThanOrEqual(backerProgress.floor);
+    expect(backerProgress).toEqual({ count: 3, floor: 3, met: true });
+  });
+
+  it('below the floor it is a COUNT against that floor, never a verdict (§3, §B4)', async () => {
+    // §B4: thin-pool risk outranks further sealing BELOW the floor — a
+    // spectator is told what the pool needs, because that is the rescue signal
+    // the counters exist to carry. At and above the floor, nothing.
+    DB = seed([group('g1')], {
+      [`${BACKING_POOLS_COLLECTION}/g1`]: pool('g1', {
+        backerProgress: { count: 2, floor: VALIDITY_MIN_BACKERS, met: false },
+        teamSpread: { met: false },
+      }),
+    });
+    const { backerProgress, teamSpread } = (await get()).body.pods[0].pool;
+    expect(backerProgress).toEqual({ count: 2, floor: 3, met: false });
+    // The client renders "Backers 2 of 3 · Team spread: needs another team"
+    // (§B6) — a count and a need, never an outcome word.
+    expect(JSON.stringify(backerProgress)).not.toMatch(/valid|insufficient/);
+    expect(teamSpread).toEqual({ met: false });
+    // AND NO TEAM COUNT COMES WITH IT. `teamsBacked` in a 2-human-team pod
+    // names WHICH team took a stake by arithmetic (§B1), so the spread is a
+    // boolean and has no count to leak.
+    expect(teamSpread).not.toHaveProperty('count');
+    expect(teamSpread).not.toHaveProperty('teams');
   });
 
   it('REVEALS the per-team shares once the pool is closed (§3 — the reveal is at close)', async () => {
