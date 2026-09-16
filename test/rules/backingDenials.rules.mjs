@@ -97,13 +97,21 @@ const wallet = (uid) => ({
   uid,
 });
 const entry = () => ({ type: 'allowance', delta: 1000, ref: WEEK, weekKey: WEEK, at: '2026-09-15T18:00:00.000Z' });
+// An OPEN pool, in the shape the writer produces since Amendment B §B5: the
+// threshold-capped pair and no pot, no exact count. Four backers are in this
+// pool; the document says 3 of 3, because 3 is the floor.
 const pool = () => ({
   status: 'open', formationPath: 'lobby', battleMondayEtDate: '2026-09-21',
   baseLayerWeek: WEEK, opensAt: '2026-09-15T18:00:00.000Z',
   closesAt: '2026-09-21T03:59:59.000Z', closeReason: 'clock',
-  potTotal: 1200, uniqueBackers: 4, teamsBacked: 3, isDev: false,
+  backerProgress: { count: 3, floor: 3, met: true }, teamSpread: { met: true }, isDev: false,
 });
-const privateTotals = () => ({ byTeam: { 'od-1': 600, 'od-2': 300 }, backers: { [OWNER_UID]: 600 } });
+// …and the sealed doc the pot and the exact counts moved INTO (§B5), which is
+// what the rows below prove no client can read.
+const privateTotals = () => ({
+  byTeam: { 'od-1': 600, 'od-2': 300 }, backers: { [OWNER_UID]: 600 },
+  potTotal: 1200, uniqueBackers: 4, teamsBacked: 3,
+});
 const stake = (userId) => ({
   userId, groupId: GROUP, teamOdUserId: 'od-1', amount: 250,
   placedAt: '2026-09-15T18:00:00.000Z', weekKey: WEEK, status: 'live',
@@ -350,6 +358,11 @@ describe('backingPools/{groupId} — authed-read, server-written (§3, §6)', ()
       await assertFails(updateDoc(doc(fs, POOL), { potTotal: 999_999 }), label);
       await assertFails(setDoc(doc(fs, POOL), pool()), label);
       await assertFails(deleteDoc(doc(fs, POOL)), label);
+      // Amendment B §B2: the capped signals are a SERVER fact too. A client
+      // that could raise its own `backerProgress` would manufacture a qualified
+      // pool, and one that could lower it would hide a real one.
+      await assertFails(updateDoc(doc(fs, POOL), { backerProgress: { count: 3, floor: 3, met: true } }), label);
+      await assertFails(updateDoc(doc(fs, POOL), { teamSpread: { met: true } }), label);
     }
   });
 });

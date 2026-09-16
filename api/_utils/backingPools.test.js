@@ -47,6 +47,8 @@ import {
   poolRefFor,
   poolTotalsRefFor,
   seatedIdsFor,
+  publicProgressChanged,
+  publicProgressFrom,
   totalsFromBackers,
   totalsFromStakes,
 } from './backingPools.js';
@@ -95,9 +97,10 @@ const openPool = (over = {}) => ({
   closeReason: 'clock',
   baseLayerWeek: WEEK,
   isDev: false,
-  potTotal: 0,
-  uniqueBackers: 0,
-  teamsBacked: 0,
+  // The capped open-state pair (Amendment B §B2) — the pot and the exact
+  // counts are NOT on a public open pool; they are in `private/totals`.
+  backerProgress: { count: 0, floor: VALIDITY_MIN_BACKERS, met: false },
+  teamSpread: { met: false },
   createdAt: '2026-09-22T14:00:00.000Z',
   updatedAt: '2026-09-22T14:00:00.000Z',
   ...over,
@@ -256,9 +259,8 @@ describe('materializePool — the §4 lazy open, refused per poolEligible', () =
       closeReason: 'clock',
       baseLayerWeek: WEEK,
       isDev: false,
-      potTotal: 0,
-      uniqueBackers: 0,
-      teamsBacked: 0,
+      backerProgress: { count: 0, floor: VALIDITY_MIN_BACKERS, met: false },
+      teamSpread: { met: false },
       createdAt: NOW.toISOString(),
       updatedAt: NOW.toISOString(),
     });
@@ -267,6 +269,13 @@ describe('materializePool — the §4 lazy open, refused per poolEligible', () =
     // source that a departed seat would leave stale.
     expect(pool).not.toHaveProperty('teams');
     expect(pool).not.toHaveProperty('humanTeams');
+    // AND THE ROWS THAT FAIL IF THE POT OR AN EXACT COUNT IS EVER WRITTEN AT
+    // OPEN (Amendment B §B5). The `toEqual` above already pins the whole
+    // document, but these name the three fields the amendment MOVED, so a
+    // regression reads as what it is rather than as a shape diff.
+    expect(pool).not.toHaveProperty('potTotal');
+    expect(pool).not.toHaveProperty('uniqueBackers');
+    expect(pool).not.toHaveProperty('teamsBacked');
   });
 
   it('a slot pod opens with formationPath `slot`, its slotId, and the FIRE close', async () => {
@@ -693,6 +702,186 @@ describe('monthKeyForPool — the substitute key for a pod that never banks (§2
     for (const bad of [undefined, null, {}, { battleMondayEtDate: 'W40' }, { battleMondayEtDate: 7 }]) {
       expect(() => monthKeyForPool(bad)).toThrow(BackingPoolError);
     }
+  });
+});
+
+// ================= THE SEAL, AND THE REVEAL THAT ENDS IT =================
+describe('the open pool is sealed — Amendment B §B2/§B5', () => {
+  describe('publicProgressFrom — the ONE implementation of the cap', () => {
+    it('stops the backer count AT the floor — 3 of 3 for four backers, five, six', () => {
+      for (const uniqueBackers of [3, 4, 5, 6, 99]) {
+        expect(publicProgressFrom({ uniqueBackers, teamsBacked: 2 }).backerProgress)
+          .toEqual({ count: VALIDITY_MIN_BACKERS, floor: VALIDITY_MIN_BACKERS, met: true });
+      }
+    });
+
+    it('below the floor it is the true count — §B4, the rescue signal', () => {
+      expect(publicProgressFrom({ uniqueBackers: 0, teamsBacked: 0 }).backerProgress)
+        .toEqual({ count: 0, floor: 3, met: false });
+      expect(publicProgressFrom({ uniqueBackers: 2, teamsBacked: 1 }).backerProgress)
+        .toEqual({ count: 2, floor: 3, met: false });
+    });
+
+    it('the team spread is a BOOLEAN — it carries no count at any value (§B1)', () => {
+      for (const teamsBacked of [0, 1, 2, 3, 4]) {
+        const { teamSpread } = publicProgressFrom({ uniqueBackers: 5, teamsBacked });
+        expect(Object.keys(teamSpread)).toEqual(['met']);
+        expect(teamSpread.met).toBe(teamsBacked >= VALIDITY_MIN_TEAMS);
+      }
+    });
+
+    it('publishes NOTHING ELSE — no pot, no exact count, at any input', () => {
+      const progress = publicProgressFrom({ potTotal: 9999, uniqueBackers: 7, teamsBacked: 4 });
+      expect(Object.keys(progress).sort()).toEqual(['backerProgress', 'teamSpread']);
+      expect(JSON.stringify(progress)).not.toContain('9999');
+      expect(JSON.stringify(progress)).not.toContain('7');
+      expect(JSON.stringify(progress)).not.toContain('4');
+    });
+  });
+
+  describe('publicProgressChanged — what makes the freeze byte-exact', () => {
+    const qualified = publicProgressFrom({ uniqueBackers: 3, teamsBacked: 2 });
+
+    it('is FALSE for every above-floor move — the §B2 freeze', () => {
+      const pool = { ...qualified };
+      for (const uniqueBackers of [3, 4, 5, 50]) {
+        for (const teamsBacked of [2, 3, 4]) {
+          expect(
+            publicProgressChanged(pool, publicProgressFrom({ uniqueBackers, teamsBacked })),
+            `${uniqueBackers} backers / ${teamsBacked} teams moved the public document`,
+          ).toBe(false);
+        }
+      }
+    });
+
+    it('is TRUE for each of §B3\'s two accepted residual signals, and only those', () => {
+      const below = publicProgressFrom({ uniqueBackers: 1, teamsBacked: 1 });
+      // A sub-floor backer tick.
+      expect(publicProgressChanged({ ...below }, publicProgressFrom({ uniqueBackers: 2, teamsBacked: 1 })))
+        .toBe(true);
+      // The spread flipping unmet -> met.
+      expect(publicProgressChanged({ ...below }, publicProgressFrom({ uniqueBackers: 1, teamsBacked: 2 })))
+        .toBe(true);
+      // A stake that moves neither is not a signal at all.
+      expect(publicProgressChanged({ ...below }, publicProgressFrom({ uniqueBackers: 1, teamsBacked: 1 })))
+        .toBe(false);
+    });
+
+    it('is TRUE against a pool carrying no pair at all — a pre-amendment document', () => {
+      expect(publicProgressChanged({}, qualified)).toBe(true);
+    });
+  });
+
+  it('the sealed cache carries the pot AND the exact counts (§B5 — the field move)', () => {
+    const totals = totalsFromStakes([
+      { userId: 'u1', teamOdUserId: 'od-a', amount: 300 },
+      { userId: 'u2', teamOdUserId: 'od-b', amount: 200 },
+    ]);
+    // The three fields that used to sit on the public document.
+    expect(totals.private).toMatchObject({ potTotal: 500, uniqueBackers: 2, teamsBacked: 2 });
+    // …beside the per-team totals and the backers map that were already sealed.
+    expect(Object.keys(totals.private).sort())
+      .toEqual(['backers', 'byTeam', 'potTotal', 'teamsBacked', 'uniqueBackers']);
+    // And they are the SAME numbers the fold derived, not a second count.
+    expect(totals.private.potTotal).toBe(totals.potTotal);
+    expect(totals.private.uniqueBackers).toBe(totals.uniqueBackers);
+    expect(totals.private.teamsBacked).toBe(totals.teamsBacked);
+  });
+
+  it('THE CLOSE REVEALS THE POT, and sheds the capped pair (§3 step 4, §B5)', async () => {
+    const stakes = [
+      stake('s1', 'u1', 'od-a', 300),
+      stake('s2', 'u2', 'od-b', 200),
+      stake('s3', 'u3', 'od-a', 100),
+    ];
+    // The open pool publishes the capped pair and no pot — the state the close
+    // starts from.
+    const before = openPool();
+    expect(before).not.toHaveProperty('potTotal');
+    expect(before.backerProgress).toEqual({ count: 0, floor: VALIDITY_MIN_BACKERS, met: false });
+
+    const { db, store } = seedClosable({ stakes, spentByUser: { u1: 300, u2: 200, u3: 100 } });
+    await closePool(db, lobbyGroup(), AFTER_CLOSE);
+    const pool = poolOf(store);
+
+    // The pot and the EXACT counts come up, from the same object the sealed doc
+    // was written from — so the two cannot disagree (§9).
+    expect(pool.potTotal).toBe(600);
+    expect(pool.uniqueBackers).toBe(3);
+    expect(pool.teamsBacked).toBe(2);
+    expect(totalsOf(store)).toMatchObject({ potTotal: 600, uniqueBackers: 3, teamsBacked: 2 });
+    expect(pool.potTotal).toBe(totalsOf(store).potTotal);
+
+    // And the capped pair is GONE: `count: 3` sitting beside `uniqueBackers: 3`
+    // is a second, coarser source for the same fact, and it would read `3` for
+    // ever however many backers the pool ended with.
+    expect(pool).not.toHaveProperty('backerProgress');
+    expect(pool).not.toHaveProperty('teamSpread');
+  });
+
+  it('a FIVE-backer pool reveals five, not the capped three', async () => {
+    // The row that fails if the reveal ever publishes the capped signal rather
+    // than the sealed truth — the cap's whole failure mode, at the one moment
+    // the exact number is owed.
+    const stakes = [
+      stake('s1', 'u1', 'od-a', 100), stake('s2', 'u2', 'od-b', 100),
+      stake('s3', 'u3', 'od-a', 100), stake('s4', 'u4', 'od-b', 100),
+      stake('s5', 'u5', 'od-a', 100),
+    ];
+    const { db, store } = seedClosable({
+      stakes, spentByUser: { u1: 100, u2: 100, u3: 100, u4: 100, u5: 100 },
+    });
+    await closePool(db, lobbyGroup(), AFTER_CLOSE);
+    expect(poolOf(store).uniqueBackers).toBe(5);
+    expect(poolOf(store).potTotal).toBe(500);
+  });
+
+  it('VALIDITY READS THE TRUE COUNTS, never the capped public pair (§B5)', async () => {
+    // A pool whose public document says BOTH thresholds are met — because they
+    // were, while it was open — but whose surviving stakes are thin: od-b left,
+    // taking the spread and the third backer with it. Judged on the capped pair
+    // this closes `closed` on one team; judged on the truth it is
+    // `insufficient`, which is what §3 step 3 requires.
+    const stakes = [
+      stake('s1', 'u1', 'od-a', 300),
+      stake('s2', 'u2', 'od-b', 200),
+      stake('s3', 'u3', 'od-b', 100),
+    ];
+    const metWhileOpen = openPool({
+      backerProgress: { count: VALIDITY_MIN_BACKERS, floor: VALIDITY_MIN_BACKERS, met: true },
+      teamSpread: { met: true },
+    });
+    const atClose = lobbyGroup({ players: [{ odUserId: 'od-a' }, { odUserId: 'cpu-1', isCpu: true }] });
+    const { db, store } = seedClosable({
+      stakes, group: atClose, pool: metWhileOpen, spentByUser: { u1: 300, u2: 200, u3: 100 },
+    });
+    const out = await closePool(db, atClose, AFTER_CLOSE);
+
+    expect(out.status).toBe(POOL_STATUS.INSUFFICIENT);
+    expect(poolOf(store).uniqueBackers).toBe(1);   // the truth, not the capped 3
+    expect(poolOf(store).teamsBacked).toBe(1);
+  });
+
+  it('a FIVE-backer pool is not judged on a capped three either — the other arm', async () => {
+    // The mirror image: five backers, all on ONE team. `backerProgress` is met
+    // at its cap and would say so; the team arm is what fails, and it fails on
+    // the true `teamsBacked`, which the public document does not carry at all.
+    const stakes = [
+      stake('s1', 'u1', 'od-a', 100), stake('s2', 'u2', 'od-a', 100),
+      stake('s3', 'u3', 'od-a', 100), stake('s4', 'u4', 'od-a', 100),
+      stake('s5', 'u5', 'od-a', 100),
+    ];
+    const { db, store } = seedClosable({
+      stakes,
+      pool: openPool({
+        backerProgress: { count: VALIDITY_MIN_BACKERS, floor: VALIDITY_MIN_BACKERS, met: true },
+        teamSpread: { met: true },   // stale: it was never true of these stakes
+      }),
+      spentByUser: { u1: 100, u2: 100, u3: 100, u4: 100, u5: 100 },
+    });
+    expect((await closePool(db, lobbyGroup(), AFTER_CLOSE)).status).toBe(POOL_STATUS.INSUFFICIENT);
+    expect(poolOf(store).uniqueBackers).toBe(5);
+    expect(poolOf(store).teamsBacked).toBe(1);
   });
 });
 

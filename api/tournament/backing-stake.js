@@ -68,6 +68,15 @@
 // human-review note, so a new write in this transaction fails CI until it is
 // reviewed too.
 //
+// PR 2b — THE COUNTER UPDATE SPLITS (Amendment B §B2/§B5). WRITE 6 sends the
+// TRUE totals (pot, exact counts, per-team, the backers map) to
+// `private/totals` and only the threshold-capped `backerProgress` /
+// `teamSpread` to the public document — and writes the public document NOT AT
+// ALL when those capped values are unchanged, which is every stake once both
+// floors are met. Nothing else in this transaction moves: the check order, the
+// `requestId` idempotency, the wallet threading and the belt are as PR 2 left
+// them, because the amendment changes WHAT IS PUBLISHED, not what is decided.
+//
 // DARK AT MERGE. `BACKING_BETA_ENABLED` is false and read at CALL time; the
 // co-located `.dark.test.js` proves the route answers 404 and touches nothing.
 
@@ -87,6 +96,8 @@ import {
   poolRefFor,
   poolTotalsRefFor,
   readGroup,
+  publicProgressChanged,
+  publicProgressFrom,
   stakeablePod,
   totalsFromBackers,
 } from '../_utils/backingPools.js';
@@ -475,21 +486,35 @@ export default async function handler(req, res) {
         at: now.toISOString(),
       });
 
-      // ---- WRITE 6: the sealed totals and the public counters, derived from
-      // ONE updated `backers` map so they cannot disagree (§9).
+      // ---- WRITE 6: THE SPLIT (Amendment B §B2/§B5). The true totals — the
+      // pot and the exact counts — go to the SEALED doc; the public document
+      // gets the threshold-capped pair and nothing else, and often gets
+      // nothing at all.
+      //
+      // Both halves still derive from ONE updated `backers` map through ONE
+      // fold (§9), so the sealed numbers and the public signals cannot
+      // disagree: the cap is applied to the fold's output, not computed from a
+      // second count.
       const mine = backers[user.uid] ?? (backers[user.uid] = { total: 0, byTeam: {} });
       mine.byTeam[teamOdUserId] = (mine.byTeam[teamOdUserId] ?? 0) + amount;
       mine.total += amount;
       const totals = totalsFromBackers(backers);
       tx.set(totalsRef, { ...totals.private, updatedAt: now.toISOString() });
-      const nextPool = {
-        ...pool,
-        potTotal: totals.potTotal,
-        uniqueBackers: totals.uniqueBackers,
-        teamsBacked: totals.teamsBacked,
-        updatedAt: now.toISOString(),
-      };
-      tx.set(poolRef, nextPool);
+
+      // AND NO PUBLIC WRITE WHEN THE CAPPED VALUES DO NOT MOVE. Above the
+      // floors `publicProgressFrom` is constant, so this is always the case
+      // once both thresholds are met — an above-threshold stake leaves the
+      // public document BYTE-IDENTICAL, which is the whole point of §B2's
+      // freeze. Skipping the write, rather than writing the same values, is
+      // what makes it byte-identical: `backingPools/{poolId}` is authed-read
+      // and therefore an `onSnapshot` stream, so a bare `updatedAt` bump would
+      // itself publish "someone just staked" to every spectator watching.
+      const progress = publicProgressFrom(totals);
+      let nextPool = pool;
+      if (publicProgressChanged(pool, progress)) {
+        nextPool = { ...pool, ...progress, updatedAt: now.toISOString() };
+        tx.set(poolRef, nextPool);
+      }
 
       return { replay: false, stake: { id: stakeId, ...stake }, pool: nextPool, wallet: wallet2 };
     });
@@ -499,18 +524,24 @@ export default async function handler(req, res) {
       return res.status(status).json({ error, ...rest });
     }
 
-    // THE SEALED PROJECTION (§3): the reply carries the pot total, the unique
-    // backer count and the viewer's own stake — never a per-team total and never
-    // a pays ×, both of which stay unrevealed until close.
+    // THE SEALED PROJECTION (§3, Amendment B §B2): the reply carries the capped
+    // validity signals, the close and the viewer's own stake — never the pot,
+    // never an exact count, never a per-team total and never a pays ×.
+    //
+    // A BACKER WHO HAS JUST STAKED IS THE BEST-PLACED OBSERVER (§B1): they can
+    // subtract their own contribution from anything they are told, so handing
+    // the pot back in the confirmation response would re-open the leak the
+    // document move just closed, on the one request most able to exploit it.
+    // The reply projects the same capped fields the public document carries,
+    // read off that document, so the two cannot disagree (§9).
     return res.status(200).json({
       replay: outcome.replay === true,
       stake: outcome.stake,
       pool: outcome.pool
         ? {
           status: outcome.pool.status,
-          potTotal: outcome.pool.potTotal,
-          uniqueBackers: outcome.pool.uniqueBackers,
-          teamsBacked: outcome.pool.teamsBacked,
+          backerProgress: outcome.pool.backerProgress,
+          teamSpread: outcome.pool.teamSpread,
           closesAt: outcome.pool.closesAt,
           closeReason: outcome.pool.closeReason,
         }

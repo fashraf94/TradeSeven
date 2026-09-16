@@ -29,6 +29,7 @@ import {
   BACKING_EVENT_ALLOWLIST,
   FINE_PRINT,
   DISCLOSURES,
+  POOL_STRIP,
   LEXICON,
   FORBIDDEN_TERMS,
 } from './backing.js';
@@ -57,6 +58,7 @@ describe('backing constants — the module contract', () => {
       'PER_TEAM_CAP_BP',
       'POOL_EXCLUDED_SLOT_IDS',
       'POOL_MIN_WINDOW_MS',
+      'POOL_STRIP',
       'VALIDITY_MIN_BACKERS',
       'VALIDITY_MIN_TEAMS',
     ]);
@@ -187,11 +189,70 @@ describe('copy — §5 fine print and the three §4 Confirm lines (D-t, D-q, D-n
     // The guard's inputs must pass the guard. Word-boundary matching so 'bet'
     // does not fire on 'better' — the same rule PR 4's copy guard will need,
     // stated here first because this is where the term list lives.
-    const shipped = [FINE_PRINT, ...Object.values(DISCLOSURES)];
+    const shipped = [
+      FINE_PRINT,
+      ...Object.values(DISCLOSURES),
+      // The Amendment B §B6 strings are shipped copy too, and a term that
+      // slipped into the pool strip would be just as visible as one in the
+      // fine print.
+      ...Object.values(POOL_STRIP).flatMap((v) => (typeof v === 'string' ? [v] : Object.values(v))),
+    ];
     for (const term of FORBIDDEN_TERMS) {
       const re = new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
       for (const line of shipped) {
         expect(re.test(line), `"${term}" appears in shipped backing copy: ${line}`).toBe(false);
+      }
+    }
+  });
+
+  it('POOL_STRIP carries the two §B6 open states, verbatim', () => {
+    expect(Object.keys(POOL_STRIP).sort()).toEqual(['belowFloor', 'qualified', 'yourBacking']);
+    expect(POOL_STRIP.belowFloor).toEqual({
+      headline: 'Pool needs support',
+      backers: 'Backers {count} of {floor}',
+      teamSpread: 'Team spread: needs another team',
+    });
+    expect(POOL_STRIP.qualified).toEqual({
+      headline: 'Pool qualified',
+      backers: 'Backers: threshold met',
+      teamSpread: 'Team spread: threshold met',
+    });
+    expect(POOL_STRIP.yourBacking).toBe('Your backing: {amount} BP');
+  });
+
+  it('NEITHER open state has a pot line — there is no pot fact to bind one to (§B5)', () => {
+    // Not a copy preference: §B5 moves `potTotal` off the public pool document,
+    // so a pot string here would be a label with no payload field behind it —
+    // the §9 display-agreement failure applied to copy. The row fails the day
+    // someone adds one.
+    const everyString = Object.values(POOL_STRIP)
+      .flatMap((v) => (typeof v === 'string' ? [v] : Object.values(v)));
+    for (const line of everyString) {
+      expect(line, `"${line}" mentions the pot`).not.toMatch(/\bpot\b|\bpot total\b/i);
+    }
+    // `Your backing` is the viewer's OWN stake, which §B2 keeps visible
+    // throughout — the one BP figure an open pool may show.
+    expect(POOL_STRIP.yourBacking).toContain('{amount}');
+  });
+
+  it('the qualified state names NO NUMBER — once met, the signals freeze (§B2)', () => {
+    // §B2: "Never 4, 5, 6." The qualified block is the copy half of that — it
+    // has no placeholder to interpolate a count into, so a surface rendering it
+    // has nothing to leak.
+    for (const line of Object.values(POOL_STRIP.qualified)) {
+      expect(line, `"${line}" carries a placeholder`).not.toMatch(/\{/);
+      expect(line).not.toMatch(/\d/);
+    }
+    // The below-floor block does carry the count, and its floor with it (§B4 —
+    // below the floor the spectator is told what the pool needs).
+    expect(POOL_STRIP.belowFloor.backers).toContain('{count}');
+    expect(POOL_STRIP.belowFloor.backers).toContain('{floor}');
+  });
+
+  it('every nested POOL_STRIP block is frozen too, not just the top level', () => {
+    for (const [name, value] of Object.entries(POOL_STRIP)) {
+      if (value !== null && typeof value === 'object') {
+        expect(Object.isFrozen(value), `POOL_STRIP.${name} is not frozen`).toBe(true);
       }
     }
   });
