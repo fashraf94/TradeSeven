@@ -2,7 +2,7 @@
 
 **Every Phase 0 anchor re-verified at this HEAD, zero drift.** The Phase 0 report's anchors were taken at `cca8e98e`; this branch was cut from `origin/main` at **`dcb08ea1ace9174551f0580002ac7a15402cc5ae`**, and every site the build touches sits at the same line it did: `directiveGate.js:75` (`evaluate`), `voiceLayerPrompt.js:2607` (the bare menu render), `:148 / :185 / :217` (the confirmation rule, identical text at three sites), `featureFlags.js:2137` (`VOICE_GROUNDING_MODE = 'shadow'`), `chat.js:1052` (`archetypeGate` on the exchange), `archetypeAdjustments.js:105` (the Speculator `protectedBias` prose), `voiceLayerGrounding.js:656` (the grounded confirmation rule), `file-directive.js:172-174` (the chip route's `=== 'on'` gate). **Fence line confirmed at this HEAD: none of the files this build touches is on the BUILD_RULES §1 list** (`docs/BUILD_RULES.md:14-24`, read this session) — `api/_utils/directiveGate.js`, `api/agent/chat.js`, `api/_utils/voiceLayerPrompt.js`, `src/data/archetypeAdjustments.js` (read only, unedited), `src/config/featureFlags.js` and the client are all non-fenced. No fenced file was edited; no fenced function was called.
 
-**Session:** Claude Code (Opus 5). Prescribed build. **Branch:** `claude/directive-fit-check`, cut from `origin/main` after `git fetch origin` (BUILD_RULES §3, recorded here). Tree clean at cut, clean at every commit. **First commit:** `git cherry-pick f2ce8881` — the Phase 0 report, `docs/audits/20260915_PHASE0_DIRECTIVE_GATE.md`. **Markers:** VERIFIED = read or executed at that line, this session, at this HEAD.
+**Session:** Claude Code (Opus 5). Prescribed build. **Branch:** `claude/directive-fit-check`, cut from `origin/main` after `git fetch origin` (BUILD_RULES §3, recorded here). Tree clean at cut, clean at every commit. **First commit:** `git cherry-pick f2ce8881` — the Phase 0 report, `docs/audits/20260915_PHASE0_DIRECTIVE_GATE.md`. **Markers:** VERIFIED = read or executed at that line, this session. **Every `file:line` below is at BRANCH HEAD** (`e4e321e6`) except the re-verification sentence above, which is at the cut SHA — the build's own inserts shifted later lines in the two files it edits, and a citation the founder cannot click is worse than none.
 
 ---
 
@@ -10,12 +10,12 @@
 
 | | |
 |---|---|
-| **What shipped** | Three flagged changes and one always-on change, in four commits, all non-fenced. |
+| **What shipped** | Three flagged changes and one always-on change, plus a documented flip-order hazard, in five commits, all non-fenced. |
 | **Flag** | `DIRECTIVE_FIT_CHECK_ENABLED`, boolean, shipped `false`, pinned, in `DARK_BY_DESIGN` with its runway. |
 | **Flag-off invariant** | **Holds.** Every prompt byte and every gate outcome is byte-identical to the pre-build commit, proved against goldens captured by rendering the pre-build code — not regenerated from the code they guard. |
 | **Not behind the flag** | The three forensics fields. Deliberate: the one-way door. Every turn without them is a turn whose intent can never be recovered. |
 | **Verification** | Full suite `VITEST_EXIT=0` — 13 041 passed, 64 skipped, 681 files. `npm run lint:gate` exit 0. `vite build` exit 0. |
-| **Review** | Mandatory (13 files / 1 686 lines, over both §2 thresholds). Four lenses, isolated `git archive` trees, refuters, the mutating lens last. Recorded in §7. |
+| **Review** | Mandatory (15 files / 1 973 lines, over both §2 thresholds). Four lenses, isolated `git archive` trees, refuters, the mutating lens last. Recorded in §7. |
 | **Deviations** | Three, all enumerated in §6. One is a provable incompatibility inside the brief itself; one is a scope boundary; one is a flip-order hazard that needs a founder ruling before the grounding walk resumes. |
 | **Blocking item for the founder** | **§6 D-3 — the flip-order hazard.** `DIRECTIVE_FIT_CHECK_ENABLED` must not be lit at the same time as `VOICE_GROUNDING_MODE` ≥ `'canary'` until the grounded confirmation rule carries the quote instruction too. Documented at the flag and pinned by a test; the build does not and cannot fix it (the grounded rule is outside this build's file list). |
 
@@ -23,7 +23,7 @@
 
 ## 1. The defect, restated from the record
 
-One model call writes the reply *and* the proposal; the gate runs after and never rewrites the reply (`chat.js:759-762` → parse `:771` → gate `:839-849` → `agentResponse: parsed.response` `:1023`, Phase 0 §5). The menu the model chooses from is seven bare strings (`voiceLayerPrompt.js:2607`, Phase 0 §3) — the data module knows SP-04 and SP-05 are opposite ends of one dial (`ADJUSTMENT_CONFLICT_GROUPS.degen`, `archetypeAdjustments.js:298-308`) and knows which ids lower risk, and rendered none of it. The confirmation rule's own suggested acknowledgement is "Got it; that's my lean now."
+One model call writes the reply *and* the proposal; the gate runs after and never rewrites the reply (`chat.js:763` → parse `:775` → gate `:843` → `agentResponse: parsed.response` `:1027`, Phase 0 §5). The menu the model chooses from is seven bare strings (`voiceLayerPrompt.js:2607`, Phase 0 §3) — the data module knows SP-04 and SP-05 are opposite ends of one dial (`ADJUSTMENT_CONFLICT_GROUPS.degen`, `archetypeAdjustments.js:298-308`) and knows which ids lower risk, and rendered none of it. The confirmation rule's own suggested acknowledgement is "Got it; that's my lean now."
 
 So on Sep 14 the model wrote *"that's the lean I'm carrying now — trading Core momentum for a heavy Support floor"*, selected SP-05, and the gate filed *"Spread across more names (diversify the chaos)"* beneath it. Three sentences on one screen; nothing compared the second to the third. And the model's own `originalUserAsk`, `counterOfferText` and `rejectionReason` were dropped (Phase 0 §7), so one can prove a filing was wrong but not what the model meant.
 
@@ -43,7 +43,7 @@ Each menu line now renders `{id}: {canonical} — {annotations}`, all **derived*
 | `api/_utils/voiceLayerPrompt.js:2702-2708` | `renderCautiousRegisterLine` — `More cautious, in character: {ids}.` |
 | `api/_utils/voiceLayerPrompt.js:2716` | the menu splice |
 | `api/_utils/voiceLayerPrompt.js:2724` | the register-line splice |
-| `src/config/featureFlags.js:815` | the flag, `false`, with its `// Pinned by:` pointer |
+| `src/config/featureFlags.js:847` | the flag, `false`, with its `// Pinned by:` pointer (`:770-846` is its docstring, incl. the D-3 FLIP ORDER block added in commit E) |
 | `src/config/flagPinGuard.test.js:154` | the `DARK_BY_DESIGN` entry + runway note |
 
 `forbiddenOpposite` is not rendered anywhere. Flag-off, both helpers return `''` — the shipped line, byte for byte.
@@ -73,7 +73,7 @@ The model is now asked for: `"Got it — filing: {the exact canonical text of th
 | `api/_utils/directiveGate.js:198` | `result()` carries `fitCheck`, mismatch-only |
 | `api/_utils/directiveGate.js:269, :294` | the reply threaded in, on both passes |
 
-Whitespace normalized; case not. `status: 'fit_mismatch'`, `directive: null`, `hasDirective: false`. **No change was needed in `chat.js`:** a `fit_mismatch` is a null-write like any other, so `renderDirectiveStatus` already yields "No change made to your strategy this turn.", no threadId is minted (`chat.js:1005`), no `battle.directive` slot is written (`chat.js:1076-1078`), and nothing is charged beyond the message. The `mode` argument stays accepted and unused (`:236`); the decision is a function of `(archetype, classification, selectedAdjustmentId)` plus, now, the reply.
+Whitespace normalized; case not. `status: 'fit_mismatch'`, `directive: null`, `hasDirective: false`. **No change was needed in `chat.js`:** a `fit_mismatch` is a null-write like any other, so `renderDirectiveStatus` already yields "No change made to your strategy this turn.", no threadId is minted (`chat.js:1009`), no `battle.directive` slot is written (`chat.js:1081`), and nothing is charged beyond the message. The `mode` argument stays accepted and unused (`:251`); the decision is a function of `(archetype, classification, selectedAdjustmentId)` plus, now, the reply.
 
 `fitCheck` rides the outcome **only** on a mismatch, so every other record shape — every committed turn included — is unchanged.
 
@@ -93,6 +93,17 @@ The comparand on both passes is the **first** call's reply, the one `chat.js` pe
 
 **Why the sanitizer moved.** The brief says "sanitize through the same path as `userMessage`". That path was an inline expression at `chat.js:425`. A second caller needing it makes two copies the BUILD_RULES §4 drift class, and the copy missing a rule is the one that writes the record. So it moved into one zero-import module, unchanged, and `chatTextSanitize.test.js` compares every case against the literal pre-extraction expression written out by hand.
 
+### Commit E — the flip-order hazard, documented and pinned (`e4e321e6`)
+
+Not in the brief's commit list. Found while writing this report, and it is the one thing in this build that could break production on a later flip, so it is written where a flipper will read it rather than only here. Full statement in §6 D-3.
+
+| Site | What |
+|---|---|
+| `src/config/featureFlags.js:808-838` | `FLIP ORDER — READ THIS BEFORE FLIPPING`, on the flag's own docstring (the `SHOW_IT_ENABLED` precedent at `:2343`) |
+| `api/_utils/voiceLayerPrompt.fitCheck.test.js` | a `DOCUMENTED LIMIT` row asserting the grounded prompt carries no quote instruction at either flag state, and that the contradicting grounded rule is present verbatim |
+
+The test row pins a **limitation**, not a behaviour anyone wants: it says so, and says it must be deleted rather than "fixed" by whichever walk resolves the hazard. No production code changed in this commit.
+
 ---
 
 ## 3. The flag-off invariant, and how it is proved
@@ -106,7 +117,7 @@ The comparand on both passes is the **first** call's reply, the one `chat.js` pe
 
 ---
 
-## 4. Tests, each with its shown-failing evidence
+## 4. Tests and verification
 
 Every guard below was run against a deliberately reintroduced defect, in the working tree, and restored immediately after. "Rows still passing" is listed because a mutation check that fails *everything* is as uninformative as one that fails nothing — the flag-off invariant rows **must** still pass under the defect, since the defect *is* the flag-off state.
 
@@ -138,6 +149,39 @@ The brief asked whether the flag-OFF exchange-shape pin in `chat.test.js` assert
 
 The pin that **did** move is one this build added: commit C's exact outcome key list in `directiveGate.fitCheck.test.js`. Commit D's three new keys broke it, and it was updated **in commit D, the same commit as the value** (four keys → seven), per BUILD_RULES §2. It catching this is the pin doing its job, and it is recorded here because the brief asked for it to be.
 
+### The §5 verification, run and recorded
+
+| Check | Command | Result |
+|---|---|---|
+| Full suite, unpiped, exit code asserted | `npx vitest run; echo "VITEST_EXIT=$?"` | **`VITEST_EXIT=0`** — 681 files passed, 3 skipped; **13 041 tests passed**, 64 skipped; 123.6 s |
+| Lint gate | `npm run lint:gate` | **exit 0** |
+| Build | `npx vite build` | **exit 0**, built in 17.96 s (the §2 check no test can make — nothing in the suite imports `App.jsx`) |
+| No fenced file in the diff | every path in the §1 list matched against `git diff --name-only origin/main...HEAD` | **clean — zero** |
+| No change to `file-directive.js` | same | **untouched** (it files by id with no model call and needs no fit check) |
+| No new top-level battle key | `git diff origin/main...HEAD -- api/agent/chat.js` | **clean** — the whole `chat.js` diff is 5 lines: one import and the sanitize call site. `battleRef.update({...})` is untouched, so the `createAgentBattle` doc shape is not contacted. The three new fields ride the `chatExchanges[]` element's `archetypeGate` record (`chat.js:1056`), which Phase 0 §7 establishes as non-contact precedent |
+
+### The diff stat (cumulative branch diff vs `origin/main`)
+
+```
+ api/_utils/__fixtures__/voiceLayerPrompt.fitCheck.preBuild.golden.json |   15 +
+ api/_utils/chatTextSanitize.js                                        |   52 +
+ api/_utils/chatTextSanitize.test.js                                   |   80 +
+ api/_utils/directiveGate.fitCheck.test.js                             |  526 +
+ api/_utils/directiveGate.js                                           |  107 +-
+ api/_utils/voiceLayerPrompt.fitCheck.test.js                          |  336 +
+ api/_utils/voiceLayerPrompt.js                                        |  119 +-
+ api/agent/chat.js                                                     |    6 +-
+ api/agent/chat.test.js                                                |  103 +
+ docs/audits/20260915_PHASE0_DIRECTIVE_GATE.md                         |  172 +
+ docs/audits/20260916_BUILD_DIRECTIVE_FIT_CHECK.md                     |  (this file)
+ src/components/Agent/AgentChat.fitMismatch.jsdom.test.jsx             |  142 +
+ src/config/directiveFitCheckFlags.test.js                             |   27 +
+ src/config/featureFlags.js                                            |   77 +
+ src/config/flagPinGuard.test.js                                       |    2 +
+```
+
+**Four production files changed**, totalling ~150 net lines of behaviour: `voiceLayerPrompt.js`, `directiveGate.js`, `chat.js` (5 lines), `featureFlags.js` (flag + docstring). Everything else is tests, a golden fixture, one new zero-import module, and two reports.
+
 ---
 
 ## 5. §3's question — does the grounded prompt carry the same archetype-blind seeds?
@@ -147,7 +191,7 @@ The pin that **did** move is one this build added: commit C's exact outcome key 
 | Seed | Shipped prompt | Grounded prompt |
 |---|---|---|
 | "concentrated momentum vs **diversified support** vs sector rotation" | PRESENT — `voiceLayerPrompt.js:151` | **PRESENT** — `voiceLayerGrounding.js:675`, same trio, same order |
-| "Star tier = high risk/high reward. **Support tier = safe floor.**" | PRESENT — `voiceLayerPrompt.js:62` | **PRESENT** — `GAME_MECHANICS` is one unbranched const pushed into both assemblies (`voiceLayerPrompt.js:3083`) |
+| "Star tier = high risk/high reward. **Support tier = safe floor.**" | PRESENT — `voiceLayerPrompt.js:62` | **PRESENT** — `GAME_MECHANICS` is one unbranched const pushed into both assemblies (`voiceLayerPrompt.js:3192`) |
 | The archetype-blind elicitation targets (`chat.js:255-261`) | PRESENT | **PRESENT** — the same `elicitation` block is appended on both paths; "Present options that range from safe to aggressive", "Present a concentrated vs diversified choice", "Frame a decision around tier placement" all render verbatim to a Speculator |
 
 None of these was changed (§3 puts them out of scope). The honest reading: the grounded prompt narrows *how a chip is minted* (by id, `voiceLayerGrounding.js:1011-1014`) but not *what philosophy the model is told to offer*. A Speculator under the grounded prompt is still told to offer "diversified support" and still told Support is the "safe floor". The walk to `'on'` closes the chip channel; it does not close the seeding.
@@ -179,7 +223,7 @@ For the record, the derivation across all six archetypes: `momentum_chaser` TF-0
 
 ### D-2 — Commit B transforms the battle-chat assembly only, not `buildFirstMessagePrompt`.
 
-Both consume `PHASE_RULES[phase]` (`voiceLayerPrompt.js:3180` and `:3430`). Only the first was transformed. **Why:** `buildFirstMessagePrompt`'s own output format pins `hasDirective` false and `directive` null (`voiceLayerPrompt.js:3146-3154`, VERIFIED), so there is no confirmation to acknowledge and the gate can never commit on that path; and its callers are `decide.js` (fenced) and `ensure-opener.js`, neither of which runs the gate. Transforming it would change a prompt reaching a fenced caller for no mechanism gain. Pinned by a test row so the omission is not read as a miss.
+Both consume `PHASE_RULES[phase]` (`voiceLayerPrompt.js:3180` and `:3429-3430`). Only the first was transformed. **Why:** `buildFirstMessagePrompt`'s own output format pins `hasDirective` false and `directive` null (`voiceLayerPrompt.js:3262-3263`, VERIFIED), so there is no confirmation to acknowledge and the gate can never commit on that path; and its callers are `decide.js` (fenced) and `ensure-opener.js`, neither of which runs the gate. Transforming it would change a prompt reaching a fenced caller for no mechanism gain. Pinned by a test row so the omission is not read as a miss.
 
 ### D-3 — **BLOCKING FLIP-ORDER HAZARD.** The fit check must not be lit while the grounding walk is at `'canary'` or `'on'`.
 
@@ -187,9 +231,9 @@ The gate runs on every battle-mode chat turn regardless of `grounded` (`chat.js:
 
 So if `VOICE_GROUNDING_MODE` walks to `'canary'` (for an allowlisted uid) or `'on'` while `DIRECTIVE_FIT_CHECK_ENABLED` is `true`, the gate would demand a quote the sent prompt never asked for — **and every typed-path filing would become `fit_mismatch`.** That is precisely the failure the brief names when it says the two halves must switch together.
 
-**Today this cannot happen:** `VOICE_GROUNDING_MODE = 'shadow'` (`featureFlags.js:2137`, VERIFIED) resolves to `'shadow'` for every uid, so `grounded` is false for everyone (`chat.js:480`) and the shipped prompt — the transformed one — is what is sent. Flipping the fit check alone, today, is coherent.
+**Today this cannot happen:** `VOICE_GROUNDING_MODE = 'shadow'` (`featureFlags.js:2214`, VERIFIED) resolves to `'shadow'` for every uid, so `grounded` is false for everyone (`chat.js:480`) and the shipped prompt — the transformed one — is what is sent. Flipping the fit check alone, today, is coherent.
 
-**Not fixed here, deliberately.** `api/_utils/voiceLayerGrounding.js` is outside this build's named file list, and §3 puts the grounding walk out of scope. Threading `grounded` into the gate would contradict the brief's explicit statement that the gate's decision stays a function of `(archetype, classification, selectedAdjustmentId)` plus the reply. So it is **documented at the flag** (the `SHOW_IT_ENABLED` "FLIP ORDER — READ THIS BEFORE FLIPPING" precedent, `featureFlags.js:2266-2277`) and **pinned by a test row** that asserts the grounded prompt carries no quote instruction at either flag state, as executable documentation of the limit.
+**Not fixed here, deliberately.** `api/_utils/voiceLayerGrounding.js` is outside this build's named file list, and §3 puts the grounding walk out of scope. Threading `grounded` into the gate would contradict the brief's explicit statement that the gate's decision stays a function of `(archetype, classification, selectedAdjustmentId)` plus the reply. So it is **documented at the flag** (the `SHOW_IT_ENABLED` "FLIP ORDER — READ THIS BEFORE FLIPPING" precedent, `featureFlags.js:2343`) and **pinned by a test row** that asserts the grounded prompt carries no quote instruction at either flag state, as executable documentation of the limit.
 
 **Founder ruling wanted before the grounding walk resumes:** either the grounded confirmation rule gains the same quote instruction in the walk's own PR, or the fit check gains a `grounded` input. One of the two must happen before both flags are lit together.
 
@@ -220,5 +264,5 @@ Not run here: the flag ships `false`, so nothing this build added is reachable u
 ## 10. Found outside the task — reported, not fixed (BUILD_RULES §3)
 
 - **The grounded prompt carries every archetype-blind seed the shipped prompt does** (§5). The walk to `'on'` closes the chip channel but not the seeding. Worth its own task.
-- **`chat.js:742` cites `directiveGate.js:105-107` for the repair clamp**; the code was already at `:110-112` before this build and is now at `:116-118`. Comment drift only — inherited from Phase 0's own "found outside" list, and now one commit staler.
+- **`chat.js:746` cites `directiveGate.js:105-107` for the repair clamp**; the code was already at `:110-112` before this build and is now at `:168`. Comment drift only — inherited from Phase 0's own "found outside" list, and now one commit staler.
 - **The shipped few-shot `CONFIRMATION_EXAMPLE` (`voiceLayerPrompt.js:256-258`) models a free-text `directive.text`** that `enforce` discards, and never shows `_archetypeProposal` — the one field the gate reads. Under the fit check it also models an acknowledgement that quotes *nothing*. Phase 0 flagged the first half; the fit check makes the second half newly relevant. Out of this build's scope (the brief names the phase rules, not the few-shot).
