@@ -56,11 +56,15 @@
 // the write log of a full settlement and asserts no `tournament*` path.
 //
 // IDEMPOTENT AT EVERY GRAIN: the pool's status guards the pool, each stake's
-// status guards the stake (only `live` stakes are read), and the wallet's
-// `appliedEntries` guards each ledger entry (`loss:{stakeId}`,
-// `payout:{stakeId}`). A retry mid-settlement — the SDK re-running the body,
-// or a second host re-calling after a crash — converges on the same final
-// state; the fixtures prove it both ways.
+// status guards the stake DOCUMENT (only `live` stakes are decided), and the
+// wallet's `appliedEntries` guards each ledger entry (`loss:{stakeId}`,
+// `payout:{stakeId}`). A retry — the SDK re-running the body on its one
+// Transaction object, or a second host re-calling after a crash between
+// hosts — converges on the same final state. The fixtures: the SDK-retry row
+// proves re-entrancy of the body on a shared transaction object; the
+// crash-mid-settlement row proves convergence from a PARTIAL store that only
+// the non-atomic test stand-in can produce (Firestore commits atomically), so
+// the prior-stakes ledger re-visit below is belt under production semantics.
 //
 // THE PAYOUT MATH IS §3'S, AND NOTHING ELSE'S: `payout = floor(stake × pot ÷
 // winningStakes)`, integer BP, the rounding remainder BURNED. The pot and the
@@ -78,10 +82,14 @@
 // from the ladder's own `monthKeyForGroup`. Voided stakes are not read here
 // (they are not `live`) and get nothing.
 //
-// TELEMETRY NEVER FAILS SETTLEMENT (§1, D-m). Each winning team's `agentId`
-// and `hashAtSettlement` are resolved from the agent-draft stream and the
-// pod's tournament battle docs before the transaction, best-effort; any
-// failure yields `null` and the settlement proceeds.
+// TELEMETRY NEVER FAILS SETTLEMENT (§1, D-m). EACH team's `agentId` and
+// `hashAtSettlement` (§1: "the pool records each team's agentId and
+// equippedConfigHash"; §6 `teams[].agentId` / `teams[].hashAtSettlement`) are
+// resolved from the agent-draft stream and the seat's CURRENT tournament
+// battle doc (the P7 selector) before the transaction, best-effort; any
+// failure yields `null` and the settlement proceeds. Every team, not only the
+// winners: the loadout-changed marker (§4) sits on a backer's OWN stakes,
+// which may be on a losing team.
 //
 // Imports the zero-import schema module from src/ under the revised June 2026
 // import rule (BUILD_RULES §4); the co-located test's real import of THIS
@@ -98,6 +106,7 @@ import {
   getWeeklyComposite,
   isCpuUserId,
   isWeekBanked,
+  pickCurrentTournamentBattle,
 } from '../../src/constants/leagueTournament.js';
 import { monthKeyForGroup } from './tournamentLeaderboard.js';
 import {
@@ -134,9 +143,12 @@ export const SETTLEMENT_MAX_STAKES = 120;
 
 /**
  * The most writes one settlement transaction will project before holding
- * instead (H3) — 20 under Firestore's 500 so the pool write and any wallet
- * re-set land with room. Counted conservatively: every `commitWallet` call is
- * a write even when two stakes by one backer re-set the same wallet document.
+ * instead (H3) — 20 under Firestore's 500-write transaction limit (platform
+ * knowledge, ASSUMED in the pre-build check §2.6 and not verifiable in-tree)
+ * as pure margin; the projection already counts the pool write and every
+ * wallet re-set. Counted conservatively: every `commitWallet` call is a write
+ * even when two stakes by one backer re-set the same wallet document, which
+ * matches the SDK's per-operation count (no same-document coalescing).
  */
 export const SETTLEMENT_MAX_WRITES = 480;
 
@@ -388,17 +400,32 @@ export async function resolveSettlementTelemetry(db, groupId, seats) {
     console.warn(`${LOG_PREFIX} agent-draft stream unreadable for ${groupId} (telemetry only):`, err?.message);
   }
   try {
-    const battles = await db.collection('agentBattles').where('groupId', '==', groupId).get();
+    // A seat's battles are deployed FRESH daily (up to five per group), so the
+    // hash "at settlement" is the seat's CURRENT battle's — chosen by the P7
+    // selector (`pickCurrentTournamentBattle`: active, else latest createdAt),
+    // the ONE home for that rule — never whichever doc the query returned
+    // first. A field mask keeps the read to what is needed.
+    const battles = await db.collection('agentBattles')
+      .where('groupId', '==', groupId)
+      .select('gameMode', 'ownerId', 'agentId', 'status', 'createdAt', 'resolvedAgentManifest.equippedConfigHash')
+      .get();
+    const byOwner = new Map();
     battles.forEach((doc) => {
       const data = doc.data();
-      if (data?.gameMode !== TOURNAMENT_GAME_MODE) return;
-      const rec = out.get(data.ownerId);
-      if (!rec) return;
-      if (rec.agentId === null && typeof data.agentId === 'string' && data.agentId.length > 0) rec.agentId = data.agentId;
-      if (isCpu(data.ownerId)) return;
-      const hash = data.resolvedAgentManifest?.equippedConfigHash;
-      if (rec.hashAtSettlement === null && typeof hash === 'string' && hash.length > 0) rec.hashAtSettlement = hash;
+      if (data?.gameMode !== TOURNAMENT_GAME_MODE || !out.has(data.ownerId)) return;
+      const list = byOwner.get(data.ownerId) ?? [];
+      list.push(data);
+      byOwner.set(data.ownerId, list);
     });
+    for (const [ownerId, list] of byOwner) {
+      const current = pickCurrentTournamentBattle(list);
+      const rec = out.get(ownerId);
+      if (!current || !rec) continue;
+      if (rec.agentId === null && typeof current.agentId === 'string' && current.agentId.length > 0) rec.agentId = current.agentId;
+      if (isCpu(ownerId)) continue;
+      const hash = current.resolvedAgentManifest?.equippedConfigHash;
+      if (typeof hash === 'string' && hash.length > 0) rec.hashAtSettlement = hash;
+    }
   } catch (err) {
     console.warn(`${LOG_PREFIX} battle docs unreadable for ${groupId} (telemetry only):`, err?.message);
   }
@@ -459,6 +486,10 @@ function requireArgs(groupId, source, now) {
  * @returns {Promise<{settled: boolean, reason?: string, holdReason?: string,
  *   pool?: Object, winners?: string[], winningStakes?: number, paysX?: number|null,
  *   stakesSettled?: number, payoutsTotal?: number, burned?: number}>}
+ *   `stakesSettled` on the RETURN is this pass's count (the stakes decided by
+ *   this call); `pool.stakesSettled`, `payoutsTotal` and `burned` are
+ *   cumulative over the whole book. The two differ only after a partial
+ *   store, which Firestore's atomic commit never produces.
  */
 export async function settlePool(db, groupId, {
   now = new Date(), source, overrideHold = false, actor = null, reason = null,
@@ -567,8 +598,15 @@ export async function settlePool(db, groupId, {
       const data = { id: doc.id, ...doc.data() };
       if (data.status === STAKE_STATUS.LIVE) stakes.push(data);
       else if (data.status === STAKE_STATUS.WON || data.status === STAKE_STATUS.LOST) {
+        const won = data.status === STAKE_STATUS.WON;
         const payout = Number.isFinite(data.payout) && data.payout > 0 ? Math.floor(data.payout) : 0;
-        prior.push({ stake: data, won: data.status === STAKE_STATUS.WON, payout });
+        // A `won` stake always pays at least its own amount (pot ⊇ winning
+        // stakes); one recorded as won with no payout is a corrupt book, and
+        // re-visiting it silently would leave it unpaid for ever. Abort.
+        if (won && payout <= 0) {
+          throw new BackingSettlementError('payout_invariant', `settlement: stake ${data.id} is recorded won with payout ${JSON.stringify(data.payout)}`);
+        }
+        prior.push({ stake: data, won, payout });
         priorPayouts += payout;
       }
     });
@@ -605,7 +643,9 @@ export async function settlePool(db, groupId, {
         heldAt: nowIso,
         holdSource: source,
         liveStakesAtHold: stakes.length,
-        ...(releasing ? { holdReleaseRefused: { by: actor ?? 'admin', at: nowIso, reason: reason ?? null } } : {}),
+        // WHO and WHEN are recorded; the operator's free-text WHY is logged
+        // only — the pool document is authed-read by every signed-in user.
+        ...(releasing ? { holdReleaseRefused: { by: actor ?? 'admin', at: nowIso } } : {}),
         updatedAt: nowIso,
       };
       tx.set(poolRef, held);
@@ -625,7 +665,16 @@ export async function settlePool(db, groupId, {
     for (const { stake } of ledgerWork) {
       const ref = walletRef(db, stake.userId, { dev });
       if (walletDocs.has(ref.path)) continue;
-      walletDocs.set(ref.path, await readWallet(tx, ref));
+      const walletDoc = await readWallet(tx, ref);
+      // A stake cannot exist without the wallet that was debited for it
+      // (`debitStake` wrote both in one transaction), so a missing wallet at
+      // settlement is an out-of-band deletion — a book this function cannot
+      // trust. The primitives would mint a fresh wallet holding the payout
+      // alone (the stake side gone); abort instead, writing nothing.
+      if (walletDoc == null) {
+        throw new BackingSettlementError('wallet_missing', `settlement: wallet ${ref.path} is missing for stake ${stake.id} — refusing to mint a record from nothing`);
+      }
+      walletDocs.set(ref.path, walletDoc);
     }
 
     // ----- WRITES -----
@@ -664,14 +713,30 @@ export async function settlePool(db, groupId, {
       walletDocs.set(wRef.path, wallet);
     }
 
-    // (8) THE POOL: `resolved`, the winners, the ratio, and each winning team's
-    // agent + loadout hash from the pre-read telemetry (`null` when unresolved).
+    // (8) THE POOL: `resolved`, the winners, the ratio, and EACH team's agent +
+    // loadout hash from the pre-read telemetry (`null` when unresolved).
+    //
+    // TWO pays × figures, and they mean different things (BUILD_RULES §9 — a
+    // label is bound to the number it describes):
+    //   · `pool.paysX` is the REALIZED ratio, pot ÷ winningStakes over the whole
+    //     winning set (null when no winner was backed);
+    //   · `teams[].paysX` is §3's own table — "pays × IF THIS TEAM WINS", pot ÷
+    //     that team's stakes (null for an unbacked team) — the per-team figure
+    //     the results card shows beside every seat, winner or not.
+    // Neither is ever multiplied by a stake to produce a number a backer is
+    // owed: the payout is `stake.payout`, floor-rounded per stake (§3), and a
+    // 2-dp ratio × stake disagrees with it by design.
     const winnerSet = new Set(plan.winners);
     const teams = (Array.isArray(pool.teams) ? pool.teams : []).map((team) => {
-      const won = winnerSet.has(team.odUserId);
-      if (!won) return { ...team, won: false, paysX: 0 };
       const tele = telemetry.get(team.odUserId) ?? { agentId: null, hashAtSettlement: null };
-      return { ...team, won: true, paysX: plan.paysX ?? 0, agentId: tele.agentId, hashAtSettlement: tele.hashAtSettlement };
+      const stakeTotal = Number.isFinite(team.stakeTotal) ? team.stakeTotal : 0;
+      return {
+        ...team,
+        won: winnerSet.has(team.odUserId),
+        paysX: stakeTotal > 0 ? Math.round((plan.pot / stakeTotal) * 100) / 100 : null,
+        agentId: tele.agentId,
+        hashAtSettlement: tele.hashAtSettlement,
+      };
     });
     // THE RECORD IS CUMULATIVE: this pass plus whatever an interrupted earlier
     // pass already settled, so a retry writes the same pool document a single
@@ -693,8 +758,11 @@ export async function settlePool(db, groupId, {
       updatedAt: nowIso,
     };
     if (releasing) {
+      // WHO, WHEN and WHAT WAS HELD are recorded on the pool; the operator's
+      // free-text WHY is in the log line below only — the pool document is
+      // authed-read by every signed-in user, and a note is not a result.
       resolved.holdRelease = {
-        by: actor ?? 'admin', at: nowIso, priorHoldReason: pool.holdReason ?? null, reason: reason ?? null,
+        by: actor ?? 'admin', at: nowIso, priorHoldReason: pool.holdReason ?? null,
       };
       delete resolved.holdReason;
       delete resolved.heldAt;

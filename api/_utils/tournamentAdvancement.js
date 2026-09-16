@@ -367,9 +367,10 @@ export async function runFridayAdvancement(db, { now = new Date(), includeDevGro
       if (BACKING_BETA_ENABLED) {
         try {
           const settled = await settleBackingPool(db, group.id, { now: nowIso, source: 'friday_duty' });
-          if (settled.settled) backingSummary.settled++; else backingSummary.unsettled++;
+          if (settled.settled) backingSummary.settled++;
+          else { backingSummary.unsettled++; console.warn(`${LOG_PREFIX} backing settlement ${group.id}: unsettled (${settled.reason})`); }
         } catch (err) {
-          console.error(`${LOG_PREFIX} backing settlement ${group.id} FAILED (non-blocking):`, err.message);
+          console.error(`${LOG_PREFIX} backing settlement ${group.id} FAILED (non-blocking):`, err?.message);
           backingSummary.settlementErrors++;
         }
       }

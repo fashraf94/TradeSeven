@@ -299,6 +299,17 @@ export default async function handler(req, res) {
         // touches a `resolving` hold, which only the admin endpoint releases.
         // The predicate on the list's group read is a cheap gate; the primitive
         // re-reads the group inside its transaction and decides on that (H4).
+        //
+        // LATENT ON THIS ROUTE IN PRODUCTION, and stated so (PR 3 review, three
+        // lenses): this list is keyed to the NEXT battle Monday's week (§5,
+        // `podListWeek`), which rolls forward at Monday 09:30 ET, while a pod
+        // satisfies the predicate no earlier than the Tuesday evening of its
+        // own week — so a completed pod is never in this list, and this block
+        // cannot reach it. It is the settle-on-read CONTRACT (the freeze check,
+        // the hold exclusion, the one primitive) that the results reader
+        // (PR 5 — pools fetched by the viewer's own stakes across weeks) will
+        // carry; until then the admin re-run is the practical whole-pool retry.
+        // The test suite pins both the contract and the limit.
         if (pool != null && pool.status === POOL_STATUS.CLOSED
           && settlementPredicate(group).final && !TOURNAMENT_ADVANCEMENT_FROZEN) {
           const settled = await settlePool(db, group.id, { now, source: SETTLEMENT_SOURCE.SETTLE_ON_READ });

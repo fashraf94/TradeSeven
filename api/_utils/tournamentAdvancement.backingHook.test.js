@@ -18,8 +18,16 @@
 // The settlement module is mocked with a PASS-THROUGH: rows that need a
 // throwing or canned settler install one; the end-to-end row lets the real
 // primitive run inside the duty, which is also the H4 mutation guard (pass the
-// loop's stale group object instead of its id → the primitive reads `battle`,
-// refuses, and the pool never resolves).
+// loop's stale group object instead of its id → the primitive's argument
+// check refuses a non-string `groupId` with `invalid_group_id`, the hook
+// counts a settlementError, and the pool never resolves — the row reds either
+// way; the primitive's own stale-object row, in backingSettlement.test.js,
+// covers the "reads `battle`" half).
+//
+// PLACEMENT: the hook sits after the completion transition in the base-layer
+// loop (pre-build check §2.2). The end-to-end row pins that ORDER on the write
+// log (transition before the first backing write); its position relative to
+// the `baseCompleted++` line itself is not observable and not pinned.
 //
 // DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): this file's real import of
 // tournamentAdvancement.js is the runtime guard for its transitive import
@@ -249,8 +257,9 @@ describe('the hook calls the ONE primitive with group.id (H4)', () => {
 
   it('END TO END: the real primitive settles the closed pool during the duty, AFTER the transition, writing only backing paths (H2)', async () => {
     // Mutation guard for H4: pass the loop's group object instead of its id
-    // and the primitive reads `battle` on it, answers not_final, and this pool
-    // never resolves.
+    // and the primitive refuses it (`invalid_group_id` — a non-string
+    // groupId), the hook counts a settlementError, and this pool never
+    // resolves.
     flags.backing = true;
     const { db, store, writeLog } = seed();
     const summary = await runFridayAdvancement(db, { now: NOW });
@@ -298,5 +307,74 @@ describe('the hook calls the ONE primitive with group.id (H4)', () => {
     const s2 = await runFridayAdvancement(db, { now: NOW });
     expect(s2.frozen).toBe(1);
     expect(settler.calls).toEqual([]);
+  });
+});
+
+// ==================== THE CATCH ITSELF (review lens A, A2) ====================
+describe('the hook\'s catch survives any rejection shape', () => {
+  it('a NULLISH rejection (throw null / Promise.reject()) is still caught by the hook — never by the loop', async () => {
+    // `err.message` on null throws a TypeError INSIDE the inner catch, which
+    // would escape to the loop's catch and count on summary.errors — the H1
+    // failure by another route. `err?.message` closes it.
+    flags.backing = true;
+    for (const rejection of [null, undefined]) {
+      settler.impl = async () => { throw rejection; };
+      const { db } = seed();
+      const summary = await runFridayAdvancement(db, { now: NOW });
+      expect(summary.errors).toBe(0);
+      expect(summary.baseCompleted).toBe(1);
+      expect(summary.backing).toEqual({ settled: 0, unsettled: 0, settlementErrors: 1 });
+      expect(isDutySatisfied(DUTY.FRIDAY_ADVANCEMENT, summary)).toBe(true);
+    }
+  });
+
+  it('an unsettled answer is logged per group with its reason, so an operator can find a closed-unsettled pool', async () => {
+    flags.backing = true;
+    settler.impl = async () => ({ settled: false, reason: 'not_final' });
+    const { db } = seed();
+    await runFridayAdvancement(db, { now: NOW });
+    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('backing settlement base1: unsettled (not_final)'));
+  });
+});
+
+// ==================== TYPED ERRORS (review lens D, #1) ====================
+describe('a TYPED settlement error is swallowed like any other (H1)', () => {
+  it('a settler that throws BackingSettlementError / BackingPoolError / BackingLedgerError still yields errors 0 and the marker', async () => {
+    // The errors a REAL settlement raises (totals_missing, no_winner,
+    // payout_invariant, wallet_missing, invalid_pool) are typed; a hook that
+    // "surfaced data errors to the duty" by rethrowing typed ones would
+    // withhold the marker with the untyped row still green.
+    const { BackingSettlementError } = await import('./backingSettlement.js');
+    const { BackingPoolError } = await import('./backingPools.js');
+    const { BackingLedgerError } = await import('./backingWallet.js');
+    flags.backing = true;
+    for (const err of [
+      new BackingSettlementError('totals_missing', 'no book'),
+      new BackingPoolError('invalid_pool', 'no monday'),
+      new BackingLedgerError('invalid_amount', 'bad amount'),
+    ]) {
+      settler.impl = async () => { throw err; };
+      const { db, store } = seed();
+      const result = await runOrchestratorTick(db, { now: NOW, forceDuty: DUTY.FRIDAY_ADVANCEMENT });
+      expect(result.errors, err.name).toBe(0);
+      expect(result.baseCompleted, err.name).toBe(1);
+      expect(result.complete, err.name).toBe(true);
+      expect(result.backing, err.name).toEqual({ settled: 0, unsettled: 0, settlementErrors: 1 });
+      expect(store.get('tournamentOrchestrator/state').duties[dutyMarkerKey('2026-06-19', DUTY.FRIDAY_ADVANCEMENT)]).toBeDefined();
+    }
+  });
+
+  it('END TO END: the REAL primitive aborting inside the duty (a corrupt book) still completes the group and sets the marker', async () => {
+    flags.backing = true;
+    const { db, store } = seed();
+    store.delete(`${BACKING_POOLS_COLLECTION}/base1/private/totals`);   // totals_missing → BackingSettlementError
+    const result = await runOrchestratorTick(db, { now: NOW, forceDuty: DUTY.FRIDAY_ADVANCEMENT });
+    expect(result.errors).toBe(0);
+    expect(result.baseCompleted).toBe(1);
+    expect(result.complete).toBe(true);
+    expect(result.backing).toEqual({ settled: 0, unsettled: 0, settlementErrors: 1 });
+    expect(store.get('tournamentGroups/base1').status).toBe(GROUP_STATUS.COMPLETE);
+    expect(store.get(`${BACKING_POOLS_COLLECTION}/base1`).status).toBe(POOL_STATUS.CLOSED);   // left for the admin re-run
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('backing settlement base1 FAILED (non-blocking)'), expect.stringContaining('private/totals'));
   });
 });

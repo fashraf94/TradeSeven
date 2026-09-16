@@ -198,7 +198,13 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       ]);
 
     for (const rel of routesNamed('backing')) {
-      const src = read(rel);
+      // CODE ONLY: comments are stripped before any index check, so a comment
+      // that names `requireAdminSecret(req, res)` above a flag read that has
+      // been moved AHEAD of auth cannot satisfy this row (PR 3 review lens C,
+      // F3 — the row was comment-vacuous; the dark suites were its only
+      // backstop). The block-comment strip runs first so a `//` inside a
+      // block comment cannot leave a dangling fragment.
+      const src = read(rel).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
       // The call-time read, inside the handler, in the SHOW_IT / research.js
       // shape - never a module-scope derivation and never an accessor.
       expect(src, `${rel} does not 404 on the flag`)

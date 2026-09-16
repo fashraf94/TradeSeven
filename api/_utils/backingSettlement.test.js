@@ -239,10 +239,16 @@ function backingSnapshot(store) {
 }
 
 // ==================== THE VERSIONED HARNESS ====================
-// A real optimistic-concurrency simulator (the backing-stake.test.js shape):
+// An optimistic-concurrency SIMULATOR (the backing-stake.test.js shape):
 // every document is versioned, a transaction remembers what it READ, and on
 // commit it discards the buffered writes and re-runs the body if any of them
-// moved — which is what Firestore does. It also refuses a read after a write.
+// moved — which is what Firestore does. It also refuses a read after a write,
+// and (unlike the PR 2 copy) re-runs the body on ONE transaction object, as
+// the SDK does. DOCUMENTED LIMIT, inherited from PR 2's harness: a query's
+// read set is the documents it MATCHED — narrower than Firestore's, which also
+// guards the range — so this harness misses conflicts Firestore would catch
+// and never invents ones it would not; every "safe" conclusion drawn here
+// holds a fortiori.
 const tick = () => new Promise((r) => setImmediate(r));
 
 function makeVersionedDb(initial = {}, { beforeCommit = null } = {}) {
@@ -260,12 +266,14 @@ function makeVersionedDb(initial = {}, { beforeCommit = null } = {}) {
   const snapshotOf = (docs) => ({ docs, empty: docs.length === 0, size: docs.length, forEach: (cb) => docs.forEach(cb) });
   function makeQuery(prefix, filters) {
     const run = () => docsUnder(prefix).filter((d) => filters.every((f) => f.op !== '==' || d.data()[f.field] === f.value));
-    return {
+    const self = {
       path: prefix, _run: run,
       where: (field, op, value) => makeQuery(prefix, [...filters, { field, op, value }]),
       orderBy: () => makeQuery(prefix, filters), limit: () => makeQuery(prefix, filters),
+      select: () => self,   // a field mask never changes WHICH docs come back
       get: async () => { await tick(); return snapshotOf(run()); },
     };
+    return self;
   }
   function makeDocRef(path) {
     return {
@@ -292,24 +300,34 @@ function makeVersionedDb(initial = {}, { beforeCommit = null } = {}) {
   const db = {
     collection: makeCollection,
     runTransaction: async (fn) => {
+      // ONE Transaction object across attempts, as the SDK does
+      // (@google-cloud/firestore transaction.js runs `updateFunction(this)`
+      // and only resets its write batch between attempts) — so anything the
+      // code under test remembers PER TRANSACTION OBJECT (backingWallet.js's
+      // per-tx wallet memo, reset by readWallet's forgetWallet) is exercised
+      // the way production exercises it. A fresh object per attempt would let
+      // a missing reset pass unseen (review lens E, E4).
+      let reads = new Map();
+      let buffer = [];
+      let wrote = false;
+      const remember = (path) => reads.set(path, versions.get(path) ?? 0);
+      const tx = {
+        get: async (ref) => {
+          if (wrote) throw new Error('transaction read after write');
+          await tick();
+          if (ref._isDoc) { remember(ref.path); return snapOf(ref.path); }
+          const docs = ref._run();
+          for (const d of docs) remember(d.__path);
+          return snapshotOf(docs);
+        },
+        set: (ref, data) => { wrote = true; buffer.push([ref.path, structuredClone(data)]); },
+        update: () => { throw new Error('settlement writes whole documents or nothing'); },
+      };
       for (let attempt = 1; attempt <= 6; attempt += 1) {
         stats.attempts += 1;
-        const reads = new Map();
-        const buffer = [];
-        let wrote = false;
-        const remember = (path) => reads.set(path, versions.get(path) ?? 0);
-        const tx = {
-          get: async (ref) => {
-            if (wrote) throw new Error('transaction read after write');
-            await tick();
-            if (ref._isDoc) { remember(ref.path); return snapOf(ref.path); }
-            const docs = ref._run();
-            for (const d of docs) remember(d.__path);
-            return snapshotOf(docs);
-          },
-          set: (ref, data) => { wrote = true; buffer.push([ref.path, structuredClone(data)]); },
-          update: () => { throw new Error('settlement writes whole documents or nothing'); },
-        };
+        reads = new Map();
+        buffer = [];
+        wrote = false;
         const result = await fn(tx);
         await tick();
         if (beforeCommit) beforeCommit({ attempt, store, versions, commitWrites });
@@ -647,9 +665,17 @@ describe('settlePool — the clean settlement (§3 worked example)', () => {
       settledAt: NOW_ISO, settlementRef: SETTLEMENT_SOURCE.FRIDAY_DUTY, potTotal: 1200, stakesSettled: 5, payoutsTotal: 1200, burnedBp: 0,
       updatedAt: NOW_ISO,
     });
-    expect(pool.teams.find((t) => t.odUserId === 'od-a')).toMatchObject({ won: true, paysX: 2, stakeTotal: 600, agentId: null, hashAtSettlement: null });
-    expect(pool.teams.find((t) => t.odUserId === 'od-b')).toMatchObject({ won: false, paysX: 0, stakeTotal: 300 });
-    expect(pool.teams.find((t) => t.odUserId === 'od-b')).not.toHaveProperty('agentId');
+    // EVERY team is stamped (§1 "each team's", §6 teams[].agentId /
+    // teams[].hashAtSettlement) — null here because no telemetry was seeded —
+    // and carries §3's own "pays × if this team wins": the spec's table, pot
+    // 1,200 → 2.0× / 4.0× / 6.0× / 12.0×. `pool.paysX` is the REALIZED ratio.
+    expect(pool.teams.map((t) => [t.odUserId, t.won, t.paysX, t.agentId, t.hashAtSettlement])).toEqual([
+      ['od-a', true, 2, null, null],
+      ['od-b', false, 4, null, null],
+      ['cpu-1', false, 6, null, null],
+      ['cpu-2', false, 12, null, null],
+    ]);
+    expect(pool.teams.find((t) => t.odUserId === 'od-a')).toMatchObject({ stakeTotal: 600, backerCount: 2 });
 
     // H2: ONLY backing collections are written; the group doc is read FRESH
     // inside the transaction and never written.
@@ -762,17 +788,28 @@ describe('settlePool — the holds (D-ae, H3), admin-only release', () => {
     expect(await settle(db, { source: SETTLEMENT_SOURCE.ADMIN })).toMatchObject({ settled: false, reason: SETTLEMENT_REASON.HELD });
     expect(writeLog.length).toBe(afterHold);
 
+    const writesBeforeRelease = writeLog.length;
     const out = await settle(db, { source: SETTLEMENT_SOURCE.ADMIN, overrideHold: true, actor: 'founder', reason: 'agent layer confirmed present via Console' });
     expect(out.settled).toBe(true);
     const pool = poolOf(store);
     expect(pool).toMatchObject({
       status: POOL_STATUS.RESOLVED, settlementRef: SETTLEMENT_SOURCE.ADMIN,
-      holdRelease: { by: 'founder', at: NOW_ISO, priorHoldReason: HOLD_REASON.AGENT_LAYER_ABSENT, reason: 'agent layer confirmed present via Console' },
+      holdRelease: { by: 'founder', at: NOW_ISO, priorHoldReason: HOLD_REASON.AGENT_LAYER_ABSENT },
     });
+    // WHO / WHEN / WHAT WAS HELD are on the pool; the operator's free-text WHY
+    // is in the log only — the document is authed-read by every signed-in
+    // user (review lenses B and E).
+    expect(pool.holdRelease).not.toHaveProperty('reason');
+    expect(JSON.stringify(pool)).not.toContain('confirmed present via Console');
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('agent layer confirmed present via Console'));
     expect(pool).not.toHaveProperty('holdReason');
     expect(pool).not.toHaveProperty('heldAt');
+    expect(pool).not.toHaveProperty('holdSource');
     expect(stakeOf(store, 's1')).toMatchObject({ status: STAKE_STATUS.WON, payout: 1000 });
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('HOLD RELEASED'));
+    // H2 holds on the RELEASE path too: every write after the hold is a backing path.
+    expect(writeLog.slice(writesBeforeRelease).length).toBeGreaterThan(0);
+    expect(writeLog.slice(writesBeforeRelease).every(([, p]) => BACKING_PREFIXES.some((x) => p.startsWith(x)))).toBe(true);
   });
 
   it('STAKE CEILING (H3): more than SETTLEMENT_MAX_STAKES live stakes holds the pool, asserted inside the transaction', async () => {
@@ -823,8 +860,9 @@ describe('settlePool — the holds (D-ae, H3), admin-only release', () => {
     expect(out).toMatchObject({ settled: false, holdReason: HOLD_REASON.STAKE_CEILING });
     expect(poolOf(store)).toMatchObject({
       status: POOL_STATUS.RESOLVING, holdReason: HOLD_REASON.STAKE_CEILING,
-      holdReleaseRefused: { by: 'founder', at: NOW_ISO, reason: 'try' },
+      holdReleaseRefused: { by: 'founder', at: NOW_ISO },
     });
+    expect(poolOf(store).holdReleaseRefused).not.toHaveProperty('reason');
     expect(stakeOf(store, 'c0').status).toBe(STAKE_STATUS.LIVE);
   });
 
@@ -1017,8 +1055,10 @@ describe('telemetry — agentId and hashAtSettlement (§1, D-m), never deciding'
     await settle(db);
     const a = poolOf(store).teams.find((t) => t.odUserId === 'od-a');
     expect(a).toMatchObject({ won: true, agentId: 'agent-A', hashAtSettlement: 'hash-a' });
-    // Losing teams are not stamped (§1: "each winning team's").
-    expect(poolOf(store).teams.find((t) => t.odUserId === 'od-b')).not.toHaveProperty('agentId');
+    // EVERY team is stamped (§1 "each team's"; §6): the loadout-changed marker
+    // sits on a backer's OWN stakes, which may be on a losing team. od-b has a
+    // stream event but no battle doc → agentId from the stream, hash null.
+    expect(poolOf(store).teams.find((t) => t.odUserId === 'od-b')).toMatchObject({ won: false, agentId: 'agent-B', hashAtSettlement: null });
   });
 
   it('a CPU winner carries its agentId and a null hash (all CPUs share one — §1 suppresses the marker)', async () => {
@@ -1046,5 +1086,129 @@ describe('telemetry — agentId and hashAtSettlement (§1, D-m), never deciding'
     const { db } = makeInMemoryDb(extra);
     const out = await resolveSettlementTelemetry(db, GROUP_ID, [{ odUserId: 'od-a', isCpu: false }]);
     expect([...out.entries()]).toEqual([['od-a', { agentId: 'agent-A', hashAtSettlement: 'hash-a' }]]);
+  });
+});
+
+// ============================================================================
+// Rows added by the PR 3 multi-lens review (docs/audits/20260916_BACKING_PR3_MULTILENS_REVIEW.md).
+// Each names the defect it reds under; the review record carries the mutation
+// evidence.
+describe('review rows — guards that could not fail before', () => {
+  it('ROUNDING IS FLOOR, NOT ROUND: 3 × 100 on A + 500 on B, pot 800 → 266.67 → 266 each (round would pay 267), burned 2 (lens B, C6)', async () => {
+    // The 333.33 fixtures round DOWN either way, so a `Math.round` mutation
+    // slipped them; this book has a ≥ .5 fraction and separates the two.
+    const stakes = [stake('a', 'u1', 'od-a', 100), stake('b', 'u2', 'od-a', 100), stake('c', 'u3', 'od-a', 100), stake('d', 'u4', 'od-b', 500)];
+    const plan = planSettlement({ group: completeGroup(), totals: totalsFromStakes(stakes.map(([, s]) => s)).private, stakes: stakes.map(([path, s]) => ({ id: path.split('/').pop(), ...s })) });
+    expect(plan.outcomes.filter((o) => o.won).map((o) => o.payout)).toEqual([266, 266, 266]);
+    expect(plan.payoutsTotal).toBe(798);
+    expect(plan.burned).toBe(2);
+    const { db, store } = seed({ stakes });
+    const out = await settle(db);
+    expect(out).toMatchObject({ payoutsTotal: 798, burned: 2 });
+    expect(stakeOf(store, 'a').payout).toBe(266);
+    expect(poolOf(store)).toMatchObject({ burnedBp: 2, paysX: 2.67 });
+    expect(poolOf(store).teams.find((t) => t.odUserId === 'od-a').paysX).toBe(2.67);
+  });
+
+  it('THE HASH IS THE SEAT\'S CURRENT BATTLE\'S (the P7 selector), whichever order the daily docs arrive in (lens B, C4)', async () => {
+    const docs = {
+      'agentBattles/b-mon': { groupId: GROUP_ID, gameMode: 'baggerbomb_tournament', ownerId: 'od-a', agentId: 'agent-A', status: 'completed', createdAt: '2026-09-28T14:00:00.000Z', resolvedAgentManifest: { equippedConfigHash: 'hash-monday' } },
+      'agentBattles/b-fri': { groupId: GROUP_ID, gameMode: 'baggerbomb_tournament', ownerId: 'od-a', agentId: 'agent-A', status: 'completed', createdAt: '2026-10-02T14:00:00.000Z', resolvedAgentManifest: { equippedConfigHash: 'hash-friday' } },
+      'agentBattles/b-act': { groupId: GROUP_ID, gameMode: 'baggerbomb_tournament', ownerId: 'od-b', agentId: 'agent-B', status: 'active', createdAt: '2026-09-30T14:00:00.000Z', resolvedAgentManifest: { equippedConfigHash: 'hash-active' } },
+      'agentBattles/b-old': { groupId: GROUP_ID, gameMode: 'baggerbomb_tournament', ownerId: 'od-b', agentId: 'agent-B', status: 'completed', createdAt: '2026-10-02T14:00:00.000Z', resolvedAgentManifest: { equippedConfigHash: 'hash-later-but-completed' } },
+    };
+    for (const order of [Object.keys(docs), Object.keys(docs).reverse()]) {
+      const initial = {};
+      for (const k of order) initial[k] = docs[k];
+      const { db } = makeInMemoryDb(initial);
+      const out = await resolveSettlementTelemetry(db, GROUP_ID, [{ odUserId: 'od-a', isCpu: false }, { odUserId: 'od-b', isCpu: false }]);
+      expect(out.get('od-a'), order.join(',')).toEqual({ agentId: 'agent-A', hashAtSettlement: 'hash-friday' });   // latest by createdAt
+      expect(out.get('od-b'), order.join(',')).toEqual({ agentId: 'agent-B', hashAtSettlement: 'hash-active' });   // active beats later-completed
+    }
+  });
+
+  it('THE CEILING IS COUNTED ON THE TRANSACTIONAL READ: a direct query that under-counts does not slip a pool past it (lens D, #4)', async () => {
+    const stakes = [];
+    for (let i = 0; i < SETTLEMENT_MAX_STAKES + 1; i += 1) stakes.push(stake(`c${i}`, `u${i % 7}`, 'od-b', 50));
+    const { db, store } = seed({ stakes });
+    // A direct (non-transactional) read of backingStakes returns ONE FEWER
+    // doc than the truth the transaction reads.
+    const real = db.collection;
+    db.collection = (name) => {
+      const col = real(name);
+      if (name !== BACKING_STAKES_COLLECTION) return col;
+      const wrap = (q) => ({
+        ...q,
+        where: (...args) => wrap(q.where(...args)),
+        get: async () => { const snap = await q.get(); const docs = snap.docs.slice(1); return { ...snap, docs, size: docs.length, empty: docs.length === 0, forEach: (cb) => docs.forEach(cb) }; },
+      });
+      return { ...col, where: (...args) => wrap(col.where(...args)) };
+    };
+    const out = await settle(db);
+    expect(out).toMatchObject({ settled: false, holdReason: HOLD_REASON.STAKE_CEILING });
+    expect(poolOf(store)).toMatchObject({ status: POOL_STATUS.RESOLVING, liveStakesAtHold: SETTLEMENT_MAX_STAKES + 1 });
+  });
+
+  it('THE CHEAP READ DECIDES NOTHING ABOUT MONEY: winners, the agent-less test and the pool namespace all come from the transactional group read (lens D, #5)', async () => {
+    // THE TRUTH (the transactional read): a DEV pod, od-a leads, agent layer
+    // present — with a dev pool, dev wallets, AND a production twin pool with
+    // production wallets seeded beside it. THE DIRECT READ is doctored to say
+    // production, od-b leads, agent layer absent. Money must follow the
+    // transactional read: winners od-a, the DEV pool resolved, dev wallets
+    // credited, the production twin untouched. (Routing the pool off the
+    // cheap read would settle the production twin; judging winners or the
+    // agent-less test off it would pick od-b or hold.)
+    const truthGroup = completeGroup({ isDev: true });
+    const initial = world({ group: truthGroup });
+    for (const [path, data] of Object.entries(world())) if (!path.startsWith('tournamentGroups/')) initial[path] = initial[path] ?? data;
+    const { db, store, writeLog } = makeInMemoryDb(initial);
+    const real = db.collection;
+    const doctored = () => {
+      const truth = store.get(`tournamentGroups/${GROUP_ID}`);
+      const scores = bankedWeek({ ...SCORES, 'od-b': { user: 500, agent: 0 }, 'od-a': { user: 1, agent: 0 } }, { agentPointsOf: (id) => (id.startsWith('cpu') ? 5 : 0) });
+      return { ...truth, isDev: false, dailyScores: scores };
+    };
+    db.collection = (name) => {
+      const col = real(name);
+      if (name !== 'tournamentGroups') return col;
+      return { ...col, doc: (id) => ({ ...col.doc(id), get: async () => ({ exists: true, id, data: doctored }) }) };
+    };
+    const out = await settle(db);
+    expect(out).toMatchObject({ settled: true, winners: ['od-a'] });
+    expect(poolOf(store, `dev-${GROUP_ID}`)).toMatchObject({ status: POOL_STATUS.RESOLVED, winnerOdUserIds: ['od-a'], isDev: true });
+    expect(walletOf(store, 'dev-u1').careerNet).toBe(500);
+    // The production twin: pool still closed, wallets untouched, no write.
+    expect(poolOf(store, GROUP_ID).status).toBe(POOL_STATUS.CLOSED);
+    expect(walletOf(store, 'u1').careerNet).toBe(-500);
+    expect(writeLog.every(([, p]) => p.startsWith(`${BACKING_POOLS_COLLECTION}/dev-`) || p.startsWith(`${BACKING_WALLETS_COLLECTION}/dev-`) || p.startsWith(`${BACKING_STAKES_COLLECTION}/`))).toBe(true);
+    expect(stakeOf(store, 's1')).toMatchObject({ status: STAKE_STATUS.WON, payout: 1000 });
+  });
+
+  it('a PRIOR `won` stake recorded with no payout is a corrupt book — abort, nothing written (lens D, #11)', async () => {
+    const stakes = [...SPEC_STAKES(), stake('ghost', 'u1', 'od-a', 100, { status: STAKE_STATUS.WON, payout: 0, settledAt: '2026-10-02T22:00:00.000Z' })];
+    const { db, writeLog } = seed({ stakes });
+    await expect(settle(db)).rejects.toThrow(/recorded won with payout/);
+    expect(writeLog).toEqual([]);
+  });
+
+  it('a MISSING wallet at settlement is never minted from the payout alone — abort, nothing written (lens D, #12)', async () => {
+    const { db, store, writeLog } = seed();
+    store.delete(`${BACKING_WALLETS_COLLECTION}/u1`);
+    await expect(settle(db)).rejects.toThrow(/wallet .* is missing/);
+    expect(writeLog).toEqual([]);
+    expect(poolOf(store).status).toBe(POOL_STATUS.CLOSED);
+    expect(stakeOf(store, 's1').status).toBe(STAKE_STATUS.LIVE);
+  });
+
+  it('CHARACTERISATION: winners are judged over groupMembers (D-j); a member absent from players[] can win with nothing backed on it, and then every stake loses (lens D, #13)', async () => {
+    // The close voids by players[] (a seat that left); settlement wins by
+    // groupMembers (the spec's tie set). The two are updated together by the
+    // leave path, so this is drift-only — recorded so the rule is explicit.
+    const scores = bankedWeek({ ...SCORES, 'od-z': { user: 500, agent: 500 } });
+    const g = completeGroup({ groupMembers: [...MEMBERS, 'od-z'], dailyScores: scores });
+    const { db, store } = seed({ group: g });
+    const out = await settle(db);
+    expect(out).toMatchObject({ settled: true, winners: ['od-z'], winningStakes: 0, payoutsTotal: 0, burned: 1200 });
+    expect(stakeOf(store, 's1').status).toBe(STAKE_STATUS.LOST);
   });
 });

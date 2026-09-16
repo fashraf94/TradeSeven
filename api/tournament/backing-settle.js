@@ -34,7 +34,10 @@
 // A fictitious `settledAt` on real BP is exactly what the sim namespace exists
 // to prevent, so a simulated instant is honoured only against a pod whose
 // `isDev` routes it to a `dev-` pool (§11 gate 4's founder smoke) and answers
-// `simulated_requires_dev` otherwise. A production re-run uses the real clock.
+// `simulated_requires_dev` otherwise — INCLUDING a pod whose doc is missing,
+// which cannot prove it is dev and whose deleted-pod refund would otherwise
+// stamp the fictitious instant on a production pool (review lens C, F2). A
+// production re-run, and the deleted-pod refund, use the real clock.
 //
 // DARK AT MERGE. `BACKING_BETA_ENABLED` is false and read at CALL time; the
 // co-located `.dark.test.js` proves the route answers 404 and touches nothing.
@@ -105,12 +108,16 @@ export default async function handler(req, res) {
   const db = getFirebaseAdmin();
   try {
     // 6. A simulated clock is honoured against DEV pods only (see the header).
+    // A pod whose doc is MISSING cannot prove it is dev — and the primitive's
+    // deleted-pod path would close and refund whatever pool the id names, in
+    // either namespace, at the fictitious instant — so it is refused too; the
+    // deleted-pod refund runs on the real clock, without simulatedNow.
     if (simulated) {
       const group = await readGroup(db, groupId);
-      if (group != null && group.isDev !== true) {
+      if (group == null || group.isDev !== true) {
         return res.status(409).json({
           error: 'simulated_requires_dev',
-          message: 'A simulated clock may settle dev pods only; re-run without simulatedNow for a production pod.',
+          message: 'A simulated clock may settle dev pods only; re-run without simulatedNow for a production or missing pod.',
         });
       }
     }

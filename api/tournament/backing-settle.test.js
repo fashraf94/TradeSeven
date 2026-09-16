@@ -274,8 +274,12 @@ describe('the D-ae hold and its ONLY release path', () => {
     expect(res.body).toMatchObject({ overrideHold: true, settled: true, winners: ['od-a'] });
     expect(poolOf()).toMatchObject({
       status: POOL_STATUS.RESOLVED,
-      holdRelease: { by: 'admin', at: NOW.toISOString(), priorHoldReason: HOLD_REASON.AGENT_LAYER_ABSENT, reason: 'agent layer verified in the Console' },
+      holdRelease: { by: 'admin', at: NOW.toISOString(), priorHoldReason: HOLD_REASON.AGENT_LAYER_ABSENT },
     });
+    // The operator's free-text WHY is logged, never stored: the pool document
+    // is authed-read by every signed-in user (review lenses B and E).
+    expect(poolOf().holdRelease).not.toHaveProperty('reason');
+    expect(JSON.stringify(poolOf())).not.toContain('verified in the Console');
     expect(poolOf()).not.toHaveProperty('holdReason');
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('HOLD OVERRIDE requested for grp-admin-1 by admin — reason: agent layer verified in the Console'));
     expect(DB.store.get(`${BACKING_STAKES_COLLECTION}/s1`)).toMatchObject({ status: STAKE_STATUS.WON, payout: 600 });
@@ -309,9 +313,34 @@ describe('a simulated clock settles DEV pods only', () => {
     expect(DB.writeLog.every(([, p]) => p.startsWith('backing'))).toBe(true);
   });
 
-  it('an unknown pod under simulatedNow is not refused as production — it is simply no_group', async () => {
+  it('a pod whose doc is MISSING is refused under simulatedNow — it cannot prove it is dev (lens C, F2)', async () => {
     const res = await post({ groupId: 'nobody', simulatedNow: SIM });
-    expect(res.statusCode).toBe(200);
-    expect(res.body).toMatchObject({ settled: false, reason: SETTLEMENT_REASON.NO_GROUP, simulated: true });
+    expect(res.statusCode).toBe(409);
+    expect(res.body.error).toBe('simulated_requires_dev');
+    expect(DB.writeLog).toEqual([]);
+  });
+
+  it('THE DELETED-POD REFUND never runs at a fictitious instant: an OPEN production pool of a deleted pod stays open under simulatedNow, and refunds on the real clock', async () => {
+    // The primitive's deleted-pod path (ensureClosed's tombstone probe) closes
+    // and refunds whatever pool the id names, in either namespace. Under a
+    // simulated clock that would stamp `closedAt` / `voidedAt` = the fiction on
+    // real BP — the exact thing the belt exists to prevent.
+    const initial = world();
+    delete initial[`tournamentGroups/${GROUP_ID}`];
+    initial[`${BACKING_POOLS_COLLECTION}/${GROUP_ID}`].status = POOL_STATUS.OPEN;
+    delete initial[`${BACKING_POOLS_COLLECTION}/${GROUP_ID}`].teams;
+    DB = makeInMemoryDb(initial);
+
+    const sim = await post({ groupId: GROUP_ID, simulatedNow: SIM });
+    expect(sim.statusCode).toBe(409);
+    expect(sim.body.error).toBe('simulated_requires_dev');
+    expect(poolOf().status).toBe(POOL_STATUS.OPEN);
+    expect(DB.writeLog).toEqual([]);
+
+    const real = await post({ groupId: GROUP_ID });
+    expect(real.statusCode).toBe(200);
+    expect(real.body).toMatchObject({ settled: false, reason: SETTLEMENT_REASON.NO_GROUP, simulated: false });
+    expect(poolOf()).toMatchObject({ status: POOL_STATUS.REFUNDED, closedAt: NOW.toISOString() });
+    expect(DB.store.get(`${BACKING_STAKES_COLLECTION}/s1`)).toMatchObject({ status: STAKE_STATUS.VOIDED, voidReason: 'group_deleted', voidedAt: NOW.toISOString() });
   });
 });
