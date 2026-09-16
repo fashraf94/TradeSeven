@@ -33,16 +33,18 @@
 // one — there is no partial-field race between them.
 //
 // IDEMPOTENCY KEYED BY SOURCE ID (§6, the house pattern): `allowance:{weekKey}`,
-// `stake:{stakeId}`, `payout:{stakeId}`, `refund:{stakeId}`, `expiry:{weekKey}`.
+// `stake:{stakeId}`, `payout:{stakeId}`, `refund:{stakeId}`, `expiry:{weekKey}`,
+// `loss:{stakeId}` (PR 2 carry-in E2).
 // A replay of any of them is a NO-OP, not an error and not a second entry —
 // `appliedEntries` on the wallet doc is the once-only guard, exactly as
 // `appliedGroups` is on a rank doc (tournamentRank.js). Keeping the guard on the
 // PARENT doc rather than on the entry is what lets the primitives stay
 // read-free and therefore composable.
 //
-// GROWTH, stated precisely so nobody has to re-derive it: at most 42 keys a week
+// GROWTH, stated precisely so nobody has to re-derive it: at most 62 keys a week
 // — 1 allowance + 1 expiry + ALLOWANCE_BP/MIN_STAKE_BP = 20 stakes + one payout
-// or refund each — i.e. ~3.5 KB/week worst case, ~14 KiB across the four-week
+// or refund each + one `loss:` month attribution each (E2, below) — i.e. ~5 KB/
+// week worst case, ~20 KiB across the four-week
 // beta §10 decides on, against Firestore's 1 MiB document limit. Uncapped like
 // `appliedGroups`, but an order of magnitude faster-growing than it (that map
 // gains ~1 key/week), so this is a bound worth revisiting before any long-lived
@@ -76,13 +78,18 @@ export const BACKING_WALLETS_COLLECTION = 'backingWallets';
 /** The ledger subcollection under each wallet (§6). */
 export const BACKING_WALLET_ENTRIES_SUBCOLLECTION = 'entries';
 
-/** The five entry types (§6). Exported so callers and tests name them once. */
+/**
+ * The entry types. The five of §6, plus `loss` — the PR 2 carry-in E2 that
+ * closes the season-net gap the header states below (founder ruling Sept 15).
+ * Exported so callers and tests name them once.
+ */
 export const ENTRY_TYPES = Object.freeze({
   ALLOWANCE: 'allowance',
   STAKE: 'stake',
   PAYOUT: 'payout',
   REFUND: 'refund',
   EXPIRY: 'expiry',
+  LOSS: 'loss',
 });
 
 /**
@@ -456,19 +463,19 @@ export function ensureAllowance(tx, ref, walletDoc, weekKey, now = new Date()) {
  *
  * THE CONSEQUENCE, STATED EXACTLY, because it constrains PR 3. `seasons.{m}.net`
  * is the sum of the CREDITS attributed to month m — it is NOT §2's Net BP for
- * that month. The two differ by Σ ALL stakes, PERMANENTLY, not by "the stakes
- * not yet settled": a stake never receives a month attribution at all, settled
- * or not. A backer who staked 1,000 and won 650 has `careerNet -350` and
- * `seasons.{m}.net 650`. §5 renders "Net BP (season)", so PR 5 must not render
- * this field as that number without PR 3 closing the gap first.
+ * that month. The two differ by Σ ALL stakes: a stake never receives a month
+ * attribution HERE, settled or not. A backer who staked 1,000 and won 650 has
+ * `careerNet -350` and, from this primitive alone, `seasons.{m}.net 650`.
  *
- * AND PR 1's PRIMITIVES CANNOT CLOSE IT, which is why this is written down
- * rather than deferred silently: `creditPayout(amount: 0)` is refused
- * (`invalid_amount`), there is no zero/negative credit, and `debitStake` takes no
- * `monthKey`. PR 3 needs either a new month-attributing primitive for the stake
- * side (including the LOST path, which has no credit at all) or a `stakeAmount`
- * argument on the two credits. That is a founder/PR-3 decision; PR 1 does not
- * invent the primitive, and does not pretend the gap is a timing artifact.
+ * THE GAP IS CLOSED BY `recordStakeLoss` (PR 2 carry-in E2, founder ruling
+ * Sept 15) — the month-attributing primitive for the stake side this docstring
+ * asked PR 3 for, now built and tested at the bottom of this module. PR 1's own
+ * primitives could not close it (`creditPayout(amount: 0)` is refused, there is
+ * no negative credit, and `debitStake` takes no `monthKey`), so E2 adds the
+ * primitive rather than widening the credits. PR 2 SHIPS THE PRIMITIVE AND ITS
+ * TESTS ONLY; PR 3 calls it at settlement, where the pod's `monthKey` finally
+ * exists. Until PR 3 lands, §5's "Net BP (season)" is still the credits-only
+ * number and PR 5 must not render it as §2's Net BP.
  *
  * REFUSES (typed, never silent):
  *   · a debit that would take `allowanceRemaining` below zero —
@@ -600,6 +607,91 @@ export function creditPayout(tx, ref, walletDoc, args) {
  */
 export function creditRefund(tx, ref, walletDoc, args) {
   return credit(ENTRY_TYPES.REFUND, tx, ref, walletDoc, args);
+}
+
+// ============ (3b) THE MONTH ATTRIBUTION FOR THE STAKE SIDE (E2) ============
+
+/**
+ * Attribute a settled stake's own cost to the month its pod banked in — the PR 2
+ * carry-in E2 (founder ruling Sept 15), and the primitive `debitStake`'s
+ * docstring above asked for by name.
+ *
+ * WHY IT EXISTS. §2 defines Net BP as `Σ payouts + Σ refunds − Σ stakes`,
+ * attributed to the ET month of the pod's FIRST BANKED DAY. `debitStake` runs
+ * when the stake is PLACED — before the pod has battled — so no month key exists
+ * yet and it writes none. The result is that `seasons.{m}.net` counts CREDITS
+ * ONLY: a backer who staked 1,000 and won 650 reads `+650` for the month when
+ * the truth is `−350`. This writes the missing half.
+ *
+ * Writes `loss:{stakeId}` (delta `−amount`, carrying `groupId` and `monthKey`
+ * like its credit siblings) and moves `seasons.{monthKey}.net` by `−amount`.
+ *
+ * IT DOES NOT TOUCH `careerNet`, AND THAT IS A DELIBERATE DIVERGENCE FROM THE
+ * LETTER OF THE RULING, which named both fields. `careerNet` is ALREADY exactly
+ * §2's Net BP — `debitStake` subtracted the stake from it at placement — so a
+ * second `−amount` here would double-debit it and turn the ruling's own worked
+ * example (`−350`) into `−1,350`. The ruling's arithmetic is what settles it:
+ * `−350` is the number it asks for, and the season bucket is the only field that
+ * does not already produce it. The divergence is asserted, not merely argued:
+ * `backingWallet.test.js` pins the ruling's example end to end.
+ *
+ * NEVER `allowanceRemaining` (§2), like both credits: this is a RECORD entry, and
+ * the week's allowance expires on its own schedule whatever a pod later pays.
+ *
+ * THE CALLER'S RULE, and PR 3 owns following it: call this ONCE for the stake
+ * side of every stake that reaches a month attribution — the LOST path (which
+ * has no credit at all), and the WON path beside its `creditPayout`. Calling it
+ * only for losers leaves each winner's own stake unattributed and the ruling's
+ * example reads `+150` instead of `−350`; the test named "the founder's worked
+ * example" pins that too, so the rule cannot be half-applied silently.
+ *
+ * A VOIDED STAKE IS THE ONE PATH THIS DOES NOT COVER, per the ruling's explicit
+ * carve-out ("for voided stakes writes nothing — the stake's own debit is already
+ * reversed by the refund"). True of `careerNet`, which nets to zero; the season
+ * bucket, though, keeps the refund's `+amount` with no stake-side `−amount`
+ * against it, so a voided pool still reads `+stake` for its month. PR 2 leaves
+ * that residue EXACTLY as the ruling specifies rather than quietly widening the
+ * carve-out — closing it is one call at PR 3's void sites, and the test named
+ * "the voided residue" measures it so the decision is made on a number.
+ *
+ * IDEMPOTENT on `loss:{stakeId}`, like every sibling: a replayed settlement is a
+ * no-op, which is what makes PR 3's `resolving → resolved` re-read and the admin
+ * re-run safe.
+ */
+export function recordStakeLoss(tx, ref, walletDoc, { stakeId, groupId, amount, monthKey, now } = {}) {
+  const where = `recordStakeLoss`;
+  requireId(stakeId, where, 'stakeId');
+  requireId(groupId, where, 'groupId');
+  requireId(monthKey, where, 'monthKey');
+  requireAmount(amount, where);
+  const nowIso = requireInstant(now ?? new Date(), where);
+  const resolved = latestFor(tx, ref?.path, walletDoc);
+  const current = normalize(resolved);
+  const entryId = `${ENTRY_TYPES.LOSS}:${stakeId}`;
+
+  if (current.appliedEntries[entryId] !== undefined) {
+    return { wallet: resolved ?? current, applied: false, replay: true };
+  }
+
+  writeEntry(tx, ref, entryId, {
+    type: ENTRY_TYPES.LOSS,
+    delta: -amount,
+    ref: stakeId,
+    groupId,
+    monthKey,
+    at: nowIso,
+  });
+
+  const season = current.seasons[monthKey] ?? {};
+  const seasonNet = Number.isFinite(season.net) ? season.net : 0;
+  const wallet = commitWallet(tx, ref, {
+    ...current,
+    // NEVER careerNet (already carried by the stake's own debit) and NEVER
+    // allowanceRemaining (§2) — see the docstring.
+    seasons: { ...current.seasons, [monthKey]: { ...season, net: seasonNet - amount } },
+    appliedEntries: { ...current.appliedEntries, [entryId]: nowIso },
+  }, nowIso);
+  return { wallet, applied: true, replay: false };
 }
 
 // ==================== (4) THE ONE CONVENIENCE WRAPPER ====================

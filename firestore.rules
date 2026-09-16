@@ -686,6 +686,28 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // backingStakes/{stakeId}/private/{doc} — Backing Beta PR 2, carry-in E1.
+    // The stake's FINGERPRINT and its admin EXCLUSION flag (§6 `fingerprint`
+    // {ipHash, uaHash} and `excluded`; §8 detective controls). NO CLIENT READ,
+    // ever — not even the backer who placed the stake.
+    //
+    // WHY IT IS A SUBCOLLECTION AND NOT TWO FIELDS: the parent document is
+    // OWNER-READ, and Firestore rules cannot hide a field. Fields on the stake
+    // would hand every backer a hash of their own network identity and, worse,
+    // their own `excluded` flag — telling them whether an admin has dropped
+    // their stake from the Sybil watch, which is exactly the signal a detective
+    // control must not emit. The `backingPools/{groupId}/private/{doc}` block
+    // above is the same shape for the same reason.
+    //
+    // Server-only both ways: POST /api/tournament/backing-stake writes it inside
+    // the single stake transaction, and nothing in the product reads it back.
+    // Same manual Console-deploy caveat as above; inert until deployed and until
+    // BACKING_BETA_ENABLED flips.
+    match /backingStakes/{stakeId}/private/{doc} {
+      allow read: if false;
+      allow create, update, delete: if false;
+    }
+
     // backingEvents/{eventId} — the telemetry sink (§10, D-p). NO CLIENT READ:
     // it is research data, written server-side by POST /api/backing/event on a
     // fixed allowlist, and nothing in the product reads it back. A readable
