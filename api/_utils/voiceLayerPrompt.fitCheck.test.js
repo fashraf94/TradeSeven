@@ -207,6 +207,61 @@ describe('A-1 — menu render: flag-ON annotates every line from the data module
     }
   });
 
+  // ── DOCUMENTED LIMIT — the cautious register disagrees with the charter prose
+  // rendered eight lines above it, in FOUR of six archetypes (§2 review finding
+  // A4, build report §6 D-1). This row PINS a known conflict, not a behaviour
+  // anyone wants: delete it when the conflict is resolved, do not "fix" it.
+  //
+  // BUILD_RULES §9 (display-agreement) is the rule at stake: a label and the
+  // fact it names must come from ONE source. Here `zones.protectedBias` (the
+  // charter's own sentence, rendered verbatim as PROTECTED BIAS) and the
+  // derived `More cautious, in character:` line are two sources for one fact,
+  // in one block, and they demonstrably disagree.
+  //
+  // The derivation cannot be fixed in this module: SP-02/SP-06/SP-07 carry
+  // byte-identical `policy`, so no function of `policy` can produce the
+  // charter's trio. The clean fix is a `cautiousRegister` field on
+  // src/data/archetypeAdjustments.js — ONE source — which needs founder
+  // sanction, that file being read-only in this build.
+  it('LIMIT: the derived cautious register disagrees with the charter prose in 4 of 6 archetypes', () => {
+    fitCheck.on = true;
+    // What the charter's own "More cautious = ..." sentence names, read off the
+    // prose by hand — NOT derived from the code under test.
+    const CHARTER_SAYS = {
+      degen: ['SP-01', 'SP-02', 'SP-06'],          // tighten the stop / less-extreme vol / size down
+      contrarian: ['CN-03', 'CN-01', 'CN-02'],     // tighten the stop / deeper washout / clearer turn
+      analyst: ['FI-01', 'FI-02', 'FI-03'],        // quality bar / cleaner setup / hold longer
+      diversifier: ['DV-01', 'DV-02', 'DV-03'],    // tighten the cap / widen the spread / rebalance sooner
+    };
+    const renderedIds = (archetype) => {
+      const line = archetypeBlockOf(promptFor(archetype))
+        .split('\n').find((l) => l.startsWith('More cautious, in character: '));
+      expect(line, `${archetype} renders no cautious-register line`).toBeTruthy();
+      return line.replace('More cautious, in character: ', '').replace(/\.$/, '').split(', ');
+    };
+
+    // degen / contrarian / analyst: each DROPS the move its own prose names FIRST.
+    expect(renderedIds('degen')).not.toContain('SP-01');
+    expect(renderedIds('contrarian')).not.toContain('CN-03');
+    expect(renderedIds('analyst')).not.toContain('FI-03');
+
+    // diversifier is the sharpest: the two sets are entirely DISJOINT.
+    const dv = renderedIds('diversifier');
+    expect(dv).toEqual(['DV-06']);
+    for (const id of CHARTER_SAYS.diversifier) expect(dv).not.toContain(id);
+
+    // And the charter's sentence really is in the same block, so a reader of
+    // the prompt sees both claims at once.
+    const block = archetypeBlockOf(promptFor('diversifier'));
+    expect(block).toContain('More cautious = tighten the cap / widen the spread / rebalance sooner');
+    expect(block).toContain('More cautious, in character: DV-06.');
+
+    // guardian and momentum_chaser do NOT disagree — so this is four of six,
+    // not a blanket failure, and the row says which.
+    expect(renderedIds('guardian')).toEqual(['CP-01', 'CP-02', 'CP-08']);
+    expect(renderedIds('momentum_chaser')).toContain('TF-02');
+  });
+
   it('MUTATION CHECK — the flag-ON block is NOT the flag-OFF block, for every archetype', () => {
     // A toContain row that also passes flag-off is not a guard (the Sep 13
     // lesson). Every archetype's rendered block must actually move.
