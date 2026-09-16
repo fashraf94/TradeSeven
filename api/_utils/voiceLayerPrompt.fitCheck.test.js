@@ -34,7 +34,16 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   get DIRECTIVE_FIT_CHECK_ENABLED() { return fitCheck.on; },
 }));
 
-import { buildVoiceLayerPrompt } from './voiceLayerPrompt.js';
+import { buildVoiceLayerPrompt, buildFirstMessagePrompt } from './voiceLayerPrompt.js';
+
+// The exact anchor the flag-ON transform replaces, and its replacement —
+// spelled out HERE, independently of the module under test, so the surgical-
+// replacement row below compares against a value the renderer cannot supply.
+const SHIPPED_ACK_ANCHOR_TEXT = '"Got it; that\'s my lean now.").';
+const FIT_CHECK_ACK_TEXT =
+  '"Got it — filing: {the exact canonical text of the id you selected}."). '
+  + 'Say the canonical text word for word; the card beneath you states what was filed. '
+  + 'Do not describe the lean in other words.';
 
 const PRE_BUILD = JSON.parse(
   readFileSync(new URL('./__fixtures__/voiceLayerPrompt.fitCheck.preBuild.golden.json', import.meta.url), 'utf8'),
@@ -205,5 +214,92 @@ describe('A-1 — the archetype apparatus stays flag-gated end to end', () => {
     const prompt = promptFor('strategist');
     expect(prompt).not.toContain('YOUR ARCHETYPE — THE FOUR ZONES');
     expect(prompt).not.toContain('More cautious, in character:');
+  });
+});
+
+// ==================== B-1 — the prompt golden ====================
+
+// The phase rules are the LAST block (BOTTOM — highest attention).
+const phaseRulesOf = (prompt) => {
+  const start = prompt.lastIndexOf('YOUR CURRENT PHASE: ');
+  expect(start, 'phase rules missing from the prompt').toBeGreaterThan(-1);
+  return prompt.slice(start);
+};
+
+const PHASES = [['discovery', 1], ['refinement', 12], ['mastery', 40]];
+
+// The sentence the shipped confirmation rule offers as the model's
+// acknowledgement — the one the Sep 14 reply reproduced almost verbatim.
+const SHIPPED_ACK = 'Got it; that\'s my lean now.';
+
+describe('B-1 — the confirmation rule: flag-OFF is the pre-build bytes', () => {
+  it.each(PHASES)('%s: the phase-rule block is byte-identical to the pre-build capture', (phase, gamesPlayed) => {
+    fitCheck.on = false;
+    expect(phaseRulesOf(promptFor('degen', gamesPlayed))).toBe(PRE_BUILD.phaseRules[phase]);
+  });
+});
+
+describe('B-1 — the confirmation rule: flag-ON quotes the filing', () => {
+  it.each(PHASES)('%s carries the quote instruction and drops the shipped acknowledgement', (_phase, gamesPlayed) => {
+    fitCheck.on = true;
+    const rules = phaseRulesOf(promptFor('degen', gamesPlayed));
+    expect(rules).toContain('"Got it — filing: {the exact canonical text of the id you selected}.").');
+    expect(rules).toContain('Say the canonical text word for word;');
+    expect(rules).toContain('the card beneath you states what was filed.');
+    expect(rules).toContain('Do not describe the lean in other words.');
+    expect(rules).not.toContain(SHIPPED_ACK);
+  });
+
+  it.each(PHASES)('%s moves ONLY the acknowledgement — the rest of the rule is untouched', (_phase, gamesPlayed) => {
+    fitCheck.on = true;
+    const rules = phaseRulesOf(promptFor('degen', gamesPlayed));
+    // The clauses the build brief puts OUT of scope must survive verbatim.
+    expect(rules).toContain('If you\'re unsure whether they confirmed: they confirmed. Err toward committing the lean, not more questions.');
+    expect(rules).toContain('EXCEPTION — honest pushback');
+    expect(rules).toContain('they click a suggested action button');
+    expect(rules).toContain('"Noted — carrying that into my next read."');
+    expect(rules).toContain('Do NOT say "On it / Done / Locked in"');
+    // And the replacement is surgical: exactly the anchor's length of text
+    // changed, nothing else in the block.
+    fitCheck.on = false;
+    const off = phaseRulesOf(promptFor('degen', gamesPlayed));
+    expect(off.replace(SHIPPED_ACK_ANCHOR_TEXT, FIT_CHECK_ACK_TEXT)).toBe(rules);
+  });
+
+  it('the shipped anchor still exists verbatim in all three rules — a silent no-op is the worst failure', () => {
+    // The flag-ON render is a string replacement over the shipped rule. If the
+    // anchor ever drifts, the replacement would quietly no-op and the gate
+    // (commit C) would then null-write every filing. This row is what makes
+    // that drift loud rather than silent.
+    fitCheck.on = false;
+    for (const [, gamesPlayed] of PHASES) {
+      expect(phaseRulesOf(promptFor('degen', gamesPlayed))).toContain(SHIPPED_ACK_ANCHOR_TEXT);
+    }
+  });
+
+  it('MUTATION CHECK — the flag-ON phase rules are NOT the flag-OFF phase rules', () => {
+    for (const [, gamesPlayed] of PHASES) {
+      fitCheck.on = false;
+      const off = phaseRulesOf(promptFor('degen', gamesPlayed));
+      fitCheck.on = true;
+      const on = phaseRulesOf(promptFor('degen', gamesPlayed));
+      expect(on).not.toBe(off);
+    }
+  });
+
+  it('the first-message prompt is deliberately NOT transformed (its path never reaches the gate)', () => {
+    // buildFirstMessagePrompt pins hasDirective false and directive null, so
+    // there is no confirmation to acknowledge and no filing to quote. Both
+    // flag states keep today's text there — stated so a reader does not read
+    // the omission as a miss.
+    fitCheck.on = true;
+    const first = buildFirstMessagePrompt({
+      agent: { name: 'Gemma', archetype: 'degen', stats: { gamesPlayed: 1, wins: 0, losses: 0 } },
+      battle: BATTLE,
+      anchorContext: null,
+      marketSnapshot: null,
+    });
+    expect(first).toContain(SHIPPED_ACK);
+    expect(first).not.toContain('Say the canonical text word for word;');
   });
 });

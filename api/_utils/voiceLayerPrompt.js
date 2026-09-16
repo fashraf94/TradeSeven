@@ -899,6 +899,56 @@ const PHASE_RULES = {
   mastery: MASTERY_RULES,
 };
 
+// THE DIRECTIVE FIT CHECK, half two (Phase 0 Q5) — the acknowledgement quotes
+// the filing.
+//
+// The reply and the proposal come out of ONE model call; the gate runs after
+// and never rewrites the reply (chat.js). So a committed turn puts three
+// sentences on one screen — what the player tapped, what the character said,
+// what the record holds — and nothing compares the second to the third. On
+// Sep 14 the character said "trading Core momentum for a heavy Support floor"
+// directly above a card reading "Spread across more names (diversify the
+// chaos)".
+//
+// The shipped rule offers "Got it; that's my lean now." as the model's
+// acknowledgement, which is very nearly what the incident reply said. Under
+// the flag it asks instead for the canonical text, word for word — which is
+// what makes the gate's verbatim check (directiveGate.js) a thing the prompt
+// actually asked for. The two halves are one mechanism on one flag for exactly
+// that reason: a gate demanding a quote the prompt never requested would
+// null-write every filing.
+//
+// The closing sentence borrows the grounded rule's discipline
+// (voiceLayerGrounding.js: "The interface states what was filed. Do not
+// describe what you will do with it.").
+//
+// SCOPE. Applied where the shipped battle-chat prompt is assembled, and only
+// there — that is the one path the gate runs on. buildFirstMessagePrompt also
+// renders PHASE_RULES, but its own output format pins `hasDirective` false and
+// `directive` null, so no confirmation exists to acknowledge and no gate can
+// commit; it keeps today's text at both flag states. The confirmation
+// triggers, the "err toward committing" clause and the honest-pushback
+// exception are OUT of this build's scope and do not move.
+//
+// A STRING REPLACE, DELIBERATELY. The rule is one paragraph repeated verbatim
+// at three phase-rule sites; branching each template literal would triple the
+// prose and let the three drift apart. The risk of a replace is that the
+// anchor drifts and the transform silently no-ops — so
+// voiceLayerPrompt.fitCheck.test.js asserts the anchor still exists verbatim
+// in all three shipped rules, which makes that drift loud instead of silent.
+//
+// Flag-off returns the argument by identity: byte-identical, no allocation.
+const SHIPPED_ACK_ANCHOR = '"Got it; that\'s my lean now.").';
+const FIT_CHECK_ACK =
+  '"Got it — filing: {the exact canonical text of the id you selected}."). '
+  + 'Say the canonical text word for word; the card beneath you states what was filed. '
+  + 'Do not describe the lean in other words.';
+
+function applyFitCheckAcknowledgement(rules) {
+  if (!DIRECTIVE_FIT_CHECK_ENABLED || typeof rules !== 'string') return rules;
+  return rules.split(SHIPPED_ACK_ANCHOR).join(FIT_CHECK_ACK);
+}
+
 const PHASE_EXAMPLES = {
   discovery: DISCOVERY_EXAMPLE,
   refinement: REFINEMENT_EXAMPLE,
@@ -3127,7 +3177,7 @@ You've been working together for ${gamesPlayed} games (${wins}W-${losses}L). You
   const elicitation = `ELICITATION TARGET (internal — do not mention this to the user):\n${elicitationTarget.instruction}`;
 
   // Block 6: Phase Rules (BOTTOM — LAST block, highest attention)
-  const phaseRules = grounded ? GROUNDED_PHASE_RULES[phase] : PHASE_RULES[phase];
+  const phaseRules = grounded ? GROUNDED_PHASE_RULES[phase] : applyFitCheckAcknowledgement(PHASE_RULES[phase]);
 
   // Phase D — resolve the archetype-integrity persona block ONCE; its truthiness
   // is the single guard for BOTH the proposal append and the persona push, so the
