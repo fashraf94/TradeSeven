@@ -176,10 +176,22 @@ describe('pin 2 — the gate and the fail-safe contain the resolution and the st
     // the composer receives promptBuilt and the in-scope objects, never haikuAttempted
     const start = CRON.indexOf(ASSIGN);
     const block = CRON.slice(start, CRON.indexOf('}));', start));
-    for (const arg of ['promptBuilt,', 'controlResolution,', 'anticipationCandidates: haikuResult?.anticipationCandidates', 'assetScores,', 'prices,', 'momentumData,', 'stockRegimes,', 'riskStatus,', 'benchAssets: flattenBenchServer(battle.portfolio?.bench)', 'rankingsComputedAtMs,']) {
+    for (const arg of ['promptBuilt,', 'controlResolution,', 'anticipationCandidates: lintedAnticipationCandidates', 'assetScores,', 'prices,', 'momentumData,', 'stockRegimes,', 'riskStatus,', 'benchAssets: flattenBenchServer(battle.portfolio?.bench)', 'rankingsComputedAtMs,']) {
       expect(block, `composeTickStamps must receive ${arg}`).toContain(arg);
     }
     expect(block).not.toContain('haikuAttempted');
+    // THE THRESHOLD LINT moved this one argument (2026-09-16): the stamp is
+    // fed the LINTED array rather than the raw tool output, so a threshold the
+    // tick's own data could not support never becomes a fact on the record.
+    // The pin moves WITH that change and keeps its meaning by binding the new
+    // name to the old source in the same window: `lintedAnticipationCandidates`
+    // is INITIALISED from `haikuResult?.anticipationCandidates`, and under the
+    // shipped 'off' it is that same reference (the lint is never called), so
+    // the stamp still receives exactly what the decider returned.
+    const lintDecl = CRON.indexOf('let lintedAnticipationCandidates = haikuResult?.anticipationCandidates;');
+    expect(lintDecl, 'the linted array must be initialised from the decider\'s own output').toBeGreaterThan(0);
+    expect(lintDecl).toBeLessThan(start);
+    expect(CRON).toMatch(/ANTICIPATION_THRESHOLD_LINT_MODE === 'on'/);
   });
 });
 
