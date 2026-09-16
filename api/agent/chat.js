@@ -20,6 +20,7 @@ import { resolveBudgetDay, readAgentChatBudget, chargeAgentChatBudget } from '..
 // Archetype Integrity — Phase E1 (the deterministic gate). Flag-gated; OFF/review
 // run the literal legacy normalizeDirective path → byte-identical.
 import { gateDirective, renderDirectiveStatus } from '../_utils/directiveGate.js';
+import { sanitizeChatText } from '../_utils/chatTextSanitize.js';
 // Phase C / D-121 — the persisted research type, so BOTH history builders key on
 // the same name and neither excludes a card by accident.
 import { RESEARCH_MESSAGE_TYPE } from '../../src/data/decisionRecord.js';
@@ -422,7 +423,10 @@ export default async function handler(req, res) {
   }
 
   // 5. Sanitize message
-  const sanitizedMessage = String(message).slice(0, 2000).replace(/[\n\r\t]/g, ' ').replace(/[<>{}]/g, '').trim();
+  // The SAME transform, now from the one module that owns it — the directive
+  // gate's forensics fields sanitize the model's free text through this exact
+  // path, and two copies of a sanitizer eventually disagree (BUILD_RULES §4).
+  const sanitizedMessage = sanitizeChatText(message);
 
   if (!sanitizedMessage) {
     return res.status(400).json({ error: 'Message cannot be empty' });

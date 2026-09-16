@@ -9,7 +9,9 @@
 // The model's `_archetypeProposal` is UNTRUSTED. The gate validates it against
 // the archetype's allowlist (src/data/archetypeAdjustments.js — the no-fallback
 // directive-write helpers) and decides; it never copies model free-text into a
-// directive. `originalUserAsk` is NEVER read into directive.text.
+// directive. `originalUserAsk` is NEVER read into directive.text — it is
+// PERSISTED on the gate record (see result()) so a mis-filing can be traced,
+// which is a different thing from being trusted.
 //
 // Manifest-INDEPENDENT by design: the decision is a function of (effectiveArchetype,
 // classification, selectedAdjustmentId) only — `user_lever` maps to null from the
@@ -24,6 +26,10 @@ import { parseVoiceLayerResponse } from './gemmaClient.js';
 // surfaces. Re-exported here under its shipped name.
 import { NO_CHANGE_STATUS_LINE } from '../../src/data/decisionRecord.js';
 import { DIRECTIVE_FIT_CHECK_ENABLED } from '../../src/config/featureFlags.js';
+// The ONE sanitize path for chat-turn free text — the same transform chat.js
+// applies to `userMessage`, so the model's own text on the record is cleaned
+// exactly as the player's is (see the forensics fields on result()).
+import { sanitizeOptionalChatText } from './chatTextSanitize.js';
 
 // The one-shot repair-retry is BUDGET-AWARE. chat.js clears the first call's
 // abort timer the instant it resolves, so the parent signal alone would never bound
@@ -199,6 +205,28 @@ function result(directive, hasDirective, proposal, status, repairUsed, fallbackL
       selectedAdjustmentId: proposal?.selectedAdjustmentId ?? null,
       status,
       repairUsed,
+      // THE FORENSICS FIELDS (Phase 0 Q7) — ADDITIVE AND ALWAYS ON, deliberately
+      // NOT behind DIRECTIVE_FIT_CHECK_ENABLED.
+      //
+      // The gate's record has always kept the classification and the id, so one
+      // can prove AFTER THE FACT that a directive was mis-filed — but never what
+      // the model meant by it. The model's own reading of the ask, its
+      // counter-offer and its stated reason for declining were computed, used,
+      // and dropped. That is the one-way door in this build: a turn that goes by
+      // without them is a turn whose intent can never be recovered, and no later
+      // change can go back and fill it in. So they are on from merge, at every
+      // flag state.
+      //
+      // Sanitized through the same path as `userMessage` (chatTextSanitize.js):
+      // this is untrusted model text landing on a durable record beside the
+      // player's own words. Absent, null, or non-string → null, never a coerced
+      // "null" string. NEVER read into directive.text — the module header's
+      // `originalUserAsk` rule is unchanged and unchanged-able.
+      //
+      // No surface renders these in this build; readers null-guard.
+      originalUserAsk: sanitizeOptionalChatText(proposal?.originalUserAsk),
+      counterOfferText: sanitizeOptionalChatText(proposal?.counterOfferText),
+      rejectionReason: sanitizeOptionalChatText(proposal?.rejectionReason),
       // Present ONLY on a fit_mismatch, so every other outcome's record shape
       // is unchanged — including every committed turn.
       ...(fitCheck ? { fitCheck } : {}),
@@ -214,6 +242,7 @@ function result(directive, hasDirective, proposal, status, repairUsed, fallbackL
  *             hasDirective:boolean,
  *             fallbackLine:string|null,
  *             outcome:{classification, selectedAdjustmentId, status, repairUsed,
+ *                      originalUserAsk, counterOfferText, rejectionReason,
  *                      fitCheck?:{expected,quoted}} }}
  */
 export async function gateDirective({
