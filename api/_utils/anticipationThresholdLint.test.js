@@ -55,6 +55,15 @@ function sep14Tick(overrides = {}) {
         volumeProfile: { tier: 'high', ratio: 1.34 },
         factors: { rsi: 71, macdAboveSignal: true, rsPercentile: 78 },
       },
+      // CRWD carries a FULL tech doc too, deliberately (review L4 §2): without
+      // it, "a held name has no RSI" would hold because the fixture has no
+      // data, not because techScoresMap is bench-only — and the asymmetry
+      // rows would survive an inversion of the rule they claim to test.
+      CRWD: {
+        bbPercentB: 0.44,
+        volumeProfile: { tier: 'high', ratio: 1.6 },
+        factors: { rsi: 47, macdAboveSignal: false, rsPercentile: 55 },
+      },
     },
     heldSymbols: HELD,
     benchSymbols: BENCH,
@@ -209,6 +218,17 @@ const ROW_KILLERS = [
 ];
 
 describe('A-1 mutation — deleting any single vocabulary row makes its fixture go wrongly green', () => {
+  it('the mutant table really drives the MATCH order, not just the report', () => {
+    // Review L4 H-5: if `orderings()` honoured a caller's declaration list but
+    // reused the DEFAULT match list, every killer would still go green — but
+    // for the wrong reason (the signal filtered out of the report rather than
+    // stopping matching). Deleting the 5-minute MACD row must change what the
+    // GENERAL row claims, which only a real match-order change can do.
+    const noMacd5m = THRESHOLD_SIGNAL_VOCABULARY.filter((r) => r.signal !== 'MACD_5M');
+    expect(namedSignals('the 5-minute MACD turns positive')).toEqual(['MACD_5M']);
+    expect(namedSignals('the 5-minute MACD turns positive', noMacd5m)).toEqual(['MACD_CROSS']);
+  });
+
   it('the killer table covers every shipped row, one for one', () => {
     expect(ROW_KILLERS.map((k) => k.signal)).toEqual(THRESHOLD_SIGNAL_VOCABULARY.map((r) => r.signal));
   });
@@ -439,6 +459,41 @@ describe('A-2 — buildPresentSignals: one row per signal per class (Phase 0 §5
     // `?? 50` placeholder still in place this row read `RS_PERCENTILE` present
     // for a symbol that has no measurement.
     expect(only({ factors: { rsPercentile: null } })).toEqual([]);
+  });
+
+  it('EVERY bench gate treats an explicit null as an absence, not just rsPercentile', () => {
+    // Review L4 H-1: each gate is `!= null`, and production writes literal
+    // `null` to at least two of them — `macdAboveSignal: macd ? … : null`
+    // (indexIntelligence.js) and `bbPercentB: bbResult?.percentB ?? null`
+    // (compute-index-intelligence.js). Without these rows, weakening a gate to
+    // `!== undefined` would count an uncomputable MACD as PRESENT and accept a
+    // false MACD promise — the same defect class commit C removed for RS.
+    const only = (tech) => [...buildPresentSignals({ techScoresMap: { S: tech }, benchSymbols: ['S'] }).get('S')];
+    expect(only({ factors: { rsi: null } })).toEqual([]);
+    expect(only({ factors: { macdAboveSignal: null } })).toEqual([]);
+    expect(only({ bbPercentB: null })).toEqual([]);
+    expect(only({ volumeProfile: { tier: 'high', ratio: null } })).toEqual([]);
+    // …and the held-side BB width gate too
+    expect([...buildPresentSignals({ rankingsMap: { S: { bBandwidthPercentile: null } }, heldSymbols: ['S'] }).get('S')])
+      .toEqual(['ATR']);
+  });
+
+  it('L4 H-2 — the BUILD side normalises too, not just the lookup', () => {
+    // The map is keyed from the cron's lists; the tick's own documents are
+    // keyed by the raw symbol. Drop the raw-key indirection and a lowercase
+    // held list silently loses every reading — a drop under 'on', which is the
+    // exact failure the normalisation exists to prevent.
+    const present = buildPresentSignals({
+      momentumData: { vwap: { crwd: { vwapDeviation: 0.42 } }, regimes: { crwd: 'choppy' } },
+      rankingsMap: { crwd: { bBandwidthPercentile: 30, nr7Flag: true, levels: { nearestResistance: 9 } } },
+      techScoresMap: { qcom: { factors: { rsi: 60 } } },
+      heldSymbols: ['crwd'],
+      benchSymbols: ['qcom'],
+    });
+    expect([...present.keys()]).toEqual(['CRWD', 'QCOM']);
+    expect([...present.get('CRWD')].sort()).toEqual(['ATR', 'BB_WIDTH', 'LEVELS', 'NR7', 'REGIME', 'VWAP']);
+    expect([...present.get('QCOM')]).toEqual(['RSI']);
+    expect(lintThreshold({ threshold: 'If it holds above the daily VWAP', symbol: 'CRWD', present })).toEqual({ ok: true });
   });
 
   it('a symbol in BOTH lists is held — the held read is what the decider sees for a position it owns', () => {

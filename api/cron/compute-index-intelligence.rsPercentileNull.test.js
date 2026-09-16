@@ -43,6 +43,10 @@ const CACHE = readFileSync(resolve(HERE, 'voice-layer-cache.js'), 'utf8');
 // "no `?? 50` survives" row scans CODE — the D-120 docstring beside the site
 // quotes the old expression on purpose, to say what it replaced.
 const CACHE_CODE = CACHE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+// The cron's CODE, same idiom. The positive pins below must match real code —
+// a mutation that leaves the pinned line in a comment and reverts the code
+// would otherwise sail past a `toContain` over the raw source (review L4 H-4).
+const CRON_CODE = CRON.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 
 // ---------------------------------------------------------------------------
 // The source pins
@@ -50,24 +54,37 @@ const CACHE_CODE = CACHE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.
 
 describe('C-1 source — the placeholder is gone from the writer and the last reader', () => {
   it('the READING is `?? null`, and the `?? 50` it replaced is nowhere in the file', () => {
-    expect(CRON).toContain('const rsPercentile = rsPercentileMap[d.sym] ?? null;');
-    expect(CRON).not.toContain('rsPercentileMap[d.sym] ?? 50');
+    expect(CRON_CODE).toContain('const rsPercentile = rsPercentileMap[d.sym] ?? null;');
+    expect(CRON_CODE).not.toContain('rsPercentileMap[d.sym] ?? 50');
+    // AND the map is never back-filled after it is built (review L4 H-4): an
+    // added `rsPercentileMap[sym] = 50` loop downstream would restore the whole
+    // defect while every other pin here stayed green.
+    const assigns = [...CRON_CODE.matchAll(/rsPercentileMap\s*\[[^\]]*\]\s*=/g)];
+    expect(assigns, 'exactly one write into rsPercentileMap — the percentile forEach').toHaveLength(1);
+    expect(CRON_CODE.slice(assigns[0].index, assigns[0].index + 120))
+      .toContain('Math.round((idx / Math.max(sortedByRS.length - 1, 1)) * 100)');
   });
 
   it('the SCORING INPUT keeps the neutral midpoint, explicitly and separately', () => {
     // The split is the whole point: a null here would score an unmeasured
     // symbol 0/22 in computeTechnicalScore's arithmetic and silently demote it.
-    expect(CRON).toContain('rsPercentile: rsPercentile ?? 50,');
+    expect(CRON_CODE).toContain('rsPercentile: rsPercentile ?? 50,');
+    expect(CRON_CODE).not.toContain('rsPercentile: rsPercentile ?? null');
   });
 
   it('the PUBLISHED factor is the reading — the override rides the scoreResult spread', () => {
-    const push = CRON.indexOf('stockScores.push({');
+    const push = CRON_CODE.indexOf('stockScores.push({');
     expect(push).toBeGreaterThan(0);
-    const block = CRON.slice(push, CRON.indexOf('});', push));
+    const block = CRON_CODE.slice(push, CRON_CODE.indexOf('});', push));
     expect(block).toContain('...scoreResult,');
     expect(block).toContain('factors: { ...scoreResult.factors, rsPercentile, sectorRSPercentile },');
     // …and the override comes AFTER the spread, or it would be overwritten
     expect(block.indexOf('factors: { ...scoreResult.factors')).toBeGreaterThan(block.indexOf('...scoreResult,'));
+    // …and it is the LAST `factors:` key in the literal (review L4 H-4): a
+    // second one added below would win at runtime while `indexOf` kept pinning
+    // the first.
+    const factorKeys = [...block.matchAll(/^\s*factors:/gm)];
+    expect(factorKeys, 'exactly one `factors:` key in the pushed object').toHaveLength(1);
   });
 
   it('the game-mode fit inputs KEEP the neutral midpoint — the brief prescribed `?? null`, the review found it is FENCE CONTACT', () => {
@@ -75,9 +92,10 @@ describe('C-1 source — the placeholder is gone from the writer and the last re
     // it as the BB_FIT column of the agent's stock menu, and archetypeScoring
     // folds it into computeArchetypeRankings at weights 0.10-0.30. Moving it
     // from here is fence contact BUILD_RULES §1 says to stop and report.
-    expect(CRON).toContain('rsVsSpy: techFactors.rsPercentile ?? 50,');
-    expect(CRON).toContain('sectorRS: techFactors.sectorRSPercentile ?? techFactors.rsPercentile ?? 50,');
-    expect(CRON).not.toContain('rsVsSpy: techFactors.rsPercentile ?? null');
+    expect(CRON_CODE).toContain('rsVsSpy: techFactors.rsPercentile ?? 50,');
+    expect(CRON_CODE).toContain('sectorRS: techFactors.sectorRSPercentile ?? techFactors.rsPercentile ?? 50,');
+    expect(CRON_CODE).not.toContain('rsVsSpy: techFactors.rsPercentile ?? null');
+    expect(CRON_CODE).not.toContain('sectorRS: techFactors.sectorRSPercentile ?? techFactors.rsPercentile ?? null');
     // and the reason is written where the next reader will meet it
     expect(CRON).toContain('FENCE CONTACT');
   });
@@ -132,7 +150,7 @@ function publishedFactorsPreChange(rsPercentileMapValue) {
     closes, highs, lows, volumes, spyCloses,
     rsPercentile, rsTrend: 'flat', technicals, sectorRSPercentile: null,
   });
-  return scoreResult;                                        // no factors override
+  return scoreResult;   // no factors override — factors.rsPercentile is the 50
 }
 
 describe('C-1 behaviour — a symbol dropped from the RS sort publishes null', () => {
@@ -181,27 +199,69 @@ describe('C-1 behaviour — a symbol dropped from the RS sort publishes null', (
 
 describe('C-1 behaviour — baggerBombFit does NOT move, and the fenced blast radius is why', () => {
   const tech = { smaPosition: 90, macd: 88, weekHighProx: 92, volume: 85, rsi: 80 };
-  const fit = (rsVsSpy, sectorRS) => computeGameModeFits({
-    pillarScores: {}, technicalFactorScores: { ...tech, rsVsSpy, sectorRS }, atrPercentile: 0.9,
+
+  /**
+   * THE CRON'S OWN FIT-INPUT EXPRESSIONS (:1327-1328), applied to a version's
+   * PUBLISHED factors. Both sides come from a real `publishedFactors*` result,
+   * so the two differ in the only way the commit changed them — 50 vs null —
+   * and the assertion is that the `?? 50` absorbs that difference. An earlier
+   * draft of this row wrote `fit(null ?? 50, …)` against `fit(50, 50)`, which
+   * constant-folds to f(x) === f(x) and could not fail (review L4 §2).
+   */
+  const fitOf = (factors) => computeGameModeFits({
+    pillarScores: {},
+    technicalFactorScores: {
+      ...tech,
+      rsVsSpy: factors.rsPercentile ?? 50,
+      sectorRS: factors.sectorRSPercentile ?? factors.rsPercentile ?? 50,
+    },
+    atrPercentile: 0.9,
   }).baggerBombFit;
 
-  it('an unmeasured symbol scores EXACTLY what it scored before this commit', () => {
-    // pre-commit the factors carried the placeholder 50; now they carry null
-    // readings and `?? 50` resolves them to the same 50. Bit-for-bit.
-    expect(fit(null ?? 50, (null ?? null) ?? 50)).toBe(fit(50, 50));
+  it('an unmeasured symbol scores EXACTLY what it scored before this branch', () => {
+    const before = publishedFactorsPreChange(undefined).factors;   // rsPercentile 50
+    const after = publishedFactors(undefined).factors;             // rsPercentile null
+    expect(before.rsPercentile).toBe(50);
+    expect(after.rsPercentile).toBeNull();
+    expect(after.sectorRSPercentile).toBeNull();
+    expect(fitOf(after), 'the honest nulls must not move the fit').toBe(fitOf(before));
   });
 
-  it('THE CHANGE HELD OUT: `?? null` would have moved it, which is the fence contact', () => {
-    // The measurement that made this a §1 report rather than a shipped edit.
-    const withNull = fit(null, null);
-    const shipped = fit(50, 50);
-    expect(withNull).not.toBe(shipped);
-    expect(Math.abs(withNull - shipped)).toBeGreaterThanOrEqual(5);
+  it('THE CHANGE HELD OUT: the brief\'s `?? null` WOULD have moved it — the fence contact', () => {
+    // baggerBombFit reaches the §1-fenced BB_FIT menu column and the §1-fenced
+    // computeArchetypeRankings, so this movement is what made the brief's
+    // prescribed edit a founder-ruling item rather than a shipped one.
+    const after = publishedFactors(undefined).factors;
+    const asBriefPrescribed = computeGameModeFits({
+      pillarScores: {},
+      technicalFactorScores: {
+        ...tech,
+        rsVsSpy: after.rsPercentile ?? null,
+        sectorRS: after.sectorRSPercentile ?? after.rsPercentile ?? null,
+      },
+      atrPercentile: 0.9,
+    }).baggerBombFit;
+    expect(asBriefPrescribed).not.toBe(fitOf(after));
+    expect(Math.abs(asBriefPrescribed - fitOf(after))).toBeGreaterThanOrEqual(5);
   });
 
-  it('a symbol WITH readings is untouched either way', () => {
-    expect(fit(88, 80)).toBe(fit(88, 80));
-    expect(Number.isFinite(fit(88, 80))).toBe(true);
+  it('a symbol WITH readings scores identically before and after', () => {
+    const before = publishedFactorsPreChange(88).factors;
+    const after = publishedFactors(88).factors;
+    expect(before.rsPercentile).toBe(88);
+    expect(after.rsPercentile).toBe(88);
+    expect(fitOf(after)).toBe(fitOf(before));
+    expect(Number.isFinite(fitOf(after))).toBe(true);
+  });
+
+  it('is not vacuous — a broken computeGameModeFits reds these rows', () => {
+    // The anti-tautology anchor (BUILD_RULES §2). The rows above compare two
+    // DIFFERENT factor objects through the real weighted scorer, so a scorer
+    // that ignores its input cannot satisfy them by construction: it would
+    // return the same number for the `?? null` shape too, and the held-out row
+    // above asserts those differ.
+    expect(fitOf({ rsPercentile: 88, sectorRSPercentile: 80 }))
+      .not.toBe(fitOf({ rsPercentile: 12, sectorRSPercentile: 10 }));
   });
 });
 

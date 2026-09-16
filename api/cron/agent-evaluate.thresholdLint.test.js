@@ -219,6 +219,7 @@ async function runTick({ candidates = deepClone(SEP14_CANDIDATES), battle = sep1
   };
 }
 
+let consoleLog;
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date(FROZEN_NOW));
@@ -227,7 +228,7 @@ beforeEach(() => {
   mocks.generateAnticipation.mockImplementation(async () => null);
   mocks.generateTradeNarration.mockImplementation(async () => null);
   mocks.logAnticipation.mockImplementation(async () => false);
-  vi.spyOn(console, 'log').mockImplementation(() => {});
+  consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
@@ -282,6 +283,20 @@ describe("B-1 'shadow' — everything persists, the failures are measured", () =
     for (const r of lintLogs) expect(r.timestamp).toBe(FROZEN_NOW);
   });
 
+  it('THE SECOND RECEIPT (L4 H-3): each drop is also on the Vercel function log', async () => {
+    // At 'on' a drop is a deletion from a durable record and the GCS write is
+    // fire-and-forget, so the console line is the receipt that survives a
+    // swallowed write. The nearer precedent this copies (cron_budget_skip)
+    // already had one; deleting it used to red nothing.
+    await runTick();
+    const lines = consoleLog.mock.calls.map(([m]) => String(m)).filter((m) => m.includes('threshold lint'));
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain('[shadow]');
+    expect(lines[0]).toContain('flagged');
+    expect(lines[0]).toContain('QCOM');
+    expect(lines[0]).toContain('VWAP');
+  });
+
   it('the two that pass are never logged — an accepted promise leaves no complaint', async () => {
     const { lintLogs } = await runTick();
     expect(lintLogs.map((r) => r.candidate.threshold)).not.toContain(KEPT_THRESHOLDS[0]);
@@ -302,6 +317,13 @@ describe("B-1 'on' — the failing promise reaches neither Gemma nor the record"
     // the dropped sentences appear NOWHERE on the persisted battle document
     const persisted = JSON.stringify(mocks.generateAnticipation.mock.calls) + JSON.stringify(stamped);
     for (const e of EXPECTED_ABSENT) expect(persisted).not.toContain(e.threshold);
+  });
+
+  it('THE SECOND RECEIPT at \'on\' says DROPPED, not flagged', async () => {
+    await runTick();
+    const lines = consoleLog.mock.calls.map(([m]) => String(m)).filter((m) => m.includes('threshold lint'));
+    expect(lines).toHaveLength(2);
+    for (const l of lines) { expect(l).toContain('[on]'); expect(l).toContain('DROPPED'); }
   });
 
   it('the class asymmetry is the cron\'s too: the same RSI sentence on the HELD name is dropped, on the BENCH name it is not', async () => {

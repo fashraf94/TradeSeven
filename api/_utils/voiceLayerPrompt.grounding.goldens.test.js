@@ -45,8 +45,13 @@
 //    hasn't refreshed", a regime the June 12 freshness gate abolished — which
 //    these goldens pin. It was applied to voiceGroundingOffGoldens.json IN
 //    PLACE, as a literal substring replacement over that one sentence: 8 of
-//    the 16 captured prompts carry the rule, 8 changed, −768 bytes = 8 × the
-//    sentence delta, and NOTHING ELSE in the file moved. Every other byte is
+//    the 16 captured prompts carry the rule, 8 changed, −784 bytes = 8 × 98,
+//    and NOTHING ELSE in the file moved. (The per-site delta is 96 CHARACTERS
+//    but 98 BYTES — the em-dash the old clause carried is 3 UTF-8 bytes. An
+//    earlier version of this note published −768 = 8 × 96, conflating the two;
+//    the proof was sound, the number was not. Corrected after the §2 mutation
+//    lens reconstructed the pre-edit file and matched it byte-exact by
+//    sha256.) Every other byte is
 //    still the 70ba90a1 capture, so the dark contract this file exists for is
 //    intact: it still proves the GROUNDING arc changed no byte at 'off'. A
 //    whole-file regeneration from this tree would have re-baselined that
