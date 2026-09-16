@@ -287,6 +287,37 @@ describe('B-1 — the confirmation rule: flag-ON quotes the filing', () => {
     }
   });
 
+  // ── DOCUMENTED LIMIT — the flip-order hazard, asserted so it cannot be
+  // forgotten (build report §6 D-3). This row PINS a limitation, not a
+  // behaviour we want: it must be deleted, not "fixed", by whichever walk
+  // resolves the hazard.
+  it('LIMIT: the GROUNDED prompt is deliberately NOT transformed — do not light this flag with VOICE_GROUNDING_MODE', () => {
+    // The gate runs on every battle chat turn regardless of `grounded`, but
+    // the acknowledgement transform lands only on the SHIPPED assembly. The
+    // grounded confirmation rule says the opposite ("Acknowledge in one
+    // sentence ... Do not describe what you will do with it."), so with both
+    // flags lit the gate would demand a quote the sent prompt never asked for
+    // and EVERY typed-path filing would become fit_mismatch.
+    //
+    // Safe today: VOICE_GROUNDING_MODE is 'shadow', so `grounded` is false for
+    // every caller and the transformed prompt is what is sent.
+    fitCheck.on = true;
+    const groundedPrompt = buildVoiceLayerPrompt({
+      agent: { name: 'Gemma', archetype: 'degen', stats: { gamesPlayed: 1, wins: 0, losses: 0 } },
+      battle: BATTLE,
+      elicitationTarget: ELICIT,
+      conversationHistory: [],
+      anchorContext: null,
+      marketSnapshot: null,
+      mode: 'battle',
+      grounded: true,
+    });
+    expect(groundedPrompt).not.toContain('Say the canonical text word for word;');
+    expect(groundedPrompt).not.toContain('Got it — filing: {the exact canonical text of the id you selected}.');
+    // And the grounded rule that contradicts it is present, verbatim.
+    expect(groundedPrompt).toContain('The interface states what was filed. Do not describe what you will do with it.');
+  });
+
   it('the first-message prompt is deliberately NOT transformed (its path never reaches the gate)', () => {
     // buildFirstMessagePrompt pins hasDirective false and directive null, so
     // there is no confirmation to acknowledge and no filing to quote. Both

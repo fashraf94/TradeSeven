@@ -805,6 +805,38 @@ export const ARCHETYPE_INTEGRITY_MODE = 'enforce';
  * The flip is its own one-line PR after a founder preview smoke, never a build
  * PR.
  *
+ * FLIP ORDER — READ THIS BEFORE FLIPPING. This flag and VOICE_GROUNDING_MODE
+ * must NOT be lit together until the grounded confirmation rule carries the
+ * quote instruction too.
+ *
+ * The gate runs on every battle-mode chat turn regardless of `grounded`
+ * (chat.js). But the GROUNDED prompt is a different assembly, and the
+ * acknowledgement transform above lands only on the shipped one
+ * (voiceLayerPrompt.js — the branch reached when `grounded === false`). The
+ * grounded confirmation rule says the OPPOSITE of what the gate would then
+ * require: "Acknowledge in one sentence. The interface states what was filed.
+ * Do not describe what you will do with it." (voiceLayerGrounding.js).
+ *
+ * So with VOICE_GROUNDING_MODE at 'canary' (for an allowlisted uid) or 'on'
+ * AND this flag true, the gate would demand a quote the SENT prompt never
+ * asked for, and every typed-path filing would become fit_mismatch. That is
+ * exactly the failure the two halves ride one flag to prevent.
+ *
+ * TODAY THIS CANNOT HAPPEN: VOICE_GROUNDING_MODE is 'shadow' (below), which
+ * resolves to 'shadow' for every uid, so `grounded` is false for everyone and
+ * the shipped — transformed — prompt is what is sent. Flipping this flag alone,
+ * today, is coherent. The hazard is the ORDER, and it belongs to whichever of
+ * the two walks moves second.
+ *
+ * The grounded rule was NOT changed here: voiceLayerGrounding.js is outside
+ * this build's file list and the grounding walk is out of its scope. The limit
+ * is pinned as executable documentation in
+ * api/_utils/voiceLayerPrompt.fitCheck.test.js ("the GROUNDED prompt is
+ * deliberately NOT transformed"), and raised for founder ruling in
+ * docs/audits/20260916_BUILD_DIRECTIVE_FIT_CHECK.md §6 D-3. Resolve it by
+ * either giving the grounded rule the same quote instruction in the walk's own
+ * PR, or giving the gate a `grounded` input.
+ *
  * FLIP MAP (the flip PR reconciles these in the SAME commit — BUILD_RULES §2):
  *   • src/config/directiveFitCheckFlags.test.js — the dark pin row moves to true;
  *   • src/config/flagPinGuard.test.js — drop DIRECTIVE_FIT_CHECK_ENABLED from
