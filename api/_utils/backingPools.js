@@ -75,12 +75,14 @@ import {
   opensAtFor,
   poolEligible,
 } from './backingWeek.js';
-import { readWallet, walletRef, creditRefund } from './backingWallet.js';
+import { readWallet, walletRef, creditRefund, recordStakeLoss } from './backingWallet.js';
 import {
+  POOL_EXCLUDED_SLOT_IDS,
   VALIDITY_MIN_BACKERS,
   VALIDITY_MIN_TEAMS,
 } from '../../src/constants/backing.js';
 import {
+  GROUP_STATUS,
   TOURNAMENT_GROUPS_COLLECTION,
   isCpuUserId,
 } from '../../src/constants/leagueTournament.js';
@@ -130,6 +132,18 @@ export const VOID_REASONS = Object.freeze({
 export const FORMATION_PATH = Object.freeze({ LOBBY: 'lobby', SLOT: 'slot' });
 
 /**
+ * Refusals this module owns, beside PR 1's `POOL_INELIGIBLE`.
+ *
+ * `NOT_OPEN_YET` deliberately lives HERE and not in `POOL_INELIGIBLE`: that
+ * vocabulary is PR 1's and is frozen (backingWeek.js states so), and the clause
+ * it guards is a property of the READ INSTANT, not of the pod. `poolEligible`
+ * answers "does this pod get a pool at all", measuring the 24-hour rule from
+ * `max(now, opensAt)` so a pod formed before its own window still qualifies;
+ * this answers the different question "may that pool be OPEN yet".
+ */
+export const POOL_REFUSAL = Object.freeze({ NOT_OPEN_YET: 'not_open_yet' });
+
+/**
  * A pool refusal. Typed like `BackingLedgerError` / `EligibilityRequiredError`
  * so the endpoints can `instanceof` it — or read `.code` / `.statusCode` — and
  * answer without string-matching a message.
@@ -171,6 +185,56 @@ export function poolIdFor(group) {
     );
   }
   return group?.isDev === true ? `dev-${groupId}` : groupId;
+}
+
+/**
+ * Terminal group statuses: a pod with no result left to back (§5).
+ * `voided` is reachable only from `battle`; `expired` only from the three
+ * pre-battle states. Both are forward-only and carry no standing.
+ */
+const TERMINAL_GROUP_STATUSES = new Set([GROUP_STATUS.VOIDED, GROUP_STATUS.EXPIRED]);
+
+/**
+ * Is this pod still STAKEABLE? (§4, §5, D-x.)
+ *
+ * DELIBERATELY NOT a `poolEligible` clause: that predicate answers "does this
+ * pod get a pool", once, at open. This answers "may a stake still land", every
+ * time — and a pod can turn terminal long after its pool opened, at which point
+ * `materializePool` would keep handing back the open pool it already has.
+ *
+ * `battle` and `complete` are NOT refused here: a pod in battle has simply had
+ * its pool closed by the clock, and the pool's own `status` says so.
+ *
+ * DEV AND TRAINING ARE NOT REFUSED HERE EITHER, and that is the substantive
+ * split. §6's D-DEVFIELD is explicit that the dev exclusion belongs to the POD
+ * LIST ("the pod list excludes dev groups from production viewers — the field
+ * does not"), not to the pool layer: a dev pod routes to a `dev-` pool and a
+ * `dev-` wallet precisely so §11 gate 4's founder smoke can run a real stake
+ * through it. Refusing dev pods here would make that smoke impossible. A dev or
+ * training pod still gets no pool at all through the production path, because
+ * `poolEligible` refuses to open one — so this clause's absence costs nothing
+ * a production caller can reach.
+ */
+export function stakeablePod(group) {
+  if (TERMINAL_GROUP_STATUSES.has(group?.status)) return false;
+  if (POOL_EXCLUDED_SLOT_IDS.includes(group?.slotId)) return false;
+  return true;
+}
+
+/**
+ * May this pod appear in the PRODUCTION pod list? (§5, §6 D-DEVFIELD, D-x.)
+ *
+ * `stakeablePod` plus the two exclusions that are the LIST's own: dev pods never
+ * surface to a production viewer, and training pods complete with zero ladder
+ * effects so they have nothing to back. Built ON the stakeable predicate rather
+ * than beside it, so the list can never admit a pod the stake path would refuse
+ * (§9 — one source, two scopes).
+ */
+export function listablePod(group) {
+  if (!stakeablePod(group)) return false;
+  if (group?.isDev === true) return false;
+  if (group?.isTraining === true) return false;
+  return true;
 }
 
 /** The `backingPools/{poolId}` document reference. */
@@ -313,7 +377,7 @@ export function buildOpenPool(group, now, { eligibility }) {
  *   `reason` is one of `POOL_INELIGIBLE` when no pool was opened and none
  *   existed; it is null whenever a pool comes back.
  */
-export async function materializePool(db, group, now = new Date()) {
+export async function materializePool(db, group, now = new Date(), { allowDev = false } = {}) {
   const ref = poolRefFor(db, group);
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
@@ -323,8 +387,38 @@ export async function materializePool(db, group, now = new Date()) {
     // — closing it is `closePool`'s job, on the clock, not this function's.
     if (snap.exists) return { pool: snap.data(), created: false, reason: null };
 
-    const eligibility = poolEligible(group, now);
+    // THE DEV NAMESPACE OPT-IN (§6, §11 gate 4). `poolEligible` refuses every
+    // dev pod, which is right for the production pod list (D-DEVFIELD) and
+    // wrong for the founder's own smoke — gate 4 runs a DEV pod through
+    // attest → open → close → settle, and without an opt-in no dev pool can
+    // ever exist, so `poolIdFor`'s `dev-` branch would ship as dead code.
+    // Off by default and passed by NO production caller: both endpoints call
+    // this without it, so a production viewer can never materialize a dev pool.
+    const eligibility = allowDev === true && group?.isDev === true
+      ? poolEligible({ ...group, isDev: false }, now)
+      : poolEligible(group, now);
     if (!eligibility.eligible) return { pool: null, created: false, reason: eligibility.reason };
+
+    // THE WINDOW HAS TO HAVE STARTED (§4: a pool opens at the LATER of pod
+    // formation and the backing week's start). `poolEligible` deliberately does
+    // NOT enforce this — it measures the 24-hour rule from `max(now, opensAt)`
+    // so a pod formed early still qualifies for a pool — so the enforcement
+    // lives here, at the moment the pool would be written `status: 'open'`.
+    //
+    // THE DEFECT THIS CLOSES, because it is not hypothetical: a Wed/Sat/Sun
+    // slot pod is created at its FIRST CLAIM, up to a week before its fire, and
+    // its `battleStartWeek` is stamped from the fire — so a pod claimed on the
+    // Saturday of week W carries the backing week W+1 and an `opensAt` up to
+    // ~3 days in the future. Opening it then would let a stake carry
+    // `weekKey = W+1` while the backer is living in W: `ensureAllowance` would
+    // expire the whole of W's unspent allowance, re-key the wallet to W+1, and
+    // every still-open pool of week W would answer `week_mismatch` for the rest
+    // of the week. §2's "every stake on a pool is drawn from the same
+    // allowance" is exactly this clause.
+    const opensMs = new Date(eligibility.opensAt).getTime();
+    if (Number.isFinite(opensMs) && new Date(now).getTime() < opensMs) {
+      return { pool: null, created: false, reason: POOL_REFUSAL.NOT_OPEN_YET, opensAt: eligibility.opensAt };
+    }
 
     const pool = buildOpenPool({ ...group, id: group.id }, now, { eligibility });
     tx.set(ref, pool);
@@ -409,7 +503,6 @@ export async function closePool(db, group, now = new Date()) {
     if (status === POOL_STATUS.INSUFFICIENT) {
       for (const stake of surviving) voids.push({ stake, reason: VOID_REASONS.INSUFFICIENT });
     }
-    const live = status === POOL_STATUS.INSUFFICIENT ? [] : surviving;
 
     // The refund wallets — the LAST reads, still before the first write.
     // Keyed by wallet path so two stakes by one backer read the doc once and the
@@ -448,14 +541,51 @@ export async function closePool(db, group, now = new Date()) {
         monthKey,
         now,
       });
-      walletDocs.set(wRef.path, result.wallet);
+      // AND THE STAKE SIDE'S OWN MONTH ATTRIBUTION, threaded onward from the
+      // refund's returned wallet (the PR 1 contract).
+      //
+      // WITHOUT THIS THE REFUND IS NOT SCORE-NEUTRAL, which §2 requires of every
+      // voided stake. `debitStake` moves only `careerNet`, so the stake and its
+      // refund cancel there — but `creditRefund` also credits
+      // `seasons.{monthKey}.net`, and nothing debits it, so each voided stake
+      // would leave `+amount` in that month for ever. A backer whose pool went
+      // `insufficient` would read a positive month for a week in which nothing
+      // happened. `recordStakeLoss` (the PR 2 carry-in E2 primitive) writes the
+      // missing half and touches `careerNet` not at all, so the pairing is
+      // exactly neutral in BOTH fields.
+      //
+      // The E2 ruling's "for voided stakes writes nothing" carve-out is the one
+      // place this build departs from it, and deliberately: that carve-out is
+      // sound only for the careerNet-touching primitive the ruling described,
+      // where a second entry would double-debit. This primitive does not touch
+      // careerNet (see its docstring), so the carve-out's own reason — "the
+      // stake's own debit is already reversed by the refund" — is already true
+      // of careerNet and silent about the month bucket. Reversing the decision
+      // is deleting this one call.
+      const attributed = recordStakeLoss(tx, wRef, result.wallet, {
+        stakeId,
+        groupId,
+        amount: stake.amount,
+        monthKey,
+        now,
+      });
+      walletDocs.set(wRef.path, attributed.wallet);
       if (result.applied) refunded += 1;
     }
 
-    // (4) REVEAL — the totals re-derived from the surviving stakes, written to
-    // the private cache and copied up to the public doc in the SAME statement
+    // (4) REVEAL — the totals re-derived from the stakes STEP 3 JUDGED, written
+    // to the private cache and copied up to the public doc in the same statement
     // pair, so the two can never disagree (§9).
-    const totals = totalsFromStakes(live);
+    //
+    // OVER `surviving`, NOT over what is still `live` afterwards. For a `closed`
+    // pool the two sets are identical. They differ only on `insufficient`, where
+    // step 3 voids everything — and folding the post-void set there would
+    // publish `backers 0 of 3 · teams 0 of 2` to a backer whose stake had just
+    // been voided for thin participation, which is the opposite of the fact (§9:
+    // pool copy states exact facts). The revealed numbers are therefore the ones
+    // validity was evaluated on; the stakes themselves carry `voidReason`, and
+    // the pool's status says `insufficient`, so nothing here reads as a live pot.
+    const totals = totalsFromStakes(surviving);
     tx.set(poolTotalsRefFor(db, group), { ...totals.private, updatedAt: nowIso });
 
     const teams = frozenTeams.map((team) => ({

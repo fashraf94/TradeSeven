@@ -237,6 +237,30 @@ describe('the lazy jobs ride here (§4, §7)', () => {
     expect(DB.store.get(`${BACKING_POOLS_COLLECTION}/g1`).status).toBe(POOL_STATUS.CLOSED);
   });
 
+  it('costs NO transaction once a pool exists — a plain read is the steady state', async () => {
+    // `materializePool` must be transactional (two first readers race to create
+    // one pool), but the steady state is "the pool already exists", and paying
+    // for a transaction to learn that put one transaction per listed pod on
+    // EVERY request, for ever. The first GET creates; the rest only read.
+    DB = seed([group('g1'), group('g2')]);
+    await get();
+    const writesAfterFirst = DB.writeLog.length;
+    expect(writesAfterFirst).toBe(2);              // one pool per pod, once
+
+    DB.writeLog.length = 0;
+    await get();
+    await get();
+    expect(DB.writeLog).toEqual([]);               // nothing written again
+  });
+
+  it('an INELIGIBLE pod costs no write on any request, all week', async () => {
+    vi.setSystemTime(new Date('2026-09-27T12:00:00.000Z'));   // under the 24h rule
+    DB = seed([group('g1')]);
+    await get();
+    await get();
+    expect(DB.writeLog).toEqual([]);
+  });
+
   it('one pod\'s pool failure does not take down the list', async () => {
     DB = seed([group('g1'), group('g2')]);
     const realCollection = DB.db.collection;

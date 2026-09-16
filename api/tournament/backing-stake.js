@@ -78,6 +78,7 @@ import { isValidForgeId } from '../_utils/idValidation.js';
 import { backingWeekFor } from '../_utils/backingWeek.js';
 import {
   BACKING_STAKES_COLLECTION,
+  BackingPoolError,
   POOL_STATUS,
   STAKE_STATUS,
   ensureClosed,
@@ -86,6 +87,7 @@ import {
   poolRefFor,
   poolTotalsRefFor,
   readGroup,
+  stakeablePod,
   totalsFromBackers,
 } from '../_utils/backingPools.js';
 import { checkBackingEligibility } from '../_utils/backingEligibility.js';
@@ -126,7 +128,13 @@ export const MAX_REQUEST_ID_LEN = 200;
  * SHA-256 here is a namespacing function, not a security control.
  */
 export function stakeIdFor(uid, requestId) {
-  return `stk_${hashFingerprint(`stake-id\n${uid}\n${requestId}`, { salted: false }).slice(0, 40)}`;
+  // LENGTH-PREFIXED, not newline-joined. `a\nb` + `c` and `a` + `b\nc` hash to
+  // the same string under a bare separator, so two different (uid, requestId)
+  // pairs could name one document. No Firebase uid contains a newline, so it is
+  // unreachable through Auth — but the repo documents an operator custom-token
+  // path that mints arbitrary uids, and an injective encoding costs nothing.
+  const key = `${uid.length}:${uid}|${requestId.length}:${requestId}`;
+  return `stk_${hashFingerprint(`stake-id\n${key}`, { salted: false }).slice(0, 40)}`;
 }
 
 /** The `backingStakes/{stakeId}` reference. */
@@ -189,6 +197,24 @@ export async function tournamentBattleExists(db, reader, groupId) {
   let found = false;
   snap.forEach((doc) => { if (doc.data()?.gameMode === TOURNAMENT_GAME_MODE) found = true; });
   return found;
+}
+
+/**
+ * A refusal raised from INSIDE the transaction, after the first buffered write.
+ *
+ * Exists because the Admin SDK commits a transaction body that returns and rolls
+ * back only one that throws: every refusal downstream of a write must therefore
+ * leave by throwing, or a refused stake commits half of itself. Carries the
+ * response payload so the answer is identical to a returned refusal's.
+ */
+export class StakeRefusal extends Error {
+  constructor(statusCode, code, payload = {}) {
+    super(code);
+    this.name = 'StakeRefusal';
+    this.statusCode = statusCode;
+    this.code = code;
+    this.payload = payload;
+  }
 }
 
 /** A 400 body: one plain reason, the attest.js shape. */
@@ -269,23 +295,66 @@ export default async function handler(req, res) {
       // from the document it already wrote, whatever the window now says — that
       // is what "returns the existing stake unchanged and writes nothing" means.
       const existing = await tx.get(stakeRefFor(db, stakeId));
-      if (existing.exists) return { replay: true, stake: { id: stakeId, ...existing.data() } };
+      if (existing.exists) {
+        const prior = existing.data();
+        // A REPLAY IS A REPLAY OF *THIS* REQUEST, not of whatever sits at the
+        // derived id. Two guards, both cheap:
+        //   · the OWNER must match. The id mixes the uid before hashing, so
+        //     reaching another backer's stake needs their uid (which is public —
+        //     it is `players[].odUserId`) AND their exact `requestId`. PR 2
+        //     ships no client, so whether that is guessable is PR 4's choice of
+        //     `requestId` scheme; refusing here means it never becomes one. The
+        //     alternative is handing a rival the victim's team and amount while
+        //     the pool is sealed (§3).
+        //   · the BODY must match. A `requestId` reused for a different pod,
+        //     team or amount would otherwise get 200 and a stake it did not ask
+        //     for; §8 makes a duplicate submission a no-op, not a silent
+        //     substitution.
+        if (prior?.userId !== user.uid
+          || prior?.groupId !== groupId
+          || prior?.teamOdUserId !== teamOdUserId
+          || prior?.amount !== amount) {
+          return { refusal: { status: 409, error: 'request_id_conflict' } };
+        }
+        return { replay: true, stake: { id: stakeId, ...prior } };
+      }
 
       // ---- READ: the pod and the pool, transactionally. The pool doc is also
       // the serialization point against a racing close.
       const groupSnap = await tx.get(db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(groupId));
       if (!groupSnap.exists) return { refusal: { status: 409, error: 'no_pod' } };
       const txGroup = { id: groupId, ...groupSnap.data() };
+      // THE PREDICATE THE POD LIST IS BUILT ON (§9 — one source, two scopes).
+      // Without it the two endpoints disagree: `materializePool` returns an
+      // existing pool unchanged whatever the pod's status has become, so a pod
+      // that went `voided` or `expired` mid-week would vanish from the list and
+      // keep taking stakes. Deliberately the STAKEABLE predicate and not the
+      // listable one: the dev exclusion is the list's (D-DEVFIELD), and
+      // refusing dev pods here would make §11 gate 4's founder smoke — a real
+      // stake on a dev pod, in the `dev-` namespace — impossible.
+      if (!stakeablePod(txGroup)) return { refusal: { status: 409, error: 'no_pool' } };
 
       const poolRef = poolRefFor(db, txGroup);
       const poolSnap = await tx.get(poolRef);
       if (!poolSnap.exists) return { refusal: { status: 409, error: 'no_pool' } };
       const pool = poolSnap.data();
 
-      // ---- CHECK 1: the window, on the SERVER clock (§4, §8).
+      // ---- CHECK 1: the window, on the SERVER clock (§4, §8). BOTH ENDS.
       if (pool.status !== POOL_STATUS.OPEN) {
         return { refusal: { status: 409, error: 'pool_closed', poolStatus: pool.status } };
       }
+      // The near end. `materializePool` already refuses to OPEN a pool before
+      // its `opensAt`, so a pool that exists has normally passed this; the
+      // clause is here because the stake is the one path that moves BP, and a
+      // pool written by an earlier deploy, a clock skew, or a seeder must not
+      // be stakeable before its backing week starts (§4, §2 — every stake on a
+      // pool is drawn from ONE allowance, and a stake in that gap would re-key
+      // the wallet to next week and expire this week's).
+      const opensMs = new Date(pool.opensAt).getTime();
+      if (Number.isFinite(opensMs) && now.getTime() < opensMs) {
+        return { refusal: { status: 409, error: 'pool_not_open', opensAt: pool.opensAt } };
+      }
+      // The far end.
       if (now.getTime() >= new Date(pool.closesAt).getTime()) {
         return { refusal: { status: 409, error: 'pool_closed', poolStatus: pool.status } };
       }
@@ -335,6 +404,13 @@ export default async function handler(req, res) {
       const wRef = walletRef(db, user.uid, { dev: pool.isDev === true });
       const wallet0 = await readWallet(tx, wRef);
 
+      // The sealed meta, read BEFORE any write so an admin's `excluded` flag
+      // survives (see the write below). Normally absent; present only when the
+      // parent stake was deleted out of band, since Firestore does not
+      // cascade-delete a subcollection.
+      const metaSnap = await tx.get(stakeMetaRefFor(db, stakeId));
+      const priorMeta = metaSnap.exists ? metaSnap.data() : null;
+
       // ---- CHECK 4a: the allowance for THIS POOL'S backing week, granted
       // lazily if this is the first touch (§2, D-h). Threaded onward per the
       // PR 1 module contract — the stale doc is never re-read.
@@ -343,19 +419,38 @@ export default async function handler(req, res) {
       // ---- CHECK 4b: the per-team cap, against this backer's EXISTING live
       // stakes on this team (§8). Read from the stake documents, not from the
       // sealed cache: the stakes are the ledger and the cache is derived.
+      //
+      // IT THROWS RATHER THAN RETURNING, and that is the whole point. The
+      // Admin SDK COMMITS a transaction whose body returns normally and ROLLS
+      // BACK only one that throws (`Transaction.runTransaction`), so a refusal
+      // RETURNED here — after `ensureAllowance` has already buffered the
+      // week's grant and, when the prior week held a remainder, its expiry —
+      // would commit a partial transaction: a refused stake that silently
+      // re-keyed the wallet. Throwing restores the invariant every other
+      // refusal on this route already has: nothing downstream of the first
+      // buffered write may refuse by returning. `debitStake`'s own refusals
+      // (`week_mismatch`, `insufficient_allowance`) throw for the same reason.
+      //
+      // The §12 check order is unchanged — allowance, then cap, then debit —
+      // because the fix is HOW the refusal leaves, not WHERE the check sits.
       if (onThisTeam + amount > PER_TEAM_CAP_BP) {
-        return {
-          refusal: {
-            status: 409,
-            error: 'per_team_cap',
-            staked: onThisTeam,
-            cap: PER_TEAM_CAP_BP,
-          },
-        };
+        throw new StakeRefusal(409, 'per_team_cap', { staked: onThisTeam, cap: PER_TEAM_CAP_BP });
       }
 
       // ---- CHECK 4c: the debit. Refuses `insufficient_allowance` (typed).
-      const { wallet: wallet2 } = debitStake(tx, wRef, wallet1, { stakeId, amount, weekKey, now });
+      const debit = debitStake(tx, wRef, wallet1, { stakeId, amount, weekKey, now });
+      // A REPLAYED LEDGER ENTRY WITH NO STAKE DOCUMENT IS NOT A STAKE. The
+      // wallet's `appliedEntries` guard makes `stake:{stakeId}` a no-op the
+      // second time, so if the stake DOCUMENT has been deleted out of band (an
+      // admin action; Firestore does not cascade-delete, so its `private/meta`
+      // survives) this path would otherwise re-create the stake FOR FREE — no
+      // debit, the pot incremented a second time, and the admin's `excluded`
+      // flag overwritten back to false. Refuse instead: the ledger says this
+      // stake id has already been spent.
+      if (debit.replay === true) {
+        throw new StakeRefusal(409, 'stake_already_spent');
+      }
+      const wallet2 = debit.wallet;
 
       // ---- WRITE 5: the stake (§6 shape), plus its sealed meta (E1).
       const stake = {
@@ -370,9 +465,13 @@ export default async function handler(req, res) {
         status: STAKE_STATUS.LIVE,
       };
       tx.set(stakeRefFor(db, stakeId), stake);
+      // The sealed meta (E1). `excluded` is an ADMIN fact and is written here
+      // only on a doc that does not yet carry one — `metaSnap` is read above,
+      // before any write — so a stake this route creates can never clear an
+      // exclusion an admin had already set.
       tx.set(stakeMetaRefFor(db, stakeId), {
         ...fingerprintOf(req),
-        excluded: false,
+        excluded: priorMeta?.excluded === true,
         at: now.toISOString(),
       });
 
@@ -419,8 +518,27 @@ export default async function handler(req, res) {
       allowanceRemaining: outcome.wallet ? outcome.wallet.allowanceRemaining : null,
     });
   } catch (err) {
+    // A refusal thrown from inside the transaction, so the transaction rolled
+    // back. Answered exactly as a returned refusal would be.
+    if (err instanceof StakeRefusal) {
+      return res.status(err.statusCode).json({ error: err.code, ...err.payload });
+    }
+    // The ledger's and the pool's own typed refusals carry their own status. The
+    // MESSAGE is logged, never returned: it names internal state (which week the
+    // wallet is granted for, which id was ambiguous), and every other refusal on
+    // this route answers with a plain reason word.
+    // The ledger's refusals are STATE CONFLICTS (the allowance is spent, the
+    // wallet is on another week), so 409 whatever the class's own default is;
+    // the pool's are about the REQUEST (an ambiguous groupId), so its own 400
+    // stands. Either way the MESSAGE is logged, never returned: it names
+    // internal state, and every other refusal here answers with a reason word.
     if (err instanceof BackingLedgerError) {
-      return res.status(409).json({ error: err.code, message: err.message });
+      console.warn(`[backing-stake] ledger refusal (${err.code}):`, err.message);
+      return res.status(409).json({ error: err.code });
+    }
+    if (err instanceof BackingPoolError) {
+      console.warn(`[backing-stake] pool refusal (${err.code}):`, err.message);
+      return res.status(err.statusCode ?? 400).json({ error: err.code });
     }
     console.error('[backing-stake] transaction failed:', err?.message);
     return res.status(500).json({ error: 'server_error', message: 'Could not place that stake.' });

@@ -16,7 +16,8 @@
 //      being sent to attest a consent record it may not hold.
 //   2. `eligibility_required` — no attestation, or one recorded under a DIFFERENT
 //      `TERMS_VERSION` (D-aa: a terms revision forces re-attestation, so a stale
-//      version counts as ABSENT). One `eligibility/{uid}` read.
+//      version counts as ABSENT). One `eligibility/{uid}` read, through PR 0's
+//      `requireEligibility`, which is where §A2 puts the version rule itself.
 //   3. `own_pod` — the caller is seated in this pod, so NO seat in it is backable
 //      by them: not their own, and not a rival's (§8). The account-level rule.
 //   4. `seat_not_present` — the named team is not in `players[]` AT STAKE TIME.
@@ -55,9 +56,8 @@
 // import rule (BUILD_RULES §4); the co-located test's real import of THIS module
 // is the dependency-surface guard — never mock it.
 
-import { getEligibility } from './eligibility.js';
+import { EligibilityRequiredError, requireEligibility } from './eligibility.js';
 import { seatedIdsFor } from './backingPools.js';
-import { TERMS_VERSION } from '../../src/constants/eligibility.js';
 
 /** The collection the speed bump queries (§8). Reused, never written here. */
 export const AGENT_BATTLES_COLLECTION = 'agentBattles';
@@ -140,13 +140,18 @@ export async function checkBackingEligibility(db, { uid, decodedToken, group, te
     return { allowed: false, reason: BACKING_INELIGIBLE.ACCOUNT_REQUIRED };
   }
 
-  // 2. The attestation, at the CURRENT terms version (D-aa). A doc recorded
-  //    under a superseded version counts as ABSENT — the same 403 and the same
-  //    reason, so PR 4's AttestationStep re-presents the terms without needing a
-  //    second code path.
-  const attestation = await getEligibility(db, uid);
-  if (!attestation || attestation.termsVersion !== TERMS_VERSION) {
-    return { allowed: false, reason: BACKING_INELIGIBLE.ELIGIBILITY_REQUIRED };
+  // 2. The attestation, at the CURRENT terms version. THE RULE ITSELF LIVES IN
+  //    `requireEligibility` (§A2 names that function), so this is one call and
+  //    not a second home for the comparison; a stale version arrives here as the
+  //    same typed refusal an absent one does. A read FAILURE is NOT caught — it
+  //    propagates, because an outage must never read as "not eligible".
+  try {
+    await requireEligibility(db, uid);
+  } catch (err) {
+    if (err instanceof EligibilityRequiredError) {
+      return { allowed: false, reason: BACKING_INELIGIBLE.ELIGIBILITY_REQUIRED };
+    }
+    throw err;
   }
 
   // 3. Own-pod, then 4. seat-present — both off the caller's transactional read.

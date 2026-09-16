@@ -61,8 +61,12 @@
 // (D-v: there is no public ranked backer leaderboard, and this module writes
 // nothing that could feed one).
 //
-// NOTHING IN PR 1 CALLS ANY OF THIS. No endpoint, no UI, no caller, and no
-// wallet document is written. `touchWallet` is here for PR 4's read path.
+// PR 1 CALLED NONE OF THIS; PR 2 IS THE FIRST CALLER. `ensureAllowance` and
+// `debitStake` compose inside the stake endpoint's single transaction
+// (api/tournament/backing-stake.js) and `creditRefund` + `recordStakeLoss`
+// inside the close transaction (api/_utils/backingPools.js). `creditPayout` and
+// `touchWallet` still have none — PR 3's settlement and PR 4's read path
+// respectively.
 //
 // Imports the zero-import constants module from src/ under the revised June
 // 2026 import rule (BUILD_RULES §4); the co-located test's real import of THIS
@@ -642,8 +646,16 @@ export function creditRefund(tx, ref, walletDoc, args) {
  * side of every stake that reaches a month attribution — the LOST path (which
  * has no credit at all), and the WON path beside its `creditPayout`. Calling it
  * only for losers leaves each winner's own stake unattributed and the ruling's
- * example reads `+150` instead of `−350`; the test named "the founder's worked
- * example" pins that too, so the rule cannot be half-applied silently.
+ * example reads `+150` instead of `−350`.
+ *
+ * NOTHING MECHANICALLY ENFORCES THAT RULE, and this docstring will not pretend
+ * otherwise: PR 2 ships no caller, so there is nothing here to check callers
+ * against. The test named "the CALLER RULE is load-bearing" RECORDS what a
+ * half-application produces (+150) as documentation for PR 3; it is a
+ * characterization row, not a guard. The row named "the founder's worked
+ * example" calls this primitive for both stakes itself, so it pins the
+ * ARITHMETIC (−350 in both fields) and could never fail under a half-applied
+ * caller.
  *
  * A VOIDED STAKE IS THE ONE PATH THIS DOES NOT COVER, per the ruling's explicit
  * carve-out ("for voided stakes writes nothing — the stake's own debit is already

@@ -54,7 +54,12 @@ function listSources(dirRel) {
       if (ent.name === 'node_modules' || ent.name === '__fixtures__') continue;
       const next = path.join(abs, ent.name);
       if (ent.isDirectory()) walk(next);
-      else if (ent.name.endsWith('.js') && !ent.name.includes('.test.')) {
+      // `.jsx` TOO, and that is the whole point of the rows below. `src/` holds
+      // more .jsx than .js, PR 4's backing surfaces WILL be .jsx, and a walker
+      // blind to them makes "no client importer" unfalsifiable at exactly the
+      // moment it matters. This is the spelling the sibling walker this file
+      // cites as its precedent already uses (attest.dark.test.js).
+      else if (/\.(js|jsx|mjs)$/.test(ent.name) && !ent.name.includes('.test.')) {
         out.push(path.relative(REPO_ROOT, next).split(path.sep).join('/'));
       }
     }
@@ -244,7 +249,11 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       'api/tournament/backing-pools.js',
       'api/tournament/backing-stake.js',
     ]);
-    expect(importersOf('api/_utils/backingEligibility.js')).toEqual(['api/tournament/backing-stake.js']);
+    expect(importersOf('api/_utils/backingEligibility.js')).toEqual([
+      // attest.js reads the sign-in-provider helper for Amendment A §A3.
+      'api/eligibility/attest.js',
+      'api/tournament/backing-stake.js',
+    ]);
     expect(importersOf('api/_utils/backingFingerprint.js')).toEqual(['api/tournament/backing-stake.js']);
     // STILL NO CLIENT IMPORTER: the backing surfaces are PR 4's. A `src/`
     // importer here would mean the dark feature had reached a bundle.

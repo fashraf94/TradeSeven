@@ -155,7 +155,9 @@ describe('nothing else reaches it (PR 0)', () => {
     // The claim that matters is unchanged and is asserted directly rather than
     // by counting: nothing under src/ reaches these strings, so no UI ships them.
     expect(importersOf('src/constants/eligibility.js')).toEqual([
-      'api/_utils/backingEligibility.js',
+      // PR 2 moved §A2's version rule into `requireEligibility` itself, where
+      // Amendment A puts it, so the READ SIDE is now the constant's importer.
+      'api/_utils/eligibility.js',
       'api/eligibility/attest.js',
     ]);
     expect(importersOf('src/constants/eligibility.js').filter((rel) => rel.startsWith('src/'))).toEqual([]);

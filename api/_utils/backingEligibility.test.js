@@ -218,12 +218,33 @@ describe('5. no_completed_battle — the §8 speed bump, on the EXISTING index',
     expect(await check(db)).toEqual({ allowed: true, reason: null });
   });
 
-  it('hasCompletedBattle is bounded to one document', async () => {
+  it('hasCompletedBattle is bounded to one document — the LIMIT is asserted, not claimed', async () => {
     const { db } = makeInMemoryDb({
       'agentBattles/b1': battle(), 'agentBattles/b2': battle(), 'agentBattles/b3': battle(),
     });
     expect(await hasCompletedBattle(db, UID)).toBe(true);
     expect(await hasCompletedBattle(db, 'nobody')).toBe(false);
+
+    // The module says "ONE query, bounded to 1". Asserting only true/false
+    // leaves that unfalsifiable: dropping `.orderBy().limit(1)` keeps both
+    // answers right and fetches the owner's whole completed-battle history on
+    // every stake. So the chain is recorded and checked.
+    const seen = { filters: [], order: null, limit: null };
+    const probe = {
+      collection: () => {
+        const q = {
+          where: (field, op, value) => { seen.filters.push([field, op, value]); return q; },
+          orderBy: (field, dir) => { seen.order = [field, dir]; return q; },
+          limit: (n) => { seen.limit = n; return q; },
+          get: async () => ({ size: 1, empty: false, docs: [] }),
+        };
+        return q;
+      },
+    };
+    await hasCompletedBattle(probe, UID);
+    expect(seen.limit).toBe(1);
+    expect(seen.order).toEqual(['completedAt', 'desc']);
+    expect(seen.filters).toEqual([['ownerId', '==', UID], ['status', '==', 'completed']]);
   });
 
   it('a READ FAILURE throws — an outage must never read as "not eligible"', async () => {

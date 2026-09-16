@@ -244,7 +244,7 @@
     "api/earnings/resolve-tournament.js::handler::update::unresolved": 4,
     "api/earnings/sync-queue.js::handler::set::unresolved": 1,
     "api/earnings/sync-queue.js::handler::update::unresolved": 1,
-    "api/eligibility/attest.js::handler::set::unresolved": 1,
+    "api/eligibility/attest.js::handler::set::unresolved": 2,
     "api/fantasytimes/backfill-visuals.js::handler::update::unresolved": 1,
     "api/fantasytimes/cleanup.js::handler::delete::unresolved": 2,
     "api/fantasytimes/cleanup.js::handler::update::unresolved": 1,

@@ -33,6 +33,22 @@
 // hardening a runbook step can take later, step 2 is what production actually
 // uses today.
 //
+// TWO LIMITS THAT BIND, stated because a module that lists only the comfortable
+// ones is worse than one that lists none:
+//   · THE IP INPUT IS CLIENT-SUPPLIED. `clientIpOf` takes the first
+//     `x-forwarded-for` hop, the same rule the rate limiter uses. If the
+//     platform APPENDS to that header rather than overwriting it, a caller
+//     chooses their own `ipHash` and the §8 Sybil watch is defeated with one
+//     header. This is not a control against a motivated actor; it is a research
+//     signal (§8 says exactly that: "a report, not a product surface"). A
+//     platform-verified client-IP field would be the hardening, and belongs with
+//     the Sybil-watch task in PR 5, not here.
+//   · A `CRON_SECRET` ROTATION SILENTLY RE-KEYS every later fingerprint, so
+//     digests either side of a rotation never compare equal and the watch goes
+//     blind for the accounts it spans. Setting `BACKING_FINGERPRINT_SALT`
+//     explicitly is what decouples the two lifetimes. (The STAKE ID is immune —
+//     it is the unsalted hash, see `hashFingerprint`'s `salted: false`.)
+//
 // PURE AND SYNCHRONOUS, so the stake transaction can call it without a read and
 // the tests can assert the digest without a running service.
 

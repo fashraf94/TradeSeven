@@ -121,9 +121,10 @@ function makeVersionedDb(initial = {}) {
             await tick();
             if (ref._isDoc) { remember(ref.path); return snapOf(ref.path); }
             const docs = ref._run();
-            // A query's read set is the documents it matched. Coarser than
-            // Firestore's (which also guards the range), and the direction that
-            // matters here: it never reports a conflict that did not happen.
+            // A query's read set is the documents it matched. NARROWER than
+            // Firestore's, which also guards the range — so this harness misses
+            // conflicts Firestore would catch, never invents ones it would not.
+            // Every "safe" conclusion drawn here therefore holds a fortiori.
             for (const d of docs) remember(d.__path);
             return snapshotOf(docs);
           },
@@ -404,8 +405,55 @@ describe('the happy path — the §6 stake, the sealed meta, the counters', () =
     }
   });
 
-  it('a CPU seat records no hash and costs no lookup — all CPUs share one hash (§1)', async () => {
+  it('a CPU seat records no hash and COSTS NO LOOKUP — all CPUs share one hash (§1)', async () => {
+    // The "no lookup" half is measured, not assumed: with a completed battle
+    // seeded under the CPU id, a resolver that queried would find a hash. It
+    // must still be null, which is only true if the short-circuit ran.
+    DB = makeVersionedDb(world({
+      'agentBattles/cpubattle': {
+        ownerId: 'cpu-1', status: 'completed', completedAt: '2026-09-05T20:00:00.000Z',
+        resolvedAgentManifest: { equippedConfigHash: 'cpu-hash-would-be-found' },
+      },
+    }));
     const res = await post({ ...VALID(), teamOdUserId: 'cpu-1' });
+    expect(res.statusCode).toBe(200);
+    expect(stakeDoc(DB.store, stakeIdFor(UID, 'req-1')).hashAtStake).toBeNull();
+  });
+
+  it('records the LATEST completed battle\'s hash, not the oldest ("as of last deploy", §4)', async () => {
+    DB = makeVersionedDb(world({
+      'agentBattles/old': {
+        ownerId: 'od-a', status: 'completed', completedAt: '2026-08-01T20:00:00.000Z',
+        resolvedAgentManifest: { equippedConfigHash: 'STALE-hash' },
+      },
+      'agentBattles/new': {
+        ownerId: 'od-a', status: 'completed', completedAt: '2026-09-10T20:00:00.000Z',
+        resolvedAgentManifest: { equippedConfigHash: 'FRESH-hash' },
+      },
+    }));
+    await post(VALID());
+    expect(stakeDoc(DB.store, stakeIdFor(UID, 'req-1')).hashAtStake).toBe('FRESH-hash');
+  });
+
+  it('a THROWING hash lookup still stakes — never fail a stake over telemetry', async () => {
+    // The `NEVER THROWS` claim, measured: the three unresolvable worlds below
+    // merely return empty, so only a rejecting query exercises the catch.
+    // Break ONLY the ordered/limited chain the hash resolver builds; the belt's
+    // own `where('groupId')` query on the same collection must keep working, or
+    // the row would prove the belt throws rather than the resolver.
+    const realCollection = DB.db.collection.bind(DB.db);
+    DB.db.collection = (name) => {
+      const real = realCollection(name);
+      if (name !== 'agentBattles') return real;
+      return {
+        ...real,
+        where: (...a) => {
+          const q = real.where(...a);
+          return { ...q, orderBy: () => ({ limit: () => ({ get: async () => { throw new Error('index missing'); } }) }) };
+        },
+      };
+    };
+    const res = await post(VALID());
     expect(res.statusCode).toBe(200);
     expect(stakeDoc(DB.store, stakeIdFor(UID, 'req-1')).hashAtStake).toBeNull();
   });
@@ -443,6 +491,23 @@ describe('the window and the belt (§4)', () => {
     const res = await post(VALID());
     expect(res.statusCode).toBe(409);
     expect(res.body.error).toBe('pool_closed');
+  });
+
+  it('the IN-TRANSACTION clock check refuses on its own, with the pool still OPEN', async () => {
+    // Isolates the branch from both the pre-flight `ensureClosed` and the
+    // `status` check: the pool is re-opened after the pre-flight close and
+    // before the transaction body reads it, so the only thing that can refuse
+    // is `now >= pool.closesAt` inside the transaction.
+    vi.setSystemTime(new Date('2026-09-28T04:30:00.000Z'));
+    const realRun = DB.db.runTransaction.bind(DB.db);
+    DB.db.runTransaction = async (fn) => {
+      DB.store.set(`${BACKING_POOLS_COLLECTION}/${GROUP_ID}`, pool({ status: POOL_STATUS.OPEN }));
+      return realRun(fn);
+    };
+    const res = await post(VALID());
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toMatchObject({ error: 'pool_closed', poolStatus: POOL_STATUS.OPEN });
+    expect(stakeDoc(DB.store, stakeIdFor(UID, 'req-1'))).toBeUndefined();
   });
 
   it('refuses a pool that is no longer open', async () => {
@@ -529,6 +594,43 @@ describe('the window and the belt (§4)', () => {
     expect(res.body.error).toBe('pool_closed');
     expect(poolDoc(DB.store).status).toBe(POOL_STATUS.CLOSED);
     expect(poolDoc(DB.store).teams).toBeDefined();
+  });
+});
+
+// ============================================================================
+describe('the NEAR end of the window (§4) — the review\'s top finding', () => {
+  // A Wed/Sat/Sun slot pod is created at its FIRST CLAIM, up to a week before
+  // its fire, and its battle Monday is stamped from the FIRE — so a pod claimed
+  // in week W carries backing week W+1 and an `opensAt` days in the future.
+  // Staking in that gap made `ensureAllowance` expire the whole of W's unspent
+  // allowance and re-key the wallet to W+1, after which every still-open pool
+  // of week W answered `week_mismatch` for the rest of the week.
+  const EARLY = new Date('2026-09-19T17:00:00.000Z');          // Sat of W39
+  const futureOpens = () => pool({ opensAt: '2026-09-21T04:00:00.000Z' });
+
+  it('refuses a stake before the pool\'s own opensAt, and writes nothing', async () => {
+    DB = makeVersionedDb(world({ [`${BACKING_POOLS_COLLECTION}/${GROUP_ID}`]: futureOpens() }));
+    vi.setSystemTime(EARLY);
+    const res = await post(VALID());
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toMatchObject({ error: 'pool_not_open', opensAt: '2026-09-21T04:00:00.000Z' });
+    expect(DB.writeLog).toEqual([]);
+    // THE CONSEQUENCE THE REFUSAL PREVENTS: the wallet is untouched, so the
+    // live week's allowance is neither expired nor re-keyed.
+    expect(walletDoc(DB.store)).toBeUndefined();
+  });
+
+  it('admits the same stake once opensAt has passed', async () => {
+    DB = makeVersionedDb(world({ [`${BACKING_POOLS_COLLECTION}/${GROUP_ID}`]: futureOpens() }));
+    vi.setSystemTime(new Date('2026-09-22T14:00:00.000Z'));
+    expect((await post(VALID())).statusCode).toBe(200);
+  });
+
+  it('an unreadable opensAt falls through to the status and closesAt checks', async () => {
+    // Fail-open on THIS clause only: a malformed instant must not brick a pool
+    // whose other two window checks are sound.
+    DB = makeVersionedDb(world({ [`${BACKING_POOLS_COLLECTION}/${GROUP_ID}`]: pool({ opensAt: 'not-a-date' }) }));
+    expect((await post(VALID())).statusCode).toBe(200);
   });
 });
 
@@ -623,8 +725,11 @@ describe('the cap and the allowance (§2, §8)', () => {
     expect(walletDoc(DB.store).allowanceRemaining).toBe(0);
 
     const res = await post({ ...VALID(), requestId: 'r3', teamOdUserId: 'cpu-1', amount: 100 });
+    // A ledger refusal is a STATE conflict, so 409 — and the reason word only:
+    // BackingLedgerError's message names internal wallet state and is logged,
+    // never returned.
     expect(res.statusCode).toBe(409);
-    expect(res.body.error).toBe('insufficient_allowance');
+    expect(res.body).toEqual({ error: 'insufficient_allowance' });
     expect(poolDoc(DB.store).potTotal).toBe(1000);
   });
 
@@ -637,16 +742,42 @@ describe('the cap and the allowance (§2, §8)', () => {
       .toMatchObject({ type: 'allowance', delta: ALLOWANCE_BP });
   });
 
-  it('a DEV pod debits the dev-namespaced wallet, never the real one', async () => {
+  it('a DEV pod debits the dev-namespaced wallet, never the real one (§11 gate 4)', async () => {
+    // The dev exclusion is the POD LIST's (D-DEVFIELD), not the stake path's:
+    // §11 gate 4 runs the founder's smoke — attest → open → close → settle —
+    // through a real stake on a DEV pod, and it must land in the `dev-`
+    // namespace so a smoke week can never move a real record. A dev pod gets no
+    // pool through the production path (`poolEligible` refuses to open one), so
+    // this world is the one `materializePool(..., { allowDev: true })` creates.
     DB = makeVersionedDb(world({
       [`tournamentGroups/${GROUP_ID}`]: group({ isDev: true }),
       [`${BACKING_POOLS_COLLECTION}/dev-${GROUP_ID}`]: pool({ isDev: true }),
     }));
-    // The pod list excludes dev pods; the namespace is the separate mechanism.
     const res = await post(VALID());
     expect(res.statusCode).toBe(200);
     expect(walletDoc(DB.store, `dev-${UID}`).careerNet).toBe(-100);
     expect(walletDoc(DB.store, UID)).toBeUndefined();
+  });
+
+  it('a pod that turned VOIDED or EXPIRED stops taking stakes, even with an open pool', async () => {
+    // The two endpoints must not disagree: the pod list drops a terminal pod,
+    // and `materializePool` hands back an existing pool "whatever poolEligible
+    // now says", so without the gate the pod would vanish from the list and keep
+    // taking allowance all week.
+    for (const status of ['voided', 'expired']) {
+      DB = makeVersionedDb(world({ [`tournamentGroups/${GROUP_ID}`]: group({ status }) }));
+      const res = await post(VALID());
+      expect(res.statusCode, status).toBe(409);
+      expect(res.body.error, status).toBe('no_pool');
+      expect(DB.writeLog.filter(([, p]) => p.startsWith(BACKING_STAKES_COLLECTION))).toEqual([]);
+    }
+  });
+
+  it('the Mon 08:45 slot is refused even if a pool were somehow present (D-x)', async () => {
+    DB = makeVersionedDb(world({
+      [`tournamentGroups/${GROUP_ID}`]: group({ isLiveDraft: true, slotId: 'mon-0845' }),
+    }));
+    expect((await post(VALID())).body.error).toBe('no_pool');
   });
 });
 
@@ -737,20 +868,118 @@ describe('idempotency and the race (§8)', () => {
     expect(poolDoc(DB.store).potTotal).toBe(300);
   });
 
-  it('a close racing a stake cannot both land — the pool document serializes them', async () => {
-    const { ensureClosed } = await import('../_utils/backingPools.js');
-    // The stake is submitted at the last instant; the close runs concurrently.
-    const closingNow = new Date('2026-09-28T04:30:00.000Z');
-    vi.setSystemTime(closingNow);
+  it('a close racing a stake cannot both land — the POOL DOCUMENT serializes them', async () => {
+    const { closePool } = await import('../_utils/backingPools.js');
+    // WELL INSIDE THE CLOCK WINDOW, on purpose. An earlier version of this row
+    // ran at 04:30 — past the pool's 03:59:59 close — so the handler's own
+    // pre-transaction `ensureClosed` produced the 409 and the row measured
+    // nothing about serialization. `closePool` ignores the clock (it gates on
+    // status), so running it here forces the two transactions to contend on the
+    // pool document itself, which is the mechanism the header claims.
+    vi.setSystemTime(new Date('2026-09-22T14:00:00.000Z'));
+    const conflictsBefore = DB.stats.conflicts;
     const [stakeRes] = await Promise.all([
       post(VALID()),
-      ensureClosed(DB.db, { id: GROUP_ID, ...group() }, closingNow),
+      closePool(DB.db, { id: GROUP_ID, ...group() }, new Date('2026-09-22T14:00:00.000Z')),
     ]);
+    expect(DB.stats.conflicts).toBeGreaterThan(conflictsBefore);  // they really contended
     expect(stakeRes.statusCode).toBe(409);
     expect(stakeRes.body.error).toBe('pool_closed');
     expect(poolDoc(DB.store).status).not.toBe(POOL_STATUS.OPEN);
-    // No stake document survived the close.
+    // No stake document survived the close, and the wallet never moved.
     expect(stakeDoc(DB.store, stakeIdFor(UID, 'req-1'))).toBeUndefined();
+    expect(walletDoc(DB.store)?.allowanceRemaining ?? ALLOWANCE_BP).toBe(ALLOWANCE_BP);
+  });
+});
+
+// ============================================================================
+describe('a refusal after the first write must ROLL BACK, not commit half a stake', () => {
+  it('a per_team_cap refusal commits NOTHING — not even the allowance grant', async () => {
+    // The Admin SDK commits a transaction body that RETURNS and rolls back only
+    // one that THROWS. `ensureAllowance` runs before the cap check (the §12
+    // order), so a returned refusal would commit the week's grant — and its
+    // expiry of the prior week's remainder — on a stake that never happened.
+    //
+    // The state below is the one `ensureAllowance`'s own second arm anticipates:
+    // a live stake exists while the wallet carries no allowance entry (an
+    // out-of-band wallet reset). It is the only way the cap can refuse on a
+    // touch that would grant.
+    DB = makeVersionedDb(world({
+      [`${BACKING_STAKES_COLLECTION}/prior`]: {
+        userId: UID, groupId: GROUP_ID, teamOdUserId: 'od-a', amount: 400,
+        weekKey: WEEK, status: STAKE_STATUS.LIVE,
+      },
+    }));
+    const res = await post({ ...VALID(), amount: 200 });
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toMatchObject({ error: 'per_team_cap', staked: 400, cap: PER_TEAM_CAP_BP });
+    // NOTHING committed: no wallet doc, no allowance entry, no expiry entry.
+    expect(DB.writeLog).toEqual([]);
+    expect(walletDoc(DB.store)).toBeUndefined();
+  });
+});
+
+// ============================================================================
+describe('the replay is a replay of THIS request (§8)', () => {
+  const foreign = () => ({
+    userId: 'someone-else', groupId: GROUP_ID, teamOdUserId: 'od-b', amount: 450,
+    hashAtStake: null, placedAt: '2026-09-22T13:00:00.000Z', weekKey: WEEK,
+    requestId: 'req-1', status: STAKE_STATUS.LIVE,
+  });
+
+  it('never returns ANOTHER backer\'s stake from the derived id', async () => {
+    // The id mixes the uid before hashing, so reaching this needs the victim's
+    // uid — which is public, it is `players[].odUserId` — and their requestId.
+    // PR 2 ships no client, so whether that is guessable is PR 4's choice of
+    // scheme; refusing here means it never becomes one. Handing it back would
+    // give a rival the victim's team and amount while the pool is SEALED (§3).
+    DB = makeVersionedDb(world({
+      [`${BACKING_STAKES_COLLECTION}/${stakeIdFor(UID, 'req-1')}`]: foreign(),
+    }));
+    const res = await post(VALID());
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual({ error: 'request_id_conflict' });
+    expect(JSON.stringify(res.body)).not.toContain('someone-else');
+    expect(JSON.stringify(res.body)).not.toContain('450');
+  });
+
+  it('refuses a requestId reused for a DIFFERENT pod, team or amount', async () => {
+    await post(VALID());
+    for (const patch of [{ teamOdUserId: 'od-b' }, { amount: 250 }]) {
+      const res = await post({ ...VALID(), ...patch });
+      expect(res.statusCode, JSON.stringify(patch)).toBe(409);
+      expect(res.body.error).toBe('request_id_conflict');
+    }
+    // …and the original replay still works.
+    expect((await post(VALID())).body.replay).toBe(true);
+  });
+
+  it('the stake id separates (uid, requestId) injectively', () => {
+    // A bare newline join makes `a\nb`+`c` and `a`+`b\nc` one document. No
+    // Firebase uid contains a newline, but the repo documents an operator
+    // custom-token path that mints arbitrary uids.
+    expect(stakeIdFor('a\nb', 'c')).not.toBe(stakeIdFor('a', 'b\nc'));
+    expect(stakeIdFor('ab', 'c')).not.toBe(stakeIdFor('a', 'bc'));
+  });
+
+  it('a stake whose ledger entry is already spent is NOT recreated for free', async () => {
+    // Firestore does not cascade-delete, so an admin deleting the stake doc
+    // leaves its private/meta — including `excluded: true` — behind. A replay
+    // would otherwise re-create the stake with NO debit (the wallet's
+    // appliedEntries guard makes `stake:{id}` a no-op), increment the pot a
+    // second time, and reset the admin's exclusion.
+    const id = stakeIdFor(UID, 'req-1');
+    await post(VALID());
+    const potAfterFirst = poolDoc(DB.store).potTotal;
+    DB.store.set(`${BACKING_STAKES_COLLECTION}/${id}/private/meta`, { ...metaDoc(DB.store, id), excluded: true });
+    DB.store.delete(`${BACKING_STAKES_COLLECTION}/${id}`);          // the admin delete
+
+    const res = await post(VALID());
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual({ error: 'stake_already_spent' });
+    expect(poolDoc(DB.store).potTotal).toBe(potAfterFirst);          // pot not re-inflated
+    expect(metaDoc(DB.store, id).excluded).toBe(true);               // exclusion survives
+    expect(walletDoc(DB.store).allowanceRemaining).toBe(ALLOWANCE_BP - 100);
   });
 });
 

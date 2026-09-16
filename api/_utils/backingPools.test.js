@@ -12,8 +12,10 @@
 //   · an `insufficient` pool's revealed totals must be ZERO — which is true iff
 //     step 4 (reveal) follows step 3's voids;
 //   · and the WRITE LOG must show every stake void and wallet credit landing
-//     before the pool document, so a reader of the committed transaction sees
-//     the steps in the spec's sequence.
+//     before the pool document, which pins the order STRUCTURALLY rather than
+//     only by outcome. (No READER ever observes that order: the close is one
+//     `runTransaction` and Firestore commits it atomically. The log is a
+//     property of the code's sequence, which is what is being guarded.)
 //
 // Runs against the shared in-memory Firestore stand-in, so the transaction
 // boundary, the subcollection and the write log are real enough to assert
@@ -284,11 +286,65 @@ describe('materializePool — the §4 lazy open, refused per poolEligible', () =
     expect(pool.closeReason).toBe('fire');
   });
 
-  it('a dev pod that IS materialized (dev namespace) lands at dev-{groupId}', async () => {
-    // poolEligible excludes dev pods from the PRODUCTION list; the namespace is
-    // the separate mechanism (§6), so the id rule is asserted on its own.
+  it('a dev pod gets NO pool through the production path', async () => {
+    const { db, writeLog } = makeInMemoryDb();
+    expect(await materializePool(db, lobbyGroup({ isDev: true }), NOW))
+      .toEqual({ pool: null, created: false, reason: POOL_INELIGIBLE.DEV_POD });
+    expect(writeLog).toEqual([]);
+  });
+
+  it('…but the { allowDev } opt-in materializes it in the DEV NAMESPACE (§11 gate 4)', async () => {
+    // Gate 4 is the founder's smoke: a DEV pod through attest → open → close →
+    // settle → results, in the dev namespace. Without an opt-in no dev pool can
+    // ever exist and `poolIdFor`'s `dev-` branch ships as dead code. NO
+    // production caller passes it — both endpoints call materializePool without
+    // it, which the row above is the control for.
+    const { db, store } = makeInMemoryDb();
+    const out = await materializePool(db, lobbyGroup({ isDev: true }), NOW, { allowDev: true });
+    expect(out.created).toBe(true);
+    expect(out.pool.isDev).toBe(true);
+    expect(store.get(`${BACKING_POOLS_COLLECTION}/dev-${GROUP_ID}`)).toBeDefined();
+    expect(store.get(`${BACKING_POOLS_COLLECTION}/${GROUP_ID}`)).toBeUndefined();
+  });
+
+  it('the opt-in relaxes ONLY the dev clause — every other refusal still stands', async () => {
     const { db } = makeInMemoryDb();
-    expect(poolRefFor(db, lobbyGroup({ isDev: true })).path).toBe(`backingPools/dev-${GROUP_ID}`);
+    for (const [over, reason] of [
+      [{ isDev: true, isTraining: true }, POOL_INELIGIBLE.TRAINING_POD],
+      [{ isDev: true, status: 'battle' }, POOL_INELIGIBLE.NOT_FORMING],
+      [{ isDev: true, isLiveDraft: true, slotId: 'mon-0845' }, POOL_INELIGIBLE.SLOT_EXCLUDED],
+    ]) {
+      const out = await materializePool(db, lobbyGroup(over), NOW, { allowDev: true });
+      expect(out.reason, JSON.stringify(over)).toBe(reason);
+    }
+  });
+
+  it('refuses to OPEN a pool before its own opensAt — §4\'s near end', async () => {
+    // A Wed/Sat/Sun slot pod is created at its FIRST CLAIM, up to a week early,
+    // and its battle Monday is stamped from the FIRE — so a pod claimed in week
+    // W carries backing week W+1 and an `opensAt` days ahead. Opening it then
+    // would let a stake carry next week's `weekKey`, which expires the live
+    // week's allowance and re-keys the wallet (§2: every stake on a pool is
+    // drawn from ONE allowance).
+    const slot = lobbyGroup({
+      isLiveDraft: true,
+      slotId: 'wed-1900',
+      createdAt: '2026-09-19T17:00:00.000Z',
+      scheduledDraftAt: '2026-09-23T23:00:00.000Z',
+      battleStartWeek: { mondayEtDate: MONDAY },
+      players: [{ odUserId: 'od-a' }],
+    });
+    const early = new Date('2026-09-19T17:00:00.000Z');    // Sat of the PRIOR week
+    const { db, writeLog } = makeInMemoryDb();
+    const out = await materializePool(db, slot, early);
+    expect(out.pool).toBeNull();
+    expect(out.reason).toBe('not_open_yet');
+    expect(out.opensAt).toBe('2026-09-21T04:00:00.000Z');
+    expect(writeLog).toEqual([]);
+
+    // …and it opens normally once the backing week has started.
+    const later = await materializePool(db, slot, new Date('2026-09-22T14:00:00.000Z'));
+    expect(later.created).toBe(true);
   });
 
   it('opening twice is ONE pool — the second call returns it unchanged and writes nothing', async () => {
@@ -384,8 +440,12 @@ describe('closePool — the §3 order, and nothing may reorder it', () => {
     // The document id is not written back as a field.
     expect(voided).not.toHaveProperty('id');
 
-    // SCORE-NEUTRAL (§2): the stake debited careerNet, the refund credits it back.
+    // SCORE-NEUTRAL (§2) IN BOTH FIELDS: the stake debited careerNet and the
+    // refund credits it back; the refund also credits the month bucket, and the
+    // E2 primitive debits the stake's own side of it. Either half alone leaves
+    // the backer reading a positive month for a week in which nothing happened.
     expect(walletOf(store, 'u2').careerNet).toBe(0);
+    expect(walletOf(store, 'u2').seasons['2026-09'].net).toBe(0);
     // ...and NOT as spendable BP — the week has closed.
     expect(walletOf(store, 'u2').allowanceRemaining).toBe(ALLOWANCE_BP - 200);
     const refundEntry = store.get(`${BACKING_WALLETS_COLLECTION}/u2/entries/refund:s2`);
@@ -423,17 +483,48 @@ describe('closePool — the §3 order, and nothing may reorder it', () => {
     expect(out.refunded).toBe(3);
   });
 
-  it('REVEAL AFTER THE VOIDS: an `insufficient` pool reveals zeros, not the pre-void pot', async () => {
+  it('REVEAL AFTER THE VOIDS: a departed seat\'s stakes are NOT in the revealed totals', async () => {
+    // Step 4 reveals what step 3 JUDGED — i.e. the survivors of step 2. This is
+    // the row that reds if the reveal is computed before the seat-left void:
+    // u2's 200 BP on the departed od-b would then be in the pot and in od-b's
+    // revealed share, and od-b would still be in `teams[]`.
+    const stakes = [
+      stake('s1', 'u1', 'od-a', 300),
+      stake('s2', 'u2', 'od-b', 200),   // od-b leaves
+      stake('s3', 'u3', 'od-a', 100),
+    ];
+    const atClose = lobbyGroup({ players: [{ odUserId: 'od-a' }, { odUserId: 'od-b2' }] });
+    const { db, store } = seedClosable({ stakes, group: atClose, spentByUser: { u1: 300, u2: 200, u3: 100 } });
+    await closePool(db, atClose, AFTER_CLOSE);
+    const pool = poolOf(store);
+    expect(pool.potTotal).toBe(400);                         // NOT 600
+    expect(pool.uniqueBackers).toBe(2);                      // NOT 3
+    expect(pool.teams.map((t) => t.odUserId)).toEqual(['od-a', 'od-b2']);
+    expect(totalsOf(store).byTeam).toEqual({ 'od-a': { stakeTotal: 400, backerCount: 2 } });
+  });
+
+  it('an `insufficient` pool KEEPS the record validity was judged on — it does not erase it', async () => {
+    // §9: pool copy states exact facts. Folding the POST-void set here would
+    // publish "backers 0 of 3 · teams 0 of 2" to a backer whose stake had just
+    // been voided for thin participation, which is the opposite of the fact.
     const stakes = [stake('s1', 'u1', 'od-a', 300), stake('s2', 'u2', 'od-a', 200)];
     const { db, store } = seedClosable({ stakes, spentByUser: { u1: 300, u2: 200 } });
     const out = await closePool(db, lobbyGroup(), AFTER_CLOSE);
     expect(out.status).toBe(POOL_STATUS.INSUFFICIENT);
     const pool = poolOf(store);
-    expect(pool.potTotal).toBe(0);
-    expect(pool.uniqueBackers).toBe(0);
-    expect(pool.teamsBacked).toBe(0);
-    expect(pool.teams.every((t) => t.stakeTotal === 0 && t.backerCount === 0)).toBe(true);
-    expect(totalsOf(store).byTeam).toEqual({});
+    expect(pool.potTotal).toBe(500);
+    expect(pool.uniqueBackers).toBe(2);   // two of the three it needed
+    expect(pool.teamsBacked).toBe(1);     // one of the two it needed
+    expect(pool.teams.find((t) => t.odUserId === 'od-a')).toEqual({
+      odUserId: 'od-a', isCpu: false, stakeTotal: 500, backerCount: 2,
+    });
+    // …and every stake is still voided and refunded. The record is a record,
+    // never a live pot: the status and each stake's voidReason say so.
+    for (const id of ['s1', 's2']) {
+      expect(stakeOf(store, id).status).toBe(STAKE_STATUS.VOIDED);
+      expect(stakeOf(store, id).voidReason).toBe(VOID_REASONS.INSUFFICIENT);
+    }
+    expect(walletOf(store, 'u1').careerNet).toBe(0);
   });
 
   it('fails the BACKER arm: enough teams, too few backers', async () => {
@@ -536,7 +627,7 @@ describe('closePool — the §3 order, and nothing may reorder it', () => {
     const w = walletOf(store, 'u1');
     expect(w.careerNet).toBe(0);
     expect(Object.keys(w.appliedEntries).sort()).toEqual([
-      `allowance:${WEEK}`, 'refund:s1', 'refund:s2', 'stake:s1', 'stake:s2',
+      `allowance:${WEEK}`, 'loss:s1', 'loss:s2', 'refund:s1', 'refund:s2', 'stake:s1', 'stake:s2',
     ]);
   });
 
@@ -554,9 +645,9 @@ describe('closePool — the §3 order, and nothing may reorder it', () => {
     for (const p of paths.filter((x) => x.startsWith(`${BACKING_WALLETS_COLLECTION}/`))) {
       expect(paths.indexOf(p)).toBeLessThan(poolAt);
     }
-    // The sealed cache is written before the public doc it is copied into, so a
-    // reader of the committed transaction never sees a revealed pool whose
-    // private totals still hold the pre-void numbers.
+    // The sealed cache is written before the public doc it is copied into —
+    // again a structural pin on the code's sequence, not a claim about what a
+    // reader observes (the whole close commits atomically).
     expect(paths.indexOf(`${BACKING_POOLS_COLLECTION}/${GROUP_ID}/private/totals`)).toBeLessThan(poolAt);
   });
 

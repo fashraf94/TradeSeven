@@ -60,20 +60,17 @@ import {
   BACKING_STAKES_COLLECTION,
   POOL_STATUS,
   ensureClosed,
+  listablePod,
   liveTeamsFor,
   materializePool,
   poolRefFor,
 } from '../_utils/backingPools.js';
 import { backingWeekFor } from '../_utils/backingWeek.js';
 import {
-  POOL_EXCLUDED_SLOT_IDS,
   VALIDITY_MIN_BACKERS,
   VALIDITY_MIN_TEAMS,
 } from '../../src/constants/backing.js';
-import {
-  GROUP_STATUS,
-  TOURNAMENT_GROUPS_COLLECTION,
-} from '../../src/constants/leagueTournament.js';
+import { TOURNAMENT_GROUPS_COLLECTION } from '../../src/constants/leagueTournament.js';
 import { BACKING_BETA_ENABLED } from '../../src/config/featureFlags.js';
 
 export const config = { maxDuration: 15 };
@@ -86,9 +83,6 @@ export const config = { maxDuration: 15 };
  */
 export const POD_LIST_MAX = 40;
 
-/** Group statuses that get no listing: a terminal disposition with no result. */
-const TERMINAL_STATUSES = new Set([GROUP_STATUS.VOIDED, GROUP_STATUS.EXPIRED]);
-
 /** Pool statuses whose per-team shares are revealed (§3 — the reveal is at close). */
 export const REVEALED_STATUSES = new Set([
   POOL_STATUS.CLOSED,
@@ -98,21 +92,14 @@ export const REVEALED_STATUSES = new Set([
   POOL_STATUS.REFUNDED,
 ]);
 
+// The listability predicate now lives in api/_utils/backingPools.js, so the
+// stake transaction gates on the SAME function this list filters with (§9).
+// Re-exported here because it is this route's filter and its suite names it.
+export { listablePod };
+
 /** The week label the list is keyed to (§5). Exported for the suite. */
 export function podListWeek(now = new Date()) {
   return deriveBaseLayerWeek(deriveBattleStartWeek(new Date(now).toISOString()));
-}
-
-/**
- * The in-memory filters §6 keeps out of the query. Exported so the suite can
- * exercise each clause against one source rather than by re-typing them.
- */
-export function listablePod(group) {
-  if (group?.isDev === true) return false;
-  if (group?.isTraining === true) return false;
-  if (TERMINAL_STATUSES.has(group?.status)) return false;
-  if (POOL_EXCLUDED_SLOT_IDS.includes(group?.slotId)) return false;
-  return true;
 }
 
 /**
@@ -245,9 +232,16 @@ export default async function handler(req, res) {
     const pods = await Promise.all(candidates.map(async (group) => {
       let pool = null;
       try {
-        // Materialize returns the EXISTING pool unchanged when there is one, so
-        // this is also the read; an ineligible pod simply has none.
-        const materialized = await materializePool(db, group, now);
+        // A PLAIN READ FIRST, and a transaction only when there is nothing to
+        // read. `materializePool` is transactional by necessity — two first
+        // readers race to create one pool — but the steady state is "the pool
+        // already exists", and paying for a transaction to discover that put
+        // one transaction per listed pod on EVERY request, for ever. The
+        // transaction is still what creates the pool, so the race is unchanged.
+        const existing = await poolRefFor(db, group).get();
+        const materialized = existing.exists
+          ? { pool: existing.data() }
+          : await materializePool(db, group, now);
         pool = materialized.pool;
         if (pool != null && pool.status === POOL_STATUS.OPEN) {
           const closed = await ensureClosed(db, group, now);

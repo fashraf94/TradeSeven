@@ -14,6 +14,16 @@
 // NOT CALLED BY ANY ROUTE IN PR 0. The first caller is PR 2. The attestation is
 // an attestation, not verification (§8): a present doc means this uid affirmed
 // both statements under the recorded terms version, nothing more.
+//
+// AMENDMENT A §A2 (D-aa) LIVES HERE, in `requireEligibility`, because §A2 names
+// this function: "requireEligibility (PR 2) treats an attestation whose
+// `termsVersion` differs from the current TERMS_VERSION as absent → 403
+// `eligibility_required`". Putting the comparison in PR 2's backing-specific
+// checker instead would give the rule two homes, and the NEXT consumer of this
+// primitive (§11 gate 2 offers it to tournament entry later) would silently get
+// pre-A2 behaviour — the §9 display-agreement failure mode applied to a gate.
+
+import { TERMS_VERSION } from '../../src/constants/eligibility.js';
 
 /** The collection; the doc id is the Firebase Auth uid. */
 export const ELIGIBILITY_COLLECTION = 'eligibility';
@@ -62,6 +72,11 @@ export async function getEligibility(db, uid) {
  */
 export async function requireEligibility(db, uid) {
   const doc = await getEligibility(db, uid);
-  if (!doc) throw new EligibilityRequiredError(uid);
+  // A STALE TERMS VERSION COUNTS AS ABSENT (§A2, D-aa): same error, same code,
+  // same 403, so a caller needs no second branch and PR 4's AttestationStep
+  // re-presents the terms for either case. The 18+ affirmation does not expire
+  // — the attest endpoint keeps `adultAttestedAt` across a re-attestation — but
+  // the terms acceptance does.
+  if (!doc || doc.termsVersion !== TERMS_VERSION) throw new EligibilityRequiredError(uid);
   return doc;
 }
