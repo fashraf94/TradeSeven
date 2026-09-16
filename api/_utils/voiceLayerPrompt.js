@@ -15,9 +15,9 @@ import { getArchetypeLabel } from './agentArchetypeConfig.js';
 // Phase D (archetype integrity) — read-only deps. The api→src import edge is
 // Node-clean (precedent: api/agent/decide.js:23); the test's import of this file
 // is the BUILD_RULES §4 dependency-surface guard.
-import { getArchetypeZones, getAllowlist } from '../../src/data/archetypeAdjustments.js';
+import { getArchetypeZones, getAllowlist, getConflictGroups } from '../../src/data/archetypeAdjustments.js';
 import { getEffectiveArchetype } from './directiveIdentity.js';
-import { ARCHETYPE_INTEGRITY_MODE, SHOW_IT_ENABLED } from '../../src/config/featureFlags.js';
+import { ARCHETYPE_INTEGRITY_MODE, SHOW_IT_ENABLED, DIRECTIVE_FIT_CHECK_ENABLED } from '../../src/config/featureFlags.js';
 // The pane's motive renderer (D-80) — the SAME translator the grounded YOUR
 // RECORD block renders `evaluations[].rationale` through (voiceLayerGrounding.js).
 // `trades[].rationale` is the SAME cron string: agent-evaluate.js:2245 and :2640
@@ -2598,13 +2598,72 @@ function buildCohortDigestBlock(digest) {
 //   - getAllowlist is checked BEFORE getArchetypeZones: getAllowlist does NOT
 //     analyst-fall-back (directive-write path), so an unknown archetype yields no
 //     menu and therefore no block — even though getArchetypeZones would fall back.
+// THE DIRECTIVE FIT CHECK, half one (Phase 0 Q3) — the menu shows the dial.
+//
+// The shipped menu is seven bare strings: `id: canonical` and nothing else. The
+// data module already knows which ids are the cautious register, which way each
+// one moves concentration, and which two are opposite ends of one dial
+// (ADJUSTMENT_CONFLICT_GROUPS) — and rendered none of it, so the model chose
+// blind and nothing downstream noticed when it chose the wrong end (the Sep 14
+// incident: "Full Defense" filed SP-05, the SPREAD end of the concentration
+// dial). These annotations are DERIVED, never authored here: the charter owns
+// this fact and a second copy of it in this module is the drift class
+// BUILD_RULES §4 forbids.
+//
+// `forbiddenOpposite` is deliberately NOT rendered. It names the thing the
+// character must not become; a menu should not teach it.
+//
+// Flag-off returns the shipped line, byte for byte.
+function renderMenuAnnotations(codeId, adjustment) {
+  if (!DIRECTIVE_FIT_CHECK_ENABLED) return '';
+  const policy = adjustment.policy || {};
+  const tags = [];
+  // The cautious register, as the policy types define it: lowers risk without
+  // touching book shape or the clock. NOTE (build report §Deviations): this is
+  // the derivation the brief specifies, and it is NOT the charter's prose trio
+  // for the Speculator — SP-02/SP-06/SP-07 carry byte-identical policy, so no
+  // function of `policy` can include two of them and exclude the third. The
+  // charter's own sentence still reaches the model verbatim, one block above,
+  // as PROTECTED BIAS.
+  if (
+    policy.riskDirection === 'lower'
+    && policy.concentrationDirection === 'neutral'
+    && policy.timeHorizonDirection === 'neutral'
+  ) {
+    tags.push('[cautious register]');
+  }
+  if (policy.concentrationDirection === 'tighter' || policy.concentrationDirection === 'wider') {
+    tags.push(`[concentration: ${policy.concentrationDirection}]`);
+  }
+  // One tag per conflict-group partner — the dial the two ends share. Union
+  // over groups, self excluded; an id may sit in more than one group.
+  for (const group of getConflictGroups(codeId)) {
+    const memberIds = group.members.map((m) => m.id);
+    if (!memberIds.includes(adjustment.id)) continue;
+    for (const memberId of memberIds) {
+      if (memberId !== adjustment.id) tags.push(`[opposite of ${memberId}]`);
+    }
+  }
+  return tags.length ? ` — ${tags.join(' ')}` : '';
+}
+
+// The charter's "more cautious" prose, bound to ids. Omitted when the
+// derivation names nothing (and, like every annotation, when the flag is off).
+function renderCautiousRegisterLine(codeId, allowlist) {
+  if (!DIRECTIVE_FIT_CHECK_ENABLED) return '';
+  const ids = allowlist
+    .filter((a) => renderMenuAnnotations(codeId, a).includes('[cautious register]'))
+    .map((a) => a.id);
+  return ids.length ? `\nMore cautious, in character: ${ids.join(', ')}.` : '';
+}
+
 function buildArchetypeIntegrityBlock(battle, agent) {
   if (ARCHETYPE_INTEGRITY_MODE === 'off') return null;
   const codeId = getEffectiveArchetype(battle, agent);
   const allowlist = getAllowlist(codeId);
   if (!allowlist.length) return null;
   const zones = getArchetypeZones(codeId);
-  const menu = allowlist.map((a) => `  ${a.id}: ${a.canonical}`).join('\n');
+  const menu = allowlist.map((a) => `  ${a.id}: ${a.canonical}${renderMenuAnnotations(codeId, a)}`).join('\n');
   return `YOUR ARCHETYPE — THE FOUR ZONES (this is who you are; they rank by how fixed they are):
 IMMUTABLE CORE (never reverse — this is the boundary): ${zones.immutableCore}
 TUNABLE EXECUTION (your two-leg holding logic; the menu below tunes this): ${zones.tunableExecution}
@@ -2612,7 +2671,7 @@ PROTECTED BIAS (your default leans; adjustable at the margin, never abandoned): 
 OUT-OF-SCOPE / USER LEVERS (what you do NOT own — hand these off, never do them yourself): ${zones.outOfScopeUserLever}
 
 YOUR MENU — the only adjustments you may select as a directive (emit the id in _archetypeProposal):
-${menu}`;
+${menu}${renderCautiousRegisterLine(codeId, allowlist)}`;
 }
 
 // Phase E2 — the "USER LEVERS RIGHT NOW" block. Translates the capabilities

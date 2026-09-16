@@ -770,6 +770,51 @@ export const TEMPO_DIAL_ENABLED = true;
 export const ARCHETYPE_INTEGRITY_MODE = 'enforce';
 
 /**
+ * THE DIRECTIVE FIT CHECK — the voice files only what it says, and says only
+ * what it files (Phase 0: docs/audits/20260915_PHASE0_DIRECTIVE_GATE.md).
+ *
+ * ONE flag over ONE mechanism in two halves, which is why it is one flag and
+ * not two: the prompt asks the model to QUOTE the canonical text of the id it
+ * selects, and the gate REQUIRES that quote before it commits. Split them and
+ * either half is a defect on its own — a gate that demands a quote the prompt
+ * never asked for would null-write every filing, and a prompt that asks for a
+ * quote nothing checks is the status quo with extra words.
+ *
+ * What it turns on (all three together, all read at CALL time):
+ *   1. voiceLayerPrompt.js — each menu line carries its policy annotations
+ *      ([cautious register] / [concentration: tighter|wider] / [opposite of X]),
+ *      derived from the data module's own `policy` + ADJUSTMENT_CONFLICT_GROUPS,
+ *      so the model can see the dial it is choosing on rather than seven bare
+ *      strings (Phase 0 Q3).
+ *   2. voiceLayerPrompt.js — the confirmation rule's acknowledgement asks for
+ *      the canonical text word for word instead of "that's my lean now."
+ *   3. directiveGate.js — after the membership check, the selected id's
+ *      canonical text must appear verbatim (case-sensitive, whitespace
+ *      normalized) in the reply, or the turn is the deliberate null
+ *      `fit_mismatch` and files nothing (Phase 0 Q5: the reply is written
+ *      before the gate runs and is never reconciled with it).
+ *
+ * NOT gated by this flag: the three forensics fields on the gate record
+ * (originalUserAsk / counterOfferText / rejectionReason). They are additive and
+ * always on — every turn without them is a turn whose intent can never be
+ * recovered (Phase 0 Q7).
+ *
+ * Shipped FALSE. At flag-off every prompt byte and every gate outcome is
+ * byte-identical to the pre-build commit, proved by goldens captured from it
+ * (api/_utils/__fixtures__/voiceLayerPrompt.fitCheck.preBuild.golden.json).
+ * The flip is its own one-line PR after a founder preview smoke, never a build
+ * PR.
+ *
+ * FLIP MAP (the flip PR reconciles these in the SAME commit — BUILD_RULES §2):
+ *   • src/config/directiveFitCheckFlags.test.js — the dark pin row moves to true;
+ *   • src/config/flagPinGuard.test.js — drop DIRECTIVE_FIT_CHECK_ENABLED from
+ *     DARK_BY_DESIGN (its integrity test reds if a lit flag is left listed).
+ *   The flag-off goldens keep their own explicit false mock and do NOT move.
+ */
+// Pinned by: directiveFitCheckFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const DIRECTIVE_FIT_CHECK_ENABLED = false;
+
+/**
  * Release 2 PR-e — the sector-SLOT rule: tri-state rollout mode.
  *
  * Gates the Diversifier tournament sector-position cap (the ONE mechanical
