@@ -447,13 +447,13 @@ describe('backingStakes/{stakeId} — owner-read on the DOCUMENT\'s userId (§3,
 });
 
 // ============================================================================
-describe("backingStakes/{stakeId}/private/{doc} \u2014 NO client read (PR 2 carry-in E1)", () => {
-  it('nobody reads it \u2014 THE BACKER WHO PLACED THE STAKE INCLUDED', async () => {
+describe("backingStakes/{stakeId}/private/{doc} — NO client read (PR 2 carry-in E1)", () => {
+  it('nobody reads it — THE BACKER WHO PLACED THE STAKE INCLUDED', async () => {
     // The row this block exists for. The parent stake is owner-read, and rules
     // cannot hide a field, so the fingerprint and the admin `excluded` flag live
     // here instead. An owner who could read this would learn whether an admin
-    // had dropped their stake from the Sybil watch \u2014 the one signal a detective
-    // control must not emit (\u00a78).
+    // had dropped their stake from the Sybil watch — the one signal a detective
+    // control must not emit (§8).
     await assertFails(getDoc(doc(asOwner(), OWNER_STAKE_META)));
     for (const [label, ctx] of ALL_CONTEXTS) {
       await assertFails(getDoc(doc(ctx(), OWNER_STAKE_META)), label);
@@ -461,14 +461,30 @@ describe("backingStakes/{stakeId}/private/{doc} \u2014 NO client read (PR 2 carr
     }
   });
 
-  it('reading the parent stake does NOT reach into private \u2014 the positive control', async () => {
-    // Fails if a `backingStakes/{id}/{document=**}` wildcard is ever added for
-    // convenience: the parent read must succeed while this one does not.
+  it('reading the parent stake does NOT reach into private — the positive control', async () => {
+    // The parent read must SUCCEED while this one does not, so the block above
+    // cannot pass by denying everything.
+    //
+    // WHAT THIS ROW CATCHES, MEASURED rather than claimed (BUILD_RULES §2's
+    // mutation rule; all three runs are recorded in the PR 2 review record):
+    //   · RELAXING this block's read to `if request.auth != null` REDS this row
+    //     and two of its siblings. That is the defect class that matters, and
+    //     the shape a future "let the backer see their own meta" convenience
+    //     would take.
+    //   · DELETING the block entirely does NOT red anything, because Firestore
+    //     denies by default. The block is an explicit statement on the page —
+    //     the `backingPools/{id}/private` sibling's own stated convention — not
+    //     the mechanism that denies. Said here so the row is never mistaken for
+    //     a guard against its own removal.
+    //   · a `backingStakes/{id}/{document=**}` wildcard carrying the PARENT's
+    //     owner condition does not red it either, and correctly so: the meta doc
+    //     carries no `userId`, so `resource.data.userId == request.auth.uid` is
+    //     false for it and the read stays denied.
     await assertSucceeds(getDoc(doc(asOwner(), OWNER_STAKE)));
     await assertFails(getDoc(doc(asOwner(), OWNER_STAKE_META)));
   });
 
-  it('an ABSENT meta doc is denied too \u2014 no existence oracle on the fingerprint', async () => {
+  it('an ABSENT meta doc is denied too — no existence oracle on the fingerprint', async () => {
     for (const [label, ctx] of ALL_CONTEXTS) {
       await assertFails(getDoc(doc(ctx(), 'backingStakes/stake-never-written/private/meta')), label);
     }
@@ -482,7 +498,7 @@ describe("backingStakes/{stakeId}/private/{doc} \u2014 NO client read (PR 2 carr
     }
   });
 
-  it('no client writes it \u2014 the `excluded` flag is an ADMIN fact, never the backer\u2019s', async () => {
+  it('no client writes it — the `excluded` flag is an ADMIN fact, never the backer’s', async () => {
     for (const [label, ctx] of ALL_CONTEXTS) {
       const fs = ctx();
       await assertFails(setDoc(doc(fs, `${OWNER_STAKE}/private/forged`), stakeMeta()), label);

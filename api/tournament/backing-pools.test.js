@@ -147,7 +147,9 @@ describe('the week the list is keyed to (§5)', () => {
     expect(res.body).toMatchObject({
       baseLayerWeek: WEEK,
       backingWeekStart: '2026-09-21T04:00:00.000Z',
-      closesAt: CLOSE_ISO,
+      // The WEEK's close, not a pod's: a slot pod's pool closes at its fire
+      // instant, which is a different instant and a different field (§4).
+      backingWeekCloses: CLOSE_ISO,
       viewerUid: UID,
       pods: [],
     });

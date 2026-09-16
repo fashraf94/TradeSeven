@@ -275,8 +275,12 @@ export default async function handler(req, res) {
     const week = backingWeekFor(deriveBattleStartWeek(now.toISOString()).mondayEtDate);
     return res.status(200).json({
       baseLayerWeek,
+      // The BACKING WEEK's own bounds. Named apart from each pod's
+      // `pool.closesAt` on purpose: a slot pod's pool closes at its FIRE
+      // instant, days before this Sunday clock (§4), so one name for both would
+      // be the §9 display-agreement failure mode applied to a deadline.
       backingWeekStart: week?.startIso ?? null,
-      closesAt: week?.closeIso ?? null,
+      backingWeekCloses: week?.closeIso ?? null,
       viewerUid: user.uid,
       pods,
     });
