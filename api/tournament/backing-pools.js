@@ -72,8 +72,9 @@ import {
   VALIDITY_MIN_BACKERS,
   VALIDITY_MIN_TEAMS,
 } from '../../src/constants/backing.js';
+import { SETTLEMENT_SOURCE, settlePool, settlementPredicate } from '../_utils/backingSettlement.js';
 import { TOURNAMENT_GROUPS_COLLECTION } from '../../src/constants/leagueTournament.js';
-import { BACKING_BETA_ENABLED } from '../../src/config/featureFlags.js';
+import { BACKING_BETA_ENABLED, TOURNAMENT_ADVANCEMENT_FROZEN } from '../../src/config/featureFlags.js';
 
 export const config = { maxDuration: 15 };
 
@@ -290,6 +291,18 @@ export default async function handler(req, res) {
         if (pool != null && pool.status === POOL_STATUS.OPEN) {
           const closed = await ensureClosed(db, group, now);
           if (closed.closed === true) pool = closed.pool;
+        }
+        // Backing Beta PR 3 — SETTLE-ON-READ (§7 "Retries", D-o): a CLOSED pool
+        // whose pod now satisfies the settlement predicate is settled here, by
+        // the same primitive the duty calls. This path checks the freeze
+        // ITSELF (A-C13 — this route has no freeze cover of its own) and never
+        // touches a `resolving` hold, which only the admin endpoint releases.
+        // The predicate on the list's group read is a cheap gate; the primitive
+        // re-reads the group inside its transaction and decides on that (H4).
+        if (pool != null && pool.status === POOL_STATUS.CLOSED
+          && settlementPredicate(group).final && !TOURNAMENT_ADVANCEMENT_FROZEN) {
+          const settled = await settlePool(db, group.id, { now, source: SETTLEMENT_SOURCE.SETTLE_ON_READ });
+          if (settled.settled === true) pool = settled.pool;
         }
       } catch (err) {
         // ONE pod's pool must never take down the list: the pod still lists with

@@ -84,7 +84,8 @@ import {
 import { ensureCpuAgents, commitCpuUserBoards, padGamesWithCpus } from './tournamentCpu.js';
 import { applyGroupWeekToRanks, applyLockedGameToRanks } from './tournamentRank.js';
 import { upsertLeaderboardForGroups } from './tournamentLeaderboard.js';
-import { LEAGUE_CANONICAL_OPEN_CAPTURE, TOURNAMENT_ADVANCEMENT_FROZEN } from '../../src/config/featureFlags.js';
+import { settlePool as settleBackingPool } from './backingSettlement.js';
+import { BACKING_BETA_ENABLED, LEAGUE_CANONICAL_OPEN_CAPTURE, TOURNAMENT_ADVANCEMENT_FROZEN } from '../../src/config/featureFlags.js';
 
 const LOG_PREFIX = '[TournamentAdvancement]';
 
@@ -304,6 +305,11 @@ export async function runFridayAdvancement(db, { now = new Date(), includeDevGro
   let poolMemo = null;
   const getPool = async () => (poolMemo ??= await fetchRankedUserPool(db));
 
+  // Backing Beta PR 3 — the settlement hook's OWN counters (spec V1.3 §7 D-o;
+  // pre-build check H1): never summary.errors / deferredToNextTick /
+  // bankingPending / frozen, never markerSummary or isDutySatisfied.
+  const backingSummary = { settled: 0, unsettled: 0, settlementErrors: 0 };
+
   // ---- Base-layer groups: COMPLETE ONLY (ruled; recomposition docketed) ----
   const baseGroups = groups.filter(g => g.bracketGameId == null);
   for (const group of baseGroups) {
@@ -354,6 +360,19 @@ export async function runFridayAdvancement(db, { now = new Date(), includeDevGro
       await transitionStatus(db, group.id, GROUP_STATUS.COMPLETE, nowIso);
       console.log(`${LOG_PREFIX} base-layer group ${group.id}: week banked — completed (no recomposition at V1, ruled)`);
       summary.baseCompleted++;
+      // Backing Beta PR 3 — settle the pod's pool AFTER completion (§7 D-o).
+      // Own catch, never rethrows (H1); passes group.id, never this stale
+      // object (H4); a call-time flag read keeps the duty byte-identical while
+      // dark. Mon–Thu evenings route here too, so this is not Friday-only.
+      if (BACKING_BETA_ENABLED) {
+        try {
+          const settled = await settleBackingPool(db, group.id, { now: nowIso, source: 'friday_duty' });
+          if (settled.settled) backingSummary.settled++; else backingSummary.unsettled++;
+        } catch (err) {
+          console.error(`${LOG_PREFIX} backing settlement ${group.id} FAILED (non-blocking):`, err.message);
+          backingSummary.settlementErrors++;
+        }
+      }
     } catch (err) {
       console.error(`${LOG_PREFIX} base-layer group ${group.id} FAILED:`, err.message);
       summary.errors++;
@@ -428,6 +447,13 @@ export async function runFridayAdvancement(db, { now = new Date(), includeDevGro
     }
   }
 
+  // Backing Beta PR 3 — the hook's counters, logged at duty end and surfaced
+  // on the returned summary (run-duty reads it) ONLY while lit; while dark the
+  // summary is byte-identical to the pre-PR shape. Not a marker input.
+  if (BACKING_BETA_ENABLED) {
+    console.log(`${LOG_PREFIX} backing settlement: ${JSON.stringify(backingSummary)}`);
+    summary.backing = backingSummary;
+  }
   return summary;
 }
 
