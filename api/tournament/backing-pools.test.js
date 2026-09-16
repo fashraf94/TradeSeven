@@ -14,7 +14,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-const state = vi.hoisted(() => ({ flag: true, uid: 'viewer-1' }));
+const state = vi.hoisted(() => ({ flag: true, uid: 'viewer-1', frozen: false }));
 
 vi.mock('../_utils/security.js', () => ({ applySecurityMiddleware: () => false }));
 vi.mock('../_utils/authMiddleware.js', () => ({
@@ -26,6 +26,8 @@ vi.mock('../_utils/authMiddleware.js', () => ({
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   get BACKING_BETA_ENABLED() { return state.flag; },
+  // PR 3: settle-on-read checks the freeze itself (A-C13); rows flip it.
+  get TOURNAMENT_ADVANCEMENT_FROZEN() { return state.frozen; },
 }));
 
 let DB = null;
@@ -118,6 +120,7 @@ async function get(method = 'GET') {
 beforeEach(() => {
   state.flag = true;
   state.uid = UID;
+  state.frozen = false;
   DB = seed([group('g1')]);
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(NOW);
@@ -556,5 +559,166 @@ describe('projectPod — the seal lives in ONE function (§9)', () => {
   it('counts humanTeams off the seats, CPUs excluded', () => {
     const g = { id: 'g1', players: [{ odUserId: 'od-a' }, { odUserId: 'cpu-1', isCpu: true }, { odUserId: 'cpu-2' }] };
     expect(projectPod(g, null, { viewerUid: 'v' }).humanTeams).toBe(1);
+  });
+});
+
+// ============================================================================
+// Backing Beta PR 3 — SETTLE-ON-READ (spec V1.3 §7 "Retries", D-o; A-C13).
+// A CLOSED pool whose pod now satisfies the settlement predicate is settled by
+// the list read, through the same primitive the Friday duty calls. The rows:
+// it settles; it checks the freeze ITSELF; and it never touches a `resolving`
+// hold. The pod must sit in the list's week, so these seed a COMPLETE group
+// under the list's own baseLayerWeek with five banked days.
+describe('settle-on-read (§7) — PR 3', () => {
+  const DAYS = ['2026-09-28', '2026-09-29', '2026-09-30', '2026-10-01', '2026-10-02'];
+  function bankedWeek() {
+    const final = { 'od-a': [60, 30], 'od-b': [40, 20], 'cpu-1': [20, 10] };
+    const dailyScores = {};
+    for (let i = 0; i < 5; i += 1) {
+      const closeScores = {};
+      for (const [id, [user, agent]] of Object.entries(final)) {
+        closeScores[id] = { totalPoints: user, agentPoints: agent, compositePoints: agent + 1.5 * user, picks: [] };
+      }
+      dailyScores[`day${i + 1}`] = { recordedDate: DAYS[i], closeScores };
+    }
+    return dailyScores;
+  }
+  const completeGroup = (over = {}) => group('g1', {
+    status: 'complete',
+    groupMembers: ['od-a', 'od-b', 'cpu-1'],
+    players: [{ odUserId: 'od-a' }, { odUserId: 'od-b' }, { odUserId: 'cpu-1', isCpu: true }],
+    dailyScores: bankedWeek(),
+    ...over,
+  });
+  /** A closed pool over three live stakes (u1 → od-a 300; u2, u3 → od-b), with totals and wallets. */
+  function closedWorld(poolOver = {}) {
+    const stakes = [
+      ['s1', 'u1', 'od-a', 300], ['s2', 'u2', 'od-b', 200], ['s3', 'u3', 'od-b', 100],
+    ];
+    const extra = {
+      [`${BACKING_POOLS_COLLECTION}/g1`]: pool('g1', {
+        status: POOL_STATUS.CLOSED,
+        teams: [
+          { odUserId: 'od-a', isCpu: false, stakeTotal: 300, backerCount: 1 },
+          { odUserId: 'od-b', isCpu: false, stakeTotal: 300, backerCount: 2 },
+          { odUserId: 'cpu-1', isCpu: true, stakeTotal: 0, backerCount: 0 },
+        ],
+        humanTeams: 2, potTotal: 600, uniqueBackers: 3, teamsBacked: 2, closedAt: '2026-09-28T04:00:00.000Z',
+        ...poolOver,
+      }),
+      [`${BACKING_POOLS_COLLECTION}/g1/private/totals`]: {
+        backers: { u1: { total: 300, byTeam: { 'od-a': 300 } }, u2: { total: 200, byTeam: { 'od-b': 200 } }, u3: { total: 100, byTeam: { 'od-b': 100 } } },
+        byTeam: { 'od-a': { stakeTotal: 300, backerCount: 1 }, 'od-b': { stakeTotal: 300, backerCount: 2 } },
+        potTotal: 600, uniqueBackers: 3, teamsBacked: 2, updatedAt: '2026-09-28T04:00:00.000Z',
+      },
+    };
+    for (const [id, uid, team, amount] of stakes) {
+      extra[`${BACKING_STAKES_COLLECTION}/${id}`] = { userId: uid, groupId: 'g1', teamOdUserId: team, amount, weekKey: WEEK, requestId: `r-${id}`, status: STAKE_STATUS.LIVE };
+      extra[`backingWallets/${uid}`] = {
+        lastAllowanceWeek: WEEK, allowanceRemaining: 1000 - amount, careerNet: -amount, seasons: {},
+        appliedEntries: { [`allowance:${WEEK}`]: 'x', [`stake:${id}`]: 'x' },
+      };
+    }
+    return extra;
+  }
+  const poolDoc = () => DB.store.get(`${BACKING_POOLS_COLLECTION}/g1`);
+
+  it('a CLOSED pool whose pod is COMPLETE is settled on read — the list shows it resolved, by the one primitive', async () => {
+    DB = seed([completeGroup()], closedWorld());
+    const res = await get();
+    expect(res.statusCode).toBe(200);
+    expect(res.body.pods[0].pool.status).toBe(POOL_STATUS.RESOLVED);
+    expect(res.body.pods[0].teams.find((t) => t.odUserId === 'od-a')).toMatchObject({ stakeTotal: 300, paysX: 2 });
+    expect(poolDoc()).toMatchObject({ status: POOL_STATUS.RESOLVED, settlementRef: 'settle_on_read', winnerOdUserIds: ['od-a'], paysX: 2 });
+    expect(DB.store.get(`${BACKING_STAKES_COLLECTION}/s1`)).toMatchObject({ status: STAKE_STATUS.WON, payout: 600 });
+    // Only backing paths were written — the pod list still writes nothing to a tournament* store.
+    expect(DB.writeLog.every(([, p]) => p.startsWith('backing'))).toBe(true);
+  });
+
+  // THE ROUTE'S OWN GATE IS WHAT THESE THREE ROWS PROVE (review lens D, #6):
+  // the primitive carries its own freeze / predicate / hold belts, so "nothing
+  // was written" would stay true with the route's gate deleted. The gate's
+  // observable effect is that the primitive is never CALLED — no direct group
+  // doc read, no telemetry read, no transaction — and that is what is pinned.
+  const primitiveNeverCalled = () => {
+    expect(DB.readLog.filter(([ch, p]) => ch === 'get' && p === 'tournamentGroups/g1')).toEqual([]);
+    expect(DB.readLog.filter(([, p]) => p.startsWith('agentBattles'))).toEqual([]);
+    expect(DB.readLog.filter(([ch]) => ch === 'tx.get')).toEqual([]);
+  };
+
+  it('checks the FREEZE itself (A-C13): frozen → the list answers, the primitive is never called', async () => {
+    state.frozen = true;
+    DB = seed([completeGroup()], closedWorld());
+    const res = await get();
+    expect(res.statusCode).toBe(200);
+    expect(res.body.pods[0].pool.status).toBe(POOL_STATUS.CLOSED);
+    expect(poolDoc().status).toBe(POOL_STATUS.CLOSED);
+    expect(DB.writeLog).toEqual([]);
+    primitiveNeverCalled();
+  });
+
+  it('a pod still in BATTLE does not trigger settlement — the predicate gates the read, the primitive is never called', async () => {
+    DB = seed([completeGroup({ status: 'battle' })], closedWorld());
+    const res = await get();
+    expect(res.body.pods[0].pool.status).toBe(POOL_STATUS.CLOSED);
+    expect(DB.writeLog).toEqual([]);
+    primitiveNeverCalled();
+  });
+
+  it('a `resolving` HOLD is never touched by a read — admin-only release, the primitive is never called', async () => {
+    DB = seed([completeGroup()], closedWorld({ status: POOL_STATUS.RESOLVING, holdReason: 'agent_layer_absent' }));
+    const res = await get();
+    expect(res.statusCode).toBe(200);
+    expect(res.body.pods[0].pool.status).toBe(POOL_STATUS.RESOLVING);
+    expect(poolDoc()).toMatchObject({ status: POOL_STATUS.RESOLVING, holdReason: 'agent_layer_absent' });
+    expect(DB.writeLog).toEqual([]);
+    primitiveNeverCalled();
+  });
+
+  it('a settlement failure never takes down the list — the pod lists with the pool as it stands', async () => {
+    DB = seed([completeGroup()], closedWorld());
+    DB.store.delete(`${BACKING_POOLS_COLLECTION}/g1/private/totals`);   // a corrupt book: the primitive aborts loudly
+    const res = await get();
+    expect(res.statusCode).toBe(200);
+    expect(res.body.pods).toHaveLength(1);
+    expect(res.body.pods[0].pool.status).toBe(POOL_STATUS.CLOSED);
+  });
+});
+
+// ============================================================================
+// THE DOCUMENTED LIMIT (PR 3 review — lenses A, B and C independently): this
+// list is keyed to the NEXT battle Monday's week, which rolls forward at
+// Monday 09:30 ET, while a pod satisfies the settlement predicate no earlier
+// than the Tuesday evening of its own week. So a completed pod is NEVER in this
+// list in production, and the settle-on-read block above cannot reach it: the
+// rows above pin the block's CONTRACT on a fixture the list can see; this row
+// pins the LIMIT, so the two cannot be mistaken for a live retry path. The
+// results reader (PR 5) is settle-on-read's live host; the admin re-run is the
+// practical whole-pool retry until then.
+describe('settle-on-read (§7) — the documented limit on THIS route', () => {
+  it('once a pod\'s week has banked, the list has moved to the next Monday and no longer lists it — nothing settles here', async () => {
+    const DAYS = ['2026-09-28', '2026-09-29', '2026-09-30', '2026-10-01', '2026-10-02'];
+    const dailyScores = {};
+    for (let i = 0; i < 5; i += 1) {
+      dailyScores[`day${i + 1}`] = { recordedDate: DAYS[i], closeScores: {
+        'od-a': { totalPoints: 60, agentPoints: 30, compositePoints: 120, picks: [] },
+        'od-b': { totalPoints: 40, agentPoints: 20, compositePoints: 80, picks: [] },
+      } };
+    }
+    const complete = group('g1', { status: 'complete', groupMembers: ['od-a', 'od-b', 'cpu-1'], dailyScores });
+    DB = seed([complete], {
+      [`${BACKING_POOLS_COLLECTION}/g1`]: pool('g1', { status: POOL_STATUS.CLOSED, teams: [], potTotal: 600, uniqueBackers: 3, teamsBacked: 2 }),
+    });
+    // Every instant from the pod's own Tuesday onward, including the Friday
+    // evening the duty runs, the following weekend, and the next Monday.
+    for (const instant of ['2026-09-29T22:30:00.000Z', '2026-10-02T22:30:00.000Z', '2026-10-03T12:00:00.000Z', '2026-10-05T12:00:00.000Z', '2026-10-05T14:00:00.000Z']) {
+      vi.setSystemTime(new Date(instant));
+      const res = await get();
+      expect(res.statusCode).toBe(200);
+      expect(res.body.baseLayerWeek, instant).not.toBe(WEEK);
+      expect(res.body.pods, instant).toEqual([]);
+    }
+    expect(DB.store.get(`${BACKING_POOLS_COLLECTION}/g1`).status).toBe(POOL_STATUS.CLOSED);
+    expect(DB.writeLog).toEqual([]);
   });
 });

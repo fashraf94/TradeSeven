@@ -167,6 +167,10 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       'api/_utils/backingPools.js',
       'api/_utils/backingEligibility.js',
       'api/_utils/backingFingerprint.js',
+      // PR 3's settlement primitive: the Friday duty hook, the pod list and
+      // the admin route each read the flag at THEIR call site; the primitive
+      // reads only TOURNAMENT_ADVANCEMENT_FROZEN (A-C13), never this one.
+      'api/_utils/backingSettlement.js',
     ];
     for (const rel of PR1_MODULES) {
       const text = readFileSync(path.join(REPO_ROOT, rel), 'utf8');
@@ -187,27 +191,45 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
     expect(routesNamed('backing'), 'a backing route appeared under api/ - add it here WITH its 404-while-dark suite')
       .toEqual([
         'api/tournament/backing-pools.js',
+        // PR 3: the admin re-run. Admin-gated (requireAdminSecret) rather than
+        // user-authed, and it 404s AFTER that gate like every other door.
+        'api/tournament/backing-settle.js',
         'api/tournament/backing-stake.js',
       ]);
 
     for (const rel of routesNamed('backing')) {
-      const src = read(rel);
+      // CODE ONLY: comments are stripped before any index check, so a comment
+      // that names `requireAdminSecret(req, res)` above a flag read that has
+      // been moved AHEAD of auth cannot satisfy this row (PR 3 review lens C,
+      // F3 — the row was comment-vacuous; the dark suites were its only
+      // backstop). The block-comment strip runs first so a `//` inside a
+      // block comment cannot leave a dangling fragment.
+      const src = read(rel).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
       // The call-time read, inside the handler, in the SHOW_IT / research.js
       // shape - never a module-scope derivation and never an accessor.
       expect(src, `${rel} does not 404 on the flag`)
         .toContain('if (!BACKING_BETA_ENABLED) return res.status(404)');
-      // ...and it is checked AFTER auth: the requireAuth call must precede the
-      // flag read in the source, or an anonymous caller is answered differently
-      // while dark and while lit - a free oracle on the rollout state.
-      expect(src.indexOf('await requireAuth('), `${rel} reads the flag before auth`)
+      // ...and it is checked AFTER auth: the auth call must precede the flag
+      // read in the source, or an anonymous caller is answered differently
+      // while dark and while lit - a free oracle on the rollout state. A
+      // user route authenticates with requireAuth, an admin route with
+      // requireAdminSecret; every route must carry exactly one of them, and
+      // an absent call (indexOf -1) must never pass this row vacuously.
+      const authAt = Math.max(src.indexOf('await requireAuth('), src.indexOf('requireAdminSecret(req, res)'));
+      expect(authAt, `${rel} carries no auth call before the flag`).toBeGreaterThan(-1);
+      expect(authAt, `${rel} reads the flag before auth`)
         .toBeLessThan(src.indexOf('if (!BACKING_BETA_ENABLED)'));
     }
 
-    // And the darkness is proved by a suite, not by a reviewer's reading. Both
-    // routes are covered by the shared PR 2 darkness file.
+    // And the darkness is proved by a suite, not by a reviewer's reading. The
+    // two PR 2 routes are covered by the shared PR 2 darkness file; the PR 3
+    // admin route by its own.
     const dark = read('api/tournament/backing-stake.dark.test.js');
     expect(dark).toContain('./backing-stake.js');
     expect(dark).toContain('./backing-pools.js');
+    const settleDark = read('api/tournament/backing-settle.dark.test.js');
+    expect(settleDark).toContain('./backing-settle.js');
+    expect(settleDark).toContain('BACKING_BETA_ENABLED: false');
   });
 
   it('EVERY importer of the backing modules is enumerated — the "no unreviewed caller" ratchet (the PR 0 importersOf precedent)', () => {
@@ -227,6 +249,11 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
     // lists the same way - never delete the rows.
     expect(importersOf('api/_utils/backingWallet.js')).toEqual([
       'api/_utils/backingPools.js',
+      // PR 3: settlement composes creditPayout + recordStakeLoss inside its
+      // own transaction (the PR 1 threading contract's third caller).
+      'api/_utils/backingSettlement.js',
+      // PR 3: the admin route maps BackingLedgerError to a typed refusal.
+      'api/tournament/backing-settle.js',
       'api/tournament/backing-stake.js',
     ]);
     expect(importersOf('api/_utils/backingWeek.js')).toEqual([
@@ -246,8 +273,22 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
     // so a new reachable caller is a deliberate edit here.
     expect(importersOf('api/_utils/backingPools.js')).toEqual([
       'api/_utils/backingEligibility.js',
+      // PR 3: settlement reads the pool/totals refs and runs ensureClosed.
+      'api/_utils/backingSettlement.js',
       'api/tournament/backing-pools.js',
+      // PR 3: the admin route reads the group (the sim-requires-dev belt) and
+      // maps BackingPoolError.
+      'api/tournament/backing-settle.js',
       'api/tournament/backing-stake.js',
+    ]);
+    // PR 3's own module — THE THREE HOSTS, and nothing else: the Friday duty
+    // hook (the one non-backing importer, and the whole reason H1 exists), the
+    // pod list's settle-on-read, and the admin re-run. A fourth importer would
+    // be a fourth settlement host, which is exactly the review this row is for.
+    expect(importersOf('api/_utils/backingSettlement.js')).toEqual([
+      'api/_utils/tournamentAdvancement.js',
+      'api/tournament/backing-pools.js',
+      'api/tournament/backing-settle.js',
     ]);
     expect(importersOf('api/_utils/backingEligibility.js')).toEqual([
       // attest.js reads the sign-in-provider helper for Amendment A §A3.
@@ -260,7 +301,8 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
     for (const target of [
       'api/_utils/backingWallet.js', 'api/_utils/backingWeek.js',
       'api/_utils/backingPools.js', 'api/_utils/backingEligibility.js',
-      'api/_utils/backingFingerprint.js', 'src/constants/backing.js',
+      'api/_utils/backingFingerprint.js', 'api/_utils/backingSettlement.js',
+      'src/constants/backing.js',
     ]) {
       expect(importersOf(target).filter((rel) => rel.startsWith('src/')), `${target} is imported from src/`)
         .toEqual([]);
