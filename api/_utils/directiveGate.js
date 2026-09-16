@@ -23,6 +23,7 @@ import { parseVoiceLayerResponse } from './gemmaClient.js';
 // exchange, so the string is ONE source for the server's response and both
 // surfaces. Re-exported here under its shipped name.
 import { NO_CHANGE_STATUS_LINE } from '../../src/data/decisionRecord.js';
+import { DIRECTIVE_FIT_CHECK_ENABLED } from '../../src/config/featureFlags.js';
 
 // The one-shot repair-retry is BUDGET-AWARE. chat.js clears the first call's
 // abort timer the instant it resolves, so the parent signal alone would never bound
@@ -69,20 +70,71 @@ function readProposal(parsed) {
   return p;
 }
 
+// THE DIRECTIVE FIT CHECK (Phase 0 Q3/Q5) — the record refuses to file
+// anything the agent did not say.
+//
+// The membership check proves the committed text is ON the archetype's menu.
+// It has never proved the committed text is the one the reply was ABOUT: the
+// reply and the proposal come out of one model call, the gate runs after, and
+// nothing compares them. On Sep 14 the character said "trading Core momentum
+// for a heavy Support floor", selected SP-05, and the gate filed "Spread
+// across more names (diversify the chaos)" beneath it.
+//
+// So, under the flag, the id's canonical text must appear VERBATIM in the
+// reply — which is exactly what the confirmation rule now asks the model to
+// write (voiceLayerPrompt.js, commit B). Prompt and gate are one mechanism on
+// one flag: a gate demanding a quote the prompt never requested would
+// null-write every filing.
+//
+// Whitespace is normalized (a model that wraps or double-spaces its own quote
+// still filed what it said); CASE IS NOT (the text is the text — a reply that
+// re-cases the canonical sentence has paraphrased it).
+//
+// A paraphrase that files nothing is the mechanism working, not a failure: the
+// turn becomes the deliberate null `fit_mismatch` and the player gets the same
+// code-owned "no change" line every other null-write turn gets.
+const normalizeForQuote = (text) => text.replace(/\s+/g, ' ').trim();
+
+function replyQuotesCanonical(replyText, canonical) {
+  if (typeof replyText !== 'string' || typeof canonical !== 'string' || !canonical) return false;
+  return normalizeForQuote(replyText).includes(normalizeForQuote(canonical));
+}
+
 // Evaluate a (possibly null) proposal against the archetype allowlist.
 // Returns either a terminal verdict {directive, hasDirective, status} or
 // {needsRepair:true, reason} when a one-shot repair could fix it.
-function evaluate(proposal, effectiveArchetype) {
+//
+// `replyText` is the reply of the FIRST model call — the one chat.js persists
+// as `agentResponse` and shows the player. The repair re-asks only for a valid
+// proposal ("re-emit the SAME conversational response") and its reply is
+// discarded, so the original is the right and only comparand on both passes.
+function evaluate(proposal, effectiveArchetype, replyText) {
   if (!proposal) return { needsRepair: true, reason: 'no_proposal' };
   if (DELIBERATE_NULL.has(proposal.classification)) {
+    // core_conflict | user_lever | research_only never reach the fit check:
+    // there is no id, so there is nothing to have quoted.
     return { directive: null, hasDirective: false, status: 'no_change' };
   }
   // classification is in_archetype | flex → an adjustment is expected.
   const id = proposal.selectedAdjustmentId;
   if (id && isValidAdjustmentId(effectiveArchetype, id)) {
+    const canonical = getCanonicalText(effectiveArchetype, id);
+    // The fit check runs AFTER membership passes, and only under the flag —
+    // flag-off this whole branch is the pre-build code, byte for byte.
+    if (DIRECTIVE_FIT_CHECK_ENABLED && !replyQuotesCanonical(replyText, canonical)) {
+      return {
+        directive: null,
+        hasDirective: false,
+        status: 'fit_mismatch',
+        // What the record keeps about the refusal: the sentence that WOULD
+        // have been filed, and that the reply did not carry it. No repair —
+        // this is a deliberate null, not a malformed proposal.
+        fitCheck: { expected: canonical, quoted: false },
+      };
+    }
     return {
       directive: {
-        text: getCanonicalText(effectiveArchetype, id),
+        text: canonical,
         expiry: 'end_of_battle',
         // Release 2 (spec Phase 1 item 5): the minted id + its live text
         // version ride the directive record, so directive-vs-lean opposition
@@ -137,7 +189,7 @@ async function attemptRepair({ callGemmaVoice, systemPrompt, conversationHistory
   }
 }
 
-function result(directive, hasDirective, proposal, status, repairUsed, fallbackLine = null) {
+function result(directive, hasDirective, proposal, status, repairUsed, fallbackLine = null, fitCheck = null) {
   return {
     directive,
     hasDirective,
@@ -147,6 +199,9 @@ function result(directive, hasDirective, proposal, status, repairUsed, fallbackL
       selectedAdjustmentId: proposal?.selectedAdjustmentId ?? null,
       status,
       repairUsed,
+      // Present ONLY on a fit_mismatch, so every other outcome's record shape
+      // is unchanged — including every committed turn.
+      ...(fitCheck ? { fitCheck } : {}),
     },
   };
 }
@@ -158,7 +213,8 @@ function result(directive, hasDirective, proposal, status, repairUsed, fallbackL
  * @returns {{ directive:{text,expiry,adjustmentId,canonicalTextVersion}|null,
  *             hasDirective:boolean,
  *             fallbackLine:string|null,
- *             outcome:{classification, selectedAdjustmentId, status, repairUsed} }}
+ *             outcome:{classification, selectedAdjustmentId, status, repairUsed,
+ *                      fitCheck?:{expected,quoted}} }}
  */
 export async function gateDirective({
   parsed,
@@ -180,8 +236,11 @@ export async function gateDirective({
     return result(null, false, null, 'no_archetype', false);
   }
 
+  // The reply this turn will persist and show — the fit check's comparand.
+  const replyText = typeof parsed?.response === 'string' ? parsed.response : null;
+
   let proposal = readProposal(parsed);
-  let verdict = evaluate(proposal, effectiveArchetype);
+  let verdict = evaluate(proposal, effectiveArchetype, replyText);
   let repairUsed = false;
 
   // 2 / 4. One-shot repair on a fixable miss (no_proposal | invalid_id).
@@ -192,7 +251,7 @@ export async function gateDirective({
     });
     if (repaired) {
       proposal = repaired;
-      verdict = evaluate(repaired, effectiveArchetype);
+      verdict = evaluate(repaired, effectiveArchetype, replyText);
     }
   }
 
@@ -201,8 +260,9 @@ export async function gateDirective({
     return result(null, false, proposal, verdict.reason, repairUsed, NO_CHANGE_FALLBACK_LINE);
   }
 
-  // Terminal verdict: deliberate-null classification, or a committed valid id.
-  return result(verdict.directive, verdict.hasDirective, proposal, verdict.status, repairUsed);
+  // Terminal verdict: a deliberate-null classification, a committed valid id,
+  // or (under the flag) the fit_mismatch null when the reply never said it.
+  return result(verdict.directive, verdict.hasDirective, proposal, verdict.status, repairUsed, null, verdict.fitCheck ?? null);
 }
 
 export default gateDirective;
