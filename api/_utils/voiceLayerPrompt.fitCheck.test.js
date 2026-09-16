@@ -298,9 +298,13 @@ describe('A-1 — menu render: flag-ON annotates every line from the data module
     expect(prompt).toContain('- Stop / patience -> "tighten the stop,"');
     expect(prompt).toContain('still high-energy');
     // ...while SP-01's canonical, which those words paraphrase, is "Tighten the
-    // downside stop" — capitalised, and not a substring of "tighten the stop".
-    expect(prompt).toContain('SP-01: Tighten the downside stop');
-    expect('I\'ll tighten the stop a touch.').not.toContain('Tighten the downside stop');
+    // downside stop" — capitalised, and not the same sentence. That the GATE
+    // refuses this exact near-miss is pinned where it belongs, against the real
+    // gate, in directiveGate.fitCheck.test.js ("near-miss (the prompt's own
+    // paraphrase) → fit_mismatch"). An earlier draft asserted it here by
+    // comparing two string literals written in this file — a row that cannot
+    // fail under any production change, i.e. not a guard at all (§2 review
+    // finding D7, the Sep 13 lesson).
   });
 
   it('MUTATION CHECK — the flag-ON block is NOT the flag-OFF block, for every archetype', () => {

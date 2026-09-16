@@ -852,11 +852,31 @@ export const ARCHETYPE_INTEGRITY_MODE = 'enforce';
  * either giving the grounded rule the same quote instruction in the walk's own
  * PR, or giving the gate a `grounded` input.
  *
- * FLIP MAP (the flip PR reconciles these in the SAME commit — BUILD_RULES §2):
- *   • src/config/directiveFitCheckFlags.test.js — the dark pin row moves to true;
- *   • src/config/flagPinGuard.test.js — drop DIRECTIVE_FIT_CHECK_ENABLED from
- *     DARK_BY_DESIGN (its integrity test reds if a lit flag is left listed).
- *   The flag-off goldens keep their own explicit false mock and do NOT move.
+ * FLIP MAP — MEASURED, NOT ASSUMED (BUILD_RULES §2: the flip PR reconciles
+ * every one of these in the SAME commit, or it reds CI on every other open PR
+ * into main). An earlier draft of this map listed only the two pin files and
+ * said the goldens "do NOT move". That was wrong: flipping the constant and
+ * running the full suite reds **19 rows across 6 files**. Measured at
+ * 2026-09-16 on the build branch; re-measure before flipping.
+ *
+ *   src/config/directiveFitCheckFlags.test.js        1 row  — the dark pin moves to true
+ *   src/config/flagPinGuard.test.js                  2 rows — drop this flag from
+ *                                                             DARK_BY_DESIGN (its integrity
+ *                                                             row reds if a lit flag stays listed)
+ *   api/_utils/voiceLayerPrompt.grounding.goldens.test.js  6 rows
+ *   api/agent/chat.test.js                           4 rows
+ *   api/_utils/directiveGate.test.js                 4 rows
+ *   api/_utils/voiceLayerPrompt.test.js              2 rows
+ *
+ * The last four read the LIVE flag — none of them contains the string
+ * DIRECTIVE_FIT_CHECK_ENABLED — so they are behavioural fixtures and prompt
+ * goldens, not `expect(FLAG).toBe(...)` pins. flagPinGuard.test.js therefore
+ * CANNOT name them for you; only running the suite can. This flip is not a
+ * one-line PR.
+ *
+ * The suites that deliberately do NOT move are the ones that mock this flag
+ * explicitly: voiceLayerPrompt.fitCheck.test.js and
+ * directiveGate.fitCheck.test.js drive both states per row.
  */
 // Pinned by: directiveFitCheckFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const DIRECTIVE_FIT_CHECK_ENABLED = false;

@@ -15,7 +15,11 @@ import { describe, it, expect } from 'vitest';
 import { DIRECTIVE_FIT_CHECK_ENABLED } from './featureFlags.js';
 
 describe('DIRECTIVE_FIT_CHECK_ENABLED — the dark pin', () => {
-  it('ships FALSE (dark by design; the flip is its own one-line PR)', () => {
+  // NOT a one-line PR, despite the usual shape of a flip: flipping this
+  // constant reds 19 rows across 6 files, four of which read the live flag and
+  // so cannot be named by flagPinGuard. The measured reconciliation set is in
+  // the FLIP MAP at the flag's definition (§2 review finding D3).
+  it('ships FALSE (dark by design; the flip is its own PR, after its FLIP MAP)', () => {
     expect(DIRECTIVE_FIT_CHECK_ENABLED).toBe(false);
   });
 

@@ -13,7 +13,22 @@
 // would have to learn. A client that special-cased statuses would have shipped
 // a blank turn on the day this flag flips.
 //
-// Real response shape: the exchange is exactly what api/agent/chat.js writes.
+// SCOPE, STATED HONESTLY (§2 review findings D4 / D6). `groundingVersion` is
+// stamped by chat.js ONLY when the grounded prompt was sent, so the fixture
+// below — a fit_mismatch WITH the grounding marker — is producible only when
+// VOICE_GROUNDING_MODE is at 'canary'/'on' AND this flag is lit. That pairing
+// is the D-3 hazard the build says must never be lit together.
+//
+// So the four positive rows describe the turn as it will look AFTER the
+// grounding walk closes D-3 — worth pinning, because that is where this
+// mechanism is headed and the client must already be right for it — while the
+// UNGROUNDED row at the bottom is the shape TODAY's sanctioned flip actually
+// produces, and the answer there is that nothing renders. Both are real; only
+// the second is reachable under the flip the build recommends.
+//
+// The fixture is otherwise exactly what api/agent/chat.js writes, including the
+// three always-on forensics keys, which an earlier draft omitted while claiming
+// production fidelity.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React, { act } from 'react';
@@ -75,12 +90,18 @@ const FIT_MISMATCH_EXCHANGE = {
     selectedAdjustmentId: 'SP-05',
     status: 'fit_mismatch',
     repairUsed: false,
+    // Always-on (commit D). Present on every gate record chat.js writes, so a
+    // fixture claiming production fidelity must carry them even though no
+    // client surface reads them.
+    originalUserAsk: 'Swap Core for Support (Full Defense)',
+    counterOfferText: null,
+    rejectionReason: null,
     fitCheck: { expected: SP05, quoted: false },
   },
   groundingVersion: 1,
 };
 
-describe('E-1 — a fit_mismatch exchange, mounted', () => {
+describe('E-1 — a fit_mismatch exchange, mounted (GROUNDED: the post-D-3 shape)', () => {
   it('renders the code-owned no-change line', () => {
     render({ chatExchanges: [FIT_MISMATCH_EXCHANGE] });
     expect(container.querySelector('[data-directive-status="no_change"]')?.textContent)
@@ -128,11 +149,14 @@ describe('E-1 — a fit_mismatch exchange, mounted', () => {
     expect(container.textContent).toContain(SP05);
   });
 
-  it('an UNGROUNDED fit_mismatch renders no status line (§6.3 holds — the line is grounded-only)', () => {
-    // Stated because it is the live shape today: VOICE_GROUNDING_MODE is
-    // 'shadow', so a fit_mismatch filed before the grounding walk gets no
-    // client line — the server still writes null, and the record still holds
-    // the refusal. This is the existing §6.3 rule, unchanged by this build.
+  it('THE SHAPE TODAY\'S FLIP PRODUCES: an ungrounded fit_mismatch renders no status line', () => {
+    // This is the row that covers the sanctioned flip (fit check alone, at
+    // VOICE_GROUNDING_MODE 'shadow'), and its answer is that the player sees
+    // NOTHING — no card, and no "no change" line either, because §6.3 gates
+    // that line on the grounding marker. The server still writes null and the
+    // record still holds the refusal; only the on-screen honesty is missing.
+    // Pre-existing §6.3 design, not introduced here, and stated at the gate
+    // (directiveGate.js) rather than left to be discovered.
     const { groundingVersion, ...ungrounded } = FIT_MISMATCH_EXCHANGE;
     expect(groundingVersion).toBe(1);
     render({ chatExchanges: [ungrounded] });

@@ -28,7 +28,7 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
 }));
 
 import { gateDirective, renderDirectiveStatus, NO_CHANGE_STATUS_LINE } from './directiveGate.js';
-import { getCanonicalText } from '../../src/data/archetypeAdjustments.js';
+import { getCanonicalText, getAllowlist, ARCHETYPE_KEYS } from '../../src/data/archetypeAdjustments.js';
 
 const stub = (reply = '{}') => vi.fn(async () => reply);
 
@@ -182,6 +182,76 @@ describe('C-2 — a reply that quotes its filing', () => {
     expect(out.outcome.status).toBe('fit_mismatch');
   });
 
+  // ── VERBATIM-NESS ITSELF (§2 review finding D1 — the mutating lens).
+  // The rows above prove the check REJECTS UNRELATED TEXT. They did not prove
+  // it requires the canonical VERBATIM, which is the whole claim of the
+  // mechanism: every negative fixture happened to share no leading substring
+  // with the canonical, so weakening `replyQuotesCanonical` to a ten-character
+  // prefix match passed the entire suite. These rows are near-misses — text
+  // that overlaps the canonical heavily and is still not it.
+  it.each([
+    // The exact shape TWO_LEG_SIGNAL_RULE teaches the model to write.
+    ['the prompt\'s own paraphrase', 'Got it — filing: Tighten the stop.', 'SP-01'],
+    ['a long shared prefix', 'Tighten the stops a notch from here.', 'SP-01'],
+    ['the canonical truncated', 'Got it — filing: Tighten the downside.', 'SP-01'],
+    ['the canonical with a word inserted', 'Got it — filing: Tighten the wide downside stop.', 'SP-01'],
+    ['a shared opening, different move', 'Spread across the book a bit more.', 'SP-05'],
+    ['the canonical minus its parenthetical', 'Got it — filing: Spread across more names.', 'SP-05'],
+  ])('near-miss (%s) → fit_mismatch, not a prefix match', async (_label, response, id) => {
+    fitCheck.on = true;
+    const out = await run({ response, proposal: { classification: 'in_archetype', selectedAdjustmentId: id } });
+    expect(out.outcome.status).toBe('fit_mismatch');
+    expect(out.directive).toBeNull();
+  });
+
+  // ── THE NORMALIZATION CONTRACT, ON EVERY AXIS (finding D2).
+  // The module header states two axes: whitespace IS normalized, case is NOT.
+  // A third axis — punctuation — had no guard in either direction, so making
+  // `normalizeForQuote` strip punctuation also passed the whole suite. Pin the
+  // stated contract positively AND pin that nothing else is normalized.
+  it('punctuation is NOT normalized — the parentheses are part of the text', async () => {
+    fitCheck.on = true;
+    // SP-05's canonical is 'Spread across more names (diversify the chaos)'.
+    const out = await run({
+      response: 'Got it — filing: Spread across more names, diversify the chaos.',
+      proposal: { classification: 'in_archetype', selectedAdjustmentId: 'SP-05' },
+    });
+    expect(out.outcome.status).toBe('fit_mismatch');
+  });
+
+  it('hyphens and em dashes are NOT normalized either', async () => {
+    fitCheck.on = true;
+    // SP-03 carries a U+2014 em dash; an ASCII hyphen is a different sentence.
+    const out = await run({
+      response: 'Got it — filing: Trade less frequently - fewer, more-committed swings.',
+      proposal: { classification: 'in_archetype', selectedAdjustmentId: 'SP-03' },
+    });
+    expect(out.outcome.status).toBe('fit_mismatch');
+  });
+
+  it('WHITESPACE is the ONLY axis normalized — proved on the exact canonical', async () => {
+    fitCheck.on = true;
+    // Every whitespace form collapses to the same thing and commits...
+    for (const spaced of [
+      'Got it — filing: Tighten  the   downside stop.',
+      'Got it — filing: Tighten\tthe downside\nstop.',
+      '   Got it — filing: Tighten the downside stop.   ',
+    ]) {
+      const out = await run({ response: spaced, proposal: { classification: 'in_archetype', selectedAdjustmentId: 'SP-01' } });
+      expect(out.outcome.status, JSON.stringify(spaced)).toBe('committed');
+    }
+    // ...and no OTHER transformation is applied: accents, casing and
+    // punctuation all remain significant.
+    for (const altered of [
+      'Got it — filing: Tighten the downsidé stop.',
+      'Got it — filing: TIGHTEN THE DOWNSIDE STOP.',
+      'Got it — filing: Tighten the down-side stop.',
+    ]) {
+      const out = await run({ response: altered, proposal: { classification: 'in_archetype', selectedAdjustmentId: 'SP-01' } });
+      expect(out.outcome.status, JSON.stringify(altered)).toBe('fit_mismatch');
+    }
+  });
+
   it('a missing or non-string reply → fit_mismatch, never a throw', async () => {
     fitCheck.on = true;
     for (const response of [undefined, null, 42, { text: SP01 }]) {
@@ -265,6 +335,37 @@ describe('C-2b — the fit check on a repaired proposal', () => {
     expect(out.outcome.repairUsed).toBe(true);
     expect(out.outcome.fitCheck).toEqual({ expected: SP05, quoted: false });
     expect(out.directive).toBeNull();
+  });
+});
+
+// ============ D8 — the invariant the substring check depends on ============
+
+describe('D8 — no canonical contains another on the same menu', () => {
+  // `replyQuotesCanonical` is an `includes` test. It is safe today only because
+  // no archetype has two canonicals where one contains the other — if a future
+  // wording edit created such a pair, a reply quoting the longer one would
+  // silently satisfy the shorter one's check and file the WRONG id. That is the
+  // Sep 14 bug class re-entering through the data module, and nothing pinned it
+  // (§2 review finding D8).
+  //
+  // Derived over the live allowlists, so a canonical edit anywhere reds here.
+  it.each(ARCHETYPE_KEYS)('%s: no canonical is a substring of another', (codeId) => {
+    const canon = getAllowlist(codeId).map((a) => ({ id: a.id, text: a.canonical.replace(/\s+/g, ' ').trim() }));
+    const hits = [];
+    for (const a of canon) {
+      for (const b of canon) {
+        if (a.id !== b.id && b.text.includes(a.text)) hits.push(`${b.id} contains ${a.id}`);
+      }
+    }
+    expect(hits, `a reply quoting the longer text would file the shorter id: ${hits.join('; ')}`).toEqual([]);
+  });
+
+  it('MUTATION CHECK — the check would catch such a pair if one existed', () => {
+    // Guard the guard: the same predicate over a deliberately colliding pair.
+    const fake = [{ id: 'X-01', text: 'Tighten the stop' }, { id: 'X-02', text: 'Tighten the stop hard' }];
+    const hits = [];
+    for (const a of fake) for (const b of fake) if (a.id !== b.id && b.text.includes(a.text)) hits.push(`${b.id} contains ${a.id}`);
+    expect(hits).toEqual(['X-02 contains X-01']);
   });
 });
 

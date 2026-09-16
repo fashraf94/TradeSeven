@@ -334,7 +334,27 @@ Everything in §7.2 should be read against that sentence.
 
 ### 7.4 The mutating lens
 
-*(recorded below)*
+Ran last, on its own tree, per the Sep 2 2026 isolation ruling. **46 mutations applied to production code, 44 caught, 2 not caught.** It also independently reproduced all 147 whole-prompt hashes plus both slice goldens from `git show origin/main:api/_utils/voiceLayerPrompt.js`, confirming the goldens are true pre-build captures; and it instrumented the mocked flag getter to prove no row asserts a flag-ON behaviour while the flag reads `false` (74 reads in the prompt suite, 24 in the gate suite, every one correct).
+
+**The two that survived were both in `replyQuotesCanonical` / `normalizeForQuote` — the single function that is the entire gate half of this build.**
+
+| # | Mutation that survived | What it meant |
+|---|---|---|
+| **D1** | `includes(normalize(canonical))` → `includes(normalize(canonical).slice(0, 10))` | The suite proved the check **rejects unrelated text**. It never proved the check is **verbatim** — the whole claim of the mechanism. Every negative fixture happened to share no leading substring with the canonical, so a ten-character prefix match passed all 128 rows. Under it, `"Tighten the stops a notch from here."` files SP-01. |
+| **D2** | `normalizeForQuote` also strips punctuation | The header states two axes — whitespace normalized, case not — and **punctuation was a third with no guard in either direction**. SP-05's canonical carries parentheses; a reply writing the same words with a comma would have filed. |
+
+Both are now closed, and the closing rows were themselves mutation-checked: the ten-character-prefix mutation reds **9** rows, the punctuation mutation reds **3**.
+
+Four more findings, all fixed:
+
+- **D3 (high, operational).** **The FLIP MAP at the flag was factually wrong.** It named two pin files and said the goldens "do NOT move". Flipping the constant and running the full suite reds **19 rows across 6 files** — verified independently in the working tree, twice. The four unnamed files read the *live* flag and contain no `DIRECTIVE_FIT_CHECK_ENABLED` string at all, so they are behavioural fixtures and prompt goldens, not `expect(FLAG).toBe(…)` pins: **`flagPinGuard.test.js` cannot name them for you.** Followed literally, that map would have reddened `main` for every other open PR — precisely the §2 failure the flip-reconciliation rule exists to prevent. Rewritten with the measured 6-file / 19-row set and a note to re-measure.
+- **D5 (medium).** **No test drove `chat.js` with the flag ON** — the gate→handler→persisted-exchange seam, where the two halves actually meet, was covered by an argument in the report rather than a row. The argument was correct (verified by probe) but the seam is what a future `chat.js` edit would break silently. Six rows added, ending in a mutation row where the identical turn at flag-OFF files SP-05 and writes the slot.
+- **D4 / D6 (medium/low).** E-1's four positive rows pin a shape the server can only produce when grounding is lit — i.e. inside the D-3 forbidden configuration — and its fixture claimed production fidelity while omitting the three always-on forensics keys. Both corrected: the file now says which rows describe today's sanctioned flip (the ungrounded one, where **nothing renders**) and which describe the post-D-3 shape.
+- **D7 (low).** A row I added during the review, `expect('I\'ll tighten the stop a touch.').not.toContain('Tighten the downside stop')`, compares **two string literals written in the test**. It cannot fail under any production change — a no-op by §2's own definition, added while fixing other people's no-ops. Deleted, and the claim it was reaching for is now pinned against the real gate, where it closes D1.
+- **D8 (low).** Nothing pinned the invariant the substring check silently depends on: that no canonical contains another on the same menu (currently true, 0 pairs). A canonical edit could reintroduce the Sep 14 bug class through the data module. Pinned with a derived row over `getAllowlist`, plus a mutation row proving the predicate discriminates.
+
+**What the lens confirmed.** No empty `it.each` arrays; no `expect` in a never-entered loop; no assertion after an early return; no `toContain` where `toBe` was meant in any golden row; the A-1 line rows anchored at both ends genuinely catch an appended tag. Everything except the two rows above was discriminating.
+
 
 ### 7.5 What the review changed
 
@@ -343,6 +363,9 @@ Six commits of fixes and pins came out of it. Nothing in them altered production
 - `9e89d23a` — the two false comments; the §4 guard comment and its "never mock this" counterpart; the flag-off golden widened from two slices (~41% of one battle prompt) to **147 whole-prompt hashes** across every mode × grounded × archetype × phase, captured from the true pre-build module.
 - `83cfdb30` — the A4 charter-disagreement pinned as a LIMIT row, written from the charter prose by hand.
 - `9a14c3b5` — the A4 "first-named" slip corrected; the A2/A3 quote-vs-paraphrase contradiction pinned.
+- the mutating lens's round — D1/D2/D8 closed in the gate suite with mutation-checked rows; the wrong FLIP MAP replaced with the measured one; the D5 seam pinned end to end; E-1 re-scoped and its fixture made faithful; the D7 no-op I had just written deleted.
+
+Two of those came from reviewing **my own review fixes** — the tautological assertion in `9a14c3b5` and the FLIP MAP written in commit A. That is the argument for running the mutating lens last and on a fresh tree, rather than trusting a suite because it is green.
 
 The widened golden's mutation row was **wrong on first write** and the failure taught the real shape: **39 prompts move under the flag, not 18**, because the annotated menu reaches the *grounded* prompt while the quote instruction does not. That is the flip-order hazard in one assertion, and it is now pinned as one.
 
