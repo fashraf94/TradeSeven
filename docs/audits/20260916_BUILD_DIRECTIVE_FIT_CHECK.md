@@ -14,8 +14,8 @@
 | **Flag** | `DIRECTIVE_FIT_CHECK_ENABLED`, boolean, shipped `false`, pinned, in `DARK_BY_DESIGN` with its runway. |
 | **Flag-off invariant** | **Holds.** Every prompt byte and every gate outcome is byte-identical to the pre-build commit, proved against goldens captured by rendering the pre-build code — not regenerated from the code they guard. |
 | **Not behind the flag** | The three forensics fields. Deliberate: the one-way door. Every turn without them is a turn whose intent can never be recovered. |
-| **Verification** | Full suite `VITEST_EXIT=0` — 13 041 passed, 64 skipped, 681 files. `npm run lint:gate` exit 0. `vite build` exit 0. |
-| **Review** | Mandatory (15 files / 1 973 lines, over both §2 thresholds). Four lenses on isolated `git archive` trees, refuters told to kill every finding *and* to attack the clean verdicts, the mutating lens last. **8 CONFIRMED, 4 REFUTED.** Recorded in §7. |
+| **Verification** | Final, at branch HEAD: full suite `VITEST_EXIT=0` — **13 215 passed**, 64 skipped, 681 files. `npm run lint:gate` exit 0. `vite build` exit 0. Zero fenced files; `file-directive.js` untouched; the whole `chat.js` diff is 6 lines, so no new top-level battle key. |
+| **Review** | Mandatory (16 files / 2 827 lines at final HEAD, over both §2 thresholds). Four lenses on isolated `git archive` trees, refuters told to kill every finding *and* to attack the clean verdicts, the mutating lens last. **8 CONFIRMED, 4 REFUTED.** Recorded in §7. |
 | **Safety property the review proved** | At flag-ON the gate's commits are a **strict subset** of the flag-OFF gate's, by construction. **The fit check can only refuse; it can never file something the pre-build gate would not have filed.** |
 | **…and the risk that follows from it** | So the flip's realistic failure mode is **not** a mis-filed directive. It is that **directive filing quietly stops**, because the same prompt still teaches the model to paraphrase (§7.2 A2/A3) — and a `fit_mismatch` is **invisible on screen** today (A7/C2). |
 | **Deviations** | Three, in §6. One is a provable incompatibility inside the brief itself; one is a scope boundary; one is the flip-order hazard. |
@@ -155,9 +155,9 @@ The pin that **did** move is one this build added: commit C's exact outcome key 
 
 | Check | Command | Result |
 |---|---|---|
-| Full suite, unpiped, exit code asserted | `npx vitest run; echo "VITEST_EXIT=$?"` | **`VITEST_EXIT=0`** — 681 files passed, 3 skipped; **13 041 tests passed**, 64 skipped; 123.6 s |
+| Full suite, unpiped, exit code asserted | `npx vitest run; echo "VITEST_EXIT=$?"` | **`VITEST_EXIT=0`** — 681 files passed, 3 skipped; **13 215 tests passed**, 64 skipped; 124.5 s. (Re-run at final HEAD after the review's six fix commits; the mid-build run read 13 041, before the review added rows.) |
 | Lint gate | `npm run lint:gate` | **exit 0** |
-| Build | `npx vite build` | **exit 0**, built in 17.96 s (the §2 check no test can make — nothing in the suite imports `App.jsx`) |
+| Build | `npx vite build` | **exit 0** (the §2 check no test can make — nothing in the suite imports `App.jsx`) |
 | No fenced file in the diff | every path in the §1 list matched against `git diff --name-only origin/main...HEAD` | **clean — zero** |
 | No change to `file-directive.js` | same | **untouched** (it files by id with no model call and needs no fit check) |
 | No new top-level battle key | `git diff origin/main...HEAD -- api/agent/chat.js` | **clean** — the whole `chat.js` diff is 5 lines: one import and the sanitize call site. `battleRef.update({...})` is untouched, so the `createAgentBattle` doc shape is not contacted. The three new fields ride the `chatExchanges[]` element's `archetypeGate` record (`chat.js:1056`), which Phase 0 §7 establishes as non-contact precedent |
@@ -181,6 +181,8 @@ The pin that **did** move is one this build added: commit C's exact outcome key 
  src/config/featureFlags.js                                            |   77 +
  src/config/flagPinGuard.test.js                                       |    2 +
 ```
+
+*(The stat above is the mid-build snapshot; at final HEAD the branch is **16 files / 2 827 insertions**, the growth being review rows and this report.)*
 
 **Four production files changed**, totalling ~150 net lines of behaviour: `voiceLayerPrompt.js`, `directiveGate.js`, `chat.js` (5 lines), `featureFlags.js` (flag + docstring). Everything else is tests, a golden fixture, one new zero-import module, and two reports.
 
