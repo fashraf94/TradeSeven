@@ -42,7 +42,9 @@
 //                `fundAsOf` (the fundamentals vintage as a UTC date, the
 //                FUNDAMENTALS block's own header rule) and `rankingsAt` (the
 //                stockRankings doc's computedAt).
-//   candidates — the decider's own anticipation output (D-112): the four
+//   candidates — the decider's anticipation output (D-112) as the cron hands it
+//                over — every item it wrote while the threshold lint is 'off' or
+//                'shadow'; the surviving items once the lint is 'on': the four
 //                required tool fields plus the optional `signalSource` tag;
 //                `rationale` cut. Persisted here, rendered ONLY through the
 //                D-103 composer (voiceLayerAnticipation.js) — `threshold` is

@@ -1328,15 +1328,32 @@ export default async function handler(req, res) {
         // Build technical factor scores (normalized to 0-100 for game-mode computation)
         const techFactors = tech.factors || {};
         const technicalFactorScores = {
-          // `?? null` rather than `?? 50`: computeWeightedScore SKIPS a null
-          // factor and redistributes its weight across the ones that have
-          // readings (gameModeScoring.js:58-72) — the module's own way of
-          // saying "no reading", and strictly better than diluting the
-          // composite toward a median nobody measured. An unmeasured symbol's
-          // baggerBombFit therefore moves: its technical half is now the
-          // average of the factors it HAS.
-          rsVsSpy: techFactors.rsPercentile ?? null,
-          sectorRS: techFactors.sectorRSPercentile ?? techFactors.rsPercentile ?? null,
+          // NOT `?? null`, and NOT for want of honesty — FENCE CONTACT.
+          //
+          // The brief prescribed `?? null` here so computeWeightedScore would
+          // skip the factor and redistribute its weight. It does, and the
+          // §2 review measured what follows: an unmeasured symbol's
+          // baggerBombFit moves by up to ±8, which inverts baggerBombRank and
+          // can flip the game_fit scout alert. That value does not stay local:
+          //   • api/_utils/agentPromptAssembly.js renders it as the BB_FIT
+          //     COLUMN of the agent's stock-universe menu — FENCED;
+          //   • api/_utils/archetypeScoring.js folds it into
+          //     computeArchetypeRankings at weights 0.10-0.30 — FENCED, and a
+          //     +7 move was measured to invert three archetype orderings.
+          // BUILD_RULES §1: "changes that alter their behavior from non-fenced
+          // call sites are fence contact too … If your task seems to require
+          // fence contact that isn't in its prompt, STOP and report — never
+          // improvise it." The brief did not identify this edit as fence
+          // contact, so it is reported for a founder ruling rather than shipped.
+          //
+          // Holding the neutral midpoint here costs NOTHING the disclosure
+          // promised: `factors.rsPercentile` and `factors.sectorRSPercentile`
+          // are published as the honest readings above, which is what the
+          // decider is SHOWN. This line only feeds the fit arithmetic, and the
+          // value it yields for an unmeasured symbol — 50 — is bit-for-bit
+          // what it yielded before this commit.
+          rsVsSpy: techFactors.rsPercentile ?? 50,
+          sectorRS: techFactors.sectorRSPercentile ?? techFactors.rsPercentile ?? 50,
           smaPosition: tech.smaScore != null ? (tech.smaScore / 18) * 100 : 50,
           macd: tech.macdScore != null ? (tech.macdScore / 12) * 100 : 50,
           weekHighProx: tech.highProximity != null ? (tech.highProximity / 12) * 100 : 50,

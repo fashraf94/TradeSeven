@@ -70,10 +70,16 @@ describe('C-1 source — the placeholder is gone from the writer and the last re
     expect(block.indexOf('factors: { ...scoreResult.factors')).toBeGreaterThan(block.indexOf('...scoreResult,'));
   });
 
-  it('the game-mode fit inputs take `?? null`, so a missing reading redistributes weight', () => {
-    expect(CRON).toContain('rsVsSpy: techFactors.rsPercentile ?? null,');
-    expect(CRON).toContain('sectorRS: techFactors.sectorRSPercentile ?? techFactors.rsPercentile ?? null,');
-    expect(CRON).not.toContain('rsVsSpy: techFactors.rsPercentile ?? 50');
+  it('the game-mode fit inputs KEEP the neutral midpoint — the brief prescribed `?? null`, the review found it is FENCE CONTACT', () => {
+    // baggerBombFit reaches two §1-fenced modules: agentPromptAssembly renders
+    // it as the BB_FIT column of the agent's stock menu, and archetypeScoring
+    // folds it into computeArchetypeRankings at weights 0.10-0.30. Moving it
+    // from here is fence contact BUILD_RULES §1 says to stop and report.
+    expect(CRON).toContain('rsVsSpy: techFactors.rsPercentile ?? 50,');
+    expect(CRON).toContain('sectorRS: techFactors.sectorRSPercentile ?? techFactors.rsPercentile ?? 50,');
+    expect(CRON).not.toContain('rsVsSpy: techFactors.rsPercentile ?? null');
+    // and the reason is written where the next reader will meet it
+    expect(CRON).toContain('FENCE CONTACT');
   });
 
   it('voice-layer-cache carries no `factors.rsPercentile ?? 50` anywhere', () => {
@@ -173,27 +179,29 @@ describe('C-1 behaviour — a symbol dropped from the RS sort publishes null', (
   });
 });
 
-describe('C-1 behaviour — the game-mode fit redistributes rather than counting a median', () => {
-  const measured = {
-    rsVsSpy: 88, sectorRS: 80, smaPosition: 60, macd: 50, weekHighProx: 70, volume: 55, rsi: 50,
-  };
+describe('C-1 behaviour — baggerBombFit does NOT move, and the fenced blast radius is why', () => {
+  const tech = { smaPosition: 90, macd: 88, weekHighProx: 92, volume: 85, rsi: 80 };
+  const fit = (rsVsSpy, sectorRS) => computeGameModeFits({
+    pillarScores: {}, technicalFactorScores: { ...tech, rsVsSpy, sectorRS }, atrPercentile: 0.9,
+  }).baggerBombFit;
 
-  it('a null rsVsSpy is SKIPPED, not counted as 50 — computeWeightedScore redistributes its weight', () => {
-    const withNull = computeGameModeFits({
-      pillarScores: {}, technicalFactorScores: { ...measured, rsVsSpy: null, sectorRS: null }, atrPercentile: 0.5,
-    });
-    const withPlaceholder = computeGameModeFits({
-      pillarScores: {}, technicalFactorScores: { ...measured, rsVsSpy: 50, sectorRS: 50 }, atrPercentile: 0.5,
-    });
-    expect(withNull.baggerBombFit).not.toBe(withPlaceholder.baggerBombFit);
-    expect(withNull.baggerBombFit).toBeGreaterThan(0);
-    expect(Number.isFinite(withNull.baggerBombFit)).toBe(true);
+  it('an unmeasured symbol scores EXACTLY what it scored before this commit', () => {
+    // pre-commit the factors carried the placeholder 50; now they carry null
+    // readings and `?? 50` resolves them to the same 50. Bit-for-bit.
+    expect(fit(null ?? 50, (null ?? null) ?? 50)).toBe(fit(50, 50));
   });
 
-  it('a symbol WITH a reading is unchanged', () => {
-    const a = computeGameModeFits({ pillarScores: {}, technicalFactorScores: measured, atrPercentile: 0.5 });
-    const b = computeGameModeFits({ pillarScores: {}, technicalFactorScores: { ...measured }, atrPercentile: 0.5 });
-    expect(a.baggerBombFit).toBe(b.baggerBombFit);
+  it('THE CHANGE HELD OUT: `?? null` would have moved it, which is the fence contact', () => {
+    // The measurement that made this a §1 report rather than a shipped edit.
+    const withNull = fit(null, null);
+    const shipped = fit(50, 50);
+    expect(withNull).not.toBe(shipped);
+    expect(Math.abs(withNull - shipped)).toBeGreaterThanOrEqual(5);
+  });
+
+  it('a symbol WITH readings is untouched either way', () => {
+    expect(fit(88, 80)).toBe(fit(88, 80));
+    expect(Number.isFinite(fit(88, 80))).toBe(true);
   });
 });
 

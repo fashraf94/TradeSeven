@@ -2213,8 +2213,17 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           kept.push(candidate);
           continue;
         }
-        // The breadcrumb — the `grounding_dedupe` / `cron_budget_skip` shape
-        // (voiceLayerAnticipation.js:80-92 and the budget gate below).
+        // The breadcrumb. Two receipts, because at 'on' this is a DELETION
+        // from a durable record: the GCS shadow record below, and — matching
+        // the nearer of the two precedents this copies (`cron_budget_skip`,
+        // which logs its own count and battle) — a console line, so a drop is
+        // visible in the Vercel function log even if the GCS write is
+        // swallowed. The 'on' flip PR owes a durable receipt on the battle doc
+        // itself; see the build report's §5 flip precondition.
+        console.log(
+          `${LOG_PREFIX} threshold lint [${ANTICIPATION_THRESHOLD_LINT_MODE}] ${lintEnforcing ? 'DROPPED' : 'flagged'} `
+          + `${candidate.symbol} anticipation for battle ${battle.id} — absent: ${verdict.absent.join(', ')}`
+        );
         logAnticipation({
           battleId: battle.id,
           agentId: battle.agentId,
@@ -2225,12 +2234,13 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           absent: verdict.absent,
           lintMode: ANTICIPATION_THRESHOLD_LINT_MODE,
           dropped: lintEnforcing,
-          // THE JOIN KEY (review L2-F3). `evalId` is derived from
-          // evaluations.length + 1 against an array capped at 150, so on a long
-          // battle every later entry is `eval_151` — the same reason
-          // logEvaluation gained a timestamp. This record is the evidence the
-          // founder reads BEFORE flipping to 'on'; it has to be joinable to the
-          // check it describes.
+          // The check's own instant, matching logEvaluation's field. NOTE: the
+          // review justified this by the evaluations[] 150-cap making `evalId`
+          // collide, and the refutation overturned that — battles are
+          // single-day at ~26 ticks, and `_loggedAt` (stamped by appendToStream)
+          // already joins. It is kept anyway because it is the instant of the
+          // CHECK rather than of the log write, which is the join this record
+          // actually wants, and it costs nothing.
           timestamp: new Date().toISOString(),
           candidate: {
             symbol: candidate.symbol || null,

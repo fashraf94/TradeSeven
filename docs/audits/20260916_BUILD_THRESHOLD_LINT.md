@@ -63,7 +63,10 @@ Six of those are production code (`anticipationThresholdLint.js`, `agent-evaluat
 
 ## 2. The defect, and what the lint answers
 
-Phase 0 §5. Of the four thresholds the Sep 14 agent wrote, **three cite a signal it was not shown**:
+Phase 0 §5. Of the four thresholds the Sep 14 agent wrote, **two cite a signal it was not shown** on the book as the brief pins it — QCOM on the bench, CRWD held:
+
+> A correction to §5's own headline, found by the review. §5 says *"three of the four"*, but that count comes from reading threshold #1 as a **held** name. §5 is internally inconsistent about QCOM's class: reading #2 calls it *"a held name"* while reading #3 says *"RVOL observable only if QCOM was on the bench"* — same symbol, same tick, opposite classes, and neither is marked VERIFIED or ASSUMED. The brief resolves it explicitly (*"QCOM bench, CRWD held after the swap"*) and prescribes the three verdicts the tests assert, so this build follows the brief. On the **held** reading the count is three, and the suite covers that reading too (the class-asymmetry row: the same sentence against CRWD → `absent: ['VWAP', 'RSI']`). The four rows below are the bench reading.
+
 
 | # | The threshold (Phase 0 §5, verbatim) | Symbol class | Verdict |
 |---|---|---|---|

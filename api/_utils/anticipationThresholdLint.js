@@ -131,24 +131,25 @@ export const THRESHOLD_SIGNAL_VOCABULARY = Object.freeze([
 ]);
 
 /**
- * CONSUMED AND IGNORED, before anything else runs (matchFirst 0).
+ * NO IGNORED-SPAN ROW — deliberately, after refutation.
  *
- * "20-day" is the vocabulary's one genuinely ambiguous token. Phase 0 §5 is
- * right that no 20-day LEVEL is rendered — but the resistance the prompt DOES
- * render is a 20-bar swing-high cluster, the Range cell is a 20-bar range, and
- * RVOL is defined as today's volume over the 20-day average volume. So
- * "its 20-day high", "the 20-day range" and "its 20-day average volume" name
- * things the tick actually held, and rejecting them would censor an honest
- * promise (review L1-F2). These spans are blanked before the SMA_20_LEVEL row
- * ever sees them; a bare "the 20-day" still fires it.
+ * The review proposed consuming "20-day high / range / average volume" before
+ * the SMA_20_LEVEL row could claim them, on the theory that they name what the
+ * tick rendered. The refutation overturned it, and it was reverted:
+ *   • `nearestResistance` is the AVERAGE of a cluster of >=2 swing highs over a
+ *     20-BAR lookback (analyticalPrimitives.js clusterSwings) — not a 20-day
+ *     high, which nothing computes;
+ *   • RVOL's 20-day denominator is real but the prompt renders `RVOL=1.34`
+ *     alone, never the window;
+ *   • the only "20-day" the agent is ever shown is the threshold instruction's
+ *     own bad example, which Phase 0 §5 classifies as "not in the data (as a
+ *     level)" and which the fenced twin still ships.
+ * So a model writing "20-day high" is INVENTING the window, and rejecting it is
+ * the row doing its job. The honest phrasings — "breaks above 181.62
+ * resistance", "RVOL sustains above 1.2x" — name no table row and pass.
  */
-export const IGNORED_SPANS = Object.freeze([
-  {
-    signal: null,
-    matchFirst: 0,
-    pattern: /\b20[-\s]?day(?:'s)?\s+(?:high|low|range|volume|(?:avg|average)\s+volume)\b|\bvolume\b[^.]{0,40}?\b20[-\s]?day(?:'s)?\s+(?:avg|average)\b/gi,
-  },
-]);
+const IGNORED_SPANS = Object.freeze([]);
+
 
 /**
  * The two orderings for a table: `declaration` (the order `absent` comes out

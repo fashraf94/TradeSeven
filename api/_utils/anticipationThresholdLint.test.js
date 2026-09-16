@@ -261,24 +261,26 @@ describe('A-3 — review regressions: the forms that used to slip past the table
     }
   });
 
-  it('L1-F2 — the RENDERED senses of "20-day" are accepted; the level sense is still rejected', () => {
-    // The resistance the prompt renders IS a 20-bar swing cluster, the Range
-    // cell IS a 20-bar range, and RVOL IS today's volume over the 20-day
-    // average volume — so these three name what the tick held.
+  it('L1-F2, REFUTED — every "20-day" phrasing is rejected, because the agent is never shown a 20-day anything', () => {
+    // The review claimed these named what the tick rendered; the refutation
+    // overturned it. `nearestResistance` is a cluster AVERAGE of swing highs
+    // over a 20-BAR lookback, not a 20-day high; RVOL's 20-day denominator is
+    // never disclosed (the prompt renders `RVOL=1.34` alone). A model writing
+    // "20-day" is inventing the window.
     for (const t of [
       'If QCOM breaks above its 20-day high of 181.62',
       'If it clears the top of the 20-day range',
       'If volume holds above its 20-day average',
-      'If RVOL holds above its 20-day average volume',
-    ]) expect(bench(t), t).toEqual({ ok: true });
-
-    // …and the LEVEL sense, which no class is shown, still rejects
-    for (const t of [
       'If it holds above the 20-day on the next test',
       'If it holds above the 20-DMA',
       'If it holds above SMA-20',
       'If it holds above the twenty-day',
     ]) expect(bench(t), t).toEqual({ ok: false, absent: ['SMA_20_LEVEL'] });
+
+    // …and the honest phrasings of the SAME promises, which name no table row
+    // (the level and RVOL are accepted by omission), still pass.
+    expect(bench('If QCOM breaks above 181.62 resistance')).toEqual({ ok: true });
+    expect(bench('If RVOL sustains above 1.2x')).toEqual({ ok: true });
   });
 
   it('L1-F3 — the ordinary synonyms of each claimed signal are claimed too', () => {
@@ -322,8 +324,7 @@ describe('A-3 — review regressions: the forms that used to slip past the table
       .toEqual({ ok: false, absent: ['RVOL'] });
   });
 
-  it('the ignored-span row consumes and names nothing — it can never appear in `absent`', () => {
-    expect(namedSignals('its 20-day high')).toEqual([]);
+  it('every shipped row names a signal — nothing consumes silently', () => {
     expect(THRESHOLD_SIGNAL_VOCABULARY.every((r) => typeof r.signal === 'string' && r.signal)).toBe(true);
   });
 });
