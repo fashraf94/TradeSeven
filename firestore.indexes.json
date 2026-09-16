@@ -533,6 +533,34 @@
           "order": "ASCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "backingStakes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "weekKey",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "backingStakes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "groupId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": []

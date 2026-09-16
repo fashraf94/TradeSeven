@@ -2343,3 +2343,50 @@ export function isShowItOn() {
  */
 // Pinned by: eligibilityFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const ELIGIBILITY_ATTESTATION_ENABLED = false;
+
+/**
+ * BACKING BETA — PR 1–5: THE BACKING LAYER (spec V1.3 §0, §2, §4, §12; the
+ * whole rulings ledger D-a…D-z). A points-only spectator layer over base-layer
+ * League group-weeks: a weekly allowance of Backing Points staked on the pods
+ * you are not seated in, one sealed parimutuel pot per pod, settled off the
+ * composite the tournament already computes. No money, no crypto, no
+ * purchasable or redeemable points, no rake, no carry, no public ranking
+ * (§14). Points are score, never a bankroll (§2).
+ *
+ * ONE flag for every backing door. PR 1 ADDS NO DOOR — it is the foundation
+ * the later PRs compose: constants, the week helper, the wallet/ledger
+ * primitives, the rules blocks and the two stake indexes. Nothing in PR 1
+ * reads this flag, nothing calls the helpers, and no collection receives a
+ * document. The doors arrive with their PRs and are listed here as they land:
+ *   · PR 1 — NONE (this PR). Foundation only; no endpoint, no UI, no caller.
+ *   · PR 2 — POST /api/tournament/backing-stake, GET /api/tournament/backing-pools.
+ *   · PR 3 — POST /api/tournament/backing-settle (admin re-run) + the
+ *     settlement hook's own gate.
+ *   · PR 4 — the backing surfaces under src/components/League/backing/ and
+ *     GET /api/tournament/team-card.
+ *   · PR 5 — POST /api/backing/event.
+ * Every server route 404s while this is false, AFTER auth (the
+ * SHOW_IT_ENABLED / research.js shape), so no route exists as far as any
+ * caller is concerned.
+ *
+ * FALSE at merge (§11, §12): PR 1–5 all merge dark. The flip PR flips this
+ * flag TOGETHER WITH ELIGIBILITY_ATTESTATION_ENABLED after every §11 gate
+ * (counsel's jurisdictional review, the attestation deployed with counsel's
+ * copy, the two honesty fixes, the founder preview smoke, the deferral watch,
+ * and N1 mitigated per Amendment A §A1) — never a build PR.
+ *
+ * Read at CALL time inside the handler that gates on it — never a module-scope
+ * derivation — so a hermetic featureFlags mock with an explicit value governs
+ * every test (the TICK_STAMPS_ENABLED / SHOW_IT_ENABLED rule). No accessor.
+ *
+ * FLIP MAP (the flip PR reconciles these in the SAME commit — BUILD_RULES §2):
+ *   • src/config/backingBetaFlags.test.js — the dark pin row moves to true;
+ *   • src/config/flagPinGuard.test.js — drop BACKING_BETA_ENABLED from
+ *     DARK_BY_DESIGN (its integrity test reds if a lit flag is left listed).
+ *   PR 1 adds no flag-off darkness suite because PR 1 adds no door: there is
+ *   no behavior to hold byte-identical. The per-PR dark suites (PR 2's
+ *   backing-stake.dark.test.js onward) mock this flag to an explicit false and
+ *   do NOT move with the flip.
+ */
+// Pinned by: backingBetaFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const BACKING_BETA_ENABLED = false;
