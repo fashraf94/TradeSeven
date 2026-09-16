@@ -65,7 +65,7 @@ describe('C-1 source — the placeholder is gone from the writer and the last re
     expect(push).toBeGreaterThan(0);
     const block = CRON.slice(push, CRON.indexOf('});', push));
     expect(block).toContain('...scoreResult,');
-    expect(block).toContain('factors: { ...scoreResult.factors, rsPercentile },');
+    expect(block).toContain('factors: { ...scoreResult.factors, rsPercentile, sectorRSPercentile },');
     // …and the override comes AFTER the spread, or it would be overwritten
     expect(block.indexOf('factors: { ...scoreResult.factors')).toBeGreaterThan(block.indexOf('...scoreResult,'));
   });
@@ -115,8 +115,8 @@ function publishedFactors(rsPercentileMapValue) {
     technicals,
     sectorRSPercentile: null,
   });
-  // the push — the published factor
-  return { ...scoreResult, factors: { ...scoreResult.factors, rsPercentile } };
+  // the push — the published factors (both readings, never the scorer's inputs)
+  return { ...scoreResult, factors: { ...scoreResult.factors, rsPercentile, sectorRSPercentile: null } };
 }
 
 /** The PRE-CHANGE composition, kept so the defect is reproduced, not just described. */
@@ -159,7 +159,10 @@ describe('C-1 behaviour — a symbol dropped from the RS sort publishes null', (
     expect(now.technicalScore).toBe(preChange.technicalScore);
     expect(now.rsVsSpyScore).toBe(preChange.rsVsSpyScore);
     expect(now.sectorRSScore).toBe(preChange.sectorRSScore);
-    expect(now.factors.sectorRSPercentile).toBe(preChange.factors.sectorRSPercentile);
+    // …the published sectorRSPercentile is the READING, so it is deliberately
+    // NOT the pre-change value; the scorer's own band is what must not move.
+    expect(now.factors.sectorRSPercentile).toBeNull();
+    expect(preChange.factors.sectorRSPercentile).toBe(50);
     // …and a null scoring input WOULD have moved them — the reason for the split
     const ifNullScored = computeTechnicalScore({
       closes, highs, lows, volumes, spyCloses,

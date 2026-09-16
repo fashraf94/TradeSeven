@@ -304,7 +304,10 @@ export function composeCandidatesStamp(anticipationCandidates) {
  * @param {Object} p.controlResolution         the cron's resolveControls() result (same
  *                                             argument list as the fenced assembler, on the
  *                                             in-memory battle)
- * @param {Array}  [p.anticipationCandidates]  haikuResult.anticipationCandidates
+ * @param {Array}  [p.anticipationCandidates]  the decider's raw items as the cron
+ *                                             hands them over: the threshold-lint's
+ *                                             output, which IS that same reference
+ *                                             while the lint ships 'off'
  * @param {Array}  p.assetScores               fenced scorer output for the held book
  * @param {Object} p.prices                    the tick's quote table
  * @param {Object} p.momentumData              { vwap, rankings, rankingsMap, techScoresMap, … }

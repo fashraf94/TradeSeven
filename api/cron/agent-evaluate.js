@@ -2225,6 +2225,13 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           absent: verdict.absent,
           lintMode: ANTICIPATION_THRESHOLD_LINT_MODE,
           dropped: lintEnforcing,
+          // THE JOIN KEY (review L2-F3). `evalId` is derived from
+          // evaluations.length + 1 against an array capped at 150, so on a long
+          // battle every later entry is `eval_151` — the same reason
+          // logEvaluation gained a timestamp. This record is the evidence the
+          // founder reads BEFORE flipping to 'on'; it has to be joinable to the
+          // check it describes.
+          timestamp: new Date().toISOString(),
           candidate: {
             symbol: candidate.symbol || null,
             direction: candidate.direction || null,

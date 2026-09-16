@@ -187,7 +187,9 @@ const SEP14_CANDIDATES = Object.freeze([
 // The two that name a signal the tick did not hold, and why.
 const EXPECTED_ABSENT = Object.freeze([
   { threshold: SEP14_CANDIDATES[0].threshold, absent: ['VWAP'] },
-  { threshold: SEP14_CANDIDATES[1].threshold, absent: ['VWAP', 'MACD_5M'] },
+  // three names, not the brief's two: the review split MACD_HISTOGRAM out of
+  // MACD_5M so the shadow evidence says which signal was actually named (L1-F4).
+  { threshold: SEP14_CANDIDATES[1].threshold, absent: ['VWAP', 'MACD_5M', 'MACD_HISTOGRAM'] },
 ]);
 const KEPT_THRESHOLDS = Object.freeze([SEP14_CANDIDATES[2].threshold, SEP14_CANDIDATES[3].threshold]);
 
@@ -274,7 +276,10 @@ describe("B-1 'shadow' — everything persists, the failures are measured", () =
       expect(r.evalId).toBe('eval_001');
       expect(Object.keys(r.candidate)).toEqual(['symbol', 'direction', 'signalSummary', 'threshold']);
     }
-    expect(lintLogs.map((r) => r.errorReason)).toEqual(['absent_VWAP', 'absent_VWAP+MACD_5M']);
+    expect(lintLogs.map((r) => r.errorReason)).toEqual(['absent_VWAP', 'absent_VWAP+MACD_5M+MACD_HISTOGRAM']);
+    // THE JOIN KEY (L2-F3): evalId is not unique past 150 checks, so every
+    // record carries the instant of the check it describes.
+    for (const r of lintLogs) expect(r.timestamp).toBe(FROZEN_NOW);
   });
 
   it('the two that pass are never logged — an accepted promise leaves no complaint', async () => {

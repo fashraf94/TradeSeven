@@ -1029,12 +1029,17 @@ export default async function handler(req, res) {
           volumes,
           spyCloses,
           // THE SCORING INPUT IS NOT THE PUBLISHED READING. computeTechnicalScore
-          // turns this into a 0-22 band by arithmetic (indexIntelligence.js:413),
+          // turns this into a 0-22 band by arithmetic (indexIntelligence.js),
           // so a null would score an unmeasured symbol 0/22 — worst in the
-          // universe — and silently demote it in technicalRank, compositeScore
-          // and the baggerBombFit that builds the agent's hotBench. It keeps the
-          // neutral midpoint it has always had, so NO score, rank or menu moves
-          // on this commit; the honest null is restored onto `factors` below.
+          // universe — and silently demote it in technicalRank, sectorTechnicalRank
+          // and compositeScore. It keeps the neutral midpoint it has always had,
+          // so NO technicalScore, technicalRank or compositeScore moves from
+          // THIS decision; the honest null is restored onto `factors` below.
+          //
+          // Scoped deliberately (review L3-F2): `baggerBombFit` DOES move, but
+          // from the separate `?? null` on the game-mode fit inputs further
+          // down — not from this line. The two edits are described together in
+          // the build report so neither claim reads as covering the other.
           rsPercentile: rsPercentile ?? 50,
           rsTrend: d.rsTrend,
           technicals: { rsi, sma20, sma50, sma200, macd: macdEnhanced },
@@ -1113,14 +1118,20 @@ export default async function handler(req, res) {
           momentum,
           recentAction,
           ...scoreResult,
-          // The published factor is the READING (null when unmeasured), not
-          // the neutral number the 0-22 band was computed from. One source for
-          // what the decider is SHOWN; the scoring arithmetic is a separate
-          // concern and is unchanged. `sectorRSPercentile` is left exactly as
-          // the scorer resolved it — its own fall-through to the neutral input
-          // is the same placeholder one field over, reported for separate
-          // tasking rather than widened into here (BUILD_RULES §3).
-          factors: { ...scoreResult.factors, rsPercentile },
+          // The published factors are the READINGS (null when unmeasured), not
+          // the neutral numbers the 0-22 / 0-15 bands were computed from. One
+          // source for what the decider is SHOWN; the scoring arithmetic is a
+          // separate concern and is unchanged.
+          //
+          // `sectorRSPercentile` rides the same rule (review L3-F1). The scorer
+          // resolves its band from `sectorRSPercentile ?? rsPercentile`
+          // (indexIntelligence.js), so publishing what it resolved would put
+          // the SAME placeholder one field over — and since the bench block
+          // omits the rsPercentile clause on null, `sector RS=50` would have
+          // been left standing ALONE as the only relative-strength line the
+          // decider sees. That would make this commit's own disclosure
+          // ("it is shown nothing") false.
+          factors: { ...scoreResult.factors, rsPercentile, sectorRSPercentile },
         });
       }
 

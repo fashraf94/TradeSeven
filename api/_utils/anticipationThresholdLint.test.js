@@ -82,13 +82,15 @@ describe('A-1 — the four Sep 14 thresholds (Phase 0 §5), against that tick\'s
       .toEqual({ ok: false, absent: ['VWAP'] });
   });
 
-  it('#2 "…and the 5-minute MACD shows a positive histogram signal (S12)…" (QCOM, BENCH) → absent: [VWAP, MACD_5M]', () => {
+  it('#2 "…and the 5-minute MACD shows a positive histogram signal (S12)…" (QCOM, BENCH) → absent: [VWAP, MACD_5M, MACD_HISTOGRAM]', () => {
     const present = sep14Tick();
-    // the daily MACD cross IS rendered for a bench name — the 5-minute
-    // histogram is a different signal, and is on no path at all
+    // the daily MACD cross IS rendered for a bench name; the 5-minute MACD and
+    // the histogram VALUE are two different absences, and the sentence names
+    // both. The brief prescribed [VWAP, MACD_5M] — the third name is the
+    // review's MACD_HISTOGRAM split (L1-F4), recorded as a deviation.
     expect(present.get('QCOM').has(SIGNAL_NAMES.MACD_CROSS)).toBe(true);
     expect(lintThreshold({ threshold: SEP14.vwapAndMacd5m, symbol: 'QCOM', present }))
-      .toEqual({ ok: false, absent: ['VWAP', 'MACD_5M'] });
+      .toEqual({ ok: false, absent: ['VWAP', 'MACD_5M', 'MACD_HISTOGRAM'] });
   });
 
   it('#3 "breaks above 181.62 resistance and RVOL sustains above 1.2x" (QCOM, BENCH) → ok: levels and RVOL are both rendered for bench', () => {
@@ -154,7 +156,7 @@ describe('A-1 — the four Sep 14 thresholds (Phase 0 §5), against that tick\'s
   });
 
   it('the 5-minute rows take precedence over the general ones — "(not 5-minute)" is encoded as match order', () => {
-    expect(namedSignals('the 5-minute MACD shows a positive histogram signal')).toEqual(['MACD_5M']);
+    expect(namedSignals('the 5-minute MACD shows a positive histogram signal')).toEqual(['MACD_5M', 'MACD_HISTOGRAM']);
     expect(namedSignals('if the 5-min RSI crosses 50')).toEqual(['RSI_5M']);
     expect(namedSignals('if it reclaims the 5-minute VWAP')).toEqual(['VWAP_5M']);
     // the daily forms still resolve to the daily signals
@@ -173,6 +175,9 @@ describe('A-1 — the four Sep 14 thresholds (Phase 0 §5), against that tick\'s
       present,
     });
     expect(out.absent).toEqual(['VWAP', 'MACD_5M', 'RVOL', 'RSI']);
+    // declaration order puts MACD_HISTOGRAM last
+    expect(lintThreshold({ threshold: 'if the histogram expands and VWAP holds', symbol: 'CRWD', present }).absent)
+      .toEqual(['VWAP', 'MACD_HISTOGRAM']);
   });
 
   it('matching is case-insensitive', () => {
@@ -191,7 +196,7 @@ describe('A-1 — the four Sep 14 thresholds (Phase 0 §5), against that tick\'s
 // symbol whose present set makes the mutant green.
 const ROW_KILLERS = [
   { signal: 'VWAP', symbol: 'QCOM', threshold: 'holds above the daily VWAP' },
-  { signal: 'MACD_5M', symbol: 'QCOM', threshold: 'the 5-minute MACD shows a positive histogram signal' },
+  { signal: 'MACD_5M', symbol: 'QCOM', threshold: 'the 5-minute MACD turns positive' },
   { signal: 'RSI_5M', symbol: 'QCOM', threshold: 'if the 5-minute RSI crosses back above 50' },
   { signal: 'VWAP_5M', symbol: 'CRWD', threshold: 'if it reclaims the 5-minute VWAP' },
   { signal: 'RVOL', symbol: 'CRWD', threshold: 'and RVOL sustains above 1.2x' },
@@ -200,6 +205,7 @@ const ROW_KILLERS = [
   { signal: 'MACD_CROSS', symbol: 'CRWD', threshold: 'if MACD crosses above its signal line' },
   { signal: 'BB_PCT_B', symbol: 'CRWD', threshold: 'if %B pushes above 0.8' },
   { signal: 'RS_PERCENTILE', symbol: 'CRWD', threshold: 'if rsPercentile clears 80' },
+  { signal: 'MACD_HISTOGRAM', symbol: 'QCOM', threshold: 'if the histogram flips positive' },
 ];
 
 describe('A-1 mutation — deleting any single vocabulary row makes its fixture go wrongly green', () => {
@@ -224,6 +230,102 @@ describe('A-1 mutation — deleting any single vocabulary row makes its fixture 
         .toEqual({ ok: true });
     });
   }
+});
+
+// ---------------------------------------------------------------------------
+// A-3 — the §2 review's confirmed escapes, each pinned shut
+// ---------------------------------------------------------------------------
+
+describe('A-3 — review regressions: the forms that used to slip past the table', () => {
+  const bench = (t) => lintThreshold({ threshold: t, symbol: 'QCOM', present: sep14Tick() });
+  const held = (t) => lintThreshold({ threshold: t, symbol: 'CRWD', present: sep14Tick() });
+
+  it('L1-F1 — ANY intraday-minute spelling is caught, not just "5-minute"', () => {
+    // Each of these was ACCEPTED before the review: the 5-minute rows required
+    // the literal "min" + whitespace, so the general daily row claimed the
+    // mention and the bench name made it green.
+    for (const t of [
+      'If the 5m MACD turns positive',
+      'If the five-minute MACD turns positive',
+      'If the 5-min. MACD turns positive',
+      'If MACD on the 5-minute chart turns positive',
+      'If the 15-minute MACD turns positive',
+      'If the intraday MACD turns positive',
+    ]) expect(bench(t), t).toEqual({ ok: false, absent: ['MACD_5M'] });
+
+    for (const t of ['If the 5m RSI crosses back above 50', 'If the five minute RSI crosses 50', 'If RSI on the 5-minute chart crosses 50']) {
+      expect(bench(t), t).toEqual({ ok: false, absent: ['RSI_5M'] });
+    }
+    for (const t of ['If it reclaims the 5m VWAP', 'If it reclaims the five-minute VWAP']) {
+      expect(held(t), t).toEqual({ ok: false, absent: ['VWAP_5M'] });
+    }
+  });
+
+  it('L1-F2 — the RENDERED senses of "20-day" are accepted; the level sense is still rejected', () => {
+    // The resistance the prompt renders IS a 20-bar swing cluster, the Range
+    // cell IS a 20-bar range, and RVOL IS today's volume over the 20-day
+    // average volume — so these three name what the tick held.
+    for (const t of [
+      'If QCOM breaks above its 20-day high of 181.62',
+      'If it clears the top of the 20-day range',
+      'If volume holds above its 20-day average',
+      'If RVOL holds above its 20-day average volume',
+    ]) expect(bench(t), t).toEqual({ ok: true });
+
+    // …and the LEVEL sense, which no class is shown, still rejects
+    for (const t of [
+      'If it holds above the 20-day on the next test',
+      'If it holds above the 20-DMA',
+      'If it holds above SMA-20',
+      'If it holds above the twenty-day',
+    ]) expect(bench(t), t).toEqual({ ok: false, absent: ['SMA_20_LEVEL'] });
+  });
+
+  it('L1-F3 — the ordinary synonyms of each claimed signal are claimed too', () => {
+    const cases = [
+      ['If the relative strength index pulls back below 75', 'RSI'],
+      ['If RSI14 pulls back below 75', 'RSI'],
+      ['If rel volume sustains above 1.2x', 'RVOL'],
+      ['If R-VOL sustains above 1.2x', 'RVOL'],
+      ['If relative-volume sustains above 1.2x', 'RVOL'],
+      ['If the volume-ratio sustains above 1.2', 'RVOL'],
+      ['If its RS percentile clears 80', 'RS_PERCENTILE'],
+      ['If percent-B pushes above 0.8', 'BB_PCT_B'],
+      ['If both VWAPs align', 'VWAP'],
+    ];
+    for (const [t, signal] of cases) expect(held(t), t).toEqual({ ok: false, absent: [signal] });
+  });
+
+  it('L1-F4 — a MACD HISTOGRAM value is its own absence, on any timeframe and in any word order', () => {
+    // The eval system prompt hands the model this exact phrase for a DAILY
+    // strategy (S3, "MACD histogram no longer contracting") while no histogram
+    // VALUE is rendered on any timeframe — so the verdict was always right and
+    // only the NAME was wrong. The shadow log the founder reads before the
+    // flip now says which signal was actually named.
+    expect(bench('If the MACD histogram flips positive')).toEqual({ ok: false, absent: ['MACD_HISTOGRAM'] });
+    expect(bench('If MACD-H flips positive')).toEqual({ ok: false, absent: ['MACD_HISTOGRAM'] });
+    // the adjacency flip is gone: the same promise, phrased two ways, one verdict
+    expect(bench('If MACD crosses above signal and its histogram expands')).toEqual({ ok: false, absent: ['MACD_HISTOGRAM'] });
+    // and it is never mislabelled as a 5-minute violation
+    expect(namedSignals('If the MACD histogram flips positive')).not.toContain('MACD_5M');
+  });
+
+  it('L1-F6 / L2-F7 — the symbol is normalised on both sides; a case or space slip is not a total drop', () => {
+    const present = sep14Tick();
+    for (const symbol of ['QCOM', 'qcom', ' QCOM ', 'QcOm']) {
+      expect(lintThreshold({ threshold: 'If RVOL sustains above 1.2x', symbol, present }), symbol).toEqual({ ok: true });
+    }
+    // a non-string symbol normalises too, rather than dropping everything
+    expect(lintThreshold({ threshold: 'If RVOL sustains above 1.2x', symbol: { toString: () => 'QCOM' }, present })).toEqual({ ok: true });
+    // …and a genuinely unknown symbol still has nothing present
+    expect(lintThreshold({ threshold: 'If RVOL sustains above 1.2x', symbol: 'ZZZZ', present }))
+      .toEqual({ ok: false, absent: ['RVOL'] });
+  });
+
+  it('the ignored-span row consumes and names nothing — it can never appear in `absent`', () => {
+    expect(namedSignals('its 20-day high')).toEqual([]);
+    expect(THRESHOLD_SIGNAL_VOCABULARY.every((r) => typeof r.signal === 'string' && r.signal)).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -290,11 +392,27 @@ describe('A-2 — buildPresentSignals: one row per signal per class (Phase 0 §5
     expect(zeroDev.get('S').has('VWAP')).toBe(true); // 0 is a reading
   });
 
-  it('HELD: NR7 rides the field being CARRIED — `false` is a measurement, not an absence', () => {
-    const p = buildPresentSignals({ rankingsMap: { S: { nr7Flag: false } }, heldSymbols: ['S'] });
-    expect(p.get('S').has('NR7')).toBe(true);
-    const none = buildPresentSignals({ rankingsMap: { S: {} }, heldSymbols: ['S'] });
-    expect(none.get('S').has('NR7')).toBe(false);
+  it('HELD: NR7 rides TRUTHY, mirroring buildMomentumSnapshot — there is no "NR7: NO" line to read', () => {
+    // Review L1-F5 / L2-F6: the renderer is `if (rankInfo?.nr7Flag)`, so a
+    // `false` flag renders nothing and the agent was shown no NR7. (The
+    // evidence STAMP records `false`, but that answers a different question.)
+    expect(buildPresentSignals({ rankingsMap: { S: { nr7Flag: true } }, heldSymbols: ['S'] }).get('S').has('NR7')).toBe(true);
+    expect(buildPresentSignals({ rankingsMap: { S: { nr7Flag: false } }, heldSymbols: ['S'] }).get('S').has('NR7')).toBe(false);
+    expect(buildPresentSignals({ rankingsMap: { S: {} }, heldSymbols: ['S'] }).get('S').has('NR7')).toBe(false);
+  });
+
+  it('LEVELS rides a non-null SIDE, not the object — both renderers emit the empty form otherwise', () => {
+    // levelsCell returns '-' and renderBenchLevelsLine returns null when the
+    // object exists with both sides null (review L1-F5).
+    const has = (levels, cls = 'heldSymbols') => buildPresentSignals({ rankingsMap: { S: { levels } }, [cls]: ['S'] }).get('S').has('LEVELS');
+    expect(has({ nearestResistance: 181.62 })).toBe(true);
+    expect(has({ nearestSupport: 171.4 })).toBe(true);
+    expect(has({ nearestSupport: null, nearestResistance: null })).toBe(false);
+    expect(has({})).toBe(false);
+    expect(has(null)).toBe(false);
+    // …and the same on the bench side
+    expect(has({ nearestResistance: 181.62 }, 'benchSymbols')).toBe(true);
+    expect(has({}, 'benchSymbols')).toBe(false);
   });
 
   it('BENCH, everything present: RSI, MACD_CROSS, BB_PCT_B, RVOL, RS_PERCENTILE, LEVELS — and NEVER VWAP', () => {
@@ -340,7 +458,10 @@ describe('A-2 — buildPresentSignals: one row per signal per class (Phase 0 §5
       // the maximal input: every field on every doc, both classes
       buildPresentSignals({
         momentumData: { vwap: { A: { vwapDeviation: 1 }, B: { vwapDeviation: 1 } }, regimes: { A: 'choppy', B: 'choppy' } },
-        rankingsMap: { A: { bBandwidthPercentile: 1, nr7Flag: true, levels: {} }, B: { bBandwidthPercentile: 1, nr7Flag: true, levels: {} } },
+        rankingsMap: {
+          A: { bBandwidthPercentile: 1, nr7Flag: true, levels: { nearestSupport: 1, nearestResistance: 2 } },
+          B: { bBandwidthPercentile: 1, nr7Flag: true, levels: { nearestSupport: 1, nearestResistance: 2 } },
+        },
         techScoresMap: {
           A: { bbPercentB: 1, volumeProfile: { ratio: 1 }, factors: { rsi: 1, macdAboveSignal: true, rsPercentile: 1 } },
           B: { bbPercentB: 1, volumeProfile: { ratio: 1 }, factors: { rsi: 1, macdAboveSignal: true, rsPercentile: 1 } },
@@ -349,7 +470,7 @@ describe('A-2 — buildPresentSignals: one row per signal per class (Phase 0 §5
         benchSymbols: ['B'],
       }),
     ];
-    expect(NEVER_PRESENT_SIGNALS).toEqual(['MACD_5M', 'RSI_5M', 'VWAP_5M', 'SMA_20_LEVEL']);
+    expect(NEVER_PRESENT_SIGNALS).toEqual(['MACD_5M', 'RSI_5M', 'VWAP_5M', 'SMA_20_LEVEL', 'MACD_HISTOGRAM']);
     for (const map of maps) {
       for (const [sym, set] of map) {
         for (const never of NEVER_PRESENT_SIGNALS) {
