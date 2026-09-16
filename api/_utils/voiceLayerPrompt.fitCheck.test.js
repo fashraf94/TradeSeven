@@ -5,11 +5,20 @@
 // A-1: each menu line carries its policy annotations, so the model can see the
 //      dial it is choosing on instead of seven bare strings (Phase 0 Q3).
 //
-// THE FLAG-OFF INVARIANT IS THE POINT OF THIS FILE. The goldens in
-// __fixtures__/voiceLayerPrompt.fitCheck.preBuild.golden.json were captured by
-// rendering this module at the commit BEFORE commit A landed — they are not
-// regenerated from the post-change code. A golden regenerated from the code it
-// guards proves nothing.
+// THE FLAG-OFF INVARIANT IS THE POINT OF THIS FILE, and it is proved at two
+// resolutions. The two SLICE goldens (the archetype block, the phase rules)
+// read as prose and say which bytes moved; the 147 WHOLE-PROMPT HASHES at the
+// bottom cover every mode x grounded x archetype x phase the build can reach,
+// so a mutation ANYWHERE in the assembly reds — the slices alone cover only
+// ~41% of one battle prompt, which is narrower than this header used to claim
+// (§2 review finding B2).
+//
+// Every golden in __fixtures__/voiceLayerPrompt.fitCheck.preBuild.golden.json
+// was captured from the TRUE PRE-BUILD module — the slices by rendering this
+// file at the commit before commit A, the hashes from
+// `git show origin/main:api/_utils/voiceLayerPrompt.js` under the same
+// market-state mock. None was regenerated from the post-change code. A golden
+// regenerated from the code it guards proves nothing.
 //
 // Both slices are deterministic: neither the archetype block nor the phase-rule
 // block depends on market state or the clock, so no time mock is needed here.
@@ -32,6 +41,17 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   get ARCHETYPE_INTEGRITY_MODE() { return archetypeFlag.mode; },
   get DIRECTIVE_FIT_CHECK_ENABLED() { return fitCheck.on; },
+}));
+
+// The whole-prompt rows below hash the ENTIRE assembled prompt, which reaches
+// buildBattleState and therefore the clock. Pin the market state so the hash is
+// a function of the code alone — the same mock the pre-build capture ran under.
+const { mockMarketState } = vi.hoisted(() => ({
+  mockMarketState: { isOpen: true, state: 'OPEN', nextOpenTime: new Date('2099-12-31T14:30:00Z'), isEarlyClose: false },
+}));
+vi.mock('./marketSchedule.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  getMarketState: () => ({ ...mockMarketState }),
 }));
 
 import { buildVoiceLayerPrompt, buildFirstMessagePrompt } from './voiceLayerPrompt.js';
@@ -332,5 +352,105 @@ describe('B-1 — the confirmation rule: flag-ON quotes the filing', () => {
     });
     expect(first).toContain(SHIPPED_ACK);
     expect(first).not.toContain('Say the canonical text word for word;');
+  });
+});
+
+// ============ THE WHOLE-PROMPT FLAG-OFF GOLDEN (review finding B2) ============
+//
+// The two slice goldens above cover the archetype block and the phase rules —
+// together about 41% of one battle prompt, and none of the other modes or the
+// grounded variant. That is narrower than this file's own header claims, and a
+// mutation anywhere else in the assembly (the proposal block, the user-levers
+// block, TWO_LEG_SIGNAL_RULE, any review/workshop block) would have left them
+// green.
+//
+// So: a sha256 of the ENTIRE assembled prompt for every
+// (mode × grounded × archetype × phase) the build could possibly reach, plus
+// buildFirstMessagePrompt — 147 hashes, all captured from the TRUE PRE-BUILD
+// module (`git show origin/main:api/_utils/voiceLayerPrompt.js`, rendered under
+// this same market-state mock and then deleted). Not regenerated from the code
+// they guard.
+//
+// `strategist` is in the archetype list on purpose: it is unknown, so the
+// integrity block is null and the whole apparatus must stay absent.
+
+import { createHash } from 'node:crypto';
+
+const sha = (text) => createHash('sha256').update(text, 'utf8').digest('hex');
+const WORKSHOP_CTX = { previousThesis: null, sessionTurnCount: 0, messagesRemaining: 24, messageBudget: 25, seedContext: null };
+const HASH_GOLDEN = PRE_BUILD.preBuildWholePromptSha256;
+
+const wholePromptCases = () => {
+  const rows = [];
+  for (const archetype of [...ARCHETYPES, 'strategist']) {
+    for (const gamesPlayed of [1, 12, 40]) {
+      const agent = { name: 'Gemma', archetype, stats: { gamesPlayed, wins: 0, losses: 0 } };
+      for (const grounded of [false, true]) {
+        for (const mode of ['battle', 'review', 'workshop']) {
+          const args = {
+            agent, battle: BATTLE, elicitationTarget: ELICIT, conversationHistory: [],
+            anchorContext: null, marketSnapshot: null, mode, grounded,
+          };
+          if (mode === 'review') { args.dailyReviews = []; args.dailyGrades = []; args.elicitationTarget = null; }
+          if (mode === 'workshop') { args.workshopContext = WORKSHOP_CTX; }
+          rows.push([`${mode}|grounded=${grounded}|${archetype}|g${gamesPlayed}`, () => buildVoiceLayerPrompt(args)]);
+        }
+      }
+      rows.push([`firstMessage|${archetype}|g${gamesPlayed}`, () => buildFirstMessagePrompt({
+        agent, battle: BATTLE, anchorContext: null, marketSnapshot: null,
+      })]);
+    }
+  }
+  return rows;
+};
+
+describe('B2 — whole-prompt flag-OFF golden: 147 pre-build hashes', () => {
+  it('the fixture covers every case this suite renders, and nothing is silently skipped', () => {
+    const keys = wholePromptCases().map(([k]) => k).sort();
+    expect(keys).toHaveLength(147);
+    expect(Object.keys(HASH_GOLDEN).sort()).toEqual(keys);
+  });
+
+  it.each(wholePromptCases())('%s is byte-identical to the pre-build module', (key, render) => {
+    fitCheck.on = false;
+    expect(sha(render())).toBe(HASH_GOLDEN[key]);
+  });
+
+  it('MUTATION CHECK — the flag moves exactly the 39 prompts it should, and no others', () => {
+    // This row was WRONG on first write (it expected 18) and the failure taught
+    // the real shape, which is worth pinning precisely because it is the
+    // flip-order hazard in one assertion:
+    //
+    //   - the ACKNOWLEDGEMENT transform rides PHASE_RULES, so it reaches every
+    //     UNGROUNDED battle prompt — including `strategist`, where no menu
+    //     renders at all (7 archetypes x 3 phases = 21);
+    //   - the MENU annotations ride buildArchetypeIntegrityBlock, which is
+    //     pushed on BOTH the grounded and ungrounded branches, so they reach
+    //     the GROUNDED battle prompt too (6 known archetypes x 3 phases = 18).
+    //
+    // That second bullet is the hazard: under grounding the model would be
+    // shown the annotated menu while its confirmation rule still says "Do not
+    // describe what you will do with it" — the menu half arrives, the quote
+    // half does not, and the gate demands the quote anyway. If anyone ever
+    // makes the grounded prompt carry the acknowledgement too, THIS row is
+    // what tells them the hazard is closed.
+    fitCheck.on = true;
+    const moved = [];
+    for (const [key, render] of wholePromptCases()) {
+      if (sha(render()) !== HASH_GOLDEN[key]) moved.push(key);
+    }
+    const ackReaches = wholePromptCases().map(([k]) => k)
+      .filter((k) => k.startsWith('battle|grounded=false|'));
+    const menuOnlyReaches = wholePromptCases().map(([k]) => k)
+      .filter((k) => k.startsWith('battle|grounded=true|') && !k.includes('|strategist|'));
+    expect(ackReaches).toHaveLength(21);
+    expect(menuOnlyReaches).toHaveLength(18);
+    expect(moved.sort()).toEqual([...ackReaches, ...menuOnlyReaches].sort());
+    // Nothing outside battle mode moves, at either grounding: review, workshop
+    // and the first-message prompt are out of the transform's scope by design.
+    expect(moved.filter((k) => !k.startsWith('battle|'))).toEqual([]);
+    // And an unknown archetype under grounding stays byte-identical: no menu,
+    // no acknowledgement, nothing.
+    expect(moved).not.toContain('battle|grounded=true|strategist|g1');
   });
 });

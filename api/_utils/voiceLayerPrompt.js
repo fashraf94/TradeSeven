@@ -922,8 +922,16 @@ const PHASE_RULES = {
 // (voiceLayerGrounding.js: "The interface states what was filed. Do not
 // describe what you will do with it.").
 //
-// SCOPE. Applied where the shipped battle-chat prompt is assembled, and only
-// there — that is the one path the gate runs on. buildFirstMessagePrompt also
+// SCOPE, STATED CORRECTLY. Applied where the SHIPPED battle-chat prompt is
+// assembled, and only there. That is NOT the only path the gate runs on: the
+// gate is called on every battle-mode chat turn (chat.js), grounded or not. An
+// earlier draft of this comment claimed otherwise and was wrong — the
+// consequence is the flip-order hazard documented at DIRECTIVE_FIT_CHECK_ENABLED
+// (featureFlags.js) and in build report 20260916 §6 D-3: the grounded prompt
+// gets the annotated menu but NOT this quote instruction, and its own
+// confirmation rule says the opposite, so the two flags must not be lit
+// together. Safe today only because VOICE_GROUNDING_MODE is 'shadow'.
+// buildFirstMessagePrompt also
 // renders PHASE_RULES, but its own output format pins `hasDirective` false and
 // `directive` null, so no confirmation exists to acknowledge and no gate can
 // commit; it keeps today's text at both flag states. The confirmation

@@ -828,6 +828,21 @@ export const ARCHETYPE_INTEGRITY_MODE = 'enforce';
  * today, is coherent. The hazard is the ORDER, and it belongs to whichever of
  * the two walks moves second.
  *
+ * And note what does NOT open it: the VOICE_GROUNDING_CANARY_UIDS env var
+ * cannot promote anyone on its own. resolveVoiceGroundingMode consults that
+ * list ONLY when the base mode is already 'canary', so while the constant
+ * below reads 'shadow' every uid resolves to 'shadow' whatever the env says
+ * (proved exhaustively over base × env × uid in the §2 review, 12/12). Reaching
+ * the hazard therefore takes a deliberate CODE change to the constant below —
+ * a PR someone reviews — not an environment edit. That is the whole mitigation,
+ * and it is worth knowing it is a real one.
+ *
+ * The residual risk is still that this guarantee is a live-value dependency on
+ * another flag, held by this comment and one test row rather than by
+ * construction. The §2 review's recommendation, carried here so the flipper
+ * sees it: prefer shipping one of the two structural fixes BEFORE either walk
+ * moves, rather than relying on the ordering contract.
+ *
  * The grounded rule was NOT changed here: voiceLayerGrounding.js is outside
  * this build's file list and the grounding walk is out of its scope. The limit
  * is pinned as executable documentation in

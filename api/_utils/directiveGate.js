@@ -25,6 +25,14 @@ import { parseVoiceLayerResponse } from './gemmaClient.js';
 // exchange, so the string is ONE source for the server's response and both
 // surfaces. Re-exported here under its shipped name.
 import { NO_CHANGE_STATUS_LINE } from '../../src/data/decisionRecord.js';
+// BUILD_RULES §4 — an api/ -> src/ import, so it needs a DEPENDENCY-SURFACE
+// GUARD: directiveGate.test.js's own import of this module IS that guard. It
+// explodes in the Node test env the day a browser dependency enters this
+// graph, and it MUST NEVER BE MOCKED — a `vi.mock` of featureFlags.js added to
+// that file would silently disarm it. featureFlags.js is zero-import today, so
+// the graph stays Node-clean (the whole graph is six modules, none with a bare
+// specifier). Read at CALL time inside evaluate(), never captured at module
+// scope.
 import { DIRECTIVE_FIT_CHECK_ENABLED } from '../../src/config/featureFlags.js';
 // The ONE sanitize path for chat-turn free text — the same transform chat.js
 // applies to `userMessage`, so the model's own text on the record is cleaned
@@ -97,8 +105,22 @@ function readProposal(parsed) {
 // re-cases the canonical sentence has paraphrased it).
 //
 // A paraphrase that files nothing is the mechanism working, not a failure: the
-// turn becomes the deliberate null `fit_mismatch` and the player gets the same
-// code-owned "no change" line every other null-write turn gets.
+// turn becomes the deliberate null `fit_mismatch`, and on the wire it reports
+// exactly what every other null-write turn reports — renderDirectiveStatus
+// derives 'no_change' + NO_CHANGE_STATUS_LINE from hasDirective alone.
+//
+// WHAT THE PLAYER ACTUALLY SEES TODAY IS LESS THAN THAT, and the honest place
+// to say so is here. Both client surfaces gate that line on the GROUNDING
+// marker, not on the gate: AgentChat.jsx needs `_grounded`
+// (= exchange.groundingVersion, stamped by chat.js only when the grounded
+// prompt was sent) and useArenaEngine.js reads `grounded ? statusLine : null`.
+// VOICE_GROUNDING_MODE is 'shadow', so nobody is grounded, so on the very path
+// this check fires the line does not render: the player sees the over-claiming
+// reply with no card under it and no "no change" line either. Strictly better
+// than the incident — a wrong directive is no longer FILED, and the trading
+// brain never reads one — but not yet honest on screen. The grounding walk
+// closes it; until then it is a stated limit, not a claim.
+// (Build report 20260916 §7, findings A7 / C2.)
 const normalizeForQuote = (text) => text.replace(/\s+/g, ' ').trim();
 
 function replyQuotesCanonical(replyText, canonical) {
