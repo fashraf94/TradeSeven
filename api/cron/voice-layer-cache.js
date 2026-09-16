@@ -599,7 +599,12 @@ export function buildScoutAlerts(watchlist, rankingsMap, techScoresMap, archetyp
     if (!ranking && !techScore) return;
 
     const factors = techScore?.factors || {};
-    const rsPercentile = factors.rsPercentile ?? 50;
+    // The last `?? 50` on this path (the Sep 9 F-3 fix removed the portfolio
+    // brief writer's; D-120 gated the verdict beside it on the RAW reading).
+    // `null >= 85` is false exactly as `50 >= 85` was, so the rs_breakout gate
+    // below is unchanged — what changes is that no fabricated median survives
+    // to be rounded into a headline.
+    const rsPercentile = factors.rsPercentile ?? null;
     // F3.1: null sentinel for missing technical score (matches portfolio
     // brief writer). Filter predicates use `typeof === 'number'` to
     // explicitly exclude null rather than relying on `>= 75` being false

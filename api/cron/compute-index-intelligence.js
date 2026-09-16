@@ -1003,7 +1003,14 @@ export default async function handler(req, res) {
         // factors.upDayVolRatio (up-day vs down-day directional bias).
         const vp = calculateVolumeProfile(volumes, 20);
 
-        const rsPercentile = rsPercentileMap[d.sym] ?? 50;
+        // THE PLACEHOLDER, REMOVED (Phase 0 §5, "observable, but a median can be
+        // a fabrication"). A symbol dropped from the RS sort — no rs20, or a
+        // non-finite change (:920-923) — has NO relative-strength measurement,
+        // and used to be written as `50`, which the eval bench block then
+        // rendered to the decider as `rsPercentile=50 (outperforming)`. The
+        // READING is now null and the bench block's own null-guard omits the
+        // line (agentEvalPromptAssembly.js:1668, read-only).
+        const rsPercentile = rsPercentileMap[d.sym] ?? null;
         const sectorRSPercentile = sectorRSMap[d.sym] ?? null;
         // The unadjusted series, for the price-vs-SMA flags only. `?? null`, not
         // `?? o.close`: `mapDailyRows` already yields `rawClose: null` when the
@@ -1021,7 +1028,14 @@ export default async function handler(req, res) {
           lows,
           volumes,
           spyCloses,
-          rsPercentile,
+          // THE SCORING INPUT IS NOT THE PUBLISHED READING. computeTechnicalScore
+          // turns this into a 0-22 band by arithmetic (indexIntelligence.js:413),
+          // so a null would score an unmeasured symbol 0/22 — worst in the
+          // universe — and silently demote it in technicalRank, compositeScore
+          // and the baggerBombFit that builds the agent's hotBench. It keeps the
+          // neutral midpoint it has always had, so NO score, rank or menu moves
+          // on this commit; the honest null is restored onto `factors` below.
+          rsPercentile: rsPercentile ?? 50,
           rsTrend: d.rsTrend,
           technicals: { rsi, sma20, sma50, sma200, macd: macdEnhanced },
           sectorRSPercentile,
@@ -1099,6 +1113,14 @@ export default async function handler(req, res) {
           momentum,
           recentAction,
           ...scoreResult,
+          // The published factor is the READING (null when unmeasured), not
+          // the neutral number the 0-22 band was computed from. One source for
+          // what the decider is SHOWN; the scoring arithmetic is a separate
+          // concern and is unchanged. `sectorRSPercentile` is left exactly as
+          // the scorer resolved it — its own fall-through to the neutral input
+          // is the same placeholder one field over, reported for separate
+          // tasking rather than widened into here (BUILD_RULES §3).
+          factors: { ...scoreResult.factors, rsPercentile },
         });
       }
 
@@ -1295,8 +1317,15 @@ export default async function handler(req, res) {
         // Build technical factor scores (normalized to 0-100 for game-mode computation)
         const techFactors = tech.factors || {};
         const technicalFactorScores = {
-          rsVsSpy: techFactors.rsPercentile ?? 50,
-          sectorRS: techFactors.sectorRSPercentile ?? techFactors.rsPercentile ?? 50,
+          // `?? null` rather than `?? 50`: computeWeightedScore SKIPS a null
+          // factor and redistributes its weight across the ones that have
+          // readings (gameModeScoring.js:58-72) — the module's own way of
+          // saying "no reading", and strictly better than diluting the
+          // composite toward a median nobody measured. An unmeasured symbol's
+          // baggerBombFit therefore moves: its technical half is now the
+          // average of the factors it HAS.
+          rsVsSpy: techFactors.rsPercentile ?? null,
+          sectorRS: techFactors.sectorRSPercentile ?? techFactors.rsPercentile ?? null,
           smaPosition: tech.smaScore != null ? (tech.smaScore / 18) * 100 : 50,
           macd: tech.macdScore != null ? (tech.macdScore / 12) * 100 : 50,
           weekHighProx: tech.highProximity != null ? (tech.highProximity / 12) * 100 : 50,
