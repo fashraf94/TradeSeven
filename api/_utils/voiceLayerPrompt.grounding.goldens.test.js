@@ -38,6 +38,30 @@
 //   GENERATE_VOICE_GROUNDING_OFF_GOLDENS=1 ./node_modules/.bin/vitest run \
 //     api/_utils/voiceLayerPrompt.grounding.goldens.test.js
 //
+// TWO THINGS A LATER READER NEEDS (2026-09-16, the threshold-lint arc):
+//
+// 1. THE ONE APPLIED CORRECTION. Commit D of that arc changed ONE sentence of
+//    DATA_CONFIDENCE_RULE — dropping "or the prior session when EODHD's data
+//    hasn't refreshed", a regime the June 12 freshness gate abolished — which
+//    these goldens pin. It was applied to voiceGroundingOffGoldens.json IN
+//    PLACE, as a literal substring replacement over that one sentence: 8 of
+//    the 16 captured prompts carry the rule, 8 changed, −768 bytes = 8 × the
+//    sentence delta, and NOTHING ELSE in the file moved. Every other byte is
+//    still the 70ba90a1 capture, so the dark contract this file exists for is
+//    intact: it still proves the GROUNDING arc changed no byte at 'off'. A
+//    whole-file regeneration from this tree would have re-baselined that
+//    contract onto whatever the grounded module renders — the exact thing the
+//    paragraph above forbids — so it was not done.
+//
+// 2. THE RECIPE ABOVE NO LONGER RUNS AS WRITTEN, and did not at that HEAD. The
+//    harness has grown past its own snapshot: line 80 imports
+//    ELICITATION_INSTRUCTIONS from ../agent/chat.js, which 70ba90a1 does not
+//    export, so `renderAll` throws "Cannot convert undefined or null to
+//    object" inside a `git archive 70ba90a1` tree and all 18 rows skip.
+//    Verified in a scratch extraction. Repairing the recipe (pinning the
+//    snapshot forward, or sourcing that one table from a fixture) is reported
+//    for separate tasking — BUILD_RULES §3.
+//
 // Dependency-surface guard (BUILD_RULES §4): this file's import of the prompt
 // module is the runtime guard that it stays Node-clean. Never mock it.
 
@@ -239,7 +263,7 @@ afterAll(() => {
 // bytes it just wrote rather than against a file that did not exist at load.
 const loadGoldens = () => (existsSync(GOLDENS_PATH) ? JSON.parse(readFileSync(GOLDENS_PATH, 'utf8')) : null);
 
-describe("Voice-layer grounding — 'off' is byte-identical to the pre-grounding prompt (goldens @ 70ba90a1)", () => {
+describe("Voice-layer grounding — 'off' is byte-identical to the pre-grounding prompt (goldens @ 70ba90a1 + the 2026-09-16 DATA_CONFIDENCE_RULE correction)", () => {
   it('the golden file exists and names every surface this file renders (and nothing else)', () => {
     const GOLDENS = loadGoldens();
     expect(GOLDENS, 'run the regeneration command in the header, from the 70ba90a1 snapshot').not.toBeNull();

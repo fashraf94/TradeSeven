@@ -177,7 +177,7 @@ export const TRADE_DECISION_TOOL = {
             },
             threshold: {
               type: 'string',
-              description: 'One short sentence stating the specific condition that would make you act. Must be specific. "If it holds above the 20-day on the next test" is specific. "If conditions improve" is too vague. Example: "If it holds above the 20-day on the next test, I would rotate it into Core."',
+              description: 'One short sentence stating the specific condition that would make you act. Must be specific, and built on something you were shown this check. "If it holds above +0.5x ATR through the next check" is specific. "If conditions improve" is too vague. Example: "If it holds above +0.5x ATR through the next check, I would rotate it into Core."',
             },
             rationale: {
               type: 'string',

@@ -3101,11 +3101,17 @@ describe('DATA_CONFIDENCE_RULE — Phase 5A prompt-vs-response framing', () => {
     expect(out).not.toContain('Percentile and rank values may be paraphrased as bands ("top decile," "best in sector") in responses; raw indicator values');
   });
 
-  // Fix v2 — intraday clause updated for latest-session semantics. Fix v1's
-  // wording said "today's session positioning" — incorrect when EODHD's
-  // /intraday lag means the data is from the prior session. Updated wording
-  // covers both regimes explicitly.
-  it('battle prompt embeds the Fix v2 intraday clause with latest-session semantics', () => {
+  // Fix v2 (May 2026) widened the intraday clause to "the latest available
+  // session — typically today during market hours, or the prior session when
+  // EODHD's data hasn't refreshed", because the /intraday lag meant the data
+  // could be yesterday's. Fix v3 (2026-09-16, threshold-lint commit D) NARROWS
+  // it again: since the June 12 freshness gate (agentVwapFloor.js
+  // isVwapSessionUsable, `sessionDate === todayET`) a prior session is never
+  // published — the entry is discarded, not carried — so the second half of
+  // that sentence described a state the platform no longer produces. The pin
+  // moves with the copy (BUILD_RULES §2) and now asserts BOTH halves: the
+  // current-session claim present, the abolished one absent.
+  it('battle prompt embeds the Fix v3 intraday clause — the current session, and no prior-session regime', () => {
     const out = buildVoiceLayerPrompt({
       agent: minimalAgent,
       battle: minimalBattle,
@@ -3117,8 +3123,11 @@ describe('DATA_CONFIDENCE_RULE — Phase 5A prompt-vs-response framing', () => {
     });
 
     expect(out).toContain('Intraday signals (session VWAP, 5-min SMA20)');
-    expect(out).toContain('describe the latest available session');
-    expect(out).toContain("typically today during market hours, or the prior session when EODHD's data hasn't refreshed");
+    expect(out).toContain('describe the current trading session');
+    // the abolished state, gone from the prompt
+    expect(out).not.toContain('the latest available session');
+    expect(out).not.toContain('prior session');
+    expect(out).not.toContain("EODHD's data hasn't refreshed");
     expect(out).toContain('Paraphrase as "holding above session VWAP"');
     expect(out).toContain('"session momentum is constructive,"');
     expect(out).toContain('not the exact deviation percentage');
