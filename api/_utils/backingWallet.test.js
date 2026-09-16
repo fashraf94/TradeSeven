@@ -41,6 +41,7 @@ import {
   debitStake,
   creditPayout,
   creditRefund,
+  recordStakeLoss,
   touchWallet,
 } from './backingWallet.js';
 import * as WALLET_MODULE from './backingWallet.js';
@@ -81,7 +82,14 @@ function assertLedgerAgrees(store, walletId) {
   const entries = entriesOf(store, walletId);
 
   const ALLOWANCE_TYPES = [ENTRY_TYPES.ALLOWANCE, ENTRY_TYPES.STAKE, ENTRY_TYPES.EXPIRY];
-  const RECORD_TYPES = [ENTRY_TYPES.STAKE, ENTRY_TYPES.PAYOUT, ENTRY_TYPES.REFUND];
+  // careerNet is the whole of Section 2's Net BP already. The PR 2 carry-in E2
+  // `loss` entry is DELIBERATELY ABSENT from this fold: it is the MONTH
+  // ATTRIBUTION of a stake whose debit careerNet already carries, so counting it
+  // here would double-debit the field (see `recordStakeLoss`).
+  const CAREER_TYPES = [ENTRY_TYPES.STAKE, ENTRY_TYPES.PAYOUT, ENTRY_TYPES.REFUND];
+  // The season bucket folds every record-affecting type that CARRIES a monthKey,
+  // `loss` included: that is the whole point of E2.
+  const SEASON_TYPES = [ENTRY_TYPES.STAKE, ENTRY_TYPES.PAYOUT, ENTRY_TYPES.REFUND, ENTRY_TYPES.LOSS];
 
   const remaining = entries
     .filter((e) => ALLOWANCE_TYPES.includes(e.type) && e.weekKey === wallet.lastAllowanceWeek)
@@ -89,13 +97,13 @@ function assertLedgerAgrees(store, walletId) {
   expect(wallet.allowanceRemaining, 'allowanceRemaining ≠ Σ this week\'s allowance-affecting entries').toBe(remaining);
 
   const net = entries
-    .filter((e) => RECORD_TYPES.includes(e.type))
+    .filter((e) => CAREER_TYPES.includes(e.type))
     .reduce((sum, e) => sum + e.delta, 0);
   expect(wallet.careerNet, 'careerNet ≠ Σ payouts + Σ refunds − Σ stakes (§2)').toBe(net);
 
   const seasonNet = {};
   for (const e of entries) {
-    if (!RECORD_TYPES.includes(e.type) || typeof e.monthKey !== 'string') continue;
+    if (!SEASON_TYPES.includes(e.type) || typeof e.monthKey !== 'string') continue;
     seasonNet[e.monthKey] = (seasonNet[e.monthKey] ?? 0) + e.delta;
   }
   for (const [monthKey, expected] of Object.entries(seasonNet)) {
@@ -990,9 +998,11 @@ describe('the module contract itself — surface, names, and the branches no fix
     expect(BACKING_WALLET_ENTRIES_SUBCOLLECTION).toBe('entries');
   });
 
-  it('ENTRY_TYPES pins its five wire values and is frozen', () => {
+  it('ENTRY_TYPES pins its six wire values and is frozen', () => {
+    // The five of Section 6, plus `loss` - the PR 2 carry-in E2 attribution.
     expect(ENTRY_TYPES).toEqual({
       ALLOWANCE: 'allowance', STAKE: 'stake', PAYOUT: 'payout', REFUND: 'refund', EXPIRY: 'expiry',
+      LOSS: 'loss',
     });
     expect(Object.isFrozen(ENTRY_TYPES)).toBe(true);
     // The five prefixes must stay mutually distinguishable: `${type}:${id}` is
@@ -1001,7 +1011,7 @@ describe('the module contract itself — surface, names, and the branches no fix
     expect(new Set(prefixes).size).toBe(prefixes.length);
   });
 
-  it('exports exactly the PR 1 surface', () => {
+  it('exports exactly the PR 1 surface, plus the PR 2 carry-in E2 primitive', () => {
     expect(Object.keys(WALLET_MODULE).sort()).toEqual([
       'BACKING_WALLETS_COLLECTION',
       'BACKING_WALLET_ENTRIES_SUBCOLLECTION',
@@ -1012,6 +1022,7 @@ describe('the module contract itself — surface, names, and the branches no fix
       'debitStake',
       'ensureAllowance',
       'readWallet',
+      'recordStakeLoss',
       'touchWallet',
       'walletIdFor',
       'walletRef',
@@ -1120,5 +1131,242 @@ describe('the module contract itself — surface, names, and the branches no fix
       expect(walletOf(store, UID)).toBeUndefined();
       assertLedgerAgrees(store, `dev-${UID}`);
     })();
+  });
+});
+
+// ============================================================================
+// PR 2 CARRY-IN E2 — the month attribution for the stake side (founder ruling
+// Sept 15). The gap: `seasons.{m}.net` counted CREDITS ONLY, so a backer down
+// 350 rendered +650. `recordStakeLoss` writes the missing half.
+//
+// PR 2 SHIPS THE PRIMITIVE AND ITS TESTS ONLY — no caller. PR 3 calls it at
+// settlement, where the pod's monthKey finally exists. These rows are therefore
+// the whole contract PR 3 builds against, including the two places where the
+// implementation diverges from the letter of the ruling; each divergence is
+// pinned by the ruling's OWN worked example rather than argued in a comment.
+// ============================================================================
+describe('recordStakeLoss — the E2 month attribution', () => {
+  /** A wallet with one stake of `amount` placed this week. */
+  async function staked(db, { stakeId = 'stake-1', amount = 400 } = {}) {
+    await grantedWallet(db);
+    await inTx(db, UID, (tx, ref, w) => debitStake(tx, ref, w, { stakeId, amount, weekKey: WEEK, now: NOW }));
+  }
+
+  it('writes ONE `loss:{stakeId}` entry with the credit siblings\' shape', async () => {
+    const { db, store } = makeInMemoryDb();
+    await staked(db, { stakeId: 'lost-1', amount: 400 });
+    const result = await inTx(db, UID, (tx, ref, w) =>
+      recordStakeLoss(tx, ref, w, { stakeId: 'lost-1', groupId: GROUP, amount: 400, monthKey: MONTH, now: NOW }));
+
+    expect(result.applied).toBe(true);
+    expect(result.replay).toBe(false);
+    const { entries } = assertLedgerAgrees(store, UID);
+    expect(entries.find((e) => e.id === 'loss:lost-1')).toEqual({
+      id: 'loss:lost-1',
+      type: ENTRY_TYPES.LOSS,
+      delta: -400,
+      ref: 'lost-1',
+      groupId: GROUP,
+      monthKey: MONTH,
+      at: NOW.toISOString(),
+    });
+  });
+
+  it('moves the SEASON bucket by −amount and NEVER the allowance (§2)', async () => {
+    const { db, store } = makeInMemoryDb();
+    await staked(db, { stakeId: 'lost-1', amount: 400 });
+    const before = walletOf(store, UID).allowanceRemaining;
+    const result = await inTx(db, UID, (tx, ref, w) =>
+      recordStakeLoss(tx, ref, w, { stakeId: 'lost-1', groupId: GROUP, amount: 400, monthKey: MONTH, now: NOW }));
+    expect(result.wallet.seasons[MONTH].net).toBe(-400);
+    expect(result.wallet.allowanceRemaining).toBe(before);
+  });
+
+  it('does NOT touch careerNet — the stake already debited it (the divergence, measured)', async () => {
+    // The letter of the ruling named careerNet too. It must not: `debitStake`
+    // already subtracted the stake from careerNet, which is §2's Net BP exactly,
+    // so a second −amount here reads −800 for a 400 BP loss. The row below pins
+    // the ruling's own worked example, which is what settles it.
+    const { db, store } = makeInMemoryDb();
+    await staked(db, { stakeId: 'lost-1', amount: 400 });
+    expect(walletOf(store, UID).careerNet).toBe(-400);
+    const result = await inTx(db, UID, (tx, ref, w) =>
+      recordStakeLoss(tx, ref, w, { stakeId: 'lost-1', groupId: GROUP, amount: 400, monthKey: MONTH, now: NOW }));
+    expect(result.wallet.careerNet).toBe(-400);
+    assertLedgerAgrees(store, UID);
+  });
+
+  it("THE FOUNDER'S WORKED EXAMPLE: staked 1,000, won 650 → BOTH fields read −350", async () => {
+    // The ruling's own numbers, end to end. 500 on a loser, 500 on a winner that
+    // pays 650 gross. Section 2's Net BP for the month is 650 − 1,000 = −350, and
+    // the ruling states careerNet already reads −350 while the season bucket
+    // reads +650. After E2 both read −350.
+    const { db, store } = makeInMemoryDb();
+    await grantedWallet(db);
+    for (const [stakeId, amount] of [['won-1', 500], ['lost-1', 500]]) {
+      await inTx(db, UID, (tx, ref, w) => debitStake(tx, ref, w, { stakeId, amount, weekKey: WEEK, now: NOW }));
+    }
+    // Settlement, as PR 3 must run it: the winner's payout AND the month
+    // attribution of BOTH stakes' own cost.
+    await inTx(db, UID, (tx, ref, w) =>
+      creditPayout(tx, ref, w, { stakeId: 'won-1', groupId: GROUP, amount: 650, monthKey: MONTH, now: NOW }));
+    await inTx(db, UID, (tx, ref, w) =>
+      recordStakeLoss(tx, ref, w, { stakeId: 'won-1', groupId: GROUP, amount: 500, monthKey: MONTH, now: NOW }));
+    await inTx(db, UID, (tx, ref, w) =>
+      recordStakeLoss(tx, ref, w, { stakeId: 'lost-1', groupId: GROUP, amount: 500, monthKey: MONTH, now: NOW }));
+
+    const wallet = walletOf(store, UID);
+    expect(wallet.careerNet).toBe(-350);
+    expect(wallet.seasons[MONTH].net).toBe(-350);
+    assertLedgerAgrees(store, UID);
+  });
+
+  it('the CALLER RULE is load-bearing: attributing only the LOSING stake reads +150, not −350', async () => {
+    // The second divergence from the letter of the ruling ("PR 3 calls it for
+    // every losing stake"). Calling it only for losers leaves the WINNER's own
+    // 500 unattributed, so the month reads 650 − 500 = +150 and the gap is not
+    // closed. This row exists so the rule cannot be half-applied silently.
+    const { db, store } = makeInMemoryDb();
+    await grantedWallet(db);
+    for (const [stakeId, amount] of [['won-1', 500], ['lost-1', 500]]) {
+      await inTx(db, UID, (tx, ref, w) => debitStake(tx, ref, w, { stakeId, amount, weekKey: WEEK, now: NOW }));
+    }
+    await inTx(db, UID, (tx, ref, w) =>
+      creditPayout(tx, ref, w, { stakeId: 'won-1', groupId: GROUP, amount: 650, monthKey: MONTH, now: NOW }));
+    await inTx(db, UID, (tx, ref, w) =>
+      recordStakeLoss(tx, ref, w, { stakeId: 'lost-1', groupId: GROUP, amount: 500, monthKey: MONTH, now: NOW }));
+
+    expect(walletOf(store, UID).seasons[MONTH].net).toBe(150);   // the WRONG number
+    expect(walletOf(store, UID).careerNet).toBe(-350);           // careerNet is right either way
+  });
+
+  it('A FULL WEEK sums to §2\'s Net BP in both fields — stake + loss + payout', async () => {
+    // Four stakes of the week's 1,000 BP allowance: two lose, two win.
+    // §2: Net BP = Σ payouts + Σ refunds − Σ stakes = (300 + 450) − 1000 = −250.
+    const { db, store } = makeInMemoryDb();
+    await grantedWallet(db);
+    const stakes = [['a', 250], ['b', 250], ['c', 250], ['d', 250]];
+    for (const [stakeId, amount] of stakes) {
+      await inTx(db, UID, (tx, ref, w) => debitStake(tx, ref, w, { stakeId, amount, weekKey: WEEK, now: NOW }));
+    }
+    const payouts = { a: 300, c: 450 };
+    for (const [stakeId, amount] of stakes) {
+      if (payouts[stakeId]) {
+        await inTx(db, UID, (tx, ref, w) =>
+          creditPayout(tx, ref, w, { stakeId, groupId: GROUP, amount: payouts[stakeId], monthKey: MONTH, now: NOW }));
+      }
+      await inTx(db, UID, (tx, ref, w) =>
+        recordStakeLoss(tx, ref, w, { stakeId, groupId: GROUP, amount, monthKey: MONTH, now: NOW }));
+    }
+
+    const NET_BP = (300 + 450) - 1000;
+    expect(NET_BP).toBe(-250);
+    const wallet = walletOf(store, UID);
+    expect(wallet.careerNet).toBe(NET_BP);
+    expect(wallet.seasons[MONTH].net).toBe(NET_BP);
+    expect(wallet.allowanceRemaining).toBe(0);   // winnings are score, not balance
+    assertLedgerAgrees(store, UID);
+  });
+
+  it('attributes to the CALLER\'S month — two pods banking in different months split cleanly', async () => {
+    const { db, store } = makeInMemoryDb();
+    await grantedWallet(db);
+    for (const [stakeId, amount] of [['sep', 400], ['oct', 300]]) {
+      await inTx(db, UID, (tx, ref, w) => debitStake(tx, ref, w, { stakeId, amount, weekKey: WEEK, now: NOW }));
+    }
+    await inTx(db, UID, (tx, ref, w) =>
+      recordStakeLoss(tx, ref, w, { stakeId: 'sep', groupId: GROUP, amount: 400, monthKey: '2026-09', now: NOW }));
+    await inTx(db, UID, (tx, ref, w) =>
+      recordStakeLoss(tx, ref, w, { stakeId: 'oct', groupId: GROUP, amount: 300, monthKey: '2026-10', now: NOW }));
+    expect(walletOf(store, UID).seasons['2026-09'].net).toBe(-400);
+    expect(walletOf(store, UID).seasons['2026-10'].net).toBe(-300);
+    assertLedgerAgrees(store, UID);
+  });
+
+  it('preserves the season bucket\'s OTHER fields — poolsBacked/poolsWon ride through', async () => {
+    // `commitWallet` writes the whole document, so a primitive that replaced the
+    // month object would erase PR 3's and PR 5's own counters.
+    const { db, store } = makeInMemoryDb();
+    await staked(db, { stakeId: 'lost-1', amount: 400 });
+    const seeded = walletOf(store, UID);
+    store.set(`${BACKING_WALLETS_COLLECTION}/${UID}`, {
+      ...seeded,
+      seasons: { [MONTH]: { net: 0, poolsBacked: 3, poolsWon: 1, weeksPlayed: 2 } },
+    });
+    const result = await inTx(db, UID, (tx, ref, w) =>
+      recordStakeLoss(tx, ref, w, { stakeId: 'lost-1', groupId: GROUP, amount: 400, monthKey: MONTH, now: NOW }));
+    expect(result.wallet.seasons[MONTH]).toEqual({ net: -400, poolsBacked: 3, poolsWon: 1, weeksPlayed: 2 });
+  });
+
+  it('REPLAYS as a no-op — the `resolving → resolved` re-read and the admin re-run are safe', async () => {
+    const { db, store } = makeInMemoryDb();
+    await staked(db, { stakeId: 'lost-1', amount: 400 });
+    const args = { stakeId: 'lost-1', groupId: GROUP, amount: 400, monthKey: MONTH, now: NOW };
+    await inTx(db, UID, (tx, ref, w) => recordStakeLoss(tx, ref, w, args));
+    const afterFirst = walletOf(store, UID);
+
+    const second = await inTx(db, UID, (tx, ref, w) => recordStakeLoss(tx, ref, w, args));
+    expect(second).toMatchObject({ applied: false, replay: true });
+    expect(walletOf(store, UID).seasons[MONTH].net).toBe(-400);
+    expect(walletOf(store, UID)).toEqual(afterFirst);
+    expect(entriesOf(store, UID).filter((e) => e.type === ENTRY_TYPES.LOSS)).toHaveLength(1);
+  });
+
+  it('threads inside ONE transaction beside a payout — the PR 1 composition contract', async () => {
+    const { db, store } = makeInMemoryDb();
+    await staked(db, { stakeId: 's1', amount: 500 });
+    await inTx(db, UID, (tx, ref, w0) => {
+      const { wallet: w1 } = creditPayout(tx, ref, w0, { stakeId: 's1', groupId: GROUP, amount: 800, monthKey: MONTH, now: NOW });
+      return recordStakeLoss(tx, ref, w1, { stakeId: 's1', groupId: GROUP, amount: 500, monthKey: MONTH, now: NOW });
+    });
+    // Both entries survive, and the wallet carries both guard keys — the failure
+    // mode the threading contract exists to prevent.
+    const wallet = walletOf(store, UID);
+    expect(wallet.seasons[MONTH].net).toBe(300);
+    expect(wallet.careerNet).toBe(300);
+    expect(Object.keys(wallet.appliedEntries).sort())
+      .toEqual([`allowance:${WEEK}`, 'loss:s1', 'payout:s1', 'stake:s1']);
+    assertLedgerAgrees(store, UID);
+  });
+
+  it('refuses a missing id, a missing monthKey, a non-positive amount and an unreadable instant', async () => {
+    const { db } = makeInMemoryDb();
+    await grantedWallet(db);
+    const base = { stakeId: 's', groupId: GROUP, amount: 100, monthKey: MONTH, now: NOW };
+    const bads = [
+      { stakeId: undefined }, { stakeId: '' }, { stakeId: 'a/b' },
+      { groupId: undefined }, { monthKey: undefined }, { monthKey: '' },
+      { amount: 0 }, { amount: -5 }, { amount: 1.5 }, { amount: '100' },
+      { now: 'not-a-date' }, { now: NaN },
+    ];
+    for (const patch of bads) {
+      await expect(inTx(db, UID, (tx, ref, w) => recordStakeLoss(tx, ref, w, { ...base, ...patch })))
+        .rejects.toThrow(BackingLedgerError);
+    }
+    await expect(inTx(db, UID, (tx, ref, w) => recordStakeLoss(tx, ref, w))).rejects.toThrow(BackingLedgerError);
+  });
+
+  it('THE VOIDED RESIDUE, measured: a voided stake still leaves +amount in the month', async () => {
+    // The ruling's explicit carve-out — "for voided stakes writes nothing" — and
+    // its exact cost, so the decision is made on a number rather than on prose.
+    // careerNet nets to zero (§2: voided stakes are score-neutral); the SEASON
+    // bucket keeps the refund's +amount with no stake-side −amount against it.
+    // PR 3 closes it, if the founder wants it closed, with one extra call at its
+    // void sites.
+    const { db, store } = makeInMemoryDb();
+    await staked(db, { stakeId: 'voided-1', amount: 400 });
+    await inTx(db, UID, (tx, ref, w) =>
+      creditRefund(tx, ref, w, { stakeId: 'voided-1', groupId: GROUP, amount: 400, monthKey: MONTH, now: NOW }));
+
+    expect(walletOf(store, UID).careerNet).toBe(0);
+    expect(walletOf(store, UID).seasons[MONTH].net).toBe(400);   // the residue
+
+    // ...and the one call that would close it, shown working, so PR 3 needs no
+    // second derivation of what to do.
+    await inTx(db, UID, (tx, ref, w) =>
+      recordStakeLoss(tx, ref, w, { stakeId: 'voided-1', groupId: GROUP, amount: 400, monthKey: MONTH, now: NOW }));
+    expect(walletOf(store, UID).seasons[MONTH].net).toBe(0);
+    expect(walletOf(store, UID).careerNet).toBe(0);
+    assertLedgerAgrees(store, UID);
   });
 });

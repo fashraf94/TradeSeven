@@ -17,13 +17,23 @@
 // arc. ELIGIBILITY_ATTESTATION_ENABLED (PR 0) keeps its own pin suite — the two
 // flags flip in one commit but are pinned apart.
 //
-// PR 1 HAS NO DOOR, and that is the substantive claim these rows defend. The
-// PR ships constants, the week helper, the wallet/ledger primitives, the rules
-// blocks and the two stake indexes — no endpoint, no UI, no caller, no
-// document written. So there is no flag-off darkness suite to write here (there
-// is no behavior to hold byte-identical) and, correspondingly, NOTHING reads
-// the flag yet: the last row below pins that absence, so the day a PR-1 module
-// grows a call-time read the pin fails and the reader is made deliberate.
+// PR 1 HAD NO DOOR; PR 2 LANDED THE FIRST TWO, and the rows below moved with
+// it — in PR 2's own commit, exactly as each of their comments instructed
+// (BUILD_RULES §2's same-commit pin discipline, applied to a darkness pin
+// rather than to a flag value).
+//
+// The substantive claim is therefore no longer "there is no door" but "EVERY
+// door is gated, and the enumeration of what can reach the foundation is
+// complete":
+//   · every backing route under api/ reads the flag at CALL time, inside its
+//     handler, AFTER auth, and is covered by a darkness suite;
+//   · no backing HELPER reads the flag — the routes gate, the helpers do not,
+//     so a flag read in a helper would be a second gate no dark suite covers;
+//   · the importer lists are enumerated exactly, so an unreviewed caller (a
+//     cron, a client bundle, a new endpoint) reds a row rather than shipping;
+//   · and NOTHING under src/ imports any of it — the backing surfaces are
+//     PR 4's, so a client importer would mean the dark feature reached a bundle.
+// PR 3–5 extend these lists in their own commits; they never delete the rows.
 
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
@@ -44,7 +54,12 @@ function listSources(dirRel) {
       if (ent.name === 'node_modules' || ent.name === '__fixtures__') continue;
       const next = path.join(abs, ent.name);
       if (ent.isDirectory()) walk(next);
-      else if (ent.name.endsWith('.js') && !ent.name.includes('.test.')) {
+      // `.jsx` TOO, and that is the whole point of the rows below. `src/` holds
+      // more .jsx than .js, PR 4's backing surfaces WILL be .jsx, and a walker
+      // blind to them makes "no client importer" unfalsifiable at exactly the
+      // moment it matters. This is the spelling the sibling walker this file
+      // cites as its precedent already uses (attest.dark.test.js).
+      else if (/\.(js|jsx|mjs)$/.test(ent.name) && !ent.name.includes('.test.')) {
         out.push(path.relative(REPO_ROOT, next).split(path.sep).join('/'));
       }
     }
@@ -136,7 +151,7 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
     expect(pr1Line).not.toMatch(/\/api\//);
   });
 
-  it('nothing in PR 1 reads the flag — the foundation ships with zero gated callers', () => {
+  it('no backing HELPER reads the flag — the routes gate, the foundation does not', () => {
     // BUILD_RULES §2 mutation check: this row fails the moment a PR-1 module
     // imports the flag, which is exactly the event that should be deliberate.
     // Scoped to THIS PR's modules by name; PR 2–5 add their own readers and
@@ -146,6 +161,12 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       'api/_utils/backingWallet.js',
       'api/_utils/backingWeek.js',
       'src/constants/backing.js',
+      // PR 2's helpers join the list rather than leaving it: the ROUTES gate,
+      // the helpers do not, so a flag read appearing in one of these would be a
+      // second gate that no dark suite covers.
+      'api/_utils/backingPools.js',
+      'api/_utils/backingEligibility.js',
+      'api/_utils/backingFingerprint.js',
     ];
     for (const rel of PR1_MODULES) {
       const text = readFileSync(path.join(REPO_ROOT, rel), 'utf8');
@@ -154,16 +175,42 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
     }
   });
 
-  it('no backing endpoint exists yet — PR 1 ships no route to gate', () => {
-    // The other half of "no door": the flag cannot be under-read if there is
-    // nothing to read it in. Reds when PR 2 lands its route WITHOUT moving this
-    // row, which is the moment the gated-read discipline starts to matter.
+  it('EVERY backing route under api/ reads the flag at CALL time and ships a dark suite', () => {
+    // WAS "no backing endpoint exists yet - PR 1 ships no route to gate", and
+    // PR 2 moved it in its own commit, exactly as that row's comment instructed.
+    // The claim is STRONGER, not weaker: instead of counting zero routes it now
+    // holds every route that exists to the gated-read discipline, so PR 3-5 must
+    // move it again only to ADD their routes to the list.
+    //
     // Scoped to ALL of api/, not just api/tournament/, so PR 5's `api/backing/`
     // directory cannot land a route this row is blind to.
-    expect(routesNamed('backing'), 'a backing route appeared under api/ — PR 2+ lands the first one WITH its 404-while-dark suite; update this row in that PR').toEqual([]);
+    expect(routesNamed('backing'), 'a backing route appeared under api/ - add it here WITH its 404-while-dark suite')
+      .toEqual([
+        'api/tournament/backing-pools.js',
+        'api/tournament/backing-stake.js',
+      ]);
+
+    for (const rel of routesNamed('backing')) {
+      const src = read(rel);
+      // The call-time read, inside the handler, in the SHOW_IT / research.js
+      // shape - never a module-scope derivation and never an accessor.
+      expect(src, `${rel} does not 404 on the flag`)
+        .toContain('if (!BACKING_BETA_ENABLED) return res.status(404)');
+      // ...and it is checked AFTER auth: the requireAuth call must precede the
+      // flag read in the source, or an anonymous caller is answered differently
+      // while dark and while lit - a free oracle on the rollout state.
+      expect(src.indexOf('await requireAuth('), `${rel} reads the flag before auth`)
+        .toBeLessThan(src.indexOf('if (!BACKING_BETA_ENABLED)'));
+    }
+
+    // And the darkness is proved by a suite, not by a reviewer's reading. Both
+    // routes are covered by the shared PR 2 darkness file.
+    const dark = read('api/tournament/backing-stake.dark.test.js');
+    expect(dark).toContain('./backing-stake.js');
+    expect(dark).toContain('./backing-pools.js');
   });
 
-  it('NOTHING IMPORTS the PR 1 modules — the "no caller" claim, mechanized (the PR 0 importersOf precedent)', () => {
+  it('EVERY importer of the backing modules is enumerated — the "no unreviewed caller" ratchet (the PR 0 importersOf precedent)', () => {
     // THE ROW THAT MAKES THE DARKNESS A RATCHET RATHER THAN A PROMISE.
     // api/_utils/backingWallet.js:57 and api/_utils/backingWeek.js:9 both state
     // that nothing in PR 1 calls them. Before this row that was prose: wiring
@@ -172,13 +219,52 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
     // green. PR 0 mechanized the same claim (api/eligibility/attest.dark.test.js
     // :140-151); this is that helper's shape, applied to PR 1's three modules.
     //
-    // PR 2-5 add importers deliberately and move these rows in their own commit.
-    expect(importersOf('api/_utils/backingWallet.js')).toEqual([]);
-    expect(importersOf('api/_utils/backingWeek.js')).toEqual(['api/_utils/backingWallet.js']);
+    // PR 2 added the first importers and moved this row in its own commit;
+    // PR 3-5 do the same. The row never becomes a promise again.
+    // PR 2 MOVED THESE LISTS, in its own commit, as the comment above instructs.
+    // They are still a ratchet: every importer is named, so a SIXTH one (a cron,
+    // a client bundle, an unreviewed endpoint) reds this row. PR 3-5 extend the
+    // lists the same way - never delete the rows.
+    expect(importersOf('api/_utils/backingWallet.js')).toEqual([
+      'api/_utils/backingPools.js',
+      'api/tournament/backing-stake.js',
+    ]);
+    expect(importersOf('api/_utils/backingWeek.js')).toEqual([
+      'api/_utils/backingPools.js',
+      'api/_utils/backingWallet.js',
+      'api/tournament/backing-pools.js',
+      'api/tournament/backing-stake.js',
+    ]);
     expect(importersOf('src/constants/backing.js')).toEqual([
+      'api/_utils/backingPools.js',
       'api/_utils/backingWallet.js',
       'api/_utils/backingWeek.js',
+      'api/tournament/backing-pools.js',
+      'api/tournament/backing-stake.js',
     ]);
+    // PR 2's own modules, listed for the same reason: the surface is enumerated,
+    // so a new reachable caller is a deliberate edit here.
+    expect(importersOf('api/_utils/backingPools.js')).toEqual([
+      'api/_utils/backingEligibility.js',
+      'api/tournament/backing-pools.js',
+      'api/tournament/backing-stake.js',
+    ]);
+    expect(importersOf('api/_utils/backingEligibility.js')).toEqual([
+      // attest.js reads the sign-in-provider helper for Amendment A §A3.
+      'api/eligibility/attest.js',
+      'api/tournament/backing-stake.js',
+    ]);
+    expect(importersOf('api/_utils/backingFingerprint.js')).toEqual(['api/tournament/backing-stake.js']);
+    // STILL NO CLIENT IMPORTER: the backing surfaces are PR 4's. A `src/`
+    // importer here would mean the dark feature had reached a bundle.
+    for (const target of [
+      'api/_utils/backingWallet.js', 'api/_utils/backingWeek.js',
+      'api/_utils/backingPools.js', 'api/_utils/backingEligibility.js',
+      'api/_utils/backingFingerprint.js', 'src/constants/backing.js',
+    ]) {
+      expect(importersOf(target).filter((rel) => rel.startsWith('src/')), `${target} is imported from src/`)
+        .toEqual([]);
+    }
   });
 
   it('the importer walk is not vacuous — it resolves sibling and parent spellings alike', () => {

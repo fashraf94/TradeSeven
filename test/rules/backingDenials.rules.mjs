@@ -10,6 +10,9 @@
 //   · backingPools/{groupId}/private/{doc} is UNREADABLE by any client — the
 //     document whose exposure would unseal a sealed pool (§3);
 //   · backingStakes/{stakeId} is readable only by the stake's own userId;
+//   · backingStakes/{stakeId}/private/{doc} is UNREADABLE by any client, THE
+//     BACKER INCLUDED — the PR 2 carry-in E1 fingerprint and admin `excluded`
+//     flag, which cannot be fields on the owner-readable parent (§8);
 //   · backingEvents/{eventId} is unreadable by any client (§10);
 //   · and that NO client — the owner included — can create, update or delete
 //     anything in any of them (`write: if false`, the tournamentRanks pattern).
@@ -76,6 +79,7 @@ const OTHER_WALLET_ENTRY = `${OTHER_WALLET}/entries/allowance:${WEEK}`;
 const POOL = `backingPools/${GROUP}`;
 const POOL_PRIVATE = `${POOL}/private/totals`;
 const OWNER_STAKE = 'backingStakes/stake-owner-1';
+const OWNER_STAKE_META = `${OWNER_STAKE}/private/meta`;   // PR 2 carry-in E1
 const OTHER_STAKE = 'backingStakes/stake-other-1';
 const ABSENT_STAKE = 'backingStakes/stake-never-written';
 const EVENT = 'backingEvents/evt-1';
@@ -105,6 +109,9 @@ const stake = (userId) => ({
   placedAt: '2026-09-15T18:00:00.000Z', weekKey: WEEK, status: 'live',
 });
 const event = () => ({ userId: OWNER_UID, groupId: GROUP, event: 'window_viewed', at: '2026-09-15T18:00:00.000Z', props: {} });
+// PR 2 carry-in E1: the stake's fingerprint and admin exclusion flag, kept OFF
+// the owner-readable parent because rules cannot hide a field.
+const stakeMeta = () => ({ ipHash: 'a'.repeat(64), uaHash: 'b'.repeat(64), excluded: false, at: '2026-09-15T18:00:00.000Z' });
 
 let testEnv;
 
@@ -154,6 +161,7 @@ beforeEach(async () => {
   await seed(POOL, pool());
   await seed(POOL_PRIVATE, privateTotals());
   await seed(OWNER_STAKE, stake(OWNER_UID));
+  await seed(OWNER_STAKE_META, stakeMeta());
   await seed(OTHER_STAKE, stake(OTHER_UID));
   await seed(EVENT, event());
 });
@@ -434,6 +442,69 @@ describe('backingStakes/{stakeId} — owner-read on the DOCUMENT\'s userId (§3,
       await assertFails(updateDoc(doc(fs, OWNER_STAKE), { status: 'won', payout: 5000 }), label);
       await assertFails(setDoc(doc(fs, OWNER_STAKE), stake(OWNER_UID)), label);
       await assertFails(deleteDoc(doc(fs, OWNER_STAKE)), label);
+    }
+  });
+});
+
+// ============================================================================
+describe("backingStakes/{stakeId}/private/{doc} — NO client read (PR 2 carry-in E1)", () => {
+  it('nobody reads it — THE BACKER WHO PLACED THE STAKE INCLUDED', async () => {
+    // The row this block exists for. The parent stake is owner-read, and rules
+    // cannot hide a field, so the fingerprint and the admin `excluded` flag live
+    // here instead. An owner who could read this would learn whether an admin
+    // had dropped their stake from the Sybil watch — the one signal a detective
+    // control must not emit (§8).
+    await assertFails(getDoc(doc(asOwner(), OWNER_STAKE_META)));
+    for (const [label, ctx] of ALL_CONTEXTS) {
+      await assertFails(getDoc(doc(ctx(), OWNER_STAKE_META)), label);
+      await assertFails(getDocs(collection(ctx(), `${OWNER_STAKE}/private`)), label);
+    }
+  });
+
+  it('reading the parent stake does NOT reach into private — the positive control', async () => {
+    // The parent read must SUCCEED while this one does not, so the block above
+    // cannot pass by denying everything.
+    //
+    // WHAT THIS ROW CATCHES, MEASURED rather than claimed (BUILD_RULES §2's
+    // mutation rule; all three runs are recorded in the PR 2 review record):
+    //   · RELAXING this block's read to `if request.auth != null` REDS this row
+    //     and two of its siblings. That is the defect class that matters, and
+    //     the shape a future "let the backer see their own meta" convenience
+    //     would take.
+    //   · DELETING the block entirely does NOT red anything, because Firestore
+    //     denies by default. The block is an explicit statement on the page —
+    //     the `backingPools/{id}/private` sibling's own stated convention — not
+    //     the mechanism that denies. Said here so the row is never mistaken for
+    //     a guard against its own removal.
+    //   · a `backingStakes/{id}/{document=**}` wildcard carrying the PARENT's
+    //     owner condition does not red it either, and correctly so: the meta doc
+    //     carries no `userId`, so `resource.data.userId == request.auth.uid` is
+    //     false for it and the read stays denied.
+    await assertSucceeds(getDoc(doc(asOwner(), OWNER_STAKE)));
+    await assertFails(getDoc(doc(asOwner(), OWNER_STAKE_META)));
+  });
+
+  it('an ABSENT meta doc is denied too — no existence oracle on the fingerprint', async () => {
+    for (const [label, ctx] of ALL_CONTEXTS) {
+      await assertFails(getDoc(doc(ctx(), 'backingStakes/stake-never-written/private/meta')), label);
+    }
+  });
+
+  it('a COLLECTION-GROUP query on `private` cannot reach it', async () => {
+    // `backingPools/{id}/private` and `backingStakes/{id}/private` share a
+    // subcollection NAME; a collection-group read must be denied for both.
+    for (const [label, ctx] of ALL_CONTEXTS) {
+      await assertFails(getDocs(collectionGroup(ctx(), 'private')), label);
+    }
+  });
+
+  it('no client writes it — the `excluded` flag is an ADMIN fact, never the backer’s', async () => {
+    for (const [label, ctx] of ALL_CONTEXTS) {
+      const fs = ctx();
+      await assertFails(setDoc(doc(fs, `${OWNER_STAKE}/private/forged`), stakeMeta()), label);
+      await assertFails(updateDoc(doc(fs, OWNER_STAKE_META), { excluded: true }), label);
+      await assertFails(setDoc(doc(fs, OWNER_STAKE_META), stakeMeta()), label);
+      await assertFails(deleteDoc(doc(fs, OWNER_STAKE_META)), label);
     }
   });
 });

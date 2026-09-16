@@ -243,7 +243,9 @@ describe('the first call — the exact write', () => {
     expect(ELIGIBILITY_COLLECTION).toBe('eligibility');
     // ONE tx.set and no other write verb — the count the scanner allowlist pins.
     const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
-    expect(code.match(/tx\.set\(/g)).toHaveLength(1);
+    // TWO tx.set sites since PR 2: the first attestation, and the §A2
+    // re-attestation branch. The allowlist key is pinned at 2 to match.
+    expect(code.match(/tx\.set\(/g)).toHaveLength(2);
     expect(code).not.toMatch(/tx\.(update|create|delete)\(|\.(update|create|delete|add)\(/);
   });
 });
@@ -261,12 +263,58 @@ describe('the second call — idempotent, no write, no timestamp bump', () => {
     expect(state.docs['eligibility/owner-1']).toEqual(first.body.attestation);
   });
 
-  it('returns a pre-existing doc as-is — even one recorded under an older terms version', async () => {
+  it('RE-ATTESTS a doc recorded under an older terms version (Amendment A §A2, D-aa)', async () => {
+    // MOVED BY PR 2. PR 0 returned the stale doc as-is and said so: "whether a
+    // revision needs re-acceptance is a §11 gate-1 / PR 2 decision, not built
+    // here" (src/constants/eligibility.js). §A2 decided it, and PR 2 is the
+    // first of the two PRs it names, so the behaviour lands here.
+    //
+    // WHY IT MATTERS, and why the old row was a latent dead end: PR 2's
+    // `requireEligibility` treats a superseded version as ABSENT. Without
+    // re-attestation, the counsel-copy PR's TERMS_VERSION bump would lock every
+    // already-attested account out of backing FOR EVER — the AttestationStep
+    // re-presents the terms, the POST returns the same stale doc, the refusal
+    // repeats, and `eligibility/{uid}` is `write: if false` so nothing else can
+    // move it.
     const older = { adultAttestedAt: '2026-08-01T00:00:00.000Z', termsVersion: 'beta-2026-08-draft', acceptedAt: '2026-08-01T00:00:00.000Z', source: 'backing_beta' };
     state.docs['eligibility/owner-1'] = { ...older };
     const res = await post(VALID);
     expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual({ eligible: true, attestation: older });
+    expect(res.body.attestation).toEqual({
+      // THE 18+ AFFIRMATION DOES NOT EXPIRE — the original instant survives.
+      adultAttestedAt: '2026-08-01T00:00:00.000Z',
+      // The terms acceptance does.
+      termsVersion: TERMS_VERSION,
+      acceptedAt: T0.toISOString(),
+      source: 'backing_beta',
+      // …and what was accepted before is recorded, not overwritten.
+      history: [{ termsVersion: 'beta-2026-08-draft', acceptedAt: '2026-08-01T00:00:00.000Z' }],
+    });
+    expect(state.committed).toHaveLength(1);
+    expect(state.docs['eligibility/owner-1']).toEqual(res.body.attestation);
+  });
+
+  it('a SECOND revision appends to history[] rather than replacing it', async () => {
+    state.docs['eligibility/owner-1'] = {
+      adultAttestedAt: '2026-07-01T00:00:00.000Z',
+      termsVersion: 'beta-2026-08-draft',
+      acceptedAt: '2026-08-01T00:00:00.000Z',
+      source: 'backing_beta',
+      history: [{ termsVersion: 'beta-2026-07-draft', acceptedAt: '2026-07-01T00:00:00.000Z' }],
+    };
+    const res = await post(VALID);
+    expect(res.body.attestation.history).toEqual([
+      { termsVersion: 'beta-2026-07-draft', acceptedAt: '2026-07-01T00:00:00.000Z' },
+      { termsVersion: 'beta-2026-08-draft', acceptedAt: '2026-08-01T00:00:00.000Z' },
+    ]);
+    expect(res.body.attestation.adultAttestedAt).toBe('2026-07-01T00:00:00.000Z');
+  });
+
+  it('an IDENTICAL version is still idempotent — PR 0\'s guarantee stands (§A2)', async () => {
+    const current = { adultAttestedAt: '2026-08-01T00:00:00.000Z', termsVersion: TERMS_VERSION, acceptedAt: '2026-08-01T00:00:00.000Z', source: 'backing_beta' };
+    state.docs['eligibility/owner-1'] = { ...current };
+    const res = await post(VALID);
+    expect(res.body).toEqual({ eligible: true, attestation: current });
     expect(state.committed).toHaveLength(0);
     expect(state.attempts).toBe(1);
   });

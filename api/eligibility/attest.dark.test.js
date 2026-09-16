@@ -127,19 +127,40 @@ function importersOf(targetRel) {
 }
 
 describe('nothing else reaches it (PR 0)', () => {
-  it("no route calls the read side — the route imports only eligibilityRef; requireEligibility's first caller is PR 2", () => {
-    // The writer is the helper's only importer, and it takes the ref builder
-    // alone. PR 2 (backingEligibility.js → requireEligibility) adds the second
-    // importer and moves this row deliberately; until then the gate is
-    // reachable through no door.
-    expect(importersOf('api/_utils/eligibility.js')).toEqual(['api/eligibility/attest.js']);
+  it("no ROUTE calls the read side — the writer takes only eligibilityRef; PR 2's helper is the read side's one caller", () => {
+    // MOVED BY PR 2, in its own commit, exactly as this row's comment
+    // instructed. `api/_utils/backingEligibility.js` is `getEligibility`'s first
+    // and only caller (spec V1.3 §12 PR 2), and it is a HELPER, not a route:
+    // the gate is still reachable through exactly one door, the stake endpoint,
+    // which is dark behind BACKING_BETA_ENABLED and has its own darkness suite.
+    // The row stays a ratchet — a third importer reds it.
+    expect(importersOf('api/_utils/eligibility.js')).toEqual([
+      'api/_utils/backingEligibility.js',
+      'api/eligibility/attest.js',
+    ]);
+    // And the READ side is reached from no route directly: every importer is
+    // either the writer or a helper under api/_utils/.
+    for (const rel of importersOf('api/_utils/eligibility.js')) {
+      expect(rel === 'api/eligibility/attest.js' || rel.startsWith('api/_utils/'),
+        `${rel} imports the eligibility read side directly from a route`).toBe(true);
+    }
     const code = read('api/eligibility/attest.js').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
     expect(code).toContain("import { eligibilityRef } from '../_utils/eligibility.js';");
     expect(code).not.toMatch(/requireEligibility|getEligibility/);
   });
 
-  it('the route is the only importer of the constants — no UI ships in PR 0 (the AttestationStep is PR 4)', () => {
-    expect(importersOf('src/constants/eligibility.js')).toEqual(['api/eligibility/attest.js']);
+  it('NO CLIENT imports the constants — the AttestationStep is PR 4 (moved by PR 2)', () => {
+    // PR 2's helper reads TERMS_VERSION to implement Amendment A §A2 (a terms
+    // revision forces re-attestation), so the list grew by one server module.
+    // The claim that matters is unchanged and is asserted directly rather than
+    // by counting: nothing under src/ reaches these strings, so no UI ships them.
+    expect(importersOf('src/constants/eligibility.js')).toEqual([
+      // PR 2 moved §A2's version rule into `requireEligibility` itself, where
+      // Amendment A puts it, so the READ SIDE is now the constant's importer.
+      'api/_utils/eligibility.js',
+      'api/eligibility/attest.js',
+    ]);
+    expect(importersOf('src/constants/eligibility.js').filter((rel) => rel.startsWith('src/'))).toEqual([]);
   });
 
   it('the importer walk is not vacuous — it resolves a sibling `./x.js` and a parent `../_utils/x.js` spelling alike', () => {
