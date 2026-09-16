@@ -15,9 +15,11 @@
 | **Flag-off invariant** | **Holds.** Every prompt byte and every gate outcome is byte-identical to the pre-build commit, proved against goldens captured by rendering the pre-build code — not regenerated from the code they guard. |
 | **Not behind the flag** | The three forensics fields. Deliberate: the one-way door. Every turn without them is a turn whose intent can never be recovered. |
 | **Verification** | Full suite `VITEST_EXIT=0` — 13 041 passed, 64 skipped, 681 files. `npm run lint:gate` exit 0. `vite build` exit 0. |
-| **Review** | Mandatory (15 files / 1 973 lines, over both §2 thresholds). Four lenses, isolated `git archive` trees, refuters, the mutating lens last. Recorded in §7. |
-| **Deviations** | Three, all enumerated in §6. One is a provable incompatibility inside the brief itself; one is a scope boundary; one is a flip-order hazard that needs a founder ruling before the grounding walk resumes. |
-| **Blocking item for the founder** | **§6 D-3 — the flip-order hazard.** `DIRECTIVE_FIT_CHECK_ENABLED` must not be lit at the same time as `VOICE_GROUNDING_MODE` ≥ `'canary'` until the grounded confirmation rule carries the quote instruction too. Documented at the flag and pinned by a test; the build does not and cannot fix it (the grounded rule is outside this build's file list). |
+| **Review** | Mandatory (15 files / 1 973 lines, over both §2 thresholds). Four lenses on isolated `git archive` trees, refuters told to kill every finding *and* to attack the clean verdicts, the mutating lens last. **8 CONFIRMED, 4 REFUTED.** Recorded in §7. |
+| **Safety property the review proved** | At flag-ON the gate's commits are a **strict subset** of the flag-OFF gate's, by construction. **The fit check can only refuse; it can never file something the pre-build gate would not have filed.** |
+| **…and the risk that follows from it** | So the flip's realistic failure mode is **not** a mis-filed directive. It is that **directive filing quietly stops**, because the same prompt still teaches the model to paraphrase (§7.2 A2/A3) — and a `fit_mismatch` is **invisible on screen** today (A7/C2). |
+| **Deviations** | Three, in §6. One is a provable incompatibility inside the brief itself; one is a scope boundary; one is the flip-order hazard. |
+| **DO NOT FLIP until these three are ruled on** | **1. §6 D-1 / §7 A4+A5** — the annotated menu disagrees with the charter in 4 of 6 archetypes and inverts the concentration dial for two `diversifier` ids. **2. §7 J7** — the eval harness scores a fit-check refusal as a false refusal *and* drops it from the wrong-id denominator, so the two numbers that would inform the flip move in opposite directions for the same turns; filed as separate tasking. **3. §6 D-3** — never light this flag together with `VOICE_GROUNDING_MODE` ≥ `'canary'`. |
 
 ---
 
@@ -221,6 +223,27 @@ SP-02, SP-06 and SP-07 are **byte-identical in policy**, so no function of `poli
 
 For the record, the derivation across all six archetypes: `momentum_chaser` TF-01/02/05/06/07/08 · `contrarian` CN-01/02/06/07 · `degen` SP-02/06/07 · `guardian` CP-01/02/08 · `diversifier` DV-06 · `analyst` FI-01/02/07/08.
 
+**The review found this deviation understated itself, and by how much.** Written above from the Speculator alone, it reads as one archetype's rounding error. Across all six it is not:
+
+| archetype | the charter's own "More cautious = …" sentence | what the derived line renders | |
+|---|---|---|---|
+| `degen` | tighten the still-wide stop / less-extreme volatility / size down → **SP-01, SP-02, SP-06** | SP-02, SP-06, SP-07 | drops SP-01, the **first**-named |
+| `contrarian` | tighten the stop / deeper washout / clearer turn → **CN-03, CN-01, CN-02** | CN-01, CN-02, CN-06, CN-07 | drops CN-03, the **first**-named |
+| `analyst` | quality bar / cleaner setup / hold conviction longer → **FI-01, FI-02, FI-03** | FI-01, FI-02, FI-07, FI-08 | drops FI-03, the **third**-named |
+| `diversifier` | tighten the cap / widen the spread / rebalance sooner → **DV-01, DV-02, DV-03** | **DV-06** | **entirely disjoint** |
+| `guardian` | — | CP-01, CP-02, CP-08 | agrees |
+| `momentum_chaser` | — | TF-01/02/05/06/07/08 | agrees (superset) |
+
+Four of six. And the two statements sit **eleven lines apart in the same template literal**, so a reader of the prompt meets both at once. That is BUILD_RULES §9's bug family by name — a label and the fact it names, from two sources that drift — with the caveat that §9 is written about what a *user* sees and this block is model-facing, so the citation is by analogy rather than by letter. The conflict is real under any rule number.
+
+**The per-line `[cautious register]` tag carries the same disagreement, seven times per block instead of once**, because `renderCautiousRegisterLine` filters on the tag: one predicate, two renders. It is worse in salience — `SP-01` renders bare, eight lines under prose naming it first, directly above two lines that do carry the tag.
+
+**And A5 compounds it on the archetype that is already disjoint.** `[concentration: tighter]` renders `policy.concentrationDirection`, which the data module's standing drafting rule says tracks the *constraint verb, not the book outcome*. For `DV-01` ("Tighten the concentration cap") and `DV-03` ("Rebalance a creeping sector sooner") the tag points the opposite way to what the book does — 2 of 46 ids, both `diversifier` — while `DV-05`, the one DV id that genuinely concentrates, carries no tag at all. The same `[concentration: tighter]` string means "more concentrated" on SP-04 and "more spread" on DV-01.
+
+In fairness to the prescription: the rule's *operative prohibition* — never auto-pair conflict groups from policy directions — **is** honoured, because `[opposite of …]` reads the adjudicated `ADJUSTMENT_CONFLICT_GROUPS`. What is violated is the same rule's stated warning about reading that field as a dial.
+
+Both are pinned as LIMIT rows in `voiceLayerPrompt.fitCheck.test.js`, written from the charter prose by hand so they cannot pass for the wrong reason, and both say to delete rather than "fix" them once ruled on.
+
 ### D-2 — Commit B transforms the battle-chat assembly only, not `buildFirstMessagePrompt`.
 
 Both consume `PHASE_RULES[phase]` (`voiceLayerPrompt.js:3180` and `:3429-3430`). Only the first was transformed. **Why:** `buildFirstMessagePrompt`'s own output format pins `hasDirective` false and `directive` null (`voiceLayerPrompt.js:3262-3263`, VERIFIED), so there is no confirmation to acknowledge and the gate can never commit on that path; and its callers are `decide.js` (fenced) and `ensure-opener.js`, neither of which runs the gate. Transforming it would change a prompt reaching a fenced caller for no mechanism gain. Pinned by a test row so the omission is not read as a miss.
@@ -241,7 +264,88 @@ So if `VOICE_GROUNDING_MODE` walks to `'canary'` (for an allowlisted uid) or `'o
 
 ## 7. The §2 adversarial review
 
+**Threshold:** mandatory on both counts — 15 files and 1 973 lines on the cumulative branch diff, against §2's "≥10 files OR ≥1500 lines".
+
+**Method, per §2 as amended Aug 1 2026 and the Sep 2 2026 reviewer-isolation ruling.** Four lenses, each on its **own `git archive` extraction** under the session scratchpad with `node_modules` symlinked, read-only on git and on the shared working tree; **the mutating lens last, on its own tree**. Every finding was then handed to a **refuter instructed to kill it** with a concrete repro — a review that never refutes itself has not been run adversarially. The refuters were also told to attack the lenses' **CLEAN verdicts**, because a wrong "clean" is more dangerous than a missed finding: nobody looks again.
+
+| Lens | Dimension | Outcome |
+|---|---|---|
+| A | Domain correctness — does the mechanism close the incident class? | 9 findings |
+| B | The flag-off / dark-merge guarantee | **CLEAN**, 3 low findings about evidence and hygiene |
+| C | Wiring, lifecycle, fence, repo-rule compliance | 4 findings; 7 categories clean |
+| D | Test integrity (**mutating**, ran last) | recorded in §7.4 |
+
+### 7.1 The structural fact that reframes everything
+
+The refutation pass established this, and it belongs above the finding list:
+
+> At flag-ON the gate's commits are a **strict subset** of the flag-OFF gate's. `evaluate()` differs from the pre-build gate by exactly one early return, and that return can only produce `fit_mismatch`.
+
+So **the fit check can only ever refuse. It can never file something the pre-build gate would not have filed.** Verified as a proof, not a sample: "commits that happen ONLY at flag-ON = 0".
+
+That refutes the review's scariest finding (A1) as a regression, and it inverts the risk profile of the flip:
+
+> **The realistic failure mode is not a mis-filed directive. It is that directive filing quietly stops working, and no surface says so.**
+
+Everything in §7.2 should be read against that sentence.
+
+### 7.2 Findings, with dispositions
+
+**CONFIRMED — 8**
+
+| # | Finding | Sev. | Disposition |
+|---|---|---|---|
+| **A2** | The flag-ON prompt still ships four few-shots — `CONFIRMATION_EXAMPLE` and the three phase examples — that model a confirmation reply quoting no canonical, in the higher-attention slot, *before* the demand. Feeding the prompt's own worked answer to the gate yields `fit_mismatch`. | high | **Reported, pinned, not fixed.** The few-shots are outside the three phase-rule sites this build was scoped to; rewriting worked examples is a prompt change with its own eval. Pinned by a LIMIT row. |
+| **A3** | `TWO_LEG_SIGNAL_RULE`, pushed under the *same guard as the menu*, prescribes "tighten the stop," and "still high-energy" — near-misses of sentences the gate demands verbatim. **The only finding where flag-OFF files the correct id that flag-ON refuses.** | high | Same. The `THIRD_PATH_RULE` half was **refuted**: it is scoped to null-write turns, which the check never runs on. |
+| **A4** | The derived cautious-register line disagrees with the charter prose rendered 11 lines above it in the same template literal, for **4 of 6** archetypes; disjoint for `diversifier`. | high | **Blocking for flip.** See §6 D-1. Pinned by a LIMIT row. One clause corrected: for `analyst` the dropped FI-03 is third-named, not first. |
+| **A5** | `[concentration: tighter]` renders the constraint-verb field, inverting the book outcome for **DV-01 and DV-03**; and `DV-05`, the one DV id that actually concentrates, carries no tag at all. | **medium** (narrowed from med/high) | **Blocking for flip.** Narrowed: 2 of 46 ids, `diversifier` only — and the data module's *actual* prohibition (never auto-pair conflict groups from policy) **is** honoured, since `[opposite of]` reads the adjudicated groups. |
+| **A6** | The transformed acknowledgement leaves a first exemplar that quotes nothing, and step (2) still carries "that's the bias I'm carrying into each look now" — near-verbatim the incident sentence. | medium | Reported. Moving more of the rule is out of scope ("nothing else in the rule moves"). |
+| **A7 / C2** | A `fit_mismatch` is **invisible to the player** on the only path it can fire on today: both client surfaces gate the no-change line on `grounded`, and nobody is grounded at `'shadow'`. | medium | **Fixed what was mine** — the gate comment that claimed otherwise. The gating itself is pre-existing §6.3 design and out of scope. Two sub-claims refuted: `directiveFallback` has zero consumers repo-wide, and the stale This-turn strip is pre-existing null-write behaviour. |
+| **A8** | The verbatim check is brittle to character substitution (2 of 46 ids) — and, the bigger row the finding did not name, to **dropping a parenthetical (17 of 46)**. | low | Reported. Inherent to the prescribed "verbatim". Robust to markdown, smart quotes, line wrapping and a trailing period — all verified committing. |
+| **C1** | The prompt half lands on the shipped assembly only; the gate half runs on both. | **medium** (downgraded from high) | This *is* §6 D-3, found independently by three routes. **Reachability claim refuted** — see below. |
+| **J7** | **The eval harness mis-scores the new outcome.** A `fit_mismatch` is counted as a *false refusal* and simultaneously **removed from `wrongIdRate`'s denominator** — including exactly the wrong-id commits the check exists to catch. | **high** | **Blocking for flip. Reported, not fixed** (BUILD_RULES §3: the harness is not on this build's file list). Filed as separate tasking. |
+
+**REFUTED — 4**
+
+| # | Claim | Why it died |
+|---|---|---|
+| **A1** | A reply naming both ends of a dial files the wrong end; the incident passes with one clause added. | **Not a regression.** The pre-build gate files the byte-identical directive on every repro, 6/6 conflict pairs, and flag-ON commits ⊆ flag-OFF commits *by construction*. A residual gap the build does not close — never one it opens. |
+| **A6 (second half)** | Case-sensitivity punishes the template's own mid-sentence placement. | The template followed literally, with the canonical's own capitalisation, **commits**. All 46 canonicals begin capitalised and the template places the quote after `filing: `. |
+| **A9** | A committed record cannot be distinguished at the two flag states, so traceability is incomplete. | The flag is a global `const` with **no per-uid resolver**, so "was the check on" is a deploy-level fact for every record at a timestamp. And at flag-ON a `committed` record is quote-verified *by construction*. |
+| **C1 reachability** | A uid could be lit via the `VOICE_GROUNDING_CANARY_UIDS` env var, "with no code change and no test". | **Wrong on all three counts.** `resolveVoiceGroundingMode` enters the canary branch only when the base mode is already `'canary'`; there is no `process.env.VOICE_GROUNDING_MODE` read anywhere; and mutating the constant reds `voiceGroundingFlags.test.js:54`. Reaching the hazard needs a reviewed code change. Recorded at the flag. |
+| **C4** | The Phase 0 audit is stale and should be amended. | **Out of scope, and correctly left alone**: a dated, HEAD-stamped historical record that entered by cherry-pick. §7 of BUILD_RULES says audit anchors drift and readers re-verify. Its `:139` half-citation is itself wrong — that anchor is still exact. |
+
+### 7.3 The clean verdicts, and what survived attacking them
+
+| Category | Verdict | Evidence |
+|---|---|---|
+| **Flag-off prompt bytes** | **UPHELD** | 1 344 renders — 7 modes × grounded × 8 archetypes × 3 phases × fixtures — against the **true pre-build module**, 0 byte diffs, 0 error divergences. Mutation-checked: 3 injected mutations produced 168 diffs. |
+| **Flag-off gate outcomes** | **UPHELD** | 37 verdicts including every repair, abort and deadline path; 0 core diffs; `fitCheck` leaked 0/37; `console.error` payloads and repair-call arguments compared too. |
+| **The sanitizer extraction** | **UPHELD** | 48 enumerated edge cases + **203 000 fuzz cases**, 0 diffs — including identical `TypeError` on a throwing `toString`. |
+| **Call-time flag reads** | **UPHELD** | No module-scope capture. A bare-factory mock **throws loudly** rather than silently yielding `undefined`. |
+| **Fence (§1)** | **UPHELD** | §1 list re-derived from source; zero intersection with the 15-file diff. `createAgentBattle`'s full top-level key set enumerated — no `chatExchanges` element shape declared there. League, review and both error paths checked. Scoring modules contain zero occurrences of "directive". |
+| **§2.3 import ratchet** | **UPHELD** | `featureFlags` is not in `LEGACY_TABLE_BASENAMES`; `directiveGate.js` already baselined; and the ratchet is **file-level, not symbol-level**, so `getConflictGroups` cannot trip it. |
+| **§4 dependency surface** | **UPHELD on the graph; BROKEN on the comment** | Graph is 6 modules, all zero-import, clean under plain Node. But §4 also requires the guard to *say* it is the guard — the new `api/`→`src/` edge had no such comment. **Fixed** (`9e89d23a`). |
+| **Bare-mock hazard** | **UPHELD; count corrected 14 → 16** | 109 mock sites, 93 spread, **16 bare** (including one that evades a naive regex); none reaches the changed modules; all 16 run green. |
+| **Wiring** | **UPHELD** | Three non-test `archetypeGate` occurrences, all truthiness-only. **Zero production readers of `outcome.status`.** |
+| **Budget** | **UPHELD** | One increment per turn at every outcome; **zero extra model calls** on a `fit_mismatch`; it is terminal and never sets `needsRepair`. |
+| **Prompt-honesty registry** | **UPHELD** | `voiceLayerPrompt.js` already in `PROMPT_CONTRIBUTING_MODULES`; the honesty sweep passes. |
+| **Eval harness** | **BROKEN** | The literal claim holds — `aggregate.js` never reads `outcome.status`. But that is *why* it is broken: see **J7**. |
+
+### 7.4 The mutating lens
+
 *(recorded below)*
+
+### 7.5 What the review changed
+
+Six commits of fixes and pins came out of it. Nothing in them altered production behaviour: every production edit was a comment.
+
+- `9e89d23a` — the two false comments; the §4 guard comment and its "never mock this" counterpart; the flag-off golden widened from two slices (~41% of one battle prompt) to **147 whole-prompt hashes** across every mode × grounded × archetype × phase, captured from the true pre-build module.
+- `83cfdb30` — the A4 charter-disagreement pinned as a LIMIT row, written from the charter prose by hand.
+- `9a14c3b5` — the A4 "first-named" slip corrected; the A2/A3 quote-vs-paraphrase contradiction pinned.
+
+The widened golden's mutation row was **wrong on first write** and the failure taught the real shape: **39 prompts move under the flag, not 18**, because the annotated menu reaches the *grounded* prompt while the quote instruction does not. That is the flip-order hazard in one assertion, and it is now pinned as one.
+
 
 ---
 
@@ -252,6 +356,7 @@ Not run here: the flag ships `false`, so nothing this build added is reachable u
 1. **In character.** Type "tighten your stops". The reply quotes **"Tighten the downside stop"** word for word; the card beneath shows the same text; Firestore `agentBattles/{id}.directive.adjustmentId` reads **`SP-01`**; and the exchange's `archetypeGate` carries `originalUserAsk`, `counterOfferText` and `rejectionReason` (strings or nulls, all three keys present).
 2. **Out of character.** Type "go to cash". Either the reply declines in character and the turn shows "No change made to your strategy this turn.", **or** — if the model selects an id — the reply quotes that id's canonical text exactly. **A paraphrase that files nothing is the fix working, not a failure**; look for `archetypeGate.status: 'fit_mismatch'` with `fitCheck.expected` naming the sentence that was not said.
 3. **The menu, indirectly.** Ask for "something more cautious". The model should now reach for the cautious register rather than the concentration dial. Note D-1: it will offer SP-02 / SP-06 / SP-07 before SP-01.
+4. **Watch the rate, not just the turns.** The review's conclusion is that the flip's realistic failure mode is *silence* — filing stops and nothing says so. So the smoke is not passed by three good turns. Count `archetypeGate.status == 'fit_mismatch'` against `== 'committed'` over the first day of real traffic. A `fit_mismatch` rate that is not small means the prompt is still teaching the paraphrase (§7.2 A2/A3) and the flag should go back off, whatever the individual turns looked like. Until J7 is fixed the eval cannot tell you this — only the Firestore records can.
 
 ---
 
@@ -265,4 +370,5 @@ Not run here: the flag ships `false`, so nothing this build added is reachable u
 
 - **The grounded prompt carries every archetype-blind seed the shipped prompt does** (§5). The walk to `'on'` closes the chip channel but not the seeding. Worth its own task.
 - **`chat.js:746` cites `directiveGate.js:105-107` for the repair clamp**; the code was already at `:110-112` before this build and is now at `:168`. Comment drift only — inherited from Phase 0's own "found outside" list, and now one commit staler.
+- **THE EVAL HARNESS MIS-SCORES THE NEW OUTCOME (review finding J7) — filed for separate tasking.** `runEval.eval.mjs:144` sets `committed: !!gate.g.hasDirective`, and `aggregate.js:84-85,115-116` keys both flip-relevant metrics off it. So a `fit_mismatch` is counted as a **false refusal** *and* removed from `wrongIdRate`'s **denominator** — including exactly the wrong-id commits the check exists to catch. On 10 synthetic `valid_flex` turns: `falseRefusalRate` 0 % → 30 %, `wrongIdRate` 20 % → 0 %. The split is unrecoverable after the fact because `gate.g.outcome.status` is available at `runEval.eval.mjs:148` and never written to the record. The hard zeros are unaffected. Not fixed here: the harness is not on this build's file list (BUILD_RULES §3). **This is a flip-blocker — it corrupts the numbers the flip decision reads.**
 - **The shipped few-shot `CONFIRMATION_EXAMPLE` (`voiceLayerPrompt.js:256-258`) models a free-text `directive.text`** that `enforce` discards, and never shows `_archetypeProposal` — the one field the gate reads. Under the fit check it also models an acknowledgement that quotes *nothing*. Phase 0 flagged the first half; the fit check makes the second half newly relevant. Out of this build's scope (the brief names the phase rules, not the few-shot).
