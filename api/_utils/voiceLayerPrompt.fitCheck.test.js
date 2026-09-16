@@ -240,7 +240,10 @@ describe('A-1 — menu render: flag-ON annotates every line from the data module
       return line.replace('More cautious, in character: ', '').replace(/\.$/, '').split(', ');
     };
 
-    // degen / contrarian / analyst: each DROPS the move its own prose names FIRST.
+    // Each drops a move its own prose names. For degen and contrarian it is the
+    // FIRST-named one ("tighten the still-wide stop" / "tighten the stop"); for
+    // analyst it is the THIRD ("hold conviction longer") — the refutation pass
+    // corrected an earlier draft of this comment that said "first" for all three.
     expect(renderedIds('degen')).not.toContain('SP-01');
     expect(renderedIds('contrarian')).not.toContain('CN-03');
     expect(renderedIds('analyst')).not.toContain('FI-03');
@@ -260,6 +263,44 @@ describe('A-1 — menu render: flag-ON annotates every line from the data module
     // not a blanket failure, and the row says which.
     expect(renderedIds('guardian')).toEqual(['CP-01', 'CP-02', 'CP-08']);
     expect(renderedIds('momentum_chaser')).toContain('TF-02');
+  });
+
+  // ── DOCUMENTED LIMIT — the flag-ON prompt demands a verbatim quote in one
+  // paragraph while modelling and prescribing NON-quoting acknowledgements
+  // elsewhere in the same prompt (§2 review findings A2 / A3, build report §7).
+  // This row PINS the contradiction; delete it when the prompt is reconciled.
+  //
+  // Why it matters more than it looks: the refutation pass established that the
+  // flag-ON gate's commits are a SUBSET of the flag-OFF gate's, by construction
+  // — the fit check can only ever REFUSE, never mis-file. So the realistic
+  // failure mode of the flip is not a wrong directive; it is that directive
+  // filing quietly STOPS, because the prompt keeps teaching the model to
+  // paraphrase. Commit B moved one paragraph and left four few-shots and a
+  // signal-language rule pointing the other way.
+  it('LIMIT: the flag-ON prompt both demands the quote and teaches the paraphrase', () => {
+    fitCheck.on = true;
+    const prompt = promptFor('degen');
+
+    // The demand (commit B).
+    expect(prompt).toContain('Say the canonical text word for word;');
+
+    // A2 — the worked example of a CONFIRMATION turn, in the high-attention
+    // BOTTOM slot, whose modelled reply quotes no canonical and carries a
+    // free-text directive the gate discards.
+    expect(prompt).toContain('EXAMPLE — Confirmation Response:');
+    expect(prompt).toContain("That's the bias I'm carrying into my next read");
+    const exampleAt = prompt.indexOf('EXAMPLE — Confirmation Response:');
+    const demandAt = prompt.indexOf('Say the canonical text word for word;');
+    expect(exampleAt, 'the non-quoting example precedes the demand').toBeLessThan(demandAt);
+
+    // A3 — TWO_LEG_SIGNAL_RULE, pushed under the SAME guard as the menu, hands
+    // the model near-miss paraphrases of sentences the gate wants verbatim.
+    expect(prompt).toContain('- Stop / patience -> "tighten the stop,"');
+    expect(prompt).toContain('still high-energy');
+    // ...while SP-01's canonical, which those words paraphrase, is "Tighten the
+    // downside stop" — capitalised, and not a substring of "tighten the stop".
+    expect(prompt).toContain('SP-01: Tighten the downside stop');
+    expect('I\'ll tighten the stop a touch.').not.toContain('Tighten the downside stop');
   });
 
   it('MUTATION CHECK — the flag-ON block is NOT the flag-OFF block, for every archetype', () => {
