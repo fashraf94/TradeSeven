@@ -15,16 +15,41 @@
 //
 // OBSERVE is forced here via vi.mock (the committed flag stays 'off'); the gate
 // evaluates + reports, writes nothing, and the Diversifier cap stays passive.
+//
+// THE PRE-FLIGHT (2026-09-17): EVAL_FIT_CHECK=1 additionally forces
+// DIRECTIVE_FIT_CHECK_ENABLED true, so the corpus exercises the state the flip
+// would ship and the founder can read fitMismatchRate BEFORE flipping:
+//
+//     EVAL_FIT_CHECK=1 npx vitest run --config vitest.eval.config.mjs
+//
+// Harness-only — no production read changes; see the override block below.
 
 import { describe, it, vi } from 'vitest';
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
+// THE PRE-FLIGHT OVERRIDE (2026-09-17). `EVAL_FIT_CHECK=1` runs the corpus with
+// DIRECTIVE_FIT_CHECK_ENABLED true — the state the flip would ship — so the
+// founder reads the three rates BEFORE the flip rather than from the first day
+// of production.
+//
+// This is HARNESS-ONLY and touches no production read. directiveGate.js and
+// voiceLayerPrompt.js import the flag by name from featureFlags.js and read it
+// at CALL time inside the functions that gate on it, so replacing the module's
+// export here reaches both halves of the mechanism through the ordinary ESM live
+// binding. Nothing in api/ changes, and the committed constant stays `false`.
+//
+// Default OFF, so an unqualified run keeps reproducing the pre-flip numbers.
+const { fitCheckOn } = vi.hoisted(() => ({
+  fitCheckOn: process.env.EVAL_FIT_CHECK === '1',
+}));
+
 // Force OBSERVE for the whole run (production const stays 'off').
 vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   ARCHETYPE_INTEGRITY_MODE: 'observe',
+  DIRECTIVE_FIT_CHECK_ENABLED: fitCheckOn,
 }));
 
 const { buildVoiceLayerPrompt } = await import('../../_utils/voiceLayerPrompt.js');
@@ -146,6 +171,11 @@ async function evalItem(item, index, runIndex) {
       // (hasDirective) — the channel hard-zero-2 now measures. Same renderer as prod.
       directiveStatus: renderDirectiveStatus(gate.g.hasDirective).directiveStatus,
       selectedId: gate.g.outcome?.selectedAdjustmentId ?? null,
+      // The gate's own outcome record, stamped under the SAME key production
+      // persists it under (api/agent/chat.js: `archetypeGate: gateOutcome`).
+      // aggregate() reads `archetypeGate.status` to separate a `fit_mismatch`
+      // from a real refusal — one field, one shape, harness and production.
+      archetypeGate: gate.g.outcome ?? null,
       repairUsed: !!gate.g.outcome?.repairUsed,
       proseAssertsChange: proseAssertsChange(gate.parsed?.response || ''), // informational drift
       proposal: proposalPresent ? prop : null,                 // full _archetypeProposal Gemma emitted
@@ -166,6 +196,7 @@ function formatReport(agg, meta) {
   const lines = [];
   lines.push('================ ARCHETYPE-INTEGRITY OBSERVE EVAL ================');
   lines.push(`corpus items: ${meta.itemCount} · runs/item: ${meta.runsPerItem} · concurrency: ${meta.concurrency} · records: ${meta.records} · gemma calls (approx): ${meta.approxCalls}`);
+  lines.push(`DIRECTIVE_FIT_CHECK_ENABLED: ${meta.fitCheckEnabled ? 'TRUE (pre-flight, EVAL_FIT_CHECK=1)' : 'false (pre-flip baseline)'}`);
   lines.push(`call failures: ${agg.overall.counts.callFailed}`);
   lines.push('');
   lines.push('### HARD ZEROS (both STRUCTURAL — 0 by construction; must be 0 to recommend ENFORCE)');
@@ -173,6 +204,17 @@ function formatReport(agg, meta) {
   lines.push(`  null-write status NOT 'no_change'    : ${agg.hardZeros.claimedButNull}`);
   lines.push(`  → both zero: ${agg.hardZeros.bothZero ? 'YES' : 'NO'}`);
   lines.push(`  (informational: ${agg.overall.counts.proseAssertsChange} prose-overclaim turn(s) — backstopped by the authoritative status)`);
+  lines.push('');
+  // THE THREE RATES THE FOUNDER READS BEFORE THE FLIP (fit-check record §7 J7).
+  // They are only meaningful together: a fit_mismatch is neither a refusal nor a
+  // wrong id, so before this split one turn moved two of them opposite ways.
+  const o = agg.overall.rates;
+  lines.push('### THE FLIP RATES (false-refusal · wrong-id · fit-mismatch)');
+  lines.push(`  false-refusal ${fmtPct(o.falseRefusalRate)} · wrong-id ${fmtPct(o.wrongIdRate)} · fit-mismatch ${fmtPct(o.fitMismatchRate)}`);
+  lines.push(`  (fit-mismatch = ${agg.overall.counts.fitMismatch} of ${agg.overall.counts.committedTotal + agg.overall.counts.fitMismatch} turns that reached the fit check)`);
+  if (o.fitMismatchRate !== null && o.fitMismatchRate > 0) {
+    lines.push('  → a NONZERO fit-mismatch rate is the prompt still teaching the paraphrase, not the gate misfiring.');
+  }
   lines.push('');
   const tp = agg.overall.thirdPathCommit;
   lines.push('### THIRD-PATH COMMITS (informational — Ruling A; NOT a breach)');
@@ -183,7 +225,7 @@ function formatReport(agg, meta) {
     lines.push(
       `  ${label.padEnd(16)} present ${fmtPct(r.proposalPresentRate)} · schema ${fmtPct(r.schemaValidRate)} · ` +
       `flex-accept ${fmtPct(r.validFlexAcceptanceRate)} · false-refusal ${fmtPct(r.falseRefusalRate)} · ` +
-      `wrong-id ${fmtPct(r.wrongIdRate)} · core-held ${fmtPct(r.coreHeldRate)} · 3rd-path ${b.thirdPathCommit.total} · ` +
+      `wrong-id ${fmtPct(r.wrongIdRate)} · fit-mismatch ${fmtPct(r.fitMismatchRate)} · core-held ${fmtPct(r.coreHeldRate)} · 3rd-path ${b.thirdPathCommit.total} · ` +
       `repair ${fmtPct(r.repairRetryRate)} · prose-overclaim ${fmtPct(r.proseOverclaimRate)}`,
     );
   };
@@ -228,6 +270,7 @@ describe('Archetype-Integrity OBSERVE reliability eval', () => {
       itemCount: corpus.length, runsPerItem: RUNS_PER_ITEM, concurrency: CONCURRENCY,
       records: records.length,
       approxCalls: records.length + agg.overall.counts.repairUsed, // base + repairs
+      fitCheckEnabled: fitCheckOn,
     };
     const report = formatReport(agg, meta);
     console.log('\n' + report + '\n');

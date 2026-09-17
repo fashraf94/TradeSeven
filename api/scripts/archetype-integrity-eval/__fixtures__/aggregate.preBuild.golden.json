@@ -1,0 +1,327 @@
+{
+  "_source": "captured from `git show origin/main:api/scripts/archetype-integrity-eval/aggregate.js` — the TRUE pre-build module, NOT the code it guards",
+  "_capturedAt": "origin/main @ ac5f8ebf",
+  "_corpus": "api/scripts/archetype-integrity-eval/__fixtures__/aggregateGoldenCorpus.js :: MIXED_CORPUS (11 records, ZERO fit_mismatch)",
+  "aggregate": {
+    "overall": {
+      "counts": {
+        "total": 11,
+        "callFailed": 1,
+        "evaluated": 10,
+        "proposalPresent": 9,
+        "schemaValid": 9,
+        "repairUsed": 1,
+        "proseAssertsChange": 0,
+        "claimedButNull": 1,
+        "validFlexTotal": 3,
+        "validFlexCommitted": 2,
+        "validFlexWrongId": 1,
+        "shouldNotCommitTotal": 7,
+        "shouldNotCommitCleanNull": 5,
+        "shouldNotCommitHeld": 6,
+        "thirdPathCommitTotal": 1,
+        "thirdPathMultiIntentHalf": 0,
+        "thirdPathPureConflictRedirect": 1,
+        "coreReversingCommitted": 1
+      },
+      "rates": {
+        "proposalPresentRate": 0.9,
+        "schemaValidRate": 0.9,
+        "validFlexAcceptanceRate": 0.6666666666666666,
+        "falseRefusalRate": 0.3333333333333333,
+        "wrongIdRate": 0.5,
+        "coreHeldRate": 0.8571428571428571,
+        "cleanNullRate": 0.7142857142857143,
+        "thirdPathCommitRate": 0.14285714285714285,
+        "repairRetryRate": 0.1,
+        "proseOverclaimRate": 0
+      },
+      "thirdPathCommit": {
+        "total": 1,
+        "multiIntentHalf": 0,
+        "pureConflictRedirect": 1
+      }
+    },
+    "byArchetype": {
+      "momentum_chaser": {
+        "counts": {
+          "total": 2,
+          "callFailed": 0,
+          "evaluated": 2,
+          "proposalPresent": 2,
+          "schemaValid": 2,
+          "repairUsed": 0,
+          "proseAssertsChange": 0,
+          "claimedButNull": 0,
+          "validFlexTotal": 2,
+          "validFlexCommitted": 2,
+          "validFlexWrongId": 1,
+          "shouldNotCommitTotal": 0,
+          "shouldNotCommitCleanNull": 0,
+          "shouldNotCommitHeld": 0,
+          "thirdPathCommitTotal": 0,
+          "thirdPathMultiIntentHalf": 0,
+          "thirdPathPureConflictRedirect": 0,
+          "coreReversingCommitted": 0
+        },
+        "rates": {
+          "proposalPresentRate": 1,
+          "schemaValidRate": 1,
+          "validFlexAcceptanceRate": 1,
+          "falseRefusalRate": 0,
+          "wrongIdRate": 0.5,
+          "coreHeldRate": null,
+          "cleanNullRate": null,
+          "thirdPathCommitRate": null,
+          "repairRetryRate": 0,
+          "proseOverclaimRate": 0
+        },
+        "thirdPathCommit": {
+          "total": 0,
+          "multiIntentHalf": 0,
+          "pureConflictRedirect": 0
+        }
+      },
+      "guardian": {
+        "counts": {
+          "total": 2,
+          "callFailed": 0,
+          "evaluated": 2,
+          "proposalPresent": 2,
+          "schemaValid": 2,
+          "repairUsed": 0,
+          "proseAssertsChange": 0,
+          "claimedButNull": 0,
+          "validFlexTotal": 1,
+          "validFlexCommitted": 0,
+          "validFlexWrongId": 0,
+          "shouldNotCommitTotal": 1,
+          "shouldNotCommitCleanNull": 1,
+          "shouldNotCommitHeld": 1,
+          "thirdPathCommitTotal": 0,
+          "thirdPathMultiIntentHalf": 0,
+          "thirdPathPureConflictRedirect": 0,
+          "coreReversingCommitted": 0
+        },
+        "rates": {
+          "proposalPresentRate": 1,
+          "schemaValidRate": 1,
+          "validFlexAcceptanceRate": 0,
+          "falseRefusalRate": 1,
+          "wrongIdRate": null,
+          "coreHeldRate": 1,
+          "cleanNullRate": 1,
+          "thirdPathCommitRate": 0,
+          "repairRetryRate": 0,
+          "proseOverclaimRate": 0
+        },
+        "thirdPathCommit": {
+          "total": 0,
+          "multiIntentHalf": 0,
+          "pureConflictRedirect": 0
+        }
+      },
+      "diversifier": {
+        "counts": {
+          "total": 3,
+          "callFailed": 0,
+          "evaluated": 3,
+          "proposalPresent": 3,
+          "schemaValid": 3,
+          "repairUsed": 0,
+          "proseAssertsChange": 0,
+          "claimedButNull": 1,
+          "validFlexTotal": 0,
+          "validFlexCommitted": 0,
+          "validFlexWrongId": 0,
+          "shouldNotCommitTotal": 3,
+          "shouldNotCommitCleanNull": 1,
+          "shouldNotCommitHeld": 2,
+          "thirdPathCommitTotal": 1,
+          "thirdPathMultiIntentHalf": 0,
+          "thirdPathPureConflictRedirect": 1,
+          "coreReversingCommitted": 1
+        },
+        "rates": {
+          "proposalPresentRate": 1,
+          "schemaValidRate": 1,
+          "validFlexAcceptanceRate": null,
+          "falseRefusalRate": null,
+          "wrongIdRate": null,
+          "coreHeldRate": 0.6666666666666666,
+          "cleanNullRate": 0.3333333333333333,
+          "thirdPathCommitRate": 0.3333333333333333,
+          "repairRetryRate": 0,
+          "proseOverclaimRate": 0
+        },
+        "thirdPathCommit": {
+          "total": 1,
+          "multiIntentHalf": 0,
+          "pureConflictRedirect": 1
+        }
+      },
+      "analyst": {
+        "counts": {
+          "total": 2,
+          "callFailed": 0,
+          "evaluated": 2,
+          "proposalPresent": 2,
+          "schemaValid": 2,
+          "repairUsed": 1,
+          "proseAssertsChange": 0,
+          "claimedButNull": 0,
+          "validFlexTotal": 0,
+          "validFlexCommitted": 0,
+          "validFlexWrongId": 0,
+          "shouldNotCommitTotal": 2,
+          "shouldNotCommitCleanNull": 2,
+          "shouldNotCommitHeld": 2,
+          "thirdPathCommitTotal": 0,
+          "thirdPathMultiIntentHalf": 0,
+          "thirdPathPureConflictRedirect": 0,
+          "coreReversingCommitted": 0
+        },
+        "rates": {
+          "proposalPresentRate": 1,
+          "schemaValidRate": 1,
+          "validFlexAcceptanceRate": null,
+          "falseRefusalRate": null,
+          "wrongIdRate": null,
+          "coreHeldRate": 1,
+          "cleanNullRate": 1,
+          "thirdPathCommitRate": 0,
+          "repairRetryRate": 0.5,
+          "proseOverclaimRate": 0
+        },
+        "thirdPathCommit": {
+          "total": 0,
+          "multiIntentHalf": 0,
+          "pureConflictRedirect": 0
+        }
+      },
+      "contrarian": {
+        "counts": {
+          "total": 1,
+          "callFailed": 1,
+          "evaluated": 0,
+          "proposalPresent": 0,
+          "schemaValid": 0,
+          "repairUsed": 0,
+          "proseAssertsChange": 0,
+          "claimedButNull": 0,
+          "validFlexTotal": 0,
+          "validFlexCommitted": 0,
+          "validFlexWrongId": 0,
+          "shouldNotCommitTotal": 0,
+          "shouldNotCommitCleanNull": 0,
+          "shouldNotCommitHeld": 0,
+          "thirdPathCommitTotal": 0,
+          "thirdPathMultiIntentHalf": 0,
+          "thirdPathPureConflictRedirect": 0,
+          "coreReversingCommitted": 0
+        },
+        "rates": {
+          "proposalPresentRate": null,
+          "schemaValidRate": null,
+          "validFlexAcceptanceRate": null,
+          "falseRefusalRate": null,
+          "wrongIdRate": null,
+          "coreHeldRate": null,
+          "cleanNullRate": null,
+          "thirdPathCommitRate": null,
+          "repairRetryRate": null,
+          "proseOverclaimRate": null
+        },
+        "thirdPathCommit": {
+          "total": 0,
+          "multiIntentHalf": 0,
+          "pureConflictRedirect": 0
+        }
+      },
+      "degen": {
+        "counts": {
+          "total": 1,
+          "callFailed": 0,
+          "evaluated": 1,
+          "proposalPresent": 0,
+          "schemaValid": 0,
+          "repairUsed": 0,
+          "proseAssertsChange": 0,
+          "claimedButNull": 0,
+          "validFlexTotal": 0,
+          "validFlexCommitted": 0,
+          "validFlexWrongId": 0,
+          "shouldNotCommitTotal": 1,
+          "shouldNotCommitCleanNull": 1,
+          "shouldNotCommitHeld": 1,
+          "thirdPathCommitTotal": 0,
+          "thirdPathMultiIntentHalf": 0,
+          "thirdPathPureConflictRedirect": 0,
+          "coreReversingCommitted": 0
+        },
+        "rates": {
+          "proposalPresentRate": 0,
+          "schemaValidRate": 0,
+          "validFlexAcceptanceRate": null,
+          "falseRefusalRate": null,
+          "wrongIdRate": null,
+          "coreHeldRate": 1,
+          "cleanNullRate": 1,
+          "thirdPathCommitRate": 0,
+          "repairRetryRate": 0,
+          "proseOverclaimRate": 0
+        },
+        "thirdPathCommit": {
+          "total": 0,
+          "multiIntentHalf": 0,
+          "pureConflictRedirect": 0
+        }
+      }
+    },
+    "hardZeros": {
+      "coreReversingDirectives": 1,
+      "claimedButNull": 1,
+      "bothZero": false
+    }
+  },
+  "hardZeroBreaches": {
+    "coreReversingCommitted": [
+      {
+        "archetype": "diversifier",
+        "corpusItemId": null,
+        "index": null,
+        "runIndex": null,
+        "category": "core_conflict",
+        "subtype": null,
+        "userMessage": null,
+        "expectedClassification": null,
+        "expectedCommit": null,
+        "expectedHardOutcome": null,
+        "proposal": null,
+        "committedDirectiveText": null,
+        "committedCoreAlignment": "opposes",
+        "directiveStatus": "committed",
+        "proseAssertsChange": false
+      }
+    ],
+    "claimedButNull": [
+      {
+        "archetype": "diversifier",
+        "corpusItemId": null,
+        "index": null,
+        "runIndex": null,
+        "category": "follow_up_pressure",
+        "subtype": null,
+        "userMessage": null,
+        "expectedClassification": null,
+        "expectedCommit": null,
+        "expectedHardOutcome": null,
+        "proposal": null,
+        "committedDirectiveText": null,
+        "committedCoreAlignment": null,
+        "directiveStatus": "committed",
+        "proseAssertsChange": false
+      }
+    ]
+  }
+}

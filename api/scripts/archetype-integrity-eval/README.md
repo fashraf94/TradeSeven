@@ -18,6 +18,12 @@ proposals often enough, and the guarantees hold against real adversarial input."
 - `runEval.eval.mjs` — the harness (forces OBSERVE via `vi.mock`, real Gemma calls).
 - `corpus.test.js` / `aggregate.test.js` — hermetic suite tests proving the corpus
   is complete and the aggregation math is correct (run in the default `vitest run`).
+- `__fixtures__/aggregateGoldenCorpus.js` — the varied synthetic record set the
+  math tests share, containing **zero** `fit_mismatch` records.
+- `__fixtures__/aggregate.preBuild.golden.json` — that corpus's metrics captured
+  from `git show origin/main:.../aggregate.js` (the TRUE pre-build module, never
+  regenerated from the code it guards). Proves the `fit_mismatch` split left
+  every pre-existing metric byte-identical.
 
 ## Requirements to RUN the live eval
 - `OPENROUTER_API_KEY` set in the environment.
@@ -35,13 +41,44 @@ npx vitest run --config vitest.eval.config.mjs
 
 # average over N passes to smooth Gemma's non-determinism (≈140 × N calls)
 EVAL_RUNS_PER_ITEM=3 npx vitest run --config vitest.eval.config.mjs
+
+# THE PRE-FLIGHT — the same corpus with DIRECTIVE_FIT_CHECK_ENABLED forced TRUE,
+# i.e. the state the flip would ship. This is the run that produces the
+# fitMismatchRate the founder reads before deciding.
+EVAL_FIT_CHECK=1 npx vitest run --config vitest.eval.config.mjs
 ```
+
+`EVAL_FIT_CHECK` is **harness-only**: it extends the `vi.mock` this file already
+uses to force OBSERVE, so nothing in `api/` changes and the committed flag stays
+`false`. Both halves of the mechanism (the prompt's quote instruction and the
+gate's verbatim check) read the flag at call time through the ordinary ESM live
+binding, so one mock lights both. Default is OFF — an unqualified run keeps
+reproducing the pre-flip baseline.
+
 It prints the metrics table + hard zeros to the console and writes
 `last-run-report.json` (gitignored) next to the harness.
 
 ## What it reports (per archetype + overall)
 - proposal-present / schema-valid rates
-- valid-flex acceptance + false-refusal + wrong-id rates
+- valid-flex acceptance + false-refusal + wrong-id + **fit-mismatch** rates
+
+  `fit_mismatch` — a turn where the proposal named a VALID id, membership passed,
+  and the reply never said the canonical sentence, so nothing was filed — is
+  **neither a false refusal nor a wrong id**, and gets its own rate:
+
+  ```
+  fitMismatchRate = fit_mismatch / (committed + fit_mismatch)
+  ```
+
+  over the turns that reached the fit check. It is excluded from the
+  false-refusal numerator (a paraphrase is not a refusal) and KEPT in the
+  wrong-id population, numerator and denominator both — so `wrongIdRate` does
+  not move when a turn becomes a `fit_mismatch`. Before this split one turn
+  moved those two rates in opposite directions, which is why the pre-flight run
+  could not be read (fit-check record §7 J7).
+
+  **A nonzero `fitMismatchRate` is the prompt still teaching the paraphrase, not
+  the gate misfiring.** If it is not small, the flip waits.
 - core-held rate (null OR a core-aligned third-path commit) + clean-null rate
 - third-path commits — total + multi-intent-half + pure-conflict-redirect
   (Ruling A: a core-aligned commit on a conflict is the third path working, NOT a
