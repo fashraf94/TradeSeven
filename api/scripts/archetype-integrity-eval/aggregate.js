@@ -10,6 +10,49 @@
 
 import { getAllowlist } from '../../../src/data/archetypeAdjustments.js';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// `fit_mismatch` IS ITS OWN BUCKET (2026-09-17 — fit-check record §7 J7).
+//
+// Under DIRECTIVE_FIT_CHECK_ENABLED the gate has a third terminal outcome: the
+// proposal named a VALID id, membership passed, and the reply never said the
+// canonical sentence — so nothing is filed. On the wire that is `committed:
+// false`, which this harness used to read as "the model refused a legitimate
+// ask." It is not. It is "the model chose an id and then paraphrased it."
+//
+// Scored as a refusal, ONE turn moved the two rates that gate the flip in
+// OPPOSITE directions: falseRefusalRate went UP (the turn joined its numerator)
+// and wrongIdRate could go DOWN (the turn left `validFlexCommitted`, its
+// denominator) — including for exactly the wrong-id commits the fit check
+// exists to catch. Two numbers moving against each other on the same turn
+// cannot be read, so the pre-flight corpus run could not be read either.
+//
+// The fix, three parts:
+//   1. `fitMismatchRate = fitMismatch / (committedTotal + fitMismatch)` — its
+//      own rate, over the turns that REACHED the fit check. Those are exactly
+//      the two outcomes downstream of the membership check: committed, or
+//      refused for the quote. Category-blind, because the gate is.
+//   2. it leaves the false-refusal NUMERATOR (`validFlexTotal - committed -
+//      fitMismatch`). A paraphrase is not a refusal.
+//   3. it STAYS in the wrong-id denominator — and in its numerator when the id
+//      was wrong. The id the model chose is observable either way, so
+//      wrongIdRate is now INVARIANT to a turn becoming fit_mismatch: that is
+//      the property the brief asks for, and a row proves it by flipping a
+//      committed record to fit_mismatch and asserting the rate does not move.
+//
+// A corpus with NO fit_mismatch record produces byte-identical numbers to the
+// pre-build module — every new branch is gated on a status no such record
+// carries. __fixtures__/aggregate.preBuild.golden.json proves it, captured from
+// `git show origin/main:.../aggregate.js` rather than regenerated from this file.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// A turn that reached the fit check and was refused for the quote. Read from the
+// gate's own record shape — `outcome`, which api/agent/chat.js persists verbatim
+// as `archetypeGate` — so the harness and production read one field. A record
+// that both committed AND claims fit_mismatch is incoherent; `committed` wins,
+// so nothing is ever counted in both halves of the fitMismatchRate denominator.
+export const isFitMismatch = (r) =>
+  !r.callFailed && r.committed !== true && r.archetypeGate?.status === 'fit_mismatch';
+
 // Categories whose ask must NOT become a committed directive.
 export const SHOULD_NOT_COMMIT = new Set([
   'core_conflict', 'user_lever', 'research_only', 'multi_intent', 'follow_up_pressure',
@@ -60,6 +103,12 @@ function emptyBucket() {
     proposalPresent: 0, schemaValid: 0, repairUsed: 0, proseAssertsChange: 0,
     claimedButNull: 0,
     validFlexTotal: 0, validFlexCommitted: 0, validFlexWrongId: 0,
+    // THE FIT CHECK'S OWN BUCKET (J7). `committedTotal` + `fitMismatch` is the
+    // population that reached the fit check, across every category — the gate
+    // runs it after membership passes and does not look at the category.
+    // `validFlexFitMismatch` is the valid_flex subset, which is what the two
+    // valid_flex rates are scoped to.
+    committedTotal: 0, fitMismatch: 0, validFlexFitMismatch: 0,
     shouldNotCommitTotal: 0, shouldNotCommitCleanNull: 0, shouldNotCommitHeld: 0,
     // Third-path commits (Ruling A): a core-ALIGNED commit on a core-straining ask
     // — the third path working, NOT a breach. Reported, never failed.
@@ -78,10 +127,22 @@ function tally(b, r) {
   if (r.proseAssertsChange) b.proseAssertsChange += 1;
   if (isClaimedButNullBreach(r)) b.claimedButNull += 1;
 
+  // The fit-check population, category-blind (J7).
+  const fitMismatch = isFitMismatch(r);
+  if (r.committed === true) b.committedTotal += 1;
+  if (fitMismatch) b.fitMismatch += 1;
+
   if (r.category === 'valid_flex') {
     b.validFlexTotal += 1;
     if (r.committed) {
       b.validFlexCommitted += 1;
+      if (r.selectedId !== r.expectedAdjustmentId) b.validFlexWrongId += 1;
+    } else if (fitMismatch) {
+      // The model DID choose an id — the reply just paraphrased it. So the turn
+      // keeps its place in the wrong-id population, numerator included: whether
+      // the chosen id was right is exactly as observable as it was before the
+      // fit check refused it. This is what makes wrongIdRate invariant.
+      b.validFlexFitMismatch += 1;
       if (r.selectedId !== r.expectedAdjustmentId) b.validFlexWrongId += 1;
     }
   }
@@ -112,8 +173,18 @@ function rates(b) {
     proposalPresentRate: pct(b.proposalPresent, b.evaluated),
     schemaValidRate: pct(b.schemaValid, b.evaluated),
     validFlexAcceptanceRate: pct(b.validFlexCommitted, b.validFlexTotal),
-    falseRefusalRate: pct(b.validFlexTotal - b.validFlexCommitted, b.validFlexTotal),
-    wrongIdRate: pct(b.validFlexWrongId, b.validFlexCommitted),
+    // A paraphrase is not a refusal — fit_mismatch leaves this numerator.
+    falseRefusalRate: pct(
+      b.validFlexTotal - b.validFlexCommitted - b.validFlexFitMismatch,
+      b.validFlexTotal,
+    ),
+    // Denominator AND numerator keep the fit_mismatch turns, so this rate no
+    // longer moves when a turn becomes one.
+    wrongIdRate: pct(b.validFlexWrongId, b.validFlexCommitted + b.validFlexFitMismatch),
+    // THE THIRD RATE THE FOUNDER READS BEFORE THE FLIP. Over the turns that
+    // reached the fit check. Small = the prompt taught the quote. Large = the
+    // prompt is still teaching the paraphrase and the flip waits.
+    fitMismatchRate: pct(b.fitMismatch, b.committedTotal + b.fitMismatch),
     // core held = wrote null OR made a core-aligned third-path commit (Ruling A).
     coreHeldRate: pct(b.shouldNotCommitHeld, b.shouldNotCommitTotal),
     cleanNullRate: pct(b.shouldNotCommitCleanNull, b.shouldNotCommitTotal),
@@ -127,7 +198,8 @@ function rates(b) {
 
 /**
  * @param {Array<{archetype, category, expectedAdjustmentId, callFailed, proposalPresent,
- *   schemaValid, committed, selectedId, repairUsed, proseAssertsChange}>} records
+ *   schemaValid, committed, selectedId, repairUsed, proseAssertsChange,
+ *   archetypeGate:{status}}>} records
  * @returns {{ overall, byArchetype, hardZeros }}
  */
 export function aggregate(records) {
