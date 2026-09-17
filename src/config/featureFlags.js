@@ -781,11 +781,16 @@ export const ARCHETYPE_INTEGRITY_MODE = 'enforce';
  * quote nothing checks is the status quo with extra words.
  *
  * What it turns on (all three together, all read at CALL time):
- *   1. voiceLayerPrompt.js — each menu line carries its policy annotations
- *      ([cautious register] / [concentration: tighter|wider] / [opposite of X]),
- *      derived from the data module's own `policy` + ADJUSTMENT_CONFLICT_GROUPS,
- *      so the model can see the dial it is choosing on rather than seven bare
- *      strings (Phase 0 Q3).
+ *   1. voiceLayerPrompt.js — each menu line carries its annotations
+ *      ([cautious register] / [opposite of X]), READ from the data module's
+ *      `cautiousRegister` list + ADJUSTMENT_CONFLICT_GROUPS, so the model can
+ *      see the dial it is choosing on rather than seven bare strings (Phase 0
+ *      Q3). (2026-09-17: the register now comes from the charter's own "More
+ *      cautious = ..." sentence instead of a `policy` predicate that disagreed
+ *      with it in 4 of 6 archetypes, and the third tag — [concentration:
+ *      tighter|wider] — is gone: it rendered the CONSTRAINT VERB, so one string
+ *      meant "more concentrated" on SP-04 and "more spread" on DV-01. Build
+ *      report 20260916 findings A4 / A5.)
  *   2. voiceLayerPrompt.js — the confirmation rule's acknowledgement asks for
  *      the canonical text word for word instead of "that's my lean now."
  *   3. directiveGate.js — after the membership check, the selected id's

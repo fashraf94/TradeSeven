@@ -39,6 +39,29 @@
 // INVARIANT (#8): every adjustment is coreAlignment 'reinforces' | 'neutral' —
 // no canonical reverses its archetype's core direction. The gate is airtight
 // because there is no core-reversing id to select.
+
+// CAUTIOUS REGISTER (added 2026-09-17 — the cautious register comes from the
+// charter, not from a policy field). Each archetype carries a `cautiousRegister`
+// array: the menu ids named by that archetype's own "More cautious = ..."
+// sentence in ARCHETYPE_DEF_*_2026-06-24.md, ONE ID PER CLAUSE, in the
+// charter's clause order (so the ids read in the same order as the prose the
+// prompt renders one block above them).
+//
+// WHY A FIELD AND NOT A DERIVATION. The directive-fit-check build derived the
+// register from `policy` (risk 'lower' + concentration 'neutral' + horizon
+// 'neutral'). That derivation is provably incapable of reproducing the charter:
+// SP-02, SP-06 and SP-07 carry BYTE-IDENTICAL policy triples, so no function of
+// `policy` can include two of them and exclude the third — and the charter names
+// SP-01, SP-02, SP-06. Across the six archetypes the derived line disagreed with
+// the charter prose in FOUR, and was entirely DISJOINT for `diversifier`
+// (charter DV-01/02/03 vs derived DV-06). Two sources for one fact, eleven lines
+// apart in one prompt block, is the BUILD_RULES §9 drift class by name. The
+// field makes the charter the ONE source. See
+// docs/audits/20260916_BUILD_DIRECTIVE_FIT_CHECK.md §6 D-1 / §7 A4.
+//
+// The founder blesses the six lists; the build only proposes them. Shape is
+// enforced by archetypeRegistry.validateRegistryCompleteness (every id on that
+// archetype's own menu, list non-empty, no two ids sharing a conflict group).
 //
 // FALLBACK POLICY (#4): the `analyst` fallback is DISPLAY / zone-lookup ONLY
 // (getArchetypeZones). It is NEVER a directive-write path — getAllowlist /
@@ -58,6 +81,12 @@ export const ARCHETYPE_ADJUSTMENTS = {
       outOfScopeUserLever:
         "Doesn't own going defensive, shorting, or hedging. Adjusts its own book by conversation in every mode; points the user to real levers only (tournament: flip / claim / board-rank; standard: coach a directive or equip a watchlist — there is no standard-mode trade lever); and may coach a real screen ('go explore'), never promising to bring results back.",
     },
+    // CAUTIOUS REGISTER — the charter's own "more cautious" sentence, bound to
+    // menu ids, one id per clause, in the charter's clause order.
+    // ARCHETYPE_DEF_TREND_FOLLOWER_TEMPLATE_2026-06-24.md:47 — "raise its own
+    // bar (stronger confirmation, cleanest breakouts only, lean harder on the
+    // technical leg, size down)".
+    cautiousRegister: ['TF-02', 'TF-01', 'TF-07', 'TF-05'],
     adjustments: [
       { id: 'TF-01', canonical: 'Prefer fresh breakouts over extended / late-stage entries', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'buying beaten-down reversals (becoming a Contrarian)' } },
       { id: 'TF-02', canonical: 'Require stronger confirmation before entering', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'fading momentum / buying weakness' } },
@@ -82,6 +111,9 @@ export const ARCHETYPE_ADJUSTMENTS = {
       outOfScopeUserLever:
         "Doesn't own momentum-chasing or FOMO entries. Adjusts its own book by conversation in every mode; hands the user toward real levers (tournament: flip / claim; standard: coach a directive or equip a watchlist) and coaches a real momentum screen ('go explore'). Holds the line on pre-stop capitulation rather than caving to fear.",
     },
+    // CAUTIOUS REGISTER — ARCHETYPE_DEF_CONTRARIAN_2026-06-24.md:59 — "tighten
+    // the stop / demand deeper washout / require a clearer turn".
+    cautiousRegister: ['CN-03', 'CN-01', 'CN-02'],
     adjustments: [
       { id: 'CN-01', canonical: 'Require a deeper washout before entering (greater oversold depth)', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'chasing strength / buying what is already running' } },
       { id: 'CN-02', canonical: 'Require a clearer technical turn/stabilization before entering', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'buying broken names with no turn' } },
@@ -106,6 +138,9 @@ export const ARCHETYPE_ADJUSTMENTS = {
       outOfScopeUserLever:
         "Doesn't own boring protection, shorts, or hedges as a mechanic. Adjusts its own book by conversation; hands the user toward real levers (tournament: flip a short / claim a volatile inverse; standard: coach a high-ATR inverse/high-beta screen or equip a watchlist) and, for a genuinely scared casual user, names the honest off-ramp (a hedge on their side, or a different agent for the battle).",
     },
+    // CAUTIOUS REGISTER — ARCHETYPE_DEF_SPECULATOR_2026-06-24.md:47 — "tighten
+    // the (still-wide) stop / hunt slightly-less-extreme volatility / size down".
+    cautiousRegister: ['SP-01', 'SP-02', 'SP-06'],
     adjustments: [
       { id: 'SP-01', canonical: 'Tighten the downside stop', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'shorter', coreAlignment: 'reinforces', forbiddenOpposite: 'removing the survival floor' } },
       { id: 'SP-02', canonical: 'Hunt slightly-less-extreme volatility (still high-ATR, not top decile)', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'buying stable, low-volatility names' } },
@@ -129,6 +164,15 @@ export const ARCHETYPE_ADJUSTMENTS = {
       outOfScopeUserLever:
         "Doesn't own bringing firepower / offense it won't hold. Adjusts its own book by conversation; coaches a real offense screen ('go explore' high arch_scores.degen or high atrPercentile) and points the user to real levers (tournament: board-rank / claim; standard: coach a directive or equip a watchlist — never 'go buy yourself'). May redirect to the archetype that's actually built for the ask.",
     },
+    // CAUTIOUS REGISTER — ARCHETYPE_DEF_CAPITAL_PRESERVER_2026-06-24.md:47 —
+    // "raise the quality bar / tighten the volatility ceiling / demand cleaner
+    // balance sheets". THREE clauses, TWO ids: the third clause restates the
+    // first — CP-01's own canonical parenthetical is "(demand cleaner
+    // fundamentals)", and balance sheets ARE fundamentals. No other CP id names
+    // that dial (CP-08 is a near-term CATALYST, a reason to act, not a measure
+    // of cleanliness). Flagged for the founder in the build report rather than
+    // padded to three.
+    cautiousRegister: ['CP-01', 'CP-02'],
     adjustments: [
       { id: 'CP-01', canonical: 'Raise the quality bar (demand cleaner fundamentals)', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'dropping the quality floor / buying junk' } },
       { id: 'CP-02', canonical: 'Tighten the volatility ceiling (even lower-beta names)', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'chasing high-beta / volatile names' } },
@@ -153,6 +197,10 @@ export const ARCHETYPE_ADJUSTMENTS = {
       outOfScopeUserLever:
         "Doesn't own conviction / all-in plays. Adjusts its own book by conversation; coaches a real single-sector / concentration screen ('go explore') and points the user to real levers (tournament: claim / board-rank to tilt; standard: coach a directive or equip a watchlist — never 'go concentrate yourself'). May redirect to Speculator / Trend Follower for the concentrated bet.",
     },
+    // CAUTIOUS REGISTER — ARCHETYPE_DEF_DIVERSIFIER_2026-06-24.md:49 — "tighten
+    // the cap / widen the spread / rebalance sooner". Confirmed against the
+    // charter: the review's read (DV-01, DV-02, DV-03) is exact.
+    cautiousRegister: ['DV-01', 'DV-02', 'DV-03'],
     adjustments: [
       { id: 'DV-01', canonical: 'Tighten the concentration cap (thinner per sector)', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'tighter', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'concentrating / going all-in on one sector' } },
       { id: 'DV-02', canonical: 'Widen the spread (target more sectors)', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'wider', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'narrowing into a single theme' } },
@@ -176,6 +224,10 @@ export const ARCHETYPE_ADJUSTMENTS = {
       outOfScopeUserLever:
         "Doesn't own buying hot-but-low-quality names. Adjusts its own book by conversation; coaches a real momentum/volatility screen ('go explore' high momentumScore / atrPercentile regardless of fundamentals) and points the user to real levers (tournament: claim / board-rank; standard: coach a directive or equip a watchlist — never 'go buy junk yourself'). May redirect to Trend Follower / Speculator.",
     },
+    // CAUTIOUS REGISTER — ARCHETYPE_DEF_FUNDAMENTAL_INVESTOR_2026-06-24.md:54 —
+    // "raise the quality bar / demand a cleaner technical setup / hold
+    // conviction longer".
+    cautiousRegister: ['FI-01', 'FI-02', 'FI-03'],
     adjustments: [
       { id: 'FI-01', canonical: 'Raise the quality bar (demand stronger fundamentals)', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'dropping the quality floor / buying junk' } },
       { id: 'FI-02', canonical: 'Require a cleaner technical setup before committing', canonicalTextVersion: 1, policy: { riskDirection: 'lower', concentrationDirection: 'neutral', timeHorizonDirection: 'neutral', coreAlignment: 'reinforces', forbiddenOpposite: 'chasing a hot chart regardless of setup' } },
@@ -213,6 +265,13 @@ export const getArchetypeZones = (codeId) =>
 // DIRECTIVE-WRITE PATH — NO analyst fallback (#4). Unknown/missing code-id → [].
 export const getAllowlist = (codeId) =>
   ARCHETYPE_ADJUSTMENTS[codeId]?.adjustments ?? [];
+
+// The charter's cautious register for an archetype: the menu ids its own "More
+// cautious = ..." sentence names. Directive-adjacent read path, so NO analyst
+// fallback — an unknown/missing code-id yields [] and the prompt renders no
+// cautious-register line at all (never another archetype's).
+export const getCautiousRegister = (codeId) =>
+  ARCHETYPE_ADJUSTMENTS[codeId]?.cautiousRegister ?? [];
 
 // True only when `id` belongs to a KNOWN archetype's own allowlist. Unknown
 // code-id or cross-archetype id → false (no fallback).

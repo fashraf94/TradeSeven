@@ -203,6 +203,53 @@ export function computeIdentityHash() {
 }
 
 /**
+ * CAUTIOUS-REGISTER shape check (2026-09-17). The charter's own "More cautious
+ * = ..." sentence, bound to menu ids, is the ONE source the prompt's
+ * `[cautious register]` tag and its summary line both read — so its shape is a
+ * registry invariant, not a renderer's problem.
+ *
+ * Read straight from the keyed home (like ARCHETYPE_KEYS above): the field is
+ * deliberately NOT surfaced on getArchetypeDefinition, which would change
+ * computeIdentityHash and force an ARCHETYPE_IDENTITY_VERSION bump plus two new
+ * snapshot artifacts for a fact no registry consumer reads yet.
+ *
+ * Exported as a PURE function so the three failure modes can be shown failing
+ * with synthetic input — mocking src/data/archetypeAdjustments.js in the
+ * registry's own suite would also fake the identityHash lock, which needs the
+ * real content.
+ *
+ * Three rules, each closing a way the list could lie to the model:
+ *   1. every id is on THIS archetype's own menu — a typo or a cross-archetype
+ *      id points the model at something it may not select;
+ *   2. the list is non-empty — every charter has a "More cautious" sentence, so
+ *      an empty list means the field was never authored, and the prompt would
+ *      silently drop the line rather than fail;
+ *   3. no two ids in one list share a conflict group — the register would then
+ *      offer both ends of one dial as "more cautious", which is the §9
+ *      display-disagreement this field exists to end.
+ *
+ * @returns {string[]} problems (empty = valid)
+ */
+export function validateCautiousRegister({ archetypeId, register, allowlistIds, conflictGroups }) {
+  const problems = [];
+  if (!Array.isArray(register) || register.length === 0) {
+    problems.push(`${archetypeId}: cautiousRegister is missing or empty`);
+    return problems;
+  }
+  const menu = allowlistIds instanceof Set ? allowlistIds : new Set(allowlistIds || []);
+  for (const rid of register) {
+    if (!menu.has(rid)) problems.push(`${archetypeId}: cautiousRegister id ${rid} not on this archetype's menu`);
+  }
+  for (const group of conflictGroups || []) {
+    const inBoth = (group?.members || []).map((m) => m?.id).filter((mid) => register.includes(mid));
+    if (inBoth.length > 1) {
+      problems.push(`${archetypeId}: cautiousRegister holds both ends of conflict group ${group?.groupId} (${inBoth.join(', ')})`);
+    }
+  }
+  return problems;
+}
+
+/**
  * Completeness validator (§2.3): every archetype present in every keyed home,
  * structural invariants intact. Returns { complete, problems: [] }.
  */
@@ -256,6 +303,14 @@ export function validateRegistryCompleteness() {
         if (!allowlistIds.has(m?.id)) problems.push(`${id}: conflict-group member ${m?.id} not in allowlist`);
       }
     }
+
+    // CAUTIOUS REGISTER shape (2026-09-17) — see validateCautiousRegister below.
+    problems.push(...validateCautiousRegister({
+      archetypeId: id,
+      register: ARCHETYPE_ADJUSTMENTS[id]?.cautiousRegister,
+      allowlistIds,
+      conflictGroups: def.conflictGroups,
+    }));
   }
 
   if (!Array.isArray(FORGE_RULE_TEMPLATES) || FORGE_RULE_TEMPLATES.length === 0) {

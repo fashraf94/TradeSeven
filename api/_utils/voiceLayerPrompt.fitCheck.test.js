@@ -55,6 +55,10 @@ vi.mock('./marketSchedule.js', async (importOriginal) => ({
 }));
 
 import { buildVoiceLayerPrompt, buildFirstMessagePrompt } from './voiceLayerPrompt.js';
+// The charter itself, for the mutation row below: it recomputes the RETIRED
+// policy derivation from the live policy triples and proves it still disagrees
+// with what the prompt now renders. Same §4 dependency-surface guard; never mocked.
+import { getAllowlist, getCautiousRegister } from '../../src/data/archetypeAdjustments.js';
 
 // The exact anchor the flag-ON transform replaces, and its replacement —
 // spelled out HERE, independently of the module under test, so the surgical-
@@ -114,32 +118,43 @@ describe('A-1 — menu render: flag-OFF is the pre-build bytes', () => {
     for (const archetype of ARCHETYPES) {
       const block = archetypeBlockOf(promptFor(archetype));
       expect(block).not.toContain('[cautious register]');
-      expect(block).not.toContain('[concentration:');
       expect(block).not.toContain('[opposite of');
       expect(block).not.toContain('More cautious, in character:');
+    }
+  });
+
+  // The `[concentration: ...]` tag is GONE (finding A5), not flag-gated — so it
+  // is absent from the WHOLE prompt at BOTH flag states, not just from the menu
+  // block. A flag-gated absence would let it come back on a flip.
+  it('the [concentration: ...] tag is absent from the whole prompt at EVERY flag state', () => {
+    for (const on of [false, true]) {
+      fitCheck.on = on;
+      for (const archetype of ARCHETYPES) {
+        expect(promptFor(archetype), `${archetype} @ flag=${on}`).not.toContain('[concentration');
+      }
     }
   });
 });
 
 describe('A-1 — menu render: flag-ON annotates every line from the data module', () => {
   // The Speculator menu, with the annotation each line must carry. Written out
-  // FROM THE CHARTER TABLE, not copied from the renderer — a row derived from
-  // the code under test cannot fail when that code is wrong.
+  // FROM THE CHARTER, not copied from the renderer — a row derived from the
+  // code under test cannot fail when that code is wrong.
   //
-  // SP-01 carries NO tag although the charter's prose names "tighten the
-  // still-wide stop" first among its cautious moves: its policy is
-  // timeHorizonDirection 'shorter', and the cautious-register derivation is
-  // risk-lower + concentration-neutral + horizon-neutral. See the build
-  // report's Deviations section — SP-02 / SP-06 / SP-07 carry byte-identical
-  // policy, so no function of `policy` can list the charter's trio.
+  // SP-01 CARRIES THE TAG NOW. The charter's own sentence
+  // (ARCHETYPE_DEF_SPECULATOR_2026-06-24.md:47) names "tighten the (still-wide)
+  // stop" FIRST among the Speculator's cautious moves, and the register is read
+  // from that sentence instead of a `policy` predicate that could not express
+  // it (SP-02/06/07 are byte-identical in policy). SP-07 loses the tag for the
+  // same reason: the charter does not name it.
   const SPECULATOR_LINES = [
-    ['SP-01', '  SP-01: Tighten the downside stop'],
+    ['SP-01', '  SP-01: Tighten the downside stop — [cautious register]'],
     ['SP-02', '  SP-02: Hunt slightly-less-extreme volatility (still high-ATR, not top decile) — [cautious register]'],
     ['SP-03', '  SP-03: Trade less frequently — fewer, more-committed swings'],
-    ['SP-04', '  SP-04: Concentrate into fewer high-conviction movers — [concentration: tighter] [opposite of SP-05]'],
-    ['SP-05', '  SP-05: Spread across more names (diversify the chaos) — [concentration: wider] [opposite of SP-04]'],
+    ['SP-04', '  SP-04: Concentrate into fewer high-conviction movers — [opposite of SP-05]'],
+    ['SP-05', '  SP-05: Spread across more names (diversify the chaos) — [opposite of SP-04]'],
     ['SP-06', '  SP-06: Reduce position size on new entries — [cautious register]'],
-    ['SP-07', '  SP-07: Require a stronger momentum/technical trigger before piling in — [cautious register]'],
+    ['SP-07', '  SP-07: Require a stronger momentum/technical trigger before piling in'],
   ];
 
   it.each(SPECULATOR_LINES)('%s renders its exact annotated line, whole', (_id, line) => {
@@ -152,13 +167,13 @@ describe('A-1 — menu render: flag-ON annotates every line from the data module
   it('SP-04 and SP-05 name each other as the two ends of one dial', () => {
     fitCheck.on = true;
     const block = archetypeBlockOf(promptFor('degen'));
-    expect(block).toContain('SP-04: Concentrate into fewer high-conviction movers — [concentration: tighter] [opposite of SP-05]');
-    expect(block).toContain('SP-05: Spread across more names (diversify the chaos) — [concentration: wider] [opposite of SP-04]');
+    expect(block).toContain('SP-04: Concentrate into fewer high-conviction movers — [opposite of SP-05]');
+    expect(block).toContain('SP-05: Spread across more names (diversify the chaos) — [opposite of SP-04]');
   });
 
-  it('the cautious-register line lists exactly the derived ids', () => {
+  it('the cautious-register line lists exactly the charter ids, in the charter\'s clause order', () => {
     fitCheck.on = true;
-    expect(archetypeBlockOf(promptFor('degen'))).toContain('More cautious, in character: SP-02, SP-06, SP-07.');
+    expect(archetypeBlockOf(promptFor('degen'))).toContain('More cautious, in character: SP-01, SP-02, SP-06.');
   });
 
   it('forbiddenOpposite text appears NOWHERE in the prompt (a menu must not teach the reversal)', () => {
@@ -182,13 +197,19 @@ describe('A-1 — menu render: flag-ON annotates every line from the data module
   // CN-05 / CN-08 (profit-taking eagerness) and neither end carries a
   // concentration tag — so this row proves the three annotation kinds are
   // independent, not a Speculator-shaped coincidence.
-  it('repeats for Contrarian: its own group, its own cautious register, no concentration tag', () => {
+  it('repeats for Contrarian: its own group, its own cautious register', () => {
     fitCheck.on = true;
     const block = archetypeBlockOf(promptFor('contrarian'));
     expect(block).toContain('\n  CN-05: Take profit more eagerly into resistance — [opposite of CN-08]\n');
     expect(block).toContain('\n  CN-08: Hold longer for the reversal before trimming (more patient profit-taking) — [opposite of CN-05]\n');
-    expect(block).toContain('More cautious, in character: CN-01, CN-02, CN-06, CN-07.');
-    expect(block).not.toContain('[concentration:'); // no CN line moves concentration
+    // The charter (ARCHETYPE_DEF_CONTRARIAN_2026-06-24.md:59): "tighten the stop
+    // / demand deeper washout / require a clearer turn" — CN-03 leads, which the
+    // policy derivation dropped entirely. CN-06 and CN-07 are NOT in the
+    // charter's sentence, and the derivation wrongly listed both.
+    expect(block).toContain('More cautious, in character: CN-03, CN-01, CN-02.');
+    expect(block).toContain('\n  CN-03: Tighten the downside stop — [cautious register]\n');
+    expect(block).toContain('\n  CN-06: Demand a stronger fundamental reason underneath the name\n');
+    expect(block).toContain('\n  CN-07: Reduce position size on new entries\n');
   });
 
   it('every archetype annotates at least one line, and no line is annotated twice', () => {
@@ -207,31 +228,33 @@ describe('A-1 — menu render: flag-ON annotates every line from the data module
     }
   });
 
-  // ── DOCUMENTED LIMIT — the cautious register disagrees with the charter prose
-  // rendered eight lines above it, in FOUR of six archetypes (§2 review finding
-  // A4, build report §6 D-1). This row PINS a known conflict, not a behaviour
-  // anyone wants: delete it when the conflict is resolved, do not "fix" it.
+  // ── A4, CLOSED. The cautious register used to be DERIVED from `policy`, and
+  // disagreed with the charter prose rendered eight lines above it in FOUR of
+  // six archetypes — entirely disjoint for `diversifier`. It is now READ from
+  // the charter's own sentence (src/data/archetypeAdjustments.js
+  // `cautiousRegister`), so the two claims a reader of the prompt meets at once
+  // come from ONE source, which is what BUILD_RULES §9 asks for.
   //
-  // BUILD_RULES §9 (display-agreement) is the rule at stake: a label and the
-  // fact it names must come from ONE source. Here `zones.protectedBias` (the
-  // charter's own sentence, rendered verbatim as PROTECTED BIAS) and the
-  // derived `More cautious, in character:` line are two sources for one fact,
-  // in one block, and they demonstrably disagree.
-  //
-  // The derivation cannot be fixed in this module: SP-02/SP-06/SP-07 carry
-  // byte-identical `policy`, so no function of `policy` can produce the
-  // charter's trio. The clean fix is a `cautiousRegister` field on
-  // src/data/archetypeAdjustments.js — ONE source — which needs founder
-  // sanction, that file being read-only in this build.
-  it('LIMIT: the derived cautious register disagrees with the charter prose in 4 of 6 archetypes', () => {
+  // This row is the former LIMIT row INVERTED: the same six expectations, hand-
+  // transcribed from the six ARCHETYPE_DEF_*_2026-06-24.md charters — NOT read
+  // back out of the data module — now asserted to AGREE instead of to disagree.
+  // If someone re-derives the register from `policy`, every archetype but
+  // guardian and momentum_chaser reds here.
+  it('the cautious register IS the charter sentence, in all six archetypes', () => {
     fitCheck.on = true;
-    // What the charter's own "More cautious = ..." sentence names, read off the
-    // prose by hand — NOT derived from the code under test.
+    // Transcribed by hand from each charter's "More cautious = ..." sentence,
+    // one id per clause, in the charter's own clause order. The file:line each
+    // came from is in the data module beside the field.
     const CHARTER_SAYS = {
-      degen: ['SP-01', 'SP-02', 'SP-06'],          // tighten the stop / less-extreme vol / size down
-      contrarian: ['CN-03', 'CN-01', 'CN-02'],     // tighten the stop / deeper washout / clearer turn
-      analyst: ['FI-01', 'FI-02', 'FI-03'],        // quality bar / cleaner setup / hold longer
-      diversifier: ['DV-01', 'DV-02', 'DV-03'],    // tighten the cap / widen the spread / rebalance sooner
+      degen: ['SP-01', 'SP-02', 'SP-06'],           // tighten the stop / less-extreme vol / size down
+      contrarian: ['CN-03', 'CN-01', 'CN-02'],      // tighten the stop / deeper washout / clearer turn
+      analyst: ['FI-01', 'FI-02', 'FI-03'],         // quality bar / cleaner setup / hold conviction longer
+      diversifier: ['DV-01', 'DV-02', 'DV-03'],     // tighten the cap / widen the spread / rebalance sooner
+      // THREE clauses, TWO ids: "demand cleaner balance sheets" restates "raise
+      // the quality bar" — CP-01's own canonical reads "(demand cleaner
+      // fundamentals)". Recorded here rather than padded to three.
+      guardian: ['CP-01', 'CP-02'],                 // quality bar / volatility ceiling / (cleaner balance sheets = CP-01)
+      momentum_chaser: ['TF-02', 'TF-01', 'TF-07', 'TF-05'], // confirmation / cleanest breakouts / technical leg / size down
     };
     const renderedIds = (archetype) => {
       const line = archetypeBlockOf(promptFor(archetype))
@@ -240,29 +263,73 @@ describe('A-1 — menu render: flag-ON annotates every line from the data module
       return line.replace('More cautious, in character: ', '').replace(/\.$/, '').split(', ');
     };
 
-    // Each drops a move its own prose names. For degen and contrarian it is the
-    // FIRST-named one ("tighten the still-wide stop" / "tighten the stop"); for
-    // analyst it is the THIRD ("hold conviction longer") — the refutation pass
-    // corrected an earlier draft of this comment that said "first" for all three.
-    expect(renderedIds('degen')).not.toContain('SP-01');
-    expect(renderedIds('contrarian')).not.toContain('CN-03');
-    expect(renderedIds('analyst')).not.toContain('FI-03');
+    for (const [archetype, ids] of Object.entries(CHARTER_SAYS)) {
+      expect(renderedIds(archetype), `${archetype} cautious register`).toEqual(ids);
+    }
 
-    // diversifier is the sharpest: the two sets are entirely DISJOINT.
+    // The three ids the OLD derivation dropped, each the one its own charter
+    // names first (degen, contrarian) or third (analyst). Named explicitly so a
+    // regression reds on the exact defect that motivated the field.
+    expect(renderedIds('degen')).toContain('SP-01');
+    expect(renderedIds('contrarian')).toContain('CN-03');
+    expect(renderedIds('analyst')).toContain('FI-03');
+
+    // diversifier was the sharpest: derived DV-06, charter DV-01/02/03 —
+    // disjoint. Now the charter's three, and DV-06 is NOT among them.
     const dv = renderedIds('diversifier');
-    expect(dv).toEqual(['DV-06']);
-    for (const id of CHARTER_SAYS.diversifier) expect(dv).not.toContain(id);
+    expect(dv).toEqual(['DV-01', 'DV-02', 'DV-03']);
+    expect(dv).not.toContain('DV-06');
 
-    // And the charter's sentence really is in the same block, so a reader of
-    // the prompt sees both claims at once.
+    // And the charter's sentence really is in the same block, so the reader of
+    // the prompt now meets two statements of ONE fact instead of two facts.
     const block = archetypeBlockOf(promptFor('diversifier'));
     expect(block).toContain('More cautious = tighten the cap / widen the spread / rebalance sooner');
-    expect(block).toContain('More cautious, in character: DV-06.');
+    expect(block).toContain('More cautious, in character: DV-01, DV-02, DV-03.');
+  });
 
-    // guardian and momentum_chaser do NOT disagree — so this is four of six,
-    // not a blanket failure, and the row says which.
-    expect(renderedIds('guardian')).toEqual(['CP-01', 'CP-02', 'CP-08']);
-    expect(renderedIds('momentum_chaser')).toContain('TF-02');
+  // The per-line tag and the summary line are ONE list by construction — this
+  // row proves it at the render, so a future refactor cannot reintroduce the
+  // "one predicate, two renders" split the review found.
+  it('every [cautious register] tag and the summary line name exactly the same ids', () => {
+    fitCheck.on = true;
+    for (const archetype of ARCHETYPES) {
+      const block = archetypeBlockOf(promptFor(archetype));
+      const tagged = block.split('\n')
+        .filter((l) => /^ {2}[A-Z]{2}-\d\d: /.test(l) && l.includes('[cautious register]'))
+        .map((l) => l.slice(2, 7));
+      const summary = block.split('\n').find((l) => l.startsWith('More cautious, in character: '))
+        .replace('More cautious, in character: ', '').replace(/\.$/, '').split(', ');
+      expect([...tagged].sort(), `${archetype}: tags vs summary`).toEqual([...summary].sort());
+    }
+  });
+
+  // MUTATION CHECK for the two rows above: a register that is not the charter's
+  // must red them. Proven by rendering against a doctored list rather than by
+  // trusting that the assertions "look strict" — the old derivation IS the
+  // mutation, and it is what these rows exist to reject.
+  it('MUTATION CHECK — the old policy derivation would fail the agreement row', () => {
+    // The ids the retired `policy` predicate (risk lower + concentration
+    // neutral + horizon neutral) selected, recomputed here from the module's own
+    // policy triples so the row cannot go stale against a data edit.
+    const derived = (archetype) => getAllowlist(archetype)
+      .filter((a) => a.policy.riskDirection === 'lower'
+        && a.policy.concentrationDirection === 'neutral'
+        && a.policy.timeHorizonDirection === 'neutral')
+      .map((a) => a.id);
+    // Four of six DROP a move the charter names; all six differ from it. Still
+    // true of the derivation, and now NOT true of what the prompt renders.
+    expect(derived('degen')).toEqual(['SP-02', 'SP-06', 'SP-07']);
+    expect(derived('contrarian')).toEqual(['CN-01', 'CN-02', 'CN-06', 'CN-07']);
+    expect(derived('analyst')).toEqual(['FI-01', 'FI-02', 'FI-07', 'FI-08']);
+    expect(derived('diversifier')).toEqual(['DV-06']);
+    for (const a of ARCHETYPES) {
+      expect(derived(a), `${a}: derivation must differ from the charter`)
+        .not.toEqual(getCautiousRegister(a));
+    }
+    // ...and the renderer must be on the charter side of that difference.
+    fitCheck.on = true;
+    expect(archetypeBlockOf(promptFor('diversifier')))
+      .toContain(`More cautious, in character: ${getCautiousRegister('diversifier').join(', ')}.`);
   });
 
   // ── A2, CLOSED. The few-shots used to model a non-quoting acknowledgement in

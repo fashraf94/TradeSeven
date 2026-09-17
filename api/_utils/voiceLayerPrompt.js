@@ -15,7 +15,7 @@ import { getArchetypeLabel } from './agentArchetypeConfig.js';
 // Phase D (archetype integrity) — read-only deps. The api→src import edge is
 // Node-clean (precedent: api/agent/decide.js:23); the test's import of this file
 // is the BUILD_RULES §4 dependency-surface guard.
-import { getArchetypeZones, getAllowlist, getConflictGroups } from '../../src/data/archetypeAdjustments.js';
+import { getArchetypeZones, getAllowlist, getConflictGroups, getCautiousRegister } from '../../src/data/archetypeAdjustments.js';
 import { getEffectiveArchetype } from './directiveIdentity.js';
 import { ARCHETYPE_INTEGRITY_MODE, SHOW_IT_ENABLED, DIRECTIVE_FIT_CHECK_ENABLED } from '../../src/config/featureFlags.js';
 // The pane's motive renderer (D-80) — the SAME translator the grounded YOUR
@@ -2729,14 +2729,29 @@ function buildCohortDigestBlock(digest) {
 // THE DIRECTIVE FIT CHECK, half one (Phase 0 Q3) — the menu shows the dial.
 //
 // The shipped menu is seven bare strings: `id: canonical` and nothing else. The
-// data module already knows which ids are the cautious register, which way each
-// one moves concentration, and which two are opposite ends of one dial
-// (ADJUSTMENT_CONFLICT_GROUPS) — and rendered none of it, so the model chose
-// blind and nothing downstream noticed when it chose the wrong end (the Sep 14
-// incident: "Full Defense" filed SP-05, the SPREAD end of the concentration
-// dial). These annotations are DERIVED, never authored here: the charter owns
-// this fact and a second copy of it in this module is the drift class
-// BUILD_RULES §4 forbids.
+// data module already knows which ids are the cautious register and which two
+// are opposite ends of one dial (ADJUSTMENT_CONFLICT_GROUPS) — and rendered
+// none of it, so the model chose blind and nothing downstream noticed when it
+// chose the wrong end (the Sep 14 incident: "Full Defense" filed SP-05, the
+// SPREAD end of the concentration dial). Both annotations are READ from the
+// data module, never authored here: the charter owns these facts and a second
+// copy of them in this module is the drift class BUILD_RULES §4 forbids.
+//
+// TWO TAGS, NOT THREE (2026-09-17). `[cautious register]` now reads the
+// charter's own `cautiousRegister` list instead of a `policy` predicate, and
+// `[concentration: tighter|wider]` is GONE. Both changes close §9
+// display-agreement defects the fit-check review found:
+//   - the policy predicate disagreed with the charter prose rendered eleven
+//     lines above it in FOUR of six archetypes and was disjoint for
+//     `diversifier` (finding A4 / build report §6 D-1);
+//   - `concentrationDirection` tracks the CONSTRAINT VERB, not the book
+//     outcome, by the data module's own standing drafting rule — so the
+//     identical string `[concentration: tighter]` meant "more concentrated" on
+//     SP-04 and "more SPREAD" on DV-01, and DV-05, the one DV id that genuinely
+//     concentrates, carried no tag at all (finding A5). A tag that points two
+//     ways is worse than no tag; the dial the model actually needs is the
+//     `[opposite of ...]` pair, which reads the ADJUDICATED groups and the
+//     review found correct.
 //
 // `forbiddenOpposite` is deliberately NOT rendered. It names the thing the
 // character must not become; a menu should not teach it.
@@ -2744,24 +2759,14 @@ function buildCohortDigestBlock(digest) {
 // Flag-off returns the shipped line, byte for byte.
 function renderMenuAnnotations(codeId, adjustment) {
   if (!DIRECTIVE_FIT_CHECK_ENABLED) return '';
-  const policy = adjustment.policy || {};
   const tags = [];
-  // The cautious register, as the policy types define it: lowers risk without
-  // touching book shape or the clock. NOTE (build report §Deviations): this is
-  // the derivation the brief specifies, and it is NOT the charter's prose trio
-  // for the Speculator — SP-02/SP-06/SP-07 carry byte-identical policy, so no
-  // function of `policy` can include two of them and exclude the third. The
-  // charter's own sentence still reaches the model verbatim, one block above,
-  // as PROTECTED BIAS.
-  if (
-    policy.riskDirection === 'lower'
-    && policy.concentrationDirection === 'neutral'
-    && policy.timeHorizonDirection === 'neutral'
-  ) {
+  // The cautious register, straight from the charter's own "More cautious = ..."
+  // sentence via the data module's `cautiousRegister` list. Nothing is derived
+  // here: the same list drives this per-line tag and the summary line below, so
+  // the two can never disagree, and neither can disagree with the PROTECTED BIAS
+  // prose rendered one block above — all three are the one charter sentence.
+  if (getCautiousRegister(codeId).includes(adjustment.id)) {
     tags.push('[cautious register]');
-  }
-  if (policy.concentrationDirection === 'tighter' || policy.concentrationDirection === 'wider') {
-    tags.push(`[concentration: ${policy.concentrationDirection}]`);
   }
   // One tag per conflict-group partner — the dial the two ends share. Union
   // over groups, self excluded; an id may sit in more than one group.
@@ -2775,13 +2780,13 @@ function renderMenuAnnotations(codeId, adjustment) {
   return tags.length ? ` — ${tags.join(' ')}` : '';
 }
 
-// The charter's "more cautious" prose, bound to ids. Omitted when the
-// derivation names nothing (and, like every annotation, when the flag is off).
-function renderCautiousRegisterLine(codeId, allowlist) {
+// The charter's "more cautious" sentence, bound to ids — the SAME list the
+// per-line tag reads, rendered in the charter's own clause order. Omitted for an
+// unknown archetype (the list is empty) and, like every annotation, when the
+// flag is off.
+function renderCautiousRegisterLine(codeId) {
   if (!DIRECTIVE_FIT_CHECK_ENABLED) return '';
-  const ids = allowlist
-    .filter((a) => renderMenuAnnotations(codeId, a).includes('[cautious register]'))
-    .map((a) => a.id);
+  const ids = getCautiousRegister(codeId);
   return ids.length ? `\nMore cautious, in character: ${ids.join(', ')}.` : '';
 }
 
@@ -2799,7 +2804,7 @@ PROTECTED BIAS (your default leans; adjustable at the margin, never abandoned): 
 OUT-OF-SCOPE / USER LEVERS (what you do NOT own — hand these off, never do them yourself): ${zones.outOfScopeUserLever}
 
 YOUR MENU — the only adjustments you may select as a directive (emit the id in _archetypeProposal):
-${menu}${renderCautiousRegisterLine(codeId, allowlist)}`;
+${menu}${renderCautiousRegisterLine(codeId)}`;
 }
 
 // Phase E2 — the "USER LEVERS RIGHT NOW" block. Translates the capabilities
