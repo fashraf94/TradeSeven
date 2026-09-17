@@ -15,6 +15,7 @@ import ARCHETYPE_ADJUSTMENTS_DEFAULT, {
   getAllowlist,
   isValidAdjustmentId,
   getCanonicalText,
+  getCautiousRegister,
 } from './archetypeAdjustments.js';
 
 const SIX_KEYS = ['momentum_chaser', 'contrarian', 'degen', 'guardian', 'diversifier', 'analyst'];
@@ -262,5 +263,122 @@ describe('Release 2 — ADJUSTMENT_CONFLICT_GROUPS (adjudication-gated drafts)',
     expect(getOpposedLeanIds('diversifier', 'DV-03', ['DV-05', 'DV-01'])).toEqual(['DV-05']);
     expect(getOpposedLeanIds('diversifier', 'DV-01', ['DV-05'])).toEqual([]);
     expect(getOpposedLeanIds('momentum_chaser', 'TF-01', ['TF-02'])).toEqual([]); // TF has no groups
+  });
+});
+
+// ── The cautious register: the charter's sentence, bound to ids (2026-09-17) ──
+//
+// Every expectation below is hand-transcribed from the six
+// ARCHETYPE_DEF_*_2026-06-24.md charters at the repo root — ONE ID PER CLAUSE, in
+// the charter's own clause order — and NOT read back out of the module under
+// test. A row derived from the data it guards cannot fail when that data is
+// wrong. The charter is the source; the founder blesses the mapping.
+describe('cautiousRegister — the charter sentence, one id per clause', () => {
+  // archetype → [the charter's clauses, in order] → [the ids they name]
+  const CHARTER = {
+    // TREND_FOLLOWER_TEMPLATE:47 — "raise its own bar (stronger confirmation,
+    // cleanest breakouts only, lean harder on the technical leg, size down)"
+    momentum_chaser: ['TF-02', 'TF-01', 'TF-07', 'TF-05'],
+    // CONTRARIAN:59 — "tighten the stop / demand deeper washout / require a
+    // clearer turn"
+    contrarian: ['CN-03', 'CN-01', 'CN-02'],
+    // SPECULATOR:47 — "tighten the (still-wide) stop / hunt slightly-less-extreme
+    // volatility / size down"
+    degen: ['SP-01', 'SP-02', 'SP-06'],
+    // CAPITAL_PRESERVER:47 — "raise the quality bar / tighten the volatility
+    // ceiling / demand cleaner balance sheets". THREE clauses, TWO ids: clause 3
+    // restates clause 1 (CP-01 reads "(demand cleaner fundamentals)"), and no
+    // other CP id names that dial — CP-08 is a near-term CATALYST, not a measure
+    // of cleanliness. Recorded, not padded.
+    guardian: ['CP-01', 'CP-02'],
+    // DIVERSIFIER:49 — "tighten the cap / widen the spread / rebalance sooner"
+    diversifier: ['DV-01', 'DV-02', 'DV-03'],
+    // FUNDAMENTAL_INVESTOR:54 — "raise the quality bar / demand a cleaner
+    // technical setup / hold conviction longer"
+    analyst: ['FI-01', 'FI-02', 'FI-03'],
+  };
+
+  it('every archetype carries the exact charter list, in the charter\'s order', () => {
+    for (const key of SIX_KEYS) {
+      expect(ARCHETYPE_ADJUSTMENTS[key].cautiousRegister, key).toEqual(CHARTER[key]);
+    }
+  });
+
+  it('every register id is on its OWN archetype\'s menu — never another\'s, never invented', () => {
+    for (const key of SIX_KEYS) {
+      const menu = new Set(getAllowlist(key).map((a) => a.id));
+      for (const id of ARCHETYPE_ADJUSTMENTS[key].cautiousRegister) {
+        expect(id.startsWith(ID_PREFIX[key]), `${key}: ${id} has the wrong prefix`).toBe(true);
+        expect(isValidAdjustmentId(key, id), `${key}: ${id} not on the menu`).toBe(true);
+        expect(menu.has(id)).toBe(true);
+      }
+    }
+  });
+
+  it('no list is empty, and no list repeats an id', () => {
+    for (const key of SIX_KEYS) {
+      const list = ARCHETYPE_ADJUSTMENTS[key].cautiousRegister;
+      expect(list.length, `${key}: empty register`).toBeGreaterThan(0);
+      expect(new Set(list).size, `${key}: duplicate id`).toBe(list.length);
+    }
+  });
+
+  it('getCautiousRegister NEVER falls back — unknown/missing code-id yields []', () => {
+    expect(getCautiousRegister('degen')).toEqual(['SP-01', 'SP-02', 'SP-06']);
+    expect(getCautiousRegister('does_not_exist')).toEqual([]);
+    expect(getCautiousRegister(undefined)).toEqual([]);
+    expect(getCautiousRegister(null)).toEqual([]);
+    // Unlike getArchetypeZones, it must NOT resolve to analyst's list.
+    expect(getCautiousRegister('does_not_exist')).not.toEqual(CHARTER.analyst);
+  });
+
+  // WHY THE FIELD EXISTS, as an executable statement. The retired derivation —
+  // policy.riskDirection 'lower' + concentration 'neutral' + horizon 'neutral' —
+  // is recomputed here from the live triples and shown to DISAGREE with the
+  // charter in four of six archetypes. If someone deletes the field and goes
+  // back to deriving, this row is the record of what that costs.
+  it('the retired `policy` derivation cannot reproduce the charter (4 of 6 disagree)', () => {
+    const derived = (key) => getAllowlist(key)
+      .filter((a) => a.policy.riskDirection === 'lower'
+        && a.policy.concentrationDirection === 'neutral'
+        && a.policy.timeHorizonDirection === 'neutral')
+      .map((a) => a.id);
+
+    const sorted = (xs) => [...xs].sort();
+
+    // The review's headline count, stated precisely: FOUR archetypes where the
+    // derivation DROPS a move its own charter names. That is the damaging half —
+    // a player asking for "more cautious" was pointed away from it.
+    const dropsACharterMove = SIX_KEYS.filter((k) => CHARTER[k].some((id) => !derived(k).includes(id)));
+    expect(sorted(dropsACharterMove)).toEqual(sorted(['degen', 'contrarian', 'analyst', 'diversifier']));
+
+    // And the count the review's table did not make: in SIX of six the derived
+    // set is not the charter's. `guardian` and `momentum_chaser` "agree" only as
+    // supersets — they ADD ids the charter never names (CP-08; TF-06 and TF-08).
+    const notTheCharter = SIX_KEYS.filter((k) => sorted(derived(k)).join() !== sorted(CHARTER[k]).join());
+    expect(sorted(notTheCharter)).toEqual(sorted(SIX_KEYS));
+    expect(derived('guardian')).toEqual(['CP-01', 'CP-02', 'CP-08']);
+    expect(derived('momentum_chaser')).toEqual(['TF-01', 'TF-02', 'TF-05', 'TF-06', 'TF-07', 'TF-08']);
+
+    // And the reason it CANNOT be fixed inside the derivation: the three
+    // Speculator ids the charter splits carry byte-identical DIRECTION triples
+    // (plus the same coreAlignment), so no function of those fields can include
+    // two and exclude the third — while the charter includes SP-06 and excludes
+    // SP-07. The only field that separates them is `forbiddenOpposite`, free
+    // prose naming the reversal, which is deliberately never rendered and would
+    // be a second source for the same fact if it were read as a dial.
+    const dial = (id) => {
+      const { riskDirection, concentrationDirection, timeHorizonDirection, coreAlignment } =
+        getAllowlist('degen').find((a) => a.id === id).policy;
+      return JSON.stringify({ riskDirection, concentrationDirection, timeHorizonDirection, coreAlignment });
+    };
+    expect(dial('SP-02')).toBe(dial('SP-06'));
+    expect(dial('SP-06')).toBe(dial('SP-07'));
+    expect(CHARTER.degen).toContain('SP-06');
+    expect(CHARTER.degen).not.toContain('SP-07');
+
+    // diversifier was entirely disjoint — the sharpest case.
+    expect(derived('diversifier')).toEqual(['DV-06']);
+    for (const id of CHARTER.diversifier) expect(derived('diversifier')).not.toContain(id);
   });
 });
