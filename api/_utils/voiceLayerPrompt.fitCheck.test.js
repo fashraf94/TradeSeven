@@ -265,46 +265,65 @@ describe('A-1 — menu render: flag-ON annotates every line from the data module
     expect(renderedIds('momentum_chaser')).toContain('TF-02');
   });
 
-  // ── DOCUMENTED LIMIT — the flag-ON prompt demands a verbatim quote in one
-  // paragraph while modelling and prescribing NON-quoting acknowledgements
-  // elsewhere in the same prompt (§2 review findings A2 / A3, build report §7).
-  // This row PINS the contradiction; delete it when the prompt is reconciled.
+  // ── A2, CLOSED. The few-shots used to model a non-quoting acknowledgement in
+  // the higher-attention slot, against one paragraph demanding a quote. Every
+  // example that FILES now quotes, carries the canonical as its directive text,
+  // and names the id it quoted — the one field the gate actually reads.
+  it('every directive-writing few-shot quotes, and names the id it quoted', () => {
+    fitCheck.on = true;
+    const prompt = promptFor('degen');
+    const filingLines = prompt.split('\n').filter((l) => l.startsWith('Agent: {') && l.includes('"hasDirective":true'));
+    expect(filingLines.length, 'discovery + confirmation both file').toBe(2);
+    for (const line of filingLines) {
+      const ex = JSON.parse(line.slice('Agent: '.length));
+      expect(ex.response, 'the modelled reply quotes').toContain(ex.directive.text);
+      expect(ex._archetypeProposal.selectedAdjustmentId, 'and names its id').toBe('SP-01');
+      // The canonical is the directive text, not free prose the gate discards.
+      expect(ex.directive.text).toBe('Tighten the downside stop');
+    }
+    // The shipped paraphrases are gone from the examples.
+    expect(prompt).not.toContain("That's the bias I'm carrying into my next read");
+  });
+
+  it('a few-shot that does NOT file is left alone — it has nothing to quote', () => {
+    fitCheck.on = true;
+    // The refinement example presents options with hasDirective false.
+    const prompt = promptFor('degen', 12);
+    expect(prompt).toContain('"hasDirective": false');
+    expect(prompt).toContain('Trust our gut — hold');
+  });
+
+  it('the examples are built from the agent\'s OWN menu, not a hardcoded one', () => {
+    fitCheck.on = true;
+    const contrarian = promptFor('contrarian');
+    const filing = contrarian.split('\n').find((l) => l.startsWith('Agent: {') && l.includes('"hasDirective":true'));
+    const ex = JSON.parse(filing.slice('Agent: '.length));
+    expect(ex._archetypeProposal.selectedAdjustmentId).toBe('CN-01');
+    expect(ex.directive.text).toBe('Require a deeper washout before entering (greater oversold depth)');
+    expect(ex.response).toContain(ex.directive.text);
+  });
+
+  // ── DOCUMENTED LIMIT — A3 remains open. The output contract now demands the
+  // quote on every filing turn and the examples obey it, but TWO_LEG_SIGNAL_RULE
+  // — pushed under the SAME guard as the menu — still hands the model near-miss
+  // paraphrases of the sentences the gate wants verbatim. This row PINS what is
+  // still unreconciled; delete it when that rule is reconciled, do not "fix" it.
   //
-  // Why it matters more than it looks: the refutation pass established that the
-  // flag-ON gate's commits are a SUBSET of the flag-OFF gate's, by construction
-  // — the fit check can only ever REFUSE, never mis-file. So the realistic
-  // failure mode of the flip is not a wrong directive; it is that directive
-  // filing quietly STOPS, because the prompt keeps teaching the model to
-  // paraphrase. Commit B moved one paragraph and left four few-shots and a
-  // signal-language rule pointing the other way.
-  it('LIMIT: the flag-ON prompt both demands the quote and teaches the paraphrase', () => {
+  // Not fixed here: TWO_LEG_SIGNAL_RULE governs how the character SPEAKS about
+  // technical reads generally, far beyond the filing turn, and rewriting it is a
+  // voice change with its own eval rather than an addendum commit.
+  it('LIMIT: the output contract demands the quote, TWO_LEG_SIGNAL_RULE still teaches the paraphrase', () => {
     fitCheck.on = true;
     const prompt = promptFor('degen');
 
-    // The demand (commit B).
+    // The demand, now at the output contract — not only at the confirmation rule.
+    expect(prompt).toContain('WHENEVER hasDirective is true, your `response` MUST contain the canonical text');
     expect(prompt).toContain('Say the canonical text word for word;');
 
-    // A2 — the worked example of a CONFIRMATION turn, in the high-attention
-    // BOTTOM slot, whose modelled reply quotes no canonical and carries a
-    // free-text directive the gate discards.
-    expect(prompt).toContain('EXAMPLE — Confirmation Response:');
-    expect(prompt).toContain("That's the bias I'm carrying into my next read");
-    const exampleAt = prompt.indexOf('EXAMPLE — Confirmation Response:');
-    const demandAt = prompt.indexOf('Say the canonical text word for word;');
-    expect(exampleAt, 'the non-quoting example precedes the demand').toBeLessThan(demandAt);
-
-    // A3 — TWO_LEG_SIGNAL_RULE, pushed under the SAME guard as the menu, hands
-    // the model near-miss paraphrases of sentences the gate wants verbatim.
+    // ...and still, in the same prompt, the near-miss vocabulary.
     expect(prompt).toContain('- Stop / patience -> "tighten the stop,"');
     expect(prompt).toContain('still high-energy');
-    // ...while SP-01's canonical, which those words paraphrase, is "Tighten the
-    // downside stop" — capitalised, and not the same sentence. That the GATE
-    // refuses this exact near-miss is pinned where it belongs, against the real
-    // gate, in directiveGate.fitCheck.test.js ("near-miss (the prompt's own
-    // paraphrase) → fit_mismatch"). An earlier draft asserted it here by
-    // comparing two string literals written in this file — a row that cannot
-    // fail under any production change, i.e. not a guard at all (§2 review
-    // finding D7, the Sep 13 lesson).
+    expect(prompt).toContain('SP-01: Tighten the downside stop');
   });
 
   it('MUTATION CHECK — the flag-ON block is NOT the flag-OFF block, for every archetype', () => {

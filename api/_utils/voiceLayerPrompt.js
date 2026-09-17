@@ -952,6 +952,76 @@ const FIT_CHECK_ACK =
   + 'Say the canonical text word for word; the card beneath you states what was filed. '
   + 'Do not describe the lean in other words.';
 
+// THE QUOTE BELONGS TO THE DIRECTIVE, NOT TO THE CONFIRMATION (Codex #1).
+//
+// Commit B attached the quote instruction to the CONFIRMATION rule, because
+// that is where the Sep 14 turn went wrong. But the gate checks every turn that
+// files: `hasDirective` can be true on a direct instruction ("tighten your
+// stops"), on a mastery turn that leads with a plan, on any turn the model
+// judges strategic — none of which is a confirmation, and none of which the
+// confirmation rule speaks to. So the prompt asked for the quote on one path
+// and the gate demanded it on all of them.
+//
+// The §2 review named the consequence: with the demand in one paragraph and
+// four few-shots modelling a non-quoting acknowledgement in the higher-
+// attention slot, the flip's realistic failure mode is that filing quietly
+// stops. This moves the demand to the OUTPUT CONTRACT, where `hasDirective`
+// itself is defined, and fixes the examples that contradicted it.
+//
+// Flag-off returns the argument by identity, so the contract and all four
+// examples are byte-identical — held to it by the 147 whole-prompt hashes.
+const FIT_CHECK_DIRECTIVE_RULE =
+  '\n- WHENEVER hasDirective is true, your `response` MUST contain the canonical text of the id '
+  + 'you put in _archetypeProposal.selectedAdjustmentId, word for word, exactly as YOUR MENU spells it '
+  + '— same capitalisation, same punctuation, same parentheses. This is not only for confirmations: it '
+  + 'holds for a direct instruction, for a plan you lead with, for any turn you file on. The card beneath '
+  + 'you shows what was filed, and the record keeps only what you actually said — a paraphrase files NOTHING. '
+  + 'If you would rather not say the sentence, then do not set hasDirective; offer the adjustment instead.';
+
+function applyFitCheckOutputRule(outputFormat) {
+  if (!DIRECTIVE_FIT_CHECK_ENABLED || typeof outputFormat !== 'string') return outputFormat;
+  return outputFormat + FIT_CHECK_DIRECTIVE_RULE;
+}
+
+// The few-shots that model a DIRECTIVE-WRITING turn. Each shipped one answers
+// with a paraphrase, carries a free-text `directive.text` that `enforce`
+// discards, and shows no `_archetypeProposal` at all — the one field the gate
+// reads. Under the flag each is re-authored to quote, to carry the canonical as
+// its directive text, and to name the id it quoted, keeping the phase's own
+// register. The example is built from the agent's OWN menu, so it is always a
+// valid instance rather than a placeholder.
+//
+// A turn that does NOT file (the refinement example) is left alone: it has
+// nothing to quote.
+const FIT_CHECK_EXAMPLE_REPLIES = {
+  discovery: (c) => `I like it — when the setup's this clean, spreading just dilutes the upside. Filing: ${c}. That's the bias I'm carrying into each look now; I might still pass if the setup isn't there.`,
+  mastery: (c) => `Here's the play — semis leading, breadth strong, NVDA stays Star. Filing: ${c}. That's what I'm taking into the open unless you push back.`,
+  confirmation: (c) => `Got it — filing: ${c}. I might still pass if the setup isn't there, and my reflexive risk rules act on their own meanwhile.`,
+};
+
+function applyFitCheckExample(example, codeId, key) {
+  if (!DIRECTIVE_FIT_CHECK_ENABLED || typeof example !== 'string') return example;
+  const build = FIT_CHECK_EXAMPLE_REPLIES[key];
+  if (!build) return example;
+  const first = getAllowlist(codeId)[0];
+  if (!first) return example; // unknown archetype → no menu, no apparatus at all
+  const reply = build(first.canonical);
+  // Rewrite only the lines that MODEL A FILING. Line-level, keyed on the
+  // shape rather than on prose, so a wording edit upstream cannot silently
+  // make this a no-op the way a prose anchor could.
+  return example.split('\n').map((line) => {
+    if (!line.startsWith('Agent: {') || !line.includes('"hasDirective": true')) return line;
+    return `Agent: ${JSON.stringify({
+      _scratchpad: `Committing the lean. The reply must carry ${first.id}'s canonical text word for word — the card beneath states what was filed.`,
+      response: reply,
+      hasDirective: true,
+      directive: { text: first.canonical, expiry: 'end_of_battle' },
+      _archetypeProposal: { classification: 'in_archetype', selectedAdjustmentId: first.id },
+      suggestedActions: null,
+    })}`;
+  }).join('\n');
+}
+
 function applyFitCheckAcknowledgement(rules) {
   if (!DIRECTIVE_FIT_CHECK_ENABLED || typeof rules !== 'string') return rules;
   return rules.split(SHIPPED_ACK_ANCHOR).join(FIT_CHECK_ACK);
@@ -3179,7 +3249,9 @@ You've been working together for ${gamesPlayed} games (${wins}W-${losses}L). You
   // Few-Shot Example (BOTTOM — high attention)
   const fewShot = grounded
     ? GROUNDED_PHASE_EXAMPLES[phase] + '\n\n' + GROUNDED_CONFIRMATION_EXAMPLE
-    : PHASE_EXAMPLES[phase] + '\n\n' + CONFIRMATION_EXAMPLE;
+    : applyFitCheckExample(PHASE_EXAMPLES[phase], getEffectiveArchetype(battle, agent), phase)
+      + '\n\n'
+      + applyFitCheckExample(CONFIRMATION_EXAMPLE, getEffectiveArchetype(battle, agent), 'confirmation');
 
   // Elicitation Target (BOTTOM — high attention)
   const elicitation = `ELICITATION TARGET (internal — do not mention this to the user):\n${elicitationTarget.instruction}`;
@@ -3198,7 +3270,7 @@ You've been working together for ${gamesPlayed} games (${wins}W-${losses}L). You
   const blocks = [
     identity,        // Block 1   (TOP)
     GAME_MECHANICS,  // Block 1.5 (TOP)
-    grounded ? GROUNDED_OUTPUT_FORMAT : OUTPUT_FORMAT,   // Block 7   (TOP)
+    grounded ? GROUNDED_OUTPUT_FORMAT : applyFitCheckOutputRule(OUTPUT_FORMAT),   // Block 7   (TOP)
   ];
   // Phase D — battle-only proposal-schema append, adjacent to OUTPUT_FORMAT. NOT
   // an edit to the shared OUTPUT_FORMAT const (that would leak into review — C3).

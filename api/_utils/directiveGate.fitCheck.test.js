@@ -298,6 +298,69 @@ describe('C-2 — a reply that quotes its filing', () => {
   });
 });
 
+// ============ C-2c — a DIRECT INSTRUCTION, not a confirmation ============
+//
+// The gate checks every turn that files, and most of them are not
+// confirmations. Commit B put the quote demand on the confirmation rule alone;
+// the addendum moved it to the output contract, where `hasDirective` is
+// defined. These rows are the gate half of that: the player gives a direct
+// instruction, the model files on the first beat, and the same verbatim rule
+// applies as on a confirmation turn.
+
+describe('C-2c — "tighten your stops": a first-beat filing, no confirmation in sight', () => {
+  const ASK = 'tighten your stops';
+
+  it('a quoting reply files SP-01', async () => {
+    fitCheck.on = true;
+    const out = await gateDirective({
+      parsed: {
+        response: `On it in spirit — filing: ${SP01}. I'll still pass if the setup isn't there.`,
+        _archetypeProposal: { classification: 'in_archetype', selectedAdjustmentId: 'SP-01', originalUserAsk: ASK },
+      },
+      effectiveArchetype: 'degen',
+      ...baseDeps(),
+      userMessage: ASK,
+    });
+    expect(out.outcome.status).toBe('committed');
+    expect(out.directive.text).toBe(SP01);
+    expect(out.directive.adjustmentId).toBe('SP-01');
+    expect(out.outcome.originalUserAsk).toBe(ASK);
+  });
+
+  it('the SAME turn, paraphrased, is a fit_mismatch', async () => {
+    fitCheck.on = true;
+    const out = await gateDirective({
+      parsed: {
+        response: "Tightening the stops a touch from here — that's the bias I'm carrying.",
+        _archetypeProposal: { classification: 'in_archetype', selectedAdjustmentId: 'SP-01', originalUserAsk: ASK },
+      },
+      effectiveArchetype: 'degen',
+      ...baseDeps(),
+      userMessage: ASK,
+    });
+    expect(out.outcome.status).toBe('fit_mismatch');
+    expect(out.directive).toBeNull();
+    expect(out.outcome.fitCheck).toEqual({ expected: SP01, quoted: false });
+    // The ask survives on the record even though nothing filed — that is what
+    // makes this turn traceable rather than merely absent.
+    expect(out.outcome.originalUserAsk).toBe(ASK);
+  });
+
+  it('MUTATION CHECK — flag OFF, the paraphrased turn files SP-01 as today', async () => {
+    fitCheck.on = false;
+    const out = await gateDirective({
+      parsed: {
+        response: "Tightening the stops a touch from here — that's the bias I'm carrying.",
+        _archetypeProposal: { classification: 'in_archetype', selectedAdjustmentId: 'SP-01' },
+      },
+      effectiveArchetype: 'degen',
+      ...baseDeps(),
+    });
+    expect(out.outcome.status).toBe('committed');
+    expect(out.directive.text).toBe(SP01);
+  });
+});
+
 // ==================== C-2b — the repair path ====================
 
 describe('C-2b — the fit check on a repaired proposal', () => {

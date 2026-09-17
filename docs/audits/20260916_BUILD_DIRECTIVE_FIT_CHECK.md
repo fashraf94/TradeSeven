@@ -10,14 +10,14 @@
 
 | | |
 |---|---|
-| **What shipped** | Three flagged changes and one always-on change, plus a documented flip-order hazard, in five commits, all non-fenced. |
+| **What shipped** | Three flagged changes and one always-on change, plus a documented flip-order hazard and a two-commit pre-merge addendum (§7.6), all non-fenced. |
 | **Flag** | `DIRECTIVE_FIT_CHECK_ENABLED`, boolean, shipped `false`, pinned, in `DARK_BY_DESIGN` with its runway. |
 | **Flag-off invariant** | **Holds.** Every prompt byte and every gate outcome is byte-identical to the pre-build commit, proved against goldens captured by rendering the pre-build code — not regenerated from the code they guard. |
 | **Not behind the flag** | The three forensics fields. Deliberate: the one-way door. Every turn without them is a turn whose intent can never be recovered. |
 | **Verification** | Final, at branch HEAD: full suite `VITEST_EXIT=0` — **13 215 passed**, 64 skipped, 681 files. `npm run lint:gate` exit 0. `vite build` exit 0. Zero fenced files; `file-directive.js` untouched; the whole `chat.js` diff is 6 lines, so no new top-level battle key. |
 | **Review** | Mandatory (16 files / 2 827 lines at final HEAD, over both §2 thresholds). Four lenses on isolated `git archive` trees, refuters told to kill every finding *and* to attack the clean verdicts, the mutating lens last. **8 CONFIRMED, 4 REFUTED.** Recorded in §7. |
 | **Safety property the review proved** | At flag-ON the gate's commits are a **strict subset** of the flag-OFF gate's, by construction. **The fit check can only refuse; it can never file something the pre-build gate would not have filed.** |
-| **…and the risk that follows from it** | So the flip's realistic failure mode is **not** a mis-filed directive. It is that **directive filing quietly stops**, because the same prompt still teaches the model to paraphrase (§7.2 A2/A3) — and a `fit_mismatch` is **invisible on screen** today (A7/C2). |
+| **…and the risk that follows from it** | So the flip's realistic failure mode is **not** a mis-filed directive. It is that **directive filing quietly stops** — and a `fit_mismatch` is **invisible on screen** today (A7/C2). **Materially reduced by the §7.6 addendum**, which moved the quote demand to the output contract and made the filing few-shots quote (A2 closed); A3's `TWO_LEG_SIGNAL_RULE` paraphrases remain. |
 | **Deviations** | Three, in §6. One is a provable incompatibility inside the brief itself; one is a scope boundary; one is the flip-order hazard. |
 | **DO NOT FLIP until these three are ruled on** | **1. §6 D-1 / §7 A4+A5** — the annotated menu disagrees with the charter in 4 of 6 archetypes and inverts the concentration dial for two `diversifier` ids. **2. §7 J7** — the eval harness scores a fit-check refusal as a false refusal *and* drops it from the wrong-id denominator, so the two numbers that would inform the flip move in opposite directions for the same turns; filed as separate tasking. **3. §6 D-3** — never light this flag together with `VOICE_GROUNDING_MODE` ≥ `'canary'`. |
 
@@ -371,6 +371,41 @@ Two of those came from reviewing **my own review fixes** — the tautological as
 
 The widened golden's mutation row was **wrong on first write** and the failure taught the real shape: **39 prompts move under the flag, not 18**, because the annotated menu reaches the *grounded* prompt while the quote instruction does not. That is the flip-order hazard in one assertion, and it is now pinned as one.
 
+
+---
+
+## 7.6 Addendum, before merge — two founder-directed commits
+
+Both landed after the review, on the same branch, at founder direction. They close two of the things the review surfaced.
+
+### Codex #3 — the forensics come from the FIRST proposal, never the repair (live on merge)
+
+`attemptRepair` is a **schema-only** re-ask. The record was reading all three forensics fields off whatever it returned, because `proposal` is reassigned to the repaired one before `result()` runs. So on every repaired turn the field named `originalUserAsk` held a **second model emission's reconstruction**, under a name that promises an original — worse than holding nothing, on fields whose entire purpose is to be trusted after the fact.
+
+The outcome now mixes two emissions on purpose: the **repaired** proposal decides `classification` and `selectedAdjustmentId` (what the repair is *for*); the **first** supplies all three forensics fields (what they are *for*). `readForensics` captures before the repair can run.
+
+Not behind the flag, because the forensics fields are not.
+
+**Known limit, pinned:** on a `no_proposal` turn the first emission failed shape validation, so there is nothing to read and all three are null even if the raw object carried text. Recovering it means reading free text off an object that failed validation — wider than this addendum.
+
+*Shown failing:* with forensics re-read off the live proposal, **5 of 7 rows fail** — and exactly the two that cannot discriminate (the `no_proposal` limit row, and the guard-the-guard row) still pass.
+
+### Codex #1 — the quote attaches to the directive, not to the confirmation (behind the flag)
+
+Commit B put the quote demand on the **confirmation rule**, because that is where Sep 14 went wrong. But the gate checks **every turn that files**, and most are not confirmations: a direct instruction ("tighten your stops"), a mastery turn that leads with a plan, any turn the model judges strategic. The prompt asked on one path; the gate demanded on all of them.
+
+That gap *is* review finding A2/A3 — the one the review called the flip's realistic failure mode, filing quietly stopping. Two changes:
+
+- **The demand moved to the output contract**, appended to `OUTPUT_FORMAT`'s RULES where `hasDirective` is defined: whenever `hasDirective` is true the reply must carry the selected id's canonical text word for word, *and if you would rather not say the sentence, do not set `hasDirective`* — so the honest exit is offering the adjustment, not filing silently.
+- **The filing few-shots were re-authored to quote.** Each carries the canonical as its directive text and names the id in `_archetypeProposal` — the one field the gate reads, which no shipped example showed at all. They are built from the agent's **own menu** at call time, so each is a valid instance rather than a placeholder; the non-filing example is left alone, having nothing to quote.
+
+**A2 is closed. A3 is not**, and its LIMIT row was rewritten rather than deleted: `TWO_LEG_SIGNAL_RULE` still hands the model near-miss paraphrases of the sentences the gate wants verbatim. It governs how the character speaks about technical reads generally, far beyond the filing turn, so rewriting it is a voice change with its own eval.
+
+**Flag-off bytes are unchanged** — all 147 whole-prompt hashes still pass, including review and workshop, which reach `OUTPUT_FORMAT` by a different branch.
+
+*Shown failing:* with both transforms forced to identity, **3 rows fail**.
+
+**What this does to the flip risk.** The review's headline — *the realistic failure mode is that filing quietly stops* — is materially reduced, because the demand now sits where the model decides to file and the examples no longer teach the opposite. It is not eliminated: A3 stands, and the §7 J7 and D-1 blockers are untouched by this addendum.
 
 ---
 
