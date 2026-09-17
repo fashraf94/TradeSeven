@@ -112,7 +112,7 @@ export async function findActiveTrainingPodForUser(db, odUserId) {
  * `now` is caller-supplied, consistent with the factory's opaque-timestamp
  * rule. Returns the new status.
  */
-export async function transitionStatus(db, groupId, to, now) {
+export async function transitionStatus(db, groupId, to, now, extraFields = {}) {
   if (now == null) {
     throw new Error('tournamentGroupService.transitionStatus: now is required');
   }
@@ -123,7 +123,12 @@ export async function transitionStatus(db, groupId, to, now) {
       throw new Error(`tournamentGroupService: group ${groupId} not found`);
     }
     assertTransition(snap.data().status, to);
-    tx.update(ref, { status: to, updatedAt: now });
+    // `extraFields` (N1 durable fix): small server-written markers that must
+    // land in the SAME transaction as the status flip (the awaiting_open →
+    // battle agentPipelinePending stamp). Spread FIRST so status/updatedAt can
+    // never be overridden; callers passing nothing get the byte-identical
+    // { status, updatedAt } write.
+    tx.update(ref, { ...extraFields, status: to, updatedAt: now });
   });
   return to;
 }

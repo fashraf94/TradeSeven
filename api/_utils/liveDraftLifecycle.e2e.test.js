@@ -292,6 +292,10 @@ describe('Competitive Live Draft — full-lifecycle capstone (the byte-identity 
     expect(flip).toMatchObject({ flipped: 1 }); // the live-draft pod is picked up (not training-excluded)
     const battle = readGroup(store, WED_ID);
     expect(battle.status).toBe(GROUP_STATUS.BATTLE);
+    // N1 durable fix: the competitive flip stamps the agent-pipeline handoff in
+    // the same write, so a flip that lands behind the Monday duty marker is
+    // still served by the orchestrator's late-pod catch-up.
+    expect(battle).toMatchObject({ agentPipelinePending: true, agentPipelinePendingAt: MON_PREOPEN.toISOString() });
 
     // ── 5) BYTE-IDENTITY from BATTLE onward ────────────────────────────────
     // Model "born under the capture flag": stamp the one field liveDraftFormation

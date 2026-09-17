@@ -830,6 +830,36 @@ describe('P6a side-effects — rank apply + leaderboard final upsert ride the Fr
     expect(store.get('tournamentRanks/founder').appliedGroups['b-r1-g1']).toBeDefined();
   });
 
+  it('N1 DEGRADED LOCK REFUSAL: a seat with agentLayerMissing on EVERY banked day pauses the lock for MANUAL REVIEW and the log NAMES the seat; missing on some days locks normally', async () => {
+    const { db, store } = seededBracketDb();
+    const g1 = store.get('tournamentGroups/b-r1-g1');
+    for (let d = 1; d <= 5; d++) g1.dailyScores[`day${d}`].agentLayerMissing = ['cpu-3'];
+    // g2: one missing day only — the founder's "some days" ruling: the week proceeds.
+    store.get('tournamentGroups/b-r1-g2').dailyScores.day2.agentLayerMissing = ['cpu-6'];
+
+    const first = await runFridayAdvancement(db, { now: NOW });
+    expect(first.degradedLocks).toBe(1);
+    expect(first.errors).toBe(0);
+    expect(store.get('tournamentBrackets/b').rounds.r1.games['b-r1-g1'].advancers).toBeNull();      // g1 refused
+    expect(store.get('tournamentGroups/b-r1-g1').status).toBe(GROUP_STATUS.BATTLE);
+    expect(store.get('tournamentBrackets/b').rounds.r1.games['b-r1-g2'].advancers).not.toBeNull();  // g2 locked
+    expect(store.get('tournamentGroups/b-r1-g2').status).toBe(GROUP_STATUS.COMPLETE);
+    const line = console.error.mock.calls.map(c => c.join(' ')).find(l => l.includes('b-r1-g1') && l.includes('final snapshot degraded'));
+    expect(line).toBeTruthy();
+    expect(line).toContain('agentLayerMissing all week for seat(s) [cpu-3]');
+    expect(line).toContain('MANUAL REVIEW');
+    expect(line).not.toContain('agentScoresCarried');
+
+    // The manual-review resolution models the human step: the operator clears
+    // one day's listing after review; "every day" no longer holds and the next
+    // pass locks clean.
+    delete store.get('tournamentGroups/b-r1-g1').dailyScores.day3.agentLayerMissing;
+    const second = await runFridayAdvancement(db, { now: NOW });
+    expect(second.degradedLocks).toBe(0);
+    expect(store.get('tournamentBrackets/b').rounds.r1.games['b-r1-g1'].advancers).not.toBeNull();
+    expect(store.get('tournamentGroups/b-r1-g1').status).toBe(GROUP_STATUS.COMPLETE);
+  });
+
   it('base-layer completion applies rank + leaderboard BEFORE the transition', async () => {
     const base = bracketGroup({ id: 'ignored', members: G1_MEMBERS, dailyScores: G1_WEEK });
     delete base.bracketGameId;

@@ -50,6 +50,8 @@ import {
   runOrchestratorTick,
   sweepTrainingActivation,
   activateTrainingPod,
+  runPendingPodCatchUp,
+  isAgentLayerCaughtUp,
 } from './tournamentOrchestrator.js';
 import {
   GROUP_STATUS,
@@ -57,6 +59,7 @@ import {
   TOURNAMENT_GAME_MODE,
   cpuAgentDocId,
   trainingCloneDocId,
+  agentPipelinePendingStamp,
 } from '../../src/constants/leagueTournament.js';
 import { buildCpuAgentDoc } from './tournamentCpu.js';
 // Non-fenced market calendar. The holiday-week invariant row drives the REAL
@@ -214,6 +217,54 @@ function mondayDb() {
   });
   return makeDb(initial);
 }
+
+// N1 durable fix — a COMPETITIVE slot pod already in BATTLE (its user draft
+// done: three picks per seat) with NO agent layer yet (no agent boards, no
+// streams/agentDraft, no battles): the stranded shape from docs/audits/
+// 2026-09-12_N1_MON0845_AGENT_LAYER_DISCOVERY.md §7. Stamped by the completion
+// handoff unless `stamped: false` (a pod that reached BATTLE by a path that does
+// not stamp — the negative row). Its own CPU seats (cpu-8..cpu-11) so it never
+// shares an agent with the Monday fixture's pod.
+const LATE_CPU_IDS = ['cpu-8', 'cpu-9', 'cpu-10', 'cpu-11'];
+const LATE_ID = 'lds_mon-0845_2026-06-15';
+const LATE_STAMPED_AT = '2026-06-15T13:00:00.000Z'; // Mon 09:00 EDT — the inline flip instant
+function lateSlotPodDocs({ stamped = true, isTraining = false } = {}) {
+  const docs = {
+    [`tournamentGroups/${LATE_ID}`]: {
+      status: GROUP_STATUS.BATTLE,
+      isLiveDraft: true,
+      slotId: 'mon-0845',
+      roundNumber: 1,
+      groupMembers: [...LATE_CPU_IDS],
+      players: LATE_CPU_IDS.map((odUserId, i) => ({
+        odUserId,
+        isCpu: true,
+        picks: SYMBOLS.slice(20 + i * 3, 23 + i * 3).map(symbol => ({ symbol, legs: [] })),
+      })),
+      userPool: [...SYMBOLS],
+      claimSystem: { enabled: true, currentWaiverPriority: [], processingLog: [] },
+      dailyScores: {},
+      startAnchor: { anchorEtDate: '2026-06-15', anchorIso: '2026-06-15T13:30:00.000Z' },
+      battleStartWeek: { mondayEtDate: '2026-06-15', anchorEtDate: '2026-06-15', anchorIso: '2026-06-15T13:30:00.000Z' },
+      ...(stamped ? agentPipelinePendingStamp(LATE_STAMPED_AT) : {}),
+      ...(isTraining ? { isTraining: true } : {}),
+    },
+  };
+  LATE_CPU_IDS.forEach((_, i) => {
+    const n = 8 + i;
+    docs[`agents/${cpuAgentDocId(n)}`] = buildCpuAgentDoc(n, '2026-06-12T00:00:00.000Z');
+  });
+  return docs;
+}
+function addLateSlotPod(store, opts) {
+  for (const [path, doc] of Object.entries(lateSlotPodDocs(opts))) store.set(path, structuredClone(doc));
+}
+const lateAgentLayer = (store) => ({
+  stream: store.get(`tournamentGroups/${LATE_ID}/streams/agentDraft`),
+  boards: LATE_CPU_IDS.map((_, i) => store.get(`tournamentGroups/${LATE_ID}/agentBoards/${cpuAgentDocId(8 + i)}`)),
+  ledger: store.get(`tournamentGroups/${LATE_ID}/ledger/agentHeldSet`),
+});
+const bodiesFor = (fetchImpl, groupId) => fetchImpl.mock.calls.map(([, opts]) => JSON.parse(opts.body)).filter(b => b.groupId === groupId);
 
 // ==================== DISPATCHER (both DST arms) ====================
 
@@ -1081,7 +1132,7 @@ describe('runOrchestratorTick — routing, markers, inertness', () => {
     expect(writeLog).toHaveLength(0);
   });
 
-  it('a satisfied duty sets the marker; the next tick is an idempotent no-op', async () => {
+  it('a satisfied duty sets the marker; the next tick is an idempotent no-op for the pods it processed — and NOT for a late arrival', async () => {
     const { db, store } = mondayDb();
     const fetchImpl = vi.fn(async () => ({ ok: true }));
     const first = await runOrchestratorTick(db, { now: MON_MORNING_EDT, fetchImpl, pacingMs: 0 });
@@ -1089,9 +1140,18 @@ describe('runOrchestratorTick — routing, markers, inertness', () => {
     expect(first.deploys.deployed).toBe(4); // the P4 gate is open — deploys are live
     expect(store.get('tournamentOrchestrator/state').duties[dutyMarkerKey('2026-06-15', DUTY.MONDAY_PIPELINE)]).toBeDefined();
 
+    // N1 durable fix: this fixture used to be STATIC across both ticks, so the
+    // "4 calls" assertion proved the marker suppresses re-work AND (silently)
+    // that a pod reaching BATTLE between the ticks gets nothing — the defect's
+    // mechanism and the intended behavior in one line. Now a stamped late pod
+    // arrives between the ticks: the marker still short-circuits the DUTY (the
+    // first pod's four seats are not re-sent), and the late pod IS served.
+    addLateSlotPod(store);
     const second = await runOrchestratorTick(db, { now: new Date('2026-06-15T12:10:00Z'), fetchImpl, pacingMs: 0 });
     expect(second.status).toBe('already_complete');
-    expect(fetchImpl).toHaveBeenCalledTimes(4); // no re-deploys behind the marker
+    expect(fetchImpl).toHaveBeenCalledTimes(8);
+    expect(bodiesFor(fetchImpl, 'b-r1-g2')).toHaveLength(4); // no re-deploys behind the marker
+    expect(bodiesFor(fetchImpl, LATE_ID)).toHaveLength(4);   // the late arrival is no longer suppressed
   });
 
   it('forceDuty + injected clock are the dev time controls (run Monday on any instant)', async () => {
@@ -1115,6 +1175,203 @@ describe('runOrchestratorTick — routing, markers, inertness', () => {
     const result = await runOrchestratorTick(db, { now: MON_MORNING_EDT });
     expect(result.complete).toBe(false);
     expect(store.get('tournamentOrchestrator/state')).toBeUndefined();
+  });
+});
+
+// ==================== N1 — LATE-POD CATCH-UP (durable fix) ====================
+//
+// The two halves of the N1 defect had never been tested together: the slot
+// lifecycle proved the ~09:00 ET inline BATTLE flip and stopped; this suite
+// proved the marker's idempotent no-op on a static fixture and never added a
+// pod between ticks. These rows put them in one universe: tick (marker set) →
+// a stamped pod reaches BATTLE → tick → the pod has boards, a draft stream and
+// deploys, and the first pod was not re-deployed.
+
+describe('N1 late-pod catch-up — a pod that reaches BATTLE behind the duty marker still gets its agent layer', () => {
+  const MON_0910 = new Date('2026-06-15T13:10:00.000Z'); // Mon 09:10 EDT — the first tick after the 08:45 slot completes
+  const TUE_0710 = new Date('2026-06-16T11:10:00.000Z'); // Tue 07:10 EDT
+
+  beforeEach(() => {
+    vi.stubEnv('CRON_SECRET', 's3cret');
+    vi.stubEnv('VERCEL_PROJECT_PRODUCTION_URL', 'tradeseven.vercel.app');
+  });
+
+  it('THE DEFECT, CLOSED: marker set → pod flips to BATTLE (stamped) → the later tick serves boards, draft AND deploys; the stamp clears; the marker is untouched', async () => {
+    const { db, store } = mondayDb();
+    const fetchImpl = vi.fn(async () => ({ ok: true }));
+    // Tick 1 (07:00 ET): the first pod is processed and the marker is SET.
+    const first = await runOrchestratorTick(db, { now: MON_MORNING_EDT, fetchImpl, pacingMs: 0 });
+    expect(first.complete).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    const markerBefore = structuredClone(store.get('tournamentOrchestrator/state').duties);
+
+    // ~09:00 ET: the Mon 08:45 slot pod completes its draft and lands inline in BATTLE, stamped.
+    addLateSlotPod(store);
+    expect(lateAgentLayer(store).stream).toBeUndefined(); // the stranded shape — no agent layer at all
+
+    // Tick 2 (09:10 ET): the DUTY is already complete — the pod is served anyway.
+    const second = await runOrchestratorTick(db, { now: MON_0910, fetchImpl, pacingMs: 0 });
+    expect(second.status).toBe('already_complete');
+    expect(second.pendingCatchUp).toMatchObject({ pending: 1, caughtUp: 1, errors: 0, deferred: 0 });
+    expect(second.pendingCatchUp.deploys).toMatchObject({ deployed: 4, failed: 0, emptySeats: 0 });
+
+    const layer = lateAgentLayer(store);
+    expect(layer.boards.every(b => b && b.synthetic !== true)).toBe(true);   // step 2: agent boards
+    expect(layer.stream.events).toHaveLength(AGENT_MARKET_SIZE);             // step 3: the draft stream
+    expect(Object.keys(layer.ledger.held)).toHaveLength(AGENT_MARKET_SIZE);  //         + 24 held
+    expect(fetchImpl).toHaveBeenCalledTimes(8);                              // step 4: four NEW deploys…
+    expect(bodiesFor(fetchImpl, 'b-r1-g2')).toHaveLength(4);                 //         …the first pod's four NOT re-sent
+    const late = bodiesFor(fetchImpl, LATE_ID);
+    expect(late).toHaveLength(4);
+    for (const body of late) {
+      expect(body.gameMode).toBe(TOURNAMENT_GAME_MODE);
+      expect(body.prescribedPortfolio).toHaveLength(6);
+      expect(body.isCpu).toBe(true);
+    }
+
+    // The stamp is cleared with its audit trail; the duty marker is byte-identical.
+    const pod = store.get(`tournamentGroups/${LATE_ID}`);
+    expect(pod.agentPipelinePending).toBe(false);
+    expect(pod.agentPipelinePendingAt).toBe(LATE_STAMPED_AT);
+    expect(pod.agentPipelineCaughtUpAt).toBe(MON_0910.toISOString());
+    expect(store.get('tournamentOrchestrator/state').duties).toEqual(markerBefore);
+
+    // Tick 3: nothing pending, nothing re-sent — the catch-up is idempotent.
+    const third = await runOrchestratorTick(db, { now: new Date('2026-06-15T13:20:00.000Z'), fetchImpl, pacingMs: 0 });
+    expect(third.status).toBe('already_complete');
+    expect(third.pendingCatchUp).toBeUndefined();
+    expect(fetchImpl).toHaveBeenCalledTimes(8);
+  });
+
+  it('a BATTLE pod WITHOUT the stamp is untouched behind the marker — the stamp is the handoff', async () => {
+    const { db, store } = mondayDb();
+    const fetchImpl = vi.fn(async () => ({ ok: true }));
+    await runOrchestratorTick(db, { now: MON_MORNING_EDT, fetchImpl, pacingMs: 0 });
+    addLateSlotPod(store, { stamped: false });
+
+    const second = await runOrchestratorTick(db, { now: MON_0910, fetchImpl, pacingMs: 0 });
+    expect(second.status).toBe('already_complete');
+    expect(second.pendingCatchUp).toBeUndefined();
+    expect(lateAgentLayer(store).stream).toBeUndefined();
+    expect(lateAgentLayer(store).boards.every(b => b === undefined)).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    expect(store.get(`tournamentGroups/${LATE_ID}`).agentPipelinePending).toBeUndefined();
+  });
+
+  it('a FAILED catch-up keeps the stamp; the next tick retries after the ≥10-min cooldown and then clears it', async () => {
+    const { db, store } = mondayDb();
+    let lateDeploysFail = true;
+    const fetchImpl = vi.fn(async (_url, opts) => {
+      const body = JSON.parse(opts.body);
+      if (body.groupId === LATE_ID && lateDeploysFail) return { ok: false, status: 500, text: async () => 'decide exploded' };
+      return { ok: true };
+    });
+    await runOrchestratorTick(db, { now: MON_MORNING_EDT, fetchImpl, pacingMs: 0 });
+    addLateSlotPod(store);
+
+    // 09:10: boards + draft land, every deploy FAILS → stamp KEPT, cooldowns written.
+    const failing = await runOrchestratorTick(db, { now: MON_0910, fetchImpl, pacingMs: 0 });
+    expect(failing.pendingCatchUp).toMatchObject({ pending: 1, caughtUp: 0, errors: 1 });
+    expect(failing.pendingCatchUp.deploys.failed).toBe(4);
+    expect(store.get(`tournamentGroups/${LATE_ID}`).agentPipelinePending).toBe(true);
+    expect(lateAgentLayer(store).stream.events).toHaveLength(AGENT_MARKET_SIZE); // the durable half is already written
+    const streamAfterFailure = structuredClone(lateAgentLayer(store).stream);
+    expect(console.error.mock.calls.map(c => c.join(' ')).some(l => l.includes(`late-pod catch-up: pod ${LATE_ID} NOT caught up`))).toBe(true);
+
+    // 09:15: inside the cooldown — deferred (cooled), stamp still kept, nothing re-drafted.
+    lateDeploysFail = false;
+    const cooled = await runOrchestratorTick(db, { now: new Date('2026-06-15T13:15:00.000Z'), fetchImpl, pacingMs: 0 });
+    expect(cooled.pendingCatchUp).toMatchObject({ pending: 1, caughtUp: 0, errors: 1 });
+    expect(cooled.pendingCatchUp.deploys.cooled).toBe(4);
+    expect(store.get(`tournamentGroups/${LATE_ID}`).agentPipelinePending).toBe(true);
+
+    // 09:25: past the cooldown — deploys land, stamp cleared; the draft was never redone.
+    const recovered = await runOrchestratorTick(db, { now: new Date('2026-06-15T13:25:00.000Z'), fetchImpl, pacingMs: 0 });
+    expect(recovered.pendingCatchUp).toMatchObject({ pending: 1, caughtUp: 1, errors: 0 });
+    expect(recovered.pendingCatchUp.deploys.deployed).toBe(4);
+    expect(store.get(`tournamentGroups/${LATE_ID}`).agentPipelinePending).toBe(false);
+    expect(lateAgentLayer(store).stream).toEqual(streamAfterFailure);
+  });
+
+  it('runs on a Tue–Fri morning too: a pod still stamped past Monday is served on the next weekday tick', async () => {
+    // Only the late pod exists. The weekday fan-out finds no battles and no stream
+    // (the loud ZERO SEATS line — marker withheld), then the catch-up serves it.
+    const { db, store } = makeDb({ 'indexIntelligence/stockRankings': { stocks: STOCKS } });
+    addLateSlotPod(store);
+    const fetchImpl = vi.fn(async () => ({ ok: true }));
+    const tue = await runOrchestratorTick(db, { now: TUE_0710, fetchImpl, pacingMs: 0 });
+    expect(tue.duty).toBe(DUTY.WEEKDAY_FANOUT);
+    expect(tue.complete).toBe(false);
+    expect(tue.pendingCatchUp).toMatchObject({ pending: 1, caughtUp: 1, errors: 0 });
+    expect(lateAgentLayer(store).stream.events).toHaveLength(AGENT_MARKET_SIZE);
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    expect(store.get(`tournamentGroups/${LATE_ID}`).agentPipelinePending).toBe(false);
+  });
+
+  it('a stamped TRAINING pod is never served here — activateTrainingPod owns that layer', async () => {
+    const { db, store } = makeDb({ 'indexIntelligence/stockRankings': { stocks: STOCKS } });
+    addLateSlotPod(store, { isTraining: true });
+    const fetchImpl = vi.fn(async () => ({ ok: true }));
+    const summary = await runPendingPodCatchUp(db, { now: MON_0910, fetchImpl, pacingMs: 0 });
+    expect(summary).toMatchObject({ pending: 0, caughtUp: 0, errors: 0 });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(store.get(`tournamentGroups/${LATE_ID}`).agentPipelinePending).toBe(true); // untouched, not cleared
+  });
+
+  it('the tick budget bounds it: an exhausted budget defers the pod with its stamp kept', async () => {
+    const { db, store } = makeDb({ 'indexIntelligence/stockRankings': { stocks: STOCKS } });
+    addLateSlotPod(store);
+    const fetchImpl = vi.fn(async () => ({ ok: true }));
+    const summary = await runPendingPodCatchUp(db, {
+      now: MON_0910, fetchImpl, pacingMs: 0,
+      budget: { startMs: Date.now() - 10_000, deadlineMs: 1 }, // already spent
+    });
+    expect(summary).toMatchObject({ pending: 1, caughtUp: 0, deferred: 1, errors: 0 });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(lateAgentLayer(store).stream).toBeUndefined();
+    expect(store.get(`tournamentGroups/${LATE_ID}`).agentPipelinePending).toBe(true);
+  });
+
+  it('a same-tick awaiting_open flip on a clean Monday: the DUTY serves the pod, the catch-up re-enters as a no-op and only clears the stamp', async () => {
+    // The pod is stamped AND in BATTLE before the duty runs (what a 07:00 flip
+    // produces). The Monday pipeline processes it; the catch-up then re-enters
+    // the resumable steps — boards skipped, already_resolved, today's-battle
+    // guard — and clears the stamp. Four deploys total, not eight. The deploy
+    // stub records the battle doc the fenced createAgentBattle would, so the
+    // today's-battle guard is real here rather than assumed.
+    const { db, store } = makeDb({ 'indexIntelligence/stockRankings': { stocks: STOCKS } });
+    addLateSlotPod(store);
+    const fetchImpl = vi.fn(async (_url, opts) => {
+      const body = JSON.parse(opts.body);
+      store.set(`agentBattles/bt-${body.agentId}`, {
+        agentId: body.agentId, groupId: body.groupId, gameMode: TOURNAMENT_GAME_MODE, ownerId: body.ownerOdUserId,
+        createdAt: MON_MORNING_EDT.toISOString(), portfolio: {},
+      });
+      return { ok: true };
+    });
+    const result = await runOrchestratorTick(db, { now: MON_MORNING_EDT, fetchImpl, pacingMs: 0 });
+    expect(result.complete).toBe(true);
+    expect(result.deploys.deployed).toBe(4);                            // the duty's deploys
+    expect(result.pendingCatchUp).toMatchObject({ pending: 1, caughtUp: 1, errors: 0 });
+    expect(result.pendingCatchUp.deploys).toMatchObject({ deployed: 0, skippedExisting: 4 });
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    expect(store.get(`tournamentGroups/${LATE_ID}`).agentPipelinePending).toBe(false);
+  });
+
+  it('isAgentLayerCaughtUp — what clears the stamp (the Monday duty\'s own deploy criteria)', () => {
+    const clean = { deployed: 4, skipped: 0, gated: 0, skippedExisting: 0, emptySeats: 0, cooled: 0, failed: 0, deferred: 0 };
+    expect(isAgentLayerCaughtUp({ step: 'deployed', fanout: clean })).toBe(true);
+    expect(isAgentLayerCaughtUp({ step: 'deployed', fanout: { ...clean, deployed: 0, skippedExisting: 4 } })).toBe(true); // today's battles exist
+    expect(isAgentLayerCaughtUp({ step: 'deployed', fanout: { ...clean, deployed: 0, gated: 4 } })).toBe(true);           // gate closed = done, as for the duty
+    expect(isAgentLayerCaughtUp({ step: 'deployed', fanout: { ...clean, deployed: 3, skipped: 1 } })).toBe(true);         // battleCreated:false = done
+    expect(isAgentLayerCaughtUp({ step: 'deploy_deferred_market_closed', fanout: null })).toBe(true);                     // holiday: the draft resolved
+    expect(isAgentLayerCaughtUp({ step: 'deployed', fanout: { ...clean, deployed: 3, failed: 1 } })).toBe(false);
+    expect(isAgentLayerCaughtUp({ step: 'deployed', fanout: { ...clean, deployed: 3, cooled: 1 } })).toBe(false);
+    expect(isAgentLayerCaughtUp({ step: 'deployed', fanout: { ...clean, deployed: 3, deferred: 1 } })).toBe(false);
+    expect(isAgentLayerCaughtUp({ step: 'deployed', fanout: { ...clean, deployed: 0, emptySeats: 1 } })).toBe(false);
+    for (const step of ['refused_synthetic', 'board_errors', 'acquisition_conflict', 'held_count', 'stream_missing']) {
+      expect(isAgentLayerCaughtUp({ step, fanout: null })).toBe(false);
+    }
   });
 });
 

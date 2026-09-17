@@ -64,11 +64,13 @@ import {
   getWeeklyScore,
   getWeeklyComposite,
   getLatestDayEntry,
+  getLatestBankedDayEntry,
   isCpuUserId,
   cpuNFromUserId,
   WEEK_DAYS_REQUIRED,
   isWeekBanked,
   isFinalSnapshotDegraded,
+  seatsMissingAgentLayerAllWeek,
   rankByScores,
   AGENT_LEDGER_SUBCOLLECTION,
   AGENT_LEDGER_DOC_ID,
@@ -342,7 +344,7 @@ export async function runFridayAdvancement(db, { now = new Date(), includeDevGro
       // A degraded final PAUSES the week pending MANUAL review; the log below
       // must stay distinguishable from banking's stalled-finalizer clamp line.
       if (isFinalSnapshotDegraded(group)) {
-        console.error(`${LOG_PREFIX} base-layer group ${group.id}: final snapshot degraded (agentScoresCarried) — needs MANUAL REVIEW; finalization REFUSED, no self-heal past day 5 (§7.2 / L-B B-F3)`);
+        console.error(`${LOG_PREFIX} base-layer group ${group.id}: final snapshot degraded (${degradeReason(group)}) — needs MANUAL REVIEW; finalization REFUSED, no self-heal past day 5 (§7.2 / L-B B-F3 / N1)`);
         summary.degradedLocks++;
         continue;
       }
@@ -459,6 +461,22 @@ export async function runFridayAdvancement(db, { now = new Date(), includeDevGro
 }
 
 /**
+ * Why isFinalSnapshotDegraded said yes — for the three refusal/side-effect
+ * log lines, so the operator's manual review starts from the cause: the
+ * carried final (§7.2) and/or the seats whose agent layer was missing on
+ * EVERY banked day (N1 durable fix — those seats are NAMED, per the task's
+ * "extend the existing refusal log to name the seats"). One home so the
+ * three lines can never drift from the predicate.
+ */
+function degradeReason(group) {
+  const reasons = [];
+  if (getLatestBankedDayEntry(group)?.entry?.agentScoresCarried === true) reasons.push('agentScoresCarried');
+  const missing = seatsMissingAgentLayerAllWeek(group);
+  if (missing.length > 0) reasons.push(`agentLayerMissing all week for seat(s) [${missing.join(', ')}]`);
+  return reasons.join('; ') || 'unspecified';
+}
+
+/**
  * P6a finalization side-effects for a group whose week is banked — the ONE
  * core both paths run (code review, June 12, 2026: the previous split pair
  * had divergent retry semantics that could orphan a leaderboard row):
@@ -494,7 +512,7 @@ async function runWeekSideEffects(db, { group, entry, dev, nowIso, summary }) {
   let clean = true;
 
   if (group && isFinalSnapshotDegraded(group)) {
-    console.error(`${LOG_PREFIX} group ${group.id}: side-effects on a degraded snapshot (agentScoresCarried) — a pre-§7.2 lock resumed; composite may miss agent-layer points (founder attention)`);
+    console.error(`${LOG_PREFIX} group ${group.id}: side-effects on a degraded snapshot (${degradeReason(group)}) — a pre-§7.2 lock resumed; composite may miss agent-layer points (founder attention)`);
   }
 
   try {
@@ -671,7 +689,7 @@ async function advanceCohort(db, { bracketId, roundNumber, cohortGroups, nowIso,
         // self-heal (that heal was the day-6 contamination, retired by the
         // banking clamp) — it pauses the week pending MANUAL review.
         if (isFinalSnapshotDegraded(group)) {
-          console.error(`${LOG_PREFIX} bracket ${bracketId} game ${group.bracketGameId}: final snapshot degraded (agentScoresCarried) — needs MANUAL REVIEW; lock REFUSED, no self-heal past day 5 (§7.2 / L-B B-F3)`);
+          console.error(`${LOG_PREFIX} bracket ${bracketId} game ${group.bracketGameId}: final snapshot degraded (${degradeReason(group)}) — needs MANUAL REVIEW; lock REFUSED, no self-heal past day 5 (§7.2 / L-B B-F3 / N1)`);
           summary.degradedLocks++;
           continue;
         }

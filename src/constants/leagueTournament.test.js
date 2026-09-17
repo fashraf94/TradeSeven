@@ -79,6 +79,11 @@ import {
   applyRankWeek,
   applyRankWeekFrozen,
   isFinalSnapshotDegraded,
+  seatsMissingAgentLayerAllWeek,
+  agentPipelinePendingStamp,
+  agentPipelineClearedStamp,
+  isAgentPipelinePending,
+  AGENT_PIPELINE_PENDING_FIELD,
   rankByScores,
   shiftMonthKey,
   rankProgress,
@@ -933,6 +938,77 @@ describe('isFinalSnapshotDegraded — the §7.2 gate predicate (June 12, 2026)',
       day5: { recordedDate: 'x', closeScores: {} },
     } };
     expect(isFinalSnapshotDegraded(group)).toBe(false);
+  });
+});
+
+describe('seatsMissingAgentLayerAllWeek / isFinalSnapshotDegraded — N1: a never-created agent layer degrades the final', () => {
+  const day = (n, missing) => ({ recordedDate: `2026-09-${14 + n}`, closeScores: {}, ...(missing ? { agentLayerMissing: missing } : {}) });
+  const week = (missingByDay) => ({ dailyScores: Object.fromEntries(missingByDay.map((m, i) => [`day${i + 1}`, day(i + 1, m)])) });
+
+  it('a seat listed on EVERY banked day is returned, and the final reads degraded', () => {
+    const g = week([['u4'], ['u4'], ['u4'], ['u4'], ['u4']]);
+    expect(seatsMissingAgentLayerAllWeek(g)).toEqual(['u4']);
+    expect(isFinalSnapshotDegraded(g)).toBe(true);
+  });
+
+  it('two seats all week are both named; a seat missing on SOME days is not (the week proceeds)', () => {
+    const g = week([['u3', 'u4'], ['u4', 'u3', 'u1'], ['u3', 'u4'], ['u4', 'u3'], ['u3', 'u4', 'u2']]);
+    expect(seatsMissingAgentLayerAllWeek(g)).toEqual(['u3', 'u4']);
+    const partial = week([['u4'], ['u4'], [], ['u4'], ['u4']]);
+    expect(seatsMissingAgentLayerAllWeek(partial)).toEqual([]);
+    expect(isFinalSnapshotDegraded(partial)).toBe(false);
+    const oneDay = week([['u4'], null, null, null, null]);
+    expect(seatsMissingAgentLayerAllWeek(oneDay)).toEqual([]);
+    expect(isFinalSnapshotDegraded(oneDay)).toBe(false);
+  });
+
+  it('LEGACY: entries without the field (every week banked before the fix) list nobody — never degraded here', () => {
+    const g = week([null, null, null, null, null]);
+    expect(seatsMissingAgentLayerAllWeek(g)).toEqual([]);
+    expect(isFinalSnapshotDegraded(g)).toBe(false);
+    expect(isFinalSnapshotDegraded({ dailyScores: {} })).toBe(false);
+    expect(isFinalSnapshotDegraded(null)).toBe(false);
+    expect(seatsMissingAgentLayerAllWeek(null)).toEqual([]);
+  });
+
+  it('reads the WEEK (day1..the clamped final), never a zombie day 6+: day5-missing-all-week + day8 clean is still degraded, and day6+ listings alone are not', () => {
+    const zombie = week([['u4'], ['u4'], ['u4'], ['u4'], ['u4'], null, null, null]);
+    expect(seatsMissingAgentLayerAllWeek(zombie)).toEqual(['u4']);
+    expect(isFinalSnapshotDegraded(zombie)).toBe(true);
+    const lateOnly = week([null, null, null, null, null, ['u4'], ['u4'], ['u4']]);
+    expect(seatsMissingAgentLayerAllWeek(lateOnly)).toEqual([]);
+    expect(isFinalSnapshotDegraded(lateOnly)).toBe(false);
+  });
+
+  it('the carried final still degrades on its own (the §7.2 arm is untouched), and both arms can hold at once', () => {
+    const carried = week([null, null, null, null, null]);
+    carried.dailyScores.day5.agentScoresCarried = true;
+    expect(isFinalSnapshotDegraded(carried)).toBe(true);
+    expect(seatsMissingAgentLayerAllWeek(carried)).toEqual([]);
+    const both = week([['u4'], ['u4'], ['u4'], ['u4'], ['u4']]);
+    both.dailyScores.day5.agentScoresCarried = true;
+    expect(isFinalSnapshotDegraded(both)).toBe(true);
+  });
+
+  it('a malformed listing (not an array) reads as nobody missing that day', () => {
+    const g = week([['u4'], ['u4'], 'u4', ['u4'], ['u4']]);
+    expect(seatsMissingAgentLayerAllWeek(g)).toEqual([]);
+  });
+});
+
+describe('agentPipelinePending — the N1 late-pod handoff stamp (one home for the writers and the reader)', () => {
+  it('the stamp and the clear are the exact two-field writes, keyed on the one field name', () => {
+    expect(AGENT_PIPELINE_PENDING_FIELD).toBe('agentPipelinePending');
+    expect(agentPipelinePendingStamp('2026-09-14T13:00:00.000Z')).toEqual({ agentPipelinePending: true, agentPipelinePendingAt: '2026-09-14T13:00:00.000Z' });
+    expect(agentPipelineClearedStamp('2026-09-14T13:10:00.000Z')).toEqual({ agentPipelinePending: false, agentPipelineCaughtUpAt: '2026-09-14T13:10:00.000Z' });
+  });
+  it('isAgentPipelinePending is strict: only literal true is pending', () => {
+    expect(isAgentPipelinePending({ ...agentPipelinePendingStamp('x') })).toBe(true);
+    expect(isAgentPipelinePending({ ...agentPipelinePendingStamp('x'), ...agentPipelineClearedStamp('y') })).toBe(false);
+    expect(isAgentPipelinePending({})).toBe(false);
+    expect(isAgentPipelinePending({ agentPipelinePending: 'true' })).toBe(false);
+    expect(isAgentPipelinePending({ agentPipelinePending: 1 })).toBe(false);
+    expect(isAgentPipelinePending(null)).toBe(false);
   });
 });
 

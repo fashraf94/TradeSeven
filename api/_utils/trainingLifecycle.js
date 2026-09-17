@@ -86,6 +86,7 @@ import {
   createPickState,
   buildCpuUserBoard,
   cpuNFromUserId,
+  agentPipelinePendingStamp,
 } from '../../src/constants/leagueTournament.js';
 
 const LOG_PREFIX = '[TrainingLifecycle]';
@@ -403,10 +404,23 @@ export function computeHandoffWrites(group, state, now, {
   // R1 inline completion-flip: a pod whose week has started lands straight in
   // BATTLE (DRAFTING→BATTLE is legal); a future-week draft waits in AWAITING_OPEN.
   const target = anchorDateReached(battleStartWeek, startAnchor, nowEtDate) ? GROUP_STATUS.BATTLE : GROUP_STATUS.AWAITING_OPEN;
+  // N1 durable fix: a COMPETITIVE pod landing straight in BATTLE (its battle
+  // day is today) is stamped agentPipelinePending so the orchestrator's next
+  // weekday-morning tick runs its agent layer even behind that day's duty
+  // marker — the Mon 08:45 pod completes ~09:00 ET, two hours after the 07:00
+  // tick set the marker, and nothing else ever re-opened the door (docs/audits/
+  // 2026-09-12_N1_MON0845_AGENT_LAYER_DISCOVERY.md §3). AWAITING_OPEN is not
+  // stamped here: flipAwaitingOpenPods stamps at the flip. Training pods are
+  // never stamped — activateTrainingPod owns their agent layer. Same
+  // transaction as the flip (this update IS the flip), so a crash can never
+  // leave a pod in BATTLE without the stamp.
+  const pendingStamp = (target === GROUP_STATUS.BATTLE && group.isTraining !== true)
+    ? agentPipelinePendingStamp(nowIso)
+    : {};
   return {
     target,
     startAnchor,
-    groupUpdate: { players, userPool: remainingPool, status: target, updatedAt: nowIso, startAnchor },
+    groupUpdate: { players, userPool: remainingPool, status: target, updatedAt: nowIso, startAnchor, ...pendingStamp },
     streamDoc: { events: state.events || [], roundNumber: group.roundNumber, resolvedAt: nowIso },
   };
 }
@@ -652,7 +666,16 @@ export async function flipAwaitingOpenPods(db, { now = new Date(), includeDev = 
   for (const pod of pods) {
     if (anchorDateReached(pod.battleStartWeek, pod.startAnchor, nowEtDate)) {
       try {
-        await transitionStatus(db, pod.id, GROUP_STATUS.BATTLE, nowIso);
+        // N1 durable fix: a COMPETITIVE pod flipping into its battle day is
+        // stamped agentPipelinePending in the SAME transaction as the flip, so
+        // the orchestrator catch-up serves it even if this tick's duty marker
+        // is already set (a flip that fails at 07:00 and lands at 07:10 would
+        // otherwise be stranded exactly like the Mon 08:45 inline flip). The
+        // Monday pipeline still processes a same-tick flip first; the catch-up
+        // then finds the stream and clears the stamp. Training pods are never
+        // stamped (activateTrainingPod owns their agent layer).
+        const stamp = pod.isTraining !== true ? agentPipelinePendingStamp(nowIso) : {};
+        await transitionStatus(db, pod.id, GROUP_STATUS.BATTLE, nowIso, stamp);
         summary.flipped++;
         console.log(`${LOG_PREFIX} flipped ${pod.isLiveDraft === true ? 'competitive' : 'training'} pod ${pod.id} awaiting_open → battle (activates ${activationEtDate(pod.battleStartWeek, pod.startAnchor)}, first trading day ${pod.startAnchor?.anchorEtDate}, now ${nowEtDate})`);
       } catch (err) {
