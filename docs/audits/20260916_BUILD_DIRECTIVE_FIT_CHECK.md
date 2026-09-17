@@ -14,8 +14,8 @@
 | **Flag** | `DIRECTIVE_FIT_CHECK_ENABLED`, boolean, shipped `false`, pinned, in `DARK_BY_DESIGN` with its runway. |
 | **Flag-off invariant** | **Holds.** Every prompt byte and every gate outcome is byte-identical to the pre-build commit, proved against goldens captured by rendering the pre-build code — not regenerated from the code they guard. |
 | **Not behind the flag** | The three forensics fields. Deliberate: the one-way door. Every turn without them is a turn whose intent can never be recovered. |
-| **Verification** | Final, at branch HEAD: full suite `VITEST_EXIT=0` — **13 215 passed**, 64 skipped, 681 files. `npm run lint:gate` exit 0. `vite build` exit 0. Zero fenced files; `file-directive.js` untouched; the whole `chat.js` diff is 6 lines, so no new top-level battle key. |
-| **Review** | Mandatory (16 files / 2 827 lines at final HEAD, over both §2 thresholds). Four lenses on isolated `git archive` trees, refuters told to kill every finding *and* to attack the clean verdicts, the mutating lens last. **8 CONFIRMED, 4 REFUTED.** Recorded in §7. |
+| **Verification** | Final, at branch HEAD (after the §7.6 addendum): full suite `VITEST_EXIT=0` — **13 228 passed**, 64 skipped, 681 files. `npm run lint:gate` exit 0. `vite build` exit 0. Zero fenced files; `file-directive.js` untouched; the whole `chat.js` diff is 6 lines, so no new top-level battle key. |
+| **Review** | Mandatory (16 files / 3 171 lines at final HEAD, over both §2 thresholds). Four lenses on isolated `git archive` trees, refuters told to kill every finding *and* to attack the clean verdicts, the mutating lens last. **8 CONFIRMED, 4 REFUTED.** Recorded in §7. |
 | **Safety property the review proved** | At flag-ON the gate's commits are a **strict subset** of the flag-OFF gate's, by construction. **The fit check can only refuse; it can never file something the pre-build gate would not have filed.** |
 | **…and the risk that follows from it** | So the flip's realistic failure mode is **not** a mis-filed directive. It is that **directive filing quietly stops** — and a `fit_mismatch` is **invisible on screen** today (A7/C2). **Materially reduced by the §7.6 addendum**, which moved the quote demand to the output contract and made the filing few-shots quote (A2 closed); A3's `TWO_LEG_SIGNAL_RULE` paraphrases remain. |
 | **Deviations** | Three, in §6. One is a provable incompatibility inside the brief itself; one is a scope boundary; one is the flip-order hazard. |
@@ -407,6 +407,22 @@ That gap *is* review finding A2/A3 — the one the review called the flip's real
 
 **What this does to the flip risk.** The review's headline — *the realistic failure mode is that filing quietly stops* — is materially reduced, because the demand now sits where the model decides to file and the examples no longer teach the opposite. It is not eliminated: A3 stands, and the §7 J7 and D-1 blockers are untouched by this addendum.
 
+### Addendum verification
+
+Run at the addendum's HEAD, all three gates:
+
+| Check | Result |
+|---|---|
+| Full suite, unpiped, exit asserted | **`VITEST_EXIT=0`** — 681 files passed, 3 skipped; **13 228 passed**, 64 skipped; 149.6 s |
+| `npm run lint:gate` | **exit 0** |
+| `npx vite build` | **exit 0** |
+| Fenced files in the cumulative diff | **zero** |
+| `api/agent/file-directive.js` | **untouched** |
+| New top-level battle key | **none** — the whole `chat.js` diff is still 6 lines |
+| Cumulative branch diff | 16 files / 3 171 insertions |
+
+Neither addendum commit touched `chat.js`, `featureFlags.js`, the data module, or any client file.
+
 ---
 
 ## 8. The smoke — after the flip PR, on a live battle
@@ -415,6 +431,8 @@ Not run here: the flag ships `false`, so nothing this build added is reachable u
 
 1. **In character.** Type "tighten your stops". The reply quotes **"Tighten the downside stop"** word for word; the card beneath shows the same text; Firestore `agentBattles/{id}.directive.adjustmentId` reads **`SP-01`**; and the exchange's `archetypeGate` carries `originalUserAsk`, `counterOfferText` and `rejectionReason` (strings or nulls, all three keys present).
 2. **Out of character.** Type "go to cash". Either the reply declines in character and the turn shows "No change made to your strategy this turn.", **or** — if the model selects an id — the reply quotes that id's canonical text exactly. **A paraphrase that files nothing is the fix working, not a failure**; look for `archetypeGate.status: 'fit_mismatch'` with `fitCheck.expected` naming the sentence that was not said.
+2b. **A direct instruction, which the addendum is about.** Type "tighten your stops" — not a confirmation of anything, just an order. Under the §7.6 addendum the output contract demands the quote here too, so the reply should carry **"Tighten the downside stop"** word for word and the card should match. Before the addendum this was the most likely silent `fit_mismatch`; it is now the sharpest single test of whether the prompt half is working.
+
 3. **The menu, indirectly.** Ask for "something more cautious". The model should now reach for the cautious register rather than the concentration dial. Note D-1: it will offer SP-02 / SP-06 / SP-07 before SP-01.
 4. **Watch the rate, not just the turns.** The review's conclusion is that the flip's realistic failure mode is *silence* — filing stops and nothing says so. So the smoke is not passed by three good turns. Count `archetypeGate.status == 'fit_mismatch'` against `== 'committed'` over the first day of real traffic. A `fit_mismatch` rate that is not small means the prompt is still teaching the paraphrase (§7.2 A2/A3) and the flag should go back off, whatever the individual turns looked like. Until J7 is fixed the eval cannot tell you this — only the Firestore records can.
 
