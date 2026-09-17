@@ -9,9 +9,19 @@
 //   1. voiceLayerPrompt.js — DATA_CONFIDENCE_RULE told Gemma that intraday
 //      signals describe "the latest available session — typically today during
 //      market hours, or the prior session when EODHD's data hasn't refreshed."
-//      Since the June 12 freshness gate (agentVwapFloor.js isVwapSessionUsable,
-//      `sessionDate === todayET`) a prior session is never PUBLISHED: the entry
-//      is discarded, not carried. The sentence described an abolished regime.
+//      The CAUSAL half is false: under the June 12 freshness gate
+//      (agentVwapFloor.js isVwapSessionUsable, `sessionDate === todayET`) a
+//      stale session is DISCARDED, not carried, so EODHD's refresh never
+//      explains a Prior-session line.
+//
+//      The first pass DELETED the prior-session half and asserted, flatly,
+//      "describe the current trading session" — which over-corrected: the
+//      shipped renderer still has the branch (`buildIntradayLine`'s prefix is
+//      `isToday ? "Today's session" : 'Prior session'`, false for a null or
+//      legacy sessionDate as well as for any cross-date read), so the rule
+//      could be contradicted by the very line it describes. It now binds to
+//      that LABEL instead — the §9 display-agreement shape — and drops only
+//      the false causal clause. Reworded, not deleted.
 //
 //   2. agentEvalToolSchema.js — the `threshold` field's own example, "If it
 //      holds above the 20-day on the next test", names a level no prompt
@@ -41,20 +51,37 @@ const FENCED_SRC = read('agentEvalPromptAssembly.js');
 
 const thresholdField = TRADE_DECISION_TOOL.input_schema.properties.anticipationCandidates.items.properties.threshold;
 
-describe('D-1a — DATA_CONFIDENCE_RULE no longer describes the abolished prior-session regime', () => {
-  it('the source carries the current-session sentence and not the prior-session one', () => {
-    expect(PROMPT_SRC).toContain('Intraday signals (session VWAP, 5-min SMA20) describe the current trading session.');
-    expect(PROMPT_SRC).not.toContain("the prior session when EODHD's data hasn't refreshed");
+describe('D-1a — DATA_CONFIDENCE_RULE is bound to the line\'s own label, and drops only the false clause', () => {
+  const RULE = (() => {
+    const from = PROMPT_SRC.slice(PROMPT_SRC.indexOf('const DATA_CONFIDENCE_RULE'));
+    return from.slice(0, from.indexOf('`;'));
+  })();
+
+  it('the rule names the session the LINE names, not a session it assumes', () => {
+    expect(RULE).toContain('Intraday signals (session VWAP, 5-min SMA20) describe the session named on the line');
+    // …and it quotes the renderer's label verbatim, so the instruction is actionable
+    expect(RULE).toContain('a line marked "Prior session" is yesterday\'s, not today\'s');
   });
 
-  it("the phrase 'prior session' survives ONLY in buildIntradayLine's own label, which the cron path cannot reach", () => {
-    // Phase 0 finding 5 names both sites. The label at buildIntradayLine is a
-    // RENDER branch on a `sessionDate` the cron no longer publishes, not a
-    // sentence in the shipped prose — a separate retirement, reported not fixed
-    // (BUILD_RULES §3). What this row locks is that DATA_CONFIDENCE_RULE is not
-    // one of them any more.
-    const rule = PROMPT_SRC.slice(PROMPT_SRC.indexOf('const DATA_CONFIDENCE_RULE'));
-    expect(rule.slice(0, rule.indexOf('`;'))).not.toMatch(/prior session/i);
+  it('only the FALSE clause is gone — the prior-session allowance is kept, reworded', () => {
+    // The causal claim is what the gate abolished: a stale session is
+    // discarded, not carried, so EODHD's refresh state never explains the line.
+    expect(RULE).not.toContain("EODHD's data hasn't refreshed");
+    expect(RULE).not.toContain('the latest available session');
+    // The ALLOWANCE itself survives — deleting it left an unconditional claim
+    // the renderer can contradict.
+    expect(RULE).toMatch(/prior session/i);
+    expect(RULE).not.toContain('describe the current trading session');
+  });
+
+  it("the rule AGREES WITH THE RENDERER — it quotes the prefix buildIntradayLine actually emits (§9)", () => {
+    // The point of the rewording: the prose is derived from what is rendered,
+    // not from what the producer is currently expected to emit. If the branch
+    // is ever renamed, this row reds and the prose moves with it.
+    const fn = PROMPT_SRC.slice(PROMPT_SRC.indexOf('export function buildIntradayLine'));
+    const body = fn.slice(0, fn.indexOf('\n}'));
+    expect(body).toContain("const prefix = isToday ? \"Today's session\" : 'Prior session';");
+    expect(RULE).toContain('"Prior session"');
   });
 });
 

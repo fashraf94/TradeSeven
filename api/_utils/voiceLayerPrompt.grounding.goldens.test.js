@@ -40,18 +40,28 @@
 //
 // TWO THINGS A LATER READER NEEDS (2026-09-16, the threshold-lint arc):
 //
-// 1. THE ONE APPLIED CORRECTION. Commit D of that arc changed ONE sentence of
-//    DATA_CONFIDENCE_RULE — dropping "or the prior session when EODHD's data
-//    hasn't refreshed", a regime the June 12 freshness gate abolished — which
-//    these goldens pin. It was applied to voiceGroundingOffGoldens.json IN
-//    PLACE, as a literal substring replacement over that one sentence: 8 of
-//    the 16 captured prompts carry the rule, 8 changed, −784 bytes = 8 × 98,
-//    and NOTHING ELSE in the file moved. (The per-site delta is 96 CHARACTERS
-//    but 98 BYTES — the em-dash the old clause carried is 3 UTF-8 bytes. An
-//    earlier version of this note published −768 = 8 × 96, conflating the two;
-//    the proof was sound, the number was not. Corrected after the §2 mutation
-//    lens reconstructed the pre-edit file and matched it byte-exact by
-//    sha256.) Every other byte is
+// 1. THE APPLIED CORRECTIONS — TWO of them, same method both times. These
+//    goldens pin DATA_CONFIDENCE_RULE, and that sentence moved twice:
+//      • commit D (2026-09-16) dropped the prior-session half outright;
+//      • the addendum (2026-09-17) REWORDED it instead, restoring a
+//        prior-session allowance bound to the renderer's own label and keeping
+//        only the false causal clause out.
+//    Each was applied to voiceGroundingOffGoldens.json IN PLACE, as a literal
+//    substring replacement over that one sentence, never a regeneration. Both
+//    times: 8 of the 16 captured prompts carry the rule, 8 changed, and
+//    NOTHING ELSE in the file moved.
+//
+//    THE ARITHMETIC, stated in the two units it actually has — an earlier
+//    version of this note published one number for both and was wrong:
+//      • commit D:  −784 file bytes = 8 × 98. The per-site delta is 96
+//        CHARACTERS but 98 BYTES (the em-dash the old clause carried is 3
+//        UTF-8 bytes).
+//      • the addendum: +528 file bytes = 8 × 66, while the PROMPT STRING grows
+//        only 64 bytes per site. The extra 2 bytes per site are the JSON
+//        escapes on the two inner double quotes of "Prior session" (\"), which
+//        exist in the FILE and not in the rendered prompt. Value delta +512,
+//        file delta +528.
+//    Every other byte is
 //    still the 70ba90a1 capture, so the dark contract this file exists for is
 //    intact: it still proves the GROUNDING arc changed no byte at 'off'. A
 //    whole-file regeneration from this tree would have re-baselined that

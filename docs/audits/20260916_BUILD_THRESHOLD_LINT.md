@@ -168,7 +168,7 @@ Items both sites already drop (not an object, or no `symbol`) pass through the l
 
 ### Commit D — two non-fenced copy corrections (`bb4caa0d`)
 
-- `api/_utils/voiceLayerPrompt.js:1888`, `DATA_CONFIDENCE_RULE` — dropped *"— typically today during market hours, or the prior session when EODHD's data hasn't refreshed"*; the sentence now reads *"Intraday signals (session VWAP, 5-min SMA20) describe the current trading session."* Since the June 12 gate a prior session is never **published** — the entry is discarded, not carried — so the clause described a state the gate abolished, and told Gemma to be comfortable narrating one.
+- `api/_utils/voiceLayerPrompt.js:1888`, `DATA_CONFIDENCE_RULE` — **reworded, not deleted** (see §9, the Sep 17 addendum, which corrected this). The sentence now reads *"Intraday signals (session VWAP, 5-min SMA20) describe the session named on the line — a line marked "Prior session" is yesterday's, not today's."* Only the **false causal clause** — *"when EODHD's data hasn't refreshed"* — is gone: under the June 12 gate a stale session is **discarded, not carried**, so EODHD's refresh state never explains a Prior-session line.
 - `api/_utils/agentEvalToolSchema.js:180`, the `threshold` field's own example — *"If it holds above the 20-day on the next test"* → *"If it holds above +0.5x ATR through the next check."* The 20-day is rendered as a **level** for no symbol class (the bench trend line carries short/intermediate/long labels and `sma200_position` only). The schema was teaching the decider to promise on a signal it cannot see — and the lint this arc ships would then reject the model for doing exactly what the schema asked. *"Must be specific"* and the too-vague counter-example both survive, plus a new *"built on something you were shown this check."*
 
 **Not edited:** the fenced twin at `agentEvalPromptAssembly.js:501` and `:704`. Row D-1c pins it as still present in **both** variants, so the follow-up cannot be quietly forgotten.
@@ -440,3 +440,60 @@ Crons do not run on Vercel preview (BUILD_RULES §6), so nothing here is preview
 Pushed to `claude/threshold-lint-4pwvm4`. **No PR opened, no merge, no CI watched** (BUILD_RULES §2 — the founder opens PRs and merges; delivery ends at *pushed*). The two flips are the founder's, one PR each.
 
 **STOP.**
+
+---
+
+## 9. Addendum, 2026-09-17 — reword, don't delete (`DATA_CONFIDENCE_RULE`)
+
+**Founder instruction, after an external review (Codex).** Commit D deleted the prior-session half of `DATA_CONFIDENCE_RULE`. The addendum restores an allowance that is **true under the gate** and drops only the false clause. One commit, on the branch, before merge.
+
+### 9.1 What was wrong with commit D's version
+
+Commit D replaced the clause with an **unconditional claim**: *"Intraday signals … describe the current trading session."*
+
+That over-corrected, and the defect is the same family this whole arc is about — a sentence asserting something the platform can contradict:
+
+- The shipped renderer still has the branch. `buildIntradayLine` (`api/_utils/voiceLayerPrompt.js:1288-1322`, VERIFIED at this HEAD) computes `const prefix = isToday ? "Today's session" : 'Prior session';` and emits `Prior session: 1.2% below session VWAP.` verbatim.
+- `isToday` is `intraday.sessionDate === todayEt`, so it is **false for a null or legacy `sessionDate`** as well as for any cross-date read — the module's own comment names the legacy case (`:1283-1287`).
+- So if that line ever renders, commit D's rule had told Gemma the opposite of what the line in front of it says.
+
+**My reasoning in commit D was sound about the producer and wrong about the scope.** The June 12 gate (`agent-evaluate.js:978` → `isVwapSessionUsable`) governs what the **evaluation cron publishes** into `cronState.intradayMomentum`, and `voice-layer-cache.js:406` / `:929` does read that already-gated map — so on the shipped configuration (both crons RTH-weekday, `AGENT_BATTLE_DURATION_MODE = 'fullday'`) I could not construct a live Prior-session render for a fresh battle. **That is a statement about today's data path, not about the prompt's correctness**, and I let the first stand in for the second.
+
+### 9.2 Why the reworded version is right
+
+The new sentence binds the instruction to **what is rendered** rather than to what the producer currently emits:
+
+> *Intraday signals (session VWAP, 5-min SMA20) describe the session named on the line — a line marked "Prior session" is yesterday's, not today's.*
+
+This is **BUILD_RULES §9's display-agreement rule applied to prompt prose**: *"Every displayed decision or label must be derived from exactly what the user sees, never from a parallel source that can drift."* Commit D's version was derived from a parallel source — the gate's current behaviour. This one is derived from the label itself, so it is true in every state, including the one the renderer can produce, and it survives any change to the data path (a plan upgrade restoring current intraday data, a multi-day battle mode, a legacy document).
+
+The **false** half is still gone. *"when EODHD's data hasn't refreshed"* asserts a cause the gate abolished: a stale session is discarded, not carried.
+
+### 9.3 What changed
+
+| Site | Change |
+|---|---|
+| `api/_utils/voiceLayerPrompt.js:1888` | the sentence, reworded as above |
+| `api/_utils/__fixtures__/voiceGroundingOffGoldens.json` | the same substitution applied **in place**, the `bb4caa0d` method — never a regeneration (the file's own header forbids regenerating from a tree carrying the grounding edits) |
+| `api/_utils/voiceLayerPrompt.test.js:3107` | re-expects the new wording, and pins the false clause and commit D's unconditional claim both absent |
+| `api/_utils/thresholdLintCopy.test.js` D-1a | three rows: the rule names the line's session; only the false clause is gone and the allowance survives; **and the rule quotes the prefix `buildIntradayLine` actually emits**, so renaming the branch reds the row and the prose moves with it |
+| `api/_utils/voiceLayerPrompt.grounding.goldens.test.js` | the header records both edits and both byte deltas |
+
+### 9.4 The goldens, byte-verified — and the arithmetic in the right units
+
+Same method as `bb4caa0d`, verified the same way: parse both versions, assert for **every changed key** that `before[k].replace(old, new) === after[k]`, and for **every other key** that it is byte-identical. **8 of 16** keys changed, as before.
+
+**The arithmetic, in the two units it actually has:**
+
+- the **prompt string** grows **+64 bytes** per site → **+512** across 8;
+- the **file** grows **+66 bytes** per site → **+528** (212,081 → 212,609).
+
+The 2-byte difference per site is the **JSON escaping on the two inner double quotes** of `"Prior session"` (`\"`), which exist in the file and not in the rendered prompt. This is recorded deliberately: the mutation lens caught exactly this class of error last time (a chars-vs-bytes conflation published *as* the proof that nothing else moved), so the delta is stated in both units rather than one.
+
+### 9.5 Verification
+
+Full suite **exit 0** — **13,029 passed** / 64 skipped / 684 files · `npm run lint:gate` **exit 0** · `vite build` **exit 0**. No fenced file touched. The C-20 honesty pin and the 18 goldens byte-identity rows are green.
+
+### 9.6 What this does not change
+
+Nothing else in the build moves. The lint, the flag at `'off'`, the `rsPercentile` work, the fence-contact hold-out in §5.2 and the `'on'`-flip precondition in §5.3 all stand exactly as recorded. §7 item 3 (the same 20-day example in Gemma's anticipation instructions) and the fenced follow-up in §7 item 4 are still open and still untouched.
