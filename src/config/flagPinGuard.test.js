@@ -155,6 +155,20 @@ const DARK_BY_DESIGN = {
     'The directive fit check (Phase 0: docs/audits/20260915_PHASE0_DIRECTIVE_GATE.md) — ONE flag over ONE mechanism in two halves that must switch together: the prompt asks the model to QUOTE the canonical text of the id it selects (the annotated menu + the confirmation-rule acknowledgement) and the gate REQUIRES that quote before it commits (the fit_mismatch deliberate null). Built dark; flips in the founder\'s own one-line PR after a Vercel preview smoke, never a build PR. Flag-off every prompt byte and every gate outcome is byte-identical to the pre-build commit (voiceLayerPrompt.fitCheck.test.js / directiveGate.fitCheck.test.js, against goldens captured from it). The three forensics fields on the gate record are NOT behind this flag — they are additive and always on',
   BACKING_BETA_ENABLED:
     'Backing Beta PR 1–5 — the whole backing layer (spec V1.3 §12), built dark across five PRs; flips with ELIGIBILITY_ATTESTATION_ENABLED in the founder\'s own flip PR after every §11 gate (as amended by Amendment A §A7), never a build PR. PR 1 added NO door (foundation only); PR 2 lands the first two — POST /api/tournament/backing-stake and GET /api/tournament/backing-pools — both reading the flag at CALL time, AFTER auth, and both covered by backing-stake.dark.test.js; PR 3–5 add theirs',
+  // ANTICIPATION_THRESHOLD_LINT_MODE intentionally ABSENT, and it must stay
+  // absent: it is a STRING TRI-STATE ('off' | 'shadow' | 'on'), so buildFlagMap
+  // above never sees it (the scan is `*_ENABLED = true|false`) and the
+  // integrity test below would fail the key outright. Noted HERE anyway so a
+  // flip is loud in the place a reader looks for the dark runway — the
+  // VOICE_GROUNDING_MODE precedent, which is asserted absent by its own suite.
+  //   Runway: the threshold lint (docs/audits/20260915_PHASE0_SIGNAL_LANGUAGE.md
+  //   §7.2 shape 2) — a lint that rejects an agent's "I'll act if X" promise
+  //   when X is a signal that check did not hold. Ships 'off' (dark, today's
+  //   path byte-identical); 'shadow' measures without dropping; 'on' drops the
+  //   failing candidate from both persistence sites. Each flip is its own
+  //   one-line founder PR after a live battle's shadow read, never a build PR,
+  //   and each moves the pin row in anticipationThresholdLintFlags.test.js in
+  //   the same commit (BUILD_RULES §2).
 };
 
 // ── Build the live flag → value map from the source modules ──────────────────

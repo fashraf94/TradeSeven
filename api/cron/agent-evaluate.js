@@ -76,7 +76,7 @@ import { TEMPO_DIAL_BANDS } from '../_utils/tempoDialBands.js';
 // NO-EDIT).
 import { clampHftConfig, resolveTempoDial, desiredTempoOf } from '../_utils/tempoDialClamp.js';
 import { buildSwapProvenance } from '../_utils/swapProvenance.js';
-import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED, LEARNING_L1_CAPTURE_ENABLED, LEARNING_L1_CAPTURE_EXPANSION_ENABLED, REGIME_STAMP_ENABLED, PROFIT_TARGET_EXECUTOR_ENABLED, TICK_STAMPS_ENABLED, getVoiceGroundingMode } from '../../src/config/featureFlags.js';
+import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED, LEARNING_L1_CAPTURE_ENABLED, LEARNING_L1_CAPTURE_EXPANSION_ENABLED, REGIME_STAMP_ENABLED, PROFIT_TARGET_EXECUTOR_ENABLED, TICK_STAMPS_ENABLED, ANTICIPATION_THRESHOLD_LINT_MODE, getVoiceGroundingMode } from '../../src/config/featureFlags.js';
 // Voice-layer grounding §5 (hazard 27): the in-process dedupe of one tick's
 // anticipation queue, applied only when the note is code-composed.
 import { dedupeAnticipationQueue } from '../_utils/voiceLayerGrounding.js';
@@ -86,6 +86,14 @@ import { dedupeAnticipationQueue } from '../_utils/voiceLayerGrounding.js';
 // TICK_STAMPS_ENABLED. Read, never edited: the fenced assembler's directive
 // resolution is re-run here on the same in-memory object, never re-read.
 import { composeTickStamps } from '../_utils/tickStamps.js';
+// THE THRESHOLD LINT (docs/audits/20260915_PHASE0_SIGNAL_LANGUAGE.md §7.2
+// shape 2): the pure, zero-import verdict on whether an anticipation
+// candidate's "I'll act if X" promise names a signal THIS tick actually
+// rendered for that symbol. Called once between the decider's return and the
+// two persistence sites below, under ANTICIPATION_THRESHOLD_LINT_MODE. It
+// REJECTS, never rewrites — an accepted threshold is byte-identical to what
+// the decider wrote.
+import { buildPresentSignals, lintThreshold } from '../_utils/anticipationThresholdLint.js';
 // Corpus Capture Patch W3 — pure regimeAtStart stamp helpers (write-once /
 // flag / shape semantics live there so they are behaviorally unit-testable).
 import { shouldStampRegime, buildRegimeAtStart } from '../_utils/regimeStamp.js';
@@ -2151,6 +2159,102 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // ---- Process decision ----
     const evalId = `eval_${String((battle.evaluations?.length || 0) + 1).padStart(3, '0')}`;
 
+    // ---- THE THRESHOLD LINT (Phase 0 §7.2 shape 2) ----
+    //
+    // Between the decider's return and the TWO persistence sites the
+    // candidates reach — the anticipation queue just below (Gemma's input)
+    // and the `candidates[]` stamp far below (the evaluations[] record) — ask
+    // of every candidate: does its "I'll act if X" promise name a signal THIS
+    // tick actually rendered for THAT symbol?
+    //
+    // The present-signals map is built ONCE per tick from the same in-memory
+    // objects the prompt was built from: `momentumData` (the VWAP the
+    // freshness gate published, the rankings rows, the regimes), the tech-score
+    // docs, `assetScores` (the held rows the ACTIVE POSITIONS CSV rendered,
+    // pre-swap — what the decider saw) and the bench the prompt flattened.
+    // No I/O; the map is a read of objects already in hand.
+    //
+    // 'off' (shipped): not called at all — `lintedAnticipationCandidates` IS
+    // `haikuResult.anticipationCandidates`, the same reference, so both sites
+    // are byte-identical to the pre-lint path. 'shadow': every failing
+    // candidate is logged and NOTHING is dropped. 'on': a failing candidate is
+    // dropped from both sites and logged. Unknown mode ⇒ inactive (fail to the
+    // only state that changes nothing).
+    //
+    // REJECT, NEVER REWRITE: an accepted threshold is byte-identical to what
+    // the decider wrote. Rewriting the agent's sentence to remove the absent
+    // clause would be a second honesty problem; a dropped candidate is simply
+    // not a fact on the record.
+    const lintEnforcing = ANTICIPATION_THRESHOLD_LINT_MODE === 'on';
+    const lintActive = lintEnforcing || ANTICIPATION_THRESHOLD_LINT_MODE === 'shadow';
+    let lintedAnticipationCandidates = haikuResult?.anticipationCandidates;
+    if (lintActive && Array.isArray(lintedAnticipationCandidates)) {
+      const presentSignals = buildPresentSignals({
+        momentumData,
+        techScoresMap: technicalScoresMap,
+        rankingsMap: momentumData.rankingsMap,
+        heldSymbols: assetScores.map(s => s.symbol),
+        benchSymbols: flattenBenchServer(battle.portfolio?.bench).map(a => a.symbol),
+      });
+      const kept = [];
+      for (const candidate of lintedAnticipationCandidates) {
+        // Items both persistence sites already drop (not an object, or no
+        // symbol) pass through untouched — the lint adds no admission rule.
+        if (!candidate || typeof candidate !== 'object' || !candidate.symbol) {
+          kept.push(candidate);
+          continue;
+        }
+        const verdict = lintThreshold({
+          threshold: candidate.threshold,
+          symbol: candidate.symbol,
+          present: presentSignals,
+        });
+        if (verdict.ok) {
+          kept.push(candidate);
+          continue;
+        }
+        // The breadcrumb. Two receipts, because at 'on' this is a DELETION
+        // from a durable record: the GCS shadow record below, and — matching
+        // the nearer of the two precedents this copies (`cron_budget_skip`,
+        // which logs its own count and battle) — a console line, so a drop is
+        // visible in the Vercel function log even if the GCS write is
+        // swallowed. The 'on' flip PR owes a durable receipt on the battle doc
+        // itself; see the build report's §5 flip precondition.
+        console.log(
+          `${LOG_PREFIX} threshold lint [${ANTICIPATION_THRESHOLD_LINT_MODE}] ${lintEnforcing ? 'DROPPED' : 'flagged'} `
+          + `${candidate.symbol} anticipation for battle ${battle.id} — absent: ${verdict.absent.join(', ')}`
+        );
+        logAnticipation({
+          battleId: battle.id,
+          agentId: battle.agentId,
+          anticipationSource: 'haiku',
+          success: false,
+          errorStep: 'threshold_absent_signal',
+          errorReason: `absent_${verdict.absent.join('+')}`,
+          absent: verdict.absent,
+          lintMode: ANTICIPATION_THRESHOLD_LINT_MODE,
+          dropped: lintEnforcing,
+          // The check's own instant, matching logEvaluation's field. NOTE: the
+          // review justified this by the evaluations[] 150-cap making `evalId`
+          // collide, and the refutation overturned that — battles are
+          // single-day at ~26 ticks, and `_loggedAt` (stamped by appendToStream)
+          // already joins. It is kept anyway because it is the instant of the
+          // CHECK rather than of the log write, which is the join this record
+          // actually wants, and it costs nothing.
+          timestamp: new Date().toISOString(),
+          candidate: {
+            symbol: candidate.symbol || null,
+            direction: candidate.direction || null,
+            signalSummary: candidate.signalSummary || null,
+            threshold: candidate.threshold || null,
+          },
+          evalId,
+        }).catch(() => {});
+        if (!lintEnforcing) kept.push(candidate);
+      }
+      lintedAnticipationCandidates = kept;
+    }
+
     // Phase 3 Voice Layer Rework — queue anticipation candidates Haiku
     // flagged on this tick for narration. Fires on HOLD, SWAP, and
     // PROPOSAL paths alike — anticipation is additive metadata
@@ -2159,8 +2263,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // evalId is captured here (right after Haiku returned) so each
     // anticipation message can be cross-referenced back to the
     // evaluation that flagged it.
-    if (Array.isArray(haikuResult?.anticipationCandidates)) {
-      for (const candidate of haikuResult.anticipationCandidates) {
+    if (Array.isArray(lintedAnticipationCandidates)) {
+      for (const candidate of lintedAnticipationCandidates) {
         if (candidate && typeof candidate === 'object' && candidate.symbol) {
           pendingAnticipations.push({ candidate, evalId });
         }
@@ -2830,7 +2934,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         Object.assign(evaluation, composeTickStamps({
           promptBuilt,
           controlResolution,
-          anticipationCandidates: haikuResult?.anticipationCandidates,
+          // The LINTED array (dark: the same reference the decider returned).
+          anticipationCandidates: lintedAnticipationCandidates,
           assetScores,
           prices,
           momentumData,

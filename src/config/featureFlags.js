@@ -2502,3 +2502,43 @@ export const ELIGIBILITY_ATTESTATION_ENABLED = false;
  */
 // Pinned by: backingBetaFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const BACKING_BETA_ENABLED = false;
+
+/**
+ * THE THRESHOLD LINT — no promise on a signal the tick did not hold
+ * (docs/audits/20260915_PHASE0_SIGNAL_LANGUAGE.md §5 + §7.2 shape 2; the
+ * pure module is api/_utils/anticipationThresholdLint.js).
+ *
+ * A STRING TRI-STATE, walked in the grounding walk's own pattern — measure
+ * before enforcing:
+ *   'off'    the lint is not called. Today's path, byte-identical: every
+ *            candidate the decider emits reaches the anticipation queue and
+ *            the evaluations[].candidates[] stamp exactly as it does now.
+ *   'shadow' every candidate is linted and nothing is dropped. A candidate
+ *            that WOULD fail is logged to the anticipation shadow stream with
+ *            errorStep 'threshold_absent_signal' and its `absent` list — the
+ *            measurement the founder reads before enforcing.
+ *   'on'     a failing candidate is DROPPED from both persistence sites — it
+ *            reaches neither Gemma nor the candidates[] stamp — and logged.
+ *
+ * REJECT, NEVER REWRITE: an accepted threshold is byte-identical to what the
+ * decider wrote. A dropped candidate is simply not a fact on the record; the
+ * `heard` / `saw` verbs and the stamp composer are untouched (the stamp's
+ * INPUT shrinks under 'on', tickStamps.js does not change).
+ *
+ * The flip to 'shadow' is its own one-line PR; the flip to 'on' another —
+ * never a build PR. Each flip moves the pin row in
+ * src/config/anticipationThresholdLintFlags.test.js in the SAME commit
+ * (BUILD_RULES §2) and updates the note in flagPinGuard.test.js's
+ * DARK_BY_DESIGN block, which cannot HOLD this flag: the guard scans
+ * `*_ENABLED = true|false` and its integrity test rejects any key outside
+ * that boolean map. The VOICE_GROUNDING_MODE / MANDATE_TRANSPORT_MODE
+ * precedent — a string tri-state pins directly.
+ *
+ * Read as a module constant in the cron, like TICK_STAMPS_ENABLED beside it;
+ * there is no per-uid resolution to make, so there is no accessor.
+ */
+// Pinned by: anticipationThresholdLintFlags.test.js (a STRING tri-state — pinned directly, outside flagPinGuard's `*_ENABLED` scan; this value and the pin move together — BUILD_RULES §2).
+export const ANTICIPATION_THRESHOLD_LINT_MODE = 'off';
+
+/** The three founder-walked states, in walk order. */
+export const ANTICIPATION_THRESHOLD_LINT_MODES = Object.freeze(['off', 'shadow', 'on']);

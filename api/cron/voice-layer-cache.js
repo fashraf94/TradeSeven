@@ -195,8 +195,10 @@ export function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScore
           trendSummary = 'Downtrend. Below major SMAs.';
         }
 
-        // The RS clause rides the RAW reading, as the bench path does (`:423`):
-        // the `?? 50` default below is an imputed number, not a measurement.
+        // The RS clause rides the RAW reading, as the bench path does (`:423`).
+        // (Past tense, kept for the record: the `?? 50` default that used to sit
+        // on this read was an imputed number, not a measurement. It is gone —
+        // the Sep 9 F-3 fix removed it here, and nothing below imputes one.)
         const rs = factors.rsPercentile;
         if (typeof rs === 'number') {
           if (rs >= 75) trendSummary += ' RS vs SPY rising.';
@@ -302,10 +304,11 @@ export function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScore
         changePercent: Math.round(changePercent * 100) / 100,
         technicalScore,
         technicalRank,
-        // Null-honest, as the bench writer already is (`:480-482`): the `?? 50`
-        // above is an imputed default and publishing it rendered
+        // Null-honest, as the bench writer already is (`:480-482`). (Past tense,
+        // kept for the record: the `?? 50` default that used to sit on the read
+        // above was an imputed default, and publishing it rendered
         // "RS 50th %ile" into the prompt for symbols with no technical-score
-        // document at all.
+        // document at all. It is gone.)
         rsPercentile: typeof factors.rsPercentile === 'number'
           ? Math.round(factors.rsPercentile)
           : null,
@@ -599,7 +602,12 @@ export function buildScoutAlerts(watchlist, rankingsMap, techScoresMap, archetyp
     if (!ranking && !techScore) return;
 
     const factors = techScore?.factors || {};
-    const rsPercentile = factors.rsPercentile ?? 50;
+    // The last `?? 50` on this path (the Sep 9 F-3 fix removed the portfolio
+    // brief writer's; D-120 gated the verdict beside it on the RAW reading).
+    // `null >= 85` is false exactly as `50 >= 85` was, so the rs_breakout gate
+    // below is unchanged — what changes is that no fabricated median survives
+    // to be rounded into a headline.
+    const rsPercentile = factors.rsPercentile ?? null;
     // F3.1: null sentinel for missing technical score (matches portfolio
     // brief writer). Filter predicates use `typeof === 'number'` to
     // explicitly exclude null rather than relying on `>= 75` being false

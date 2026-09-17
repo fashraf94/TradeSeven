@@ -3101,11 +3101,31 @@ describe('DATA_CONFIDENCE_RULE — Phase 5A prompt-vs-response framing', () => {
     expect(out).not.toContain('Percentile and rank values may be paraphrased as bands ("top decile," "best in sector") in responses; raw indicator values');
   });
 
-  // Fix v2 — intraday clause updated for latest-session semantics. Fix v1's
-  // wording said "today's session positioning" — incorrect when EODHD's
-  // /intraday lag means the data is from the prior session. Updated wording
-  // covers both regimes explicitly.
-  it('battle prompt embeds the Fix v2 intraday clause with latest-session semantics', () => {
+  // Fix v2 (May 2026) widened the intraday clause to "the latest available
+  // session — typically today during market hours, or the prior session when
+  // EODHD's data hasn't refreshed", because the /intraday lag meant the data
+  // could be yesterday's.
+  //
+  // Fix v3 (2026-09-16, threshold-lint commit D) deleted the prior-session half
+  // outright, reasoning that the June 12 freshness gate (agentVwapFloor.js
+  // isVwapSessionUsable, `sessionDate === todayET`) means a stale session is
+  // never published. That over-corrected: it left an UNCONDITIONAL claim
+  // ("describe the current trading session") that the shipped renderer can
+  // contradict — buildIntradayLine's prefix is `isToday ? "Today's session" :
+  // 'Prior session'`, and `isToday` is false for a null/legacy sessionDate as
+  // well as for any cross-date read.
+  //
+  // Fix v4 (2026-09-17) REWORDS instead of deleting. The rule now binds to the
+  // LABEL the reader is actually shown rather than to what the producer
+  // currently emits — the BUILD_RULES §9 display-agreement shape, applied to
+  // prompt prose: true in every state, including the one the renderer can
+  // produce. Only the false CAUSAL clause is gone: under the gate a stale
+  // session is discarded, not carried, so "when EODHD's data hasn't refreshed"
+  // never explains a Prior-session line.
+  //
+  // The pin moves with the copy (BUILD_RULES §2) and asserts both halves: the
+  // label-bound claim present, the false causal clause absent.
+  it('battle prompt embeds the Fix v4 intraday clause — bound to the line\'s own label, with no false causal clause', () => {
     const out = buildVoiceLayerPrompt({
       agent: minimalAgent,
       battle: minimalBattle,
@@ -3117,8 +3137,15 @@ describe('DATA_CONFIDENCE_RULE — Phase 5A prompt-vs-response framing', () => {
     });
 
     expect(out).toContain('Intraday signals (session VWAP, 5-min SMA20)');
-    expect(out).toContain('describe the latest available session');
-    expect(out).toContain("typically today during market hours, or the prior session when EODHD's data hasn't refreshed");
+    expect(out).toContain('describe the session named on the line');
+    // …and it names the renderer's own label verbatim, so a reader can act on it
+    expect(out).toContain('a line marked "Prior session" is yesterday\'s, not today\'s');
+    // the FALSE clause — the causal one — is gone, and so is the Fix v1/v2 framing
+    expect(out).not.toContain("EODHD's data hasn't refreshed");
+    expect(out).not.toContain('the latest available session');
+    expect(out).not.toContain('typically today during market hours');
+    // the Fix v3 unconditional claim is gone too
+    expect(out).not.toContain('describe the current trading session');
     expect(out).toContain('Paraphrase as "holding above session VWAP"');
     expect(out).toContain('"session momentum is constructive,"');
     expect(out).toContain('not the exact deviation percentage');

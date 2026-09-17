@@ -1003,7 +1003,14 @@ export default async function handler(req, res) {
         // factors.upDayVolRatio (up-day vs down-day directional bias).
         const vp = calculateVolumeProfile(volumes, 20);
 
-        const rsPercentile = rsPercentileMap[d.sym] ?? 50;
+        // THE PLACEHOLDER, REMOVED (Phase 0 §5, "observable, but a median can be
+        // a fabrication"). A symbol dropped from the RS sort — no rs20, or a
+        // non-finite change (:920-923) — has NO relative-strength measurement,
+        // and used to be written as `50`, which the eval bench block then
+        // rendered to the decider as `rsPercentile=50 (outperforming)`. The
+        // READING is now null and the bench block's own null-guard omits the
+        // line (agentEvalPromptAssembly.js:1668, read-only).
+        const rsPercentile = rsPercentileMap[d.sym] ?? null;
         const sectorRSPercentile = sectorRSMap[d.sym] ?? null;
         // The unadjusted series, for the price-vs-SMA flags only. `?? null`, not
         // `?? o.close`: `mapDailyRows` already yields `rawClose: null` when the
@@ -1021,7 +1028,19 @@ export default async function handler(req, res) {
           lows,
           volumes,
           spyCloses,
-          rsPercentile,
+          // THE SCORING INPUT IS NOT THE PUBLISHED READING. computeTechnicalScore
+          // turns this into a 0-22 band by arithmetic (indexIntelligence.js),
+          // so a null would score an unmeasured symbol 0/22 — worst in the
+          // universe — and silently demote it in technicalRank, sectorTechnicalRank
+          // and compositeScore. It keeps the neutral midpoint it has always had,
+          // so NO technicalScore, technicalRank or compositeScore moves from
+          // THIS decision; the honest null is restored onto `factors` below.
+          //
+          // Scoped deliberately (review L3-F2): `baggerBombFit` DOES move, but
+          // from the separate `?? null` on the game-mode fit inputs further
+          // down — not from this line. The two edits are described together in
+          // the build report so neither claim reads as covering the other.
+          rsPercentile: rsPercentile ?? 50,
           rsTrend: d.rsTrend,
           technicals: { rsi, sma20, sma50, sma200, macd: macdEnhanced },
           sectorRSPercentile,
@@ -1099,6 +1118,20 @@ export default async function handler(req, res) {
           momentum,
           recentAction,
           ...scoreResult,
+          // The published factors are the READINGS (null when unmeasured), not
+          // the neutral numbers the 0-22 / 0-15 bands were computed from. One
+          // source for what the decider is SHOWN; the scoring arithmetic is a
+          // separate concern and is unchanged.
+          //
+          // `sectorRSPercentile` rides the same rule (review L3-F1). The scorer
+          // resolves its band from `sectorRSPercentile ?? rsPercentile`
+          // (indexIntelligence.js), so publishing what it resolved would put
+          // the SAME placeholder one field over — and since the bench block
+          // omits the rsPercentile clause on null, `sector RS=50` would have
+          // been left standing ALONE as the only relative-strength line the
+          // decider sees. That would make this commit's own disclosure
+          // ("it is shown nothing") false.
+          factors: { ...scoreResult.factors, rsPercentile, sectorRSPercentile },
         });
       }
 
@@ -1295,6 +1328,30 @@ export default async function handler(req, res) {
         // Build technical factor scores (normalized to 0-100 for game-mode computation)
         const techFactors = tech.factors || {};
         const technicalFactorScores = {
+          // NOT `?? null`, and NOT for want of honesty — FENCE CONTACT.
+          //
+          // The brief prescribed `?? null` here so computeWeightedScore would
+          // skip the factor and redistribute its weight. It does, and the
+          // §2 review measured what follows: an unmeasured symbol's
+          // baggerBombFit moves by up to ±8, which inverts baggerBombRank and
+          // can flip the game_fit scout alert. That value does not stay local:
+          //   • api/_utils/agentPromptAssembly.js renders it as the BB_FIT
+          //     COLUMN of the agent's stock-universe menu — FENCED;
+          //   • api/_utils/archetypeScoring.js folds it into
+          //     computeArchetypeRankings at weights 0.10-0.30 — FENCED, and a
+          //     +7 move was measured to invert three archetype orderings.
+          // BUILD_RULES §1: "changes that alter their behavior from non-fenced
+          // call sites are fence contact too … If your task seems to require
+          // fence contact that isn't in its prompt, STOP and report — never
+          // improvise it." The brief did not identify this edit as fence
+          // contact, so it is reported for a founder ruling rather than shipped.
+          //
+          // Holding the neutral midpoint here costs NOTHING the disclosure
+          // promised: `factors.rsPercentile` and `factors.sectorRSPercentile`
+          // are published as the honest readings above, which is what the
+          // decider is SHOWN. This line only feeds the fit arithmetic, and the
+          // value it yields for an unmeasured symbol — 50 — is bit-for-bit
+          // what it yielded before this commit.
           rsVsSpy: techFactors.rsPercentile ?? 50,
           sectorRS: techFactors.sectorRSPercentile ?? techFactors.rsPercentile ?? 50,
           smaPosition: tech.smaScore != null ? (tech.smaScore / 18) * 100 : 50,
