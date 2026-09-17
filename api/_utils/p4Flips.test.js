@@ -79,8 +79,12 @@ describe('P4 — dev-group exclusion (founder ruling D9)', () => {
     const orch = read('./tournamentOrchestrator.js');
     // Slice 3: the ranked duties now thread excludeTraining alongside includeDev,
     // so the options object is no longer { includeDev: includeDevGroups } alone —
-    // match includeDev: includeDevGroups regardless of any trailing prop. Still 3.
-    expect(orch.match(/fetchEligibleGroupsByStatus\(db, [^)]*includeDev: includeDevGroups[^)]*\)/g)?.length).toBe(3);
+    // match includeDev: includeDevGroups regardless of any trailing prop.
+    // N1 durable fix: 3 → 4 — runPendingPodCatchUp (the late-pod catch-up) is a
+    // fourth eligibility fetch on the tick and threads includeDevGroups exactly
+    // like the duties, so a production tick can never serve a dev pod's agent
+    // layer (nor a dev run-duty click miss one).
+    expect(orch.match(/fetchEligibleGroupsByStatus\(db, [^)]*includeDev: includeDevGroups[^)]*\)/g)?.length).toBe(4);
     expect(read('./tournamentAdvancement.js')).toContain('{ includeDev: includeDevGroups }');
   });
 });

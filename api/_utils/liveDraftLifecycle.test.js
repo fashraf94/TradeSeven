@@ -201,6 +201,9 @@ describe('driveSlotDraftAutopick — abandoned draft completes in ONE pass', () 
     const group = g(store);
     expect(group.status).toBe(GROUP_STATUS.AWAITING_OPEN);
     expect(group.startAnchor).toEqual({ anchorEtDate: '2026-07-13', anchorIso: '2026-07-13T13:30:00.000Z' }); // battleStartWeek honored
+    // N1 durable fix: a future-week completion is NOT stamped — the Monday
+    // awaiting_open → battle flip stamps it when its battle day arrives.
+    expect(group.agentPipelinePending).toBeUndefined();
     // every seat drafted its full book, materialized byte-identically to the resolver
     for (const p of group.players) {
       expect(p.picks).toHaveLength(PICKS_PER_PLAYER);
@@ -229,6 +232,28 @@ describe('driveSlotDraftAutopick — abandoned draft completes in ONE pass', () 
     expect(r.complete).toBe(true);
     expect(r.status).toBe(GROUP_STATUS.BATTLE); // today-anchor reached → straight to battle before 9:30
     expect(g(store).status).toBe(GROUP_STATUS.BATTLE);
+    // N1 durable fix: THIS is the flip that stranded the pod — it lands ~2 hours
+    // after the 07:00 tick set the Monday duty marker. The handoff now stamps
+    // the pod in the same transaction, and the orchestrator's late-pod catch-up
+    // (tournamentOrchestrator.test.js, "N1 late-pod catch-up") serves it.
+    expect(g(store)).toMatchObject({ agentPipelinePending: true, agentPipelinePendingAt: '2026-07-13T12:47:00.000Z' });
+  });
+
+  it('N1: the HUMAN pick path shares the handoff — a final pick that lands inline in BATTLE stamps the pod', async () => {
+    const MON_ANCHOR = { mondayEtDate: '2026-07-13', anchorEtDate: '2026-07-13', anchorIso: '2026-07-13T13:30:00.000Z' };
+    const { db, store } = seedDb({ slotId: 'mon-0845', scheduledDraftAt: '2026-07-13T12:45:00.000Z', battleStartWeek: MON_ANCHOR });
+    const MON_FIRE = new Date('2026-07-13T12:45:00.000Z');
+    await fireCompetitiveSlotDraft(db, WED_ID, { now: MON_FIRE });
+    let complete = false; let guard = 0; let last = null;
+    while (!complete && guard++ < 6) {
+      const st = draftState(store);
+      const sym = st.pool.find((s) => !(st.taken || []).includes(s));
+      last = new Date(MON_FIRE.getTime() + guard * 1000);
+      const r = await applyCompetitivePick(db, WED_ID, { odUserId: 'human-1', symbol: sym, now: last });
+      complete = r.complete;
+    }
+    expect(complete).toBe(true);
+    expect(g(store)).toMatchObject({ status: GROUP_STATUS.BATTLE, agentPipelinePending: true, agentPipelinePendingAt: last.toISOString() });
   });
 
   it('does NOT interrupt an active / within-clock draft', async () => {

@@ -15,7 +15,10 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { computeBankingUpdate, bankGroup, bankAllTournamentGroups, fetchGroupAgentScores } from './tournamentBanking.js';
 import { calculateAssetScoreV3 } from '../../src/utils/baggerBombUtils.js';
-import { BASELINE_POLICY, BASELINE_SOURCE, CAPTURE_STATE } from '../../src/constants/leagueTournament.js';
+import {
+  BASELINE_POLICY, BASELINE_SOURCE, CAPTURE_STATE,
+  isWeekBanked, isFinalSnapshotDegraded, seatsMissingAgentLayerAllWeek,
+} from '../../src/constants/leagueTournament.js';
 
 const NOW = new Date('2026-06-10T21:15:00Z'); // 17:15 ET → etDate 2026-06-10
 const NOW_ISO = NOW.toISOString();
@@ -879,6 +882,215 @@ describe('computeBankingUpdate — agentPoints + compositePoints (P6a)', () => {
     expect(update.dayEntry.closeScores.u1.agentPoints).toBe(25); // carried, not zeroed
     expect(update.dayEntry.closeScores.u2.agentPoints).toBe(0);  // no prior → 0
     expect(update.warnings).toContain('agent scores unavailable — prior snapshot agentPoints carried forward');
+  });
+});
+
+// ==================== N1 durable fix — a missing agent layer is WRITTEN DOWN ====================
+//
+// docs/audits/2026-09-12_N1_MON0845_AGENT_LAYER_DISCOVERY.md §5.2: a pod with
+// no agent battles banked five clean days with agentPoints 0, no carry marker
+// and no warning, because "{} is a real zero". The founder's rulings: a seat
+// missing ALL WEEK pauses the lock for manual review (isFinalSnapshotDegraded);
+// missing on SOME days warns and the week proceeds. These rows drive the real
+// computeBankingUpdate through a week and read the real predicate — the two
+// halves in one universe.
+
+describe('computeBankingUpdate — N1: a seat with NO agent battle is recorded, never a silent "real zero"', () => {
+  const FULL = { u1: 10, u2: 5, u3: 0, u4: 3 };   // every seat has a battle (u3's scored 0 — present, not missing)
+  const NO_U4 = { u1: 10, u2: 5, u3: 0 };         // u4 has no tournament battle in the read
+
+  /** Bank a pod through N days, feeding each day's entry back into the group
+   * exactly as the nightly cron would. Returns the updates and the final group. */
+  function bankWeek(agentScoresByDay, { group = battleGroup() } = {}) {
+    const g = structuredClone(group);
+    const updates = [];
+    agentScoresByDay.forEach((agentScores, i) => {
+      const update = computeBankingUpdate(g, QUOTES, { ...OPTS, etDate: `2026-06-${10 + i}`, agentScores });
+      expect(update.skipped).toBe(false);
+      g.dailyScores[update.dayKey] = update.dayEntry;
+      g.players = update.players;
+      updates.push(update);
+    });
+    return { group: g, updates };
+  }
+
+  it('ALL WEEK: agentLayerMissing lists the seat on all five days, the count reaches 5, and the final is DEGRADED (manual review)', () => {
+    const { group, updates } = bankWeek([NO_U4, NO_U4, NO_U4, NO_U4, NO_U4]);
+    for (const u of updates) {
+      expect(u.dayEntry.agentLayerMissing).toEqual(['u4']);
+      expect(u.dayEntry.closeScores.u4.agentPoints).toBe(0);           // numeric 0 for the composite's shape…
+      expect(u.dayEntry.closeScores.u4.compositePoints).toBe(0);       // …(u4 has no user picks either)
+      expect(u.dayEntry.agentScoresCarried).toBeUndefined();           // not a carry — a never-created layer
+      expect(u.agentLayerMissing).toEqual(['u4']);
+      expect(u.warnings.some(w => w.startsWith('u4: NO agent battle for this seat today — agent layer MISSING'))).toBe(true);
+    }
+    expect(updates.map(u => u.agentLayerMissingDays)).toEqual([1, 2, 3, 4, 5]);
+    expect(isWeekBanked(group)).toBe(true);
+    expect(seatsMissingAgentLayerAllWeek(group)).toEqual(['u4']);
+    expect(isFinalSnapshotDegraded(group)).toBe(true);                 // the Friday duty refuses the lock
+  });
+
+  it('ONE DAY: that day lists the seat, the count is 1, and the final is NOT degraded — the week proceeds (founder ruling)', () => {
+    const { group, updates } = bankWeek([NO_U4, FULL, FULL, FULL, FULL]);
+    expect(updates[0].dayEntry.agentLayerMissing).toEqual(['u4']);
+    for (const u of updates.slice(1)) expect(u.dayEntry.agentLayerMissing).toBeUndefined();
+    expect(updates.map(u => u.agentLayerMissingDays)).toEqual([1, 1, 1, 1, 1]);
+    expect(seatsMissingAgentLayerAllWeek(group)).toEqual([]);
+    expect(isFinalSnapshotDegraded(group)).toBe(false);
+    expect(updates[4].dayEntry.closeScores.u4.agentPoints).toBe(3);
+  });
+
+  it('SOME days (1 and 3, present otherwise): the count is 2 and the final is NOT degraded — "every day" means every day', () => {
+    // Day 3 is ALSO the pre-existing per-owner carry arm (u4 had a standing on
+    // day 2 and lost its battles) — that mid-week carry is transient and the
+    // seat is listed as missing that day too. The final (day 5) is clean.
+    const { group, updates } = bankWeek([NO_U4, FULL, NO_U4, FULL, FULL]);
+    expect(updates[2].dayEntry.agentScoresCarried).toBe(true);
+    expect(updates[2].dayEntry.agentLayerMissing).toEqual(['u4']);
+    expect(updates[4].agentLayerMissingDays).toBe(2);
+    expect(updates[4].dayEntry.agentLayerMissing).toBeUndefined();
+    expect(seatsMissingAgentLayerAllWeek(group)).toEqual([]);
+    expect(isFinalSnapshotDegraded(group)).toBe(false);
+  });
+
+  it('the agent layer ARRIVING on day 5 (missing 1–4, present 5): the count is 4 and the final is NOT degraded — the week proceeds', () => {
+    // Review finding B1 — the predicate must read the FINAL banked day.
+    const { group, updates } = bankWeek([NO_U4, NO_U4, NO_U4, NO_U4, FULL]);
+    expect(updates.map(u => u.agentLayerMissingDays)).toEqual([1, 2, 3, 4, 4]);
+    expect(updates[4].dayEntry.agentLayerMissing).toBeUndefined();
+    expect(seatsMissingAgentLayerAllWeek(group)).toEqual([]);
+    expect(isFinalSnapshotDegraded(group)).toBe(false);
+  });
+
+  it('a seat present all week and absent ONLY on day 5 is the §7.2 CARRIED final (pre-existing ruling, untouched): paused for manual review by that arm', () => {
+    const { group, updates } = bankWeek([FULL, FULL, FULL, FULL, NO_U4]);
+    expect(updates[4].dayEntry.agentScoresCarried).toBe(true);
+    expect(updates[4].dayEntry.closeScores.u4.agentPoints).toBe(3); // carried, never regressed to 0
+    expect(seatsMissingAgentLayerAllWeek(group)).toEqual([]);      // NOT the all-week arm…
+    expect(isFinalSnapshotDegraded(group)).toBe(true);              // …the carry arm, as before this fix
+  });
+
+  it('a seat WITH a score is unchanged byte-for-byte: the entry keys, the per-seat keys, no count, no warning', () => {
+    const update = computeBankingUpdate(battleGroup(), QUOTES, { ...OPTS, agentScores: FULL });
+    expect(Object.keys(update.dayEntry).sort()).toEqual(['closeScores', 'recordedAt', 'recordedBy', 'recordedDate']);
+    for (const id of ['u1', 'u2', 'u3', 'u4']) {
+      expect(Object.keys(update.dayEntry.closeScores[id])).toEqual(['totalPoints', 'picks', 'agentPoints', 'compositePoints']);
+    }
+    expect(update.dayEntry.closeScores.u3.agentPoints).toBe(0); // present with a real zero — NOT listed
+    expect(update.agentLayerMissing).toEqual([]);
+    expect(update.agentLayerMissingDays).toBe(0);
+    expect(update.warnings.some(w => w.includes('agent layer MISSING'))).toBe(false);
+  });
+
+  it('presence is the test, not the value: an all-zero read lists nobody', () => {
+    const update = computeBankingUpdate(battleGroup(), QUOTES, { ...OPTS, agentScores: { u1: 0, u2: 0, u3: 0, u4: 0 } });
+    expect(update.dayEntry.agentLayerMissing).toBeUndefined();
+    expect(update.agentLayerMissingDays).toBe(0);
+  });
+
+  it('the per-owner CARRY arm ALSO lists the seat — a standing that lost its battles is missing today too', () => {
+    const { updates } = bankWeek([{ u1: 25, u2: 1, u3: 1, u4: 1 }, { u2: 7, u3: 1, u4: 2 }]);
+    const day2 = updates[1];
+    expect(day2.dayEntry.closeScores.u1.agentPoints).toBe(25);          // carried (the pre-N1 arm, untouched)
+    expect(day2.dayEntry.agentScoresCarried).toBe(true);
+    expect(day2.dayEntry.agentLayerMissing).toEqual(['u1']);            // AND written down as missing
+    expect(day2.warnings.some(w => w.startsWith('u1: agent battles missing from read'))).toBe(true);
+    expect(day2.warnings.some(w => w.startsWith('u1: NO agent battle for this seat today') && w.includes('as the carry'))).toBe(true);
+  });
+
+  it('a FAILED read (null) is "unavailable", not "missing": the carry arm fires and nobody is listed', () => {
+    const update = computeBankingUpdate(battleGroup(), QUOTES, { ...OPTS, agentScores: null });
+    expect(update.dayEntry.agentScoresCarried).toBe(true);
+    expect(update.dayEntry.agentLayerMissing).toBeUndefined();
+    expect(update.agentLayerMissingDays).toBe(0);
+  });
+
+  it('a TRAINING pod is exempt: an absent seat banks 0 with no listing, no count, no warning (byte-identical to before)', () => {
+    const { group, updates } = bankWeek([NO_U4, NO_U4, NO_U4, NO_U4, NO_U4], { group: battleGroup({ isTraining: true }) });
+    for (const u of updates) {
+      expect(u.dayEntry.agentLayerMissing).toBeUndefined();
+      expect(u.agentLayerMissingDays).toBe(0);
+      expect(u.dayEntry.closeScores.u4.agentPoints).toBe(0);
+      expect(u.warnings.some(w => w.includes('agent layer MISSING'))).toBe(false);
+    }
+    expect(isFinalSnapshotDegraded(group)).toBe(false);
+  });
+
+  it('the count is derived from the entries (re-runs and out-of-order reads agree): legacy days without the field count 0', () => {
+    const legacy = battleGroup({
+      dailyScores: {
+        day1: { recordedDate: '2026-06-08', closeScores: {} },                                // pre-fix entry: no field
+        day2: { recordedDate: '2026-06-09', closeScores: {}, agentLayerMissing: ['u2'] },
+      },
+    });
+    const update = computeBankingUpdate(legacy, QUOTES, { ...OPTS, agentScores: NO_U4 });
+    expect(update.dayKey).toBe('day3');
+    expect(update.agentLayerMissingDays).toBe(2); // day2 + today; day1 (no field) is 0
+  });
+
+  it('bankGroup persists agentLayerMissingDays ONLY once a day lists a missing seat — a healthy update is byte-identical', async () => {
+    const healthy = makeDb({ groupDoc: battleGroup() });
+    await bankGroup(healthy.db, 'g', QUOTES, { now: NOW, recordedBy: 'cron', agentScores: FULL });
+    expect(Object.keys(healthy.captured.updates[0]).sort()).toEqual([
+      'claimSystem.currentWaiverPriority', 'dailyScores.day1', 'players', 'updatedAt',
+    ]);
+
+    const missing = makeDb({ groupDoc: battleGroup() });
+    const result = await bankGroup(missing.db, 'g', QUOTES, { now: NOW, recordedBy: 'cron', agentScores: NO_U4 });
+    const update = missing.captured.updates[0];
+    expect(update.agentLayerMissingDays).toBe(1);
+    expect(update['dailyScores.day1'].agentLayerMissing).toEqual(['u4']);
+    expect(result).toMatchObject({ dayKey: 'day1', dayN: 1, agentLayerMissing: ['u4'], agentLayerMissingDays: 1 });
+  });
+
+  it('the cron loop says it in ONE actionable line naming the seat, the day, and the count', async () => {
+    const group = battleGroup();
+    const battles = [
+      { id: 'b1', groupId: 'g1', gameMode: 'baggerbomb_tournament', ownerId: 'u1', scoreState: { currentScore: 10 } },
+      { id: 'b2', groupId: 'g1', gameMode: 'baggerbomb_tournament', ownerId: 'u2', scoreState: { currentScore: 5 } },
+      { id: 'b3', groupId: 'g1', gameMode: 'baggerbomb_tournament', ownerId: 'u3', scoreState: { currentScore: 0 } },
+    ];
+    // The status query returns the group; the agentBattles query returns the
+    // three battles — u4 has none.
+    const captured = { updates: [] };
+    const db = {
+      collection: (name) => ({
+        doc: () => (name === 'indexIntelligence'
+          ? { get: async () => ({ exists: false, data: () => null }) }
+          : { get: async () => ({ exists: true, data: () => structuredClone(group) }) }),
+        where: (field, _op, value) => {
+          const run = async () => ({
+            forEach: (cb) => {
+              const docs = name === 'agentBattles'
+                ? battles.filter(b => b[field] === value)
+                : [{ id: 'g1', data: group }];
+              docs.forEach(d => cb({ id: d.id, data: () => (name === 'agentBattles' ? d : d.data) }));
+            },
+          });
+          return { get: run, select: () => ({ get: run }) };
+        },
+      }),
+      runTransaction: async (fn) => fn({
+        get: async (ref) => ref.get(),
+        update: (_ref, data) => { captured.updates.push(data); },
+      }),
+    };
+    // fetchBatchQuotes needs a key; with none it degrades to {} and the run aborts
+    // before banking — so stub the quotes path by giving the group no symbols.
+    group.players = group.players.map(p => ({ ...p, picks: [] }));
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const summary = await bankAllTournamentGroups(db, { now: NOW });
+    expect(summary).toMatchObject({ groups: 1, processed: 1, errors: 0 });
+    const line = warnSpy.mock.calls.map(c => c.join(' ')).find(l => l.includes('AGENT LAYER MISSING'));
+    expect(line).toBeTruthy();
+    expect(line).toContain('group g1');
+    expect(line).toContain('day1');
+    expect(line).toContain('[u4]');
+    expect(line).toContain('agentLayerMissingDays is now 1 (through day1)');
+    expect(line).toContain('or the prior carry where agentScoresCarried'); // review B3: the carry arm banks the carry, not 0
+    expect(line).toContain('MANUAL REVIEW');
+    expect(captured.updates[0].agentLayerMissingDays).toBe(1);
+    warnSpy.mockRestore();
   });
 });
 

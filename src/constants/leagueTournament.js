@@ -1381,7 +1381,97 @@ export function isFinalSnapshotDegraded(group) {
   // day5-carried/day8-clean zombie would wrongly ALLOW a permanent lock over
   // a degraded score of record — permitting is unrecoverable where
   // over-blocking isn't.
-  return getLatestBankedDayEntry(group)?.entry?.agentScoresCarried === true;
+  if (getLatestBankedDayEntry(group)?.entry?.agentScoresCarried === true) return true;
+  // N1 durable fix (founder ruling, Sep 2026): a seat whose agent layer was
+  // MISSING on every banked day of the week never had an agent half in its
+  // composite — the same "half the inputs" condition a carry protects
+  // against, previously invisible because a never-created layer banked as a
+  // "real zero" with no marker (docs/audits/2026-09-12_N1_MON0845_AGENT_
+  // LAYER_DISCOVERY.md §5.2). Pauses the lock for manual review exactly like
+  // a carried final; a seat missing on SOME days only warns (the week
+  // proceeds — see seatsMissingAgentLayerAllWeek).
+  return seatsMissingAgentLayerAllWeek(group).length > 0;
+}
+
+/**
+ * N1 durable fix (founder ruling, Sep 2026): the seats listed in
+ * `agentLayerMissing` on EVERY banked day of the week (day1..dayN, N = the
+ * clamped final day — the same week definition as getLatestBankedDayEntry).
+ * Banking writes that list on a competitive pod's day entry when
+ * fetchGroupAgentScores returned no tournament battle for the seat
+ * (tournamentBanking.js — the "nothing notices" defect). The founder's two
+ * rulings, encoded here and at the banking writer:
+ *   - missing ALL WEEK → this returns the seats, isFinalSnapshotDegraded is
+ *     true, and the Friday duty refuses the lock pending MANUAL REVIEW;
+ *   - missing on SOME days → a warning at banking time plus the group's
+ *     agentLayerMissingDays count; this returns [] and the week proceeds.
+ * A day entry without the field (every entry banked before the fix, and
+ * every healthy day) lists nobody, so legacy weeks can never read degraded
+ * here. A day whose ENTRY is absent (a gap in the day keys — banking never
+ * produces one, only manual surgery does) is skipped rather than read as
+ * clean: permitting is unrecoverable where over-blocking isn't (§7.2).
+ * Manual-review resolution, for the operator the refusal log addresses:
+ * after verifying the seat's agent layer (or ruling the week stands as
+ * banked), remove the seat from at least one banked day's `agentLayerMissing`
+ * listing (the carry arm's analogue is clearing the final day's
+ * `agentScoresCarried`); the next advancement tick then locks. The group's
+ * `agentLayerMissingDays` is a bank-time breadcrumb — it is not recomputed by
+ * such an edit and nothing gates on it. Pure. Returns odUserIds in the first
+ * banked day's listing order.
+ */
+export function seatsMissingAgentLayerAllWeek(group) {
+  const latest = getLatestBankedDayEntry(group);
+  if (!latest) return [];
+  const dailyScores = group?.dailyScores || {};
+  let common = null;
+  for (let n = 1; n <= latest.dayN; n++) {
+    const entry = dailyScores[`day${n}`];
+    if (!entry) continue; // a missing day is not a banked day — never "nobody missing"
+    const listed = entry.agentLayerMissing;
+    const today = new Set(Array.isArray(listed) ? listed : []);
+    common = common === null ? [...today] : common.filter(id => today.has(id));
+    if (common.length === 0) return [];
+  }
+  return common ?? [];
+}
+
+/**
+ * N1 durable fix (Sep 2026) — the late-pod handoff stamp. A competitive pod
+ * that reaches BATTLE through the slot completion handoff (the pre-open inline
+ * flip in computeHandoffWrites, or the awaiting_open → battle flip in
+ * flipAwaitingOpenPods) is stamped `agentPipelinePending: true` (+ the instant)
+ * on the group doc. The orchestrator's weekday-morning tick reads the stamp
+ * (runPendingPodCatchUp) and runs the Monday pipeline's per-pod agent-layer
+ * steps for it even when that day's duty marker is already set — the marker
+ * short-circuit is what stranded a Mon 08:45 pod all week (docs/audits/
+ * 2026-09-12_N1_MON0845_AGENT_LAYER_DISCOVERY.md §3). The stamp is cleared
+ * only on a caught-up pass (agentPipelinePending: false + the instant) and
+ * kept on failure so the next tick retries. Per-group state, not marker
+ * history: the orchestrator state doc prunes duty markers after 14 days, so
+ * "no marker" can never be read as "never processed". The cron tick is the
+ * executor; the stamp is the handoff — nothing runs the pipeline inline in a
+ * request. Training pods are NEVER stamped: their agent layer is owned by
+ * activateTrainingPod / sweepTrainingActivation, and the catch-up excludes
+ * them. Not a fenced write. ONE home for the three writers/readers.
+ */
+export const AGENT_PIPELINE_PENDING_FIELD = 'agentPipelinePending';
+
+/** The stamp the two completion handoffs merge into the group update. */
+export function agentPipelinePendingStamp(nowIso) {
+  return { [AGENT_PIPELINE_PENDING_FIELD]: true, agentPipelinePendingAt: nowIso };
+}
+
+/** The clear the catch-up writes on a caught-up pass (omitted-when-false
+ * idiom is NOT used here: the explicit false + instant is the audit trail
+ * that the pod was stamped and then served). */
+export function agentPipelineClearedStamp(nowIso) {
+  return { [AGENT_PIPELINE_PENDING_FIELD]: false, agentPipelineCaughtUpAt: nowIso };
+}
+
+/** Is this group's agent pipeline still owed? Strict `=== true` — an absent,
+ * false, or malformed field is "nothing pending". */
+export function isAgentPipelinePending(group) {
+  return group?.[AGENT_PIPELINE_PENDING_FIELD] === true;
 }
 
 /**
@@ -1477,6 +1567,16 @@ export function createAgentLedgerEntry({ heldBy, since, source } = {}) {
  *   recorded in the P1a PR decisions register): totalPoints is the CUMULATIVE
  *   standing at that day's close; the weekly score is the FINAL day's
  *   snapshot, not a sum over days. The P1b banking pass is the only writer.
+ *   P6a added `agentPoints` + `compositePoints` per seat and the day-level
+ *   `recordedDate` / `agentScoresCarried` (the carry-forward degrade marker).
+ *   N1 durable fix (Sep 2026) added, on competitive pods only, the day-level
+ *   `agentLayerMissing: [odUserId, …]` (seats with NO tournament battle in
+ *   that day's read — omitted when empty) and the GROUP-level
+ *   `agentLayerMissingDays` (a bank-time count of banked days listing a
+ *   missing seat; write-only, never gated on, may lag a manual edit), plus
+ *   the group-level late-pod handoff stamp `agentPipelinePending` /
+ *   `agentPipelinePendingAt` / `agentPipelineCaughtUpAt` (see
+ *   AGENT_PIPELINE_PENDING_FIELD).
  * - The agent held-set ledger does NOT live on this document. P0 placed an
  *   `agentLedger` field here with an explicit relocation license; P2
  *   exercised it (founder ruling, June 11, 2026) — the ledger is the sibling

@@ -214,6 +214,44 @@ describe('flipAwaitingOpenPods', () => {
     expect(store.get('tournamentGroups/t1').status).toBe(GROUP_STATUS.BATTLE);
   });
 
+  // ========== N1 durable fix — the awaiting_open → battle flip STAMPS a competitive pod ==========
+  const COMPETITIVE_MON = new Date('2026-09-14T12:00:00.000Z'); // Mon 08:00 EDT, a trading Monday
+  const competitivePod = (extra = {}) => awaitingPod('2026-09-14', {
+    isTraining: false,
+    isLiveDraft: true,
+    battleStartWeek: { mondayEtDate: '2026-09-14', anchorEtDate: '2026-09-14', anchorIso: '2026-09-14T13:30:00.000Z' },
+    ...extra,
+  });
+
+  it('N1: a COMPETITIVE pod flipping into its battle day is stamped agentPipelinePending in the SAME write as the flip', async () => {
+    const { db, store } = makeDb({ 'tournamentGroups/p1': competitivePod() });
+    const r = await flipAwaitingOpenPods(db, { now: COMPETITIVE_MON });
+    expect(r).toMatchObject({ flipped: 1, pending: 0 });
+    expect(store.get('tournamentGroups/p1')).toMatchObject({
+      status: GROUP_STATUS.BATTLE,
+      agentPipelinePending: true,
+      agentPipelinePendingAt: COMPETITIVE_MON.toISOString(),
+      updatedAt: COMPETITIVE_MON.toISOString(),
+    });
+  });
+
+  it('N1: a COMPETITIVE pod whose battle day has NOT arrived is not flipped and not stamped', async () => {
+    const { db, store } = makeDb({ 'tournamentGroups/p1': competitivePod() });
+    const r = await flipAwaitingOpenPods(db, { now: new Date('2026-09-11T12:00:00.000Z') }); // the Friday before
+    expect(r).toMatchObject({ flipped: 0, pending: 1 });
+    expect(store.get('tournamentGroups/p1').status).toBe(GROUP_STATUS.AWAITING_OPEN);
+    expect(store.get('tournamentGroups/p1').agentPipelinePending).toBeUndefined();
+  });
+
+  it('N1: a TRAINING pod flipping is NEVER stamped — activateTrainingPod owns its agent layer (write byte-identical to before)', async () => {
+    const { db, store } = makeDb({ 'tournamentGroups/t1': awaitingPod('2026-06-17') });
+    await flipAwaitingOpenPods(db, { now: new Date('2026-06-17T13:00:00.000Z') });
+    const pod = store.get('tournamentGroups/t1');
+    expect(pod.status).toBe(GROUP_STATUS.BATTLE);
+    expect(pod.agentPipelinePending).toBeUndefined();
+    expect(pod.agentPipelinePendingAt).toBeUndefined();
+  });
+
   it('ranked inertness: a BATTLE/FORMING group is never swept (AWAITING_OPEN is training-only)', async () => {
     const { db, store } = makeDb({
       'tournamentGroups/ranked-battle': { status: GROUP_STATUS.BATTLE, players: FOUR_PLAYERS },
@@ -291,6 +329,36 @@ describe('computeHandoffWrites — the inline completion-flip activates on the b
       .toBe(GROUP_STATUS.AWAITING_OPEN);
     expect(computeHandoffWrites(group, state, new Date('2026-09-11T13:00:00.000Z')).target)
       .toBe(GROUP_STATUS.BATTLE);
+  });
+
+  // ========== N1 durable fix — the inline flip STAMPS a competitive pod ==========
+  const SAME_MONDAY = {
+    startAnchor: { anchorEtDate: '2026-09-14', anchorIso: '2026-09-14T13:30:00.000Z' },
+    battleStartWeek: { mondayEtDate: '2026-09-14', anchorEtDate: '2026-09-14', anchorIso: '2026-09-14T13:30:00.000Z' },
+  };
+  const MON_0847 = new Date('2026-09-14T12:47:00.000Z'); // Mon 08:47 EDT — the pre-open inline flip
+  const competitiveGroup = { ...group, isLiveDraft: true, slotId: 'mon-0845' };
+
+  it('N1: a COMPETITIVE pod landing straight in BATTLE (its battle day is today) is stamped agentPipelinePending with the instant', () => {
+    const { target, groupUpdate } = computeHandoffWrites(competitiveGroup, state, MON_0847, SAME_MONDAY);
+    expect(target).toBe(GROUP_STATUS.BATTLE);
+    expect(groupUpdate).toMatchObject({
+      status: GROUP_STATUS.BATTLE,
+      agentPipelinePending: true,
+      agentPipelinePendingAt: MON_0847.toISOString(),
+    });
+  });
+
+  it('N1: a future-week completion (AWAITING_OPEN) carries NO stamp — the flip stamps when the day arrives', () => {
+    const { target, groupUpdate } = computeHandoffWrites(competitiveGroup, state, new Date('2026-09-09T23:05:00.000Z'), SAME_MONDAY); // Wed 19:05 EDT
+    expect(target).toBe(GROUP_STATUS.AWAITING_OPEN);
+    expect(Object.keys(groupUpdate).sort()).toEqual(['players', 'startAnchor', 'status', 'updatedAt', 'userPool']);
+  });
+
+  it('N1: a TRAINING pod landing in BATTLE is NEVER stamped — its update is byte-identical to before', () => {
+    const { target, groupUpdate } = computeHandoffWrites({ ...group, isTraining: true }, state, new Date('2026-09-11T13:00:00.000Z'));
+    expect(target).toBe(GROUP_STATUS.BATTLE);
+    expect(Object.keys(groupUpdate).sort()).toEqual(['players', 'startAnchor', 'status', 'updatedAt', 'userPool']);
   });
 });
 
