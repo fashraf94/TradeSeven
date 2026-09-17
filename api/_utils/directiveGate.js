@@ -217,7 +217,38 @@ async function attemptRepair({ callGemmaVoice, systemPrompt, conversationHistory
   }
 }
 
-function result(directive, hasDirective, proposal, status, repairUsed, fallbackLine = null, fitCheck = null) {
+// THE FORENSICS ARE THE FIRST CALL'S, ALWAYS (Codex #3).
+//
+// `attemptRepair` is a SCHEMA-only re-ask: it re-sends the same system prompt
+// with a "re-emit the SAME conversational response" suffix and takes back a
+// proposal. What comes back is a second model emission — its free-text fields
+// are a re-invention of the ask, or absent, and either way they are not what
+// the model understood when it first answered the player. Reading them off the
+// repaired proposal would put a reconstruction on the record under a field name
+// that promises an original.
+//
+// So the split is: the repaired proposal decides `classification` and
+// `selectedAdjustmentId` (that is what the repair is FOR), and the FIRST
+// proposal supplies all three forensics fields (that is what they are for).
+//
+// KNOWN LIMIT, stated rather than papered over: on a `no_proposal` turn the
+// first emission failed shape validation, so there is no first proposal to read
+// and all three are null — even if the raw object carried text. Recovering that
+// would mean reading free text off an object that failed validation, which is a
+// wider change than this one and is not in this addendum's scope. Pinned by a
+// test row so the loss is visible rather than assumed.
+const NO_FORENSICS = Object.freeze({ originalUserAsk: null, counterOfferText: null, rejectionReason: null });
+
+function readForensics(proposal) {
+  if (!proposal) return NO_FORENSICS;
+  return {
+    originalUserAsk: sanitizeOptionalChatText(proposal.originalUserAsk),
+    counterOfferText: sanitizeOptionalChatText(proposal.counterOfferText),
+    rejectionReason: sanitizeOptionalChatText(proposal.rejectionReason),
+  };
+}
+
+function result(directive, hasDirective, proposal, status, repairUsed, fallbackLine = null, fitCheck = null, forensics = NO_FORENSICS) {
   return {
     directive,
     hasDirective,
@@ -246,9 +277,11 @@ function result(directive, hasDirective, proposal, status, repairUsed, fallbackL
       // `originalUserAsk` rule is unchanged and unchanged-able.
       //
       // No surface renders these in this build; readers null-guard.
-      originalUserAsk: sanitizeOptionalChatText(proposal?.originalUserAsk),
-      counterOfferText: sanitizeOptionalChatText(proposal?.counterOfferText),
-      rejectionReason: sanitizeOptionalChatText(proposal?.rejectionReason),
+      //
+      // Taken from the FIRST proposal, captured before any repair ran — NOT
+      // from `proposal`, which by this point may be the repaired one. See
+      // readForensics above for why.
+      ...forensics,
       // Present ONLY on a fit_mismatch, so every other outcome's record shape
       // is unchanged — including every committed turn.
       ...(fitCheck ? { fitCheck } : {}),
@@ -266,6 +299,10 @@ function result(directive, hasDirective, proposal, status, repairUsed, fallbackL
  *             outcome:{classification, selectedAdjustmentId, status, repairUsed,
  *                      originalUserAsk, counterOfferText, rejectionReason,
  *                      fitCheck?:{expected,quoted}} }}
+ *
+ * On a repaired turn the outcome mixes two emissions on purpose: the REPAIRED
+ * proposal supplies `classification` and `selectedAdjustmentId`; the FIRST
+ * supplies the three forensics fields (readForensics).
  */
 export async function gateDirective({
   parsed,
@@ -290,7 +327,12 @@ export async function gateDirective({
   // The reply this turn will persist and show — the fit check's comparand.
   const replyText = typeof parsed?.response === 'string' ? parsed.response : null;
 
-  let proposal = readProposal(parsed);
+  // The FIRST proposal, and the forensics read off it BEFORE any repair can
+  // replace it. `proposal` is reassigned below; `forensics` never is.
+  const firstProposal = readProposal(parsed);
+  const forensics = readForensics(firstProposal);
+
+  let proposal = firstProposal;
   let verdict = evaluate(proposal, effectiveArchetype, replyText);
   let repairUsed = false;
 
@@ -308,12 +350,12 @@ export async function gateDirective({
 
   // Still unfixable (or repair skipped) → deterministic null + canned fallback line.
   if (verdict.needsRepair) {
-    return result(null, false, proposal, verdict.reason, repairUsed, NO_CHANGE_FALLBACK_LINE);
+    return result(null, false, proposal, verdict.reason, repairUsed, NO_CHANGE_FALLBACK_LINE, null, forensics);
   }
 
   // Terminal verdict: a deliberate-null classification, a committed valid id,
   // or (under the flag) the fit_mismatch null when the reply never said it.
-  return result(verdict.directive, verdict.hasDirective, proposal, verdict.status, repairUsed, null, verdict.fitCheck ?? null);
+  return result(verdict.directive, verdict.hasDirective, proposal, verdict.status, repairUsed, null, verdict.fitCheck ?? null, forensics);
 }
 
 export default gateDirective;
