@@ -15,9 +15,9 @@ import { getArchetypeLabel } from './agentArchetypeConfig.js';
 // Phase D (archetype integrity) — read-only deps. The api→src import edge is
 // Node-clean (precedent: api/agent/decide.js:23); the test's import of this file
 // is the BUILD_RULES §4 dependency-surface guard.
-import { getArchetypeZones, getAllowlist } from '../../src/data/archetypeAdjustments.js';
+import { getArchetypeZones, getAllowlist, getConflictGroups } from '../../src/data/archetypeAdjustments.js';
 import { getEffectiveArchetype } from './directiveIdentity.js';
-import { ARCHETYPE_INTEGRITY_MODE, SHOW_IT_ENABLED } from '../../src/config/featureFlags.js';
+import { ARCHETYPE_INTEGRITY_MODE, SHOW_IT_ENABLED, DIRECTIVE_FIT_CHECK_ENABLED } from '../../src/config/featureFlags.js';
 // The pane's motive renderer (D-80) — the SAME translator the grounded YOUR
 // RECORD block renders `evaluations[].rationale` through (voiceLayerGrounding.js).
 // `trades[].rationale` is the SAME cron string: agent-evaluate.js:2245 and :2640
@@ -898,6 +898,134 @@ const PHASE_RULES = {
   refinement: REFINEMENT_RULES,
   mastery: MASTERY_RULES,
 };
+
+// THE DIRECTIVE FIT CHECK, half two (Phase 0 Q5) — the acknowledgement quotes
+// the filing.
+//
+// The reply and the proposal come out of ONE model call; the gate runs after
+// and never rewrites the reply (chat.js). So a committed turn puts three
+// sentences on one screen — what the player tapped, what the character said,
+// what the record holds — and nothing compares the second to the third. On
+// Sep 14 the character said "trading Core momentum for a heavy Support floor"
+// directly above a card reading "Spread across more names (diversify the
+// chaos)".
+//
+// The shipped rule offers "Got it; that's my lean now." as the model's
+// acknowledgement, which is very nearly what the incident reply said. Under
+// the flag it asks instead for the canonical text, word for word — which is
+// what makes the gate's verbatim check (directiveGate.js) a thing the prompt
+// actually asked for. The two halves are one mechanism on one flag for exactly
+// that reason: a gate demanding a quote the prompt never requested would
+// null-write every filing.
+//
+// The closing sentence borrows the grounded rule's discipline
+// (voiceLayerGrounding.js: "The interface states what was filed. Do not
+// describe what you will do with it.").
+//
+// SCOPE, STATED CORRECTLY. Applied where the SHIPPED battle-chat prompt is
+// assembled, and only there. That is NOT the only path the gate runs on: the
+// gate is called on every battle-mode chat turn (chat.js), grounded or not. An
+// earlier draft of this comment claimed otherwise and was wrong — the
+// consequence is the flip-order hazard documented at DIRECTIVE_FIT_CHECK_ENABLED
+// (featureFlags.js) and in build report 20260916 §6 D-3: the grounded prompt
+// gets the annotated menu but NOT this quote instruction, and its own
+// confirmation rule says the opposite, so the two flags must not be lit
+// together. Safe today only because VOICE_GROUNDING_MODE is 'shadow'.
+// buildFirstMessagePrompt also
+// renders PHASE_RULES, but its own output format pins `hasDirective` false and
+// `directive` null, so no confirmation exists to acknowledge and no gate can
+// commit; it keeps today's text at both flag states. The confirmation
+// triggers, the "err toward committing" clause and the honest-pushback
+// exception are OUT of this build's scope and do not move.
+//
+// A STRING REPLACE, DELIBERATELY. The rule is one paragraph repeated verbatim
+// at three phase-rule sites; branching each template literal would triple the
+// prose and let the three drift apart. The risk of a replace is that the
+// anchor drifts and the transform silently no-ops — so
+// voiceLayerPrompt.fitCheck.test.js asserts the anchor still exists verbatim
+// in all three shipped rules, which makes that drift loud instead of silent.
+//
+// Flag-off returns the argument by identity: byte-identical, no allocation.
+const SHIPPED_ACK_ANCHOR = '"Got it; that\'s my lean now.").';
+const FIT_CHECK_ACK =
+  '"Got it — filing: {the exact canonical text of the id you selected}."). '
+  + 'Say the canonical text word for word; the card beneath you states what was filed. '
+  + 'Do not describe the lean in other words.';
+
+// THE QUOTE BELONGS TO THE DIRECTIVE, NOT TO THE CONFIRMATION (Codex #1).
+//
+// Commit B attached the quote instruction to the CONFIRMATION rule, because
+// that is where the Sep 14 turn went wrong. But the gate checks every turn that
+// files: `hasDirective` can be true on a direct instruction ("tighten your
+// stops"), on a mastery turn that leads with a plan, on any turn the model
+// judges strategic — none of which is a confirmation, and none of which the
+// confirmation rule speaks to. So the prompt asked for the quote on one path
+// and the gate demanded it on all of them.
+//
+// The §2 review named the consequence: with the demand in one paragraph and
+// four few-shots modelling a non-quoting acknowledgement in the higher-
+// attention slot, the flip's realistic failure mode is that filing quietly
+// stops. This moves the demand to the OUTPUT CONTRACT, where `hasDirective`
+// itself is defined, and fixes the examples that contradicted it.
+//
+// Flag-off returns the argument by identity, so the contract and all four
+// examples are byte-identical — held to it by the 147 whole-prompt hashes.
+const FIT_CHECK_DIRECTIVE_RULE =
+  '\n- WHENEVER hasDirective is true, your `response` MUST contain the canonical text of the id '
+  + 'you put in _archetypeProposal.selectedAdjustmentId, word for word, exactly as YOUR MENU spells it '
+  + '— same capitalisation, same punctuation, same parentheses. This is not only for confirmations: it '
+  + 'holds for a direct instruction, for a plan you lead with, for any turn you file on. The card beneath '
+  + 'you shows what was filed, and the record keeps only what you actually said — a paraphrase files NOTHING. '
+  + 'If you would rather not say the sentence, then do not set hasDirective; offer the adjustment instead.';
+
+function applyFitCheckOutputRule(outputFormat) {
+  if (!DIRECTIVE_FIT_CHECK_ENABLED || typeof outputFormat !== 'string') return outputFormat;
+  return outputFormat + FIT_CHECK_DIRECTIVE_RULE;
+}
+
+// The few-shots that model a DIRECTIVE-WRITING turn. Each shipped one answers
+// with a paraphrase, carries a free-text `directive.text` that `enforce`
+// discards, and shows no `_archetypeProposal` at all — the one field the gate
+// reads. Under the flag each is re-authored to quote, to carry the canonical as
+// its directive text, and to name the id it quoted, keeping the phase's own
+// register. The example is built from the agent's OWN menu, so it is always a
+// valid instance rather than a placeholder.
+//
+// A turn that does NOT file (the refinement example) is left alone: it has
+// nothing to quote.
+const FIT_CHECK_EXAMPLE_REPLIES = {
+  discovery: (c) => `I like it — when the setup's this clean, spreading just dilutes the upside. Filing: ${c}. That's the bias I'm carrying into each look now; I might still pass if the setup isn't there.`,
+  mastery: (c) => `Here's the play — semis leading, breadth strong, NVDA stays Star. Filing: ${c}. That's what I'm taking into the open unless you push back.`,
+  confirmation: (c) => `Got it — filing: ${c}. I might still pass if the setup isn't there, and my reflexive risk rules act on their own meanwhile.`,
+};
+
+function applyFitCheckExample(example, codeId, key) {
+  if (!DIRECTIVE_FIT_CHECK_ENABLED || typeof example !== 'string') return example;
+  const build = FIT_CHECK_EXAMPLE_REPLIES[key];
+  if (!build) return example;
+  const first = getAllowlist(codeId)[0];
+  if (!first) return example; // unknown archetype → no menu, no apparatus at all
+  const reply = build(first.canonical);
+  // Rewrite only the lines that MODEL A FILING. Line-level, keyed on the
+  // shape rather than on prose, so a wording edit upstream cannot silently
+  // make this a no-op the way a prose anchor could.
+  return example.split('\n').map((line) => {
+    if (!line.startsWith('Agent: {') || !line.includes('"hasDirective": true')) return line;
+    return `Agent: ${JSON.stringify({
+      _scratchpad: `Committing the lean. The reply must carry ${first.id}'s canonical text word for word — the card beneath states what was filed.`,
+      response: reply,
+      hasDirective: true,
+      directive: { text: first.canonical, expiry: 'end_of_battle' },
+      _archetypeProposal: { classification: 'in_archetype', selectedAdjustmentId: first.id },
+      suggestedActions: null,
+    })}`;
+  }).join('\n');
+}
+
+function applyFitCheckAcknowledgement(rules) {
+  if (!DIRECTIVE_FIT_CHECK_ENABLED || typeof rules !== 'string') return rules;
+  return rules.split(SHIPPED_ACK_ANCHOR).join(FIT_CHECK_ACK);
+}
 
 const PHASE_EXAMPLES = {
   discovery: DISCOVERY_EXAMPLE,
@@ -2598,13 +2726,72 @@ function buildCohortDigestBlock(digest) {
 //   - getAllowlist is checked BEFORE getArchetypeZones: getAllowlist does NOT
 //     analyst-fall-back (directive-write path), so an unknown archetype yields no
 //     menu and therefore no block — even though getArchetypeZones would fall back.
+// THE DIRECTIVE FIT CHECK, half one (Phase 0 Q3) — the menu shows the dial.
+//
+// The shipped menu is seven bare strings: `id: canonical` and nothing else. The
+// data module already knows which ids are the cautious register, which way each
+// one moves concentration, and which two are opposite ends of one dial
+// (ADJUSTMENT_CONFLICT_GROUPS) — and rendered none of it, so the model chose
+// blind and nothing downstream noticed when it chose the wrong end (the Sep 14
+// incident: "Full Defense" filed SP-05, the SPREAD end of the concentration
+// dial). These annotations are DERIVED, never authored here: the charter owns
+// this fact and a second copy of it in this module is the drift class
+// BUILD_RULES §4 forbids.
+//
+// `forbiddenOpposite` is deliberately NOT rendered. It names the thing the
+// character must not become; a menu should not teach it.
+//
+// Flag-off returns the shipped line, byte for byte.
+function renderMenuAnnotations(codeId, adjustment) {
+  if (!DIRECTIVE_FIT_CHECK_ENABLED) return '';
+  const policy = adjustment.policy || {};
+  const tags = [];
+  // The cautious register, as the policy types define it: lowers risk without
+  // touching book shape or the clock. NOTE (build report §Deviations): this is
+  // the derivation the brief specifies, and it is NOT the charter's prose trio
+  // for the Speculator — SP-02/SP-06/SP-07 carry byte-identical policy, so no
+  // function of `policy` can include two of them and exclude the third. The
+  // charter's own sentence still reaches the model verbatim, one block above,
+  // as PROTECTED BIAS.
+  if (
+    policy.riskDirection === 'lower'
+    && policy.concentrationDirection === 'neutral'
+    && policy.timeHorizonDirection === 'neutral'
+  ) {
+    tags.push('[cautious register]');
+  }
+  if (policy.concentrationDirection === 'tighter' || policy.concentrationDirection === 'wider') {
+    tags.push(`[concentration: ${policy.concentrationDirection}]`);
+  }
+  // One tag per conflict-group partner — the dial the two ends share. Union
+  // over groups, self excluded; an id may sit in more than one group.
+  for (const group of getConflictGroups(codeId)) {
+    const memberIds = group.members.map((m) => m.id);
+    if (!memberIds.includes(adjustment.id)) continue;
+    for (const memberId of memberIds) {
+      if (memberId !== adjustment.id) tags.push(`[opposite of ${memberId}]`);
+    }
+  }
+  return tags.length ? ` — ${tags.join(' ')}` : '';
+}
+
+// The charter's "more cautious" prose, bound to ids. Omitted when the
+// derivation names nothing (and, like every annotation, when the flag is off).
+function renderCautiousRegisterLine(codeId, allowlist) {
+  if (!DIRECTIVE_FIT_CHECK_ENABLED) return '';
+  const ids = allowlist
+    .filter((a) => renderMenuAnnotations(codeId, a).includes('[cautious register]'))
+    .map((a) => a.id);
+  return ids.length ? `\nMore cautious, in character: ${ids.join(', ')}.` : '';
+}
+
 function buildArchetypeIntegrityBlock(battle, agent) {
   if (ARCHETYPE_INTEGRITY_MODE === 'off') return null;
   const codeId = getEffectiveArchetype(battle, agent);
   const allowlist = getAllowlist(codeId);
   if (!allowlist.length) return null;
   const zones = getArchetypeZones(codeId);
-  const menu = allowlist.map((a) => `  ${a.id}: ${a.canonical}`).join('\n');
+  const menu = allowlist.map((a) => `  ${a.id}: ${a.canonical}${renderMenuAnnotations(codeId, a)}`).join('\n');
   return `YOUR ARCHETYPE — THE FOUR ZONES (this is who you are; they rank by how fixed they are):
 IMMUTABLE CORE (never reverse — this is the boundary): ${zones.immutableCore}
 TUNABLE EXECUTION (your two-leg holding logic; the menu below tunes this): ${zones.tunableExecution}
@@ -2612,7 +2799,7 @@ PROTECTED BIAS (your default leans; adjustable at the margin, never abandoned): 
 OUT-OF-SCOPE / USER LEVERS (what you do NOT own — hand these off, never do them yourself): ${zones.outOfScopeUserLever}
 
 YOUR MENU — the only adjustments you may select as a directive (emit the id in _archetypeProposal):
-${menu}`;
+${menu}${renderCautiousRegisterLine(codeId, allowlist)}`;
 }
 
 // Phase E2 — the "USER LEVERS RIGHT NOW" block. Translates the capabilities
@@ -3062,13 +3249,15 @@ You've been working together for ${gamesPlayed} games (${wins}W-${losses}L). You
   // Few-Shot Example (BOTTOM — high attention)
   const fewShot = grounded
     ? GROUNDED_PHASE_EXAMPLES[phase] + '\n\n' + GROUNDED_CONFIRMATION_EXAMPLE
-    : PHASE_EXAMPLES[phase] + '\n\n' + CONFIRMATION_EXAMPLE;
+    : applyFitCheckExample(PHASE_EXAMPLES[phase], getEffectiveArchetype(battle, agent), phase)
+      + '\n\n'
+      + applyFitCheckExample(CONFIRMATION_EXAMPLE, getEffectiveArchetype(battle, agent), 'confirmation');
 
   // Elicitation Target (BOTTOM — high attention)
   const elicitation = `ELICITATION TARGET (internal — do not mention this to the user):\n${elicitationTarget.instruction}`;
 
   // Block 6: Phase Rules (BOTTOM — LAST block, highest attention)
-  const phaseRules = grounded ? GROUNDED_PHASE_RULES[phase] : PHASE_RULES[phase];
+  const phaseRules = grounded ? GROUNDED_PHASE_RULES[phase] : applyFitCheckAcknowledgement(PHASE_RULES[phase]);
 
   // Phase D — resolve the archetype-integrity persona block ONCE; its truthiness
   // is the single guard for BOTH the proposal append and the persona push, so the
@@ -3081,7 +3270,7 @@ You've been working together for ${gamesPlayed} games (${wins}W-${losses}L). You
   const blocks = [
     identity,        // Block 1   (TOP)
     GAME_MECHANICS,  // Block 1.5 (TOP)
-    grounded ? GROUNDED_OUTPUT_FORMAT : OUTPUT_FORMAT,   // Block 7   (TOP)
+    grounded ? GROUNDED_OUTPUT_FORMAT : applyFitCheckOutputRule(OUTPUT_FORMAT),   // Block 7   (TOP)
   ];
   // Phase D — battle-only proposal-schema append, adjacent to OUTPUT_FORMAT. NOT
   // an edit to the shared OUTPUT_FORMAT const (that would leak into review — C3).

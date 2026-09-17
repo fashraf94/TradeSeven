@@ -1,9 +1,18 @@
 // api/_utils/directiveGate.test.js
 //
 // Phase E1 — pure gate-logic tests. The import of ./directiveGate.js (and,
-// transitively, archetypeAdjustments.js + gemmaClient.js) is the BUILD_RULES §4
+// transitively, archetypeAdjustments.js + gemmaClient.js + decisionRecord.js +
+// chatTextSanitize.js + src/config/featureFlags.js) is the BUILD_RULES §4
 // dependency-surface guard. callGemmaVoice is passed in (a stub), so no module
 // mock is needed for the repair path.
+//
+// NEVER MOCK featureFlags.js IN THIS FILE. The directive fit check added the
+// api/ -> src/config/featureFlags.js edge to this graph, and §4 makes THIS
+// file's unmocked import the thing that proves the graph stays Node-clean. A
+// `vi.mock` of featureFlags.js added here would disarm the guard silently —
+// the tests would still pass while the surface went unchecked. Flag-flipping
+// rows live in directiveGate.fitCheck.test.js, which mocks with an
+// `importOriginal()` spread for exactly that reason.
 
 import { describe, it, expect, vi } from 'vitest';
 import { gateDirective, NO_CHANGE_FALLBACK_LINE } from './directiveGate.js';
