@@ -814,6 +814,24 @@ describe('runMondayPipeline — the full Monday arc on an all-CPU group (no mode
     expect(store.get('tournamentGroups/b-r1-g2/streams/agentDraft')).toBeUndefined(); // never drafts
   });
 
+  it('EXTRACTION FOLD-BACK: a per-group agent-layer failure counts errors, not drafted — the marker is withheld and the next tick retries', async () => {
+    // Review-lens U2: runGroupAgentLayer's non-deployed outcomes fold back into
+    // the Monday summary's `errors`, which is what withholds the marker. A
+    // corrupted agent-draft stream with no picks is the deterministic route:
+    // the draft's already-resolved path returns acquisition_conflict without a
+    // mock. Under a fold-back that dropped errors++ this tick would mark the
+    // duty COMPLETE over a failed draft.
+    const { db, store } = mondayDb();
+    store.get('tournamentGroups/b-r1-g2').status = GROUP_STATUS.BATTLE;
+    store.set('tournamentGroups/b-r1-g2/streams/agentDraft', { picksByAgent: {}, events: [] });
+    const fetchImpl = vi.fn(async () => ({ ok: true }));
+    const result = await runOrchestratorTick(db, { now: MON_MORNING_EDT, fetchImpl, pacingMs: 0 });
+    expect(result).toMatchObject({ groups: 1, resolved: 0, drafted: 0, refusedSynthetic: 0, errors: 1, complete: false });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(store.get('tournamentOrchestrator/state')).toBeUndefined(); // no marker
+    expect(console.error.mock.calls.map(c => c.join(' ')).some(l => l.includes('b-r1-g2: ACQUISITION CONFLICT'))).toBe(true);
+  });
+
   it('zero groups: clean no-op, zero writes (production state at merge)', async () => {
     const { db, writeLog } = makeDb({ 'indexIntelligence/stockRankings': { stocks: STOCKS } });
     const summary = await runMondayPipeline(db, { now: MON_MORNING_EDT, anthropic: null });
@@ -1360,6 +1378,46 @@ describe('N1 late-pod catch-up — a pod that reaches BATTLE behind the duty mar
     expect(summary).toMatchObject({ pending: 0, caughtUp: 0, errors: 0 });
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(store.get(`tournamentGroups/${LATE_ID}`).agentPipelinePending).toBe(true); // untouched, not cleared
+  });
+
+  it('a stamped DEV pod is invisible to a production tick and served by the dev surface (includeDevGroups threads through)', async () => {
+    // Review-lens U4: the p4Flips source-text count was the only guard on the
+    // catch-up's dev-group threading; this is the behavioral one.
+    const { db, store } = makeDb({ 'indexIntelligence/stockRankings': { stocks: STOCKS } });
+    addLateSlotPod(store);
+    store.get(`tournamentGroups/${LATE_ID}`).isDev = true;
+    const fetchImpl = vi.fn(async () => ({ ok: true }));
+    const prod = await runPendingPodCatchUp(db, { now: MON_0910, fetchImpl, pacingMs: 0 });
+    expect(prod).toMatchObject({ pending: 0, caughtUp: 0 });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(store.get(`tournamentGroups/${LATE_ID}`).agentPipelinePending).toBe(true);
+    const dev = await runPendingPodCatchUp(db, { now: MON_0910, fetchImpl, pacingMs: 0, includeDevGroups: true });
+    expect(dev).toMatchObject({ pending: 1, caughtUp: 1, errors: 0 });
+    expect(store.get(`tournamentGroups/${LATE_ID}`).agentPipelinePending).toBe(false);
+  });
+
+  it('a THROWING catch-up never blocks the tick: the duty result still returns and the failure is one logged line', async () => {
+    // Review-lens U8: "own catch so it never blocks the duty" — exercised.
+    const { db, store } = mondayDb();
+    const fetchImpl = vi.fn(async () => ({ ok: true }));
+    const first = await runOrchestratorTick(db, { now: MON_MORNING_EDT, fetchImpl, pacingMs: 0 });
+    expect(first.complete).toBe(true);
+    addLateSlotPod(store);
+    // Every tournamentGroups status query now fails (the sweeps have their own
+    // catches; the marker read is on another collection and still works).
+    const realCollection = db.collection;
+    db.collection = (name) => {
+      const col = realCollection(name);
+      if (name !== 'tournamentGroups') return col;
+      return { ...col, where: () => ({ get: async () => { throw new Error('firestore down'); }, limit: () => ({ get: async () => { throw new Error('firestore down'); } }), select: () => ({ get: async () => { throw new Error('firestore down'); } }) }) };
+    };
+    const second = await runOrchestratorTick(db, { now: MON_0910, fetchImpl, pacingMs: 0 });
+    expect(second.status).toBe('already_complete');
+    expect(second.pendingCatchUp).toBeUndefined();
+    expect(console.error.mock.calls.map(c => c.join(' ')).some(l => l.includes('late-pod catch-up failed: firestore down'))).toBe(true);
+    db.collection = realCollection;
+    expect(store.get(`tournamentGroups/${LATE_ID}`).agentPipelinePending).toBe(true); // untouched; the next healthy tick serves it
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
   });
 
   it('the tick budget bounds it: an exhausted budget defers the pod with its stamp kept', async () => {

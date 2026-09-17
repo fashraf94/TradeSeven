@@ -877,6 +877,31 @@ describe('P6a side-effects — rank apply + leaderboard final upsert ride the Fr
     expect(line).not.toContain('unspecified');
   });
 
+  it('N1 BASE-LAYER refusal: an all-week-missing seat on a base-layer (non-bracket) group refuses completion, names the seat, applies no rank', async () => {
+    // Review-lens U3: every prior degraded-lock row was bracket-only; the
+    // base-layer gate (the first of the three isFinalSnapshotDegraded sites) had
+    // no row on either arm.
+    // structuredClone: bracketGroup keeps the dailyScores reference, and G1_WEEK
+    // is shared by the sibling rows — never mutate the fixture in place.
+    const base = bracketGroup({ id: 'ignored', members: G1_MEMBERS, dailyScores: structuredClone(G1_WEEK) });
+    delete base.bracketGameId;
+    base.baseLayerWeek = '2026-W25';
+    for (let d = 1; d <= 5; d++) base.dailyScores[`day${d}`].agentLayerMissing = ['cpu-2'];
+    const { db, store } = makeDb({
+      'tournamentGroups/base1': base,
+      'indexIntelligence/stockRankings': { stocks: STOCKS },
+    });
+    const summary = await runFridayAdvancement(db, { now: NOW });
+    expect(summary.degradedLocks).toBe(1);
+    expect(summary.baseCompleted).toBe(0);
+    expect(summary.rankApplied).toBe(0);
+    expect(store.get('tournamentGroups/base1').status).toBe(GROUP_STATUS.BATTLE);
+    expect(store.get('tournamentRanks/founder')).toBeUndefined();
+    const line = console.error.mock.calls.map(c => c.join(' ')).find(l => l.includes('base-layer group base1') && l.includes('final snapshot degraded'));
+    expect(line).toBeTruthy();
+    expect(line).toContain('agentLayerMissing all week for seat(s) [cpu-2]');
+  });
+
   it('base-layer completion applies rank + leaderboard BEFORE the transition', async () => {
     const base = bracketGroup({ id: 'ignored', members: G1_MEMBERS, dailyScores: G1_WEEK });
     delete base.bracketGameId;
