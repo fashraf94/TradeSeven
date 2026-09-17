@@ -561,7 +561,8 @@ export async function bankAllTournamentGroups(db, { now = new Date() } = {}) {
         console.warn(
           `[TournamentBanking] group ${group.id}: AGENT LAYER MISSING on ${result.dayKey} for seat(s) ` +
           `[${result.agentLayerMissing.join(', ')}] — no tournament battle exists for them today; agentPoints banked 0 ` +
-          `for the composite. ${result.agentLayerMissingDays} of ${result.dayN} banked day(s) this week list a missing seat. ` +
+          `for the composite (or the prior carry where agentScoresCarried). agentLayerMissingDays is now ` +
+          `${result.agentLayerMissingDays} (through ${result.dayKey}). ` +
           `A seat missing on EVERY banked day pauses the week's lock for MANUAL REVIEW (isFinalSnapshotDegraded); ` +
           `missing on some days only, the week proceeds (founder ruling). Check streams/agentDraft and the ` +
           `late-pod catch-up lines in the orchestrator log for this group.`,

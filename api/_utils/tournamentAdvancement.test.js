@@ -860,6 +860,23 @@ describe('P6a side-effects — rank apply + leaderboard final upsert ride the Fr
     expect(store.get('tournamentGroups/b-r1-g1').status).toBe(GROUP_STATUS.COMPLETE);
   });
 
+  it('the refusal log reads the CLAMPED final for the carried arm: day5 carried + day6–8 clean still says agentScoresCarried, never "unspecified"', async () => {
+    // Review finding B5: degradeReason's carried arm must use the same clamped
+    // read as the predicate (getLatestBankedDayEntry) — an unclamped read on the
+    // zombie shape would refuse the lock and then fail to say why.
+    const { db, store } = seededBracketDb();
+    const g1 = store.get('tournamentGroups/b-r1-g1');
+    g1.dailyScores.day5.agentScoresCarried = true;
+    for (let d = 6; d <= 8; d++) g1.dailyScores[`day${d}`] = { recordedDate: `2026-06-${15 + d}`, closeScores: {} };
+
+    const first = await runFridayAdvancement(db, { now: NOW });
+    expect(first.degradedLocks).toBe(1);
+    const line = console.error.mock.calls.map(c => c.join(' ')).find(l => l.includes('b-r1-g1') && l.includes('final snapshot degraded'));
+    expect(line).toBeTruthy();
+    expect(line).toContain('(agentScoresCarried)');
+    expect(line).not.toContain('unspecified');
+  });
+
   it('base-layer completion applies rank + leaderboard BEFORE the transition', async () => {
     const base = bracketGroup({ id: 'ignored', members: G1_MEMBERS, dailyScores: G1_WEEK });
     delete base.bracketGameId;

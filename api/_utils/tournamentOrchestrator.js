@@ -429,7 +429,7 @@ export async function fanOutDeploys(db, {
   // seats were served". Zero active groups never reaches this function at all.
   // Gate-closed (deployEnabled false) stays quiet — nothing was meant to deploy.
   if (deployEnabled && seats.length === 0) {
-    console.error(`${LOG_PREFIX} group ${groupId}: ZERO SEATS fanned out on ${etDate} while deploy is ENABLED — the agent layer did NOT deploy for this group today and the duty will NOT be marked complete. Founder attention: check that streams/agentDraft exists for this group (the Monday pipeline is its only writer).`);
+    console.error(`${LOG_PREFIX} group ${groupId}: ZERO SEATS fanned out on ${etDate} while deploy is ENABLED — the agent layer did NOT deploy for this group today and the duty will NOT be marked complete. Founder attention: check that streams/agentDraft exists for this group (the Monday pipeline writes it; a pod stamped agentPipelinePending gets it from the late-pod catch-up instead).`);
     out.emptySeats++;
     return out;
   }
@@ -705,6 +705,10 @@ export async function runWeekdayFanout(db, {
     groups: groups.length,
     noBattles: 0,
     mondayCatchupSeats: 0,
+    // N1: pods stamped agentPipelinePending are the late-pod catch-up's to
+    // serve (it runs on this same tick, after the duty); the fan-out leaves
+    // them alone. Counted here so the duty summary says so; NOT a marker input.
+    pendingCatchUp: 0,
     deployDeferredMarketClosed: 0,
     deploys: { deployed: 0, skipped: 0, gated: 0, skippedExisting: 0, emptySeats: 0, cooled: 0, failed: 0, deferred: 0 },
     deferredToNextTick: 0,
@@ -738,6 +742,19 @@ export async function runWeekdayFanout(db, {
       break;
     }
     const group = groups[i];
+    // N1 durable fix: a pod whose agent pipeline is still PENDING (it reached
+    // BATTLE behind a duty marker and has not been caught up yet) has no
+    // stream and no battles for this fan-out to redeploy — running it here
+    // would only trip the ZERO SEATS guard (a false alarm) and withhold this
+    // duty's marker for a tick. The late-pod catch-up serves it on this same
+    // tick, right after the duty; once caught up (stamp cleared) it is an
+    // ordinary incumbent here from the next day on. `groups` still counts it
+    // (so the tick never reads "zero groups" while a stamped pod exists).
+    if (isAgentPipelinePending(group)) {
+      summary.pendingCatchUp++;
+      console.log(`${LOG_PREFIX} group ${group.id}: agent pipeline PENDING (stamped ${group.agentPipelinePendingAt ?? 'at an unknown instant'}) — left to the late-pod catch-up on this tick; incumbent fan-out skipped`);
+      continue;
+    }
     try {
       const latest = await latestTournamentBattlesByAgent(db, group.id);
       if (latest.size === 0 && !deployEnabled) {
@@ -1098,7 +1115,11 @@ export function isAgentLayerCaughtUp(layer) {
 /**
  * Serve every competitive BATTLE pod stamped agentPipelinePending: boards →
  * agent draft → deploys through runGroupAgentLayer. Runs on every weekday-
- * morning tick regardless of the duty marker (see the block comment). Returns
+ * morning tick regardless of the duty marker (see the block comment) — on the
+ * already-complete exit and after a dispatched duty; the zero-groups exit is
+ * the one morning exit that skips it, and safely so: a stamped pod is a
+ * competitive BATTLE group, which both morning duties count in `groups`
+ * (identical fetch: status, includeDev, excludeTraining, GROUP_SIZE). Returns
  * { pending, caughtUp, deferred, errors, deploys }; `pending` is the number of
  * stamped pods seen, so a zero-pending tick is one read and zero writes.
  */
@@ -1323,11 +1344,18 @@ export async function runOrchestratorTick(db, {
   const state = await readOrchestratorState(db);
 
   // N1 late-pod catch-up (see the block comment above runPendingPodCatchUp).
-  // Wraps every weekday-morning exit AFTER the marker check: the marker still
-  // decides whether the DUTY runs; it no longer decides whether a pod stamped
-  // agentPipelinePending is served. Own catch so it never blocks the duty;
-  // shares the tick budget + pacing; its counters never touch the marker.
-  const morningTick = routed.duty === DUTY.MONDAY_PIPELINE || routed.duty === DUTY.WEEKDAY_FANOUT;
+  // Wraps the already-complete and the dispatched exits of a weekday-morning
+  // tick, AFTER the marker check: the marker still decides whether the DUTY
+  // runs; it no longer decides whether a pod stamped agentPipelinePending is
+  // served. (The zero-groups exit is not wrapped — a stamped pod is always
+  // counted in `groups`, see runPendingPodCatchUp.) A morning tick is one
+  // ROUTED to a morning duty (the cron) OR one FORCED to a morning duty
+  // (api/tournament/run-duty.js — the manual recovery lever, which must serve
+  // and clear a stamped pod exactly as the cron would, whatever the instant).
+  // Own catch so it never blocks the duty; shares the tick budget + pacing;
+  // its counters never touch the marker.
+  const isMorningDuty = (d) => d === DUTY.MONDAY_PIPELINE || d === DUTY.WEEKDAY_FANOUT;
+  const morningTick = isMorningDuty(routed.duty) || isMorningDuty(duty);
   const withPendingCatchUp = async (result) => {
     if (!morningTick) return result;
     try {

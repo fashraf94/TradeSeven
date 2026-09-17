@@ -962,6 +962,27 @@ describe('seatsMissingAgentLayerAllWeek / isFinalSnapshotDegraded — N1: a neve
     expect(isFinalSnapshotDegraded(oneDay)).toBe(false);
   });
 
+  it('the FINAL banked day counts: missing on days 1–4 and PRESENT on day 5 (the agent layer arrived Friday) is NOT degraded', () => {
+    // Review finding B1: the `n <= dayN` bound was unguarded — a `<` mutation
+    // would read this shape as degraded and refuse a lock the founder's
+    // "some days" ruling says proceeds.
+    const g = week([['u4'], ['u4'], ['u4'], ['u4'], null]);
+    expect(seatsMissingAgentLayerAllWeek(g)).toEqual([]);
+    expect(isFinalSnapshotDegraded(g)).toBe(false);
+    const lastOnly = week([null, null, null, null, ['u4']]);
+    expect(seatsMissingAgentLayerAllWeek(lastOnly)).toEqual([]);
+  });
+
+  it('a GAP in the day keys (manual surgery) is skipped, never read as a clean day — permitting is unrecoverable where over-blocking is not', () => {
+    // Review finding B2: an absent day3 used to empty the intersection, so a
+    // seat listed on every EXISTING banked day read NOT degraded while the
+    // week read banked, and the Friday duty would have locked.
+    const g = week([['u4'], ['u4'], ['u4'], ['u4'], ['u4']]);
+    delete g.dailyScores.day3;
+    expect(seatsMissingAgentLayerAllWeek(g)).toEqual(['u4']);
+    expect(isFinalSnapshotDegraded(g)).toBe(true);
+  });
+
   it('LEGACY: entries without the field (every week banked before the fix) list nobody — never degraded here', () => {
     const g = week([null, null, null, null, null]);
     expect(seatsMissingAgentLayerAllWeek(g)).toEqual([]);

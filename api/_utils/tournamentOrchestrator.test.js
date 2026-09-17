@@ -1293,18 +1293,62 @@ describe('N1 late-pod catch-up — a pod that reaches BATTLE behind the duty mar
     expect(lateAgentLayer(store).stream).toEqual(streamAfterFailure);
   });
 
-  it('runs on a Tue–Fri morning too: a pod still stamped past Monday is served on the next weekday tick', async () => {
-    // Only the late pod exists. The weekday fan-out finds no battles and no stream
-    // (the loud ZERO SEATS line — marker withheld), then the catch-up serves it.
+  it('runs on a Tue–Fri morning too: a pod still stamped past Monday is served on the next weekday tick, with NO false ZERO SEATS alarm', async () => {
+    // Only the late pod exists. The weekday fan-out has nothing to redeploy for
+    // a stamped pod (no battles, no stream) and LEAVES it to the catch-up on
+    // this same tick — no ZERO SEATS error, no withheld marker (review finding
+    // A1: before the fix the fan-out false-alarmed and withheld the weekday
+    // marker for one tick before the catch-up served the pod).
     const { db, store } = makeDb({ 'indexIntelligence/stockRankings': { stocks: STOCKS } });
     addLateSlotPod(store);
     const fetchImpl = vi.fn(async () => ({ ok: true }));
     const tue = await runOrchestratorTick(db, { now: TUE_0710, fetchImpl, pacingMs: 0 });
     expect(tue.duty).toBe(DUTY.WEEKDAY_FANOUT);
-    expect(tue.complete).toBe(false);
+    expect(tue.complete).toBe(true);
     expect(tue.pendingCatchUp).toMatchObject({ pending: 1, caughtUp: 1, errors: 0 });
+    expect(tue.pendingCatchUp.deploys.deployed).toBe(4);
+    expect(console.error.mock.calls.map(c => c.join(' ')).some(l => l.includes('ZERO SEATS'))).toBe(false);
     expect(lateAgentLayer(store).stream.events).toHaveLength(AGENT_MARKET_SIZE);
     expect(fetchImpl).toHaveBeenCalledTimes(4);
+    expect(store.get(`tournamentGroups/${LATE_ID}`).agentPipelinePending).toBe(false);
+  });
+
+  it('the weekday fan-out itself leaves a stamped pod alone (counted, logged, marker-worthy); an UNSTAMPED stream-less pod still trips ZERO SEATS', async () => {
+    const { db, store } = makeDb({ 'indexIntelligence/stockRankings': { stocks: STOCKS } });
+    addLateSlotPod(store);
+    const fetchImpl = vi.fn(async () => ({ ok: true }));
+    const stamped = await runWeekdayFanout(db, { now: TUE_0710, deployEnabled: true, pacingMs: 0, fetchImpl });
+    expect(stamped).toMatchObject({ groups: 1, pendingCatchUp: 1, errors: 0 });
+    expect(stamped.deploys.emptySeats).toBe(0);
+    expect(isDutySatisfied(DUTY.WEEKDAY_FANOUT, stamped)).toBe(true);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(logSpy.mock.calls.map(c => c.join(' ')).some(l => l.includes(`group ${LATE_ID}: agent pipeline PENDING`) && l.includes('left to the late-pod catch-up'))).toBe(true);
+    expect(lateAgentLayer(store).stream).toBeUndefined(); // the fan-out produced nothing; the catch-up owns it
+
+    store.get(`tournamentGroups/${LATE_ID}`).agentPipelinePending = false; // the same pod, unstamped
+    const unstamped = await runWeekdayFanout(db, { now: TUE_0710, deployEnabled: true, pacingMs: 0, fetchImpl });
+    expect(unstamped).toMatchObject({ groups: 1, pendingCatchUp: 0 });
+    expect(unstamped.deploys.emptySeats).toBe(1);
+    expect(isDutySatisfied(DUTY.WEEKDAY_FANOUT, unstamped)).toBe(false);
+    expect(console.error.mock.calls.map(c => c.join(' ')).some(l => l.includes('ZERO SEATS') && l.includes('late-pod catch-up'))).toBe(true);
+  });
+
+  it('the manual recovery lever (run-duty forceDuty on any instant) serves AND clears a stamped pod exactly like the cron', async () => {
+    // A Thursday evening is routed to advancement; forcing the Monday duty is
+    // the documented whole-duty recovery lever (audit §4.3). The forced duty is
+    // a morning duty, so the catch-up rides it: the duty serves the pod, the
+    // catch-up re-enters as a no-op and clears the stamp in the same call
+    // (review finding A2: before the fix the stamp lingered until the next
+    // real morning tick).
+    const { db, store } = makeDb({ 'indexIntelligence/stockRankings': { stocks: STOCKS } });
+    addLateSlotPod(store);
+    const fetchImpl = vi.fn(async () => ({ ok: true }));
+    const forced = await runOrchestratorTick(db, {
+      now: new Date('2026-06-18T22:30:00.000Z'), forceDuty: DUTY.MONDAY_PIPELINE, fetchImpl, pacingMs: 0,
+    });
+    expect(forced.duty).toBe(DUTY.MONDAY_PIPELINE);
+    expect(forced.complete).toBe(true);
+    expect(forced.pendingCatchUp).toMatchObject({ pending: 1, caughtUp: 1, errors: 0 });
     expect(store.get(`tournamentGroups/${LATE_ID}`).agentPipelinePending).toBe(false);
   });
 

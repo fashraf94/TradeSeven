@@ -953,6 +953,15 @@ describe('computeBankingUpdate — N1: a seat with NO agent battle is recorded, 
     expect(isFinalSnapshotDegraded(group)).toBe(false);
   });
 
+  it('the agent layer ARRIVING on day 5 (missing 1–4, present 5): the count is 4 and the final is NOT degraded — the week proceeds', () => {
+    // Review finding B1 — the predicate must read the FINAL banked day.
+    const { group, updates } = bankWeek([NO_U4, NO_U4, NO_U4, NO_U4, FULL]);
+    expect(updates.map(u => u.agentLayerMissingDays)).toEqual([1, 2, 3, 4, 4]);
+    expect(updates[4].dayEntry.agentLayerMissing).toBeUndefined();
+    expect(seatsMissingAgentLayerAllWeek(group)).toEqual([]);
+    expect(isFinalSnapshotDegraded(group)).toBe(false);
+  });
+
   it('a seat present all week and absent ONLY on day 5 is the §7.2 CARRIED final (pre-existing ruling, untouched): paused for manual review by that arm', () => {
     const { group, updates } = bankWeek([FULL, FULL, FULL, FULL, NO_U4]);
     expect(updates[4].dayEntry.agentScoresCarried).toBe(true);
@@ -1077,7 +1086,8 @@ describe('computeBankingUpdate — N1: a seat with NO agent battle is recorded, 
     expect(line).toContain('group g1');
     expect(line).toContain('day1');
     expect(line).toContain('[u4]');
-    expect(line).toContain('1 of 1 banked day(s)');
+    expect(line).toContain('agentLayerMissingDays is now 1 (through day1)');
+    expect(line).toContain('or the prior carry where agentScoresCarried'); // review B3: the carry arm banks the carry, not 0
     expect(line).toContain('MANUAL REVIEW');
     expect(captured.updates[0].agentLayerMissingDays).toBe(1);
     warnSpy.mockRestore();

@@ -1407,7 +1407,17 @@ export function isFinalSnapshotDegraded(group) {
  *     agentLayerMissingDays count; this returns [] and the week proceeds.
  * A day entry without the field (every entry banked before the fix, and
  * every healthy day) lists nobody, so legacy weeks can never read degraded
- * here. Pure. Returns odUserIds in the first banked day's listing order.
+ * here. A day whose ENTRY is absent (a gap in the day keys — banking never
+ * produces one, only manual surgery does) is skipped rather than read as
+ * clean: permitting is unrecoverable where over-blocking isn't (§7.2).
+ * Manual-review resolution, for the operator the refusal log addresses:
+ * after verifying the seat's agent layer (or ruling the week stands as
+ * banked), remove the seat from at least one banked day's `agentLayerMissing`
+ * listing (the carry arm's analogue is clearing the final day's
+ * `agentScoresCarried`); the next advancement tick then locks. The group's
+ * `agentLayerMissingDays` is a bank-time breadcrumb — it is not recomputed by
+ * such an edit and nothing gates on it. Pure. Returns odUserIds in the first
+ * banked day's listing order.
  */
 export function seatsMissingAgentLayerAllWeek(group) {
   const latest = getLatestBankedDayEntry(group);
@@ -1415,7 +1425,9 @@ export function seatsMissingAgentLayerAllWeek(group) {
   const dailyScores = group?.dailyScores || {};
   let common = null;
   for (let n = 1; n <= latest.dayN; n++) {
-    const listed = dailyScores[`day${n}`]?.agentLayerMissing;
+    const entry = dailyScores[`day${n}`];
+    if (!entry) continue; // a missing day is not a banked day — never "nobody missing"
+    const listed = entry.agentLayerMissing;
     const today = new Set(Array.isArray(listed) ? listed : []);
     common = common === null ? [...today] : common.filter(id => today.has(id));
     if (common.length === 0) return [];
@@ -1555,6 +1567,16 @@ export function createAgentLedgerEntry({ heldBy, since, source } = {}) {
  *   recorded in the P1a PR decisions register): totalPoints is the CUMULATIVE
  *   standing at that day's close; the weekly score is the FINAL day's
  *   snapshot, not a sum over days. The P1b banking pass is the only writer.
+ *   P6a added `agentPoints` + `compositePoints` per seat and the day-level
+ *   `recordedDate` / `agentScoresCarried` (the carry-forward degrade marker).
+ *   N1 durable fix (Sep 2026) added, on competitive pods only, the day-level
+ *   `agentLayerMissing: [odUserId, …]` (seats with NO tournament battle in
+ *   that day's read — omitted when empty) and the GROUP-level
+ *   `agentLayerMissingDays` (a bank-time count of banked days listing a
+ *   missing seat; write-only, never gated on, may lag a manual edit), plus
+ *   the group-level late-pod handoff stamp `agentPipelinePending` /
+ *   `agentPipelinePendingAt` / `agentPipelineCaughtUpAt` (see
+ *   AGENT_PIPELINE_PENDING_FIELD).
  * - The agent held-set ledger does NOT live on this document. P0 placed an
  *   `agentLedger` field here with an explicit relocation license; P2
  *   exercised it (founder ruling, June 11, 2026) — the ledger is the sibling
