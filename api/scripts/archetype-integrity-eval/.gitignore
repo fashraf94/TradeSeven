@@ -1,2 +1,6 @@
 # Local run artifact from runEval.eval.mjs — not committed.
 last-run-report.json
+
+# Per-run record files from runEval.eval.mjs (one per run, never overwritten,
+# each carrying that run's per-item records) — not committed.
+runs/
