@@ -25,9 +25,13 @@
 // Harness-only — no production read changes; see the override block below.
 
 import { describe, it, vi } from 'vitest';
-import { writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+// The run-file helpers. Imported STATICALLY, unlike the modules below: this one
+// is zero-import, so hoisting it above the vi.mock pulls none of the mocked
+// graph in early. It is pure naming/projection — it grades nothing.
+import { buildRunFile, resolveRunFileName, runFileName } from './runFile.mjs';
 
 // THE PRE-FLIGHT OVERRIDE (2026-09-17). `EVAL_FIT_CHECK=1` runs the corpus with
 // DIRECTIVE_FIT_CHECK_ENABLED true — the state the flip would ship — so the
@@ -180,6 +184,11 @@ async function evalItem(item, index, runIndex) {
       proseAssertsChange: proseAssertsChange(gate.parsed?.response || ''), // informational drift
       proposal: proposalPresent ? prop : null,                 // full _archetypeProposal Gemma emitted
       committedDirectiveText: gate.g.directive?.text ?? null,  // canonical text that got minted (if any)
+      // The agent's reply, verbatim — the SAME value the prose heuristic above
+      // already reads, carried onto the record so the run file can hold it.
+      // aggregate.js and collectHardZeroBreaches read records by named property
+      // only, so no metric and no byte of last-run-report.json moves.
+      replyText: gate.parsed?.response ?? null,
     };
   } catch (err) {
     return {
@@ -287,11 +296,36 @@ describe('Archetype-Integrity OBSERVE reliability eval', () => {
     summarize('core-reversing', hardZeroBreaches.coreReversingCommitted);
     summarize('claimed-but-null', hardZeroBreaches.claimedButNull);
 
+    // One clock for both files, so the run file's stamp and the aggregate's `ts`
+    // name the same instant.
+    const ts = new Date().toISOString();
+
+    // UNCHANGED: same path, same keys, same values, still overwritten each run.
+    // Anything that reads it keeps working.
     writeFileSync(
       join(HERE, 'last-run-report.json'),
-      JSON.stringify({ meta, agg, hardZeroBreaches, ts: new Date().toISOString() }, null, 2),
+      JSON.stringify({ meta, agg, hardZeroBreaches, ts }, null, 2),
     );
+
+    // THE RUN FILE (2026-09-18). Beside the aggregate, one file per run, never
+    // overwritten, carrying the per-item `records` this harness used to discard —
+    // which is why the Sep 17 pre-flight numbers no longer exist on disk
+    // (docs/audits/20260918_JEV_DIRECTION_JUDGE_EXPERIMENT.md §1 finding 2, §9).
+    // `runs/` is gitignored; run files are never committed.
+    const runsDir = join(HERE, 'runs');
+    mkdirSync(runsDir, { recursive: true });
+    const runPath = join(
+      runsDir,
+      resolveRunFileName(runFileName(ts, meta), (name) => existsSync(join(runsDir, name))),
+    );
+    writeFileSync(
+      runPath,
+      JSON.stringify(buildRunFile({ meta, agg, hardZeroBreaches, ts, records }), null, 2),
+    );
+
     // Measurement, not a gate: the run passes; the FOUNDER reads the numbers and
     // decides. (The hard zeros are reported, not asserted.)
+    // Last line of the run: where the per-item records went.
+    console.log(`[eval] run file: ${runPath}`);
   }, 2 * 60 * 60 * 1000); // 2h ceiling — generous headroom for slow-network / rate-limit backoff
 });

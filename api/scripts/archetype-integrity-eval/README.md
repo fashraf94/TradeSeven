@@ -16,8 +16,13 @@ proposals often enough, and the guarantees hold against real adversarial input."
   140 items. `buildCorpus()` flattens the labelled `RAW` blocks.
 - `aggregate.js` — pure metrics aggregation + the `proseAssertsChange` heuristic.
 - `runEval.eval.mjs` — the harness (forces OBSERVE via `vi.mock`, real Gemma calls).
-- `corpus.test.js` / `aggregate.test.js` — hermetic suite tests proving the corpus
-  is complete and the aggregation math is correct (run in the default `vitest run`).
+- `runFile.mjs` — pure helpers for the per-run record file: the name, the
+  never-overwrite rule, and the payload projection. **Zero imports**, grades
+  nothing — `aggregate.js` stays the only place a rate is computed.
+- `corpus.test.js` / `aggregate.test.js` / `runFile.test.js` — hermetic suite tests
+  proving the corpus is complete, the aggregation math is correct, and the run
+  file's naming/no-overwrite/pass-through rules hold (run in the default
+  `vitest run`).
 - `__fixtures__/aggregateGoldenCorpus.js` — the varied synthetic record set the
   math tests share, containing **zero** `fit_mismatch` records.
 - `__fixtures__/aggregate.preBuild.golden.json` — that corpus's metrics captured
@@ -55,8 +60,33 @@ gate's verbatim check) read the flag at call time through the ordinary ESM live
 binding, so one mock lights both. Default is OFF — an unqualified run keeps
 reproducing the pre-flip baseline.
 
-It prints the metrics table + hard zeros to the console and writes
-`last-run-report.json` (gitignored) next to the harness.
+## What a run leaves on disk
+
+It prints the metrics table + hard zeros to the console and writes **two** files,
+both gitignored:
+
+1. `last-run-report.json` — the aggregate, next to the harness. Unchanged: same
+   path, same keys (`{ meta, agg, hardZeroBreaches, ts }`), still overwritten by
+   every run. Anything that reads it keeps working.
+2. `runs/<stamp>_<fit-on|fit-off>.json` — **one file per run, never overwritten**,
+   holding `{ meta, agg, hardZeroBreaches, ts, records }`. Its `agg` is the SAME
+   object the aggregate file reports, so the two can never disagree. The path is
+   the last line the run prints.
+
+`<stamp>` is UTC `YYYYMMDDTHHMMSSZ` — no colons, nothing else Windows rejects in a
+file name. The `fit-on` / `fit-off` half comes from `meta.fitCheckEnabled`, so a
+pre-flight run and a baseline run can never land on the same name. If a name is
+somehow taken (two runs inside one second), the next is suffixed `-1`, `-2`, ….
+
+**Why per-run files exist.** The harness used to compute a verdict for all 140
+items and then discard the per-item `records`, saving only totals — to one file
+that each run overwrote. That is why the Sep 17 pre-flight numbers no longer
+exist on disk, and why which asks Gemma filed, mis-filed or refused was not
+recoverable (`docs/audits/20260918_JEV_DIRECTION_JUDGE_EXPERIMENT.md` §1 finding
+2, §9). Each record now carries the corpus item id, archetype, item kind, the ask
+text, the three expected labels, the gate's classification and status, the id
+filed (or null), the refusal and fit-mismatch flags, and the agent's reply — the
+inputs the direction-judge sets B and F need.
 
 ## What it reports (per archetype + overall)
 - proposal-present / schema-valid rates
