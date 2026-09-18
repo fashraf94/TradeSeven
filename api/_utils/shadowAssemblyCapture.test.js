@@ -3,9 +3,10 @@
 // Archetype Architecture Phase 2 (P2.6) — shadow assembly + envelope
 // plumbing. Locks:
 //
-//   1. SHADOW_ASSEMBLY_ENABLED is ON (the deliberate Phase 2 flag-flip,
-//      second in the flip sequence after manifest-write `335e38de`; the
-//      P2.6 merge-dark exit criterion held until that flip)
+//   1. SHADOW_ASSEMBLY_ENABLED is OFF — dark since the 2026-09-12 flip-off.
+//      It shipped ON from the Phase 2 activation flip (PR #671, second in the
+//      sequence after manifest-write `335e38de`) until then; the lock below
+//      moves with the flag, in the flip's own commit.
 //   2. A-1 envelope: manifest-anchored (null without a manifest — no
 //      envelope-less record can exist), validator-green with one, tickId =
 //      cronStart + battleId
@@ -103,7 +104,7 @@ function makeFakeDb({ failCreateWith = null } = {}) {
   return { created, updated, collection(name) { return { doc: (id) => ref(`${name}/${id}`) }; } };
 }
 
-describe('P2.6 activation', () => {
+describe('P2.6 flag state', () => {
   it('SHADOW_ASSEMBLY_ENABLED is OFF — the deliberate flip-off this suite guards', () => {
     // Flipped false→true in the Phase 2 activation PR #671 (2026-07-24), then
     // true→false on 2026-09-12: the DR-10 stage-1 corpus has exactly one

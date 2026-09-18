@@ -23,11 +23,14 @@ export const HAIKU_POST_CALL_ALLOWANCE_MS = 12_000;
 // sequential Firestore batches, which is the only shape that gets near this.
 //
 // SCOPE, stated so this is not read as more than it is: it bounds the DECIDER'S
-// build only — the one call whose result is sent to the model. The shadow
-// capture rebuilds the same block twice more per tick (shadowAssemblyCapture.js
-// buildShadowDiffRecord, both awaited before battleRef.update), and those two
-// are NOT bounded by this constant. A Firestore hang there still costs the
-// write. Bounding them is a separate task; it is not fixed here.
+// build only — the one call whose result is sent to the model. That is now the
+// tick's ONLY unbounded-build exposure. The shadow capture used to rebuild the
+// same block twice more per tick (shadowAssemblyCapture.js buildShadowDiffRecord,
+// both awaited before battleRef.update) and neither rebuild was bounded by this
+// constant — but SHADOW_ASSEMBLY_ENABLED went off 2026-09-12 and the tick no
+// longer enters that module, so those two awaits are gone rather than fixed. A
+// re-flip reopens both, which is why the DARK_BY_DESIGN entry for that flag
+// (src/config/flagPinGuard.test.js) requires the re-flip brief to bound them.
 //
 // REVISIT once `buildMs` has a week of production data.
 export const PROMPT_BUILD_CEILING_MS = 10_000;
