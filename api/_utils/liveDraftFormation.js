@@ -67,7 +67,7 @@ import {
   isoWeekString,
 } from '../../src/constants/leagueTournament.js';
 import { LEAGUE_CANONICAL_OPEN_CAPTURE } from '../../src/config/featureFlags.js';
-import { LIVE_DRAFT_SLOTS, ET_WEEKDAY_NAMES, slotById } from '../../src/config/liveDraftSlots.js';
+import { LIVE_DRAFT_SLOTS, ET_WEEKDAY_NAMES, slotById, isSlotEnabled } from '../../src/config/liveDraftSlots.js';
 
 const LOG_PREFIX = '[LiveDraftFormation]';
 
@@ -337,11 +337,17 @@ function buildInitialSlotGroupDoc({ odUserId, displayName, slotId, scheduledDraf
  *   - not FORMING       → `draft_already_started` (the slot has fired).
  * Returns `{ groupId, slotId, scheduledDraftAt, battleStartWeek, humanCount,
  * created, joined, alreadyClaimed }`. Throws SLOT_SENTINEL_PREFIX errors
- * (unknown_slot / slot_full / draft_already_started / not_a_slot_group).
+ * (unknown_slot / slot_disabled / slot_full / draft_already_started /
+ * not_a_slot_group).
  */
 export async function claimSlotSeat(db, { slotId, odUserId, displayName = null, now = new Date() } = {}) {
   const slot = slotById(slotId);
   if (!slot) throw slotError('unknown_slot');
+  // Disabled slot (liveDraftSlots.js `enabled: false`) — refuse BEFORE any read
+  // or write, so a disabled slot can never lazily create its occurrence group.
+  // Distinct from unknown_slot on purpose: the id is real and reserved, it is
+  // just off the board for now.
+  if (!isSlotEnabled(slot)) throw slotError('slot_disabled');
   if (typeof odUserId !== 'string' || odUserId.length === 0) throw slotError('bad_user');
 
   const { fireIso, fireEtDate } = nextSlotFireInstant(slot, now);
@@ -468,7 +474,13 @@ export async function releaseSlotSeat(db, groupId, { odUserId, now = new Date() 
  * names. A cheap per-occurrence doc read (one get per slot), no subscription.
  * Returns an array of
  * `{ slotId, label, weekday, scheduledDraftAt, battleStartWeek, groupId,
- *    humanCount, isFull, seats:[{ odUserId, name }] }`.
+ *    humanCount, isFull, enabled, seats:[{ odUserId, name }] }`.
+ *
+ * A DISABLED slot is REPORTED (`enabled: false`), never omitted: dropping the
+ * row would make the slot vanish from the picker with no explanation, and would
+ * also hide any group already claimed under it before the disable — which is
+ * exactly what the founder needs to see. The picker reads `enabled` and closes
+ * its own claim door; the server refusal in claimSlotSeat is the real gate.
  */
 export async function getSlotOccupancy(db, now = new Date()) {
   const rows = LIVE_DRAFT_SLOTS.map((slot) => {
@@ -497,6 +509,7 @@ export async function getSlotOccupancy(db, now = new Date()) {
       groupId: r.groupId,
       humanCount: members.length,
       isFull: members.length >= GROUP_SIZE,
+      enabled: isSlotEnabled(r.slot),
       seats: members.map((odUserId) => ({ odUserId, name: seatNames[odUserId] ?? null })),
     };
   });

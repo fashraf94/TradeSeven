@@ -26,30 +26,10 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { fetchDailyOHLCV, mapDailyRows } from './marketDataCache.js';
 import { calculateAllIndicators, calculateSMA, calculateMACD } from './technicalCalculations.js';
-
-const DAY_MS = 86_400_000;
-
-// An EODHD `/eod/` payload: newest-first weekday rows, gently trending with a
-// wobble so ATR/Bollinger/RSI are non-degenerate and nothing here depends on
-// flat data. 90 weekdays clears MACD's 35-row and SMA50's 50-row minimums with
-// room, which is what makes "the same series minus one row" a fair comparison.
-function eodPayload(n = 90) {
-  const rows = [];
-  const today = Date.UTC(2026, 5, 15);
-  for (let i = 0; i < n; i++) {
-    const close = Number((120 + i * 0.35 + Math.sin(i / 3) * 1.8).toFixed(4));
-    rows.push({
-      date: new Date(today - i * DAY_MS).toISOString().slice(0, 10),
-      open: Number((close - 0.25).toFixed(4)),
-      high: Number((close + 1.2).toFixed(4)),
-      low: Number((close - 1.2).toFixed(4)),
-      close,
-      adjusted_close: close,
-      volume: 4_000_000 + (i % 5) * 120_000,
-    });
-  }
-  return rows;
-}
+// Moved to __fixtures__ so the universe cron's mapper battery
+// (api/cron/cronDailyRowHygiene.test.js) drives the IDENTICAL payload shape
+// through the IDENTICAL mapper. One fixture, one contract.
+import { eodPayload } from './__fixtures__/eodPayload.js';
 
 function stubFetch(rows) {
   vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({

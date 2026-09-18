@@ -42,7 +42,9 @@
 //                `fundAsOf` (the fundamentals vintage as a UTC date, the
 //                FUNDAMENTALS block's own header rule) and `rankingsAt` (the
 //                stockRankings doc's computedAt).
-//   candidates — the decider's own anticipation output (D-112): the four
+//   candidates — the decider's anticipation output (D-112) as the cron hands it
+//                over — every item it wrote while the threshold lint is 'off' or
+//                'shadow'; the surviving items once the lint is 'on': the four
 //                required tool fields plus the optional `signalSource` tag;
 //                `rationale` cut. Persisted here, rendered ONLY through the
 //                D-103 composer (voiceLayerAnticipation.js) — `threshold` is
@@ -304,7 +306,10 @@ export function composeCandidatesStamp(anticipationCandidates) {
  * @param {Object} p.controlResolution         the cron's resolveControls() result (same
  *                                             argument list as the fenced assembler, on the
  *                                             in-memory battle)
- * @param {Array}  [p.anticipationCandidates]  haikuResult.anticipationCandidates
+ * @param {Array}  [p.anticipationCandidates]  the decider's raw items as the cron
+ *                                             hands them over: the threshold-lint's
+ *                                             output, which IS that same reference
+ *                                             while the lint ships 'off'
  * @param {Array}  p.assetScores               fenced scorer output for the held book
  * @param {Object} p.prices                    the tick's quote table
  * @param {Object} p.momentumData              { vwap, rankings, rankingsMap, techScoresMap, … }

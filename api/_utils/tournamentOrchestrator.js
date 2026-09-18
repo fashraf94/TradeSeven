@@ -1,8 +1,8 @@
 // api/_utils/tournamentOrchestrator.js
 //
 // P3b — the Tournament Orchestrator (Spec §1.3; founder Ruling A, verbatim).
-// One cron entry (vercel.json: */10 over the morning + Friday-evening UTC
-// hour set, Mon–Fri) feeds this ET-aware dispatcher, which routes every tick
+// One cron entry (vercel.json: */10 over the morning + evening UTC hour set,
+// Mon–Fri) feeds this ET-aware dispatcher, which routes every tick
 // through the ruled duty table:
 //
 //   Mon morning   → advancement catch-up check, then the per-group Monday
@@ -20,9 +20,14 @@
 //                   an agent with NO battle yet falls back to Monday's
 //                   drafted six from the stream record (a failed Monday
 //                   deploy keeps retrying all week, never a one-week gap).
-//   Fri evening   → round advancement + champion (tournamentAdvancement.js);
-//                   a loud "banking pending" no-op until day-5 is banked
-//                   (banking lands ~17:15 ET on the nightly handler).
+//   Any weekday   → round advancement + champion (tournamentAdvancement.js);
+//   evening         a loud "banking pending" no-op until day-5 is banked
+//                   (banking lands ~17:15 ET on the nightly handler). Routed on
+//                   BANKED-ness, not on Friday: a holiday-short week banks its
+//                   fifth day the FOLLOWING Monday, and a Friday-only finalizer
+//                   left it in BATTLE — deploying daily, clamping nightly,
+//                   "Day 6 of 5" on the arena — until that Friday. Same cron,
+//                   same duty name (markers are date-scoped), same gate.
 //   anything else → one quiet skip line. NEVER self-reinvokes.
 //
 // TWO-GRAIN IDEMPOTENCY (ruled): per-duty/per-ET-date markers on
@@ -36,6 +41,19 @@
 // markers under a 'sim:' namespace — a smoke run can never pre-satisfy a
 // real future duty (code-review finding, June 12, 2026). Zero groups is a
 // clean no-op: one quiet log line, ZERO writes (test-locked).
+//
+// N1 LATE-POD CATCH-UP (durable fix, Sep 2026): the duty marker is per-DAY,
+// but a competitive pod can reach BATTLE AFTER the day's Monday duty completed
+// (the Mon 08:45 slot completes ~09:00 ET; the 07:00 tick set the marker), and
+// every later tick short-circuited on the marker — the pod played the week
+// with no agent layer and nothing noticed (docs/audits/2026-09-12_N1_MON0845_
+// AGENT_LAYER_DISCOVERY.md). The two completion handoffs now stamp such a pod
+// `agentPipelinePending`, and every weekday-morning tick runs
+// runPendingPodCatchUp AFTER the marker check — the same per-pod steps the
+// Monday pipeline runs (ONE home: runGroupAgentLayer), the same pacing and
+// tick budget, clearing the stamp on a caught-up pass and keeping it on
+// failure. The marker's meaning is untouched: it still suppresses re-work of
+// the pods the duty processed; it no longer suppresses a late arrival.
 //
 // TIME BUDGET (ruled): sequential with ≥20s pacing between REAL deploy
 // calls — enforced ACROSS group boundaries by duty-scoped pacing state
@@ -69,8 +87,10 @@ import {
   STREAMS_SUBCOLLECTION,
   AGENT_DRAFT_STREAM_DOC_ID,
   AGENT_BOARDS_SUBCOLLECTION,
+  isAgentPipelinePending,
+  agentPipelineClearedStamp,
 } from '../../src/constants/leagueTournament.js';
-import { getEtParts, formatEtDate } from './tournamentTime.js';
+import { getEtParts, formatEtDate, isEtTradingDay } from './tournamentTime.js';
 import { fetchEligibleGroupsByStatus } from './tournamentGroupService.js';
 import { produceGroupBoards } from './tournamentAgentBoards.js';
 import { resolveAgentDraftForGroup } from './tournamentAgentDraft.js';
@@ -111,13 +131,34 @@ export const DUTY = Object.freeze({
   SKIP: 'skip',
 });
 
-const MORNING_END_MIN = 12 * 60; // ET noon splits morning duties from the Friday-evening duty
+const MORNING_END_MIN = 12 * 60; // ET noon splits the morning duties from the evening advancement duty
 
 // ==================== DISPATCH (pure) ====================
 
 /**
  * The ruled duty table, ET-aware (Intl via tournamentTime — the DST pattern
  * of record; the UTC schedule fires both DST arms, this guard routes them).
+ *
+ * ADVANCEMENT ROUTES ON EVERY WEEKDAY EVENING, NOT ONLY FRIDAY. A week is five
+ * BANKED days, not five calendar days (tournamentBanking.js:140 counts banked
+ * days), so a holiday-short week banks its day 5 on the FOLLOWING Monday — and
+ * a Friday-only finalizer then left the group in BATTLE for the rest of that
+ * week: fresh battles deployed daily, the banking clamp firing nightly, and the
+ * arena reading "Day 6 of 5". Routing every weekday evening seals the week on
+ * the first evening after it banks, whatever weekday that is.
+ *
+ * Nothing else had to change for this, which is why it is one term:
+ *   - the evening UTC hours (21/22/23) ALREADY fire Mon–Fri (vercel.json:177),
+ *     so the cron budget is untouched — §6, 39/40, no new entry;
+ *   - isWeekBanked is ALREADY the gate — an unbanked group is a logged no-op
+ *     (tournamentAdvancement.js:311-315), so Mon–Thu in a normal week is inert;
+ *   - markers are ALREADY per-duty/per-ET-date (dutyMarkerKey), and
+ *     isDutySatisfied ALREADY withholds while bankingPending > 0 — i.e. "retry
+ *     until the week banks", which is exactly the wanted semantics;
+ *   - banking commits at 21:15 UTC and the first evening tick is 21:20 UTC, so
+ *     the ordering holds in both DST arms.
+ * The duty NAME stays `friday_advancement`: the marker key is date-scoped, so
+ * reusing the string is safe and avoids orphaning 14 days of live markers.
  */
 export function getDutyForInstant(now = new Date()) {
   const { weekday, date, minutes, etTime } = getEtParts(now);
@@ -125,7 +166,7 @@ export function getDutyForInstant(now = new Date()) {
   let duty = DUTY.SKIP;
   if (morning && weekday === 'Mon') duty = DUTY.MONDAY_PIPELINE;
   else if (morning && ['Tue', 'Wed', 'Thu', 'Fri'].includes(weekday)) duty = DUTY.WEEKDAY_FANOUT;
-  else if (!morning && weekday === 'Fri') duty = DUTY.FRIDAY_ADVANCEMENT;
+  else if (!morning && ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].includes(weekday)) duty = DUTY.FRIDAY_ADVANCEMENT;
   return { duty, etDate: date, etTime, weekday };
 }
 
@@ -356,7 +397,9 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  *
  * `seats` = [{agentId, odUserId, isCpu, symbols}] in groupMembers order.
  * `latestBattles` lets the weekday caller pass its already-fetched map.
- * Returns {deployed, skipped, gated, skippedExisting, cooled, failed, deferred}.
+ * Returns {deployed, skipped, gated, skippedExisting, emptySeats, cooled, failed,
+ * deferred}. `emptySeats` is the loud zero-seat guard below — 1 when this group
+ * was served no seats at all while the deploy gate was open.
  * `skipped` = a 200 whose body reported battleCreated:false (no battle created —
  * e.g. a casual battle already blocks the agent, G2); it is NOT a `deployed`.
  */
@@ -370,7 +413,26 @@ export async function fanOutDeploys(db, {
 }) {
   const nowIso = now.toISOString();
   const etDate = formatEtDate(now);
-  const out = { deployed: 0, skipped: 0, gated: 0, skippedExisting: 0, cooled: 0, failed: 0, deferred: 0 };
+  const out = { deployed: 0, skipped: 0, gated: 0, skippedExisting: 0, emptySeats: 0, cooled: 0, failed: 0, deferred: 0 };
+
+  // ZERO SEATS WITH THE GATE OPEN IS A FAILURE, NOT A NO-OP. A group reached
+  // this call, so it exists and is live; producing no seat for it means the
+  // upstream seat assembly found nothing to deploy — the exact shape that hid
+  // the Labor Day 2026 gap for four days, because a zero-length loop returns
+  // all-zero counters, logs nothing, and isDutySatisfied then marks the duty
+  // COMPLETE. Said loudly here (ONE home, inherited by all three callers) and
+  // counted, so the marker is withheld (isDutySatisfied) instead of recording a
+  // successful fan-out that deployed nothing.
+  //
+  // This does NOT fire when there is simply no work: fanOutDeploys is called
+  // PER GROUP, so emptySeats > 0 can only mean "a group existed and none of its
+  // seats were served". Zero active groups never reaches this function at all.
+  // Gate-closed (deployEnabled false) stays quiet — nothing was meant to deploy.
+  if (deployEnabled && seats.length === 0) {
+    console.error(`${LOG_PREFIX} group ${groupId}: ZERO SEATS fanned out on ${etDate} while deploy is ENABLED — the agent layer did NOT deploy for this group today and the duty will NOT be marked complete. Founder attention: check that streams/agentDraft exists for this group (the Monday pipeline writes it; a pod stamped agentPipelinePending gets it from the late-pod catch-up instead).`);
+    out.emptySeats++;
+    return out;
+  }
 
   const latest = latestBattles
     ?? await latestTournamentBattlesByAgent(db, groupId, ['agentId', 'createdAt', 'gameMode']);
@@ -533,7 +595,24 @@ export async function runMondayPipeline(db, {
     deferredBoards: 0,   // finding #5 fallback: auto-commit couldn't heal
     refusedSynthetic: 0, // P3a contract: synthetic > 0 on a real group
     drafted: 0,
-    deploys: { deployed: 0, skipped: 0, gated: 0, skippedExisting: 0, cooled: 0, failed: 0, deferred: 0 },
+    // NEVER DEPLOY INTO A CLOSED MARKET. createAgentBattle stamps
+    // timing.tradingDays from getNextMarketClose (agentBattleService.js:119,
+    // :377), which on a closed day skips forward to the NEXT trading day — so a
+    // battle created on a holiday is a battle for TOMORROW, opened with today's
+    // stale (previous-session) baselines instead of the trading day's own.
+    //
+    // It does NOT double-count. decide.js:711-727 refuses to create a second
+    // battle while the agent holds an active, unexpired one, so the next trading
+    // day's fan-out returns battleCreated:false and exactly one battle exists per
+    // trading day either way. What that costs instead is a WASTED DECISION: both
+    // model calls (strategy + portfolio) run before that check, so the discarded
+    // call is paid for in full, per agent, per closed day.
+    //
+    // So: resolve the draft, skip the deploy, let the first trading day open the
+    // battle with its own baselines. Same guard in runWeekdayFanout for the
+    // Tue–Fri holidays (Thanksgiving, Christmas, New Year's).
+    deployDeferredMarketClosed: 0,
+    deploys: { deployed: 0, skipped: 0, gated: 0, skippedExisting: 0, emptySeats: 0, cooled: 0, failed: 0, deferred: 0 },
     deferredToNextTick: 0,
     errors: 0,
   };
@@ -541,6 +620,11 @@ export async function runMondayPipeline(db, {
 
   const dutyState = state ?? await readOrchestratorState(db);
   const pacingState = pacing ?? { lastSentAt: 0 }; // shared with the tick's sweep when passed; else duty-scoped
+  // Whether TODAY is a trading day — the same for every group in this tick, so
+  // read once. Gates step 4 only; steps 1–3 run on a holiday Monday exactly as
+  // on any other (see the step-4 comment).
+  const tradingDay = isEtTradingDay(now);
+  const etDate = formatEtDate(now);
 
   for (let i = 0; i < groups.length; i++) {
     if (budget && Date.now() - budget.startMs > budget.deadlineMs) {
@@ -588,48 +672,18 @@ export async function runMondayPipeline(db, {
       }
       if (group.status !== GROUP_STATUS.BATTLE) continue;
 
-      // ---- Step 2: agent boards (refuse synthetic on a real group —
-      // EVERY tick: produceGroupBoards counts pre-existing synthetic
-      // boards on the skip path, so the refusal can never be one-shot) ----
-      const boards = await produceGroupBoards(db, group, { anthropic, now });
-      if (boards.synthetic > 0) {
-        console.error(`${LOG_PREFIX} group ${group.id}: REFUSING PIPELINE — ${boards.synthetic} SYNTHETIC board(s) on a real group (missing agent registration; P3a contract, tournamentAgentBoards.js). Founder attention required.`);
-        summary.refusedSynthetic++;
-        continue;
-      }
-      if (boards.errors > 0) {
-        console.error(`${LOG_PREFIX} group ${group.id}: ${boards.errors} board production error(s) — agent draft would refuse; retrying next tick`);
-        summary.errors++;
-        continue;
-      }
-
-      // ---- Step 3: agent draft + 24-held verification ----
-      const draft = await resolveAgentDraftForGroup(db, group, { now });
-      if (draft.status === 'acquisition_conflict') {
-        console.error(`${LOG_PREFIX} group ${group.id}: ACQUISITION CONFLICT — founder attention, never blind retry:`, JSON.stringify(draft.conflicts));
-        summary.errors++;
-        continue;
-      }
-      if (draft.heldCount !== AGENT_MARKET_SIZE) {
-        console.error(`${LOG_PREFIX} group ${group.id}: held-count ${draft.heldCount} ≠ ${AGENT_MARKET_SIZE} — deploy fan-out withheld`);
-        summary.errors++;
-        continue;
-      }
-      summary.drafted++;
-
-      // ---- Step 4: deploy fan-out [P4-gated] ----
-      const seats = await seatsFromDraftStream(db, group);
-      if (!seats) {
-        console.error(`${LOG_PREFIX} group ${group.id}: agent-draft stream missing after resolution — retrying next tick`);
-        summary.errors++;
-        continue;
-      }
-      await attachRiderSix(db, group, seats);
-      const fanout = await fanOutDeploys(db, {
-        groupId: group.id, seats, now, state: dutyState, budget, fetchImpl, deployEnabled, pacing: pacingState, pacingMs,
+      // ---- Steps 2–4: boards → agent draft → deploy fan-out. ONE home
+      // (runGroupAgentLayer), shared with the N1 late-pod catch-up so a pod
+      // that reaches BATTLE behind the marker gets byte-identical treatment. ----
+      const layer = await runGroupAgentLayer(db, group, {
+        now, anthropic, fetchImpl, budget, state: dutyState, deployEnabled, pacing: pacingState, pacingMs,
+        tradingDay, etDate, label: 'Monday pipeline',
       });
-      for (const key of Object.keys(summary.deploys)) summary.deploys[key] += fanout[key];
-      console.log(`${LOG_PREFIX} group ${group.id}: Monday pipeline done — drafted six per agent; deploys: ${JSON.stringify(fanout)}`);
+      if (layer.drafted) summary.drafted++;
+      if (layer.step === 'refused_synthetic') { summary.refusedSynthetic++; continue; }
+      if (layer.step === 'deploy_deferred_market_closed') { summary.deployDeferredMarketClosed++; continue; }
+      if (layer.step !== 'deployed') { summary.errors++; continue; }
+      for (const key of Object.keys(summary.deploys)) summary.deploys[key] += layer.fanout[key];
     } catch (err) {
       console.error(`${LOG_PREFIX} group ${group.id}: Monday pipeline FAILED:`, err.message);
       summary.errors++;
@@ -651,11 +705,30 @@ export async function runWeekdayFanout(db, {
     groups: groups.length,
     noBattles: 0,
     mondayCatchupSeats: 0,
-    deploys: { deployed: 0, skipped: 0, gated: 0, skippedExisting: 0, cooled: 0, failed: 0, deferred: 0 },
+    // N1: pods stamped agentPipelinePending are the late-pod catch-up's to
+    // serve (it runs on this same tick, after the duty); the fan-out leaves
+    // them alone. Counted here so the duty summary says so; NOT a marker input.
+    pendingCatchUp: 0,
+    deployDeferredMarketClosed: 0,
+    deploys: { deployed: 0, skipped: 0, gated: 0, skippedExisting: 0, emptySeats: 0, cooled: 0, failed: 0, deferred: 0 },
     deferredToNextTick: 0,
     errors: 0,
   };
   if (groups.length === 0) return summary;
+
+  // Vercel crons are holiday-blind (`* * 1-5`), so a Tue–Fri NYSE holiday —
+  // Thanksgiving, Christmas, New Year's — fires this duty into a closed market.
+  // Deploying there opens tomorrow's battle a day early on today's stale
+  // baselines and burns a decision decide.js then discards (the full reasoning
+  // sits on deployDeferredMarketClosed in runMondayPipeline; this is the same
+  // guard on the other four weekdays). Placed AFTER the group read so the
+  // summary still reports what was live, and so the duty keeps its ONE
+  // eligibility fetch (p4Flips.test.js counts those call sites).
+  if (!isEtTradingDay(now)) {
+    summary.deployDeferredMarketClosed = groups.length;
+    console.log(`${LOG_PREFIX} ${formatEtDate(now)} is not a trading day — incumbent fan-out DEFERRED for ${groups.length} group(s); the next trading day redeploys them`);
+    return summary;
+  }
 
   const dutyState = state ?? await readOrchestratorState(db);
   // Shared with the same-tick training-activation sweep (when the tick passes
@@ -669,6 +742,19 @@ export async function runWeekdayFanout(db, {
       break;
     }
     const group = groups[i];
+    // N1 durable fix: a pod whose agent pipeline is still PENDING (it reached
+    // BATTLE behind a duty marker and has not been caught up yet) has no
+    // stream and no battles for this fan-out to redeploy — running it here
+    // would only trip the ZERO SEATS guard (a false alarm) and withhold this
+    // duty's marker for a tick. The late-pod catch-up serves it on this same
+    // tick, right after the duty; once caught up (stamp cleared) it is an
+    // ordinary incumbent here from the next day on. `groups` still counts it
+    // (so the tick never reads "zero groups" while a stamped pod exists).
+    if (isAgentPipelinePending(group)) {
+      summary.pendingCatchUp++;
+      console.log(`${LOG_PREFIX} group ${group.id}: agent pipeline PENDING (stamped ${group.agentPipelinePendingAt ?? 'at an unknown instant'}) — left to the late-pod catch-up on this tick; incumbent fan-out skipped`);
+      continue;
+    }
     try {
       const latest = await latestTournamentBattlesByAgent(db, group.id);
       if (latest.size === 0 && !deployEnabled) {
@@ -780,7 +866,7 @@ export async function activateTrainingPod(db, group, {
     groupId: group.id,
     clones: { created: 0, existing: 0, skipped: 0 },
     drafted: false,
-    deploys: { deployed: 0, skipped: 0, gated: 0, skippedExisting: 0, cooled: 0, failed: 0, deferred: 0 },
+    deploys: { deployed: 0, skipped: 0, gated: 0, skippedExisting: 0, emptySeats: 0, cooled: 0, failed: 0, deferred: 0 },
     errors: 0,
   };
   if (group.isTraining !== true || group.status !== GROUP_STATUS.BATTLE) {
@@ -895,17 +981,223 @@ export async function sweepTrainingActivation(db, {
   return summary;
 }
 
+// ==================== PER-GROUP AGENT LAYER (shared) ====================
+
+/**
+ * Steps 2–4 of the Monday pipeline for ONE competitive BATTLE group — agent
+ * boards (refuse synthetic on a real group) → agent draft + 24-held → deploy
+ * fan-out (deferred on a non-trading day). ONE home, shared by runMondayPipeline
+ * (the Monday duty) and runPendingPodCatchUp (the N1 late-pod catch-up), so a
+ * pod that reaches BATTLE behind the duty marker gets byte-identical treatment
+ * to one the duty saw. Every step is individually resumable (existing boards
+ * are skipped, an existing stream returns already_resolved, today's-battle is
+ * the deploy guard), so re-entry from either caller is a cheap no-op.
+ *
+ * Returns { step, drafted, fanout }: `step` is the terminal outcome —
+ *   'refused_synthetic' | 'board_errors' | 'acquisition_conflict' | 'held_count'
+ *   | 'stream_missing' | 'deploy_deferred_market_closed' | 'deployed'
+ * — `drafted` is true once the 24-held verification passed, and `fanout` is
+ * the fanOutDeploys counters (null unless step === 'deployed'). Callers fold
+ * these into their own summaries; the per-group log lines name the caller
+ * via `label`.
+ */
+async function runGroupAgentLayer(db, group, {
+  now, anthropic, fetchImpl, budget, state, deployEnabled, pacing, pacingMs,
+  tradingDay, etDate, label,
+}) {
+  // ---- Step 2: agent boards (refuse synthetic on a real group —
+  // EVERY tick: produceGroupBoards counts pre-existing synthetic
+  // boards on the skip path, so the refusal can never be one-shot) ----
+  const boards = await produceGroupBoards(db, group, { anthropic, now });
+  if (boards.synthetic > 0) {
+    console.error(`${LOG_PREFIX} group ${group.id}: REFUSING PIPELINE — ${boards.synthetic} SYNTHETIC board(s) on a real group (missing agent registration; P3a contract, tournamentAgentBoards.js). Founder attention required.`);
+    return { step: 'refused_synthetic', drafted: false, fanout: null };
+  }
+  if (boards.errors > 0) {
+    console.error(`${LOG_PREFIX} group ${group.id}: ${boards.errors} board production error(s) — agent draft would refuse; retrying next tick`);
+    return { step: 'board_errors', drafted: false, fanout: null };
+  }
+
+  // ---- Step 3: agent draft + 24-held verification ----
+  const draft = await resolveAgentDraftForGroup(db, group, { now });
+  if (draft.status === 'acquisition_conflict') {
+    console.error(`${LOG_PREFIX} group ${group.id}: ACQUISITION CONFLICT — founder attention, never blind retry:`, JSON.stringify(draft.conflicts));
+    return { step: 'acquisition_conflict', drafted: false, fanout: null };
+  }
+  if (draft.heldCount !== AGENT_MARKET_SIZE) {
+    console.error(`${LOG_PREFIX} group ${group.id}: held-count ${draft.heldCount} ≠ ${AGENT_MARKET_SIZE} — deploy fan-out withheld`);
+    return { step: 'held_count', drafted: false, fanout: null };
+  }
+
+  // ---- Step 4: deploy fan-out [P4-gated] ----
+  const seats = await seatsFromDraftStream(db, group);
+  if (!seats) {
+    console.error(`${LOG_PREFIX} group ${group.id}: agent-draft stream missing after resolution — retrying next tick`);
+    return { step: 'stream_missing', drafted: true, fanout: null };
+  }
+
+  // A NON-TRADING day is not a deploy day — see deployDeferredMarketClosed in
+  // runMondayPipeline for why. Steps 2–3 still run, so the draft stream (the
+  // durable artifact a holiday-shifted pod used to be missing entirely) is
+  // written and the Tue–Fri catch-up deploys the drafted six on the first
+  // trading day. NOT an error: the pod's Monday job is done, so the duty marker
+  // is still set (and the late-pod stamp cleared) and nothing re-runs all
+  // morning. Reachable by every ranked group on a holiday Monday, not just a
+  // holiday-shifted slot pod.
+  if (!tradingDay) {
+    console.log(`${LOG_PREFIX} group ${group.id}: ${label} done — drafted six per agent; deploy DEFERRED (${etDate} is not a trading day) — the Tue–Fri incumbent catch-up deploys the drafted six on the first trading day`);
+    return { step: 'deploy_deferred_market_closed', drafted: true, fanout: null };
+  }
+
+  await attachRiderSix(db, group, seats);
+  const fanout = await fanOutDeploys(db, {
+    groupId: group.id, seats, now, state, budget, fetchImpl, deployEnabled, pacing, pacingMs,
+  });
+  console.log(`${LOG_PREFIX} group ${group.id}: ${label} done — drafted six per agent; deploys: ${JSON.stringify(fanout)}`);
+  return { step: 'deployed', drafted: true, fanout };
+}
+
+// ==================== N1 — LATE-POD CATCH-UP (durable fix) ====================
+//
+// THE DEFECT (docs/audits/2026-09-12_N1_MON0845_AGENT_LAYER_DISCOVERY.md,
+// CONFIRMED): the Monday duty marker is per-ET-date and is set by the first
+// tick that completes a clean pass — 07:00 ET (EDT) / 06:00 ET (EST), the
+// moment the Wed/Sat/Sun slot pods flip to BATTLE. The Mon 08:45 slot pod
+// completes its draft ~09:00 ET and lands inline in BATTLE, and every later
+// Monday tick returned `already_complete` before reaching the pipeline. The
+// agent layer exists ONLY inside the Monday pipeline (the Tue–Fri fan-out needs
+// the stream Monday writes), so the pod banked five clean days with
+// agentPoints 0, no carry marker, no warning, and locked a bracket + permanent
+// RP on half a composite. The FORMING skip at the top of runMondayPipeline was
+// built deliberately ("a Monday-morning tick would steal a Mon-8:45am slot
+// group before it fires") and nothing ever re-opened the door.
+//
+// THE FIX — two halves converged (report §8 fix A + fix B), keyed on
+// per-group state rather than marker history (the state doc prunes markers
+// after 14 days, so "no marker" can never be read as "never processed"):
+//   - the HANDOFF: both slot completion paths (computeHandoffWrites' inline
+//     flip, flipAwaitingOpenPods' awaiting_open → battle flip) stamp a
+//     competitive pod `agentPipelinePending` in the same transaction as the
+//     status flip (trainingLifecycle.js);
+//   - the EXECUTOR: this function runs on EVERY weekday-morning tick, after the
+//     duty marker has been consulted and the duty (if any) has run, and serves
+//     each stamped BATTLE pod through runGroupAgentLayer — the SAME boards →
+//     draft → deploys the Monday pipeline runs, on the tick's shared pacing and
+//     time budget. A caught-up pass clears the stamp; anything else keeps it so
+//     the next tick retries (a failed deploy sits out its ≥10-min cooldown and
+//     is retried through the stream, exactly as the duty would).
+//   The pipeline is NEVER run inline inside the human pick endpoint: a fan-out
+//   with ≥20s pacing does not belong in a request (§8 fix B's sizing concern).
+//   The cron tick is the executor; the stamp is the handoff.
+//
+// BOUNDS: only BATTLE pods carrying the stamp (competitive; training is
+// excluded — activateTrainingPod owns that layer); the tick's shared
+// DUTY_DEADLINE_MS budget (the remainder defers with stamps kept); the shared
+// ≥20s deploy pacing. The duty marker's meaning is untouched: this never reads
+// or writes it, and its counters never feed isDutySatisfied. A pod the duty
+// already served (a same-tick awaiting_open flip on a clean Monday) re-enters
+// runGroupAgentLayer as a no-op — existing boards skipped, already_resolved,
+// today's-battle guard — and has its stamp cleared.
+
+/** Is one runGroupAgentLayer pass a caught-up agent layer for today — i.e. is
+ * the stamp clearable? The deploy criteria are the Monday duty's own
+ * (isDutySatisfied): nothing failed, cooled, deferred or empty. A market-closed
+ * deferral IS caught up (the draft resolved; the next trading day's fan-out
+ * deploys the drafted six), and gated / battleCreated:false / today's-battle
+ * skips are done work, as they are for the duty. */
+export function isAgentLayerCaughtUp(layer) {
+  if (layer.step === 'deploy_deferred_market_closed') return true;
+  if (layer.step !== 'deployed' || !layer.fanout) return false;
+  const f = layer.fanout;
+  return f.failed === 0 && f.cooled === 0 && f.deferred === 0 && (f.emptySeats || 0) === 0;
+}
+
+/**
+ * Serve every competitive BATTLE pod stamped agentPipelinePending: boards →
+ * agent draft → deploys through runGroupAgentLayer. Runs on every weekday-
+ * morning tick regardless of the duty marker (see the block comment) — on the
+ * already-complete exit and after a dispatched duty; the zero-groups exit is
+ * the one morning exit that skips it, and safely so: a stamped pod is a
+ * competitive BATTLE group, which both morning duties count in `groups`
+ * (identical fetch: status, includeDev, excludeTraining, GROUP_SIZE). Returns
+ * { pending, caughtUp, deferred, errors, deploys }; `pending` is the number of
+ * stamped pods seen, so a zero-pending tick is one read and zero writes.
+ */
+export async function runPendingPodCatchUp(db, {
+  now = new Date(), anthropic = null, fetchImpl = fetch, budget = null,
+  state = null, deployEnabled = TOURNAMENT_DEPLOY_ENABLED, pacingMs = DEPLOY_PACING_MS,
+  includeDevGroups = false, pacing = null,
+} = {}) {
+  const battle = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE, { includeDev: includeDevGroups, excludeTraining: true });
+  const pending = battle.filter(g => isAgentPipelinePending(g));
+  const summary = {
+    pending: pending.length,
+    caughtUp: 0,
+    deferred: 0,
+    errors: 0,
+    deploys: { deployed: 0, skipped: 0, gated: 0, skippedExisting: 0, emptySeats: 0, cooled: 0, failed: 0, deferred: 0 },
+  };
+  if (pending.length === 0) return summary;
+
+  const dutyState = state ?? await readOrchestratorState(db);
+  const pacingState = pacing ?? { lastSentAt: 0 };
+  const tradingDay = isEtTradingDay(now);
+  const etDate = formatEtDate(now);
+  const nowIso = now.toISOString();
+
+  for (let i = 0; i < pending.length; i++) {
+    if (budget && Date.now() - budget.startMs > budget.deadlineMs) {
+      summary.deferred = pending.length - i;
+      console.log(`${LOG_PREFIX} late-pod catch-up: time budget reached — ${summary.deferred} pod(s) deferred to next tick (stamps kept)`);
+      break;
+    }
+    const pod = pending[i];
+    try {
+      console.log(`${LOG_PREFIX} late-pod catch-up: pod ${pod.id} is in battle with its agent pipeline PENDING (stamped ${pod.agentPipelinePendingAt ?? 'at an unknown instant'}) — running boards → agent draft → deploys on ${etDate}`);
+      const layer = await runGroupAgentLayer(db, pod, {
+        now, anthropic, fetchImpl, budget, state: dutyState, deployEnabled, pacing: pacingState, pacingMs,
+        tradingDay, etDate, label: 'late-pod catch-up',
+      });
+      if (layer.fanout) {
+        for (const key of Object.keys(summary.deploys)) summary.deploys[key] += layer.fanout[key];
+      }
+      if (isAgentLayerCaughtUp(layer)) {
+        await db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(pod.id).update(agentPipelineClearedStamp(nowIso));
+        summary.caughtUp++;
+        console.log(`${LOG_PREFIX} late-pod catch-up: pod ${pod.id} caught up (${layer.step}) — agentPipelinePending cleared`);
+      } else {
+        summary.errors++;
+        console.error(`${LOG_PREFIX} late-pod catch-up: pod ${pod.id} NOT caught up (${layer.step}${layer.fanout ? ` ${JSON.stringify(layer.fanout)}` : ''}) — agentPipelinePending KEPT; the next tick retries`);
+      }
+    } catch (err) {
+      summary.errors++;
+      console.error(`${LOG_PREFIX} late-pod catch-up: pod ${pod.id} FAILED (${err.message}) — agentPipelinePending KEPT; the next tick retries`);
+    }
+  }
+  return summary;
+}
+
 // ==================== THE TICK ====================
 
 /** Is this duty pass fully done (nothing deferred) — i.e., marker-worthy? */
 export function isDutySatisfied(duty, summary) {
   if (summary.errors > 0 || summary.deferredToNextTick > 0) return false;
+  // `emptySeats` (fanOutDeploys): a live group served ZERO seats while the deploy
+  // gate was open. Never marker-worthy — an empty fan-out used to be
+  // indistinguishable from a successful one, which is how four consecutive days
+  // recorded as complete fan-outs while nothing deployed. Withholding the marker
+  // makes the next tick retry and keeps the tick's log line on "incomplete".
+  // A deliberately deferred deploy (deployDeferredMarketClosed — a non-trading
+  // Monday) is NOT this: the draft resolved, so the duty IS done and the marker
+  // is set; the Tue–Fri catch-up owns the deploy.
   if (duty === DUTY.MONDAY_PIPELINE) {
     return summary.deferredBoards === 0 && summary.refusedSynthetic === 0
-      && summary.deploys.cooled === 0 && summary.deploys.deferred === 0 && summary.deploys.failed === 0;
+      && summary.deploys.cooled === 0 && summary.deploys.deferred === 0 && summary.deploys.failed === 0
+      && (summary.deploys.emptySeats || 0) === 0;
   }
   if (duty === DUTY.WEEKDAY_FANOUT) {
-    return summary.deploys.cooled === 0 && summary.deploys.deferred === 0 && summary.deploys.failed === 0;
+    return summary.deploys.cooled === 0 && summary.deploys.deferred === 0 && summary.deploys.failed === 0
+      && (summary.deploys.emptySeats || 0) === 0;
   }
   if (duty === DUTY.FRIDAY_ADVANCEMENT) {
     // Emergency freeze (TOURNAMENT_ADVANCEMENT_FROZEN): a frozen pass withheld
@@ -927,6 +1219,13 @@ function markerSummary(duty, summary) {
       // Surfaced so the "incomplete (resumes next tick)" log line shows the
       // freeze explicitly (duty summaries must say what actually happened).
       frozen: summary.frozen ?? 0,
+      // Ditto for banking-pending, and now load-bearing: advancement routes on
+      // every weekday evening, so Mon–Thu in a NORMAL week is structurally
+      // unsatisfiable (nothing has banked five days yet) and every tick logs
+      // "incomplete". Without this count those lines are indistinguishable from
+      // a genuinely wedged Friday. bankingPending === groups is the benign
+      // mid-week shape; bankingPending 0 with the marker still withheld is not.
+      bankingPending: summary.bankingPending ?? 0,
     };
   }
   return {
@@ -934,6 +1233,11 @@ function markerSummary(duty, summary) {
     deployed: summary.deploys?.deployed ?? 0,
     skipped: summary.deploys?.skipped ?? 0,
     gated: summary.deploys?.gated ?? 0,
+    // Surfaced so the "incomplete (resumes next tick)" line names the reason
+    // (duty summaries must say what actually happened) — and so a holiday
+    // Monday's deliberate deferral is visible next to it, not inferred.
+    emptySeats: summary.deploys?.emptySeats ?? 0,
+    ...(summary.deployDeferredMarketClosed ? { deployDeferredMarketClosed: summary.deployDeferredMarketClosed } : {}),
   };
 }
 
@@ -966,15 +1270,21 @@ export async function runOrchestratorTick(db, {
   // anchor DATE has arrived to BATTLE (date-based — the morning window is
   // pre-open in EST, so a timestamp compare would miss every winter). Placed
   // BEFORE the SKIP / already-complete short-circuits so duty idempotency never
-  // gates it; its own catch so a flip failure never blocks the duty; AWAITING_
-  // OPEN is training-only, so ranked/legacy are never seen. Zero new cron.
+  // gates it; its own catch so a flip failure never blocks the duty. NOT
+  // training-only: Competitive Live Draft slot pods (isLiveDraft) also wait in
+  // AWAITING_OPEN for their Monday anchor and are flipped here too — and, on a
+  // Monday, that same-tick flip is what puts them in the Monday pipeline's
+  // BATTLE fetch and sets the duty marker (docs/audits/2026-09-12_N1_MON0845_
+  // AGENT_LAYER_DISCOVERY.md §3.5). Legacy ranked groups never pass through
+  // AWAITING_OPEN (they go FORMING → BATTLE via the Monday resolve). Zero new cron.
   if (routed.duty === DUTY.MONDAY_PIPELINE || routed.duty === DUTY.WEEKDAY_FANOUT) {
     // League Training Slice 2 — idle-draft sweep. Runs BEFORE the awaiting-open
     // flip so a pod auto-completed here (and whose anchor is today) is flipped to
     // BATTLE in this same tick by its own inline completion-flip; the flip below
     // then backstops any pod whose anchor lands on a later date. Own catch so a
-    // sweep failure never blocks the duty; DRAFTING is training-only, so ranked/
-    // legacy are never seen. Zero new cron.
+    // sweep failure never blocks the duty. Competitive slot pods DO sit in
+    // DRAFTING (the live-draft-fire cron drives them); the sweep filters to
+    // isTraining in memory and never touches them. Zero new cron.
     try {
       const sweep = await sweepIdleDraftingPods(db, { now, includeDev: includeDevGroups });
       if (sweep.completed > 0) {
@@ -1032,9 +1342,36 @@ export async function runOrchestratorTick(db, {
   }
 
   const state = await readOrchestratorState(db);
+
+  // N1 late-pod catch-up (see the block comment above runPendingPodCatchUp).
+  // Wraps the already-complete and the dispatched exits of a weekday-morning
+  // tick, AFTER the marker check: the marker still decides whether the DUTY
+  // runs; it no longer decides whether a pod stamped agentPipelinePending is
+  // served. (The zero-groups exit is not wrapped — a stamped pod is always
+  // counted in `groups`, see runPendingPodCatchUp.) A morning tick is one
+  // ROUTED to a morning duty (the cron) OR one FORCED to a morning duty
+  // (api/tournament/run-duty.js — the manual recovery lever, which must serve
+  // and clear a stamped pod exactly as the cron would, whatever the instant).
+  // Own catch so it never blocks the duty; shares the tick budget + pacing;
+  // its counters never touch the marker.
+  const isMorningDuty = (d) => d === DUTY.MONDAY_PIPELINE || d === DUTY.WEEKDAY_FANOUT;
+  const morningTick = isMorningDuty(routed.duty) || isMorningDuty(duty);
+  const withPendingCatchUp = async (result) => {
+    if (!morningTick) return result;
+    try {
+      const catchUp = await runPendingPodCatchUp(db, { now, anthropic, fetchImpl, budget, state, includeDevGroups, deployEnabled, pacingMs, pacing });
+      if (catchUp.pending === 0) return result;
+      console.log(`${tag} late-pod catch-up: pending ${catchUp.pending}, caught up ${catchUp.caughtUp}, deferred ${catchUp.deferred}, errors ${catchUp.errors}; deploys ${JSON.stringify(catchUp.deploys)}`);
+      return { ...result, pendingCatchUp: catchUp };
+    } catch (err) {
+      console.error(`${tag} late-pod catch-up failed: ${err.message}`);
+      return result;
+    }
+  };
+
   if (isDutyComplete(state, routed.etDate, duty, { simulated })) {
     console.log(`${tag} duty=${duty} — already complete for ${routed.etDate} (idempotent no-op)`);
-    return { duty, etDate: routed.etDate, etTime: routed.etTime, status: 'already_complete' };
+    return withPendingCatchUp({ duty, etDate: routed.etDate, etTime: routed.etTime, status: 'already_complete' });
   }
 
   console.log(`${tag} duty=${duty} — dispatching`);
@@ -1052,7 +1389,9 @@ export async function runOrchestratorTick(db, {
   }
 
   if ((summary.groups ?? 0) === 0 && (summary.activeBrackets ?? 0) === 0) {
-    // Production inertness: zero groups, zero writes, one quiet line.
+    // Production inertness: zero groups, zero writes, one quiet line. No
+    // catch-up read either: a stamped pod is a competitive BATTLE group, so
+    // both morning duties would have counted it in `groups`.
     console.log(`${tag} duty=${duty} — zero groups (quiet skip)`);
     return { duty, etDate: routed.etDate, etTime: routed.etTime, ...summary };
   }
@@ -1062,5 +1401,5 @@ export async function runOrchestratorTick(db, {
     await markDutyComplete(db, routed.etDate, duty, markerSummary(duty, summary), now.toISOString(), { simulated });
   }
   console.log(`${tag} duty=${duty} — ${satisfied ? 'COMPLETE (marker set)' : 'incomplete (resumes next tick)'}: ${JSON.stringify(markerSummary(duty, summary))}`);
-  return { duty, etDate: routed.etDate, etTime: routed.etTime, complete: satisfied, ...summary };
+  return withPendingCatchUp({ duty, etDate: routed.etDate, etTime: routed.etTime, complete: satisfied, ...summary });
 }

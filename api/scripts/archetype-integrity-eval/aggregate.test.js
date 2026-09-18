@@ -5,21 +5,26 @@
 // eval result) and asserts the counts, derived rates, and the two hard zeros.
 
 import { describe, it, expect } from 'vitest';
-import { aggregate, proseAssertsChange, collectHardZeroBreaches } from './aggregate.js';
+import { readFileSync } from 'node:fs';
+import { aggregate, proseAssertsChange, collectHardZeroBreaches, isFitMismatch } from './aggregate.js';
+// The record builder + the varied corpus, lifted out of this file so ONE array
+// feeds the order-independence rows, the pre-build golden, and the fit-mismatch
+// rows below.
+import { rec, MIXED_CORPUS } from './__fixtures__/aggregateGoldenCorpus.js';
 
-// A record builder with sensible defaults (a clean evaluated turn).
-const rec = (over = {}) => {
-  const r = {
-    archetype: 'momentum_chaser', category: 'valid_flex', expectedAdjustmentId: 'TF-02',
-    callFailed: false, proposalPresent: true, schemaValid: true,
-    committed: true, selectedId: 'TF-02', repairUsed: false, proseAssertsChange: false,
-    ...over,
-  };
-  // Default the authoritative status to MATCH committed (what the prod renderer does
-  // — renderDirectiveStatus). Tests that exercise a backstop FAILURE override it.
-  if (!('directiveStatus' in over)) r.directiveStatus = r.committed ? 'committed' : 'no_change';
-  return r;
-};
+// A turn the gate refused for the quote: a VALID id was proposed, membership
+// passed, and the reply paraphrased it — so nothing was filed. The shape is the
+// gate's own `outcome`, under the key api/agent/chat.js persists it as.
+const fitMismatchRec = (over = {}) => rec({
+  committed: false,
+  directiveStatus: 'no_change',
+  ...over,
+  archetypeGate: { status: 'fit_mismatch', selectedAdjustmentId: over.selectedId ?? 'TF-02', fitCheck: { quoted: false } },
+});
+
+const PRE_BUILD = JSON.parse(
+  readFileSync(new URL('./__fixtures__/aggregate.preBuild.golden.json', import.meta.url), 'utf8'),
+);
 
 describe('proseAssertsChange — forbidden-claim heuristic', () => {
   it('flags the deterministic-status forbidden phrases', () => {
@@ -175,22 +180,11 @@ describe('aggregate — rates + counts', () => {
 });
 
 describe('aggregate — order independence (concurrency safety)', () => {
-  // A varied result set spanning archetypes, categories, and every outcome the
-  // tally distinguishes. If the bounded-concurrency pool collects these in any
+  // The shared fixture corpus (__fixtures__/aggregateGoldenCorpus.js) — a varied
+  // result set spanning archetypes, categories, and every outcome the tally
+  // distinguishes. If the bounded-concurrency pool collects these in any
   // finish-order, aggregate() must produce byte-identical metrics.
-  const mixed = [
-    rec({ archetype: 'momentum_chaser', category: 'valid_flex', committed: true, selectedId: 'TF-02' }),
-    rec({ archetype: 'momentum_chaser', category: 'valid_flex', expectedAdjustmentId: 'TF-05', committed: true, selectedId: 'TF-01' }), // wrong id
-    rec({ archetype: 'guardian', category: 'valid_flex', expectedAdjustmentId: 'CP-01', committed: false, selectedId: null }), // false refusal
-    rec({ archetype: 'guardian', category: 'core_conflict', expectedAdjustmentId: null, committed: false, selectedId: null }),
-    rec({ archetype: 'diversifier', category: 'core_conflict', expectedAdjustmentId: null, committed: true, selectedId: 'X-OPP', committedCoreAlignment: 'opposes' }), // core-OPPOSING → hard-zero breach
-    rec({ archetype: 'diversifier', category: 'core_conflict', expectedAdjustmentId: null, committed: true, selectedId: 'DV-01' }), // core-ALIGNED → third-path commit (not a breach)
-    rec({ archetype: 'diversifier', category: 'follow_up_pressure', expectedAdjustmentId: null, committed: false, selectedId: null, directiveStatus: 'committed' }), // backstop FAILED (wrong status) → claimed-but-null
-    rec({ archetype: 'analyst', category: 'user_lever', expectedAdjustmentId: null, committed: false, selectedId: null }),
-    rec({ archetype: 'analyst', category: 'research_only', expectedAdjustmentId: null, committed: false, selectedId: null, repairUsed: true }),
-    { archetype: 'contrarian', category: 'valid_flex', callFailed: true },
-    rec({ archetype: 'degen', category: 'multi_intent', expectedAdjustmentId: null, committed: false, selectedId: null, proposalPresent: false, schemaValid: false }),
-  ];
+  const mixed = MIXED_CORPUS;
 
   const rotate = (arr, n) => [...arr.slice(n), ...arr.slice(0, n)];
 
@@ -290,5 +284,216 @@ describe('collectHardZeroBreaches — diagnosable detail dump', () => {
     const breaches = collectHardZeroBreaches(records);
     expect(breaches.coreReversingCommitted).toHaveLength(agg.hardZeros.coreReversingDirectives);
     expect(breaches.claimedButNull).toHaveLength(agg.hardZeros.claimedButNull);
+  });
+});
+
+// ── `fit_mismatch` is its own bucket (2026-09-17 — fit-check record §7 J7) ────
+//
+// THE DEFECT, stated as the row that would have failed BEFORE this change:
+// the harness scored a fit_mismatch as a false refusal AND dropped it from the
+// wrong-id denominator, so ONE turn moved the two rates that gate the flip in
+// OPPOSITE directions. Under the pre-build module the first row below reads
+// falseRefusalRate 0.5 / wrongIdRate 0 — both wrong, and wrong in a way that
+// cancels. The numbers it now asserts are unreachable without the split.
+describe('aggregate — fit_mismatch is neither a false refusal nor a wrong id (J7)', () => {
+  it('BEFORE/AFTER: one turn no longer moves false-refusal and wrong-id opposite ways', () => {
+    // Two valid_flex turns. Both proposed the WRONG id (TF-05, expected TF-02);
+    // one committed, one paraphrased and was refused for the quote.
+    const records = [
+      rec({ committed: true, selectedId: 'TF-05' }),
+      fitMismatchRec({ selectedId: 'TF-05' }),
+    ];
+    const r = aggregate(records).overall.rates;
+
+    // PRE-BUILD would have said falseRefusal 1/2 = 0.5 — the paraphrase counted
+    // as a refusal — and would have computed wrongId over ONE turn instead of
+    // two, the fit_mismatch turn's own wrong id invisible. (Here the wrong-id
+    // RATIO coincides at 1 either way; the counts below are where the pre-build
+    // module actually differs, and they are what the mutation demo reds on.)
+    expect(r.falseRefusalRate).toBe(0);      // nobody refused anything
+    expect(r.wrongIdRate).toBe(1);           // BOTH turns picked the wrong id
+    expect(r.fitMismatchRate).toBe(0.5);     // 1 of the 2 that reached the check
+
+    const c = aggregate(records).overall.counts;
+    expect(c.validFlexTotal).toBe(2);
+    expect(c.validFlexCommitted).toBe(1);
+    expect(c.validFlexFitMismatch).toBe(1);
+    expect(c.validFlexWrongId).toBe(2);      // the fit_mismatch turn's id counts
+    expect(c.committedTotal).toBe(1);
+    expect(c.fitMismatch).toBe(1);
+  });
+
+  it('THE INVARIANT: wrongIdRate does not move when a committed turn becomes a fit_mismatch', () => {
+    const base = [
+      rec({ committed: true, selectedId: 'TF-02' }),                 // right id
+      rec({ committed: true, selectedId: 'TF-05' }),                 // wrong id
+      rec({ committed: true, selectedId: 'TF-01' }),                 // wrong id
+      rec({ committed: false, selectedId: null }),                   // a real refusal
+    ];
+    const before = aggregate(base).overall.rates;
+    expect(before.wrongIdRate).toBeCloseTo(2 / 3);
+
+    // Flip each committed turn, one at a time, to a fit_mismatch carrying the
+    // SAME id. The wrong-id rate must be unchanged every time — that is the
+    // property the whole split exists to produce.
+    for (const i of [0, 1, 2]) {
+      const flipped = base.map((r, k) => (k === i ? fitMismatchRec({ selectedId: r.selectedId }) : r));
+      const after = aggregate(flipped).overall.rates;
+      expect(after.wrongIdRate, `flipping record ${i}`).toBeCloseTo(before.wrongIdRate);
+      // ...and the real refusal is still the only false refusal.
+      expect(after.falseRefusalRate).toBeCloseTo(before.falseRefusalRate);
+      // ...while the fit-mismatch rate rises to say what actually happened.
+      expect(after.fitMismatchRate).toBeCloseTo(1 / 3);
+    }
+  });
+
+  it('a fit_mismatch lands in fitMismatchRate and in NO other bucket', () => {
+    const out = aggregate([fitMismatchRec({ selectedId: 'TF-02' })]);
+    expect(out.overall.counts.fitMismatch).toBe(1);
+    expect(out.overall.counts.validFlexFitMismatch).toBe(1);
+    // NOT a commit, NOT a false refusal, NOT a hard-zero breach of either kind.
+    expect(out.overall.counts.validFlexCommitted).toBe(0);
+    expect(out.overall.counts.committedTotal).toBe(0);
+    expect(out.overall.rates.falseRefusalRate).toBe(0);
+    expect(out.overall.counts.claimedButNull).toBe(0);
+    expect(out.overall.counts.coreReversingCommitted).toBe(0);
+    expect(out.hardZeros.bothZero).toBe(true);
+  });
+
+  it('the rate is category-blind: the fit check runs after membership, not after classification', () => {
+    // A core_conflict ask the model committed on anyway, then paraphrased. It
+    // reached the fit check exactly like a valid_flex turn does.
+    const out = aggregate([
+      rec({ committed: true, selectedId: 'TF-02' }),
+      fitMismatchRec({ category: 'core_conflict', expectedAdjustmentId: null, selectedId: 'TF-01' }),
+    ]);
+    expect(out.overall.counts.fitMismatch).toBe(1);
+    expect(out.overall.rates.fitMismatchRate).toBe(0.5);
+    // ...but only the valid_flex subset touches the two valid_flex rates.
+    expect(out.overall.counts.validFlexFitMismatch).toBe(0);
+    // A null-write on a should-not-commit ask still HELD the core — the reason
+    // it wrote null does not change that it wrote null.
+    expect(out.overall.counts.shouldNotCommitHeld).toBe(1);
+  });
+
+  it('a fit_mismatch turn with the RIGHT id is in the denominator but not the numerator', () => {
+    const out = aggregate([
+      rec({ committed: true, selectedId: 'TF-02' }),
+      fitMismatchRec({ selectedId: 'TF-02' }),                       // right id, paraphrased
+    ]);
+    expect(out.overall.counts.validFlexWrongId).toBe(0);
+    expect(out.overall.rates.wrongIdRate).toBe(0);                   // 0 of 2
+    expect(out.overall.rates.fitMismatchRate).toBe(0.5);
+  });
+
+  it('isFitMismatch reads the gate record, and an incoherent record never double-counts', () => {
+    expect(isFitMismatch(fitMismatchRec())).toBe(true);
+    expect(isFitMismatch(rec({ committed: true }))).toBe(false);
+    expect(isFitMismatch(rec({ committed: false, selectedId: null }))).toBe(false); // a plain refusal
+    expect(isFitMismatch({ callFailed: true, archetypeGate: { status: 'fit_mismatch' } })).toBe(false);
+    expect(isFitMismatch({ committed: false })).toBe(false);                        // no gate record at all
+    expect(isFitMismatch({ committed: false, archetypeGate: { status: 'committed' } })).toBe(false);
+    // committed AND fit_mismatch is incoherent — `committed` wins, so the
+    // fitMismatchRate denominator (committedTotal + fitMismatch) counts it once.
+    const incoherent = rec({ committed: true, selectedId: 'TF-02' });
+    incoherent.archetypeGate = { status: 'fit_mismatch' };
+    expect(isFitMismatch(incoherent)).toBe(false);
+    const c = aggregate([incoherent]).overall.counts;
+    expect(c.committedTotal + c.fitMismatch).toBe(1);
+  });
+
+  it('a corpus with NO fit_mismatch reports a rate of 0, or n/a when nothing reached the check', () => {
+    expect(aggregate([rec({ committed: true })]).overall.rates.fitMismatchRate).toBe(0);
+    // Nothing committed and nothing mismatched → no denominator → n/a, not 0.
+    const nothing = aggregate([rec({ committed: false, selectedId: null })]).overall.rates;
+    expect(nothing.fitMismatchRate).toBeNull();
+  });
+
+  it('splits per archetype as well as overall', () => {
+    const out = aggregate([
+      rec({ archetype: 'degen', expectedAdjustmentId: 'SP-01', committed: true, selectedId: 'SP-01' }),
+      fitMismatchRec({ archetype: 'degen', expectedAdjustmentId: 'SP-01', selectedId: 'SP-01' }),
+      rec({ archetype: 'guardian', expectedAdjustmentId: 'CP-01', committed: true, selectedId: 'CP-01' }),
+    ]);
+    expect(out.byArchetype.degen.rates.fitMismatchRate).toBe(0.5);
+    expect(out.byArchetype.guardian.rates.fitMismatchRate).toBe(0);
+    expect(out.overall.rates.fitMismatchRate).toBeCloseTo(1 / 3);
+  });
+});
+
+// ── THE GOLDEN: every pre-existing metric is byte-identical at HEAD ───────────
+//
+// The fixture was captured from `git show origin/main:.../aggregate.js` — the
+// TRUE pre-build module — NOT regenerated from the code it guards. A golden
+// regenerated from its own subject proves nothing.
+describe('aggregate — the pre-build golden (no fit_mismatch → nothing moves)', () => {
+  it('the corpus the golden was captured over carries ZERO fit_mismatch records', () => {
+    expect(MIXED_CORPUS.some(isFitMismatch)).toBe(false);
+    expect(MIXED_CORPUS.length).toBe(11);
+  });
+
+  it('every metric present at HEAD is byte-identical — counts, rates, third-path, hard zeros', () => {
+    const now = aggregate(MIXED_CORPUS);
+    const pre = PRE_BUILD.aggregate;
+
+    // Hard zeros and the per-archetype key set, whole.
+    expect(now.hardZeros).toEqual(pre.hardZeros);
+    expect(Object.keys(now.byArchetype).sort()).toEqual(Object.keys(pre.byArchetype).sort());
+
+    // Every key the pre-build module emitted, at every bucket, unchanged. New
+    // keys are allowed through here and pinned exactly by the next row.
+    const sameOnPreBuildKeys = (label, preObj, nowObj) => {
+      for (const k of Object.keys(preObj)) {
+        expect(nowObj[k], `${label}.${k} moved`).toEqual(preObj[k]);
+      }
+    };
+    const buckets = [['overall', pre.overall, now.overall]]
+      .concat(Object.keys(pre.byArchetype).map((a) => [a, pre.byArchetype[a], now.byArchetype[a]]));
+    for (const [label, p, n] of buckets) {
+      sameOnPreBuildKeys(`${label}.counts`, p.counts, n.counts);
+      sameOnPreBuildKeys(`${label}.rates`, p.rates, n.rates);
+      expect(n.thirdPathCommit, `${label}.thirdPathCommit`).toEqual(p.thirdPathCommit);
+    }
+
+    // The breach dump too — the detail the founder reads on a nonzero hard zero.
+    expect(collectHardZeroBreaches(MIXED_CORPUS)).toEqual(PRE_BUILD.hardZeroBreaches);
+  });
+
+  it('names EXACTLY the keys this change adds — nothing else appeared', () => {
+    const now = aggregate(MIXED_CORPUS).overall;
+    const pre = PRE_BUILD.aggregate.overall;
+    const added = (p, n) => Object.keys(n).filter((k) => !(k in p)).sort();
+    expect(added(pre.counts, now.counts)).toEqual(['committedTotal', 'fitMismatch', 'validFlexFitMismatch']);
+    expect(added(pre.rates, now.rates)).toEqual(['fitMismatchRate']);
+    // And no key DISAPPEARED — a removal would also pass the row above.
+    expect(Object.keys(pre.counts).every((k) => k in now.counts)).toBe(true);
+    expect(Object.keys(pre.rates).every((k) => k in now.rates)).toBe(true);
+  });
+
+  // MUTATION — swap the bucket and the golden must RED. Two swaps, because the
+  // split has two halves and either one alone could rot silently.
+  it('MUTATION CHECK — scoring a fit_mismatch the OLD way changes the numbers', () => {
+    // Take the golden corpus and turn its ONE false refusal into a fit_mismatch.
+    // Under the old scoring nothing about the rates would change (both were
+    // "committed: false"); under the new scoring three numbers move. If they do
+    // not, the split is not wired in.
+    const idx = MIXED_CORPUS.findIndex((r) => r.category === 'valid_flex' && r.committed === false && !r.callFailed);
+    expect(idx, 'the golden corpus must contain a valid_flex refusal to convert').toBeGreaterThan(-1);
+    const swapped = MIXED_CORPUS.map((r, k) => (k === idx
+      ? fitMismatchRec({ archetype: r.archetype, expectedAdjustmentId: r.expectedAdjustmentId, selectedId: 'CP-02' })
+      : r));
+
+    const pre = PRE_BUILD.aggregate.overall.rates;
+    const now = aggregate(swapped).overall.rates;
+    expect(now.falseRefusalRate).not.toEqual(pre.falseRefusalRate); // 1/3 → 0
+    expect(now.falseRefusalRate).toBe(0);
+    expect(now.wrongIdRate).not.toEqual(pre.wrongIdRate);           // 1/2 → 2/3
+    expect(now.wrongIdRate).toBeCloseTo(2 / 3);
+    // The golden corpus has FOUR committed turns, so the fit check was reached
+    // five times once the refusal became a paraphrase.
+    expect(now.fitMismatchRate).toBeCloseTo(1 / 5);
+    // The hard zeros do NOT move — a fit_mismatch is a null write, and a null
+    // write with a correct 'no_change' status breaches neither.
+    expect(aggregate(swapped).hardZeros).toEqual(PRE_BUILD.aggregate.hardZeros);
   });
 });

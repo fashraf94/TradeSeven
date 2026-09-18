@@ -201,6 +201,9 @@ describe('driveSlotDraftAutopick — abandoned draft completes in ONE pass', () 
     const group = g(store);
     expect(group.status).toBe(GROUP_STATUS.AWAITING_OPEN);
     expect(group.startAnchor).toEqual({ anchorEtDate: '2026-07-13', anchorIso: '2026-07-13T13:30:00.000Z' }); // battleStartWeek honored
+    // N1 durable fix: a future-week completion is NOT stamped — the Monday
+    // awaiting_open → battle flip stamps it when its battle day arrives.
+    expect(group.agentPipelinePending).toBeUndefined();
     // every seat drafted its full book, materialized byte-identically to the resolver
     for (const p of group.players) {
       expect(p.picks).toHaveLength(PICKS_PER_PLAYER);
@@ -214,6 +217,11 @@ describe('driveSlotDraftAutopick — abandoned draft completes in ONE pass', () 
   });
 
   it('a Monday-PRE-OPEN slot completes inline into BATTLE (today-anchor)', async () => {
+    // STILL VALID while mon-0845 is disabled (N1 mitigation): the disable gate
+    // lives in findDueSlotGroups, not in fireCompetitiveSlotDraft, so driving the
+    // fire path directly — as this test does — exercises the S3 pre-open margin
+    // exactly as before. Keeping this proof green is the point: it is what fix B
+    // must not regress when the slot is re-enabled.
     // Fire the Mon-8:45am slot at 8:45 ET; its battle anchor is that same Monday.
     const MON_ANCHOR = { mondayEtDate: '2026-07-13', anchorEtDate: '2026-07-13', anchorIso: '2026-07-13T13:30:00.000Z' };
     const { db, store } = seedDb({ slotId: 'mon-0845', scheduledDraftAt: '2026-07-13T12:45:00.000Z', battleStartWeek: MON_ANCHOR });
@@ -224,6 +232,28 @@ describe('driveSlotDraftAutopick — abandoned draft completes in ONE pass', () 
     expect(r.complete).toBe(true);
     expect(r.status).toBe(GROUP_STATUS.BATTLE); // today-anchor reached → straight to battle before 9:30
     expect(g(store).status).toBe(GROUP_STATUS.BATTLE);
+    // N1 durable fix: THIS is the flip that stranded the pod — it lands ~2 hours
+    // after the 07:00 tick set the Monday duty marker. The handoff now stamps
+    // the pod in the same transaction, and the orchestrator's late-pod catch-up
+    // (tournamentOrchestrator.test.js, "N1 late-pod catch-up") serves it.
+    expect(g(store)).toMatchObject({ agentPipelinePending: true, agentPipelinePendingAt: '2026-07-13T12:47:00.000Z' });
+  });
+
+  it('N1: the HUMAN pick path shares the handoff — a final pick that lands inline in BATTLE stamps the pod', async () => {
+    const MON_ANCHOR = { mondayEtDate: '2026-07-13', anchorEtDate: '2026-07-13', anchorIso: '2026-07-13T13:30:00.000Z' };
+    const { db, store } = seedDb({ slotId: 'mon-0845', scheduledDraftAt: '2026-07-13T12:45:00.000Z', battleStartWeek: MON_ANCHOR });
+    const MON_FIRE = new Date('2026-07-13T12:45:00.000Z');
+    await fireCompetitiveSlotDraft(db, WED_ID, { now: MON_FIRE });
+    let complete = false; let guard = 0; let last = null;
+    while (!complete && guard++ < 6) {
+      const st = draftState(store);
+      const sym = st.pool.find((s) => !(st.taken || []).includes(s));
+      last = new Date(MON_FIRE.getTime() + guard * 1000);
+      const r = await applyCompetitivePick(db, WED_ID, { odUserId: 'human-1', symbol: sym, now: last });
+      complete = r.complete;
+    }
+    expect(complete).toBe(true);
+    expect(g(store)).toMatchObject({ status: GROUP_STATUS.BATTLE, agentPipelinePending: true, agentPipelinePendingAt: last.toISOString() });
   });
 
   it('does NOT interrupt an active / within-clock draft', async () => {
@@ -330,6 +360,40 @@ describe('findDueSlotGroups / findDraftingSlotGroups', () => {
     store.set('tournamentGroups/regular', { status: GROUP_STATUS.FORMING, players: [] }); // non-slot forming
     const due = await findDueSlotGroups(db, new Date('2026-07-08T23:05:00.000Z'));
     expect(due.map((d) => d.id)).toEqual([WED_ID]); // not future, not regular
+  });
+
+  // ── N1 mitigation: the fire gate for a slot taken off the board ──
+  it('SKIPS a due FORMING group whose slot is DISABLED (a pre-disable claim never fires)', async () => {
+    const { db, store } = seedDb();
+    // A mon-0845 group claimed BEFORE the slot was disabled: still FORMING, its
+    // fire instant already past. Closing the claim door does not reach it — this
+    // gate is what stops it entering the stranded path (N1).
+    store.set('tournamentGroups/lds_mon-0845_2026-07-13', slotGroup({
+      slotId: 'mon-0845',
+      scheduledDraftAt: '2026-07-13T12:45:00.000Z',
+      battleStartWeek: { mondayEtDate: '2026-07-13', anchorEtDate: '2026-07-13', anchorIso: '2026-07-13T13:30:00.000Z' },
+    }));
+
+    // Well past BOTH fire instants: the enabled Wed pod is due, the disabled
+    // Monday pod is due too — and only the Wed one comes back.
+    const due = await findDueSlotGroups(db, new Date('2026-07-13T13:00:00.000Z'));
+    expect(due.map((d) => d.id)).toEqual([WED_ID]);
+    expect(due.map((d) => d.slotId)).not.toContain('mon-0845');
+
+    // Non-vacuous: the doc IS there, IS forming, and IS past its fire instant —
+    // the slot's disabled flag is the only reason it was skipped.
+    const mon = store.get('tournamentGroups/lds_mon-0845_2026-07-13');
+    expect(mon.status).toBe(GROUP_STATUS.FORMING);
+    expect(mon.scheduledDraftAt < '2026-07-13T13:00:00.000Z').toBe(true);
+  });
+
+  it('a due group whose slotId is absent or unrecognized still fires (fail-OPEN, byte-identical)', async () => {
+    const { db, store } = seedDb();
+    store.set('tournamentGroups/no-slot-id', slotGroup({ slotId: undefined }));
+    store.set('tournamentGroups/stale-slot-id', slotGroup({ slotId: 'retired-0000' }));
+    const due = await findDueSlotGroups(db, new Date('2026-07-08T23:05:00.000Z'));
+    // Only an EXPLICITLY disabled slot is skipped; everything else behaves as before.
+    expect(due.map((d) => d.id).sort()).toEqual([WED_ID, 'no-slot-id', 'stale-slot-id'].sort());
   });
 
   it('returns DRAFTING slot groups only', async () => {

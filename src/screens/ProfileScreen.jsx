@@ -2,6 +2,10 @@ import React from 'react';
 import { Bug } from 'lucide-react';
 import DesktopBackground from '../components/DesktopBackground';
 import { ADMIN_USERS } from '../components/ClashBot/BugReportAdmin';
+// The one ladder — same module that assigns the rank on battle settlement.
+// This file used to inline its own copy of the same four thresholds
+// (docs/audits/20260915_BUILD_CRASH_CLASS_A1_A4.md §8 F4).
+import { determineRank } from '../services/battleTimer';
 
 // Style override to neutralize App.css
 const containerStyle = {
@@ -26,7 +30,7 @@ const ProfileScreen = ({
     wins: user.wins || 0,
     losses: user.losses || 0,
     totalBattles: (user.wins || 0) + (user.losses || 0),
-    rank: (user.xp || 0) >= 5000 ? 'Master' : (user.xp || 0) >= 2000 ? 'Expert' : (user.xp || 0) >= 500 ? 'Veteran' : 'Beginner'
+    rank: determineRank(user.xp || 0)
   };
 
   return (

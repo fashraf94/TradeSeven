@@ -8,9 +8,15 @@ import React from 'react';
 import { cssVar } from '../theme/cssTokens';
 
 const DesktopBackground = ({ isDesktop }) => {
-  if (!isDesktop) return null;
-
-  // Generate stable particle positions
+  // Generate stable particle positions.
+  //
+  // ABOVE THE EARLY RETURN, deliberately. `isDesktop` is derived from
+  // useIsMobile's debounced resize listener (hooks/useIsMobile.js:62-70), so
+  // it flips between renders of the SAME mounted component whenever the
+  // viewport crosses the tablet breakpoint. A hook below the return changed
+  // the hook count on that render — React's "rendered more hooks than during
+  // the previous render" crash. Deps are [] and the body is a 15-element map,
+  // so on the mobile path this now computes a cheap value nothing reads.
   const particles = React.useMemo(() => {
     return [...Array(15)].map((_, i) => ({
       id: i,
@@ -22,6 +28,8 @@ const DesktopBackground = ({ isDesktop }) => {
       delay: (i % 4) * 1.5,
     }));
   }, []);
+
+  if (!isDesktop) return null;
 
   return (
     <>

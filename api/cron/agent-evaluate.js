@@ -79,7 +79,7 @@ import { TEMPO_DIAL_BANDS } from '../_utils/tempoDialBands.js';
 // NO-EDIT).
 import { clampHftConfig, resolveTempoDial, desiredTempoOf } from '../_utils/tempoDialClamp.js';
 import { buildSwapProvenance } from '../_utils/swapProvenance.js';
-import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED, LEARNING_L1_CAPTURE_ENABLED, LEARNING_L1_CAPTURE_EXPANSION_ENABLED, REGIME_STAMP_ENABLED, PROFIT_TARGET_EXECUTOR_ENABLED, TICK_STAMPS_ENABLED, getVoiceGroundingMode } from '../../src/config/featureFlags.js';
+import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED, LEARNING_L1_CAPTURE_ENABLED, LEARNING_L1_CAPTURE_EXPANSION_ENABLED, REGIME_STAMP_ENABLED, PROFIT_TARGET_EXECUTOR_ENABLED, TICK_STAMPS_ENABLED, ANTICIPATION_THRESHOLD_LINT_MODE, getVoiceGroundingMode } from '../../src/config/featureFlags.js';
 // Voice-layer grounding §5 (hazard 27): the in-process dedupe of one tick's
 // anticipation queue, applied only when the note is code-composed.
 import { dedupeAnticipationQueue } from '../_utils/voiceLayerGrounding.js';
@@ -89,6 +89,14 @@ import { dedupeAnticipationQueue } from '../_utils/voiceLayerGrounding.js';
 // TICK_STAMPS_ENABLED. Read, never edited: the fenced assembler's directive
 // resolution is re-run here on the same in-memory object, never re-read.
 import { composeTickStamps } from '../_utils/tickStamps.js';
+// THE THRESHOLD LINT (docs/audits/20260915_PHASE0_SIGNAL_LANGUAGE.md §7.2
+// shape 2): the pure, zero-import verdict on whether an anticipation
+// candidate's "I'll act if X" promise names a signal THIS tick actually
+// rendered for that symbol. Called once between the decider's return and the
+// two persistence sites below, under ANTICIPATION_THRESHOLD_LINT_MODE. It
+// REJECTS, never rewrites — an accepted threshold is byte-identical to what
+// the decider wrote.
+import { buildPresentSignals, lintThreshold } from '../_utils/anticipationThresholdLint.js';
 // Corpus Capture Patch W3 — pure regimeAtStart stamp helpers (write-once /
 // flag / shape semantics live there so they are behaviorally unit-testable).
 import { shouldStampRegime, buildRegimeAtStart } from '../_utils/regimeStamp.js';
@@ -109,7 +117,7 @@ import { resolveModeConfig } from '../../src/constants/agentGameModes.js';
 // and resolveRecordTargetId (pure, given the in-tx clone doc — the settlement)
 // share one rule: casual clone → parent, everything else → self (byte-identical).
 import { resolveAttributionAgentId, resolveRecordTargetId } from '../_utils/casualClone.js';
-import { classifyHaikuFailure, shouldStartHaikuCall, nextConsecutiveEvalFailures, HAIKU_CALL_CEILING_MS, EVAL_MODEL_ID, EVAL_MAX_OUTPUT_TOKENS } from '../_utils/agentEvalTransport.js';
+import { classifyHaikuFailure, classifyTimeoutKind, shouldStartHaikuCall, nextConsecutiveEvalFailures, HAIKU_CALL_CEILING_MS, PROMPT_BUILD_CEILING_MS, PROMPT_BUILD_TIMEOUT_ERROR_NAME, EVAL_MODEL_ID, EVAL_MAX_OUTPUT_TOKENS } from '../_utils/agentEvalTransport.js';
 import { logBattlePattern } from '../_utils/battlePatternLogger.js';
 import { runCanonicalOpenSweep } from '../_utils/canonicalOpenSweep.js';
 import { logEvaluation, logVisionTransition, logAnticipation } from '../_utils/shadowLogger.js';
@@ -1963,9 +1971,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     let inputTokens = 0;
     let outputTokens = 0;
     // Transport-failure record for this tick (null on success). failureClass ∈
-    // 'timeout' | 'truncated_response' | 'budget_skipped' | String(status|name).
-    // Consumed below by the evaluation record, cronErrors, the eval_degraded
-    // statusFeed entry, the shadow log, and the disclosure counter.
+    // 'timeout' | 'build_timeout' | 'truncated_response' | 'budget_skipped' |
+    // String(status|name). Consumed below by the evaluation record, cronErrors,
+    // the eval_degraded statusFeed entry, the shadow log, and the disclosure
+    // counter.
     let haikuFailure = null;
     let haikuAttempted = false;
     // Phase B (D-110): true only once the prompt's three parts are BUILT and
@@ -1974,33 +1983,45 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // otherwise stamp a prompt that never existed (review A-4 / B-1). The tick
     // stamps gate on this, never on haikuAttempted.
     let promptBuilt = false;
+    // Transport-hygiene timing (Sep 2026) — three additive facts the entry
+    // carries so the record can tell a slow BUILD from a slow CALL, which it
+    // could not before (Phase 0 §3.1: no field measured either). Date.now()
+    // pairs, nothing fancier. Each stays null when its phase never ran.
+    let promptBuiltAt = null;
+    let buildMs = null;
+    let callMs = null;
 
-    // Pre-call budget guard: a late-run battle must never start a call whose
-    // hard-abort ceiling (22s) plus post-call work (parallel narration dispatch
-    // ≤10s + the awaited finalUpdate — the same 12s allowance the anticipation
-    // gate uses) could push the function past TIME_BUDGET_MS / the 60s kill
-    // window and lose the finalUpdate. The handler-level deferral can't express
-    // this: by now the battle's risk swaps and score writes have already
-    // happened mid-function — we skip only the Haiku call and keep the normal
-    // write path.
+    // Pre-call budget guard: a late-run battle must never start the evaluation
+    // engine when its bounded phases — the 10s prompt-build ceiling, then the
+    // 22s hard-abort call ceiling, then post-call work (parallel narration
+    // dispatch ≤10s + the awaited finalUpdate, the same 12s allowance the
+    // anticipation gate uses) — could push the function past TIME_BUDGET_MS /
+    // the kill window and lose the finalUpdate. 44s, the sum of the three named
+    // constants in agentEvalTransport.js (34s until Sep 2026, when the build
+    // became a bounded phase BEFORE the call rather than time stolen from
+    // inside its ceiling). The handler-level deferral can't express this: by
+    // now the battle's risk swaps and score writes have already happened
+    // mid-function — we skip only the Haiku call and keep the normal write
+    // path. It still runs ONCE, before the build.
     const budget = shouldStartHaikuCall({ elapsedMs: Date.now() - cronStartTime, timeBudgetMs: TIME_BUDGET_MS });
     if (!budget.proceed) {
       haikuFailure = {
         failureClass: 'budget_skipped',
         message: `cron budget too low to start Haiku call (${Math.round(budget.remainingMs / 1000)}s remaining, ${Math.round(budget.requiredMs / 1000)}s required)`,
         timestamp: new Date().toISOString(),
+        timeoutKind: null,
       };
       console.warn(`${LOG_PREFIX} Haiku call skipped for battle ${battle.id}: ${haikuFailure.message}`);
     } else {
       haikuAttempted = true;
-      // L1 transport: SDK-native per-request timeout (20s) replaces the old
-      // bare Promise.race — the SDK aborts its underlying fetch at `timeout`
-      // (verified v0.71.2 fetchWithTimeout), so the losing request is genuinely
-      // cancelled, never orphaned server-side billing unrecorded tokens. The
-      // AbortController is a defense-in-depth backstop 2s above it.
-      const abortCtrl = new AbortController();
-      const hardAbort = setTimeout(() => abortCtrl.abort(), HAIKU_CALL_CEILING_MS);
+      // Both timers are declared BEFORE the try so the finally can clear them
+      // whatever fails — including a build that dies before the call's backstop
+      // is ever armed.
+      let buildTimer = null;
+      let hardAbort = null;
+      const buildStartedAt = Date.now();
       try {
+        // ---- Phase 1: the prompt build, bounded on its OWN ceiling ----
         // The prompt's three parts, built in the order the request carries
         // them (system → identity → live context) — the same builders, the
         // same argument lists, the same order as when they sat inline in the
@@ -2014,26 +2035,73 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         // DR-13 (STOP-A ruling A1): the RAW archetype code-id rides as the
         // 4th arg — `archetype` above is the display-cased label (:1881)
         // and must never be the identity-block key.
-        const systemPrompt = buildEvalSystemPrompt(agentName, archetype, battle.gameMode, ctx.archetype);
-        const identityBlock = buildAgentIdentityBlock(battle);
-        const liveContextBlock = await buildLiveContextBlock(
-          battle, prices, macroPrices, assetScores,
-          triggers, news, battle.evaluations, momentumData, presetConfig
-        );
+        //
+        // A RACE, not an AbortController: buildLiveContextBlock's cost is
+        // sequential Firestore batches inside fetchInstitutionalContext, and a
+        // Firestore read is neither billed by duration nor harmful when
+        // orphaned (the June precedent for the EODHD GETs). The loser is simply
+        // abandoned; the winner clears the timer in its own finally, so no
+        // timer dangles into the next battle either way.
+        const buildPrompt = async () => {
+          const systemPrompt = buildEvalSystemPrompt(agentName, archetype, battle.gameMode, ctx.archetype);
+          const identityBlock = buildAgentIdentityBlock(battle);
+          const liveContextBlock = await buildLiveContextBlock(
+            battle, prices, macroPrices, assetScores,
+            triggers, news, battle.evaluations, momentumData, presetConfig
+          );
+          return { systemPrompt, identityBlock, liveContextBlock };
+        };
+        const built = await Promise.race([
+          buildPrompt().finally(() => { clearTimeout(buildTimer); }),
+          new Promise((_, reject) => {
+            buildTimer = setTimeout(() => {
+              const err = new Error(`prompt build exceeded ${PROMPT_BUILD_CEILING_MS} ms`);
+              err.name = PROMPT_BUILD_TIMEOUT_ERROR_NAME;
+              reject(err);
+            }, PROMPT_BUILD_CEILING_MS);
+          }),
+        ]);
+        buildMs = Date.now() - buildStartedAt;
         promptBuilt = true;
-        const response = await anthropic.messages.create({
-          model: EVAL_MODEL_ID,
-          max_tokens: EVAL_MAX_OUTPUT_TOKENS,
-          temperature: 0.4,
-          system: systemPrompt,
-          messages: [
-            { role: 'user', content: identityBlock },
-            { role: 'assistant', content: 'I understand my identity and strategic context. Show me the live battle state.' },
-            { role: 'user', content: liveContextBlock },
-          ],
-          tools: [TRADE_DECISION_TOOL],
-          tool_choice: { type: 'tool', name: 'submit_trade_decision' },
-        }, { timeout: 20_000, signal: abortCtrl.signal });
+        promptBuiltAt = new Date().toISOString();
+        const { systemPrompt, identityBlock, liveContextBlock } = built;
+
+        // ---- Phase 2: the call, and ONLY now the backstop ----
+        // L1 transport: SDK-native per-request timeout (20s) replaces the old
+        // bare Promise.race — the SDK aborts its underlying fetch at `timeout`
+        // (verified v0.71.2 fetchWithTimeout), so the losing request is genuinely
+        // cancelled, never orphaned server-side billing unrecorded tokens. The
+        // AbortController is a defense-in-depth backstop 2s above it.
+        //
+        // ARMED HERE, not before the build (Sep 2026 transport hygiene; the
+        // placement dates to June 11 and Phase 0 §3.1 steps 8–12 measured its
+        // cost). Armed before the build, prompt-assembly time was charged
+        // against the 22s ceiling: the call's effective ceiling was 22s − the
+        // build, and any build over 2s fired the backstop before the SDK's own
+        // 20s timeout could — so the backstop was not a backstop. Both timers
+        // now measure the same interval from the same instant.
+        const abortCtrl = new AbortController();
+        hardAbort = setTimeout(() => abortCtrl.abort(), HAIKU_CALL_CEILING_MS);
+        const callStartedAt = Date.now();
+        let response;
+        try {
+          response = await anthropic.messages.create({
+            model: EVAL_MODEL_ID,
+            max_tokens: EVAL_MAX_OUTPUT_TOKENS,
+            temperature: 0.4,
+            system: systemPrompt,
+            messages: [
+              { role: 'user', content: identityBlock },
+              { role: 'assistant', content: 'I understand my identity and strategic context. Show me the live battle state.' },
+              { role: 'user', content: liveContextBlock },
+            ],
+            tools: [TRADE_DECISION_TOOL],
+            tool_choice: { type: 'tool', name: 'submit_trade_decision' },
+          }, { timeout: 20_000, signal: abortCtrl.signal });
+        } finally {
+          // Return OR throw — the honest wall time the call actually got.
+          callMs = Date.now() - callStartedAt;
+        }
 
         inputTokens = response.usage?.input_tokens || 0;
         outputTokens = response.usage?.output_tokens || 0;
@@ -2051,24 +2119,144 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             failureClass: 'truncated_response',
             message: `response received but tool input missing/unusable (stop_reason=${response.stop_reason || 'unknown'})`,
             timestamp: new Date().toISOString(),
+            timeoutKind: null,
           };
           console.warn(`${LOG_PREFIX} Haiku response unusable for battle ${battle.id}: ${haikuFailure.message}`);
         }
       } catch (err) {
+        // The build's own elapsed when it was the BUILD that failed (the race
+        // rejected, or a builder threw): promptBuilt is still false there, so
+        // buildMs is the only measure of what the tick spent before giving up.
+        if (buildMs === null) buildMs = Date.now() - buildStartedAt;
         haikuFailure = {
           failureClass: classifyHaikuFailure(err),
           message: String(err?.message || '').slice(0, 200),
           timestamp: new Date().toISOString(),
+          // WHICH transport timeout fired — the split failureClass deliberately
+          // does not make (every consumer of the class is unchanged). null for a
+          // build timeout and for every non-timeout failure.
+          //
+          // GATED ON callMs: the kind describes THE CALL, so it may only be
+          // claimed when a call actually ran (callMs is set in the finally
+          // around messages.create and stays null otherwise). Without this, a
+          // build-phase failure whose message happens to be timeout-shaped —
+          // gaxios' 'Total timeout of 60000ms exceeded' on a stalled token
+          // refresh, a socket's 'connect ETIMEDOUT' — would be recorded as
+          // timeoutKind 'sdk', asserting that the SDK's 20s per-request timeout
+          // fired on a request that was never sent.
+          timeoutKind: callMs === null ? null : classifyTimeoutKind(err),
         };
         console.error(`${LOG_PREFIX} Haiku call failed for battle ${battle.id} [${haikuFailure.failureClass}]:`, err.message);
         // Default to HOLD on timeout or error
       } finally {
+        // hardAbort may never have been armed (a build failure returns before
+        // it); clearTimeout(null) is a no-op. buildTimer, by contrast, is armed
+        // synchronously while the race array is evaluated, so it is always set
+        // by the time anything can throw — its clear here is belt-and-braces
+        // behind the winner's own .finally above.
+        clearTimeout(buildTimer);
         clearTimeout(hardAbort);
       }
     }
 
     // ---- Process decision ----
     const evalId = `eval_${String((battle.evaluations?.length || 0) + 1).padStart(3, '0')}`;
+
+    // ---- THE THRESHOLD LINT (Phase 0 §7.2 shape 2) ----
+    //
+    // Between the decider's return and the TWO persistence sites the
+    // candidates reach — the anticipation queue just below (Gemma's input)
+    // and the `candidates[]` stamp far below (the evaluations[] record) — ask
+    // of every candidate: does its "I'll act if X" promise name a signal THIS
+    // tick actually rendered for THAT symbol?
+    //
+    // The present-signals map is built ONCE per tick from the same in-memory
+    // objects the prompt was built from: `momentumData` (the VWAP the
+    // freshness gate published, the rankings rows, the regimes), the tech-score
+    // docs, `assetScores` (the held rows the ACTIVE POSITIONS CSV rendered,
+    // pre-swap — what the decider saw) and the bench the prompt flattened.
+    // No I/O; the map is a read of objects already in hand.
+    //
+    // 'off' (shipped): not called at all — `lintedAnticipationCandidates` IS
+    // `haikuResult.anticipationCandidates`, the same reference, so both sites
+    // are byte-identical to the pre-lint path. 'shadow': every failing
+    // candidate is logged and NOTHING is dropped. 'on': a failing candidate is
+    // dropped from both sites and logged. Unknown mode ⇒ inactive (fail to the
+    // only state that changes nothing).
+    //
+    // REJECT, NEVER REWRITE: an accepted threshold is byte-identical to what
+    // the decider wrote. Rewriting the agent's sentence to remove the absent
+    // clause would be a second honesty problem; a dropped candidate is simply
+    // not a fact on the record.
+    const lintEnforcing = ANTICIPATION_THRESHOLD_LINT_MODE === 'on';
+    const lintActive = lintEnforcing || ANTICIPATION_THRESHOLD_LINT_MODE === 'shadow';
+    let lintedAnticipationCandidates = haikuResult?.anticipationCandidates;
+    if (lintActive && Array.isArray(lintedAnticipationCandidates)) {
+      const presentSignals = buildPresentSignals({
+        momentumData,
+        techScoresMap: technicalScoresMap,
+        rankingsMap: momentumData.rankingsMap,
+        heldSymbols: assetScores.map(s => s.symbol),
+        benchSymbols: flattenBenchServer(battle.portfolio?.bench).map(a => a.symbol),
+      });
+      const kept = [];
+      for (const candidate of lintedAnticipationCandidates) {
+        // Items both persistence sites already drop (not an object, or no
+        // symbol) pass through untouched — the lint adds no admission rule.
+        if (!candidate || typeof candidate !== 'object' || !candidate.symbol) {
+          kept.push(candidate);
+          continue;
+        }
+        const verdict = lintThreshold({
+          threshold: candidate.threshold,
+          symbol: candidate.symbol,
+          present: presentSignals,
+        });
+        if (verdict.ok) {
+          kept.push(candidate);
+          continue;
+        }
+        // The breadcrumb. Two receipts, because at 'on' this is a DELETION
+        // from a durable record: the GCS shadow record below, and — matching
+        // the nearer of the two precedents this copies (`cron_budget_skip`,
+        // which logs its own count and battle) — a console line, so a drop is
+        // visible in the Vercel function log even if the GCS write is
+        // swallowed. The 'on' flip PR owes a durable receipt on the battle doc
+        // itself; see the build report's §5 flip precondition.
+        console.log(
+          `${LOG_PREFIX} threshold lint [${ANTICIPATION_THRESHOLD_LINT_MODE}] ${lintEnforcing ? 'DROPPED' : 'flagged'} `
+          + `${candidate.symbol} anticipation for battle ${battle.id} — absent: ${verdict.absent.join(', ')}`
+        );
+        logAnticipation({
+          battleId: battle.id,
+          agentId: battle.agentId,
+          anticipationSource: 'haiku',
+          success: false,
+          errorStep: 'threshold_absent_signal',
+          errorReason: `absent_${verdict.absent.join('+')}`,
+          absent: verdict.absent,
+          lintMode: ANTICIPATION_THRESHOLD_LINT_MODE,
+          dropped: lintEnforcing,
+          // The check's own instant, matching logEvaluation's field. NOTE: the
+          // review justified this by the evaluations[] 150-cap making `evalId`
+          // collide, and the refutation overturned that — battles are
+          // single-day at ~26 ticks, and `_loggedAt` (stamped by appendToStream)
+          // already joins. It is kept anyway because it is the instant of the
+          // CHECK rather than of the log write, which is the join this record
+          // actually wants, and it costs nothing.
+          timestamp: new Date().toISOString(),
+          candidate: {
+            symbol: candidate.symbol || null,
+            direction: candidate.direction || null,
+            signalSummary: candidate.signalSummary || null,
+            threshold: candidate.threshold || null,
+          },
+          evalId,
+        }).catch(() => {});
+        if (!lintEnforcing) kept.push(candidate);
+      }
+      lintedAnticipationCandidates = kept;
+    }
 
     // Phase 3 Voice Layer Rework — queue anticipation candidates Haiku
     // flagged on this tick for narration. Fires on HOLD, SWAP, and
@@ -2078,8 +2266,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // evalId is captured here (right after Haiku returned) so each
     // anticipation message can be cross-referenced back to the
     // evaluation that flagged it.
-    if (Array.isArray(haikuResult?.anticipationCandidates)) {
-      for (const candidate of haikuResult.anticipationCandidates) {
+    if (Array.isArray(lintedAnticipationCandidates)) {
+      for (const candidate of lintedAnticipationCandidates) {
         if (candidate && typeof candidate === 'object' && candidate.symbol) {
           pendingAnticipations.push({ candidate, evalId });
         }
@@ -2690,10 +2878,19 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       guardrailOverrides,
       guardrailSourceNote,
       // Haiku eval reliability fix (June 2026): transport-failure receipt.
-      // null on success; { failureClass, message, timestamp, evalId } when the
-      // tick degraded to a fallback HOLD — distinguishes a deliberate HOLD
-      // from an engine outage in the eval history.
+      // null on success; { failureClass, message, timestamp, timeoutKind,
+      // evalId } when the tick degraded to a fallback HOLD — distinguishes a
+      // deliberate HOLD from an engine outage in the eval history.
       haikuError: haikuFailure ? { ...haikuFailure, evalId } : null,
+      // Transport-hygiene timing (Sep 2026) — ADDITIVE and flat. None of the
+      // three reaches the decider: formatRecentEvals reads a fixed eight-key
+      // whitelist, pinned in agent-evaluate.tickStamps.pins.test.js.
+      //   promptBuiltAt — when the prompt was finished, or null (never built)
+      //   buildMs       — the build's wall time, or null (the build never ran)
+      //   callMs        — messages.create start → return or throw, or null (no call)
+      promptBuiltAt,
+      buildMs,
+      callMs,
     };
 
     // ---- Phase B — the tick stamps (D-110 → D-113) ----
@@ -2740,7 +2937,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         Object.assign(evaluation, composeTickStamps({
           promptBuilt,
           controlResolution,
-          anticipationCandidates: haikuResult?.anticipationCandidates,
+          // The LINTED array (dark: the same reference the decider returned).
+          anticipationCandidates: lintedAnticipationCandidates,
           assetScores,
           prices,
           momentumData,
@@ -2781,6 +2979,16 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       battleId: battle.id,
       agentId: battle.agentId,
       userId: battle.ownerId || null,
+      // Join keys (Sep 2026): the shadow record could only be matched back to
+      // its evaluations[] entry by ORDER — the forensics gap Phase 0 hit.
+      // `timestamp` is the unique one and is what the join should key on:
+      // `evalId` is derived from evaluations.length + 1 against an array capped
+      // at 150 (below), so on a battle past 150 checks every later entry is
+      // eval_151. That collision is pre-existing and is NOT fixed here — it is
+      // reported for separate tasking; evalId rides along as the human-readable
+      // half of the pair, never as the key.
+      evalId,
+      timestamp: evaluation.timestamp,
       battlePhase: phase,
       decision,
       symbolOut: evaluation.symbolOut,
@@ -2798,6 +3006,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       // pipeline (null on success). logEvaluation is a passthrough to the GCS
       // shadow stream, so no shadowLogger.js change is needed.
       failureClass: haikuFailure?.failureClass || null,
+      // The same two timings the entry carries, so a week of shadow records
+      // answers "build or call?" without reading every battle doc.
+      buildMs: evaluation.buildMs,
+      callMs: evaluation.callMs,
     }).catch(() => {});
 
     // ---- Write everything ----
@@ -2821,7 +3033,12 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       'cronState.lastTriggeredAt': now,
       // totalHaikuCalls counts ATTEMPTS — a budget_skipped tick never started a
       // call, so it does not increment (semantic fidelity for the token-vs-call
-      // forensics that exposed the June 11 outage).
+      // forensics that exposed the June 11 outage). The contrast is with
+      // budget_skipped ONLY: a tick that entered the engine path and failed
+      // before the request — a builder throw, or a build_timeout — DOES
+      // increment, and has since the June fix. So this counter minus the
+      // responded calls is "attempts that produced no tokens", which includes
+      // build-phase failures; it is not a count of requests put on the wire.
       'cronState.totalHaikuCalls': (battle.cronState?.totalHaikuCalls || 0) + (haikuAttempted ? 1 : 0),
       // Fair-rotation signal (budget-starvation mitigation): the last tick this
       // battle actually STARTED a Haiku call. Written ONLY on a real attempt so

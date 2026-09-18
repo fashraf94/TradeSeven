@@ -69,6 +69,9 @@ import {
   DRAFT_SUBCOLLECTION,
   DRAFT_STATE_DOC_ID,
 } from '../../src/constants/leagueTournament.js';
+// Zero-import pure-data slot config (BUILD_RULES §4) — the ONE home for whether
+// a slot is on the board; the fire gate reads it rather than re-listing ids.
+import { isSlotIdDisabled } from '../../src/config/liveDraftSlots.js';
 
 const LOG_PREFIX = '[LiveDraftLifecycle]';
 
@@ -100,7 +103,15 @@ function draftStateRef(db, groupId) {
 // precedent); the isLiveDraft + scheduledDraftAt filter runs in memory.
 
 /** FORMING slot groups whose scheduled fire instant has arrived (ISO strings
- *  compare chronologically). These are the pods to fire this pass. */
+ *  compare chronologically). These are the pods to fire this pass.
+ *
+ *  DISABLED-SLOT SKIP (N1 mitigation, 2026-09-12): a group claimed BEFORE its
+ *  slot was disabled is still sitting in FORMING with its fire instant stamped,
+ *  so closing the claim door alone would not stop it — this is the gate that
+ *  does. Keyed on `isSlotIdDisabled`, i.e. it skips ONLY a slot the founder
+ *  explicitly disabled; a group whose `slotId` is absent or unrecognized keeps
+ *  its pre-existing behavior exactly (fail-open, no byte-change). The skip is
+ *  logged, never silent — a pod that stops firing must say so. */
 export async function findDueSlotGroups(db, now = new Date()) {
   const nowIso = toIso(now);
   const snap = await db.collection(TOURNAMENT_GROUPS_COLLECTION).where('status', '==', GROUP_STATUS.FORMING).get();
@@ -108,13 +119,29 @@ export async function findDueSlotGroups(db, now = new Date()) {
   snap.forEach((d) => {
     const data = d.data();
     if (data.isLiveDraft === true && typeof data.scheduledDraftAt === 'string' && data.scheduledDraftAt <= nowIso) {
+      if (isSlotIdDisabled(data.slotId)) {
+        console.log(`${LOG_PREFIX} ${d.id}: slot '${data.slotId}' is DISABLED — due pod NOT fired (see liveDraftSlots.js).`);
+        return;
+      }
       due.push({ id: d.id, ...data });
     }
   });
   return due;
 }
 
-/** DRAFTING slot groups — the pods whose overdue turns this pass may autopick. */
+/** DRAFTING slot groups — the pods whose overdue turns this pass may autopick.
+ *
+ *  DELIBERATELY NOT DISABLED-SLOT-GATED (N1 mitigation scope limit, 2026-09-12).
+ *  The disable closes FORMING -> DRAFTING (findDueSlotGroups above), so no NEW
+ *  pod can reach this query for a disabled slot. A pod ALREADY in DRAFTING when
+ *  the disable deploys is still carried to completion here, and by the human
+ *  pick path (applyCompetitivePick), and will then hit N1 — because abandoning a
+ *  live draft with humans seated mid-pick is the worse failure. That window is
+ *  bounded: a draft completes in ~5 minutes (the S3 margin), so it exists only
+ *  if a deploy lands inside one. scripts/n1-stranded-precheck.js reports a
+ *  DRAFTING pod explicitly so the case is never silent, and the expire script
+ *  refuses one on purpose. Closing it properly belongs to the N1 pipeline fix,
+ *  which makes reaching `battle` safe instead of blocking it. */
 export async function findDraftingSlotGroups(db) {
   const snap = await db.collection(TOURNAMENT_GROUPS_COLLECTION).where('status', '==', GROUP_STATUS.DRAFTING).get();
   const groups = [];
@@ -333,6 +360,9 @@ export async function driveSlotDraftAutopick(db, groupId, { now = new Date() } =
       const anchor = effectiveBattleAnchor(group, now);
       const { target, groupUpdate, streamDoc } = computeHandoffWrites(group, completeState, now, {
         startAnchor: { anchorEtDate: anchor.anchorEtDate, anchorIso: anchor.anchorIso },
+        // The week that goes WITH that anchor — fresh when the guard restamped,
+        // so the activation compare never reads the stale Monday still on the doc.
+        battleStartWeek: anchor.battleStartWeek,
       });
       if (anchor.restamped) {
         groupUpdate.battleStartWeek = anchor.battleStartWeek;
@@ -428,6 +458,9 @@ export async function applyCompetitivePick(db, groupId, { odUserId, symbol = nul
       const anchor = effectiveBattleAnchor(group, now);
       const { target, groupUpdate, streamDoc } = computeHandoffWrites(group, completeState, now, {
         startAnchor: { anchorEtDate: anchor.anchorEtDate, anchorIso: anchor.anchorIso },
+        // The week that goes WITH that anchor — fresh when the guard restamped,
+        // so the activation compare never reads the stale Monday still on the doc.
+        battleStartWeek: anchor.battleStartWeek,
       });
       if (anchor.restamped) {
         groupUpdate.battleStartWeek = anchor.battleStartWeek;

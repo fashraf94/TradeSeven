@@ -15,6 +15,32 @@ export default function AnimatedScore({
   const [flash, setFlash] = useState(null);
   const prev = useRef(null);
   const mounted = useRef(false);
+  const flashTimer = useRef(null);
+  const rafId = useRef(null);
+
+  // F1: the component's two async channels both outlived it.
+  //
+  //   The flash-clear timer: unmounting inside its 300 ms window left it armed
+  //   to call setFlash on unmounted state.
+  //
+  //   The rAF ramp: never cancelled, so unmounting MID-ramp left the loop
+  //   ticking on a dead component until it reached p === 1, whereupon it armed
+  //   a FRESH flash-clear *after* this cleanup had already run. Cancelling the
+  //   timer alone therefore did not close the leak — hence both, here, together.
+  //
+  // BOTH ramps assign rafId on EVERY schedule, the in-loop re-schedules
+  // included, not just where each loop is kicked off. A loop that only recorded
+  // its first frame would leave this ref holding an id that has already fired,
+  // and the cancel below would be a silent no-op from frame two onward.
+  //
+  // Empty deps ON PURPOSE, so this cleanup runs only on UNMOUNT. Hanging it on
+  // the [value] effect instead would also cancel a pending clear on every value
+  // change, and the sub-0.01 early-return path below arms no replacement — that
+  // would strand an on-screen flash lit until the next material change.
+  useEffect(() => () => {
+    clearTimeout(flashTimer.current);
+    cancelAnimationFrame(rafId.current);
+  }, []);
 
   useEffect(() => {
     const target = parseFloat(value) || 0;
@@ -30,9 +56,9 @@ export default function AnimatedScore({
         const p = Math.min(elapsed / duration, 1);
         const eased = 1 - Math.pow(1 - p, 4);
         setDisplay(target * eased);
-        if (p < 1) requestAnimationFrame(tick);
+        if (p < 1) rafId.current = requestAnimationFrame(tick);
       };
-      requestAnimationFrame(tick);
+      rafId.current = requestAnimationFrame(tick);
       return;
     }
 
@@ -49,13 +75,13 @@ export default function AnimatedScore({
       const p = Math.min(elapsed / duration, 1);
       const eased = 1 - Math.pow(1 - p, 3);
       setDisplay(startVal + (target - startVal) * eased);
-      if (p < 1) requestAnimationFrame(tick);
+      if (p < 1) rafId.current = requestAnimationFrame(tick);
       else {
         prev.current = target;
-        setTimeout(() => setFlash(null), 300);
+        flashTimer.current = setTimeout(() => setFlash(null), 300);
       }
     };
-    requestAnimationFrame(tick);
+    rafId.current = requestAnimationFrame(tick);
   }, [value]);
 
   const c = flash === 'up' ? activeUp : flash === 'down' ? activeDown : defaultColor;

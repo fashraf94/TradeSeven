@@ -770,6 +770,123 @@ export const TEMPO_DIAL_ENABLED = true;
 export const ARCHETYPE_INTEGRITY_MODE = 'enforce';
 
 /**
+ * THE DIRECTIVE FIT CHECK — the voice files only what it says, and says only
+ * what it files (Phase 0: docs/audits/20260915_PHASE0_DIRECTIVE_GATE.md).
+ *
+ * ONE flag over ONE mechanism in two halves, which is why it is one flag and
+ * not two: the prompt asks the model to QUOTE the canonical text of the id it
+ * selects, and the gate REQUIRES that quote before it commits. Split them and
+ * either half is a defect on its own — a gate that demands a quote the prompt
+ * never asked for would null-write every filing, and a prompt that asks for a
+ * quote nothing checks is the status quo with extra words.
+ *
+ * What it turns on (all three together, all read at CALL time):
+ *   1. voiceLayerPrompt.js — each menu line carries its annotations
+ *      ([cautious register] / [opposite of X]), READ from the data module's
+ *      `cautiousRegister` list + ADJUSTMENT_CONFLICT_GROUPS, so the model can
+ *      see the dial it is choosing on rather than seven bare strings (Phase 0
+ *      Q3). (2026-09-17: the register now comes from the charter's own "More
+ *      cautious = ..." sentence instead of a `policy` predicate that disagreed
+ *      with it in 4 of 6 archetypes, and the third tag — [concentration:
+ *      tighter|wider] — is gone: it rendered the CONSTRAINT VERB, so one string
+ *      meant "more concentrated" on SP-04 and "more spread" on DV-01. Build
+ *      report 20260916 findings A4 / A5.)
+ *   2. voiceLayerPrompt.js — the confirmation rule's acknowledgement asks for
+ *      the canonical text word for word instead of "that's my lean now."
+ *   3. directiveGate.js — after the membership check, the selected id's
+ *      canonical text must appear verbatim (case-sensitive, whitespace
+ *      normalized) in the reply, or the turn is the deliberate null
+ *      `fit_mismatch` and files nothing (Phase 0 Q5: the reply is written
+ *      before the gate runs and is never reconciled with it).
+ *
+ * NOT gated by this flag: the three forensics fields on the gate record
+ * (originalUserAsk / counterOfferText / rejectionReason). They are additive and
+ * always on — every turn without them is a turn whose intent can never be
+ * recovered (Phase 0 Q7).
+ *
+ * Shipped FALSE. At flag-off every prompt byte and every gate outcome is
+ * byte-identical to the pre-build commit, proved by goldens captured from it
+ * (api/_utils/__fixtures__/voiceLayerPrompt.fitCheck.preBuild.golden.json).
+ * The flip is its own one-line PR after a founder preview smoke, never a build
+ * PR.
+ *
+ * FLIP ORDER — READ THIS BEFORE FLIPPING. This flag and VOICE_GROUNDING_MODE
+ * must NOT be lit together until the grounded confirmation rule carries the
+ * quote instruction too.
+ *
+ * The gate runs on every battle-mode chat turn regardless of `grounded`
+ * (chat.js). But the GROUNDED prompt is a different assembly, and the
+ * acknowledgement transform above lands only on the shipped one
+ * (voiceLayerPrompt.js — the branch reached when `grounded === false`). The
+ * grounded confirmation rule says the OPPOSITE of what the gate would then
+ * require: "Acknowledge in one sentence. The interface states what was filed.
+ * Do not describe what you will do with it." (voiceLayerGrounding.js).
+ *
+ * So with VOICE_GROUNDING_MODE at 'canary' (for an allowlisted uid) or 'on'
+ * AND this flag true, the gate would demand a quote the SENT prompt never
+ * asked for, and every typed-path filing would become fit_mismatch. That is
+ * exactly the failure the two halves ride one flag to prevent.
+ *
+ * TODAY THIS CANNOT HAPPEN: VOICE_GROUNDING_MODE is 'shadow' (below), which
+ * resolves to 'shadow' for every uid, so `grounded` is false for everyone and
+ * the shipped — transformed — prompt is what is sent. Flipping this flag alone,
+ * today, is coherent. The hazard is the ORDER, and it belongs to whichever of
+ * the two walks moves second.
+ *
+ * And note what does NOT open it: the VOICE_GROUNDING_CANARY_UIDS env var
+ * cannot promote anyone on its own. resolveVoiceGroundingMode consults that
+ * list ONLY when the base mode is already 'canary', so while the constant
+ * below reads 'shadow' every uid resolves to 'shadow' whatever the env says
+ * (proved exhaustively over base × env × uid in the §2 review, 12/12). Reaching
+ * the hazard therefore takes a deliberate CODE change to the constant below —
+ * a PR someone reviews — not an environment edit. That is the whole mitigation,
+ * and it is worth knowing it is a real one.
+ *
+ * The residual risk is still that this guarantee is a live-value dependency on
+ * another flag, held by this comment and one test row rather than by
+ * construction. The §2 review's recommendation, carried here so the flipper
+ * sees it: prefer shipping one of the two structural fixes BEFORE either walk
+ * moves, rather than relying on the ordering contract.
+ *
+ * The grounded rule was NOT changed here: voiceLayerGrounding.js is outside
+ * this build's file list and the grounding walk is out of its scope. The limit
+ * is pinned as executable documentation in
+ * api/_utils/voiceLayerPrompt.fitCheck.test.js ("the GROUNDED prompt is
+ * deliberately NOT transformed"), and raised for founder ruling in
+ * docs/audits/20260916_BUILD_DIRECTIVE_FIT_CHECK.md §6 D-3. Resolve it by
+ * either giving the grounded rule the same quote instruction in the walk's own
+ * PR, or giving the gate a `grounded` input.
+ *
+ * FLIP MAP — MEASURED, NOT ASSUMED (BUILD_RULES §2: the flip PR reconciles
+ * every one of these in the SAME commit, or it reds CI on every other open PR
+ * into main). An earlier draft of this map listed only the two pin files and
+ * said the goldens "do NOT move". That was wrong: flipping the constant and
+ * running the full suite reds **19 rows across 6 files**. Measured at
+ * 2026-09-16 on the build branch; re-measure before flipping.
+ *
+ *   src/config/directiveFitCheckFlags.test.js        1 row  — the dark pin moves to true
+ *   src/config/flagPinGuard.test.js                  2 rows — drop this flag from
+ *                                                             DARK_BY_DESIGN (its integrity
+ *                                                             row reds if a lit flag stays listed)
+ *   api/_utils/voiceLayerPrompt.grounding.goldens.test.js  6 rows
+ *   api/agent/chat.test.js                           4 rows
+ *   api/_utils/directiveGate.test.js                 4 rows
+ *   api/_utils/voiceLayerPrompt.test.js              2 rows
+ *
+ * The last four read the LIVE flag — none of them contains the string
+ * DIRECTIVE_FIT_CHECK_ENABLED — so they are behavioural fixtures and prompt
+ * goldens, not `expect(FLAG).toBe(...)` pins. flagPinGuard.test.js therefore
+ * CANNOT name them for you; only running the suite can. This flip is not a
+ * one-line PR.
+ *
+ * The suites that deliberately do NOT move are the ones that mock this flag
+ * explicitly: voiceLayerPrompt.fitCheck.test.js and
+ * directiveGate.fitCheck.test.js drive both states per row.
+ */
+// Pinned by: directiveFitCheckFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const DIRECTIVE_FIT_CHECK_ENABLED = false;
+
+/**
  * Release 2 PR-e — the sector-SLOT rule: tri-state rollout mode.
  *
  * Gates the Diversifier tournament sector-position cap (the ONE mechanical
@@ -2318,3 +2435,132 @@ export const SHOW_IT_ENABLED = false;
 export function isShowItOn() {
   return isBattleViewControllerOn() && SHOW_IT_ENABLED;
 }
+
+/**
+ * BACKING BETA — PR 0: ELIGIBILITY ATTESTATION (spec V1.3 §5 / §6 / §8 / §12
+ * PR 0; ruling D-z). A PLATFORM PRIMITIVE, not a backing feature: the first
+ * age, terms or consent state the platform has ever held (addendum §2 Q3 —
+ * nothing existed). `users/{uid}` is owner-writable, so the attestation lives
+ * in its own server-written `eligibility/{uid}` doc under a `write: if false`
+ * rule (the tournamentRanks pattern); it is an attestation, not verification.
+ *
+ * ONE flag for the ONE door. When it resolves ON —
+ *   · POST /api/eligibility/attest answers (it 404s while this is false, AFTER
+ *     auth — the SHOW_IT_ENABLED / research.js shape — so the route does not
+ *     exist as far as any caller is concerned).
+ * That route is the only thing this flag governs. While it is false the route
+ * is absent, and nothing else is reachable either: PR 0 ships no UI (the
+ * AttestationStep lands in PR 4 at the backing entry), no existing endpoint
+ * calls the read helper (api/_utils/eligibility.js — its first caller is PR 2),
+ * and the `eligibility` rules block is inert until deployed via the Console.
+ *
+ * FALSE at merge (§11 gates 1–2, §12): PR 0 merges dark. Before the flip,
+ * counsel's copy replaces the two `COUNSEL: replace before flip` placeholders
+ * in src/constants/eligibility.js and TERMS_VERSION becomes the ratified
+ * version (its COPY MAP names the rows that move; eligibilityFlags.test.js
+ * reds a lit flag that still carries either); the rules block is deployed.
+ * The flip PR then flips this flag TOGETHER WITH BACKING_BETA_ENABLED after
+ * every §11 gate — never a build PR.
+ *
+ * Read at CALL time inside the handler that gates on it — never a module-scope
+ * derivation — so a hermetic featureFlags mock with an explicit value governs
+ * every test (the TICK_STAMPS_ENABLED / SHOW_IT_ENABLED rule). No accessor:
+ * the server reads the bare constant, and there is no client gate in PR 0.
+ *
+ * FLIP MAP (the flip PR reconciles these in the SAME commit — BUILD_RULES §2):
+ *   • src/config/eligibilityFlags.test.js — the dark pin row moves to true;
+ *   • src/config/flagPinGuard.test.js — drop ELIGIBILITY_ATTESTATION_ENABLED
+ *     from DARK_BY_DESIGN (its integrity test reds if a lit flag is left listed).
+ *   The flag-off darkness suite (api/eligibility/attest.dark.test.js) mocks
+ *   this flag to an explicit false and does NOT move; the lit suite
+ *   (api/eligibility/attest.test.js) mocks it per row and does not move either.
+ */
+// Pinned by: eligibilityFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const ELIGIBILITY_ATTESTATION_ENABLED = false;
+
+/**
+ * BACKING BETA — PR 1–5: THE BACKING LAYER (spec V1.3 §0, §2, §4, §12; the
+ * whole rulings ledger D-a…D-z). A points-only spectator layer over base-layer
+ * League group-weeks: a weekly allowance of Backing Points staked on the pods
+ * you are not seated in, one sealed parimutuel pot per pod, settled off the
+ * composite the tournament already computes. No money, no crypto, no
+ * purchasable or redeemable points, no rake, no carry, no public ranking
+ * (§14). Points are score, never a bankroll (§2).
+ *
+ * ONE flag for every backing door. PR 1 ADDS NO DOOR — it is the foundation
+ * the later PRs compose: constants, the week helper, the wallet/ledger
+ * primitives, the rules blocks and the two stake indexes. Nothing in PR 1
+ * reads this flag, nothing calls the helpers, and no collection receives a
+ * document. The doors arrive with their PRs and are listed here as they land:
+ *   · PR 1 — NONE (this PR). Foundation only; no endpoint, no UI, no caller.
+ *   · PR 2 — POST /api/tournament/backing-stake, GET /api/tournament/backing-pools.
+ *   · PR 3 — POST /api/tournament/backing-settle (admin re-run) + the
+ *     settlement hook's own gate.
+ *   · PR 4 — the backing surfaces under src/components/League/backing/ and
+ *     GET /api/tournament/team-card.
+ *   · PR 5 — POST /api/backing/event.
+ * Every server route 404s while this is false, AFTER auth (the
+ * SHOW_IT_ENABLED / research.js shape), so no route exists as far as any
+ * caller is concerned.
+ *
+ * FALSE at merge (§11, §12): PR 1–5 all merge dark. The flip PR flips this
+ * flag TOGETHER WITH ELIGIBILITY_ATTESTATION_ENABLED after every §11 gate
+ * (counsel's jurisdictional review, the attestation deployed with counsel's
+ * copy, the two honesty fixes, the founder preview smoke, the deferral watch,
+ * and N1 mitigated per Amendment A §A1) — never a build PR.
+ *
+ * Read at CALL time inside the handler that gates on it — never a module-scope
+ * derivation — so a hermetic featureFlags mock with an explicit value governs
+ * every test (the TICK_STAMPS_ENABLED / SHOW_IT_ENABLED rule). No accessor.
+ *
+ * FLIP MAP (the flip PR reconciles these in the SAME commit — BUILD_RULES §2):
+ *   • src/config/backingBetaFlags.test.js — the dark pin row moves to true;
+ *   • src/config/flagPinGuard.test.js — drop BACKING_BETA_ENABLED from
+ *     DARK_BY_DESIGN (its integrity test reds if a lit flag is left listed).
+ *   PR 1 adds no flag-off darkness suite because PR 1 adds no door: there is
+ *   no behavior to hold byte-identical. The per-PR dark suites (PR 2's
+ *   backing-stake.dark.test.js onward) mock this flag to an explicit false and
+ *   do NOT move with the flip.
+ */
+// Pinned by: backingBetaFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const BACKING_BETA_ENABLED = false;
+
+/**
+ * THE THRESHOLD LINT — no promise on a signal the tick did not hold
+ * (docs/audits/20260915_PHASE0_SIGNAL_LANGUAGE.md §5 + §7.2 shape 2; the
+ * pure module is api/_utils/anticipationThresholdLint.js).
+ *
+ * A STRING TRI-STATE, walked in the grounding walk's own pattern — measure
+ * before enforcing:
+ *   'off'    the lint is not called. Today's path, byte-identical: every
+ *            candidate the decider emits reaches the anticipation queue and
+ *            the evaluations[].candidates[] stamp exactly as it does now.
+ *   'shadow' every candidate is linted and nothing is dropped. A candidate
+ *            that WOULD fail is logged to the anticipation shadow stream with
+ *            errorStep 'threshold_absent_signal' and its `absent` list — the
+ *            measurement the founder reads before enforcing.
+ *   'on'     a failing candidate is DROPPED from both persistence sites — it
+ *            reaches neither Gemma nor the candidates[] stamp — and logged.
+ *
+ * REJECT, NEVER REWRITE: an accepted threshold is byte-identical to what the
+ * decider wrote. A dropped candidate is simply not a fact on the record; the
+ * `heard` / `saw` verbs and the stamp composer are untouched (the stamp's
+ * INPUT shrinks under 'on', tickStamps.js does not change).
+ *
+ * The flip to 'shadow' is its own one-line PR; the flip to 'on' another —
+ * never a build PR. Each flip moves the pin row in
+ * src/config/anticipationThresholdLintFlags.test.js in the SAME commit
+ * (BUILD_RULES §2) and updates the note in flagPinGuard.test.js's
+ * DARK_BY_DESIGN block, which cannot HOLD this flag: the guard scans
+ * `*_ENABLED = true|false` and its integrity test rejects any key outside
+ * that boolean map. The VOICE_GROUNDING_MODE / MANDATE_TRANSPORT_MODE
+ * precedent — a string tri-state pins directly.
+ *
+ * Read as a module constant in the cron, like TICK_STAMPS_ENABLED beside it;
+ * there is no per-uid resolution to make, so there is no accessor.
+ */
+// Pinned by: anticipationThresholdLintFlags.test.js (a STRING tri-state — pinned directly, outside flagPinGuard's `*_ENABLED` scan; this value and the pin move together — BUILD_RULES §2).
+export const ANTICIPATION_THRESHOLD_LINT_MODE = 'off';
+
+/** The three founder-walked states, in walk order. */
+export const ANTICIPATION_THRESHOLD_LINT_MODES = Object.freeze(['off', 'shadow', 'on']);

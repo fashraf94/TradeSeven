@@ -532,6 +532,13 @@ export function computeTechnicalScore({
       sma20: smaBasis.sma20,
       sma50: smaBasis.sma50,
       sma200: smaBasis.sma200,
+      // WHICH series each average above came from — 'raw' or 'adjusted', per
+      // period. Already computed by `resolveSmaBasis` and, until now, thrown
+      // away: the split-guard fallback (a re-denominated window, or any
+      // non-finite raw close) silently reverted a symbol to the shipped
+      // comparison with no reading anywhere that said so. Additive; no reader
+      // iterates these keys.
+      basis: smaBasis.basis,
       distTo52wkHigh: Number(distToHigh.toFixed(1)),
       upDayVolRatio: Number(upDayVolRatio.toFixed(2)),
       rsi: rsiValue,

@@ -40,6 +40,8 @@ import {
 } from '../../src/constants/leagueTournament.js';
 
 const NOW = new Date('2026-06-19T22:30:00.000Z'); // Friday 18:30 ET
+// Tue 2026-06-16 18:30 ET — the weekday a holiday-short week's day 5 can land on.
+const TUE_EVENING = new Date('2026-06-16T22:30:00.000Z');
 const NOW_ISO = NOW.toISOString();
 
 beforeEach(() => {
@@ -307,6 +309,33 @@ describe('banking pending (the loud no-op until day-5 is banked)', () => {
     expect(bracket.rounds.r2).toBeUndefined();
     expect(summary.composedGroups).toEqual([]);
     expect(writeLog.some(([, path]) => path === 'tournamentGroups/b-r2-g1')).toBe(false);
+  });
+
+  // ===== FINALIZE ON BANKED, NOT ON FRIDAY (holiday-week fix) =====
+  // A week is five BANKED days, not five calendar days (tournamentBanking.js
+  // counts banked days), so a holiday-short week banks its fifth day on the
+  // FOLLOWING Monday. Under the Friday-only route that group then sat in BATTLE
+  // for the rest of the week — deploying daily, clamping nightly, and reading
+  // "Day 6 of 5" on the arena — until the Friday evening tick came round.
+
+  it('a FULLY BANKED week seals on a TUESDAY evening — the finalizer routes on banked-ness, not the weekday', async () => {
+    const { db, store } = seededBracketDb(); // both groups banked through day 5
+    const summary = await runFridayAdvancement(db, { now: TUE_EVENING });
+
+    expect(summary.bankingPending).toBe(0);
+    expect(summary.gamesLocked).toBe(2);
+    expect(store.get('tournamentGroups/b-r1-g1').status).toBe(GROUP_STATUS.COMPLETE);
+    expect(store.get('tournamentGroups/b-r1-g2').status).toBe(GROUP_STATUS.COMPLETE);
+    expect(store.get('tournamentBrackets/b').rounds.r1.lockedAt).toBeTruthy();
+  });
+
+  it('FOUR banked days do NOT seal — not even on a Friday', async () => {
+    const { db, store } = seededBracketDb({ g2DailyScores: bankedWeek([{}, {}, {}, {}]) });
+    const summary = await runFridayAdvancement(db, { now: NOW }); // Friday 18:30 ET
+
+    expect(summary.bankingPending).toBe(1);
+    expect(store.get('tournamentGroups/b-r1-g2').status).toBe(GROUP_STATUS.BATTLE);
+    expect(store.get('tournamentBrackets/b').rounds.r1.lockedAt).toBeNull();
   });
 });
 
@@ -799,6 +828,78 @@ describe('P6a side-effects — rank apply + leaderboard final upsert ride the Fr
     expect(store.get('tournamentBrackets/b').rounds.r1.games['b-r1-g1'].advancers).not.toBeNull();
     expect(store.get('tournamentGroups/b-r1-g1').status).toBe(GROUP_STATUS.COMPLETE);
     expect(store.get('tournamentRanks/founder').appliedGroups['b-r1-g1']).toBeDefined();
+  });
+
+  it('N1 DEGRADED LOCK REFUSAL: a seat with agentLayerMissing on EVERY banked day pauses the lock for MANUAL REVIEW and the log NAMES the seat; missing on some days locks normally', async () => {
+    const { db, store } = seededBracketDb();
+    const g1 = store.get('tournamentGroups/b-r1-g1');
+    for (let d = 1; d <= 5; d++) g1.dailyScores[`day${d}`].agentLayerMissing = ['cpu-3'];
+    // g2: one missing day only — the founder's "some days" ruling: the week proceeds.
+    store.get('tournamentGroups/b-r1-g2').dailyScores.day2.agentLayerMissing = ['cpu-6'];
+
+    const first = await runFridayAdvancement(db, { now: NOW });
+    expect(first.degradedLocks).toBe(1);
+    expect(first.errors).toBe(0);
+    expect(store.get('tournamentBrackets/b').rounds.r1.games['b-r1-g1'].advancers).toBeNull();      // g1 refused
+    expect(store.get('tournamentGroups/b-r1-g1').status).toBe(GROUP_STATUS.BATTLE);
+    expect(store.get('tournamentBrackets/b').rounds.r1.games['b-r1-g2'].advancers).not.toBeNull();  // g2 locked
+    expect(store.get('tournamentGroups/b-r1-g2').status).toBe(GROUP_STATUS.COMPLETE);
+    const line = console.error.mock.calls.map(c => c.join(' ')).find(l => l.includes('b-r1-g1') && l.includes('final snapshot degraded'));
+    expect(line).toBeTruthy();
+    expect(line).toContain('agentLayerMissing all week for seat(s) [cpu-3]');
+    expect(line).toContain('MANUAL REVIEW');
+    expect(line).not.toContain('agentScoresCarried');
+
+    // The manual-review resolution models the human step: the operator clears
+    // one day's listing after review; "every day" no longer holds and the next
+    // pass locks clean.
+    delete store.get('tournamentGroups/b-r1-g1').dailyScores.day3.agentLayerMissing;
+    const second = await runFridayAdvancement(db, { now: NOW });
+    expect(second.degradedLocks).toBe(0);
+    expect(store.get('tournamentBrackets/b').rounds.r1.games['b-r1-g1'].advancers).not.toBeNull();
+    expect(store.get('tournamentGroups/b-r1-g1').status).toBe(GROUP_STATUS.COMPLETE);
+  });
+
+  it('the refusal log reads the CLAMPED final for the carried arm: day5 carried + day6–8 clean still says agentScoresCarried, never "unspecified"', async () => {
+    // Review finding B5: degradeReason's carried arm must use the same clamped
+    // read as the predicate (getLatestBankedDayEntry) — an unclamped read on the
+    // zombie shape would refuse the lock and then fail to say why.
+    const { db, store } = seededBracketDb();
+    const g1 = store.get('tournamentGroups/b-r1-g1');
+    g1.dailyScores.day5.agentScoresCarried = true;
+    for (let d = 6; d <= 8; d++) g1.dailyScores[`day${d}`] = { recordedDate: `2026-06-${15 + d}`, closeScores: {} };
+
+    const first = await runFridayAdvancement(db, { now: NOW });
+    expect(first.degradedLocks).toBe(1);
+    const line = console.error.mock.calls.map(c => c.join(' ')).find(l => l.includes('b-r1-g1') && l.includes('final snapshot degraded'));
+    expect(line).toBeTruthy();
+    expect(line).toContain('(agentScoresCarried)');
+    expect(line).not.toContain('unspecified');
+  });
+
+  it('N1 BASE-LAYER refusal: an all-week-missing seat on a base-layer (non-bracket) group refuses completion, names the seat, applies no rank', async () => {
+    // Review-lens U3: every prior degraded-lock row was bracket-only; the
+    // base-layer gate (the first of the three isFinalSnapshotDegraded sites) had
+    // no row on either arm.
+    // structuredClone: bracketGroup keeps the dailyScores reference, and G1_WEEK
+    // is shared by the sibling rows — never mutate the fixture in place.
+    const base = bracketGroup({ id: 'ignored', members: G1_MEMBERS, dailyScores: structuredClone(G1_WEEK) });
+    delete base.bracketGameId;
+    base.baseLayerWeek = '2026-W25';
+    for (let d = 1; d <= 5; d++) base.dailyScores[`day${d}`].agentLayerMissing = ['cpu-2'];
+    const { db, store } = makeDb({
+      'tournamentGroups/base1': base,
+      'indexIntelligence/stockRankings': { stocks: STOCKS },
+    });
+    const summary = await runFridayAdvancement(db, { now: NOW });
+    expect(summary.degradedLocks).toBe(1);
+    expect(summary.baseCompleted).toBe(0);
+    expect(summary.rankApplied).toBe(0);
+    expect(store.get('tournamentGroups/base1').status).toBe(GROUP_STATUS.BATTLE);
+    expect(store.get('tournamentRanks/founder')).toBeUndefined();
+    const line = console.error.mock.calls.map(c => c.join(' ')).find(l => l.includes('base-layer group base1') && l.includes('final snapshot degraded'));
+    expect(line).toBeTruthy();
+    expect(line).toContain('agentLayerMissing all week for seat(s) [cpu-2]');
   });
 
   it('base-layer completion applies rank + leaderboard BEFORE the transition', async () => {

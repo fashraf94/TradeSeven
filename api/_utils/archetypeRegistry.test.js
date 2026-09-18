@@ -43,7 +43,14 @@ import {
   validateRegistryCompleteness,
   buildRegistrySnapshot,
   buildCandidateRegistrySnapshot,
+  validateCautiousRegister,
 } from './archetypeRegistry.js';
+import {
+  ARCHETYPE_ADJUSTMENTS,
+  ADJUSTMENT_CONFLICT_GROUPS,
+  getAllowlist,
+  getCautiousRegister,
+} from '../../src/data/archetypeAdjustments.js';
 import { canonicalContentHash } from './canonicalHash.js';
 import { VALID_ARCHETYPES } from './agentArchetypeConfig.js';
 
@@ -343,5 +350,105 @@ describe('extensionless relative import guard — whole api/ graph (BUILD_RULES 
       offenders,
       `Extensionless relative import(s) in the api/ graph — add the .js extension (Node ESM requires it; Vite/vitest hide this):\n  ${offenders.join('\n  ')}`
     ).toEqual([]);
+  });
+});
+
+// ── The cautious register (2026-09-17): the charter's sentence, bound to ids ──
+//
+// The prompt's `[cautious register]` tag and its summary line both read this ONE
+// list, so a malformed list is a prompt that lies to the model about its own
+// menu. The three rows below are the three ways it can be malformed, EACH SHOWN
+// FAILING — a validator row that cannot red under the defect it names is not a
+// guard (BUILD_RULES §2).
+describe('cautiousRegister shape (the charter is the one source)', () => {
+  const MENU = new Set(['SP-01', 'SP-02', 'SP-04', 'SP-05', 'SP-06']);
+  const GROUPS = [{ groupId: 'SP-G1', members: [{ id: 'SP-04' }, { id: 'SP-05' }] }];
+  const check = (register) => validateCautiousRegister({
+    archetypeId: 'degen', register, allowlistIds: MENU, conflictGroups: GROUPS,
+  });
+
+  it('a well-formed register produces no problems (the control)', () => {
+    expect(check(['SP-01', 'SP-02', 'SP-06'])).toEqual([]);
+    // One id that happens to sit in a group is fine — only BOTH ends are not.
+    expect(check(['SP-01', 'SP-04'])).toEqual([]);
+  });
+
+  it('FAILS on an id that is not on this archetype\'s own menu', () => {
+    expect(check(['SP-01', 'SP-99'])).toEqual([
+      "degen: cautiousRegister id SP-99 not on this archetype's menu",
+    ]);
+    // A real id from ANOTHER archetype is the realistic version of this typo.
+    expect(check(['CN-03'])).toEqual([
+      "degen: cautiousRegister id CN-03 not on this archetype's menu",
+    ]);
+  });
+
+  it('FAILS on an empty list, and on a missing/malformed field', () => {
+    expect(check([])).toEqual(['degen: cautiousRegister is missing or empty']);
+    expect(check(undefined)).toEqual(['degen: cautiousRegister is missing or empty']);
+    expect(check(null)).toEqual(['degen: cautiousRegister is missing or empty']);
+    expect(check('SP-01')).toEqual(['degen: cautiousRegister is missing or empty']);
+  });
+
+  it('FAILS when the register holds BOTH ends of one conflict group', () => {
+    expect(check(['SP-04', 'SP-05'])).toEqual([
+      'degen: cautiousRegister holds both ends of conflict group SP-G1 (SP-04, SP-05)',
+    ]);
+  });
+
+  // The live data, through the real validator surface. This is what keeps the
+  // six authored lists honest as the menus and groups evolve.
+  it('all six live archetypes pass every rule, and the registry is complete', () => {
+    for (const id of listArchetypeIds()) {
+      const register = ARCHETYPE_ADJUSTMENTS[id].cautiousRegister;
+      expect(Array.isArray(register) && register.length > 0, `${id}: authored register`).toBe(true);
+      expect(validateCautiousRegister({
+        archetypeId: id,
+        register,
+        allowlistIds: new Set(getAllowlist(id).map((a) => a.id)),
+        conflictGroups: ADJUSTMENT_CONFLICT_GROUPS[id],
+      }), `${id}`).toEqual([]);
+      // The accessor and the raw field are the same list (no fallback, no copy).
+      expect(getCautiousRegister(id)).toEqual(register);
+    }
+    expect(validateRegistryCompleteness().problems).toEqual([]);
+  });
+
+  // MUTATION CHECK — validateRegistryCompleteness must actually CARRY these
+  // problems, not merely compute them. Doctoring the live field on the frozen-
+  // by-convention object is avoided: instead the helper's output is injected
+  // through the same call shape the validator uses, and the validator's own
+  // real-data row above proves the wiring produces [] when the data is good.
+  it('MUTATION CHECK — a doctored register surfaces through the full validator', () => {
+    const before = validateRegistryCompleteness();
+    expect(before.complete).toBe(true);
+    const original = ARCHETYPE_ADJUSTMENTS.degen.cautiousRegister;
+    try {
+      ARCHETYPE_ADJUSTMENTS.degen.cautiousRegister = ['SP-01', 'SP-99'];
+      const after = validateRegistryCompleteness();
+      expect(after.complete).toBe(false);
+      expect(after.problems).toContain("degen: cautiousRegister id SP-99 not on this archetype's menu");
+
+      ARCHETYPE_ADJUSTMENTS.degen.cautiousRegister = [];
+      expect(validateRegistryCompleteness().problems).toContain('degen: cautiousRegister is missing or empty');
+
+      ARCHETYPE_ADJUSTMENTS.degen.cautiousRegister = ['SP-04', 'SP-05'];
+      expect(validateRegistryCompleteness().problems).toContain(
+        'degen: cautiousRegister holds both ends of conflict group SP-G1 (SP-04, SP-05)',
+      );
+    } finally {
+      ARCHETYPE_ADJUSTMENTS.degen.cautiousRegister = original;
+    }
+    expect(validateRegistryCompleteness()).toEqual(before);
+  });
+
+  // The field is deliberately NOT on the composed definition: surfacing it would
+  // move computeIdentityHash and force an ARCHETYPE_IDENTITY_VERSION bump + two
+  // new snapshot artifacts. This row states that choice so a later reader does
+  // not "fix" it without minting the versions.
+  it('is NOT surfaced on getArchetypeDefinition, so the identityHash does not move', () => {
+    expect(getArchetypeDefinition('degen')).not.toHaveProperty('cautiousRegister');
+    const snapshot = JSON.parse(readFileSync(SNAPSHOT_PATH, 'utf8'));
+    expect(computeIdentityHash()).toBe(snapshot.identityHash);
   });
 });

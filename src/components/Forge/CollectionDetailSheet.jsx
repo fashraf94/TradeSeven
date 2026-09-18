@@ -157,20 +157,14 @@ export default function CollectionDetailSheet({
     return () => { document.body.style.overflow = orig; };
   }, []);
 
-  if (!collection) return null;
-
-  const { title, subtitle, accentColor, rules, categoryColors, ruleIds: rawRuleIds } = collection;
-  const ruleIds = rawRuleIds || [];
-  const isStyle = !!collection.isStyleCollection;
-  const collectedCount = ruleIds.filter(id => collectedSourceRefs.has(id)).length;
-  const allCollected = ruleIds.length > 0 && collectedCount === ruleIds.length;
-  const remainingCount = ruleIds.length - collectedCount;
-
-  const hasProgression = !!collection.progressionHints;
-  const currentLevel = agentLevel || 'rookie';
-  const hints = hasProgression ? collection.progressionHints[currentLevel] : null;
-  const totalRules = rules?.length || 0;
-  const activeCount = hints?.activeCount || totalRules;
+  // ABOVE THE EARLY RETURN so the hook count does not depend on `collection`.
+  // Both values the memos close over are read through `collection?.` for the
+  // guarded path; below the return `collection` is non-null, so `rules` and
+  // `hasProgression` hold exactly what the destructure and the `!!` produced
+  // before. Both memo bodies already bail on `!hasProgression`, which is
+  // false without a collection, so neither does any work on that path.
+  const rules = collection?.rules;
+  const hasProgression = !!collection?.progressionHints;
 
   // Group rules by priority tier for progressive collections
   const tierGroups = useMemo(() => {
@@ -189,6 +183,20 @@ export default function CollectionDetailSheet({
     if (!hasProgression || gamesPlayed == null) return null;
     return getNextLevelInfo(gamesPlayed);
   }, [hasProgression, gamesPlayed]);
+
+  if (!collection) return null;
+
+  const { title, subtitle, accentColor, categoryColors, ruleIds: rawRuleIds } = collection;
+  const ruleIds = rawRuleIds || [];
+  const isStyle = !!collection.isStyleCollection;
+  const collectedCount = ruleIds.filter(id => collectedSourceRefs.has(id)).length;
+  const allCollected = ruleIds.length > 0 && collectedCount === ruleIds.length;
+  const remainingCount = ruleIds.length - collectedCount;
+
+  const currentLevel = agentLevel || 'rookie';
+  const hints = hasProgression ? collection.progressionHints[currentLevel] : null;
+  const totalRules = rules?.length || 0;
+  const activeCount = hints?.activeCount || totalRules;
 
   // CTA label for progressive collections
   const ctaLabel = hasProgression

@@ -44,6 +44,7 @@ export function releaseSlot({ groupId } = {}) {
 // Known slot error codes → friendly copy; falls back to the server message.
 const SLOT_ERROR_COPY = Object.freeze({
   unknown_slot: 'That draft slot isn’t on the schedule.',
+  slot_disabled: 'That draft slot is unavailable right now — pick another time.',
   slot_full: 'That slot is full — all four seats are taken.',
   draft_already_started: 'That draft has already started — seats are locked.',
   live_draft_disabled: 'Live draft isn’t available right now.',

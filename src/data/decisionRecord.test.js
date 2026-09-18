@@ -187,7 +187,14 @@ describe('decisionRecord — the rules', () => {
 
   it('the absence lines: a timeout earns the timeout words, every other class the neutral line (D-65 / D-69)', () => {
     expect(noDecisionLine({ failureClass: 'timeout' })).toBe(NO_DECISION_OUTAGE);
-    for (const cls of ['budget_skipped', 'truncated_response', '502', 'TypeError', 'unknown', undefined]) {
+    // 'build_timeout' (Sep 12, 2026) is the one class this loop does NOT cover
+    // by construction: it CONTAINS the substring 'timeout', so a matcher
+    // loosened from === to .includes() would silently give a check that never
+    // made a call the words "the evaluation timed out". Listed first for that
+    // reason. (This module's noDecisionLine is the narrator's copy of the rule —
+    // api/_utils/voiceLayerGrounding.js:247 — and the Why? panel keeps its own
+    // at selectWhyState.js:146, which has its own mounted row.)
+    for (const cls of ['build_timeout', 'budget_skipped', 'truncated_response', '502', 'TypeError', 'unknown', undefined]) {
       expect(noDecisionLine({ failureClass: cls })).toBe(NO_DECISION_INCOMPLETE);
     }
     expect(NO_DECISION_OUTAGE.startsWith(NO_DECISION)).toBe(true);

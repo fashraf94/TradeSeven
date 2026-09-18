@@ -30,7 +30,14 @@ import {
   getSlotOccupancy,
   SLOT_SENTINEL_PREFIX,
 } from './liveDraftFormation.js';
-import { LIVE_DRAFT_SLOTS, slotById } from '../../src/config/liveDraftSlots.js';
+import {
+  LIVE_DRAFT_SLOTS,
+  slotById,
+  isKnownSlotId,
+  isSlotEnabled,
+  isSlotIdEnabled,
+  isSlotIdDisabled,
+} from '../../src/config/liveDraftSlots.js';
 import { GROUP_STATUS, GROUP_SIZE, TOURNAMENT_GROUPS_COLLECTION, BASELINE_POLICY } from '../../src/constants/leagueTournament.js';
 
 beforeEach(() => {
@@ -147,7 +154,52 @@ describe('nextSlotFireInstant — DST-safe slot resolution', () => {
       expect(typeof s.hourEt).toBe('number');
       expect(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']).toContain(s.weekday);
     }
+    // The definition STAYS (the id is reserved and must never be reused) — it is
+    // only taken off the board. Re-enabling is a deliberate edit, not a default.
     expect(slotById('mon-0845')).toMatchObject({ hourEt: 8, minuteEt: 45 });
+  });
+
+  // ── N1 mitigation: mon-0845 is DISABLED, the other three are not ──
+  it('config: mon-0845 is disabled; every other slot stays enabled by default', () => {
+    expect(slotById('mon-0845').enabled).toBe(false);
+    expect(isSlotEnabled(slotById('mon-0845'))).toBe(false);
+    expect(isSlotIdEnabled('mon-0845')).toBe(false);
+    expect(isSlotIdDisabled('mon-0845')).toBe(true);
+
+    for (const id of ['wed-1900', 'sat-1200', 'sun-1900']) {
+      // default-enabled: the field is ABSENT on these, not `true`
+      expect(slotById(id).enabled).toBeUndefined();
+      expect(isSlotEnabled(slotById(id))).toBe(true);
+      expect(isSlotIdEnabled(id)).toBe(true);
+      expect(isSlotIdDisabled(id)).toBe(false);
+    }
+
+    // A disabled slot is still a KNOWN slot — so a claim earns the specific
+    // slot_disabled refusal, not the misleading "not on the schedule" one.
+    expect(isKnownSlotId('mon-0845')).toBe(true);
+
+    // Unknown ids: never enabled, but never "disabled" either — the fire gate
+    // keys on isSlotIdDisabled so an unrecognized slotId stays fail-OPEN.
+    expect(isSlotIdEnabled('nope')).toBe(false);
+    expect(isSlotIdDisabled('nope')).toBe(false);
+    expect(isSlotEnabled(null)).toBe(false);
+    expect(isSlotIdDisabled(undefined)).toBe(false);
+  });
+
+  it('a MALFORMED `enabled` value fails SAFE (reads disabled, never silently live)', () => {
+    // The footgun this guards: someone disabling a slot writes `enabled: null`
+    // or `enabled: 'false'`. A `!== false` predicate would call all of these
+    // ENABLED and ship a live slot while the author believed it was off.
+    for (const bad of [null, 0, '', 'false', 'no', NaN]) {
+      expect(isSlotEnabled({ id: 'x', enabled: bad })).toBe(false);
+    }
+    // Only an absent field or a literal `true` means enabled.
+    expect(isSlotEnabled({ id: 'x' })).toBe(true);
+    expect(isSlotEnabled({ id: 'x', enabled: undefined })).toBe(true);
+    expect(isSlotEnabled({ id: 'x', enabled: true })).toBe(true);
+    // Truthy-but-not-true is NOT a way to force a slot on.
+    expect(isSlotEnabled({ id: 'x', enabled: 1 })).toBe(false);
+    expect(isSlotEnabled({ id: 'x', enabled: 'true' })).toBe(false);
   });
 
   it('WINTER/EST: Wed 7pm ET resolves to 00:00 UTC (next day)', () => {
@@ -337,6 +389,32 @@ describe('claimSlotSeat / releaseSlotSeat — transactional seat lifecycle', () 
       .rejects.toThrow(sentinel('unknown_slot'));
   });
 
+  // ── N1 mitigation: a DISABLED slot refuses claims, and writes nothing ──
+  it('a DISABLED slot is rejected with slot_disabled — and creates no group', async () => {
+    const { db, store } = makeDb();
+    const before = store.size;
+    await expect(claimSlotSeat(db, { slotId: 'mon-0845', odUserId: 'userA', now: NOW }))
+      .rejects.toThrow(sentinel('slot_disabled'));
+    // Refused BEFORE any read or write: the lazy get-or-create never ran, so no
+    // occurrence group exists for the disabled slot to strand anyone in.
+    expect(store.size).toBe(before);
+  });
+
+  // Distinct from unknown_slot — the id is real and reserved, just off the board.
+  // Asserted by COMPARING the two refusals rather than with a `.not.toThrow` on
+  // the disabled one: once the positive assertion above pins the message with
+  // ^...$, "and it is not the other message" is a tautology of the same call and
+  // can never fail independently. This row compares two DIFFERENT calls, so it
+  // genuinely fails if the two cases ever collapse into one error.
+  it('slot_disabled and unknown_slot are DIFFERENT refusals (a real id is never "not on the schedule")', async () => {
+    const { db } = makeDb();
+    const disabledErr = await claimSlotSeat(db, { slotId: 'mon-0845', odUserId: 'userA', now: NOW }).catch((e) => e);
+    const unknownErr = await claimSlotSeat(db, { slotId: 'totally-not-a-slot', odUserId: 'userA', now: NOW }).catch((e) => e);
+    expect(disabledErr.message).toMatch(sentinel('slot_disabled'));
+    expect(unknownErr.message).toMatch(sentinel('unknown_slot'));
+    expect(disabledErr.message).not.toBe(unknownErr.message);
+  });
+
   it('release frees a seat; a non-last release does NOT delete the group', async () => {
     const { db, store } = makeDb();
     await claimSlotSeat(db, { slotId: 'wed-1900', odUserId: 'userA', now: NOW });
@@ -516,5 +594,26 @@ describe('getSlotOccupancy — per-slot counts + names', () => {
     const sat = rows.find((r) => r.slotId === 'sat-1200');
     expect(sat.humanCount).toBe(0);
     expect(sat.seats).toEqual([]);
+  });
+
+  // ── N1 mitigation: the disabled slot is REPORTED, never omitted ──
+  it('reports a disabled slot with enabled:false rather than dropping the row', async () => {
+    const { db } = makeDb();
+    const rows = await getSlotOccupancy(db, NOW);
+
+    // Still four rows — the picker must show the slot as unavailable, not have
+    // it silently vanish (and a pre-existing group under it must stay visible).
+    expect(rows.map((r) => r.slotId)).toEqual(['wed-1900', 'sat-1200', 'sun-1900', 'mon-0845']);
+
+    const mon = rows.find((r) => r.slotId === 'mon-0845');
+    expect(mon.enabled).toBe(false);
+    // the row is otherwise intact — label and occurrence still resolve
+    expect(mon.label).toBe('Mon 8:45am ET');
+    expect(typeof mon.scheduledDraftAt).toBe('string');
+    expect(mon.groupId).toContain('mon-0845');
+
+    for (const id of ['wed-1900', 'sat-1200', 'sun-1900']) {
+      expect(rows.find((r) => r.slotId === id).enabled).toBe(true);
+    }
   });
 });

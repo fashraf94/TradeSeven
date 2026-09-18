@@ -142,10 +142,15 @@ population at its `battleStartWeek` Monday open:
 - [ ] The League view now renders the **existing** battle arena (untouched) —
       the live-draft chrome is gone; from here the pod scores, banks, and
       advances exactly like any ranked pod.
-- [ ] **Monday 8:45am slot margin.** For the `mon-0845` slot, confirm a fully
-      abandoned draft still completes (one drive pass) **before** the 9:30 open —
-      slot time + max draft duration + one fire-cron cadence < 9:30 by
-      construction.
+- [ ] ~~**Monday 8:45am slot margin.** For the `mon-0845` slot, confirm a fully
+      abandoned draft still completes (one drive pass) **before** the 9:30 open.~~
+      **NOT SMOKE-TESTABLE AS OF 2026-09-12 — the `mon-0845` slot is DISABLED**
+      (N1 mitigation, `src/config/liveDraftSlots.js`): a claim on it now returns
+      409 `slot_disabled`, so this step cannot be performed by hand. The margin
+      itself is still proven in code — `liveDraftLifecycle.test.js` ("slot 8:45 +
+      fire latency + one drive cadence + max draft duration < 9:30") and the
+      inline-flip e2e row. Restore this manual step only when the slot is
+      re-enabled (after the N1 pipeline fix is merged and smoked).
 
 ## 6. Control — the training pod is byte-identical
 

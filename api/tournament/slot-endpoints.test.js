@@ -160,6 +160,37 @@ describe('slot-* endpoints — claim → schedule → release', () => {
     expect(res.body.error).toBe('unknown_slot');
   });
 
+  // ── N1 mitigation: the disabled slot, end to end through the endpoints ──
+  it('rejects a DISABLED slot with 409 slot_disabled, and an UNKNOWN slot with 400 — two distinct refusals', async () => {
+    const disabled = mockRes();
+    await claimHandler(req('POST', { slotId: 'mon-0845' }), disabled);
+    expect(disabled.statusCode).toBe(409);
+    expect(disabled.body.error).toBe('slot_disabled');
+
+    // The contrast is asserted across TWO calls, not as a `.not.toBe` on the
+    // first: after `toBe('slot_disabled')` passes, "not unknown_slot" is implied
+    // and could never fail on its own. Comparing the two responses can.
+    const unknown = mockRes();
+    await claimHandler(req('POST', { slotId: 'totally-not-a-slot' }), unknown);
+    expect(unknown.statusCode).toBe(400);
+    expect(unknown.body.error).toBe('unknown_slot');
+    expect(disabled.statusCode).not.toBe(unknown.statusCode);
+
+    // and nothing was created for the disabled slot
+    expect(h.db._store.has('tournamentGroups/lds_mon-0845_2026-07-13')).toBe(false);
+  });
+
+  it('schedule still LISTS the disabled slot, marked enabled:false', async () => {
+    const res = mockRes();
+    await scheduleHandler(req('GET'), res);
+    expect(res.statusCode).toBe(200);
+    const mon = res.body.slots.find((s) => s.slotId === 'mon-0845');
+    expect(mon).toBeDefined();          // reported, not omitted
+    expect(mon.enabled).toBe(false);
+    const wed = res.body.slots.find((s) => s.slotId === 'wed-1900');
+    expect(wed.enabled).toBe(true);
+  });
+
   it('schedule returns the week’s slots with counts', async () => {
     await claimHandler(req('POST', { slotId: 'wed-1900', displayName: 'Ada' }), mockRes());
     const res = mockRes();

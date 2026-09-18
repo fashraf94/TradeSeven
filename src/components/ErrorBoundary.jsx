@@ -224,7 +224,11 @@ class ErrorBoundary extends React.Component {
             </div>
 
             {/* Show error details in dev mode */}
-            {process.env.NODE_ENV === 'development' && error && (
+            {/* import.meta.env.DEV, not process.env.NODE_ENV — same reason as
+                src/App.jsx's diagnostic banner: `process` is undefined in a
+                browser and Vite was substituting it. DEV is false for
+                `vite build`, so details stay out of production. */}
+            {import.meta.env.DEV && error && (
               <details style={{
                 marginTop: '20px',
                 textAlign: 'left',

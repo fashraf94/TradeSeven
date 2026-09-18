@@ -8,10 +8,13 @@
 import { describe, it, expect } from 'vitest';
 import {
   classifyHaikuFailure,
+  classifyTimeoutKind,
   shouldStartHaikuCall,
   nextConsecutiveEvalFailures,
   HAIKU_CALL_CEILING_MS,
   HAIKU_POST_CALL_ALLOWANCE_MS,
+  PROMPT_BUILD_CEILING_MS,
+  PROMPT_BUILD_TIMEOUT_ERROR_NAME,
   EVAL_MAX_OUTPUT_TOKENS,
 } from './agentEvalTransport.js';
 
@@ -45,6 +48,13 @@ class InternalServerError extends Error {
 class APIConnectionError extends Error {
   constructor() { super('Connection error.'); }
 }
+// The cron's prompt-build race rejection: a plain Error whose `.name` is set
+// (agent-evaluate.js). Its constructor.name is 'Error', so — the mirror image
+// of the SDK quirk above — only the `.name` arm can catch it.
+const promptBuildTimeout = () => Object.assign(
+  new Error(`prompt build exceeded ${PROMPT_BUILD_CEILING_MS} ms`),
+  { name: PROMPT_BUILD_TIMEOUT_ERROR_NAME },
+);
 
 describe('classifyHaikuFailure', () => {
   it('classifies the SDK per-request timeout as timeout (constructor.name, .name stays Error)', () => {
@@ -82,14 +92,113 @@ describe('classifyHaikuFailure', () => {
     expect(classifyHaikuFailure(null)).toBe('unknown');
     expect(classifyHaikuFailure(undefined)).toBe('unknown');
   });
+
+  // Sep 2026 transport hygiene: the prompt build is bounded on its own ceiling
+  // and blowing it is NOT a call that timed out — no request was ever sent.
+  it('classifies the prompt-build ceiling as build_timeout, never as timeout', () => {
+    const err = promptBuildTimeout();
+    expect(err.constructor.name).toBe('Error'); // only the `.name` arm can catch it
+    expect(classifyHaikuFailure(err)).toBe('build_timeout');
+    expect(classifyHaikuFailure(err)).not.toBe('timeout');
+  });
+
+  it('the build-timeout message is not timeout-shaped either — the class does not depend on the branch order', () => {
+    const msg = promptBuildTimeout().message;
+    expect(msg).not.toMatch(/timed? ?out/i);
+    expect(msg).not.toMatch(/request was aborted/i);
+    expect(classifyHaikuFailure(new Error(msg))).toBe('Error'); // the message alone classifies as nothing
+  });
+});
+
+// Sep 2026 transport hygiene. classifyHaikuFailure keeps ONE 'timeout' class —
+// every consumer of it is unchanged — and this carries the split Phase 0 §3.3
+// found missing: by failureClass alone the SDK's 20s timeout and the cron's 22s
+// AbortController backstop were indistinguishable, and only the first 200 chars
+// of haikuError.message told them apart.
+describe('classifyTimeoutKind', () => {
+  it("the SDK's own per-request timeout is 'sdk' (constructor.name, .name stays Error)", () => {
+    const err = new APIConnectionTimeoutError();
+    expect(err.name).toBe('Error');
+    expect(classifyTimeoutKind(err)).toBe('sdk');
+    // …and by message alone, for an SDK build that stops exporting the class
+    expect(classifyTimeoutKind(new Error('Request timed out.'))).toBe('sdk');
+    expect(classifyTimeoutKind(new Error('connect ETIMEDOUT: timed out'))).toBe('sdk');
+  });
+
+  it("the AbortController backstop is 'backstop' — the SDK class, a native AbortError, and the message", () => {
+    expect(classifyTimeoutKind(new APIUserAbortError())).toBe('backstop');
+    const native = new Error('The operation was aborted');
+    native.name = 'AbortError';
+    expect(classifyTimeoutKind(native)).toBe('backstop');
+    expect(classifyTimeoutKind(new Error('Request was aborted.'))).toBe('backstop');
+  });
+
+  it('the two kinds are never the same value, while the failure CLASS stays one word for both', () => {
+    const sdk = new APIConnectionTimeoutError();
+    const backstop = new APIUserAbortError();
+    expect(classifyTimeoutKind(sdk)).not.toBe(classifyTimeoutKind(backstop));
+    expect(classifyHaikuFailure(sdk)).toBe('timeout');
+    expect(classifyHaikuFailure(backstop)).toBe('timeout');
+  });
+
+  it('a build timeout stays null even when its MESSAGE is timeout-shaped — the name guard, not the fall-through, is what holds', () => {
+    // Anti-vacuity (review lens A, finding A1): the shipped ceiling message
+    // ('prompt build exceeded 10000 ms') matches neither regex, so the plain
+    // build-timeout case would return null with or without the name guard at
+    // the top of classifyTimeoutKind. This row is the one that makes that guard
+    // load-bearing: same name, a message that DOES match /timed? ?out/i.
+    const err = Object.assign(new Error('prompt build timed out'), { name: PROMPT_BUILD_TIMEOUT_ERROR_NAME });
+    expect(/timed? ?out/i.test(err.message)).toBe(true);
+    expect(classifyTimeoutKind(err)).toBeNull();
+    expect(classifyHaikuFailure(err)).toBe('build_timeout');
+  });
+
+  it('the CLASS check beats the message check: a backstop abort whose message mentions a timeout is still backstop', () => {
+    // Review lens D, finding D4. The class is the strong signal; the messages
+    // are only a fallback for an SDK build that stops exporting the classes.
+    // Interleaving them mis-read the one discrimination this function exists for.
+    const abortWithTimeoutWords = new APIUserAbortError();
+    abortWithTimeoutWords.message = 'Request was aborted due to timeout';
+    expect(classifyTimeoutKind(abortWithTimeoutWords)).toBe('backstop');
+
+    const nativeAbort = new Error('The operation timed out and was aborted');
+    nativeAbort.name = 'AbortError';
+    expect(classifyTimeoutKind(nativeAbort)).toBe('backstop');
+  });
+
+  it('everything that is not a transport timeout is null — build timeout, statuses, connection error, TypeError, nullish', () => {
+    expect(classifyTimeoutKind(promptBuildTimeout())).toBeNull();
+    expect(classifyTimeoutKind(new RateLimitError())).toBeNull();
+    expect(classifyTimeoutKind(new InternalServerError())).toBeNull();
+    expect(classifyTimeoutKind(new APIConnectionError())).toBeNull();
+    expect(classifyTimeoutKind(new TypeError('x is not a function'))).toBeNull();
+    expect(classifyTimeoutKind(null)).toBeNull();
+    expect(classifyTimeoutKind(undefined)).toBeNull();
+  });
+
+  it('a truncated response never reaches it — but were it passed one, it is null (the class is set from a literal, not from an error)', () => {
+    expect(classifyTimeoutKind(new Error('response received but tool input missing/unusable (stop_reason=max_tokens)'))).toBeNull();
+  });
 });
 
 describe('shouldStartHaikuCall — pre-call budget guard', () => {
-  const timeBudgetMs = 50_000; // TIME_BUDGET_MS in agent-evaluate.js
-  const required = HAIKU_CALL_CEILING_MS + HAIKU_POST_CALL_ALLOWANCE_MS; // 34s
+  const timeBudgetMs = 80_000; // > the requirement, so the boundary rows are about the guard, not the budget
+  // The requirement is the SUM OF THE THREE NAMED CONSTANTS and never a
+  // literal, so a future ceiling change moves the guard with it. Sep 2026: the
+  // build became a bounded phase running sequentially BEFORE the call (the
+  // backstop is armed after the prompt is built), so its ceiling joins the sum.
+  const required = PROMPT_BUILD_CEILING_MS + HAIKU_CALL_CEILING_MS + HAIKU_POST_CALL_ALLOWANCE_MS;
 
-  it('derives the 34s requirement from the 22s ceiling + 12s allowance', () => {
-    expect(required).toBe(34_000);
+  it('derives the 44s requirement from the 10s build ceiling + 22s call ceiling + 12s post-call allowance', () => {
+    expect(required).toBe(44_000);
+    expect(PROMPT_BUILD_CEILING_MS).toBe(10_000);
+    expect(HAIKU_CALL_CEILING_MS).toBe(22_000);
+    expect(HAIKU_POST_CALL_ALLOWANCE_MS).toBe(12_000);
+    // anti-vacuous: the build ceiling is really IN the sum (the pre-Sep-2026
+    // guard required 34s and this row is what catches a silent revert)
+    expect(shouldStartHaikuCall({ elapsedMs: 0, timeBudgetMs }).requiredMs).toBe(required);
+    expect(shouldStartHaikuCall({ elapsedMs: 0, timeBudgetMs }).requiredMs)
+      .toBe(HAIKU_CALL_CEILING_MS + HAIKU_POST_CALL_ALLOWANCE_MS + PROMPT_BUILD_CEILING_MS);
   });
 
   it('proceeds when remaining budget exactly equals the requirement (boundary inclusive)', () => {
@@ -102,16 +211,27 @@ describe('shouldStartHaikuCall — pre-call budget guard', () => {
   it('skips when remaining budget is 1ms short', () => {
     const d = shouldStartHaikuCall({ elapsedMs: timeBudgetMs - required + 1, timeBudgetMs });
     expect(d.proceed).toBe(false);
+    expect(d.remainingMs).toBe(required - 1);
+  });
+
+  it('a battle that WOULD have proceeded under the old 34s requirement is now skipped — the build needs room of its own', () => {
+    const oldRequired = HAIKU_CALL_CEILING_MS + HAIKU_POST_CALL_ALLOWANCE_MS;
+    const d = shouldStartHaikuCall({ elapsedMs: timeBudgetMs - oldRequired, timeBudgetMs });
+    expect(d.remainingMs).toBe(oldRequired);
+    expect(d.proceed).toBe(false);
   });
 
   it('proceeds comfortably at the start of a run', () => {
     expect(shouldStartHaikuCall({ elapsedMs: 5_000, timeBudgetMs }).proceed).toBe(true);
   });
 
-  it('honors explicit ceiling/allowance overrides', () => {
-    const d = shouldStartHaikuCall({ elapsedMs: 0, timeBudgetMs: 10_000, callCeilingMs: 8_000, postCallAllowanceMs: 1_000 });
+  it('honors explicit build/ceiling/allowance overrides', () => {
+    const d = shouldStartHaikuCall({
+      elapsedMs: 0, timeBudgetMs: 10_000,
+      promptBuildCeilingMs: 500, callCeilingMs: 8_000, postCallAllowanceMs: 1_000,
+    });
     expect(d.proceed).toBe(true);
-    expect(d.requiredMs).toBe(9_000);
+    expect(d.requiredMs).toBe(9_500);
   });
 });
 

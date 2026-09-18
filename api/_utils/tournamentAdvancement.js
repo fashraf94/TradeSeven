@@ -64,11 +64,13 @@ import {
   getWeeklyScore,
   getWeeklyComposite,
   getLatestDayEntry,
+  getLatestBankedDayEntry,
   isCpuUserId,
   cpuNFromUserId,
   WEEK_DAYS_REQUIRED,
   isWeekBanked,
   isFinalSnapshotDegraded,
+  seatsMissingAgentLayerAllWeek,
   rankByScores,
   AGENT_LEDGER_SUBCOLLECTION,
   AGENT_LEDGER_DOC_ID,
@@ -84,7 +86,8 @@ import {
 import { ensureCpuAgents, commitCpuUserBoards, padGamesWithCpus } from './tournamentCpu.js';
 import { applyGroupWeekToRanks, applyLockedGameToRanks } from './tournamentRank.js';
 import { upsertLeaderboardForGroups } from './tournamentLeaderboard.js';
-import { LEAGUE_CANONICAL_OPEN_CAPTURE, TOURNAMENT_ADVANCEMENT_FROZEN } from '../../src/config/featureFlags.js';
+import { settlePool as settleBackingPool } from './backingSettlement.js';
+import { BACKING_BETA_ENABLED, LEAGUE_CANONICAL_OPEN_CAPTURE, TOURNAMENT_ADVANCEMENT_FROZEN } from '../../src/config/featureFlags.js';
 
 const LOG_PREFIX = '[TournamentAdvancement]';
 
@@ -304,6 +307,11 @@ export async function runFridayAdvancement(db, { now = new Date(), includeDevGro
   let poolMemo = null;
   const getPool = async () => (poolMemo ??= await fetchRankedUserPool(db));
 
+  // Backing Beta PR 3 — the settlement hook's OWN counters (spec V1.3 §7 D-o;
+  // pre-build check H1): never summary.errors / deferredToNextTick /
+  // bankingPending / frozen, never markerSummary or isDutySatisfied.
+  const backingSummary = { settled: 0, unsettled: 0, settlementErrors: 0 };
+
   // ---- Base-layer groups: COMPLETE ONLY (ruled; recomposition docketed) ----
   const baseGroups = groups.filter(g => g.bracketGameId == null);
   for (const group of baseGroups) {
@@ -336,7 +344,7 @@ export async function runFridayAdvancement(db, { now = new Date(), includeDevGro
       // A degraded final PAUSES the week pending MANUAL review; the log below
       // must stay distinguishable from banking's stalled-finalizer clamp line.
       if (isFinalSnapshotDegraded(group)) {
-        console.error(`${LOG_PREFIX} base-layer group ${group.id}: final snapshot degraded (agentScoresCarried) — needs MANUAL REVIEW; finalization REFUSED, no self-heal past day 5 (§7.2 / L-B B-F3)`);
+        console.error(`${LOG_PREFIX} base-layer group ${group.id}: final snapshot degraded (${degradeReason(group)}) — needs MANUAL REVIEW; finalization REFUSED, no self-heal past day 5 (§7.2 / L-B B-F3 / N1)`);
         summary.degradedLocks++;
         continue;
       }
@@ -354,6 +362,20 @@ export async function runFridayAdvancement(db, { now = new Date(), includeDevGro
       await transitionStatus(db, group.id, GROUP_STATUS.COMPLETE, nowIso);
       console.log(`${LOG_PREFIX} base-layer group ${group.id}: week banked — completed (no recomposition at V1, ruled)`);
       summary.baseCompleted++;
+      // Backing Beta PR 3 — settle the pod's pool AFTER completion (§7 D-o).
+      // Own catch, never rethrows (H1); passes group.id, never this stale
+      // object (H4); a call-time flag read keeps the duty byte-identical while
+      // dark. Mon–Thu evenings route here too, so this is not Friday-only.
+      if (BACKING_BETA_ENABLED) {
+        try {
+          const settled = await settleBackingPool(db, group.id, { now: nowIso, source: 'friday_duty' });
+          if (settled.settled) backingSummary.settled++;
+          else { backingSummary.unsettled++; console.warn(`${LOG_PREFIX} backing settlement ${group.id}: unsettled (${settled.reason})`); }
+        } catch (err) {
+          console.error(`${LOG_PREFIX} backing settlement ${group.id} FAILED (non-blocking):`, err?.message);
+          backingSummary.settlementErrors++;
+        }
+      }
     } catch (err) {
       console.error(`${LOG_PREFIX} base-layer group ${group.id} FAILED:`, err.message);
       summary.errors++;
@@ -428,7 +450,30 @@ export async function runFridayAdvancement(db, { now = new Date(), includeDevGro
     }
   }
 
+  // Backing Beta PR 3 — the hook's counters, logged at duty end and surfaced
+  // on the returned summary (run-duty reads it) ONLY while lit; while dark the
+  // summary is byte-identical to the pre-PR shape. Not a marker input.
+  if (BACKING_BETA_ENABLED) {
+    console.log(`${LOG_PREFIX} backing settlement: ${JSON.stringify(backingSummary)}`);
+    summary.backing = backingSummary;
+  }
   return summary;
+}
+
+/**
+ * Why isFinalSnapshotDegraded said yes — for the three refusal/side-effect
+ * log lines, so the operator's manual review starts from the cause: the
+ * carried final (§7.2) and/or the seats whose agent layer was missing on
+ * EVERY banked day (N1 durable fix — those seats are NAMED, per the task's
+ * "extend the existing refusal log to name the seats"). One home so the
+ * three lines can never drift from the predicate.
+ */
+function degradeReason(group) {
+  const reasons = [];
+  if (getLatestBankedDayEntry(group)?.entry?.agentScoresCarried === true) reasons.push('agentScoresCarried');
+  const missing = seatsMissingAgentLayerAllWeek(group);
+  if (missing.length > 0) reasons.push(`agentLayerMissing all week for seat(s) [${missing.join(', ')}]`);
+  return reasons.join('; ') || 'unspecified';
 }
 
 /**
@@ -467,7 +512,7 @@ async function runWeekSideEffects(db, { group, entry, dev, nowIso, summary }) {
   let clean = true;
 
   if (group && isFinalSnapshotDegraded(group)) {
-    console.error(`${LOG_PREFIX} group ${group.id}: side-effects on a degraded snapshot (agentScoresCarried) — a pre-§7.2 lock resumed; composite may miss agent-layer points (founder attention)`);
+    console.error(`${LOG_PREFIX} group ${group.id}: side-effects on a degraded snapshot (${degradeReason(group)}) — a pre-§7.2 lock resumed; composite may miss agent-layer points (founder attention)`);
   }
 
   try {
@@ -644,7 +689,7 @@ async function advanceCohort(db, { bracketId, roundNumber, cohortGroups, nowIso,
         // self-heal (that heal was the day-6 contamination, retired by the
         // banking clamp) — it pauses the week pending MANUAL review.
         if (isFinalSnapshotDegraded(group)) {
-          console.error(`${LOG_PREFIX} bracket ${bracketId} game ${group.bracketGameId}: final snapshot degraded (agentScoresCarried) — needs MANUAL REVIEW; lock REFUSED, no self-heal past day 5 (§7.2 / L-B B-F3)`);
+          console.error(`${LOG_PREFIX} bracket ${bracketId} game ${group.bracketGameId}: final snapshot degraded (${degradeReason(group)}) — needs MANUAL REVIEW; lock REFUSED, no self-heal past day 5 (§7.2 / L-B B-F3 / N1)`);
           summary.degradedLocks++;
           continue;
         }

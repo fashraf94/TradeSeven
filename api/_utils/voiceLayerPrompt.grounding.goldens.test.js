@@ -38,6 +38,45 @@
 //   GENERATE_VOICE_GROUNDING_OFF_GOLDENS=1 ./node_modules/.bin/vitest run \
 //     api/_utils/voiceLayerPrompt.grounding.goldens.test.js
 //
+// TWO THINGS A LATER READER NEEDS (2026-09-16, the threshold-lint arc):
+//
+// 1. THE APPLIED CORRECTIONS — TWO of them, same method both times. These
+//    goldens pin DATA_CONFIDENCE_RULE, and that sentence moved twice:
+//      • commit D (2026-09-16) dropped the prior-session half outright;
+//      • the addendum (2026-09-17) REWORDED it instead, restoring a
+//        prior-session allowance bound to the renderer's own label and keeping
+//        only the false causal clause out.
+//    Each was applied to voiceGroundingOffGoldens.json IN PLACE, as a literal
+//    substring replacement over that one sentence, never a regeneration. Both
+//    times: 8 of the 16 captured prompts carry the rule, 8 changed, and
+//    NOTHING ELSE in the file moved.
+//
+//    THE ARITHMETIC, stated in the two units it actually has — an earlier
+//    version of this note published one number for both and was wrong:
+//      • commit D:  −784 file bytes = 8 × 98. The per-site delta is 96
+//        CHARACTERS but 98 BYTES (the em-dash the old clause carried is 3
+//        UTF-8 bytes).
+//      • the addendum: +528 file bytes = 8 × 66, while the PROMPT STRING grows
+//        only 64 bytes per site. The extra 2 bytes per site are the JSON
+//        escapes on the two inner double quotes of "Prior session" (\"), which
+//        exist in the FILE and not in the rendered prompt. Value delta +512,
+//        file delta +528.
+//    Every other byte is
+//    still the 70ba90a1 capture, so the dark contract this file exists for is
+//    intact: it still proves the GROUNDING arc changed no byte at 'off'. A
+//    whole-file regeneration from this tree would have re-baselined that
+//    contract onto whatever the grounded module renders — the exact thing the
+//    paragraph above forbids — so it was not done.
+//
+// 2. THE RECIPE ABOVE NO LONGER RUNS AS WRITTEN, and did not at that HEAD. The
+//    harness has grown past its own snapshot: line 80 imports
+//    ELICITATION_INSTRUCTIONS from ../agent/chat.js, which 70ba90a1 does not
+//    export, so `renderAll` throws "Cannot convert undefined or null to
+//    object" inside a `git archive 70ba90a1` tree and all 18 rows skip.
+//    Verified in a scratch extraction. Repairing the recipe (pinning the
+//    snapshot forward, or sourcing that one table from a fixture) is reported
+//    for separate tasking — BUILD_RULES §3.
+//
 // Dependency-surface guard (BUILD_RULES §4): this file's import of the prompt
 // module is the runtime guard that it stays Node-clean. Never mock it.
 
@@ -239,7 +278,7 @@ afterAll(() => {
 // bytes it just wrote rather than against a file that did not exist at load.
 const loadGoldens = () => (existsSync(GOLDENS_PATH) ? JSON.parse(readFileSync(GOLDENS_PATH, 'utf8')) : null);
 
-describe("Voice-layer grounding — 'off' is byte-identical to the pre-grounding prompt (goldens @ 70ba90a1)", () => {
+describe("Voice-layer grounding — 'off' is byte-identical to the pre-grounding prompt (goldens @ 70ba90a1 + the 2026-09-16 DATA_CONFIDENCE_RULE correction)", () => {
   it('the golden file exists and names every surface this file renders (and nothing else)', () => {
     const GOLDENS = loadGoldens();
     expect(GOLDENS, 'run the regeneration command in the header, from the 70ba90a1 snapshot').not.toBeNull();

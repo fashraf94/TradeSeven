@@ -87,6 +87,37 @@ export function isMarketOpenAt(now = new Date()) {
 }
 
 /**
+ * Is this instant's ET calendar DATE a trading day — Mon–Fri and not a NYSE
+ * holiday? Date-grained on purpose, unlike isMarketOpenAt, which also asks "is
+ * the bell ringing right now": the orchestrator's morning window is 06:00–09:00
+ * ET, before the open on EVERY trading day, so an is-the-market-open test would
+ * refuse every morning duty. Same calendar source as the nightly crons' own
+ * trading-day guards (api/cron/snake-draft-daily-scores.js:455-462,
+ * api/cron/process-draft-claims.js:582-587) — never a further copy of the list.
+ */
+export function isEtTradingDay(now = new Date()) {
+  const { weekday, date } = getEtParts(now);
+  return !WEEKEND.has(weekday) && !isMarketHoliday(date);
+}
+
+const ET_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const DOW_SHORT_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/**
+ * The weekday short name ('Mon'…'Sun') of a 'YYYY-MM-DD' ET calendar date, or
+ * null if it is not one. PURE — takes a date string, never reads a clock, so it
+ * reports the weekday of a date recorded in the past just as well as today's.
+ * Noon UTC is the probe instant because it lands on the same calendar date under
+ * every ET offset, which makes the answer DST-immune (the etDateToUtcNoon idiom,
+ * liveDraftFormation.js:115-122).
+ */
+export function etDateWeekday(etDate) {
+  if (typeof etDate !== 'string' || !ET_DATE_RE.test(etDate)) return null;
+  const probe = new Date(`${etDate}T12:00:00Z`);
+  return Number.isNaN(probe.getTime()) ? null : DOW_SHORT_NAMES[probe.getUTCDay()];
+}
+
+/**
  * PRE-OPEN PHASE — is this group on its battle day, but before the bell?
  *
  * True iff the group is BATTLE and the market has not yet opened on the group's

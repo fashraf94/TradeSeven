@@ -17,6 +17,8 @@ import {
   isMarketOpenAt,
   getTournamentClaimWindow,
   parseSimulatedNow,
+  isEtTradingDay,
+  etDateWeekday,
 } from './tournamentTime.js';
 
 describe('getEtParts / formatEtDate', () => {
@@ -64,6 +66,50 @@ describe('isMarketOpenAt — regular session, ET', () => {
     expect(isMarketOpenAt(new Date('2026-03-09T13:30:00Z'))).toBe(true);  // Mon after spring-forward (EDT)
     expect(isMarketOpenAt(new Date('2026-11-02T13:30:00Z'))).toBe(false); // Mon after fall-back (EST) — 8:30 ET
     expect(isMarketOpenAt(new Date('2026-11-02T14:30:00Z'))).toBe(true);  // 9:30 ET
+  });
+});
+
+describe('isEtTradingDay — date-grained, unlike isMarketOpenAt', () => {
+  it('a weekday that is not a holiday is a trading day at ANY hour — including the pre-open cron window', () => {
+    // 11:00 UTC = 07:00 EDT, Tue Jun 16: the orchestrator's own morning window,
+    // hours before the bell. An is-the-market-open test would say false here,
+    // which is exactly why the deploy guard needs this one instead.
+    expect(isEtTradingDay(new Date('2026-06-16T11:00:00.000Z'))).toBe(true);
+    expect(isEtTradingDay(new Date('2026-06-16T18:00:00.000Z'))).toBe(true); // 14:00, open
+    expect(isEtTradingDay(new Date('2026-06-16T23:00:00.000Z'))).toBe(true); // 19:00, closed
+  });
+
+  it('an NYSE holiday is NOT a trading day, at any hour', () => {
+    expect(isEtTradingDay(new Date('2026-09-07T12:00:00.000Z'))).toBe(false); // Labor Day, 08:00 EDT
+    expect(isEtTradingDay(new Date('2026-06-19T14:00:00.000Z'))).toBe(false); // Juneteenth, a Friday
+    expect(isEtTradingDay(new Date('2026-01-19T14:00:00.000Z'))).toBe(false); // MLK, 09:00 EST
+  });
+
+  it('weekends are not trading days — and the ET weekday decides, not UTC', () => {
+    expect(isEtTradingDay(new Date('2026-06-20T14:00:00.000Z'))).toBe(false); // Saturday
+    // 01:00Z Monday = Sunday 21:00 ET — still Sunday in ET.
+    expect(isEtTradingDay(new Date('2026-06-22T01:00:00.000Z'))).toBe(false);
+  });
+});
+
+describe('etDateWeekday — pure, for a date recorded in the past', () => {
+  it('names the weekday of an ET calendar date across both DST arms', () => {
+    expect(etDateWeekday('2026-09-07')).toBe('Mon'); // Labor Day (EDT)
+    expect(etDateWeekday('2026-06-05')).toBe('Fri'); // EDT
+    expect(etDateWeekday('2026-01-19')).toBe('Mon'); // EST
+    expect(etDateWeekday('2026-06-20')).toBe('Sat');
+    expect(etDateWeekday('2026-06-21')).toBe('Sun');
+  });
+
+  it('DST boundary dates are not off by one (noon UTC lands on the same ET date either side)', () => {
+    expect(etDateWeekday('2026-03-08')).toBe('Sun'); // spring forward
+    expect(etDateWeekday('2026-11-01')).toBe('Sun'); // fall back
+  });
+
+  it('anything that is not a YYYY-MM-DD ET date is null, never a guess', () => {
+    for (const bad of [null, undefined, '', 'tomorrow', '2026-9-7', '2026-09-07T00:00:00Z', 42, {}]) {
+      expect(etDateWeekday(bad)).toBeNull();
+    }
   });
 });
 

@@ -200,6 +200,54 @@ describe('the header, the facts and the trades', () => {
     expect(skipped).not.toContain('Haiku');
   });
 
+  it("a `build_timeout` tick renders the generic absence — a class this surface has never seen falls to the class-neutral line, not a blank and not a throw", () => {
+    // Transport hygiene (Sep 12, 2026) added ONE new failureClass: the prompt
+    // build blew its 10s ceiling, so no call was ever made. The selector's
+    // outage arm is not exhaustive by construction (only `timeout` earns the
+    // timeout words — honesty rule 8), so the new class needs no new copy. This
+    // row proves that rather than asserting it: the entry is the real doc shape
+    // the cron now writes, timing fields and all, rendered through the real
+    // selector into the real component.
+    const built = {
+      ...HELD,
+      rationale: 'Haiku call failed — defaulting to HOLD',
+      haikuError: {
+        failureClass: 'build_timeout',
+        message: 'prompt build exceeded 10000 ms',
+        timestamp: TS,
+        timeoutKind: null,
+        evalId: 'eval_015',
+      },
+      promptBuiltAt: null,
+      buildMs: 10_004,
+      callMs: null,
+    };
+    const html = renderRow(built);
+    expect(html).toContain('No decision recorded at this check · the evaluation did not complete');
+    expect(html).toContain('data-why-kind="absent"');
+    // Never the timeout words (the call never happened), never the engine's
+    // placeholder, and never a machine word or a raw number on screen.
+    expect(html).not.toContain('timed out');
+    expect(html).not.toContain('build_timeout');
+    expect(html).not.toContain('prompt build');
+    expect(html).not.toContain('Haiku');
+    expect(html).not.toContain('10004');
+    expect(html).not.toContain('buildMs');
+    expect(html).not.toMatch(/>Held</);
+    // …and the row is not blank: the facts around the absence still render.
+    expect(html.length).toBeGreaterThan(0);
+    expect(html).toContain('Entry');
+  });
+
+  it('the three additive timing fields never reach the player on a NORMAL tick either', () => {
+    const html = renderRow({ ...HELD, promptBuiltAt: TS, buildMs: 412, callMs: 6_231 });
+    for (const needle of ['promptBuiltAt', 'buildMs', 'callMs', '412', '6231']) {
+      expect(html, `the Why panel must not render "${needle}"`).not.toContain(needle);
+    }
+    // the tick still renders as the agent's own words, unchanged
+    expect(html).toContain('Held');
+  });
+
   it('the FIFTH state (D-70) names the guardrail as the subject, never the agent', () => {
     // A guardrail-forced exit whose replacement was rejected: the rationale on
     // the entry is the CRON's `Guardrail override (…)` text, not the agent's.

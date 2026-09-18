@@ -51,6 +51,27 @@ jobs:
       # NOTE: `--maxWorkers` only. There is no `--minWorkers` in vitest 4 —
       # passing it aborts the run with "CACError: Unknown option `--minWorkers`"
       # (verified against the pinned vitest 4.0.17).
+      # ── The interim lint gate ────────────────────────────────────────
+      # Two rules, both of which catch a CRASH rather than a style slip:
+      #   no-undef                    -> a ReferenceError that unmounts the
+      #                                  React tree (the XP modal, A1)
+      #   react-hooks/rules-of-hooks  -> React throwing the moment a
+      #                                  condition changes between renders
+      #                                  (19 sites, A4)
+      # Both were at zero on the commit that added this step, which is the
+      # condition it was allowed to land under
+      # (docs/audits/20260915_BUILD_CRASH_CLASS_A1_A4.md §6-A). Everything
+      # else `npm run lint` reports — 873 errors at that commit — is NOT
+      # gated; gating on those would mean continue-on-error, which is not a
+      # gate. Widen one rule at a time, each time it reaches zero.
+      #
+      # Runs BEFORE the unit suite on purpose: it takes well under a minute
+      # and both defect classes it catches are ones the suite can miss —
+      # nothing imported App.jsx until this arc, and a conditional hook only
+      # throws on the one render path that flips its condition.
+      - name: Lint gate (crash-class rules only)
+        run: npm run lint:gate
+
       - name: Run unit tests
         run: npm run test:run -- --maxWorkers=2
         env:

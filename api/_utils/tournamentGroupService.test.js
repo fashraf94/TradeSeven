@@ -165,6 +165,15 @@ describe('transitionStatus', () => {
     expect(captured.updates).toHaveLength(0);
   });
 
+  it('N1: extraFields ride the SAME write as the flip and can never override status or updatedAt (spread first)', async () => {
+    // The awaiting_open → battle flip passes the agentPipelinePending stamp
+    // here; a caller that (mistakenly) passed status/updatedAt must lose to the
+    // transition's own values. Review-lens U1: the comment claims it, this pins it.
+    const { db, captured } = makeDb({ storedDoc: { status: 'awaiting_open' } });
+    await transitionStatus(db, 'group-1', 'battle', NOW, { agentPipelinePending: true, agentPipelinePendingAt: NOW, status: 'complete', updatedAt: 'never' });
+    expect(captured.updates).toEqual([{ agentPipelinePending: true, agentPipelinePendingAt: NOW, status: 'battle', updatedAt: NOW }]);
+  });
+
   it('missing group and missing now both throw', async () => {
     await expect(transitionStatus(makeDb().db, 'group-1', 'battle', NOW))
       .rejects.toThrow(/not found/);

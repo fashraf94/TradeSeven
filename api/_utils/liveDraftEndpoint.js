@@ -35,6 +35,9 @@ export { resolveDisplayName };
 // fire/pick lifecycle (LIVE_DRAFT_) sentinels.
 const SLOT_ERROR_TO_HTTP = Object.freeze({
   unknown_slot:          [400, 'unknown_slot', 'That draft slot isn’t on the schedule.'],
+  // N1 mitigation: a KNOWN slot the founder took off the board (liveDraftSlots.js
+  // `enabled: false`). Distinct from unknown_slot — the id is real and reserved.
+  slot_disabled:         [409, 'slot_disabled', 'That draft slot is unavailable right now — pick another time.'],
   slot_full:             [409, 'slot_full', 'That slot is full — all four seats are taken.'],
   draft_already_started: [409, 'draft_already_started', 'That draft has already started — seats are locked.'],
   already_in_competitive:[409, 'already_in_competitive', 'You already have a game that week — finish it before joining another slot.'],

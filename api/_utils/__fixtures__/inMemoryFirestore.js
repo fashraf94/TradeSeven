@@ -4,7 +4,10 @@
 // (extracted from trainingLifecycle.test.js so the R4 canonical-chain regression
 // lock can drive the REAL training writers against the SAME store the unit tests
 // use). Supports: doc get/set/update (dot-path), sub-collections, top-level
-// where('==') queries, and runTransaction with tx.get/update/set. Captures writes
+// where('==') queries — CHAINABLE since Backing Beta PR 2 (`.where().where()`,
+// `.orderBy()`, `.limit()`, and `_read()` so `tx.get(query)` resolves like a doc
+// ref does; the pre-existing single-`where` forms are untouched) — and
+// runTransaction with tx.get/update/set. Captures writes
 // in `writeLog`, reads in `readLog` (channel-tagged: 'get' for direct reads,
 // 'tx.get' for transactional reads — so a suite can assert a dark path does
 // ZERO reads, and that in-transaction verification reads actually ride the
@@ -71,15 +74,51 @@ export function makeInMemoryDb(initial = {}) {
         return { id: ref.path.split('/').pop(), path: ref.path };
       },
       _read: () => snapshotOf(topLevelDocs(prefix)), // channel-neutral: tx.get logs its own channel
-      where: (field, op, value) => ({
-        select: () => ({ get: async () => { readLog.push(['get', prefix]); return snapshotOf(filterDocs(field, value)); } }),
-        get: async () => { readLog.push(['get', prefix]); return snapshotOf(filterDocs(field, value)); },
-      }),
+      where: (field, op, value) => makeQuery([{ field, op, value }]),
       get: async () => { readLog.push(['get', prefix]); return snapshotOf(topLevelDocs(prefix)); },
     };
-    function filterDocs(field, value) {
-      return topLevelDocs(prefix).filter(d => d.data()[field] === value);
+
+    /**
+     * A CHAINABLE query: `.where()` again, `.orderBy()`, `.limit()`, `.select()`,
+     * `.get()`, and `_read()` so a TRANSACTIONAL query read (`tx.get(query)` —
+     * the Admin SDK shape the Backing Beta close transaction uses) resolves the
+     * same way a doc ref does. Purely additive: the pre-existing single-`where`
+     * `.get()` and `.where().select().get()` forms behave exactly as before.
+     *
+     * Only `==` is applied as a filter (every caller's operator today); any other
+     * operator is recorded and ignored, which is the fixture's documented limit
+     * rather than a silent wrong answer — a suite needing `>=` must assert on the
+     * filtered set itself.
+     */
+    function makeQuery(filters, order = null, max = null) {
+      const run = () => {
+        let docs = topLevelDocs(prefix).filter(d => filters.every((f) => {
+          if (f.op !== '==') return true;
+          return d.data()[f.field] === f.value;
+        }));
+        if (order) {
+          const { field, dir } = order;
+          docs = [...docs].sort((a, b) => {
+            const av = a.data()[field];
+            const bv = b.data()[field];
+            if (av === bv) return 0;
+            const cmp = av > bv ? 1 : -1;
+            return dir === 'desc' ? -cmp : cmp;
+          });
+        }
+        return snapshotOf(max == null ? docs : docs.slice(0, max));
+      };
+      return {
+        path: prefix,
+        where: (field, op, value) => makeQuery([...filters, { field, op, value }], order, max),
+        orderBy: (field, dir = 'asc') => makeQuery(filters, { field, dir }, max),
+        limit: (n) => makeQuery(filters, order, n),
+        select: () => ({ get: async () => { readLog.push(['get', prefix]); return run(); } }),
+        _read: run, // channel-neutral: tx.get logs its own channel
+        get: async () => { readLog.push(['get', prefix]); return run(); },
+      };
     }
+
     function snapshotOf(docs) {
       return { docs, empty: docs.length === 0, size: docs.length, forEach: (cb) => docs.forEach(cb) };
     }
