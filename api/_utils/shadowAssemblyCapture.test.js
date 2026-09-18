@@ -3,9 +3,10 @@
 // Archetype Architecture Phase 2 (P2.6) — shadow assembly + envelope
 // plumbing. Locks:
 //
-//   1. SHADOW_ASSEMBLY_ENABLED is ON (the deliberate Phase 2 flag-flip,
-//      second in the flip sequence after manifest-write `335e38de`; the
-//      P2.6 merge-dark exit criterion held until that flip)
+//   1. SHADOW_ASSEMBLY_ENABLED is OFF — dark since the 2026-09-12 flip-off.
+//      It shipped ON from the Phase 2 activation flip (PR #671, second in the
+//      sequence after manifest-write `335e38de`) until then; the lock below
+//      moves with the flag, in the flip's own commit.
 //   2. A-1 envelope: manifest-anchored (null without a manifest — no
 //      envelope-less record can exist), validator-green with one, tickId =
 //      cronStart + battleId
@@ -103,14 +104,19 @@ function makeFakeDb({ failCreateWith = null } = {}) {
   return { created, updated, collection(name) { return { doc: (id) => ref(`${name}/${id}`) }; } };
 }
 
-describe('P2.6 activation', () => {
-  it('SHADOW_ASSEMBLY_ENABLED is ON — the deliberate flag-flip this suite guards', () => {
-    // Flipped false→true in the founder flag-flip PR (Phase 2 flip sequence:
-    // manifest-write first `335e38de`, shadow-assembly second — capture is
-    // manifest-anchored and skips pre-manifest battles). Reverting the flag
-    // is likewise a deliberate act: it must edit this assertion in the same
-    // commit, exactly as the flip did.
-    expect(SHADOW_ASSEMBLY_ENABLED).toBe(true);
+describe('P2.6 flag state', () => {
+  it('SHADOW_ASSEMBLY_ENABLED is OFF — the deliberate flip-off this suite guards', () => {
+    // Flipped false→true in the Phase 2 activation PR #671 (2026-07-24), then
+    // true→false on 2026-09-12: the DR-10 stage-1 corpus has exactly one
+    // consumer (the offline scripts/paired-eval-harness.js, run once on
+    // 2026-07-31 for the DR-13 identity-block flip, which shipped), the
+    // manifest-read migration it was built to gate has no build, and the
+    // capture sat on three unbounded awaits before the battle write. The
+    // historical corpus is preserved and stays queryable by that harness.
+    // Re-flipping is likewise a deliberate act: it must edit this assertion
+    // AND drop the DARK_BY_DESIGN entry (src/config/flagPinGuard.test.js) in
+    // the same commit, exactly as this flip did.
+    expect(SHADOW_ASSEMBLY_ENABLED).toBe(false);
   });
 });
 

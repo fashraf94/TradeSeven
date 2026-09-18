@@ -15,9 +15,15 @@
 // report. It never touches battle docs, agents, or any production
 // collection, and it spends API tokens only when run by a human.
 //
-// Prerequisites: preview/smoke flags on long enough to accumulate diffs
-// (COMPILER_ENABLED + MANIFEST_WRITE_ENABLED + SHADOW_ASSEMBLY_ENABLED);
-// GOOGLE_APPLICATION_CREDENTIALS (Admin SDK) + ANTHROPIC_API_KEY.
+// The corpus is FROZEN. SHADOW_ASSEMBLY_ENABLED went off 2026-09-12, so no new
+// shadowDiffs accumulate. What the capture wrote while those flags were on
+// (COMPILER_ENABLED + MANIFEST_WRITE_ENABLED + SHADOW_ASSEMBLY_ENABLED, from
+// 2026-07-24) is preserved and still replayable here. A fresh corpus is a
+// founder flip PR with a brief that also bounds the capture — never a local
+// flag edit to make this script return more rows.
+//
+// Prerequisites to run: GOOGLE_APPLICATION_CREDENTIALS (Admin SDK) +
+// ANTHROPIC_API_KEY.
 //
 // ── DR-13 mode (--dr13) ─────────────────────────────────────────────────
 // The identity-block pre-flip validation (DR-13 arc, founder Flag F ruling
@@ -255,7 +261,7 @@ async function runDr13Corpus(anthropic, rows) {
   console.log(`[paired-eval] DR13 corpus: ${diffs.length} diffs read, ${withTexts.length} carry replayable texts ` +
     '(identical ticks are hash-only by design — payload discipline)');
   if (withTexts.length === 0) {
-    console.log('[paired-eval] DR13: no replayable corpus — run with --synthetic, or let the #671 flip accumulate divergent diffs.');
+    console.log('[paired-eval] DR13: no replayable corpus — run with --synthetic. The shadowDiffs corpus is frozen (SHADOW_ASSEMBLY_ENABLED off since 2026-09-12): no new diffs accumulate.');
     return;
   }
 
@@ -343,7 +349,7 @@ async function main() {
   const divergent = diffs.filter((d) => d.identical === false && d.texts).slice(0, LIMIT);
   console.log(`[paired-eval] ${diffs.length} diffs read, ${divergent.length} divergent-with-texts selected (limit ${LIMIT})`);
   if (divergent.length === 0) {
-    console.log('[paired-eval] nothing to replay — accumulate divergent diffs first (SHADOW_ASSEMBLY_ENABLED preview smoke).');
+    console.log('[paired-eval] nothing to replay — no divergent doc with texts in the frozen corpus for this query (SHADOW_ASSEMBLY_ENABLED off since 2026-09-12; nothing new accumulates). Widen --battle/--limit, or run with --synthetic.');
     return;
   }
 
