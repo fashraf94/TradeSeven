@@ -185,3 +185,148 @@ Add, since the branch ordering resolved: `claude/eval-transport-hygiene` had not
 ---
 
 *Pushed, not merged. No PR opened — the founder opens PRs. Claude does not drive this PR toward merge: no CI watching, no autofix, no review request, no merge (BUILD_RULES §2). STOP.*
+
+---
+
+# Merge section — brought forward to `main` @ `a7ba95ce` (2026-09-18)
+
+*Appended six days after the flip was pushed. The branch sat behind one merge conflict while `main` moved 102 commits: the lint gate, the transport hygiene, the index hygiene, the directive fit-check build, the cautious register, the threshold lint, the eval harness. The Sep 18 live battle confirmed the capture was still running — `shadowGateAggregates` grew on every tick — so the flip is still wanted, unchanged.*
+
+## M0. Verdict
+
+| | |
+|---|---|
+| **Conflict** | One file, `src/config/flagPinGuard.test.js`, in the `DARK_BY_DESIGN` block. Purely additive on both sides. |
+| **Resolution** | All four entries and `main`'s comment block kept. `main`'s text byte-identical to `origin/main`; the branch's entry appended to the entry list. |
+| **Auto-merged clean** | `api/cron/agent-evaluate.js`, `src/config/featureFlags.js`. |
+| **Re-verified items that drifted** | **None drifted in substance.** Four of four still true at the merged tree; only line numbers moved. |
+| **Addendum items already present** | **None.** All four were outstanding; all four are now applied. |
+| **Fenced files touched** | **None** (re-confirmed at this HEAD against the §1 list, mechanically). |
+| **Full suite** | `690 passed \| 3 skipped (693)` / `13526 passed \| 64 skipped (13590)` — **exit code 0**. |
+| **`npm run lint:gate`** | **exit code 0** (the gate did not exist when this branch was cut). |
+| **`vite build`** | **exit code 0**. |
+| **Production diff** | Exactly **one** non-comment line in the whole branch diff: the flag value. |
+
+## M1. Preamble
+
+- **`git fetch origin` run as the first git command of the session** (§3): `origin/main` advanced `398c528e..a7ba95ce`, plus a batch of remote branch refs new to this container. Recorded per the stale-ref rule.
+- **Branch:** `claude/flip-shadow-assembly-off` — the existing branch, brought forward. No new branch was cut; PR #844 updates from the push.
+- **HEAD at checkout:** `68bf31a1`. **Tree:** clean.
+- **Merge target:** `origin/main` @ `a7ba95cec2269f599d6eeb7e2fe6a7820f9a395e` ("Merge pull request #862 … claude/flip-directive-fit-check"). Merge base `27f42c07` — the branch's own cut point, 102 commits behind.
+- **Environment:** `node_modules/` was again empty; `npm ci` was run (exit 0) before any test, lint or build. `package.json` / `package-lock.json` untouched and not in the diff.
+- **Merge commit:** `a08539c6`. **Addendum commit:** `b8e0800d`.
+
+## M2. What the conflict was
+
+Both sides appended to the `DARK_BY_DESIGN` map in `src/config/flagPinGuard.test.js`, at the same place — immediately after the `BATTLE_VIEW_CONTROLLER_ENABLED` intentionally-absent note, which was the end of the object on the branch. Git could not know the two additions were independent, so it marked the whole tail region.
+
+- **The branch adds one entry:** `SHADOW_ASSEMBLY_ENABLED`, with the re-flip-needs-a-bounded-capture rationale.
+- **`main` adds three entries and a comment block:** `ELIGIBILITY_ATTESTATION_ENABLED`, `DIRECTIVE_FIT_CHECK_ENABLED`, `BACKING_BETA_ENABLED`, then the note recording why `ANTICIPATION_THRESHOLD_LINT_MODE` is deliberately absent and must stay absent — it is a string tri-state (`'off' | 'shadow' | 'on'`), so `buildFlagMap`'s `*_ENABLED = true|false` scan never sees it and the integrity test would fail the key outright.
+
+**Nothing here was an either/or**, exactly as briefed: four independent dark-runway registrations and one explanatory note about a fifth that must never become a registration.
+
+Simulated read-only with `git merge-tree --write-tree` before touching the working tree; it reported this one conflict and clean auto-merges for the other two files, which is what the real merge then did.
+
+## M3. How it resolved
+
+`main`'s block is taken **verbatim, in `main`'s order** — nothing from `main` is reordered, reworded or re-indented. Verified mechanically rather than by eye: the resolved file diffed against `origin/main`'s copy is **+2 lines and nothing else**, those two lines being the branch's entry.
+
+The branch's `SHADOW_ASSEMBLY_ENABLED` entry is appended to the **entry list** — after `BACKING_BETA_ENABLED`, ahead of `main`'s trailing `ANTICIPATION_THRESHOLD_LINT_MODE` note (`flagPinGuard.test.js:158-159`). Two placements were available and both are functionally identical; this one keeps every real key together and leaves `main`'s closing note last, where it was deliberately put ("Noted HERE anyway so a flip is loud in the place a reader looks for the dark runway"). The branch's one-line blank separator was dropped so the entry matches the spacing of the three entries above it.
+
+`api/cron/agent-evaluate.js` and `src/config/featureFlags.js` auto-merged with no conflict: `main`'s 102 commits added 311 and 246 lines to those files respectively, none of it inside the flip's hunks.
+
+## M4. Re-verification of the other four items at the merged tree
+
+The Sep 12 anchors were a week old. Every item was re-read at the merged tree. **None drifted in substance; three moved line numbers** because `main` grew `featureFlags.js` by 246 lines and `agent-evaluate.js` by 311.
+
+| Item | Sep 12 anchor | At the merged tree | Verdict |
+|---|---|---|---|
+| 1. The value is `false` | `featureFlags.js:1365` | **`featureFlags.js:1482`** — `export const SHADOW_ASSEMBLY_ENABLED = false;` | **VERIFIED**, line moved |
+| 2. The pin matches | `shadowAssemblyCapture.test.js:107-119` | **`:119`** — `expect(SHADOW_ASSEMBLY_ENABLED).toBe(false)`; `// Pinned by:` pointer intact at `featureFlags.js:1481` | **VERIFIED** (`main` never touched this file) |
+| 3. The registry entry | `flagPinGuard.test.js:153-154` | **`:158-159`** | **VERIFIED**, line moved by the resolution itself |
+| 4. The "dark" header comments | `shadowAssemblyCapture.js:4-6`, `agent-evaluate.js:10-13` | **`shadowAssemblyCapture.js:4-12`**, **`agent-evaluate.js:10-16`** | **VERIFIED** — see below |
+| 5. The corpus caveat | `shadowAssemblyCapture.js:14-18` | **`:14-18`**, unmoved | **VERIFIED** |
+
+**On item 4, stated precisely because the count matters.** The handover says "the three dark header comments (`shadowAssemblyCapture.js`, `agent-evaluate.js`)". Every candidate in those two files was re-read, and all are true at the merged tree:
+
+1. **`shadowAssemblyCapture.js:4-12`** — the module header's DARK paragraph. Claims zero reads, zero writes, no new `shadowDiffs`. True: the flag is `false` and all three call sites are gated.
+2. **`agent-evaluate.js:10-16`** — the import-site header. It makes a **countable** claim — "the THREE flag-gated call sites below — the per-tick `runShadowTickCapture`, the completion-time `receiptCoverage` stamp, and `writeBattleSettlementRecord`". Re-counted at the merged tree: **exactly three**, at `:3090`, `:4652`, `:4808`, and each matches the site it names. `main` added neither a fourth nor removed one.
+3. **The three call-site `// P2.6 (dark…)` comments** (`:3085-3089`, `:4647-4651`, `:4803-4807`) already read correctly under flag-off and needed no edit.
+4. **The flag's own docblock** (`featureFlags.js:1451-1480`) survived the auto-merge intact. Two of its factual claims were re-checked against 102 commits of `main` rather than assumed:
+   - *"api/ and src/ have zero readers"* of the corpus — **still true**: every `shadowDiffs` / `battleSettlements` / `shadowGateAggregates` match in `api/` and `src/` at the merged tree is a comment, not code.
+   - *"three deadline-less awaits"* — **still true**: the transport hygiene build bounded only the decider's build, and `shadowAssemblyCapture.js:194` / `:198` are still unbounded `await buildLiveContextBlock` calls. This is precisely why addendum item 4 exists.
+
+**No item stopped applying at this HEAD, so there was nothing to STOP on.**
+
+## M5. The addendum — which items were already present
+
+**None of the four had landed.** The Sep 12 report's own §9 predicted this: it filed items 1–3 as "found, not fixed … ideally folded into this PR before merge rather than left to rot", and §6/§10 left item 4 to "whichever of the two PRs lands second". They were still outstanding six days later, and all four are applied in `b8e0800d`.
+
+| Addendum item | Already present? | Applied at |
+|---|---|---|
+| The test header's "is ON" | **No** — only the `it()` label inside the block was flipped on Sep 12; the header bullet was not | `shadowAssemblyCapture.test.js:6-9` |
+| `describe('P2.6 activation')` | **No** | **`:107`** — now `describe('P2.6 flag state')` |
+| The harness's re-flip advice | **No** | `paired-eval-harness.js:352` (the named string), plus two same-defect twins in the same file — `:264` and the header Prerequisites line at `:18-26` |
+| The `PROMPT_BUILD_CEILING_MS` SCOPE comment | **No** | `agentEvalTransport.js:25-33` |
+
+**The branch-ordering question from §6 is now closed.** `claude/eval-transport-hygiene` merged as PR #839 (`2a373360`), so this flip lands **second** — which, per §6's own rule, puts the SCOPE-comment edit in this PR. The file exists on `main` and the paragraph is at `:25-30` there, exactly where §6 said it would be on that branch. Rewritten (`:25-33`) to say the decider's build is now the tick's only unbounded-build exposure, that the capture's two rebuilds are **gone rather than fixed**, and that a re-flip reopens them — which is what the `DARK_BY_DESIGN` entry already obliges a re-flip brief to bound. The two statements now point at each other instead of contradicting.
+
+**Two twins were fixed beyond the one string named**, and it is worth being explicit about why. The handover named `:346` (now `:352`). The DR-13 branch at `:264` carried the same instruction in different words ("let the #671 flip accumulate divergent diffs"), and the file **header** listed `SHADOW_ASSEMBLY_ENABLED` among the flags a reader should have on. Fixing one sentence and leaving two that say the same thing — one of them in the header, the first thing a reader sees — would have reproduced the exact failure this addendum exists to correct: three "dark" comments survived seven weeks of the flag being ON because nobody swept the neighbours. All three now say the corpus is frozen and that a fresh one is a founder flip PR with a capture-bounding brief, never a local flag edit. The two empty-set messages also name what a reader *can* do (widen `--battle`/`--limit`, or `--synthetic`), so they stay actionable rather than merely forbidding.
+
+**Not touched, reported instead (§3):** `scripts/PAIRED_EVAL_HARNESS_README.md` carries the same class of staleness in at least four places (`:4-5`, `:31`, `:77-78` — "preferred once the SHADOW_ASSEMBLY_ENABLED flip, PR #671, has accumulated divergent shadowDiffs"). It is a separate document, not named in the addendum, and editing it starts a doc sweep this task did not ask for. One small task whenever the founder wants it.
+
+## M6. Verification at the merged tree
+
+**Full suite** — `npx vitest run`, unpiped; output redirected to a file so the exit code reported is the suite's own, never a pipeline's:
+
+```
+ Test Files  690 passed | 3 skipped (693)
+      Tests  13526 passed | 64 skipped (13590)
+   Duration  118.50s
+```
+
+**Exit code: 0.**
+
+**The three directly affected suites** — `flagPinGuard.test.js`, `shadowAssemblyCapture.test.js`, `agentEvalTransport.test.js`: `3 passed (3)` / `51 passed (51)`, **exit code 0**. `agentEvalTransport.test.js` is included because the addendum edits that module; its 29 rows are unaffected, as a comment-only change should leave them.
+
+**`npm run lint:gate`: exit code 0.** This replaces the Sep 12 record's "6 errors → 6 errors (did not rise)" hand-count — the gate did not exist on `main` when this branch was cut, and it is now a hard check this branch passes outright.
+
+**`npx vite build`: exit code 0.** Built in 15.22s. (The >500 kB chunk advisory is pre-existing and repo-wide.)
+
+**Diff scope** — `git diff origin/main --stat`:
+
+```
+ api/_utils/agentEvalTransport.js                 |  13 +-
+ api/_utils/shadowAssemblyCapture.js              |  18 +-
+ api/_utils/shadowAssemblyCapture.test.js         |  28 ++-
+ api/cron/agent-evaluate.js                       |   9 +-
+ docs/audits/20260912_FLIP_SHADOW_ASSEMBLY_OFF.md | 187 ++++++++++++++++
+ docs/audits/20260912_PHASE0_SHADOW_ASSEMBLY.md   | 263 +++++++++++++++++++++++
+ scripts/paired-eval-harness.js                   |  16 +-
+ src/config/featureFlags.js                       |  43 ++--
+ src/config/flagPinGuard.test.js                  |   2 +
+```
+
+**No fenced file** — checked mechanically, not by eye: each of the eleven §1 paths was run through `git diff --quiet origin/main -- <path>`; all eleven are unchanged.
+
+**No production source beyond the flag and the comments** — proved rather than asserted. Filtering the production diff (`agentEvalTransport.js`, `shadowAssemblyCapture.js`, `agent-evaluate.js`, `featureFlags.js`) down to non-comment, non-blank changed lines yields exactly two:
+
+```
+-export const SHADOW_ASSEMBLY_ENABLED = true;
++export const SHADOW_ASSEMBLY_ENABLED = false;
+```
+
+One flag value. Everything else in the branch diff is a comment, a test label, a console string, or a doc.
+
+## M7. Smoke, unchanged
+
+The Sep 12 smoke (§8) and its correction stand: crons do not run on Vercel preview, the flag-off state is **silent by construction** (the gate is in the cron, so the module emits nothing), and the flip must be read off the absence of writes. On the next production battle after the founder merges and deploys:
+
+1. **`shadowGateAggregates[]` stops growing between ticks** — the signal the Sep 18 battle showed still growing, which is what re-confirmed this flip was wanted.
+2. **No new `agentBattles/{id}/shadowDiffs` documents appear.**
+
+Both are absence-signals on the battle document; neither needs a log line.
+
+---
+
+*Merged forward and pushed. **No PR opened** — #844 already exists and updates from this push. Claude does not drive it toward merge: no CI watching, no autofix, no review request, no merge (BUILD_RULES §2). STOP.*
