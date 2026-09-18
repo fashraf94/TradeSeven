@@ -1,5 +1,9 @@
-#!/usr/bin/env node
 // scripts/experiments/jevDirectionJudge.js
+//
+// (No shebang line, on purpose: under `core.autocrlf=true` this file is checked
+// out CRLF on Windows, and vitest cannot collect a CRLF module that opens with
+// `#!` — "SyntaxError: Invalid or unexpected token". It is always run as
+// `node … jevDirectionJudge.js`, so the line bought nothing.)
 //
 // MEASUREMENT — Jev (typesafe/jev-1.13, OpenRouter Decisions alpha) as a
 // DIRECTIVE DIRECTION JUDGE: given the archetype's charter, its menu, the
@@ -14,6 +18,7 @@
 //   node --env-file=.env.local scripts/experiments/jevDirectionJudge.js --dry-run
 //   node --env-file=.env.local scripts/experiments/jevDirectionJudge.js --probe
 //   node --env-file=.env.local scripts/experiments/jevDirectionJudge.js --run [--resume]
+//   node --env-file=.env.local scripts/experiments/jevDirectionJudge.js --round2 [--dry-run] [--resume]
 //
 //   --dry-run        build the case sets, print the counts, call nothing
 //   --probe          ONE Jev call (the Sep 14 case), raw request + response saved
@@ -21,17 +26,25 @@
 //   --resume         skip (model, case, repeat) triples already in records.jsonl
 //   --records PATH   per-case harness records (the evalItem shape in
 //                    api/scripts/archetype-integrity-eval/runEval.eval.mjs:163-183)
-//                    — builds sets B and F. The harness does not persist these
-//                    today (it writes aggregates only, :290-293), so without
-//                    this flag B and F are empty and the report says so.
+//                    — builds ROUND 1's sets B and F. Round 1 ran before the
+//                    harness kept per-run records, so its B and F were empty.
+//                    Round 2 (--round2) reads the run files instead.
 //   --out DIR        raw output dir (default scripts/output/jev-direction-judge,
-//                    gitignored by .gitignore:45)
+//                    gitignored by .gitignore:45; round 2 defaults to its
+//                    `round2/` subfolder so round 1's raw files are never overwritten)
+//   --round2         ROUND 2 — the hard cases: near-neighbour wrong filings (N),
+//                    Gemma's real wrong filings (B) and false refusals (F) read
+//                    from the harness run files, and the whole corpus as a
+//                    classifier test with no filing in state (G). Set A is
+//                    re-scored from round 1's saved records; no new A calls.
+//   --runs-dir DIR   harness run files (default api/scripts/archetype-integrity-eval/runs)
+//   --round1 DIR     round 1's raw output dir (default scripts/output/jev-direction-judge)
 //
 // Raw per-case output stays in the gitignored dir; the committed report carries
 // aggregates and case ids only. The key is read from the environment and is
 // never logged, never written, never placed in a record.
 
-import { mkdirSync, appendFileSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdirSync, appendFileSync, writeFileSync, readFileSync, readdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -107,6 +120,8 @@ export const HAIKU_PREFILL = '{';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_OUT = path.resolve(HERE, '..', 'output', 'jev-direction-judge');
+// Round 2 reads the harness's per-run record files (gitignored; README "What a run leaves on disk").
+const DEFAULT_RUNS_DIR = path.resolve(HERE, '..', '..', 'api', 'scripts', 'archetype-integrity-eval', 'runs');
 
 // ─── Case sets ──────────────────────────────────────────────────────────────
 
@@ -248,8 +263,7 @@ export function buildQuestions(c) {
     },
   };
   // Set F (a refusal) has no filing to judge.
-  if (!c.filedId) return questions;
-  return {
+  const all = !c.filedId ? questions : {
     filing_matches_ask: {
       type: 'noul',
       instructions: 'Does the filed adjustment carry out what the player asked for?',
@@ -260,7 +274,15 @@ export function buildQuestions(c) {
     },
     ...questions,
   };
+  // Round 2's set F asks `ask_in_character` alone. A case may narrow the
+  // questions to a subset; it can never add one or reword one, so every question
+  // that IS sent is byte-identical to round 1's.
+  if (!Array.isArray(c.questionKeys)) return all;
+  return Object.fromEntries(Object.entries(all).filter(([k]) => c.questionKeys.includes(k)));
 }
+
+const CHOICE_KEYS = ['best_menu_item', 'ask_in_character'];
+const choiceKeysOf = (c) => Object.keys(buildQuestions(c)).filter((k) => CHOICE_KEYS.includes(k));
 
 export function buildJevRequest(c, { denyDataCollection = false } = {}) {
   const body = { model: JEV_MODEL, state: buildState(c), questions: buildQuestions(c) };
@@ -271,12 +293,16 @@ export function buildJevRequest(c, { denyDataCollection = false } = {}) {
 export function buildHaikuRequest(c) {
   const questions = buildQuestions(c);
   const keys = Object.keys(questions);
+  const choiceKeys = keys.filter((k) => CHOICE_KEYS.includes(k));
   const system = [
     'You are a strict judge of trading-agent directive filings. You are given a STATE and QUESTIONS.',
     'Reply with ONE JSON object and nothing else — no markdown, no code fence, no commentary.',
     `It has exactly these keys: ${keys.map((k) => `"${k}"`).join(', ')}.`,
     keys.includes('filing_matches_ask') ? '"filing_matches_ask" is a JSON boolean (true or false), judged by that question\'s criteria.' : '',
-    '"best_menu_item" and "ask_in_character" are each exactly one of that question\'s criteria keys, as a string.',
+    // Round 1's sentence, verbatim, whenever both choice questions are asked.
+    choiceKeys.length === 2
+      ? '"best_menu_item" and "ask_in_character" are each exactly one of that question\'s criteria keys, as a string.'
+      : `"${choiceKeys[0]}" is exactly one of that question's criteria keys, as a string.`,
   ].filter(Boolean).join('\n');
   const messages = [
     { role: 'system', content: system },
@@ -298,13 +324,14 @@ export function parseJevResponse(json, c) {
     if (!isProb(a.filing_matches_ask?.noul)) return { ok: false, error: 'bad_noul' };
     out.pMatch = a.filing_matches_ask.noul;
   }
-  for (const key of ['best_menu_item', 'ask_in_character']) {
+  // Only the questions this case asked are required back (round 2's set F asks one).
+  for (const key of choiceKeysOf(c)) {
     if (typeof a[key]?.choice !== 'string') return { ok: false, error: `bad_choice:${key}` };
   }
-  out.bestItem = a.best_menu_item.choice;
-  out.bestItemConfidence = a.best_menu_item.confidence ?? null;
-  out.inCharacter = a.ask_in_character.choice;
-  out.inCharacterConfidence = a.ask_in_character.confidence ?? null;
+  out.bestItem = a.best_menu_item?.choice ?? null;
+  out.bestItemConfidence = a.best_menu_item?.confidence ?? null;
+  out.inCharacter = a.ask_in_character?.choice ?? null;
+  out.inCharacterConfidence = a.ask_in_character?.confidence ?? null;
   return out;
 }
 
@@ -321,10 +348,10 @@ export function parseHaikuReply(content, c) {
   const want = Object.keys(questions).sort();
   if (JSON.stringify(Object.keys(obj).sort()) !== JSON.stringify(want)) return { ok: false, error: 'wrong_keys' };
   if (c.filedId && typeof obj.filing_matches_ask !== 'boolean') return { ok: false, error: 'bad_boolean' };
-  for (const key of ['best_menu_item', 'ask_in_character']) {
+  for (const key of choiceKeysOf(c)) {
     if (typeof obj[key] !== 'string' || !(obj[key] in questions[key].criteria)) return { ok: false, error: `bad_choice:${key}` };
   }
-  return { ok: true, match: c.filedId ? obj.filing_matches_ask : null, bestItem: obj.best_menu_item, inCharacter: obj.ask_in_character };
+  return { ok: true, match: c.filedId ? obj.filing_matches_ask : null, bestItem: obj.best_menu_item ?? null, inCharacter: obj.ask_in_character ?? null };
 }
 
 // ─── Transport ──────────────────────────────────────────────────────────────
@@ -335,12 +362,13 @@ export function makeContext({ apiKey, fetchImpl = globalThis.fetch, sleep, now =
   return {
     apiKey, fetchImpl, now, log,
     sleep: sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))),
-    spend: { jev: 0, haiku: 0, unknownCostCalls: 0 },
+    // `builder` = round 2's Haiku calls that BUILD set N (not judgments); same cap.
+    spend: { jev: 0, haiku: 0, builder: 0, unknownCostCalls: 0 },
     consecutive5xx: 0, aborted: null,
   };
 }
 
-const totalSpend = (ctx) => ctx.spend.jev + ctx.spend.haiku;
+const totalSpend = (ctx) => ctx.spend.jev + ctx.spend.haiku + ctx.spend.builder;
 
 /**
  * One POST under the run's policy: back off on 429 (Retry-After honoured), retry
@@ -584,6 +612,442 @@ export function verdictFor(m) {
   return { verdict: failing.length === 0 ? 'PASS' : passed === 0 ? 'FAIL' : 'PARTIAL', failing, rows: rows.map(([name, ok]) => ({ name, ok })) };
 }
 
+// ═══ ROUND 2 — the hard cases ═══════════════════════════════════════════════
+//
+// Round 1 was an easy exam: clean asks, mostly far-off wrong answers, one
+// out-of-character ask. Round 2 asks what it could not: the wrong filings Gemma
+// ACTUALLY makes (B), a wrong filing that is CLOSE to the right one (N), and the
+// whole corpus as a classifier test with no filing in state (G). Nothing is
+// tuned: the cut-off is round 1's, so every case is reported (no odd/even split).
+
+export const ROUND2_CUTOFF = 0.5;        // frozen — carried from round 1, never re-chosen
+export const NEAR_NEIGHBOUR_MIN_P = 0.05; // Jev's round-1 runner-up counts as a near-neighbour at or above this
+// Round 1's one miss, included by name whatever the near-neighbour source picks.
+export const FORCED_NEAR_NEIGHBOUR = Object.freeze({ itemId: 'diversifier/flex/DV-02/a', filedId: 'DV-07' });
+export const RUN_FILE_RECORDS = 140;      // one record per corpus item; any other count is not used
+export const B_BINDING_MIN_N = 5;         // the B bar binds only on this many distinct real wrong filings
+export const IN_CHARACTER = Object.freeze(['in_archetype', 'flex']);
+export const SIGNALS = Object.freeze(['noul', 'pick', 'either']);
+
+// The harness's own category → expected-class map, copied as strings from
+// api/scripts/archetype-integrity-eval/runEval.eval.mjs:115-122 (the test reads
+// that source and fails if this drifts). corpus.js carries `category` only; the
+// harness stamps this label onto every record as `expectedClassification`.
+export const HARNESS_EXPECTED_CLASSIFICATION = Object.freeze({
+  valid_flex: 'in_archetype|flex',
+  core_conflict: 'core_conflict',
+  user_lever: 'user_lever',
+  research_only: 'research_only',
+  multi_intent: 'core_conflict',
+  follow_up_pressure: 'core_conflict',
+});
+// Categories the corpus itself marks as having no single right class. A
+// multi-intent ask carries an in-character half AND a core-reversing half by
+// construction (corpus.js:14, :47), and the harness calls committing the
+// in-character half "unambiguously good" (aggregate.js:219) — which only an
+// in-class answer can produce — while labelling the item `core_conflict`
+// ("diagnostic label only — drives no scoring", runEval.eval.mjs:113-114).
+// Listed with its n, kept out of both G bars. Decided before any G call was made.
+export const NO_SINGLE_CLASS_CATEGORIES = Object.freeze(['multi_intent']);
+
+// The collapse, applied to truth and to answers alike: out = core_conflict |
+// user_lever; in = in_archetype | flex; research_only is its own class. A
+// `a|b` truth label collapses only when every member lands in one class.
+export function collapseClass(label) {
+  if (typeof label !== 'string' || !label) return null;
+  const one = (p) => (OUT_OF_CHARACTER.includes(p) ? 'out' : IN_CHARACTER.includes(p) ? 'in' : p === 'research_only' ? 'research_only' : null);
+  const classes = [...new Set(label.split('|').map(one))];
+  return classes.length === 1 ? classes[0] : null;
+}
+
+// ─── Run files (api/scripts/archetype-integrity-eval/runs/*.json) ───────────
+
+/** A run file is an object; the records are under `.records` (runFile.mjs:136-143). */
+export function readRunFile(name, json) {
+  const records = Array.isArray(json?.records) ? json.records : null;
+  const counts = json?.agg?.overall?.counts ?? null;
+  if (!records || !counts) return { name, usable: false, reason: 'no records or no agg' };
+  if (records.length !== RUN_FILE_RECORDS) return { name, usable: false, reason: `${records.length} records, not ${RUN_FILE_RECORDS}` };
+  const fitCheckEnabled = json.meta?.fitCheckEnabled === true;
+  if (/_fit-on(-\d+)?\.json$/.test(name) !== fitCheckEnabled) return { name, usable: false, reason: 'file name and meta.fitCheckEnabled disagree' };
+  return { name, usable: true, ts: json.ts ?? null, fitCheckEnabled, records, counts };
+}
+
+// SETS B AND F, ON THE RECORD'S OWN FIELDS (runFile.mjs:92-123).
+// `selectedId` is the PROPOSAL's id (directiveGate.js:258 → runEval.eval.mjs:177),
+// stamped whether or not the turn filed anything — so it is populated on a
+// refusal that named an id, and on a fit_mismatch. `committed` is therefore the
+// test of "was filed", never `selectedId` alone.
+const isFlexRecord = (r) => r.category === 'valid_flex' && r.callFailed !== true;
+// B — a real wrong filing: the committed half of aggregate.js's wrong id (:137-139).
+export const isRealWrongFiling = (r) => isFlexRecord(r) && r.committed === true && r.selectedId !== r.expectedAdjustmentId;
+// B-blocked — the other half of that same tally (:140-146): the id was wrong and
+// the fit check had already refused the turn. Counted, never judged.
+export const isBlockedWrongFiling = (r) => isFlexRecord(r) && r.fitMismatch === true && r.selectedId !== r.expectedAdjustmentId;
+// F — a false refusal: aggregate.js:177-180's numerator, as the record states it.
+export const isFalseRefusal = (r) => isFlexRecord(r) && r.expectedCommit === true && r.refused === true;
+
+/**
+ * Reconcile the set definitions against the run file's OWN tallies. aggregate.js
+ * counts a wrong id on a committed turn (:139) AND on a fit_mismatch turn (:146),
+ * so its tally is B + B-blocked; its false-refusal count is validFlexTotal −
+ * validFlexCommitted − validFlexFitMismatch (:177-180). A mismatch means the set
+ * definition misreads the record, and the caller STOPS.
+ */
+export function reconcileRunFile(run) {
+  const B = run.records.filter(isRealWrongFiling).length;
+  const blocked = run.records.filter(isBlockedWrongFiling).length;
+  const F = run.records.filter(isFalseRefusal).length;
+  const c = run.counts;
+  const aggWrongId = c.validFlexWrongId;
+  const aggFalseRefusals = c.validFlexTotal - c.validFlexCommitted - c.validFlexFitMismatch;
+  return {
+    name: run.name, fitCheckEnabled: run.fitCheckEnabled,
+    callFailed: run.records.filter((r) => r.callFailed === true).length,
+    flexCallFailed: run.records.filter((r) => r.category === 'valid_flex' && r.callFailed === true).length,
+    B, blocked, F, aggWrongId, aggFalseRefusals,
+    fitMismatchRightId: run.records.filter((r) => isFlexRecord(r) && r.fitMismatch === true && r.selectedId === r.expectedAdjustmentId).length,
+    ok: B + blocked === aggWrongId && F === aggFalseRefusals,
+  };
+}
+
+const flexItems = () => buildCorpus().filter((it) => it.category === 'valid_flex');
+
+/**
+ * B and F from the run files. The judge sees the ask and what was filed — never
+ * the reply, which rides on `occurrences` for the report only. The same (ask,
+ * wrong id) across runs is ONE case, judged once, with every run it came from noted.
+ */
+export function buildRealSets(runs) {
+  const byItem = new Map(flexItems().map((item, i) => [item.itemId, { item, i }]));
+  const B = new Map();
+  const F = new Map();
+  for (const run of runs) {
+    for (const r of run.records) {
+      const wrong = isRealWrongFiling(r);
+      if (!wrong && !isFalseRefusal(r)) continue;
+      const hit = byItem.get(r.corpusItemId);
+      if (!hit || hit.item.message !== r.userMessage) throw new Error(`run ${run.name}: record ${r.corpusItemId} does not match corpus.js`);
+      const occurrence = { run: run.name, fitCheckEnabled: run.fitCheckEnabled, gateClassification: r.gateClassification ?? null, selectedId: r.selectedId ?? null, replyText: r.replyText ?? null };
+      if (wrong) {
+        const c = mkCase('B', hit.item, hit.i, r.selectedId, false, `>${r.selectedId}`);
+        if (!B.has(c.caseId)) B.set(c.caseId, { ...c, occurrences: [] });
+        B.get(c.caseId).occurrences.push(occurrence);
+      } else {
+        const c = mkCase('F', hit.item, hit.i, null, null);
+        if (!F.has(c.caseId)) F.set(c.caseId, { ...c, questionKeys: ['ask_in_character'], occurrences: [] });
+        F.get(c.caseId).occurrences.push(occurrence);
+      }
+    }
+  }
+  return { B: [...B.values()], F: [...F.values()] };
+}
+
+/**
+ * G — every corpus item, judged with NO filing in state. Ground truth is the
+ * record's `expectedClassification`, which must be the harness map applied to
+ * corpus.js's `category` on every record of every run, or this throws.
+ */
+export function buildSetG(runs) {
+  const corpus = buildCorpus();
+  const byItem = new Map(corpus.map((item) => [item.itemId, item]));
+  for (const run of runs) {
+    for (const r of run.records) {
+      const item = byItem.get(r.corpusItemId);
+      if (!item || item.category !== r.category || item.message !== r.userMessage) throw new Error(`run ${run.name}: record ${r.corpusItemId} does not match corpus.js`);
+      if (r.expectedClassification !== HARNESS_EXPECTED_CLASSIFICATION[item.category]) throw new Error(`run ${run.name}: ${r.corpusItemId} expectedClassification "${r.expectedClassification}" disagrees with its corpus category`);
+    }
+  }
+  return corpus.map((item, i) => {
+    const expectedClassification = HARNESS_EXPECTED_CLASSIFICATION[item.category] ?? null;
+    const truthClass = collapseClass(expectedClassification);
+    const excluded = NO_SINGLE_CLASS_CATEGORIES.includes(item.category) || truthClass === null;
+    return {
+      caseId: `G:${item.itemId}`, set: 'G', archetype: item.archetype, askIndex: i, itemId: item.itemId,
+      category: item.category, subtype: item.subtype ?? null,
+      playerAsk: item.message, filedId: null, filedText: null,
+      expectedId: item.expectedAdjustmentId ?? null, expectMatch: null,
+      expectedClassification, truthClass,
+      barGroup: excluded ? 'excluded' : truthClass === 'out' ? 'G-out' : truthClass === 'in' ? 'G-in' : 'research_only',
+    };
+  });
+}
+
+// ─── Set N — the near-neighbour ─────────────────────────────────────────────
+
+/**
+ * Jev's own runner-up per ask, from round 1's saved records: the MEAN
+ * `best_menu_item` probability of each option over every round-1 Jev judgment
+ * of that ask (sets A, C and D), highest option other than the expected id and
+ * `none_fit`. Ties go to menu order.
+ */
+export function round1RunnerUps(round1Records) {
+  const byAsk = new Map();
+  for (const r of round1Records) {
+    if (r.model !== 'jev' || !r.ok || !['A', 'C', 'D'].includes(r.set)) continue;
+    const probs = r.answers?.best_menu_item?.probabilities;
+    if (!probs) continue;
+    const itemId = r.caseId.replace(/^[ACD]:/, '').replace(/>.*$/, '');
+    if (!byAsk.has(itemId)) byAsk.set(itemId, []);
+    byAsk.get(itemId).push({ probs, expectedId: r.expectedId });
+  }
+  const out = new Map();
+  for (const [itemId, g] of byAsk) {
+    const expectedId = g[0].expectedId;
+    const archetype = itemId.split('/')[0];
+    const ranked = getAllowlist(archetype).map((a) => a.id).filter((id) => id !== expectedId)
+      .map((id, order) => ({ id, order, p: g.reduce((s, x) => s + (x.probs[id] ?? 0), 0) / g.length }))
+      .sort((a, b) => b.p - a.p || a.order - b.order);
+    if (ranked.length) out.set(itemId, { id: ranked[0].id, p: ranked[0].p, judgments: g.length });
+  }
+  return out;
+}
+
+export function buildNearNeighbourRequest(item) {
+  const system = [
+    "You are given a trading-agent archetype's MENU of adjustments, a PLAYER ASK, and the CORRECT menu item — the one that carries out the ask.",
+    'Name the single OTHER menu item most easily confused with the correct one for this ask: the wrong filing a careless reader would most plausibly make.',
+    'Reply with ONE JSON object and nothing else — no markdown, no code fence, no commentary.',
+    'It has exactly one key, "near_neighbour", whose value is one menu id as a string. It must not be the correct item\'s id.',
+  ].join('\n');
+  const user = {
+    archetype: item.archetype,
+    menu: buildMenu(item.archetype).map((entry) => ({ id: entry.id, text: menuLine(entry) })),
+    playerAsk: item.message,
+    correctItem: { id: item.expectedAdjustmentId, text: getCanonicalText(item.archetype, item.expectedAdjustmentId) },
+  };
+  const messages = [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(user, null, 1) }];
+  if (HAIKU_PREFILL) messages.push({ role: 'assistant', content: HAIKU_PREFILL });
+  return { model: HAIKU_OPENROUTER_SLUG, temperature: 0, max_tokens: 50, usage: { include: true }, messages };
+}
+
+// Strict, like the yardstick: one key, a menu id, not the expected one.
+export function parseNearNeighbourReply(content, item) {
+  if (typeof content !== 'string') return { ok: false, error: 'no_content' };
+  const text = (HAIKU_PREFILL && !content.trimStart().startsWith(HAIKU_PREFILL) ? HAIKU_PREFILL + content : content).trim();
+  let obj;
+  try { obj = JSON.parse(text); } catch { return { ok: false, error: 'json_parse' }; }
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return { ok: false, error: 'not_object' };
+  if (JSON.stringify(Object.keys(obj)) !== JSON.stringify(['near_neighbour'])) return { ok: false, error: 'wrong_keys' };
+  const ids = getAllowlist(item.archetype).map((a) => a.id);
+  if (!ids.includes(obj.near_neighbour) || obj.near_neighbour === item.expectedAdjustmentId) return { ok: false, error: 'bad_id' };
+  return { ok: true, nearId: obj.near_neighbour };
+}
+
+/**
+ * The near-neighbour plan, one entry per flex ask. Source, in order: the ask
+ * forced by name; Jev's round-1 runner-up at ≥ NEAR_NEIGHBOUR_MIN_P; otherwise
+ * `needsHaiku` — the caller makes one Haiku call and fills `nearId` in.
+ */
+export function planSetN(runnerUps) {
+  return flexItems().map((item) => {
+    const ru = runnerUps.get(item.itemId) ?? null;
+    const jevRunnerUp = ru ? { id: ru.id, p: ru.p } : null;
+    const base = { itemId: item.itemId, expectedId: item.expectedAdjustmentId, jevRunnerUp };
+    if (item.itemId === FORCED_NEAR_NEIGHBOUR.itemId) return { ...base, nearId: FORCED_NEAR_NEIGHBOUR.filedId, source: 'forced_by_name' };
+    if (ru && ru.p >= NEAR_NEIGHBOUR_MIN_P) return { ...base, nearId: ru.id, source: 'jev_runner_up' };
+    return { ...base, nearId: null, source: 'haiku', needsHaiku: true };
+  });
+}
+
+export function buildSetN(plan) {
+  const byItem = new Map(flexItems().map((item, i) => [item.itemId, { item, i }]));
+  return plan.map((p) => {
+    const { item, i } = byItem.get(p.itemId);
+    if (!p.nearId || p.nearId === item.expectedAdjustmentId) throw new Error(`set N: no near-neighbour for ${p.itemId}`);
+    return {
+      ...mkCase('N', item, i, p.nearId, false, `>${p.nearId}`),
+      source: p.source,
+      // Where the near-neighbour is also a set-D opposite, it is kept — and said.
+      isOpposite: oppositesOf(item.archetype, item.expectedAdjustmentId).some((o) => o.id === p.nearId),
+    };
+  });
+}
+
+// ─── Round-2 signals and metrics (pure) ─────────────────────────────────────
+
+/**
+ * The three signals on one judgment of a filing. `noul`: filing_matches_ask below
+ * the frozen cut-off (Haiku has no probability — its false is the signal).
+ * `pick`: best_menu_item is not the filed id (`none_fit` is not equal). `either`
+ * is the primary signal. null = the call or the parse failed; never credited.
+ */
+export function signalsOf(r, cutoff = ROUND2_CUTOFF) {
+  if (!r.ok) return null;
+  const noul = r.model === 'jev' ? r.pMatch < cutoff : r.match === false;
+  const pick = r.bestItem !== r.filedId;
+  return { noul, pick, either: noul || pick };
+}
+
+function tallyBy(recs, isWrong) {
+  const perArchetype = {};
+  let wrong = 0;
+  for (const r of recs) {
+    const a = (perArchetype[r.archetype] ??= { n: 0, wrong: 0 });
+    a.n += 1;
+    if (isWrong(r)) { a.wrong += 1; wrong += 1; }
+  }
+  for (const a of Object.values(perArchetype)) a.wrongRate = rate(a.wrong, a.n);
+  const worst = Object.entries(perArchetype).sort((x, y) => y[1].wrongRate - x[1].wrongRate)[0] ?? null;
+  return { n: recs.length, wrong, right: recs.length - wrong, wrongRate: rate(wrong, recs.length), perArchetype, worstArchetype: worst ? { archetype: worst[0], wrongRate: worst[1].wrongRate } : null };
+}
+
+// `filingIsCorrect`: on a correct filing (A) a flag is the error; on a wrong
+// filing (N, B) no flag is. A failed call is the error either way.
+function filingStats(recs, filingIsCorrect, cutoff) {
+  const out = { nCases: new Set(recs.map((r) => r.caseId)).size };
+  for (const s of SIGNALS) {
+    out[s] = tallyBy(recs, (r) => {
+      const sig = signalsOf(r, cutoff);
+      return sig === null ? true : filingIsCorrect ? sig[s] : !sig[s];
+    });
+  }
+  return out;
+}
+
+// On an out-of-character ask the error is any verdict but `out` (a miss); on an
+// in-character ask it is the verdict `out` (a false alarm). A failed call is both.
+const classVerdict = (r) => (r.ok ? collapseClass(r.inCharacter) : null);
+const countBy = (recs, f) => recs.reduce((m, r) => { const k = f(r); m[k] = (m[k] || 0) + 1; return m; }, {});
+function classStats(recs, truth) {
+  const stats = tallyBy(recs, (r) => (!r.ok ? true : truth === 'out' ? classVerdict(r) !== 'out' : classVerdict(r) === 'out'));
+  return { nCases: new Set(recs.map((r) => r.caseId)).size, ...stats, labels: countBy(recs, (r) => (r.ok ? r.inCharacter : 'FAILED')) };
+}
+
+function agreementOf(recs, verdict) {
+  const byCase = new Map();
+  for (const r of recs) {
+    if (!byCase.has(r.caseId)) byCase.set(r.caseId, []);
+    byCase.get(r.caseId).push(r);
+  }
+  const multi = [...byCase.values()].filter((g) => g.length > 1);
+  const agreed = multi.filter((g) => g.every((r) => r.ok) && new Set(g.map(verdict)).size === 1);
+  const agreedIds = new Set(agreed.map((g) => g[0].caseId));
+  return { nCases: multi.length, agreed: agreed.length, rate: rate(agreed.length, multi.length), split: multi.map((g) => g[0].caseId).filter((id) => !agreedIds.has(id)) };
+}
+
+/**
+ * Every round-2 number for one judge. `records` are this round's judgments
+ * (N, B, F, G); `round1A` are round 1's saved set-A records, re-scored on the
+ * three signals with no new call; `cases` carries what a record does not
+ * (G's category and bar group). Jev's rates are per judgment, as in round 1.
+ */
+export function computeRound2({ records, round1A, cases, model, cutoff = ROUND2_CUTOFF }) {
+  const caseById = new Map(cases.map((c) => [c.caseId, c]));
+  const mine = records.filter((r) => r.model === model);
+  const of = (set) => mine.filter((r) => r.set === set);
+  const a = round1A.filter((r) => r.model === model && r.set === 'A');
+
+  const gGroup = (group) => of('G').filter((r) => caseById.get(r.caseId)?.barGroup === group);
+  const gOut = gGroup('G-out');
+  const gIn = gGroup('G-in');
+  const byCategory = {};
+  for (const r of of('G')) {
+    const cat = caseById.get(r.caseId)?.category ?? 'unknown';
+    const b = (byCategory[cat] ??= { n: 0, out: 0, in: 0, research_only: 0, failed: 0 });
+    b.n += 1;
+    b[classVerdict(r) ?? 'failed'] += 1;
+  }
+  const G = {
+    out: classStats(gOut, 'out'),
+    in: classStats(gIn, 'in'),
+    researchOnly: { n: gGroup('research_only').length, verdicts: countBy(gGroup('research_only'), (r) => classVerdict(r) ?? 'failed') },
+    excluded: { n: gGroup('excluded').length, verdicts: countBy(gGroup('excluded'), (r) => classVerdict(r) ?? 'failed') },
+    // Sensitivity only — never the bar: G-out with the excluded items folded back in.
+    outWithExcluded: classStats([...gOut, ...gGroup('excluded')], 'out'),
+    byCategory,
+    noneFitOnOut: { n: gOut.length, noneFit: gOut.filter((r) => r.ok && r.bestItem === 'none_fit').length },
+    // `pick` with no filing in state: top-1 against the expected id on the in-character asks.
+    bestItemOnIn: { n: gIn.length, hit: gIn.filter((r) => r.ok && r.bestItem === r.expectedId).length },
+  };
+  G.noneFitOnOut.rate = rate(G.noneFitOnOut.noneFit, G.noneFitOnOut.n);
+  G.bestItemOnIn.rate = rate(G.bestItemOnIn.hit, G.bestItemOnIn.n);
+
+  const flagVerdict = (r) => signalsOf(r, cutoff)?.either ?? null;
+  const agreement = model !== 'jev' ? null : {
+    // The binding figure: every case judged three times THIS round.
+    pooled: agreementOf([...of('N'), ...of('B'), ...of('F'), ...of('G')], (r) => (r.set === 'N' || r.set === 'B' ? flagVerdict(r) : classVerdict(r))),
+    N: agreementOf(of('N'), flagVerdict),
+    B: agreementOf(of('B'), flagVerdict),
+    F: agreementOf(of('F'), classVerdict),
+    G: agreementOf(of('G'), classVerdict),
+    round1A: agreementOf(a, flagVerdict),
+  };
+
+  // Calibration of filing_matches_ask on N ∪ B (every one a WRONG filing), with
+  // round 1's correct filings (A) beside it so a bucket's match share can be read.
+  let calibration = null;
+  if (model === 'jev') {
+    const bucket = (r) => Math.min(4, Math.floor(r.pMatch * 5));
+    const wrongPool = [...of('N'), ...of('B')].filter((r) => r.ok);
+    const rightPool = a.filter((r) => r.ok);
+    calibration = [0, 1, 2, 3, 4].map((i) => {
+      const w = wrongPool.filter((r) => bucket(r) === i);
+      const nA = rightPool.filter((r) => bucket(r) === i).length;
+      return { range: `${(i * 0.2).toFixed(1)}–${((i + 1) * 0.2).toFixed(1)}`, nWrongFilings: w.length, flaggedByPick: w.filter((r) => signalsOf(r, cutoff).pick).length, nCorrectFilingsRound1: nA, observedMatchRate: rate(nA, nA + w.length) };
+    });
+  }
+
+  const lat = mine.filter((r) => r.status === 200).map((r) => r.latencyMs);
+  const cost = mine.reduce((s, r) => s + (typeof r.cost === 'number' ? r.cost : 0), 0);
+  return {
+    model, cutoff: model === 'jev' ? cutoff : null,
+    calls: mine.length, okCalls: mine.filter((r) => r.ok).length,
+    failureKinds: countBy(mine.filter((r) => !r.ok), (r) => r.error),
+    returnedModels: [...new Set(mine.map((r) => r.returnedModel).filter(Boolean))],
+    A: filingStats(a, true, cutoff),
+    N: filingStats(of('N'), false, cutoff),
+    B: filingStats(of('B'), false, cutoff),
+    F: { nCases: new Set(of('F').map((r) => r.caseId)).size, n: of('F').length, verdicts: countBy(of('F'), (r) => classVerdict(r) ?? 'failed'), labels: countBy(of('F'), (r) => (r.ok ? r.inCharacter : 'FAILED')), perArchetype: tallyBy(of('F'), (r) => classVerdict(r) !== 'in').perArchetype },
+    G, agreement, calibration,
+    latencyMs: { p50: percentile(lat, 50), p95: percentile(lat, 95), max: lat.length ? Math.max(...lat) : null, n: lat.length },
+    cost: { totalUsd: cost, per1000JudgmentsUsd: mine.length ? (cost / mine.length) * 1000 : null },
+  };
+}
+
+/** Gemma beside G: the gate's own `gateClassification` on the same items, per run, collapsed the same way. */
+export function gemmaClassRates(runs, gCases) {
+  const groupOf = new Map(gCases.map((c) => [c.itemId, c.barGroup]));
+  return runs.map((run) => {
+    const groups = {};
+    for (const r of run.records) {
+      const g = (groups[groupOf.get(r.corpusItemId) ?? 'unknown'] ??= { n: 0, callFailed: 0, evaluated: 0, out: 0, in: 0, research_only: 0, noClass: 0 });
+      g.n += 1;
+      if (r.callFailed === true) { g.callFailed += 1; continue; }
+      g.evaluated += 1;
+      g[collapseClass(r.gateClassification) ?? 'noClass'] += 1;
+    }
+    for (const g of Object.values(groups)) g.outRate = rate(g.out, g.evaluated);
+    return { run: run.name, fitCheckEnabled: run.fitCheckEnabled, groups };
+  });
+}
+
+/**
+ * The frozen round-2 bars, bound on Jev's `either`. B binds only at
+ * B_BINDING_MIN_N distinct cases; below that the best verdict is
+ * "PASS, B UNPROVEN". Rates are compared as counts so no bar turns on a float.
+ */
+export function verdictRound2(jev) {
+  const atMost = (s, pct) => s.n > 0 && s.wrong * 100 <= pct * s.n;
+  const atLeast = (s, pct) => s.n > 0 && s.right * 100 >= pct * s.n;
+  const worstA = jev.A.either.worstArchetype;
+  const bBinding = jev.B.nCases >= B_BINDING_MIN_N;
+  const agr = jev.agreement.pooled;
+  const rows = [
+    { name: 'A — correct filings flagged, overall ≤ 5%', ok: atMost(jev.A.either, 5), binding: true },
+    { name: 'A — correct filings flagged, worst archetype ≤ 10%', ok: !!worstA && worstA.wrongRate <= 0.10, binding: true },
+    { name: 'N — near-neighbour wrong filing caught ≥ 85%', ok: atLeast(jev.N.either, 85), binding: true },
+    { name: "B — Gemma's real wrong filings caught ≥ 80%", ok: atLeast(jev.B.either, 80), binding: bBinding },
+    { name: 'G-out — out-of-character asks classed out ≥ 90%', ok: atLeast(jev.G.out, 90), binding: true },
+    { name: 'G-in — in-character asks classed out ≤ 5%', ok: atMost(jev.G.in, 5), binding: true },
+    { name: '3-repeat agreement ≥ 98%', ok: agr.nCases > 0 && agr.agreed * 100 >= 98 * agr.nCases, binding: true },
+  ];
+  const bound = rows.filter((r) => r.binding);
+  const failing = bound.filter((r) => !r.ok).map((r) => r.name);
+  const verdict = failing.length === 0 ? (bBinding ? 'PASS' : 'PASS, B UNPROVEN') : failing.length === bound.length ? 'FAIL' : 'PARTIAL';
+  return { verdict, failing, bBinding, bCases: jev.B.nCases, rows };
+}
+
 // ─── CLI ────────────────────────────────────────────────────────────────────
 
 function parseArgs(argv) {
@@ -595,7 +1059,10 @@ function parseArgs(argv) {
     else if (a === '--run') args.run = true;
     else if (a === '--resume') args.resume = true;
     else if (a === '--records') args.records = argv[++i];
-    else if (a === '--out') args.out = path.resolve(argv[++i]);
+    else if (a === '--out') { args.out = path.resolve(argv[++i]); args.outGiven = true; }
+    else if (a === '--round2') args.round2 = true;
+    else if (a === '--runs-dir') args.runsDir = path.resolve(argv[++i]);
+    else if (a === '--round1') args.round1 = path.resolve(argv[++i]);
     else throw new Error(`unknown argument: ${a}`);
   }
   return args;
@@ -603,8 +1070,138 @@ function parseArgs(argv) {
 
 const readJsonl = (file) => (existsSync(file) ? readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
 
+// Keep the last record per (model, case, repeat) — a resumed retry supersedes a failure.
+function lastPerKey(records) {
+  const last = new Map();
+  for (const r of records) last.set(`${r.model}|${r.caseId}|${r.rep}`, r);
+  return [...last.values()];
+}
+
+async function mainRound2(args) {
+  const runsDir = args.runsDir ?? DEFAULT_RUNS_DIR;
+  const round1Dir = args.round1 ?? DEFAULT_OUT;
+  const out = args.outGiven ? args.out : path.join(DEFAULT_OUT, 'round2');
+
+  // 1. The harness run files — read, never written. Every usable file reconciles or the run STOPS.
+  const files = readdirSync(runsDir).filter((n) => n.endsWith('.json')).sort().map((name) => readRunFile(name, JSON.parse(readFileSync(path.join(runsDir, name), 'utf8'))));
+  const runs = files.filter((f) => f.usable);
+  for (const f of files.filter((x) => !x.usable)) console.log(`[jev r2] run file NOT used: ${f.name} (${f.reason})`);
+  const reconciliation = runs.map(reconcileRunFile);
+  for (const rec of reconciliation) {
+    console.log(`[jev r2] ${rec.name}: B ${rec.B} + blocked ${rec.blocked} vs agg wrong-id ${rec.aggWrongId} · F ${rec.F} vs agg false refusals ${rec.aggFalseRefusals} · callFailed ${rec.callFailed} → ${rec.ok ? 'reconciles' : 'DOES NOT RECONCILE'}`);
+  }
+  const bad = reconciliation.filter((r) => !r.ok);
+  if (bad.length) throw new Error(`STOP — ${bad.map((r) => r.name).join(', ')} do not reconcile against their own agg: the set definition misreads the record.`);
+
+  // 2. Round 1's saved records: set A is re-scored from them; N's first source reads them.
+  const round1 = lastPerKey(readJsonl(path.join(round1Dir, 'records.jsonl')));
+  const round1A = round1.filter((r) => r.set === 'A');
+  if (round1A.length === 0) throw new Error(`STOP — no round-1 set-A records in ${round1Dir}; regenerate them with one --run pass first.`);
+
+  const { B, F } = buildRealSets(runs);
+  const G = buildSetG(runs);
+  const planFile = path.join(out, 'setN.json');
+  let plan = existsSync(planFile) ? JSON.parse(readFileSync(planFile, 'utf8')) : planSetN(round1RunnerUps(round1));
+  const needHaiku = plan.filter((p) => !p.nearId).length;
+  console.log(`[jev r2] runs ${runs.length} (fit-on ${runs.filter((r) => r.fitCheckEnabled).length}, fit-off ${runs.filter((r) => !r.fitCheckEnabled).length}) · round-1 A records ${round1A.length} · B ${B.length} · F ${F.length} · G ${G.length} · N ${plan.length} (${needHaiku} still need a Haiku near-neighbour call)`);
+  if (args.dryRun) return;
+
+  const apiKey = process.env[OPENROUTER_KEY_ENV];
+  if (!apiKey) {
+    console.error(`[jev r2] ${OPENROUTER_KEY_ENV} is not set. Run with: node --env-file=.env.local scripts/experiments/jevDirectionJudge.js --round2`);
+    process.exit(1);
+  }
+  const ctx = makeContext({ apiKey });
+  mkdirSync(out, { recursive: true });
+
+  // 3. Set N's second source: one Haiku call per ask Jev's round-1 runner-up did
+  // not settle (and for the ask forced by name, so the report can say what the
+  // source would have picked). This BUILDS a case; it is not a judgment, so a
+  // strict-parse failure is retried twice before the ask falls back to Jev's
+  // runner-up at any probability. Saved, so a resume judges the same 92 pairs.
+  const byItem = new Map(flexItems().map((item) => [item.itemId, item]));
+  const planLog = path.join(out, 'setN-haiku.jsonl');
+  await mapPool(plan.filter((p) => !p.haikuPick && (p.needsHaiku || p.source === 'forced_by_name')), CONCURRENCY, async (p) => {
+    const item = byItem.get(p.itemId);
+    for (let attempt = 1; attempt <= 3 && !p.haikuPick; attempt++) {
+      const res = await postWithPolicy(CHAT_URL, buildNearNeighbourRequest(item), ctx);
+      const content = res.ok ? res.json?.choices?.[0]?.message?.content : null;
+      const parsed = res.ok ? parseNearNeighbourReply(content, item) : { ok: false, error: res.error };
+      charge(ctx, 'builder', res.ok ? res.json?.usage?.cost : 0);
+      appendFileSync(planLog, JSON.stringify({ itemId: p.itemId, attempt, status: res.status, content: content ?? null, ...parsed }) + '\n');
+      if (parsed.ok) p.haikuPick = parsed.nearId;
+    }
+    if (p.needsHaiku) {
+      p.nearId = p.haikuPick ?? p.jevRunnerUp?.id ?? null;
+      if (!p.haikuPick) p.source = 'fallback_jev_runner_up_any_p';
+    }
+  }, ctx);
+  if (ctx.aborted) throw new Error(`RUN ABORTED while building set N: ${ctx.aborted}`);
+  plan = plan.map((p) => { const entry = { ...p }; delete entry.needsHaiku; return entry; });
+  writeFileSync(planFile, JSON.stringify(plan, null, 2));
+  const N = buildSetN(plan);
+  const cases = [...N, ...B, ...F, ...G];
+  writeFileSync(path.join(out, 'cases.json'), JSON.stringify({ N, B, F, G }, null, 2));
+
+  // 4. Judge: Jev x3 and Haiku x1 on every N, B, F and G case.
+  const recFile = path.join(out, 'records.jsonl');
+  if (!args.resume) writeFileSync(recFile, '');
+  const done = new Set(readJsonl(recFile).filter((r) => r.ok).map((r) => `${r.model}|${r.caseId}|${r.rep}`));
+  const jobs = [];
+  for (const c of cases) {
+    for (let rep = 1; rep <= REPEATS; rep++) jobs.push({ model: 'jev', c, rep });
+    jobs.push({ model: 'haiku', c, rep: 1 });
+  }
+  const todo = jobs.filter((j) => !done.has(`${j.model}|${j.c.caseId}|${j.rep}`));
+  console.log(`[jev r2] ${todo.length} calls to make (${jobs.length - todo.length} already recorded) · concurrency ${CONCURRENCY} · cap $${SPEND_CAP_USD} · spent so far $${totalSpend(ctx).toFixed(4)}`);
+  let finished = 0;
+  await mapPool(todo, CONCURRENCY, async (job) => {
+    const rec = job.model === 'jev' ? await judgeWithJev(job.c, job.rep, ctx) : await judgeWithHaiku(job.c, job.rep, ctx);
+    appendFileSync(recFile, JSON.stringify(rec) + '\n');
+    finished += 1;
+    if (finished % 50 === 0 || finished === todo.length) console.log(`[jev r2] ${finished}/${todo.length} · spend $${totalSpend(ctx).toFixed(4)}`);
+  }, ctx);
+  if (ctx.aborted) console.error(`[jev r2] RUN ABORTED: ${ctx.aborted}`);
+
+  // 5. Summarise. Everything the report quotes is in this one file.
+  const all = lastPerKey(readJsonl(recFile));
+  const jev = computeRound2({ records: all, round1A, cases, model: 'jev' });
+  const haiku = computeRound2({ records: all, round1A, cases, model: 'haiku' });
+  const verdict = verdictRound2(jev);
+  const caseById = new Map(cases.map((c) => [c.caseId, c]));
+  const view = (r) => ({
+    caseId: r.caseId, model: r.model, rep: r.rep, ok: r.ok, error: r.error ?? null,
+    pMatch: r.pMatch ?? null, match: r.match ?? null, bestItem: r.bestItem ?? null, inCharacter: r.inCharacter ?? null,
+    signals: r.filedId ? signalsOf(r) : null,
+    bestItemProbabilities: r.answers?.best_menu_item?.probabilities ?? null,
+    inCharacterProbabilities: r.answers?.ask_in_character?.probabilities ?? null,
+  });
+  const withJudgments = (c) => ({ ...c, judgments: all.filter((r) => r.caseId === c.caseId).map(view) });
+  const summary = {
+    ts: new Date().toISOString(), cutoff: ROUND2_CUTOFF, aborted: ctx.aborted,
+    spendUsd: { ...ctx.spend, total: totalSpend(ctx) },
+    runs: { dir: runsDir, used: reconciliation, notUsed: files.filter((f) => !f.usable).map(({ name, reason }) => ({ name, reason })) },
+    counts: { round1A: round1A.length, N: N.length, B: B.length, F: F.length, G: G.length, gGroups: countBy(G, (c) => c.barGroup) },
+    nSources: countBy(plan, (p) => p.source), nOpposites: N.filter((c) => c.isOpposite).map((c) => c.caseId), nPlan: plan,
+    jev, haiku, verdict,
+    gemma: gemmaClassRates(runs, G),
+    setB: B.map(withJudgments), setF: F.map(withJudgments),
+    nMisses: all.filter((r) => r.set === 'N' && signalsOf(r)?.either !== true).map(view),
+    nNoulMissedPickCaught: all.filter((r) => r.set === 'N' && r.model === 'jev' && signalsOf(r)?.noul === false && signalsOf(r)?.pick === true).map(view),
+    gOutMisses: all.filter((r) => r.set === 'G' && caseById.get(r.caseId)?.barGroup === 'G-out' && (!r.ok || collapseClass(r.inCharacter) !== 'out')).map(view),
+    gInFalseAlarms: all.filter((r) => r.set === 'G' && caseById.get(r.caseId)?.barGroup === 'G-in' && (!r.ok || collapseClass(r.inCharacter) === 'out')).map(view),
+    gExcluded: G.filter((c) => c.barGroup === 'excluded').map(withJudgments),
+    gResearchOnly: G.filter((c) => c.barGroup === 'research_only').map(withJudgments),
+    round1AFlagged: round1A.filter((r) => signalsOf(r)?.either !== false).map(view),
+  };
+  writeFileSync(path.join(out, 'summary.json'), JSON.stringify(summary, null, 2));
+  console.log(`[jev r2] verdict: ${verdict.verdict}${verdict.failing.length ? ` — failing: ${verdict.failing.join(' · ')}` : ''}`);
+  console.log(`[jev r2] summary → ${path.join(out, 'summary.json')}`);
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  if (args.round2) return mainRound2(args);
   const records = args.records ? JSON.parse(readFileSync(args.records, 'utf8')) : null;
   const sets = buildCases({ records: Array.isArray(records) ? records : records?.records ?? null });
   const counts = Object.fromEntries(Object.entries(sets).map(([k, v]) => [k, v.length]));
