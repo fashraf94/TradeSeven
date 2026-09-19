@@ -73,8 +73,21 @@ export const PRE_PHASE_B_ENTRY_KEYS = Object.freeze([
  */
 export const TIMING_ENTRY_KEYS = Object.freeze(['promptBuiltAt', 'buildMs', 'callMs']);
 
+/**
+ * Fail-closed hygiene (Sep 19, 2026) — `holdKind` says WHY this tick's HOLD is
+ * a HOLD: 'default_failure' when the proposal was never usable or could not be
+ * safely evaluated and the tick failed closed, null on a CHOSEN hold (and on
+ * any non-HOLD entry). Its sibling `haikuError.failureClass` says WHICH
+ * failure. Composed LAST in the cron's `const evaluation = {…}` literal, so the
+ * frozen PRE_PHASE_B_ENTRY_KEYS golden above is untouched and this
+ * reconciliation is a single append.
+ */
+export const FAIL_CLOSED_ENTRY_KEYS = Object.freeze(['holdKind']);
+
 /** Every key the cron composes ITSELF, in source order — the entry before any stamp is assigned. */
-export const BASE_ENTRY_KEYS = Object.freeze([...PRE_PHASE_B_ENTRY_KEYS, ...TIMING_ENTRY_KEYS]);
+export const BASE_ENTRY_KEYS = Object.freeze([
+  ...PRE_PHASE_B_ENTRY_KEYS, ...TIMING_ENTRY_KEYS, ...FAIL_CLOSED_ENTRY_KEYS,
+]);
 
 export function makeDirective(overrides = {}) {
   return {

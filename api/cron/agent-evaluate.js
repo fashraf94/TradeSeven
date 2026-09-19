@@ -2000,6 +2000,14 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // the eval_degraded statusFeed entry, the shadow log, and the disclosure
     // counter.
     let haikuFailure = null;
+    // Why this tick's HOLD is a HOLD. null on a CHOSEN hold (the model said
+    // HOLD, or no failure occurred) — those keep exactly what they wrote
+    // before. 'default_failure' on a FALLBACK hold: the proposal was never
+    // usable, or could not be safely evaluated, and the tick failed closed.
+    // The repo had no hold-kind field, so this is a new single field rather
+    // than a new value — stated in the T2 build report per the build prompt's
+    // common rules.
+    let holdKind = null;
     let haikuAttempted = false;
     // Phase B (D-110): true only once the prompt's three parts are BUILT and
     // about to be sent — set immediately before anthropic.messages.create.
@@ -2035,6 +2043,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         timestamp: new Date().toISOString(),
         timeoutKind: null,
       };
+      holdKind = 'default_failure';
       console.warn(`${LOG_PREFIX} Haiku call skipped for battle ${battle.id}: ${haikuFailure.message}`);
     } else {
       haikuAttempted = true;
@@ -2145,6 +2154,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             timestamp: new Date().toISOString(),
             timeoutKind: null,
           };
+          holdKind = 'default_failure';
           console.warn(`${LOG_PREFIX} Haiku response unusable for battle ${battle.id}: ${haikuFailure.message}`);
         }
       } catch (err) {
@@ -2170,6 +2180,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           // fired on a request that was never sent.
           timeoutKind: callMs === null ? null : classifyTimeoutKind(err),
         };
+        holdKind = 'default_failure';
         console.error(`${LOG_PREFIX} Haiku call failed for battle ${battle.id} [${haikuFailure.failureClass}]:`, err.message);
         // Default to HOLD on timeout or error
       } finally {
@@ -2373,9 +2384,44 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           }
         }
       } catch (err) {
-        // Never crash a battle on guardrail failure — log and proceed with
-        // Haiku's original decision.
-        console.error(`${LOG_PREFIX} Guardrail evaluation failed (non-fatal):`, err?.message);
+        // FAIL CLOSED. Never crash a battle on guardrail failure — but never
+        // trade through one either.
+        //
+        // This catch used to log and proceed with the model's original
+        // proposal, which inverted the layer's purpose: the deterministic
+        // override exists to STOP trades the thresholds forbid, so an
+        // exception here means the one check that could have blocked the swap
+        // did not run. Proceeding executed the proposal with its guardrails
+        // silently absent — the least safe reading of an unknown state.
+        //
+        // The proposal is now held. Scope is the MODEL PROPOSAL ONLY: anything
+        // already executed earlier in this tick — S7 risk exits, meeting-
+        // approved swaps — has been committed by executeSwapServer and stands.
+        // Nothing here reverts a trade.
+        const message = String(err?.message || '').slice(0, 200);
+        const heldProposal = decision !== 'HOLD';
+
+        decision = 'HOLD';
+        if (heldProposal) {
+          // Only a proposal that was actually going somewhere counts as
+          // downgraded. A model that already said HOLD keeps a chosen HOLD.
+          downgraded = true;
+          holdKind = 'default_failure';
+          validationErrors.push(`Guardrail evaluation failed — proposal held: ${message}`);
+        }
+
+        // The message, never the stack. Setting the tick's failure record here
+        // also routes this through the two existing receipts for a degraded
+        // tick — the `eval_degraded` status-feed beat and the durable
+        // `cronState.cronErrors` entry — so a guardrail fault is as visible as
+        // a transport fault instead of living only in the logs.
+        haikuFailure = {
+          failureClass: 'guardrail_error',
+          message,
+          timestamp: new Date().toISOString(),
+          timeoutKind: null,
+        };
+        console.error(`${LOG_PREFIX} Guardrail evaluation failed — model proposal held for battle ${battle.id}:`, message);
       }
     }
 
@@ -2915,6 +2961,13 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       promptBuiltAt,
       buildMs,
       callMs,
+      // Why this HOLD is a HOLD: 'default_failure' when the tick failed closed
+      // with no usable proposal, null when the HOLD was CHOSEN (or the tick
+      // swapped). Reads alongside haikuError.failureClass, which says WHICH
+      // failure; this says the decision was not the model's. Composed LAST so
+      // the frozen PRE_PHASE_B_ENTRY_KEYS golden keeps matching byte-for-byte
+      // and the pin reconciliation is a single append.
+      holdKind,
     };
 
     // ---- Intraday Data Build 1 (contract §8.1) — the diagnostic view beside
