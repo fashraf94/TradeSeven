@@ -38,12 +38,56 @@ describe('/api/cron/intraday-validate', () => {
   });
   it('listViewsForSession reads the intradayViews of active battles within the session (evaluatedAt range) and tags the battleId', async () => {
     const { db } = makeInMemoryDb();
-    mocks.battles = [{ id: 'b1', status: 'active' }];
+    mocks.battles = [{ id: 'b1', status: 'active', evaluations: [{ evalId: 'eval_1', intradayViewRef: 'eval_1' }, { evalId: 'eval_0', intradayViewRef: 'eval_0' }] }];
     const session = { openMs: 1000, closeMs: 5000 };
     await db.collection('agentBattles').doc('b1').collection('intradayViews').doc('eval_1').set({ evalId: 'eval_1', evaluatedAt: 2000, symbols: { AAPL: {} } });
     await db.collection('agentBattles').doc('b1').collection('intradayViews').doc('eval_0').set({ evalId: 'eval_0', evaluatedAt: 10, symbols: {} });
     const views = await listViewsForSession(db, session);
     expect(views.map((v) => v.evalId)).toEqual(['eval_1']);
     expect(views[0].battleId).toBe('b1');
+  });
+
+  // -------------------------------------------------------------------------
+  // Addendum A8(c) — the evidence set is what the battle POINTS AT.
+  // Review finding R-2 (docs/audits/20260919_BUILD1_INTRADAY_REVIEW.md).
+  // -------------------------------------------------------------------------
+  it('A8(c) — a view no evaluation points at is NOT graded, even inside the session window', async () => {
+    const { db } = makeInMemoryDb();
+    const session = { openMs: 1000, closeMs: 5000 };
+    // eval_1 was kept; eval_2's write lost its 2 s race, so the entry records
+    // intradayViewRef: null — and then the abandoned write landed anyway,
+    // because withTimeout has no AbortController. §10.4 must not grade it.
+    mocks.battles = [{
+      id: 'b1',
+      status: 'active',
+      evaluations: [
+        { evalId: 'eval_1', intradayViewRef: 'eval_1', intradayViewStatus: null },
+        { evalId: 'eval_2', intradayViewRef: null, intradayViewStatus: 'write_failed' },
+      ],
+    }];
+    await db.collection('agentBattles').doc('b1').collection('intradayViews').doc('eval_1').set({ evalId: 'eval_1', evaluatedAt: 2000, symbols: { AAPL: {} } });
+    await db.collection('agentBattles').doc('b1').collection('intradayViews').doc('eval_2').set({ evalId: 'eval_2', evaluatedAt: 3000, symbols: { AAPL: {} } });
+
+    const views = await listViewsForSession(db, session);
+    expect(views.map((v) => v.evalId)).toEqual(['eval_1']);
+  });
+
+  it('A8(c) — a battle whose evaluations point at nothing costs no subcollection read', async () => {
+    const { db, readLog } = makeInMemoryDb();
+    const session = { openMs: 1000, closeMs: 5000 };
+    mocks.battles = [{ id: 'b1', status: 'active', evaluations: [{ evalId: 'eval_1', intradayViewRef: null }] }];
+    await db.collection('agentBattles').doc('b1').collection('intradayViews').doc('eval_1').set({ evalId: 'eval_1', evaluatedAt: 2000, symbols: {} });
+    const before = readLog.length;
+    expect(await listViewsForSession(db, session)).toEqual([]);
+    // Only the completedAt scan; no per-battle subcollection query.
+    expect(readLog.slice(before).filter(([, path]) => String(path).includes('intradayViews'))).toEqual([]);
+  });
+
+  it('A8(c) — a document whose evalId disagrees with its own id is refused', async () => {
+    const { db } = makeInMemoryDb();
+    const session = { openMs: 1000, closeMs: 5000 };
+    mocks.battles = [{ id: 'b1', status: 'active', evaluations: [{ evalId: 'eval_1', intradayViewRef: 'eval_1' }] }];
+    await db.collection('agentBattles').doc('b1').collection('intradayViews').doc('eval_1').set({ evalId: 'eval_9', evaluatedAt: 2000, symbols: {} });
+    expect(await listViewsForSession(db, session)).toEqual([]);
   });
 });

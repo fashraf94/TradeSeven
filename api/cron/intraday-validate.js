@@ -38,12 +38,30 @@ export async function listViewsForSession(db, session) {
   }
   const views = [];
   for (const b of battles) {
+    // Addendum A8(c) — the evidence set is what the BATTLE POINTS AT.
+    //
+    // The range query alone graded any view sitting in the subcollection for
+    // the session, including one the evaluation entry explicitly disowns: the
+    // §8.1 hook races its write against a 2 s timer without an AbortController
+    // (review R-2), so a write that loses the race still lands afterwards
+    // while the entry records `intradayViewStatus: 'write_failed'` and
+    // `intradayViewRef: null`. §10.4's metrics must not be computed over a
+    // receipt the check did not keep. Only an evalId an evaluation names in
+    // `intradayViewRef` is admitted, which also bounds the set by the
+    // session's own evaluations rather than by whatever is in the collection.
+    const referenced = new Set(
+      (Array.isArray(b.evaluations) ? b.evaluations : [])
+        .filter((e) => e && typeof e.intradayViewRef === 'string' && e.intradayViewRef)
+        .map((e) => e.intradayViewRef),
+    );
+    if (!referenced.size) continue;
     const snap = await db.collection('agentBattles').doc(b.id).collection(VIEWS_SUBCOLLECTION)
       .where('evaluatedAt', '>=', session.openMs).where('evaluatedAt', '<=', session.closeMs + 60 * 60_000).get();
     // The query filters server-side; the guard below restates the range so a
     // fake without range operators (the in-memory fixture) cannot widen it.
     for (const d of snap.docs || []) {
       const v = d.data();
+      if (!referenced.has(d.id) || v?.evalId !== d.id) continue;
       if (Number.isFinite(v?.evaluatedAt) && v.evaluatedAt >= session.openMs && v.evaluatedAt <= session.closeMs + 60 * 60_000) views.push({ ...v, battleId: b.id });
     }
   }

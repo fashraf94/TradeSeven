@@ -7,8 +7,10 @@
 // reconciliation (§6.2) for the session; if bars are unpublished, record the
 // attempt and exit; otherwise validate up to 20 symbols within a 60 s
 // budget, persist progress, exit. `done` when pendingSymbols is empty;
-// `window_closed` at 16:00 UTC with the unvalidated symbols listed and
-// reason `unpublished`. Bounded work every invocation; nothing relies on
+// `window_closed` at 16:00 UTC (recomputed per invocation — A8) with the
+// unvalidated symbols listed and a reason that distinguishes a vendor that
+// has not published from a transport failure (A8). Bounded work every
+// invocation; nothing relies on
 // platform retries. Every dependency injected.
 
 import * as DEFAULT_CONFIG from '../intradayConfig.js';
@@ -21,6 +23,26 @@ import { toVendorStock } from './universe.js';
 
 const dataOf = (snap) => (snap && snap.exists ? (typeof snap.data === 'function' ? snap.data() : snap.data) : null);
 
+/**
+ * Addendum A8(a) — the window closes at `hourUtc` on the CURRENT grading day,
+ * recomputed every invocation.
+ *
+ * It used to be stamped once, at state creation, from the first invocation's
+ * clock and then compared against on every later one. Two reachable
+ * consequences, both measured in the review:
+ *
+ *   - if the twelve earlier cron slots were dropped (Vercel gives no retry —
+ *     G10), the state was CREATED at 16:00 and closed in the same breath:
+ *     attempts 0, zero vendor requests, and every symbol written off as
+ *     unpublished while the bars sat there;
+ *   - 19 sessions a year have two grading UTC days (the session before a
+ *     holiday Monday). On the second, the stale stamp was already in the
+ *     past, so the first slot closed the session with twelve usable slots
+ *     and published bars remaining.
+ *
+ * Deriving it from `nowMs` each time fixes both: every grading day gets its
+ * own full window.
+ */
 function windowCloseMs(nowMs, hourUtc) {
   const d = new Date(nowMs);
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), hourUtc, 0, 0);
@@ -59,7 +81,7 @@ export async function runValidation({
   if (!state) {
     const listing = await calcStateRef(db, gradeDate).collection('actionable').get();
     const symbols = (listing.docs || []).map((d) => d.id).sort();
-    state = { etDate: gradeDate, status: 'pending', pendingSymbols: symbols, doneSymbols: [], attempts: 0, firstPublishHourUtc: null, windowClosesAt: windowCloseMs(nowMs, config.VALIDATOR_WINDOW_CLOSE_HOUR_UTC), results: {}, createdAt: nowMs };
+    state = { etDate: gradeDate, status: 'pending', pendingSymbols: symbols, doneSymbols: [], attempts: 0, firstPublishHourUtc: null, results: {}, createdAt: nowMs };
     if (!symbols.length) {
       state.status = 'done';
       await stateRef.set({ ...state, updatedAt: nowMs });
@@ -68,9 +90,18 @@ export async function runValidation({
     }
   }
 
-  // Window closed at 16:00 UTC.
-  if (nowMs >= state.windowClosesAt && state.pendingSymbols.length) {
-    const finalState = { ...state, status: 'window_closed', windowClosedAt: nowMs, unvalidated: state.pendingSymbols.map((s) => ({ sym: s, reason: 'unpublished' })), updatedAt: nowMs };
+  // A8(a): the window is this grading day's 16:00 UTC, recomputed now — not
+  // a stamp from whenever the state happened to be created.
+  const windowClosesAt = windowCloseMs(nowMs, config.VALIDATOR_WINDOW_CLOSE_HOUR_UTC);
+  state.windowClosesAt = windowClosesAt;
+  // ...and it never closes a session that has not been tried. A first
+  // invocation at or after 16:00 falls through and makes its attempt; the
+  // next one closes. `unpublished` must mean the vendor was asked.
+  if (nowMs >= windowClosesAt && state.pendingSymbols.length && (state.attempts || 0) > 0) {
+    // A8(b): each pending symbol carries WHY it is unvalidated — the last
+    // failure this session saw, not a blanket 'unpublished'.
+    const lastReason = state.lastFailure?.reason === 'transport_error' ? 'transport_error' : 'unpublished';
+    const finalState = { ...state, status: 'window_closed', windowClosedAt: nowMs, unvalidated: state.pendingSymbols.map((s) => ({ sym: s, reason: lastReason, ...(lastReason === 'transport_error' ? { httpStatus: state.lastFailure?.httpStatus ?? null, error: state.lastFailure?.error ?? null } : {}) })), updatedAt: nowMs };
     await stateRef.set(finalState);
     await validationRef(db, gradeDate).set(aggregateValidation(state.results || {}, { etDate: gradeDate, calcVersion: config.CALC_VERSION, policyVersion: config.POLICY_VERSION, firstPublishHourUtc: state.firstPublishHourUtc, status: 'window_closed', unvalidated: finalState.unvalidated, computedAt: nowMs }));
     return { gradeDate, status: 'window_closed', unvalidated: state.pendingSymbols.length, deadline };
@@ -87,12 +118,21 @@ export async function runValidation({
   const results = { ...(state.results || {}) };
   const done = [...state.doneSymbols];
   const pending = [...state.pendingSymbols];
-  let units = 0; let validated = 0; let unpublished = false;
+  let units = 0; let validated = 0; let failure = null;
   while (pending.length && validated < config.VALIDATOR_SYMBOLS_PER_INVOCATION && now() < budgetEnd) {
     const sym = pending[0];
     const bars = await fetchIntraday1mBars({ apiKey, vendorSymbol: toVendorStock(sym), fromSec: Math.floor(session.openMs / 1000), toSec: Math.floor(session.closeMs / 1000) + 60, fetchImpl, timeoutMs: config.FETCH_TIMEOUT_MS });
     units += bars.units;
-    if (!bars.ok || !bars.bars?.length) { unpublished = true; break; }
+    // A8(b): a non-2xx or a timeout is a TRANSPORT failure, not "the vendor
+    // has not published yet". Collapsing them made an expired API key read
+    // as vendor latency in the one metric §10.5 exists to produce — and
+    // §10.6's qualification calendar depends on those reasons.
+    if (!bars.ok) {
+      failure = { reason: 'transport_error', httpStatus: bars.status ?? null, error: bars.error ?? null };
+      break;
+    }
+    if (!bars.bars?.length) { failure = { reason: 'unpublished', httpStatus: bars.status ?? null, error: null }; break; }
+    // Only a real publication sets the hour the vendor first published.
     if (state.firstPublishHourUtc === null) state.firstPublishHourUtc = new Date(now()).getUTCHours();
     // A5: named for what it is — the vendor's cumulative session volume on
     // the LAST QUOTE THE ACCUMULATOR ACCEPTED, not an end-of-day volume.
@@ -102,7 +142,17 @@ export async function runValidation({
   }
   if (units > 0) await recordUnits(db, { etDate: todayEt, units, unitsBySource: { intraday_1m_validate: units }, sweepId: `validate-${gradeDate}`, now });
   const status = pending.length ? 'in_progress' : 'done';
-  const nextState = { ...state, status, pendingSymbols: pending, doneSymbols: done, attempts: state.attempts + 1, results, lastAttemptAt: nowMs, lastAttemptUnpublished: unpublished, updatedAt: now() };
+  // A8(b): the last failure is remembered so `window_closed` can say WHY,
+  // and cleared once a symbol validates so a transient 5xx does not haunt a
+  // session that later succeeded.
+  const nextState = {
+    ...state, status, pendingSymbols: pending, doneSymbols: done, attempts: state.attempts + 1, results,
+    lastAttemptAt: nowMs, windowClosesAt,
+    lastFailure: failure ?? (validated > 0 ? null : state.lastFailure ?? null),
+    lastAttemptUnpublished: failure?.reason === 'unpublished',
+    lastAttemptTransportError: failure?.reason === 'transport_error',
+    updatedAt: now(),
+  };
   await stateRef.set(nextState);
   if (status === 'done') {
     const doc = aggregateValidation(results, { etDate: gradeDate, calcVersion: config.CALC_VERSION, policyVersion: config.POLICY_VERSION, firstPublishHourUtc: state.firstPublishHourUtc, status: 'done', computedAt: now() });
@@ -111,7 +161,7 @@ export async function runValidation({
     const trailing10 = await trailingRollup({ db, gradeDate, calendar, n: 10 });
     await validationRef(db, gradeDate).update({ trailing10 });
   }
-  return { gradeDate, status, validated, pending: pending.length, unpublished, units, firstPublishHourUtc: state.firstPublishHourUtc, deadline };
+  return { gradeDate, status, validated, pending: pending.length, unpublished: failure?.reason === 'unpublished', transportError: failure?.reason === 'transport_error' ? { httpStatus: failure.httpStatus, error: failure.error } : null, units, firstPublishHourUtc: state.firstPublishHourUtc, deadline };
 }
 
 /** §10.5 trailing-N rollup over the previous sessions' reported documents. */

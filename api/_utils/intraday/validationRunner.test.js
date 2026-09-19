@@ -125,3 +125,87 @@ describe('§10.1 the validator state machine', () => {
     expect(mem.store.get('intradayValidation/2026-09-17').status).toBe('done_no_symbols');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Addendum A8 — the window, and what counts as evidence.
+// Review findings R-5 and R-2 (docs/audits/20260919_BUILD1_INTRADAY_REVIEW.md).
+// ---------------------------------------------------------------------------
+describe('A8 §10.1 — the window is the grading day\'s, and a transport failure says so', () => {
+  it('a FIRST invocation at 16:00 UTC still makes its attempt: attempts 1, the vendor asked', async () => {
+    const mem = await dayOfPolling();
+    // Every earlier slot was dropped (G10: Vercel gives no retry). The state
+    // is created here, at the close of the window.
+    let t = Date.UTC(2026, 8, 18, 16, 0, 0);
+    const run = validator(mem, { now: () => t, barsByDate: { '2026-09-17': barsForDate('2026-09-17') } });
+    const r = await run();
+    const state = mem.store.get('intradayValidationState/2026-09-17');
+    expect(state.attempts).toBe(1);
+    expect(r.status).not.toBe('window_closed');
+    expect(r.validated).toBeGreaterThan(0);
+    expect(r.units).toBeGreaterThan(0);
+    // It closes on the NEXT invocation, not before it was ever tried.
+  });
+
+  it('a SECOND grading day gets its own full window (the pre-holiday-Monday shape)', async () => {
+    const mem = await dayOfPolling();
+    // Friday: one attempt, bars unpublished, state left in_progress.
+    let t = Date.UTC(2026, 8, 18, 10, 0, 0);
+    const run = validator(mem, { now: () => t, barsByDate: { '2026-09-17': null } });
+    await run();
+    expect(mem.store.get('intradayValidationState/2026-09-17')).toMatchObject({ status: 'in_progress', attempts: 1 });
+
+    // A later grading day, first slot. Real shape: 19 sessions a year are
+    // graded on two UTC days — the session before a holiday Monday, e.g.
+    // Friday 2026-09-04 is graded on Sat 09-05 AND on Tue 09-08, because
+    // Labor Day falls between. Modelled here by pointing a later day's
+    // previous-session at the same grade date.
+    t = Date.UTC(2026, 8, 21, 10, 0, 0);
+    const twoGradingDays = {
+      ...calendar,
+      getPreviousSessionDate: (d) => (d === '2026-09-21' ? '2026-09-17' : calendar.getPreviousSessionDate(d)),
+    };
+    const run2 = validator(mem, { now: () => t, barsByDate: { '2026-09-17': barsForDate('2026-09-17') } });
+    const r2 = await run2({ calendar: twoGradingDays });
+    expect(r2.status).not.toBe('window_closed');
+    expect(r2.validated).toBeGreaterThan(0);
+    expect(mem.store.get('intradayValidationState/2026-09-17').windowClosesAt).toBe(Date.UTC(2026, 8, 21, 16, 0, 0));
+  });
+
+  it('HTTP 500 across the window yields window_closed with transport_error and firstPublishHourUtc null', async () => {
+    const mem = await dayOfPolling();
+    let t = Date.UTC(2026, 8, 18, 10, 0, 0);
+    const vendor = makeVendor({
+      barsByDate: { '2026-09-17': barsForDate('2026-09-17') }, // the bars EXIST
+      onRequest: async (url) => (url.includes('/intraday/') ? { ok: false, status: 500, json: async () => ({}) } : null),
+    });
+    vendor.now = () => t;
+    const run = (over = {}) => runValidation({ db: mem.db, now: () => t, fetchImpl: vendor, apiKey: 'k', collectEnabled: true, calendar, listViewsForSession: async () => [], fireTicksOf: () => 2, log: { error: () => {} }, ...over });
+
+    const first = await run();
+    expect(first.unpublished).toBe(false);
+    expect(first.transportError).toMatchObject({ httpStatus: 500 });
+    expect(mem.store.get('intradayValidationState/2026-09-17').lastFailure).toMatchObject({ reason: 'transport_error', httpStatus: 500 });
+
+    t = Date.UTC(2026, 8, 18, 16, 0, 0);
+    const closed = await run();
+    expect(closed.status).toBe('window_closed');
+    const doc = mem.store.get('intradayValidation/2026-09-17');
+    expect(doc.firstPublishHourUtc).toBeNull();
+    // Every unvalidated symbol names the TRANSPORT failure, not "unpublished".
+    for (const u of doc.unvalidated) {
+      expect(u.reason).toBe('transport_error');
+      expect(u.httpStatus).toBe(500);
+    }
+  });
+
+  it('a genuinely unpublished vendor still reads unpublished', async () => {
+    const mem = await dayOfPolling();
+    let t = Date.UTC(2026, 8, 18, 10, 0, 0);
+    const run = validator(mem, { now: () => t, barsByDate: { '2026-09-17': null } });
+    await run();
+    t = Date.UTC(2026, 8, 18, 16, 0, 0);
+    const closed = await run();
+    expect(closed.status).toBe('window_closed');
+    for (const u of mem.store.get('intradayValidation/2026-09-17').unvalidated) expect(u.reason).toBe('unpublished');
+  });
+});
