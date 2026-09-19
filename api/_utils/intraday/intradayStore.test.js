@@ -111,8 +111,11 @@ describe('§7.1 / §7.2 shapes and strings', () => {
   it('serialize/parse round-trips ring, state, log and seedStatus; a malformed string parses to the empty shape', () => {
     const doc = { ring: { buckets: [{ key: 5, close: 1.5 }] }, state: { segmentLen: 3, sma20: null }, log: [{ sweepAt: 1, strikeKey: 'k' }], seedStatus: 'seeded' };
     const s = serializeActionable(doc, 9);
-    expect(Object.keys(s)).toEqual(['ringJson', 'stateJson', 'logJson', 'generation', 'seedStatus']);
+    expect(Object.keys(s)).toEqual(['ringJson', 'stateJson', 'logJson', 'generation', 'seedStatus', 'seed']);
     expect(parseActionable(s)).toEqual({ ...doc, generation: 9 });
+    const withSeed = serializeActionable({ ...doc, seedAttempts: 2, seedFirstAttemptAt: 5, seedLastAttemptAt: 9, seededBuckets: 60, seedSessions: 1 }, 9);
+    expect(withSeed.seed).toEqual({ seedAttempts: 2, seedFirstAttemptAt: 5, seedLastAttemptAt: 9, seededBuckets: 60, seedSessions: 1 });
+    expect(parseActionable(withSeed)).toMatchObject({ seedAttempts: 2, seedFirstAttemptAt: 5, seedLastAttemptAt: 9, seededBuckets: 60, seedSessions: 1 });
     expect(parseActionable({ ringJson: '{bad', stateJson: 'x', logJson: '[', generation: 1 })).toEqual({ ring: { buckets: [] }, state: null, log: [], seedStatus: null, generation: 1 });
     expect(parseActionable(null)).toBeNull();
   });

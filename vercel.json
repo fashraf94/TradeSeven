@@ -158,6 +158,14 @@
       "schedule": "*/15 13,14,15,16,17,18,19,20,21 * * 1-5"
     },
     {
+      "path": "/api/cron/intraday-poll",
+      "schedule": "* 13-21 * * 1-5"
+    },
+    {
+      "path": "/api/cron/intraday-validate",
+      "schedule": "*/30 10-16 * * 2-6"
+    },
+    {
       "path": "/api/cron/voice-layer-cache",
       "schedule": "*/15 13,14,15,16,17,18,19,20 * * 1-5"
     },

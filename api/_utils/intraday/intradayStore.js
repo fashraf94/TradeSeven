@@ -40,13 +40,19 @@ const dataOf = (snap) => (snap && snap.exists ? (typeof snap.data === 'function'
 // §7.2 — JSON strings for the ring / state / log
 // ---------------------------------------------------------------------------
 
+export const SEED_FIELDS = Object.freeze(['seedAttempts', 'seedFirstAttemptAt', 'seedLastAttemptAt', 'seededBuckets', 'seedSessions', 'seedReason']);
+
 export function serializeActionable(doc, generation) {
+  const seed = {};
+  for (const k of SEED_FIELDS) if (doc[k] !== undefined) seed[k] = doc[k];
   return {
     ringJson: JSON.stringify(doc.ring ?? { buckets: [] }),
     stateJson: JSON.stringify(doc.state ?? null),
     logJson: JSON.stringify(doc.log ?? []),
     generation,
     seedStatus: doc.seedStatus ?? null,
+    // §6.6 retry bookkeeping (attempts, first/last attempt, what was seeded).
+    seed,
   };
 }
 
@@ -56,13 +62,15 @@ export function parseActionable(data) {
     if (typeof s !== 'string') return fallback;
     try { return JSON.parse(s); } catch { return fallback; }
   };
-  return {
+  const out = {
     ring: parse(data.ringJson, { buckets: [] }),
     state: parse(data.stateJson, null),
     log: parse(data.logJson, []),
     seedStatus: data.seedStatus ?? null,
     generation: data.generation ?? null,
   };
+  if (data.seed && typeof data.seed === 'object') for (const k of SEED_FIELDS) if (data.seed[k] !== undefined) out[k] = data.seed[k];
+  return out;
 }
 
 // ---------------------------------------------------------------------------
