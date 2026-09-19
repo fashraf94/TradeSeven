@@ -143,6 +143,12 @@ export default function WhyPanel({
   // pre-flip battle, and on any tick that never built a prompt: the section is
   // then absent WHOLE, never a placeholder.
   evidence = null,
+  // Intraday Data Build 1 (contract §9.1): the diagnostic lines for this piece
+  // from the view stored beside the check — `COPY.intradayDiagnostic(view,
+  // symbol)`, header first — or an empty list. The panel renders what it is
+  // handed and derives nothing; absent whole flag-off, on the book panel, and
+  // when no view was written for this check.
+  intradayDiagnostic = [],
   // Phase C §1 (D-116 / D-122): the THIRD DOOR. `onShowIt` is the handler that
   // calls the research route with this piece's symbol; `researchUsed` is the
   // count of research cards already persisted on the battle, from which the
@@ -531,6 +537,21 @@ export default function WhyPanel({
                 {evidenceProvenance}
               </div>
             )}
+          </div>
+        )}
+
+        {/* 3c. Intraday Data Build 1 (contract §9.1): DIAGNOSTIC · recorded at
+               the check · not seen by the agent. Its own section, independent
+               of the evidence stamp: the eyebrow is the fixed header from the
+               ONE copy table (src/data/intradayDiagnosticCopy.js) and the
+               lines never connect a value to the decision above them. Absent
+               whole without a view, on the book panel, and flag-off. */}
+        {!isBook && intradayDiagnostic.length > 1 && (
+          <div data-intraday="diagnostic" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div style={eyebrow}>{intradayDiagnostic[0]}</div>
+            {intradayDiagnostic.slice(1).map((line) => (
+              <span key={line} style={{ fontSize: 12, color: cssVar('text-secondary'), fontVariantNumeric: 'tabular-nums' }}>{line}</span>
+            ))}
           </div>
         )}
 

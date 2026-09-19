@@ -67,8 +67,11 @@ export const SIGNAL_NAMES = Object.freeze({
 });
 
 /**
- * The five that are never present for any symbol under any input. Exported
- * for the A-2 row that asserts exactly that, and for the report.
+ * The five intraday-timeframe names. Never present for any symbol under any
+ * input WHILE INTRADAY_AGENT_USE_ENABLED IS FALSE (contract §9.3 — the shipped
+ * state): with the flag true (stage 2) and a diagnostic view whose indicator
+ * is `eligible`, `buildPresentSignals` adds them (see `intradaySignalsFor`).
+ * Exported for the A-2 row that asserts the flag-off fact, and for the report.
  */
 export const NEVER_PRESENT_SIGNALS = Object.freeze([
   SIGNAL_NAMES.MACD_5M,
@@ -114,14 +117,20 @@ const intraday = (ind) => new RegExp(
   'gi',
 );
 
+// Intraday Data Build 1 (contract §9.3): the indicator KEYS of the diagnostic
+// view (`macd5m`, `rsi5m`, `sma20_5m`) as the stage-2 prompt lines would name
+// them, folded into the SAME rows as alternations (one row per signal is a
+// structural invariant of `namedSignals` and of the mutation table).
+const orKeys = (re, keys) => new RegExp(`${re.source}|${keys}`, re.flags);
+
 export const THRESHOLD_SIGNAL_VOCABULARY = Object.freeze([
   { signal: SIGNAL_NAMES.VWAP, pattern: /\bVWAPs?\b/gi, matchFirst: 2 },
-  { signal: SIGNAL_NAMES.MACD_5M, pattern: intraday(String.raw`\bMACD\b`), matchFirst: 1 },
-  { signal: SIGNAL_NAMES.RSI_5M, pattern: intraday(String.raw`\bRSI\b`), matchFirst: 1 },
+  { signal: SIGNAL_NAMES.MACD_5M, pattern: orKeys(intraday(String.raw`\bMACD\b`), String.raw`\bmacd[_-]?5m\b`), matchFirst: 1 },
+  { signal: SIGNAL_NAMES.RSI_5M, pattern: orKeys(intraday(String.raw`\bRSI\b`), String.raw`\brsi[_-]?5m\b`), matchFirst: 1 },
   { signal: SIGNAL_NAMES.VWAP_5M, pattern: intraday(String.raw`\bVWAP\b`), matchFirst: 1 },
   { signal: SIGNAL_NAMES.RVOL, pattern: /\bR-?VOL\b|\brelative[-\s]volume\b|\brel\.?\s*vol(?:ume)?\b|\bvolume[-\s]ratio\b/gi, matchFirst: 2 },
   { signal: SIGNAL_NAMES.RSI, pattern: /\bRSI[-\s]?\d*\b|\brelative strength index\b/gi, matchFirst: 2 },
-  { signal: SIGNAL_NAMES.SMA_20_LEVEL, pattern: /\b(?:the\s+)?20[-\s]?day\b|\b20[-\s]?DMA\b|\bSMA[-\s]?20\b|\b(?:the\s+)?twenty[-\s]day\b/gi, matchFirst: 2 },
+  { signal: SIGNAL_NAMES.SMA_20_LEVEL, pattern: /\b(?:the\s+)?20[-\s]?day\b|\b20[-\s]?DMA\b|\bSMA[-\s]?20\b|\b(?:the\s+)?twenty[-\s]day\b|\bsma[_-]?20[_-]?5m\b/gi, matchFirst: 2 },
   { signal: SIGNAL_NAMES.MACD_CROSS, pattern: /\bMACD\b/gi, matchFirst: 2 },
   { signal: SIGNAL_NAMES.BB_PCT_B, pattern: /%[-\s]?B\b|\bpercent[-\s]?B\b|\bB%/gi, matchFirst: 2 },
   { signal: SIGNAL_NAMES.RS_PERCENTILE, pattern: /\brs[-\s]?percentile\b|\bRS\s+percentile\b|\brelative strength percentile\b/gi, matchFirst: 2 },
@@ -237,8 +246,35 @@ function symbolList(v) {
  * @param {string[]} [args.benchSymbols] - the bench symbols the bench block rendered
  * @returns {Map<string, Set<string>>} symbol → the set of present signal names
  */
-export function buildPresentSignals({ momentumData, techScoresMap, rankingsMap, heldSymbols, benchSymbols } = {}) {
+/**
+ * Intraday Data Build 1 (contract §9.3): the intraday-timeframe names a
+ * diagnostic view makes present for a symbol — ONLY when the caller passes
+ * `intradayAgentUseEnabled: true` (the INTRADAY_AGENT_USE_ENABLED flag, read
+ * by the cron and handed in, never read here: this module has no imports)
+ * AND the view's indicator verdict is `eligible`. A `display_only` or
+ * `ineligible` verdict adds nothing: the decider was shown nothing it may
+ * act on. With the flag false — build 1 — this returns the empty set for
+ * every input, which is exactly today's behaviour.
+ */
+export function intradaySignalsFor(record, intradayAgentUseEnabled) {
+  const out = new Set();
+  if (intradayAgentUseEnabled !== true || !record || typeof record !== 'object') return out;
+  const eligible = (key) => record.indicators?.[key]?.verdict?.state === 'eligible';
+  if (eligible('vwap')) out.add(SIGNAL_NAMES.VWAP_5M);
+  if (eligible('macd5m')) { out.add(SIGNAL_NAMES.MACD_5M); out.add(SIGNAL_NAMES.MACD_HISTOGRAM); }
+  if (eligible('rsi5m')) out.add(SIGNAL_NAMES.RSI_5M);
+  if (eligible('sma20_5m')) out.add(SIGNAL_NAMES.SMA_20_LEVEL);
+  return out;
+}
+
+export function buildPresentSignals({ momentumData, techScoresMap, rankingsMap, heldSymbols, benchSymbols, intradayView = null, intradayAgentUseEnabled = false } = {}) {
   const present = new Map();
+  const viewSymbols = intradayView?.symbols && typeof intradayView.symbols === 'object' ? intradayView.symbols : null;
+  const addIntraday = (sym, set) => {
+    if (!viewSymbols) return;
+    const raw = rawOf.get(sym) ?? sym;
+    for (const name of intradaySignalsFor(viewSymbols[raw] ?? viewSymbols[sym], intradayAgentUseEnabled)) set.add(name);
+  };
 
   const vwapMap = momentumData?.vwap || {};
   const regimes = momentumData?.regimes || {};
@@ -276,6 +312,7 @@ export function buildPresentSignals({ momentumData, techScoresMap, rankingsMap, 
       if (hasLevels(rank)) set.add(SIGNAL_NAMES.LEVELS);
     }
     if (isReading(doc(regimes, sym))) set.add(SIGNAL_NAMES.REGIME);
+    addIntraday(sym, set);
     present.set(sym, set);
   }
 
@@ -290,6 +327,7 @@ export function buildPresentSignals({ momentumData, techScoresMap, rankingsMap, 
     if (tech?.volumeProfile?.ratio != null) set.add(SIGNAL_NAMES.RVOL);
     if (factors?.rsPercentile != null) set.add(SIGNAL_NAMES.RS_PERCENTILE);
     if (hasLevels(doc(rankings, sym))) set.add(SIGNAL_NAMES.LEVELS);
+    addIntraday(sym, set);
     present.set(sym, set);
   }
 

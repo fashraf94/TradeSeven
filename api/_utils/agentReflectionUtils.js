@@ -151,8 +151,24 @@ export const REFLECTION_TOOL = {
  * - statusFeed[]: Keep last 10 plus high-signal entries (swap, risk_alert, threshold_event,
  *   strategy, lock).
  */
+/**
+ * Intraday Data Build 1 (contract §9.2): the reflection prompt is a
+ * prompt-feeding reader of evaluation entries, so it reads them through an
+ * EXPLICIT field allowlist — the fields the EVALUATION HIGHLIGHTS block
+ * renders plus the dedupe key. The §8.1 pointer fields, the vintages and any
+ * diagnostic key never travel into a later prompt (→ agent.memory[]).
+ */
+export const REFLECTION_EVALUATION_FIELDS = Object.freeze(['evalId', 'timestamp', 'decision', 'conviction', 'scores', 'hypothesis']);
+
+function pickEvaluation(entry) {
+  if (!entry || typeof entry !== 'object') return entry;
+  const out = {};
+  for (const k of REFLECTION_EVALUATION_FIELDS) if (k in entry) out[k] = entry[k];
+  return out;
+}
+
 export function truncateBattleHistory(battleDoc) {
-  const evaluations = battleDoc.evaluations || [];
+  const evaluations = (battleDoc.evaluations || []).map(pickEvaluation);
   const trades = battleDoc.trades || [];
   const statusFeed = battleDoc.statusFeed || [];
 

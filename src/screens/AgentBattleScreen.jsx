@@ -34,6 +34,7 @@ import TurnLine from './battleView/TurnLine';
 import WhyPanel from './battleView/WhyPanel';
 import { selectWhyState, selectTradesForSymbol, deriveTierPrices } from './battleView/selectWhyState';
 import { selectEvidence } from './battleView/selectEvidence';
+import { useIntradayView } from './battleView/useIntradayView';
 import { selectDeployPlan, selectDeployPlanForSymbol } from './battleView/selectDeployPlan';
 import { buildTape, checkEntryId } from './battleView/buildTape';
 import { BATTLE_VIEW_COPY } from './battleView/battleViewCopy';
@@ -1481,6 +1482,11 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   }, [controllerOn, gameTapeOpen]);
   const lastScoredAt = agentBattle?.scoreState?.lastScoredAt ?? null;
   const latestDecision = turnLine?.decision ?? null;
+  // Intraday Data Build 1 (contract §8.1 / §9.1): the ONE `get` of the
+  // diagnostic view beside the latest decided check, made when a row's Why?
+  // panel is open and the entry points at its own view. Flag-gated inside the
+  // hook; null flag-off, on the book panel, and for every check without a view.
+  const intradayView = useIntradayView({ open: Boolean(whyOpen), battleId: agentBattle?.id ?? null, evaluation: latestDecision });
   useEffect(() => { latestDecisionRef.current = latestDecision; }, [latestDecision]);
 
   // ── Receipts + This turn (Phase A, controller flag) ───────────────────────
@@ -1839,6 +1845,10 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                     // Phase B (seed §2): presence-gated — null until the
                     // server flag flips and an entry carries the stamp.
                     evidence={selectEvidence(latestDecision, leftAsset.symbol, lastScoredAt)}
+                    // Intraday Data Build 1 (§9.1): the diagnostic block for
+                    // THIS piece from the fetched view, through the one copy
+                    // table; an empty list when there is no view.
+                    intradayDiagnostic={intradayView ? BATTLE_VIEW_COPY.intradayDiagnostic(intradayView, leftAsset.symbol) : []}
                     proximity={proximity}
                     entryPrice={leftAsset.openPrice ?? null}
                     heldSince={leftAsset.swappedInAt || agentBattle?.activatedAt || null}
