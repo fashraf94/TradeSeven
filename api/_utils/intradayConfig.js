@@ -39,6 +39,8 @@ export const DEADLINE_AFTER_CLOSE_MS = 30 * 60_000;
 export const PRICE_AS_OF_FUTURE_TOLERANCE_MS = 60_000;
 /** volumePace needs at least this many elapsed session minutes (§5.4). */
 export const VOLUME_PACE_MIN_ELAPSED_MIN = 5;
+/** A snapshot whose last successful sweep is older than this at the check is collectionStalled (§8.2). */
+export const COLLECTION_STALL_MS = 5 * 60_000;
 /** Accumulator samples required for eligibility (§8.3). */
 export const MIN_ACCUMULATOR_SAMPLES = 3;
 

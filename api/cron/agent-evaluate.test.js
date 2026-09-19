@@ -693,7 +693,9 @@ describe('agent-evaluate cron — P2 tournament ledger wiring (agent-market excl
     // The cache is created in the handler loop scope and threaded through.
     expect(source).toMatch(/const tournamentGroupCache = new Map\(\);/);
     // Mastery P1: the call threads the run-level mastery flag view too.
-    expect(source).toMatch(/processAgentBattle\(db, battle, summary, startTime, tournamentGroupCache, masteryFlagView\)/);
+    // Intraday Data Build 1 (§8.1): and the invocation's ONE snapshot read
+    // (null with INTRADAY_DIAGNOSTIC_ENABLED off).
+    expect(source).toMatch(/processAgentBattle\(db, battle, summary, startTime, tournamentGroupCache, masteryFlagView, intradayContext\)/);
   });
 
   it('THE RESOLVER DISCRIMINATES BEFORE ANY AWAIT — a regular battle costs zero Firestore I/O (P4 contract: gameMode AND groupId stamped together)', () => {

@@ -2564,3 +2564,78 @@ export const ANTICIPATION_THRESHOLD_LINT_MODE = 'off';
 
 /** The three founder-walked states, in walk order. */
 export const ANTICIPATION_THRESHOLD_LINT_MODES = Object.freeze(['off', 'shadow', 'on']);
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * INTRADAY DATA — BUILD 1 (contract docs/specs/INTRADAY_DATA_BUILD_1_CONTRACT_V1_1.md
+ * §3; discovery docs/audits/20260918_PHASE0_INTRADAY_DATA.md + _ADDENDA.md;
+ * build report docs/audits/20260919_BUILD1_INTRADAY.md). Five flags, ALL OFF
+ * at merge. With every flag off every surface is byte-identical to today
+ * except the §11 legacy-gate freshness fix, which ships with flags off by
+ * contract and is stated in the PR body.
+ *
+ * INTRADAY_COLLECT_ENABLED — the per-minute delayed-quote poller
+ * (api/cron/intraday-poll.js) and the next-day validator
+ * (api/cron/intraday-validate.js) RUN. Off → both handlers exit 200 with
+ * `{ skipped: true, reason: 'flag_off' }` before any read, any vendor call
+ * or any write. Read as a module constant in the two crons. Flip after the
+ * founder's day-1 smoke (§13): one line, this file, the pin row in
+ * src/config/intradayFlags.test.js in the same commit (BUILD_RULES §2).
+ */
+// Pinned by: intradayFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const INTRADAY_COLLECT_ENABLED = false;
+
+/**
+ * INTRADAY_DIAGNOSTIC_ENABLED — the evaluator reads intradaySnapshots/latest
+ * once per invocation and writes agentBattles/{id}/intradayViews/{evalId}
+ * per battle per tick (§8.1, isolated: bounded to 2 s, non-fatal, the
+ * trading evaluation and its authoritative battle write proceed unchanged);
+ * the evaluation entry carries the eight pointer fields (§8.1) and the
+ * vintages block gains intradaySnapshotId / intradayGeneration (§8.4);
+ * the player's Why? panel fetches the view on open and renders the
+ * diagnostic block (§9.1); shadow lines are STORED on the view, never sent.
+ * Off → no snapshot read, no view write, no pointer field, the vintages
+ * block byte-identical to today, no client fetch. Read as a module constant
+ * in api/cron/agent-evaluate.js (the TICK_STAMPS_ENABLED shape) and at
+ * render scope on the client. The sent prompt is identical on and off
+ * (§9.2 (d), asserted).
+ */
+// Pinned by: intradayFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const INTRADAY_DIAGNOSTIC_ENABLED = false;
+
+/**
+ * INTRADAY_AGENT_USE_ENABLED — STAGE 2 (deferred): the agent's decision may
+ * use eligible intraday evidence. PRESENT, NO CONSUMER in build 1 except the
+ * threshold lint (§9.3): the five intraday-timeframe signal names become
+ * present only when a view exists AND this is true — false → never present,
+ * exactly today's behaviour. Gate: the paired-eval scorecard (§2). Registered
+ * DARK_BY_DESIGN in flagPinGuard.test.js; a deliberate flip drops that entry.
+ */
+// Pinned by: intradayFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const INTRADAY_AGENT_USE_ENABLED = false;
+
+/**
+ * INTRADAY_PRICE_SOURCE — STAGE 3 (deferred): 'legacy' (today's
+ * /real-time/ quote) | 'snapshot' (the §8.5 adapter over
+ * intradaySnapshots/latest). PRESENT, NO CONSUMER in build 1; the adapter
+ * `toLegacyPriceShape` exists and is tested. A STRING enum, so the flag-pin
+ * guard (which scans `*_ENABLED = true|false`) cannot see it: pinned
+ * directly in src/config/intradayPriceSourceFlags.test.js, the
+ * ANTICIPATION_THRESHOLD_LINT_MODE precedent. Gate: G11/G12 and ID-22 §7.
+ */
+// Pinned by: intradayPriceSourceFlags.test.js (a STRING enum — pinned directly, outside flagPinGuard's `*_ENABLED` scan; this value and the pin move together — BUILD_RULES §2).
+export const INTRADAY_PRICE_SOURCE = 'legacy';
+
+/** The two price sources, in adoption order. */
+export const INTRADAY_PRICE_SOURCES = Object.freeze(['legacy', 'snapshot']);
+
+/**
+ * INTRADAY_RISK_ACTIVATION_ENABLED — STAGE 4 (deferred): the risk layer may
+ * act on eligible, closeQualified intraday evidence via `evaluateIntraday`
+ * run immediately before every action. PRESENT, NO CONSUMER in build 1.
+ * Gate: the §10.6 qualification calendar (10 characterisation sessions, a
+ * frozen policy, 10 fixed test sessions). Registered DARK_BY_DESIGN in
+ * flagPinGuard.test.js; a deliberate flip drops that entry.
+ */
+// Pinned by: intradayFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const INTRADAY_RISK_ACTIVATION_ENABLED = false;

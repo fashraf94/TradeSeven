@@ -437,6 +437,19 @@ service cloud.firestore {
                        .hasOnly(['executionMode', 'pendingProposal', 'battleLedger', 'updatedAt', 'strategyPreset', 'gameplanMeeting', 'gameplanMeetingHistory', 'dailyGrades', 'feedBookmarks', 'reviewDecisions']);
 
       allow create, delete: if false;
+
+      // Intraday Data — Build 1 (contract §8.1, G13): rules on a parent
+      // document do NOT apply to its subcollections, so the diagnostic view
+      // the evaluator writes beside each check gets its own match. Read is
+      // allowed to EXACTLY the principals the parent battle's read rule
+      // allows — mirrored explicitly via the parent's ownerId. Client writes
+      // denied; the server writes via Admin. Proven by
+      // test/rules/intradayViewsDenials.rules.mjs (npm run test:rules).
+      match /intradayViews/{evalId} {
+        allow read: if request.auth != null
+                    && get(/databases/$(database)/documents/agentBattles/$(battleId)).data.ownerId == request.auth.uid;
+        allow write: if false;
+      }
     }
 
     // Draft user stats — document ID is the userId

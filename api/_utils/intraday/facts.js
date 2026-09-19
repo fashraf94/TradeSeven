@@ -105,10 +105,13 @@ export function buildSymbolFacts({ sym, isCrypto = false, acc, obs, ring, state,
   ind.volume = volumeInvalid
     ? { status: 'absent', value: null, cutoff: volumeCutoffAsOf, reason: 'volume_invalid' }
     : { status: 'ready', value: obs.volume, cutoff: volumeCutoffAsOf, reason: volumeCutoffAsOf === null ? 'cutoff_unconfirmed' : null };
-  ind.volumePace = computeVolumePace({
-    volume: obs?.volume, averageVolume: obs?.averageVolume, volumeCutoffAsOf, session, volumeInvalid,
-    minElapsedMin: cfg.VOLUME_PACE_MIN_ELAPSED_MIN ?? 5,
-  });
+  ind.volumePace = {
+    ...computeVolumePace({
+      volume: obs?.volume, averageVolume: obs?.averageVolume, volumeCutoffAsOf, session, volumeInvalid,
+      minElapsedMin: cfg.VOLUME_PACE_MIN_ELAPSED_MIN ?? 5,
+    }),
+    cutoff: volumeCutoffAsOf,
+  };
 
   if (!ring || !state) {
     for (const k of ['sma20_5m', 'macd5m', 'rsi5m']) ind[k] = { status: 'absent', value: null, cutoff: null, quality: null, reason: 'not_actionable' };
