@@ -75,3 +75,84 @@ describe('§9.2 (a) — the reflection input contains no diagnostic key', () => 
     expect(JSON.stringify(prompt)).toBe(JSON.stringify(promptOff));
   });
 });
+
+// ---------------------------------------------------------------------------
+// Addendum A9 — GOLDEN PINS for the three non-fenced prompt readers.
+// Review finding R-4 (docs/audits/20260919_BUILD1_INTRADAY_REVIEW.md).
+//
+// The build narrowed three prompt readers behind explicit allowlists, and did
+// it UNCONDITIONALLY — on the flags-off path. Every §9.2 test compares
+// post-build WITH-pointers against post-build WITHOUT-pointers, so an
+// allowlist entry that is simply MISSING is missing identically on both arms
+// and no differential can see it. The review removed 'vintages' from
+// RECORD_ENTRY_FIELDS: the whole provenance line vanished from the prompt
+// sent to the narrator model, with every flag off, and the full suite still
+// reported 720 files / 13,836 tests passing.
+//
+// These rows pin the allowlists themselves and the text they produce, so a
+// future edit that drops a real field goes red.
+// ---------------------------------------------------------------------------
+describe('A9 §9.2 — the allowlists are pinned against their renderers', () => {
+  /** Every field the evaluator writes on an entry, including the pointers. */
+  const MAXIMAL = {
+    evalId: 'eval_1', timestamp: '2026-09-17T14:30:00.000Z', day: 1, battlePhase: 'active', decision: 'SWAP',
+    symbolOut: 'MU', symbolIn: 'SLB', tier: 'core', rationale: 'Rotated into energy.', hypothesis: 'SLB continues.',
+    conviction: 72, scores: { active: 1, banked: 2, total: 6 },
+    triggers: ['scheduled'], haikuError: null, downgraded: false, validationErrors: [], guardrailOverrides: [],
+    guardrailSourceNote: 'note', directiveThreadId: 't1', ignoredDirectiveIds: [],
+    evidence: { NVDA: { px: 100, chg: 1, atrX: 0.5, vwapDev: 0.2, bbPct: 10, nr7: false, regime: 'directional_expansion', risk: { action: 'HOLD' } } },
+    vintages: { quote: 'tick', vwap: 'diagnostic', techAt: '2026-09-17T14:30:00.000Z', fundAsOf: '2026-09-12', rankingsAt: '2026-09-17T11:00:00.000Z', intradaySnapshotId: '2026-09-17-0042', intradayGeneration: 42 },
+    heard: { directiveThreadId: 't1', suppressed: null },
+    ...POINTERS,
+  };
+
+  it('RECORD_ENTRY_FIELDS is exactly this list, and pickRecordEntry preserves exactly it', () => {
+    const expected = [
+      'evalId', 'timestamp', 'decision', 'symbolOut', 'symbolIn', 'tier', 'rationale', 'hypothesis',
+      'triggers', 'haikuError', 'downgraded', 'validationErrors', 'guardrailOverrides', 'guardrailSourceNote',
+      'directiveThreadId', 'ignoredDirectiveIds', 'evidence', 'vintages', 'heard',
+    ];
+    expect([...RECORD_ENTRY_FIELDS]).toEqual(expected);
+    expect(Object.keys(pickRecordEntry(MAXIMAL))).toEqual(expected);
+    // No pointer field survives the pick.
+    for (const k of INTRADAY_ENTRY_FIELDS) expect(pickRecordEntry(MAXIMAL)).not.toHaveProperty(k);
+  });
+
+  it('the narrator record block renders EXACTLY this — dropping an allowlist entry changes it', () => {
+    // The provenance line is the one the review demonstrated: it is rendered
+    // from `vintages`, so removing 'vintages' from the allowlist deletes it
+    // and this pin goes red.
+    expect(buildYourRecordBlock({ evaluations: [MAXIMAL], directive: null })).toBe(
+      'YOUR RECORD (the last 3 checks, newest first — history, not a plan)\n'
+      + '\n'
+      + "[10:30 AM check] · Swapped · MU → SLB (Core)\n"
+      + "  Rationale — The agent's own words: Rotated into energy.\n"
+      + '  Hypothesis recorded at this check (graded after the battle): SLB continues.\n'
+      + '  What this check saw:\n'
+      + '    NVDA — Price $100.00 · Gain since entry +1.00% · ATR multiple 0.50× · VWAP deviation +0.20% · Bollinger width 10th %ile · Regime directional_expansion\n'
+      + '    Fundamentals block as of Sep 12 · Latest held technical stamp · 10:30 AM · Rankings as of 7:00 AM\n'
+      + '\n'
+      + 'RATIONALE RULE: Rationale is historical decider text. It may contain forward-looking language produced by the decision prompt. When explaining a completed decision, quote only the part describing the completed decision and its observed reason. Never repeat a hypothesis, future action, action condition, intended trade, or plan from inside rationale.\n'
+      + '\n'
+      + 'CURRENT DIRECTIVE: none filed.',
+    );
+  });
+
+  it('REFLECTION_EVALUATION_FIELDS is exactly this list, and every one of them still reaches the reflection prompt', () => {
+    expect([...REFLECTION_EVALUATION_FIELDS]).toEqual(['evalId', 'timestamp', 'decision', 'conviction', 'scores', 'hypothesis']);
+    const truncated = truncateBattleHistory(battle([MAXIMAL]));
+    expect(Object.keys(truncated.evaluations[0])).toEqual([...REFLECTION_EVALUATION_FIELDS]);
+    const prompt = JSON.stringify(buildReflectionUserMessage(truncated));
+    // The renderer reads timestamp, decision, conviction, scores.total and
+    // hypothesis; each must survive the pick and appear.
+    expect(prompt).toContain('SWAP');
+    expect(prompt).toContain('72');
+    expect(prompt).toContain('SLB continues.');
+    for (const m of DIAGNOSTIC_MARKERS) expect(prompt).not.toContain(m);
+  });
+
+  it('ANTICIPATION_ENTRY_FIELDS is exactly this list and the pick returns exactly it', () => {
+    expect([...ANTICIPATION_ENTRY_FIELDS]).toEqual(['evalId', 'timestamp']);
+    expect(pickAnticipationEntry(MAXIMAL)).toEqual({ evalId: 'eval_1', timestamp: '2026-09-17T14:30:00.000Z' });
+  });
+});

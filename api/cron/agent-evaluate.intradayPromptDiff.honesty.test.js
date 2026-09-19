@@ -188,7 +188,26 @@ describe('§9.2 (d) — the sent prompt with diagnostics on and off', () => {
       if (Number.isFinite(est)) expect(sent).not.toContain(est.toFixed(2));
     }
     // And the two entries differ only by the eight pointer fields + the vintage keys.
-    const strip = (e) => { const c = { ...e }; for (const k of INTRADAY_ENTRY_FIELDS) delete c[k]; if (c.vintages) { c.vintages = { ...c.vintages }; delete c.vintages.intradaySnapshotId; delete c.vintages.intradayGeneration; c.vintages.vwap = 'tick'; } return c; };
+    //
+    // Addendum A9: `vintages.vwap` is a REAL, pre-existing field — it was
+    // previously overwritten to 'tick' on both sides before the diff, which
+    // made the comparison blind to it. The review smuggled an arbitrary
+    // string through it and this test stayed green. It is now ASSERTED on
+    // each side and then removed, so the diff below still means "everything
+    // else is identical" while nothing hides inside the normalisation.
+    expect(off.entry.vintages?.vwap).toBe('tick');
+    expect(on.entry.vintages?.vwap).toBe('diagnostic');
+    const strip = (e) => {
+      const c = { ...e };
+      for (const k of INTRADAY_ENTRY_FIELDS) delete c[k];
+      if (c.vintages) {
+        c.vintages = { ...c.vintages };
+        delete c.vintages.intradaySnapshotId;
+        delete c.vintages.intradayGeneration;
+        delete c.vintages.vwap; // asserted above, not normalised away
+      }
+      return c;
+    };
     expect(JSON.stringify(strip(on.entry))).toBe(JSON.stringify(strip(off.entry)));
   });
 });
