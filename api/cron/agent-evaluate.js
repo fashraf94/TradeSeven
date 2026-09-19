@@ -716,13 +716,17 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     const presetConfig = getPresetConfig(battle.strategyPreset || 'balanced');
 
     // ---- Collect all symbols ----
-    const flatPortfolio = flattenPortfolioServer(battle.portfolio);
-    const portfolioSymbols = flatPortfolio.map(a => a.symbol).filter(Boolean);
-    const benchAssets = [
+    // `let`, not `const`: a forced S7 exit mid-tick changes what is held, and
+    // the decision snapshot is rebuilt from the refreshed battle before the
+    // trigger gate (see "tick coherence" below). The initial derivation is
+    // unchanged.
+    let flatPortfolio = flattenPortfolioServer(battle.portfolio);
+    let portfolioSymbols = flatPortfolio.map(a => a.symbol).filter(Boolean);
+    let benchAssets = [
       ...(battle.portfolio?.bench?.stocks || []),
       ...(battle.portfolio?.bench?.crypto ? [battle.portfolio.bench.crypto] : []),
     ].filter(Boolean);
-    const benchSymbols = benchAssets.map(a => a.symbol).filter(Boolean);
+    let benchSymbols = benchAssets.map(a => a.symbol).filter(Boolean);
     const macroSymbols = ['SPY', 'QQQ', 'BTC-USD.CC'];
     // Expand with watchlist hotBench for open universe trading (may be updated by daily refresh)
     let hotBenchSymbols = battle.watchlist?.hotBench || [];
@@ -802,9 +806,15 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     const flat6StampMultiplier = resolveModeConfig(battle.gameMode).flatMultiplier;
     const flat6Stamp = flat6StampMultiplier != null ? { tierMultiplier: flat6StampMultiplier } : {};
 
-    const assetScores = flatPortfolio.map(asset => {
+    // The held-position scorer, named so the SAME builder can run twice in a
+    // tick: once here, and once more from the refreshed battle after a forced
+    // S7 exit. Body unchanged from when it was inline — it computes exactly
+    // what it computed before. `battle.*` is read at call time (the refresh
+    // mutates `battle` in place), so the rebuild sees the post-swap portfolio
+    // and threshold history; every other input is tick-invariant.
+    const scoreHeldPositions = (flat) => flat.map(asset => {
       const currentPrice = prices[asset.symbol]?.current;
-      const entryPrice = asset.swapPrice || startingPrices[asset.symbol] || 0;
+      const entryPrice = asset.swapPrice || battle.portfolio?.startingPrices?.[asset.symbol] || 0;
 
       if (!currentPrice || entryPrice <= 0) {
         return calculateAssetScoreServer(
@@ -820,7 +830,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       // asset whose startingPrice is missing), validate it against the prior
       // session's close first. A stale/wrong-session previousClose would
       // otherwise fabricate badges on a near-flat ticker.
-      if (!asset.swapPrice && (!isActivationDay || !(startingPrices[asset.symbol] > 0))) {
+      if (!asset.swapPrice && (!isActivationDay || !(battle.portfolio?.startingPrices?.[asset.symbol] > 0))) {
         const isCryptoAsset = asset.isCrypto === true || /\.CC$/i.test(asset.symbol || '');
         const g2 = resolveBadgeBaseline({
           daily: dailySeries[asset.symbol],
@@ -839,7 +849,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       // For swapped-in assets, use swapPrice so they don't get retroactive
       // BaggerBomb credit for pre-swap moves since previousClose.
       const thresholdBaseline = asset.swapPrice
-        || (isActivationDay ? (startingPrices[asset.symbol] || previousClose) : previousClose);
+        || (isActivationDay ? (battle.portfolio?.startingPrices?.[asset.symbol] || previousClose) : previousClose);
       const thresholdPriceChange = thresholdBaseline && thresholdBaseline > 0
         ? ((currentPrice - thresholdBaseline) / thresholdBaseline) * 100
         : null;
@@ -852,6 +862,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         thresholdPriceChange
       );
     });
+
+    let assetScores = scoreHeldPositions(flatPortfolio);
 
     // ---- Compute CPU opponent scores ----
     const cpuAssetScores = cpuPortfolioFlat.map(asset => {
@@ -1283,6 +1295,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // ---- Risk evaluation layer (runs BEFORE trigger gate) ----
     const riskStatus = {};
     const riskSwaps = [];
+    // How many S7 forced exits actually COMMITTED this tick. Drives the
+    // decision-snapshot rebuild below; a queued-but-failed swap does not
+    // count, because nothing changed for it to rebuild from.
+    let forcedSwapsCommitted = 0;
     const lockedPositions = new Set();
     const vwapTicks = { ...(battle.cronState?.vwapTicks || {}) };
     // Forge Enforcement Keystone V1.4 §4.2 (Knob A) — per-symbol stagnation state,
@@ -1812,6 +1828,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         // processing (re-applies the tournament candidate filter — the
         // persisted doc is unfiltered).
         await refreshBattleFromDoc(battleRef, battle, tournamentCtx);
+        forcedSwapsCommitted += 1;
       } catch (err) {
         console.error(`${LOG_PREFIX} Risk swap failed for ${score.symbol}:`, err.message);
         // [VWAP Floor B7] Feed-visible skip: a deterministically-throwing
@@ -1834,6 +1851,57 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         // P2: compensating release (the reserve landed but the swap didn't).
         await releaseTournamentReservation(db, tournamentCtx, reservedSymbolIn);
       }
+    }
+
+    // ---- Tick coherence: rebuild the decision snapshot after forced exits ----
+    //
+    // `refreshBattleFromDoc` above refreshes `battle` and nothing else. The
+    // arrays the rest of the tick reasons from were derived from the PRE-swap
+    // portfolio at the top of this function, so after a forced exit the tick
+    // carried two disagreeing pictures of the same book:
+    //
+    //   · the prompt header reads `battle.scoreState` — refreshed, post-swap;
+    //   · the ACTIVE POSITIONS CSV iterates `assetScores` — stale, pre-swap.
+    //
+    // The visible result was a prompt whose CSV listed a position the agent no
+    // longer held (rendered with sector "Unknown", because the assembler's own
+    // `flattenPortfolioServer(battle.portfolio)` lookup for that row already
+    // came from the refreshed doc) while the same symbol also appeared on the
+    // bench it had just been returned to — and no row at all for the position
+    // that replaced it. The trigger gate read the same stale set.
+    //
+    // Rebuild from the refreshed battle, using the SAME builders that ran at
+    // the top of the tick. Nothing about what they compute changes.
+    //
+    // NOT REBUILT, deliberately: `activeScore` / `bankedScore` /
+    // `currentScore` and the `scoreUpdate` entries derived from them. Those
+    // are the end-of-tick score transaction, which this task must not touch —
+    // they keep the values they were computed with, so the persisted score is
+    // byte-identical to today (verified on the fixture; see the T1 report).
+    if (forcedSwapsCommitted > 0) {
+      flatPortfolio = flattenPortfolioServer(battle.portfolio);
+      portfolioSymbols = flatPortfolio.map(a => a.symbol).filter(Boolean);
+      benchAssets = [
+        ...(battle.portfolio?.bench?.stocks || []),
+        ...(battle.portfolio?.bench?.crypto ? [battle.portfolio.bench.crypto] : []),
+      ].filter(Boolean);
+      benchSymbols = benchAssets.map(a => a.symbol).filter(Boolean);
+      assetScores = scoreHeldPositions(flatPortfolio);
+
+      // Prune the two per-symbol maps to what is still held. PRUNE ONLY —
+      // never re-run `evaluateRisk`: that would be a second risk pass on the
+      // same tick and could fire a second exit. A freshly swapped-in position
+      // therefore carries no risk row until the next tick, which is the same
+      // state it would have had if the swap had landed a moment later.
+      const heldNow = new Set(portfolioSymbols);
+      for (const symbol of [...lockedPositions]) {
+        if (!heldNow.has(symbol)) lockedPositions.delete(symbol);
+      }
+      for (const symbol of Object.keys(riskStatus)) {
+        if (!heldNow.has(symbol)) delete riskStatus[symbol];
+      }
+
+      console.log(`${LOG_PREFIX} Rebuilt decision snapshot after ${forcedSwapsCommitted} forced exit(s) on battle ${battle.id}: ${portfolioSymbols.join(', ')}`);
     }
 
     // ---- Proposal lifecycle check (after risk evaluation, before triggers/Haiku) ----
