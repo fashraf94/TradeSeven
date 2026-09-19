@@ -9,6 +9,9 @@ const cutoff = T - 10 * 60_000;
 function facts(over = {}) {
   const base = {
     collectionStalled: false,
+    // §8.2 puts availableAt on the symbol record; addendum A2 uses it as the
+    // age basis when the indicator's own cutoff is unconfirmed.
+    availableAt: T - 15 * 60_000,
     price: { value: 100, priceAsOf: T - 15 * 60_000 },
     indicators: {
       vwap: { status: 'ready', value: 99.5, method: 'sampled_estimate', experimental: false, estimateCutoff: cutoff, volumeCutoffAsOf: cutoff, quality: { samples: 5, degraded: false }, reason: null },
@@ -51,8 +54,10 @@ describe('§8.3 eligible', () => {
 describe('§8.3 display_only', () => {
   it('experimental VWAP (build 1) is display_only for display with reason cutoff_unconfirmed, ineligible for stage 4', () => {
     const f = facts({ indicators: { vwap: { experimental: true, estimateCutoff: null, volumeCutoffAsOf: null, reason: 'cutoff_unconfirmed' } } });
-    expect(ev(f, 'display').vwap).toEqual({ state: VERDICT.DISPLAY_ONLY, reason: 'cutoff_unconfirmed', consumer: 'display' });
-    expect(ev(f, 'stage4').vwap).toEqual({ state: VERDICT.INELIGIBLE, reason: 'cutoff_unconfirmed', consumer: 'stage4' });
+    // A2: with the cutoff unconfirmed the age is measured from the quote's
+    // own availableAt, and it rides the verdict.
+    expect(ev(f, 'display').vwap).toEqual({ state: VERDICT.DISPLAY_ONLY, reason: 'cutoff_unconfirmed', consumer: 'display', ageMs: 15 * 60_000 });
+    expect(ev(f, 'stage4').vwap).toEqual({ state: VERDICT.INELIGIBLE, reason: 'cutoff_unconfirmed', consumer: 'stage4', ageMs: 15 * 60_000 });
     // experimental WITH a cutoff still never reaches eligible.
     const f2 = facts({ indicators: { vwap: { experimental: true } } });
     expect(ev(f2, 'display').vwap.state).toBe(VERDICT.DISPLAY_ONLY);
@@ -91,5 +96,62 @@ describe('§8.3 ineligible, with reason', () => {
     expect(() => evaluateIntraday(facts(), { nowMs: T, consumer: 'display', policyVersion: 2 })).toThrow();
     expect(() => evaluateIntraday(facts(), { consumer: 'display' })).toThrow();
     expect(CONSUMERS).toEqual({ DISPLAY: 'display', STAGE4: 'stage4' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Addendum A2 — the age gate runs BEFORE the cutoff-null branch.
+// Review finding R-3 (docs/audits/20260919_BUILD1_INTRADAY_REVIEW.md).
+// ---------------------------------------------------------------------------
+describe('A2 §8.3 — a cutoff-unconfirmed fact is still bounded by the quote behind it', () => {
+  it('an 18-hour-old carried-forward fact is ineligible/stale, NOT display_only', () => {
+    // The shape the review measured: §15 open so every cutoff is null, the
+    // poller alive so collectionStalled is false, and the facts carried
+    // forward from yesterday by §5.5.
+    const f = facts({
+      indicators: {
+        vwap: { experimental: true, estimateCutoff: null, volumeCutoffAsOf: null, reason: 'cutoff_unconfirmed' },
+        sessionHL: { cutoff: null },
+        volume: { cutoff: null },
+      },
+    });
+    f.availableAt = T - 18 * 60 * 60_000;
+    f.collectionStalled = false;
+
+    const v = ev(f, 'display');
+    for (const k of ['vwap', 'sessionHL', 'volume']) {
+      expect(v[k], `${k} must not render as current`).toMatchObject({ state: VERDICT.INELIGIBLE, reason: 'stale' });
+      expect(v[k].ageMs).toBe(18 * 60 * 60_000);
+    }
+  });
+
+  it('the display_only window is the consumer\'s own maxAgeMs, measured from availableAt', () => {
+    const mk = (ageMs) => {
+      const f = facts({ indicators: { sessionHL: { cutoff: null }, volume: { cutoff: null } } });
+      f.availableAt = T - ageMs;
+      return f;
+    };
+    // Exactly at the display limit: still shown.
+    expect(ev(mk(45 * 60_000), 'display').sessionHL.state).toBe(VERDICT.DISPLAY_ONLY);
+    // One millisecond past it: refused.
+    expect(ev(mk(45 * 60_000 + 1), 'display').sessionHL).toMatchObject({ state: VERDICT.INELIGIBLE, reason: 'stale' });
+    // A fresh quote is unaffected — the fix costs nothing in normal operation.
+    expect(ev(mk(60_000), 'display').sessionHL.state).toBe(VERDICT.DISPLAY_ONLY);
+  });
+
+  it('a record with no cutoff AND no availableAt cannot be aged, so it is never display_only', () => {
+    const f = facts({ indicators: { sessionHL: { cutoff: null } } });
+    f.availableAt = null;
+    expect(ev(f, 'display').sessionHL).toMatchObject({ state: VERDICT.INELIGIBLE, reason: 'cutoff_unconfirmed' });
+  });
+
+  it('a confirmed indicator is UNAFFECTED — §8.3 still ages it from its own cutoff, not the quote', () => {
+    // Deliberate scope: A2 bounds only the null-cutoff path. An hour-old
+    // quote with 10-minute-old cutoffs keeps its eligible verdicts, because
+    // the cutoff is the tighter and more accurate measure and §8.3 says so.
+    const f = facts();
+    f.availableAt = T - 60 * 60_000;
+    expect(ev(f, 'display').sma20_5m.state).toBe(VERDICT.ELIGIBLE);
+    expect(ev(f, 'display').sma20_5m.ageMs).toBe(10 * 60_000);
   });
 });

@@ -84,7 +84,13 @@ function makeSnapshot({ generation = 46 } = {}) {
   const stocks = [...HELD.filter((s) => s !== 'BTC'), ...BENCH];
   const actionable = new Set(stocks);
   let prev = {}; let uni = { accumulators: {} }; let docs = {}; let last = null;
-  const startMin = 44; // 10:14 ET … 11:00 ET
+  // Addendum A2 made a null-cutoff verdict age from the quote's own
+  // `availableAt`, which exposed a fixture artefact: the sweep ran on session
+  // minutes whose availableAt (priceAsOf + 16 min) landed 16 minutes AFTER
+  // FROZEN_NOW — a quote received after the check that read it. Wound back so
+  // the last sweep's availableAt IS the check's instant, as a 15-minute
+  // delayed feed actually behaves.
+  const startMin = 28; // priceAsOf 09:58 ET … 10:44 ET; available 10:14 … 11:00 ET
   for (let s = 0; s <= 46; s++) {
     const observations = {};
     stocks.forEach((sym, i) => {
@@ -95,7 +101,9 @@ function makeSnapshot({ generation = 46 } = {}) {
     last = runSweepCalc({ prevSnapshotSymbols: prev, universeState: uni, actionableDocs: docs, observations, actionableSet: actionable, cryptoSet: new Set(['BTC']), session: SESSION, etDateOf, sessionOf: () => SESSION, nowMs: SESSION.openMs + (startMin + s) * 60_000 + 16 * 60_000, sweepId: `sw${s}`, generation: s + 1, config: CONFIG });
     prev = last.snapshotSymbols; uni = last.universeState; docs = last.actionableDocs;
   }
-  const sweepAt = Date.parse(FROZEN_NOW) - 30_000;
+  // The snapshot's own instant is the harness's last sweep, not a separate
+  // constant — so `availableAt`, `sweepAt` and the check all agree.
+  const sweepAt = SESSION.openMs + (startMin + 46) * 60_000 + 16 * 60_000;
   return { sweepId: 'sw46', generation, sweepAt, lastSuccessfulSweepAt: sweepAt, calcVersion: 1, anomalies: last.anomalies, counters: last.counters, symbols: last.snapshotSymbols, lease: null };
 }
 const SNAPSHOT = makeSnapshot();
@@ -174,7 +182,9 @@ describe('§8.1 flag ON — a valid snapshot', () => {
     expect(view.evaluatedAt).toBe(Date.parse(entry.timestamp));
     expect(Object.keys(view.symbols).sort()).toEqual([...new Set([...HELD, ...BENCH])].sort());
     for (const sym of HELD) expect(view.symbols[sym].indicators.vwap.verdict).toHaveProperty('state');
-    expect(view.symbols.NVDA.indicators.vwap.verdict).toEqual({ state: 'display_only', reason: 'cutoff_unconfirmed', consumer: 'display' });
+    // A2: the null-cutoff verdict carries the age it was bounded by — here 0,
+    // because the last sweep's quote IS the check's instant.
+    expect(view.symbols.NVDA.indicators.vwap.verdict).toEqual({ state: 'display_only', reason: 'cutoff_unconfirmed', consumer: 'display', ageMs: 0 });
     expect(view.symbols.BTC.indicators.vwap.verdict.reason).toBe('no_session_anchor');
     expect(view.shadowLines.length).toBeGreaterThan(0);
     // The entry: base keys, the stamps, then EXACTLY the eight pointer fields.

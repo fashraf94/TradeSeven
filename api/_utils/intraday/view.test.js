@@ -45,7 +45,8 @@ describe('§8.2 the view schema', () => {
     expect(Object.keys(a.price)).toEqual(['value', 'priceAsOf', 'snapshotTs', 'previousClose', 'change', 'changePercent', 'size']);
     expect(Object.keys(a.indicators)).toEqual(['vwap', 'sessionHL', 'volume', 'volumePace', 'sma20_5m', 'macd5m', 'rsi5m']);
     // Build 1: the estimate is experimental → display_only; the bucket indicators are warming (46 min = 9 completed buckets).
-    expect(a.indicators.vwap.verdict).toEqual({ state: 'display_only', reason: 'cutoff_unconfirmed', consumer: 'display' });
+    // A2: a null-cutoff verdict is aged from the quote's own availableAt, and carries it.
+    expect(a.indicators.vwap.verdict).toEqual({ state: 'display_only', reason: 'cutoff_unconfirmed', consumer: 'display', ageMs: 30_000 });
     expect(a.indicators.vwap).toMatchObject({ method: 'sampled_estimate', experimental: true, estimateCutoff: null, volumeCutoffAsOf: null });
     expect(a.indicators.sma20_5m.verdict).toMatchObject({ state: 'ineligible', reason: 'warmup' });
     expect(a.indicators.sma20_5m.quality).toMatchObject({ warmupMet: false, gaps: 0 });
@@ -113,7 +114,14 @@ describe('§8.2 receipt-only replay — with intradaySnapshots/latest deleted', 
     // Verdicts at the check equal the stored ones; at a later instant they flip while the view is unchanged.
     expect(replay.symbols.AAPL.verdicts).toEqual(Object.fromEntries(Object.entries(storedView.symbols.AAPL.indicators).map(([k, v]) => [k, v.verdict])));
     const later = replayFromView(storedView, defs, { nowMs: EVAL_AT + 3 * 3600_000, timeText: et });
-    expect(later.symbols.AAPL.verdicts.sessionHL.state).toBe('display_only'); // null cutoff: no age
+    // Addendum A2: a null cutoff is no longer ageless. Three hours on, the
+    // same stored view replays as stale rather than as a current diagnostic —
+    // this row asserted the opposite before A2, and that was review finding
+    // R-3 in test form.
+    expect(later.symbols.AAPL.verdicts.sessionHL).toMatchObject({ state: 'ineligible', reason: 'stale' });
+    // Within the display window it still renders.
+    const soon = replayFromView(storedView, defs, { nowMs: EVAL_AT + 10 * 60_000, timeText: et });
+    expect(soon.symbols.AAPL.verdicts.sessionHL.state).toBe('display_only');
     expect(JSON.stringify(storedView)).toBe(JSON.stringify((await db.collection('agentBattles').doc('b1').collection('intradayViews').doc('eval_3').get()).data()));
   });
   it('refuses a definitions document of another calcVersion', () => {

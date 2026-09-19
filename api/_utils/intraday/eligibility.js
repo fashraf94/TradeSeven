@@ -56,6 +56,10 @@ export function evaluateIntraday(symbolFacts, { nowMs, policyVersion = POLICY_VE
   const isDisplay = consumer === CONSUMERS.DISPLAY;
   const indicators = symbolFacts?.indicators || {};
   const stalled = symbolFacts?.collectionStalled === true;
+  // §8.2 puts `availableAt` on the symbol record — the instant the quote
+  // behind these facts was received. Addendum A2 uses it as the age basis
+  // when the indicator's own cutoff is unconfirmed.
+  const availableAt = isNum(symbolFacts?.availableAt) ? symbolFacts.availableAt : null;
   const verdicts = {};
   const v = (state, reason, extra = {}) => ({ state, reason, consumer, ...extra });
 
@@ -68,18 +72,42 @@ export function evaluateIntraday(symbolFacts, { nowMs, policyVersion = POLICY_VE
 
     const cutoff = cutoffOf(key, f);
     const experimental = key === 'vwap' && f.experimental === true;
+
+    // Addendum A2 — the age gate runs BEFORE the cutoff-null branch.
+    //
+    // While §15 is unanswered every vendor aggregate and the VWAP estimate
+    // carry a null cutoff, and the old order returned `display_only` without
+    // ever reaching the age check. Combined with §5.5's carry-forward (a
+    // rejected or held observation leaves the PREVIOUS sweep's facts in the
+    // snapshot) and a `collectionStalled` that measures whether the POLLER is
+    // alive rather than whether the FACT is fresh, an arbitrarily old value
+    // rendered as a current diagnostic — measured at 18 hours in the review
+    // (R-3). Every trading morning reproduced it: on a 15-minute delayed feed
+    // the first ~15 minutes of the session are all rejects or prior-session,
+    // so every symbol is in carry-forward when the first check runs.
+    //
+    // The quote's own `availableAt` is the only instant the record carries
+    // when the cutoff is null, so it is what bounds the line. Where a cutoff
+    // exists it stays the measure — it is the tighter and more accurate one,
+    // and §8.3's "age from the indicator's OWN cutoff" still governs.
+    // Scoped deliberately: §8.3's "age from the indicator's OWN cutoff" still
+    // governs wherever a cutoff exists, so this changes nothing for a
+    // confirmed indicator. It is only the null-cutoff path that gains a bound.
+    const ageBasis = cutoff !== null ? cutoff : availableAt;
+    if (!isNum(ageBasis)) { verdicts[key] = v(VERDICT.INELIGIBLE, 'cutoff_unconfirmed'); continue; }
+    const ageMs = nowMs - ageBasis;
+    if (ageMs > maxAgeMs) { verdicts[key] = v(VERDICT.INELIGIBLE, 'stale', { ageMs }); continue; }
+
     if (cutoff === null) {
       // A vendor aggregate or an experimental estimate with no confirmed cutoff:
-      // displayable as such, never eligible.
+      // displayable as such (and now only while fresh), never eligible.
       if (isDisplay && (experimental || VENDOR_AGGREGATES.has(key))) {
-        verdicts[key] = v(VERDICT.DISPLAY_ONLY, 'cutoff_unconfirmed');
+        verdicts[key] = v(VERDICT.DISPLAY_ONLY, 'cutoff_unconfirmed', { ageMs });
       } else {
-        verdicts[key] = v(VERDICT.INELIGIBLE, 'cutoff_unconfirmed');
+        verdicts[key] = v(VERDICT.INELIGIBLE, 'cutoff_unconfirmed', { ageMs });
       }
       continue;
     }
-    const ageMs = nowMs - cutoff;
-    if (ageMs > maxAgeMs) { verdicts[key] = v(VERDICT.INELIGIBLE, 'stale', { ageMs }); continue; }
     if (experimental) { verdicts[key] = v(isDisplay ? VERDICT.DISPLAY_ONLY : VERDICT.INELIGIBLE, isDisplay ? 'cutoff_unconfirmed' : 'experimental', { ageMs }); continue; }
 
     if (key === 'vwap') {
