@@ -65,7 +65,7 @@ describe('§10.1 the validator state machine', () => {
     // Build 1: every estimate has a null cutoff → excluded with cutoff_unconfirmed; closing row unresolved → unqualified.
     expect(doc.symbols.AAPL.series.excludedByReason.cutoff_unconfirmed).toBeGreaterThan(0);
     expect(doc.symbols.AAPL.qualification).toEqual({ included: false, reason: 'close_unqualified' });
-    expect(doc.symbols.AAPL.coverage.referenceCoveragePct).not.toBeNull();
+    expect(doc.symbols.AAPL.coverage.quoteCumulativeVolumeRatio).not.toBeNull();
     expect(doc.symbols.AAPL.evaluationLinked.unavailable).toEqual({ evaluationLinked: 'no_evaluation_evidence' });
     expect(doc.unavailable.p95AbsResidualOverPrice).toBe('no_aligned_comparisons');
     expect(doc.trailing10).toMatchObject({ sessions: 1, dates: ['2026-09-17'] });

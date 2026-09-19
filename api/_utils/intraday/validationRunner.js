@@ -94,8 +94,10 @@ export async function runValidation({
     units += bars.units;
     if (!bars.ok || !bars.bars?.length) { unpublished = true; break; }
     if (state.firstPublishHourUtc === null) state.firstPublishHourUtc = new Date(now()).getUTCHours();
-    const eodVolume = calcState.accumulators?.[sym]?.lastAcceptedVolume ?? null;
-    results[sym] = validateSymbolSession({ sym, bars: bars.bars, session, doc: docs[sym] || null, eodVolume, views: viewsBySym[sym] || [], fireTicksOf, calcVersion: config.CALC_VERSION, policyVersion: config.POLICY_VERSION });
+    // A5: named for what it is — the vendor's cumulative session volume on
+    // the LAST QUOTE THE ACCUMULATOR ACCEPTED, not an end-of-day volume.
+    const quoteCumulativeVolume = calcState.accumulators?.[sym]?.lastAcceptedVolume ?? null;
+    results[sym] = validateSymbolSession({ sym, bars: bars.bars, session, doc: docs[sym] || null, quoteCumulativeVolume, views: viewsBySym[sym] || [], fireTicksOf, calcVersion: config.CALC_VERSION, policyVersion: config.POLICY_VERSION });
     pending.shift(); done.push(sym); validated += 1;
   }
   if (units > 0) await recordUnits(db, { etDate: todayEt, units, unitsBySource: { intraday_1m_validate: units }, sweepId: `validate-${gradeDate}`, now });
@@ -123,7 +125,7 @@ export async function trailingRollup({ db, gradeDate, calendar, n = 10 }) {
   const mean = (key) => { const v = docs.map((x) => x[key]).filter(isNum); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
   const unavailable = {};
   const out = { sessions: docs.length, dates: docs.map((x) => x.etDate) };
-  for (const key of ['p95AbsResidualOverPrice', 'overallDisagreement', 'falseStrikeRate', 'missedStrikeRate', 'nearThresholdDisagreement', 'replayedExitDisagreement', 'sma20P95AbsResidualOverPrice', 'macdEventAgreement', 'referenceCoveragePct']) {
+  for (const key of ['p95AbsResidualOverPrice', 'overallDisagreement', 'falseStrikeRate', 'missedStrikeRate', 'nearThresholdDisagreement', 'replayedExitDisagreement', 'sma20P95AbsResidualOverPrice', 'macdEventAgreement', 'quoteCumulativeVolumeRatio']) {
     const m = mean(key);
     if (m === null) unavailable[key] = docs.length ? 'no_sessions_with_metric' : 'no_completed_sessions';
     out[key] = m;

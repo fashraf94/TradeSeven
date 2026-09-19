@@ -6,7 +6,8 @@
 //
 //   refVWAP(t) = Σ(HLC3 × volume) / Σ volume over 1-minute bars with
 //                start + 60_000 ≤ t                                   (§10.2)
-//   referenceCoveragePct = Σ(bar volume) / EOD volume; barsMissing   (§10.2)
+//   quoteCumulativeVolumeRatio = Σ(bar volume) / the last accepted quote's
+//   cumulative session volume, a DIAGNOSTIC (A5); barsMissing decides coverage
 //   per log entry: estimateCutoff (null → excluded, cutoff_unconfirmed);
 //     referenceCutoff = end of the last completed bar ≤ estimateCutoff;
 //     alignmentLagMs; comparisonResidual = estimate − refVWAP(referenceCutoff);
@@ -49,20 +50,54 @@ export function lastCompletedBarAt(series, t) {
   return ans >= 0 ? series[ans] : null;
 }
 
-/** §10.2 coverage. Expected bars: every minute from open to close INCLUSIVE (the vendor's 16:00 row). */
-export function computeCoverage({ series, session, eodVolume }) {
+/**
+ * §10.2 coverage. Expected bars: every minute from open to close INCLUSIVE
+ * (the vendor's 16:00 row).
+ *
+ * Addendum A5 — what the ratio is, and what it is not.
+ *
+ * The contract called this `referenceCoveragePct` = Σ(bar volume) / EOD
+ * volume, and gated qualification on it falling below 90 %. There is no EOD
+ * volume in build 1 and no unit budgeted to fetch one, so the denominator is
+ * the vendor's cumulative session `volume` carried on the LAST QUOTE THE
+ * ACCUMULATOR ACCEPTED that day (`quoteCumulativeVolume`). On a 15-minute
+ * delayed feed that quote's priceAsOf is ~15 minutes before the last sweep,
+ * so the denominator structurally omits the closing auction — 42.9 % of the
+ * day on the founder's AAPL fixture. Measured against that fixture the ratio
+ * reads 197 %, not 100 %.
+ *
+ * So the `< 90 %` leg could never fire while the bar series was complete,
+ * and could only fire in the inverted case — a vendor `volume` that is not
+ * regular-session-cumulative (G7 records this as UNCONFIRMED), which would
+ * empty the qualification set on day 1 for a reason that has nothing to do
+ * with coverage. It is removed. `coverage` is now decided by `barsMissing`
+ * alone, which is the leg that was doing the real work.
+ *
+ * The ratio is still reported — it is genuinely informative once §15 lands,
+ * and a day-2 value far from ~1.97 says the vendor's `volume` is not what
+ * G7 assumes — but as a DIAGNOSTIC under an honest name, never as a gate.
+ */
+export function computeCoverage({ series, session, quoteCumulativeVolume }) {
   const expected = Math.floor((session.closeMs - session.openMs) / BAR_MS) + 1;
   const present = new Set(series.map((r) => r.startMs));
   let barsMissing = 0;
   const missingStarts = [];
   for (let t = session.openMs; t <= session.closeMs; t += BAR_MS) if (!present.has(t)) { barsMissing += 1; if (missingStarts.length < 50) missingStarts.push(t); }
   const sumVol = series.reduce((a, r) => a + r.volume, 0);
-  const pct = isNum(eodVolume) && eodVolume > 0 ? (100 * sumVol) / eodVolume : null;
-  let coverage = 'full'; let reason = null;
-  if (pct === null) { coverage = 'unknown'; reason = 'eod_volume_unavailable'; }
-  else if (pct < 90) { coverage = 'partial'; reason = 'coverage_below_90pct'; }
-  if (barsMissing > 0 && coverage === 'full') { coverage = 'partial'; reason = 'bars_missing'; }
-  return { referenceCoveragePct: pct, barsMissing, barsPresent: series.length, barsExpected: expected, sumBarVolume: sumVol, eodVolume: isNum(eodVolume) ? eodVolume : null, coverage, reason, missingStarts };
+  const denominatorOk = isNum(quoteCumulativeVolume) && quoteCumulativeVolume > 0;
+  const ratio = denominatorOk ? sumVol / quoteCumulativeVolume : null;
+  // A5: bar completeness decides coverage. Nothing else does.
+  const coverage = barsMissing > 0 ? 'partial' : 'full';
+  const reason = barsMissing > 0 ? 'bars_missing' : null;
+  return {
+    // The diagnostic, honestly named and sourced.
+    quoteCumulativeVolumeRatio: ratio,
+    denominatorSource: denominatorOk ? 'live_v2_last_accepted_volume' : null,
+    ratioUnavailableReason: denominatorOk ? null : 'quote_cumulative_volume_unavailable',
+    quoteCumulativeVolume: isNum(quoteCumulativeVolume) ? quoteCumulativeVolume : null,
+    barsMissing, barsPresent: series.length, barsExpected: expected, sumBarVolume: sumVol,
+    coverage, reason, missingStarts,
+  };
 }
 
 /** §10.3 alignment of every log entry. */
@@ -230,9 +265,9 @@ export function evaluationMetrics({ views, sym, series, fireTicksOf, nearBand = 
 }
 
 /** §10.5 — the per-symbol result. */
-export function validateSymbolSession({ sym, bars, session, doc, eodVolume, views, fireTicksOf, calcVersion, policyVersion }) {
+export function validateSymbolSession({ sym, bars, session, doc, quoteCumulativeVolume, views, fireTicksOf, calcVersion, policyVersion }) {
   const series = buildReferenceSeries(bars, session);
-  const cov = computeCoverage({ series, session, eodVolume });
+  const cov = computeCoverage({ series, session, quoteCumulativeVolume });
   const aligned = alignLogEntries({ log: doc?.log || [], series, missingStarts: cov.missingStarts });
   const closingUnresolved = (doc?.ring?.buckets || []).some((b) => b.sessionEtDate === session.etDate && b.isLast && b.closeQualified === false)
     || !(doc?.ring?.buckets || []).some((b) => b.sessionEtDate === session.etDate && b.isLast);
@@ -242,7 +277,16 @@ export function validateSymbolSession({ sym, bars, session, doc, eodVolume, view
   const qualification = cov.coverage !== 'full' ? { included: false, reason: cov.reason || cov.coverage } : (closeQualifiedSeries ? { included: true, reason: null } : { included: false, reason: 'close_unqualified' });
   return {
     sym, etDate: session.etDate, calcVersion, policyVersion,
-    coverage: { referenceCoveragePct: cov.referenceCoveragePct, barsMissing: cov.barsMissing, barsPresent: cov.barsPresent, barsExpected: cov.barsExpected, coverage: cov.coverage, reason: cov.reason, eodVolumeSource: isNum(eodVolume) ? 'live_v2_last_accepted_volume' : null },
+    coverage: {
+      // A5: the gate (bar completeness) and the diagnostic (the ratio) are
+      // now separate fields with separate names, so neither can be read as
+      // the other.
+      coverage: cov.coverage, reason: cov.reason,
+      barsMissing: cov.barsMissing, barsPresent: cov.barsPresent, barsExpected: cov.barsExpected,
+      quoteCumulativeVolumeRatio: cov.quoteCumulativeVolumeRatio,
+      denominatorSource: cov.denominatorSource,
+      ratioUnavailableReason: cov.ratioUnavailableReason,
+    },
     closeQualified: closeQualifiedSeries, qualification,
     series: s, evaluationLinked: e,
     logEntries: aligned.length,
@@ -260,7 +304,7 @@ export function aggregateValidation(results, { etDate, calcVersion, policyVersio
   const p95s = collect((r) => r.series.p95AbsResidualOverPrice, 'p95AbsResidualOverPrice', 'no_aligned_comparisons');
   const sma = collect((r) => (r.qualification.included ? r.series.sma20P95AbsResidualOverPrice : null), 'sma20P95AbsResidualOverPrice', qualified.length ? 'no_sma20_comparisons' : 'no_qualified_series');
   const macd = collect((r) => (r.qualification.included ? r.series.macdEventAgreement : null), 'macdEventAgreement', qualified.length ? 'no_macd_events' : 'no_qualified_series');
-  const cov = collect((r) => r.coverage.referenceCoveragePct, 'referenceCoveragePct', 'eod_volume_unavailable');
+  const cov = collect((r) => r.coverage.quoteCumulativeVolumeRatio, 'quoteCumulativeVolumeRatio', 'quote_cumulative_volume_unavailable');
   const evalRows = syms.map((r) => r.evaluationLinked).filter((e) => e.usable > 0);
   const evalMetric = (key, reason) => { const v = evalRows.map((e) => e[key]).filter(isNum); if (!v.length) { unavailable[key] = evalRows.length ? reason : 'no_evaluation_evidence'; return null; } return mean(v); };
   const lostCoverageByReason = countBy(syms.filter((r) => r.coverage.coverage !== 'full').map((r) => r.coverage.reason || r.coverage.coverage));
@@ -280,7 +324,7 @@ export function aggregateValidation(results, { etDate, calcVersion, policyVersio
     replayedExitDisagreement: evalMetric('replayedExitDisagreement', 'no_replayed_fires'),
     sma20P95AbsResidualOverPrice: sma ? p95(sma) : null,
     macdEventAgreement: mean(macd),
-    referenceCoveragePct: median(cov),
+    quoteCumulativeVolumeRatio: median(cov),
     lostCoverageByReason,
     eventCounts,
     unavailable,

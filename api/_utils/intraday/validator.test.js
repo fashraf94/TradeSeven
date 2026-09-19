@@ -22,14 +22,45 @@ describe('§10.2 reference series and coverage', () => {
     expect(lastCompletedBarAt(series, SEP17.closeMs + 60_000).startMs).toBe(SEP17.closeMs);
     expect(lastCompletedBarAt(series, SEP17.openMs + 59_000)).toBeNull();
   });
-  it('coverage: full fixture at 100 %; missing bars → partial; no EOD volume → unknown', () => {
-    expect(computeCoverage({ series, session: SEP17, eodVolume: EOD })).toMatchObject({ referenceCoveragePct: 100, barsMissing: 0, barsPresent: 391, barsExpected: 391, coverage: 'full', reason: null });
+  it('A5 — coverage is decided by barsMissing ALONE; the ratio is a diagnostic beside it', () => {
+    const full = computeCoverage({ series, session: SEP17, quoteCumulativeVolume: EOD });
+    expect(full).toMatchObject({ barsMissing: 0, barsPresent: 391, barsExpected: 391, coverage: 'full', reason: null });
+    expect(full.quoteCumulativeVolumeRatio).toBeCloseTo(1, 6);
+    expect(full.denominatorSource).toBe('live_v2_last_accepted_volume');
+
     const holed = buildReferenceSeries(FIXTURE_BARS.filter((_, i) => i !== 100 && i !== 101), SEP17);
-    const c = computeCoverage({ series: holed, session: SEP17, eodVolume: EOD });
+    const c = computeCoverage({ series: holed, session: SEP17, quoteCumulativeVolume: EOD });
     expect(c).toMatchObject({ barsMissing: 2, coverage: 'partial', reason: 'bars_missing' });
     expect(c.missingStarts).toEqual([SEP17.openMs + 100 * 60_000, SEP17.openMs + 101 * 60_000]);
-    expect(computeCoverage({ series, session: SEP17, eodVolume: EOD * 1.2 })).toMatchObject({ coverage: 'partial', reason: 'coverage_below_90pct' });
-    expect(computeCoverage({ series, session: SEP17, eodVolume: null })).toMatchObject({ coverage: 'unknown', reason: 'eod_volume_unavailable', referenceCoveragePct: null });
+
+    // A5: the `< 90 %` leg is GONE. A denominator 20 % larger than the bar
+    // sum used to read `partial / coverage_below_90pct`; with every bar
+    // present the series is complete, and that is what coverage means.
+    const inflated = computeCoverage({ series, session: SEP17, quoteCumulativeVolume: EOD * 1.2 });
+    expect(inflated).toMatchObject({ coverage: 'full', reason: null });
+    expect(inflated.quoteCumulativeVolumeRatio).toBeCloseTo(1 / 1.2, 6);
+
+    // No denominator → the RATIO is unavailable, but coverage still stands.
+    const noDenom = computeCoverage({ series, session: SEP17, quoteCumulativeVolume: null });
+    expect(noDenom).toMatchObject({
+      coverage: 'full', reason: null,
+      quoteCumulativeVolumeRatio: null, denominatorSource: null,
+      ratioUnavailableReason: 'quote_cumulative_volume_unavailable',
+    });
+  });
+
+  it('A5 — the founder\'s fixture at a 15:44 last-accepted quote reads ~1.97, labelled diagnostic, coverage full', () => {
+    // The realistic shape: a 15-minute delayed feed's last accepted quote
+    // carries cumulative volume to ~15:44, while the bar series runs to the
+    // 16:00 closing auction. The denominator structurally omits it.
+    const cutoffUtc = '2026-09-17 19:44:00';
+    const cum = FIXTURE_BARS.filter((b) => b.datetime <= cutoffUtc).reduce((a, b) => a + b.volume, 0);
+    const c = computeCoverage({ series, session: SEP17, quoteCumulativeVolume: cum });
+    expect(c.quoteCumulativeVolumeRatio).toBeGreaterThan(1.9);
+    expect(c.quoteCumulativeVolumeRatio).toBeLessThan(2.05);
+    expect(c.denominatorSource).toBe('live_v2_last_accepted_volume');
+    // ...and it does NOT make the session partial. That was the bug.
+    expect(c).toMatchObject({ coverage: 'full', reason: null, barsMissing: 0 });
   });
 });
 
@@ -116,15 +147,17 @@ describe('§10.5 per-symbol result and aggregate — unavailable reasons, never 
   it('validateSymbolSession + aggregateValidation over one symbol with the closing row unresolved', () => {
     const { buckets } = aggregateBarsToBuckets(FIXTURE_BARS, SEP17); // last bucket closeQualified false (policy null)
     const doc = { ring: { buckets }, state: null, log: [{ sweepAt: 1, priceAsOf: SEP17.openMs + 30 * 60_000 + 20_000, price: 335, estimate: 334.5, estimateCutoff: null, strikeKey: 'k' }] };
-    const r = validateSymbolSession({ sym: 'AAPL', bars: FIXTURE_BARS, session: SEP17, doc, eodVolume: EOD, views: [], fireTicksOf, calcVersion: 1, policyVersion: 1 });
-    expect(r.coverage).toMatchObject({ referenceCoveragePct: 100, coverage: 'full', eodVolumeSource: 'live_v2_last_accepted_volume' });
+    const r = validateSymbolSession({ sym: 'AAPL', bars: FIXTURE_BARS, session: SEP17, doc, quoteCumulativeVolume: EOD, views: [], fireTicksOf, calcVersion: 1, policyVersion: 1 });
+    expect(r.coverage).toMatchObject({ coverage: 'full', denominatorSource: 'live_v2_last_accepted_volume' });
+    expect(r.coverage.quoteCumulativeVolumeRatio).toBeCloseTo(1, 6);
     expect(r.closeQualified).toBe(false);
     expect(r.qualification).toEqual({ included: false, reason: 'close_unqualified' });
     expect(r.series.unavailable).toMatchObject({ p95AbsResidualOverPrice: 'no_aligned_comparisons', sma20P95AbsResidualOverPrice: 'close_unqualified', macdEventAgreement: 'close_unqualified' });
     expect(r.series.excludedByReason).toEqual({ cutoff_unconfirmed: 1 });
     expect(r.evaluationLinked.unavailable).toEqual({ evaluationLinked: 'no_evaluation_evidence' });
     const agg = aggregateValidation({ AAPL: r }, { etDate: '2026-09-17', calcVersion: 1, policyVersion: 1, firstPublishHourUtc: 11, status: 'done', computedAt: 2 });
-    expect(agg).toMatchObject({ symbolsValidated: 1, symbolsQualified: 0, referenceCoveragePct: 100, firstPublishHourUtc: 11, lostCoverageByReason: {} });
+    expect(agg).toMatchObject({ symbolsValidated: 1, symbolsQualified: 0, firstPublishHourUtc: 11, lostCoverageByReason: {} });
+    expect(agg.quoteCumulativeVolumeRatio).toBeCloseTo(1, 6);
     for (const k of ['p95AbsResidualOverPrice', 'falseStrikeRate', 'missedStrikeRate', 'nearThresholdDisagreement', 'replayedExitDisagreement', 'sma20P95AbsResidualOverPrice', 'macdEventAgreement']) {
       expect(agg[k], k).toBeNull();
       expect(typeof agg.unavailable[k], k).toBe('string');
