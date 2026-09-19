@@ -36,7 +36,7 @@ import {
   getCurrentTradingDayServer,
 } from '../_utils/agentEvalPromptAssembly.js';
 import { TRADE_DECISION_TOOL } from '../_utils/agentEvalToolSchema.js';
-import { evaluateTriggers, fetchRecentNews } from '../_utils/agentTriggerGate.js';
+import { evaluateTriggers, fetchRecentNews, MAX_STORY_WAKE_ATTEMPTS, SEEN_STORY_ID_CAP } from '../_utils/agentTriggerGate.js';
 import { validateTradeDecision, executeSwapServer } from '../_utils/agentSwapExecution.js';
 // P2 League Tournament — agent-market exclusivity (Spec §1.2). Every use is
 // tournament-conditional: resolveTournamentContext returns null for regular
@@ -1960,11 +1960,18 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     const seenStoryIds = battle.cronState?.seenStoryIds || [];
     const { shouldEvaluate, triggers, newStoryIds } = evaluateTriggers(battle, assetScores, prices, news, momentumData, seenStoryIds);
 
-    // Persist any new story IDs to prevent re-triggering (cap at 50)
-    if (newStoryIds?.length > 0) {
-      const updatedSeenIds = [...seenStoryIds, ...newStoryIds].slice(-50);
-      scoreUpdate['cronState.seenStoryIds'] = updatedSeenIds;
-    }
+    // The story ids this tick's news triggers woke on. They are NOT marked
+    // seen here — that write moved to after the model call resolves (see
+    // "seen-story bookkeeping" below). Marking them before the attempt meant a
+    // story that woke the engine and then hit a timeout was burned unread:
+    // the tick never evaluated it, and no later tick ever would.
+    //
+    // Nothing between here and that write can skip it: `newStoryIds` is
+    // non-empty only when the news loop also pushed a trigger, so
+    // `shouldEvaluate` is necessarily true and the no-trigger early return
+    // below is unreachable with stories in hand (asserted in the T4 suite),
+    // and there is no other return between the call and the final write.
+    const wokenStoryIds = newStoryIds || [];
 
     if (!shouldEvaluate) {
       // No triggers — update scores, VWAP ticks, and status feed, then move on
@@ -2180,6 +2187,74 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         // behind the winner's own .finally above.
         clearTimeout(buildTimer);
         clearTimeout(hardAbort);
+      }
+    }
+
+    // ---- Seen-story bookkeeping (moved here from the trigger gate) ----
+    //
+    // A story is marked seen only after the call it woke SUCCEEDED. Success is
+    // a tool result the handler ACCEPTED — `haikuResult` set with no failure
+    // recorded — which is strictly narrower than an HTTP 200: a response that
+    // arrived but was unusable leaves `haikuFailure` set and does not count.
+    // (Once the tool-result validation fix lands alongside this one, that same
+    // predicate additionally means "passed schema validation", because
+    // `haikuResult` is then only ever assigned from a validated result. The
+    // predicate is written against the handler's own acceptance so it needs no
+    // knowledge of which checks produced it.)
+    //
+    // On failure the story stays unseen and may wake a later tick — which is
+    // the point: the evaluation it was supposed to get never happened.
+    //
+    // THE LOOP GUARD. Left there, an unread story could re-wake the engine
+    // every tick for the rest of the battle. Attempts are counted per story id
+    // on the battle; at MAX_STORY_WAKE_ATTEMPTS the story is marked seen with
+    // `seenReason: 'attempts_exhausted'`, so the record says it was retired
+    // unread rather than acted on.
+    if (wokenStoryIds.length > 0) {
+      const priorAttempts = battle.cronState?.storyAttempts || {};
+      const haikuCallSucceeded = Boolean(haikuResult) && !haikuFailure;
+
+      if (haikuCallSucceeded) {
+        scoreUpdate['cronState.seenStoryIds'] = [...seenStoryIds, ...wokenStoryIds].slice(-SEEN_STORY_ID_CAP);
+        // Retire the counters these stories were accumulating. Written only if
+        // one of them actually had a counter, so the ordinary
+        // first-try-succeeds tick adds no key it did not add before.
+        const remaining = { ...priorAttempts };
+        const cleared = wokenStoryIds.filter(id => id in remaining);
+        if (cleared.length > 0) {
+          for (const id of cleared) delete remaining[id];
+          scoreUpdate['cronState.storyAttempts'] = remaining;
+        }
+      } else {
+        const attempts = { ...priorAttempts };
+        const exhausted = [];
+        for (const id of wokenStoryIds) {
+          const attempt = (attempts[id] || 0) + 1;
+          if (attempt >= MAX_STORY_WAKE_ATTEMPTS) {
+            exhausted.push(id);
+            delete attempts[id]; // retired — stop counting it
+          } else {
+            attempts[id] = attempt;
+          }
+        }
+        scoreUpdate['cronState.storyAttempts'] = attempts;
+
+        if (exhausted.length > 0) {
+          const updatedSeenIds = [...seenStoryIds, ...exhausted].slice(-SEEN_STORY_ID_CAP);
+          scoreUpdate['cronState.seenStoryIds'] = updatedSeenIds;
+          // Why each was retired. Pruned to the ids still inside the seen cap
+          // so the map cannot outgrow the list it annotates.
+          const survivors = new Set(updatedSeenIds);
+          const reasons = {};
+          for (const [id, reason] of Object.entries(battle.cronState?.seenStoryReasons || {})) {
+            if (survivors.has(id)) reasons[id] = reason;
+          }
+          for (const id of exhausted) {
+            if (survivors.has(id)) reasons[id] = 'attempts_exhausted';
+          }
+          scoreUpdate['cronState.seenStoryReasons'] = reasons;
+          console.warn(`${LOG_PREFIX} Story ids retired unread after ${MAX_STORY_WAKE_ATTEMPTS} failed wakes on battle ${battle.id}: ${exhausted.join(', ')}`);
+        }
       }
     }
 

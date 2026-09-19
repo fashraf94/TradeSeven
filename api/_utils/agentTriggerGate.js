@@ -5,6 +5,25 @@
 import { flattenPortfolioServer, flattenBenchServer } from './agentScoring.js';
 
 /**
+ * How many failed wakes one story gets before it is marked seen anyway.
+ *
+ * A story is marked seen only after the model call it woke actually SUCCEEDED
+ * (agent-evaluate.js). That is the correct default — a story whose evaluation
+ * never happened has not been evaluated — but on its own it is a loop: a story
+ * that reliably triggers a failure would re-wake the engine every tick for the
+ * rest of the battle. After this many failed wakes the story is marked seen
+ * with `seenReason: 'attempts_exhausted'`, which says plainly in the record
+ * that it was retired unread rather than acted on.
+ *
+ * Three is a starting value, not a finding. Founder-adjustable: this is the
+ * single named export the loop guard reads.
+ */
+export const MAX_STORY_WAKE_ATTEMPTS = 3;
+
+/** How many seen story ids the battle keeps (the pre-existing `.slice(-50)`). */
+export const SEEN_STORY_ID_CAP = 50;
+
+/**
  * Evaluate whether triggers warrant a Haiku call.
  *
  * @param {Object} battle - Full agentBattle document
