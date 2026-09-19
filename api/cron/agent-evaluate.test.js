@@ -693,7 +693,9 @@ describe('agent-evaluate cron — P2 tournament ledger wiring (agent-market excl
     // The cache is created in the handler loop scope and threaded through.
     expect(source).toMatch(/const tournamentGroupCache = new Map\(\);/);
     // Mastery P1: the call threads the run-level mastery flag view too.
-    expect(source).toMatch(/processAgentBattle\(db, battle, summary, startTime, tournamentGroupCache, masteryFlagView\)/);
+    // Intraday Data Build 1 (§8.1): and the invocation's ONE snapshot read
+    // (null with INTRADAY_DIAGNOSTIC_ENABLED off).
+    expect(source).toMatch(/processAgentBattle\(db, battle, summary, startTime, tournamentGroupCache, masteryFlagView, intradayContext\)/);
   });
 
   it('THE RESOLVER DISCRIMINATES BEFORE ANY AWAIT — a regular battle costs zero Firestore I/O (P4 contract: gameMode AND groupId stamped together)', () => {
@@ -864,8 +866,10 @@ describe('agent-evaluate cron — P2 tournament ledger wiring (agent-market excl
 describe('agent-evaluate cron — VWAP floor wiring (A1/B1/B6)', () => {
   const source = readFileSync(SOURCE_PATH, 'utf-8');
 
-  it('A1: the freshness gate wraps the momentumData.vwap assignment (stale/thin sessions publish nothing)', () => {
-    expect(source).toMatch(/if \(vwapResult && isVwapSessionUsable\(\{ sessionDate, todayET, sessionCandleCount: sessionCandles\.length \}\)\) \{\s*\n\s*const sma20_5m = calculate5minSMA20\(candles\);\s*\n\s*momentumData\.vwap\[symbol\] = \{ \.\.\.vwapResult, sma20_5m, sessionDate \};/);
+  it('A1: the freshness gate wraps the momentumData.vwap assignment (stale/thin/STALLED sessions publish nothing — Intraday Data §11)', () => {
+    expect(source).toMatch(/if \(vwapResult && isVwapSessionUsable\(\{ sessionDate, todayET, coverageCount: sessionCandles\.length, asOfMs: newestCandleAsOfMs\(sessionCandles\), nowMs: Date\.now\(\) \}\)\) \{\s*\n\s*const sma20_5m = calculate5minSMA20\(candles\);\s*\n\s*momentumData\.vwap\[symbol\] = \{ \.\.\.vwapResult, sma20_5m, sessionDate \};/);
+    // §11: the cascade re-qualification passes the same freshness inputs.
+    expect(source).toMatch(/isReplacementQualified\(\{\s*sessionDate,\s*coverageCount: sessionCandles\.length,\s*vwapDeviation: vwapResult\.vwapDeviation,\s*todayET,\s*deadBandPct,\s*(\/\/[^\n]*\n\s*)?asOfMs: newestCandleAsOfMs\(sessionCandles\),\s*nowMs: Date\.now\(\),\s*\}\)/);
   });
 
   it('A2: the tick counter strikes via the dead-band predicate, preset-driven', () => {

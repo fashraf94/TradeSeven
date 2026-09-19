@@ -113,7 +113,12 @@ describe('compute-index-intelligence — Phase A axis block wiring', () => {
 
   it('does not add a cron entry or touch the schedule (spec §5: no new cron)', () => {
     const vercel = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'vercel.json'), 'utf8');
-    expect((vercel.match(/"schedule"/g) || []).length).toBe(39);
+    // 39 at this arc's landing; 41 since Intraday Data Build 1 added its two
+    // entries (/api/cron/intraday-poll, /api/cron/intraday-validate — contract
+    // §5.1 / §10.1, G10). The axis block itself still adds none.
+    expect((vercel.match(/"schedule"/g) || []).length).toBe(41);
+    expect(vercel).toMatch(/"\/api\/cron\/intraday-poll"/);
+    expect(vercel).toMatch(/"\/api\/cron\/intraday-validate"/);
     expect(vercel).not.toMatch(/rankingSnapshots/);
   });
 });

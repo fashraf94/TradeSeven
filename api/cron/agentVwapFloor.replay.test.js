@@ -45,7 +45,8 @@ const SURVIVING_COUNTERS = { VLO: 7, XRP: 7, LRCX: 2 };
 describe('replay §6.1 — stale-session day arms nothing', () => {
   it('no symbol passes the freshness gate, so no vwap entry is published', () => {
     for (const symbol of HELD) {
-      expect(isVwapSessionUsable({ ...STALE_SESSIONS[symbol], todayET: INCIDENT_DAY })).toBe(false);
+      // §11: even a fresh instant cannot rescue yesterday's session (the date leg).
+      expect(isVwapSessionUsable({ ...STALE_SESSIONS[symbol], todayET: INCIDENT_DAY, asOfMs: Date.UTC(2026, 5, 11, 15, 0, 0), nowMs: Date.UTC(2026, 5, 11, 15, 5, 0) })).toBe(false);
     }
   });
 
@@ -154,7 +155,7 @@ describe('replay §6.4 — counters do not survive their positions', () => {
 describe('replay §6.7 — no mass flagging when freshness returns', () => {
   it('the morning after (fresh sessions, healthy deviations) nothing fires despite the stale counters', () => {
     // A1 passes again, but the counters were pruned and deviations are healthy.
-    expect(isVwapSessionUsable({ sessionDate: '2026-06-12', todayET: '2026-06-12', sessionCandleCount: 12 })).toBe(true);
+    expect(isVwapSessionUsable({ sessionDate: '2026-06-12', todayET: '2026-06-12', sessionCandleCount: 12, asOfMs: Date.UTC(2026, 5, 12, 14, 25, 0), nowMs: Date.UTC(2026, 5, 12, 14, 30, 0) })).toBe(true);
     const r = evaluateRisk(
       { symbol: 'LRCX', baseATR: 2.5, dailyPct: 0 },
       100, 100, 2.5,
@@ -183,6 +184,7 @@ describe('replay §6.6 — the cascade guard would have stopped the spiral at N'
       sessionDate: STALE_SESSION,
       sessionCandleCount: 78,
       vwapDeviation: 0.5, // even a healthy-looking deviation
+      asOfMs: Date.UTC(2026, 5, 12, 14, 25, 0), nowMs: Date.UTC(2026, 5, 12, 14, 30, 0),
       todayET: INCIDENT_DAY,
       deadBandPct: BALANCED_DEAD_BAND,
     })).toBe(false);

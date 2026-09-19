@@ -58,7 +58,7 @@ import { classifyStockRegime, classifyMarketPosture, getPresetAdjustedStrategies
 import { evaluateRisk, calculate5minSMA20, pickSwapReplacementCandidate, updateStagnationCounter, findPortfolioSlot, clearsHurdleFloor, getRecentSwapCount, EMERGENCY_BYPASS_REASONS, USER_DIRECTIVE_BYPASS_REASONS, buildSwapReceiptSource } from '../_utils/agentRiskManager.js';
 import { buildFreshAtrPercentileMap, resolveHurdleAtr } from '../_utils/hurdleAtr.js';
 import { getPresetConfig } from '../_utils/agentPresetConfig.js';
-import { isVwapSessionUsable, isVwapStrike, pruneCounterMaps, seedVwapFireGuard, isReplacementQualified, VWAP_CASCADE_GUARD_N, CASCADE_QUALIFY_TIMEOUT_MS } from '../_utils/agentVwapFloor.js';
+import { isVwapSessionUsable, isVwapStrike, pruneCounterMaps, seedVwapFireGuard, isReplacementQualified, newestCandleAsOfMs, VWAP_CASCADE_GUARD_N, CASCADE_QUALIFY_TIMEOUT_MS } from '../_utils/agentVwapFloor.js';
 import { getArchetypeConfig, resolveHftConfig, KNOB_CONFIG_VERSION } from '../_utils/agentArchetypeConfig.js';
 // Release 2 PR-c — control-suppression epoch telemetry (renderer contract,
 // fence-lite signed off 2026-07-10): ONE structured event per battle +
@@ -79,7 +79,7 @@ import { TEMPO_DIAL_BANDS } from '../_utils/tempoDialBands.js';
 // NO-EDIT).
 import { clampHftConfig, resolveTempoDial, desiredTempoOf } from '../_utils/tempoDialClamp.js';
 import { buildSwapProvenance } from '../_utils/swapProvenance.js';
-import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED, LEARNING_L1_CAPTURE_ENABLED, LEARNING_L1_CAPTURE_EXPANSION_ENABLED, REGIME_STAMP_ENABLED, PROFIT_TARGET_EXECUTOR_ENABLED, TICK_STAMPS_ENABLED, ANTICIPATION_THRESHOLD_LINT_MODE, getVoiceGroundingMode } from '../../src/config/featureFlags.js';
+import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED, LEARNING_L1_CAPTURE_ENABLED, LEARNING_L1_CAPTURE_EXPANSION_ENABLED, REGIME_STAMP_ENABLED, PROFIT_TARGET_EXECUTOR_ENABLED, TICK_STAMPS_ENABLED, ANTICIPATION_THRESHOLD_LINT_MODE, INTRADAY_DIAGNOSTIC_ENABLED, getVoiceGroundingMode } from '../../src/config/featureFlags.js';
 // Voice-layer grounding §5 (hazard 27): the in-process dedupe of one tick's
 // anticipation queue, applied only when the note is code-composed.
 import { dedupeAnticipationQueue } from '../_utils/voiceLayerGrounding.js';
@@ -104,6 +104,14 @@ import { shouldStampRegime, buildRegimeAtStart } from '../_utils/regimeStamp.js'
 // false at merge). captureSwapReceipt is a strict no-op when the flag is off.
 import { captureSwapReceipt, resolveEntrySnapshot, classifyEntryAtrSource, classifyEvidence } from '../_utils/learning/captureReceipt.js';
 import { finalizeCronState } from '../_utils/agentCronState.js';
+// Intraday Data — Build 1 (contract §8.1): the isolated snapshot read (once
+// per invocation), the per-battle view write beside the check, and the eight
+// pointer fields. Non-fenced; every call is wrapped, bounded to 2 s and
+// non-fatal. Dark with INTRADAY_DIAGNOSTIC_ENABLED off: nothing is read,
+// nothing is written, no key is added.
+import { readIntradaySnapshot, writeIntradayView, composeIntradayEntryFields } from '../_utils/intraday/evaluatorHook.js';
+import { buildIntradayView } from '../_utils/intraday/view.js';
+import { POLICY_VERSION as INTRADAY_POLICY_VERSION } from '../_utils/intradayConfig.js';
 // P4 — the tournament discriminator of record (code-review finding: never a
 // string literal). Zero-import schema module, BUILD_RULES §4.
 import { TOURNAMENT_GAME_MODE } from '../../src/constants/leagueTournament.js';
@@ -325,6 +333,16 @@ export default async function handler(req, res) {
 
     console.log(`${LOG_PREFIX} Found ${activeBattles.length} active agent battle(s) (${summary.expired} expired and completed)`);
 
+    // ---- 3c. Intraday Data Build 1 (§8.1) — the ONE snapshot read per
+    // invocation, isolated (bounded 2 s, non-fatal; a missing, malformed or
+    // unreadable snapshot is a status, never a throw). Dark: with the flag
+    // off nothing is read. Handed to every battle's tick below.
+    let intradayContext = null;
+    if (INTRADAY_DIAGNOSTIC_ENABLED) {
+      intradayContext = await readIntradaySnapshot(db);
+      summary.intradaySnapshot = intradayContext.status;
+    }
+
     // P2: per-invocation memo for tournament GROUP docs (4 agents per group
     // share one). Regular battles never touch it — their resolution
     // short-circuits on in-memory battle fields before any read.
@@ -358,7 +376,7 @@ export default async function handler(req, res) {
         // Pass startTime so processAgentBattle can budget-gate the Phase 3
         // anticipation dispatch in its finally block (anticipations skip
         // gracefully if <12s of cron budget remain; narrations always fire).
-        await processAgentBattle(db, battle, summary, startTime, tournamentGroupCache, masteryFlagView);
+        await processAgentBattle(db, battle, summary, startTime, tournamentGroupCache, masteryFlagView, intradayContext);
       } catch (err) {
         console.error(`${LOG_PREFIX} Error processing battle ${battle.id}:`, err.message);
         summary.errors++;
@@ -528,10 +546,13 @@ async function qualifyCascadeReplacement(symbol, { todayET, deadBandPct, memo })
       const vwapResult = calculateVWAP(sessionCandles);
       qualified = !!vwapResult && isReplacementQualified({
         sessionDate,
-        sessionCandleCount: sessionCandles.length,
+        coverageCount: sessionCandles.length,
         vwapDeviation: vwapResult.vwapDeviation,
         todayET,
         deadBandPct,
+        // §11: the fresh fetch must itself be fresh — a stalled feed disqualifies.
+        asOfMs: newestCandleAsOfMs(sessionCandles),
+        nowMs: Date.now(),
       });
     }
   } catch (err) {
@@ -561,7 +582,7 @@ function buildPoolEmptyFeedEntry({ message, symbolOut, symbolIn = null, regime =
   };
 }
 
-export async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(), tournamentGroupCache = new Map(), masteryFlagView = DARK_FLAG_VIEW) {
+export async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(), tournamentGroupCache = new Map(), masteryFlagView = DARK_FLAG_VIEW, intradayContext = null) {
   const battleRef = db.collection('agentBattles').doc(battle.id);
 
   // ---- Idempotency: atomically check and acquire evaluatingAt lock ----
@@ -982,11 +1003,14 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           const { candles: sessionCandles, sessionDate } = filterToLatestSession(candles);
           const vwapResult = calculateVWAP(sessionCandles);
           // [VWAP Floor A1] Freshness/arming gate: a stale session (EODHD
-          // returning yesterday's candles) or an ultra-thin one (<3 candles
-          // at the open) publishes NO vwap entry at all, so the floor cannot
-          // strike and TRAIL_STOP disarms — identical to the existing
-          // missing-intraday path. Bust + guardrails + Haiku still cover.
-          if (vwapResult && isVwapSessionUsable({ sessionDate, todayET, sessionCandleCount: sessionCandles.length })) {
+          // returning yesterday's candles), an ultra-thin one (<3 candles
+          // at the open) OR — Intraday Data Build 1 §11, the one flags-off
+          // change — a STALLED feed (today-dated candles whose newest bar is
+          // older than VWAP_LEGACY_MAX_AGE_MS) publishes NO vwap entry at
+          // all, so the floor cannot strike and TRAIL_STOP disarms —
+          // identical to the existing missing-intraday path. Bust +
+          // guardrails + Haiku still cover.
+          if (vwapResult && isVwapSessionUsable({ sessionDate, todayET, coverageCount: sessionCandles.length, asOfMs: newestCandleAsOfMs(sessionCandles), nowMs: Date.now() })) {
             const sma20_5m = calculate5minSMA20(candles);
             momentumData.vwap[symbol] = { ...vwapResult, sma20_5m, sessionDate };
           }
@@ -2893,6 +2917,68 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       callMs,
     };
 
+    // ---- Intraday Data Build 1 (contract §8.1) — the diagnostic view beside
+    // the check. From the invocation's ONE snapshot read, for held ∪ bench,
+    // written set-merge to agentBattles/{id}/intradayViews/{evalId} (bounded
+    // 2 s, non-fatal). The entry carries ONLY the eight pointer fields; the
+    // decision, the scores, the status feed and the authoritative battle
+    // write are untouched by every outcome (missing snapshot → 'no_snapshot';
+    // malformed → 'snapshot_invalid'; unreadable → 'read_failed'; write
+    // failure → 'write_failed' with intradayViewRef null). Dark with the flag
+    // off: no key is added and the vintages block below is today's. The
+    // pointer for the vintages (§8.4) is composed here and handed to the
+    // stamps splice; it is null unless a view was actually written.
+    let intradayVintage = null;
+    if (INTRADAY_DIAGNOSTIC_ENABLED) {
+      try {
+        const readStatus = intradayContext?.status ?? 'no_snapshot';
+        let viewStatus = readStatus === 'ok' ? null : readStatus;
+        let viewWritten = false;
+        if (readStatus === 'ok') {
+          const viewSymbols = [...new Set([...portfolioSymbols, ...benchSymbols])];
+          const view = buildIntradayView({
+            snapshot: intradayContext.snapshot,
+            symbols: viewSymbols,
+            evalId,
+            battleId: battle.id,
+            presetId: battle.strategyPreset || 'balanced',
+            presetBand: presetConfig.risk.vwapDeadBandPct ?? 0.5,
+            evaluatedAt: Date.parse(now),
+            policyVersion: INTRADAY_POLICY_VERSION,
+          });
+          const written = await writeIntradayView(db, { battleId: battle.id, view });
+          viewStatus = written.status;
+          viewWritten = written.status === 'written';
+          if (viewWritten) {
+            const anyEstimate = viewSymbols.some((s) => Number.isFinite(view.symbols[s]?.indicators?.vwap?.value));
+            intradayVintage = {
+              snapshotId: intradayContext.snapshotId,
+              generation: intradayContext.generation,
+              vwap: anyEstimate ? 'diagnostic' : (Object.keys(momentumData.vwap || {}).length ? 'tick' : 'absent'),
+            };
+          } else {
+            console.error(`${LOG_PREFIX} intraday view write failed for battle ${battle.id} (${written.error}) — tick continues`);
+          }
+        }
+        const builtMs = typeof promptBuiltAt === 'string' ? Date.parse(promptBuiltAt) : NaN;
+        Object.assign(evaluation, composeIntradayEntryFields({
+          status: viewStatus,
+          snapshotId: intradayContext?.snapshotId ?? null,
+          generation: intradayContext?.generation ?? null,
+          viewWritten,
+          evalId,
+          evaluatedAt: now,
+          policyVersion: INTRADAY_POLICY_VERSION,
+          decisionStartedAt: Number.isFinite(builtMs) && Number.isFinite(buildMs) ? new Date(builtMs - buildMs).toISOString() : null,
+          decisionCompletedAt: Number.isFinite(builtMs) && Number.isFinite(callMs) ? new Date(builtMs + callMs).toISOString() : null,
+        }));
+      } catch (intradayErr) {
+        // Fail-safe (the tick-stamps precedent): a diagnostic must never cost
+        // the tick its write. Logged loud; the entry goes out with no pointer.
+        console.error(`${LOG_PREFIX} intraday view failed for battle ${battle.id} (entry written without a view; tick continues):`, intradayErr?.message || intradayErr);
+      }
+    }
+
     // ---- Phase B — the tick stamps (D-110 → D-113) ----
     // Three more facts on this check's own record, composed AFTER the decision
     // from objects this tick already holds, under ONE server flag read at call
@@ -2949,6 +3035,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           // block's header rule exactly (review A-6).
           benchAssets: flattenBenchServer(battle.portfolio?.bench),
           rankingsComputedAtMs,
+          // Intraday Data Build 1 (§8.4): null unless a view was written this tick.
+          intraday: intradayVintage,
         }));
       }
     } catch (stampErr) {

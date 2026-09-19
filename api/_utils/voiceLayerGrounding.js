@@ -345,8 +345,30 @@ export function renderCurrentDirective(directive, heardSlot = null) {
  * @param {Array}  args.evaluations   battle.evaluations (write order, oldest first)
  * @param {object|null} args.directive the resolved current directive, or null
  */
+/**
+ * Intraday Data Build 1 (contract §9.2): the narrator's YOUR RECORD block is a
+ * prompt-feeding reader of evaluation entries, so it reads them through an
+ * EXPLICIT field allowlist — every field `renderRecordEntry`, its helpers
+ * (`recordStateLabel`, `renderHypothesis`, `renderEvidenceLines`,
+ * `provenanceLine`, `noDecisionLine`, `wokenBy`) and `heardStamps` read
+ * today, and nothing else. The §8.1 pointer fields, `candidates`, the tool
+ * reasoning and any diagnostic key never reach a later prompt.
+ */
+export const RECORD_ENTRY_FIELDS = Object.freeze([
+  'evalId', 'timestamp', 'decision', 'symbolOut', 'symbolIn', 'tier', 'rationale', 'hypothesis',
+  'triggers', 'haikuError', 'downgraded', 'validationErrors', 'guardrailOverrides', 'guardrailSourceNote',
+  'directiveThreadId', 'ignoredDirectiveIds', 'evidence', 'vintages', 'heard',
+]);
+
+export function pickRecordEntry(entry) {
+  if (!entry || typeof entry !== 'object') return entry;
+  const out = {};
+  for (const k of RECORD_ENTRY_FIELDS) if (k in entry) out[k] = entry[k];
+  return out;
+}
+
 export function buildYourRecordBlock({ evaluations, directive }) {
-  const list = Array.isArray(evaluations) ? evaluations.filter((e) => e && typeof e === 'object') : [];
+  const list = Array.isArray(evaluations) ? evaluations.filter((e) => e && typeof e === 'object').map(pickRecordEntry) : [];
   const recent = list.slice(-RECORD_WINDOW).reverse();
 
   // Phase B (seed §4) — the evidence's own ceiling. Build the block with the

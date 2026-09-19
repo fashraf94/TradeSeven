@@ -8,35 +8,91 @@ import { describe, it, expect } from 'vitest';
 import {
   MIN_SESSION_CANDLES,
   VWAP_CASCADE_GUARD_N,
+  VWAP_LEGACY_MAX_AGE_MS,
   isVwapSessionUsable,
   isVwapStrike,
   pruneCounterMaps,
   seedVwapFireGuard,
   isReplacementQualified,
+  newestCandleAsOfMs,
 } from './agentVwapFloor.js';
 
 const TODAY = '2026-06-12';
 const YESTERDAY = '2026-06-11';
+// Intraday Data Build 1 §11: every row below carries a FRESH instant (the
+// newest candle 10 minutes before the clock) — the freshness clause is
+// mandatory, so the pre-§11 rows keep asserting the date/count legs only
+// with a fresh feed. The clause itself is asserted in its own block.
+const NOW = Date.UTC(2026, 5, 12, 15, 0, 0);
+const FRESH = { asOfMs: NOW - 10 * 60_000, nowMs: NOW };
 
 describe('isVwapSessionUsable — A1 freshness/arming predicate', () => {
   it('arms on a fresh session with enough candles', () => {
-    expect(isVwapSessionUsable({ sessionDate: TODAY, todayET: TODAY, sessionCandleCount: 10 })).toBe(true);
+    expect(isVwapSessionUsable({ sessionDate: TODAY, todayET: TODAY, sessionCandleCount: 10, ...FRESH })).toBe(true);
   });
 
   it("disarms on a stale session (yesterday's candles after a data outage)", () => {
-    expect(isVwapSessionUsable({ sessionDate: YESTERDAY, todayET: TODAY, sessionCandleCount: 78 })).toBe(false);
+    expect(isVwapSessionUsable({ sessionDate: YESTERDAY, todayET: TODAY, sessionCandleCount: 78, ...FRESH })).toBe(false);
   });
 
   it('disarms on an ultra-thin session (< MIN_SESSION_CANDLES at the open)', () => {
-    expect(isVwapSessionUsable({ sessionDate: TODAY, todayET: TODAY, sessionCandleCount: MIN_SESSION_CANDLES - 1 })).toBe(false);
+    expect(isVwapSessionUsable({ sessionDate: TODAY, todayET: TODAY, sessionCandleCount: MIN_SESSION_CANDLES - 1, ...FRESH })).toBe(false);
   });
 
   it('boundary: exactly MIN_SESSION_CANDLES arms', () => {
-    expect(isVwapSessionUsable({ sessionDate: TODAY, todayET: TODAY, sessionCandleCount: MIN_SESSION_CANDLES })).toBe(true);
+    expect(isVwapSessionUsable({ sessionDate: TODAY, todayET: TODAY, sessionCandleCount: MIN_SESSION_CANDLES, ...FRESH })).toBe(true);
+    expect(isVwapSessionUsable({ sessionDate: TODAY, todayET: TODAY, coverageCount: MIN_SESSION_CANDLES, ...FRESH })).toBe(true);
   });
 
   it('fails closed on a missing sessionDate', () => {
-    expect(isVwapSessionUsable({ sessionDate: null, todayET: TODAY, sessionCandleCount: 10 })).toBe(false);
+    expect(isVwapSessionUsable({ sessionDate: null, todayET: TODAY, sessionCandleCount: 10, ...FRESH })).toBe(false);
+  });
+});
+
+describe('isVwapSessionUsable — the §11 freshness clause (Intraday Data Build 1, the one flags-off change)', () => {
+  const ok = { sessionDate: TODAY, todayET: TODAY, coverageCount: 10 };
+
+  it('VWAP_LEGACY_MAX_AGE_MS is 45 minutes', () => {
+    expect(VWAP_LEGACY_MAX_AGE_MS).toBe(45 * 60 * 1000);
+  });
+
+  it('refuses a STALLED feed: today-dated candles whose newest bar is older than 45 minutes (the 09:35-then-nothing shape)', () => {
+    // Three bars published at 09:30/09:35/09:40 ET, then the feed stalls; the
+    // 12:00 ET tick: date matches, count ≥ 3, the newest bar is 2h20m old.
+    const newest = Date.UTC(2026, 5, 12, 13, 40, 0);
+    const noon = Date.UTC(2026, 5, 12, 16, 0, 0);
+    expect(isVwapSessionUsable({ ...ok, coverageCount: 3, asOfMs: newest, nowMs: noon })).toBe(false);
+    // …and the same three bars at 09:50 ET (10 minutes old) pass.
+    expect(isVwapSessionUsable({ ...ok, coverageCount: 3, asOfMs: newest, nowMs: newest + 10 * 60_000 })).toBe(true);
+  });
+
+  it('boundary: exactly 45 minutes old arms; one millisecond more is refused', () => {
+    expect(isVwapSessionUsable({ ...ok, asOfMs: NOW - VWAP_LEGACY_MAX_AGE_MS, nowMs: NOW })).toBe(true);
+    expect(isVwapSessionUsable({ ...ok, asOfMs: NOW - VWAP_LEGACY_MAX_AGE_MS - 1, nowMs: NOW })).toBe(false);
+  });
+
+  it('the clause is MANDATORY: a missing or non-finite instant fails closed (the pre-§11 call shape no longer arms)', () => {
+    expect(isVwapSessionUsable({ ...ok })).toBe(false);
+    expect(isVwapSessionUsable({ ...ok, asOfMs: null, nowMs: NOW })).toBe(false);
+    expect(isVwapSessionUsable({ ...ok, asOfMs: NaN, nowMs: NOW })).toBe(false);
+    expect(isVwapSessionUsable({ ...ok, asOfMs: NOW, nowMs: undefined })).toBe(false);
+  });
+
+  it('a caller may tighten or loosen maxAgeMs explicitly', () => {
+    expect(isVwapSessionUsable({ ...ok, asOfMs: NOW - 20 * 60_000, nowMs: NOW, maxAgeMs: 15 * 60_000 })).toBe(false);
+    expect(isVwapSessionUsable({ ...ok, asOfMs: NOW - 60 * 60_000, nowMs: NOW, maxAgeMs: 90 * 60_000 })).toBe(true);
+  });
+
+  it('newestCandleAsOfMs reads EODHD datetimes (UTC), ISO strings and second/ms timestamps; null when nothing parses', () => {
+    expect(newestCandleAsOfMs([
+      { datetime: '2026-06-12 13:30:00' }, { datetime: '2026-06-12 13:45:00' }, { datetime: '2026-06-12 13:40:00' },
+    ])).toBe(Date.UTC(2026, 5, 12, 13, 45, 0));
+    expect(newestCandleAsOfMs([{ datetime: '2026-06-12T13:45:00.000Z' }])).toBe(Date.UTC(2026, 5, 12, 13, 45, 0));
+    expect(newestCandleAsOfMs([{ timestamp: 1781185500 }])).toBe(1781185500 * 1000);
+    expect(newestCandleAsOfMs([{ timestamp: 1781185500000 }])).toBe(1781185500000);
+    expect(newestCandleAsOfMs([{ datetime: 'garbage' }, {}])).toBeNull();
+    expect(newestCandleAsOfMs([])).toBeNull();
+    expect(newestCandleAsOfMs(null)).toBeNull();
   });
 });
 
@@ -126,7 +182,7 @@ describe('seedVwapFireGuard — B6 daily fire counter lifecycle', () => {
 });
 
 describe('isReplacementQualified — B6 cascade qualification (fail-closed)', () => {
-  const base = { sessionDate: TODAY, sessionCandleCount: 10, todayET: TODAY, deadBandPct: 0.5 };
+  const base = { sessionDate: TODAY, sessionCandleCount: 10, todayET: TODAY, deadBandPct: 0.5, ...FRESH };
 
   it('qualifies a fresh replacement above the dead-band', () => {
     expect(isReplacementQualified({ ...base, vwapDeviation: 0.2 })).toBe(true);
@@ -148,5 +204,11 @@ describe('isReplacementQualified — B6 cascade qualification (fail-closed)', ()
   it('disqualifies on a missing deviation (fail-closed)', () => {
     expect(isReplacementQualified({ ...base, vwapDeviation: undefined })).toBe(false);
     expect(isReplacementQualified({ ...base, vwapDeviation: NaN })).toBe(false);
+  });
+
+  it('§11: disqualifies on a STALLED fresh fetch, and on a missing instant', () => {
+    expect(isReplacementQualified({ ...base, vwapDeviation: 1.5, asOfMs: NOW - 46 * 60_000 })).toBe(false);
+    expect(isReplacementQualified({ ...base, vwapDeviation: 1.5, asOfMs: undefined })).toBe(false);
+    expect(isReplacementQualified({ ...base, vwapDeviation: 1.5, asOfMs: NOW - 44 * 60_000 })).toBe(true);
   });
 });

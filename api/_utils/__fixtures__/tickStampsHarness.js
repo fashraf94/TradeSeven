@@ -285,13 +285,23 @@ export function makeTechDocs() {
  * and a real calculateVWAP: the closes rise, so the deviation is positive and
  * the VWAP floor never strikes.
  */
+/**
+ * Five 5-minute session candles, the newest 5 minutes before FROZEN_NOW
+ * (15:00Z). Intraday Data Build 1 §11 made the legacy VWAP gate refuse a
+ * feed whose newest candle is older than VWAP_LEGACY_MAX_AGE_MS (45 min);
+ * these bars were 13:30–13:50Z — 70 minutes stale against the frozen clock —
+ * so they were shifted to 14:35–14:55Z with the OHLCV untouched: the VWAP,
+ * the SMA20 and every golden byte stay identical, and the pre-§11 suites keep
+ * asserting the VWAP-present path. The §11 refusal is asserted independently
+ * in agentVwapFloor.test.js.
+ */
 export function makeIntradayCandles() {
   return [
-    { datetime: '2026-09-09 13:30:00', open: 121.0, high: 121.8, low: 120.6, close: 121.5, volume: 1_000_000 },
-    { datetime: '2026-09-09 13:35:00', open: 121.5, high: 122.4, low: 121.3, close: 122.2, volume: 800_000 },
-    { datetime: '2026-09-09 13:40:00', open: 122.2, high: 122.9, low: 122.0, close: 122.7, volume: 700_000 },
-    { datetime: '2026-09-09 13:45:00', open: 122.7, high: 123.3, low: 122.5, close: 123.1, volume: 600_000 },
-    { datetime: '2026-09-09 13:50:00', open: 123.1, high: 123.6, low: 122.9, close: 123.4, volume: 500_000 },
+    { datetime: '2026-09-09 14:35:00', open: 121.0, high: 121.8, low: 120.6, close: 121.5, volume: 1_000_000 },
+    { datetime: '2026-09-09 14:40:00', open: 121.5, high: 122.4, low: 121.3, close: 122.2, volume: 800_000 },
+    { datetime: '2026-09-09 14:45:00', open: 122.2, high: 122.9, low: 122.0, close: 122.7, volume: 700_000 },
+    { datetime: '2026-09-09 14:50:00', open: 122.7, high: 123.3, low: 122.5, close: 123.1, volume: 600_000 },
+    { datetime: '2026-09-09 14:55:00', open: 123.1, high: 123.6, low: 122.9, close: 123.4, volume: 500_000 },
   ];
 }
 

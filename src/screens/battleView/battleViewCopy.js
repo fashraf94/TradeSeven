@@ -36,6 +36,9 @@
 // `filed` / `replaced` (a chat exchange), `factHeldSince` (an entry).
 
 import { etTime } from '../../components/Dashboard/desk/deskCopy';
+// Intraday Data Build 1 (contract §9.1): the ONE copy table for diagnostic
+// views — zero-import, shared with the server's receipt-only replay.
+import { renderIntradayDiagnosticBlock } from '../../data/intradayDiagnosticCopy';
 import { slotLabel } from './deriveTurnLine';
 // Phase C §1 — the door's integer comes from the ONE cap display function
 // (D-122): server, client and tests share it, so `Show it · 1 of 3` cannot
@@ -604,6 +607,11 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // The check's own instant goes with it, so a vintage from another ET day
   // carries its date rather than reading as a time later today (review A-3).
   evidenceProvenance: (vintages, checkIso = null) => provenanceLine(vintages, etTime, checkIso),
+  // Intraday Data Build 1 (§9.1): the diagnostic block for one piece from a
+  // stored view — header first, then the lines from the fixed copy table,
+  // instants through the same ET formatter as every other check line. Empty
+  // when the view carries nothing for the piece.
+  intradayDiagnostic: (view, symbol) => renderIntradayDiagnosticBlock(view?.symbols?.[symbol] ?? null, { timeText: (ms) => etTime(new Date(ms).toISOString()) }),
   regimeWord: (value) => regimeWord(value),
 
   // BOTH VERDICTS TRAVEL, BECAUSE BOTH NOW NAME THEIR OWN CHECK.

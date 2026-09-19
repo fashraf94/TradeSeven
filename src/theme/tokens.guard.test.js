@@ -95,6 +95,8 @@ const GUARDED_FILES = [
   'src/screens/battleView/deriveBaggerMoment.js',
   'src/screens/battleView/useBaggerMoment.js',
   'src/screens/battleView/PaneOverflow.jsx',
+  // Intraday Data Build 1 (§9.1): the Why? panel's one-get hook — no colour, no motion.
+  'src/screens/battleView/useIntradayView.js',
 ];
 
 /**

@@ -57,6 +57,15 @@ import {
  * ET day (hazard 27) — the per-candidate pass, keyed with formatEtDate, never
  * a UTC slice. Exported for its own rows.
  */
+/** Contract §9.2: the ONLY entry fields the anticipation note may read. */
+export const ANTICIPATION_ENTRY_FIELDS = Object.freeze(['evalId', 'timestamp']);
+export function pickAnticipationEntry(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  const out = {};
+  for (const k of ANTICIPATION_ENTRY_FIELDS) if (k in entry) out[k] = entry[k];
+  return out;
+}
+
 export function anticipationAlreadyNoted(chatExchanges, { symbol, direction, etDay }) {
   if (!Array.isArray(chatExchanges)) return false;
   const key = anticipationDedupeKey(symbol, direction, etDay);
@@ -94,9 +103,13 @@ async function composeGroundedAnticipation({ battleRef, battle, battleId, agentI
 
   // The check's slot (D-83), from the evaluation entry this candidate rode in
   // on; the dispatch instant's slot when the entry is not on the doc yet.
-  const evaluation = Array.isArray(battle.evaluations) && evalId
+  // Intraday Data Build 1 (contract §9.2): this is a prompt-feeding reader of
+  // evaluation entries, so it reads them through an EXPLICIT allowlist — the
+  // slot's timestamp and the join key, nothing else.
+  const found = Array.isArray(battle.evaluations) && evalId
     ? battle.evaluations.find((e) => e && e.evalId === evalId) || null
     : null;
+  const evaluation = pickAnticipationEntry(found);
   const slot = etSlotTime(evaluation?.timestamp ?? now.toISOString());
   const signalSummary = typeof anticipationCandidate.signalSummary === 'string' ? anticipationCandidate.signalSummary : null;
   const agentMessage = composeAnticipationNote({ symbol, direction, slot, signalSummary });

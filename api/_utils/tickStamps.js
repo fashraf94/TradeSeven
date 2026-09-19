@@ -92,6 +92,14 @@ export const EVIDENCE_FIELDS = Object.freeze([
 
 export const VINTAGE_FIELDS = Object.freeze(['quote', 'vwap', 'techAt', 'fundAsOf', 'rankingsAt']);
 
+// Intraday Data — Build 1 (contract §8.4): under INTRADAY_DIAGNOSTIC_ENABLED,
+// when a view was written this tick, the vintages block ALSO carries the
+// snapshot pointer and `vwap` names its vintage. Absent (flag off, or no view
+// written) the block is byte-identical to today — VINTAGE_FIELDS above is the
+// unchanged flag-off shape.
+export const INTRADAY_VINTAGE_FIELDS = Object.freeze(['intradaySnapshotId', 'intradayGeneration']);
+export const VWAP_VINTAGES = Object.freeze(['diagnostic', 'tick', 'absent']);
+
 export const CANDIDATE_FIELDS = Object.freeze([
   'symbol', 'direction', 'signalSummary', 'threshold', 'signalSource',
 ]);
@@ -241,7 +249,7 @@ function newestMs(values) {
  * @param {Object} [p.techScoresMap]        symbol → stockTechnicalScores doc
  * @param {number|{toMillis: Function}|null} [p.rankingsComputedAtMs]
  */
-export function composeVintages({ heldSymbols, benchAssets, rankingsMap, techScoresMap, rankingsComputedAtMs }) {
+export function composeVintages({ heldSymbols, benchAssets, rankingsMap, techScoresMap, rankingsComputedAtMs, intraday = null }) {
   const held = Array.isArray(heldSymbols) ? heldSymbols.filter((s) => typeof s === 'string' && s) : [];
   // The FUNDAMENTALS block's own symbol set: every held name, then each bench
   // asset that has a symbol, is not crypto and was not already seen.
@@ -255,12 +263,20 @@ export function composeVintages({ heldSymbols, benchAssets, rankingsMap, techSco
   const techMs = newestMs(held.map((sym) => techScoresMap?.[sym]?.updatedAt));
   const fundMs = newestMs(fundSymbols.map((sym) => rankingsMap?.[sym]?.fundamentals?.computedAt));
   const rankMs = toMs(rankingsComputedAtMs);
-  return {
+  const base = {
     quote: 'tick',
     vwap: 'tick',
     techAt: techMs == null ? null : new Date(techMs).toISOString(),
     fundAsOf: fundMs == null ? null : new Date(fundMs).toISOString().slice(0, 10),
     rankingsAt: rankMs == null ? null : new Date(rankMs).toISOString(),
+  };
+  // §8.4 — only when the cron hands over a written view's pointer.
+  if (!intraday || typeof intraday !== 'object') return base;
+  return {
+    ...base,
+    vwap: VWAP_VINTAGES.includes(intraday.vwap) ? intraday.vwap : 'tick',
+    intradaySnapshotId: typeof intraday.snapshotId === 'string' ? intraday.snapshotId : null,
+    intradayGeneration: Number.isFinite(intraday.generation) ? intraday.generation : null,
   };
 }
 
@@ -330,6 +346,9 @@ export function composeTickStamps({
   riskStatus,
   benchAssets = [],
   rankingsComputedAtMs = null,
+  // Intraday Data Build 1 (§8.4): `{ snapshotId, generation, vwap }` when a
+  // diagnostic view was written this tick; null otherwise (flag off included).
+  intraday = null,
 }) {
   if (promptBuilt !== true) return {};
   const stamps = {};
@@ -342,6 +361,7 @@ export function composeTickStamps({
     rankingsMap: momentumData?.rankingsMap,
     techScoresMap: momentumData?.techScoresMap,
     rankingsComputedAtMs,
+    intraday,
   });
   const candidates = composeCandidatesStamp(anticipationCandidates);
   if (candidates) stamps.candidates = candidates;

@@ -72,6 +72,14 @@ const DARK_BY_DESIGN = {
   // the live true value (direct + getWireFlags() object form).
   CONTINUITY_MEMORY_ENABLED:
     'Wire runway — requires WIRE_WRITES_ENABLED live first',
+  // Intraday Data Build 1 (contract §3): the two deferred stage gates. The two
+  // build-1 live flags (INTRADAY_COLLECT_ENABLED, INTRADAY_DIAGNOSTIC_ENABLED)
+  // are deliberately NOT listed: they flip after the founder's day-1 smoke as
+  // ordinary pinned flags (intradayFlags.test.js moves with them).
+  INTRADAY_AGENT_USE_ENABLED:
+    'Intraday Data stage 2 — the agent may use eligible intraday evidence; gate: the paired-eval scorecard (contract §2: correct use of eligible evidence, no use of ineligible, stale/missing/conflicting-timeframe/archetype cases, overclaim as one row, ≥ 200 prompts); its flip PR carries the fenced splice and the PROMPT_CONTRIBUTING_MODULES registration',
+  INTRADAY_RISK_ACTIVATION_ENABLED:
+    'Intraday Data stage 4 — the risk layer may act on eligible, closeQualified intraday evidence; gate: the §10.6 qualification calendar (10 characterisation sessions, frozen policy, 10 fixed test sessions, every denominator ≥ its minimum)',
   WIRE_NEWSLINE_ENABLED:
     'Wire runway step 7 (LAST) — requires WIRE_WRITES_ENABLED; flips last at founder discretion',
   EDITORIAL_REVIEW_ENABLED:
