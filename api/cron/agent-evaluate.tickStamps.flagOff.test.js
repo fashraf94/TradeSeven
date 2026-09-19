@@ -36,6 +36,7 @@ import {
   PRE_PHASE_B_ENTRY_KEYS,
   BASE_ENTRY_KEYS,
   TIMING_ENTRY_KEYS,
+  FAIL_CLOSED_ENTRY_KEYS,
   makeTickBattle,
   makePriceTable,
   makeRankingsDoc,
@@ -187,11 +188,16 @@ describe('Phase B tick stamps — flag OFF: the write is byte-identical to the p
     expect(JSON.stringify(goldenUpdate)).toBe(JSON.stringify(golden.finalUpdate));
     // …and the timing fields ARE on the live entry, flag off (anti-vacuous: the
     // comparison above would pass just as well had they silently vanished).
+    // `holdKind` joins them (T3, Sep 19 2026): additive, composed LAST, and
+    // OUTSIDE the frozen pre-Phase-B golden, so the byte comparison above is
+    // unaffected — this pin is what proves the new field rides the entry.
     expect(Object.keys(entry).filter((k) => !PRE_PHASE_B_ENTRY_KEYS.includes(k)))
-      .toEqual([...TIMING_ENTRY_KEYS]);
+      .toEqual([...TIMING_ENTRY_KEYS, ...FAIL_CLOSED_ENTRY_KEYS]);
     expect(entry.promptBuiltAt).toBe(FROZEN_NOW);
     expect(entry.buildMs).toBe(0);
     expect(entry.callMs).toBe(0);
+    // A CHOSEN hold — the model answered HOLD — carries no holdKind.
+    expect(entry.holdKind).toBeNull();
     // No new TOP-LEVEL battle key rides the final update either (V2 hazard 9).
     expect(Object.keys(finalUpdate)).toEqual(golden.finalUpdateKeys);
   });
