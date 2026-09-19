@@ -58,7 +58,7 @@ import { classifyStockRegime, classifyMarketPosture, getPresetAdjustedStrategies
 import { evaluateRisk, calculate5minSMA20, pickSwapReplacementCandidate, updateStagnationCounter, findPortfolioSlot, clearsHurdleFloor, getRecentSwapCount, EMERGENCY_BYPASS_REASONS, USER_DIRECTIVE_BYPASS_REASONS, buildSwapReceiptSource } from '../_utils/agentRiskManager.js';
 import { buildFreshAtrPercentileMap, resolveHurdleAtr } from '../_utils/hurdleAtr.js';
 import { getPresetConfig } from '../_utils/agentPresetConfig.js';
-import { isVwapSessionUsable, isVwapStrike, pruneCounterMaps, seedVwapFireGuard, isReplacementQualified, VWAP_CASCADE_GUARD_N, CASCADE_QUALIFY_TIMEOUT_MS } from '../_utils/agentVwapFloor.js';
+import { isVwapSessionUsable, isVwapStrike, pruneCounterMaps, seedVwapFireGuard, isReplacementQualified, newestCandleAsOfMs, VWAP_CASCADE_GUARD_N, CASCADE_QUALIFY_TIMEOUT_MS } from '../_utils/agentVwapFloor.js';
 import { getArchetypeConfig, resolveHftConfig, KNOB_CONFIG_VERSION } from '../_utils/agentArchetypeConfig.js';
 // Release 2 PR-c — control-suppression epoch telemetry (renderer contract,
 // fence-lite signed off 2026-07-10): ONE structured event per battle +
@@ -546,10 +546,13 @@ async function qualifyCascadeReplacement(symbol, { todayET, deadBandPct, memo })
       const vwapResult = calculateVWAP(sessionCandles);
       qualified = !!vwapResult && isReplacementQualified({
         sessionDate,
-        sessionCandleCount: sessionCandles.length,
+        coverageCount: sessionCandles.length,
         vwapDeviation: vwapResult.vwapDeviation,
         todayET,
         deadBandPct,
+        // §11: the fresh fetch must itself be fresh — a stalled feed disqualifies.
+        asOfMs: newestCandleAsOfMs(sessionCandles),
+        nowMs: Date.now(),
       });
     }
   } catch (err) {
@@ -1000,11 +1003,14 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           const { candles: sessionCandles, sessionDate } = filterToLatestSession(candles);
           const vwapResult = calculateVWAP(sessionCandles);
           // [VWAP Floor A1] Freshness/arming gate: a stale session (EODHD
-          // returning yesterday's candles) or an ultra-thin one (<3 candles
-          // at the open) publishes NO vwap entry at all, so the floor cannot
-          // strike and TRAIL_STOP disarms — identical to the existing
-          // missing-intraday path. Bust + guardrails + Haiku still cover.
-          if (vwapResult && isVwapSessionUsable({ sessionDate, todayET, sessionCandleCount: sessionCandles.length })) {
+          // returning yesterday's candles), an ultra-thin one (<3 candles
+          // at the open) OR — Intraday Data Build 1 §11, the one flags-off
+          // change — a STALLED feed (today-dated candles whose newest bar is
+          // older than VWAP_LEGACY_MAX_AGE_MS) publishes NO vwap entry at
+          // all, so the floor cannot strike and TRAIL_STOP disarms —
+          // identical to the existing missing-intraday path. Bust +
+          // guardrails + Haiku still cover.
+          if (vwapResult && isVwapSessionUsable({ sessionDate, todayET, coverageCount: sessionCandles.length, asOfMs: newestCandleAsOfMs(sessionCandles), nowMs: Date.now() })) {
             const sma20_5m = calculate5minSMA20(candles);
             momentumData.vwap[symbol] = { ...vwapResult, sma20_5m, sessionDate };
           }
