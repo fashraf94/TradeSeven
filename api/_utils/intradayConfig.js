@@ -11,8 +11,16 @@
 export const UNIVERSE_CADENCE_MIN = 5;
 /** Actionable tier (held ∪ bench across active battles) swept every invocation. */
 export const HELD_TIER_ENABLED = true;
-/** Lease on intradaySnapshots/latest (§7.4). */
-export const LEASE_MS = 90_000;
+/**
+ * Lease on intradaySnapshots/latest (§7.4).
+ *
+ * Addendum A1: 90_000 → 50_000. The lease MUST expire before the function
+ * does (`intraday-poll.js` `maxDuration: 60`), or an invocation killed at the
+ * platform limit leaves a lease the next minute's invocation cannot take —
+ * one dead sweep for every killed one. 50 s gives the killed invocation's
+ * lease 10 s to lapse before the next minute begins.
+ */
+export const LEASE_MS = 50_000;
 /** Live v2 accepts ≤ 20 tickers per request, 1 unit each (G1, §4). */
 export const MAX_TICKERS_PER_REQUEST = 20;
 
@@ -50,6 +58,24 @@ export const SEED_MIN_BUCKETS = 35;
 export const SEED_MAX_SESSIONS = 2;
 export const SEED_RETRY_INTERVAL_MS = 15 * 60_000;
 export const SEED_RETRY_WINDOW_MS = 2 * 60 * 60_000;
+
+// ---- Seed-loop bounds (addendum A1) ----
+//
+// The first sweep of EVERY trading day must seed every actionable symbol,
+// because intradayCalcState is sharded per ET date — so the seed loop is the
+// longest-running part of the longest-running invocation of the day, inside a
+// function with `maxDuration: 60`. Unbounded and sequential at
+// FETCH_TIMEOUT_MS each, seven timing-out symbols exhaust the budget; the
+// invocation is killed, no units are recorded and no attempt is stamped, and
+// the next minute replans the same symbols. These three bound it: deferred
+// seeds simply run on subsequent invocations (§6.6's retry interval governs
+// re-attempts, not first attempts).
+/** Wall-clock budget for the whole seed loop, measured from invocation start. */
+export const SEED_TIME_BUDGET_MS = 35_000;
+/** At most this many symbols attempt a seed in one invocation. */
+export const SEED_MAX_PER_INVOCATION = 10;
+/** Concurrent seed fetches (quotes use FETCH_CONCURRENCY). */
+export const SEED_CONCURRENCY = 3;
 
 // ---- Fetch (§5.3) ----
 export const FETCH_TIMEOUT_MS = 10_000;

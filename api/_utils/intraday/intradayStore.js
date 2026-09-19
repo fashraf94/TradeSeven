@@ -119,7 +119,7 @@ export async function releaseLease(db, { owner }) {
  * Read-add-write on intradayBudget/{etDate}. 1 unit per ticker requested
  * whether or not it returned (G1), 5 per /intraday/ request.
  */
-export async function recordUnits(db, { etDate, units, unitsBySource = {}, sweepId, now }) {
+export async function recordUnits(db, { etDate, units, unitsBySource = {}, sweepId, now, countSweep = true }) {
   const ref = budgetRef(db, etDate);
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
@@ -130,13 +130,48 @@ export async function recordUnits(db, { etDate, units, unitsBySource = {}, sweep
       etDate,
       unitsRequested: (cur.unitsRequested || 0) + units,
       unitsBySource: bySource,
-      sweeps: (cur.sweeps || 0) + 1,
+      // Addendum A1 charges a sweep in two calls (quotes, then seeds); only
+      // the first counts the sweep, so `sweeps` stays one per invocation.
+      sweeps: (cur.sweeps || 0) + (countSweep ? 1 : 0),
       lastSweepId: sweepId ?? null,
       updatedAt: now(),
     };
     tx.set(ref, next);
     return next;
   });
+}
+
+/**
+ * Addendum A1 — stamp a seed attempt DURABLY, before its vendor fetch.
+ *
+ * The §6.6 retry bookkeeping used to be written only by the publish
+ * transaction at the end of the sweep, so an invocation killed mid-fetch left
+ * no stamp and the next minute replanned the same symbol — re-charging 5
+ * units per symbol with no backoff. This writes the stamp first. It is the
+ * one actionable-document write outside the publish transaction; it touches
+ * only the `seed` map, never the ring, state or log, and the publish
+ * moments later overwrites the document from the in-memory copy that carries
+ * the same stamp.
+ *
+ * `existed` says whether `loadActionableDocs` returned a document for this
+ * symbol: an update on a missing document fails, and a set on a present one
+ * would wipe the ring.
+ */
+export async function persistSeedAttempt(db, { etDate, sym, seedFields, existed }) {
+  const ref = actionableRef(db, etDate, sym);
+  if (existed) {
+    await ref.update({ seed: seedFields });
+    return { mode: 'update' };
+  }
+  await ref.set({
+    ringJson: JSON.stringify({ buckets: [] }),
+    stateJson: JSON.stringify(null),
+    logJson: JSON.stringify([]),
+    generation: 0,
+    seedStatus: null,
+    seed: seedFields,
+  });
+  return { mode: 'set' };
 }
 
 // ---------------------------------------------------------------------------

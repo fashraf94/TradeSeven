@@ -1,5 +1,6 @@
 // api/_utils/intraday/pollRunner.test.js — contract §5.1, §5.3, §6.2 (deadline), §6.6 (seeding), §7.1 (log provenance).
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { makeInMemoryDb } from '../__fixtures__/inMemoryFirestore.js';
 import { calendar, sessionOf, makeVendor, barsForDate, battleWith } from '../__fixtures__/intradayPollHarness.js';
 import { runPoll, applyDeadlineForSession, planSeeds, applySeedToDoc } from './pollRunner.js';
@@ -218,5 +219,129 @@ describe('§6.6 seeding', () => {
     expect(r.seeds.JPM).toBe('fetched');
     const docs = await loadActionableDocs(h.db, '2026-09-17', ['JPM']);
     expect(docs.JPM.seedStatus).toBe('seeded');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Addendum A1 — units before anything, and a bounded seed loop.
+// Review findings R-1 (docs/audits/20260919_BUILD1_INTRADAY_REVIEW.md).
+// ---------------------------------------------------------------------------
+describe('A1 §5.3 — the charge is recorded before anything can lose it', () => {
+  /** A db whose intradayCalcState document read throws, leaving everything else real. */
+  function dbWithCalcStateReadFailure(db) {
+    return {
+      ...db,
+      collection: (name) => {
+        const c = db.collection(name);
+        if (name !== 'intradayCalcState') return c;
+        return { ...c, doc: (id) => ({ ...c.doc(id), get: async () => { throw new Error('firestore unavailable'); } }) };
+      },
+    };
+  }
+
+  it('a loadCalcState throw AFTER the fetch still leaves the budget document written', async () => {
+    const h = harness();
+    const r = await h.poll(minute(S17, 1), { db: dbWithCalcStateReadFailure(h.db) });
+    expect(r).toMatchObject({ published: false, reason: 'sweep_error', error: 'firestore unavailable' });
+    // The vendor was called and therefore charged...
+    expect(h.vendor.calls.some((u) => u.includes('/us-quote-delayed'))).toBe(true);
+    // ...so the budget must hold those units even though the sweep died.
+    const budget = (await budgetRef(h.db, '2026-09-17').get()).data();
+    expect(budget.unitsRequested).toBeGreaterThan(0);
+    expect(budget.unitsBySource.live_v2).toBeGreaterThan(0);
+    expect(budget.sweeps).toBe(1);
+    // Seeds never ran, so no seed units were charged.
+    expect(budget.unitsBySource.intraday_1m_seed ?? 0).toBe(0);
+  });
+
+  it('one invocation is one sweep even though units are recorded in two calls', async () => {
+    const h = harness();
+    await h.poll(minute(S17, 1));
+    const budget = (await budgetRef(h.db, '2026-09-17').get()).data();
+    expect(budget.sweeps).toBe(1);
+    expect(budget.unitsBySource.intraday_1m_seed).toBeGreaterThan(0);
+    expect(budget.unitsBySource.live_v2).toBeGreaterThan(0);
+    // The two writes sum to the reported total.
+    expect(budget.unitsRequested).toBe(budget.unitsBySource.live_v2 + budget.unitsBySource.live_v1_crypto + budget.unitsBySource.intraday_1m_seed);
+  });
+
+  it('a kill at 40 s leaves stamps for the symbols that were ATTEMPTED and none for the deferred', async () => {
+    const MANY = ['AAPL', 'MSFT', 'NVDA', 'AMD', 'JPM', 'KO', 'XOM', 'GE', 'F', 'T', 'BA', 'CAT', 'DIS', 'IBM'];
+    let clock = minute(S17, 1);
+    const h = harness({
+      battles: [battleWith(MANY)],
+      // Every seed request burns 12 s of wall clock: three of them cross the
+      // 35 s budget, so the rest of the capped ten are deferred.
+      onRequest: async (url) => { if (url.includes('/intraday/')) clock += 12_000; return null; },
+    });
+    const r = await runPoll({
+      db: h.db, now: () => clock, fetchImpl: h.vendor, apiKey: 'k', collectEnabled: true, calendar,
+      listActiveBattles: async () => [battleWith(MANY)], universeStocks: UNIVERSE, owner: 'owner-A', log: { error: () => {}, warn: () => {} },
+    });
+    h.vendor.now = () => clock;
+
+    expect(MANY.length).toBeGreaterThan(CONFIG.SEED_MAX_PER_INVOCATION);
+    // The count cap and the time budget together leave most of the set for later.
+    expect(r.seedsDeferred).toBe(MANY.length - Object.keys(r.seeds).length);
+    expect(r.seedsDeferredForBudget).toBeGreaterThan(0);
+
+    const attempted = new Set(Object.keys(r.seeds));
+    expect(attempted.size).toBeLessThanOrEqual(CONFIG.SEED_MAX_PER_INVOCATION);
+    expect(attempted.size).toBeGreaterThan(0);
+
+    const docs = await loadActionableDocs(h.db, '2026-09-17', MANY);
+    for (const sym of MANY) {
+      if (attempted.has(sym)) {
+        expect(docs[sym]?.seedLastAttemptAt, `${sym} was attempted → stamped`).toBeGreaterThan(0);
+        expect(docs[sym].seedAttempts).toBe(1);
+      } else {
+        // Never fetched → never stamped → planSeeds replans it next invocation,
+        // rather than the retry interval silently swallowing it.
+        expect(docs[sym]?.seedLastAttemptAt ?? null, `${sym} was deferred → unstamped`).toBeNull();
+      }
+    }
+    // Only the attempted symbols were charged.
+    const budget = (await budgetRef(h.db, '2026-09-17').get()).data();
+    expect(budget.unitsBySource.intraday_1m_seed).toBe(attempted.size * 5);
+  });
+
+  it('the stamp is durable BEFORE the fetch: a sweep that DIES before publishing still leaves it, so the symbol is not re-fetched next minute', async () => {
+    // The publish transaction is the last of the sweep's four. Killing it
+    // simulates the invocation dying after the vendor was charged: only a
+    // stamp written BEFORE the fetch survives, because the publish — the only
+    // other writer of the actionable document — never ran.
+    const h = harness();
+    let txCount = 0;
+    const dyingDb = {
+      ...h.db,
+      runTransaction: async (fn) => {
+        txCount += 1;
+        if (txCount >= 4) throw new Error('killed before publish');
+        return h.db.runTransaction(fn);
+      },
+    };
+    const r = await h.poll(minute(S17, 1), { db: dyingDb });
+    expect(r).toMatchObject({ published: false, reason: 'sweep_error' });
+
+    // The stamp is on disk even though nothing was published.
+    const docs = await loadActionableDocs(h.db, '2026-09-17', ['AAPL']);
+    expect(docs.AAPL?.seedLastAttemptAt).toBe(minute(S17, 1));
+    expect(docs.AAPL?.seedAttempts).toBe(1);
+    // Nothing else of the sweep landed: the ring is still empty.
+    expect(docs.AAPL.ring.buckets).toEqual([]);
+
+    // ...so the next minute, inside SEED_RETRY_INTERVAL_MS, does not re-charge it.
+    const calls0 = h.vendor.calls.filter((u) => u.includes('/intraday/AAPL')).length;
+    await h.poll(minute(S17, 2));
+    expect(h.vendor.calls.filter((u) => u.includes('/intraday/AAPL')).length).toBe(calls0);
+  });
+
+  it('the lease expires BEFORE the function does — a killed invocation cannot block the next minute', () => {
+    const handler = readFileSync(new URL('../../cron/intraday-poll.js', import.meta.url), 'utf8');
+    const maxDurationS = Number(handler.match(/maxDuration:\s*(\d+)/)[1]);
+    expect(maxDurationS).toBeGreaterThan(0);
+    expect(CONFIG.LEASE_MS).toBeLessThan(maxDurationS * 1000);
+    // And the seed loop must not be able to consume the whole function budget.
+    expect(CONFIG.SEED_TIME_BUDGET_MS).toBeLessThan(maxDurationS * 1000);
   });
 });

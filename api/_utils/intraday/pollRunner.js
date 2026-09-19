@@ -11,18 +11,25 @@
 //       session guard, every invocation;
 //   (2) the session guard: quote collection only when now ∈ [open, close + 30 min);
 //   (3) the sweep (§5.3): lease → lists → fetch outside any transaction →
-//       units recorded IMMEDIATELY in a read-add-write transaction → seeding
-//       → classification / accumulators / buckets (pure) → documents →
-//       one publish transaction.
+//       QUOTE units recorded IMMEDIATELY in a read-add-write transaction →
+//       bounded seeding (each attempt stamped durably before its fetch) →
+//       SEED units recorded → classification / accumulators / buckets (pure)
+//       → documents → one publish transaction.
+//
+// Addendum A1: the two unit writes bracket the seed loop rather than following
+// it, because everything between a vendor fetch and its budget write is a
+// window where a throw loses the charge; and the seed loop is bounded by
+// SEED_MAX_PER_INVOCATION / SEED_TIME_BUDGET_MS / SEED_CONCURRENCY so it
+// cannot run the invocation into `maxDuration: 60`.
 // Missing calendar entry → `calendar_missing`; never a guess.
 
 import { randomUUID } from 'node:crypto';
 import * as DEFAULT_CONFIG from '../intradayConfig.js';
 import { etPartsOf, etDateOf as defaultEtDateOf } from './etTime.js';
-import { fetchQuotes, fetchIntraday1mBars } from './intradayFetch.js';
+import { fetchQuotes, fetchIntraday1mBars, mapConcurrent } from './intradayFetch.js';
 import {
   acquireLease, releaseLease, recordUnits, publishSweep, loadCalcState, loadActionableDocs,
-  calcStateRef, actionableRef, parseActionable,
+  calcStateRef, actionableRef, parseActionable, persistSeedAttempt, SEED_FIELDS,
 } from './intradayStore.js';
 import { runSweepCalc } from './sweepCalc.js';
 import { applyDeadline, rebuildFromBuckets, newRing, newState } from './buckets.js';
@@ -103,11 +110,40 @@ export async function fetchSeedBuckets({ sym, session, calendar, apiKey, fetchIm
   return { ok: true, units, buckets: combineSeedSessions(tails, sessions, config.SEED_MAX_BUCKETS), sessionsFetched: sessions.length };
 }
 
-/** Apply a fetched seed to an actionable document (pure): late-seed rebuild, corporate-action check. */
-export function applySeedToDoc({ doc, seed, sessionOf, nowMs, config = DEFAULT_CONFIG }) {
+/**
+ * Addendum A1 — the §6.6 retry stamp, applied BEFORE the vendor fetch (pure).
+ *
+ * Previously `applySeedToDoc` stamped after the fetch and the stamp reached
+ * Firestore only in the publish transaction, so an invocation killed mid-fetch
+ * left no stamp and the next minute replanned the same symbol, re-charging 5
+ * units with no backoff. `runPoll` now calls this first, persists it with
+ * `persistSeedAttempt`, and only then fetches.
+ */
+export function stampSeedAttempt({ doc, nowMs }) {
   const base = doc || { ring: newRing(), state: newState(), log: [], seedStatus: null };
-  const attempts = (base.seedAttempts || 0) + 1;
-  const stamped = { ...base, seedAttempts: attempts, seedFirstAttemptAt: base.seedFirstAttemptAt ?? nowMs, seedLastAttemptAt: nowMs };
+  return {
+    ...base,
+    seedAttempts: (base.seedAttempts || 0) + 1,
+    seedFirstAttemptAt: base.seedFirstAttemptAt ?? nowMs,
+    seedLastAttemptAt: nowMs,
+  };
+}
+
+/** The `seed` map persisted by `persistSeedAttempt` / `serializeActionable` (§7.1 bookkeeping). */
+export function seedFieldsOf(doc) {
+  const out = {};
+  for (const k of SEED_FIELDS) if (doc?.[k] !== undefined) out[k] = doc[k];
+  return out;
+}
+
+/**
+ * Apply a fetched seed to an actionable document (pure): late-seed rebuild,
+ * corporate-action check. Does NOT stamp — `stampSeedAttempt` ran before the
+ * fetch (addendum A1); `doc` is expected to carry the stamp already.
+ */
+export function applySeedToDoc({ doc, seed, sessionOf, config = DEFAULT_CONFIG }) {
+  const stamped = doc || { ring: newRing(), state: newState(), log: [], seedStatus: null };
+  const base = stamped;
   if (!seed.ok || !seed.buckets.length) return { ...stamped, seedStatus: 'pending', seedReason: seed.reason || 'empty' };
   const todays = base.ring?.buckets || [];
   const firstToday = todays.find((b) => Number.isFinite(b.close));
@@ -184,25 +220,53 @@ export async function runPoll({
       apiKey, stocks, crypto, fetchImpl, now, timeoutMs: config.FETCH_TIMEOUT_MS, concurrency: config.FETCH_CONCURRENCY, maxPerRequest: config.MAX_TICKERS_PER_REQUEST,
     });
 
+    // 4a. Units for the quotes, recorded IMMEDIATELY (§5.3 step 4, addendum
+    //     A1). The vendor has already been charged; nothing between the fetch
+    //     and this write may lose the record. The seed units follow in 4b.
+    await recordUnits(db, { etDate, units: quotes.unitsRequested, unitsBySource: quotes.unitsBySource, sweepId, now });
+
     // State for the day, and the seed plan (§6.6) — seed fetches are I/O outside transactions too.
     const calcState = await loadCalcState(db, etDate);
     const docs = await loadActionableDocs(db, etDate, actionable.stocks);
+    const existedBefore = new Set(Object.keys(docs));
     const plan = planSeeds({ symbols: actionable.stocks, docs, nowMs, config });
+
+    // Addendum A1 — the seed loop is bounded three ways: a count cap, a
+    // wall-clock budget measured from invocation start, and concurrency.
+    // Symbols beyond the cap or past the budget are simply deferred to a
+    // later invocation (they keep no stamp, so planSeeds replans them).
+    const attempt = plan.attempt.slice(0, config.SEED_MAX_PER_INVOCATION);
+    const deferred = plan.attempt.slice(config.SEED_MAX_PER_INVOCATION);
     const seeds = {};
     let seedUnits = 0;
-    for (const sym of plan.attempt) {
+    let seedsDeferredForBudget = 0;
+    await mapConcurrent(attempt, config.SEED_CONCURRENCY, async (sym) => {
+      if (now() - nowMs >= config.SEED_TIME_BUDGET_MS) { seedsDeferredForBudget += 1; return; }
+      // Stamp BEFORE the fetch — durably and in memory — so a kill mid-fetch
+      // cannot replan this symbol next minute.
+      const stamped = stampSeedAttempt({ doc: docs[sym], nowMs });
+      docs[sym] = stamped;
+      try {
+        await persistSeedAttempt(db, { etDate, sym, seedFields: seedFieldsOf(stamped), existed: existedBefore.has(sym) });
+      } catch (err) {
+        log.warn?.(`[intraday-poll] seed stamp failed for ${sym} (${err?.message || err}) — skipping its fetch this sweep`);
+        return;
+      }
       const seed = await fetchSeedBuckets({ sym, session, calendar, apiKey, fetchImpl, config });
       seedUnits += seed.units;
       seeds[sym] = seed;
-    }
+    });
 
-    // 4. Units recorded IMMEDIATELY — before any calculation or publication.
+    // 4b. Seed units, recorded immediately after the loop and before any
+    //     calculation. `countSweep: false` — one invocation is one sweep.
+    if (seedUnits > 0) {
+      await recordUnits(db, { etDate, units: seedUnits, unitsBySource: { intraday_1m_seed: seedUnits }, sweepId, now, countSweep: false });
+    }
     const units = quotes.unitsRequested + seedUnits;
-    await recordUnits(db, { etDate, units, unitsBySource: { ...quotes.unitsBySource, intraday_1m_seed: seedUnits }, sweepId, now });
 
     // Seeds applied (pure), expiries marked.
     const sessionOf = (d) => calendar.getSessionForDate(d);
-    for (const [sym, seed] of Object.entries(seeds)) docs[sym] = applySeedToDoc({ doc: docs[sym], seed, sessionOf, nowMs, config });
+    for (const [sym, seed] of Object.entries(seeds)) docs[sym] = applySeedToDoc({ doc: docs[sym], seed, sessionOf, config });
     for (const sym of plan.expire) docs[sym] = { ...(docs[sym] || { ring: newRing(), state: newState(), log: [] }), seedStatus: 'unavailable' };
 
     // 5–6. Classification, accumulators, buckets, documents (pure).
@@ -229,7 +293,9 @@ export async function runPoll({
     return {
       published: true, sweepId, generation, unitsRecorded: units, universeSweep, requested: stocks.length + crypto.length,
       actionable: actionableSet.size, anomalies: snapshotDoc.anomalies, counters: calc.counters,
-      seeds: Object.fromEntries(Object.entries(seeds).map(([s, r]) => [s, r.ok ? 'fetched' : r.reason])), seedsExpired: plan.expire, ...summary,
+      seeds: Object.fromEntries(Object.entries(seeds).map(([s, r]) => [s, r.ok ? 'fetched' : r.reason])), seedsExpired: plan.expire,
+      // Addendum A1 — what the bounded loop left for a later invocation.
+      seedsDeferred: deferred.length + seedsDeferredForBudget, seedsDeferredForBudget, ...summary,
     };
   } catch (err) {
     log.error?.(`[intraday-poll] sweep failed (${err?.message || err}) — releasing lease`);
