@@ -285,10 +285,18 @@ export async function runPoll({
     if (!calcState.generation) await ensureDefinitionsDoc(db, INTRADAY_DEFINITIONS_V1);
 
     // 7. Publish — one transaction, lease re-checked with `now` per attempt.
-    const pub = await publishSweep(db, { owner, now, etDate, snapshotDoc, universeState: calc.universeState, actionableDocs: calc.actionableDocs, generation });
+    const pub = await publishSweep(db, { owner, now, etDate, snapshotDoc, universeState: calc.universeState, actionableDocs: calc.actionableDocs, generation, log });
     if (!pub.ok) {
+      // Addendum A4: `publish_oversize` arrives here having written nothing
+      // and opened no transaction — the lease is released like any other
+      // publish failure, and the bytes ride the result so the founder sees
+      // the scale rather than a bare sweep_error.
       await releaseLease(db, { owner });
-      return { published: false, reason: pub.reason, sweepId, generation, unitsRecorded: units, ...summary };
+      return {
+        published: false, reason: pub.reason, sweepId, generation, unitsRecorded: units,
+        ...(pub.reason === 'publish_oversize' ? { bytes: pub.bytes, symbols: pub.symbols, maxBytes: pub.maxBytes } : {}),
+        ...summary,
+      };
     }
     return {
       published: true, sweepId, generation, unitsRecorded: units, universeSweep, requested: stocks.length + crypto.length,

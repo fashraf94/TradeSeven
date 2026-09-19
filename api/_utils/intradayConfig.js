@@ -77,6 +77,19 @@ export const SEED_MAX_PER_INVOCATION = 10;
 /** Concurrent seed fetches (quotes use FETCH_CONCURRENCY). */
 export const SEED_CONCURRENCY = 3;
 
+/**
+ * Addendum A4 — the publish transaction refuses rather than attempts above
+ * this. Firestore's hard limit on one transaction is 10 MiB; 9 MiB leaves
+ * headroom for the accounting's own approximation. The review's exact model
+ * puts the crossing at 81 actionable symbols (~7 concurrent battles at
+ * held ∪ bench), and because the log grows through the session it would be
+ * crossed near the CLOSE — taking exactly the data the validator needs. An
+ * attempted over-limit transaction also stalls the sweep permanently: it
+ * writes nothing, so the next minute reloads the same document, appends one
+ * more log entry and fails identically, while units keep being charged.
+ */
+export const PUBLISH_MAX_BYTES = 9 * 1024 * 1024;
+
 // ---- Fetch (§5.3) ----
 export const FETCH_TIMEOUT_MS = 10_000;
 export const FETCH_CONCURRENCY = 4;

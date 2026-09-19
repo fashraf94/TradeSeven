@@ -8,6 +8,7 @@ import {
   acquireLease, releaseLease, recordUnits, publishSweep, serializeActionable, parseActionable,
   loadCalcState, loadActionableDocs, loadSnapshot, firestoreDocBytes,
 } from './intradayStore.js';
+import { PUBLISH_MAX_BYTES } from '../intradayConfig.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const T0 = 1_789_652_000_000;
@@ -132,5 +133,62 @@ describe('§7.1 / §7.2 shapes and strings', () => {
   it('firestoreDocBytes follows the documented accounting', () => {
     // "intradayBudget/2026-09-17" → 14+1 + 10+1 + 16 = 42; fields: etDate (6+1 + 10+1) + n (1+1 + 8) + 32
     expect(firestoreDocBytes('intradayBudget/2026-09-17', { etDate: '2026-09-17', n: 1 })).toBe(42 + 18 + 10 + 32);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Addendum A4 — the publish refuses rather than attempts above the ceiling.
+// Review finding R-6 (docs/audits/20260919_BUILD1_INTRADAY_REVIEW.md).
+// ---------------------------------------------------------------------------
+describe('A4 §7.3 — an over-limit publish is REFUSED, not attempted', () => {
+  const bigDoc = (entries) => ({
+    ring: { buckets: [] },
+    state: null,
+    log: Array.from({ length: entries }, (_, i) => ({
+      sweepAt: 1 + i, priceAsOf: 2 + i, snapshotTs: 3 + i, price: 100.1234, estimate: 100.5678,
+      experimental: true, estimateCutoff: null, volumeCutoffAsOf: null, calcVersion: 1,
+      strikeKey: 'abcdef0123456789', generation: i + 1,
+    })),
+    seedStatus: 'seeded',
+  });
+
+  it('refuses with publish_oversize, names the bytes and the symbol count, and opens NO transaction', async () => {
+    const mem = makeInMemoryDb();
+    await acquireLease(mem.db, { owner: 'me', now: () => 1000, leaseMs: 90_000 });
+    // Baselines taken AFTER the lease, whose own transaction is legitimate.
+    const before = mem.writeLog.length;
+    const readsBefore = mem.readLog.length;
+    const actionableDocs = Object.fromEntries(Array.from({ length: 40 }, (_, i) => [`S${i}`, bigDoc(2000)]));
+
+    const res = await publishSweep(mem.db, {
+      owner: 'me', now: () => 2000, etDate: '2026-09-17',
+      snapshotDoc: { sweepId: 's', sweepAt: 1, symbols: {} }, universeState: { accumulators: {} },
+      actionableDocs, generation: 7, log: { error: () => {} },
+    });
+
+    expect(res.ok).toBe(false);
+    expect(res.reason).toBe('publish_oversize');
+    expect(res.symbols).toBe(40);
+    expect(res.bytes).toBeGreaterThan(PUBLISH_MAX_BYTES);
+    expect(res.maxBytes).toBe(PUBLISH_MAX_BYTES);
+    // Nothing was written, and no transaction was even opened.
+    expect(mem.writeLog.slice(before)).toEqual([]);
+    expect(mem.readLog.slice(readsBefore).some(([op]) => op === 'tx.get')).toBe(false);
+  });
+
+  it('a publish inside the ceiling still goes through untouched', async () => {
+    const mem = makeInMemoryDb();
+    await acquireLease(mem.db, { owner: 'me', now: () => 1000, leaseMs: 90_000 });
+    const res = await publishSweep(mem.db, {
+      owner: 'me', now: () => 2000, etDate: '2026-09-17',
+      snapshotDoc: { sweepId: 's', sweepAt: 1, symbols: {} }, universeState: { accumulators: {} },
+      actionableDocs: { AAPL: bigDoc(10) }, generation: 7,
+    });
+    expect(res).toMatchObject({ ok: true, generation: 7, actionableWritten: 1 });
+  });
+
+  it('the ceiling sits under Firestore\'s hard 10 MiB limit', () => {
+    expect(PUBLISH_MAX_BYTES).toBeLessThan(10 * 1024 * 1024);
+    expect(PUBLISH_MAX_BYTES).toBe(9 * 1024 * 1024);
   });
 });

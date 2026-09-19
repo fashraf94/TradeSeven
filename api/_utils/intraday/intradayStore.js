@@ -17,6 +17,10 @@
 // budget counter is read, added, written inside one transaction; the
 // D-105 increment sentinel is never imported here.
 
+// Addendum A4 — the only import: the publish size ceiling. `intradayConfig`
+// is pure constants with zero imports of its own, so this adds no graph.
+import { PUBLISH_MAX_BYTES } from '../intradayConfig.js';
+
 export const SNAPSHOT_COLLECTION = 'intradaySnapshots';
 export const SNAPSHOT_DOC_ID = 'latest';
 export const CALC_STATE_COLLECTION = 'intradayCalcState';
@@ -184,8 +188,31 @@ export async function persistSeedAttempt(db, { etDate, sym, seedFields, existed 
  * universe state and every actionable document with ONE generation; release
  * the lease inside the same transaction.
  */
-export async function publishSweep(db, { owner, now, etDate, snapshotDoc, universeState, actionableDocs = {}, generation }) {
+export async function publishSweep(db, { owner, now, etDate, snapshotDoc, universeState, actionableDocs = {}, generation, maxBytes = PUBLISH_MAX_BYTES, log = console }) {
   const ref = snapshotRef(db);
+
+  // Addendum A4 — refuse rather than attempt.
+  //
+  // `firestoreDocBytes` existed only in the sizing test; nothing measured the
+  // real transaction, so an over-limit publish was attempted and Firestore
+  // rejected the whole sweep. That is not a one-sweep failure: the publish
+  // writes nothing, so the next minute reloads the same documents, appends
+  // one more log entry and fails identically — the sweep stalls for the rest
+  // of the session while units keep being charged, and after
+  // COLLECTION_STALL_MS every symbol reads collectionStalled. Measuring
+  // first turns a silent wedge into one named, actionable line.
+  const staged = firestoreDocBytes(`${SNAPSHOT_COLLECTION}/${SNAPSHOT_DOC_ID}`, snapshotDoc)
+    + firestoreDocBytes(`${CALC_STATE_COLLECTION}/${etDate}`, { etDate, accumulators: universeState?.accumulators || {}, generation, updatedAt: 0 })
+    + Object.entries(actionableDocs).reduce(
+      (a, [sym, doc]) => a + firestoreDocBytes(`${CALC_STATE_COLLECTION}/${etDate}/${ACTIONABLE_SUBCOLLECTION}/${sym}`, serializeActionable(doc, generation)),
+      0,
+    );
+  if (staged > maxBytes) {
+    const symbols = Object.keys(actionableDocs).length;
+    log.error?.(`[intraday-publish] publish_oversize: ${staged} B staged for ${symbols} actionable symbols exceeds ${maxBytes} B — refusing the transaction (contract §7.3; the generation-pointer design is the fix at this scale)`);
+    return { ok: false, reason: 'publish_oversize', bytes: staged, symbols, maxBytes };
+  }
+
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     const nowMs = now();

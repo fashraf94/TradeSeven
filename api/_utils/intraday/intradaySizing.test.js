@@ -82,5 +82,26 @@ describe('§7.3 sizing (Firestore byte accounting)', () => {
     expect(oneActionable).toBeLessThan(MiB);
     expect(publish30).toBeLessThan(8 * MiB); // the contract's STOP line
     expect(publish255).toBeGreaterThan(0);
+
+    // Addendum A4 — the crossing is a STANDING assertion, not a number in a
+    // report that drifts (the build report's §3 table had already drifted in
+    // four of five rows by the time the review re-measured it).
+    //
+    // The relationship has a fixed component (the snapshot shell plus the 255
+    // non-actionable symbol facts), so fit the line properly rather than
+    // dividing: a naive publish255/255 is ~1.6 symbols optimistic.
+    const perSymbol = (publish255 - publish30) / (255 - 30);
+    const fixed = publish30 - 30 * perSymbol;
+    const crossingAt10MiB = (10 * MiB - fixed) / perSymbol;
+    // eslint-disable-next-line no-console
+    console.log('[intraday sizing §7.3] crossing', JSON.stringify({ perSymbol: Math.round(perSymbol), fixed: Math.round(fixed), crossingAt10MiB: Number(crossingAt10MiB.toFixed(1)) }));
+    // The fit must agree with the directly measured single document.
+    expect(Math.abs(perSymbol - oneActionable) / oneActionable).toBeLessThan(0.05);
+    // The founder must have decided the generation-pointer question by here.
+    // If this row ever drops below 80, the actionable set has outgrown the
+    // one-transaction publish and §7.3's reserved design is due.
+    expect(crossingAt10MiB).toBeGreaterThanOrEqual(80);
+    // And the refusal ceiling must sit below the crossing, or it never fires.
+    expect(CONFIG.PUBLISH_MAX_BYTES).toBeLessThan(10 * MiB);
   }, 60_000);
 });
