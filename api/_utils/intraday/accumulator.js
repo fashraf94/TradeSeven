@@ -33,6 +33,13 @@ export const OUTCOME = Object.freeze({
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 
+/**
+ * Addendum A3 — how many held observation ids the accumulator retains.
+ * §5.5 needs exactly two ("two DISTINCT held observations ... set degraded");
+ * the rest were pure growth in a persisted document.
+ */
+export const HELD_ID_CAP = 2;
+
 export function newAccumulator(sessionEtDate = null) {
   return {
     num: 0,
@@ -44,6 +51,8 @@ export function newAccumulator(sessionEtDate = null) {
     sessionEtDate,
     degraded: false,
     heldObservationIds: [],
+    // Addendum A3 — holds this session, uncapped; the id array is capped.
+    heldCount: 0,
     holding: false,
   };
 }
@@ -160,10 +169,25 @@ export function applyObservation(acc, obs, { obsEtDate, obsSession, pollSession,
   // Regressed: priceAsOf moved backwards, or cumulative volume shrank → hold.
   if (earlierAsOf || volDown) {
     const distinct = !cur.heldObservationIds.includes(oid);
-    const heldObservationIds = distinct ? [...cur.heldObservationIds, oid] : cur.heldObservationIds;
+    // Addendum A3 — the array is capped at HELD_ID_CAP.
+    //
+    // It is read in exactly two places: `.includes()` just above, and
+    // `.length >= 2` just below. Two entries are all either needs, and
+    // `degraded` is sticky once set, so capping is behaviour-preserving. It
+    // was previously unbounded: one 16-char id per distinct held observation
+    // for a whole session, persisted in intradayCalcState/{etDate}. At 255
+    // symbols regressing every sweep the review measured that document at
+    // 1,868,275 B — 178 % of Firestore's 1 MiB limit, which would fail the
+    // publish transaction for every symbol, not just the flapping ones. The
+    // §7.3 sizing run never produced a held observation, so it never saw it.
+    const heldObservationIds = distinct && cur.heldObservationIds.length < HELD_ID_CAP
+      ? [...cur.heldObservationIds, oid]
+      : cur.heldObservationIds;
     const degraded = cur.degraded || heldObservationIds.length >= 2;
     return result(OUTCOME.HELD, {
-      acc: { ...cur, heldObservationIds, degraded, holding: true },
+      // `heldCount` keeps the magnitude the ids no longer carry: every hold
+      // this session, uncapped, as a plain number.
+      acc: { ...cur, heldObservationIds, heldCount: (cur.heldCount || 0) + 1, degraded, holding: true },
       reason: earlierAsOf ? 'price_as_of_regressed' : 'volume_regressed',
       anomaly: 'held', rollover, volumeInvalid, hlInvalid,
     });

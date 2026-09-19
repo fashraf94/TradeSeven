@@ -1,6 +1,6 @@
 // api/_utils/intraday/accumulator.test.js — contract §5.4, §5.5, §5.6.
 import { describe, it, expect } from 'vitest';
-import { applyObservation, newAccumulator, vwapEstimate, computeVolumePace, validateObservation, OUTCOME } from './accumulator.js';
+import { applyObservation, newAccumulator, vwapEstimate, computeVolumePace, validateObservation, OUTCOME, HELD_ID_CAP } from './accumulator.js';
 import { SEP17, SEP16, obsAt } from '../__fixtures__/intradaySessions.js';
 
 const ctx = (obs, over = {}) => ({
@@ -216,5 +216,59 @@ describe('§5.4 volumePace', () => {
     expect(computeVolumePace({ volume: 1, averageVolume: 0, volumeCutoffAsOf: SEP17.openMs + 10 * 60_000, session: SEP17, volumeInvalid: false }).reason).toBe('no_reference_volume');
     expect(computeVolumePace({ volume: 1, averageVolume: null, volumeCutoffAsOf: SEP17.openMs + 10 * 60_000, session: SEP17, volumeInvalid: false }).reason).toBe('no_reference_volume');
     expect(computeVolumePace({ volume: null, averageVolume: 5, volumeCutoffAsOf: SEP17.openMs + 10 * 60_000, session: SEP17, volumeInvalid: true }).reason).toBe('volume_invalid');
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// Addendum A3 — the held-id array is capped; heldCount keeps the magnitude.
+// Review finding R-7 (docs/audits/20260919_BUILD1_INTRADAY_REVIEW.md).
+// ---------------------------------------------------------------------------
+describe('A3 §5.5 — heldObservationIds is bounded', () => {
+  const accepted = () => run(null, obsAt(SEP17, 5, { price: 100, volume: 1000 }));
+
+  it('400 DISTINCT held observations leave the array at 2, degraded true, and heldCount at 400', () => {
+    // The production shape: a vendor node flapping between two cache states
+    // re-delivers a stale trade with a fresh snapshotTs every sweep, so every
+    // hold is "distinct" and the array grew one 16-char id per sweep.
+    let { acc } = accepted();
+    const before = { num: acc.num, den: acc.den, samples: acc.samples };
+    for (let i = 0; i < 400; i++) {
+      acc = run(acc, obsAt(SEP17, 4, { price: 99, volume: 900, snapshotLagMs: 60_000 + i * 1000 })).acc;
+    }
+    expect(HELD_ID_CAP).toBe(2);
+    expect(acc.heldObservationIds).toHaveLength(HELD_ID_CAP);
+    expect(acc.degraded).toBe(true);
+    expect(acc.heldCount).toBe(400);
+    // A hold applies nothing: the estimate is untouched after all 400.
+    expect({ num: acc.num, den: acc.den, samples: acc.samples }).toEqual(before);
+  });
+
+  it('the cap is behaviour-preserving: degraded still needs TWO distinct holds, and one repeated hold never sets it', () => {
+    const { acc } = accepted();
+    const h1 = run(acc, obsAt(SEP17, 4, { price: 99, volume: 900 }));
+    expect(h1.acc.degraded).toBe(false);
+    expect(h1.acc.heldObservationIds).toHaveLength(1);
+    expect(h1.acc.heldCount).toBe(1);
+    // The SAME observation again is not distinct — still not degraded, but
+    // it IS another hold, and heldCount is what now says so.
+    const again = run(h1.acc, obsAt(SEP17, 4, { price: 99, volume: 900 }));
+    expect(again.acc.degraded).toBe(false);
+    expect(again.acc.heldObservationIds).toHaveLength(1);
+    expect(again.acc.heldCount).toBe(2);
+    // A second DISTINCT hold degrades, exactly as before the cap.
+    const h2 = run(again.acc, obsAt(SEP17, 4, { price: 99, volume: 900, snapshotLagMs: 30 * 60_000 }));
+    expect(h2.acc.degraded).toBe(true);
+    expect(h2.acc.heldObservationIds).toHaveLength(2);
+  });
+
+  it('rollover clears the holds with everything else (§5.6)', () => {
+    const { acc } = accepted();
+    const held = run(acc, obsAt(SEP17, 4, { price: 99, volume: 900 }));
+    expect(held.acc.heldCount).toBe(1);
+    const nextDay = run(held.acc, obsAt(SEP16, 5, { price: 98, volume: 10 }), { obsEtDate: '2026-09-16', obsSession: SEP16, pollSession: SEP16 });
+    expect(nextDay.acc.heldObservationIds).toEqual([]);
+    expect(nextDay.acc.heldCount).toBe(0);
+    expect(nextDay.acc.degraded).toBe(false);
   });
 });
