@@ -1,3 +1,12 @@
+#!golden source-commit: 6cd3699a220aacd5c8669ac2aade6d91216da5b1
+#!golden provenance: regenerated on a clean checkout of that commit (PRE-fix
+#!golden   agent-evaluate.js, before the T1 rebuild existed) and compared
+#!golden   byte-for-byte against this file. Recorded in the Part C report §11.
+#!golden sha256: e595c08a948e863d802418a34ca47c5cf71a66162413e487c5e90ba2e93a6ab7
+#!golden regenerate: UPDATE_GOLDEN=1 npx vitest run api/cron/agent-evaluate.tickCoherence.test.js
+#!golden   — and ONLY on a checkout of the source-commit above. The suite
+#!golden   verifies this hash on every run, so an overwrite on the wrong tree
+#!golden   cannot pass silently: the hash line must be updated deliberately.
 ━━━ LIVE BATTLE STATE ━━━
 Day 1 of 1 | 5h 0m remaining | Phase: EARLY
 Current Score: 0.0 (Active: 0.0 + BankedTrades: 0.0 + BankedBadges: 0.0)

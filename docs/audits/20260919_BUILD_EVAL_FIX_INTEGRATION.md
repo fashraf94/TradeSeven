@@ -125,7 +125,7 @@ with the comment above it rewritten (`:2304-2324`) to say why.
 
 ### Why it is behaviour-preserving at HEAD — checked, not assumed
 
-T4 wrote `&& !haikuFailure` defensively against a `main` whose parse check was only *"input exists and `decision` is a string"* — on that tree a response could be accepted and still be junk. **T3, landing in this same composition, closed that at the source.** At `api/cron/agent-evaluate.js:2236-2238`, `haikuResult` is assigned on exactly one branch — `validation.valid` — and that assignment is the **last statement in the `try`**, so nothing between it and the catch can throw. Therefore, at the predicate's line, a truthy `haikuResult` already means *"passed the full schema and was accepted"*, and none of the four failure classes that can exist at that point can coexist with it. The dropped clause was redundant.
+T4 wrote `&& !haikuFailure` defensively against a `main` whose parse check was only *"input exists and `decision` is a string"* — on that tree a response could be accepted and still be junk. **T3, landing in this same composition, closed that at the source.** At `api/cron/agent-evaluate.js:2236-2238`, `haikuResult` is assigned on exactly one branch — `validation.valid` — and that assignment is the **last statement in the `try`**, so nothing between it and the catch can throw. Therefore, at the predicate's line, a truthy `haikuResult` already means *"passed the validator and was accepted"*, and none of the four failure classes that can exist at that point can coexist with it. The dropped clause was redundant.
 
 Confirmed by measurement, not only by reading: **mutation M2 below restores the old predicate and the whole suite stays green.**
 

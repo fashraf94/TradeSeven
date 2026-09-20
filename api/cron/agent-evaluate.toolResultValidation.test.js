@@ -1,6 +1,7 @@
 // api/cron/agent-evaluate.toolResultValidation.test.js
 //
-// T3 — the model's tool result is validated against the FULL schema before
+// T3 — the model's tool result goes through schema-driven validation of its
+// top-level fields, with the disclosed relaxations, before
 // anything reads it (adjudication V1.1 P-3).
 //
 // THE DEFECT. The parse site accepted any tool_use block whose `decision` was

@@ -2,6 +2,14 @@
 //
 // Schema validation for the mid-battle evaluation tool result.
 //
+// WHAT THIS IS, PRECISELY (corrected Sep 20 2026, Astra review): this is
+// schema-driven validation of top-level fields, with the disclosed relaxations.
+// It is NOT "full schema" validation, and earlier wording that said so was
+// literally wrong — the relaxations below are real and deliberate: the
+// integer relaxation, nested rows left unvalidated, and null accepted on an
+// optional property. Pinned by the N1 block in
+// api/cron/agent-evaluate.astraFindings.test.js.
+//
 // WHY THIS EXISTS. `tool_choice` is forced, so the parse site in
 // agent-evaluate.js used to accept any tool_use block carrying a STRING
 // `decision` and hand it straight to the decision pipeline. That let three

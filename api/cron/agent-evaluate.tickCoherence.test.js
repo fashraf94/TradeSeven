@@ -26,6 +26,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -43,6 +44,10 @@ const mocks = vi.hoisted(() => ({
 const { executeSwapServerMock } = vi.hoisted(() => ({ executeSwapServerMock: vi.fn() }));
 // What the assembler was handed, and what it rendered.
 const { captured } = vi.hoisted(() => ({ captured: { calls: [] } }));
+// F5b — the lock set is not handed to the assembler, so the only place a test
+// can observe it is the guardrail boundary it IS handed to. Captured by
+// reference, never replaced: the real evaluator still runs.
+const { guardrailCapture } = vi.hoisted(() => ({ guardrailCapture: { lockedPositions: null, calls: 0 } }));
 
 vi.mock('@anthropic-ai/sdk', () => ({ default: class AnthropicMock { constructor() { this.messages = { create: (...args) => mocks.create(...args) }; } } }));
 vi.mock('../_utils/marketDataCache.js', () => ({
@@ -66,6 +71,19 @@ vi.mock('../_utils/agentSwapExecution.js', async (importOriginal) => ({
   ...(await importOriginal()),
   executeSwapServer: executeSwapServerMock,
 }));
+// The fenced guardrails module, WRAPPED not replaced — the real evaluator runs
+// and the lock set it was handed is recorded. Doubled in tests only.
+vi.mock('../_utils/agentGuardrails.js', async (importOriginal) => {
+  const real = await importOriginal();
+  return {
+    ...real,
+    applyGuardrails: (args) => {
+      guardrailCapture.calls += 1;
+      guardrailCapture.lockedPositions = new Set(args?.lockedPositions || []);
+      return real.applyGuardrails(args);
+    },
+  };
+});
 vi.mock('../_utils/tournamentAgentLedger.js', () => ({ resolveTournamentContext: vi.fn(async () => null), excludeHeldByOthers: vi.fn(), excludeHeldSymbols: vi.fn(), reserveSymbol: vi.fn(), confirmSwap: vi.fn(), releaseReservation: vi.fn() }));
 vi.mock('../_utils/firebaseAdmin.js', () => ({ getFirebaseAdmin: () => ({}) }));
 vi.mock('../_utils/voiceLayerAnticipation.js', async (importOriginal) => ({ ...(await importOriginal()), generateAnticipation: vi.fn(async () => null) }));
@@ -80,6 +98,16 @@ vi.mock('../_utils/learning/captureReceipt.js', () => ({
 
 const { processAgentBattle } = await import('./agent-evaluate.js');
 const HERE = dirname(fileURLToPath(import.meta.url));
+// The commit the golden was captured on — the tree BEFORE T1's rebuild existed.
+const GOLDEN_SOURCE_COMMIT = '6cd3699a220aacd5c8669ac2aade6d91216da5b1';
+const HEADER_LINE = /^#!golden(?: |$)/;
+/** The provenance header: the `#!golden` lines at the top of the fixture. */
+const goldenHeader = () => readFileSync(GOLDEN_PATH, 'utf8')
+  .split('\n').filter((l) => HEADER_LINE.test(l)).map((l) => `${l}\n`).join('');
+/** The fixture with its provenance header stripped — the prompt block itself. */
+const goldenBlock = () => readFileSync(GOLDEN_PATH, 'utf8')
+  .split('\n').filter((l) => !HEADER_LINE.test(l)).join('\n');
+const goldenRecordedSha = () => (goldenHeader().match(/#!golden sha256: ([0-9a-f]{64})/) || [])[1];
 const GOLDEN_PATH = resolve(HERE, '../_utils/__fixtures__/tickCoherenceLiveContextGolden.noSwap.txt');
 const SCORE_DUMP_PATH = process.env.SCORE_DUMP_PATH || null;
 
@@ -156,6 +184,7 @@ const benchSymbols = (block) => rowSymbols(block, BENCH_BLOCK, 0);
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(FROZEN_NOW));
   captured.calls = [];
+  guardrailCapture.lockedPositions = null; guardrailCapture.calls = 0;
   mocks.getStockAnalysisData.mockReset(); mocks.fetchIntradayBatch.mockReset(); mocks.create.mockReset();
   executeSwapServerMock.mockReset();
   vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -213,13 +242,50 @@ describe('T1 — a tick with a risk exit first', () => {
     expect(rows.filter((s) => bench.includes(s))).toEqual([]);
   });
 
-  it('the per-symbol risk and lock maps are pruned to what is still held', async () => {
-    const { prompt } = await runTick({ prices: bustingPrices({ only: 'KO' }) });
+  it('BOTH per-symbol maps are pruned to what is still held — riskStatus AND the lock set', async () => {
+    // Astra review F5b (Sep 20 2026): this row used to inspect `riskStatus`
+    // only, so deleting the lock-pruning loop left it green. The lock set is
+    // never handed to the assembler, so it is captured at the one boundary it
+    // IS handed to — applyGuardrails — which means the battle must carry a
+    // deployed guardrail for the evaluator to be reached at all.
+    const battle = makeTickBattle();
+    const guardedBattle = {
+      ...battle,
+      agentContext: { ...battle.agentContext, deployedGuardrails: [{ type: 'stopLoss', value: 25, unit: '%', enforcement: 'hard' }] },
+    };
+    const { prompt } = await runTick({ battle: guardedBattle, prices: bustingPrices({ only: 'KO' }) });
+
+    const held = prompt.assetScores.map((s) => s.symbol);
+    expect(held).not.toContain('KO');
+
     const riskStatus = prompt.momentumData?.riskStatus || {};
     expect(Object.keys(riskStatus)).not.toContain('KO');
-    for (const symbol of Object.keys(riskStatus)) {
-      expect(prompt.assetScores.map((s) => s.symbol)).toContain(symbol);
-    }
+    for (const symbol of Object.keys(riskStatus)) expect(held).toContain(symbol);
+
+    // The lock set, observed rather than assumed.
+    expect(guardrailCapture.calls, 'the evaluator must have been reached').toBeGreaterThan(0);
+    const locked = guardrailCapture.lockedPositions;
+    expect(locked, 'the lock set must have been captured').toBeTruthy();
+    expect(locked.has('KO')).toBe(false);
+    for (const symbol of locked) expect(held).toContain(symbol);
+  });
+
+  it('documented limit: the lock-pruning BRANCH cannot be reached end-to-end', () => {
+    // Stated as executable documentation rather than left as a silent gap.
+    // `lockedPositions` is populated only when evaluateRisk returns 'LOCK'
+    // (agent-evaluate.js:1452-1454), and a position is exited only when it
+    // returns EMERGENCY_SWAP / SWAP_OUT / TRAIL_STOP (:1449-1451). The two are
+    // branches of ONE action value, so no symbol can be locked and exited on
+    // the same tick — which means the prune-the-lock-set loop in the rebuild
+    // has no reachable input today. The row above therefore asserts a SUBSET
+    // INVARIANT (nothing unheld is ever in the set), not a mutation-provable
+    // guard: removing the loop does not redden it, because the set is already
+    // empty on every reachable path. Filed for separate tasking in the Part C
+    // report; recorded here so the next reader does not mistake the invariant
+    // for proof that the branch works.
+    const source = readFileSync(resolve(HERE, './agent-evaluate.js'), 'utf8');
+    expect(source).toMatch(/if \(riskResult\.action === 'LOCK'\) \{\s*\n\s*lockedPositions\.add\(score\.symbol\);/);
+    expect(source).toMatch(/\['EMERGENCY_SWAP', 'SWAP_OUT', 'TRAIL_STOP'\]\.includes\(riskResult\.action\)/);
   });
 
   it('TWO queued risk swaps — the snapshot reflects BOTH', async () => {
@@ -290,17 +356,26 @@ describe('T1 — a tick with NO forced swap', () => {
     expect(summary.swapped).toBe(0);
     expect(executeSwapServerMock).not.toHaveBeenCalled();
 
-    if (process.env.GENERATE_TICK_COHERENCE_GOLDEN === '1') {
-      writeFileSync(GOLDEN_PATH, prompt.block, 'utf8');
+    // Astra review, golden provenance (Sep 20 2026). The row NEVER writes the
+    // golden as a side effect of running; regeneration is an explicit, opt-in
+    // act under UPDATE_GOLDEN=1, and the fixture carries a header naming the
+    // commit it was captured on plus the sha256 of its own block. The hash is
+    // re-verified below on EVERY run, so a regeneration on the wrong tree
+    // cannot pass silently — it would have to rewrite the recorded hash too.
+    if (process.env.UPDATE_GOLDEN === '1') {
+      writeFileSync(GOLDEN_PATH, goldenHeader() + prompt.block, 'utf8');
     }
     expect(existsSync(GOLDEN_PATH), 'golden must be captured from the PRE-fix tree').toBe(true);
-    // Captured by running this row against origin/main's agent-evaluate.js —
+    expect(goldenHeader()).toContain(GOLDEN_SOURCE_COMMIT);
+    expect(createHash('sha256').update(goldenBlock(), 'utf8').digest('hex'))
+      .toBe(goldenRecordedSha());
+    // Captured by running this row against the pre-fix tree at that commit —
     // so a match is a real byte-identity guarantee, not a self-comparison.
-    expect(prompt.block).toBe(readFileSync(GOLDEN_PATH, 'utf8'));
+    expect(prompt.block).toBe(goldenBlock());
   });
 
   it('anti-vacuous: the golden is a real live-context block holding all seven names', () => {
-    const golden = readFileSync(GOLDEN_PATH, 'utf8');
+    const golden = goldenBlock();
     expect(golden).toContain('LIVE BATTLE STATE');
     expect(golden).toContain('ACTIVE POSITIONS');
     for (const symbol of ['NVDA', 'TSLA', 'MSFT', 'AMZN', 'KO', 'PG', 'BTC']) {

@@ -13,7 +13,7 @@
 |---|---|
 | **The bug** | The evaluator accepted any tool result whose `decision` was *a string* — so a decision outside the enum, a SWAP naming no tickers, and a missing or non-numeric `conviction` all reached the trading pipeline. |
 | **Why it mattered** | A missing/non-numeric `conviction` also **slipped the platform's `conviction < 70` floor**, because `undefined < 70` and `'high' < 70` are both `false`. The one check meant to stop a low-confidence trade could not see the field at all. |
-| **The fix** | The result is validated against the **full schema before anything reads it**. Invalid → fail-closed HOLD, category `invalid_tool_result`, the failing field named on the record. Nothing repaired, defaulted, or retried. |
+| **The fix** | The result goes through **schema-driven validation of top-level fields, with the disclosed relaxations, before anything reads it** *(wording corrected Sep 20 2026, Astra review — it was "full schema", which is literally wrong; the three relaxations are listed in §6.3)*. Invalid → fail-closed HOLD, category `invalid_tool_result`, the failing field named on the record. Nothing repaired, defaulted, or retried. |
 | **Blast radius** | 2 new files, 3 modified. The normal path is **byte-identical** to the pre-fix golden (asserted, not asserted-by-absence). |
 | **Failing-file set** | **Unchanged from the gate: empty.** 22 → 23 files, 298 → 307 passing, 2 skipped. |
 | **Verdict** | **DONE.** Pushed, not merged. One founder-visible decision is flagged below (§6). |

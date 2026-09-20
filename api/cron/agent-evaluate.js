@@ -2296,8 +2296,9 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         // — the category's original meaning, unchanged. Tokens above stay
         // recorded either way: a response did arrive.
         //
-        // A block that IS present is validated against the FULL schema before
-        // anything downstream reads it (agentEvalToolResultValidation.js).
+        // A block that IS present goes through schema-driven validation of top-level fields, with the disclosed relaxations
+        // before anything downstream reads it (agentEvalToolResultValidation.js).
+        // Not "full schema": see that module's header for the three.
         // The old test — "input exists and `decision` is a string" — accepted
         // a decision outside the enum, a SWAP with no symbolOut/symbolIn, and
         // a missing or non-numeric conviction; the last slipped past the
@@ -2382,7 +2383,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // the same composition closed that gap at the source: `haikuResult` is now
     // assigned on exactly one branch — `validation.valid` — and that
     // assignment is the last statement in the try, so a truthy `haikuResult`
-    // already means "passed the FULL schema and was accepted", and no failure
+    // already means "passed the validator and was accepted", and no failure
     // class that exists at this point can coexist with it. The extra clause
     // was therefore redundant here.
     //
