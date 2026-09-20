@@ -188,7 +188,7 @@ describe('Phase B tick stamps — flag OFF: the write is byte-identical to the p
     expect(JSON.stringify(goldenUpdate)).toBe(JSON.stringify(golden.finalUpdate));
     // …and the timing fields ARE on the live entry, flag off (anti-vacuous: the
     // comparison above would pass just as well had they silently vanished).
-    // `holdKind` joins them (T3, Sep 19 2026): additive, composed LAST, and
+    // `holdKind` joins them (Sep 19 2026): additive, composed LAST, and
     // OUTSIDE the frozen pre-Phase-B golden, so the byte comparison above is
     // unaffected — this pin is what proves the new field rides the entry.
     expect(Object.keys(entry).filter((k) => !PRE_PHASE_B_ENTRY_KEYS.includes(k)))
