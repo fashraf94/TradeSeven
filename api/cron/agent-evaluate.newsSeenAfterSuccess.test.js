@@ -160,6 +160,39 @@ describe('T4 — the story is marked seen only after a successful call', () => {
     expect(second.seenIds).toBeUndefined();
   });
 
+  // The failure class the row above cannot reach. T4 was cut from `main`,
+  // where a response was accepted on "input exists and `decision` is a
+  // string" — `invalid_tool_result` did not exist yet, so the transport
+  // timeout above was the only failure shape available to it. The tool-result
+  // validation fix in this same composition added a failure that arrives as a
+  // perfectly healthy HTTP 200, which is precisely the case the "success is
+  // narrower than 200" contract exists for. Asserted rather than assumed.
+  it('a SCHEMA-INVALID tool result leaves the story unseen and opens an attempt', async () => {
+    const { entry, seenIds, attempts, reasons } = await runTick(
+      battleWithHistory(),
+      // A decision outside the tool schema's enum. The transport succeeded —
+      // a tool_use block arrived — and validation rejected it.
+      async () => makeToolUseResponse(makeHoldResult({ decision: 'SELL' })),
+    );
+
+    // The story woke the engine and the model was called exactly once: the
+    // handler never retries a malformed result.
+    expect(entry.triggers).toContain('news_catalyst');
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+
+    // It failed on the SCHEMA, not on transport — `invalidField` is what
+    // separates this row from the timeout row above and keeps it honest.
+    expect(entry.decision).toBe('HOLD');
+    expect(entry.haikuError.failureClass).toBe('invalid_tool_result');
+    expect(entry.haikuError.invalidField).toBe('decision');
+    expect(entry.holdKind).toBe('default_failure');
+
+    // The story is NOT burned, and one attempt is opened against it.
+    expect(seenIds).toBeUndefined();
+    expect(attempts).toEqual({ [STORY_ID]: 1 });
+    expect(reasons).toBeUndefined();
+  });
+
   it('a SUCCESSFUL call marks the story seen', async () => {
     const { entry, seenIds, attempts, reasons } = await runTick(battleWithHistory(), succeed);
 

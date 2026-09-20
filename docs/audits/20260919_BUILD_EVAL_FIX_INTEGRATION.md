@@ -228,7 +228,7 @@ All eleven fence-list paths were checked mechanically against `git diff main --n
 
 ## 8. Founder-visible items
 
-**8.1 The prompt describes the row to keep as an `invalid_tool_result` row; in the file it is a transport timeout.** The prompt says: *"Keep the existing row showing an `invalid_tool_result` leaves the story unseen and counts an attempt."* The existing row in `agent-evaluate.newsSeenAfterSuccess.test.js:145` drives its failure with an `APIConnectionTimeoutError`, not a schema-invalid tool result — T4 was cut from `main`, where T3's `invalid_tool_result` class did not yet exist. **I kept that row exactly as it is and added nothing**, because the prompt sanctions one added row and "no other edits". The contract it proves is the right one and it still holds; it simply proves it for the transport class. Post-composition, an `invalid_tool_result` also leaves the story unseen and counts an attempt — `haikuResult` stays null on that branch — but **no row asserts it.** If you want that coverage it is a one-row follow-up, and it is a genuine guard rather than a lock. Flagged rather than silently added or silently ignored.
+**8.1 The prompt describes the row to keep as an `invalid_tool_result` row; in the file it is a transport timeout.** The prompt says: *"Keep the existing row showing an `invalid_tool_result` leaves the story unseen and counts an attempt."* The existing row in `agent-evaluate.newsSeenAfterSuccess.test.js:145` drives its failure with an `APIConnectionTimeoutError`, not a schema-invalid tool result — T4 was cut from `main`, where T3's `invalid_tool_result` class did not yet exist. **I kept that row exactly as it is and added nothing**, because the prompt sanctions one added row and "no other edits". The contract it proves is the right one and it still holds; it simply proves it for the transport class. Post-composition, an `invalid_tool_result` also leaves the story unseen and counts an attempt — `haikuResult` stays null on that branch — but **no row asserts it.** If you want that coverage it is a one-row follow-up, and it is a genuine guard rather than a lock. Flagged rather than silently added or silently ignored. **RESOLVED — see §10: the row was commissioned and added.**
 
 **8.2 The gate prescribed a three-path baseline; step 2 compares the whole repo against it.** Those measure different sets, so a whole-repo baseline on clean `main` was taken as well (§1). Both are empty, so the comparison is sound either way — but had the repo carried a pre-existing failure outside the three paths, the prescribed comparison would have charged it to this composition. Recorded so the next integration takes both baselines by default.
 
@@ -247,5 +247,41 @@ All eleven fence-list paths were checked mechanically against `git diff main --n
 | **Branch tip** | the commit carrying this report, which sits directly on `8b4e45d1` and changes no file but this one. Its SHA cannot be printed inside itself; read it with `git rev-parse claude/eval-small-fixes-integrate-or1aqn`. |
 | **Base** | `main` @ `6cd3699a220aacd5c8669ac2aade6d91216da5b1` |
 | **Commits ahead of `main`** | 5 — four `--no-ff` merges (`4f8be4db` T3, `985206e8` T2, `6db8226f` T4+R-A, `8b4e45d1` T1) plus this report |
+
+---
+
+## 10. Follow-up — the `invalid_tool_result` row (§8.1, commissioned)
+
+Added on the same branch, at founder request, after the composition was pushed. **One row, nothing else.**
+
+### The row — `api/cron/agent-evaluate.newsSeenAfterSuccess.test.js:163-194`
+
+*"a SCHEMA-INVALID tool result leaves the story unseen and opens an attempt."* The model returns `makeHoldResult({ decision: 'SELL' })` — a decision outside the tool schema's enum, delivered over a perfectly healthy transport — and the row asserts:
+
+* `news_catalyst` fired, and the model was called **exactly once** (the handler never retries a malformed result);
+* `decision === 'HOLD'`, `haikuError.failureClass === 'invalid_tool_result'`, `haikuError.invalidField === 'decision'`, `holdKind === 'default_failure'`;
+* **`seenStoryIds` is not written at all** — the story is not burned;
+* **`storyAttempts === { [STORY_ID]: 1 }`** — one attempt opened against it;
+* `seenStoryReasons` not written.
+
+`invalidField` is what does the real work in that list: it is the one assertion the transport-timeout row above cannot satisfy, so it proves this row failed on the **schema** rather than on the wire. Without it the row would merely restate its neighbour.
+
+### Why this one IS a guard, where the R-A row (§4) is a lock
+
+This row closes the gap §8.1 named. `invalid_tool_result` arrives as an HTTP 200 with a `tool_use` block present — the exact shape T4's *"success is narrower than 200"* contract exists for, and the only failure class T4 could not reach, because on `main` a result was accepted on "input exists and `decision` is a string" and this class did not yet exist.
+
+**Mutation check (BUILD_RULES §2):** the predicate was forced to `const haikuCallSucceeded = true;` — the defect the row names, a failed call marking its story seen. **The row goes RED**, on the assertion that matters: `expected [ 'story-nvda-catalyst-1' ] to be undefined` at `:191`. Two neighbouring rows go red with it (the transport-timeout row and the attempts-exhausted row), which is correct — they assert the same contract for other classes. Restored and re-verified green. Unlike §4's R-A row, **this row can fail under the defect it names, so it is a guard.**
+
+### Verification
+
+| Check | Command | Result |
+|---|---|---|
+| The two files named in the request | `npx vitest run api/cron/agent-evaluate.newsSeenAfterSuccess.test.js api/cron/agent-evaluate.tickStamps.flagOff.test.js` | **exit code 0** · **2 files passed, 13 tests passed** (9 + 4) |
+| `newsSeenAfterSuccess.test.js` row count | | 8 → **9** |
+| Composed diff | `git diff main --stat` | 15 files, **2369 insertions** (+33: this row and its comment) |
+
+The figures in §5 and §7 are as-of composition HEAD `8b4e45d1` and are left as recorded; this section carries the deltas. No source file changed — the only edit is the test row, so the full-suite and `vite build` results at `8b4e45d1` stand, and the fence and regional-guard findings are untouched.
+
+---
 
 **STOP.** Composition complete and pushed. **No PR was opened, nothing was merged, no flag was flipped.**
