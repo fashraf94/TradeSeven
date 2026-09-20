@@ -1,0 +1,84 @@
+#!golden source-commit: 6cd3699a220aacd5c8669ac2aade6d91216da5b1
+#!golden provenance: regenerated on a clean checkout of that commit (PRE-fix
+#!golden   agent-evaluate.js, before the T1 rebuild existed) and compared
+#!golden   byte-for-byte against this file. Recorded in the Part C report §11.
+#!golden sha256: e595c08a948e863d802418a34ca47c5cf71a66162413e487c5e90ba2e93a6ab7
+#!golden regenerate: UPDATE_GOLDEN=1 npx vitest run api/cron/agent-evaluate.tickCoherence.test.js
+#!golden   — and ONLY on a checkout of the source-commit above. The suite
+#!golden   verifies this hash on every run, so an overwrite on the wrong tree
+#!golden   cannot pass silently: the hash line must be updated deliberately.
+━━━ LIVE BATTLE STATE ━━━
+Day 1 of 1 | 5h 0m remaining | Phase: EARLY
+Current Score: 0.0 (Active: 0.0 + BankedTrades: 0.0 + BankedBadges: 0.0)
+Trades executed: 0 | Evaluations: 0
+
+MACRO BENCHMARKS TODAY:
+SPY (S&P 500): +0.76% | QQQ (Nasdaq): +0.59% | BTC: +0.97%
+
+REGIME CONTEXT:
+MARKET POSTURE: selective
+STOCK REGIMES: NVDA=directional_expansion, TSLA=distressed, MSFT=directional_contraction, AMZN=choppy, KO=choppy, PG=directional_contraction, BTC=unknown
+
+STRATEGY PRESET: Balanced
+You are in BALANCED mode. Use the full strategy mix based on regime classification. Standard risk parameters. Make trades when conviction is strong. Balance risk and reward across all tiers.
+
+ACTIVE POSITIONS:
+Tier,Symbol,Sector,Entry,$Entry,$Current,Gain%,ATR Mult,Badges,ATR%,LockNow(base/badges),NextBonus,Levels
+star,NVDA,Technology,Day1,$120.50,$123.40,+2.41%,+0.78x,[],3.1%,+48(+48/+0),+0.7%,-
+star,TSLA,Consumer Cyclical,Day1,$250.10,$244.90,-2.08%,-0.52x,[],4.0%,-42(-42/+0),+6.1%,-
+core,MSFT,Technology,Day1,$410.00,$412.30,+0.56%,+0.30x,[],1.9%,+8(+8/+0),+1.3%,-
+core,AMZN,Consumer Cyclical,Day1,$185.00,$186.20,+0.65%,+0.29x,[],2.2%,+10(+10/+0),+1.6%,-
+support,KO,Consumer Defensive,Day1,$62.20,$62.00,-0.32%,-0.29x,[],1.1%,-3(-3/+0),+1.4%,-
+support,PG,Consumer Defensive,Day1,$165.30,$166.10,+0.48%,+0.48x,[],1.0%,+5(+5/+0),+0.5%,-
+support,BTC,Crypto,Day1,$67000.00,$67450.00,+0.67%,+0.13x,[],5.0%,+7(+7/+0),+4.3%,-
+
+BENCH (available for swap):
+Symbol,Sector,$Current,Daily%,ATR%,Status
+AMD,Technology,$162.00,+1.57%,3.4%,available
+JPM,Financial Services,$201.10,+0.45%,1.6%,available
+
+BENCH TECHNICAL CONTEXT:
+
+AMD (Technology):
+  Momentum: RSI=66, MACD above signal (no fresh cross)
+  Volatility: ATR regime: extreme
+  Relative strength: rsPercentile=91 (leading)
+
+JPM (Financial Services):
+  Momentum: RSI=57, MACD above signal (no fresh cross)
+  Volatility: ATR regime: low
+  Relative strength: rsPercentile=58 (outperforming)
+
+FUNDAMENTALS (held + bench; a missing metric is NOT REPORTED — never zero):
+Basis: revenue growth is from the most recent reported quarter; beat rate and
+the surprise percentile aggregate 4-12 quarters of filings; EPS revisions
+cover the last 30 days; valuation ratios and market-cap class move with price
+(book value = most recent quarterly filing). Fundamentals data as of 09-08 (UTC); older entries are marked.
+
+HELD:
+NVDA (Technology): PE=41.2 | mcap=large | EPS rev 30d=+2.1% | as of 09-04
+TSLA (Consumer Cyclical): PE=62.5 | mcap=large | as of 09-04
+MSFT (Technology): PE=33 | mcap=large | as of 09-04
+AMZN (Consumer Cyclical): no fundamentals reported
+KO (Consumer Defensive): PE=24.1 | mcap=large | as of 09-01
+PG (Consumer Defensive): PE=26.3 | mcap=large | as of 09-04
+
+BENCH:
+AMD (Technology): PE=45 | mcap=large
+JPM (Financial Services): PE=12.4 | mcap=large | as of 09-04
+
+TRIGGER (why you were woken up):
+- forced_open: First evaluation of the battle.
+
+INTRADAY MOMENTUM SNAPSHOT:
+NVDA: VWAP: $122.24 (+0.95%) | BB Width: 15th pctl [SQUEEZE] | NR7: YES [CONTRACTION] | Range: $3.20
+TSLA: BB Width: 88th pctl [EXPANDED] | Range: $9.80
+MSFT: BB Width: 42th pctl | Range: $4.10
+AMZN: BB Width: 55th pctl | Range: $3.00
+KO: BB Width: 12th pctl [SQUEEZE] | NR7: YES [CONTRACTION] | Range: $0.60
+PG: BB Width: 30th pctl | Range: $1.40
+
+ACTIVE DIRECTIVE (from your Coach):
+"Require stronger confirmation before entering"
+threadId: thread-tf02-0001
+If your next trade is influenced by this directive, include directiveThreadId: "thread-tf02-0001" in your submit_trade_decision response.
