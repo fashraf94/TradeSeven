@@ -105,8 +105,8 @@ function guarded(battle) {
  * makeTickDb, with the battle doc's reads instrumented so a row can make the
  * post-swap `refreshBattleFromDoc` read fail the way production can.
  */
-function makeDb(battle, { failBattleGetAfter = null, emptyBattleGetAfter = null } = {}) {
-  const db = makeTickDb({ battle, rankingsDoc: makeRankingsDoc(), techDocs: makeTechDocs() });
+function makeDb(battle, { failBattleGetAfter = null, emptyBattleGetAfter = null, rankingsDoc = null } = {}) {
+  const db = makeTickDb({ battle, rankingsDoc: rankingsDoc || makeRankingsDoc(), techDocs: makeTechDocs() });
   const realCollection = db.collection.bind(db);
   let gets = 0;
   db.collection = (col) => {
@@ -692,5 +692,133 @@ describe('E2 — the guardrail fault keeps its own receipts', () => {
     expect(cronErrors).toBeNull();
     expect(shadowPayload.guardrailFault ?? null).toBeNull();
     expect(entry.guardrailFault).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PART F — Astra's third read.
+//
+// F-1. E1's rule is that a tick which cannot re-read the book does nothing
+// that depends on it. Three doors were closed in Part E, but the NEWS CATALYST
+// block was still unconditional: it fetches stories, prices the new names,
+// mutates the in-memory bench, and enqueues a player-facing "added to
+// watchlist" beat — and that beat reaches the common feed write, so a tick
+// that evaluated nothing still tells the player it changed their watchlist.
+const CATALYST = 'META';
+/** The fixture's rankings plus one symbol that is neither held nor benched. */
+function rankingsWithCatalyst() {
+  const doc = makeRankingsDoc();
+  return {
+    ...doc,
+    stocks: [...doc.stocks, {
+      symbol: CATALYST, name: 'Meta Platforms', sectorName: 'Technology',
+      baseATR: 3.1, atrPercentile: 0.4, baggerBombFit: 0.1,
+      bBandwidthPercentile: 90, nr7Flag: false, dailyRange: 5.0,
+    }],
+  };
+}
+const CATALYST_STORY = Object.freeze({
+  id: 'story-meta-catalyst-1', tickers: [CATALYST],
+  headline: 'Meta announces a new datacenter build-out', reporterName: 'Kai',
+  sentiment: 'bullish', publishedAt: '2026-09-09T14:45:00.000Z',
+});
+
+describe('F-1 — the news catalyst block is withheld on an unreadable book', () => {
+  it('refresh failure + catalyst news → no price fetch, no bench mutation, no watchlist beat', async () => {
+    mocks.fetchRecentNews.mockImplementation(async () => [CATALYST_STORY]);
+    const battle = makeTickBattle();
+    const db = makeDb(battle, { failBattleGetAfter: 1, rankingsDoc: rankingsWithCatalyst() });
+    const { entry, feed, finalUpdate, stored } = await runTick({ battle, prices: koBustPrices(), db });
+
+    // Nothing was priced for a name we only learned about from a story we
+    // should not have fetched.
+    const priced = mocks.getStockAnalysisData.mock.calls.map((c) => c[0]);
+    expect(priced).not.toContain(CATALYST);
+    // The in-memory bench was not mutated…
+    expect(battle.portfolio.bench.stocks.map((a) => a.symbol)).not.toContain(CATALYST);
+    // …and the player was not told their watchlist changed.
+    expect(feed.some((f) => f.action === 'catalyst_override')).toBe(false);
+    expect(JSON.stringify(feed)).not.toContain(CATALYST);
+
+    // No story bookkeeping of any kind on a tick that evaluated nothing.
+    expect(finalUpdate['cronState.seenStoryIds']).toBeUndefined();
+    expect(finalUpdate['cronState.storyAttempts']).toBeUndefined();
+
+    // The disclosure is unchanged, and the committed trade stands.
+    expect(entry.haikuError.failureClass).toBe('refresh_failed');
+    expect(stored.trades.some((t) => t.symbolOut === 'KO')).toBe(true);
+  });
+
+  it('CONTROL — the same catalyst news on a healthy tick behaves exactly as today', async () => {
+    mocks.fetchRecentNews.mockImplementation(async () => [CATALYST_STORY]);
+    const battle = makeTickBattle();
+    const db = makeDb(battle, { rankingsDoc: rankingsWithCatalyst() });
+    const { entry, feed } = await runTick({ battle, db });
+
+    // Anti-vacuity: the catalyst path really is reachable in this fixture.
+    const beat = feed.find((f) => f.action === 'catalyst_override');
+    expect(beat, 'the control must actually exercise the catalyst path').toBeTruthy();
+    expect(beat.message).toContain(CATALYST);
+    expect(battle.portfolio.bench.stocks.map((a) => a.symbol)).toContain(CATALYST);
+    expect(mocks.getStockAnalysisData.mock.calls.map((c) => c[0])).toContain(CATALYST);
+    expect(entry.haikuError).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-2. `forcedSwapsCommitted > 0` runs the snapshot rebuild even when a LATER
+// swap's re-read failed — so the rebuild is derived from an INTERMEDIATE book:
+// newer than the pre-loop snapshot, older than the committed truth.
+//
+// STATED HONESTLY: this is the rule holding, not a live defect. Every consumer
+// of the rebuilt snapshot is already skipped on a refresh-failure tick (the
+// enumeration is in §13 of the integration report), so today nothing reads the
+// intermediate values. The gate keeps it that way — and matters because two of
+// the would-be readers are flag-off code whose flips are filed in §13.
+//
+// The rebuild's only observable on such a tick is therefore its own log line,
+// which is what this row watches.
+function bustingBoth() {
+  const prices = makePriceTable();
+  prices.KO = { ...prices.KO, current: 61.578 };
+  prices.PG = { ...prices.PG, current: 163.647 };
+  return prices;
+}
+
+describe('F-2 — the rebuild runs only when EVERY committed swap was re-read', () => {
+  it('first re-read succeeds, second fails → no rebuild, both trades intact, refresh_failed written', async () => {
+    const logs = [];
+    console.log.mockImplementation((...a) => { logs.push(a.join(' ')); });
+
+    const battle = makeTickBattle();
+    // get #1 is the tick's own read; #2 is the first swap's re-read (succeeds);
+    // #3 is the second swap's re-read (fails).
+    const db = makeDb(battle, { failBattleGetAfter: 2 });
+    const { entry, stored } = await runTick({ battle, prices: bustingBoth(), db });
+
+    // Anti-vacuity: TWO swaps really did commit before the failure.
+    expect(executeSwapServerMock).toHaveBeenCalledTimes(2);
+    expect(stored.trades.some((t) => t.symbolOut === 'KO')).toBe(true);
+    expect(stored.trades.some((t) => t.symbolOut === 'PG')).toBe(true);
+    expect(stored.scoreState.tradeCount).toBe(2);
+
+    // The rebuild did not run against the intermediate book.
+    expect(logs.some((l) => l.includes('Rebuilt decision snapshot'))).toBe(false);
+
+    // And the tick still discloses.
+    expect(entry.haikuError.failureClass).toBe('refresh_failed');
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it('CONTROL — two exits with BOTH re-reads succeeding still rebuilds', async () => {
+    const logs = [];
+    console.log.mockImplementation((...a) => { logs.push(a.join(' ')); });
+
+    const { summary } = await runTick({ prices: bustingBoth() });
+
+    expect(summary.swapped).toBe(2);
+    const line = logs.find((l) => l.includes('Rebuilt decision snapshot'));
+    expect(line, 'the rebuild must still run on a healthy tick').toBeTruthy();
+    expect(line).toContain('after 2 forced exit(s)');
   });
 });

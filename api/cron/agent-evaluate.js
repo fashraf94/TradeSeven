@@ -1918,7 +1918,15 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // are the end-of-tick score transaction, which this task must not touch —
     // they keep the values they were computed with, so the persisted score is
     // byte-identical to today (verified on the fixture; see the T1 report).
-    if (forcedSwapsCommitted > 0) {
+    // F-2 — and only when EVERY committed swap was re-read. If a later swap's
+    // re-read failed, `forcedSwapsCommitted` still counts the earlier ones, and
+    // rebuilding from those would derive the snapshot from an INTERMEDIATE
+    // book: newer than the pre-loop picture, older than the committed truth.
+    // Today every consumer of the rebuilt values is already skipped on a
+    // refresh-failure tick, so this is the E1 rule holding rather than a live
+    // defect — but two of the would-be readers are flag-off code (§13), and
+    // this keeps the guarantee true when those flags flip.
+    if (forcedSwapsCommitted > 0 && !refreshFailure) {
       // F1 — show each incoming position at the price it was ACTUALLY entered
       // at, so the rebuilt snapshot (and the prompt built from it) reads
       // +0.00% for a position bought moments ago rather than the difference
@@ -2040,8 +2048,16 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     }
 
     // ---- Fetch news for trigger gate (portfolio + bench + hotBench tickers) ----
-    const allNewsTickers = [...new Set([...portfolioSymbols, ...benchSymbols, ...hotBenchSymbols])];
-    const news = await fetchRecentNews(db, allNewsTickers);
+    // F-1 — withheld on an unreadable book. The ticker list is derived from the
+    // very snapshot the tick failed to refresh, the stories feed the trigger
+    // gate that is already skipped, and the catalyst block below acts on the
+    // result: it prices new names, mutates the in-memory bench, and enqueues a
+    // player-facing "added to watchlist" beat that rides the common feed write.
+    // A tick that evaluated nothing must not tell the player its watchlist moved.
+    const allNewsTickers = refreshFailure
+      ? []
+      : [...new Set([...portfolioSymbols, ...benchSymbols, ...hotBenchSymbols])];
+    const news = refreshFailure ? [] : await fetchRecentNews(db, allNewsTickers);
 
     // ---- Catalyst override: add stocks from FantasyTimes stories not in eval set ----
     const evalTickerSet = new Set([...portfolioSymbols, ...benchSymbols, ...hotBenchSymbols]);
@@ -2053,7 +2069,9 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         }
       }
     }
-    if (catalystTickers.length > 0) {
+    // F-1 — gated explicitly as well as by the empty `news` above, so the
+    // withholding survives a future change that sources stories elsewhere.
+    if (!refreshFailure && catalystTickers.length > 0) {
       const limitedCatalysts = catalystTickers.slice(0, 5);
       for (const ticker of limitedCatalysts) {
         const rankingData = stockRankingsArray.find(s => s.symbol === ticker);
