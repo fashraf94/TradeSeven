@@ -498,8 +498,17 @@ function applyTournamentCandidateFilter(battle, tournamentCtx) {
 // to the candidate surfaces (the Spec §1.2 pre-filter invariant).
 async function refreshBattleFromDoc(battleRef, battle, tournamentCtx) {
   const refreshedDoc = await battleRef.get();
-  Object.assign(battle, refreshedDoc.data());
+  const refreshedData = refreshedDoc?.data?.();
+  // A read that came back empty is NOT a refresh. It used to be silent:
+  // merging an undefined payload onto `battle` is a no-op, so the tick carried
+  // on with the stale pre-swap picture exactly as if the re-read had
+  // succeeded. The caller now decides what to do about it (see the S7 loop).
+  // (Worded without the literal assign call: pin 3 in
+  // agent-evaluate.tickStamps.pins.test.js counts those occurrences.)
+  if (!refreshedData) return false;
+  Object.assign(battle, refreshedData);
   applyTournamentCandidateFilter(battle, tournamentCtx);
+  return true;
 }
 
 // P2: phase 1 of the two-phase swap protocol, shared by all five
@@ -1300,6 +1309,11 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // decision-snapshot rebuild below; a queued-but-failed swap does not
     // count, because nothing changed for it to rebuild from.
     let forcedSwapsCommitted = 0;
+    // F1 — symbol → the price the executor actually entered it at this tick.
+    const forcedEntryPrices = {};
+    // F1b — set when a COMMITTED swap could not be re-read. Non-null stops the
+    // tick taking any further discretionary action.
+    let refreshFailure = null;
     const lockedPositions = new Set();
     const vwapTicks = { ...(battle.cronState?.vwapTicks || {}) };
     // Forge Enforcement Keystone V1.4 §4.2 (Knob A) — per-symbol stagnation state,
@@ -1828,8 +1842,33 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         // Re-read battle doc after swap for accurate state in subsequent
         // processing (re-applies the tournament candidate filter — the
         // persisted doc is unfiltered).
-        await refreshBattleFromDoc(battleRef, battle, tournamentCtx);
+        //
+        // THE SWAP IS ALREADY COMMITTED at this point. A refresh that throws
+        // or comes back empty therefore leaves the tick holding a picture of a
+        // book that no longer exists, and — because the counter below used to
+        // sit after an unguarded await — with no rebuild either. Both are now
+        // recorded and the tick stops taking discretionary action (F1b).
+        let refreshed = false;
+        try {
+          refreshed = await refreshBattleFromDoc(battleRef, battle, tournamentCtx);
+        } catch (refreshErr) {
+          refreshed = false;
+          console.error(`${LOG_PREFIX} Post-swap refresh threw for battle ${battle.id}: ${refreshErr?.message || refreshErr}`);
+        }
+        if (!refreshed) {
+          refreshFailure = `committed swap of ${score.symbol} could not be re-read; discretionary processing stopped for this tick`;
+          break;
+        }
         forcedSwapsCommitted += 1;
+        // F1 — the price the position was actually ENTERED at. The executor
+        // prefers a fresh live beacon over the REST quote this tick fetched
+        // (agentSwapExecution.js:276), so the two can differ; carrying the
+        // fetched quote forward would show a brand-new position at an instant
+        // gain or loss it never made.
+        const committedEntryPrice = riskSwapResult?.incomingAsset?.swapPrice;
+        if (replacement?.symbol && committedEntryPrice > 0) {
+          forcedEntryPrices[replacement.symbol] = committedEntryPrice;
+        }
       } catch (err) {
         console.error(`${LOG_PREFIX} Risk swap failed for ${score.symbol}:`, err.message);
         // [VWAP Floor B7] Feed-visible skip: a deterministically-throwing
@@ -1880,6 +1919,17 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // they keep the values they were computed with, so the persisted score is
     // byte-identical to today (verified on the fixture; see the T1 report).
     if (forcedSwapsCommitted > 0) {
+      // F1 — show each incoming position at the price it was ACTUALLY entered
+      // at, so the rebuilt snapshot (and the prompt built from it) reads
+      // +0.00% for a position bought moments ago rather than the difference
+      // between this tick's REST quote and the executor's beacon price. The
+      // exited symbol keeps its fetched quote, and nothing is re-fetched: this
+      // re-points the tick's existing map, in place, for the incoming symbols
+      // only. The end-of-tick score transaction was computed BEFORE the risk
+      // loop, so it cannot be moved by this (asserted by T1's scope guard).
+      for (const [symbol, entryPrice] of Object.entries(forcedEntryPrices)) {
+        prices[symbol] = { ...(prices[symbol] || {}), current: entryPrice };
+      }
       flatPortfolio = flattenPortfolioServer(battle.portfolio);
       portfolioSymbols = flatPortfolio.map(a => a.symbol).filter(Boolean);
       benchAssets = [
@@ -1906,7 +1956,9 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     }
 
     // ---- Proposal lifecycle check (after risk evaluation, before triggers/Haiku) ----
-    const proposalHandled = await handlePendingProposal(db, battleRef, battle, prices, statusFeedEntries, summary, currentScore, tournamentCtx);
+    const proposalHandled = refreshFailure
+      ? null // F1b — discretionary; the book we would act on cannot be read
+      : await handlePendingProposal(db, battleRef, battle, prices, statusFeedEntries, summary, currentScore, tournamentCtx);
     if (proposalHandled === 'skip_haiku') {
       // Proposal is pending and not expired — write scores/risk but skip trigger gate + Haiku
       finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp, vwapFireGuard });
@@ -2027,7 +2079,15 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
 
     // ---- Evaluate triggers ----
     const seenStoryIds = battle.cronState?.seenStoryIds || [];
-    const { shouldEvaluate, triggers, newStoryIds } = evaluateTriggers(battle, assetScores, prices, news, momentumData, seenStoryIds);
+    // F1b — when a committed swap could not be re-read, the gate is NOT run:
+    // deciding what to do next off a book we know is stale is the discretion
+    // this path exists to withhold. The tick still writes its record below, so
+    // the fault is disclosed rather than silently skipped. `shouldEvaluate` is
+    // forced true only to reach that write — no trigger is fabricated.
+    const gate = refreshFailure
+      ? { shouldEvaluate: true, triggers: [], newStoryIds: [] }
+      : evaluateTriggers(battle, assetScores, prices, news, momentumData, seenStoryIds);
+    const { shouldEvaluate, triggers, newStoryIds } = gate;
 
     // The story ids this tick's news triggers woke on. They are NOT marked
     // seen here — that write moved to after the model call resolves (see
@@ -2076,15 +2136,18 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // the eval_degraded statusFeed entry, the shadow log, and the disclosure
     // counter.
     let haikuFailure = null;
-    // Why this tick's HOLD is a HOLD. null on a CHOSEN hold (the model said
-    // HOLD, or no failure occurred) — those keep exactly what they wrote
-    // before. 'default_failure' on a FALLBACK hold: the proposal was never
-    // usable (transport failure, budget skip, unusable or schema-invalid tool
-    // result), or could not be safely evaluated (the guardrail evaluator
-    // threw), and the tick failed closed. The repo had no hold-kind field, so
-    // this is a new single field rather than a new value — stated in the T3
-    // and T2 build reports per the build prompt's common rules.
-    let holdKind = null;
+    // Did this tick lose its model proposal? Set by the fallback branches —
+    // transport failure, budget skip, unusable or schema-invalid tool result,
+    // and the unreadable-refresh stop. It is a statement about the CALL, not
+    // about the outcome: the record's `holdKind` is derived from it and the
+    // FINAL decision at composition time (F3), because the deterministic
+    // guardrail layer can still turn a fallback into a protective SWAP, and a
+    // tick that traded is not a "fallback HOLD".
+    let fallbackHold = false;
+    // A fault in the DETERMINISTIC guardrail layer, which runs after the model
+    // call. Separate from `haikuFailure` by construction (F2) — the two answer
+    // different questions and a tick can carry both.
+    let guardrailFault = null;
     let haikuAttempted = false;
     // Phase B (D-110): true only once the prompt's three parts are BUILT and
     // about to be sent — set immediately before anthropic.messages.create.
@@ -2113,14 +2176,25 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // mid-function — we skip only the Haiku call and keep the normal write
     // path. It still runs ONCE, before the build.
     const budget = shouldStartHaikuCall({ elapsedMs: Date.now() - cronStartTime, timeBudgetMs: TIME_BUDGET_MS });
-    if (!budget.proceed) {
+    if (refreshFailure) {
+      // F1b — a swap committed and its re-read failed. No model call: the
+      // prompt would describe a book that is not the book.
+      haikuFailure = {
+        failureClass: 'refresh_failed',
+        message: refreshFailure,
+        timestamp: new Date().toISOString(),
+        timeoutKind: null,
+      };
+      fallbackHold = true;
+      console.error(`${LOG_PREFIX} ${refreshFailure} (battle ${battle.id})`);
+    } else if (!budget.proceed) {
       haikuFailure = {
         failureClass: 'budget_skipped',
         message: `cron budget too low to start Haiku call (${Math.round(budget.remainingMs / 1000)}s remaining, ${Math.round(budget.requiredMs / 1000)}s required)`,
         timestamp: new Date().toISOString(),
         timeoutKind: null,
       };
-      holdKind = 'default_failure';
+      fallbackHold = true;
       console.warn(`${LOG_PREFIX} Haiku call skipped for battle ${battle.id}: ${haikuFailure.message}`);
     } else {
       haikuAttempted = true;
@@ -2243,7 +2317,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             timestamp: new Date().toISOString(),
             timeoutKind: null,
           };
-          holdKind = 'default_failure';
+          fallbackHold = true;
           console.warn(`${LOG_PREFIX} Haiku response unusable for battle ${battle.id}: ${haikuFailure.message}`);
         } else {
           haikuFailure = {
@@ -2254,7 +2328,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             // The field that failed — the one fact a triage read needs.
             invalidField: validation.invalidField,
           };
-          holdKind = 'default_failure';
+          fallbackHold = true;
           console.warn(`${LOG_PREFIX} Haiku tool result invalid for battle ${battle.id} [${validation.invalidField}]: ${validation.reason}`);
         }
       } catch (err) {
@@ -2280,7 +2354,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           // fired on a request that was never sent.
           timeoutKind: callMs === null ? null : classifyTimeoutKind(err),
         };
-        holdKind = 'default_failure';
+        fallbackHold = true;
         console.error(`${LOG_PREFIX} Haiku call failed for battle ${battle.id} [${haikuFailure.failureClass}]:`, err.message);
         // Default to HOLD on timeout or error
       } finally {
@@ -2335,8 +2409,36 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       const priorAttempts = battle.cronState?.storyAttempts || {};
       const haikuCallSucceeded = Boolean(haikuResult);
 
+      // F4 — the reasons map annotates the seen LIST, so it is rebuilt from
+      // that list every time the list is written. It used to be pruned only on
+      // the exhaustion path, so a reason whose id the cap had since evicted
+      // survived indefinitely, and a story that was later evaluated
+      // successfully kept its 'attempts_exhausted' annotation — an id and its
+      // explanation disagreeing about what happened (BUILD_RULES §9).
+      // `evaluated` ids lose their reason outright: they were not retired
+      // unread, they were read.
+      const priorReasons = battle.cronState?.seenStoryReasons || {};
+      const rewriteReasons = (ids, { evaluated = [], exhausted = [] } = {}) => {
+        const survivors = new Set(ids);
+        const evaluatedSet = new Set(evaluated);
+        const next = {};
+        for (const [id, reason] of Object.entries(priorReasons)) {
+          if (survivors.has(id) && !evaluatedSet.has(id)) next[id] = reason;
+        }
+        for (const id of exhausted) {
+          if (survivors.has(id)) next[id] = 'attempts_exhausted';
+        }
+        // Written only when it actually differs, so a tick with no reasons to
+        // keep and none to add adds no key it did not add before.
+        const changed = Object.keys(next).length !== Object.keys(priorReasons).length
+          || Object.keys(next).some(k => next[k] !== priorReasons[k]);
+        if (changed) scoreUpdate['cronState.seenStoryReasons'] = next;
+      };
+
       if (haikuCallSucceeded) {
-        scoreUpdate['cronState.seenStoryIds'] = [...seenStoryIds, ...wokenStoryIds].slice(-SEEN_STORY_ID_CAP);
+        const updatedSeenIds = [...seenStoryIds, ...wokenStoryIds].slice(-SEEN_STORY_ID_CAP);
+        scoreUpdate['cronState.seenStoryIds'] = updatedSeenIds;
+        rewriteReasons(updatedSeenIds, { evaluated: wokenStoryIds });
         // Retire the counters these stories were accumulating. Written only if
         // one of them actually had a counter, so the ordinary
         // first-try-succeeds tick adds no key it did not add before.
@@ -2363,17 +2465,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         if (exhausted.length > 0) {
           const updatedSeenIds = [...seenStoryIds, ...exhausted].slice(-SEEN_STORY_ID_CAP);
           scoreUpdate['cronState.seenStoryIds'] = updatedSeenIds;
-          // Why each was retired. Pruned to the ids still inside the seen cap
-          // so the map cannot outgrow the list it annotates.
-          const survivors = new Set(updatedSeenIds);
-          const reasons = {};
-          for (const [id, reason] of Object.entries(battle.cronState?.seenStoryReasons || {})) {
-            if (survivors.has(id)) reasons[id] = reason;
-          }
-          for (const id of exhausted) {
-            if (survivors.has(id)) reasons[id] = 'attempts_exhausted';
-          }
-          scoreUpdate['cronState.seenStoryReasons'] = reasons;
+          // Why each was retired — same rebuild as the success path above.
+          rewriteReasons(updatedSeenIds, { exhausted });
           console.warn(`${LOG_PREFIX} Story ids retired unread after ${MAX_STORY_WAKE_ATTEMPTS} failed wakes on battle ${battle.id}: ${exhausted.join(', ')}`);
         }
       }
@@ -2591,20 +2684,22 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           // Only a proposal that was actually going somewhere counts as
           // downgraded. A model that already said HOLD keeps a chosen HOLD.
           downgraded = true;
-          holdKind = 'default_failure';
+          fallbackHold = true;
           validationErrors.push(`Guardrail evaluation failed — proposal held: ${message}`);
         }
 
-        // The message, never the stack. Setting the tick's failure record here
-        // also routes this through the two existing receipts for a degraded
-        // tick — the `eval_degraded` status-feed beat and the durable
-        // `cronState.cronErrors` entry — so a guardrail fault is as visible as
-        // a transport fault instead of living only in the logs.
-        haikuFailure = {
-          failureClass: 'guardrail_error',
+        // The message, never the stack. Recorded in its OWN field (F2): this
+        // fault happened AFTER the model call, and overwriting `haikuFailure`
+        // with it erased the call's own outcome — an `invalid_tool_result`
+        // lost both its class and the `invalidField` naming what was wrong,
+        // and a budget skip was re-filed as an engine fault, which flipped the
+        // disclosure counter from pass-through to increment. `haikuError` is
+        // now the model-call outcome and nothing else. Both faults still reach
+        // the two existing receipts — the `eval_degraded` beat and the durable
+        // `cronState.cronErrors` entry — so nothing became less visible.
+        guardrailFault = {
           message,
           timestamp: new Date().toISOString(),
-          timeoutKind: null,
         };
         console.error(`${LOG_PREFIX} Guardrail evaluation failed — model proposal held for battle ${battle.id}:`, message);
       }
@@ -3147,12 +3242,20 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       buildMs,
       callMs,
       // Why this HOLD is a HOLD: 'default_failure' when the tick failed closed
-      // with no usable proposal, null when the HOLD was CHOSEN (or the tick
-      // swapped). Reads alongside haikuError.failureClass, which says WHICH
-      // failure; this says the decision was not the model's. Composed LAST so
-      // the frozen PRE_PHASE_B_ENTRY_KEYS golden keeps matching byte-for-byte
-      // and the pin reconciliation is a single append.
-      holdKind,
+      // with no usable proposal, null when the HOLD was CHOSEN. Reads
+      // alongside haikuError.failureClass, which says WHICH failure; this says
+      // the decision was not the model's.
+      //
+      // DERIVED FROM THE FINAL DECISION (F3), never written eagerly. A tick
+      // can lose its proposal and still trade: the deterministic guardrail
+      // layer materialises protective SWAPs with no model result at all. Filing
+      // one of those as a "fallback HOLD" described a trade as an abstention.
+      // Composed LAST (with its sibling below) so the frozen
+      // PRE_PHASE_B_ENTRY_KEYS golden keeps matching byte-for-byte.
+      holdKind: decision === 'HOLD' && fallbackHold ? 'default_failure' : null,
+      // The deterministic layer's own fault, if it threw. Never merged into
+      // haikuError — see the catch (F2).
+      guardrailFault: guardrailFault ? { ...guardrailFault, evalId } : null,
     };
 
     // ---- Intraday Data Build 1 (contract §8.1) — the diagnostic view beside
@@ -3288,10 +3391,21 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // Surface the degraded tick on the status feed — a silent fallback HOLD is
     // indistinguishable from a deliberate one without this. Rides the existing
     // feed concat below (no new write op); the slice enforces the cap.
-    if (haikuFailure) {
+    if (haikuFailure || guardrailFault) {
+      // Wording derives from the same two facts the record does: which fault
+      // occurred, and what the tick finally decided. It used to say "defaulted
+      // to HOLD" unconditionally — including when the model had CHOSEN to
+      // hold and only the guardrail layer faulted, and when the deterministic
+      // layer had gone on to trade.
+      const what = haikuFailure && guardrailFault
+        ? `${haikuFailure.failureClass}, guardrail_error`
+        : (haikuFailure ? haikuFailure.failureClass : 'guardrail_error');
+      const outcome = haikuFailure
+        ? (decision === 'HOLD' ? 'no usable decision; held by default' : 'no usable decision; deterministic exit taken')
+        : (decision === 'HOLD' && fallbackHold ? 'guardrail check failed; proposal held' : 'guardrail check failed; decision unaffected');
       statusFeedEntries.push({
         timestamp: now,
-        message: `Evaluation engine degraded this tick (${haikuFailure.failureClass}) — defaulted to HOLD.`,
+        message: `Evaluation engine degraded this tick (${what}) — ${outcome}.`,
         action: 'eval_degraded',
         source: 'system',
         evalId,

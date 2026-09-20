@@ -112,6 +112,7 @@ async function runTick(battle, toolInput, { prices = makePriceTable() } = {}) {
     db, summary, finalUpdate,
     entry: finalUpdate ? finalUpdate.evaluations.at(-1) : null,
     feed: finalUpdate?.statusFeed || [],
+    stored: db.__store.battle,
   };
 }
 
@@ -120,10 +121,32 @@ beforeEach(() => {
   guardrailState.throws = null;
   mocks.getStockAnalysisData.mockReset(); mocks.fetchIntradayBatch.mockReset(); mocks.create.mockReset();
   executeSwapServerMock.mockReset();
-  executeSwapServerMock.mockImplementation(async (_db, _id, _battle, _tier, _slot, incoming) => ({
-    closedTrade: { symbolIn: incoming.symbol, symbolOut: 'KO', swappedOutAt: FROZEN_NOW, entryPrice: 62.2, lockedPoints: 0 },
-    incomingAsset: { ...incoming, swapPrice: 160.4 },
-  }));
+  // F5c — the double COMMITS to the fake stored document, the way the real
+  // executor commits to Firestore: slot occupant replaced, outgoing returned
+  // to the bench under cooldown, trade appended, tradeCount bumped. Without
+  // this there was no durable state for the "SURVIVES" row to preserve.
+  executeSwapServerMock.mockImplementation(async (dbArg, _id, _battle, tier, slotIndex, incoming) => {
+    const stored = dbArg.__store.battle;
+    const outgoing = stored.portfolio[tier][slotIndex];
+    stored.portfolio[tier] = stored.portfolio[tier].map((a, i) => (
+      i === slotIndex ? { ...incoming, swapPrice: 160.4, swappedInAt: FROZEN_NOW } : a
+    ));
+    stored.portfolio.bench = {
+      ...stored.portfolio.bench,
+      stocks: [
+        ...(stored.portfolio.bench.stocks || []).filter((a) => a.symbol !== incoming.symbol),
+        { ...outgoing, cooldownUntil: '2026-09-10T15:00:00.000Z' },
+      ],
+    };
+    stored.trades = [...(stored.trades || []), {
+      symbolIn: incoming.symbol, symbolOut: outgoing.symbol, lockedPoints: 0, entryPrice: 62.2,
+    }];
+    stored.scoreState = { ...stored.scoreState, tradeCount: (stored.scoreState?.tradeCount || 0) + 1 };
+    return {
+      closedTrade: { symbolIn: incoming.symbol, symbolOut: outgoing.symbol, swappedOutAt: FROZEN_NOW, entryPrice: 62.2, lockedPoints: 0 },
+      incomingAsset: { ...incoming, swapPrice: 160.4 },
+    };
+  });
   vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -141,10 +164,13 @@ describe('T2 — a throwing guardrail evaluation holds the proposal', () => {
     expect(entry.downgraded).toBe(true);
     expect(entry.holdKind).toBe('default_failure');
 
-    // The category, on the existing failure-category field.
-    expect(entry.haikuError.failureClass).toBe('guardrail_error');
+    // The fault, on its OWN field (Astra review F2, Sep 20 2026): it happened
+    // AFTER the model call, so it no longer overwrites `haikuError`, which is
+    // the model-call outcome and nothing else. The call succeeded here, so
+    // haikuError is null and the fault is beside it.
+    expect(entry.haikuError).toBeNull();
     // The MESSAGE, and only the message — no stack anywhere on the record.
-    expect(entry.haikuError.message).toBe("Cannot read properties of undefined (reading 'baseATR')");
+    expect(entry.guardrailFault.message).toBe("Cannot read properties of undefined (reading 'baseATR')");
     expect(JSON.stringify(entry)).not.toMatch(/\bat \w+ \(|\.js:\d+:\d+/);
     expect(entry.validationErrors.join(' ')).toContain('Guardrail evaluation failed');
 
@@ -162,7 +188,7 @@ describe('T2 — a throwing guardrail evaluation holds the proposal', () => {
     guardrailState.throws = new Error('guardrail evaluator exploded');
     // KO busts, so the risk loop exits it BEFORE the model is ever called.
     // The model then proposes an unrelated SWAP, and the guardrail throws.
-    const { entry, summary, feed } = await runTick(
+    const { entry, summary, feed, stored } = await runTick(
       guardedBattle(),
       makeSwapResult({ symbolOut: 'TSLA', symbolIn: 'JPM' }),
       { prices: pricesWithKoBust() },
@@ -175,10 +201,23 @@ describe('T2 — a throwing guardrail evaluation holds the proposal', () => {
     expect(riskBeat, 'the risk exit must be on the status feed').toBeTruthy();
     expect(riskBeat.triggeredBy).toContain('bust_avoidance');
 
+    // DURABLE PRESERVATION (Astra review F5c, Sep 20 2026). A call count is
+    // not survival: the double now COMMITS the slot change and the trade to
+    // the fake stored document, exactly as the executor does, and the
+    // assertions below read that document back AFTER the whole tick — so a
+    // later write that clobbered the portfolio or dropped the trade would
+    // redden this row. Before, nothing was ever committed, so "SURVIVES" was
+    // about the mock, not the book.
+    expect(stored.portfolio.support.map((a) => a.symbol)).not.toContain('KO');
+    expect(stored.portfolio.support.map((a) => a.symbol)).toContain('AMD');
+    expect(stored.trades.some((t) => t.symbolOut === 'KO' && t.symbolIn === 'AMD')).toBe(true);
+    expect(stored.scoreState.tradeCount).toBe(1);
+
     // …and the model's proposal alone was held. Nothing reverted the trade:
     // the one executeSwapServer call was the risk exit, not the proposal.
     expect(entry.decision).toBe('HOLD');
-    expect(entry.haikuError.failureClass).toBe('guardrail_error');
+    expect(entry.haikuError).toBeNull();
+    expect(entry.guardrailFault.message).toBe('guardrail evaluator exploded');
     expect(entry.downgraded).toBe(true);
     const proposalSwap = executeSwapServerMock.mock.calls.find((c) => c[5]?.symbol === 'JPM');
     expect(proposalSwap, 'the held proposal must never have reached the executor').toBeUndefined();
@@ -193,8 +232,10 @@ describe('T2 — a throwing guardrail evaluation holds the proposal', () => {
     expect(entry.downgraded).toBe(false);
     expect(entry.holdKind).toBeNull();
     expect(entry.validationErrors).toEqual([]);
-    // The guardrail fault is still a real engine fault and is still recorded.
-    expect(entry.haikuError.failureClass).toBe('guardrail_error');
+    // The guardrail fault is still a real engine fault and is still recorded —
+    // on its own field, leaving the model's own (successful) call untouched.
+    expect(entry.haikuError).toBeNull();
+    expect(entry.guardrailFault.message).toBe('guardrail evaluator exploded');
   });
 });
 

@@ -39,6 +39,9 @@ const mocks = vi.hoisted(() => ({
 // to throw, or null to run the real one. Every other row leaves it null, so
 // they exercise production `applyGuardrails` exactly as before.
 const { guardrailState } = vi.hoisted(() => ({ guardrailState: { throws: null } }));
+// F5a — null means "use the shipped constant". A row that sets it proves the
+// guard READS the export rather than matching a hardcoded number.
+const { gateState } = vi.hoisted(() => ({ gateState: { maxAttempts: null } }));
 vi.mock('@anthropic-ai/sdk', () => ({ default: class AnthropicMock { constructor() { this.messages = { create: (...args) => mocks.create(...args) }; } } }));
 vi.mock('../_utils/marketDataCache.js', () => ({
   getStockAnalysisData: mocks.getStockAnalysisData, fetchIntradayBatch: mocks.fetchIntradayBatch,
@@ -47,10 +50,18 @@ vi.mock('../_utils/marketDataCache.js', () => ({
 // Only the news FETCH is doubled. `evaluateTriggers` — the thing that decides
 // a story is a wake and hands back its id — stays real, so these rows exercise
 // the production gate rather than a restatement of it.
-vi.mock('../_utils/agentTriggerGate.js', async (importOriginal) => ({
-  ...(await importOriginal()),
-  fetchRecentNews: (...args) => mocks.fetchRecentNews(...args),
-}));
+vi.mock('../_utils/agentTriggerGate.js', async (importOriginal) => {
+  const real = await importOriginal();
+  return {
+    ...real,
+    fetchRecentNews: (...args) => mocks.fetchRecentNews(...args),
+    // A getter, so a row can retune the limit and BOTH the cron and this file
+    // see the same value through their live bindings.
+    get MAX_STORY_WAKE_ATTEMPTS() {
+      return gateState.maxAttempts ?? real.MAX_STORY_WAKE_ATTEMPTS;
+    },
+  };
+});
 // The fenced `agentGuardrails.js` is DOUBLED here — doubled in tests only,
 // never edited — because "the evaluator throws" is the premise of the R-A row.
 // The double delegates to the real module whenever `throws` is null.
@@ -133,6 +144,7 @@ const succeed = async () => makeToolUseResponse(makeHoldResult());
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(FROZEN_NOW));
   guardrailState.throws = null;
+  gateState.maxAttempts = null;
   mocks.getStockAnalysisData.mockReset(); mocks.fetchIntradayBatch.mockReset();
   mocks.create.mockReset(); mocks.fetchRecentNews.mockReset();
   vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -228,10 +240,23 @@ describe('T4 — the story is marked seen only after a successful call', () => {
     expect(attempts).toEqual({});
   });
 
-  it('the guard fires at the constant, not at a hardcoded 3', () => {
-    // If the founder retunes the export, the row above moves with it — the
-    // constant is the single source, as the prompt requires.
-    expect(MAX_STORY_WAKE_ATTEMPTS).toBeGreaterThanOrEqual(1);
+  it('the guard fires at the CONFIGURED limit — retuned to 2, it retires on the second failure', async () => {
+    // Astra review F5a (Sep 20 2026). This row used to assert only that the
+    // export was positive and the cap was 50 — which a production `attempt >= 3`
+    // would have passed just as happily, as would the exhaustion row above.
+    // It now RETUNES the limit and demands the behaviour move with it: at 2,
+    // the second failed wake must retire the story. Hardcoding 3 reddens this.
+    gateState.maxAttempts = 2;
+    expect(MAX_STORY_WAKE_ATTEMPTS).toBe(2); // the retune reached both bindings
+
+    const first = await runTick(battleWithHistory(), timeout);
+    expect(first.attempts).toEqual({ [STORY_ID]: 1 }); // not retired yet
+    expect(first.seenIds).toBeUndefined();
+
+    const second = await runTick(battleWithHistory({ storyAttempts: first.attempts }), timeout);
+    expect(second.seenIds).toEqual([STORY_ID]);        // retired on the SECOND
+    expect(second.reasons).toEqual({ [STORY_ID]: 'attempts_exhausted' });
+    expect(second.attempts).toEqual({});
     expect(SEEN_STORY_ID_CAP).toBe(50);
   });
 });
@@ -310,7 +335,11 @@ describe('R-A (integration) — success is the handler accepting a tool result, 
 
     // The tick then failed closed on the guardrail fault: the proposal is held.
     expect(entry.decision).toBe('HOLD');
-    expect(entry.haikuError.failureClass).toBe('guardrail_error');
+    // Astra review F2 (Sep 20 2026): the guardrail fault has its own field, so
+    // the MODEL-call outcome stays what it was — a success. That is precisely
+    // what R-A's predicate reads, which is why the story is still seen.
+    expect(entry.haikuError).toBeNull();
+    expect(entry.guardrailFault.message).toContain('baseATR');
     expect(entry.holdKind).toBe('default_failure');
 
     // …and the story is SEEN anyway. The call it woke was made, accepted and

@@ -81,8 +81,14 @@ export const TIMING_ENTRY_KEYS = Object.freeze(['promptBuiltAt', 'buildMs', 'cal
  * failure. Composed LAST in the cron's `const evaluation = {…}` literal, so the
  * frozen PRE_PHASE_B_ENTRY_KEYS golden above is untouched and this
  * reconciliation is a single append.
+ *
+ * `guardrailFault` (Sep 20, 2026, Astra review F2) rides beside it: the
+ * DETERMINISTIC layer's own fault, recorded separately so it can never
+ * overwrite `haikuError`, which is the MODEL-CALL outcome and nothing else.
+ * A tick can carry both. Also composed after PRE_PHASE_B_ENTRY_KEYS, so the
+ * frozen golden above is still untouched.
  */
-export const FAIL_CLOSED_ENTRY_KEYS = Object.freeze(['holdKind']);
+export const FAIL_CLOSED_ENTRY_KEYS = Object.freeze(['holdKind', 'guardrailFault']);
 
 /** Every key the cron composes ITSELF, in source order — the entry before any stamp is assigned. */
 export const BASE_ENTRY_KEYS = Object.freeze([

@@ -769,8 +769,16 @@ describe('agent-evaluate cron — P2 tournament ledger wiring (agent-market excl
     // 9 → 10: the R11 suppression pass re-reads after its swap (Ask 3).
     const refreshCalls = source.match(/await refreshBattleFromDoc\(battleRef, battle, tournamentCtx\);/g) || [];
     expect(refreshCalls.length).toBe(10);
-    const rawReassigns = source.match(/Object\.assign\(battle, \w+Doc\.data\(\)\)/g) || [];
+    // The chokepoint now reads the snapshot once into `refreshedData` and
+    // returns false when it is empty (Astra F1b — an empty re-read is not a
+    // refresh), so the assign names that local rather than `…Doc.data()`
+    // inline. Same strictness, same count: exactly ONE doc-data re-assign, and
+    // it is the one inside refreshBattleFromDoc. That it is the only
+    // `Object.assign(battle` besides the migration write-back is pinned
+    // independently by pin 3 in agent-evaluate.tickStamps.pins.test.js.
+    const rawReassigns = source.match(/Object\.assign\(battle, (?:\w+Doc\.data\(\)|refreshedData)\)/g) || [];
     expect(rawReassigns.length).toBe(1); // only inside refreshBattleFromDoc itself
+    expect(source).toMatch(/const refreshedData = refreshedDoc\?\.data\?\.\(\);\s*\n(?:\s*\/\/[^\n]*\n)*\s*if \(!refreshedData\) return false;/);
     expect(source).toMatch(/async function refreshBattleFromDoc\([\s\S]*?applyTournamentCandidateFilter\(battle, tournamentCtx\);/);
     // hotBench refresh candidates.
     expect(source).toMatch(/candidates = excludeHeldByOthers\(candidates, tournamentCtx\.heldByOthers\);/);
