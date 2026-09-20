@@ -617,7 +617,14 @@ describe('E1 — a tick that cannot re-read the book does NOTHING that depends o
     expect(stored.trades.some((t) => t.symbolOut === 'TSLA')).toBe(false);
   });
 
-  it('(d) CONTROL — a breached deployed stop with a SUCCESSFUL refresh still exits, exactly as today', async () => {
+  it('(d) a breached deployed stop with NO prior risk exit still exits — the S10 gate is inert when the book is readable', async () => {
+    // RENAMED (Astra Part D follow-up, F-3): this row was called the
+    // "successful refresh" control, but it uses the default price table, which
+    // triggers no risk exit at all (tickStampsHarness.js:219-224) — so there
+    // was never a post-swap re-read for it to control. What it actually covers
+    // is that E1's gate does not disturb the S10 stage on an ordinary tick, and
+    // that is what it now claims. The real control is row (e) below.
+    //
     // The verdict is supplied rather than computed for the same reason as F3:
     // the real evaluator's forced-exit override carries `note: undefined`
     // (agentGuardrails.js:546-548, §11.6) which Firestore rejects. The point of
@@ -633,6 +640,60 @@ describe('E1 — a tick that cannot re-read the book does NOTHING that depends o
     expect(entry.decision).toBe('SWAP');
     expect(summary.swapped).toBe(1);
     expect(stored.trades.some((t) => t.symbolOut === 'TSLA' && t.symbolIn === 'AMD')).toBe(true);
+  });
+
+  it('(e) THE REAL CONTROL — a real risk exit, a SUCCESSFUL re-read, then a distinct S10 exit', async () => {
+    // What row (d) was mis-named for. The first exit is REAL: KO priced below
+    // its bust line, queued by the production risk manager, not supplied. Its
+    // re-read then succeeds, the snapshot is rebuilt, and only then does the
+    // S10 stage take a SECOND, distinct exit on another symbol.
+    //
+    // The S10 verdict is supplied (see row (d)); the RISK exit is not.
+    guardrailState.returns = {
+      decision: 'SWAP', symbolOut: 'TSLA', symbolIn: 'JPM',
+      overrides: [{
+        type: 'stopLoss', symbol: 'TSLA', metric: 'pnlPct', threshold: -1.5,
+        actual: -2.08, action: 'forced_exit', originalDecision: 'HOLD',
+        replacementSymbol: 'JPM',
+      }],
+      statusMessage: 'Guardrail override: stop-loss at 1.5% breached on TSLA (-2.08%). Forcing exit → JPM.',
+      sourceNote: 'guardrail_stopLoss',
+    };
+    const base = makeTickBattle();
+    const battle = {
+      ...base,
+      agentContext: { ...base.agentContext, deployedGuardrails: [TIGHT_STOP] },
+    };
+    // The executor enters AMD ABOVE the tick's REST quote, so the rebuild's
+    // price re-point is observable in the prompt — that is what proves the
+    // re-read actually succeeded and the snapshot was rebuilt from it.
+    const EXEC = 168.42;
+    const prices = koBustPrices();
+    expect(prices.AMD.current).not.toBe(EXEC);
+
+    const { entry, summary, stored, prompt } = await runTick({
+      battle, prices, execPriceOf: (sym) => (sym === 'AMD' ? EXEC : prices[sym]?.current ?? 0),
+    });
+
+    // BOTH swaps happened, in that order: the risk exit first, then S10.
+    expect(executeSwapServerMock).toHaveBeenCalledTimes(2);
+    expect(executeSwapServerMock.mock.calls[0][5].symbol).toBe('AMD'); // risk exit replaces KO
+    expect(executeSwapServerMock.mock.calls[1][5].symbol).toBe('JPM'); // S10 replaces TSLA
+    expect(summary.swapped).toBe(2);
+    expect(stored.trades.some((t) => t.symbolOut === 'KO' && t.symbolIn === 'AMD')).toBe(true);
+    expect(stored.trades.some((t) => t.symbolOut === 'TSLA' && t.symbolIn === 'JPM')).toBe(true);
+
+    // The re-read SUCCEEDED and the snapshot was rebuilt from it: the prompt
+    // the model saw shows AMD at its own entry price, not the stale quote.
+    const row = activeRow(prompt.block, 'AMD');
+    expect(row).toContain('+0.00%');
+    expect(row).toContain('$168.42');
+
+    // And the evaluation record is an ordinary one — no fault, no fallback.
+    expect(entry.haikuError).toBeNull();
+    expect(entry.guardrailFault).toBeNull();
+    expect(entry.holdKind).toBeNull();
+    expect(entry.decision).toBe('SWAP');
   });
 });
 

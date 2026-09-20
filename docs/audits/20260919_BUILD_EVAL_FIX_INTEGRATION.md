@@ -305,7 +305,7 @@ The figures in §5 and §7 are as-of composition HEAD `8b4e45d1` and are left as
 | **Whole-repo suite** | **exit code 0** — 725 files passed / 3 skipped, 13 914 passed / 64 skipped. |
 | **`vite build`** | **exit code 0**, built in 22.77 s. |
 | **Fence (§1)** | **No fenced file changed** — all eleven paths checked against `git diff origin/main --name-only`. |
-| **Newly filed** | **Two defects found while confirming, NOT fixed** (BUILD_RULES §3) — one of them a live production break in a §1-fenced file. See §11.6. |
+| **Newly filed** | **Two defects found while confirming, NOT fixed** (BUILD_RULES §3) — one of them **P1-latent** in a §1-fenced file (latent, not live: see §11.6(1) for why, and §12.4 for the correction that established it). See §11.6. |
 
 ---
 
@@ -379,7 +379,7 @@ The fixture now carries a `#!golden` header naming the source commit and the sha
 
 **(1) P1-LATENT — a non-distressed guardrail forced exit writes `note: undefined`, which would throw the tick's final write.** `api/_utils/agentGuardrails.js:546-548` sets `note:` to `undefined` via a ternary with no else-value; that object rides `guardrailOverrides` into the evaluation record and into `battleRef.update()`. With `ignoreUndefinedProperties` unset, Firestore rejects it. **This is a §1 FENCED file — not touched, not fixed.**
 
-*Characterisation corrected 2026-09-20 (Astra Part D review, adopted).* The original text here called it a live production break. **It is LATENT, not live.** The undefined key is produced only by the non-distressed **forced-exit** branch, which requires a **breached deployed stop, trailing stop or profit target**; sector-cap observation alone cannot reach it, and per Astra's review no agent currently has a deployed guardrail — so nothing is hitting it today. What it breaks is **the tick's final write, not necessarily the protective trade**: `executeSwapServer` commits before the record is composed, so a forced exit can already have executed when the write is rejected. That is its own hazard (a committed trade with no evaluation record) and is part of why it stays P1.
+*Characterisation corrected 2026-09-20 (Astra Part D review, adopted).* The original text here called it a live production break. **It is LATENT, not live.** The undefined key is produced only by the non-distressed **forced-exit** branch, which requires a **breached deployed stop, trailing stop or profit target**; sector-cap observation alone cannot reach it, and Fable's production census of Sep 17 2026 — **zero agents with a deployed guardrail; zero guardrail exits across 468 battles / 402 trades** — supplied to the reviewer as a premise, which the reviewer **accepted rather than independently observed** records that no agent currently has one — so nothing is hitting it today. What it breaks is **the tick's final write, not necessarily the protective trade**: `executeSwapServer` commits before the record is composed, so a forced exit can already have executed when the write is rejected. That is its own hazard (a committed trade with no evaluation record) and is part of why it stays P1.
 
 Filed as **P1-latent for the exit-dials arc, ahead of the F3 fix in that arc's order** — F3's defect cannot manifest until this is fixed, because the write throws first.
 
@@ -500,7 +500,7 @@ Every mutation was restored from a `cp` copy, never `git checkout --` (§11.7).
 
 ### 12.4 Corrections to claims we made (E3)
 
-**§11.6(1) — "live production break" → P1-LATENT.** Astra is right and the characterisation is corrected in place. The undefined key is produced only by the **non-distressed forced-exit branch**, which requires a breached deployed stop, trailing stop or profit target; sector-cap observation alone cannot reach it, and per Astra's review **no agent currently has a deployed guardrail**, so nothing is hitting it today. The correction also records what it actually breaks: **the tick's final write, not necessarily the protective trade** — `executeSwapServer` commits before the record is composed, so a forced exit can already have executed when the write is rejected. That residue (a committed trade with no evaluation record) is its own hazard and is part of why it stays P1. Filed as **P1-latent for the exit-dials arc, ahead of F3 in that arc's order**. The fenced file remains untouched.
+**§11.6(1) — "live production break" → P1-LATENT.** Astra is right and the characterisation is corrected in place. The undefined key is produced only by the **non-distressed forced-exit branch**, which requires a breached deployed stop, trailing stop or profit target; sector-cap observation alone cannot reach it, and **no agent currently has a deployed guardrail** per Fable's production census of Sep 17 2026 — **zero agents with a deployed guardrail; zero guardrail exits across 468 battles / 402 trades** — supplied to the reviewer as a premise, which the reviewer **accepted rather than independently observed**, so nothing is hitting it today. The correction also records what it actually breaks: **the tick's final write, not necessarily the protective trade** — `executeSwapServer` commits before the record is composed, so a forced exit can already have executed when the write is rejected. That residue (a committed trade with no evaluation record) is its own hazard and is part of why it stays P1. Filed as **P1-latent for the exit-dials arc, ahead of F3 in that arc's order**. The fenced file remains untouched.
 
 **P3 wording — "empty on every reachable path" was wrong.** Corrected in both places (`api/cron/agent-evaluate.tickCoherence.test.js:273-298` and §11.4/§11.6(2)). The lock set is often **non-empty**: a still-held locked symbol sits in it quite normally while a *different* symbol exits. What has no reachable input is the loop's **deletion arm** — the branch that removes a locked symbol because it is no longer held — since being locked and being exited are mutually exclusive on one tick. The companion row is renamed to say exactly that.
 
@@ -564,3 +564,157 @@ Test count moved 13 914 → **13 922** (+8): exactly the eight rows added. Linux
 | **Part E commits** | `d83615b1` (E1 + E2 + their rows), plus this section with the E3 corrections |
 
 **STOP.** Part E complete and pushed. **No PR was opened, nothing was merged, no flag was flipped.**
+
+---
+
+## 13. Part F — closing Astra's final review findings
+
+**Date:** 2026-09-20 · **Executor:** Opus (Claude Code) · **Author of prompt:** Fable
+**Branch:** `claude/eval-small-fixes-integrate-or1aqn`, continued from tip `b6bf3e22` (Part E code HEAD `d83615b1`). **No PR, no merge, no flag flip.** This is the last review round; the branch goes to PR after this report.
+**Preamble (BUILD_RULES §3):** `git fetch origin` run first; `origin/main` unchanged at `0871937c`; tip `b6bf3e22` confirmed, tree clean. Whole-repo baseline **exit 0** (725 files, 13 922 passed). Same discipline as Parts C and E: each code finding got a test **red on the current tree, for the reason the finding names**, before its fix. Anchors are **VERIFIED** at the new tip.
+
+### Executive verdict
+
+| | |
+|---|---|
+| **Input** | Astra's third read: MERGE WITH CHANGES, three findings. Its verifications — the three E1 gates, the failed tick reaching the common flush with the score transaction and lease intact, both E2 receipts with no off-by-one and no counter change, narration's own fresh re-read, scope and fence — were accepted and not reworked. |
+| **F-1** | **CONFIRMED and fixed.** The catalyst path priced a new name and would have told the player their watchlist changed, on a tick that evaluated nothing. |
+| **F-2** | **CONFIRMED and fixed** — and reported as the rule holding, not a live defect, because the check below found no consumer. |
+| **F-3** | **CONFIRMED.** The row was renamed to what it covers and the real control was built beside it. |
+| **F-4** | Both document corrections applied. |
+| **F-5** | Filed, not fixed — §13.6. |
+| **Whole-repo suite** | **exit code 0** — 725 files passed / 3 skipped, **13 927 passed** / 64 skipped. |
+| **`vite build`** | **exit code 0**, built in 26.90 s. |
+| **Fence (§1)** | **No fenced file changed.** |
+
+---
+
+### 13.1 CONFIRMED / REFUTED
+
+| # | Finding | Verdict | Red-before evidence | Green-after |
+|---|---|---|---|---|
+| **F-1** | The news catalyst block runs on an unreadable book | **CONFIRMED** | `expected [ 'NVDA', 'TSLA', 'MSFT', …(10) ] to not include 'META'` — a catalyst name was **priced** on a refresh-failure tick, en route to a bench mutation and a player-facing beat | ✓ |
+| **F-2** | Success-then-failure rebuilds from an intermediate book | **CONFIRMED** | `expected true to be false` on the rebuild's own log line, after the anti-vacuity assertions confirmed **two** swaps had committed | ✓ |
+| **F-3** | The control row doesn't control what it claims | **CONFIRMED** | Astra's reading verified directly: the row used the default price table, which triggers no risk exit (`tickStampsHarness.js:219-224`), so there was never a post-swap re-read for it to control | ✓ (renamed + real control added) |
+
+**Nothing refuted.** All three were real.
+
+### 13.2 The F-2 check, run before gating — **NO STOP**
+
+The ruling required confirming that nothing on a refresh-failure tick reads the rebuilt snapshot, and a STOP if anything did. Every read of the seven rebuilt values (`flatPortfolio`, `portfolioSymbols`, `benchAssets`, `benchSymbols`, `assetScores`, `lockedPositions`, `riskStatus`) after the rebuild was enumerated and classified:
+
+| Reader | `path:line` | Reachable on a refresh-failure tick? |
+|---|---|---|
+| Gameplan detection | `:2012` | **No** — gated by E1 |
+| Both suppression passes | `:1996`, `:2024` | **No** — gated by E1 |
+| News ticker list / catalyst set | `:2057`, `:2063` | **No** — gated by F-1. `evalTickerSet` is still *constructed* at `:2063`, but `news` is `[]`, so the loop that queries it never runs and the Set is discarded unread |
+| Trigger gate | `:2119` | **No** — the synthetic gate replaces it |
+| Prompt build | `:2263` | **No** — inside the diverted model-call block |
+| Anticipation threshold lint | `:2543` | **No** — `lintedAnticipationCandidates = haikuResult?.anticipationCandidates` is `undefined`, so `Array.isArray(...)` is false |
+| `activeBaseATR` in swap execution | `:2791` | **No** — inside `decision === 'SWAP' && haikuResult`; `haikuResult` is null |
+| S10 guardrails | `:2665` | **No** — gated by E1 |
+| LOCKED-swap check | `:2744` | **No** — short-circuits on `haikuResult` null |
+| Tick stamps (`assetScores`, `riskStatus`, `benchAssets`) | `:3404`, `:3408`, `:3412` | **No** — gated on `promptBuilt`, which stays false |
+| **Intraday diagnostics** | `:3308` | **Not at this HEAD** — `INTRADAY_DIAGNOSTIC_ENABLED = false` (`featureFlags.js:2604`, value confirmed by import). Filed in §13.6 |
+| **Shadow assembly** | `:3588` | **Not at this HEAD** — `SHADOW_ASSEMBLY_ENABLED = false` (`featureFlags.js:1482`, value confirmed by import). Filed in §13.6 |
+
+**No consumer reads the rebuilt snapshot on a refresh-failure tick at this HEAD**, so there was nothing to choose between and no STOP. That is exactly why F-2 is reported as **the rule holding rather than a live defect** — and exactly why the gate is still worth having: two of the would-be readers are flag-off code whose flips are now gated on adding the same check.
+
+### 13.3 The fixes
+
+| Fix | `path:line` | What changed |
+|---|---|---|
+| **F-1 — news fetch** | `api/cron/agent-evaluate.js:2050-2060` | `allNewsTickers` resolves to `[]` and `fetchRecentNews` is not called on a `refreshFailure` tick. The ticker list is derived from the very snapshot the tick failed to refresh. |
+| **F-1 — catalyst block** | `api/cron/agent-evaluate.js:2074` | `if (!refreshFailure && catalystTickers.length > 0)`. Gated explicitly as well as by the empty `news`, so the withholding survives a future change that sources stories elsewhere. This redundancy is deliberate and it changes what a faithful mutation looks like — see §13.4. |
+| **F-2 — snapshot rebuild** | `api/cron/agent-evaluate.js:1921-1929` | `if (forcedSwapsCommitted > 0 && !refreshFailure)`. A later swap whose re-read failed left the counter still counting the earlier ones, so the rebuild derived from an **intermediate** book — newer than the pre-loop picture, older than the committed truth. |
+
+**Unchanged, as ruled:** the precomputed score update, the `refresh_failed` disclosure, the lease, and everything on a tick whose refresh succeeded. The four control rows are the guards on that.
+
+### 13.4 New and changed tests, and the mutation check (BUILD_RULES §2)
+
+Five rows added (two F-1, two F-2, one real control), one row renamed.
+
+| Mutation | Rows reddened |
+|---|---|
+| Un-gate the news fetch **only** | **0** |
+| Un-gate the catalyst block **only** | **0** |
+| **Un-gate BOTH — the faithful pre-fix state** | **1** (the F-1 row) |
+| Un-gate the rebuild | **1** (the F-2 row) |
+| **Break the rebuild's price re-point** *(the mutation the ruling names for the new control)* | **2** (control (e), and F1's own row) |
+
+**The two zero results are stated, not buried.** Neither F-1 gate reddens the row alone, because each is blocked by the other: with the fetch gated, `news` is empty so the catalyst block no-ops; with the catalyst block gated, fetched stories reach nothing. The gates are **deliberately redundant**, so the only faithful mutation is removing both — the same reasoning T3 used when a narrower mutation reddened 4 of 5 rows and the whole pre-fix block was restored instead (§ T3 report). Under that mutation the row goes red, so it is a guard.
+
+**F-3 — the row that was renamed, and the control that replaced it.**
+
+* `api/cron/agent-evaluate.astraFindings.test.js:620` — was *"CONTROL — a breached deployed stop with a SUCCESSFUL refresh still exits"*. It is now *"(d) a breached deployed stop with NO prior risk exit still exits — the S10 gate is inert when the book is readable"*, which is what it actually covers. Astra's diagnosis is recorded at the row.
+* `api/cron/agent-evaluate.astraFindings.test.js:645` — **(e) the real control.** A **real** risk exit (KO below its bust line, queued by the production risk manager, not supplied), a **successful** re-read, then a **distinct** S10 exit on another symbol. It asserts both swaps in order (`calls[0]` incoming `AMD`, `calls[1]` incoming `JPM`), both trades in the stored document, and an ordinary evaluation record (`haikuError` null, `guardrailFault` null, `holdKind` null, decision `SWAP`).
+  The proof that the re-read **succeeded** is the rebuild's own effect: the executor enters AMD at 168.42 against a fetched quote of 162.00, and the prompt the model saw renders AMD at **+0.00% / $168.42**. That is why breaking the price re-point reddens this row, exactly as the ruling predicted.
+
+The S10 verdict is supplied through the guardrail double in both rows, for the reason given at the E1 rows: the real evaluator's forced-exit override carries the `note: undefined` defect of §11.6(1), which Firestore rejects. **The risk exit is real in row (e).**
+
+### 13.5 Document corrections (F-4)
+
+* **§11 executive verdict** (`docs/audits/20260919_BUILD_EVAL_FIX_INTEGRATION.md`, the "Newly filed" row) said *"a live production break in a §1-fenced file"* while §11.6 and §12.4 had already corrected it to latent. It now reads **P1-latent**, with pointers to §11.6(1) and to §12.4.
+* **The premise is now attributed correctly.** "No agent currently has a deployed guardrail" was attributed to Astra in both §11.6 and §12.4. It is **Fable's production census of Sep 17 2026 — zero agents with a deployed guardrail; zero guardrail exits across 468 battles / 402 trades — supplied to the reviewer as a premise, which the reviewer accepted rather than independently observed.** Both occurrences now say that; no "per Astra's review" attribution of it remains in the document.
+
+### 13.6 Filed, not fixed (F-5)
+
+**(1) Two flag-off stages lack the refresh-failure gate — adding it is a precondition of either flip.**
+
+* **Intraday diagnostics** — `api/cron/agent-evaluate.js:3308`, behind `INTRADAY_DIAGNOSTIC_ENABLED` (`src/config/featureFlags.js:2604`, **false** at this HEAD). It builds `viewSymbols` from `portfolioSymbols` / `benchSymbols` and writes a view document. **For the intraday arc.**
+* **Shadow assembly** — `api/cron/agent-evaluate.js:3588`, behind `SHADOW_ASSEMBLY_ENABLED` (`src/config/featureFlags.js:1482`, **false** at this HEAD). Its market payload carries `assetScores`. **For the shadow-assembly owner.**
+
+Both flag values were confirmed by importing the module, not by reading alone. Neither is reachable today, which is why neither was gated in this task; each flip should add `!refreshFailure` in the same commit.
+
+**(2) Narration is deliberately left reachable — do not "fix" it into silence.** Committed-trade narration runs in a `finally` at `api/cron/agent-evaluate.js:3632`, and `generateTradeNarration` **re-reads the battle itself** before proceeding (`api/_utils/voiceLayerTradeNarration.js:109`, `battleRef.get()` inside its own `Promise.all`). It therefore narrates a trade that really committed, from a document it fetched fresh, rather than from the snapshot this tick failed to refresh. It is a **safe fresh-read exception** to the blanket E1 wording, recorded here so a later reader does not silence a trade the player made.
+
+### 13.7 Verification
+
+| Check | Result |
+|---|---|
+| Whole-repo `npx vitest run` — output redirected, not piped, so `$?` is vitest's own | **exit 0** · 725 files passed / 3 skipped · **13 927 passed** / 64 skipped |
+| Failing-file set | **empty**, equal to the baseline |
+| `npx vite build` | **exit 0**, 26.90 s |
+| `git diff origin/main --name-only` vs the §1 fence list | **no fenced file present** |
+| Three regional guards | **pass** — 3 files / 108 tests; `tickStampsEntryGolden.flagOff.json` absent from the diff; the `executeSwapServer` census allowlist unchanged |
+| `eslint` on the changed source | **3 errors, all pre-existing** (`getPresetAdjustedStrategies`, two `_e`) |
+
+Test count moved 13 922 → **13 927** (+5): exactly the five rows added. Every mutation was restored from a `cp` copy, never `git checkout --` (§11.7). Linux is the suite of record.
+
+### 13.8 `git diff origin/main --stat`
+
+```
+ .../tickCoherenceLiveContextGolden.noSwap.txt      |  84 ++
+ api/_utils/__fixtures__/tickStampsHarness.js       |  21 +-
+ api/_utils/agentEvalToolResultValidation.js        | 139 ++++
+ api/_utils/agentTriggerGate.js                     |  19 +
+ api/cron/agent-evaluate.astraFindings.test.js      | 885 +++++++++++++++++++++
+ ...agent-evaluate.guardrailErrorFailClosed.test.js | 269 +++++++
+ api/cron/agent-evaluate.js                         | 490 +++++++++++-
+ .../agent-evaluate.newsSeenAfterSuccess.test.js    | 352 ++++++++
+ api/cron/agent-evaluate.test.js                    |  10 +-
+ api/cron/agent-evaluate.tickCoherence.test.js      | 394 +++++++++
+ api/cron/agent-evaluate.tickStamps.flagOff.test.js |   8 +-
+ .../agent-evaluate.toolResultValidation.test.js    | 217 +++++
+ ...26-09-19_ASTRA_RUNTIME_STATE_INTEGRITY_AUDIT.md | 383 ---------
+ docs/audits/20260919_BUILD_EVAL_FIX_INTEGRATION.md | 566 +++++++++++++
+ ...260919_BUILD_EVAL_FIX_T1_eval-tick-coherence.md | 137 ++++
+ ...UILD_EVAL_FIX_T2_guardrail-error-fail-closed.md | 128 +++
+ ...919_BUILD_EVAL_FIX_T3_tool-result-validation.md | 138 ++++
+ ...19_BUILD_EVAL_FIX_T4_news-seen-after-success.md | 131 +++
+ 18 files changed, 3945 insertions(+), 426 deletions(-)
+```
+
+*(plus this section, in the commit that carries it.)* The `2026-09-19_ASTRA_RUNTIME_STATE_INTEGRITY_AUDIT.md` deletion remains the artefact of not rebasing, unchanged from §11.8 and §12.7 — **this branch has not deleted anything**, and it disappears on merge or rebase.
+
+### 13.9 Branch state
+
+| | |
+|---|---|
+| **Branch** | `claude/eval-small-fixes-integrate-or1aqn` |
+| **Part F code HEAD** | `9d25f6f1` — the F-1/F-2 gates; §13's measurements were taken at or after it, on a clean tree |
+| **Branch tip** | the commit carrying this section, the F-3 test work and the F-4 corrections. Read it with `git rev-parse claude/eval-small-fixes-integrate-or1aqn`. |
+| **Base** | `origin/main` @ `0871937c` (not rebased) |
+| **Part F commits** | `9d25f6f1` (F-1 + F-2 + their rows), plus this section with F-3 and F-4 |
+
+**STOP.** Part F complete and pushed. **No PR was opened, nothing was merged, no flag was flipped** — the branch is ready for the founder to open one.
