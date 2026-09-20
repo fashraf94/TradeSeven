@@ -36,6 +36,7 @@ import {
   getCurrentTradingDayServer,
 } from '../_utils/agentEvalPromptAssembly.js';
 import { TRADE_DECISION_TOOL } from '../_utils/agentEvalToolSchema.js';
+import { validateTradeToolResult, INVALID_TOOL_RESULT_CLASS } from '../_utils/agentEvalToolResultValidation.js';
 import { evaluateTriggers, fetchRecentNews } from '../_utils/agentTriggerGate.js';
 import { validateTradeDecision, executeSwapServer } from '../_utils/agentSwapExecution.js';
 // P2 League Tournament — agent-market exclusivity (Spec §1.2). Every use is
@@ -2000,6 +2001,14 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // the eval_degraded statusFeed entry, the shadow log, and the disclosure
     // counter.
     let haikuFailure = null;
+    // Why this tick's HOLD is a HOLD. null on a CHOSEN hold (the model said
+    // HOLD, or no failure occurred) — those keep exactly what they wrote
+    // before. 'default_failure' on a FALLBACK hold: the proposal was never
+    // usable (transport failure, budget skip, unusable or schema-invalid tool
+    // result) and the tick failed closed. The repo had no hold-kind field, so
+    // this is a new single field rather than a new value — stated in the T3
+    // build report per the build prompt's common rules.
+    let holdKind = null;
     let haikuAttempted = false;
     // Phase B (D-110): true only once the prompt's three parts are BUILT and
     // about to be sent — set immediately before anthropic.messages.create.
@@ -2035,6 +2044,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         timestamp: new Date().toISOString(),
         timeoutKind: null,
       };
+      holdKind = 'default_failure';
       console.warn(`${LOG_PREFIX} Haiku call skipped for battle ${battle.id}: ${haikuFailure.message}`);
     } else {
       haikuAttempted = true;
@@ -2131,21 +2141,45 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         outputTokens = response.usage?.output_tokens || 0;
 
         // Extract tool use block. tool_choice is forced, so a usable response
-        // carries submit_trade_decision input with a string `decision`;
-        // anything else (max_tokens truncation mid-JSON, absent block) is a
-        // truncated_response — instrumented instead of silently null. Tokens
-        // above stay recorded: a response did arrive.
+        // carries submit_trade_decision input. An ABSENT block (max_tokens
+        // truncation mid-JSON, no tool_use at all) stays a truncated_response
+        // — the category's original meaning, unchanged. Tokens above stay
+        // recorded either way: a response did arrive.
+        //
+        // A block that IS present is validated against the FULL schema before
+        // anything downstream reads it (agentEvalToolResultValidation.js).
+        // The old test — "input exists and `decision` is a string" — accepted
+        // a decision outside the enum, a SWAP with no symbolOut/symbolIn, and
+        // a missing or non-numeric conviction; the last slipped past the
+        // platform's `conviction < 70` floor (agentSwapExecution.js:77)
+        // because `undefined < 70` is false. This check runs strictly BEFORE
+        // that floor, so a malformed proposal fails closed to HOLD here.
+        // Nothing is repaired, defaulted or retried — only the failing field
+        // is recorded.
         const toolUse = response.content?.find(c => c.type === 'tool_use');
-        if (toolUse?.input && typeof toolUse.input.decision === 'string') {
+        const validation = validateTradeToolResult(toolUse?.input);
+        if (validation.valid) {
           haikuResult = toolUse.input;
-        } else {
+        } else if (!toolUse) {
           haikuFailure = {
             failureClass: 'truncated_response',
             message: `response received but tool input missing/unusable (stop_reason=${response.stop_reason || 'unknown'})`,
             timestamp: new Date().toISOString(),
             timeoutKind: null,
           };
+          holdKind = 'default_failure';
           console.warn(`${LOG_PREFIX} Haiku response unusable for battle ${battle.id}: ${haikuFailure.message}`);
+        } else {
+          haikuFailure = {
+            failureClass: INVALID_TOOL_RESULT_CLASS,
+            message: `tool result failed schema validation: ${validation.reason}`,
+            timestamp: new Date().toISOString(),
+            timeoutKind: null,
+            // The field that failed — the one fact a triage read needs.
+            invalidField: validation.invalidField,
+          };
+          holdKind = 'default_failure';
+          console.warn(`${LOG_PREFIX} Haiku tool result invalid for battle ${battle.id} [${validation.invalidField}]: ${validation.reason}`);
         }
       } catch (err) {
         // The build's own elapsed when it was the BUILD that failed (the race
@@ -2170,6 +2204,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           // fired on a request that was never sent.
           timeoutKind: callMs === null ? null : classifyTimeoutKind(err),
         };
+        holdKind = 'default_failure';
         console.error(`${LOG_PREFIX} Haiku call failed for battle ${battle.id} [${haikuFailure.failureClass}]:`, err.message);
         // Default to HOLD on timeout or error
       } finally {
@@ -2915,6 +2950,13 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       promptBuiltAt,
       buildMs,
       callMs,
+      // Why this HOLD is a HOLD: 'default_failure' when the tick failed closed
+      // with no usable proposal, null when the HOLD was CHOSEN (or the tick
+      // swapped). Reads alongside haikuError.failureClass, which says WHICH
+      // failure; this says the decision was not the model's. Composed LAST so
+      // the frozen PRE_PHASE_B_ENTRY_KEYS golden keeps matching byte-for-byte
+      // and the pin reconciliation is a single append.
+      holdKind,
     };
 
     // ---- Intraday Data Build 1 (contract §8.1) — the diagnostic view beside
