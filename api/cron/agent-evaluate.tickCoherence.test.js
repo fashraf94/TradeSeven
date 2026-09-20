@@ -270,19 +270,28 @@ describe('T1 — a tick with a risk exit first', () => {
     for (const symbol of locked) expect(held).toContain(symbol);
   });
 
-  it('documented limit: the lock-pruning BRANCH cannot be reached end-to-end', () => {
+  it('documented limit: the lock-pruning loop\'s DELETION ARM cannot be reached', () => {
     // Stated as executable documentation rather than left as a silent gap.
     // `lockedPositions` is populated only when evaluateRisk returns 'LOCK'
     // (agent-evaluate.js:1452-1454), and a position is exited only when it
     // returns EMERGENCY_SWAP / SWAP_OUT / TRAIL_STOP (:1449-1451). The two are
     // branches of ONE action value, so no symbol can be locked and exited on
-    // the same tick — which means the prune-the-lock-set loop in the rebuild
-    // has no reachable input today. The row above therefore asserts a SUBSET
-    // INVARIANT (nothing unheld is ever in the set), not a mutation-provable
-    // guard: removing the loop does not redden it, because the set is already
-    // empty on every reachable path. Filed for separate tasking in the Part C
-    // report; recorded here so the next reader does not mistake the invariant
-    // for proof that the branch works.
+    // the same tick.
+    //
+    // PRECISELY WHAT THAT MEANS (corrected Sep 20 2026, Astra Part D review —
+    // the earlier wording here said "the set is empty on every reachable
+    // path", which is wrong). The lock set is often NON-empty: a still-held
+    // locked symbol sits in it quite normally while a DIFFERENT symbol exits.
+    // What has no reachable input is the loop's DELETION ARM — the branch that
+    // removes a locked symbol because it is no longer held — since being
+    // locked and being exited are mutually exclusive on one tick.
+    //
+    // So the row above asserts a SUBSET INVARIANT (nothing unheld is ever in
+    // the set), not a mutation-provable guard: deleting the loop does not
+    // redden it, because on every reachable path there is nothing for the loop
+    // to delete. Filed for separate tasking in the Part C report; recorded
+    // here so the next reader does not mistake the invariant for proof that
+    // the deletion arm works.
     const source = readFileSync(resolve(HERE, './agent-evaluate.js'), 'utf8');
     expect(source).toMatch(/if \(riskResult\.action === 'LOCK'\) \{\s*\n\s*lockedPositions\.add\(score\.symbol\);/);
     expect(source).toMatch(/\['EMERGENCY_SWAP', 'SWAP_OUT', 'TRAIL_STOP'\]\.includes\(riskResult\.action\)/);

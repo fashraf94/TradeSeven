@@ -360,7 +360,7 @@ Every mutation was applied to a file **restored from a copy**, never `git checko
 
 **F3 is real in the cron, but currently unreachable end-to-end.** Every guardrail forced exit — the only path that turns a fallback into a SWAP — is built by `agentGuardrails.js:537-549`, which sets `note: undefined` whenever the replacement is not distressed. `ignoreUndefinedProperties` is unset repo-wide (stated at `tickStampsHarness.js:29`, `tickStamps.js:55`, `agent-evaluate.js:972`), so Firestore **rejects** that write: the tick throws before any record with a wrong `holdKind` could persist. The distressed alternative is downgraded back to HOLD at `agent-evaluate.js:2622`. So the F3 defect is genuine and the fix is correct, but it is **latent behind a larger break** filed in §11.6. The F3 row therefore doubles the evaluator to supply the verdict — legitimate, because F3's fix lives entirely in the cron's *classification* of a verdict, not in producing one — and says so at the row.
 
-**F5b's row cannot be made a mutation-provable guard, and is not claimed as one.** `lockedPositions` is populated only when `evaluateRisk` returns `'LOCK'` (`:1452-1454`), and a position is exited only on `EMERGENCY_SWAP` / `SWAP_OUT` / `TRAIL_STOP` (`:1449-1451`). Those are branches of one action value, so **no symbol can be locked and exited on the same tick** and the lock-pruning loop has no reachable input. The row now observes the lock set (fixing Astra's literal complaint) and asserts a **subset invariant**; a companion row records the limit as executable documentation so the next reader cannot mistake the invariant for proof. The dead branch is filed in §11.6.
+**F5b's row cannot be made a mutation-provable guard, and is not claimed as one.** `lockedPositions` is populated only when `evaluateRisk` returns `'LOCK'` (`:1452-1454`), and a position is exited only on `EMERGENCY_SWAP` / `SWAP_OUT` / `TRAIL_STOP` (`:1449-1451`). Those are branches of one action value, so **no symbol can be locked and exited on the same tick** — the lock set may well be non-empty (a still-held locked symbol sits in it while a different symbol exits), but its **deletion arm** has no reachable input. *(Corrected 2026-09-20, Astra Part D review; the earlier "the set is already empty on every reachable path" was wrong.)* The row now observes the lock set (fixing Astra's literal complaint) and asserts a **subset invariant**; a companion row records the limit as executable documentation so the next reader cannot mistake the invariant for proof. The dead branch is filed in §11.6.
 
 ### 11.5 Golden provenance — verified, then made self-checking
 
@@ -377,9 +377,13 @@ The fixture now carries a `#!golden` header naming the source commit and the sha
 
 ### 11.6 Filed for separate tasking (BUILD_RULES §3 — report, do not fix)
 
-**(1) P1 — every non-distressed guardrail forced exit writes `note: undefined` and would throw the tick's final write.** `api/_utils/agentGuardrails.js:546-548` sets `note:` to `undefined` via a ternary with no else-value; that object rides `guardrailOverrides` into the evaluation record and into `battleRef.update()`. With `ignoreUndefinedProperties` unset, Firestore rejects it. **This is a §1 FENCED file — not touched, not fixed.** It was found because it blocked the F3 fixture, and it appears to break the entire deterministic forced-exit path in production, which makes it more consequential than anything in Astra's list. Recommend tasking it next, ahead of the F3 fix it currently hides.
+**(1) P1-LATENT — a non-distressed guardrail forced exit writes `note: undefined`, which would throw the tick's final write.** `api/_utils/agentGuardrails.js:546-548` sets `note:` to `undefined` via a ternary with no else-value; that object rides `guardrailOverrides` into the evaluation record and into `battleRef.update()`. With `ignoreUndefinedProperties` unset, Firestore rejects it. **This is a §1 FENCED file — not touched, not fixed.**
 
-**(2) P3 — the lock-pruning branch in the rebuild is unreachable.** See §11.4. Either the LOCK/exit exclusivity is intended (and the loop should go, with a comment) or a locked position is meant to be exitable (and the risk manager is wrong). That is a design question for the founder, not a fix to improvise.
+*Characterisation corrected 2026-09-20 (Astra Part D review, adopted).* The original text here called it a live production break. **It is LATENT, not live.** The undefined key is produced only by the non-distressed **forced-exit** branch, which requires a **breached deployed stop, trailing stop or profit target**; sector-cap observation alone cannot reach it, and per Astra's review no agent currently has a deployed guardrail — so nothing is hitting it today. What it breaks is **the tick's final write, not necessarily the protective trade**: `executeSwapServer` commits before the record is composed, so a forced exit can already have executed when the write is rejected. That is its own hazard (a committed trade with no evaluation record) and is part of why it stays P1.
+
+Filed as **P1-latent for the exit-dials arc, ahead of the F3 fix in that arc's order** — F3's defect cannot manifest until this is fixed, because the write throws first.
+
+**(2) P3 — the lock-pruning branch's DELETION ARM is unreachable** *(wording corrected 2026-09-20, Astra Part D review: the set itself is not always empty — a still-held locked symbol sits in it while a different symbol exits; what no tick can produce is a symbol that is both locked and exited, which is the only input the deletion arm has)*. See §11.4. Either the LOCK/exit exclusivity is intended (and the loop should go, with a comment) or a locked position is meant to be exitable (and the risk manager is wrong). That is a design question for the founder, not a fix to improvise.
 
 ### 11.7 Process notes
 
@@ -430,3 +434,133 @@ The fixture now carries a `#!golden` header naming the source commit and the sha
 | **Part C commits** | `fd78b86e` (F1–F4 + the confirm/refute suite), `37622c5a` (F5, golden provenance, N1 wording), plus this section |
 
 **STOP.** Part C complete and pushed. **No PR was opened, nothing was merged, no flag was flipped.**
+
+---
+
+## 12. Part E — closing Astra's delta-review findings
+
+**Date:** 2026-09-20 · **Executor:** Opus (Claude Code) · **Author of prompt:** Fable
+**Branch:** `claude/eval-small-fixes-integrate-or1aqn`, continued from tip `6effe727` (Part C code HEAD `37622c5a`). **No PR, no merge, no flag flip.**
+**Preamble (BUILD_RULES §3):** `git fetch origin` run first; `origin/main` unchanged at `0871937c`; tip `6effe727` confirmed, tree clean. Whole-repo baseline **exit 0** (725 files, 13 914 passed). Same confirm-then-fix discipline as Part C: every finding got a test that was **red on the current tree, for the reason the finding names**, before its fix. Anchors below are **VERIFIED** at the new tip.
+
+### Executive verdict
+
+| | |
+|---|---|
+| **Input** | Astra's Part D review: MERGE WITH CHANGES — the Part C refresh-failure stop was incomplete, the Part C fault separation dropped an existing receipt, plus two wording corrections. Its verifications of F1, F2's record semantics, F3, F4, F5a–c, the golden, the changed pin and scope were accepted and not reworked. |
+| **E1** | **CONFIRMED and fixed.** Three doors were still open on an unreadable book — and two of them meant the tick wrote **no record at all**. |
+| **E2** | **CONFIRMED and fixed.** The guardrail fault now carries its own durable and shadow receipts, routed independently of the model-call outcome. |
+| **E3** | Both corrections applied. Astra was right on both: the fenced defect is **latent, not live**, and "the set is empty on every reachable path" was wrong — it is the **deletion arm** that is unreachable. |
+| **E4** | Filed, not fixed — §12.5. |
+| **Whole-repo suite** | **exit code 0** — 725 files passed / 3 skipped, **13 922 passed** / 64 skipped. |
+| **`vite build`** | **exit code 0**, built in 29.93 s. |
+| **Fence (§1)** | **No fenced file changed** — all eleven paths checked. |
+
+---
+
+### 12.1 CONFIRMED / REFUTED
+
+| # | Finding | Verdict | Red-before evidence | Green-after |
+|---|---|---|---|---|
+| **E1(a)** | Refresh failure + **pending** meeting: suppression pass runs and trades, then returns early | **CONFIRMED** | `expected 1 to be +0` — the pass **evaluated** on the stale book; and before the row was strengthened, `the tick must still write its record: expected null to be truthy` — **no record at all** | ✓ |
+| **E1(b)** | Refresh failure + **newly detected** meeting: same | **CONFIRMED** | `expected 1 to be +0`, and the same missing-record red | ✓ |
+| **E1(c)** | Refresh failure + breached deployed stop: **S10 runs** | **CONFIRMED** | `expected 1 to be +0` — `applyGuardrails` was called on a book the tick had just failed to re-read | ✓ |
+| **E1(d)** | Control: breached stop + successful refresh still exits | **green throughout** — the fix must not touch this | n/a | ✓ |
+| **E2** | The fault separation dropped the `cronErrors` entry and the shadow disclosure | **CONFIRMED** | `expected [] to have a length of 1 but got +0` (valid result + throw); `expected [ { …(4) } ] to have a length of 2 but got 1` (both faults → only one receipt) | ✓ |
+
+**Nothing refuted.** Both findings were real, and E1 was worse than its headline: the two gameplan paths do not merely act on a stale book, they **early-return**, so on the pre-fix tree a refresh-failure tick with a meeting pending or newly detected produced **no evaluation record whatsoever** — the fault was not merely mis-stated, it was entirely undisclosed. The fixture hid both doors exactly as Astra said (`tickStampsHarness.js:163` pre-sets `lastGameplanDate` to suppress the detector; no deployed guardrail is shipped), so the new rows remove that masking rather than working around it.
+
+### 12.2 The fixes
+
+| Fix | `path:line` | What changed |
+|---|---|---|
+| **E1 — gameplan handling** | `api/cron/agent-evaluate.js:1980-1982` | `gameplanHandled` resolves to `'continue'` on a `refreshFailure` tick instead of calling `handleGameplanMeeting`. Both of that stage's outcomes depend on the book — handling an approved meeting **executes its legs**, and the pending branch runs a **trading** suppression pass and returns early. `'continue'` keeps the tick falling through to the common flush. |
+| **E1 — meeting detection** | `api/cron/agent-evaluate.js:2003` | `if (!refreshFailure && !battle.gameplanMeeting)`. The detector reads the snapshot, the creating tick runs the same trading pass and returns early, and a meeting diagnosed off a stale book would be **persisted**. |
+| **E1 — S10 guardrail stage** | `api/cron/agent-evaluate.js:2640` | `if (!refreshFailure && (deployedGuardrails.length > 0 || sectorSlotObserveCap !== null))`. A deterministic exit forced off a stale snapshot is a trade that cannot be justified; the delayed exit is the correct trade. |
+| **E2 — durable receipt** | `api/cron/agent-evaluate.js:3533-3554` | One receipt **per fault**, not per tick: `faultRows` collects a `haiku_eval …` row when `haikuFailure` is set and a `guardrail_eval guardrail_error: …` row when `guardrailFault` is set, distinguishable by `failureClass`. A tick with both writes both. The ≤20 cap is preserved (it was `slice(-19)` plus one push; it is now `slice(-20)` over the combined array). |
+| **E2 — shadow disclosure** | `api/cron/agent-evaluate.js:3470` | `guardrailFault` rides the shadow payload in its **own** field. The payload's `failureClass` stays the model-call outcome, so a guardrail fault on a successful call reads as `failureClass: null` + `guardrailFault` set. |
+
+**Not changed, deliberately:** the score transaction, the lease semantics, anything on a tick whose refresh succeeded, `failureClass` for the model outcome, and `consecutiveEvalFailures` semantics. E1(d) and the E2 no-regression row are the guards on that.
+
+### 12.3 New tests, and the mutation check (BUILD_RULES §2)
+
+Eight rows added to `api/cron/agent-evaluate.astraFindings.test.js` (four E1, four E2).
+
+| Mutation | Rows reddened |
+|---|---|
+| Un-gate gameplan **handling** | **1** (E1a) |
+| Un-gate meeting **detection** | **1** (E1b) |
+| Un-gate the **S10** stage | **3** (E1a, E1b, E1c — a, b also pin `applyGuardrails` at zero calls) |
+| Drop the guardrail `cronErrors` row | **3** (the three E2 fault rows) |
+| Drop `guardrailFault` from the shadow payload | **3** (the three E2 fault rows) |
+
+Every mutation was restored from a `cp` copy, never `git checkout --` (§11.7).
+
+**One deliberate double, stated.** E1(c) and E1(d) supply the forced-exit verdict through the guardrail double rather than computing it, for the same reason as F3: the real evaluator's forced-exit override carries `note: undefined` (§11.6(1)), which the harness — correctly mirroring Firestore — rejects. The rows are about whether the **stage runs**, not about what the evaluator decides, so the substituted verdict is the input rather than the thing under test. Said at the rows.
+
+### 12.4 Corrections to claims we made (E3)
+
+**§11.6(1) — "live production break" → P1-LATENT.** Astra is right and the characterisation is corrected in place. The undefined key is produced only by the **non-distressed forced-exit branch**, which requires a breached deployed stop, trailing stop or profit target; sector-cap observation alone cannot reach it, and per Astra's review **no agent currently has a deployed guardrail**, so nothing is hitting it today. The correction also records what it actually breaks: **the tick's final write, not necessarily the protective trade** — `executeSwapServer` commits before the record is composed, so a forced exit can already have executed when the write is rejected. That residue (a committed trade with no evaluation record) is its own hazard and is part of why it stays P1. Filed as **P1-latent for the exit-dials arc, ahead of F3 in that arc's order**. The fenced file remains untouched.
+
+**P3 wording — "empty on every reachable path" was wrong.** Corrected in both places (`api/cron/agent-evaluate.tickCoherence.test.js:273-298` and §11.4/§11.6(2)). The lock set is often **non-empty**: a still-held locked symbol sits in it quite normally while a *different* symbol exits. What has no reachable input is the loop's **deletion arm** — the branch that removes a locked symbol because it is no longer held — since being locked and being exited are mutually exclusive on one tick. The companion row is renamed to say exactly that.
+
+### 12.5 Filed, not fixed (E4) — `holdKind` and `guardrailFault` have no reader
+
+`grep` across `src/` and `api/` returns **zero** consumers of either field outside the cron that writes them and the test harness. Three references, all **VERIFIED** this session:
+
+* **`src/screens/battleView/selectWhyState.js:145`** — `if (evaluation.haikuError)` returns the ABSENT "no decision" state. Post-F2 a chosen HOLD whose only fault is the guardrail no longer short-circuits here. **That is intended**: there *was* a decision, and the model made it.
+* **`src/screens/battleView/buildTape.js:272-274`** — but the same entry now satisfies `quiet = decision === 'HOLD' && downgraded !== true && !haikuError`, so it becomes eligible for **quiet tape folding**. The guardrail fault is disclosed on the feed beat and in the two receipts restored by E2, and **not on the tape**.
+* **`api/_utils/voiceLayerGrounding.js:357`** — `RECORD_ENTRY_FIELDS` whitelists `haikuError`, `guardrailOverrides` and `guardrailSourceNote`, but neither `holdKind` nor `guardrailFault`, so neither reaches a later prompt.
+
+Filed for the Film Room / capture readers. **No reader was changed in this task.** The question for that arc is whether a guardrail-only fault should break a quiet run on the tape, and whether either field should join the grounding whitelist.
+
+### 12.6 Verification
+
+| Check | Result |
+|---|---|
+| Whole-repo `npx vitest run` — output redirected, not piped, so `$?` is vitest's own | **exit 0** · 725 files passed / 3 skipped · **13 922 passed** / 64 skipped |
+| Failing-file set | **empty**, equal to the baseline |
+| `npx vite build` | **exit 0**, 29.93 s |
+| `git diff origin/main --name-only` vs the §1 fence list | **no fenced file present** |
+| Three regional guards | **pass** — 3 files / 108 tests; `tickStampsEntryGolden.flagOff.json` absent from the diff; the `executeSwapServer` census allowlist unchanged |
+| `eslint` on the changed source | **3 errors, all pre-existing** (`getPresetAdjustedStrategies`, two `_e`) |
+
+Test count moved 13 914 → **13 922** (+8): exactly the eight rows added. Linux is the suite of record.
+
+### 12.7 `git diff origin/main --stat`
+
+```
+ .../tickCoherenceLiveContextGolden.noSwap.txt      |  84 +++
+ api/_utils/__fixtures__/tickStampsHarness.js       |  21 +-
+ api/_utils/agentEvalToolResultValidation.js        | 139 ++++
+ api/_utils/agentTriggerGate.js                     |  19 +
+ api/cron/agent-evaluate.astraFindings.test.js      | 696 +++++++++++++++++++++
+ ...agent-evaluate.guardrailErrorFailClosed.test.js | 269 ++++++++
+ api/cron/agent-evaluate.js                         | 466 ++++++++++++--
+ .../agent-evaluate.newsSeenAfterSuccess.test.js    | 352 +++++++++++
+ api/cron/agent-evaluate.test.js                    |  10 +-
+ api/cron/agent-evaluate.tickCoherence.test.js      | 394 ++++++++++++
+ api/cron/agent-evaluate.tickStamps.flagOff.test.js |   8 +-
+ .../agent-evaluate.toolResultValidation.test.js    | 217 +++++++
+ ...26-09-19_ASTRA_RUNTIME_STATE_INTEGRITY_AUDIT.md | 383 ------------
+ docs/audits/20260919_BUILD_EVAL_FIX_INTEGRATION.md | 436 +++++++++++++
+ ...260919_BUILD_EVAL_FIX_T1_eval-tick-coherence.md | 137 ++++
+ ...UILD_EVAL_FIX_T2_guardrail-error-fail-closed.md | 128 ++++
+ ...919_BUILD_EVAL_FIX_T3_tool-result-validation.md | 138 ++++
+ ...19_BUILD_EVAL_FIX_T4_news-seen-after-success.md | 131 ++++
+ 18 files changed, 3605 insertions(+), 423 deletions(-)
+```
+
+*(plus this section, in the commit that carries it.)* The `2026-09-19_ASTRA_RUNTIME_STATE_INTEGRITY_AUDIT.md` deletion remains the artefact of not rebasing, unchanged from §11.8 — this branch has not deleted anything.
+
+### 12.8 Branch state
+
+| | |
+|---|---|
+| **Branch** | `claude/eval-small-fixes-integrate-or1aqn` |
+| **Part E code HEAD** | `d83615b1` — the E1/E2 fixes; every measurement in §12 was taken at or after it, on a clean tree |
+| **Branch tip** | the commit carrying this section and the E3 corrections. Read it with `git rev-parse claude/eval-small-fixes-integrate-or1aqn`. |
+| **Base** | `origin/main` @ `0871937c` (not rebased) |
+| **Part E commits** | `d83615b1` (E1 + E2 + their rows), plus this section with the E3 corrections |
+
+**STOP.** Part E complete and pushed. **No PR was opened, nothing was merged, no flag was flipped.**
