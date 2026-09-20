@@ -1971,7 +1971,15 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     }
 
     // ---- Gameplan meeting lifecycle check (after proposals, before triggers) ----
-    const gameplanHandled = await handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEntries, summary, pendingNarrations, tournamentCtx);
+    // E1 — withheld when a committed swap could not be re-read. Both of this
+    // stage's outcomes depend on the book: handling an approved meeting
+    // EXECUTES its legs, and the pending branch runs a deterministic
+    // suppression pass that TRADES and then returns early — which would also
+    // mean this tick never wrote the `refresh_failed` record at all.
+    // 'continue' keeps the tick falling through to that record.
+    const gameplanHandled = refreshFailure
+      ? 'continue'
+      : await handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEntries, summary, pendingNarrations, tournamentCtx);
     // R11 (Exit-Behavior Tier 2): a pending-and-unexpired meeting suppresses
     // DISCRETIONARY trading, never the user's standing deterministic orders —
     // the pass below runs the guardrail stops + profit target before the
@@ -1988,7 +1996,11 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     }
 
     // ---- Gameplan meeting trigger detection (only if no meeting pending) ----
-    if (!battle.gameplanMeeting) {
+    // E1 — and only if the book is readable: the detector reads the snapshot,
+    // and the tick that CREATES a meeting runs the same trading suppression
+    // pass and returns early. A meeting diagnosed off a stale book would also
+    // persist that diagnosis.
+    if (!refreshFailure && !battle.gameplanMeeting) {
       const gameplanTrigger = detectGameplanMeetingTrigger(battle, assetScores, prices, flatPortfolio, benchAssets, technicalScoresMap);
       // R11: the tick that CREATES a meeting is a suppression tick too ("gameplan
       // IS the evaluation" returns below) — deterministic orders run first. The
@@ -2621,7 +2633,11 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       battle.agentContext?.deployedGuardrails || [],
       battle,
     );
-    if (deployedGuardrails.length > 0 || sectorSlotObserveCap !== null) {
+    // E1 — S10 is withheld on an unreadable book for the same reason as the
+    // model call: a deterministic exit forced off a stale snapshot is a trade
+    // we cannot justify. Delaying a protective exit to the next tick is the
+    // correct trade; acting on a book we cannot read is not.
+    if (!refreshFailure && (deployedGuardrails.length > 0 || sectorSlotObserveCap !== null)) {
       try {
         const result = applyGuardrails({
           haikuResult,
@@ -3447,6 +3463,11 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       // pipeline (null on success). logEvaluation is a passthrough to the GCS
       // shadow stream, so no shadowLogger.js change is needed.
       failureClass: haikuFailure?.failureClass || null,
+      // E2 — the DETERMINISTIC layer's fault, disclosed beside the model's
+      // rather than folded into it. `failureClass` above stays the model-call
+      // outcome, so a guardrail fault on a successful call still reads as
+      // failureClass null + guardrailFault set.
+      guardrailFault: guardrailFault ? { ...guardrailFault } : null,
       // The same two timings the entry carries, so a week of shadow records
       // answers "build or call?" without reading every battle doc.
       buildMs: evaluation.buildMs,
@@ -3503,15 +3524,33 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // Durable failure capture (Phase 2): same {timestamp, error} shape and
     // ≤20-entry cap as the handler-catch writer above, plus additive
     // failureClass/evalId. Rides this finalUpdate — no new write op.
+    // E2 — ONE receipt per fault, not one per tick. T2 got the durable
+    // cronErrors entry for free by writing `haikuFailure`; the F2 separation
+    // gave the guardrail fault its own field and silently took that receipt
+    // away with it. Both faults now write their own row, distinguishable by
+    // `failureClass`, and a tick carrying both writes both. The ≤20 cap is
+    // unchanged (it was slice(-19) plus one push).
+    const faultRows = [];
     if (haikuFailure) {
-      const cronErrors = (battle.cronState?.cronErrors || []).slice(-19);
-      cronErrors.push({
+      faultRows.push({
         timestamp: haikuFailure.timestamp,
         error: `haiku_eval ${haikuFailure.failureClass}: ${haikuFailure.message}`,
         failureClass: haikuFailure.failureClass,
         evalId,
       });
-      finalUpdate['cronState.cronErrors'] = cronErrors;
+    }
+    if (guardrailFault) {
+      faultRows.push({
+        timestamp: guardrailFault.timestamp,
+        error: `guardrail_eval guardrail_error: ${guardrailFault.message}`,
+        failureClass: 'guardrail_error',
+        evalId,
+      });
+    }
+    if (faultRows.length > 0) {
+      finalUpdate['cronState.cronErrors'] = [
+        ...(battle.cronState?.cronErrors || []), ...faultRows,
+      ].slice(-20);
     }
     // Shared cron state (lastEvaluatedAt / evaluatingAt / vwapTicks /
     // intradayMomentum). `now` is passed so lastEvaluatedAt === lastTriggeredAt,

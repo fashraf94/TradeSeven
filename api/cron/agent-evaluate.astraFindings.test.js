@@ -32,7 +32,9 @@ const { captured } = vi.hoisted(() => ({ captured: { calls: [] } }));
 // null → run the real evaluator; an Error → throw it.
 // null → run the real evaluator; `throws` → throw it; `returns` → hand back
 // that result instead of evaluating.
-const { guardrailState } = vi.hoisted(() => ({ guardrailState: { throws: null, returns: null } }));
+const { guardrailState } = vi.hoisted(() => ({ guardrailState: { throws: null, returns: null, calls: 0 } }));
+// E2 — what the shadow stream was handed.
+const { shadow } = vi.hoisted(() => ({ shadow: { calls: [] } }));
 
 vi.mock('@anthropic-ai/sdk', () => ({ default: class AnthropicMock { constructor() { this.messages = { create: (...args) => mocks.create(...args) }; } } }));
 vi.mock('../_utils/marketDataCache.js', () => ({
@@ -55,6 +57,7 @@ vi.mock('../_utils/agentGuardrails.js', async (importOriginal) => {
   return {
     ...real,
     applyGuardrails: (...args) => {
+      guardrailState.calls += 1;
       if (guardrailState.throws) throw guardrailState.throws;
       if (guardrailState.returns) return guardrailState.returns;
       return real.applyGuardrails(...args);
@@ -73,7 +76,7 @@ vi.mock('../_utils/tournamentAgentLedger.js', () => ({ resolveTournamentContext:
 vi.mock('../_utils/firebaseAdmin.js', () => ({ getFirebaseAdmin: () => ({}) }));
 vi.mock('../_utils/voiceLayerAnticipation.js', async (importOriginal) => ({ ...(await importOriginal()), generateAnticipation: vi.fn(async () => null) }));
 vi.mock('../_utils/voiceLayerTradeNarration.js', async (importOriginal) => ({ ...(await importOriginal()), generateTradeNarration: vi.fn(async () => null) }));
-vi.mock('../_utils/shadowLogger.js', async (importOriginal) => ({ ...(await importOriginal()), logEvaluation: vi.fn(async () => false), logVisionTransition: vi.fn(async () => false), logAnticipation: vi.fn(async () => false) }));
+vi.mock('../_utils/shadowLogger.js', async (importOriginal) => ({ ...(await importOriginal()), logEvaluation: async (payload) => { shadow.calls.push(payload); return false; }, logVisionTransition: vi.fn(async () => false), logAnticipation: vi.fn(async () => false) }));
 vi.mock('../_utils/learning/captureReceipt.js', () => ({
   captureSwapReceipt: vi.fn(async () => {}),
   resolveEntrySnapshot: vi.fn(async () => ({ snapshotIn: null, techDocIn: null, entrySnapshotSource: 'unavailable' })),
@@ -184,6 +187,8 @@ async function runTick({
     feed: finalUpdate?.statusFeed || [],
     prompt: captured.calls.at(-1),
     stored: db.__store.battle,
+    cronErrors: finalUpdate?.['cronState.cronErrors'] || null,
+    shadowPayload: shadow.calls.at(-1) || null,
   };
 }
 
@@ -198,6 +203,8 @@ beforeEach(() => {
   captured.calls = [];
   guardrailState.throws = null;
   guardrailState.returns = null;
+  guardrailState.calls = 0;
+  shadow.calls = [];
   mocks.getStockAnalysisData.mockReset(); mocks.fetchIntradayBatch.mockReset();
   mocks.create.mockReset(); mocks.fetchRecentNews.mockReset();
   mocks.fetchRecentNews.mockImplementation(async () => []);
@@ -504,5 +511,186 @@ describe('N1 — the validator is schema-DRIVEN over top-level fields, not "full
     const r = hold(); delete r.decision;
     expect(validateTradeToolResult(r).valid).toBe(false);
     expect(validateTradeToolResult(r).invalidField).toBe('decision');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PART E — Astra's delta review.
+//
+// E1. The Part C refresh-failure stop was INCOMPLETE. It withheld the proposal
+// lifecycle, the trigger gate and the model call, but left three doors open on
+// a book the tick had just failed to re-read: gameplan meeting HANDLING and
+// DETECTION (each of which runs a deterministic suppression pass that TRADES,
+// then early-returns so no record is written at all), and the S10 guardrail
+// stage (which can force a protective exit). The fixture masked both: it
+// suppresses the detector via `lastGameplanDate` and ships no deployed
+// guardrail. These rows remove that masking.
+const PENDING_MEETING = Object.freeze({
+  status: 'pending',
+  createdAt: FROZEN_NOW,
+  diagnosis: 'Consumer Cyclical is dragging.',
+  toSectors: ['Technology'],
+  suggestedSwaps: [],
+});
+/** A forced-exit verdict shaped like the real one, minus the key Firestore rejects. */
+const FORCED_EXIT = Object.freeze({
+  decision: 'SWAP', symbolOut: 'TSLA', symbolIn: 'AMD',
+  overrides: [{
+    type: 'stopLoss', symbol: 'TSLA', metric: 'pnlPct', threshold: -1.5,
+    actual: -2.08, action: 'forced_exit', originalDecision: 'HOLD', replacementSymbol: 'AMD',
+  }],
+  statusMessage: 'Guardrail override: stop-loss at 1.5% breached on TSLA (-2.08%). Forcing exit → AMD.',
+  sourceNote: 'guardrail_stopLoss',
+});
+/** The fixture pre-suppresses the detector; a meeting-detection row must not inherit that. */
+function detectorArmed(battle) {
+  const cronState = { ...battle.cronState };
+  delete cronState.lastGameplanDate;
+  return { ...battle, cronState };
+}
+
+describe('E1 — a tick that cannot re-read the book does NOTHING that depends on it', () => {
+  it('(a) refresh failure with a PENDING meeting → no suppression pass, no early return, refresh_failed written', async () => {
+    // A deployed stop AND a forced-exit verdict, so the suppression pass has
+    // something to trade: that is what makes "no suppression pass" observable
+    // rather than merely asserted.
+    guardrailState.returns = { ...FORCED_EXIT };
+    const base = makeTickBattle();
+    const battle = {
+      ...base,
+      gameplanMeeting: { ...PENDING_MEETING },
+      agentContext: { ...base.agentContext, deployedGuardrails: [TIGHT_STOP] },
+    };
+    const db = makeDb(battle, { failBattleGetAfter: 1 });
+    const { entry, stored } = await runTick({ battle, prices: koBustPrices(), db });
+
+    // The pass never ran, so it never evaluated and never traded. Exactly one
+    // executor call happened — the S7 exit that committed BEFORE the refresh
+    // failed; nothing after it.
+    expect(guardrailState.calls).toBe(0);
+    expect(executeSwapServerMock).toHaveBeenCalledTimes(1);
+    expect(stored.trades.some((t) => t.symbolOut === 'TSLA')).toBe(false);
+    expect(mocks.create).not.toHaveBeenCalled();
+    // The early return is gone: a record exists, and it names the fault.
+    expect(entry, 'the tick must still write its record').toBeTruthy();
+    expect(entry.haikuError.failureClass).toBe('refresh_failed');
+    expect(entry.holdKind).toBe('default_failure');
+    // …and the committed trade stands.
+    expect(stored.trades.some((t) => t.symbolOut === 'KO')).toBe(true);
+  });
+
+  it('(b) refresh failure with a NEWLY DETECTED meeting → same stop, record still written', async () => {
+    guardrailState.returns = { ...FORCED_EXIT };
+    const base = detectorArmed(makeTickBattle());
+    const battle = { ...base, agentContext: { ...base.agentContext, deployedGuardrails: [TIGHT_STOP] } };
+    const db = makeDb(battle, { failBattleGetAfter: 1 });
+    const { entry, finalUpdate, stored } = await runTick({ battle, prices: koBustPrices(), db });
+
+    expect(guardrailState.calls).toBe(0);
+    expect(executeSwapServerMock).toHaveBeenCalledTimes(1);
+    expect(stored.trades.some((t) => t.symbolOut === 'TSLA')).toBe(false);
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(entry, 'the tick must still write its record').toBeTruthy();
+    expect(entry.haikuError.failureClass).toBe('refresh_failed');
+    // No meeting is created off a book we cannot read.
+    expect(finalUpdate.gameplanMeeting).toBeUndefined();
+    expect(stored.trades.some((t) => t.symbolOut === 'KO')).toBe(true);
+  });
+
+  it('(c) refresh failure with a BREACHED deployed stop → the guardrail stage never runs', async () => {
+    guardrailState.returns = { ...FORCED_EXIT };
+    const battle = {
+      ...makeTickBattle(),
+      agentContext: { ...makeTickBattle().agentContext, deployedGuardrails: [TIGHT_STOP] },
+    };
+    const db = makeDb(battle, { failBattleGetAfter: 1 });
+    const { entry, stored } = await runTick({ battle, prices: koBustPrices(), db });
+
+    // S10 is not merely harmless here — it is not reached.
+    expect(guardrailState.calls).toBe(0);
+    // Only the S7 trade that had already committed. No protective exit was
+    // attempted off the stale book.
+    expect(executeSwapServerMock).toHaveBeenCalledTimes(1);
+    expect(entry.haikuError.failureClass).toBe('refresh_failed');
+    expect(entry.decision).toBe('HOLD');
+    expect(stored.trades.some((t) => t.symbolOut === 'KO')).toBe(true);
+    expect(stored.trades.some((t) => t.symbolOut === 'TSLA')).toBe(false);
+  });
+
+  it('(d) CONTROL — a breached deployed stop with a SUCCESSFUL refresh still exits, exactly as today', async () => {
+    // The verdict is supplied rather than computed for the same reason as F3:
+    // the real evaluator's forced-exit override carries `note: undefined`
+    // (agentGuardrails.js:546-548, §11.6) which Firestore rejects. The point of
+    // this row is that the STAGE RUNS and its exit executes — unchanged by E1.
+    guardrailState.returns = { ...FORCED_EXIT };
+    const battle = {
+      ...makeTickBattle(),
+      agentContext: { ...makeTickBattle().agentContext, deployedGuardrails: [TIGHT_STOP] },
+    };
+    const { entry, summary, stored } = await runTick({ battle });
+
+    expect(guardrailState.calls).toBeGreaterThan(0);
+    expect(entry.decision).toBe('SWAP');
+    expect(summary.swapped).toBe(1);
+    expect(stored.trades.some((t) => t.symbolOut === 'TSLA' && t.symbolIn === 'AMD')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// E2. Part C gave the guardrail fault its own record field, which was right —
+// but T2 had been getting the durable `cronState.cronErrors` entry and the
+// shadow-log disclosure for free by writing `haikuFailure`, and the separation
+// silently dropped both for guardrail faults. The fault now carries its own
+// receipts, routed independently of the model-call outcome.
+describe('E2 — the guardrail fault keeps its own receipts', () => {
+  const guardrailErrors = (rows) => (rows || []).filter((e) => e.failureClass === 'guardrail_error');
+
+  it('valid model result + guardrail throws → cronErrors entry, shadow carries the fault, model class still null', async () => {
+    guardrailState.throws = new TypeError("Cannot read properties of undefined (reading 'baseATR')");
+    const { entry, cronErrors, shadowPayload } = await runTick({ battle: guarded(makeTickBattle()) });
+
+    const gr = guardrailErrors(cronErrors);
+    expect(gr).toHaveLength(1);
+    expect(gr[0].error).toContain('baseATR');
+    expect(gr[0].error).toContain('guardrail');
+
+    // The MODEL call succeeded; its own disclosure stays null.
+    expect(shadowPayload.failureClass).toBeNull();
+    expect(entry.haikuError).toBeNull();
+    // …and the shadow stream carries the guardrail fault beside it.
+    expect(shadowPayload.guardrailFault).toBeTruthy();
+    expect(shadowPayload.guardrailFault.message).toContain('baseATR');
+  });
+
+  it('invalid result + guardrail throws → BOTH receipts, distinguishable by kind', async () => {
+    guardrailState.throws = new Error('guardrail evaluator exploded');
+    const { cronErrors, shadowPayload, entry } = await runTick({
+      battle: guarded(makeTickBattle()),
+      respond: async () => makeToolUseResponse(makeHoldResult({ decision: 'SELL' })),
+    });
+
+    expect(cronErrors).toHaveLength(2);
+    expect(guardrailErrors(cronErrors)).toHaveLength(1);
+    expect(cronErrors.filter((e) => e.failureClass === 'invalid_tool_result')).toHaveLength(1);
+    // Neither fault has overwritten the other, on the record or in the stream.
+    expect(entry.haikuError.invalidField).toBe('decision');
+    expect(shadowPayload.failureClass).toBe('invalid_tool_result');
+    expect(shadowPayload.guardrailFault.message).toBe('guardrail evaluator exploded');
+  });
+
+  it('a CHOSEN HOLD + guardrail throws → receipt present, haikuError still null', async () => {
+    guardrailState.throws = new Error('guardrail evaluator exploded');
+    const { entry, cronErrors, shadowPayload } = await runTick({ battle: guarded(makeTickBattle()) });
+
+    expect(entry.haikuError).toBeNull();
+    expect(guardrailErrors(cronErrors)).toHaveLength(1);
+    expect(shadowPayload.guardrailFault).toBeTruthy();
+  });
+
+  it('NO REGRESSION — a clean tick writes no cronErrors entry and no guardrailFault', async () => {
+    const { cronErrors, shadowPayload, entry } = await runTick({ battle: guarded(makeTickBattle()) });
+    expect(cronErrors).toBeNull();
+    expect(shadowPayload.guardrailFault ?? null).toBeNull();
+    expect(entry.guardrailFault).toBeNull();
   });
 });
