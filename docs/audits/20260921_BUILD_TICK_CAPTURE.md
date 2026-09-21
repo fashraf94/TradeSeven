@@ -708,3 +708,61 @@ Astra's own caveats are carried forward unchanged: **actual deployed concurrency
 is NOT VERIFIED** (F3 fixes the missing isolation, not a measured incident), and
 the historical green and mutation results from round 0 were not re-verified by
 that review.
+
+---
+---
+
+# Round 2 — Astra review: last round before merge
+
+**Date:** 2026-09-21 · **Executor:** Opus (Claude Code) · **Reviewer:** Astra · **Verdict in:** MERGE WITH CHANGES
+**Continued from:** `4bb50f85` (tree clean, `git fetch origin` run first)
+**Round-2 baseline, before any edit:** whole-repo `npx vitest run` → **737 files passed / 3 skipped · 14,127 tests passed / 64 skipped · exit 0**
+
+## R2.0 — Scope statement (the merge condition)
+
+**Nothing outside capture code, tests, the export script and docs changed in this
+round.** The full changed-file list is in R2.5; every product edit is either a
+guarded `captureStep` call, a file under `api/_utils/tickCapture/`, the export
+script, a test, or a document. In particular:
+
+- No trading calculation, decision, score, write payload or control flow moved.
+  The two findings that required knowledge *from inside* the trading path (G1's
+  executor admission, G2's suppression-pass outcomes) are recorded through
+  guarded capture calls and one capture-only context field — **no new variable
+  in the trading path, and no change to what any existing statement does**.
+- The `suppressionPass.behavior` suite — the one that caught last round's
+  regression in exactly this code — is green and was re-run on its own.
+
+## R2.1 — Dispositions (written before any fix)
+
+Astra's round-2 review is source inspection only and says so; it explicitly
+records that every mutation outcome and historical green in R1.4/R1.5 is NOT
+VERIFIED by it. Each finding below was therefore re-derived on this tree first.
+
+| # | Finding | Disposition | Reproduced at `4bb50f85` |
+|---|---|---|---|
+| G1 | Execution recorded `failed` without the executor being attempted | **CONFIRMED (P2)** | The reservation denial throws at `agent-evaluate.js:3244`, **before** `executeSwapServer` at `:3248`. The broad catch at `:3415` records `execution: 'failed'`. So a trade that never reached the executor is filed as an executor failure — the record misstates *why* it did not happen. The round-1 executor-throw row (`tickCapture.test.js:654`) mocks the executor itself, so it never exercises the denial. |
+| G2 | Suppression-path guardrail evaluations and faults absent | **CONFIRMED (P2)** | `runSuppressionDeterministicPass` evaluates guardrails at `:4838` and records only a committed action; its catch at `:5134` records no capture fault. So `guardrail.evaluated`, `suppressionPassRan` and `suppressionPassFaulted` are written `false` for a pass that ran — and for one that faulted. |
+| G3 | Date-range cohort still omits battles | **CONFIRMED (P2), both halves** | `export-tick-capture.js:227` filters on `updatedAt`. A HOLD / no-trigger tick does not move that field, and a historical-window battle can carry a later update, so battles in range are missed. Worse, `if (ids.length) return ids` means the fallback only runs when the query returns **nothing at all** — and the fallback then returns **every** battle with no filtering, exactly not what its comment advertises. |
+| G4 | Serialization can exhaust the deadline and still commit | **CONFIRMED (P2), all four parts** | `captureWriter.js:477` checks the deadline **before** serialization, never after. At `:493` `batch.commit()` is evaluated as an argument, so the commit **starts** even when the remaining allowance is zero. The value stored as `capture.preCommitMs` is the argument computed at `:481`, i.e. pre-serialization elapsed. And `finalizeAbandonedTickCapture` (`agent-evaluate.js:4272`) never adds to `summary.captureTotalMs`, so error-path captures are missing from the advertised invocation total. |
+| G5 | Symbol-bearing map keys bypass universe admission | **CONFIRMED (P2)** | `risk.verdicts.*` is declared an object container (`captureSerializer.js:206`); the key check at `:356` and the sweep at `:397` require only identifier syntax plus a declared path. `risk.verdicts = {"PRIVATE-CANARY": {}}` therefore survives **with an empty universe**. Astra's qualification is adopted: today's keys come from held positions, so this is a serializer enforcement hole, **not a demonstrated live leak**. |
+| G6 | The final document size is not checked | **CONFIRMED (P3)** | `captureWriter.js:431` adds `shedFields` and `bodyIncomplete` **after** the last `approxBytes` measurement, so a body just under the configured cap can cross it and still be batched. Astra's qualification is adopted: this does not establish that the document exceeds Firestore's own 1 MiB limit. |
+| G7 | The source guard accepts unsafe argument placement | **CONFIRMED (P3)** | The span check (`isolation.test.js:201`) accepts any index inside the whole `captureStep(...)` call — including the **first argument**, which is evaluated eagerly. The mutator list at `:191` omits `risk` and `controlSourceText`. So last round's actual regression — a bad receiver in the first argument — would not be caught by the guard that exists to catch it. |
+| G8 | Error formatting is outside the protective catch | **CONFIRMED (report correction)** | `agent-evaluate.js:4254`: `captureErr?.message \|\| String(captureErr)` runs in the catch block but outside any inner try. A thrown value whose `message` getter or `toString` throws escapes `captureStep` into the tick. No current production path producing one was established — this is the absolute "never throws" claim being narrowed, which is why it is carried as a report correction as well as a fix. |
+
+**Nothing was refuted.** All seven reproduced.
+
+**Two report corrections accepted as stated:**
+
+1. **"38 call sites" was wrong as a total.** It is **42**: 38 `captureStep(tickCapture, …)` in `processAgentBattle` plus 4 `captureStep(captureFor(), …)` in the helpers. Counted at this tree: 38 + 4. R1.2 is corrected in R2.4 below.
+2. **"Every finalizer runs inside the async scope" was wrong literally.** The outer handler's finalizer runs **after** `runInTickCaptureScope` has returned, using the **explicit scope and context** it holds — the writer needs no ambient lookup. Isolation and ordering are unaffected; the sentence was.
+
+Astra's VERIFIED items are accepted and not reworked: F1's closure of the
+original unguarded selectors and the helper-receiver regression, F2's
+object-at-leaf fix and container shapes, F3's scope isolation and once-only
+claim, F4's single resolution and suppressed-control exclusion, F5's veto
+placement and risk capture, F6a/F6b, F9's byte hashing, the atomic two-document
+write, structural flag-off identity, and zero fenced files. Its three standing
+NOT-VERIFIED caveats are carried forward unchanged: deployed concurrency,
+exhaustive runtime byte identity, and — from this review — every mutation and
+green reported in R1.4/R1.5.
