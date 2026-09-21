@@ -103,7 +103,7 @@ const NOOP_METHODS = [
   'stage', 'exit', 'identify', 'check', 'universe', 'scores', 'model', 'guardrail', 'decision',
   'originalToolResult', 'finalToolResult', 'action', 'controls', 'controlsText',
   'manifest', 'callEnvelope', 'validationErrors', 'fault', 'bindBodyHolder',
-  'controlSourceText', 'risk',
+  'controlSourceText', 'risk', 'executorAdmitted',
 ];
 
 /** The inert context. Flag off, every call site runs against this. */
@@ -152,6 +152,11 @@ export function createTickCaptureContext({
     controlTexts: {},
     controlSourceTexts: {},
     riskFacts: {},
+    // G1 (Astra round 2): did the tick actually CALL the executor? A denied
+    // reservation throws before it, and without this the broad catch filed
+    // that as an executor failure — a record that misstated why no trade
+    // happened. `failed` is only ever for an executor that was called.
+    executorAdmitted: false,
     manifestFacts: {},
     envelope: {},
     validationErrorTexts: [],
@@ -261,6 +266,8 @@ export function createTickCaptureContext({
     controlSourceText: guard((texts = {}) => { Object.assign(state.controlSourceTexts, copyPlain(texts) || {}); }),
     /** C-7 (F5): the per-symbol risk verdicts and guardrail results the tick computed. */
     risk: guard((facts = {}) => { Object.assign(state.riskFacts, copyPlain(facts) || {}); }),
+    /** G1: recorded immediately before the executor call, and nowhere else. */
+    executorAdmitted: guard(() => { state.executorAdmitted = true; }),
     manifest: guard((facts = {}) => { Object.assign(state.manifestFacts, facts); }),
     callEnvelope: guard((facts = {}) => { Object.assign(state.envelope, facts); }),
     validationErrors: guard((errors) => {

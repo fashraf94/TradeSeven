@@ -432,7 +432,7 @@ export default async function handler(req, res) {
         // here, AFTER the receipt — a failed tick is the class of tick a
         // record is most wanted for. Never throws; a flag-off run finds
         // nothing registered and returns immediately.
-        await finalizeAbandonedTickCapture(db, captureScope, startTime);
+        await finalizeAbandonedTickCapture(db, captureScope, startTime, summary);
       }
     }
 
@@ -3241,10 +3241,24 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
               });
             });
             if (!reservation.reserved) {
+              // G1: a denied PRECONDITION, not a failed execution. Recorded
+              // here, at the gate that denied it, before the throw.
+              captureStep(tickCapture, () => {
+                tickCapture.check('execution', {
+                  status: 'bypassed',
+                  stage: 'decision_resolved',
+                  symbolOut: haikuResult?.symbolOut ?? null,
+                  symbolIn: haikuResult?.symbolIn ?? null,
+                  reason: 'reservation_denied',
+                });
+              });
               throw new Error(`${haikuResult.symbolIn} unavailable in the group's agent market (${reservation.reason})`);
             }
             if (tournamentCtx) reservedSymbolIn = haikuResult.symbolIn;
 
+            // G1: the executor is about to be CALLED. Only from here can a
+            // throw be an executor failure.
+            captureStep(tickCapture, () => { tickCapture.executorAdmitted(); });
             const swapResult = await executeSwapServer(
               db, battle.id, battle,
               validation.resolvedTier, validation.resolvedSlotIndex,
@@ -3417,7 +3431,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             // F5: the execution check RAN and produced no verdict. Leaving it
             // `not_evaluated` made a failed trade indistinguishable from a tick
             // that never tried to trade.
+            // G1: but ONLY if the executor was actually called. A throw from a
+            // denied precondition keeps the `bypassed` the gate already wrote.
             captureStep(tickCapture, () => {
+              if (tickCapture.state?.executorAdmitted !== true) return;
               tickCapture.check('execution', {
                 status: 'failed',
                 stage: 'decision_resolved',
@@ -4251,9 +4268,18 @@ function captureStep(ctx, fn) {
   try {
     fn();
   } catch (captureErr) {
-    const message = captureErr?.message || String(captureErr);
-    try { ctx?.fault?.(message); } catch { /* the fault recorder itself is best-effort */ }
-    console.warn(`${LOG_PREFIX} tick capture step failed (ignored, tick unaffected): ${message}`);
+    // G8 (Astra round 2): the FORMATTING is inside the guard too. A thrown
+    // value whose `message` getter or `toString` throws would otherwise escape
+    // `captureStep` into the tick — which is the one thing this function
+    // exists to make impossible.
+    try {
+      const message = captureErr?.message || String(captureErr);
+      try { ctx?.fault?.(message); } catch { /* the fault recorder itself is best-effort */ }
+      console.warn(`${LOG_PREFIX} tick capture step failed (ignored, tick unaffected): ${message}`);
+    } catch {
+      try { ctx?.fault?.('unprintable_capture_error'); } catch { /* nothing left to try */ }
+      console.warn(`${LOG_PREFIX} tick capture step failed with an unprintable error (ignored, tick unaffected)`);
+    }
   }
 }
 
@@ -4262,7 +4288,7 @@ function captureStep(ctx, fn) {
  * the handler's per-battle catch, AFTER its fault receipt is written. Never
  * throws; with the flag off nothing is registered and it returns immediately.
  */
-async function finalizeAbandonedTickCapture(db, scope, cronStartTime) {
+async function finalizeAbandonedTickCapture(db, scope, cronStartTime, summary = null) {
   try {
     // IDENTITY-CHECKED (F3): this claims the scope it was handed and nothing
     // else, and a context the tick's own `finally` already finalized is never
@@ -4272,6 +4298,14 @@ async function finalizeAbandonedTickCapture(db, scope, cronStartTime) {
     const result = await finalizeTickCapture(db, ctx, {
       remainingBudgetMs: TIME_BUDGET_MS - (Date.now() - cronStartTime),
     });
+    // G4 (Astra round 2): an errored tick's capture is part of what capture
+    // cost this invocation. Left out, the advertised total understated itself
+    // exactly on the ticks a record is most wanted for.
+    if (summary) {
+      summary.captureTotalMs = (summary.captureTotalMs || 0) + (result.totalMs || 0);
+      summary.captureTicks = (summary.captureTicks || 0) + 1;
+      if (result.disposition !== 'written') summary.captureGaps = (summary.captureGaps || 0) + 1;
+    }
     console.log(`${LOG_PREFIX} [tickCapture] errored-tick disposition=${result.disposition} totalMs=${result.totalMs ?? 0}`);
     if (result.disposition !== 'written') {
       console.warn(`${LOG_PREFIX} tick capture ${result.disposition} for errored tick ${result.tickId || '(unknown)'}${result.error ? `: ${result.error}` : ''}`);
@@ -4833,7 +4867,14 @@ export async function runSuppressionDeterministicPass({
       battle.agentContext?.deployedGuardrails || [],
       battle,
     );
-    if (deployedGuardrails.length === 0) return;
+    if (deployedGuardrails.length === 0) {
+      // G2 (Astra round 2): a pass that did NOT run says so — otherwise its
+      // `false` is indistinguishable from a pass that ran and found nothing.
+      captureStep(captureFor(), () => {
+        captureFor().guardrail({ suppressionPassRan: false, deployedCount: 0 });
+      });
+      return;
+    }
 
     deterministicResult = applyGuardrails({
       haikuResult: null,
@@ -4843,6 +4884,18 @@ export async function runSuppressionDeterministicPass({
       lockedPositions,
       stockRegimes,
       sectorSlotObserveCap: null,
+    });
+    // G2: the pass RAN and its guardrails were evaluated. Recorded at the
+    // boundary that did it — on a suppression tick the main-path evaluation
+    // never happens, so without this `evaluated` was written false for a tick
+    // whose guardrails had in fact just run.
+    captureStep(captureFor(), () => {
+      captureFor().guardrail({
+        suppressionPassRan: true,
+        evaluated: true,
+        deployedCount: deployedGuardrails.length,
+        sourceNote: deterministicResult?.sourceNote ?? null,
+      });
     });
 
     // [VWAP Floor B7] parity: a wanted-but-impossible exit is a feed beat —
@@ -5133,6 +5186,18 @@ export async function runSuppressionDeterministicPass({
     await refreshBattleFromDoc(battleRef, battle, tournamentCtx);
   } catch (err) {
     console.error(`${LOG_PREFIX} R11 deterministic pass failed for ${battle.id}:`, err?.message);
+    // G2 (Astra round 2): the pass's OWN fault, recorded where it is caught.
+    // It is separate from the main-path guardrail fault by construction — a
+    // suppression tick never runs that one — and its message is free text, so
+    // it lives in the TTL body like every other message.
+    captureStep(captureFor(), () => {
+      captureFor().guardrail({
+        suppressionPassRan: true,
+        suppressionPassFaulted: true,
+        faultClass: 'guardrail_error',
+        message: `suppression pass: ${String(err?.message || err)}`,
+      });
+    });
     // [VWAP Floor B7] parity: a deterministically-failing exit must not go unobserved.
     statusFeedEntries.push({
       timestamp: new Date().toISOString(),

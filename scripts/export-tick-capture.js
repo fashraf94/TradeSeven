@@ -89,6 +89,40 @@ export function inWindow(capturedAt, { fromIso, toIso }) {
   return true;
 }
 
+/**
+ * G3 (Astra round 2) — does this battle's LIFETIME overlap the window?
+ *
+ * The cohort used to be selected by `updatedAt`, which is not a lifetime field:
+ * a HOLD or no-trigger tick never moves it, and a later edit moves a historical
+ * battle out of its own window. Both directions silently dropped battles — and
+ * with them their counters and their gaps, which is the one thing the coverage
+ * figure exists to show.
+ *
+ * A battle with no completion is still running, so it overlaps any window that
+ * starts before now.
+ */
+export function overlapsRange(battle, bounds, nowIso) {
+  const started = battle?.activatedAt ?? battle?.createdAt ?? null;
+  const ended = battle?.completedAt ?? battle?.expiresAt ?? nowIso;
+  if (bounds.toIso && started && started > bounds.toIso) return false;
+  if (bounds.fromIso && ended && ended < bounds.fromIso) return false;
+  return true;
+}
+
+/**
+ * Every battle whose lifetime overlaps the range. ONE range filter in the query
+ * (Firestore's own rule), the other end filtered locally — and NO early return:
+ * one battle matching can never hide another.
+ */
+export async function battleCohortForRange(db, bounds, { nowIso = new Date().toISOString() } = {}) {
+  let q = db.collection('agentBattles');
+  if (bounds.toIso) q = q.where('activatedAt', '<=', bounds.toIso);
+  const snap = await q.select('activatedAt', 'createdAt', 'completedAt', 'expiresAt').get();
+  return snap.docs
+    .filter((d) => overlapsRange(typeof d.data === 'function' ? d.data() : d.data, bounds, nowIso))
+    .map((d) => d.id);
+}
+
 /** The default output path, inside the project, platform-correct. */
 export function defaultOutPath(flags, now = new Date()) {
   const stamp = now.toISOString().slice(0, 19).replace(/[-:T]/g, '');
@@ -216,24 +250,12 @@ async function main() {
       return snap.exists ? snap.data() : null;
     },
     async findBattleIds(bounds) {
-      // THE COHORT COMES FROM THE BATTLES, NOT FROM SUCCESSFUL CAPTURES
-      // (Astra round 1, F6c). Built from a `ticks` collection-group query, a
-      // battle whose captures ALL failed has no tick documents and is
-      // therefore invisible — so its minted sequences, the very gaps the
-      // figure exists to reveal, were silently omitted from the denominator.
-      // `agentBattles` is the independent cohort: every battle that ran in the
-      // window contributes its counter whether or not anything was captured.
-      let q = db.collection('agentBattles');
-      if (bounds.fromIso) q = q.where('updatedAt', '>=', bounds.fromIso);
-      if (bounds.toIso) q = q.where('updatedAt', '<=', bounds.toIso);
-      const snap = await q.select().get();
-      const ids = snap.docs.map((d) => d.id);
-      if (ids.length) return ids;
-      // Fallback for a deployment whose battle documents carry no comparable
-      // `updatedAt`: scan the collection and filter locally rather than fall
-      // back to the capture-derived cohort, which is the defect above.
-      const all = await db.collection('agentBattles').select('activatedAt', 'expiresAt').get();
-      return all.docs.map((d) => d.id);
+      // THE COHORT IS THE BATTLES, BY LIFETIME (Astra rounds 1 F6c and 2 G3).
+      // Not by successful captures — a battle whose captures all failed has no
+      // tick documents and would be invisible. And not by `updatedAt`, which is
+      // not a lifetime field. `battleCohortForRange` holds the rule; this is a
+      // one-line call so the arithmetic stays unit-tested.
+      return battleCohortForRange(db, bounds);
     },
   };
 

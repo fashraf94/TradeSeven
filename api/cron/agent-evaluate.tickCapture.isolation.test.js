@@ -175,24 +175,44 @@ describe('F1 — the source guard: no capture mutator runs outside its flag-and-
     const { dirname, resolve } = await import('node:path');
     const src = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'agent-evaluate.js'), 'utf8');
 
-    // Brace/paren-matched spans of every captureStep( … ) call.
+    // CALLBACK-BODY spans, not whole-call spans (Astra round 2, G7). The first
+    // argument of `captureStep(…)` is evaluated EAGERLY — it is exactly where
+    // last round's bad helper receiver sat — so a guard that accepts anything
+    // inside the call accepts the defect it exists to catch.
+    const OPENER = ' => {';
     const spans = [];
+    const receivers = [];
     for (let i = src.indexOf('captureStep('); i !== -1; i = src.indexOf('captureStep(', i + 1)) {
+      const argsOpen = src.indexOf('(', i);
+      const bodyOpen = src.indexOf(OPENER, argsOpen);
+      if (bodyOpen === -1) continue;
+      // the receiver is the first argument, up to the comma before the arrow
+      receivers.push(src.slice(argsOpen + 1, src.indexOf(',', argsOpen)).trim());
       let depth = 0;
-      let j = src.indexOf('(', i);
+      let j = bodyOpen + OPENER.length - 1;
       for (; j < src.length; j++) {
-        if (src[j] === '(') depth++;
-        else if (src[j] === ')') { depth--; if (depth === 0) break; }
+        if (src[j] === '{') depth++;
+        else if (src[j] === '}') { depth--; if (depth === 0) break; }
       }
-      spans.push([i, j]);
+      spans.push([bodyOpen + OPENER.length, j]);
     }
     expect(spans.length, 'captureStep must exist and be used').toBeGreaterThan(10);
 
-    const MUTATORS = [
-      'stage', 'exit', 'identify', 'check', 'universe', 'scores', 'model', 'guardrail',
-      'decision', 'originalToolResult', 'finalToolResult', 'action', 'controls',
-      'controlsText', 'manifest', 'callEnvelope', 'validationErrors', 'bindBodyHolder',
-    ];
+    // RECEIVER VALIDITY: only the two names that resolve in their own scope.
+    // `tickCapture` is the local in processAgentBattle; `captureFor()` is the
+    // async-scope lookup the four helpers use. Anything else — the round-1
+    // regression was `tickCapture` used inside a helper — is a defect.
+    const badReceivers = receivers.filter((r) => r !== 'tickCapture' && r !== 'captureFor()' && r !== 'ctx');
+    expect(badReceivers, 'a capture step may only take `tickCapture` or `captureFor()`').toEqual([]);
+
+    // EVERY mutator the context exposes. Derived from the module rather than
+    // hand-listed, so a new channel cannot be forgotten here the way `risk` and
+    // `controlSourceText` were (Astra round 2, G7).
+    const { NOOP_TICK_CAPTURE } = await import('../_utils/tickCapture/captureContext.js');
+    const MUTATORS = Object.keys(NOOP_TICK_CAPTURE).filter((k) => typeof NOOP_TICK_CAPTURE[k] === 'function');
+    expect(MUTATORS, 'the channels round 2 found missing must be in scope').toEqual(
+      expect.arrayContaining(['risk', 'controlSourceText']),
+    );
     const offenders = [];
     for (const name of MUTATORS) {
       for (const pattern of [`tickCapture.${name}(`, `.${name}({`]) {
@@ -200,7 +220,14 @@ describe('F1 — the source guard: no capture mutator runs outside its flag-and-
         while (idx !== -1) {
           const inside = spans.some(([a, b]) => idx > a && idx < b);
           const isDefinition = src.slice(Math.max(0, idx - 40), idx).includes('captureStep');
-          const isCaptureCall = src.slice(Math.max(0, idx - 12), idx).includes('tickCapture')
+          // The receiver is either spelled INSIDE the match (`tickCapture.x(`)
+          // or immediately before it (`captureFor().x({`). Reading only the
+          // text before the match made the explicit-receiver pattern incapable
+          // of ever reporting anything: an unwrapped `tickCapture.x()` has only
+          // whitespace in front of it, so it was dismissed as somebody else's
+          // `.x(`. A guard that cannot fail is not a guard.
+          const isCaptureCall = pattern.startsWith('tickCapture')
+            || src.slice(Math.max(0, idx - 12), idx).includes('tickCapture')
             || src.slice(Math.max(0, idx - 14), idx).includes('captureFor()');
           if (!inside && !isDefinition && isCaptureCall) offenders.push(`${name} @ ${idx}`);
           idx = src.indexOf(pattern, idx + 1);
@@ -208,6 +235,22 @@ describe('F1 — the source guard: no capture mutator runs outside its flag-and-
       }
     }
     expect(offenders, 'these capture mutators are called outside a captureStep guard').toEqual([]);
+  });
+
+  it('every capture step names a receiver that resolves in ITS OWN scope', async () => {
+    // The round-1 regression, in one sentence: `tickCapture` is not in scope
+    // inside the four helper functions, so `captureStep(tickCapture, …)` there
+    // threw a ReferenceError that each helper's own try/catch swallowed — and
+    // the suppression-pass swap silently aborted. The guard above now reads the
+    // receiver; this row states the rule it enforces.
+    const { readFileSync } = await import('node:fs');
+    const { fileURLToPath } = await import('node:url');
+    const { dirname, resolve } = await import('node:path');
+    const src = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'agent-evaluate.js'), 'utf8');
+    const inHelpers = src.split('// ==================== HELPERS ====================')[1] ?? '';
+    // Inside the helpers there is no `tickCapture` local, so no step may name it.
+    expect(inHelpers).not.toMatch(/captureStep\(tickCapture,/);
+    expect(inHelpers).toMatch(/captureStep\(captureFor\(\),/);
   });
 
   it('captureStep checks the flag FIRST and swallows everything', async () => {
@@ -224,6 +267,35 @@ describe('F1 — the source guard: no capture mutator runs outside its flag-and-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // F3 — two overlapping ticks in ONE process must not see each other.
+
+describe('G8 (Astra round 2) — an exotic thrown value cannot escape capture', () => {
+  it('a thrown value whose toString THROWS is still swallowed', async () => {
+    const battle = makeTickBattle();
+    const store = makeCaptureDb({ battle, rankingsDoc: makeRankingsDoc(), techDocs: makeTechDocs() });
+    const hostile = { get message() { throw new Error('message getter exploded'); },
+      toString() { throw new Error('toString exploded'); } };
+    Object.defineProperty(battle, 'resolvedAgentManifest', {
+      get() { throw hostile; }, enumerable: false, configurable: true,
+    });
+    const { thrown, finalUpdate, db } = await runTick({ battle, capture: true, db: store });
+    expect(thrown, 'formatting a hostile error must not become a tick error').toBeNull();
+    expect(finalUpdate, 'the tick still writes').not.toBeNull();
+    expect(permanentDoc(db, 'battle-tick-1', 'battle-tick-1:1'), 'and still has a record').not.toBeNull();
+  });
+
+  it('a thrown primitive and a thrown null are both swallowed', async () => {
+    for (const hostile of [Symbol('nope'), null, undefined, 42]) {
+      const battle = makeTickBattle();
+      const store = makeCaptureDb({ battle, rankingsDoc: makeRankingsDoc(), techDocs: makeTechDocs() });
+      Object.defineProperty(battle, 'resolvedAgentManifest', {
+        // eslint-disable-next-line no-throw-literal
+        get() { throw hostile; }, enumerable: false, configurable: true,
+      });
+      const { thrown } = await runTick({ battle, capture: true, db: store });
+      expect(thrown, `throwing ${String(hostile?.toString?.() ?? hostile)} must not reach the tick`).toBeNull();
+    }
+  });
+});
 
 describe('F3 — overlapping ticks are isolated', () => {
   it('SAME battle, overlapping: the in-tick lookup returns THIS tick\'s context, not the newest one', async () => {

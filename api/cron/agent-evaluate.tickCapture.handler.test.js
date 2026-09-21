@@ -132,6 +132,30 @@ describe('the REAL handler finalizes a thrown tick — after its fault receipt (
     expect(world.db.__order).toEqual(['fault_receipt', 'capture_record']);
   });
 
+  it('the errored tick\'s capture is IN the invocation total (G4)', async () => {
+    // What capture cost this run has to include the ticks that threw — those
+    // are the ones a record is most wanted for, and leaving them out understates
+    // the number the flip decision is made on. The commit burns 120 ms of the
+    // frozen clock so the total is a measured figure, not a zero that any
+    // implementation would produce.
+    const battle = makeTickBattle();
+    world.battles = [battle];
+    const db = makeThrowingDb(battle);
+    const baseBatch = db.batch.bind(db);
+    db.batch = () => {
+      const b = baseBatch();
+      return { set: b.set, commit: async () => { vi.advanceTimersByTime(120); return b.commit(); } };
+    };
+    world.db = db;
+
+    const response = res();
+    await handler({ headers: { 'x-vercel-cron': '1' } }, response);
+
+    expect(response.payload.errors, 'the tick must have errored').toBe(1);
+    expect(response.payload.captureTicks, 'the errored tick is counted').toBe(1);
+    expect(response.payload.captureTotalMs, 'and what it cost is in the total').toBeGreaterThanOrEqual(120);
+  });
+
   it('a tick that finalizes itself MARKS its scope, so the handler can never write a second record', async () => {
     // Capture is the final statement of the tick's own `finally`, so there is
     // no end-to-end path where a tick both captures AND then throws — which is
@@ -145,14 +169,23 @@ describe('the REAL handler finalizes a thrown tick — after its fault receipt (
     const src = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'agent-evaluate.js'), 'utf8');
     expect(src).toContain('markTickCaptureClaimed(tickCaptureScope);');
     // and the handler's error path claims a SCOPE, never a battle id
-    expect(src).toContain('await finalizeAbandonedTickCapture(db, captureScope, startTime);');
+    expect(src).toContain('await finalizeAbandonedTickCapture(db, captureScope, startTime, summary);');
     expect(src).not.toMatch(/finalizeAbandonedTickCapture\(db, battle\.id/);
   });
 
   it('a tick that does NOT throw is finalized by the tick itself, and the handler adds nothing', async () => {
     const battle = makeTickBattle();
     world.battles = [battle];
-    world.db = withCaptureStore(makeTickDb({ battle, rankingsDoc: makeRankingsDoc(), techDocs: makeTechDocs() }));
+    const db = withCaptureStore(makeTickDb({ battle, rankingsDoc: makeRankingsDoc(), techDocs: makeTechDocs() }));
+    // Same 120 ms burn as the errored-tick row, so the ORDINARY path's
+    // contribution to the invocation total is a measured figure too — both
+    // paths feed one number, and neither may be silently absent from it.
+    const baseBatch = db.batch.bind(db);
+    db.batch = () => {
+      const b = baseBatch();
+      return { set: b.set, commit: async () => { vi.advanceTimersByTime(120); return b.commit(); } };
+    };
+    world.db = db;
 
     const response = res();
     await handler({ headers: { 'x-vercel-cron': '1' } }, response);
@@ -161,6 +194,8 @@ describe('the REAL handler finalizes a thrown tick — after its fault receipt (
     expect(response.payload.evaluated).toBe(1);
     expect(world.db.__captureWrites, 'exactly one record, written once').toHaveLength(1);
     expect(permanentDoc(world.db, BATTLE_ID, `${BATTLE_ID}:1`).exitReason).toBe('completed');
+    expect(response.payload.captureTicks, 'the ordinary tick is counted').toBe(1);
+    expect(response.payload.captureTotalMs, 'and what it cost is in the total').toBeGreaterThanOrEqual(120);
   });
 
   it('two battles in one invocation: each gets its own record, and a thrown one does not take the other\'s', async () => {

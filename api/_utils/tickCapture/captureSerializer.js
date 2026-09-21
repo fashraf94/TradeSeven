@@ -197,6 +197,20 @@ export const PERMANENT_FIELD_KINDS = Object.freeze({
  * `enum:DECISIONS`) survived by having a well-formed key and never reaching
  * `leafOk`. Default-deny has to be checked BEFORE the descent, not after it.
  */
+/**
+ * KEY KINDS (Astra round 2, G5). A map whose KEYS carry meaning needs its keys
+ * admitted the same way its values are. `risk.verdicts` is keyed by SYMBOL, so
+ * a key must pass universe admission — identifier syntax plus a declared path
+ * is not enough, and without this `risk.verdicts = {"PRIVATE-CANARY": {}}`
+ * survived even with an EMPTY universe.
+ *
+ * A container absent from this table keeps the default: keys are structure and
+ * must be bounded identifiers naming a declared path.
+ */
+export const PERMANENT_KEY_KINDS = Object.freeze({
+  'risk.verdicts': 'symbol',
+});
+
 export const PERMANENT_CONTAINER_KINDS = Object.freeze({
   '': 'object',
   'model': 'object',
@@ -298,6 +312,22 @@ function isDeclaredPath(path) {
   return kindFor(path) !== null || containerFor(path) !== null;
 }
 
+/** The declared KEY kind of a container's own keys, or null. */
+function keyKindFor(containerPath) {
+  for (const probe of pathProbes(containerPath)) {
+    if (Object.hasOwn(PERMANENT_KEY_KINDS, probe)) return PERMANENT_KEY_KINDS[probe];
+  }
+  return null;
+}
+
+/** Is this key admissible as a key of `containerPath`? */
+function keyOk(containerPath, key, universe) {
+  if (!ID_RE.test(key)) return false;
+  const declared = keyKindFor(containerPath);
+  if (declared === 'symbol') return admitSymbol(key, universe) !== null;
+  return true;
+}
+
 function leafOk(kind, value, universe) {
   if (value === null) return true;
   switch (kind) {
@@ -352,8 +382,10 @@ export function sanitizePermanentDocument(input, { universe = new Set() } = {}) 
         const childPath = path ? `${path}.${k}` : k;
         // A key is structure, never data: it must be a bounded identifier AND
         // it must name something this schema declares. An undeclared key is
-        // dropped with its whole subtree, never walked into.
-        if (!ID_RE.test(k)) { reject(childPath, v, 'key_not_id'); continue; }
+        // dropped with its whole subtree, never walked into. G5: where the
+        // container declares a KEY KIND, the key is admitted by that kind too —
+        // a symbol key goes through the tick's own universe like any other.
+        if (!keyOk(path, k, universe)) { reject(childPath, v, 'key_not_admissible'); continue; }
         if (!isDeclaredPath(childPath)) { reject(childPath, v, 'undeclared_path'); continue; }
         out[k] = walk(v, childPath);
       }
@@ -392,9 +424,10 @@ export function findFreeText(doc, { universe = new Set() } = {}) {
       if (!isPlainObject(value)) { bad.push(path); return; }
       for (const [k, v] of Object.entries(value)) {
         const childPath = path ? `${path}.${k}` : k;
-        // KEYS TOO (F2): an undeclared or non-identifier key is a finding, even
-        // when its value is an empty object with nothing to read.
-        if (!ID_RE.test(k) || !isDeclaredPath(childPath)) { bad.push(childPath); continue; }
+        // KEYS TOO (F2), and by their DECLARED KIND (G5): an undeclared key, a
+        // non-identifier key, or a symbol key outside the tick's universe is a
+        // finding — even when its value is an empty object with nothing to read.
+        if (!keyOk(path, k, universe) || !isDeclaredPath(childPath)) { bad.push(childPath); continue; }
         walk(v, childPath);
       }
       return;

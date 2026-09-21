@@ -126,7 +126,10 @@ describe('sanitizePermanentDocument — default deny, and the body catches what 
     input.manifest = { vintages: { 'KO — the support slot I am rotating out of': 12 } };
     const { doc, rejected } = sanitizePermanentDocument(input, { universe: UNIVERSE });
     expect(doc.manifest.vintages).toEqual({});
-    expect(rejected.some((r) => r.reason === 'key_not_id')).toBe(true);
+    // Round 2 (G5) renamed the reason: a key is now checked against its
+    // container's DECLARED key kind, of which "must be a bounded identifier"
+    // is the default case.
+    expect(rejected.some((r) => r.reason === 'key_not_admissible')).toBe(true);
   });
 
   it('`undefined` never reaches a write — Firestore rejects it (the harness asserts this too)', () => {
@@ -233,6 +236,41 @@ describe('F2 (Astra round 1) — the kind is checked BEFORE the walk recurses', 
       .toContain('decision.CANARY-FIELD');
     // anti-vacuous: a clean document still reports nothing
     expect(findFreeText({ decision: { final: 'HOLD' } }, { universe: UNIVERSE })).toEqual([]);
+  });
+});
+
+describe('G5 (Astra round 2) — a map KEY that names a symbol goes through universe admission', () => {
+  it('a non-universe key under `risk.verdicts` is rejected, even with an EMPTY universe', () => {
+    const { doc, rejected } = sanitizePermanentDocument(
+      { risk: { verdicts: { 'PRIVATE-CANARY': {} } } },
+      { universe: new Set() },
+    );
+    expect(doc.risk.verdicts).toEqual({});
+    expect(JSON.stringify(doc)).not.toContain('PRIVATE-CANARY');
+    expect(rejected.map((r) => r.path)).toContain('risk.verdicts.PRIVATE-CANARY');
+  });
+
+  it('a well-formed ticker the tick never held is rejected there too', () => {
+    const { doc } = sanitizePermanentDocument(
+      { risk: { verdicts: { TSLA: { action: 'HOLD', reason: null } } } },
+      { universe: UNIVERSE },      // NVDA / KO / AMD / JPM
+    );
+    expect(doc.risk.verdicts).toEqual({});
+  });
+
+  it('anti-vacuous: a held symbol IS admitted as a key', () => {
+    const { doc, rejected } = sanitizePermanentDocument(
+      { risk: { verdicts: { NVDA: { action: 'HOLD', reason: null }, KO: { action: 'LOCK', reason: 'near_threshold' } } } },
+      { universe: UNIVERSE },
+    );
+    expect(rejected).toEqual([]);
+    expect(Object.keys(doc.risk.verdicts).sort()).toEqual(['KO', 'NVDA']);
+  });
+
+  it('the independent sweep reports a non-universe symbol KEY as well', () => {
+    expect(findFreeText({ risk: { verdicts: { 'PRIVATE-CANARY': {} } } }, { universe: UNIVERSE }))
+      .toContain('risk.verdicts.PRIVATE-CANARY');
+    expect(findFreeText({ risk: { verdicts: { NVDA: { action: 'HOLD' } } } }, { universe: UNIVERSE })).toEqual([]);
   });
 });
 

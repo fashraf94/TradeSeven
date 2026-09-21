@@ -41,6 +41,8 @@ const { swapMock } = vi.hoisted(() => ({ swapMock: vi.fn() }));
 const { guardrailHook } = vi.hoisted(() => ({ guardrailHook: { throwMessage: null } }));
 /** Forces a LOCK verdict for one held symbol; the real evaluator runs otherwise. */
 const { riskHook } = vi.hoisted(() => ({ riskHook: { lockSymbols: [] } }));
+/** Forces the tournament ledger to deny the reserve, the G1 path. */
+const { ledgerHook } = vi.hoisted(() => ({ ledgerHook: { denyReservation: null } }));
 const flagState = vi.hoisted(() => ({ tickCapture: true }));
 
 vi.mock('@anthropic-ai/sdk', () => ({
@@ -83,8 +85,17 @@ vi.mock('../_utils/agentRiskManager.js', async (importOriginal) => {
   };
 });
 vi.mock('../_utils/tournamentAgentLedger.js', () => ({
-  resolveTournamentContext: vi.fn(async () => null), excludeHeldByOthers: vi.fn(), excludeHeldSymbols: vi.fn(),
-  reserveSymbol: vi.fn(), confirmSwap: vi.fn(), releaseReservation: vi.fn(),
+  // A reservation denial needs a tournament context to exist at all, so the
+  // resolver returns one only when a row asks for the denial path.
+  resolveTournamentContext: vi.fn(async () => (ledgerHook.denyReservation
+    ? { groupId: 'group-1', heldByOthers: new Set(), agentId: 'agent-1' }
+    : null)),
+  // Pass-throughs, not bare stubs: a bare `vi.fn()` returns undefined and
+  // applyTournamentCandidateFilter assigns it straight onto the bench, wiping
+  // the candidate pool before the reservation gate is ever reached.
+  excludeHeldByOthers: vi.fn((list) => list), excludeHeldSymbols: vi.fn((list) => list),
+  reserveSymbol: vi.fn(async () => ({ reserved: false, reason: ledgerHook.denyReservation })),
+  confirmSwap: vi.fn(), releaseReservation: vi.fn(),
 }));
 vi.mock('../_utils/firebaseAdmin.js', () => ({ getFirebaseAdmin: () => ({}) }));
 vi.mock('../_utils/voiceLayerAnticipation.js', async (importOriginal) => ({ ...(await importOriginal()), generateAnticipation: vi.fn(async () => null) }));
@@ -171,11 +182,13 @@ async function runTick({
   modelResponse = null,
   lockSymbols = null,
   swapThrows = null,
+  denyReservation = null,
   db: injectedDb = null,
 } = {}) {
   flagState.tickCapture = capture;
   guardrailHook.throwMessage = guardrailHook.throwMessage ?? null;
   riskHook.lockSymbols = lockSymbols ?? [];
+  ledgerHook.denyReservation = denyReservation ?? null;
   mocks.getStockAnalysisData.mockImplementation(async (symbol) => (prices[symbol] ? { price: prices[symbol], daily: [] } : {}));
   mocks.fetchIntradayBatch.mockImplementation(async () => ({ NVDA: makeIntradayCandles() }));
   mocks.create.mockImplementation(async () => {
@@ -237,6 +250,7 @@ beforeEach(() => {
   swapMock.mockReset();
   guardrailHook.throwMessage = null;
   riskHook.lockSymbols = [];
+  ledgerHook.denyReservation = null;
   flagState.tickCapture = true;
   vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -677,6 +691,79 @@ describe('F5 (Astra round 1) — a check is recorded where it actually runs', ()
     });
     expect(permanent.guardrail.evaluated).toBe(true);
     expect(permanent.guardrail.faultClass).toBeNull();
+  });
+});
+
+describe('G1 (Astra round 2) — a denied precondition is not a failed execution', () => {
+  it('a DENIED RESERVATION records execution `bypassed` with its reason, never `failed`', async () => {
+    // The denial throws BEFORE the executor is called, so filing it as an
+    // executor failure misstates why the trade did not happen.
+    const { permanent } = await runTick({ result: makeSwapResult(), denyReservation: 'held_by_rival' });
+    expect(permanent.checks.reservation).toMatchObject({ status: 'evaluated', result: 'blocked' });
+    expect(permanent.checks.execution.status).toBe('bypassed');
+    expect(permanent.checks.execution.reason).toBe('reservation_denied');
+    expect(permanent.checks.execution.status).not.toBe('failed');
+    expect(permanent.actions).toEqual([]);
+  });
+
+  it('anti-vacuous: an executor that WAS called and threw is still `failed`', async () => {
+    const { permanent } = await runTick({ result: makeSwapResult(), swapThrows: new Error('slot occupied') });
+    expect(permanent.checks.execution.status).toBe('failed');
+    expect(permanent.checks.reservation.status).toBe('bypassed'); // no tournament ledger in this fixture
+  });
+
+  it('a successful swap still records execution `evaluated` / `passed`', async () => {
+    const { permanent } = await runTick({ result: makeSwapResult() });
+    expect(permanent.checks.execution).toMatchObject({ status: 'evaluated', result: 'passed' });
+  });
+});
+
+describe('G2 (Astra round 2) — the suppression pass is recorded where it runs', () => {
+  const suppressed = (over = {}) => makeTickBattle({
+    // A pending, unexpired meeting: the R11 suppression pass runs and the tick
+    // returns early through `gameplan_pending`.
+    gameplanMeeting: { status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', swaps: [] },
+    agentContext: {
+      ...makeTickBattle().agentContext,
+      deployedGuardrails: [{ type: 'stopLoss', value: 25, unit: '%', enforcement: 'hard' }],
+    },
+    ...over,
+  });
+
+  it('a suppression pass that RAN is recorded as having run, with its guardrail evaluation', async () => {
+    const { permanent } = await runTick({ battle: suppressed() });
+    expect(permanent.exitReason).toBe('gameplan_pending');
+    expect(permanent.guardrail.suppressionPassRan).toBe(true);
+    expect(permanent.guardrail.evaluated).toBe(true);
+    expect(permanent.guardrail.deployedCount).toBe(1);
+    expect(permanent.guardrail.suppressionPassFaulted).toBe(false);
+  });
+
+  it('a suppression pass that FAULTED says so — and the tick is unharmed', async () => {
+    guardrailHook.throwMessage = 'ZZQX-SUPPRESSION-FAULT';
+    const { permanent, body, thrown, db } = await runTick({ battle: suppressed() });
+    expect(thrown).toBeNull();
+    // `gameplan_pending` returns before the evaluation entry, so the tick's own
+    // write is its score/feed update — it must still have happened.
+    expect(db.__updates.some((u) => Object.hasOwn(u, 'scoreState.activeScore')), 'the tick still writes').toBe(true);
+    expect(permanent.guardrail.suppressionPassRan).toBe(true);
+    expect(permanent.guardrail.suppressionPassFaulted).toBe(true);
+    // the message is free text and lives ONLY in the TTL body
+    expect(body.faults.guardrail).toContain('ZZQX-SUPPRESSION-FAULT');
+    expect(containsText(permanent, 'ZZQX-SUPPRESSION-FAULT')).toBe(false);
+  });
+
+  it('a battle with NO deployed guardrails records a pass that did not run', async () => {
+    const { permanent } = await runTick({
+      battle: makeTickBattle({ gameplanMeeting: { status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', swaps: [] } }),
+    });
+    expect(permanent.guardrail.suppressionPassRan).toBe(false);
+    expect(permanent.guardrail.suppressionPassFaulted).toBe(false);
+    // `suppressionPassRan: false` is also the DEFAULT, so on its own it proves
+    // nothing — recording and not recording look identical. `deployedCount` is
+    // what separates them: `null` means nothing ever considered the pass, `0`
+    // means the pass was reached and had nothing to deploy.
+    expect(permanent.guardrail.deployedCount, 'the pass was reached, not skipped by the recorder').toBe(0);
   });
 });
 

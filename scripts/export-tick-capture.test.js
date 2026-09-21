@@ -14,7 +14,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import {
-  buildBattleInput, defaultOutPath, inWindow, parseArgs, parseEnvFile, rangeBounds, runExport, usage,
+  battleCohortForRange, buildBattleInput, defaultOutPath, inWindow, overlapsRange, parseArgs,
+  parseEnvFile, rangeBounds, runExport, usage,
 } from './export-tick-capture.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -180,6 +181,102 @@ describe('F6c (Astra round 1) — the range cohort comes from BATTLES, not from 
     expect(SOURCE).toMatch(/collection\('agentBattles'\)/);
     const finder = SOURCE.slice(SOURCE.indexOf('async findBattleIds('), SOURCE.indexOf('};', SOURCE.indexOf('async findBattleIds(')));
     expect(finder, 'the cohort must not be derived from captured ticks').not.toContain('collectionGroup');
+  });
+});
+
+describe('G3 (Astra round 2) — the cohort is by battle LIFETIME, not by latest update', () => {
+  /** A Firestore double that models the real query surface, not the reader. */
+  function makeFirestore(battles) {
+    const calls = [];
+    const makeQuery = (filters) => ({
+      where: (field, op, value) => { calls.push([field, op, value]); return makeQuery([...filters, [field, op, value]]); },
+      select: () => makeQuery(filters),
+      async get() {
+        const docs = Object.entries(battles)
+          .filter(([, b]) => filters.every(([field, op, value]) => {
+            const v = b[field];
+            if (v === undefined || v === null) return false;
+            if (op === '>=') return v >= value;
+            if (op === '<=') return v <= value;
+            return true;
+          }))
+          .map(([id, b]) => ({ id, data: () => b }));
+        return { docs, empty: docs.length === 0 };
+      },
+    });
+    return { calls, collection: () => makeQuery([]) };
+  }
+
+  const BATTLES = {
+    // In range, but its LAST update is long after the window — a HOLD-only day
+    // never moves updatedAt, and a later edit moves it out of a historical range.
+    'b-late-update': { activatedAt: '2026-09-02T13:30:00.000Z', completedAt: '2026-09-02T20:00:00.000Z', updatedAt: '2026-09-30T00:00:00.000Z' },
+    // In range and still running: no completedAt at all.
+    'b-open': { activatedAt: '2026-09-02T13:30:00.000Z', updatedAt: '2026-09-02T14:00:00.000Z' },
+    // Genuinely outside the window.
+    'b-old': { activatedAt: '2026-08-01T13:30:00.000Z', completedAt: '2026-08-01T20:00:00.000Z', updatedAt: '2026-08-01T20:00:00.000Z' },
+    // The finding's own scenario: activated before the window, RUNNING through
+    // it, and never written to during it — a HOLD-only stretch moves no field.
+    // Its lifetime covers the window; its last update is weeks before it.
+    'b-quiet': { activatedAt: '2026-08-28T13:30:00.000Z', expiresAt: '2026-09-05T20:00:00.000Z', updatedAt: '2026-08-28T14:00:00.000Z' },
+  };
+
+  it('a battle whose LATEST UPDATE is outside the window is still in the cohort', async () => {
+    const fs = makeFirestore(BATTLES);
+    const ids = await battleCohortForRange(fs, rangeBounds({ from: '2026-09-02', to: '2026-09-02' }));
+    expect(ids).toContain('b-late-update');
+    expect(ids).toContain('b-open');
+    expect(ids).not.toContain('b-old');
+  });
+
+  it('the query never filters on updatedAt', async () => {
+    const fs = makeFirestore(BATTLES);
+    await battleCohortForRange(fs, rangeBounds({ from: '2026-09-02', to: '2026-09-02' }));
+    expect(fs.calls.map(([field]) => field), 'updatedAt is not a lifetime field').not.toContain('updatedAt');
+  });
+
+  it('a battle still running (no completion) overlaps any window that starts before now', async () => {
+    const fs = makeFirestore(BATTLES);
+    const ids = await battleCohortForRange(fs, rangeBounds({ from: '2026-09-01', to: '2026-09-03' }));
+    expect(ids).toContain('b-open');
+  });
+
+  it('a battle that ran QUIETLY through the window is in the cohort — updatedAt is not its end', async () => {
+    // The end of a battle's life is `completedAt ?? expiresAt`, never the last
+    // time something wrote to it. Reading the end from `updatedAt` drops this
+    // battle: its last write is 2026-08-28, five days before the window it was
+    // live through.
+    const fs = makeFirestore(BATTLES);
+    const ids = await battleCohortForRange(fs, rangeBounds({ from: '2026-09-02', to: '2026-09-02' }));
+    expect(ids, 'a quiet battle is still a battle').toContain('b-quiet');
+  });
+
+  it('the predicate itself applies BOTH ends of the range', async () => {
+    // `overlapsRange` is exported and tested on its own terms: it is the whole
+    // membership rule, and it must not depend on the caller's query having
+    // already applied one end of it.
+    const bounds = rangeBounds({ from: '2026-09-02', to: '2026-09-02' });
+    const NOW = '2026-09-10T00:00:00.000Z';
+    expect(overlapsRange({ activatedAt: '2026-09-02T13:30:00.000Z' }, bounds, NOW), 'starts inside').toBe(true);
+    expect(overlapsRange({ activatedAt: '2026-09-09T13:30:00.000Z' }, bounds, NOW), 'starts AFTER the end').toBe(false);
+    expect(overlapsRange({ activatedAt: '2026-08-01T13:30:00.000Z', completedAt: '2026-08-02T20:00:00.000Z' }, bounds, NOW),
+      'ends BEFORE the start').toBe(false);
+    expect(overlapsRange({ activatedAt: '2026-08-01T13:30:00.000Z', completedAt: '2026-09-02T14:00:00.000Z' }, bounds, NOW),
+      'ends inside').toBe(true);
+  });
+
+  it('there is NO early return that drops battles — one match never hides another', async () => {
+    const fs = makeFirestore(BATTLES);
+    const ids = await battleCohortForRange(fs, rangeBounds({ from: '2026-09-02', to: '2026-09-02' }));
+    expect(ids.sort()).toEqual(['b-late-update', 'b-open', 'b-quiet']);
+  });
+
+  it('the exported TICKS are still filtered by capture time', async () => {
+    const reader = makeReader({ battles: { b1: { minted: 3, ticks: [permanent(1), permanent(2), permanent(3)], bodyIds: ['b1:1', 'b1:2', 'b1:3'] } } });
+    const { lines, totals } = await runExport(reader, parseArgs(['node', 's', '--from', '2026-09-02', '--to', '2026-09-02']));
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0]).tickId).toBe('b1:2');
+    expect(totals.minted, 'the DENOMINATOR is still the whole counter').toBe(3);
   });
 });
 

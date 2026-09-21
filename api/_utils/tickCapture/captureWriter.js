@@ -153,7 +153,19 @@ const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
  *
  * @returns {{permanent: object, body: object, universeSize: number, rejected: Array}}
  */
-export function buildCaptureDocuments(state, { nowMs = Date.now(), bodyFacts, captureMs = 0, remainingBudgetMs = null } = {}) {
+export function buildCaptureDocuments(state, {
+  nowMs = Date.now(),
+  bodyFacts,
+  captureMs = 0,
+  remainingBudgetMs = null,
+  // G6 (Astra round 2): the cap is an explicit bound of the composer, so the
+  // boundary can be placed precisely by a test instead of guessed at.
+  maxDocBytes = TICK_CAPTURE_BODY_DOC_MAX_BYTES,
+  // G4 (Astra round 2): the in-document timing is stamped AFTER the documents
+  // exist and BEFORE the final measurement — it could not previously include
+  // the serialization it was supposed to describe.
+  timingAtComposition = null,
+} = {}) {
   const capturedAt = new Date(nowMs).toISOString();
   const expireAt = new Date(nowMs + TICK_CAPTURE_BODY_RETENTION_DAYS * 86_400_000);
   const universe = buildUniverse(state.universeSets);
@@ -397,12 +409,20 @@ export function buildCaptureDocuments(state, { nowMs = Date.now(), bodyFacts, ca
     permanent.body.status = 'written';
   }
 
-  // ---- whole-body-document budget (F8) -----------------------------------
-  // A DECLARED shed order, largest-value-first inside each step, with an
-  // explicit reason recorded. The loop re-measures after every step and stops
-  // as soon as the document fits, so an oversize document can never reach the
-  // batch — the commit would reject it and the tick would lose its record for
-  // a reason nothing on the record could explain.
+  // ---- the timing stamp, then the FINAL measurement (G4 / G6) -------------
+  // Everything that can grow either document is now on it: the capped fields,
+  // the C-3 rejections, the body status — and, below, the shed metadata. The
+  // size check has to come after ALL of that, because `shedFields` and
+  // `bodyIncomplete` are themselves bytes, and appending them after the last
+  // measurement is how a body inside the cap crossed it and was batched anyway.
+  if (typeof timingAtComposition === 'function') {
+    try {
+      const timing = timingAtComposition() || {};
+      permanent.capture.preCommitMs = num(timing.preCommitMs) ?? permanent.capture.preCommitMs;
+      permanent.capture.bodyMs = num(timing.bodyMs) ?? null;
+    } catch { /* timing is an observation; it can never cost the record */ }
+  }
+
   const SHED_ORDER = [
     ['rejectedFields', () => { body.rejectedFields = []; }],
     ['controlSourceText', () => { body.controlSourceText = {}; }],
@@ -414,22 +434,31 @@ export function buildCaptureDocuments(state, { nowMs = Date.now(), bodyFacts, ca
     ['request.body', () => { if (typeof body.request.body === 'string') { body.request.body = null; body.request.truncated = true; } }],
     ['faults', () => { body.faults = { model: null, guardrail: null, capture: null }; }],
   ];
-  if (approxBytes(body) > TICK_CAPTURE_BODY_DOC_MAX_BYTES) {
-    for (const [label, shed] of SHED_ORDER) {
-      if (approxBytes(body) <= TICK_CAPTURE_BODY_DOC_MAX_BYTES) break;
-      shed();
-      shedFields.push(label);
+
+  /** Write the shed metadata, then measure the document WITH it. */
+  const stampAndMeasure = () => {
+    if (shedFields.length) {
+      body.shedFields = [...new Set(shedFields)];
+      body.bodyIncomplete = permanent.body.incomplete;
     }
-    if (permanent.body.status !== 'copy_failed' && permanent.body.status !== 'skipped') {
-      permanent.body.status = 'truncated';
-    }
-    permanent.body.incomplete = 'doc_budget';
-  } else if (shedFields.length && permanent.body.incomplete === null) {
+    return Math.max(approxBytes(body), approxBytes(permanent));
+  };
+
+  if (shedFields.length && permanent.body.incomplete === null) {
     permanent.body.incomplete = 'field_capped';
   }
-  if (shedFields.length) {
-    body.shedFields = [...new Set(shedFields)];
-    body.bodyIncomplete = permanent.body.incomplete;
+  if (stampAndMeasure() > maxDocBytes) {
+    for (const [label, shed] of SHED_ORDER) {
+      shed();
+      shedFields.push(label);
+      permanent.body.incomplete = 'doc_budget';
+      if (permanent.body.status !== 'copy_failed' && permanent.body.status !== 'skipped') {
+        permanent.body.status = 'truncated';
+      }
+      // Re-measured WITH the metadata each step writes, so the loop stops at a
+      // size that is actually final.
+      if (stampAndMeasure() <= maxDocBytes) break;
+    }
   }
 
   return { permanent, body, universeSize: universe.size, rejected, freeTextPaths: findFreeText(permanent, { universe }) };
@@ -478,8 +507,21 @@ export async function finalizeTickCapture(db, ctx, {
       const spent = Date.now() - startedMs;
       return { disposition: 'timed_out', tickId: state.tickId, ms: spent, totalMs: spent, preCommitMs: spent, bodyMs };
     }
-    docs = buildCaptureDocuments(state, { nowMs, bodyFacts, captureMs: Date.now() - startedMs, remainingBudgetMs });
-    preCommitMs = Date.now() - startedMs;
+    docs = buildCaptureDocuments(state, {
+      nowMs, bodyFacts, remainingBudgetMs,
+      // G4: stamped after composition, so the number on the record is the one
+      // the caller also reports.
+      timingAtComposition: () => {
+        preCommitMs = Date.now() - startedMs;
+        return { preCommitMs, bodyMs };
+      },
+    });
+    // G4: and CHECKED AGAIN after serialization. Composition is real work; a
+    // deadline verified only on the way in was never a bound on it.
+    if (remainingDeadline() === 0) {
+      const spent = Date.now() - startedMs;
+      return { disposition: 'timed_out', tickId: state.tickId, ms: spent, totalMs: spent, preCommitMs, bodyMs };
+    }
   } catch (err) {
     const spent = Date.now() - startedMs;
     return { disposition: 'serialize_failed', tickId: state.tickId, ms: spent, totalMs: spent, bodyMs, error: String(err?.message || err).slice(0, 200) };
@@ -490,7 +532,18 @@ export async function finalizeTickCapture(db, ctx, {
     const batch = db.batch();
     batch.set(battleRef.collection(TICKS_SUBCOLLECTION).doc(state.tickId), docs.permanent);
     batch.set(battleRef.collection(TICK_BODIES_SUBCOLLECTION).doc(state.tickId), docs.body);
-    await withDeadline(batch.commit(), remainingDeadline(), 'tick_capture_commit');
+    // G4: the allowance is taken IMMEDIATELY BEFORE the commit — building and
+    // staging the batch is real work, and an allowance measured before it is
+    // already stale when the write is dispatched — and it GATES the call rather
+    // than only racing it. Passed as an argument to `withDeadline`,
+    // `batch.commit()` was already in flight by the time the deadline could
+    // reject it, so a zero allowance still wrote.
+    const allowance = remainingDeadline();
+    if (allowance === 0) {
+      const spent = Date.now() - startedMs;
+      return { disposition: 'timed_out', tickId: state.tickId, ms: spent, totalMs: spent, preCommitMs, bodyMs };
+    }
+    await withDeadline(batch.commit(), allowance, 'tick_capture_commit');
     const totalMs = Date.now() - startedMs;
     return { disposition: 'written', tickId: state.tickId, ms: totalMs, totalMs, preCommitMs, bodyMs };
   } catch (err) {

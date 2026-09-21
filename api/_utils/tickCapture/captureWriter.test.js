@@ -355,6 +355,152 @@ describe('F8 (Astra round 1) — the size cap covers the WHOLE body', () => {
   });
 });
 
+describe('G4 (Astra round 2) — the deadline holds through serialization and commit', () => {
+  it('SERIALIZATION exhausting the budget is a counted gap — no commit is started', async () => {
+    vi.useFakeTimers();
+    try {
+      const ctx = liveState((c) => c.exit('completed'));
+      // No test-only hook in product code: the clock is burned by a field the
+      // SERIALIZER itself reads. `state.riskFacts.verdicts` is read once, while
+      // the documents are being composed — exactly the window the old order
+      // never re-checked.
+      Object.defineProperty(ctx.state.riskFacts, 'verdicts', {
+        get() { vi.advanceTimersByTime(TICK_CAPTURE_DEADLINE_MS + 100); return {}; },
+        configurable: true,
+      });
+      const db = makeDb();
+      const batches = vi.fn(db.batch.bind(db));
+      db.batch = batches;
+      const result = await finalizeTickCapture(db, ctx, { nowMs: NOW_MS, remainingBudgetMs: 60_000 });
+      expect(result.disposition, 'an exhausted budget must not commit').toBe('timed_out');
+      expect(db.__committed, 'nothing may be written').toEqual([]);
+      // This is what makes the POST-SERIALIZATION check load-bearing on its own:
+      // past the deadline the writer does not touch the database at all. Without
+      // that check the batch is built and both documents staged, and only the
+      // pre-commit check stops the write.
+      expect(batches, 'no batch may even be built past the deadline').not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('STAGING the batch exhausting the budget is a counted gap — commit is never called', async () => {
+    vi.useFakeTimers();
+    try {
+      const ctx = liveState((c) => c.exit('completed'));
+      const db = makeDb();
+      const commits = vi.fn();
+      // Serialization finishes inside the deadline; BUILDING AND STAGING the
+      // batch burns the rest. That window sits between the two checks, so only
+      // an allowance measured immediately before `commit()` covers it — one
+      // taken earlier is already stale when the commit is dispatched.
+      db.batch = () => ({
+        set() { vi.advanceTimersByTime(TICK_CAPTURE_DEADLINE_MS + 100); },
+        commit: commits,
+      });
+      const result = await finalizeTickCapture(db, ctx, { nowMs: NOW_MS, remainingBudgetMs: 60_000 });
+      expect(result.disposition, 'a stale allowance must not authorise the write').toBe('timed_out');
+      expect(commits, 'the commit must never be dispatched past the deadline').not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('the in-document timing is stamped AFTER the documents are composed', async () => {
+    vi.useFakeTimers();
+    try {
+      const ctx = liveState((c) => c.exit('completed'));
+      // Serialization has to COST something, or "stamped after" and "never
+      // stamped" both read zero and the row proves nothing. A field the
+      // serializer reads burns 400 ms — real elapsed, well inside the deadline.
+      Object.defineProperty(ctx.state.riskFacts, 'verdicts', {
+        get() { vi.advanceTimersByTime(400); return {}; },
+        configurable: true,
+      });
+      const db = makeDb();
+      const result = await finalizeTickCapture(db, ctx, { nowMs: NOW_MS, remainingBudgetMs: 60_000 });
+      const permanent = db.__committed[0][0].data;
+      expect(result.preCommitMs, 'the work is on the clock').toBeGreaterThanOrEqual(400);
+      // The stored number must be the POST-serialization elapsed the caller also
+      // reports, not the value computed on the way in (which would be 0).
+      expect(permanent.capture.preCommitMs).toBe(result.preCommitMs);
+    } finally { vi.useRealTimers(); }
+  });
+});
+
+describe('G6 (Astra round 2) — the size check is the LAST thing before batching', () => {
+  /** Build a body whose text lands just under `cap`, so metadata decides it. */
+  const nearCapState = (cap) => liveState((c) => {
+    c.exit('completed');
+    c.controlsText({ directiveText: 'L'.repeat(Math.floor(cap * 0.93)) });
+  });
+
+  it('metadata added after the last measurement cannot push a body over the cap', async () => {
+    // The cap is an explicit bound of the composer, so the boundary can be
+    // placed precisely instead of guessed at. `shedFields` and `bodyIncomplete`
+    // used to be appended AFTER the final measurement, so a body inside the cap
+    // crossed it and was batched anyway.
+    const CAP = 4_000;
+    const { body, permanent } = buildCaptureDocuments(nearCapState(CAP).state, {
+      nowMs: NOW_MS, bodyFacts: EMPTY_BODY, maxDocBytes: CAP,
+    });
+    expect(body.shedFields, 'the metadata that decides it is itself present').toBeTruthy();
+    expect(body.bodyIncomplete).toBeTruthy();
+    // measured with EVERYTHING on it
+    expect(approxBytes(body)).toBeLessThanOrEqual(CAP);
+    expect(permanent.body.incomplete).toBeTruthy();
+  });
+
+  it('a body inside the cap ONLY until its own shed metadata is written is still shed', async () => {
+    // The finding, at its exact boundary. A FIELD-CAPPED body already carries
+    // `shedFields` and `bodyIncomplete`; those bytes are what the old order
+    // appended after the last measurement. Placing the cap one byte under the
+    // size WITH them means the two orders disagree, and only the correct one
+    // ends inside the cap.
+    const overlong = () => liveState((c) => {
+      c.exit('completed');
+      c.controlsText({ directiveText: 'L'.repeat(TICK_CAPTURE_TEXT_FIELD_MAX_BYTES + 4_096) });
+    }).state;
+    const probe = buildCaptureDocuments(overlong(), {
+      nowMs: NOW_MS, bodyFacts: EMPTY_BODY, maxDocBytes: Number.MAX_SAFE_INTEGER,
+    });
+    expect(probe.body.shedFields, 'the field cap wrote the metadata').toBeTruthy();
+    const CAP = approxBytes(probe.body) - 1;
+    const { body } = buildCaptureDocuments(overlong(), {
+      nowMs: NOW_MS, bodyFacts: EMPTY_BODY, maxDocBytes: CAP,
+    });
+    expect(approxBytes(body), 'measured WITH its own shed metadata').toBeLessThanOrEqual(CAP);
+  });
+
+  it('the PERMANENT record is measured too — an oversize permanent record still sheds', async () => {
+    // Only the body can be shed, so this is not a bound on the permanent record
+    // (nothing in the composer can shrink it). What the measurement does buy is
+    // that an oversize permanent record is NOTICED: everything sheddable is
+    // shed and the record says `doc_budget`, rather than the batch going out
+    // unremarked because the body alone happened to be small.
+    const symbols = Array.from({ length: 160 }, (_, i) => `SYM${String(i).padStart(3, '0')}`);
+    const ctx = createTickCaptureContext({ battleId: 'battle-1', tickSeq: 4, agentId: 'agent-1', enabled: true });
+    ctx.universe({ heldSymbols: symbols });
+    ctx.exit('completed');
+    ctx.risk({ verdicts: Object.fromEntries(symbols.map((s) => [s, { action: 'hold', reason: 'within_band' }])) });
+    const CAP = 4_000;
+    const { body, permanent } = buildCaptureDocuments(ctx.state, {
+      nowMs: NOW_MS, bodyFacts: EMPTY_BODY, maxDocBytes: CAP,
+    });
+    expect(approxBytes(body), 'the body alone was never the problem').toBeLessThanOrEqual(CAP);
+    expect(approxBytes(permanent), 'the permanent record is what is over').toBeGreaterThan(CAP);
+    expect(permanent.body.incomplete, 'so the over-budget batch is recorded').toBe('doc_budget');
+    expect(body.shedFields, 'and everything sheddable was shed').toBeTruthy();
+  });
+
+  it('at the real cap, neither document reaches the batch over it', async () => {
+    const many = {};
+    for (let i = 0; i < 12; i++) many[`leanText${i}`] = 'L'.repeat(200_000);
+    const ctx = liveState((c) => { c.exit('completed'); c.controlsText(many); });
+    const db = makeDb();
+    await finalizeTickCapture(db, ctx, { nowMs: NOW_MS, remainingBudgetMs: 60_000 });
+    for (const write of db.__committed[0]) {
+      expect(approxBytes(write.data)).toBeLessThanOrEqual(TICK_CAPTURE_BODY_DOC_MAX_BYTES);
+    }
+  });
+});
+
 describe('F9 (Astra round 1) — the digest is of the RECEIVED BYTES', () => {
   it('a body with a UTF-8 BOM hashes its bytes, not the decoded string', async () => {
     const { sha256Bytes } = await import('./captureWriter.js');
