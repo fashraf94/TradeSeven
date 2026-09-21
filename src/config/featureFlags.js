@@ -2583,7 +2583,7 @@ export const ANTICIPATION_THRESHOLD_LINT_MODES = Object.freeze(['off', 'shadow',
  * src/config/intradayFlags.test.js in the same commit (BUILD_RULES §2).
  */
 // Pinned by: intradayFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const INTRADAY_COLLECT_ENABLED = false;
+export const INTRADAY_COLLECT_ENABLED = true;
 
 /**
  * INTRADAY_DIAGNOSTIC_ENABLED — the evaluator reads intradaySnapshots/latest

@@ -1,7 +1,9 @@
 // src/config/intradayFlags.test.js
 //
 // Intraday Data — Build 1: THE FLAG PINS (BUILD_RULES §2) for the four
-// boolean flags (contract §3). All ship FALSE. The flag-pin guard
+// boolean flags (contract §3). All four shipped FALSE at build-1 merge;
+// INTRADAY_COLLECT_ENABLED is now LIT — the founder flipped it in its own
+// one-line PR after the day-1 smoke (§13). The flag-pin guard
 // (flagPinGuard.test.js) tracks each row against the live value; a flip moves
 // the row here in the flip commit, and — for the two stage gates — drops the
 // DARK_BY_DESIGN entry in the same commit.
@@ -25,8 +27,13 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(HERE, 'featureFlags.js'), 'utf8');
 
 describe('Intraday Data Build 1 flags — the pins (BUILD_RULES §2)', () => {
-  it('INTRADAY_COLLECT_ENABLED ships false (flips after the founder\'s day-1 smoke, one-line PR)', () => {
-    expect(INTRADAY_COLLECT_ENABLED).toBe(false);
+  it('is LIT: INTRADAY_COLLECT_ENABLED is true (the founder flipped it after the day-1 smoke, one-line PR)', () => {
+    // THE ROW THAT MOVED WITH THE FLIP, in the flip PR's own commit — the
+    // tickStampsFlags.test.js precedent. The tripwire turned around: pinned
+    // TRUE, this row is now what makes an accidental ROLLBACK loud, and a
+    // deliberate one moves it back. Nothing else moves — this flag is not
+    // DARK_BY_DESIGN, so there is no guard entry to drop (row below asserts it).
+    expect(INTRADAY_COLLECT_ENABLED).toBe(true);
   });
   it('INTRADAY_DIAGNOSTIC_ENABLED ships false (flips after the founder\'s day-1 smoke, one-line PR)', () => {
     expect(INTRADAY_DIAGNOSTIC_ENABLED).toBe(false);
