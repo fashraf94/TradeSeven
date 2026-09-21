@@ -51,7 +51,7 @@ export const ENUM_LISTS = Object.freeze({
 });
 
 const ID_RE = /^[A-Za-z0-9_:.+\-/]{1,120}$/;
-const SYMBOL_RE = /^[A-Z0-9][A-Z0-9.\-]{0,11}$/;
+const SYMBOL_RE = /^[A-Z0-9][A-Z0-9.-]{0,11}$/;
 const SHA256_RE = /^[a-f0-9]{64}$/;
 const ISO_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}:\d{2}))?$/;
 

@@ -563,5 +563,91 @@
       ]
     }
   ],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    {
+      "collectionGroup": "tickBodies",
+      "fieldPath": "request",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tickBodies",
+      "fieldPath": "response",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tickBodies",
+      "fieldPath": "originalToolResult",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tickBodies",
+      "fieldPath": "finalToolResult",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tickBodies",
+      "fieldPath": "controlsAsRendered",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tickBodies",
+      "fieldPath": "faults",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tickBodies",
+      "fieldPath": "validationErrors",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tickBodies",
+      "fieldPath": "rejectedFields",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tickBodies",
+      "fieldPath": "copyError",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "ticks",
+      "fieldPath": "manifest",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "ticks",
+      "fieldPath": "checks",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "ticks",
+      "fieldPath": "actions",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "ticks",
+      "fieldPath": "controls",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "ticks",
+      "fieldPath": "callEnvelope",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "ticks",
+      "fieldPath": "decision",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "ticks",
+      "fieldPath": "capture",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "ticks",
+      "fieldPath": "scores",
+      "indexes": []
+    }
+  ]
 }
