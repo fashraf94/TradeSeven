@@ -1,10 +1,10 @@
 // api/_utils/intraday/validator.test.js — contract §10.2–§10.5 (pure).
 import { describe, it, expect } from 'vitest';
-import { buildReferenceSeries, lastCompletedBarAt, computeCoverage, alignLogEntries, seriesMetrics, evaluationMetrics, validateSymbolSession, aggregateValidation, referenceBucketCloses } from './validator.js';
+import { buildReferenceSeries, lastCompletedBarAt, computeCoverage, alignLogEntries, seriesMetrics, evaluationMetrics, validateSymbolSession, aggregateValidation, referenceBucketCloses, lastReferenceBarStartMs, sessionCalcVersionOf } from './validator.js';
 import { aggregateBarsToBuckets } from './seed.js';
 import { sessionKeys } from './buckets.js';
 import { FIXTURE_BARS } from '../__fixtures__/intradayPollHarness.js';
-import { SEP17 } from '../__fixtures__/intradaySessions.js';
+import { SEP17, makeSession } from '../__fixtures__/intradaySessions.js';
 
 const series = buildReferenceSeries(FIXTURE_BARS, SEP17);
 const EOD = FIXTURE_BARS.reduce((a, r) => a + r.volume, 0);
@@ -140,6 +140,87 @@ describe('§10.4 evaluation-linked metrics', () => {
     // Replay: k1 (strike, both count 1), k1 again skipped, k2 (both 2 → both fire, agree), k3 (est 1, ref 0), k4 (0,0), k5 (0,0).
     expect(m.counts.fires).toBe(1);
     expect(m.replayedExitDisagreement).toBe(0);
+  });
+});
+
+describe('§10.2 / §10.7 — the reference window is the GRADED session\'s calcVersion', () => {
+  const EARLY = makeSession('2026-11-27', { early: true, previousEtDate: '2026-11-25' });
+  const logAt = (version, count = 3) => Array.from({ length: count }, (_, i) => ({
+    sweepAt: SEP17.openMs + (100 + i) * 60_000,
+    priceAsOf: SEP17.openMs + (100 + i) * 60_000,
+    price: 335, estimate: 334.5,
+    estimateCutoff: SEP17.openMs + (100 + i) * 60_000,
+    calcVersion: version, strikeKey: `k${i}`,
+  }));
+  const ringFor = (policy) => ({ buckets: aggregateBarsToBuckets(FIXTURE_BARS, SEP17, { closingRowPolicy: policy }).buckets });
+  const validate = (log, policy) => validateSymbolSession({
+    sym: 'AAPL', bars: FIXTURE_BARS, session: SEP17,
+    doc: { ring: ringFor(policy), state: null, log },
+    quoteCumulativeVolume: EOD, views: [], fireTicksOf, calcVersion: 1, policyVersion: 1,
+  });
+
+  it('the last reference bar is the calendar close under v1 and 15:59 under v2; an early close gives 12:59', () => {
+    expect(lastReferenceBarStartMs(SEP17, 1)).toBe(SEP17.closeMs);
+    expect(lastReferenceBarStartMs(SEP17, 2)).toBe(SEP17.closeMs - 60_000);
+    expect(lastReferenceBarStartMs(EARLY, 2)).toBe(EARLY.closeMs - 60_000);
+    // 12:59 ET, stated as the wall clock the contract names.
+    expect(new Date(lastReferenceBarStartMs(EARLY, 2) - 4 * 3600_000).toISOString().slice(11, 16)).toBe('12:59');
+    expect(new Date(lastReferenceBarStartMs(SEP17, 2) - 4 * 3600_000).toISOString().slice(11, 16)).toBe('15:59');
+  });
+
+  it('v2 uses the 390 rows through 15:59 and excludes the 16:00 row from the series, the coverage denominator and the 5-minute closes', () => {
+    const v2 = buildReferenceSeries(FIXTURE_BARS, SEP17, { sessionCalcVersion: 2 });
+    expect(v2).toHaveLength(390);
+    expect(v2.at(-1).startMs).toBe(SEP17.closeMs - 60_000);
+    expect(v2.some((r) => r.startMs === SEP17.closeMs)).toBe(false);
+    // The auction's 19.1 M shares are out of the reference VWAP entirely.
+    expect(v2.at(-1).cumVol).toBe(FIXTURE_BARS.slice(0, 390).reduce((a, r) => a + r.volume, 0));
+    expect(v2.at(-1).cumVol).toBeLessThan(series.at(-1).cumVol);
+    expect(v2.at(-1).vwap).not.toBeCloseTo(series.at(-1).vwap, 6);
+
+    const cov = computeCoverage({ series: v2, session: SEP17, quoteCumulativeVolume: EOD, sessionCalcVersion: 2 });
+    expect(cov).toMatchObject({ barsExpected: 390, barsPresent: 390, barsMissing: 0, coverage: 'full' });
+
+    const ref5 = referenceBucketCloses(v2, SEP17);
+    const { lastKey } = sessionKeys(SEP17);
+    expect(ref5.get(lastKey).close).toBe(FIXTURE_BARS[389].close);
+    expect(ref5.get(lastKey).close).not.toBe(FIXTURE_BARS[390].close);
+  });
+
+  it('a v1-stamped session is graded with the OLD window, through the 16:00 row — the grader\'s own constant never decides', () => {
+    const r = validate(logAt(1), null);
+    expect(r.sessionCalcVersion).toBe(1);
+    expect(r.calcVersionSource).toBe('log');
+    expect(r.calcVersionMixed).toBe(false);
+    expect(r.referenceWindow.lastBarStartMs).toBe(SEP17.closeMs);
+    expect(r.coverage.barsExpected).toBe(391);
+    expect(r.coverage.barsPresent).toBe(391);
+    // The same bars graded as v2 shrink to the continuous session.
+    const v2 = validate(logAt(2), 'continuous_session');
+    expect(v2.sessionCalcVersion).toBe(2);
+    expect(v2.referenceWindow.lastBarStartMs).toBe(SEP17.closeMs - 60_000);
+    expect(v2.coverage.barsExpected).toBe(390);
+    expect(v2.coverage.barsPresent).toBe(390);
+    expect(v2.qualification).toEqual({ included: true, reason: null });
+  });
+
+  it('a session whose entries straddle the bump is `calc_version_mixed` and excluded from qualification, while still being reported', () => {
+    const mixed = validate([...logAt(1, 2), ...logAt(2, 2)], 'continuous_session');
+    expect(mixed.calcVersionMixed).toBe(true);
+    expect(mixed.calcVersions).toEqual([1, 2]);
+    expect(mixed.qualification).toEqual({ included: false, reason: 'calc_version_mixed' });
+    // Excluded, not erased: the numbers are still there to look at.
+    expect(mixed.series.comparisons).toBeGreaterThan(0);
+    expect(mixed.coverage.coverage).toBe('full');
+    const agg = aggregateValidation({ AAPL: mixed }, { etDate: '2026-09-17', calcVersion: 2, policyVersion: 1, firstPublishHourUtc: 11, status: 'done', computedAt: 2 });
+    expect(agg.symbolsQualified).toBe(0);
+    expect(agg.symbolsCalcVersionMixed).toBe(1);
+    expect(agg.symbolsByCalcVersion).toEqual({ 2: 1 });
+  });
+
+  it('an empty log falls back to the grader\'s calcVersion and says so, rather than guessing silently', () => {
+    expect(sessionCalcVersionOf([], 7)).toEqual({ calcVersion: 7, mixed: false, versions: [], source: 'fallback' });
+    expect(sessionCalcVersionOf(logAt(2), 7)).toEqual({ calcVersion: 2, mixed: false, versions: [2], source: 'log' });
   });
 });
 

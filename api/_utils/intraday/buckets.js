@@ -21,9 +21,11 @@
 // advance across it). §6.3 completed buckets are immutable (late updates
 // rejected and counted). §6.4 a missing bucket breaks the contiguous segment
 // and every indicator re-warms independently. §6.7 closeQualified: the last
-// bucket of a session is unqualified until CLOSING_ROW_POLICY is set; SMA20
-// clears by window exit, MACD/RSI only by reinitialisation from a fully
-// qualified segment (recursive state retains the influence).
+// bucket of a session is unqualified only while CLOSING_ROW_POLICY is null —
+// under `continuous_session` (§15 item 2) it closes on the last
+// continuous-session trade and qualifies like any other; SMA20 clears by
+// window exit, MACD/RSI only by reinitialisation from a fully qualified
+// segment (recursive state retains the influence).
 
 import { stepSma, stepMacd, stepWilderRsi, WARMUP_BARS } from './stepIndicators.js';
 
@@ -31,6 +33,29 @@ export const BUCKET_MS = 300_000;
 const MAX_SEGMENT_CLOSES = Math.max(...Object.values(WARMUP_BARS));
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+
+/**
+ * §15 item 2 — the closing-row assignment policy of record (calcVersion 2).
+ *
+ * EODHD's 2026-09-21 answer 3: the closing-auction print lands in the 16:00
+ * bar for Nasdaq and most NYSE symbols, and in the 16:03 or 16:04 bar for
+ * some NYSE symbols — so bars from 16:00 onward are unsuitable for session
+ * totals, and the clean continuous session is 09:30–15:59. Under this policy
+ * the session ends at the LAST MILLISECOND BEFORE the calendar close for the
+ * estimate, the 5-minute buckets, seeding and validation; the closing auction
+ * is outside it; and the session's last bucket — the one that closes on the
+ * last continuous-session trade — is therefore fully qualified.
+ */
+export const CONTINUOUS_SESSION = 'continuous_session';
+
+/**
+ * §6.1 — the last instant that belongs to the session, by policy. Under
+ * `continuous_session` that is `closeMs − 1`; under a null policy the
+ * calendar close itself, which is where build 1 stood.
+ */
+export function sessionEndMs(session, closingRowPolicy = null) {
+  return closingRowPolicy === CONTINUOUS_SESSION ? session.closeMs - 1 : session.closeMs;
+}
 
 /** First and last regular-session bucket keys for a calendar session. */
 export function sessionKeys(session) {
@@ -40,10 +65,19 @@ export function sessionKeys(session) {
   };
 }
 
-/** §6.1 — the bucket key an in-session priceAsOf belongs to (null outside). */
-export function bucketKeyFor(priceAsOf, session) {
-  if (!isNum(priceAsOf) || priceAsOf < session.openMs || priceAsOf > session.closeMs) return null;
+/**
+ * §6.1 — the bucket key an in-session instant belongs to (null outside).
+ *
+ * `sessionKeys().lastKey` is already `floor((closeMs − 1) / BUCKET_MS)`, so
+ * the last bucket is the 15:55 one under either policy; what the policy
+ * decides is whether an instant AT the close still belongs to the session at
+ * all. Under `continuous_session` it does not.
+ */
+export function bucketKeyFor(priceAsOf, session, { closingRowPolicy = null } = {}) {
+  const endMs = sessionEndMs(session, closingRowPolicy);
+  if (!isNum(priceAsOf) || priceAsOf < session.openMs || priceAsOf > endMs) return null;
   const { lastKey } = sessionKeys(session);
+  // Reachable only under the null policy — `endMs` excludes it otherwise.
   if (priceAsOf === session.closeMs) return lastKey;
   return Math.floor(priceAsOf / BUCKET_MS);
 }
@@ -148,7 +182,9 @@ function finalize(bucket, { closingRowPolicy }) {
     status: 'completed',
     reason: 'normal',
     closeLagMs: isNum(bucket.maxPriceAsOf) ? bucket.endMs - bucket.maxPriceAsOf : null,
-    // §6.7 — the closing bar is unresolved until §15 answers.
+    // §6.7 — the last bucket is unresolved only while the policy is NULL.
+    // Under `continuous_session` it closes on the last continuous-session
+    // trade, which is a resolved close, so it qualifies like any other.
     closeQualified: bucket.isLast ? closingRowPolicy !== null : true,
   };
 }
@@ -198,7 +234,7 @@ export function applyObservationToBuckets({ ring, state, obs, session, closingRo
     return { ring: { buckets: trimRing(buckets, maxClosed) }, state: st, completed, rejected: null };
   }
 
-  const k = bucketKeyFor(obs.priceAsOf, session);
+  const k = bucketKeyFor(obs.priceAsOf, session, { closingRowPolicy });
   if (k === null) return { ring: r, state: st, completed: [], rejected: 'outside_session' };
 
   // §6.3 — a completed key is immutable.

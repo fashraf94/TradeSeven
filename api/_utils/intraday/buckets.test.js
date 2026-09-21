@@ -2,8 +2,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   applyObservationToBuckets, applyDeadline, advanceState, rebuildFromBuckets, newRing, newState,
-  sessionKeys, bucketKeyFor, isAdjacent, indicatorQuality, BUCKET_MS,
+  sessionKeys, bucketKeyFor, isAdjacent, indicatorQuality, BUCKET_MS, sessionEndMs, CONTINUOUS_SESSION,
 } from './buckets.js';
+import { CLOSING_ROW_POLICY } from '../intradayConfig.js';
 import { stepSma, stepMacd, stepWilderRsi, WARMUP_BARS } from './stepIndicators.js';
 import { SEP16, SEP17, SEP18, makeSession, obsAt, sessionOfFixture } from '../__fixtures__/intradaySessions.js';
 
@@ -192,6 +193,30 @@ describe('§6.7 close qualification propagates', () => {
     expect(nul.ring.buckets.find((x) => x.isLast).closeQualified).toBe(false);
     const set = applyObservationToBuckets({ ring: pre.ring, state: pre.state, obs: obsAt(SEP17, 390, { price: 5 }), session: SEP17, closingRowPolicy: 'vendor_close_row' });
     expect(set.ring.buckets.find((x) => x.isLast).closeQualified).toBe(true);
+  });
+
+  it('§15 item 2 — under the shipped continuous_session policy the last bucket closes on the last continuous-session trade and IS qualified', () => {
+    expect(CLOSING_ROW_POLICY).toBe(CONTINUOUS_SESSION);
+    // The session's window ends one millisecond before the calendar close.
+    expect(sessionEndMs(SEP17, CONTINUOUS_SESSION)).toBe(SEP17.closeMs - 1);
+    expect(sessionEndMs(SEP17, null)).toBe(SEP17.closeMs);
+    expect(bucketKeyFor(SEP17.closeMs, SEP17, { closingRowPolicy: CONTINUOUS_SESSION })).toBeNull();
+    expect(bucketKeyFor(SEP17.closeMs - 1, SEP17, { closingRowPolicy: CONTINUOUS_SESSION })).toBe(sessionKeys(SEP17).lastKey);
+    // …and under the null policy the exact close is still inside the session.
+    expect(bucketKeyFor(SEP17.closeMs, SEP17, { closingRowPolicy: null })).toBe(sessionKeys(SEP17).lastKey);
+
+    const pre = feed(newRing(), newState(), walk(SEP17, 385, 389), SEP17, { closingRowPolicy: CLOSING_ROW_POLICY });
+    const out = applyObservationToBuckets({ ring: pre.ring, state: pre.state, obs: obsAt(SEP17, 392, { price: 5 }), session: SEP17, closingRowPolicy: CLOSING_ROW_POLICY });
+    const last = out.ring.buckets.find((x) => x.isLast);
+    expect(last).toMatchObject({ status: 'completed', reason: 'normal', closeQualified: true });
+    expect(last.maxPriceAsOf).toBe(SEP17.openMs + 389 * 60_000);
+    expect(last.close).not.toBe(5);
+    // A deadline-marked last bucket is still unqualified: an incomplete
+    // bucket has no resolved close, whatever the policy says about the
+    // auction. The policy resolves the closing ROW, not a missing bar.
+    const stalled = feed(newRing(), newState(), walk(SEP17, 370, 384), SEP17, { closingRowPolicy: CLOSING_ROW_POLICY });
+    const dl = applyDeadline({ ring: stalled.ring, session: SEP17, nowMs: SEP17.closeMs + 30 * 60_000 });
+    expect(dl.ring.buckets.find((x) => x.isLast)).toMatchObject({ status: 'incomplete', reason: 'deadline', closeQualified: false });
   });
 
   it('SMA20 clears when the unqualified bucket leaves its 20-bucket window; MACD/RSI clear ONLY by qualified reinitialisation', () => {

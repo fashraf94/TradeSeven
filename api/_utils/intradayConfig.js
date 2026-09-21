@@ -63,8 +63,25 @@ export const MAX_TICKERS_PER_REQUEST = 20;
 export const VOLUME_CUTOFF_FIELD = 'priceAsOf';
 /** Which Observation field session high/low/open are cumulative TO. null | 'priceAsOf' only. */
 export const HL_CUTOFF_FIELD = 'priceAsOf';
-/** Closing-row assignment policy (§15 item 2). null → the closing bar is unresolved. */
-export const CLOSING_ROW_POLICY = null;
+//   (3) The closing-auction print lands in the 16:00 bar for Nasdaq and most
+//       NYSE symbols, and in the 16:03 or 16:04 bar for some NYSE symbols —
+//       so bars from 16:00 onward are unsuitable for session totals, and the
+//       clean continuous session is 09:30–15:59.
+/**
+ * Closing-row assignment policy (§15 item 2) — `'continuous_session'` per
+ * answer 3. For the VWAP estimate, the 5-minute buckets, seeding and
+ * validation the session ends at the LAST MILLISECOND BEFORE the calendar
+ * close; one-minute bars with `start ≥ sessionCloseMs` (16:00 and later,
+ * 13:00 and later on an early close) are excluded from seeding and from
+ * every reference computation. The session's last bucket therefore closes on
+ * the last continuous-session trade and is `closeQualified: true` — which
+ * is what §6.7's `closingRowPolicy !== null` stamping (buckets.js `finalize`,
+ * seed.js `aggregateBarsToBuckets`) has always meant by "resolved".
+ *
+ * `null` remains the build-1 value and is still honoured everywhere, so a
+ * session collected before the bump is still described by it.
+ */
+export const CLOSING_ROW_POLICY = 'continuous_session';
 
 /** §10.7 — covers §5.4–5.6, §6, §10.2–10.3. */
 export const CALC_VERSION = 1;

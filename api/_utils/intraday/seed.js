@@ -5,8 +5,14 @@
 // contiguous run ENDING at that session's last bucket, capped at 60. PURE.
 //
 // A 1-minute bar's `timestamp` (seconds, bar START) is treated as the
-// priceAsOf of its close, so the vendor's 16:00 row (start === sessionCloseMs)
-// lands in the last regular bucket by the same §6.1 rule the poller applies.
+// priceAsOf of its close, so the same §6.1 rule the poller applies decides
+// which bucket it lands in — INCLUDING the policy. Under
+// `continuous_session` (§15 item 2) the vendor's 16:00 row
+// (start === sessionCloseMs) is outside the session and is ignored, counted
+// in `barsIgnored`: it carries the closing auction, which on the founder's
+// AAPL fixture is 19,122,063 shares — 42.9 % of the day — at a price the
+// continuous session never printed. Under a null policy it still lands in
+// the last bucket, which is where build 1 stood.
 
 import { sessionKeys, BUCKET_MS, bucketKeyFor } from './buckets.js';
 
@@ -36,7 +42,7 @@ export function aggregateBarsToBuckets(bars, session, { closingRowPolicy = null 
   for (const bar of Array.isArray(bars) ? bars : []) {
     const t = barTimeMs(bar);
     const close = isNum(bar?.close) ? bar.close : null;
-    const k = t === null ? null : bucketKeyFor(t, session);
+    const k = t === null ? null : bucketKeyFor(t, session, { closingRowPolicy });
     if (k === null || close === null) { ignored += 1; continue; }
     used += 1;
     const cur = map.get(k) || {

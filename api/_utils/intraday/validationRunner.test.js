@@ -6,6 +6,7 @@ import { runPoll } from './pollRunner.js';
 import { runValidation } from './validationRunner.js';
 import { loadActionableDocs } from './intradayStore.js';
 import { sessionKeys } from './buckets.js';
+import * as CONFIG from '../intradayConfig.js';
 
 const S17 = sessionOf('2026-09-17');
 const HELD = ['AAPL', 'MSFT', 'NVDA'];
@@ -67,9 +68,23 @@ describe('§10.1 the validator state machine', () => {
     expect(doc.symbols.AAPL.series.excludedByReason.cutoff_unconfirmed).toBeUndefined();
     expect(doc.symbols.AAPL.series.comparisons).toBeGreaterThan(0);
     expect(doc.symbols.AAPL.series.p95AbsResidualOverPrice).not.toBeNull();
-    // The closing row is still unresolved at this commit (CLOSING_ROW_POLICY
-    // null) → unqualified. The continuous-session policy is the next one.
-    expect(doc.symbols.AAPL.qualification).toEqual({ included: false, reason: 'close_unqualified' });
+    // §15 item 2 answered: under `continuous_session` the last bucket closes
+    // on the last continuous-session trade, so the series is close-qualified
+    // and the symbol-session QUALIFIES. This row read
+    // `{ included: false, reason: 'close_unqualified' }` for the whole of
+    // build 1 — the closing row was the one thing keeping it out.
+    expect(CONFIG.CLOSING_ROW_POLICY).toBe('continuous_session');
+    expect(doc.symbols.AAPL.qualification).toEqual({ included: true, reason: null });
+    expect(doc.symbols.AAPL.closeQualified).toBe(true);
+    // The window is the GRADED session's: the harness collected at the
+    // current calcVersion, and the expected bar count follows from it.
+    expect(doc.symbols.AAPL.sessionCalcVersion).toBe(CONFIG.CALC_VERSION);
+    expect(doc.symbols.AAPL.calcVersionMixed).toBe(false);
+    expect(doc.symbols.AAPL.coverage.barsExpected).toBe(CONFIG.CALC_VERSION >= 2 ? 390 : 391);
+    expect(doc.symbols.AAPL.coverage.barsMissing).toBe(0);
+    expect(doc.symbolsQualified).toBe(4);
+    expect(doc.symbolsCalcVersionMixed).toBe(0);
+    expect(doc.symbolsByCalcVersion).toEqual({ [String(CONFIG.CALC_VERSION)]: 4 });
     expect(doc.symbols.AAPL.coverage.quoteCumulativeVolumeRatio).not.toBeNull();
     expect(doc.symbols.AAPL.evaluationLinked.unavailable).toEqual({ evaluationLinked: 'no_evaluation_evidence' });
     expect(doc.p95AbsResidualOverPrice).not.toBeNull();

@@ -18,7 +18,7 @@
 // immutable; `venue: 'vendor_unconfirmed'` until §15.
 
 import { evaluateIntraday, CONSUMERS } from './eligibility.js';
-import { CALC_VERSION, POLICY_VERSION, COLLECTION_STALL_MS } from '../intradayConfig.js';
+import { CALC_VERSION, POLICY_VERSION, COLLECTION_STALL_MS, CLOSING_ROW_POLICY } from '../intradayConfig.js';
 import { renderIntradayDiagnosticLines, INTRADAY_DIAGNOSTIC_HEADER } from '../../../src/data/intradayDiagnosticCopy.js';
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -39,7 +39,12 @@ export const INTRADAY_DEFINITIONS_V1 = Object.freeze({
     rsi5m: DEF('Wilder RSI(14) of completed 5-minute bucket closes', { period: 14, seed: 'sma' }, '5m', 'index', 'regular', 'none'),
   },
   buckets: { widthMs: 300_000, keyRule: 'floor(priceAsOf / 300000); exact close → last regular bucket', deadline: 'close + 30 min' },
-  closingRow: 'unresolved (CLOSING_ROW_POLICY null) — last bucket closeQualified: false',
+  // Derived from the constant, never a parallel sentence that can drift from
+  // it (BUILD_RULES §9): this line is what a receipt-only replay reads to
+  // learn which session the buckets describe.
+  closingRow: CLOSING_ROW_POLICY === null
+    ? 'unresolved (CLOSING_ROW_POLICY null) — last bucket closeQualified: false'
+    : `${CLOSING_ROW_POLICY} — the session ends at the last millisecond before the calendar close; the closing auction is excluded and the last bucket is closeQualified`,
 });
 
 /** The evaluation-entry pointer fields (§8.1) — the ONLY intraday keys on an entry. */
