@@ -46,6 +46,8 @@ import {
   makeToolUseResponse,
   makeTickDb,
   undefinedPaths,
+  POST_GOLDEN_UPDATE_KEYS,
+  withoutPostGoldenKeys,
 } from '../_utils/__fixtures__/tickStampsHarness.js';
 
 const mocks = vi.hoisted(() => ({
@@ -161,13 +163,15 @@ describe('Phase B tick stamps — flag OFF: the write is byte-identical to the p
     // keys, same order, same bytes), which is exactly the flag-off guarantee.
     // `pick` preserves PRE_PHASE_B_ENTRY_KEYS order by construction — it
     // iterates the key list, not the entry.
+    // The finalUpdate's own post-capture keys (POST_GOLDEN_UPDATE_KEYS) are
+    // lifted the same way, for the same reason — see the harness.
     const withoutTiming = (e) => pick(e, PRE_PHASE_B_ENTRY_KEYS);
-    const goldenUpdate = { ...finalUpdate, evaluations: finalUpdate.evaluations.map(withoutTiming) };
+    const goldenUpdate = withoutPostGoldenKeys({ ...finalUpdate, evaluations: finalUpdate.evaluations.map(withoutTiming) });
     if (GENERATE) {
       writeFileSync(GOLDEN_PATH, `${JSON.stringify({
         capturedFrom: 'origin/main @ 4a8ae54a — agent-evaluate.js before any Phase B stamp code; harness tickStampsHarness.js',
         frozenNow: FROZEN_NOW,
-        finalUpdateKeys: Object.keys(finalUpdate),
+        finalUpdateKeys: Object.keys(goldenUpdate),
         finalUpdate: goldenUpdate,
         entry: withoutTiming(entry),
       }, null, 2)}\n`);
@@ -199,7 +203,15 @@ describe('Phase B tick stamps — flag OFF: the write is byte-identical to the p
     // A CHOSEN hold — the model answered HOLD — carries no holdKind.
     expect(entry.holdKind).toBeNull();
     // No new TOP-LEVEL battle key rides the final update either (V2 hazard 9).
-    expect(Object.keys(finalUpdate)).toEqual(golden.finalUpdateKeys);
+    expect(Object.keys(finalUpdate).filter((k) => !POST_GOLDEN_UPDATE_KEYS.includes(k)))
+      .toEqual(golden.finalUpdateKeys);
+    // …and the lifted keys ARE on the live write (anti-vacuous, as above): on a
+    // fresh battle — no cronState.evalSeq, evaluations [] — the first entry's
+    // sequence is 1, and it rides THIS update, beside the append it counts.
+    expect(Object.keys(finalUpdate).filter((k) => POST_GOLDEN_UPDATE_KEYS.includes(k)))
+      .toEqual([...POST_GOLDEN_UPDATE_KEYS]);
+    expect(finalUpdate['cronState.evalSeq']).toBe(1);
+    expect(finalUpdate.evaluations).toHaveLength(1);
   });
 
   it('the entry carries exactly the cron-composed base keys, in source order, and none of the four stamp keys', async () => {

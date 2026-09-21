@@ -278,8 +278,10 @@ describe("B-1 'shadow' — everything persists, the failures are measured", () =
       expect(Object.keys(r.candidate)).toEqual(['symbol', 'direction', 'signalSummary', 'threshold']);
     }
     expect(lintLogs.map((r) => r.errorReason)).toEqual(['absent_VWAP', 'absent_VWAP+MACD_5M+MACD_HISTOGRAM']);
-    // THE JOIN KEY (L2-F3): evalId is not unique past 150 checks, so every
-    // record carries the instant of the check it describes.
+    // THE JOIN KEY (L2-F3): the record carries the instant of the check it
+    // describes. evalId is monotonic since the A-13 fix (cronState.evalSeq) but
+    // is still only battle-scoped, and pre-fix battles can hold repeated ids —
+    // the timestamp is what the join keys on.
     for (const r of lintLogs) expect(r.timestamp).toBe(FROZEN_NOW);
   });
 

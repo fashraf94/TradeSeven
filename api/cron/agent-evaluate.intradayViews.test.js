@@ -29,7 +29,7 @@ import { fileURLToPath } from 'node:url';
 import {
   FROZEN_NOW, HELD, BENCH, PRE_PHASE_B_ENTRY_KEYS, BASE_ENTRY_KEYS,
   makeTickBattle, makePriceTable, makeRankingsDoc, makeTechDocs, makeIntradayCandles,
-  makeHoldResult, makeToolUseResponse, makeTickDb, undefinedPaths,
+  makeHoldResult, makeToolUseResponse, makeTickDb, undefinedPaths, POST_GOLDEN_UPDATE_KEYS,
 } from '../_utils/__fixtures__/tickStampsHarness.js';
 import { VINTAGE_FIELDS, INTRADAY_VINTAGE_FIELDS } from '../_utils/tickStamps.js';
 import { INTRADAY_ENTRY_FIELDS } from '../_utils/intraday/view.js';
@@ -198,7 +198,10 @@ describe('§8.1 flag ON — a valid snapshot', () => {
     expect(entry.vintages).toMatchObject({ quote: 'tick', vwap: 'diagnostic', intradaySnapshotId: 'sw46', intradayGeneration: 46 });
     // The 25 pre-Phase-B values and the finalUpdate's keys are the golden's — the decision path is untouched.
     expect(JSON.stringify(pick(entry, PRE_PHASE_B_ENTRY_KEYS))).toBe(JSON.stringify(GOLDEN.entry));
-    expect(Object.keys(finalUpdate)).toEqual(GOLDEN.finalUpdateKeys);
+    // POST_GOLDEN_UPDATE_KEYS are lifted off this comparison — they ride every
+    // write, flag on or off, and postdate the golden capture (the harness).
+    expect(Object.keys(finalUpdate).filter((k) => !POST_GOLDEN_UPDATE_KEYS.includes(k)))
+      .toEqual(GOLDEN.finalUpdateKeys);
     expect(undefinedPaths(finalUpdate)).toEqual([]);
     // No new top-level battle key (the legacy cronState.intradayMomentum is today's and is in the golden).
     expect(Object.keys(finalUpdate).filter((k) => /intraday/i.test(k))).toEqual(['cronState.intradayMomentum']);
@@ -234,7 +237,10 @@ describe('§8.1 flag ON — the four failure modes leave the evaluation byte-ide
       expect(db.__views).toEqual([]);
       // Byte-identical to the flag-off golden apart from the pointer fields.
       expect(JSON.stringify(pick(entry, PRE_PHASE_B_ENTRY_KEYS))).toBe(JSON.stringify(GOLDEN.entry));
-      expect(Object.keys(finalUpdate)).toEqual(GOLDEN.finalUpdateKeys);
+      // POST_GOLDEN_UPDATE_KEYS are lifted off this comparison — they ride every
+      // write, flag on or off, and postdate the golden capture (the harness).
+      expect(Object.keys(finalUpdate).filter((k) => !POST_GOLDEN_UPDATE_KEYS.includes(k)))
+        .toEqual(GOLDEN.finalUpdateKeys);
       expect(Object.keys(entry)).toEqual([...BASE_ENTRY_KEYS, ...INTRADAY_ENTRY_FIELDS, 'heard', 'evidence', 'vintages']);
       // The vintages block is today's five keys — no snapshot pointer without a written view.
       expect(Object.keys(entry.vintages)).toEqual([...VINTAGE_FIELDS]);
