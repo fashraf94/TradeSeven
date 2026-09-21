@@ -82,6 +82,42 @@ describe('usable pairs — over ticks KNOWN to have dispatched', () => {
   });
 });
 
+describe('F6 (Astra round 1) — the three arithmetic defects', () => {
+  it('(a) an EXPIRED body is counted even when the tick never dispatched', () => {
+    // A CPU-passive or no-trigger tick has a body document too (it holds the
+    // controls and the fault text). Skipping non-dispatched ticks before the
+    // expiry count made those bodies vanish from the figure entirely.
+    const r = coverageForBattle({
+      battleId: 'b1', mintedTickSeq: 2,
+      ticks: [
+        tick(1, { dispatched: false, bodyStatus: 'skipped', bodyPresent: false }),
+        tick(2, { dispatched: false, bodyStatus: 'skipped', bodyPresent: false }),
+      ],
+    });
+    expect(r.expiredBodies).toBe(2);
+    expect(r.dispatched).toBe(0);
+    expect(r.usablePairRate).toBeNull();     // still not an all-attempts rate
+  });
+
+  it('(b) coverage NEVER exceeds 100%, and a record above the counter is an inconsistency', () => {
+    // The export reads the battle document and the ticks subcollection
+    // separately; a tick written between the two reads carries a sequence
+    // above the counter the export saw.
+    const r = coverageForBattle({ battleId: 'b1', mintedTickSeq: 1, ticks: [tick(1), tick(2)] });
+    expect(r.coverage).toBeLessThanOrEqual(1);
+    expect(r.aboveCounter).toEqual([2]);
+    expect(r.inconsistent).toBe(true);
+    expect(r.capturedWithinCounter).toBe(1);
+  });
+
+  it('(b) the totals and the printed report disclose the inconsistency rather than hiding it', () => {
+    const t = computeCoverage([{ battleId: 'b1', mintedTickSeq: 1, ticks: [tick(1), tick(2)] }]);
+    expect(t.coverage).toBeLessThanOrEqual(1);
+    expect(t.aboveCounter).toBe(1);
+    expect(formatCoverageReport(t, { scope: 'b1' })).toMatch(/above the counter|inconsisten/i);
+  });
+});
+
 describe('a timed-out write is `unknown` until the export checks whether it landed', () => {
   it('resolves each reported sequence by PRESENCE', () => {
     const r = coverageForBattle({

@@ -123,8 +123,15 @@ export const GUARDRAIL_FAULT_CLASSES = Object.freeze(['guardrail_error']);
  * deliberately skipped it; `not_evaluated` means control never reached it;
  * `unknown` means the outcome was discarded inside a fenced module and this
  * build does not recompute it. Nothing untouched is ever labelled "passed".
+ *
+ * A check or an execution that THREW is `failed` (Astra round 1, F5): it ran
+ * and produced no verdict, which is neither `evaluated` nor `not_evaluated`.
+ * SPEC AMENDMENT for V1.4 — C-6 names four statuses; this is the fifth, and it
+ * is needed because an executor exception used to leave the execution check
+ * reading `not_evaluated`, i.e. indistinguishable from a tick that never tried
+ * to trade.
  */
-export const CHECK_STATUSES = Object.freeze(['evaluated', 'bypassed', 'not_evaluated', 'unknown']);
+export const CHECK_STATUSES = Object.freeze(['evaluated', 'bypassed', 'not_evaluated', 'unknown', 'failed']);
 
 /** The checks C-6 names, plus the execution legality Phase 0 Q3 adds. */
 export const CHECK_NAMES = Object.freeze([

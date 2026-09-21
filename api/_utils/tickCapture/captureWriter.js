@@ -38,6 +38,20 @@ export function sha256Hex(s) {
   return createHash('sha256').update(typeof s === 'string' ? s : '', 'utf8').digest('hex');
 }
 
+/**
+ * F9 (Astra round 1) — the digest of the RECEIVED BYTES.
+ *
+ * `.text()` decodes before anything can hash it, and decoding is lossy in ways
+ * that matter here: a UTF-8 BOM is stripped, and invalid sequences become
+ * U+FFFD. A digest taken after that describes a string the wire never carried,
+ * so it cannot be used to prove what arrived. The observer now reads the clone
+ * as bytes, hashes those, and decodes only for STORAGE.
+ */
+export function sha256Bytes(bytes) {
+  const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes ?? 0);
+  return createHash('sha256').update(view).digest('hex');
+}
+
 /** Cut a string at a byte budget without splitting a code point. */
 export function truncateUtf8(s, maxBytes) {
   if (typeof s !== 'string') return s;
@@ -68,7 +82,8 @@ export function approxBytes(value) {
  * or failed copy is RECORDED (`copy_failed`), never reconstructed from the
  * parsed object.
  */
-export async function resolveBodyHolder(holder, { deadlineMs = TICK_CAPTURE_DEADLINE_MS } = {}) {
+export async function resolveBodyHolder(holder, { deadlineMs = TICK_CAPTURE_DEADLINE_MS, deadlineAt = null } = {}) {
+  const remaining = () => (deadlineAt === null ? deadlineMs : Math.max(0, deadlineAt - Date.now()));
   const empty = {
     dispatched: false,
     request: { body: null, bytes: null, sha256: null, truncated: false },
@@ -80,7 +95,9 @@ export async function resolveBodyHolder(holder, { deadlineMs = TICK_CAPTURE_DEAD
   const out = { ...empty, dispatched: true };
   const reqBody = typeof holder.requestBody === 'string' ? holder.requestBody : null;
   if (reqBody !== null) {
-    out.request = { body: reqBody, bytes: utf8Length(reqBody), sha256: sha256Hex(reqBody), truncated: false };
+    // The request body is a string the SDK itself built (JSON.stringify), so
+    // its UTF-8 encoding IS the dispatched bytes — encoding it back is exact.
+    out.request = { body: reqBody, bytes: utf8Length(reqBody), sha256: sha256Bytes(encoder.encode(reqBody)), truncated: false };
   } else {
     out.copyError = holder.requestError ? String(holder.requestError).slice(0, 200) : 'request_body_absent';
   }
@@ -89,15 +106,19 @@ export async function resolveBodyHolder(holder, { deadlineMs = TICK_CAPTURE_DEAD
   if (holder.responseTextPromise) {
     let settled = null;
     try {
-      settled = await withDeadline(holder.responseTextPromise, deadlineMs, 'tick_capture_body_copy');
+      settled = await withDeadline(holder.responseTextPromise, remaining(), 'tick_capture_body_copy');
     } catch (err) {
       settled = { ok: false, error: String(err?.message || err) };
     }
     if (settled && settled.ok === true && typeof settled.text === 'string') {
       const text = settled.text;
       out.response.body = text;
-      out.response.bytes = utf8Length(text);
-      out.response.sha256 = sha256Hex(text);
+      // BYTES, not the decoded string (F9). `settled.bytes` is what the clone
+      // actually yielded; the encode fallback covers a holder built by a test
+      // double that carries text only.
+      const bytes = settled.bytes instanceof Uint8Array ? settled.bytes : encoder.encode(text);
+      out.response.bytes = bytes.length;
+      out.response.sha256 = sha256Bytes(bytes);
       // Derived from OUR OWN copied bytes, never from the SDK's parsed object.
       try {
         const parsed = JSON.parse(text);
@@ -156,6 +177,11 @@ export function buildCaptureDocuments(state, { nowMs = Date.now(), bodyFacts, ca
     // The controls AS RENDERED — directive text, lean text, rule text. This is
     // a copy of what the model already received (C-3 rule 2), not new exposure.
     controlsAsRendered: state.controlTexts,
+    // NAMED FOR WHAT IT IS (F4): the source templates, which the fenced
+    // assembler sanitizes and — for SX-04 — rewrites before rendering. They are
+    // kept because forensics wants them; they never claim to be the fragment
+    // the model saw. The request body is the authority on that.
+    controlSourceText: state.controlSourceTexts,
     faults: {
       model: state.modelFaultMessage,
       guardrail: state.guardrailFaultMessage,
@@ -194,8 +220,21 @@ export function buildCaptureDocuments(state, { nowMs = Date.now(), bodyFacts, ca
       faultClass: state.guardrailFacts.faultClass ?? null,
       sourceNote: state.guardrailFacts.sourceNote ?? null,
       overrideCount: num(state.guardrailFacts.overrideCount),
+      evaluated: state.guardrailFacts.evaluated === true,
+      deployedCount: num(state.guardrailFacts.deployedCount),
+      suppressionPassRan: state.guardrailFacts.suppressionPassRan === true,
+      suppressionPassFaulted: state.guardrailFacts.suppressionPassFaulted === true,
     },
     checks: defaultChecks(state.checks),
+    // C-7 (F5): the per-symbol risk verdicts and the guardrail evaluation the
+    // tick ACTUALLY computed. Allowlisted: an action and a reason id per
+    // symbol, nothing free-text.
+    risk: {
+      verdicts: state.riskFacts.verdicts ?? {},
+      lockedCount: num(state.riskFacts.lockedCount),
+      forcedExitCount: num(state.riskFacts.forcedExitCount),
+      evaluatedCount: num(state.riskFacts.evaluatedCount),
+    },
     decision: {
       // The ORIGINAL proposal's three fields, read by NAME off the copy taken
       // before the deterministic layer could replace it — never a spread of
@@ -217,6 +256,9 @@ export function buildCaptureDocuments(state, { nowMs = Date.now(), bodyFacts, ca
     },
     actions: state.actions,
     controls: {
+      rendered: state.controlFacts.rendered ?? 'not_rendered',
+      suppressedControlCount: num(state.controlFacts.suppressedControlCount),
+      activeRuleRendered: state.controlFacts.activeRuleRendered ?? null,
       directiveThreadId: state.controlFacts.directiveThreadId ?? null,
       directiveAdjustmentId: state.controlFacts.directiveAdjustmentId ?? null,
       directiveCanonicalTextVersion: num(state.controlFacts.directiveCanonicalTextVersion),
@@ -265,7 +307,12 @@ export function buildCaptureDocuments(state, { nowMs = Date.now(), bodyFacts, ca
       bankedBadgePoints: num(state.scoreFields?.bankedBadgePoints),
     },
     capture: {
-      ms: num(captureMs) ?? 0,
+      // NAMED FOR WHAT IT MEASURES (Astra round 1, F7). This number is written
+      // INSIDE the document being committed, so it structurally cannot include
+      // its own commit. Calling it the tick's capture overhead was wrong: the
+      // TOTAL — body resolution + serialization + commit — is returned to the
+      // caller and logged there, and that is what the flip decision reads.
+      preCommitMs: num(captureMs) ?? 0,
       deadlineMs: TICK_CAPTURE_DEADLINE_MS,
       minRemainingBudgetMs: TICK_CAPTURE_MIN_REMAINING_BUDGET_MS,
       remainingBudgetMs: num(remainingBudgetMs),
@@ -277,8 +324,37 @@ export function buildCaptureDocuments(state, { nowMs = Date.now(), bodyFacts, ca
     },
   };
 
-  // ---- the size cap (spec §3) ---------------------------------------------
+  // ---- the size cap (spec §3, Astra round 1 F8) --------------------------
+  // EVERY text-bearing field is bounded, not only the two HTTP bodies: a
+  // control block, a fault message or a validation list can each be arbitrarily
+  // long, and the old cap left all three unbounded and then returned without
+  // re-checking the document it had just "fixed".
   const truncatedParts = [];
+  const shedFields = [];
+
+  const boundText = (value) => {
+    if (typeof value !== 'string') return value;
+    if (utf8Length(value) <= TICK_CAPTURE_TEXT_FIELD_MAX_BYTES) return value;
+    return truncateUtf8(value, TICK_CAPTURE_TEXT_FIELD_MAX_BYTES);
+  };
+  const boundField = (owner, key, label) => {
+    const before = owner[key];
+    if (typeof before === 'string') {
+      const after = boundText(before);
+      if (after !== before) { owner[key] = after; shedFields.push(label); }
+      return;
+    }
+    if (Array.isArray(before)) {
+      let changed = false;
+      owner[key] = before.map((v) => {
+        const after = boundText(v);
+        if (after !== v) changed = true;
+        return after;
+      });
+      if (changed) shedFields.push(label);
+    }
+  };
+
   for (const part of ['request', 'response']) {
     const text = body[part].body;
     if (typeof text !== 'string') continue;
@@ -290,6 +366,11 @@ export function buildCaptureDocuments(state, { nowMs = Date.now(), bodyFacts, ca
   }
   // The digests and byte counts above are of the ORIGINAL bytes and stay that
   // way: a truncated copy must never claim the whole body's hash.
+
+  for (const key of Object.keys(body.controlsAsRendered ?? {})) boundField(body.controlsAsRendered, key, `controlsAsRendered.${key}`);
+  for (const key of Object.keys(body.controlSourceText ?? {})) boundField(body.controlSourceText, key, `controlSourceText.${key}`);
+  for (const key of Object.keys(body.faults ?? {})) boundField(body.faults, key, `faults.${key}`);
+  boundField(body, 'validationErrors', 'validationErrors');
 
   // ---- C-3: nothing the serializer cannot classify reaches the record ------
   const { doc: permanent, rejected } = sanitizePermanentDocument(composed, { universe });
@@ -316,27 +397,39 @@ export function buildCaptureDocuments(state, { nowMs = Date.now(), bodyFacts, ca
     permanent.body.status = 'written';
   }
 
-  // ---- whole-body-document budget -----------------------------------------
+  // ---- whole-body-document budget (F8) -----------------------------------
+  // A DECLARED shed order, largest-value-first inside each step, with an
+  // explicit reason recorded. The loop re-measures after every step and stops
+  // as soon as the document fits, so an oversize document can never reach the
+  // batch — the commit would reject it and the tick would lose its record for
+  // a reason nothing on the record could explain.
+  const SHED_ORDER = [
+    ['rejectedFields', () => { body.rejectedFields = []; }],
+    ['controlSourceText', () => { body.controlSourceText = {}; }],
+    ['originalToolResult', () => { body.originalToolResult = null; }],
+    ['finalToolResult', () => { body.finalToolResult = null; }],
+    ['controlsAsRendered', () => { body.controlsAsRendered = {}; }],
+    ['validationErrors', () => { body.validationErrors = []; }],
+    ['response.body', () => { if (typeof body.response.body === 'string') { body.response.body = null; body.response.truncated = true; } }],
+    ['request.body', () => { if (typeof body.request.body === 'string') { body.request.body = null; body.request.truncated = true; } }],
+    ['faults', () => { body.faults = { model: null, guardrail: null, capture: null }; }],
+  ];
   if (approxBytes(body) > TICK_CAPTURE_BODY_DOC_MAX_BYTES) {
-    // Evict the largest text last-resort, largest first, until the estimate
-    // fits. The permanent record says the body is incomplete and why.
-    const parts = ['request', 'response']
-      .filter((p) => typeof body[p].body === 'string')
-      .sort((a, b) => utf8Length(body[b].body) - utf8Length(body[a].body));
-    for (const p of parts) {
+    for (const [label, shed] of SHED_ORDER) {
       if (approxBytes(body) <= TICK_CAPTURE_BODY_DOC_MAX_BYTES) break;
-      body[p].body = truncateUtf8(body[p].body, Math.floor(TICK_CAPTURE_TEXT_FIELD_MAX_BYTES / 4));
-      body[p].truncated = true;
-    }
-    if (approxBytes(body) > TICK_CAPTURE_BODY_DOC_MAX_BYTES) {
-      body.rejectedFields = [];
-      body.originalToolResult = null;
-      body.finalToolResult = null;
+      shed();
+      shedFields.push(label);
     }
     if (permanent.body.status !== 'copy_failed' && permanent.body.status !== 'skipped') {
       permanent.body.status = 'truncated';
     }
     permanent.body.incomplete = 'doc_budget';
+  } else if (shedFields.length && permanent.body.incomplete === null) {
+    permanent.body.incomplete = 'field_capped';
+  }
+  if (shedFields.length) {
+    body.shedFields = [...new Set(shedFields)];
+    body.bodyIncomplete = permanent.body.incomplete;
   }
 
   return { permanent, body, universeSize: universe.size, rejected, freeTextPaths: findFreeText(permanent, { universe }) };
@@ -354,28 +447,42 @@ export async function finalizeTickCapture(db, ctx, {
   deadlineMs = TICK_CAPTURE_DEADLINE_MS,
   minRemainingBudgetMs = TICK_CAPTURE_MIN_REMAINING_BUDGET_MS,
 } = {}) {
-  if (!ctx || ctx.enabled !== true || !ctx.state) return { disposition: 'skipped', tickId: null, ms: 0 };
+  if (!ctx || ctx.enabled !== true || !ctx.state) return { disposition: 'skipped', tickId: null, ms: 0, totalMs: 0 };
   const state = ctx.state;
   const startedMs = Date.now();
+  // ONE ABSOLUTE DEADLINE for the whole operation (Astra round 1, F7). Body
+  // resolution, serialization and the commit share it and each gets only what
+  // is left. Two independent allowances made the real worst case 2 ×
+  // deadlineMs plus unbounded serialization, so the declared three-second
+  // bound was not the bound.
+  const deadlineAt = startedMs + deadlineMs;
+  const remainingDeadline = () => Math.max(0, deadlineAt - Date.now());
 
   // The budget gate: a skipped capture is a COUNTED gap (the export sees the
   // minted sequence with no document), never a silent one, and it can never
   // alter the tick's own results or writes.
   if (Number.isFinite(remainingBudgetMs) && remainingBudgetMs < minRemainingBudgetMs) {
-    return { disposition: 'skipped_budget', tickId: state.tickId, ms: 0 };
+    return { disposition: 'skipped_budget', tickId: state.tickId, ms: 0, totalMs: 0 };
   }
 
   let docs;
+  let bodyMs = 0;
+  let preCommitMs = 0;
   try {
-    const bodyFacts = await resolveBodyHolder(state.bodyHolder, { deadlineMs });
-    docs = buildCaptureDocuments(state, {
-      nowMs,
-      bodyFacts,
-      captureMs: Date.now() - startedMs,
-      remainingBudgetMs,
-    });
+    const bodyStartedMs = Date.now();
+    const bodyFacts = await resolveBodyHolder(state.bodyHolder, { deadlineAt });
+    bodyMs = Date.now() - bodyStartedMs;
+    // Serialization lives inside the shared deadline too: past it the record is
+    // abandoned rather than allowed to run on into the tick's own budget.
+    if (remainingDeadline() === 0) {
+      const spent = Date.now() - startedMs;
+      return { disposition: 'timed_out', tickId: state.tickId, ms: spent, totalMs: spent, preCommitMs: spent, bodyMs };
+    }
+    docs = buildCaptureDocuments(state, { nowMs, bodyFacts, captureMs: Date.now() - startedMs, remainingBudgetMs });
+    preCommitMs = Date.now() - startedMs;
   } catch (err) {
-    return { disposition: 'serialize_failed', tickId: state.tickId, ms: Date.now() - startedMs, error: String(err?.message || err).slice(0, 200) };
+    const spent = Date.now() - startedMs;
+    return { disposition: 'serialize_failed', tickId: state.tickId, ms: spent, totalMs: spent, bodyMs, error: String(err?.message || err).slice(0, 200) };
   }
 
   try {
@@ -383,13 +490,15 @@ export async function finalizeTickCapture(db, ctx, {
     const batch = db.batch();
     batch.set(battleRef.collection(TICKS_SUBCOLLECTION).doc(state.tickId), docs.permanent);
     batch.set(battleRef.collection(TICK_BODIES_SUBCOLLECTION).doc(state.tickId), docs.body);
-    await withDeadline(batch.commit(), deadlineMs, 'tick_capture_commit');
-    return { disposition: 'written', tickId: state.tickId, ms: Date.now() - startedMs };
+    await withDeadline(batch.commit(), remainingDeadline(), 'tick_capture_commit');
+    const totalMs = Date.now() - startedMs;
+    return { disposition: 'written', tickId: state.tickId, ms: totalMs, totalMs, preCommitMs, bodyMs };
   } catch (err) {
     const message = String(err?.message || err);
     // A timeout is UNKNOWN, not failed: the race does not cancel a commit that
     // may still land. The export resolves it by looking for the document.
     const disposition = message.includes('tick_capture_commit_timeout') ? 'timed_out' : 'write_failed';
-    return { disposition, tickId: state.tickId, ms: Date.now() - startedMs, error: message.slice(0, 200) };
+    const totalMs = Date.now() - startedMs;
+    return { disposition, tickId: state.tickId, ms: totalMs, totalMs, preCommitMs, bodyMs, error: message.slice(0, 200) };
   }
 }

@@ -23,17 +23,42 @@ import { makeTickDb, deepClone } from './tickStampsHarness.js';
 
 /**
  * @param {object} base a db from makeTickDb
+ * @param {object} [opts]
+ * @param {number|null} [opts.abortFirstTransactionWithSeq] Astra round 1, blind
+ *   spot 4: the base harness calls a transaction callback exactly ONCE, so a
+ *   defect that used a callback-local side effect as the tick's identity would
+ *   survive every row. With this set, the FIRST attempt runs against a battle
+ *   carrying this sequence and its writes are DISCARDED (an aborted attempt),
+ *   then the callback runs again against the real store and only that attempt
+ *   commits. The record must carry the COMMITTED sequence, not the aborted one.
  * @returns the same db, with subcollection refs and an atomic batch
  */
-export function withCaptureStore(base) {
+export function withCaptureStore(base, { abortFirstTransactionWithSeq = null } = {}) {
   const captureWrites = [];
   const subStore = new Map(); // 'agentBattles/b/ticks/t' → data
 
+  let transactionAttempts = 0;
   const db = {
     ...base,
     __captureWrites: captureWrites,
     __subStore: subStore,
     __failCapture: null,
+    get __transactionAttempts() { return transactionAttempts; },
+    async runTransaction(cb) {
+      transactionAttempts += 1;
+      if (abortFirstTransactionWithSeq !== null && transactionAttempts === 1) {
+        // The aborted attempt: it READS a different battle and its writes go
+        // nowhere. Whatever it computed must not reach the tick.
+        const phantom = deepClone(base.__store.battle);
+        phantom.cronState = { ...(phantom.cronState || {}), tickSeq: abortFirstTransactionWithSeq };
+        await cb({
+          get: async () => ({ exists: true, id: 'battle', data: () => deepClone(phantom) }),
+          update: () => {},                      // discarded — the attempt aborts
+        });
+        transactionAttempts += 1;
+      }
+      return base.runTransaction(cb);
+    },
     collection(col) {
       const c = base.collection(col);
       return {
@@ -68,8 +93,8 @@ export function withCaptureStore(base) {
 }
 
 /** The base harness db plus the capture store, in one call. */
-export function makeCaptureDb(args) {
-  return withCaptureStore(makeTickDb(args));
+export function makeCaptureDb({ abortFirstTransactionWithSeq = null, ...args } = {}) {
+  return withCaptureStore(makeTickDb(args), { abortFirstTransactionWithSeq });
 }
 
 /** The permanent document a run wrote, or null. */

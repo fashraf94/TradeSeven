@@ -28,12 +28,18 @@
 //      Battles are processed serially, so exactly one holder is ever active,
 //      and a holder that is not active observes nothing.
 
-/** The one holder a dispatch may write into, or null. */
-let activeHolder = null;
+/**
+ * The holder lives on the TICK'S OWN SCOPE (Astra round 1, F3), never in a
+ * module global. A single global was replaced on every `begin` and cleared
+ * unconditionally on every `end`, so two overlapping invocations in one warm
+ * process could attach A's dispatch to B's holder, or close A's window when B
+ * finished. A scope is reachable only from the async chain that opened it.
+ */
+import { currentCaptureScope, ensureCaptureScope } from './captureContext.js';
 
 /** Open a holder for this tick's dispatch. Returns it for the capture context. */
 export function beginBodyCapture() {
-  activeHolder = {
+  const holder = {
     dispatched: false,
     requestBody: null,
     requestError: null,
@@ -41,19 +47,27 @@ export function beginBodyCapture() {
     responseTextPromise: null,
     responseError: null,
   };
-  return activeHolder;
-}
-
-/** Close the window. Anything dispatched afterwards is observed by nothing. */
-export function endBodyCapture() {
-  const holder = activeHolder;
-  activeHolder = null;
+  ensureCaptureScope().holder = holder;
   return holder;
 }
 
-/** The open holder, or null. Test visibility; product code holds its own reference. */
+/**
+ * Close THIS tick's window. Passing the holder makes the identity check
+ * explicit; without it the scope's own holder is closed, which is already
+ * unreachable from any other tick.
+ */
+export function endBodyCapture(holder = null) {
+  const scope = currentCaptureScope();
+  if (!scope) return null;
+  const open = scope.holder;
+  if (holder && open !== holder) return open;   // never close someone else's
+  scope.holder = null;
+  return open;
+}
+
+/** The open holder of the CALLING tick, or null. */
 export function activeBodyHolder() {
-  return activeHolder;
+  return currentCaptureScope()?.holder ?? null;
 }
 
 /**
@@ -66,7 +80,7 @@ export function activeBodyHolder() {
 export function makeObservingFetch(baseFetch) {
   return async function observingFetch(input, init) {
     const fetchImpl = baseFetch || globalThis.fetch;
-    const holder = activeHolder;
+    const holder = currentCaptureScope()?.holder ?? null;
     if (!holder) return fetchImpl(input, init);
 
     try {
@@ -97,8 +111,16 @@ export function makeObservingFetch(baseFetch) {
       // a malformed one, which is exactly when it is worth having. The clone
       // is an independent stream: the SDK still reads its own.
       const copy = response.clone();
-      holder.responseTextPromise = copy.text().then(
-        (text) => ({ ok: true, text }),
+      // BYTES FIRST (Astra round 1, F9). `.text()` decodes before anything can
+      // hash it, and decoding is lossy in exactly the places a forensic digest
+      // matters: a UTF-8 BOM is stripped and invalid sequences become U+FFFD.
+      // The clone is read as bytes, the digest is taken from those, and the
+      // decode happens only so the body can be STORED as readable text.
+      holder.responseTextPromise = copy.arrayBuffer().then(
+        (buffer) => {
+          const bytes = new Uint8Array(buffer);
+          return { ok: true, bytes, text: new TextDecoder('utf-8').decode(bytes) };
+        },
         (err) => ({ ok: false, error: String(err?.message || err).slice(0, 200) }),
       );
     } catch (err) {

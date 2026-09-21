@@ -82,9 +82,15 @@ export function coverageForBattle(battle) {
   let truncatedBodies = 0;
   let copyFailedBodies = 0;
   for (const t of bySeq.values()) {
+    // EXPIRY IS COUNTED INDEPENDENTLY OF DISPATCH (Astra round 1, F6a). Every
+    // captured tick has a body document — a CPU-passive or no-trigger tick's
+    // holds its controls and its fault text — so counting expiry only for
+    // dispatched ticks made those bodies vanish from the figure entirely
+    // rather than appear as expired.
+    if (t?.bodyPresent === false) expiredBodies += 1;
     if (t?.dispatched !== true) continue;
     dispatched += 1;
-    if (t?.bodyPresent === false) { expiredBodies += 1; continue; }
+    if (t?.bodyPresent === false) continue;
     if (t?.bodyStatus === 'truncated') { truncatedBodies += 1; continue; }
     if (t?.bodyStatus === 'copy_failed') { copyFailedBodies += 1; continue; }
     if (t?.bodyStatus === 'written') usablePairs += 1;
@@ -94,11 +100,21 @@ export function coverageForBattle(battle) {
   const reported = Array.isArray(battle?.reportedUnknown) ? battle.reportedUnknown.map(asInt) : [];
   const resolvedUnknown = reported.map((seq) => ({ tickSeq: seq, resolution: bySeq.has(seq) ? 'landed' : 'missing' }));
 
+  // COVERAGE IS BOUNDED BY ITS OWN DENOMINATOR (F6b). The export reads the
+  // battle document and the ticks subcollection separately, so a tick written
+  // between the two reads carries a sequence above the counter the export saw.
+  // Dividing by the counter anyway printed 200%. The numerator is now the
+  // records WITHIN the counter, and the excess is disclosed as an
+  // inconsistency instead of inflating a ratio.
+  const capturedWithinCounter = captured - aboveCounter.length;
+
   return {
     battleId,
     minted,
     captured,
-    coverage: minted > 0 ? captured / minted : null,
+    capturedWithinCounter,
+    inconsistent: aboveCounter.length > 0,
+    coverage: minted > 0 ? capturedWithinCounter / minted : null,
     missing,
     attemptUnknown: missing.length,      // a missing tick's dispatch is UNKNOWABLE
     trailingGap,
@@ -119,13 +135,18 @@ export function computeCoverage(battles) {
   const sum = (key) => rows.reduce((acc, r) => acc + r[key], 0);
   const minted = sum('minted');
   const captured = sum('captured');
+  const capturedWithinCounter = sum('capturedWithinCounter');
+  const aboveCounter = rows.reduce((acc, r) => acc + r.aboveCounter.length, 0);
   const dispatched = sum('dispatched');
   const usablePairs = sum('usablePairs');
   return {
     battles: rows.length,
     minted,
     captured,
-    coverage: minted > 0 ? captured / minted : null,
+    capturedWithinCounter,
+    aboveCounter,
+    inconsistent: aboveCounter > 0,
+    coverage: minted > 0 ? capturedWithinCounter / minted : null,
     attemptUnknown: sum('attemptUnknown'),
     trailingGap: sum('trailingGap'),
     dispatched,
@@ -148,8 +169,10 @@ export function formatCoverageReport(totals, { scope = 'all battles' } = {}) {
   const lines = [
     `Tick capture coverage — ${scope}`,
     '',
-    `  COVERAGE        ${totals.captured} captured / ${totals.minted} minted  = ${pct(totals.coverage)}`,
+    `  COVERAGE        ${totals.capturedWithinCounter} captured / ${totals.minted} minted  = ${pct(totals.coverage)}`,
     `                  (denominator: the persisted cronState.tickSeq, so a trailing gap is visible)`,
+    `  above counter   ${totals.aboveCounter} record(s) with a sequence ABOVE the counter — an INCONSISTENCY`,
+    `                  (the counter and the records are separate reads; disclosed, never folded into the ratio)`,
     `  attempt unknown ${totals.attemptUnknown} minted tick(s) with no record — whether they dispatched is UNKNOWABLE`,
     `  trailing gap    ${totals.trailingGap} sequence(s) minted after the highest captured one`,
     '',

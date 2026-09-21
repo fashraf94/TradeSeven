@@ -6,7 +6,7 @@
 
 import { describe, it, expect, afterEach } from 'vitest';
 import { activeBodyHolder, beginBodyCapture, endBodyCapture, makeObservingFetch } from './captureBodyObserver.js';
-import { resolveBodyHolder } from './captureWriter.js';
+import { resolveBodyHolder, sha256Bytes, sha256Hex } from './captureWriter.js';
 
 const jsonResponse = (body, status = 200) => new Response(body, { status, headers: { 'content-type': 'application/json' } });
 
@@ -57,7 +57,7 @@ describe('inside a window', () => {
     // Still a pending promise the instant fetch returned — so the observer
     // cannot inflate `callMs`, the tick's own transport measurement.
     expect(holder.responseTextPromise).toBeInstanceOf(Promise);
-    expect(await holder.responseTextPromise).toEqual({ ok: true, text: '{"a":1}' });
+    expect(await holder.responseTextPromise).toMatchObject({ ok: true, text: '{"a":1}' });
   });
 
   it('captures a NON-2xx body with its status', async () => {
@@ -106,6 +106,98 @@ describe('inside a window', () => {
     await makeObservingFetch(async () => jsonResponse('{}'))('u', { body: new Uint8Array([1, 2, 3]) });
     expect(holder.requestBody).toBeNull();
     expect(holder.requestError).toMatch(/^unsupported_request_body_/);
+  });
+
+  it('BLIND SPOT 2 (Astra round 1): fetch returns BEFORE the clone read resolves', async () => {
+    // The old row used an immediately-available body and only checked that a
+    // Promise existed, so awaiting the clone inside the observer would have
+    // passed it. Here the clone read cannot resolve until the row says so, and
+    // the assertion is that fetch had already returned.
+    const holder = beginBodyCapture();
+    let releaseBody;
+    const bodyStream = new ReadableStream({
+      start(controller) {
+        releaseBody = () => { controller.enqueue(new TextEncoder().encode('{"late":true}')); controller.close(); };
+      },
+    });
+    const base = async () => new Response(bodyStream, { status: 200, headers: { 'content-type': 'application/json' } });
+
+    let fetchReturned = false;
+    const inFlight = makeObservingFetch(base)('u', { body: '{}' }).then((r) => { fetchReturned = true; return r; });
+    await Promise.resolve();
+    await new Promise((r) => setTimeout(r, 5));
+    expect(fetchReturned, 'the observer must not await the clone read').toBe(true);
+    expect(holder.responseTextPromise).toBeInstanceOf(Promise);
+
+    releaseBody();
+    const res = await inFlight;
+    expect(await res.text()).toBe('{"late":true}');    // the SDK still reads its own
+    const facts = await resolveBodyHolder(endBodyCapture());
+    expect(facts.response.body).toBe('{"late":true}');
+  });
+
+  it('BLIND SPOT 3 (Astra round 1): a REJECTING body read is handled, with no unhandled rejection', async () => {
+    // The existing rows only exercise a synchronous clone() throw. A stream
+    // that errors mid-read rejects the text() promise instead — and an
+    // unattached rejection handler would crash the process, not the capture.
+    const unhandled = [];
+    const onUnhandled = (err) => unhandled.push(err);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      const holder = beginBodyCapture();
+      const failing = new ReadableStream({ start(controller) { controller.error(new Error('stream aborted mid-read')); } });
+      const base = async () => new Response(failing, { status: 200 });
+      await makeObservingFetch(base)('u', { body: '{}' });
+      const facts = await resolveBodyHolder(holder);
+      expect(facts.response.body).toBeNull();
+      expect(facts.copyError).toContain('stream aborted mid-read');
+      await new Promise((r) => setTimeout(r, 10));
+      expect(unhandled, 'a rejecting body read must not become an unhandled rejection').toEqual([]);
+    } finally { process.off('unhandledRejection', onUnhandled); }
+  });
+
+  it('BLIND SPOT 3b: a rejecting body read on a CAPTURE-SKIPPED exit is still harmless', async () => {
+    const unhandled = [];
+    const onUnhandled = (err) => unhandled.push(err);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      beginBodyCapture();
+      const failing = new ReadableStream({ start(controller) { controller.error(new Error('aborted')); } });
+      await makeObservingFetch(async () => new Response(failing, { status: 200 }))('u', { body: '{}' });
+      endBodyCapture();                 // the tick skips capture: nobody ever resolves the holder
+      await new Promise((r) => setTimeout(r, 20));
+      expect(unhandled, 'an unresolved holder must not leak a rejection').toEqual([]);
+    } finally { process.off('unhandledRejection', onUnhandled); }
+  });
+
+  it('F9 END TO END: the recorded digest is of the RECEIVED BYTES, not the decoded string', async () => {
+    // A UTF-8 BOM is stripped by `.text()`. Reading the clone as text and
+    // hashing that produced a digest of a string the wire never carried — so
+    // the record could not be used to prove what arrived.
+    const raw = new Uint8Array([0xEF, 0xBB, 0xBF, ...new TextEncoder().encode('{"model":"m"}')]);
+    const holder = beginBodyCapture();
+    await makeObservingFetch(async () => new Response(raw, { status: 200 }))('u', { body: '{}' });
+    const facts = await resolveBodyHolder(endBodyCapture(holder));
+
+    expect(facts.response.sha256).toBe(sha256Bytes(raw));
+    expect(facts.response.bytes).toBe(raw.length);
+    // …and that is NOT the digest of the decoded string, which is the point
+    expect(facts.response.sha256).not.toBe(sha256Hex('{"model":"m"}'));
+    // storage still holds readable text
+    expect(facts.response.body).toBe('{"model":"m"}');
+  });
+
+  it('endBodyCapture refuses to close a window it does not own', async () => {
+    // The identity check (F3): a caller can only close the holder it opened.
+    // Scope isolation already stops one TICK closing another's; this stops a
+    // stale reference inside one tick closing the live window.
+    const mine = beginBodyCapture();
+    const stranger = { dispatched: false, requestBody: null, requestError: null, status: null, responseTextPromise: null, responseError: null };
+    expect(endBodyCapture(stranger), 'the stranger\'s close is refused').toBe(mine);
+    await makeObservingFetch(async () => jsonResponse('{"still":"open"}'))('u', { body: '{"mine":1}' });
+    expect(mine.requestBody, 'the window must still be open').toBe('{"mine":1}');
+    expect(endBodyCapture(mine)).toBe(mine);
+    expect(activeBodyHolder()).toBeNull();
   });
 
   it('endBodyCapture closes the window — a later dispatch writes into nothing', async () => {

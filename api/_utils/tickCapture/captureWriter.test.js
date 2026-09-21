@@ -8,7 +8,8 @@ import {
   approxBytes, buildCaptureDocuments, finalizeTickCapture, resolveBodyHolder,
   sha256Hex, truncateUtf8, utf8Length, withDeadline,
 } from './captureWriter.js';
-import { createTickCaptureContext, releaseTickCaptureContext } from './captureContext.js';
+import { TICK_CAPTURE_BODY_DOC_MAX_BYTES } from './captureConfig.js';
+import { createTickCaptureContext, runWithTickCaptureScope } from './captureContext.js';
 import {
   TICK_CAPTURE_BODY_RETENTION_DAYS, TICK_CAPTURE_DEADLINE_MS,
   TICK_CAPTURE_MIN_REMAINING_BUDGET_MS, TICK_CAPTURE_TEXT_FIELD_MAX_BYTES,
@@ -24,7 +25,6 @@ const EMPTY_BODY = {
 };
 
 function liveState(fill = () => {}) {
-  releaseTickCaptureContext('battle-1');
   const ctx = createTickCaptureContext({ battleId: 'battle-1', tickSeq: 4, agentId: 'agent-1', enabled: true });
   ctx.universe({ heldSymbols: ['NVDA', 'KO'], benchSymbols: ['AMD'] });
   fill(ctx);
@@ -245,6 +245,133 @@ describe('finalizeTickCapture — the boundary', () => {
     expect(permanent.capture.remainingBudgetMs).toBe(44_000);
     expect(TICK_CAPTURE_DEADLINE_MS).toBe(3_000);
     expect(TICK_CAPTURE_MIN_REMAINING_BUDGET_MS).toBe(10_000);
+  });
+});
+
+describe('F7 (Astra round 1) — ONE absolute deadline, and honest timing', () => {
+  it('body resolution and the commit SHARE one budget — the worst case is the deadline, not twice it', async () => {
+    vi.useFakeTimers();
+    try {
+      // A body read that consumes most of the deadline must leave the commit
+      // only what is left. Previously each stage got a fresh full allowance.
+      const ctx = liveState((c) => c.exit('completed'));
+      const slowBody = new Promise((resolve) => setTimeout(() => resolve({ ok: true, text: '{}' }), TICK_CAPTURE_DEADLINE_MS - 200));
+      ctx.bindBodyHolder({ dispatched: true, requestBody: '{}', status: 200, responseTextPromise: slowBody });
+      const db = makeDb({ fail: 'hang' });
+      // Observed rather than awaited: under two independent allowances the
+      // commit is still waiting at this point, and awaiting would hang the row
+      // rather than fail it.
+      let settled = null;
+      const pending = finalizeTickCapture(db, ctx, { nowMs: NOW_MS, remainingBudgetMs: 60_000 });
+      pending.then((r) => { settled = r; });
+      await vi.advanceTimersByTimeAsync(TICK_CAPTURE_DEADLINE_MS + 50);
+      expect(settled, 'capture must be finished within ONE deadline, not two').not.toBeNull();
+      expect(settled.disposition).toBe('timed_out');
+      // drain whatever is left so no fake timer leaks into the next row
+      await vi.advanceTimersByTimeAsync(TICK_CAPTURE_DEADLINE_MS * 3);
+      await pending;
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('the recorded time is named for what it measures, and the total is reported to the caller', async () => {
+    const ctx = liveState((c) => c.exit('completed'));
+    const db = makeDb();
+    const result = await finalizeTickCapture(db, ctx, { nowMs: NOW_MS, remainingBudgetMs: 60_000 });
+    const permanent = db.__committed[0][0].data;
+    // The in-document number cannot include its own commit — it is written
+    // INSIDE the document being committed. So it must not be called the total.
+    expect(permanent.capture).not.toHaveProperty('ms');
+    expect(permanent.capture.preCommitMs).toBeGreaterThanOrEqual(0);
+    // The TOTAL, which does include the commit, comes back to the caller.
+    expect(result.ms).toBeGreaterThanOrEqual(0);
+    expect(result.totalMs).toBeGreaterThanOrEqual(result.preCommitMs ?? 0);
+  });
+});
+
+describe('F8 (Astra round 1) — the size cap covers the WHOLE body', () => {
+  const oversizeControls = () => ({
+    directiveText: 'D'.repeat(400_000),
+    standingLeanTexts: ['L'.repeat(400_000)],
+    activeRuleTemplates: ['R'.repeat(400_000)],
+  });
+
+  it('a huge CONTROLS payload is bounded — request/response are not the only text fields', async () => {
+    const ctx = liveState((c) => { c.exit('completed'); c.controlsText(oversizeControls()); });
+    const { permanent, body } = buildCaptureDocuments(ctx.state, { nowMs: NOW_MS, bodyFacts: EMPTY_BODY });
+    expect(approxBytes(body)).toBeLessThanOrEqual(TICK_CAPTURE_BODY_DOC_MAX_BYTES);
+    expect(permanent.body.incomplete).toBeTruthy();
+    expect(utf8Length(body.controlsAsRendered.directiveText ?? '')).toBeLessThanOrEqual(TICK_CAPTURE_TEXT_FIELD_MAX_BYTES);
+  });
+
+  it('huge FAULT and VALIDATION text is bounded too', async () => {
+    const ctx = liveState((c) => {
+      c.exit('completed');
+      c.model({ outcome: 'failed', failureClass: 'timeout', message: 'M'.repeat(400_000) });
+      c.guardrail({ faultClass: 'guardrail_error', message: 'G'.repeat(400_000) });
+      c.validationErrors(Array.from({ length: 50 }, () => 'V'.repeat(40_000)));
+    });
+    const { permanent, body } = buildCaptureDocuments(ctx.state, { nowMs: NOW_MS, bodyFacts: EMPTY_BODY });
+    expect(approxBytes(body)).toBeLessThanOrEqual(TICK_CAPTURE_BODY_DOC_MAX_BYTES);
+    expect(permanent.body.incomplete).toBeTruthy();
+  });
+
+  it('a field capped on its own says `field_capped`, and names which fields were cut', async () => {
+    const ctx = liveState((c) => { c.exit('completed'); c.controlsText(oversizeControls()); });
+    const { permanent, body } = buildCaptureDocuments(ctx.state, { nowMs: NOW_MS, bodyFacts: EMPTY_BODY });
+    expect(body.bodyIncomplete).toBe('field_capped');
+    expect(permanent.body.incomplete).toBe('field_capped');
+    expect(body.shedFields).toContain('controlsAsRendered.directiveText');
+    expect(body.shedFields).toContain('controlsAsRendered.standingLeanTexts');
+  });
+
+  it('a document still over the cap AFTER field capping sheds in the DECLARED order and says `doc_budget`', async () => {
+    // Twelve capped fields still add up past the document cap, so the shed
+    // order has to run — largest-value guesswork is not the mechanism; a
+    // declared order is, and it stops the moment the document fits.
+    const many = {};
+    for (let i = 0; i < 12; i++) many[`leanText${i}`] = 'L'.repeat(200_000);
+    const ctx = liveState((c) => {
+      c.exit('completed');
+      c.controlsText(many);
+      c.originalToolResult({ rationale: 'O'.repeat(200_000) });
+      c.finalToolResult({ rationale: 'F'.repeat(200_000) });
+    });
+    const { permanent, body } = buildCaptureDocuments(ctx.state, { nowMs: NOW_MS, bodyFacts: EMPTY_BODY });
+    expect(approxBytes(body)).toBeLessThanOrEqual(TICK_CAPTURE_BODY_DOC_MAX_BYTES);
+    expect(permanent.body.incomplete).toBe('doc_budget');
+    expect(body.shedFields).toContain('controlsAsRendered');
+    // the EARLIER steps of the declared order went first
+    expect(body.shedFields.indexOf('originalToolResult')).toBeLessThan(body.shedFields.indexOf('controlsAsRendered'));
+  });
+
+  it('an oversize document never reaches the batch over the cap', async () => {
+    const ctx = liveState((c) => { c.exit('completed'); c.controlsText(oversizeControls()); });
+    const db = makeDb();
+    const result = await finalizeTickCapture(db, ctx, { nowMs: NOW_MS, remainingBudgetMs: 60_000 });
+    expect(result.disposition).toBe('written');
+    for (const write of db.__committed[0]) {
+      expect(approxBytes(write.data)).toBeLessThanOrEqual(TICK_CAPTURE_BODY_DOC_MAX_BYTES);
+    }
+  });
+});
+
+describe('F9 (Astra round 1) — the digest is of the RECEIVED BYTES', () => {
+  it('a body with a UTF-8 BOM hashes its bytes, not the decoded string', async () => {
+    const { sha256Bytes } = await import('./captureWriter.js');
+    const raw = new Uint8Array([0xEF, 0xBB, 0xBF, 0x7B, 0x7D]);   // BOM + "{}"
+    // `.text()` strips the BOM; a digest taken after decoding therefore
+    // describes something the wire never carried.
+    const decoded = new TextDecoder('utf-8').decode(raw);
+    expect(decoded).toBe('{}');
+    expect(sha256Bytes(raw)).not.toBe(sha256Hex(decoded));
+
+    const facts = await resolveBodyHolder({
+      dispatched: true, requestBody: '{}', status: 200,
+      responseTextPromise: Promise.resolve({ ok: true, bytes: raw, text: decoded }),
+    });
+    expect(facts.response.sha256).toBe(sha256Bytes(raw));
+    expect(facts.response.bytes).toBe(raw.length);
+    expect(facts.response.body).toBe(decoded);      // storage stays readable text
   });
 });
 

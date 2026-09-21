@@ -32,13 +32,15 @@ import {
   makeIntradayCandles, makeHoldResult, makeSwapResult, makeToolUseResponse, undefinedPaths,
 } from '../_utils/__fixtures__/tickStampsHarness.js';
 import { makeCaptureDb, permanentDoc, bodyDoc, containsText } from '../_utils/__fixtures__/tickCaptureHarness.js';
-import { claimTickCaptureContext, peekTickCaptureContext } from '../_utils/tickCapture/captureContext.js';
+import { claimTickCaptureContext, newTickCaptureScope, runInTickCaptureScope } from '../_utils/tickCapture/captureContext.js';
 import { finalizeTickCapture } from '../_utils/tickCapture/captureWriter.js';
 import { TICK_CAPTURE_MIN_REMAINING_BUDGET_MS } from '../_utils/tickCapture/captureConfig.js';
 
 const mocks = vi.hoisted(() => ({ getStockAnalysisData: vi.fn(), fetchIntradayBatch: vi.fn(), create: vi.fn() }));
 const { swapMock } = vi.hoisted(() => ({ swapMock: vi.fn() }));
 const { guardrailHook } = vi.hoisted(() => ({ guardrailHook: { throwMessage: null } }));
+/** Forces a LOCK verdict for one held symbol; the real evaluator runs otherwise. */
+const { riskHook } = vi.hoisted(() => ({ riskHook: { lockSymbols: [] } }));
 const flagState = vi.hoisted(() => ({ tickCapture: true }));
 
 vi.mock('@anthropic-ai/sdk', () => ({
@@ -67,6 +69,17 @@ vi.mock('../_utils/agentGuardrails.js', async (importOriginal) => {
       if (guardrailHook.throwMessage) throw new Error(guardrailHook.throwMessage);
       return real.applyGuardrails(args);
     },
+  };
+});
+vi.mock('../_utils/agentRiskManager.js', async (importOriginal) => {
+  const real = await importOriginal();
+  return {
+    ...real,
+    evaluateRisk: (position, ...rest) => (
+      riskHook.lockSymbols.includes(position?.symbol)
+        ? { action: 'LOCK', reason: 'near_threshold', detail: 'near_threshold' }
+        : real.evaluateRisk(position, ...rest)
+    ),
   };
 });
 vi.mock('../_utils/tournamentAgentLedger.js', () => ({
@@ -156,9 +169,13 @@ async function runTick({
   breakRefreshAfterSwap = false,
   modelThrows = null,
   modelResponse = null,
+  lockSymbols = null,
+  swapThrows = null,
+  db: injectedDb = null,
 } = {}) {
   flagState.tickCapture = capture;
   guardrailHook.throwMessage = guardrailHook.throwMessage ?? null;
+  riskHook.lockSymbols = lockSymbols ?? [];
   mocks.getStockAnalysisData.mockImplementation(async (symbol) => (prices[symbol] ? { price: prices[symbol], daily: [] } : {}));
   mocks.fetchIntradayBatch.mockImplementation(async () => ({ NVDA: makeIntradayCandles() }));
   mocks.create.mockImplementation(async () => {
@@ -166,7 +183,7 @@ async function runTick({
     return modelResponse ?? makeToolUseResponse(result);
   });
 
-  const db = makeCaptureDb({ battle, rankingsDoc, techDocs: makeTechDocs() });
+  const db = injectedDb || makeCaptureDb({ battle, rankingsDoc, techDocs: makeTechDocs() });
   db.__failCapture = failCapture;
 
   let swaps = 0;
@@ -187,6 +204,7 @@ async function runTick({
     };
   }
   swapMock.mockImplementation(async (dbArg, _id, _b, tier, slotIndex, incoming) => {
+    if (swapThrows) throw swapThrows;
     swaps += 1;
     const outgoing = swapInStore(db, tier, slotIndex, incoming, (s) => prices[s]?.current ?? 0);
     return {
@@ -218,12 +236,13 @@ beforeEach(() => {
   mocks.create.mockReset();
   swapMock.mockReset();
   guardrailHook.throwMessage = null;
+  riskHook.lockSymbols = [];
   flagState.tickCapture = true;
   vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });
-afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); claimTickCaptureContext(BATTLE_ID); });
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 // ─────────────────────────────────────────────────────────────────────────────
 describe('C-8 — every exit in the Phase 0 exit map, flag OFF and ON', () => {
@@ -320,17 +339,20 @@ describe('C-8 — every exit in the Phase 0 exit map, flag OFF and ON', () => {
     mocks.fetchIntradayBatch.mockImplementation(async () => ({ NVDA: makeIntradayCandles() }));
     mocks.create.mockImplementation(async () => makeToolUseResponse(makeHoldResult()));
 
-    await expect(processAgentBattle(db, battle, { evaluated: 0, held: 0, triggered: 0, skipped: 0, swapped: 0 }, Date.now(), new Map(), { everEnabled: false }))
+    // The handler wraps each battle in its OWN scope; do the same here so the
+    // row exercises the real seam rather than a battle-id lookup.
+    const scope = newTickCaptureScope();
+    await expect(runInTickCaptureScope(scope, () => processAgentBattle(db, battle, { evaluated: 0, held: 0, triggered: 0, skipped: 0, swapped: 0 }, Date.now(), new Map(), { everEnabled: false })))
       .rejects.toThrow('final update failed');
 
     // The `finally` SKIPPED capture — nothing written yet…
     expect(db.__captureWrites).toEqual([]);
-    const ctx = peekTickCaptureContext(BATTLE_ID);
-    expect(ctx, 'the context must survive the throw for the outer handler').not.toBeNull();
-    expect(ctx.state.exitReason).toBe('tick_error');
+    expect(scope.ctx, 'the scope must still hold this tick\'s context').not.toBeNull();
+    expect(scope.ctx.state.exitReason).toBe('tick_error');
+    expect(scope.claimed, 'the tick did not finalize itself').toBe(false);
 
     // …and the outer handler's two calls produce the record, after its receipt.
-    const claimed = claimTickCaptureContext(BATTLE_ID);
+    const claimed = claimTickCaptureContext(scope);
     const result = await finalizeTickCapture(db, claimed, { remainingBudgetMs: 200_000 });
     expect(result.disposition).toBe('written');
     expect(permanentDoc(db, BATTLE_ID, tickIdOf(1)).exitReason).toBe('tick_error');
@@ -491,7 +513,11 @@ describe('C-3 — the sentinels', () => {
       },
     });
     const { permanent, body } = await runTick({ battle });
-    expect(body.controlsAsRendered.activeRuleTexts).toContain(`Never exit before ${RULE_SENTINEL} confirms`);
+    // Round 1 (F4) renamed this channel: the assembler sanitizes rule text and
+    // rewrites SX-04, so the raw template is the SOURCE, not the rendered
+    // fragment, and the body says which it is.
+    expect(body.controlSourceText.activeRuleTemplates).toContain(`Never exit before ${RULE_SENTINEL} confirms`);
+    expect(body.controlsAsRendered).not.toHaveProperty('activeRuleTexts');
     expect(containsText(permanent, RULE_SENTINEL)).toBe(false);
     // the record still IDENTIFIES the rule — by id and by a hash of that text
     expect(permanent.controls.activeRuleIds).toEqual(['rule-1']);
@@ -526,14 +552,164 @@ describe('C-3 — the sentinels', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+describe('F4 (Astra round 1) — controls are what the tick RESOLVED, not the raw slots', () => {
+  const base = () => makeTickBattle();
+
+  it('an EPOCH-KILLED directive is not copied as rendered text', async () => {
+    // The shipped no-resurrection rule: a directive whose thread is in the
+    // battle's controlEpochLog kill set is suppressed, and the renderer emits
+    // no directive block at all. Copying battle.directive.text into
+    // `controlsAsRendered` put UNRENDERED player text in the body.
+    const battle = makeTickBattle({
+      directive: { ...makeTickBattle().directive, text: 'ZZQX-KILLED-DIRECTIVE-SENTINEL' },
+      controlEpochLog: [{ suppressedDirectiveIds: ['thread-tf02-0001'] }],
+    });
+    const { permanent, body } = await runTick({ battle });
+    expect(permanent.controls.directiveSuppressed).toBe('epoch_killed');
+    expect(body.controlsAsRendered.directiveText, 'a killed directive was never rendered').toBeNull();
+    expect(containsText(body, 'ZZQX-KILLED-DIRECTIVE-SENTINEL')).toBe(false);
+    // the record still IDENTIFIES it — suppression is a fact, not an erasure
+    expect(permanent.controls.directiveThreadId).toBe('thread-tf02-0001');
+    expect(permanent.controls.suppressedControlCount).toBeGreaterThan(0);
+  });
+
+  it('a directive that DID render is copied — the rule is not a blanket ban (anti-vacuous)', async () => {
+    const { permanent, body } = await runTick({});
+    expect(permanent.controls.rendered).toBe('resolved');
+    expect(permanent.controls.directiveSuppressed).toBeNull();
+    expect(body.controlsAsRendered.directiveText).toBe('Require stronger confirmation before entering');
+  });
+
+  it('a lean the resolver suppressed is not copied as rendered text either', async () => {
+    const b = base();
+    const battle = makeTickBattle({
+      agentContext: {
+        ...b.agentContext,
+        standingLeans: [
+          { adjustmentId: 'TF-09', version: 2, text: 'ZZQX-SUPPRESSED-LEAN-SENTINEL' },
+          { adjustmentId: 'TF-10', version: 1, text: 'This lean does render' },
+        ],
+      },
+      // The shipped override rule: a lean the RENDERING directive overrides is
+      // suppressed and never reaches the prompt.
+      leanOverrides: [{ directiveInstanceId: 'thread-tf02-0001', leanId: 'TF-09' }],
+    });
+    const { permanent, body } = await runTick({ battle });
+    expect(containsText(body.controlsAsRendered, 'ZZQX-SUPPRESSED-LEAN-SENTINEL')).toBe(false);
+    expect(permanent.controls.standingLeanIds).toEqual(['TF-10']);
+    // anti-vacuous: the lean that DID render is there, unchanged
+    expect(body.controlsAsRendered.standingLeanTexts).toEqual(['This lean does render']);
+  });
+
+  it('raw rule text is NOT labelled as rendered text — the request body is the authority', async () => {
+    // The assembler sanitizes rule text and rewrites SX-04 entirely, so the
+    // raw template is not the rendered fragment and must not claim to be.
+    const b = base();
+    const battle = makeTickBattle({
+      agentContext: { ...b.agentContext, activeRules: [{ ruleId: 'rule-1', text: 'ZZQX-RULE-TEMPLATE-SENTINEL', category: 'exit' }] },
+    });
+    const { permanent, body } = await runTick({ battle });
+    expect(body.controlsAsRendered).not.toHaveProperty('activeRuleTexts');
+    expect(body.controlSourceText.activeRuleTemplates).toContain('ZZQX-RULE-TEMPLATE-SENTINEL');
+    expect(permanent.controls.activeRuleRendered).toBe('unknown');
+    expect(containsText(permanent, 'ZZQX-RULE-TEMPLATE-SENTINEL')).toBe(false);
+  });
+
+  it('after a SKIPPED prompt build the controls are `not_rendered`, not copied', async () => {
+    // A tick that never built a prompt rendered no controls at all.
+    const { permanent, body } = await runTick({ battle: makeTickBattle({ isCpu: true }) });
+    expect(permanent.controls.rendered).toBe('not_rendered');
+    expect(body.controlsAsRendered.directiveText ?? null).toBeNull();
+    expect(body.controlsAsRendered.standingLeanTexts ?? []).toEqual([]);
+    expect(containsText(body, 'Require stronger confirmation')).toBe(false);
+  });
+
+  it('the cron still calls resolveControls exactly once — capture reads it, never re-runs it', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { fileURLToPath } = await import('node:url');
+    const { dirname, resolve } = await import('node:path');
+    const src = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'agent-evaluate.js'), 'utf8');
+    expect(src.match(/resolveControls\(/g)).toHaveLength(1);
+  });
+});
+
+describe('F5 (Astra round 1) — a check is recorded where it actually runs', () => {
+  it('the distressed veto SHORT-CIRCUITED by LOCK is `bypassed`, not `evaluated`', async () => {
+    // LOCK flips the decision to HOLD, so the distressed gate below never
+    // evaluates its predicate. Recording it as `evaluated` described a check
+    // that did not run.
+    const battle = makeTickBattle({
+      cronState: { ...makeTickBattle().cronState, vwapFireGuard: {} },
+    });
+    const { permanent } = await runTick({
+      battle,
+      result: makeSwapResult({ symbolOut: 'NVDA', symbolIn: 'AMD' }),
+      lockSymbols: ['NVDA'],
+    });
+    expect(permanent.checks.lock).toMatchObject({ status: 'evaluated', result: 'blocked' });
+    expect(permanent.checks.distressedVeto.status).toBe('bypassed');
+    expect(permanent.checks.distressedVeto.result).toBeNull();
+  });
+
+  it('an EXECUTOR THROW is recorded `failed`, not left `not_evaluated`', async () => {
+    const { permanent } = await runTick({ result: makeSwapResult(), swapThrows: new Error('slot occupied') });
+    expect(permanent.checks.execution).toMatchObject({ status: 'failed' });
+    expect(permanent.checks.execution.status).not.toBe('not_evaluated');
+    expect(permanent.actions).toEqual([]);      // nothing committed
+  });
+
+  it('C-7: the per-symbol RISK VERDICTS the tick computed are on the record', async () => {
+    const { permanent } = await runTick({});
+    expect(permanent.risk).toBeTruthy();
+    const verdicts = permanent.risk.verdicts;
+    expect(Object.keys(verdicts).length).toBeGreaterThan(0);
+    for (const [symbol, verdict] of Object.entries(verdicts)) {
+      expect(['NVDA', 'TSLA', 'MSFT', 'AMZN', 'KO', 'PG', 'BTC']).toContain(symbol);
+      expect(typeof verdict.action).toBe('string');
+    }
+    // and they carry no free text
+    expect(containsText(permanent.risk, ' ')).toBe(false);
+  });
+
+  it('C-7: a guardrail evaluation that ran is recorded with its outcome', async () => {
+    const { permanent } = await runTick({
+      battle: makeTickBattle({ agentContext: { ...makeTickBattle().agentContext, deployedGuardrails: [{ type: 'stopLoss', value: 25, unit: '%', enforcement: 'hard' }] } }),
+    });
+    expect(permanent.guardrail.evaluated).toBe(true);
+    expect(permanent.guardrail.faultClass).toBeNull();
+  });
+});
+
+describe('BLIND SPOT 4 (Astra round 1) — an ABORTED transaction attempt is not the tick\'s identity', () => {
+  it('a retried admission uses the COMMITTED sequence, never the aborted attempt\'s', async () => {
+    const battle = makeTickBattle();
+    battle.cronState = { ...battle.cronState, tickSeq: 40 };
+    const db = makeCaptureDb({
+      battle, rankingsDoc: makeRankingsDoc(), techDocs: makeTechDocs(),
+      abortFirstTransactionWithSeq: 7,      // the aborted attempt would mint 8
+    });
+    const { permanent } = await runTick({ battle, db });
+    expect(db.__transactionAttempts).toBeGreaterThan(1);
+    expect(permanent, 'the tick must be captured').not.toBeNull();
+    expect(permanent.tickSeq, 'the aborted attempt minted 8; only 41 committed').toBe(41);
+    expect(permanent.tickId).toBe('battle-tick-1:41');
+    expect(db.__updates[0]['cronState.tickSeq']).toBe(41);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 describe('C-1 / C-9 — a capture that fails, times out or skips never costs the tick anything', () => {
   it('a FAILED capture write leaves the tick\'s own writes byte-identical and the record absent', async () => {
     const good = await runTick({ result: makeSwapResult() });
     const bad = await runTick({ result: makeSwapResult(), failCapture: 'throw' });
     expect(bad.permanent).toBeNull();
     expect(bad.db.__captureWrites).toEqual([]);
-    // the tick's own results and writes are unchanged
-    expect(bad.summary).toEqual(good.summary);
+    // The tick's own TRADING results and writes are unchanged. The capture
+    // counters deliberately differ — a failed capture increments `captureGaps`,
+    // which is what makes the gap countable rather than silent.
+    const trading = ({ evaluated, held, triggered, skipped, swapped }) => ({ evaluated, held, triggered, skipped, swapped });
+    expect(trading(bad.summary)).toEqual(trading(good.summary));
+    expect(bad.summary.captureGaps ?? 0).toBeGreaterThan(good.summary.captureGaps ?? 0);
     expect(bad.db.__updates).toEqual(good.db.__updates);
     expect(bad.db.__store.battle.trades).toEqual(good.db.__store.battle.trades);
     expect(bad.thrown).toBeNull();
@@ -554,6 +730,6 @@ describe('C-1 / C-9 — a capture that fails, times out or skips never costs the
     expect(permanent.capture.deadlineMs).toBe(3_000);
     expect(permanent.capture.minRemainingBudgetMs).toBe(10_000);
     expect(permanent.capture.remainingBudgetMs).toBe(290_000);
-    expect(permanent.capture.ms).toBeGreaterThanOrEqual(0);
+    expect(permanent.capture.preCommitMs).toBeGreaterThanOrEqual(0);
   });
 });

@@ -114,7 +114,10 @@ describe('sanitizePermanentDocument — default deny, and the body catches what 
     // Fails if kindFor() returns a permissive default for an unknown path.
     const input = { ...base(), rationale: 'KO has gone dead money while the semis keep leading' };
     const { doc, rejected } = sanitizePermanentDocument(input, { universe: UNIVERSE });
-    expect(doc.rationale).toBeNull();
+    // Round 1 (F2) made this STRICTER: an undeclared key is dropped with its
+    // whole subtree rather than nulled, so the field does not exist at all.
+    expect(doc).not.toHaveProperty('rationale');
+    expect(JSON.stringify(doc)).not.toContain('dead money');
     expect(rejected.map((r) => r.reason)).toContain('undeclared_path');
   });
 
@@ -158,6 +161,78 @@ describe('sanitizePermanentDocument — default deny, and the body catches what 
     const bad = sanitizePermanentDocument({ ...base(), capturedAt: 'just now' }, { universe: UNIVERSE });
     expect(bad.doc.capturedAt).toBeNull();
     expect(bad.rejected[0].reason).toBe('not_timestamp');
+  });
+});
+
+describe('F2 (Astra round 1) — the kind is checked BEFORE the walk recurses', () => {
+  const base = () => ({
+    schemaVersion: 1, tickId: 'battle-1:3', battleId: 'battle-1', tickSeq: 3,
+    capturedAt: '2026-09-09T15:00:00.000Z', stageReached: 'finalized', exitReason: 'completed',
+  });
+
+  it('a CONTAINER at a declared LEAF path is rejected WHOLE, key and all', () => {
+    // The model's tool input is copied verbatim before validation, so
+    // `decision.original` can be any JSON the model emitted. It is declared
+    // `enum:DECISIONS`; an object there must never survive by having a
+    // well-formed key.
+    const input = { ...base(), decision: { original: { 'PRIVATE-CANARY': {} } } };
+    const { doc, rejected } = sanitizePermanentDocument(input, { universe: UNIVERSE });
+    expect(doc.decision.original).toBeNull();
+    expect(JSON.stringify(doc)).not.toContain('PRIVATE-CANARY');
+    expect(rejected.map((r) => r.path)).toContain('decision.original');
+  });
+
+  it('the same defect NESTED, and behind an array, is rejected whole', () => {
+    for (const hostile of [
+      { 'PRIVATE-CANARY': { deeper: { 'ALSO-SECRET': {} } } },
+      [{ 'PRIVATE-CANARY': {} }],
+      { a: { b: { c: { 'PRIVATE-CANARY': {} } } } },
+    ]) {
+      const { doc } = sanitizePermanentDocument({ ...base(), decision: { original: hostile } }, { universe: UNIVERSE });
+      expect(doc.decision.original).toBeNull();
+      expect(JSON.stringify(doc)).not.toContain('PRIVATE-CANARY');
+      expect(JSON.stringify(doc)).not.toContain('ALSO-SECRET');
+    }
+  });
+
+  it('an ARRAY where an object is declared, and an object where an array is declared, are both rejected whole', () => {
+    const asObject = sanitizePermanentDocument({ ...base(), actions: { 'CANARY-KEY': {} } }, { universe: UNIVERSE });
+    expect(asObject.doc.actions).toBeNull();
+    expect(JSON.stringify(asObject.doc)).not.toContain('CANARY-KEY');
+
+    const asArray = sanitizePermanentDocument({ ...base(), controls: ['CANARY-TEXT'] }, { universe: UNIVERSE });
+    expect(asArray.doc.controls).toBeNull();
+    expect(JSON.stringify(asArray.doc)).not.toContain('CANARY-TEXT');
+  });
+
+  it('an UNDECLARED key inside a declared object container is dropped, not descended', () => {
+    const { doc } = sanitizePermanentDocument(
+      { ...base(), decision: { final: 'HOLD', 'CANARY-FIELD': { nested: 'CANARY-TEXT' } } },
+      { universe: UNIVERSE },
+    );
+    expect(doc.decision.final).toBe('HOLD');          // anti-vacuous
+    expect(doc.decision).not.toHaveProperty('CANARY-FIELD');
+    expect(JSON.stringify(doc)).not.toContain('CANARY-TEXT');
+  });
+
+  it('a WILDCARD map still admits its declared shape — the rule is not a blanket ban on maps', () => {
+    const { doc, rejected } = sanitizePermanentDocument(
+      { ...base(), checks: { lock: { status: 'evaluated', result: 'passed', stage: 'decision_resolved', symbolOut: 'KO', symbolIn: null, reason: null } } },
+      { universe: UNIVERSE },
+    );
+    expect(rejected).toEqual([]);
+    expect(doc.checks.lock.status).toBe('evaluated');
+  });
+
+  it('the INDEPENDENT sweep reports a container at a leaf path and an undeclared key — not just strings', () => {
+    // findFreeText only inspected string leaves, so the canary above was
+    // invisible to the writer's own re-check as well as to the walk.
+    expect(findFreeText({ decision: { original: { 'PRIVATE-CANARY': {} } } }, { universe: UNIVERSE }))
+      .toContain('decision.original');
+    expect(findFreeText({ decision: { 'CANARY-FIELD': 1 } }, { universe: UNIVERSE }))
+      .toContain('decision.CANARY-FIELD');
+    // anti-vacuous: a clean document still reports nothing
+    expect(findFreeText({ decision: { final: 'HOLD' } }, { universe: UNIVERSE })).toEqual([]);
   });
 });
 

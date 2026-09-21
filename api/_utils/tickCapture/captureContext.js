@@ -26,10 +26,62 @@
 // re-creating a context for the same battle drops any stale predecessor, so the
 // map cannot grow.
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { STAGES } from './captureConfig.js';
 
-/** battleId → live context awaiting finalization. */
-const REGISTRY = new Map();
+/**
+ * THE TICK SCOPE (Astra round 1, F3). Capture state is bound to the TICK'S OWN
+ * ASYNC CHAIN, never to a battle id and never to a module global.
+ *
+ * The previous design keyed a Map by battle id, so a second tick admitting the
+ * same battle replaced the first's registration and either cleanup could then
+ * remove or finalize the other's context. Two overlapping invocations in one
+ * warm process were not isolated. An `AsyncLocalStorage` scope cannot have that
+ * failure mode: a scope is reachable only from the async chain that created it,
+ * so a tick can physically only see its own.
+ *
+ * A scope holds BOTH the capture context and the Stage B body holder, so the
+ * fetch observer is scoped by exactly the same mechanism.
+ */
+const scopeStore = new AsyncLocalStorage();
+let scopeSeq = 0;
+
+const newScope = () => ({ id: ++scopeSeq, ctx: null, holder: null, claimed: false });
+
+/** Run `fn` inside a fresh tick scope. The handler wraps each battle in one. */
+export function runWithTickCaptureScope(fn) {
+  return scopeStore.run(newScope(), fn);
+}
+
+/** Run `fn` inside a scope the caller already made (or plainly, when null). */
+export function runInTickCaptureScope(scope, fn) {
+  return scope ? scopeStore.run(scope, fn) : fn();
+}
+
+/** A scope the caller can hold a reference to — the handler's error path does. */
+export function newTickCaptureScope() {
+  return newScope();
+}
+
+/** The scope of the calling async chain, or null. */
+export function currentCaptureScope() {
+  return scopeStore.getStore() ?? null;
+}
+
+/**
+ * The calling chain's scope, creating one if there is none. `enterWith` binds
+ * it to THIS chain only, so a direct `processAgentBattle` call (the test path,
+ * and any future caller that is not the handler) is still isolated from every
+ * other chain in the process.
+ */
+export function ensureCaptureScope() {
+  return scopeStore.getStore() ?? (() => { const fresh = newScope(); scopeStore.enterWith(fresh); return fresh; })();
+}
+
+/** The live context of the CALLING TICK, or the inert NOOP. */
+export function currentTickCapture() {
+  return scopeStore.getStore()?.ctx ?? NOOP_TICK_CAPTURE;
+}
 
 const STAGE_INDEX = new Map(STAGES.map((s, i) => [s, i]));
 
@@ -51,6 +103,7 @@ const NOOP_METHODS = [
   'stage', 'exit', 'identify', 'check', 'universe', 'scores', 'model', 'guardrail', 'decision',
   'originalToolResult', 'finalToolResult', 'action', 'controls', 'controlsText',
   'manifest', 'callEnvelope', 'validationErrors', 'fault', 'bindBodyHolder',
+  'controlSourceText', 'risk',
 ];
 
 /** The inert context. Flag off, every call site runs against this. */
@@ -97,6 +150,8 @@ export function createTickCaptureContext({
     actions: [],
     controlFacts: {},
     controlTexts: {},
+    controlSourceTexts: {},
+    riskFacts: {},
     manifestFacts: {},
     envelope: {},
     validationErrorTexts: [],
@@ -202,6 +257,10 @@ export function createTickCaptureContext({
 
     controls: guard((facts = {}) => { Object.assign(state.controlFacts, facts); }),
     controlsText: guard((texts = {}) => { Object.assign(state.controlTexts, copyPlain(texts) || {}); }),
+    /** Source text that is NOT the rendered fragment, named so it cannot pose as one (F4). */
+    controlSourceText: guard((texts = {}) => { Object.assign(state.controlSourceTexts, copyPlain(texts) || {}); }),
+    /** C-7 (F5): the per-symbol risk verdicts and guardrail results the tick computed. */
+    risk: guard((facts = {}) => { Object.assign(state.riskFacts, copyPlain(facts) || {}); }),
     manifest: guard((facts = {}) => { Object.assign(state.manifestFacts, facts); }),
     callEnvelope: guard((facts = {}) => { Object.assign(state.envelope, facts); }),
     validationErrors: guard((errors) => {
@@ -213,33 +272,25 @@ export function createTickCaptureContext({
     bindBodyHolder: guard((holder) => { state.bodyHolder = holder; }),
   };
 
-  REGISTRY.set(battleId, ctx);
-  return ctx;
-}
-
-/** Take the live context for a battle, removing it from the registry. */
-export function claimTickCaptureContext(battleId) {
-  const ctx = REGISTRY.get(battleId) || null;
-  if (ctx) REGISTRY.delete(battleId);
+  // Bound to THIS tick's async chain — nothing is keyed by battle id, so no
+  // other tick can reach it and no other tick's cleanup can take it.
+  ensureCaptureScope().ctx = ctx;
   return ctx;
 }
 
 /**
- * Read the live context for a battle WITHOUT removing it. This is how the four
- * executor call sites that live inside helpers record their committed action
- * without a new parameter on four signatures — and without a seventh executor
- * caller. Read-only: only a finalizer claims.
+ * Claim a scope's context for finalization. IDENTITY-CHECKED and ONCE-ONLY: a
+ * caller can only claim the scope it was handed, and a context already claimed
+ * (by the tick's own `finally`) is never handed out again to the handler's
+ * error path. Returns null when there is nothing of this scope's own to do.
  */
-export function peekTickCaptureContext(battleId) {
-  return REGISTRY.get(battleId) || null;
+export function claimTickCaptureContext(scope) {
+  if (!scope || scope.claimed || !scope.ctx) return null;
+  scope.claimed = true;
+  return scope.ctx;
 }
 
-/** Drop a context without finalizing (the flag-off and test paths). */
-export function releaseTickCaptureContext(battleId) {
-  REGISTRY.delete(battleId);
-}
-
-/** Test-only visibility into the registry size — never read by product code. */
-export function registrySizeForTests() {
-  return REGISTRY.size;
+/** Mark a scope's context finalized without taking it (the normal exit path). */
+export function markTickCaptureClaimed(scope) {
+  if (scope) scope.claimed = true;
 }

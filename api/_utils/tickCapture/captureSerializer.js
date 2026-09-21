@@ -86,6 +86,16 @@ export const PERMANENT_FIELD_KINDS = Object.freeze({
   'guardrail.faultClass': 'enum:GUARDRAIL_FAULT_CLASSES',
   'guardrail.sourceNote': 'id',
   'guardrail.overrideCount': 'number',
+  'guardrail.evaluated': 'bool',
+  'guardrail.deployedCount': 'number',
+  'guardrail.suppressionPassRan': 'bool',
+  'guardrail.suppressionPassFaulted': 'bool',
+
+  'risk.verdicts.*.action': 'id',
+  'risk.verdicts.*.reason': 'id',
+  'risk.lockedCount': 'number',
+  'risk.forcedExitCount': 'number',
+  'risk.evaluatedCount': 'number',
 
   'checks.*.status': 'enum:CHECK_STATUSES',
   'checks.*.result': 'enum:CHECK_RESULTS',
@@ -119,6 +129,9 @@ export const PERMANENT_FIELD_KINDS = Object.freeze({
   'actions.*.committed': 'bool',
   'actions.*.entryPrice': 'number',
 
+  'controls.rendered': 'id',
+  'controls.suppressedControlCount': 'number',
+  'controls.activeRuleRendered': 'id',
   'controls.directiveThreadId': 'id',
   'controls.directiveAdjustmentId': 'id',
   'controls.directiveCanonicalTextVersion': 'number',
@@ -162,12 +175,55 @@ export const PERMANENT_FIELD_KINDS = Object.freeze({
   'scores.opponent': 'number',
   'scores.bankedBadgePoints': 'number',
 
-  'capture.ms': 'number',
+  'capture.preCommitMs': 'number',
+  'capture.bodyMs': 'number',
   'capture.deadlineMs': 'number',
   'capture.minRemainingBudgetMs': 'number',
   'capture.remainingBudgetMs': 'number',
   'capture.disposition': 'enum:CAPTURE_DISPOSITIONS',
   'capture.rejectedFieldCount': 'number',
+});
+
+/**
+ * DECLARED CONTAINERS (Astra round 1, F2). The walk below only descends a path
+ * that appears here, and only when the value's own SHAPE matches. Everything
+ * else — a container where a leaf is declared, an array where an object is,
+ * an undeclared key inside a declared object — is rejected WHOLE into the TTL
+ * body rather than descended.
+ *
+ * The previous walk recursed first and consulted the declared kind only at the
+ * leaves, so an object at a leaf path (an invalid model decision such as
+ * `{"PRIVATE-CANARY": {}}` under `decision.original`, which is declared
+ * `enum:DECISIONS`) survived by having a well-formed key and never reaching
+ * `leafOk`. Default-deny has to be checked BEFORE the descent, not after it.
+ */
+export const PERMANENT_CONTAINER_KINDS = Object.freeze({
+  '': 'object',
+  'model': 'object',
+  'guardrail': 'object',
+  'risk': 'object',
+  'risk.verdicts': 'object',
+  'risk.verdicts.*': 'object',
+  'checks': 'object',
+  'checks.*': 'object',
+  'decision': 'object',
+  'actions': 'array',
+  'actions.*': 'object',
+  'controls': 'object',
+  'controls.standingLeanIds': 'array',
+  'controls.standingLeanVersions': 'array',
+  'controls.standingLeanTextHashes': 'array',
+  'controls.activeRuleIds': 'array',
+  'controls.activeRuleTextHashes': 'array',
+  'manifest': 'object',
+  'manifest.evidenceKeys': 'array',
+  'manifest.vintages': 'object',
+  'manifest.vintageLabels': 'object',
+  'manifest.notRenderedFields': 'array',
+  'callEnvelope': 'object',
+  'body': 'object',
+  'scores': 'object',
+  'capture': 'object',
 });
 
 /** The tick's own symbol universe: held ∪ bench ∪ rendered candidates. */
@@ -204,24 +260,42 @@ export function admitNumber(value) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
-/** Turn a dotted concrete path into its wildcard lookup key. */
-function kindFor(path) {
-  if (Object.hasOwn(PERMANENT_FIELD_KINDS, path)) return PERMANENT_FIELD_KINDS[path];
+/** Every candidate lookup key for a concrete path, most specific first. */
+function pathProbes(path) {
+  const probes = [path];
   const parts = path.split('.');
-  // Try every single-segment wildcard substitution, left to right, then pairs.
   for (let i = 0; i < parts.length; i++) {
     const probe = [...parts];
     probe[i] = '*';
-    const key = probe.join('.');
-    if (Object.hasOwn(PERMANENT_FIELD_KINDS, key)) return PERMANENT_FIELD_KINDS[key];
+    probes.push(probe.join('.'));
     for (let j = i + 1; j < parts.length; j++) {
       const probe2 = [...probe];
       probe2[j] = '*';
-      const key2 = probe2.join('.');
-      if (Object.hasOwn(PERMANENT_FIELD_KINDS, key2)) return PERMANENT_FIELD_KINDS[key2];
+      probes.push(probe2.join('.'));
     }
   }
+  return probes;
+}
+
+/** The declared LEAF kind at a path, or null. */
+function kindFor(path) {
+  for (const probe of pathProbes(path)) {
+    if (Object.hasOwn(PERMANENT_FIELD_KINDS, probe)) return PERMANENT_FIELD_KINDS[probe];
+  }
   return null;
+}
+
+/** The declared CONTAINER kind at a path ('object' | 'array'), or null. */
+function containerFor(path) {
+  for (const probe of pathProbes(path)) {
+    if (Object.hasOwn(PERMANENT_CONTAINER_KINDS, probe)) return PERMANENT_CONTAINER_KINDS[probe];
+  }
+  return null;
+}
+
+/** Is anything at all declared at this path? */
+function isDeclaredPath(path) {
+  return kindFor(path) !== null || containerFor(path) !== null;
 }
 
 function leafOk(kind, value, universe) {
@@ -258,37 +332,40 @@ const isPlainObject = (v) =>
 export function sanitizePermanentDocument(input, { universe = new Set() } = {}) {
   const rejected = [];
 
+  /** Reject a value WHOLE — never descended, never partially kept. */
+  const reject = (path, value, reason) => { rejected.push({ path, value, reason }); return null; };
+
   const walk = (value, path) => {
-    if (Array.isArray(value)) {
-      return value.map((v, i) => walk(v, path ? `${path}.${i}` : String(i)));
-    }
-    if (isPlainObject(value)) {
+    if (value === undefined) return reject(path, null, 'undefined');
+
+    // THE DECLARED SHAPE IS CHECKED FIRST (F2). A path is either a declared
+    // container, a declared leaf, or nothing at all.
+    const container = containerFor(path);
+    if (container !== null) {
+      if (container === 'array') {
+        if (!Array.isArray(value)) return reject(path, value, 'not_array');
+        return value.map((v, i) => walk(v, path ? `${path}.${i}` : String(i)));
+      }
+      if (!isPlainObject(value)) return reject(path, value, 'not_object');
       const out = {};
       for (const [k, v] of Object.entries(value)) {
-        // A key is structure, never data: a key that is not a bounded
-        // identifier cannot name a map field on the permanent record.
         const childPath = path ? `${path}.${k}` : k;
-        if (!ID_RE.test(k)) {
-          rejected.push({ path: childPath, value: v, reason: 'key_not_id' });
-          continue;
-        }
+        // A key is structure, never data: it must be a bounded identifier AND
+        // it must name something this schema declares. An undeclared key is
+        // dropped with its whole subtree, never walked into.
+        if (!ID_RE.test(k)) { reject(childPath, v, 'key_not_id'); continue; }
+        if (!isDeclaredPath(childPath)) { reject(childPath, v, 'undeclared_path'); continue; }
         out[k] = walk(v, childPath);
       }
       return out;
     }
-    if (value === undefined) {
-      rejected.push({ path, value: null, reason: 'undefined' });
-      return null;
-    }
+
     const kind = kindFor(path);
-    if (kind === null) {
-      rejected.push({ path, value, reason: 'undeclared_path' });
-      return null;
-    }
-    if (!leafOk(kind, value, universe)) {
-      rejected.push({ path, value, reason: `not_${kind}` });
-      return null;
-    }
+    if (kind === null) return reject(path, value, 'undeclared_path');
+    // A CONTAINER where a leaf is declared is rejected whole — this is the
+    // case the old walk descended into.
+    if (Array.isArray(value) || isPlainObject(value)) return reject(path, value, `not_${kind}`);
+    if (!leafOk(kind, value, universe)) return reject(path, value, `not_${kind}`);
     return value;
   };
 
@@ -304,11 +381,28 @@ export function sanitizePermanentDocument(input, { universe = new Set() } = {}) 
 export function findFreeText(doc, { universe = new Set() } = {}) {
   const bad = [];
   const walk = (value, path) => {
-    if (Array.isArray(value)) { value.forEach((v, i) => walk(v, path ? `${path}.${i}` : String(i))); return; }
-    if (isPlainObject(value)) { for (const [k, v] of Object.entries(value)) walk(v, path ? `${path}.${k}` : k); return; }
-    if (typeof value !== 'string') return;
+    if (value === undefined || value === null) return;
+    const container = containerFor(path);
+    if (container !== null) {
+      if (container === 'array') {
+        if (!Array.isArray(value)) { bad.push(path); return; }
+        value.forEach((v, i) => walk(v, path ? `${path}.${i}` : String(i)));
+        return;
+      }
+      if (!isPlainObject(value)) { bad.push(path); return; }
+      for (const [k, v] of Object.entries(value)) {
+        const childPath = path ? `${path}.${k}` : k;
+        // KEYS TOO (F2): an undeclared or non-identifier key is a finding, even
+        // when its value is an empty object with nothing to read.
+        if (!ID_RE.test(k) || !isDeclaredPath(childPath)) { bad.push(childPath); continue; }
+        walk(v, childPath);
+      }
+      return;
+    }
     const kind = kindFor(path);
-    if (kind === null || !leafOk(kind, value, universe)) bad.push(path);
+    if (kind === null) { bad.push(path); return; }
+    if (Array.isArray(value) || isPlainObject(value)) { bad.push(path); return; }
+    if (!leafOk(kind, value, universe)) bad.push(path);
   };
   walk(doc, '');
   return bad;

@@ -37,7 +37,7 @@ function makeReader({ battles }) {
     async readTicks(id) { reads.push(['ticks', id]); return battles[id]?.ticks ?? []; },
     async readBodyIds(id) { reads.push(['bodyIds', id]); return battles[id]?.bodyIds ?? []; },
     async readBody(id, tickId) { reads.push(['body', id, tickId]); return { tickId, request: { body: '{}' } }; },
-    async findBattleIds() { reads.push(['find']); return Object.keys(battles); },
+    async findBattleIds() { reads.push(['battles-in-range']); return Object.keys(battles); },
   };
 }
 
@@ -154,6 +154,32 @@ describe('runExport', () => {
     expect(battleIds).toEqual(['b1', 'b2']);
     expect(totals.battles).toBe(2);
     expect(totals.minted).toBe(3);
+  });
+});
+
+describe('F6c (Astra round 1) — the range cohort comes from BATTLES, not from successful captures', () => {
+  it('a battle whose captures ALL failed still contributes its counter and its gaps', async () => {
+    // Built from a `ticks` collection-group query, such a battle is invisible:
+    // it has no tick documents at all, so coverage silently omits its minted
+    // sequences — the exact case the figure exists to reveal.
+    const reader = makeReader({
+      battles: {
+        b1: { minted: 2, ticks: [permanent(1)], bodyIds: ['b1:1'] },
+        b2: { minted: 5, ticks: [], bodyIds: [] },     // every capture failed
+      },
+    });
+    const { totals, battleIds } = await runExport(reader, parseArgs(['node', 's', '--from', '2026-09-01']));
+    expect(reader.reads[0], 'the cohort is read first, from the battles').toEqual(['battles-in-range']);
+    expect(battleIds, 'the cohort must include the battle with no captures').toContain('b2');
+    expect(totals.minted).toBe(7);
+    expect(totals.captured).toBe(1);
+    expect(totals.attemptUnknown).toBe(6);
+  });
+
+  it('the cohort query reads agentBattles, not the ticks collection group', async () => {
+    expect(SOURCE).toMatch(/collection\('agentBattles'\)/);
+    const finder = SOURCE.slice(SOURCE.indexOf('async findBattleIds('), SOURCE.indexOf('};', SOURCE.indexOf('async findBattleIds(')));
+    expect(finder, 'the cohort must not be derived from captured ticks').not.toContain('collectionGroup');
   });
 });
 

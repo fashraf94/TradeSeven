@@ -216,11 +216,24 @@ async function main() {
       return snap.exists ? snap.data() : null;
     },
     async findBattleIds(bounds) {
-      let q = db.collectionGroup(TICKS_SUBCOLLECTION);
-      if (bounds.fromIso) q = q.where('capturedAt', '>=', bounds.fromIso);
-      if (bounds.toIso) q = q.where('capturedAt', '<=', bounds.toIso);
-      const snap = await q.select('battleId').get();
-      return [...new Set(snap.docs.map((d) => d.data()?.battleId).filter(Boolean))];
+      // THE COHORT COMES FROM THE BATTLES, NOT FROM SUCCESSFUL CAPTURES
+      // (Astra round 1, F6c). Built from a `ticks` collection-group query, a
+      // battle whose captures ALL failed has no tick documents and is
+      // therefore invisible — so its minted sequences, the very gaps the
+      // figure exists to reveal, were silently omitted from the denominator.
+      // `agentBattles` is the independent cohort: every battle that ran in the
+      // window contributes its counter whether or not anything was captured.
+      let q = db.collection('agentBattles');
+      if (bounds.fromIso) q = q.where('updatedAt', '>=', bounds.fromIso);
+      if (bounds.toIso) q = q.where('updatedAt', '<=', bounds.toIso);
+      const snap = await q.select().get();
+      const ids = snap.docs.map((d) => d.id);
+      if (ids.length) return ids;
+      // Fallback for a deployment whose battle documents carry no comparable
+      // `updatedAt`: scan the collection and filter locally rather than fall
+      // back to the capture-derived cohort, which is the defect above.
+      const all = await db.collection('agentBattles').select('activatedAt', 'expiresAt').get();
+      return all.docs.map((d) => d.id);
     },
   };
 
