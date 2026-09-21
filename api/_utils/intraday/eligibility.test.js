@@ -1,6 +1,6 @@
 // api/_utils/intraday/eligibility.test.js — contract §8.3 policy v1.
 import { describe, it, expect } from 'vitest';
-import { evaluateIntraday, CONSUMERS, VERDICT } from './eligibility.js';
+import { evaluateIntraday, CONSUMERS, VERDICT, CUTOFF_FUTURE_TOLERANCE_MS } from './eligibility.js';
 import { CONSUMER_MAX_AGE_MS } from '../intradayConfig.js';
 
 const T = Date.UTC(2026, 8, 17, 15, 0, 0);
@@ -153,5 +153,74 @@ describe('A2 §8.3 — a cutoff-unconfirmed fact is still bounded by the quote b
     f.availableAt = T - 60 * 60_000;
     expect(ev(f, 'display').sma20_5m.state).toBe(VERDICT.ELIGIBLE);
     expect(ev(f, 'display').sma20_5m.ageMs).toBe(10 * 60_000);
+  });
+});
+
+describe('§8.3 the future-cutoff guard', () => {
+  // A cutoff AHEAD of the check is not an age. `ageMs` goes negative, so
+  // `ageMs > maxAgeMs` is false at any distance and the fact reads as the
+  // freshest possible reading — the A2 failure approached from the other side.
+  const TOL = CUTOFF_FUTURE_TOLERANCE_MS;
+  const ahead = (ms) => facts({
+    indicators: {
+      sessionHL: { cutoff: T + ms }, volume: { cutoff: T + ms }, volumePace: { cutoff: T + ms },
+      sma20_5m: { cutoff: T + ms }, macd5m: { cutoff: T + ms }, rsi5m: { cutoff: T + ms },
+      vwap: { estimateCutoff: T + ms, volumeCutoffAsOf: T + ms },
+    },
+  });
+
+  it('exactly 60 s ahead is the boundary and is UNAFFECTED; 61 s ahead is ineligible, for every consumer', () => {
+    expect(TOL).toBe(60_000);
+    for (const c of ['display', 'stage4']) {
+      // At the tolerance: the ordinary verdicts stand, unchanged.
+      const at = ev(ahead(TOL), c);
+      for (const k of Object.keys(at)) expect(at[k].state, `${c}/${k} at +${TOL}ms`).toBe(VERDICT.ELIGIBLE);
+      // One millisecond past it: refused, everywhere.
+      const past = ev(ahead(TOL + 1), c);
+      for (const k of Object.keys(past)) {
+        expect(past[k], `${c}/${k} at +${TOL + 1}ms`).toMatchObject({ state: VERDICT.INELIGIBLE, reason: 'cutoff_future', consumer: c });
+        expect(past[k].ageMs).toBe(-(TOL + 1));
+      }
+    }
+  });
+
+  it('+59 s is unaffected — the tolerance really is a tolerance, not a rounding of zero', () => {
+    for (const c of ['display', 'stage4']) {
+      const v = ev(ahead(59_000), c);
+      for (const k of Object.keys(v)) expect(v[k].state, `${c}/${k}`).toBe(VERDICT.ELIGIBLE);
+    }
+  });
+
+  it('it runs BEFORE the age check, and ahead of the display_only escape — a future null-cutoff aggregate is refused, not shown', () => {
+    // The null-cutoff path ages from availableAt (A2) and would otherwise
+    // return display_only without the sign ever being looked at.
+    const f = facts({ indicators: { sessionHL: { cutoff: null }, volume: { cutoff: null } } });
+    f.availableAt = T + TOL + 1;
+    expect(ev(f, 'display').sessionHL).toMatchObject({ state: VERDICT.INELIGIBLE, reason: 'cutoff_future' });
+    expect(ev(f, 'display').volume).toMatchObject({ state: VERDICT.INELIGIBLE, reason: 'cutoff_future' });
+    // …and the same record one millisecond inside the tolerance still shows.
+    f.availableAt = T + TOL;
+    expect(ev(f, 'display').sessionHL.state).toBe(VERDICT.DISPLAY_ONLY);
+  });
+
+  it('ANTI-VACUOUS: without the guard a far-future cutoff would read as eligible, not stale', () => {
+    // The defect in one line: an hour into the future is "newer than fresh".
+    const f = ahead(60 * 60_000);
+    const ageMs = T - (T + 60 * 60_000);
+    expect(ageMs).toBeLessThan(CONSUMER_MAX_AGE_MS.display); // the stale check cannot catch it
+    expect(ev(f, 'display').sma20_5m).toMatchObject({ state: VERDICT.INELIGIBLE, reason: 'cutoff_future' });
+  });
+
+  it('DETERMINISM: the same facts at the same nowMs give the same verdicts, and the facts are not mutated', () => {
+    const f = ahead(TOL + 1);
+    const frozen = JSON.stringify(f);
+    const a = evaluateIntraday(f, { nowMs: T, policyVersion: 1, consumer: 'display' });
+    const b = evaluateIntraday(structuredClone(f), { nowMs: T, policyVersion: 1, consumer: 'display' });
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+    expect(a.policyVersion).toBe(1);
+    expect(JSON.stringify(f)).toBe(frozen);
+    // And the verdict is a function of nowMs alone: advance past the cutoff
+    // and the same record ages normally again.
+    expect(ev(f, 'display', T + 2 * TOL).sma20_5m.state).toBe(VERDICT.ELIGIBLE);
   });
 });

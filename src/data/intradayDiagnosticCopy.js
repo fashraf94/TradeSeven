@@ -31,6 +31,7 @@ export const INTRADAY_REASON_COPY = Object.freeze({
   cutoff_unconfirmed: 'cutoff unconfirmed',
   warmup: 'warming up',
   stale: 'too old at the check',
+  cutoff_future: 'timestamp ahead of the check',
   insufficient_samples: 'too few samples',
   degraded: 'feed held this session',
   collection_stalled: 'collection stalled',

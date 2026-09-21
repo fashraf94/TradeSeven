@@ -18,11 +18,31 @@
 //                with "cutoff unconfirmed" and the QUOTE's priceAsOf shown
 //                separately as "quote as of". Every non-display consumer
 //                treats it as ineligible.
-//   ineligible   otherwise, with reason.
+//   ineligible   otherwise, with reason — including `cutoff_future`, a cutoff
+//                stamped more than CUTOFF_FUTURE_TOLERANCE_MS after the check.
 //
 // `consumer` on every verdict names who asked (§8.2 verdict shape).
 
 import { CONSUMER_MAX_AGE_MS, MIN_ACCUMULATOR_SAMPLES, POLICY_VERSION } from '../intradayConfig.js';
+
+/**
+ * How far a cutoff may lead the check before the age is refused (§8.3 policy).
+ *
+ * An age is `nowMs - cutoff`, so a cutoff AHEAD of the check makes it negative
+ * and every age comparison downstream passes — `ageMs > maxAgeMs` is false at
+ * any distance, so a fact stamped an hour into the future reads as the
+ * freshest possible reading, for every consumer. That is the same failure
+ * shape addendum A2 closed on the other side (R-3: an ageless null cutoff),
+ * approached from the future rather than the past.
+ *
+ * 60 s covers ordinary skew between the vendor's clock, the poller's and the
+ * reader's. Deliberately NOT `PRICE_AS_OF_FUTURE_TOLERANCE_MS`, which is the
+ * §5.5 reject rule for priceAsOf vs availableAt at COLLECTION time and is a
+ * calcVersion tunable: this one is an §8.3 policy bound, and a tune of either
+ * must not silently move the other. Equal magnitude today, by coincidence of
+ * what "clock skew" means, not by derivation.
+ */
+export const CUTOFF_FUTURE_TOLERANCE_MS = 60_000;
 
 export const CONSUMERS = Object.freeze({ DISPLAY: 'display', STAGE4: 'stage4' });
 export const VERDICT = Object.freeze({ ELIGIBLE: 'eligible', INELIGIBLE: 'ineligible', DISPLAY_ONLY: 'display_only' });
@@ -96,6 +116,15 @@ export function evaluateIntraday(symbolFacts, { nowMs, policyVersion = POLICY_VE
     const ageBasis = cutoff !== null ? cutoff : availableAt;
     if (!isNum(ageBasis)) { verdicts[key] = v(VERDICT.INELIGIBLE, 'cutoff_unconfirmed'); continue; }
     const ageMs = nowMs - ageBasis;
+
+    // THE FUTURE-CUTOFF GUARD — ahead of the age check, and so ahead of every
+    // branch that reads `ageMs`, including the `display_only` ones. A basis
+    // later than the check is not an age at all, and the sign is what makes it
+    // dangerous: it reads as freshest-possible rather than as an error, for
+    // every consumer. Applied to `ageBasis` because that IS the cutoff wherever
+    // a cutoff exists, and is A2's documented stand-in for it where one does
+    // not — the negative age is the same either way.
+    if (-ageMs > CUTOFF_FUTURE_TOLERANCE_MS) { verdicts[key] = v(VERDICT.INELIGIBLE, 'cutoff_future', { ageMs }); continue; }
     if (ageMs > maxAgeMs) { verdicts[key] = v(VERDICT.INELIGIBLE, 'stale', { ageMs }); continue; }
 
     if (cutoff === null) {
