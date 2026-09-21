@@ -84,7 +84,13 @@ describe('§5.3 the sweep', () => {
     expect(docs.AAPL.log[0].strikeKey).toMatch(/^[0-9a-f]{16}$/);
     expect(docs.AAPL.generation).toBe(1);
     expect(h.store.get('intradayCalcState/2026-09-17').generation).toBe(1);
+    // §15 / §8.2 — the ensure path writes intradayDefinitions/v{calcVersion}
+    // and creates only that one. v1 is a historical record of how the
+    // sessions before the bump were computed, and is never rewritten.
+    expect(CONFIG.CALC_VERSION).toBe(2);
     expect((await definitionsRef(h.db, CONFIG.CALC_VERSION).get()).exists).toBe(true);
+    expect((await definitionsRef(h.db, 2).get()).data().calcVersion).toBe(2);
+    expect((await definitionsRef(h.db, 1).get()).exists).toBe(false);
   });
   it('a universe minute sweeps the universe ∪ actionable, each symbol once; a missing symbol is anomalies.missing with no update', async () => {
     const h = harness({ omit: ['XOM'] });

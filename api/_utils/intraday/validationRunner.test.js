@@ -61,7 +61,7 @@ describe('§10.1 the validator state machine', () => {
     const r = await run();
     expect(r).toMatchObject({ gradeDate: '2026-09-17', status: 'done', validated: 4, pending: 0, unpublished: false, units: 20, firstPublishHourUtc: 11 });
     const doc = mem.store.get('intradayValidation/2026-09-17');
-    expect(doc).toMatchObject({ etDate: '2026-09-17', status: 'done', symbolsValidated: 4, firstPublishHourUtc: 11, calcVersion: 1, policyVersion: 1 });
+    expect(doc).toMatchObject({ etDate: '2026-09-17', status: 'done', symbolsValidated: 4, firstPublishHourUtc: 11, calcVersion: CONFIG.CALC_VERSION, policyVersion: 1 });
     expect(Object.keys(doc.symbols).sort()).toEqual(['AAPL', 'AMD', 'MSFT', 'NVDA']);
     // calcVersion 2: every estimate carries a confirmed cutoff, so NOTHING is
     // excluded as cutoff_unconfirmed any more and the comparisons are real.

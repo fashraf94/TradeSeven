@@ -83,8 +83,23 @@ export const HL_CUTOFF_FIELD = 'priceAsOf';
  */
 export const CLOSING_ROW_POLICY = 'continuous_session';
 
-/** §10.7 — covers §5.4–5.6, §6, §10.2–10.3. */
-export const CALC_VERSION = 1;
+/**
+ * §10.7 — covers §5.4–5.6, §6, §10.2–10.3.
+ *
+ * 1 → 2 on 2026-09-21, when EODHD's §15 answers landed as configuration. The
+ * bump is required, not cosmetic: confirming the cutoffs changed §5.4's
+ * estimate record and §5.5's classification (the `post_close` case), and the
+ * continuous-session policy changed §6's buckets and seeding and §10.2's
+ * reference window. A session's log entries carry this number so the
+ * validator grades each session against the window it was COLLECTED under
+ * (validator.js `sessionCalcVersionOf`); a session straddling the bump is
+ * `calc_version_mixed` and never qualifies, which is why the flip is merged
+ * between the close and the next open.
+ *
+ * §10.6: a calcVersion change resets the qualification calendar. Nothing to
+ * reset here — no views have been written, so the calendar has not started.
+ */
+export const CALC_VERSION = 2;
 /** §10.7 — covers §8.3. */
 export const POLICY_VERSION = 1;
 

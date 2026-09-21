@@ -15,7 +15,12 @@
 //   }
 //
 // Definitions that do not vary live in intradayDefinitions/v{calcVersion},
-// immutable; `venue: 'vendor_unconfirmed'` until §15.
+// immutable. §15 is answered as of calcVersion 2 (EODHD, 2026-09-21), so the
+// venue and session fields now say what the vendor said — and only where it
+// said it. `sessionHL`'s venue stays `vendor_unconfirmed`: answer 2 named the
+// SESSION its high/low cover (the regular session) and said nothing about the
+// venue, and a definitions document is the one place a guess would be
+// indistinguishable from a fact.
 
 import { evaluateIntraday, CONSUMERS } from './eligibility.js';
 import { CALC_VERSION, POLICY_VERSION, COLLECTION_STALL_MS, CLOSING_ROW_POLICY } from '../intradayConfig.js';
@@ -23,22 +28,34 @@ import { renderIntradayDiagnosticLines, INTRADAY_DIAGNOSTIC_HEADER } from '../..
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 
-const DEF = (name, params, timeframe, units, session, adjust) => ({ name, params, timeframe, units, session, adjust, venue: 'vendor_unconfirmed' });
+const DEF = (name, params, timeframe, units, session, adjust, venue = 'vendor_unconfirmed') => ({ name, params, timeframe, units, session, adjust, venue });
 
-/** §8.2 — the immutable definitions document for calcVersion 1. */
-export const INTRADAY_DEFINITIONS_V1 = Object.freeze({
+/**
+ * The venue EODHD's 2026-09-21 answer 1 names for Live v2 `volume`:
+ * consolidated regular-trading-hours tape, `ethVolume` excluded. It is the
+ * volume the VWAP estimate and the pace are computed from, so all three
+ * carry it.
+ */
+const CONSOLIDATED_RTH = 'consolidated_rth';
+/** Answer 3's session: the clean continuous session, the closing auction outside it. */
+const CONTINUOUS_SESSION_TEXT = 'continuous 09:30–15:59 ET (16:00 and later excluded; 12:59 on an early close)';
+/** Answer 2's session: whatever the vendor calls its regular session for high/low/open. */
+const VENDOR_REGULAR_SESSION_TEXT = "vendor regular session (EODHD Live v2 high/low are regular-session only)";
+
+/** §8.2 — the immutable definitions document for the current calcVersion. */
+export const INTRADAY_DEFINITIONS_V2 = Object.freeze({
   calcVersion: CALC_VERSION,
   policyVersion: POLICY_VERSION,
   indicators: {
-    vwap: DEF('Session VWAP estimate (sampled)', { method: 'sampled_estimate', firstSample: 'HLC3×volume', later: 'price×Δvolume' }, 'session', 'price', 'regular', 'none'),
-    sessionHL: DEF('Session high / low / open (vendor aggregate)', {}, 'session', 'price', 'regular', 'none'),
-    volume: DEF('Session cumulative volume (vendor aggregate)', {}, 'session', 'shares', 'regular', 'none'),
-    volumePace: DEF('Linear volume pace vs average volume', { method: 'linear_pace', minElapsedMin: 5 }, 'session', 'ratio', 'regular', 'none'),
+    vwap: DEF('Session VWAP estimate (sampled)', { method: 'sampled_estimate', firstSample: 'HLC3×volume', later: 'price×Δvolume' }, 'session', 'price', CONTINUOUS_SESSION_TEXT, 'none', CONSOLIDATED_RTH),
+    sessionHL: DEF('Session high / low / open (vendor aggregate)', {}, 'session', 'price', VENDOR_REGULAR_SESSION_TEXT, 'none'),
+    volume: DEF('Session cumulative volume (vendor aggregate)', {}, 'session', 'shares', 'regular', 'none', CONSOLIDATED_RTH),
+    volumePace: DEF('Linear volume pace vs average volume', { method: 'linear_pace', minElapsedMin: 5 }, 'session', 'ratio', 'regular', 'none', CONSOLIDATED_RTH),
     sma20_5m: DEF('SMA(20) of completed 5-minute bucket closes', { period: 20 }, '5m', 'price', 'regular', 'none'),
     macd5m: DEF('MACD(12,26,9) of completed 5-minute bucket closes', { fast: 12, slow: 26, signal: 9, seed: 'sma', signalSeed: 'valid-macd-subsequence' }, '5m', 'price', 'regular', 'none'),
     rsi5m: DEF('Wilder RSI(14) of completed 5-minute bucket closes', { period: 14, seed: 'sma' }, '5m', 'index', 'regular', 'none'),
   },
-  buckets: { widthMs: 300_000, keyRule: 'floor(priceAsOf / 300000); exact close → last regular bucket', deadline: 'close + 30 min' },
+  buckets: { widthMs: 300_000, keyRule: 'floor(priceAsOf / 300000)', session: CONTINUOUS_SESSION_TEXT, deadline: 'close + 30 min' },
   // Derived from the constant, never a parallel sentence that can drift from
   // it (BUILD_RULES §9): this line is what a receipt-only replay reads to
   // learn which session the buckets describe.

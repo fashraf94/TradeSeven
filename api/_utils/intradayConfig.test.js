@@ -40,7 +40,7 @@
 // good as the rule that stops it being read past the close.
 
 import { describe, it, expect } from 'vitest';
-import { VOLUME_CUTOFF_FIELD, HL_CUTOFF_FIELD, CALC_VERSION } from './intradayConfig.js';
+import { VOLUME_CUTOFF_FIELD, HL_CUTOFF_FIELD, CALC_VERSION, CLOSING_ROW_POLICY } from './intradayConfig.js';
 import { OBSERVATION_FIELDS } from './intraday/observation.js';
 
 const PERMITTED = Object.freeze([null, 'priceAsOf']);
@@ -75,8 +75,15 @@ describe('intradayConfig — the cutoff fields are null | priceAsOf only', () =>
   it('the vendor answered: both fields are `priceAsOf` — the last-trade clock, not the snapshot clock', () => {
     expect(VOLUME_CUTOFF_FIELD).toBe('priceAsOf');
     expect(HL_CUTOFF_FIELD).toBe('priceAsOf');
-    // Confirming a cutoff bumps calcVersion (§15) — the bump is pinned in
-    // its own commit, and this row only asserts a cutoff is now configured.
-    expect(CALC_VERSION).toBeGreaterThanOrEqual(1);
+  });
+
+  it('§15 answered → calcVersion 2, and the closing row is the continuous session', () => {
+    // §15: confirming a cutoff, and setting the closing-row policy, each bump
+    // calcVersion. Both landed together, so the number moved once, to 2.
+    // A session's log entries carry it, and the validator grades each session
+    // against the window it was COLLECTED under — which is why this pin and
+    // CLOSING_ROW_POLICY belong in the same row: v2 IS the pair.
+    expect(CALC_VERSION).toBe(2);
+    expect(CLOSING_ROW_POLICY).toBe('continuous_session');
   });
 });

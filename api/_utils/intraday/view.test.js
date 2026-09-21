@@ -5,7 +5,7 @@ import { makeInMemoryDb } from '../__fixtures__/inMemoryFirestore.js';
 // src/data/intradayDiagnosticCopy.js (zero-import, Node-clean). This REAL
 // import of the consuming module IS the runtime guard — it explodes in the
 // Node test env if a browser dep ever enters that graph. Never mocked.
-import { buildIntradayView, replayFromView, INTRADAY_DEFINITIONS_V1, INTRADAY_ENTRY_FIELDS, validateSnapshot, strikeFromView } from './view.js';
+import { buildIntradayView, replayFromView, INTRADAY_DEFINITIONS_V2, INTRADAY_ENTRY_FIELDS, validateSnapshot, strikeFromView } from './view.js';
 import { runSweepCalc } from './sweepCalc.js';
 import { snapshotRef, definitionsRef } from './intradayStore.js';
 import { INTRADAY_DIAGNOSTIC_HEADER } from '../../../src/data/intradayDiagnosticCopy.js';
@@ -94,13 +94,32 @@ describe('§8.2 the view schema', () => {
     expect(validateSnapshot({ sweepId: 's', generation: 'x', symbols: {} })).toEqual({ ok: false, reason: 'snapshot_invalid' });
     expect(validateSnapshot(SNAP)).toEqual({ ok: true });
   });
-  it('the definitions document is immutable, versioned to calcVersion 1, and names the venue as vendor_unconfirmed', () => {
-    expect(Object.isFrozen(INTRADAY_DEFINITIONS_V1)).toBe(true);
-    expect(INTRADAY_DEFINITIONS_V1.calcVersion).toBe(1);
-    for (const d of Object.values(INTRADAY_DEFINITIONS_V1.indicators)) {
+  it('the definitions document is immutable, versioned to calcVersion 2, and says what the vendor said — no more', () => {
+    expect(Object.isFrozen(INTRADAY_DEFINITIONS_V2)).toBe(true);
+    expect(INTRADAY_DEFINITIONS_V2.calcVersion).toBe(2);
+    expect(CONFIG.CALC_VERSION).toBe(2);
+    const ind = INTRADAY_DEFINITIONS_V2.indicators;
+    for (const d of Object.values(ind)) {
       expect(Object.keys(d)).toEqual(['name', 'params', 'timeframe', 'units', 'session', 'adjust', 'venue']);
-      expect(d.venue).toBe('vendor_unconfirmed');
     }
+    // Answer 1 — the consolidated regular-hours tape, `ethVolume` excluded —
+    // covers the volume the estimate and the pace are computed from.
+    for (const k of ['vwap', 'volume', 'volumePace']) expect(ind[k].venue, k).toBe('consolidated_rth');
+    // Answer 2 named the SESSION its high/low cover, not the venue. The venue
+    // therefore stays unconfirmed: a definitions document is the one place a
+    // guess is indistinguishable from a fact.
+    expect(ind.sessionHL.venue).toBe('vendor_unconfirmed');
+    expect(ind.sessionHL.session).toMatch(/regular session/);
+    // Answer 3 — the estimate and the buckets run on the continuous session.
+    expect(ind.vwap.session).toMatch(/continuous 09:30–15:59 ET/);
+    expect(INTRADAY_DEFINITIONS_V2.buckets.session).toBe(ind.vwap.session);
+    expect(INTRADAY_DEFINITIONS_V2.closingRow).toMatch(/^continuous_session — /);
+    // Everything else carried forward unchanged.
+    for (const k of ['sma20_5m', 'macd5m', 'rsi5m']) {
+      expect(ind[k].session, k).toBe('regular');
+      expect(ind[k].venue, k).toBe('vendor_unconfirmed');
+    }
+    for (const k of ['volume', 'volumePace']) expect(ind[k].session, k).toBe('regular');
   });
 });
 
@@ -108,14 +127,14 @@ describe('§8.2 receipt-only replay — with intradaySnapshots/latest deleted', 
   it('reconstructs every strike computation and every displayed line from the stored view plus its definitions document alone', async () => {
     const { db, store } = makeInMemoryDb();
     await snapshotRef(db).set(SNAP);
-    await definitionsRef(db, 1).set(INTRADAY_DEFINITIONS_V1);
+    await definitionsRef(db, CONFIG.CALC_VERSION).set(INTRADAY_DEFINITIONS_V2);
     const view = buildIntradayView({ snapshot: SNAP, symbols: ['AAPL', 'MSFT', 'BTC'], evalId: 'eval_3', battleId: 'b1', presetId: 'aggressive', presetBand: 0.7, evaluatedAt: EVAL_AT, timeText: et });
     await db.collection('agentBattles').doc('b1').collection('intradayViews').doc('eval_3').set(view);
     // The snapshot is gone.
     await snapshotRef(db).delete();
     expect(store.has('intradaySnapshots/latest')).toBe(false);
     const storedView = (await db.collection('agentBattles').doc('b1').collection('intradayViews').doc('eval_3').get()).data();
-    const defs = (await definitionsRef(db, 1).get()).data();
+    const defs = (await definitionsRef(db, CONFIG.CALC_VERSION).get()).data();
     const replay = replayFromView(storedView, defs, { nowMs: EVAL_AT, timeText: et });
     // Strikes: estDev from the stored price and estimate; the strike key is the stored one.
     for (const sym of ['AAPL', 'MSFT']) {
@@ -133,7 +152,7 @@ describe('§8.2 receipt-only replay — with intradaySnapshots/latest deleted', 
     for (const sym of ['AAPL', 'MSFT', 'BTC']) {
       expect(replay.symbols[sym].lines).toEqual(storedView.shadowLines.filter((l) => l.startsWith(`${sym}: `)).map((l) => l.slice(sym.length + 2)));
       expect(replay.symbols[sym].header).toBe(INTRADAY_DIAGNOSTIC_HEADER);
-      expect(replay.symbols[sym].definition.vwap.venue).toBe('vendor_unconfirmed');
+      expect(replay.symbols[sym].definition.vwap.venue).toBe('consolidated_rth');
     }
     // Verdicts at the check equal the stored ones; at a later instant they flip while the view is unchanged.
     expect(replay.symbols.AAPL.verdicts).toEqual(Object.fromEntries(Object.entries(storedView.symbols.AAPL.indicators).map(([k, v]) => [k, v.verdict])));
@@ -151,7 +170,7 @@ describe('§8.2 receipt-only replay — with intradaySnapshots/latest deleted', 
   });
   it('refuses a definitions document of another calcVersion', () => {
     const view = buildIntradayView({ snapshot: SNAP, symbols: ['AAPL'], evalId: 'e', battleId: 'b', presetId: 'balanced', presetBand: 0.5, evaluatedAt: EVAL_AT });
-    expect(() => replayFromView(view, { ...INTRADAY_DEFINITIONS_V1, calcVersion: 2 }, { nowMs: EVAL_AT })).toThrow(/calcVersion/);
+    expect(() => replayFromView(view, { ...INTRADAY_DEFINITIONS_V2, calcVersion: 1 }, { nowMs: EVAL_AT })).toThrow(/calcVersion/);
     expect(strikeFromView({ price: { value: 99 }, indicators: { vwap: { value: 100 } }, strikeKey: 'k' }, 0.5)).toEqual({ estDev: -1, isVwapStrike: true, strikeKey: 'k' });
   });
 });
@@ -163,8 +182,8 @@ describe('§8.3 the build-1 flip test on a persisted view', () => {
     const rec = structuredClone(view.symbols.AAPL);
     rec.indicators.sessionHL.cutoff = EVAL_AT - 60_000;
     const frozen = JSON.stringify(rec);
-    const fresh = replayFromView({ ...view, symbols: { AAPL: rec } }, INTRADAY_DEFINITIONS_V1, { nowMs: EVAL_AT });
-    const stale = replayFromView({ ...view, symbols: { AAPL: rec } }, INTRADAY_DEFINITIONS_V1, { nowMs: EVAL_AT - 60_000 + 45 * 60_000 + 1 });
+    const fresh = replayFromView({ ...view, symbols: { AAPL: rec } }, INTRADAY_DEFINITIONS_V2, { nowMs: EVAL_AT });
+    const stale = replayFromView({ ...view, symbols: { AAPL: rec } }, INTRADAY_DEFINITIONS_V2, { nowMs: EVAL_AT - 60_000 + 45 * 60_000 + 1 });
     expect(fresh.symbols.AAPL.verdicts.sessionHL.state).toBe('eligible');
     expect(stale.symbols.AAPL.verdicts.sessionHL).toMatchObject({ state: 'ineligible', reason: 'stale' });
     expect(JSON.stringify(rec)).toBe(frozen);
