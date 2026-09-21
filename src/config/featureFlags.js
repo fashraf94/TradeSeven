@@ -2578,9 +2578,10 @@ export const ANTICIPATION_THRESHOLD_LINT_MODES = Object.freeze(['off', 'shadow',
  * (api/cron/intraday-poll.js) and the next-day validator
  * (api/cron/intraday-validate.js) RUN. Off → both handlers exit 200 with
  * `{ skipped: true, reason: 'flag_off' }` before any read, any vendor call
- * or any write. Read as a module constant in the two crons. Flip after the
- * founder's day-1 smoke (§13): one line, this file, the pin row in
- * src/config/intradayFlags.test.js in the same commit (BUILD_RULES §2).
+ * or any write. Read as a module constant in the two crons. FLIPPED TRUE on
+ * 2026-09-21 by `39e5c48a`, after the founder's day-1 smoke (§13) passed:
+ * one line, this file, with the pin row in src/config/intradayFlags.test.js
+ * moved in the same commit (BUILD_RULES §2).
  */
 // Pinned by: intradayFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const INTRADAY_COLLECT_ENABLED = true;
