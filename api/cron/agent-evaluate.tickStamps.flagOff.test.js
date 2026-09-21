@@ -95,6 +95,11 @@ vi.mock('../_utils/shadowLogger.js', async (importOriginal) => ({
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   TICK_STAMPS_ENABLED: false,
+  // Tick capture ships dark; the golden this suite pins is the flag-OFF write,
+  // so the flag is pinned FALSE here explicitly rather than inherited (Phase 0
+  // Part 3: "a new capture flag also needs an explicit false mock in legacy
+  // fixture tests"). A future flip must move this line deliberately.
+  TICK_CAPTURE_ENABLED: false,
 }));
 
 const { processAgentBattle } = await import('./agent-evaluate.js');
