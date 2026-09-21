@@ -54,6 +54,7 @@ import {
   makeTickDb,
   undefinedPaths,
   firestoreBytes,
+  POST_GOLDEN_UPDATE_KEYS,
 } from '../_utils/__fixtures__/tickStampsHarness.js';
 import { EVIDENCE_FIELDS, VINTAGE_FIELDS } from '../_utils/tickStamps.js';
 
@@ -392,7 +393,11 @@ describe('flag ON — the write: additive keys on the entry, nothing else moves'
 
   it('no new top-level battle key rides the finalUpdate (V2 hazard 9), and nothing anywhere in it is undefined (the mock write rejects it, as Firestore would)', async () => {
     const { finalUpdate } = await runTick({ result: makeHoldResult({ anticipationCandidates: makeAnticipationCandidates() }) });
-    expect(Object.keys(finalUpdate)).toEqual(GOLDEN.finalUpdateKeys);
+    // POST_GOLDEN_UPDATE_KEYS are lifted off the comparison here too — they
+    // postdate the capture and ride every write, flag on or off; the flag-off
+    // suite holds their anti-vacuous pins.
+    expect(Object.keys(finalUpdate).filter((k) => !POST_GOLDEN_UPDATE_KEYS.includes(k)))
+      .toEqual(GOLDEN.finalUpdateKeys);
     expect(undefinedPaths(finalUpdate)).toEqual([]);
     expect(finalUpdate).not.toHaveProperty('heard');
     expect(finalUpdate).not.toHaveProperty('evidence');

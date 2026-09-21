@@ -90,6 +90,24 @@ export const TIMING_ENTRY_KEYS = Object.freeze(['promptBuiltAt', 'buildMs', 'cal
  */
 export const FAIL_CLOSED_ENTRY_KEYS = Object.freeze(['holdKind', 'guardrailFault']);
 
+/**
+ * finalUpdate keys the cron writes that POSTDATE the flag-off golden capture.
+ * The entry-level analogue of TIMING_ENTRY_KEYS: unconditional (they ride every
+ * finalUpdate, flag on or off) and therefore lifted off BOTH SIDES of the byte
+ * comparison and out of any regeneration, so what the golden asserts stays
+ * "nothing ELSE moved". Each one carries its own anti-vacuous pin in the
+ * flag-off suite — the lift must never be the only thing said about a key.
+ *
+ * `cronState.evalSeq` (Sep 21, 2026, review A-13): the monotonic evaluation
+ * counter behind `evalId`, written on the same update that appends the entry.
+ */
+export const POST_GOLDEN_UPDATE_KEYS = Object.freeze(['cronState.evalSeq']);
+
+/** `update` without the POST_GOLDEN_UPDATE_KEYS, insertion order otherwise intact. */
+export function withoutPostGoldenKeys(update) {
+  return Object.fromEntries(Object.entries(update).filter(([k]) => !POST_GOLDEN_UPDATE_KEYS.includes(k)));
+}
+
 /** Every key the cron composes ITSELF, in source order — the entry before any stamp is assigned. */
 export const BASE_ENTRY_KEYS = Object.freeze([
   ...PRE_PHASE_B_ENTRY_KEYS, ...TIMING_ENTRY_KEYS, ...FAIL_CLOSED_ENTRY_KEYS,

@@ -93,6 +93,16 @@ export function normalizeLiveV2(json, requested, { availableAt }) {
     const q = pickQuote(data, r);
     if (!q) { out.missing.push(r.sym); continue; }
     const asOf = toMs(q.lastTradeTime);
+    // `snapshotTs` IS AN IDENTITY, NEVER AN INSTANT. On all 21 quotes of the
+    // founder's Live v2 responses (2026-09-20) the vendor's `timestamp` is
+    // exactly floor(lastTradeTime / 60_000) × 60 + 14_400 — the last-trade
+    // minute plus the Eastern offset, as on EODHD's Live v2 documentation
+    // page — so it carries no information `lastTradeTime` does not already
+    // carry, and the offset makes it wrong by four hours read as UTC. It
+    // exists here so a re-quoted symbol gets a NEW `observationId` while its
+    // `strikeKey` holds (§5.5); nothing may read it as the instant a
+    // cumulative field is cumulative to. See the two cutoff constants in
+    // intradayConfig.js, which exclude it by name.
     // G7: `lastTradeTime` is documented in ms, snapshot `timestamp` in seconds —
     // only a seconds-valued lastTradeTime is a unit surprise worth counting.
     const snap = toMs(q.timestamp);

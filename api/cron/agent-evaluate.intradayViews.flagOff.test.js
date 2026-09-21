@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import {
   FROZEN_NOW, PRE_PHASE_B_ENTRY_KEYS, BASE_ENTRY_KEYS,
   makeTickBattle, makePriceTable, makeRankingsDoc, makeTechDocs, makeIntradayCandles,
-  makeHoldResult, makeToolUseResponse, makeTickDb,
+  makeHoldResult, makeToolUseResponse, makeTickDb, POST_GOLDEN_UPDATE_KEYS,
 } from '../_utils/__fixtures__/tickStampsHarness.js';
 import { VINTAGE_FIELDS } from '../_utils/tickStamps.js';
 import { INTRADAY_ENTRY_FIELDS } from '../_utils/intraday/view.js';
@@ -83,7 +83,10 @@ describe('§3 flag OFF — every surface byte-identical to today', () => {
     expect(Object.keys(entry.vintages)).toEqual([...VINTAGE_FIELDS]);
     expect(entry.vintages.vwap).toBe('tick');
     expect(JSON.stringify(pick(entry, PRE_PHASE_B_ENTRY_KEYS))).toBe(JSON.stringify(GOLDEN.entry));
-    expect(Object.keys(finalUpdate)).toEqual(GOLDEN.finalUpdateKeys);
+    // POST_GOLDEN_UPDATE_KEYS are lifted off this comparison — they ride every
+    // write, flag on or off, and postdate the golden capture (the harness).
+    expect(Object.keys(finalUpdate).filter((k) => !POST_GOLDEN_UPDATE_KEYS.includes(k)))
+      .toEqual(GOLDEN.finalUpdateKeys);
     // The only 'intraday' in the whole payload is the legacy cronState.intradayMomentum map.
     expect(JSON.stringify(finalUpdate).replace(/cronState\.intradayMomentum/g, '').includes('intraday')).toBe(false);
   });

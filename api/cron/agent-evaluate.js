@@ -2729,7 +2729,16 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     }
 
     // ---- Process decision ----
-    const evalId = `eval_${String((battle.evaluations?.length || 0) + 1).padStart(3, '0')}`;
+    // MONOTONIC (review A-13). The sequence number is carried in cronState, not
+    // derived from `evaluations.length`: that array is capped at 150 (below), so
+    // a length-derived id hands out `eval_151` to every entry past the cap and
+    // the id stops identifying anything. `cronState.evalSeq` is the count of
+    // entries ever APPENDED — it rides the same finalUpdate as the append, so it
+    // advances exactly when the array does. A battle written before the field
+    // existed continues from its current length, which is the same number it
+    // would have produced until the cap is first reached.
+    const evalSeq = (battle.cronState?.evalSeq ?? battle.evaluations?.length ?? 0) + 1;
+    const evalId = `eval_${String(evalSeq).padStart(3, '0')}`;
 
     // ---- THE THRESHOLD LINT (Phase 0 §7.2 shape 2) ----
     //
@@ -3891,11 +3900,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       // Join keys (Sep 2026): the shadow record could only be matched back to
       // its evaluations[] entry by ORDER — the forensics gap Phase 0 hit.
       // `timestamp` is the unique one and is what the join should key on:
-      // `evalId` is derived from evaluations.length + 1 against an array capped
-      // at 150 (below), so on a battle past 150 checks every later entry is
-      // eval_151. That collision is pre-existing and is NOT fixed here — it is
-      // reported for separate tasking; evalId rides along as the human-readable
-      // half of the pair, never as the key.
+      // `evalId` is now monotonic (cronState.evalSeq, above) and no longer
+      // repeats past the 150-entry cap, but it rides along as the
+      // human-readable half of the pair, never as the key: it is unique only
+      // within a battle, and pre-fix battles can still hold repeated ids.
       evalId,
       timestamp: evaluation.timestamp,
       battlePhase: phase,
@@ -3971,6 +3979,11 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         battle.cronState?.consecutiveEvalFailures,
         haikuResult ? 'success' : (haikuFailure?.failureClass === 'budget_skipped' ? 'budget_skipped' : 'failure')
       ),
+      // The monotonic evaluation counter behind `evalId` (above). An EXPLICIT
+      // value, never FieldValue.increment (D-105), and written on the SAME
+      // update that appends the entry — the two can never diverge, and a tick
+      // that writes no entry advances no sequence.
+      'cronState.evalSeq': evalSeq,
     };
 
     // Durable failure capture (Phase 2): same {timestamp, error} shape and

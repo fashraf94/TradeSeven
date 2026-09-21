@@ -171,7 +171,7 @@ Read these on the first `intradaySnapshots/latest` for a known-good liquid symbo
 | S4 | `symbols[SYM].indicators.vwap.value !== null` **and** `quality.samples ≥ 3` by mid-session | the accumulator never advancing, for any reason |
 | S5 | `indicators.volumePace.status !== 'absent'` with reason ≠ `no_reference_volume`, and the value within ~0.3–3.0 | `averageVolume` renamed, or `volume` on a different scale |
 | S6 | `indicators.sessionHL.value.high/low` non-null, and `price.previousClose` non-null | `high` / `low` / `open` / `previousClosePrice` renamed |
-| S7 | day 2: `quoteCumulativeVolumeRatio` **between 1.7 and 2.2** | the field is A5's renamed diagnostic. ~1.97 is the *expected* reading — the denominator is the last accepted quote's cumulative volume, which omits the closing auction. A value near 1.0 or below 0.9 says the vendor's `volume` is not regular-session-cumulative, which G7 records as unconfirmed |
+| S7 | day 2: `quoteCumulativeVolumeRatio` — read it as a **quality figure, not a pass/fail band** *(corrected 2026-09-21 — the earlier "between 1.7 and 2.2, ~1.97 expected" band was wrong, and is retracted)* | the ratio measures **how much of the vendor's consolidated regular-session volume the one-minute bars capture** — Σ(bar volume) over the denominator. The vendor answered (2026-09-21) that `volume` IS consolidated regular-session volume: it excludes extended hours and stops at the session total after 16:00 ET. So **near 1.0 means complete bars**; **below 1.0 means the bars undercount** — the in-repo 5-minute sample ran at a median **74 %**; **above 1.0 would mean the bars carry volume the quote does not**, which is the reading that wants investigating. No value of it fails the build: coverage is decided by `barsMissing` (A5), and this rides beside it |
 
 Two more the addendum added instrumentation for: `seedsDeferred` / `seedsDeferredForBudget` on the poll result (A1 — non-zero on the first sweep of a day is expected and healthy; persistently non-zero later means the seed loop is not keeping up), and `reason: 'publish_oversize'` with its `bytes` and `symbols` (A4 — should never appear below ~80 actionable symbols).
 
@@ -179,7 +179,7 @@ Two more the addendum added instrumentation for: `seedsDeferred` / `seedsDeferre
 
 ## 7. Bugs found outside scope (BUILD_RULES §3 — reported, not fixed)
 
-1. `evalId` collision past 150 entries (item 13 above) — pre-existing, now with a second consequence (view overwrite).
+1. `evalId` collision past 150 entries (item 13 above) — pre-existing, now with a second consequence (view overwrite). **Fixed 2026-09-21** in the follow-up PR (`cronState.evalSeq`, monotonic, written on the same update that appends the entry).
 2. The seed's second-session rule (item 5) is structurally inert under the maintained calendar — a contract observation, not a code bug.
 
 ---
@@ -221,7 +221,7 @@ Push: `git push -u origin claude/intraday-build-1-utkb37`. No PR. STOP.
 | **A2** age before the cutoff-null branch | `98649f3e` | `eligibility.js`, `eligibility.test.js`, `view.test.js`, `agent-evaluate.intradayViews.test.js` | +4 — an 18-hour carried-forward fact is stale not display_only; the window is the consumer's maxAgeMs from `availableAt` (at the limit, one ms past, fresh); no cutoff and no `availableAt` is never display_only; a confirmed indicator is unaffected |
 | **A3** cap `heldObservationIds` | `e2745109` | `accumulator.js`, `accumulator.test.js` | +3 — 400 distinct holds leave the array at 2 with `heldCount` 400; the cap is behaviour-preserving; rollover clears both |
 | **A4** pre-flight publish refusal | `13a11b49` | `intradayStore.js`, `intradayConfig.js`, `pollRunner.js`, `intradayStore.test.js`, `intradaySizing.test.js` | +3 and a new assertion group — the refusal names bytes and symbols and opens no transaction; a publish inside the ceiling still goes through; the 10 MiB crossing is pinned at ≥ 80 |
-| **A5** the coverage number | `852169af` | `validator.js`, `validationRunner.js`, `validator.test.js`, `validationRunner.test.js` | coverage row rewritten +1 — the gate is bar completeness, the ratio rides beside it; the founder's fixture at a 15:44 quote reads ~1.97, diagnostic, coverage full |
+| **A5** the coverage number | `852169af` | `validator.js`, `validationRunner.js`, `validator.test.js`, `validationRunner.test.js` | coverage row rewritten +1 — the gate is bar completeness, the ratio rides beside it; the founder's fixture at a 15:44 quote reads ~1.97, diagnostic, coverage full (a measurement of that fixture, not a norm — see the corrected S7 above) |
 | **A8** validator window, reasons, evidence set | `5a5fd03b` | `validationRunner.js`, `api/cron/intraday-validate.js`, both test files | +7 — first invocation at 16:00 UTC records attempts 1; a second grading day gets its own window; HTTP 500 yields `transport_error` with `firstPublishHourUtc: null`; a genuine non-publication still reads `unpublished`; an orphaned view is not graded; a battle referencing nothing costs no read; an `evalId`/id mismatch is refused |
 | **A9** golden pins for the three prompt readers | `5bfd048a` | `intradayPromptExclusions.test.js`, `agent-evaluate.intradayPromptDiff.honesty.test.js` | +4 — the three allowlists pinned against a maximal entry; the narrator record block pinned verbatim; `vintages.vwap` asserted rather than forced in the on/off diff |
 | **A7** smoke and report corrections | this commit | `docs/audits/20260919_BUILD1_INTRADAY.md` | — |
@@ -251,3 +251,32 @@ A2 is worth one more line: the first implementation applied the `availableAt` bo
 | Cumulative branch diff vs `origin/main` | **84 files, +8,507 / −86** (the addendum adds 8 commits on top of the build's 11) |
 
 Push to `claude/intraday-build-1-utkb37`. **No PR — the founder opens it.**
+
+---
+
+# Addendum B — Live v2 observed shape and vendor answers (2026-09-20 / 2026-09-21)
+
+`eodhd.com` was egress-blocked from the build session, so every Live v2 field name in §6a and in `api/_utils/intraday/observation.js` shipped **ASSUMED**. The founder has since run the endpoint (2026-09-20: two symbols, then twenty — `meta.count` 20, `links.next` null) and put the open questions to the vendor (answers 2026-09-21). This section records what those two rounds settled. **It changes no code in this PR beyond the two comment/guard items noted below** — the post-close rule and the continuous-session policy are applied in the calcVersion 2 PR.
+
+## What the responses confirmed
+
+| # | Finding | Consequence |
+|---|---|---|
+| B1 | **Every field the parser reads is present, under the assumed name and in the assumed unit,** on all 20 symbols. | §6a's ASSUMED marker on the field names is discharged. The smoke rows S1–S6 stand as written. |
+| B2 | **No pagination at 20 tickers** — `meta.count` 20, `links.next` null. | `MAX_TICKERS_PER_REQUEST = 20` needs no paging path (G1, §4). |
+| B3 | **`timestamp` = the last-trade minute + the Eastern offset**, on 21 of 21 quotes: `floor(lastTradeTime / 60 000) × 60 + 14 400`, matching the example on EODHD's Live v2 documentation page. `lastTradeTime`, `bidTime`, `askTime` and `ethTime` agree with one another. | **`timestamp` carries no independent information.** It is an identity, never an instant — a re-quote gets a new `observationId` while its `strikeKey` holds (§5.5). Applied here: the two cutoff constants are locked to `null \| 'priceAsOf'` (`intradayConfig.js` + `intradayConfig.test.js`) and the adapter's `snapshotTs` mapping says so at the site (`observation.js`). |
+
+## What the vendor answered
+
+| # | Answer | Consequence |
+|---|---|---|
+| B4 | **`volume` is consolidated regular-session volume**, accumulated as the session runs. It does **not** include `ethVolume`, and it **stops at the session total after 16:00 ET** — while `lastTradePrice` / `lastTradeTime` (equal to `ethPrice` / `ethTime` after the close) and `ethVolume` keep updating. So after 16:00 **`lastTradeTime` is later than the point `volume` reflects.** | The post-close rule the calcVersion 2 PR must carry. Also the corrected reading of `quoteCumulativeVolumeRatio` — see the revised S7 in §6a. |
+| B5 | **`ethVolume` is a separate counter** for prints outside the regular session, and its composition is **undocumented**. | It must **never** be treated as pre-market plus after-hours, and never subtracted from anything. |
+| B6 | **`change` / `changePercent` are derived from `ethPrice`.** After the close `previousClosePrice` is the **same day's** regular-session close while `previousCloseDate` still names the **prior** day. Observed on AMAT: 444.57 vs 417.4 on 2026-09-17; `change` +0.35 = 444.92 − 444.57. | **Stage-3 note: the v2 change fields must not be used as the day's change.** |
+| B7 | **`previousClosePrice` and `changePercent` can be null on a liquid name** — observed on EBAY. | The adapter's nullable handling (`num()` → null) is exercised in production, not merely defensive. |
+| B8 | **`size` is inconsistent**: 0 on JPM, VLO, CRM and XOM; 112 on BE; 361 on NVDA; 1,019 on AMD; millions on most other Nasdaq-listed names. | **`size` must never be used.** It is carried on the Observation for fidelity only. |
+| B9 | **1-minute bars:** the closing-auction print falls in the bar stamped **16:00** for Nasdaq and most NYSE symbols, and in the **16:03 or 16:04** bar for some NYSE symbols. The 16:00 bar covers 16:00:00–16:00:59; after-hours bars run 16:01–20:00 and pre-market from 04:00. | **Bars from 16:00 onward are unsuitable for session totals.** The **clean continuous session is 09:30–15:59** — the continuous-session policy for the calcVersion 2 PR. |
+
+## What this section does NOT do
+
+B4's post-close rule and B9's continuous-session policy are **applied in the calcVersion 2 PR**, not here. This PR carries only B3's two items (the cutoff-constant lock and the adapter comment) and the S7 correction above, all of which are comment, test or policy-side and change no stored value.

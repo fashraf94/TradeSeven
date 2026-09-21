@@ -13,6 +13,11 @@ const REPO = path.resolve(HERE, '..', '..');
 const T = Date.UTC(2026, 8, 17, 17, 52, 0);
 const timeText = (ms) => new Date(ms).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' });
 
+// Reasons the producer emits that are deliberately NOT copy: the structural
+// silences renderIntradayDiagnosticLines drops before it ever asks for a
+// phrase, plus the by-definition fallback, which is a code, not a line.
+const SILENT_IN_COPY = new Set(['not_actionable', 'no_buckets', 'ineligible_by_definition']);
+
 const rec = (over = {}) => ({
   price: { value: 493.9, priceAsOf: T },
   indicators: {
@@ -60,6 +65,33 @@ describe('§9.1 copy table', () => {
     const lines = renderIntradayDiagnosticLines(rec(), { timeText, verdicts: { macd5m: { state: 'ineligible', reason: 'stale' } } });
     expect(lines).toContain('5m MACD hist unavailable · too old at the check');
   });
+  it('EVERY REASON THE VERDICT PRODUCER CAN EMIT HAS COPY — no player line falls back to the generic phrase', () => {
+    // `reasonPhrase` returns 'unavailable' for an unknown reason, so a reason
+    // added to eligibility.js without a row here degrades silently: the line
+    // renders, it just stops saying anything. This reads the reason slot of
+    // every `v(state, reason, …)` call in the verdict producer and requires a
+    // row for each literal it finds. Scoped to eligibility.js on purpose — the
+    // reasons facts.js and accumulator.js stamp reach a verdict only through
+    // its `f.reason || …` fallbacks, which this same scan picks up.
+    const src = readFileSync(path.join(REPO, 'api/_utils/intraday/eligibility.js'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    const emitted = new Set();
+    // arg 1 is a VERDICT expression (never contains a comma); arg 2 is the
+    // reason slot, which may be `null`, a literal, or a ternary/`||` of them.
+    for (const m of src.matchAll(/\bv\(\s*[^,]+,\s*([^,)]*)/g)) {
+      for (const lit of m[1].matchAll(/'([a-z0-9_]+)'/g)) emitted.add(lit[1]);
+    }
+    const missing = [...emitted].filter((r) => !(r in INTRADAY_REASON_COPY) && !SILENT_IN_COPY.has(r));
+    expect(missing, `reasons emitted by eligibility.js with no copy row: ${missing.join(', ')}`).toEqual([]);
+    // ANTI-VACUOUS: the scan actually found the reasons, including the newest.
+    expect(emitted.size).toBeGreaterThanOrEqual(10);
+    expect(emitted).toContain('cutoff_future');
+    expect(emitted).toContain('stale');
+    expect(emitted).toContain('cutoff_unconfirmed');
+    // …and it would notice a missing row: a reason not in the table is caught.
+    expect('not_a_real_reason' in INTRADAY_REASON_COPY).toBe(false);
+  });
+
   it('is the ONE table: no other src/ or api/ module carries the header or a reason phrase literal', () => {
     // Phrases identical to their reason CODE (e.g. 'experimental') are codes,
     // not copy, wherever else they appear; comments are stripped before matching.
