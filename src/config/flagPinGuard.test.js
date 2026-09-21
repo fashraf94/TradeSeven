@@ -81,10 +81,15 @@ const DARK_BY_DESIGN = {
   INTRADAY_RISK_ACTIVATION_ENABLED:
     'Intraday Data stage 4 — the risk layer may act on eligible, closeQualified intraday evidence; gate: the §10.6 qualification calendar (10 characterisation sessions, frozen policy, 10 fixed test sessions, every denominator ≥ its minimum)',
   // Tick capture (docs/specs/CAPTURE_BUILD_SPEC_V1_3.md §6): built dark, three
-  // stages, one branch. Its flip is NOT a build PR — the four prerequisites in
-  // the flag's own docstring must be met first.
-  TICK_CAPTURE_ENABLED:
-    'Tick capture — the per-check observation record (two documents in one atomic batch, spec §3); flips only after its four prerequisites: the Firestore TTL policy enabled on tickBodies, the single-field index exemptions deployed, measured per-tick overhead and record sizes within the C-9 bound, and coverage reporting working. Flag off, the admission transaction and every existing write are byte-identical',
+  // stages, one branch. TICK_CAPTURE_ENABLED intentionally ABSENT: it flipped
+  // true (src/config/featureFlags.js) once its four prerequisites were met —
+  // the deliberate flip drops it here in the same commit, per the guard's own
+  // "if DELIBERATE" instruction. Re-adding it while it ships true fails the
+  // DARK_BY_DESIGN integrity test below. Its pin in tickCaptureFlags.test.js
+  // now asserts the live true value AND, turned around, that this entry is
+  // gone — a rollback moves both lines back together. The flag-off
+  // byte-identity suite and the legacy fixture suites keep their own explicit
+  // false mocks and did not move with the flip.
   WIRE_NEWSLINE_ENABLED:
     'Wire runway step 7 (LAST) — requires WIRE_WRITES_ENABLED; flips last at founder discretion',
   EDITORIAL_REVIEW_ENABLED:
