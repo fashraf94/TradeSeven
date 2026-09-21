@@ -27,7 +27,7 @@ function makeSnapshot() {
     prev = last.snapshotSymbols; uni = last.universeState; docs = last.actionableDocs;
   }
   const sweepAt = SEP17.openMs + 45 * 60_000 + 16 * 60_000;
-  return { sweepId: 'sw45', generation: 46, sweepAt, lastSuccessfulSweepAt: sweepAt, calcVersion: 1, anomalies: last.anomalies, counters: last.counters, symbols: last.snapshotSymbols, lease: null };
+  return { sweepId: 'sw45', generation: 46, sweepAt, lastSuccessfulSweepAt: sweepAt, calcVersion: CONFIG.CALC_VERSION, anomalies: last.anomalies, counters: last.counters, symbols: last.snapshotSymbols, lease: null };
 }
 const SNAP = makeSnapshot();
 const EVAL_AT = SNAP.sweepAt + 30_000;
@@ -36,7 +36,7 @@ const et = (ms) => new Date(ms).toISOString().slice(11, 16);
 describe('§8.2 the view schema', () => {
   it('carries the header fields, presetBand, providedToDecision: false, per-symbol facts with per-indicator verdicts, shadowLines, and missing symbols', () => {
     const view = buildIntradayView({ snapshot: SNAP, symbols: ['AAPL', 'BTC', 'ZZZZ'], evalId: 'eval_7', battleId: 'b1', presetId: 'balanced', presetBand: 0.5, evaluatedAt: EVAL_AT, timeText: et });
-    expect(view).toMatchObject({ evalId: 'eval_7', battleId: 'b1', sweepId: 'sw45', generation: 46, calcVersion: 1, policyVersion: 1, evaluatedAt: EVAL_AT, presetId: 'balanced', presetBand: 0.5, providedToDecision: false, missingSymbols: ['ZZZZ'] });
+    expect(view).toMatchObject({ evalId: 'eval_7', battleId: 'b1', sweepId: 'sw45', generation: 46, calcVersion: CONFIG.CALC_VERSION, policyVersion: 1, evaluatedAt: EVAL_AT, presetId: 'balanced', presetBand: 0.5, providedToDecision: false, missingSymbols: ['ZZZZ'] });
     const a = view.symbols.AAPL;
     expect(a.strikeKey).toMatch(/^[0-9a-f]{16}$/);
     expect(a.observationId).toMatch(/^[0-9a-f]{16}$/);
@@ -44,13 +44,25 @@ describe('§8.2 the view schema', () => {
     expect(a.collectionStalled).toBe(false);
     expect(Object.keys(a.price)).toEqual(['value', 'priceAsOf', 'snapshotTs', 'previousClose', 'change', 'changePercent', 'size']);
     expect(Object.keys(a.indicators)).toEqual(['vwap', 'sessionHL', 'volume', 'volumePace', 'sma20_5m', 'macd5m', 'rsi5m']);
-    // Build 1: the estimate is experimental → display_only; the bucket indicators are warming (46 min = 9 completed buckets).
-    // A2: a null-cutoff verdict is aged from the quote's own availableAt, and carries it.
-    expect(a.indicators.vwap.verdict).toEqual({ state: 'display_only', reason: 'cutoff_unconfirmed', consumer: 'display', ageMs: 30_000 });
-    expect(a.indicators.vwap).toMatchObject({ method: 'sampled_estimate', experimental: true, estimateCutoff: null, volumeCutoffAsOf: null });
+    // calcVersion 2: the cutoffs are confirmed, so the estimate is no longer
+    // experimental and the verdict is ELIGIBLE, aged from the indicator's own
+    // cutoff (§8.3) — the last accepted trade, not the sweep and not
+    // availableAt. The bucket indicators are still warming (46 min = 9
+    // completed buckets).
+    const lastAcceptedAsOf = a.indicators.vwap.estimateCutoff;
+    expect(a.indicators.vwap.verdict).toEqual({ state: 'eligible', reason: null, consumer: 'display', ageMs: EVAL_AT - lastAcceptedAsOf });
+    expect(a.indicators.vwap).toMatchObject({ method: 'sampled_estimate', experimental: false, volumeCutoffAsOf: lastAcceptedAsOf });
+    expect(lastAcceptedAsOf).toBeLessThan(SEP17.closeMs);
     expect(a.indicators.sma20_5m.verdict).toMatchObject({ state: 'ineligible', reason: 'warmup' });
     expect(a.indicators.sma20_5m.quality).toMatchObject({ warmupMet: false, gaps: 0 });
-    expect(a.indicators.volumePace.verdict).toMatchObject({ state: 'ineligible', reason: 'cutoff_unconfirmed' });
+    // §5.4's restored pace formula runs now that the cutoff exists: 46 min of
+    // a 390-minute session, measured AT the volume cutoff.
+    expect(a.indicators.volumePace.verdict).toMatchObject({ state: 'eligible', reason: null });
+    expect(a.indicators.volumePace.elapsedAtCutoffMin).toBe((lastAcceptedAsOf - SEP17.openMs) / 60_000);
+    expect(a.indicators.sessionHL.verdict).toMatchObject({ state: 'eligible', reason: null });
+    expect(a.indicators.volume.verdict).toMatchObject({ state: 'eligible', reason: null });
+    // Nothing is display_only for a cutoff reason any more.
+    expect(Object.values(a.indicators).map((i) => i.verdict.state)).not.toContain('display_only');
     // Crypto: price facts, vwap ineligible by definition.
     expect(view.symbols.BTC.indicators.vwap).toMatchObject({ value: null, method: 'n/a', reason: 'no_session_anchor', verdict: { state: 'ineligible', reason: 'no_session_anchor' } });
     // Missing: every verdict says so.
@@ -58,7 +70,17 @@ describe('§8.2 the view schema', () => {
     expect(view.symbols.ZZZZ.indicators.vwap.verdict.reason).toBe('not_in_snapshot');
     // Shadow lines are stored, prefixed by symbol, never empty for a present symbol.
     expect(view.shadowLines.some((l) => l.startsWith('AAPL: VWAP est.'))).toBe(true);
-    expect(view.shadowLines.some((l) => l.includes('cutoff unconfirmed') && l.includes('quote as of') && l.includes('experimental'))).toBe(true);
+    // calcVersion 2: an eligible line reads "· as of HH:MM" off the
+    // indicator's own cutoff. The display_only phrasing is gone with the
+    // cutoff reasons that produced it.
+    expect(view.shadowLines.some((l) => /^AAPL: VWAP est\. [\d.]+ · as of \d\d:\d\d$/.test(l))).toBe(true);
+    // …for a STOCK. Crypto keeps its null cutoffs (§5.7: no session anchor,
+    // so the vendor aggregates have no session instant to be cumulative to),
+    // which is why this is scoped to AAPL rather than the whole block.
+    const aaplLines = view.shadowLines.filter((l) => l.startsWith('AAPL: '));
+    expect(aaplLines.some((l) => l.includes('cutoff unconfirmed'))).toBe(false);
+    expect(aaplLines.some((l) => l.includes('experimental'))).toBe(false);
+    expect(view.shadowLines.some((l) => l.startsWith('BTC: ') && l.includes('cutoff unconfirmed'))).toBe(true);
     expect(INTRADAY_ENTRY_FIELDS).toEqual(['intradaySnapshotId', 'intradayGeneration', 'intradayViewRef', 'intradayViewStatus', 'intradayEvaluatedAt', 'intradayPolicyVersion', 'decisionStartedAt', 'decisionCompletedAt']);
   });
   it('marks every symbol collectionStalled when the last successful sweep is older than the stall window at the check', () => {
@@ -102,8 +124,10 @@ describe('§8.2 receipt-only replay — with intradaySnapshots/latest deleted', 
       expect(replay.symbols[sym].strike.estDev).toBeCloseTo(expected, 9);
       expect(replay.symbols[sym].strike.isVwapStrike).toBe(expected < -0.7);
       expect(replay.symbols[sym].strike.strikeKey).toBe(rec.strikeKey);
-      expect(replay.symbols[sym].strike.eligible).toBe(false); // experimental in build 1
+      // calcVersion 2: the estimate is eligible, so the replayed strike is too.
+      expect(replay.symbols[sym].strike.eligible).toBe(true);
     }
+    // Crypto has no session anchor (§5.7), so it stays ineligible either way.
     expect(replay.symbols.BTC.strike).toEqual({ estDev: null, isVwapStrike: false, strikeKey: storedView.symbols.BTC.strikeKey, eligible: false });
     // Lines: identical to the ones the view rendered at the check (shadow lines carry the symbol prefix).
     for (const sym of ['AAPL', 'MSFT', 'BTC']) {
@@ -119,9 +143,10 @@ describe('§8.2 receipt-only replay — with intradaySnapshots/latest deleted', 
     // this row asserted the opposite before A2, and that was review finding
     // R-3 in test form.
     expect(later.symbols.AAPL.verdicts.sessionHL).toMatchObject({ state: 'ineligible', reason: 'stale' });
-    // Within the display window it still renders.
+    // Within the display window it still renders — and at calcVersion 2, with
+    // a confirmed HL cutoff, it renders as ELIGIBLE rather than display_only.
     const soon = replayFromView(storedView, defs, { nowMs: EVAL_AT + 10 * 60_000, timeText: et });
-    expect(soon.symbols.AAPL.verdicts.sessionHL.state).toBe('display_only');
+    expect(soon.symbols.AAPL.verdicts.sessionHL.state).toBe('eligible');
     expect(JSON.stringify(storedView)).toBe(JSON.stringify((await db.collection('agentBattles').doc('b1').collection('intradayViews').doc('eval_3').get()).data()));
   });
   it('refuses a definitions document of another calcVersion', () => {

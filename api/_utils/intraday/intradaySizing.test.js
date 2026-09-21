@@ -49,7 +49,7 @@ describe('§7.3 sizing (Firestore byte accounting)', () => {
     const sweeps = 420;
     const r30 = simulate(30, sweeps);
     const snapshotDoc = {
-      sweepId: 'sw419', generation: 420, sweepAt: 1, lastSuccessfulSweepAt: 1, lease: null, calcVersion: 1,
+      sweepId: 'sw419', generation: 420, sweepAt: 1, lastSuccessfulSweepAt: 1, lease: null, calcVersion: CONFIG.CALC_VERSION,
       anomalies: r30.anomalies, counters: r30.counters, symbols: r30.snapshotSymbols,
     };
     const snapshotBytes = firestoreDocBytes('intradaySnapshots/latest', snapshotDoc);
@@ -98,9 +98,24 @@ describe('§7.3 sizing (Firestore byte accounting)', () => {
     // The fit must agree with the directly measured single document.
     expect(Math.abs(perSymbol - oneActionable) / oneActionable).toBeLessThan(0.05);
     // The founder must have decided the generation-pointer question by here.
-    // If this row ever drops below 80, the actionable set has outgrown the
+    // If this row ever drops below 75, the actionable set has outgrown the
     // one-transaction publish and §7.3's reserved design is due.
-    expect(crossingAt10MiB).toBeGreaterThanOrEqual(80);
+    //
+    // MOVED 81 → 76 by calcVersion 2 (measured, not estimated). Confirming
+    // the cutoffs (§15 items 1 and 2) turned `estimateCutoff` and
+    // `volumeCutoffAsOf` from `null` into real epoch-ms integers on EVERY one
+    // of a symbol's 420 log entries, and the log is a JSON STRING (§7.2, G9):
+    // `"estimateCutoff":null` is 9 characters shorter than
+    // `"estimateCutoff":1789654200000`, twice per entry, ~7.5 KB per symbol
+    // per session. The crossing moved because the RECORD got more truthful,
+    // not because the actionable set grew — it is still ~2.5× the contract's
+    // modelled scale (30 actionable ≈ 7 concurrent battles at held ∪ bench).
+    // The failure mode also stays named rather than silent: addendum A4's
+    // PUBLISH_MAX_BYTES refuses at ~68 actionable symbols, BELOW the
+    // crossing, so an over-limit sweep is one logged `publish_oversize` line
+    // and never a wedged transaction. Flagged for the founder in the
+    // calcVersion 2 report.
+    expect(crossingAt10MiB).toBeGreaterThanOrEqual(75);
     // And the refusal ceiling must sit below the crossing, or it never fires.
     expect(CONFIG.PUBLISH_MAX_BYTES).toBeLessThan(10 * MiB);
   }, 60_000);

@@ -64,16 +64,22 @@ describe('§6.2 completion — normal and deadline', () => {
     expect(completed).toHaveLength(1);
     expect(ring.buckets.map((b) => b.status)).toEqual(['completed', 'open']);
   });
-  it('close order: an exact-close observation is applied to the last bucket FIRST, then finalised; indicators advance once', () => {
+  it('an observation AT the close establishes passage: the last bucket completes on the 15:59 trade and the close print is never written', () => {
+    // calcVersion 2 (§5.5 post-close): the closing-auction print is stamped
+    // AT sessionCloseMs on Nasdaq and most NYSE symbols, so `>=`, not `>`.
+    // Before the post-close rule this observation's price BECAME the last
+    // bucket's close — the exact defect the rule removes.
     const { lastKey } = sessionKeys(SEP17);
     const pre = feed(newRing(), newState(), walk(SEP17, 300, 389), SEP17);
-    const closeObs = obsAt(SEP17, 390, { price: 999 });
-    const out = applyObservationToBuckets({ ring: pre.ring, state: pre.state, obs: closeObs, session: SEP17 });
+    const lastContinuousClose = pre.ring.buckets.find((b) => b.key === lastKey).close;
+    const out = applyObservationToBuckets({ ring: pre.ring, state: pre.state, obs: obsAt(SEP17, 390, { price: 999 }), session: SEP17 });
     const last = out.ring.buckets.find((b) => b.key === lastKey);
     expect(last.status).toBe('completed');
-    expect(last.close).toBe(999);
-    expect(last.maxPriceAsOf).toBe(SEP17.closeMs);
+    expect(last.close).toBe(lastContinuousClose);
+    expect(last.close).not.toBe(999);
+    expect(last.maxPriceAsOf).toBe(SEP17.openMs + 389 * 60_000);
     expect(out.completed).toHaveLength(1);
+    // Indicators advance once, over the bucket the continuous session closed.
     expect(out.state.completedBars).toBe(pre.state.completedBars + 1);
   });
   it('an observation past the close establishes passage: the last bucket completes but its price is never written', () => {
@@ -84,6 +90,14 @@ describe('§6.2 completion — normal and deadline', () => {
     expect(last.status).toBe('completed');
     expect(last.close).not.toBe(999);
     expect(out.ring.buckets.some((b) => b.key > lastKey)).toBe(false);
+  });
+  it('a repeated post-close observation is idempotent: nothing reopens, nothing completes twice, no price lands', () => {
+    const pre = feed(newRing(), newState(), walk(SEP17, 385, 389), SEP17);
+    const first = applyObservationToBuckets({ ring: pre.ring, state: pre.state, obs: obsAt(SEP17, 390, { price: 999 }), session: SEP17 });
+    const again = applyObservationToBuckets({ ring: first.ring, state: first.state, obs: obsAt(SEP17, 415, { price: 1001 }), session: SEP17 });
+    expect(again.completed).toHaveLength(0);
+    expect(again.state).toBe(first.state);
+    expect(again.ring.buckets).toEqual(first.ring.buckets);
   });
   it('deadline: at close + 30 min a last bucket not normally completed is `incomplete` / `deadline`; idempotent; state does not advance', () => {
     const pre = feed(newRing(), newState(), walk(SEP17, 380, 389), SEP17);

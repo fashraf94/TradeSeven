@@ -41,6 +41,10 @@ export const INTRADAY_REASON_COPY = Object.freeze({
   absent: 'no reading',
   no_value: 'no reading',
   no_volume_yet: 'no volume yet',
+  // §5.5 post-close (calcVersion 2): a symbol whose only observation this
+  // session arrived at or after the close has no pre-close accepted
+  // observation to carry a session aggregate from.
+  post_close: 'no reading before the close',
   volume_invalid: 'volume unusable',
   hl_invalid: 'range unusable',
   not_completed: 'bar not completed',

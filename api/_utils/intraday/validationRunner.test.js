@@ -62,14 +62,26 @@ describe('§10.1 the validator state machine', () => {
     const doc = mem.store.get('intradayValidation/2026-09-17');
     expect(doc).toMatchObject({ etDate: '2026-09-17', status: 'done', symbolsValidated: 4, firstPublishHourUtc: 11, calcVersion: 1, policyVersion: 1 });
     expect(Object.keys(doc.symbols).sort()).toEqual(['AAPL', 'AMD', 'MSFT', 'NVDA']);
-    // Build 1: every estimate has a null cutoff → excluded with cutoff_unconfirmed; closing row unresolved → unqualified.
-    expect(doc.symbols.AAPL.series.excludedByReason.cutoff_unconfirmed).toBeGreaterThan(0);
+    // calcVersion 2: every estimate carries a confirmed cutoff, so NOTHING is
+    // excluded as cutoff_unconfirmed any more and the comparisons are real.
+    expect(doc.symbols.AAPL.series.excludedByReason.cutoff_unconfirmed).toBeUndefined();
+    expect(doc.symbols.AAPL.series.comparisons).toBeGreaterThan(0);
+    expect(doc.symbols.AAPL.series.p95AbsResidualOverPrice).not.toBeNull();
+    // The closing row is still unresolved at this commit (CLOSING_ROW_POLICY
+    // null) → unqualified. The continuous-session policy is the next one.
     expect(doc.symbols.AAPL.qualification).toEqual({ included: false, reason: 'close_unqualified' });
     expect(doc.symbols.AAPL.coverage.quoteCumulativeVolumeRatio).not.toBeNull();
     expect(doc.symbols.AAPL.evaluationLinked.unavailable).toEqual({ evaluationLinked: 'no_evaluation_evidence' });
-    expect(doc.unavailable.p95AbsResidualOverPrice).toBe('no_aligned_comparisons');
+    expect(doc.p95AbsResidualOverPrice).not.toBeNull();
+    expect(doc.unavailable.p95AbsResidualOverPrice).toBeUndefined();
     expect(doc.trailing10).toMatchObject({ sessions: 1, dates: ['2026-09-17'] });
-    expect(typeof doc.trailing10.unavailable.p95AbsResidualOverPrice).toBe('string');
+    // calcVersion 2: the rollup now carries a real residual — its reason is
+    // gone because the metric exists, not because the reason stopped being
+    // reported. A metric that IS still unavailable still names why (§10.5
+    // "never a zero").
+    expect(doc.trailing10.p95AbsResidualOverPrice).not.toBeNull();
+    expect(doc.trailing10.unavailable.p95AbsResidualOverPrice).toBeUndefined();
+    expect(typeof doc.trailing10.unavailable.overallDisagreement).toBe('string');
     // A second invocation is a no-op.
     expect(await run()).toMatchObject({ skipped: true, reason: 'already_done' });
   });

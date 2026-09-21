@@ -1,7 +1,7 @@
 // api/_utils/intradayConfig.js
 //
 // Intraday Data — Build 1, contract §5.2: the poller's tiers, cadence and
-// vendor-pending configuration. PURE CONSTANTS, zero imports.
+// vendor-answered configuration (§15). PURE CONSTANTS, zero imports.
 //
 // Changing ANY of these is a founder PR that bumps CALC_VERSION (contract
 // §5.2 / §10.7) — the validator's qualification calendar resets on a change
@@ -24,14 +24,14 @@ export const LEASE_MS = 50_000;
 /** Live v2 accepts ≤ 20 tickers per request, 1 unit each (G1, §4). */
 export const MAX_TICKERS_PER_REQUEST = 20;
 
-// ---- Vendor-pending (contract §15) — each null until the vendor answers. ----
+// ---- Vendor-answered (contract §15) — EODHD, 2026-09-21. ----
 //
 // THE TWO CUTOFF FIELDS NAME AN OBSERVATION KEY (`resolveCutoff` reads
 // `obs[field]` — accumulator.js), and only two values are permitted: `null`,
 // or `'priceAsOf'` — the Observation field the Live v2 adapter maps from the
 // vendor's `lastTradeTime` (observation.js:95, :101).
 //
-// `'snapshotTs'` IS EXCLUDED, and is not a pending option. It carries the
+// `'snapshotTs'` IS EXCLUDED, and was never a pending option. It carries the
 // vendor's `timestamp`, and on all 21 quotes of the founder's Live v2
 // responses (2026-09-20, 2 symbols then 20) that field is exactly
 // `floor(lastTradeTime / 60_000) × 60 + 14_400` — the last-trade minute plus
@@ -43,10 +43,26 @@ export const MAX_TICKERS_PER_REQUEST = 20;
 // TO. Locked by intradayConfig.test.js, which also traps the literal
 // `'lastTradeTime'`: no Observation key is named that, so it would resolve to
 // null and read as "cutoff unconfirmed" while looking configured.
+//
+// THE VENDOR'S ANSWERS (2026-09-21), and why each field is now `'priceAsOf'`:
+//
+//   (1) Live v2 `volume` is consolidated REGULAR-SESSION volume for the
+//       current day, accumulated as the session runs; it does NOT include
+//       `ethVolume`. So while the session is running it is cumulative to the
+//       last trade — `priceAsOf`. After 16:00 ET it stops at the session
+//       total while `lastTradePrice`/`lastTradeTime` keep updating with
+//       extended-hours prints, so after the close `priceAsOf` is LATER than
+//       the point `volume` reflects. That is why §5.5 now classifies an
+//       observation with `priceAsOf ≥ sessionCloseMs` as `post_close` and
+//       updates no session aggregate from it: only a PRE-CLOSE observation's
+//       clock is a valid cutoff.
+//   (2) Live v2 `high` and `low` are regular-session only — same clock, same
+//       post-close rule.
+//
 /** Which Observation field `volume` is cumulative TO. null | 'priceAsOf' only. null → cutoff unconfirmed. */
-export const VOLUME_CUTOFF_FIELD = null;
+export const VOLUME_CUTOFF_FIELD = 'priceAsOf';
 /** Which Observation field session high/low/open are cumulative TO. null | 'priceAsOf' only. */
-export const HL_CUTOFF_FIELD = null;
+export const HL_CUTOFF_FIELD = 'priceAsOf';
 /** Closing-row assignment policy (§15 item 2). null → the closing bar is unresolved. */
 export const CLOSING_ROW_POLICY = null;
 

@@ -18,6 +18,36 @@ const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 
 export const INDICATOR_KEYS = Object.freeze(['vwap', 'sessionHL', 'volume', 'volumePace', 'sma20_5m', 'macd5m', 'rsi5m']);
 
+/** The four session aggregates the §5.5 post-close rule freezes (the accumulator's and the vendor's). */
+export const SESSION_AGGREGATE_KEYS = Object.freeze(['vwap', 'sessionHL', 'volume', 'volumePace']);
+
+/**
+ * §5.5 post-close — the shape of a session aggregate for a symbol whose only
+ * observation this session is post-close, so there is no last pre-close
+ * accepted observation to carry.
+ *
+ * Deliberately NOT re-derived from the accumulator. The carried block is the
+ * ONE source for a post-close aggregate (BUILD_RULES §9): a second derivation
+ * would have to reconstruct the cutoff from `lastAcceptedAsOf` and could not
+ * reconstruct `sessionHL` at all — the vendor's high/low/open are not in the
+ * accumulator — so the two sources would disagree the moment either moved.
+ */
+function postCloseAbsent(key, acc, experimental) {
+  switch (key) {
+    case 'vwap':
+      return {
+        status: 'absent', value: null, method: 'sampled_estimate', experimental,
+        estimateCutoff: null, volumeCutoffAsOf: null,
+        quality: { samples: acc?.samples ?? 0, degraded: acc?.degraded === true },
+        reason: 'post_close',
+      };
+    case 'volumePace':
+      return { status: 'absent', value: null, method: 'linear_pace', elapsedAtCutoffMin: null, reason: 'post_close', cutoff: null };
+    default:
+      return { status: 'absent', value: null, cutoff: null, reason: 'post_close' };
+  }
+}
+
 function priceBlock(obs) {
   return {
     value: isNum(obs?.price) ? obs.price : null,
@@ -54,8 +84,10 @@ function bucketIndicator(state, key, valueOf) {
  * @param {boolean} p.volumeInvalid
  * @param {boolean} p.hlInvalid
  * @param {object} p.config            { VOLUME_CUTOFF_FIELD, HL_CUTOFF_FIELD, VOLUME_PACE_MIN_ELAPSED_MIN }
+ * @param {boolean} [p.postClose]       §5.5: this observation is at or after the calendar close
+ * @param {object|null} [p.carryForward] the previous snapshot's facts for this symbol (post-close only)
  */
-export function buildSymbolFacts({ sym, isCrypto = false, acc, obs, ring, state, session, ids, volumeInvalid = false, hlInvalid = false, config }) {
+export function buildSymbolFacts({ sym, isCrypto = false, acc, obs, ring, state, session, ids, volumeInvalid = false, hlInvalid = false, config, postClose = false, carryForward = null }) {
   const cfg = config || {};
   const price = priceBlock(obs);
   const facts = {
@@ -88,6 +120,24 @@ export function buildSymbolFacts({ sym, isCrypto = false, acc, obs, ring, state,
   const volumeCutoffAsOf = resolveCutoff(obs, cfg.VOLUME_CUTOFF_FIELD);
   const hlCutoff = resolveCutoff(obs, cfg.HL_CUTOFF_FIELD);
   const experimental = !cfg.VOLUME_CUTOFF_FIELD;
+
+  if (postClose) {
+    // §5.5 post-close (calcVersion 2): this quote's clock is an
+    // extended-hours print, so it is not the instant `volume`, `high` or
+    // `low` are cumulative to and it is not a valid cutoff for the estimate
+    // either. Every session aggregate keeps the value AND the cutoff of the
+    // last pre-close accepted observation — which is exactly the previous
+    // snapshot's block for this symbol, carried verbatim. Only the price
+    // facts above and the bucket indicators below reflect this observation.
+    const carried = carryForward && carryForward.sessionEtDate === (session?.etDate ?? null)
+      ? (carryForward.indicators || null)
+      : null;
+    for (const k of SESSION_AGGREGATE_KEYS) {
+      ind[k] = carried?.[k] ? { ...carried[k] } : postCloseAbsent(k, acc, experimental);
+    }
+    return withBucketIndicators(facts, ind, ring, state);
+  }
+
   const est = vwapEstimate(acc);
   ind.vwap = {
     status: est === null ? 'absent' : 'ready',
@@ -113,6 +163,11 @@ export function buildSymbolFacts({ sym, isCrypto = false, acc, obs, ring, state,
     cutoff: volumeCutoffAsOf,
   };
 
+  return withBucketIndicators(facts, ind, ring, state);
+}
+
+/** The three bucket-based indicators (§6), shared by the normal and post-close paths. */
+function withBucketIndicators(facts, ind, ring, state) {
   if (!ring || !state) {
     for (const k of ['sma20_5m', 'macd5m', 'rsi5m']) ind[k] = { status: 'absent', value: null, cutoff: null, quality: null, reason: 'not_actionable' };
     return facts;

@@ -13,10 +13,10 @@
 //           segmentCloses[], qualifiedRun, lastCompleted: {key, sessionEtDate,
 //           isLast} | null, completedBars, gaps }
 //
-// §6.1 keys: k = floor(priceAsOf / 300_000); priceAsOf === sessionCloseMs
-// belongs to the LAST regular-session bucket. §6.2 completion: normal (an
+// §6.1 keys: k = floor(priceAsOf / 300_000). §6.2 completion: normal (an
 // observation with key > k, or for the last bucket one with priceAsOf ≥
-// sessionCloseMs — an exact-close observation is applied first) or deadline
+// sessionCloseMs — which establishes passage and is NEVER written, §5.5
+// post-close) or deadline
 // (close + 30 min → status 'incomplete', reason 'deadline'; state does not
 // advance across it). §6.3 completed buckets are immutable (late updates
 // rejected and counted). §6.4 a missing bucket breaks the contiguous segment
@@ -186,8 +186,14 @@ export function applyObservationToBuckets({ ring, state, obs, session, closingRo
     }
   };
 
-  // Passage past the close: the last bucket completes; the price is never written.
-  if (isNum(obs.priceAsOf) && obs.priceAsOf > session.closeMs) {
+  // Passage AT OR PAST the close: the last bucket completes; the price is
+  // never written. `>=`, not `>`, since calcVersion 2 (§5.5 post-close rule,
+  // EODHD answer 3): the closing-auction print lands AT the close on Nasdaq
+  // and most NYSE symbols, and minutes after it on the rest, so an
+  // observation stamped `sessionCloseMs` is the auction — outside the
+  // continuous session these buckets describe — and its price must not become
+  // a 5-minute close. The bucket still completes: passage is established.
+  if (isNum(obs.priceAsOf) && obs.priceAsOf >= session.closeMs) {
     closeOpen((b) => b.sessionEtDate === session.etDate && b.key <= lastKey);
     return { ring: { buckets: trimRing(buckets, maxClosed) }, state: st, completed, rejected: null };
   }
@@ -216,11 +222,9 @@ export function applyObservationToBuckets({ ring, state, obs, session, closingRo
   }
   buckets = buckets.map((b) => (b === bucket ? updated : b));
 
-  // Close order (§6.2): an exact-close observation is applied FIRST, then the
-  // last bucket is finalised and indicators advance once.
-  if (obs.priceAsOf >= session.closeMs) {
-    closeOpen((b) => b.sessionEtDate === session.etDate && b.key <= lastKey);
-  }
+  // No exact-close special case remains: `priceAsOf === sessionCloseMs` is
+  // caught by the passage branch above (calcVersion 2). The last bucket
+  // closes on the last CONTINUOUS-session trade, or on the §6.2 deadline.
   return { ring: { buckets: trimRing(buckets, maxClosed) }, state: st, completed, rejected: null };
 }
 

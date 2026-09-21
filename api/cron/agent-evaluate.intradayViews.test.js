@@ -107,7 +107,7 @@ function makeSnapshot({ generation = 46 } = {}) {
   // The snapshot's own instant is the harness's last sweep, not a separate
   // constant — so `availableAt`, `sweepAt` and the check all agree.
   const sweepAt = SESSION.openMs + (startMin + 46) * 60_000 + 16 * 60_000;
-  return { sweepId: 'sw46', generation, sweepAt, lastSuccessfulSweepAt: sweepAt, calcVersion: 1, anomalies: last.anomalies, counters: last.counters, symbols: last.snapshotSymbols, lease: null };
+  return { sweepId: 'sw46', generation, sweepAt, lastSuccessfulSweepAt: sweepAt, calcVersion: CONFIG.CALC_VERSION, anomalies: last.anomalies, counters: last.counters, symbols: last.snapshotSymbols, lease: null };
 }
 const SNAPSHOT = makeSnapshot();
 
@@ -181,13 +181,16 @@ describe('§8.1 flag ON — a valid snapshot', () => {
     expect(w.path).toBe(`agentBattles/${makeTickBattle().id}/intradayViews/${entry.evalId}`);
     expect(w.opts).toEqual({ merge: true });
     const view = w.data;
-    expect(view).toMatchObject({ evalId: entry.evalId, battleId: makeTickBattle().id, sweepId: 'sw46', generation: 46, calcVersion: 1, policyVersion: 1, presetId: 'balanced', presetBand: 0.5, providedToDecision: false });
+    expect(view).toMatchObject({ evalId: entry.evalId, battleId: makeTickBattle().id, sweepId: 'sw46', generation: 46, calcVersion: CONFIG.CALC_VERSION, policyVersion: 1, presetId: 'balanced', presetBand: 0.5, providedToDecision: false });
     expect(view.evaluatedAt).toBe(Date.parse(entry.timestamp));
     expect(Object.keys(view.symbols).sort()).toEqual([...new Set([...HELD, ...BENCH])].sort());
     for (const sym of HELD) expect(view.symbols[sym].indicators.vwap.verdict).toHaveProperty('state');
-    // A2: the null-cutoff verdict carries the age it was bounded by — here 0,
-    // because the last sweep's quote IS the check's instant.
-    expect(view.symbols.NVDA.indicators.vwap.verdict).toEqual({ state: 'display_only', reason: 'cutoff_unconfirmed', consumer: 'display', ageMs: 0 });
+    // calcVersion 2: the cutoff is confirmed, so the verdict is eligible and
+    // its age is measured from the indicator's OWN cutoff — the last accepted
+    // trade — not from the sweep and not from the quote's availableAt (§8.3).
+    const nvdaCutoff = view.symbols.NVDA.indicators.vwap.estimateCutoff;
+    expect(nvdaCutoff).not.toBeNull();
+    expect(view.symbols.NVDA.indicators.vwap.verdict).toEqual({ state: 'eligible', reason: null, consumer: 'display', ageMs: view.evaluatedAt - nvdaCutoff });
     expect(view.symbols.BTC.indicators.vwap.verdict.reason).toBe('no_session_anchor');
     expect(view.shadowLines.length).toBeGreaterThan(0);
     // The entry: base keys, the stamps, then EXACTLY the eight pointer fields.

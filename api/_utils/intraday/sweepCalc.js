@@ -16,7 +16,11 @@ export function emptyAnomalies() {
   return { rejected: 0, volumeInvalid: 0, held: 0, gapAssigned: 0, missing: 0, lateUpdateRejected: 0, shapeUnexpected: 0, unitCoerced: 0 };
 }
 export function emptyCounters() {
-  return { fetched: 0, accepted: 0, resumed: 0, unchangedCount: 0, volumeOnlyAdvance: 0, priorSession: 0, rollover: 0, carriedForward: 0 };
+  // `postClose` (§5.5, calcVersion 2) is a COUNTER, not an anomaly: an
+  // extended-hours print after the calendar close is normal. It counts every
+  // observation whose session aggregates were frozen at the last pre-close
+  // accepted observation.
+  return { fetched: 0, accepted: 0, resumed: 0, unchangedCount: 0, volumeOnlyAdvance: 0, priorSession: 0, rollover: 0, carriedForward: 0, postClose: 0 };
 }
 
 /**
@@ -90,6 +94,7 @@ export function runSweepCalc({
       case OUTCOME.UNCHANGED: counters.unchangedCount += 1; break;
       case OUTCOME.VOLUME_ONLY_ADVANCE: counters.volumeOnlyAdvance += 1; break;
       case OUTCOME.PRIOR_SESSION: counters.priorSession += 1; break;
+      case OUTCOME.POST_CLOSE: counters.postClose += 1; break;
       default: break;
     }
     if (res.outcome === OUTCOME.REJECTED || res.outcome === OUTCOME.PRIOR_SESSION || res.outcome === OUTCOME.HELD) {
@@ -118,6 +123,13 @@ export function runSweepCalc({
       sym, isCrypto: false, acc: res.acc, obs, ring: doc ? doc.ring : null, state: doc ? doc.state : null, session,
       ids: { observationId: res.observationId, strikeKey: res.strikeKey },
       volumeInvalid: res.volumeInvalid, hlInvalid: res.hlInvalid, config,
+      // §5.5 post-close: the price facts and the buckets advance; the four
+      // session aggregates are carried verbatim from the last published
+      // facts, so they keep the value AND the cutoff of the last pre-close
+      // accepted observation. `prevSnapshotSymbols` is the previous
+      // snapshot's `symbols` map — facts without verdicts (§7.1).
+      postClose: res.outcome === OUTCOME.POST_CLOSE,
+      carryForward: prevSnapshotSymbols[sym] || null,
     });
     snapshotSymbols[sym] = facts;
 

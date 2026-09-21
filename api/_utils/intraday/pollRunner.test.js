@@ -71,17 +71,20 @@ describe('§5.3 the sweep', () => {
     expect(snap.lease).toBeNull();
     expect(Object.keys(snap.symbols).sort()).toEqual(['AAPL', 'AMD', 'BTC', 'MSFT', 'NVDA']);
     expect(snap.symbols.BTC.indicators.vwap.reason).toBe('no_session_anchor');
-    expect(snap.calcVersion).toBe(1);
+    expect(snap.calcVersion).toBe(CONFIG.CALC_VERSION);
     const docs = await loadActionableDocs(h.db, '2026-09-17', ['AAPL']);
     expect(docs.AAPL.seedStatus).toBe('seeded');
     expect(docs.AAPL.seededBuckets).toBe(60);
     expect(docs.AAPL.log).toHaveLength(1);
     expect(Object.keys(docs.AAPL.log[0])).toEqual(['sweepAt', 'priceAsOf', 'snapshotTs', 'price', 'estimate', 'experimental', 'estimateCutoff', 'volumeCutoffAsOf', 'calcVersion', 'strikeKey', 'generation']);
-    expect(docs.AAPL.log[0]).toMatchObject({ sweepAt: minute(S17, 1), experimental: true, estimateCutoff: null, volumeCutoffAsOf: null, calcVersion: 1, generation: 1 });
+    // calcVersion 2: the cutoffs are confirmed (§15 items 1 and 2), so every
+    // log entry carries the last-trade clock of the observation it records —
+    // the delayed feed's priceAsOf, clamped to the open on the first sweep.
+    expect(docs.AAPL.log[0]).toMatchObject({ sweepAt: minute(S17, 1), priceAsOf: S17.openMs, experimental: false, estimateCutoff: S17.openMs, volumeCutoffAsOf: S17.openMs, calcVersion: CONFIG.CALC_VERSION, generation: 1 });
     expect(docs.AAPL.log[0].strikeKey).toMatch(/^[0-9a-f]{16}$/);
     expect(docs.AAPL.generation).toBe(1);
     expect(h.store.get('intradayCalcState/2026-09-17').generation).toBe(1);
-    expect((await definitionsRef(h.db, 1).get()).exists).toBe(true);
+    expect((await definitionsRef(h.db, CONFIG.CALC_VERSION).get()).exists).toBe(true);
   });
   it('a universe minute sweeps the universe ∪ actionable, each symbol once; a missing symbol is anomalies.missing with no update', async () => {
     const h = harness({ omit: ['XOM'] });

@@ -8,7 +8,7 @@
 // cumulative TO — it sets `estimateCutoff`, `volumeCutoffAsOf` and the elapsed
 // minutes `computeVolumePace` divides by. So only two values are permitted:
 //
-//   null         — cutoff unconfirmed, which is where build 1 stands
+//   null         — cutoff unconfirmed, which is where build 1 stood
 //   'priceAsOf'  — the field the Live v2 adapter maps from the vendor's
 //                  `lastTradeTime` (observation.js), and the v1 crypto adapter
 //                  from that row's `timestamp`
@@ -27,7 +27,17 @@
 // Observation key, so `resolveCutoff` would return null and the whole chain
 // would read "cutoff unconfirmed" while the config looked configured.
 //
-// Setting VOLUME_CUTOFF_FIELD is the separate calcVersion 2 PR, not this one.
+// EODHD ANSWERED on 2026-09-21 (contract §15 items 1 and 2): Live v2 `volume`
+// is consolidated regular-session volume accumulated as the session runs, and
+// `high`/`low` are regular-session only — so while the session is running both
+// are cumulative to the LAST TRADE, which the Observation carries as
+// `priceAsOf`. Both fields are now `'priceAsOf'`, and the pin below moved in
+// the same commit (BUILD_RULES §2). The answers hold only up to the close:
+// after 16:00 ET `volume`, `high` and `low` freeze while `lastTradeTime` keeps
+// running on extended-hours prints, which is why §5.5 classifies an
+// observation with `priceAsOf ≥ sessionCloseMs` as `post_close` and updates no
+// session aggregate from it (accumulator.js). A cutoff field is only ever as
+// good as the rule that stops it being read past the close.
 
 import { describe, it, expect } from 'vitest';
 import { VOLUME_CUTOFF_FIELD, HL_CUTOFF_FIELD, CALC_VERSION } from './intradayConfig.js';
@@ -62,9 +72,11 @@ describe('intradayConfig — the cutoff fields are null | priceAsOf only', () =>
     expect(OBSERVATION_FIELDS).not.toContain('lastTradeTime');
   });
 
-  it('build 1 (calcVersion 1) ships both null — confirming a cutoff bumps calcVersion', () => {
-    expect(CALC_VERSION).toBe(1);
-    expect(VOLUME_CUTOFF_FIELD).toBeNull();
-    expect(HL_CUTOFF_FIELD).toBeNull();
+  it('the vendor answered: both fields are `priceAsOf` — the last-trade clock, not the snapshot clock', () => {
+    expect(VOLUME_CUTOFF_FIELD).toBe('priceAsOf');
+    expect(HL_CUTOFF_FIELD).toBe('priceAsOf');
+    // Confirming a cutoff bumps calcVersion (§15) — the bump is pinned in
+    // its own commit, and this row only asserts a cutoff is now configured.
+    expect(CALC_VERSION).toBeGreaterThanOrEqual(1);
   });
 });
