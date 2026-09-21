@@ -2672,8 +2672,20 @@ export const INTRADAY_RISK_ACTIVATION_ENABLED = false;
  * this flag): the Firestore TTL policy enabled on the `tickBodies` collection
  * group, the single-field index exemptions deployed, measured per-tick
  * overhead and record sizes within the §C-9 bound, and coverage reporting
- * working. Registered DARK_BY_DESIGN in flagPinGuard.test.js; a deliberate
- * flip drops that entry and moves the pin in the same commit.
+ * working.
+ *
+ * NOW LIT — flipping starts the collection window (spec §6). FLIP MAP (the
+ * flip reconciles these in the SAME commit — BUILD_RULES §2):
+ *   • src/config/tickCaptureFlags.test.js — the dark pin row moves to true,
+ *     and the registration row turns around to assert the entry is GONE;
+ *   • src/config/flagPinGuard.test.js — drop TICK_CAPTURE_ENABLED from
+ *     DARK_BY_DESIGN (its integrity test reds if a lit flag is left listed).
+ * FALSE is now the ROLLBACK, one literal on the export below: with it false
+ * the admission transaction is byte-identical to today and no subcollection
+ * document is written. The flag-off byte-identity suite
+ * (agent-evaluate.tickCapture.flagOff.test.js) and the legacy fixture suites
+ * mock this flag to an explicit false and do NOT move with the flip; the
+ * flag-on suites mock it true and do not move either.
  */
 // Pinned by: tickCaptureFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const TICK_CAPTURE_ENABLED = false;
+export const TICK_CAPTURE_ENABLED = true;
