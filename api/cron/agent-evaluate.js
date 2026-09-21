@@ -96,6 +96,7 @@ import { composeTickStamps } from '../_utils/tickStamps.js';
 // builder, and flag off every one of its call sites is the frozen inert NOOP.
 import { createTickCaptureContext, claimTickCaptureContext, peekTickCaptureContext, NOOP_TICK_CAPTURE } from '../_utils/tickCapture/captureContext.js';
 import { finalizeTickCapture } from '../_utils/tickCapture/captureWriter.js';
+import { beginBodyCapture, endBodyCapture, makeObservingFetch } from '../_utils/tickCapture/captureBodyObserver.js';
 // THE THRESHOLD LINT (docs/audits/20260915_PHASE0_SIGNAL_LANGUAGE.md §7.2
 // shape 2): the pure, zero-import verdict on whether an anticipation
 // candidate's "I'll act if X" promise names a signal THIS tick actually
@@ -181,7 +182,18 @@ function getAnthropicClient() {
     // enough to justify a budgeted retry later (founder decision L2: measure
     // first, no retries now). Safe at client level: this file has exactly one
     // messages.create call site.
-    anthropicClient = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY, maxRetries: 0 });
+    // TICK CAPTURE, STAGE B: the ONLY place both HTTP entity bodies exist as
+    // bytes without touching the installed SDK (Phase 0 Q1). Flag off, the
+    // options object is exactly what it has always been — `{ apiKey,
+    // maxRetries }` — and the client is constructed identically. The observing
+    // function is stateless: the per-tick holder lives in the observer module
+    // and is opened and closed around the one dispatch below, so nothing about
+    // a tick is ever stored on this cached client.
+    anthropicClient = new Anthropic({
+      apiKey: process.env.CLAUDE_API_KEY,
+      maxRetries: 0,
+      ...(TICK_CAPTURE_ENABLED ? { fetch: makeObservingFetch() } : {}),
+    });
   }
   return anthropicClient;
 }
@@ -2336,6 +2348,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     } else {
       haikuAttempted = true;
       tickCapture.model({ attempted: true });
+      // Stage B: the request-local holder for THIS tick's one dispatch. Opened
+      // here and closed in the finally below, so only the evaluation call can
+      // be observed and no later request can write into a stale holder.
+      tickCapture.bindBodyHolder(beginBodyCapture());
       // Both timers are declared BEFORE the try so the finally can clear them
       // whatever fails — including a build that dies before the call's backstop
       // is ever armed.
@@ -2532,6 +2548,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         // behind the winner's own .finally above.
         clearTimeout(buildTimer);
         clearTimeout(hardAbort);
+        endBodyCapture();
       }
     }
 
