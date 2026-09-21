@@ -25,9 +25,27 @@ export const LEASE_MS = 50_000;
 export const MAX_TICKERS_PER_REQUEST = 20;
 
 // ---- Vendor-pending (contract §15) — each null until the vendor answers. ----
-/** Which Observation field `volume` is cumulative TO (e.g. 'snapshotTs'). null → cutoff unconfirmed. */
+//
+// THE TWO CUTOFF FIELDS NAME AN OBSERVATION KEY (`resolveCutoff` reads
+// `obs[field]` — accumulator.js), and only two values are permitted: `null`,
+// or `'priceAsOf'` — the Observation field the Live v2 adapter maps from the
+// vendor's `lastTradeTime` (observation.js:95, :101).
+//
+// `'snapshotTs'` IS EXCLUDED, and is not a pending option. It carries the
+// vendor's `timestamp`, and on all 21 quotes of the founder's Live v2
+// responses (2026-09-20, 2 symbols then 20) that field is exactly
+// `floor(lastTradeTime / 60_000) × 60 + 14_400` — the last-trade minute plus
+// the Eastern offset, matching the example on EODHD's Live v2 documentation
+// page. `lastTradeTime`, `bidTime`, `askTime` and `ethTime` agree with one
+// another; `timestamp` carries NO INDEPENDENT INFORMATION. It is an identity
+// (it changes when the quote changes, which is what `observationId` uses it
+// for) and must never be read as the instant a cumulative field is cumulative
+// TO. Locked by intradayConfig.test.js, which also traps the literal
+// `'lastTradeTime'`: no Observation key is named that, so it would resolve to
+// null and read as "cutoff unconfirmed" while looking configured.
+/** Which Observation field `volume` is cumulative TO. null | 'priceAsOf' only. null → cutoff unconfirmed. */
 export const VOLUME_CUTOFF_FIELD = null;
-/** Which Observation field session high/low/open are cumulative TO. null → cutoff unconfirmed. */
+/** Which Observation field session high/low/open are cumulative TO. null | 'priceAsOf' only. */
 export const HL_CUTOFF_FIELD = null;
 /** Closing-row assignment policy (§15 item 2). null → the closing bar is unresolved. */
 export const CLOSING_ROW_POLICY = null;
