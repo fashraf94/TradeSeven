@@ -523,3 +523,188 @@ single-invocation paths.
 
 **Four test blind spots: all four confirmed as described**, and all four are predicted survivors
 rather than executed mutations in Astra's review. They are executed as mutations in §R1.4 below.
+
+## R1.2 — The fixes, with `path:line`
+
+All anchors at `4234b297`.
+
+### P1
+
+**F1 — flag off is inert, and capture never throws into a tick.**
+`captureStep(ctx, fn)` — `api/cron/agent-evaluate.js:4232`. It checks
+`TICK_CAPTURE_ENABLED` **first** and invokes `fn` **inside** a try, so nothing —
+no selector, no `.map()`, no hash — runs with the flag off, and a throw raised
+while *building* a capture argument is caught. That is the part a guard inside
+the receiving method cannot do, and it is exactly how a malformed
+`standingLeans` slot took the tick's final write down. **38 call sites** now go
+through it (`:868`, `:1036`, `:1571`, `:1803`, … `:4162`); the four that live
+inside helpers take `captureFor()` as the receiver (`:4430`, `:4647`, `:5006`,
+`:5232`) because `tickCapture` is not in those scopes.
+
+Two source guards, in `agent-evaluate.tickCapture.isolation.test.js`: every
+mutator call site lies inside a `captureStep(` span, and `captureStep` itself
+checks the flag before its `try`.
+
+*Note, recorded rather than smoothed over:* after **F4** the control facts come
+from the resolver's own effective set, and the resolver already tolerates a
+malformed slot — so the original crash case no longer arises at all rather than
+merely being caught. The guard is proven instead by a throwing accessor on
+`battle.resolvedAgentManifest`, a field **nothing but capture reads**, which
+makes it a clean probe of the guard itself.
+
+**F2 — the declared kind is checked before the walk recurses.**
+`PERMANENT_CONTAINER_KINDS` — `api/_utils/tickCapture/captureSerializer.js:200`
+— declares which paths are containers and of which shape. `sanitizePermanentDocument:291`
+now resolves the container kind first: an array where an object is declared, an
+object where a leaf is declared, and an undeclared key are each **rejected
+whole** into the TTL body rather than descended. `findFreeText:349` checks
+**keys** as well as values, so `{"PRIVATE-CANARY": {}}` under
+`decision.original` is invisible to neither.
+
+One pre-existing row got **stricter** and was updated to say so: an undeclared
+key is now dropped with its whole subtree rather than nulled, so the field does
+not exist on the record at all.
+
+**F3 — capture state is bound to the tick.**
+`AsyncLocalStorage` scope — `api/_utils/tickCapture/captureContext.js:20`, with
+`runWithTickCaptureScope:52`, `runInTickCaptureScope:57`, `newTickCaptureScope:62`,
+`currentTickCapture:84`. The battle-keyed registry is **gone**; so is the module
+-global `activeHolder` — the body holder now lives on the same scope
+(`captureBodyObserver.js:31`, `:63`). A scope is reachable only from the async
+chain that created it, so a tick can physically only see its own.
+
+Cleanup identity-checks: `claimTickCaptureContext(scope):230` claims **once**
+and only the scope it is handed; the tick's own `finally` marks its scope
+(`agent-evaluate.js:4155`) and the handler's error path claims **that scope**,
+never a battle id (`:419`, `:4180`).
+
+### P2
+
+| # | Fix | `path:line` |
+|---|---|---|
+| F4 | Controls from the **effective resolution** the renderer consumed, recorded inside the gate that computes it | `agent-evaluate.js:3772`; helpers `effectiveControlFacts:4194`, `effectiveControlText:4222`, `controlSourceText:4234` |
+| F4 | Raw rule text moved to `controlSourceText`, with `activeRuleRendered: 'unknown'` — the request body is the authority | `captureWriter.js:236`; `captureSerializer.js:141` |
+| F4 | After a skipped or failed prompt build the controls are `not_rendered` | `agent-evaluate.js:3796` |
+| F5 | Each veto recorded **at its own gate, after it runs**; a distressed veto LOCK short-circuited is `bypassed` | `agent-evaluate.js:2986`, `:3009` |
+| F5 | `failed` added to the C-6 vocabulary; an executor throw records it | `captureConfig.js:132`; `agent-evaluate.js:3422` |
+| F5 | C-7: the per-symbol risk verdicts and the guardrail evaluation the tick computed | `agent-evaluate.js:1571`, `:2968`; schema `captureWriter.js:262`, `captureSerializer.js:104` |
+| F6a | Expiry counted **independently of dispatch** | `captureCoverage.js:84` |
+| F6b | Coverage bounded by its denominator; a record above the counter is an **inconsistency**, disclosed | `captureCoverage.js:109`, report line `:186` |
+| F6c | The export's cohort comes from `agentBattles`, not from successful captures | `export-tick-capture.js:218` |
+| F7 | **One absolute deadline** across body resolution, serialization and commit | `captureWriter.js:458`, `:470`, `:485` |
+| F7 | `capture.ms` → `capture.preCommitMs`, named for what it can measure; the TOTAL goes to the caller and to telemetry | `captureWriter.js:289`; `agent-evaluate.js:4162`, `:442` |
+| F8 | Every text-bearing field bounded; final size checked; **declared** shed order with an explicit reason | `captureWriter.js:306`, `:406` |
+| F9 | The clone is read as **bytes**, hashed, then decoded for storage | `captureBodyObserver.js:98`; `sha256Bytes` `captureWriter.js:40` |
+
+### Two things fixed that Astra did not name
+
+- **A real regression I introduced and caught**: the blanket `captureStep`
+  wrapping pass used `tickCapture` as the receiver inside the four helper
+  functions, where that name is not in scope. The resulting `ReferenceError` was
+  swallowed by each helper's own try/catch and silently **aborted the
+  suppression-pass swap** — `agent-evaluate.suppressionPass.behavior.test.js`
+  caught it. Fixed at the four sites above.
+- **A second source-count pin nearly tripped**, the same class as round 0's
+  `ownerId`: a comment I wrote contained the literal counted form of the cron's
+  single control-resolver call. The comment was reworded; **the pin was not
+  touched** (`agent-evaluate.js:3736`).
+- **The existing flag-mock census caught a real omission**: two new suites used
+  `async (o) => ({ ...(await o()) })`, which `src/config/tickStampsFlags.test.js`
+  cannot recognise as spreading the original. Both renamed to the recognised
+  form.
+
+## R1.3 — Spec amendments this implies, for V1.4
+
+| # | Amendment | Why |
+|---|---|---|
+| 1 | **C-6 gains a fifth status, `failed`** | A check or execution that *ran and produced no verdict* is neither `evaluated` nor `not_evaluated`. Without it an executor exception read `not_evaluated` — indistinguishable from a tick that never tried to trade. `captureConfig.js:132`. |
+| 2 | **C-9's per-tick overhead is measured by TELEMETRY, not by a field on the record** | The number written *inside* the document structurally cannot include its own commit. The record now carries `capture.preCommitMs`; the total is logged per tick and per invocation. Flip prerequisite #3 must read the log line, not the field. |
+| 3 | **The body digest is of the RECEIVED BYTES** | §3 says "each with a SHA-256". Taken after `.text()`, that digest describes a decoded string — a BOM is stripped, invalid sequences become U+FFFD — so it cannot prove what arrived. |
+| 4 | **C-3's allowlist is a path-and-shape allowlist, not a leaf-kind allowlist** | Default-deny has to be enforced before the descent. The spec should say containers are declared too. |
+| 5 | **C-9's "request-local" is stated as async-chain-local** | A battle id is not an identity: two overlapping invocations in one warm process share it. |
+
+## R1.4 — Mutation results (23, every one red)
+
+Each applied to product code from a `cp` copy, suite re-run, file restored.
+
+| Finding | Mutation | Result |
+|---|---|---|
+| F1 | `captureStep` drops the flag-first check | 1 failed / 15 |
+| F1 | `captureStep` rethrows instead of swallowing | 1 failed / 15 |
+| F1 | `captureStep` swallows but records no fault | 1 failed / 15 |
+| F1 | an unguarded `.map()` back in an argument list | 1 failed / 15 |
+| F2 | recurse on SHAPE again instead of the declared kind | 3 failed / 25 |
+| F2 | stop policing undeclared keys | 2 failed / 25 |
+| F2 | the sweep checks only string values again | 1 failed / 25 |
+| F3 | the in-tick lookup goes back to a module-level latest | 2 failed / 32 |
+| F3 | `endBodyCapture` drops its identity check | 1 failed / 14 |
+| F3 | a scope can be claimed twice | 2 failed / 17 |
+| F3 | the tick does not mark its scope claimed | 1 failed / 4 |
+| F4 | controls copied from the RAW slot again | 6 failed / 40 |
+| F4 | leans copied from the RAW slot again | 6 failed / 40 |
+| F4 | raw rule text labelled as rendered again | 2 failed / 40 |
+| F5 | distressed veto claims `evaluated` after a LOCK short-circuit | 1 failed / 40 |
+| F5 | an executor throw leaves execution `not_evaluated` | 1 failed / 40 |
+| F5 | the risk verdicts are dropped | 1 failed / 40 |
+| F5 | the guardrail evaluation is not recorded | 1 failed / 40 |
+| F6a | expiry counted only for dispatched ticks again | 1 failed / 17 |
+| F6b | coverage can exceed 100% again | 1 failed / 17 |
+| F6b | the inconsistency is not disclosed in the report | 1 failed / 17 |
+| F6c | cohort from successful captures again | 1 failed / 17 |
+| F7 | the commit gets a SECOND full deadline | 1 failed / 28 |
+| F7 | the in-document time is called the total again | 1 failed / 28 |
+| F8 | control text left unbounded | 1 failed / 28 |
+| F8 | the whole-document budget is never enforced | 2 failed / 28 |
+| F9 | hash the decoded string again (end to end) | 1 failed / 15 |
+| BS1 | remove the handler's finalization call | 2 failed / 3 |
+| BS1 | capture BEFORE the fault receipt | 2 failed / 3 |
+| BS2 | await the clone read inside the observer | 1 failed / 13 |
+| BS3 | remove the async read rejection handler | 1 failed / 13 |
+| BS4 | a first-read-wins memo survives the retry with the ABORTED value | 1 failed / 40 |
+
+**Two mutations survived their first attempt and are recorded as such**, because
+a guard that cannot fail is not a guard:
+
+- *`endBodyCapture` drops its identity check* survived, because scope isolation
+  already covers the overlapping-tick case the row modelled. A row was added
+  that exercises the check itself (a stranger's holder cannot close the live
+  window), and the mutation then reds.
+- *`the tick does not mark its scope claimed`* survived end to end, because
+  capture is the **final statement** of the tick's `finally` — so there is no
+  reachable path where a tick both captures and then throws. The mark is
+  belt-and-braces. Its **mechanism** is proven behaviourally in
+  `captureContext.test.js` ("a tick that finalized itself cannot be finalized
+  again by the error path"); the call site itself is held by a source pin,
+  labelled in the test as exactly that rather than dressed up as behavioural.
+
+A third, *callback-local side effects used as the tick identity*, survived its
+first form (writing a global inside the callback still yields the committed
+value, since the committing attempt is the last one). Re-cast as the real defect
+class — a **first-read-wins memo** that survives the retry carrying the aborted
+attempt's value — it reds against the new aborted-attempt harness.
+
+## R1.5 — Round-1 verification
+
+| Check | Result |
+|---|---|
+| Whole-repo `npx vitest run` | **737 files passed / 3 skipped · 14,127 tests passed / 64 skipped · exit 0** |
+| Round-1 baseline, before any edit | 735 files / 14,070 tests · exit 0 — **+2 files, +57 tests, zero regressions** |
+| `npx vite build` | **exit 0**, 32.4 s |
+| `npm run lint:gate` | **exit 0** |
+| `npm run test:rules` (emulator) | **10 files / 230 tests passed**, `tickCaptureDenials` among them |
+| Fence check vs BUILD_RULES §1 | **0 fenced files** |
+| The three regional guards | green (frozen entry golden, executor census, assembly honesty) |
+| Flag-off byte-identity, re-proven | green — `tickCapture.flagOff.test.js` A/B, plus the new malformed-slot rows |
+
+`git diff origin/main --stat`: **30 files changed, 6,154 insertions(+), 9 deletions(-)**.
+
+## R1.6 — Still not done
+
+**The BUILD_RULES §2 adversarial review has still not been run by me**, and this
+round does not change that — it answers a review, it is not one. The diff is now
+larger, not smaller. Astra's round 2 is the next step.
+
+Astra's own caveats are carried forward unchanged: **actual deployed concurrency
+is NOT VERIFIED** (F3 fixes the missing isolation, not a measured incident), and
+the historical green and mutation results from round 0 were not re-verified by
+that review.
