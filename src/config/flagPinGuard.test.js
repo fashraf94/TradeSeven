@@ -80,6 +80,11 @@ const DARK_BY_DESIGN = {
     'Intraday Data stage 2 — the agent may use eligible intraday evidence; gate: the paired-eval scorecard (contract §2: correct use of eligible evidence, no use of ineligible, stale/missing/conflicting-timeframe/archetype cases, overclaim as one row, ≥ 200 prompts); its flip PR carries the fenced splice and the PROMPT_CONTRIBUTING_MODULES registration',
   INTRADAY_RISK_ACTIVATION_ENABLED:
     'Intraday Data stage 4 — the risk layer may act on eligible, closeQualified intraday evidence; gate: the §10.6 qualification calendar (10 characterisation sessions, frozen policy, 10 fixed test sessions, every denominator ≥ its minimum)',
+  // Tick capture (docs/specs/CAPTURE_BUILD_SPEC_V1_3.md §6): built dark, three
+  // stages, one branch. Its flip is NOT a build PR — the four prerequisites in
+  // the flag's own docstring must be met first.
+  TICK_CAPTURE_ENABLED:
+    'Tick capture — the per-check observation record (two documents in one atomic batch, spec §3); flips only after its four prerequisites: the Firestore TTL policy enabled on tickBodies, the single-field index exemptions deployed, measured per-tick overhead and record sizes within the C-9 bound, and coverage reporting working. Flag off, the admission transaction and every existing write are byte-identical',
   WIRE_NEWSLINE_ENABLED:
     'Wire runway step 7 (LAST) — requires WIRE_WRITES_ENABLED; flips last at founder discretion',
   EDITORIAL_REVIEW_ENABLED:

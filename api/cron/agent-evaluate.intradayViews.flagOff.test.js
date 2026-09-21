@@ -37,6 +37,8 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   TICK_STAMPS_ENABLED: true,
   INTRADAY_DIAGNOSTIC_ENABLED: false,
+  // Tick capture ships dark — pinned false explicitly (Phase 0 Part 3).
+  TICK_CAPTURE_ENABLED: false,
 }));
 
 const { processAgentBattle } = await import('./agent-evaluate.js');

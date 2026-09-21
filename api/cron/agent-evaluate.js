@@ -80,7 +80,7 @@ import { TEMPO_DIAL_BANDS } from '../_utils/tempoDialBands.js';
 // NO-EDIT).
 import { clampHftConfig, resolveTempoDial, desiredTempoOf } from '../_utils/tempoDialClamp.js';
 import { buildSwapProvenance } from '../_utils/swapProvenance.js';
-import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED, LEARNING_L1_CAPTURE_ENABLED, LEARNING_L1_CAPTURE_EXPANSION_ENABLED, REGIME_STAMP_ENABLED, PROFIT_TARGET_EXECUTOR_ENABLED, TICK_STAMPS_ENABLED, ANTICIPATION_THRESHOLD_LINT_MODE, INTRADAY_DIAGNOSTIC_ENABLED, getVoiceGroundingMode } from '../../src/config/featureFlags.js';
+import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED, LEARNING_L1_CAPTURE_ENABLED, LEARNING_L1_CAPTURE_EXPANSION_ENABLED, REGIME_STAMP_ENABLED, PROFIT_TARGET_EXECUTOR_ENABLED, TICK_STAMPS_ENABLED, ANTICIPATION_THRESHOLD_LINT_MODE, INTRADAY_DIAGNOSTIC_ENABLED, TICK_CAPTURE_ENABLED, getVoiceGroundingMode } from '../../src/config/featureFlags.js';
 // Voice-layer grounding §5 (hazard 27): the in-process dedupe of one tick's
 // anticipation queue, applied only when the note is code-composed.
 import { dedupeAnticipationQueue } from '../_utils/voiceLayerGrounding.js';
@@ -90,6 +90,13 @@ import { dedupeAnticipationQueue } from '../_utils/voiceLayerGrounding.js';
 // TICK_STAMPS_ENABLED. Read, never edited: the fenced assembler's directive
 // resolution is re-run here on the same in-memory object, never re-read.
 import { composeTickStamps } from '../_utils/tickStamps.js';
+// Tick capture (docs/specs/CAPTURE_BUILD_SPEC_V1_3.md). OBSERVATION ONLY: the
+// context is a request-local record filled at each stage and finalized as the
+// LAST thing a tick does (C-9). Nothing it exports reads a battle, a score or a
+// builder, and flag off every one of its call sites is the frozen inert NOOP.
+import { createTickCaptureContext, claimTickCaptureContext, markTickCaptureClaimed, currentTickCapture, currentCaptureScope, newTickCaptureScope, runInTickCaptureScope } from '../_utils/tickCapture/captureContext.js';
+import { finalizeTickCapture } from '../_utils/tickCapture/captureWriter.js';
+import { beginBodyCapture, endBodyCapture, makeObservingFetch } from '../_utils/tickCapture/captureBodyObserver.js';
 // THE THRESHOLD LINT (docs/audits/20260915_PHASE0_SIGNAL_LANGUAGE.md §7.2
 // shape 2): the pure, zero-import verdict on whether an anticipation
 // candidate's "I'll act if X" promise names a signal THIS tick actually
@@ -129,6 +136,10 @@ import { resolveAttributionAgentId, resolveRecordTargetId } from '../_utils/casu
 import { classifyHaikuFailure, classifyTimeoutKind, shouldStartHaikuCall, nextConsecutiveEvalFailures, HAIKU_CALL_CEILING_MS, PROMPT_BUILD_CEILING_MS, PROMPT_BUILD_TIMEOUT_ERROR_NAME, EVAL_MODEL_ID, EVAL_MAX_OUTPUT_TOKENS } from '../_utils/agentEvalTransport.js';
 import { logBattlePattern } from '../_utils/battlePatternLogger.js';
 import { runCanonicalOpenSweep } from '../_utils/canonicalOpenSweep.js';
+// Tick capture: the ONE canonical content-hash helper (BUILD_RULES §4 — never
+// a local copy). Used ONLY to hash control text into the permanent record so a
+// control can be identified there without its words being stored there.
+import { canonicalContentHash } from '../_utils/canonicalHash.js';
 import { logEvaluation, logVisionTransition, logAnticipation } from '../_utils/shadowLogger.js';
 import { filterActiveConstraints } from '../_utils/visionRuntime.js';
 import { confidenceToFloat } from '../../src/constants/visionEnums.js';
@@ -171,7 +182,18 @@ function getAnthropicClient() {
     // enough to justify a budgeted retry later (founder decision L2: measure
     // first, no retries now). Safe at client level: this file has exactly one
     // messages.create call site.
-    anthropicClient = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY, maxRetries: 0 });
+    // TICK CAPTURE, STAGE B: the ONLY place both HTTP entity bodies exist as
+    // bytes without touching the installed SDK (Phase 0 Q1). Flag off, the
+    // options object is exactly what it has always been — `{ apiKey,
+    // maxRetries }` — and the client is constructed identically. The observing
+    // function is stateless: the per-tick holder lives in the observer module
+    // and is opened and closed around the one dispatch below, so nothing about
+    // a tick is ever stored on this cached client.
+    anthropicClient = new Anthropic({
+      apiKey: process.env.CLAUDE_API_KEY,
+      maxRetries: 0,
+      ...(TICK_CAPTURE_ENABLED ? { fetch: makeObservingFetch() } : {}),
+    });
   }
   return anthropicClient;
 }
@@ -373,11 +395,17 @@ export default async function handler(req, res) {
         break;
       }
 
+      let captureScope = null;
       try {
         // Pass startTime so processAgentBattle can budget-gate the Phase 3
         // anticipation dispatch in its finally block (anticipations skip
         // gracefully if <12s of cron budget remain; narrations always fire).
-        await processAgentBattle(db, battle, summary, startTime, tournamentGroupCache, masteryFlagView, intradayContext);
+        // One capture scope per battle (F3): created here so the catch below
+        // holds a reference to THIS tick's scope and can finalize nothing else.
+        // Flag off it is null and `runInTickCaptureScope` calls straight
+        // through, so the loop is exactly today's.
+        captureScope = TICK_CAPTURE_ENABLED ? newTickCaptureScope() : null;
+        await runInTickCaptureScope(captureScope, () => processAgentBattle(db, battle, summary, startTime, tournamentGroupCache, masteryFlagView, intradayContext));
       } catch (err) {
         console.error(`${LOG_PREFIX} Error processing battle ${battle.id}:`, err.message);
         summary.errors++;
@@ -398,10 +426,21 @@ export default async function handler(req, res) {
         } catch (logErr) {
           console.error(`${LOG_PREFIX} Failed to log error for battle ${battle.id}:`, logErr.message);
         }
+
+        // Tick capture (C-9): an admitted tick that THREW skipped its own
+        // finalization so this receipt could be written first. Finalize it
+        // here, AFTER the receipt — a failed tick is the class of tick a
+        // record is most wanted for. Never throws; a flag-off run finds
+        // nothing registered and returns immediately.
+        await finalizeAbandonedTickCapture(db, captureScope, startTime, summary);
       }
     }
 
     const duration = Date.now() - startTime;
+    if (summary.captureTicks) {
+      // The per-INVOCATION total (F7): what capture cost this run, end to end.
+      console.log(`${LOG_PREFIX} [tickCapture] invocation totalMs=${summary.captureTotalMs} ticks=${summary.captureTicks} gaps=${summary.captureGaps || 0}`);
+    }
     console.log(`${LOG_PREFIX} Complete in ${duration}ms:`, summary);
 
     return res.status(200).json({ ...summary, duration });
@@ -626,10 +665,27 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     }
 
     // Atomically claim the lock
-    transaction.update(battleRef, {
+    const lockUpdate = {
       'cronState.evaluatingAt': new Date().toISOString(),
-    });
-    return true;
+    };
+    // TICK CAPTURE (C-1) — the record's DENOMINATOR, and the ONE permitted
+    // change to an existing write (spec §4). Flag off, `lockUpdate` is the
+    // object literal this update has always carried, byte for byte, and no
+    // sequence is read or written.
+    //
+    // Minted HERE because admission is exactly what it counts: the sequence
+    // and the lock commit together or not at all, so a tick can never be
+    // admitted without a number, nor numbered without being admitted.
+    if (TICK_CAPTURE_ENABLED) {
+      const priorTickSeq = Number(data?.cronState?.tickSeq);
+      lockUpdate['cronState.tickSeq'] = (Number.isFinite(priorTickSeq) ? priorTickSeq : 0) + 1;
+    }
+    transaction.update(battleRef, lockUpdate);
+    // THE COMMITTED VALUE, never a variable a retried callback wrote. A
+    // transaction callback can re-run: each attempt re-reads `data` and
+    // re-mints from it, and only the attempt that commits is the one whose
+    // return value arrives below. No capture side effect happens in here.
+    return TICK_CAPTURE_ENABLED ? { tickSeq: lockUpdate['cronState.tickSeq'] } : true;
   });
 
   if (!lockAcquired) {
@@ -637,6 +693,32 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     summary.skipped++;
     return;
   }
+
+  // TICK CAPTURE (spec §3, C-9) — the request-local record for THIS tick,
+  // created immediately after admission with the committed sequence, filled at
+  // each stage below, and finalized exactly once as the final statement of the
+  // `finally`. Declared out here beside pendingNarrations/pendingAnticipations
+  // for the same reason they are: the `finally` must reach it however the tick
+  // exits. Flag off this is the frozen inert NOOP — nothing is registered,
+  // nothing is allocated per tick and nothing is ever written.
+  const committedTickSeq = (lockAcquired !== true && lockAcquired) ? lockAcquired.tickSeq : null;
+  const tickCapture = createTickCaptureContext({
+    battleId: battle.id,
+    tickSeq: committedTickSeq,
+    agentId: battle.agentId || null,
+    // Nullish coalescing deliberately, not a logical-or: the or-form of this
+    // exact line is a COUNTED source pin in
+    // voiceLayerAnticipation.grounding.test.js, which proves that BOTH voice
+    // dispatch sites pass the owner. Capture is not a voice dispatch site and
+    // must not inflate that count — hence the different operator, and hence
+    // this comment not quoting the pinned form either.
+    ownerId: battle.ownerId ?? null,
+    gameMode: battle.gameMode ?? null,
+    enabled: TICK_CAPTURE_ENABLED,
+  });
+  // The scope the context bound itself to — this tick's own, and the only one
+  // this function ever touches.
+  const tickCaptureScope = TICK_CAPTURE_ENABLED ? currentCaptureScope() : null;
 
   // Phase 2 Voice Layer Rework — trade narrations queued during this tick.
   // Declared outside the try so the finally block can dispatch them
@@ -783,6 +865,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       // Release the eval lock we acquired above; a plain early-return would
       // otherwise leave cronState.evaluatingAt set until the lock ages out.
       await battleRef.update({ 'cronState.evaluatingAt': null }).catch(() => {});
+      captureStep(tickCapture, () => {
+        tickCapture.stage('quotes_checked');
+        tickCapture.exit('degraded_quotes');
+      });
       return;
     }
 
@@ -943,6 +1029,22 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       'scoreState.opponentScore': Math.round(opponentScore * 100) / 100,
       'scoreState.lastScoredAt': new Date().toISOString(),
     };
+    // Capture: the score fields EXACTLY as this tick wrote them (C-2 — the
+    // record never recomputes a score), and the tick's own symbol universe so
+    // far. `universe()` merges, so the later call picks up a rebuilt bench and
+    // the hot-bench/catalyst names without losing what was held here.
+    captureStep(tickCapture, () => {
+      tickCapture.stage('quotes_checked');
+      tickCapture.stage('scores_marked');
+      tickCapture.scores({
+        active: Math.round(activeScore * 100) / 100,
+        banked: Math.round(bankedScore * 100) / 100,
+        total: Math.round(currentScore * 100) / 100,
+        opponent: Math.round(opponentScore * 100) / 100,
+        bankedBadgePoints,
+      });
+      tickCapture.universe({ heldSymbols: portfolioSymbols, benchSymbols, candidateSymbols: hotBenchSymbols });
+    });
 
     // Track peak score
     if (currentScore > (battle.scoreState?.peakScore || 0)) {
@@ -985,6 +1087,9 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       summary.evaluated++;
       summary.held++;
       console.log(`${LOG_PREFIX} battle ${battle.id}: CPU passive battle — scores marked, triggered evaluation skipped (P4 contract #5)`);
+      captureStep(tickCapture, () => {
+        tickCapture.exit('cpu_passive');
+      });
       return;
     }
 
@@ -1455,6 +1560,21 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     }
 
     momentumData.riskStatus = riskStatus;
+    // Capture C-7 (Astra round 1, F5): the per-symbol verdicts the tick ACTUALLY
+    // computed, read off the map it just filled. An allowlisted action + reason
+    // per symbol — no free text, and no re-run of the risk manager.
+    captureStep(tickCapture, () => {
+      const verdicts = {};
+      for (const [symbol, verdict] of Object.entries(riskStatus)) {
+        verdicts[symbol] = { action: verdict?.action ?? null, reason: verdict?.reason ?? null };
+      }
+      tickCapture.risk({
+        verdicts,
+        evaluatedCount: Object.keys(verdicts).length,
+        lockedCount: lockedPositions.size,
+        forcedExitCount: riskSwaps.length,
+      });
+    });
 
     // ---- Execute risk-triggered swaps (no Haiku needed) ----
     for (const { score, asset, riskResult } of riskSwaps) {
@@ -1687,6 +1807,20 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           slot.tier, slot.slotIndex,
           replacement, currentDay, prices, evaluationMetadata, snapshot
         );
+        // Capture (C-10): the COMMITTED action, read off the executor's own
+        // return before any later await, identified INSIDE the record only.
+        // The trade entry the executor just wrote is not touched.
+        captureStep(tickCapture, () => {
+          tickCapture.action({
+            kind: 'swap', source: swapSource, exitReason: riskResult.reason,
+            symbolOut: riskSwapResult.closedTrade?.symbolOut ?? null,
+            symbolIn: riskSwapResult.closedTrade?.symbolIn ?? null,
+            swappedOutAt: riskSwapResult.closedTrade?.swappedOutAt ?? null,
+            lockedPoints: riskSwapResult.closedTrade?.lockedPoints ?? null,
+            entryPrice: riskSwapResult.incomingAsset?.swapPrice ?? null,
+            committed: true,
+          });
+        });
 
         // P2 phase 2: the swap landed — finalize symbolIn, release symbolOut,
         // detect/emit double-down events (no-op for regular battles). The
@@ -1975,6 +2109,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       await battleRef.update(scoreUpdate);
       summary.evaluated++;
       summary.held++;
+      captureStep(tickCapture, () => {
+        tickCapture.stage('proposal_handled');
+        tickCapture.exit('proposal_pending');
+      });
       return;
     }
 
@@ -2000,6 +2138,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       await battleRef.update(scoreUpdate);
       summary.evaluated++;
       summary.held++;
+      captureStep(tickCapture, () => {
+        tickCapture.stage('gameplan_handled');
+        tickCapture.exit('gameplan_pending');
+      });
       return;
     }
 
@@ -2043,6 +2185,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
         await battleRef.update(scoreUpdate);
         summary.evaluated++;
+        captureStep(tickCapture, () => {
+          tickCapture.stage('gameplan_handled');
+          tickCapture.exit('gameplan_created');
+        });
         return;
       }
     }
@@ -2132,6 +2278,20 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // and there is no other return between the call and the final write.
     const wokenStoryIds = newStoryIds || [];
 
+    // Capture: the RENDERED candidate set this tick actually offered — the
+    // rebuilt bench plus every hot-bench and catalyst name added above. This is
+    // the set a symbol must belong to before the serializer will admit it into
+    // the permanent record (C-3).
+    captureStep(tickCapture, () => {
+      tickCapture.stage('risk_evaluated');
+      tickCapture.stage('trigger_evaluated');
+      tickCapture.universe({
+        heldSymbols: portfolioSymbols,
+        benchSymbols,
+        candidateSymbols: [...hotBenchSymbols, ...Object.keys(hotBenchAssetMap)],
+      });
+    });
+
     if (!shouldEvaluate) {
       // No triggers — update scores, VWAP ticks, and status feed, then move on
       // NOTE (naming): despite the name, this counter tracks ticks where the
@@ -2148,6 +2308,9 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       await battleRef.update(scoreUpdate);
       summary.evaluated++;
       summary.held++;
+      captureStep(tickCapture, () => {
+        tickCapture.exit('no_trigger');
+      });
       return;
     }
 
@@ -2217,6 +2380,9 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       };
       fallbackHold = true;
       console.error(`${LOG_PREFIX} ${refreshFailure} (battle ${battle.id})`);
+      captureStep(tickCapture, () => {
+        tickCapture.model({ outcome: 'failed', failureClass: 'refresh_failed', message: refreshFailure });
+      });
     } else if (!budget.proceed) {
       haikuFailure = {
         failureClass: 'budget_skipped',
@@ -2226,8 +2392,20 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       };
       fallbackHold = true;
       console.warn(`${LOG_PREFIX} Haiku call skipped for battle ${battle.id}: ${haikuFailure.message}`);
+      captureStep(tickCapture, () => {
+        tickCapture.model({ outcome: 'failed', failureClass: 'budget_skipped', message: haikuFailure.message });
+      });
     } else {
       haikuAttempted = true;
+      captureStep(tickCapture, () => {
+        tickCapture.model({ attempted: true });
+      });
+      // Stage B: the request-local holder for THIS tick's one dispatch. Opened
+      // here and closed in the finally below, so only the evaluation call can
+      // be observed and no later request can write into a stale holder.
+      captureStep(tickCapture, () => {
+        tickCapture.bindBodyHolder(beginBodyCapture());
+      });
       // Both timers are declared BEFORE the try so the finally can clear them
       // whatever fails — including a build that dies before the call's backstop
       // is ever armed.
@@ -2278,6 +2456,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         buildMs = Date.now() - buildStartedAt;
         promptBuilt = true;
         promptBuiltAt = new Date().toISOString();
+        captureStep(tickCapture, () => {
+          tickCapture.stage('prompt_built');
+          tickCapture.callEnvelope({ buildMs, promptBuiltAt });
+        });
         const { systemPrompt, identityBlock, liveContextBlock } = built;
 
         // ---- Phase 2: the call, and ONLY now the backstop ----
@@ -2296,6 +2478,11 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         // now measure the same interval from the same instant.
         const abortCtrl = new AbortController();
         hardAbort = setTimeout(() => abortCtrl.abort(), HAIKU_CALL_CEILING_MS);
+        // Capture: the request envelope, taken from the SAME constants the call
+        // literal below uses. Nothing is looked up and nothing is rebuilt.
+        captureStep(tickCapture, () => {
+          tickCapture.callEnvelope({ requestedModel: EVAL_MODEL_ID, maxOutputTokens: EVAL_MAX_OUTPUT_TOKENS, temperature: 0.4 });
+        });
         const callStartedAt = Date.now();
         let response;
         try {
@@ -2315,10 +2502,23 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         } finally {
           // Return OR throw — the honest wall time the call actually got.
           callMs = Date.now() - callStartedAt;
+          // Capture: `callMs` is set exactly when the call RAN, return or
+          // throw, so it is also the honest answer to "did this tick dispatch
+          // a model request?" — the denominator C-1 measures usable pairs
+          // over. A tick that never got here is `attempt unknown`, never a
+          // failed pair.
+          captureStep(tickCapture, () => {
+            tickCapture.stage('model_returned');
+            tickCapture.model({ dispatched: true });
+            tickCapture.callEnvelope({ callMs });
+          });
         }
 
         inputTokens = response.usage?.input_tokens || 0;
         outputTokens = response.usage?.output_tokens || 0;
+        captureStep(tickCapture, () => {
+          tickCapture.callEnvelope({ inputTokens, outputTokens });
+        });
 
         // Extract tool use block. tool_choice is forced, so a usable response
         // carries submit_trade_decision input. An ABSENT block (max_tokens
@@ -2339,8 +2539,18 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         // is recorded.
         const toolUse = response.content?.find(c => c.type === 'tool_use');
         const validation = validateTradeToolResult(toolUse?.input);
+        // Capture (spec §3): the ORIGINAL tool result exactly as the model
+        // returned it, copied HERE — before the deterministic guardrail layer
+        // can replace `haikuResult` below. Recorded whether or not it
+        // validated: an invalid proposal is the evidence a triage read wants.
+        captureStep(tickCapture, () => {
+          tickCapture.originalToolResult(toolUse?.input ?? null);
+        });
         if (validation.valid) {
           haikuResult = toolUse.input;
+          captureStep(tickCapture, () => {
+            tickCapture.model({ outcome: 'ok', failureClass: null });
+          });
         } else if (!toolUse) {
           haikuFailure = {
             failureClass: 'truncated_response',
@@ -2350,6 +2560,9 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           };
           fallbackHold = true;
           console.warn(`${LOG_PREFIX} Haiku response unusable for battle ${battle.id}: ${haikuFailure.message}`);
+          captureStep(tickCapture, () => {
+            tickCapture.model({ outcome: 'failed', failureClass: 'truncated_response', message: haikuFailure.message });
+          });
         } else {
           haikuFailure = {
             failureClass: INVALID_TOOL_RESULT_CLASS,
@@ -2361,6 +2574,9 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           };
           fallbackHold = true;
           console.warn(`${LOG_PREFIX} Haiku tool result invalid for battle ${battle.id} [${validation.invalidField}]: ${validation.reason}`);
+          captureStep(tickCapture, () => {
+            tickCapture.model({ outcome: 'failed', failureClass: INVALID_TOOL_RESULT_CLASS, invalidField: validation.invalidField, message: haikuFailure.message });
+          });
         }
       } catch (err) {
         // The build's own elapsed when it was the BUILD that failed (the race
@@ -2387,6 +2603,14 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         };
         fallbackHold = true;
         console.error(`${LOG_PREFIX} Haiku call failed for battle ${battle.id} [${haikuFailure.failureClass}]:`, err.message);
+        captureStep(tickCapture, () => {
+          tickCapture.model({
+            outcome: 'failed',
+            failureClass: haikuFailure.failureClass,
+            timeoutKind: haikuFailure.timeoutKind,
+            message: haikuFailure.message,
+          });
+        });
         // Default to HOLD on timeout or error
       } finally {
         // hardAbort may never have been armed (a build failure returns before
@@ -2396,6 +2620,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         // behind the winner's own .finally above.
         clearTimeout(buildTimer);
         clearTimeout(hardAbort);
+        endBodyCapture();
       }
     }
 
@@ -2689,6 +2914,13 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             };
             decision = 'SWAP';
             console.warn(`${LOG_PREFIX} Guardrail forced SWAP ${result.symbolOut}→${result.symbolIn}`);
+            // Capture: the DETERMINISTIC layer replaced the model's proposal.
+            // The original was copied at the tool-result branch above, so the
+            // record can never call this synthesized object "what the model
+            // said" (Phase 0 Q9).
+            captureStep(tickCapture, () => {
+              tickCapture.decision({ replacedByDeterministic: true });
+            });
           } else if (result.decision === 'HOLD' && originalDecision === 'SWAP') {
             validationErrors.push(result.statusMessage || 'Guardrail blocked swap');
             decision = 'HOLD';
@@ -2737,29 +2969,97 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           timestamp: new Date().toISOString(),
         };
         console.error(`${LOG_PREFIX} Guardrail evaluation failed — model proposal held for battle ${battle.id}:`, message);
+        // Capture (C-8): its OWN field. A tick can carry both this and a model
+        // failure; neither is ever recorded as the other.
+        captureStep(tickCapture, () => {
+          tickCapture.guardrail({ faultClass: 'guardrail_error', message });
+        });
       }
     }
 
+    // Capture (C-6): the deterministic layer's own result, and the LOCK and
+    // DISTRESSED vetoes below — recorded ONLY when the tick actually reached
+    // them with a live SWAP proposal. Both predicates below are the same
+    // side-effect-free membership tests the gates themselves use; no
+    // validator, picker or risk manager is called a second time to fill a
+    // value, and nothing untouched is ever recorded as "passed".
+    captureStep(tickCapture, () => {
+      tickCapture.finalToolResult(haikuResult);
+      tickCapture.guardrail({
+        sourceNote: guardrailSourceNote ?? null,
+        overrideCount: guardrailOverrides.length,
+        evaluated: !refreshFailure && (deployedGuardrails.length > 0 || sectorSlotObserveCap !== null),
+        deployedCount: deployedGuardrails.length,
+      });
+    });
+
     // Block Haiku from swapping out LOCKED positions
+    // F5 (Astra round 1): each veto is recorded AT ITS OWN GATE, after it runs.
+    // Recorded ahead of both gates, the distressed row claimed `evaluated` for
+    // a predicate that LOCK had already short-circuited.
+    const lockGateReached = decision === 'SWAP' && !!haikuResult;
     if (decision === 'SWAP' && haikuResult && lockedPositions.has(haikuResult.symbolOut)) {
       validationErrors.push(`${haikuResult.symbolOut} is LOCKED (near bonus threshold) — swap blocked`);
       decision = 'HOLD';
       downgraded = true;
       console.warn(`${LOG_PREFIX} SWAP blocked by risk LOCK for ${haikuResult.symbolOut}`);
     }
+    captureStep(tickCapture, () => {
+      tickCapture.check('lock', {
+        status: lockGateReached ? 'evaluated' : 'not_evaluated',
+        result: lockGateReached ? (lockedPositions.has(haikuResult.symbolOut) ? 'blocked' : 'passed') : null,
+        stage: 'decision_resolved',
+        symbolOut: haikuResult?.symbolOut ?? null,
+      });
+    });
 
     // Block Haiku from swapping IN distressed stocks
+    // A proposal LOCK already downgraded never reaches this predicate, so the
+    // check is `bypassed` — it did not run, and it certainly did not pass.
+    const distressedGateReached = decision === 'SWAP' && !!haikuResult;
     if (decision === 'SWAP' && haikuResult && stockRegimes[haikuResult.symbolIn] === 'distressed') {
       validationErrors.push(`${haikuResult.symbolIn} is DISTRESSED regime — swap blocked`);
       decision = 'HOLD';
       downgraded = true;
       console.warn(`${LOG_PREFIX} SWAP blocked: ${haikuResult.symbolIn} is distressed`);
     }
+    captureStep(tickCapture, () => {
+      tickCapture.check('distressedVeto', {
+        status: distressedGateReached ? 'evaluated' : (lockGateReached ? 'bypassed' : 'not_evaluated'),
+        result: distressedGateReached ? (stockRegimes[haikuResult.symbolIn] === 'distressed' ? 'blocked' : 'passed') : null,
+        stage: 'decision_resolved',
+        symbolIn: haikuResult?.symbolIn ?? null,
+        reason: distressedGateReached ? (stockRegimes[haikuResult.symbolIn] ?? null) : null,
+      });
+    });
 
     let pendingProposalUpdate = null;
 
     if (decision === 'SWAP' && haikuResult) {
       const validation = validateTradeDecision(haikuResult, battle);
+      // Capture (C-6): read off the validation the tick ALREADY ran — never a
+      // second call to fill a matrix.
+      captureStep(tickCapture, () => {
+        tickCapture.check('proposedPairValidation', {
+          status: 'evaluated',
+          result: validation.valid ? 'passed' : 'blocked',
+          stage: 'decision_resolved',
+          symbolOut: haikuResult.symbolOut ?? null,
+          symbolIn: haikuResult.symbolIn ?? null,
+        });
+      });
+      // The conviction floor lives INSIDE that fenced validator and its
+      // per-predicate verdict is not a return value: C-6's `unknown`. The
+      // tick's conviction number is on the record; which predicate rejected a
+      // pair is not, and this build does not recompute it to find out.
+      captureStep(tickCapture, () => {
+        tickCapture.check('conviction', {
+          status: 'unknown',
+          stage: 'decision_resolved',
+          symbolOut: haikuResult.symbolOut ?? null,
+          symbolIn: haikuResult.symbolIn ?? null,
+        });
+      });
       if (!validation.valid) {
         validationErrors = [...validationErrors, ...validation.errors];
         decision = 'HOLD';
@@ -2812,6 +3112,31 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           // model-churn breaker — the user's standing order is not churn.
           && !USER_DIRECTIVE_BYPASS_REASONS.has(haikuSwapReason)
           && getRecentSwapCount(battle.trades || [], swCfg.windowMinutes, Date.now(), { countEmergencies: swCfg.countEmergencies }) >= swCfg.capPerWindow;
+
+        // Capture (C-6): both gates actually ran on this pair; their outcomes
+        // are read off the objects the gates themselves produced. A gate that
+        // an EMERGENCY/user-directive reason bypassed is recorded `bypassed`,
+        // never `passed`.
+        captureStep(tickCapture, () => {
+          tickCapture.check('hurdle', {
+            status: 'evaluated',
+            result: hurdle.clears ? 'passed' : 'blocked',
+            stage: 'decision_resolved',
+            symbolOut: haikuResult.symbolOut ?? null,
+            symbolIn: haikuResult.symbolIn ?? null,
+            reason: hurdle.clears ? haikuSwapReason : (hurdle.blockReason ?? null),
+          });
+          tickCapture.check('swapCap', {
+            status: swCfg?.enabled
+              ? ((EMERGENCY_BYPASS_REASONS.has(haikuSwapReason) || USER_DIRECTIVE_BYPASS_REASONS.has(haikuSwapReason)) ? 'bypassed' : 'evaluated')
+              : 'not_evaluated',
+            result: swCfg?.enabled && !EMERGENCY_BYPASS_REASONS.has(haikuSwapReason) && !USER_DIRECTIVE_BYPASS_REASONS.has(haikuSwapReason)
+              ? (capBlocked ? 'blocked' : 'passed')
+              : null,
+            stage: 'decision_resolved',
+            reason: haikuSwapReason,
+          });
+        });
 
         if (!hurdle.clears) {
           // Mirror the LOCKED / distressed downgrade pattern above.
@@ -2903,16 +3228,56 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             // loss downgrades to HOLD exactly like a failed swap. No-op
             // (always reserved) for regular battles.
             const reservation = await reserveTournamentSymbolIn(db, tournamentCtx, battle, haikuResult.symbolIn);
+            // Capture (C-6): the reservation the tick ALREADY performed. For a
+            // regular (non-tournament) battle the ledger is a no-op, so the
+            // check is recorded `bypassed` rather than claimed as a pass.
+            captureStep(tickCapture, () => {
+              tickCapture.check('reservation', {
+                status: tournamentCtx ? 'evaluated' : 'bypassed',
+                result: tournamentCtx ? (reservation.reserved ? 'passed' : 'blocked') : null,
+                stage: 'decision_resolved',
+                symbolIn: haikuResult.symbolIn ?? null,
+                reason: reservation.reason ?? null,
+              });
+            });
             if (!reservation.reserved) {
+              // G1: a denied PRECONDITION, not a failed execution. Recorded
+              // here, at the gate that denied it, before the throw.
+              captureStep(tickCapture, () => {
+                tickCapture.check('execution', {
+                  status: 'bypassed',
+                  stage: 'decision_resolved',
+                  symbolOut: haikuResult?.symbolOut ?? null,
+                  symbolIn: haikuResult?.symbolIn ?? null,
+                  reason: 'reservation_denied',
+                });
+              });
               throw new Error(`${haikuResult.symbolIn} unavailable in the group's agent market (${reservation.reason})`);
             }
             if (tournamentCtx) reservedSymbolIn = haikuResult.symbolIn;
 
+            // G1: the executor is about to be CALLED. Only from here can a
+            // throw be an executor failure.
+            captureStep(tickCapture, () => { tickCapture.executorAdmitted(); });
             const swapResult = await executeSwapServer(
               db, battle.id, battle,
               validation.resolvedTier, validation.resolvedSlotIndex,
               benchAsset, currentDay, prices, evaluationMetadata, snapshot
             );
+            // Capture (C-10 / C-6): the committed action, and the execution
+            // check's actual outcome. Both read off the executor's own return.
+            captureStep(tickCapture, () => {
+              tickCapture.action({
+                kind: 'swap', source: swapSource, exitReason: haikuSwapReason,
+                symbolOut: swapResult.closedTrade?.symbolOut ?? null,
+                symbolIn: swapResult.closedTrade?.symbolIn ?? null,
+                swappedOutAt: swapResult.closedTrade?.swappedOutAt ?? null,
+                lockedPoints: swapResult.closedTrade?.lockedPoints ?? null,
+                entryPrice: swapResult.incomingAsset?.swapPrice ?? null,
+                committed: true,
+              });
+              tickCapture.check('execution', { status: 'evaluated', result: 'passed', stage: 'decision_resolved', symbolOut: swapResult.closedTrade?.symbolOut ?? null, symbolIn: swapResult.closedTrade?.symbolIn ?? null });
+            });
 
             // P2 phase 2: confirm + double-down detection (no-op when
             // tournamentCtx is null). Actual symbols from closedTrade.
@@ -3063,6 +3428,20 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             stagnationTicks[haikuInSymbol] = 0;
           } catch (swapErr) {
             console.error(`${LOG_PREFIX} Swap execution failed for battle ${battle.id}:`, swapErr.message);
+            // F5: the execution check RAN and produced no verdict. Leaving it
+            // `not_evaluated` made a failed trade indistinguishable from a tick
+            // that never tried to trade.
+            // G1: but ONLY if the executor was actually called. A throw from a
+            // denied precondition keeps the `bypassed` the gate already wrote.
+            captureStep(tickCapture, () => {
+              if (tickCapture.state?.executorAdmitted !== true) return;
+              tickCapture.check('execution', {
+                status: 'failed',
+                stage: 'decision_resolved',
+                symbolOut: haikuResult?.symbolOut ?? null,
+                symbolIn: haikuResult?.symbolIn ?? null,
+              });
+            });
             validationErrors.push(`Swap execution failed: ${swapErr.message}`);
             decision = 'HOLD';
             downgraded = true;
@@ -3396,6 +3775,21 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         const rankingsComputedAtMs = (rankingsResult.status === 'fulfilled' && rankingsResult.value.exists)
           ? (rankingsResult.value.data()?.computedAt?.toMillis?.() ?? null)
           : null;
+        // Capture (Astra round 1, F4): the controls the tick ACTUALLY
+        // RESOLVED — the same `controlResolution` object the fenced assembler
+        // builds and the renderer consumes (pin 1 proves the two calls are
+        // byte-identical). Copying the raw `battle.directive` / lean / rule
+        // slots instead put UNRENDERED player text in the body and labelled
+        // raw rule text as rendered text. Synchronous and side-effect-free:
+        // nothing is resolved a second time — the cron's single call to the
+        // control resolver is a COUNTED source pin (pin 1 of
+        // agent-evaluate.tickStamps.pins.test.js), so this comment does not
+        // name it in its counted form either.
+        captureStep(tickCapture, () => {
+          tickCapture.controls({ rendered: 'resolved', ...effectiveControlFacts(controlResolution, battle) });
+          tickCapture.controlsText(effectiveControlText(controlResolution));
+          tickCapture.controlSourceText(controlSourceText(battle));
+        });
         Object.assign(evaluation, composeTickStamps({
           promptBuilt,
           controlResolution,
@@ -3422,6 +3816,46 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       // below. Logged loud; the entry goes out unstamped.
       console.error(`${LOG_PREFIX} tick stamps failed for battle ${battle.id} (entry written unstamped; tick continues):`, stampErr?.message || stampErr);
     }
+
+    // ---- Tick capture: the tick's own facts, read off what it already has --
+    // The CONTROLS come from the in-memory slots the prompt was rendered from,
+    // never a fresh read (C-5): pin 3 of agent-evaluate.tickStamps.pins.test.js
+    // proves nothing refreshes `battle` between the prompt build and here, so
+    // these ARE the rendered controls. Their TEXT goes to the TTL body; the
+    // permanent record keeps only ids, versions and hashes of that same text.
+    captureStep(tickCapture, () => {
+      tickCapture.stage('decision_resolved');
+      tickCapture.identify({ evalId, day: currentDay, battlePhase: phase });
+      tickCapture.decision({
+        final: decision,
+        finalSymbolOut: evaluation.symbolOut ?? null,
+        finalSymbolIn: evaluation.symbolIn ?? null,
+        conviction: evaluation.conviction ?? null,
+        tier: evaluation.tier ?? null,
+        holdKind: evaluation.holdKind ?? null,
+        downgraded,
+      });
+      tickCapture.validationErrors(validationErrors);
+      // F4: when the gate above never ran, NOTHING was rendered from these
+      // slots on this tick, and the record says so rather than copying them.
+      if (!tickCapture.state?.controlFacts?.rendered) {
+        tickCapture.controls({
+          rendered: promptBuilt ? 'unknown' : 'not_rendered',
+          equippedConfigHash: battle.resolvedAgentManifest?.equippedConfigHash ?? null,
+          controlEpoch: Array.isArray(battle.controlEpochLog) ? battle.controlEpochLog.length : null,
+        });
+        tickCapture.controlsText({ directiveText: null, standingLeanTexts: [] });
+      }
+      tickCapture.manifest({
+        // C-5: evidence keys and known vintages ALREADY at the handler. The
+        // exact request is what was shown; anything absent from it was not
+        // seen, so nothing here is reconstructed and no prompt is rebuilt.
+        evidenceKeys: Object.keys(evaluation.evidence || {}),
+        vintages: Object.fromEntries(Object.entries(evaluation.vintages || {}).filter(([, v]) => typeof v === 'number' && Number.isFinite(v))),
+        vintageLabels: Object.fromEntries(Object.entries(evaluation.vintages || {}).filter(([, v]) => typeof v === 'string')),
+        notRenderedFields: evaluation.heard ? [] : ['heard'],
+      });
+    });
 
     // Surface the degraded tick on the status feed — a silent fallback HOLD is
     // indistinguishable from a deliberate one without this. Rides the existing
@@ -3610,7 +4044,18 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
 
     await battleRef.update(finalUpdate);
     summary.evaluated++;
+    captureStep(tickCapture, () => {
+      tickCapture.stage('finalized');
+      tickCapture.exit('completed');
+    });
   } catch (err) {
+    // Tick capture (C-9): THE ERROR EXIT. Marked here so the `finally` below
+    // SKIPS capture on this path — the outer handler finalizes the registered
+    // context AFTER it writes its own fault receipt, so a thrown tick still
+    // leaves a record and the record can name the receipt's tick.
+    captureStep(tickCapture, () => {
+      tickCapture.exit('tick_error');
+    });
     // Clear lock on any error
     await battleRef.update({ 'cronState.evaluatingAt': null }).catch(() => {});
     throw err;
@@ -3705,10 +4150,185 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         }
       }
     }
+
+    // ---- TICK CAPTURE — THE LAST THING THE TICK DOES (spec C-9) -----------
+    // The final statement of this `finally`, on every NON-ERROR exit: after
+    // the final battle update, after narration dispatch and after anticipation
+    // dispatch, so nothing the record costs can reorder an authoritative write
+    // or a chat beat. An ERROR exit is skipped here by construction — the
+    // catch above marked it `tick_error` and the outer handler finalizes it
+    // after writing its fault receipt.
+    //
+    // PERMITTED EFFECT (C-9): this may cost wall time and so may shift LATER
+    // scheduling (another battle's deferral, a later tick's anticipation
+    // admission). It may never change any trading calculation or authoritative
+    // outcome of THIS tick, and it cannot: everything above has already been
+    // awaited and written.
+    if (tickCapture.enabled && tickCapture.state.exitReason !== 'tick_error') {
+      // Mark THIS scope done so the handler's error path can never finalize a
+      // tick that already finalized itself (F3).
+      markTickCaptureClaimed(tickCaptureScope);
+      const captureResult = await finalizeTickCapture(db, tickCapture, {
+        remainingBudgetMs: TIME_BUDGET_MS - (Date.now() - cronStartTime),
+      });
+      // F7 (Astra round 1): the TOTAL — body resolution + serialization +
+      // commit — logged AFTER the commit, because the number written INSIDE
+      // the document structurally cannot include its own commit. This line and
+      // the per-invocation total below are what the flip decision reads for
+      // prerequisite #3; `capture.preCommitMs` on the record is not.
+      summary.captureTotalMs = (summary.captureTotalMs || 0) + (captureResult.totalMs || 0);
+      summary.captureTicks = (summary.captureTicks || 0) + 1;
+      if (captureResult.disposition !== 'written') {
+        summary.captureGaps = (summary.captureGaps || 0) + 1;
+      }
+      console.log(`${LOG_PREFIX} [tickCapture] battle=${battle.id} disposition=${captureResult.disposition} totalMs=${captureResult.totalMs ?? 0} preCommitMs=${captureResult.preCommitMs ?? 0} bodyMs=${captureResult.bodyMs ?? 0}`);
+      if (captureResult.disposition !== 'written') {
+        // A gap you can COUNT, never a silent one. No second write is made to
+        // report a failed first one (C-1) — the export sees the minted
+        // sequence with no document and reports it.
+        console.warn(`${LOG_PREFIX} tick capture ${captureResult.disposition} for ${captureResult.tickId || battle.id}${captureResult.error ? `: ${captureResult.error}` : ''}`);
+      }
+    }
   }
 }
 
 // ==================== HELPERS ====================
+
+/**
+ * F4 (Astra round 1) — the control FACTS, from the resolution the renderer
+ * consumed. `resolveControls` already dropped every directive that was
+ * malformed, non-enforce or epoch-killed, and every suppressed lean; those are
+ * facts about the tick, recorded as such, and their text is never copied as
+ * "rendered".
+ *
+ * Active rules are deliberately absent from the rendered set: the fenced
+ * assembler SANITIZES rule text and rewrites SX-04 entirely
+ * (agentEvalPromptAssembly.js renderEquippedRuleText), so the raw template is
+ * not the rendered fragment. The record identifies each rule by id and by a
+ * hash of its source text and marks the rendered form `unknown` — the request
+ * body in the TTL document is the authority on what was actually sent.
+ */
+function effectiveControlFacts(controlResolution, battle) {
+  const effective = controlResolution?.directive?.effective ?? null;
+  const leans = Array.isArray(controlResolution?.leans?.effective) ? controlResolution.leans.effective : [];
+  const descriptors = Array.isArray(controlResolution?.suppressionDescriptors) ? controlResolution.suppressionDescriptors : [];
+  const directiveDescriptor = descriptors.find((d) => d && d.target === 'directive') ?? null;
+  const rules = Array.isArray(battle?.agentContext?.activeRules) ? battle.agentContext.activeRules : [];
+  return {
+    directiveThreadId: effective?.directiveThreadId ?? directiveDescriptor?.id ?? null,
+    directiveAdjustmentId: effective?.adjustmentId ?? null,
+    directiveCanonicalTextVersion: effective?.canonicalTextVersion ?? null,
+    directiveTextHash: typeof effective?.text === 'string' ? canonicalContentHash(effective.text) : null,
+    directiveSuppressed: directiveDescriptor?.reason ?? null,
+    standingLeanIds: leans.map((l) => l?.adjustmentId).filter(Boolean),
+    standingLeanVersions: leans.map((l) => l?.version).filter((v) => typeof v === 'number'),
+    standingLeanTextHashes: leans.map((l) => (typeof l?.text === 'string' ? canonicalContentHash(l.text) : null)).filter(Boolean),
+    suppressedControlCount: descriptors.length,
+    activeRuleIds: rules.map((r) => r?.ruleId).filter(Boolean),
+    activeRuleTextHashes: rules.map((r) => {
+      const text = r?.text ?? r?.textTemplate;
+      return typeof text === 'string' ? canonicalContentHash(text) : null;
+    }).filter(Boolean),
+    activeRuleRendered: 'unknown',
+    equippedConfigHash: battle?.resolvedAgentManifest?.equippedConfigHash ?? null,
+    controlEpoch: Array.isArray(battle?.controlEpochLog) ? battle.controlEpochLog.length : null,
+  };
+}
+
+/** The control TEXT that was rendered — and only that. */
+function effectiveControlText(controlResolution) {
+  const effective = controlResolution?.directive?.effective ?? null;
+  const leans = Array.isArray(controlResolution?.leans?.effective) ? controlResolution.leans.effective : [];
+  return {
+    directiveText: typeof effective?.text === 'string' ? effective.text : null,
+    standingLeanTexts: leans.map((l) => l?.text ?? null),
+  };
+}
+
+/** Rule SOURCE text — named for what it is, never as the rendered fragment. */
+function controlSourceText(battle) {
+  const rules = Array.isArray(battle?.agentContext?.activeRules) ? battle.agentContext.activeRules : [];
+  return { activeRuleTemplates: rules.map((r) => r?.text ?? r?.textTemplate ?? null) };
+}
+
+/**
+ * THE ONE WAY CAPTURE IS CALLED (Astra round 1, F1).
+ *
+ * The flag is checked FIRST, so with capture off nothing inside `fn` runs at
+ * all — no selector, no `.map()`, no hash. And `fn` is invoked INSIDE the try,
+ * so an exception raised while BUILDING a capture argument is caught here: a
+ * guard inside the receiving method cannot catch a throw from its own argument
+ * list, which is exactly how a malformed `standingLeans` slot could take the
+ * tick's final write down with the flag off.
+ *
+ * A capture exception is a COUNTED GAP and a log line. Never a tick error.
+ */
+function captureStep(ctx, fn) {
+  if (!TICK_CAPTURE_ENABLED) return;
+  try {
+    fn();
+  } catch (captureErr) {
+    // G8 (Astra round 2): the FORMATTING is inside the guard too. A thrown
+    // value whose `message` getter or `toString` throws would otherwise escape
+    // `captureStep` into the tick — which is the one thing this function
+    // exists to make impossible.
+    try {
+      const message = captureErr?.message || String(captureErr);
+      try { ctx?.fault?.(message); } catch { /* the fault recorder itself is best-effort */ }
+      console.warn(`${LOG_PREFIX} tick capture step failed (ignored, tick unaffected): ${message}`);
+    } catch {
+      try { ctx?.fault?.('unprintable_capture_error'); } catch { /* nothing left to try */ }
+      console.warn(`${LOG_PREFIX} tick capture step failed with an unprintable error (ignored, tick unaffected)`);
+    }
+  }
+}
+
+/**
+ * Finalize the capture context of an admitted tick that THREW (C-9). Called by
+ * the handler's per-battle catch, AFTER its fault receipt is written. Never
+ * throws; with the flag off nothing is registered and it returns immediately.
+ */
+async function finalizeAbandonedTickCapture(db, scope, cronStartTime, summary = null) {
+  try {
+    // IDENTITY-CHECKED (F3): this claims the scope it was handed and nothing
+    // else, and a context the tick's own `finally` already finalized is never
+    // handed out twice.
+    const ctx = claimTickCaptureContext(scope);
+    if (!ctx) return;
+    const result = await finalizeTickCapture(db, ctx, {
+      remainingBudgetMs: TIME_BUDGET_MS - (Date.now() - cronStartTime),
+    });
+    // G4 (Astra round 2): an errored tick's capture is part of what capture
+    // cost this invocation. Left out, the advertised total understated itself
+    // exactly on the ticks a record is most wanted for.
+    if (summary) {
+      summary.captureTotalMs = (summary.captureTotalMs || 0) + (result.totalMs || 0);
+      summary.captureTicks = (summary.captureTicks || 0) + 1;
+      if (result.disposition !== 'written') summary.captureGaps = (summary.captureGaps || 0) + 1;
+    }
+    console.log(`${LOG_PREFIX} [tickCapture] errored-tick disposition=${result.disposition} totalMs=${result.totalMs ?? 0}`);
+    if (result.disposition !== 'written') {
+      console.warn(`${LOG_PREFIX} tick capture ${result.disposition} for errored tick ${result.tickId || '(unknown)'}${result.error ? `: ${result.error}` : ''}`);
+    }
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} tick capture finalization threw for an errored tick (ignored):`, err?.message || err);
+  }
+}
+
+/**
+ * The live tick-capture context of the CALLING TICK, or the frozen inert NOOP.
+ *
+ * Four of the six executor call sites live inside helpers
+ * (handlePendingProposal ×2, runSuppressionDeterministicPass,
+ * handleGameplanMeeting). This lookup lets those sites record their COMMITTED
+ * action without threading a new parameter through four signatures — and
+ * without creating a seventh executor caller. It resolves through the tick's
+ * own async scope (F3), so a helper can only ever reach ITS OWN tick's record,
+ * however many ticks are in flight in the process.
+ */
+function captureFor() {
+  return currentTickCapture();
+}
 
 function findBenchAsset(bench, symbol) {
   if (!bench || !symbol) return null;
@@ -3841,6 +4461,17 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
             },
             proposal.snapshot || null
           );
+          captureStep(captureFor(), () => {
+            captureFor().action({
+              kind: 'swap', source: 'haiku', exitReason: proposal.evaluationMetadata?.exitReason ?? 'haiku_decision',
+              symbolOut: approvedSwapResult.closedTrade?.symbolOut ?? null,
+              symbolIn: approvedSwapResult.closedTrade?.symbolIn ?? null,
+              swappedOutAt: approvedSwapResult.closedTrade?.swappedOutAt ?? null,
+              lockedPoints: approvedSwapResult.closedTrade?.lockedPoints ?? null,
+              entryPrice: approvedSwapResult.incomingAsset?.swapPrice ?? null,
+              committed: true,
+            });
+          });
           await confirmTournamentSwap(db, tournamentCtx, battle, {
             symbolIn: approvedSwapResult.closedTrade?.symbolIn || proposal.symbolIn,
             symbolOut: approvedSwapResult.closedTrade?.symbolOut || proposal.symbolOut,
@@ -4047,6 +4678,17 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
           },
           proposal.snapshot || null
         );
+        captureStep(captureFor(), () => {
+          captureFor().action({
+            kind: 'swap', source: 'haiku', exitReason: proposal.evaluationMetadata?.exitReason ?? 'haiku_decision',
+            symbolOut: expiredSwapResult.closedTrade?.symbolOut ?? null,
+            symbolIn: expiredSwapResult.closedTrade?.symbolIn ?? null,
+            swappedOutAt: expiredSwapResult.closedTrade?.swappedOutAt ?? null,
+            lockedPoints: expiredSwapResult.closedTrade?.lockedPoints ?? null,
+            entryPrice: expiredSwapResult.incomingAsset?.swapPrice ?? null,
+            committed: true,
+          });
+        });
         await confirmTournamentSwap(db, tournamentCtx, battle, {
           symbolIn: expiredSwapResult.closedTrade?.symbolIn || proposal.symbolIn,
           symbolOut: expiredSwapResult.closedTrade?.symbolOut || proposal.symbolOut,
@@ -4225,7 +4867,14 @@ export async function runSuppressionDeterministicPass({
       battle.agentContext?.deployedGuardrails || [],
       battle,
     );
-    if (deployedGuardrails.length === 0) return;
+    if (deployedGuardrails.length === 0) {
+      // G2 (Astra round 2): a pass that did NOT run says so — otherwise its
+      // `false` is indistinguishable from a pass that ran and found nothing.
+      captureStep(captureFor(), () => {
+        captureFor().guardrail({ suppressionPassRan: false, deployedCount: 0 });
+      });
+      return;
+    }
 
     deterministicResult = applyGuardrails({
       haikuResult: null,
@@ -4235,6 +4884,18 @@ export async function runSuppressionDeterministicPass({
       lockedPositions,
       stockRegimes,
       sectorSlotObserveCap: null,
+    });
+    // G2: the pass RAN and its guardrails were evaluated. Recorded at the
+    // boundary that did it — on a suppression tick the main-path evaluation
+    // never happens, so without this `evaluated` was written false for a tick
+    // whose guardrails had in fact just run.
+    captureStep(captureFor(), () => {
+      captureFor().guardrail({
+        suppressionPassRan: true,
+        evaluated: true,
+        deployedCount: deployedGuardrails.length,
+        sourceNote: deterministicResult?.sourceNote ?? null,
+      });
     });
 
     // [VWAP Floor B7] parity: a wanted-but-impossible exit is a feed beat —
@@ -4395,6 +5056,17 @@ export async function runSuppressionDeterministicPass({
       slot.tier, slot.slotIndex,
       benchAsset, currentDay, prices, evaluationMetadata, snapshot
     );
+    captureStep(captureFor(), () => {
+      captureFor().action({
+        kind: 'swap', source: 'guardrail', exitReason: deterministicExitReason,
+        symbolOut: passSwapResult.closedTrade?.symbolOut ?? null,
+        symbolIn: passSwapResult.closedTrade?.symbolIn ?? null,
+        swappedOutAt: passSwapResult.closedTrade?.swappedOutAt ?? null,
+        lockedPoints: passSwapResult.closedTrade?.lockedPoints ?? null,
+        entryPrice: passSwapResult.incomingAsset?.swapPrice ?? null,
+        committed: true,
+      });
+    });
 
     // P2 phase 2: confirm + double-down detection (no-op when tournamentCtx
     // is null). Actual symbols from closedTrade.
@@ -4514,6 +5186,18 @@ export async function runSuppressionDeterministicPass({
     await refreshBattleFromDoc(battleRef, battle, tournamentCtx);
   } catch (err) {
     console.error(`${LOG_PREFIX} R11 deterministic pass failed for ${battle.id}:`, err?.message);
+    // G2 (Astra round 2): the pass's OWN fault, recorded where it is caught.
+    // It is separate from the main-path guardrail fault by construction — a
+    // suppression tick never runs that one — and its message is free text, so
+    // it lives in the TTL body like every other message.
+    captureStep(captureFor(), () => {
+      captureFor().guardrail({
+        suppressionPassRan: true,
+        suppressionPassFaulted: true,
+        faultClass: 'guardrail_error',
+        message: `suppression pass: ${String(err?.message || err)}`,
+      });
+    });
     // [VWAP Floor B7] parity: a deterministically-failing exit must not go unobserved.
     statusFeedEntries.push({
       timestamp: new Date().toISOString(),
@@ -4610,6 +5294,17 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
             ...buildSwapProvenance(resolveTempoDial({ desiredTempo: desiredTempoOf(battle), dialEnabled: TEMPO_DIAL_ENABLED }).provenance),
             evaluationId: gameplanEvalId }
         );
+        captureStep(captureFor(), () => {
+          captureFor().action({
+            kind: 'swap', source: 'gameplan_meeting', exitReason: 'gameplan_rotation',
+            symbolOut: gameplanSwapResult.closedTrade?.symbolOut ?? null,
+            symbolIn: gameplanSwapResult.closedTrade?.symbolIn ?? null,
+            swappedOutAt: gameplanSwapResult.closedTrade?.swappedOutAt ?? null,
+            lockedPoints: gameplanSwapResult.closedTrade?.lockedPoints ?? null,
+            entryPrice: gameplanSwapResult.incomingAsset?.swapPrice ?? null,
+            committed: true,
+          });
+        });
         // P2 phase 2: confirm + double-down detection (no-op when
         // tournamentCtx is null). Actual symbols from closedTrade.
         await confirmTournamentSwap(db, tournamentCtx, battle, {

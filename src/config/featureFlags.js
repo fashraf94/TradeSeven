@@ -2639,3 +2639,41 @@ export const INTRADAY_PRICE_SOURCES = Object.freeze(['legacy', 'snapshot']);
  */
 // Pinned by: intradayFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const INTRADAY_RISK_ACTIVATION_ENABLED = false;
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * TICK CAPTURE — the per-check observation record (spec
+ * docs/specs/CAPTURE_BUILD_SPEC_V1_3.md; discovery
+ * docs/audits/20260920_PHASE0_TICK_CAPTURE.md).
+ *
+ * TICK_CAPTURE_ENABLED — the evaluator mints `cronState.tickSeq` inside its
+ * EXISTING admission transaction (the one permitted change to an existing
+ * write, spec §4) and, as the LAST thing every admitted tick does, writes two
+ * documents in ONE atomic batch: `agentBattles/{id}/ticks/{tickId}`
+ * (permanent, no free text) and `agentBattles/{id}/tickBodies/{tickId}` (all
+ * text, `expireAt = capturedAt + 120 days` for a Firestore TTL policy).
+ *
+ * Off → the admission transaction is BYTE-IDENTICAL to today, no sequence is
+ * written, no subcollection document is written, the Anthropic client is
+ * constructed with exactly today's options (no fetch observer), and every
+ * existing write — the entry, the scores, the status feed, the final battle
+ * update — is unchanged. Read as a module constant in
+ * api/cron/agent-evaluate.js (the TICK_STAMPS_ENABLED / INTRADAY_DIAGNOSTIC
+ * shape). The prompt sent to the model is identical on and off: capture never
+ * touches a builder, a decision or a score.
+ *
+ * Capture is bounded and non-fatal: a bounded deadline
+ * (TICK_CAPTURE_DEADLINE_MS) and a minimum remaining handler budget
+ * (TICK_CAPTURE_MIN_REMAINING_BUDGET_MS), both in
+ * api/_utils/tickCapture/captureConfig.js. A skipped, timed-out or failed
+ * capture is a COUNTED gap and never alters the tick's own results or writes.
+ *
+ * FLIP PREREQUISITES (spec §6, and they are not part of the build that added
+ * this flag): the Firestore TTL policy enabled on the `tickBodies` collection
+ * group, the single-field index exemptions deployed, measured per-tick
+ * overhead and record sizes within the §C-9 bound, and coverage reporting
+ * working. Registered DARK_BY_DESIGN in flagPinGuard.test.js; a deliberate
+ * flip drops that entry and moves the pin in the same commit.
+ */
+// Pinned by: tickCaptureFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const TICK_CAPTURE_ENABLED = false;

@@ -89,6 +89,14 @@ vi.mock('../_utils/firebaseAdmin.js', () => ({ getFirebaseAdmin: () => ({}) }));
 vi.mock('../_utils/voiceLayerAnticipation.js', async (importOriginal) => ({ ...(await importOriginal()), generateAnticipation: vi.fn(async () => null) }));
 vi.mock('../_utils/voiceLayerTradeNarration.js', async (importOriginal) => ({ ...(await importOriginal()), generateTradeNarration: vi.fn(async () => null) }));
 vi.mock('../_utils/shadowLogger.js', async (importOriginal) => ({ ...(await importOriginal()), logEvaluation: vi.fn(async () => false), logVisionTransition: vi.fn(async () => false), logAnticipation: vi.fn(async () => false) }));
+// Tick capture ships dark. This suite holds the no-swap prompt golden and the
+// forced-swap score lock — the two behavioural guards Phase 0 Part 3 names —
+// so the flag is pinned FALSE explicitly here rather than inherited, and a
+// future flip has to move this line deliberately.
+vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  TICK_CAPTURE_ENABLED: false,
+}));
 vi.mock('../_utils/learning/captureReceipt.js', () => ({
   captureSwapReceipt: vi.fn(async () => {}),
   resolveEntrySnapshot: vi.fn(async () => ({ snapshotIn: null, techDocIn: null, entrySnapshotSource: 'unavailable' })),
