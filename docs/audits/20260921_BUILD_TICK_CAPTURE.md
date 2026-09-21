@@ -483,3 +483,43 @@ split written down in `docs/audits/`.
 - **Pushed. No PR opened. No merge. No flag flipped.**
 - Branch tip is recorded in the delivery message rather than embedded here — a report cannot contain
   the hash of the commit that contains it.
+
+---
+---
+
+# Round 1 — Astra review: confirm, refute, fix
+
+**Date:** 2026-09-21 · **Executor:** Opus (Claude Code) · **Reviewer:** Astra · **Verdict in:** DO NOT MERGE
+**Continued from:** `c968a922` (tree clean, `git fetch origin` run first)
+**Round-1 baseline, before any edit:** whole-repo `npx vitest run` → **735 files passed / 3 skipped · 14,070 tests passed / 64 skipped · exit 0**
+
+## R1.1 — Dispositions (written before any fix was made)
+
+Astra's review reports source inspection only — it ran no tests, builds or mutations, and says so.
+Every finding below was therefore re-derived against this tree first, and each fix is preceded by a
+test that is **red on the pre-fix tree for the reason the finding names**.
+
+| # | Finding | Disposition | What I reproduced, at `c968a922` |
+|---|---|---|---|
+| 1 | Flag-off capture is not inert and can throw into the tick | **CONFIRMED (P1)** | `agent-evaluate.js:3701` evaluates `(battle.agentContext?.standingLeans \|\| []).map(...)` **as an argument**, so it runs before `tickCapture.controls` is entered and outside the NOOP's internal guard. `standingLeans: {}` is truthy, so `\|\|` does not rescue it, and `.map` is not a function. The throw lands in `processAgentBattle`'s inner catch → lock cleared → rethrow → **the final battle update never happens**, with the flag off. `canonicalContentHash` and three further `.map()` chains are in the same position. |
+| 2 | The serializer is not default-deny for every input shape | **CONFIRMED (P1)** | `captureSerializer.js:262–277` descends arrays and objects **before** `kindFor(path)` is consulted. `decision.original = {"PRIVATE-CANARY": {}}` survives: the key passes `ID_RE`, the empty object never reaches `leafOk`, and the field is declared `enum:DECISIONS`. Reachable exactly as Astra says — `agent-evaluate.js:2484` copies invalid tool input deliberately, `captureWriter.js:205` selects `state.originalTool?.decision` into the record. `findFreeText` tests `typeof value === 'string'` only, so the independent sweep misses it too. |
+| 3 | Capture state is not tick-local | **CONFIRMED (P1)** | `captureContext.js:216` keys the registry by `battleId` alone and `set` replaces; `claimTickCaptureContext` removes whoever occupies the key. `captureBodyObserver.js:32` is a single module-global `activeHolder`, replaced on `begin` and **unconditionally** cleared on `end`. Two overlapping invocations in one warm process are not isolated: A's cleanup can delete or finalize B's context, and A's dispatch can attach to B's holder. Astra's own caveat is kept: **actual deployed concurrency is NOT VERIFIED** — the defect is the missing isolation, not a measured incident. |
+| 4 | `controlsAsRendered` holds more than what was rendered | **CONFIRMED (P2)** | `agent-evaluate.js:3714` copies raw `battle.directive` / `standingLeans` / `activeRules` slots unconditionally. The renderer consumes `resolveControls(...)` (`agentEvalPromptAssembly.js:1229`), which drops non-enforce, epoch-killed and malformed directives and suppressed leans (`controlPromptRenderer.js:127–195`), and `renderEquippedRuleText:180` rewrites SX-04 text and sanitizes the rest. So the body could carry **unrendered** player text and label **raw** rule text as rendered. The same copy runs after a skipped or failed prompt build. |
+| 5 | Recorded checks do not all describe what ran | **CONFIRMED (P2)** | `agent-evaluate.js:2919` records `distressedVeto: evaluated` **before** the LOCK gate at `:2929` can flip `decision` to `HOLD`; on that path the real predicate at `:2937` short-circuits, so the record claims a check that did not run. `execution` is recorded only after success (`:3164`), so an executor throw leaves it `not_evaluated`. C-7: `riskStatus[symbol] = riskResult` exists at `:1533` and the capture schema has no home for it; suppression-pass guardrail failures are likewise uncaptured. |
+| 6 | Coverage does not fully implement C-1 | **CONFIRMED (P2), all three** | (a) `captureCoverage.js:85` `continue`s on non-dispatched ticks **before** counting expired bodies, so an expired CPU/no-trigger body vanishes from that figure. (b) `:101` divides `bySeq.size` by the counter; `aboveCounter` is reported but not excluded, so counter 1 with records 1 and 2 prints **200%**. (c) `export-tick-capture.js:218` builds the range cohort from a collection-group query on `ticks` — i.e. from **successful captures** — so a battle whose captures all failed contributes neither counter nor gaps. |
+| 7 | Capture is not one three-second bound and does not record its overhead | **CONFIRMED (P2)** | `captureWriter.js:370` spends up to `deadlineMs` on body resolution, then `:386` starts a **fresh** `deadlineMs` on the commit; serialization between them is unbounded. Worst case is >6 s, not 3 s. `capture.ms` is sampled at `:373` — before document construction and before the commit — so the persisted number cannot establish flip prerequisite #3. |
+| 8 | The whole-body size cap is not enforced | **CONFIRMED (P2)** | `captureWriter.js:320–340` trims only `request`/`response` and then drops the tool/rejection fields; `controlsAsRendered`, `faults` and `validationErrors` are unbounded, and the block **returns without re-checking**. An 800 KiB controls payload ships over the declared 700 KiB cap and would be rejected by Firestore at commit. |
+| 9 | Byte identity of the response hash | **CONFIRMED (P2)** | `captureBodyObserver.js:98` reads `copy.text()`, which decodes before `sha256Hex` sees it (`captureWriter.js:96`). A BOM or invalid UTF-8 changes the digest, so the record's hash is of the **decoded string**, not the received bytes. |
+
+**Nothing was refuted.** Every one of the nine reproduced on this tree.
+
+Astra's VERIFIED items are accepted as stated and were not reworked: committed-counter identity,
+single-invocation finalization ordering, clone/rejection handling and non-2xx passthrough, no
+parsed-object reconstruction, symbol-leaf universe membership, the shared atomic batch, the basic
+C-1 arithmetic, the protected-store entry at count 2, the `??` beside the voice pin, and zero fence
+contact. Two of its qualifications are adopted verbatim: the protected-store **count** does not prove
+atomicity (the shared batch does), and universal isolation was only ever true for the
+single-invocation paths.
+
+**Four test blind spots: all four confirmed as described**, and all four are predicted survivors
+rather than executed mutations in Astra's review. They are executed as mutations in §R1.4 below.
