@@ -25,6 +25,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import TeamCard from './TeamCard';
+import { agentPickDid, humanPickDid } from './backingCopy';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..', '..', '..');
@@ -136,7 +137,7 @@ describe('the CPU seat — archetype and no history', () => {
   it('reads as the house on both layers, with the archetype template named', () => {
     expect(html).toContain('CPU — Trend Follower · house');
     expect(html).toContain('CPU seat · no history');
-    expect(html).toContain('Both layers run the Trend Follower template');
+    expect(html).toContain('The Trend Follower archetype runs the six');
     expect(html).toContain('No owner behind the seat.');
     expect(html).toContain('>CPU<');
     expect(html).toContain('>none<');
@@ -249,5 +250,58 @@ describe('PROJECTION ONLY — MUTATION CHECK #5, on the source tree', () => {
       const src = stripped(f);
       expect(src, `${path.basename(f)} reaches fixtures`).not.toMatch(/leagueFixtures|REASONING|RIVALRY|backing-data|ARCH_PROFILE/);
     }
+  });
+});
+
+describe('the PR 4 review record — FAB-4, FAB-8, FAB-13, FAB-14, FAB-5 (docs/audits/20260922_BACKING_PR4_MULTILENS_REVIEW.md)', () => {
+  it('FAB-4: on a live-draft (slot) pod the first-week body says the draft lands at the fire, never Monday', () => {
+    const html = render(firstWeek(), openPod({ formationPath: 'slot', slotId: 'wed-1900' }));
+    expect(html).toContain('The three-stock draft lands at the slot’s fire — the moment this pool closes.');
+    expect(html).not.toContain('lands Monday');
+    expect(render(firstWeek(), openPod({ formationPath: 'lobby' }))).toContain('The three-stock draft lands Monday — after this pool closes.');
+  });
+
+  it('FAB-8: the house’s seat carries no loadout marker — no "contents private", no "may change nightly"', () => {
+    const html = render(cpu());
+    expect(html).not.toContain('data-backing="loadout"');
+    expect(html).not.toContain('contents private');
+    expect(html).not.toContain('may change nightly');
+    // On the visible text (the markup's CSS carries 'grid-template-columns').
+    const text = html.replace(/<[^>]*>/g, ' ');
+    expect(text).not.toMatch(/\btemplate\b/);
+    expect(text).not.toMatch(/\bbets?\b/);
+  });
+
+  it('FAB-13: completed weeks on the record but no readable tape is "No tape on file" — never FIRST WEEK', () => {
+    const card = veteran();
+    card.lastWeek = null;
+    card.team.derived = null;
+    const html = render(card);
+    expect(html).toContain('data-backing="tape-none"');
+    expect(html).toContain('No tape on file');
+    expect(html).not.toContain('FIRST WEEK');
+    expect(html).not.toContain('data-backing="tape-first-week"');
+    expect(html).toContain('412 RP');
+  });
+
+  it('FAB-14: a rank doc without an RP figure shows a dash, never "0 RP"', () => {
+    const card = veteran();
+    card.known = { ...card.known, rp: null };
+    const html = render(card);
+    expect(html).not.toContain('0 RP');
+    expect(html).toContain('>—<');
+  });
+
+  it('FAB-5: the why is headed as the trade’s recorded note, not as the agent’s own words', () => {
+    const html = render(veteran());
+    expect(html).toContain('The why · as recorded on the trade');
+    expect(html).not.toContain('in their agent’s words');
+  });
+
+  it('FAB-6: a roster name with no draft record reads as on the roster at close — never "Held all week", never "Claimed"', () => {
+    expect(humanPickDid({ symbol: 'NVDA', drafted: null, heldAtClose: true, flips: 0, claimedIn: null })).toBe('On the roster at close');
+    expect(humanPickDid({ symbol: 'XLE', drafted: null, heldAtClose: true, flips: 0, claimedIn: { day: 'TUE', forSymbol: 'COIN' } })).toBe('Claimed Tue for COIN');
+    expect(humanPickDid({ symbol: 'AMD', drafted: true, heldAtClose: true, flips: 0, dropped: { day: 'TUE', forSymbol: 'XLE' }, reclaimed: { day: 'THU', forSymbol: 'XLE' } })).toBe('Dropped Tue · back Thu');
+    expect(agentPickDid({ symbol: 'SMCI', drafted: null, heldAtClose: true, addedIn: null })).toBe('In the book at close');
   });
 });

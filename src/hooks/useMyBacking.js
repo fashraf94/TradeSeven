@@ -16,18 +16,33 @@ import { useEffect, useMemo, useState } from 'react';
 import { subscribeMyStakes, subscribePool } from '../services/backingService';
 import { subscribeGroup } from '../services/tournamentGroupService';
 
-export default function useMyBacking(uid, weekKey, enabled = true) {
-  const [stakes, setStakes] = useState([]);
+/**
+ * @param {string} uid
+ * @param {string|string[]} weekKeys  the week keys to read — the current battle
+ *   week (in play or settling) AND the window's week, so a committed stake on
+ *   a slot pod whose pool closed at its fire is the viewer's backing from the
+ *   moment it is placed, not from Monday (DOM-1, the PR 4 review record).
+ */
+export default function useMyBacking(uid, weekKeys, enabled = true) {
+  const keysKey = [...new Set((Array.isArray(weekKeys) ? weekKeys : [weekKeys]).filter((k) => typeof k === 'string' && k.length > 0))].sort().join(',');
+  const [stakesByKey, setStakesByKey] = useState({});
+  const [loadedKeys, setLoadedKeys] = useState({});
   const [poolsById, setPoolsById] = useState({});
   const [groupsById, setGroupsById] = useState({});
-  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    if (!enabled || !uid || !weekKey) { setStakes([]); setLoaded(true); return undefined; }
-    setLoaded(false);
-    const unsub = subscribeMyStakes(uid, weekKey, (list) => { setStakes(list); setLoaded(true); });
-    return () => unsub();
-  }, [enabled, uid, weekKey]);
+    if (!enabled || !uid || !keysKey) { setStakesByKey({}); setLoadedKeys({}); return undefined; }
+    setStakesByKey({});
+    setLoadedKeys({});
+    const unsubs = keysKey.split(',').map((key) => subscribeMyStakes(uid, key, (list) => {
+      setStakesByKey((prev) => ({ ...prev, [key]: list }));
+      setLoadedKeys((prev) => ({ ...prev, [key]: true }));
+    }));
+    return () => unsubs.forEach((u) => u());
+  }, [enabled, uid, keysKey]);
+
+  const stakes = useMemo(() => Object.values(stakesByKey).flat(), [stakesByKey]);
+  const loaded = !keysKey || keysKey.split(',').every((k) => loadedKeys[k] === true);
 
   // The distinct backed pods, as a stable string so the join re-subscribes
   // only when membership changes (the useRealLeagueState idsKey idiom).

@@ -27,8 +27,11 @@ import { deriveStripState } from './backingStripState';
 
 function LiveStrip({ uid, accent, onOpen, wide }) {
   const pods = useBackingPods(true);
-  const weekKey = useMemo(() => currentBaseLayerWeek(new Date()), []);
-  const inPlay = useMyBacking(uid, weekKey, Boolean(uid));
+  // The current battle week (in play or settling) and the window's week (a
+  // committed stake on a pool closed at its fire) are both the viewer's
+  // backing (DOM-1). Read each render, not memoised: the key rolls at Monday
+  // 00:00 ET and the next render picks it up (DOM-NOTE-5).
+  const inPlay = useMyBacking(uid, [currentBaseLayerWeek(new Date()), pods.data?.baseLayerWeek ?? null], Boolean(uid));
   const state = useMemo(() => deriveStripState({
     pods: pods.pods,
     inPlay,

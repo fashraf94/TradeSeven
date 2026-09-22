@@ -52,7 +52,7 @@ async function mount(props = {}) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
-  const all = { card: card(), pod: pod(), wallet: { left: 1000, total: 1000 }, eligibility: attested(), onBacked: vi.fn(), onClose: vi.fn(), ...props };
+  const all = { card: card(), pod: pod(), wallet: { known: true, left: 1000, total: 1000 }, eligibility: attested(), onBacked: vi.fn(), onClose: vi.fn(), ...props };
   await act(async () => { root.render(<StakeControl {...all} />); });
   roots.push({ root, container });
   return { container, props: all };
@@ -95,7 +95,7 @@ describe('the control, attested', () => {
   });
 
   it('shows the allowance and the per-team cap from the wallet state and the viewer’s own stakes', async () => {
-    const { container } = await mount({ wallet: { left: 640, total: 1000 }, pod: pod([{ stakeId: 's1', teamOdUserId: 'od-a', amount: 150, status: 'live' }]) });
+    const { container } = await mount({ wallet: { known: true, left: 640, total: 1000 }, pod: pod([{ stakeId: 's1', teamOdUserId: 'od-a', amount: 150, status: 'live' }]) });
     expect(container.textContent).toContain('640');
     expect(container.textContent).toContain('of 1,000 BP');
     expect(container.textContent).toContain(`Per-team cap ${PER_TEAM_CAP_BP} BP · 150 already on Mira`);
@@ -173,7 +173,7 @@ describe('the control, attested', () => {
     await click(confirmButton(capped.container));
     expect(svc.placeStake).not.toHaveBeenCalled();
 
-    const poor = await mount({ wallet: { left: 120, total: 1000 } });
+    const poor = await mount({ wallet: { known: true, left: 120, total: 1000 } });
     expect(q(poor.container, '[data-preset="100"]').disabled).toBe(false);
     expect(q(poor.container, '[data-preset="250"]').disabled).toBe(true);
     expect(q(poor.container, '[data-preset="500"]').disabled).toBe(true);
@@ -251,5 +251,32 @@ describe('the pure pieces', () => {
     expect(validateAmount(300, { capLeft: 250, allowanceLeft: 1000 })).toBe(REFUSALS.above_team_cap);
     expect(validateAmount(300, { capLeft: 500, allowanceLeft: 200 })).toBe(REFUSALS.insufficient_allowance);
     expect(validateAmount(300, { capLeft: 500, allowanceLeft: 1000 })).toBeNull();
+  });
+});
+
+describe('the PR 4 review record — FAB-10, FAB-11, FAB-16 (docs/audits/20260922_BACKING_PR4_MULTILENS_REVIEW.md)', () => {
+  it('FAB-10: until the wallet’s record has been read, nothing stakeable renders and no figure is shown — never a default 1,000', async () => {
+    const { container } = await mount({ wallet: { known: false, left: null, total: 1000 } });
+    expect(q(container, '[data-backing="wallet-checking"]')).not.toBeNull();
+    expect(q(container, '[data-backing="stake-control"]')).toBeNull();
+    expect(container.textContent).not.toContain('1,000');
+    expect(container.textContent).toContain('Reading your points…');
+  });
+
+  it('FAB-11: a success reply that carries no stake is not "Backed" — the plain failure sentence, nothing recorded', async () => {
+    svc.placeStake.mockResolvedValue({ ok: true });
+    const { container, props } = await mount();
+    await click(confirmButton(container));
+    await settle();
+    expect(q(container, '[data-backing="backed"]')).toBeNull();
+    expect(container.textContent).not.toContain('Backed ·');
+    expect(container.textContent).toContain(REFUSALS.server_error);
+    expect(props.onBacked).not.toHaveBeenCalled();
+  });
+
+  it('FAB-16: below the smallest preset the minimum stake is pre-chosen — never "Confirm 0 BP"', async () => {
+    const { container } = await mount({ wallet: { known: true, left: 80, total: 1000 } });
+    expect(confirmButton(container).textContent).toBe('Confirm 50 BP');
+    expect(container.textContent).not.toContain('Confirm 0 BP');
   });
 });

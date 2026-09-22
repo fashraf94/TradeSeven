@@ -163,7 +163,7 @@ const veteran = {
       { symbol: 'NVDA', sector: 'technology', drafted: true, heldAtClose: true, swappedOut: null },
       { symbol: 'AVGO', sector: 'technology', drafted: true, heldAtClose: true, swappedOut: null },
       { symbol: 'ANET', sector: 'technology', drafted: true, heldAtClose: false, swappedOut: { day: 'THU', forSymbol: 'SMCI' } },
-      { symbol: 'VST', sector: 'utilities', drafted: true, heldAtClose: true, swappedOut: null },
+      { symbol: 'VST', sector: 'energy', drafted: true, heldAtClose: true, swappedOut: null },
       { symbol: 'META', sector: 'technology', drafted: true, heldAtClose: true, swappedOut: null },
       { symbol: 'LLY', sector: 'healthcare', drafted: true, heldAtClose: true, swappedOut: null },
       { symbol: 'SMCI', sector: 'technology', drafted: false, heldAtClose: true, addedIn: { day: 'THU', forSymbol: 'ANET' } },

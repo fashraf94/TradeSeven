@@ -24,11 +24,16 @@ export function allowanceLeft(wallet, weekKey) {
 }
 
 export default function useBackingWallet(uid, weekKey, enabled = true) {
-  const [wallet, setWallet] = useState(null);
+  const [state, setState] = useState({ wallet: null, known: false });
   useEffect(() => {
-    if (!enabled || !uid) { setWallet(null); return undefined; }
-    const unsub = subscribeWallet(uid, setWallet);
+    if (!enabled || !uid) { setState({ wallet: null, known: false }); return undefined; }
+    setState({ wallet: null, known: false });
+    const unsub = subscribeWallet(uid, (wallet, err) => setState({ wallet, known: !err }));
     return () => unsub();
   }, [enabled, uid]);
-  return { wallet, left: allowanceLeft(wallet, weekKey), total: ALLOWANCE_BP };
+  // `known`: the server's record has been read — a MISSING document is a
+  // record (no wallet yet; the full allowance ahead). Until the first snapshot
+  // lands, or after a failed read, the allowance is unknown and no surface
+  // shows a figure for it (FAB-10, the PR 4 review record).
+  return { wallet: state.wallet, known: state.known, left: state.known ? allowanceLeft(state.wallet, weekKey) : null, total: ALLOWANCE_BP };
 }

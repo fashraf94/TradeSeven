@@ -14,7 +14,8 @@ node scripts/backing-screenshots/shoot.mjs $SHOTS docs/design/backing/screenshot
 
 - `harness.render.jsx` — renders the landing strip (through its gated mount,
   `BackingLandingStrip`) in its four states and the team card in its first-week
-  and veteran states, over inputs shaped like the endpoints' replies, and writes
+  and veteran states, over INVENTED inputs shaped like the endpoints' replies
+  (no real pod, team or stake is pictured), and writes
   one static page per state. It is not collected by `npm run test:run`.
 - `shoot.mjs` — photographs each page with Playwright's Chromium at a 390px
   mobile width, 2× scale. The app's two web fonts are fetched with curl and

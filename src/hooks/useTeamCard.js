@@ -4,8 +4,8 @@
 // §5, D-l): one fetch of GET /api/tournament/team-card per (groupId,
 // odUserId). Everything agent-derived on Surface B arrives through this reply;
 // the client reads no `agents` document (the projection-only pin in
-// TeamCard.test.jsx). Re-fetched on demand (`refresh`, after the viewer edits
-// their own pitch on the card).
+// TeamCard.test.jsx). `refresh` re-fetches on demand; the own-seat card shows
+// the viewer's pitch from useMyPitch's subscription, so no host needs it today.
 
 import { useCallback, useEffect, useState } from 'react';
 import { fetchTeamCard } from '../services/backingService';

@@ -53,9 +53,14 @@ export function dayTrailFor(group, odUserId) {
   return { trail, through };
 }
 
-/** The agent's six from the projected battle's frozen Monday portfolio (public WHAT). */
+/**
+ * The agent's six as they STAND — the projected battle's current book (public
+ * WHAT), or the day's opening book until the current one is written. Never
+ * labelled as Monday's draft: each weekday's battle opens on the book the
+ * prior day closed with (FAB-2 / DOM-5, the PR 4 review record).
+ */
 export function agentSixFor(battle) {
-  const pf = battle?.agentContext?.initialPortfolio ?? battle?.portfolio;
+  const pf = battle?.portfolio ?? battle?.agentContext?.initialPortfolio;
   const out = [];
   for (const tier of ['star', 'core', 'support']) {
     for (const h of Array.isArray(pf?.[tier]) ? pf[tier] : []) {
@@ -90,14 +95,29 @@ function Chips({ symbols }) {
 function WeekCard({ groupId, stakes, pool, group, accent, onOpenTape }) {
   const { battles } = useSpectatedTournamentBattles(groupId, true);
   const podName = baseGroupName(groupId);
-  const settled = SETTLED.has(pool?.status) || group?.status === GROUP_STATUS.COMPLETE;
+  // Settled is the POOL's fact — a complete pod whose pool has not resolved
+  // is settling, not settled (FAB-1, the PR 4 review record).
+  const settled = SETTLED.has(pool?.status);
+  const settling = !settled && group?.status === GROUP_STATUS.COMPLETE;
   const standing = group ? podStanding(group) : [];
   const amounts = new Map();
-  for (const s of stakes) amounts.set(s.teamOdUserId, (amounts.get(s.teamOdUserId) ?? 0) + (Number.isFinite(s.amount) ? s.amount : 0));
+  const statuses = new Map();
+  for (const s of stakes) {
+    amounts.set(s.teamOdUserId, (amounts.get(s.teamOdUserId) ?? 0) + (Number.isFinite(s.amount) ? s.amount : 0));
+    statuses.set(s.teamOdUserId, [...(statuses.get(s.teamOdUserId) ?? []), typeof s.status === 'string' ? s.status : 'live']);
+  }
+  // A stake that is no longer live says so beside its amount (DOM-6): any
+  // void on the team reads void; a team whose stakes have all resolved reads settled.
+  const stakeStatus = (id) => {
+    const list = statuses.get(id) ?? [];
+    if (list.includes('voided')) return WEEK.stakeStatus.voided;
+    if (list.length > 0 && list.every((x) => x === 'won' || x === 'lost')) return WEEK.stakeStatus.won;
+    return null;
+  };
   const teams = [...amounts.keys()];
   const first = teams[0] ?? null;
   const { trail, through } = group && first ? dayTrailFor(group, first) : { trail: [], through: 0 };
-  const statusLabel = settled ? WEEK.settled : group?.status === GROUP_STATUS.BATTLE ? WEEK.status.battle : WEEK.status.awaiting;
+  const statusLabel = settled ? WEEK.settled : settling ? WEEK.status.settling : group?.status === GROUP_STATUS.BATTLE ? WEEK.status.battle : WEEK.status.awaiting;
 
   return (
     <div data-backing="week-card" data-group={groupId} style={card}>
@@ -109,7 +129,7 @@ function WeekCard({ groupId, stakes, pool, group, accent, onOpenTape }) {
       <Mono style={{ fontSize: 9, color: LTOKENS.ink3, letterSpacing: '0.12em', textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>{WEEK.backed}</Mono>
       <div data-backing="week-stakes" style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
         {teams.map((id) => (
-          <Mono key={id} style={{ fontSize: 12, color: LTOKENS.ink }}>{WEEK.stakeRow(seatDisplayName(group?.seatNames, id), amounts.get(id))}</Mono>
+          <Mono key={id} style={{ fontSize: 12, color: LTOKENS.ink }}>{WEEK.stakeRow(seatDisplayName(group?.seatNames, id), amounts.get(id), stakeStatus(id))}</Mono>
         ))}
       </div>
 
@@ -147,18 +167,18 @@ function WeekCard({ groupId, stakes, pool, group, accent, onOpenTape }) {
           return (
             <div key={id} style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 8 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: LTOKENS.ink }}>{WEEK.revealSub(name, agentName)}</div>
-              {picks.length > 0 && (
+              {picks.length > 0 ? (
                 <div>
                   <Mono style={{ fontSize: 9.5, color: LTOKENS.ink2, letterSpacing: '0.12em', textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>{WEEK.revealHuman(name)}</Mono>
                   <Chips symbols={picks} />
                 </div>
-              )}
-              {six.length > 0 && (
+              ) : <Mono style={{ fontSize: 10.5, color: LTOKENS.ink3 }}>{WEEK.humanPending}</Mono>}
+              {six.length > 0 ? (
                 <div>
                   <Mono style={{ fontSize: 9.5, color: LTOKENS.ink2, letterSpacing: '0.12em', textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>{WEEK.revealAgent(agentName)}</Mono>
                   <Chips symbols={six} />
                 </div>
-              )}
+              ) : <Mono style={{ fontSize: 10.5, color: LTOKENS.ink3 }}>{WEEK.agentPending(agentName)}</Mono>}
             </div>
           );
         })}
@@ -191,12 +211,13 @@ export function backedPodsFor(inPlay) {
 export default function YourBacking({ inPlay, accent = LX.energy, onOpenTape, now = new Date() }) {
   const pods = backedPodsFor(inPlay);
   if (pods.length === 0) return null;
-  const allSettled = pods.every(({ groupId }) => SETTLED.has(inPlay?.poolsById?.[groupId]?.status) || inPlay?.groupsById?.[groupId]?.status === GROUP_STATUS.COMPLETE);
+  const allSettled = pods.every(({ groupId }) => SETTLED.has(inPlay?.poolsById?.[groupId]?.status));
+  const allComplete = !allSettled && pods.every(({ groupId }) => SETTLED.has(inPlay?.poolsById?.[groupId]?.status) || inPlay?.groupsById?.[groupId]?.status === GROUP_STATUS.COMPLETE);
   return (
     <div data-backing="your-backing-section" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div>
         <Eyebrow color={accent} style={{ marginBottom: 4 }}>{WEEK.title}</Eyebrow>
-        <Mono style={{ fontSize: 10.5, color: LTOKENS.ink3 }}>{allSettled ? WEEK.settledSub : WEEK.sub(weekDayOfFive(now))}</Mono>
+        <Mono style={{ fontSize: 10.5, color: LTOKENS.ink3 }}>{allSettled ? WEEK.settledSub : allComplete ? WEEK.settlingSub : WEEK.sub(weekDayOfFive(now))}</Mono>
       </div>
       {pods.map(({ groupId, stakes }) => (
         <WeekCard

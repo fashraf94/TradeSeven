@@ -40,9 +40,10 @@ function headFor(state) {
 
 function whenFor(state) {
   switch (state.kind) {
-    case STRIP_KIND.OPEN:
-    case STRIP_KIND.STAKED: return STRIP.when.closes(formatEtClose(state.closesAt));
-    case STRIP_KIND.WEEK: return STRIP.when.week;
+    case STRIP_KIND.OPEN: return STRIP.when.closes(formatEtClose(state.closesAt));
+    // Every staked pool already closed at its fire: nothing left to close.
+    case STRIP_KIND.STAKED: return state.closesAt ? STRIP.when.closes(formatEtClose(state.closesAt)) : STRIP.when.locked;
+    case STRIP_KIND.WEEK: return state.settling ? STRIP.when.settling : STRIP.when.week;
     case STRIP_KIND.BETWEEN: return state.reopens === 'monday' ? STRIP.when.reopensMonday : STRIP.when.reopensOnFormation;
     default: return STRIP.when.reopensOnFormation;
   }
@@ -110,6 +111,7 @@ export default function BackingStrip({ state, accent = LX.energy, onOpen, wide =
             <div key={x.stakeId ?? `${x.groupId}-${x.teamOdUserId}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 9px', borderRadius: 9, background: alpha(LTOKENS.bg, 0.5), border: `1px solid ${alpha(c, 0.2)}` }}>
               <span style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{x.teamName}</span>
               <Mono style={{ fontSize: 9.5, color: LTOKENS.ink3, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.podName}</Mono>
+              {x.closed && <Mono style={{ fontSize: 9, color: LTOKENS.ink3, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{STRIP.lockedRow}</Mono>}
               <Mono style={{ fontSize: 11.5, fontWeight: 700, color: c }}>{STRIP.stakeRow(x.amount)}</Mono>
             </div>
           ))}

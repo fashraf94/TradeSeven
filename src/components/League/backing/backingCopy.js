@@ -69,8 +69,10 @@ export const STRIP = Object.freeze({
     quiet: 'Backing',
   }),
   when: Object.freeze({
-    closes: (closeLabel) => (closeLabel ? `Closes ${closeLabel}` : 'Closes when the pool closes'),
+    closes: (closeLabel) => (closeLabel ? `Closes ${closeLabel}` : 'Close pending'),
+    locked: 'Closed · plays Monday',
     week: 'Settles after Friday’s close',
+    settling: 'Complete · settling',
     reopensMonday: 'Pools open again Monday',
     reopensOnFormation: 'Pools open as pods form',
   }),
@@ -80,6 +82,7 @@ export const STRIP = Object.freeze({
     between: 'Your stakes have settled. Open Backing for the week’s standings.',
   }),
   stakeRow: (amount) => `${bp(amount)} BP`,
+  lockedRow: 'locked',
   standingRank: (rank) => ordinal(rank),
 });
 
@@ -153,21 +156,9 @@ export const POD_LIST = Object.freeze({
 
 // ==================== THE BACKERS CALL (three chairs) ====================
 
-/**
- * "Backers 2 of 3" is an invitation, not a metric (brief §4.3). Copy per
- * capped count and spread state; the count is the API's own capped value.
- */
-export function backersCall({ count, floor, backersMet, spreadMet, youBacked }) {
-  if (backersMet && spreadMet) return { head: 'Pool qualified', sub: 'Backers and team spread met. Sealed until close.' };
-  let head;
-  let sub;
-  if (count <= 0) { head = 'No backers yet'; sub = `Yours would be the first. ${floor - 1} more make it a pool.`; }
-  else if (count === 1) { head = youBacked ? 'You and no one else' : '1 backer'; sub = `${floor - 1} more and this pool plays.`; }
-  else if (count < floor) { head = youBacked ? `You and ${count - 1} other${count - 1 === 1 ? '' : 's'}` : `${count} of ${floor} backers`; sub = `${floor - count} more and this pool plays.`; }
-  else { head = 'Backers met'; sub = 'Threshold reached.'; }
-  if (!spreadMet && count > 0) sub += ' Every stake is on one team — back another to spread it.';
-  return { head, sub };
-}
+// The open pool's two lines are Amendment B §B6's, VERBATIM, from
+// src/constants/backing.js POOL_STRIP (BackersCall renders them; DOM-3 /
+// SEAL-4, the PR 4 review record) — no prose of this module's own.
 
 // ==================== THE TEAM CARD (Surface B) ====================
 
@@ -178,7 +169,11 @@ export const CARD = Object.freeze({
   agentRole: 'agent · runs 6',
   agentFallbackName: (displayName) => `${displayName}’s agent`,
   noAgent: 'No agent on this seat yet.',
-  cpuPicks: 'The house drafts three from the archetype template and runs the agent’s six the same way. No owner behind the seat.',
+  // The house's seat, as it is actually played: the three come off a fixed
+  // board (a ranked-pool slice, no archetype in it — leagueTournament.js
+  // buildCpuUserBoard), the six by the archetype's rankings; the house also
+  // works the overnight wire like any seat (FAB-3, the PR 4 review record).
+  cpuPicks: 'The house plays this seat: three picks from a fixed board, the agent’s six by its archetype. No owner behind the seat.',
   pitch: Object.freeze({
     quote: (text) => `“${text}”`,
     noneYours: 'No pitch yet — write one sentence.',
@@ -214,13 +209,22 @@ export const CARD = Object.freeze({
   tape: Object.freeze({
     firstWeekTitle: 'First week · no tape yet',
     firstWeekSub: 'Nothing to replay. Judge the team as stated.',
-    firstWeekBody: ({ hasPitch, agentName, traits, rules }) => {
+    // When the three land depends on how the pod formed: a lobby pod drafts
+    // on its Monday; a live-draft (slot) pod drafts at its fire, the instant
+    // its pool closes (spec §4; FAB-4, the PR 4 review record).
+    firstWeekBody: ({ hasPitch, agentName, traits, rules, formationPath }) => {
       const loadout = Number.isInteger(traits) && Number.isInteger(rules) ? `a ${traits}-trait, ${rules}-rule loadout` : 'a loadout whose contents stay private';
-      return `What you have: ${hasPitch ? 'their pitch' : 'no pitch yet'}, ${agentName}’s stated approach, and ${loadout}. The three-stock draft lands Monday — after this pool closes.`;
+      const draft = formationPath === 'slot' ? 'The three-stock draft lands at the slot’s fire — the moment this pool closes.' : 'The three-stock draft lands Monday — after this pool closes.';
+      return `What you have: ${hasPitch ? 'their pitch' : 'no pitch yet'}, ${agentName}’s stated approach, and ${loadout}. ${draft}`;
     },
+    // A team with completed weeks whose tape could not be read: said plainly,
+    // never dressed as a first week (FAB-13, the PR 4 review record).
+    noTapeTitle: 'No tape on file',
+    noTapeSub: 'Completed weeks exist; none could be read back.',
+    noTapeBody: 'Judge the team as stated: the pitch, the approach, the known facts below.',
     cpuTitle: 'CPU seat · no history',
-    cpuSub: (archetypeLabel) => `Both layers run the ${archetypeLabel} template`,
-    cpuBody: 'The house drafts three and the agent runs six, both from the archetype template. No owner behind the seat.',
+    cpuSub: (archetypeLabel) => `The ${archetypeLabel} archetype runs the six`,
+    cpuBody: 'The house picks three from a fixed board; the agent runs its six by the archetype’s rankings. No owner behind the seat.',
     lastWeekTitle: 'Last week · both layers',
     lastWeekSub: (place, count, composite) => `Finished ${ordinal(place)} of ${count} · ${signed(composite)} · both layers, as recorded`,
     humanCol: (name) => `${name} · 3`,
@@ -228,7 +232,10 @@ export const CARD = Object.freeze({
     agentCol: (agentName) => `${agentName} · 6`,
     pickLayer: 'pick layer',
     book: 'book',
-    whyTitle: 'The why · in their agent’s words',
+    // The trade's recorded note — the agent's own reasoning, or the note a
+    // guardrail or the risk manager left when it moved the book; the WHAT
+    // projection carries no marker of which (FAB-5, the PR 4 review record).
+    whyTitle: 'The why · as recorded on the trade',
     noSwaps: 'No swaps recorded — the agent held its six.',
     tradeAct: (symbolOut) => `in for ${symbolOut}`,
     noWhy: 'no why recorded',
@@ -255,12 +262,20 @@ export function humanPickDid(pick) {
     const day = pick.swappedOut.day ? ` ${titleDay(pick.swappedOut.day)}` : '';
     return pick.swappedOut.forSymbol ? `Swapped out${day} for ${pick.swappedOut.forSymbol}` : `Swapped out${day}`;
   }
+  // Dropped on the wire and claimed back later — not held all week.
+  if (pick.dropped && pick.reclaimed) {
+    const out = pick.dropped.day ? ` ${titleDay(pick.dropped.day)}` : '';
+    const back = pick.reclaimed.day ? ` ${titleDay(pick.reclaimed.day)}` : '';
+    return `Dropped${out} · back${back}`;
+  }
   if (pick.heldAtClose && Number.isInteger(pick.flips) && pick.flips > 0) {
     const dir = pick.direction === 'short' ? 'short' : 'long';
     const day = pick.lastFlipDay ? ` ${titleDay(pick.lastFlipDay)}` : '';
     return `Flipped ${dir}${day}`;
   }
-  if (pick.heldAtClose) return 'Held all week';
+  // "All week" needs the draft record; without it the roster at close is the
+  // only fact (FAB-6, the PR 4 review record).
+  if (pick.heldAtClose) return pick.drafted === true ? 'Held all week' : 'On the roster at close';
   return '';
 }
 
@@ -275,7 +290,8 @@ export function agentPickDid(pick) {
     const day = pick.swappedOut.day ? ` ${titleDay(pick.swappedOut.day)}` : '';
     return `Out${day} for ${pick.swappedOut.forSymbol}`;
   }
-  if (pick.heldAtClose) return 'Held';
+  // "Held" needs the opening book; without it the closing book is the only fact (FAB-7).
+  if (pick.heldAtClose) return pick.drafted === true ? 'Held' : 'In the book at close';
   return '';
 }
 
@@ -301,6 +317,8 @@ export const STAKE = Object.freeze({
   remaining: (left) => `${bp(left)} BP left this week`,
   disclosuresTitle: 'Before you confirm',
   confirm: (amount) => `Confirm ${bp(amount)} BP`,
+  confirmNone: 'Choose an amount',
+  walletPending: 'Reading your points…',
   confirming: 'Confirming…',
   backed: (amount) => `Backed · ${bp(amount)} BP`,
   backedSub: 'Recorded by the server. Sealed until the pool closes.',
@@ -371,21 +389,30 @@ export const WEEK = Object.freeze({
   title: 'Your backing',
   sub: (day) => `Day ${day} of 5 · nothing to do but watch`,
   settledSub: 'Week complete',
+  settlingSub: 'Week complete · settling',
   empty: 'No stakes in play this week.',
   backed: 'Backed',
-  stakeRow: (teamName, amount) => `${teamName} · ${bp(amount)} BP`,
+  stakeRow: (teamName, amount, status = null) => `${teamName} · ${bp(amount)} BP${status ? ` · ${status}` : ''}`,
+  // A stake that is no longer live says so beside its amount (DOM-6).
+  stakeStatus: Object.freeze({ voided: 'void', won: 'settled', lost: 'settled' }),
   standing: 'Where the pod stands',
   noStanding: 'Standing appears after the first close.',
-  revealTitle: 'This week · drafted Monday',
-  revealSub: (teamName, agentName) => `What ${teamName} and ${agentName} took`,
-  revealPending: 'Drafts show Monday morning.',
+  // The books as they stand: the roster after the overnight wire and the
+  // agent's book after its swaps — what the team HOLDS, never re-labelled as
+  // Monday's draft (FAB-2 / DOM-5, the PR 4 review record).
+  revealTitle: 'This week · both layers',
+  revealSub: (teamName, agentName) => `What ${teamName} and ${agentName} hold`,
+  revealPending: 'The books show once the pod has drafted.',
+  humanPending: 'Three picks · not drafted yet',
+  agentPending: (agentName) => `${agentName} · six built Monday morning`,
   revealHuman: (teamName) => `${teamName} · 3`,
   revealAgent: (agentName) => `${agentName} · 6`,
   tape: 'Open the tape',
   settled: 'Settled',
   status: Object.freeze({
     battle: 'In play',
-    awaiting: 'Drafting Monday',
+    awaiting: 'Locked · plays Monday',
+    settling: 'Settling',
     complete: 'Complete',
   }),
 });

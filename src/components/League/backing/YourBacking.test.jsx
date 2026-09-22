@@ -88,8 +88,9 @@ describe('one card per backed pod, Monday–Friday', () => {
       },
     };
     const html = render();
-    expect(html).toContain('This week · drafted Monday');
-    expect(html).toContain('What Mira and Kestrel took');
+    expect(html).toContain('This week · both layers');
+    expect(html).toContain('What Mira and Kestrel hold');
+    expect(html).not.toContain('drafted Monday');
     expect(html).toContain('Mira · 3');
     expect(html).toContain('Kestrel · 6');
     for (const s of ['NVDA', 'AMD', 'VST', 'AVGO', 'ANET', 'META']) expect(html).toContain(s);
@@ -98,7 +99,7 @@ describe('one card per backed pod, Monday–Friday', () => {
 
   it('before the drafts land it says so — nothing filled', () => {
     const html = render({ inPlay: inPlay({ groupsById: { 'g-play': group({ players: [{ odUserId: 'od-a', picks: [] }, { odUserId: 'od-x', picks: [] }] }), 'g-two': group() } }) });
-    expect(html).toContain('Drafts show Monday morning.');
+    expect(html).toContain('The books show once the pod has drafted.');
   });
 
   it('one tap into the tape, and NO stake action anywhere on the surface', () => {
@@ -141,5 +142,32 @@ describe('the pure pieces', () => {
 
   it('backedPodsFor groups the stakes by pod and drops open pools and pools not yet read', () => {
     expect(backedPodsFor(inPlay()).map((p) => [p.groupId, p.stakes.length])).toEqual([['g-play', 2], ['g-two', 1]]);
+  });
+});
+
+describe('the PR 4 review record — FAB-1, DOM-6, FAB-2 (docs/audits/20260922_BACKING_PR4_MULTILENS_REVIEW.md)', () => {
+  it('FAB-1: a complete pod whose pool has not resolved reads Settling — never Settled', () => {
+    const html = render({ inPlay: inPlay({ poolsById: { 'g-play': { status: 'resolving' }, 'g-two': { status: 'closed' } }, groupsById: { 'g-play': group({ status: 'complete' }), 'g-two': group({ status: 'complete' }) } }) });
+    expect(html).toContain('>Settling<');
+    expect(html).not.toContain('>Settled<');
+    expect(html).toContain('Week complete · settling');
+    expect(html).not.toContain('>Week complete<');
+  });
+
+  it('DOM-6: a voided stake says so beside its amount; a live one says nothing', () => {
+    const html = render({ inPlay: inPlay({ stakes: [
+      { id: 's1', groupId: 'g-play', teamOdUserId: 'od-a', amount: 250, status: 'voided', weekKey: '2026-W39' },
+      { id: 's3', groupId: 'g-two', teamOdUserId: 'od-x', amount: 200, status: 'live', weekKey: '2026-W39' },
+    ] }) });
+    expect(html).toContain('Mira · 250 BP · void');
+    expect(html).toContain('Rigel · 200 BP<');
+  });
+
+  it('FAB-2: a layer that has not drafted says so for THAT layer — the other layer still shows', () => {
+    battles.byOwner = {};
+    const html = render();
+    expect(html).toContain('Mira · 3');
+    expect(html).toContain('six built Monday morning');
+    expect(html).not.toContain('drafted Monday');
   });
 });

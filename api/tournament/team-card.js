@@ -79,6 +79,7 @@ import { projectTournamentBattle } from '../_utils/tournamentBattleView.js';
 import { readPitch } from '../_utils/teamPitch.js';
 import { deriveWeekLine } from '../../src/constants/deriveWeekLine.js';
 import { getArchetypeDefinition } from '../_utils/archetypeRegistry.js';
+import { FORBIDDEN_TERMS } from '../../src/constants/backing.js';
 import { COMPANY_SECTORS } from '../../src/config/stockData.js';
 import {
   GROUP_STATUS,
@@ -93,7 +94,6 @@ import {
   getWeeklyComposite,
   isCloneAgentId,
   isWeekBanked,
-  rankByScores,
   rankDocId,
 } from '../../src/constants/leagueTournament.js';
 import { BACKING_BETA_ENABLED } from '../../src/config/featureFlags.js';
@@ -135,18 +135,37 @@ export function etDayLabel(iso) {
  * activeRules (rules + params + hardness), equippedTraits, equippedBundleIds,
  * config, memory, the equipped watchlist — stays behind it.
  */
+/**
+ * True when the text carries none of the backing lexicon's forbidden terms
+ * (src/constants/backing.js FORBIDDEN_TERMS), matched at a word start so
+ * "bet" covers "bets" and "betting". The backing surfaces may not show the
+ * lexicon anywhere, including copy they did not write (design brief §5).
+ */
+export function passesBackingLexicon(text) {
+  if (typeof text !== 'string' || text.length === 0) return false;
+  return !FORBIDDEN_TERMS.some((term) => {
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+');
+    return new RegExp(`\\b${escaped}`, 'i').test(text);
+  });
+}
+
 export function projectAgent(data, { archetype = data?.archetype ?? null } = {}) {
   const key = typeof archetype === 'string' && archetype.length > 0 ? archetype : null;
   // The registry's definition for a known archetype; null for anything else,
   // so an unknown archetype gets no label and no approach — never a guess,
   // never the analyst's line borrowed as a fallback.
   const definition = key ? getArchetypeDefinition(key) : null;
+  // The archetype's STATED approach — the canonical per-archetype copy — and
+  // ONLY when it passes the backing lexicon: a canonical line that names a
+  // forbidden term (the diversifier's "Spreads the bets…") is omitted rather
+  // than rewritten here (DOM-2, the PR 4 review record; a backing-safe line
+  // is the founder's call).
+  const disposition = definition?.identity?.disposition ?? null;
   return {
     name: typeof data?.name === 'string' && data.name.length > 0 ? data.name : null,
     archetype: key,
     archetypeLabel: definition?.displayName ?? null,
-    // The archetype's STATED approach — the canonical per-archetype copy.
-    approach: definition?.identity?.disposition ?? null,
+    approach: passesBackingLexicon(disposition) ? disposition : null,
     traitCount: Array.isArray(data?.equippedTraits) ? data.equippedTraits.length : null,
     ruleCount: Array.isArray(data?.activeRules) ? data.activeRules.length : null,
   };
@@ -173,7 +192,7 @@ export function knownFactsFrom(rank) {
   const weeksPlayed = Math.max(applied, history.length);
   if (weeksPlayed === 0) return null;
   return {
-    rp: Number.isFinite(rank.rp) ? rank.rp : 0,
+    rp: Number.isFinite(rank.rp) ? rank.rp : null,
     tier: Number.isFinite(rank.tier) ? rank.tier : null,
     tierName: typeof rank.tierName === 'string' ? rank.tierName : null,
     weeksPlayed,
@@ -258,52 +277,67 @@ export function humanLayerFrom({ drafted, player, approvedClaims }) {
   const bySymbol = new Map((picksAtClose ?? []).map((p) => [p?.symbol, p]));
   const swappedOut = new Map(approvedClaims.map((c) => [c.dropSymbol, c]));
   const swappedIn = new Map(approvedClaims.map((c) => [c.addSymbol, c]));
-
-  const picks = [];
-  for (const symbol of drafted ?? []) {
-    const pick = bySymbol.get(symbol);
-    if (pick) {
-      const legs = Array.isArray(pick.legs) ? pick.legs : [];
-      const last = legs[legs.length - 1];
-      picks.push({
-        symbol,
-        drafted: true,
-        heldAtClose: true,
-        flips: Math.max(0, legs.length - 1),
-        direction: typeof last?.direction === 'string' ? last.direction : null,
-        lastFlipDay: legs.length > 1 ? etDayLabel(last?.openedAt) : null,
-        swappedOut: null,
-      });
-    } else {
-      const claim = swappedOut.get(symbol) ?? null;
-      picks.push({
-        symbol,
-        drafted: true,
-        heldAtClose: false,
-        flips: null,
-        direction: null,
-        lastFlipDay: null,
-        swappedOut: claim ? { day: claim.day, forSymbol: claim.addSymbol } : { day: null, forSymbol: null },
-      });
-    }
-  }
-  // Names claimed IN during the week — on the roster at close, not drafted.
-  for (const pick of picksAtClose ?? []) {
-    if (!pick?.symbol || (drafted ?? []).includes(pick.symbol)) continue;
-    const claim = swappedIn.get(pick.symbol) ?? null;
+  // The draft record: absent (no stream, or no events for this seat) means the
+  // three are UNKNOWN. The roster at close is then the only fact, and no name
+  // is called drafted, held all week or claimed without a record of it
+  // (FAB-6, the PR 4 review record).
+  const draftKnown = Array.isArray(drafted) && drafted.length > 0;
+  const rosterPick = (pick) => {
     const legs = Array.isArray(pick.legs) ? pick.legs : [];
-    picks.push({
+    const last = legs[legs.length - 1];
+    return {
       symbol: pick.symbol,
-      drafted: false,
       heldAtClose: true,
       flips: Math.max(0, legs.length - 1),
-      direction: typeof legs[legs.length - 1]?.direction === 'string' ? legs[legs.length - 1].direction : null,
-      lastFlipDay: null,
-      claimedIn: claim ? { day: claim.day, forSymbol: claim.dropSymbol } : { day: null, forSymbol: null },
-    });
+      direction: typeof last?.direction === 'string' ? last.direction : null,
+      lastFlipDay: legs.length > 1 ? etDayLabel(last?.openedAt) : null,
+    };
+  };
+
+  const picks = [];
+  if (draftKnown) {
+    for (const symbol of drafted) {
+      const pick = bySymbol.get(symbol);
+      if (pick) {
+        // On the roster at close. Dropped on the wire and claimed back later
+        // is recorded as such — never "held all week".
+        const dropped = swappedOut.get(symbol) ?? null;
+        const reclaimed = swappedIn.get(symbol) ?? null;
+        picks.push({
+          ...rosterPick(pick),
+          drafted: true,
+          swappedOut: null,
+          dropped: dropped && reclaimed ? { day: dropped.day, forSymbol: dropped.addSymbol } : null,
+          reclaimed: dropped && reclaimed ? { day: reclaimed.day, forSymbol: reclaimed.dropSymbol } : null,
+        });
+      } else {
+        const claim = swappedOut.get(symbol) ?? null;
+        picks.push({
+          symbol,
+          drafted: true,
+          heldAtClose: false,
+          flips: null,
+          direction: null,
+          lastFlipDay: null,
+          swappedOut: claim ? { day: claim.day, forSymbol: claim.addSymbol } : { day: null, forSymbol: null },
+        });
+      }
+    }
+    // Names claimed IN during the week — on the roster at close, not drafted.
+    for (const pick of picksAtClose ?? []) {
+      if (!pick?.symbol || drafted.includes(pick.symbol)) continue;
+      const claim = swappedIn.get(pick.symbol) ?? null;
+      picks.push({ ...rosterPick(pick), drafted: false, claimedIn: claim ? { day: claim.day, forSymbol: claim.dropSymbol } : { day: null, forSymbol: null } });
+    }
+  } else {
+    for (const pick of picksAtClose ?? []) {
+      if (!pick?.symbol) continue;
+      const claim = swappedIn.get(pick.symbol) ?? null;
+      picks.push({ ...rosterPick(pick), drafted: null, claimedIn: claim ? { day: claim.day, forSymbol: claim.dropSymbol } : null });
+    }
   }
   return {
-    drafted: drafted ?? null,
+    drafted: draftKnown ? drafted : null,
     heldAtClose: picksAtClose ? picksAtClose.map((p) => p?.symbol).filter(Boolean) : null,
     picks,
   };
@@ -317,8 +351,12 @@ export function agentLayerFrom(battles) {
   if (!Array.isArray(battles) || battles.length === 0) return null;
   const first = battles[0];
   const last = battles[battles.length - 1];
-  const initial = flattenPortfolio(first.agentContext?.initialPortfolio ?? first.portfolio);
-  const atClose = new Set(flattenPortfolio(last.portfolio).map((h) => h.symbol));
+  // The opening book is the first battle's frozen `initialPortfolio`. Without
+  // it the six are UNKNOWN and the closing book is the only fact — never the
+  // closing book re-labelled as the draft (FAB-7, the PR 4 review record).
+  const initial = first.agentContext?.initialPortfolio ? flattenPortfolio(first.agentContext.initialPortfolio) : null;
+  const closing = flattenPortfolio(last.portfolio);
+  const atClose = new Set(closing.map((h) => h.symbol));
   const trades = [];
   for (const battle of battles) {
     for (const t of Array.isArray(battle.trades) ? battle.trades : []) {
@@ -334,23 +372,35 @@ export function agentLayerFrom(battles) {
     }
   }
   const out = new Map(trades.map((t) => [t.symbolOut, t]));
-  const picks = initial.map((h) => ({
-    symbol: h.symbol,
-    sector: h.sector,
-    drafted: true,
-    heldAtClose: atClose.has(h.symbol),
-    swappedOut: out.has(h.symbol) ? { day: out.get(h.symbol).day, forSymbol: out.get(h.symbol).symbolIn } : null,
-  }));
-  const initialSet = new Set(initial.map((h) => h.symbol));
-  for (const t of trades) {
-    if (initialSet.has(t.symbolIn) || picks.some((p) => p.symbol === t.symbolIn)) continue;
-    picks.push({
-      symbol: t.symbolIn,
-      sector: null,
-      drafted: false,
-      heldAtClose: atClose.has(t.symbolIn),
-      addedIn: { day: t.day, forSymbol: t.symbolOut },
-    });
+  const added = new Map(trades.map((t) => [t.symbolIn, t]));
+  let picks;
+  if (initial) {
+    picks = initial.map((h) => ({
+      symbol: h.symbol,
+      sector: h.sector,
+      drafted: true,
+      heldAtClose: atClose.has(h.symbol),
+      swappedOut: out.has(h.symbol) ? { day: out.get(h.symbol).day, forSymbol: out.get(h.symbol).symbolIn } : null,
+    }));
+    const initialSet = new Set(initial.map((h) => h.symbol));
+    for (const t of trades) {
+      if (initialSet.has(t.symbolIn) || picks.some((p) => p.symbol === t.symbolIn)) continue;
+      picks.push({
+        symbol: t.symbolIn,
+        sector: null,
+        drafted: false,
+        heldAtClose: atClose.has(t.symbolIn),
+        addedIn: { day: t.day, forSymbol: t.symbolOut },
+      });
+    }
+  } else {
+    picks = closing.map((h) => ({
+      symbol: h.symbol,
+      sector: h.sector ?? null,
+      drafted: null,
+      heldAtClose: true,
+      addedIn: added.has(h.symbol) ? { day: added.get(h.symbol).day, forSymbol: added.get(h.symbol).symbolOut } : null,
+    }));
   }
   return { picks, trades, swaps: trades.length, agentName: typeof first.agentContext?.agentName === 'string' ? first.agentContext.agentName : null };
 }
@@ -401,11 +451,14 @@ export async function lastCompletedWeekFor(db, { odUserId, rank, currentGroupId,
     const human = humanLayerFrom({ drafted, player, approvedClaims });
     const agent = agentLayerFrom(battles);
 
-    // Placement and composite — the week's own result, the tournament's own comparator.
+    // The composite from the week's banked scores (the tournament's own
+    // comparator); the PLACEMENT as the rank writer recorded it for this
+    // group — the career record, one source, never a re-ranking here
+    // (DOM-4 / FAB-12, the PR 4 review record). No record, no finish.
     const members = (group.players || []).map((p) => p?.odUserId).filter(Boolean);
     const scores = Object.fromEntries(members.map((id) => [id, getWeeklyComposite(group, id)]));
-    const ranking = rankByScores(scores, members);
-    const placement = ranking.indexOf(odUserId) + 1;
+    const recorded = rank?.appliedGroups?.[groupId]?.placement ?? history.find((e) => e?.groupId === groupId)?.placement;
+    const placement = Number.isInteger(recorded) && recorded > 0 ? recorded : null;
 
     // The sector lookup for the LEAN clause — the repo's own map, held names only.
     const sectors = {};
@@ -424,7 +477,7 @@ export async function lastCompletedWeekFor(db, { odUserId, rank, currentGroupId,
       card: {
         groupId,
         baseLayerWeek: group.baseLayerWeek,
-        placement: placement > 0 ? placement : null,
+        placement,
         seatCount: members.length,
         composite: Number.isFinite(scores[odUserId]) ? scores[odUserId] : null,
         human: { drafted: human.drafted, picks: human.picks },
@@ -443,8 +496,11 @@ export async function buildTeamCard(db, { group, seats, seatIndex, viewerUid }) 
   const { odUserId, isCpu } = seat;
   const dev = group.isDev === true;
 
-  const names = await resolveDisplayNames(db, [odUserId]);
-  const displayName = names[odUserId] ?? odUserId;
+  // The name the pod row and the strip show — the pod's own formation-time
+  // seatNames — so the card agrees with the row that opened it (DOM-7, the
+  // PR 4 review record); the users doc names a seat the pod did not.
+  const seatName = !isCpu && typeof group.seatNames?.[odUserId] === 'string' && group.seatNames[odUserId].length > 0 ? group.seatNames[odUserId] : null;
+  const displayName = seatName ?? (await resolveDisplayNames(db, [odUserId]))[odUserId] ?? odUserId;
 
   const agent = isCpu ? await cpuAgentFor(db, odUserId, displayName) : await ownerAgentFor(db, odUserId);
   const pitch = isCpu ? null : await readPitch(db, odUserId);

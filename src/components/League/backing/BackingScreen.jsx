@@ -12,10 +12,13 @@
 // status (useEligibility), the viewer's own pitch (useMyPitch), and the team
 // card projection for the seat in view (useTeamCard). Every read is one of
 // the rules-granted reads backingService.js names; every write is an
-// endpoint. Mounted only while BACKING_BETA_ENABLED (the hosts gate it at
-// call time); this component itself assumes it is lit.
+// endpoint. The hosts open it only while lit, and the screen reads
+// BACKING_BETA_ENABLED at call time itself (the outer component holds no
+// hooks; the inner one owns them), so a direct mount while dark renders
+// nothing and runs nothing.
 
 import React, { useMemo, useState } from 'react';
+import { BACKING_BETA_ENABLED } from '../../../config/featureFlags';
 import { FINE_PRINT } from '../../../constants/backing';
 import { currentBaseLayerWeek } from '../../../constants/leagueTournament';
 import { LTOKENS, LX, alpha } from '../leagueTokens';
@@ -59,11 +62,11 @@ function TopBar({ label, onBack, accent, right }) {
   );
 }
 
-export default function BackingScreen({ uid, accent = LX.energy, viewport = 'mobile', onBack, onOpenTape }) {
+function BackingScreenLive({ uid, accent, viewport, onBack, onOpenTape }) {
   const pods = useBackingPods(true);
-  const weekKey = useMemo(() => currentBaseLayerWeek(new Date()), []);
-  const inPlay = useMyBacking(uid, weekKey, Boolean(uid));
   const upcomingWeek = pods.data?.baseLayerWeek ?? null;
+  // Both weeks — see BackingLandingStrip (DOM-1); read each render (DOM-NOTE-5).
+  const inPlay = useMyBacking(uid, [currentBaseLayerWeek(new Date()), upcomingWeek], Boolean(uid));
   const wallet = useBackingWallet(uid, upcomingWeek, Boolean(uid));
   const eligibility = useEligibility(uid, Boolean(uid));
   const myPitch = useMyPitch(uid, Boolean(uid));
@@ -151,4 +154,10 @@ export default function BackingScreen({ uid, accent = LX.energy, viewport = 'mob
       )}
     </div>
   );
+}
+
+/** The screen. Renders nothing — and runs nothing — while the flag is dark. */
+export default function BackingScreen({ uid, accent = LX.energy, viewport = 'mobile', onBack, onOpenTape }) {
+  if (!BACKING_BETA_ENABLED) return null;
+  return <BackingScreenLive uid={uid} accent={accent} viewport={viewport} onBack={onBack} onOpenTape={onOpenTape} />;
 }

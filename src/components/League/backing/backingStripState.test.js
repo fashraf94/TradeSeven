@@ -141,6 +141,36 @@ describe('priority — one strip says one thing', () => {
     expect(s.kind).toBe(STRIP_KIND.STAKED);
   });
 
+  it('a stake whose pool document is not known (undelivered or unreadable) is UNKNOWN — neither in play nor settled; the strip never guesses a week or a result from it', () => {
+    // SEAL-1 (docs/audits/20260922_BACKING_PR4_MULTILENS_REVIEW.md): a null pool
+    // used to put the stake in play and rank a pod that had not battled.
+    const s = deriveStripState({
+      pods: [],
+      inPlay: {
+        stakes: [{ id: 's1', groupId: 'g-unknown', teamOdUserId: 'od-a', amount: 100, status: 'live', weekKey: '2026-W39' }],
+        poolsById: {},
+        groupsById: { 'g-unknown': inPlayGroup({ status: 'forming', dailyScores: {} }) },
+      },
+      now: WED,
+    });
+    expect(s.kind).toBe(STRIP_KIND.QUIET);
+  });
+
+  it('in play before the first close has banked: the team rows carry NO rank and NO score — seat order is never a standing', () => {
+    const s = deriveStripState({
+      pods: [],
+      inPlay: {
+        stakes: [{ id: 's1', groupId: 'g-play', teamOdUserId: 'od-a', amount: 100, status: 'live', weekKey: '2026-W39' }],
+        poolsById: { 'g-play': { status: 'closed' } },
+        groupsById: { 'g-play': inPlayGroup({ dailyScores: {} }) },
+      },
+      now: WED,
+    });
+    expect(s.kind).toBe(STRIP_KIND.WEEK);
+    expect(s.teams).toHaveLength(1);
+    expect(s.teams[0]).toMatchObject({ teamName: 'Mira', amount: 100, rank: null, score: null });
+  });
+
   it('a voided stake on a closed pool counts as settled, not in play', () => {
     const s = deriveStripState({
       pods: [],
@@ -238,5 +268,69 @@ describe('THE SEAL — nothing about an open pool leaves the derivation', () => 
     expect(text).not.toContain('700');
     // The viewer's OWN stake is the one number the open state may carry.
     expect(text).toContain('250');
+  });
+});
+
+describe('the PR 4 review record — DOM-1, FAB-1 (docs/audits/20260922_BACKING_PR4_MULTILENS_REVIEW.md)', () => {
+  it('DOM-1: a live stake on a listed pod whose pool CLOSED at its fire is the viewer’s backing now — STAKED, locked, no close to show', () => {
+    const s = deriveStripState({
+      pods: [pod('lds-wed', { formationPath: 'slot', slotId: 'wed-1900', pool: openPool({ status: 'closed', closesAt: WED_FIRE, closeReason: 'fire' }), myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', amount: 250, status: 'live' }] })],
+      inPlay: { stakes: [], poolsById: {}, groupsById: {} },
+      now: SAT,
+    });
+    expect(s.kind).toBe(STRIP_KIND.STAKED);
+    expect(s.pods).toBe(1);
+    expect(s.closesAt).toBeNull();
+    expect(s.stakes).toEqual([expect.objectContaining({ teamName: 'Mira', amount: 250, closed: true })]);
+  });
+
+  it('DOM-1: with one open and one fire-closed staked pod the window’s close is the OPEN pool’s', () => {
+    const s = deriveStripState({
+      pods: [
+        pod('g-open', { myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', amount: 100, status: 'live' }] }),
+        pod('lds-wed', { pool: openPool({ status: 'closed', closesAt: WED_FIRE, closeReason: 'fire' }), myStakes: [{ stakeId: 's2', teamOdUserId: 'od-b', amount: 50, status: 'live' }] }),
+      ],
+      now: TUE,
+    });
+    expect(s.kind).toBe(STRIP_KIND.STAKED);
+    expect(s.pods).toBe(2);
+    expect(s.closesAt).toBe(SUNDAY_CLOSE);
+    expect(s.stakes.map((x) => x.closed)).toEqual([false, true]);
+  });
+
+  it('a listed pod’s stakes are read from the list only — the same stake arriving through the week subscription is not counted twice', () => {
+    const stake = { stakeId: 's1', id: 's1', groupId: 'g-open', teamOdUserId: 'od-a', amount: 100, status: 'live', weekKey: '2026-W40' };
+    const s = deriveStripState({
+      pods: [pod('g-open', { myStakes: [stake] })],
+      inPlay: { stakes: [stake], poolsById: { 'g-open': openPool() }, groupsById: {} },
+      now: TUE,
+    });
+    expect(s.kind).toBe(STRIP_KIND.STAKED);
+    expect(s.pods).toBe(1);
+    expect(s.stakes).toHaveLength(1);
+  });
+
+  it('FAB-1: a complete pod whose pool has NOT resolved is settling — WEEK, never "Last week banked"', () => {
+    const s = deriveStripState({
+      pods: [],
+      inPlay: {
+        stakes: [{ id: 's1', groupId: 'g-done', teamOdUserId: 'od-a', amount: 250, status: 'live', weekKey: '2026-W39' }],
+        poolsById: { 'g-done': { status: 'resolving', holdReason: 'agent_layer_absent' } },
+        groupsById: { 'g-done': inPlayGroup({ status: 'complete' }) },
+      },
+      now: SAT,
+    });
+    expect(s.kind).toBe(STRIP_KIND.WEEK);
+    expect(s.settling).toBe(true);
+    expect(s.teams[0]).toMatchObject({ teamName: 'Mira', amount: 250, rank: 2 });
+  });
+
+  it('a closed pool on a pod whose document has not arrived is not guessed in play or pending', () => {
+    const s = deriveStripState({
+      pods: [],
+      inPlay: { stakes: [{ id: 's1', groupId: 'g-x', teamOdUserId: 'od-a', amount: 100, status: 'live', weekKey: '2026-W39' }], poolsById: { 'g-x': { status: 'closed' } }, groupsById: {} },
+      now: TUE,
+    });
+    expect(s.kind).toBe(STRIP_KIND.QUIET);
   });
 });

@@ -58,8 +58,12 @@ function PitchView({ text }) {
 }
 
 // ── the team unit — two layers, one team ────────────────────────────────────
+/** A first week: no tape AND no completed week on the record (FAB-13). */
+const isFirstWeek = (card) => !card.lastWeek && !(card.known?.weeksPlayed > 0);
+
 export function TeamUnit({ card, agentName, myPitch, accent }) {
   const { team, seat } = card;
+  const firstWeek = isFirstWeek(card);
   const isYou = seat.isViewer;
   const color = seatColor(card.odUserId, team.isCpu);
   const kind = team.isCpu ? 'cpu' : 'human';
@@ -88,7 +92,7 @@ export function TeamUnit({ card, agentName, myPitch, accent }) {
             {isYou && <Mono style={{ fontSize: 9, color: LTOKENS.ink3, letterSpacing: '0.04em' }}>{CARD.pitch.sameLine}</Mono>}
             {team.derived
               ? <div data-backing="derived" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><LIcon name="pulse" size={11} color={LTOKENS.ink3} /><Mono style={{ fontSize: 10.5, color: LTOKENS.ink2, letterSpacing: '0.01em', lineHeight: 1.4 }}>{team.derived}</Mono></div>
-              : <MonoAttr data-backing="first-week" style={{ fontSize: 10, color: LTOKENS.gold, letterSpacing: '0.08em' }}>{CARD.firstWeek}</MonoAttr>}
+              : firstWeek ? <MonoAttr data-backing="first-week" style={{ fontSize: 10, color: LTOKENS.gold, letterSpacing: '0.08em' }}>{CARD.firstWeek}</MonoAttr> : null}
           </>
         )}
       </LayerRow>
@@ -102,10 +106,14 @@ export function TeamUnit({ card, agentName, myPitch, accent }) {
         {agent ? (
           <>
             {agent.approach && <span data-backing="approach" style={body}>{agent.approach}</span>}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Icon name="lock" size={10} color={LTOKENS.ink3} stroke={2} />
-              <MonoAttr data-backing="loadout" style={{ fontSize: 10, color: LTOKENS.ink3 }}>{CARD.loadout(agent.traitCount, agent.ruleCount)}</MonoAttr>
-            </div>
+            {/* The loadout marker is a human agent's: the house's seat carries no
+                private loadout to keep private (spec §1; FAB-8). */}
+            {!team.isCpu && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Icon name="lock" size={10} color={LTOKENS.ink3} stroke={2} />
+                <MonoAttr data-backing="loadout" style={{ fontSize: 10, color: LTOKENS.ink3 }}>{CARD.loadout(agent.traitCount, agent.ruleCount)}</MonoAttr>
+              </div>
+            )}
           </>
         ) : (
           <span style={body}>{CARD.noAgent}</span>
@@ -123,7 +131,7 @@ export function KnownStrip({ card }) {
   if (team.isCpu) {
     items.push([K.career, K.dash, LTOKENS.ink3], [K.tier, K.cpuTier, LTOKENS.ink2], [K.history, K.none, LTOKENS.ink3]);
   } else if (known) {
-    items.push([K.career, K.rp(known.rp)], [K.tier, known.tierName ?? K.dash, known.tierName ? LTOKENS.ink : LTOKENS.ink3]);
+    items.push([K.career, Number.isFinite(known.rp) ? K.rp(known.rp) : K.dash, Number.isFinite(known.rp) ? LTOKENS.ink : LTOKENS.ink3], [K.tier, known.tierName ?? K.dash, known.tierName ? LTOKENS.ink : LTOKENS.ink3]);
     items.push([K.last, K.finishes(known.priorFinishes ?? []), LTOKENS.ink2], [K.weeks, String(known.weeksPlayed), LTOKENS.ink2]);
   } else {
     items.push([K.career, K.noWeeks, LTOKENS.ink3], [K.tier, K.dash, LTOKENS.ink3], [K.weeks, '0', LTOKENS.ink3]);
@@ -168,7 +176,7 @@ export function TwoLayerBook({ humanLabel, agentLabel, humanRows, agentRows }) {
 }
 
 // ── the tape block ──────────────────────────────────────────────────────────
-export function TapeBlock({ card, agentName, onOpenTape }) {
+export function TapeBlock({ card, pod, agentName, onOpenTape }) {
   const { team, lastWeek } = card;
   const agent = team.agent;
   if (team.isCpu) {
@@ -179,12 +187,20 @@ export function TapeBlock({ card, agentName, onOpenTape }) {
       </div>
     );
   }
+  if (!lastWeek && !isFirstWeek(card)) {
+    return (
+      <div data-backing="tape-none">
+        <TapeHead color={LTOKENS.ink3} lead title={CARD.tape.noTapeTitle} sub={CARD.tape.noTapeSub} />
+        <div style={box}><div style={body}>{CARD.tape.noTapeBody}</div></div>
+      </div>
+    );
+  }
   if (!lastWeek) {
     return (
       <div data-backing="tape-first-week">
         <TapeHead color={LTOKENS.gold} lead title={CARD.tape.firstWeekTitle} sub={CARD.tape.firstWeekSub} />
         <div style={goldBox}>
-          <div style={body}>{CARD.tape.firstWeekBody({ hasPitch: Boolean(team.pitch), agentName, traits: agent?.traitCount, rules: agent?.ruleCount })}</div>
+          <div style={body}>{CARD.tape.firstWeekBody({ hasPitch: Boolean(team.pitch), agentName, traits: agent?.traitCount, rules: agent?.ruleCount, formationPath: pod?.formationPath ?? null })}</div>
         </div>
       </div>
     );
@@ -261,7 +277,7 @@ export default function TeamCard({ card, pod, accent = LX.energy, onBack, onOpen
     <div data-backing="team-card" data-seat={card.odUserId} style={{ display: 'flex', flexDirection: 'column', gap: 14, fontFamily: 'inherit' }}>
       <Mono style={{ fontSize: 10, color: LTOKENS.ink3, letterSpacing: '0.1em', textTransform: 'uppercase', paddingRight: 36 }}>{CARD.podLine(podName, card.seat.index, card.seat.count)}</Mono>
       <TeamUnit card={card} agentName={agentName} myPitch={card.seat.isViewer ? myPitch : null} accent={accent} />
-      <TapeBlock card={card} agentName={agentName} onOpenTape={onOpenTape} />
+      <TapeBlock card={card} pod={pod} agentName={agentName} onOpenTape={onOpenTape} />
       <KnownStrip card={card} />
       <BackButton card={card} pod={pod} agentName={agentName} accent={accent} onBack={onBack} />
     </div>

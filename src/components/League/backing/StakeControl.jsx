@@ -55,10 +55,17 @@ export default function StakeControl({ card, pod, wallet, eligibility, accent = 
   const agentName = card.team.agent?.name ?? CARD.agentFallbackName(name);
   const already = stakedOnTeam(pod, card.odUserId);
   const capLeft = Math.max(0, PER_TEAM_CAP_BP - already);
-  const allowanceLeft = Number.isFinite(wallet?.left) ? wallet.left : 0;
+  // The wallet is the server's record; until its first snapshot has landed
+  // (or if the read failed) the allowance is UNKNOWN — never shown as the full
+  // 1,000 (FAB-10, the PR 4 review record).
+  const walletKnown = wallet?.known === true && Number.isFinite(wallet?.left);
+  const allowanceLeft = walletKnown ? wallet.left : 0;
   const maxAmount = Math.min(capLeft, allowanceLeft);
 
-  const defaultPreset = useMemo(() => [...STAKE_PRESETS].reverse().find((p) => p <= maxAmount) ?? null, [maxAmount]);
+  // The largest preset the allowance and the cap admit; below the smallest
+  // preset the minimum stake, when it fits; otherwise nothing is pre-chosen
+  // and Confirm waits for an amount (never "Confirm 0 BP").
+  const defaultPreset = useMemo(() => [...STAKE_PRESETS].reverse().find((p) => p <= maxAmount) ?? (maxAmount >= MIN_STAKE_BP ? MIN_STAKE_BP : null), [maxAmount]);
   const [preset, setPreset] = useState(defaultPreset);
   const [custom, setCustom] = useState('');
   const [busy, setBusy] = useState(false);
@@ -76,7 +83,11 @@ export default function StakeControl({ card, pod, wallet, eligibility, accent = 
     setError(null);
     try {
       const body = await placeStake({ groupId: card.groupId, teamOdUserId: card.odUserId, amount, requestId });
-      // "Backed" only from the server's success reply.
+      // "Backed" only from the server's success reply — and only with the
+      // amount THAT reply carries: a reply without its stake is not a stake
+      // (FAB-11, the PR 4 review record). The pod list re-reads the ledger
+      // (`onBacked` → refresh) so the §B6 line and the strip follow the record.
+      if (!Number.isFinite(body?.stake?.amount)) throw Object.assign(new Error('stake reply without a stake'), { code: 'server_error' });
       setResult(body);
       onBacked?.(body);
     } catch (err) {
@@ -100,8 +111,12 @@ export default function StakeControl({ card, pod, wallet, eligibility, accent = 
     );
   }
 
+  if (!walletKnown && !result) {
+    return <MonoAttr data-backing="wallet-checking" style={{ fontSize: 11, color: LTOKENS.ink3 }}>{STAKE.walletPending}</MonoAttr>;
+  }
+
   if (result) {
-    const backedAmount = Number.isFinite(result?.stake?.amount) ? result.stake.amount : amount;
+    const backedAmount = result.stake.amount;
     return (
       <div data-backing="backed" style={{ borderRadius: 16, padding: '16px 15px', background: `linear-gradient(160deg, ${alpha(accent, 0.12)}, ${LTOKENS.surface} 64%)`, border: `1px solid ${alpha(accent, 0.3)}`, textAlign: 'center' }}>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 17, fontWeight: 700, color: LTOKENS.ink }}>
@@ -178,10 +193,10 @@ export default function StakeControl({ card, pod, wallet, eligibility, accent = 
         className="lg-tap"
         data-backing="confirm"
         onClick={confirm}
-        disabled={busy || atCap}
-        style={{ all: 'unset', boxSizing: 'border-box', cursor: busy || atCap ? 'default' : 'pointer', width: '100%', padding: 14, borderRadius: 13, textAlign: 'center', fontWeight: 700, fontSize: 14.5, background: atCap ? LTOKENS.surface : accent, color: atCap ? LTOKENS.ink3 : LTOKENS.bg, opacity: busy ? 0.7 : 1, border: `1px solid ${atCap ? LTOKENS.hair2 : 'transparent'}`, boxShadow: atCap ? 'none' : `0 8px 24px ${alpha(accent, 0.3)}` }}
+        disabled={busy || atCap || amount == null}
+        style={{ all: 'unset', boxSizing: 'border-box', cursor: busy || atCap || amount == null ? 'default' : 'pointer', width: '100%', padding: 14, borderRadius: 13, textAlign: 'center', fontWeight: 700, fontSize: 14.5, background: atCap ? LTOKENS.surface : accent, color: atCap ? LTOKENS.ink3 : LTOKENS.bg, opacity: busy ? 0.7 : 1, border: `1px solid ${atCap ? LTOKENS.hair2 : 'transparent'}`, boxShadow: atCap ? 'none' : `0 8px 24px ${alpha(accent, 0.3)}` }}
       >
-        {busy ? STAKE.confirming : STAKE.confirm(Number.isInteger(amount) ? amount : 0)}
+        {busy ? STAKE.confirming : amount == null ? STAKE.confirmNone : STAKE.confirm(Number.isInteger(amount) ? amount : 0)}
       </button>
     </div>
   );

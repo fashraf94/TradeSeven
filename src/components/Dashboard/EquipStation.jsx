@@ -302,10 +302,11 @@ export default function EquipStation({ agent, accent, onOpenAgentRecord, setShow
         <div style={{ fontSize: 11.5, color: CMD.ink3, marginTop: 10 }}>Locked in battle · changes apply to your next deploy.</div>
       )}
 
-      {/* the scouting line — the player's own pitch for Backing (dark until the flag) */}
-      <div style={{ marginTop: 12 }}>
-        <ScoutingLine uid={agent?.ownerId} agentName={agentName} accent={accent} compact />
-      </div>
+      {/* the scouting line — the player's own pitch for Backing (dark until the
+          flag). Mounted BARE: it renders null while dark, and a wrapper of this
+          station's own would survive that null render as an empty element
+          (the compact line carries its own top margin when lit). */}
+      <ScoutingLine uid={agent?.ownerId} agentName={agentName} accent={accent} compact />
 
       {/* watchlist picker */}
       <EquipSheet

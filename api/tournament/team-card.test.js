@@ -47,7 +47,7 @@ vi.mock('../_utils/firebaseAdmin.js', () => ({ getFirebaseAdmin: () => DB.db }))
 const { makeInMemoryDb } = await import('../_utils/__fixtures__/inMemoryFirestore.js');
 const {
   default: handler, HISTORY_LOOKBACK, PRIOR_FINISHES, etDayLabel, projectAgent, knownFactsFrom,
-  humanLayerFrom, agentLayerFrom,
+  humanLayerFrom, agentLayerFrom, passesBackingLexicon,
 } = await import('./team-card.js');
 const { ARCHETYPE_IDENTITY } = await import('../../src/data/archetypeIdentity.js');
 const { deriveWeekLine } = await import('../../src/constants/deriveWeekLine.js');
@@ -305,8 +305,8 @@ describe('the veteran card — the team leads, from real completed data', () => 
     expect(lw.composite).toBe(8.7);
     expect(lw.human.drafted).toEqual(['NVDA', 'AMD', 'COIN']);
     expect(lw.human.picks).toEqual([
-      { symbol: 'NVDA', drafted: true, heldAtClose: true, flips: 0, direction: 'long', lastFlipDay: null, swappedOut: null },
-      { symbol: 'AMD', drafted: true, heldAtClose: true, flips: 1, direction: 'short', lastFlipDay: 'WED', swappedOut: null },
+      { symbol: 'NVDA', drafted: true, heldAtClose: true, flips: 0, direction: 'long', lastFlipDay: null, swappedOut: null, dropped: null, reclaimed: null },
+      { symbol: 'AMD', drafted: true, heldAtClose: true, flips: 1, direction: 'short', lastFlipDay: 'WED', swappedOut: null, dropped: null, reclaimed: null },
       { symbol: 'COIN', drafted: true, heldAtClose: false, flips: null, direction: null, lastFlipDay: null, swappedOut: { day: 'TUE', forSymbol: 'XLE' } },
       { symbol: 'XLE', drafted: false, heldAtClose: true, flips: 0, direction: 'long', lastFlipDay: null, claimedIn: { day: 'TUE', forSymbol: 'COIN' } },
     ]);
@@ -421,10 +421,30 @@ describe('honesty of the pure pieces', () => {
     expect(Object.keys(projectAgent(RANKED_AGENT)).sort()).toEqual(['approach', 'archetype', 'archetypeLabel', 'name', 'ruleCount', 'traitCount']);
   });
 
-  it('the approach is the canonical per-archetype copy, one string per archetype, for every archetype the identity module knows', () => {
+  it('the approach is the canonical per-archetype copy — and ONLY when it passes the backing lexicon (DOM-2 in the PR 4 review record)', () => {
+    let shown = 0;
     for (const [key, identity] of Object.entries(ARCHETYPE_IDENTITY)) {
-      expect(projectAgent({ archetype: key }).approach).toBe(identity.disposition);
+      const approach = projectAgent({ archetype: key }).approach;
+      if (passesBackingLexicon(identity.disposition)) { expect(approach).toBe(identity.disposition); shown += 1; } else expect(approach).toBeNull();
     }
+    expect(shown).toBeGreaterThan(3);
+    // The diversifier's canonical line names a forbidden term ("bets"); the card
+    // omits it rather than rewriting canonical copy — a backing-safe line is
+    // the founder's call, recorded in the PR.
+    expect(ARCHETYPE_IDENTITY.diversifier.disposition).toMatch(/\bbets\b/);
+    expect(projectAgent({ archetype: 'diversifier' }).approach).toBeNull();
+    expect(projectAgent({ archetype: 'diversifier' }).archetypeLabel).toBe('Diversifier');
+  });
+
+  it('passesBackingLexicon: the forbidden terms at a word start, in any case; empty text never passes', () => {
+    expect(passesBackingLexicon('Goes where the momentum is — and leaves the moment it fades.')).toBe(true);
+    expect(passesBackingLexicon('Spreads the bets so no single one can sink you.')).toBe(false);
+    expect(passesBackingLexicon('Never BETTING the house.')).toBe(false);
+    expect(passesBackingLexicon('Plays the odds.')).toBe(false);
+    expect(passesBackingLexicon('Time to cash   out.')).toBe(false);
+    expect(passesBackingLexicon('An alphabet of names.')).toBe(true);
+    expect(passesBackingLexicon('')).toBe(false);
+    expect(passesBackingLexicon(null)).toBe(false);
   });
 
   it('knownFactsFrom: no doc or an empty history → null; otherwise the strip\'s facts with the last placements most recent first', () => {
@@ -485,7 +505,10 @@ describe('the last completed week is found through the rank history, and only a 
     const res = await get({ groupId: 'g-now', odUserId: 'od-a' });
     expect(res.body.lastWeek.human.drafted).toBeNull();
     expect(res.body.lastWeek.human.picks.map((p) => p.symbol)).toEqual(['NVDA', 'AMD', 'XLE']);
-    expect(res.body.lastWeek.human.picks.every((p) => p.drafted === false)).toBe(true);
+    // FAB-6 (the PR 4 review record): with no draft record the three are UNKNOWN —
+    // no roster name is called drafted, held all week or claimed without a record.
+    expect(res.body.lastWeek.human.picks.every((p) => p.drafted === null)).toBe(true);
+    expect(res.body.lastWeek.human.picks.map((p) => (p.claimedIn ? p.symbol : null)).filter(Boolean)).toEqual(['XLE']);
     expect(res.body.team.derived).toBe('2 moves');
   });
 
@@ -495,5 +518,46 @@ describe('the last completed week is found through the rank history, and only a 
     expect(res.body.known).toBeNull(); // no tournamentRanks/dev-od-a doc
     expect(DB.readLog.some(([, p]) => p === 'tournamentRanks/dev-od-a')).toBe(true);
     expect(DB.readLog.some(([, p]) => p === 'tournamentRanks/od-a')).toBe(false);
+  });
+});
+
+describe('the PR 4 review record — FAB-7, DOM-4, DOM-7, FAB-14 (docs/audits/20260922_BACKING_PR4_MULTILENS_REVIEW.md)', () => {
+  it('FAB-7: a week whose first battle carries no frozen opening book gives UNKNOWN drafted flags — the closing book is never re-labelled as the draft', () => {
+    const agent = agentLayerFrom([{
+      createdAt: '2026-09-14T14:00:00.000Z', status: 'completed', agentContext: { agentName: 'Kestrel' },
+      portfolio: { star: [{ symbol: 'SMCI', sector: 'technology' }], core: [], support: [] },
+      trades: [{ symbolOut: 'ANET', symbolIn: 'SMCI', swappedOutAt: '2026-09-17T15:00:00.000Z', rationale: 'Broke its Monday low.' }],
+    }]);
+    expect(agent.picks).toEqual([expect.objectContaining({ symbol: 'SMCI', drafted: null, heldAtClose: true, addedIn: { day: 'THU', forSymbol: 'ANET' } })]);
+    expect(agent.picks.some((p) => p.symbol === 'ANET')).toBe(false);
+    expect(agent.swaps).toBe(1);
+  });
+
+  it('DOM-4: the finish is the placement the rank writer RECORDED for the group — with no record there is no finish, never a re-ranking', async () => {
+    const rank = DB.store.get('tournamentRanks/od-a');
+    DB.store.set('tournamentRanks/od-a', {
+      ...rank,
+      appliedGroups: { 'g-w1': { placement: 2 }, 'g-w2': {} },
+      history: rank.history.map((e) => (e.groupId === 'g-w2' ? { ...e, placement: undefined } : e)),
+    });
+    const res = await get({ groupId: 'g-now', odUserId: 'od-a' });
+    expect(res.body.lastWeek.groupId).toBe('g-w2');
+    expect(res.body.lastWeek.placement).toBeNull();
+    expect(res.body.lastWeek.composite).toBe(8.7);
+  });
+
+  it('DOM-7: the card’s display name is the pod’s own formation-time seat name — the name the row that opened it shows', async () => {
+    const group = DB.store.get('tournamentGroups/g-now');
+    DB.store.set('tournamentGroups/g-now', { ...group, seatNames: { ...group.seatNames, 'od-a': 'Mira · seated' } });
+    const res = await get({ groupId: 'g-now', odUserId: 'od-a' });
+    expect(res.body.team.displayName).toBe('Mira · seated');
+    // A seat the pod did not name falls back to the users document.
+    DB.store.set('tournamentGroups/g-now', { ...group, seatNames: {} });
+    expect((await get({ groupId: 'g-now', odUserId: 'od-a' })).body.team.displayName).toBe('Mira');
+  });
+
+  it('FAB-14: a rank doc without an RP figure projects null, never 0', () => {
+    expect(knownFactsFrom({ tier: 1, tierName: 'Rookie', appliedGroups: { a: 1 }, history: [{ placement: 3 }] }).rp).toBeNull();
+    expect(knownFactsFrom({ rp: 0, tier: 1, tierName: 'Rookie', appliedGroups: { a: 1 }, history: [{ placement: 3 }] }).rp).toBe(0);
   });
 });

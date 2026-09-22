@@ -24,7 +24,11 @@ import { CARD, PROFILE } from './backingCopy';
 function ScoutingLineLive({ uid, agentName, accent, compact }) {
   const pitch = useMyPitch(uid, Boolean(uid));
   return (
-    <div data-backing="scouting-line" style={{ borderRadius: 14, padding: compact ? '11px 13px' : '13px 15px', background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair2}` }}>
+    // The compact home (EquipStation's fragment) spaces its sections with their
+    // own margins; the framed home sits in a flex column with a gap. The margin
+    // lives HERE, on the lit element, so the host mounts the line bare and the
+    // dark render leaves nothing behind.
+    <div data-backing="scouting-line" style={{ marginTop: compact ? 12 : 0, borderRadius: 14, padding: compact ? '11px 13px' : '13px 15px', background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair2}` }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 7 }}>
         <Eyebrow color={LTOKENS.ink3}>{PROFILE.eyebrow}</Eyebrow>
       </div>

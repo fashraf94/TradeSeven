@@ -74,12 +74,26 @@ vi.mock('../../../services/liveDraftActions', () => ({
   fetchSlotSchedule: () => Promise.resolve({ slots: [] }), claimSlot: () => Promise.resolve({}), releaseSlot: () => Promise.resolve({}), mapSlotActionError: () => 'error',
 }));
 vi.mock('../LoadoutChooserSheet', () => ({ default: () => null }));
+// EquipStation's collaborators (the mobile pitch home) — stubbed the way
+// MobilePresenceIdentity.smoke.test.jsx stubs them, so the station renders in
+// isolation without its sheets' transitive Firestore graph.
+vi.mock('../../../hooks/useForge', () => ({
+  useForge: () => ({ forgedBundles: [], equippedBundles: [], equipBundleFn: vi.fn(), unequipBundleFn: vi.fn(), equippingBundleId: null, loading: false }),
+}));
+vi.mock('../../../services/forgeWatchlistService', () => ({ listWatchlists: () => Promise.resolve([]) }));
+vi.mock('../../../services/agentService', () => ({ equipWatchlist: vi.fn(), unequipWatchlist: vi.fn(), changeArchetype: vi.fn() }));
+vi.mock('../../Dashboard/EquipSheet', () => ({ default: () => null }));
+vi.mock('../../Dashboard/RuleBundlePicker', () => ({ default: () => null }));
+vi.mock('../../Dashboard/TraitsSheet', () => ({ default: () => null }));
+vi.mock('../../Dashboard/ArchetypePicker', () => ({ default: () => null }));
+vi.mock('../../Dashboard/EvolutionPreviewCard', () => ({ default: () => null }));
 
 const LeagueHome = (await import('../LeagueHome')).default;
 const LeagueLobbyDesktop = (await import('../LeagueLobbyDesktop')).default;
 const { PodCard } = await import('../LeaguePod');
 const ScoutingLine = (await import('./ScoutingLine')).default;
 const IdentityPanel = (await import('../../Dashboard/desktop/IdentityPanel')).default;
+const EquipStation = (await import('../../Dashboard/EquipStation')).default;
 
 const homeProps = { onOpenMyGame: () => {}, onOpenTrainingPod: () => {}, hasAgent: true, agentLoadout: null };
 const ssr = (el) => renderToString(el);
@@ -132,6 +146,18 @@ describe('flag OFF — the League renders as it does today', () => {
     expect(html).toContain('Prime');
   });
 
+  it('the mobile pitch home (EquipStation) carries no backing element and NO EMPTY WRAPPER where the line sits', () => {
+    const props = { agent: { id: 'a1', ownerId: 'viewer-1', name: 'Prime', archetype: 'momentum_chaser', stats: {} }, accent: '#5EEAD4', onOpenAgentRecord: () => {}, setShowForge: () => {} };
+    const html = ssr(<EquipStation {...props} />);
+    expect(html).not.toContain('data-backing');
+    expect(html).toContain('Prime');
+    // The DARK-1 class (multi-lens review, docs/audits/20260922_BACKING_PR4_MULTILENS_REVIEW.md):
+    // a host-side wrapper that survives the null render as an empty element.
+    expect(html).not.toMatch(/<div style="margin-top:12px"><\/div>/);
+    flag.on = true;
+    expect(ssr(<EquipStation {...props} />)).toContain('data-backing="scouting-line"');
+  });
+
   it('a mounted landing (effects running) opens NO backing read and makes NO backing request', async () => {
     const container = await mount(<LeagueHome {...homeProps} />);
     expect(container.querySelector('[data-backing]')).toBeNull();
@@ -175,6 +201,7 @@ describe('the flag is read at CALL time in every host — never captured at modu
     'src/components/League/LeaguePod.jsx',
     'src/components/League/backing/BackingLandingStrip.jsx',
     'src/components/League/backing/ScoutingLine.jsx',
+    'src/components/League/backing/BackingScreen.jsx',
   ]) {
     it(`${rel} has no module-level derivation of BACKING_BETA_ENABLED`, () => {
       const src = readFileSync(path.join(REPO, rel), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
@@ -183,6 +210,43 @@ describe('the flag is read at CALL time in every host — never captured at modu
       // at import time (the LEAGUE_REDESIGN idiom is deliberate elsewhere; here
       // the contract is call-time).
       expect(src).not.toMatch(/^const [^\n]*BACKING_BETA_ENABLED/m);
+    });
+  }
+
+  // A host that wraps a dark-gated mount in an element of its own leaves that
+  // element behind while dark — the one defect class the flag-on-minus-strip
+  // equality in backingLanding.test.jsx cannot see, because the wrapper is
+  // present in both states (DARK-1/DARK-2 in the PR 4 multi-lens review).
+  // Every mount of a gated backing component in a host is therefore held BARE
+  // at the source: nothing opens right before it that closes right after it.
+  const HOST_MOUNTS = [
+    ['src/components/Dashboard/EquipStation.jsx', '<ScoutingLine'],
+    ['src/components/Dashboard/desktop/IdentityPanel.jsx', '<ScoutingLine'],
+    ['src/components/League/LeagueHome.jsx', '<BackingLandingStrip'],
+    ['src/components/League/LeagueLobbyDesktop.jsx', '<BackingLandingStrip'],
+    ['src/components/League/LeagueLobbyRedesign.jsx', '{backingSlot}'],
+  ];
+  const stripComments = (src) => src.replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  /** Every occurrence of `marker`, with the trimmed text right before and right after it. */
+  function mountsOf(src, marker) {
+    const out = [];
+    for (let i = src.indexOf(marker); i >= 0; i = src.indexOf(marker, i + marker.length)) {
+      const end = marker.startsWith('{') ? src.indexOf('}', i) + 1 : src.indexOf('/>', i) + 2;
+      out.push({ before: src.slice(0, i).trimEnd(), after: src.slice(end).trimStart() });
+    }
+    return out;
+  }
+  for (const [rel, marker] of HOST_MOUNTS) {
+    it(`${rel} mounts ${marker} bare — no host element of its own around it`, () => {
+      const mounts = mountsOf(stripComments(readFileSync(path.join(REPO, rel), 'utf8')), marker);
+      expect(mounts.length, `${marker} is mounted in ${rel}`).toBeGreaterThan(0);
+      for (const { before, after } of mounts) {
+        // an HTML element opened right before the mount (attributes carry no angle bracket)…
+        const opened = /<([a-z][\w-]*)(\s[^<>]*[^/<>])?>$/.exec(before);
+        // …and closed right after it: the mount is that element's only child.
+        const soleChild = opened != null && after.startsWith(`</${opened[1]}>`);
+        expect(soleChild, `${rel}: ${marker} is the sole child of a host <${opened?.[1]}> — that element survives the null render while dark`).toBe(false);
+      }
     });
   }
 

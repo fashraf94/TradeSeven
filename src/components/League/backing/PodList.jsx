@@ -66,9 +66,9 @@ function SeatRow({ pod, team, revealed, onOpenSeat, accent }) {
           {team.isCpu ? <KindMark agent={agent} /> : <Mono style={{ fontSize: 10, color: LTOKENS.ink3 }}>{POD_LIST.humanMark}</Mono>}
         </div>
       </div>
-      {revealed && (
+      {revealed && Number.isFinite(team.stakeTotal) && Number.isFinite(team.backerCount) && (
         <div style={{ textAlign: 'right' }}>
-          <Mono style={{ fontSize: 10.5, color: LTOKENS.ink2, display: 'block' }}>{POD_LIST.revealed.team(team.stakeTotal ?? 0, team.backerCount ?? 0)}</Mono>
+          <Mono style={{ fontSize: 10.5, color: LTOKENS.ink2, display: 'block' }}>{POD_LIST.revealed.team(team.stakeTotal, team.backerCount)}</Mono>
           {pays && <Mono style={{ fontSize: 10, color: LTOKENS.gold, display: 'block' }}>{pays}</Mono>}
         </div>
       )}
@@ -120,7 +120,7 @@ export function PodEntry({ pod, onOpenSeat, accent = LX.energy }) {
       <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${LTOKENS.hair}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
         {open && (
           <>
-            <BackersCall progress={pool.backerProgress} spread={pool.teamSpread} youBacked={myTotal > 0} compact />
+            <BackersCall progress={pool.backerProgress} spread={pool.teamSpread} compact />
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <Sealed label={POD_LIST.sealedPot} size="sm" />
               <Sealed label={POD_LIST.sealedPays} size="sm" />
@@ -134,8 +134,10 @@ export function PodEntry({ pod, onOpenSeat, accent = LX.energy }) {
         )}
         {revealed && (
           <div data-backing="revealed" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <Mono style={{ fontSize: 11.5, fontWeight: 700, color: LTOKENS.ink }}>{POD_LIST.revealed.pot(pool.potTotal ?? 0)}</Mono>
-            <Mono style={{ fontSize: 10.5, color: LTOKENS.ink2 }}>{POD_LIST.revealed.backers(pool.uniqueBackers ?? 0)}</Mono>
+            {/* Figures only where the document carries them (a refund over a
+                missing pod folds to zeros that are not a pot) — never a default. */}
+            {pool.status !== 'refunded' && Number.isFinite(pool.potTotal) && <Mono style={{ fontSize: 11.5, fontWeight: 700, color: LTOKENS.ink }}>{POD_LIST.revealed.pot(pool.potTotal)}</Mono>}
+            {pool.status !== 'refunded' && Number.isFinite(pool.uniqueBackers) && <Mono style={{ fontSize: 10.5, color: LTOKENS.ink2 }}>{POD_LIST.revealed.backers(pool.uniqueBackers)}</Mono>}
             {myTotal > 0 && (
               <MonoAttr data-backing="your-backing" style={{ marginLeft: 'auto', fontSize: 10.5, color: accent, fontWeight: 600 }}>
                 {POOL_STRIP.yourBacking.replace('{amount}', bp(myTotal))}

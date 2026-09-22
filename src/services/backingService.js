@@ -138,11 +138,13 @@ export function subscribePool(groupId, callback) {
 /** The viewer's own wallet (allowance remaining, the week it is granted for). */
 export function subscribeWallet(uid, callback) {
   if (!uid) { callback(null); return () => {}; }
+  // A missing document is a record (no wallet yet); a failed read is not —
+  // the caller gets the error as its second argument and shows no figure.
   return onSnapshot(doc(db, 'backingWallets', uid), (snap) => {
-    callback(snap.exists() ? { id: snap.id, ...snap.data() } : null);
+    callback(snap.exists() ? { id: snap.id, ...snap.data() } : null, null);
   }, (err) => {
     console.warn('[backingService] wallet subscription failed:', err?.message);
-    callback(null);
+    callback(null, err);
   });
 }
 

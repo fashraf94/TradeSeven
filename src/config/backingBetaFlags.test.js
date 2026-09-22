@@ -277,6 +277,10 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       'api/_utils/backingWeek.js',
       'api/tournament/backing-pools.js',
       'api/tournament/backing-stake.js',
+      // PR 4 — the team-card projection reads FORBIDDEN_TERMS: an archetype's
+      // canonical approach line leaves the route only when it passes the
+      // backing lexicon (DOM-2 in the PR 4 review record).
+      'api/tournament/team-card.js',
       // PR 4 — THE SURFACE PR. The client reads the constants module for the
       // disclosures, the fine print, the §B6 strip lines, the economy's
       // bounds and the 24-hour rule; every one of these mounts only behind
@@ -343,6 +347,49 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
     // a walker blind to that spelling would report zero client importers and
     // pass the enumeration above for the wrong reason.
     expect(importersOf('src/constants/backing.js')).toContain('src/hooks/useBackingWallet.js');
+  });
+
+  it('every HOST that mounts a backing surface is enumerated — the client half of the ratchet (DARK-3 in the PR 4 review record)', () => {
+    // The three gated mounts, by exact host…
+    expect(importersOf('src/components/League/backing/BackingLandingStrip.jsx')).toEqual(['src/components/League/LeagueHome.jsx', 'src/components/League/LeagueLobbyDesktop.jsx']);
+    expect(importersOf('src/components/League/backing/BackingScreen.jsx')).toEqual(['src/components/League/LeagueHome.jsx', 'src/components/League/LeagueLobbyDesktop.jsx']);
+    expect(importersOf('src/components/League/backing/ScoutingLine.jsx')).toEqual(['src/components/Dashboard/EquipStation.jsx', 'src/components/Dashboard/desktop/IdentityPanel.jsx']);
+    // …the service, by exact importer…
+    expect(importersOf('src/services/backingService.js')).toEqual([
+      'src/components/League/LeagueHome.jsx',
+      'src/components/League/LeagueLobbyDesktop.jsx',
+      'src/components/League/backing/AttestationStep.jsx',
+      'src/components/League/backing/StakeControl.jsx',
+      'src/hooks/useBackingPods.js',
+      'src/hooks/useBackingWallet.js',
+      'src/hooks/useEligibility.js',
+      'src/hooks/useMyBacking.js',
+      'src/hooks/useMyPitch.js',
+      'src/hooks/useTeamCard.js',
+    ]);
+    // …and NOTHING outside the backing surfaces, their six hooks and these
+    // hosts reaches any backing module. A new host is a deliberate edit here,
+    // and it is held to the dark contract (backingDark.test.jsx) on arrival.
+    const HOSTS = new Set([
+      'src/components/Dashboard/EquipStation.jsx',
+      'src/components/Dashboard/desktop/IdentityPanel.jsx',
+      'src/components/League/LeagueHome.jsx',
+      'src/components/League/LeagueLobbyDesktop.jsx',
+      'src/components/League/LeaguePod.jsx',
+    ]);
+    const BACKING_HOOK = /^src\/hooks\/use(BackingPods|MyBacking|BackingWallet|Eligibility|MyPitch|TeamCard)\.js$/;
+    const targets = [
+      ...listSources('src/components/League/backing'),
+      ...SOURCES.filter((rel) => BACKING_HOOK.test(rel)),
+      'src/services/backingService.js',
+    ];
+    expect(targets.length).toBeGreaterThan(15);
+    for (const target of targets) {
+      for (const rel of importersOf(target)) {
+        if (rel.startsWith('src/components/League/backing/') || BACKING_HOOK.test(rel)) continue;
+        expect(HOSTS.has(rel), `${rel} reaches ${target} from outside the enumerated hosts`).toBe(true);
+      }
+    }
   });
 
   it('the two PR 4 routes read the flag at CALL time, after auth, and share a darkness suite', () => {

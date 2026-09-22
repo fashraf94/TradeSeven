@@ -50,8 +50,10 @@ describe('the open state — exactly the §B2 contract', () => {
     expect(html).toContain('Closes Sun 11:59 PM ET');
     expect(html).toContain('data-backing="chairs"');
     expect(html).toContain('data-count="2"');
-    expect(html).toContain('2 of 3 backers');
-    expect(html).toContain('back another to spread it');
+    // Amendment B §B6, verbatim (POOL_STRIP) — the two lines an open pool may say about itself.
+    expect(html).toContain('Pool needs support');
+    expect(html).toContain('Backers 2 of 3');
+    expect(html).toContain('Team spread: needs another team');
     expect(html).toContain('SEALED');
     expect(html).toContain('data-backing="sealed"');
     expect(html).toContain('Pot');
@@ -77,7 +79,7 @@ describe('the open state — exactly the §B2 contract', () => {
     expect(html).toContain('Live-draft slot');
     expect(html).toContain('Closes Wed 7:00 PM ET');
     expect(html).not.toContain('Sun 11:59');
-    expect(html).toContain('No backers yet');
+    expect(html).toContain('Backers 0 of 3');
   });
 
   it('SEAL — MUTATION CHECK #1: a pool object carrying a pot, exact counts, per-team totals and a pays × while OPEN leaks none of them', () => {
@@ -138,5 +140,21 @@ describe('the revealed view at close', () => {
   it('a pod with no pool says so; an empty list says so', () => {
     expect(render([openPod('g-none', { pool: null })])).toContain('No pool for this pod.');
     expect(render([])).toContain('No pods to back yet.');
+  });
+});
+
+describe('the PR 4 review record — FAB-16 (docs/audits/20260922_BACKING_PR4_MULTILENS_REVIEW.md)', () => {
+  it('a refunded pool (its pod gone) shows its status and never a folded "Pot 0 BP · 0 backers"', () => {
+    const html = render([openPod('g-gone', { pool: { status: 'refunded', potTotal: 0, uniqueBackers: 0, closesAt: SUNDAY_CLOSE } })]);
+    expect(html).toContain('Refunded · stakes void');
+    expect(html).not.toContain('Pot 0 BP');
+    expect(html).not.toContain('0 backers');
+  });
+
+  it('a closed pool whose document carries no figures renders none — a figure is never defaulted to zero', () => {
+    const html = render([openPod('g-bare', { pool: { status: 'closed', closesAt: SUNDAY_CLOSE } })]);
+    expect(html).toContain('Closed · revealed');
+    expect(html).not.toContain('Pot 0 BP');
+    expect(html).not.toContain('0 BP · 0 backers');
   });
 });

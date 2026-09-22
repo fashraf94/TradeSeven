@@ -20,10 +20,10 @@
 // collapsed, never an icon.
 
 import React from 'react';
-import { DISCLOSURES } from '../../../constants/backing';
+import { DISCLOSURES, POOL_STRIP } from '../../../constants/backing';
 import { LTOKENS, LX, alpha, MONO } from '../leagueTokens';
 import { Eyebrow, Mono, Icon } from '../LeagueParts';
-import { POD_LIST, SCREEN, backersCall, bp, ordinal } from './backingCopy';
+import { POD_LIST, SCREEN, bp, ordinal } from './backingCopy';
 
 // ── Mono that carries its DOM attributes. LeagueParts' Mono takes only
 // children and style, so a `data-backing` marker on it never reaches the DOM;
@@ -89,14 +89,21 @@ export function WeekRail({ day, color = LX.energy }) {
   );
 }
 
-// ── the backers call — an invitation, not a progress bar (brief §4.3) ────────
-export function BackersCall({ progress, spread, youBacked = false, compact = false }) {
+// ── the backers call — the three chairs and the §B6 lines, verbatim ─────────
+// The open pool says exactly two things about itself (Amendment B §B6): it
+// needs support (backers n of the floor, spread met or not), or it has
+// qualified and frozen. The words are POOL_STRIP's, filled from the API's own
+// capped `backerProgress` and the spread boolean — never re-derived here.
+export function BackersCall({ progress, spread, compact = false }) {
   const count = Number.isFinite(progress?.count) ? progress.count : 0;
   const floor = Number.isFinite(progress?.floor) ? progress.floor : 3;
   const backersMet = progress?.met === true;
   const spreadMet = spread?.met === true;
   const frozen = backersMet && spreadMet;
-  const copy = backersCall({ count, floor, backersMet, spreadMet, youBacked });
+  const block = frozen ? POOL_STRIP.qualified : POOL_STRIP.belowFloor;
+  const backers = backersMet ? POOL_STRIP.qualified.backers : POOL_STRIP.belowFloor.backers.replace('{count}', String(count)).replace('{floor}', String(floor));
+  const teamSpread = spreadMet ? POOL_STRIP.qualified.teamSpread : POOL_STRIP.belowFloor.teamSpread;
+  const copy = { head: block.headline, sub: `${backers} · ${teamSpread}` };
   return (
     <div data-backing="backers-call" data-frozen={frozen ? 'true' : 'false'} style={{
       display: 'flex', alignItems: 'center', gap: 10, padding: compact ? '8px 10px' : '10px 12px', borderRadius: 12,
@@ -116,7 +123,7 @@ export function BackersCall({ progress, spread, youBacked = false, compact = fal
 export function PointsMeter({ left, total, compact = false }) {
   return (
     <div data-backing="points-meter" style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-      <Mono style={{ fontSize: compact ? 15 : 18, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums' }}>{bp(left)}</Mono>
+      <Mono style={{ fontSize: compact ? 15 : 18, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums' }}>{Number.isFinite(left) ? bp(left) : '—'}</Mono>
       <Mono style={{ fontSize: 10, color: LTOKENS.ink3, letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>{SCREEN.pointsSuffix(total)}</Mono>
     </div>
   );

@@ -7,7 +7,8 @@
 // the exact write shape, idempotency, and that the uid is the TOKEN's.
 //
 // DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): the route's real import below is
-// the runtime guard for its api/ -> src/ import (src/config/featureFlags.js).
+// the runtime guard for its api/ -> src/ imports: src/config/featureFlags.js
+// directly, and src/constants/teamPitch.js through api/_utils/teamPitch.js.
 // The darkness half lives in api/tournament/team-card.dark.test.js beside the
 // other PR 4 route, mocked to an explicit false so it never moves with the flip.
 
