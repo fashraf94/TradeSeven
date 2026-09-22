@@ -14,7 +14,7 @@
 import { describe, it, expect } from 'vitest';
 import { POOL_MIN_WINDOW_MS } from '../../../constants/backing';
 import {
-  STRIP_KIND, deriveStripState, etWeekdayIndex, formatEtClose, nextOpening, podStanding, seatDisplayName, weekDayOfFive,
+  STRIP_KIND, backingWeekKeys, deriveStripState, etWeekdayIndex, formatEtClose, nextOpening, podDayOfFive, podStanding, seatDisplayName, weekDayOfFive,
 } from './backingStripState';
 
 const SUNDAY_CLOSE = '2026-09-28T03:59:59.000Z';   // Sun 27 Sep 23:59 ET (EDT)
@@ -43,7 +43,8 @@ const pod = (groupId, over = {}) => ({
 const inPlayGroup = (over = {}) => ({
   status: 'battle', seatNames: { 'od-a': 'Mira', 'od-x': 'Rigel' },
   players: [{ odUserId: 'od-a' }, { odUserId: 'od-x' }, { odUserId: 'cpu-3', isCpu: true }, { odUserId: 'cpu-4', isCpu: true }],
-  dailyScores: { day2: { closeScores: { 'od-a': { compositePoints: 4.8 }, 'od-x': { compositePoints: 5.1 }, 'cpu-3': { compositePoints: 1 }, 'cpu-4': { compositePoints: -0.5 } } } },
+  // day 2 banked TODAY (Tuesday) — the League's own reading of "which day" (deriveCurrentTradingDay).
+  dailyScores: { day2: { recordedDate: '2026-09-22', closeScores: { 'od-a': { compositePoints: 4.8 }, 'od-x': { compositePoints: 5.1 }, 'cpu-3': { compositePoints: 1 }, 'cpu-4': { compositePoints: -0.5 } } } },
   ...over,
 });
 
@@ -332,5 +333,69 @@ describe('the PR 4 review record — DOM-1, FAB-1 (docs/audits/20260922_BACKING_
       now: TUE,
     });
     expect(s.kind).toBe(STRIP_KIND.QUIET);
+  });
+});
+
+describe('the PR 4 review record — refutation pass (R-A-1, R-A-4, R-A-5, FAB-9)', () => {
+  it('backingWeekKeys reads LAST week, this week and the window’s week — a holiday-short week banks its day 5 on the following Monday (R-A-1)', () => {
+    const monday = new Date('2026-09-14T14:00:00.000Z'); // Mon 14 Sep 10:00 ET, the Monday after Labor Day week
+    expect(backingWeekKeys(monday, '2026-W39')).toEqual(['2026-W37', '2026-W38', '2026-W39']);
+    expect(backingWeekKeys(monday, null)).toEqual(['2026-W37', '2026-W38']);
+    expect(backingWeekKeys(monday, '2026-W38')).toEqual(['2026-W37', '2026-W38']);
+  });
+
+  it('podDayOfFive is the pod’s banking record: the latest banked day if it banked today, else the next; 5 once complete; null without a pod (FAB-9)', () => {
+    const wedEvening = new Date('2026-09-23T22:00:00.000Z');
+    expect(podDayOfFive(inPlayGroup({ dailyScores: { day1: { recordedDate: '2026-09-21' }, day2: { recordedDate: '2026-09-22' }, day3: { recordedDate: '2026-09-23' } } }), wedEvening)).toBe(3);
+    expect(podDayOfFive(inPlayGroup({ dailyScores: { day1: { recordedDate: '2026-09-21' }, day2: { recordedDate: '2026-09-22' } } }), wedEvening)).toBe(3);
+    expect(podDayOfFive(inPlayGroup({ dailyScores: {} }), wedEvening)).toBe(1);
+    // A holiday-short week: its day 5 banks the FOLLOWING Monday — the pod still reads day 5, never the calendar's "day 1".
+    expect(podDayOfFive(inPlayGroup({ dailyScores: { day1: {}, day2: {}, day3: {}, day4: { recordedDate: '2026-09-11' } } }), new Date('2026-09-14T14:00:00.000Z'))).toBe(5);
+    expect(podDayOfFive(inPlayGroup({ status: 'complete', dailyScores: { day5: { recordedDate: '2026-09-18' } } }), new Date('2026-09-26T16:00:00.000Z'))).toBe(5);
+    expect(podDayOfFive(null, wedEvening)).toBeNull();
+  });
+
+  it('the WEEK day is the pods’ banking record, not the calendar: three closes banked before today reads day 4 on a Wednesday', () => {
+    const s = deriveStripState({
+      pods: [],
+      inPlay: {
+        stakes: [{ id: 's1', groupId: 'g-play', teamOdUserId: 'od-a', amount: 100, status: 'live', weekKey: '2026-W39' }],
+        poolsById: { 'g-play': { status: 'closed' } },
+        groupsById: { 'g-play': inPlayGroup({ dailyScores: { day1: { recordedDate: '2026-09-21', closeScores: {} }, day2: { recordedDate: '2026-09-22', closeScores: {} }, day3: { recordedDate: '2026-09-23', closeScores: {} } } }) },
+      },
+      now: new Date('2026-09-24T14:00:00.000Z'), // Thursday morning
+    });
+    expect(s.kind).toBe(STRIP_KIND.WEEK);
+    expect(s.day).toBe(4);
+  });
+
+  it('R-A-4: a listed pod fired thin (pool insufficient, the stake voided) reads BETWEEN — never "No pods to back yet"', () => {
+    const s = deriveStripState({
+      pods: [pod('lds-wed', { pool: openPool({ status: 'insufficient', closesAt: WED_FIRE }), myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', amount: 250, status: 'voided' }] })],
+      inPlay: { stakes: [], poolsById: {}, groupsById: {} },
+      now: SAT,
+      backingWeekCloses: SUNDAY_CLOSE,
+    });
+    expect(s.kind).toBe(STRIP_KIND.BETWEEN);
+    expect(s.pods).toBe(1);
+  });
+
+  it('R-A-4: a voided stake on a listed CLOSED pool is settled, not the window’s', () => {
+    const s = deriveStripState({
+      pods: [pod('lds-wed', { pool: openPool({ status: 'closed', closesAt: WED_FIRE }), myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', amount: 250, status: 'voided' }] })],
+      now: SAT,
+    });
+    expect(s.kind).toBe(STRIP_KIND.BETWEEN);
+  });
+
+  it('R-A-5: Monday morning the list still names last night’s week — a listed pod already IN BATTLE with a live stake reads WEEK, not locked', () => {
+    const s = deriveStripState({
+      pods: [pod('g-mon', { groupStatus: 'battle', pool: openPool({ status: 'closed' }), myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', amount: 250, status: 'live' }] })],
+      inPlay: { stakes: [], poolsById: {}, groupsById: { 'g-mon': inPlayGroup({ status: 'battle', dailyScores: {} }) } },
+      now: new Date('2026-09-21T12:00:00.000Z'), // Monday 08:00 ET
+    });
+    expect(s.kind).toBe(STRIP_KIND.WEEK);
+    expect(s.day).toBe(1);
+    expect(s.teams[0]).toMatchObject({ teamName: 'Mira', amount: 250, rank: null });
   });
 });

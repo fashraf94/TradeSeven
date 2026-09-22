@@ -35,7 +35,8 @@ const group = (over = {}) => ({
   dailyScores: {
     day1: { closeScores: { 'od-a': { compositePoints: 2.1 }, 'od-x': { compositePoints: 3.0 }, 'cpu-3': { compositePoints: 1 }, 'cpu-4': { compositePoints: 0 } } },
     day2: { closeScores: { 'od-a': { compositePoints: 3.4 }, 'od-x': { compositePoints: 2.6 }, 'cpu-3': { compositePoints: 1 }, 'cpu-4': { compositePoints: 0 } } },
-    day3: { closeScores: { 'od-a': { compositePoints: 4.8 }, 'od-x': { compositePoints: 5.1 }, 'cpu-3': { compositePoints: 1 }, 'cpu-4': { compositePoints: 0 } } },
+    // day 3 banked TODAY (Wednesday): the pods' own reading of the day (deriveCurrentTradingDay).
+    day3: { recordedDate: '2026-09-23', closeScores: { 'od-a': { compositePoints: 4.8 }, 'od-x': { compositePoints: 5.1 }, 'cpu-3': { compositePoints: 1 }, 'cpu-4': { compositePoints: 0 } } },
   },
   ...over,
 });
@@ -167,7 +168,8 @@ describe('the PR 4 review record — FAB-1, DOM-6, FAB-2 (docs/audits/20260922_B
     battles.byOwner = {};
     const html = render();
     expect(html).toContain('Mira · 3');
-    expect(html).toContain('six built Monday morning');
+    expect(html).toContain('no book on file yet');
+    expect(html).not.toContain('built Monday');
     expect(html).not.toContain('drafted Monday');
   });
 });

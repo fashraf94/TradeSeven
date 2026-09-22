@@ -37,7 +37,7 @@
 // to leak (the API strips them — backing-pools.js projectPod).
 
 import { POOL_MIN_WINDOW_MS } from '../../../constants/backing';
-import { getWeeklyComposite, rankByScores, GROUP_STATUS } from '../../../constants/leagueTournament';
+import { currentBaseLayerWeek, deriveCurrentTradingDay, etDateString, getWeeklyComposite, rankByScores, GROUP_STATUS } from '../../../constants/leagueTournament';
 import { baseGroupName, cpuSeatName } from '../leagueAdapter';
 
 export const STRIP_KIND = Object.freeze({
@@ -52,6 +52,17 @@ export const STRIP_KIND = Object.freeze({
 const SETTLED_POOL_STATUSES = new Set(['resolved', 'insufficient', 'refunded']);
 
 const ET = 'America/New_York';
+
+/**
+ * The week keys the viewer's backing can live under right now: last week (a
+ * holiday-short week banks its day 5 on the following Monday, and its result
+ * is read after that — R-A-1), this week, and the window's week (the pod
+ * list's, when known). The stake's own key is its battle Monday's label.
+ */
+export function backingWeekKeys(now = new Date(), upcomingWeek = null) {
+  const week = (d) => currentBaseLayerWeek(d);
+  return [...new Set([week(new Date(now.getTime() - 7 * 86400000)), week(now), upcomingWeek].filter((k) => typeof k === 'string' && k.length > 0))];
+}
 
 /** ISO weekday index in ET — Mon=1 … Sun=7. */
 export function etWeekdayIndex(now = new Date()) {
@@ -99,6 +110,19 @@ export function seatDisplayName(seatNames, odUserId) {
   return typeof named === 'string' && named.length > 0 ? named : odUserId;
 }
 
+/**
+ * The pod's battle day, 1…5, from its BANKING RECORD — the League's own
+ * reading (deriveCurrentTradingDay: the latest banked close's day if it banked
+ * today, else the next), so a holiday-short week counts its own days and the
+ * header agrees with the rail (FAB-9 / R-A-1, the PR 4 review record). 5 once
+ * the pod is complete; null without a pod document.
+ */
+export function podDayOfFive(group, now = new Date()) {
+  if (!group) return null;
+  if (group.status === GROUP_STATUS.COMPLETE) return 5;
+  return Math.min(5, Math.max(1, deriveCurrentTradingDay(group, etDateString(now))));
+}
+
 /** How many closes the pod has banked — the day1…day5 close entries present. */
 export function bankedCloses(group) {
   let n = 0;
@@ -131,7 +155,7 @@ export function nextOpening(now, backingWeekCloses) {
  *
  * @param {Object} args
  * @param {Array} [args.pods]            the pod-list response's `pods` (the next Monday's pods, with the viewer's own stakes)
- * @param {Object|null} [args.inPlay]    { stakes, poolsById, groupsById } — the viewer's stakes for the current and the upcoming week
+ * @param {Object|null} [args.inPlay]    { stakes, poolsById, groupsById } — the viewer's stakes for last week, this week and the window's week
  * @param {Date} [args.now]
  * @param {string|null} [args.backingWeekCloses]
  */
@@ -140,76 +164,59 @@ export function deriveStripState({ pods = [], inPlay = null, now = new Date(), b
   const openPods = list.filter((p) => p?.pool?.status === 'open');
   const listedIds = new Set(list.map((p) => p?.groupId).filter(Boolean));
 
-  // The viewer's LIVE stakes on the upcoming window, by pod: on pools still
-  // OPEN, and on pools already CLOSED at their fire — a slot pod's pool shuts
-  // days before its Monday and the stake is committed, not yet in play
-  // (DOM-1, the PR 4 review record). A closed pod carries no close to show.
-  const stakedPods = [];
-  const pushStaked = ({ groupId, seatNames, closesAt, closed, stakes }) => {
-    const live = stakes.filter((s) => s?.status === 'live');
-    if (live.length === 0) return;
-    stakedPods.push({
-      groupId,
-      podName: baseGroupName(groupId),
-      closesAt,
-      closed,
-      stakes: live.map((s) => ({
-        stakeId: s.stakeId ?? s.id ?? null,
-        teamOdUserId: s.teamOdUserId,
-        teamName: seatDisplayName(seatNames, s.teamOdUserId),
-        amount: Number.isFinite(s.amount) ? s.amount : 0,
-      })),
-    });
-  };
-  for (const pod of list) {
-    const status = pod?.pool?.status;
-    if (status !== 'open' && status !== 'closed') continue;
-    pushStaked({
-      groupId: pod.groupId,
-      seatNames: pod.seatNames,
-      closesAt: status === 'open' ? pod.pool?.closesAt ?? null : null,
-      closed: status === 'closed',
-      stakes: Array.isArray(pod.myStakes) ? pod.myStakes : [],
-    });
-  }
-
-  // The viewer's stakes on pods the list does not carry — the current battle
-  // week's pods, in play or settled, and any committed pod the list has
-  // dropped. Each is classified from its POOL document and its pod's status.
+  // Every stake of the viewer's lands in exactly one of these, from its POOL's
+  // status, its own status and its pod's status — never from the calendar:
+  //   window  — live, on a pool OPEN or CLOSED at its fire, the pod not yet in battle (DOM-1)
+  //   live    — live, pool closed, pod in battle (or complete with the pool unresolved: settling — FAB-1)
+  //   settled — the pool resolved / insufficient / refunded, or the stake itself no longer live (R-A-4)
+  const window = new Map();
   const live = [];
   const settled = [];
-  const pending = new Map();
-  for (const stake of Array.isArray(inPlay?.stakes) ? inPlay.stakes : []) {
-    if (!stake || typeof stake.groupId !== 'string') continue;
-    if (listedIds.has(stake.groupId)) continue; // the list carries this pod's stakes (above)
-    const pool = inPlay?.poolsById?.[stake.groupId] ?? null;
-    const group = inPlay?.groupsById?.[stake.groupId] ?? null;
-    // No pool document yet (not delivered, or not readable): the stake's state
-    // is UNKNOWN, and the strip does not guess a week in play or a result from
-    // it — it says what the known pools say (SEAL-1, the PR 4 review record).
-    if (pool == null) continue;
-    // Settled is a fact of the POOL (or of the stake itself) — never inferred
-    // from the pod being complete: a pool can sit unresolved after the week
-    // ends (a hold, a settlement error), and its stakes are not settled (FAB-1).
-    if (SETTLED_POOL_STATUSES.has(pool.status) || stake.status !== 'live') { settled.push({ stake, pool, group }); continue; }
-    if (pool.status !== 'open') {
-      if (group == null) continue; // closed, and the pod's state is not known yet: not guessed
-      const inBattle = group.status === GROUP_STATUS.BATTLE || group.status === GROUP_STATUS.COMPLETE;
-      if (inBattle) { live.push({ stake, pool, group, settling: group.status === GROUP_STATUS.COMPLETE }); continue; }
+  const classify = ({ stake, pool, group, groupStatus, seatNames, listed }) => {
+    if (!stake || typeof stake.groupId !== 'string') return;
+    const status = pool?.status ?? null;
+    if (SETTLED_POOL_STATUSES.has(status) || stake.status !== 'live') { settled.push({ stake, pool, group }); return; }
+    // No pool document (not delivered, or not readable): the stake's state is
+    // UNKNOWN and the strip does not guess a week or a result from it (SEAL-1).
+    if (pool == null) return;
+    const podStatus = groupStatus ?? group?.status ?? null;
+    if (status !== 'open') {
+      if (status !== 'closed' && status !== 'resolving') return; // a status this module does not know: not guessed
+      if (podStatus == null && !listed) return; // closed, and the pod's state is not known yet: not guessed
+      if (podStatus === GROUP_STATUS.BATTLE || podStatus === GROUP_STATUS.COMPLETE) {
+        live.push({ stake, pool, group, seatNames, settling: podStatus === GROUP_STATUS.COMPLETE });
+        return;
+      }
     }
-    // Open, or closed on a pod that has not started: the window's.
-    const entry = pending.get(stake.groupId) ?? {
-      groupId: stake.groupId, seatNames: group?.seatNames, closesAt: pool.status === 'open' ? pool.closesAt ?? null : null, closed: pool.status !== 'open', stakes: [],
+    // Open, or closed on a pod that has not started: the window's (a slot
+    // pod's pool shuts days before its Monday; the stake is committed, not in play).
+    const entry = window.get(stake.groupId) ?? {
+      groupId: stake.groupId, seatNames, closesAt: status === 'open' ? pool.closesAt ?? null : null, closed: status !== 'open', stakes: [],
     };
     entry.stakes.push(stake);
-    pending.set(stake.groupId, entry);
+    window.set(stake.groupId, entry);
+  };
+
+  // The listed pods carry the viewer's stakes on them (the endpoint's own
+  // projection) and the pod's status; the joined group doc, when read, adds
+  // the standing.
+  for (const pod of list) {
+    for (const stake of Array.isArray(pod?.myStakes) ? pod.myStakes : []) {
+      classify({ stake: { ...stake, groupId: pod.groupId }, pool: pod.pool ?? null, group: inPlay?.groupsById?.[pod.groupId] ?? null, groupStatus: pod.groupStatus ?? null, seatNames: pod.seatNames, listed: true });
+    }
   }
-  for (const entry of pending.values()) pushStaked(entry);
+  // The pods the list does not carry: last week's and this week's, from the
+  // viewer's own stake subscription joined to each pool and pod document.
+  for (const stake of Array.isArray(inPlay?.stakes) ? inPlay.stakes : []) {
+    if (!stake || typeof stake.groupId !== 'string' || listedIds.has(stake.groupId)) continue;
+    const group = inPlay?.groupsById?.[stake.groupId] ?? null;
+    classify({ stake, pool: inPlay?.poolsById?.[stake.groupId] ?? null, group, groupStatus: null, seatNames: group?.seatNames, listed: false });
+  }
 
   if (live.length > 0) {
     const byGroup = new Map();
-    for (const { stake, group, settling } of live) {
-      const entry = byGroup.get(stake.groupId) ?? { groupId: stake.groupId, podName: baseGroupName(stake.groupId), group, settling, teams: [] };
+    for (const { stake, group, seatNames, settling } of live) {
+      const entry = byGroup.get(stake.groupId) ?? { groupId: stake.groupId, podName: baseGroupName(stake.groupId), group, seatNames: group?.seatNames ?? seatNames, settling, teams: [] };
       if (!entry.teams.some((t) => t.teamOdUserId === stake.teamOdUserId)) {
         entry.teams.push({ teamOdUserId: stake.teamOdUserId, amount: 0 });
       }
@@ -217,17 +224,20 @@ export function deriveStripState({ pods = [], inPlay = null, now = new Date(), b
       byGroup.set(stake.groupId, entry);
     }
     const teams = [];
+    let day = null;
     for (const entry of byGroup.values()) {
       // A rank exists once a close has banked; before that, no seat has a
       // standing and the rail shows none (never seat order as a rank).
       const standing = bankedCloses(entry.group) > 0 ? podStanding(entry.group) : [];
+      const podDay = podDayOfFive(entry.group, now);
+      if (podDay != null) day = Math.max(day ?? 0, podDay);
       for (const team of entry.teams) {
         const row = standing.find((s) => s.odUserId === team.teamOdUserId) ?? null;
         teams.push({
           groupId: entry.groupId,
           podName: entry.podName,
           teamOdUserId: team.teamOdUserId,
-          teamName: seatDisplayName(entry.group?.seatNames, team.teamOdUserId),
+          teamName: seatDisplayName(entry.seatNames, team.teamOdUserId),
           amount: team.amount,
           rank: row ? row.rank : null,
           score: row ? row.score : null,
@@ -236,19 +246,31 @@ export function deriveStripState({ pods = [], inPlay = null, now = new Date(), b
       }
     }
     // The week is complete but a pool has not settled: the stakes are in
-    // play until the pool says otherwise.
+    // play until the pool says otherwise. The day is the pods' own banking
+    // record; the calendar weekday only while no pod document has been read.
     const settling = [...byGroup.values()].every((e) => e.settling);
-    return { kind: STRIP_KIND.WEEK, day: weekDayOfFive(now), settling, pods: byGroup.size, teams };
+    return { kind: STRIP_KIND.WEEK, day: day ?? weekDayOfFive(now), settling, pods: byGroup.size, teams };
   }
 
-  if (stakedPods.length > 0) {
-    const openCloses = stakedPods.filter((p) => !p.closed).map((p) => p.closesAt);
+  if (window.size > 0) {
+    const stakedPods = [...window.values()].map((p) => ({
+      groupId: p.groupId,
+      podName: baseGroupName(p.groupId),
+      closesAt: p.closesAt,
+      closed: p.closed,
+      stakes: p.stakes.map((s) => ({
+        stakeId: s.stakeId ?? s.id ?? null,
+        teamOdUserId: s.teamOdUserId,
+        teamName: seatDisplayName(p.seatNames, s.teamOdUserId),
+        amount: Number.isFinite(s.amount) ? s.amount : 0,
+      })),
+    }));
     return {
       kind: STRIP_KIND.STAKED,
       pods: stakedPods.length,
       // The window's close is the latest close among the OPEN pools; with every
       // staked pool already closed there is none to show.
-      closesAt: latestIso(openCloses),
+      closesAt: latestIso(stakedPods.filter((p) => !p.closed).map((p) => p.closesAt)),
       stakes: stakedPods.flatMap((p) => p.stakes.map((s) => ({ ...s, podName: p.podName, groupId: p.groupId, closed: p.closed }))),
     };
   }

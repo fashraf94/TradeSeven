@@ -24,7 +24,7 @@
 //     projection carries only the capped signals and the close, and the
 //     control does not render even those — the pod list does.
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { MIN_STAKE_BP, PER_TEAM_CAP_BP } from '../../../constants/backing';
 import { LTOKENS, LX, alpha, MONO } from '../leagueTokens';
 import { Eyebrow, Mono, Icon } from '../LeagueParts';
@@ -67,6 +67,10 @@ export default function StakeControl({ card, pod, wallet, eligibility, accent = 
   // and Confirm waits for an amount (never "Confirm 0 BP").
   const defaultPreset = useMemo(() => [...STAKE_PRESETS].reverse().find((p) => p <= maxAmount) ?? (maxAmount >= MIN_STAKE_BP ? MIN_STAKE_BP : null), [maxAmount]);
   const [preset, setPreset] = useState(defaultPreset);
+  const [touched, setTouched] = useState(false);
+  // Until the viewer chooses, the pre-chosen preset follows the allowance and
+  // the cap as they become known (the wallet can land after the control; R-A-8).
+  useEffect(() => { if (!touched) setPreset(defaultPreset); }, [defaultPreset, touched]);
   const [custom, setCustom] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -155,7 +159,7 @@ export default function StakeControl({ card, pod, wallet, eligibility, accent = 
                 const disabled = p > maxAmount;
                 const on = custom.length === 0 && preset === p;
                 return (
-                  <button key={p} type="button" className="lg-tap" disabled={disabled} onClick={() => { setPreset(p); setCustom(''); setError(null); }} style={presetStyle(on, accent, disabled)} data-preset={p}>
+                  <button key={p} type="button" className="lg-tap" disabled={disabled} onClick={() => { setTouched(true); setPreset(p); setCustom(''); setError(null); }} style={presetStyle(on, accent, disabled)} data-preset={p}>
                     {bp(p)}
                   </button>
                 );
@@ -171,7 +175,7 @@ export default function StakeControl({ card, pod, wallet, eligibility, accent = 
               max={maxAmount}
               step={1}
               value={custom}
-              onChange={(e) => { setCustom(e.target.value.replace(/[^0-9]/g, '')); setError(null); }}
+              onChange={(e) => { setTouched(true); setCustom(e.target.value.replace(/[^0-9]/g, '')); setError(null); }}
               placeholder={STAKE.customPlaceholder(maxAmount)}
               aria-label={STAKE.custom}
               data-backing="custom-amount"

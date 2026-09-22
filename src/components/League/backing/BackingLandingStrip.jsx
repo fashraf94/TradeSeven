@@ -19,11 +19,10 @@
 
 import React, { useMemo } from 'react';
 import { BACKING_BETA_ENABLED } from '../../../config/featureFlags';
-import { currentBaseLayerWeek } from '../../../constants/leagueTournament';
 import useBackingPods from '../../../hooks/useBackingPods';
 import useMyBacking from '../../../hooks/useMyBacking';
 import BackingStrip from './BackingStrip';
-import { deriveStripState } from './backingStripState';
+import { backingWeekKeys, deriveStripState } from './backingStripState';
 
 function LiveStrip({ uid, accent, onOpen, wide }) {
   const pods = useBackingPods(true);
@@ -31,7 +30,7 @@ function LiveStrip({ uid, accent, onOpen, wide }) {
   // committed stake on a pool closed at its fire) are both the viewer's
   // backing (DOM-1). Read each render, not memoised: the key rolls at Monday
   // 00:00 ET and the next render picks it up (DOM-NOTE-5).
-  const inPlay = useMyBacking(uid, [currentBaseLayerWeek(new Date()), pods.data?.baseLayerWeek ?? null], Boolean(uid));
+  const inPlay = useMyBacking(uid, backingWeekKeys(new Date(), pods.data?.baseLayerWeek ?? null), Boolean(uid));
   const state = useMemo(() => deriveStripState({
     pods: pods.pods,
     inPlay,

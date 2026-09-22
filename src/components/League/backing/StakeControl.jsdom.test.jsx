@@ -280,3 +280,14 @@ describe('the PR 4 review record — FAB-10, FAB-11, FAB-16 (docs/audits/2026092
     expect(container.textContent).not.toContain('Confirm 0 BP');
   });
 });
+
+describe('the PR 4 review record — refutation pass (R-A-8)', () => {
+  it('a wallet that becomes known after the control mounted still pre-chooses the largest affordable preset', async () => {
+    const { container, props } = await mount({ wallet: { known: false, left: null, total: 1000 } });
+    expect(q(container, '[data-backing="wallet-checking"]')).not.toBeNull();
+    const { root } = roots[roots.length - 1];
+    await act(async () => { root.render(<StakeControl {...props} wallet={{ known: true, left: 1000, total: 1000 }} />); });
+    expect(confirmButton(container).textContent).toBe('Confirm 500 BP');
+    expect(q(container, '[data-preset="500"]').getAttribute('style')).toContain('rgb(');
+  });
+});

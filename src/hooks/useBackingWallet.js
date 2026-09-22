@@ -16,7 +16,11 @@ import { ALLOWANCE_BP } from '../constants/backing';
 import { subscribeWallet } from '../services/backingService';
 
 export function allowanceLeft(wallet, weekKey) {
-  if (wallet && weekKey && wallet.lastAllowanceWeek === weekKey) {
+  // No week to bind to yet (the pod list names it): unknown, not the full
+  // allowance — a known wallet with a remainder would otherwise read 1,000
+  // until the list resolved (R-A-3, the PR 4 review record).
+  if (typeof weekKey !== 'string' || weekKey.length === 0) return null;
+  if (wallet && wallet.lastAllowanceWeek === weekKey) {
     const remaining = Number.isFinite(wallet.allowanceRemaining) ? Math.max(0, Math.floor(wallet.allowanceRemaining)) : 0;
     return remaining;
   }
@@ -35,5 +39,6 @@ export default function useBackingWallet(uid, weekKey, enabled = true) {
   // record (no wallet yet; the full allowance ahead). Until the first snapshot
   // lands, or after a failed read, the allowance is unknown and no surface
   // shows a figure for it (FAB-10, the PR 4 review record).
-  return { wallet: state.wallet, known: state.known, left: state.known ? allowanceLeft(state.wallet, weekKey) : null, total: ALLOWANCE_BP };
+  const left = state.known ? allowanceLeft(state.wallet, weekKey) : null;
+  return { wallet: state.wallet, known: state.known && Number.isFinite(left), left, total: ALLOWANCE_BP };
 }

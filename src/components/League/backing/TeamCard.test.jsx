@@ -305,3 +305,13 @@ describe('the PR 4 review record — FAB-4, FAB-8, FAB-13, FAB-14, FAB-5 (docs/a
     expect(agentPickDid({ symbol: 'SMCI', drafted: null, heldAtClose: true, addedIn: null })).toBe('In the book at close');
   });
 });
+
+describe('the PR 4 review record — refutation pass (R-A-6)', () => {
+  it('on a pool that has already closed the first-week body no longer speaks of the draft as ahead of the close', () => {
+    const html = render(firstWeek(), openPod({ pool: { status: 'closed', closesAt: '2026-09-28T03:59:59.000Z' } }));
+    expect(html).toContain('This pool has closed; the three-stock draft follows.');
+    expect(html).not.toContain('after this pool closes');
+    expect(html).not.toContain('the moment this pool closes');
+    expect(html).toContain('BACKING CLOSED FOR THE WEEK');
+  });
+});

@@ -101,7 +101,8 @@ export function BackersCall({ progress, spread, compact = false }) {
   const spreadMet = spread?.met === true;
   const frozen = backersMet && spreadMet;
   const block = frozen ? POOL_STRIP.qualified : POOL_STRIP.belowFloor;
-  const backers = backersMet ? POOL_STRIP.qualified.backers : POOL_STRIP.belowFloor.backers.replace('{count}', String(count)).replace('{floor}', String(floor));
+  // The count is the API's capped value; clamped again here so no reply shape can print a number above the floor (R-A-7).
+  const backers = backersMet ? POOL_STRIP.qualified.backers : POOL_STRIP.belowFloor.backers.replace('{count}', String(Math.min(count, floor))).replace('{floor}', String(floor));
   const teamSpread = spreadMet ? POOL_STRIP.qualified.teamSpread : POOL_STRIP.belowFloor.teamSpread;
   const copy = { head: block.headline, sub: `${backers} · ${teamSpread}` };
   return (

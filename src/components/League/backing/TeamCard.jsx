@@ -200,7 +200,7 @@ export function TapeBlock({ card, pod, agentName, onOpenTape }) {
       <div data-backing="tape-first-week">
         <TapeHead color={LTOKENS.gold} lead title={CARD.tape.firstWeekTitle} sub={CARD.tape.firstWeekSub} />
         <div style={goldBox}>
-          <div style={body}>{CARD.tape.firstWeekBody({ hasPitch: Boolean(team.pitch), agentName, traits: agent?.traitCount, rules: agent?.ruleCount, formationPath: pod?.formationPath ?? null })}</div>
+          <div style={body}>{CARD.tape.firstWeekBody({ hasPitch: Boolean(team.pitch), agentName, traits: agent?.traitCount, rules: agent?.ruleCount, formationPath: pod?.formationPath ?? null, poolOpen: pod?.pool?.status === 'open' })}</div>
         </div>
       </div>
     );

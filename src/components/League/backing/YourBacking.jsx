@@ -28,7 +28,7 @@ import { baseGroupName } from '../leagueAdapter';
 import useSpectatedTournamentBattles from '../../../hooks/useSpectatedTournamentBattles';
 import { DayTrail } from './BackingParts';
 import { CARD, WEEK } from './backingCopy';
-import { podStanding, seatDisplayName, weekDayOfFive } from './backingStripState';
+import { podDayOfFive, podStanding, seatDisplayName, weekDayOfFive } from './backingStripState';
 
 const SETTLED = new Set(['resolved', 'insufficient', 'refunded']);
 const card = { borderRadius: 18, padding: '13px 14px', background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}` };
@@ -213,11 +213,13 @@ export default function YourBacking({ inPlay, accent = LX.energy, onOpenTape, no
   if (pods.length === 0) return null;
   const allSettled = pods.every(({ groupId }) => SETTLED.has(inPlay?.poolsById?.[groupId]?.status));
   const allComplete = !allSettled && pods.every(({ groupId }) => SETTLED.has(inPlay?.poolsById?.[groupId]?.status) || inPlay?.groupsById?.[groupId]?.status === GROUP_STATUS.COMPLETE);
+  // The day from the pods' own banking record (the League's reading — FAB-9); the calendar only while no pod document has been read.
+  const dayOfFive = pods.reduce((best, { groupId }) => { const d = podDayOfFive(inPlay?.groupsById?.[groupId] ?? null, now); return d == null ? best : Math.max(best ?? 0, d); }, null) ?? weekDayOfFive(now);
   return (
     <div data-backing="your-backing-section" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div>
         <Eyebrow color={accent} style={{ marginBottom: 4 }}>{WEEK.title}</Eyebrow>
-        <Mono style={{ fontSize: 10.5, color: LTOKENS.ink3 }}>{allSettled ? WEEK.settledSub : allComplete ? WEEK.settlingSub : WEEK.sub(weekDayOfFive(now))}</Mono>
+        <Mono style={{ fontSize: 10.5, color: LTOKENS.ink3 }}>{allSettled ? WEEK.settledSub : allComplete ? WEEK.settlingSub : WEEK.sub(dayOfFive)}</Mono>
       </div>
       {pods.map(({ groupId, stakes }) => (
         <WeekCard

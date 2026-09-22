@@ -186,6 +186,13 @@ describe('flag ON — the same mounts light up (the pin is not vacuous)', () => 
     const container = await mount(<LeagueHome {...homeProps} />);
     expect(svc.calls.filter((c) => c === 'fetchBackingPods')).toHaveLength(1);
     expect(svc.calls).toContain('subscribeMyStakes');
+    // The viewer's backing is read under LAST week's key, this week's and the
+    // window's (R-A-1 in the PR 4 review record) — one stake subscription each.
+    const { subscribeMyStakes } = await import('../../../services/backingService');
+    const keys = new Set(subscribeMyStakes.mock.calls.map((c) => c[1]));
+    const { backingWeekKeys } = await import('./backingStripState');
+    for (const k of backingWeekKeys(new Date(), '2026-W40')) expect(keys.has(k), `week key ${k} is read`).toBe(true);
+    expect(keys.size).toBe(backingWeekKeys(new Date(), '2026-W40').length);
     const strip = container.querySelector('[data-backing="strip"]');
     expect(strip).not.toBeNull();
     expect(strip.getAttribute('data-strip-state')).toBe('open');

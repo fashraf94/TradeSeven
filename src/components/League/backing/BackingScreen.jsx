@@ -20,7 +20,6 @@
 import React, { useMemo, useState } from 'react';
 import { BACKING_BETA_ENABLED } from '../../../config/featureFlags';
 import { FINE_PRINT } from '../../../constants/backing';
-import { currentBaseLayerWeek } from '../../../constants/leagueTournament';
 import { LTOKENS, LX, alpha } from '../leagueTokens';
 import { Eyebrow, Mono, Icon, LIcon } from '../LeagueParts';
 import useBackingPods from '../../../hooks/useBackingPods';
@@ -35,7 +34,7 @@ import TeamCard from './TeamCard';
 import StakeControl from './StakeControl';
 import YourBacking from './YourBacking';
 import { POD_LIST, SCREEN, STRIP } from './backingCopy';
-import { STRIP_KIND, deriveStripState, formatEtClose } from './backingStripState';
+import { STRIP_KIND, backingWeekKeys, deriveStripState, formatEtClose } from './backingStripState';
 
 function headerLine(state) {
   switch (state.kind) {
@@ -66,7 +65,7 @@ function BackingScreenLive({ uid, accent, viewport, onBack, onOpenTape }) {
   const pods = useBackingPods(true);
   const upcomingWeek = pods.data?.baseLayerWeek ?? null;
   // Both weeks — see BackingLandingStrip (DOM-1); read each render (DOM-NOTE-5).
-  const inPlay = useMyBacking(uid, [currentBaseLayerWeek(new Date()), upcomingWeek], Boolean(uid));
+  const inPlay = useMyBacking(uid, backingWeekKeys(new Date(), upcomingWeek), Boolean(uid));
   const wallet = useBackingWallet(uid, upcomingWeek, Boolean(uid));
   const eligibility = useEligibility(uid, Boolean(uid));
   const myPitch = useMyPitch(uid, Boolean(uid));

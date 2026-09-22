@@ -212,9 +212,11 @@ export const CARD = Object.freeze({
     // When the three land depends on how the pod formed: a lobby pod drafts
     // on its Monday; a live-draft (slot) pod drafts at its fire, the instant
     // its pool closes (spec §4; FAB-4, the PR 4 review record).
-    firstWeekBody: ({ hasPitch, agentName, traits, rules, formationPath }) => {
+    firstWeekBody: ({ hasPitch, agentName, traits, rules, formationPath, poolOpen = true }) => {
       const loadout = Number.isInteger(traits) && Number.isInteger(rules) ? `a ${traits}-trait, ${rules}-rule loadout` : 'a loadout whose contents stay private';
-      const draft = formationPath === 'slot' ? 'The three-stock draft lands at the slot’s fire — the moment this pool closes.' : 'The three-stock draft lands Monday — after this pool closes.';
+      // Once the pool has closed the draft is no longer "after this pool closes" (R-A-6).
+      const draft = !poolOpen ? 'This pool has closed; the three-stock draft follows.'
+        : formationPath === 'slot' ? 'The three-stock draft lands at the slot’s fire — the moment this pool closes.' : 'The three-stock draft lands Monday — after this pool closes.';
       return `What you have: ${hasPitch ? 'their pitch' : 'no pitch yet'}, ${agentName}’s stated approach, and ${loadout}. ${draft}`;
     },
     // A team with completed weeks whose tape could not be read: said plainly,
@@ -404,7 +406,9 @@ export const WEEK = Object.freeze({
   revealSub: (teamName, agentName) => `What ${teamName} and ${agentName} hold`,
   revealPending: 'The books show once the pod has drafted.',
   humanPending: 'Three picks · not drafted yet',
-  agentPending: (agentName) => `${agentName} · six built Monday morning`,
+  // What is KNOWN: no agent book has been read for the seat — never when one
+  // will be built (a seat can be running without an agent layer; R-A-2).
+  agentPending: (agentName) => `${agentName} · no book on file yet`,
   revealHuman: (teamName) => `${teamName} · 3`,
   revealAgent: (agentName) => `${agentName} · 6`,
   tape: 'Open the tape',

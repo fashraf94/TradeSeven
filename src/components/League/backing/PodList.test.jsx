@@ -159,3 +159,12 @@ describe('the PR 4 review record — FAB-16 (docs/audits/20260922_BACKING_PR4_MU
     expect(html).not.toContain('0 BP · 0 backers');
   });
 });
+
+describe('the PR 4 review record — refutation pass (R-A-7)', () => {
+  it('the §B6 count is clamped to the floor in the text too — no reply shape prints "Backers 5 of 3"', () => {
+    const html = render([openPod('g-odd', { pool: { status: 'open', backerProgress: { count: 5, floor: 3, met: false }, teamSpread: { met: false }, closesAt: SUNDAY_CLOSE } })]);
+    expect(html).toContain('Backers 3 of 3');
+    expect(html).not.toContain('Backers 5 of 3');
+    expect(html).not.toContain('data-count="5"');
+  });
+});
