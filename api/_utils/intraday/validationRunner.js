@@ -164,7 +164,27 @@ export async function runValidation({
   return { gradeDate, status, validated, pending: pending.length, unpublished: failure?.reason === 'unpublished', transportError: failure?.reason === 'transport_error' ? { httpStatus: failure.httpStatus, error: failure.error } : null, units, firstPublishHourUtc: state.firstPublishHourUtc, deadline };
 }
 
-/** §10.5 trailing-N rollup over the previous sessions' reported documents. */
+/**
+ * §10.5 — the metrics the trailing rollup carries forward. Exported so the
+ * suite can assert, against ONE source rather than a copied list, that every
+ * one of them is a qualification aggregate (addendum A / review R1).
+ */
+export const TRAILING_ROLLUP_METRICS = Object.freeze([
+  'p95AbsResidualOverPrice', 'overallDisagreement', 'falseStrikeRate', 'missedStrikeRate',
+  'nearThresholdDisagreement', 'replayedExitDisagreement', 'sma20P95AbsResidualOverPrice',
+  'macdEventAgreement', 'quoteCumulativeVolumeRatio',
+]);
+
+/**
+ * §10.5 trailing-N rollup over the previous sessions' reported documents.
+ *
+ * It averages the TOP-LEVEL keys of each day's document, which since addendum
+ * A are the qualification aggregate — computed over `qualification.included`
+ * sessions only (validator.js `aggregateValidation`). It must never reach
+ * into `diagnosticAllSymbols`: that block deliberately includes sessions the
+ * §10.2 check excluded, and carrying them into the rollup is exactly the
+ * defect R1 named.
+ */
 export async function trailingRollup({ db, gradeDate, calendar, n = 10 }) {
   const dates = [];
   let d = gradeDate;
@@ -175,7 +195,7 @@ export async function trailingRollup({ db, gradeDate, calendar, n = 10 }) {
   const mean = (key) => { const v = docs.map((x) => x[key]).filter(isNum); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
   const unavailable = {};
   const out = { sessions: docs.length, dates: docs.map((x) => x.etDate) };
-  for (const key of ['p95AbsResidualOverPrice', 'overallDisagreement', 'falseStrikeRate', 'missedStrikeRate', 'nearThresholdDisagreement', 'replayedExitDisagreement', 'sma20P95AbsResidualOverPrice', 'macdEventAgreement', 'quoteCumulativeVolumeRatio']) {
+  for (const key of TRAILING_ROLLUP_METRICS) {
     const m = mean(key);
     if (m === null) unavailable[key] = docs.length ? 'no_sessions_with_metric' : 'no_completed_sessions';
     out[key] = m;

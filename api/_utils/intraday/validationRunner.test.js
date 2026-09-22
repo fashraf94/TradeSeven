@@ -3,7 +3,8 @@ import { describe, it, expect } from 'vitest';
 import { makeInMemoryDb } from '../__fixtures__/inMemoryFirestore.js';
 import { calendar, sessionOf, makeVendor, barsForDate, battleWith } from '../__fixtures__/intradayPollHarness.js';
 import { runPoll } from './pollRunner.js';
-import { runValidation } from './validationRunner.js';
+import { runValidation, trailingRollup, TRAILING_ROLLUP_METRICS } from './validationRunner.js';
+import { validationRef } from './intradayStore.js';
 import { loadActionableDocs } from './intradayStore.js';
 import { sessionKeys } from './buckets.js';
 import * as CONFIG from '../intradayConfig.js';
@@ -234,5 +235,39 @@ describe('A8 §10.1 — the window is the grading day\'s, and a transport failur
     const closed = await run();
     expect(closed.status).toBe('window_closed');
     for (const u of mem.store.get('intradayValidation/2026-09-17').unvalidated) expect(u.reason).toBe('unpublished');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ADDENDUM A / R1 — the trailing rollup reads the QUALIFICATION block only.
+// ---------------------------------------------------------------------------
+describe('§10.5 trailing rollup — qualified aggregates only', () => {
+  it('carries forward the top-level qualification metrics and never the diagnosticAllSymbols block', async () => {
+    const mem = makeInMemoryDb();
+    // One graded day whose two blocks disagree on every rollup metric: the
+    // qualification aggregate is small, the all-symbol diagnostic is 100×
+    // larger. Only the first may reach the rollup.
+    const qualified = Object.fromEntries(TRAILING_ROLLUP_METRICS.map((k, i) => [k, 0.01 * (i + 1)]));
+    const diagnostic = Object.fromEntries(TRAILING_ROLLUP_METRICS.map((k, i) => [k, 1 * (i + 1)]));
+    await validationRef(mem.db, '2026-09-17').set({
+      etDate: '2026-09-17', status: 'done', calcVersion: 2, policyVersion: 1,
+      symbolsValidated: 2, symbolsQualified: 1, symbolsCalcVersionMixed: 1,
+      ...qualified,
+      eventCounts: { ourEvents: 1, refEvents: 1, agreed: 1, evaluations: 1 },
+      unavailable: {},
+      diagnosticAllSymbols: { sessions: 2, ...diagnostic, eventCounts: { ourEvents: 9, refEvents: 9, agreed: 9, evaluations: 9 }, unavailable: {} },
+      symbols: {},
+    });
+
+    const roll = await trailingRollup({ db: mem.db, gradeDate: '2026-09-17', calendar, n: 10 });
+    expect(roll.sessions).toBe(1);
+    expect(roll.dates).toEqual(['2026-09-17']);
+    for (const k of TRAILING_ROLLUP_METRICS) {
+      expect(roll[k], k).toBe(qualified[k]);
+      expect(roll[k], k).not.toBe(diagnostic[k]);
+    }
+    // The diagnostic block is not carried forward at all, under any name.
+    expect(roll.diagnosticAllSymbols).toBeUndefined();
+    expect(roll.eventCounts).toEqual({ ourEvents: 1, refEvents: 1, agreed: 1, evaluations: 1 });
   });
 });

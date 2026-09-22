@@ -1,10 +1,11 @@
 // api/_utils/intraday/validator.test.js — contract §10.2–§10.5 (pure).
 import { describe, it, expect } from 'vitest';
-import { buildReferenceSeries, lastCompletedBarAt, computeCoverage, alignLogEntries, seriesMetrics, evaluationMetrics, validateSymbolSession, aggregateValidation, referenceBucketCloses, lastReferenceBarStartMs, sessionCalcVersionOf } from './validator.js';
+import { buildReferenceSeries, lastCompletedBarAt, computeCoverage, alignLogEntries, seriesMetrics, evaluationMetrics, validateSymbolSession, aggregateValidation, referenceBucketCloses, lastReferenceBarStartMs, sessionCalcVersionOf, NO_QUALIFIED_SESSIONS } from './validator.js';
 import { aggregateBarsToBuckets } from './seed.js';
 import { sessionKeys } from './buckets.js';
 import { FIXTURE_BARS } from '../__fixtures__/intradayPollHarness.js';
 import { SEP17, makeSession } from '../__fixtures__/intradaySessions.js';
+import { TRAILING_ROLLUP_METRICS } from './validationRunner.js';
 
 const series = buildReferenceSeries(FIXTURE_BARS, SEP17);
 const EOD = FIXTURE_BARS.reduce((a, r) => a + r.volume, 0);
@@ -224,6 +225,128 @@ describe('§10.2 / §10.7 — the reference window is the GRADED session\'s calc
   });
 });
 
+describe('ADDENDUM A / R1 — qualification aggregates count INCLUDED symbol-sessions only', () => {
+  // The review's own reproduction (docs/audits/20260921_INTRADAY_CALCVERSION_2_REVIEW.md
+  // §2 R1): one qualified session, plus one the §10.2 check excluded whose
+  // estimates carry a deliberately large error. Before the fix, adding the
+  // excluded session took the aggregate p95AbsResidualOverPrice from 0.0058
+  // to 1.69 while `symbolsQualified` stayed at 1. Both sessions go through
+  // the real `validateSymbolSession`; neither result object is fabricated.
+
+  /** Everything `aggregateValidation` computes over the included set. */
+  const QUALIFICATION_AGGREGATE_KEYS = Object.freeze([
+    'residualByLagBin', 'p95AbsResidualOverPrice', 'overallDisagreement', 'falseStrikeRate',
+    'missedStrikeRate', 'nearThresholdDisagreement', 'replayedExitDisagreement',
+    'sma20P95AbsResidualOverPrice', 'macdEventAgreement', 'quoteCumulativeVolumeRatio',
+    'eventCounts', 'unavailable',
+  ]);
+  const qualifiedBlock = (agg) => JSON.stringify(Object.fromEntries(QUALIFICATION_AGGREGATE_KEYS.map((k) => [k, agg[k]])));
+
+  const ring = (policy) => ({ buckets: aggregateBarsToBuckets(FIXTURE_BARS, SEP17, { closingRowPolicy: policy }).buckets });
+  // The v2 reference the grader will use, so a "clean" entry can be pinned to
+  // the reference VWAP itself: its residual is then ~0 by construction and any
+  // leak from the excluded session is unmistakable rather than a ratio.
+  const v2Series = buildReferenceSeries(FIXTURE_BARS, SEP17, { sessionCalcVersion: 2 });
+  const refVwapAt = (ms) => lastCompletedBarAt(v2Series, ms).vwap;
+  const entry = (i, { version, cutoff = true, estimate }) => ({
+    sweepAt: SEP17.openMs + (100 + i) * 60_000,
+    priceAsOf: SEP17.openMs + (100 + i) * 60_000,
+    price: 335,
+    estimate,
+    estimateCutoff: cutoff ? SEP17.openMs + (100 + i) * 60_000 : null,
+    volumeCutoffAsOf: cutoff ? SEP17.openMs + (100 + i) * 60_000 : null,
+    calcVersion: version, strikeKey: `k${version}${i}`,
+  });
+  const grade = (sym, log, { bars = FIXTURE_BARS } = {}) => validateSymbolSession({
+    sym, bars, session: SEP17, doc: { ring: ring('continuous_session'), state: null, log },
+    quoteCumulativeVolume: EOD, views: [], fireTicksOf, calcVersion: 2, policyVersion: 1,
+  });
+  const agg = (results) => aggregateValidation(results, { etDate: '2026-09-17', calcVersion: 2, policyVersion: 1, firstPublishHourUtc: 11, status: 'done', computedAt: 2 });
+
+  // A clean v2 session: three ordinary entries whose estimates sit near the
+  // reference, so the day has a real, small residual.
+  const CLEAN_LOG = [0, 1, 2].map((i) => entry(i, { version: 2, estimate: refVwapAt(SEP17.openMs + (100 + i) * 60_000) }));
+  // The excluded session: three v1 null-cutoff entries plus three v2 entries
+  // 200 points away from the reference. If it leaks in, it dominates.
+  const WILD_LOG = [
+    ...[0, 1, 2].map((i) => entry(i, { version: 1, cutoff: false, estimate: 334.5 })),
+    ...[3, 4, 5].map((i) => entry(i, { version: 2, estimate: 536 + i })),
+  ];
+
+  it('the review\'s reproduction: an excluded MIXED session leaves every qualified aggregate byte-identical', () => {
+    const clean = grade('AAPL', CLEAN_LOG);
+    const mixed = grade('MSFT', WILD_LOG);
+    expect(clean.qualification).toEqual({ included: true, reason: null });
+    expect(mixed.qualification).toEqual({ included: false, reason: 'calc_version_mixed' });
+    expect(mixed.calcVersionMixed).toBe(true);
+
+    const alone = agg({ AAPL: clean });
+    const withMixed = agg({ AAPL: clean, MSFT: mixed });
+
+    expect(qualifiedBlock(withMixed)).toBe(qualifiedBlock(alone));
+    expect(withMixed.symbolsQualified).toBe(1);
+    expect(withMixed.symbolsCalcVersionMixed).toBe(1);
+    expect(withMixed.symbolsValidated).toBe(2);
+
+    // ANTI-VACUOUS: the clean session's residual is ~0 by construction and the
+    // excluded one's is enormous, so a leak could not hide in rounding.
+    expect(alone.p95AbsResidualOverPrice).toBeLessThan(1e-12);
+    expect(mixed.series.p95AbsResidualOverPrice).toBeGreaterThan(0.5);
+    expect(withMixed.p95AbsResidualOverPrice).toBe(alone.p95AbsResidualOverPrice);
+    expect(withMixed.diagnosticAllSymbols.p95AbsResidualOverPrice).toBeGreaterThan(0.5);
+    // The per-symbol results are unchanged and still reported in full.
+    expect(withMixed.symbols.MSFT).toBe(mixed);
+    expect(withMixed.symbols.MSFT.series.comparisons).toBeGreaterThan(0);
+    // The exclusion ledger and the censuses still count every symbol.
+    expect(withMixed.diagnosticAllSymbols.sessions).toBe(2);
+    expect(withMixed.symbolsByCalcVersion).toEqual({ 2: 2 });
+  });
+
+  it('the same holds for PARTIAL COVERAGE — the filter is `included`, not `calc_version_mixed`', () => {
+    // Broadened from the review deliberately: §10.2 keeps unqualified series
+    // out of EVERY qualification metric, and `included: false` is also how
+    // partial coverage and `close_unqualified` are recorded.
+    const clean = grade('AAPL', CLEAN_LOG);
+    const holed = grade('MSFT', [0, 1, 2].map((i) => entry(i, { version: 2, estimate: 536 + i })), {
+      bars: FIXTURE_BARS.filter((_, i) => i !== 100 && i !== 101),
+    });
+    expect(holed.qualification).toEqual({ included: false, reason: 'bars_missing' });
+    expect(holed.calcVersionMixed).toBe(false);
+    expect(qualifiedBlock(agg({ AAPL: clean, MSFT: holed }))).toBe(qualifiedBlock(agg({ AAPL: clean })));
+    expect(agg({ AAPL: clean, MSFT: holed }).lostCoverageByReason).toEqual({ bars_missing: 1 });
+  });
+
+  it('an all-excluded set yields `no_qualified_sessions` on every metric — never a zero, never a leaked number', () => {
+    const only = agg({ MSFT: grade('MSFT', WILD_LOG) });
+    expect(only.symbolsQualified).toBe(0);
+    for (const k of TRAILING_ROLLUP_METRICS) {
+      expect(only[k], k).toBeNull();
+      expect(only.unavailable[k], k).toBe(NO_QUALIFIED_SESSIONS);
+    }
+    expect(only.eventCounts).toEqual({ ourEvents: 0, refEvents: 0, agreed: 0, evaluations: 0 });
+    expect(only.residualByLagBin).toEqual({});
+    expect(Object.values(only.unavailable).some((v) => v === 0 || v === '0')).toBe(false);
+    // The numbers are not lost — they are named for what they are.
+    expect(only.diagnosticAllSymbols.p95AbsResidualOverPrice).toBeGreaterThan(0);
+    expect(only.diagnosticAllSymbols.sessions).toBe(1);
+  });
+
+  it('every metric the trailing rollup carries forward IS a qualification aggregate — asserted against the rollup\'s own list', () => {
+    // Bound to `TRAILING_ROLLUP_METRICS` itself, not a copy of it: adding a
+    // metric to the rollup without adding it here fails this row.
+    for (const k of TRAILING_ROLLUP_METRICS) expect(QUALIFICATION_AGGREGATE_KEYS, k).toContain(k);
+    const withMixed = agg({ AAPL: grade('AAPL', CLEAN_LOG), MSFT: grade('MSFT', WILD_LOG) });
+    for (const k of TRAILING_ROLLUP_METRICS) expect(Object.prototype.hasOwnProperty.call(withMixed, k), k).toBe(true);
+    // The two blocks are separate objects and genuinely disagree on the
+    // metric the rollup carries forward.
+    expect(withMixed.diagnosticAllSymbols).not.toBe(withMixed);
+    expect(withMixed.p95AbsResidualOverPrice).not.toBe(withMixed.diagnosticAllSymbols.p95AbsResidualOverPrice);
+    // `unavailable` is per block: the diagnostic's reasons never overwrite
+    // the qualification block's.
+    expect(withMixed.unavailable).not.toBe(withMixed.diagnosticAllSymbols.unavailable);
+  });
+});
+
 describe('§10.5 per-symbol result and aggregate — unavailable reasons, never zero', () => {
   it('validateSymbolSession + aggregateValidation over one symbol with the closing row unresolved', () => {
     const { buckets } = aggregateBarsToBuckets(FIXTURE_BARS, SEP17); // last bucket closeQualified false (policy null)
@@ -238,13 +361,25 @@ describe('§10.5 per-symbol result and aggregate — unavailable reasons, never 
     expect(r.evaluationLinked.unavailable).toEqual({ evaluationLinked: 'no_evaluation_evidence' });
     const agg = aggregateValidation({ AAPL: r }, { etDate: '2026-09-17', calcVersion: 1, policyVersion: 1, firstPublishHourUtc: 11, status: 'done', computedAt: 2 });
     expect(agg).toMatchObject({ symbolsValidated: 1, symbolsQualified: 0, firstPublishHourUtc: 11, lostCoverageByReason: {} });
-    expect(agg.quoteCumulativeVolumeRatio).toBeCloseTo(1, 6);
-    for (const k of ['p95AbsResidualOverPrice', 'falseStrikeRate', 'missedStrikeRate', 'nearThresholdDisagreement', 'replayedExitDisagreement', 'sma20P95AbsResidualOverPrice', 'macdEventAgreement']) {
+    // ADDENDUM A / R1 — the one symbol is EXCLUDED (`close_unqualified`), so
+    // no qualification aggregate may carry its numbers. This row asserted
+    // `agg.quoteCumulativeVolumeRatio` ≈ 1 off that excluded symbol until the
+    // addendum; the value moved to the diagnostic block, which is named for
+    // what it is.
+    expect(agg.quoteCumulativeVolumeRatio).toBeNull();
+    expect(agg.diagnosticAllSymbols.quoteCumulativeVolumeRatio).toBeCloseTo(1, 6);
+    expect(agg.diagnosticAllSymbols.sessions).toBe(1);
+    for (const k of ['p95AbsResidualOverPrice', 'falseStrikeRate', 'missedStrikeRate', 'nearThresholdDisagreement', 'replayedExitDisagreement', 'sma20P95AbsResidualOverPrice', 'macdEventAgreement', 'quoteCumulativeVolumeRatio']) {
       expect(agg[k], k).toBeNull();
-      expect(typeof agg.unavailable[k], k).toBe('string');
+      // Every one of them names the SAME reason, because one condition holds:
+      // the day qualified nothing. `no_qualified_series` (SMA/MACD only)
+      // merged into this single name in the same commit.
+      expect(agg.unavailable[k], k).toBe('no_qualified_sessions');
     }
-    expect(agg.unavailable.sma20P95AbsResidualOverPrice).toBe('no_qualified_series');
-    expect(agg.unavailable.falseStrikeRate).toBe('no_evaluation_evidence');
+    expect(agg.unavailable.sma20P95AbsResidualOverPrice).toBe(NO_QUALIFIED_SESSIONS);
+    expect(agg.unavailable.falseStrikeRate).toBe(NO_QUALIFIED_SESSIONS);
     expect(Object.values(agg.unavailable).some((v) => v === 0 || v === '0')).toBe(false);
+    // …and the diagnostic block still names its own reasons honestly.
+    expect(agg.diagnosticAllSymbols.unavailable.p95AbsResidualOverPrice).toBe('no_aligned_comparisons');
   });
 });
