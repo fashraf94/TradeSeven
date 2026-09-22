@@ -16,6 +16,18 @@
 //   excluded from every qualification metric                        (§10.2/§6.7)
 //   `unavailable` names a reason for every metric with no denominator —
 //   never a zero                                                     (§10.5)
+//
+// THE WINDOW IS THE GRADED SESSION'S, NOT THE GRADER'S (calcVersion 2).
+// calcVersion 2 moved the session for the estimate, the buckets, seeding and
+// validation to the continuous session, 09:30–15:59 (§15 item 2). A session
+// COLLECTED under calcVersion 1 was collected against the old window — through
+// the 16:00 row — so grading it against the new one would compare a v1 series
+// to a v2 reference and report the difference as error. The window is
+// therefore chosen from the calcVersion stamped on the session's own LOG
+// ENTRIES (§7.1), not from the validator's current constant. A symbol-session
+// whose entries carry more than one calcVersion straddles the change and
+// cannot be graded against either window: it is marked `calc_version_mixed`
+// and excluded from qualification.
 
 import { sessionKeys, BUCKET_MS } from './buckets.js';
 import { barTimeMs } from './seed.js';
@@ -26,12 +38,40 @@ const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 export const BAR_MS = 60_000;
 export const LAG_BINS = Object.freeze([0, 60_000, 120_000, 300_000, 600_000]);
 
+/** The calcVersion from which the reference window is the continuous session. */
+export const CONTINUOUS_SESSION_CALC_VERSION = 2;
+
+/**
+ * §10.2 — the START of the last 1-minute bar the reference window includes.
+ *
+ * calcVersion 1: the calendar close itself, so the vendor's 16:00 row (which
+ * carries the closing auction — 19.1 M shares on the founder's AAPL fixture)
+ * is part of the reference. calcVersion 2: 15:59, so it is not. On an early
+ * close the same rule gives 12:59.
+ */
+export function lastReferenceBarStartMs(session, sessionCalcVersion) {
+  return sessionCalcVersion >= CONTINUOUS_SESSION_CALC_VERSION ? session.closeMs - BAR_MS : session.closeMs;
+}
+
+/**
+ * §10.2 / §10.7 — the calcVersion a symbol-session was COLLECTED under, read
+ * off its own log entries. `mixed` when the entries straddle a bump.
+ */
+export function sessionCalcVersionOf(log, fallback) {
+  const seen = [...new Set((Array.isArray(log) ? log : []).map((e) => e?.calcVersion).filter(isNum))].sort((a, b) => a - b);
+  if (!seen.length) return { calcVersion: fallback, mixed: false, versions: [], source: 'fallback' };
+  // A mixed session is graded against the NEWER window so the metrics are at
+  // least internally consistent, but it never qualifies — see `qualification`.
+  return { calcVersion: seen[seen.length - 1], mixed: seen.length > 1, versions: seen, source: 'log' };
+}
+
 /** Sorted, cumulative reference series over the session's 1-minute bars. */
-export function buildReferenceSeries(bars, session) {
+export function buildReferenceSeries(bars, session, { sessionCalcVersion = 1 } = {}) {
+  const lastBarStart = lastReferenceBarStartMs(session, sessionCalcVersion);
   const rows = [];
   for (const bar of Array.isArray(bars) ? bars : []) {
     const start = barTimeMs(bar);
-    if (start === null || start < session.openMs || start > session.closeMs) continue;
+    if (start === null || start < session.openMs || start > lastBarStart) continue;
     if (!isNum(bar.close)) continue;
     const vol = isNum(bar.volume) ? bar.volume : 0;
     const hlc3 = isNum(bar.high) && isNum(bar.low) ? (bar.high + bar.low + bar.close) / 3 : bar.close;
@@ -51,8 +91,9 @@ export function lastCompletedBarAt(series, t) {
 }
 
 /**
- * §10.2 coverage. Expected bars: every minute from open to close INCLUSIVE
- * (the vendor's 16:00 row).
+ * §10.2 coverage. Expected bars: every minute from the open to the last bar
+ * of the graded session's window — the calendar close under calcVersion 1
+ * (the vendor's 16:00 row), 15:59 under calcVersion 2.
  *
  * Addendum A5 — what the ratio is, and what it is not.
  *
@@ -77,12 +118,13 @@ export function lastCompletedBarAt(series, t) {
  * and a day-2 value far from ~1.97 says the vendor's `volume` is not what
  * G7 assumes — but as a DIAGNOSTIC under an honest name, never as a gate.
  */
-export function computeCoverage({ series, session, quoteCumulativeVolume }) {
-  const expected = Math.floor((session.closeMs - session.openMs) / BAR_MS) + 1;
+export function computeCoverage({ series, session, quoteCumulativeVolume, sessionCalcVersion = 1 }) {
+  const lastBarStart = lastReferenceBarStartMs(session, sessionCalcVersion);
+  const expected = Math.floor((lastBarStart - session.openMs) / BAR_MS) + 1;
   const present = new Set(series.map((r) => r.startMs));
   let barsMissing = 0;
   const missingStarts = [];
-  for (let t = session.openMs; t <= session.closeMs; t += BAR_MS) if (!present.has(t)) { barsMissing += 1; if (missingStarts.length < 50) missingStarts.push(t); }
+  for (let t = session.openMs; t <= lastBarStart; t += BAR_MS) if (!present.has(t)) { barsMissing += 1; if (missingStarts.length < 50) missingStarts.push(t); }
   const sumVol = series.reduce((a, r) => a + r.volume, 0);
   const denominatorOk = isNum(quoteCumulativeVolume) && quoteCumulativeVolume > 0;
   const ratio = denominatorOk ? sumVol / quoteCumulativeVolume : null;
@@ -131,7 +173,12 @@ const p95 = (values) => {
 };
 const lagBin = (lag) => { let bin = LAG_BINS[0]; for (const b of LAG_BINS) if (lag >= b) bin = b; return String(bin); };
 
-/** Reference 5-minute closes keyed by bucket key, from the 1-minute series (the 16:00 row → last bucket). */
+/**
+ * Reference 5-minute closes keyed by bucket key, from the 1-minute series.
+ * Under calcVersion 1 the 16:00 row folds into the last bucket; under
+ * calcVersion 2 `buildReferenceSeries` has already dropped it, and the
+ * fold-in would be unreachable — it stays as the v1 path.
+ */
 export function referenceBucketCloses(series, session) {
   const { lastKey } = sessionKeys(session);
   const byKey = new Map();
@@ -266,17 +313,27 @@ export function evaluationMetrics({ views, sym, series, fireTicksOf, nearBand = 
 
 /** §10.5 — the per-symbol result. */
 export function validateSymbolSession({ sym, bars, session, doc, quoteCumulativeVolume, views, fireTicksOf, calcVersion, policyVersion }) {
-  const series = buildReferenceSeries(bars, session);
-  const cov = computeCoverage({ series, session, quoteCumulativeVolume });
+  // The window is the GRADED session's, read off its own log entries.
+  const graded = sessionCalcVersionOf(doc?.log, calcVersion);
+  const sessionCalcVersion = graded.calcVersion;
+  const series = buildReferenceSeries(bars, session, { sessionCalcVersion });
+  const cov = computeCoverage({ series, session, quoteCumulativeVolume, sessionCalcVersion });
   const aligned = alignLogEntries({ log: doc?.log || [], series, missingStarts: cov.missingStarts });
   const closingUnresolved = (doc?.ring?.buckets || []).some((b) => b.sessionEtDate === session.etDate && b.isLast && b.closeQualified === false)
     || !(doc?.ring?.buckets || []).some((b) => b.sessionEtDate === session.etDate && b.isLast);
   const closeQualifiedSeries = !closingUnresolved && cov.coverage === 'full';
   const s = seriesMetrics({ aligned, ring: doc?.ring, series, session, closeQualifiedSeries });
   const e = evaluationMetrics({ views: views || [], sym, series, fireTicksOf });
-  const qualification = cov.coverage !== 'full' ? { included: false, reason: cov.reason || cov.coverage } : (closeQualifiedSeries ? { included: true, reason: null } : { included: false, reason: 'close_unqualified' });
+  // A session that straddles a calcVersion bump is graded — the numbers are
+  // still reported — but never qualified: half its entries were produced
+  // against a different window from the one they are compared with.
+  const qualification = graded.mixed
+    ? { included: false, reason: 'calc_version_mixed' }
+    : cov.coverage !== 'full' ? { included: false, reason: cov.reason || cov.coverage } : (closeQualifiedSeries ? { included: true, reason: null } : { included: false, reason: 'close_unqualified' });
   return {
     sym, etDate: session.etDate, calcVersion, policyVersion,
+    sessionCalcVersion, calcVersionMixed: graded.mixed, calcVersions: graded.versions, calcVersionSource: graded.source,
+    referenceWindow: { openMs: session.openMs, lastBarStartMs: lastReferenceBarStartMs(session, sessionCalcVersion) },
     coverage: {
       // A5: the gate (bar completeness) and the diagnostic (the ratio) are
       // now separate fields with separate names, so neither can be read as
@@ -293,31 +350,67 @@ export function validateSymbolSession({ sym, bars, session, doc, quoteCumulative
   };
 }
 
-/** §10.5 — the reported document's aggregates over the per-symbol results. */
-export function aggregateValidation(results, { etDate, calcVersion, policyVersion, firstPublishHourUtc, status, unvalidated = [], computedAt }) {
-  const syms = Object.values(results);
-  const qualified = syms.filter((r) => r.qualification.included);
+/**
+ * §10.5 — the reason a qualification metric has no denominator BECAUSE the
+ * day qualified nothing. Distinct from the per-metric reasons ("no aligned
+ * comparisons", "no MACD events"), which mean the included set exists but is
+ * silent on that metric.
+ */
+export const NO_QUALIFIED_SESSIONS = 'no_qualified_sessions';
+
+/**
+ * §10.2 / §10.5 — every reported metric over ONE set of symbol-session
+ * results, with `unavailable` naming a reason for each metric that has no
+ * denominator (never a zero).
+ *
+ * Addendum A — review finding R1. The whole metric block is computed here,
+ * once, so the qualification aggregate and the all-symbol diagnostic cannot
+ * drift apart: `aggregateValidation` calls it twice over two different SETS,
+ * never with two different formulas (BUILD_RULES §4 — no local copy of the
+ * same computation; §9 — one source).
+ *
+ * `rows` is the membership decision. It is the only difference between the
+ * qualification aggregate and the diagnostic.
+ */
+function metricsOverResults(rows, { emptyReason }) {
   const unavailable = {};
-  const collect = (pick, name, reason) => { const v = syms.map(pick).filter(isNum); if (!v.length) { unavailable[name] = reason; return null; } return v; };
   const mean = (v) => (v ? v.reduce((a, b) => a + b, 0) / v.length : null);
   const median = (v) => { if (!v) return null; const s = [...v].sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
+  const collect = (pick, name, reason) => {
+    if (!rows.length) { unavailable[name] = emptyReason; return null; }
+    const v = rows.map(pick).filter(isNum);
+    if (!v.length) { unavailable[name] = reason; return null; }
+    return v;
+  };
   const p95s = collect((r) => r.series.p95AbsResidualOverPrice, 'p95AbsResidualOverPrice', 'no_aligned_comparisons');
-  const sma = collect((r) => (r.qualification.included ? r.series.sma20P95AbsResidualOverPrice : null), 'sma20P95AbsResidualOverPrice', qualified.length ? 'no_sma20_comparisons' : 'no_qualified_series');
-  const macd = collect((r) => (r.qualification.included ? r.series.macdEventAgreement : null), 'macdEventAgreement', qualified.length ? 'no_macd_events' : 'no_qualified_series');
+  const sma = collect((r) => r.series.sma20P95AbsResidualOverPrice, 'sma20P95AbsResidualOverPrice', 'no_sma20_comparisons');
+  const macd = collect((r) => r.series.macdEventAgreement, 'macdEventAgreement', 'no_macd_events');
   const cov = collect((r) => r.coverage.quoteCumulativeVolumeRatio, 'quoteCumulativeVolumeRatio', 'quote_cumulative_volume_unavailable');
-  const evalRows = syms.map((r) => r.evaluationLinked).filter((e) => e.usable > 0);
-  const evalMetric = (key, reason) => { const v = evalRows.map((e) => e[key]).filter(isNum); if (!v.length) { unavailable[key] = evalRows.length ? reason : 'no_evaluation_evidence'; return null; } return mean(v); };
-  const lostCoverageByReason = countBy(syms.filter((r) => r.coverage.coverage !== 'full').map((r) => r.coverage.reason || r.coverage.coverage));
+  const evalRows = rows.map((r) => r.evaluationLinked).filter((e) => e.usable > 0);
+  // `reportedAs` is the key the metric appears under in the DOCUMENT, which
+  // is not always the key it is read from on the per-symbol row: the row
+  // carries `agreement`, the document reports `overallDisagreement`. §10.5
+  // says `unavailable` names a reason for every metric with no denominator,
+  // and a reason filed under a name the document never prints is not one
+  // (BUILD_RULES §9 — the label and its reason come from one source).
+  const evalMetric = (key, reason, reportedAs = key) => {
+    if (!rows.length) { unavailable[reportedAs] = emptyReason; return null; }
+    const v = evalRows.map((e) => e[key]).filter(isNum);
+    if (!v.length) { unavailable[reportedAs] = evalRows.length ? reason : 'no_evaluation_evidence'; return null; }
+    return mean(v);
+  };
   const residualByLagBin = {};
-  for (const r of syms) for (const [bin, v] of Object.entries(r.series.residualByLagBin || {})) { const cur = residualByLagBin[bin] || { n: 0, p95Abs: [] }; cur.n += v.n; cur.p95Abs.push(v.p95Abs); residualByLagBin[bin] = cur; }
+  for (const r of rows) for (const [bin, v] of Object.entries(r.series.residualByLagBin || {})) { const cur = residualByLagBin[bin] || { n: 0, p95Abs: [] }; cur.n += v.n; cur.p95Abs.push(v.p95Abs); residualByLagBin[bin] = cur; }
   for (const bin of Object.keys(residualByLagBin)) residualByLagBin[bin].p95Abs = median(residualByLagBin[bin].p95Abs.filter(isNum));
-  const eventCounts = syms.reduce((a, r) => ({ ourEvents: a.ourEvents + (r.series.eventCounts?.ourEvents || 0), refEvents: a.refEvents + (r.series.eventCounts?.refEvents || 0), agreed: a.agreed + (r.series.eventCounts?.agreed || 0), evaluations: a.evaluations + (r.evaluationLinked.evaluations || 0) }), { ourEvents: 0, refEvents: 0, agreed: 0, evaluations: 0 });
+  const eventCounts = rows.reduce((a, r) => ({ ourEvents: a.ourEvents + (r.series.eventCounts?.ourEvents || 0), refEvents: a.refEvents + (r.series.eventCounts?.refEvents || 0), agreed: a.agreed + (r.series.eventCounts?.agreed || 0), evaluations: a.evaluations + (r.evaluationLinked.evaluations || 0) }), { ourEvents: 0, refEvents: 0, agreed: 0, evaluations: 0 });
+  // Called ONCE: `evalMetric` writes into `unavailable`, so a second call
+  // would restate the reason as a side effect of formatting the value.
+  const agreement = evalMetric('agreement', 'no_usable_evaluations', 'overallDisagreement');
   return {
-    etDate, calcVersion, policyVersion, computedAt, status, firstPublishHourUtc: firstPublishHourUtc ?? null,
-    symbolsValidated: syms.length, symbolsQualified: qualified.length, unvalidated,
+    sessions: rows.length,
     residualByLagBin,
     p95AbsResidualOverPrice: p95s ? p95(p95s) : null,
-    overallDisagreement: evalMetric('agreement', 'no_usable_evaluations') === null ? null : 1 - evalMetric('agreement', 'no_usable_evaluations'),
+    overallDisagreement: agreement === null ? null : 1 - agreement,
     falseStrikeRate: evalMetric('falseStrikeRate', 'no_estimate_strikes'),
     missedStrikeRate: evalMetric('missedStrikeRate', 'no_reference_strikes'),
     nearThresholdDisagreement: evalMetric('nearThresholdDisagreement', 'no_near_threshold_points'),
@@ -325,9 +418,74 @@ export function aggregateValidation(results, { etDate, calcVersion, policyVersio
     sma20P95AbsResidualOverPrice: sma ? p95(sma) : null,
     macdEventAgreement: mean(macd),
     quoteCumulativeVolumeRatio: median(cov),
-    lostCoverageByReason,
     eventCounts,
     unavailable,
+  };
+}
+
+/**
+ * §10.5 — the reported document's aggregates over the per-symbol results.
+ *
+ * ADDENDUM A / REVIEW R1: every QUALIFICATION aggregate counts symbol-sessions
+ * with `qualification.included === true` and nothing else.
+ *
+ * Before this, only SMA20 and the MACD event agreement tested qualification.
+ * The residual P95, the evaluation-linked rates, the lag bins and the event
+ * counts read every symbol — so a session the §10.2 check had just excluded
+ * still moved the number the founder reads as "the VWAP error", and the
+ * §10.5 trailing rollup carried it forward. The review reproduced it: adding
+ * one excluded mixed-version session took the aggregate
+ * `p95AbsResidualOverPrice` from 0.0058 to 1.69 while `symbolsQualified`
+ * stayed at 1.
+ *
+ * The filter is `included`, not `calc_version_mixed`, deliberately and more
+ * broadly than the review asked. §10.2 says unqualified series are excluded
+ * from EVERY qualification metric, and `included: false` is also how
+ * `close_unqualified` and partial coverage are recorded — one membership
+ * test, so a new exclusion reason is covered the day it is added rather than
+ * the day someone remembers to extend a list of reasons.
+ *
+ * Per-symbol results are unchanged and still reported in full under
+ * `symbols`. The all-symbol numbers survive under `diagnosticAllSymbols`,
+ * named for what they are; nothing reads that block — the trailing rollup
+ * (validationRunner.js) reads only the top-level qualification aggregate.
+ * The census fields (`symbolsValidated`, `symbolsByCalcVersion`,
+ * `symbolsCalcVersionMixed`, `lostCoverageByReason`) count every symbol by
+ * definition: they exist to say who was left out and why.
+ */
+export function aggregateValidation(results, { etDate, calcVersion, policyVersion, firstPublishHourUtc, status, unvalidated = [], computedAt }) {
+  const syms = Object.values(results);
+  const qualified = syms.filter((r) => r.qualification.included);
+  const q = metricsOverResults(qualified, { emptyReason: NO_QUALIFIED_SESSIONS });
+  const all = metricsOverResults(syms, { emptyReason: 'no_symbols_validated' });
+  return {
+    etDate, calcVersion, policyVersion, computedAt, status, firstPublishHourUtc: firstPublishHourUtc ?? null,
+    symbolsValidated: syms.length, symbolsQualified: qualified.length, unvalidated,
+    // §10.7 — which window each symbol-session was graded under, and how many
+    // straddled the bump (excluded from qualification, never silently).
+    symbolsByCalcVersion: countBy(syms.map((r) => String(r.sessionCalcVersion ?? 'unknown'))),
+    symbolsCalcVersionMixed: syms.filter((r) => r.calcVersionMixed === true).length,
+    // The exclusion ledger: over EVERY symbol, because its job is to name the
+    // ones the aggregate above left out.
+    lostCoverageByReason: countBy(syms.filter((r) => r.coverage.coverage !== 'full').map((r) => r.coverage.reason || r.coverage.coverage)),
+    // ---- The qualification aggregate (§10.2-included sessions only) ----
+    residualByLagBin: q.residualByLagBin,
+    p95AbsResidualOverPrice: q.p95AbsResidualOverPrice,
+    overallDisagreement: q.overallDisagreement,
+    falseStrikeRate: q.falseStrikeRate,
+    missedStrikeRate: q.missedStrikeRate,
+    nearThresholdDisagreement: q.nearThresholdDisagreement,
+    replayedExitDisagreement: q.replayedExitDisagreement,
+    sma20P95AbsResidualOverPrice: q.sma20P95AbsResidualOverPrice,
+    macdEventAgreement: q.macdEventAgreement,
+    quoteCumulativeVolumeRatio: q.quoteCumulativeVolumeRatio,
+    eventCounts: q.eventCounts,
+    unavailable: q.unavailable,
+    // ---- The same metrics over EVERY validated session, for diagnosis only.
+    // Never a qualification metric, never read by the trailing rollup. It
+    // exists so a day that qualifies nothing still shows its numbers instead
+    // of an empty document.
+    diagnosticAllSymbols: all,
     symbols: results,
   };
 }

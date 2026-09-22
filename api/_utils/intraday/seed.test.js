@@ -7,6 +7,8 @@ import { aggregateBarsToBuckets, contiguousTail, combineSeedSessions, barTimeMs 
 import { advanceState, newState, sessionKeys, BUCKET_MS } from './buckets.js';
 import { stepMacd, stepSma, stepWilderRsi, WARMUP_BARS } from './stepIndicators.js';
 import { SEP17, SEP16, makeSession } from '../__fixtures__/intradaySessions.js';
+import { CLOSING_ROW_POLICY, SEED_MAX_BUCKETS } from '../intradayConfig.js';
+import { indicatorQuality } from './buckets.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE = path.resolve(HERE, '../../../docs/audits/fixtures/AAPL_2026-09-17_1m.json');
@@ -65,6 +67,66 @@ describe('§6.6 aggregation of 1-minute bars into 5-minute buckets', () => {
     const { buckets, barsIgnored } = aggregateBarsToBuckets(extra, SEP17);
     expect(barsIgnored).toBe(2);
     expect(buckets).toHaveLength(78);
+  });
+});
+
+describe('§6.6 / §15 item 2 — the continuous-session policy on the founder fixture', () => {
+  const POLICY = { closingRowPolicy: CLOSING_ROW_POLICY };
+
+  it('the shipped policy is continuous_session, and it uses the 390 rows through 15:59 — the 16:00 row is ignored, not folded in', () => {
+    expect(CLOSING_ROW_POLICY).toBe('continuous_session');
+    const { buckets, barsUsed, barsIgnored } = aggregateBarsToBuckets(bars, SEP17, POLICY);
+    expect(barsUsed).toBe(390);
+    expect(barsIgnored).toBe(1);
+    expect(buckets).toHaveLength(78);
+    const last = buckets[77];
+    // 15:55…15:59 — five rows, not six, and the close is the 15:59 print.
+    expect(last.sampleCount).toBe(5);
+    expect(last.close).toBe(bars[389].close);
+    expect(last.close).not.toBe(bars[390].close);
+    expect(last.maxPriceAsOf).toBe(SEP17.closeMs - 60_000);
+    expect(last.closeLagMs).toBe(60_000);
+    // The row that is dropped is the closing auction: 19.1 M shares, 42.9 %
+    // of the day's bar volume — the reason answer 3 exists.
+    expect(bars[390].volume / bars.reduce((a, r) => a + r.volume, 0)).toBeGreaterThan(0.42);
+  });
+
+  it('the seeded last bucket is closeQualified TRUE under the policy and FALSE under null — the null stamping applies only when the policy is null', () => {
+    expect(aggregateBarsToBuckets(bars, SEP17, POLICY).buckets[77].closeQualified).toBe(true);
+    expect(aggregateBarsToBuckets(bars, SEP17, { closingRowPolicy: null }).buckets[77].closeQualified).toBe(false);
+    expect(aggregateBarsToBuckets(bars, SEP17).buckets[77].closeQualified).toBe(false);
+  });
+
+  it('R-11 cannot arise under the policy: a seeded name is NOT close-unqualified all day', () => {
+    // Review finding R-11 (docs/audits/20260919_BUILD1_INTRADAY_REVIEW.md):
+    // with a null policy the seed's last bucket is unqualified, MACD and RSI
+    // initialise from a segment containing it, and §6.7 says elapsed bars
+    // never clear them — so every seeded name carried closeQualified: false
+    // for the whole session and was excluded from every stage-4 consumer.
+    const seedOf = (policy) => contiguousTail(aggregateBarsToBuckets(bars, SEP17, { closingRowPolicy: policy }).buckets, SEP17, SEED_MAX_BUCKETS);
+    const stateOver = (tail) => { let st = newState(); for (const b of tail) st = advanceState(st, b, SEP17); return st; };
+
+    const underPolicy = stateOver(seedOf(CLOSING_ROW_POLICY));
+    for (const ind of ['sma20_5m', 'macd5m', 'rsi5m']) {
+      expect(indicatorQuality(underPolicy, ind).warmupMet, ind).toBe(true);
+      expect(indicatorQuality(underPolicy, ind).closeQualified, ind).toBe(true);
+    }
+    // …and the defect it replaces, still reproducible with a null policy.
+    const underNull = stateOver(seedOf(null));
+    expect(indicatorQuality(underNull, 'macd5m').closeQualified).toBe(false);
+    expect(indicatorQuality(underNull, 'rsi5m').closeQualified).toBe(false);
+  });
+
+  it('an early-close session ends at 12:59 under the policy: 42 buckets, the 13:00 row ignored', () => {
+    const early = makeSession('2026-11-27', { early: true, previousEtDate: '2026-11-25' });
+    const earlyBars = Array.from({ length: 211 }, (_, i) => ({ timestamp: (early.openMs + i * 60_000) / 1000, close: 100 + i, volume: 100 }));
+    const { buckets, barsUsed, barsIgnored } = aggregateBarsToBuckets(earlyBars, early, POLICY);
+    expect(barsUsed).toBe(210);
+    expect(barsIgnored).toBe(1);
+    expect(buckets).toHaveLength(42);
+    expect(buckets[41].maxPriceAsOf).toBe(early.closeMs - 60_000);
+    expect(buckets[41].close).toBe(earlyBars[209].close);
+    expect(buckets[41].closeQualified).toBe(true);
   });
 });
 

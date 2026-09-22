@@ -5,7 +5,23 @@
 // rollover). PURE, ZERO IMPORTS, no Date.now(). Every function returns a NEW
 // accumulator; inputs are never mutated.
 //
-// Order of operations, per §5.5: numeric validation → rollover → classification.
+// Order of operations, per §5.5: numeric validation → rollover → the
+// post-close rule → classification.
+//
+// THE POST-CLOSE RULE (calcVersion 2; EODHD's 2026-09-21 answers 1 and 2).
+// Live v2 `volume`, `high` and `low` are REGULAR-SESSION quantities, and after
+// 16:00 ET they stop at the session total while `lastTradePrice` /
+// `lastTradeTime` — the Observation's `price` / `priceAsOf` — keep updating
+// with extended-hours prints. So after the close `priceAsOf` is LATER than the
+// point those aggregates reflect, and it is no longer a valid cutoff for them.
+// An observation with `priceAsOf ≥ sessionCloseMs` is therefore `post_close`:
+// not an anomaly (an extended-hours print is normal), and it updates NO
+// session aggregate — the accumulator is returned byte-identical, so the VWAP
+// estimate, `volume`, `volumePace` and `sessionHL` keep the values AND the
+// cutoffs of the last pre-close accepted observation. Only the price facts
+// (the latest quote) and bucket COMPLETION reflect it; its price is never
+// written to a bucket (§6.2, applyObservationToBuckets). The close is the
+// calendar's, so an early-close day uses 13:00 ET.
 //
 // The accumulator (contract §7.1, universe state):
 //   { num, den, samples, lastAcceptedVolume, lastAcceptedAsOf, sessionEtDate,
@@ -16,8 +32,10 @@
 //
 // Known failure, stated in the definition (§5.4): all interval volume is
 // assigned to the interval's last accepted price; the error is unbounded at
-// sharp intra-poll moves. That is why the record carries `experimental: true`
-// and `method: 'sampled_estimate'` while VOLUME_CUTOFF_FIELD is null.
+// sharp intra-poll moves. That is why the record is named
+// `method: 'sampled_estimate'` — it is an estimate whatever the cutoff says.
+// (`experimental` tracked only whether VOLUME_CUTOFF_FIELD was confirmed, and
+// is false now that it is.)
 
 import { observationId, strikeKey } from './observation.js';
 
@@ -29,6 +47,7 @@ export const OUTCOME = Object.freeze({
   HELD: 'held',
   ACCEPTED: 'accepted',
   RESUMED: 'resumed',
+  POST_CLOSE: 'post_close',
 });
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -147,7 +166,20 @@ export function applyObservation(acc, obs, { obsEtDate, obsSession, pollSession,
     cur = newAccumulator(obsEtDate);
   }
 
-  // 3. Classification.
+  // 3. The post-close rule (§5.5, calcVersion 2) — before every classification
+  //    case, so a post-close quote is never `unchanged`, `volume_only_advance`,
+  //    `held` or `accepted`. The accumulator rides through untouched (`cur` is
+  //    `base` itself unless the rollover above replaced it), so every session
+  //    aggregate keeps the value and the cutoff of the last PRE-CLOSE accepted
+  //    observation. `priceNew` is true: the quote is the latest one, and the
+  //    bucket layer needs it to establish passage past the close.
+  if (obs.priceAsOf >= obsSession.closeMs) {
+    return result(OUTCOME.POST_CLOSE, {
+      acc: cur, rollover, volumeInvalid, hlInvalid, priceNew: true, reason: 'post_close',
+    });
+  }
+
+  // 4. Classification.
   if (cur.lastAcceptedAsOf === null) {
     const next = firstAccept(cur, obs, volumeInvalid, hlInvalid);
     return result(OUTCOME.ACCEPTED, {
@@ -230,8 +262,11 @@ export function applyObservation(acc, obs, { obsEtDate, obsSession, pollSession,
 
 /**
  * §5.4 — `volumePace`, linear pace against averageVolume over the elapsed
- * fraction of the session. Absent with a reason while the cutoff is
- * unconfirmed (VOLUME_CUTOFF_FIELD null).
+ * fraction of the session. `volumeCutoffAsOf` is the instant the volume is
+ * cumulative to, so the elapsed time is measured AT THE VOLUME CUTOFF, never
+ * at the sweep. Absent with `cutoff_unconfirmed` when there is no cutoff —
+ * which, with VOLUME_CUTOFF_FIELD set, now means a symbol whose only
+ * observation this session is post-close.
  */
 export function computeVolumePace({ volume, averageVolume, volumeCutoffAsOf, session, volumeInvalid, minElapsedMin = 5 }) {
   if (!isNum(volumeCutoffAsOf)) return { status: 'absent', value: null, method: 'linear_pace', elapsedAtCutoffMin: null, reason: 'cutoff_unconfirmed' };

@@ -8,13 +8,13 @@ import {
   acquireLease, releaseLease, recordUnits, publishSweep, serializeActionable, parseActionable,
   loadCalcState, loadActionableDocs, loadSnapshot, firestoreDocBytes,
 } from './intradayStore.js';
-import { PUBLISH_MAX_BYTES } from '../intradayConfig.js';
+import { PUBLISH_MAX_BYTES, CALC_VERSION } from '../intradayConfig.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const T0 = 1_789_652_000_000;
 const clock = (t) => () => t;
 
-const snapshotDoc = (sweepId, symbols = { AAPL: { price: { value: 1 } } }) => ({ sweepId, sweepAt: T0, calcVersion: 1, anomalies: {}, counters: {}, symbols });
+const snapshotDoc = (sweepId, symbols = { AAPL: { price: { value: 1 } } }) => ({ sweepId, sweepAt: T0, calcVersion: CALC_VERSION, anomalies: {}, counters: {}, symbols });
 const actionable = { AAPL: { ring: { buckets: [{ key: 1 }] }, state: { segmentLen: 1 }, log: [{ sweepAt: T0 }], seedStatus: null } };
 
 describe('§7.4 lease', () => {
@@ -145,8 +145,11 @@ describe('A4 §7.3 — an over-limit publish is REFUSED, not attempted', () => {
     ring: { buckets: [] },
     state: null,
     log: Array.from({ length: entries }, (_, i) => ({
+      // The real calcVersion-2 shape: confirmed cutoffs are epoch-ms
+      // integers, not nulls, and the log is a JSON string (§7.2) — so the
+      // ceiling is measured against what a session actually writes.
       sweepAt: 1 + i, priceAsOf: 2 + i, snapshotTs: 3 + i, price: 100.1234, estimate: 100.5678,
-      experimental: true, estimateCutoff: null, volumeCutoffAsOf: null, calcVersion: 1,
+      experimental: false, estimateCutoff: 1789651800000 + i, volumeCutoffAsOf: 1789651800000 + i, calcVersion: CALC_VERSION,
       strikeKey: 'abcdef0123456789', generation: i + 1,
     })),
     seedStatus: 'seeded',

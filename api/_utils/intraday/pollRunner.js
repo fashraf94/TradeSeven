@@ -34,7 +34,7 @@ import {
 import { runSweepCalc } from './sweepCalc.js';
 import { applyDeadline, rebuildFromBuckets, newRing, newState } from './buckets.js';
 import { aggregateBarsToBuckets, contiguousTail, combineSeedSessions } from './seed.js';
-import { INTRADAY_DEFINITIONS_V1 } from './view.js';
+import { INTRADAY_DEFINITIONS_V2 } from './view.js';
 import { ensureDefinitionsDoc } from './evaluatorHook.js';
 import { UNIVERSE_STOCKS, actionableFromBattles, toVendorStock, toVendorCrypto } from './universe.js';
 
@@ -282,7 +282,7 @@ export async function runPoll({
       universeSweep, universeCount: universeSweep ? universeStocks.length : 0, actionableCount: actionableSet.size,
       requests: quotes.requests, unitsRequested: units, symbols: calc.snapshotSymbols,
     };
-    if (!calcState.generation) await ensureDefinitionsDoc(db, INTRADAY_DEFINITIONS_V1);
+    if (!calcState.generation) await ensureDefinitionsDoc(db, INTRADAY_DEFINITIONS_V2);
 
     // 7. Publish — one transaction, lease re-checked with `now` per attempt.
     const pub = await publishSweep(db, { owner, now, etDate, snapshotDoc, universeState: calc.universeState, actionableDocs: calc.actionableDocs, generation, log });

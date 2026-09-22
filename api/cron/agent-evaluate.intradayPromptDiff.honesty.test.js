@@ -100,7 +100,7 @@ function makeSnapshot({ generation = 46 } = {}) {
     prev = last.snapshotSymbols; uni = last.universeState; docs = last.actionableDocs;
   }
   const sweepAt = Date.parse(FROZEN_NOW) - 30_000;
-  return { sweepId: 'sw46', generation, sweepAt, lastSuccessfulSweepAt: sweepAt, calcVersion: 1, anomalies: last.anomalies, counters: last.counters, symbols: last.snapshotSymbols, lease: null };
+  return { sweepId: 'sw46', generation, sweepAt, lastSuccessfulSweepAt: sweepAt, calcVersion: CONFIG.CALC_VERSION, anomalies: last.anomalies, counters: last.counters, symbols: last.snapshotSymbols, lease: null };
 }
 const SNAPSHOT = makeSnapshot();
 

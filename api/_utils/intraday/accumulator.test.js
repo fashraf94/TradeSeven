@@ -161,6 +161,60 @@ describe('§5.5 classification', () => {
   });
 });
 
+describe('§5.5 the post-close rule (calcVersion 2, EODHD answers 1 and 2)', () => {
+  const EARLY = { ...SEP17, etDate: '2026-11-27', isEarlyClose: true, closeMs: SEP17.openMs + 210 * 60_000, sessionLenMin: 210 };
+  const preClose = () => run(null, obsAt(SEP17, 380, { price: 100, volume: 1_000_000 }));
+
+  it('an observation AT the close is post_close: no anomaly, no update, the accumulator returned byte-identical', () => {
+    const { acc } = preClose();
+    const frozen = JSON.stringify(acc);
+    // The closing auction: a 19-million-share jump at a new price, stamped
+    // exactly at sessionCloseMs (Nasdaq and most NYSE symbols).
+    const r = run(acc, obsAt(SEP17, 390, { price: 101, volume: 20_000_000 }));
+    expect(r.outcome).toBe(OUTCOME.POST_CLOSE);
+    expect(r.reason).toBe('post_close');
+    expect(r.anomaly).toBeNull();
+    expect(r.priceNew).toBe(true);
+    expect(r.acc).toBe(acc);
+    expect(JSON.stringify(r.acc)).toBe(frozen);
+    expect(r.acc.lastAcceptedAsOf).toBeLessThan(SEP17.closeMs);
+    expect(r.acc.lastAcceptedVolume).toBe(1_000_000);
+  });
+
+  it('it precedes every classification case: the same quote would otherwise be accepted, unchanged, volume-only or held', () => {
+    const { acc } = preClose();
+    // Would be ACCEPTED (later asOf, larger volume).
+    expect(run(acc, obsAt(SEP17, 391, { price: 101, volume: 20_000_000 })).outcome).toBe(OUTCOME.POST_CLOSE);
+    // Post-close first, then a repeat of it: would be UNCHANGED.
+    const after = run(acc, obsAt(SEP17, 391, { price: 101, volume: 20_000_000 })).acc;
+    expect(run(after, obsAt(SEP17, 391, { price: 101, volume: 20_000_000 })).outcome).toBe(OUTCOME.POST_CLOSE);
+    // Would be VOLUME_ONLY_ADVANCE (same asOf, larger volume) — but the asOf is post-close.
+    expect(run(after, obsAt(SEP17, 391, { price: 101, volume: 20_000_001 })).outcome).toBe(OUTCOME.POST_CLOSE);
+    // Would be HELD (a smaller volume) — an extended-hours quote is never an anomaly.
+    const held = run(after, obsAt(SEP17, 392, { price: 99, volume: 1 }));
+    expect(held.outcome).toBe(OUTCOME.POST_CLOSE);
+    expect(held.anomaly).toBeNull();
+    expect(held.acc.degraded).toBe(false);
+    expect(held.acc.holding).toBe(false);
+  });
+
+  it('the boundary is exact: sessionCloseMs − 1 ms is still the continuous session', () => {
+    const { acc } = preClose();
+    const lastTick = { ...obsAt(SEP17, 389, { price: 100.5, volume: 1_500_000 }), priceAsOf: SEP17.closeMs - 1 };
+    const r = run(acc, { ...lastTick, availableAt: SEP17.closeMs - 1 + 16 * 60_000 });
+    expect(r.outcome).toBe(OUTCOME.ACCEPTED);
+    expect(r.acc.lastAcceptedAsOf).toBe(SEP17.closeMs - 1);
+  });
+
+  it('the close is the CALENDAR\'s: an early-close session uses its own 13:00, and the same instant is mid-session on a normal day', () => {
+    const early = { obsEtDate: '2026-11-27', obsSession: EARLY, pollSession: EARLY };
+    const atEarlyClose = obsAt(SEP17, 210, { price: 100, volume: 5_000_000 });
+    expect(applyObservation(null, atEarlyClose, { ...early, futureToleranceMs: 60_000 }).outcome).toBe(OUTCOME.POST_CLOSE);
+    // The identical instant on a full session is 12:00 ET — ordinary trading.
+    expect(run(null, atEarlyClose).outcome).toBe(OUTCOME.ACCEPTED);
+  });
+});
+
 describe('§5.6 rollover — on the ET date of the observation\'s OWN priceAsOf, before any comparison', () => {
   it('overnight volume reset is not an anomaly: a yesterday-dated accumulator resets on today\'s first trade', () => {
     let acc = run(null, obsAt(SEP16, 380, { price: 90, volume: 50_000_000 }), { obsEtDate: '2026-09-16', obsSession: SEP16, pollSession: SEP16 }).acc;
