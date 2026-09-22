@@ -24,6 +24,14 @@
 **Two things the founder must read before merging**, both below in full: the
 **merge window** (§7) and the **§7.3 publish-size crossing moving 81 → 76** (§6).
 
+> **The REVIEW OUTCOME section at the end supersedes parts of §3, §6, §7, §8
+> and §9 of this report.** The independent §2 review
+> ran on 2026-09-21 and found one defect to fix before merge (R1, now fixed in
+> addendum A) and five claims in this report stronger than their evidence.
+> **Read it before acting on anything above it.** (It is referenced below as
+> "Review outcome R1…R6"; the bare §10.x numbers in this report are always
+> the CONTRACT's §10.)
+
 ---
 
 ## 1. Session preamble (BUILD_RULES §2 / §3)
@@ -93,7 +101,9 @@ early-close day uses its own 13:00.
 cutoff for the session aggregates; and per C2 the closing auction lies outside
 the session those aggregates describe.
 
-**One design note worth the founder's eye.** A post-close aggregate is carried
+**One design note worth the founder's eye.** *(Wording corrected in Review outcome R2 —
+the source is the last SUCCESSFULLY PUBLISHED block, which can itself be a
+published absence.)* A post-close aggregate is carried
 **verbatim from the previous snapshot's block**, and is deliberately *not*
 re-derived from the accumulator. A second derivation would have to reconstruct
 the cutoff from `lastAcceptedAsOf` and could not reconstruct `sessionHL` at all
@@ -275,20 +285,28 @@ addendum A4's `PUBLISH_MAX_BYTES` (9 MiB) refuses at ≈ 68 actionable symbols,
 line and never a wedged transaction.
 
 **What it means for the founder.** The generation-pointer design §7.3 reserves is
-now closer than it was. Nothing to do today. If concurrent battles approach ~6,
-it is due — and that is a separate task, not this one.
+now closer than it was. **"Nothing to do today" is WITHDRAWN for launch scale
+— see Review outcome R3.** The review's R2 shows the one-transaction publish does not
+survive the stated launch scenario (≈20 users × 3 portfolios ≈ 200 distinct
+actionable names against a refusal point of 69). Nothing to do *in this PR*;
+publication redesign is a pre-launch item.
 
 ---
 
 ## 7. FOUNDER ITEM — the merge window
 
-**Merge after 4:30 PM ET and before the next open.** The validator grades each
+**Merge after 6 PM ET and before the next open** (moved from 4:30 PM — see
+Review outcome R4). The validator grades each
 session against the window it was *collected* under, read from the `calcVersion`
 on its own log entries. A session whose entries straddle the bump is
 `calc_version_mixed` and is excluded from qualification — reported, but not
 counted. Merging inside a session would cost that session; merging between the
 close and the next open costs nothing. The poller's collection window runs to
-close + 30 min, so 4:30 PM ET is the earliest safe moment.
+close + 30 min, so 4:30 PM ET is the earliest moment that avoids a mixed
+session. The review found a second reason to wait: the poll cron runs through
+17:59 ET in EDT, and a deploy inside that window can still write §6.2 deadline
+marks to the prior (v1) session. Those writes were verified harmless, but
+**18:00 ET avoids them entirely**, so that is the recommendation.
 
 ---
 
@@ -298,7 +316,7 @@ close + 30 min, so 4:30 PM ET is the earliest safe moment.
 |---|---|---|---|
 | Code (non-test) | **10** | 345 | 62 |
 | Test | **13** (1 new: `postClose.test.js`) | 676 | 59 |
-| **Total branch diff vs `origin/main`** | **23** | **1,021** | **121** |
+| **Total branch diff vs `origin/main`** | **23** (24 once this report's own commit lands — see Review outcome R6) | **1,021** | **121** |
 
 Per commit: C1 `d530ffb6` 17 files +592/−64 · C2 `012416e7` 9 files +340/−32 ·
 C3 `a7ba76ac` 7 files +94/−30.
@@ -318,6 +336,10 @@ adversarially-verified, written-down review before it opens.
 this session** — §2: "Claude never drives a PR toward merge — it pushes,
 reports, and STOPS."
 
+**The review has since run — see the Review outcome section.** Its one
+blocking finding (R1) is fixed in addendum A; the PR body below is superseded
+by the one at the end of that section.
+
 For the founder's PR body, after the review passes:
 
 > Applies EODHD's 2026-09-21 answers. The VWAP estimate, volume, volume pace
@@ -325,3 +347,259 @@ For the founder's PR body, after the review passes:
 > regular-session close; the session for the estimate, 5-minute bars, seeding
 > and grading is 09:30–15:59, excluding the closing auction; calcVersion 2.
 > Merge after 4:30 PM ET and before the next open, so no session mixes versions.
+
+*(Superseded — the current PR body is at the end of the Review outcome section.)*
+
+---
+
+# Review outcome — corrections after the §2 review
+
+**The review:** `docs/audits/20260921_INTRADAY_CALCVERSION_2_REVIEW.md` on
+branch `claude/review-intraday-calcversion-2` (commit `115cf9c1`), by Astra,
+independently refuted by a second reviewer on a path-distinct archive. It read
+this PR at `b13770ec` and returned **DO NOT MERGE**, with one blocking finding
+(R1), two dispositions (R2, R3), and six claims in the report above stronger
+than their evidence.
+
+**Addendum A** (this branch, on top of `b13770ec`) implements R1 and records
+these corrections. Nothing else in the review asked for a code change in this
+PR.
+
+**Fence:** none of the files addendum A touches is in BUILD_RULES §1.
+Line citations below are at the addendum's HEAD and were re-read here.
+
+| | Correction | Where the superseded claim was |
+|---|---|---|
+| **R1** | The mixed-version exclusion is end-to-end **only after addendum A** | §3 (C2), §4 |
+| **R2** | The post-close carry source is the last **successfully published** block, which can itself be a published **absence** | §3 (C1) |
+| **R3** | "Nothing to do today" is **withdrawn for launch scale** | §6 |
+| **R4** | A deploy between 16:30 and 17:59 ET can still write deadline marks to the prior (v1) session | §7 |
+| **R5** | "No views have been written" — now **proven**, not asserted | §3 (C3) |
+| **R6** | 24 files including this report's commit (23 before it); the first refused integer is **69**, 68 enters | §8, §6 |
+
+---
+
+## R1 — the mixed-version exclusion was not end-to-end
+
+**The claim as written:** C2 said a mixed-version session is "excluded from
+qualification". **CONFIRMED defect:** it was excluded from the *counts* and
+from the SMA20/MACD aggregates only. `aggregateValidation`'s `collect` helper
+read every symbol, so the residual P95, the evaluation-linked rates, the lag
+bins and the event counts still carried an excluded session — and the §10.5
+trailing rollup carried it forward as measurement evidence. The review
+measured one excluded session taking the aggregate `p95AbsResidualOverPrice`
+from 0.0058 to 1.69 while `symbolsQualified` stayed at 1.
+
+**Fixed in addendum A** (`65c60635`): every qualification aggregate is computed
+over symbol-sessions with `qualification.included === true` and nothing else
+(`validator.js:375` `metricsOverResults`, the whole metric block computed once
+over a given set so the two blocks cannot drift apart; `:456`
+`aggregateValidation` calls it over `qualified`, then over every symbol for
+the diagnostic; `validationRunner.js:172` exports `TRAILING_ROLLUP_METRICS` so
+the suite can assert against one source that every metric the rollup carries
+forward is a qualification aggregate). The review's own reproduction is the
+test — both sessions go through the real `validateSymbolSession`, and the
+qualified block is asserted byte-identical with and without the excluded
+one.
+
+**Broadened from the review, deliberately.** The filter is `included`, not
+`calc_version_mixed` alone. Contract §10.2 says unqualified series are kept out
+of *every* qualification metric, and `included: false` is also how
+`close_unqualified` and partial coverage are recorded. One membership test
+covers a new exclusion reason the day it is added, rather than the day someone
+remembers to extend a list of reasons. A partial-coverage pair is tested
+alongside the mixed one for exactly this reason.
+
+Per-symbol results are unchanged and still reported in full. The all-symbol
+numbers survive under `diagnosticAllSymbols` — named for what they are, never
+read by the trailing rollup — so a day that qualifies nothing still shows its
+numbers instead of an empty document. An empty included set yields
+`unavailable: 'no_qualified_sessions'` on every metric, never a zero.
+
+One thing the review did not ask for, found while fixing it and fixed in the
+same commit: an evaluation metric's `unavailable` reason was filed under the
+key the per-symbol *row* carries (`agreement`) rather than the key the
+*document* prints (`overallDisagreement`). §10.5 requires a reason for every
+metric with no denominator, and a reason filed under a name the document never
+prints is not one (BUILD_RULES §9). `validator.js:396`.
+
+## R2 — the post-close carry source, stated exactly
+
+**The claim as written:** §3 (C1) said the aggregates "keep the values and the
+cutoffs of the last pre-close **accepted** observation".
+
+**Correction.** The source is the **last successfully published snapshot
+block** — `intradaySnapshots/latest.symbols[sym].indicators`, read
+transactionally when the sweep acquires its lease. Two consequences the
+original wording obscured, both verified by the review:
+
+- A **refused or lost publish is not a carry source.** If the publish that
+  would have carried 15:59 was refused (`publish_oversize`) or lost its lease,
+  the next sweep carries the last *published* generation — 15:58 — not the
+  computed-but-unpublished 15:59. That is correct behaviour: an unpublished
+  value is not a fact anyone has seen. It is simply not what "last accepted
+  observation" says.
+- The published block can be a **published absence.** An ACCEPTED 15:57 with
+  volume 1000, then an UNCHANGED observation at the same timestamp whose
+  volume is unusable, publishes `volume: absent / volume_invalid` — and that
+  absence is what the post-close sweep then carries, while the accumulator
+  still holds the accepted 1000.
+
+The second case is inherited pre-close behaviour, not introduced by
+calcVersion 2, and the conservative choice (publish the absence rather than
+reconstruct an older value) is the right one: the alternative is a second
+derivation that would drift, which is why the carry reads one source. No
+change was made. The wording is what needed correcting.
+
+## R3 — "nothing to do today" is withdrawn for launch scale
+
+**The claim as written:** §6 said the §7.3 crossing moving 81 → 76 meant
+"nothing to do today".
+
+**Correction, and it is the most consequential item here.** That sentence was
+argued from the contract's modelled scale (30 actionable ≈ 7 concurrent
+battles). Measured against the **stated launch scale** it does not hold. Per
+the review's R2, ordinary portfolio validation requires 9 distinct equity
+slots (2 star + 2 core + 2 support held, 3 bench), and at ≈20 users × 3
+portfolios ≈ 60 concurrently active portfolios over a 239-stock universe the
+expected distinct actionable set is **≈215 names** — against a refusal point
+of **69**. Even a concentrated 6-held-no-bench scenario gives ≈187.
+
+So: the one-transaction publish is **not demonstrated safe for launch**, and
+an over-limit sweep is not a degraded sweep — it publishes nothing at all, for
+every symbol, and the next minute can fail identically. The named
+`publish_oversize` line prevents an oversized transaction; it is not a recovery
+mechanism.
+
+**What this does and does not mean for this PR.** Contract §7.3 mandates the
+generation-pointer design only below 30 actionable symbols, and this PR still
+passes 30 comfortably — so capacity is **not** a contract-based reason to
+redesign publication here, and the review says so explicitly. **Publication
+redesign is a pre-launch item**, with a §7.3 capacity decision measured against
+an explicit maximum distinct actionable set. It is a separate task; per
+BUILD_RULES §3 it is filed, not fixed here.
+
+## R4 — a deploy between 16:30 and 17:59 ET still writes to the prior session
+
+**The claim as written:** §7 said merging after 4:30 PM ET "costs nothing".
+
+**Correction.** It costs no *mixed collection entries* — that part stands. But
+in EDT the poll cron runs through 17:59 ET (`vercel.json:161`–`:162`), and
+every invocation applies §6.2 deadline processing **before** the session guard.
+So v2 code deployed in that window can still write to the prior (v1) session:
+`incomplete` / `deadline` / unqualified marks on open or missing-last buckets,
+`deadlineAppliedAt`, and the calc-state deadline stamp.
+
+The review verified these writes are the **existing §6.2 reconciliation and
+harmless** — a completed document stayed byte-identical; `stateJson`,
+`logJson`, accumulator numbers, existing closes and `endMs` were unchanged;
+repetition returned `already_applied`. No v1 number is reinterpreted.
+
+**Recommendation moved to 18:00 ET**, which avoids the writes entirely. §7
+above now says so.
+
+## R5 — "no views have been written" is now proven, not asserted
+
+**The claim as written:** §3 (C3) asserted the qualification calendar has not
+started because no views have been written. The review correctly marked this
+**NOT VERIFIED** — it is a hosted-state claim, and repository source cannot
+prove hosted state.
+
+**The proof available in the repository, which is the right kind.** Views are
+written on exactly one path, and that path is gated:
+
+- `api/cron/agent-evaluate.js:3696` — the view write sits inside
+  `if (INTRADAY_DIAGNOSTIC_ENABLED) { … }`; `:3713` is the
+  `writeIntradayView` call. It is the only production writer of
+  `agentBattles/{battleId}/intradayViews/{evalId}`.
+- The flag has had exactly **one** value in `main`'s entire history:
+
+```
+$ git log -S "INTRADAY_DIAGNOSTIC_ENABLED" --oneline origin/main -- src/config/featureFlags.js
+7c143085 feat(intraday): §8 evaluated records, eligibility, price adapter, evaluator hook, rules; §3 flags
+
+$ git show 7c143085:src/config/featureFlags.js | grep "export const INTRADAY_DIAGNOSTIC_ENABLED"
+export const INTRADAY_DIAGNOSTIC_ENABLED = false;
+
+$ git log -S "INTRADAY_DIAGNOSTIC_ENABLED = true" --oneline origin/main
+(no commits)
+```
+
+The flag was introduced `false` and `main` has never carried it `true`
+(`src/config/featureFlags.js:2605` at `origin/main` and at this HEAD; pinned by
+`src/config/intradayFlags.test.js:39`). Production runs `main`, so the only
+writer has never been enabled, so no view has been written.
+
+**The honest limit, stated.** This proves the *writer* was never enabled on
+`main`; it is not an inspection of the database. If a view exists from some
+path outside `main`, the §10.6 calendar reset applies as written — which is
+the safe direction, since the reset discards evidence rather than keeping bad
+evidence.
+
+## R6 — two counts
+
+- **Files.** The branch diff against `origin/main` is **24 files** once this
+  report's own commit is included; **23** describes the code-and-test diff
+  before it. §8's table now says both. (Addendum A adds its own files on top —
+  the closing counts are below.)
+- **The refusal boundary.** §6 said the 9 MiB guard refuses at "≈68". The
+  first *refused* integer is **69**; **68 enters**. Re-measured here with the
+  product's own byte accounting on the standing 420-sweep fixture, reproducing
+  the review's figures exactly:
+
+| Actionable symbols | Staged bytes | 9 MiB guard (9,437,184) | 10 MiB |
+|---:|---:|---|---|
+| 68 | 9,413,134 | enters | under |
+| 69 | 9,547,392 | **REFUSES** | under |
+| 76 | 10,487,130 | REFUSES | **over by 1,370 B** |
+
+Entering the guard is not proof a hosted Firestore transaction succeeds; it
+means only that this build does not refuse first.
+
+---
+
+## Dispositions the review left open, filed not fixed (BUILD_RULES §3)
+
+- **R2 — §7.3 publication capacity before launch.** A capacity decision
+  measured against an explicit maximum distinct actionable set. The review
+  also measured, informationally, that hoisting the two constant-valued log
+  fields and encoding the redundant pre-close cutoff pair would move the
+  fitted 10 MiB crossing from ≈76 to ≈109 — still far below ≈215, so that is
+  a mitigation, not the answer. Any such change is a §7.1 schema decision.
+- **R3 — a §10.3/§10.5 measurement-policy addendum before the §10.6
+  qualification freeze.** Three effects, all CONFIRMED and none a contract
+  violation today (§10.3 says "per log entry"): the frozen post-close estimate
+  appears once per post-close sweep (16 of 404 comparisons on the review's
+  fixture day rather than 1 of 389); the price-source residual pairs an
+  after-hours quote with the 15:59 bar, pooling after-hours movement with
+  source disagreement; and repeated unchanged pre-close observations vote once
+  per sweep. The programme should say whether the comparison unit is the log
+  entry or the observation before the thresholds are frozen.
+- **Windows test portability** and **pre-existing rollup statistics** (a P95
+  of per-symbol P95s; no calcVersion cohort filter on the trailing rollup) —
+  the review filed both as out of scope, and they stay filed.
+
+## Addendum A — close
+
+| | |
+|---|---|
+| Base | `b13770ec`, confirmed after `git fetch origin` |
+| A1 | `65c60635` — qualification aggregates over included sessions only |
+| A2 | this section (docs only) |
+| Full suite, unpiped, exit asserted | 740 files, **14,204 passed**, 64 skipped, exit **0** |
+| `npm run lint:gate` | exit **0** |
+| `vite build` | exit **0** |
+| Fence | no BUILD_RULES §1 file in the branch diff |
+| Addendum A diff vs `b13770ec` | 5 files, +598 / −35 (4 code/test, 1 doc) |
+| Whole branch vs `origin/main` | **25 files**, +1,935 / −145 |
+
+Mutation-checked both directions: removing the `included` filter reddens 5
+rows; pointing the trailing rollup at `diagnosticAllSymbols` reddens 1.
+
+## PR body (supersedes the one in §9)
+
+> Applies EODHD's 2026-09-21 answers (calcVersion 2) plus Addendum A, which
+> implements the §2 review's R1 using the review's own reproduction as its
+> test. Qualification aggregates count included sessions only, broadened from
+> mixed-version to every excluded reason per contract §10.2. Merge after 6 PM
+> ET and before the next open.
