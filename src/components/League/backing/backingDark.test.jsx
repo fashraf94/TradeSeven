@@ -94,6 +94,7 @@ const { PodCard } = await import('../LeaguePod');
 const ScoutingLine = (await import('./ScoutingLine')).default;
 const IdentityPanel = (await import('../../Dashboard/desktop/IdentityPanel')).default;
 const EquipStation = (await import('../../Dashboard/EquipStation')).default;
+const BackingScreen = (await import('./BackingScreen')).default;
 
 const homeProps = { onOpenMyGame: () => {}, onOpenTrainingPod: () => {}, hasAgent: true, agentLoadout: null };
 const ssr = (el) => renderToString(el);
@@ -156,6 +157,18 @@ describe('flag OFF — the League renders as it does today', () => {
     expect(html).not.toMatch(/<div style="margin-top:12px"><\/div>/);
     flag.on = true;
     expect(ssr(<EquipStation {...props} />)).toContain('data-backing="scouting-line"');
+  });
+
+  it('the backing screen mounted DIRECTLY while dark renders nothing and opens NO read — its own gate, not the hosts’ (DARK-5; mutation check 8)', async () => {
+    const container = await mount(<BackingScreen uid="viewer-1" onBack={() => {}} onOpenTape={() => {}} />);
+    expect(container.innerHTML).toBe('');
+    expect(svc.calls).toEqual([]);
+    expect(backingCalls()).toEqual([]);
+    // …and lit, the same mount fetches the pod list — the row is not vacuous.
+    flag.on = true;
+    const lit = await mount(<BackingScreen uid="viewer-1" onBack={() => {}} onOpenTape={() => {}} />);
+    expect(lit.querySelector('[data-backing]')).not.toBeNull();
+    expect(svc.calls).toContain('fetchBackingPods');
   });
 
   it('a mounted landing (effects running) opens NO backing read and makes NO backing request', async () => {
@@ -254,7 +267,8 @@ describe('the flag is read at CALL time in every host — never captured at modu
     const lobby = readFileSync(path.join(REPO, 'src/components/League/LeagueLobbyRedesign.jsx'), 'utf8');
     expect(lobby).toContain('{backingSlot}');
     expect(lobby).not.toMatch(/backingSlot && <div/);
-    const strip = readFileSync(path.join(REPO, 'src/components/League/backing/BackingLandingStrip.jsx'), 'utf8');
-    expect(strip).toContain('if (!BACKING_BETA_ENABLED) return null;');
+    for (const rel of ['src/components/League/backing/BackingLandingStrip.jsx', 'src/components/League/backing/ScoutingLine.jsx', 'src/components/League/backing/BackingScreen.jsx']) {
+      expect(readFileSync(path.join(REPO, rel), 'utf8'), `${rel} returns null while dark`).toContain('if (!BACKING_BETA_ENABLED) return null;');
+    }
   });
 });

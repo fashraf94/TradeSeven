@@ -103,8 +103,11 @@ describe('no bracket — the strip and the weekly pods lead; no funnel frame, pl
     expect(center).toBeGreaterThan(-1);
     expect(strip).toBeGreaterThan(center);
     expect(field).toBeGreaterThan(strip);
-    // No empty slot wrapper: the wrapper exists only around a rendered strip.
+    // No empty slot wrapper: the wrapper exists only around a rendered strip…
     expect(on).not.toMatch(/data-backing="strip-slot"[^>]*><\/div>/);
+    // …and nothing rides inside the slot ahead of the strip (a placeholder
+    // inside the slot would be excised with it below — mutation check 6b).
+    expect(on).toMatch(/data-backing="strip-slot"[^>]*><button[^>]*data-backing="strip"/);
     // MUTATION CHECK #6 — nothing else moved: minus the strip (and the label), byte-equal to the flag-off landing.
     expect(excise(on)).toBe(off);
     expect(off).not.toContain('data-backing');
@@ -141,6 +144,7 @@ describe('a bracket exists — the composition is unchanged by the mount; nothin
     flag.on = false;
     const off = render(LeagueHome);
     expect(on).toContain('data-backing="strip"');
+    expect(on).toMatch(/data-backing="strip-slot"[^>]*><button[^>]*data-backing="strip"/);
     expect(excise(on)).toBe(off);
     // The group card and the field still render, in their places, after the strip.
     const strip = on.indexOf('data-backing="strip"');

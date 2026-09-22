@@ -84,8 +84,9 @@ describe('the open state — exactly the §B2 contract', () => {
 
   it('SEAL — MUTATION CHECK #1: a pool object carrying a pot, exact counts, per-team totals and a pays × while OPEN leaks none of them', () => {
     const leaky = openPod('g-leak', {
-      pool: { status: 'open', backerProgress: { count: 2, floor: 3, met: false }, teamSpread: { met: true }, closesAt: SUNDAY_CLOSE, potTotal: 1200, uniqueBackers: 5, teamsBacked: 3, paysX: 2.4 },
-      teams: teams({ 'od-a': { stakeTotal: 700, backerCount: 3, paysX: 1.71 }, 'od-b': { stakeTotal: 500, backerCount: 2, paysX: 2.4 } }),
+      // Distinctive figures, so a bare String(value) has no innocent twin in the markup (mutation checks 1b/1d).
+      pool: { status: 'open', backerProgress: { count: 2, floor: 3, met: false }, teamSpread: { met: true }, closesAt: SUNDAY_CLOSE, potTotal: 1200, uniqueBackers: 47, teamsBacked: 4, paysX: 3.7 },
+      teams: teams({ 'od-a': { stakeTotal: 700, backerCount: 3, paysX: 1.71 }, 'od-b': { stakeTotal: 500, backerCount: 2, paysX: 3.7 } }),
     });
     const html = render([leaky]);
     expect(html).toContain('SEALED');
@@ -93,15 +94,15 @@ describe('the open state — exactly the §B2 contract', () => {
     // attributes carry `font-weight:700`, so the numbers are checked on the
     // text the reader sees) …
     const text = html.replace(/<[^>]*>/g, ' ');
-    for (const figure of ['1,200', '1200', '700', '500', '1.71', '2.40', '5 backers']) {
+    for (const figure of ['1,200', '1200', '700', '500', '47', '1.71', '3.7', '3.70', '47 backers']) {
       expect(text, `leaked "${figure}" while open`).not.toContain(figure);
     }
     // … and the whole markup carries none of the revealed view's formatted strings.
-    for (const figure of ['1,200 BP', '700 BP', '500 BP', '×1.71', '×2.40', 'pays ×', 'Pot 1', 'data-backing="revealed"']) {
+    for (const figure of ['1,200 BP', '700 BP', '500 BP', '×1.71', '×3.70', 'pays ×', 'Pot 1', 'data-backing="revealed"']) {
       expect(html, `leaked "${figure}" while open`).not.toContain(figure);
     }
     // The chairs never show above the floor, whatever the reply claims.
-    expect(html).not.toContain('data-count="5"');
+    expect(html).not.toContain('data-count="47"');
     expect(html).toContain('data-count="2"');
   });
 });
