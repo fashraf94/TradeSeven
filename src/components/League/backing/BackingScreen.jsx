@@ -33,17 +33,14 @@ import PodList from './PodList';
 import TeamCard from './TeamCard';
 import StakeControl from './StakeControl';
 import YourBacking from './YourBacking';
-import { POD_LIST, SCREEN, STRIP } from './backingCopy';
-import { STRIP_KIND, backingWeekKeys, deriveStripState, formatEtClose } from './backingStripState';
+import { POD_LIST, SCREEN, STRIP, stripLines } from './backingCopy';
+import { STRIP_KIND, backingWeekKeys, deriveStripState } from './backingStripState';
 
+// The header says what the strip says — one mapping (stripLines; R-B-1).
 function headerLine(state) {
-  switch (state.kind) {
-    case STRIP_KIND.OPEN: return `${STRIP.head.open(state.pods)} · ${STRIP.when.closes(formatEtClose(state.closesAt))}`;
-    case STRIP_KIND.STAKED: return `${STRIP.head.staked(state.pods)} · ${STRIP.when.closes(formatEtClose(state.closesAt))}`;
-    case STRIP_KIND.WEEK: return `${STRIP.head.week(state.day)} · ${STRIP.when.week}`;
-    case STRIP_KIND.BETWEEN: return `${STRIP.head.between} · ${state.reopens === 'monday' ? STRIP.when.reopensMonday : STRIP.when.reopensOnFormation}`;
-    default: return STRIP.sub.quiet;
-  }
+  const lines = stripLines(state);
+  if (lines.kind === STRIP_KIND.QUIET) return STRIP.sub.quiet;
+  return `${lines.head} · ${lines.when}`;
 }
 
 function TopBar({ label, onBack, accent, right }) {

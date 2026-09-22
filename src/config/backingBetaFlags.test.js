@@ -41,7 +41,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
-import { BACKING_BETA_ENABLED } from './featureFlags.js';
+import { BACKING_BETA_ENABLED, ELIGIBILITY_ATTESTATION_ENABLED } from './featureFlags.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..');
@@ -277,10 +277,6 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       'api/_utils/backingWeek.js',
       'api/tournament/backing-pools.js',
       'api/tournament/backing-stake.js',
-      // PR 4 — the team-card projection reads FORBIDDEN_TERMS: an archetype's
-      // canonical approach line leaves the route only when it passes the
-      // backing lexicon (DOM-2 in the PR 4 review record).
-      'api/tournament/team-card.js',
       // PR 4 — THE SURFACE PR. The client reads the constants module for the
       // disclosures, the fine print, the §B6 strip lines, the economy's
       // bounds and the 24-hour rule; every one of these mounts only behind
@@ -291,6 +287,9 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       'src/components/League/backing/StakeControl.jsx',
       'src/components/League/backing/backingCopy.js',
       'src/components/League/backing/backingStripState.js',
+      // PR 4 — the one lexicon matcher (the copy guard and the team-card
+      // projection's approach filter share it; R-B-5 in the PR 4 review record).
+      'src/constants/backingLexicon.js',
       'src/hooks/useBackingWallet.js',
     ]);
     // PR 2's own modules, listed for the same reason: the surface is enumerated,
@@ -338,7 +337,7 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
     // And every CLIENT importer of the constants module is a backing surface
     // or one of its hooks — a stray importer elsewhere in src/ reds this row.
     for (const rel of importersOf('src/constants/backing.js').filter((r) => r.startsWith('src/'))) {
-      expect(rel.startsWith('src/components/League/backing/') || rel.startsWith('src/hooks/use'), `${rel} imports the backing constants from outside the backing surfaces`).toBe(true);
+      expect(rel.startsWith('src/components/League/backing/') || rel.startsWith('src/hooks/use') || rel === 'src/constants/backingLexicon.js', `${rel} imports the backing constants from outside the backing surfaces`).toBe(true);
     }
   });
 
@@ -392,6 +391,15 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
     }
   });
 
+  it('BACKING_BETA_ENABLED never lights alone: the flip PR flips both flags (spec §12) — a backing-only flip would ship a dead Confirm (DOM-NOTE-1)', () => {
+    // The stake control routes every first stake through the attestation
+    // step, whose endpoint 404s while ELIGIBILITY_ATTESTATION_ENABLED is
+    // false — so backing on without attestation on is a control that can
+    // never confirm. The two pins are separate by design; this row binds the
+    // ORDER: attestation lights first or together, never after.
+    expect(!BACKING_BETA_ENABLED || ELIGIBILITY_ATTESTATION_ENABLED).toBe(true);
+  });
+
   it('the two PR 4 routes read the flag at CALL time, after auth, and share a darkness suite', () => {
     // Their paths carry no `backing` token, so the routesNamed row above
     // cannot see them; they are held to the same discipline by name.
@@ -425,9 +433,17 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
     // the repo carries alias imports today. A basename sweep (the
     // archetypeImportBoundaryBaseline ratchet's spelling-agnostic idiom) covers
     // every other spelling of the same three targets.
-    const ALIASED = /\bfrom\s+['"]@\/(?:constants\/backing|config\/backing)[^'"]*['"]/;
+    // …and, since PR 4, the backing surfaces, their six hooks and the service
+    // (R-B-6 in the PR 4 review record): a host reaching them through the
+    // alias would slip the host ratchet above.
+    const ALIASED = /\b(?:from|import)\s*\(?\s*['"]@\/(?:constants\/backing|config\/backing|components\/League\/backing\/|hooks\/use(?:BackingPods|MyBacking|BackingWallet|Eligibility|MyPitch|TeamCard)\b|services\/backingService\b)[^'"]*['"]/;
     for (const rel of SOURCES) {
-      expect(ALIASED.test(read(rel)), `${rel} reaches a PR 1 module through a @/ alias`).toBe(false);
+      expect(ALIASED.test(read(rel)), `${rel} reaches a backing module through a @/ alias`).toBe(false);
     }
+    // The sweep sees the spellings it is meant to see.
+    for (const spelling of ["import x from '@/hooks/useMyPitch';", "import { s } from '@/services/backingService';", "import S from '@/components/League/backing/BackingScreen';", "const m = import('@/hooks/useMyBacking');"]) {
+      expect(ALIASED.test(spelling), spelling).toBe(true);
+    }
+    expect(ALIASED.test("import { useMyPitchless } from '@/hooks/useMyPitchless';")).toBe(false);
   });
 });

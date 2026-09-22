@@ -26,6 +26,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { FORBIDDEN_TERMS, LEXICON } from '../../../constants/backing';
+import { forbiddenTermRegExp } from '../../../constants/backingLexicon';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..', '..', '..');
@@ -58,7 +59,8 @@ function strippedSource(file) {
     .replace(/(^|[^:])\/\/.*$/gm, '$1');
 }
 
-const termRe = (term) => new RegExp(`\\b${term.replace(/ /g, '\\s+')}\\b`, 'i');
+// The ONE matcher, shared with the team-card projection's approach filter (R-B-5).
+const termRe = (term) => forbiddenTermRegExp(term);
 
 describe('the backing copy guard — no forbidden term in any backing UI file', () => {
   it('guards a non-empty set that includes the copy module, the strip, the card, the control and the routes', () => {

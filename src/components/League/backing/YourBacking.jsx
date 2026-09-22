@@ -215,11 +215,13 @@ export default function YourBacking({ inPlay, accent = LX.energy, onOpenTape, no
   const allComplete = !allSettled && pods.every(({ groupId }) => SETTLED.has(inPlay?.poolsById?.[groupId]?.status) || inPlay?.groupsById?.[groupId]?.status === GROUP_STATUS.COMPLETE);
   // The day from the pods' own banking record (the League's reading — FAB-9); the calendar only while no pod document has been read.
   const dayOfFive = pods.reduce((best, { groupId }) => { const d = podDayOfFive(inPlay?.groupsById?.[groupId] ?? null, now); return d == null ? best : Math.max(best ?? 0, d); }, null) ?? weekDayOfFive(now);
+  // No backed pod has started (every one locked in ahead of its Monday): no battle day to count (R-B-2).
+  const noneStarted = pods.every(({ groupId }) => { const st = inPlay?.groupsById?.[groupId]?.status; return st != null && st !== GROUP_STATUS.BATTLE && st !== GROUP_STATUS.COMPLETE; });
   return (
     <div data-backing="your-backing-section" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div>
         <Eyebrow color={accent} style={{ marginBottom: 4 }}>{WEEK.title}</Eyebrow>
-        <Mono style={{ fontSize: 10.5, color: LTOKENS.ink3 }}>{allSettled ? WEEK.settledSub : allComplete ? WEEK.settlingSub : WEEK.sub(dayOfFive)}</Mono>
+        <Mono style={{ fontSize: 10.5, color: LTOKENS.ink3 }}>{allSettled ? WEEK.settledSub : allComplete ? WEEK.settlingSub : noneStarted ? WEEK.lockedSub : WEEK.sub(dayOfFive)}</Mono>
       </div>
       {pods.map(({ groupId, stakes }) => (
         <WeekCard

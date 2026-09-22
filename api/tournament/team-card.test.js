@@ -436,13 +436,14 @@ describe('honesty of the pure pieces', () => {
     expect(projectAgent({ archetype: 'diversifier' }).archetypeLabel).toBe('Diversifier');
   });
 
-  it('passesBackingLexicon: the forbidden terms at a word start, in any case; empty text never passes', () => {
+  it('passesBackingLexicon: the shared matcher — whole words and their plain inflections, in any case; empty text never passes', () => {
     expect(passesBackingLexicon('Goes where the momentum is — and leaves the moment it fades.')).toBe(true);
     expect(passesBackingLexicon('Spreads the bets so no single one can sink you.')).toBe(false);
     expect(passesBackingLexicon('Never BETTING the house.')).toBe(false);
     expect(passesBackingLexicon('Plays the odds.')).toBe(false);
     expect(passesBackingLexicon('Time to cash   out.')).toBe(false);
     expect(passesBackingLexicon('An alphabet of names.')).toBe(true);
+    expect(passesBackingLexicon('Reads between the lines; a better week.')).toBe(true);
     expect(passesBackingLexicon('')).toBe(false);
     expect(passesBackingLexicon(null)).toBe(false);
   });

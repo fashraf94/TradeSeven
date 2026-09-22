@@ -173,3 +173,16 @@ describe('the PR 4 review record — FAB-1, DOM-6, FAB-2 (docs/audits/20260922_B
     expect(html).not.toContain('drafted Monday');
   });
 });
+
+describe('the PR 4 review record — refutation pass (R-B-2)', () => {
+  it('a backed pod locked in ahead of its Monday reads "Locked in · plays Monday" — never a battle day', () => {
+    const html = render({ inPlay: inPlay({
+      stakes: [{ id: 's1', groupId: 'lds-wed', teamOdUserId: 'od-a', amount: 250, status: 'live', weekKey: '2026-W40' }],
+      poolsById: { 'lds-wed': { status: 'closed' } },
+      groupsById: { 'lds-wed': group({ status: 'drafting', dailyScores: {} }) },
+    }) });
+    expect(html).toContain('Locked in · plays Monday');
+    expect(html).not.toContain('Day ');
+    expect(html).toContain('>Locked · plays Monday<');
+  });
+});

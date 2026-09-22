@@ -31,7 +31,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..', '..', '..');
 
 const flag = vi.hoisted(() => ({ on: false }));
-const svc = vi.hoisted(() => ({ calls: [] }));
+const svc = vi.hoisted(() => ({ calls: [], reply: null }));
 const fetchSpy = vi.hoisted(() => vi.fn(async () => ({ ok: true, json: async () => ({ slots: [], battles: {} }) })));
 
 vi.mock('../../../config/featureFlags', async (importOriginal) => ({
@@ -41,6 +41,7 @@ vi.mock('../../../config/featureFlags', async (importOriginal) => ({
 vi.mock('../../../services/backingService', () => ({
   fetchBackingPods: vi.fn(async () => {
     svc.calls.push('fetchBackingPods');
+    if (svc.reply) return svc.reply;
     return {
       baseLayerWeek: '2026-W40', backingWeekStart: '2026-09-21T04:00:00.000Z', backingWeekCloses: '2026-09-28T03:59:59.000Z', viewerUid: 'viewer-1',
       pods: [{
@@ -112,7 +113,7 @@ async function mount(el) {
   return container;
 }
 
-beforeEach(() => { flag.on = false; svc.calls.length = 0; fetchSpy.mockClear(); });
+beforeEach(() => { flag.on = false; svc.calls.length = 0; svc.reply = null; fetchSpy.mockClear(); });
 afterEach(async () => {
   for (const { root, container } of roots) { await act(async () => root.unmount()); container.remove(); }
   roots = [];
@@ -210,6 +211,22 @@ describe('flag ON — the same mounts light up (the pin is not vacuous)', () => 
     expect(strip.textContent).toContain('Backing open · 1 pod');
   });
 
+  it('the screen header says what the strip says — one mapping (R-B-1): a window whose pool closed at its fire reads "Closed · plays Monday"', async () => {
+    flag.on = true;
+    svc.reply = {
+      baseLayerWeek: '2026-W40', backingWeekStart: '2026-09-21T04:00:00.000Z', backingWeekCloses: '2026-09-28T03:59:59.000Z', viewerUid: 'viewer-1',
+      pods: [{
+        groupId: 'lds-wed', formationPath: 'slot', slotId: 'wed-1900', baseLayerWeek: '2026-W40', seatNames: { 'od-a': 'Mira' }, humanTeams: 1, groupStatus: 'drafting',
+        teams: [{ odUserId: 'od-a', isCpu: false, isOwnSeat: false, backable: false }],
+        pool: { status: 'closed', backerProgress: { count: 1, floor: 3, met: false }, teamSpread: { met: false }, closesAt: '2026-09-23T23:00:00.000Z', closeReason: 'fire' },
+        myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', amount: 250, status: 'live' }],
+      }],
+    };
+    const container = await mount(<BackingScreen uid="viewer-1" onBack={() => {}} onOpenTape={() => {}} />);
+    expect(container.querySelector('[data-backing="screen-state"]').textContent).toBe('Your backing · 1 pod · Closed · plays Monday');
+    expect(container.textContent).not.toContain('Close pending');
+  });
+
   it('the profile home renders the scouting line', () => {
     flag.on = true;
     expect(ssr(<ScoutingLine uid="viewer-1" agentName="Prime" />)).toContain('data-backing="scouting-line"');
@@ -247,25 +264,43 @@ describe('the flag is read at CALL time in every host — never captured at modu
     ['src/components/League/LeagueLobbyRedesign.jsx', '{backingSlot}'],
   ];
   const stripComments = (src) => src.replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-  /** Every occurrence of `marker`, with the trimmed text right before and right after it. */
+  /** JSX brace expressions removed (balanced), so an attribute like `onClick={() => open()}` cannot hide an opener's `>` (R-B-7). */
+  function stripBraces(src) {
+    let out = '';
+    let depth = 0;
+    for (const ch of src) {
+      if (ch === '{') { depth += 1; continue; }
+      if (ch === '}') { depth = Math.max(0, depth - 1); continue; }
+      if (depth === 0) out += ch;
+    }
+    return out;
+  }
+  /** Every occurrence of `marker`, with the trimmed text right before (braces stripped) and right after it. */
   function mountsOf(src, marker) {
     const out = [];
     for (let i = src.indexOf(marker); i >= 0; i = src.indexOf(marker, i + marker.length)) {
       const end = marker.startsWith('{') ? src.indexOf('}', i) + 1 : src.indexOf('/>', i) + 2;
-      out.push({ before: src.slice(0, i).trimEnd(), after: src.slice(end).trimStart() });
+      out.push({ before: stripBraces(src.slice(0, i)).trimEnd(), after: src.slice(end).trimStart() });
     }
     return out;
   }
+  /** True when the mount is the sole child of an element opened right before it and closed right after it. */
+  function soleChildWrapped({ before, after }) {
+    const opened = /<([a-z][\w-]*)(\s[^<>]*[^/<>])?>$/.exec(before);
+    return opened != null && after.startsWith(`</${opened[1]}>`);
+  }
+  it('the mount guard sees a wrapper whose attributes carry a ">" (R-B-7), and passes a bare mount', () => {
+    const wrapped = mountsOf(stripComments('<div onClick={() => open()}>\n  <ScoutingLine uid={u} />\n</div>'), '<ScoutingLine');
+    expect(wrapped.map(soleChildWrapped)).toEqual([true]);
+    const bare = mountsOf(stripComments('{locked && (<div>x</div>)}\n<ScoutingLine uid={u} />\n<Other />'), '<ScoutingLine');
+    expect(bare.map(soleChildWrapped)).toEqual([false]);
+  });
   for (const [rel, marker] of HOST_MOUNTS) {
     it(`${rel} mounts ${marker} bare — no host element of its own around it`, () => {
       const mounts = mountsOf(stripComments(readFileSync(path.join(REPO, rel), 'utf8')), marker);
       expect(mounts.length, `${marker} is mounted in ${rel}`).toBeGreaterThan(0);
-      for (const { before, after } of mounts) {
-        // an HTML element opened right before the mount (attributes carry no angle bracket)…
-        const opened = /<([a-z][\w-]*)(\s[^<>]*[^/<>])?>$/.exec(before);
-        // …and closed right after it: the mount is that element's only child.
-        const soleChild = opened != null && after.startsWith(`</${opened[1]}>`);
-        expect(soleChild, `${rel}: ${marker} is the sole child of a host <${opened?.[1]}> — that element survives the null render while dark`).toBe(false);
+      for (const mount of mounts) {
+        expect(soleChildWrapped(mount), `${rel}: ${marker} is the sole child of a host element — that element survives the null render while dark`).toBe(false);
       }
     });
   }

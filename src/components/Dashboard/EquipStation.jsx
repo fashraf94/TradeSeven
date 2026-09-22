@@ -291,22 +291,25 @@ export default function EquipStation({ agent, accent, onOpenAgentRecord, setShow
         </div>
       </div>
 
-      {/* reassurance — never a requirement */}
-      {slots.some((s) => !s.filled) && !benchLocked && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 10 }}>
-          <Sparkles size={12} color={accent} />
-          <div style={{ fontSize: 11.5, color: CMD.ink3 }}>One open slot — a chance to arm {agentName}, not a requirement. Deploy works now.</div>
-        </div>
-      )}
-      {benchLocked && (
-        <div style={{ fontSize: 11.5, color: CMD.ink3, marginTop: 10 }}>Locked in battle · changes apply to your next deploy.</div>
-      )}
-
-      {/* the scouting line — the player's own pitch for Backing (dark until the
-          flag). Mounted BARE: it renders null while dark, and a wrapper of this
-          station's own would survive that null render as an empty element
-          (the compact line carries its own top margin when lit). */}
-      <ScoutingLine uid={agent?.ownerId} agentName={agentName} accent={accent} compact />
+      {/* reassurance — never a requirement — and the scouting line (the
+          player's own pitch for Backing, dark until the flag) share ONE root
+          entry: the station's root children stay at seven, so React's
+          generated ids on the presence face are byte-identical to today's
+          while dark (R-B-8, the PR 4 review record). The line is mounted
+          BARE inside it: it renders null while dark and a wrapper of the
+          station's own would survive that null render as an empty element. */}
+      <>
+        {slots.some((s) => !s.filled) && !benchLocked && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 10 }}>
+            <Sparkles size={12} color={accent} />
+            <div style={{ fontSize: 11.5, color: CMD.ink3 }}>One open slot — a chance to arm {agentName}, not a requirement. Deploy works now.</div>
+          </div>
+        )}
+        {benchLocked && (
+          <div style={{ fontSize: 11.5, color: CMD.ink3, marginTop: 10 }}>Locked in battle · changes apply to your next deploy.</div>
+        )}
+        <ScoutingLine uid={agent?.ownerId} agentName={agentName} accent={accent} compact />
+      </>
 
       {/* watchlist picker */}
       <EquipSheet

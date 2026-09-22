@@ -25,47 +25,13 @@ import React from 'react';
 import { LTOKENS, LX, alpha } from '../leagueTokens';
 import { Mono, Icon, LIcon, Score } from '../LeagueParts';
 import { Chairs, WeekRail } from './BackingParts';
-import { STRIP } from './backingCopy';
-import { STRIP_KIND, formatEtClose } from './backingStripState';
-
-function headFor(state) {
-  switch (state.kind) {
-    case STRIP_KIND.OPEN: return STRIP.head.open(state.pods);
-    case STRIP_KIND.STAKED: return STRIP.head.staked(state.pods);
-    case STRIP_KIND.WEEK: return STRIP.head.week(state.day);
-    case STRIP_KIND.BETWEEN: return STRIP.head.between;
-    default: return STRIP.head.quiet;
-  }
-}
-
-function whenFor(state) {
-  switch (state.kind) {
-    case STRIP_KIND.OPEN: return STRIP.when.closes(formatEtClose(state.closesAt));
-    // Every staked pool already closed at its fire: nothing left to close.
-    case STRIP_KIND.STAKED: return state.closesAt ? STRIP.when.closes(formatEtClose(state.closesAt)) : STRIP.when.locked;
-    case STRIP_KIND.WEEK: return state.settling ? STRIP.when.settling : STRIP.when.week;
-    case STRIP_KIND.BETWEEN: return state.reopens === 'monday' ? STRIP.when.reopensMonday : STRIP.when.reopensOnFormation;
-    default: return STRIP.when.reopensOnFormation;
-  }
-}
-
-function subFor(state) {
-  switch (state.kind) {
-    case STRIP_KIND.OPEN: return STRIP.sub.open;
-    case STRIP_KIND.BETWEEN: return STRIP.sub.between;
-    case STRIP_KIND.QUIET: return STRIP.sub.quiet;
-    default: return null;
-  }
-}
+import { STRIP, stripLines } from './backingCopy';
+import { STRIP_KIND } from './backingStripState';
 
 export default function BackingStrip({ state, accent = LX.energy, onOpen, wide = false }) {
   const s = state && typeof state === 'object' ? state : { kind: STRIP_KIND.QUIET };
-  const kind = Object.values(STRIP_KIND).includes(s.kind) ? s.kind : STRIP_KIND.QUIET;
+  const { kind, eyebrow, head, when, sub } = stripLines(s);
   const c = kind === STRIP_KIND.BETWEEN ? LTOKENS.gold : accent;
-  const eyebrow = STRIP.eyebrow[kind];
-  const head = headFor(s);
-  const when = whenFor(s);
-  const sub = subFor(s);
   const motif = kind === STRIP_KIND.WEEK
     ? <WeekRail day={s.day} color={c} />
     : kind === STRIP_KIND.BETWEEN

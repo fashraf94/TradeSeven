@@ -36,6 +36,7 @@
 // server and never escapes the guard.
 
 import { ALLOWANCE_BP, MIN_STAKE_BP, PER_TEAM_CAP_BP } from '../../../constants/backing';
+import { STRIP_KIND, formatEtClose } from './backingStripState';
 
 /** Backing Points, formatted the way the design formats them (1,000). */
 export const bp = (n) => (Number.isFinite(n) ? n : 0).toLocaleString('en-US');
@@ -155,6 +156,33 @@ export const POD_LIST = Object.freeze({
 });
 
 // ==================== THE BACKERS CALL (three chairs) ====================
+
+/**
+ * The strip's words for a derived state — ONE mapping, so the landing strip
+ * and the Backing screen's header can never say two things about one state
+ * object (R-B-1, the PR 4 review record).
+ */
+export function stripLines(state) {
+  const s = state && typeof state === 'object' ? state : { kind: STRIP_KIND.QUIET };
+  const kind = Object.values(STRIP_KIND).includes(s.kind) ? s.kind : STRIP_KIND.QUIET;
+  let head;
+  let when;
+  let sub = null;
+  switch (kind) {
+    case STRIP_KIND.OPEN:
+      head = STRIP.head.open(s.pods); when = STRIP.when.closes(formatEtClose(s.closesAt)); sub = STRIP.sub.open; break;
+    case STRIP_KIND.STAKED:
+      // Every staked pool already closed at its fire: nothing left to close.
+      head = STRIP.head.staked(s.pods); when = s.closesAt ? STRIP.when.closes(formatEtClose(s.closesAt)) : STRIP.when.locked; break;
+    case STRIP_KIND.WEEK:
+      head = STRIP.head.week(s.day); when = s.settling ? STRIP.when.settling : STRIP.when.week; break;
+    case STRIP_KIND.BETWEEN:
+      head = STRIP.head.between; when = s.reopens === 'monday' ? STRIP.when.reopensMonday : STRIP.when.reopensOnFormation; sub = STRIP.sub.between; break;
+    default:
+      head = STRIP.head.quiet; when = STRIP.when.reopensOnFormation; sub = STRIP.sub.quiet;
+  }
+  return { kind, eyebrow: STRIP.eyebrow[kind], head, when, sub };
+}
 
 // The open pool's two lines are Amendment B §B6's, VERBATIM, from
 // src/constants/backing.js POOL_STRIP (BackersCall renders them; DOM-3 /
@@ -392,6 +420,9 @@ export const WEEK = Object.freeze({
   sub: (day) => `Day ${day} of 5 · nothing to do but watch`,
   settledSub: 'Week complete',
   settlingSub: 'Week complete · settling',
+  // Every backed pod is locked in and none has started (a slot pod fired
+  // before its Monday): no battle day to count yet (R-B-2).
+  lockedSub: 'Locked in · plays Monday',
   empty: 'No stakes in play this week.',
   backed: 'Backed',
   stakeRow: (teamName, amount, status = null) => `${teamName} · ${bp(amount)} BP${status ? ` · ${status}` : ''}`,

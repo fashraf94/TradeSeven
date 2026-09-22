@@ -16,6 +16,7 @@ import { POOL_MIN_WINDOW_MS } from '../../../constants/backing';
 import {
   STRIP_KIND, backingWeekKeys, deriveStripState, etWeekdayIndex, formatEtClose, nextOpening, podDayOfFive, podStanding, seatDisplayName, weekDayOfFive,
 } from './backingStripState';
+import { stripLines } from './backingCopy';
 
 const SUNDAY_CLOSE = '2026-09-28T03:59:59.000Z';   // Sun 27 Sep 23:59 ET (EDT)
 const WED_FIRE = '2026-09-23T23:00:00.000Z';        // Wed 23 Sep 19:00 ET (a slot pod's fire)
@@ -397,5 +398,17 @@ describe('the PR 4 review record — refutation pass (R-A-1, R-A-4, R-A-5, FAB-9
     expect(s.kind).toBe(STRIP_KIND.WEEK);
     expect(s.day).toBe(1);
     expect(s.teams[0]).toMatchObject({ teamName: 'Mira', amount: 250, rank: null });
+  });
+});
+
+describe('stripLines — the ONE mapping the landing strip and the screen header share (R-B-1)', () => {
+  it('a window whose every staked pool has closed reads "Closed · plays Monday"; a settling week reads "Complete · settling"', () => {
+    expect(stripLines({ kind: 'staked', pods: 1, closesAt: null, stakes: [] })).toMatchObject({ head: 'Your backing · 1 pod', when: 'Closed · plays Monday' });
+    expect(stripLines({ kind: 'staked', pods: 2, closesAt: SUNDAY_CLOSE, stakes: [] })).toMatchObject({ when: 'Closes Sun 11:59 PM ET' });
+    expect(stripLines({ kind: 'week', day: 5, settling: true, pods: 1, teams: [] })).toMatchObject({ head: 'Your backing · day 5 of 5', when: 'Complete · settling' });
+    expect(stripLines({ kind: 'week', day: 2, settling: false, pods: 1, teams: [] })).toMatchObject({ when: 'Settles after Friday’s close' });
+    expect(stripLines({ kind: 'between', pods: 1, reopens: 'monday' })).toMatchObject({ head: 'Last week’s result', when: 'Pools open again Monday' });
+    expect(stripLines({ kind: 'open', pods: 3, closesAt: SUNDAY_CLOSE })).toMatchObject({ head: 'Backing open · 3 pods', when: 'Closes Sun 11:59 PM ET' });
+    expect(stripLines(null)).toMatchObject({ kind: 'quiet', head: 'Backing' });
   });
 });

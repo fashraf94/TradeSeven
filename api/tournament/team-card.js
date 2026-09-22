@@ -79,7 +79,7 @@ import { projectTournamentBattle } from '../_utils/tournamentBattleView.js';
 import { readPitch } from '../_utils/teamPitch.js';
 import { deriveWeekLine } from '../../src/constants/deriveWeekLine.js';
 import { getArchetypeDefinition } from '../_utils/archetypeRegistry.js';
-import { FORBIDDEN_TERMS } from '../../src/constants/backing.js';
+import { findForbiddenTerm } from '../../src/constants/backingLexicon.js';
 import { COMPANY_SECTORS } from '../../src/config/stockData.js';
 import {
   GROUP_STATUS,
@@ -136,17 +136,14 @@ export function etDayLabel(iso) {
  * config, memory, the equipped watchlist — stays behind it.
  */
 /**
- * True when the text carries none of the backing lexicon's forbidden terms
- * (src/constants/backing.js FORBIDDEN_TERMS), matched at a word start so
- * "bet" covers "bets" and "betting". The backing surfaces may not show the
- * lexicon anywhere, including copy they did not write (design brief §5).
+ * True when the text carries none of the backing lexicon's forbidden terms —
+ * the ONE matcher (src/constants/backingLexicon.js) the copy guard uses too,
+ * so "bets" is caught here exactly as it would be in the copy module and
+ * "between" is clean in both (R-B-5, the PR 4 review record).
  */
 export function passesBackingLexicon(text) {
   if (typeof text !== 'string' || text.length === 0) return false;
-  return !FORBIDDEN_TERMS.some((term) => {
-    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+');
-    return new RegExp(`\\b${escaped}`, 'i').test(text);
-  });
+  return findForbiddenTerm(text) == null;
 }
 
 export function projectAgent(data, { archetype = data?.archetype ?? null } = {}) {
