@@ -28,6 +28,10 @@ import { filterWatchlistsByStatus } from '../Forge/Watchlist/filterWatchlistsByS
 import { equipWatchlist, unequipWatchlist } from '../../services/agentService';
 import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 import { getArchetypeIdentity } from '../../data/archetypeIdentity';
+// Backing Beta PR 4 (design brief rev3 §3): the scouting line's mobile profile
+// home, under the identity bench. Renders NOTHING while BACKING_BETA_ENABLED
+// is dark (read at call time inside).
+import ScoutingLine from '../League/backing/ScoutingLine';
 import { getTraitSlotSummary } from '../../utils/traitSlotSummary';
 import { getEquipSlots } from '../../utils/equipSlots';
 
@@ -297,6 +301,11 @@ export default function EquipStation({ agent, accent, onOpenAgentRecord, setShow
       {benchLocked && (
         <div style={{ fontSize: 11.5, color: CMD.ink3, marginTop: 10 }}>Locked in battle · changes apply to your next deploy.</div>
       )}
+
+      {/* the scouting line — the player's own pitch for Backing (dark until the flag) */}
+      <div style={{ marginTop: 12 }}>
+        <ScoutingLine uid={agent?.ownerId} agentName={agentName} accent={accent} compact />
+      </div>
 
       {/* watchlist picker */}
       <EquipSheet

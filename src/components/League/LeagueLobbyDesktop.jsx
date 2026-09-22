@@ -37,6 +37,12 @@ import {
   LDFocus, DeskTabBar, DeskTrainingPanel, TRAIN,
 } from './LeagueDeskParts';
 import DeskSeasonRail from './DeskSeasonRail';
+// Backing Beta PR 4 — the landing strip on the left rail (the design's desktop
+// variant) and the Backing screen in the same focus overlay Spectate uses.
+// BackingLandingStrip renders NOTHING while BACKING_BETA_ENABLED is dark.
+import BackingLandingStrip from './backing/BackingLandingStrip';
+import BackingScreen from './backing/BackingScreen';
+import { fetchTapePod } from '../../services/backingService';
 
 const ACCENT = LX.energy; // teal — the league energy accent (tournament surface)
 
@@ -116,6 +122,7 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
   // object reference each render.
   const [selectedPodId, setSelectedPodId] = React.useState(null);
   const [spec, setSpec] = React.useState(null);            // { pod, focusId }
+  const [backing, setBacking] = React.useState(false);     // the Backing overlay (opened only by the strip)
 
   // Active Training Game (build spec §4) — a member-scoped real-time listener,
   // the SAME proven subscription the mobile training tab uses. uid is derived
@@ -156,6 +163,17 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
   // for DeskPodPanel when a pod is docked, so the tab has to survive up here.
   const [railTab, setRailTab] = React.useState('field');
   const openSpectate = (pod, focusId) => { if (!pod) return; setSpec({ pod, focusId }); signal('spectate-open', { podId: pod.id, focusId }); };
+  // Backing: the strip opens the overlay; a card's tape link closes it and
+  // opens Spectate on the COMPLETED week's real pod (backingService.fetchTapePod).
+  const openBacking = () => { setSpec(null); setBacking(true); };
+  const openTape = async (groupId, focusId) => {
+    try {
+      const pod = await fetchTapePod(groupId, uid);
+      if (pod) { setBacking(false); openSpectate(pod, focusId); }
+    } catch (err) {
+      console.warn('[LeagueLobbyDesktop] tape unavailable:', err?.message);
+    }
+  };
   // Switching tabs dismisses any open tournament overlay so a ranked overlay
   // can't linger over the (purple) training surface.
   const switchTab = (next) => {
@@ -223,6 +241,7 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
           {/* LEFT — your group + live follows */}
           <div className="lg-scroll ld-rail-left">
             {onOpenMyGame && activeGroup && <MyGameBar onOpen={onOpenMyGame} />}
+            <BackingLandingStrip uid={uid} accent={ACCENT} onOpen={openBacking} wide />
             <DeskYourGroup st={st} accent={ACCENT} onOpen={pickPod} />
             <DeskFollowRail items={st.followLive} accent={ACCENT} onSpectate={openSpectate} />
             <div style={{ marginTop: 'auto', paddingTop: 8 }}>
@@ -272,6 +291,13 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
         <LDFocus width={760} onClose={() => setSpec(null)}>
           <div style={{ height: '86vh', maxHeight: 880, borderRadius: 24, overflow: 'hidden', border: `1px solid ${LTOKENS.hair2}`, boxShadow: '0 30px 90px rgba(0,0,0,0.6)', position: 'relative' }}>
             <Spectate pod={spec.pod} focusId={spec.focusId} accent={ACCENT} onBack={() => setSpec(null)} onEnter={() => setSpec(null)} />
+          </div>
+        </LDFocus>
+      )}
+      {backing && !spec && (
+        <LDFocus width={760} onClose={() => setBacking(false)}>
+          <div className="lg-scroll" style={{ height: '86vh', maxHeight: 880, borderRadius: 24, overflowY: 'auto', overflowX: 'hidden', background: LTOKENS.bg, border: `1px solid ${LTOKENS.hair2}`, boxShadow: '0 30px 90px rgba(0,0,0,0.6)', position: 'relative' }}>
+            <BackingScreen uid={uid} accent={ACCENT} viewport="desktop" onBack={() => setBacking(false)} onOpenTape={openTape} />
           </div>
         </LDFocus>
       )}

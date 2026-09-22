@@ -24,6 +24,13 @@ import Lobby, { LobbyTabbed } from './LeagueLobbyRedesign';
 import Spectate from './LeagueSpectate';
 import { PodSheet } from './LeaguePod';
 import LeagueVoidedNotice from './LeagueVoidedNotice';
+// Backing Beta PR 4 — the landing strip (the door) and the screen it opens.
+// BackingLandingStrip reads BACKING_BETA_ENABLED at call time and renders
+// NOTHING while dark, so the slot below emits no element and opens no read;
+// the screen is reachable only through the strip.
+import BackingLandingStrip from './backing/BackingLandingStrip';
+import BackingScreen from './backing/BackingScreen';
+import { fetchTapePod } from '../../services/backingService';
 
 const ACCENT = LX.energy; // teal — the league energy accent
 
@@ -110,6 +117,19 @@ export default function LeagueHome({ onOpenMyGame, onOpenTrainingPod, hasAgent, 
   const openSpectate = (pod, focusId) => { setPodSheet(null); setSpec({ pod, focusId }); setScreen('spectate'); signal('spectate-open', { podId: pod.id, focusId }); };
   const openPod = (pod) => { setPodSheet(pod); signal('pod-tap', { podId: pod.id }); };
   const backToLobby = () => { setScreen('lobby'); setSpec(null); };
+  // Backing: the strip opens the screen; the card's tape link opens the
+  // existing spectator view on the COMPLETED week's real pod (group doc +
+  // battles through the WHY-projecting endpoint — backingService.fetchTapePod).
+  const openBacking = () => { setPodSheet(null); setSpec(null); setScreen('backing'); };
+  const openTape = async (groupId, focusId) => {
+    try {
+      const pod = await fetchTapePod(groupId, uid);
+      if (pod) openSpectate(pod, focusId);
+    } catch (err) {
+      console.warn('[LeagueHome] tape unavailable:', err?.message);
+    }
+  };
+  const backingSlot = <BackingLandingStrip uid={uid} accent={ACCENT} onOpen={openBacking} />;
   // tab-switch: front-end navigation telemetry (NOT a §4 trading-signal).
   // Emitted only on a real switch, never on mount.
   const switchTab = (next) => { if (next === tab) return; signal('tab-switch', { from: tab, to: next }); setTab(next); };
@@ -117,15 +137,17 @@ export default function LeagueHome({ onOpenMyGame, onOpenTrainingPod, hasAgent, 
   // Flag-on → the persistent Training|Ranked tabs; flag-off → today's lobby,
   // byte-identical (same <Lobby> invocation, untouched).
   const lobby = TABS_ENABLED
-    ? <LobbyTabbed st={st} accent={ACCENT} tab={tab} onSwitchTab={switchTab} onPickPod={openPod} onSpectate={openSpectate} onOpenMyGame={onOpenMyGame} activeGroup={activeGroup} onOpenTrainingPod={onOpenTrainingPod} activeTrainingPod={activeTrainingPod} hasAgent={hasAgent} agentLoadout={agentLoadout} uid={uid} displayName={user?.displayName} />
-    : <Lobby st={st} accent={ACCENT} onPickPod={openPod} onSpectate={openSpectate} onOpenMyGame={onOpenMyGame} activeGroup={activeGroup} uid={uid} displayName={user?.displayName} onOpenTrainingPod={onOpenTrainingPod} activeTrainingPod={activeTrainingPod} hasAgent={hasAgent} />;
+    ? <LobbyTabbed st={st} accent={ACCENT} tab={tab} onSwitchTab={switchTab} onPickPod={openPod} onSpectate={openSpectate} onOpenMyGame={onOpenMyGame} activeGroup={activeGroup} onOpenTrainingPod={onOpenTrainingPod} activeTrainingPod={activeTrainingPod} hasAgent={hasAgent} agentLoadout={agentLoadout} uid={uid} displayName={user?.displayName} backingSlot={backingSlot} />
+    : <Lobby st={st} accent={ACCENT} onPickPod={openPod} onSpectate={openSpectate} onOpenMyGame={onOpenMyGame} activeGroup={activeGroup} uid={uid} displayName={user?.displayName} onOpenTrainingPod={onOpenTrainingPod} activeTrainingPod={activeTrainingPod} hasAgent={hasAgent} backingSlot={backingSlot} />;
 
   // Spectate's claim CTA re-points at the entry (P3): it returns to the lobby,
   // whose center IS the slot picker for a no-game viewer (the retired
   // Pick-your-mode modal is gone).
-  const body = screen === 'spectate' && spec
-    ? <Spectate pod={spec.pod} focusId={spec.focusId} accent={ACCENT} onBack={backToLobby} onEnter={backToLobby} />
-    : lobby;
+  const body = screen === 'backing'
+    ? <BackingScreen uid={uid} accent={ACCENT} viewport="mobile" onBack={backToLobby} onOpenTape={openTape} />
+    : screen === 'spectate' && spec
+      ? <Spectate pod={spec.pod} focusId={spec.focusId} accent={ACCENT} onBack={backToLobby} onEnter={backToLobby} />
+      : lobby;
 
   return (
     <div style={{ position: 'relative', minHeight: '100vh', maxWidth: 448, margin: '0 auto', background: LTOKENS.bg, color: LTOKENS.ink }}>

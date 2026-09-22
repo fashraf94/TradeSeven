@@ -8,6 +8,11 @@
 import React from 'react';
 import { rankPod } from './leagueFixtures';
 import { LTOKENS, LX, alpha } from './leagueTokens';
+// Backing Beta PR 4 (design brief rev2 §1 / rev3 §1): the spectate affordance
+// reads "Predictions" while BACKING_BETA_ENABLED — LABEL ONLY, read at call
+// time inside PodCard; the onSpectate handler is untouched either way.
+import { BACKING_BETA_ENABLED } from '../../config/featureFlags';
+import { PREDICTIONS_LABEL } from './backing/backingCopy';
 import {
   Eyebrow, Mono, Icon, LIcon, Tag, AgentAvatar, KindMark, Score, StatusBadge, Watchers,
 } from './LeagueParts';
@@ -111,7 +116,7 @@ export function PodCard({ pod, accent, onSpectate, featured = false }) {
         {onSpectate && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <LIcon name="eyeR" size={13} color={accent} />
-            <Mono style={{ fontSize: 10.5, color: accent, fontWeight: 600, letterSpacing: '0.04em' }}>Tap a seat to spectate</Mono>
+            <Mono style={{ fontSize: 10.5, color: accent, fontWeight: 600, letterSpacing: '0.04em' }}>{BACKING_BETA_ENABLED ? PREDICTIONS_LABEL : 'Tap a seat to spectate'}</Mono>
           </div>
         )}
       </div>
