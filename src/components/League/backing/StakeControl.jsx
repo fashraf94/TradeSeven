@@ -27,6 +27,10 @@
 //     the confirmation read the seat's `label` — the team card's, and on
 //     "Backed" the stake reply's own `teamLabel` — never a name composed from
 //     an id. The title keeps the card's human-and-agent unit.
+//   · A TOP-UP SAYS SO (Amendment C §C2, D-ag): a backer holds one stake per
+//     team, so with a live stake on this team the Confirm step reads "Adds to
+//     your {n} BP on {label}." and "Backed" shows the stake's new total with
+//     what this Confirm added — both from the server's reply.
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { MIN_STAKE_BP, PER_TEAM_CAP_BP } from '../../../constants/backing';
@@ -145,6 +149,9 @@ export default function StakeControl({ card, pod, wallet, eligibility, accent = 
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 17, fontWeight: 700, color: LTOKENS.ink }}>
           <Icon name="check" size={16} color={accent} stroke={2.4} />{STAKE.backed(backedAmount, backedLabel)}
         </div>
+        {result.topUp === true && Number.isFinite(result.added) && (
+          <MonoAttr data-backing="topped-up" style={{ display: 'block', marginTop: 6, fontSize: 11, color: LTOKENS.ink2 }}>{STAKE.toppedUp(result.added)}</MonoAttr>
+        )}
         <div style={{ fontSize: 12.5, color: LTOKENS.ink2, lineHeight: 1.45, marginTop: 6 }}>{STAKE.backedSub}</div>
         {result?.replay === true && <Mono style={{ display: 'block', marginTop: 6, fontSize: 10, color: LTOKENS.ink3 }}>{STAKE.replayed}</Mono>}
         <button type="button" className="lg-tap" onClick={onClose} style={{ all: 'unset', cursor: 'pointer', marginTop: 14, padding: '10px 16px', borderRadius: 11, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair2}`, fontSize: 13, fontWeight: 600, color: LTOKENS.ink }}>{STAKE.another}</button>
@@ -158,6 +165,9 @@ export default function StakeControl({ card, pod, wallet, eligibility, accent = 
       <div>
         <Eyebrow color={accent} style={{ marginBottom: 5 }}>{STAKE.eyebrow}</Eyebrow>
         <div style={{ fontSize: 18, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.01em', lineHeight: 1.15 }}>{STAKE.title(name, agentName)}</div>
+        {already > 0 && (
+          <div data-backing="top-up-note" style={{ fontSize: 12.5, color: LTOKENS.ink2, lineHeight: 1.45, marginTop: 5 }}>{STAKE.addsTo(already, label)}</div>
+        )}
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>

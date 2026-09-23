@@ -101,12 +101,14 @@ export function newBackingEventId(event) {
 }
 
 /**
- * The DETERMINISTIC id of a stake's `stake_confirmed` record — keyed by the
- * stake id (§6's "idempotency keyed by source id"), so a retried request can
- * only ever rewrite identical bytes, never mint a second confirmation.
+ * The DETERMINISTIC id of a `stake_confirmed` record — keyed by its source id
+ * (§6's "idempotency keyed by source id"), so a retried request can only ever
+ * rewrite identical bytes, never mint a second confirmation. The stake
+ * endpoint passes the REQUEST's debit key (Amendment C §C2, D-ag): a stake
+ * and each of its top-ups are one document but separate confirmations.
  */
-export function stakeConfirmedEventId(stakeId) {
-  return `${STAKE_CONFIRMED_EVENT}:${stakeId}`;
+export function stakeConfirmedEventId(sourceId) {
+  return `${STAKE_CONFIRMED_EVENT}:${sourceId}`;
 }
 
 /** The §6 document, built from its parts. Pure. */

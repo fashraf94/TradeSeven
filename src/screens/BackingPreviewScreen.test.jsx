@@ -228,16 +228,16 @@ describe('the page — the label, every state, the local actions', () => {
     expect(page.textContent.startsWith(PREVIEW_LABEL)).toBe(true);
   });
 
-  it('the switcher names every surface state the build asks for — 23 from PR 4, and PR 5\'s four results and two stats states', () => {
+  it('the switcher names every surface state the build asks for — 23 from PR 4, PR 5\'s four results and two stats states, and the pre-flip cleanup\'s top-up (D-ag)', () => {
     const byGroup = (g) => PREVIEW_STATES.filter((s) => s.group === g).map((s) => s.id);
     expect(byGroup('strip')).toEqual(['open', 'staked', 'week', 'between'].flatMap((k) => [`strip-${k}-no-bracket`, `strip-${k}-bracket`]));
     expect(byGroup('pods')).toEqual(['pods-below-floor', 'pods-qualified', 'pods-revealed', 'pods-your-pod']);
     expect(byGroup('card')).toEqual(['card-first-week', 'card-veteran', 'card-cpu', 'card-own']);
-    expect(byGroup('stake')).toEqual(['stake-attest', 'stake-attested', 'stake-refusal', 'stake-backed']);
+    expect(byGroup('stake')).toEqual(['stake-attest', 'stake-attested', 'stake-refusal', 'stake-backed', 'stake-top-up']);
     expect(byGroup('week')).toEqual(['week-before-monday', 'week-monday', 'week-mid-week']);
     expect(byGroup('results')).toEqual(['results-win', 'results-loss', 'results-refunded', 'results-insufficient']);
     expect(byGroup('stats')).toEqual(['stats-mine', 'stats-trainer']);
-    expect(PREVIEW_STATES).toHaveLength(29);
+    expect(PREVIEW_STATES).toHaveLength(30);
   });
 
   it('every state renders its surface, from the switcher — and the page speaks no forbidden term', async () => {

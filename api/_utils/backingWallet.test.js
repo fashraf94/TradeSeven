@@ -42,6 +42,7 @@ import {
   creditPayout,
   creditRefund,
   recordStakeLoss,
+  stakeEntryIdFor,
   touchWallet,
 } from './backingWallet.js';
 import * as WALLET_MODULE from './backingWallet.js';
@@ -317,6 +318,43 @@ describe('debitStake — spending the allowance (§2, §8)', () => {
       weekKey: WEEK,
       at: NOW.toISOString(),
     });
+  });
+
+  it('D-ag: ONE DEBIT PER REQUEST — two entry keys against ONE stake document are two entries, each `ref` the document, and the ledger agrees', async () => {
+    const { db, store } = makeInMemoryDb();
+    await grantedWallet(db);
+    await inTx(db, UID, (tx, ref, w) => debitStake(tx, ref, w, { stakeId: 'stk-team-a', entryKey: 'dbt-req-1', amount: 100, weekKey: WEEK, now: NOW }));
+    const second = await inTx(db, UID, (tx, ref, w) => debitStake(tx, ref, w, { stakeId: 'stk-team-a', entryKey: 'dbt-req-2', amount: 150, weekKey: WEEK, now: NOW }));
+    expect(second).toMatchObject({ applied: true, replay: false });
+    expect(second.wallet).toMatchObject({ allowanceRemaining: 750, careerNet: -250 });
+    const { entries } = assertLedgerAgrees(store, UID);
+    const debits = entries.filter((e) => e.type === ENTRY_TYPES.STAKE);
+    expect(debits.map((e) => [e.id, e.ref, e.delta])).toEqual([
+      [stakeEntryIdFor('dbt-req-1'), 'stk-team-a', -100],
+      [stakeEntryIdFor('dbt-req-2'), 'stk-team-a', -150],
+    ]);
+  });
+
+  it('D-ag: a REPLAYED entry key is a no-op — and an omitted one keys the entry by the stake id (the pre-D-ag shape)', async () => {
+    const { db, store } = makeInMemoryDb();
+    await grantedWallet(db);
+    await inTx(db, UID, (tx, ref, w) => debitStake(tx, ref, w, { stakeId: 'stk-a', entryKey: 'dbt-1', amount: 100, weekKey: WEEK, now: NOW }));
+    const replay = await inTx(db, UID, (tx, ref, w) => debitStake(tx, ref, w, { stakeId: 'stk-a', entryKey: 'dbt-1', amount: 100, weekKey: WEEK, now: NOW }));
+    expect(replay).toMatchObject({ applied: false, replay: true });
+    expect(replay.wallet.allowanceRemaining).toBe(900);
+    await inTx(db, UID, (tx, ref, w) => debitStake(tx, ref, w, { stakeId: 'stk-b', amount: 50, weekKey: WEEK, now: NOW }));
+    const { entries } = assertLedgerAgrees(store, UID);
+    expect(entries.filter((e) => e.type === ENTRY_TYPES.STAKE).map((e) => e.id)).toEqual(['stake:dbt-1', 'stake:stk-b']);
+    expect(stakeEntryIdFor('x')).toBe('stake:x');
+  });
+
+  it('D-ag: a malformed entry key is refused, typed, before anything is written', async () => {
+    const { db } = makeInMemoryDb();
+    await grantedWallet(db);
+    for (const entryKey of ['', 'a/b', 7]) {
+      await expect(inTx(db, UID, (tx, ref, w) => debitStake(tx, ref, w, { stakeId: 'stk-a', entryKey, amount: 100, weekKey: WEEK, now: NOW })))
+        .rejects.toMatchObject({ name: 'BackingLedgerError', code: 'invalid_id' });
+    }
   });
 
   it('DEBITS BEYOND the allowance are refused, typed, with nothing written', async () => {
@@ -1023,6 +1061,9 @@ describe('the module contract itself — surface, names, and the branches no fix
       'ensureAllowance',
       'readWallet',
       'recordStakeLoss',
+      // Amendment C §C2 (D-ag): the stake DEBIT's entry id, one home for the
+      // stake endpoint's pre-check and `debitStake`.
+      'stakeEntryIdFor',
       'touchWallet',
       'walletIdFor',
       'walletRef',

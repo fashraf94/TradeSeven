@@ -33,8 +33,13 @@
 // one — there is no partial-field race between them.
 //
 // IDEMPOTENCY KEYED BY SOURCE ID (§6, the house pattern): `allowance:{weekKey}`,
-// `stake:{stakeId}`, `payout:{stakeId}`, `refund:{stakeId}`, `expiry:{weekKey}`,
-// `loss:{stakeId}` (PR 2 carry-in E2).
+// `stake:{debitKey}`, `payout:{stakeId}`, `refund:{stakeId}`, `expiry:{weekKey}`,
+// `loss:{stakeId}` (PR 2 carry-in E2). The STAKE entry is keyed by the REQUEST
+// that debited (Amendment C §C2, D-ag): one stake document per (backer, pool,
+// team) can be funded by several requests — a stake and its top-ups — each
+// its own debit, its own entry and its own `requestId`, while the entry's
+// `ref` names the one stake document they funded. Every other entry stays
+// keyed by that document: one payout, refund and month attribution per stake.
 // A replay of any of them is a NO-OP, not an error and not a second entry —
 // `appliedEntries` on the wallet doc is the once-only guard, exactly as
 // `appliedGroups` is on a rank doc (tournamentRank.js). Keeping the guard on the
@@ -42,8 +47,10 @@
 // read-free and therefore composable.
 //
 // GROWTH, stated precisely so nobody has to re-derive it: at most 62 keys a week
-// — 1 allowance + 1 expiry + ALLOWANCE_BP/MIN_STAKE_BP = 20 stakes + one payout
-// or refund each + one `loss:` month attribution each (E2, below) — i.e. ~5 KB/
+// — 1 allowance + 1 expiry + ALLOWANCE_BP/MIN_STAKE_BP = 20 stake debits + one
+// payout or refund per stake document + one `loss:` month attribution per stake
+// document (E2, below; since D-ag a top-up adds a debit but never a document,
+// so these two are at most the debit count) — i.e. ~5 KB/
 // week worst case, ~20 KiB across the four-week
 // beta §10 decides on, against Firestore's 1 MiB document limit. Uncapped like
 // `appliedGroups`, but an order of magnitude faster-growing than it (that map
@@ -279,6 +286,15 @@ function forgetWallet(scope, path) {
   TX_WALLET_STATE.get(scope)?.delete(path);
 }
 
+/**
+ * The ledger entry id a stake DEBIT writes — `stake:{debitKey}` (D-ag). One
+ * home for the format, so the stake endpoint's pre-check reads the same id
+ * `debitStake` writes.
+ */
+export function stakeEntryIdFor(debitKey) {
+  return `${ENTRY_TYPES.STAKE}:${debitKey}`;
+}
+
 /** A positive integer BP amount, or a typed refusal. BP is integer-only (§3). */
 function requireAmount(amount, what) {
   if (!Number.isInteger(amount) || amount <= 0) {
@@ -450,7 +466,16 @@ export function ensureAllowance(tx, ref, walletDoc, weekKey, now = new Date()) {
  * Spend `amount` BP of this week's allowance on a stake (§8 — one transaction
  * per stake; this is its wallet half).
  *
- * Writes `stake:{stakeId}` (delta −amount) and moves BOTH cached fields it
+ * ONE DEBIT PER REQUEST (Amendment C §C2, D-ag). `entryKey` is the requesting
+ * submission's own key — the stake endpoint derives it from (uid,
+ * `requestId`) — and names the entry, `stake:{entryKey}`; `stakeId` is the ONE
+ * stake document the debit funds and is recorded as the entry's `ref`. So a
+ * stake and each of its top-ups are distinct entries against one document, a
+ * replay of one request is a no-op, and Σ entries = the cached balance after
+ * every one of them. `entryKey` omitted keys the entry by `stakeId` (the
+ * pre-D-ag shape — one debit per document).
+ *
+ * Writes `stake:{entryKey}` (delta −amount) and moves BOTH cached fields it
  * feeds:
  *   · `allowanceRemaining −= amount` — the spendable side;
  *   · `careerNet −= amount` — the RECORD. §2 defines Net BP as
@@ -490,18 +515,19 @@ export function ensureAllowance(tx, ref, walletDoc, weekKey, now = new Date()) {
  *   · a week that is not the wallet's granted week — `week_mismatch`. §2 makes
  *     every stake on a pool draw from ONE allowance; a debit keyed to another
  *     week would spend the wrong one.
- * REPLAYS a known `stake:{stakeId}` as a no-op: `{ applied: false, replay: true }`
+ * REPLAYS a known `stake:{entryKey}` as a no-op: `{ applied: false, replay: true }`
  * with the wallet unchanged. This is the `requestId` guarantee (§8, "duplicate
  * submissions are no-ops") reaching the ledger.
  */
-export function debitStake(tx, ref, walletDoc, { stakeId, amount, weekKey, now } = {}) {
+export function debitStake(tx, ref, walletDoc, { stakeId, entryKey = undefined, amount, weekKey, now } = {}) {
   requireId(stakeId, 'debitStake', 'stakeId');
+  if (entryKey !== undefined) requireId(entryKey, 'debitStake', 'entryKey');
   requireId(weekKey, 'debitStake', 'weekKey');
   requireAmount(amount, 'debitStake');
   const nowIso = requireInstant(now ?? new Date(), 'debitStake');
   const resolved = latestFor(tx, ref?.path, walletDoc);
   const current = normalize(resolved);
-  const entryId = `${ENTRY_TYPES.STAKE}:${stakeId}`;
+  const entryId = stakeEntryIdFor(entryKey ?? stakeId);
 
   if (current.appliedEntries[entryId] !== undefined) {
     return { wallet: resolved ?? current, applied: false, replay: true };

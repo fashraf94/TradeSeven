@@ -353,6 +353,12 @@ export const STAKE = Object.freeze({
   // The confirmation names the team by the SERVER's label (D-af — Amendment C
   // §C1): the stake reply's `teamLabel`, never a name composed from an id.
   backed: (amount, label) => `Backed · ${bp(amount)} BP on ${label}`,
+  // A TOP-UP says so (Amendment C §C2, D-ag): one stake per team per backer,
+  // so backing a team you already hold adds to that one stake — the Confirm
+  // step names the stake it adds to, and "Backed" (the stake's new total)
+  // says what this Confirm added.
+  addsTo: (amount, label) => `Adds to your ${bp(amount)} BP on ${label}.`,
+  toppedUp: (added) => `Added ${bp(added)} BP to your stake.`,
   backedSub: 'Recorded by the server. Sealed until the pool closes.',
   replayed: 'Already recorded — this stake was placed once.',
   another: 'Back another team',
@@ -388,6 +394,8 @@ export const REFUSALS = Object.freeze({
   no_completed_battle: 'Complete one battle of your own before backing a team.',
   request_id_conflict: 'That request was already used. Start a new stake.',
   stake_already_spent: 'That request was already used. Start a new stake.',
+  // D-ag: a stake that has been settled or voided is not topped up.
+  stake_not_live: 'Your stake on this team can no longer be added to.',
   insufficient_allowance: STAKE.aboveAllowance,
   week_mismatch: 'Your allowance is on a different week. Reload and try again.',
   server_error: 'Could not place that stake. Try again.',

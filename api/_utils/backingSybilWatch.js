@@ -29,6 +29,15 @@
 //     landed, or a legacy doc), stakes already `excluded`, stakes whose
 //     address hashed the `unknown` sentinel, and dev-namespace stakes.
 //
+// EVERY PLACEMENT IS SEEN (Amendment C §C2, D-ag). A backer holds one stake
+// per team per pool, so backing the same team again TOPS UP the one document
+// — and that request's address and agent ride in the sealed meta's
+// `topUps[]`, beside the first placement's, each naming the debit it made.
+// The watch reads every placement as its own row (an address used only for a
+// top-up is still an address this account staked from), with the stake's BP
+// split across them by its debits, so a cluster's BP never counts a stake
+// twice; its stake counts are counts of DISTINCT stakes.
+//
 // WHAT IT NEVER DOES: it never de-hashes anything (it cannot), never carries
 // a full digest — the REPORT OBJECT holds a 12-character prefix of every hash,
 // so the text and the `--json` output alike show prefixes (HON-8, the PR 5
@@ -50,13 +59,31 @@ export function shortHash(hash, n = 12) {
 }
 
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+const str = (v) => (typeof v === 'string' ? v : null);
+
+/**
+ * A stake's PLACEMENTS — its first, then each top-up (D-ag) — as
+ * `{ ipHash, uaHash, amount }`. A top-up's BP is the debit its meta entry
+ * names (`entryId` on the stake's `debits[]`); the first placement carries the
+ * rest, so the placements' BP always sum to the stake's amount. A stake that
+ * was never topped up is one placement: exactly the row it always was.
+ */
+export function placementsOf(stake, meta) {
+  const debits = Array.isArray(stake?.debits) ? stake.debits : [];
+  const topUps = (Array.isArray(meta?.topUps) ? meta.topUps : []).map((t) => {
+    const debit = typeof t?.entryId === 'string' ? debits.find((d) => d?.entryId === t.entryId) : null;
+    return { ipHash: str(t?.ipHash), uaHash: str(t?.uaHash), amount: num(debit?.amount) };
+  });
+  const toppedUp = topUps.reduce((sum, t) => sum + t.amount, 0);
+  return [{ ipHash: str(meta?.ipHash), uaHash: str(meta?.uaHash), amount: Math.max(0, num(stake?.amount) - toppedUp) }, ...topUps];
+}
 
 /**
  * Analyze the book.
  *
  * @param {Object} input
- * @param {Array<Object>} input.stakes — stake documents `{ id, userId, groupId, teamOdUserId, amount, status, weekKey, placedAt }`
- * @param {Object<string, Object>} input.metaByStakeId — stakeId → the sealed `{ ipHash, uaHash, excluded, at }` (absent when the meta doc is missing)
+ * @param {Array<Object>} input.stakes — stake documents `{ id, userId, groupId, teamOdUserId, amount, status, weekKey, placedAt, debits? }`
+ * @param {Object<string, Object>} input.metaByStakeId — stakeId → the sealed `{ ipHash, uaHash, excluded, at, topUps? }` (absent when the meta doc is missing)
  * @param {Object<string, Object>} [input.poolsByGroupId] — groupId → the pool document (only `isDev` / `formationPath` are read)
  * @param {Object} [options]
  * @param {number} [options.minAccounts=2] — accounts a cluster needs
@@ -78,28 +105,31 @@ export function analyzeSybil({ stakes, metaByStakeId, poolsByGroupId = {} }, { m
     const isDev = pool?.isDev === true || (typeof stake.groupId === 'string' && stake.groupId.startsWith('dev-'));
     if (isDev) hygiene.devStakes += 1;
     if (meta == null) { hygiene.missingMeta += 1; hygiene.counted += 1; accounts.add(stake.userId); pods.add(stake.groupId); continue; }
+    const placements = placementsOf(stake, meta);
     if (meta.excluded === true) hygiene.excluded += 1;
-    if (unknownIpHash && meta.ipHash === unknownIpHash) hygiene.unknownAddress += 1;
+    if (unknownIpHash && placements.some((p) => p.ipHash === unknownIpHash)) hygiene.unknownAddress += 1;
     hygiene.counted += 1;
     accounts.add(stake.userId);
     pods.add(stake.groupId);
-    rows.push({
-      stakeId: stake.id, userId: stake.userId, groupId: stake.groupId, teamOdUserId: stake.teamOdUserId ?? null,
-      amount: num(stake.amount), weekKey: stake.weekKey ?? null, status: stake.status,
-      ipHash: typeof meta.ipHash === 'string' ? meta.ipHash : null, uaHash: typeof meta.uaHash === 'string' ? meta.uaHash : null,
-      excluded: meta.excluded === true, isDev,
-    });
+    for (const p of placements) {
+      rows.push({
+        stakeId: stake.id, userId: stake.userId, groupId: stake.groupId, teamOdUserId: stake.teamOdUserId ?? null,
+        amount: p.amount, weekKey: stake.weekKey ?? null, status: stake.status,
+        ipHash: p.ipHash, uaHash: p.uaHash,
+        excluded: meta.excluded === true, isDev,
+      });
+    }
   }
 
   // ── address clusters: ipHash → accounts ────────────────────────────────────
   const byIp = new Map();
   for (const r of rows) {
     if (!r.ipHash) continue;
-    const c = byIp.get(r.ipHash) ?? { ipHash: r.ipHash, accounts: new Map(), stakeCount: 0, bp: 0, byPodTeam: new Map() };
-    c.stakeCount += 1;
+    const c = byIp.get(r.ipHash) ?? { ipHash: r.ipHash, accounts: new Map(), stakes: new Set(), bp: 0, byPodTeam: new Map() };
+    c.stakes.add(r.stakeId);
     c.bp += r.amount;
-    const a = c.accounts.get(r.userId) ?? { userId: r.userId, stakes: 0, bp: 0, pods: new Set(), excluded: 0 };
-    a.stakes += 1; a.bp += r.amount; a.pods.add(r.groupId); if (r.excluded) a.excluded += 1;
+    const a = c.accounts.get(r.userId) ?? { userId: r.userId, stakes: new Set(), bp: 0, pods: new Set(), excluded: new Set() };
+    a.stakes.add(r.stakeId); a.bp += r.amount; a.pods.add(r.groupId); if (r.excluded) a.excluded.add(r.stakeId);
     c.accounts.set(r.userId, a);
     const key = `${r.groupId}|${r.teamOdUserId ?? ''}`;
     const pt = c.byPodTeam.get(key) ?? { groupId: r.groupId, teamOdUserId: r.teamOdUserId, accounts: new Set(), bp: 0, isDev: r.isDev };
@@ -112,9 +142,9 @@ export function analyzeSybil({ stakes, metaByStakeId, poolsByGroupId = {} }, { m
     .map((c) => ({
       ipHash: shortHash(c.ipHash),
       accountCount: c.accounts.size,
-      stakeCount: c.stakeCount,
+      stakeCount: c.stakes.size,
       bp: c.bp,
-      accounts: [...c.accounts.values()].map((a) => ({ userId: a.userId, stakes: a.stakes, bp: a.bp, pods: [...a.pods].sort(), excluded: a.excluded })).sort((x, y) => y.bp - x.bp || x.userId.localeCompare(y.userId)),
+      accounts: [...c.accounts.values()].map((a) => ({ userId: a.userId, stakes: a.stakes.size, bp: a.bp, pods: [...a.pods].sort(), excluded: a.excluded.size })).sort((x, y) => y.bp - x.bp || x.userId.localeCompare(y.userId)),
       // THE CONCENTRATION: this cluster's accounts on ONE team in ONE pod.
       sameTeam: [...c.byPodTeam.values()]
         .filter((pt) => pt.accounts.size >= minAccounts)
@@ -128,13 +158,13 @@ export function analyzeSybil({ stakes, metaByStakeId, poolsByGroupId = {} }, { m
   for (const r of rows) {
     if (!r.ipHash || !r.uaHash) continue;
     const key = `${r.ipHash}|${r.uaHash}`;
-    const d = byDevice.get(key) ?? { ipHash: r.ipHash, uaHash: r.uaHash, accounts: new Set(), stakeCount: 0, bp: 0 };
-    d.accounts.add(r.userId); d.stakeCount += 1; d.bp += r.amount;
+    const d = byDevice.get(key) ?? { ipHash: r.ipHash, uaHash: r.uaHash, accounts: new Set(), stakes: new Set(), bp: 0 };
+    d.accounts.add(r.userId); d.stakes.add(r.stakeId); d.bp += r.amount;
     byDevice.set(key, d);
   }
   const deviceClusters = [...byDevice.values()]
     .filter((d) => d.accounts.size >= minAccounts)
-    .map((d) => ({ ipHash: shortHash(d.ipHash), uaHash: shortHash(d.uaHash), accountCount: d.accounts.size, accounts: [...d.accounts].sort(), stakeCount: d.stakeCount, bp: d.bp }))
+    .map((d) => ({ ipHash: shortHash(d.ipHash), uaHash: shortHash(d.uaHash), accountCount: d.accounts.size, accounts: [...d.accounts].sort(), stakeCount: d.stakes.size, bp: d.bp }))
     .sort((x, y) => y.accountCount - x.accountCount || y.bp - x.bp || x.ipHash.localeCompare(y.ipHash));
 
   // ── concentration across the book: every (pod, team) backed by a cluster ──
@@ -144,15 +174,15 @@ export function analyzeSybil({ stakes, metaByStakeId, poolsByGroupId = {} }, { m
   // ── many-address accounts (informational) ─────────────────────────────────
   const byAccount = new Map();
   for (const r of rows) {
-    const a = byAccount.get(r.userId) ?? { userId: r.userId, ips: new Set(), uas: new Set(), stakes: 0 };
+    const a = byAccount.get(r.userId) ?? { userId: r.userId, ips: new Set(), uas: new Set(), stakes: new Set() };
     if (r.ipHash) a.ips.add(r.ipHash);
     if (r.uaHash) a.uas.add(r.uaHash);
-    a.stakes += 1;
+    a.stakes.add(r.stakeId);
     byAccount.set(r.userId, a);
   }
   const manyAddressAccounts = [...byAccount.values()]
     .filter((a) => a.ips.size >= 3)
-    .map((a) => ({ userId: a.userId, addressCount: a.ips.size, agentCount: a.uas.size, stakes: a.stakes }))
+    .map((a) => ({ userId: a.userId, addressCount: a.ips.size, agentCount: a.uas.size, stakes: a.stakes.size }))
     .sort((x, y) => y.addressCount - x.addressCount || x.userId.localeCompare(y.userId));
 
   return {

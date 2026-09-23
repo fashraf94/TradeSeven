@@ -255,6 +255,12 @@ const STAKE_CARD = {
 };
 const STAKE_POD = { groupId: 'g1', pool: { status: 'open', closesAt: SUNDAY_CLOSE }, myStakes: [] };
 const STAKE_WALLET = { known: true, left: 1000, total: 1000 };
+// D-ag (Amendment C §C2): the viewer already holds a live stake on this team —
+// one stake per team per backer, so Confirm ADDS to it (fixture:
+// StakeControl.jsdom.test.jsx, the top-up rows).
+const TOP_UP_ALREADY = 250;
+const TOP_UP_POD = { ...STAKE_POD, myStakes: [{ stakeId: 'preview-stake-0', teamOdUserId: 'od-a', teamLabel: teamLabel('od-a'), amount: TOP_UP_ALREADY, status: 'live' }] };
+const TOP_UP_WALLET = { ...STAKE_WALLET, left: STAKE_WALLET.left - TOP_UP_ALREADY };
 
 // ═══ Your Backing — YourBacking.test.jsx ═══
 const leg = (direction) => ({ direction, openedAt: '2026-09-21T11:00:00.000Z' });
@@ -406,6 +412,7 @@ export const PREVIEW_STATES = [
   { id: 'stake-attested', group: 'stake', label: 'Attestation done', variant: 'attested' },
   { id: 'stake-refusal', group: 'stake', label: 'A refusal', variant: 'refusal' },
   { id: 'stake-backed', group: 'stake', label: 'Backed', variant: 'backed' },
+  { id: 'stake-top-up', group: 'stake', label: 'Adding to a stake', variant: 'top-up' },
   { id: 'week-before-monday', group: 'week', label: 'Before Monday', week: 'before-monday' },
   { id: 'week-monday', group: 'week', label: 'Monday · draft reveal', week: 'monday' },
   { id: 'week-mid-week', group: 'week', label: 'Mid-week', week: 'mid-week' },
@@ -429,6 +436,9 @@ function captionFor(state) {
     case 'card':
       return `The team card (fixture: ${state.source}). Its call to action opens the stake control.`;
     case 'stake':
+      if (state.variant === 'top-up') {
+        return 'The stake control on a team you already back (fixture: StakeControl.jsdom.test.jsx). One stake per team: Confirm adds to it. Every answer is local fixture data.';
+      }
       return state.variant === 'refusal' || state.variant === 'backed'
         ? 'The stake control (fixture: StakeControl.jsdom.test.jsx). The preview pressed Confirm; the answer is local fixture data.'
         : 'The stake control (fixture: StakeControl.jsdom.test.jsx). Every answer is local fixture data.';
@@ -501,6 +511,9 @@ function OwnPitchCard({ card, onBack, onOpenTape, onNote }) {
 
 function StakeStage({ variant, card, onNote, onReset }) {
   const [eligibility, setEligibility] = useState(variant === 'attest' ? ELIGIBILITY.REQUIRED : ELIGIBILITY.ATTESTED);
+  const topUp = variant === 'top-up';
+  const pod = topUp ? TOP_UP_POD : STAKE_POD;
+  const wallet = topUp ? TOP_UP_WALLET : STAKE_WALLET;
   const requests = useRef(0);
   const services = useMemo(() => ({
     newRequestId: () => { requests.current += 1; return `preview-request-${requests.current}`; },
@@ -508,9 +521,11 @@ function StakeStage({ variant, card, onNote, onReset }) {
     placeStake: async ({ teamOdUserId, amount }) => {
       onNote(NOTHING_SAVED);
       if (variant === 'refusal') throw Object.assign(new Error('pool_closed'), { code: 'pool_closed' });
-      return { ok: true, replay: false, stake: { stakeId: `preview-stake-${requests.current}`, teamOdUserId, amount, status: 'live' }, allowanceRemaining: STAKE_WALLET.left - amount };
+      // A top-up answers as the endpoint does: the ONE stake's new total, and what this Confirm added.
+      const already = topUp ? TOP_UP_ALREADY : 0;
+      return { ok: true, replay: false, topUp, added: amount, stake: { stakeId: `preview-stake-${requests.current}`, teamOdUserId, amount: already + amount, status: 'live' }, allowanceRemaining: wallet.left - amount };
     },
-  }), [variant, onNote]);
+  }), [variant, onNote, topUp, wallet]);
   // "A refusal" and "Backed" land on their answer: the page presses the real
   // Confirm once (the control's own handler runs, against the local answers).
   const frame = useRef(null);
@@ -524,8 +539,8 @@ function StakeStage({ variant, card, onNote, onReset }) {
     <div ref={frame} style={{ borderRadius: 18, padding: '14px 15px', background: `linear-gradient(165deg, ${alpha(ACCENT, 0.06)}, ${LTOKENS.surface} 58%)`, border: `1px solid ${alpha(ACCENT, 0.26)}` }}>
       <StakeControl
         card={card}
-        pod={STAKE_POD}
-        wallet={STAKE_WALLET}
+        pod={pod}
+        wallet={wallet}
         eligibility={{ status: eligibility, refresh: () => setEligibility(ELIGIBILITY.ATTESTED) }}
         accent={ACCENT}
         services={services}
