@@ -318,13 +318,9 @@ describe('ROW 2 — every backing surface, rendered from those responses, shows 
     surfaces.push(['MyBackingStats', await render(<MyBackingStats stats={R.myStats.body} />)]);
     surfaces.push(['TrainerStats', await render(<TrainerStats stats={R.trainerStats.body} />)]);
 
-    // Not vacuous: the surfaces rendered, and they rendered the names.
-    expect(surfaces.length).toBeGreaterThan(10);
-    const all = surfaces.map(([, c]) => visibleText(c)).join(' ');
-    expect(all).toContain('Winner: Unnamed team');
-    expect(all).toContain('Shadow');
-    expect(all).toContain('Backed · 100 BP on Unnamed team');
-
+    // THE SCAN FIRST, so a raw id planted on any surface is reported BY the
+    // scan (surface, match and context) — not by a name check below that
+    // happens to run earlier.
     const offenders = [];
     for (const [name, container] of surfaces) {
       const text = visibleText(container);
@@ -334,5 +330,12 @@ describe('ROW 2 — every backing surface, rendered from those responses, shows 
       }
     }
     expect(offenders).toEqual([]);
+
+    // Not vacuous: the surfaces rendered, and they rendered the names.
+    expect(surfaces.length).toBeGreaterThan(10);
+    const all = surfaces.map(([, c]) => visibleText(c)).join(' ');
+    expect(all).toContain('Winner: Unnamed team');
+    expect(all).toContain('Shadow');
+    expect(all).toContain('Backed · 100 BP on Unnamed team');
   });
 });

@@ -322,16 +322,24 @@ describe('a replayed requestId of a top-up is a no-op', () => {
 // ============================================================================
 describe('LEDGER — Σ entries = the cached balance, and net BP per §2, across stake → top-up → settle (win, loss) → refund', () => {
   const DAYS = ['2026-09-28', '2026-09-29', '2026-09-30', '2026-10-01', '2026-10-02'];
-  /** The book: X 100 + a 150 top-up on od-a; Z 100 on od-a; Y 200 on od-b — pot 550, 3 backers, 2 teams. */
+  /**
+   * The book: X 100 then TWO top-ups (100, 50) on od-a; Z 100 on od-a; Y 200
+   * on od-b — pot 550, 3 backers, 2 teams. Two top-ups, not one: a ledger
+   * entry id SHARED by two top-ups (mutation check 2) is only visible once a
+   * second top-up lands on the same stake.
+   */
   async function book() {
     expect((await stakeAs(X, 'x-1', 'od-a', 100)).statusCode).toBe(200);
     expect((await stakeAs(Y, 'y-1', 'od-b', 200)).statusCode).toBe(200);
     expect((await stakeAs(Z, 'z-1', 'od-a', 100)).statusCode).toBe(200);
     for (const uid of BACKERS) assertLedger(uid);
-    const topUp = await stakeAs(X, 'x-2', 'od-a', 150);
-    expect(topUp.statusCode, 'the top-up must land').toBe(200);
-    expect(topUp.body.topUp).toBe(true);
-    for (const uid of BACKERS) assertLedger(uid);
+    for (const [requestId, amount] of [['x-2', 100], ['x-3', 50]]) {
+      const topUp = await stakeAs(X, requestId, 'od-a', amount);
+      expect(topUp.statusCode, `the top-up ${requestId} must land`).toBe(200);
+      expect(topUp.body).toMatchObject({ topUp: true, added: amount });
+      for (const uid of BACKERS) assertLedger(uid);
+    }
+    expect(doc(`${BACKING_STAKES_COLLECTION}/${SID(X, 'od-a')}`).debits.map((d) => d.amount)).toEqual([100, 100, 50]);
     expect(totals()).toMatchObject({ potTotal: 550, uniqueBackers: 3, teamsBacked: 2 });
   }
   async function close() {
