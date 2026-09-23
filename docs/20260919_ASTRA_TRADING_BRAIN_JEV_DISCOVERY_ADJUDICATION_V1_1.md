@@ -2,7 +2,7 @@
 
 **Adjudicates:** `docs/audits/20260919_ASTRA_TRADING_BRAIN_JEV_DISCOVERY.md` (Astra, GPT-6, Codex worktree; read against local `main` @ `5ba40661`)
 **Author:** Fable · **Date:** 2026-09-19 · **Supersedes:** V1 (same date)
-**Status:** proposed. Rulings P-1–P-8 are approve-by-default; FR-1–FR-3 need Flash. Once blessed, they take D-numbers on the Command Center ledger.
+**Status:** Adopted by founder, 19 Sep 2026 (stamped 22 Sep 2026; see status update at end). Rulings P-1–P-8 are approve-by-default; FR-1–FR-3 need Flash. Once blessed, they take D-numbers on the Command Center ledger.
 **Companion:** `CAPTURE_BUILD_SCOPE_AMENDMENT_A_V1_1_SEP19_2026.md`
 **Changes from V1 (from Astra's second opinion, Sep 19):** §3 restructured into measured / disabled / backlog / planned columns and narrowed; F02 latency enumerated per path; F06 split into three consumers; F08 given a repair owner (P-8); P-5's threshold-removal alternative moved to FR-1; P-6 defines "successful call"; J1's Sep 10/14 examples demoted to provenance-incomplete illustrations; §7 acceptance restored to the report's D5 contract. Astra reviewed from a copy of the report that began mid-J3; its points concern these documents' own consistency and stand regardless.
 **Reader note:** §1 is plain terms. §2 onward is plumbing.
@@ -143,3 +143,7 @@ Four kinds of fact, kept apart. **Measured** bounds exposure. **Disabled** means
 3. Capture build spec absorbs Amendment A V1.1 → CC Phase 0 → build. Parity change in parallel (P-5).
 4. Twelve captured trading days → readiness check against D5 → Fable writes the J1 executable prompt.
 5. FR-1–FR-3 whenever Flash is ready; none blocks steps 1–4.
+
+---
+
+Status update — Adopted by founder, 19 Sep 2026. The rulings in this adjudication were adopted in conversation on 19 Sep 2026 and are stamped here on 22 Sep 2026 so the committed artifact reflects the decision. Convention: conversation-blessed rulings are stamped on the committed document with the adoption date. No ruling text above is changed.
