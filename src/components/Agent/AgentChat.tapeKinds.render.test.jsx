@@ -367,16 +367,20 @@ describe('the deferred beat on the real component (eval-cron D3)', () => {
   });
 
   it('wears the ABSENT check\'s colour, read off the one map — edge and eyebrow both, a token, never a hex', () => {
-    expect(DEFERRED_EYEBROW_COLOR).toBe(LABEL_COLOR[WHY_KIND.ABSENT]);
-    expect(DEFERRED_EYEBROW_COLOR).toBe('var(--ft-text-muted)');
+    // BY CONSTRUCTION, not by value: the line wears whatever the ABSENT check
+    // wears, so a deliberate retune of that one colour moves both and keeps
+    // this row green, while any other colour on either half turns it red.
+    const absent = LABEL_COLOR[WHY_KIND.ABSENT];
+    expect(DEFERRED_EYEBROW_COLOR).toBe(absent);
+    expect(absent).toMatch(/^var\(--ft-[a-z0-9-]+\)$/);
     const html = render({ tapeEntries: withBeat() });
     const at = html.indexOf('data-tape-kind="checkDeferred"');
     expect(at).toBeGreaterThan(-1);
     const line = html.slice(at, html.indexOf('</p>', at));
-    expect(line).toContain('border-left:2px solid var(--ft-text-muted)');
+    expect(line).toContain(`border-left:2px solid ${absent}`);
     const eyebrowAt = line.indexOf('>Check deferred<');
     expect(eyebrowAt).toBeGreaterThan(-1);
-    expect(line.slice(line.lastIndexOf('style="', eyebrowAt), eyebrowAt)).toContain('color:var(--ft-text-muted)');
+    expect(line.slice(line.lastIndexOf('style="', eyebrowAt), eyebrowAt)).toContain(`color:${absent}`);
     expect(line).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
   });
 
