@@ -541,6 +541,74 @@ describe('the viewer — their own pod, and their own stakes (§5)', () => {
 });
 
 // ============================================================================
+describe('WIRE-R-1 — a lazy close THIS request ran re-reads the viewer\'s stakes before the reply (the PR 5 review record)', () => {
+  const liveStake = (over = {}) => ({ userId: UID, groupId: 'g1', teamOdUserId: 'od-a', amount: 250, weekKey: WEEK, status: STAKE_STATUS.LIVE, ...over });
+  const walletFor = (...stakeIds) => ({
+    lastAllowanceWeek: WEEK, allowanceRemaining: 750, careerNet: -250, seasons: {},
+    appliedEntries: { [`allowance:${WEEK}`]: 'x', ...Object.fromEntries(stakeIds.map((id) => [`stake:${id}`, 'x'])) },
+  });
+  const PAST_THE_CLOCK = new Date('2026-09-28T05:00:00.000Z');
+  const stakeReads = () => DB.readLog.filter(([channel, path]) => channel === 'get' && path.startsWith(`${BACKING_STAKES_COLLECTION}/`));
+
+  it('a close that VOIDS the viewer\'s stake (below the floor → insufficient) answers it voided, with its reason — never the `live` copy read before the close', async () => {
+    DB = seed([group('g1')], {
+      [`${BACKING_POOLS_COLLECTION}/g1`]: pool('g1'),
+      [`${BACKING_STAKES_COLLECTION}/mine1`]: liveStake(),
+      [`backingWallets/${UID}`]: walletFor('mine1'),
+    });
+    vi.setSystemTime(PAST_THE_CLOCK);
+    const pod = (await get()).body.pods[0];
+    expect(pod.pool.status).toBe(POOL_STATUS.INSUFFICIENT);                                  // this request closed it
+    expect(DB.store.get(`${BACKING_STAKES_COLLECTION}/mine1`).status).toBe(STAKE_STATUS.VOIDED); // and the close voided the stake
+    expect(pod.myStakes).toEqual([{ stakeId: 'mine1', teamOdUserId: 'od-a', teamLabel: 'Ada', amount: 250, status: 'voided', voidReason: 'insufficient' }]);
+    expect(stakeReads()).toEqual([['get', `${BACKING_STAKES_COLLECTION}/mine1`]]);             // re-read by id, once
+  });
+
+  it('a seat that LEFT before the close: the viewer\'s stake on it answers voided `seat_left`', async () => {
+    DB = seed([group('g1')], {
+      [`${BACKING_POOLS_COLLECTION}/g1`]: pool('g1'),
+      [`${BACKING_STAKES_COLLECTION}/mine1`]: liveStake({ teamOdUserId: 'od-gone' }),
+      [`backingWallets/${UID}`]: walletFor('mine1'),
+    });
+    vi.setSystemTime(PAST_THE_CLOCK);
+    const pod = (await get()).body.pods[0];
+    expect(pod.myStakes).toEqual([{ stakeId: 'mine1', teamOdUserId: 'od-gone', teamLabel: 'Unnamed team', amount: 250, status: 'voided', voidReason: 'seat_left' }]);
+  });
+
+  it('the steady state costs NO read: a pool this request did not move re-reads no stake — open and not due, or closed before the request', async () => {
+    DB = seed([group('g1'), group('g2')], {
+      [`${BACKING_POOLS_COLLECTION}/g1`]: pool('g1'),
+      [`${BACKING_POOLS_COLLECTION}/g2`]: pool('g2', { status: POOL_STATUS.INSUFFICIENT, teams: [] }),
+      [`${BACKING_STAKES_COLLECTION}/mine1`]: liveStake(),
+      [`${BACKING_STAKES_COLLECTION}/mine2`]: liveStake({ groupId: 'g2', status: STAKE_STATUS.VOIDED, voidReason: 'insufficient' }),
+    });
+    const res = await get();
+    expect(res.body.pods.find((p) => p.groupId === 'g1').myStakes[0].status).toBe('live');
+    expect(res.body.pods.find((p) => p.groupId === 'g2').myStakes[0].status).toBe('voided');
+    expect(stakeReads()).toEqual([]);
+  });
+
+  it('a failed re-read keeps the copies read before and never takes down the list', async () => {
+    DB = seed([group('g1')], {
+      [`${BACKING_POOLS_COLLECTION}/g1`]: pool('g1'),
+      [`${BACKING_STAKES_COLLECTION}/mine1`]: liveStake(),
+      [`backingWallets/${UID}`]: walletFor('mine1'),
+    });
+    const realCollection = DB.db.collection;
+    DB.db.collection = (name) => {
+      const col = realCollection(name);
+      if (name !== BACKING_STAKES_COLLECTION) return col;
+      return { ...col, doc: (id) => ({ ...col.doc(id), get: async () => { throw new Error('stake read failed'); } }) };
+    };
+    vi.setSystemTime(PAST_THE_CLOCK);
+    const res = await get();
+    expect(res.statusCode).toBe(200);
+    expect(res.body.pods[0].pool.status).toBe(POOL_STATUS.INSUFFICIENT);
+    expect(res.body.pods[0].myStakes).toEqual([{ stakeId: 'mine1', teamOdUserId: 'od-a', teamLabel: 'Ada', amount: 250, status: 'live' }]);
+  });
+});
+
+// ============================================================================
 describe('projectPod — the seal lives in ONE function (§9)', () => {
   it('an open pool projects no revealed field; a closed one does', () => {
     const g = { id: 'g1', players: [{ odUserId: 'od-a' }] };

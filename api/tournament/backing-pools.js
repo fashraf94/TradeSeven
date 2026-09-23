@@ -48,7 +48,10 @@
 // THE TWO LAZY JOBS RIDE HERE (§4, §7). An eligible pod with no pool gets one
 // materialized; a pool past its `closesAt` gets closed. Both are idempotent and
 // both are the same functions the stake route and PR 3's settlement call, so
-// "who opens a pool" and "who closes one" each have one answer.
+// "who opens a pool" and "who closes one" each have one answer. When one of
+// them MOVES a pool, the viewer's own stakes on it are re-read before the
+// reply (WIRE-R-1, the PR 5 review record): a close that voids a stake must
+// not be answered with the copy read before it.
 //
 // READ-ONLY FOR THE VIEWER: this route writes nothing on its own account. The
 // pool documents it may create or close are the lazy jobs above, which belong to
@@ -249,6 +252,20 @@ export function projectPod(group, pool, { viewerUid, myStakes = [], teamLabelFor
   };
 }
 
+/**
+ * The viewer's stakes on a pod, RE-READ by id after this request's lazy jobs
+ * moved its pool (WIRE-R-1) — the documents as the close or the settlement
+ * left them, never the copies read before. The results reader's own
+ * `refreshStakes` (api/backing/results.js, WIRE-1), mirrored: a stake that has
+ * vanished keeps the copy that was read.
+ */
+async function refreshStakes(db, myStakes) {
+  return Promise.all(myStakes.map(async (s) => {
+    const snap = await db.collection(BACKING_STAKES_COLLECTION).doc(s.id).get();
+    return snap.exists ? { id: snap.id, ...snap.data() } : s;
+  }));
+}
+
 export default async function handler(req, res) {
   // 1. Security middleware + rate limit.
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 60, windowMs: 60000 } })) return;
@@ -300,6 +317,10 @@ export default async function handler(req, res) {
     // from — the labels, then the projection. Bounded by POD_LIST_MAX.
     const loaded = await Promise.all(candidates.map(async (group) => {
       let pool = null;
+      // The pool's status BEFORE this request's lazy jobs — the state the
+      // viewer's stakes (read in 5b) were read against. `undefined` until the
+      // first read lands, so a pod whose first read failed counts as moved.
+      let before;
       try {
         // A PLAIN READ FIRST, and a transaction only when there is nothing to
         // read. `materializePool` is transactional by necessity — two first
@@ -312,6 +333,7 @@ export default async function handler(req, res) {
           ? { pool: existing.data() }
           : await materializePool(db, group, now);
         pool = materialized.pool;
+        before = pool?.status ?? null;
         if (pool != null && pool.status === POOL_STATUS.OPEN) {
           const closed = await ensureClosed(db, group, now);
           if (closed.closed === true) pool = closed.pool;
@@ -352,7 +374,22 @@ export default async function handler(req, res) {
           pool = existing.exists ? existing.data() : null;
         } catch { pool = null; }
       }
-      return { group, pool, myStakes: stakesByGroup.get(group.id) ?? [] };
+      // WIRE-R-1 (the PR 5 review record — the pod list's twin of the results
+      // reader's WIRE-1): a lazy close moves the viewer's stakes on its own
+      // (`insufficient` voids them, a seat that left is voided) and a
+      // settle-on-read settles them, so when THIS request moved the pool the
+      // copies read in 5b are stale. They are re-read by id before the reply —
+      // only then, so the steady state costs no read. A failed re-read keeps
+      // the copies (logged): one pod never takes down the list.
+      let myStakes = stakesByGroup.get(group.id) ?? [];
+      if (myStakes.length > 0 && (pool?.status ?? null) !== before) {
+        try {
+          myStakes = await refreshStakes(db, myStakes);
+        } catch (err) {
+          console.warn(`[backing-pools] stakes not re-read for ${group.id}:`, err?.message);
+        }
+      }
+      return { group, pool, myStakes };
     }));
 
     // 5d. EVERY name this response carries, in ONE batch (D-af — no per-row
