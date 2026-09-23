@@ -28,7 +28,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { MIN_STAKE_BP, PER_TEAM_CAP_BP } from '../../../constants/backing';
 import { LTOKENS, LX, alpha, MONO } from '../leagueTokens';
 import { Eyebrow, Mono, Icon } from '../LeagueParts';
-import { newRequestId, placeStake } from '../../../services/backingService';
+import { attestEligibility, newRequestId, placeStake } from '../../../services/backingService';
 import { ELIGIBILITY } from '../../../hooks/useEligibility';
 import AttestationStep from './AttestationStep';
 import { Disclosures, MonoAttr, PointsMeter } from './BackingParts';
@@ -50,7 +50,16 @@ const presetStyle = (on, accent, disabled) => ({
   background: on ? accent : LTOKENS.surface, border: `1px solid ${on ? accent : LTOKENS.hair2}`, opacity: disabled ? 0.5 : 1,
 });
 
-export default function StakeControl({ card, pod, wallet, eligibility, accent = LX.energy, onBacked, onClose }) {
+/**
+ * `services` (optional) replaces the calls this control makes — placeStake,
+ * newRequestId, attestEligibility — so a host can answer them without the
+ * network. Only the dev preview page passes it (fixture answers, nothing
+ * saved); omitted, each call is the real service, exactly as before.
+ */
+export default function StakeControl({ card, pod, wallet, eligibility, accent = LX.energy, onBacked, onClose, services = null }) {
+  const place = services?.placeStake ?? placeStake;
+  const nextRequestId = services?.newRequestId ?? newRequestId;
+  const attest = services?.attestEligibility ?? attestEligibility;
   const name = card.team.displayName;
   const agentName = card.team.agent?.name ?? CARD.agentFallbackName(name);
   const already = stakedOnTeam(pod, card.odUserId);
@@ -82,11 +91,11 @@ export default function StakeControl({ card, pod, wallet, eligibility, accent = 
   const confirm = async () => {
     const problem = validateAmount(amount, { capLeft, allowanceLeft });
     if (problem) { setError(problem); return; }
-    const requestId = newRequestId();
+    const requestId = nextRequestId();
     setBusy(true);
     setError(null);
     try {
-      const body = await placeStake({ groupId: card.groupId, teamOdUserId: card.odUserId, amount, requestId });
+      const body = await place({ groupId: card.groupId, teamOdUserId: card.odUserId, amount, requestId });
       // "Backed" only from the server's success reply — and only with the
       // amount THAT reply carries: a reply without its stake is not a stake
       // (FAB-11, the PR 4 review record). The pod list re-reads the ledger
@@ -110,6 +119,7 @@ export default function StakeControl({ card, pod, wallet, eligibility, accent = 
     return (
       <AttestationStep
         accent={accent}
+        attest={attest}
         onAttested={() => { setNeedsAttest(false); setError(null); eligibility?.refresh?.(); }}
       />
     );

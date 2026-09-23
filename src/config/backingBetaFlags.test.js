@@ -375,6 +375,12 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       'src/components/League/LeagueHome.jsx',
       'src/components/League/LeagueLobbyDesktop.jsx',
       'src/components/League/LeaguePod.jsx',
+      // The dev-only design preview (PR 4 follow-up): the app entry consults
+      // the preview gate (backingPreview.js), and the preview page renders the
+      // surfaces from fixtures. Its dark contract is the gate — never mounted
+      // on production — held by src/screens/BackingPreviewScreen.test.jsx.
+      'src/main.jsx',
+      'src/screens/BackingPreviewScreen.jsx',
     ]);
     const BACKING_HOOK = /^src\/hooks\/use(BackingPods|MyBacking|BackingWallet|Eligibility|MyPitch|TeamCard)\.js$/;
     const targets = [

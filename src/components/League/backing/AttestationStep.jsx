@@ -37,7 +37,10 @@ function Statement({ id, label, text, checked, onChange, accent }) {
   );
 }
 
-export default function AttestationStep({ onAttested, accent = LX.energy }) {
+// `attest` (optional) replaces the attestation call — the stake control passes
+// its own (the real service unless a host injected one; the dev preview page
+// does, answering from fixtures). Omitted, it is the real service.
+export default function AttestationStep({ onAttested, accent = LX.energy, attest = attestEligibility }) {
   const [adult, setAdult] = useState(false);
   const [terms, setTerms] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -49,7 +52,7 @@ export default function AttestationStep({ onAttested, accent = LX.energy }) {
     setBusy(true);
     setError(null);
     try {
-      await attestEligibility(TERMS_VERSION);
+      await attest(TERMS_VERSION);
       onAttested?.();
     } catch (err) {
       setError(err?.code === 'network' || err?.code === 'account_required' ? refusalMessage(err.code) : ATTEST.failed);

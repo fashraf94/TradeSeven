@@ -92,8 +92,11 @@ function Chips({ symbols }) {
   );
 }
 
-function WeekCard({ groupId, stakes, pool, group, accent, onOpenTape }) {
-  const { battles } = useSpectatedTournamentBattles(groupId, true);
+function WeekCard({ groupId, stakes, pool, group, accent, onOpenTape, injectedBattles = null }) {
+  // The live read, unless the host handed this pod's battles in (only the dev
+  // preview page does — fixtures, no network): then the hook stays disabled.
+  const spectated = useSpectatedTournamentBattles(groupId, injectedBattles == null);
+  const battles = injectedBattles ?? spectated.battles;
   const podName = baseGroupName(groupId);
   // Settled is the POOL's fact — a complete pod whose pool has not resolved
   // is settling, not settled (FAB-1, the PR 4 review record).
@@ -208,7 +211,14 @@ export function backedPodsFor(inPlay) {
   return [...byGroup.entries()].map(([groupId, stakes]) => ({ groupId, stakes }));
 }
 
-export default function YourBacking({ inPlay, accent = LX.energy, onOpenTape, now = new Date() }) {
+/**
+ * `battlesByGroup` (optional) — { groupId: battlesByOwner } handed in by the
+ * host INSTEAD of the live spectator read: when it is passed, every card takes
+ * its battles from it (a pod it does not name has none) and no card polls.
+ * Only the dev preview page passes it; omitted, every card polls the battle
+ * view exactly as before.
+ */
+export default function YourBacking({ inPlay, accent = LX.energy, onOpenTape, now = new Date(), battlesByGroup = null }) {
   const pods = backedPodsFor(inPlay);
   if (pods.length === 0) return null;
   const allSettled = pods.every(({ groupId }) => SETTLED.has(inPlay?.poolsById?.[groupId]?.status));
@@ -232,6 +242,7 @@ export default function YourBacking({ inPlay, accent = LX.energy, onOpenTape, no
           group={inPlay?.groupsById?.[groupId] ?? null}
           accent={accent}
           onOpenTape={onOpenTape}
+          injectedBattles={battlesByGroup ? (battlesByGroup[groupId] ?? {}) : null}
         />
       ))}
     </div>
