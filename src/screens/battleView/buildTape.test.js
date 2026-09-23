@@ -769,6 +769,12 @@ describe('the deferred beat — a check the loop never reached (eval-cron D3)', 
     expect(buildDeferredEntries([beat({ reason: undefined })])).toEqual([]);
   });
 
+  it('a beat with no run id is still keyed, by its own instant — never `tape-deferred-undefined`, never a shared key', () => {
+    const [a, b] = buildDeferredEntries([beat({ runId: undefined }), beat({ runId: '', at: T('19:34') })]);
+    expect(a.id).toBe(`tape-deferred-${Date.parse(T('19:04'))}`);
+    expect(b.id).toBe(`tape-deferred-${Date.parse(T('19:34'))}`);
+  });
+
   it('an unreadable instant is skipped, never sorted to the epoch; junk is not a crash', () => {
     expect(buildDeferredEntries([beat({ at: 'not a date' }), beat({ at: undefined }), null, 7, 'x'])).toEqual([]);
     expect(buildDeferredEntries(null)).toEqual([]);

@@ -17,6 +17,8 @@
 //                line    entry.firstSentence
 //   a quiet run  eyebrow —                                 (the run has no kind word)
 //                line    COPY.checksNoChange(count)       — the run LINE's own words
+//   a deferral   eyebrow COPY.checkDeferredEyebrow        — the deferred LINE's own
+//                line    COPY.checkDeferredLine             two strings
 //   a directive  eyebrow COPY.directiveEyebrow
 //                line    peekLineFor(item)                — `Filed {t} · {text}` (D-51)
 //   speech       eyebrow COPY.tapeKindEyebrow(…)          — Opener / Bench note / …
@@ -47,6 +49,7 @@ import {
   DIRECTIVE_EYEBROW_COLOR,
   SPEECH_EYEBROW_COLOR,
   BAGGER_EYEBROW_COLOR,
+  DEFERRED_EYEBROW_COLOR,
 } from './TapeCards';
 import { peekLineFor } from './derivePeekLine';
 
@@ -134,6 +137,18 @@ export function bubbleFor(item) {
     // an invented eyebrow would be the composition this module refuses.
     const line = COPY.checksNoChange(item.count);
     return { eyebrow: null, line, eyebrowColor: SPEECH_EYEBROW_COLOR, isRecord: true };
+  }
+
+  if (item._type === TAPE_KIND.CHECK_DEFERRED) {
+    // A check the loop never reached. It HAS words — the line's own two
+    // strings — so the bubble mirrors it like any other record, rather than
+    // walking back to an older entry while the unread count names this one.
+    return {
+      eyebrow: COPY.checkDeferredEyebrow,
+      line: COPY.checkDeferredLine,
+      eyebrowColor: DEFERRED_EYEBROW_COLOR,
+      isRecord: true,
+    };
   }
 
   if (item._type === TAPE_MESSAGE) {

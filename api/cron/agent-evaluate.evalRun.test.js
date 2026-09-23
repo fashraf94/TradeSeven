@@ -48,6 +48,9 @@ const mocks = vi.hoisted(() => ({
   fetchIntradayBatch: vi.fn(),
   create: vi.fn(),
   logEvaluation: vi.fn(async () => false),
+  runRepairSweep: vi.fn(async () => ({ scanned: 0 })),
+  // An error the doubled live-context builder throws instead of building.
+  liveBlockError: null,
   marketOpen: true,
 }));
 const world = vi.hoisted(() => ({ db: null, battles: null }));
@@ -68,7 +71,7 @@ vi.mock('../_utils/agentBattleService.js', async (importOriginal) => ({
   findActiveAgentBattles: vi.fn(async () => (typeof world.battles === 'function' ? world.battles() : world.battles.map(deepClone))),
 }));
 vi.mock('../_utils/canonicalOpenSweep.js', () => ({ runCanonicalOpenSweep: vi.fn(async () => ({ skipped: true })) }));
-vi.mock('../_utils/masterySettlement.js', async (importOriginal) => ({ ...(await importOriginal()), runRepairSweep: vi.fn(async () => ({ scanned: 0 })) }));
+vi.mock('../_utils/masterySettlement.js', async (importOriginal) => ({ ...(await importOriginal()), runRepairSweep: (...a) => mocks.runRepairSweep(...a) }));
 vi.mock('../_utils/tournamentAgentLedger.js', () => ({
   resolveTournamentContext: vi.fn(async () => null), excludeHeldByOthers: vi.fn(), excludeHeldSymbols: vi.fn(),
   reserveSymbol: vi.fn(), confirmSwap: vi.fn(), releaseReservation: vi.fn(),
@@ -83,6 +86,20 @@ vi.mock('../_utils/shadowLogger.js', async (importOriginal) => ({
   logVisionTransition: vi.fn(async () => false),
   logAnticipation: vi.fn(async () => false),
 }));
+// THE PROMPT BUILDER, doubled (fenced module — doubled in tests only, never
+// edited; the timing and astraFindings suites' precedent). Real everywhere
+// unless a row sets `mocks.liveBlockError`, which fails the build before any
+// request is dispatched.
+vi.mock('../_utils/agentEvalPromptAssembly.js', async (importOriginal) => {
+  const real = await importOriginal();
+  return {
+    ...real,
+    buildLiveContextBlock: async (...args) => {
+      if (mocks.liveBlockError) throw mocks.liveBlockError;
+      return real.buildLiveContextBlock(...args);
+    },
+  };
+});
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   TICK_CAPTURE_ENABLED: false,
@@ -149,9 +166,11 @@ function setPath(obj, dotted, value) {
  * order. A battle write RECORDS its payload as sent (sentinels by reference);
  * a completed tick — the write that carries `scoreState.lastScoredAt` — then
  * charges its fixture's cost to the clock. `runDocWrite`: 'ok' | 'reject' |
- * 'hang'; `beatWrite`: 'ok' | 'hang'.
+ * 'hang'; `hangBeats`: the ids whose beat write never answers ('all' for every
+ * one); `beatCostMs`: time the FIRST beat write charges to the clock.
  */
-function makeRunDb({ battles, costs = {}, missing = [], runDocWrite = 'ok', beatWrite = 'ok' }) {
+function makeRunDb({ battles, costs = {}, missing = [], runDocWrite = 'ok', hangBeats = [], beatCostMs = 0 }) {
+  let beatCharged = false;
   const docs = new Map(battles.filter((b) => !missing.includes(b.id)).map((b) => [b.id, deepClone(b)]));
   const writes = [];
   const runDocs = [];
@@ -176,7 +195,10 @@ function makeRunDb({ battles, costs = {}, missing = [], runDocWrite = 'ok', beat
     id, path: `agentBattles/${id}`,
     get: async () => snap(id, docs.get(id) ?? null),
     update: async (payload) => {
-      if (beatWrite === 'hang' && isSentinel(payload.statusFeed)) return new Promise(() => {});
+      if (isSentinel(payload.statusFeed)) {
+        if (hangBeats === 'all' || hangBeats.includes(id)) return new Promise(() => {});
+        if (beatCostMs && !beatCharged) { beatCharged = true; advance(beatCostMs); }
+      }
       writeBattle(id, payload);
     },
     collection: (sub) => ({ doc: (subId) => genericRef(`agentBattles/${id}/${sub}`, subId) }),
@@ -259,6 +281,9 @@ beforeEach(() => {
   mocks.create.mockReset();
   mocks.logEvaluation.mockReset();
   mocks.logEvaluation.mockImplementation(async () => false);
+  mocks.runRepairSweep.mockReset();
+  mocks.runRepairSweep.mockImplementation(async () => ({ scanned: 0 }));
+  mocks.liveBlockError = null;
   const prices = makePriceTable();
   mocks.getStockAnalysisData.mockImplementation(async (s) => (prices[s] ? { price: prices[s], daily: [] } : {}));
   mocks.fetchIntradayBatch.mockImplementation(async () => ({ NVDA: makeIntradayCandles() }));
@@ -275,15 +300,19 @@ afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); world.db = null; wor
 describe('D2 — agentEvalRuns/{runId}: one record per evaluation run, always on', () => {
   it('TEST 1 — a run that breaks after N battles records deferred = total − N, the ids in loop order, and its wall time', async () => {
     const battles = cpuBattles('c', 6);
+    // 1 s BEFORE the market gate (the mastery repair sweep): the run's clock
+    // starts at the handler's start, not at the gate, so it is on the record.
+    mocks.runRepairSweep.mockImplementationOnce(async () => { advance(1_000); return { scanned: 0 }; });
     const { res, run, db } = await runHandler(battles, { costs: { c1: TICK_MS, c2: TICK_MS, c3: TICK_MS } });
 
     expect(run, 'the run document was not written').not.toBeNull();
-    expect(run.id, 'runId is the run\'s start instant').toBe(FROZEN_NOW);
+    expect(run.id, 'runId is the run\'s start instant — the handler\'s, not the gate\'s').toBe(FROZEN_NOW);
+    expect(run.data.startedAt).toBe(run.id);
     expect(Object.keys(run.data)).toEqual(RUN_KEYS);
     expect(run.data).toEqual({
       startedAt: FROZEN_NOW,
-      endedAt: iso(291_000),
-      wallMs: 291_000, // exact under the fake clock: 3 × 97 s, nothing else charges it
+      endedAt: iso(292_000),
+      wallMs: 292_000, // exact under the fake clock: 1 s before the gate + 3 × 97 s, nothing else charges it
       budgetMs: 290_000,
       battlesTotal: 6,
       evaluated: 3, // N
@@ -297,7 +326,22 @@ describe('D2 — agentEvalRuns/{runId}: one record per evaluation run, always on
     });
     // …and the unreached battles got nothing else: no lock, no tick, no write.
     expect(db.__writes.filter((w) => ['c4', 'c5', 'c6'].includes(w.id))).toEqual([]);
-    expect(res.payload).toMatchObject({ evaluated: 3, deferred: 3, lockSkipped: 0, skipped: 3, duration: 291_000 });
+    expect(res.payload).toMatchObject({ evaluated: 3, deferred: 3, lockSkipped: 0, skipped: 3, duration: 292_000 });
+  });
+
+  it('the deferred list is in ROTATION order — oldest `lastEvalStartedAt` first — not in query order', async () => {
+    // Queried newest-first with the never-evaluated battle last; the loop
+    // sorts before it runs, so c0 ('' sorts first) takes the whole budget and
+    // the three it never reached are listed oldest-first.
+    const stamped = (id, at) => cpuBattle(id, { cronState: { ...cpuBattle(id).cronState, lastEvalStartedAt: at } });
+    const battles = [
+      stamped('d1', '2026-09-09T15:00:00.000Z'),
+      stamped('d2', '2026-09-09T14:00:00.000Z'),
+      stamped('d3', '2026-09-09T13:00:00.000Z'),
+      cpuBattle('c0'),
+    ];
+    const { run } = await runHandler(battles, { costs: { c0: 291_000 } });
+    expect(run.data).toMatchObject({ evaluated: 1, deferred: 3, deferredBattleIds: ['d3', 'd2', 'd1'] });
   });
 
   it('TEST 2 — lock-skips and deferrals are counted apart, and `skipped` is exactly their sum', async () => {
@@ -339,6 +383,15 @@ describe('D2 — agentEvalRuns/{runId}: one record per evaluation run, always on
     expect(run.data).toMatchObject({ evaluated: 2, triggered: 1, modelCalls: 0, budgetSkipped: 1, deferred: 0 });
   });
 
+  it('a prompt build that throws counts as triggered with NO model call — `modelCalls` is dispatches, not attempts', async () => {
+    // The identity the report states: triggered − modelCalls − budgetSkipped
+    // = refresh failures + build failures. This row is the build failure.
+    mocks.liveBlockError = new Error('live context unavailable');
+    const { run } = await runHandler([makeTickBattle({ id: 'full-1' })]);
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(run.data).toMatchObject({ evaluated: 1, triggered: 1, modelCalls: 0, budgetSkipped: 0 });
+  });
+
   it('the list holds 200 ids and COUNTS the rest (composer, at the boundary)', () => {
     const ids = (n) => Array.from({ length: n }, (_, i) => `b${i + 1}`);
     const record = (n) => composeEvalRunRecord({ startTime: FROZEN_MS, endTime: FROZEN_MS + 1, battlesTotal: n, evaluated: 0, summary: {}, deferredBattleIds: ids(n) });
@@ -369,22 +422,35 @@ describe('D2 — agentEvalRuns/{runId}: one record per evaluation run, always on
     expect(res.sends).toBe(1);
   });
 
-  it('a run that dies after the market gate is still recorded, before its 500', async () => {
-    // A battle whose rotation key cannot be read throws inside the sort — the
-    // handler's outer catch, the one path no battle's own try can absorb.
-    const poisoned = (id) => {
-      const b = cpuBattle(id);
-      Object.defineProperty(b, 'cronState', { get() { throw new Error('unreadable rotation key'); }, enumerable: false });
-      return b;
-    };
-    world.battles = () => [poisoned('p1'), poisoned('p2')];
+  // A battle whose rotation key cannot be read throws inside the sort — the
+  // handler's outer catch, the one path no battle's own try can absorb.
+  const poisoned = (id, thrown) => {
+    const b = cpuBattle(id);
+    Object.defineProperty(b, 'cronState', { get() { throw thrown; }, enumerable: false });
+    return b;
+  };
+  async function runPoisoned(thrown) {
+    world.battles = () => [poisoned('p1', thrown), poisoned('p2', thrown)];
     world.db = makeRunDb({ battles: [] });
     const res = makeRes(world.db.__order);
     await handler({ headers: { 'x-vercel-cron': '1' } }, res);
+    return res;
+  }
+
+  it('a run that THROWS after the market gate is still recorded, before its 500 (a platform kill never reaches the `finally`, and leaves no record)', async () => {
+    const res = await runPoisoned(new Error('unreadable rotation key'));
     expect(res.statusCode).toBe(500);
     expect(res.payload).toEqual({ error: 'unreadable rotation key' });
     expect(world.db.__order).toEqual(['run_doc', 'response']);
     expect(world.db.__runDocs[0].data).toMatchObject({ battlesTotal: 2, evaluated: 0, deferred: 0 });
+  });
+
+  it('a thrown NON-Error still leaves a reply: the record, then a 500 — never a crash in the `finally`', async () => {
+    const nothing = undefined; // what `Promise.reject()` with no reason delivers to an `await`
+    const res = await runPoisoned(nothing);
+    expect(res.statusCode).toBe(500);
+    expect(res.payload).toEqual({ error: 'undefined' });
+    expect(world.db.__order).toEqual(['run_doc', 'response']);
   });
 });
 
@@ -479,19 +545,49 @@ describe('D3 — the deferred beat (flag ON)', () => {
     expect(run.data.deferredBattleIds).toEqual(['d1', 'd2', 'd3']);
   });
 
-  it('beats that never answer are abandoned at 2 s; the run document and the response still go out', async () => {
+  /** The handler with timers faked, so a write that never answers meets its real 2 s bound. */
+  function startBoundedRun(battles, opts) {
     vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
     vi.setSystemTime(new Date(FROZEN_NOW));
-    const battles = [cpuBattle('c0'), ...cpuBattles('d', 3)];
     world.battles = battles;
-    world.db = makeRunDb({ battles, costs: { c0: 291_000 }, beatWrite: 'hang' });
+    world.db = makeRunDb({ battles, ...opts });
     const res = makeRes(world.db.__order);
-    const done = handler({ headers: { 'x-vercel-cron': '1' } }, res);
-    await vi.advanceTimersByTimeAsync(2_000);
+    return { res, done: handler({ headers: { 'x-vercel-cron': '1' } }, res) };
+  }
+  const errors = () => console.error.mock.calls.map((c) => c.join(' ')).join('\n');
+  const logs = () => console.log.mock.calls.map((c) => c.join(' ')).join('\n');
+
+  it('beats that never answer are WAITED for, up to 2 s, then abandoned; the run document and the response follow', async () => {
+    const { res, done } = startBoundedRun([cpuBattle('c0'), ...cpuBattles('d', 3)], { costs: { c0: 291_000 }, hangBeats: 'all' });
+    await vi.advanceTimersByTimeAsync(1_999);
+    // Still inside the bound: the beats are awaited, so neither the record nor the response has gone.
+    expect(world.db.__runDocs).toEqual([]);
+    expect(res.sends).toBe(0);
+    await vi.advanceTimersByTimeAsync(1);
     await done;
     expect(world.db.__order).toEqual(['run_doc', 'response']);
     expect(world.db.__runDocs[0].data).toMatchObject({ deferred: 3 });
-    expect(console.error.mock.calls.map((c) => c.join(' ')).join('\n')).toContain('deferred_beat_write_timeout_2000ms');
+    for (const id of ['d1', 'd2', 'd3']) {
+      expect(errors()).toContain(`beat unconfirmed (it may still land) for battle ${id}: deferred_beat_write_timeout_2000ms`);
+    }
+    expect(logs()).toContain('0/3 beat(s) written');
+  });
+
+  it('each beat is bounded ON ITS OWN: one hung write costs only its own beat and its own log line', async () => {
+    const { done } = startBoundedRun([cpuBattle('c0'), ...cpuBattles('d', 3)], { costs: { c0: 291_000 }, hangBeats: ['d2'] });
+    await vi.advanceTimersByTimeAsync(2_000);
+    await done;
+    expect(beatWrites(world.db).map((w) => w.id)).toEqual(['d1', 'd3']);
+    expect(errors()).toContain('beat unconfirmed (it may still land) for battle d2');
+    expect(errors()).not.toContain('beats not written');
+    expect(logs()).toContain('2/3 beat(s) written for 3 deferred battle(s)');
+  });
+
+  it('the run\'s wall time INCLUDES the beats: the record is closed after them', async () => {
+    const battles = [cpuBattle('c0'), ...cpuBattles('d', 3)];
+    const { run, res } = await runHandler(battles, { costs: { c0: 291_000 }, beatCostMs: 1_500 });
+    expect(run.data).toMatchObject({ wallMs: 292_500, endedAt: iso(292_500) });
+    expect(res.payload.duration).toBe(292_500);
   });
 });
 
@@ -506,7 +602,9 @@ describe('D3 — flag OFF (TEST 4): no status-feed write, the record and the sta
     expect(run.data).toMatchObject({ battlesTotal: 5, evaluated: 2, deferred: 3, deferredBattleIds: ['d1', 'd2', 'd3'], triggered: 1, modelCalls: 1 });
     const final = db.__writes.find((w) => w.id === 'full-1' && Array.isArray(w.payload.evaluations));
     const entry = final.payload.evaluations.at(-1);
-    expect(typeof entry.tickMs).toBe('number');
+    // A NUMBER, never null (and never NaN — `typeof NaN` is 'number' too).
+    expect(Number.isFinite(entry.tickMs), `tickMs was ${entry.tickMs}`).toBe(true);
+    expect(entry.tickMs).toBeGreaterThanOrEqual(0);
     expect(Object.keys(entry).indexOf('tickMs')).toBe(Object.keys(entry).indexOf('callMs') + 1);
   });
 
@@ -576,16 +674,45 @@ describe('D1 — tickMs: admission → the authoritative final update', () => {
     await processAgentBattle(db, makeTickBattle(), summary, Date.now(), new Map(), { everEnabled: false });
     expect(summary.modelCalls).toBe(1);
     expect(finalUpdate().evaluations.at(-1).haikuError).not.toBeNull();
-    expect(typeof finalUpdate().evaluations.at(-1).tickMs).toBe('number');
+    expect(Number.isFinite(finalUpdate().evaluations.at(-1).tickMs)).toBe(true);
   });
 });
 
 // ---------------------------------------------------------------------------
 // The rules posture, in the DEFAULT run (the emulator suite is not in CI)
 
+/**
+ * The statements of every `match <path> {` block whose path matches `pathRe`,
+ * comments stripped, NESTED blocks included (a nested grant is a new surface).
+ */
+function ruleBlocks(text, pathRe) {
+  const blocks = [];
+  const re = new RegExp(`match ${pathRe.source} \\{`, 'g');
+  while (re.exec(text) !== null) {
+    let depth = 1;
+    let i = re.lastIndex;
+    for (; i < text.length && depth > 0; i += 1) {
+      if (text[i] === '{') depth += 1;
+      else if (text[i] === '}') depth -= 1;
+    }
+    const body = text.slice(re.lastIndex, i - 1);
+    blocks.push(body.split('\n').map((l) => l.replace(/\/\/.*$/, '').trim()).filter(Boolean));
+  }
+  return blocks;
+}
+
 describe('firestore.rules — agentEvalRuns is server-only (source tripwire)', () => {
-  it('an explicit `if false` block (proven against the emulator in test/rules/agentEvalRunsDenials.rules.mjs)', () => {
-    const rules = readFileSync(resolve(HERE, '../../firestore.rules'), 'utf8');
-    expect(rules).toMatch(/match \/agentEvalRuns\/\{runId\} \{\s*allow read, write: if false;/);
+  const rules = readFileSync(resolve(HERE, '../../firestore.rules'), 'utf8');
+
+  it('exactly ONE block for the collection, and it says exactly `allow read, write: if false;` (proven against the emulator in test/rules/agentEvalRunsDenials.rules.mjs)', () => {
+    expect(ruleBlocks(rules, /\/agentEvalRuns\/\{[^}/]+\}/)).toEqual([['allow read, write: if false;']]);
+    // Every mention of the collection is that block or its comment — no second path names it.
+    const named = rules.split('\n').filter((l) => l.includes('agentEvalRuns') && !l.trim().startsWith('//'));
+    expect(named.map((l) => l.trim())).toEqual(['match /agentEvalRuns/{runId} {']);
+  });
+
+  it('no wildcard-first path can grant it either: the only one is the root default-deny', () => {
+    // `/{a}` or `/{a}/{b}/…` — any path whose FIRST segment is a wildcard could name the collection.
+    expect(ruleBlocks(rules, /\/\{[^\n]*?\}/)).toEqual([['allow read, write: if false;']]);
   });
 });

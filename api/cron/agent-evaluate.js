@@ -229,10 +229,14 @@ export default async function handler(req, res) {
   const summary = { evaluated: 0, triggered: 0, swapped: 0, held: 0, errors: 0, skipped: 0, expired: 0, lockSkipped: 0, deferred: 0 };
   // THE RUN'S OWN RECORD (always on). Set the moment this invocation becomes
   // an evaluation run — past the market-hours gate, so ~26 per weekday — and
-  // written once, in the `finally`, however the run ends. The response is
-  // sent from that same `finally`, AFTER the write: a function may be frozen
-  // once its response ends, so a write issued after res.json() is not
-  // guaranteed to land (the repo's post-response work goes through waitUntil).
+  // written once, in the `finally`, whether the handler returns or throws. A
+  // platform kill at maxDuration never reaches the `finally` and leaves NO
+  // record, so a missing market-hours slot is the signal of a killed run. The
+  // response is sent from that same `finally`, AFTER the write: a function may
+  // be frozen once its response ends, so a write issued after res.json() is
+  // not guaranteed to land (the repo's post-response work goes through
+  // waitUntil). The record outranks the response, which no caller reads: a
+  // loop ending within the write's bound of the ceiling can cost the response.
   let evalRun = null;
   let reply = null;
   const respond = (status, payload) => { reply = { status, payload }; };
@@ -476,7 +480,9 @@ export default async function handler(req, res) {
     return respond(200, { ...summary, duration });
   } catch (err) {
     console.error(`${LOG_PREFIX} Fatal error:`, err);
-    return respond(500, { error: err.message });
+    // `?.` + String(): the `finally` below sends whatever this sets, so even a
+    // thrown non-Error must leave a reply behind.
+    return respond(500, { error: err?.message ?? String(err) });
   } finally {
     // The run document goes out BEFORE the response (see `evalRun` above),
     // bounded and never throwing, so the response always follows it.
@@ -555,35 +561,43 @@ async function writeEvalRunRecord(db, evalRun, summary, startTime) {
     await withTimeout(db.collection('agentEvalRuns').doc(evalRun.runId).set(record), EVAL_RUN_WRITE_TIMEOUT_MS, 'eval_run_write');
     return true;
   } catch (err) {
-    console.error(`${LOG_PREFIX} [evalRun] run document ${evalRun.runId} not written (run unaffected): ${err?.message || err}`);
+    console.error(`${LOG_PREFIX} [evalRun] run document ${evalRun.runId} ${writeOutcome(err)} (run unaffected): ${err?.message || err}`);
     return false;
   }
 }
+
+/** A bound that fired leaves the write in flight — it may still land, so it is not "not written". */
+const writeOutcome = (err) => (String(err?.message).includes('_timeout_') ? 'unconfirmed (it may still land)' : 'not written');
 
 /**
  * THE DEFERRED BEAT: one `check_deferred` entry appended to each deferred
  * battle's status feed with arrayUnion — no read and no lock, since a deferred
  * battle was never admitted. Only the first DEFERRED_BEAT_CAP in loop order,
  * and none at all with less than DEFERRED_BEAT_MIN_REMAINING_MS of the hard
- * ceiling left; past either limit the run document is the record, and it
- * lists every deferred battle. The flag is read in here, inside the fail-safe.
- * Bounded (2 s) and never throws.
+ * ceiling left; past either limit the run document is the record (it lists up
+ * to EVAL_RUN_DEFERRED_ID_CAP deferred battles and counts the rest). BEST
+ * EFFORT: an overlapping invocation's whole-array feed rewrite can drop a beat.
+ * The flag is read in here, inside the fail-safe. Each write is bounded to
+ * 2 s on its own, in parallel, so one hung write costs only its own beat and
+ * never the others' log lines. Never throws.
  */
 async function writeDeferredBeats(db, deferredBattleIds, { runId, at, startTime }) {
   try {
     if (!EVAL_DEFERRED_BEAT_ENABLED) return 0;
     const remainingMs = HARD_CEILING_MS - (Date.now() - startTime);
     if (remainingMs < DEFERRED_BEAT_MIN_REMAINING_MS) {
-      console.log(`${LOG_PREFIX} [deferredBeat] no beats: ${remainingMs}ms of the ceiling left (< ${DEFERRED_BEAT_MIN_REMAINING_MS}ms) — the run document lists all ${deferredBattleIds.length}`);
+      console.log(`${LOG_PREFIX} [deferredBeat] no beats: ${remainingMs}ms of the ceiling left (< ${DEFERRED_BEAT_MIN_REMAINING_MS}ms) — the run document is the record for all ${deferredBattleIds.length}`);
       return 0;
     }
     const beat = { kind: 'check_deferred', at, reason: 'budget', runId };
     const targets = deferredBattleIds.slice(0, DEFERRED_BEAT_CAP);
-    const results = await withTimeout(Promise.allSettled(targets.map((battleId) => (
-      db.collection('agentBattles').doc(battleId).update({ statusFeed: FieldValue.arrayUnion(beat) })
-    ))), EVAL_RUN_WRITE_TIMEOUT_MS, 'deferred_beat_write');
+    const results = await Promise.allSettled(targets.map((battleId) => withTimeout(
+      db.collection('agentBattles').doc(battleId).update({ statusFeed: FieldValue.arrayUnion(beat) }),
+      EVAL_RUN_WRITE_TIMEOUT_MS,
+      'deferred_beat_write',
+    )));
     results.forEach((result, i) => {
-      if (result.status === 'rejected') console.error(`${LOG_PREFIX} [deferredBeat] beat not written for battle ${targets[i]}: ${result.reason?.message || result.reason}`);
+      if (result.status === 'rejected') console.error(`${LOG_PREFIX} [deferredBeat] beat ${writeOutcome(result.reason)} for battle ${targets[i]}: ${result.reason?.message || result.reason}`);
     });
     const written = results.filter((result) => result.status === 'fulfilled').length;
     console.log(`${LOG_PREFIX} [deferredBeat] ${written}/${targets.length} beat(s) written for ${deferredBattleIds.length} deferred battle(s)`);
@@ -4222,9 +4236,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     }
 
     // The tick's wall time closes as the authoritative update is issued, so it
-    // counts everything done after the entry was composed (the intraday view,
-    // the stamps, the shadow capture). `evaluation` is the object `evaluations`
-    // holds, so the restamp rides this write.
+    // counts everything done between composing the entry and this write.
+    // `evaluation` is the object `evaluations` holds, so the restamp rides this
+    // write. What runs AFTER it — narrations, anticipations, the tick capture —
+    // is the loop's cost but outside `tickMs` by definition.
     evaluation.tickMs = Date.now() - tickAdmittedAtMs;
     await battleRef.update(finalUpdate);
     summary.evaluated++;

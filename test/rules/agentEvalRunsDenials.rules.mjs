@@ -116,9 +116,30 @@ describe('agentEvalRuns/{runId} — server-only: no client verb for anyone', () 
   }
 });
 
+/**
+ * The statements of every `match <path> {` block whose path matches `pathRe`,
+ * comments stripped, NESTED blocks included (a nested grant is a new surface).
+ */
+function ruleBlocks(text, pathRe) {
+  const blocks = [];
+  const re = new RegExp(`match ${pathRe.source} \\{`, 'g');
+  while (re.exec(text) !== null) {
+    let depth = 1;
+    let i = re.lastIndex;
+    for (; i < text.length && depth > 0; i += 1) {
+      if (text[i] === '{') depth += 1;
+      else if (text[i] === '}') depth -= 1;
+    }
+    blocks.push(text.slice(re.lastIndex, i - 1).split('\n').map((l) => l.replace(/\/\/.*$/, '').trim()).filter(Boolean));
+  }
+  return blocks;
+}
+
 describe('the posture is written down, not only inherited', () => {
-  it('the rules text carries an explicit `if false` block for the collection, and the root default-deny', () => {
-    expect(RULES_TEXT).toMatch(/match \/agentEvalRuns\/\{runId\} \{\s*allow read, write: if false;/);
-    expect(RULES_TEXT).toMatch(/match \/\{document=\*\*\} \{\s*\n\s*allow read, write: if false;/);
+  it('ONE block for the collection, saying exactly `allow read, write: if false;` — a grant appended inside it fails here', () => {
+    expect(ruleBlocks(RULES_TEXT, /\/agentEvalRuns\/\{[^}/]+\}/)).toEqual([['allow read, write: if false;']]);
+  });
+  it('the only wildcard-first path is the root default-deny, which says the same', () => {
+    expect(ruleBlocks(RULES_TEXT, /\/\{[^\n]*?\}/)).toEqual([['allow read, write: if false;']]);
   });
 });

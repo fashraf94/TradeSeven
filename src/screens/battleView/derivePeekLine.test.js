@@ -192,3 +192,23 @@ describe('the properties', () => {
     }
   });
 });
+
+describe('the deferred beat — a check the loop never reached (eval-cron D3)', () => {
+  // The server's beat, through the REAL builder: `{ kind, at, reason, runId }`.
+  const BEAT = { kind: 'check_deferred', at: T('19:50'), reason: 'budget', runId: T('19:45') };
+
+  it('reads `Check deferred` — the line\'s own eyebrow, and no time, as a folded run has none', () => {
+    const [deferred] = entriesOf({ statusFeed: [BEAT] });
+    expect(deferred._type).toBe(TAPE_KIND.CHECK_DEFERRED);
+    expect(peekLineFor(deferred)).toBe(COPY.checkDeferredEyebrow);
+    expect(peekLineFor(deferred)).toBe('Check deferred');
+  });
+
+  it('MUTATION ROW — as the NEWEST entry it is what the strip shows, never the check before it (§9)', () => {
+    // Without its row the strip walked back to `3:45 PM · Held` while the
+    // stream's newest line said `Check deferred` (review L2-F2 / L4-F1).
+    const items = mergeRecordedTape([], entriesOf({ evaluations: [HELD], statusFeed: [BEAT] }));
+    expect(items.at(-1)._type).toBe(TAPE_KIND.CHECK_DEFERRED);
+    expect(derivePeekLine(items)).toBe('Check deferred');
+  });
+});

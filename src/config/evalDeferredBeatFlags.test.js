@@ -46,12 +46,24 @@ describe('EVAL_DEFERRED_BEAT_ENABLED — the pin (BUILD_RULES §2)', () => {
     expect(GUARD).toMatch(/^\s*EVAL_DEFERRED_BEAT_ENABLED:/m);
   });
 
+  const block = () => SRC.slice(SRC.indexOf('EVAL-CRON INSTRUMENTATION'), SRC.indexOf('export const EVAL_DEFERRED_BEAT_ENABLED'));
+
   it('its docstring names the flip map and states what is NOT behind the flag', () => {
-    const block = SRC.slice(SRC.indexOf('EVAL-CRON INSTRUMENTATION'), SRC.indexOf('export const EVAL_DEFERRED_BEAT_ENABLED'));
-    expect(block).toContain('FLIP MAP');
-    expect(block).toContain('DARK_BY_DESIGN');
+    expect(block()).toContain('FLIP MAP');
+    expect(block()).toContain('DARK_BY_DESIGN');
     // The run document is always on; the flag must never read as gating it.
-    expect(block).toContain('agentEvalRuns/{runId}');
-    expect(block).toContain('always on');
+    expect(block()).toContain('agentEvalRuns/{runId}');
+    expect(block()).toContain('always on');
+  });
+
+  it('the flip map turns the REGISTRATION row around too — a flip that only moves the pin leaves this file red', () => {
+    expect(block()).toContain('registration row turns around to assert the DARK_BY_DESIGN entry is GONE');
+  });
+
+  it('the two rulings a flip is blocked on stay written down beside the flag (build report §13)', () => {
+    // The line's copy promises a pickup the scheduler does not guarantee, and
+    // a battle deferred run after run collects identical untimed lines.
+    expect(block()).toContain('A COPY RULING');
+    expect(block()).toContain('A RULING ON REPEATS');
   });
 });

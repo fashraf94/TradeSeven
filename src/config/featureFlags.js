@@ -2705,34 +2705,52 @@ export const TICK_CAPTURE_ENABLED = true;
  * api/cron/agent-evaluate.js runs out of its time budget, each battle it did
  * not reach gets ONE status-feed entry, `{ kind: 'check_deferred', at,
  * reason: 'budget', runId }`, appended with arrayUnion (no read, no lock);
- * the tape renders it as a `Check deferred` line. At most DEFERRED_BEAT_CAP
- * (25) per run, and none unless 5 s of the function's hard ceiling remain.
- * Off → no status-feed write of any kind; the tape has nothing to render.
+ * the tape renders it as a `Check deferred` line, and the peek strip and the
+ * character bubble mirror that line. At most DEFERRED_BEAT_CAP (25) per run,
+ * and none unless 5 s of the function's hard ceiling remain. BEST EFFORT: an
+ * overlapping invocation's whole-array feed rewrite can drop a beat; the run
+ * document is the record. Off → no status-feed write of any kind; the tape has
+ * nothing to render.
  *
  * NOT behind this flag, and always on: the per-run measurement document
- * agentEvalRuns/{runId} (it lists every deferred battle, beat or not), the
- * `lockSkipped` / `deferred` split of the response's `skipped`, and `tickMs`
- * on every evaluation entry. Read as a module constant inside the beat
- * writer's fail-safe (the TICK_STAMPS_ENABLED shape).
+ * agentEvalRuns/{runId} (it lists up to 200 deferred battles, beat or not, and
+ * counts the rest), the `lockSkipped` / `deferred` split of the response's
+ * `skipped`, and `tickMs` on every evaluation entry. Read as a module constant
+ * inside the beat writer's fail-safe (the TICK_STAMPS_ENABLED shape).
  *
- * FLIP PREREQUISITES (not part of the build that added this flag). The beat's
- * shape is `kind`/`at`, and the other status-feed readers key on `action` /
- * `message` / `timestamp`. None of them throws on it, but four behave
- * differently once beats exist (line numbers as of that build):
- *   • the tournament Live feed renders it as a "—" row
- *     (src/components/Tournament/Flat6BattleView.jsx:335);
- *   • the post-battle reflection prompt prints it as `[undefined] undefined: …`
- *     (api/_utils/agentReflectionUtils.js:339);
- *   • the league voice lane counts it inside its 6-line window before
- *     dropping it (src/components/League/battleArena/statusFeedToVoice.js:55);
- *   • the Desk's latest line takes it as the latest entry
- *     (src/adapters/baggerbombAdapter.js:270), which is dark today.
+ * FLIP PREREQUISITES (not part of the build that added this flag; line
+ * numbers as of that build — the build report §13 has the detail):
+ *   • A COPY RULING. "next run picks it up first" is not what the scheduler
+ *     guarantees: the rotation key advances only on a model attempt, so every
+ *     battle reached without one — CPU seats, lock-skips, budget-skips,
+ *     no-trigger ticks — sorts at or ahead of the deferred set next run; a
+ *     battle deferred at the 15:45 ET run is completed, not checked, next;
+ *     and at scale the next run may not reach it at all.
+ *   • A RULING ON REPEATS. One beat per run per unreached battle (the spec):
+ *     a battle deferred run after run collects identical, untimed lines —
+ *     up to ~26 a day — which also crowd the short windows below.
+ *   • The other status-feed readers key on `action` / `message` /
+ *     `timestamp`, not `kind` / `at`. None throws, but:
+ *       – the tournament Live feed renders a "—" row
+ *         (src/components/Tournament/Flat6BattleView.jsx:335), and spectators
+ *         receive the beat as `{}` through the public projection
+ *         (api/_utils/tournamentBattleView.js:58, :96) — a fix keyed on
+ *         `kind` must allowlist it there or drop beats at the projection;
+ *       – the post-battle reflection prompt prints `[undefined] undefined:
+ *         null`, every beat collapsing into that one line through the dedupe
+ *         key while each still takes a last-10 slot
+ *         (api/_utils/agentReflectionUtils.js:220-229, :339);
+ *       – the league voice lane counts beats inside its 6-line window before
+ *         dropping them (src/components/League/battleArena/statusFeedToVoice.js:55);
+ *       – the Desk's latest line takes a beat as the latest entry
+ *         (src/adapters/baggerbombAdapter.js:270) — dark today.
  *
  * Registered DARK_BY_DESIGN in flagPinGuard.test.js. FLIP MAP (the flip
- * reconciles these in the SAME commit — BUILD_RULES §2): the pin row in
- * src/config/evalDeferredBeatFlags.test.js moves to true, and the
- * DARK_BY_DESIGN entry is dropped. Crons do not run on preview, so the first
- * beat is observable only in production after the founder's merge.
+ * reconciles these in the SAME commit — BUILD_RULES §2): in
+ * src/config/evalDeferredBeatFlags.test.js the value pin moves to true and the
+ * registration row turns around to assert the DARK_BY_DESIGN entry is GONE;
+ * the DARK_BY_DESIGN entry is dropped. Crons do not run on preview, so the
+ * first beat is observable only in production after the founder's merge.
  */
 // Pinned by: evalDeferredBeatFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const EVAL_DEFERRED_BEAT_ENABLED = false;
