@@ -59,6 +59,33 @@ vi.mock('../../../services/backingService', () => ({
   subscribePitch: vi.fn(() => { svc.calls.push('subscribePitch'); return () => {}; }),
   fetchTapePod: vi.fn(async () => { svc.calls.push('fetchTapePod'); return null; }),
   fetchTeamCard: vi.fn(async () => { svc.calls.push('fetchTeamCard'); return null; }),
+  // PR 5: the results reader (one pod, or weeks), the two private stats
+  // readers and the telemetry sink — every one counted, none reaching the wire.
+  fetchBackingResults: vi.fn(async ({ groupId = null } = {}) => {
+    svc.calls.push('fetchBackingResults');
+    if (groupId) {
+      return { viewerUid: 'viewer-1', pod: {
+        groupId, poolId: groupId, weekKey: '2026-W39', status: 'resolved', outcome: 'settled', formationPath: 'lobby', slotId: null,
+        seatNames: { 'od-a': 'Mira' }, humanTeams: 1, potTotal: 300, uniqueBackers: 3, winners: ['od-a'], winningStakes: 300, paysX: 1,
+        closedAt: '2026-09-21T04:00:00.000Z', settledAt: '2026-09-25T22:30:00.000Z', refundedAt: null, refundReason: null, holdReason: null, monthKey: '2026-09',
+        teams: [{ odUserId: 'od-a', isCpu: false, backerCount: 3, stakeTotal: 300, sharePct: 100, paysX: 1, won: true }],
+        myStakes: [], myNet: null, myWon: null,
+      } };
+    }
+    return { viewerUid: 'viewer-1', weeks: [], nextBefore: null, weeksAvailable: 0 };
+  }),
+  fetchMyBackingStats: vi.fn(async () => {
+    svc.calls.push('fetchMyBackingStats');
+    const zero = { poolsBacked: 0, poolsWon: 0, weeksPlayed: 0, pending: 0, net: 0 };
+    const acc = { pools: 0, youWon: 0, baselineWon: 0, both: 0, excluded: 0 };
+    return { label: 'beta stats', seasonKey: '2026-09', net: { career: 0, season: 0 }, career: zero, season: { monthKey: '2026-09', ...zero }, seasons: {}, accuracy: { career: acc, season: acc, seasons: {} } };
+  }),
+  fetchTrainerStats: vi.fn(async () => {
+    svc.calls.push('fetchTrainerStats');
+    const zero = { uniqueBackers: 0, bpBacked: 0, backersNet: 0, pending: 0, poolsBackedOn: 0, stakes: 0, decidedStakes: 0 };
+    return { label: 'beta stats', seasonKey: '2026-09', career: zero, season: { monthKey: '2026-09', ...zero }, seasons: {}, excludedStakes: 0 };
+  }),
+  postBackingEvent: vi.fn(async () => { svc.calls.push('postBackingEvent'); return { recorded: true }; }),
   placeStake: vi.fn(), attestEligibility: vi.fn(), savePitch: vi.fn(), newRequestId: () => 'req',
   BackingApiError: class BackingApiError extends Error {},
 }));
@@ -89,13 +116,19 @@ vi.mock('../../Dashboard/TraitsSheet', () => ({ default: () => null }));
 vi.mock('../../Dashboard/ArchetypePicker', () => ({ default: () => null }));
 vi.mock('../../Dashboard/EvolutionPreviewCard', () => ({ default: () => null }));
 
+// The emitter's per-session dedup is reset before every row: a dark emit of a
+// key a lit row already sent would otherwise be swallowed and the "opens NO
+// read / makes NO request" rows could not see it (DARK-2, the PR 5 record).
+const { __resetBackingTelemetry } = await import('../../../services/backingTelemetry');
 const LeagueHome = (await import('../LeagueHome')).default;
 const LeagueLobbyDesktop = (await import('../LeagueLobbyDesktop')).default;
-const { PodCard } = await import('../LeaguePod');
+const { PodCard, PodSheet } = await import('../LeaguePod');
 const ScoutingLine = (await import('./ScoutingLine')).default;
 const IdentityPanel = (await import('../../Dashboard/desktop/IdentityPanel')).default;
 const EquipStation = (await import('../../Dashboard/EquipStation')).default;
 const BackingScreen = (await import('./BackingScreen')).default;
+const Spectate = (await import('../LeagueSpectate')).default;
+const BackingStatsEntry = (await import('./BackingStatsEntry')).default;
 
 const homeProps = { onOpenMyGame: () => {}, onOpenTrainingPod: () => {}, hasAgent: true, agentLoadout: null };
 const ssr = (el) => renderToString(el);
@@ -113,7 +146,7 @@ async function mount(el) {
   return container;
 }
 
-beforeEach(() => { flag.on = false; svc.calls.length = 0; svc.reply = null; fetchSpy.mockClear(); });
+beforeEach(() => { flag.on = false; svc.calls.length = 0; svc.reply = null; fetchSpy.mockClear(); __resetBackingTelemetry(); });
 afterEach(async () => {
   for (const { root, container } of roots) { await act(async () => root.unmount()); container.remove(); }
   roots = [];
@@ -170,6 +203,63 @@ describe('flag OFF — the League renders as it does today', () => {
     const lit = await mount(<BackingScreen uid="viewer-1" onBack={() => {}} onOpenTape={() => {}} />);
     expect(lit.querySelector('[data-backing]')).not.toBeNull();
     expect(svc.calls).toContain('fetchBackingPods');
+  });
+
+  it('the Spectate FINAL state carries no backing element and opens NO read while dark; lit, the same mount fetches THIS pod\'s result once and renders the card — and a LIVE pod never does (PR 5, Surface E)', async () => {
+    const finalPod = leagueState('open').baseGames.find((p) => p.base && p.status === 'final');
+    const livePod = leagueState('open').baseGames.find((p) => p.base && p.status === 'live');
+    expect(finalPod?.id).toBeTruthy();
+    const props = { accent: '#5EEAD4', onBack: () => {}, onEnter: () => {} };
+    expect(ssr(<Spectate pod={finalPod} {...props} />)).not.toContain('data-backing');
+    const dark = await mount(<Spectate pod={finalPod} {...props} />);
+    expect(dark.querySelector('[data-backing]')).toBeNull();
+    expect(svc.calls).toEqual([]);
+    expect(backingCalls()).toEqual([]);
+    flag.on = true;
+    const lit = await mount(<Spectate pod={finalPod} {...props} />);
+    expect(svc.calls.filter((c) => c === 'fetchBackingResults')).toHaveLength(1);
+    const { fetchBackingResults } = await import('../../../services/backingService');
+    expect(fetchBackingResults.mock.calls.at(-1)[0]).toMatchObject({ groupId: finalPod.id });
+    expect(lit.querySelector('[data-backing="spectate-results"]')).not.toBeNull();
+    expect(lit.querySelector('[data-backing="results-card"]')).not.toBeNull();
+    // The card is the FINAL state's: a live pod, lit, opens no result read.
+    svc.calls.length = 0;
+    const live = await mount(<Spectate pod={livePod} {...props} />);
+    expect(live.querySelector('[data-backing="spectate-results"]')).toBeNull();
+    expect(svc.calls).toEqual([]);
+  });
+
+  it('the stats home (BackingStatsEntry) mounted DIRECTLY while dark renders nothing and opens NO read; lit, it reads both stats once and the pitch home carries it (PR 5, D-v/D-w)', async () => {
+    const dark = await mount(<BackingStatsEntry uid="viewer-1" />);
+    expect(dark.innerHTML).toBe('');
+    expect(svc.calls).toEqual([]);
+    flag.on = true;
+    const lit = await mount(<BackingStatsEntry uid="viewer-1" />);
+    expect(lit.querySelector('[data-backing="stats-entry"]')).not.toBeNull();
+    expect(svc.calls.filter((c) => c === 'fetchMyBackingStats')).toHaveLength(1);
+    expect(svc.calls.filter((c) => c === 'fetchTrainerStats')).toHaveLength(1);
+    expect(lit.textContent).toContain('beta stats');
+    const props = { agent: { id: 'a1', ownerId: 'viewer-1', name: 'Prime', archetype: 'momentum_chaser', stats: {} }, accent: '#5EEAD4', onOpenAgentRecord: () => {}, setShowForge: () => {} };
+    expect(ssr(<EquipStation {...props} />)).toContain('data-backing="stats-entry"');
+    flag.on = false;
+    expect(ssr(<EquipStation {...props} />)).not.toContain('data-backing');
+  });
+
+  it('EVERY other enumerated host, MOUNTED dark with effects running — the pitch home, the desktop lobby, the identity panel, the pod sheet — opens NO backing read and makes NO request (DARK-3 / DARK-R-1)', async () => {
+    const agent = { id: 'a1', ownerId: 'viewer-1', name: 'Prime', archetype: 'momentum_chaser', stats: {} };
+    const hosts = [
+      ['EquipStation', <EquipStation agent={agent} accent="#5EEAD4" onOpenAgentRecord={() => {}} setShowForge={() => {}} />],
+      ['LeagueLobbyDesktop', <LeagueLobbyDesktop {...homeProps} />],
+      ['IdentityPanel', <IdentityPanel agent={{ ownerId: 'viewer-1', name: 'Prime', archetype: 'momentum_chaser', stats: {} }} accent="#5EEAD4" live={false} record="0-0" winRate={0} levelConfig={{ label: 'Rookie' }} nextLevelInfo={null} onOpenRecord={() => {}} />],
+      ['PodSheet', <PodSheet pod={leagueState('open').baseGames[0]} accent="#5EEAD4" onClose={() => {}} onSpectate={() => {}} />],
+    ];
+    for (const [name, el] of hosts) {
+      svc.calls.length = 0; fetchSpy.mockClear(); __resetBackingTelemetry();
+      const container = await mount(el);
+      expect(container.querySelector('[data-backing]'), `${name}: a backing element while dark`).toBeNull();
+      expect(svc.calls, `${name}: a backing read while dark`).toEqual([]);
+      expect(backingCalls(), `${name}: a backing request while dark`).toEqual([]);
+    }
   });
 
   it('a mounted landing (effects running) opens NO backing read and makes NO backing request', async () => {
@@ -239,6 +329,9 @@ describe('the flag is read at CALL time in every host — never captured at modu
     'src/components/League/backing/BackingLandingStrip.jsx',
     'src/components/League/backing/ScoutingLine.jsx',
     'src/components/League/backing/BackingScreen.jsx',
+    // PR 5: the Spectate final state's card and the private stats' home.
+    'src/components/League/backing/SpectateBackingResults.jsx',
+    'src/components/League/backing/BackingStatsEntry.jsx',
   ]) {
     it(`${rel} has no module-level derivation of BACKING_BETA_ENABLED`, () => {
       const src = readFileSync(path.join(REPO, rel), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
@@ -262,39 +355,87 @@ describe('the flag is read at CALL time in every host — never captured at modu
     ['src/components/League/LeagueHome.jsx', '<BackingLandingStrip'],
     ['src/components/League/LeagueLobbyDesktop.jsx', '<BackingLandingStrip'],
     ['src/components/League/LeagueLobbyRedesign.jsx', '{backingSlot}'],
+    // PR 5: the results card under the film room, the stats under the line.
+    ['src/components/League/LeagueSpectate.jsx', '<SpectateBackingResults'],
+    ['src/components/Dashboard/EquipStation.jsx', '<BackingStatsEntry'],
   ];
   const stripComments = (src) => src.replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-  /** JSX brace expressions removed (balanced), so an attribute like `onClick={() => open()}` cannot hide an opener's `>` (R-B-7). */
-  function stripBraces(src) {
+  /**
+   * JSX ATTRIBUTE-VALUE brace expressions removed (`={…}`, balanced) — and
+   * ONLY those, so an attribute like `onClick={() => open()}` cannot hide an
+   * opener's `>` (R-B-7) while a component's function body SURVIVES. The
+   * previous stripper dropped every character at brace depth ≥ 1, and every
+   * host mounts inside a block-bodied function, so `before` always ended at
+   * the function signature and no wrapper could ever be seen — the guard was
+   * vacuous on every real host (DARK-1, the PR 5 review record). The
+   * positive-control row below wraps every REAL host's mount in memory and
+   * demands the guard say so, so it cannot go vacuous again.
+   */
+  function stripAttributeBraces(src) {
     let out = '';
-    let depth = 0;
-    for (const ch of src) {
-      if (ch === '{') { depth += 1; continue; }
-      if (ch === '}') { depth = Math.max(0, depth - 1); continue; }
-      if (depth === 0) out += ch;
+    let lastNonBlank = '';
+    let i = 0;
+    while (i < src.length) {
+      const ch = src[i];
+      if (ch === '{' && lastNonBlank === '=') {
+        let depth = 1;
+        i += 1;
+        while (i < src.length && depth > 0) {
+          if (src[i] === '{') depth += 1;
+          else if (src[i] === '}') depth -= 1;
+          i += 1;
+        }
+        lastNonBlank = '}';
+        continue;
+      }
+      out += ch;
+      if (!/\s/.test(ch)) lastNonBlank = ch;
+      i += 1;
     }
     return out;
   }
-  /** Every occurrence of `marker`, with the trimmed text right before (braces stripped) and right after it. */
+  /** Every occurrence of `marker`, with the trimmed text right before (attribute braces stripped) and right after it. */
   function mountsOf(src, marker) {
     const out = [];
     for (let i = src.indexOf(marker); i >= 0; i = src.indexOf(marker, i + marker.length)) {
       const end = marker.startsWith('{') ? src.indexOf('}', i) + 1 : src.indexOf('/>', i) + 2;
-      out.push({ before: stripBraces(src.slice(0, i)).trimEnd(), after: src.slice(end).trimStart() });
+      out.push({ before: stripAttributeBraces(src.slice(0, i)).trimEnd(), after: src.slice(end).trimStart() });
     }
     return out;
+  }
+  /** The real host file with its FIRST mount of `marker` wrapped in a sole-child element — the DARK-1 defect, planted in memory. */
+  function wrappedInMemory(rel, marker) {
+    const src = readFileSync(path.join(REPO, rel), 'utf8');
+    const i = src.indexOf(marker);
+    const end = marker.startsWith('{') ? src.indexOf('}', i) + 1 : src.indexOf('/>', i) + 2;
+    return `${src.slice(0, i)}<div style={{ marginTop: 12 }}>\n${src.slice(i, end)}\n</div>${src.slice(end)}`;
   }
   /** True when the mount is the sole child of an element opened right before it and closed right after it. */
   function soleChildWrapped({ before, after }) {
     const opened = /<([a-z][\w-]*)(\s[^<>]*[^/<>])?>$/.exec(before);
     return opened != null && after.startsWith(`</${opened[1]}>`);
   }
-  it('the mount guard sees a wrapper whose attributes carry a ">" (R-B-7), and passes a bare mount', () => {
+  it('the mount guard sees a wrapper whose attributes carry a ">" (R-B-7), and passes a bare mount — inside a function body too', () => {
     const wrapped = mountsOf(stripComments('<div onClick={() => open()}>\n  <ScoutingLine uid={u} />\n</div>'), '<ScoutingLine');
     expect(wrapped.map(soleChildWrapped)).toEqual([true]);
     const bare = mountsOf(stripComments('{locked && (<div>x</div>)}\n<ScoutingLine uid={u} />\n<Other />'), '<ScoutingLine');
     expect(bare.map(soleChildWrapped)).toEqual([false]);
+    // The DARK-1 shape: the same two cases inside `function Host() { return (…) }`.
+    const inBody = (jsx) => `export default function Host({ u }) {\n  const locked = false;\n  return (\n    <section>\n      ${jsx}\n    </section>\n  );\n}`;
+    expect(mountsOf(stripComments(inBody('<div onClick={() => open()}>\n  <ScoutingLine uid={u} />\n</div>')), '<ScoutingLine').map(soleChildWrapped)).toEqual([true]);
+    expect(mountsOf(stripComments(inBody('{locked && (<div>x</div>)}\n<ScoutingLine uid={u} />\n<Other />')), '<ScoutingLine').map(soleChildWrapped)).toEqual([false]);
   });
+
+  // THE POSITIVE CONTROL, on the real files: every host's mount, wrapped in
+  // memory, must be SEEN as wrapped — the row that reds the day the guard's
+  // pre-processing goes vacuous again (DARK-1, the PR 5 review record).
+  for (const [rel, marker] of HOST_MOUNTS) {
+    it(`the guard SEES a wrapper planted around ${marker} in ${rel} (positive control)`, () => {
+      const mounts = mountsOf(stripComments(wrappedInMemory(rel, marker)), marker);
+      expect(mounts.length).toBeGreaterThan(0);
+      expect(soleChildWrapped(mounts[0]), `${rel}: the guard cannot see a wrapper around ${marker}`).toBe(true);
+    });
+  }
   for (const [rel, marker] of HOST_MOUNTS) {
     it(`${rel} mounts ${marker} bare — no host element of its own around it`, () => {
       const mounts = mountsOf(stripComments(readFileSync(path.join(REPO, rel), 'utf8')), marker);
@@ -309,7 +450,7 @@ describe('the flag is read at CALL time in every host — never captured at modu
     const lobby = readFileSync(path.join(REPO, 'src/components/League/LeagueLobbyRedesign.jsx'), 'utf8');
     expect(lobby).toContain('{backingSlot}');
     expect(lobby).not.toMatch(/backingSlot && <div/);
-    for (const rel of ['src/components/League/backing/BackingLandingStrip.jsx', 'src/components/League/backing/ScoutingLine.jsx', 'src/components/League/backing/BackingScreen.jsx']) {
+    for (const rel of ['src/components/League/backing/BackingLandingStrip.jsx', 'src/components/League/backing/ScoutingLine.jsx', 'src/components/League/backing/BackingScreen.jsx', 'src/components/League/backing/SpectateBackingResults.jsx', 'src/components/League/backing/BackingStatsEntry.jsx']) {
       expect(readFileSync(path.join(REPO, rel), 'utf8'), `${rel} returns null while dark`).toContain('if (!BACKING_BETA_ENABLED) return null;');
     }
   });

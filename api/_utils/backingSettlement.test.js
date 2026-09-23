@@ -557,14 +557,24 @@ describe('settlePool — refusals that write nothing', () => {
     expect(readLog).toEqual([]);
   });
 
-  it('no group doc: the deleted-pod refund rides ensureClosed; nothing to settle', async () => {
+  it('no group doc and an OPEN pool: the deleted-pod refund rides ensureClosed, answered as a refund (PR 5); nothing to settle', async () => {
     const { db, store, writeLog } = makeInMemoryDb({
       [`${BACKING_POOLS_COLLECTION}/${GROUP_ID}`]: { ...closedPool([], completeGroup()).pool, status: POOL_STATUS.OPEN, teams: undefined },
     });
     const out = await settle(db);
-    expect(out).toEqual({ settled: false, reason: SETTLEMENT_REASON.NO_GROUP });
+    // PR 5: the close's tombstone refund is reported as what it is — a refund
+    // with `group_deleted` — rather than as a bare `no_group`; the refund
+    // primitive's own suite (backingRefund.test.js) covers the pool that had
+    // already closed when the doc vanished.
+    expect(out).toMatchObject({ settled: false, refunded: true, reason: SETTLEMENT_REASON.REFUNDED, refundReason: VOID_REASONS.GROUP_DELETED });
     expect(poolOf(store).status).toBe(POOL_STATUS.REFUNDED);
     expect(writeLog.every(([, p]) => BACKING_PREFIXES.some((x) => p.startsWith(x)))).toBe(true);
+  });
+
+  it('no group doc and NO pool: no_group, nothing written', async () => {
+    const { db, writeLog } = makeInMemoryDb({});
+    expect(await settle(db)).toEqual({ settled: false, reason: SETTLEMENT_REASON.NO_GROUP });
+    expect(writeLog).toEqual([]);
   });
 
   it('no pool: no_pool, no write', async () => {

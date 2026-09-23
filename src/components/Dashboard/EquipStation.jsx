@@ -32,6 +32,10 @@ import { getArchetypeIdentity } from '../../data/archetypeIdentity';
 // home, under the identity bench. Renders NOTHING while BACKING_BETA_ENABLED
 // is dark (read at call time inside).
 import ScoutingLine from '../League/backing/ScoutingLine';
+// Backing Beta PR 5 (spec V1.3 §5; D-v, D-w): the private stats' mobile home
+// — My Backing and the trainer's beta stats — under the scouting line, in the
+// same fragment. Renders NOTHING while dark (read at call time inside).
+import BackingStatsEntry from '../League/backing/BackingStatsEntry';
 import { getTraitSlotSummary } from '../../utils/traitSlotSummary';
 import { getEquipSlots } from '../../utils/equipSlots';
 
@@ -309,6 +313,7 @@ export default function EquipStation({ agent, accent, onOpenAgentRecord, setShow
           <div style={{ fontSize: 11.5, color: CMD.ink3, marginTop: 10 }}>Locked in battle · changes apply to your next deploy.</div>
         )}
         <ScoutingLine uid={agent?.ownerId} agentName={agentName} accent={accent} compact />
+        <BackingStatsEntry uid={agent?.ownerId} accent={accent} compact />
       </>
 
       {/* watchlist picker */}

@@ -451,3 +451,138 @@ export const WEEK = Object.freeze({
     complete: 'Complete',
   }),
 });
+
+// ==================== THE RESULTS CARD (Surface E — PR 5) ====================
+
+/**
+ * Every string on the results card (spec V1.3 §5 "Results card", §3 the
+ * exact-fact labels, §7 the refund paths). The numbers beside these words are
+ * the pool document's and the stake document's, through the server projection
+ * — the payout is `stake.payout`, never stake × pays ×; the share is the
+ * close's own figure, labeled exactly as §3 labels it, never a crowd
+ * probability.
+ */
+export const RESULTS = Object.freeze({
+  // The section over every listed week (the newest listed week may be weeks
+  // old), and the one pod's card in the Spectate final state (HON-9).
+  eyebrow: 'Results',
+  podEyebrow: 'This pod’s result',
+  title: 'Results',
+  weekTitle: (weekKey) => (weekKey ? `Week ${weekKey}` : 'Week'),
+  loading: 'Loading…',
+  unavailable: 'Results are unavailable right now.',
+  empty: 'No completed pools yet. Results appear here once a pool you backed settles.',
+  outcome: Object.freeze({
+    settled: 'Settled',
+    refunded: 'Refunded · stakes void',
+    insufficient: 'Did not qualify · stakes void',
+    settling: 'Settling',
+    open: 'Open',
+  }),
+  winner: (names) => (names.length > 1 ? `Winners (tie): ${names.join(' & ')}` : `Winner: ${names[0] ?? '—'}`),
+  noWinner: 'No result recorded',
+  pot: (pot, backers) => (Number.isFinite(backers) ? `Pot ${bp(pot)} BP · ${plural(backers, 'backer', 'backers')}` : `Pot ${bp(pot)} BP`),
+  yourStakes: 'Your stakes',
+  noStakes: 'You had no stake in this pool.',
+  stakeRow: (teamName, amount) => `${teamName} · ${bp(amount)} BP`,
+  // The payout per stake, read off the stake document (§3, §9).
+  paid: (payout) => `paid ${bp(payout)} BP`,
+  // A figure the document does not carry is shown as absent, never as zero (HON-10).
+  paidUnknown: 'paid — BP',
+  unknown: '—',
+  lost: 'lost',
+  pending: 'settling',
+  voided: 'void',
+  net: (n) => (Number.isFinite(n) ? `${n >= 0 ? '+' : '−'}${bp(Math.abs(n))} BP net` : ''),
+  // The reveal, per team (§3): backers, the BP share labeled exactly, pays ×.
+  teams: 'Every team · revealed',
+  backers: (n) => plural(n, 'backer', 'backers'),
+  share: (pct) => `${pct}% of BP in this pool backed them`,
+  // The WINNING set's realized ratio (§2: pays × = pot ÷ winning stakes — one
+  // figure for every winner, a tie included) …
+  paidX: (x) => `paid ×${x.toFixed(2)}`,
+  // … and §3's table figure for every other team, conditional as the table
+  // heads it ("if this team wins"): a losing team never "pays" (HON-2, HON-6).
+  wouldPay: (x) => `×${x.toFixed(2)} had they won`,
+  noBackers: 'no backers',
+  won: 'won',
+  // The §4 marker — disclosure, not contract.
+  loadoutChanged: 'Loadout changed during the week',
+  loadoutSame: 'Loadout unchanged',
+  loadoutUnknown: 'Loadout change not known',
+  // The plain statement of a refund or a failed floor (§7, §3).
+  reason: Object.freeze({
+    group_voided: 'This pod was voided during its week, so every stake was refunded.',
+    group_expired: 'This pod expired before it played, so every stake was refunded.',
+    group_deleted: 'This pod was removed, so every stake was refunded.',
+    admin: 'The league refunded this pool, so every stake was refunded.',
+    insufficient: 'This pool did not reach its participation minimum at close, so every stake was void.',
+  }),
+  reasonFallback: 'Every stake in this pool was refunded.',
+  neutral: 'Refunds are score-neutral: your record shows no change from this pool.',
+  settling: 'This pod is complete; its pool settles shortly.',
+  // A closed pool whose pod is STILL PLAYING (the Spectate path can ask for
+  // one): the truth, never "complete" (HON-3).
+  settlingInPlay: 'This pod is still playing its week; the pool settles after its last close.',
+  held: 'Held for a human to check — the league settles this pool by hand.',
+  earlier: 'Earlier weeks',
+  loadMore: 'Show earlier weeks',
+  loadingMore: 'Loading…',
+  tape: 'Open the tape',
+});
+
+// ==================== THE PRIVATE STATS (PR 5) ====================
+
+/**
+ * The two private stats surfaces (spec V1.3 §5 "My Backing stats — private"
+ * and "Trainer stats — private to the trainer, labeled 'beta stats'"; §8;
+ * D-v, D-w). Private, no consequences, no comparison to other players; the
+ * naive baseline is a RULE, not a rival.
+ */
+export const STATS = Object.freeze({
+  label: 'beta stats',
+  eyebrow: 'Your backing · beta stats',
+  title: 'Your record',
+  sub: 'Private to you. Not a ranking, not a reputation.',
+  tabs: Object.freeze({ mine: 'Your backing', trainer: 'As a team' }),
+  loading: 'Loading…',
+  unavailable: 'Stats are unavailable right now.',
+  season: 'This season',
+  // The column names its month (the ladder's own key, §2), so a stake on next
+  // month's pod is not looked for under this one (HON-11).
+  seasonTitle: (seasonKey) => {
+    const m = /^(\d{4})-(\d{2})$/.exec(seasonKey ?? '');
+    if (!m) return 'This season';
+    const label = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, 1)).toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+    return `This season · ${label}`;
+  },
+  career: 'Career',
+  net: 'Net BP',
+  // The one rule both columns follow (§2), stated on the card (HON-4).
+  netNote: 'Net BP counts a stake from the moment it is placed; In play is what is still out.',
+  poolsBacked: 'Pools backed',
+  poolsWon: 'Pools won',
+  weeksPlayed: 'Weeks played',
+  pending: 'In play',
+  // Pools in play and the BP still out on them — counted in Net BP from the
+  // moment a stake is placed (§2), in both columns alike.
+  inPlay: (pools, bpOut) => (bpOut > 0 ? `${pools} · ${bp(bpOut)} BP` : String(pools)),
+  accuracy: 'Accuracy',
+  yours: 'You',
+  baseline: 'Naive baseline',
+  accuracyLine: (won, pools) => `${won} of ${plural(pools, 'pool', 'pools')}`,
+  baselineNote: 'The naive baseline backs last week’s best placement in every pool you backed.',
+  excluded: (n) => `${plural(n, 'pool', 'pools')} had no prior week to compare against.`,
+  noPools: 'No settled pools yet.',
+  signedNet: (n) => (Number.isFinite(n) ? `${n >= 0 ? '+' : '−'}${bp(Math.abs(n))}` : '—'),
+  trainer: Object.freeze({
+    title: 'As a team',
+    sub: 'What backers put on your team. Beta stats — private, no consequences attach.',
+    uniqueBackers: 'Backers on you',
+    bpBacked: 'BP backed on you',
+    backersNet: 'Backers’ net on you',
+    pending: 'In play on you',
+    poolsBackedOn: 'Pools',
+    empty: 'Nobody has backed your team yet.',
+  }),
+});

@@ -94,6 +94,9 @@ function makeVersionedDb(initial = {}) {
       path,
       _isDoc: true,
       get: async () => { await tick(); return snapOf(path); },
+      // A PLAIN (non-transactional) write — the route's post-commit
+      // `stake_confirmed` record (PR 5) lands through it.
+      set: async (data) => { await tick(); store.set(path, structuredClone(data)); versions.set(path, (versions.get(path) ?? 0) + 1); writeLog.push(['set', path]); },
       collection: (sub) => makeCollection(`${path}/${sub}`),
     };
   }
@@ -1135,5 +1138,57 @@ describe('failures answer, they do not leak', () => {
     expect(res.statusCode).toBe(500);
     expect(res.body).toEqual({ error: 'server_error', message: 'Could not place that stake.' });
     expect(JSON.stringify(res.body)).not.toContain('exploded');
+  });
+});
+
+// ============================================================================
+describe('stake_confirmed — written SERVER-SIDE after the commit, never failing the stake (spec §10, Amendment B §B7.3; Backing Beta PR 5)', () => {
+  const eventPath = (id) => `backingEvents/stake_confirmed:${id}`;
+
+  it('a NEW stake records ONE stake_confirmed keyed by the stake id, with the funnel props, AFTER the transaction', async () => {
+    const res = await post(VALID());
+    expect(res.statusCode).toBe(200);
+    const id = stakeIdFor(UID, 'req-1');
+    expect(DB.store.get(eventPath(id))).toEqual({
+      userId: UID, groupId: GROUP_ID, event: 'stake_confirmed', at: NOW.toISOString(),
+      props: { stakeId: id, teamOdUserId: 'od-a', amount: 100, weekKey: WEEK, formationPath: 'lobby', humanTeams: 2, isDev: false },
+    });
+    // After the transaction: the record is the LAST write, and the only event write.
+    expect(DB.writeLog[DB.writeLog.length - 1]).toEqual(['set', eventPath(id)]);
+    expect(DB.writeLog.filter(([, p]) => p.startsWith('backingEvents/'))).toHaveLength(1);
+    // The reply still carries nothing about the record — no client read of the sink.
+    expect(JSON.stringify(res.body)).not.toContain('stake_confirmed');
+  });
+
+  it('a REPLAY records no second confirmation', async () => {
+    await post(VALID());
+    const events = () => DB.writeLog.filter(([, p]) => p.startsWith('backingEvents/')).length;
+    const before = events();
+    const res = await post(VALID());
+    expect(res.body.replay).toBe(true);
+    expect(events()).toBe(before);
+  });
+
+  it('a REFUSED stake records nothing', async () => {
+    state.uid = 'od-a'; // seated in the pod → own_pod
+    const res = await post(VALID());
+    expect(res.statusCode).toBe(403);
+    expect(DB.writeLog.filter(([, p]) => p.startsWith('backingEvents/'))).toEqual([]);
+  });
+
+  it('MUTATION CHECK 4 — a THROWING telemetry write never fails the stake: 200, the stake on the record, the failure logged', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const real = DB.db.collection;
+    DB.db.collection = (name) => (name === 'backingEvents'
+      ? { doc: () => ({ set: async () => { throw new Error('the sink is down'); } }) }
+      : real(name));
+    const res = await post(VALID());
+    expect(res.statusCode).toBe(200);
+    const id = stakeIdFor(UID, 'req-1');
+    expect(stakeDoc(DB.store, id)).toMatchObject({ status: STAKE_STATUS.LIVE, amount: 100 });
+    expect(res.body.stake.id).toBe(id);
+    expect(DB.store.get(eventPath(id))).toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('stake_confirmed not recorded'), 'the sink is down');
+    warn.mockRestore();
   });
 });

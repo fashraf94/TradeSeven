@@ -2498,7 +2498,9 @@ export const ELIGIBILITY_ATTESTATION_ENABLED = false;
  *     settlement hook's own gate.
  *   · PR 4 — the backing surfaces under src/components/League/backing/,
  *     GET /api/tournament/team-card and POST /api/team/pitch.
- *   · PR 5 — POST /api/backing/event.
+ *   · PR 5 — GET /api/backing/results (the settle-on-read host), GET
+ *     /api/backing/my-stats, GET /api/backing/trainer-stats, POST
+ *     /api/backing/event; the admin re-run's `action: 'refund'`.
  * Every server route 404s while this is false, AFTER auth (the
  * SHOW_IT_ENABLED / research.js shape), so no route exists as far as any
  * caller is concerned.
@@ -2519,10 +2521,11 @@ export const ELIGIBILITY_ATTESTATION_ENABLED = false;
  *     DARK_BY_DESIGN (its integrity test reds if a lit flag is left listed).
  *   PR 1 adds no flag-off darkness suite because PR 1 adds no door: there is
  *   no behavior to hold byte-identical. The per-PR dark suites (PR 2's
- *   backing-stake.dark.test.js onward) mock this flag to an explicit false and
- *   do NOT move with the flip.
+ *   backing-stake.dark.test.js onward; PR 5's backing-routes.dark.test.js for
+ *   the four api/backing/ routes) mock this flag to an explicit false and do
+ *   NOT move with the flip.
  */
-// Pinned by: backingBetaFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+// Pinned by: backingBetaFlags.test.js, backing-stake.dark.test.js, backing-routes.dark.test.js (flagPinGuard: this value and the pins move together — BUILD_RULES §2).
 export const BACKING_BETA_ENABLED = false;
 
 /**

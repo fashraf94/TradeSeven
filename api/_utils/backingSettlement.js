@@ -91,6 +91,26 @@
 // winners: the loadout-changed marker (§4) sits on a backer's OWN stakes,
 // which may be on a losing team.
 //
+// THE REFUND (Backing Beta PR 5; spec §7 "Refund paths"; the PR 3 review
+// record's finding 21). `refundPool(db, groupId, { now, reason, source })` is
+// the fourth write path and the ONE primitive for the §7 paths the close does
+// not reach: a group that goes `voided` (from `battle`, an in-week event on a
+// closed pool) or `expired` (from the pre-battle states) after its pool
+// closed, a group doc deleted after the close, and the admin refund for
+// degraded, holiday, frozen or lingering pods. One transaction, fresh reads of
+// the pool and the group, allowed from `closed` or `resolving` ONLY: every
+// `live` stake is voided with the matching `voidReason` and paired
+// `creditRefund` + `recordStakeLoss` EXACTLY as `closePool` pairs them, so a
+// refunded stake nets to zero in the career record AND the season bucket; the
+// pool lands `refunded` with `refundReason` and `refundedAt`. The status gate
+// is what makes a refund racing a settlement safe: both re-read the pool
+// inside their own transaction, Firestore commits one, and the other re-runs
+// to find `resolved` or `refunded` and writes nothing. `settlePool` ROUTES to
+// it — on its fresh group read a voided, expired or missing group is a refund,
+// never `not_final` — so the results reader's settle-on-read and the admin
+// re-run inherit the refund paths without carrying any refund logic of their
+// own. The same stake ceiling and the same allowlist discipline apply.
+//
 // Imports the zero-import schema module from src/ under the revised June 2026
 // import rule (BUILD_RULES §4); the co-located test's real import of THIS
 // module is the dependency-surface guard — never mock it.
@@ -113,6 +133,7 @@ import {
   BACKING_STAKES_COLLECTION,
   POOL_STATUS,
   STAKE_STATUS,
+  VOID_REASONS,
   ensureClosed,
   liveTeamsFor,
   monthKeyForPool,
@@ -120,7 +141,7 @@ import {
   poolTotalsRefFor,
   readGroup,
 } from './backingPools.js';
-import { creditPayout, readWallet, recordStakeLoss, walletRef } from './backingWallet.js';
+import { creditPayout, creditRefund, readWallet, recordStakeLoss, walletRef } from './backingWallet.js';
 
 const LOG_PREFIX = '[BackingSettlement]';
 
@@ -166,7 +187,11 @@ export const SETTLEMENT_SOURCE = Object.freeze({
   ADMIN_SIM: 'admin_sim',
 });
 
-/** Every reason `settlePool` can answer `{ settled: false }` with. */
+/**
+ * Every reason `settlePool` can answer `{ settled: false }` with. `REFUNDED`
+ * (PR 5) is the one that also carries `refunded: true`: the pod's pool was
+ * routed to `refundPool` and refunded — a result, not a refusal.
+ */
 export const SETTLEMENT_REASON = Object.freeze({
   FROZEN: 'frozen',
   NO_GROUP: 'no_group',
@@ -178,7 +203,82 @@ export const SETTLEMENT_REASON = Object.freeze({
   HELD: 'held',
   AGENT_LAYER_ABSENT: 'agent_layer_absent',
   STAKE_CEILING: 'stake_ceiling',
+  REFUNDED: 'refunded',
 });
+
+/**
+ * Every reason `refundPool` can answer `{ refunded: false }` with (PR 5).
+ * `already_refunded` and `already_settled` are idempotency working — the race
+ * loser's answer — not failures.
+ */
+export const REFUND_REASON = Object.freeze({
+  NOT_TERMINAL: 'not_terminal',
+  NO_POOL: 'no_pool',
+  POOL_OPEN: 'pool_open',
+  ALREADY_REFUNDED: 'already_refunded',
+  ALREADY_SETTLED: 'already_settled',
+  TERMINAL: 'terminal',
+  HELD: 'held',
+  STAKE_CEILING: 'stake_ceiling',
+  // A `won` / `lost` stake inside an undecided pool (out-of-band only): the
+  // refund refuses rather than refund AROUND it and seal a recoverable book
+  // as `refunded` (MONEY-3, the PR 5 review record). Returned, never thrown:
+  // on the versioned harness a body can read the pool before and the stakes
+  // after a competing settlement's commit, and a throw would turn that race
+  // into a hard error where the pristine flow re-runs and answers
+  // `already_settled` (MONEY-R-1).
+  CORRUPT_BOOK: 'corrupt_book',
+  // A stake whose amount is not a positive integer: refused BEFORE the first
+  // write, as the settlement refuses it (MONEY-R-3).
+  MALFORMED_STAKE: 'malformed_stake',
+});
+
+/**
+ * The §7 refund reason a GROUP's own state carries, or null when the group
+ * still has a result to settle: a missing doc → `group_deleted`, `voided` →
+ * `group_voided`, `expired` → `group_expired`. Pure; the ONE derivation, used
+ * by `settlePool`'s routing on its fresh reads and re-derived by `refundPool`
+ * on its own in-transaction read — so the reason written on a stake is the
+ * truth at commit, never the caller's memory of it.
+ */
+export function refundReasonForGroup(group) {
+  if (group == null) return VOID_REASONS.GROUP_DELETED;
+  if (group.status === GROUP_STATUS.VOIDED) return VOID_REASONS.GROUP_VOIDED;
+  if (group.status === GROUP_STATUS.EXPIRED) return VOID_REASONS.GROUP_EXPIRED;
+  return null;
+}
+
+/** The reasons `refundPool` accepts — the §7 paths the close does not reach, plus the admin's. */
+const REFUND_VOID_REASONS = new Set([
+  VOID_REASONS.GROUP_VOIDED,
+  VOID_REASONS.GROUP_EXPIRED,
+  VOID_REASONS.GROUP_DELETED,
+  VOID_REASONS.ADMIN,
+]);
+
+/**
+ * The writes ONE refunded stake costs (H3, mirrored for the refund): the stake
+ * document (1), `creditRefund` (entry + wallet, 2) and `recordStakeLoss`
+ * (entry + wallet, 2). A settled stake costs 3 or 5; a refunded one always 5,
+ * so the refund ceiling bites at 95 live stakes under `SETTLEMENT_MAX_WRITES`
+ * (1 + 95 × 5 = 476).
+ *
+ * THE STUCK STATE, stated plainly (MONEY-4, the PR 5 review record): a book
+ * of 96–120 live stakes SETTLES (the settlement's losers cost 3) but can never
+ * be REFUNDED — the hold is structural and `fromHold` re-asserts the same
+ * ceiling. The "≤ 40 stakes per pool" figure is ASSUMED beta scale, enforced
+ * by nothing (the stake endpoint caps per backer and per team, never the
+ * book), so five backers at the 20-stake cap reach it. No primitive exits it
+ * today; the only procedure is the Console one described in
+ * api/tournament/backing-settle.js, and a batched refund (priors costed at 0
+ * once applied, wallets read before the ceiling) is the follow-up that would
+ * close the class. Inherited posture: the settlement holds the same way above
+ * 120 stakes (PR 3 review record, "the ceiling is STRUCTURAL").
+ */
+const REFUND_WRITES_PER_STAKE = 5;
+
+/** A stake amount the ledger will accept: a positive integer of BP. */
+const isValidStakeAmount = (amount) => Number.isInteger(amount) && amount > 0;
 
 /**
  * A settlement refusal that must ABORT the transaction — a data-integrity
@@ -509,11 +609,35 @@ export async function settlePool(db, groupId, {
   // These decide only whether to proceed to the transaction, never the money:
   // every one of them is re-read and re-judged inside it (H4, H5).
   const cheapGroup = await readGroup(db, groupId);
+  // The hand-off to the refund primitive (below): the group's own reason,
+  // this host as the source, the admin's override as the hold release, and
+  // the operator's free-text `reason` as the LOGGED note.
+  const refundRoute = (refundReason) => routeToRefund(db, groupId, {
+    now: nowDate, source, reason: refundReason, fromHold: overrideHold === true, actor, note: reason,
+  });
   if (cheapGroup == null) {
-    // The deleted-pod refund path (§7) rides the close, not settlement; a
-    // pod with no doc has no result to settle.
-    await ensureClosed(db, groupId, nowDate);
-    return { settled: false, reason: SETTLEMENT_REASON.NO_GROUP };
+    // THE DELETED POD (§7). An OPEN pool closes `refunded` through the close's
+    // own tombstone path (`closePool`, every stake `group_deleted`); a pool
+    // that had ALREADY closed when the doc vanished is the refund primitive's
+    // (PR 5 — the PR 3 review record's finding 21), reached here so every
+    // host inherits it. A pod with no pool at all has nothing to refund.
+    const closed = await ensureClosed(db, groupId, nowDate);
+    if (closed.closed === true) {
+      return { settled: false, refunded: true, reason: SETTLEMENT_REASON.REFUNDED, refundReason: VOID_REASONS.GROUP_DELETED, pool: closed.pool };
+    }
+    if (closed.reason === 'no_pool') return { settled: false, reason: SETTLEMENT_REASON.NO_GROUP };
+    return refundRoute(VOID_REASONS.GROUP_DELETED);
+  }
+  // A VOIDED or EXPIRED group has no result left to settle: its closed pool is
+  // REFUNDED, never `not_final` (§7; finding 21). The clock's close runs first
+  // if it is due, in the close's own transaction — a pool still inside its
+  // window stays open and refunds once the clock has closed it.
+  const terminalReason = refundReasonForGroup(cheapGroup);
+  if (terminalReason !== null) {
+    const closed = await ensureClosed(db, cheapGroup, nowDate);
+    if (closed.reason === 'no_pool') return { settled: false, reason: SETTLEMENT_REASON.NO_POOL };
+    if (closed.reason === 'still_open') return { settled: false, reason: SETTLEMENT_REASON.POOL_OPEN };
+    return refundRoute(terminalReason);
   }
   const cheapPredicate = settlementPredicate(cheapGroup);
   if (!cheapPredicate.final) {
@@ -540,11 +664,17 @@ export async function settlePool(db, groupId, {
 
   // ---------- THE TRANSACTION ----------
   const groupRef = db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(groupId);
-  return db.runTransaction(async (tx) => {
+  const outcome = await db.runTransaction(async (tx) => {
     // ----- READS (all of them, before any write) -----
-    // (1) THE FRESH GROUP (H4) and the predicate on THAT read.
+    // (1) THE FRESH GROUP (H4) and the predicate on THAT read. A group that
+    // turned voided/expired — or vanished — between the cheap read and this
+    // one is a REFUND, decided on this read: the body returns a routing
+    // sentinel having written nothing (a transaction that returns without a
+    // write commits nothing), and the refund runs in its own transaction with
+    // its own fresh reads after this one has closed.
     const groupSnap = await tx.get(groupRef);
-    if (!groupSnap.exists) return { settled: false, reason: SETTLEMENT_REASON.NO_GROUP };
+    const routedReason = refundReasonForGroup(groupSnap.exists ? groupSnap.data() : null);
+    if (routedReason !== null) return { __routeToRefund: routedReason };
     const group = { id: groupSnap.id, ...groupSnap.data() };
     const predicate = settlementPredicate(group);
     if (!predicate.final) {
@@ -783,5 +913,287 @@ export async function settlePool(db, groupId, {
       payoutsTotal,
       burned: plan.pot - payoutsTotal,
     };
+  });
+  if (outcome?.__routeToRefund) return refundRoute(outcome.__routeToRefund);
+  return outcome;
+}
+
+// ==================== (4) THE REFUND (§7, PR 5 — finding 21) ====================
+
+/**
+ * `settlePool`'s hand-off to the refund primitive, shaped as a settlement
+ * answer: `{ settled: false, refunded, reason, … }`, where `reason` is
+ * `SETTLEMENT_REASON.REFUNDED` when the refund applied and the refund's own
+ * refusal word (`REFUND_REASON`) when it did not. The hosts read one shape.
+ */
+async function routeToRefund(db, groupId, { now, source, reason, fromHold, actor, note }) {
+  const out = await refundPool(db, groupId, { now, source, reason, fromHold, actor, note });
+  const answer = { settled: false, refunded: out.refunded === true, reason: out.refunded === true ? SETTLEMENT_REASON.REFUNDED : out.reason };
+  for (const key of ['refundReason', 'pool', 'holdReason', 'status', 'stakesVoided', 'groupStatus']) {
+    if (out[key] !== undefined) answer[key] = out[key];
+  }
+  return answer;
+}
+
+/**
+ * The pool document of a pod whose doc may be GONE: the group's own `isDev`
+ * routes the id when the doc exists; otherwise both namespaces are probed,
+ * production first (`ensureClosed`'s tombstone rule). Returns the reference,
+ * the cheap snapshot's data (or null) and the tombstone-shaped group the
+ * wallet namespace is read from.
+ */
+async function locatePool(db, groupId, cheapGroup) {
+  if (cheapGroup != null) {
+    const ref = poolRefFor(db, cheapGroup);
+    const snap = await ref.get();
+    return { ref, pool: snap.exists ? snap.data() : null };
+  }
+  for (const isDev of [false, true]) {
+    const ref = poolRefFor(db, { id: groupId, isDev, missing: true });
+    const snap = await ref.get();
+    if (snap.exists) return { ref, pool: snap.data() };
+  }
+  return { ref: null, pool: null };
+}
+
+/**
+ * Refund one pod's pool (§7's refund paths that the close does not reach;
+ * the PR 3 review record's finding 21). ONE transaction, fresh reads of the
+ * group and the pool, and the pool's status is the guard.
+ *
+ * WHAT IT DOES. Every `live` stake is voided with the matching `voidReason`
+ * and paired `creditRefund` + `recordStakeLoss` EXACTLY as `closePool` pairs
+ * them — the stake's own debit already moved `careerNet`, the refund credits
+ * it back, and the stake-side month attribution cancels the refund's credit
+ * in the season bucket, so a refunded stake nets to ZERO in both fields (§2:
+ * "voided stakes are score-neutral"). The BP does not return as spendable
+ * (`creditRefund` never touches `allowanceRemaining`). The pool lands
+ * `refunded` with `refundReason`, `refundedAt`, `refundRef` and the ladder's
+ * `monthKey`; stakes already `voided` by this reason have their ledger
+ * re-visited idempotently (`appliedEntries` makes an applied entry a no-op),
+ * so a retry from any interruption point converges on one final state.
+ *
+ * ALLOWED FROM `closed` OR `resolving` ONLY. An open pool is the clock's (or
+ * the close's tombstone path's) to close first — `pool_open`, nothing
+ * written; a `refunded` pool answers `already_refunded` and a `resolved` one
+ * `already_settled`, each with nothing written, which is how a refund racing
+ * a settlement resolves: exactly one commits, decided on the IN-TRANSACTION
+ * status. A `resolving` HOLD is refunded only with `fromHold: true` — the
+ * admin's explicit act (`action: 'refund'` on the admin endpoint, or an
+ * admin re-run with `overrideHold`); the automatic hosts never pass it.
+ *
+ * THE REASON IS RE-DERIVED ON THE FRESH GROUP READ. The caller names the path
+ * it saw (`group_voided`, `group_expired`, `group_deleted`) or `admin`; for
+ * the three group paths this function derives the reason again from ITS read
+ * of the group and writes THAT — a group that is not terminal on the fresh
+ * read is `not_terminal`, nothing written. `admin` refunds whatever the
+ * group's state (degraded, holiday, frozen or lingering weeks — §7); the
+ * operator's free-text `note` is LOGGED and never written to the authed-read
+ * pool document (the PR 3 review record's finding 3).
+ *
+ * SAME CEILING, SAME ALLOWLIST AS SETTLEMENT (H3). The live-stake count and
+ * the projected write count are asserted INSIDE the transaction; past either
+ * bound a `closed` pool is held `resolving` with `holdReason: 'stake_ceiling'`
+ * rather than attempting a commit Firestore would reject. Writes only to
+ * `backingPools`, `backingStakes` and `backingWallets` (H2). A missing wallet
+ * aborts `wallet_missing` rather than minting a record from nothing (the
+ * settlement's own posture, the PR 3 review record's finding 17).
+ *
+ * @param {Object} db
+ * @param {string} groupId — the id, never a group object (H4).
+ * @param {Object} opts
+ * @param {Date|string} [opts.now] the instant of record (`refundedAt`, `voidedAt`, the entries' `at`).
+ * @param {string} opts.reason one of `group_voided` | `group_expired` | `group_deleted` | `admin`.
+ * @param {string} opts.source one of `SETTLEMENT_SOURCE` → `refundRef`.
+ * @param {boolean} [opts.fromHold=false] admin only: refund a pool held in `resolving`.
+ * @param {string|null} [opts.actor] who (recorded on a hold release as `holdRelease.by`).
+ * @param {string|null} [opts.note] the operator's why — logged only, never stored.
+ * @returns {Promise<{refunded: boolean, reason?: string, refundReason?: string,
+ *   pool?: Object, stakesVoided?: number, priorVoided?: number, holdReason?: string,
+ *   status?: string, groupStatus?: string|null}>}
+ */
+export async function refundPool(db, groupId, {
+  now = new Date(), reason, source, fromHold = false, actor = null, note = null,
+} = {}) {
+  const nowDate = requireArgs(groupId, source, now);
+  if (!REFUND_VOID_REASONS.has(reason)) {
+    throw new BackingSettlementError('invalid_refund_reason', `refundPool: reason must be one of ${[...REFUND_VOID_REASONS].join(', ')}`, 400);
+  }
+  if (typeof fromHold !== 'boolean') {
+    throw new BackingSettlementError('invalid_from_hold', 'refundPool: fromHold must be a boolean', 400);
+  }
+  const nowIso = nowDate.toISOString();
+
+  // ---------- CHEAP READS: is a transaction worth opening? ----------
+  // They decide only that; the group, the pool and every stake are re-read
+  // and re-judged inside the transaction below.
+  const cheapGroup = await readGroup(db, groupId);
+  const located = await locatePool(db, groupId, cheapGroup);
+  if (located.pool == null) return { refunded: false, reason: REFUND_REASON.NO_POOL };
+  const cheapStatus = located.pool.status;
+  if (cheapStatus === POOL_STATUS.OPEN) return { refunded: false, reason: REFUND_REASON.POOL_OPEN };
+  if (cheapStatus === POOL_STATUS.REFUNDED) return { refunded: false, reason: REFUND_REASON.ALREADY_REFUNDED, pool: located.pool };
+  if (cheapStatus === POOL_STATUS.RESOLVED) return { refunded: false, reason: REFUND_REASON.ALREADY_SETTLED, pool: located.pool };
+  if (cheapStatus === POOL_STATUS.RESOLVING && fromHold !== true) {
+    return { refunded: false, reason: REFUND_REASON.HELD, holdReason: located.pool.holdReason ?? null, pool: located.pool };
+  }
+  if (cheapStatus !== POOL_STATUS.CLOSED && cheapStatus !== POOL_STATUS.RESOLVING) {
+    return { refunded: false, reason: REFUND_REASON.TERMINAL, status: cheapStatus, pool: located.pool };
+  }
+  if (reason !== VOID_REASONS.ADMIN && refundReasonForGroup(cheapGroup) === null) {
+    return { refunded: false, reason: REFUND_REASON.NOT_TERMINAL, groupStatus: cheapGroup?.status ?? null };
+  }
+
+  // ---------- THE TRANSACTION ----------
+  const poolRef = located.ref;
+  const groupRef = db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(groupId);
+  return db.runTransaction(async (tx) => {
+    // ----- READS (all of them, before any write) -----
+    // (1) THE FRESH GROUP, and the reason on THAT read.
+    const groupSnap = await tx.get(groupRef);
+    const group = groupSnap.exists ? { id: groupSnap.id, ...groupSnap.data() } : null;
+    const derived = refundReasonForGroup(group);
+    if (reason !== VOID_REASONS.ADMIN && derived === null) {
+      return { refunded: false, reason: REFUND_REASON.NOT_TERMINAL, groupStatus: group?.status ?? null };
+    }
+    const voidReason = reason === VOID_REASONS.ADMIN ? VOID_REASONS.ADMIN : derived;
+
+    // (2) THE POOL, and the status gate — the one that makes a refund racing
+    // a settlement (or a second refund) safe.
+    const poolSnap = await tx.get(poolRef);
+    if (!poolSnap.exists) return { refunded: false, reason: REFUND_REASON.NO_POOL };
+    const pool = poolSnap.data();
+    let releasing = false;
+    switch (pool.status) {
+      case POOL_STATUS.CLOSED:
+        break;
+      case POOL_STATUS.RESOLVING:
+        if (fromHold !== true) return { refunded: false, reason: REFUND_REASON.HELD, holdReason: pool.holdReason ?? null, pool };
+        releasing = true;
+        break;
+      case POOL_STATUS.REFUNDED:
+        return { refunded: false, reason: REFUND_REASON.ALREADY_REFUNDED, pool };
+      case POOL_STATUS.RESOLVED:
+        return { refunded: false, reason: REFUND_REASON.ALREADY_SETTLED, pool };
+      case POOL_STATUS.OPEN:
+        return { refunded: false, reason: REFUND_REASON.POOL_OPEN };
+      default:
+        return { refunded: false, reason: REFUND_REASON.TERMINAL, status: pool.status, pool };
+    }
+
+    // (3) THE STAKES — the whole book in one read, partitioned in memory: the
+    // `live` ones are voided; the ones ALREADY voided by this reason have
+    // their ledger re-visited (a no-op when applied) so a retry converges
+    // from a partial store the non-atomic test stand-in can produce and
+    // Firestore's atomic commit never does. `seat_left` / `insufficient`
+    // voids were paired by the close already. A `won` / `lost` stake SHOULD
+    // be impossible here (the status gate admits no settled pool; the
+    // settlement writes its stakes and the pool atomically) — but an
+    // out-of-band write can leave one, and refunding AROUND it would seal a
+    // recoverable book as `refunded` for ever, with the card then showing a
+    // payout the ledger never credited (MONEY-3 / MONEY-R-2, the PR 5 review
+    // record): the refund REFUSES, writes nothing, and the operator repairs
+    // the book in the Console and re-runs.
+    const stakesSnap = await tx.get(stakesQuery(db, groupId));
+    const live = [];
+    const prior = [];
+    const decided = [];
+    const malformed = [];
+    stakesSnap.forEach((doc) => {
+      const data = { id: doc.id, ...doc.data() };
+      if (data.status === STAKE_STATUS.LIVE) live.push(data);
+      else if (data.status === STAKE_STATUS.VOIDED && data.voidReason === voidReason) prior.push(data);
+      else if (data.status === STAKE_STATUS.WON || data.status === STAKE_STATUS.LOST) decided.push(data);
+    });
+    for (const s of [...live, ...prior]) if (!isValidStakeAmount(s.amount)) malformed.push(s);
+    if (decided.length > 0) {
+      console.error(`[backingSettlement] refund REFUSED for ${groupId}: ${decided.length} decided stake(s) inside a ${pool.status} pool (${decided.map((s) => s.id).join(', ')}) — repair the book, then re-run`);
+      return { refunded: false, reason: REFUND_REASON.CORRUPT_BOOK, stakeIds: decided.map((s) => s.id), status: pool.status, pool };
+    }
+    if (malformed.length > 0) {
+      console.error(`[backingSettlement] refund REFUSED for ${groupId}: malformed stake amount on ${malformed.map((s) => s.id).join(', ')}`);
+      return { refunded: false, reason: REFUND_REASON.MALFORMED_STAKE, stakeIds: malformed.map((s) => s.id), status: pool.status, pool };
+    }
+
+    // (4) THE CEILING (H3), inside the transaction, structural.
+    const projected = 1 + live.length * REFUND_WRITES_PER_STAKE + prior.length * (REFUND_WRITES_PER_STAKE - 1);
+    if (live.length > SETTLEMENT_MAX_STAKES || projected > SETTLEMENT_MAX_WRITES) {
+      if (pool.status === POOL_STATUS.CLOSED) {
+        const held = {
+          ...pool, status: POOL_STATUS.RESOLVING, holdReason: HOLD_REASON.STAKE_CEILING,
+          heldAt: nowIso, holdSource: source, liveStakesAtHold: live.length, updatedAt: nowIso,
+        };
+        tx.set(poolRef, held);
+        console.error(`${LOG_PREFIX} HOLD: refund of ${poolRef.path} held in resolving — holdReason=${HOLD_REASON.STAKE_CEILING} (live stakes ${live.length}, source ${source}).`);
+        return { refunded: false, reason: REFUND_REASON.STAKE_CEILING, holdReason: HOLD_REASON.STAKE_CEILING, pool: held };
+      }
+      return { refunded: false, reason: REFUND_REASON.STAKE_CEILING, holdReason: pool.holdReason ?? HOLD_REASON.STAKE_CEILING, pool };
+    }
+
+    // (5) THE WALLETS — the LAST reads, keyed by path (the PR 1 threading contract).
+    const dev = pool.isDev === true;
+    const work = [...live.map((stake) => ({ stake, decide: true })), ...prior.map((stake) => ({ stake, decide: false }))];
+    const walletDocs = new Map();
+    for (const { stake } of work) {
+      const ref = walletRef(db, stake.userId, { dev });
+      if (walletDocs.has(ref.path)) continue;
+      const walletDoc = await readWallet(tx, ref);
+      if (walletDoc == null) {
+        throw new BackingSettlementError('wallet_missing', `refund: wallet ${ref.path} is missing for stake ${stake.id} — refusing to mint a record from nothing`);
+      }
+      walletDocs.set(ref.path, walletDoc);
+    }
+
+    // ----- WRITES -----
+    // The ladder's own month when the pod banked a day (a voided in-week pod
+    // may have); the pool's battle-Monday month otherwise (`closePool`'s rule
+    // for a pod that never battled). Both halves of each pair carry the SAME
+    // key, which is what makes the pair cancel in the season bucket.
+    const monthKey = (group ? monthKeyForGroup(group) : null) ?? monthKeyForPool(pool);
+    let stakesVoided = 0;
+    for (const { stake, decide } of work) {
+      const { id: stakeId, ...stakeFields } = stake;
+      if (decide) {
+        tx.set(stakeRefFor(db, stakeId), { ...stakeFields, status: STAKE_STATUS.VOIDED, voidReason, voidedAt: nowIso });
+        stakesVoided += 1;
+      }
+      const wRef = walletRef(db, stake.userId, { dev });
+      // THE PAIR, exactly as `closePool` pairs it: the refund credit, then the
+      // stake side's month attribution threaded from the credit's returned
+      // wallet — score-neutral in `careerNet` AND `seasons.{monthKey}.net`.
+      const refunded = creditRefund(tx, wRef, walletDocs.get(wRef.path), {
+        stakeId, groupId, amount: stake.amount, monthKey, now: nowDate,
+      });
+      const attributed = recordStakeLoss(tx, wRef, refunded.wallet, {
+        stakeId, groupId, amount: stake.amount, monthKey, now: nowDate,
+      });
+      walletDocs.set(wRef.path, attributed.wallet);
+    }
+
+    // (6) THE POOL: `refunded`, the reason, the instant, the host, the month.
+    const refundedPool = {
+      ...pool,
+      status: POOL_STATUS.REFUNDED,
+      refundReason: voidReason,
+      refundedAt: nowIso,
+      refundRef: source,
+      monthKey,
+      stakesVoided: stakesVoided + prior.length,
+      updatedAt: nowIso,
+    };
+    if (releasing) {
+      // WHO, WHEN and WHAT WAS HELD are recorded; the operator's free-text WHY
+      // is in the log line only (the pool document is authed-read).
+      refundedPool.holdRelease = { by: actor ?? 'admin', at: nowIso, priorHoldReason: pool.holdReason ?? null };
+      delete refundedPool.holdReason;
+      delete refundedPool.heldAt;
+      delete refundedPool.holdSource;
+      delete refundedPool.holdReleaseRefused;
+    }
+    tx.set(poolRef, refundedPool);
+
+    const line = `${LOG_PREFIX} REFUNDED ${poolRef.path}: ${stakesVoided} stakes voided ${voidReason} this pass (${prior.length} prior), source ${source}${releasing ? `, released from hold ${pool.holdReason ?? 'none'} by ${actor ?? 'admin'}` : ''}${voidReason === VOID_REASONS.ADMIN ? ` — admin reason: ${note ?? 'none given'}` : ''}`;
+    if (voidReason === VOID_REASONS.ADMIN || releasing) console.error(line); else console.log(line);
+    return { refunded: true, pool: refundedPool, refundReason: voidReason, stakesVoided, priorVoided: prior.length };
   });
 }

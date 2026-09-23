@@ -85,14 +85,16 @@ export function makeInMemoryDb(initial = {}) {
      * same way a doc ref does. Purely additive: the pre-existing single-`where`
      * `.get()` and `.where().select().get()` forms behave exactly as before.
      *
-     * Only `==` is applied as a filter (every caller's operator today); any other
-     * operator is recorded and ignored, which is the fixture's documented limit
-     * rather than a silent wrong answer — a suite needing `>=` must assert on the
+     * `==` and `in` are applied as filters (`in` since Backing Beta PR 5 — the
+     * trainer-stats query's status disjunction); any other operator is
+     * recorded and ignored, which is the fixture's documented limit rather
+     * than a silent wrong answer — a suite needing `>=` must assert on the
      * filtered set itself.
      */
     function makeQuery(filters, order = null, max = null) {
       const run = () => {
         let docs = topLevelDocs(prefix).filter(d => filters.every((f) => {
+          if (f.op === 'in') return Array.isArray(f.value) && f.value.includes(d.data()[f.field]);
           if (f.op !== '==') return true;
           return d.data()[f.field] === f.value;
         }));

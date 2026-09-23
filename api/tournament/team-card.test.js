@@ -50,6 +50,7 @@ const {
   humanLayerFrom, agentLayerFrom, passesBackingLexicon,
 } = await import('./team-card.js');
 const { ARCHETYPE_IDENTITY } = await import('../../src/data/archetypeIdentity.js');
+const { BACKING_SAFE_APPROACH } = await import('../../src/constants/backingApproach.js');
 const { deriveWeekLine } = await import('../../src/constants/deriveWeekLine.js');
 
 // ==================== FIXTURES ====================
@@ -421,19 +422,24 @@ describe('honesty of the pure pieces', () => {
     expect(Object.keys(projectAgent(RANKED_AGENT)).sort()).toEqual(['approach', 'archetype', 'archetypeLabel', 'name', 'ruleCount', 'traitCount']);
   });
 
-  it('the approach is the canonical per-archetype copy — and ONLY when it passes the backing lexicon (DOM-2 in the PR 4 review record)', () => {
+  it('the approach is the canonical per-archetype copy when it passes the backing lexicon — else its BACKING-SAFE TWIN, else nothing (DOM-2 in the PR 4 review record; PR 5 §2G)', () => {
     let shown = 0;
     for (const [key, identity] of Object.entries(ARCHETYPE_IDENTITY)) {
       const approach = projectAgent({ archetype: key }).approach;
-      if (passesBackingLexicon(identity.disposition)) { expect(approach).toBe(identity.disposition); shown += 1; } else expect(approach).toBeNull();
+      if (passesBackingLexicon(identity.disposition)) { expect(approach).toBe(identity.disposition); shown += 1; } else expect(approach).toBe(BACKING_SAFE_APPROACH[key] ?? null);
+      // Whatever is shown passes the lexicon — the twin included.
+      if (approach !== null) expect(passesBackingLexicon(approach), `${key}: ${approach}`).toBe(true);
     }
     expect(shown).toBeGreaterThan(3);
-    // The diversifier's canonical line names a forbidden term ("bets"); the card
-    // omits it rather than rewriting canonical copy — a backing-safe line is
-    // the founder's call, recorded in the PR.
+    // The diversifier's canonical line names a forbidden term ("bets"). PR 4
+    // omitted the approach; PR 5 shows the backing-safe twin the founder
+    // ruled — a second line alongside the canonical one, which is untouched.
     expect(ARCHETYPE_IDENTITY.diversifier.disposition).toMatch(/\bbets\b/);
-    expect(projectAgent({ archetype: 'diversifier' }).approach).toBeNull();
+    expect(projectAgent({ archetype: 'diversifier' }).approach).toBe(BACKING_SAFE_APPROACH.diversifier);
+    expect(projectAgent({ archetype: 'diversifier' }).approach).toBe('Keeps the portfolio spread across many sectors so no single one can sink you.');
     expect(projectAgent({ archetype: 'diversifier' }).archetypeLabel).toBe('Diversifier');
+    // An unknown archetype still gets nothing — no guess, no borrowed twin.
+    expect(projectAgent({ archetype: 'not_an_archetype' }).approach).toBeNull();
   });
 
   it('passesBackingLexicon: the shared matcher — whole words and their plain inflections, in any case; empty text never passes', () => {

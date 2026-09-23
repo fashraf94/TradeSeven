@@ -11,22 +11,51 @@
 //   2  auth — the admin/cron secret (header or Bearer, never a query string)
 //   3  THE FLAG — 404 while BACKING_BETA_ENABLED is dark, AFTER auth (the
 //      SHOW_IT_ENABLED / research.js shape, the same as every backing route)
-//   4  body — { groupId, overrideHold?, reason?, simulatedNow? }, each refusal
-//      a plain reason, nothing read
+//   4  body — { groupId, action?, overrideHold?, reason?, simulatedNow? },
+//      each refusal a plain reason, nothing read
 //   5  THE FREEZE — 409 while TOURNAMENT_ADVANCEMENT_FROZEN, nothing read
-//   6  a SIMULATED clock settles DEV pods only (below)
-//   7  `settlePool`, the one primitive; the answer is its own
+//      (the SETTLE action only — see THE REFUND below)
+//   6  a SIMULATED clock settles or refunds DEV pods only (below)
+//   7  `settlePool` or `refundPool`, the one primitive per action; the answer
+//      is its own
 //
-// WHAT THIS ROUTE IS FOR. The duty never revisits a completed pod and
-// settle-on-read is a latent path, so this is the whole-pool retry an operator
-// reaches for — and it is the ONLY way out of a `resolving` hold:
+// WHAT THIS ROUTE IS FOR. The duty never revisits a completed pod and the pod
+// list's settle-on-read cannot reach one (PR 3 review, finding 1 — the
+// results reader carries that contract since PR 5), so this is the
+// whole-pool retry an operator reaches for — and it is the ONLY way out of a
+// `resolving` hold:
 //   · a D-ae hold (`holdReason: 'agent_layer_absent'`) is released with
 //     `overrideHold: true`, which bypasses the agent-less refusal and settles;
 //     who and why are logged loudly and recorded on the pool (`holdRelease`);
 //   · a ceiling hold (`holdReason: 'stake_ceiling'`) is STRUCTURAL — the bound
-//     is Firestore's — so an override re-runs the assertion and re-holds; the
-//     operator reduces the live book (admin voids) and re-runs.
+//     is Firestore's — so an override re-runs the assertion and re-holds.
+//     NO PRIMITIVE EXITS IT TODAY (MONEY-4, the PR 5 review record): there is
+//     no "admin void", and the refund holds at 96 live stakes (five backers
+//     at the per-backer cap reach it) with no way to reduce the book from
+//     this route. The one procedure is a Console repair, with two traps:
+//     a stake voided by hand must carry the GROUP'S OWN reason
+//     (`group_voided` / `group_expired` / `group_deleted`) and its ledger
+//     pair must be written with it, and the hold must then be released with
+//     `action: 'settle'` + `overrideHold` (which re-derives that reason and
+//     re-visits the prior stake) — `action: 'refund'` writes `admin` and
+//     SKIPS a stake voided under another reason, stranding its BP; and a
+//     hand-voided stake on a pool that will later SETTLE must have the
+//     sealed `private/totals` re-derived in the same write, or the pot pays
+//     out BP it no longer holds (MONEY-7). A batched refund is the follow-up
+//     that closes the class.
 // Without `overrideHold` a held pool answers `held` and nothing moves.
+//
+// THE REFUND (Backing Beta PR 5; spec §7 "Refund paths"; the PR 3 review
+// record's finding 21). `action: 'refund'` voids every live stake of a
+// `closed` (or, with `overrideHold`, a `resolving`) pool as `admin` — the §7
+// admin refund for a degraded, holiday, frozen or lingering pod — through
+// `refundPool`, the one refund primitive. A `reason` is REQUIRED for it,
+// logged loudly, and NEVER written to the pool document (authed-read by every
+// signed-in user; finding 3 of the same record). The freeze does NOT gate the
+// refund: a frozen week that never completes is one of §7's named refund
+// cases, and a refund reads no composite — it pays nothing on them. The
+// group-driven paths (`voided`, `expired`, a deleted doc) need no action:
+// `settlePool` routes them to the refund itself on every host.
 //
 // A SIMULATED CLOCK SETTLES DEV PODS ONLY. run-duty's `simulatedNow` keeps its
 // markers in the 'sim:' namespace so a smoke run can never pre-satisfy the
@@ -48,9 +77,10 @@ import { parseSimulatedNow } from '../_utils/tournamentTime.js';
 import {
   BackingSettlementError,
   SETTLEMENT_SOURCE,
+  refundPool,
   settlePool,
 } from '../_utils/backingSettlement.js';
-import { BackingPoolError, readGroup } from '../_utils/backingPools.js';
+import { BackingPoolError, VOID_REASONS, readGroup } from '../_utils/backingPools.js';
 import { BackingLedgerError } from '../_utils/backingWallet.js';
 import { BACKING_BETA_ENABLED, TOURNAMENT_ADVANCEMENT_FROZEN } from '../../src/config/featureFlags.js';
 
@@ -58,6 +88,9 @@ export const config = { maxDuration: 60 };
 
 /** The longest `reason` the route records — an operator's note, not an essay. */
 export const MAX_REASON_LEN = 500;
+
+/** The two things this route can do to a pool. `settle` is the PR 3 default. */
+export const ADMIN_ACTIONS = Object.freeze({ SETTLE: 'settle', REFUND: 'refund' });
 
 /** A 400 body: one plain reason, the attest.js shape. */
 function bad(res, error, message) {
@@ -83,15 +116,23 @@ export default async function handler(req, res) {
   } catch {
     return bad(res, 'invalid_body', 'The body must be JSON.');
   }
-  const { groupId, overrideHold = false, reason = null, simulatedNow = null } = body;
+  const { groupId, action = ADMIN_ACTIONS.SETTLE, overrideHold = false, reason = null, simulatedNow = null } = body;
   if (typeof groupId !== 'string' || groupId.length === 0 || groupId.length > 200 || groupId.includes('/')) {
     return bad(res, 'invalid_group_id', 'A non-empty groupId of at most 200 characters, with no slash, is required.');
+  }
+  if (!Object.values(ADMIN_ACTIONS).includes(action)) {
+    return bad(res, 'invalid_action', `action must be one of ${Object.values(ADMIN_ACTIONS).join(', ')} when present.`);
   }
   if (typeof overrideHold !== 'boolean') {
     return bad(res, 'invalid_override', 'overrideHold must be a boolean when present.');
   }
   if (reason !== null && (typeof reason !== 'string' || reason.length > MAX_REASON_LEN)) {
     return bad(res, 'invalid_reason', `reason must be a string of at most ${MAX_REASON_LEN} characters when present.`);
+  }
+  const refunding = action === ADMIN_ACTIONS.REFUND;
+  // A refund of other people's stakes needs a stated why — logged, never stored.
+  if (refunding && (typeof reason !== 'string' || reason.trim().length === 0)) {
+    return bad(res, 'reason_required', 'A refund requires a non-empty reason (logged, never written to the pool).');
   }
   const parsed = parseSimulatedNow(simulatedNow);
   if (parsed.error) {
@@ -100,7 +141,8 @@ export default async function handler(req, res) {
   const simulated = simulatedNow != null;
 
   // 5. THE FREEZE — this route's own check (A-C13). Nothing is read first.
-  if (TOURNAMENT_ADVANCEMENT_FROZEN) {
+  // The SETTLE action only: a refund reads no composite (see the header).
+  if (TOURNAMENT_ADVANCEMENT_FROZEN && !refunding) {
     console.error(`[backing-settle] FROZEN (TOURNAMENT_ADVANCEMENT_FROZEN): re-run of ${groupId} refused`);
     return res.status(409).json({ error: 'frozen', message: 'Advancement is frozen; settlement is withheld.' });
   }
@@ -122,29 +164,48 @@ export default async function handler(req, res) {
       }
     }
 
+    const source = simulated ? SETTLEMENT_SOURCE.ADMIN_SIM : SETTLEMENT_SOURCE.ADMIN;
+
+    // 7a. THE REFUND — `refundPool`, the one refund primitive. The operator's
+    // reason is on this log line and nowhere else.
+    if (refunding) {
+      console.error(`[backing-settle] ADMIN REFUND requested for ${groupId}${overrideHold ? ' (out of a hold)' : ''}${simulated ? ' [SIMULATED]' : ''} — reason: ${reason}`);
+      const result = await refundPool(db, groupId, {
+        now: parsed.now,
+        source,
+        reason: VOID_REASONS.ADMIN,
+        fromHold: overrideHold,
+        actor: 'admin',
+        note: reason,
+      });
+      console.log(`[backing-settle] ${groupId}${simulated ? ' [SIMULATED]' : ''} → ${result.refunded ? `REFUNDED (${result.stakesVoided} stakes)` : `not refunded (${result.reason}${result.holdReason ? `: ${result.holdReason}` : ''})`}`);
+      return res.status(200).json({ groupId, simulated, action, overrideHold, ...result });
+    }
+
     if (overrideHold) {
       console.error(`[backing-settle] HOLD OVERRIDE requested for ${groupId} by admin — reason: ${reason ?? 'none given'}${simulated ? ' [SIMULATED]' : ''}`);
     }
 
-    // 7. The one primitive.
+    // 7b. The one settlement primitive (which routes a voided, expired or
+    // deleted pod to the refund on its own — PR 5).
     const result = await settlePool(db, groupId, {
       now: parsed.now,
-      source: simulated ? SETTLEMENT_SOURCE.ADMIN_SIM : SETTLEMENT_SOURCE.ADMIN,
+      source,
       overrideHold,
       actor: 'admin',
       reason,
     });
-    console.log(`[backing-settle] ${groupId}${simulated ? ' [SIMULATED]' : ''} → ${result.settled ? 'SETTLED' : `unsettled (${result.reason}${result.holdReason ? `: ${result.holdReason}` : ''})`}`);
-    return res.status(200).json({ groupId, simulated, overrideHold, ...result });
+    console.log(`[backing-settle] ${groupId}${simulated ? ' [SIMULATED]' : ''} → ${result.settled ? 'SETTLED' : result.refunded ? `REFUNDED (${result.refundReason})` : `unsettled (${result.reason}${result.holdReason ? `: ${result.holdReason}` : ''})`}`);
+    return res.status(200).json({ groupId, simulated, action, overrideHold, ...result });
   } catch (err) {
     if (err instanceof BackingSettlementError || err instanceof BackingPoolError || err instanceof BackingLedgerError) {
       // Typed refusals: the code goes to the caller, the message (which may
       // name internal state) to the log.
       console.error(`[backing-settle] ${groupId} refused (${err.code}):`, err.message);
       return res.status(err.statusCode >= 400 && err.statusCode < 600 ? err.statusCode : 500)
-        .json({ error: err.code, message: 'Settlement refused; see the server log.' });
+        .json({ error: err.code, message: refunding ? 'Refund refused; see the server log.' : 'Settlement refused; see the server log.' });
     }
     console.error('[backing-settle] error:', err);
-    return res.status(500).json({ error: 'server_error', message: 'Could not run the settlement.' });
+    return res.status(500).json({ error: 'server_error', message: refunding ? 'Could not run the refund.' : 'Could not run the settlement.' });
   }
 }

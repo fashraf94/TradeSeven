@@ -188,3 +188,44 @@ export async function fetchTapePod(groupId, uid) {
   }
   return groupToPod(group, { names, uid, base: true, battlesByOwner });
 }
+
+// ==================== BACKING BETA PR 5 — RESULTS, STATS, TELEMETRY ====================
+
+export const BACKING_RESULTS_URL = '/api/backing/results';
+export const MY_STATS_URL = '/api/backing/my-stats';
+export const TRAINER_STATS_URL = '/api/backing/trainer-stats';
+export const BACKING_EVENT_URL = '/api/backing/event';
+
+/**
+ * The viewer's results (spec §5 Surface E; §7 settle-on-read rides this read
+ * server-side). `groupId` asks for ONE pod's result (the Spectate final
+ * state: `{ pod }`); otherwise weeks, newest first (`{ weeks, nextBefore }`),
+ * `before` paging further back and `limit` weeks per page.
+ */
+export function fetchBackingResults({ groupId = null, before = null, limit = null } = {}) {
+  const params = new URLSearchParams();
+  if (groupId) params.set('groupId', groupId);
+  if (before) params.set('before', before);
+  if (Number.isInteger(limit)) params.set('limit', String(limit));
+  const q = params.toString();
+  return call(q ? `${BACKING_RESULTS_URL}?${q}` : BACKING_RESULTS_URL);
+}
+
+/** The viewer's OWN private record (spec §5 "My Backing stats — private"). The server reads the token; no id is sent. */
+export function fetchMyBackingStats() {
+  return call(MY_STATS_URL);
+}
+
+/** The viewer's trainer beta stats (spec §5 "Trainer stats — private to the trainer"). The server reads the token; no id is sent. */
+export function fetchTrainerStats() {
+  return call(TRAINER_STATS_URL);
+}
+
+/**
+ * ONE telemetry event to the sink (spec §10). AWAITED here — the server's
+ * write is awaited in-request — and fired-and-forgotten by the caller
+ * (src/services/backingTelemetry.js), never by this function.
+ */
+export function postBackingEvent({ event, groupId = null, props = {} }) {
+  return post(BACKING_EVENT_URL, { event, groupId, props });
+}

@@ -69,13 +69,17 @@ const { default: BackingPreviewScreen, PREVIEW_LABEL, NOTHING_SAVED, PREVIEW_STA
 const { backingPreviewAllowed, backingPreviewRequested, PRODUCTION_VERCEL_HOSTS } = await import('../components/League/backing/backingPreview');
 const { PodCard } = await import('../components/League/LeaguePod');
 const { leagueState } = await import('../components/League/leagueFixtures');
-const { PREDICTIONS_LABEL, REFUSALS } = await import('../components/League/backing/backingCopy');
+const { PREDICTIONS_LABEL, REFUSALS, RESULTS, STATS } = await import('../components/League/backing/backingCopy');
 const { findForbiddenTerm } = await import('../constants/backingLexicon');
 const BackingLandingStrip = (await import('../components/League/backing/BackingLandingStrip')).default;
 const StakeControl = (await import('../components/League/backing/StakeControl')).default;
 const YourBacking = (await import('../components/League/backing/YourBacking')).default;
 const { doc } = await import('firebase/firestore');
 const { fetchWithAuth } = await import('../utils/fetchWithAuth');
+// The emitter's per-session dedup is reset before every row, so a telemetry
+// emit from the page (which must never happen) is seen on every render, not
+// only the first (DARK-2, the PR 5 review record).
+const { __resetBackingTelemetry } = await import('../services/backingTelemetry');
 
 // ── the network boundary, spied ─────────────────────────────────────────────
 const saved = {};
@@ -132,7 +136,7 @@ async function select(page, stateId) {
 }
 const byText = (root, selector, text) => [...root.querySelectorAll(selector)].find((el) => el.textContent.trim() === text) ?? null;
 
-beforeEach(() => { flag.on = false; resetNet(); window.history.replaceState(null, '', '/?preview=backing'); });
+beforeEach(() => { flag.on = false; resetNet(); __resetBackingTelemetry(); window.history.replaceState(null, '', '/?preview=backing'); });
 afterEach(async () => {
   for (const { root, container } of roots) { await act(async () => root.unmount()); container.remove(); }
   roots = [];
@@ -181,6 +185,29 @@ function expectState(page, state) {
       if (state.variant === 'backed') { expect(s.querySelector('[data-backing="backed"]')?.textContent).toContain('Backed · 500 BP'); expect(noteText(page)).toBe(NOTHING_SAVED); }
       break;
     }
+    case 'results': {
+      const card = s.querySelector('[data-backing="results-card"]');
+      expect(card, state.id).not.toBeNull();
+      expect(card.getAttribute('data-outcome')).toBe({ win: 'settled', loss: 'settled', refunded: 'refunded', insufficient: 'insufficient' }[state.result]);
+      // MUTATION CHECK 3's fixture on the page: the stake document's payout, never stake × pays ×.
+      if (state.result === 'win') { expect(text).toContain('paid 714 BP'); expect(text).not.toContain('715'); expect(text).toContain('+114 BP net'); expect(text).toContain('70% of BP in this pool backed them'); }
+      // The loss: the viewer's stake row says "lost" and no BP was paid to them; the WINNING team's row still shows what the pot paid (×).
+      if (state.result === 'loss') { expect(text).toContain('−500 BP net'); expect(text).toContain('lost'); expect(text).not.toMatch(/paid \d/); expect(text).toContain('paid ×3.33'); }
+      if (state.result === 'refunded') { expect(text).toContain(RESULTS.reason.group_voided); expect(text).toContain(RESULTS.neutral); expect(text).not.toContain('pays ×'); }
+      if (state.result === 'insufficient') { expect(text).toContain(RESULTS.reason.insufficient); expect(text).not.toContain('Winner'); }
+      // The tape link rides a SETTLED result only (there is no film room for a pool that never played out).
+      if (state.result === 'win' || state.result === 'loss') expect(s.querySelector('[data-backing="results-tape"]'), `${state.id}: the tape link`).not.toBeNull();
+      else expect(s.querySelector('[data-backing="results-tape"]'), `${state.id}: no tape link`).toBeNull();
+      break;
+    }
+    case 'stats': {
+      expect(s.querySelector(state.stats === 'mine' ? '[data-backing="my-stats"]' : '[data-backing="trainer-stats"]'), state.id).not.toBeNull();
+      expect(text).toContain(STATS.eyebrow);
+      if (state.stats === 'mine') { expect(text).toContain(STATS.sub); expect(text).toContain('1 of 2 pools'); }
+      if (state.stats === 'trainer') { expect(text).toContain(STATS.trainer.uniqueBackers); expect(text).toContain('600 BP'); }
+      expect(text).not.toMatch(/leaderboard|percentile/i);
+      break;
+    }
     default: {
       expect(s.querySelector('[data-backing="your-backing-section"]'), state.id).not.toBeNull();
       if (state.week === 'before-monday') { expect(text).toContain('Locked in · plays Monday'); expect(text).not.toMatch(/Day \d of 5/); }
@@ -201,13 +228,16 @@ describe('the page — the label, every state, the local actions', () => {
     expect(page.textContent.startsWith(PREVIEW_LABEL)).toBe(true);
   });
 
-  it('the switcher names every surface state the build asks for — 23 of them', () => {
+  it('the switcher names every surface state the build asks for — 23 from PR 4, and PR 5\'s four results and two stats states', () => {
     const byGroup = (g) => PREVIEW_STATES.filter((s) => s.group === g).map((s) => s.id);
     expect(byGroup('strip')).toEqual(['open', 'staked', 'week', 'between'].flatMap((k) => [`strip-${k}-no-bracket`, `strip-${k}-bracket`]));
     expect(byGroup('pods')).toEqual(['pods-below-floor', 'pods-qualified', 'pods-revealed', 'pods-your-pod']);
     expect(byGroup('card')).toEqual(['card-first-week', 'card-veteran', 'card-cpu', 'card-own']);
     expect(byGroup('stake')).toEqual(['stake-attest', 'stake-attested', 'stake-refusal', 'stake-backed']);
     expect(byGroup('week')).toEqual(['week-before-monday', 'week-monday', 'week-mid-week']);
+    expect(byGroup('results')).toEqual(['results-win', 'results-loss', 'results-refunded', 'results-insufficient']);
+    expect(byGroup('stats')).toEqual(['stats-mine', 'stats-trainer']);
+    expect(PREVIEW_STATES).toHaveLength(29);
   });
 
   it('every state renders its surface, from the switcher — and the page speaks no forbidden term', async () => {
@@ -216,11 +246,11 @@ describe('the page — the label, every state, the local actions', () => {
       await select(page, state.id);
       expectState(page, state);
       const own = [page.querySelector('[data-preview="header"]').textContent,
-        ...[...stage(page).querySelectorAll('[data-backing="strip"], [data-backing="pod-list"], [data-backing="team-card"], [data-backing="stake-control"], [data-backing="attestation"], [data-backing="backed"], [data-backing="your-backing-section"]')].map((el) => el.textContent)].join(' ');
+        ...[...stage(page).querySelectorAll('[data-backing="strip"], [data-backing="pod-list"], [data-backing="team-card"], [data-backing="stake-control"], [data-backing="attestation"], [data-backing="backed"], [data-backing="your-backing-section"], [data-backing="results-card"], [data-backing="my-stats"], [data-backing="trainer-stats"]')].map((el) => el.textContent)].join(' ');
       expect(findForbiddenTerm(own), state.id).toBeNull();
     }
     expectNoNetwork();
-  });
+  }, 60_000);
 
   it('a state is addressable: ?state=<id> opens it, and the switcher keeps the URL in step', async () => {
     window.history.replaceState(null, '', '/?preview=backing&state=card-cpu');

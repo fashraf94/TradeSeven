@@ -61,6 +61,12 @@ const BODIES = [
   ['a valid re-run', { groupId: 'grp-1' }],
   ['an override', { groupId: 'grp-1', overrideHold: true, reason: 'because' }],
   ['a simulated run', { groupId: 'grp-1', simulatedNow: '2026-10-02T22:30:00.000Z' }],
+  // PR 5: the refund door (and a bogus action) are as dark as the re-run —
+  // a refund branch placed ahead of the flag would answer here (DARK-5, the
+  // PR 5 review record).
+  ['a refund', { groupId: 'grp-1', action: 'refund', reason: 'the pod was voided by hand' }],
+  ['a refund releasing a hold', { groupId: 'grp-1', action: 'refund', overrideHold: true, reason: 'held' }],
+  ['a bogus action', { groupId: 'grp-1', action: 'bogus' }],
   ['an invalid body', { groupId: 42 }],
   ['an empty body', {}],
   ['a string body', JSON.stringify({ groupId: 'grp-1' })],
