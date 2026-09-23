@@ -2,11 +2,12 @@
 
 **Date:** 2026-09-23
 **Branch:** `claude/eval-deferred-beat`, cut from `origin/main` at `591b714d90a72ed6e8e5604f19a2c0fff3388fc4` after `git fetch origin`, the session's first step (BUILD_RULES §3). The remote-tracking ref was current and the tree was clean at open. The clone is shallow; no history beyond it was needed and `--unshallow` was not run.
-**Commits:** `c7e3c1df` (the build) → `8e3d5337` (the draft report) → `f32995e9` (the §2 review fixes: code and tests). **Code HEAD: `f32995e9`.** This report rides one more commit, docs only, on top; that commit is the branch head the PR shows.
+**Commits:** `c7e3c1df` (the build) → `8e3d5337` (the draft report) → `f32995e9` (the §2 review fixes: code and tests) → `4c75ba15` (this report, pending the last refuter) → `039df27d` (the colour row in the form that refuter preferred). **Code HEAD: `039df27d`.** This report's final text rides one more commit, docs only, on top; that commit is the branch head the PR shows.
 **Prompt:** *Build — Eval cron instrumentation and the deferred beat*: three items (D1 `tickMs`, D2 the run document, D3 the deferred beat) and nothing else.
 **Basis:** `docs/audits/20260918_PHASE0_EVAL_CRON_SCALING.md`: `:271` (no per-battle wall time anywhere), `:293` (R2: `summary.skipped` conflates lock-skips with deferrals and is never persisted), `:298` (R7: `tickMs` on the entry). Also `docs/audits/20260923_PHASE0_COCKPIT.md` §6.4 (`:159`: "a deferred battle still gets no tick, no lock, no record"). All four were re-read this session. VERIFIED.
 **Fence:** `git diff origin/main --name-only` ∩ BUILD_RULES §1 = **∅** (§3). No fenced function is edited, and none is newly called.
 **Crons do not run on Vercel preview** (BUILD_RULES §6). Nothing here can be seen on a preview deploy. Verification is the suites below, then the first production runs after the founder's merge. The run document and `tickMs` go live at merge; the beat stays dark.
+**For Astra's review** (per the prompt, relayed by the founder; this PR requests no reviewers, per BUILD_RULES §2): the prompt expected ≤ 8 files, and the branch has 21 (11 source, 9 test, 1 report; §12.4 explains why). The source to read first is `api/cron/agent-evaluate.js` (§4–§6), then the tape's `buildTape.js`, `TapeCards.jsx` and `AgentChat.jsx` (§6.2), and the two mirrors, `derivePeekLine.js` and `deriveBubble.js`.
 **Markers:** every claim about the code carries `file:line`. It is VERIFIED (read at that line this session) unless marked ASSUMED. Line numbers refer to the branch tree unless marked `@591b714d`.
 
 ---
@@ -21,7 +22,7 @@
 | R | Ratchets | Flag guard ✓ (DARK_BY_DESIGN, pin, `Pinned by:`). Rules ✓ (emulator suite, 12 rows, plus a default-run source tripwire). Flag-on shape test: **no edit needed**, because it enumerates through `BASE_ENTRY_KEYS`. Protected-stores allowlist: **no row needed**. Both new write sites resolve to non-protected literal collections, and a row would fail the stale check (§7). | VERIFIED |
 | T | Tests | The six required tests plus the rows around them: 53 new rows across six suites, plus 12 emulator rows. **52 source mutations, every one RED** at a named row. The unmutated control is green (0 of 168). One ruleset mutation was also run against the emulator: RED (§8). | VERIFIED |
 | F | §1 fence | `git diff origin/main --name-only` ∩ §1 = ∅. | VERIFIED |
-| RV | §2 review | Required (21 files, about 1,970 changed lines). Four adversarial lenses and four independent refuters, each on its own snapshot tree. 35 findings: **no merge blocker**. @@R3:EXEC@@ Every confirmed finding is fixed or recorded (§11). Explicit `vite build`: exit 0. | VERIFIED |
+| RV | §2 review | Required (21 files, about 1,980 changed lines). Four adversarial lenses and four independent refuters, each on its own snapshot tree. 35 findings: **no merge blocker**; 26 confirmed, 8 partly confirmed, 1 refuted. Every confirmed finding is fixed or recorded (§11). Explicit `vite build`: exit 0. | VERIFIED |
 | ⚠ | **Flip-blocking: two founder rulings** | (1) **The copy.** "next run picks it up first" is usually false: battles reached without a model call sort ahead of the deferred set, a 15:45 ET deferral is followed by the battle's completion, and at scale the next run may not reach it at all (§9). (2) **Repeats.** A battle deferred run after run collects identical, untimed lines (§6.1). Neither matters while the flag is off. | VERIFIED |
 | ⚠ | Other flip prerequisites | Other status-feed readers treat a beat differently: a "—" row in the tournament feed, `{}` for spectators, `[undefined] undefined: null` in the reflection prompt, the voice lane's window, the Desk's latest line. None throws (§13). | VERIFIED |
 | ⚠ | Prompt discrepancies | Five, each decided and stated rather than improvised past (§12). The founder should look at test 3's `deferredTruncated: 5` and the copy. | — |
@@ -88,7 +89,7 @@ The §1 list was re-read this session (`docs/BUILD_RULES.md:14-24`). `api/cron/a
 - **Start: admission.** `const tickAdmittedAtMs = Date.now()` runs immediately after the lock transaction commits and the lock-skip return is behind it (`api/cron/agent-evaluate.js:864`). Time inside the lock transaction is not the tick's.
 - **End: the authoritative final update.** The entry composes `tickMs: Date.now() - tickAdmittedAtMs` right after `callMs` (`:3846`). The value is **restamped** just before `await battleRef.update(finalUpdate)` (`:4243-4244`). `evaluations` holds the same `evaluation` object (`:4118`), so the restamp rides the write. `tickMs` therefore covers everything from admission to that write, and excludes only the write's own round trip.
 - **Where it lands, and where it does not** (review L4-F4). `:3793` is the only composer of an evaluation entry, and `:4118` the only place the array is rebuilt. Between the trigger count (`:2487`) and the write there is no early return, so every *triggered* tick that completes carries `tickMs`: model failures, budget skips, and refresh or build failures included. A tick that never triggers (CPU-passive, no-trigger or risk-only flushes, degraded quotes, lock-skips) writes no entry, so it has no `tickMs`. A tick that throws writes no entry either. The prompt scoped D1 to "each evaluation entry", and it was built to that. Per-tick wall time for non-triggered ticks remains unmeasured.
-- **What it leaves out** (review L1-F3). Work after the write still costs the loop time but falls outside `tickMs` by definition: narration and anticipation dispatch, and tick-capture finalization. **Summed `tickMs` understates the loop's wall time.** A sharding spec should size runs from the run document's `wallMs`.
+- **What it leaves out** (review L1-F3). Work after the write still costs the loop time but falls outside `tickMs` by definition: narration and anticipation dispatch, and tick-capture finalization. **Summed `tickMs` understates the loop's wall time.** A sharding spec should size runs from the run document's `wallMs`. One gap is known and unpinned: the D1 row charges post-composition time through the shadow log (`:4076`). The only other awaited work before the restamp is the dark shadow capture (`:4215-4216`, `SHADOW_ASSEMBLY_ENABLED = false`, `src/config/featureFlags.js:1482`). That capture is inside `tickMs` by construction, but no row pins it while it is dark: a restamp moved above it survives (review L3-F9, partly confirmed). Pin it when the flag is re-enabled.
 - **The sanctioned list.** `TIMING_ENTRY_KEYS` gains `'tickMs'` after `'callMs'` (`api/_utils/__fixtures__/tickStampsHarness.js:79`). `BASE_ENTRY_KEYS` (`:117`) and every suite that enumerates entry keys through it therefore agree with the new order. The exact-key test (`api/cron/agent-evaluate.tickStamps.flagOff.test.js:196-205`) and the frozen golden (`api/_utils/__fixtures__/tickStampsEntryGolden.flagOff.json`) are **byte-unchanged** against `origin/main`, and the golden was not regenerated. Mutation M3 shows `tickMs` reaches those comparisons only through that list. Under the harness's frozen clock `tickMs` is 0, as `buildMs` and `callMs` are.
 - **The flag-on shape test** (`api/cron/agent-evaluate.tickStamps.flagOn.test.js:386`) enumerates `[...BASE_ENTRY_KEYS, 'heard', 'evidence', 'vintages', 'candidates']`. It moved with the list and needed no edit.
 
@@ -245,7 +246,7 @@ Each mutation was applied in a **snapshot tree**: a copy of the working tree und
 | M26 | builder renders any reason (`buildTape.js`) | **1** / 119 | buildTape: “MUTATION ROW — a beat for any reason but the budget is not rendered w…” |
 | M27 | builder keyed on `action` instead of `kind` (`buildTape.js`) | **11** / 119 | AgentChat: “renders as an engine RECORD — the flat shell, a token edge, a mono ey…” (+10) |
 | M28 | the line's copy changed (`battleViewCopy.js`) | **1** / 119 | AgentChat: “renders as an engine RECORD — the flat shell, a token edge, a mono ey…” |
-| M29 | agentEvalRuns deny block removed from firestore.rules (`firestore.rules`) | **1** / 32 | evalRun: “exactly ONE block for the collection, and it says exactly `allow read…” |
+| M29 | agentEvalRuns deny block removed from firestore.rules (`firestore.rules`) | **1** / 32 | evalRun: “exactly ONE block for the collection, and it says exactly allow read…” |
 | M31 | flag flipped true (`featureFlags.js`) | **3** / 12 | pin: “ships DARK: EVAL_DEFERRED_BEAT_ENABLED is false at merge — the founde…” (+2) |
 | M32 | DARK_BY_DESIGN entry dropped (`flagPinGuard.test.js`) | **1** / 6 | pin: “is registered DARK_BY_DESIGN in the guard — the entry a deliberate fl…” |
 | M33 | Pinned-by pointer dropped (`featureFlags.js`) | **2** / 12 | pin: “is a plain boolean export the flag-pin guard can scan, with a Pinned-…” (+1) |
@@ -255,18 +256,18 @@ Each mutation was applied in a **snapshot tree**: a copy of the working tree und
 | M37 | the record closed BEFORE the beats (end time taken at the loop's end) (`agent-evaluate.js`) | **1** / 32 | evalRun: “the run's wall time INCLUDES the beats: the record is closed after them” |
 | M38 | rotation sort removed (deferred list in query order) (`agent-evaluate.js`) | **3** / 32 | evalRun: “the deferred list is in ROTATION order — oldest `lastEvalStartedAt` f…” (+2) |
 | M39 | rotation sort reversed (newest first) (`agent-evaluate.js`) | **1** / 32 | evalRun: “the deferred list is in ROTATION order — oldest `lastEvalStartedAt` f…” |
-| M40 | `modelCalls` counted at the ATTEMPT, before the build (`agent-evaluate.js`) | **1** / 32 | evalRun: “a prompt build that throws counts as triggered with NO model call — `…” |
+| M40 | `modelCalls` counted at the ATTEMPT, before the build (`agent-evaluate.js`) | **1** / 32 | evalRun: “a prompt build that throws counts as triggered with NO model call — …” |
 | M41 | beat timeout reverted to ONE outer bound over all writes (`agent-evaluate.js`) | **2** / 32 | evalRun: “beats that never answer are WAITED for, up to 2 s, then abandoned; th…” (+1) |
 | M42 | a timed-out write reported as "not written" (writeOutcome flattened) (`agent-evaluate.js`) | **2** / 32 | evalRun: “beats that never answer are WAITED for, up to 2 s, then abandoned; th…” (+1) |
 | M43 | the handler catch reverted to `err.message` (a non-Error throw crashes the finally) (`agent-evaluate.js`) | **1** / 32 | evalRun: “a thrown NON-Error still leaves a reply: the record, then a 500 — nev…” |
-| M44 | deferred colour is the trade teal, not the ABSENT check's (`TapeCards.jsx`) | **1** / 119 | AgentChat: “wears the ABSENT check's colour, read off the one map — edge and eyeb…” |
-| M45 | the deferred line's EYEBROW painted another colour (`TapeCards.jsx`) | **1** / 119 | AgentChat: “wears the ABSENT check's colour, read off the one map — edge and eyeb…” |
-| M46 | the deferred line's EDGE painted another colour (`TapeCards.jsx`) | **1** / 119 | AgentChat: “wears the ABSENT check's colour, read off the one map — edge and eyeb…” |
-| M47 | the id's instant fallback dropped (`\|\| ms`) (`buildTape.js`) | **1** / 119 | buildTape: “a beat with no run id is still keyed, by its own instant — never `tap…” |
+| M44 | deferred colour is the trade teal, not the ABSENT check's (`TapeCards.jsx`) | **1** / 120 | AgentChat: “wears the ABSENT check's colour, read off the one map — edge and eyeb…” |
+| M45 | the deferred line's EYEBROW painted another colour (`TapeCards.jsx`) | **1** / 120 | AgentChat: “wears the ABSENT check's colour, read off the one map — edge and eyeb…” |
+| M46 | the deferred line's EDGE painted another colour (`TapeCards.jsx`) | **1** / 120 | AgentChat: “wears the ABSENT check's colour, read off the one map — edge and eyeb…” |
+| M47 | the id's instant fallback dropped (`\|\| ms`) (`buildTape.js`) | **1** / 119 | buildTape: “a beat with no run id is still keyed, by its own instant — never tap…” |
 | M48 | the peek strip's deferred branch removed (`derivePeekLine.js`) | **2** / 119 | peek: “reads `Check deferred` — the line's own eyebrow, and no time, as a fo…” (+1) |
 | M49 | the bubble's deferred branch removed (`deriveBubble.js`) | **2** / 119 | bubble: “the deferred LINE's own two strings and its own token colour — nothin…” (+1) |
 | M50 | the flip map no longer turns the registration row around (`featureFlags.js`) | **1** / 12 | pin: “the flip map turns the REGISTRATION row around too — a flip that only…” |
-| M51 | rules: a grant OR'd into the agentEvalRuns block (`firestore.rules`) | **1** / 32 | evalRun: “exactly ONE block for the collection, and it says exactly `allow read…” |
+| M51 | rules: a grant OR'd into the agentEvalRuns block (`firestore.rules`) | **1** / 32 | evalRun: “exactly ONE block for the collection, and it says exactly allow read…” |
 | M52 | rules: a wildcard-first path granting reads (`firestore.rules`) | **1** / 32 | evalRun: “no wildcard-first path can grant it either: the only one is the root…” |
 | M53 | the LEGACY chat path admits a beat as a trade line (dead in production — controller flag on) (`AgentChat.jsx`) | **1** / 120 | AgentChat: “the LEGACY path (no tape entries — the controller flag off) renders n…” |
 | — | CONTROL: the unmutated snapshot, every file above | **0** / 168 | — |
@@ -302,15 +303,15 @@ One field, one range, ordered on the same field. Firestore's automatic single-fi
 
 ## 11. The §2 review
 
-**Required:** 21 files and about 1,970 changed lines on the cumulative branch diff (1,947 insertions, 25 deletions, this report included); the thresholds are 10 files or 1,500 lines. §12.4 explains the count.
+**Required:** 21 files and about 1,980 changed lines on the cumulative branch diff (1,952 insertions, 25 deletions, this report included); the thresholds are 10 files or 1,500 lines. §12.4 explains the count.
 
 **Method:**
 
 - **Lenses.** Four lenses reviewed `c7e3c1df`: L1 server correctness, L2 the beat and the client tape, L3 test integrity and ratchets (the mutating lens), L4 cross-cutting consistency and regressions.
-- **Refuters.** Each lens's findings went to an independent refuter (R1–R4) told to **refute** each one with a concrete repro.
+- **Refuters.** Each lens's findings went to an independent refuter (R1–R4) told to **refute** each one with a concrete repro. R3 checked L3's "survives every test" claims against the **whole** default suite (`vitest run`: 14 984 passed, 0 failed on the pristine build), and validated each proposed fix row against its mutation. The coordinator time-boxed R3 after two whole-suite runs: it finished F1–F6 on the whole suite, and gave F7–F10 on its broad set (3 011 rows) plus targeted runs. R3 says so itself.
 - **Isolation.** Every reviewer and refuter worked on its own snapshot tree under the session scratchpad, with `node_modules` symlinked. All were read-only on git and on the shared working tree. The mutating lens and refuter ran their mutations in their own trees. Each reported its tree restored and the shared tree untouched, and the shared tree's diff holds only the coordinator's edits (§15).
 - **Build.** An explicit `vite build` ran in the review (L4, exit 0) and again on the final tree (§15).
-- **Fixes.** They are in `f32995e9`, and each fix row is mutation-checked (§8.2, M34–M53).
+- **Fixes.** They are in `f32995e9`, plus `039df27d` (R3's by-construction colour row). Each fix row is mutation-checked (§8.2, M34–M53).
 
 **Verdict:** no finding blocks the merge. The two flip-blocking items (the copy and repeats) are founder rulings, recorded in the flag's docstring and pinned by the flag test.
 
@@ -332,16 +333,16 @@ One field, one range, ordered on the same field. Firestore's automatic single-fi
 | L2-F6 one hung write → log says no beats were written | minor (flip) | **CONFIRMED** | **Fixed:** per-write bounds (M41) |
 | L2-F7 a comment the diff made stale (`AgentBattleScreen.jsx`) | nit | **PARTLY CONFIRMED**, plus a second stale clause nearby | **Fixed:** both clauses |
 | L2-F8 the beats use the record's margin | nit (flip) | **CONFIRMED**, theoretical (≥ 3 s left) | No action (§6.1d) |
-| L3-F1 removing the beats' `await` passes every test | major | @@R3:F1@@ | **Fixed:** the 1,999-ms row (M34) |
-| L3-F2 no time before the gate: `runId`/`wallMs` from the gate would pass | major | @@R3:F2@@ | **Fixed:** TEST 1 charges 1 s pre-gate (M35, M36) |
-| L3-F3 nothing checks `wallMs` includes the beats | minor | @@R3:F3@@ | **Fixed:** row (M37) |
-| L3-F4 no fixture sets the rotation key | minor | @@R3:F4@@ | **Fixed:** rotation row (M38, M39) |
-| L3-F5 the CI tripwire reads only the first statement | minor | @@R3:F5@@ | **Fixed:** exact-block and wildcard rows, default run and emulator (M51, M52) |
-| L3-F6 the line's colour is unpinned | minor | @@R3:F6@@ | **Fixed:** colour row (M44–M46) |
-| L3-F7 a flip that follows the FLIP MAP goes red | minor | @@R3:F7@@ | **Fixed:** FLIP MAP names the registration turnaround; pinned (M50) |
-| L3-F8 a position check passes when its label is missing | nit | @@R3:F8@@ | **Fixed:** found-first guards |
-| L3-F9 `typeof` accepts `NaN`; a comment over-claims | nit | @@R3:F9@@ | **Fixed:** `Number.isFinite`; comment corrected |
-| L3-F10 no-`runId` id fallback; the dead legacy path admits a beat | nit | @@R3:F10@@ | **Fixed:** two rows (M47, M53) |
+| L3-F1 removing the beats' `await` passes every test | major | **CONFIRMED** (survives the whole suite: 14 984 passed, 0 failed) | **Fixed:** the 1,999-ms row (M34) |
+| L3-F2 no time before the gate: `runId`/`wallMs` from the gate would pass | major | **CONFIRMED**, all three variants (whole suite) | **Fixed:** TEST 1 charges 1 s pre-gate (M35, M36) |
+| L3-F3 nothing checks `wallMs` includes the beats | minor | **CONFIRMED** (whole suite, combined run) | **Fixed:** row (M37) |
+| L3-F4 no fixture sets the rotation key | minor | **CONFIRMED** (whole suite, combined run) | **Fixed:** rotation row (M38, M39) |
+| L3-F5 the CI tripwire reads only the first statement | minor | **CONFIRMED** (whole suite, combined run); the emulator catches both variants, but CI does not run it | **Fixed:** exact-block and wildcard rows, default run and emulator (M51, M52) |
+| L3-F6 the line's colour is unpinned | minor | **CONFIRMED** (whole suite). R3 preferred a pin by construction, so that a retune of the ABSENT colour stays green | **Fixed**, R3's way: the row compares against `LABEL_COLOR[WHY_KIND.ABSENT]`. Red under M44–M46; green under a retune |
+| L3-F7 a flip that follows the FLIP MAP goes red | minor | **CONFIRMED** (broad and targeted runs) | **Fixed:** FLIP MAP names the registration turnaround; pinned (M50) |
+| L3-F8 a position check passes when its label is missing | nit | **PARTLY CONFIRMED**: vacuous on its own, but `buildTape.test.js` catches the production mutation | **Fixed** (optional per R3): found-first guards |
+| L3-F9 `typeof` accepts `NaN`; a comment over-claims | nit | **PARTLY CONFIRMED**: moving the restamp above the dark shadow capture survives. The NaN half is **REFUTED**: the exact 5 000 row kills NaN | `Number.isFinite` kept; comment corrected; the dark-capture gap **documented** (§4), not pinned while the flag is off |
+| L3-F10 no-`runId` id fallback; the dead legacy path admits a beat | nit | **CONFIRMED** for the fallback (targeted runs; unreachable today, since the only writer always sets `runId`). R3 did not re-run the legacy-path half | **Fixed:** two rows, M47 for the fallback and M53 for the legacy path |
 | L4-F1 §9 display agreement (strip, bubble, badge) | flip | **CONFIRMED**, with a correction: with the pane on, the visible defect is the badge plus a stale bubble | **Fixed** (see L2-F2) |
 | L4-F2 the copy's claim is usually false | flip | **CONFIRMED, worse**: "cheap ticks" was wrong; lock- and budget-skipped battles go first *with* model calls | §9 and §12.5 rewritten; **founder ruling** |
 | L4-F3 "however the run ends" overstates; the wait is not clamped | minor | **CONFIRMED** | Comment and test title reworded; §5.5; clamp declined (§5.4) |
@@ -352,7 +353,7 @@ One field, one range, ordered on the same field. Firestore's automatic single-fi
 | L4-F8 the report did not exist at `c7e3c1df` | nit | Fact true, **not a defect** (it is in `8e3d5337`) | None |
 | L4 read-path caveat: `fromIso` shape | — | **CONFIRMED** | §10 |
 
-**Counts:** 35 findings: L1 8, L2 8, L3 10, L4 8, and the read-path caveat. @@R3:COUNTS@@ R4's extra find (the pins test's stale key list) is folded into L4-F7.
+**Counts:** 35 findings: L1 8, L2 8, L3 10, L4 8, and the read-path caveat. **26 CONFIRMED, 8 PARTLY CONFIRMED, 1 REFUTED** (L4-F8, not a defect). Four sub-claims inside the partly confirmed ones were also refuted: L2-F4's activity-log scroll and "report missing", L4-F7's harness comment, and L3-F9's NaN half. R4's extra find (the pins test's stale key list) is folded into L4-F7.
 
 **R1's aside, outside this build:** the loop's catch reads `err.message` (`:439`; `@591b714d :410`). A battle that rejects with `null` or `undefined` aborts the whole loop with a 500, and the battles it never reached are absent from the record's counts. This is pre-existing and reported for separate tasking (§14).
 
@@ -391,7 +392,7 @@ With the flag off, no beat exists, and every reader above is untouched.
 
 ## 15. Verification
 
-All checks ran on the final code tree (`f32995e9`) unless stated otherwise.
+All checks ran on the final code tree (`039df27d`) unless stated otherwise. `039df27d` changes one test row from `f32995e9`.
 
 | Check | Command | Result |
 |---|---|---|
@@ -399,9 +400,9 @@ All checks ran on the final code tree (`f32995e9`) unless stated otherwise.
 | §1 fence | `comm -12 changed.txt fence.txt` (§3) | **∅** across the 21 changed files |
 | Golden and exact-key test | `git diff --quiet origin/main -- api/cron/agent-evaluate.tickStamps.flagOff.test.js api/_utils/__fixtures__/tickStampsEntryGolden.flagOff.json` | byte-unchanged |
 | Targeted suites | `npx vitest run` on the 8 touched vitest suites plus the flag-off, flag-on and scan suites | **11 files, 205 passed** |
-| Full suite | `npx vitest run` | **770 files; 14 999 passed, 64 skipped, 0 failed** (274.7 s) |
+| Full suite | `npx vitest run` | **770 files; 14 999 passed, 64 skipped, 0 failed** (178.5 s) |
 | Lint gate | `npm run lint:gate` (`--max-warnings 0`) | exit 0 |
-| `vite build` | `npm run build` | exit 0 (29.1 s). Four CSS-syntax warnings, identical to the branch's first build; this build adds no CSS |
+| `vite build` | `npm run build` | exit 0 (26.0 s). Four CSS-syntax warnings, identical to the branch's first build; this build adds no CSS |
 | Rules (emulator) | `npm run test:rules` | **12 files, 254 passed**, `agentEvalRunsDenials` 12 of 12; rules text sha256 `1a39f511…e460180` |
 | Rules mutation M51 | the same, with `COMPOSITION_RULES_TEXT_PATH` → a ruleset with an admin read OR'd into the block | **2 of 254 red**: the privileged-claims read row and the posture row |
 | Mutations | `mutate2.py`, snapshot tree (§8.2) | **52 of 52 RED**; control 0 of 168 |
