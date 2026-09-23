@@ -39,11 +39,14 @@
 // endpoints send them — `label` (the team's primary agent) and `secondary`
 // (the player) on each seat and team row, `teamLabel` on each of the viewer's
 // stakes, `winnerLabels` on a settled result, `labelsById` beside the in-play
-// stakes (GET /api/backing/team-labels). The copied fixtures differ from their
-// named sources by exactly those fields, and by the pod-list and results
-// `seatNames` maps, which the endpoints no longer send; the group documents
-// keep theirs (a slot pod's does), and the surfaces ignore it — so the page
-// shows what the pre-flip build shows.
+// stakes (GET /api/backing/team-labels — each team's label pair AND its two
+// layers, `player` and `agent`, named apart for Your Backing's reveal). The
+// screenshot harness carries the same shapes since this build's review
+// (WIRING-7); the other copied fixtures differ from their named sources by
+// exactly those fields, and by the pod-list and results `seatNames` maps,
+// which the endpoints no longer send; the group documents keep theirs (a slot
+// pod's does), and the surfaces ignore it — so the page shows what the
+// pre-flip build shows.
 
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -93,8 +96,25 @@ const AGENT_NAMES = Object.freeze({
 });
 const named = (id) => AGENT_NAMES[id] ?? { label: 'Unnamed team', secondary: null };
 const teamLabel = (id) => named(id).label;
-/** `labelsById` for the in-play pods — what useMyBacking fetches from the team-labels route. */
-const labelsFor = (...groupIds) => Object.fromEntries(groupIds.map((groupId) => [groupId, AGENT_NAMES]));
+/**
+ * The two layers the team-labels route also answers for each team — the
+ * player and the agent, named apart (this build's review record, RAWID-R-2);
+ * a CPU seat is its own agent.
+ */
+const LAYERS = Object.freeze({
+  'od-a': Object.freeze({ player: 'Mira', agent: 'Kestrel' }),
+  'od-b': Object.freeze({ player: 'Draco', agent: 'Tarn' }),
+  'od-x': Object.freeze({ player: 'Rigel', agent: 'Orbit' }),
+  'cpu-1': Object.freeze({ player: 'CPU — Trend Follower', agent: 'CPU — Trend Follower' }),
+  'cpu-2': Object.freeze({ player: 'CPU — Contrarian', agent: 'CPU — Contrarian' }),
+  'cpu-3': Object.freeze({ player: 'CPU — Diversifier', agent: 'CPU — Diversifier' }),
+  'cpu-4': Object.freeze({ player: 'CPU — Speculator', agent: 'CPU — Speculator' }),
+});
+/** `labelsById` for the in-play pods — what useMyBacking fetches from the team-labels route, in its full shape. */
+const labelsFor = (...groupIds) => Object.fromEntries(groupIds.map((groupId) => [
+  groupId,
+  Object.fromEntries(Object.entries(AGENT_NAMES).map(([id, names]) => [id, { ...names, ...LAYERS[id] }])),
+]));
 
 // ═══ the strip's inputs — scripts/backing-screenshots/harness.render.jsx ═══
 const stripSeats = [

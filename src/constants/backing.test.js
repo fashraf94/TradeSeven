@@ -34,6 +34,7 @@ import {
   FORBIDDEN_TERMS,
   UNNAMED_TEAM_LABEL,
   TEAM_LABELS_MAX_PODS,
+  TEAM_NAME_PENDING,
 } from './backing.js';
 import * as BACKING from './backing.js';
 
@@ -64,6 +65,9 @@ describe('backing constants — the module contract', () => {
       // Amendment C §C1 (D-af): the team-labels route's ceiling, one number
       // for the route and the client's chunking…
       'TEAM_LABELS_MAX_PODS',
+      // …the placeholder while a pod's names are on their way (this build's
+      // review record, WIRING-5 — client only)…
+      'TEAM_NAME_PENDING',
       // …and the neutral team label, one source for the server's resolver and
       // the client's label-less fallback.
       'UNNAMED_TEAM_LABEL',
@@ -288,6 +292,12 @@ describe('team labels — Amendment C §C1 (D-af)', () => {
     expect(UNNAMED_TEAM_LABEL).not.toMatch(/^[A-Za-z0-9]{28}$/);
     expect(UNNAMED_TEAM_LABEL).not.toMatch(/\bcpu-\d/);
     expect(UNNAMED_TEAM_LABEL).toMatch(/\s/);
+  });
+
+  it('the pending placeholder is not a name, not the neutral label and not an id — a name on its way is not "Unnamed team"', () => {
+    expect(TEAM_NAME_PENDING).toBe('…');
+    expect(TEAM_NAME_PENDING).not.toBe(UNNAMED_TEAM_LABEL);
+    expect(TEAM_NAME_PENDING).not.toMatch(/[A-Za-z0-9]/);
   });
 
   it('the team-labels ceiling is a positive whole number of pods', () => {

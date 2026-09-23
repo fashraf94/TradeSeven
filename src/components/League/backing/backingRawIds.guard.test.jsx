@@ -38,7 +38,7 @@ import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 
-const ctx = vi.hoisted(() => ({ uid: null, db: null }));
+const ctx = vi.hoisted(() => ({ uid: null, db: null, store: null }));
 
 vi.mock('../../../../api/_utils/security.js', () => ({ applySecurityMiddleware: () => false }));
 vi.mock('../../../../api/_utils/authMiddleware.js', () => ({
@@ -91,6 +91,28 @@ const RAW_ID_PATTERNS = Object.freeze([
   /(?<![\w-])cpu-\d+(?![\w-])/,                         // a CPU seat id, `cpu-{n}`
 ]);
 const idShaped = (text) => RAW_ID_PATTERNS.some((re) => re.test(text));
+
+/**
+ * EVERY ID THE WORLD KNOWS, whatever its shape (this build's review record,
+ * RAWID-3): every document-id segment of every path in the store AFTER every
+ * door has run — pods, pools, stakes (the stake route's own `stk_…` ids
+ * included), wallets, ledger entries, events, agents, profiles. The shape
+ * patterns above catch an ACCOUNT id; membership catches ANY id — a pod's
+ * group id, a stake id, an agent id — reaching a screen or a display field.
+ * Only distinctive ids (6+ characters) are walked, and the store's fixed
+ * sub-document names are not ids.
+ */
+const FIXED_DOC_NAMES = new Set(['totals', 'meta']);
+function worldIds(store) {
+  const ids = new Set();
+  for (const path of store.keys()) {
+    path.split('/').forEach((segment, i) => {
+      if (i % 2 === 1 && segment.length >= 6 && !FIXED_DOC_NAMES.has(segment)) ids.add(segment);
+    });
+  }
+  return [...ids];
+}
+const knownIdIn = (text, ids) => ids.find((id) => text.includes(id)) ?? null;
 
 /**
  * The fields that ARE ids by contract — data the client keys on and never
@@ -183,7 +205,10 @@ function world() {
     // Names on file — for NAMED only (and the agent P0 recorded for NAMED).
     'agents/agt-ada': { ownerId: NAMED, name: 'Shadow' },
     'agents/agt-played': { ownerId: 'someone-else', name: 'Played The Week' },
-    [`users/${NAMED}`]: { username: 'ada' },
+    // The production shape — names NESTED under `profile` (src/firebase/authService.js;
+    // this build's review record, RAWID-1: the guard's world used to seed a
+    // top-level shape production never writes).
+    [`users/${NAMED}`]: { _v: 1, auth: { uid: NAMED, email: 'ada@example.com' }, profile: { username: 'ada', displayName: 'ada', avatarUrl: null, bio: null } },
     // The viewer may stake: attested, one completed battle, not seated in P1.
     [`eligibility/${VIEWER}`]: { adultAttestedAt: '2026-09-14T13:30:00.000Z', termsVersion: TERMS_VERSION, acceptedAt: '2026-09-14T13:30:00.000Z', source: 'backing_beta' },
     'agentBattles/viewer-done': { ownerId: VIEWER, status: 'completed', completedAt: '2026-09-01T20:00:00.000Z' },
@@ -204,7 +229,9 @@ beforeAll(async () => {
   vi.setSystemTime(NOW);
   process.env.BACKING_FINGERPRINT_SALT = 'guard-salt';
   ctx.uid = VIEWER;
-  ctx.db = makeInMemoryDb(world()).db;
+  const made = makeInMemoryDb(world());
+  ctx.db = made.db;
+  ctx.store = made.store;
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   vi.spyOn(console, 'log').mockImplementation(() => {});
   R.stake = await call(stakeHandler, { method: 'POST', body: { groupId: P1, teamOdUserId: BARE, amount: 100, requestId: 'guard-1' } });
@@ -245,6 +272,14 @@ describe('the guard\'s own patterns are not vacuous', () => {
     }
   });
 
+  it('RAWID-3: the membership walk is not vacuous — a pod\'s group id, a stake id the route minted and an agent id are each caught; names are not', () => {
+    const ids = worldIds(ctx.store);
+    const stakeId = ids.find((id) => id.startsWith('stk_'));
+    expect(stakeId, 'the stake route minted a stake document').toBeTruthy();
+    for (const planted of [`Pod ${P1}`, `stake ${stakeId}`, 'agent agt-played', `Your backing ${P0}`]) expect(knownIdIn(planted, ids), planted).not.toBeNull();
+    for (const ok of ['Shadow', 'Unnamed team', 'CPU — Diversifier', 'Winner: Unnamed team', 'Backed · 100 BP on Unnamed team', 'ada']) expect(knownIdIn(ok, ids), ok).toBeNull();
+  });
+
   it('the world really is the HON-17 shape: every endpoint answered, and the settled winner has no name on file', () => {
     for (const [name, res] of RESPONSES()) expect(res.statusCode, name).toBe(200);
     expect(R.resultsOne.body.pod.winners).toEqual([BARE]);
@@ -254,10 +289,12 @@ describe('the guard\'s own patterns are not vacuous', () => {
 
 describe('ROW 1 — every backing endpoint\'s response carries NO raw id outside an id field (D-af)', () => {
   it('walks every string of every response', () => {
+    const ids = worldIds(ctx.store);
     const offenders = [];
     for (const [name, res] of RESPONSES()) {
       for (const [path, text] of displayStrings(res.body)) {
-        if (idShaped(text)) offenders.push(`${name} ${path} = ${JSON.stringify(text)}`);
+        const known = knownIdIn(text, ids);
+        if (idShaped(text) || known) offenders.push(`${name} ${path} = ${JSON.stringify(text)}${known ? ` (the world's id ${known})` : ''}`);
       }
     }
     expect(offenders).toEqual([]);
@@ -321,6 +358,7 @@ describe('ROW 2 — every backing surface, rendered from those responses, shows 
     // THE SCAN FIRST, so a raw id planted on any surface is reported BY the
     // scan (surface, match and context) — not by a name check below that
     // happens to run earlier.
+    const ids = worldIds(ctx.store);
     const offenders = [];
     for (const [name, container] of surfaces) {
       const text = visibleText(container);
@@ -328,6 +366,8 @@ describe('ROW 2 — every backing surface, rendered from those responses, shows 
         const m = text.match(re);
         if (m) offenders.push(`${name}: ${JSON.stringify(m[0])} in …${text.slice(Math.max(0, m.index - 30), m.index + m[0].length + 30)}…`);
       }
+      const known = knownIdIn(text, ids);
+      if (known) offenders.push(`${name}: the world's id ${JSON.stringify(known)} in …${text.slice(Math.max(0, text.indexOf(known) - 30), text.indexOf(known) + known.length + 30)}…`);
     }
     expect(offenders).toEqual([]);
 
@@ -337,5 +377,8 @@ describe('ROW 2 — every backing surface, rendered from those responses, shows 
     expect(all).toContain('Winner: Unnamed team');
     expect(all).toContain('Shadow');
     expect(all).toContain('Backed · 100 BP on Unnamed team');
+    // The player's name from the NESTED profile (RAWID-1) reaches the card:
+    // the human-and-agent unit names both halves.
+    expect(all).toContain('Back ada & Shadow');
   });
 });

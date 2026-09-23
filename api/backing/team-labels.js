@@ -32,6 +32,10 @@
 // teams (with settlement's recorded agent) and the teams the viewer's own
 // stakes name — including a seat that has since left.
 //
+// THE ANSWER, per backed pod and team: `{ label, secondary, player, agent }` —
+// the label and its secondary (the surfaces' single-label uses) and the two
+// layers named apart (the reveal's; see the resolver's `layersFor`).
+//
 // READ-ONLY, ALWAYS: this route writes nothing — no lazy job rides here (the
 // pod list and the results reader own those).
 
@@ -108,11 +112,16 @@ export default async function handler(req, res) {
     }));
     const labels = await resolveTeamLabels(db, loaded.flatMap((pod) => podLabelSeats(pod)));
 
+    // Each team: its label and secondary, AND its two layers named apart —
+    // `player` and `agent` (RAWID-R-2): Your Backing's reveal names the
+    // player's picks and the agent's six separately, and a lone label cannot
+    // say which layer it is.
     const pods = {};
     for (const { groupId, group, pool, extraTeamIds } of loaded) {
       const teams = {};
       for (const seat of podLabelSeats({ group, pool, extraTeamIds })) {
-        teams[seat.odUserId] = labels.teamLabelFor(labelSeatOf({ group, pool }, seat.odUserId, seat.isCpu));
+        const labelSeat = labelSeatOf({ group, pool }, seat.odUserId, seat.isCpu);
+        teams[seat.odUserId] = { ...labels.teamLabelFor(labelSeat), ...labels.layersFor(labelSeat) };
       }
       pods[groupId] = teams;
     }

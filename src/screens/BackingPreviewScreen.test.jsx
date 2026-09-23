@@ -276,7 +276,9 @@ describe('the page — the label, every state, the local actions', () => {
     for (const state of PREVIEW_STATES) {
       await select(page, state.id);
       for (const el of stage(page).querySelectorAll(SURFACES)) {
-        const attrs = [...el.querySelectorAll('[aria-label], [title], [placeholder], [alt]')]
+        // The surface root's OWN attributes too — `querySelectorAll` searches
+        // descendants only (this build's review record, RAWID-4).
+        const attrs = [el, ...el.querySelectorAll('[aria-label], [title], [placeholder], [alt]')]
           .flatMap((n) => ['aria-label', 'title', 'placeholder', 'alt'].map((a) => n.getAttribute(a)).filter(Boolean));
         const text = [nodesText(el), ...attrs].join(' \u2016 ');
         seen.push(text);

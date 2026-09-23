@@ -232,9 +232,19 @@ export const POOL_STRIP = Object.freeze({
 export const UNNAMED_TEAM_LABEL = 'Unnamed team';
 
 /**
+ * The team-name placeholder while the SERVER's names for a pod are still on
+ * their way — client only: Your Backing and the strip's in-play half fetch
+ * their names (GET /api/backing/team-labels) after the stakes land. Not
+ * UNNAMED_TEAM_LABEL: that is §C1's word for a team neither an agent nor a
+ * player names, and a name that has not arrived yet is not that (this build's
+ * review record, WIRING-5). Never an id, by construction.
+ */
+export const TEAM_NAME_PENDING = '…';
+
+/**
  * The most pods ONE request to GET /api/backing/team-labels may name — the
  * route's own ceiling (api/backing/team-labels.js) and the size the client
- * chunks a larger set into (src/services/backingService.js fetchTeamLabels),
+ * chunks a larger set into (src/hooks/useMyBacking.js `fetchLabelsFor`),
  * one number for both ends. Your Backing covers three week keys and a backer
  * holds one stake per team (D-ag), so this is a ceiling, not an expectation.
  */

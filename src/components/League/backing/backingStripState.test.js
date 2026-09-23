@@ -12,9 +12,9 @@
 // guard that the derivation stays React-free and Node-clean. Never mock it.
 
 import { describe, it, expect } from 'vitest';
-import { POOL_MIN_WINDOW_MS } from '../../../constants/backing';
+import { POOL_MIN_WINDOW_MS, TEAM_NAME_PENDING, UNNAMED_TEAM_LABEL } from '../../../constants/backing';
 import {
-  STRIP_KIND, backingWeekKeys, deriveStripState, etWeekdayIndex, formatEtClose, nextOpening, podDayOfFive, podStanding, podTeamLabel, teamLabelOf, weekDayOfFive,
+  STRIP_KIND, backingWeekKeys, deriveStripState, etWeekdayIndex, formatEtClose, nextOpening, podDayOfFive, podStanding, podTeamLabel, podTeamLayers, teamLabelOf, weekDayOfFive,
 } from './backingStripState';
 import { stripLines } from './backingCopy';
 
@@ -260,6 +260,32 @@ describe('names and standings', () => {
     expect(podTeamLabel(labels, 'g-play', 'cpu-3')).toEqual({ label: 'CPU — Diversifier', secondary: null });
     expect(podTeamLabel(labels, 'g-play', 'od-zz')).toEqual({ label: 'Unnamed team', secondary: null });
     expect(podTeamLabel(null, 'g-x', 'od-a')).toEqual({ label: 'Unnamed team', secondary: null });
+  });
+
+  it('WIRING-5: a pod the map does not carry YET reads the pending placeholder — a name on its way is not "Unnamed team"', () => {
+    const labels = labelsFor('g-play');
+    expect(podTeamLabel(labels, 'g-later', 'od-a')).toEqual({ label: TEAM_NAME_PENDING, secondary: null });
+    expect(podTeamLabel({}, 'g-play', 'od-a').label).toBe(TEAM_NAME_PENDING);
+    // A pod the map DOES carry names what it carries, and a team it does not is neutral.
+    expect(podTeamLabel({ 'g-play': {} }, 'g-play', 'od-a').label).toBe(UNNAMED_TEAM_LABEL);
+  });
+
+  it('RAWID-R-2: podTeamLayers names the player and the agent APART — from the server\'s layers, never guessed from a lone label', () => {
+    const layered = { 'g-play': {
+      'od-a': { label: 'Shadow', secondary: 'Mira', player: 'Mira', agent: 'Shadow' },
+      'od-b': { label: 'Shadow', secondary: null, player: null, agent: 'Shadow' },      // the player unnamed
+      'od-c': { label: 'Cy', secondary: null, player: 'Cy', agent: null },              // no agent
+      'cpu-3': { label: 'CPU — Diversifier', secondary: null, player: 'CPU — Diversifier', agent: 'CPU — Diversifier' },
+    } };
+    expect(podTeamLayers(layered, 'g-play', 'od-a')).toEqual({ player: 'Mira', agent: 'Shadow' });
+    expect(podTeamLayers(layered, 'g-play', 'od-b')).toEqual({ player: UNNAMED_TEAM_LABEL, agent: 'Shadow' });
+    expect(podTeamLayers(layered, 'g-play', 'od-c')).toEqual({ player: 'Cy', agent: null });
+    expect(podTeamLayers(layered, 'g-play', 'cpu-3')).toEqual({ player: 'CPU — Diversifier', agent: 'CPU — Diversifier' });
+    // An older reply without the layers: only what is CERTAIN — a label WITH a secondary is the agent's.
+    expect(podTeamLayers({ g: { x: { label: 'Shadow', secondary: 'Mira' } } }, 'g', 'x')).toEqual({ player: 'Mira', agent: 'Shadow' });
+    expect(podTeamLayers({ g: { x: { label: 'Shadow', secondary: null } } }, 'g', 'x')).toEqual({ player: UNNAMED_TEAM_LABEL, agent: null });
+    // On their way: both layers wait.
+    expect(podTeamLayers({}, 'g-play', 'od-a')).toEqual({ player: TEAM_NAME_PENDING, agent: TEAM_NAME_PENDING });
   });
 
   it('D-af: the strip IGNORES a group document\'s seatNames — the in-play names are the server\'s, or neutral', () => {

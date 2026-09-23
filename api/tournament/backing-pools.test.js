@@ -35,10 +35,10 @@ vi.mock('../_utils/firebaseAdmin.js', () => ({ getFirebaseAdmin: () => DB.db }))
 
 const { makeInMemoryDb } = await import('../_utils/__fixtures__/inMemoryFirestore.js');
 const {
-  default: handler, POD_LIST_MAX, listablePod, podListWeek, projectPod, REVEALED_STATUSES,
+  default: handler, POD_LIST_MAX, listablePod, liveStakeContradicts, podListWeek, projectPod, REVEALED_STATUSES,
 } = await import('./backing-pools.js');
 const {
-  BACKING_POOLS_COLLECTION, BACKING_STAKES_COLLECTION, POOL_STATUS, STAKE_STATUS,
+  BACKING_POOLS_COLLECTION, BACKING_STAKES_COLLECTION, POOL_STATUS, STAKE_STATUS, closePool,
 } = await import('../_utils/backingPools.js');
 const { VALIDITY_MIN_BACKERS, VALIDITY_MIN_TEAMS } = await import('../../src/constants/backing.js');
 
@@ -588,6 +588,86 @@ describe('WIRE-R-1 — a lazy close THIS request ran re-reads the viewer\'s stak
     expect(stakeReads()).toEqual([]);
   });
 
+  /**
+   * ANOTHER request's close, landing at the Nth read of the pool document —
+   * the real `closePool` against the same store, as a racing viewer's list,
+   * the stake route or the results reader would run it.
+   */
+  function closeOnPoolRead(n) {
+    const realCollection = DB.db.collection;
+    let reads = 0;
+    DB.db.collection = (name) => {
+      const col = realCollection(name);
+      if (name !== BACKING_POOLS_COLLECTION) return col;
+      return {
+        ...col,
+        doc: (id) => {
+          const ref = col.doc(id);
+          return {
+            ...ref,
+            get: async () => {
+              if (id === 'g1' && (reads += 1) === n) {
+                await closePool({ ...DB.db, collection: realCollection }, { id: 'g1', ...DB.store.get('tournamentGroups/g1') }, PAST_THE_CLOCK);
+              }
+              return ref.get();
+            },
+          };
+        },
+      };
+    };
+  }
+  const dueWorld = () => seed([group('g1')], {
+    [`${BACKING_POOLS_COLLECTION}/g1`]: pool('g1'),
+    [`${BACKING_STAKES_COLLECTION}/mine1`]: liveStake(),
+    [`backingWallets/${UID}`]: walletFor('mine1'),
+  });
+
+  it('WIRING-1: a close ANOTHER request commits between the stakes query and the pool read — the answered pool contradicts the live copy, so it is re-read: voided, with its reason', async () => {
+    DB = dueWorld();
+    vi.setSystemTime(PAST_THE_CLOCK);
+    closeOnPoolRead(1);                                   // before this request's plain read: `before` already says insufficient
+    const pod = (await get()).body.pods[0];
+    expect(pod.pool.status).toBe(POOL_STATUS.INSUFFICIENT);
+    expect(pod.myStakes).toEqual([{ stakeId: 'mine1', teamOdUserId: 'od-a', teamLabel: 'Ada', amount: 250, status: 'voided', voidReason: 'insufficient' }]);
+  });
+
+  it('WIRING-2: a close the list FINDS already committed (a racing request, or its own retried transaction) is adopted — the closed pool answered, nothing backable, the stake re-read', async () => {
+    DB = dueWorld();
+    vi.setSystemTime(PAST_THE_CLOCK);
+    closeOnPoolRead(2);                                   // between the plain read (open) and ensureClosed's own read
+    const pod = (await get()).body.pods[0];
+    expect(DB.store.get(`${BACKING_POOLS_COLLECTION}/g1`).status).toBe(POOL_STATUS.INSUFFICIENT);
+    expect(pod.pool.status).toBe(POOL_STATUS.INSUFFICIENT);
+    expect(pod.teams.every((t) => t.backable === false)).toBe(true);
+    expect(pod.myStakes).toEqual([{ stakeId: 'mine1', teamOdUserId: 'od-a', teamLabel: 'Ada', amount: 250, status: 'voided', voidReason: 'insufficient' }]);
+  });
+
+  it('a CLOSED pool\'s live stakes on its frozen teams contradict nothing — every list load until settlement costs NO stake read', async () => {
+    DB = seed([group('g1')], {
+      [`${BACKING_POOLS_COLLECTION}/g1`]: pool('g1', {
+        status: POOL_STATUS.CLOSED, teams: [{ odUserId: 'od-a', isCpu: false, stakeTotal: 250, backerCount: 1 }], potTotal: 250,
+      }),
+      [`${BACKING_STAKES_COLLECTION}/mine1`]: liveStake(),
+    });
+    const pod = (await get()).body.pods[0];
+    expect(pod.myStakes[0].status).toBe('live');
+    expect(stakeReads()).toEqual([]);
+  });
+
+  it('liveStakeContradicts — the one predicate, every pool status', () => {
+    const live = { status: STAKE_STATUS.LIVE, teamOdUserId: 'od-a' };
+    const frozen = (status, teams = [{ odUserId: 'od-a' }]) => ({ status, teams });
+    expect(liveStakeContradicts(pool('g1'), live)).toBe(false);                                    // open
+    expect(liveStakeContradicts(frozen(POOL_STATUS.CLOSED), live)).toBe(false);                    // closed, its seat frozen
+    expect(liveStakeContradicts(frozen(POOL_STATUS.RESOLVING), live)).toBe(false);                 // a hold keeps stakes live
+    expect(liveStakeContradicts(frozen(POOL_STATUS.CLOSED, [{ odUserId: 'od-b' }]), live)).toBe(true);   // its seat left at the close
+    for (const status of [POOL_STATUS.INSUFFICIENT, POOL_STATUS.REFUNDED, POOL_STATUS.RESOLVED]) {
+      expect(liveStakeContradicts(frozen(status), live), status).toBe(true);
+    }
+    expect(liveStakeContradicts(frozen(POOL_STATUS.INSUFFICIENT), { ...live, status: STAKE_STATUS.VOIDED })).toBe(false);
+    expect(liveStakeContradicts(null, live)).toBe(false);
+  });
+
   it('a failed re-read keeps the copies read before and never takes down the list', async () => {
     DB = seed([group('g1')], {
       [`${BACKING_POOLS_COLLECTION}/g1`]: pool('g1'),
@@ -661,10 +741,10 @@ describe('settle-on-read (§7) — PR 3', () => {
     dailyScores: bankedWeek(),
     ...over,
   });
-  /** A closed pool over three live stakes (u1 → od-a 300; u2, u3 → od-b), with totals and wallets. */
-  function closedWorld(poolOver = {}) {
+  /** A closed pool over three live stakes (u1 → od-a 300; u2, u3 → od-b), with totals and wallets; `s1Backer` renames u1. */
+  function closedWorld(poolOver = {}, { s1Backer = 'u1' } = {}) {
     const stakes = [
-      ['s1', 'u1', 'od-a', 300], ['s2', 'u2', 'od-b', 200], ['s3', 'u3', 'od-b', 100],
+      ['s1', s1Backer, 'od-a', 300], ['s2', 'u2', 'od-b', 200], ['s3', 'u3', 'od-b', 100],
     ];
     const extra = {
       [`${BACKING_POOLS_COLLECTION}/g1`]: pool('g1', {
@@ -678,7 +758,7 @@ describe('settle-on-read (§7) — PR 3', () => {
         ...poolOver,
       }),
       [`${BACKING_POOLS_COLLECTION}/g1/private/totals`]: {
-        backers: { u1: { total: 300, byTeam: { 'od-a': 300 } }, u2: { total: 200, byTeam: { 'od-b': 200 } }, u3: { total: 100, byTeam: { 'od-b': 100 } } },
+        backers: { [s1Backer]: { total: 300, byTeam: { 'od-a': 300 } }, u2: { total: 200, byTeam: { 'od-b': 200 } }, u3: { total: 100, byTeam: { 'od-b': 100 } } },
         byTeam: { 'od-a': { stakeTotal: 300, backerCount: 1 }, 'od-b': { stakeTotal: 300, backerCount: 2 } },
         potTotal: 600, uniqueBackers: 3, teamsBacked: 2, updatedAt: '2026-09-28T04:00:00.000Z',
       },
@@ -716,6 +796,13 @@ describe('settle-on-read (§7) — PR 3', () => {
     expect(DB.readLog.filter(([, p]) => p.startsWith('agentBattles'))).toEqual([]);
     expect(DB.readLog.filter(([ch]) => ch === 'tx.get')).toEqual([]);
   };
+
+  it('WIRING-3 (this build\'s review record): a settlement THIS read ran re-reads the VIEWER\'s stake — answered won, with its payout, never the live copy', async () => {
+    DB = seed([completeGroup()], closedWorld({}, { s1Backer: UID }));
+    const pod = (await get()).body.pods[0];
+    expect(pod.pool.status).toBe(POOL_STATUS.RESOLVED);
+    expect(pod.myStakes).toEqual([expect.objectContaining({ stakeId: 's1', teamOdUserId: 'od-a', amount: 300, status: 'won', payout: 600 })]);
+  });
 
   it('checks the FREEZE itself (A-C13): frozen → the list answers, the primitive is never called', async () => {
     state.frozen = true;
@@ -808,7 +895,8 @@ describe('D-af — every seat is named by the SERVER, by its primary agent (Amen
   const names = () => ({
     'agents/agt-ada': { ownerId: ADA, name: 'Shadow' },
     'agents/agt-ada-clone': { ownerId: ADA, name: 'Clone', isTrainingClone: true },
-    [`users/${ADA}`]: { username: 'ada' },
+    // The production shape — names NESTED under `profile` (RAWID-1).
+    [`users/${ADA}`]: { _v: 1, auth: { uid: ADA, email: 'ada@example.com' }, profile: { username: 'ada', displayName: 'ada', avatarUrl: null, bio: null } },
   });
 
   it('a lobby pod with NO seatNames names every seat — agent, then player, then "Unnamed team"; never the id', async () => {

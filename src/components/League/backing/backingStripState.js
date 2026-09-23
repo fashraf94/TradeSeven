@@ -43,7 +43,7 @@
 // entry that arrives without a label reads UNNAMED_TEAM_LABEL, never the id
 // the pre-flip `seatDisplayName` fell back to.
 
-import { POOL_MIN_WINDOW_MS, UNNAMED_TEAM_LABEL } from '../../../constants/backing';
+import { POOL_MIN_WINDOW_MS, TEAM_NAME_PENDING, UNNAMED_TEAM_LABEL } from '../../../constants/backing';
 import { currentBaseLayerWeek, deriveCurrentTradingDay, etDateString, getWeeklyComposite, rankByScores, GROUP_STATUS } from '../../../constants/leagueTournament';
 import { baseGroupName } from '../leagueAdapter';
 
@@ -119,11 +119,43 @@ export function teamLabelOf(entry) {
   return typeof label === 'string' && label.trim().length > 0 ? label : UNNAMED_TEAM_LABEL;
 }
 
-/** The server's `{ label, secondary }` for one seat of one pod, from a `labelsById` map; the neutral name when absent. */
+/** A pod the map does not carry YET: its names are on their way (useMyBacking — WIRING-5). */
+const namesPending = (labelsById, groupId) => labelsById != null && typeof labelsById === 'object' && labelsById[groupId] === undefined;
+const nameOrNull = (v) => (typeof v === 'string' && v.trim().length > 0 ? v : null);
+
+/**
+ * The server's `{ label, secondary }` for one seat of one pod, from a
+ * `labelsById` map: the pending placeholder while the pod's names are on their
+ * way, the neutral name for a team the pod's names do not carry.
+ */
 export function podTeamLabel(labelsById, groupId, odUserId) {
+  if (namesPending(labelsById, groupId)) return { label: TEAM_NAME_PENDING, secondary: null };
   const entry = labelsById?.[groupId]?.[odUserId] ?? null;
-  const secondary = typeof entry?.secondary === 'string' && entry.secondary.trim().length > 0 ? entry.secondary : null;
-  return { label: teamLabelOf(entry), secondary };
+  return { label: teamLabelOf(entry), secondary: nameOrNull(entry?.secondary) };
+}
+
+/**
+ * The server's two layers for one seat of one pod, named apart (RAWID-R-2) —
+ * a surface that names the player and the agent separately reads these,
+ * never the single label (a label with no secondary may be either layer):
+ *   · `player` — the player's name; the pending placeholder while the pod's
+ *     names are on their way; else the neutral name;
+ *   · `agent` — the agent's (server-belted) name; the pending placeholder
+ *     while on their way; else null, for the surface's own "{player}'s agent".
+ * An entry without the two fields (an older reply) yields them only where they
+ * are certain: a label WITH a secondary is the agent's, the secondary the
+ * player's.
+ */
+export function podTeamLayers(labelsById, groupId, odUserId) {
+  const pending = namesPending(labelsById, groupId);
+  const entry = labelsById?.[groupId]?.[odUserId] ?? null;
+  const secondary = nameOrNull(entry?.secondary);
+  const player = nameOrNull(entry?.player) ?? secondary;
+  const agent = nameOrNull(entry?.agent) ?? (secondary != null ? nameOrNull(entry?.label) : null);
+  return {
+    player: player ?? (pending ? TEAM_NAME_PENDING : UNNAMED_TEAM_LABEL),
+    agent: agent ?? (pending ? TEAM_NAME_PENDING : null),
+  };
 }
 
 /**

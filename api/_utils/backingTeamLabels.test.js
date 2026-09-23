@@ -71,12 +71,26 @@ function fakeDb(docs = {}, { getAll = true, failAgents = false, failUsers = fals
   return db;
 }
 
+/**
+ * `users/{uid}` EXACTLY as its one writer writes it (src/firebase/authService.js
+ * — email sign-up: `displayName` = the username; Google sign-in: the Google
+ * display name): the names are NESTED under `profile` (this build's review
+ * record, RAWID-1 — the fixtures used to seed a top-level shape production
+ * never writes, so no row could see the resolver reading the wrong level).
+ */
+const userDoc = (uid, { username, displayName = username } = {}) => ({
+  _v: 1,
+  auth: { uid, email: `${uid.slice(0, 6).toLowerCase()}@example.com`, createdAt: '2026-09-01T00:00:00.000Z', lastLoginAt: '2026-09-20T00:00:00.000Z' },
+  profile: { username, displayName, avatarUrl: null, bio: null },
+  stats: { xp: 0, level: 1, rank: 'Beginner', wins: 0, losses: 0, totalBattles: 0 },
+});
+
 const WORLD = () => ({
-  // Ada: a primary agent AND a profile.
+  // Ada: a primary agent AND a profile (email sign-up shape).
   'agents/agt-ada-1': { ownerId: ADA, name: 'Shadow' },
-  [`users/${ADA}`]: { username: 'ada', displayName: 'Ada L.' },
-  // Bo: a profile, no agent at all.
-  [`users/${BO}`]: { displayName: 'Bo' },
+  [`users/${ADA}`]: userDoc(ADA, { username: 'ada' }),
+  // Bo: a profile (Google shape — a display name of its own), no agent at all.
+  [`users/${BO}`]: userDoc(BO, { username: 'bo.d', displayName: 'Bo' }),
   // Cy: neither an agent nor a profile.
 });
 
@@ -116,9 +130,40 @@ describe('the chain — agent name, player secondary, then the player, then "Unn
     expect(db.log.flatMap(([, p]) => (Array.isArray(p) ? p : [p])).some((p) => String(p).startsWith('users/'))).toBe(false);
   });
 
-  it('username first, then displayName — the leaderboard\'s and the client\'s order', async () => {
-    const { teamLabelFor } = await resolveTeamLabels(fakeDb({ [`users/${BO}`]: { username: 'bo_d', displayName: 'Bo' } }), [{ odUserId: BO }]);
-    expect(teamLabelFor({ odUserId: BO }).label).toBe('bo_d');
+  it('RAWID-1: the profile is NESTED — `profile.displayName`, then `profile.username`; the top-level fields are a legacy fallback only', async () => {
+    const nameOf = async (doc) => {
+      const { teamLabelFor } = await resolveTeamLabels(fakeDb({ [`users/${BO}`]: doc }), [{ odUserId: BO }]);
+      return teamLabelFor({ odUserId: BO }).label;
+    };
+    expect(await nameOf(userDoc(BO, { username: 'bo.d', displayName: 'Bo' }))).toBe('Bo');
+    expect(await nameOf({ profile: { username: 'bo.d' } })).toBe('bo.d');
+    expect(await nameOf({ profile: { displayName: '   ', username: '' }, displayName: 'Bo (legacy)' })).toBe('Bo (legacy)');
+    expect(await nameOf({ username: 'bo_legacy' })).toBe('bo_legacy');
+    // A nested name that is an account id is refused like any other rung.
+    expect(await nameOf({ profile: { displayName: BO, username: 'cpu-2' } })).toBe(UNNAMED_TEAM_LABEL);
+  });
+
+  it('RAWID-1: a player with an agent, on a lobby pod (no seat name), carries their name as the SECONDARY — the exact sign-up document', async () => {
+    const { teamLabelFor } = await resolveTeamLabels(fakeDb(WORLD()), [{ odUserId: ADA }, { odUserId: BO }]);
+    expect(teamLabelFor({ odUserId: ADA })).toEqual({ label: 'Shadow', secondary: 'ada' });
+    expect(teamLabelFor({ odUserId: BO })).toEqual({ label: 'Bo', secondary: null });
+  });
+});
+
+// ============================================================================
+describe('the two layers, named apart — `layersFor` (RAWID-R-2)', () => {
+  it('player and agent, each its own rung; a CPU seat is its own agent; neither → nulls, never an id', async () => {
+    const world = { ...WORLD(), 'agents/agt-cy-1': { ownerId: CY, name: 'cpu-3' } };
+    const { layersFor, teamLabelFor } = await resolveTeamLabels(fakeDb(world), [{ odUserId: ADA }, { odUserId: BO }, { odUserId: CY }, { odUserId: 'cpu-4', isCpu: true }]);
+    expect(layersFor({ odUserId: ADA })).toEqual({ player: 'ada', agent: 'Shadow' });
+    expect(layersFor({ odUserId: BO })).toEqual({ player: 'Bo', agent: null });
+    // Cy's agent is NAMED like a seat id — creatable in the UI — so the belt refuses it on both surfaces.
+    expect(layersFor({ odUserId: CY })).toEqual({ player: null, agent: null });
+    expect(teamLabelFor({ odUserId: CY })).toEqual({ label: UNNAMED_TEAM_LABEL, secondary: null });
+    expect(layersFor({ odUserId: 'cpu-4', isCpu: true })).toEqual({ player: cpuDisplayName('cpu-4'), agent: cpuDisplayName('cpu-4') });
+    expect(layersFor({})).toEqual({ player: null, agent: null });
+    // The fold is exactly the chain: agent → label with the player secondary; else the player; else neutral.
+    expect(teamLabelFor({ odUserId: ADA })).toEqual({ label: 'Shadow', secondary: 'ada' });
   });
 });
 

@@ -23,7 +23,8 @@
 // DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): the route's real import below is
 // the runtime guard for its api/ -> src/ imports (deriveWeekLine.js,
 // archetypeIdentity.js, archetypeDisplay.js, stockData.js, leagueTournament.js,
-// featureFlags.js). Never mock the constants.
+// backing.js, backingLexicon.js, backingApproach.js, featureFlags.js). Never
+// mock the constants.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
@@ -75,8 +76,10 @@ function seedWorld() {
       seatNames: { 'od-a': 'Mira', 'od-b': 'Draco' },
       players: [{ odUserId: 'od-a' }, { odUserId: 'od-b' }, { odUserId: 'cpu-1', isCpu: true }, { odUserId: 'cpu-2', isCpu: true }],
     },
-    'users/od-a': { username: 'Mira' },
-    'users/od-b': { displayName: 'Draco' },
+    // `users/{uid}` as its one writer writes it — names NESTED under `profile`
+    // (src/firebase/authService.js; this build's review record, RAWID-1).
+    'users/od-a': { _v: 1, auth: { uid: 'od-a', email: 'mira@example.com' }, profile: { username: 'Mira', displayName: 'Mira', avatarUrl: null, bio: null } },
+    'users/od-b': { _v: 1, auth: { uid: 'od-b', email: 'draco@example.com' }, profile: { username: 'draco', displayName: 'Draco', avatarUrl: null, bio: null } },
     // CLONES FIRST — a naive "first doc for this owner" would pick one of these.
     // `a-clone-early` sorts FIRST BY DOCUMENT ID, which is the order Firestore
     // answers the owner query in (and the order board production's selection
@@ -332,6 +335,17 @@ describe('the veteran card — the team leads, from real completed data', () => 
     expect(ag.trades).toEqual([{ day: 'THU', symbolOut: 'ANET', symbolIn: 'SMCI', rationale: 'Broke its Monday low. Rule is rule.' }]);
   });
 
+  it('RAWID-2: last week\'s agent name passes the label\'s belt — a battle record whose agent name is id-shaped carries none', async () => {
+    for (const id of ['b-w2-mon', 'b-w2-thu']) {
+      const path = `agentBattles/${id}`;
+      const b = DB.store.get(path);
+      DB.store.set(path, { ...b, agentContext: { ...b.agentContext, agentName: 'od-a' } });
+    }
+    const res = await get({ groupId: 'g-now', odUserId: 'od-a' });
+    expect(res.body.lastWeek.agent.agentName).toBeNull();
+    expect(res.body.lastWeek.agent.swaps).toBe(1);                 // the layer itself is untouched
+  });
+
   it('the other owner\'s battle, the non-tournament battle and the ACTIVE battle are ignored — no live WHY, no foreign tape', () => {
     const strings = allStrings(body);
     expect(strings).not.toContain('live WHY');
@@ -396,6 +410,22 @@ describe('the FIRST-WEEK card — the primary case', () => {
     expect(res.body.team).toMatchObject({ displayName: 'Unnamed team', label: 'Unnamed team', secondary: null, agent: null });
     const text = JSON.stringify(res.body.team);
     expect(text).not.toContain('"od-b"');
+  });
+
+  it('RAWID-2 / WIRING-12 (this build\'s review record): an agent NAMED like a seat id (`cpu-3` — the onboarding UI accepts it) never reaches the card — no agent name (the client says "{player}\'s agent"), the player labels the team; ONE derivation with the label', async () => {
+    DB.store.set('agents/agent-b', { ...DB.store.get('agents/agent-b'), name: 'cpu-3' });
+    DB.store.set('tournamentGroups/g-now', { ...DB.store.get('tournamentGroups/g-now'), seatNames: {} });   // a lobby pod
+    const res = await get({ groupId: 'g-now', odUserId: 'od-b' });
+    expect(res.body.team).toMatchObject({ displayName: 'Draco', label: 'Draco', secondary: null });
+    expect(res.body.team.agent).toMatchObject({ name: null, archetype: 'analyst', traitCount: 3, ruleCount: 5 });
+    expect(JSON.stringify(res.body.team)).not.toContain('cpu-3');
+  });
+
+  it('RAWID-1 (this build\'s review record): on a LOBBY pod (no seat names) the player\'s name comes from the NESTED profile — never "Unnamed team" for a player on file', async () => {
+    DB.store.set('tournamentGroups/g-now', { ...DB.store.get('tournamentGroups/g-now'), seatNames: {} });
+    const res = await get({ groupId: 'g-now', odUserId: 'od-b' });
+    expect(res.body.team).toMatchObject({ displayName: 'Draco', label: 'Tarn', secondary: 'Draco' });
+    expect(res.body.team.agent.name).toBe('Tarn');
   });
 
   it('a cleared pitch reads as no pitch', async () => {

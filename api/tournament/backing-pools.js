@@ -73,6 +73,7 @@ import { deriveBaseLayerWeek, deriveBattleStartWeek } from '../_utils/liveDraftF
 import {
   BACKING_STAKES_COLLECTION,
   POOL_STATUS,
+  STAKE_STATUS,
   ensureClosed,
   listablePod,
   liveTeamsFor,
@@ -253,6 +254,23 @@ export function projectPod(group, pool, { viewerUid, myStakes = [], teamLabelFor
 }
 
 /**
+ * A `live` copy of the viewer's stake that the pool AS ANSWERED says cannot
+ * still be live (this build's review record, WIRING-1). Every transition out
+ * of `open` other than to `closed` / `resolving` moves every live stake in the
+ * SAME transaction (`insufficient` / `refunded` void them, `resolved` settles
+ * them), and a close voids a stake on a seat missing from the frozen `teams[]`
+ * — so such a copy predates a transition this request did not see: another
+ * request's close landing between the stakes query and the pool read. Zero
+ * cost in the steady state: an open pool, or a closed one's stakes on its
+ * frozen teams, contradict nothing. Pure.
+ */
+export function liveStakeContradicts(pool, stake) {
+  if (stake?.status !== STAKE_STATUS.LIVE || pool == null || pool.status === POOL_STATUS.OPEN) return false;
+  if (pool.status !== POOL_STATUS.CLOSED && pool.status !== POOL_STATUS.RESOLVING) return true;
+  return Array.isArray(pool.teams) && !pool.teams.some((t) => t.odUserId === stake.teamOdUserId);
+}
+
+/**
  * The viewer's stakes on a pod, RE-READ by id after this request's lazy jobs
  * moved its pool (WIRE-R-1) — the documents as the close or the settlement
  * left them, never the copies read before. The results reader's own
@@ -321,6 +339,7 @@ export default async function handler(req, res) {
       // viewer's stakes (read in 5b) were read against. `undefined` until the
       // first read lands, so a pod whose first read failed counts as moved.
       let before;
+      let settleCalled = false;
       try {
         // A PLAIN READ FIRST, and a transaction only when there is nothing to
         // read. `materializePool` is transactional by necessity — two first
@@ -335,8 +354,13 @@ export default async function handler(req, res) {
         pool = materialized.pool;
         before = pool?.status ?? null;
         if (pool != null && pool.status === POOL_STATUS.OPEN) {
+          // THE POOL THE CLOSE ANSWERED, whichever way it answered (the results
+          // reader's rule — WIRE-1): closed by this request, or found already
+          // closed — by a racing request, or by this request's OWN close when
+          // the SDK re-ran a committed transaction after a lost acknowledgement
+          // (this build's review record, WIRING-2) — never the stale open copy.
           const closed = await ensureClosed(db, group, now);
-          if (closed.closed === true) pool = closed.pool;
+          if (closed.pool) pool = closed.pool;
         }
         // Backing Beta PR 3 — SETTLE-ON-READ (§7 "Retries", D-o): a CLOSED pool
         // whose pod now satisfies the settlement predicate is settled here, by
@@ -362,7 +386,8 @@ export default async function handler(req, res) {
         if (pool != null && pool.status === POOL_STATUS.CLOSED
           && settlementPredicate(group).final && !TOURNAMENT_ADVANCEMENT_FROZEN) {
           const settled = await settlePool(db, group.id, { now, source: SETTLEMENT_SOURCE.SETTLE_ON_READ });
-          if (settled.settled === true) pool = settled.pool;
+          settleCalled = true;
+          pool = settled.pool ?? pool;
         }
       } catch (err) {
         // ONE pod's pool must never take down the list: the pod still lists with
@@ -377,12 +402,17 @@ export default async function handler(req, res) {
       // WIRE-R-1 (the PR 5 review record — the pod list's twin of the results
       // reader's WIRE-1): a lazy close moves the viewer's stakes on its own
       // (`insufficient` voids them, a seat that left is voided) and a
-      // settle-on-read settles them, so when THIS request moved the pool the
-      // copies read in 5b are stale. They are re-read by id before the reply —
-      // only then, so the steady state costs no read. A failed re-read keeps
-      // the copies (logged): one pod never takes down the list.
+      // settle-on-read settles them, so when THIS request moved the pool — or
+      // called the settlement at all — the copies read in 5b are stale; and a
+      // `live` copy the answered pool contradicts is stale whoever moved it
+      // (`liveStakeContradicts`, WIRING-1). They are re-read by id before the
+      // reply — only then, so the steady state costs no read. A failed re-read
+      // keeps the copies (logged): one pod never takes down the list.
       let myStakes = stakesByGroup.get(group.id) ?? [];
-      if (myStakes.length > 0 && (pool?.status ?? null) !== before) {
+      const stale = settleCalled
+        || (pool?.status ?? null) !== before
+        || myStakes.some((s) => liveStakeContradicts(pool, s));
+      if (myStakes.length > 0 && stale) {
         try {
           myStakes = await refreshStakes(db, myStakes);
         } catch (err) {

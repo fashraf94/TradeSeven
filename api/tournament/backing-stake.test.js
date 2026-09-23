@@ -204,7 +204,8 @@ function world(over = {}) {
     // Names on file for od-a (D-af): its primary agent and its player. od-b
     // has none — the confirmation's neutral case.
     'agents/agt-od-a': { ownerId: 'od-a', name: 'Shadow' },
-    'users/od-a': { username: 'Ada' },
+    // The production shape — names NESTED under `profile` (RAWID-1).
+    'users/od-a': { _v: 1, auth: { uid: 'od-a', email: 'ada@example.com' }, profile: { username: 'Ada', displayName: 'Ada', avatarUrl: null, bio: null } },
     ...over,
   };
 }

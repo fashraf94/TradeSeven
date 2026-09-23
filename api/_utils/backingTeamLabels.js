@@ -20,12 +20,28 @@
 //   · no agent name → the PLAYER'S DISPLAY NAME as the label (no secondary).
 //     The display name is the pod's own formation-time `seatNames` entry when
 //     the caller has one (the team card's DOM-7 precedent: the name the pod
-//     gave the seat), else `users/{uid}` `username || displayName` (the
-//     leaderboard's and the client's `fetchDisplayNames` rule).
+//     gave the seat), else the profile's `users/{uid}.profile.displayName`,
+//     then `.profile.username` — the NESTED shape the one writer of that
+//     document writes (see `readProfileNames`; the top-level fields are a
+//     legacy fallback — this build's review record, RAWID-1).
 //   · neither → `UNNAMED_TEAM_LABEL` ("Unnamed team"), verbatim from §C1.
 // A recorded `agentId` whose document is gone (or nameless) falls to the
 // player's display name, never to the owner's CURRENT agent: a settled team
 // is not relabelled with an agent that never played its week.
+//
+// THE TWO LAYERS, NAMED APART — `layersFor(seat)` → `{ player, agent }`: the
+// same rungs, unfolded, for a surface that names the player and the agent
+// separately (Your Backing's reveal, through the team labels reader). A lone
+// `label` cannot say which layer it is (RAWID-R-2), so such a surface reads
+// the layers, never the label.
+//
+// IN PLAY, BEFORE SETTLEMENT, the label is the owner's primary agent AT READ
+// TIME — §C1 names the before-the-draft and after-settlement sources only.
+// It can differ from the agent the pod's battle records (the reveal's) only if
+// the owner acquires a second agent whose id sorts first mid-week: an agent's
+// `name` cannot be updated (firestore.rules) and onboarding creates one agent,
+// so that takes a crafted client create (this build's review record,
+// RAWID-6). Settlement then freezes the recorded agent.
 //
 // NEVER A RAW ACCOUNT ID, ANYWHERE, IN ANY STATE (§C1). No rung of the chain
 // can answer an id: every candidate name is refused when it equals a known id
@@ -56,8 +72,13 @@
 // the order is restated rather than inherited) and additionally refusing the
 // clone ID prefixes (`isCloneAgentId`) the team card's owner lookup already
 // refused — "clones excluded" by flag and by id. Tournament code is not
-// touched: this module reproduces the selection, and its test pins it against
-// `resolveGroupAgents` itself.
+// touched: this module is board production's selection PLUS that id-prefix
+// belt, and its test pins it against `resolveGroupAgents` itself. The two
+// differ in ONE owner shape (this build's review record, WIRING-10): a
+// flagless `casual-agent-{uid}` document sorting first — a pre-rules client
+// squat (casualClone.js), which firestore.rules now forbids — board production
+// plays it, the label names the real agent. Aligning board production is
+// tournament code, reported for separate tasking.
 //
 // READS ONLY. Imports the zero-import constants modules from src/ under the
 // revised June 2026 import rule (BUILD_RULES §4); the co-located test's real
@@ -198,7 +219,18 @@ async function readPrimaryAgents(db, ownerIds) {
   return out;
 }
 
-/** uid → the profile's candidate display name (`username || displayName`), for the uids named. */
+/**
+ * uid → the player's display name, for the uids named.
+ *
+ * THE PRODUCTION SHAPE IS NESTED (this build's review record, RAWID-1): the
+ * one writer of `users/{uid}` — src/firebase/authService.js, email sign-up and
+ * Google sign-in alike — writes `profile: { username, displayName, … }`, and
+ * the app reads it there (src/contexts/UserContext.jsx). `profile.displayName`
+ * first — the name the product shows, the one a slot pod's `seatNames` carry —
+ * then `profile.username`; the TOP-LEVEL fields are a legacy fallback only.
+ * (The League's own `resolveDisplayNames` / `fetchDisplayNames` read the top
+ * level — reported for separate tasking, RAWID-R-1.)
+ */
 async function readProfileNames(db, uids) {
   const out = new Map();
   if (uids.length === 0) return out;
@@ -207,9 +239,11 @@ async function readProfileNames(db, uids) {
     const snaps = await getDocs(db, uids.map((uid) => col.doc(uid)));
     snaps.forEach((snap, i) => {
       if (!snap?.exists) return;
-      const profile = dataOf(snap) ?? {};
-      // The `resolveDisplayNames` / `fetchDisplayNames` order: username first.
-      const name = usableName(profile.username, [uids[i]]) ?? usableName(profile.displayName, [uids[i]]);
+      const data = dataOf(snap) ?? {};
+      const profile = data.profile && typeof data.profile === 'object' ? data.profile : {};
+      const ids = [uids[i]];
+      const name = usableName(profile.displayName, ids) ?? usableName(profile.username, ids)
+        ?? usableName(data.displayName, ids) ?? usableName(data.username, ids);
       if (name != null) out.set(uids[i], name);
     });
   } catch (err) {
@@ -267,6 +301,7 @@ export function podLabelSeats({ group = null, pool = null, extraTeamIds = [] } =
  *   (absent before settlement), `seatName` the pod's own `seatNames` entry.
  * @returns {Promise<{
  *   teamLabelFor: (seat: {odUserId: string, isCpu?: boolean, agentId?: string|null, seatName?: string|null}) => {label: string, secondary: string|null},
+ *   layersFor: (seat: {odUserId: string, isCpu?: boolean, agentId?: string|null, seatName?: string|null}) => {player: string|null, agent: string|null},
  *   displayNameFor: (odUserId: string, seatName?: string|null) => string|null,
  *   primaryAgentFor: (odUserId: string) => {id: string, data: Object}|null,
  * }>}
@@ -299,22 +334,40 @@ export async function resolveTeamLabels(db, seats) {
     return primaryByOwner.get(odUserId) ?? null;
   }
 
-  /** The team's label and its secondary line — see the header's chain. Pure. */
-  function teamLabelFor({ odUserId, isCpu = false, agentId = null, seatName = null } = {}) {
-    if (typeof odUserId !== 'string' || odUserId.length === 0) return { label: UNNAMED_TEAM_LABEL, secondary: null };
+  /**
+   * The team's two layers NAMED APART (this build's review record,
+   * RAWID-R-2): `player` — the player's display name — and `agent` — the
+   * agent's name through the same belt (settlement's recorded agent, else the
+   * owner's primary). A CPU seat is its own agent: both are its CPU name.
+   * Either may be null; neither is ever an id. `{ label, secondary }` cannot
+   * say which layer a lone label is, and a surface that names the layers
+   * apart (Your Backing's reveal) must not guess. Pure.
+   */
+  function layersFor({ odUserId, isCpu = false, agentId = null, seatName = null } = {}) {
+    if (typeof odUserId !== 'string' || odUserId.length === 0) return { player: null, agent: null };
     if (isCpu === true || isCpuUserId(odUserId)) {
       // `cpuDisplayName` answers a bare 'CPU' for a malformed id — a word, never the id.
-      return { label: cpuDisplayName(odUserId), secondary: null };
+      const name = cpuDisplayName(odUserId);
+      return { player: name, agent: name };
     }
     const agent = readableId(agentId)
       ? { id: agentId, data: agentsById.get(agentId) ?? null }
       : primaryByOwner.get(odUserId) ?? null;
-    const agentName = agent?.data ? usableName(agent.data.name, [odUserId, agent.id]) : null;
-    const displayName = displayNameFor(odUserId, seatName);
-    if (agentName != null) return { label: agentName, secondary: displayName };
-    if (displayName != null) return { label: displayName, secondary: null };
+    return {
+      player: displayNameFor(odUserId, seatName),
+      agent: agent?.data ? usableName(agent.data.name, [odUserId, agent.id]) : null,
+    };
+  }
+
+  /** The team's label and its secondary line — see the header's chain. Pure. */
+  function teamLabelFor({ odUserId, isCpu = false, agentId = null, seatName = null } = {}) {
+    if (typeof odUserId !== 'string' || odUserId.length === 0) return { label: UNNAMED_TEAM_LABEL, secondary: null };
+    if (isCpu === true || isCpuUserId(odUserId)) return { label: cpuDisplayName(odUserId), secondary: null };
+    const { player, agent } = layersFor({ odUserId, isCpu, agentId, seatName });
+    if (agent != null) return { label: agent, secondary: player };
+    if (player != null) return { label: player, secondary: null };
     return { label: UNNAMED_TEAM_LABEL, secondary: null };
   }
 
-  return { teamLabelFor, displayNameFor, primaryAgentFor };
+  return { teamLabelFor, layersFor, displayNameFor, primaryAgentFor };
 }

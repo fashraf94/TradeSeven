@@ -23,9 +23,11 @@
 // EVERY TEAM IS NAMED BY THE SERVER (Amendment C §C1, D-af): the stake rows and
 // the standing rows show the team's `label` (its primary agent's name) from
 // `inPlay.labelsById` — GET /api/backing/team-labels through useMyBacking —
-// and the two-layer reveal pairs the player (`secondary`) with the agent.
-// Nothing here composes a name from an id; a team the map does not carry
-// reads "Unnamed team".
+// and the two-layer reveal names the player and the agent APART from the
+// server's `player` / `agent` (RAWID-R-2), never guessed from a lone label.
+// Nothing here composes a name from an id; while a pod's names are on their
+// way its teams read the pending placeholder, and a team the server's names
+// do not carry reads "Unnamed team" (WIRING-5).
 
 import React from 'react';
 import { GROUP_STATUS, computeComposite } from '../../../constants/leagueTournament';
@@ -35,7 +37,7 @@ import { baseGroupName } from '../leagueAdapter';
 import useSpectatedTournamentBattles from '../../../hooks/useSpectatedTournamentBattles';
 import { DayTrail } from './BackingParts';
 import { CARD, WEEK } from './backingCopy';
-import { podDayOfFive, podStanding, podTeamLabel, weekDayOfFive } from './backingStripState';
+import { podDayOfFive, podStanding, podTeamLabel, podTeamLayers, weekDayOfFive } from './backingStripState';
 
 const SETTLED = new Set(['resolved', 'insufficient', 'refunded']);
 const card = { borderRadius: 18, padding: '13px 14px', background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}` };
@@ -168,13 +170,13 @@ function WeekCard({ groupId, stakes, pool, group, labelsById, accent, onOpenTape
       <div data-backing="week-reveal" style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${LTOKENS.hair}` }}>
         <Eyebrow color={accent} style={{ marginBottom: 6 }}>{WEEK.revealTitle}</Eyebrow>
         {teams.map((id) => {
-          // The two layers, named apart: the player (the label's secondary,
-          // or the label itself when no agent is on file) and the agent (the
-          // battle's own record, else the label the server resolved).
-          const { label, secondary } = named(id);
-          const name = secondary ?? label;
+          // The two layers, named apart — the SERVER's `player` and `agent`,
+          // never guessed from a lone label (RAWID-R-2): a label with no
+          // secondary may be either layer. The agent is the server's belted
+          // name, not the battle record's raw one (RAWID-2).
+          const { player: name, agent } = podTeamLayers(labelsById, groupId, id);
           const battle = battles?.[id] ?? null;
-          const agentName = battle?.agentContext?.agentName ?? (secondary != null ? label : CARD.agentFallbackName(name));
+          const agentName = agent ?? CARD.agentFallbackName(name);
           const picks = humanPicksFor(group, id);
           const six = agentSixFor(battle);
           if (picks.length === 0 && six.length === 0) {

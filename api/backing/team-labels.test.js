@@ -61,8 +61,10 @@ function world() {
     // Names on file.
     'agents/agt-ada': { ownerId: ADA, name: 'Shadow' },
     'agents/agt-played': { ownerId: 'someone', name: 'Played The Week' },
-    [`users/${ADA}`]: { username: 'ada' },
-    [`users/${GONE}`]: { displayName: 'Gone Away' },
+    // `users/{uid}` as its one writer writes it — the names NESTED under
+    // `profile` (src/firebase/authService.js; this build's review record, RAWID-1).
+    [`users/${ADA}`]: { _v: 1, auth: { uid: ADA, email: 'ada@example.com' }, profile: { username: 'ada', displayName: 'ada', avatarUrl: null, bio: null } },
+    [`users/${GONE}`]: { _v: 1, auth: { uid: GONE, email: 'gone@example.com' }, profile: { username: 'gone', displayName: 'Gone Away', avatarUrl: null, bio: null } },
   };
 }
 
@@ -111,18 +113,22 @@ describe('the names — the server\'s, for the viewer\'s own backed pods (D-af)'
   it('in play: every seat by its PRIMARY AGENT, then its player, then "Unnamed team" — and a departed seat the viewer backed', async () => {
     const res = await get({ groupIds: 'g-play' });
     expect(res.statusCode).toBe(200);
+    // Each team: its label and secondary, AND its two layers named apart
+    // (`player`, `agent` — RAWID-R-2: the reveal must never guess which layer
+    // a lone label is).
+    const cpu = expect.stringMatching(/^CPU — /);
     expect(res.body.pods['g-play']).toEqual({
-      [ADA]: { label: 'Shadow', secondary: 'ada' },
-      [CY]: { label: UNNAMED_TEAM_LABEL, secondary: null },
-      'cpu-3': { label: expect.stringMatching(/^CPU — /), secondary: null },
-      [GONE]: { label: 'Gone Away', secondary: null },
+      [ADA]: { label: 'Shadow', secondary: 'ada', player: 'ada', agent: 'Shadow' },
+      [CY]: { label: UNNAMED_TEAM_LABEL, secondary: null, player: null, agent: null },
+      'cpu-3': { label: cpu, secondary: null, player: cpu, agent: cpu },
+      [GONE]: { label: 'Gone Away', secondary: null, player: 'Gone Away', agent: null },
     });
   });
 
   it('settled: the agent settlement RECORDED names the team; a recorded agent that is gone falls to the player', async () => {
     const res = await get({ groupIds: 'g-done' });
-    expect(res.body.pods['g-done'][ADA]).toEqual({ label: 'Played The Week', secondary: 'ada' });
-    expect(res.body.pods['g-done'][CY]).toEqual({ label: UNNAMED_TEAM_LABEL, secondary: null });
+    expect(res.body.pods['g-done'][ADA]).toEqual({ label: 'Played The Week', secondary: 'ada', player: 'ada', agent: 'Played The Week' });
+    expect(res.body.pods['g-done'][CY]).toEqual({ label: UNNAMED_TEAM_LABEL, secondary: null, player: null, agent: null });
   });
 
   it('a pod the viewer has NOT backed is not answered — another backer\'s stake does not make it theirs', async () => {

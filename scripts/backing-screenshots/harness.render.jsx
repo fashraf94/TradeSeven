@@ -65,17 +65,33 @@ function write(name, title, element) {
 }
 
 // ── the strip's inputs, shaped like the endpoint's reply ────────────────────
+// Since the pre-flip cleanup (Amendment C §C1, D-af) every team is named by the
+// SERVER: each seat carries `label` (its primary agent's name) and `secondary`
+// (the player), each of the viewer's stakes its `teamLabel`, and Your Backing's
+// names arrive as `labelsById` (label, secondary and the two layers — the
+// team-labels route's reply). No reply carries `seatNames` any more.
 const SUNDAY_CLOSE = '2026-09-28T03:59:59.000Z'; // Sun 27 Sep 23:59 ET
 const WED_FIRE = '2026-09-23T23:00:00.000Z';     // a slot pod's fire, Wed 7:00 PM ET
+const NAMES = {
+  'od-a': { label: 'Kestrel', secondary: 'Mira', player: 'Mira', agent: 'Kestrel' },
+  'od-b': { label: 'Tarn', secondary: 'Draco', player: 'Draco', agent: 'Tarn' },
+  'od-x': { label: 'Orbit', secondary: 'Rigel', player: 'Rigel', agent: 'Orbit' },
+  'cpu-1': { label: 'CPU — Trend Follower', secondary: null, player: 'CPU — Trend Follower', agent: 'CPU — Trend Follower' },
+  'cpu-2': { label: 'CPU — Contrarian', secondary: null, player: 'CPU — Contrarian', agent: 'CPU — Contrarian' },
+  'cpu-3': { label: 'CPU — Diversifier', secondary: null, player: 'CPU — Diversifier', agent: 'CPU — Diversifier' },
+  'cpu-4': { label: 'CPU — Speculator', secondary: null, player: 'CPU — Speculator', agent: 'CPU — Speculator' },
+};
+const labelOf = (id) => ({ label: NAMES[id].label, secondary: NAMES[id].secondary });
+const labelsFor = (...groupIds) => Object.fromEntries(groupIds.map((g) => [g, NAMES]));
 const seats = [
-  { odUserId: 'od-a', isCpu: false, isOwnSeat: false, backable: true },
-  { odUserId: 'od-b', isCpu: false, isOwnSeat: false, backable: true },
-  { odUserId: 'cpu-1', isCpu: true, isOwnSeat: false, backable: true },
-  { odUserId: 'cpu-2', isCpu: true, isOwnSeat: false, backable: true },
+  { odUserId: 'od-a', isCpu: false, isOwnSeat: false, backable: true, ...labelOf('od-a') },
+  { odUserId: 'od-b', isCpu: false, isOwnSeat: false, backable: true, ...labelOf('od-b') },
+  { odUserId: 'cpu-1', isCpu: true, isOwnSeat: false, backable: true, ...labelOf('cpu-1') },
+  { odUserId: 'cpu-2', isCpu: true, isOwnSeat: false, backable: true, ...labelOf('cpu-2') },
 ];
 const pod = (groupId, over = {}) => ({
   groupId, formationPath: 'lobby', slotId: null, baseLayerWeek: '2026-W40',
-  seatNames: { 'od-a': 'Mira', 'od-b': 'Draco' }, humanTeams: 2, teams: seats,
+  humanTeams: 2, teams: seats,
   pool: { status: 'open', closesAt: SUNDAY_CLOSE, closeReason: 'clock', backerProgress: { count: 1, floor: 3, met: false }, teamSpread: { met: false } },
   myStakes: [],
   ...over,
@@ -102,8 +118,8 @@ const STRIP_STATES = {
   },
   staked: {
     pods: podsReply([
-      pod('lobby-w40-a', { myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', amount: 250, status: 'live' }] }),
-      pod('lobby-w40-b', { myStakes: [{ stakeId: 's2', teamOdUserId: 'cpu-1', amount: 100, status: 'live' }] }),
+      pod('lobby-w40-a', { myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', teamLabel: NAMES['od-a'].label, amount: 250, status: 'live' }] }),
+      pod('lobby-w40-b', { myStakes: [{ stakeId: 's2', teamOdUserId: 'cpu-1', teamLabel: NAMES['cpu-1'].label, amount: 100, status: 'live' }] }),
       pod('lobby-w40-c'),
     ]),
     inPlay: nothingInPlay,
@@ -117,6 +133,7 @@ const STRIP_STATES = {
       ],
       poolsById: { 'lobby-w39-a': { status: 'closed', closesAt: '2026-09-21T03:59:59.000Z' }, 'lobby-w39-b': { status: 'closed', closesAt: '2026-09-21T03:59:59.000Z' } },
       groupsById: { 'lobby-w39-a': battleGroup(), 'lobby-w39-b': battleGroup({ seatNames: { 'od-x': 'Rigel', 'od-a': 'Mira' } }) },
+      labelsById: labelsFor('lobby-w39-a', 'lobby-w39-b'),
       loading: false,
     },
   },
@@ -126,6 +143,7 @@ const STRIP_STATES = {
       stakes: [{ id: 's7', groupId: 'lobby-w39-a', teamOdUserId: 'od-a', amount: 250, status: 'settled', weekKey: '2026-W39' }],
       poolsById: { 'lobby-w39-a': { status: 'resolved' } },
       groupsById: { 'lobby-w39-a': battleGroup({ status: 'complete' }) },
+      labelsById: labelsFor('lobby-w39-a'),
       loading: false,
     },
   },
@@ -139,7 +157,7 @@ const openPod = (over = {}) => ({ groupId: 'lobby-w40-a', pool: { status: 'open'
 const firstWeek = {
   groupId: 'lobby-w40-a', odUserId: 'od-b', viewerUid: 'viewer-1',
   seat: seat({ index: 2 }),
-  team: { displayName: 'Draco', isCpu: false, pitch: 'Macro guy. Tarn keeps me from being too early.', derived: null,
+  team: { displayName: 'Draco', ...labelOf('od-b'), isCpu: false, pitch: 'Macro guy. Tarn keeps me from being too early.', derived: null,
     agent: { name: 'Tarn', archetype: 'analyst', archetypeLabel: 'Fundamental Investor', approach: 'Buys quality companies and lets the fundamentals do the work.', traitCount: 3, ruleCount: 5 } },
   known: null,
   lastWeek: null,
@@ -148,7 +166,7 @@ const firstWeek = {
 const veteran = {
   groupId: 'lobby-w40-a', odUserId: 'od-a', viewerUid: 'viewer-1',
   seat: seat(),
-  team: { displayName: 'Mira', isCpu: false, pitch: 'I take the leader in whatever sector has breadth on Monday.', derived: 'Held 2 of 3 all week · 2 moves · leaned technology',
+  team: { displayName: 'Mira', ...labelOf('od-a'), isCpu: false, pitch: 'I take the leader in whatever sector has breadth on Monday.', derived: 'Held 2 of 3 all week · 2 moves · leaned technology',
     agent: { name: 'Kestrel', archetype: 'momentum_chaser', archetypeLabel: 'Trend Follower', approach: APPROACH, traitCount: 4, ruleCount: 7 } },
   known: { rp: 412, tier: 2, tierName: 'Analyst', weeksPlayed: 2, priorFinishes: [1, 2] },
   lastWeek: {
