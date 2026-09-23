@@ -19,10 +19,12 @@ import {
   buildTape,
   buildTradeEntries,
   buildCheckEntries,
+  buildDeferredEntries,
   collapseQuietChecks,
   checkEntryId,
   tradeEntryId,
   TAPE_KIND,
+  FEED_KIND_CHECK_DEFERRED,
   MIN_RUN,
 } from './buildTape';
 import { WHY_KIND, isEngineAuthoredMotive, ENGINE_MOTIVE_PREFIXES, TEXT_DECIDES_SOURCES } from './selectWhyState';
@@ -733,5 +735,59 @@ describe('a check is named by its SLOT, a trade by its instant (D-83)', () => {
     ));
     expect(sameSlot).toHaveLength(1);
     expect(sameSlot[0].count).toBe(2);
+  });
+});
+
+describe('the deferred beat — a check the loop never reached (eval-cron D3)', () => {
+  // The server's shape, exactly: agent-evaluate.js appends it with arrayUnion
+  // when the loop's budget runs out before this battle's turn. It carries no
+  // `action`, `message` or `timestamp` — `kind` and `at` are its own.
+  const beat = (over = {}) => ({ kind: 'check_deferred', at: T('19:04'), reason: 'budget', runId: '2026-09-01T19:00:00.123Z', ...over });
+
+  it('one `checkDeferred` entry per beat, at the beat\'s own instant, keyed by its run', () => {
+    expect(FEED_KIND_CHECK_DEFERRED).toBe('check_deferred');
+    const [entry, ...rest] = buildDeferredEntries([beat()]);
+    expect(rest).toEqual([]);
+    expect(entry).toEqual({
+      _type: TAPE_KIND.CHECK_DEFERRED,
+      id: 'tape-deferred-2026-09-01T19:00:00.123Z',
+      timestamp: new Date(T('19:04')),
+      at: T('19:04'),
+    });
+    expect(TAPE_KIND.CHECK_DEFERRED).toBe('checkDeferred');
+  });
+
+  it('MUTATION ROW — only the deferred kind is a record of its own; every other feed entry stays join-only', () => {
+    // FEED's swap and trail-stop entries, and an entry that merely resembles
+    // the beat through `action`, build nothing here.
+    expect(buildDeferredEntries([...FEED, { action: 'check_deferred', timestamp: T('19:04') }])).toEqual([]);
+    expect(buildDeferredEntries([...FEED, beat()])).toHaveLength(1);
+  });
+
+  it('MUTATION ROW — a beat for any reason but the budget is not rendered with a line that says "ran out of time"', () => {
+    expect(buildDeferredEntries([beat({ reason: 'lock' })])).toEqual([]);
+    expect(buildDeferredEntries([beat({ reason: undefined })])).toEqual([]);
+  });
+
+  it('an unreadable instant is skipped, never sorted to the epoch; junk is not a crash', () => {
+    expect(buildDeferredEntries([beat({ at: 'not a date' }), beat({ at: undefined }), null, 7, 'x'])).toEqual([]);
+    expect(buildDeferredEntries(null)).toEqual([]);
+    expect(buildDeferredEntries(undefined)).toEqual([]);
+  });
+
+  it('buildTape carries it beside the cards — and it BREAKS a quiet run rather than being folded into one', () => {
+    const entries = buildTape({
+      trades: [],
+      statusFeed: [beat({ at: T('19:40') })],
+      evaluations: [check('19:31'), check('19:46')],
+      receipts: {},
+      chatExchanges: [],
+    });
+    expect(entries.map((e) => e._type)).toEqual([TAPE_KIND.CHECK, TAPE_KIND.CHECK, TAPE_KIND.CHECK_DEFERRED]);
+    const sorted = [...entries].sort((a, b) => a.timestamp - b.timestamp);
+    // Two quiet checks either side of the deferral: two cards, never one run —
+    // a run stands for checks that ran back to back, and one did not run.
+    expect(collapseQuietChecks(sorted).map((e) => e._type))
+      .toEqual([TAPE_KIND.CHECK, TAPE_KIND.CHECK_DEFERRED, TAPE_KIND.CHECK]);
   });
 });

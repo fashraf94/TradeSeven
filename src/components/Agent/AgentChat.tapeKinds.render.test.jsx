@@ -340,3 +340,48 @@ describe('Review lens 4 F11 — the eyebrow\'s colour is the SHARED one (D-98)',
     expect(colourLine.trim()).toBe('color: SPEECH_EYEBROW_COLOR,');
   });
 });
+
+describe('the deferred beat on the real component (eval-cron D3)', () => {
+  // The server's `check_deferred` status-feed beat, through the REAL builder,
+  // dispatcher and card: nothing here is hand-built past the feed entry.
+  const DEFERRED_FEED = [{ kind: 'check_deferred', at: T('19:40'), reason: 'budget', runId: T('19:30') }];
+  const withBeat = () => buildTape({
+    trades: TRADES, statusFeed: DEFERRED_FEED, evaluations: EVALUATIONS, receipts, chatExchanges: EXCHANGES,
+  });
+
+  it('renders as an engine RECORD — the flat shell, a token edge, a mono eyebrow — carrying the two founder strings', () => {
+    const html = render({ tapeEntries: withBeat() });
+    const at = html.indexOf('data-tape-kind="checkDeferred"');
+    expect(at, 'the deferred line did not render').toBeGreaterThan(-1);
+    const line = html.slice(at, html.indexOf('</p>', at));
+    expect(line).toContain(RECORD_SHELL);
+    expect(line).toContain(MONO);
+    expect(line).toContain('>Check deferred<');
+    expect(line).toContain('The loop ran out of time before reaching this battle · next run picks it up first');
+    expect(BATTLE_VIEW_COPY.checkDeferredEyebrow).toBe('Check deferred');
+    // Never a bubble: no speech tail, no player tail, no card fill.
+    expect(line).not.toContain('border-radius:0 12px 12px 12px');
+    expect(line).not.toContain('border-radius:12px 12px 0 12px');
+    expect(line).not.toContain('background:var(--ft-bg-card)');
+  });
+
+  it('it sits in the stream at its own instant — after the 3:30 PM check, before the 3:45 PM one, and the two stay two cards', () => {
+    const quietLater = [...EVALUATIONS, { ...EVALUATIONS[0], evalId: 'eval_047', timestamp: T('19:31') }];
+    const html = render({
+      tapeEntries: buildTape({ trades: TRADES, statusFeed: DEFERRED_FEED, evaluations: quietLater, receipts, chatExchanges: EXCHANGES }),
+    });
+    const deferred = html.indexOf('data-tape-kind="checkDeferred"');
+    expect(html.indexOf('Status check · 3:30 PM')).toBeLessThan(deferred);
+    expect(html.indexOf('Status check · 3:45 PM')).toBeGreaterThan(deferred);
+  });
+
+  it('MUTATION ROW — a tape kind the stream has no row for renders NOTHING, never an empty bubble', () => {
+    const bubbles = (html) => (html.match(/border-radius:0 12px 12px 12px|border-radius:12px 12px 0 12px/g) || []).length;
+    const baseline = render();
+    const withUnknown = render({ tapeEntries: [...tapeEntries, { _type: 'somethingNew', id: 'x-1', timestamp: new Date(T('19:50')) }] });
+    expect(bubbles(withUnknown)).toBe(bubbles(baseline));
+    expect(withUnknown).not.toContain('x-1');
+    // …and the stream around it is unchanged.
+    expect(withUnknown.replace(/\s+/g, '')).toBe(baseline.replace(/\s+/g, ''));
+  });
+});

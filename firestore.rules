@@ -878,6 +878,17 @@ service cloud.firestore {
       allow read, write: if false;  // Admin SDK only
     }
 
+    // Eval-cron run records (docs/audits/20260923_BUILD_EVAL_DEFERRED_BEAT.md):
+    // agentEvalRuns/{runId}, one measurement document per evaluation run,
+    // written by api/cron/agent-evaluate.js through the Admin SDK. SERVER-ONLY:
+    // no client verb, not even for the owner of a battle a run lists. The root
+    // default-deny already covers it; the block ships with the collection so
+    // the posture is visible (the Wire precedent), and
+    // test/rules/agentEvalRunsDenials.rules.mjs asserts it.
+    match /agentEvalRuns/{runId} {
+      allow read, write: if false;  // Admin SDK only
+    }
+
     // Voice Layer Cache — OWNER-scoped read, server-only write (Admin SDK).
     //
     // P-4 (Command Center Sync Pass 1, PASS1_PHASE0_STOP_RULINGS_AND_GO.md §1).

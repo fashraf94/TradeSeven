@@ -533,6 +533,13 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // deliberately not among them — it moves with price on nearly every tick,
   // and the board already shows it.
   checksNoChange: (n) => `${n} checks · no change`,
+  // A check the evaluation loop never reached: the run's time budget ran out
+  // before this battle's turn, so nothing was decided and no agent verb
+  // applies — the line names the LOOP, never the agent (rule 2). Rendered off
+  // the server's `check_deferred` status-feed beat (EVAL_DEFERRED_BEAT_ENABLED;
+  // docs/audits/20260923_BUILD_EVAL_DEFERRED_BEAT.md). Founder copy, verbatim.
+  checkDeferredEyebrow: 'Check deferred',
+  checkDeferredLine: 'The loop ran out of time before reaching this battle · next run picks it up first',
 
   // ── This turn (A3) ─────────────────────────────────────────────────────────
   // Strict membership (D-49): only the current directive. `Filed {t}` is the

@@ -80,7 +80,7 @@ import { TEMPO_DIAL_BANDS } from '../_utils/tempoDialBands.js';
 // NO-EDIT).
 import { clampHftConfig, resolveTempoDial, desiredTempoOf } from '../_utils/tempoDialClamp.js';
 import { buildSwapProvenance } from '../_utils/swapProvenance.js';
-import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED, LEARNING_L1_CAPTURE_ENABLED, LEARNING_L1_CAPTURE_EXPANSION_ENABLED, REGIME_STAMP_ENABLED, PROFIT_TARGET_EXECUTOR_ENABLED, TICK_STAMPS_ENABLED, ANTICIPATION_THRESHOLD_LINT_MODE, INTRADAY_DIAGNOSTIC_ENABLED, TICK_CAPTURE_ENABLED, getVoiceGroundingMode } from '../../src/config/featureFlags.js';
+import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED, LEARNING_L1_CAPTURE_ENABLED, LEARNING_L1_CAPTURE_EXPANSION_ENABLED, REGIME_STAMP_ENABLED, PROFIT_TARGET_EXECUTOR_ENABLED, TICK_STAMPS_ENABLED, ANTICIPATION_THRESHOLD_LINT_MODE, INTRADAY_DIAGNOSTIC_ENABLED, TICK_CAPTURE_ENABLED, EVAL_DEFERRED_BEAT_ENABLED, getVoiceGroundingMode } from '../../src/config/featureFlags.js';
 // Voice-layer grounding §5 (hazard 27): the in-process dedupe of one tick's
 // anticipation queue, applied only when the note is code-composed.
 import { dedupeAnticipationQueue } from '../_utils/voiceLayerGrounding.js';
@@ -117,7 +117,9 @@ import { finalizeCronState } from '../_utils/agentCronState.js';
 // pointer fields. Non-fenced; every call is wrapped, bounded to 2 s and
 // non-fatal. Dark with INTRADAY_DIAGNOSTIC_ENABLED off: nothing is read,
 // nothing is written, no key is added.
-import { readIntradaySnapshot, writeIntradayView, composeIntradayEntryFields } from '../_utils/intraday/evaluatorHook.js';
+// `withTimeout` also bounds the run document and the deferred beat below — the
+// same 2 s race, one helper (never a local copy).
+import { readIntradaySnapshot, writeIntradayView, composeIntradayEntryFields, withTimeout } from '../_utils/intraday/evaluatorHook.js';
 import { buildIntradayView } from '../_utils/intraday/view.js';
 import { POLICY_VERSION as INTRADAY_POLICY_VERSION } from '../_utils/intradayConfig.js';
 // P4 — the tournament discriminator of record (code-review finding: never a
@@ -222,7 +224,18 @@ export default async function handler(req, res) {
 
   const db = getFirebaseAdmin();
   const startTime = Date.now();
-  const summary = { evaluated: 0, triggered: 0, swapped: 0, held: 0, errors: 0, skipped: 0, expired: 0 };
+  // `lockSkipped` and `deferred` split what `skipped` used to conflate (R2);
+  // `skipped` stays their sum, so the response only gains keys.
+  const summary = { evaluated: 0, triggered: 0, swapped: 0, held: 0, errors: 0, skipped: 0, expired: 0, lockSkipped: 0, deferred: 0 };
+  // THE RUN'S OWN RECORD (always on). Set the moment this invocation becomes
+  // an evaluation run — past the market-hours gate, so ~26 per weekday — and
+  // written once, in the `finally`, however the run ends. The response is
+  // sent from that same `finally`, AFTER the write: a function may be frozen
+  // once its response ends, so a write issued after res.json() is not
+  // guaranteed to land (the repo's post-response work goes through waitUntil).
+  let evalRun = null;
+  let reply = null;
+  const respond = (status, payload) => { reply = { status, payload }; };
 
   try {
     // ---- 1b. Mastery flag view (Spec V2 §5.1; adversarial rulings B1/B2).
@@ -334,8 +347,12 @@ export default async function handler(req, res) {
     // ---- 3. Market hours guard (only for evaluations, not expiry completion) ----
     if (!isMarketOpen()) {
       const duration = Date.now() - startTime;
-      return res.status(200).json({ skipped: true, reason: 'market_closed', expired: summary.expired, duration });
+      return respond(200, { skipped: true, reason: 'market_closed', expired: summary.expired, duration });
     }
+    // From here this invocation is an evaluation run and will leave a record.
+    // `evaluatedBefore` fences off the expiry completions and repairs above,
+    // which count into `summary.evaluated` but are not the loop's work.
+    evalRun = { runId: new Date(startTime).toISOString(), evaluatedBefore: summary.evaluated, battlesTotal: 0, deferredBattleIds: [], deferredAt: null };
 
     // ---- 3b. Canonical-open capture sweep (Spec §1.1, Phase 2) — ISOLATED
     // first-class subtask: its own timeout; any failure is caught + reported
@@ -351,8 +368,9 @@ export default async function handler(req, res) {
     }
 
     if (activeBattles.length === 0) {
-      return res.status(200).json({ evaluated: 0, expired: summary.expired, canonicalOpenSweep: summary.canonicalOpenSweep, message: 'No active agent battles' });
+      return respond(200, { evaluated: 0, expired: summary.expired, canonicalOpenSweep: summary.canonicalOpenSweep, message: 'No active agent battles' });
     }
+    evalRun.battlesTotal = activeBattles.length;
 
     console.log(`${LOG_PREFIX} Found ${activeBattles.length} active agent battle(s) (${summary.expired} expired and completed)`);
 
@@ -386,12 +404,19 @@ export default async function handler(req, res) {
     );
 
     // ---- 4. Process each battle sequentially (with time budget) ----
-    for (const battle of activeBattles) {
+    for (const [index, battle] of activeBattles.entries()) {
       const elapsed = Date.now() - startTime;
       if (elapsed > TIME_BUDGET_MS) {
-        const remaining = activeBattles.length - summary.evaluated - summary.errors;
-        console.log(`${LOG_PREFIX} Time budget exceeded (${elapsed}ms). ${remaining} agent(s) deferred to next tick.`);
-        summary.skipped += remaining;
+        // THE DEFERRED SET is exactly the battles this loop never reached: the
+        // tail from here, in rotation order. Counted off the list itself (R2)
+        // — the old `length − evaluated − errors` counted every lock-skip twice
+        // and subtracted the expiry completions, which were never in the list.
+        const deferred = activeBattles.slice(index);
+        evalRun.deferredBattleIds = deferred.map((b) => b.id);
+        evalRun.deferredAt = new Date().toISOString();
+        summary.deferred += deferred.length;
+        summary.skipped += deferred.length;
+        console.log(`${LOG_PREFIX} Time budget exceeded (${elapsed}ms). ${deferred.length} agent(s) deferred to next tick.`);
         break;
       }
 
@@ -436,6 +461,11 @@ export default async function handler(req, res) {
       }
     }
 
+    // ---- 4b. The deferred beat (dark — EVAL_DEFERRED_BEAT_ENABLED) ----
+    if (evalRun.deferredBattleIds.length > 0) {
+      await writeDeferredBeats(db, evalRun.deferredBattleIds, { runId: evalRun.runId, at: evalRun.deferredAt, startTime });
+    }
+
     const duration = Date.now() - startTime;
     if (summary.captureTicks) {
       // The per-INVOCATION total (F7): what capture cost this run, end to end.
@@ -443,10 +473,124 @@ export default async function handler(req, res) {
     }
     console.log(`${LOG_PREFIX} Complete in ${duration}ms:`, summary);
 
-    return res.status(200).json({ ...summary, duration });
+    return respond(200, { ...summary, duration });
   } catch (err) {
     console.error(`${LOG_PREFIX} Fatal error:`, err);
-    return res.status(500).json({ error: err.message });
+    return respond(500, { error: err.message });
+  } finally {
+    // The run document goes out BEFORE the response (see `evalRun` above),
+    // bounded and never throwing, so the response always follows it.
+    if (evalRun) await writeEvalRunRecord(db, evalRun, summary, startTime);
+    res.status(reply.status).json(reply.payload);
+  }
+}
+
+// ==================== THE RUN RECORD + THE DEFERRED BEAT ====================
+//
+// docs/audits/20260918_PHASE0_EVAL_CRON_SCALING.md found no wall time recorded
+// anywhere (:271), `summary.skipped` conflating lock-skips with deferrals and
+// never persisted (:293, R2), and a deferred battle getting no tick, no lock
+// and no record. The run document is ALWAYS ON; the beat is dark behind
+// EVAL_DEFERRED_BEAT_ENABLED. Report: docs/audits/20260923_BUILD_EVAL_DEFERRED_BEAT.md.
+
+/** Deferred ids the run document LISTS; past this it only counts them. */
+export const EVAL_RUN_DEFERRED_ID_CAP = 200;
+/** Deferred battles that get a status-feed beat, per run, in loop order. */
+export const DEFERRED_BEAT_CAP = 25;
+/** The bound on the run document write and on the beat writes alike. */
+const EVAL_RUN_WRITE_TIMEOUT_MS = 2_000;
+/**
+ * The beats need this much of the function's HARD ceiling left. They follow the
+ * loop's own break, which fires only once elapsed exceeds TIME_BUDGET_MS, so
+ * what remains is the buffer TIME_BUDGET_MS leaves under maxDuration "for
+ * cleanup/response" (its own comment): 5 s = the beats' 2 s bound + the run
+ * document's 2 s bound + 1 s for the response.
+ */
+const DEFERRED_BEAT_MIN_REMAINING_MS = 5_000;
+const HARD_CEILING_MS = config.maxDuration * 1000;
+
+/**
+ * agentEvalRuns/{runId} — one per evaluation run; `runId` is the run's start
+ * instant. Pure, so the counts and the list cap are provable apart from the
+ * handler. SCOPED TO THE LOOP: `battlesTotal` is the loop's population (the
+ * active battles left after expiry) and `evaluated` the battles the LOOP
+ * evaluated — the response's `evaluated` also counts expiry completions, which
+ * are not the loop's work. `deferredBattleIds` holds the first
+ * EVAL_RUN_DEFERRED_ID_CAP ids in loop order; `deferredTruncated` counts the rest.
+ */
+export function composeEvalRunRecord({ startTime, endTime, battlesTotal, evaluated, summary, deferredBattleIds }) {
+  const listed = deferredBattleIds.slice(0, EVAL_RUN_DEFERRED_ID_CAP);
+  return {
+    startedAt: new Date(startTime).toISOString(),
+    endedAt: new Date(endTime).toISOString(),
+    wallMs: endTime - startTime,
+    budgetMs: TIME_BUDGET_MS,
+    battlesTotal,
+    evaluated,
+    lockSkipped: summary.lockSkipped || 0,
+    deferred: deferredBattleIds.length,
+    deferredBattleIds: listed,
+    deferredTruncated: deferredBattleIds.length - listed.length,
+    triggered: summary.triggered || 0,
+    modelCalls: summary.modelCalls || 0,
+    budgetSkipped: summary.budgetSkipped || 0,
+  };
+}
+
+/**
+ * Compose and write the run's record at the end of the run. Bounded (2 s) and
+ * never throws — composition included — so a lost record costs the record,
+ * never the run or its response.
+ */
+async function writeEvalRunRecord(db, evalRun, summary, startTime) {
+  try {
+    const record = composeEvalRunRecord({
+      startTime,
+      endTime: Date.now(),
+      battlesTotal: evalRun.battlesTotal,
+      evaluated: summary.evaluated - evalRun.evaluatedBefore,
+      summary,
+      deferredBattleIds: evalRun.deferredBattleIds,
+    });
+    await withTimeout(db.collection('agentEvalRuns').doc(evalRun.runId).set(record), EVAL_RUN_WRITE_TIMEOUT_MS, 'eval_run_write');
+    return true;
+  } catch (err) {
+    console.error(`${LOG_PREFIX} [evalRun] run document ${evalRun.runId} not written (run unaffected): ${err?.message || err}`);
+    return false;
+  }
+}
+
+/**
+ * THE DEFERRED BEAT: one `check_deferred` entry appended to each deferred
+ * battle's status feed with arrayUnion — no read and no lock, since a deferred
+ * battle was never admitted. Only the first DEFERRED_BEAT_CAP in loop order,
+ * and none at all with less than DEFERRED_BEAT_MIN_REMAINING_MS of the hard
+ * ceiling left; past either limit the run document is the record, and it
+ * lists every deferred battle. The flag is read in here, inside the fail-safe.
+ * Bounded (2 s) and never throws.
+ */
+async function writeDeferredBeats(db, deferredBattleIds, { runId, at, startTime }) {
+  try {
+    if (!EVAL_DEFERRED_BEAT_ENABLED) return 0;
+    const remainingMs = HARD_CEILING_MS - (Date.now() - startTime);
+    if (remainingMs < DEFERRED_BEAT_MIN_REMAINING_MS) {
+      console.log(`${LOG_PREFIX} [deferredBeat] no beats: ${remainingMs}ms of the ceiling left (< ${DEFERRED_BEAT_MIN_REMAINING_MS}ms) — the run document lists all ${deferredBattleIds.length}`);
+      return 0;
+    }
+    const beat = { kind: 'check_deferred', at, reason: 'budget', runId };
+    const targets = deferredBattleIds.slice(0, DEFERRED_BEAT_CAP);
+    const results = await withTimeout(Promise.allSettled(targets.map((battleId) => (
+      db.collection('agentBattles').doc(battleId).update({ statusFeed: FieldValue.arrayUnion(beat) })
+    ))), EVAL_RUN_WRITE_TIMEOUT_MS, 'deferred_beat_write');
+    results.forEach((result, i) => {
+      if (result.status === 'rejected') console.error(`${LOG_PREFIX} [deferredBeat] beat not written for battle ${targets[i]}: ${result.reason?.message || result.reason}`);
+    });
+    const written = results.filter((result) => result.status === 'fulfilled').length;
+    console.log(`${LOG_PREFIX} [deferredBeat] ${written}/${targets.length} beat(s) written for ${deferredBattleIds.length} deferred battle(s)`);
+    return written;
+  } catch (err) {
+    console.error(`${LOG_PREFIX} [deferredBeat] beats not written (run unaffected): ${err?.message || err}`);
+    return 0;
   }
 }
 
@@ -690,9 +834,20 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
 
   if (!lockAcquired) {
     console.log(`${LOG_PREFIX} Battle ${battle.id} already being evaluated — skipping`);
+    // A lock-skip is counted on its OWN (R2: `skipped` used to be the only
+    // bucket, shared with budget deferrals). `skipped` stays their sum — the
+    // handler adds the deferrals beside it — so the response is additive.
+    summary.lockSkipped = (summary.lockSkipped || 0) + 1;
     summary.skipped++;
     return;
   }
+
+  // The tick's wall time starts HERE, at admission: the lock is held and the
+  // tick is this invocation's to finish. The entry's `tickMs` runs from this
+  // instant to the authoritative final update (stamped just before
+  // battleRef.update(finalUpdate) below). No early exit writes an entry, so
+  // none carries one.
+  const tickAdmittedAtMs = Date.now();
 
   // TICK CAPTURE (spec §3, C-9) — the request-local record for THIS tick,
   // created immediately after admission with the committed sequence, filled at
@@ -2391,6 +2546,9 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         timeoutKind: null,
       };
       fallbackHold = true;
+      // The run document's per-battle budget skips (the loop-level deferral is
+      // counted by the handler, apart from these).
+      summary.budgetSkipped = (summary.budgetSkipped || 0) + 1;
       console.warn(`${LOG_PREFIX} Haiku call skipped for battle ${battle.id}: ${haikuFailure.message}`);
       captureStep(tickCapture, () => {
         tickCapture.model({ outcome: 'failed', failureClass: 'budget_skipped', message: haikuFailure.message });
@@ -2502,6 +2660,9 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         } finally {
           // Return OR throw — the honest wall time the call actually got.
           callMs = Date.now() - callStartedAt;
+          // …and, for the same reason, the honest count of model requests this
+          // run dispatched (the run document's `modelCalls`).
+          summary.modelCalls = (summary.modelCalls || 0) + 1;
           // Capture: `callMs` is set exactly when the call RAN, return or
           // throw, so it is also the honest answer to "did this tick dispatch
           // a model request?" — the denominator C-1 measures usable pairs
@@ -3661,9 +3822,14 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       //   promptBuiltAt — when the prompt was finished, or null (never built)
       //   buildMs       — the build's wall time, or null (the build never ran)
       //   callMs        — messages.create start → return or throw, or null (no call)
+      //   tickMs        — admission (the lock) → the authoritative final update.
+      //                   Composed here and RESTAMPED immediately before that
+      //                   update, so it is a number on every written entry;
+      //                   the update's own round trip is structurally outside it.
       promptBuiltAt,
       buildMs,
       callMs,
+      tickMs: Date.now() - tickAdmittedAtMs,
       // Why this HOLD is a HOLD: 'default_failure' when the tick failed closed
       // with no usable proposal, null when the HOLD was CHOSEN. Reads
       // alongside haikuError.failureClass, which says WHICH failure; this says
@@ -4055,6 +4221,11 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       });
     }
 
+    // The tick's wall time closes as the authoritative update is issued, so it
+    // counts everything done after the entry was composed (the intraday view,
+    // the stamps, the shadow capture). `evaluation` is the object `evaluations`
+    // holds, so the restamp rides this write.
+    evaluation.tickMs = Date.now() - tickAdmittedAtMs;
     await battleRef.update(finalUpdate);
     summary.evaluated++;
     captureStep(tickCapture, () => {

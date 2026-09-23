@@ -15,7 +15,10 @@
 // THE SPINE IS `trades[]` (D-72, ruling 5), not the feed. `trades[]` is the one
 // list of EXECUTED swaps (agentSwapExecution.js), and it carries the three
 // things a card needs that the feed entry does not have: `tier`, `lockedPoints`
-// and `rationale`. The feed is joined only for the `↳ from directive` echo.
+// and `rationale`. The feed is joined only for the `↳ from directive` echo —
+// and read for one entry kind that is a record on its own, the deferred beat
+// (`buildDeferredEntries`), because a check the loop never reached has no
+// evaluation to build a card from.
 // Two consequences, both deliberate:
 //
 //   · All five swap actions appear. The shipped chat filtered the feed to
@@ -56,7 +59,16 @@ export const TAPE_KIND = Object.freeze({
   TRADE: 'trade',
   CHECK: 'check',
   CHECK_RUN: 'checkRun',
+  CHECK_DEFERRED: 'checkDeferred',
 });
+
+/**
+ * The status-feed `kind` the evaluation cron appends when its loop runs out of
+ * budget before reaching a battle (the deferred beat — agent-evaluate.js,
+ * behind EVAL_DEFERRED_BEAT_ENABLED). The feed's ONLY entry the tape renders on
+ * its own; every other feed entry is read solely for the directive echo.
+ */
+export const FEED_KIND_CHECK_DEFERRED = 'check_deferred';
 
 // Trims, exactly as selectWhyState's does (review FIX-3): `trades[].rationale`
 // is rendered by BOTH the tape's card and the panel's `This piece today`, and
@@ -319,13 +331,45 @@ export function buildCheckEntries(evaluations, receipts, chatExchanges, trades) 
 }
 
 /**
- * The non-message half of the tape: trade cards and check cards, unsorted (the
- * chat sorts the merged stream once).
+ * A `Check deferred` line per deferred beat on the status feed.
+ *
+ * The one feed entry that is a record in its own right: the loop never reached
+ * the battle, so there is no evaluation to build a check card from — the beat
+ * IS the record. Read by its own `kind` and `at`; it carries no `action`,
+ * `message` or `timestamp`. Only `reason: 'budget'` renders, because that is
+ * the only reason the line describes ("ran out of time"). An entry with no
+ * readable instant is skipped rather than sorted to the epoch, like every card.
+ */
+export function buildDeferredEntries(statusFeed) {
+  if (!Array.isArray(statusFeed)) return [];
+  const entries = [];
+  for (const entry of statusFeed) {
+    if (!entry || typeof entry !== 'object') continue;
+    if (entry.kind !== FEED_KIND_CHECK_DEFERRED || entry.reason !== 'budget') continue;
+    const at = toIso(entry.at);
+    const ms = toMillis(at);
+    if (ms == null) continue;
+    entries.push({
+      _type: TAPE_KIND.CHECK_DEFERRED,
+      // One beat per battle per run (arrayUnion, and each run's id is its own
+      // start instant), so the run id is unique on the feed it came from.
+      id: `tape-deferred-${entry.runId || ms}`,
+      timestamp: new Date(ms),
+      at,
+    });
+  }
+  return entries;
+}
+
+/**
+ * The non-message half of the tape: trade cards, check cards and deferred-check
+ * lines, unsorted (the chat sorts the merged stream once).
  */
 export function buildTape({ trades, statusFeed, evaluations, receipts, chatExchanges }) {
   return [
     ...buildTradeEntries(trades, statusFeed),
     ...buildCheckEntries(evaluations, receipts, chatExchanges, trades),
+    ...buildDeferredEntries(statusFeed),
   ];
 }
 

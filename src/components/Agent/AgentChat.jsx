@@ -20,7 +20,7 @@ import { deriveChatMessages } from './deriveChatMessages';
 // Phase C §3 — the research card's whole render. Absent unless an exchange
 // carries one, so nothing changes while SHOW_IT_ENABLED is dark.
 import ResearchCard from './ResearchCard';
-import { TradeCard, CheckCard, CheckRunLine, SPEECH_EYEBROW_COLOR } from '../../screens/battleView/TapeCards';
+import { TradeCard, CheckCard, CheckRunLine, DeferredCheckLine, SPEECH_EYEBROW_COLOR } from '../../screens/battleView/TapeCards';
 import { collapseQuietChecks, TAPE_KIND } from '../../screens/battleView/buildTape';
 import { scopeTape } from '../../screens/battleView/scopeTape';
 import { cssVar } from '../../theme/cssTokens';
@@ -1502,6 +1502,10 @@ export default function AgentChat({
               body = <CheckCard key={item.id} entry={item} startExpanded={openCheckId === item.id} />;
             } else if (item._type === TAPE_KIND.CHECK_RUN) {
               body = <CheckRunLine key={item.id} entry={item} />;
+            } else if (item._type === TAPE_KIND.CHECK_DEFERRED) {
+              // A check the loop never reached (the eval cron's deferred beat):
+              // a flat record line, never a bubble — nothing was said.
+              body = <DeferredCheckLine key={item.id} entry={item} />;
             } else if (item._type === 'trade' && Array.isArray(tapeEntries)) {
               // Under the flag the card carries the tier, the banked points and
               // the motive with its author named — everything the slim line
@@ -1536,7 +1540,10 @@ export default function AgentChat({
               );
             } else if (item.isTyping) {
               body = <TypingIndicator key={item.id} />;
-            } else {
+            } else if (item._type === 'message') {
+              // Messages only. A tape kind with no row above renders NOTHING
+              // rather than falling through to an empty bubble: an unknown
+              // kind must never render blank.
               body = (
                 <MessageBubble
                   key={item.id}
