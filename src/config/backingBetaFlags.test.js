@@ -31,15 +31,17 @@
 //     so a flag read in a helper would be a second gate no dark suite covers;
 //   · the importer lists are enumerated exactly, so an unreviewed caller (a
 //     cron, a client bundle, a new endpoint) reds a row rather than shipping;
-//   · and NOTHING under src/ imports any of it — the backing surfaces are
-//     PR 4's, so a client importer would mean the dark feature reached a bundle.
+//   · and the CLIENT importers are enumerated too: PR 4 landed the backing
+//     surfaces, which read the zero-import CONSTANTS module (and only it) —
+//     no client file imports any api/ backing helper, and every client
+//     importer lives under the backing surfaces or their hooks.
 // PR 3–5 extend these lists in their own commits; they never delete the rows.
 
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
-import { BACKING_BETA_ENABLED } from './featureFlags.js';
+import { BACKING_BETA_ENABLED, ELIGIBILITY_ATTESTATION_ENABLED } from './featureFlags.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..');
@@ -81,7 +83,14 @@ function importersOf(targetRel) {
     const dir = path.dirname(path.join(REPO_ROOT, rel));
     for (const re of [IMPORT_FROM_RE, IMPORT_CALL_RE]) {
       for (const m of src.matchAll(re)) {
-        if (m[1].startsWith('.') && path.resolve(dir, m[1]) === target) return true;
+        if (!m[1].startsWith('.')) continue;
+        // Backing Beta PR 4: client modules import EXTENSIONLESS
+        // (`'../constants/backing'`, the src/ convention), which the
+        // extension-only resolution above could never see — so "no client
+        // importer" was unfalsifiable at exactly the moment PR 4 added
+        // client importers. Resolve the bare, `.js`, `.jsx` and index spellings.
+        const abs = path.resolve(dir, m[1]);
+        if ([abs, `${abs}.js`, `${abs}.jsx`, path.join(abs, 'index.js')].includes(target)) return true;
       }
     }
     return false;
@@ -268,6 +277,20 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       'api/_utils/backingWeek.js',
       'api/tournament/backing-pools.js',
       'api/tournament/backing-stake.js',
+      // PR 4 — THE SURFACE PR. The client reads the constants module for the
+      // disclosures, the fine print, the §B6 strip lines, the economy's
+      // bounds and the 24-hour rule; every one of these mounts only behind
+      // BACKING_BETA_ENABLED (read at call time in the hosts).
+      'src/components/League/backing/BackingParts.jsx',
+      'src/components/League/backing/BackingScreen.jsx',
+      'src/components/League/backing/PodList.jsx',
+      'src/components/League/backing/StakeControl.jsx',
+      'src/components/League/backing/backingCopy.js',
+      'src/components/League/backing/backingStripState.js',
+      // PR 4 — the one lexicon matcher (the copy guard and the team-card
+      // projection's approach filter share it; R-B-5 in the PR 4 review record).
+      'src/constants/backingLexicon.js',
+      'src/hooks/useBackingWallet.js',
     ]);
     // PR 2's own modules, listed for the same reason: the surface is enumerated,
     // so a new reachable caller is a deliberate edit here.
@@ -280,6 +303,9 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       // maps BackingPoolError.
       'api/tournament/backing-settle.js',
       'api/tournament/backing-stake.js',
+      // PR 4: the team-card projection reads the pod (readGroup) and derives
+      // the seats through the ONE seat derivation (liveTeamsFor) — reads only.
+      'api/tournament/team-card.js',
     ]);
     // PR 3's own module — THE THREE HOSTS, and nothing else: the Friday duty
     // hook (the one non-backing importer, and the whole reason H1 exists), the
@@ -296,17 +322,105 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       'api/tournament/backing-stake.js',
     ]);
     expect(importersOf('api/_utils/backingFingerprint.js')).toEqual(['api/tournament/backing-stake.js']);
-    // STILL NO CLIENT IMPORTER: the backing surfaces are PR 4's. A `src/`
-    // importer here would mean the dark feature had reached a bundle.
+    // NO CLIENT IMPORTER OF ANY api/ BACKING HELPER — still true after PR 4:
+    // the surfaces reach the layer through endpoints and the rules-granted
+    // Firestore reads, never by importing server modules into a bundle.
     for (const target of [
       'api/_utils/backingWallet.js', 'api/_utils/backingWeek.js',
       'api/_utils/backingPools.js', 'api/_utils/backingEligibility.js',
       'api/_utils/backingFingerprint.js', 'api/_utils/backingSettlement.js',
-      'src/constants/backing.js',
+      'api/_utils/teamPitch.js',
     ]) {
       expect(importersOf(target).filter((rel) => rel.startsWith('src/')), `${target} is imported from src/`)
         .toEqual([]);
     }
+    // And every CLIENT importer of the constants module is a backing surface
+    // or one of its hooks — a stray importer elsewhere in src/ reds this row.
+    for (const rel of importersOf('src/constants/backing.js').filter((r) => r.startsWith('src/'))) {
+      expect(rel.startsWith('src/components/League/backing/') || rel.startsWith('src/hooks/use') || rel === 'src/constants/backingLexicon.js', `${rel} imports the backing constants from outside the backing surfaces`).toBe(true);
+    }
+  });
+
+  it('the importer walk sees EXTENSIONLESS client spellings — the row above is not vacuous for src/', () => {
+    // useBackingWallet.js imports `'../constants/backing'` with no extension;
+    // a walker blind to that spelling would report zero client importers and
+    // pass the enumeration above for the wrong reason.
+    expect(importersOf('src/constants/backing.js')).toContain('src/hooks/useBackingWallet.js');
+  });
+
+  it('every HOST that mounts a backing surface is enumerated — the client half of the ratchet (DARK-3 in the PR 4 review record)', () => {
+    // The three gated mounts, by exact host…
+    expect(importersOf('src/components/League/backing/BackingLandingStrip.jsx')).toEqual(['src/components/League/LeagueHome.jsx', 'src/components/League/LeagueLobbyDesktop.jsx']);
+    expect(importersOf('src/components/League/backing/BackingScreen.jsx')).toEqual(['src/components/League/LeagueHome.jsx', 'src/components/League/LeagueLobbyDesktop.jsx']);
+    expect(importersOf('src/components/League/backing/ScoutingLine.jsx')).toEqual(['src/components/Dashboard/EquipStation.jsx', 'src/components/Dashboard/desktop/IdentityPanel.jsx']);
+    // …the service, by exact importer…
+    expect(importersOf('src/services/backingService.js')).toEqual([
+      'src/components/League/LeagueHome.jsx',
+      'src/components/League/LeagueLobbyDesktop.jsx',
+      'src/components/League/backing/AttestationStep.jsx',
+      'src/components/League/backing/StakeControl.jsx',
+      'src/hooks/useBackingPods.js',
+      'src/hooks/useBackingWallet.js',
+      'src/hooks/useEligibility.js',
+      'src/hooks/useMyBacking.js',
+      'src/hooks/useMyPitch.js',
+      'src/hooks/useTeamCard.js',
+    ]);
+    // …and NOTHING outside the backing surfaces, their six hooks and these
+    // hosts reaches any backing module. A new host is a deliberate edit here,
+    // and it is held to the dark contract (backingDark.test.jsx) on arrival.
+    const HOSTS = new Set([
+      'src/components/Dashboard/EquipStation.jsx',
+      'src/components/Dashboard/desktop/IdentityPanel.jsx',
+      'src/components/League/LeagueHome.jsx',
+      'src/components/League/LeagueLobbyDesktop.jsx',
+      'src/components/League/LeaguePod.jsx',
+      // The dev-only design preview (PR 4 follow-up): the app entry consults
+      // the preview gate (backingPreview.js), and the preview page renders the
+      // surfaces from fixtures. Its dark contract is the gate — never mounted
+      // on production — held by src/screens/BackingPreviewScreen.test.jsx.
+      'src/main.jsx',
+      'src/screens/BackingPreviewScreen.jsx',
+    ]);
+    const BACKING_HOOK = /^src\/hooks\/use(BackingPods|MyBacking|BackingWallet|Eligibility|MyPitch|TeamCard)\.js$/;
+    const targets = [
+      ...listSources('src/components/League/backing'),
+      ...SOURCES.filter((rel) => BACKING_HOOK.test(rel)),
+      'src/services/backingService.js',
+    ];
+    expect(targets.length).toBeGreaterThan(15);
+    for (const target of targets) {
+      for (const rel of importersOf(target)) {
+        if (rel.startsWith('src/components/League/backing/') || BACKING_HOOK.test(rel)) continue;
+        expect(HOSTS.has(rel), `${rel} reaches ${target} from outside the enumerated hosts`).toBe(true);
+      }
+    }
+  });
+
+  it('BACKING_BETA_ENABLED never lights alone: the flip PR flips both flags (spec §12) — a backing-only flip would ship a dead Confirm (DOM-NOTE-1)', () => {
+    // The stake control routes every first stake through the attestation
+    // step, whose endpoint 404s while ELIGIBILITY_ATTESTATION_ENABLED is
+    // false — so backing on without attestation on is a control that can
+    // never confirm. The two pins are separate by design; this row binds the
+    // ORDER: attestation lights first or together, never after.
+    expect(!BACKING_BETA_ENABLED || ELIGIBILITY_ATTESTATION_ENABLED).toBe(true);
+  });
+
+  it('the two PR 4 routes read the flag at CALL time, after auth, and share a darkness suite', () => {
+    // Their paths carry no `backing` token, so the routesNamed row above
+    // cannot see them; they are held to the same discipline by name.
+    const PR4_ROUTES = ['api/tournament/team-card.js', 'api/team/pitch.js'];
+    for (const rel of PR4_ROUTES) {
+      const src = read(rel).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+      expect(src, `${rel} does not 404 on the flag`).toContain('if (!BACKING_BETA_ENABLED) return res.status(404)');
+      const authAt = src.indexOf('await requireAuth(');
+      expect(authAt, `${rel} carries no auth call before the flag`).toBeGreaterThan(-1);
+      expect(authAt, `${rel} reads the flag before auth`).toBeLessThan(src.indexOf('if (!BACKING_BETA_ENABLED)'));
+    }
+    const dark = read('api/tournament/team-card.dark.test.js');
+    expect(dark).toContain('./team-card.js');
+    expect(dark).toContain('../team/pitch.js');
+    expect(dark).toContain('BACKING_BETA_ENABLED: false');
   });
 
   it('the importer walk is not vacuous — it resolves sibling and parent spellings alike', () => {
@@ -325,9 +439,17 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
     // the repo carries alias imports today. A basename sweep (the
     // archetypeImportBoundaryBaseline ratchet's spelling-agnostic idiom) covers
     // every other spelling of the same three targets.
-    const ALIASED = /\bfrom\s+['"]@\/(?:constants\/backing|config\/backing)[^'"]*['"]/;
+    // …and, since PR 4, the backing surfaces, their six hooks and the service
+    // (R-B-6 in the PR 4 review record): a host reaching them through the
+    // alias would slip the host ratchet above.
+    const ALIASED = /\b(?:from|import)\s*\(?\s*['"]@\/(?:constants\/backing|config\/backing|components\/League\/backing\/|hooks\/use(?:BackingPods|MyBacking|BackingWallet|Eligibility|MyPitch|TeamCard)\b|services\/backingService\b)[^'"]*['"]/;
     for (const rel of SOURCES) {
-      expect(ALIASED.test(read(rel)), `${rel} reaches a PR 1 module through a @/ alias`).toBe(false);
+      expect(ALIASED.test(read(rel)), `${rel} reaches a backing module through a @/ alias`).toBe(false);
     }
+    // The sweep sees the spellings it is meant to see.
+    for (const spelling of ["import x from '@/hooks/useMyPitch';", "import { s } from '@/services/backingService';", "import S from '@/components/League/backing/BackingScreen';", "const m = import('@/hooks/useMyBacking');"]) {
+      expect(ALIASED.test(spelling), spelling).toBe(true);
+    }
+    expect(ALIASED.test("import { useMyPitchless } from '@/hooks/useMyPitchless';")).toBe(false);
   });
 });

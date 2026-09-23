@@ -54,6 +54,19 @@ vi.mock('../../services/liveDraftActions', () => ({
   mapSlotActionError: () => 'error',
 }));
 vi.mock('./LoadoutChooserSheet', () => ({ default: () => null }));
+// The Backing Beta mounts (dark by flag) transitively import the backing
+// service, whose Firestore subscriptions pull the env-gated Firebase client —
+// stub it like the other services. Nothing here renders while the flag is off.
+vi.mock('../../services/backingService', () => ({
+  fetchBackingPods: vi.fn(), fetchTeamCard: vi.fn(), placeStake: vi.fn(), attestEligibility: vi.fn(), savePitch: vi.fn(),
+  newRequestId: () => 'req', subscribeMyStakes: () => () => {}, subscribePool: () => () => {}, subscribeWallet: () => () => {},
+  readEligibility: async () => null, subscribePitch: () => () => {}, fetchTapePod: async () => null,
+  BackingApiError: class BackingApiError extends Error {},
+}));
+// Your Backing (inside the dark BackingScreen) reads the spectator battle hook,
+// whose fetchWithAuth pulls the same env-gated client — stub it like
+// DeskSeasonRail.render.test. Nothing here fetches while the flag is off.
+vi.mock('../../utils/fetchWithAuth', () => ({ fetchWithAuth: vi.fn(async () => ({ ok: true, json: async () => ({}) })) }));
 
 const LeagueLobbyDesktop = (await import('./LeagueLobbyDesktop')).default;
 const LeagueHome = (await import('./LeagueHome')).default;

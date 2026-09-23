@@ -23,6 +23,9 @@ import { CMD, alpha, Eyebrow, Mono } from '../commandUI';
 import { getArchetypeDisplayName } from '../../../data/archetypeDisplay';
 import { getArchetypeIdentity } from '../../../data/archetypeIdentity';
 import { getLevelProgressPct } from '../../../constants/agentProgression';
+// Backing Beta PR 4 (design brief rev3 §3): the scouting line's profile home.
+// Renders NOTHING while BACKING_BETA_ENABLED is dark (read at call time inside).
+import ScoutingLine from '../../League/backing/ScoutingLine';
 
 function Tag({ children, color }) {
   return (
@@ -90,6 +93,9 @@ export default function IdentityPanel({ agent, accent, live, record, winRate, le
         </div>
         {disposition && <div style={{ fontSize: 12.5, color: CMD.ink2, lineHeight: 1.5, marginTop: 12 }}>{disposition}</div>}
       </div>
+
+      {/* the scouting line — the player's own pitch for Backing (dark until the flag) */}
+      <ScoutingLine uid={agent?.ownerId} agentName={agentName} accent={accent} />
 
       {/* career record */}
       <div style={{ padding: '16px 18px', borderRadius: 18, background: CMD.surface, border: `1px solid ${CMD.hair}` }}>

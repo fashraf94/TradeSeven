@@ -221,7 +221,16 @@ function LobbyFooter() {
 // FLAG-OFF PATH (LEAGUE_NEXT_ARC_ENABLED off + no ?leagueTabs=1): today's
 // single-column lobby, byte-identical — the extracted sections compose to the
 // same output, FollowRail included.
-export default function Lobby({ st, accent, onPickPod, onSpectate, onOpenMyGame, activeGroup = null, uid = null, displayName = null, onOpenTrainingPod = null, activeTrainingPod = null, hasAgent }) {
+// Backing Beta PR 4 — `backingSlot` (design brief rev2 §1 / rev3 §1): the
+// landing strip's mount, DIRECTLY UNDER the ranked-entry center (the slot
+// picker / waiting room) and above the group and the field. The host passes a
+// node that renders NOTHING while BACKING_BETA_ENABLED is dark, so the
+// flag-off composition is byte-identical to today (backingDark.test.jsx).
+// No frame, no placeholder, no reserved space rides with it (the no-bracket
+// ruling, Sept 18): the slot is rendered BARE — no wrapper, no margin — so a
+// strip that renders null leaves no element and no gap; the strip carries its
+// own spacing when it does render.
+export default function Lobby({ st, accent, onPickPod, onSpectate, onOpenMyGame, activeGroup = null, uid = null, displayName = null, onOpenTrainingPod = null, activeTrainingPod = null, hasAgent, backingSlot = null }) {
   return (
     <div style={{ padding: '16px 18px calc(env(safe-area-inset-bottom, 0px) + 120px)', maxWidth: 720, margin: '0 auto' }}>
       {onOpenMyGame && activeGroup && <MyGameBar onOpenMyGame={onOpenMyGame} />}
@@ -229,6 +238,7 @@ export default function Lobby({ st, accent, onPickPod, onSpectate, onOpenMyGame,
       <FollowRail items={st.followLive} onSpectate={onSpectate} />
       <BracketFunnelSection st={st} activeGroup={activeGroup} currentUserId={uid} displayName={displayName} onEnterGame={onOpenMyGame}
         activeTrainingPod={activeTrainingPod} onOpenTrainingPod={onOpenTrainingPod} hasAgent={hasAgent} onSpectate={onSpectate} />
+      {backingSlot}
       <YourGroup st={st} accent={accent} onPick={onPickPod} />
       <FieldSection st={st} accent={accent} onSpectate={onSpectate} />
       <LobbyFooter />
@@ -467,7 +477,7 @@ function TrainingShell({ accent, onOpenTrainingPod, activeTrainingPod = null, ha
 // / group / field flow with the reserved pulse slot in FollowRail's place;
 // Training = the inert cold-start shell. The keyed wrapper replays a calm CSS
 // fade on switch (reduced-motion-neutralized globally).
-export function LobbyTabbed({ st, accent, tab, onSwitchTab, onPickPod, onSpectate, onOpenMyGame, activeGroup = null, onOpenTrainingPod, activeTrainingPod, hasAgent, agentLoadout, uid = null, displayName = null }) {
+export function LobbyTabbed({ st, accent, tab, onSwitchTab, onPickPod, onSpectate, onOpenMyGame, activeGroup = null, onOpenTrainingPod, activeTrainingPod, hasAgent, agentLoadout, uid = null, displayName = null, backingSlot = null }) {
   return (
     <div style={{ padding: '16px 18px calc(env(safe-area-inset-bottom, 0px) + 120px)', maxWidth: 720, margin: '0 auto' }}>
       {onOpenMyGame && activeGroup && <MyGameBar onOpenMyGame={onOpenMyGame} />}
@@ -481,6 +491,7 @@ export function LobbyTabbed({ st, accent, tab, onSwitchTab, onPickPod, onSpectat
             <PulseSlot />
             <BracketFunnelSection st={st} activeGroup={activeGroup} currentUserId={uid} displayName={displayName} onEnterGame={onOpenMyGame}
               activeTrainingPod={activeTrainingPod} onOpenTrainingPod={onOpenTrainingPod} hasAgent={hasAgent} onSpectate={onSpectate} />
+            {backingSlot}
             <YourGroup st={st} accent={accent} onPick={onPickPod} />
             <FieldSection st={st} accent={accent} onSpectate={onSpectate} />
             <LobbyFooter />

@@ -2496,8 +2496,8 @@ export const ELIGIBILITY_ATTESTATION_ENABLED = false;
  *   · PR 2 — POST /api/tournament/backing-stake, GET /api/tournament/backing-pools.
  *   · PR 3 — POST /api/tournament/backing-settle (admin re-run) + the
  *     settlement hook's own gate.
- *   · PR 4 — the backing surfaces under src/components/League/backing/ and
- *     GET /api/tournament/team-card.
+ *   · PR 4 — the backing surfaces under src/components/League/backing/,
+ *     GET /api/tournament/team-card and POST /api/team/pitch.
  *   · PR 5 — POST /api/backing/event.
  * Every server route 404s while this is false, AFTER auth (the
  * SHOW_IT_ENABLED / research.js shape), so no route exists as far as any

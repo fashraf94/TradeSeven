@@ -65,3 +65,9 @@
 @media (max-width: 360px) {
   .lg-spec-layers { flex-direction: column !important; }
 }
+
+/* ── Backing (Backing Beta PR 4, dark behind BACKING_BETA_ENABLED) — the team
+ * card's two-layer book: two columns on a phone-wide card, one column below
+ * 440px. Purely layout; no motion. Unused while the flag is off. */
+.bk-book { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 16px; }
+@media (max-width: 440px) { .bk-book { grid-template-columns: 1fr; gap: 12px; } }

@@ -119,7 +119,14 @@ function importersOf(targetRel) {
     const dir = path.dirname(path.join(REPO, rel));
     for (const re of [IMPORT_FROM_RE, IMPORT_CALL_RE]) {
       for (const m of src.matchAll(re)) {
-        if (m[1].startsWith('.') && path.resolve(dir, m[1]) === target) return true;
+        if (!m[1].startsWith('.')) continue;
+        // Backing Beta PR 4: client modules import EXTENSIONLESS
+        // (`'../constants/backing'`, the src/ convention), which the
+        // extension-only resolution above could never see — so "no client
+        // importer" was unfalsifiable at exactly the moment PR 4 added
+        // client importers. Resolve the bare, `.js`, `.jsx` and index spellings.
+        const abs = path.resolve(dir, m[1]);
+        if ([abs, `${abs}.js`, `${abs}.jsx`, path.join(abs, 'index.js')].includes(target)) return true;
       }
     }
     return false;
@@ -149,18 +156,27 @@ describe('nothing else reaches it (PR 0)', () => {
     expect(code).not.toMatch(/requireEligibility|getEligibility/);
   });
 
-  it('NO CLIENT imports the constants — the AttestationStep is PR 4 (moved by PR 2)', () => {
-    // PR 2's helper reads TERMS_VERSION to implement Amendment A §A2 (a terms
-    // revision forces re-attestation), so the list grew by one server module.
-    // The claim that matters is unchanged and is asserted directly rather than
-    // by counting: nothing under src/ reaches these strings, so no UI ships them.
+  it('the constants have exactly the attestation step and its status hook as client importers (moved by PR 4)', () => {
+    // MOVED BY PR 4, in its own commit, as the row's PR-2 comment instructed:
+    // the AttestationStep renders the two placeholder strings at the backing
+    // entry and useEligibility compares the recorded termsVersion to
+    // TERMS_VERSION (Amendment A §A2). Both mount only behind
+    // BACKING_BETA_ENABLED, and the flag stays dark while the strings carry
+    // the COUNSEL marker (eligibilityFlags.test.js), so no lit UI ships them.
+    // The walker resolves EXTENSIONLESS src/ spellings for this row to be true
+    // for the right reason.
     expect(importersOf('src/constants/eligibility.js')).toEqual([
       // PR 2 moved §A2's version rule into `requireEligibility` itself, where
       // Amendment A puts it, so the READ SIDE is now the constant's importer.
       'api/_utils/eligibility.js',
       'api/eligibility/attest.js',
+      'src/components/League/backing/AttestationStep.jsx',
+      'src/hooks/useEligibility.js',
     ]);
-    expect(importersOf('src/constants/eligibility.js').filter((rel) => rel.startsWith('src/'))).toEqual([]);
+    expect(importersOf('src/constants/eligibility.js').filter((rel) => rel.startsWith('src/'))).toEqual([
+      'src/components/League/backing/AttestationStep.jsx',
+      'src/hooks/useEligibility.js',
+    ]);
   });
 
   it('the importer walk is not vacuous — it resolves a sibling `./x.js` and a parent `../_utils/x.js` spelling alike', () => {

@@ -730,6 +730,23 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // Backing Beta PR 4: teamPitches/{uid} — the player's self-written
+    // SCOUTING LINE (design brief rev2 §2, rev3 §3; spec V1.3 §9). One
+    // sentence in their own words, shown on their team card to any signed-in
+    // spectator, so AUTHED-READ (the tournamentGroups pattern) — and SERVER-
+    // WRITTEN ONLY: the one writer is POST /api/team/pitch (Admin SDK), which
+    // validates the text (trimmed, 1–140 characters, control characters
+    // stripped, no newlines). Never a client write, the owner included, so
+    // the validated text is the only text that can exist. Deliberately does
+    // NOT live on users/{uid} — that doc is owner-writable, so a pitch there
+    // would be client-asserted and not authoritative (the career-rank /
+    // eligibility precedent). Same manual Console-deploy caveat as above;
+    // inert until deployed and until BACKING_BETA_ENABLED flips.
+    match /teamPitches/{userId} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if false;
+    }
+
     // P10: self-serve lobby waiting-pool docs — the front door before a group
     // exists (the tournamentGroups pattern verbatim: authenticated reads for
     // the "who's waiting" / own-lobby surface; all mutation is Admin SDK via
