@@ -13,6 +13,17 @@
 // TRANSACTION OBJECT (backingWallet.js's per-tx wallet memo, reset by
 // readWallet's forgetWallet) is exercised the way production exercises it.
 //
+// ONE WAY IT IS LOOSER THAN THE SERVER: reads are LIVE, so a body can read one
+// document before a competing commit and the next document after it (a MIXED
+// read) — the conflict is caught at commit, not at the read. Firestore's
+// server client libraries take pessimistic read locks and never hand a body
+// that mix. The code under test must therefore TOLERATE a mixed read — buffer
+// a write the commit will discard and let the re-run answer — and never THROW
+// on two documents disagreeing in its read phase, or a race row on this
+// harness turns into a hard error the server would never raise (MONEY-R-1,
+// the PR 5 review record; the refund's `corrupt_book` refusal is RETURNED for
+// exactly this reason).
+//
 // Shared since PR 5 (the refund suite is the third copy's worth); PR 2's and
 // PR 3's own copies stay where they are, untouched.
 //

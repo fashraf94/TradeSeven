@@ -676,6 +676,35 @@ describe('the refund\'s belts', () => {
     expect(poolOf(store).status).toBe(POOL_STATUS.CLOSED);
     expect(walletOf(store, 'u3')).toBeUndefined();
   });
+
+  it('MONEY-3 — a `won` stake inside a CLOSED pool (out of band) is REFUSED as corrupt_book with zero writes: the refund never voids AROUND it and seals a recoverable book as refunded', async () => {
+    const initial = world();
+    initial[`${BACKING_STAKES_COLLECTION}/s1`] = { ...initial[`${BACKING_STAKES_COLLECTION}/s1`], status: STAKE_STATUS.WON, payout: 700 };
+    const { db, store, writeLog } = makeInMemoryDb(initial);
+    const out = await refund(db, { source: SETTLEMENT_SOURCE.ADMIN, reason: VOID_REASONS.ADMIN, note: 'by hand' });
+    expect(out).toMatchObject({ refunded: false, reason: REFUND_REASON.CORRUPT_BOOK, stakeIds: ['s1'], status: POOL_STATUS.CLOSED });
+    expect(writeLog).toEqual([]);
+    expect(poolOf(store).status).toBe(POOL_STATUS.CLOSED);
+    expect(stakeOf(store, 's1')).toMatchObject({ status: STAKE_STATUS.WON, payout: 700 });
+    expect(stakeOf(store, 's2').status).toBe(STAKE_STATUS.LIVE);
+    expect(walletOf(store, 'u1').careerNet).toBe(-400);
+    // Repaired in the Console (the stake back to live), the same call refunds every stake.
+    store.set(`${BACKING_STAKES_COLLECTION}/s1`, { ...stakeOf(store, 's1'), status: STAKE_STATUS.LIVE, payout: undefined });
+    const again = await refund(db, { source: SETTLEMENT_SOURCE.ADMIN, reason: VOID_REASONS.ADMIN, note: 'by hand' });
+    expect(again).toMatchObject({ refunded: true, stakesVoided: 4 });
+    expectEveryStakeNetsToZero(store, { voidReason: VOID_REASONS.ADMIN });
+  });
+
+  it('MONEY-R-3 — a malformed stake amount is refused BEFORE the first write (the settlement\'s own posture), never part-way through the book', async () => {
+    const initial = world();
+    initial[`${BACKING_STAKES_COLLECTION}/s3`] = { ...initial[`${BACKING_STAKES_COLLECTION}/s3`], amount: 100.5 };
+    const { db, store, writeLog } = makeInMemoryDb(initial);
+    const out = await refund(db);
+    expect(out).toMatchObject({ refunded: false, reason: REFUND_REASON.MALFORMED_STAKE, stakeIds: ['s3'] });
+    expect(writeLog).toEqual([]);
+    expect(poolOf(store).status).toBe(POOL_STATUS.CLOSED);
+    for (const id of ['s1', 's2', 's3', 's4']) expect(stakeOf(store, id).status).toBe(STAKE_STATUS.LIVE);
+  });
 });
 
 // ============================ settlePool ROUTES ============================

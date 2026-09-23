@@ -28,8 +28,21 @@
 //     `overrideHold: true`, which bypasses the agent-less refusal and settles;
 //     who and why are logged loudly and recorded on the pool (`holdRelease`);
 //   · a ceiling hold (`holdReason: 'stake_ceiling'`) is STRUCTURAL — the bound
-//     is Firestore's — so an override re-runs the assertion and re-holds; the
-//     operator reduces the live book (admin voids) and re-runs.
+//     is Firestore's — so an override re-runs the assertion and re-holds.
+//     NO PRIMITIVE EXITS IT TODAY (MONEY-4, the PR 5 review record): there is
+//     no "admin void", and the refund holds at 96 live stakes (five backers
+//     at the per-backer cap reach it) with no way to reduce the book from
+//     this route. The one procedure is a Console repair, with two traps:
+//     a stake voided by hand must carry the GROUP'S OWN reason
+//     (`group_voided` / `group_expired` / `group_deleted`) and its ledger
+//     pair must be written with it, and the hold must then be released with
+//     `action: 'settle'` + `overrideHold` (which re-derives that reason and
+//     re-visits the prior stake) — `action: 'refund'` writes `admin` and
+//     SKIPS a stake voided under another reason, stranding its BP; and a
+//     hand-voided stake on a pool that will later SETTLE must have the
+//     sealed `private/totals` re-derived in the same write, or the pot pays
+//     out BP it no longer holds (MONEY-7). A batched refund is the follow-up
+//     that closes the class.
 // Without `overrideHold` a held pool answers `held` and nothing moves.
 //
 // THE REFUND (Backing Beta PR 5; spec §7 "Refund paths"; the PR 3 review

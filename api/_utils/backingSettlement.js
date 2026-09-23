@@ -220,6 +220,17 @@ export const REFUND_REASON = Object.freeze({
   TERMINAL: 'terminal',
   HELD: 'held',
   STAKE_CEILING: 'stake_ceiling',
+  // A `won` / `lost` stake inside an undecided pool (out-of-band only): the
+  // refund refuses rather than refund AROUND it and seal a recoverable book
+  // as `refunded` (MONEY-3, the PR 5 review record). Returned, never thrown:
+  // on the versioned harness a body can read the pool before and the stakes
+  // after a competing settlement's commit, and a throw would turn that race
+  // into a hard error where the pristine flow re-runs and answers
+  // `already_settled` (MONEY-R-1).
+  CORRUPT_BOOK: 'corrupt_book',
+  // A stake whose amount is not a positive integer: refused BEFORE the first
+  // write, as the settlement refuses it (MONEY-R-3).
+  MALFORMED_STAKE: 'malformed_stake',
 });
 
 /**
@@ -250,9 +261,24 @@ const REFUND_VOID_REASONS = new Set([
  * document (1), `creditRefund` (entry + wallet, 2) and `recordStakeLoss`
  * (entry + wallet, 2). A settled stake costs 3 or 5; a refunded one always 5,
  * so the refund ceiling bites at 95 live stakes under `SETTLEMENT_MAX_WRITES`
- * (1 + 95 × 5 = 476) — well past beta scale (≤ 40, pre-build check §2.6).
+ * (1 + 95 × 5 = 476).
+ *
+ * THE STUCK STATE, stated plainly (MONEY-4, the PR 5 review record): a book
+ * of 96–120 live stakes SETTLES (the settlement's losers cost 3) but can never
+ * be REFUNDED — the hold is structural and `fromHold` re-asserts the same
+ * ceiling. The "≤ 40 stakes per pool" figure is ASSUMED beta scale, enforced
+ * by nothing (the stake endpoint caps per backer and per team, never the
+ * book), so five backers at the 20-stake cap reach it. No primitive exits it
+ * today; the only procedure is the Console one described in
+ * api/tournament/backing-settle.js, and a batched refund (priors costed at 0
+ * once applied, wallets read before the ceiling) is the follow-up that would
+ * close the class. Inherited posture: the settlement holds the same way above
+ * 120 stakes (PR 3 review record, "the ceiling is STRUCTURAL").
  */
 const REFUND_WRITES_PER_STAKE = 5;
+
+/** A stake amount the ledger will accept: a positive integer of BP. */
+const isValidStakeAmount = (amount) => Number.isInteger(amount) && amount > 0;
 
 /**
  * A settlement refusal that must ABORT the transaction — a data-integrity
@@ -1059,17 +1085,35 @@ export async function refundPool(db, groupId, {
     // `live` ones are voided; the ones ALREADY voided by this reason have
     // their ledger re-visited (a no-op when applied) so a retry converges
     // from a partial store the non-atomic test stand-in can produce and
-    // Firestore's atomic commit never does. `won` / `lost` cannot be present
-    // (the status gate above admits no settled pool) and `seat_left` /
-    // `insufficient` voids were paired by the close already.
+    // Firestore's atomic commit never does. `seat_left` / `insufficient`
+    // voids were paired by the close already. A `won` / `lost` stake SHOULD
+    // be impossible here (the status gate admits no settled pool; the
+    // settlement writes its stakes and the pool atomically) — but an
+    // out-of-band write can leave one, and refunding AROUND it would seal a
+    // recoverable book as `refunded` for ever, with the card then showing a
+    // payout the ledger never credited (MONEY-3 / MONEY-R-2, the PR 5 review
+    // record): the refund REFUSES, writes nothing, and the operator repairs
+    // the book in the Console and re-runs.
     const stakesSnap = await tx.get(stakesQuery(db, groupId));
     const live = [];
     const prior = [];
+    const decided = [];
+    const malformed = [];
     stakesSnap.forEach((doc) => {
       const data = { id: doc.id, ...doc.data() };
       if (data.status === STAKE_STATUS.LIVE) live.push(data);
       else if (data.status === STAKE_STATUS.VOIDED && data.voidReason === voidReason) prior.push(data);
+      else if (data.status === STAKE_STATUS.WON || data.status === STAKE_STATUS.LOST) decided.push(data);
     });
+    for (const s of [...live, ...prior]) if (!isValidStakeAmount(s.amount)) malformed.push(s);
+    if (decided.length > 0) {
+      console.error(`[backingSettlement] refund REFUSED for ${groupId}: ${decided.length} decided stake(s) inside a ${pool.status} pool (${decided.map((s) => s.id).join(', ')}) — repair the book, then re-run`);
+      return { refunded: false, reason: REFUND_REASON.CORRUPT_BOOK, stakeIds: decided.map((s) => s.id), status: pool.status, pool };
+    }
+    if (malformed.length > 0) {
+      console.error(`[backingSettlement] refund REFUSED for ${groupId}: malformed stake amount on ${malformed.map((s) => s.id).join(', ')}`);
+      return { refunded: false, reason: REFUND_REASON.MALFORMED_STAKE, stakeIds: malformed.map((s) => s.id), status: pool.status, pool };
+    }
 
     // (4) THE CEILING (H3), inside the transaction, structural.
     const projected = 1 + live.length * REFUND_WRITES_PER_STAKE + prior.length * (REFUND_WRITES_PER_STAKE - 1);

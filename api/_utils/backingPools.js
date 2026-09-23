@@ -330,7 +330,10 @@ export function seatedIdsFor(group) {
  * holiday Monday — §4), it is frozen on the pool at open, and it therefore reads
  * the same on a re-run a month later. PR 3, settling a pod that DID bank, uses
  * `monthKeyForGroup` itself; the two agree except across a month boundary a
- * holiday Monday could straddle, which no voided pool can reach.
+ * holiday Monday could straddle — which an in-week VOIDED pod that banked its
+ * day 1 can reach since PR 5's refund (it takes the group's key first and
+ * falls back to this one, so the boundary attributes to the banked day;
+ * pinned by backingRefund.test.js's month-boundary row).
  */
 export function monthKeyForPool(pool) {
   const monday = pool?.battleMondayEtDate;

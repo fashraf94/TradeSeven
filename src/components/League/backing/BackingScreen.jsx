@@ -47,6 +47,9 @@ import { BACKING_EVENT, dwellSince, emitBackingEvent } from '../../../services/b
 import { POD_LIST, SCREEN, STRIP, stripLines } from './backingCopy';
 import { STRIP_KIND, backingWeekKeys, deriveStripState } from './backingStripState';
 
+/** The shortest card visit worth a record — one frame; below it is StrictMode's mount-time cleanup, not a person. */
+const MIN_DWELL_MS = 16;
+
 // The header says what the strip says — one mapping (stripLines; R-B-1).
 function headerLine(state) {
   const lines = stripLines(state);
@@ -103,12 +106,20 @@ function BackingScreenLive({ uid, accent, viewport, onBack, onOpenTape }) {
   }, [view.kind, inPlayPods.length, inPlayWeek]);
   // team_card_opened: recorded on LEAVING the card (to the list, the control
   // or a closed screen), with the dwell — the one event whose prop needs the
-  // whole visit.
+  // whole visit. A dwell under one frame is not a visit: the DEV build's
+  // root StrictMode runs setup → cleanup → setup at mount, and that mount-time
+  // cleanup would otherwise record a 0 ms dwell and, through the per-session
+  // dedup, swallow the real one (WIRE-4, the PR 5 review record). A human
+  // cannot leave a card in 16 ms, so no production visit is lost.
   useEffect(() => {
     if (view.kind !== 'card' || !view.groupId || !view.odUserId) return undefined;
     const { groupId, odUserId } = view;
     const startedAt = Date.now();
-    return () => { emitBackingEvent(BACKING_EVENT.TEAM_CARD_OPENED, { groupId, odUserId, props: { dwellMs: dwellSince(startedAt) } }); };
+    return () => {
+      const dwellMs = dwellSince(startedAt);
+      if (dwellMs < MIN_DWELL_MS) return;
+      emitBackingEvent(BACKING_EVENT.TEAM_CARD_OPENED, { groupId, odUserId, props: { dwellMs } });
+    };
   }, [view]);
   // stake_control_opened: on entering the control for a seat.
   useEffect(() => {
