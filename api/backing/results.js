@@ -36,16 +36,20 @@
 // settlement wrote it; each team's share is the close's `stakeTotal ÷ potTotal`,
 // labeled exactly; a refunded or insufficient pool is stated with its reason.
 //
-// WHICH WEEKS: the viewer's stakes are grouped by `weekKey`, newest first. A
-// week is a RESULT once at least one of its pools has nothing left to decide;
-// a week whose pools are all open, closed or held is in play (the strip and
-// Your Backing own it) and is skipped. A listed week shows its TERMINAL pools
-// only: a pool of that week still `closed` (its pod in battle) or held stays
-// with the strip and Your Backing until it is decided — a results card must
-// never call an in-battle pod complete (HON-3, the PR 5 review record).
-// `before=<weekKey>` pages further back; `limit` is weeks per page (1–12,
-// default 4); at most `MAX_WEEKS_SCANNED` weeks are examined per request, so
-// the read cost is bounded whatever the history.
+// WHICH WEEKS, WHICH POOLS: the viewer's stakes are grouped by `weekKey`,
+// newest first. A week is listed once one of its pools HAS A RESULT OR IS
+// WAITING ON ONE — decided (`resolved` / `refunded` / `insufficient`), held
+// (`resolving`, for the admin), or `closed` with nothing left to play (the
+// pod complete, gone, or frozen mid-settlement) — and it shows exactly those
+// pools. A `closed` pool whose pod is STILL PLAYING is never listed here: it
+// is Your Backing's for exactly as long as it plays, and a results card must
+// never call an in-battle pod complete (HON-3); a pool that outlives Your
+// Backing's three-week window while still waiting — a hold, a frozen week, a
+// failed settlement (§7: "pools may sit unresolved indefinitely") — has this
+// surface and no other (HON-R-3, the PR 5 review record). `before=<weekKey>`
+// pages further back; `limit` is weeks per page (1–12, default 4); at most
+// `MAX_WEEKS_SCANNED` weeks are examined per request, so the read cost is
+// bounded whatever the history.
 //
 // READ-ONLY FOR THE VIEWER: the only writes this route can cause are the pool
 // lifecycle's own (the lazy close, the settlement, the refund), which belong
@@ -65,6 +69,7 @@ import {
 } from '../_utils/backingSettlement.js';
 import { projectResultPool, weeksOf } from '../_utils/backingResults.js';
 import { isTerminalPool, readPoolByGroupId, readStakesWhere } from '../_utils/backingStats.js';
+import { GROUP_STATUS } from '../../src/constants/leagueTournament.js';
 import { BACKING_BETA_ENABLED, TOURNAMENT_ADVANCEMENT_FROZEN } from '../../src/config/featureFlags.js';
 
 export const config = { maxDuration: 30 };
@@ -77,6 +82,22 @@ export const MAX_WEEKS = 12;
 export const MAX_WEEKS_SCANNED = 26;
 
 const WEEK_KEY_RE = /^\d{4}-W\d{2}$/;
+
+/** A pod with nothing left to play: complete, voided, expired — or gone. */
+const POD_DONE = new Set([GROUP_STATUS.COMPLETE, GROUP_STATUS.VOIDED, GROUP_STATUS.EXPIRED]);
+const podDone = (podStatus) => podStatus == null || POD_DONE.has(podStatus);
+
+/**
+ * Whether a projected pool belongs on the results surface: it has a result,
+ * or it is waiting on one with nothing left to play. A closed pool of a pod
+ * still playing is Your Backing's (HON-3 / HON-R-3, the PR 5 review record).
+ */
+export function showsInResults(pod) {
+  if (!pod) return false;
+  if (isTerminalPool({ status: pod.status })) return true;
+  if (pod.status === POOL_STATUS.RESOLVING) return true;
+  return pod.status === POOL_STATUS.CLOSED && podDone(pod.podStatus);
+}
 
 /** Why the settle-on-read pass did not call the primitive — the row vocabulary. */
 export const SETTLE_ON_READ_SKIP = Object.freeze({
@@ -212,10 +233,11 @@ export default async function handler(req, res) {
       scanned += 1;
       lastScanned = week.weekKey;
       const pods = (await Promise.all(week.groupIds.map((id) => loadPod(db, { groupId: id, myStakes: stakes.filter((s) => s.groupId === id), now })))).filter(Boolean);
-      // Every pod took the settle-on-read pass above; only the DECIDED ones are a result.
-      const done = pods.filter((p) => isTerminalPool({ status: p.status }));
-      if (done.length === 0) continue;
-      page.push({ weekKey: week.weekKey, pools: done });
+      // Every pod took the settle-on-read pass above; the week shows the pools
+      // that have a result or are waiting on one (see the header).
+      const shown = pods.filter(showsInResults);
+      if (shown.length === 0) continue;
+      page.push({ weekKey: week.weekKey, pools: shown });
     }
     return res.status(200).json({ viewerUid: user.uid, weeks: page, nextBefore, weeksAvailable: weeks.length });
   } catch (err) {

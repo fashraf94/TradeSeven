@@ -31,8 +31,7 @@ import {
   readPoolByGroupId,
   readPoolsFor,
   readRanksFor,
-  readStakesWhere,
-} from './backingStats.js';
+  readStakesWhere, rankEventsOf } from './backingStats.js';
 import { STAKE_PRIVATE_SUBCOLLECTION as WRITER_SUB, STAKE_META_DOC as WRITER_DOC } from '../tournament/backing-stake.js';
 
 const NOW = new Date('2026-10-05T14:00:00.000Z'); // Monday Oct 5 — the season is 2026-10; last week's pools banked in 2026-09
@@ -62,6 +61,19 @@ describe('the baseline (§10) — pure', () => {
     expect(baselinePick(teams, new Map([['cpu-1', 1]]))).toBeNull();
     expect(baselinePick(teams, new Map())).toBeNull();
     expect(baselinePick([], new Map([['od-a', 1]]))).toBeNull();
+  });
+});
+
+describe('the baseline reads the UNCAPPED map (HON-12)', () => {
+  it('a pre-close event that rolled off the capped `history` is still judged from `appliedGroups`; `history` alone serves a legacy doc', () => {
+    const pre = { groupId: 'g-pre', placement: 1, appliedAt: '2026-09-18T21:00:00.000Z' };
+    const later = Array.from({ length: 20 }, (_, i) => ({ groupId: `g-later-${i}`, placement: 3, appliedAt: `2026-10-${String(10 + i).padStart(2, '0')}T21:00:00.000Z` }));
+    const rolled = { appliedGroups: Object.fromEntries([pre, ...later].map((e) => [e.groupId, e])), history: later };
+    expect(priorPlacementBefore(rolled, { beforeIso: '2026-09-28T04:00:00.000Z' })).toBe(1);
+    expect(priorPlacementBefore({ history: later }, { beforeIso: '2026-09-28T04:00:00.000Z' })).toBeNull();
+    expect(priorPlacementBefore({ history: [pre, ...later] }, { beforeIso: '2026-09-28T04:00:00.000Z' })).toBe(1);
+    expect(rankEventsOf(rolled)).toHaveLength(21);
+    expect(rankEventsOf({ appliedGroups: { 'g-pre': pre }, history: [pre] })).toHaveLength(1);
   });
 });
 

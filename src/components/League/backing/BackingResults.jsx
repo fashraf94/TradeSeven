@@ -16,12 +16,18 @@ import { BACKING_EVENT, emitBackingEvent } from '../../../services/backingTeleme
 import BackingResultsCard from './BackingResultsCard';
 import { RESULTS } from './backingCopy';
 
+/** The outcomes that ARE a result. */
+const RESULT_OUTCOMES = new Set(['settled', 'refunded', 'insufficient']);
+
 export default function BackingResults({ uid, accent = LX.energy, onOpenTape = null }) {
   const results = useBackingResults({ limit: 1, enabled: Boolean(uid) });
   const { weeks } = results;
+  // `results_viewed` is §10's last funnel stage: recorded for a pool that
+  // SHOWS a result, never for one still waiting on it (HON-R-2).
   useEffect(() => {
     for (const week of weeks) {
       for (const pod of Array.isArray(week?.pools) ? week.pools : []) {
+        if (!RESULT_OUTCOMES.has(pod?.outcome)) continue;
         emitBackingEvent(BACKING_EVENT.RESULTS_VIEWED, { groupId: pod.groupId, props: typeof week.weekKey === 'string' ? { weekKey: week.weekKey } : {} });
       }
     }

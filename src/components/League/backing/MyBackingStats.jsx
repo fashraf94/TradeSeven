@@ -55,9 +55,10 @@ export default function MyBackingStats({ stats }) {
   return (
     <div data-backing="my-stats" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ ...box, display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
-        <Column title={STATS.season} bucket={stats.season} />
+        <Column title={STATS.seasonTitle(stats.seasonKey)} bucket={stats.season} />
         <Column title={STATS.career} bucket={stats.career} />
       </div>
+      <Mono style={{ fontSize: 10, color: LTOKENS.ink3, lineHeight: 1.5 }}>{STATS.netNote}</Mono>
       <Accuracy acc={stats.accuracy?.career} />
       <Mono style={{ fontSize: 10, color: LTOKENS.ink3, lineHeight: 1.5 }}>{STATS.sub}</Mono>
     </div>

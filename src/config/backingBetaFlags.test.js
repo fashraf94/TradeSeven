@@ -526,9 +526,15 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
     // (R-B-6 in the PR 4 review record): a host reaching them through the
     // alias would slip the host ratchet above.
     const ALIASED = /\b(?:from|import)\s*\(?\s*['"]@\/(?:constants\/backing|config\/backing|components\/League\/backing\/|hooks\/use(?:BackingPods|MyBacking|BackingWallet|Eligibility|MyPitch|TeamCard|BackingResults|MyBackingStats|TrainerStats)\b|services\/backing(?:Service|Telemetry)\b)[^'"]*['"]/;
+    // …nor a Vite glob (`import.meta.glob('…/backing/*')`), the one other
+    // spelling the importer walk cannot resolve (DARK-6, the PR 5 record).
+    const GLOBBED = /import\.meta\.glob\(\s*['"][^'"]*(?:League\/backing|hooks\/use(?:BackingPods|MyBacking|BackingWallet|Eligibility|MyPitch|TeamCard|BackingResults|MyBackingStats|TrainerStats)|services\/backing(?:Service|Telemetry)|constants\/backing)/;
     for (const rel of SOURCES) {
       expect(ALIASED.test(read(rel)), `${rel} reaches a backing module through a @/ alias`).toBe(false);
+      expect(GLOBBED.test(read(rel)), `${rel} reaches a backing module through import.meta.glob`).toBe(false);
     }
+    expect(GLOBBED.test("const m = import.meta.glob('../components/League/backing/*.jsx');")).toBe(true);
+    expect(GLOBBED.test("const t = import.meta.glob('./dkb/thematic/*.js');")).toBe(false);
     // The sweep sees the spellings it is meant to see.
     for (const spelling of ["import x from '@/hooks/useMyPitch';", "import { s } from '@/services/backingService';", "import S from '@/components/League/backing/BackingScreen';", "const m = import('@/hooks/useMyBacking');", "import { e } from '@/services/backingTelemetry';", "import r from '@/hooks/useBackingResults';"]) {
       expect(ALIASED.test(spelling), spelling).toBe(true);

@@ -436,7 +436,7 @@ describe('honesty of the pure pieces', () => {
     // ruled — a second line alongside the canonical one, which is untouched.
     expect(ARCHETYPE_IDENTITY.diversifier.disposition).toMatch(/\bbets\b/);
     expect(projectAgent({ archetype: 'diversifier' }).approach).toBe(BACKING_SAFE_APPROACH.diversifier);
-    expect(projectAgent({ archetype: 'diversifier' }).approach).toBe('Spreads the book across many sectors so no single one can sink you.');
+    expect(projectAgent({ archetype: 'diversifier' }).approach).toBe('Keeps the portfolio spread across many sectors so no single one can sink you.');
     expect(projectAgent({ archetype: 'diversifier' }).archetypeLabel).toBe('Diversifier');
     // An unknown archetype still gets nothing — no guess, no borrowed twin.
     expect(projectAgent({ archetype: 'not_an_archetype' }).approach).toBeNull();

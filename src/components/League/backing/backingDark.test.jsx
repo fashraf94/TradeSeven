@@ -122,7 +122,7 @@ vi.mock('../../Dashboard/EvolutionPreviewCard', () => ({ default: () => null }))
 const { __resetBackingTelemetry } = await import('../../../services/backingTelemetry');
 const LeagueHome = (await import('../LeagueHome')).default;
 const LeagueLobbyDesktop = (await import('../LeagueLobbyDesktop')).default;
-const { PodCard } = await import('../LeaguePod');
+const { PodCard, PodSheet } = await import('../LeaguePod');
 const ScoutingLine = (await import('./ScoutingLine')).default;
 const IdentityPanel = (await import('../../Dashboard/desktop/IdentityPanel')).default;
 const EquipStation = (await import('../../Dashboard/EquipStation')).default;
@@ -245,6 +245,23 @@ describe('flag OFF — the League renders as it does today', () => {
     expect(ssr(<EquipStation {...props} />)).not.toContain('data-backing');
   });
 
+  it('EVERY other enumerated host, MOUNTED dark with effects running — the pitch home, the desktop lobby, the identity panel, the pod sheet — opens NO backing read and makes NO request (DARK-3 / DARK-R-1)', async () => {
+    const agent = { id: 'a1', ownerId: 'viewer-1', name: 'Prime', archetype: 'momentum_chaser', stats: {} };
+    const hosts = [
+      ['EquipStation', <EquipStation agent={agent} accent="#5EEAD4" onOpenAgentRecord={() => {}} setShowForge={() => {}} />],
+      ['LeagueLobbyDesktop', <LeagueLobbyDesktop {...homeProps} />],
+      ['IdentityPanel', <IdentityPanel agent={{ ownerId: 'viewer-1', name: 'Prime', archetype: 'momentum_chaser', stats: {} }} accent="#5EEAD4" live={false} record="0-0" winRate={0} levelConfig={{ label: 'Rookie' }} nextLevelInfo={null} onOpenRecord={() => {}} />],
+      ['PodSheet', <PodSheet pod={leagueState('open').baseGames[0]} accent="#5EEAD4" onClose={() => {}} onSpectate={() => {}} />],
+    ];
+    for (const [name, el] of hosts) {
+      svc.calls.length = 0; fetchSpy.mockClear(); __resetBackingTelemetry();
+      const container = await mount(el);
+      expect(container.querySelector('[data-backing]'), `${name}: a backing element while dark`).toBeNull();
+      expect(svc.calls, `${name}: a backing read while dark`).toEqual([]);
+      expect(backingCalls(), `${name}: a backing request while dark`).toEqual([]);
+    }
+  });
+
   it('a mounted landing (effects running) opens NO backing read and makes NO backing request', async () => {
     const container = await mount(<LeagueHome {...homeProps} />);
     expect(container.querySelector('[data-backing]')).toBeNull();
@@ -343,37 +360,82 @@ describe('the flag is read at CALL time in every host — never captured at modu
     ['src/components/Dashboard/EquipStation.jsx', '<BackingStatsEntry'],
   ];
   const stripComments = (src) => src.replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-  /** JSX brace expressions removed (balanced), so an attribute like `onClick={() => open()}` cannot hide an opener's `>` (R-B-7). */
-  function stripBraces(src) {
+  /**
+   * JSX ATTRIBUTE-VALUE brace expressions removed (`={…}`, balanced) — and
+   * ONLY those, so an attribute like `onClick={() => open()}` cannot hide an
+   * opener's `>` (R-B-7) while a component's function body SURVIVES. The
+   * previous stripper dropped every character at brace depth ≥ 1, and every
+   * host mounts inside a block-bodied function, so `before` always ended at
+   * the function signature and no wrapper could ever be seen — the guard was
+   * vacuous on every real host (DARK-1, the PR 5 review record). The
+   * positive-control row below wraps every REAL host's mount in memory and
+   * demands the guard say so, so it cannot go vacuous again.
+   */
+  function stripAttributeBraces(src) {
     let out = '';
-    let depth = 0;
-    for (const ch of src) {
-      if (ch === '{') { depth += 1; continue; }
-      if (ch === '}') { depth = Math.max(0, depth - 1); continue; }
-      if (depth === 0) out += ch;
+    let lastNonBlank = '';
+    let i = 0;
+    while (i < src.length) {
+      const ch = src[i];
+      if (ch === '{' && lastNonBlank === '=') {
+        let depth = 1;
+        i += 1;
+        while (i < src.length && depth > 0) {
+          if (src[i] === '{') depth += 1;
+          else if (src[i] === '}') depth -= 1;
+          i += 1;
+        }
+        lastNonBlank = '}';
+        continue;
+      }
+      out += ch;
+      if (!/\s/.test(ch)) lastNonBlank = ch;
+      i += 1;
     }
     return out;
   }
-  /** Every occurrence of `marker`, with the trimmed text right before (braces stripped) and right after it. */
+  /** Every occurrence of `marker`, with the trimmed text right before (attribute braces stripped) and right after it. */
   function mountsOf(src, marker) {
     const out = [];
     for (let i = src.indexOf(marker); i >= 0; i = src.indexOf(marker, i + marker.length)) {
       const end = marker.startsWith('{') ? src.indexOf('}', i) + 1 : src.indexOf('/>', i) + 2;
-      out.push({ before: stripBraces(src.slice(0, i)).trimEnd(), after: src.slice(end).trimStart() });
+      out.push({ before: stripAttributeBraces(src.slice(0, i)).trimEnd(), after: src.slice(end).trimStart() });
     }
     return out;
+  }
+  /** The real host file with its FIRST mount of `marker` wrapped in a sole-child element — the DARK-1 defect, planted in memory. */
+  function wrappedInMemory(rel, marker) {
+    const src = readFileSync(path.join(REPO, rel), 'utf8');
+    const i = src.indexOf(marker);
+    const end = marker.startsWith('{') ? src.indexOf('}', i) + 1 : src.indexOf('/>', i) + 2;
+    return `${src.slice(0, i)}<div style={{ marginTop: 12 }}>\n${src.slice(i, end)}\n</div>${src.slice(end)}`;
   }
   /** True when the mount is the sole child of an element opened right before it and closed right after it. */
   function soleChildWrapped({ before, after }) {
     const opened = /<([a-z][\w-]*)(\s[^<>]*[^/<>])?>$/.exec(before);
     return opened != null && after.startsWith(`</${opened[1]}>`);
   }
-  it('the mount guard sees a wrapper whose attributes carry a ">" (R-B-7), and passes a bare mount', () => {
+  it('the mount guard sees a wrapper whose attributes carry a ">" (R-B-7), and passes a bare mount — inside a function body too', () => {
     const wrapped = mountsOf(stripComments('<div onClick={() => open()}>\n  <ScoutingLine uid={u} />\n</div>'), '<ScoutingLine');
     expect(wrapped.map(soleChildWrapped)).toEqual([true]);
     const bare = mountsOf(stripComments('{locked && (<div>x</div>)}\n<ScoutingLine uid={u} />\n<Other />'), '<ScoutingLine');
     expect(bare.map(soleChildWrapped)).toEqual([false]);
+    // The DARK-1 shape: the same two cases inside `function Host() { return (…) }`.
+    const inBody = (jsx) => `export default function Host({ u }) {\n  const locked = false;\n  return (\n    <section>\n      ${jsx}\n    </section>\n  );\n}`;
+    expect(mountsOf(stripComments(inBody('<div onClick={() => open()}>\n  <ScoutingLine uid={u} />\n</div>')), '<ScoutingLine').map(soleChildWrapped)).toEqual([true]);
+    expect(mountsOf(stripComments(inBody('{locked && (<div>x</div>)}\n<ScoutingLine uid={u} />\n<Other />')), '<ScoutingLine').map(soleChildWrapped)).toEqual([false]);
   });
+
+  // THE POSITIVE CONTROL, on the real files: every host's mount, wrapped in
+  // memory, must be SEEN as wrapped — the row that reds the day the guard's
+  // pre-processing goes vacuous again (DARK-1, the PR 5 review record).
+  for (const [rel, marker] of HOST_MOUNTS) {
+    it(`the guard SEES a wrapper planted around ${marker} in ${rel} (positive control)`, () => {
+      const mounts = mountsOf(stripComments(wrappedInMemory(rel, marker)), marker);
+      expect(mounts.length).toBeGreaterThan(0);
+      expect(soleChildWrapped(mounts[0]), `${rel}: the guard cannot see a wrapper around ${marker}`).toBe(true);
+    });
+  }
   for (const [rel, marker] of HOST_MOUNTS) {
     it(`${rel} mounts ${marker} bare — no host element of its own around it`, () => {
       const mounts = mountsOf(stripComments(readFileSync(path.join(REPO, rel), 'utf8')), marker);

@@ -521,6 +521,9 @@ export const RESULTS = Object.freeze({
   reasonFallback: 'Every stake in this pool was refunded.',
   neutral: 'Refunds are score-neutral: your record shows no change from this pool.',
   settling: 'This pod is complete; its pool settles shortly.',
+  // A closed pool whose pod is STILL PLAYING (the Spectate path can ask for
+  // one): the truth, never "complete" (HON-3).
+  settlingInPlay: 'This pod is still playing its week; the pool settles after its last close.',
   held: 'Held for a human to check — the league settles this pool by hand.',
   earlier: 'Earlier weeks',
   loadMore: 'Show earlier weeks',
@@ -545,8 +548,18 @@ export const STATS = Object.freeze({
   loading: 'Loading…',
   unavailable: 'Stats are unavailable right now.',
   season: 'This season',
+  // The column names its month (the ladder's own key, §2), so a stake on next
+  // month's pod is not looked for under this one (HON-11).
+  seasonTitle: (seasonKey) => {
+    const m = /^(\d{4})-(\d{2})$/.exec(seasonKey ?? '');
+    if (!m) return 'This season';
+    const label = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, 1)).toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+    return `This season · ${label}`;
+  },
   career: 'Career',
   net: 'Net BP',
+  // The one rule both columns follow (§2), stated on the card (HON-4).
+  netNote: 'Net BP counts a stake from the moment it is placed; In play is what is still out.',
   poolsBacked: 'Pools backed',
   poolsWon: 'Pools won',
   weeksPlayed: 'Weeks played',

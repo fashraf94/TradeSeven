@@ -28,7 +28,7 @@ describe('BACKING_SAFE_APPROACH — the twins of the canonical lines that fail t
 
   it('the Diversifier twin says the same thing in the lexicon\'s words', () => {
     expect(ARCHETYPE_IDENTITY.diversifier.disposition).toMatch(/\bbets\b/);
-    expect(BACKING_SAFE_APPROACH.diversifier).toBe('Spreads the book across many sectors so no single one can sink you.');
+    expect(BACKING_SAFE_APPROACH.diversifier).toBe('Keeps the portfolio spread across many sectors so no single one can sink you.');
     expect(BACKING_SAFE_APPROACH.diversifier).toMatch(/sink you/);
   });
 });

@@ -31,7 +31,7 @@ import { findForbiddenTerm } from './backingLexicon.js';
  * passes is shown as it is and needs no twin.
  */
 export const BACKING_SAFE_APPROACH = Object.freeze({
-  diversifier: 'Spreads the book across many sectors so no single one can sink you.',
+  diversifier: 'Keeps the portfolio spread across many sectors so no single one can sink you.',
 });
 
 /**

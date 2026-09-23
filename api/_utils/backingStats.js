@@ -139,8 +139,26 @@ export async function readRanksFor(db, odUserIds) {
  * excluding this pod's own event. Null when the team has no such history.
  * Pure over the rank doc.
  */
+/**
+ * A rank document's events, ONE per pod: `appliedGroups` (the idempotency
+ * map the rank writer keeps for every pod ever applied — never capped) first,
+ * `history` (the last HISTORY_CAP events, a display list) only for a pod the
+ * map does not carry. Judging the baseline over the capped list alone made
+ * an old pool's "no prior week" EXCLUSION drift as newer events rolled the
+ * pre-close ones off (HON-12, the PR 5 review record).
+ */
+export function rankEventsOf(rank) {
+  const byGroup = new Map();
+  const applied = rank?.appliedGroups && typeof rank.appliedGroups === 'object' ? Object.values(rank.appliedGroups) : [];
+  for (const event of applied) if (event && typeof event.groupId === 'string') byGroup.set(event.groupId, event);
+  for (const event of Array.isArray(rank?.history) ? rank.history : []) {
+    if (event && typeof event.groupId === 'string' && !byGroup.has(event.groupId)) byGroup.set(event.groupId, event);
+  }
+  return [...byGroup.values()];
+}
+
 export function priorPlacementBefore(rank, { beforeIso, excludeGroupId = null } = {}) {
-  const history = Array.isArray(rank?.history) ? rank.history : [];
+  const history = rankEventsOf(rank);
   let best = null;
   for (const event of history) {
     if (!event || event.groupId === excludeGroupId) continue;

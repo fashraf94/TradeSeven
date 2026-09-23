@@ -159,10 +159,14 @@ describe('a refunded, insufficient or settling pool is stated plainly', () => {
     expect(render(voided('insufficient', null))).toContain('>Did not qualify · stakes void<');
   });
 
-  it('settling: says so; held: says a human settles it', () => {
-    const settling = settled({ outcome: 'settling', status: 'closed', winners: [], paysX: null, myNet: null, myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', amount: 500, status: 'live', payout: null, net: null, loadoutChanged: null }] });
+  it('settling: says so — "complete" only for a pod with nothing left to play, the truth for a pod still playing (HON-3); held: says a human settles it', () => {
+    const settling = settled({ outcome: 'settling', status: 'closed', podStatus: 'complete', winners: [], paysX: null, myNet: null, myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', amount: 500, status: 'live', payout: null, net: null, loadoutChanged: null }] });
     expect(text(settling)).toContain(RESULTS.settling);
     expect(text(settling)).toContain('settling');
+    const playing = text({ ...settling, podStatus: 'battle' });
+    expect(playing).toContain(RESULTS.settlingInPlay);
+    expect(playing).not.toContain('complete');
+    expect(text({ ...settling, podStatus: null })).toContain(RESULTS.settling);
     expect(text(settled({ outcome: 'settling', status: 'resolving', holdReason: 'agent_layer_absent', winners: [], myNet: null }))).toContain(RESULTS.held);
   });
 

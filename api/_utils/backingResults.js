@@ -145,6 +145,10 @@ export function projectResultPool({ groupId, poolId = null, pool, group = null, 
     poolId,
     weekKey: (Array.isArray(myStakes) && myStakes.find((s) => typeof s?.weekKey === 'string')?.weekKey) ?? pool?.baseLayerWeek ?? null,
     status: pool?.status ?? null,
+    // The pod's OWN status (null for a deleted pod), so a card for a closed
+    // pool can say whether the pod is still playing or done and waiting
+    // (HON-3, the PR 5 review record) — never "complete" for a pod in battle.
+    podStatus: typeof group?.status === 'string' ? group.status : null,
     outcome,
     formationPath: pool?.formationPath ?? null,
     slotId: pool?.slotId ?? null,

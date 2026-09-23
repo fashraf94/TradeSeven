@@ -28,6 +28,10 @@ import { baseGroupName, seatColor } from '../leagueAdapter';
 import { MonoAttr } from './BackingParts';
 import { RESULTS, bp } from './backingCopy';
 import { seatDisplayName } from './backingStripState';
+import { GROUP_STATUS } from '../../../constants/leagueTournament';
+
+/** A pod with nothing left to play: complete, voided, expired — or gone. */
+const podDone = (podStatus) => podStatus == null || podStatus === GROUP_STATUS.COMPLETE || podStatus === GROUP_STATUS.VOIDED || podStatus === GROUP_STATUS.EXPIRED;
 
 const card = { borderRadius: 18, padding: '13px 14px', background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}` };
 const sectionLabel = { fontSize: 9, color: LTOKENS.ink3, letterSpacing: '0.12em', textTransform: 'uppercase', display: 'block', marginBottom: 5 };
@@ -95,7 +99,7 @@ export default function BackingResultsCard({ pod, accent = LX.energy, onOpenTape
         </div>
       )}
       {pod.outcome === 'settling' && (
-        <div data-backing="results-settling" style={{ marginBottom: 10, fontSize: 12.5, color: LTOKENS.ink2, lineHeight: 1.45 }}>{pod.holdReason ? RESULTS.held : RESULTS.settling}</div>
+        <div data-backing="results-settling" style={{ marginBottom: 10, fontSize: 12.5, color: LTOKENS.ink2, lineHeight: 1.45 }}>{pod.holdReason ? RESULTS.held : podDone(pod.podStatus) ? RESULTS.settling : RESULTS.settlingInPlay}</div>
       )}
 
       <Mono style={sectionLabel}>{RESULTS.yourStakes}</Mono>

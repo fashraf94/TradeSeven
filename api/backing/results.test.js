@@ -247,7 +247,7 @@ describe('SETTLE-ON-READ — the path the pod list never had (finding 1)', () =>
     expect(thin.myStakes[0]).toMatchObject({ status: STAKE_STATUS.VOIDED, net: 0 });
   });
 
-  it('HON-3 — a results week lists its TERMINAL pools only: the closed pool of a pod still in battle stays with the strip and Your Backing; the pod\'s own read still answers it as settling', async () => {
+  it('HON-3 — a results week never lists the closed pool of a pod STILL PLAYING (that is Your Backing\'s); the pod\'s own read answers it as settling for a pod in play', async () => {
     DB = makeInMemoryDb({
       ...pod('g-play', { status: POOL_STATUS.CLOSED, g: group({ status: GROUP_STATUS.BATTLE, dailyScores: {} }), stakes: [{ id: 'p1', userId: UID, teamOdUserId: 'od-a', amount: 100 }] }),
       ...pod('g-done', { status: POOL_STATUS.INSUFFICIENT, stakes: [{ id: 'd1', userId: UID, teamOdUserId: 'od-a', amount: 100, status: STAKE_STATUS.VOIDED, voidReason: 'insufficient' }] }),
@@ -258,7 +258,7 @@ describe('SETTLE-ON-READ — the path the pod list never had (finding 1)', () =>
     expect(JSON.stringify(res.body)).not.toContain('g-play');
     expect(spy.settlePool).not.toHaveBeenCalled();
     const single = await get({ groupId: 'g-play' });
-    expect(single.body.pod).toMatchObject({ groupId: 'g-play', outcome: 'settling', status: POOL_STATUS.CLOSED });
+    expect(single.body.pod).toMatchObject({ groupId: 'g-play', outcome: 'settling', status: POOL_STATUS.CLOSED, podStatus: GROUP_STATUS.BATTLE });
   });
 
   it('ONE pod\'s failing settlement never takes down the reader: the pod projects as it stands, the failure is logged', async () => {
@@ -372,12 +372,24 @@ describe('WEEKS — the last completed week first, then history', () => {
     expect(DB.readLog).toEqual([['get', BACKING_STAKES_COLLECTION]]);
   });
 
-  it('the FREEZE holds across the whole page: no primitive call, W40 stays closed and is listed as settling beside the done pools', async () => {
+  it('the FREEZE holds across the whole page: no primitive call, W40 stays closed — and, its pod complete with nothing left to play, it IS listed, as settling (HON-R-1 / HON-R-3)', async () => {
     state.frozen = true;
     const res = await get();
     expect(spy.settlePool).not.toHaveBeenCalled();
     expect(poolOf('g-w40').status).toBe(POOL_STATUS.CLOSED);
-    // W40 is in play (nothing done), so it is not a result week yet.
-    expect(res.body.weeks.map((w) => w.weekKey)).toEqual(['2026-W39', '2026-W38']);
+    expect(res.body.weeks.map((w) => w.weekKey)).toEqual(['2026-W40', '2026-W39', '2026-W38']);
+    expect(res.body.weeks[0].pools[0]).toMatchObject({ groupId: 'g-w40', outcome: 'settling', status: POOL_STATUS.CLOSED, podStatus: GROUP_STATUS.COMPLETE });
+  });
+
+  it('HON-R-3 — a LONE held pool of an older week is listed (as held): the only surface it has once Your Backing\'s window rolls', async () => {
+    DB = makeInMemoryDb({
+      ...pod('g-w40', { stakes: BOOK() }),
+      ...pod('g-held', { status: POOL_STATUS.RESOLVING, weekKey: '2026-W37', monday: '2026-09-07', stakes: [{ id: 'h1', userId: UID, teamOdUserId: 'od-a', amount: 100 }], poolOver: { holdReason: 'agent_layer_absent', heldAt: '2026-09-11T22:00:00.000Z' } }),
+    });
+    const res = await get();
+    expect(res.body.weeks.map((w) => w.weekKey)).toEqual(['2026-W40', '2026-W37']);
+    expect(res.body.weeks[1].pools[0]).toMatchObject({ groupId: 'g-held', outcome: 'settling', status: POOL_STATUS.RESOLVING, holdReason: 'agent_layer_absent' });
+    // The hold is the admin's: the pass never touched it.
+    expect(poolOf('g-held').status).toBe(POOL_STATUS.RESOLVING);
   });
 });

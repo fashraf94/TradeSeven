@@ -19,11 +19,15 @@ import { BACKING_EVENT, emitBackingEvent } from '../../../services/backingTeleme
 import BackingResultsCard from './BackingResultsCard';
 import { RESULTS } from './backingCopy';
 
+/** The outcomes that ARE a result. */
+const RESULT_OUTCOMES = new Set(['settled', 'refunded', 'insufficient']);
+
 function SpectateBackingResultsLive({ groupId, accent }) {
   const results = useBackingResults({ groupId, enabled: true });
   const pod = results.pod;
+  // `results_viewed` only for a pool that SHOWS a result (HON-R-2).
   useEffect(() => {
-    if (!pod || pod.outcome === 'open') return;
+    if (!pod || !RESULT_OUTCOMES.has(pod.outcome)) return;
     emitBackingEvent(BACKING_EVENT.RESULTS_VIEWED, { groupId, props: typeof pod.weekKey === 'string' ? { weekKey: pod.weekKey } : {} });
   }, [groupId, pod]);
   // Nothing while loading or when the pod has no pool: no reserved space, no
