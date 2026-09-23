@@ -23,7 +23,7 @@
 // only leaves that one count at zero. From the repo root:
 //   node scripts/backing-sybil-watch.js                     # the whole book, newest 2000 stakes
 //   node scripts/backing-sybil-watch.js --week=2026-W40     # one backing week
-//   node scripts/backing-sybil-watch.js --since=2026-09-01  # stakes placed on or after a day
+//   node scripts/backing-sybil-watch.js --since=2026-09-01  # stakes FIRST placed on or after a day
 //   node scripts/backing-sybil-watch.js --limit=500 --min-accounts=3
 //   node scripts/backing-sybil-watch.js --json              # the report object, for a file
 //
@@ -117,6 +117,13 @@ function readOnly(target, path = 'db') {
  * on `placedAt` (ordered by the same field), and the default is the newest
  * `--limit` by `placedAt`. With both flags the week is the query and the
  * instant is applied in memory.
+ *
+ * `placedAt` IS THE FIRST PLACEMENT. Since D-ag (Amendment C §C2) a repeat
+ * backing tops up the one stake document and keeps its first `placedAt`, so
+ * `--since` and the newest-N window scope on when a stake was OPENED: a stake
+ * opened before `--since` and topped up after it is out of scope, top-up and
+ * all (the review record's MONEY-7). `--week` sees every placement of the
+ * week's stakes — use it when a top-up's address matters.
  */
 async function readStakes(db) {
   const col = db.collection(BACKING_STAKES_COLLECTION);

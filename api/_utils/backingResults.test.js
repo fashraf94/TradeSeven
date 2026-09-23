@@ -80,6 +80,26 @@ describe('projectResultPool — the card\'s numbers are the documents\' (§9)', 
     expect(loadoutChangedFor({ hashAtStake: 'x' }, undefined)).toBeNull();
   });
 
+  it('MONEY-8 (this build\'s review record): a TOPPED-UP stake is never "unchanged" — its one hash is the FIRST placement\'s; a difference is still a change', () => {
+    const team = { odUserId: 'od-a', isCpu: false, hashAtSettlement: 'H1' };
+    const first = { entryId: 'stake:dbt_1', amount: 100 };
+    const topUp = { entryId: 'stake:dbt_2', amount: 150 };
+    // One placement: the marker is exactly what it always was.
+    expect(loadoutChangedFor({ hashAtStake: 'H1', debits: [first] }, team)).toBe(false);
+    expect(loadoutChangedFor({ hashAtStake: 'H1' }, team)).toBe(false);
+    // Topped up: a match says nothing about the 150 added later (the loadout
+    // may have moved and moved back) — not known, never "unchanged".
+    expect(loadoutChangedFor({ hashAtStake: 'H1', debits: [first, topUp] }, team)).toBeNull();
+    // A difference is a change "during the week", topped up or not.
+    expect(loadoutChangedFor({ hashAtStake: 'H0', debits: [first, topUp] }, team)).toBe(true);
+    // Through the projection, as the card reads it.
+    const projected = projectResultPool({
+      groupId: 'g1', poolId: 'g1', pool: { ...SETTLED, teams: SETTLED.teams.map((t) => (t.odUserId === 'od-a' ? { ...t, hashAtSettlement: 'H1' } : t)) },
+      myStakes: [{ id: 'sx', teamOdUserId: 'od-a', amount: 250, status: STAKE_STATUS.WON, payout: 300, hashAtStake: 'H1', debits: [first, topUp] }],
+    });
+    expect(projected.myStakes[0].loadoutChanged).toBeNull();
+  });
+
   it('carries the outcome word and the ladder month; never a team\'s agentId or hash', () => {
     expect(pod).toMatchObject({ groupId: 'g1', poolId: 'g1', weekKey: '2026-W40', outcome: RESULT_OUTCOME.SETTLED, monthKey: '2026-09', settledAt: SETTLED.settledAt, refundReason: null, refundedAt: null, humanTeams: 2 });
     for (const t of pod.teams) {

@@ -86,7 +86,8 @@ export function fetchTeamCard(groupId, odUserId) {
 
 /**
  * Place a stake. `requestId` is the caller's idempotency key — FRESH per
- * Confirm (newRequestId below); the server makes it the stake's document id.
+ * Confirm (newRequestId below); the server keys this request's DEBIT by it
+ * (one stake document per team; each Confirm is its own debit — D-ag).
  * The reply is the server's sealed projection; "Backed" renders only from it.
  */
 export function placeStake({ groupId, teamOdUserId, amount, requestId }) {

@@ -401,6 +401,66 @@ describe('LEDGER — Σ entries = the cached balance, and net BP per §2, across
 });
 
 // ============================================================================
+describe('this build\'s review record — MONEY-3, MONEY-4, MONEY-5', () => {
+  const txSets = () => DB.writeLog.filter(([k]) => k === 'tx.set');
+
+  it('MONEY-4: a requestId spent in a PRIOR week, reused this week → 409 and NOTHING committed — the refusal returns before the week\'s grant is buffered', async () => {
+    DB = makeVersionedDb(world());
+    const wPath = `${BACKING_WALLETS_COLLECTION}/${X}`;
+    const spent = ENTRY(X, 'r-old');
+    const w0 = { lastAllowanceWeek: '2026-W39', allowanceRemaining: 700, careerNet: -300, seasons: {}, appliedEntries: { 'allowance:2026-W39': 'x', [spent]: 'x' }, createdAt: 'x' };
+    DB.store.set(wPath, w0);
+    DB.store.set(`${wPath}/entries/allowance:2026-W39`, { type: 'allowance', delta: 1000, ref: '2026-W39', weekKey: '2026-W39', at: 'x' });
+    DB.store.set(`${wPath}/entries/${spent}`, { type: 'stake', delta: -300, ref: 'stk_somewhere_else', weekKey: '2026-W39', at: 'x' });
+    DB.writeLog.length = 0;
+    const res = await stakeAs(X, 'r-old', 'od-a', 100);
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual({ error: 'request_id_conflict' });
+    // A RETURNED refusal commits whatever was buffered before it — here, had
+    // the ledger pre-check sat below `ensureAllowance`, last week's expiry,
+    // this week's grant and the re-keyed wallet. Nothing may be.
+    expect(txSets()).toEqual([]);
+    expect(doc(wPath)).toEqual(w0);
+  });
+
+  it('MONEY-5: the cap counts the document being topped up even when the week query cannot see it (an out-of-band drift) — refused, nothing written', async () => {
+    DB = makeVersionedDb(world());
+    expect((await stakeAs(X, 'x-1', 'od-a', 400)).statusCode).toBe(200);
+    const path = `${BACKING_STAKES_COLLECTION}/${SID(X, 'od-a')}`;
+    DB.store.set(path, { ...doc(path), weekKey: '2026-W39' });           // out of band: outside the (userId, weekKey) query
+    DB.writeLog.length = 0;
+    const res = await stakeAs(X, 'x-2', 'od-a', 400);
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toMatchObject({ error: 'per_team_cap', staked: 400, cap: PER_TEAM_CAP_BP });
+    expect(doc(path).amount).toBe(400);
+    expect(txSets()).toEqual([]);
+  });
+
+  it('MONEY-3: a requestId spent on a production pod and reused on a DEV pod never overwrites the production confirmation — the dev one is namespaced', async () => {
+    const DEV_GROUP = 'grp-topup-dev';
+    const base = world();
+    DB = makeVersionedDb({
+      ...base,
+      [`tournamentGroups/${DEV_GROUP}`]: { ...base[`tournamentGroups/${GROUP_ID}`], isDev: true },
+      [`${BACKING_POOLS_COLLECTION}/dev-${DEV_GROUP}`]: { ...base[`${BACKING_POOLS_COLLECTION}/${GROUP_ID}`], groupId: DEV_GROUP, isDev: true },
+    });
+    const debitKey = stakeDebitKeyFor(X, 'r1');
+    expect((await stakeAs(X, 'r1', 'od-a', 100)).statusCode).toBe(200);
+    const prodEvent = structuredClone(doc(`backingEvents/stake_confirmed:${debitKey}`));
+    expect(prodEvent.props).toMatchObject({ amount: 100, teamOdUserId: 'od-a', isDev: false });
+
+    state.uid = X;
+    const res = mkRes();
+    await handler({ method: 'POST', headers: { 'x-forwarded-for': '203.0.113.9', 'user-agent': 'topup' }, body: { groupId: DEV_GROUP, teamOdUserId: 'od-b', amount: 150, requestId: 'r1' } }, res);
+    expect(res.statusCode).toBe(200);                                     // a separate ledger (the dev wallet)
+    expect(doc(`backingEvents/stake_confirmed:${debitKey}`)).toEqual(prodEvent);
+    expect(doc(`backingEvents/stake_confirmed:dev:${debitKey}`).props).toMatchObject({ amount: 150, teamOdUserId: 'od-b', isDev: true });
+    expect(doc(`${BACKING_WALLETS_COLLECTION}/${X}`).careerNet).toBe(-100);
+    expect(doc(`${BACKING_WALLETS_COLLECTION}/dev-${X}`).careerNet).toBe(-150);
+  });
+});
+
+// ============================================================================
 describe('the maximum stake count of a pool is (eligible backers × teams) — by construction', () => {
   it('three backers, each backing all three teams three times over: nine documents, never more', async () => {
     let n = 0;

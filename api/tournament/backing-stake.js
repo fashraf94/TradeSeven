@@ -64,12 +64,19 @@
 //     (one fold, `totalsFromBackers`, keyed by backer and team);
 //   · settlement and the refund are untouched — they read the document's
 //     final `amount`, one payout / refund / month attribution per document.
-// So a pool holds at most (eligible backers × teams) stake documents, and the
-// settlement ceiling (120) and the refund stuck state (the PR 5 review
-// record's MONEY-4) are unreachable by construction; the ceilings stay in code
-// as belts. The first request's `placedAt`, `requestId` and `hashAtStake`
-// stay the document's; a top-up's fingerprint is kept beside the first in the
-// sealed meta (`topUps[]`), never over it.
+// So a backer holds ONE stake document per seat — at most four per pod (a
+// pod has four seats, and a CPU seat is backable) — and after the close a
+// pool's book is at most 4 × its distinct backers. NOTHING BOUNDS DISTINCT
+// BACKERS, so the ceilings are NOT unreachable by construction (this build's
+// review record, MONEY-1): 24 backers each backing all four seats reach the
+// refund's stuck state (96 live stakes — the PR 5 review record's MONEY-4)
+// and 31 reach the settlement ceiling (120). Amendment C §C2 expects "a few
+// dozen" stakes at beta scale; the ceilings stay in code as belts, the
+// batched refund remains the class fix, and the close has no write ceiling of
+// its own (MONEY-R-1 — reported for separate tasking). The first request's
+// `placedAt`, `requestId` and `hashAtStake` stay the document's; a top-up's
+// fingerprint is kept beside the first in the sealed meta (`topUps[]`), never
+// over it.
 //
 // THE FINGERPRINT IS NOT ON THE STAKE DOC (carry-in E1). `backingStakes/{id}` is
 // OWNER-READ, and Firestore rules cannot hide a field — an owner-readable doc
@@ -205,9 +212,13 @@ export function stakeDebitKeyFor(uid, requestId) {
 
 /**
  * The debits that funded a stake document — one `{ entryId, amount, at }` per
- * request, first to last. A document written before D-ag carries none and is
- * read as the one debit its own id keyed (`stake:{stakeId}`), so its replay
- * and cross-body rules stay exact.
+ * request, first to last. A document WITHOUT `debits[]` at the deterministic
+ * id — reachable only by an out-of-band write — is read as the one debit its
+ * own id keyed (`stake:{stakeId}`). It does NOT reach a stake written before
+ * D-ag: those live at the old (uid, requestId) id, which nothing reads any
+ * more, so a pre-cleanup request replayed after this deploy would be a new
+ * request (the review record's MONEY-2). None exists in production — the flag
+ * has been false on main throughout.
  */
 export function debitsOf(stake, stakeId) {
   if (Array.isArray(stake?.debits)) return stake.debits;
@@ -508,9 +519,10 @@ export default async function handler(req, res) {
       const wallet0 = await readWallet(tx, wRef);
 
       // The sealed meta, read BEFORE any write so an admin's `excluded` flag
-      // survives (see the write below). Normally absent; present only when the
-      // parent stake was deleted out of band, since Firestore does not
-      // cascade-delete a subcollection.
+      // survives (see the write below). Present on every TOP-UP (the stake's
+      // own meta, which a top-up extends); on a first stake normally absent —
+      // present only when a parent stake was deleted out of band, since
+      // Firestore does not cascade-delete a subcollection.
       const metaSnap = await tx.get(stakeMetaRefFor(db, stakeId));
       const priorMeta = metaSnap.exists ? metaSnap.data() : null;
 
@@ -560,8 +572,14 @@ export default async function handler(req, res) {
       // THE CAP IS ON THE TOTAL (D-ag): `onThisTeam` is every live stake this
       // backer holds on the team — the one document a top-up adds to — so the
       // check is the NEW total against the cap, never the request alone.
-      if (onThisTeam + amount > PER_TEAM_CAP_BP) {
-        throw new StakeRefusal(409, 'per_team_cap', { staked: onThisTeam, cap: PER_TEAM_CAP_BP });
+      //
+      // A BELT (the review record's MONEY-5): the base is never below the
+      // document this request tops up. The (userId, weekKey) query carries it
+      // whenever its `weekKey` is the pool's — always, unless written out of
+      // band — and a drifted document must not let a top-up past the cap.
+      const capBase = Math.max(onThisTeam, Number.isFinite(prior?.amount) ? prior.amount : 0);
+      if (capBase + amount > PER_TEAM_CAP_BP) {
+        throw new StakeRefusal(409, 'per_team_cap', { staked: capBase, cap: PER_TEAM_CAP_BP });
       }
 
       // ---- CHECK 4c: the debit. Refuses `insufficient_allowance` (typed).
@@ -673,10 +691,14 @@ export default async function handler(req, res) {
     // document but are separate confirmations, and a retried request can only
     // rewrite identical bytes — and `topUp` records whether this request
     // opened the stake or added to it. `amount` is what THIS request added.
+    // A DEV pod's confirmation is namespaced: the dev wallet is a separate
+    // ledger, so a `requestId` spent on a production pod is not refused on a
+    // dev one, and its confirmation must not overwrite the production
+    // record (the review record's MONEY-3).
     if (outcome.replay !== true) {
       try {
         await recordBackingEvent(db, {
-          eventId: stakeConfirmedEventId(debitKey),
+          eventId: stakeConfirmedEventId(outcome.pool?.isDev === true ? `dev:${debitKey}` : debitKey),
           userId: user.uid,
           groupId,
           event: STAKE_CONFIRMED_EVENT,

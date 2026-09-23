@@ -97,6 +97,12 @@ export function sharePctOf(stakeTotal, pot) {
  * hash recorded at the stake differs from the hash recorded at settlement,
  * false when they match, null when either is unknown or the seat is a CPU
  * (all CPUs share one hash — §1 suppresses the marker for them).
+ *
+ * A TOPPED-UP STAKE (D-ag — more than one debit) carries only its FIRST
+ * placement's hash, so a match proves nothing about the BP added later: the
+ * loadout may have moved and moved back in between (the review record's
+ * MONEY-8). It is never answered "unchanged" — a difference is still a
+ * change ("during the week" stays true), a match is not known.
  */
 export function loadoutChangedFor(stake, team) {
   if (!team || team.isCpu === true) return null;
@@ -104,7 +110,8 @@ export function loadoutChangedFor(stake, team) {
   const atSettlement = team?.hashAtSettlement;
   if (typeof atStake !== 'string' || atStake.length === 0) return null;
   if (typeof atSettlement !== 'string' || atSettlement.length === 0) return null;
-  return atStake !== atSettlement;
+  if (atStake !== atSettlement) return true;
+  return Array.isArray(stake?.debits) && stake.debits.length > 1 ? null : false;
 }
 
 /** The record delta of ONE stake once decided: won → payout − amount, lost → −amount, voided → 0 (neutral), live → null (undecided). */
