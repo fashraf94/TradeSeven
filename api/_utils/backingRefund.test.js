@@ -93,7 +93,7 @@ const SCORES = {
 };
 
 /** `days` banked days whose FINAL snapshot is `finalByUser`. */
-function bankedWeek(finalByUser, { days = 5 } = {}) {
+function bankedWeek(finalByUser, { days = 5, dates = DAYS } = {}) {
   const dailyScores = {};
   for (let i = 0; i < days; i += 1) {
     const closeScores = {};
@@ -103,7 +103,7 @@ function bankedWeek(finalByUser, { days = 5 } = {}) {
       const agent = i === days - 1 ? v.agent : Math.round(v.agent * scale);
       closeScores[id] = { totalPoints: user, agentPoints: agent, compositePoints: round2(agent + 1.5 * user), picks: [] };
     }
-    dailyScores[`day${i + 1}`] = { recordedDate: DAYS[i], closeScores };
+    dailyScores[`day${i + 1}`] = { recordedDate: dates[i], closeScores };
   }
   return dailyScores;
 }
@@ -463,9 +463,13 @@ describe('A REFUND RACING A SETTLEMENT — exactly one wins, decided on the IN-T
       settlePool(db, GROUP_ID, { now: NOW, source: SETTLEMENT_SOURCE.ADMIN }),
       refundPool(db, GROUP_ID, { now: NOW, source: SETTLEMENT_SOURCE.ADMIN, reason: VOID_REASONS.ADMIN, note: 'race' }),
     ]);
-    // MUTATION CHECK 2: remove the refund's in-transaction status gate → the
-    // loser re-runs, overwrites the pool and (having no live stakes) leaves the
-    // decided stakes beside a `refunded` pool — the XOR reds.
+    // On this harness the REFUND commits first (fewer reads before its
+    // commit), so this row exercises the SETTLEMENT's in-transaction gate:
+    // removing it makes the settlement re-run over the refunded pool and pay
+    // out beside `voided` stakes — the XOR reds. MUTATION CHECK 2 (the
+    // REFUND's gate) is carried by the two rows below — "the SETTLEMENT lands
+    // between the refund's read and its commit" and "TWO refunds racing" —
+    // which red when that gate is removed (MONEY-1, the PR 5 review record).
     expect((s.settled === true) !== (r.refunded === true)).toBe(true);
     const outcome = expectExactlyOneOutcome(store);
     if (outcome === 'settled') expect(r).toMatchObject({ refunded: false, reason: REFUND_REASON.ALREADY_SETTLED });
@@ -557,30 +561,65 @@ describe('A REFUND RACING A SETTLEMENT — exactly one wins, decided on the IN-T
 
 // ============================ THE RETRY ============================
 describe('A RETRY MID-REFUND converges (idempotent at every grain)', () => {
-  it('a crash after the first writes leaves a partial store; the second pass lands the SAME final store a clean pass does', async () => {
+  it('a crash after ANY write leaves a partial store; the second pass lands the SAME final store a clean pass does — EVERY position (MONEY-2: one position could not see a one-stake backer\'s partial pair)', async () => {
     const clean = seed();
     await refund(clean.db);
     const expected = backingSnapshot(clean.store);
 
-    const crashed = seed();
-    const realRun = crashed.db.runTransaction;
-    let sets = 0;
-    crashed.db.runTransaction = (fn) => realRun((tx) => fn({
-      ...tx,
-      set: (ref, data) => { sets += 1; if (sets === 3) throw new Error('crash mid-refund'); return tx.set(ref, data); },
-    }));
-    await expect(refund(crashed.db)).rejects.toThrow('crash mid-refund');
-    // The partial store only the non-atomic stand-in can produce: one stake
-    // already voided, its refund entry written, its wallet NOT yet moved.
-    expect(stakeOf(crashed.store, 's1').status).toBe(STAKE_STATUS.VOIDED);
-    expect(walletOf(crashed.store, 'u1').careerNet).toBe(-400);
-    expect(poolOf(crashed.store).status).toBe(POOL_STATUS.CLOSED);
+    // 4 stakes × 5 writes (the stake, the refund entry, the wallet, the loss
+    // entry, the wallet) + the pool, written last. The in-memory stand-in
+    // applies writes as they are issued, so a throw on the Nth write leaves a
+    // PARTIAL store at every grain the refund has: a stake voided with no
+    // entry, an entry with the wallet unmoved (a one-stake backer's included,
+    // at the 8th write), a pair applied with the pool still `closed`.
+    const total = 4 * 5 + 1;
+    for (let failAt = 1; failAt <= total; failAt += 1) {
+      const crashed = seed();
+      const realRun = crashed.db.runTransaction;
+      let sets = 0;
+      crashed.db.runTransaction = (fn) => realRun((tx) => fn({
+        ...tx,
+        set: (ref, data) => { sets += 1; if (sets === failAt) throw new Error(`crash at write ${failAt}`); return tx.set(ref, data); },
+      }));
+      await expect(refund(crashed.db)).rejects.toThrow(`crash at write ${failAt}`);
+      expect(poolOf(crashed.store).status, `the pool write is last: untouched after a crash at ${failAt}`).toBe(POOL_STATUS.CLOSED);
+      if (failAt === 3) {
+        // The partial store the original one-position row pinned: s1 voided,
+        // its refund entry written, its wallet NOT yet moved.
+        expect(stakeOf(crashed.store, 's1').status).toBe(STAKE_STATUS.VOIDED);
+        expect(walletOf(crashed.store, 'u1').careerNet).toBe(-400);
+      }
+      if (failAt === 8) {
+        // MONEY-2's position: s2 voided with its refund entry landed and u2's
+        // wallet — a backer with NO other live stake — unmoved; only the
+        // prior-stake wallet read can carry it to zero.
+        expect(stakeOf(crashed.store, 's2').status).toBe(STAKE_STATUS.VOIDED);
+        expect(walletOf(crashed.store, 'u2').careerNet).toBe(-200);
+      }
 
-    crashed.db.runTransaction = realRun;
-    const out = await refund(crashed.db);
-    expect(out).toMatchObject({ refunded: true, stakesVoided: 3, priorVoided: 1 });
-    expect(backingSnapshot(crashed.store)).toEqual(expected);
-    expectEveryStakeNetsToZero(crashed.store, { voidReason: VOID_REASONS.GROUP_VOIDED });
+      crashed.db.runTransaction = realRun;
+      const out = await refund(crashed.db);
+      expect(out.refunded, `re-run after a crash at ${failAt}`).toBe(true);
+      expect(out.stakesVoided + out.priorVoided, `every stake accounted for after a crash at ${failAt}`).toBe(4);
+      expect(backingSnapshot(crashed.store), `state after a crash at ${failAt}`).toEqual(expected);
+      expectEveryStakeNetsToZero(crashed.store, { voidReason: VOID_REASONS.GROUP_VOIDED });
+    }
+  });
+
+  it('MONEY-5 — a week straddling a month (Memorial Day Monday 2027-05-31; day 1 banks 2027-06-01): a voided pod refunds into 2027-06, an expired one into 2027-05; each pair nets zero in ITS bucket and the pool carries the same key', async () => {
+    const MON = '2027-05-31';
+    const dates = ['2027-06-01', '2027-06-02', '2027-06-03', '2027-06-04', '2027-06-05'];
+    const v = seed({ group: voidedGroup({ dailyScores: bankedWeek(SCORES, { days: 1, dates }) }), poolOver: { battleMondayEtDate: MON } });
+    await settlePool(v.db, GROUP_ID, { now: NOW, source: SETTLEMENT_SOURCE.SETTLE_ON_READ });
+    expect(poolOf(v.store)).toMatchObject({ status: POOL_STATUS.REFUNDED, monthKey: '2027-06' });
+    for (const uid of ['u1', 'u2', 'u3']) {
+      expect(walletOf(v.store, uid).careerNet).toBe(0);
+      expect(walletOf(v.store, uid).seasons, `${uid}: the ladder month is the first BANKED day's`).toEqual({ '2027-06': { net: 0 } });
+    }
+    const e = seed({ group: expiredGroup(), poolOver: { battleMondayEtDate: MON } });
+    await settlePool(e.db, GROUP_ID, { now: NOW, source: SETTLEMENT_SOURCE.SETTLE_ON_READ });
+    expect(poolOf(e.store)).toMatchObject({ status: POOL_STATUS.REFUNDED, monthKey: '2027-05' });
+    for (const uid of ['u1', 'u2', 'u3']) expect(walletOf(e.store, uid).seasons, `${uid}: nothing banked → the pool's Monday`).toEqual({ '2027-05': { net: 0 } });
   });
 
   it('a second refund after a complete one is already_refunded and writes nothing', async () => {

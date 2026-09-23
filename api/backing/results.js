@@ -120,16 +120,27 @@ async function refreshStakes(db, myStakes) {
   }));
 }
 
-/** One pod, loaded and passed through settle-on-read, then projected. Never throws: a pod whose pool fails to load projects with what was read. */
+/**
+ * One pod, loaded and passed through settle-on-read, then projected. The
+ * settle-on-read pass never takes the reader down: a pod whose SETTLEMENT
+ * fails projects with what was read (the two loads before it are plain reads
+ * and surface as the request's 500 like any other read failure).
+ */
 async function loadPod(db, { groupId, myStakes, now }) {
   const group = await readGroup(db, groupId);
   let located = await readPoolByGroupId(db, groupId);
   if (located.pool == null) return null;
   let stakes = myStakes;
   try {
+    // The status BEFORE the pass: the lazy close moves stakes on its own
+    // (`insufficient` voids them, a deleted pod's tombstone refunds them, a
+    // seat that left is voided) without the primitive being called, so the
+    // viewer's copies are re-read whenever the pool's status moved — not only
+    // when the primitive ran (WIRE-1, the PR 5 review record).
+    const before = located.pool.status;
     const passed = await settleOnRead(db, { groupId, group, pool: located.pool, now });
     if (passed.pool) located = { ...located, pool: passed.pool };
-    if (passed.called || passed.pool?.status !== located.pool?.status) stakes = await refreshStakes(db, myStakes);
+    if (passed.called || located.pool.status !== before) stakes = await refreshStakes(db, myStakes);
   } catch (err) {
     // ONE pod's settlement must never take down the reader: the pod projects
     // as it stands and the failure is logged for the operator.
@@ -187,11 +198,16 @@ export default async function handler(req, res) {
     const weeks = weeksOf(stakes).filter((w) => before === null || w.weekKey < before);
     const page = [];
     let scanned = 0;
+    let lastScanned = null;
     let nextBefore = null;
     for (const week of weeks) {
-      if (page.length >= limit) { nextBefore = page[page.length - 1].weekKey; break; }
-      if (scanned >= MAX_WEEKS_SCANNED) { nextBefore = page.length > 0 ? page[page.length - 1].weekKey : week.weekKey; break; }
+      // The cursor is always the LAST WEEK EXAMINED: the next page filters
+      // `weekKey < before`, so a cursor naming the first UNexamined week would
+      // skip it for ever (WIRE-2, the PR 5 review record).
+      if (page.length >= limit) { nextBefore = lastScanned; break; }
+      if (scanned >= MAX_WEEKS_SCANNED) { nextBefore = lastScanned; break; }
       scanned += 1;
+      lastScanned = week.weekKey;
       const pods = (await Promise.all(week.groupIds.map((id) => loadPod(db, { groupId: id, myStakes: stakes.filter((s) => s.groupId === id), now })))).filter(Boolean);
       const done = pods.some((p) => isTerminalPool({ status: p.status }));
       if (!done) continue;

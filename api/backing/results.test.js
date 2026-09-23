@@ -228,6 +228,25 @@ describe('SETTLE-ON-READ — the path the pod list never had (finding 1)', () =>
     expect(res.body.pod.outcome).toBe('settled');
   });
 
+  it('WIRE-1 — a lazy close that VOIDS the viewer\'s stakes without the primitive (two backers → insufficient) is reflected on the same read: the stake copies are re-read', async () => {
+    // Two backers only: the close lands `insufficient` and voids every stake
+    // itself; the primitive is never called (`not_closed` after the close), so
+    // the reply must come from the re-read documents, not the pre-close copies.
+    DB = makeInMemoryDb(pod('g-thin', { status: POOL_STATUS.OPEN, stakes: BOOK().slice(0, 2), poolOver: { teams: undefined, potTotal: undefined, uniqueBackers: undefined, teamsBacked: undefined } }));
+    const res = await get({ groupId: 'g-thin' });
+    expect(spy.settlePool).not.toHaveBeenCalled();
+    expect(poolOf('g-thin').status).toBe(POOL_STATUS.INSUFFICIENT);
+    expect(stakeOf('v1')).toMatchObject({ status: STAKE_STATUS.VOIDED, voidReason: 'insufficient' });
+    // No stake was DECIDED, so there is no net to state (the card says the
+    // refund is score-neutral instead); each voided stake nets to zero.
+    expect(res.body.pod).toMatchObject({ outcome: 'insufficient', myNet: null, myWon: null });
+    expect(res.body.pod.myStakes[0]).toMatchObject({ stakeId: 'v1', status: STAKE_STATUS.VOIDED, voidReason: 'insufficient', net: 0, payout: null });
+    // …and the weeks path shows the same re-read copy.
+    const weeks = await get();
+    const thin = weeks.body.weeks.flatMap((w) => w.pools).find((p) => p.groupId === 'g-thin');
+    expect(thin.myStakes[0]).toMatchObject({ status: STAKE_STATUS.VOIDED, net: 0 });
+  });
+
   it('ONE pod\'s failing settlement never takes down the reader: the pod projects as it stands, the failure is logged', async () => {
     DB.db.runTransaction = async () => { throw new Error('Firestore is on fire'); };
     const res = await get({ groupId: 'g-w40' });
@@ -300,6 +319,36 @@ describe('WEEKS — the last completed week first, then history', () => {
     const third = await get({ limit: '2', before: '2026-W39' });
     expect(third.body.weeks.map((w) => w.weekKey)).toEqual(['2026-W38']);
     expect(third.body.nextBefore).toBeNull();
+  });
+
+  it('WIRE-2 — the scan cap: 26 in-play weeks then a settled one; the cursor is the LAST WEEK EXAMINED, so the next page reaches the settled week', async () => {
+    // 27 weeks older than every fixture week: W27…W02 closed pools over pods
+    // still in battle (in play → skipped), W01 resolved. `before` scopes the
+    // walk to them.
+    const inPlay = group({ status: GROUP_STATUS.BATTLE, dailyScores: {} });
+    let initial = {};
+    for (let n = 27; n >= 1; n -= 1) {
+      const weekKey = `2025-W${String(n).padStart(2, '0')}`;
+      const id = `g-old-${n}`;
+      const resolved = n === 1;
+      initial = { ...initial, ...pod(id, {
+        status: resolved ? POOL_STATUS.RESOLVED : POOL_STATUS.CLOSED,
+        g: resolved ? group() : inPlay,
+        weekKey, monday: '2025-01-06',
+        stakes: [{ id: `s-old-${n}`, userId: UID, teamOdUserId: 'od-a', amount: 10, ...(resolved ? { status: STAKE_STATUS.WON, payout: 10 } : {}) }],
+        poolOver: resolved ? { winners: ['od-a'], paysX: 1, winningStakes: 10, settledAt: '2025-01-11T00:00:00.000Z' } : {},
+      }) };
+    }
+    DB = makeInMemoryDb(initial);
+    const first = await get({ limit: '1', before: '2026-W01' });
+    expect(first.statusCode).toBe(200);
+    expect(first.body.weeks).toEqual([]);
+    expect(first.body.nextBefore).toBe('2025-W02');
+    expect(first.body.weeksAvailable).toBe(27);
+    const second = await get({ limit: '1', before: first.body.nextBefore });
+    expect(second.body.weeks.map((w) => w.weekKey)).toEqual(['2025-W01']);
+    expect(second.body.nextBefore).toBeNull();
+    expect(spy.settlePool).not.toHaveBeenCalled();
   });
 
   it('a viewer with no stakes gets an empty page, and reads only their own stake query', async () => {

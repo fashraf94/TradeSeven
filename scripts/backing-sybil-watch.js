@@ -32,8 +32,8 @@
 // MUST be imported before firebaseAdmin.js — loads .env.local as a side effect.
 import { requireFirebaseCreds } from './loadLocalEnv.js';
 import { getFirebaseAdmin } from '../api/_utils/firebaseAdmin.js';
-import { BACKING_STAKES_COLLECTION, BACKING_POOLS_COLLECTION } from '../api/_utils/backingPools.js';
-import { STAKE_PRIVATE_SUBCOLLECTION, STAKE_META_DOC } from '../api/_utils/backingStats.js';
+import { BACKING_STAKES_COLLECTION } from '../api/_utils/backingPools.js';
+import { STAKE_PRIVATE_SUBCOLLECTION, STAKE_META_DOC, readPoolByGroupId } from '../api/_utils/backingStats.js';
 import { hashFingerprint } from '../api/_utils/backingFingerprint.js';
 import { analyzeSybil, formatSybilReport } from '../api/_utils/backingSybilWatch.js';
 
@@ -149,14 +149,20 @@ async function readMetas(db, stakes) {
   return out;
 }
 
-/** The pools the stakes name (for the dev flag), read once each. */
+/**
+ * The pools the stakes name (for the dev flag), read once each — in EITHER
+ * namespace: a stake names its pod, and a dev pod's pool lives at
+ * `dev-{groupId}` (the readers' rule, `readPoolByGroupId`), so a production-
+ * only read would report every dev stake as a production lead (WIRE-3, the
+ * PR 5 review record).
+ */
 async function readPools(db, stakes) {
   const ids = [...new Set(stakes.map((s) => s.groupId).filter((g) => typeof g === 'string' && g.length > 0))];
   const out = {};
   for (let i = 0; i < ids.length; i += META_READ_CHUNK) {
     const chunk = ids.slice(i, i + META_READ_CHUNK);
-    const snaps = await Promise.all(chunk.map((id) => db.collection(BACKING_POOLS_COLLECTION).doc(id).get()));
-    snaps.forEach((snap, j) => { if (snap.exists) out[chunk[j]] = snap.data(); });
+    const located = await Promise.all(chunk.map((id) => readPoolByGroupId(db, id)));
+    located.forEach((hit, j) => { if (hit.pool) out[chunk[j]] = { ...hit.pool, isDev: hit.isDev || hit.pool.isDev === true }; });
   }
   return out;
 }
