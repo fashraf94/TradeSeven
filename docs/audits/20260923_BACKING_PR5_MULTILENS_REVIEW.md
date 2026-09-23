@@ -150,12 +150,12 @@ Every check below was taken on the final commit of the branch (the sha is in the
 
 | Check | Result |
 | --- | --- |
-| `npm run test:run` | _see the PR body for the verbatim `Test Files` line and the exit code_ |
-| `npm run test:rules` (Firestore emulator v1.21.0, downloaded in-session) | `Test Files  11 passed (11)` · `Tests  242 passed (242)` · exit 0 |
-| `npx vite build` | exit 0 |
-| `npm run lint:gate` | exit 0 |
+| `npm run test:run` (at `b5d14874`, the last code commit; the commits after it are docs-only) | `Test Files  768 passed | 3 skipped (771)` · `Tests  14946 passed | 64 skipped (15010)` · exit 0 · 216 s |
+| `npm run test:rules` (Firestore emulator v1.21.0, downloaded in-session; re-taken on the final tree) | `Test Files  11 passed (11)` · `Tests  242 passed (242)` · exit 0 |
+| `npx vite build` | exit 0 (`✓ built in 36.66s`, re-taken on the final tree) |
+| `npm run lint:gate` | exit 0 (re-taken on the final tree) |
 | Fenced files touched | none (every file is outside BUILD_RULES §1's list) |
-| The six mutation checks, re-taken on the final tree | _see the PR body_ |
+| The six mutation checks, re-taken on the final tree (`mut/final/m1…m6`) | 1: **20 failed / 23 passed (43)** — the net-zero rows · 2: **2 failed / 41 passed** — the two race rows · 3: **2 failed / 8 passed (10)** — MUTATION CHECK 3 and the absent-figure row (HON-10) · 4: **1 failed / 83 passed** · 5: **1 failed / 7 passed (8)** · 6: **3 failed / 18 passed (21)** — the freeze rows |
 
 Per-fix guard checks, each on an isolated `tar` copy (`scratchpad/mut/*`): the refund crash-position sweep reds under "prior wallets not read" (P6: 1/41 red); the ledger-month row reds under "pool month only" (P4: 1/41 red); a sole-child wrapper planted around the Spectate mount reds the rewritten bare-mount guard; a hook planted in `EquipStation`'s body reds the mounted-dark row.
 
