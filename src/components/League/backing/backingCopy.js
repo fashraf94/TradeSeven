@@ -350,7 +350,9 @@ export const STAKE = Object.freeze({
   confirmNone: 'Choose an amount',
   walletPending: 'Reading your points…',
   confirming: 'Confirming…',
-  backed: (amount) => `Backed · ${bp(amount)} BP`,
+  // The confirmation names the team by the SERVER's label (D-af — Amendment C
+  // §C1): the stake reply's `teamLabel`, never a name composed from an id.
+  backed: (amount, label) => `Backed · ${bp(amount)} BP on ${label}`,
   backedSub: 'Recorded by the server. Sealed until the pool closes.',
   replayed: 'Already recorded — this stake was placed once.',
   another: 'Back another team',

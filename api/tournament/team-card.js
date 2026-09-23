@@ -65,6 +65,16 @@
 // deterministic map the lobby and the leaderboard use) and their counts from
 // the system agent doc when one exists.
 //
+// THE NAMES ARE THE ONE RESOLVER'S (Amendment C §C1, D-af): the card's human
+// row keeps its display name and the agent row its agent — the human-and-agent
+// unit as designed — and the projection also carries the seat's `label` (its
+// primary agent's name) and `secondary` for the single-label uses the pod row,
+// the stake control and the confirmation share. All of it comes from
+// api/_utils/backingTeamLabels.js, whose owner lookup IS this card's (board
+// production's selection, `primaryAgentDocFrom`), so the card reads the owner's
+// agents once and never answers an account id: a seat whose player name
+// resolves nowhere reads "Unnamed team" (the pre-flip fallback was the id).
+//
 // READS ONLY — this route writes nothing, ever. Imports the zero-import src/
 // modules under the revised June 2026 import rule (BUILD_RULES §4); the
 // co-located test's real import of THIS module is the dependency-surface guard.
@@ -74,7 +84,8 @@ import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { isValidForgeId } from '../_utils/idValidation.js';
 import { liveTeamsFor, readGroup } from '../_utils/backingPools.js';
-import { resolveDisplayNames } from '../_utils/tournamentLeaderboard.js';
+import { labelSeatOf, primaryAgentDocFrom, resolveTeamLabels } from '../_utils/backingTeamLabels.js';
+import { UNNAMED_TEAM_LABEL } from '../../src/constants/backing.js';
 import { projectTournamentBattle } from '../_utils/tournamentBattleView.js';
 import { readPitch } from '../_utils/teamPitch.js';
 import { deriveWeekLine } from '../../src/constants/deriveWeekLine.js';
@@ -94,7 +105,6 @@ import {
   cpuArchetypeForN,
   cpuNFromUserId,
   getWeeklyComposite,
-  isCloneAgentId,
   isWeekBanked,
   rankDocId,
 } from '../../src/constants/leagueTournament.js';
@@ -205,17 +215,18 @@ export function knownFactsFrom(rank) {
 
 // ==================== READS ====================
 
-/** The owner's current RANKED agent — clones excluded — or null. */
+/**
+ * The owner's current RANKED agent — clones excluded — or null. The selection
+ * is the label resolver's (`primaryAgentDocFrom`: board production's first
+ * non-clone document in id order), so the card's agent and the seat's label
+ * can never name two different agents.
+ */
 export async function ownerAgentFor(db, odUserId) {
   const snap = await db.collection(AGENTS_COLLECTION).where('ownerId', '==', odUserId).get();
-  let found = null;
-  snap.forEach((doc) => {
-    if (found) return;
-    const data = doc.data() ?? {};
-    if (data.isTrainingClone === true || data.isCasualClone === true || isCloneAgentId(doc.id)) return;
-    found = projectAgent(data);
-  });
-  return found;
+  const docs = [];
+  snap.forEach((doc) => docs.push(doc));
+  const primary = primaryAgentDocFrom(docs);
+  return primary ? projectAgent(primary.data) : null;
 }
 
 /** A CPU seat's agent: archetype from the id, counts from the system doc when it exists. */
@@ -497,13 +508,20 @@ export async function buildTeamCard(db, { group, seats, seatIndex, viewerUid }) 
   const { odUserId, isCpu } = seat;
   const dev = group.isDev === true;
 
-  // The name the pod row and the strip show — the pod's own formation-time
-  // seatNames — so the card agrees with the row that opened it (DOM-7, the
-  // PR 4 review record); the users doc names a seat the pod did not.
-  const seatName = !isCpu && typeof group.seatNames?.[odUserId] === 'string' && group.seatNames[odUserId].length > 0 ? group.seatNames[odUserId] : null;
-  const displayName = seatName ?? (await resolveDisplayNames(db, [odUserId]))[odUserId] ?? odUserId;
+  // THE NAMES, from the ONE resolver (D-af): the seat's label and secondary
+  // — what the pod row, the stake control and the confirmation show — and the
+  // player's display name for the human row: the pod's own formation-time
+  // seat name first, so the card agrees with the row that opened it (DOM-7,
+  // the PR 4 review record), then the profile. Never the account id.
+  const labelSeat = labelSeatOf({ group }, odUserId, isCpu);
+  const labels = await resolveTeamLabels(db, [labelSeat]);
+  const { label, secondary } = labels.teamLabelFor(labelSeat);
+  const displayName = isCpu ? label : (labels.displayNameFor(odUserId, labelSeat.seatName) ?? UNNAMED_TEAM_LABEL);
 
-  const agent = isCpu ? await cpuAgentFor(db, odUserId, displayName) : await ownerAgentFor(db, odUserId);
+  // The owner's agent is the one the label named — the resolver already read
+  // the owner's agents, so the card projects that document (no second query).
+  const primary = isCpu ? null : labels.primaryAgentFor(odUserId);
+  const agent = isCpu ? await cpuAgentFor(db, odUserId, displayName) : (primary ? projectAgent(primary.data) : null);
   const pitch = isCpu ? null : await readPitch(db, odUserId);
   const rank = await readRank(db, odUserId, { dev });
   // Completed history only. A CPU seat shows archetype and no history (spec §5).
@@ -523,6 +541,8 @@ export async function buildTeamCard(db, { group, seats, seatIndex, viewerUid }) 
     },
     team: {
       displayName,
+      label,
+      secondary,
       isCpu,
       pitch,
       derived: lastWeek ? deriveWeekLine({ ...lastWeek.facts, isCpu }) : null,

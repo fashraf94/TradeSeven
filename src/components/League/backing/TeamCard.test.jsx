@@ -37,7 +37,7 @@ const seat = (over = {}) => ({ index: 1, count: 4, isCpu: false, isViewer: false
 const firstWeek = () => ({
   groupId: 'g-now', odUserId: 'od-b', viewerUid: 'viewer-1',
   seat: seat({ index: 2 }),
-  team: { displayName: 'Draco', isCpu: false, pitch: 'Macro guy. Tarn keeps me from being too early.', derived: null,
+  team: { displayName: 'Draco', label: 'Tarn', secondary: 'Draco', isCpu: false, pitch: 'Macro guy. Tarn keeps me from being too early.', derived: null,
     agent: { name: 'Tarn', archetype: 'analyst', archetypeLabel: 'Fundamental Investor', approach: 'Buys quality companies and lets the fundamentals do the work.', traitCount: 3, ruleCount: 5 } },
   known: null,
   lastWeek: null,
@@ -46,7 +46,7 @@ const firstWeek = () => ({
 const cpu = () => ({
   groupId: 'g-now', odUserId: 'cpu-1', viewerUid: 'viewer-1',
   seat: seat({ index: 3, isCpu: true }),
-  team: { displayName: 'CPU — Trend Follower', isCpu: true, pitch: null, derived: null,
+  team: { displayName: 'CPU — Trend Follower', label: 'CPU — Trend Follower', secondary: null, isCpu: true, pitch: null, derived: null,
     agent: { name: 'CPU — Trend Follower', archetype: 'momentum_chaser', archetypeLabel: 'Trend Follower', approach: APPROACH, traitCount: 0, ruleCount: 0 } },
   known: null,
   lastWeek: null,
@@ -55,7 +55,7 @@ const cpu = () => ({
 const veteran = () => ({
   groupId: 'g-now', odUserId: 'od-a', viewerUid: 'viewer-1',
   seat: seat(),
-  team: { displayName: 'Mira', isCpu: false, pitch: 'I take the leader in whatever sector has breadth on Monday.', derived: 'Held 2 of 3 all week · 2 moves · leaned technology',
+  team: { displayName: 'Mira', label: 'Kestrel', secondary: 'Mira', isCpu: false, pitch: 'I take the leader in whatever sector has breadth on Monday.', derived: 'Held 2 of 3 all week · 2 moves · leaned technology',
     agent: { name: 'Kestrel', archetype: 'momentum_chaser', archetypeLabel: 'Trend Follower', approach: APPROACH, traitCount: 4, ruleCount: 7 } },
   known: { rp: 412, tier: 2, tierName: 'Analyst', weeksPlayed: 2, priorFinishes: [1, 2] },
   lastWeek: {
@@ -192,7 +192,8 @@ describe('the VETERAN card — last week, both layers, from recorded facts', () 
 describe('the CTA follows the pool and the viewer', () => {
   it('with a live stake on the team it offers to add to it', () => {
     const html = render(veteran(), openPod({ myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', amount: 250, status: 'live' }] }));
-    expect(html).toContain('Add to your 250 on Mira');
+    // A top-up names the team by its single label — the primary agent (D-af).
+    expect(html).toContain('Add to your 250 on Kestrel');
   });
 
   it('once the pool has closed it says so, and names the viewer’s stake', () => {

@@ -41,7 +41,8 @@ class Refusal extends Error { constructor(code) { super(code); this.code = code;
 const card = () => ({
   groupId: 'g1', odUserId: 'od-a', viewerUid: 'viewer-1',
   seat: { index: 1, count: 4, isCpu: false, isViewer: false, viewerSeated: false },
-  team: { displayName: 'Mira', isCpu: false, pitch: null, derived: null, agent: { name: 'Kestrel', archetype: 'momentum_chaser', archetypeLabel: 'Trend Follower', approach: 'x', traitCount: 4, ruleCount: 7 } },
+  // D-af (Amendment C §C1): the team-card projection carries the seat's label (its primary agent) and the player as secondary.
+  team: { displayName: 'Mira', label: 'Kestrel', secondary: 'Mira', isCpu: false, pitch: null, derived: null, agent: { name: 'Kestrel', archetype: 'momentum_chaser', archetypeLabel: 'Trend Follower', approach: 'x', traitCount: 4, ruleCount: 7 } },
   known: null, lastWeek: null,
 });
 const pod = (myStakes = []) => ({ groupId: 'g1', pool: { status: 'open', closesAt: '2026-09-28T03:59:59.000Z' }, myStakes });
@@ -98,7 +99,7 @@ describe('the control, attested', () => {
     const { container } = await mount({ wallet: { known: true, left: 640, total: 1000 }, pod: pod([{ stakeId: 's1', teamOdUserId: 'od-a', amount: 150, status: 'live' }]) });
     expect(container.textContent).toContain('640');
     expect(container.textContent).toContain('of 1,000 BP');
-    expect(container.textContent).toContain(`Per-team cap ${PER_TEAM_CAP_BP} BP · 150 already on Mira`);
+    expect(container.textContent).toContain(`Per-team cap ${PER_TEAM_CAP_BP} BP · 150 already on Kestrel`);
   });
 
   it('Confirm sends a FRESH requestId and shows "Backed" ONLY after the server’s success reply', async () => {
@@ -115,9 +116,20 @@ describe('the control, attested', () => {
     await act(async () => { resolve({ replay: false, stake: { id: 'stk_1', amount: 250 }, pool: { status: 'open' }, allowanceRemaining: 750 }); });
     await settle();
     expect(q(container, '[data-backing="backed"]')).not.toBeNull();
-    expect(container.textContent).toContain('Backed · 250 BP');
+    // A reply without its own label names the team by the card's label — never an id (D-af).
+    expect(container.textContent).toContain('Backed · 250 BP on Kestrel');
     expect(container.textContent).toContain('Recorded by the server.');
     expect(props.onBacked).toHaveBeenCalledTimes(1);
+  });
+
+  it('D-af: "Backed" names the team by the stake REPLY\'s own label — the server confirmed this stake', async () => {
+    svc.placeStake.mockResolvedValue({ replay: false, stake: { id: 'stk_1', amount: 250 }, teamLabel: { label: 'Shadow', secondary: 'Mira' }, pool: { status: 'open' }, allowanceRemaining: 750 });
+    const { container } = await mount();
+    await click(q(container, '[data-preset="250"]'));
+    await click(confirmButton(container));
+    await settle();
+    expect(container.textContent).toContain('Backed · 250 BP on Shadow');
+    expect(container.textContent).not.toContain('od-a');
   });
 
   it('a refusal shows the plain sentence, never "Backed" — and the retry carries a NEW requestId', async () => {
@@ -168,7 +180,7 @@ describe('the control, attested', () => {
 
   it('at the per-team cap the control says so and Confirm is disabled; presets above the allowance are disabled', async () => {
     const capped = await mount({ pod: pod([{ stakeId: 's1', teamOdUserId: 'od-a', amount: PER_TEAM_CAP_BP, status: 'live' }]) });
-    expect(capped.container.textContent).toContain('You are at the per-team cap on Mira.');
+    expect(capped.container.textContent).toContain('You are at the per-team cap on Kestrel.');
     expect(confirmButton(capped.container).disabled).toBe(true);
     await click(confirmButton(capped.container));
     expect(svc.placeStake).not.toHaveBeenCalled();

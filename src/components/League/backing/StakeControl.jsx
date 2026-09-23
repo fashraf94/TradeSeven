@@ -23,6 +23,10 @@
 //   · Nothing here shows a pot, a share or a payout: the reply's pool
 //     projection carries only the capped signals and the close, and the
 //     control does not render even those — the pod list does.
+//   · THE TEAM IS NAMED BY THE SERVER (Amendment C §C1, D-af): the cap line and
+//     the confirmation read the seat's `label` — the team card's, and on
+//     "Backed" the stake reply's own `teamLabel` — never a name composed from
+//     an id. The title keeps the card's human-and-agent unit.
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { MIN_STAKE_BP, PER_TEAM_CAP_BP } from '../../../constants/backing';
@@ -34,6 +38,7 @@ import AttestationStep from './AttestationStep';
 import { Disclosures, MonoAttr, PointsMeter } from './BackingParts';
 import { ATTEST, CARD, STAKE, STAKE_PRESETS, bp, refusalMessage } from './backingCopy';
 import { stakedOnTeam } from './backingStakes';
+import { teamLabelOf } from './backingStripState';
 
 /** Client-side pre-check of an amount — the server decides; this only saves a round trip. */
 export function validateAmount(amount, { capLeft, allowanceLeft }) {
@@ -62,6 +67,8 @@ export default function StakeControl({ card, pod, wallet, eligibility, accent = 
   const attest = services?.attestEligibility ?? attestEligibility;
   const name = card.team.displayName;
   const agentName = card.team.agent?.name ?? CARD.agentFallbackName(name);
+  // The seat's single-label name (D-af): the server's, off the team card.
+  const label = teamLabelOf(card.team.label);
   const already = stakedOnTeam(pod, card.odUserId);
   const capLeft = Math.max(0, PER_TEAM_CAP_BP - already);
   // The wallet is the server's record; until its first snapshot has landed
@@ -131,10 +138,12 @@ export default function StakeControl({ card, pod, wallet, eligibility, accent = 
 
   if (result) {
     const backedAmount = result.stake.amount;
+    // The reply's own name for the team — the server confirmed THIS stake.
+    const backedLabel = teamLabelOf(result.teamLabel ?? card.team.label);
     return (
       <div data-backing="backed" style={{ borderRadius: 16, padding: '16px 15px', background: `linear-gradient(160deg, ${alpha(accent, 0.12)}, ${LTOKENS.surface} 64%)`, border: `1px solid ${alpha(accent, 0.3)}`, textAlign: 'center' }}>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 17, fontWeight: 700, color: LTOKENS.ink }}>
-          <Icon name="check" size={16} color={accent} stroke={2.4} />{STAKE.backed(backedAmount)}
+          <Icon name="check" size={16} color={accent} stroke={2.4} />{STAKE.backed(backedAmount, backedLabel)}
         </div>
         <div style={{ fontSize: 12.5, color: LTOKENS.ink2, lineHeight: 1.45, marginTop: 6 }}>{STAKE.backedSub}</div>
         {result?.replay === true && <Mono style={{ display: 'block', marginTop: 6, fontSize: 10, color: LTOKENS.ink3 }}>{STAKE.replayed}</Mono>}
@@ -153,12 +162,12 @@ export default function StakeControl({ card, pod, wallet, eligibility, accent = 
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
         <PointsMeter left={allowanceLeft} total={wallet?.total ?? 0} compact />
-        <Mono style={{ fontSize: 9.5, color: LTOKENS.ink3, textAlign: 'right' }}>{STAKE.cap(already, name)}</Mono>
+        <Mono style={{ fontSize: 9.5, color: LTOKENS.ink3, textAlign: 'right' }}>{STAKE.cap(already, label)}</Mono>
       </div>
 
       {atCap ? (
         <div data-backing="cap-reached" style={{ fontSize: 12.5, color: LTOKENS.ink2, lineHeight: 1.45, padding: '11px 12px', borderRadius: 12, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}` }}>
-          {capLeft < MIN_STAKE_BP ? STAKE.capReached(name) : STAKE.aboveAllowance}
+          {capLeft < MIN_STAKE_BP ? STAKE.capReached(label) : STAKE.aboveAllowance}
         </div>
       ) : (
         <>

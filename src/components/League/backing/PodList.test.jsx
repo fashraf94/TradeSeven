@@ -20,16 +20,19 @@ import PodList from './PodList';
 const SUNDAY_CLOSE = '2026-09-28T03:59:59.000Z';
 const WED_FIRE = '2026-09-23T23:00:00.000Z';
 
+// D-af (Amendment C §C1): each seat arrives NAMED by the server — `label` its
+// primary agent's name, `secondary` the player's — exactly as
+// backing-pools.js projects it.
 const teams = (over = {}) => ([
-  { odUserId: 'od-a', isCpu: false, isOwnSeat: false, backable: true, ...(over['od-a'] || {}) },
-  { odUserId: 'od-b', isCpu: false, isOwnSeat: false, backable: true, ...(over['od-b'] || {}) },
-  { odUserId: 'cpu-1', isCpu: true, isOwnSeat: false, backable: true, ...(over['cpu-1'] || {}) },
-  { odUserId: 'cpu-2', isCpu: true, isOwnSeat: false, backable: true, ...(over['cpu-2'] || {}) },
+  { odUserId: 'od-a', isCpu: false, label: 'Shadow', secondary: 'Mira', isOwnSeat: false, backable: true, ...(over['od-a'] || {}) },
+  { odUserId: 'od-b', isCpu: false, label: 'Kestrel', secondary: 'Draco', isOwnSeat: false, backable: true, ...(over['od-b'] || {}) },
+  { odUserId: 'cpu-1', isCpu: true, label: 'CPU — Trend Follower', secondary: null, isOwnSeat: false, backable: true, ...(over['cpu-1'] || {}) },
+  { odUserId: 'cpu-2', isCpu: true, label: 'CPU — Contrarian', secondary: null, isOwnSeat: false, backable: true, ...(over['cpu-2'] || {}) },
 ]);
 
 const openPod = (groupId, over = {}) => ({
   groupId, formationPath: 'lobby', slotId: null, baseLayerWeek: '2026-W40',
-  seatNames: { 'od-a': 'Mira', 'od-b': 'Draco' }, humanTeams: 2,
+  humanTeams: 2,
   teams: teams(),
   pool: { status: 'open', backerProgress: { count: 2, floor: 3, met: false }, teamSpread: { met: false }, closesAt: SUNDAY_CLOSE, closeReason: 'clock' },
   myStakes: [],
@@ -42,6 +45,10 @@ describe('the open state — exactly the §B2 contract', () => {
   it('renders the pod name, the seats with honest marks, the close from the pool, the chairs, the spread and the SEALED lockups', () => {
     const html = render([openPod('g1')]);
     expect(html).toContain('data-backing="pod"');
+    // Each seat by its PRIMARY AGENT, the player on the line beneath (D-af).
+    expect(html).toContain('Shadow');
+    expect(html).toContain('Kestrel');
+    expect(html).toContain('data-backing="seat-secondary"');
     expect(html).toContain('Mira');
     expect(html).toContain('Draco');
     expect(html).toContain('CPU — Trend Follower');
@@ -166,5 +173,22 @@ describe('the PR 4 review record — refutation pass (R-A-7)', () => {
     expect(html).toContain('Backers 3 of 3');
     expect(html).not.toContain('Backers 5 of 3');
     expect(html).not.toContain('data-count="5"');
+  });
+});
+
+describe('D-af — the seats are named by the SERVER (Amendment C §C1)', () => {
+  it('a seat that arrives with no label reads "Unnamed team" — the row never falls back to the account id', () => {
+    const uid = 'AdaLovelace0000000000000001a';
+    const html = render([openPod('g1', { teams: [{ odUserId: uid, isCpu: false, isOwnSeat: false, backable: true }] })]);
+    expect(html).toContain('Unnamed team');
+    expect(html).not.toContain(uid);
+    expect(html).not.toContain('data-backing="seat-secondary"');
+  });
+
+  it('a pod the old way — a `seatNames` map and no labels — shows none of those names: the client composes nothing', () => {
+    const html = render([openPod('g1', { seatNames: { 'od-a': 'Mira' }, teams: [{ odUserId: 'od-a', isCpu: false, isOwnSeat: false, backable: true }] })]);
+    expect(html).not.toContain('Mira');
+    expect(html).not.toContain('od-a<');
+    expect(html).toContain('Unnamed team');
   });
 });

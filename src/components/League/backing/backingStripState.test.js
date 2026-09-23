@@ -14,7 +14,7 @@
 import { describe, it, expect } from 'vitest';
 import { POOL_MIN_WINDOW_MS } from '../../../constants/backing';
 import {
-  STRIP_KIND, backingWeekKeys, deriveStripState, etWeekdayIndex, formatEtClose, nextOpening, podDayOfFive, podStanding, seatDisplayName, weekDayOfFive,
+  STRIP_KIND, backingWeekKeys, deriveStripState, etWeekdayIndex, formatEtClose, nextOpening, podDayOfFive, podStanding, podTeamLabel, teamLabelOf, weekDayOfFive,
 } from './backingStripState';
 import { stripLines } from './backingCopy';
 
@@ -29,14 +29,23 @@ const openPool = (over = {}) => ({
   backerProgress: { count: 1, floor: 3, met: false }, teamSpread: { met: false }, ...over,
 });
 
+// D-af (Amendment C §C1) — the SERVER's names, in the shapes it sends them:
+// the pod list puts `label` / `secondary` on each seat and `teamLabel` on each
+// of the viewer's stakes; the in-play pods' names arrive as `labelsById`
+// (GET /api/backing/team-labels). The group documents below still carry
+// `seatNames` — and the strip must IGNORE them: the names it shows are these.
+const LABEL = { 'od-a': 'Shadow', 'od-b': 'Kestrel', 'od-x': 'Orbit', 'cpu-1': 'CPU — Trend Follower', 'cpu-2': 'CPU — Contrarian', 'cpu-3': 'CPU — Diversifier', 'cpu-4': 'CPU — Speculator' };
+const SECONDARY = { 'od-a': 'Mira', 'od-b': 'Draco', 'od-x': 'Rigel' };
+const named = (id) => ({ label: LABEL[id], secondary: SECONDARY[id] ?? null });
+const labelsFor = (...groupIds) => Object.fromEntries(groupIds.map((g) => [g, Object.fromEntries(Object.keys(LABEL).map((id) => [id, named(id)]))]));
+
 const pod = (groupId, over = {}) => ({
   groupId, formationPath: 'lobby', slotId: null, baseLayerWeek: '2026-W40',
-  seatNames: { 'od-a': 'Mira', 'od-b': 'Draco' },
   teams: [
-    { odUserId: 'od-a', isCpu: false, isOwnSeat: false, backable: true },
-    { odUserId: 'od-b', isCpu: false, isOwnSeat: false, backable: true },
-    { odUserId: 'cpu-1', isCpu: true, isOwnSeat: false, backable: true },
-    { odUserId: 'cpu-2', isCpu: true, isOwnSeat: false, backable: true },
+    { odUserId: 'od-a', isCpu: false, ...named('od-a'), isOwnSeat: false, backable: true },
+    { odUserId: 'od-b', isCpu: false, ...named('od-b'), isOwnSeat: false, backable: true },
+    { odUserId: 'cpu-1', isCpu: true, ...named('cpu-1'), isOwnSeat: false, backable: true },
+    { odUserId: 'cpu-2', isCpu: true, ...named('cpu-2'), isOwnSeat: false, backable: true },
   ],
   humanTeams: 2, pool: openPool(), myStakes: [], ...over,
 });
@@ -60,8 +69,8 @@ describe('the four states, from data', () => {
   it('STAKED — the window is open and the viewer has live stakes on it: the staked pods and each stake with its team name', () => {
     const s = deriveStripState({
       pods: [
-        pod('g1', { myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', amount: 250, status: 'live' }] }),
-        pod('g2', { myStakes: [{ stakeId: 's2', teamOdUserId: 'cpu-1', amount: 100, status: 'live' }, { stakeId: 's3', teamOdUserId: 'od-b', amount: 50, status: 'voided' }] }),
+        pod('g1', { myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', teamLabel: LABEL['od-a'], amount: 250, status: 'live' }] }),
+        pod('g2', { myStakes: [{ stakeId: 's2', teamOdUserId: 'cpu-1', teamLabel: LABEL['cpu-1'], amount: 100, status: 'live' }, { stakeId: 's3', teamOdUserId: 'od-b', teamLabel: LABEL['od-b'], amount: 50, status: 'voided' }] }),
         pod('g3'),
       ],
       now: TUE,
@@ -69,7 +78,7 @@ describe('the four states, from data', () => {
     expect(s.kind).toBe(STRIP_KIND.STAKED);
     expect(s.pods).toBe(2);
     expect(s.closesAt).toBe(SUNDAY_CLOSE);
-    expect(s.stakes.map((x) => [x.teamName, x.amount])).toEqual([['Mira', 250], ['CPU — Trend Follower', 100]]);
+    expect(s.stakes.map((x) => [x.teamName, x.amount])).toEqual([['Shadow', 250], ['CPU — Trend Follower', 100]]);
     expect(s.stakes.every((x) => typeof x.podName === 'string' && x.podName.length > 0)).toBe(true);
   });
 
@@ -80,6 +89,7 @@ describe('the four states, from data', () => {
         stakes: [{ id: 's9', groupId: 'g-play', teamOdUserId: 'od-a', amount: 250, status: 'live', weekKey: '2026-W39' }],
         poolsById: { 'g-play': { status: 'closed', closesAt: '2026-09-21T03:59:59.000Z' } },
         groupsById: { 'g-play': inPlayGroup() },
+        labelsById: labelsFor('g-play'),
       },
       now: WED,
     });
@@ -87,7 +97,7 @@ describe('the four states, from data', () => {
     expect(s.day).toBe(3);
     expect(s.pods).toBe(1);
     expect(s.teams).toEqual([{
-      groupId: 'g-play', podName: s.teams[0].podName, teamOdUserId: 'od-a', teamName: 'Mira', amount: 250, rank: 2, score: 4.8, seatCount: 4,
+      groupId: 'g-play', podName: s.teams[0].podName, teamOdUserId: 'od-a', teamName: 'Shadow', amount: 250, rank: 2, score: 4.8, seatCount: 4,
     }]);
   });
 
@@ -121,7 +131,7 @@ describe('priority — one strip says one thing', () => {
   };
 
   it('in-play stakes outrank an open window with stakes on it (Monday–Friday reads as the week)', () => {
-    const s = deriveStripState({ pods: [pod('g1', { myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', amount: 100, status: 'live' }] })], inPlay: inPlayLive, now: WED });
+    const s = deriveStripState({ pods: [pod('g1', { myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', teamLabel: LABEL['od-a'], amount: 100, status: 'live' }] })], inPlay: inPlayLive, now: WED });
     expect(s.kind).toBe(STRIP_KIND.WEEK);
   });
 
@@ -136,7 +146,7 @@ describe('priority — one strip says one thing', () => {
 
   it('a stake whose pool is still OPEN is the window\'s, not the week\'s — it never reads as in play', () => {
     const s = deriveStripState({
-      pods: [pod('g1', { myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', amount: 100, status: 'live' }] })],
+      pods: [pod('g1', { myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', teamLabel: LABEL['od-a'], amount: 100, status: 'live' }] })],
       inPlay: { stakes: [{ id: 's1', groupId: 'g1', teamOdUserId: 'od-a', amount: 100, status: 'live' }], poolsById: { g1: openPool() }, groupsById: {} },
       now: TUE,
     });
@@ -165,12 +175,13 @@ describe('priority — one strip says one thing', () => {
         stakes: [{ id: 's1', groupId: 'g-play', teamOdUserId: 'od-a', amount: 100, status: 'live', weekKey: '2026-W39' }],
         poolsById: { 'g-play': { status: 'closed' } },
         groupsById: { 'g-play': inPlayGroup({ dailyScores: {} }) },
+        labelsById: labelsFor('g-play'),
       },
       now: WED,
     });
     expect(s.kind).toBe(STRIP_KIND.WEEK);
     expect(s.teams).toHaveLength(1);
-    expect(s.teams[0]).toMatchObject({ teamName: 'Mira', amount: 100, rank: null, score: null });
+    expect(s.teams[0]).toMatchObject({ teamName: 'Shadow', amount: 100, rank: null, score: null });
   });
 
   it('a voided stake on a closed pool counts as settled, not in play', () => {
@@ -235,10 +246,33 @@ describe('the between-state reopening line — the 24-hour rule, from the week\'
 });
 
 describe('names and standings', () => {
-  it('seatDisplayName reads the pod\'s own seatNames, synthesizes CPUs, and falls back to the id', () => {
-    expect(seatDisplayName({ 'od-a': 'Mira' }, 'od-a')).toBe('Mira');
-    expect(seatDisplayName({}, 'cpu-2')).toBe('CPU — Contrarian');
-    expect(seatDisplayName(null, 'od-zz')).toBe('od-zz');
+  it('D-af: teamLabelOf renders the SERVER\'s label and nothing else — a missing or blank one reads "Unnamed team", never an id', () => {
+    expect(teamLabelOf({ label: 'Shadow', secondary: 'Mira' })).toBe('Shadow');
+    expect(teamLabelOf('Shadow')).toBe('Shadow');
+    for (const missing of [null, undefined, {}, { label: '' }, { label: '   ' }, { secondary: 'Mira' }]) {
+      expect(teamLabelOf(missing)).toBe('Unnamed team');
+    }
+  });
+
+  it('D-af: podTeamLabel reads the labels map by pod and seat — a seat the map does not carry is "Unnamed team", never its id', () => {
+    const labels = labelsFor('g-play');
+    expect(podTeamLabel(labels, 'g-play', 'od-a')).toEqual({ label: 'Shadow', secondary: 'Mira' });
+    expect(podTeamLabel(labels, 'g-play', 'cpu-3')).toEqual({ label: 'CPU — Diversifier', secondary: null });
+    expect(podTeamLabel(labels, 'g-play', 'od-zz')).toEqual({ label: 'Unnamed team', secondary: null });
+    expect(podTeamLabel(null, 'g-x', 'od-a')).toEqual({ label: 'Unnamed team', secondary: null });
+  });
+
+  it('D-af: the strip IGNORES a group document\'s seatNames — the in-play names are the server\'s, or neutral', () => {
+    const inPlay = {
+      stakes: [{ id: 's9', groupId: 'g-play', teamOdUserId: 'od-a', amount: 250, status: 'live', weekKey: '2026-W39' }],
+      poolsById: { 'g-play': { status: 'closed' } },
+      groupsById: { 'g-play': inPlayGroup() },   // seatNames: od-a → 'Mira'
+    };
+    const withLabels = deriveStripState({ pods: [], inPlay: { ...inPlay, labelsById: labelsFor('g-play') }, now: WED });
+    expect(withLabels.teams[0].teamName).toBe('Shadow');
+    const without = deriveStripState({ pods: [], inPlay, now: WED });
+    expect(without.teams[0].teamName).toBe('Unnamed team');
+    expect(JSON.stringify(without)).not.toContain('Mira');
   });
 
   it('podStanding ranks the pod by the tournament\'s own comparator on the banked composite', () => {
@@ -256,7 +290,7 @@ describe('THE SEAL — nothing about an open pool leaves the derivation', () => 
         { odUserId: 'od-a', isCpu: false, isOwnSeat: false, backable: true, stakeTotal: 700, backerCount: 3, paysX: 1.7 },
         { odUserId: 'od-b', isCpu: false, isOwnSeat: false, backable: true, stakeTotal: 500, backerCount: 2 },
       ],
-      myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', amount: 250, status: 'live' }],
+      myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', teamLabel: LABEL['od-a'], amount: 250, status: 'live' }],
     });
     const s = deriveStripState({ pods: [leaky], now: TUE });
     const text = JSON.stringify(s);
@@ -276,21 +310,21 @@ describe('THE SEAL — nothing about an open pool leaves the derivation', () => 
 describe('the PR 4 review record — DOM-1, FAB-1 (docs/audits/20260922_BACKING_PR4_MULTILENS_REVIEW.md)', () => {
   it('DOM-1: a live stake on a listed pod whose pool CLOSED at its fire is the viewer’s backing now — STAKED, locked, no close to show', () => {
     const s = deriveStripState({
-      pods: [pod('lds-wed', { formationPath: 'slot', slotId: 'wed-1900', pool: openPool({ status: 'closed', closesAt: WED_FIRE, closeReason: 'fire' }), myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', amount: 250, status: 'live' }] })],
+      pods: [pod('lds-wed', { formationPath: 'slot', slotId: 'wed-1900', pool: openPool({ status: 'closed', closesAt: WED_FIRE, closeReason: 'fire' }), myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', teamLabel: LABEL['od-a'], amount: 250, status: 'live' }] })],
       inPlay: { stakes: [], poolsById: {}, groupsById: {} },
       now: SAT,
     });
     expect(s.kind).toBe(STRIP_KIND.STAKED);
     expect(s.pods).toBe(1);
     expect(s.closesAt).toBeNull();
-    expect(s.stakes).toEqual([expect.objectContaining({ teamName: 'Mira', amount: 250, closed: true })]);
+    expect(s.stakes).toEqual([expect.objectContaining({ teamName: 'Shadow', amount: 250, closed: true })]);
   });
 
   it('DOM-1: with one open and one fire-closed staked pod the window’s close is the OPEN pool’s', () => {
     const s = deriveStripState({
       pods: [
-        pod('g-open', { myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', amount: 100, status: 'live' }] }),
-        pod('lds-wed', { pool: openPool({ status: 'closed', closesAt: WED_FIRE, closeReason: 'fire' }), myStakes: [{ stakeId: 's2', teamOdUserId: 'od-b', amount: 50, status: 'live' }] }),
+        pod('g-open', { myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', teamLabel: LABEL['od-a'], amount: 100, status: 'live' }] }),
+        pod('lds-wed', { pool: openPool({ status: 'closed', closesAt: WED_FIRE, closeReason: 'fire' }), myStakes: [{ stakeId: 's2', teamOdUserId: 'od-b', teamLabel: LABEL['od-b'], amount: 50, status: 'live' }] }),
       ],
       now: TUE,
     });
@@ -301,7 +335,7 @@ describe('the PR 4 review record — DOM-1, FAB-1 (docs/audits/20260922_BACKING_
   });
 
   it('a listed pod’s stakes are read from the list only — the same stake arriving through the week subscription is not counted twice', () => {
-    const stake = { stakeId: 's1', id: 's1', groupId: 'g-open', teamOdUserId: 'od-a', amount: 100, status: 'live', weekKey: '2026-W40' };
+    const stake = { stakeId: 's1', id: 's1', groupId: 'g-open', teamOdUserId: 'od-a', teamLabel: LABEL['od-a'], amount: 100, status: 'live', weekKey: '2026-W40' };
     const s = deriveStripState({
       pods: [pod('g-open', { myStakes: [stake] })],
       inPlay: { stakes: [stake], poolsById: { 'g-open': openPool() }, groupsById: {} },
@@ -319,12 +353,13 @@ describe('the PR 4 review record — DOM-1, FAB-1 (docs/audits/20260922_BACKING_
         stakes: [{ id: 's1', groupId: 'g-done', teamOdUserId: 'od-a', amount: 250, status: 'live', weekKey: '2026-W39' }],
         poolsById: { 'g-done': { status: 'resolving', holdReason: 'agent_layer_absent' } },
         groupsById: { 'g-done': inPlayGroup({ status: 'complete' }) },
+        labelsById: labelsFor('g-done'),
       },
       now: SAT,
     });
     expect(s.kind).toBe(STRIP_KIND.WEEK);
     expect(s.settling).toBe(true);
-    expect(s.teams[0]).toMatchObject({ teamName: 'Mira', amount: 250, rank: 2 });
+    expect(s.teams[0]).toMatchObject({ teamName: 'Shadow', amount: 250, rank: 2 });
   });
 
   it('a closed pool on a pod whose document has not arrived is not guessed in play or pending', () => {
@@ -372,7 +407,7 @@ describe('the PR 4 review record — refutation pass (R-A-1, R-A-4, R-A-5, FAB-9
 
   it('R-A-4: a listed pod fired thin (pool insufficient, the stake voided) reads BETWEEN — never "No pods to back yet"', () => {
     const s = deriveStripState({
-      pods: [pod('lds-wed', { pool: openPool({ status: 'insufficient', closesAt: WED_FIRE }), myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', amount: 250, status: 'voided' }] })],
+      pods: [pod('lds-wed', { pool: openPool({ status: 'insufficient', closesAt: WED_FIRE }), myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', teamLabel: LABEL['od-a'], amount: 250, status: 'voided' }] })],
       inPlay: { stakes: [], poolsById: {}, groupsById: {} },
       now: SAT,
       backingWeekCloses: SUNDAY_CLOSE,
@@ -383,7 +418,7 @@ describe('the PR 4 review record — refutation pass (R-A-1, R-A-4, R-A-5, FAB-9
 
   it('R-A-4: a voided stake on a listed CLOSED pool is settled, not the window’s', () => {
     const s = deriveStripState({
-      pods: [pod('lds-wed', { pool: openPool({ status: 'closed', closesAt: WED_FIRE }), myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', amount: 250, status: 'voided' }] })],
+      pods: [pod('lds-wed', { pool: openPool({ status: 'closed', closesAt: WED_FIRE }), myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', teamLabel: LABEL['od-a'], amount: 250, status: 'voided' }] })],
       now: SAT,
     });
     expect(s.kind).toBe(STRIP_KIND.BETWEEN);
@@ -391,13 +426,13 @@ describe('the PR 4 review record — refutation pass (R-A-1, R-A-4, R-A-5, FAB-9
 
   it('R-A-5: Monday morning the list still names last night’s week — a listed pod already IN BATTLE with a live stake reads WEEK, not locked', () => {
     const s = deriveStripState({
-      pods: [pod('g-mon', { groupStatus: 'battle', pool: openPool({ status: 'closed' }), myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', amount: 250, status: 'live' }] })],
+      pods: [pod('g-mon', { groupStatus: 'battle', pool: openPool({ status: 'closed' }), myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', teamLabel: LABEL['od-a'], amount: 250, status: 'live' }] })],
       inPlay: { stakes: [], poolsById: {}, groupsById: { 'g-mon': inPlayGroup({ status: 'battle', dailyScores: {} }) } },
       now: new Date('2026-09-21T12:00:00.000Z'), // Monday 08:00 ET
     });
     expect(s.kind).toBe(STRIP_KIND.WEEK);
     expect(s.day).toBe(1);
-    expect(s.teams[0]).toMatchObject({ teamName: 'Mira', amount: 250, rank: null });
+    expect(s.teams[0]).toMatchObject({ teamName: 'Shadow', amount: 250, rank: null });
   });
 });
 

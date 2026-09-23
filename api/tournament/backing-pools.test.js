@@ -323,7 +323,10 @@ describe('THE SEAL — an OPEN pool reveals no per-team total and no pays × (§
     expect(body).not.toContain('paysX');
     expect(body).not.toContain('someone-else');
     for (const team of res.body.pods[0].teams) {
-      expect(Object.keys(team).sort()).toEqual(['backable', 'isCpu', 'isOwnSeat', 'odUserId']);
+      // Identity, the server's NAME for the seat (D-af — Amendment C §C1:
+      // `label` and `secondary` are names, nothing about the book) and
+      // backability. Nothing else.
+      expect(Object.keys(team).sort()).toEqual(['backable', 'isCpu', 'isOwnSeat', 'label', 'odUserId', 'secondary']);
     }
     // What an open pool MAY show (§3, Amendment B §B2): the CAPPED validity
     // signals, the close — and nothing about the book. Four backers are on this
@@ -441,8 +444,8 @@ describe('THE SEAL — an OPEN pool reveals no per-team total and no pays × (§
     });
     const teams = (await get()).body.pods[0].teams;
     expect(teams).toEqual([
-      { odUserId: 'od-a', isCpu: false, isOwnSeat: false, backable: false, stakeTotal: 400, backerCount: 2 },
-      { odUserId: 'od-b', isCpu: false, isOwnSeat: false, backable: false, stakeTotal: 200, backerCount: 1 },
+      { odUserId: 'od-a', isCpu: false, label: 'Ada', secondary: null, isOwnSeat: false, backable: false, stakeTotal: 400, backerCount: 2 },
+      { odUserId: 'od-b', isCpu: false, label: 'Bo', secondary: null, isOwnSeat: false, backable: false, stakeTotal: 200, backerCount: 1 },
     ]);
   });
 
@@ -516,8 +519,8 @@ describe('the viewer — their own pod, and their own stakes (§5)', () => {
     const res = await get();
     const g1 = res.body.pods.find((p) => p.groupId === 'g1');
     const g2 = res.body.pods.find((p) => p.groupId === 'g2');
-    expect(g1.myStakes).toEqual([{ stakeId: 'mine1', teamOdUserId: 'od-a', amount: 250, status: 'live' }]);
-    expect(g2.myStakes).toEqual([{ stakeId: 'mine2', teamOdUserId: 'od-b', amount: 100, status: 'live' }]);
+    expect(g1.myStakes).toEqual([{ stakeId: 'mine1', teamOdUserId: 'od-a', teamLabel: 'Ada', amount: 250, status: 'live' }]);
+    expect(g2.myStakes).toEqual([{ stakeId: 'mine2', teamOdUserId: 'od-b', teamLabel: 'Bo', amount: 100, status: 'live' }]);
     // Another backer's stake is not in the body at all — sealed (§3).
     expect(JSON.stringify(res.body)).not.toContain('theirs');
     // Nor is last week's.
@@ -533,7 +536,7 @@ describe('the viewer — their own pod, and their own stakes (§5)', () => {
       },
     });
     expect((await get()).body.pods[0].myStakes[0])
-      .toEqual({ stakeId: 'v1', teamOdUserId: 'od-a', amount: 250, status: 'voided', voidReason: 'insufficient' });
+      .toEqual({ stakeId: 'v1', teamOdUserId: 'od-a', teamLabel: 'Ada', amount: 250, status: 'voided', voidReason: 'insufficient' });
   });
 });
 
@@ -720,5 +723,80 @@ describe('settle-on-read (§7) — the documented limit on THIS route', () => {
     }
     expect(DB.store.get(`${BACKING_POOLS_COLLECTION}/g1`).status).toBe(POOL_STATUS.CLOSED);
     expect(DB.writeLog).toEqual([]);
+  });
+});
+
+// ============================================================================
+describe('D-af — every seat is named by the SERVER, by its primary agent (Amendment C §C1)', () => {
+  // Firebase-uid-shaped seats — the production id shape the pre-flip list
+  // printed on a lobby pod, which carries no `seatNames` (HON-17).
+  const ADA = 'AdaLovelace0000000000000001a';
+  const CY = 'CyHarrison000000000000003ccc';
+  const lobby = (id, over = {}) => group(id, {
+    seatNames: undefined,
+    players: [{ odUserId: ADA }, { odUserId: CY }, { odUserId: 'cpu-1', isCpu: true }],
+    ...over,
+  });
+  const names = () => ({
+    'agents/agt-ada': { ownerId: ADA, name: 'Shadow' },
+    'agents/agt-ada-clone': { ownerId: ADA, name: 'Clone', isTrainingClone: true },
+    [`users/${ADA}`]: { username: 'ada' },
+  });
+
+  it('a lobby pod with NO seatNames names every seat — agent, then player, then "Unnamed team"; never the id', async () => {
+    DB = seed([lobby('g1')], names());
+    const res = await get();
+    const teams = res.body.pods[0].teams;
+    expect(teams.map((t) => [t.odUserId, t.label, t.secondary])).toEqual([
+      [ADA, 'Shadow', 'ada'],
+      [CY, 'Unnamed team', null],
+      ['cpu-1', expect.stringMatching(/^CPU — /), null],
+    ]);
+    // The client is handed names, not the map it used to compose them from.
+    expect(res.body.pods[0]).not.toHaveProperty('seatNames');
+    for (const t of teams) {
+      expect(t.label).not.toBe(t.odUserId);
+      expect(t.secondary ?? '').not.toContain(t.odUserId);
+    }
+  });
+
+  it('the viewer\'s stakes carry their team\'s label — including a seat that has since LEFT the pod', async () => {
+    DB = seed([lobby('g1', { players: [{ odUserId: CY }, { odUserId: 'cpu-1', isCpu: true }] })], {
+      ...names(),
+      [`${BACKING_STAKES_COLLECTION}/mine`]: { userId: UID, groupId: 'g1', teamOdUserId: ADA, amount: 250, weekKey: WEEK, status: STAKE_STATUS.LIVE },
+    });
+    const pod = (await get()).body.pods[0];
+    expect(pod.teams.map((t) => t.odUserId)).not.toContain(ADA);     // ADA has left
+    expect(pod.myStakes).toEqual([expect.objectContaining({ teamOdUserId: ADA, teamLabel: 'Shadow' })]);
+  });
+
+  it('a SETTLED pool names each team by the agent settlement RECORDED, not the owner\'s current one', async () => {
+    DB = seed([lobby('g1', { status: 'battle' })], {
+      ...names(),
+      'agents/agt-ada-old': { ownerId: 'someone-else', name: 'Played The Week' },
+      [`${BACKING_POOLS_COLLECTION}/g1`]: pool('g1', {
+        status: POOL_STATUS.RESOLVED, potTotal: 300, uniqueBackers: 3, teamsBacked: 2, humanTeams: 2,
+        teams: [
+          { odUserId: ADA, isCpu: false, stakeTotal: 200, backerCount: 2, agentId: 'agt-ada-old' },
+          { odUserId: CY, isCpu: false, stakeTotal: 100, backerCount: 1, agentId: 'agt-gone' },
+        ],
+      }),
+    });
+    const teams = (await get()).body.pods[0].teams;
+    expect(teams.map((t) => [t.odUserId, t.label, t.secondary])).toEqual([
+      [ADA, 'Played The Week', 'ada'],
+      // A recorded agent that is gone falls to the player — and CY has none either.
+      [CY, 'Unnamed team', null],
+    ]);
+  });
+
+  it('BATCHED PER RESPONSE — one owner lookup for every pod on the list, each profile read once', async () => {
+    DB = seed([lobby('g1'), lobby('g2', { players: [{ odUserId: CY }, { odUserId: ADA }] })], names());
+    const res = await get();
+    expect(res.body.pods).toHaveLength(2);
+    const agentQueries = DB.readLog.filter(([ch, p]) => ch === 'get' && p === 'agents');
+    expect(agentQueries).toHaveLength(1);
+    const profileReads = DB.readLog.filter(([, p]) => p.startsWith('users/')).map(([, p]) => p);
+    expect(new Set(profileReads).size).toBe(profileReads.length);
   });
 });

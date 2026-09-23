@@ -55,6 +55,13 @@
 // lifecycle's own (the lazy close, the settlement, the refund), which belong
 // to the pool and not to this request's viewer. Every one is the shared
 // primitive; none is this route's own logic.
+//
+// EVERY NAME ON THE CARD IS THE SERVER'S (Amendment C §C1, D-af): the winner
+// line, the team rows and the viewer's stakes carry the one resolver's labels
+// (api/_utils/backingTeamLabels.js) — a settled team is named by the agent
+// settlement recorded. The pods are loaded (and passed through settle-on-read)
+// first, and every name the RESPONSE carries is then resolved in ONE batch,
+// so no pod reads a name of its own.
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
@@ -68,6 +75,7 @@ import {
   settlementPredicate,
 } from '../_utils/backingSettlement.js';
 import { projectResultPool, weeksOf } from '../_utils/backingResults.js';
+import { labelSeatOf, podLabelSeats, resolveTeamLabels } from '../_utils/backingTeamLabels.js';
 import { isTerminalPool, readPoolByGroupId, readStakesWhere } from '../_utils/backingStats.js';
 import { GROUP_STATUS } from '../../src/constants/leagueTournament.js';
 import { BACKING_BETA_ENABLED, TOURNAMENT_ADVANCEMENT_FROZEN } from '../../src/config/featureFlags.js';
@@ -145,10 +153,11 @@ async function refreshStakes(db, myStakes) {
 }
 
 /**
- * One pod, loaded and passed through settle-on-read, then projected. The
- * settle-on-read pass never takes the reader down: a pod whose SETTLEMENT
- * fails projects with what was read (the two loads before it are plain reads
- * and surface as the request's 500 like any other read failure).
+ * One pod, loaded and passed through settle-on-read — the documents as the
+ * pass left them, ready for `projectPods`. The settle-on-read pass never takes
+ * the reader down: a pod whose SETTLEMENT fails projects with what was read
+ * (the two loads before it are plain reads and surface as the request's 500
+ * like any other read failure).
  */
 async function loadPod(db, { groupId, myStakes, now }) {
   const group = await readGroup(db, groupId);
@@ -170,7 +179,31 @@ async function loadPod(db, { groupId, myStakes, now }) {
     // as it stands and the failure is logged for the operator.
     console.warn(`[backing-results] settle-on-read failed for ${groupId}:`, err?.message);
   }
-  return projectResultPool({ groupId, poolId: located.poolId, pool: located.pool, group, myStakes: stakes });
+  return { groupId, poolId: located.poolId, pool: located.pool, group, myStakes: stakes };
+}
+
+/** What `showsInResults` reads, off a LOADED pod: the pool's status and the pod's own. */
+function statusesOf(loaded) {
+  return { status: loaded.pool?.status ?? null, podStatus: typeof loaded.group?.status === 'string' ? loaded.group.status : null };
+}
+
+/**
+ * The loaded pods' projections, every name from ONE batched call of the label
+ * resolver (D-af — no per-row reads): each pod's seats, its frozen teams with
+ * settlement's recorded agents, and the teams the viewer's stakes name.
+ */
+async function projectPods(db, loaded) {
+  const labels = await resolveTeamLabels(db, loaded.flatMap(({ group, pool, myStakes }) => podLabelSeats({
+    group, pool, extraTeamIds: myStakes.map((s) => s.teamOdUserId),
+  })));
+  return loaded.map(({ groupId, poolId, pool, group, myStakes }) => projectResultPool({
+    groupId,
+    poolId,
+    pool,
+    group,
+    myStakes,
+    nameTeam: (odUserId) => labels.teamLabelFor(labelSeatOf({ group, pool }, odUserId)),
+  }));
 }
 
 export default async function handler(req, res) {
@@ -214,7 +247,8 @@ export default async function handler(req, res) {
 
     // 6b. ONE POD (the Spectate final state): its result, with the viewer's stakes on it, if any.
     if (groupId !== null) {
-      const pod = await loadPod(db, { groupId, myStakes: stakes.filter((s) => s.groupId === groupId), now });
+      const loaded = await loadPod(db, { groupId, myStakes: stakes.filter((s) => s.groupId === groupId), now });
+      const [pod] = loaded ? await projectPods(db, [loaded]) : [null];
       return res.status(200).json({ viewerUid: user.uid, pod });
     }
 
@@ -235,11 +269,15 @@ export default async function handler(req, res) {
       const pods = (await Promise.all(week.groupIds.map((id) => loadPod(db, { groupId: id, myStakes: stakes.filter((s) => s.groupId === id), now })))).filter(Boolean);
       // Every pod took the settle-on-read pass above; the week shows the pools
       // that have a result or are waiting on one (see the header).
-      const shown = pods.filter(showsInResults);
+      const shown = pods.filter((loaded) => showsInResults(statusesOf(loaded)));
       if (shown.length === 0) continue;
       page.push({ weekKey: week.weekKey, pools: shown });
     }
-    return res.status(200).json({ viewerUid: user.uid, weeks: page, nextBefore, weeksAvailable: weeks.length });
+    // The page's names, in ONE batch, then the projections in page order.
+    const projected = await projectPods(db, page.flatMap((w) => w.pools));
+    let at = 0;
+    const weeksOut = page.map((w) => ({ weekKey: w.weekKey, pools: w.pools.map(() => projected[at++]) }));
+    return res.status(200).json({ viewerUid: user.uid, weeks: weeksOut, nextBefore, weeksAvailable: weeks.length });
   } catch (err) {
     console.error('[backing-results] failed:', err?.message);
     return res.status(500).json({ error: 'server_error', message: 'Could not load your results.' });

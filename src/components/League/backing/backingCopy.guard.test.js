@@ -66,6 +66,11 @@ const LISTED = [
   'api/_utils/backingStats.js',
   'api/_utils/backingSybilWatch.js',
   'scripts/backing-sybil-watch.js',
+  // The pre-flip cleanup (Amendment C §C1, D-af): the team-label resolver and
+  // the team-labels route — every name a backing surface shows passes through
+  // them, so their words are held to the same lexicon.
+  'api/_utils/backingTeamLabels.js',
+  'api/backing/team-labels.js',
 ].map((rel) => path.join(REPO, rel));
 
 const GUARDED = [...DIR_SOURCES, ...LISTED];

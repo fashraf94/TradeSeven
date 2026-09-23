@@ -195,6 +195,9 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       'api/_utils/backingResults.js',
       'api/_utils/backingStats.js',
       'api/_utils/backingSybilWatch.js',
+      // The pre-flip cleanup (Amendment C §C1, D-af): the team-label
+      // resolver. Every door that names a team calls it; it gates nothing.
+      'api/_utils/backingTeamLabels.js',
     ];
     for (const rel of PR1_MODULES) {
       const text = readFileSync(path.join(REPO_ROOT, rel), 'utf8');
@@ -220,6 +223,10 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
         'api/backing/event.js',
         'api/backing/my-stats.js',
         'api/backing/results.js',
+        // The pre-flip cleanup (Amendment C §C1, D-af): the team-labels reader
+        // — Your Backing's names — the fifth door under api/backing/, 404s
+        // AFTER requireAuth, covered by the same darkness file.
+        'api/backing/team-labels.js',
         'api/backing/trainer-stats.js',
         'api/tournament/backing-pools.js',
         // PR 3: the admin re-run. Admin-gated (requireAdminSecret) rather than
@@ -263,7 +270,7 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
     expect(settleDark).toContain('BACKING_BETA_ENABLED: false');
     // PR 5: the four api/backing/ routes share one darkness file.
     const pr5Dark = read('api/backing/backing-routes.dark.test.js');
-    for (const rel of ['./event.js', './my-stats.js', './results.js', './trainer-stats.js']) expect(pr5Dark).toContain(rel);
+    for (const rel of ['./event.js', './my-stats.js', './results.js', './trainer-stats.js', './team-labels.js']) expect(pr5Dark).toContain(rel);
     expect(pr5Dark).toContain('BACKING_BETA_ENABLED: false');
   });
 
@@ -304,10 +311,18 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       // PR 5: the telemetry writer reads the FIXED event allowlist.
       'api/_utils/backingEvents.js',
       'api/_utils/backingPools.js',
+      // The pre-flip cleanup (Amendment C §C1, D-af): the neutral team label
+      // (UNNAMED_TEAM_LABEL) — the results projection's default, the
+      // resolver's last rung — and the team-labels route's ceiling.
+      'api/_utils/backingResults.js',
+      'api/_utils/backingTeamLabels.js',
       'api/_utils/backingWallet.js',
       'api/_utils/backingWeek.js',
+      'api/backing/team-labels.js',
       'api/tournament/backing-pools.js',
       'api/tournament/backing-stake.js',
+      // …and the team card's human row when no player name resolves.
+      'api/tournament/team-card.js',
       // PR 4 — THE SURFACE PR. The client reads the constants module for the
       // disclosures, the fine print, the §B6 strip lines, the economy's
       // bounds and the 24-hour rule; every one of these mounts only behind
@@ -322,6 +337,9 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       // projection's approach filter share it; R-B-5 in the PR 4 review record).
       'src/constants/backingLexicon.js',
       'src/hooks/useBackingWallet.js',
+      // The pre-flip cleanup: Your Backing's names are fetched in chunks of
+      // the team-labels route's ceiling (TEAM_LABELS_MAX_PODS).
+      'src/hooks/useMyBacking.js',
     ]);
     // PR 2's own modules, listed for the same reason: the surface is enumerated,
     // so a new reachable caller is a deliberate edit here.
@@ -336,6 +354,9 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       // PR 5: the two client-facing readers — reads only, own-uid only.
       'api/backing/my-stats.js',
       'api/backing/results.js',
+      // The pre-flip cleanup: the team-labels reader reads the pods the
+      // viewer backed (readGroup) — reads only.
+      'api/backing/team-labels.js',
       'api/tournament/backing-pools.js',
       // PR 3: the admin route reads the group (the sim-requires-dev belt) and
       // maps BackingPoolError.
@@ -372,8 +393,19 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
     // nothing under api/ or src/ may reach it).
     expect(importersOf('api/_utils/backingEvents.js')).toEqual(['api/backing/event.js', 'api/tournament/backing-stake.js']);
     expect(importersOf('api/_utils/backingResults.js')).toEqual(['api/_utils/backingStats.js', 'api/backing/results.js']);
-    expect(importersOf('api/_utils/backingStats.js')).toEqual(['api/backing/my-stats.js', 'api/backing/results.js', 'api/backing/trainer-stats.js']);
+    expect(importersOf('api/_utils/backingStats.js')).toEqual(['api/backing/my-stats.js', 'api/backing/results.js', 'api/backing/team-labels.js', 'api/backing/trainer-stats.js']);
     expect(importersOf('api/_utils/backingSybilWatch.js')).toEqual([]);
+    // The pre-flip cleanup's resolver (Amendment C §C1, D-af), by exact
+    // importer: every door that names a team — the pod list, the stake
+    // confirmation, the team card, the results reader and the team-labels
+    // reader. A sixth is a new surface naming teams, which is this row's review.
+    expect(importersOf('api/_utils/backingTeamLabels.js')).toEqual([
+      'api/backing/results.js',
+      'api/backing/team-labels.js',
+      'api/tournament/backing-pools.js',
+      'api/tournament/backing-stake.js',
+      'api/tournament/team-card.js',
+    ]);
     // …and EVERY route under api/ that reaches any backing helper is one of
     // the enumerated doors — by import, not by path token — so a route named
     // without `backing` that imports a helper is still held to the flag and a
@@ -383,6 +415,7 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       'api/_utils/backingWallet.js', 'api/_utils/backingWeek.js', 'api/_utils/backingPools.js', 'api/_utils/backingEligibility.js',
       'api/_utils/backingFingerprint.js', 'api/_utils/backingSettlement.js', 'api/_utils/teamPitch.js',
       'api/_utils/backingEvents.js', 'api/_utils/backingResults.js', 'api/_utils/backingStats.js', 'api/_utils/backingSybilWatch.js',
+      'api/_utils/backingTeamLabels.js',
     ]) {
       for (const rel of importersOf(helper).filter((r) => r.startsWith('api/') && !r.startsWith('api/_utils/'))) {
         expect(DOORS.has(rel), `${rel} reaches ${helper} but is not an enumerated backing door`).toBe(true);
@@ -399,6 +432,9 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       // PR 5's helpers, held to the same line.
       'api/_utils/backingEvents.js', 'api/_utils/backingResults.js',
       'api/_utils/backingStats.js', 'api/_utils/backingSybilWatch.js',
+      // …and the pre-flip cleanup's resolver: names reach the client through
+      // the endpoints, never by bundling the resolver.
+      'api/_utils/backingTeamLabels.js',
     ]) {
       expect(importersOf(target).filter((rel) => rel.startsWith('src/')), `${target} is imported from src/`)
         .toEqual([]);

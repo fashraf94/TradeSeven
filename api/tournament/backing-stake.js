@@ -77,6 +77,13 @@
 // `requestId` idempotency, the wallet threading and the belt are as PR 2 left
 // them, because the amendment changes WHAT IS PUBLISHED, not what is decided.
 //
+// THE CONFIRMATION NAMES THE TEAM BY THE SERVER'S LABEL (Amendment C §C1,
+// D-af): the reply carries `teamLabel` — the seat's primary agent's name and
+// the player's display name — from the one resolver
+// (api/_utils/backingTeamLabels.js), so the "Backed" line the client renders
+// from this reply never composes a name from an id. Resolved AFTER the commit,
+// like `stake_confirmed`: a name is never a reason to fail a stake.
+//
 // DARK AT MERGE. `BACKING_BETA_ENABLED` is false and read at CALL time; the
 // co-located `.dark.test.js` proves the route answers 404 and touches nothing.
 
@@ -111,7 +118,8 @@ import {
 } from '../_utils/backingWallet.js';
 import { fingerprintOf, hashFingerprint } from '../_utils/backingFingerprint.js';
 import { STAKE_CONFIRMED_EVENT, recordBackingEvent, stakeConfirmedEventId } from '../_utils/backingEvents.js';
-import { MIN_STAKE_BP, PER_TEAM_CAP_BP } from '../../src/constants/backing.js';
+import { labelSeatOf, resolveTeamLabels } from '../_utils/backingTeamLabels.js';
+import { MIN_STAKE_BP, PER_TEAM_CAP_BP, UNNAMED_TEAM_LABEL } from '../../src/constants/backing.js';
 import { TOURNAMENT_GAME_MODE, TOURNAMENT_GROUPS_COLLECTION } from '../../src/constants/leagueTournament.js';
 import { BACKING_BETA_ENABLED } from '../../src/config/featureFlags.js';
 
@@ -226,6 +234,23 @@ export class StakeRefusal extends Error {
     this.statusCode = statusCode;
     this.code = code;
     this.payload = payload;
+  }
+}
+
+/**
+ * The confirmation's name for the team (D-af) — the one resolver's label for
+ * the seat, off the pod this request already read. NEVER THROWS: the stake is
+ * already on the record when this runs, and a name is never a reason to fail
+ * it (the resolver degrades on its own; this catch is the belt).
+ */
+export async function confirmationLabelFor(db, group, teamOdUserId, isCpu = false) {
+  try {
+    const seat = labelSeatOf({ group }, teamOdUserId, isCpu);
+    const labels = await resolveTeamLabels(db, [seat]);
+    return labels.teamLabelFor(seat);
+  } catch (err) {
+    console.warn('[backing-stake] team label unresolvable (the neutral name answers):', err?.message);
+    return { label: UNNAMED_TEAM_LABEL, secondary: null };
   }
 }
 
@@ -556,6 +581,9 @@ export default async function handler(req, res) {
       }
     }
 
+    // The confirmation's name for the team (D-af), after the commit.
+    const teamLabel = await confirmationLabelFor(db, group, teamOdUserId, seat?.isCpu === true);
+
     // THE SEALED PROJECTION (§3, Amendment B §B2): the reply carries the capped
     // validity signals, the close and the viewer's own stake — never the pot,
     // never an exact count, never a per-team total and never a pays ×.
@@ -569,6 +597,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       replay: outcome.replay === true,
       stake: outcome.stake,
+      teamLabel,
       pool: outcome.pool
         ? {
           status: outcome.pool.status,

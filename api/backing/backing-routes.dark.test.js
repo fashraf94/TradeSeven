@@ -2,7 +2,9 @@
 //
 // Backing Beta PR 5 — THE DARKNESS SUITE for the four PR 5 routes:
 // POST /api/backing/event, GET /api/backing/results, GET /api/backing/my-stats
-// and GET /api/backing/trainer-stats (spec V1.3 §12: every backing route 404s
+// and GET /api/backing/trainer-stats — and, since the pre-flip cleanup
+// (Amendment C §C1, D-af), GET /api/backing/team-labels, the fifth door under
+// api/backing/ (spec V1.3 §12: every backing route 404s
 // while BACKING_BETA_ENABLED is false, AFTER auth — the SHOW_IT_ENABLED /
 // research.js shape, and the backing-stake.dark.test.js precedent this file
 // copies).
@@ -50,6 +52,7 @@ const { default: eventHandler } = await import('./event.js');
 const { default: resultsHandler } = await import('./results.js');
 const { default: myStatsHandler } = await import('./my-stats.js');
 const { default: trainerStatsHandler } = await import('./trainer-stats.js');
+const { default: teamLabelsHandler } = await import('./team-labels.js');
 
 const mkRes = () => ({
   statusCode: null, body: null,
@@ -73,6 +76,7 @@ const ROUTES = [
   ['GET /api/backing/results', resultsHandler, 'GET', { query: { groupId: 'grp-1' } }],
   ['GET /api/backing/my-stats', myStatsHandler, 'GET', { query: {} }],
   ['GET /api/backing/trainer-stats', trainerStatsHandler, 'GET', { query: {} }],
+  ['GET /api/backing/team-labels', teamLabelsHandler, 'GET', { query: { groupIds: 'grp-1,grp-2' } }],
 ];
 
 for (const [label, handler, method, valid] of ROUTES) {

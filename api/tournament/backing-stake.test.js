@@ -201,6 +201,10 @@ function world(over = {}) {
       acceptedAt: '2026-09-14T13:30:00.000Z', source: 'backing_beta',
     },
     'agentBattles/mine': { ownerId: UID, status: 'completed', completedAt: '2026-09-01T20:00:00.000Z' },
+    // Names on file for od-a (D-af): its primary agent and its player. od-b
+    // has none — the confirmation's neutral case.
+    'agents/agt-od-a': { ownerId: 'od-a', name: 'Shadow' },
+    'users/od-a': { username: 'Ada' },
     ...over,
   };
 }
@@ -363,6 +367,8 @@ describe('the happy path — the §6 stake, the sealed meta, the counters', () =
     expect(res.body).toEqual({
       replay: false,
       stake: { id, ...stakeDoc(DB.store, id) },
+      // D-af: the confirmation names the team by the server's label.
+      teamLabel: { label: 'Shadow', secondary: 'Ada' },
       pool: {
         status: 'open',
         backerProgress: { count: 1, floor: VALIDITY_MIN_BACKERS, met: false },
@@ -495,6 +501,25 @@ describe('the happy path — the §6 stake, the sealed meta, the counters', () =
     // the answer does not say so.
     expect(body).not.toContain('350');
     expect(res.body.stake.amount).toBe(250);   // their OWN stake, still theirs (§B2)
+  });
+
+  it('D-af: the confirmation names the team by the SERVER\'s label — agent, then player, then "Unnamed team"; never the id', async () => {
+    expect((await post(VALID())).body.teamLabel).toEqual({ label: 'Shadow', secondary: 'Ada' });
+    const b = await post({ ...VALID(), requestId: 'req-b', teamOdUserId: 'od-b' });
+    expect(b.body.teamLabel).toEqual({ label: 'Unnamed team', secondary: null });
+    const cpu = await post({ ...VALID(), requestId: 'req-c', teamOdUserId: 'cpu-1' });
+    expect(cpu.body.teamLabel.label).toMatch(/^CPU — /);
+    for (const res of [b, cpu]) expect(JSON.stringify(res.body.teamLabel)).not.toMatch(/od-b|cpu-1/);
+  });
+
+  it('D-af: a name is never a reason to fail a stake — an unreadable agents collection still answers 200 with the player\'s name', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const real = DB.db.collection;
+    DB.db.collection = (name) => (name === 'agents' ? { where: () => ({ get: async () => { throw new Error('agents down'); } }) } : real(name));
+    const res = await post(VALID());
+    expect(res.statusCode).toBe(200);
+    expect(res.body.teamLabel).toEqual({ label: 'Ada', secondary: null });
+    warn.mockRestore();
   });
 
   it('the sealed totals doc holds the pot, the exact counts and the per-backer map (§B5)', async () => {

@@ -35,10 +35,17 @@
 // carries the viewer's own stakes and the capped signals the API already
 // caps, and no pot, share, count above three or pays × exists in the inputs
 // to leak (the API strips them — backing-pools.js projectPod).
+//
+// EVERY TEAM NAME IS THE SERVER'S (Amendment C §C1, D-af): a listed pod's
+// stakes carry their team's `teamLabel` (backing-pools.js), and the in-play
+// pods' names arrive as `inPlay.labelsById` (GET /api/backing/team-labels,
+// through useMyBacking). This module never composes a name from an id — an
+// entry that arrives without a label reads UNNAMED_TEAM_LABEL, never the id
+// the pre-flip `seatDisplayName` fell back to.
 
-import { POOL_MIN_WINDOW_MS } from '../../../constants/backing';
+import { POOL_MIN_WINDOW_MS, UNNAMED_TEAM_LABEL } from '../../../constants/backing';
 import { currentBaseLayerWeek, deriveCurrentTradingDay, etDateString, getWeeklyComposite, rankByScores, GROUP_STATUS } from '../../../constants/leagueTournament';
-import { baseGroupName, cpuSeatName } from '../leagueAdapter';
+import { baseGroupName } from '../leagueAdapter';
 
 export const STRIP_KIND = Object.freeze({
   OPEN: 'open',
@@ -101,13 +108,22 @@ function latestIso(list) {
   return best ? best.iso : null;
 }
 
-/** A seat's display name from the pod's own seatNames map, or the CPU's synthesized name. */
-export function seatDisplayName(seatNames, odUserId) {
-  if (typeof odUserId !== 'string') return '';
-  const cpu = cpuSeatName(odUserId);
-  if (cpu !== 'CPU') return cpu;
-  const named = seatNames && typeof seatNames === 'object' ? seatNames[odUserId] : null;
-  return typeof named === 'string' && named.length > 0 ? named : odUserId;
+/**
+ * The server's label for a team (D-af — Amendment C §C1): `entry` is a label
+ * string or a `{ label }` the server sent. Anything else — a missing entry, a
+ * blank label — reads the neutral UNNAMED_TEAM_LABEL. There is no id argument
+ * on purpose: nothing here can turn an account id into a name.
+ */
+export function teamLabelOf(entry) {
+  const label = typeof entry === 'string' ? entry : entry?.label;
+  return typeof label === 'string' && label.trim().length > 0 ? label : UNNAMED_TEAM_LABEL;
+}
+
+/** The server's `{ label, secondary }` for one seat of one pod, from a `labelsById` map; the neutral name when absent. */
+export function podTeamLabel(labelsById, groupId, odUserId) {
+  const entry = labelsById?.[groupId]?.[odUserId] ?? null;
+  const secondary = typeof entry?.secondary === 'string' && entry.secondary.trim().length > 0 ? entry.secondary : null;
+  return { label: teamLabelOf(entry), secondary };
 }
 
 /**
@@ -155,7 +171,7 @@ export function nextOpening(now, backingWeekCloses) {
  *
  * @param {Object} args
  * @param {Array} [args.pods]            the pod-list response's `pods` (the next Monday's pods, with the viewer's own stakes)
- * @param {Object|null} [args.inPlay]    { stakes, poolsById, groupsById } — the viewer's stakes for last week, this week and the window's week
+ * @param {Object|null} [args.inPlay]    { stakes, poolsById, groupsById, labelsById } — the viewer's stakes for last week, this week and the window's week, and the server's names for their pods' teams
  * @param {Date} [args.now]
  * @param {string|null} [args.backingWeekCloses]
  */
@@ -172,7 +188,7 @@ export function deriveStripState({ pods = [], inPlay = null, now = new Date(), b
   const window = new Map();
   const live = [];
   const settled = [];
-  const classify = ({ stake, pool, group, groupStatus, seatNames, listed }) => {
+  const classify = ({ stake, pool, group, groupStatus, listed }) => {
     if (!stake || typeof stake.groupId !== 'string') return;
     const status = pool?.status ?? null;
     if (SETTLED_POOL_STATUSES.has(status) || stake.status !== 'live') { settled.push({ stake, pool, group }); return; }
@@ -184,14 +200,14 @@ export function deriveStripState({ pods = [], inPlay = null, now = new Date(), b
       if (status !== 'closed' && status !== 'resolving') return; // a status this module does not know: not guessed
       if (podStatus == null && !listed) return; // closed, and the pod's state is not known yet: not guessed
       if (podStatus === GROUP_STATUS.BATTLE || podStatus === GROUP_STATUS.COMPLETE) {
-        live.push({ stake, pool, group, seatNames, settling: podStatus === GROUP_STATUS.COMPLETE });
+        live.push({ stake, pool, group, settling: podStatus === GROUP_STATUS.COMPLETE });
         return;
       }
     }
     // Open, or closed on a pod that has not started: the window's (a slot
     // pod's pool shuts days before its Monday; the stake is committed, not in play).
     const entry = window.get(stake.groupId) ?? {
-      groupId: stake.groupId, seatNames, closesAt: status === 'open' ? pool.closesAt ?? null : null, closed: status !== 'open', stakes: [],
+      groupId: stake.groupId, closesAt: status === 'open' ? pool.closesAt ?? null : null, closed: status !== 'open', stakes: [],
     };
     entry.stakes.push(stake);
     window.set(stake.groupId, entry);
@@ -202,7 +218,7 @@ export function deriveStripState({ pods = [], inPlay = null, now = new Date(), b
   // the standing.
   for (const pod of list) {
     for (const stake of Array.isArray(pod?.myStakes) ? pod.myStakes : []) {
-      classify({ stake: { ...stake, groupId: pod.groupId }, pool: pod.pool ?? null, group: inPlay?.groupsById?.[pod.groupId] ?? null, groupStatus: pod.groupStatus ?? null, seatNames: pod.seatNames, listed: true });
+      classify({ stake: { ...stake, groupId: pod.groupId }, pool: pod.pool ?? null, group: inPlay?.groupsById?.[pod.groupId] ?? null, groupStatus: pod.groupStatus ?? null, listed: true });
     }
   }
   // The pods the list does not carry: last week's and this week's, from the
@@ -210,15 +226,18 @@ export function deriveStripState({ pods = [], inPlay = null, now = new Date(), b
   for (const stake of Array.isArray(inPlay?.stakes) ? inPlay.stakes : []) {
     if (!stake || typeof stake.groupId !== 'string' || listedIds.has(stake.groupId)) continue;
     const group = inPlay?.groupsById?.[stake.groupId] ?? null;
-    classify({ stake, pool: inPlay?.poolsById?.[stake.groupId] ?? null, group, groupStatus: null, seatNames: group?.seatNames, listed: false });
+    classify({ stake, pool: inPlay?.poolsById?.[stake.groupId] ?? null, group, groupStatus: null, listed: false });
   }
 
   if (live.length > 0) {
     const byGroup = new Map();
-    for (const { stake, group, seatNames, settling } of live) {
-      const entry = byGroup.get(stake.groupId) ?? { groupId: stake.groupId, podName: baseGroupName(stake.groupId), group, seatNames: group?.seatNames ?? seatNames, settling, teams: [] };
+    for (const { stake, group, settling } of live) {
+      const entry = byGroup.get(stake.groupId) ?? { groupId: stake.groupId, podName: baseGroupName(stake.groupId), group, settling, teams: [] };
       if (!entry.teams.some((t) => t.teamOdUserId === stake.teamOdUserId)) {
-        entry.teams.push({ teamOdUserId: stake.teamOdUserId, amount: 0 });
+        // The server's name for the team: the listed pod's stake carries its
+        // own `teamLabel`; an in-play pod's comes from `labelsById`.
+        const teamName = stake.teamLabel != null ? teamLabelOf(stake.teamLabel) : podTeamLabel(inPlay?.labelsById, stake.groupId, stake.teamOdUserId).label;
+        entry.teams.push({ teamOdUserId: stake.teamOdUserId, teamName, amount: 0 });
       }
       entry.teams.find((t) => t.teamOdUserId === stake.teamOdUserId).amount += Number.isFinite(stake.amount) ? stake.amount : 0;
       byGroup.set(stake.groupId, entry);
@@ -237,7 +256,7 @@ export function deriveStripState({ pods = [], inPlay = null, now = new Date(), b
           groupId: entry.groupId,
           podName: entry.podName,
           teamOdUserId: team.teamOdUserId,
-          teamName: seatDisplayName(entry.seatNames, team.teamOdUserId),
+          teamName: team.teamName,
           amount: team.amount,
           rank: row ? row.rank : null,
           score: row ? row.score : null,
@@ -261,7 +280,7 @@ export function deriveStripState({ pods = [], inPlay = null, now = new Date(), b
       stakes: p.stakes.map((s) => ({
         stakeId: s.stakeId ?? s.id ?? null,
         teamOdUserId: s.teamOdUserId,
-        teamName: seatDisplayName(p.seatNames, s.teamOdUserId),
+        teamName: s.teamLabel != null ? teamLabelOf(s.teamLabel) : podTeamLabel(inPlay?.labelsById, p.groupId, s.teamOdUserId).label,
         amount: Number.isFinite(s.amount) ? s.amount : 0,
       })),
     }));

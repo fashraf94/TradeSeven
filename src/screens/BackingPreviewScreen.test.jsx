@@ -252,6 +252,47 @@ describe('the page — the label, every state, the local actions', () => {
     expectNoNetwork();
   }, 60_000);
 
+  it('D-af: every state\'s teams are AGENT-NAMED, and no backing surface shows a raw account id (Amendment C §C1)', async () => {
+    // The raw-id guard's three shapes (src/components/League/backing/
+    // backingRawIds.guard.test.jsx walks every endpoint and surface; this row
+    // walks this page's own fixture states the same way).
+    const RAW_ID = [
+      /(?<![A-Za-z0-9])[A-Za-z0-9]{28}(?![A-Za-z0-9])/,
+      /(?<![\w-])od-[A-Za-z0-9][\w-]*/,
+      /(?<![\w-])cpu-\d+(?![\w-])/,
+    ];
+    const SURFACES = '[data-backing="strip"], [data-backing="pod-list"], [data-backing="team-card"], [data-backing="stake-control"], [data-backing="attestation"], [data-backing="backed"], [data-backing="your-backing-section"], [data-backing="results-card"], [data-backing="my-stats"], [data-backing="trainer-stats"]';
+    // Text node by text node, separated — `textContent` glues adjacent nodes
+    // ("6" + "book" + "NVDA" …) into runs no reader ever sees.
+    const nodesText = (el) => {
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      const out = [];
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) if (n.nodeValue.trim()) out.push(n.nodeValue);
+      return out.join(' \u2016 ');
+    };
+    const page = await mount(<BackingPreviewScreen />);
+    const offenders = [];
+    const seen = [];
+    for (const state of PREVIEW_STATES) {
+      await select(page, state.id);
+      for (const el of stage(page).querySelectorAll(SURFACES)) {
+        const attrs = [...el.querySelectorAll('[aria-label], [title], [placeholder], [alt]')]
+          .flatMap((n) => ['aria-label', 'title', 'placeholder', 'alt'].map((a) => n.getAttribute(a)).filter(Boolean));
+        const text = [nodesText(el), ...attrs].join(' \u2016 ');
+        seen.push(text);
+        for (const re of RAW_ID) {
+          const m = text.match(re);
+          if (m) offenders.push(`${state.id}: ${JSON.stringify(m[0])}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+    // Not vacuous: the fixtures' teams read by their agents, the players beside them.
+    const all = seen.join(' ');
+    for (const name of ['Kestrel', 'Tarn', 'Orbit', 'Winner: Kestrel', 'Kestrel · 350 BP']) expect(all, name).toContain(name);
+    expectNoNetwork();
+  }, 60_000);
+
   it('a state is addressable: ?state=<id> opens it, and the switcher keeps the URL in step', async () => {
     window.history.replaceState(null, '', '/?preview=backing&state=card-cpu');
     const page = await mount(<BackingPreviewScreen />);

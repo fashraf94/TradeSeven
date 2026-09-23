@@ -29,6 +29,7 @@ import { baseGroupName, seatColor } from '../leagueAdapter';
 import { MonoAttr, Stat, TapeHead, TapeList } from './BackingParts';
 import PitchEditor from './PitchEditor';
 import { stakedOnTeam } from './backingStakes';
+import { teamLabelOf } from './backingStripState';
 import { CARD, agentPickDid, humanPickDid } from './backingCopy';
 
 const box = { borderRadius: 14, padding: '11px 13px', background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}` };
@@ -255,7 +256,9 @@ export function BackButton({ card, pod, agentName, accent, onBack }) {
       </div>
     );
   }
-  const label = myStake > 0 ? CARD.cta.addTo(myStake, team.displayName) : CARD.cta.back(team.displayName, agentName);
+  // A top-up names the team by its single label (D-af — Amendment C §C1); the
+  // first stake keeps the card's human-and-agent unit.
+  const label = myStake > 0 ? CARD.cta.addTo(myStake, teamLabelOf(team.label)) : CARD.cta.back(team.displayName, agentName);
   return (
     <button
       type="button"

@@ -53,6 +53,15 @@
 // READ-ONLY FOR THE VIEWER: this route writes nothing on its own account. The
 // pool documents it may create or close are the lazy jobs above, which belong to
 // the pool's own lifecycle and not to this request's viewer.
+//
+// EVERY SEAT IS NAMED BY THE SERVER (Amendment C §C1, D-af). Each team carries
+// `label` — its primary agent's name — and `secondary`, the player's display
+// name; each of the viewer's stakes carries its team's `teamLabel`. All of
+// them come from ONE batched call to the one resolver
+// (api/_utils/backingTeamLabels.js) per response, after the lazy jobs, so no
+// row reads anything of its own. The pod's `seatNames` map is no longer sent:
+// the client renders the label and never composes a name from an id — which
+// is how a lobby pod (no `seatNames`) used to print a raw account id.
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
@@ -68,7 +77,9 @@ import {
   poolRefFor,
 } from '../_utils/backingPools.js';
 import { backingWeekFor } from '../_utils/backingWeek.js';
+import { labelSeatOf, podLabelSeats, resolveTeamLabels } from '../_utils/backingTeamLabels.js';
 import {
+  UNNAMED_TEAM_LABEL,
   VALIDITY_MIN_BACKERS,
   VALIDITY_MIN_TEAMS,
 } from '../../src/constants/backing.js';
@@ -165,7 +176,10 @@ function revealedPoolFigures(pool) {
   };
 }
 
-export function projectPod(group, pool, { viewerUid, myStakes = [] }) {
+/** A projection built without a resolver names every team neutrally — never by its id. */
+const NEUTRAL_LABELS = () => ({ label: UNNAMED_TEAM_LABEL, secondary: null });
+
+export function projectPod(group, pool, { viewerUid, myStakes = [], teamLabelFor = NEUTRAL_LABELS }) {
   const open = pool != null && pool.status === POOL_STATUS.OPEN;
   const revealed = pool != null && REVEALED_STATUSES.has(pool.status);
   // While OPEN the seats are derived live from `players[]` (§1); at close the
@@ -179,10 +193,17 @@ export function projectPod(group, pool, { viewerUid, myStakes = [] }) {
   // the viewer is seated is a fact about the pod now, not about the freeze.
   const viewerSeated = live.some((s) => s.odUserId === viewerUid);
 
+  // D-af (Amendment C §C1): the seat's name is the server's, off the ONE
+  // descriptor every backing endpoint builds (`labelSeatOf`).
+  const named = (odUserId, isCpu = false) => teamLabelFor(labelSeatOf({ group, pool }, odUserId, isCpu));
+
   const teams = seats.map((seat) => {
+    const { label, secondary } = named(seat.odUserId, seat.isCpu === true);
     const base = {
       odUserId: seat.odUserId,
       isCpu: seat.isCpu === true,
+      label,
+      secondary,
       isOwnSeat: seat.odUserId === viewerUid,
       backable: open === true && !viewerSeated,
     };
@@ -202,7 +223,6 @@ export function projectPod(group, pool, { viewerUid, myStakes = [] }) {
     slotId: typeof group.slotId === 'string' ? group.slotId : null,
     scheduledDraftAt: typeof group.scheduledDraftAt === 'string' ? group.scheduledDraftAt : null,
     baseLayerWeek: typeof group.baseLayerWeek === 'string' ? group.baseLayerWeek : null,
-    seatNames: group.seatNames && typeof group.seatNames === 'object' ? group.seatNames : {},
     humanTeams: seats.filter((s) => s.isCpu !== true).length,
     teams,
     pool: pool == null ? null : {
@@ -218,6 +238,9 @@ export function projectPod(group, pool, { viewerUid, myStakes = [] }) {
     myStakes: myStakes.map((s) => ({
       stakeId: s.id,
       teamOdUserId: s.teamOdUserId,
+      // A stake can name a seat that has since LEFT the pod; the label is
+      // still the server's, never the id (the resolver was primed with it).
+      teamLabel: named(s.teamOdUserId).label,
       amount: s.amount,
       status: s.status,
       ...(s.voidReason === undefined ? {} : { voidReason: s.voidReason }),
@@ -273,8 +296,9 @@ export default async function handler(req, res) {
       stakesByGroup.set(stake.groupId, list);
     });
 
-    // 5c. The lazy jobs, then the projection. Bounded by POD_LIST_MAX.
-    const pods = await Promise.all(candidates.map(async (group) => {
+    // 5c. The lazy jobs, then — once every pool is where it will be answered
+    // from — the labels, then the projection. Bounded by POD_LIST_MAX.
+    const loaded = await Promise.all(candidates.map(async (group) => {
       let pool = null;
       try {
         // A PLAIN READ FIRST, and a transaction only when there is nothing to
@@ -328,10 +352,19 @@ export default async function handler(req, res) {
           pool = existing.exists ? existing.data() : null;
         } catch { pool = null; }
       }
-      return projectPod(group, pool, {
-        viewerUid: user.uid,
-        myStakes: stakesByGroup.get(group.id) ?? [],
-      });
+      return { group, pool, myStakes: stakesByGroup.get(group.id) ?? [] };
+    }));
+
+    // 5d. EVERY name this response carries, in ONE batch (D-af — no per-row
+    // reads): each pod's seats, its frozen teams (settlement's recorded agent)
+    // and the teams the viewer's own stakes name.
+    const labels = await resolveTeamLabels(db, loaded.flatMap(({ group, pool, myStakes }) => podLabelSeats({
+      group, pool, extraTeamIds: myStakes.map((s) => s.teamOdUserId),
+    })));
+    const pods = loaded.map(({ group, pool, myStakes }) => projectPod(group, pool, {
+      viewerUid: user.uid,
+      myStakes,
+      teamLabelFor: labels.teamLabelFor,
     }));
 
     // The week's own bounds, derived from the SAME battle Monday the label came

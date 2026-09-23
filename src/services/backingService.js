@@ -221,6 +221,22 @@ export function fetchTrainerStats() {
   return call(TRAINER_STATS_URL);
 }
 
+// ==================== THE PRE-FLIP CLEANUP — TEAM NAMES (Amendment C §C1, D-af) ====================
+
+export const BACKING_TEAM_LABELS_URL = '/api/backing/team-labels';
+
+/**
+ * The server's names for every team of the pods the viewer BACKED —
+ * `{ pods: { [groupId]: { [odUserId]: { label, secondary } } } }`, the label
+ * the team's primary agent's name (D-af). Your Backing and the strip's
+ * in-play half render these; the client never composes a name from an id.
+ * ONE request: the caller (useMyBacking) keeps each within the route's
+ * ceiling, TEAM_LABELS_MAX_PODS.
+ */
+export function fetchTeamLabels(groupIds) {
+  return call(`${BACKING_TEAM_LABELS_URL}?groupIds=${encodeURIComponent(groupIds.join(','))}`);
+}
+
 /**
  * ONE telemetry event to the sink (spec §10). AWAITED here — the server's
  * write is awaited in-request — and fired-and-forgotten by the caller

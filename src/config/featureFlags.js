@@ -2501,6 +2501,8 @@ export const ELIGIBILITY_ATTESTATION_ENABLED = false;
  *   · PR 5 — GET /api/backing/results (the settle-on-read host), GET
  *     /api/backing/my-stats, GET /api/backing/trainer-stats, POST
  *     /api/backing/event; the admin re-run's `action: 'refund'`.
+ *   · The pre-flip cleanup (Amendment C) — GET /api/backing/team-labels, the
+ *     server's names for Your Backing's teams (D-af).
  * Every server route 404s while this is false, AFTER auth (the
  * SHOW_IT_ENABLED / research.js shape), so no route exists as far as any
  * caller is concerned.
@@ -2522,8 +2524,8 @@ export const ELIGIBILITY_ATTESTATION_ENABLED = false;
  *   PR 1 adds no flag-off darkness suite because PR 1 adds no door: there is
  *   no behavior to hold byte-identical. The per-PR dark suites (PR 2's
  *   backing-stake.dark.test.js onward; PR 5's backing-routes.dark.test.js for
- *   the four api/backing/ routes) mock this flag to an explicit false and do
- *   NOT move with the flip.
+ *   the api/backing/ routes, five since the pre-flip cleanup) mock this flag to
+ *   an explicit false and do NOT move with the flip.
  */
 // Pinned by: backingBetaFlags.test.js, backing-stake.dark.test.js, backing-routes.dark.test.js (flagPinGuard: this value and the pins move together — BUILD_RULES §2).
 export const BACKING_BETA_ENABLED = false;

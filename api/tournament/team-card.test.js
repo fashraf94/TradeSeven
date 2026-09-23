@@ -78,6 +78,11 @@ function seedWorld() {
     'users/od-a': { username: 'Mira' },
     'users/od-b': { displayName: 'Draco' },
     // CLONES FIRST — a naive "first doc for this owner" would pick one of these.
+    // `a-clone-early` sorts FIRST BY DOCUMENT ID, which is the order Firestore
+    // answers the owner query in (and the order board production's selection
+    // walks): only the clone FLAG keeps it out (D-af — one selection, the
+    // label resolver's `primaryAgentDocFrom`).
+    'agents/a-clone-early': { ownerId: 'od-a', isTrainingClone: true, name: 'Kestrel (early clone)', archetype: 'contrarian', equippedTraits: [], activeRules: [] },
     'agents/training-agent-g-old_od-a': { ownerId: 'od-a', isTrainingClone: true, name: 'Kestrel (clone)', archetype: 'guardian', equippedTraits: [], activeRules: [] },
     'agents/casual-agent-od-a': { ownerId: 'od-a', isCasualClone: true, name: 'Kestrel (casual)', archetype: 'degen', equippedTraits: [{ traitId: 'x' }], activeRules: [{}] },
     'agents/agent-a': RANKED_AGENT,
@@ -288,6 +293,9 @@ describe('the veteran card — the team leads, from real completed data', () => 
     expect(body.team.agent.name).toBe('Kestrel');
     expect(body.team.agent.archetype).not.toBe('guardian');
     expect(body.team.agent.archetype).not.toBe('degen');
+    expect(body.team.agent.archetype).not.toBe('contrarian');
+    // …and the seat's label names the SAME agent (D-af — one owner lookup).
+    expect(body.team.label).toBe('Kestrel');
   });
 
   it('the known facts: completed history only — RP, tier, last placements (most recent first), weeks played; NO live standing', () => {
@@ -360,6 +368,8 @@ describe('the FIRST-WEEK card — the primary case', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.team).toEqual({
       displayName: 'Draco',
+      label: 'Tarn',
+      secondary: 'Draco',
       isCpu: false,
       pitch: null,
       derived: null,
@@ -374,6 +384,18 @@ describe('the FIRST-WEEK card — the primary case', () => {
     DB.store.delete('agents/agent-b');
     const res = await get({ groupId: 'g-now', odUserId: 'od-b' });
     expect(res.body.team.agent).toBeNull();
+    // D-af: with no agent, the player's own name is the seat's label.
+    expect(res.body.team).toMatchObject({ label: 'Draco', secondary: null });
+  });
+
+  it('D-af: a seat whose player name resolves NOWHERE reads "Unnamed team" — never the account id (the pre-flip fallback)', async () => {
+    DB.store.set('tournamentGroups/g-now', { ...DB.store.get('tournamentGroups/g-now'), seatNames: {} });
+    DB.store.delete('users/od-b');
+    DB.store.delete('agents/agent-b');
+    const res = await get({ groupId: 'g-now', odUserId: 'od-b' });
+    expect(res.body.team).toMatchObject({ displayName: 'Unnamed team', label: 'Unnamed team', secondary: null, agent: null });
+    const text = JSON.stringify(res.body.team);
+    expect(text).not.toContain('"od-b"');
   });
 
   it('a cleared pitch reads as no pitch', async () => {
@@ -391,6 +413,8 @@ describe('the CPU seat — archetype and no history (spec §5)', () => {
     expect(res.body.seat).toEqual({ index: 3, count: 4, isCpu: true, isViewer: false, viewerSeated: false });
     expect(res.body.team).toEqual({
       displayName: 'CPU — Trend Follower',
+      label: 'CPU — Trend Follower',
+      secondary: null,
       isCpu: true,
       pitch: null,
       derived: null,

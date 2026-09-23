@@ -11,10 +11,32 @@
 // backed pods changes; nothing here polls, nothing here writes, and none of
 // it opens while the host's flag is off (the hook is only called from the
 // backing surfaces).
+//
+// THE NAMES ARE THE SERVER'S (Amendment C §C1, D-af): `labelsById` —
+// { groupId: { odUserId: { label, secondary } } } from GET
+// /api/backing/team-labels — is fetched once per backed-pod set, and again
+// when a pool settles (a settled team is named by the agent settlement
+// recorded). The surfaces render it; nothing here reads `agents` or composes
+// a name from an id.
 
 import { useEffect, useMemo, useState } from 'react';
-import { subscribeMyStakes, subscribePool } from '../services/backingService';
+import { TEAM_LABELS_MAX_PODS } from '../constants/backing';
+import { fetchTeamLabels, subscribeMyStakes, subscribePool } from '../services/backingService';
 import { subscribeGroup } from '../services/tournamentGroupService';
+
+/**
+ * The server's names for the backed pods (D-af), in requests of at most the
+ * route's ceiling, merged: `{ groupId: { odUserId: { label, secondary } } }`.
+ */
+export async function fetchLabelsFor(groupIds) {
+  const ids = [...new Set((Array.isArray(groupIds) ? groupIds : []).filter((g) => typeof g === 'string' && g.length > 0))].sort();
+  const chunks = [];
+  for (let i = 0; i < ids.length; i += TEAM_LABELS_MAX_PODS) chunks.push(ids.slice(i, i + TEAM_LABELS_MAX_PODS));
+  const bodies = await Promise.all(chunks.map((chunk) => fetchTeamLabels(chunk)));
+  const pods = {};
+  for (const body of bodies) Object.assign(pods, body?.pods && typeof body.pods === 'object' ? body.pods : {});
+  return pods;
+}
 
 /**
  * @param {string} uid
@@ -29,6 +51,7 @@ export default function useMyBacking(uid, weekKeys, enabled = true) {
   const [loadedKeys, setLoadedKeys] = useState({});
   const [poolsById, setPoolsById] = useState({});
   const [groupsById, setGroupsById] = useState({});
+  const [labelsById, setLabelsById] = useState({});
 
   useEffect(() => {
     if (!enabled || !uid || !keysKey) { setStakesByKey({}); setLoadedKeys({}); return undefined; }
@@ -62,5 +85,26 @@ export default function useMyBacking(uid, weekKeys, enabled = true) {
     return () => { unsubs.forEach((u) => { try { u(); } catch { /* already closed */ } }); };
   }, [enabled, groupKey]);
 
-  return { stakes, poolsById, groupsById, loading: enabled && !loaded };
+  // The names: re-asked when the backed-pod set changes or a pool SETTLES
+  // (only the settled set enters the key, so a snapshot that moves nothing
+  // else re-asks nothing).
+  const settledKey = useMemo(
+    () => (groupKey ? groupKey.split(',').filter((id) => poolsById[id]?.status === 'resolved').join(',') : ''),
+    [groupKey, poolsById],
+  );
+  useEffect(() => {
+    if (!enabled || !groupKey) { setLabelsById({}); return undefined; }
+    let active = true;
+    fetchLabelsFor(groupKey.split(','))
+      .then((pods) => { if (active) setLabelsById(pods); })
+      .catch((err) => {
+        // No names is a fallback, never an id: every surface reads the
+        // neutral label for a team this map does not carry.
+        console.warn('[useMyBacking] team names unavailable:', err?.code ?? err?.message);
+        if (active) setLabelsById({});
+      });
+    return () => { active = false; };
+  }, [enabled, groupKey, settledKey]);
+
+  return { stakes, poolsById, groupsById, labelsById, loading: enabled && !loaded };
 }

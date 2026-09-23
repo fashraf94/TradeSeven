@@ -41,6 +41,13 @@ const group = (over = {}) => ({
   ...over,
 });
 
+const LABELS = {
+  'od-a': { label: 'Kestrel', secondary: 'Mira' },
+  'od-x': { label: 'Orbit', secondary: 'Rigel' },
+  'cpu-3': { label: 'CPU — Diversifier', secondary: null },
+  'cpu-4': { label: 'CPU — Speculator', secondary: null },
+};
+
 const inPlay = (over = {}) => ({
   stakes: [
     { id: 's1', groupId: 'g-play', teamOdUserId: 'od-a', amount: 250, status: 'live', weekKey: '2026-W39' },
@@ -51,6 +58,10 @@ const inPlay = (over = {}) => ({
   ],
   poolsById: { 'g-play': { status: 'closed' }, 'g-two': { status: 'closed' }, 'g-next': { status: 'open' } },
   groupsById: { 'g-play': group(), 'g-two': group({ seatNames: { 'od-x': 'Rigel' } }) },
+  // D-af (Amendment C §C1): the SERVER's names (GET /api/backing/team-labels
+  // through useMyBacking) — each team by its primary agent, the player as the
+  // secondary. The group docs' seatNames above are ignored by the surface.
+  labelsById: { 'g-play': LABELS, 'g-two': LABELS, 'g-next': LABELS },
   ...over,
 });
 
@@ -67,8 +78,9 @@ describe('one card per backed pod, Monday–Friday', () => {
 
   it('names the team(s) backed with the amount, summed per team', () => {
     const html = render();
-    expect(html).toContain('Mira · 350 BP');
-    expect(html).toContain('Rigel · 200 BP');
+    // Each team by its primary agent (D-af).
+    expect(html).toContain('Kestrel · 350 BP');
+    expect(html).toContain('Orbit · 200 BP');
   });
 
   it('shows where the pod stands from the banked composites and the team’s rank at each banked close', () => {
@@ -160,8 +172,8 @@ describe('the PR 4 review record — FAB-1, DOM-6, FAB-2 (docs/audits/20260922_B
       { id: 's1', groupId: 'g-play', teamOdUserId: 'od-a', amount: 250, status: 'voided', weekKey: '2026-W39' },
       { id: 's3', groupId: 'g-two', teamOdUserId: 'od-x', amount: 200, status: 'live', weekKey: '2026-W39' },
     ] }) });
-    expect(html).toContain('Mira · 250 BP · void');
-    expect(html).toContain('Rigel · 200 BP<');
+    expect(html).toContain('Kestrel · 250 BP · void');
+    expect(html).toContain('Orbit · 200 BP<');
   });
 
   it('FAB-2: a layer that has not drafted says so for THAT layer — the other layer still shows', () => {
@@ -184,5 +196,19 @@ describe('the PR 4 review record — refutation pass (R-B-2)', () => {
     expect(html).toContain('Locked in · plays Monday');
     expect(html).not.toContain('Day ');
     expect(html).toContain('>Locked · plays Monday<');
+  });
+});
+
+describe('D-af — every team is named by the SERVER (Amendment C §C1)', () => {
+  it('the standing rows name every seat by its label — the house seats too', () => {
+    const html = render();
+    for (const name of ['Kestrel', 'Orbit', 'CPU — Diversifier', 'CPU — Speculator']) expect(html).toContain(name);
+  });
+
+  it('with NO labels delivered, every name reads "Unnamed team" — never an id, and never the group doc\'s seatNames', () => {
+    const html = render({ inPlay: inPlay({ labelsById: undefined }) });
+    expect(html).toContain('Unnamed team · 350 BP');
+    expect(html).not.toMatch(/od-[ax]|cpu-[34]/);
+    expect(html).not.toContain('Rigel · 200 BP');
   });
 });
