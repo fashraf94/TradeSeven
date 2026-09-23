@@ -219,7 +219,9 @@ describe('PROJECTION ONLY — MUTATION CHECK #5, on the source tree', () => {
   const clientFiles = [
     ...backingDir,
     ...['src/services/backingService.js', 'src/hooks/useBackingPods.js', 'src/hooks/useMyBacking.js', 'src/hooks/useBackingWallet.js',
-      'src/hooks/useEligibility.js', 'src/hooks/useTeamCard.js', 'src/hooks/useMyPitch.js'].map((r) => path.join(REPO, r)),
+      'src/hooks/useEligibility.js', 'src/hooks/useTeamCard.js', 'src/hooks/useMyPitch.js',
+      // PR 5: the results and stats hooks and the telemetry emitter.
+      'src/hooks/useBackingResults.js', 'src/hooks/useMyBackingStats.js', 'src/hooks/useTrainerStats.js', 'src/services/backingTelemetry.js'].map((r) => path.join(REPO, r)),
   ];
   const stripped = (f) => readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 

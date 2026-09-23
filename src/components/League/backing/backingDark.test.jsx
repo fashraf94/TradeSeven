@@ -59,6 +59,33 @@ vi.mock('../../../services/backingService', () => ({
   subscribePitch: vi.fn(() => { svc.calls.push('subscribePitch'); return () => {}; }),
   fetchTapePod: vi.fn(async () => { svc.calls.push('fetchTapePod'); return null; }),
   fetchTeamCard: vi.fn(async () => { svc.calls.push('fetchTeamCard'); return null; }),
+  // PR 5: the results reader (one pod, or weeks), the two private stats
+  // readers and the telemetry sink — every one counted, none reaching the wire.
+  fetchBackingResults: vi.fn(async ({ groupId = null } = {}) => {
+    svc.calls.push('fetchBackingResults');
+    if (groupId) {
+      return { viewerUid: 'viewer-1', pod: {
+        groupId, poolId: groupId, weekKey: '2026-W39', status: 'resolved', outcome: 'settled', formationPath: 'lobby', slotId: null,
+        seatNames: { 'od-a': 'Mira' }, humanTeams: 1, potTotal: 300, uniqueBackers: 3, winners: ['od-a'], winningStakes: 300, paysX: 1,
+        closedAt: '2026-09-21T04:00:00.000Z', settledAt: '2026-09-25T22:30:00.000Z', refundedAt: null, refundReason: null, holdReason: null, monthKey: '2026-09',
+        teams: [{ odUserId: 'od-a', isCpu: false, backerCount: 3, stakeTotal: 300, sharePct: 100, paysX: 1, won: true }],
+        myStakes: [], myNet: null, myWon: null,
+      } };
+    }
+    return { viewerUid: 'viewer-1', weeks: [], nextBefore: null, weeksAvailable: 0 };
+  }),
+  fetchMyBackingStats: vi.fn(async () => {
+    svc.calls.push('fetchMyBackingStats');
+    const zero = { poolsBacked: 0, poolsWon: 0, weeksPlayed: 0, pending: 0, net: 0 };
+    const acc = { pools: 0, youWon: 0, baselineWon: 0, both: 0, excluded: 0 };
+    return { label: 'beta stats', seasonKey: '2026-09', net: { career: 0, season: 0 }, career: zero, season: { monthKey: '2026-09', ...zero }, seasons: {}, accuracy: { career: acc, season: acc, seasons: {} } };
+  }),
+  fetchTrainerStats: vi.fn(async () => {
+    svc.calls.push('fetchTrainerStats');
+    const zero = { uniqueBackers: 0, bpBacked: 0, backersNet: 0, pending: 0, poolsBackedOn: 0, stakes: 0, decidedStakes: 0 };
+    return { label: 'beta stats', seasonKey: '2026-09', career: zero, season: { monthKey: '2026-09', ...zero }, seasons: {}, excludedStakes: 0 };
+  }),
+  postBackingEvent: vi.fn(async () => { svc.calls.push('postBackingEvent'); return { recorded: true }; }),
   placeStake: vi.fn(), attestEligibility: vi.fn(), savePitch: vi.fn(), newRequestId: () => 'req',
   BackingApiError: class BackingApiError extends Error {},
 }));
@@ -96,6 +123,8 @@ const ScoutingLine = (await import('./ScoutingLine')).default;
 const IdentityPanel = (await import('../../Dashboard/desktop/IdentityPanel')).default;
 const EquipStation = (await import('../../Dashboard/EquipStation')).default;
 const BackingScreen = (await import('./BackingScreen')).default;
+const Spectate = (await import('../LeagueSpectate')).default;
+const BackingStatsEntry = (await import('./BackingStatsEntry')).default;
 
 const homeProps = { onOpenMyGame: () => {}, onOpenTrainingPod: () => {}, hasAgent: true, agentLoadout: null };
 const ssr = (el) => renderToString(el);
@@ -172,6 +201,46 @@ describe('flag OFF — the League renders as it does today', () => {
     expect(svc.calls).toContain('fetchBackingPods');
   });
 
+  it('the Spectate FINAL state carries no backing element and opens NO read while dark; lit, the same mount fetches THIS pod\'s result once and renders the card — and a LIVE pod never does (PR 5, Surface E)', async () => {
+    const finalPod = leagueState('open').baseGames.find((p) => p.base && p.status === 'final');
+    const livePod = leagueState('open').baseGames.find((p) => p.base && p.status === 'live');
+    expect(finalPod?.id).toBeTruthy();
+    const props = { accent: '#5EEAD4', onBack: () => {}, onEnter: () => {} };
+    expect(ssr(<Spectate pod={finalPod} {...props} />)).not.toContain('data-backing');
+    const dark = await mount(<Spectate pod={finalPod} {...props} />);
+    expect(dark.querySelector('[data-backing]')).toBeNull();
+    expect(svc.calls).toEqual([]);
+    expect(backingCalls()).toEqual([]);
+    flag.on = true;
+    const lit = await mount(<Spectate pod={finalPod} {...props} />);
+    expect(svc.calls.filter((c) => c === 'fetchBackingResults')).toHaveLength(1);
+    const { fetchBackingResults } = await import('../../../services/backingService');
+    expect(fetchBackingResults.mock.calls.at(-1)[0]).toMatchObject({ groupId: finalPod.id });
+    expect(lit.querySelector('[data-backing="spectate-results"]')).not.toBeNull();
+    expect(lit.querySelector('[data-backing="results-card"]')).not.toBeNull();
+    // The card is the FINAL state's: a live pod, lit, opens no result read.
+    svc.calls.length = 0;
+    const live = await mount(<Spectate pod={livePod} {...props} />);
+    expect(live.querySelector('[data-backing="spectate-results"]')).toBeNull();
+    expect(svc.calls).toEqual([]);
+  });
+
+  it('the stats home (BackingStatsEntry) mounted DIRECTLY while dark renders nothing and opens NO read; lit, it reads both stats once and the pitch home carries it (PR 5, D-v/D-w)', async () => {
+    const dark = await mount(<BackingStatsEntry uid="viewer-1" />);
+    expect(dark.innerHTML).toBe('');
+    expect(svc.calls).toEqual([]);
+    flag.on = true;
+    const lit = await mount(<BackingStatsEntry uid="viewer-1" />);
+    expect(lit.querySelector('[data-backing="stats-entry"]')).not.toBeNull();
+    expect(svc.calls.filter((c) => c === 'fetchMyBackingStats')).toHaveLength(1);
+    expect(svc.calls.filter((c) => c === 'fetchTrainerStats')).toHaveLength(1);
+    expect(lit.textContent).toContain('beta stats');
+    const props = { agent: { id: 'a1', ownerId: 'viewer-1', name: 'Prime', archetype: 'momentum_chaser', stats: {} }, accent: '#5EEAD4', onOpenAgentRecord: () => {}, setShowForge: () => {} };
+    expect(ssr(<EquipStation {...props} />)).toContain('data-backing="stats-entry"');
+    flag.on = false;
+    expect(ssr(<EquipStation {...props} />)).not.toContain('data-backing');
+  });
+
   it('a mounted landing (effects running) opens NO backing read and makes NO backing request', async () => {
     const container = await mount(<LeagueHome {...homeProps} />);
     expect(container.querySelector('[data-backing]')).toBeNull();
@@ -239,6 +308,9 @@ describe('the flag is read at CALL time in every host — never captured at modu
     'src/components/League/backing/BackingLandingStrip.jsx',
     'src/components/League/backing/ScoutingLine.jsx',
     'src/components/League/backing/BackingScreen.jsx',
+    // PR 5: the Spectate final state's card and the private stats' home.
+    'src/components/League/backing/SpectateBackingResults.jsx',
+    'src/components/League/backing/BackingStatsEntry.jsx',
   ]) {
     it(`${rel} has no module-level derivation of BACKING_BETA_ENABLED`, () => {
       const src = readFileSync(path.join(REPO, rel), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
@@ -262,6 +334,9 @@ describe('the flag is read at CALL time in every host — never captured at modu
     ['src/components/League/LeagueHome.jsx', '<BackingLandingStrip'],
     ['src/components/League/LeagueLobbyDesktop.jsx', '<BackingLandingStrip'],
     ['src/components/League/LeagueLobbyRedesign.jsx', '{backingSlot}'],
+    // PR 5: the results card under the film room, the stats under the line.
+    ['src/components/League/LeagueSpectate.jsx', '<SpectateBackingResults'],
+    ['src/components/Dashboard/EquipStation.jsx', '<BackingStatsEntry'],
   ];
   const stripComments = (src) => src.replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   /** JSX brace expressions removed (balanced), so an attribute like `onClick={() => open()}` cannot hide an opener's `>` (R-B-7). */
@@ -309,7 +384,7 @@ describe('the flag is read at CALL time in every host — never captured at modu
     const lobby = readFileSync(path.join(REPO, 'src/components/League/LeagueLobbyRedesign.jsx'), 'utf8');
     expect(lobby).toContain('{backingSlot}');
     expect(lobby).not.toMatch(/backingSlot && <div/);
-    for (const rel of ['src/components/League/backing/BackingLandingStrip.jsx', 'src/components/League/backing/ScoutingLine.jsx', 'src/components/League/backing/BackingScreen.jsx']) {
+    for (const rel of ['src/components/League/backing/BackingLandingStrip.jsx', 'src/components/League/backing/ScoutingLine.jsx', 'src/components/League/backing/BackingScreen.jsx', 'src/components/League/backing/SpectateBackingResults.jsx', 'src/components/League/backing/BackingStatsEntry.jsx']) {
       expect(readFileSync(path.join(REPO, rel), 'utf8'), `${rel} returns null while dark`).toContain('if (!BACKING_BETA_ENABLED) return null;');
     }
   });

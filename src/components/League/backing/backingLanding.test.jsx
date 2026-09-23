@@ -40,6 +40,8 @@ vi.mock('../../../services/backingService', () => ({
   fetchBackingPods: vi.fn(), subscribeMyStakes: () => () => {}, subscribePool: () => () => {}, subscribeWallet: () => () => {},
   readEligibility: async () => null, subscribePitch: () => () => {}, fetchTapePod: async () => null, fetchTeamCard: vi.fn(),
   placeStake: vi.fn(), attestEligibility: vi.fn(), savePitch: vi.fn(), newRequestId: () => 'req', BackingApiError: class extends Error {},
+  // PR 5: the results, the two stats readers, the telemetry sink.
+  fetchBackingResults: vi.fn(async () => ({ weeks: [], nextBefore: null, weeksAvailable: 0 })), fetchMyBackingStats: vi.fn(async () => null), fetchTrainerStats: vi.fn(async () => null), postBackingEvent: vi.fn(async () => ({ recorded: true })),
 }));
 vi.mock('../../../utils/fetchWithAuth', () => ({ fetchWithAuth: vi.fn(async () => ({ ok: true, json: async () => ({ slots: [], battles: {} }) })) }));
 vi.mock('../../../services/leagueSignals', () => ({ logLeagueSignal: () => {} }));

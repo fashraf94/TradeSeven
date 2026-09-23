@@ -29,7 +29,10 @@
 // (scripts/backing-screenshots/harness.render.jsx) for the strip's four states
 // and the first-week and veteran cards; PodList.test.jsx, TeamCard.test.jsx,
 // StakeControl.jsdom.test.jsx, YourBacking.test.jsx and backingLanding.test.jsx
-// for the rest. Nothing on this page is real, and nothing leaves it.
+// for the rest; and, since PR 5, BackingResultsCard.test.jsx for the results
+// card (settled win, settled loss, refunded, insufficient) and
+// BackingStats.test.jsx for the two private stats surfaces. Nothing on this
+// page is real, and nothing leaves it.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import '../components/League/league.css';
@@ -45,6 +48,12 @@ import PodList from '../components/League/backing/PodList';
 import TeamCard from '../components/League/backing/TeamCard';
 import StakeControl from '../components/League/backing/StakeControl';
 import YourBacking from '../components/League/backing/YourBacking';
+// PR 5: the results card (Surface E) and the two private stats surfaces —
+// pure over their data, so the page hands them fixtures and nothing runs.
+import BackingResultsCard from '../components/League/backing/BackingResultsCard';
+import MyBackingStats from '../components/League/backing/MyBackingStats';
+import TrainerStats from '../components/League/backing/TrainerStats';
+import { RESULTS, STATS } from '../components/League/backing/backingCopy';
 import { deriveStripState } from '../components/League/backing/backingStripState';
 import { BackingPreviewLitContext } from '../components/League/backing/backingPreview';
 
@@ -271,8 +280,64 @@ const WEEK_INPUTS = {
   'mid-week': { now: PREVIEW_NOW, inPlay: weekInPlay(), battlesByGroup: WEEK_BATTLES },
 };
 
+// ═══ the results card — BackingResultsCard.test.jsx (PR 5, Surface E) ═══
+// MUTATION CHECK 3's fixture: the stake document's payout (714) is NOT
+// stake × pays × (500 × 1.43 = 715); the card must show 714.
+const RESULT_SEATS = { 'od-a': 'Mira', 'od-b': 'Draco' };
+const resultPod = (over = {}) => ({
+  groupId: 'lobby-w39-a', poolId: 'lobby-w39-a', weekKey: '2026-W39', status: 'resolved', outcome: 'settled', formationPath: 'lobby', slotId: null,
+  seatNames: RESULT_SEATS, humanTeams: 2, potTotal: 1000, uniqueBackers: 4, winners: ['od-a'], winningStakes: 700, paysX: 1.43,
+  closedAt: '2026-09-21T04:00:00.000Z', settledAt: '2026-09-25T22:30:00.000Z', refundedAt: null, refundReason: null, holdReason: null, monthKey: '2026-09',
+  teams: [
+    { odUserId: 'od-a', isCpu: false, backerCount: 2, stakeTotal: 700, sharePct: 70, paysX: 1.43, won: true },
+    { odUserId: 'od-b', isCpu: false, backerCount: 2, stakeTotal: 300, sharePct: 30, paysX: 3.33, won: false },
+    { odUserId: 'cpu-1', isCpu: true, backerCount: 0, stakeTotal: 0, sharePct: 0, paysX: null, won: false },
+  ],
+  myStakes: [
+    { stakeId: 's1', teamOdUserId: 'od-a', amount: 500, status: 'won', payout: 714, voidReason: null, net: 214, loadoutChanged: true },
+    { stakeId: 's2', teamOdUserId: 'od-b', amount: 100, status: 'lost', payout: 0, voidReason: null, net: -100, loadoutChanged: false },
+  ],
+  myNet: 114, myWon: true,
+  ...over,
+});
+const voidedPod = (outcome, refundReason) => resultPod({
+  outcome, status: outcome === 'insufficient' ? 'insufficient' : 'refunded', refundReason, refundedAt: '2026-09-22T20:30:00.000Z',
+  winners: [], paysX: null, winningStakes: null, myNet: null, myWon: null,
+  teams: resultPod().teams.map((t) => ({ ...t, paysX: null, won: null })),
+  myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', amount: 500, status: 'voided', payout: null, voidReason: refundReason ?? 'insufficient', net: 0, loadoutChanged: null }],
+});
+const RESULT_PODS = {
+  win: resultPod(),
+  loss: resultPod({
+    winners: ['od-b'], winningStakes: 300, paysX: 3.33,
+    teams: [
+      { odUserId: 'od-a', isCpu: false, backerCount: 2, stakeTotal: 700, sharePct: 70, paysX: 1.43, won: false },
+      { odUserId: 'od-b', isCpu: false, backerCount: 2, stakeTotal: 300, sharePct: 30, paysX: 3.33, won: true },
+      { odUserId: 'cpu-1', isCpu: true, backerCount: 0, stakeTotal: 0, sharePct: 0, paysX: null, won: false },
+    ],
+    myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', amount: 500, status: 'lost', payout: 0, voidReason: null, net: -500, loadoutChanged: false }],
+    myNet: -500, myWon: false,
+  }),
+  refunded: voidedPod('refunded', 'group_voided'),
+  insufficient: voidedPod('insufficient', null),
+};
+
+// ═══ the private stats — BackingStats.test.jsx (PR 5) ═══
+const MY_STATS = {
+  label: 'beta stats', seasonKey: '2026-09', net: { career: -150, season: 40 },
+  career: { poolsBacked: 3, poolsWon: 1, weeksPlayed: 2, pending: 1, net: -150 },
+  season: { monthKey: '2026-09', poolsBacked: 1, poolsWon: 1, weeksPlayed: 1, pending: 1, net: 40 },
+  seasons: {}, accuracy: { career: { pools: 2, youWon: 1, baselineWon: 2, both: 1, excluded: 1 }, season: { pools: 0, youWon: 0, baselineWon: 0, both: 0, excluded: 0 } },
+};
+const TRAINER_STATS = {
+  label: 'beta stats', seasonKey: '2026-09',
+  career: { uniqueBackers: 3, bpBacked: 600, backersNet: 100, pending: 100, poolsBackedOn: 3, stakes: 4, decidedStakes: 3 },
+  season: { monthKey: '2026-09', uniqueBackers: 1, bpBacked: 100, backersNet: 0, pending: 100, poolsBackedOn: 1, stakes: 1, decidedStakes: 0 },
+  seasons: {}, excludedStakes: 1,
+};
+
 /** The fixture table — exported for the page's own test only. */
-export const PREVIEW_FIXTURES = Object.freeze({ now: PREVIEW_NOW, backingWeekCloses: SUNDAY_CLOSE, strip: STRIP_INPUTS });
+export const PREVIEW_FIXTURES = Object.freeze({ now: PREVIEW_NOW, backingWeekCloses: SUNDAY_CLOSE, strip: STRIP_INPUTS, results: RESULT_PODS, stats: { mine: MY_STATS, trainer: TRAINER_STATS } });
 
 // ═══ the switcher ═══
 const GROUPS = [
@@ -281,6 +346,8 @@ const GROUPS = [
   { id: 'card', label: 'Team card' },
   { id: 'stake', label: 'Stake control' },
   { id: 'week', label: 'Your Backing' },
+  { id: 'results', label: 'Results' },
+  { id: 'stats', label: 'Beta stats' },
 ];
 const STRIP_KINDS = [['open', 'Open'], ['staked', 'Staked'], ['week', 'Week'], ['between', 'Between']];
 export const PREVIEW_STATES = [
@@ -303,6 +370,12 @@ export const PREVIEW_STATES = [
   { id: 'week-before-monday', group: 'week', label: 'Before Monday', week: 'before-monday' },
   { id: 'week-monday', group: 'week', label: 'Monday · draft reveal', week: 'monday' },
   { id: 'week-mid-week', group: 'week', label: 'Mid-week', week: 'mid-week' },
+  { id: 'results-win', group: 'results', label: 'Settled · you won', result: 'win' },
+  { id: 'results-loss', group: 'results', label: 'Settled · you lost', result: 'loss' },
+  { id: 'results-refunded', group: 'results', label: 'Refunded', result: 'refunded' },
+  { id: 'results-insufficient', group: 'results', label: 'Did not qualify', result: 'insufficient' },
+  { id: 'stats-mine', group: 'stats', label: 'Your backing', stats: 'mine' },
+  { id: 'stats-trainer', group: 'stats', label: 'As a team', stats: 'trainer' },
 ];
 const STATE_BY_ID = Object.fromEntries(PREVIEW_STATES.map((s) => [s.id, s]));
 
@@ -320,6 +393,10 @@ function captionFor(state) {
       return state.variant === 'refusal' || state.variant === 'backed'
         ? 'The stake control (fixture: StakeControl.jsdom.test.jsx). The preview pressed Confirm; the answer is local fixture data.'
         : 'The stake control (fixture: StakeControl.jsdom.test.jsx). Every answer is local fixture data.';
+    case 'results':
+      return 'The results card (fixture: BackingResultsCard.test.jsx) as the Spectate final state and the Backing screen show it. Every figure is the projection’s — the payout per stake is the stake document’s, never stake × pays ×.';
+    case 'stats':
+      return 'The private stats (fixture: BackingStats.test.jsx) as the profile home shows them. Private, no consequences, not a ranking.';
     default:
       return 'Your Backing (fixture: YourBacking.test.jsx). No stake action exists on this surface.';
   }
@@ -465,6 +542,26 @@ export default function BackingPreviewScreen() {
     );
   } else if (state.group === 'stake') {
     stage = <ScreenFrame name="stake"><StakeStage variant={state.variant} card={stakeCard} onNote={onNote} onReset={() => select('stake-attested', { card: stakeCard })} /></ScreenFrame>;
+  } else if (state.group === 'results') {
+    stage = (
+      <ScreenFrame name="results">
+        <div style={{ marginBottom: 8 }}><Eyebrow color={LTOKENS.ink3}>{RESULTS.eyebrow}</Eyebrow></div>
+        <BackingResultsCard pod={RESULT_PODS[state.result]} accent={ACCENT} onOpenTape={onOpenTape} />
+      </ScreenFrame>
+    );
+  } else if (state.group === 'stats') {
+    stage = (
+      <ScreenFrame name="stats">
+        <div data-preview-stats={state.stats} style={{ borderRadius: 14, padding: '13px 15px', background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair2}` }}>
+          <Eyebrow color={LTOKENS.ink3}>{STATS.eyebrow}</Eyebrow>
+          <div style={{ fontSize: 15, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.01em', margin: '4px 0 8px' }}>{STATS.title}</div>
+          {state.stats === 'mine' ? <MyBackingStats stats={MY_STATS} /> : <TrainerStats stats={TRAINER_STATS} />}
+          <div style={{ marginTop: 9, padding: '6px 9px', borderRadius: 8, background: alpha(LTOKENS.bg, 0.5), display: 'inline-block' }}>
+            <Mono style={{ fontSize: 9, color: LTOKENS.ink3, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{STATS.label}</Mono>
+          </div>
+        </div>
+      </ScreenFrame>
+    );
   } else {
     const week = WEEK_INPUTS[state.week];
     stage = <ScreenFrame name="week"><YourBacking inPlay={week.inPlay} accent={ACCENT} onOpenTape={onOpenTape} now={week.now} battlesByGroup={week.battlesByGroup} /></ScreenFrame>;

@@ -305,11 +305,14 @@ export default async function handler(req, res) {
         // `podListWeek`), which rolls forward at Monday 09:30 ET, while a pod
         // satisfies the predicate no earlier than the Tuesday evening of its
         // own week — so a completed pod is never in this list, and this block
-        // cannot reach it. It is the settle-on-read CONTRACT (the freeze check,
-        // the hold exclusion, the one primitive) that the results reader
-        // (PR 5 — pools fetched by the viewer's own stakes across weeks) will
-        // carry; until then the admin re-run is the practical whole-pool retry.
-        // The test suite pins both the contract and the limit.
+        // cannot reach it. THE PATH THAT CAN IS THE RESULTS READER (Backing
+        // Beta PR 5, api/backing/results.js `settleOnRead`): it loads pools by
+        // the viewer's own stakes across weeks, carries this same contract
+        // (the freeze check in front of the call, the hold exclusion, the one
+        // primitive) and, since `settlePool` routes a voided, expired or
+        // deleted pod to the refund, inherits the §7 refund paths too. This
+        // block stays as the contract's statement on the list; the test suite
+        // pins both the contract and the limit.
         if (pool != null && pool.status === POOL_STATUS.CLOSED
           && settlementPredicate(group).final && !TOURNAMENT_ADVANCEMENT_FROZEN) {
           const settled = await settlePool(db, group.id, { now, source: SETTLEMENT_SOURCE.SETTLE_ON_READ });

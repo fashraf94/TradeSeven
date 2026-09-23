@@ -34,7 +34,7 @@ const {
   BACKING_POOLS_COLLECTION, BACKING_STAKES_COLLECTION, POOL_STATUS, STAKE_STATUS, totalsFromStakes,
 } = await import('../_utils/backingPools.js');
 const { BACKING_WALLETS_COLLECTION } = await import('../_utils/backingWallet.js');
-const { HOLD_REASON, SETTLEMENT_REASON, SETTLEMENT_SOURCE } = await import('../_utils/backingSettlement.js');
+const { HOLD_REASON, REFUND_REASON, SETTLEMENT_REASON, SETTLEMENT_SOURCE } = await import('../_utils/backingSettlement.js');
 const { GROUP_STATUS, round2 } = await import('../../src/constants/leagueTournament.js');
 
 // ==================== FIXTURES ====================
@@ -339,8 +339,123 @@ describe('a simulated clock settles DEV pods only', () => {
 
     const real = await post({ groupId: GROUP_ID });
     expect(real.statusCode).toBe(200);
-    expect(real.body).toMatchObject({ settled: false, reason: SETTLEMENT_REASON.NO_GROUP, simulated: false });
+    // PR 5: the close's tombstone refund is answered as the refund it is.
+    expect(real.body).toMatchObject({ settled: false, refunded: true, reason: SETTLEMENT_REASON.REFUNDED, refundReason: 'group_deleted', simulated: false });
     expect(poolOf()).toMatchObject({ status: POOL_STATUS.REFUNDED, closedAt: NOW.toISOString() });
     expect(DB.store.get(`${BACKING_STAKES_COLLECTION}/s1`)).toMatchObject({ status: STAKE_STATUS.VOIDED, voidReason: 'group_deleted', voidedAt: NOW.toISOString() });
+  });
+});
+
+// ============================================================================
+describe('action: refund — the §7 admin refund (Backing Beta PR 5; the PR 3 review record\'s finding 21)', () => {
+  /** A LINGERING pod: its pool closed by the clock, the pod never reached a result. */
+  const lingering = (over = {}) => group({ status: GROUP_STATUS.BATTLE, dailyScores: {}, ...over });
+  const NOTE = 'degraded week — refund by founder decision';
+
+  it('400s an unknown action, and a refund without a reason (reason_required); nothing is read', async () => {
+    for (const [body, error] of [
+      [{ groupId: GROUP_ID, action: 'void' }, 'invalid_action'],
+      [{ groupId: GROUP_ID, action: 'refund' }, 'reason_required'],
+      [{ groupId: GROUP_ID, action: 'refund', reason: '   ' }, 'reason_required'],
+      [{ groupId: GROUP_ID, action: 'refund', reason: 7 }, 'invalid_reason'],
+    ]) {
+      const res = await post(body);
+      expect(res.statusCode, JSON.stringify(body)).toBe(400);
+      expect(res.body.error).toBe(error);
+    }
+    expect(DB.readLog).toEqual([]);
+    expect(DB.writeLog).toEqual([]);
+  });
+
+  it('refunds a lingering pod\'s closed pool as `admin`: 200, every stake voided, score-neutral; the reason is LOGGED and never on the pool', async () => {
+    DB = makeInMemoryDb(world({ g: lingering() }));
+    const res = await post({ groupId: GROUP_ID, action: 'refund', reason: NOTE });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({ groupId: GROUP_ID, action: 'refund', simulated: false, refunded: true, refundReason: 'admin', stakesVoided: 3 });
+    expect(poolOf()).toMatchObject({ status: POOL_STATUS.REFUNDED, refundReason: 'admin', refundedAt: NOW.toISOString(), refundRef: SETTLEMENT_SOURCE.ADMIN, monthKey: '2026-09' });
+    for (const id of ['s1', 's2', 's3']) {
+      expect(DB.store.get(`${BACKING_STAKES_COLLECTION}/${id}`)).toMatchObject({ status: STAKE_STATUS.VOIDED, voidReason: 'admin', voidedAt: NOW.toISOString() });
+    }
+    for (const uid of ['u1', 'u2', 'u3']) {
+      expect(DB.store.get(`${BACKING_WALLETS_COLLECTION}/${uid}`)).toMatchObject({ careerNet: 0, seasons: { '2026-09': { net: 0 } } });
+    }
+    expect(JSON.stringify(poolOf())).not.toContain('founder decision');
+    expect(JSON.stringify(res.body)).not.toContain('founder decision');
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining(`ADMIN REFUND requested for ${GROUP_ID} — reason: ${NOTE}`));
+    expect(DB.writeLog.every(([, p]) => p.startsWith('backing'))).toBe(true);
+  });
+
+  it('a second refund is already_refunded and writes nothing; a refund of a RESOLVED pool is already_settled — it never claws back a settlement', async () => {
+    DB = makeInMemoryDb(world({ g: lingering() }));
+    await post({ groupId: GROUP_ID, action: 'refund', reason: NOTE });
+    const writes = DB.writeLog.length;
+    const again = await post({ groupId: GROUP_ID, action: 'refund', reason: NOTE });
+    expect(again.statusCode).toBe(200);
+    expect(again.body).toMatchObject({ refunded: false, reason: REFUND_REASON.ALREADY_REFUNDED });
+    expect(DB.writeLog.length).toBe(writes);
+
+    DB = makeInMemoryDb(world());
+    await post({ groupId: GROUP_ID });
+    const settledWrites = DB.writeLog.length;
+    const res = await post({ groupId: GROUP_ID, action: 'refund', reason: NOTE });
+    expect(res.body).toMatchObject({ refunded: false, reason: REFUND_REASON.ALREADY_SETTLED });
+    expect(DB.writeLog.length).toBe(settledWrites);
+    expect(DB.store.get(`${BACKING_STAKES_COLLECTION}/s1`)).toMatchObject({ status: STAKE_STATUS.WON, payout: 600 });
+  });
+
+  it('the FREEZE does not gate a refund (a frozen week is a §7 refund case) — and still gates settle', async () => {
+    flags.frozen = true;
+    DB = makeInMemoryDb(world({ g: lingering() }));
+    expect((await post({ groupId: GROUP_ID })).statusCode).toBe(409);
+    const res = await post({ groupId: GROUP_ID, action: 'refund', reason: 'frozen week never completed' });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({ refunded: true, refundReason: 'admin' });
+    expect(poolOf().status).toBe(POOL_STATUS.REFUNDED);
+  });
+
+  it('a pool HELD in resolving is refunded only with overrideHold, which is recorded as the hold\'s release', async () => {
+    DB = makeInMemoryDb(world({ g: lingering(), poolOver: { status: POOL_STATUS.RESOLVING, holdReason: HOLD_REASON.STAKE_CEILING, heldAt: 'x', holdSource: 'admin' } }));
+    const held = await post({ groupId: GROUP_ID, action: 'refund', reason: NOTE });
+    expect(held.body).toMatchObject({ refunded: false, reason: REFUND_REASON.HELD, holdReason: HOLD_REASON.STAKE_CEILING });
+    expect(DB.writeLog).toEqual([]);
+    const released = await post({ groupId: GROUP_ID, action: 'refund', reason: NOTE, overrideHold: true });
+    expect(released.body).toMatchObject({ refunded: true, overrideHold: true });
+    expect(poolOf()).toMatchObject({ status: POOL_STATUS.REFUNDED, holdRelease: { by: 'admin', at: NOW.toISOString(), priorHoldReason: HOLD_REASON.STAKE_CEILING } });
+    expect(poolOf()).not.toHaveProperty('holdReason');
+  });
+
+  it('an OPEN pool is not refunded by an admin — the clock closes it first (pool_open, nothing written)', async () => {
+    DB = makeInMemoryDb(world({ g: lingering(), poolOver: { status: POOL_STATUS.OPEN, closesAt: '2099-01-01T00:00:00.000Z' } }));
+    const res = await post({ groupId: GROUP_ID, action: 'refund', reason: NOTE });
+    expect(res.body).toMatchObject({ refunded: false, reason: REFUND_REASON.POOL_OPEN });
+    expect(DB.writeLog).toEqual([]);
+  });
+
+  it('a simulated clock refunds DEV pods only, in the dev namespace, stamped admin_sim', async () => {
+    DB = makeInMemoryDb(world({ g: lingering() }));
+    const prod = await post({ groupId: GROUP_ID, action: 'refund', reason: NOTE, simulatedNow: SIM });
+    expect(prod.statusCode).toBe(409);
+    expect(prod.body.error).toBe('simulated_requires_dev');
+    expect(DB.writeLog).toEqual([]);
+
+    DB = makeInMemoryDb(world({ g: lingering({ isDev: true }) }));
+    const dev = await post({ groupId: GROUP_ID, action: 'refund', reason: NOTE, simulatedNow: SIM });
+    expect(dev.statusCode).toBe(200);
+    expect(dev.body).toMatchObject({ simulated: true, refunded: true });
+    expect(poolOf(`dev-${GROUP_ID}`)).toMatchObject({ status: POOL_STATUS.REFUNDED, refundedAt: SIM, refundRef: SETTLEMENT_SOURCE.ADMIN_SIM });
+    expect(DB.store.get(`${BACKING_WALLETS_COLLECTION}/dev-u1`).careerNet).toBe(0);
+  });
+
+  it('the group-driven paths need no action: a settle re-run of a VOIDED pod refunds it (settlePool routes), answered as a refund', async () => {
+    DB = makeInMemoryDb(world({ g: group({ status: GROUP_STATUS.VOIDED, dailyScores: {} }) }));
+    const res = await post({ groupId: GROUP_ID });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({ action: 'settle', settled: false, refunded: true, reason: SETTLEMENT_REASON.REFUNDED, refundReason: 'group_voided' });
+    expect(poolOf()).toMatchObject({ status: POOL_STATUS.REFUNDED, refundReason: 'group_voided' });
+  });
+
+  it('the default action is settle — the PR 3 contract unchanged (the response names the action)', async () => {
+    const res = await post({ groupId: GROUP_ID });
+    expect(res.body).toMatchObject({ action: 'settle', settled: true });
   });
 });

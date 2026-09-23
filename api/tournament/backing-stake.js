@@ -110,6 +110,7 @@ import {
   walletRef,
 } from '../_utils/backingWallet.js';
 import { fingerprintOf, hashFingerprint } from '../_utils/backingFingerprint.js';
+import { STAKE_CONFIRMED_EVENT, recordBackingEvent, stakeConfirmedEventId } from '../_utils/backingEvents.js';
 import { MIN_STAKE_BP, PER_TEAM_CAP_BP } from '../../src/constants/backing.js';
 import { TOURNAMENT_GAME_MODE, TOURNAMENT_GROUPS_COLLECTION } from '../../src/constants/leagueTournament.js';
 import { BACKING_BETA_ENABLED } from '../../src/config/featureFlags.js';
@@ -522,6 +523,37 @@ export default async function handler(req, res) {
     if (outcome.refusal) {
       const { status, error, ...rest } = outcome.refusal;
       return res.status(status).json({ error, ...rest });
+    }
+
+    // Backing Beta PR 5 — `stake_confirmed` (spec §10; Amendment B §B7.3) is
+    // written SERVER-SIDE, here, AFTER the transaction has committed and only
+    // for a NEW stake (a replay confirmed nothing new). It is telemetry: the
+    // write is awaited (BUILD_RULES §5) but a failure is logged and NEVER
+    // fails the stake — the stake is already on the record. The §10
+    // segmentation keys (human seats per pod, formation path) ride along,
+    // read off the pod this request already holds; the id is the stake's, so
+    // a retried request can only rewrite identical bytes.
+    if (outcome.replay !== true) {
+      try {
+        await recordBackingEvent(db, {
+          eventId: stakeConfirmedEventId(stakeId),
+          userId: user.uid,
+          groupId,
+          event: STAKE_CONFIRMED_EVENT,
+          props: {
+            stakeId,
+            teamOdUserId,
+            amount,
+            weekKey: outcome.stake.weekKey,
+            formationPath: outcome.pool?.formationPath ?? null,
+            humanTeams: liveTeamsFor(group).filter((t) => !t.isCpu).length,
+            isDev: outcome.pool?.isDev === true,
+          },
+          now,
+        });
+      } catch (err) {
+        console.warn('[backing-stake] stake_confirmed not recorded (telemetry only):', err?.message);
+      }
     }
 
     // THE SEALED PROJECTION (§3, Amendment B §B2): the reply carries the capped

@@ -48,6 +48,24 @@ const LISTED = [
   'api/tournament/team-card.js',
   'api/team/pitch.js',
   'api/_utils/teamPitch.js',
+  // PR 5 — every new file: the three hooks, the emitter, the four routes,
+  // their helpers, the backing-safe approach line, the dev preview page and
+  // the admin Sybil watch (a report is copy too).
+  'src/hooks/useBackingResults.js',
+  'src/hooks/useMyBackingStats.js',
+  'src/hooks/useTrainerStats.js',
+  'src/services/backingTelemetry.js',
+  'src/constants/backingApproach.js',
+  'src/screens/BackingPreviewScreen.jsx',
+  'api/backing/event.js',
+  'api/backing/results.js',
+  'api/backing/my-stats.js',
+  'api/backing/trainer-stats.js',
+  'api/_utils/backingEvents.js',
+  'api/_utils/backingResults.js',
+  'api/_utils/backingStats.js',
+  'api/_utils/backingSybilWatch.js',
+  'scripts/backing-sybil-watch.js',
 ].map((rel) => path.join(REPO, rel));
 
 const GUARDED = [...DIR_SOURCES, ...LISTED];
@@ -66,7 +84,7 @@ describe('the backing copy guard — no forbidden term in any backing UI file', 
   it('guards a non-empty set that includes the copy module, the strip, the card, the control and the routes', () => {
     expect(GUARDED.length).toBeGreaterThan(10);
     const names = GUARDED.map((f) => path.basename(f));
-    for (const must of ['backingCopy.js', 'BackingStrip.jsx', 'TeamCard.jsx', 'StakeControl.jsx', 'PodList.jsx', 'YourBacking.jsx', 'BackingScreen.jsx', 'team-card.js', 'pitch.js', 'deriveWeekLine.js']) {
+    for (const must of ['backingCopy.js', 'BackingStrip.jsx', 'TeamCard.jsx', 'StakeControl.jsx', 'PodList.jsx', 'YourBacking.jsx', 'BackingScreen.jsx', 'team-card.js', 'pitch.js', 'deriveWeekLine.js', 'BackingResultsCard.jsx', 'MyBackingStats.jsx', 'TrainerStats.jsx', 'results.js', 'my-stats.js', 'trainer-stats.js', 'event.js', 'backingTelemetry.js']) {
       expect(names, `${must} is not under the guard`).toContain(must);
     }
     for (const f of GUARDED) expect(() => readFileSync(f), `${f} does not exist`).not.toThrow();

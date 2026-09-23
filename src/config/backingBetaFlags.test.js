@@ -46,7 +46,15 @@ import { BACKING_BETA_ENABLED, ELIGIBILITY_ATTESTATION_ENABLED } from './feature
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..');
 const SRC = readFileSync(path.join(HERE, 'featureFlags.js'), 'utf8');
-const read = (rel) => readFileSync(path.join(REPO_ROOT, rel), 'utf8');
+// Memoized: the importer walks below read every source once per TARGET, and
+// the host row has nine hooks, the service, the emitter and every backing
+// surface as targets — a per-file cache keeps the whole file inside the
+// default per-row budget under a loaded full run (PR 5).
+const SRC_CACHE = new Map();
+const read = (rel) => {
+  if (!SRC_CACHE.has(rel)) SRC_CACHE.set(rel, readFileSync(path.join(REPO_ROOT, rel), 'utf8'));
+  return SRC_CACHE.get(rel);
+};
 
 /** Every non-test .js source under api/ and src/ (the PR 0 walker's shape). */
 function listSources(dirRel) {
@@ -180,6 +188,13 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       // the admin route each read the flag at THEIR call site; the primitive
       // reads only TOURNAMENT_ADVANCEMENT_FROZEN (A-C13), never this one.
       'api/_utils/backingSettlement.js',
+      // PR 5's helpers: the telemetry writer, the results projection, the
+      // stats folds and the Sybil-watch analysis. The four routes under
+      // api/backing/ gate; these do not.
+      'api/_utils/backingEvents.js',
+      'api/_utils/backingResults.js',
+      'api/_utils/backingStats.js',
+      'api/_utils/backingSybilWatch.js',
     ];
     for (const rel of PR1_MODULES) {
       const text = readFileSync(path.join(REPO_ROOT, rel), 'utf8');
@@ -199,6 +214,13 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
     // directory cannot land a route this row is blind to.
     expect(routesNamed('backing'), 'a backing route appeared under api/ - add it here WITH its 404-while-dark suite')
       .toEqual([
+        // PR 5: the four doors under api/backing/ — the telemetry sink, the
+        // two private stats readers and the results reader (the settle-on-read
+        // host). Each 404s AFTER requireAuth; one darkness file covers them.
+        'api/backing/event.js',
+        'api/backing/my-stats.js',
+        'api/backing/results.js',
+        'api/backing/trainer-stats.js',
         'api/tournament/backing-pools.js',
         // PR 3: the admin re-run. Admin-gated (requireAdminSecret) rather than
         // user-authed, and it 404s AFTER that gate like every other door.
@@ -239,6 +261,10 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
     const settleDark = read('api/tournament/backing-settle.dark.test.js');
     expect(settleDark).toContain('./backing-settle.js');
     expect(settleDark).toContain('BACKING_BETA_ENABLED: false');
+    // PR 5: the four api/backing/ routes share one darkness file.
+    const pr5Dark = read('api/backing/backing-routes.dark.test.js');
+    for (const rel of ['./event.js', './my-stats.js', './results.js', './trainer-stats.js']) expect(pr5Dark).toContain(rel);
+    expect(pr5Dark).toContain('BACKING_BETA_ENABLED: false');
   });
 
   it('EVERY importer of the backing modules is enumerated — the "no unreviewed caller" ratchet (the PR 0 importersOf precedent)', () => {
@@ -261,6 +287,9 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       // PR 3: settlement composes creditPayout + recordStakeLoss inside its
       // own transaction (the PR 1 threading contract's third caller).
       'api/_utils/backingSettlement.js',
+      // PR 5: my-stats reads the viewer's OWN wallet (walletRef) — a read, the
+      // one client-facing reader of the ledger.
+      'api/backing/my-stats.js',
       // PR 3: the admin route maps BackingLedgerError to a typed refusal.
       'api/tournament/backing-settle.js',
       'api/tournament/backing-stake.js',
@@ -272,6 +301,8 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       'api/tournament/backing-stake.js',
     ]);
     expect(importersOf('src/constants/backing.js')).toEqual([
+      // PR 5: the telemetry writer reads the FIXED event allowlist.
+      'api/_utils/backingEvents.js',
       'api/_utils/backingPools.js',
       'api/_utils/backingWallet.js',
       'api/_utils/backingWeek.js',
@@ -296,8 +327,15 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
     // so a new reachable caller is a deliberate edit here.
     expect(importersOf('api/_utils/backingPools.js')).toEqual([
       'api/_utils/backingEligibility.js',
+      // PR 5: the results projection reads the status/void vocabularies.
+      'api/_utils/backingResults.js',
       // PR 3: settlement reads the pool/totals refs and runs ensureClosed.
       'api/_utils/backingSettlement.js',
+      // PR 5: the stats readers locate pools by group id (prod, then dev).
+      'api/_utils/backingStats.js',
+      // PR 5: the two client-facing readers — reads only, own-uid only.
+      'api/backing/my-stats.js',
+      'api/backing/results.js',
       'api/tournament/backing-pools.js',
       // PR 3: the admin route reads the group (the sim-requires-dev belt) and
       // maps BackingPoolError.
@@ -307,12 +345,16 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       // the seats through the ONE seat derivation (liveTeamsFor) — reads only.
       'api/tournament/team-card.js',
     ]);
-    // PR 3's own module — THE THREE HOSTS, and nothing else: the Friday duty
-    // hook (the one non-backing importer, and the whole reason H1 exists), the
-    // pod list's settle-on-read, and the admin re-run. A fourth importer would
-    // be a fourth settlement host, which is exactly the review this row is for.
+    // PR 3's own module — THE HOSTS, and nothing else: the Friday duty hook
+    // (the one non-backing importer, and the whole reason H1 exists), the pod
+    // list (which no longer calls it — the comment there says where the pass
+    // moved), the admin re-run, and, since PR 5, the results reader: THE
+    // settle-on-read host (the PR 3 review record's finding 1), which also
+    // reads the refund-routing predicate. A fifth importer would be a fifth
+    // settlement host, which is exactly the review this row is for.
     expect(importersOf('api/_utils/backingSettlement.js')).toEqual([
       'api/_utils/tournamentAdvancement.js',
+      'api/backing/results.js',
       'api/tournament/backing-pools.js',
       'api/tournament/backing-settle.js',
     ]);
@@ -330,6 +372,9 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       'api/_utils/backingPools.js', 'api/_utils/backingEligibility.js',
       'api/_utils/backingFingerprint.js', 'api/_utils/backingSettlement.js',
       'api/_utils/teamPitch.js',
+      // PR 5's helpers, held to the same line.
+      'api/_utils/backingEvents.js', 'api/_utils/backingResults.js',
+      'api/_utils/backingStats.js', 'api/_utils/backingSybilWatch.js',
     ]) {
       expect(importersOf(target).filter((rel) => rel.startsWith('src/')), `${target} is imported from src/`)
         .toEqual([]);
@@ -353,6 +398,10 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
     expect(importersOf('src/components/League/backing/BackingLandingStrip.jsx')).toEqual(['src/components/League/LeagueHome.jsx', 'src/components/League/LeagueLobbyDesktop.jsx']);
     expect(importersOf('src/components/League/backing/BackingScreen.jsx')).toEqual(['src/components/League/LeagueHome.jsx', 'src/components/League/LeagueLobbyDesktop.jsx']);
     expect(importersOf('src/components/League/backing/ScoutingLine.jsx')).toEqual(['src/components/Dashboard/EquipStation.jsx', 'src/components/Dashboard/desktop/IdentityPanel.jsx']);
+    // PR 5: the results card in the Spectate final state (mobile), and the
+    // private stats' home under the mobile pitch home — one host each.
+    expect(importersOf('src/components/League/backing/SpectateBackingResults.jsx')).toEqual(['src/components/League/LeagueSpectate.jsx']);
+    expect(importersOf('src/components/League/backing/BackingStatsEntry.jsx')).toEqual(['src/components/Dashboard/EquipStation.jsx']);
     // …the service, by exact importer…
     expect(importersOf('src/services/backingService.js')).toEqual([
       'src/components/League/LeagueHome.jsx',
@@ -360,21 +409,30 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       'src/components/League/backing/AttestationStep.jsx',
       'src/components/League/backing/StakeControl.jsx',
       'src/hooks/useBackingPods.js',
+      // PR 5: the results and the two stats readers, and the telemetry
+      // emitter (the one non-hook importer: fire-and-forget over the service).
+      'src/hooks/useBackingResults.js',
       'src/hooks/useBackingWallet.js',
       'src/hooks/useEligibility.js',
       'src/hooks/useMyBacking.js',
+      'src/hooks/useMyBackingStats.js',
       'src/hooks/useMyPitch.js',
       'src/hooks/useTeamCard.js',
+      'src/hooks/useTrainerStats.js',
+      'src/services/backingTelemetry.js',
     ]);
-    // …and NOTHING outside the backing surfaces, their six hooks and these
-    // hosts reaches any backing module. A new host is a deliberate edit here,
-    // and it is held to the dark contract (backingDark.test.jsx) on arrival.
+    // …and NOTHING outside the backing surfaces, their nine hooks, the
+    // emitter and these hosts reaches any backing module. A new host is a
+    // deliberate edit here, and it is held to the dark contract
+    // (backingDark.test.jsx) on arrival.
     const HOSTS = new Set([
       'src/components/Dashboard/EquipStation.jsx',
       'src/components/Dashboard/desktop/IdentityPanel.jsx',
       'src/components/League/LeagueHome.jsx',
       'src/components/League/LeagueLobbyDesktop.jsx',
       'src/components/League/LeaguePod.jsx',
+      // PR 5: the Spectate final state mounts the results card.
+      'src/components/League/LeagueSpectate.jsx',
       // The dev-only design preview (PR 4 follow-up): the app entry consults
       // the preview gate (backingPreview.js), and the preview page renders the
       // surfaces from fixtures. Its dark contract is the gate — never mounted
@@ -382,16 +440,17 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       'src/main.jsx',
       'src/screens/BackingPreviewScreen.jsx',
     ]);
-    const BACKING_HOOK = /^src\/hooks\/use(BackingPods|MyBacking|BackingWallet|Eligibility|MyPitch|TeamCard)\.js$/;
+    const BACKING_HOOK = /^src\/hooks\/use(BackingPods|MyBacking|BackingWallet|Eligibility|MyPitch|TeamCard|BackingResults|MyBackingStats|TrainerStats)\.js$/;
     const targets = [
       ...listSources('src/components/League/backing'),
       ...SOURCES.filter((rel) => BACKING_HOOK.test(rel)),
       'src/services/backingService.js',
+      'src/services/backingTelemetry.js',
     ];
     expect(targets.length).toBeGreaterThan(15);
     for (const target of targets) {
       for (const rel of importersOf(target)) {
-        if (rel.startsWith('src/components/League/backing/') || BACKING_HOOK.test(rel)) continue;
+        if (rel.startsWith('src/components/League/backing/') || BACKING_HOOK.test(rel) || rel === 'src/services/backingTelemetry.js') continue;
         expect(HOSTS.has(rel), `${rel} reaches ${target} from outside the enumerated hosts`).toBe(true);
       }
     }
@@ -442,12 +501,12 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
     // …and, since PR 4, the backing surfaces, their six hooks and the service
     // (R-B-6 in the PR 4 review record): a host reaching them through the
     // alias would slip the host ratchet above.
-    const ALIASED = /\b(?:from|import)\s*\(?\s*['"]@\/(?:constants\/backing|config\/backing|components\/League\/backing\/|hooks\/use(?:BackingPods|MyBacking|BackingWallet|Eligibility|MyPitch|TeamCard)\b|services\/backingService\b)[^'"]*['"]/;
+    const ALIASED = /\b(?:from|import)\s*\(?\s*['"]@\/(?:constants\/backing|config\/backing|components\/League\/backing\/|hooks\/use(?:BackingPods|MyBacking|BackingWallet|Eligibility|MyPitch|TeamCard|BackingResults|MyBackingStats|TrainerStats)\b|services\/backing(?:Service|Telemetry)\b)[^'"]*['"]/;
     for (const rel of SOURCES) {
       expect(ALIASED.test(read(rel)), `${rel} reaches a backing module through a @/ alias`).toBe(false);
     }
     // The sweep sees the spellings it is meant to see.
-    for (const spelling of ["import x from '@/hooks/useMyPitch';", "import { s } from '@/services/backingService';", "import S from '@/components/League/backing/BackingScreen';", "const m = import('@/hooks/useMyBacking');"]) {
+    for (const spelling of ["import x from '@/hooks/useMyPitch';", "import { s } from '@/services/backingService';", "import S from '@/components/League/backing/BackingScreen';", "const m = import('@/hooks/useMyBacking');", "import { e } from '@/services/backingTelemetry';", "import r from '@/hooks/useBackingResults';"]) {
       expect(ALIASED.test(spelling), spelling).toBe(true);
     }
     expect(ALIASED.test("import { useMyPitchless } from '@/hooks/useMyPitchless';")).toBe(false);

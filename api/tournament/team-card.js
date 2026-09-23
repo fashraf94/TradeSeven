@@ -80,6 +80,8 @@ import { readPitch } from '../_utils/teamPitch.js';
 import { deriveWeekLine } from '../../src/constants/deriveWeekLine.js';
 import { getArchetypeDefinition } from '../_utils/archetypeRegistry.js';
 import { findForbiddenTerm } from '../../src/constants/backingLexicon.js';
+// PR 5 (§2G): the backing-safe twin of a canonical approach line that fails the lexicon — this projection's alone.
+import { backingSafeApproach } from '../../src/constants/backingApproach.js';
 import { COMPANY_SECTORS } from '../../src/config/stockData.js';
 import {
   GROUP_STATUS,
@@ -153,16 +155,18 @@ export function projectAgent(data, { archetype = data?.archetype ?? null } = {})
   // never the analyst's line borrowed as a fallback.
   const definition = key ? getArchetypeDefinition(key) : null;
   // The archetype's STATED approach — the canonical per-archetype copy — and
-  // ONLY when it passes the backing lexicon: a canonical line that names a
-  // forbidden term (the diversifier's "Spreads the bets…") is omitted rather
-  // than rewritten here (DOM-2, the PR 4 review record; a backing-safe line
-  // is the founder's call).
+  // ONLY when it passes the backing lexicon. A canonical line that names a
+  // forbidden term (the diversifier's "Spreads the bets…") is never rewritten
+  // here: PR 4 omitted it (DOM-2, the PR 4 review record); PR 5 (§2G) shows
+  // its BACKING-SAFE TWIN from src/constants/backingApproach.js — a second
+  // line kept alongside the canonical one, used by this projection alone —
+  // and still nothing when no twin exists.
   const disposition = definition?.identity?.disposition ?? null;
   return {
     name: typeof data?.name === 'string' && data.name.length > 0 ? data.name : null,
     archetype: key,
     archetypeLabel: definition?.displayName ?? null,
-    approach: passesBackingLexicon(disposition) ? disposition : null,
+    approach: passesBackingLexicon(disposition) ? disposition : backingSafeApproach(key, disposition),
     traitCount: Array.isArray(data?.equippedTraits) ? data.equippedTraits.length : null,
     ruleCount: Array.isArray(data?.activeRules) ? data.activeRules.length : null,
   };

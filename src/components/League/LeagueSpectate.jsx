@@ -17,6 +17,12 @@ import {
   Eyebrow, Mono, Icon, LIcon, Tag, AgentAvatar, KindMark, Score, StatusBadge, Watchers, PortfolioMini, SectionLabel,
 } from './LeagueParts';
 import { CutLine } from './LeaguePod';
+// Backing Beta PR 5 (spec V1.3 §5 "Results card (after settlement), in the
+// Spectate final state"): the viewer's result for THIS pod, under the film
+// room. Renders NOTHING while BACKING_BETA_ENABLED is dark (read at call time
+// inside), nothing for a live or bracket pod; mounted BARE below (DARK-1: a
+// wrapper of this file's own would survive the null render).
+import SpectateBackingResults from './backing/SpectateBackingResults';
 
 // fixture reasoning — only ever rendered for a SETTLED pod (the film room).
 const REASONING = {
@@ -217,6 +223,7 @@ export default function Spectate({ pod, focusId, accent, onBack, onEnter }) {
 
         <SectionLabel label="Why they moved" color={LTOKENS.ink3} />
         <FilmRoom player={player} locked={locked} />
+        <SpectateBackingResults pod={pod} accent={accent} />
 
         {/* learn-from-loss social hook (only when you're eliminated) */}
         {player.you && !player.advancing && (

@@ -39,6 +39,7 @@ vi.mock('../../services/backingService', () => ({
   fetchBackingPods: vi.fn(), fetchTeamCard: vi.fn(), placeStake: vi.fn(), attestEligibility: vi.fn(), savePitch: vi.fn(),
   newRequestId: () => 'req', subscribeMyStakes: () => () => {}, subscribePool: () => () => {}, subscribeWallet: () => () => {},
   readEligibility: async () => null, subscribePitch: () => () => {}, fetchTapePod: async () => null,
+  fetchBackingResults: vi.fn(async () => ({ weeks: [], nextBefore: null })), fetchMyBackingStats: vi.fn(async () => null), fetchTrainerStats: vi.fn(async () => null), postBackingEvent: vi.fn(async () => ({ recorded: true })),
   BackingApiError: class BackingApiError extends Error {},
 }));
 // Your Backing (inside the dark BackingScreen) reads the spectator battle hook,

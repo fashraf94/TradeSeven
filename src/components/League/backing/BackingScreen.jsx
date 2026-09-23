@@ -16,8 +16,17 @@
 // BACKING_BETA_ENABLED at call time itself (the outer component holds no
 // hooks; the inner one owns them), so a direct mount while dark renders
 // nothing and runs nothing.
+//
+// PR 5 (spec V1.3 §5, §10): the list view opens on LAST WEEK'S RESULTS
+// (BackingResults — the strip's between-state lands here), above Your
+// Backing; and the screen emits the funnel's client events — window_viewed
+// once the pod list has answered, your_backing_viewed while the viewer has a
+// pod in play, team_card_opened with the dwell on leaving a card,
+// stake_control_opened on entering the control — through the fire-and-forget,
+// per-session-deduplicated emitter (backingTelemetry.js). `stake_confirmed`
+// is the server's to write, never this screen's.
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { BACKING_BETA_ENABLED } from '../../../config/featureFlags';
 import { FINE_PRINT } from '../../../constants/backing';
 import { LTOKENS, LX, alpha } from '../leagueTokens';
@@ -32,7 +41,9 @@ import { MonoAttr, PointsMeter, SealRule } from './BackingParts';
 import PodList from './PodList';
 import TeamCard from './TeamCard';
 import StakeControl from './StakeControl';
-import YourBacking from './YourBacking';
+import YourBacking, { backedPodsFor } from './YourBacking';
+import BackingResults from './BackingResults';
+import { BACKING_EVENT, dwellSince, emitBackingEvent } from '../../../services/backingTelemetry';
 import { POD_LIST, SCREEN, STRIP, stripLines } from './backingCopy';
 import { STRIP_KIND, backingWeekKeys, deriveStripState } from './backingStripState';
 
@@ -75,6 +86,36 @@ function BackingScreenLive({ uid, accent, viewport, onBack, onOpenTape }) {
 
   const pod = view.groupId ? pods.pods.find((p) => p.groupId === view.groupId) ?? null : null;
   const desktop = viewport === 'desktop';
+
+  // THE FUNNEL (§10) — fire-and-forget, deduplicated per session by the
+  // emitter, so a re-render or a back-and-forth records nothing twice.
+  // window_viewed: the list, once the pod list has answered (its week key).
+  useEffect(() => {
+    if (view.kind !== 'list' || !pods.data) return;
+    emitBackingEvent(BACKING_EVENT.WINDOW_VIEWED, { props: typeof upcomingWeek === 'string' ? { weekKey: upcomingWeek } : {} });
+  }, [view.kind, pods.data, upcomingWeek]);
+  // your_backing_viewed: the list, while Your Backing has a pod to show.
+  const inPlayPods = backedPodsFor(inPlay);
+  const inPlayWeek = inPlayPods.flatMap((p) => p.stakes).find((s) => typeof s?.weekKey === 'string')?.weekKey ?? null;
+  useEffect(() => {
+    if (view.kind !== 'list' || inPlayPods.length === 0) return;
+    emitBackingEvent(BACKING_EVENT.YOUR_BACKING_VIEWED, { props: inPlayWeek ? { weekKey: inPlayWeek } : {} });
+  }, [view.kind, inPlayPods.length, inPlayWeek]);
+  // team_card_opened: recorded on LEAVING the card (to the list, the control
+  // or a closed screen), with the dwell — the one event whose prop needs the
+  // whole visit.
+  useEffect(() => {
+    if (view.kind !== 'card' || !view.groupId || !view.odUserId) return undefined;
+    const { groupId, odUserId } = view;
+    const startedAt = Date.now();
+    return () => { emitBackingEvent(BACKING_EVENT.TEAM_CARD_OPENED, { groupId, odUserId, props: { dwellMs: dwellSince(startedAt) } }); };
+  }, [view]);
+  // stake_control_opened: on entering the control for a seat.
+  useEffect(() => {
+    if (view.kind !== 'stake' || !view.groupId || !view.odUserId) return;
+    emitBackingEvent(BACKING_EVENT.STAKE_CONTROL_OPENED, { groupId: view.groupId, odUserId: view.odUserId });
+  }, [view]);
+
   const toList = () => setView({ kind: 'list', groupId: null, odUserId: null });
   const toCard = () => setView((v) => ({ ...v, kind: 'card' }));
 
@@ -88,6 +129,7 @@ function BackingScreenLive({ uid, accent, viewport, onBack, onOpenTape }) {
             <MonoAttr data-backing="screen-state" style={{ display: 'block', marginTop: 7, fontSize: 10.5, color: LTOKENS.ink2 }}>{pods.loading && !pods.data ? SCREEN.loading : headerLine(state)}</MonoAttr>
           </div>
 
+          <BackingResults uid={uid} accent={accent} onOpenTape={onOpenTape} />
           <YourBacking inPlay={inPlay} accent={accent} onOpenTape={onOpenTape} />
 
           <div style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
