@@ -84,7 +84,11 @@ describe('OWNER ONLY — the token is the only identity (mutation check 5)', () 
   it('returns the viewer\'s OWN record: their wallet\'s net, their pools, their accuracy — and nothing of the other user\'s', async () => {
     const res = await get();
     expect(res.statusCode).toBe(200);
-    expect(res.body).toMatchObject({ viewerUid: UID, label: 'beta stats', seasonKey: '2026-10', net: { career: 250, season: 0 } });
+    // Net BP follows §2's one definition in both columns: the live 100 on
+    // October's pod (g-c) is counted from placement — career carries it in the
+    // wallet's debit, the season subtracts it here (HON-4).
+    expect(res.body).toMatchObject({ viewerUid: UID, label: 'beta stats', seasonKey: '2026-10', net: { career: 250, season: -100 }, excludedStakes: 0 });
+    expect(res.body.season).toMatchObject({ pending: 1, inPlayBp: 100, net: -100 });
     expect(res.body.career).toMatchObject({ poolsBacked: 2, poolsWon: 1, weeksPlayed: 1, pending: 1, net: 250, stakedBp: 350, paidBp: 500 });
     expect(res.body.seasons['2026-09']).toMatchObject({ net: 250, poolsBacked: 2, poolsWon: 1 });
     // Accuracy: g-a — priors od-a 2 (g-old), od-b 1 → baseline od-b, winner od-a; viewer backed od-a → youWon 1, baselineWon 0.
@@ -112,6 +116,20 @@ describe('OWNER ONLY — the token is the only identity (mutation check 5)', () 
     const walletReads = DB.readLog.filter(([, p]) => p.startsWith('backingWallets/')).map(([, p]) => p);
     expect(walletReads).toEqual([`backingWallets/${UID}`]);
     expect(DB.readLog.some(([, p]) => p === `backingWallets/${OTHER}`)).toBe(false);
+  });
+
+  it('an admin-EXCLUDED stake leaves the viewer\'s stats AND their net (§8; HON-5): the won stake on g-a drops out of the counts, the accuracy and both nets', async () => {
+    DB = makeInMemoryDb({ ...world(), 'backingStakes/v1/private/meta': { ipHash: 'x', uaHash: 'y', excluded: true, at: 'x' } });
+    const res = await get();
+    expect(res.statusCode).toBe(200);
+    expect(res.body.excludedStakes).toBe(1);
+    // g-a had only the excluded stake → no longer a pool backed or won; g-b stays.
+    expect(res.body.career).toMatchObject({ poolsBacked: 1, poolsWon: 0, stakedBp: 100, paidBp: 0 });
+    // The wallet's +250 from v1 (500 paid on 250) is taken back out of career and of September.
+    expect(res.body.net).toEqual({ career: 0, season: -100 });
+    expect(res.body.seasons['2026-09'].net).toBe(0);
+    // Its pool leaves the accuracy count too (g-b remains EXCLUDED for want of history).
+    expect(res.body.accuracy.career).toEqual({ pools: 0, youWon: 0, baselineWon: 0, both: 0, excluded: 1 });
   });
 
   it('a viewer with nothing gets zeros — not the other user\'s figures, not a 404', async () => {

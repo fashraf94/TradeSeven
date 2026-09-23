@@ -463,7 +463,10 @@ export const WEEK = Object.freeze({
  * probability.
  */
 export const RESULTS = Object.freeze({
-  eyebrow: 'Last week’s result',
+  // The section over every listed week (the newest listed week may be weeks
+  // old), and the one pod's card in the Spectate final state (HON-9).
+  eyebrow: 'Results',
+  podEyebrow: 'This pod’s result',
   title: 'Results',
   weekTitle: (weekKey) => (weekKey ? `Week ${weekKey}` : 'Week'),
   loading: 'Loading…',
@@ -478,12 +481,15 @@ export const RESULTS = Object.freeze({
   }),
   winner: (names) => (names.length > 1 ? `Winners (tie): ${names.join(' & ')}` : `Winner: ${names[0] ?? '—'}`),
   noWinner: 'No result recorded',
-  pot: (pot, backers) => `Pot ${bp(pot)} BP · ${plural(backers, 'backer', 'backers')}`,
+  pot: (pot, backers) => (Number.isFinite(backers) ? `Pot ${bp(pot)} BP · ${plural(backers, 'backer', 'backers')}` : `Pot ${bp(pot)} BP`),
   yourStakes: 'Your stakes',
   noStakes: 'You had no stake in this pool.',
   stakeRow: (teamName, amount) => `${teamName} · ${bp(amount)} BP`,
   // The payout per stake, read off the stake document (§3, §9).
   paid: (payout) => `paid ${bp(payout)} BP`,
+  // A figure the document does not carry is shown as absent, never as zero (HON-10).
+  paidUnknown: 'paid — BP',
+  unknown: '—',
   lost: 'lost',
   pending: 'settling',
   voided: 'void',
@@ -492,7 +498,13 @@ export const RESULTS = Object.freeze({
   teams: 'Every team · revealed',
   backers: (n) => plural(n, 'backer', 'backers'),
   share: (pct) => `${pct}% of BP in this pool backed them`,
-  pays: (x) => (Number.isFinite(x) ? `pays ×${x.toFixed(2)}` : 'no backers'),
+  // The WINNING set's realized ratio (§2: pays × = pot ÷ winning stakes — one
+  // figure for every winner, a tie included) …
+  paidX: (x) => `paid ×${x.toFixed(2)}`,
+  // … and §3's table figure for every other team, conditional as the table
+  // heads it ("if this team wins"): a losing team never "pays" (HON-2, HON-6).
+  wouldPay: (x) => `×${x.toFixed(2)} had they won`,
+  noBackers: 'no backers',
   won: 'won',
   // The §4 marker — disclosure, not contract.
   loadoutChanged: 'Loadout changed during the week',
@@ -539,6 +551,9 @@ export const STATS = Object.freeze({
   poolsWon: 'Pools won',
   weeksPlayed: 'Weeks played',
   pending: 'In play',
+  // Pools in play and the BP still out on them — counted in Net BP from the
+  // moment a stake is placed (§2), in both columns alike.
+  inPlay: (pools, bpOut) => (bpOut > 0 ? `${pools} · ${bp(bpOut)} BP` : String(pools)),
   accuracy: 'Accuracy',
   yours: 'You',
   baseline: 'Naive baseline',

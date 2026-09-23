@@ -28,7 +28,7 @@ import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { POOL_STATUS } from '../_utils/backingPools.js';
 import { walletRef } from '../_utils/backingWallet.js';
-import { computeMyStats, readPoolsFor, readRanksFor, readStakesWhere } from '../_utils/backingStats.js';
+import { computeMyStats, readExcludedStakeIds, readPoolsFor, readRanksFor, readStakesWhere } from '../_utils/backingStats.js';
 import { BACKING_BETA_ENABLED } from '../../src/config/featureFlags.js';
 
 export const config = { maxDuration: 30 };
@@ -56,6 +56,9 @@ export default async function handler(req, res) {
       readStakesWhere(db, 'userId', user.uid),
     ]);
     const wallet = walletSnap.exists ? walletSnap.data() : null;
+    // The admin `excluded` flags of the viewer's own stakes (§8: an excluded
+    // stake leaves the stats and their net; settlement math never moves).
+    const excluded = await readExcludedStakeIds(db, stakes.map((s) => s.id));
 
     // 5b. The pools those stakes name, then the rank docs of every human team
     // of every settled pool (the baseline's source), read once each.
@@ -68,7 +71,7 @@ export default async function handler(req, res) {
     const ranksByTeam = await readRanksFor(db, [...humanTeams]);
 
     // 5c. The pure fold.
-    const stats = computeMyStats({ stakes, poolsByGroup, ranksByTeam, wallet, now });
+    const stats = computeMyStats({ stakes, poolsByGroup, ranksByTeam, wallet, now, excluded });
     return res.status(200).json({ viewerUid: user.uid, ...stats });
   } catch (err) {
     console.error('[backing-my-stats] failed:', err?.message);

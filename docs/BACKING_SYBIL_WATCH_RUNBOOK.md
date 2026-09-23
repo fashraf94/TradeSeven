@@ -17,7 +17,7 @@ A **read-only report** an admin runs by hand. It reads the backing book — the 
 ## What it never does
 
 - It **never writes**. The Firestore handle is wrapped in a proxy that throws on every mutator (`set`, `update`, `delete`, `create`, `add`, `batch`, `runTransaction`, `commit`, …) and on the write-capable escape hatches (`parent`, `firestore`, `ref`). It imports no writer, no settlement module and no apply script.
-- It **never de-hashes** anything (it cannot) and never prints a whole digest — the report shows a 12-character prefix.
+- It **never de-hashes** anything (it cannot) and never carries a whole digest — the report object holds a 12-character prefix of every hash, so the text and the `--json` output alike show prefixes.
 - It **never ranks** accounts and **never sets** `excluded`. Nothing in the product reads its output.
 
 ## Running it
@@ -43,7 +43,7 @@ Reads: one query over `backingStakes` (bounded by `--limit`, max 10 000), one `p
 
 ## What follows, if anything — an admin's deliberate act, never this script's
 
-- **Exclude a stake from stats and social counts:** set `excluded: true` on `backingStakes/{id}/private/meta`. The stats readers (`GET /api/backing/my-stats`, `GET /api/backing/trainer-stats`) drop excluded stakes; **settlement math never changes** (§8) — the pot, the pays × and the payouts stand.
+- **Exclude a stake from the stats:** set `excluded: true` on `backingStakes/{id}/private/meta`. The two private stats readers (`GET /api/backing/my-stats`, `GET /api/backing/trainer-stats`) drop excluded stakes from their counts and their net; **settlement math never changes** (§8) — the pot, the pays × and the payouts stand. Known limit: the results card's per-team backer counts and the pool's unique-backer count are the close's frozen figures and are not adjusted by the flag.
 - **Refund a pool** (every live stake returned, the pool `refunded`, net BP zero per stake): `POST /api/tournament/backing-settle` with `{ "groupId": "…", "action": "refund", "reason": "…" }` and the admin secret. The reason is logged, never written to the pool document.
 - The excluded flag and the refund are the two levers. There is no ban, no rank, and no automatic action from this report.
 

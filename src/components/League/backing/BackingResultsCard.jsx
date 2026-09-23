@@ -35,7 +35,7 @@ const sectionLabel = { fontSize: 9, color: LTOKENS.ink3, letterSpacing: '0.12em'
 /** The words for ONE stake's outcome — from its status and its own payout. */
 export function stakeOutcomeWords(stake) {
   switch (stake?.status) {
-    case 'won': return RESULTS.paid(stake.payout ?? 0);
+    case 'won': return Number.isFinite(stake.payout) ? RESULTS.paid(stake.payout) : RESULTS.paidUnknown;
     case 'lost': return RESULTS.lost;
     case 'voided': return RESULTS.voided;
     default: return RESULTS.pending;
@@ -85,7 +85,7 @@ export default function BackingResultsCard({ pod, accent = LX.energy, onOpenTape
       {settled && (
         <div data-backing="results-winner" style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: LTOKENS.ink, lineHeight: 1.2 }}>{winners.length > 0 ? RESULTS.winner(winners.map(names)) : RESULTS.noWinner}</div>
-          {revealed && <Mono style={{ fontSize: 10.5, color: LTOKENS.ink2, display: 'block', marginTop: 3 }}>{RESULTS.pot(pod.potTotal, pod.uniqueBackers ?? 0)}</Mono>}
+          {revealed && <Mono style={{ fontSize: 10.5, color: LTOKENS.ink2, display: 'block', marginTop: 3 }}>{RESULTS.pot(pod.potTotal, pod.uniqueBackers)}</Mono>}
         </div>
       )}
       {voided && (
@@ -122,6 +122,16 @@ export default function BackingResultsCard({ pod, accent = LX.energy, onOpenTape
           {teams.map((t) => {
             const name = names(t.odUserId);
             const won = t.won === true;
+            // The right-hand figure: before a settlement the team's staked BP;
+            // after it, the WINNING set's realized ratio (`pod.paysX`, one
+            // figure for every winner — a tie pays every winner the same) and,
+            // for every other team, §3's conditional table figure. Never a
+            // zero for a figure the document does not carry.
+            const paysCell = !settled
+              ? (Number.isFinite(t.stakeTotal) ? `${bp(t.stakeTotal)} BP` : RESULTS.unknown)
+              : won
+                ? (Number.isFinite(pod.paysX) ? RESULTS.paidX(pod.paysX) : RESULTS.paidUnknown)
+                : (Number.isFinite(t.paysX) ? RESULTS.wouldPay(t.paysX) : RESULTS.noBackers);
             return (
               <div key={t.odUserId} data-backing="results-team" data-won={won ? 'true' : 'false'} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '6px 0', borderTop: `1px solid ${LTOKENS.hair}` }}>
                 <AgentAvatar agent={{ kind: t.isCpu ? 'cpu' : 'human', color: seatColor(t.odUserId, t.isCpu) }} size={26} />
@@ -131,10 +141,10 @@ export default function BackingResultsCard({ pod, accent = LX.energy, onOpenTape
                     {won && <Tag color={LTOKENS.gold}>{RESULTS.won}</Tag>}
                   </div>
                   <Mono style={{ fontSize: 9.5, color: LTOKENS.ink3, display: 'block', marginTop: 2 }}>
-                    {RESULTS.backers(t.backerCount ?? 0)}{Number.isFinite(t.sharePct) ? ` · ${RESULTS.share(t.sharePct)}` : ''}
+                    {Number.isFinite(t.backerCount) ? RESULTS.backers(t.backerCount) : RESULTS.unknown}{Number.isFinite(t.sharePct) ? ` · ${RESULTS.share(t.sharePct)}` : ''}
                   </Mono>
                 </div>
-                <MonoAttr data-backing="results-pays" style={{ fontSize: 10.5, color: Number.isFinite(t.paysX) ? LTOKENS.gold : LTOKENS.ink3, whiteSpace: 'nowrap' }}>{settled ? RESULTS.pays(t.paysX) : bp(t.stakeTotal ?? 0) + ' BP'}</MonoAttr>
+                <MonoAttr data-backing="results-pays" style={{ fontSize: 10.5, color: settled && won ? LTOKENS.gold : LTOKENS.ink3, whiteSpace: 'nowrap' }}>{paysCell}</MonoAttr>
               </div>
             );
           })}

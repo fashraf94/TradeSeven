@@ -247,6 +247,20 @@ describe('SETTLE-ON-READ — the path the pod list never had (finding 1)', () =>
     expect(thin.myStakes[0]).toMatchObject({ status: STAKE_STATUS.VOIDED, net: 0 });
   });
 
+  it('HON-3 — a results week lists its TERMINAL pools only: the closed pool of a pod still in battle stays with the strip and Your Backing; the pod\'s own read still answers it as settling', async () => {
+    DB = makeInMemoryDb({
+      ...pod('g-play', { status: POOL_STATUS.CLOSED, g: group({ status: GROUP_STATUS.BATTLE, dailyScores: {} }), stakes: [{ id: 'p1', userId: UID, teamOdUserId: 'od-a', amount: 100 }] }),
+      ...pod('g-done', { status: POOL_STATUS.INSUFFICIENT, stakes: [{ id: 'd1', userId: UID, teamOdUserId: 'od-a', amount: 100, status: STAKE_STATUS.VOIDED, voidReason: 'insufficient' }] }),
+    });
+    const res = await get();
+    expect(res.body.weeks.map((w) => w.weekKey)).toEqual(['2026-W40']);
+    expect(res.body.weeks[0].pools.map((p) => p.groupId)).toEqual(['g-done']);
+    expect(JSON.stringify(res.body)).not.toContain('g-play');
+    expect(spy.settlePool).not.toHaveBeenCalled();
+    const single = await get({ groupId: 'g-play' });
+    expect(single.body.pod).toMatchObject({ groupId: 'g-play', outcome: 'settling', status: POOL_STATUS.CLOSED });
+  });
+
   it('ONE pod\'s failing settlement never takes down the reader: the pod projects as it stands, the failure is logged', async () => {
     DB.db.runTransaction = async () => { throw new Error('Firestore is on fire'); };
     const res = await get({ groupId: 'g-w40' });

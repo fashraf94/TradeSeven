@@ -31,7 +31,7 @@ function SpectateBackingResultsLive({ groupId, accent }) {
   if (!pod || pod.outcome === 'open') return null;
   return (
     <div data-backing="spectate-results" style={{ marginTop: 18 }}>
-      <Eyebrow color={LTOKENS.ink3} style={{ marginBottom: 8 }}>{RESULTS.eyebrow}</Eyebrow>
+      <Eyebrow color={LTOKENS.ink3} style={{ marginBottom: 8 }}>{RESULTS.podEyebrow}</Eyebrow>
       <BackingResultsCard pod={pod} accent={accent} />
     </div>
   );

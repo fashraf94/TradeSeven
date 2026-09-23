@@ -305,6 +305,15 @@ const voidedPod = (outcome, refundReason) => resultPod({
   winners: [], paysX: null, winningStakes: null, myNet: null, myWon: null,
   teams: resultPod().teams.map((t) => ({ ...t, paysX: null, won: null })),
   myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', amount: 500, status: 'voided', payout: null, voidReason: refundReason ?? 'insufficient', net: 0, loadoutChanged: null }],
+  // A pool that DID miss the floor: two backers on two teams (§3 asks ≥3 backers).
+  ...(outcome === 'insufficient' ? {
+    potTotal: 800, uniqueBackers: 2,
+    teams: [
+      { odUserId: 'od-a', isCpu: false, backerCount: 1, stakeTotal: 500, sharePct: 63, paysX: null, won: null },
+      { odUserId: 'od-b', isCpu: false, backerCount: 1, stakeTotal: 300, sharePct: 38, paysX: null, won: null },
+      { odUserId: 'cpu-1', isCpu: true, backerCount: 0, stakeTotal: 0, sharePct: 0, paysX: null, won: null },
+    ],
+  } : {}),
 });
 const RESULT_PODS = {
   win: resultPod(),

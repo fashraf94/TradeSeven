@@ -76,6 +76,10 @@ const StakeControl = (await import('../components/League/backing/StakeControl'))
 const YourBacking = (await import('../components/League/backing/YourBacking')).default;
 const { doc } = await import('firebase/firestore');
 const { fetchWithAuth } = await import('../utils/fetchWithAuth');
+// The emitter's per-session dedup is reset before every row, so a telemetry
+// emit from the page (which must never happen) is seen on every render, not
+// only the first (DARK-2, the PR 5 review record).
+const { __resetBackingTelemetry } = await import('../services/backingTelemetry');
 
 // ── the network boundary, spied ─────────────────────────────────────────────
 const saved = {};
@@ -132,7 +136,7 @@ async function select(page, stateId) {
 }
 const byText = (root, selector, text) => [...root.querySelectorAll(selector)].find((el) => el.textContent.trim() === text) ?? null;
 
-beforeEach(() => { flag.on = false; resetNet(); window.history.replaceState(null, '', '/?preview=backing'); });
+beforeEach(() => { flag.on = false; resetNet(); __resetBackingTelemetry(); window.history.replaceState(null, '', '/?preview=backing'); });
 afterEach(async () => {
   for (const { root, container } of roots) { await act(async () => root.unmount()); container.remove(); }
   roots = [];
@@ -187,7 +191,8 @@ function expectState(page, state) {
       expect(card.getAttribute('data-outcome')).toBe({ win: 'settled', loss: 'settled', refunded: 'refunded', insufficient: 'insufficient' }[state.result]);
       // MUTATION CHECK 3's fixture on the page: the stake document's payout, never stake × pays ×.
       if (state.result === 'win') { expect(text).toContain('paid 714 BP'); expect(text).not.toContain('715'); expect(text).toContain('+114 BP net'); expect(text).toContain('70% of BP in this pool backed them'); }
-      if (state.result === 'loss') { expect(text).toContain('−500 BP net'); expect(text).not.toContain('paid'); }
+      // The loss: the viewer's stake row says "lost" and no BP was paid to them; the WINNING team's row still shows what the pot paid (×).
+      if (state.result === 'loss') { expect(text).toContain('−500 BP net'); expect(text).toContain('lost'); expect(text).not.toMatch(/paid \d/); expect(text).toContain('paid ×3.33'); }
       if (state.result === 'refunded') { expect(text).toContain(RESULTS.reason.group_voided); expect(text).toContain(RESULTS.neutral); expect(text).not.toContain('pays ×'); }
       if (state.result === 'insufficient') { expect(text).toContain(RESULTS.reason.insufficient); expect(text).not.toContain('Winner'); }
       // The tape link rides a SETTLED result only (there is no film room for a pool that never played out).

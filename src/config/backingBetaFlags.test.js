@@ -364,6 +364,30 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       'api/tournament/backing-stake.js',
     ]);
     expect(importersOf('api/_utils/backingFingerprint.js')).toEqual(['api/tournament/backing-stake.js']);
+    // PR 5's four helpers, by exact importer (DARK-4, the PR 5 review record):
+    // the telemetry writer (the sink route and the stake route's server-side
+    // stake_confirmed), the results projection (the results reader), the
+    // stats readers/folds (the three client-facing readers), and the Sybil
+    // analysis (the admin script only — scripts/ is outside this walk, and
+    // nothing under api/ or src/ may reach it).
+    expect(importersOf('api/_utils/backingEvents.js')).toEqual(['api/backing/event.js', 'api/tournament/backing-stake.js']);
+    expect(importersOf('api/_utils/backingResults.js')).toEqual(['api/_utils/backingStats.js', 'api/backing/results.js']);
+    expect(importersOf('api/_utils/backingStats.js')).toEqual(['api/backing/my-stats.js', 'api/backing/results.js', 'api/backing/trainer-stats.js']);
+    expect(importersOf('api/_utils/backingSybilWatch.js')).toEqual([]);
+    // …and EVERY route under api/ that reaches any backing helper is one of
+    // the enumerated doors — by import, not by path token — so a route named
+    // without `backing` that imports a helper is still held to the flag and a
+    // dark suite (DARK-4's second half).
+    const DOORS = new Set([...routesNamed('backing'), 'api/tournament/team-card.js', 'api/team/pitch.js', 'api/eligibility/attest.js']);
+    for (const helper of [
+      'api/_utils/backingWallet.js', 'api/_utils/backingWeek.js', 'api/_utils/backingPools.js', 'api/_utils/backingEligibility.js',
+      'api/_utils/backingFingerprint.js', 'api/_utils/backingSettlement.js', 'api/_utils/teamPitch.js',
+      'api/_utils/backingEvents.js', 'api/_utils/backingResults.js', 'api/_utils/backingStats.js', 'api/_utils/backingSybilWatch.js',
+    ]) {
+      for (const rel of importersOf(helper).filter((r) => r.startsWith('api/') && !r.startsWith('api/_utils/'))) {
+        expect(DOORS.has(rel), `${rel} reaches ${helper} but is not an enumerated backing door`).toBe(true);
+      }
+    }
     // NO CLIENT IMPORTER OF ANY api/ BACKING HELPER — still true after PR 4:
     // the surfaces reach the layer through endpoints and the rules-granted
     // Firestore reads, never by importing server modules into a bundle.

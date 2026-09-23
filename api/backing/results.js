@@ -39,10 +39,13 @@
 // WHICH WEEKS: the viewer's stakes are grouped by `weekKey`, newest first. A
 // week is a RESULT once at least one of its pools has nothing left to decide;
 // a week whose pools are all open, closed or held is in play (the strip and
-// Your Backing own it) and is skipped. Pools in a listed week that are still
-// settling are stated as such. `before=<weekKey>` pages further back; `limit`
-// is weeks per page (1–12, default 4); at most `MAX_WEEKS_SCANNED` weeks are
-// examined per request, so the read cost is bounded whatever the history.
+// Your Backing own it) and is skipped. A listed week shows its TERMINAL pools
+// only: a pool of that week still `closed` (its pod in battle) or held stays
+// with the strip and Your Backing until it is decided — a results card must
+// never call an in-battle pod complete (HON-3, the PR 5 review record).
+// `before=<weekKey>` pages further back; `limit` is weeks per page (1–12,
+// default 4); at most `MAX_WEEKS_SCANNED` weeks are examined per request, so
+// the read cost is bounded whatever the history.
 //
 // READ-ONLY FOR THE VIEWER: the only writes this route can cause are the pool
 // lifecycle's own (the lazy close, the settlement, the refund), which belong
@@ -209,9 +212,10 @@ export default async function handler(req, res) {
       scanned += 1;
       lastScanned = week.weekKey;
       const pods = (await Promise.all(week.groupIds.map((id) => loadPod(db, { groupId: id, myStakes: stakes.filter((s) => s.groupId === id), now })))).filter(Boolean);
-      const done = pods.some((p) => isTerminalPool({ status: p.status }));
-      if (!done) continue;
-      page.push({ weekKey: week.weekKey, pools: pods });
+      // Every pod took the settle-on-read pass above; only the DECIDED ones are a result.
+      const done = pods.filter((p) => isTerminalPool({ status: p.status }));
+      if (done.length === 0) continue;
+      page.push({ weekKey: week.weekKey, pools: done });
     }
     return res.status(200).json({ viewerUid: user.uid, weeks: page, nextBefore, weeksAvailable: weeks.length });
   } catch (err) {

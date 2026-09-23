@@ -29,7 +29,7 @@ const BOOK = {
     stake('s5', 'u4', 'g1', 'od-a', 250),
     stake('s6', 'u5', 'g2', 'od-c', 100),
     stake('s7', 'u2', 'g2', 'od-c', 50, { status: 'voided', voidReason: 'group_voided' }),
-    stake('s8', 'u6', 'dev-g9', 'od-a', 100),
+    stake('s8', 'u6', 'g9', 'od-a', 100),
   ],
   metaByStakeId: {
     s1: meta(IP_A, UA_1), s2: meta(IP_A, UA_1), s3: meta(IP_A, UA_2), s4: meta(IP_A, UA_1),
@@ -37,14 +37,15 @@ const BOOK = {
     s7: meta(IP_A, UA_1),
     s8: meta(UNKNOWN, UA_2),
   },
-  poolsByGroupId: { g1: { isDev: false }, g2: { isDev: false }, 'dev-g9': { isDev: true } },
+  // A dev pod keeps a plain group id; its POOL carries `isDev` (the runner reads it at `dev-{groupId}`).
+  poolsByGroupId: { g1: { isDev: false }, g2: { isDev: false }, g9: { isDev: true } },
 };
 
 describe('analyzeSybil — the clusters', () => {
   const report = analyzeSybil(BOOK, { unknownIpHash: UNKNOWN, now: new Date('2026-09-23T12:00:00.000Z') });
 
   it('an address shared by ≥2 accounts is a cluster; an address with one account is not', () => {
-    expect(report.addressClusters.map((c) => c.ipHash)).toEqual([IP_A]);
+    expect(report.addressClusters.map((c) => c.ipHash)).toEqual([IP_A.slice(0, 12)]);
     const a = report.addressClusters[0];
     expect(a.accountCount).toBe(3);
     expect(a.accounts.map((x) => x.userId)).toEqual(['u1', 'u2', 'u3']);
@@ -54,11 +55,11 @@ describe('analyzeSybil — the clusters', () => {
   });
 
   it('a device cluster needs the SAME address and user agent — u1 and u2, not u3', () => {
-    expect(report.deviceClusters).toEqual([{ ipHash: IP_A, uaHash: UA_1, accountCount: 2, accounts: ['u1', 'u2'], stakeCount: 3, bp: 650 }]);
+    expect(report.deviceClusters).toEqual([{ ipHash: IP_A.slice(0, 12), uaHash: UA_1.slice(0, 12), accountCount: 2, accounts: ['u1', 'u2'], stakeCount: 3, bp: 650 }]);
   });
 
   it('the concentration is a cluster\'s accounts on ONE team in ONE pod — u1 and u2 on od-a in g1; not the two pods u1 backed alone', () => {
-    expect(report.concentration).toEqual([{ groupId: 'g1', teamOdUserId: 'od-a', accountCount: 2, accounts: ['u1', 'u2'], bp: 500, isDev: false, ipHash: IP_A }]);
+    expect(report.concentration).toEqual([{ groupId: 'g1', teamOdUserId: 'od-a', accountCount: 2, accounts: ['u1', 'u2'], bp: 500, isDev: false, ipHash: IP_A.slice(0, 12) }]);
     expect(report.addressClusters[0].sameTeam).toHaveLength(1);
   });
 
@@ -100,6 +101,12 @@ describe('analyzeSybil — the clusters', () => {
       expect(r.addressClusters).toEqual([]);
       expect(r.counts.counted).toBe(0);
     }
+  });
+
+  it('the REPORT OBJECT itself carries no whole digest — `--json` shows the same prefixes the text does (HON-8)', () => {
+    const json = JSON.stringify(report);
+    for (const digest of [IP_A, IP_B, IP_C, UA_1, UA_2, UNKNOWN]) expect(json).not.toContain(digest);
+    expect(json).toContain(IP_A.slice(0, 12));
   });
 
   it('ranks NOTHING about users: the ordering is by cluster size and BP, and no field is a rank, a score or a verdict', () => {

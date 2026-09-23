@@ -29,10 +29,14 @@
 //     landed, or a legacy doc), stakes already `excluded`, stakes whose
 //     address hashed the `unknown` sentinel, and dev-namespace stakes.
 //
-// WHAT IT NEVER DOES: it never de-hashes anything (it cannot), never prints a
-// full digest (the runner shows a prefix), never ranks accounts, and never
-// touches the `excluded` flag — that is an admin's deliberate write elsewhere,
-// and stats readers honour it (api/_utils/backingStats.js).
+// WHAT IT NEVER DOES: it never de-hashes anything (it cannot), never carries
+// a full digest — the REPORT OBJECT holds a 12-character prefix of every hash,
+// so the text and the `--json` output alike show prefixes (HON-8, the PR 5
+// review record) — never ranks accounts, and never touches the `excluded`
+// flag: that is an admin's deliberate write elsewhere, which the two stats
+// readers honour (api/backing/my-stats.js, api/backing/trainer-stats.js); the
+// results card's per-team backer counts are the close's frozen figures and are
+// not adjusted by it.
 
 /** The report's shape version — bumped when a field changes meaning. */
 export const SYBIL_WATCH_VERSION = 1;
@@ -106,7 +110,7 @@ export function analyzeSybil({ stakes, metaByStakeId, poolsByGroupId = {} }, { m
   const addressClusters = [...byIp.values()]
     .filter((c) => c.accounts.size >= minAccounts)
     .map((c) => ({
-      ipHash: c.ipHash,
+      ipHash: shortHash(c.ipHash),
       accountCount: c.accounts.size,
       stakeCount: c.stakeCount,
       bp: c.bp,
@@ -130,7 +134,7 @@ export function analyzeSybil({ stakes, metaByStakeId, poolsByGroupId = {} }, { m
   }
   const deviceClusters = [...byDevice.values()]
     .filter((d) => d.accounts.size >= minAccounts)
-    .map((d) => ({ ipHash: d.ipHash, uaHash: d.uaHash, accountCount: d.accounts.size, accounts: [...d.accounts].sort(), stakeCount: d.stakeCount, bp: d.bp }))
+    .map((d) => ({ ipHash: shortHash(d.ipHash), uaHash: shortHash(d.uaHash), accountCount: d.accounts.size, accounts: [...d.accounts].sort(), stakeCount: d.stakeCount, bp: d.bp }))
     .sort((x, y) => y.accountCount - x.accountCount || y.bp - x.bp || x.ipHash.localeCompare(y.ipHash));
 
   // ── concentration across the book: every (pod, team) backed by a cluster ──
@@ -189,6 +193,6 @@ export function formatSybilReport(report) {
   out.push(`MANY-ADDRESS ACCOUNTS (≥3 addresses across their stakes — informational): ${report.manyAddressAccounts.length}`);
   for (const a of report.manyAddressAccounts) out.push(`  ${a.userId} — ${a.addressCount} addresses · ${a.agentCount} agents · ${a.stakes} stakes`);
   out.push('');
-  out.push('Next step, if any, is an admin\'s: set `excluded: true` on a stake\'s sealed meta (stats and social counts drop it; settlement math never changes), or refund a pool through the admin endpoint with a reason. This script does neither.');
+  out.push('Next step, if any, is an admin\'s: set `excluded: true` on a stake\'s sealed meta (the two private stats readers drop it; the results card\'s backer counts are the close\'s frozen figures; settlement math never changes), or refund a pool through the admin endpoint with a reason. This script does neither.');
   return out.join('\n');
 }

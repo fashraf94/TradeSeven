@@ -67,17 +67,38 @@ describe('the settled card — every number is the projection\'s', () => {
     expect(html).toContain('>Settled<');
   });
 
-  it('reveals every team: backers, the share labeled EXACTLY (§3), pays × from the table, "no backers" for an unbacked seat', () => {
+  it('reveals every team: backers, the share labeled EXACTLY (§3), the winner\'s REALIZED "paid ×", the table\'s conditional figure for a loser, "no backers" for an unbacked seat', () => {
     const t = text(settled());
     expect(t).toContain('2 backers · 70% of BP in this pool backed them');
     expect(t).toContain('2 backers · 30% of BP in this pool backed them');
-    expect(t).toContain('pays ×1.43');
-    expect(t).toContain('pays ×3.33');
+    // The winner shows what the pot PAID (pool.paysX); a losing team's figure
+    // is §3's "if this team wins" table entry, said conditionally — a losing
+    // team never "pays" (HON-2, HON-6 in the PR 5 review record).
+    expect(t).toContain('paid ×1.43');
+    expect(t).toContain('×3.33 had they won');
+    expect(t).not.toMatch(/pays ×/);
     expect(t).toContain('no backers');
     expect(t).not.toMatch(/crowd|probab|chance|%\s*to win/i);
     const html = render(settled());
     expect(html.match(/data-backing="results-team"/g)).toHaveLength(3);
     expect(html).toContain('data-won="true"');
+  });
+
+  it('a figure the document does not carry is shown as absent, never as zero (HON-10)', () => {
+    const bare = settled({
+      uniqueBackers: null,
+      teams: [{ odUserId: 'od-a', isCpu: false, backerCount: null, stakeTotal: null, sharePct: null, paysX: null, won: true }],
+      myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', amount: 500, status: 'won', payout: null, voidReason: null, net: null, loadoutChanged: null }],
+      myNet: null,
+    });
+    const t = text(bare);
+    expect(t).toContain('Pot 1,000 BP');
+    expect(t).not.toContain('0 backers');
+    expect(t).toContain('paid — BP');
+    expect(t).not.toContain('paid 0 BP');
+    expect(t).not.toMatch(/\b0% of BP/);
+    // …and a settled pool with no realized ratio on record says so rather than inventing one.
+    expect(text(settled({ paysX: null }))).toContain('paid — BP');
   });
 
   it('the loadout marker rides the viewer\'s OWN stakes: changed on s1, unchanged on s2, nothing when unknown', () => {
@@ -90,8 +111,19 @@ describe('the settled card — every number is the projection\'s', () => {
     expect(unknown).not.toContain(RESULTS.loadoutSame);
   });
 
-  it('a tie names both winners; a viewer with no stake is told so; the tape link opens the first backed team', () => {
-    expect(text(settled({ winners: ['od-a', 'od-b'] }))).toContain('Winners (tie): Mira & Draco');
+  it('a tie names both winners and pays EVERY winner the pool\'s one realized ratio — never each team\'s own table figure (HON-2); a viewer with no stake is told so; the tape link opens the first backed team', () => {
+    const tie = settled({
+      winners: ['od-a', 'od-b'], winningStakes: 1000, paysX: 1,
+      teams: settled().teams.map((tm) => ({ ...tm, won: !tm.isCpu })),
+      myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', amount: 500, status: 'won', payout: 500, voidReason: null, net: 0, loadoutChanged: null }],
+      myNet: 0,
+    });
+    const tt = text(tie);
+    expect(tt).toContain('Winners (tie): Mira & Draco');
+    expect(tt.match(/paid ×1\.00/g)).toHaveLength(2);
+    expect(tt).not.toContain('×1.43');
+    expect(tt).not.toContain('×3.33');
+    expect(tt).toContain('paid 500 BP');
     expect(text(settled({ myStakes: [], myNet: null }))).toContain(RESULTS.noStakes);
     const calls = [];
     const html = renderToString(<BackingResultsCard pod={settled()} onOpenTape={(g, f) => calls.push([g, f])} />);
@@ -116,7 +148,7 @@ describe('a refunded, insufficient or settling pool is stated plainly', () => {
       expect(t).toContain(RESULTS.neutral);
       expect(t).toContain('void');
       expect(t).not.toContain('paid');
-      expect(t).not.toContain('pays ×');
+      expect(t).not.toContain('had they won');
       expect(t).not.toContain('Winner');
     }
   });

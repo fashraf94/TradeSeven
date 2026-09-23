@@ -26,7 +26,7 @@ function Column({ title, bucket }) {
       <Stat k={STATS.poolsBacked} v={String(bucket?.poolsBacked ?? 0)} />
       <Stat k={STATS.poolsWon} v={String(bucket?.poolsWon ?? 0)} />
       <Stat k={STATS.weeksPlayed} v={String(bucket?.weeksPlayed ?? 0)} />
-      <Stat k={STATS.pending} v={String(bucket?.pending ?? 0)} color={LTOKENS.ink2} />
+      <Stat k={STATS.pending} v={STATS.inPlay(bucket?.pending ?? 0, bucket?.inPlayBp ?? 0)} color={LTOKENS.ink2} />
     </div>
   );
 }

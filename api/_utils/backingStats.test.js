@@ -96,13 +96,42 @@ describe('computeMyStats — the viewer\'s own record, pure', () => {
   ]);
   const out = computeMyStats({ stakes, poolsByGroup, ranksByTeam, wallet, now: NOW });
 
-  it('net BP is the wallet\'s ledger figure — career and the current season — never re-summed from stakes', () => {
+  it('net BP is the wallet\'s ledger figure under §2\'s ONE definition in both columns: career as the wallet carries it (every placement debited), each season\'s settled figure less the BP still in play on that month\'s pools (HON-4)', () => {
     expect(out.label).toBe(BETA_STATS_LABEL);
     expect(out.seasonKey).toBe('2026-10');
-    expect(out.net).toEqual({ career: -150, season: 0 });
+    // The live 100 on g-d (battle Monday 2026-10-12) is October's: the wallet
+    // has no October bucket yet, so October reads −100 — exactly what the
+    // career column already counts for it.
+    expect(out.net).toEqual({ career: -150, season: -100 });
+    expect(out.seasons['2026-10']).toMatchObject({ net: -100, pending: 1, inPlayBp: 100 });
     expect(out.seasons['2026-09'].net).toBe(-150);
     expect(out.seasons['2026-08'].net).toBe(40);
     expect(out.career.net).toBe(-150);
+    expect(out.career.inPlayBp).toBe(100);
+    expect(out.excludedStakes).toBe(0);
+  });
+
+  it('HON-4 — a first-week backer with ONE live stake and nothing decided reads the same net in both columns (−500), never +0 beside −500', () => {
+    const first = computeMyStats({
+      stakes: [{ id: 'f1', groupId: 'g-f', teamOdUserId: 'od-a', amount: 500, status: 'live', weekKey: '2026-W41' }],
+      poolsByGroup: new Map([['g-f', { poolId: 'g-f', isDev: false, pool: { status: 'open', battleMondayEtDate: '2026-10-05' } }]]),
+      wallet: { careerNet: -500, seasons: {} },
+      now: NOW,
+    });
+    expect(first.net).toEqual({ career: -500, season: -500 });
+    expect(first.season).toMatchObject({ pending: 1, inPlayBp: 500, poolsBacked: 0 });
+    expect(first.career).toMatchObject({ pending: 1, inPlayBp: 500, net: -500 });
+  });
+
+  it('HON-5 — an admin-EXCLUDED stake leaves the counts and the net (§8): s1\'s +214 comes out of career and of September; g-a stays backed through s2', () => {
+    const ex = computeMyStats({ stakes, poolsByGroup, ranksByTeam, wallet, now: NOW, excluded: new Set(['s1']) });
+    expect(ex.excludedStakes).toBe(1);
+    expect(ex.net).toEqual({ career: -150 - 214, season: -100 });
+    expect(ex.seasons['2026-09'].net).toBe(-150 - 214);
+    expect(ex.career).toMatchObject({ poolsBacked: 3, poolsWon: 0, stakes: 5, stakedBp: 400, paidBp: 0 });
+    // The excluded stake's pool is still judged for accuracy through the remaining decided stake (s2 lost).
+    expect(ex.accuracy.career.pools).toBe(out.accuracy.career.pools);
+    expect(ex.accuracy.career.youWon).toBe(out.accuracy.career.youWon - 1);
   });
 
   it('counts pools backed (decided), pools won, weeks played, pending pools and voided pools; skips dev pools and says so', () => {

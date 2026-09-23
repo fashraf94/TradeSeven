@@ -8,7 +8,7 @@
 // nobody; `refresh` re-fetches on demand. The per-run `active` flag guards a
 // stale reply (the useBackingPods idiom).
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchBackingResults } from '../services/backingService';
 
 export default function useBackingResults({ groupId = null, limit = null, enabled = true } = {}) {
@@ -19,8 +19,13 @@ export default function useBackingResults({ groupId = null, limit = null, enable
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(null);
   const [tick, setTick] = useState(0);
+  // The run the hook is on: a reply from an earlier run (a `loadMore` that
+  // landed after `enabled` flipped, `groupId` changed or the hook unmounted)
+  // is dropped (WIRE-8, the PR 5 review record).
+  const run = useRef(0);
 
   useEffect(() => {
+    run.current += 1;
     if (!enabled) { setData(null); setWeeks([]); setNextBefore(null); setLoading(false); setError(null); return undefined; }
     let active = true;
     setLoading(true);
@@ -34,20 +39,22 @@ export default function useBackingResults({ groupId = null, limit = null, enable
       })
       .catch((err) => { if (active) setError(err?.code || 'server_error'); })
       .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
+    return () => { active = false; run.current += 1; };
   }, [enabled, groupId, limit, tick]);
 
   const loadMore = useCallback(async () => {
     if (!enabled || groupId || !nextBefore || loadingMore) return;
+    const mine = run.current;
     setLoadingMore(true);
     try {
       const body = await fetchBackingResults({ before: nextBefore, limit });
+      if (run.current !== mine) return;
       setWeeks((prev) => [...prev, ...(Array.isArray(body?.weeks) ? body.weeks : [])]);
       setNextBefore(typeof body?.nextBefore === 'string' ? body.nextBefore : null);
     } catch (err) {
-      setError(err?.code || 'server_error');
+      if (run.current === mine) setError(err?.code || 'server_error');
     } finally {
-      setLoadingMore(false);
+      if (run.current === mine) setLoadingMore(false);
     }
   }, [enabled, groupId, nextBefore, limit, loadingMore]);
 

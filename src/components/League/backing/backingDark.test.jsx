@@ -116,6 +116,10 @@ vi.mock('../../Dashboard/TraitsSheet', () => ({ default: () => null }));
 vi.mock('../../Dashboard/ArchetypePicker', () => ({ default: () => null }));
 vi.mock('../../Dashboard/EvolutionPreviewCard', () => ({ default: () => null }));
 
+// The emitter's per-session dedup is reset before every row: a dark emit of a
+// key a lit row already sent would otherwise be swallowed and the "opens NO
+// read / makes NO request" rows could not see it (DARK-2, the PR 5 record).
+const { __resetBackingTelemetry } = await import('../../../services/backingTelemetry');
 const LeagueHome = (await import('../LeagueHome')).default;
 const LeagueLobbyDesktop = (await import('../LeagueLobbyDesktop')).default;
 const { PodCard } = await import('../LeaguePod');
@@ -142,7 +146,7 @@ async function mount(el) {
   return container;
 }
 
-beforeEach(() => { flag.on = false; svc.calls.length = 0; svc.reply = null; fetchSpy.mockClear(); });
+beforeEach(() => { flag.on = false; svc.calls.length = 0; svc.reply = null; fetchSpy.mockClear(); __resetBackingTelemetry(); });
 afterEach(async () => {
   for (const { root, container } of roots) { await act(async () => root.unmount()); container.remove(); }
   roots = [];

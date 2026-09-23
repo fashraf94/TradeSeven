@@ -177,8 +177,23 @@ export function baselinePick(teams, priorByTeam) {
 
 const emptyMine = (monthKey = null) => ({
   monthKey, poolsBacked: 0, poolsWon: 0, weeksPlayed: 0, pending: 0, voidedPools: 0,
-  stakes: 0, stakedBp: 0, paidBp: 0,
+  stakes: 0, stakedBp: 0, paidBp: 0, inPlayBp: 0,
 });
+
+/**
+ * ONE stake's ledger effect on net BP (§2: net BP = Σ payouts + Σ refunds −
+ * Σ stakes): a won stake's payout less its stake, a lost or LIVE stake's
+ * stake (debited at placement), a voided stake's zero (its refund pairs).
+ */
+function netEffectOf(stake) {
+  const amount = Number.isFinite(stake?.amount) ? stake.amount : 0;
+  switch (stake?.status) {
+    case STAKE_STATUS.WON: return (Number.isFinite(stake.payout) ? stake.payout : 0) - amount;
+    case STAKE_STATUS.LOST: return -amount;
+    case STAKE_STATUS.LIVE: return -amount;
+    default: return 0;
+  }
+}
 const emptyAccuracy = () => ({ pools: 0, youWon: 0, baselineWon: 0, both: 0, excluded: 0 });
 
 /**
@@ -186,7 +201,7 @@ const emptyAccuracy = () => ({ pools: 0, youWon: 0, baselineWon: 0, both: 0, exc
  * { poolId, pool }; `ranksByTeam` is odUserId → rank doc for the baseline;
  * `wallet` is the viewer's production wallet document (or null).
  */
-export function computeMyStats({ stakes = [], poolsByGroup = new Map(), ranksByTeam = new Map(), wallet = null, now = new Date() } = {}) {
+export function computeMyStats({ stakes = [], poolsByGroup = new Map(), ranksByTeam = new Map(), wallet = null, now = new Date(), excluded = new Set() } = {}) {
   const season = currentSeasonKey(now);
   const career = emptyMine();
   const seasons = {};
@@ -195,6 +210,17 @@ export function computeMyStats({ stakes = [], poolsByGroup = new Map(), ranksByT
   const weeksBySeason = {};
   let devPoolsSkipped = 0;
   let unknownPools = 0;
+  // NET BP FOLLOWS ONE DEFINITION IN BOTH COLUMNS (§2: Σ payouts + Σ refunds
+  // − Σ stakes, an in-play stake counted from the moment it is placed). The
+  // wallet's `careerNet` already carries every placement's debit; its season
+  // buckets move only at settlement (`recordStakeLoss`) — so the season
+  // figure subtracts the live BP on that month's pools here, or the two
+  // columns would count an in-play stake differently under one label (HON-4,
+  // the PR 5 review record). An admin-EXCLUDED stake leaves the stats and
+  // their net (§8; HON-5): its ledger effect is taken back out of both.
+  const liveBp = { career: 0, seasons: {} };
+  const excludedEffect = { career: 0, seasons: {} };
+  let excludedStakes = 0;
 
   const byGroup = new Map();
   for (const s of stakes) {
@@ -204,19 +230,35 @@ export function computeMyStats({ stakes = [], poolsByGroup = new Map(), ranksByT
     byGroup.set(s.groupId, list);
   }
 
-  for (const [groupId, mine] of byGroup) {
+  for (const [groupId, mineAll] of byGroup) {
+    let mine = mineAll;
     const located = poolsByGroup.get(groupId) ?? null;
     if (!located?.pool) { unknownPools += 1; continue; }
     if (located.isDev === true || (typeof located.poolId === 'string' && located.poolId.startsWith('dev-'))) { devPoolsSkipped += 1; continue; }
     const pool = located.pool;
     const monthKey = monthKeyOfPool(pool);
     const bucket = monthKey ? (seasons[monthKey] ??= emptyMine(monthKey)) : null;
+    // The excluded stakes of this pool leave the counts, and their ledger
+    // effect leaves the net (career, and the pool's month).
+    const dropped = mine.filter((s) => excluded.has(s.id));
+    if (dropped.length > 0) {
+      excludedStakes += dropped.length;
+      const effect = dropped.reduce((sum, s) => sum + netEffectOf(s), 0);
+      excludedEffect.career += effect;
+      if (monthKey) excludedEffect.seasons[monthKey] = (excludedEffect.seasons[monthKey] ?? 0) + effect;
+      mine = mine.filter((s) => !excluded.has(s.id));
+      if (mine.length === 0) continue;
+    }
     const decided = mine.filter((s) => s.status === STAKE_STATUS.WON || s.status === STAKE_STATUS.LOST);
     const live = mine.filter((s) => s.status === STAKE_STATUS.LIVE);
     const won = decided.some((s) => s.status === STAKE_STATUS.WON);
+    const liveAmount = live.reduce((sum, s) => sum + (Number.isFinite(s.amount) ? s.amount : 0), 0);
+    liveBp.career += liveAmount;
+    if (monthKey) liveBp.seasons[monthKey] = (liveBp.seasons[monthKey] ?? 0) + liveAmount;
 
     for (const target of [career, bucket].filter(Boolean)) {
       target.stakes += mine.length;
+      target.inPlayBp += liveAmount;
       if (decided.length > 0) {
         target.poolsBacked += 1;
         if (won) target.poolsWon += 1;
@@ -262,7 +304,12 @@ export function computeMyStats({ stakes = [], poolsByGroup = new Map(), ranksByT
   for (const [monthKey, weeks] of Object.entries(weeksBySeason)) seasons[monthKey].weeksPlayed = weeks.size;
 
   const walletSeasons = wallet?.seasons && typeof wallet.seasons === 'object' ? wallet.seasons : {};
-  const netFor = (monthKey) => (Number.isFinite(walletSeasons[monthKey]?.net) ? walletSeasons[monthKey].net : 0);
+  // A month's net: the ledger's settled figure, less the BP still in play on
+  // that month's pools (debited at placement, not yet in the bucket), less
+  // the effect of any excluded stake — the same definition as the career's.
+  const netFor = (monthKey) => (Number.isFinite(walletSeasons[monthKey]?.net) ? walletSeasons[monthKey].net : 0)
+    - (liveBp.seasons[monthKey] ?? 0) - (excludedEffect.seasons[monthKey] ?? 0);
+  const careerNet = (Number.isFinite(wallet?.careerNet) ? wallet.careerNet : 0) - excludedEffect.career;
   for (const monthKey of Object.keys(seasons)) seasons[monthKey].net = netFor(monthKey);
   // A season the wallet knows but no pool of the viewer's names (a refund of a
   // pool since deleted, say) still shows its ledger figure.
@@ -271,11 +318,12 @@ export function computeMyStats({ stakes = [], poolsByGroup = new Map(), ranksByT
   return {
     label: BETA_STATS_LABEL,
     seasonKey: season,
-    net: { career: Number.isFinite(wallet?.careerNet) ? wallet.careerNet : 0, season: netFor(season) },
-    career: { ...career, net: Number.isFinite(wallet?.careerNet) ? wallet.careerNet : 0 },
+    net: { career: careerNet, season: netFor(season) },
+    career: { ...career, net: careerNet },
     season: seasons[season] ?? { ...emptyMine(season), net: netFor(season) },
     seasons,
     accuracy: { career: accuracy.career, season: accuracy.seasons[season] ?? emptyAccuracy(), seasons: accuracy.seasons },
+    excludedStakes,
     devPoolsSkipped,
     unknownPools,
   };
