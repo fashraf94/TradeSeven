@@ -2,7 +2,16 @@
 //
 // Backing Beta PR 4 — photographs the pages harness.render.jsx wrote.
 //
-//   node scripts/backing-screenshots/shoot.mjs <pages dir> <png dir>
+//   node scripts/backing-screenshots/shoot.mjs <pages dir> <png dir> [page prefix]
+//
+// Desktop pages (`desk-*.html`, written by desktop.render.jsx) are photographed
+// in a 1440×900 viewport at 1×; the mobile pages keep the 390px column at 2×.
+// On a desktop page that shows the stake control in the Backing screen's
+// right column, the script also MEASURES the rule the desktop brief sets —
+// the three disclosure lines and Confirm visible without scrolling at
+// 1440×900 — and prints each measurement (and fails if one is off-screen).
+// The optional third argument photographs only the pages whose names start
+// with it (e.g. `desk-`).
 //
 // Fonts: the app's two web fonts (index.html) are fetched once with curl —
 // which honours the environment's proxy and CA bundle — and served to the
@@ -16,7 +25,8 @@ import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright-core';
 
-const [pagesDir, pngDir] = process.argv.slice(2).map((p) => path.resolve(p));
+const [pagesDir, pngDir] = process.argv.slice(2, 4).map((p) => path.resolve(p));
+const prefix = process.argv[4] ?? '';
 if (!pagesDir || !pngDir) {
   console.error('usage: node scripts/backing-screenshots/shoot.mjs <pages dir> <png dir>');
   process.exit(2);
@@ -63,18 +73,38 @@ const browser = await chromium.launch({
   executablePath: process.env.BACKING_SHOTS_CHROMIUM || undefined,
   args: ['--no-sandbox', '--disable-gpu', '--font-render-hinting=none'],
 });
+const failures = [];
 try {
-  const context = await browser.newContext({ viewport: { width: 430, height: 900 }, deviceScaleFactor: 2, colorScheme: 'dark' });
-  const page = await context.newPage();
-  const pages = readdirSync(pagesDir).filter((f) => f.endsWith('.html')).sort();
+  const mobile = await (await browser.newContext({ viewport: { width: 430, height: 900 }, deviceScaleFactor: 2, colorScheme: 'dark' })).newPage();
+  const desktop = await (await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, colorScheme: 'dark' })).newPage();
+  const pages = readdirSync(pagesDir).filter((f) => f.endsWith('.html') && f.startsWith(prefix)).sort();
   for (const file of pages) {
+    const page = file.startsWith('desk-') ? desktop : mobile;
     await page.goto(`file://${path.join(pagesDir, file)}`, { waitUntil: 'load' });
     await page.evaluate(() => document.fonts.ready);
     const shot = await page.$('#shot');
     const out = path.join(pngDir, file.replace(/\.html$/, '.png'));
     await shot.screenshot({ path: out });
     console.log(`wrote ${path.relative(process.cwd(), out)}`);
+    // The desktop brief's rule: the three lines above Confirm, visible without scrolling at 1440×900.
+    const measured = await page.evaluate(() => {
+      const col = document.querySelector('[data-desk-col="right"]');
+      const lines = col?.querySelector('[data-backing="disclosures"]');
+      const confirm = col?.querySelector('[data-backing="confirm"]');
+      if (!col || !lines || !confirm || !col.querySelector('[data-backing="stake-control"]')) return null;
+      const rect = (el) => { const r = el.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom) }; };
+      return { viewport: window.innerHeight, scrollTop: col.scrollTop, disclosures: rect(lines), confirm: rect(confirm), confirmBelowLines: rect(confirm).top >= rect(lines).bottom };
+    });
+    if (measured) {
+      const ok = measured.scrollTop === 0 && measured.disclosures.bottom <= measured.viewport && measured.confirm.bottom <= measured.viewport && measured.confirmBelowLines;
+      console.log(`  ${ok ? 'OK ' : 'OFF'} ${file}: the three lines ${measured.disclosures.top}–${measured.disclosures.bottom}px, Confirm ${measured.confirm.top}–${measured.confirm.bottom}px, viewport ${measured.viewport}px, column scrolled ${measured.scrollTop}px`);
+      if (!ok) failures.push(file);
+    }
   }
 } finally {
   await browser.close();
+}
+if (failures.length > 0) {
+  console.error(`the three disclosure lines or Confirm are off-screen at 1440×900 on: ${failures.join(', ')}`);
+  process.exit(1);
 }

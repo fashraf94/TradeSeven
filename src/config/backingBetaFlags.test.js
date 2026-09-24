@@ -327,6 +327,9 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       // disclosures, the fine print, the §B6 strip lines, the economy's
       // bounds and the 24-hour rule; every one of these mounts only behind
       // BACKING_BETA_ENABLED (read at call time in the hosts).
+      // The desktop layouts build: the desktop Backing screen's pod column
+      // carries the same fine print (FINE_PRINT) as the mobile list.
+      'src/components/League/backing/BackingDesk.jsx',
       'src/components/League/backing/BackingParts.jsx',
       'src/components/League/backing/BackingScreen.jsx',
       'src/components/League/backing/PodList.jsx',
@@ -457,11 +460,20 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
     // The three gated mounts, by exact host…
     expect(importersOf('src/components/League/backing/BackingLandingStrip.jsx')).toEqual(['src/components/League/LeagueHome.jsx', 'src/components/League/LeagueLobbyDesktop.jsx']);
     expect(importersOf('src/components/League/backing/BackingScreen.jsx')).toEqual(['src/components/League/LeagueHome.jsx', 'src/components/League/LeagueLobbyDesktop.jsx']);
-    expect(importersOf('src/components/League/backing/ScoutingLine.jsx')).toEqual(['src/components/Dashboard/EquipStation.jsx', 'src/components/Dashboard/desktop/IdentityPanel.jsx']);
+    // The desktop layouts build: the dev preview page imports the line's pure
+    // view (ScoutingLineView) to show the shipped view over fixtures — its dark
+    // contract is the preview gate (never mounted on production), held by
+    // src/screens/BackingPreviewScreen.test.jsx.
+    expect(importersOf('src/components/League/backing/ScoutingLine.jsx')).toEqual(['src/components/Dashboard/EquipStation.jsx', 'src/components/Dashboard/desktop/IdentityPanel.jsx', 'src/screens/BackingPreviewScreen.jsx']);
     // PR 5: the results card in the Spectate final state (mobile), and the
     // private stats' home under the mobile pitch home — one host each.
     expect(importersOf('src/components/League/backing/SpectateBackingResults.jsx')).toEqual(['src/components/League/LeagueSpectate.jsx']);
-    expect(importersOf('src/components/League/backing/BackingStatsEntry.jsx')).toEqual(['src/components/Dashboard/EquipStation.jsx']);
+    // The desktop layouts build: the private record and the trainer stats get
+    // their desktop home beside the pitch — IdentityPanel, the Command
+    // surface's left column (gated bare mount, held by backingDark.test.jsx's
+    // HOST_MOUNTS) — and the dev preview imports the pure view
+    // (StatsEntryView), as above.
+    expect(importersOf('src/components/League/backing/BackingStatsEntry.jsx')).toEqual(['src/components/Dashboard/EquipStation.jsx', 'src/components/Dashboard/desktop/IdentityPanel.jsx', 'src/screens/BackingPreviewScreen.jsx']);
     // …the service, by exact importer…
     expect(importersOf('src/services/backingService.js')).toEqual([
       'src/components/League/LeagueHome.jsx',

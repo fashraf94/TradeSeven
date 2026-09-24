@@ -85,6 +85,9 @@ export const STRIP = Object.freeze({
   stakeRow: (amount) => `${bp(amount)} BP`,
   lockedRow: 'locked',
   standingRank: (rank) => ordinal(rank),
+  // The desktop strip's primary-weight action while the window is open
+  // (founder ruling, Sept 24 — the strip's emphasis on the desktop landing).
+  backCta: 'Back a team',
 });
 
 // ==================== THE PREDICTIONS RELABEL (rev2 §1, rev3 §1) ====================
@@ -182,6 +185,17 @@ export function stripLines(state) {
       head = STRIP.head.quiet; when = STRIP.when.reopensOnFormation; sub = STRIP.sub.quiet;
   }
   return { kind, eyebrow: STRIP.eyebrow[kind], head, when, sub };
+}
+
+/**
+ * The Backing screen's state line — what the strip says, in one line (the
+ * header says what the strip says: one mapping, R-B-1). Shared by the mobile
+ * screen and the desktop layout's headers.
+ */
+export function screenStateLine(state) {
+  const lines = stripLines(state);
+  if (lines.kind === STRIP_KIND.QUIET) return STRIP.sub.quiet;
+  return `${lines.head} · ${lines.when}`;
 }
 
 // The open pool's two lines are Amendment B §B6's, VERBATIM, from
@@ -347,6 +361,7 @@ export const STAKE = Object.freeze({
   remaining: (left) => `${bp(left)} BP left this week`,
   disclosuresTitle: 'Before you confirm',
   confirm: (amount) => `Confirm ${bp(amount)} BP`,
+  stakeBp: (amount) => `${bp(amount)} BP`,
   confirmNone: 'Choose an amount',
   walletPending: 'Reading your points…',
   confirming: 'Confirming…',
@@ -539,6 +554,33 @@ export const RESULTS = Object.freeze({
   loadMore: 'Show earlier weeks',
   loadingMore: 'Loading…',
   tape: 'Open the tape',
+});
+
+// ==================== THE DESKTOP LAYOUTS (Backing desktop build) ====================
+
+/**
+ * The few labels only the desktop layout draws. Everything else on the desktop
+ * surfaces is the copy above, reused — the same words the mobile build ships.
+ *   · topUp — the stake control's designed top-up panel (design brief rev2 §3;
+ *     Amendment C §C2, D-ag): the stake already held, what this Confirm adds,
+ *     and the one stake's new total against the per-team cap. The Confirm line
+ *     itself stays STAKE.addsTo, verbatim.
+ *   · resultsCols — the results card's table heads (Surface E, desktop). The
+ *     cells keep §3's exact phrases (RESULTS.share — never a bare percentage).
+ *     The last column's head names what its cells hold: "Pays ×" once the pool
+ *     has settled (the realized and the §3 conditional ratios), and "BP backed"
+ *     before that — a settling or void pool's cell is the team's staked BP, and
+ *     a losing or void team never "pays" (HON-2 / HON-6, the PR 5 record).
+ */
+export const DESK = Object.freeze({
+  topUp: Object.freeze({
+    current: (label) => `Your stake on ${label}`,
+    adding: 'Adding',
+    total: 'New total',
+    ofCap: `of ${bp(PER_TEAM_CAP_BP)}`,
+    preset: (amount) => `+${bp(amount)}`,
+  }),
+  resultsCols: Object.freeze({ team: 'Team', backers: 'Backers', share: 'Share', pays: 'Pays ×', backed: 'BP backed' }),
 });
 
 // ==================== THE PRIVATE STATS (PR 5) ====================

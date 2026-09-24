@@ -65,12 +65,13 @@ vi.mock('../config/featureFlags', async (importOriginal) => ({
 vi.mock('../hooks/useBackingPods', () => ({ default: () => hooked.pods }));
 vi.mock('../hooks/useMyBacking', () => ({ default: () => hooked.inPlay }));
 
-const { default: BackingPreviewScreen, PREVIEW_LABEL, NOTHING_SAVED, PREVIEW_STATES, PREVIEW_FIXTURES } = await import('./BackingPreviewScreen');
+const { default: BackingPreviewScreen, PREVIEW_LABEL, NOTHING_SAVED, PREVIEW_STATES, PREVIEW_DESKTOP_STATES, PREVIEW_FIXTURES } = await import('./BackingPreviewScreen');
 const { backingPreviewAllowed, backingPreviewRequested, PRODUCTION_VERCEL_HOSTS } = await import('../components/League/backing/backingPreview');
 const { PodCard } = await import('../components/League/LeaguePod');
 const { leagueState } = await import('../components/League/leagueFixtures');
 const { PREDICTIONS_LABEL, REFUSALS, RESULTS, STATS } = await import('../components/League/backing/backingCopy');
 const { findForbiddenTerm } = await import('../constants/backingLexicon');
+const { backingWindow } = await import('../components/League/backing/backingStripState');
 const BackingLandingStrip = (await import('../components/League/backing/BackingLandingStrip')).default;
 const StakeControl = (await import('../components/League/backing/StakeControl')).default;
 const YourBacking = (await import('../components/League/backing/YourBacking')).default;
@@ -129,7 +130,11 @@ const stage = (page) => page.querySelector('[data-preview="stage"]');
 const current = (page) => stage(page).getAttribute('data-preview-current');
 const noteText = (page) => page.querySelector('[data-preview="note"]')?.textContent ?? null;
 async function select(page, stateId) {
-  const target = PREVIEW_STATES.find((s) => s.id === stateId);
+  const desk = PREVIEW_DESKTOP_STATES.find((s) => s.id === stateId);
+  const target = desk ?? PREVIEW_STATES.find((s) => s.id === stateId);
+  // The Mobile / Desktop toggle first, when the state is on the other side.
+  const onDesk = current(page).startsWith('desk-');
+  if (Boolean(desk) !== onDesk) await press(page.querySelector(`[data-preview-viewport="${desk ? 'desktop' : 'mobile'}"]`));
   await press(page.querySelector(`[data-preview-group="${target.group}"]`));
   await press(page.querySelector(`[data-preview-state="${stateId}"]`));
   expect(current(page)).toBe(stateId);
@@ -362,6 +367,203 @@ describe('the page — the label, every state, the local actions', () => {
   }, 120_000);
 });
 
+// ── THE DESKTOP TOGGLE (Backing desktop layouts) ────────────────────────────
+function expectDeskState(page, state) {
+  const s = stage(page);
+  const text = s.textContent;
+  switch (state.group) {
+    case 'desk-landing': {
+      const strip = s.querySelector('.ld-center [data-backing="strip-slot"] > [data-backing="strip-card"] > [data-backing="strip"]');
+      expect(strip, `${state.id}: the strip in the centre column's slot`).not.toBeNull();
+      expect(strip.getAttribute('data-strip-state')).toBe(state.kind);
+      expect(strip.getAttribute('data-strip-layout')).toBe('desktop');
+      expect(s.querySelector('.ld-rail-left [data-backing="strip"]'), `${state.id}: never in a side rail`).toBeNull();
+      const html = s.innerHTML;
+      const at = html.indexOf('data-backing="strip"');
+      if (state.seat === 'seated') {
+        expect(at).toBeGreaterThan(html.indexOf('Solo · Training Pod'));
+        if (html.includes('Watch a live game')) expect(at).toBeLessThan(html.indexOf('Watch a live game'));
+      } else {
+        expect(at).toBeGreaterThan(html.indexOf('Can’t make a slot?'));
+      }
+      expect(at).toBeLessThan(html.indexOf('The monthly bracket opens when the season locks'));
+      // "Back a team" rides the WINDOW — any open pool in the pod list —
+      // whatever the strip's own state (a returning backer's week strip too;
+      // PLACE-1), as the card's second button, never inside the strip's own.
+      const back = strip.closest('[data-backing="strip-card"]').querySelector('[data-backing="strip-back"]');
+      if (backingWindow(PREVIEW_FIXTURES.strip[state.kind].pods) != null) expect(back?.textContent).toBe('Back a team');
+      else expect(back).toBeNull();
+      if (state.kind === 'week') expect(back?.textContent, 'the week strip, with next week\'s pools open, carries the action').toBe('Back a team');
+      expect(strip.querySelector('[data-backing="strip-back"]')).toBeNull();
+      break;
+    }
+    case 'desk-window': {
+      const screen = s.querySelector('[data-backing="screen"][data-layout="desktop"]');
+      expect(screen, state.id).not.toBeNull();
+      for (const col of ['pods', 'card', 'right']) expect(s.querySelector(`[data-desk-col="${col}"]`), `${state.id}: the ${col} column`).not.toBeNull();
+      const right = s.querySelector('[data-desk-col="right"]');
+      const centre = s.querySelector('[data-desk-col="card"]');
+      if (state.screen === 'list') { expect(centre.querySelector('[data-backing="desk-card-empty"]')).not.toBeNull(); expect(right.querySelector('[data-backing="desk-rail"]')).not.toBeNull(); }
+      if (state.screen === 'first-week') expect(centre.querySelector('[data-backing="tape-first-week"]')).not.toBeNull();
+      if (state.screen === 'veteran') expect(centre.querySelector('[data-backing="two-layer-book"]')).not.toBeNull();
+      if (state.screen === 'cpu') expect(centre.querySelector('[data-backing="tape-cpu"]')).not.toBeNull();
+      if (state.screen === 'own') expect(centre.querySelector('[data-backing="cta-yours"]')).not.toBeNull();
+      if (state.screen === 'attest') { expect(right.querySelector('[data-backing="attestation"]')).not.toBeNull(); expect(right.querySelector('[data-backing="stake-control"]')).toBeNull(); }
+      if (state.screen === 'stake') { expect(right.querySelector('[data-backing="stake-control"][data-layout="desktop"]')).not.toBeNull(); expect(right.innerHTML.indexOf('data-backing="confirm"')).toBeGreaterThan(right.innerHTML.indexOf('data-backing="disclosures"')); }
+      if (state.screen === 'top-up') { expect(right.querySelector('[data-backing="top-up"]')).not.toBeNull(); expect(right.textContent).toContain('Adds to your 250 BP on Kestrel.'); }
+      if (state.screen === 'backed') { expect(right.querySelector('[data-backing="backed"]')?.textContent).toContain('Backed · 500 BP on Tarn'); expect(noteText(page)).toBe(NOTHING_SAVED); }
+      if (state.screen === 'refusal') { expect(right.querySelector('[data-backing="stake-error"]')?.textContent).toBe(REFUSALS.pool_closed); expect(right.querySelector('[data-backing="backed"]')).toBeNull(); }
+      // The seal, at desktop width: no revealed view for an open pool, anywhere on the screen.
+      expect(s.querySelector('[data-backing="revealed"]')).toBeNull();
+      expect(text).toContain('SEALED');
+      break;
+    }
+    case 'desk-week': {
+      expect(s.querySelector('[data-desk-section-view="week"] [data-backing="your-backing-section"][data-layout="desktop"]'), state.id).not.toBeNull();
+      if (state.screen === 'week-before-monday') { expect(text).toContain('Locked in · plays Monday'); expect(text).not.toMatch(/Day \d of 5/); }
+      if (state.screen === 'week-monday') { expect(text).toContain('Day 1 of 5'); expect(text).toContain('Kestrel · 6'); }
+      if (state.screen === 'week-mid-week') { expect(text).toContain('Day 3 of 5'); expect(s.querySelector('[data-backing="week-standing"]')).not.toBeNull(); }
+      expect(text).not.toContain('Confirm');
+      break;
+    }
+    case 'desk-results': {
+      const card = s.querySelector('[data-desk-section-view="results"] [data-backing="results-card"][data-layout="desktop"]');
+      expect(card, state.id).not.toBeNull();
+      expect(card.getAttribute('data-outcome')).toBe({ 'results-win': 'settled', 'results-loss': 'settled', 'results-refunded': 'refunded', 'results-insufficient': 'insufficient' }[state.screen]);
+      expect(s.querySelector('[data-backing="desk-record"] [data-backing="my-stats"]'), `${state.id}: the private record beside the results`).not.toBeNull();
+      if (state.screen === 'results-win') { expect(text).toContain('paid 714 BP'); expect(text).not.toContain('715'); expect(text).toContain('70% of BP in this pool backed them'); }
+      break;
+    }
+    case 'desk-profile': {
+      expect(s.querySelector('[data-preview-column="identity"] [data-backing="scouting-line"]')).not.toBeNull();
+      expect(s.querySelector(state.stats === 'mine' ? '[data-backing="my-stats"]' : '[data-backing="trainer-stats"]'), state.id).not.toBeNull();
+      expect(text).toContain('beta stats');
+      expect(text).not.toMatch(/leaderboard of backers|percentile/i);
+      break;
+    }
+    default: throw new Error(`unknown desktop group ${state.group}`);
+  }
+}
+const DESK_SURFACES = '[data-preview-stage="desk-landing"] [data-backing="strip"], [data-backing="screen"], [data-backing="scouting-line"], [data-backing="stats-entry"]';
+
+describe('the desktop toggle — every desktop state, the same promises', () => {
+  it('names every desktop state the build asks for — the landing (each strip state, not seated and seated, no bracket and a bracket), the window, the week, the results, the stats beside the pitch', () => {
+    const byGroup = (g) => PREVIEW_DESKTOP_STATES.filter((s) => s.group === g).map((s) => s.id);
+    expect(byGroup('desk-landing')).toEqual(['open', 'staked', 'week', 'between'].flatMap((k) => ['unseated', 'seated'].flatMap((seat) => ['no-bracket', 'bracket'].map((l) => `desk-landing-${k}-${seat}-${l}`))));
+    expect(byGroup('desk-window')).toEqual(['list', 'first-week', 'veteran', 'cpu', 'own', 'attest', 'stake', 'top-up', 'backed', 'refusal'].map((x) => `desk-window-${x}`));
+    expect(byGroup('desk-week')).toEqual(['desk-week-before-monday', 'desk-week-monday', 'desk-week-mid-week']);
+    expect(byGroup('desk-results')).toEqual(['desk-results-win', 'desk-results-loss', 'desk-results-refunded', 'desk-results-insufficient']);
+    expect(byGroup('desk-profile')).toEqual(['desk-profile-record', 'desk-profile-trainer']);
+    expect(PREVIEW_DESKTOP_STATES).toHaveLength(35);
+    // The mobile set is untouched.
+    expect(PREVIEW_STATES).toHaveLength(30);
+  });
+
+  it('the week landing\'s strip opens Your Backing — the section its state names — while its "Back a team" action opens the WINDOW (PLACE-1 / WIRE-2)', async () => {
+    window.history.replaceState(null, '', '/?preview=backing&state=desk-landing-week-unseated-no-bracket');
+    const page = await mount(<BackingPreviewScreen />);
+    await press(stage(page).querySelector('[data-backing="strip-back"]'));
+    expect(current(page)).toBe('desk-window-list');
+    window.history.replaceState(null, '', '/?preview=backing&state=desk-landing-week-unseated-no-bracket');
+    const again = await mount(<BackingPreviewScreen />);
+    await press(stage(again).querySelector('[data-backing="strip"]'));
+    expect(current(again)).toBe('desk-week-mid-week');
+  });
+
+  it('the toggle switches the whole switcher between the two sets, and a desktop state is addressable', async () => {
+    const page = await mount(<BackingPreviewScreen />);
+    expect(page.querySelector('[data-preview-viewport="mobile"]').getAttribute('aria-pressed')).toBe('true');
+    await press(page.querySelector('[data-preview-viewport="desktop"]'));
+    expect(current(page)).toBe(PREVIEW_DESKTOP_STATES[0].id);
+    expect(page.querySelector('[data-preview-group="strip"]')).toBeNull();
+    expect(page.querySelector('[data-preview-group="desk-window"]')).not.toBeNull();
+    await press(page.querySelector('[data-preview-viewport="mobile"]'));
+    expect(current(page)).toBe(PREVIEW_STATES[0].id);
+    window.history.replaceState(null, '', '/?preview=backing&state=desk-window-top-up');
+    const direct = await mount(<BackingPreviewScreen />);
+    expect(current(direct)).toBe('desk-window-top-up');
+    expect(direct.querySelector('[data-preview-viewport="desktop"]').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('every desktop state renders its surface, from the switcher — and speaks no forbidden term', async () => {
+    const page = await mount(<BackingPreviewScreen />);
+    for (const state of PREVIEW_DESKTOP_STATES) {
+      await select(page, state.id);
+      expectDeskState(page, state);
+      const own = [page.querySelector('[data-preview="header"]').textContent, ...[...stage(page).querySelectorAll(DESK_SURFACES)].map((el) => el.textContent)].join(' ');
+      expect(findForbiddenTerm(own), state.id).toBeNull();
+    }
+    expectNoNetwork();
+  }, 120_000);
+
+  it('D-af: every desktop state\'s teams are AGENT-NAMED, and no desktop backing surface shows a raw account id', async () => {
+    const RAW_ID = [/(?<![A-Za-z0-9])[A-Za-z0-9]{28}(?![A-Za-z0-9])/, /(?<![\w-])od-[A-Za-z0-9][\w-]*/, /(?<![\w-])cpu-\d+(?![\w-])/];
+    const nodesText = (el) => {
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      const out = [];
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) if (n.nodeValue.trim()) out.push(n.nodeValue);
+      return out.join(' ‖ ');
+    };
+    const page = await mount(<BackingPreviewScreen />);
+    const offenders = [];
+    const seen = [];
+    for (const state of PREVIEW_DESKTOP_STATES) {
+      await select(page, state.id);
+      for (const el of stage(page).querySelectorAll(DESK_SURFACES)) {
+        const attrs = [el, ...el.querySelectorAll('[aria-label], [title], [placeholder], [alt]')]
+          .flatMap((n) => ['aria-label', 'title', 'placeholder', 'alt'].map((a) => n.getAttribute(a)).filter(Boolean));
+        const t = [nodesText(el), ...attrs].join(' ‖ ');
+        seen.push(t);
+        for (const re of RAW_ID) { const m = t.match(re); if (m) offenders.push(`${state.id}: ${JSON.stringify(m[0])}`); }
+      }
+    }
+    expect(offenders).toEqual([]);
+    const all = seen.join(' ');
+    for (const name of ['Kestrel', 'Tarn', 'Orbit', 'Winner: Kestrel', 'Adds to your 250 BP on Kestrel.']) expect(all, name).toContain(name);
+    expectNoNetwork();
+  }, 120_000);
+
+  it('the desktop surfaces lead into each other: the landing strip → the window; a seat → its card in the centre; the card\'s Back → the stake control in the right column', async () => {
+    const page = await mount(<BackingPreviewScreen />);
+    await select(page, 'desk-landing-open-unseated-no-bracket');
+    await press(stage(page).querySelector('[data-backing="strip"]'));
+    expect(current(page)).toBe('desk-window-list');
+    const tarn = [...stage(page).querySelectorAll('[data-backing="seat"]')].find((el) => el.textContent.includes('Tarn'));
+    await press(tarn);
+    expect(tarn.getAttribute('aria-current')).toBe('true');
+    expect(stage(page).querySelector('[data-desk-col="card"] [data-backing="tape-first-week"]')).not.toBeNull();
+    await press(stage(page).querySelector('[data-desk-col="card"] [data-backing="cta-back"]'));
+    expect(stage(page).querySelector('[data-desk-col="right"] [data-backing="stake-control"]')).not.toBeNull();
+    expect(stage(page).querySelector('[data-desk-col="card"] [data-backing="team-card"]'), 'the card stays whole').not.toBeNull();
+    await press(stage(page).querySelector('[data-desk-col="right"] [data-backing="stake-cancel"]'));
+    expect(stage(page).querySelector('[data-desk-col="right"] [data-backing="desk-rail"]')).not.toBeNull();
+    expectNoNetwork();
+  });
+
+  it('EVERY button, seat, checkbox and link in EVERY desktop state, pressed — zero fetch, zero Firestore', async () => {
+    const page = await mount(<BackingPreviewScreen />);
+    const CLICKABLE = 'button, [role="button"], input, textarea, .lg-tap, [style*="cursor: pointer"]';
+    // A press that moves the screen to another section (the header's tabs)
+    // would cut the walk short: the state is re-selected — the stage remounts
+    // on its own section — and the walk carries on at the next control.
+    const sectionOf = () => stage(page).querySelector('[data-backing="screen"]')?.getAttribute('data-desk-section') ?? null;
+    let pressed = 0;
+    for (const state of PREVIEW_DESKTOP_STATES) {
+      await select(page, state.id);
+      const home = sectionOf();
+      for (let i = 0; i < 400; i += 1) {
+        if (current(page) !== state.id || sectionOf() !== home) await select(page, state.id);
+        const targets = [...stage(page).querySelectorAll(CLICKABLE)];
+        if (i >= targets.length) break;
+        await press(targets[i]);
+        pressed += 1;
+      }
+    }
+    expect(pressed).toBeGreaterThan(300);
+    expectNoNetwork();
+  }, 600_000);
+});
+
 describe('the spies are not vacuous — the surfaces call the network when nothing is injected', () => {
   it('the spied Firestore SDK and fetchWithAuth record a call', async () => {
     try { doc({ not: 'a database' }, 'x/y'); } catch { /* the fake database refuses; the call is what counts */ }
@@ -408,6 +610,26 @@ describe('the landing slot — byte-equal to what the real mount renders', () =>
       const html = renderToString(<BackingPreviewScreen />);
       const slot = html.match(/<div data-backing="strip-slot"[\s\S]*?<\/button><\/div>/)?.[0];
       expect(real).toMatch(/^<div data-backing="strip-slot"/);
+      expect(slot).toBe(real);
+    });
+  }
+});
+
+describe('the desktop landing slot — byte-equal to what the real (wide) mount renders', () => {
+  for (const kind of ['open', 'staked', 'week', 'between']) {
+    it(`the “${kind}” strip in the page’s desktop landing is BackingLandingStrip’s wide output for the same inputs`, () => {
+      const inputs = PREVIEW_FIXTURES.strip[kind];
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(PREVIEW_FIXTURES.now);
+      flag.on = true;
+      hooked.pods = { data: { baseLayerWeek: '2026-W40', backingWeekCloses: PREVIEW_FIXTURES.backingWeekCloses, pods: inputs.pods }, pods: inputs.pods, loading: false, error: null, refresh: () => {} };
+      hooked.inPlay = inputs.inPlay;
+      const real = renderToString(<BackingLandingStrip uid="u1" onOpen={() => {}} wide />);
+      window.history.replaceState(null, '', `/?preview=backing&state=desk-landing-${kind}-unseated-no-bracket`);
+      const html = renderToString(<BackingPreviewScreen />);
+      // The desktop slot: the strip's card, then the lobby rule it brings (a <style>, last).
+      const slot = html.match(/<div data-backing="strip-slot"><div data-backing="strip-card"[\s\S]*?<\/style><\/div>/)?.[0];
+      expect(real).toMatch(/^<div data-backing="strip-slot"><div data-backing="strip-card"[^>]*data-strip-layout="desktop"/);
       expect(slot).toBe(real);
     });
   }

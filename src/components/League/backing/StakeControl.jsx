@@ -31,6 +31,16 @@
 //     team, so with a live stake on this team the Confirm step reads "Adds to
 //     your {n} BP on {label}." and "Backed" shows the stake's new total with
 //     what this Confirm added — both from the server's reply.
+//   · THE DESKTOP LAYOUT (`layout="desktop"`, the Backing screen's right
+//     column — design brief rev2 §3/§6): the same control, the same checks and
+//     the same calls, laid out as designed — the top-up state shows the stake
+//     already held, what this Confirm adds and the one stake's new total
+//     against the cap; the "Adds to your {n} BP on {label}." line rides the
+//     Confirm button; the three lines sit directly above Confirm; a "Back to
+//     the card" link (`onCancel`) returns the column to the rail. The new
+//     total is `already + amount` — the two figures this control already
+//     holds, the ones Confirm sends — never a pool figure. Mobile (the
+//     default) is the markup main ships (backingMobilePin.test.jsx).
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { MIN_STAKE_BP, PER_TEAM_CAP_BP } from '../../../constants/backing';
@@ -40,7 +50,7 @@ import { attestEligibility, newRequestId, placeStake } from '../../../services/b
 import { ELIGIBILITY } from '../../../hooks/useEligibility';
 import AttestationStep from './AttestationStep';
 import { Disclosures, MonoAttr, PointsMeter } from './BackingParts';
-import { ATTEST, CARD, STAKE, STAKE_PRESETS, bp, refusalMessage } from './backingCopy';
+import { ATTEST, CARD, DESK, SCREEN, STAKE, STAKE_PRESETS, bp, refusalMessage } from './backingCopy';
 import { stakedOnTeam } from './backingStakes';
 import { teamLabelOf } from './backingStripState';
 
@@ -65,7 +75,39 @@ const presetStyle = (on, accent, disabled) => ({
  * network. Only the dev preview page passes it (fixture answers, nothing
  * saved); omitted, each call is the real service, exactly as before.
  */
-export default function StakeControl({ card, pod, wallet, eligibility, accent = LX.energy, onBacked, onClose, services = null }) {
+/** The desktop top-up panel: the stake held, what this Confirm adds, the new total against the cap. */
+function TopUpPanel({ label, already, adding, capLeft, accent }) {
+  const total = already + adding;
+  const fill = (n) => `${Math.max(0, Math.min(100, (n / PER_TEAM_CAP_BP) * 100))}%`;
+  const totalColor = total > PER_TEAM_CAP_BP ? LX.neg : total === PER_TEAM_CAP_BP ? LTOKENS.gold : LTOKENS.ink;
+  const head = { fontSize: 9, color: LTOKENS.ink3, letterSpacing: '0.12em', textTransform: 'uppercase', display: 'block', marginBottom: 3 };
+  const fig = { fontSize: 16, fontWeight: 700, fontVariantNumeric: 'tabular-nums' };
+  return (
+    <div data-backing="top-up" style={{ padding: '10px 13px 11px', borderRadius: 12, background: alpha(accent, 0.07), border: `1px solid ${alpha(accent, 0.28)}` }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.3fr) minmax(0, 0.8fr) minmax(0, 1fr)', gap: 10, alignItems: 'end' }}>
+        <div style={{ minWidth: 0 }}>
+          <Mono style={head}>{DESK.topUp.current(label)}</Mono>
+          <MonoAttr data-backing="top-up-held" style={{ ...fig, color: LTOKENS.ink }}>{STAKE.stakeBp(already)}</MonoAttr>
+        </div>
+        <div style={{ textAlign: 'center' }}>
+          <Mono style={head}>{DESK.topUp.adding}</Mono>
+          <MonoAttr data-backing="top-up-adding" style={{ ...fig, color: accent }}>{DESK.topUp.preset(adding)}</MonoAttr>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <Mono style={head}>{DESK.topUp.total}</Mono>
+          <MonoAttr data-backing="top-up-total" style={{ ...fig, color: totalColor }}>{bp(total)}</MonoAttr>
+          <Mono style={{ fontSize: 10, color: LTOKENS.ink3, marginLeft: 4 }}>{DESK.topUp.ofCap}</Mono>
+        </div>
+      </div>
+      <div style={{ display: 'flex', height: 4, marginTop: 9, borderRadius: 2, background: LTOKENS.raised, overflow: 'hidden' }}>
+        <div style={{ width: fill(already), background: LTOKENS.ink2 }} />
+        <div style={{ width: fill(Math.min(adding, capLeft)), background: accent }} />
+      </div>
+    </div>
+  );
+}
+
+export default function StakeControl({ card, pod, wallet, eligibility, accent = LX.energy, onBacked, onClose, services = null, layout = 'mobile', onCancel = null }) {
   const place = services?.placeStake ?? placeStake;
   const nextRequestId = services?.newRequestId ?? newRequestId;
   const attest = services?.attestEligibility ?? attestEligibility;
@@ -122,18 +164,27 @@ export default function StakeControl({ card, pod, wallet, eligibility, accent = 
     }
   };
 
+  // Desktop: the way back to the right column's rail (mobile has its top bar).
+  const cancelLink = layout === 'desktop' && onCancel ? (
+    <button type="button" className="lg-tap" data-backing="stake-cancel" onClick={onCancel} style={{ all: 'unset', cursor: 'pointer', alignSelf: 'center', padding: 4, fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: LTOKENS.ink3 }}>
+      {SCREEN.toCard}
+    </button>
+  ) : null;
+
   const status = eligibility?.status ?? ELIGIBILITY.REQUIRED;
   if (status === ELIGIBILITY.LOADING) {
     return <MonoAttr data-backing="stake-checking" style={{ fontSize: 11, color: LTOKENS.ink3 }}>{ATTEST.checking}</MonoAttr>;
   }
   if (status !== ELIGIBILITY.ATTESTED || needsAttest) {
-    return (
+    const step = (
       <AttestationStep
         accent={accent}
         attest={attest}
         onAttested={() => { setNeedsAttest(false); setError(null); eligibility?.refresh?.(); }}
       />
     );
+    if (!cancelLink) return step;
+    return <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>{step}{cancelLink}</div>;
   }
 
   if (!walletKnown && !result) {
@@ -160,6 +211,86 @@ export default function StakeControl({ card, pod, wallet, eligibility, accent = 
   }
 
   const atCap = maxAmount < MIN_STAKE_BP;
+  if (layout === 'desktop') {
+    const topUp = already > 0;
+    const adding = Number.isInteger(amount) && amount > 0 ? amount : 0;
+    const disabled = busy || atCap || amount == null;
+    return (
+      <div data-backing="stake-control" data-layout="desktop" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div>
+          <Eyebrow color={accent} style={{ marginBottom: 5 }}>{STAKE.eyebrow}</Eyebrow>
+          <div style={{ fontSize: 18, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.01em', lineHeight: 1.15 }}>{STAKE.title(name, agentName)}</div>
+        </div>
+
+        {topUp && <TopUpPanel label={label} already={already} adding={adding} capLeft={capLeft} accent={accent} />}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <PointsMeter left={allowanceLeft} total={wallet?.total ?? 0} compact />
+          <Mono style={{ fontSize: 9.5, color: LTOKENS.ink3 }}>{STAKE.cap(already, label)}</Mono>
+        </div>
+
+        {atCap ? (
+          <div data-backing="cap-reached" style={{ fontSize: 12.5, color: LTOKENS.ink2, lineHeight: 1.45, padding: '11px 12px', borderRadius: 12, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}` }}>
+            {capLeft < MIN_STAKE_BP ? STAKE.capReached(label) : STAKE.aboveAllowance}
+          </div>
+        ) : (
+          <>
+            <div>
+              <Mono style={{ fontSize: 9, color: LTOKENS.ink3, letterSpacing: '0.12em', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>{STAKE.presets}</Mono>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {STAKE_PRESETS.map((p) => {
+                  const off = p > maxAmount;
+                  const on = custom.length === 0 && preset === p;
+                  return (
+                    <button key={p} type="button" className="lg-tap" disabled={off} onClick={() => { setTouched(true); setPreset(p); setCustom(''); setError(null); }} style={presetStyle(on, accent, off)} data-preset={p}>
+                      {topUp ? DESK.topUp.preset(p) : bp(p)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div>
+              <Mono style={{ fontSize: 9, color: LTOKENS.ink3, letterSpacing: '0.12em', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>{STAKE.custom}</Mono>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={MIN_STAKE_BP}
+                max={maxAmount}
+                step={1}
+                value={custom}
+                onChange={(e) => { setTouched(true); setCustom(e.target.value.replace(/[^0-9]/g, '')); setError(null); }}
+                placeholder={STAKE.customPlaceholder(maxAmount)}
+                aria-label={STAKE.custom}
+                data-backing="custom-amount"
+                style={{ all: 'unset', boxSizing: 'border-box', width: '100%', padding: '10px 12px', borderRadius: 11, fontFamily: MONO, fontSize: 14, color: LTOKENS.ink, background: LTOKENS.surface, border: `1px solid ${custom ? alpha(accent, 0.5) : LTOKENS.hair2}` }}
+              />
+            </div>
+          </>
+        )}
+
+        <div>
+          <Mono style={{ fontSize: 9, color: LTOKENS.ink3, letterSpacing: '0.12em', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>{STAKE.disclosuresTitle}</Mono>
+          <Disclosures />
+        </div>
+
+        {error && <div role="alert" data-backing="stake-error" style={{ fontSize: 12, color: LX.neg, lineHeight: 1.4 }}>{error}</div>}
+
+        <button
+          type="button"
+          className="lg-tap"
+          data-backing="confirm"
+          onClick={confirm}
+          disabled={disabled}
+          style={{ all: 'unset', boxSizing: 'border-box', cursor: disabled ? 'default' : 'pointer', width: '100%', padding: topUp ? '11px 14px' : 14, borderRadius: 13, textAlign: 'center', fontWeight: 700, fontSize: 14.5, background: atCap ? LTOKENS.surface : accent, color: atCap ? LTOKENS.ink3 : LTOKENS.bg, opacity: busy ? 0.7 : 1, border: `1px solid ${atCap ? LTOKENS.hair2 : 'transparent'}`, boxShadow: atCap ? 'none' : `0 8px 24px ${alpha(accent, 0.3)}` }}
+        >
+          <span style={{ display: 'block' }}>{busy ? STAKE.confirming : amount == null ? STAKE.confirmNone : STAKE.confirm(Number.isInteger(amount) ? amount : 0)}</span>
+          {topUp && <span data-backing="top-up-note" style={{ display: 'block', fontSize: 11.5, fontWeight: 600, opacity: 0.8, marginTop: 2 }}>{STAKE.addsTo(already, label)}</span>}
+        </button>
+
+        {cancelLink}
+      </div>
+    );
+  }
   return (
     <div data-backing="stake-control" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div>

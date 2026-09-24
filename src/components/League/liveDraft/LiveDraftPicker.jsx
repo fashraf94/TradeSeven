@@ -6,7 +6,9 @@
 // seat via the Phase-1 endpoints. Lean and functional (not the hub); behind
 // LEAGUE_LIVE_DRAFT (the endpoints 404 dark, and the caller gates the mount on the
 // same flag). `tokens` is the League useTheme tokens (passed in) so this stays
-// pure/smoke-testable.
+// pure/smoke-testable. `services` (optional) replaces the three slot calls —
+// only the Backing dev preview page passes it (fixture answers, no network);
+// omitted, each call is the real service, exactly as before.
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { fetchSlotSchedule, claimSlot, releaseSlot, mapSlotActionError } from '../../../services/liveDraftActions';
@@ -18,15 +20,18 @@ function ghostBtn(t, enabled) {
   return { background: 'transparent', color: t.textMuted, border: `1px solid ${t.borderDivider}`, borderRadius: 9, padding: '9px 16px', fontWeight: 600, cursor: enabled ? 'pointer' : 'default', whiteSpace: 'nowrap' };
 }
 
-export default function LiveDraftPicker({ tokens, currentUserId, displayName = null, onEntered = null }) {
+export default function LiveDraftPicker({ tokens, currentUserId, displayName = null, onEntered = null, services = null }) {
+  const fetchSchedule = services?.fetchSlotSchedule ?? fetchSlotSchedule;
+  const claim = services?.claimSlot ?? claimSlot;
+  const release = services?.releaseSlot ?? releaseSlot;
   const [slots, setSlots] = useState(null);
   const [error, setError] = useState(null);
   const [pending, setPending] = useState(false);
 
   const load = useCallback(async () => {
-    try { const r = await fetchSlotSchedule(); setSlots(Array.isArray(r?.slots) ? r.slots : []); }
+    try { const r = await fetchSchedule(); setSlots(Array.isArray(r?.slots) ? r.slots : []); }
     catch (e) { setError(mapSlotActionError(e)); setSlots([]); }
-  }, []);
+  }, [fetchSchedule]);
   useEffect(() => { load(); }, [load]);
 
   // `entered` fires onEntered for the CLAIM payoff only — a release must never
@@ -75,9 +80,9 @@ export default function LiveDraftPicker({ tokens, currentUserId, displayName = n
                 </div>
               </div>
               {mine ? (
-                <button onClick={() => run(() => releaseSlot({ groupId: slot.groupId }))} disabled={pending} style={ghostBtn(tokens, !pending)}>Leave</button>
+                <button onClick={() => run(() => release({ groupId: slot.groupId }))} disabled={pending} style={ghostBtn(tokens, !pending)}>Leave</button>
               ) : (
-                <button onClick={() => run(() => claimSlot({ slotId: slot.slotId, displayName }), { entered: true })} disabled={!claimable} style={primaryBtn(tokens, claimable)}>
+                <button onClick={() => run(() => claim({ slotId: slot.slotId, displayName }), { entered: true })} disabled={!claimable} style={primaryBtn(tokens, claimable)}>
                   {disabled ? 'Unavailable' : slot.isFull ? 'Full' : 'Claim seat'}
                 </button>
               )}

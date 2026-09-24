@@ -47,6 +47,23 @@
 // which the endpoints no longer send; the group documents keep theirs (a slot
 // pod's does), and the surfaces ignore it — so the page shows what the
 // pre-flip build shows.
+//
+// THE DESKTOP TOGGLE (Backing desktop layouts): "Desktop" switches the page to
+// every desktop state — the landing (the strip in the centre column: each
+// strip state, not seated and seated, no bracket and a bracket), the Backing
+// screen during the window (no card yet, the first-week, veteran, CPU and own
+// cards, the attestation step, the stake control, the top-up state, "Backed",
+// a refusal), Monday–Friday, the results, and the stats' home beside the pitch
+// — rendered through the REAL desktop components (DeskLobby, BackingDesk,
+// ScoutingLineView, StatsEntryView) from the same fixtures, in frames sized
+// as the app sizes them (the League's content area at a 1440-wide window,
+// beside the app's sidebar in its default collapsed 64px rail; the Backing
+// screen full-window at 1440×900). Every call is answered locally
+// as above — the draft-slot picker's and the Auto-draft lane's through their
+// `services` seam — and the page's test presses every control of every
+// desktop state and asserts zero network, as it does for mobile. The desktop
+// states are best viewed in a window at least 1440 wide (the layouts' own
+// breakpoints read the window, not the frame).
 
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -58,7 +75,7 @@ import { leagueState } from '../components/League/leagueFixtures';
 import { buildLeagueState } from '../components/League/leagueAdapter';
 import { GROUP_STATUS } from '../constants/leagueTournament';
 import { ELIGIBILITY } from '../hooks/useEligibility';
-import BackingStrip from '../components/League/backing/BackingStrip';
+import BackingStrip, { DeskStripSlot } from '../components/League/backing/BackingStrip';
 import PodList from '../components/League/backing/PodList';
 import TeamCard from '../components/League/backing/TeamCard';
 import StakeControl from '../components/League/backing/StakeControl';
@@ -69,8 +86,14 @@ import BackingResultsCard from '../components/League/backing/BackingResultsCard'
 import MyBackingStats from '../components/League/backing/MyBackingStats';
 import TrainerStats from '../components/League/backing/TrainerStats';
 import { RESULTS, STATS } from '../components/League/backing/backingCopy';
-import { deriveStripState } from '../components/League/backing/backingStripState';
+import { backingWindow, deriveStripState } from '../components/League/backing/backingStripState';
 import { BackingPreviewLitContext } from '../components/League/backing/backingPreview';
+// The desktop layouts — the real components, pure over the page's fixtures.
+import { DeskLobby } from '../components/League/LeagueLobbyDesktop';
+import BackingDesk, { DESK_SECTION, deskDefaultSection, deskSections } from '../components/League/backing/BackingDesk';
+import { backedPodsFor } from '../components/League/backing/YourBacking';
+import { ScoutingLineView } from '../components/League/backing/ScoutingLine';
+import { StatsEntryView } from '../components/League/backing/BackingStatsEntry';
 
 export const PREVIEW_LABEL = 'Backing — design preview. Fixture data. Nothing here is real or saved.';
 export const NOTHING_SAVED = 'preview — nothing saved';
@@ -404,6 +427,55 @@ const TRAINER_STATS = {
 /** The fixture table — exported for the page's own test only. */
 export const PREVIEW_FIXTURES = Object.freeze({ now: PREVIEW_NOW, backingWeekCloses: SUNDAY_CLOSE, strip: STRIP_INPUTS, results: RESULT_PODS, stats: { mine: MY_STATS, trainer: TRAINER_STATS } });
 
+// ═══ the desktop states — the same fixtures, through the desktop components ═══
+// The draft-slot picker's week (invented labels, the endpoint's shape).
+const DESK_SLOTS = Object.freeze([
+  { slotId: 'sun-1900', groupId: 'lds-sun-1900', label: 'Sun 7:00pm ET', humanCount: 2, isFull: false, enabled: true, seats: [] },
+  { slotId: 'mon-0845', groupId: 'lds-mon-0845', label: 'Mon 8:45am ET', humanCount: 0, isFull: false, enabled: true, seats: [] },
+]);
+const DESK_OWN_POD = 'g-mine';
+// The window's pods: the strip's open pods, and the viewer's own pod (reads as yours).
+const deskPods = (myStakesA = []) => [
+  stripPod('lobby-w40-a', { myStakes: myStakesA }),
+  stripPod('lobby-w40-b'),
+  stripPod('lds-wed-1900', { formationPath: 'slot', slotId: 'wed-1900', pool: { status: 'open', closesAt: WED_FIRE, closeReason: 'fire', backerProgress: { count: 0, floor: 3, met: false }, teamSpread: { met: false } } }),
+  { ...POD_LIST_PODS['your-pod'], groupId: DESK_OWN_POD },
+];
+const DESK_TOP_UP = [{ stakeId: 'preview-stake-0', teamOdUserId: 'od-a', teamLabel: teamLabel('od-a'), amount: TOP_UP_ALREADY, status: 'live' }];
+/** The card for any seat the window shows — the harness and suites' projections, re-seated. */
+function deskCardFor(groupId, odUserId) {
+  const pod = deskPods().find((p) => p.groupId === groupId) ?? null;
+  const index = Math.max(0, pod?.teams.findIndex((t) => t.odUserId === odUserId) ?? 0) + 1;
+  if (groupId === DESK_OWN_POD && odUserId === 'od-a') return { ...OWN_CARD, groupId };
+  const base = odUserId === 'od-a' ? VETERAN_CARD : odUserId === 'od-b' ? FIRST_WEEK_CARD : CPU_CARD;
+  const card = { ...base, groupId, odUserId, seat: { ...base.seat, index, viewerSeated: groupId === DESK_OWN_POD } };
+  if (!odUserId.startsWith('cpu-')) return card;
+  const n = named(odUserId);
+  return { ...card, team: { ...CPU_CARD.team, displayName: n.label, ...n, agent: { ...CPU_CARD.team.agent, name: n.label, archetypeLabel: n.label.replace('CPU — ', '') } } };
+}
+const onCard = (groupId, odUserId, kind = 'card') => ({ kind, groupId, odUserId });
+const LIST = Object.freeze({ kind: 'list', groupId: null, odUserId: null });
+/** Each desktop Backing-screen state: its pods, wallet, attestation, view and section. */
+const DESK_SCREENS = {
+  list: { view: LIST, pods: deskPods(DESK_TOP_UP), wallet: TOP_UP_WALLET },
+  'first-week': { view: onCard('lobby-w40-a', 'od-b') },
+  veteran: { view: onCard('lobby-w40-a', 'od-a') },
+  cpu: { view: onCard('lobby-w40-a', 'cpu-1') },
+  own: { view: onCard(DESK_OWN_POD, 'od-a') },
+  attest: { view: onCard('lobby-w40-a', 'od-b', 'stake'), attested: false },
+  stake: { view: onCard('lobby-w40-a', 'od-b', 'stake') },
+  'top-up': { view: onCard('lobby-w40-a', 'od-a', 'stake'), pods: deskPods(DESK_TOP_UP), wallet: TOP_UP_WALLET },
+  backed: { view: onCard('lobby-w40-a', 'od-b', 'stake'), press: true },
+  refusal: { view: onCard('lobby-w40-a', 'od-b', 'stake'), press: true, refuse: 'pool_closed' },
+  'week-before-monday': { section: DESK_SECTION.WEEK, week: 'before-monday' },
+  'week-monday': { section: DESK_SECTION.WEEK, week: 'monday' },
+  'week-mid-week': { section: DESK_SECTION.WEEK, week: 'mid-week' },
+  'results-win': { section: DESK_SECTION.RESULTS, result: 'win' },
+  'results-loss': { section: DESK_SECTION.RESULTS, result: 'loss' },
+  'results-refunded': { section: DESK_SECTION.RESULTS, result: 'refunded' },
+  'results-insufficient': { section: DESK_SECTION.RESULTS, result: 'insufficient' },
+};
+
 // ═══ the switcher ═══
 const GROUPS = [
   { id: 'strip', label: 'Landing strip' },
@@ -443,10 +515,57 @@ export const PREVIEW_STATES = [
   { id: 'stats-mine', group: 'stats', label: 'Your backing', stats: 'mine' },
   { id: 'stats-trainer', group: 'stats', label: 'As a team', stats: 'trainer' },
 ];
-const STATE_BY_ID = Object.fromEntries(PREVIEW_STATES.map((s) => [s.id, s]));
+const DESK_GROUPS = [
+  { id: 'desk-landing', label: 'Landing' },
+  { id: 'desk-window', label: 'Backing · the window' },
+  { id: 'desk-week', label: 'Your Backing' },
+  { id: 'desk-results', label: 'Results' },
+  { id: 'desk-profile', label: 'Stats beside the pitch' },
+];
+const SEATS = [['unseated', 'not seated'], ['seated', 'seated']];
+const LANDING_KINDS = [['no-bracket', 'no bracket'], ['bracket', 'bracket']];
+export const PREVIEW_DESKTOP_STATES = [
+  ...STRIP_KINDS.flatMap(([kind, label]) => SEATS.flatMap(([seat, seatLabel]) => LANDING_KINDS.map(([landing, landingLabel]) => (
+    { id: `desk-landing-${kind}-${seat}-${landing}`, group: 'desk-landing', label: `${label} · ${seatLabel} · ${landingLabel}`, kind, seat, landing }
+  )))),
+  { id: 'desk-window-list', group: 'desk-window', label: 'No card yet', screen: 'list' },
+  { id: 'desk-window-first-week', group: 'desk-window', label: 'First-week card', screen: 'first-week' },
+  { id: 'desk-window-veteran', group: 'desk-window', label: 'Veteran card', screen: 'veteran' },
+  { id: 'desk-window-cpu', group: 'desk-window', label: 'CPU seat', screen: 'cpu' },
+  { id: 'desk-window-own', group: 'desk-window', label: 'Your own pod', screen: 'own' },
+  { id: 'desk-window-attest', group: 'desk-window', label: 'Attestation', screen: 'attest' },
+  { id: 'desk-window-stake', group: 'desk-window', label: 'Stake control', screen: 'stake' },
+  { id: 'desk-window-top-up', group: 'desk-window', label: 'Topping up', screen: 'top-up' },
+  { id: 'desk-window-backed', group: 'desk-window', label: 'Backed', screen: 'backed' },
+  { id: 'desk-window-refusal', group: 'desk-window', label: 'A refusal', screen: 'refusal' },
+  { id: 'desk-week-before-monday', group: 'desk-week', label: 'Before Monday', screen: 'week-before-monday' },
+  { id: 'desk-week-monday', group: 'desk-week', label: 'Monday · draft reveal', screen: 'week-monday' },
+  { id: 'desk-week-mid-week', group: 'desk-week', label: 'Mid-week', screen: 'week-mid-week' },
+  { id: 'desk-results-win', group: 'desk-results', label: 'Settled · you won', screen: 'results-win' },
+  { id: 'desk-results-loss', group: 'desk-results', label: 'Settled · you lost', screen: 'results-loss' },
+  { id: 'desk-results-refunded', group: 'desk-results', label: 'Refunded', screen: 'results-refunded' },
+  { id: 'desk-results-insufficient', group: 'desk-results', label: 'Did not qualify', screen: 'results-insufficient' },
+  { id: 'desk-profile-record', group: 'desk-profile', label: 'Your record', stats: 'mine' },
+  { id: 'desk-profile-trainer', group: 'desk-profile', label: 'As a team', stats: 'trainer' },
+];
+/** Where the desktop strip's door leads, per state — the section the strip points to. */
+// The desktop strip names the section it opens (stripSection; the "Back a team" action, the window) — the page opens that section's state.
+const DESK_DOOR = { window: 'desk-window-list', week: 'desk-week-mid-week', results: 'desk-results-win' };
+const STATE_BY_ID = Object.fromEntries([...PREVIEW_STATES, ...PREVIEW_DESKTOP_STATES].map((s) => [s.id, s]));
+const isDesktopState = (state) => state.group.startsWith('desk-');
 
 function captionFor(state) {
   switch (state.group) {
+    case 'desk-landing':
+      return `The desktop League (the real DeskLobby — the content area of a 1440-wide window), ${state.seat === 'seated' ? 'the viewer seated this week (the waiting room is the centre)' : 'the viewer not seated (the draft-slot picker is the centre)'}, ${state.landing === 'bracket' ? 'the fixture bracket' : 'no bracket — today’s production'}. The strip, in its “${state.kind}” state, sits directly under the entry. Tap it.`;
+    case 'desk-window':
+      return 'The Backing screen on desktop during the window (the real BackingDesk, full-window at 1440×900): the pods left, the team card centre, your backing right — the stake control, and the attestation step, swap into the right column. Every answer is local fixture data.';
+    case 'desk-week':
+      return 'Monday–Friday on desktop: Your Backing takes the whole screen (fixture: YourBacking.test.jsx). No stake action exists on this surface.';
+    case 'desk-results':
+      return 'Friday on desktop: the results take the whole screen, the viewer’s private record beside them (fixtures: BackingResultsCard.test.jsx, BackingStats.test.jsx).';
+    case 'desk-profile':
+      return 'The private record and the trainer beta stats in their desktop home — the agent/profile column (IdentityPanel), directly beside the pitch — the real views, from fixtures.';
     case 'strip':
       return `The strip in its “${state.kind}” state (inputs: the screenshot harness), on ${state.landing === 'bracket'
         ? 'the League’s fixture bracket landing'
@@ -571,6 +690,155 @@ function StakeStage({ variant, card, onNote, onReset }) {
   );
 }
 
+// ═══ the desktop stages ═══
+// The lobby's own scroll model locks its root to the viewport height; inside
+// the page's frame it fills the frame instead.
+const DESK_FRAME_STYLE = '.bkp-desk-frame .ld-root { height: 100%; }';
+function DeskFrame({ name, width, children }) {
+  return (
+    <div style={{ padding: '16px 0 40px', overflowX: 'auto' }}>
+      <style>{DESK_FRAME_STYLE}</style>
+      <div data-preview-stage={name} className="bkp-desk-frame" style={{ width, height: 900, margin: '0 auto', position: 'relative', overflow: 'hidden', borderRadius: 12, border: `1px solid ${LTOKENS.hair2}`, background: LTOKENS.bg, color: LTOKENS.ink }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function DeskLandingStage({ state, onDoor, onLeagueNav, onNote }) {
+  const inputs = STRIP_INPUTS[state.kind];
+  const stripState = deriveStripState({ pods: inputs.pods, inPlay: inputs.inPlay, now: PREVIEW_NOW, backingWeekCloses: SUNDAY_CLOSE });
+  // The slot IS BackingLandingStrip's desktop slot — the one composition both
+  // render (DeskStripSlot); the window is the fixture pod list's, as the live
+  // mount reads it (backingWindow).
+  const slot = <DeskStripSlot state={stripState} windowOpen={backingWindow(inputs.pods) != null} accent={ACCENT} onOpen={onDoor} />;
+  const slotServices = useMemo(() => ({
+    fetchSlotSchedule: async () => ({ slots: DESK_SLOTS }),
+    claimSlot: async () => { onNote(NOTHING_SAVED); return {}; },
+    releaseSlot: async () => { onNote(NOTHING_SAVED); return {}; },
+    quickPlay: async () => { onNote(NOTHING_SAVED); return {}; },
+  }), [onNote]);
+  const seated = state.seat === 'seated';
+  return (
+    <DeskFrame name="desk-landing" width={1376}>
+      <DeskLobby
+        st={LANDINGS[state.landing]}
+        uid="u1"
+        displayName="Alice"
+        tab="ranked"
+        onSwitchTab={onLeagueNav}
+        activeGroup={seated ? SEATED_GROUP : null}
+        preOpen={false}
+        activeTrainingPod={seated ? PRACTICE_POD : null}
+        onOpenMyGame={onLeagueNav}
+        onOpenTrainingPod={onLeagueNav}
+        hasAgent
+        agentLoadout={null}
+        selectedPod={null}
+        onPickPod={onLeagueNav}
+        onClosePod={onLeagueNav}
+        onOpenGroupById={onLeagueNav}
+        railTab="field"
+        onRailTab={onLeagueNav}
+        onSpectate={onLeagueNav}
+        backingSlot={slot}
+        slotServices={slotServices}
+      />
+    </DeskFrame>
+  );
+}
+
+/** The desktop Backing screen over one fixture state — its view and section the page's own, as BackingScreen owns them in the app. */
+function DeskScreenStage({ state, onNote, onLeagueNav, onOpenTape }) {
+  const cfg = DESK_SCREENS[state.screen];
+  const week = cfg.week ? WEEK_INPUTS[cfg.week] : null;
+  const pods = cfg.pods ?? deskPods();
+  const wallet = cfg.wallet ?? STAKE_WALLET;
+  const inPlay = week ? week.inPlay : nothingInPlay;
+  const now = week ? week.now : PREVIEW_NOW;
+  const [view, setView] = useState(cfg.view ?? LIST);
+  const [section, setSection] = useState(null);
+  const [eligibility, setEligibility] = useState(cfg.attested === false ? ELIGIBILITY.REQUIRED : ELIGIBILITY.ATTESTED);
+  const [pitchText, setPitchText] = useState(OWN_CARD.team.pitch ?? '');
+  const savePitch = useCallback(async (next) => { setPitchText(next); onNote(NOTHING_SAVED); return true; }, [onNote]);
+  const requests = useRef(0);
+  const services = useMemo(() => ({
+    newRequestId: () => { requests.current += 1; return `preview-request-${requests.current}`; },
+    attestEligibility: async () => { onNote(NOTHING_SAVED); return { eligible: true }; },
+    placeStake: async ({ teamOdUserId, amount }) => {
+      onNote(NOTHING_SAVED);
+      if (cfg.refuse) throw Object.assign(new Error(cfg.refuse), { code: cfg.refuse });
+      const already = pods.find((p) => p.groupId === view.groupId)?.myStakes.filter((x) => x.teamOdUserId === teamOdUserId && x.status === 'live').reduce((n, x) => n + x.amount, 0) ?? 0;
+      return { ok: true, replay: false, topUp: already > 0, added: amount, stake: { stakeId: `preview-stake-${requests.current}`, teamOdUserId, amount: already + amount, status: 'live' }, allowanceRemaining: wallet.left - amount };
+    },
+  }), [cfg, onNote, pods, view.groupId, wallet]);
+  const pressed = useRef(false);
+  const frame = useRef(null);
+  useEffect(() => {
+    if (pressed.current || !cfg.press) return;
+    pressed.current = true;
+    frame.current?.querySelector('[data-desk-col="right"] [data-backing="confirm"]')?.click();
+  }, [cfg.press]);
+
+  const stripState = deriveStripState({ pods, inPlay, now, backingWeekCloses: SUNDAY_CLOSE });
+  const windowState = deriveStripState({ pods, inPlay: null, now, backingWeekCloses: SUNDAY_CLOSE });
+  const backed = backedPodsFor(inPlay).length;
+  const sections = deskSections(backed);
+  const current = section != null && sections.includes(section) ? section : (cfg.section ?? deskDefaultSection(stripState, backed));
+  const card = view.kind !== 'list' && view.groupId ? deskCardFor(view.groupId, view.odUserId) : null;
+  const results = cfg.result ? { weeks: [{ weekKey: RESULT_PODS[cfg.result].weekKey, pools: [RESULT_PODS[cfg.result]] }], loading: false, nextBefore: null } : { weeks: [], loading: false, nextBefore: null };
+  return (
+    <DeskFrame name="desk-screen" width={1440}>
+      <div ref={frame} style={{ height: '100%' }}>
+        <BackingDesk
+          accent={ACCENT}
+          uid="viewer-1"
+          pods={{ data: { baseLayerWeek: '2026-W40', backingWeekCloses: SUNDAY_CLOSE }, pods, loading: false, error: null }}
+          state={stripState}
+          windowState={windowState}
+          inPlay={inPlay}
+          wallet={wallet}
+          eligibility={{ status: eligibility, refresh: () => setEligibility(ELIGIBILITY.ATTESTED) }}
+          myPitch={{ text: pitchText, loaded: true, saving: false, error: null, save: savePitch }}
+          view={view}
+          cardQuery={{ card, loading: false }}
+          pod={view.groupId ? pods.find((p) => p.groupId === view.groupId) ?? null : null}
+          section={current}
+          sections={sections}
+          onSection={(next) => { setSection(next); if (next !== DESK_SECTION.WINDOW) setView(LIST); }}
+          onBack={onLeagueNav}
+          onOpenSeat={(groupId, odUserId) => setView({ kind: 'card', groupId, odUserId })}
+          onToStake={() => setView((v) => ({ ...v, kind: 'stake' }))}
+          onToCard={() => setView((v) => ({ ...v, kind: 'card' }))}
+          onBacked={() => onNote(NOTHING_SAVED)}
+          onOpenTape={onOpenTape}
+          results={results}
+          myStats={{ data: MY_STATS, loading: false }}
+          now={now}
+          services={services}
+          battlesByGroup={week ? week.battlesByGroup : {}}
+        />
+      </div>
+    </DeskFrame>
+  );
+}
+
+/** The stats' desktop home — the agent/profile column (IdentityPanel's), beside the pitch: the real views, from fixtures. */
+function DeskProfileStage({ state, onNote }) {
+  const [text, setText] = useState('I back breadth, and my agent keeps me honest.');
+  const save = useCallback(async (next) => { setText(next); onNote(NOTHING_SAVED); return true; }, [onNote]);
+  return (
+    <DeskFrame name="desk-profile" width={1376}>
+      <div style={{ padding: '22px 30px', height: '100%', boxSizing: 'border-box' }}>
+        <div data-preview-column="identity" style={{ width: 300, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <ScoutingLineView pitch={{ text, loaded: true, saving: false, error: null, save }} agentName="Prime" accent={ACCENT} />
+          <StatsEntryView mine={{ data: MY_STATS, loading: false }} trainer={{ data: TRAINER_STATS, loading: false }} accent={ACCENT} initialTab={state.stats} />
+        </div>
+      </div>
+    </DeskFrame>
+  );
+}
+
 // ═══ the page ═══
 export default function BackingPreviewScreen() {
   const [stateId, setStateId] = useState(readInitialState);
@@ -601,7 +869,13 @@ export default function BackingPreviewScreen() {
   }, [select]);
 
   let stage;
-  if (state.group === 'strip') {
+  if (state.group === 'desk-landing') {
+    stage = <DeskLandingStage state={state} onDoor={(section) => select(DESK_DOOR[section] ?? DESK_DOOR.window)} onLeagueNav={onLeagueNav} onNote={onNote} />;
+  } else if (state.group === 'desk-window' || state.group === 'desk-week' || state.group === 'desk-results') {
+    stage = <DeskScreenStage state={state} onNote={onNote} onLeagueNav={onLeagueNav} onOpenTape={onOpenTape} />;
+  } else if (state.group === 'desk-profile') {
+    stage = <DeskProfileStage state={state} onNote={onNote} />;
+  } else if (state.group === 'strip') {
     stage = <LandingStage state={state} onOpenStrip={() => select('pods-below-floor')} onLeagueNav={onLeagueNav} />;
   } else if (state.group === 'pods') {
     stage = <ScreenFrame name="pods"><PodList pods={[POD_LIST_PODS[state.pod]]} accent={ACCENT} onOpenSeat={onOpenSeat} /></ScreenFrame>;
@@ -641,6 +915,10 @@ export default function BackingPreviewScreen() {
     stage = <ScreenFrame name="week"><YourBacking inPlay={week.inPlay} accent={ACCENT} onOpenTape={onOpenTape} now={week.now} battlesByGroup={week.battlesByGroup} /></ScreenFrame>;
   }
 
+  const desktop = isDesktopState(state);
+  const groups = desktop ? DESK_GROUPS : GROUPS;
+  const states = desktop ? PREVIEW_DESKTOP_STATES : PREVIEW_STATES;
+
   const chip = (on) => ({
     all: 'unset', boxSizing: 'border-box', cursor: 'pointer', padding: '6px 10px', borderRadius: 9, fontSize: 12, fontWeight: 600,
     color: on ? LTOKENS.bg : LTOKENS.ink2, background: on ? ACCENT : LTOKENS.surface, border: `1px solid ${on ? ACCENT : LTOKENS.hair2}`,
@@ -651,16 +929,26 @@ export default function BackingPreviewScreen() {
       <div data-preview="root" style={{ minHeight: '100vh', background: LTOKENS.bg, color: LTOKENS.ink }}>
         <header data-preview="header" style={{ position: 'sticky', top: 0, zIndex: 20, padding: '12px 16px', background: alpha(LTOKENS.bg, 0.97), borderBottom: `1px solid ${LTOKENS.hair}` }}>
           <div data-preview="label" role="note" style={{ fontSize: 13.5, fontWeight: 700, color: LTOKENS.gold, lineHeight: 1.35 }}>{PREVIEW_LABEL}</div>
+          <div role="group" aria-label="Layout" data-preview="viewport" style={{ display: 'inline-flex', gap: 6, marginTop: 10 }}>
+            {[['mobile', 'Mobile', PREVIEW_STATES], ['desktop', 'Desktop', PREVIEW_DESKTOP_STATES]].map(([id, label, set]) => {
+              const on = (id === 'desktop') === desktop;
+              return (
+                <button key={id} type="button" className="lg-tap" data-preview-viewport={id} aria-pressed={on} onClick={() => { if (!on) select(set[0].id); }} style={chip(on)}>
+                  {label}
+                </button>
+              );
+            })}
+          </div>
           <nav aria-label="Surface" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
-            {GROUPS.map((g) => (
+            {groups.map((g) => (
               <button key={g.id} type="button" className="lg-tap" data-preview-group={g.id} aria-pressed={state.group === g.id}
-                onClick={() => select(PREVIEW_STATES.find((s) => s.group === g.id).id)} style={chip(state.group === g.id)}>
+                onClick={() => select(states.find((s) => s.group === g.id).id)} style={chip(state.group === g.id)}>
                 {g.label}
               </button>
             ))}
           </nav>
           <div role="group" aria-label="State" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-            {PREVIEW_STATES.filter((s) => s.group === state.group).map((s) => (
+            {states.filter((s) => s.group === state.group).map((s) => (
               <button key={s.id} type="button" className="lg-tap" data-preview-state={s.id} aria-pressed={s.id === stateId}
                 onClick={() => select(s.id)} style={chip(s.id === stateId)}>
                 {s.label}

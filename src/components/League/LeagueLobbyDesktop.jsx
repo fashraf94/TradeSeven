@@ -37,11 +37,17 @@ import {
   LDFocus, DeskTabBar, DeskTrainingPanel, TRAIN,
 } from './LeagueDeskParts';
 import DeskSeasonRail from './DeskSeasonRail';
-// Backing Beta PR 4 — the landing strip on the left rail (the design's desktop
-// variant) and the Backing screen in the same focus overlay Spectate uses.
-// BackingLandingStrip renders NOTHING while BACKING_BETA_ENABLED is dark.
+// Backing desktop layouts — the strip is the desktop landing's door: in the
+// CENTRE column, directly under the draft-slot picker and the Auto-draft card
+// (unseated), or directly under the waiting room's headline and hero (seated)
+// — never below "Watch a live game" or the bracket line (founder rulings). The
+// Backing screen opens full-window, in its three-column desktop layout.
+// BackingLandingStrip renders NOTHING while BACKING_BETA_ENABLED is dark, and
+// the Backing host opens only from the strip, so the flag-off lobby is today's
+// markup byte for byte (backingDark.test.jsx pins it against main's).
 import BackingLandingStrip from './backing/BackingLandingStrip';
 import BackingScreen from './backing/BackingScreen';
+import { SCREEN } from './backing/backingCopy';
 import { fetchTapePod } from '../../services/backingService';
 
 const ACCENT = LX.energy; // teal — the league energy accent (tournament surface)
@@ -110,83 +116,28 @@ function MyGameBar({ onOpen }) {
   );
 }
 
-export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, hasAgent, agentLoadout }) {
-  const { state: st, isFixtures } = useLeagueState(DEV_FILL);
-  const { user } = useUser();
-  const uid = user?.uid;
-
-  const [tab, setTab] = React.useState('ranked');         // 'ranked' | 'training'
-  // Store the docked pod by ID and derive it from the live state each render, so
-  // the docked panel always reflects the current data (and never stales) without
-  // a setState-in-effect that could loop if the real adapter returns a fresh
-  // object reference each render.
-  const [selectedPodId, setSelectedPodId] = React.useState(null);
-  const [spec, setSpec] = React.useState(null);            // { pod, focusId }
-  const [backing, setBacking] = React.useState(false);     // the Backing overlay (opened only by the strip)
-
-  // Active Training Game (build spec §4) — a member-scoped real-time listener,
-  // the SAME proven subscription the mobile training tab uses. uid is derived
-  // from auth via UserContext, so the effect re-subscribes on auth change (no
-  // stale-subscription bug). Gated so the flag-off lobby opens no extra listener.
-  const [activeTrainingPod, setActiveTrainingPod] = React.useState(null);
-  React.useEffect(() => {
-    if (!TRAINING_ON || !uid) { setActiveTrainingPod(null); return undefined; }
-    return subscribeMyTrainingPod(uid, setActiveTrainingPod);
-  }, [uid]);
-
-  // The per-user active-game signal (Entry-Flow Consolidation Phase 1) — the
-  // caller's competitive group via subscribeMyGroup, which observes a claimed
-  // slot seat through FORMING/DRAFTING/AWAITING_OPEN/BATTLE. Drives BOTH the
-  // conditional MyGameBar (no game → no bar) and the no-game slot-picker center.
-  // Fixture mode has no myGroup, so the bar simply hides there.
-  const [activeGroup, setActiveGroup] = React.useState(null);
-  // Bound to the SAME activeGroup that supplies `status` at the WhileYouWait
-  // mount below (BUILD_RULES §9). One hook for the surface, not one per pod.
-  const preOpen = usePreOpenPhase(activeGroup);
-  React.useEffect(() => {
-    if (!uid) { setActiveGroup(null); return undefined; }
-    return subscribeMyGroup(uid, setActiveGroup);
-  }, [uid]);
-
-  // Derived (never stale): the docked pod from the live state, or null.
-  const selectedPod = selectedPodId ? findPod(st, selectedPodId) : null;
-
-  const signal = (event, payload) => logLeagueSignal(event, payload, { isFixtures });
-
-  const pickPod = (pod) => { setSpec(null); setSelectedPodId(pod.id); signal('pod-tap', { podId: pod.id }); };
-  const closePod = () => setSelectedPodId(null);
-  // Weekly ladder §5: a season row opens the player's CURRENT pod in the same
-  // docked rail the board already uses — reusing pickPod, never a second
-  // navigation path. A group not in the current field simply does not open.
-  const openGroupById = (groupId) => { const pod = findPod(st, groupId); if (pod) pickPod(pod); };
-  // Lifted out of DeskSeasonRail: the right rail swaps the whole component out
-  // for DeskPodPanel when a pod is docked, so the tab has to survive up here.
-  const [railTab, setRailTab] = React.useState('field');
-  const openSpectate = (pod, focusId) => { if (!pod) return; setSpec({ pod, focusId }); signal('spectate-open', { podId: pod.id, focusId }); };
-  // Backing: the strip opens the overlay; a card's tape link closes it and
-  // opens Spectate on the COMPLETED week's real pod (backingService.fetchTapePod).
-  const openBacking = () => { setSpec(null); setBacking(true); };
-  const openTape = async (groupId, focusId) => {
-    try {
-      const pod = await fetchTapePod(groupId, uid);
-      if (pod) { setBacking(false); openSpectate(pod, focusId); }
-    } catch (err) {
-      console.warn('[LeagueLobbyDesktop] tape unavailable:', err?.message);
-    }
-  };
-  // Switching tabs dismisses any open tournament overlay so a ranked overlay
-  // can't linger over the (purple) training surface.
-  const switchTab = (next) => {
-    if (next === tab) return;
-    signal('tab-switch', { from: tab, to: next });
-    setSpec(null);
-    setTab(next);
-  };
-
+/**
+ * THE PAGE — the top bar, the three columns (or the Training surface) and the
+ * host's overlays (`children`), pure over its props. LeagueLobbyDesktop below
+ * owns the data and the state; the Backing dev preview page renders this page
+ * from fixtures (no network), so the desktop landing it shows IS this one.
+ * `backingSlot` is the strip's mount (the centre, under the entry); `slotServices`
+ * reaches the draft-slot picker and the Auto-draft lane (the preview only).
+ */
+export function DeskLobby({
+  // `uid` carries no default: a signed-out viewer's is `undefined`, exactly as
+  // main hands it to the slot picker (a null default would match a seat whose
+  // odUserId is null — DARK-R-1, the desktop review record).
+  st, uid, displayName = null, trainingOn = TRAINING_ON, tab = 'ranked', onSwitchTab,
+  activeGroup = null, preOpen = false, activeTrainingPod = null,
+  onOpenMyGame, onOpenTrainingPod, hasAgent, agentLoadout,
+  selectedPod = null, onPickPod, onClosePod, onOpenGroupById, railTab = 'field', onRailTab, onSpectate,
+  backingSlot = null, slotServices = null, children = null,
+}) {
   const liveCount = React.useMemo(() => [...st.rounds.r1, ...st.rounds.r2, st.rounds.r3].filter((p) => p.status === 'live').length, [st]);
   const humans = React.useMemo(() => Object.values(st.field).filter((p) => p.kind === 'human').length, [st]);
   const cpus = React.useMemo(() => Object.values(st.field).filter((p) => p.kind === 'cpu').length, [st]); // REAL CPU count (not 16 − humans)
-  const onTraining = TRAINING_ON && tab === 'training';
+  const onTraining = trainingOn && tab === 'training';
 
   return (
     <div className="ld-root" style={{ position: 'relative', backgroundImage: `radial-gradient(circle at 50% 0%, ${alpha(onTraining ? TRAIN.base : ACCENT, 0.06)}, transparent 55%)` }}>
@@ -208,7 +159,7 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
           <DeskStat n={cpus} label="CPU agents" dot={LX.cpu} muted={cpus === 0} />
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 16 }}>
-          {TRAINING_ON && <DeskTabBar tab={tab} onSwitchTab={switchTab} accent={ACCENT} />}
+          {trainingOn && <DeskTabBar tab={tab} onSwitchTab={onSwitchTab} accent={ACCENT} />}
         </div>
       </div>
 
@@ -233,7 +184,7 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
           </div>
           {/* RIGHT — the standings rail, for context */}
           <div className="ld-rail-right">
-            <DeskSeasonRail st={st} accent={ACCENT} uid={uid} tab={railTab} onTabChange={setRailTab} />
+            <DeskSeasonRail st={st} accent={ACCENT} uid={uid} tab={railTab} onTabChange={onRailTab} />
           </div>
         </div>
       ) : (
@@ -241,9 +192,8 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
           {/* LEFT — your group + live follows */}
           <div className="lg-scroll ld-rail-left">
             {onOpenMyGame && activeGroup && <MyGameBar onOpen={onOpenMyGame} />}
-            <BackingLandingStrip uid={uid} accent={ACCENT} onOpen={openBacking} wide />
-            <DeskYourGroup st={st} accent={ACCENT} onOpen={pickPod} />
-            <DeskFollowRail items={st.followLive} accent={ACCENT} onSpectate={openSpectate} />
+            <DeskYourGroup st={st} accent={ACCENT} onOpen={onPickPod} />
+            <DeskFollowRail items={st.followLive} accent={ACCENT} onSpectate={onSpectate} />
             <div style={{ marginTop: 'auto', paddingTop: 8 }}>
               <Mono style={{ fontSize: 9, letterSpacing: '0.14em', color: LTOKENS.ink3, textTransform: 'uppercase', lineHeight: 1.6 }}>
                 Empty seats run as CPU · your group locks Monday
@@ -257,10 +207,11 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
               old bracket-funnel / forthcoming panel (both sub-states) as the
               primary content, keeping the honest one-line bracket footnote.
               SlotCenter owns the LEAGUE_LIVE_DRAFT gate internally (P2c) so
-              flag-off still keeps the Auto-draft entry affordance. */}
+              flag-off still keeps the Auto-draft entry affordance. The Backing
+              strip rides the centre's own slot (backingSlot) in both. */}
           <div className="lg-scroll ld-center">
             {!activeGroup ? (
-              <SlotCenter currentUserId={uid} displayName={user?.displayName} onEntered={onOpenMyGame} />
+              <SlotCenter currentUserId={uid} displayName={displayName} onEntered={onOpenMyGame} backingSlot={backingSlot} services={slotServices} />
             ) : (
               <WhileYouWait
                 viewport="desktop"
@@ -270,7 +221,8 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
                 activeTrainingPod={activeTrainingPod}
                 onOpenTrainingPod={onOpenTrainingPod}
                 hasAgent={hasAgent}
-                onSpectate={openSpectate}
+                onSpectate={onSpectate}
+                backingSlot={backingSlot}
               />
             )}
           </div>
@@ -278,12 +230,141 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
           {/* RIGHT — leaderboard, swaps to the docked League Pod on click */}
           <div className="ld-rail-right" style={{ border: `1px solid ${selectedPod ? alpha(ACCENT, 0.3) : LTOKENS.hair}` }}>
             {selectedPod
-              ? <DeskPodPanel pod={selectedPod} accent={ACCENT} onClose={closePod} onSpectate={(seat) => openSpectate(selectedPod, seat.id)} />
-              : <DeskSeasonRail st={st} accent={ACCENT} uid={uid} onOpenGroup={openGroupById} tab={railTab} onTabChange={setRailTab} />}
+              ? <DeskPodPanel pod={selectedPod} accent={ACCENT} onClose={onClosePod} onSpectate={(seat) => onSpectate(selectedPod, seat.id)} />
+              : <DeskSeasonRail st={st} accent={ACCENT} uid={uid} onOpenGroup={onOpenGroupById} tab={railTab} onTabChange={onRailTab} />}
           </div>
         </div>
       )}
 
+      {children}
+    </div>
+  );
+}
+
+export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, hasAgent, agentLoadout }) {
+  const { state: st, isFixtures } = useLeagueState(DEV_FILL);
+  const { user } = useUser();
+  const uid = user?.uid;
+
+  const [tab, setTab] = React.useState('ranked');         // 'ranked' | 'training'
+  // Store the docked pod by ID and derive it from the live state each render, so
+  // the docked panel always reflects the current data (and never stales) without
+  // a setState-in-effect that could loop if the real adapter returns a fresh
+  // object reference each render.
+  const [selectedPodId, setSelectedPodId] = React.useState(null);
+  const [spec, setSpec] = React.useState(null);            // { pod, focusId }
+  const [backing, setBacking] = React.useState(null);      // the Backing overlay — { section } — opened only by the strip
+
+  // Active Training Game (build spec §4) — a member-scoped real-time listener,
+  // the SAME proven subscription the mobile training tab uses. uid is derived
+  // from auth via UserContext, so the effect re-subscribes on auth change (no
+  // stale-subscription bug). Gated so the flag-off lobby opens no extra listener.
+  const [activeTrainingPod, setActiveTrainingPod] = React.useState(null);
+  React.useEffect(() => {
+    if (!TRAINING_ON || !uid) { setActiveTrainingPod(null); return undefined; }
+    return subscribeMyTrainingPod(uid, setActiveTrainingPod);
+  }, [uid]);
+
+  // The per-user active-game signal (Entry-Flow Consolidation Phase 1) — the
+  // caller's competitive group via subscribeMyGroup, which observes a claimed
+  // slot seat through FORMING/DRAFTING/AWAITING_OPEN/BATTLE. Drives BOTH the
+  // conditional MyGameBar (no game → no bar) and the no-game slot-picker center.
+  // Fixture mode has no myGroup, so the bar simply hides there.
+  const [activeGroup, setActiveGroup] = React.useState(null);
+  // Whose seat the subscription has ANSWERED for (it always answers: the
+  // group, or null). The Backing strip mounts once the centre it rides is
+  // known — the slot picker's or the waiting room's — so a seated viewer's
+  // strip mounts ONCE, in its place, rather than under the slot picker first
+  // and again under the waiting room (two pod-list requests, two sets of
+  // stake listeners; WIRE-7, the desktop review record).
+  const [seatFor, setSeatFor] = React.useState(null);
+  // Bound to the SAME activeGroup that supplies `status` at the WhileYouWait
+  // mount below (BUILD_RULES §9). One hook for the surface, not one per pod.
+  const preOpen = usePreOpenPhase(activeGroup);
+  React.useEffect(() => {
+    if (!uid) { setActiveGroup(null); return undefined; }
+    return subscribeMyGroup(uid, (group) => { setActiveGroup(group); setSeatFor(uid); });
+  }, [uid]);
+
+  // Derived (never stale): the docked pod from the live state, or null.
+  const selectedPod = selectedPodId ? findPod(st, selectedPodId) : null;
+
+  const signal = (event, payload) => logLeagueSignal(event, payload, { isFixtures });
+
+  const pickPod = (pod) => { setSpec(null); setSelectedPodId(pod.id); signal('pod-tap', { podId: pod.id }); };
+  const closePod = () => setSelectedPodId(null);
+  // Weekly ladder §5: a season row opens the player's CURRENT pod in the same
+  // docked rail the board already uses — reusing pickPod, never a second
+  // navigation path. A group not in the current field simply does not open.
+  const openGroupById = (groupId) => { const pod = findPod(st, groupId); if (pod) pickPod(pod); };
+  // Lifted out of DeskSeasonRail: the right rail swaps the whole component out
+  // for DeskPodPanel when a pod is docked, so the tab has to survive up here.
+  const [railTab, setRailTab] = React.useState('field');
+  const openSpectate = (pod, focusId) => { if (!pod) return; setSpec({ pod, focusId }); signal('spectate-open', { podId: pod.id, focusId }); };
+  // Backing: the strip opens the overlay, on the section it names (its own
+  // state's, or the window for "Back a team"); a card's tape link closes it
+  // and opens Spectate on the COMPLETED week's real pod (backingService.fetchTapePod).
+  const openBacking = (section) => { setSpec(null); setBacking({ section: typeof section === 'string' ? section : null }); };
+  const closeBacking = () => setBacking(null);
+  const openTape = async (groupId, focusId) => {
+    try {
+      const pod = await fetchTapePod(groupId, uid);
+      if (pod) { setBacking(null); openSpectate(pod, focusId); }
+    } catch (err) {
+      console.warn('[LeagueLobbyDesktop] tape unavailable:', err?.message);
+    }
+  };
+  // Switching tabs dismisses any open tournament overlay so a ranked overlay
+  // can't linger over the (purple) training surface.
+  const switchTab = (next) => {
+    if (next === tab) return;
+    signal('tab-switch', { from: tab, to: next });
+    setSpec(null);
+    setTab(next);
+  };
+
+  // The full-window host is a dialog: Escape closes it, and it takes focus
+  // when it opens (PLACE-7). It opens only from the strip — never while dark,
+  // so neither runs anything then.
+  const hostRef = React.useRef(null);
+  const hostOpen = Boolean(backing) && !spec;
+  React.useEffect(() => {
+    if (!hostOpen) return undefined;
+    hostRef.current?.focus();
+    const onKey = (e) => { if (e.key === 'Escape') setBacking(null); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [hostOpen]);
+
+  // The strip's mount — the centre column's own slot, under the entry (see
+  // DeskLobby), once the seat is known (WIRE-7 above). A component that
+  // renders null while dark: no element, no gap.
+  const seatKnown = !uid || seatFor === uid;
+  const backingSlot = seatKnown ? <BackingLandingStrip uid={uid} accent={ACCENT} onOpen={openBacking} wide /> : null;
+
+  return (
+    <DeskLobby
+      st={st}
+      uid={uid}
+      displayName={user?.displayName}
+      tab={tab}
+      onSwitchTab={switchTab}
+      activeGroup={activeGroup}
+      preOpen={preOpen}
+      activeTrainingPod={activeTrainingPod}
+      onOpenMyGame={onOpenMyGame}
+      onOpenTrainingPod={onOpenTrainingPod}
+      hasAgent={hasAgent}
+      agentLoadout={agentLoadout}
+      selectedPod={selectedPod}
+      onPickPod={pickPod}
+      onClosePod={closePod}
+      onOpenGroupById={openGroupById}
+      railTab={railTab}
+      onRailTab={setRailTab}
+      onSpectate={openSpectate}
+      backingSlot={backingSlot}
+    >
       {/* overlays — Spectate's claim CTA re-points at the entry (P3): closing
           the overlay lands on the center, which IS the slot picker for a
           no-game viewer (the retired Pick-your-mode modal is gone). */}
@@ -294,13 +375,13 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
           </div>
         </LDFocus>
       )}
-      {backing && !spec && (
-        <LDFocus width={760} onClose={() => setBacking(false)}>
-          <div className="lg-scroll" style={{ height: '86vh', maxHeight: 880, borderRadius: 24, overflowY: 'auto', overflowX: 'hidden', background: LTOKENS.bg, border: `1px solid ${LTOKENS.hair2}`, boxShadow: '0 30px 90px rgba(0,0,0,0.6)', position: 'relative' }}>
-            <BackingScreen uid={uid} accent={ACCENT} viewport="desktop" onBack={() => setBacking(false)} onOpenTape={openTape} />
-          </div>
-        </LDFocus>
+      {/* the Backing screen — full-window, its own three columns (desktop
+          layout); opened only by the strip, so never while dark */}
+      {hostOpen && (
+        <div ref={hostRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={SCREEN.eyebrow} data-backing="desk-host" style={{ position: 'fixed', inset: 0, zIndex: 1000, background: LTOKENS.bg, color: LTOKENS.ink, outline: 'none' }}>
+          <BackingScreen uid={uid} accent={ACCENT} viewport="desktop" initialSection={backing.section} onBack={closeBacking} onOpenTape={openTape} />
+        </div>
       )}
-    </div>
+    </DeskLobby>
   );
 }

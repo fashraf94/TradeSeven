@@ -27,10 +27,14 @@ const tabStyle = (on, accent) => ({
   color: on ? LTOKENS.bg : LTOKENS.ink2, background: on ? accent : 'transparent', border: `1px solid ${on ? accent : LTOKENS.hair2}`,
 });
 
-function BackingStatsEntryLive({ accent, compact }) {
-  const mine = useMyBackingStats(true);
-  const trainer = useTrainerStats(true);
-  const [tab, setTab] = useState('mine');
+/**
+ * The two stats' home, pure over the two reads (each hook's return) — the live
+ * mount below feeds it; the dev preview page feeds it fixtures (Backing
+ * desktop layouts: the stats' desktop home beside the pitch), so the preview
+ * shows THIS view. `initialTab` opens a tab (the preview's "as a team" state).
+ */
+export function StatsEntryView({ mine, trainer, accent = LX.energy, compact = false, initialTab = 'mine' }) {
+  const [tab, setTab] = useState(initialTab);
   const current = tab === 'mine' ? mine : trainer;
   return (
     <div data-backing="stats-entry" style={{ marginTop: compact ? 12 : 0, borderRadius: 14, padding: compact ? '11px 13px' : '13px 15px', background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair2}` }}>
@@ -53,6 +57,12 @@ function BackingStatsEntryLive({ accent, compact }) {
       </div>
     </div>
   );
+}
+
+function BackingStatsEntryLive({ accent, compact }) {
+  const mine = useMyBackingStats(true);
+  const trainer = useTrainerStats(true);
+  return <StatsEntryView mine={mine} trainer={trainer} accent={accent} compact={compact} />;
 }
 
 /** The profile home. Renders nothing — and runs nothing — while the flag is dark. */

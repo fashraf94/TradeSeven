@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- the results_viewed hook is co-located with the section that owns it (the LeagueParts precedent) */
 // src/components/League/backing/BackingResults.jsx
 //
 // Backing Beta PR 5 — THE RESULTS SECTION of the Backing screen: the last
@@ -19,11 +20,13 @@ import { RESULTS } from './backingCopy';
 /** The outcomes that ARE a result. */
 const RESULT_OUTCOMES = new Set(['settled', 'refunded', 'insufficient']);
 
-export default function BackingResults({ uid, accent = LX.energy, onOpenTape = null }) {
-  const results = useBackingResults({ limit: 1, enabled: Boolean(uid) });
-  const { weeks } = results;
-  // `results_viewed` is §10's last funnel stage: recorded for a pool that
-  // SHOWS a result, never for one still waiting on it (HON-R-2).
+/**
+ * `results_viewed` is §10's last funnel stage: recorded for a pool that SHOWS
+ * a result, never for one still waiting on it (HON-R-2). One home for the
+ * emit — this section, and the desktop layout's results view, which passes
+ * the weeks it is showing (and none while it is not).
+ */
+export function useResultsViewed(weeks) {
   useEffect(() => {
     for (const week of weeks) {
       for (const pod of Array.isArray(week?.pools) ? week.pools : []) {
@@ -32,6 +35,12 @@ export default function BackingResults({ uid, accent = LX.energy, onOpenTape = n
       }
     }
   }, [weeks]);
+}
+
+export default function BackingResults({ uid, accent = LX.energy, onOpenTape = null }) {
+  const results = useBackingResults({ limit: 1, enabled: Boolean(uid) });
+  const { weeks } = results;
+  useResultsViewed(weeks);
   if (!uid) return null;
   if (results.loading && weeks.length === 0) return <Mono style={{ display: 'block', fontSize: 11, color: LTOKENS.ink3, marginBottom: 14 }}>{RESULTS.loading}</Mono>;
   if (weeks.length === 0) return null;

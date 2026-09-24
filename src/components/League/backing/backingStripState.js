@@ -55,6 +55,43 @@ export const STRIP_KIND = Object.freeze({
   QUIET: 'quiet',
 });
 
+/**
+ * The desktop Backing screen's three sections (Backing desktop layouts): the
+ * window, Monday–Friday's Your Backing, Friday's results. Here, beside the
+ * strip's states, so the desktop strip can name the section its "Back a team"
+ * action opens without importing the screen.
+ */
+export const DESK_SECTION = Object.freeze({ WINDOW: 'window', WEEK: 'week', RESULTS: 'results' });
+
+/**
+ * The desktop section a strip state points to — Monday–Friday's Your Backing
+ * for the week, Friday's results once banked, the window otherwise. The
+ * desktop strip opens the screen THERE (the screen holds it while its own
+ * snapshots land; WIRE-2, the desktop review record), and the screen's own
+ * default reads the same mapping (deskDefaultSection).
+ */
+export function stripSection(state) {
+  if (state?.kind === STRIP_KIND.WEEK) return DESK_SECTION.WEEK;
+  if (state?.kind === STRIP_KIND.BETWEEN) return DESK_SECTION.RESULTS;
+  return DESK_SECTION.WINDOW;
+}
+
+/**
+ * The backing window, from the pod list alone: open while ANY listed pool is
+ * open — whatever the viewer's own strip state says (a returning backer's
+ * week, a stake already closed at its slot fire) — closing at the latest of
+ * those pools' closes, the OPEN state's own figure. Null when no listed pool
+ * is open. The desktop strip's "Back a team" action and the Backing screen's
+ * close chip both read it: one source for "the window is open" and for its
+ * close (BUILD_RULES §9; PLACE-1 / PLACE-5, the desktop review record). It
+ * derives nothing the pod list does not already say.
+ */
+export function backingWindow(pods) {
+  const open = (Array.isArray(pods) ? pods : []).filter((p) => p?.pool?.status === 'open');
+  if (open.length === 0) return null;
+  return { kind: STRIP_KIND.OPEN, pods: open.length, closesAt: latestIso(open.map((p) => p.pool?.closesAt)) };
+}
+
 /** Pool statuses that mean the stakes have settled or been voided. */
 const SETTLED_POOL_STATUSES = new Set(['resolved', 'insufficient', 'refunded']);
 
