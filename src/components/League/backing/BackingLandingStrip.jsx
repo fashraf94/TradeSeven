@@ -25,9 +25,14 @@
 //     announces the stake route's success reply), so a strip left mounted
 //     behind the Backing host moves from "not staked" to "staked";
 //   · the earliest `closesAt` among the listed OPEN pools passing (one timer,
-//     to that close, re-armed from each reply and cleared on unmount), so the
-//     strip moves from open to closed — the read itself runs the server's
-//     lazy close — without a reload.
+//     to that close plus a few seconds, cleared on unmount), so the strip
+//     moves from open to closed — the read itself runs the server's lazy
+//     close — without a reload. The instant is recomputed when EACH read
+//     completes, success or failure, so a failed re-read never disarms the
+//     closes after it (WIRE-R-1); and a pool a re-read still finds open —
+//     a client clock ahead of the server's, a failed read — gets ONE
+//     follow-up a minute after its close (WIRE-C1; the pre-flip fixes 2
+//     review record). At most two reads per close; never a poll.
 // The viewer's in-play pools need neither: they are live subscriptions.
 
 import React, { useEffect, useMemo } from 'react';
@@ -47,10 +52,11 @@ function LiveStrip({ uid, accent, onOpen, wide }) {
   // PRE-1: a confirmed stake re-reads the pod list (its `myStakes` are the
   // strip's STAKED state for a listed pod).
   useEffect(() => onStakePlaced(() => refresh()), [refresh]);
-  // N4: ONE timer, to the earliest close among the listed open pools — its
-  // instant recomputed from each reply, so the next close re-arms it; cleared
-  // on unmount. A close already passed arms nothing (no loop).
-  const rereadAt = useMemo(() => nextCloseRereadAt(pods.pods, Date.now()), [pods.pods]);
+  // N4: ONE timer, to the next re-read instant among the listed open pools —
+  // recomputed as each read COMPLETES (success or failure: `loading` falls),
+  // none while a read is in flight; cleared on unmount. An instant already
+  // passed arms nothing (no loop).
+  const rereadAt = useMemo(() => (pods.loading ? null : nextCloseRereadAt(pods.pods, Date.now())), [pods.pods, pods.loading]);
   useEffect(() => {
     if (rereadAt == null) return undefined;
     const delay = Math.max(0, rereadAt - Date.now());

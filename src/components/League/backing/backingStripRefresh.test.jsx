@@ -9,9 +9,11 @@
 //     its full-window Backing host) re-reads its pod list: "not staked" →
 //     "staked" without a reload; a refused stake re-reads nothing;
 //   · when the earliest `closesAt` among the listed OPEN pools passes — ONE
-//     timer, to that close (plus a few seconds' grace), re-armed from each
-//     reply for the next close and cleared on unmount: open → closed without
-//     a reload; a reply still open after its close arms nothing more.
+//     timer, to that close (plus a few seconds' grace), recomputed as each
+//     read completes and cleared on unmount: open → closed without a reload;
+//     a pool a re-read still finds open (a clock ahead, a failed read) gets
+//     ONE follow-up a minute on, then nothing more (WIRE-C1); a failed read
+//     never disarms the closes after it (WIRE-R-1).
 //
 // The strip's hooks are the REAL ones (useBackingPods, useMyBacking) and the
 // Backing screen is the real one, over a service mock that answers from a
@@ -36,7 +38,7 @@ import { leagueState } from '../leagueFixtures';
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const flag = vi.hoisted(() => ({ on: true }));
-const server = vi.hoisted(() => ({ pools: {}, stakes: [], refuse: false, calls: [] }));
+const server = vi.hoisted(() => ({ pools: {}, stakes: [], refuse: false, calls: [], failReads: 0 }));
 const sig = vi.hoisted(() => ({ active: 0 }));
 
 // The REAL signal behind a pass-through that counts the listeners still live.
@@ -79,6 +81,8 @@ vi.mock('../../../services/backingService', () => {
   return {
     fetchBackingPods: vi.fn(async () => {
       server.calls.push('fetchBackingPods');
+      // The next N reads FAIL (a network blip at the close).
+      if (server.failReads > 0) { server.failReads -= 1; const err = new Error('unavailable'); err.code = 'unavailable'; throw err; }
       return {
         baseLayerWeek: '2026-W40', backingWeekStart: '2026-09-21T04:00:00.000Z', backingWeekCloses: SUNDAY_CLOSE, viewerUid: 'viewer-1',
         pods: Object.keys(server.pools).map(podOf),
@@ -139,7 +143,7 @@ vi.mock('../../../hooks/useSpectatedTournamentBattles', () => ({ default: () => 
 const BackingLandingStrip = (await import('./BackingLandingStrip')).default;
 const BackingScreen = (await import('./BackingScreen')).default;
 const LeagueHome = (await import('../LeagueHome')).default;
-const { CLOSE_REREAD_GRACE_MS } = await import('./backingStripState');
+const { CLOSE_REREAD_GRACE_MS, CLOSE_REREAD_FOLLOW_UP_MS } = await import('./backingStripState');
 const { announceStakePlaced } = await import('./backingStakeSignal');
 
 let roots = [];
@@ -170,6 +174,7 @@ beforeEach(() => {
   server.stakes = [];
   server.refuse = false;
   server.calls = [];
+  server.failReads = 0;
   sig.active = 0;
   // setInterval too, so a poll could not hide from the rows below on a real clock.
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
@@ -304,15 +309,57 @@ describe('N4 — when the earliest close among the listed OPEN pools passes, the
     expect(reads(), 'no read after unmount').toBe(2);
   });
 
-  it('NO POLLING: a reply that still says open after its close (the server\'s clock behind ours) arms nothing more — exactly one re-read, then quiet', async () => {
+  it('NO POLLING: a pool that still reads open after its close (a close never run) gets its one follow-up and then NOTHING — exactly two re-reads, then quiet', async () => {
     await mount(<BackingLandingStrip uid="viewer-1" accent="#5EEAD4" onOpen={() => {}} />);
     expect(reads()).toBe(1);
     await advance(new Date(WED_FIRE).getTime() + CLOSE_REREAD_GRACE_MS - NOW.getTime());
     expect(reads()).toBe(2);
-    // The pool still reads open (never closed by the server here): no second timer, no loop.
+    await advance(CLOSE_REREAD_FOLLOW_UP_MS - CLOSE_REREAD_GRACE_MS);
+    expect(reads(), 'the one follow-up').toBe(3);
+    // The pool still reads open (never closed by the server here): no third read, no loop.
     await advance(6 * 60 * 60 * 1000);
-    expect(reads(), 'one read at the close, then nothing').toBe(2);
+    expect(reads(), 'two reads at the close, then nothing').toBe(3);
     expect(vi.getTimerCount(), 'no timer left armed').toBe(0);
+  });
+
+  it('WIRE-C1 — a client clock AHEAD of the server\'s: the first re-read still finds the pool open, the follow-up a minute on finds it closed — the strip closes, then quiet', async () => {
+    const entry = await mount(<BackingLandingStrip uid="viewer-1" accent="#5EEAD4" onOpen={() => {}} />);
+    await advance(new Date(WED_FIRE).getTime() + CLOSE_REREAD_GRACE_MS - NOW.getTime());
+    expect(reads()).toBe(2);
+    expect(stripOf(entry.container).getAttribute('data-strip-state')).toBe('open'); // the server's close has not landed yet
+    server.pools['lds-wed'].status = 'closed'; // …it lands, 30 s after ours
+    await advance(CLOSE_REREAD_FOLLOW_UP_MS - CLOSE_REREAD_GRACE_MS);
+    expect(reads()).toBe(3);
+    expect(entry.container.textContent).not.toContain('Closes Wed');
+    await advance(6 * 60 * 60 * 1000);
+    expect(reads()).toBe(3);
+  });
+
+  it('WIRE-C1 — a re-read that FAILS at the close is followed up once: the strip still closes, without a reload', async () => {
+    server.stakes = [{ stakeId: 's1', groupId: 'lds-wed', teamOdUserId: 'od-a', teamLabel: 'Kestrel', amount: 250, status: 'live' }];
+    const entry = await mount(<BackingLandingStrip uid="viewer-1" accent="#5EEAD4" onOpen={() => {}} />);
+    server.pools['lds-wed'].status = 'closed';
+    server.failReads = 1;
+    await advance(new Date(WED_FIRE).getTime() + CLOSE_REREAD_GRACE_MS - NOW.getTime());
+    expect(reads(), 'the re-read at the close — it failed').toBe(2);
+    expect(entry.container.textContent).toContain('Closes Wed 7:00 PM ET'); // the last good reply stands
+    await advance(CLOSE_REREAD_FOLLOW_UP_MS - CLOSE_REREAD_GRACE_MS);
+    expect(reads(), 'the follow-up').toBe(3);
+    expect(entry.container.textContent).toContain('Closed · plays Monday');
+  });
+
+  it('WIRE-R-1 — a failed read never disarms the closes AFTER it: Wednesday\'s re-read and its follow-up both fail, and Sunday\'s close is still armed and read', async () => {
+    server.pools['lobby-w40'] = { status: 'open', closesAt: SUNDAY_CLOSE };
+    await mount(<BackingLandingStrip uid="viewer-1" accent="#5EEAD4" onOpen={() => {}} />);
+    server.failReads = 2;
+    await advance(new Date(WED_FIRE).getTime() + CLOSE_REREAD_GRACE_MS - NOW.getTime());
+    await advance(CLOSE_REREAD_FOLLOW_UP_MS - CLOSE_REREAD_GRACE_MS);
+    expect(reads(), 'Wednesday: the re-read and its follow-up, both failed').toBe(3);
+    expect(vi.getTimerCount(), 'Sunday\'s close still armed').toBe(1);
+    server.pools['lobby-w40'].status = 'closed';
+    await advance(new Date(SUNDAY_CLOSE).getTime() + CLOSE_REREAD_GRACE_MS - Date.now());
+    expect(reads(), 'Sunday\'s close re-read').toBe(4);
+    expect(vi.getTimerCount(), 'nothing left open to watch').toBe(0);
   });
 
   it('with no open pool listed, no timer is armed at all', async () => {

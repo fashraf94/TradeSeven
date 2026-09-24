@@ -101,12 +101,21 @@ export function backingWindow(pods) {
 export const CLOSE_REREAD_GRACE_MS = 5000;
 
 /**
- * The instant the strip next re-reads the pod list for a close (N4): the
- * earliest `closesAt` among the listed pods' OPEN pools, plus the grace — only
- * one still ahead of `nowMs`. A close already behind us arms nothing, so a
- * reply that still says open after its close (the server's clock behind ours)
- * cannot loop the re-read: one timer to the next close, never a poll. Null
- * when no listed pool is open. Pure.
+ * The ONE follow-up re-read for a close (WIRE-C1, the pre-flip fixes 2 review
+ * record): a minute after the close, for a pool the first re-read still found
+ * open — a client clock ahead of the server's by more than the grace — or
+ * whose re-read failed. Bounded: two re-reads per close at most, then nothing.
+ */
+export const CLOSE_REREAD_FOLLOW_UP_MS = 60000;
+
+/**
+ * The instant the strip next re-reads the pod list for a close (N4): for each
+ * listed pod's OPEN pool, its `closesAt` plus the grace and, once, plus the
+ * follow-up — the earliest still ahead of `nowMs`. An instant behind us arms
+ * nothing, so a reply that still says open after both (a clock far ahead of
+ * the server's, a close never run) cannot loop the re-read: at most two reads
+ * per close, one timer to the next instant, never a poll. Null when no listed
+ * pool is open. Pure.
  */
 export function nextCloseRereadAt(pods, nowMs) {
   let best = null;
@@ -114,9 +123,10 @@ export function nextCloseRereadAt(pods, nowMs) {
     if (p?.pool?.status !== 'open') continue;
     const closesMs = typeof p.pool.closesAt === 'string' ? new Date(p.pool.closesAt).getTime() : NaN;
     if (!Number.isFinite(closesMs)) continue;
-    const at = closesMs + CLOSE_REREAD_GRACE_MS;
-    if (at <= nowMs) continue;
-    if (best === null || at < best) best = at;
+    for (const at of [closesMs + CLOSE_REREAD_GRACE_MS, closesMs + CLOSE_REREAD_FOLLOW_UP_MS]) {
+      if (at <= nowMs) continue;
+      if (best === null || at < best) best = at;
+    }
   }
   return best;
 }

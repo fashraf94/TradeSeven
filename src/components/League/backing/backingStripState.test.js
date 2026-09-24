@@ -547,20 +547,27 @@ describe('WIRE-R-2 — a pod CANCELLED after its pool closed never reads "plays 
 });
 
 describe('N4 — nextCloseRereadAt: the ONE instant the strip re-reads for a close (the desktop review record)', () => {
-  it('the earliest close among the listed OPEN pools, plus the grace — never a closed pool\'s, never an unreadable one, never one already behind us', async () => {
-    const { CLOSE_REREAD_GRACE_MS, nextCloseRereadAt } = await import('./backingStripState');
+  it('the earliest close among the listed OPEN pools, plus the grace — then, ONCE, the follow-up a minute on (WIRE-C1) — never a closed pool\'s, never an unreadable one, never one already behind us', async () => {
+    const { CLOSE_REREAD_GRACE_MS, CLOSE_REREAD_FOLLOW_UP_MS, nextCloseRereadAt } = await import('./backingStripState');
     const wedMs = new Date(WED_FIRE).getTime();
     const sunMs = new Date(SUNDAY_CLOSE).getTime();
     const pods = [pod('g-sun'), pod('g-wed', { pool: openPool({ closesAt: WED_FIRE }) }), pod('g-closed', { pool: openPool({ status: 'closed', closesAt: '2026-09-23T15:00:00.000Z' }) }), pod('g-bad', { pool: openPool({ closesAt: 'not a date' }) })];
     expect(nextCloseRereadAt(pods, WED.getTime())).toBe(wedMs + CLOSE_REREAD_GRACE_MS);
     // Inside the grace the passed close still holds the timer (a re-render there must not drop its re-read)…
     expect(nextCloseRereadAt(pods, wedMs + 1)).toBe(wedMs + CLOSE_REREAD_GRACE_MS);
-    // …and once its re-read is due, it arms nothing more: the next close takes over.
-    expect(nextCloseRereadAt(pods, wedMs + CLOSE_REREAD_GRACE_MS)).toBe(sunMs + CLOSE_REREAD_GRACE_MS);
-    expect(nextCloseRereadAt(pods, sunMs + CLOSE_REREAD_GRACE_MS)).toBeNull();
+    // …once its re-read is due, a pool STILL listed open gets its one follow-up (a clock ahead, a failed read)…
+    expect(nextCloseRereadAt(pods, wedMs + CLOSE_REREAD_GRACE_MS)).toBe(wedMs + CLOSE_REREAD_FOLLOW_UP_MS);
+    // …and after that it arms nothing more for that close: the next close takes over.
+    expect(nextCloseRereadAt(pods, wedMs + CLOSE_REREAD_FOLLOW_UP_MS)).toBe(sunMs + CLOSE_REREAD_GRACE_MS);
+    expect(nextCloseRereadAt(pods, sunMs + CLOSE_REREAD_GRACE_MS)).toBe(sunMs + CLOSE_REREAD_FOLLOW_UP_MS);
+    expect(nextCloseRereadAt(pods, sunMs + CLOSE_REREAD_FOLLOW_UP_MS)).toBeNull();
+    // A pool the first re-read found CLOSED is not listed open: no follow-up for it.
+    const closedWed = [pod('g-sun'), pod('g-wed', { pool: openPool({ status: 'closed', closesAt: WED_FIRE }) })];
+    expect(nextCloseRereadAt(closedWed, wedMs + CLOSE_REREAD_GRACE_MS)).toBe(sunMs + CLOSE_REREAD_GRACE_MS);
     expect(nextCloseRereadAt([], WED.getTime())).toBeNull();
     expect(nextCloseRereadAt(null, WED.getTime())).toBeNull();
     expect(CLOSE_REREAD_GRACE_MS).toBeGreaterThan(0);
+    expect(CLOSE_REREAD_FOLLOW_UP_MS).toBeGreaterThan(CLOSE_REREAD_GRACE_MS);
   });
 
   it('the stake signal (PRE-1): every listener hears a confirmed stake, a failing one never silences the rest, and an unsubscribed one hears nothing', async () => {
