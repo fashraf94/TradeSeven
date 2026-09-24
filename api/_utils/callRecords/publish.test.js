@@ -25,6 +25,11 @@ const UNIVERSE = ['NVDA', 'TSLA', 'MSFT', 'AMZN', 'KO', 'PG', 'BTC', 'AMD', 'JPM
 const PROMPT_MS = Date.parse(FROZEN_NOW);
 const MINT = PROMPT_MS + 20_000;
 const sleep = (ms) => new Promise((r) => { setTimeout(r, ms); });
+// The REAL-TIME rows (withTimeout races a real timer): every candidate is built
+// BEFORE the clock is read, and each slow step outlasts its deadline by a wide
+// margin, so a loaded worker cannot reorder them (review D-2: 20–40 ms budgets
+// stalled under parallel load).
+const RT = Object.freeze({ tx: 150, slow: 400, reread: 1_000, settle: 600 });
 
 const committedBattle = (over = {}) => makeTickBattle({
   cronState: { ...makeTickBattle().cronState, evalSeq: 1 },
@@ -141,15 +146,16 @@ describe('the transaction (row 7)', () => {
     const db = makeCallsDb({ battle: committedBattle() });
     db.__hooks.afterTxBody = async ({ attempt }) => {
       if (attempt !== 1) return;
-      await sleep(120);
+      await sleep(RT.slow);
       await db.collection('agentBattles').doc(BATTLE_ID).update({ status: 'completed' });
     };
+    const c = candidateOf();
     const now = Date.now();
-    const res = await publish(db, candidateOf(), { txDeadlineMs: now + 40, rereadDeadlineMs: now + 400 });
+    const res = await publish(db, c, { txDeadlineMs: now + RT.tx, rereadDeadlineMs: now + RT.reread });
     expect(res).toMatchObject({ phaseResult: 'timeout_absent', wire: 'failed' });
     expect(res.perId.every((p) => p.result === 'unconfirmed')).toBe(true);
     expect(res.confirmedCallIds).toEqual([]);
-    await sleep(200); // let the abandoned attempt settle
+    await sleep(RT.settle); // let the abandoned attempt settle
     expect(storedCollection(db, 'calls')).toEqual({});
     expect(storedDoc(db, 'declarations', EVAL_ID)).toBeNull();
     // The retry after the deadline never read (it refused before any read).
@@ -278,16 +284,17 @@ describe('the transaction (row 7)', () => {
     const db = makeCallsDb({ battle: committedBattle() });
     db.__hooks.afterTxBody = async ({ attempt }) => {
       if (attempt !== 1) return;
-      await sleep(30);
+      await sleep(RT.slow);
       // An unrelated write to the parent — contention, not completion.
       await db.collection('agentBattles').doc(BATTLE_ID).update({ 'cronState.evaluatingAt': null });
     };
+    const c = candidateOf();
     const now = Date.now();
     // No re-read slice at all (the re-read deadline precedes the timeout), so the outcome is deterministic.
-    const res = await publish(db, candidateOf(), { txDeadlineMs: now + 20, rereadDeadlineMs: now });
+    const res = await publish(db, c, { txDeadlineMs: now + RT.tx, rereadDeadlineMs: now });
     // The timeout fired first; with no re-read budget the wire is unchanged.
     expect(res).toMatchObject({ phaseResult: 'unconfirmed', wire: null });
-    await sleep(80);
+    await sleep(RT.settle);
     expect(db.__txAttempts).toBe(2);
     expect(db.__counts.battleDocGets).toBe(1);
     expect(storedCollection(db, 'calls')).toEqual({});
@@ -307,11 +314,12 @@ describe('the transaction (row 7)', () => {
 
   it('the first reads return after the deadline: no queue read starts, no commit is issued — the failed wire is true', async () => {
     const db = makeCallsDb({ battle: committedBattle() });
-    slowTxReads(db, (path) => (path === `agentBattles/${BATTLE_ID}` ? 60 : 0));
+    slowTxReads(db, (path) => (path === `agentBattles/${BATTLE_ID}` ? RT.slow : 0));
+    const c = candidateOf();
     const now = Date.now();
-    const res = await publish(db, candidateOf(), { txDeadlineMs: now + 30, rereadDeadlineMs: now + 400 });
+    const res = await publish(db, c, { txDeadlineMs: now + RT.tx, rereadDeadlineMs: now + RT.reread });
     expect(res).toMatchObject({ phaseResult: 'timeout_absent', wire: 'failed' });
-    await sleep(150); // let the abandoned attempt finish its body
+    await sleep(RT.settle); // let the abandoned attempt finish its body
     expect(db.__txAttempts).toBe(1);
     expect(queueTouches(db)).toEqual({ reads: 0, writes: 0 });
     expect(storedCollection(db, 'calls')).toEqual({});
@@ -320,11 +328,12 @@ describe('the transaction (row 7)', () => {
 
   it('the queue read returns after the deadline: still no commit — nothing lands behind the failed wire', async () => {
     const db = makeCallsDb({ battle: committedBattle() });
-    slowTxReads(db, (path) => (path.startsWith(`${QUEUE_COLLECTION}/`) ? 60 : 0));
+    slowTxReads(db, (path) => (path.startsWith(`${QUEUE_COLLECTION}/`) ? RT.slow : 0));
+    const c = candidateOf();
     const now = Date.now();
-    const res = await publish(db, candidateOf(), { txDeadlineMs: now + 30, rereadDeadlineMs: now + 400 });
+    const res = await publish(db, c, { txDeadlineMs: now + RT.tx, rereadDeadlineMs: now + RT.reread });
     expect(res).toMatchObject({ phaseResult: 'timeout_absent', wire: 'failed' });
-    await sleep(150);
+    await sleep(RT.settle);
     expect(queueTouches(db)).toEqual({ reads: 1, writes: 0 });
     expect(storedCollection(db, 'calls')).toEqual({});
     expect(storedDoc(db, 'declarations', EVAL_ID)).toBeNull();
@@ -343,45 +352,47 @@ describe('the transaction (row 7)', () => {
 describe('the phase wire (row 8)', () => {
   it('a timeout whose commit LANDED (late acknowledgement): the re-read finds the identical documents → written, confirmed', async () => {
     const db = makeCallsDb({ battle: committedBattle() });
-    db.__hooks.afterCommit = async () => { await sleep(120); };
-    const now = Date.now();
+    db.__hooks.afterCommit = async () => { await sleep(RT.slow); };
     const c = candidateOf();
-    const res = await publish(db, c, { txDeadlineMs: now + 40, rereadDeadlineMs: now + 400 });
+    const now = Date.now();
+    const res = await publish(db, c, { txDeadlineMs: now + RT.tx, rereadDeadlineMs: now + RT.reread });
     expect(res).toMatchObject({ phaseResult: 'timeout_present', wire: 'written' });
     expect(res.perId.every((p) => p.result === 'confirmed')).toBe(true);
     expect(res.confirmedCallIds).toEqual(c.calls.map((x) => x.callId));
-    await sleep(150);
+    await sleep(RT.settle);
   });
 
   it('a timeout whose commit has NOT landed: absent → failed, per-id unconfirmed, no capture reference', async () => {
     const db = makeCallsDb({ battle: committedBattle() });
-    db.__hooks.beforeCommit = async () => { await sleep(120); };
-    const now = Date.now();
+    db.__hooks.beforeCommit = async () => { await sleep(RT.slow); };
     const c = candidateOf();
-    const res = await publish(db, c, { txDeadlineMs: now + 40, rereadDeadlineMs: now + 400 });
+    const now = Date.now();
+    const res = await publish(db, c, { txDeadlineMs: now + RT.tx, rereadDeadlineMs: now + RT.reread });
     expect(res).toMatchObject({ phaseResult: 'timeout_absent', wire: 'failed', confirmedCallIds: [] });
     expect(captureRefsFor(c, res.confirmedCallIds)).toEqual([]);
-    await sleep(150); // the late commit lands after the phase gave up — still never referenced
+    await sleep(RT.settle); // the late commit lands after the phase gave up — still never referenced
     expect(storedDoc(db, 'declarations', EVAL_ID)).toEqual(c.record);
   });
 
   it('a timeout that cannot be re-read: the wire is LEFT UNCHANGED (null) and the diagnostics say unconfirmed', async () => {
     const noBudget = makeCallsDb({ battle: committedBattle() });
-    noBudget.__hooks.beforeCommit = async () => { await sleep(80); };
+    noBudget.__hooks.beforeCommit = async () => { await sleep(RT.slow); };
+    const ca = candidateOf();
     const now = Date.now();
     // No re-read slice (its deadline precedes the timeout): deterministic, whatever the timer's rounding.
-    const a = await publish(noBudget, candidateOf(), { txDeadlineMs: now + 30, rereadDeadlineMs: now });
+    const a = await publish(noBudget, ca, { txDeadlineMs: now + RT.tx, rereadDeadlineMs: now });
     expect(a).toMatchObject({ phaseResult: 'unconfirmed', wire: null });
     expect(a.perId.every((p) => p.result === 'unconfirmed')).toBe(true);
 
     const failingReread = makeCallsDb({ battle: committedBattle() });
-    failingReread.__hooks.beforeCommit = async () => { await sleep(80); };
+    failingReread.__hooks.beforeCommit = async () => { await sleep(RT.slow); };
     failingReread.getAll = async () => { throw new Error('14 UNAVAILABLE'); };
+    const cb = candidateOf();
     const t = Date.now();
-    const b = await publish(failingReread, candidateOf(), { txDeadlineMs: t + 30, rereadDeadlineMs: t + 400 });
+    const b = await publish(failingReread, cb, { txDeadlineMs: t + RT.tx, rereadDeadlineMs: t + RT.reread });
     expect(b).toMatchObject({ phaseResult: 'unconfirmed', wire: null });
     expect(b.perId.every((p) => p.result === 'unconfirmed' && p.reason === 'reread_failed')).toBe(true);
-    await sleep(120);
+    await sleep(RT.settle);
   });
 
   it('a timeout whose re-read finds DIFFERENT documents → failed (timeout_conflict)', async () => {
@@ -391,12 +402,13 @@ describe('the phase wire (row 8)', () => {
       if (attempt !== 1) return;
       // Another writer's record lands while this commit is slow.
       await db.collection('agentBattles').doc(BATTLE_ID).collection('declarations').doc(EVAL_ID).create(other.record);
-      await sleep(80);
+      await sleep(RT.slow);
     };
+    const mine = candidateOf();
     const now = Date.now();
-    const res = await publish(db, candidateOf(), { txDeadlineMs: now + 30, rereadDeadlineMs: now + 400 });
+    const res = await publish(db, mine, { txDeadlineMs: now + RT.tx, rereadDeadlineMs: now + RT.reread });
     expect(res).toMatchObject({ phaseResult: 'timeout_conflict', wire: 'failed' });
-    await sleep(120);
+    await sleep(RT.settle);
   });
 
   it('`written` never precedes the commit: at commit time the battle carries no written wire for this check', async () => {
@@ -569,11 +581,11 @@ describe('diagnostics, status, capture references', () => {
     const db = makeCallsDb({ battle: committedBattle() });
     expect(await writeCallsStatus({ db, battleId: BATTLE_ID, fields: { 'cronState.callsDiag': {} }, deadlineMs: Date.now() - 1 })).toBe('skipped');
     expect(db.__updates).toEqual([]);
-    const slow = { collection: () => ({ doc: () => ({ update: () => sleep(100) }) }) };
-    expect(await writeCallsStatus({ db: slow, battleId: BATTLE_ID, fields: { a: 1 }, deadlineMs: Date.now() + 20 })).toBe('unconfirmed');
+    const slow = { collection: () => ({ doc: () => ({ update: () => sleep(RT.slow) }) }) };
+    expect(await writeCallsStatus({ db: slow, battleId: BATTLE_ID, fields: { a: 1 }, deadlineMs: Date.now() + RT.tx })).toBe('unconfirmed');
     const broken = { collection: () => ({ doc: () => ({ update: async () => { throw new Error('boom'); } }) }) };
-    expect(await writeCallsStatus({ db: broken, battleId: BATTLE_ID, fields: { a: 1 }, deadlineMs: Date.now() + 500 })).toBe('failed');
-    await sleep(120);
+    expect(await writeCallsStatus({ db: broken, battleId: BATTLE_ID, fields: { a: 1 }, deadlineMs: Date.now() + RT.reread })).toBe('failed');
+    await sleep(RT.settle);
   });
 
   it('captureRefsFor: confirmed calls only, as { callId, n, kind }', () => {
