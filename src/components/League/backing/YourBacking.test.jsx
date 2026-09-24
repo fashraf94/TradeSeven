@@ -341,6 +341,38 @@ describe('WIRE-R-2 — a pod CANCELLED after its pool closed never reads "plays 
     expect(render({ inPlay: cancelledPod({ g: null }) })).toContain(WEEK.cancelled);
   });
 
+  it('D7 / PLACE-R-1 — until a closed pod\'s group read answers (still on its way, or failed before any answer), the card carries NO status and the section NO line: never "plays Monday" or a battle day over a pod that may be cancelled — mobile and desktop', () => {
+    const t = (html) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    for (const groupsById of [{}, { 'lds-wed': undefined }]) {
+      const unknown = inPlay({
+        stakes: [{ id: 's1', groupId: 'lds-wed', teamOdUserId: 'od-a', amount: 250, status: 'live', weekKey: '2026-W40' }],
+        poolsById: { 'lds-wed': { status: 'closed' } },
+        groupsById,
+        labelsById: { 'lds-wed': LABELS },
+      });
+      for (const layout of ['mobile', 'desktop']) {
+        const html = render({ inPlay: unknown, layout });
+        const words = t(html);
+        expect(words, `${layout}: no "plays Monday"`).not.toMatch(/plays Monday/);
+        expect(words, `${layout}: no battle day`).not.toMatch(/Day \d of 5/);
+        for (const label of [WEEK.status.awaiting, WEEK.status.battle, WEEK.status.settling, WEEK.status.cancelled]) expect(html, `${layout}: ${label}`).not.toContain(`>${label}<`);
+        expect(html, `${layout}: nothing claimed about money`).not.toContain(WEEK.cancelled);
+        // The stake itself still reads — the server's name and the amount.
+        expect(words).toContain('Kestrel · 250 BP');
+      }
+    }
+    // Once it answers, the card speaks: a pod that plays reads "Locked · plays Monday"; a voided one "Cancelled".
+    const answered = (g) => render({ inPlay: cancelledPod({ g }) });
+    expect(answered(group({ status: 'drafting', dailyScores: {} }))).toContain(`>${WEEK.status.awaiting}<`);
+    expect(answered(group({ status: 'voided' }))).toContain(`>${WEEK.status.cancelled}<`);
+    // A SETTLED pool needs no group read to say so.
+    const settledUnknown = inPlay({
+      stakes: [{ id: 's1', groupId: 'lds-wed', teamOdUserId: 'od-a', amount: 250, status: 'won', payout: 400, weekKey: '2026-W40' }],
+      poolsById: { 'lds-wed': { status: 'resolved' } }, groupsById: {}, labelsById: { 'lds-wed': LABELS },
+    });
+    expect(render({ inPlay: settledUnknown })).toContain(`>${WEEK.settled}<`);
+  });
+
   it('then SHOWS THE REFUND once it lands: the refunded pool\'s own words and reason — never the cancellation, never "Settled", never "plays Monday"', () => {
     const refunded = cancelledPod({
       g: group({ status: 'voided' }),

@@ -128,7 +128,10 @@ function Chips({ symbols }) {
  * A pod cancelled after its pool closed (WIRE-R-2) is `cancelled`, with its
  * `notice`: the cancellation until the refund lands, then the refund's own
  * reason — the POOL's `refundReason`, the one source the results card reads
- * (§9; WIRE-D2), never the viewer's stake. Pure.
+ * (§9; WIRE-D2), never the viewer's stake. Until the group read answers, a
+ * pool not yet settled carries NO status (`statusLabel` null — D7 / PLACE-R-1,
+ * the pre-flip fixes 2 review record): "plays Monday" is said only of a pod
+ * known to play, never of one that may be cancelled. Pure.
  */
 export function weekCardModel({ groupId, stakes, pool, group, labelsById, battles, groupAnswered = group != null }) {
   const podName = baseGroupName(groupId);
@@ -163,7 +166,8 @@ export function weekCardModel({ groupId, stakes, pool, group, labelsById, battle
   const first = teams[0] ?? null;
   const { trail, through } = group && first ? dayTrailFor(group, first) : { trail: [], through: 0 };
   const statusLabel = cancellation ? (cancellation.refunded ? RESULTS.outcome.refunded : WEEK.status.cancelled)
-    : settled ? WEEK.settled : settling ? WEEK.status.settling : group?.status === GROUP_STATUS.BATTLE ? WEEK.status.battle : WEEK.status.awaiting;
+    : settled ? WEEK.settled : groupAnswered !== true ? null
+      : settling ? WEEK.status.settling : group?.status === GROUP_STATUS.BATTLE ? WEEK.status.battle : WEEK.status.awaiting;
   const reveal = teams.map((id) => {
     // The two layers, named apart — the SERVER's `player` and `agent`,
     // never guessed from a lone label (RAWID-R-2): a label with no
@@ -240,7 +244,7 @@ function WeekCard({ groupId, stakes, pool, group, groupAnswered, labelsById, acc
     <div data-backing="week-card" data-group={groupId} {...(m.cancelled ? { 'data-cancelled': 'true' } : {})} style={card}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
         <span style={{ fontSize: 14, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.01em' }}>{m.podName}</span>
-        <Tag color={tagColor(m, accent)}>{m.statusLabel}</Tag>
+        {m.statusLabel && <Tag color={tagColor(m, accent)}>{m.statusLabel}</Tag>}
       </div>
 
       <Mono style={{ fontSize: 9, color: LTOKENS.ink3, letterSpacing: '0.12em', textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>{WEEK.backed}</Mono>
@@ -284,7 +288,7 @@ function WeekCardDesk({ groupId, stakes, pool, group, groupAnswered, labelsById,
     <div data-backing="week-card" data-group={groupId} data-layout="desktop" {...(m.cancelled ? { 'data-cancelled': 'true' } : {})} style={{ ...card, padding: '16px 18px 14px', display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
         <span style={{ fontSize: 16, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.01em' }}>{m.podName}</span>
-        <Tag color={tagColor(m, accent)}>{m.statusLabel}</Tag>
+        {m.statusLabel && <Tag color={tagColor(m, accent)}>{m.statusLabel}</Tag>}
       </div>
 
       <div style={{ padding: '10px 13px', borderRadius: 13, background: alpha(accent, 0.07), border: `1px solid ${alpha(accent, 0.28)}` }}>
@@ -362,7 +366,11 @@ export default function YourBacking({ inPlay, accent = LX.energy, onOpenTape, no
   const dayOfFive = playing.reduce((best, { groupId }) => { const d = podDayOfFive(inPlay?.groupsById?.[groupId] ?? null, now); return d == null ? best : Math.max(best ?? 0, d); }, null) ?? weekDayOfFive(now);
   // No backed pod has started (every one locked in ahead of its Monday): no battle day to count (R-B-2).
   const noneStarted = playing.every(({ groupId }) => { const st = inPlay?.groupsById?.[groupId]?.status; return st != null && st !== GROUP_STATUS.BATTLE && st !== GROUP_STATUS.COMPLETE; });
-  const sub = playing.length === 0 ? null : allSettled ? WEEK.settledSub : allComplete ? WEEK.settlingSub : noneStarted ? WEEK.lockedSub : WEEK.sub(dayOfFive);
+  // …and says nothing while a pod's group read has not answered and its pool
+  // is not settled: that pod may be cancelled, so no line may call the week
+  // "plays Monday" or a battle day over it (D7 / PLACE-R-1).
+  const unknown = playing.some(({ groupId }) => !answered(groupId) && !SETTLED.has(inPlay?.poolsById?.[groupId]?.status));
+  const sub = playing.length === 0 || unknown ? null : allSettled ? WEEK.settledSub : allComplete ? WEEK.settlingSub : noneStarted ? WEEK.lockedSub : WEEK.sub(dayOfFive);
   if (layout === 'desktop') {
     return (
       <div data-backing="your-backing-section" data-layout="desktop" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>

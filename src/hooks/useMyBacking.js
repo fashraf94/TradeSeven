@@ -100,14 +100,16 @@ export default function useMyBacking(uid, weekKeys, enabled = true) {
     const unsubs = [];
     for (const groupId of ids) {
       unsubs.push(subscribePool(groupId, (pool) => setPoolsById((prev) => ({ ...prev, [groupId]: pool }))));
-      // A group read that FAILED is recorded as `undefined` — the key present
-      // (the names' gate below still opens), the value no answer: never the
-      // `null` of a pod that is gone (WIRE-D1 — a failed read is not a
-      // cancelled pod).
+      // A group read that FAILED is no answer: never the `null` of a pod that
+      // is gone (WIRE-D1 — a failed read is not a cancelled pod). Before any
+      // answer it is recorded as `undefined` — the key present, so the names'
+      // gate below still opens; after one, the LAST ANSWER stands (PLACE-R-1:
+      // a later failure never unknows a pod already known — voided, or in
+      // battle).
       unsubs.push(subscribeGroup(
         groupId,
         (group) => setGroupsById((prev) => ({ ...prev, [groupId]: group })),
-        () => setGroupsById((prev) => ({ ...prev, [groupId]: undefined })),
+        () => setGroupsById((prev) => (prev[groupId] !== undefined ? prev : { ...prev, [groupId]: undefined })),
       ));
     }
     return () => { unsubs.forEach((u) => { try { u(); } catch { /* already closed */ } }); };
