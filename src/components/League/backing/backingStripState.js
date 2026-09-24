@@ -64,6 +64,19 @@ export const STRIP_KIND = Object.freeze({
 export const DESK_SECTION = Object.freeze({ WINDOW: 'window', WEEK: 'week', RESULTS: 'results' });
 
 /**
+ * The desktop section a strip state points to — Monday–Friday's Your Backing
+ * for the week, Friday's results once banked, the window otherwise. The
+ * desktop strip opens the screen THERE (the screen holds it while its own
+ * snapshots land; WIRE-2, the desktop review record), and the screen's own
+ * default reads the same mapping (deskDefaultSection).
+ */
+export function stripSection(state) {
+  if (state?.kind === STRIP_KIND.WEEK) return DESK_SECTION.WEEK;
+  if (state?.kind === STRIP_KIND.BETWEEN) return DESK_SECTION.RESULTS;
+  return DESK_SECTION.WINDOW;
+}
+
+/**
  * The backing window, from the pod list alone: open while ANY listed pool is
  * open — whatever the viewer's own strip state says (a returning backer's
  * week, a stake already closed at its slot fire) — closing at the latest of

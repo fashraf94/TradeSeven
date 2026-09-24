@@ -548,7 +548,8 @@ export const PREVIEW_DESKTOP_STATES = [
   { id: 'desk-profile-trainer', group: 'desk-profile', label: 'As a team', stats: 'trainer' },
 ];
 /** Where the desktop strip's door leads, per state — the section the strip points to. */
-const DESK_DOOR = { open: 'desk-window-list', staked: 'desk-window-list', week: 'desk-week-mid-week', between: 'desk-results-win' };
+// The desktop strip names the section it opens (stripSection; the "Back a team" action, the window) — the page opens that section's state.
+const DESK_DOOR = { window: 'desk-window-list', week: 'desk-week-mid-week', results: 'desk-results-win' };
 const STATE_BY_ID = Object.fromEntries([...PREVIEW_STATES, ...PREVIEW_DESKTOP_STATES].map((s) => [s.id, s]));
 const isDesktopState = (state) => state.group.startsWith('desk-');
 
@@ -868,7 +869,7 @@ export default function BackingPreviewScreen() {
 
   let stage;
   if (state.group === 'desk-landing') {
-    stage = <DeskLandingStage state={state} onDoor={(section) => select(section === DESK_SECTION.WINDOW ? DESK_DOOR.open : DESK_DOOR[state.kind])} onLeagueNav={onLeagueNav} onNote={onNote} />;
+    stage = <DeskLandingStage state={state} onDoor={(section) => select(DESK_DOOR[section] ?? DESK_DOOR.window)} onLeagueNav={onLeagueNav} onNote={onNote} />;
   } else if (state.group === 'desk-window' || state.group === 'desk-week' || state.group === 'desk-results') {
     stage = <DeskScreenStage state={state} onNote={onNote} onLeagueNav={onLeagueNav} onOpenTape={onOpenTape} />;
   } else if (state.group === 'desk-profile') {

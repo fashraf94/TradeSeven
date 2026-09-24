@@ -40,7 +40,7 @@ import { LTOKENS, LX, alpha } from '../leagueTokens';
 import { Mono, Icon, LIcon, Score } from '../LeagueParts';
 import { Chairs, WeekRail } from './BackingParts';
 import { STRIP, stripLines } from './backingCopy';
-import { DESK_SECTION, STRIP_KIND } from './backingStripState';
+import { DESK_SECTION, STRIP_KIND, stripSection } from './backingStripState';
 
 function DeskStrip({ s, kind, eyebrow, head, when, sub, c, onOpen, windowOpen }) {
   const motif = kind === STRIP_KIND.WEEK
@@ -49,10 +49,11 @@ function DeskStrip({ s, kind, eyebrow, head, when, sub, c, onOpen, windowOpen })
       ? <LIcon name="crown" size={14} color={c} stroke={2.2} />
       : <Chairs n={kind === STRIP_KIND.STAKED ? 1 : 0} color={c} size={11} />;
   // The card holds TWO buttons, siblings (a button never nests in a button):
-  // the strip itself, which opens the Backing screen where its own state
-  // points (Your Backing Monday–Friday, the results once banked, the window
-  // otherwise), and — while the window is open, whatever the strip's own
-  // state — the "Back a team" action, which opens the window (PLACE-1).
+  // the strip itself, which opens the Backing screen on the section its own
+  // state names (stripSection: Your Backing Monday–Friday, the results once
+  // banked, the window otherwise — the screen holds it; WIRE-2), and — while
+  // the window is open, whatever the strip's own state — the "Back a team"
+  // action, which opens the window (PLACE-1).
   return (
     <div
       data-backing="strip-card"
@@ -71,7 +72,7 @@ function DeskStrip({ s, kind, eyebrow, head, when, sub, c, onOpen, windowOpen })
         data-backing="strip"
         data-strip-state={kind}
         data-strip-layout="desktop"
-        onClick={() => onOpen?.()}
+        onClick={() => onOpen?.(stripSection(s))}
         aria-label={`${eyebrow} · ${head}`}
         style={{
           all: 'unset', boxSizing: 'border-box', display: 'block', width: '100%', cursor: 'pointer', textAlign: 'left',

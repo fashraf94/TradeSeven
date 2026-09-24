@@ -473,3 +473,21 @@ describe('stripLines — the ONE mapping the landing strip and the screen header
     expect(stripLines(null)).toMatchObject({ kind: 'quiet', head: 'Backing' });
   });
 });
+
+describe('the desktop door (Backing desktop layouts): the window is the pod list\'s, the section is the strip state\'s', () => {
+  it('backingWindow — open while ANY listed pool is open, closing at the latest of their closes; null otherwise', async () => {
+    const { backingWindow } = await import('./backingStripState');
+    const pool = (status, closesAt) => ({ pool: { status, closesAt } });
+    expect(backingWindow([])).toBeNull();
+    expect(backingWindow([pool('closed', '2026-09-23T23:00:00.000Z')])).toBeNull();
+    expect(backingWindow([pool('open', '2026-09-23T23:00:00.000Z'), pool('open', '2026-09-28T03:59:59.000Z'), pool('closed', '2026-09-30T00:00:00.000Z')]))
+      .toEqual({ kind: 'open', pods: 2, closesAt: '2026-09-28T03:59:59.000Z' });
+  });
+  it('stripSection — Monday–Friday\'s Your Backing for the week, the results once banked, the window otherwise', async () => {
+    const { stripSection, STRIP_KIND, DESK_SECTION } = await import('./backingStripState');
+    expect(stripSection({ kind: STRIP_KIND.WEEK })).toBe(DESK_SECTION.WEEK);
+    expect(stripSection({ kind: STRIP_KIND.BETWEEN })).toBe(DESK_SECTION.RESULTS);
+    for (const kind of [STRIP_KIND.OPEN, STRIP_KIND.STAKED, STRIP_KIND.QUIET]) expect(stripSection({ kind })).toBe(DESK_SECTION.WINDOW);
+    expect(stripSection(null)).toBe(DESK_SECTION.WINDOW);
+  });
+});

@@ -46,7 +46,7 @@ import YourBacking from './YourBacking';
 import { BackingResultsCardDesk } from './BackingResultsCard';
 import MyBackingStats from './MyBackingStats';
 import { POD_LIST, RESULTS, SCREEN, STAKE, STATS, STRIP, WEEK, screenStateLine, stripLines } from './backingCopy';
-import { DESK_SECTION, STRIP_KIND, backingWindow } from './backingStripState';
+import { DESK_SECTION, STRIP_KIND, backingWindow, stripSection } from './backingStripState';
 
 /** The three desktop sections, in their header order. */
 // The three sections live beside the strip's states (the strip's action names one); re-exported here.
@@ -59,9 +59,9 @@ const SECTION_LABEL = Object.freeze({ window: POD_LIST.title, week: WEEK.title, 
  * stakes in play → Your Backing; the week banked → Results; else the window.
  */
 export function deskDefaultSection(state, backedPods = 0) {
-  if (state?.kind === STRIP_KIND.WEEK && backedPods > 0) return DESK_SECTION.WEEK;
-  if (state?.kind === STRIP_KIND.BETWEEN) return DESK_SECTION.RESULTS;
-  return DESK_SECTION.WINDOW;
+  const section = stripSection(state);
+  // Your Backing is offered only while a backed pod has closed (deskSections).
+  return section === DESK_SECTION.WEEK && backedPods === 0 ? DESK_SECTION.WINDOW : section;
 }
 
 /** The sections a viewer can open: the window and the results always; Your Backing while a backed pod has closed. */

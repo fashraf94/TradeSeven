@@ -459,6 +459,17 @@ describe('the desktop toggle — every desktop state, the same promises', () => 
     expect(PREVIEW_STATES).toHaveLength(30);
   });
 
+  it('the week landing\'s strip opens Your Backing — the section its state names — while its "Back a team" action opens the WINDOW (PLACE-1 / WIRE-2)', async () => {
+    window.history.replaceState(null, '', '/?preview=backing&state=desk-landing-week-unseated-no-bracket');
+    const page = await mount(<BackingPreviewScreen />);
+    await press(stage(page).querySelector('[data-backing="strip-back"]'));
+    expect(current(page)).toBe('desk-window-list');
+    window.history.replaceState(null, '', '/?preview=backing&state=desk-landing-week-unseated-no-bracket');
+    const again = await mount(<BackingPreviewScreen />);
+    await press(stage(again).querySelector('[data-backing="strip"]'));
+    expect(current(again)).toBe('desk-week-mid-week');
+  });
+
   it('the toggle switches the whole switcher between the two sets, and a desktop state is addressable', async () => {
     const page = await mount(<BackingPreviewScreen />);
     expect(page.querySelector('[data-preview-viewport="mobile"]').getAttribute('aria-pressed')).toBe('true');
