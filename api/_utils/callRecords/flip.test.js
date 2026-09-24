@@ -15,7 +15,7 @@ import { buildMintCandidate, MUTABLE_CALL_FIELDS } from './candidate.js';
 import { createCallsContext } from './mode.js';
 import { TAIL_RESERVE_MS, NON_MODEL_PHASE_MS } from './publish.js';
 import { FROZEN_NOW, makeTickBattle, makeDeclarations, makeObservation, makeExecutorResult } from '../__fixtures__/tickStampsHarness.js';
-import { makeCallsDb, storedDoc, storedCollection, callsTouches } from '../__fixtures__/callRecordsStore.js';
+import { makeCallsDb, storedDoc, storedCollection, callsTouches, MAX_CALLS_QUERIES } from '../__fixtures__/callRecordsStore.js';
 
 const TIME_BUDGET_MS = 290_000;
 const BATTLE_ID = 'battle-tick-1';
@@ -485,6 +485,13 @@ describe('the cursor — continuation, wraparound, ties, > 50 open calls, the de
     const second = await flipsOf(db, ctxFor({ evalId: 'eval_002', observation: hot() }), { deadlineMs: Date.now() + 2_000 });
     expect(second.diag.hit).toBe(1);
     expect(storedDoc(db, 'calls', late.callId).state).toBe('hit');
+  });
+
+  it('the store double refuses a runaway scan: a cursor that never advances fails its row instead of hanging the worker', async () => {
+    const db = makeCallsDb({ battle: makeTickBattle(), seed: seedOf(manyCalls(3)) });
+    const q = db.collection('agentBattles').doc(BATTLE_ID).collection('calls').where('state', '==', 'open').limit(1);
+    for (let i = 0; i < MAX_CALLS_QUERIES; i++) await q.get();
+    await expect(q.get()).rejects.toThrow(/runaway scan/);
   });
 
   it('cursorOf rejects a malformed persisted cursor', () => {

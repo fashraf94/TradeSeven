@@ -29,6 +29,11 @@
 //     rows need (a completion that commits between a transaction's reads and
 //     its commit; a commit that lands late; a commit whose acknowledgement is
 //     late; a failing query)
+//   · a RUNAWAY GUARD: more than MAX_CALLS_QUERIES queries on one store throws.
+//     The double resolves every query on microtasks, and the flip rows freeze
+//     Date — so a scan whose cursor never advances would spin forever with no
+//     timer able to fire. The guard makes such a defect fail its row instead
+//     of hanging the worker (the Build 0 mutation battery hit exactly this).
 //
 // ZERO product imports beyond the two base fixtures (their own rule).
 
@@ -41,6 +46,8 @@ export const CALL_SUBCOLLECTIONS = Object.freeze(['calls', 'declarations', 'call
 export const QUEUE_COLLECTION = 'callSweepQueue';
 
 const NAME = '__name__';
+/** No legitimate row issues more than a handful of queries; a runaway scan issues thousands. */
+export const MAX_CALLS_QUERIES = 400;
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
   && (v.constructor === Object || v.constructor === undefined);
 
@@ -179,6 +186,9 @@ export function makeCallsDb({ seed = {}, abortFirstTransactionWithSeq = null, ..
     limit(n) { return makeQuery(collectionPath, { ...state, limit: n }); },
     async get() {
       access.queries.push(deepClone({ collectionPath, ...state }));
+      if (access.queries.length > MAX_CALLS_QUERIES) {
+        throw new Error(`calls store: runaway scan — more than ${MAX_CALLS_QUERIES} queries on one store (a cursor that never advances)`);
+      }
       if (hooks.failQuery) { const err = hooks.failQuery; throw err; }
       const prefix = `${collectionPath}/`;
       let rows = [...docs.entries()]
