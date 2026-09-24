@@ -56,8 +56,9 @@
 // a refusal), Monday–Friday, the results, and the stats' home beside the pitch
 // — rendered through the REAL desktop components (DeskLobby, BackingDesk,
 // ScoutingLineView, StatsEntryView) from the same fixtures, in frames sized
-// as the app sizes them (the League's content area at a 1440-wide window;
-// the Backing screen full-window at 1440×900). Every call is answered locally
+// as the app sizes them (the League's content area at a 1440-wide window,
+// beside the app's sidebar in its default collapsed 64px rail; the Backing
+// screen full-window at 1440×900). Every call is answered locally
 // as above — the draft-slot picker's and the Auto-draft lane's through their
 // `services` seam — and the page's test presses every control of every
 // desktop state and asserts zero network, as it does for mobile. The desktop
@@ -719,7 +720,7 @@ function DeskLandingStage({ state, onDoor, onLeagueNav, onNote }) {
   }), [onNote]);
   const seated = state.seat === 'seated';
   return (
-    <DeskFrame name="desk-landing" width={1220}>
+    <DeskFrame name="desk-landing" width={1376}>
       <DeskLobby
         st={LANDINGS[state.landing]}
         uid="u1"
@@ -827,7 +828,7 @@ function DeskProfileStage({ state, onNote }) {
   const [text, setText] = useState('I back breadth, and my agent keeps me honest.');
   const save = useCallback(async (next) => { setText(next); onNote(NOTHING_SAVED); return true; }, [onNote]);
   return (
-    <DeskFrame name="desk-profile" width={1220}>
+    <DeskFrame name="desk-profile" width={1376}>
       <div style={{ padding: '22px 30px', height: '100%', boxSizing: 'border-box' }}>
         <div data-preview-column="identity" style={{ width: 300, display: 'flex', flexDirection: 'column', gap: 16 }}>
           <ScoutingLineView pitch={{ text, loaded: true, saving: false, error: null, save }} agentName="Prime" accent={ACCENT} />
