@@ -2756,3 +2756,48 @@ export const TICK_CAPTURE_ENABLED = true;
  */
 // Pinned by: evalDeferredBeatFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const EVAL_DEFERRED_BEAT_ENABLED = false;
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * THE COCKPIT — CALL RECORDS (spec docs/design/COCKPIT_SPEC_V1_3.md §2–§3;
+ * contract docs/CALL_RECORD_FIELD_CONTRACT_V1_3.md; Build 0 report
+ * docs/audits/20260924_BUILD0_CALL_RECORDS.md).
+ *
+ * CALL_RECORDS_MODE — a STRING TRI-STATE, resolved ONCE per evaluation check
+ * by resolveCallRecordsMode() (api/_utils/callRecords/mode.js), carried in the
+ * check's calls context and never re-read mid-check:
+ *   'off'    (shipped) — no `declarations` property in the evaluation tool
+ *            schema; no admission reserve; no observation snapshot; no read or
+ *            write of `declarations/`, `calls/`, `callObservations/` or
+ *            `callSweepQueue/`; no `declarationsPhase` on any entry and no
+ *            `declarationsPhase` / `callFlips` / `callsDiag` on `cronState`;
+ *            the tick-capture record keeps its pre-build shape (version 1).
+ *            Every battle write, prompt byte and capture document is
+ *            byte-identical to the frozen pre-change fixture
+ *            (api/cron/agent-evaluate.callRecords.offGolden.test.js).
+ *   'shadow' the model may declare; the validated block is recorded
+ *            (declarations record + calls + sweep-queue arm, one transaction
+ *            after the evaluation commit), encounter flips and receipts run,
+ *            capture carries `calls[]` references — and NOTHING is rendered:
+ *            chat, tiles and the endpoint are unchanged.
+ *   'on'     Build 1/2 surfaces read the records (the chat calls block, the
+ *            answer endpoint, the cockpit tiles). Build 0 ships no reader, so
+ *            'on' behaves as 'shadow' here.
+ *
+ * RUNWAY: 'off' → 'shadow' is its own one-line founder PR after this build
+ * merges AND the `calls` composite index (firestore.indexes.json) is deployed —
+ * never a build PR; the flip moves the pin row in
+ * src/config/callRecordsFlags.test.js in the SAME commit (BUILD_RULES §2).
+ * 'on' waits on Build 1 and Build 2 (spec §1). A rollback is the same line
+ * back to 'off': existing records are then neither read nor written.
+ *
+ * Unknown values resolve to 'off' (fail closed). A string tri-state, so it is
+ * pinned DIRECTLY — never a DARK_BY_DESIGN key (the flag-pin guard scans
+ * `*_ENABLED = true|false` only; the ANTICIPATION_THRESHOLD_LINT_MODE
+ * precedent).
+ */
+// Pinned by: callRecordsFlags.test.js (a STRING tri-state — pinned directly, outside flagPinGuard's `*_ENABLED` scan; this value and the pin move together — BUILD_RULES §2).
+export const CALL_RECORDS_MODE = 'off';
+
+/** The three founder-walked states, in walk order. */
+export const CALL_RECORDS_MODES = Object.freeze(['off', 'shadow', 'on']);

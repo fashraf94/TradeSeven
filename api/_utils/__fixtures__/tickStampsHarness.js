@@ -118,6 +118,19 @@ export const BASE_ENTRY_KEYS = Object.freeze([
   ...PRE_PHASE_B_ENTRY_KEYS, ...TIMING_ENTRY_KEYS, ...FAIL_CLOSED_ENTRY_KEYS,
 ]);
 
+/**
+ * Cockpit Build 0 (spec docs/design/COCKPIT_SPEC_V1_3.md §2) — the entry key
+ * the call records add, in its OWN list and deliberately in NEITHER
+ * TIMING_ENTRY_KEYS nor BASE_ENTRY_KEYS: those are UNCONDITIONAL (every entry,
+ * every flag state), and `declarationsPhase` is CONDITIONAL — present on every
+ * entry the cron writes when CALL_RECORDS_MODE !== 'off' ('none' | 'expected'),
+ * and ABSENT on every entry at 'off'. Registering it in an unconditional list
+ * would either require it at off or weaken the off proof (round-2 review R2-8).
+ * The flag-off suites assert its absence; agent-evaluate.tickStamps.callsOn
+ * .test.js asserts its presence on those same paths at shadow/on.
+ */
+export const CALLS_ENTRY_KEYS = Object.freeze(['declarationsPhase']);
+
 export function makeDirective(overrides = {}) {
   return {
     text: 'Require stronger confirmation before entering',
