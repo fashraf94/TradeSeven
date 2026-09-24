@@ -36,6 +36,14 @@
 // (weekCardModel), so the two can never say two things about one pod
 // (BUILD_RULES §9). No stake action on either. Mobile is the markup main ships
 // (backingMobilePin.test.jsx).
+//
+// A POD CANCELLED AFTER ITS POOL CLOSED (WIRE-R-2, the desktop review record)
+// — its group `voided` or `expired`, or gone — never reads "plays Monday":
+// its card says "This pod was cancelled — your stake will be returned." until
+// the refund lands, then the refund's own words (the pool's `refundReason`,
+// the results card's sentence). No standing, no day trail, no book and no
+// tape for it: a week it will not play. Derived from the group status this
+// surface already reads (`podCancellation`); no new read.
 
 import React from 'react';
 import { GROUP_STATUS, computeComposite } from '../../../constants/leagueTournament';
@@ -44,8 +52,8 @@ import { Eyebrow, Mono, Icon, LIcon, Tag, Score } from '../LeagueParts';
 import { baseGroupName } from '../leagueAdapter';
 import useSpectatedTournamentBattles from '../../../hooks/useSpectatedTournamentBattles';
 import { DayTrail } from './BackingParts';
-import { CARD, WEEK } from './backingCopy';
-import { podDayOfFive, podStanding, podTeamLabel, podTeamLayers, weekDayOfFive } from './backingStripState';
+import { CARD, RESULTS, WEEK } from './backingCopy';
+import { podCancellation, podDayOfFive, podStanding, podTeamLabel, podTeamLayers, weekDayOfFive } from './backingStripState';
 
 const SETTLED = new Set(['resolved', 'insufficient', 'refunded']);
 const card = { borderRadius: 18, padding: '13px 14px', background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}` };
@@ -114,9 +122,13 @@ function Chips({ symbols }) {
  * name, settled / settling, the standing, each backed team's summed amount and
  * stake status, the day trail of the first backed team, the status label, and
  * the two-layer reveal per backed team (the SERVER's `player` / `agent`,
- * never guessed from a lone label — RAWID-R-2). Pure.
+ * never guessed from a lone label — RAWID-R-2). `groupAnswered` says the
+ * pod's group read has landed (so a `group` of null is a pod that is GONE,
+ * not one still loading). A pod cancelled after its pool closed (WIRE-R-2)
+ * is `cancelled`, with its `notice`: the cancellation until the refund
+ * lands, then the refund's own reason. Pure.
  */
-export function weekCardModel({ groupId, stakes, pool, group, labelsById, battles }) {
+export function weekCardModel({ groupId, stakes, pool, group, labelsById, battles, groupAnswered = group != null }) {
   const podName = baseGroupName(groupId);
   // The server's `{ label, secondary }` for a seat of this pod (D-af).
   const named = (id) => podTeamLabel(labelsById, groupId, id);
@@ -124,6 +136,12 @@ export function weekCardModel({ groupId, stakes, pool, group, labelsById, battle
   // is settling, not settled (FAB-1, the PR 4 review record).
   const settled = SETTLED.has(pool?.status);
   const settling = !settled && group?.status === GROUP_STATUS.COMPLETE;
+  // WIRE-R-2: voided, expired or gone after its pool closed — never "plays Monday".
+  const cancellation = podCancellation({ pool, group, answered: groupAnswered });
+  const refundReason = pool?.refundReason ?? stakes.find((s) => typeof s?.voidReason === 'string')?.voidReason ?? null;
+  const notice = cancellation == null ? null
+    : cancellation.refunded ? (RESULTS.reason[refundReason] ?? RESULTS.reasonFallback)
+      : WEEK.cancelled;
   const standing = group ? podStanding(group) : [];
   const amounts = new Map();
   const statuses = new Map();
@@ -142,7 +160,8 @@ export function weekCardModel({ groupId, stakes, pool, group, labelsById, battle
   const teams = [...amounts.keys()];
   const first = teams[0] ?? null;
   const { trail, through } = group && first ? dayTrailFor(group, first) : { trail: [], through: 0 };
-  const statusLabel = settled ? WEEK.settled : settling ? WEEK.status.settling : group?.status === GROUP_STATUS.BATTLE ? WEEK.status.battle : WEEK.status.awaiting;
+  const statusLabel = cancellation ? (cancellation.refunded ? RESULTS.outcome.refunded : WEEK.status.cancelled)
+    : settled ? WEEK.settled : settling ? WEEK.status.settling : group?.status === GROUP_STATUS.BATTLE ? WEEK.status.battle : WEEK.status.awaiting;
   const reveal = teams.map((id) => {
     // The two layers, named apart — the SERVER's `player` and `agent`,
     // never guessed from a lone label (RAWID-R-2): a label with no
@@ -152,8 +171,16 @@ export function weekCardModel({ groupId, stakes, pool, group, labelsById, battle
     const battle = battles?.[id] ?? null;
     return { id, name, agentName: agent ?? CARD.agentFallbackName(name), picks: humanPicksFor(group, id), six: agentSixFor(battle) };
   });
-  return { podName, named, settled, standing, amounts, stakeStatus, teams, first, trail, through, statusLabel, reveal };
+  return { podName, named, settled, standing, amounts, stakeStatus, teams, first, trail, through, statusLabel, reveal, cancelled: cancellation != null, notice };
 }
+
+/** A cancelled pod's one line — the cancellation, then the refund (WIRE-R-2). */
+function CancelledNotice({ m, size = 12.5 }) {
+  return <div data-backing="week-cancelled" style={{ fontSize: size, color: LTOKENS.ink2, lineHeight: 1.45 }}>{m.notice}</div>;
+}
+
+/** The status tag's colour: gold once settled or refunded, quiet while a cancelled pod's refund is on its way. */
+const tagColor = (m, accent) => (m.settled ? LTOKENS.gold : m.cancelled ? LTOKENS.ink2 : accent);
 
 /** One backed team's reveal — the human's three and the agent's six, both layers (public WHAT). */
 function RevealBlock({ r }) {
@@ -200,18 +227,18 @@ function StandingRows({ m, spaced = true }) {
   );
 }
 
-function WeekCard({ groupId, stakes, pool, group, labelsById, accent, onOpenTape, injectedBattles = null }) {
+function WeekCard({ groupId, stakes, pool, group, groupAnswered, labelsById, accent, onOpenTape, injectedBattles = null }) {
   // The live read, unless the host handed this pod's battles in (only the dev
   // preview page does — fixtures, no network): then the hook stays disabled.
   const spectated = useSpectatedTournamentBattles(groupId, injectedBattles == null);
   const battles = injectedBattles ?? spectated.battles;
-  const m = weekCardModel({ groupId, stakes, pool, group, labelsById, battles });
+  const m = weekCardModel({ groupId, stakes, pool, group, groupAnswered, labelsById, battles });
 
   return (
-    <div data-backing="week-card" data-group={groupId} style={card}>
+    <div data-backing="week-card" data-group={groupId} {...(m.cancelled ? { 'data-cancelled': 'true' } : {})} style={card}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
         <span style={{ fontSize: 14, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.01em' }}>{m.podName}</span>
-        <Tag color={m.settled ? LTOKENS.gold : accent}>{m.statusLabel}</Tag>
+        <Tag color={tagColor(m, accent)}>{m.statusLabel}</Tag>
       </div>
 
       <Mono style={{ fontSize: 9, color: LTOKENS.ink3, letterSpacing: '0.12em', textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>{WEEK.backed}</Mono>
@@ -221,37 +248,41 @@ function WeekCard({ groupId, stakes, pool, group, labelsById, accent, onOpenTape
         ))}
       </div>
 
-      <Mono style={{ fontSize: 9, color: LTOKENS.ink3, letterSpacing: '0.12em', textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>{WEEK.standing}</Mono>
-      <StandingRows m={m} />
+      {m.cancelled ? <CancelledNotice m={m} /> : (
+        <>
+          <Mono style={{ fontSize: 9, color: LTOKENS.ink3, letterSpacing: '0.12em', textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>{WEEK.standing}</Mono>
+          <StandingRows m={m} />
 
-      <DayTrail trail={m.trail} through={m.through} color={accent} />
+          <DayTrail trail={m.trail} through={m.through} color={accent} />
 
-      <div data-backing="week-reveal" style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${LTOKENS.hair}` }}>
-        <Eyebrow color={accent} style={{ marginBottom: 6 }}>{WEEK.revealTitle}</Eyebrow>
-        {m.reveal.map((r) => <RevealBlock key={r.id} r={r} />)}
-      </div>
+          <div data-backing="week-reveal" style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${LTOKENS.hair}` }}>
+            <Eyebrow color={accent} style={{ marginBottom: 6 }}>{WEEK.revealTitle}</Eyebrow>
+            {m.reveal.map((r) => <RevealBlock key={r.id} r={r} />)}
+          </div>
 
-      {onOpenTape && m.first && (
-        <button type="button" className="lg-tap" data-backing="week-tape" onClick={() => onOpenTape(groupId, m.first)} style={{ all: 'unset', cursor: 'pointer', marginTop: 10, display: 'flex', alignItems: 'center', gap: 6, color: accent }}>
-          <Mono style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '0.06em' }}>{WEEK.tape}</Mono><Icon name="arrowR" size={13} color={accent} />
-        </button>
+          {onOpenTape && m.first && (
+            <button type="button" className="lg-tap" data-backing="week-tape" onClick={() => onOpenTape(groupId, m.first)} style={{ all: 'unset', cursor: 'pointer', marginTop: 10, display: 'flex', alignItems: 'center', gap: 6, color: accent }}>
+              <Mono style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '0.06em' }}>{WEEK.tape}</Mono><Icon name="arrowR" size={13} color={accent} />
+            </button>
+          )}
+        </>
       )}
     </div>
   );
 }
 
 /** The desktop card — the same model, wide: the backed teams on top, the reveal beside the standing. */
-function WeekCardDesk({ groupId, stakes, pool, group, labelsById, accent, onOpenTape, injectedBattles = null }) {
+function WeekCardDesk({ groupId, stakes, pool, group, groupAnswered, labelsById, accent, onOpenTape, injectedBattles = null }) {
   const spectated = useSpectatedTournamentBattles(groupId, injectedBattles == null);
   const battles = injectedBattles ?? spectated.battles;
-  const m = weekCardModel({ groupId, stakes, pool, group, labelsById, battles });
+  const m = weekCardModel({ groupId, stakes, pool, group, groupAnswered, labelsById, battles });
   const label = { fontSize: 9, color: LTOKENS.ink3, letterSpacing: '0.12em', textTransform: 'uppercase', display: 'block', marginBottom: 6 };
 
   return (
-    <div data-backing="week-card" data-group={groupId} data-layout="desktop" style={{ ...card, padding: '16px 18px 14px', display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
+    <div data-backing="week-card" data-group={groupId} data-layout="desktop" {...(m.cancelled ? { 'data-cancelled': 'true' } : {})} style={{ ...card, padding: '16px 18px 14px', display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
         <span style={{ fontSize: 16, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.01em' }}>{m.podName}</span>
-        <Tag color={m.settled ? LTOKENS.gold : accent}>{m.statusLabel}</Tag>
+        <Tag color={tagColor(m, accent)}>{m.statusLabel}</Tag>
       </div>
 
       <div style={{ padding: '10px 13px', borderRadius: 13, background: alpha(accent, 0.07), border: `1px solid ${alpha(accent, 0.28)}` }}>
@@ -263,24 +294,28 @@ function WeekCardDesk({ groupId, stakes, pool, group, labelsById, accent, onOpen
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.1fr) minmax(0, 1fr)', gap: 18 }}>
-        <div data-backing="week-reveal" style={{ minWidth: 0 }}>
-          <Eyebrow color={accent} style={{ marginBottom: 8 }}>{WEEK.revealTitle}</Eyebrow>
-          {m.reveal.map((r) => <RevealBlock key={r.id} r={r} />)}
-        </div>
-        <div style={{ minWidth: 0 }}>
-          <Mono style={label}>{WEEK.standing}</Mono>
-          <DayTrail trail={m.trail} through={m.through} color={accent} />
-          <div style={{ marginTop: 8 }}><StandingRows m={m} spaced={false} /></div>
-        </div>
-      </div>
+      {m.cancelled ? <CancelledNotice m={m} size={13} /> : (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.1fr) minmax(0, 1fr)', gap: 18 }}>
+            <div data-backing="week-reveal" style={{ minWidth: 0 }}>
+              <Eyebrow color={accent} style={{ marginBottom: 8 }}>{WEEK.revealTitle}</Eyebrow>
+              {m.reveal.map((r) => <RevealBlock key={r.id} r={r} />)}
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <Mono style={label}>{WEEK.standing}</Mono>
+              <DayTrail trail={m.trail} through={m.through} color={accent} />
+              <div style={{ marginTop: 8 }}><StandingRows m={m} spaced={false} /></div>
+            </div>
+          </div>
 
-      {onOpenTape && m.first && (
-        <button type="button" className="lg-tap" data-backing="week-tape" onClick={() => onOpenTape(groupId, m.first)} style={{ all: 'unset', boxSizing: 'border-box', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 12, background: LTOKENS.raised, border: `1px solid ${LTOKENS.hair2}`, color: accent }}>
-          <LIcon name="play" size={12} color={accent} />
-          <Mono style={{ flex: 1, fontSize: 11, fontWeight: 600, letterSpacing: '0.06em' }}>{WEEK.tape}</Mono>
-          <Icon name="arrowR" size={14} color={LTOKENS.ink2} />
-        </button>
+          {onOpenTape && m.first && (
+            <button type="button" className="lg-tap" data-backing="week-tape" onClick={() => onOpenTape(groupId, m.first)} style={{ all: 'unset', boxSizing: 'border-box', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 12, background: LTOKENS.raised, border: `1px solid ${LTOKENS.hair2}`, color: accent }}>
+              <LIcon name="play" size={12} color={accent} />
+              <Mono style={{ flex: 1, fontSize: 11, fontWeight: 600, letterSpacing: '0.06em' }}>{WEEK.tape}</Mono>
+              <Icon name="arrowR" size={14} color={LTOKENS.ink2} />
+            </button>
+          )}
+        </>
       )}
     </div>
   );
@@ -311,19 +346,24 @@ export function backedPodsFor(inPlay) {
 export default function YourBacking({ inPlay, accent = LX.energy, onOpenTape, now = new Date(), battlesByGroup = null, layout = 'mobile' }) {
   const pods = backedPodsFor(inPlay);
   if (pods.length === 0) return null;
-  const allSettled = pods.every(({ groupId }) => SETTLED.has(inPlay?.poolsById?.[groupId]?.status));
-  const allComplete = !allSettled && pods.every(({ groupId }) => SETTLED.has(inPlay?.poolsById?.[groupId]?.status) || inPlay?.groupsById?.[groupId]?.status === GROUP_STATUS.COMPLETE);
+  const groupsById = inPlay?.groupsById ?? {};
+  // The week's line speaks for the pods that PLAY: a pod cancelled after its
+  // pool closed (WIRE-R-2) says so on its own card, and never makes the
+  // section read "plays Monday" or a battle day. Only cancelled pods: no line.
+  const playing = pods.filter(({ groupId }) => podCancellation({ pool: inPlay?.poolsById?.[groupId] ?? null, group: groupsById[groupId] ?? null, answered: groupId in groupsById }) == null);
+  const allSettled = playing.every(({ groupId }) => SETTLED.has(inPlay?.poolsById?.[groupId]?.status));
+  const allComplete = !allSettled && playing.every(({ groupId }) => SETTLED.has(inPlay?.poolsById?.[groupId]?.status) || inPlay?.groupsById?.[groupId]?.status === GROUP_STATUS.COMPLETE);
   // The day from the pods' own banking record (the League's reading — FAB-9); the calendar only while no pod document has been read.
-  const dayOfFive = pods.reduce((best, { groupId }) => { const d = podDayOfFive(inPlay?.groupsById?.[groupId] ?? null, now); return d == null ? best : Math.max(best ?? 0, d); }, null) ?? weekDayOfFive(now);
+  const dayOfFive = playing.reduce((best, { groupId }) => { const d = podDayOfFive(inPlay?.groupsById?.[groupId] ?? null, now); return d == null ? best : Math.max(best ?? 0, d); }, null) ?? weekDayOfFive(now);
   // No backed pod has started (every one locked in ahead of its Monday): no battle day to count (R-B-2).
-  const noneStarted = pods.every(({ groupId }) => { const st = inPlay?.groupsById?.[groupId]?.status; return st != null && st !== GROUP_STATUS.BATTLE && st !== GROUP_STATUS.COMPLETE; });
-  const sub = allSettled ? WEEK.settledSub : allComplete ? WEEK.settlingSub : noneStarted ? WEEK.lockedSub : WEEK.sub(dayOfFive);
+  const noneStarted = playing.every(({ groupId }) => { const st = inPlay?.groupsById?.[groupId]?.status; return st != null && st !== GROUP_STATUS.BATTLE && st !== GROUP_STATUS.COMPLETE; });
+  const sub = playing.length === 0 ? null : allSettled ? WEEK.settledSub : allComplete ? WEEK.settlingSub : noneStarted ? WEEK.lockedSub : WEEK.sub(dayOfFive);
   if (layout === 'desktop') {
     return (
       <div data-backing="your-backing-section" data-layout="desktop" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div>
           <Eyebrow color={accent} style={{ marginBottom: 5 }}>{WEEK.title}</Eyebrow>
-          <Mono style={{ fontSize: 11.5, color: LTOKENS.ink2 }}>{sub}</Mono>
+          {sub && <Mono style={{ fontSize: 11.5, color: LTOKENS.ink2 }}>{sub}</Mono>}
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(520px, 1fr))', gap: 20 }}>
           {pods.map(({ groupId, stakes }) => (
@@ -333,6 +373,7 @@ export default function YourBacking({ inPlay, accent = LX.energy, onOpenTape, no
               stakes={stakes}
               pool={inPlay?.poolsById?.[groupId] ?? null}
               group={inPlay?.groupsById?.[groupId] ?? null}
+              groupAnswered={groupId in groupsById}
               labelsById={inPlay?.labelsById ?? null}
               accent={accent}
               onOpenTape={onOpenTape}
@@ -347,7 +388,7 @@ export default function YourBacking({ inPlay, accent = LX.energy, onOpenTape, no
     <div data-backing="your-backing-section" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div>
         <Eyebrow color={accent} style={{ marginBottom: 4 }}>{WEEK.title}</Eyebrow>
-        <Mono style={{ fontSize: 10.5, color: LTOKENS.ink3 }}>{sub}</Mono>
+        {sub && <Mono style={{ fontSize: 10.5, color: LTOKENS.ink3 }}>{sub}</Mono>}
       </div>
       {pods.map(({ groupId, stakes }) => (
         <WeekCard
@@ -356,6 +397,7 @@ export default function YourBacking({ inPlay, accent = LX.energy, onOpenTape, no
           stakes={stakes}
           pool={inPlay?.poolsById?.[groupId] ?? null}
           group={inPlay?.groupsById?.[groupId] ?? null}
+          groupAnswered={groupId in groupsById}
           labelsById={inPlay?.labelsById ?? null}
           accent={accent}
           onOpenTape={onOpenTape}

@@ -474,7 +474,14 @@ export const WEEK = Object.freeze({
     awaiting: 'Locked · plays Monday',
     settling: 'Settling',
     complete: 'Complete',
+    // A pod voided, expired or gone after its pool closed (WIRE-R-2): never
+    // "plays Monday". Once its refund lands the card reads the results card's
+    // own words for a refunded pool (RESULTS.outcome.refunded).
+    cancelled: 'Cancelled',
   }),
+  // The card's line for that pod until the refund lands (the build prompt's
+  // words, verbatim); then the refund's own reason (RESULTS.reason).
+  cancelled: 'This pod was cancelled — your stake will be returned.',
 });
 
 // ==================== THE RESULTS CARD (Surface E — PR 5) ====================

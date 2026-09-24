@@ -24,6 +24,7 @@ vi.mock('../../../hooks/useSpectatedTournamentBattles', () => ({
 }));
 
 const { default: YourBacking, dayTrailFor, agentSixFor, humanPicksFor, backedPodsFor } = await import('./YourBacking');
+const { RESULTS, WEEK } = await import('./backingCopy');
 
 const WED = new Date('2026-09-23T14:00:00.000Z');
 const leg = (direction) => ({ direction, openedAt: '2026-09-21T11:00:00.000Z' });
@@ -277,5 +278,95 @@ describe('the desktop layout — the same facts, wide, and still nothing to clic
     expect((html.match(/data-backing="week-card"/g) || []).length).toBe(2);
     expect(html).not.toContain('data-group="g-next"');
     expect(html).not.toMatch(/Confirm|data-backing="confirm"|data-backing="cta-back"|type="number"|data-backing="custom-amount"/);
+  });
+});
+
+describe('WIRE-R-2 — a pod CANCELLED after its pool closed never reads "plays Monday" (the desktop review record)', () => {
+  const text = (html) => html.replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ');
+  /** The viewer's one stake on `lds-wed` — a slot pod whose pool closed at its fire. */
+  const cancelledPod = ({ pool = { status: 'closed' }, g, answered = true, stakeOver = {} } = {}) => inPlay({
+    stakes: [{ id: 's1', groupId: 'lds-wed', teamOdUserId: 'od-a', amount: 250, status: 'live', weekKey: '2026-W40', ...stakeOver }],
+    poolsById: { 'lds-wed': pool },
+    groupsById: answered ? { 'lds-wed': g } : {},
+    labelsById: { 'lds-wed': LABELS },
+  });
+  const expectCancelledCard = (html) => {
+    const t = text(html);
+    expect(t).toContain(WEEK.cancelled);
+    expect(html).toContain(`>${WEEK.status.cancelled}<`);
+    expect(html).toContain('data-cancelled="true"');
+    expect(t, 'never "plays Monday"').not.toMatch(/plays Monday/);
+    expect(t, 'no battle day').not.toMatch(/Day \d of 5/);
+    // No standing, no trail, no book, no tape: a week it will not play.
+    for (const gone of ['week-standing', 'week-reveal', 'week-tape']) expect(html).not.toContain(`data-backing="${gone}"`);
+    expect(t).not.toContain(WEEK.standing);
+    // The stake itself still reads — the server's name and the amount.
+    expect(t).toContain('Kestrel · 250 BP');
+  };
+
+  for (const [name, g] of [
+    ['VOIDED', group({ status: 'voided' })],
+    ['EXPIRED', group({ status: 'expired', dailyScores: {} })],
+    ['GONE (the group read answered with no document)', null],
+  ]) {
+    it(`${name}: the card reads "This pod was cancelled — your stake will be returned." until the refund lands — mobile and desktop`, () => {
+      expectCancelledCard(render({ inPlay: cancelledPod({ g }) }));
+      expectCancelledCard(render({ inPlay: cancelledPod({ g }), layout: 'desktop' }));
+      // A held pool (resolving) is cancelled the same way.
+      expectCancelledCard(render({ inPlay: cancelledPod({ g, pool: { status: 'resolving' } }) }));
+    });
+  }
+
+  it('a pod whose group read has NOT landed is not taken for a missing one — it reads as it did (nothing guessed)', () => {
+    const html = render({ inPlay: cancelledPod({ answered: false }) });
+    expect(html).not.toContain(WEEK.cancelled);
+    expect(html).not.toContain('data-cancelled');
+  });
+
+  it('then SHOWS THE REFUND once it lands: the refunded pool\'s own words and reason — never the cancellation, never "Settled", never "plays Monday"', () => {
+    const refunded = cancelledPod({
+      g: group({ status: 'voided' }),
+      pool: { status: 'refunded', refundReason: 'group_voided', refundedAt: '2026-09-24T14:00:00.000Z' },
+      stakeOver: { status: 'voided', voidReason: 'group_voided' },
+    });
+    for (const layout of ['mobile', 'desktop']) {
+      const html = render({ inPlay: refunded, layout });
+      const t = text(html);
+      expect(t).toContain(RESULTS.reason.group_voided);
+      expect(t).toContain(RESULTS.outcome.refunded);
+      expect(t).toContain('Kestrel · 250 BP · void');
+      expect(t).not.toContain(WEEK.cancelled);
+      expect(html).not.toContain(`>${WEEK.settled}<`);
+      expect(t).not.toMatch(/plays Monday/);
+    }
+    // A pod gone before its refund: the stake's own reason names it.
+    const gone = render({ inPlay: cancelledPod({ g: null, pool: { status: 'refunded' }, stakeOver: { status: 'voided', voidReason: 'group_deleted' } }) });
+    expect(text(gone)).toContain(RESULTS.reason.group_deleted);
+  });
+
+  it('beside a pod that PLAYS, the section\'s line is the playing pod\'s (the cancelled card speaks for itself); only cancelled pods — no line at all', () => {
+    const mixed = inPlay({
+      stakes: [
+        { id: 's1', groupId: 'g-play', teamOdUserId: 'od-a', amount: 250, status: 'live', weekKey: '2026-W39' },
+        { id: 's9', groupId: 'g-void', teamOdUserId: 'od-x', amount: 100, status: 'live', weekKey: '2026-W39' },
+      ],
+      poolsById: { 'g-play': { status: 'closed' }, 'g-void': { status: 'closed' } },
+      groupsById: { 'g-play': group(), 'g-void': group({ status: 'voided' }) },
+      labelsById: { 'g-play': LABELS, 'g-void': LABELS },
+    });
+    const t = text(render({ inPlay: mixed }));
+    expect(t).toContain('Day 3 of 5');
+    expect(t).toContain(WEEK.cancelled);
+    expect(t).not.toMatch(/plays Monday/);
+    // Only a cancelled pod: the section names the week and no line — never "Locked in · plays Monday".
+    const lone = render({ inPlay: cancelledPod({ g: group({ status: 'expired', dailyScores: {} }) }) });
+    expect(lone).not.toContain(WEEK.lockedSub);
+    expect(lone).toContain(`>${WEEK.title}<`);
+  });
+
+  it('a pool that closed INSUFFICIENT on a voided pod is not this state: its stakes were voided at the close and it reads as it always has', () => {
+    const html = render({ inPlay: cancelledPod({ g: group({ status: 'voided' }), pool: { status: 'insufficient' }, stakeOver: { status: 'voided', voidReason: 'insufficient' } }) });
+    expect(html).not.toContain(WEEK.cancelled);
+    expect(html).toContain(`>${WEEK.settled}<`);
   });
 });
