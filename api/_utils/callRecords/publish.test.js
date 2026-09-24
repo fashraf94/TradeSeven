@@ -7,7 +7,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
-  publishDeclarations, runModelCallsPhase, callsBudget, callsReserveMsFor, composeCallsDiag, captureRefsFor, writeCallsStatus,
+  publishDeclarations, runModelCallsPhase, callsBudget, callsReserveMsFor, composeCallsDiag, captureRefsFor, writeCallsStatus, removedLogToken,
   CALLS_RESERVE_MS, TAIL_RESERVE_MS, MODEL_PHASE_MS, NON_MODEL_PHASE_MS, STATUS_RESERVE_MS, DIAG_LIST_CAP, PHASE_WIRE_VALUES,
 } from './publish.js';
 import { buildMintCandidate } from './candidate.js';
@@ -283,13 +283,51 @@ describe('the transaction (row 7)', () => {
       await db.collection('agentBattles').doc(BATTLE_ID).update({ 'cronState.evaluatingAt': null });
     };
     const now = Date.now();
-    const res = await publish(db, candidateOf(), { txDeadlineMs: now + 20, rereadDeadlineMs: now + 20 });
+    // No re-read slice at all (the re-read deadline precedes the timeout), so the outcome is deterministic.
+    const res = await publish(db, candidateOf(), { txDeadlineMs: now + 20, rereadDeadlineMs: now });
     // The timeout fired first; with no re-read budget the wire is unchanged.
     expect(res).toMatchObject({ phaseResult: 'unconfirmed', wire: null });
     await sleep(80);
     expect(db.__txAttempts).toBe(2);
     expect(db.__counts.battleDocGets).toBe(1);
     expect(storedCollection(db, 'calls')).toEqual({});
+  });
+
+  // Reads that return AFTER the deadline issue no commit — the SDK would send
+  // one as soon as the body returned with buffered writes (review E-1).
+  /** Slow the transaction's reads: `extraMs(path)` of real time after each returns. */
+  function slowTxReads(db, extraMs) {
+    const run = db.runTransaction.bind(db);
+    db.runTransaction = (cb) => run(async (tx) => {
+      const get = tx.get;
+      tx.get = async (ref) => { const snap = await get(ref); const ms = extraMs(ref.path); if (ms > 0) await sleep(ms); return snap; };
+      return cb(tx);
+    });
+  }
+
+  it('the first reads return after the deadline: no queue read starts, no commit is issued — the failed wire is true', async () => {
+    const db = makeCallsDb({ battle: committedBattle() });
+    slowTxReads(db, (path) => (path === `agentBattles/${BATTLE_ID}` ? 60 : 0));
+    const now = Date.now();
+    const res = await publish(db, candidateOf(), { txDeadlineMs: now + 30, rereadDeadlineMs: now + 400 });
+    expect(res).toMatchObject({ phaseResult: 'timeout_absent', wire: 'failed' });
+    await sleep(150); // let the abandoned attempt finish its body
+    expect(db.__txAttempts).toBe(1);
+    expect(queueTouches(db)).toEqual({ reads: 0, writes: 0 });
+    expect(storedCollection(db, 'calls')).toEqual({});
+    expect(storedDoc(db, 'declarations', EVAL_ID)).toBeNull();
+  });
+
+  it('the queue read returns after the deadline: still no commit — nothing lands behind the failed wire', async () => {
+    const db = makeCallsDb({ battle: committedBattle() });
+    slowTxReads(db, (path) => (path.startsWith(`${QUEUE_COLLECTION}/`) ? 60 : 0));
+    const now = Date.now();
+    const res = await publish(db, candidateOf(), { txDeadlineMs: now + 30, rereadDeadlineMs: now + 400 });
+    expect(res).toMatchObject({ phaseResult: 'timeout_absent', wire: 'failed' });
+    await sleep(150);
+    expect(queueTouches(db)).toEqual({ reads: 1, writes: 0 });
+    expect(storedCollection(db, 'calls')).toEqual({});
+    expect(storedDoc(db, 'declarations', EVAL_ID)).toBeNull();
   });
 
   it('an exhausted budget at entry is skipped_budget: no transaction, wire failed', async () => {
@@ -331,7 +369,8 @@ describe('the phase wire (row 8)', () => {
     const noBudget = makeCallsDb({ battle: committedBattle() });
     noBudget.__hooks.beforeCommit = async () => { await sleep(80); };
     const now = Date.now();
-    const a = await publish(noBudget, candidateOf(), { txDeadlineMs: now + 30, rereadDeadlineMs: now + 30 });
+    // No re-read slice (its deadline precedes the timeout): deterministic, whatever the timer's rounding.
+    const a = await publish(noBudget, candidateOf(), { txDeadlineMs: now + 30, rereadDeadlineMs: now });
     expect(a).toMatchObject({ phaseResult: 'unconfirmed', wire: null });
     expect(a.perId.every((p) => p.result === 'unconfirmed')).toBe(true);
 
@@ -430,6 +469,20 @@ describe('runModelCallsPhase', () => {
     const [w] = statusWrites(db);
     expect(w).not.toHaveProperty('cronState.declarationsPhase');
     expect(w['cronState.callFlips']).toEqual({ evalId: EVAL_ID, cursor: null, scanned: 0, total: null, complete: true });
+  });
+
+  it('the phase log line carries the removals per check — a malformed or fully removed block stays readable after callsDiag is overwritten (review B-4)', async () => {
+    const phaseLines = () => logSpy.mock.calls.map((c) => c.join(' ')).filter((l) => l.startsWith('[calls] phase '));
+    await runModelCallsPhase(modelCtx({ raw: 'not a block' }), phaseArgs(makeCallsDb({ battle: committedBattle() })));
+    expect(phaseLines().pop()).toMatch(/ result=none wire=unchanged .* removed=block:malformed_blockx1 status=written /);
+    await runModelCallsPhase(modelCtx({ raw: { calledShots: [{}, {}], watching: [7] } }), phaseArgs(makeCallsDb({ battle: committedBattle() })));
+    expect(phaseLines().pop()).toMatch(/ removed=calledShots:malformedx2,watching:malformedx1 /);
+    await runModelCallsPhase(modelCtx(), phaseArgs(makeCallsDb({ battle: committedBattle() })));
+    expect(phaseLines().pop()).toMatch(/ result=written .* removed=none /);
+    const handlerStartMs = MINT - (TIME_BUDGET_MS - TAIL_RESERVE_MS - 3_999);
+    await runModelCallsPhase(modelCtx({ handlerStartMs, raw: { calledShots: [{}] } }), phaseArgs(makeCallsDb({ battle: committedBattle() })));
+    expect(phaseLines().pop()).toMatch(/ result=skipped_budget .* removed=calledShots:malformedx1 /);
+    expect(removedLogToken([])).toBe('none');
   });
 
   it('flips share the deadline: they receive a work deadline that keeps the status slice, inside the tail boundary', async () => {

@@ -179,6 +179,9 @@ async function flipOne({ db, battleId, callId, observation, evalId, executorResu
       const call = callSnap.data();
       const plan = planFlip(call, { observation, evalId, executorResult });
       if (plan.skip) return { result: 'skipped', reason: plan.skip };
+      // The reads can outlast the ceiling: nothing is written — so no commit is
+      // issued — once it has passed (review E-1).
+      if (Date.now() >= attemptDeadlineMs) throw new CallsAbort('deadline');
       const outcome = { ...(isPlainObject(call.outcome) ? call.outcome : {}) };
       const change = {};
       if (plan.next) {

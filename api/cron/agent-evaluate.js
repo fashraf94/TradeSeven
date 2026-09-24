@@ -1293,7 +1293,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         tickCapture.exit('cpu_passive');
       });
       // Calls (§3.8): this exit's flips, after its authoritative write, under the non-model rule.
-      await callsStepAsync(callsCtx, () => runExitCallsHook(callsCtx, { db, battle, timeBudgetMs: TIME_BUDGET_MS }));
+      if (callsActive(callsCtx.mode)) await callsStepAsync(callsCtx, () => runExitCallsHook(callsCtx, { db, battle, timeBudgetMs: TIME_BUDGET_MS }));
       return;
     }
 
@@ -2330,7 +2330,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         tickCapture.exit('proposal_pending');
       });
       // Calls (§3.8): this exit's flips, after its authoritative write, under the non-model rule.
-      await callsStepAsync(callsCtx, () => runExitCallsHook(callsCtx, { db, battle, timeBudgetMs: TIME_BUDGET_MS }));
+      if (callsActive(callsCtx.mode)) await callsStepAsync(callsCtx, () => runExitCallsHook(callsCtx, { db, battle, timeBudgetMs: TIME_BUDGET_MS }));
       return;
     }
 
@@ -2354,8 +2354,13 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       const existingFeed = battle.statusFeed || [];
       scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
       // Calls (§3.4 gameplan-pending row): the observation is the R11 pass's own
-      // (frozen inside it); a pass that examined nothing leaves none.
-      callsStep(callsCtx, () => { callsCtx.exit = 'gameplan_pending'; });
+      // (frozen inside it). A pass that examined nothing (no deployed guardrail,
+      // or the executor flag off) still stamps THIS exit's instant with an EMPTY
+      // examined set (review A-2): the row flips — expiry runs, no hit can.
+      callsStep(callsCtx, () => {
+        callsCtx.exit = 'gameplan_pending';
+        freezeObservation(callsCtx, { source: 'gameplan_pass', observedAtMs: Date.now(), examined: [] });
+      });
       await battleRef.update(scoreUpdate);
       summary.evaluated++;
       summary.held++;
@@ -2364,7 +2369,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         tickCapture.exit('gameplan_pending');
       });
       // Calls (§3.8): this exit's flips, after its authoritative write, under the non-model rule.
-      await callsStepAsync(callsCtx, () => runExitCallsHook(callsCtx, { db, battle, timeBudgetMs: TIME_BUDGET_MS }));
+      if (callsActive(callsCtx.mode)) await callsStepAsync(callsCtx, () => runExitCallsHook(callsCtx, { db, battle, timeBudgetMs: TIME_BUDGET_MS }));
       return;
     }
 
@@ -2406,8 +2411,13 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp, vwapFireGuard });
         const existingFeed = battle.statusFeed || [];
         scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
-        // Calls (§3.4 gameplan-created row): the R11 pass's own observation.
-        callsStep(callsCtx, () => { callsCtx.exit = 'gameplan_created'; });
+        // Calls (§3.4 gameplan-created row): the R11 pass's own observation; a
+        // pass that examined nothing stamps this exit's instant with an EMPTY
+        // set (review A-2) — expiry runs, no hit can.
+        callsStep(callsCtx, () => {
+          callsCtx.exit = 'gameplan_created';
+          freezeObservation(callsCtx, { source: 'gameplan_pass', observedAtMs: Date.now(), examined: [] });
+        });
         await battleRef.update(scoreUpdate);
         summary.evaluated++;
         captureStep(tickCapture, () => {
@@ -2415,7 +2425,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           tickCapture.exit('gameplan_created');
         });
         // Calls (§3.8): this exit's flips, after its authoritative write, under the non-model rule.
-        await callsStepAsync(callsCtx, () => runExitCallsHook(callsCtx, { db, battle, timeBudgetMs: TIME_BUDGET_MS }));
+        if (callsActive(callsCtx.mode)) await callsStepAsync(callsCtx, () => runExitCallsHook(callsCtx, { db, battle, timeBudgetMs: TIME_BUDGET_MS }));
         return;
       }
     }
@@ -2552,7 +2562,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         tickCapture.exit('no_trigger');
       });
       // Calls (§3.8): this exit's flips, after its authoritative write, under the non-model rule.
-      await callsStepAsync(callsCtx, () => runExitCallsHook(callsCtx, { db, battle, timeBudgetMs: TIME_BUDGET_MS }));
+      if (callsActive(callsCtx.mode)) await callsStepAsync(callsCtx, () => runExitCallsHook(callsCtx, { db, battle, timeBudgetMs: TIME_BUDGET_MS }));
       return;
     }
 
@@ -2765,7 +2775,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
               { role: 'user', content: liveContextBlock },
             ],
             // §3.1: the declarations property rides the tool only at shadow/on;
-            // at off this is the frozen TRADE_DECISION_TOOL object itself.
+            // at off this is the TRADE_DECISION_TOOL object itself — the same
+            // reference every import holds, unchanged.
             tools: [buildTradeDecisionTool({ declarations: callsActive(callsCtx.mode) })],
             tool_choice: { type: 'tool', name: 'submit_trade_decision' },
           }, { timeout: 20_000, signal: abortCtrl.signal });
@@ -4384,7 +4395,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // flip rows (budget-skipped, transport-failed-after-prompt) run their flips
     // under the non-model rule; the excluded rows do nothing. Inert at off;
     // isolated at shadow/on; never the trade's concern.
-    const callsPhase = await callsStepAsync(callsCtx, () => (callsCtx.exit === 'model_result'
+    // At off: no await at all (review B-2) — the control flow is origin/main's exactly.
+    const callsPhase = !callsActive(callsCtx.mode) ? undefined : await callsStepAsync(callsCtx, () => (callsCtx.exit === 'model_result'
       ? runModelCallsPhase(callsCtx, {
         db,
         battle,

@@ -14,7 +14,12 @@
 //     in index order (field value, then document id)
 //   · an OPTIMISTIC transaction: reads record each document's version, writes
 //     buffer until commit, a changed read retries the callback (≤ 5 attempts),
-//     `create` on an existing document fails ALREADY_EXISTS and applies nothing.
+//     `create` on an existing document fails ALREADY_EXISTS and applies nothing,
+//     and a read after a buffered write throws as the Admin SDK does. KNOWN GAP
+//     (review D-7): the SDK backs off ~1 s (± 0.5 s) before retrying a
+//     contended attempt; this double retries at once — a production flip that
+//     is contended past its 800 ms ceiling is therefore `unconfirmed` where the
+//     double resolves it. No assertion depends on the retry timing.
 //     Every transactional write to the battle document still lands through the
 //     base harness's own update, so `__updates` records exactly what it always
 //     recorded (the frozen fixtures depend on that).
@@ -112,6 +117,8 @@ export function makeCallsDb({ seed = {}, abortFirstTransactionWithSeq = null, ..
     afterCommit: null,
     /** Error | null — the next calls query rejects with it. */
     failQuery: null,
+    /** async ({ collectionPath, rows }) → void — runs after a calls query resolved its page, before it returns (a slow read). */
+    afterQuery: null,
     /** number of transaction attempts seen (read-only for tests). */
   };
   let txAttempts = 0;
@@ -181,6 +188,9 @@ export function makeCallsDb({ seed = {}, abortFirstTransactionWithSeq = null, ..
         if (f.op !== '==') throw new Error(`calls store: unsupported filter op ${f.op}`);
         rows = rows.filter((r) => getPath(r.data, f.field) === f.value);
       }
+      // Firestore serves an ordered query from its index: a document missing an
+      // order-by field is not in it, so it is never returned (review D-7).
+      rows = rows.filter((r) => state.orders.every((o) => o.field === NAME || getPath(r.data, o.field) !== undefined));
       const keyOf = (r) => state.orders.map((o) => (o.field === NAME ? r.id : getPath(r.data, o.field)));
       rows.sort((a, b) => {
         const ka = keyOf(a); const kb = keyOf(b);
@@ -202,6 +212,7 @@ export function makeCallsDb({ seed = {}, abortFirstTransactionWithSeq = null, ..
       if (state.endAt) rows = rows.filter((r) => cmpCursor(r, state.endAt) <= 0);
       if (Number.isFinite(state.limit)) rows = rows.slice(0, state.limit);
       for (const r of rows) access.reads.push(r.path);
+      if (hooks.afterQuery) await hooks.afterQuery({ collectionPath, rows: rows.length });
       const docsOut = rows.map((r) => {
         const ref = makeCallsRef(r.path, r.id);
         return { id: r.id, ref, exists: true, data: () => deepClone(r.data) };
@@ -254,8 +265,14 @@ export function makeCallsDb({ seed = {}, abortFirstTransactionWithSeq = null, ..
         txAttempts += 1;
         const reads = new Map();
         const writes = [];
+        // The Admin SDK's own rule (transaction.js): every read precedes every
+        // write in one attempt — a read after a buffered write throws (review D-5).
+        const readsBeforeWrites = () => {
+          if (writes.length > 0) throw new Error('Firestore transactions require all reads to be executed before all writes.');
+        };
         const tx = {
           async get(refOrQuery) {
+            readsBeforeWrites();
             if (typeof refOrQuery?.__queryShape === 'function') {
               const res = await refOrQuery.get();
               for (const d of res.docs) reads.set(d.ref.path, versionOf(d.ref.path));
@@ -265,7 +282,7 @@ export function makeCallsDb({ seed = {}, abortFirstTransactionWithSeq = null, ..
             reads.set(path, versionOf(path));
             return refOrQuery.get();
           },
-          async getAll(...refs) { return Promise.all(refs.map((r) => tx.get(r))); },
+          async getAll(...refs) { readsBeforeWrites(); return Promise.all(refs.map((r) => tx.get(r))); },
           create(ref, data) { assertNoUndefined(data, `tx.create(${ref.path})`); writes.push({ op: 'create', ref, path: ref.path, data: deepClone(data) }); return tx; },
           set(ref, data, opts) { assertNoUndefined(data, `tx.set(${ref.path})`); writes.push({ op: 'set', ref, path: ref.path, data: deepClone(data), opts }); return tx; },
           update(ref, data) { assertNoUndefined(data, `tx.update(${ref.path})`); writes.push({ op: 'update', ref, path: ref.path, data: deepClone(data) }); return tx; },

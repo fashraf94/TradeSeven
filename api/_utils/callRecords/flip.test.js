@@ -174,6 +174,23 @@ describe('runCallFlips — one transaction per call, the receipt with the first 
     });
   });
 
+  // PENDING A FOUNDER RULING (review E-3): a next_check horizon expires AT the
+  // next slot, and the next check can observe only after its cron fires — so a
+  // next_check call is never hit, whatever the price did. The code follows
+  // contract §5/§6 and spec §3.8 as written; this row pins that until the ruling.
+  it('a next_check call observed by the next check (slot + 20 s) with its condition MET → expired_unresolved, never hit [pending ruling E-3]', async () => {
+    const nextCheck = { ...makeDeclarations().calledShots[0], horizonPhrase: 'next_check' };
+    const [amd] = earlierCalls(makeDeclarations({ calledShots: [nextCheck], watching: [] }));
+    const slot = amd.horizon.expiresAt;
+    expect(slot).toBe(EARLIER_MINT + 5 * 60_000); // 14:10 → the 14:15 slot
+    const at = slot + 20_000;
+    vi.setSystemTime(at + 1_000);
+    const db = makeCallsDb({ battle: makeTickBattle(), seed: seedOf([amd]) });
+    await flipsOf(db, ctxFor({ observation: obsWith({ AMD: { px: 170, fetchedAtMs: at - 1 } }, at) }));
+    expect(storedDoc(db, 'calls', amd.callId)).toMatchObject({ state: 'expired_unresolved', stateChangedAt: at });
+    expect(storedDoc(db, 'callObservations', amd.callId)).toMatchObject({ px: 170, observedAtMs: at });
+  });
+
   it('never a hit on the minting check; an observation at or before the mint is skipped', async () => {
     const minted = earlierCalls(makeDeclarations(), { evalId: 'eval_001', mintedAtMs: NOW - 10_000 });
     const early = earlierCalls(makeDeclarations(), { evalId: 'eval_000', mintedAtMs: NOW + 5 });
@@ -221,6 +238,54 @@ describe('runCallFlips — one transaction per call, the receipt with the first 
     const res = await flipsOf(db, ctxFor({ observation: obsWith({ AMD: { px: 170, fetchedAtMs: NOW - 1 }, TSLA: { px: 200, fetchedAtMs: NOW - 1 } }) }));
     expect(res.diag.stopped).toBe('parent_terminal');
     expect(res.status.complete).toBe(false);
+    expect(callWrites(db)).toEqual([]);
+  });
+
+  // The transaction is the authority, not the page read: a competing write that
+  // lands BETWEEN the transaction's own reads and its commit conflicts the
+  // attempt, and the retry reads what is now there (review D-3).
+  it('a sweep resolves the call after the transaction read it: the attempt conflicts, the retry reads it closed — no transition, no receipt', async () => {
+    const amd = amdShot();
+    const db = makeCallsDb({ battle: makeTickBattle(), seed: seedOf([amd]) });
+    db.__hooks.afterTxBody = async ({ attempt, readPaths }) => {
+      if (attempt !== 1 || !readPaths.includes(`agentBattles/${BATTLE_ID}/calls/${amd.callId}`)) return;
+      await db.collection('agentBattles').doc(BATTLE_ID).collection('calls').doc(amd.callId).update({ state: 'expired_unresolved', stateChangedAt: NOW - 1, stateSource: 'sweep' });
+    };
+    const res = await flipsOf(db, ctxFor({ observation: obsWith({ AMD: { px: 170, fetchedAtMs: NOW - 1 } }) }));
+    expect(db.__txAttempts).toBe(2);
+    expect(res.diag).toMatchObject({ hit: 0, receipts: 0, skipped: { not_open: 1 } });
+    expect(storedDoc(db, 'calls', amd.callId)).toMatchObject({ state: 'expired_unresolved', stateChangedAt: NOW - 1, stateSource: 'sweep' });
+    expect(storedCollection(db, 'callObservations')).toEqual({});
+  });
+
+  it('the battle completes after the transaction read it: the retry reads the terminal parent — nothing flips, the scan stops', async () => {
+    const amd = amdShot();
+    const db = makeCallsDb({ battle: makeTickBattle(), seed: seedOf([amd]) });
+    db.__hooks.afterTxBody = async ({ attempt, readPaths }) => {
+      if (attempt !== 1 || !readPaths.includes(`agentBattles/${BATTLE_ID}`)) return;
+      await db.collection('agentBattles').doc(BATTLE_ID).update({ status: 'completed' });
+    };
+    const res = await flipsOf(db, ctxFor({ observation: obsWith({ AMD: { px: 170, fetchedAtMs: NOW - 1 } }) }));
+    expect(db.__txAttempts).toBe(2);
+    expect(res.diag).toMatchObject({ hit: 0, receipts: 0, stopped: 'parent_terminal' });
+    expect(storedDoc(db, 'calls', amd.callId)).toEqual(amd);
+    expect(storedCollection(db, 'callObservations')).toEqual({});
+  });
+
+  it('reads that outlast the 800 ms ceiling issue no commit: the flip is unconfirmed, the call stays open, no receipt (review E-1)', async () => {
+    const amd = amdShot();
+    const db = makeCallsDb({ battle: makeTickBattle(), seed: seedOf([amd]) });
+    const run = db.runTransaction.bind(db);
+    db.runTransaction = (cb) => run(async (tx) => {
+      const get = tx.get;
+      // The call read returns 900 ms of the shared clock later — past the ceiling.
+      tx.get = async (ref) => { const snap = await get(ref); if (ref.path.includes('/calls/')) vi.setSystemTime(Date.now() + 900); return snap; };
+      return cb(tx);
+    });
+    const res = await flipsOf(db, ctxFor({ observation: obsWith({ AMD: { px: 170, fetchedAtMs: NOW - 1 } }) }));
+    expect(res.diag).toMatchObject({ unconfirmed: 1, hit: 0, receipts: 0, failed: 0 });
+    expect(storedDoc(db, 'calls', amd.callId)).toEqual(amd);
+    expect(storedCollection(db, 'callObservations')).toEqual({});
     expect(callWrites(db)).toEqual([]);
   });
 
@@ -362,13 +427,63 @@ describe('the cursor — continuation, wraparound, ties, > 50 open calls, the de
     expect(Object.values(storedCollection(db, 'calls')).every((c) => c.state === 'hit')).toBe(true);
   });
 
-  it('an unresolved prefix cannot monopolize the deadline: the rotation reaches the calls behind it', async () => {
+  // The rows below keep every examined call OPEN, so a scan that ignored the
+  // persisted cursor (or cut the id tie-break) would re-read calls it had
+  // already examined — and the reads say so (review D-4).
+  const callReadsSince = (db, from) => db.__callsAccess.reads.slice(from).filter((p) => p.includes('/calls/')).map((p) => p.split('/').pop());
+  const noQuote = () => makeObservation({ observedAtMs: NOW, omit: ['AMD'] });
+
+  it('continuation with examined calls still OPEN (act only, no transition): the next check starts after the cursor and wraps to it — each call once, in index order', async () => {
+    const calls = order(manyCalls(8));
+    const db = makeCallsDb({ battle: makeTickBattle(), seed: seedOf(calls) });
+    // No quote, so no transition; the committed swap matches every call, so each needs one transaction (400 ms).
+    db.__hooks.afterTxBody = async () => { vi.setSystemTime(Date.now() + 400); };
+    const first = await flipsOf(db, ctxFor({ observation: noQuote(), executorResult: makeExecutorResult() }), { deadlineMs: Date.now() + 1_000 });
+    const k = first.diag.acted;
+    expect(k).toBeGreaterThan(0);
+    expect(k).toBeLessThan(8);
+    expect(first.diag).toMatchObject({ hit: 0, receipts: 0, stopped: 'deadline' });
+    expect(first.status.cursor).toEqual({ mintedAt: calls[k - 1].mintedAt, callId: calls[k - 1].callId });
+    expect(Object.values(storedCollection(db, 'calls')).every((c) => c.state === 'open')).toBe(true);
+    db.__store.battle.cronState.callFlips = first.status;
+    db.__hooks.afterTxBody = null;
+    const from = db.__callsAccess.reads.length;
+    const second = await flipsOf(db, ctxFor({ evalId: 'eval_002', observation: noQuote() }));
+    expect(second.diag).toMatchObject({ wrapped: true, complete: true, scanned: 8 });
+    expect(callReadsSince(db, from)).toEqual([...calls.slice(k), ...calls.slice(0, k)].map((c) => c.callId));
+  });
+
+  it('120 calls with ONE mint instant: the id tie-break carries the scan across page boundaries and the persisted cursor — each call exactly once, in index order', async () => {
+    const calls = order(manyCalls(120, { sameMint: true }));
+    const db = makeCallsDb({ battle: makeTickBattle(), seed: seedOf(calls) });
+    const full = await flipsOf(db, ctxFor({ observation: noQuote() }));
+    expect(full.diag).toMatchObject({ scanned: 120, pages: 3, complete: true });
+    expect(callReadsSince(db, 0)).toEqual(calls.map((c) => c.callId));
+    expect(db.__callsAccess.queries[1].startAfter).toEqual([EARLIER_MINT, calls[49].callId]);
+    // A cursor persisted mid-page-two (call 59): the tail leg, then the head leg up to and including it.
+    db.__store.battle.cronState.callFlips = { evalId: 'eval_000', cursor: { mintedAt: EARLIER_MINT, callId: calls[59].callId }, scanned: 60, total: null, complete: false };
+    const from = db.__callsAccess.reads.length;
+    const resumed = await flipsOf(db, ctxFor({ evalId: 'eval_002', observation: noQuote() }));
+    expect(resumed.diag).toMatchObject({ scanned: 120, wrapped: true, complete: true });
+    expect(callReadsSince(db, from)).toEqual([...calls.slice(60), ...calls.slice(0, 60)].map((c) => c.callId));
+  });
+
+  it('an unresolved prefix cannot monopolize the deadline: the check it exhausts leaves the cursor past it, and the next check reaches the call behind it', async () => {
     // 60 old calls that never resolve (no quote for them), then one that hits.
-    const stuck = manyCalls(60).map((c) => ({ ...c, symbol: 'JPM', condition: { side: 'above', level: 999 } }));
+    const stuck = order(manyCalls(60).map((c) => ({ ...c, symbol: 'JPM', condition: { side: 'above', level: 999 } })));
     const [late] = earlierCalls(makeDeclarations({ calledShots: [makeDeclarations().calledShots[0]], watching: [] }), { evalId: 'eval_zzz', mintedAtMs: EARLIER_MINT + 10_000 });
     const db = makeCallsDb({ battle: makeTickBattle(), seed: seedOf([...stuck, late]) });
-    const res = await flipsOf(db, ctxFor({ observation: obsWith({ AMD: { px: 170, fetchedAtMs: NOW - 1 } }) }));
-    expect(res.diag.hit).toBe(1);
+    // Every page read costs 1,500 ms of the shared clock; each check has 2,000 ms — one page.
+    db.__hooks.afterQuery = async () => { vi.setSystemTime(Date.now() + 1_500); };
+    const hot = () => obsWith({ AMD: { px: 170, fetchedAtMs: Date.now() - 1 } }, Date.now());
+    const first = await flipsOf(db, ctxFor({ observation: hot() }), { deadlineMs: Date.now() + 2_000 });
+    expect(first.diag).toMatchObject({ scanned: 50, hit: 0, stopped: 'deadline', complete: false });
+    expect(first.status.cursor).toEqual({ mintedAt: stuck[49].mintedAt, callId: stuck[49].callId });
+    expect(storedDoc(db, 'calls', late.callId).state).toBe('open');
+    db.__store.battle.cronState.callFlips = first.status;
+    vi.setSystemTime(Date.now() + 15 * 60_000);
+    const second = await flipsOf(db, ctxFor({ evalId: 'eval_002', observation: hot() }), { deadlineMs: Date.now() + 2_000 });
+    expect(second.diag.hit).toBe(1);
     expect(storedDoc(db, 'calls', late.callId).state).toBe('hit');
   });
 

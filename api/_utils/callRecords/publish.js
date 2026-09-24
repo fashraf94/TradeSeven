@@ -113,11 +113,13 @@ const finiteNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 /**
  * THE TRANSACTION (§3.7). Never throws.
  *
- * Every attempt checks the deadline FIRST: the SDK retries a contended
- * transaction, and no attempt may start after the deadline ("nothing starts
- * after it"). An attempt refused that way is treated like a timeout — an
- * earlier attempt's outcome is not provably absent — so the bounded existence
- * re-read decides, exactly as for a timeout.
+ * Every attempt checks the deadline FIRST (the SDK retries a contended
+ * transaction, and no attempt may start after the deadline — "nothing starts
+ * after it") and AGAIN between its reads and its first write (reads can
+ * outlast the deadline; the SDK issues the commit as soon as the body returns).
+ * An attempt refused either way is treated like a timeout — an earlier
+ * attempt's outcome is not provably absent — so the bounded existence re-read
+ * decides, exactly as for a timeout.
  *
  * @returns {Promise<{ phaseResult: string, wire: 'written'|'failed'|null, perId: Array<{id:string, result:string, reason?:string}>, confirmedCallIds: string[], ms: number }>}
  */
@@ -161,12 +163,18 @@ export async function publishDeclarations({ db, battleId, candidate, evalSeq, tx
       // 3. THE QUEUE — read and armed only when this publication opens a call.
       let nextExpiresAt = null;
       if (candidate.newOpen.length > 0) {
+        // No second read starts after the deadline either (review E-1).
+        if (Date.now() >= txDeadlineMs) throw new CallsAbort('deadline');
         const queueSnap = await tx.get(publishQueueRef);
         const existing = queueSnap?.exists ? queueSnap.data()?.nextExpiresAt : undefined;
         const finiteExpiries = candidate.newOpen.map((c) => c.horizon?.expiresAt).filter(finiteNumber);
         const armable = [...(finiteNumber(existing) ? [existing] : []), ...finiteExpiries];
         nextExpiresAt = armable.length > 0 ? Math.min(...armable) : null;
       }
+      // The reads can outlast the deadline: re-check before the first write,
+      // so no commit is ever ISSUED after it (review E-1). A commit already in
+      // flight at the deadline stays unconfirmed — the re-read decides.
+      if (Date.now() >= txDeadlineMs) throw new CallsAbort('deadline');
       // 4. CREATE-ONCE — the record and every call; the queue with merge.
       tx.create(publishDeclarationsRef, candidate.record);
       for (const call of candidate.calls) {
@@ -205,6 +213,22 @@ export async function publishDeclarations({ db, battleId, candidate, evalSeq, tx
       return done('unconfirmed', null, all('unconfirmed', 'reread_failed'));
     }
   }
+}
+
+/**
+ * The removals as ONE bounded log token — per (source, reason) counts in
+ * first-appearance order, or `none`. callsDiag keeps only the latest check's
+ * removals (every later check overwrites it), so the phase log line is where
+ * a malformed or fully removed block stays readable per check (review B-4).
+ */
+export function removedLogToken(removed) {
+  const groups = [];
+  for (const r of Array.isArray(removed) ? removed : []) {
+    const group = groups.find((g) => g.source === r?.source && g.reason === r?.reason);
+    if (group) group.count += 1;
+    else groups.push({ source: r?.source, reason: r?.reason, count: 1 });
+  }
+  return groups.length ? groups.map((g) => `${g.source}:${g.reason}x${g.count}`).join(',') : 'none';
 }
 
 /** The bounded diagnostics document (never a reader wire). */
@@ -281,7 +305,7 @@ export async function runModelCallsPhase(callsCtx, { db, battle, timeBudgetMs, p
       'cronState.callsDiag': composeCallsDiag({ evalId, exit: callsCtx.exit, phaseResult, removed: removedPre, truncated: callsCtx.diag.truncated, faults: callsCtx.diag.faults, ms: 0 }),
     };
     const status = await writeCallsStatus({ db, battleId, fields, deadlineMs: Math.min(startedMs + STATUS_ONLY_MS, budget.tailBoundaryMs) });
-    console.log(`[calls] phase battle=${battleId} evalId=${evalId} result=${phaseResult} available=${budget.available}ms status=${status}`);
+    console.log(`[calls] phase battle=${battleId} evalId=${evalId} result=${phaseResult} available=${budget.available}ms removed=${removedLogToken(removedPre)} status=${status}`);
     return { phaseResult, wire: expected ? 'failed' : null, captureRefs: [], status, flips: null };
   }
 
@@ -335,6 +359,6 @@ export async function runModelCallsPhase(callsCtx, { db, battle, timeBudgetMs, p
     }),
   };
   const status = await writeCallsStatus({ db, battleId, fields, deadlineMs: budget.deadlineMs });
-  console.log(`[calls] phase battle=${battleId} evalId=${evalId} result=${phaseResult} wire=${wire ?? 'unchanged'} perId=${JSON.stringify(perId)} status=${status} ms=${Date.now() - startedMs}`);
+  console.log(`[calls] phase battle=${battleId} evalId=${evalId} result=${phaseResult} wire=${wire ?? 'unchanged'} perId=${JSON.stringify(perId)} removed=${removedLogToken(removed)} status=${status} ms=${Date.now() - startedMs}`);
   return { phaseResult, wire, perId, captureRefs, status, flips: flipResult };
 }
