@@ -105,7 +105,9 @@ export class CallsAbort extends Error {
   }
 }
 
-const isTimeout = (err) => String(err?.message || '').includes('_timeout_');
+/** Did a withTimeout race reject (the helper's `<label>_timeout_<ms>ms` message)? */
+export const isCallsTimeout = (err) => String(err?.message || '').includes('_timeout_');
+const isTimeout = isCallsTimeout;
 const finiteNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
 /**
@@ -258,7 +260,8 @@ export function captureRefsFor(candidate, confirmedCallIds) {
  * @param {number} p.timeBudgetMs     the handler's TIME_BUDGET_MS (the one clock)
  * @param {string|null} p.promptBuiltAt
  * @param {string|null} p.tickId      the capture tick id, or null (capture off)
- * @param {(ctx: object, opts: object) => Promise<object>} [p.flips] the flip runner (§3.8), injected
+ * @param {(ctx: object, opts: { db: object, battle: object, battleId: string, deadlineMs: number }) => Promise<object>} [p.flips]
+ *   the flip runner (§3.8: flip.js runCallFlips), injected so this module never imports flip.js
  */
 export async function runModelCallsPhase(callsCtx, { db, battle, timeBudgetMs, promptBuiltAt, tickId, flips = null }) {
   if (!callsCtx || !callsActive(callsCtx.mode) || callsCtx.exit !== 'model_result' || !callsCtx.evalIdentity) return null;
@@ -320,7 +323,7 @@ export async function runModelCallsPhase(callsCtx, { db, battle, timeBudgetMs, p
   }
 
   const flipResult = typeof flips === 'function'
-    ? await flips(callsCtx, { db, battleId, workDeadlineMs })
+    ? await flips(callsCtx, { db, battle, battleId, deadlineMs: workDeadlineMs })
     : null;
 
   const fields = {

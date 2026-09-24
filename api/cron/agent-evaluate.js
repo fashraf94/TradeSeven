@@ -45,6 +45,7 @@ import { recordFetchedQuote, freezeObservation, freezeModelObservation, classify
 import { captureDeclarations } from '../_utils/callRecords/validate.js';
 import { bindHorizon, battleExpiryMs } from '../_utils/callRecords/horizon.js';
 import { callsReserveMsFor, runModelCallsPhase } from '../_utils/callRecords/publish.js';
+import { runCallFlips, runExitCallsHook } from '../_utils/callRecords/flip.js';
 import { validateTradeToolResult, INVALID_TOOL_RESULT_CLASS } from '../_utils/agentEvalToolResultValidation.js';
 import { evaluateTriggers, fetchRecentNews, MAX_STORY_WAKE_ATTEMPTS, SEEN_STORY_ID_CAP } from '../_utils/agentTriggerGate.js';
 import { validateTradeDecision, executeSwapServer } from '../_utils/agentSwapExecution.js';
@@ -1281,6 +1282,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       captureStep(tickCapture, () => {
         tickCapture.exit('cpu_passive');
       });
+      // Calls (§3.8): this exit's flips, after its authoritative write, under the non-model rule.
+      await callsStepAsync(callsCtx, () => runExitCallsHook(callsCtx, { db, battle, timeBudgetMs: TIME_BUDGET_MS }));
       return;
     }
 
@@ -2316,6 +2319,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         tickCapture.stage('proposal_handled');
         tickCapture.exit('proposal_pending');
       });
+      // Calls (§3.8): this exit's flips, after its authoritative write, under the non-model rule.
+      await callsStepAsync(callsCtx, () => runExitCallsHook(callsCtx, { db, battle, timeBudgetMs: TIME_BUDGET_MS }));
       return;
     }
 
@@ -2348,6 +2353,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         tickCapture.stage('gameplan_handled');
         tickCapture.exit('gameplan_pending');
       });
+      // Calls (§3.8): this exit's flips, after its authoritative write, under the non-model rule.
+      await callsStepAsync(callsCtx, () => runExitCallsHook(callsCtx, { db, battle, timeBudgetMs: TIME_BUDGET_MS }));
       return;
     }
 
@@ -2397,6 +2404,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           tickCapture.stage('gameplan_handled');
           tickCapture.exit('gameplan_created');
         });
+        // Calls (§3.8): this exit's flips, after its authoritative write, under the non-model rule.
+        await callsStepAsync(callsCtx, () => runExitCallsHook(callsCtx, { db, battle, timeBudgetMs: TIME_BUDGET_MS }));
         return;
       }
     }
@@ -2532,6 +2541,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       captureStep(tickCapture, () => {
         tickCapture.exit('no_trigger');
       });
+      // Calls (§3.8): this exit's flips, after its authoritative write, under the non-model rule.
+      await callsStepAsync(callsCtx, () => runExitCallsHook(callsCtx, { db, battle, timeBudgetMs: TIME_BUDGET_MS }));
       return;
     }
 
@@ -4356,18 +4367,23 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       tickCapture.stage('finalized');
       tickCapture.exit('completed');
     });
-    // Calls (§3.7): the model-path phase — publication (when the entry said
-    // `expected`), the flips, one status write — after the evaluation commit
-    // and before narration dispatch, under the shared clock with the 12 s tail
-    // protected. Inert at off; isolated at shadow/on; never the trade's
-    // concern. Runs only on the model-result row (the phase checks it).
-    await callsStepAsync(callsCtx, () => runModelCallsPhase(callsCtx, {
-      db,
-      battle,
-      timeBudgetMs: TIME_BUDGET_MS,
-      promptBuiltAt,
-      tickId: tickCapture.enabled ? (tickCapture.state?.tickId ?? null) : null,
-    }));
+    // Calls (§3.7–§3.8): after the evaluation commit and before narration
+    // dispatch, under the shared clock with the 12 s tail protected. The
+    // model-result row runs the model-path phase — publication (when the entry
+    // said `expected`), the flips, one status write; the other entry-writing
+    // flip rows (budget-skipped, transport-failed-after-prompt) run their flips
+    // under the non-model rule; the excluded rows do nothing. Inert at off;
+    // isolated at shadow/on; never the trade's concern.
+    await callsStepAsync(callsCtx, () => (callsCtx.exit === 'model_result'
+      ? runModelCallsPhase(callsCtx, {
+        db,
+        battle,
+        timeBudgetMs: TIME_BUDGET_MS,
+        promptBuiltAt,
+        tickId: tickCapture.enabled ? (tickCapture.state?.tickId ?? null) : null,
+        flips: runCallFlips,
+      })
+      : runExitCallsHook(callsCtx, { db, battle, timeBudgetMs: TIME_BUDGET_MS })));
   } catch (err) {
     // Tick capture (C-9): THE ERROR EXIT. Marked here so the `finally` below
     // SKIPS capture on this path — the outer handler finalizes the registered

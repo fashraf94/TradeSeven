@@ -18,8 +18,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   FROZEN_NOW, BASE_ENTRY_KEYS, TIMING_ENTRY_KEYS, CALLS_ENTRY_KEYS,
   makeTickBattle, makePriceTable, makeRankingsDoc, makeTechDocs, makeIntradayCandles,
-  makeHoldResult, makeSwapResult, makeToolUseResponse, makeDeclarations, undefinedPaths,
+  makeHoldResult, makeSwapResult, makeToolUseResponse, makeDeclarations, makeObservation, undefinedPaths,
 } from '../_utils/__fixtures__/tickStampsHarness.js';
+import { buildMintCandidate } from '../_utils/callRecords/candidate.js';
 import { makeCallsDb, storedDoc, storedCollection, callsTouches } from '../_utils/__fixtures__/callRecordsStore.js';
 
 const mocks = vi.hoisted(() => ({ getStockAnalysisData: vi.fn(), fetchIntradayBatch: vi.fn(), create: vi.fn() }));
@@ -111,7 +112,7 @@ async function runTick({
   mode = 'shadow', capture = true, battle = makeTickBattle(), result = makeHoldResult(), prices = makePriceTable(),
   rankingsDoc = makeRankingsDoc(), cronStartTime = Date.now(), modelThrows = null, modelResponse = null,
   breakRefreshAfterSwap = false, buildThrows = null, seed = {}, db: injected = null, beforeModel = null,
-  failFinalUpdate = false,
+  failFinalUpdate = false, swapThrows = null, onSwap = null,
 } = {}) {
   flagState.callsMode = mode;
   flagState.tickCapture = capture;
@@ -152,6 +153,8 @@ async function runTick({
     };
   }
   swapMock.mockImplementation(async (_db, _id, _b, tier, slotIndex, incoming) => {
+    if (onSwap) await onSwap();
+    if (swapThrows) throw swapThrows;
     swaps += 1;
     const outgoing = swapInStore(db, tier, slotIndex, incoming, (s) => prices[s]?.current ?? 0);
     return {
@@ -359,5 +362,155 @@ describe('§3.12 row 6 — the budget on the model path', () => {
     expect(storedCollection(db, 'calls')).toEqual({});
     expect(db.__store.battle.cronState.declarationsPhase).toEqual({ evalId: entry.evalId, phase: 'failed' });
     expect(db.__store.battle.cronState.callsDiag).toMatchObject({ phaseResult: 'skipped_budget' });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Flips (§3.8) end to end. Calls minted by an EARLIER check (eval_000, 50
+// minutes before this one), stored as publication stores them.
+const EARLIER_MINT_MS = Date.parse(FROZEN_NOW) - 50 * 60_000;
+function earlierCalls(calledShots) {
+  return buildMintCandidate({
+    battleId: 'battle-tick-1', evalId: 'eval_000', evalSeq: 0, mintedAtMs: EARLIER_MINT_MS,
+    raw: { calledShots, watching: [], playerAsk: null, fork: null },
+    universe: ['NVDA', 'TSLA', 'MSFT', 'AMZN', 'KO', 'PG', 'BTC', 'AMD', 'JPM'],
+    observation: makeObservation({ observedAtMs: EARLIER_MINT_MS - 5_000 }), promptBuiltAt: new Date(EARLIER_MINT_MS - 5_000).toISOString(),
+    tickId: null, battle: makeTickBattle(),
+  }).calls.map((c) => JSON.parse(JSON.stringify(c)));
+}
+const seedOf = (calls) => ({ calls: Object.fromEntries(calls.map((c) => [c.callId, c])) });
+// KO is held (support) and quoted 62.0 (62.3 on the flat table): below 62.5 on every row that examines it.
+const KO_OUT = { symbol: 'KO', direction: 'exit', slot: 'support', condition: { side: 'below', level: 62.5 }, horizonPhrase: 'this_session', defaultAction: 'hold', said: 'Out of KO below $62.50.' };
+// AMD is on the bench, quoted 162.0: above 161.
+const AMD_IN = { symbol: 'AMD', direction: 'entry', slot: 'support', counterpart: 'KO', condition: { side: 'above', level: 161 }, horizonPhrase: 'this_session', defaultAction: 'act', said: 'AMD in for KO above $161.' };
+
+const STOP_8 = { type: 'stopLoss', value: 8, unit: '%', enforcement: 'hard' };
+const withStop = (args) => ({ ...args, battle: { ...args.battle, agentContext: { ...args.battle.agentContext, deployedGuardrails: [STOP_8] } } });
+
+describe('§3.12 row 5 — the exit matrix: every flip row flips without publishing; the excluded rows never flip', () => {
+  const FLIP_ROWS = {
+    model_result: { run: () => ({}), source: 'model_prompt', entry: true },
+    transport_failed: { run: () => ({ modelThrows: new APIConnectionError('Connection error.') }), source: 'model_prompt', entry: true },
+    budget_skipped: { run: () => ({ cronStartTime: Date.parse(FROZEN_NOW) - (TIME_BUDGET_MS - 40_000) }), source: 'budget_skipped', entry: true },
+    no_trigger: { run: NO_ENTRY_PATHS.no_trigger, source: 'no_trigger', entry: false },
+    proposal_pending: { run: NO_ENTRY_PATHS.proposal_pending, source: 'proposal_pending', entry: false },
+    // The gameplan rows observe what the R11 pass EXAMINED — so the battle deploys a
+    // guardrail the pass evaluates (an 8% stop nothing is near; nothing trades).
+    gameplan_pending: { run: () => withStop(NO_ENTRY_PATHS.gameplan_pending()), source: 'gameplan_pass', entry: false },
+    gameplan_created: { run: () => withStop(NO_ENTRY_PATHS.gameplan_created()), source: 'gameplan_pass', entry: false },
+    cpu_passive: { run: NO_ENTRY_PATHS.cpu_passive, source: 'passive', entry: false },
+  };
+  for (const [name, spec] of Object.entries(FLIP_ROWS)) {
+    it(`${name}: the open call flips on THIS exit's observation — receipt from '${spec.source}', nothing published`, async () => {
+      const [call] = earlierCalls([KO_OUT]);
+      const { db, entry } = await runTick({ mode: 'shadow', seed: seedOf([call]), ...spec.run() });
+      const after = storedDoc(db, 'calls', call.callId);
+      expect(after).toMatchObject({ state: 'hit', stateSource: 'check' });
+      const receipt = storedDoc(db, 'callObservations', call.callId);
+      expect(receipt).toMatchObject({ callId: call.callId, source: spec.source, evalId: spec.entry ? entry.evalId : null });
+      expect(after.outcome).toEqual({ receiptRef: `agentBattles/battle-tick-1/callObservations/${call.callId}` });
+      expect(storedCollection(db, 'declarations')).toEqual({});
+      expect(db.__store.battle.cronState.callFlips).toMatchObject({ evalId: spec.entry ? entry.evalId : null, complete: true, scanned: 1 });
+      if (!spec.entry) {
+        expect(entry).toBeNull();
+        expect(JSON.stringify(db.__updates)).not.toMatch(/declarationsPhase|"evalSeq"|cronState\.evalSeq/);
+      }
+    });
+  }
+
+  const EXCLUDED = {
+    refresh_failed: () => ({ prices: bustingPrices(), breakRefreshAfterSwap: true }),
+    prompt_build_failed: () => ({ buildThrows: 'institutional read exploded' }),
+    degraded_quotes: NO_ENTRY_PATHS.degraded_quotes,
+  };
+  for (const [name, run] of Object.entries(EXCLUDED)) {
+    it(`${name}: no qualifying observation — the open call is never read or written`, async () => {
+      const [call] = earlierCalls([KO_OUT]);
+      const { db } = await runTick({ mode: 'shadow', seed: seedOf([call]), ...run() });
+      expect(storedDoc(db, 'calls', call.callId)).toEqual(call);
+      expect(callsTouches(db)).toEqual({ reads: 0, writes: 0, queries: 0 });
+      expect(db.__store.battle.cronState).not.toHaveProperty('callFlips');
+    });
+  }
+
+  for (const name of ['gameplan_pending', 'gameplan_created']) {
+    it(`${name} with no deployed guardrail: the pass examined nothing, so there is no observation and no flip`, async () => {
+      const [call] = earlierCalls([KO_OUT]);
+      const { db } = await runTick({ mode: 'shadow', seed: seedOf([call]), ...NO_ENTRY_PATHS[name]() });
+      expect(storedDoc(db, 'calls', call.callId)).toEqual(call);
+      expect(callsTouches(db)).toEqual({ reads: 0, writes: 0, queries: 0 });
+    });
+  }
+
+  it('off: the same open call is neither read nor written on any row (the rollback fixture)', async () => {
+    for (const spec of Object.values(FLIP_ROWS)) {
+      const [call] = earlierCalls([KO_OUT]);
+      const { db } = await runTick({ mode: 'off', seed: seedOf([call]), ...spec.run() });
+      expect(callsTouches(db)).toEqual({ reads: 0, writes: 0, queries: 0 });
+      expect(storedDoc(db, 'calls', call.callId)).toEqual(call);
+    }
+  });
+});
+
+describe('§3.12 row 9 — outcome.actedEvalId from the committed executor result, end to end', () => {
+  for (const capture of [true, false]) {
+    it(`capture ${capture ? 'on' : 'off'}: the model's committed SWAP KO → AMD (support) matches the declared trade → hit + actedEvalId`, async () => {
+      const [call] = earlierCalls([AMD_IN]);
+      const { db, entry, swaps } = await runTick({ mode: 'shadow', capture, seed: seedOf([call]), result: makeSwapResult() });
+      expect(swaps).toBe(1);
+      expect(storedDoc(db, 'calls', call.callId)).toMatchObject({ state: 'hit', outcome: { actedEvalId: entry.evalId } });
+    });
+  }
+
+  it('a blocked SWAP (the executor rejects) → the hit, never an act', async () => {
+    const [call] = earlierCalls([AMD_IN]);
+    const { db, entry } = await runTick({ mode: 'shadow', seed: seedOf([call]), result: makeSwapResult(), swapThrows: new Error('reserve_failed') });
+    expect(entry.decision).toBe('HOLD');
+    const after = storedDoc(db, 'calls', call.callId);
+    expect(after.state).toBe('hit');
+    expect(after.outcome).not.toHaveProperty('actedEvalId');
+  });
+
+  it('a declared counterpart the swap did not take (AMD for PG) → no act', async () => {
+    const [call] = earlierCalls([{ ...AMD_IN, counterpart: 'PG' }]);
+    const { db } = await runTick({ mode: 'shadow', seed: seedOf([call]), result: makeSwapResult() });
+    expect(storedDoc(db, 'calls', call.callId).outcome).not.toHaveProperty('actedEvalId');
+  });
+
+  it('proposal pending (nothing executes this check) → a non-model exit, never an act', async () => {
+    const [call] = earlierCalls([AMD_IN]);
+    const { db } = await runTick({ mode: 'shadow', seed: seedOf([call]), ...NO_ENTRY_PATHS.proposal_pending() });
+    expect(storedDoc(db, 'calls', call.callId).outcome).not.toHaveProperty('actedEvalId');
+  });
+
+  it('a call minted by THIS check is never flipped by it (publication then flips, same check)', async () => {
+    const { db, entry } = await runTick({ mode: 'shadow', result: makeSwapResult({ declarations: makeDeclarations() }) });
+    const minted = Object.values(storedCollection(db, 'calls'));
+    expect(minted).toHaveLength(2);
+    for (const call of minted) {
+      expect(call.evalId).toBe(entry.evalId);
+      expect(call.state).toBe('open');
+      expect(call.outcome).toBeNull();
+    }
+    expect(storedCollection(db, 'callObservations')).toEqual({});
+  });
+});
+
+describe('§3.12 row 6 — a late exit with narration queued (R3-3)', () => {
+  it('a gameplan-pending exit reached with < 2,000 ms available: the narration dispatches, the flip hook never starts', async () => {
+    const [call] = earlierCalls([KO_OUT]);
+    // Risk swaps queue narrations; each costs 50 s of the shared clock.
+    const onSwap = async () => { vi.setSystemTime(new Date(Date.now() + 50_000)); };
+    generateTradeNarration.mockClear();
+    const { db, swaps } = await runTick({
+      mode: 'shadow', seed: seedOf([call]), prices: bustingPrices(), onSwap,
+      cronStartTime: Date.parse(FROZEN_NOW) - (TIME_BUDGET_MS - 60_000),
+      battle: makeTickBattle({ gameplanMeeting: { status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', swaps: [] } }),
+    });
+    expect(swaps).toBeGreaterThan(0);
+    expect(generateTradeNarration).toHaveBeenCalled();
+    expect(callsTouches(db)).toEqual({ reads: 0, writes: 0, queries: 0 });
+    expect(storedDoc(db, 'calls', call.callId)).toEqual(call);
+    expect(db.__store.battle.cronState).not.toHaveProperty('callFlips');
   });
 });

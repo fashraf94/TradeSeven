@@ -438,8 +438,9 @@ describe('runModelCallsPhase', () => {
     await runModelCallsPhase(ctx, phaseArgs(db, { flips }));
     const [, opts] = flips.mock.calls[0];
     const boundary = ctx.handlerStartMs + TIME_BUDGET_MS - TAIL_RESERVE_MS;
-    expect(opts.workDeadlineMs).toBe(Math.min(MINT + MODEL_PHASE_MS, boundary) - STATUS_RESERVE_MS);
+    expect(opts.deadlineMs).toBe(Math.min(MINT + MODEL_PHASE_MS, boundary) - STATUS_RESERVE_MS);
     expect(opts.battleId).toBe(BATTLE_ID);
+    expect(opts.battle.id).toBe(BATTLE_ID);
   });
 
   it('skipped at available < 4,000: no publication, no flips; the wire says failed through a status-only write inside the boundary', async () => {
