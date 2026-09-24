@@ -514,3 +514,47 @@ describe('§3.12 row 6 — a late exit with narration queued (R3-3)', () => {
     expect(db.__store.battle.cronState).not.toHaveProperty('callFlips');
   });
 });
+
+describe('§3.9 — capture composition end to end: one resolved schema, confirmed references only', () => {
+  const capturedDocs = (db) => {
+    const find = (sub) => [...db.__subStore.entries()].filter(([p]) => p.startsWith(`agentBattles/battle-tick-1/${sub}/`)).map(([, d]) => d);
+    return { permanent: find('ticks'), body: find('tickBodies') };
+  };
+
+  it('shadow: both documents at version 2; calls[] carries the confirmed references ({ callId, n, kind } — nothing the model wrote)', async () => {
+    const { db, entry } = await runTick({ mode: 'shadow', result: makeHoldResult({ declarations: makeDeclarations() }) });
+    const { permanent: [permanent], body: [body] } = capturedDocs(db);
+    expect(permanent.schemaVersion).toBe(2);
+    expect(body.schemaVersion).toBe(2);
+    expect(permanent.calls).toEqual([
+      { callId: `battle-tick-1:${entry.evalId}:call:0`, n: 0, kind: 'called_shot' },
+      { callId: `battle-tick-1:${entry.evalId}:call:1`, n: 1, kind: 'confirmation' },
+    ]);
+    expect(JSON.stringify(permanent)).not.toMatch(/holds \$163\.50|by the next check/);
+  });
+
+  it('shadow, no block: version 2 with an empty calls[]', async () => {
+    const { db } = await runTick({ mode: 'shadow' });
+    const { permanent: [permanent] } = capturedDocs(db);
+    expect(permanent.schemaVersion).toBe(2);
+    expect(permanent.calls).toEqual([]);
+  });
+
+  it('shadow, a conflicting publication: nothing confirmed, so nothing referenced', async () => {
+    // Another payload already sits under this check's identity.
+    const conflicting = { battleId: 'battle-tick-1', evalId: 'eval_001', evalSeq: 1, mintedAt: 1, calledShots: [], watching: ['AMD'], playerAsk: null, fork: null, removed: [], minted: [] };
+    const { db, entry } = await runTick({ mode: 'shadow', result: makeHoldResult({ declarations: makeDeclarations() }), seed: { declarations: { eval_001: conflicting } } });
+    expect(entry.evalId).toBe('eval_001');
+    expect(db.__store.battle.cronState.declarationsPhase).toEqual({ evalId: 'eval_001', phase: 'failed' });
+    const { permanent: [permanent] } = capturedDocs(db);
+    expect(permanent.calls).toEqual([]);
+  });
+
+  it('off: version 1 on both documents and no calls key at all — the pre-build shape', async () => {
+    const { db } = await runTick({ mode: 'off', result: makeHoldResult({ declarations: makeDeclarations() }) });
+    const { permanent: [permanent], body: [body] } = capturedDocs(db);
+    expect(permanent.schemaVersion).toBe(1);
+    expect(body.schemaVersion).toBe(1);
+    expect(permanent).not.toHaveProperty('calls');
+  });
+});

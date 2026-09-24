@@ -5,7 +5,7 @@
 //
 // ZERO product imports, by the tickStampsHarness precedent: nothing here can
 // drag a browser dependency into the cron's Node graph, and nothing here can
-// read a flag, a battle or a clock. Pure data.
+// read a flag, a battle or a clock. Pure data (and one pure resolver over it).
 //
 // THE TWO TIMING CONSTANTS (C-9) are founder-adjustable and are the flip
 // gate's measured quantities:
@@ -36,6 +36,43 @@
 
 /** Schema version of the two documents. Bump on any shape change. */
 export const TICK_CAPTURE_SCHEMA_VERSION = 1;
+
+/**
+ * Cockpit Build 0 (docs/design/COCKPIT_SPEC_V1_3.md §2, §3.9; contract
+ * docs/CALL_RECORD_FIELD_CONTRACT_V1_3.md §9) — the registered version of the
+ * record WITH the calls contribution: version 1 plus the permanent `calls[]`
+ * reference container. Emitted only when the tick's calls mode is shadow/on.
+ */
+export const TICK_CAPTURE_SCHEMA_VERSION_CALLS = 2;
+
+/**
+ * The pilot's capture contribution (contract §9 rows 3 and 4). NO pilot or
+ * combined registration exists at the Build 0 baseline, so both rows are gated
+ * UNAVAILABLE: never emitted, never with a borrowed version. A registration
+ * lands with the pilot's own build, beside its own flag.
+ */
+export const PILOT_CAPTURE_REGISTRATION = null;
+
+/**
+ * The emitted capture schema for one tick, resolved ONCE from the enabled
+ * contribution set and handed to BOTH composers (the permanent record and the
+ * body), so the two documents can never disagree about their version.
+ *
+ *   calls off · pilot off → version 1, the pre-build shape (no `calls` key)
+ *   calls on  · pilot off → version 2, + the `calls[]` container
+ *   pilot on (either calls state) → unavailable at this baseline
+ *
+ * @returns {{ version: number|null, includeCalls: boolean, includePilot: boolean, available: boolean, reason: string|null }}
+ */
+export function resolveCaptureSchema({ callsEnabled = false, pilotEnabled = false } = {}) {
+  if (pilotEnabled === true && PILOT_CAPTURE_REGISTRATION === null) {
+    return Object.freeze({ version: null, includeCalls: callsEnabled === true, includePilot: true, available: false, reason: 'pilot_unregistered' });
+  }
+  if (callsEnabled === true) {
+    return Object.freeze({ version: TICK_CAPTURE_SCHEMA_VERSION_CALLS, includeCalls: true, includePilot: false, available: true, reason: null });
+  }
+  return Object.freeze({ version: TICK_CAPTURE_SCHEMA_VERSION, includeCalls: false, includePilot: false, available: true, reason: null });
+}
 
 /** Bounded wall time for the capture batch commit and the body reads (C-9). */
 export const TICK_CAPTURE_DEADLINE_MS = 3_000;

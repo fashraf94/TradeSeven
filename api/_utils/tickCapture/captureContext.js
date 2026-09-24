@@ -104,6 +104,9 @@ const NOOP_METHODS = [
   'originalToolResult', 'finalToolResult', 'action', 'controls', 'controlsText',
   'manifest', 'callEnvelope', 'validationErrors', 'fault', 'bindBodyHolder',
   'controlSourceText', 'risk', 'executorAdmitted',
+  // Cockpit Build 0 (spec §3.9): the confirmed call references, and the
+  // tick's emitted capture schema (resolved once, read by both composers).
+  'call', 'schema',
 ];
 
 /** The inert context. Flag off, every call site runs against this. */
@@ -163,6 +166,13 @@ export function createTickCaptureContext({
     originalTool: null,
     finalTool: null,
     bodyHolder: null,
+    // Cockpit Build 0 (spec §3.9): call references from CONFIRMED publication
+    // results only, each `{ callId, n, kind }` with the call's own zero-based
+    // ordinal (independent of the action ordinals above).
+    calls: [],
+    // The emitted schema for this tick (captureConfig.js resolveCaptureSchema),
+    // set once at the tick's start; null → the version-1 default.
+    captureSchema: null,
   };
 
   const guard = (fn) => (...args) => {
@@ -277,6 +287,16 @@ export function createTickCaptureContext({
 
     /** Stage B binds the request-local HTTP body holder here. */
     bindBodyHolder: guard((holder) => { state.bodyHolder = holder; }),
+
+    /** Cockpit Build 0: one CONFIRMED call reference — ids, the call's own ordinal, its kind. */
+    call: guard(({ callId = null, n = null, kind = null } = {}) => {
+      state.calls.push({ callId, n: Number.isInteger(n) ? n : null, kind });
+    }),
+
+    /** Cockpit Build 0: the tick's emitted schema — set ONCE; a second call is ignored. */
+    schema: guard((resolved) => {
+      if (state.captureSchema === null && resolved && typeof resolved === 'object') state.captureSchema = resolved;
+    }),
   };
 
   // Bound to THIS tick's async chain — nothing is keyed by battle id, so no

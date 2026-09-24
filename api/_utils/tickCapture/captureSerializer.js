@@ -38,14 +38,17 @@
 // precedent): no flags, no clock, no Firestore.
 
 import {
-  ACTION_KINDS, ACTION_SOURCES, BODY_STATUSES, CAPTURE_DISPOSITIONS, CHECK_RESULTS,
+  ACTION_KINDS, ACTION_SOURCES, BODY_STATUSES, CALL_KINDS, CAPTURE_DISPOSITIONS, CHECK_RESULTS,
   CHECK_STATUSES, DECISIONS, EXIT_REASONS, GUARDRAIL_FAULT_CLASSES, HOLD_KINDS,
   MODEL_OUTCOMES, STAGES, TIMEOUT_KINDS,
 } from './captureConfig.js';
 
+// Cockpit Build 0 (spec §3.9): the call kinds, re-exported from the one source.
+export { CALL_KINDS };
+
 /** The closed lists an `enum:<NAME>` kind can name. */
 export const ENUM_LISTS = Object.freeze({
-  ACTION_KINDS, ACTION_SOURCES, BODY_STATUSES, CAPTURE_DISPOSITIONS, CHECK_RESULTS,
+  ACTION_KINDS, ACTION_SOURCES, BODY_STATUSES, CALL_KINDS, CAPTURE_DISPOSITIONS, CHECK_RESULTS,
   CHECK_STATUSES, DECISIONS, EXIT_REASONS, GUARDRAIL_FAULT_CLASSES, HOLD_KINDS,
   MODEL_OUTCOMES, STAGES, TIMEOUT_KINDS,
 });
@@ -128,6 +131,14 @@ export const PERMANENT_FIELD_KINDS = Object.freeze({
   'actions.*.lockedPoints': 'number',
   'actions.*.committed': 'bool',
   'actions.*.entryPrice': 'number',
+
+  // Cockpit Build 0 (spec §3.9; contract §1: "the tick's permanent record
+  // carries calls[] references"): ids, an ordinal and an enum — never `said`,
+  // never a condition, never anything the model wrote. Emitted only at
+  // version 2 (calls shadow/on); absent from the version-1 shape.
+  'calls.*.callId': 'id',
+  'calls.*.n': 'number',
+  'calls.*.kind': 'enum:CALL_KINDS',
 
   'controls.rendered': 'id',
   'controls.suppressedControlCount': 'number',
@@ -223,6 +234,8 @@ export const PERMANENT_CONTAINER_KINDS = Object.freeze({
   'decision': 'object',
   'actions': 'array',
   'actions.*': 'object',
+  'calls': 'array',
+  'calls.*': 'object',
   'controls': 'object',
   'controls.standingLeanIds': 'array',
   'controls.standingLeanVersions': 'array',

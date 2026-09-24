@@ -106,6 +106,7 @@ import { composeTickStamps } from '../_utils/tickStamps.js';
 // builder, and flag off every one of its call sites is the frozen inert NOOP.
 import { createTickCaptureContext, claimTickCaptureContext, markTickCaptureClaimed, currentTickCapture, currentCaptureScope, newTickCaptureScope, runInTickCaptureScope } from '../_utils/tickCapture/captureContext.js';
 import { finalizeTickCapture } from '../_utils/tickCapture/captureWriter.js';
+import { resolveCaptureSchema } from '../_utils/tickCapture/captureConfig.js';
 import { beginBodyCapture, endBodyCapture, makeObservingFetch } from '../_utils/tickCapture/captureBodyObserver.js';
 // THE THRESHOLD LINT (docs/audits/20260915_PHASE0_SIGNAL_LANGUAGE.md §7.2
 // shape 2): the pure, zero-import verdict on whether an anticipation
@@ -904,6 +905,15 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
   // must reach it. The mode is resolved ONCE, here, and never re-read during
   // the check. Independent of tick capture. At 'off' every call site is inert.
   const callsCtx = createCallsContext({ mode: resolveCallRecordsMode(), handlerStartMs: cronStartTime });
+  // Capture composition (§3.9): the emitted capture schema, resolved ONCE from
+  // the enabled contribution set and read by BOTH composers at finalization
+  // (either exit). Calls off → version 1, the pre-build shape; shadow/on →
+  // version 2 with `calls[]`. No pilot capture registration exists at this
+  // baseline, so the pilot contribution is structurally absent (rows 3–4
+  // unavailable).
+  captureStep(tickCapture, () => {
+    tickCapture.schema(resolveCaptureSchema({ callsEnabled: callsActive(callsCtx.mode), pilotEnabled: false }));
+  });
 
   // Phase 2 Voice Layer Rework — trade narrations queued during this tick.
   // Declared outside the try so the finally block can dispatch them
@@ -4374,7 +4384,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // flip rows (budget-skipped, transport-failed-after-prompt) run their flips
     // under the non-model rule; the excluded rows do nothing. Inert at off;
     // isolated at shadow/on; never the trade's concern.
-    await callsStepAsync(callsCtx, () => (callsCtx.exit === 'model_result'
+    const callsPhase = await callsStepAsync(callsCtx, () => (callsCtx.exit === 'model_result'
       ? runModelCallsPhase(callsCtx, {
         db,
         battle,
@@ -4384,6 +4394,11 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         flips: runCallFlips,
       })
       : runExitCallsHook(callsCtx, { db, battle, timeBudgetMs: TIME_BUDGET_MS })));
+    // Capture references (§3.7/§3.9): CONFIRMED publication results only,
+    // recorded before capture finalizes in the `finally`.
+    captureStep(tickCapture, () => {
+      for (const ref of callsPhase?.captureRefs || []) tickCapture.call(ref);
+    });
   } catch (err) {
     // Tick capture (C-9): THE ERROR EXIT. Marked here so the `finally` below
     // SKIPS capture on this path — the outer handler finalizes the registered
