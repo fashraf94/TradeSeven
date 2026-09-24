@@ -185,11 +185,17 @@ async function refreshStakes(db, myStakes) {
  *   · the pass FAILED after moving the pool — the lazy close committed, then
  *     the settlement threw — so the pool is RE-READ as it now stands, never
  *     answered from the copy read before the pass, and the same rule runs on
- *     it (WIRING-15). A pool that cannot be re-read then is not answered at
- *     all: its only copy predates a move this request may have made.
+ *     it (WIRING-15).
  * Zero reads in the steady state: a decided pool's decided stakes and a closed
- * pool's live stakes on its frozen teams contradict nothing. A failed re-read
- * of the stakes keeps the copies (logged), as the pod list does.
+ * pool's live stakes on its frozen teams contradict nothing. BOTH RE-READS ARE
+ * PLAIN READS, and a failed one is the request's 500 like any other (the
+ * pre-flip fixes 2 review record): a pool that cannot be re-read is never
+ * dropped from its week — a page would step past it and never come back
+ * (WIRE-E1) — and stakes that cannot be re-read are never answered from copies
+ * this request knows may be stale, beside a pool that contradicts them
+ * (WIRE-E3). The reader's pages keep their cursor on an error, so the read is
+ * retried, not lost. (The pod list keeps its own rule — one pod never takes
+ * down the list — for a list of pods still to be backed.)
  */
 async function loadPod(db, { groupId, myStakes, now }) {
   const group = await readGroup(db, groupId);
@@ -204,28 +210,19 @@ async function loadPod(db, { groupId, myStakes, now }) {
     if (passed.pool) located = { ...located, pool: passed.pool };
   } catch (err) {
     // ONE pod's settlement must never take down the reader: the failure is
-    // logged for the operator, and the pod projects as it NOW stands.
+    // logged for the operator, and the pod projects as it NOW stands — the
+    // pool RE-READ (a plain read: its own failure is the request's 500).
     console.warn(`[backing-results] settle-on-read failed for ${groupId}:`, err?.message);
-    try {
-      const snap = await db.collection(BACKING_POOLS_COLLECTION).doc(located.poolId).get();
-      located = { ...located, pool: snap.exists ? snap.data() : null };
-    } catch (readErr) {
-      console.warn(`[backing-results] pool not re-read for ${groupId}:`, readErr?.message);
-      located = { ...located, pool: null };
-    }
+    const snap = await db.collection(BACKING_POOLS_COLLECTION).doc(located.poolId).get();
+    located = { ...located, pool: snap.exists ? snap.data() : null };
     if (located.pool == null) return null;
   }
   let stakes = myStakes;
   const stale = called
     || located.pool.status !== before
     || myStakes.some((s) => liveStakeContradicts(located.pool, s));
-  if (myStakes.length > 0 && stale) {
-    try {
-      stakes = await refreshStakes(db, myStakes);
-    } catch (err) {
-      console.warn(`[backing-results] stakes not re-read for ${groupId}:`, err?.message);
-    }
-  }
+  // A plain read, too: never the stale copies instead (WIRE-E3).
+  if (myStakes.length > 0 && stale) stakes = await refreshStakes(db, myStakes);
   return { groupId, poolId: located.poolId, pool: located.pool, group, myStakes: stakes };
 }
 

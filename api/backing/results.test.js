@@ -545,15 +545,52 @@ describe('WIRING-15 and WIRING-1\'s twin — the viewer\'s stakes are answered a
     expect(late.myStakes[0]).toMatchObject({ status: STAKE_STATUS.VOIDED, voidReason: 'seat_left' });
   });
 
-  it('WIRING-15 — a pool that cannot be re-read after the failed pass is not answered at all (its one copy predates the close this request made)', async () => {
-    DB = closeThenFail();
-    spy.settlePool.mockImplementationOnce(async () => { throw new Error('settlement failed'); });
-    // Read 1: the reader's own; read 2: ensureClosed's; read 3: the re-read after the failure — it fails too.
-    onPoolRead('g-late', 3, async () => { throw new Error('read failed'); });
+  it('WIRE-E1 — a pool that cannot be RE-READ after the failed pass is the request\'s 500 (a plain read), never a pod dropped from its week — a page would step past it for good; the one-pod read and the weeks path alike, and the retry answers it as the close left it', async () => {
+    const failedReRead = () => {
+      DB = closeThenFail();
+      spy.settlePool.mockImplementationOnce(async () => { throw new Error('settlement failed'); });
+      // Read 1: the reader's own; read 2: ensureClosed's; read 3: the re-read after the failure — it fails too.
+      onPoolRead('g-late', 3, async () => { throw new Error('read failed'); });
+    };
+    failedReRead();
     const res = await get({ groupId: 'g-late' });
+    expect(res.statusCode).toBe(500);
+    expect(poolOf('g-late').status).toBe(POOL_STATUS.CLOSED); // the close this request made stands
+    // The retry: the pod as the close left it — closed, the viewer's stake voided `seat_left`.
+    const retry = await get({ groupId: 'g-late' });
+    expect(retry.statusCode).toBe(200);
+    expect(retry.body.pod.myStakes[0]).toMatchObject({ stakeId: 'v1', status: STAKE_STATUS.VOIDED, voidReason: 'seat_left' });
+    // The weeks path: no page that skips the week and no cursor past it — the request fails and is retried.
+    failedReRead();
+    const weeks = await get();
+    expect(weeks.statusCode).toBe(500);
+    expect(weeks.body).not.toHaveProperty('weeks');
+    expect(weeks.body).not.toHaveProperty('nextBefore');
+    const again = await get();
+    expect(again.body.weeks.flatMap((w) => w.pools).map((p) => p.groupId)).toContain('g-late');
+  });
+
+  it('WIRE-E4 — a DEV pod\'s failed pass re-reads its pool at its OWN id (`dev-…`): the close committed, the settlement threw, and the answer is the dev pool as it now stands, the stake voided', async () => {
+    DB = makeInMemoryDb(pod('g-dlate', {
+      status: POOL_STATUS.OPEN,
+      g: group({ isDev: true }),
+      stakes: [
+        { id: 'v1', userId: UID, teamOdUserId: 'od-gone', amount: 500 },
+        { id: 'o1', userId: 'u2', teamOdUserId: 'od-a', amount: 200 },
+        { id: 'o2', userId: 'u3', teamOdUserId: 'od-b', amount: 300 },
+        { id: 'o3', userId: 'u4', teamOdUserId: 'od-a', amount: 100 },
+      ],
+      poolOver: OPEN_PAST_CLOSE,
+    }));
+    spy.settlePool.mockImplementationOnce(async () => { throw new Error('settlement failed'); });
+    const res = await get({ groupId: 'g-dlate' });
     expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual({ viewerUid: UID, pod: null });
-    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('pool not re-read for g-late'), 'read failed');
+    expect(poolOf('dev-g-dlate').status).toBe(POOL_STATUS.CLOSED);
+    expect(res.body.pod).toMatchObject({ poolId: 'dev-g-dlate', status: POOL_STATUS.CLOSED, outcome: 'settling' });
+    expect(res.body.pod.myStakes[0]).toMatchObject({ stakeId: 'v1', status: STAKE_STATUS.VOIDED, voidReason: 'seat_left' });
+    // The re-read went to the dev id — never the production id, where no pool lives.
+    const reReads = DB.readLog.filter(([ch, p]) => ch === 'get' && p.startsWith(`${BACKING_POOLS_COLLECTION}/`) && !p.includes('/private/'));
+    expect(reReads.filter(([, p]) => p === `${BACKING_POOLS_COLLECTION}/dev-g-dlate`).length).toBeGreaterThanOrEqual(3);
   });
 
   it('the steady state costs NO stake read: a decided pool\'s decided stakes, and a closed pool\'s live stakes on its frozen teams (a pod in play), contradict nothing', async () => {
@@ -569,17 +606,22 @@ describe('WIRING-15 and WIRING-1\'s twin — the viewer\'s stakes are answered a
     expect(stakeReads()).toEqual([]);
   });
 
-  it('a failed stake re-read keeps the copies read before (logged) and never takes down the reader — the pod list\'s posture', async () => {
+  it('WIRE-E3 — a failed stake RE-READ is the request\'s 500 (a plain read): never the copies read before, beside a pool that contradicts them (`insufficient` beside a `live` stake); the retry answers the stake as the close left it', async () => {
     DB = makeInMemoryDb(pod('g-thin', { status: POOL_STATUS.OPEN, stakes: BOOK().slice(0, 2), poolOver: OPEN_PAST_CLOSE }));
     const realCollection = DB.db.collection;
+    let failing = true;
     DB.db.collection = (name) => {
       const col = realCollection(name);
       if (name !== BACKING_STAKES_COLLECTION) return col;
-      return { ...col, doc: (id) => ({ ...col.doc(id), get: async () => { throw new Error('stake read failed'); } }) };
+      return { ...col, doc: (id) => { const ref = col.doc(id); return { ...ref, get: async () => { if (failing) throw new Error('stake read failed'); return ref.get(); } }; } };
     };
     const res = await get({ groupId: 'g-thin' });
-    expect(res.statusCode).toBe(200);
-    expect(res.body.pod.outcome).toBe('insufficient');
-    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('stakes not re-read for g-thin'), 'stake read failed');
+    expect(res.statusCode).toBe(500);
+    expect(poolOf('g-thin').status).toBe(POOL_STATUS.INSUFFICIENT); // the close committed; its voids stand
+    failing = false;
+    const retry = await get({ groupId: 'g-thin' });
+    expect(retry.statusCode).toBe(200);
+    expect(retry.body.pod).toMatchObject({ outcome: 'insufficient' });
+    expect(retry.body.pod.myStakes[0]).toMatchObject({ stakeId: 'v1', status: STAKE_STATUS.VOIDED, voidReason: 'insufficient' });
   });
 });
