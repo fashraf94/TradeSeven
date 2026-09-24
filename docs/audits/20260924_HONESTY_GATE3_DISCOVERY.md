@@ -107,7 +107,7 @@ Traces it added beyond §2 (VERIFIED by it): the deploy target on the clone path
 | Check | Result |
 | --- | --- |
 | `npm run test:run` (tree at `567568cb`, before the literal-sweep row) | `Test Files  794 passed | 3 skipped (797)` · `Tests  15781 passed | 64 skipped (15845)` |
-| `npm run test:run` (final tree, re-run after the sweep row) | FINAL_RUN_PENDING |
+| `npm run test:run` (final tree, re-run after the sweep row) | `Test Files  794 passed | 3 skipped (797)` · `Tests  15782 passed | 64 skipped (15846)` |
 | `npm run test:rules` (emulator, `cloud-firestore-emulator-v1.21.0.jar`) | `Test Files  17 passed (17)` · `Tests  311 passed (311)` — the new file included (`[agentsOwnerRead] rules text: firestore.rules sha256=d6ecb108aa10764f46eb1512f6036623f2d5c298c701795c28e5560b0f08defa`) |
 | `vite build` | `✓ built in 33.23s` (the pre-existing chunk-size warnings only) |
 | `npm run lint:gate` | exit 0, zero warnings |
