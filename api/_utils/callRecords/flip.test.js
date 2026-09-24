@@ -85,12 +85,49 @@ describe('the transition rule (contract §6)', () => {
     expect(decideFlip(call(), makeObservation({ omit: ['AMD'] }))).toBeNull();
     expect(decideFlip(call(), obsWith({ AMD: { px: 0, fetchedAtMs: NOW - 1 } }))).toBeNull();
   });
-  it('a pick never hits — only expiry resolves it', () => {
+  it('a pick never hits — only expiry resolves it (its next_check slot included: the first check there expires it)', () => {
     const [pick] = earlierCalls({ fork: { slot: 'support', swapOut: 'KO', options: [{ symbol: 'AMD', why: 'a' }, { symbol: 'JPM', why: 'b' }], said: 'AMD or JPM?' } });
     expect(pick.kind).toBe('pick');
-    expect(pick.horizon.expiresAt).toBe(EARLIER_MINT + 5 * 60_000); // next_check: the 14:15 slot
+    expect(pick.horizon).toMatchObject({ basis: 'next_check', expiresAt: EARLIER_MINT + 5 * 60_000 }); // the 14:15 slot
     expect(decideFlip(pick, obsWith({ AMD: { px: 999, fetchedAtMs: 0 } }, pick.horizon.expiresAt - 1))).toBeNull();
+    expect(decideFlip(pick, obsWith({ AMD: { px: 999, fetchedAtMs: 0 } }, pick.horizon.expiresAt))).toBe('expired_unresolved');
     expect(decideFlip(pick, obsWith({}, pick.horizon.expiresAt + 1))).toBe('expired_unresolved');
+  });
+
+  // FOUNDER RULING E-3 (2026-09-24; review E-3): a next_check call is
+  // evaluated ONCE, by the first check at or after its slot — hit if met,
+  // else expired_unresolved; a later check (a previous scan already ran at or
+  // after the slot) only expires it. Other bases are unchanged.
+  it('next_check (ruling E-3): the first check at or after the slot evaluates the condition once; a later check only expires it', () => {
+    const [nc] = earlierCalls(makeDeclarations({ calledShots: [{ ...makeDeclarations().calledShots[0], horizonPhrase: 'next_check' }], watching: [] }));
+    expect(nc.horizon).toMatchObject({ basis: 'next_check', expiresAt: EARLIER_MINT + 5 * 60_000 });
+    const slot = nc.horizon.expiresAt;
+    const hot = { AMD: { px: 170, fetchedAtMs: 0 } };   // above 163.5: met
+    const cold = { AMD: { px: 160, fetchedAtMs: 0 } };  // not met
+    // The first check — exactly at the slot or after it: hit if met, else expired.
+    expect(decideFlip(nc, obsWith(hot, slot))).toBe('hit');
+    expect(decideFlip(nc, obsWith(hot, slot + 20_000))).toBe('hit');
+    expect(decideFlip(nc, obsWith(cold, slot))).toBe('expired_unresolved');
+    expect(decideFlip(nc, obsWith(cold, slot + 20_000))).toBe('expired_unresolved');
+    expect(decideFlip(nc, obsWith({}, slot + 20_000))).toBe('expired_unresolved'); // unobserved: not met
+    // A previous scan BEFORE the slot keeps this the first check.
+    expect(decideFlip(nc, obsWith(hot, slot + 20_000), { priorScanAtMs: slot - 1 })).toBe('hit');
+    // A previous scan AT or after the slot makes this a later check: expiry only, even when met.
+    expect(decideFlip(nc, obsWith(hot, slot + 15 * 60_000), { priorScanAtMs: slot })).toBe('expired_unresolved');
+    expect(decideFlip(nc, obsWith(hot, slot + 15 * 60_000), { priorScanAtMs: slot + 20_000 })).toBe('expired_unresolved');
+    // Before the slot, the ordinary rule.
+    expect(decideFlip(nc, obsWith(hot, slot - 1))).toBe('hit');
+    expect(decideFlip(nc, obsWith(cold, slot - 1))).toBeNull();
+  });
+
+  it('other bases are unchanged (ruling E-3 is next_check only): past the expiry → expired even when met; the exact instant is inside; a prior scan changes nothing', () => {
+    const c = amdShot();
+    expect(c.horizon.basis).toBe('this_session');
+    const hot = { AMD: { px: 170, fetchedAtMs: 0 } };
+    const cold = { AMD: { px: 160, fetchedAtMs: 0 } };
+    expect(decideFlip(c, obsWith(hot, c.horizon.expiresAt + 1))).toBe('expired_unresolved');
+    expect(decideFlip(c, obsWith(cold, c.horizon.expiresAt))).toBeNull(); // not met at the exact instant: still open
+    expect(decideFlip(c, obsWith(hot, c.horizon.expiresAt), { priorScanAtMs: c.horizon.expiresAt + 5 })).toBe('hit');
   });
 });
 
@@ -159,7 +196,7 @@ describe('runCallFlips — one transaction per call, the receipt with the first 
     expect(storedDoc(db, 'calls', tsla.callId)).toEqual(tsla);
     // Never merge on a call; the call write is an update.
     expect(callWrites(db).map((w) => [w.op, w.merge])).toEqual([['update', false]]);
-    expect(res.status).toEqual({ evalId: 'eval_001', cursor: null, scanned: 2, total: 2, complete: true });
+    expect(res.status).toEqual({ evalId: 'eval_001', cursor: null, scanned: 2, total: 2, complete: true, observedAtMs: NOW });
   });
 
   it('expired_unresolved: the receipt says what was (not) observed — px null for an unobserved symbol', async () => {
@@ -174,21 +211,62 @@ describe('runCallFlips — one transaction per call, the receipt with the first 
     });
   });
 
-  // PENDING A FOUNDER RULING (review E-3): a next_check horizon expires AT the
-  // next slot, and the next check can observe only after its cron fires — so a
-  // next_check call is never hit, whatever the price did. The code follows
-  // contract §5/§6 and spec §3.8 as written; this row pins that until the ruling.
-  it('a next_check call observed by the next check (slot + 20 s) with its condition MET → expired_unresolved, never hit [pending ruling E-3]', async () => {
-    const nextCheck = { ...makeDeclarations().calledShots[0], horizonPhrase: 'next_check' };
-    const [amd] = earlierCalls(makeDeclarations({ calledShots: [nextCheck], watching: [] }));
+  // FOUNDER RULING E-3 (2026-09-24; review E-3): a next_check horizon ends AT
+  // the next slot and the next check observes only after its cron fires, so
+  // the FIRST check at or after the slot evaluates the condition once — hit if
+  // met, else expired_unresolved; a later check only expires it.
+  const nextCheckCall = () => earlierCalls(makeDeclarations({ calledShots: [{ ...makeDeclarations().calledShots[0], horizonPhrase: 'next_check' }], watching: [] }))[0];
+  const hotAt = (at) => obsWith({ AMD: { px: 170, fetchedAtMs: at - 1 } }, at);
+
+  it('next_check, HIT at the next check: the first check after the slot (slot + 20 s) finds the condition met → hit, with its receipt (ruling E-3)', async () => {
+    const amd = nextCheckCall();
     const slot = amd.horizon.expiresAt;
     expect(slot).toBe(EARLIER_MINT + 5 * 60_000); // 14:10 → the 14:15 slot
     const at = slot + 20_000;
     vi.setSystemTime(at + 1_000);
     const db = makeCallsDb({ battle: makeTickBattle(), seed: seedOf([amd]) });
-    await flipsOf(db, ctxFor({ observation: obsWith({ AMD: { px: 170, fetchedAtMs: at - 1 } }, at) }));
-    expect(storedDoc(db, 'calls', amd.callId)).toMatchObject({ state: 'expired_unresolved', stateChangedAt: at });
+    // The minting check's own scan ran before the slot: this is the first check at or after it.
+    db.__store.battle.cronState.callFlips = { evalId: 'eval_000', cursor: null, scanned: 0, total: 0, complete: true, observedAtMs: EARLIER_MINT - 5_000 };
+    const res = await flipsOf(db, ctxFor({ observation: hotAt(at) }));
+    expect(res.diag).toMatchObject({ hit: 1, expired: 0, receipts: 1 });
+    expect(storedDoc(db, 'calls', amd.callId)).toMatchObject({ state: 'hit', stateChangedAt: at, stateSource: 'check' });
     expect(storedDoc(db, 'callObservations', amd.callId)).toMatchObject({ px: 170, observedAtMs: at });
+    expect(res.status.observedAtMs).toBe(at);
+  });
+
+  it('next_check, MISS at the next check: the condition not met at the first check after the slot → expired_unresolved, with the observed px (ruling E-3)', async () => {
+    const amd = nextCheckCall();
+    const at = amd.horizon.expiresAt + 20_000;
+    vi.setSystemTime(at + 1_000);
+    const db = makeCallsDb({ battle: makeTickBattle(), seed: seedOf([amd]) });
+    const res = await flipsOf(db, ctxFor({ observation: obsWith({ AMD: { px: 160, fetchedAtMs: at - 1 } }, at) }));
+    expect(res.diag).toMatchObject({ hit: 0, expired: 1, receipts: 1 });
+    expect(storedDoc(db, 'calls', amd.callId)).toMatchObject({ state: 'expired_unresolved', stateChangedAt: at, stateSource: 'check' });
+    expect(storedDoc(db, 'callObservations', amd.callId)).toMatchObject({ px: 160, observedAtMs: at });
+  });
+
+  it('next_check, a LATER check: the first check after the slot scanned but never reached the call; the next one finds it met and still only expires it (ruling E-3)', async () => {
+    const amd = nextCheckCall();
+    // An older open this_session call sorts first and takes the first scan's whole deadline.
+    const [older] = earlierCalls(makeDeclarations({ calledShots: [makeDeclarations().calledShots[0]], watching: [] }), { evalId: 'eval_00a', mintedAtMs: EARLIER_MINT - 60_000 });
+    const first = amd.horizon.expiresAt + 20_000;
+    vi.setSystemTime(first);
+    const db = makeCallsDb({ battle: makeTickBattle(), seed: seedOf([older, amd]) });
+    db.__hooks.afterTxBody = async () => { vi.setSystemTime(Date.now() + 400); };
+    const firstRes = await flipsOf(db, ctxFor({ observation: hotAt(first) }), { deadlineMs: Date.now() + 300 });
+    expect(firstRes.diag).toMatchObject({ hit: 1, stopped: 'deadline' });
+    expect(storedDoc(db, 'calls', older.callId).state).toBe('hit');
+    expect(storedDoc(db, 'calls', amd.callId).state).toBe('open'); // never reached
+    expect(firstRes.status).toMatchObject({ complete: false, observedAtMs: first });
+    // Persist the status the way the phase does; the next check runs a slot later.
+    db.__store.battle.cronState.callFlips = firstRes.status;
+    db.__hooks.afterTxBody = null;
+    const later = first + 15 * 60_000;
+    vi.setSystemTime(later + 1_000);
+    const laterRes = await flipsOf(db, ctxFor({ evalId: 'eval_002', observation: hotAt(later) }));
+    expect(laterRes.diag).toMatchObject({ hit: 0, expired: 1 });
+    expect(storedDoc(db, 'calls', amd.callId)).toMatchObject({ state: 'expired_unresolved', stateChangedAt: later });
+    expect(storedDoc(db, 'callObservations', amd.callId)).toMatchObject({ px: 170, observedAtMs: later });
   });
 
   it('never a hit on the minting check; an observation at or before the mint is skipped', async () => {
@@ -543,7 +621,7 @@ describe('runExitCallsHook — the non-model rule (row 6)', () => {
     expect(storedDoc(db, 'calls', amd.callId).state).toBe('hit');
     const statusWrites = db.__updates.filter((u) => 'cronState.callsDiag' in u);
     expect(statusWrites).toHaveLength(1);
-    expect(statusWrites[0]['cronState.callFlips']).toEqual({ evalId: null, cursor: null, scanned: 1, total: 1, complete: true });
+    expect(statusWrites[0]['cronState.callFlips']).toEqual({ evalId: null, cursor: null, scanned: 1, total: 1, complete: true, observedAtMs: NOW });
     expect(statusWrites[0]['cronState.callsDiag']).toMatchObject({ evalId: null, exit: 'no_trigger', phaseResult: 'none' });
     expect(JSON.stringify(statusWrites)).not.toMatch(/declarationsPhase/);
   });

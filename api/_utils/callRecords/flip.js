@@ -26,7 +26,12 @@
 // only a hint — the transaction re-decides everything):
 //   skip if not open, the parent is not active, the call was minted by THIS
 //   check (never a hit on the minting check), or observedAtMs ≤ mintedAt;
-//   observedAtMs > expiresAt → `expired_unresolved`;
+//   horizon.basis 'next_check' (founder ruling E-3): the FIRST check with
+//   observedAtMs ≥ expiresAt evaluates the condition once — `hit` if met, else
+//   `expired_unresolved`; any later check only expires it. "Later" is read off
+//   the battle's persisted scan status: a previous check whose scan ran at or
+//   after the expiry (`cronState.callFlips.observedAtMs ≥ expiresAt`);
+//   every other basis: observedAtMs > expiresAt → `expired_unresolved`;
 //   else the symbol in the observation and px > level (above) / px < level
 //   (below) → `hit`;
 //   the first observed transition creates the companion receipt
@@ -75,21 +80,45 @@ export function cursorOf(c) {
 }
 
 /**
- * The transition an observation proves for an OPEN call, or null.
- * Expiry wins when the observation is outside the horizon; a `hit` needs the
- * symbol in the observation with a finite positive quote.
+ * Is the call's condition met by the observation? A pick has no price
+ * condition (only expiry resolves it); a price needs the symbol in the
+ * observation with a finite positive quote.
  */
-export function decideFlip(call, observation) {
-  const at = observation.observedAtMs;
-  const expiresAt = call?.horizon?.expiresAt;
-  if (finite(expiresAt) && at > expiresAt) return 'expired_unresolved';
-  if (call?.kind === 'pick') return null;
+function conditionMet(call, observation) {
+  if (call?.kind === 'pick') return false;
   const px = observation.symbols?.[call?.symbol]?.px;
   const level = call?.condition?.level;
-  if (!(finite(px) && px > 0) || !finite(level)) return null;
+  if (!(finite(px) && px > 0) || !finite(level)) return false;
   const side = call.condition.side;
-  if ((side === 'above' && px > level) || (side === 'below' && px < level)) return 'hit';
-  return null;
+  return (side === 'above' && px > level) || (side === 'below' && px < level);
+}
+
+/**
+ * The transition an observation proves for an OPEN call, or null.
+ *
+ * `next_check` (founder ruling E-3, 2026-09-24; review E-3): the horizon ends
+ * AT the next check's slot, and that check can only observe after its cron
+ * fires — so the FIRST check with observedAtMs ≥ expiresAt evaluates the
+ * condition once: `hit` if met, else `expired_unresolved`. A LATER check
+ * (`priorScanAtMs` — the observation instant of the previous check whose scan
+ * ran — already at or after the expiry) only expires it.
+ *
+ * Every other basis (unchanged): expiry wins when the observation is outside
+ * the horizon (observedAtMs > expiresAt); the exact expiry instant is inside it.
+ *
+ * @param {object} call
+ * @param {object} observation
+ * @param {{ priorScanAtMs?: number|null }} [opts]
+ */
+export function decideFlip(call, observation, { priorScanAtMs = null } = {}) {
+  const at = observation.observedAtMs;
+  const expiresAt = call?.horizon?.expiresAt;
+  if (call?.horizon?.basis === 'next_check' && finite(expiresAt) && at >= expiresAt) {
+    if (finite(priorScanAtMs) && priorScanAtMs >= expiresAt) return 'expired_unresolved';
+    return conditionMet(call, observation) ? 'hit' : 'expired_unresolved';
+  }
+  if (finite(expiresAt) && at > expiresAt) return 'expired_unresolved';
+  return conditionMet(call, observation) ? 'hit' : null;
 }
 
 /**
@@ -126,11 +155,11 @@ export function matchesWholeTrade(call, executorResult, { selectedSymbol = null 
  * why nothing happens; otherwise `next` (a transition or null) and `acted`.
  * Pure — the page read uses it as a hint and the transaction as the authority.
  */
-export function planFlip(call, { observation, evalId, executorResult }) {
+export function planFlip(call, { observation, evalId, executorResult, priorScanAtMs = null }) {
   if (!call || call.state !== 'open') return { skip: 'not_open' };
   if (evalId !== null && call.evalId === evalId) return { skip: 'minting_check' };
   if (!(finite(call.mintedAt) && observation.observedAtMs > call.mintedAt)) return { skip: 'before_mint' };
-  const next = decideFlip(call, observation);
+  const next = decideFlip(call, observation, { priorScanAtMs });
   const acted = evalId !== null && executorResult != null
     && !(isPlainObject(call.outcome) && call.outcome.actedEvalId)
     && matchesWholeTrade(call, executorResult);
@@ -162,7 +191,7 @@ function isIndexMissing(err) {
 // ---------------------------------------------------------------------------
 
 /** One call's transaction. Never throws. */
-async function flipOne({ db, battleId, callId, observation, evalId, executorResult, deadlineMs }) {
+async function flipOne({ db, battleId, callId, observation, evalId, executorResult, priorScanAtMs, deadlineMs }) {
   const budgetMs = Math.min(FLIP_TX_MS, deadlineMs - Date.now());
   if (budgetMs <= 0) return { result: 'not_started' };
   const attemptDeadlineMs = Date.now() + budgetMs;
@@ -177,7 +206,7 @@ async function flipOne({ db, battleId, callId, observation, evalId, executorResu
       if (!parent || parent.status !== 'active') return { result: 'skipped', reason: 'parent_terminal' };
       if (!callSnap?.exists) return { result: 'skipped', reason: 'missing' };
       const call = callSnap.data();
-      const plan = planFlip(call, { observation, evalId, executorResult });
+      const plan = planFlip(call, { observation, evalId, executorResult, priorScanAtMs });
       if (plan.skip) return { result: 'skipped', reason: plan.skip };
       // The reads can outlast the ceiling: nothing is written — so no commit is
       // issued — once it has passed (review E-1).
@@ -224,6 +253,9 @@ export async function runCallFlips(callsCtx, { db, battle, deadlineMs }) {
   // actedEvalId: the model-result row only, with a committed identity.
   const executorResult = callsCtx.exit === 'model_result' && evalId !== null ? (callsCtx.executorResult ?? null) : null;
   const startCursor = cursorOf(battle?.cronState?.callFlips?.cursor);
+  // Ruling E-3: the previous scan's observation instant decides whether THIS
+  // check is the first at or after a next_check call's expiry.
+  const priorScanAtMs = finite(battle?.cronState?.callFlips?.observedAtMs) ? battle.cronState.callFlips.observedAtMs : null;
   const diag = {
     scanned: 0, hit: 0, expired: 0, acted: 0, receipts: 0, skipped: {}, unconfirmed: 0, failed: 0,
     pages: 0, wrapped: false, complete: false, index: flipIndex.state, stopped: null, ms: 0,
@@ -233,7 +265,9 @@ export async function runCallFlips(callsCtx, { db, battle, deadlineMs }) {
     diag.index = flipIndex.state;
     diag.ms = Date.now() - startedMs;
     return {
-      status: { evalId, cursor: complete ? null : cursor, scanned: diag.scanned, total: complete ? diag.scanned : null, complete },
+      // observedAtMs: this scan's observation instant — the next check's
+      // priorScanAtMs (ruling E-3; §3.8's status plus this one field).
+      status: { evalId, cursor: complete ? null : cursor, scanned: diag.scanned, total: complete ? diag.scanned : null, complete, observedAtMs: observation.observedAtMs },
       diag,
     };
   };
@@ -279,11 +313,11 @@ export async function runCallFlips(callsCtx, { db, battle, deadlineMs }) {
       const call = doc.data();
       const position = { mintedAt: call?.mintedAt, callId: doc.id };
       diag.scanned += 1;
-      const plan = planFlip(call, { observation, evalId, executorResult });
+      const plan = planFlip(call, { observation, evalId, executorResult, priorScanAtMs });
       if (plan.skip) {
         diag.skipped[plan.skip] = (diag.skipped[plan.skip] || 0) + 1;
       } else {
-        const res = await flipOne({ db, battleId, callId: doc.id, observation, evalId, executorResult, deadlineMs });
+        const res = await flipOne({ db, battleId, callId: doc.id, observation, evalId, executorResult, priorScanAtMs, deadlineMs });
         if (res.result === 'not_started') { diag.scanned -= 1; diag.stopped = 'deadline'; return finish(cursor, false); }
         if (res.result === 'flipped') {
           if (res.next === 'hit') diag.hit += 1;
