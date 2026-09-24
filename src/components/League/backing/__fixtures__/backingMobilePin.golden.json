@@ -1,0 +1,378 @@
+{
+  "attestation-step": {
+    "sha256": "d8ae13b9fd4b9a6f121835567322efacf51ff49f46007b43ee9dff1011dc6063",
+    "length": 2526
+  },
+  "card/closed": {
+    "sha256": "6c89fcdf5848128eff46c62b3530cf583c590d66ee17ccf2da09b8058ff4ca87",
+    "length": 20544
+  },
+  "card/cpu": {
+    "sha256": "6fbd969a6ea567cb45ce6e94f87a56ef3d190d98d78b539b6e1433f1667728e2",
+    "length": 9248
+  },
+  "card/first-week": {
+    "sha256": "dc439c712074ff66f0f62fe6dc6894cf1669359bb187c8a5d12b12f6be02e53f",
+    "length": 9097
+  },
+  "card/own": {
+    "sha256": "5b7857dbeefe92378a70417d9eb07b72eedfc894bcef2bcbfdf61e305339c8d1",
+    "length": 21347
+  },
+  "card/top-up-cta": {
+    "sha256": "30d9de809bcf5646c19019ea5f01eb87555747d2e6736500f97b82250765b525",
+    "length": 20764
+  },
+  "card/veteran": {
+    "sha256": "69edb8b939d2ecf5d2fb43d6fe08fb7cd406547bbe3ce119bd035eb96f179cc8",
+    "length": 20761
+  },
+  "equip-station/off": {
+    "sha256": "0f99b0eb9706e1032e3b41fa12e001d951a263bc6c9c5a8a28af21ed593903d9",
+    "length": 7819
+  },
+  "equip-station/on": {
+    "sha256": "52cd163b360fac00bec64a6f1d771c91f3943919ebb98729e9a6b1d544b307b1",
+    "length": 19302
+  },
+  "landing-strip/between": {
+    "sha256": "290757f5d28d051b277b7c64cb2c9ad9b2b01c5f3098443dc5f16539a8cb65c8",
+    "length": 2481
+  },
+  "landing-strip/open": {
+    "sha256": "a09ec6722f2f639e853d391eac620fd825f6fc03c7d3a5022458a75732719a13",
+    "length": 2793
+  },
+  "landing-strip/quiet": {
+    "sha256": "0ade97958c5acb21641712a39e87b1141d4ba51c89ce98b970fd89864aeb8c2a",
+    "length": 2741
+  },
+  "landing-strip/staked": {
+    "sha256": "01a5ba458c9e6eac12c7dcdbd835c1931a3ba115d4ffd202a5bf32078b9d874c",
+    "length": 4140
+  },
+  "landing-strip/week": {
+    "sha256": "8860f937656638f8096c735d88b82c15370bca7133908814f0a3b6ad517b3433",
+    "length": 4411
+  },
+  "landing/bracket/off/seated-mounted": {
+    "sha256": "aa52d1a846e21bcf59cc3e6bffa6ee1f7f5419fed5ccb68bbaedb66e233454ca",
+    "length": 63481
+  },
+  "landing/bracket/off/unseated-mounted": {
+    "sha256": "26e1a220ba61604ee2e698060eddf0d87cd8b021bf803363815a85d22b39571f",
+    "length": 60828
+  },
+  "landing/bracket/off/unseated-ssr": {
+    "sha256": "1179d017c8eba4b5ad880bc6da8216341c68f402813561f618cf079bed70d9bf",
+    "length": 59653
+  },
+  "landing/bracket/on/seated-mounted": {
+    "sha256": "fc3656f348cca2413dcfbdd68e49cedf127e92f2a357c2e27bb7a530ffa677bc",
+    "length": 66554
+  },
+  "landing/bracket/on/unseated-mounted": {
+    "sha256": "a4c979a2aae5293c430f41d5c2e1f5ba10642d11779e7a420841f3d6134c25d3",
+    "length": 63901
+  },
+  "landing/bracket/on/unseated-ssr": {
+    "sha256": "e5636220ca27cffbfc6e3c4ff9162125a209e5d7c9af9fbff8e7715b3a4d21b9",
+    "length": 62452
+  },
+  "landing/no-bracket/off/seated-mounted": {
+    "sha256": "1869ce3cb0346ec315123d012cf45e0057f49b815ff74041774c2cc5b59b8ffd",
+    "length": 27578
+  },
+  "landing/no-bracket/off/unseated-mounted": {
+    "sha256": "b811df3e76482f4f717a0474878667da10db91447d48315e6913ccf8228c5b89",
+    "length": 24925
+  },
+  "landing/no-bracket/off/unseated-ssr": {
+    "sha256": "53916e42816dc5345eef14e59c70a94d78970b61768059192f6c28f25e09a3d7",
+    "length": 23472
+  },
+  "landing/no-bracket/on/seated-mounted": {
+    "sha256": "f277688edad0917bdefad2db3822f322714bd24c431de77ebade17aaccc17345",
+    "length": 30647
+  },
+  "landing/no-bracket/on/unseated-mounted": {
+    "sha256": "ea31b9bc3d9d8d3c1aa1a497ef7034601c6f7cb91137c7fc5625033099d22c23",
+    "length": 27994
+  },
+  "landing/no-bracket/on/unseated-ssr": {
+    "sha256": "57e62b16a04016c971bc103babd64f00bf3e20f07e9b18596c2870a7bb5e0595",
+    "length": 26267
+  },
+  "lobby-tabbed/bracket/seated/between": {
+    "sha256": "74c467e21bdd20373f58c91067905d544e02d05d5630c6c669c9e23cb793bf55",
+    "length": 65514
+  },
+  "lobby-tabbed/bracket/seated/open": {
+    "sha256": "d33ea498094f8e6a66da7394d47e32f97814c396ec027b5a97f6a7a66a1e8fde",
+    "length": 65826
+  },
+  "lobby-tabbed/bracket/seated/staked": {
+    "sha256": "582344fbe1beae9a405ac7b8eb7c1cf2ed7d6fd60b21bbd8452db8a29ec3b97a",
+    "length": 67173
+  },
+  "lobby-tabbed/bracket/seated/week": {
+    "sha256": "b0c30e478b4bf3735e4f49c07bf0c41dc8eb839d3dfe3d7d14621756c940655b",
+    "length": 67444
+  },
+  "lobby-tabbed/no-bracket/seated/between": {
+    "sha256": "4ff5763980a44f3c35fc951fc3088f6c0c1067323bf5593527c193dfd11bc282",
+    "length": 29329
+  },
+  "lobby-tabbed/no-bracket/seated/open": {
+    "sha256": "decf079ee5998e309c319f6ae8bd066ec7215e793c7c001c9153853728abdc28",
+    "length": 29641
+  },
+  "lobby-tabbed/no-bracket/seated/staked": {
+    "sha256": "8ff436b1928492d33815d9e3329fada60738b4664f4ab6f0f683c29a295fdbb6",
+    "length": 30988
+  },
+  "lobby-tabbed/no-bracket/seated/week": {
+    "sha256": "287016a3cb290074ddf3be83074db95fcb626060437c8cf560a5d4bc4a8ab8f0",
+    "length": 31259
+  },
+  "lobby/bracket/seated/between": {
+    "sha256": "5274564d385a8343c5f5c5e3abeb34d940bc390baf84b0c7070156261a0db7bf",
+    "length": 75419
+  },
+  "lobby/bracket/seated/open": {
+    "sha256": "a8f40a753d35d6e4ed0ea44ce7bde487eba82c095950cb849fb5de3313612c64",
+    "length": 75731
+  },
+  "lobby/bracket/seated/staked": {
+    "sha256": "4c203dc1f16d21e7cc8f75072c4d757665fe5ede9aea59a657391ddf0bbc6edf",
+    "length": 77078
+  },
+  "lobby/bracket/seated/week": {
+    "sha256": "b470f1f54624b0613c1a17fcb72e504ce9701540e18bb21687197919f3af9084",
+    "length": 77349
+  },
+  "lobby/no-bracket/seated/between": {
+    "sha256": "ec3c03bd439340c42618e5eb78c93f7b134b62c446ac1fd21ef3bbe81866fc27",
+    "length": 26840
+  },
+  "lobby/no-bracket/seated/open": {
+    "sha256": "bd8aff8800c7311e7de1455fbccfafcf20a06bec9a210d2283453f37be1a512c",
+    "length": 27152
+  },
+  "lobby/no-bracket/seated/staked": {
+    "sha256": "57cd459dfdd019cbde8f94772111eb10d86812a89396494915da252e777b8e81",
+    "length": 28499
+  },
+  "lobby/no-bracket/seated/week": {
+    "sha256": "d549f3bf30cad8d3edf70e51778e05e6febf91df242eccbbc8362650f135cdb9",
+    "length": 28770
+  },
+  "pod-card/off": {
+    "sha256": "6136bbecff4afe9a7eca4876129575d7d1db2ab3676cfb0905d3af42f1976614",
+    "length": 16368
+  },
+  "pod-card/on": {
+    "sha256": "e232248ca5dd031079e846aff956980a3d03416551e5ad5e2eaed0577a5fc737",
+    "length": 16370
+  },
+  "pod-sheet/on": {
+    "sha256": "0a943dcdd59e067fe812b392344dc64c63a3848bdd82f2fe0c6f00a34cbbb8bd",
+    "length": 18197
+  },
+  "pods/below-floor": {
+    "sha256": "9305b8fbef2b20fd612790aebcf61eded8b9fdb4f8657e46db755ac462997ddf",
+    "length": 18937
+  },
+  "pods/empty": {
+    "sha256": "818c055b4a9c53382c60160efe37f54a2cf3326161b41dc632797c4ad2cf326c",
+    "length": 347
+  },
+  "pods/mixed-with-my-stake": {
+    "sha256": "99b7abf43579876ded06899a27823614550ba4d08f38d65e6ed23250eef5e32e",
+    "length": 37782
+  },
+  "pods/qualified": {
+    "sha256": "888f011a6f6494f395d2c30a5208f7039e3b9672b0c76cd1f684404caf85d348",
+    "length": 19255
+  },
+  "pods/revealed": {
+    "sha256": "84d71014fd90f72339262cb806d50873aeafeec40c859f500c697319ea15b2e3",
+    "length": 17490
+  },
+  "pods/your-pod": {
+    "sha256": "27f9f294ae84dc86abb28d4379e86bd717d0f4adfa9414e754e16d85c5f9acfb",
+    "length": 19677
+  },
+  "results-card/insufficient": {
+    "sha256": "7426adcc29c04134a7b4ef9102521e923561a51214d96cba2f7f7907bfefc6e1",
+    "length": 12024
+  },
+  "results-card/loss": {
+    "sha256": "3c87f231349ffba05f0c27545a4d9aae002cda7b53f7e661377c21eec41c1678",
+    "length": 12877
+  },
+  "results-card/refunded": {
+    "sha256": "d839860c100a833eb546d83626ddb8bf29f8f8867a5ff53c8e9bd0b560fe3dc0",
+    "length": 11994
+  },
+  "results-card/settling": {
+    "sha256": "060ff1bb9706b9dd86f1621c66e55476eb96713d4e486a32405a1e79a727d7d8",
+    "length": 11714
+  },
+  "results-card/win": {
+    "sha256": "14e29cbc8ea99ee0bd74d6319db80064bbe0694a37c7f32fd10b808127010661",
+    "length": 13755
+  },
+  "results-section": {
+    "sha256": "5b3649ae3f8d19bb912cd951202da0e02461c2ec08923d036b3892d808e9c20e",
+    "length": 27548
+  },
+  "scouting-line/compact": {
+    "sha256": "fa7860c5f5247547b944a1c400d0065f23e95d0f1f8235bb99ada36be8c1f2d7",
+    "length": 1627
+  },
+  "screen/card-first-week": {
+    "sha256": "dd32074bd8e501fbe946458475bc81568b6f53d4926e42d0613d636619be048e",
+    "length": 10657
+  },
+  "screen/card-top-up": {
+    "sha256": "1c56c38a86e71650b6db751cc68d0bbddee703c4c9d81cb38ef3b718334b8c56",
+    "length": 23425
+  },
+  "screen/card-veteran": {
+    "sha256": "6251c501aa0df0a54ca94c0ea0a219d2256d5d84d6ab3c01a441a64348cab834",
+    "length": 23422
+  },
+  "screen/list-mounted": {
+    "sha256": "0617d08acda4775a7b25f979bc08aa2ebd4bdb60ddee30ee159a310a9139e4c1",
+    "length": 107072
+  },
+  "screen/list-ssr": {
+    "sha256": "3aab31c45cacab8221f0eec1d5205e0df92e2cf6791d3a6dae4cd230251bef3d",
+    "length": 105604
+  },
+  "screen/stake-attest": {
+    "sha256": "d741fd8eb55d54a6db46b33daf15897f41459bcc64d90f3fd43466e016787aa5",
+    "length": 4848
+  },
+  "screen/stake-attested": {
+    "sha256": "83ec4ae8edceb79faaee39fb8fa1cb5908bffe7ef693f6dd0fd28eeda82c5025",
+    "length": 8200
+  },
+  "screen/stake-top-up": {
+    "sha256": "68a323f3afff4dad86e6641a9d57aee7dfb504e7d0476bff3be9d548fafe22f6",
+    "length": 8371
+  },
+  "slot-center/mounted": {
+    "sha256": "e895cf4d222ccc8ee977bf32e31f28cb148a79af4e65e57d922cd21dd42d87df",
+    "length": 2713
+  },
+  "slot-center/ssr": {
+    "sha256": "b13479439fd602636f147c3814a6e69b1261a97516f530e57758ae2a3fc1f932",
+    "length": 1450
+  },
+  "spectate/final-with-results": {
+    "sha256": "2837b07296f3adc435c0f3299099cbd486966fa583af0a65537197d12428e8fb",
+    "length": 51939
+  },
+  "stake/at-cap": {
+    "sha256": "ab7c66cf982adf3c4bd85b51fe07a9612ad4b5e5b1cb56860b450451ee8a18eb",
+    "length": 3815
+  },
+  "stake/attest": {
+    "sha256": "d8ae13b9fd4b9a6f121835567322efacf51ff49f46007b43ee9dff1011dc6063",
+    "length": 2526
+  },
+  "stake/attested": {
+    "sha256": "23fbc6e08289b1e522ec414653896089438f2dedd32ddd7f09a2b6270572e274",
+    "length": 5572
+  },
+  "stake/backed": {
+    "sha256": "956f7a72cefe7e7077e4604919e21f20ffae9e139d7268d27cfc8c2c2d88e508",
+    "length": 1061
+  },
+  "stake/checking": {
+    "sha256": "47180710b48e63a9c3c7206801823e34ec167870c3bb0de27fe56dee3a65419c",
+    "length": 203
+  },
+  "stake/refused": {
+    "sha256": "19adee280d8262d39f37bb56a1c666493c2c49483bf2e31ecb1cf734e5b2e9ae",
+    "length": 6326
+  },
+  "stake/top-up": {
+    "sha256": "b9402b57839b6ff1566fccde5a35552aa299f8080bd21bd034724a722a6e6360",
+    "length": 5726
+  },
+  "stake/topped-up": {
+    "sha256": "702fab75518a1eeb49ca25fe51791647077b0f7944682fba2d8fa02bf750da67",
+    "length": 1310
+  },
+  "stake/wallet-pending": {
+    "sha256": "11cd1af6e7a8779c3ebca6e6236d06c1f2c2b52b299a72944083c67742781967",
+    "length": 198
+  },
+  "stats/entry-compact": {
+    "sha256": "f4fc2b99bf672fcf1789406e641bb0d6bb1d332917981d4932288718cc37ba8f",
+    "length": 9856
+  },
+  "stats/mine": {
+    "sha256": "0972b7b7fd7d5d36f4fd2a938e89d4ae7d11743e2ea7412c0a7964440dad8636",
+    "length": 8173
+  },
+  "stats/trainer": {
+    "sha256": "dcd12b9ea1cd48ff4f6fb05d14997b84129d44041e1a1675c2e6625549bbc7d5",
+    "length": 6260
+  },
+  "strip/between": {
+    "sha256": "adc7f3584967ba160c9a941689ee62fa301b5659e3900e6b568945d7229d7f98",
+    "length": 2417
+  },
+  "strip/open": {
+    "sha256": "34f41123605c50cf8650e2e36974af071840483449e3bedbc7320977e2825208",
+    "length": 2729
+  },
+  "strip/quiet": {
+    "sha256": "1309b1cc7abf275f3b2809cd2d1b849fae9765045ccccf56f6229d1b085223ab",
+    "length": 2677
+  },
+  "strip/staked": {
+    "sha256": "b39908fbb2d451619a5a803b755c52bbb09969272477beaa4e5dc97a1cf17413",
+    "length": 4076
+  },
+  "strip/week": {
+    "sha256": "5c02d8bb43770203e2e1230966dfdcc82bf47bbd8496912516ee05c56ddc286c",
+    "length": 4347
+  },
+  "week/before-monday": {
+    "sha256": "9cbb91e6c9cde1cd37710f351263534819c21ebde0490bd4185181e66036f46f",
+    "length": 7702
+  },
+  "week/mid-week": {
+    "sha256": "2e57795b89eef9888f5ebd441198922744ca99881aa17772c1b71557dec9cad1",
+    "length": 21100
+  },
+  "week/monday": {
+    "sha256": "acd671654e5ec7154c6a5bc86097d74b594efd61aaa530042a45e27cce8aec02",
+    "length": 16358
+  },
+  "week/settled": {
+    "sha256": "8fbcf2cd67095b9dca147c7939dd0c27feff34640ce9b9e9be719efc7d8e5655",
+    "length": 18889
+  },
+  "while-you-wait/mobile/battle": {
+    "sha256": "bdf1f1127c03695aefb5d860580dc2671437340316a5d4b997ba4f617c252036",
+    "length": 2847
+  },
+  "while-you-wait/mobile/battle · a live pod to watch · a practice pod": {
+    "sha256": "a06f5e5d230240447f6064bba2f8aa930c5a27941a37c46eea53eb9b6da01171",
+    "length": 4106
+  },
+  "while-you-wait/mobile/forming": {
+    "sha256": "edffcf8446fcb62d07307de45c578b2f3c2a53e28c5ed820a8ca701765a53512",
+    "length": 2868
+  },
+  "while-you-wait/mobile/pre-open": {
+    "sha256": "3e04d67261c32fe906496c04588e592ece32f7e616b0872919373ae237870eeb",
+    "length": 2868
+  }
+}

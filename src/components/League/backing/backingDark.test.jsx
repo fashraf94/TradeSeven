@@ -18,20 +18,22 @@
 // (no effects), and a jsdom mount with act() for the "opens no read" rows
 // (effects run, so a subscription or a fetch would be counted).
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { renderToString } from 'react-dom/server';
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { leagueState } from '../leagueFixtures';
+import { buildLeagueState } from '../leagueAdapter';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..', '..', '..');
 
 const flag = vi.hoisted(() => ({ on: false }));
-const svc = vi.hoisted(() => ({ calls: [], reply: null, stakes: [], snapshots: false }));
+const svc = vi.hoisted(() => ({ calls: [], reply: null, stakes: [], snapshots: false, league: null, myGroup: null }));
 const fetchSpy = vi.hoisted(() => vi.fn(async () => ({ ok: true, json: async () => ({ slots: [], battles: {} }) })));
 
 vi.mock('../../../config/featureFlags', async (importOriginal) => ({
@@ -94,10 +96,10 @@ vi.mock('../../../services/backingService', () => ({
   BackingApiError: class BackingApiError extends Error {},
 }));
 vi.mock('../../../utils/fetchWithAuth', () => ({ fetchWithAuth: fetchSpy }));
-vi.mock('../../../hooks/useLeagueState', () => ({ default: () => ({ state: leagueState('open'), loading: false, isFixtures: true }) }));
+vi.mock('../../../hooks/useLeagueState', () => ({ default: () => ({ state: svc.league ?? leagueState('open'), loading: false, isFixtures: true }) }));
 vi.mock('../../../contexts/UserContext', () => ({ useUser: () => ({ user: { uid: 'viewer-1', displayName: 'Viewer' } }) }));
 vi.mock('../../../services/tournamentGroupService', () => ({
-  subscribeMyGroup: () => () => {}, subscribeMyMostRecentVoidedGroup: () => () => {}, subscribeMyTrainingPod: () => () => {},
+  subscribeMyGroup: (_uid, cb) => { if (svc.myGroup) cb(svc.myGroup); return () => {}; }, subscribeMyMostRecentVoidedGroup: () => () => {}, subscribeMyTrainingPod: () => () => {},
   subscribeGroup: (_groupId, cb) => { if (svc.snapshots) cb(null); return () => {}; }, getGroup: async () => null, fetchDisplayNames: async () => ({}),
 }));
 vi.mock('../../../services/leagueSignals', () => ({ logLeagueSignal: () => {} }));
@@ -133,6 +135,8 @@ const EquipStation = (await import('../../Dashboard/EquipStation')).default;
 const BackingScreen = (await import('./BackingScreen')).default;
 const Spectate = (await import('../LeagueSpectate')).default;
 const BackingStatsEntry = (await import('./BackingStatsEntry')).default;
+const WhileYouWait = (await import('../WhileYouWait')).default;
+const { DeskPodPanel } = await import('../LeagueDeskParts');
 
 const homeProps = { onOpenMyGame: () => {}, onOpenTrainingPod: () => {}, hasAgent: true, agentLoadout: null };
 const ssr = (el) => renderToString(el);
@@ -150,7 +154,7 @@ async function mount(el) {
   return container;
 }
 
-beforeEach(() => { flag.on = false; svc.calls.length = 0; svc.reply = null; svc.stakes = []; svc.snapshots = false; fetchSpy.mockClear(); __resetBackingTelemetry(); });
+beforeEach(() => { flag.on = false; svc.calls.length = 0; svc.reply = null; svc.stakes = []; svc.snapshots = false; svc.league = null; svc.myGroup = null; fetchSpy.mockClear(); __resetBackingTelemetry(); });
 afterEach(async () => {
   for (const { root, container } of roots) { await act(async () => root.unmount()); container.remove(); }
   roots = [];
@@ -280,6 +284,86 @@ describe('flag OFF — the League renders as it does today', () => {
     expect(container.querySelector('[data-backing]')).toBeNull();
     expect(svc.calls).toEqual([]);
     expect(backingCalls()).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DARK BYTE-IDENTITY, DESKTOP (the Backing desktop layouts build, item F): with
+// the flag false the desktop League renders EXACTLY as today. The rows above
+// prove no backing element and no backing read; these prove the markup itself
+// has not moved — the desktop build had to open the shared centre (SlotCenter,
+// WhileYouWait), the lobby's composition and the identity panel, and every one
+// of them is held here byte for byte. THE GOLDEN WAS GENERATED ON THE
+// UNTOUCHED TREE — main @ 97693a41, before any desktop edit —
+// (__fixtures__/backingDark.golden.json; regenerate only on main's code:
+// UPDATE_BACKING_PINS=1 npx vitest run src/components/League/backing/backingDark.test.jsx).
+const DARK_GOLDEN = path.join(HERE, '__fixtures__', 'backingDark.golden.json');
+const UPDATE_PINS = process.env.UPDATE_BACKING_PINS === '1';
+const darkGolden = existsSync(DARK_GOLDEN) ? JSON.parse(readFileSync(DARK_GOLDEN, 'utf8')) : {};
+const darkSeen = {};
+function darkPin(name, markup) {
+  const text = String(markup).replace(/ /g, ' ');
+  const fp = { sha256: createHash('sha256').update(text).digest('hex'), length: text.length };
+  expect(fp.length, `${name}: rendered nothing`).toBeGreaterThan(0);
+  darkSeen[name] = fp;
+  if (UPDATE_PINS) return;
+  expect(darkGolden[name], `${name}: no golden row — regenerate on main's code`).toBeDefined();
+  expect(fp, `${name}: the flag-off desktop markup moved (today's is ${darkGolden[name]?.length} chars, this is ${fp.length})`).toEqual(darkGolden[name]);
+}
+
+describe('flag OFF — the desktop League renders EXACTLY as today (golden, generated on main before the desktop build)', () => {
+  // The clock is held for these rows only: the lobby reads it (the pre-open
+  // phase), and a golden must not depend on the day the suite runs.
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-09-23T14:00:00.000Z')); });
+  afterEach(() => { vi.useRealTimers(); });
+  afterAll(() => {
+    if (!UPDATE_PINS) return;
+    mkdirSync(path.dirname(DARK_GOLDEN), { recursive: true });
+    writeFileSync(DARK_GOLDEN, `${JSON.stringify(Object.fromEntries(Object.keys(darkSeen).sort().map((k) => [k, darkSeen[k]])), null, 2)}\n`);
+  });
+
+  // No bracket — a real base-layer group, today's production state (backingLanding.test.jsx's shape).
+  const noBracket = () => buildLeagueState({ fieldGroups: [{
+    id: 'wk-real-1', status: 'battle', roundNumber: 1, baseLayerWeek: '2026-W39',
+    players: [{ odUserId: 'u1', picks: [] }, { odUserId: 'cpu-1', isCpu: true, picks: [] }, { odUserId: 'u2', picks: [] }, { odUserId: 'cpu-2', isCpu: true, picks: [] }],
+    dailyScores: { day1: { closeScores: { u1: { compositePoints: 3.2 }, u2: { compositePoints: 1.1 } } } },
+  }], names: { u1: 'Alice', u2: 'Bob' }, uid: 'viewer-1' }).state;
+  const LANDINGS = { bracket: () => leagueState('open'), 'no-bracket': noBracket };
+
+  for (const [landing, st] of Object.entries(LANDINGS)) {
+    it(`LeagueLobbyDesktop · ${landing} · unseated — server render and mounted`, async () => {
+      svc.league = st();
+      darkPin(`desktop-lobby/${landing}/unseated-ssr`, ssr(<LeagueLobbyDesktop {...homeProps} />));
+      const c = await mount(<LeagueLobbyDesktop {...homeProps} />);
+      darkPin(`desktop-lobby/${landing}/unseated-mounted`, c.innerHTML);
+    });
+    it(`LeagueLobbyDesktop · ${landing} · seated (the waiting room is the centre) — mounted`, async () => {
+      svc.league = st();
+      svc.myGroup = { id: 'wk-real-1', status: 'battle' };
+      const c = await mount(<LeagueLobbyDesktop {...homeProps} />);
+      darkPin(`desktop-lobby/${landing}/seated-mounted`, c.innerHTML);
+    });
+  }
+
+  it('WhileYouWait · desktop · every seated sub-state', () => {
+    for (const [name, props] of [
+      ['forming', { status: 'forming' }],
+      ['battle', { status: 'battle' }],
+      ['pre-open', { status: 'battle', preOpen: true }],
+      ['battle · a live pod · a practice pod', { status: 'battle', st: leagueState('open'), activeTrainingPod: { id: 'p1', status: 'battle' }, onSpectate: () => {} }],
+    ]) {
+      darkPin(`while-you-wait/desktop/${name}`, ssr(<WhileYouWait viewport="desktop" onOpenTrainingPod={() => {}} hasAgent {...props} />));
+    }
+  });
+
+  it('the identity panel (the pitch\'s desktop home) and the desktop pod panel', () => {
+    darkPin('identity-panel', ssr(<IdentityPanel agent={{ ownerId: 'viewer-1', name: 'Prime', archetype: 'momentum_chaser', stats: { gamesPlayed: 3, wins: 1, avgScore: 61 } }} accent="#5EEAD4" live={false} record="1-2" winRate={33} levelConfig={{ label: 'Rookie' }} nextLevelInfo={{ label: 'Starter' }} onOpenRecord={() => {}} />));
+    darkPin('desk-pod-panel', ssr(<DeskPodPanel pod={leagueState('open').baseGames[0]} accent="#5EEAD4" onClose={() => {}} onSpectate={() => {}} />));
+  });
+
+  it('the golden carries exactly these rows — nothing stale, nothing missing', () => {
+    if (UPDATE_PINS) return;
+    expect(Object.keys(darkSeen).sort()).toEqual(Object.keys(darkGolden).sort());
   });
 });
 

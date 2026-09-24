@@ -1,0 +1,50 @@
+{
+  "desk-pod-panel": {
+    "sha256": "cfdc8fc6307e3435cc254867233ee25b83006bbb49505555bef79117ac516dec",
+    "length": 17657
+  },
+  "desktop-lobby/bracket/seated-mounted": {
+    "sha256": "d2fe714521424bfa8ebff0b888cdb6577337bbae071b5fa0d0b3ddead883c0db",
+    "length": 95809
+  },
+  "desktop-lobby/bracket/unseated-mounted": {
+    "sha256": "48d047643bbe4204ef07a90f7d6c297fd63ffe5979272875eeec6852863e372e",
+    "length": 92326
+  },
+  "desktop-lobby/bracket/unseated-ssr": {
+    "sha256": "a27e2d24bb6afbd4dc473f910114f9da7db7f6848c5d7bae3ea1ad21a0e6ea6a",
+    "length": 94299
+  },
+  "desktop-lobby/no-bracket/seated-mounted": {
+    "sha256": "cb907dfd25cdc1b0be1e80a52f9e5e3dfe151ff62f8c69109a13f9826a53cea4",
+    "length": 27351
+  },
+  "desktop-lobby/no-bracket/unseated-mounted": {
+    "sha256": "c480389b4cbbca1137ce81509c2418689ccc7f02b41628f433a28dd89c8f32ba",
+    "length": 23868
+  },
+  "desktop-lobby/no-bracket/unseated-ssr": {
+    "sha256": "2d56369fe8950c156c0ab6defbd1d75ec17373c871721dce87e718ba4aae1302",
+    "length": 23655
+  },
+  "identity-panel": {
+    "sha256": "cd80f2897d1b20b2a349f598caa928820ae488c304a90eeaf576477c11eccfdc",
+    "length": 7675
+  },
+  "while-you-wait/desktop/battle": {
+    "sha256": "2bf1102565138ba9201f2f03ff04d2586cb4852124ad5a2e4e8df90edb714e3d",
+    "length": 2844
+  },
+  "while-you-wait/desktop/battle · a live pod · a practice pod": {
+    "sha256": "816c4f25b7b6ee3054d6b492b284316df21494e93ce16ee91e86d226b812077e",
+    "length": 4103
+  },
+  "while-you-wait/desktop/forming": {
+    "sha256": "2845ca494f6e1308f39f8d3500c97f79cf670de0e6df88fdf55a484071f31811",
+    "length": 2865
+  },
+  "while-you-wait/desktop/pre-open": {
+    "sha256": "f4d0e82396633f0c0b4a69842e39a6e61ebd1a57bc1aa50a2f996a63b5b3cf7e",
+    "length": 2865
+  }
+}
