@@ -93,7 +93,10 @@ export function resultsCardModel(pod) {
   const winnerNames = winners.map((_, i) => teamLabelOf(Array.isArray(pod.winnerLabels) ? pod.winnerLabels[i] : null));
   const mine = Array.isArray(pod.myStakes) ? pod.myStakes : [];
   const teams = Array.isArray(pod.teams) ? pod.teams : [];
-  const revealed = Number.isFinite(pod.potTotal);
+  // Revealed only once the pool has CLOSED — never on a figure's presence
+  // alone: an open pool carrying figures (no route sends one; defence in
+  // depth) shows none of them, on either card (SEAL-3, the desktop review record).
+  const revealed = pod.outcome !== 'open' && pod.status !== 'open' && Number.isFinite(pod.potTotal);
   const reasonKey = pod.outcome === 'insufficient' ? 'insufficient' : pod.refundReason;
   const first = mine[0]?.teamOdUserId ?? winners[0] ?? null;
   // The right-hand figure: before a settlement the team's staked BP; after

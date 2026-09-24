@@ -231,6 +231,16 @@ describe('the desktop card — the same facts as a table, from the same model (B
     expect(html).toContain('data-layout="desktop"');
   });
 
+  it('SEAL at desktop width: an OPEN pool carrying figures (no route sends one) renders byte-equal to the sealed pool, on both cards — the reveal waits for the close (SEAL-3)', () => {
+    const base = settled();
+    const openPool = { ...base, outcome: 'open', status: 'open', winners: [], winnerLabels: [], paysX: null, myNet: null, myWon: null,
+      myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', teamLabel: 'Shadow', amount: 250, status: 'live', payout: null, voidReason: null, net: null, loadoutChanged: null }] };
+    const sealed = { ...openPool, potTotal: null, uniqueBackers: null, teams: openPool.teams.map((t) => ({ ...t, stakeTotal: null, backerCount: null, sharePct: null, paysX: null })) };
+    expect(renderToString(<BackingResultsCardDesk pod={openPool} />)).toBe(renderToString(<BackingResultsCardDesk pod={sealed} />));
+    expect(renderToString(<BackingResultsCard pod={openPool} />)).toBe(renderToString(<BackingResultsCard pod={sealed} />));
+    expect(deskText(openPool)).not.toMatch(/of BP in this pool backed them|\d+ backers?\b/);
+  });
+
   it('the last column\'s head names what its cells hold — "Pays ×" only once the pool has settled; before that the cells are staked BP and the head says so (WIRE-6: a void or settling team never "pays")', () => {
     const headOf = (pod) => deskText(pod).match(/Team Backers Share (.+?) /)?.[1] ?? null;
     expect(deskText(PODS.settled)).toContain(`Team Backers Share ${DESK.resultsCols.pays}`);
