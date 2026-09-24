@@ -11,10 +11,13 @@ import { describe, it, expect } from 'vitest';
 import {
   recordFetchedQuote, buildObservation, freezeObservation, freezeModelObservation, observationUsable,
   classifyEntryExit, carryExecutorResult, FLIP_EXITS, OBSERVATION_SOURCES,
+  passExaminesHeldPrices, PRICE_SCANNING_GUARDRAIL_TYPES,
 } from './observe.js';
 import { createCallsContext } from './mode.js';
 import { isSettlementQuoteUsable } from '../agentQuoteHealth.js';
-import { makeTickBattle } from '../__fixtures__/tickStampsHarness.js';
+import { applyGuardrails } from '../agentGuardrails.js';
+import { flattenPortfolioServer } from '../agentScoring.js';
+import { makeTickBattle, makePriceTable } from '../__fixtures__/tickStampsHarness.js';
 
 const active = () => createCallsContext({ mode: 'shadow', handlerStartMs: 0 });
 
@@ -182,5 +185,71 @@ describe('carryExecutorResult — the committed executor return, independent of 
     const ctx = createCallsContext({ mode: 'off', handlerStartMs: 0 });
     carryExecutorResult(ctx, { closedTrade: { symbolOut: 'KO', symbolIn: 'AMD', tier: 'support', slotIndex: 0 } });
     expect(ctx.executorResult).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Branch review BR-2: the R11 pass's observation membership comes from ACTUAL
+// price examination. The adapter mirrors the fenced helper's preconditions; the
+// rows below run the REAL helper (called, never edited) with every price read
+// recorded, so the adapter cannot drift from what the helper really examines.
+describe('the R11 pass examines held prices ONLY through a price-scanning guardrail (review BR-2)', () => {
+  const STOP = { type: 'stopLoss', value: 8, unit: '%', enforcement: 'hard' };
+  const TRAIL = { type: 'trailingStop', value: 10, unit: '%', enforcement: 'hard' };
+  const TARGET = { type: 'profitTarget', value: 15, unit: '%', enforcement: 'hard' };
+  const SECTOR = { type: 'maxSectorWeight', value: 40, unit: '%', enforcement: 'hard' };
+  const MAX_POSITION = { type: 'maxPosition', value: 25, unit: '%', enforcement: 'hard' };
+  const CASES = {
+    'sector-only': [SECTOR],
+    'maxPosition-only': [MAX_POSITION],
+    'sector + maxPosition': [SECTOR, MAX_POSITION],
+    stopLoss: [STOP],
+    trailingStop: [TRAIL],
+    profitTarget: [TARGET],
+    'sector + stopLoss': [SECTOR, STOP],
+    'stopLoss without a numeric value': [{ ...STOP, value: '8' }],
+    'the LAST stopLoss wins (non-numeric)': [STOP, { ...STOP, value: null }],
+    'the LAST stopLoss wins (numeric)': [{ ...STOP, value: null }, STOP],
+  };
+
+  /** The held symbols whose price the REAL helper reads, called exactly as the suppression pass calls it. */
+  function heldPricesRead(guardrails) {
+    const battle = makeTickBattle();
+    const read = new Set();
+    const prices = new Proxy(makePriceTable(), {
+      get(target, prop, receiver) {
+        if (typeof prop === 'string') read.add(prop);
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+    applyGuardrails({ haikuResult: null, guardrails, battle, prices, lockedPositions: new Set(), stockRegimes: {}, sectorSlotObserveCap: null });
+    const held = flattenPortfolioServer(battle.portfolio).map((a) => a.symbol);
+    return { held, read: held.filter((symbol) => read.has(symbol)) };
+  }
+
+  it('the adapter agrees with the REAL helper on every configuration: every held price read ⟺ passExaminesHeldPrices, and no held price read otherwise', () => {
+    for (const [label, guardrails] of Object.entries(CASES)) {
+      const { held, read } = heldPricesRead(guardrails);
+      expect(held.length, label).toBeGreaterThan(0);
+      expect(read, label).toEqual(passExaminesHeldPrices(guardrails) ? held : []);
+    }
+  });
+
+  it('the verdicts: sector-only and maxPosition-only examine nothing; a numeric stop, trailing stop or profit target (the last of its type) examines every held price', () => {
+    expect(Object.fromEntries(Object.entries(CASES).map(([label, g]) => [label, passExaminesHeldPrices(g)]))).toEqual({
+      'sector-only': false,
+      'maxPosition-only': false,
+      'sector + maxPosition': false,
+      stopLoss: true,
+      trailingStop: true,
+      profitTarget: true,
+      'sector + stopLoss': true,
+      'stopLoss without a numeric value': false,
+      'the LAST stopLoss wins (non-numeric)': false,
+      'the LAST stopLoss wins (numeric)': true,
+    });
+    expect(PRICE_SCANNING_GUARDRAIL_TYPES).toEqual(['stopLoss', 'trailingStop', 'profitTarget']);
+    expect(passExaminesHeldPrices([])).toBe(false);
+    expect(passExaminesHeldPrices(null)).toBe(false);
   });
 });

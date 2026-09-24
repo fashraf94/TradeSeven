@@ -41,7 +41,7 @@ import { buildTradeDecisionTool } from '../_utils/agentEvalToolSchema.js';
 // 'off' (nothing inside it runs), isolated at shadow/on (a calls defect costs
 // the check a record, never a decision, a write or an exit).
 import { resolveCallRecordsMode, createCallsContext, callsActive, callsStep, callsStepAsync } from '../_utils/callRecords/mode.js';
-import { recordFetchedQuote, freezeObservation, freezeModelObservation, classifyEntryExit, carryExecutorResult } from '../_utils/callRecords/observe.js';
+import { recordFetchedQuote, freezeObservation, freezeModelObservation, classifyEntryExit, carryExecutorResult, passExaminesHeldPrices } from '../_utils/callRecords/observe.js';
 import { captureDeclarations } from '../_utils/callRecords/validate.js';
 import { bindHorizon, battleExpiryMs } from '../_utils/callRecords/horizon.js';
 import { callsReserveMsFor, runModelCallsPhase } from '../_utils/callRecords/publish.js';
@@ -5249,13 +5249,16 @@ export async function runSuppressionDeterministicPass({
       stockRegimes,
       sectorSlotObserveCap: null,
     });
-    // Calls (§3.4 gameplan rows): the held names this pass just evaluated,
-    // observed at this instant — before the pass can swap and re-read the book.
-    // Inert at off; the pass's own behavior is untouched.
+    // Calls (§3.4 gameplan rows): the held names whose prices this pass just
+    // EXAMINED — its stop / trailing-stop / profit-target scans read every held
+    // price — observed at this instant, before the pass can swap and re-read
+    // the book. A pass with no price-scanning guardrail (sector-only,
+    // maxPosition-only) examined no price: an EMPTY set (branch review BR-2) —
+    // expiry runs, no hit can. Inert at off; the pass's own behavior is untouched.
     callsStep(callsCtx, () => freezeObservation(callsCtx, {
       source: 'gameplan_pass',
       observedAtMs: Date.now(),
-      examined: flattenPortfolioServer(battle.portfolio).map((a) => a.symbol),
+      examined: passExaminesHeldPrices(deployedGuardrails) ? flattenPortfolioServer(battle.portfolio).map((a) => a.symbol) : [],
     }));
     // G2: the pass RAN and its guardrails were evaluated. Recorded at the
     // boundary that did it — on a suppression tick the main-path evaluation

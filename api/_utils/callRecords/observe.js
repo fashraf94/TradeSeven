@@ -135,6 +135,37 @@ export function classifyEntryExit({ refreshFailure, haikuFailure, promptBuilt })
   return 'model_result';
 }
 
+/**
+ * The guardrail kinds whose deterministic scan READS held prices — the fenced
+ * applyGuardrails (api/_utils/agentGuardrails.js; called, never edited): the
+ * stop-loss, trailing-stop and profit-target scans each compute every held
+ * position's P&L from `prices[symbol].current`. The sector cap only checks a
+ * PROPOSED swap (the R11 suppression pass proposes none: `haikuResult: null`),
+ * and maxPosition reads no price at all.
+ */
+export const PRICE_SCANNING_GUARDRAIL_TYPES = Object.freeze(['stopLoss', 'trailingStop', 'profitTarget']);
+
+/**
+ * Branch review BR-2: did the R11 deterministic pass EXAMINE the held names'
+ * prices? Mirrors the fenced helper's own preconditions — guardrails indexed by
+ * type with the LAST entry of a type winning, and a scan runs only when its
+ * entry carries a numeric value. A pass with no price-scanning kind
+ * (sector-only, maxPosition-only, …) examined no price, so its observation is
+ * the EMPTY set: expiry runs, no hit can. Pinned against the real helper's
+ * price reads (observe.test.js), so a change to which kinds read prices fails
+ * a row instead of silently widening the membership.
+ *
+ * @param {Array<object>} guardrails the pass's deployed (possibly injected) guardrails
+ * @returns {boolean}
+ */
+export function passExaminesHeldPrices(guardrails) {
+  const byType = {};
+  for (const g of Array.isArray(guardrails) ? guardrails : []) {
+    if (g && typeof g.type === 'string') byType[g.type] = g;
+  }
+  return PRICE_SCANNING_GUARDRAIL_TYPES.some((type) => typeof byType[type]?.value === 'number');
+}
+
 /** The §3.4 rows whose exit flips (the excluded rows never do). */
 export const FLIP_EXITS = Object.freeze([
   'model_result', 'transport_failed_after_prompt', 'budget_skipped', 'no_trigger',

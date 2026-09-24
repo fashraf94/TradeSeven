@@ -467,6 +467,35 @@ describe('§3.12 row 5 — the exit matrix: every flip row flips without publish
     });
   }
 
+  // Branch review BR-2's counterexamples: a pass whose only guardrail is a 40%
+  // sector cap RUNS, but the cap checks a proposed swap and this pass proposes
+  // none, so no held price is examined. Before the fix, the older KO call was
+  // marked hit at px 62 with source gameplan_pass. Now the pass records an empty
+  // set: that call stays open, and expiry still runs. The withStop rows above
+  // are the positive control: a price-scanning pass on the same exits does hit.
+  const SECTOR_40 = { type: 'maxSectorWeight', value: 40, unit: '%', enforcement: 'hard' };
+  const withSectorOnly = (args) => ({ ...args, battle: { ...args.battle, agentContext: { ...args.battle.agentContext, deployedGuardrails: [SECTOR_40] } } });
+  const capturedGuardrail = (db) => [...db.__subStore.entries()].find(([p]) => p.startsWith('agentBattles/battle-tick-1/ticks/'))?.[1]?.guardrail;
+  for (const name of ['gameplan_pending', 'gameplan_created']) {
+    it(`${name} with a SECTOR-ONLY guardrail: the pass ran and examined no price, so it records an EMPTY set; the older KO call is not hit, and expiry still runs (review BR-2)`, async () => {
+      const T1 = Date.parse(FROZEN_NOW);
+      const [live] = earlierCalls([KO_OUT]);
+      const [template] = earlierCalls([AMD_IN]);
+      const expired = { ...template, callId: 'battle-tick-1:eval_000:call:7', horizon: { ...template.horizon, expiresAt: T1 - 60_000 } };
+      const { db } = await runTick({ mode: 'shadow', seed: seedOf([live, expired]), ...withSectorOnly(NO_ENTRY_PATHS[name]()) });
+      // The pass RAN on this exit, so the empty set is its verdict and not the
+      // no-pass fallback.
+      expect(capturedGuardrail(db)).toMatchObject({ suppressionPassRan: true, evaluated: true, suppressionPassFaulted: false });
+      expect(capturedGuardrail(db).deployedCount).toBeGreaterThan(0);
+      // KO trades at 62.0, below 62.5, but nothing examined it.
+      expect(storedDoc(db, 'calls', live.callId)).toEqual(live);
+      expect(storedDoc(db, 'callObservations', live.callId)).toBeNull();
+      expect(storedDoc(db, 'calls', expired.callId)).toMatchObject({ state: 'expired_unresolved', stateSource: 'check' });
+      expect(storedDoc(db, 'callObservations', expired.callId)).toMatchObject({ source: 'gameplan_pass', px: null, evalId: null, observedAtMs: T1 });
+      expect(db.__store.battle.cronState.callFlips).toMatchObject({ evalId: null, scanned: 2, complete: true });
+    });
+  }
+
   it('off: the same open call is neither read nor written on any row (the rollback fixture)', async () => {
     for (const spec of Object.values(FLIP_ROWS)) {
       const [call] = earlierCalls([KO_OUT]);
