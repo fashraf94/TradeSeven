@@ -20,7 +20,7 @@ import {
   makeTickBattle, makePriceTable, makeRankingsDoc, makeTechDocs, makeIntradayCandles,
   makeHoldResult, makeSwapResult, makeToolUseResponse, makeDeclarations, undefinedPaths,
 } from '../_utils/__fixtures__/tickStampsHarness.js';
-import { makeCallsDb } from '../_utils/__fixtures__/callRecordsStore.js';
+import { makeCallsDb, storedDoc, storedCollection, callsTouches } from '../_utils/__fixtures__/callRecordsStore.js';
 
 const mocks = vi.hoisted(() => ({ getStockAnalysisData: vi.fn(), fetchIntradayBatch: vi.fn(), create: vi.fn() }));
 const { swapMock } = vi.hoisted(() => ({ swapMock: vi.fn() }));
@@ -73,6 +73,7 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => {
 
 const { processAgentBattle } = await import('./agent-evaluate.js');
 const { TRADE_DECISION_TOOL } = await import('../_utils/agentEvalToolSchema.js');
+const { generateTradeNarration } = await import('../_utils/voiceLayerTradeNarration.js');
 
 const TIME_BUDGET_MS = 290_000;
 class APIConnectionError extends Error {}
@@ -110,6 +111,7 @@ async function runTick({
   mode = 'shadow', capture = true, battle = makeTickBattle(), result = makeHoldResult(), prices = makePriceTable(),
   rankingsDoc = makeRankingsDoc(), cronStartTime = Date.now(), modelThrows = null, modelResponse = null,
   breakRefreshAfterSwap = false, buildThrows = null, seed = {}, db: injected = null, beforeModel = null,
+  failFinalUpdate = false,
 } = {}) {
   flagState.callsMode = mode;
   flagState.tickCapture = capture;
@@ -131,6 +133,22 @@ async function runTick({
       const c = baseCollection(col);
       if (col !== 'agentBattles') return c;
       return { ...c, doc: (id) => { const ref = c.doc(id); return { ...ref, get: async () => (swaps > 0 ? { exists: false, id, data: () => undefined } : ref.get()) }; } };
+    };
+  }
+  if (failFinalUpdate) {
+    // The evaluation commit itself fails: the final update (the one carrying
+    // `evaluations`) rejects, so no evaluation identity is ever committed.
+    const baseCollection = db.collection.bind(db);
+    db.collection = (col) => {
+      const c = baseCollection(col);
+      if (col !== 'agentBattles') return c;
+      return {
+        ...c,
+        doc: (id) => {
+          const ref = c.doc(id);
+          return { ...ref, update: async (payload) => { if (Array.isArray(payload?.evaluations)) throw new Error('4 DEADLINE_EXCEEDED: final update'); return ref.update(payload); } };
+        },
+      };
     };
   }
   swapMock.mockImplementation(async (_db, _id, _b, tier, slotIndex, incoming) => {
@@ -254,5 +272,92 @@ describe('§3.1 — the tool the model receives follows the resolved mode', () =
     const strip = (e) => { const { declarationsPhase: _p, ...rest } = e; return rest; };
     expect(JSON.stringify(strip(dirty.entry))).toBe(JSON.stringify(strip(clean.entry)));
     expect(dirty.entry.declarationsPhase).toBe('none');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+/** Index of the first update carrying a key (or -1). */
+const updateIndex = (db, key) => db.__updates.findIndex((u) => Object.prototype.hasOwnProperty.call(u, key));
+
+describe('§3.7 — publication after the evaluation commit, end to end', () => {
+  for (const mode of ['shadow', 'on']) {
+    it(`${mode} · an expected block: the record and its calls are created from the COMMITTED identity, then one status write carries the wire`, async () => {
+      const { db, entry, finalUpdate } = await runTick({ mode, result: makeHoldResult({ declarations: makeDeclarations() }) });
+      expect(entry.declarationsPhase).toBe('expected');
+      const record = storedDoc(db, 'declarations', entry.evalId);
+      expect(record).toMatchObject({ battleId: 'battle-tick-1', evalId: entry.evalId, evalSeq: finalUpdate['cronState.evalSeq'], watching: ['JPM'] });
+      const calls = Object.values(storedCollection(db, 'calls'));
+      expect(calls.map((c) => c.callId)).toEqual([`battle-tick-1:${entry.evalId}:call:0`, `battle-tick-1:${entry.evalId}:call:1`]);
+      for (const call of calls) {
+        expect(call.evidence.priceAsOf).toBe(entry.promptBuiltAt);
+        expect(call.evidence.tickId).toMatch(/^battle-tick-1:\d+$/);
+        expect(call.evidence.availability).toBe('unresolved');
+      }
+      expect(db.__store.battle.cronState.declarationsPhase).toEqual({ evalId: entry.evalId, phase: 'written' });
+      // The wire is written AFTER the evaluation commit, never with it.
+      const finalIdx = db.__updates.findIndex((u) => Array.isArray(u.evaluations));
+      const wireIdx = updateIndex(db, 'cronState.declarationsPhase');
+      expect(wireIdx).toBeGreaterThan(finalIdx);
+      expect(finalUpdate).not.toHaveProperty('cronState.declarationsPhase');
+      expect(db.__store.battle.cronState.callsDiag).toMatchObject({ evalId: entry.evalId, exit: 'model_result', phaseResult: 'written' });
+    });
+  }
+
+  it('capture off: evidence carries tickId null / availability off — the calls do not depend on capture', async () => {
+    const { db, entry } = await runTick({ mode: 'shadow', capture: false, result: makeHoldResult({ declarations: makeDeclarations() }) });
+    const calls = Object.values(storedCollection(db, 'calls'));
+    expect(calls).toHaveLength(2);
+    for (const call of calls) expect(call.evidence).toEqual({ tickId: null, availability: 'off', priceAsOf: entry.promptBuiltAt });
+  });
+
+  it('no block → no record, no wire; the diagnostics still say what happened', async () => {
+    const { db, entry } = await runTick({ mode: 'shadow' });
+    expect(entry.declarationsPhase).toBe('none');
+    expect(storedCollection(db, 'declarations')).toEqual({});
+    expect(db.__store.battle.cronState).not.toHaveProperty('declarationsPhase');
+    expect(db.__store.battle.cronState.callsDiag).toMatchObject({ evalId: entry.evalId, phaseResult: 'none' });
+  });
+
+  it('failed before the evaluation commit: nothing minted — no record, no call, no queue, no wire (contract §3 acceptance)', async () => {
+    const { db, thrown } = await runTick({ mode: 'shadow', result: makeHoldResult({ declarations: makeDeclarations() }), failFinalUpdate: true });
+    expect(thrown).toBeTruthy();
+    expect(callsTouches(db).writes).toBe(0);
+    expect(storedCollection(db, 'declarations')).toEqual({});
+    expect(storedCollection(db, 'calls')).toEqual({});
+    expect(JSON.stringify(db.__updates)).not.toMatch(/declarationsPhase|callsDiag/);
+  });
+
+  it('transport failed after the prompt: no model output, so no publication and no wire', async () => {
+    const { db, entry } = await runTick({ mode: 'shadow', modelThrows: new APIConnectionError('Connection error.') });
+    expect(entry.declarationsPhase).toBe('none');
+    expect(storedCollection(db, 'declarations')).toEqual({});
+    expect(db.__store.battle.cronState).not.toHaveProperty('declarationsPhase');
+  });
+});
+
+describe('§3.12 row 6 — the budget on the model path', () => {
+  it('admission: 46 s left admits the model at off (44,000 required) and skips it at shadow (48,000 required)', async () => {
+    const cronStartTime = Date.parse(FROZEN_NOW) - (TIME_BUDGET_MS - 46_000);
+    const off = await runTick({ mode: 'off', cronStartTime });
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+    expect(off.entry.haikuError).toBeNull();
+    const shadow = await runTick({ mode: 'shadow', cronStartTime });
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(shadow.entry.haikuError).toMatchObject({ failureClass: 'budget_skipped' });
+  });
+
+  it('the phase is skipped at available < 4,000 with a narration queued: the narration still dispatches, nothing is published, the wire says failed', async () => {
+    const cronStartTime = Date.parse(FROZEN_NOW) - (TIME_BUDGET_MS - 48_000);
+    // The model call takes 33 s of the shared clock: 15 s remain at the phase, 3 s past the tail.
+    const beforeModel = async () => { vi.setSystemTime(new Date(Date.now() + 33_000)); };
+    generateTradeNarration.mockClear();
+    const { db, entry, swaps } = await runTick({ mode: 'shadow', cronStartTime, beforeModel, result: makeSwapResult({ declarations: makeDeclarations() }) });
+    expect(swaps).toBe(1);
+    expect(entry.declarationsPhase).toBe('expected');
+    expect(generateTradeNarration).toHaveBeenCalledTimes(1);
+    expect(storedCollection(db, 'declarations')).toEqual({});
+    expect(storedCollection(db, 'calls')).toEqual({});
+    expect(db.__store.battle.cronState.declarationsPhase).toEqual({ evalId: entry.evalId, phase: 'failed' });
+    expect(db.__store.battle.cronState.callsDiag).toMatchObject({ phaseResult: 'skipped_budget' });
   });
 });

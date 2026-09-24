@@ -40,10 +40,11 @@ import { buildTradeDecisionTool } from '../_utils/agentEvalToolSchema.js';
 // Every call site below runs through callsStep — inert at CALL_RECORDS_MODE
 // 'off' (nothing inside it runs), isolated at shadow/on (a calls defect costs
 // the check a record, never a decision, a write or an exit).
-import { resolveCallRecordsMode, createCallsContext, callsActive, callsStep } from '../_utils/callRecords/mode.js';
+import { resolveCallRecordsMode, createCallsContext, callsActive, callsStep, callsStepAsync } from '../_utils/callRecords/mode.js';
 import { recordFetchedQuote, freezeObservation, freezeModelObservation, classifyEntryExit, carryExecutorResult } from '../_utils/callRecords/observe.js';
 import { captureDeclarations } from '../_utils/callRecords/validate.js';
 import { bindHorizon, battleExpiryMs } from '../_utils/callRecords/horizon.js';
+import { callsReserveMsFor, runModelCallsPhase } from '../_utils/callRecords/publish.js';
 import { validateTradeToolResult, INVALID_TOOL_RESULT_CLASS } from '../_utils/agentEvalToolResultValidation.js';
 import { evaluateTriggers, fetchRecentNews, MAX_STORY_WAKE_ATTEMPTS, SEEN_STORY_ID_CAP } from '../_utils/agentTriggerGate.js';
 import { validateTradeDecision, executeSwapServer } from '../_utils/agentSwapExecution.js';
@@ -2588,7 +2589,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // now the battle's risk swaps and score writes have already happened
     // mid-function — we skip only the Haiku call and keep the normal write
     // path. It still runs ONCE, before the build.
-    const budget = shouldStartHaikuCall({ elapsedMs: Date.now() - cronStartTime, timeBudgetMs: TIME_BUDGET_MS });
+    // Calls (§3.7): at shadow/on the pre-call requirement carries the calls
+    // phase's 4,000 ms admission reserve (48,000 ms); at off it is 0 and the
+    // requirement is today's 44,000 ms exactly.
+    const budget = shouldStartHaikuCall({ elapsedMs: Date.now() - cronStartTime, timeBudgetMs: TIME_BUDGET_MS, callsReserveMs: callsReserveMsFor(callsCtx.mode) });
     if (refreshFailure) {
       // F1b — a swap committed and its re-read failed. No model call: the
       // prompt would describe a book that is not the book.
@@ -4352,6 +4356,18 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       tickCapture.stage('finalized');
       tickCapture.exit('completed');
     });
+    // Calls (§3.7): the model-path phase — publication (when the entry said
+    // `expected`), the flips, one status write — after the evaluation commit
+    // and before narration dispatch, under the shared clock with the 12 s tail
+    // protected. Inert at off; isolated at shadow/on; never the trade's
+    // concern. Runs only on the model-result row (the phase checks it).
+    await callsStepAsync(callsCtx, () => runModelCallsPhase(callsCtx, {
+      db,
+      battle,
+      timeBudgetMs: TIME_BUDGET_MS,
+      promptBuiltAt,
+      tickId: tickCapture.enabled ? (tickCapture.state?.tickId ?? null) : null,
+    }));
   } catch (err) {
     // Tick capture (C-9): THE ERROR EXIT. Marked here so the `finally` below
     // SKIPS capture on this path — the outer handler finalizes the registered

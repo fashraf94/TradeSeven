@@ -22,7 +22,8 @@
 //     collections, so a mode-off row can assert ZERO of each
 //   · `__hooks` — the race and latency injections the publication and flip
 //     rows need (a completion that commits between a transaction's reads and
-//     its commit; a commit that lands late; a failing query)
+//     its commit; a commit that lands late; a commit whose acknowledgement is
+//     late; a failing query)
 //
 // ZERO product imports beyond the two base fixtures (their own rule).
 
@@ -107,6 +108,8 @@ export function makeCallsDb({ seed = {}, abortFirstTransactionWithSeq = null, ..
     afterTxBody: null,
     /** async ({ writes }) → void — runs after the conflict check, before the writes apply (a slow commit). */
     beforeCommit: null,
+    /** async ({ writes }) → void — runs after the writes APPLIED, before the call returns (a late acknowledgement). */
+    afterCommit: null,
     /** Error | null — the next calls query rejects with it. */
     failQuery: null,
     /** number of transaction attempts seen (read-only for tests). */
@@ -283,6 +286,7 @@ export function makeCallsDb({ seed = {}, abortFirstTransactionWithSeq = null, ..
             await w.ref.update(w.data);
           }
         }
+        if (hooks.afterCommit) await hooks.afterCommit({ attempt, writes });
         return result;
       }
       const err = new Error('10 ABORTED: Too much contention on these documents.');
