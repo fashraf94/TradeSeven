@@ -181,3 +181,13 @@ export const ACTION_SOURCES = Object.freeze([
 
 /** Action kinds the record distinguishes. */
 export const ACTION_KINDS = Object.freeze(['swap']);
+
+/**
+ * Cockpit Build 0 — the call-record kinds (contract
+ * docs/CALL_RECORD_FIELD_CONTRACT_V1_3.md §1: "kind ∈ {called_shot,
+ * confirmation, pick}. No other kind is ever written"). ONE source: the calls
+ * validator (api/_utils/callRecords/validate.js) mints from this list and the
+ * capture serializer admits `calls.*.kind` against it. It lives here because
+ * the capture modules import only their sibling constants.
+ */
+export const CALL_KINDS = Object.freeze(['called_shot', 'confirmation', 'pick']);
