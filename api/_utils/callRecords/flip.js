@@ -26,11 +26,14 @@
 // only a hint — the transaction re-decides everything):
 //   skip if not open, the parent is not active, the call was minted by THIS
 //   check (never a hit on the minting check), or observedAtMs ≤ mintedAt;
-//   horizon.basis 'next_check' (founder ruling E-3): the FIRST check with
-//   observedAtMs ≥ expiresAt evaluates the condition once — `hit` if met, else
-//   `expired_unresolved`; any later check only expires it. "Later" is read off
-//   the battle's persisted scan status: a previous check whose scan ran at or
-//   after the expiry (`cronState.callFlips.observedAtMs ≥ expiresAt`);
+//   horizon.basis 'next_check' (founder ruling E-3 as clarified by branch
+//   review BR-1): the first scan that REACHES the still-open call with
+//   observedAtMs ≥ expiresAt judges it once, from its own observation — `hit`
+//   if met, else `expired_unresolved` — state and receipt committed together.
+//   "Judged" means that transaction committed: a query, read or transaction
+//   that fails first judges nothing, and a later scan judges it from ITS
+//   observation. No battle-level clock decides it; the transaction's re-read
+//   of the call (not open → skip) is what makes the judgment happen once;
 //   every other basis: observedAtMs > expiresAt → `expired_unresolved`;
 //   else the symbol in the observation and px > level (above) / px < level
 //   (below) → `hit`;
@@ -96,25 +99,22 @@ function conditionMet(call, observation) {
 /**
  * The transition an observation proves for an OPEN call, or null.
  *
- * `next_check` (founder ruling E-3, 2026-09-24; review E-3): the horizon ends
- * AT the next check's slot, and that check can only observe after its cron
- * fires — so the FIRST check with observedAtMs ≥ expiresAt evaluates the
- * condition once: `hit` if met, else `expired_unresolved`. A LATER check
- * (`priorScanAtMs` — the observation instant of the previous check whose scan
- * ran — already at or after the expiry) only expires it.
+ * `next_check` (founder ruling E-3, clarified by branch review BR-1): expiresAt
+ * is the call's JUDGMENT boundary — the next check's slot, which that check can
+ * only observe after its cron fires. An observation at or after it judges the
+ * still-open call once: `hit` if met, else `expired_unresolved`. Which check
+ * judges is decided per call, by the first transaction that commits a
+ * transition for it (planFlip rejects a call that is no longer open) — never by
+ * a battle-level scan clock. A later first reach judges from its own, later
+ * observation.
  *
  * Every other basis (unchanged): expiry wins when the observation is outside
  * the horizon (observedAtMs > expiresAt); the exact expiry instant is inside it.
- *
- * @param {object} call
- * @param {object} observation
- * @param {{ priorScanAtMs?: number|null }} [opts]
  */
-export function decideFlip(call, observation, { priorScanAtMs = null } = {}) {
+export function decideFlip(call, observation) {
   const at = observation.observedAtMs;
   const expiresAt = call?.horizon?.expiresAt;
   if (call?.horizon?.basis === 'next_check' && finite(expiresAt) && at >= expiresAt) {
-    if (finite(priorScanAtMs) && priorScanAtMs >= expiresAt) return 'expired_unresolved';
     return conditionMet(call, observation) ? 'hit' : 'expired_unresolved';
   }
   if (finite(expiresAt) && at > expiresAt) return 'expired_unresolved';
@@ -155,11 +155,11 @@ export function matchesWholeTrade(call, executorResult, { selectedSymbol = null 
  * why nothing happens; otherwise `next` (a transition or null) and `acted`.
  * Pure — the page read uses it as a hint and the transaction as the authority.
  */
-export function planFlip(call, { observation, evalId, executorResult, priorScanAtMs = null }) {
+export function planFlip(call, { observation, evalId, executorResult }) {
   if (!call || call.state !== 'open') return { skip: 'not_open' };
   if (evalId !== null && call.evalId === evalId) return { skip: 'minting_check' };
   if (!(finite(call.mintedAt) && observation.observedAtMs > call.mintedAt)) return { skip: 'before_mint' };
-  const next = decideFlip(call, observation, { priorScanAtMs });
+  const next = decideFlip(call, observation);
   const acted = evalId !== null && executorResult != null
     && !(isPlainObject(call.outcome) && call.outcome.actedEvalId)
     && matchesWholeTrade(call, executorResult);
@@ -191,7 +191,7 @@ function isIndexMissing(err) {
 // ---------------------------------------------------------------------------
 
 /** One call's transaction. Never throws. */
-async function flipOne({ db, battleId, callId, observation, evalId, executorResult, priorScanAtMs, deadlineMs }) {
+async function flipOne({ db, battleId, callId, observation, evalId, executorResult, deadlineMs }) {
   const budgetMs = Math.min(FLIP_TX_MS, deadlineMs - Date.now());
   if (budgetMs <= 0) return { result: 'not_started' };
   const attemptDeadlineMs = Date.now() + budgetMs;
@@ -206,7 +206,7 @@ async function flipOne({ db, battleId, callId, observation, evalId, executorResu
       if (!parent || parent.status !== 'active') return { result: 'skipped', reason: 'parent_terminal' };
       if (!callSnap?.exists) return { result: 'skipped', reason: 'missing' };
       const call = callSnap.data();
-      const plan = planFlip(call, { observation, evalId, executorResult, priorScanAtMs });
+      const plan = planFlip(call, { observation, evalId, executorResult });
       if (plan.skip) return { result: 'skipped', reason: plan.skip };
       // The reads can outlast the ceiling: nothing is written — so no commit is
       // issued — once it has passed (review E-1).
@@ -253,9 +253,6 @@ export async function runCallFlips(callsCtx, { db, battle, deadlineMs }) {
   // actedEvalId: the model-result row only, with a committed identity.
   const executorResult = callsCtx.exit === 'model_result' && evalId !== null ? (callsCtx.executorResult ?? null) : null;
   const startCursor = cursorOf(battle?.cronState?.callFlips?.cursor);
-  // Ruling E-3: the previous scan's observation instant decides whether THIS
-  // check is the first at or after a next_check call's expiry.
-  const priorScanAtMs = finite(battle?.cronState?.callFlips?.observedAtMs) ? battle.cronState.callFlips.observedAtMs : null;
   const diag = {
     scanned: 0, hit: 0, expired: 0, acted: 0, receipts: 0, skipped: {}, unconfirmed: 0, failed: 0,
     pages: 0, wrapped: false, complete: false, index: flipIndex.state, stopped: null, ms: 0,
@@ -265,9 +262,7 @@ export async function runCallFlips(callsCtx, { db, battle, deadlineMs }) {
     diag.index = flipIndex.state;
     diag.ms = Date.now() - startedMs;
     return {
-      // observedAtMs: this scan's observation instant — the next check's
-      // priorScanAtMs (ruling E-3; §3.8's status plus this one field).
-      status: { evalId, cursor: complete ? null : cursor, scanned: diag.scanned, total: complete ? diag.scanned : null, complete, observedAtMs: observation.observedAtMs },
+      status: { evalId, cursor: complete ? null : cursor, scanned: diag.scanned, total: complete ? diag.scanned : null, complete },
       diag,
     };
   };
@@ -313,11 +308,11 @@ export async function runCallFlips(callsCtx, { db, battle, deadlineMs }) {
       const call = doc.data();
       const position = { mintedAt: call?.mintedAt, callId: doc.id };
       diag.scanned += 1;
-      const plan = planFlip(call, { observation, evalId, executorResult, priorScanAtMs });
+      const plan = planFlip(call, { observation, evalId, executorResult });
       if (plan.skip) {
         diag.skipped[plan.skip] = (diag.skipped[plan.skip] || 0) + 1;
       } else {
-        const res = await flipOne({ db, battleId, callId: doc.id, observation, evalId, executorResult, priorScanAtMs, deadlineMs });
+        const res = await flipOne({ db, battleId, callId: doc.id, observation, evalId, executorResult, deadlineMs });
         if (res.result === 'not_started') { diag.scanned -= 1; diag.stopped = 'deadline'; return finish(cursor, false); }
         if (res.result === 'flipped') {
           if (res.next === 'hit') diag.hit += 1;
