@@ -358,3 +358,34 @@ describe('the desktop window reads the WINDOW — the pod list\'s open pools —
     expect(open.slice(open.indexOf('data-backing="desk-rail"'))).toContain('Window open');
   });
 });
+
+describe('the desktop results section says "nothing yet" / "unavailable" only after a read answers (WIRE-5)', () => {
+  const now = new Date('2026-09-23T14:00:00.000Z');
+  const resultsSection = (results, myStats) => renderToString(
+    <BackingDesk
+      uid="viewer-1"
+      pods={{ data: { backingWeekCloses: SUNDAY_CLOSE }, pods: [], loading: false, error: null }}
+      state={{ kind: 'between', pods: 1, reopens: null }}
+      windowState={{ kind: 'quiet' }}
+      inPlay={{ stakes: [], poolsById: {}, groupsById: {}, labelsById: {} }}
+      wallet={{ known: true, left: 1000, total: 1000 }}
+      eligibility={{ status: ELIGIBILITY.ATTESTED, refresh: () => {} }}
+      view={{ kind: 'list', groupId: null, odUserId: null }}
+      section="results"
+      results={results}
+      myStats={myStats}
+      now={now}
+    />,
+  );
+  it('the first commit after the reads are enabled (no answer yet, not loading) is LOADING — no alert, no empty state', () => {
+    const html = resultsSection({ data: null, weeks: [], loading: false, error: null }, { data: null, loading: false, error: null });
+    expect(html).not.toContain('role="alert"');
+    expect(html).not.toContain('data-backing="results-empty"');
+    expect(html).toContain('Loading');
+  });
+  it('an answer with no weeks is the empty state; an error is the alert (the rows are not vacuous)', () => {
+    const empty = resultsSection({ data: { weeks: [] }, weeks: [], loading: false, error: null }, { data: null, loading: false, error: new Error('x') });
+    expect(empty).toContain('data-backing="results-empty"');
+    expect(empty).toContain('role="alert"');
+  });
+});
