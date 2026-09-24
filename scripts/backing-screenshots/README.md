@@ -21,3 +21,31 @@ node scripts/backing-screenshots/shoot.mjs $SHOTS docs/design/backing/screenshot
   mobile width, 2× scale. The app's two web fonts are fetched with curl and
   served locally; without them the pages use the system fonts and the script
   says so.
+
+## Desktop (Backing desktop layouts)
+
+The pictures in `docs/design/backing/desktop/screenshots/` come from
+`desktop.render.jsx`, the same way: the real desktop surfaces with the flag
+forced on in the harness only, over invented inputs, written as `desk-*.html`
+pages and photographed at **1440×900, 1×**.
+
+```sh
+SHOTS=/tmp/backing-desk-shots
+BACKING_SHOTS_DIR=$SHOTS npx vitest run --config scripts/backing-screenshots/vitest.config.mjs scripts/backing-screenshots/desktop.render.jsx
+node scripts/backing-screenshots/shoot.mjs $SHOTS docs/design/backing/desktop/screenshots desk-
+```
+
+- `desktop.render.jsx` — frames each page the way App lays out a desktop
+  width: the real `DesktopSidebar` (fixed, 220px) with the surface beside it.
+  It walks the real flow — the lobby's strip → the Backing screen → a seat →
+  "Back" — and writes: the landing (not seated / seated × no bracket /
+  bracket), each strip state, the Backing screen during the window (no card
+  yet, first-week card, veteran card, stake control, top-up, the one-time
+  confirmation), Your Backing, the results, and the private record and the
+  trainer stats in their desktop home (the Command surface's left column,
+  beside the pitch — its other two columns are not rendered).
+- `shoot.mjs` photographs `desk-*` pages at 1440×900 and, on the pages that
+  show the stake control, MEASURES the desktop brief's rule — the three
+  disclosure lines and Confirm on screen without scrolling — and fails if
+  either is off-screen. The third argument limits the run to pages with that
+  name prefix.

@@ -134,10 +134,11 @@ function write(name, title, container) {
 }
 
 // The League tab exactly as App lays it out on a desktop: the sidebar, the League beside it.
+// `screen` is the sidebar's active item — the Command surface (the profile pages) is Compete's.
 const sidebarProps = { screen: 'league', setScreen: () => {}, setShowForge: () => {}, showForge: false, user: { username: 'Alice', wins: 4, losses: 3 }, unreadCount: 0, collapsed: false, onToggleCollapse: () => {}, onLogout: () => {} };
-const AppFrame = ({ children }) => (
+const AppFrame = ({ screen = 'league', children }) => (
   <ThemeProvider>
-    <DesktopSidebar {...sidebarProps} />
+    <DesktopSidebar {...sidebarProps} screen={screen} />
     <div style={{ marginLeft: '220px' }}>{children}</div>
   </ThemeProvider>
 );
@@ -432,7 +433,7 @@ describe('the Backing screen, desktop — Monday–Friday and Friday take the wh
 describe('the private record and the trainer stats — their desktop home, beside the pitch', () => {
   const agent = { id: 'a1', ownerId: 'u1', name: 'Prime', archetype: 'momentum_chaser', stats: { gamesPlayed: 7, wins: 4, avgScore: 64 } };
   const panel = () => (
-    <AppFrame>
+    <AppFrame screen="dashboard">
       <div style={{ height: '900px', padding: '22px 30px', background: LTOKENS.bg }}>
         <div style={{ width: '300px', height: '100%', overflowY: 'auto' }} className="lg-scroll">
           <IdentityPanel agent={agent} accent="#5EEAD4" live={false} record="4-3" winRate={57} levelConfig={{ label: 'Starter' }} nextLevelInfo={{ label: 'Partner' }} onOpenRecord={() => {}} />
