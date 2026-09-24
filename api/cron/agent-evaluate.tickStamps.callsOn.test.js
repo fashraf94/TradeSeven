@@ -21,6 +21,7 @@ import {
   makeHoldResult, makeSwapResult, makeToolUseResponse, makeDeclarations, makeObservation, undefinedPaths,
 } from '../_utils/__fixtures__/tickStampsHarness.js';
 import { buildMintCandidate } from '../_utils/callRecords/candidate.js';
+import { resolveCaptureSchema } from '../_utils/tickCapture/captureConfig.js';
 import { makeCallsDb, storedDoc, storedCollection, callsTouches } from '../_utils/__fixtures__/callRecordsStore.js';
 
 const mocks = vi.hoisted(() => ({ getStockAnalysisData: vi.fn(), fetchIntradayBatch: vi.fn(), create: vi.fn() }));
@@ -113,20 +114,36 @@ async function runTick({
   rankingsDoc = makeRankingsDoc(), cronStartTime = Date.now(), modelThrows = null, modelResponse = null,
   breakRefreshAfterSwap = false, buildThrows = null, seed = {}, db: injected = null, beforeModel = null,
   failFinalUpdate = false, swapThrows = null, onSwap = null,
+  onFetch = null, onIntraday = null, newsStories = null, swapPriceOf = null,
 } = {}) {
   flagState.callsMode = mode;
   flagState.tickCapture = capture;
   buildHook.throwMessage = buildThrows;
   mocks.create.mockClear();
   swapMock.mockClear();
-  mocks.getStockAnalysisData.mockImplementation(async (symbol) => (prices[symbol] ? { price: prices[symbol], daily: [] } : {}));
-  mocks.fetchIntradayBatch.mockImplementation(async () => ({ NVDA: makeIntradayCandles() }));
+  mocks.getStockAnalysisData.mockImplementation(async (symbol) => {
+    if (onFetch) await onFetch(symbol);
+    return prices[symbol] ? { price: prices[symbol], daily: [] } : {};
+  });
+  mocks.fetchIntradayBatch.mockImplementation(async () => {
+    if (onIntraday) await onIntraday();
+    return { NVDA: makeIntradayCandles() };
+  });
   mocks.create.mockImplementation(async () => {
     if (beforeModel) await beforeModel();
     if (modelThrows) throw modelThrows;
     return modelResponse ?? makeToolUseResponse(result);
   });
   const db = injected || makeCallsDb({ battle, rankingsDoc, techDocs: makeTechDocs(), seed });
+  if (newsStories) {
+    // FantasyTimes stories for the trigger gate's news read (every symbol's query sees them; the reader dedupes by id).
+    const baseCollection = db.collection.bind(db);
+    db.collection = (col) => {
+      if (col !== 'fantasyTimesStories') return baseCollection(col);
+      const q = { where: () => q, orderBy: () => q, limit: () => q, get: async () => ({ empty: false, size: newsStories.length, docs: newsStories.map((st) => ({ id: st.id, data: () => ({ ...st }) })) }) };
+      return q;
+    };
+  }
   let swaps = 0;
   if (breakRefreshAfterSwap) {
     const baseCollection = db.collection.bind(db);
@@ -159,7 +176,7 @@ async function runTick({
     const outgoing = swapInStore(db, tier, slotIndex, incoming, (s) => prices[s]?.current ?? 0);
     return {
       closedTrade: { symbolIn: incoming.symbol, symbolOut: outgoing.symbol, tier, slotIndex, swappedOutAt: FROZEN_NOW, entryPrice: 0, lockedPoints: 1.5 },
-      incomingAsset: { ...incoming, swapPrice: prices[incoming.symbol]?.current ?? 0 },
+      incomingAsset: { ...incoming, swapPrice: swapPriceOf ? swapPriceOf(incoming.symbol, prices[incoming.symbol]?.current ?? 0) : (prices[incoming.symbol]?.current ?? 0) },
     };
   });
   const summary = { evaluated: 0, held: 0, triggered: 0, skipped: 0, swapped: 0 };
@@ -556,5 +573,139 @@ describe('§3.9 — capture composition end to end: one resolved schema, confirm
     expect(permanent.schemaVersion).toBe(1);
     expect(body.schemaVersion).toBe(1);
     expect(permanent).not.toHaveProperty('calls');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('§3.12 row 1 — composition: the four rows, every unrelated flag fixed', () => {
+  // Every flag but CALL_RECORDS_MODE is its HEAD value (the featureFlags mock
+  // overrides only the calls mode and holds TICK_CAPTURE_ENABLED on), so each
+  // row differs from the next by the calls contribution alone.
+  const capturedPermanent = (db) => [...db.__subStore.entries()].find(([p]) => p.startsWith('agentBattles/battle-tick-1/ticks/'))?.[1];
+
+  it('row 1 — calls off · pilot off: the HEAD tool, the version-1 capture shape, the calls data neither read nor written', async () => {
+    const [call] = earlierCalls([KO_OUT]);
+    const { db, tool } = await runTick({ mode: 'off', seed: seedOf([call]), result: makeHoldResult({ declarations: makeDeclarations() }) });
+    expect(tool).toBe(TRADE_DECISION_TOOL);
+    expect(capturedPermanent(db)).toMatchObject({ schemaVersion: 1 });
+    expect(capturedPermanent(db)).not.toHaveProperty('calls');
+    expect(callsTouches(db)).toEqual({ reads: 0, writes: 0, queries: 0 });
+  });
+
+  for (const mode of ['shadow', 'on']) {
+    it(`row 2 — calls ${mode} · pilot off: + declarations in the tool, version 2 + calls[] in the capture, the calls data active`, async () => {
+      const [call] = earlierCalls([KO_OUT]);
+      const { db, tool } = await runTick({ mode, seed: seedOf([call]), result: makeHoldResult({ declarations: makeDeclarations() }) });
+      expect(Object.keys(tool.input_schema.properties).filter((k) => !(k in TRADE_DECISION_TOOL.input_schema.properties))).toEqual(['declarations']);
+      expect(capturedPermanent(db)).toMatchObject({ schemaVersion: 2 });
+      expect(capturedPermanent(db).calls).toHaveLength(2);
+      expect(storedDoc(db, 'calls', call.callId).state).toBe('hit');
+    });
+  }
+
+  it('rows 3–4 — pilot on (calls off / on): UNAVAILABLE at this baseline, reported and never claimed', () => {
+    // No pilot flag or pilot capture registration exists at the build baseline
+    // (reconciliation gate). The resolver refuses both rows; no emitted shape
+    // carries a borrowed version. Nothing here claims those rows work.
+    for (const callsEnabled of [false, true]) {
+      expect(resolveCaptureSchema({ callsEnabled, pilotEnabled: true })).toMatchObject({ available: false, version: null, reason: 'pilot_unregistered' });
+    }
+  });
+});
+
+describe('§3.12 row 3 — the quote shape at the model seam', () => {
+  it('a forced-entry-price symbol observes its FETCHED quote, marked replacedInPrompt — never the execution price', async () => {
+    // KO and PG bust: the risk loop swaps them out; each incoming name enters at 1% OVER its fetched quote.
+    const calls = earlierCalls([AMD_IN, { ...AMD_IN, symbol: 'JPM', counterpart: 'PG', condition: { side: 'above', level: 200 }, said: 'JPM in above $200.' }]);
+    const { db } = await runTick({ mode: 'shadow', prices: bustingPrices(), seed: seedOf(calls), swapPriceOf: (_s, fetched) => Math.round(fetched * 101) / 100 });
+    const swappedIn = swapMock.mock.calls.map((c) => c[5]?.symbol);
+    expect(swappedIn.length).toBeGreaterThan(0);
+    const fetched = { AMD: 162.0, JPM: 201.1 };
+    for (const call of calls) {
+      if (!swappedIn.includes(call.symbol)) continue;
+      const receipt = storedDoc(db, 'callObservations', call.callId);
+      expect(receipt).toMatchObject({ px: fetched[call.symbol], replacedInPrompt: true, source: 'model_prompt' });
+      // The risk loop's swap is not the model's executor result: no act.
+      expect(storedDoc(db, 'calls', call.callId).outcome).not.toHaveProperty('actedEvalId');
+    }
+  });
+});
+
+describe('§3.12 row 4 — the clock: every exit observes at its own instant, after every admitted quote arrived', () => {
+  const T1 = Date.parse(FROZEN_NOW);
+
+  it('a call expiring AFTER the initial quote-health instant but BEFORE the exit resolves expired at the exit instant — never a hit at the health instant', async () => {
+    // AMD (bench; the flat no-trigger table quotes 159.5 at T1) is above 158 —
+    // a hit IF observed at T1. The clock moves 3 minutes after the initial
+    // fetch (inside the 290 s handler budget); the call expires 1 minute in.
+    const [call] = earlierCalls([{ ...AMD_IN, condition: { side: 'above', level: 158 } }]);
+    const expiring = { ...call, horizon: { ...call.horizon, expiresAt: T1 + 60_000 } };
+    const onIntraday = async () => { vi.setSystemTime(new Date(T1 + 3 * 60_000)); };
+    const { db } = await runTick({ mode: 'shadow', seed: seedOf([expiring]), onIntraday, ...NO_ENTRY_PATHS.no_trigger() });
+    expect(storedDoc(db, 'calls', call.callId)).toMatchObject({ state: 'expired_unresolved', stateChangedAt: T1 + 3 * 60_000 });
+    expect(storedDoc(db, 'callObservations', call.callId)).toMatchObject({ observedAtMs: T1 + 3 * 60_000, source: 'no_trigger', px: 159.5 });
+  });
+
+  it('a LATER augmentation fetch straddling the expiry: the catalyst quote is observed at the exit instant (fetchedAtMs ≤ observedAtMs), so the call expires', async () => {
+    // A FantasyTimes story on NVDA names XOM — a catalyst the tick adds to its bench and prices LATE, 3 minutes after
+    // the initial fetch. A call on XOM expired at the 1-minute mark. Observed at the initial health instant it would be
+    // unobservable (fetched after it) and stay open; at the exit instant it is observed and expired.
+    const rankingsDoc = makeRankingsDoc();
+    rankingsDoc.stocks = [...rankingsDoc.stocks, { symbol: 'XOM', name: 'Exxon', baseATR: 2.5, atrPercentile: 0.3, baggerBombFit: 50, sectorName: 'Energy', bBandwidthPercentile: 70, nr7Flag: false, dailyRange: 2 }];
+    const prices = { ...makePriceTable(), XOM: { current: 118.5, previousClose: 117.9, changePercent: 0.51 } };
+    const [template] = earlierCalls([AMD_IN]);
+    const xomCall = { ...template, callId: 'battle-tick-1:eval_000:call:9', symbol: 'XOM', counterpart: null, condition: { side: 'above', level: 110 }, horizon: { ...template.horizon, expiresAt: T1 + 60_000 } };
+    const onFetch = async (symbol) => { if (symbol === 'XOM') vi.setSystemTime(new Date(T1 + 3 * 60_000)); };
+    const newsStories = [{ id: 'story-xom-1', tickers: ['NVDA', 'XOM'], publishedAt: new Date(T1 - 60_000), headline: 'Energy names move', type: 'news' }];
+    const { db } = await runTick({ mode: 'shadow', seed: seedOf([xomCall]), rankingsDoc, prices, onFetch, newsStories });
+    expect(mocks.getStockAnalysisData.mock.calls.map((c) => c[0])).toContain('XOM');
+    const receipt = storedDoc(db, 'callObservations', xomCall.callId);
+    expect(receipt).toMatchObject({ px: 118.5 });
+    expect(receipt.observedAtMs).toBeGreaterThanOrEqual(T1 + 3 * 60_000);
+    expect(storedDoc(db, 'calls', xomCall.callId).state).toBe('expired_unresolved');
+  });
+
+  it('each flipping exit stamps its own instant — at or after every quote it admitted, and (past the data fetch) after the initial health instant', async () => {
+    const rows = {
+      // budget_skipped: 100 s left at the start → 40 s at admission after the 60 s the data fetch costs (< 48 s: skipped), 28 s available at its hook.
+      model_result: {}, budget_skipped: { cronStartTime: T1 - (TIME_BUDGET_MS - 100_000) },
+      no_trigger: NO_ENTRY_PATHS.no_trigger(), proposal_pending: NO_ENTRY_PATHS.proposal_pending(),
+      gameplan_pending: withStop(NO_ENTRY_PATHS.gameplan_pending()), gameplan_created: withStop(NO_ENTRY_PATHS.gameplan_created()),
+    };
+    for (const [name, args] of Object.entries(rows)) {
+      vi.setSystemTime(new Date(T1));
+      const [call] = earlierCalls([KO_OUT]);
+      let lastFetch = 0;
+      const onFetch = async () => { lastFetch = Date.now(); };
+      const onIntraday = async () => { vi.setSystemTime(new Date(Date.now() + 60_000)); };
+      const { db } = await runTick({ mode: 'shadow', seed: seedOf([call]), onFetch, onIntraday, ...args });
+      const receipt = storedDoc(db, 'callObservations', call.callId);
+      expect(receipt, name).not.toBeNull();
+      expect(receipt.observedAtMs, name).toBeGreaterThanOrEqual(lastFetch);
+      expect(receipt.observedAtMs, name).toBeGreaterThan(T1);
+    }
+  });
+});
+
+describe('shadow changes no prompt (contract §9: "nothing rendered")', () => {
+  it('the next check\'s model request is byte-identical with the call-record state on the battle and without it', async () => {
+    const prior = { evalId: 'eval_1', timestamp: '2026-09-09T14:45:00.000Z', decision: 'HOLD', symbolOut: null, symbolIn: null, tier: null, rationale: 'held', hypothesis: null };
+    const plain = makeTickBattle({ evaluations: [prior] });
+    const stateful = makeTickBattle({
+      evaluations: [{ ...prior, declarationsPhase: 'expected' }],
+      cronState: {
+        ...plain.cronState,
+        declarationsPhase: { evalId: 'eval_1', phase: 'written' },
+        callFlips: { evalId: 'eval_1', cursor: { mintedAt: 1, callId: 'battle-tick-1:eval_1:call:0' }, scanned: 1, total: 1, complete: true },
+        callsDiag: { evalId: 'eval_1', exit: 'model_result', phaseResult: 'written', perId: [], removed: [], flips: null, truncated: false, faults: [], ms: 3 },
+      },
+    });
+    await runTick({ mode: 'shadow', battle: plain });
+    const a = mocks.create.mock.calls[0][0];
+    await runTick({ mode: 'shadow', battle: stateful });
+    const b = mocks.create.mock.calls[0][0];
+    expect(JSON.stringify(b.messages)).toBe(JSON.stringify(a.messages));
+    expect(JSON.stringify(b.system)).toBe(JSON.stringify(a.system));
+    expect(JSON.stringify(b)).not.toMatch(/callFlips|callsDiag|declarationsPhase/);
   });
 });
