@@ -9,11 +9,14 @@
 // written (the rollback fixture: every scenario runs against a store SEEDED
 // with them).
 //
-// THE FIXTURE (api/_utils/__fixtures__/callRecordsOffGolden.json) WAS CAPTURED
-// FROM THE UNTOUCHED TREE — branch claude/cockpit-build0-call-records @ c2f1b883,
-// whose source is byte-identical to origin/main @ 987a9a68 — BEFORE any Build 0
-// source existed. Regenerate it ONLY from such a tree (never to make this suite
-// green after a Build 0 change):
+// THE FIXTURE (api/_utils/__fixtures__/callRecordsOffGolden.json) IS CAPTURED
+// FROM THE UNTOUCHED PRODUCT TREE — first at c2f1b883, then (review C-2: every
+// writer's arguments + the errored tick's capture) from a `git archive` of
+// 20d207d7, whose product source is byte-identical to origin/main @ 987a9a68,
+// BEFORE any Build 0 source existed. Its SHA-256 is pinned below (review C-9):
+// the label inside the file is a literal and proves nothing by itself.
+// Regenerate it ONLY from such a tree (never to make this suite green after a
+// Build 0 change), then move the pin in the same commit:
 //   GENERATE_CALLS_OFF_GOLDEN=1 npx vitest run api/cron/agent-evaluate.callRecords.offGolden.test.js
 // The generating run fails on purpose after writing, and refuses CI.
 //
@@ -27,6 +30,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -90,9 +94,38 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => {
 
 const { processAgentBattle } = await import('./agent-evaluate.js');
 const { TRADE_DECISION_TOOL } = await import('../_utils/agentEvalToolSchema.js');
+// The handler's own per-battle capture scope and errored-tick finalization
+// (agent-evaluate.js, the battle loop's catch) — mirrored so the tick_error
+// row's capture document is compared too (review C-2).
+const { newTickCaptureScope, runInTickCaptureScope, claimTickCaptureContext } = await import('../_utils/tickCapture/captureContext.js');
+const { finalizeTickCapture } = await import('../_utils/tickCapture/captureWriter.js');
+// THE MOCKED WRITERS (review C-2): the frozen fixture also records every
+// argument the cron hands to a writer this harness doubles — the executor,
+// the tournament ledger, the learning receipt, the narration and anticipation
+// dispatchers and the shadow logger — so a changed payload to any of them is
+// a changed byte, not an invisible one.
+const ledger = await import('../_utils/tournamentAgentLedger.js');
+const receipts = await import('../_utils/learning/captureReceipt.js');
+const narration = await import('../_utils/voiceLayerTradeNarration.js');
+const anticipation = await import('../_utils/voiceLayerAnticipation.js');
+const shadowLog = await import('../_utils/shadowLogger.js');
+const WRITERS = {
+  executeSwapServer: () => swapMock,
+  reserveSymbol: () => ledger.reserveSymbol,
+  confirmSwap: () => ledger.confirmSwap,
+  releaseReservation: () => ledger.releaseReservation,
+  captureSwapReceipt: () => receipts.captureSwapReceipt,
+  generateTradeNarration: () => narration.generateTradeNarration,
+  generateAnticipation: () => anticipation.generateAnticipation,
+  logEvaluation: () => shadowLog.logEvaluation,
+  logVisionTransition: () => shadowLog.logVisionTransition,
+  logAnticipation: () => shadowLog.logAnticipation,
+};
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const GOLDEN_PATH = resolve(HERE, '../_utils/__fixtures__/callRecordsOffGolden.json');
+/** The fixture's SHA-256 as captured from the pre-change tree (review C-9). */
+const GOLDEN_SHA256 = '15a442dd066ba17104621083dc13deba3bd671167da538b4f232815fb6381091';
 const ENV = globalThis.process?.env || {};
 const GENERATE = ENV.GENERATE_CALLS_OFF_GOLDEN === '1';
 if (GENERATE && ENV.CI) throw new Error('GENERATE_CALLS_OFF_GOLDEN is a local, deliberate act — never on CI');
@@ -205,6 +238,7 @@ async function runScenario(name) {
   } = SCENARIOS[name]();
   flagState.tickCapture = capture;
   buildHook.throwMessage = buildThrows;
+  for (const get of Object.values(WRITERS)) get().mockClear();
   mocks.getStockAnalysisData.mockImplementation(async (symbol) => (prices[symbol] ? { price: prices[symbol], daily: [] } : {}));
   mocks.fetchIntradayBatch.mockImplementation(async () => ({ NVDA: makeIntradayCandles() }));
   mocks.create.mockImplementation(async () => {
@@ -247,18 +281,35 @@ async function runScenario(name) {
 
   const summary = { evaluated: 0, held: 0, triggered: 0, skipped: 0, swapped: 0 };
   let thrown = null;
+  // One capture scope per battle, exactly as the handler creates it; a tick
+  // that THREW is finalized from that scope as the handler's catch does.
+  const captureScope = capture ? newTickCaptureScope() : null;
   try {
-    await processAgentBattle(db, battle, summary, cronStartTime, new Map(), { everEnabled: false });
-  } catch (err) { thrown = String(err?.message || err); }
+    await runInTickCaptureScope(captureScope, () => processAgentBattle(db, battle, summary, cronStartTime, new Map(), { everEnabled: false }));
+  } catch (err) {
+    thrown = String(err?.message || err);
+    const abandoned = claimTickCaptureContext(captureScope);
+    if (abandoned) await finalizeTickCapture(db, abandoned, { remainingBudgetMs: TIME_BUDGET_MS - (Date.now() - cronStartTime) });
+  }
 
   // The request params the model received (the AbortSignal option is not bytes).
   const prompts = mocks.create.mock.calls.map((call) => deepClone(call[0]));
+  // Every writer's arguments; the Firestore handle and the in-memory battle
+  // are named, not dumped (they are the harness's own objects).
+  const argOf = (a) => {
+    if (a === db) return '<db>';
+    if (a === battle) return '<battle>';
+    if (a && typeof a === 'object' && !Array.isArray(a) && 'db' in a) return Object.fromEntries(Object.entries(a).map(([k, v]) => [k, k === 'db' ? '<db>' : (v === battle ? '<battle>' : v)]));
+    return a;
+  };
+  const writers = Object.fromEntries(Object.entries(WRITERS).map(([name, get]) => [name, get().mock.calls.map((call) => deepClone(call.map(argOf)))]));
   const snapshot = {
     thrown,
     summary,
     updates: db.__updates,
     prompts,
     capture: db.__captureWrites,
+    writers,
   };
   return { snapshot, db, seed, swaps };
 }
@@ -294,7 +345,7 @@ describe('calls OFF — byte-identical to the frozen pre-change fixture on every
       swapMock.mockReset();
     }
     writeFileSync(GOLDEN_PATH, `${JSON.stringify({
-      capturedFrom: 'claude/cockpit-build0-call-records @ c2f1b883 (source byte-identical to origin/main @ 987a9a68) — BEFORE any Build 0 source; harness tickStampsHarness.js + tickCaptureHarness.js + callRecordsStore.js',
+      capturedFrom: 'a git archive of claude/cockpit-build0-call-records @ 20d207d7 (product source byte-identical to origin/main @ 987a9a68 — BEFORE any Build 0 source) with this suite\'s review-C-2 harness (writer arguments; the errored tick finalized as the handler does); harness tickStampsHarness.js + tickCaptureHarness.js + callRecordsStore.js',
       frozenNow: FROZEN_NOW,
       toolSchema: JSON.parse(serialize(TRADE_DECISION_TOOL)),
       scenarios,
@@ -337,6 +388,23 @@ describe('calls OFF — byte-identical to the frozen pre-change fixture on every
     const passRan = (name) => golden.scenarios[name].capture[0]?.find((w) => w.path.includes('/ticks/'))?.data.guardrail.suppressionPassRan;
     expect(passRan('gameplan_pending_with_pass')).toBe(true);
     expect(passRan('gameplan_pending')).toBe(false);
+    expect(passRan('gameplan_created_with_pass')).toBe(true);
+    expect(passRan('gameplan_created')).toBe(false);
+    // The errored tick's capture is finalized as the handler does, and compared (review C-2).
+    expect(exitOf('tick_error')).toBe('tick_error');
+    // The writers are recorded: the SWAP rows handed the executor its payload, the narration its trade.
+    expect(golden.scenarios.completed_swap.writers.executeSwapServer).toHaveLength(1);
+    // Positional: (db, battleId, battle, tier, slotIndex, incoming, currentDay, prices, evaluationMetadata, snapshot).
+    const [swapCall] = golden.scenarios.completed_swap.writers.executeSwapServer;
+    expect(swapCall[0]).toBe('<db>');
+    expect(swapCall[2]).toBe('<battle>');
+    expect(swapCall[8]).toBeTruthy(); // evaluationMetadata — the payload the executor persists
+    expect(golden.scenarios.risk_swaps_then_model_hold.writers.executeSwapServer).toHaveLength(2);
+    expect(golden.scenarios.completed_swap.writers.generateTradeNarration).toHaveLength(1);
+  });
+
+  it('the fixture file is exactly the one captured from the pre-change tree (SHA-256 pinned — review C-9)', () => {
+    expect(createHash('sha256').update(readFileSync(GOLDEN_PATH)).digest('hex')).toBe(GOLDEN_SHA256);
   });
 
   it('the tool schema is byte-identical to the frozen constant', () => {
@@ -352,6 +420,7 @@ describe('calls OFF — byte-identical to the frozen pre-change fixture on every
       expect(serialize(live.prompts), `${name}: prompt bytes moved`).toBe(serialize(frozen.prompts));
       expect(serialize(live.capture), `${name}: capture documents moved`).toBe(serialize(frozen.capture));
       expect(serialize(live.summary), `${name}: summary moved`).toBe(serialize(frozen.summary));
+      expect(serialize(live.writers), `${name}: a writer's arguments moved`).toBe(serialize(frozen.writers));
       expect(live.thrown).toBe(frozen.thrown);
       // THE ROLLBACK FIXTURE: existing call records untouched and unread.
       expect(callsTouches(db), `${name}: the call-record collections were touched at off`).toEqual({ reads: 0, writes: 0, queries: 0 });

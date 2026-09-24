@@ -1,5 +1,5 @@
 {
-  "capturedFrom": "claude/cockpit-build0-call-records @ c2f1b883 (source byte-identical to origin/main @ 987a9a68) — BEFORE any Build 0 source; harness tickStampsHarness.js + tickCaptureHarness.js + callRecordsStore.js",
+  "capturedFrom": "a git archive of claude/cockpit-build0-call-records @ 20d207d7 (product source byte-identical to origin/main @ 987a9a68 — BEFORE any Build 0 source) with this suite's review-C-2 harness (writer arguments; the errored tick finalized as the handler does); harness tickStampsHarness.js + tickCaptureHarness.js + callRecordsStore.js",
   "frozenNow": "2026-09-09T15:00:00.000Z",
   "toolSchema": {
     "name": "submit_trade_decision",
@@ -1094,7 +1094,55 @@
             }
           }
         ]
-      ]
+      ],
+      "writers": {
+        "executeSwapServer": [],
+        "reserveSymbol": [],
+        "confirmSwap": [],
+        "releaseReservation": [],
+        "captureSwapReceipt": [],
+        "generateTradeNarration": [],
+        "generateAnticipation": [],
+        "logEvaluation": [
+          [
+            {
+              "battleId": "battle-tick-1",
+              "agentId": "agent-1",
+              "userId": "owner-uid-1",
+              "evalId": "eval_001",
+              "timestamp": "2026-09-09T15:00:00.000Z",
+              "battlePhase": "EARLY",
+              "decision": "HOLD",
+              "symbolOut": null,
+              "symbolIn": null,
+              "tier": null,
+              "rationale": "NVDA is pressing its first ATR line with the sector leading; nothing on the bench outranks what I hold. Holding the book as it stands.",
+              "hypothesis": "Hypothesis: NVDA clears +1x ATR before the close and holds the star slot.",
+              "conviction": 58,
+              "triggers": [
+                "forced_open"
+              ],
+              "scores": {
+                "active": 33,
+                "banked": 0,
+                "total": 33
+              },
+              "marketPosture": "selective",
+              "downgraded": false,
+              "tokenUsage": {
+                "input": 4321,
+                "output": 210
+              },
+              "failureClass": null,
+              "guardrailFault": null,
+              "buildMs": 0,
+              "callMs": 0
+            }
+          ]
+        ],
+        "logVisionTransition": [],
+        "logAnticipation": []
+      }
     },
     "completed_hold_capture_off": {
       "thrown": null,
@@ -1648,7 +1696,55 @@
           }
         }
       ],
-      "capture": []
+      "capture": [],
+      "writers": {
+        "executeSwapServer": [],
+        "reserveSymbol": [],
+        "confirmSwap": [],
+        "releaseReservation": [],
+        "captureSwapReceipt": [],
+        "generateTradeNarration": [],
+        "generateAnticipation": [],
+        "logEvaluation": [
+          [
+            {
+              "battleId": "battle-tick-1",
+              "agentId": "agent-1",
+              "userId": "owner-uid-1",
+              "evalId": "eval_001",
+              "timestamp": "2026-09-09T15:00:00.000Z",
+              "battlePhase": "EARLY",
+              "decision": "HOLD",
+              "symbolOut": null,
+              "symbolIn": null,
+              "tier": null,
+              "rationale": "NVDA is pressing its first ATR line with the sector leading; nothing on the bench outranks what I hold. Holding the book as it stands.",
+              "hypothesis": "Hypothesis: NVDA clears +1x ATR before the close and holds the star slot.",
+              "conviction": 58,
+              "triggers": [
+                "forced_open"
+              ],
+              "scores": {
+                "active": 33,
+                "banked": 0,
+                "total": 33
+              },
+              "marketPosture": "selective",
+              "downgraded": false,
+              "tokenUsage": {
+                "input": 4321,
+                "output": 210
+              },
+              "failureClass": null,
+              "guardrailFault": null,
+              "buildMs": 0,
+              "callMs": 0
+            }
+          ]
+        ],
+        "logVisionTransition": [],
+        "logAnticipation": []
+      }
     },
     "completed_swap": {
       "thrown": null,
@@ -2527,7 +2623,436 @@
             }
           }
         ]
-      ]
+      ],
+      "writers": {
+        "executeSwapServer": [
+          [
+            "<db>",
+            "battle-tick-1",
+            "<battle>",
+            "support",
+            0,
+            {
+              "symbol": "AMD",
+              "name": "AMD",
+              "baseATR": 3.4,
+              "isCrypto": false,
+              "sector": "Technology"
+            },
+            1,
+            {
+              "NVDA": {
+                "current": 123.4,
+                "previousClose": 121,
+                "changePercent": 1.98
+              },
+              "TSLA": {
+                "current": 244.9,
+                "previousClose": 249,
+                "changePercent": -1.65
+              },
+              "MSFT": {
+                "current": 412.3,
+                "previousClose": 409.5,
+                "changePercent": 0.68
+              },
+              "AMZN": {
+                "current": 186.2,
+                "previousClose": 184,
+                "changePercent": 1.2
+              },
+              "KO": {
+                "current": 62,
+                "previousClose": 62.3,
+                "changePercent": -0.48
+              },
+              "PG": {
+                "current": 166.1,
+                "previousClose": 165,
+                "changePercent": 0.67
+              },
+              "BTC": {
+                "current": 67450,
+                "previousClose": 66800,
+                "changePercent": 0.97
+              },
+              "AMD": {
+                "current": 162,
+                "previousClose": 159.5,
+                "changePercent": 1.57
+              },
+              "JPM": {
+                "current": 201.1,
+                "previousClose": 200.2,
+                "changePercent": 0.45
+              },
+              "SPY": {
+                "current": 560.2,
+                "previousClose": 556,
+                "changePercent": 0.76
+              },
+              "QQQ": {
+                "current": 480.1,
+                "previousClose": 477.3,
+                "changePercent": 0.59
+              },
+              "BTC-USD.CC": {
+                "current": 67450,
+                "previousClose": 66800,
+                "changePercent": 0.97
+              }
+            },
+            {
+              "id": "trade_001",
+              "action": "SWAP",
+              "trigger": "forced_open",
+              "rationale": "KO has gone dead money while the semis keep leading; AMD's relative strength is the cleanest on the bench and volume confirmed the push. Rotating the support slot into strength.",
+              "hypothesis": "Hypothesis: AMD closes above its 20-day within two sessions and holds the support slot.",
+              "evaluationId": "eval_001",
+              "tradingDay": 1,
+              "entryRegime": "choppy",
+              "entryMarketPosture": "selective",
+              "entryConviction": 72,
+              "entryPreset": "balanced",
+              "entryMode": "autopilot",
+              "exitReason": "haiku_decision",
+              "swapMotive": null,
+              "source": "haiku",
+              "archetype": null,
+              "hftKnobsSource": "archetype",
+              "swapProvenance": {
+                "tempoDesired": "standard",
+                "tempoEffective": "standard",
+                "selectionSource": "default",
+                "dialBandVersion": 2,
+                "knobConfigVersion": 2
+              },
+              "trade_reasoning": null
+            },
+            {
+              "symbolOut": {
+                "symbol": "KO",
+                "sectorName": "Consumer Defensive",
+                "capturedAt": "2026-09-09T15:00:00.000Z",
+                "trend": {
+                  "shortTerm": null,
+                  "intermediate": null,
+                  "longTerm": null
+                },
+                "momentum": {
+                  "rsi": 44,
+                  "macdAboveSignal": false,
+                  "macdFreshBullishCross": null,
+                  "macdFreshBearishCross": null,
+                  "macdHistogram": -0.05,
+                  "divergence": null,
+                  "upDayVolRatio": 0.8
+                },
+                "volatility": {
+                  "bbPercentB": null,
+                  "bbUpper": null,
+                  "bbLower": null,
+                  "bBandwidthPercentile": 12,
+                  "atrPercent": 1.1
+                },
+                "volume": {
+                  "avgVolume": null,
+                  "ratio": null,
+                  "tier": null,
+                  "nr7Flag": true,
+                  "dailyRange": 0.6
+                },
+                "smaStack": {
+                  "aboveSMA20": false,
+                  "aboveSMA50": false,
+                  "aboveSMA200": true,
+                  "sma200_position": null,
+                  "distTo52wkHigh": null
+                },
+                "rs": {
+                  "rsPercentile": 22,
+                  "sectorRSPercentile": null
+                },
+                "levels": {
+                  "nearestSupport": null,
+                  "nearestResistance": null,
+                  "distanceToSupportPct": null,
+                  "distanceToResistancePct": null
+                },
+                "pivots": null,
+                "recentAction": {
+                  "lastCandlePattern": null
+                },
+                "intraday": {
+                  "vwap": null,
+                  "currentPrice": null,
+                  "vwapDeviation": null,
+                  "sma20_5m": null,
+                  "sessionDate": null
+                },
+                "composite": {
+                  "technicalScore": null,
+                  "technicalRank": null,
+                  "sectorTechnicalRank": null,
+                  "sectorTechnicalTotal": null
+                }
+              },
+              "symbolIn": {
+                "symbol": "AMD",
+                "sectorName": "Technology",
+                "capturedAt": "2026-09-09T15:00:00.000Z",
+                "trend": {
+                  "shortTerm": null,
+                  "intermediate": null,
+                  "longTerm": null
+                },
+                "momentum": {
+                  "rsi": 66,
+                  "macdAboveSignal": true,
+                  "macdFreshBullishCross": null,
+                  "macdFreshBearishCross": null,
+                  "macdHistogram": 0.5,
+                  "divergence": null,
+                  "upDayVolRatio": 1.4
+                },
+                "volatility": {
+                  "bbPercentB": null,
+                  "bbUpper": null,
+                  "bbLower": null,
+                  "bBandwidthPercentile": 20,
+                  "atrPercent": 4.5
+                },
+                "volume": {
+                  "avgVolume": null,
+                  "ratio": null,
+                  "tier": null,
+                  "nr7Flag": true,
+                  "dailyRange": 4.4
+                },
+                "smaStack": {
+                  "aboveSMA20": true,
+                  "aboveSMA50": true,
+                  "aboveSMA200": true,
+                  "sma200_position": null,
+                  "distTo52wkHigh": null
+                },
+                "rs": {
+                  "rsPercentile": 91,
+                  "sectorRSPercentile": null
+                },
+                "levels": {
+                  "nearestSupport": null,
+                  "nearestResistance": null,
+                  "distanceToSupportPct": null,
+                  "distanceToResistancePct": null
+                },
+                "pivots": null,
+                "recentAction": {
+                  "lastCandlePattern": null
+                },
+                "intraday": {
+                  "vwap": null,
+                  "currentPrice": null,
+                  "vwapDeviation": null,
+                  "sma20_5m": null,
+                  "sessionDate": null
+                },
+                "composite": {
+                  "technicalScore": null,
+                  "technicalRank": null,
+                  "sectorTechnicalRank": null,
+                  "sectorTechnicalTotal": null
+                }
+              }
+            }
+          ]
+        ],
+        "reserveSymbol": [],
+        "confirmSwap": [],
+        "releaseReservation": [],
+        "captureSwapReceipt": [
+          [
+            {
+              "enabled": true,
+              "db": "<db>",
+              "agentId": "agent-1",
+              "archetype": "analyst",
+              "battleId": "battle-tick-1",
+              "battleDay": 1,
+              "timestamp": "2026-09-09T15:00:00.000Z",
+              "receiptSeq": 1,
+              "symbolIn": "AMD",
+              "symbolOut": "KO",
+              "source": "haiku",
+              "exitReason": "haiku_decision",
+              "haikuSwapReason": "haiku_decision",
+              "resolvedTier": "support",
+              "resolvedSlotIndex": 0,
+              "entryMark": 162,
+              "entryATR": 3.4,
+              "entryAtrSource": "bench_atr",
+              "outgoingEntryPrice": 0,
+              "outgoingBaseATR": 1.1,
+              "thresholdHistory": null,
+              "outgoingSwappedInAt": null,
+              "outgoingSwappedInDay": null,
+              "archetypeIntegrityMode": "enforce",
+              "snapshotIn": null,
+              "snapshotOut": {
+                "symbol": "KO",
+                "sectorName": "Consumer Defensive",
+                "capturedAt": "2026-09-09T15:00:00.000Z",
+                "trend": {
+                  "shortTerm": null,
+                  "intermediate": null,
+                  "longTerm": null
+                },
+                "momentum": {
+                  "rsi": 44,
+                  "macdAboveSignal": false,
+                  "macdFreshBullishCross": null,
+                  "macdFreshBearishCross": null,
+                  "macdHistogram": -0.05,
+                  "divergence": null,
+                  "upDayVolRatio": 0.8
+                },
+                "volatility": {
+                  "bbPercentB": null,
+                  "bbUpper": null,
+                  "bbLower": null,
+                  "bBandwidthPercentile": 12,
+                  "atrPercent": 1.1
+                },
+                "volume": {
+                  "avgVolume": null,
+                  "ratio": null,
+                  "tier": null,
+                  "nr7Flag": true,
+                  "dailyRange": 0.6
+                },
+                "smaStack": {
+                  "aboveSMA20": false,
+                  "aboveSMA50": false,
+                  "aboveSMA200": true,
+                  "sma200_position": null,
+                  "distTo52wkHigh": null
+                },
+                "rs": {
+                  "rsPercentile": 22,
+                  "sectorRSPercentile": null
+                },
+                "levels": {
+                  "nearestSupport": null,
+                  "nearestResistance": null,
+                  "distanceToSupportPct": null,
+                  "distanceToResistancePct": null
+                },
+                "pivots": null,
+                "recentAction": {
+                  "lastCandlePattern": null
+                },
+                "intraday": {
+                  "vwap": null,
+                  "currentPrice": null,
+                  "vwapDeviation": null,
+                  "sma20_5m": null,
+                  "sessionDate": null
+                },
+                "composite": {
+                  "technicalScore": null,
+                  "technicalRank": null,
+                  "sectorTechnicalRank": null,
+                  "sectorTechnicalTotal": null
+                }
+              },
+              "entrySnapshotSource": "unavailable",
+              "regimeIn": "directional_expansion",
+              "regimeOut": "choppy",
+              "techDocIn": null,
+              "techDocOut": {
+                "symbol": "KO",
+                "atrPercent": 1.1,
+                "factors": {
+                  "aboveSMA20": false,
+                  "aboveSMA50": false,
+                  "aboveSMA200": true,
+                  "rsi": 44,
+                  "macdHistogram": -0.05,
+                  "macdAboveSignal": false,
+                  "upDayVolRatio": 0.8,
+                  "rsPercentile": 22
+                },
+                "updatedAt": {}
+              },
+              "dataMode": null,
+              "rankingsComputedAtMs": 1788964200000,
+              "tradeCountAtDecision": 0,
+              "tradesLenAtDecision": 0,
+              "capturedAt": "2026-09-09T15:00:00.000Z"
+            }
+          ]
+        ],
+        "generateTradeNarration": [
+          [
+            {
+              "db": "<db>",
+              "battleId": "battle-tick-1",
+              "agentId": "agent-1",
+              "closedTrade": {
+                "symbolIn": "AMD",
+                "symbolOut": "KO",
+                "tier": "support",
+                "slotIndex": 0,
+                "swappedOutAt": "2026-09-09T15:00:00.000Z",
+                "entryPrice": 0,
+                "lockedPoints": 1.5
+              },
+              "evalId": "eval_001",
+              "ownerId": "owner-uid-1"
+            }
+          ]
+        ],
+        "generateAnticipation": [],
+        "logEvaluation": [
+          [
+            {
+              "battleId": "battle-tick-1",
+              "agentId": "agent-1",
+              "userId": "owner-uid-1",
+              "evalId": "eval_001",
+              "timestamp": "2026-09-09T15:00:00.000Z",
+              "battlePhase": "EARLY",
+              "decision": "SWAP",
+              "symbolOut": "KO",
+              "symbolIn": "AMD",
+              "tier": "support",
+              "rationale": "KO has gone dead money while the semis keep leading; AMD's relative strength is the cleanest on the bench and volume confirmed the push. Rotating the support slot into strength.",
+              "hypothesis": "Hypothesis: AMD closes above its 20-day within two sessions and holds the support slot.",
+              "conviction": 72,
+              "triggers": [
+                "forced_open"
+              ],
+              "scores": {
+                "active": 33,
+                "banked": 0,
+                "total": 33
+              },
+              "marketPosture": "selective",
+              "downgraded": false,
+              "tokenUsage": {
+                "input": 4321,
+                "output": 210
+              },
+              "failureClass": null,
+              "guardrailFault": null,
+              "buildMs": 0,
+              "callMs": 0
+            }
+          ]
+        ],
+        "logVisionTransition": [],
+        "logAnticipation": []
+      }
     },
     "risk_swaps_then_model_hold": {
       "thrown": null,
@@ -3443,7 +3968,814 @@
             }
           }
         ]
-      ]
+      ],
+      "writers": {
+        "executeSwapServer": [
+          [
+            "<db>",
+            "battle-tick-1",
+            "<battle>",
+            "support",
+            0,
+            {
+              "symbol": "AMD",
+              "name": "AMD",
+              "baseATR": 3.4,
+              "isCrypto": false,
+              "sector": "Technology",
+              "benchType": "stock",
+              "slotIndex": 0
+            },
+            1,
+            {
+              "NVDA": {
+                "current": 123.4,
+                "previousClose": 121,
+                "changePercent": 1.98
+              },
+              "TSLA": {
+                "current": 244.9,
+                "previousClose": 249,
+                "changePercent": -1.65
+              },
+              "MSFT": {
+                "current": 412.3,
+                "previousClose": 409.5,
+                "changePercent": 0.68
+              },
+              "AMZN": {
+                "current": 186.2,
+                "previousClose": 184,
+                "changePercent": 1.2
+              },
+              "KO": {
+                "current": 61.578,
+                "previousClose": 62.3,
+                "changePercent": -0.48
+              },
+              "PG": {
+                "current": 163.647,
+                "previousClose": 165,
+                "changePercent": 0.67
+              },
+              "BTC": {
+                "current": 67450,
+                "previousClose": 66800,
+                "changePercent": 0.97
+              },
+              "AMD": {
+                "current": 162,
+                "previousClose": 159.5,
+                "changePercent": 1.57
+              },
+              "JPM": {
+                "current": 201.1,
+                "previousClose": 200.2,
+                "changePercent": 0.45
+              },
+              "SPY": {
+                "current": 560.2,
+                "previousClose": 556,
+                "changePercent": 0.76
+              },
+              "QQQ": {
+                "current": 480.1,
+                "previousClose": 477.3,
+                "changePercent": 0.59
+              },
+              "BTC-USD.CC": {
+                "current": 67450,
+                "previousClose": 66800,
+                "changePercent": 0.97
+              }
+            },
+            {
+              "id": "trade_001",
+              "action": "SWAP",
+              "trigger": "bust_avoidance",
+              "rationale": "Risk manager: KO at -0.91x ATR (-1.00% from entry). Hit -0.85x bust avoidance buffer. Emergency rotation to protect score.",
+              "hypothesis": null,
+              "evaluationId": "risk_bust_avoidance_KO_1788966000000",
+              "tradingDay": 1,
+              "entryRegime": "choppy",
+              "entryMarketPosture": "selective",
+              "entryConviction": 0,
+              "entryPreset": "balanced",
+              "entryMode": "autopilot",
+              "exitReason": "bust_avoidance",
+              "source": "risk_manager",
+              "archetype": null,
+              "hftKnobsSource": "archetype",
+              "swapProvenance": {
+                "tempoDesired": "standard",
+                "tempoEffective": "standard",
+                "selectionSource": "default",
+                "dialBandVersion": 2,
+                "knobConfigVersion": 2
+              }
+            },
+            {
+              "symbolOut": {
+                "symbol": "KO",
+                "sectorName": "Consumer Defensive",
+                "capturedAt": "2026-09-09T15:00:00.000Z",
+                "trend": {
+                  "shortTerm": null,
+                  "intermediate": null,
+                  "longTerm": null
+                },
+                "momentum": {
+                  "rsi": 44,
+                  "macdAboveSignal": false,
+                  "macdFreshBullishCross": null,
+                  "macdFreshBearishCross": null,
+                  "macdHistogram": -0.05,
+                  "divergence": null,
+                  "upDayVolRatio": 0.8
+                },
+                "volatility": {
+                  "bbPercentB": null,
+                  "bbUpper": null,
+                  "bbLower": null,
+                  "bBandwidthPercentile": 12,
+                  "atrPercent": 1.1
+                },
+                "volume": {
+                  "avgVolume": null,
+                  "ratio": null,
+                  "tier": null,
+                  "nr7Flag": true,
+                  "dailyRange": 0.6
+                },
+                "smaStack": {
+                  "aboveSMA20": false,
+                  "aboveSMA50": false,
+                  "aboveSMA200": true,
+                  "sma200_position": null,
+                  "distTo52wkHigh": null
+                },
+                "rs": {
+                  "rsPercentile": 22,
+                  "sectorRSPercentile": null
+                },
+                "levels": {
+                  "nearestSupport": null,
+                  "nearestResistance": null,
+                  "distanceToSupportPct": null,
+                  "distanceToResistancePct": null
+                },
+                "pivots": null,
+                "recentAction": {
+                  "lastCandlePattern": null
+                },
+                "intraday": {
+                  "vwap": null,
+                  "currentPrice": null,
+                  "vwapDeviation": null,
+                  "sma20_5m": null,
+                  "sessionDate": null
+                },
+                "composite": {
+                  "technicalScore": null,
+                  "technicalRank": null,
+                  "sectorTechnicalRank": null,
+                  "sectorTechnicalTotal": null
+                }
+              },
+              "symbolIn": {
+                "symbol": "AMD",
+                "sectorName": "Technology",
+                "capturedAt": "2026-09-09T15:00:00.000Z",
+                "trend": {
+                  "shortTerm": null,
+                  "intermediate": null,
+                  "longTerm": null
+                },
+                "momentum": {
+                  "rsi": 66,
+                  "macdAboveSignal": true,
+                  "macdFreshBullishCross": null,
+                  "macdFreshBearishCross": null,
+                  "macdHistogram": 0.5,
+                  "divergence": null,
+                  "upDayVolRatio": 1.4
+                },
+                "volatility": {
+                  "bbPercentB": null,
+                  "bbUpper": null,
+                  "bbLower": null,
+                  "bBandwidthPercentile": 20,
+                  "atrPercent": 4.5
+                },
+                "volume": {
+                  "avgVolume": null,
+                  "ratio": null,
+                  "tier": null,
+                  "nr7Flag": true,
+                  "dailyRange": 4.4
+                },
+                "smaStack": {
+                  "aboveSMA20": true,
+                  "aboveSMA50": true,
+                  "aboveSMA200": true,
+                  "sma200_position": null,
+                  "distTo52wkHigh": null
+                },
+                "rs": {
+                  "rsPercentile": 91,
+                  "sectorRSPercentile": null
+                },
+                "levels": {
+                  "nearestSupport": null,
+                  "nearestResistance": null,
+                  "distanceToSupportPct": null,
+                  "distanceToResistancePct": null
+                },
+                "pivots": null,
+                "recentAction": {
+                  "lastCandlePattern": null
+                },
+                "intraday": {
+                  "vwap": null,
+                  "currentPrice": null,
+                  "vwapDeviation": null,
+                  "sma20_5m": null,
+                  "sessionDate": null
+                },
+                "composite": {
+                  "technicalScore": null,
+                  "technicalRank": null,
+                  "sectorTechnicalRank": null,
+                  "sectorTechnicalTotal": null
+                }
+              }
+            }
+          ],
+          [
+            "<db>",
+            "battle-tick-1",
+            "<battle>",
+            "support",
+            1,
+            {
+              "symbol": "JPM",
+              "name": "JPMorgan",
+              "baseATR": 1.6,
+              "isCrypto": false,
+              "sector": "Financial Services",
+              "benchType": "stock",
+              "slotIndex": 0
+            },
+            1,
+            {
+              "NVDA": {
+                "current": 123.4,
+                "previousClose": 121,
+                "changePercent": 1.98
+              },
+              "TSLA": {
+                "current": 244.9,
+                "previousClose": 249,
+                "changePercent": -1.65
+              },
+              "MSFT": {
+                "current": 412.3,
+                "previousClose": 409.5,
+                "changePercent": 0.68
+              },
+              "AMZN": {
+                "current": 186.2,
+                "previousClose": 184,
+                "changePercent": 1.2
+              },
+              "KO": {
+                "current": 61.578,
+                "previousClose": 62.3,
+                "changePercent": -0.48
+              },
+              "PG": {
+                "current": 163.647,
+                "previousClose": 165,
+                "changePercent": 0.67
+              },
+              "BTC": {
+                "current": 67450,
+                "previousClose": 66800,
+                "changePercent": 0.97
+              },
+              "AMD": {
+                "current": 162,
+                "previousClose": 159.5,
+                "changePercent": 1.57
+              },
+              "JPM": {
+                "current": 201.1,
+                "previousClose": 200.2,
+                "changePercent": 0.45
+              },
+              "SPY": {
+                "current": 560.2,
+                "previousClose": 556,
+                "changePercent": 0.76
+              },
+              "QQQ": {
+                "current": 480.1,
+                "previousClose": 477.3,
+                "changePercent": 0.59
+              },
+              "BTC-USD.CC": {
+                "current": 67450,
+                "previousClose": 66800,
+                "changePercent": 0.97
+              }
+            },
+            {
+              "id": "trade_003",
+              "action": "SWAP",
+              "trigger": "bust_avoidance",
+              "rationale": "Risk manager: PG at -1.00x ATR (-1.00% from entry). Hit -0.85x bust avoidance buffer. Emergency rotation to protect score.",
+              "hypothesis": null,
+              "evaluationId": "risk_bust_avoidance_PG_1788966000000",
+              "tradingDay": 1,
+              "entryRegime": "directional_contraction",
+              "entryMarketPosture": "selective",
+              "entryConviction": 0,
+              "entryPreset": "balanced",
+              "entryMode": "autopilot",
+              "exitReason": "bust_avoidance",
+              "source": "risk_manager",
+              "archetype": null,
+              "hftKnobsSource": "archetype",
+              "swapProvenance": {
+                "tempoDesired": "standard",
+                "tempoEffective": "standard",
+                "selectionSource": "default",
+                "dialBandVersion": 2,
+                "knobConfigVersion": 2
+              }
+            },
+            {
+              "symbolOut": {
+                "symbol": "PG",
+                "sectorName": "Consumer Defensive",
+                "capturedAt": "2026-09-09T15:00:00.000Z",
+                "trend": {
+                  "shortTerm": null,
+                  "intermediate": null,
+                  "longTerm": null
+                },
+                "momentum": {
+                  "rsi": 52,
+                  "macdAboveSignal": true,
+                  "macdFreshBullishCross": null,
+                  "macdFreshBearishCross": null,
+                  "macdHistogram": 0.02,
+                  "divergence": null,
+                  "upDayVolRatio": 1
+                },
+                "volatility": {
+                  "bbPercentB": null,
+                  "bbUpper": null,
+                  "bbLower": null,
+                  "bBandwidthPercentile": 30,
+                  "atrPercent": 1
+                },
+                "volume": {
+                  "avgVolume": null,
+                  "ratio": null,
+                  "tier": null,
+                  "nr7Flag": false,
+                  "dailyRange": 1.4
+                },
+                "smaStack": {
+                  "aboveSMA20": true,
+                  "aboveSMA50": true,
+                  "aboveSMA200": true,
+                  "sma200_position": null,
+                  "distTo52wkHigh": null
+                },
+                "rs": {
+                  "rsPercentile": 47,
+                  "sectorRSPercentile": null
+                },
+                "levels": {
+                  "nearestSupport": null,
+                  "nearestResistance": null,
+                  "distanceToSupportPct": null,
+                  "distanceToResistancePct": null
+                },
+                "pivots": null,
+                "recentAction": {
+                  "lastCandlePattern": null
+                },
+                "intraday": {
+                  "vwap": null,
+                  "currentPrice": null,
+                  "vwapDeviation": null,
+                  "sma20_5m": null,
+                  "sessionDate": null
+                },
+                "composite": {
+                  "technicalScore": null,
+                  "technicalRank": null,
+                  "sectorTechnicalRank": null,
+                  "sectorTechnicalTotal": null
+                }
+              },
+              "symbolIn": {
+                "symbol": "JPM",
+                "sectorName": "Financial Services",
+                "capturedAt": "2026-09-09T15:00:00.000Z",
+                "trend": {
+                  "shortTerm": null,
+                  "intermediate": null,
+                  "longTerm": null
+                },
+                "momentum": {
+                  "rsi": 57,
+                  "macdAboveSignal": true,
+                  "macdFreshBullishCross": null,
+                  "macdFreshBearishCross": null,
+                  "macdHistogram": 0.05,
+                  "divergence": null,
+                  "upDayVolRatio": 1
+                },
+                "volatility": {
+                  "bbPercentB": null,
+                  "bbUpper": null,
+                  "bbLower": null,
+                  "bBandwidthPercentile": 60,
+                  "atrPercent": 1.3
+                },
+                "volume": {
+                  "avgVolume": null,
+                  "ratio": null,
+                  "tier": null,
+                  "nr7Flag": false,
+                  "dailyRange": 2.2
+                },
+                "smaStack": {
+                  "aboveSMA20": true,
+                  "aboveSMA50": true,
+                  "aboveSMA200": true,
+                  "sma200_position": null,
+                  "distTo52wkHigh": null
+                },
+                "rs": {
+                  "rsPercentile": 58,
+                  "sectorRSPercentile": null
+                },
+                "levels": {
+                  "nearestSupport": null,
+                  "nearestResistance": null,
+                  "distanceToSupportPct": null,
+                  "distanceToResistancePct": null
+                },
+                "pivots": null,
+                "recentAction": {
+                  "lastCandlePattern": null
+                },
+                "intraday": {
+                  "vwap": null,
+                  "currentPrice": null,
+                  "vwapDeviation": null,
+                  "sma20_5m": null,
+                  "sessionDate": null
+                },
+                "composite": {
+                  "technicalScore": null,
+                  "technicalRank": null,
+                  "sectorTechnicalRank": null,
+                  "sectorTechnicalTotal": null
+                }
+              }
+            }
+          ]
+        ],
+        "reserveSymbol": [],
+        "confirmSwap": [],
+        "releaseReservation": [],
+        "captureSwapReceipt": [
+          [
+            {
+              "enabled": true,
+              "db": "<db>",
+              "agentId": "agent-1",
+              "archetype": "analyst",
+              "battleId": "battle-tick-1",
+              "battleDay": 1,
+              "timestamp": "2026-09-09T15:00:00.000Z",
+              "receiptSeq": 1,
+              "symbolIn": "AMD",
+              "symbolOut": "KO",
+              "source": "risk_manager",
+              "exitReason": "bust_avoidance",
+              "haikuSwapReason": null,
+              "resolvedTier": "support",
+              "resolvedSlotIndex": 0,
+              "entryMark": 162,
+              "entryATR": 3.4,
+              "entryAtrSource": "bench_atr",
+              "outgoingEntryPrice": 0,
+              "outgoingBaseATR": 1.1,
+              "thresholdHistory": null,
+              "outgoingSwappedInAt": null,
+              "outgoingSwappedInDay": null,
+              "archetypeIntegrityMode": "enforce",
+              "snapshotIn": null,
+              "snapshotOut": {
+                "symbol": "KO",
+                "sectorName": "Consumer Defensive",
+                "capturedAt": "2026-09-09T15:00:00.000Z",
+                "trend": {
+                  "shortTerm": null,
+                  "intermediate": null,
+                  "longTerm": null
+                },
+                "momentum": {
+                  "rsi": 44,
+                  "macdAboveSignal": false,
+                  "macdFreshBullishCross": null,
+                  "macdFreshBearishCross": null,
+                  "macdHistogram": -0.05,
+                  "divergence": null,
+                  "upDayVolRatio": 0.8
+                },
+                "volatility": {
+                  "bbPercentB": null,
+                  "bbUpper": null,
+                  "bbLower": null,
+                  "bBandwidthPercentile": 12,
+                  "atrPercent": 1.1
+                },
+                "volume": {
+                  "avgVolume": null,
+                  "ratio": null,
+                  "tier": null,
+                  "nr7Flag": true,
+                  "dailyRange": 0.6
+                },
+                "smaStack": {
+                  "aboveSMA20": false,
+                  "aboveSMA50": false,
+                  "aboveSMA200": true,
+                  "sma200_position": null,
+                  "distTo52wkHigh": null
+                },
+                "rs": {
+                  "rsPercentile": 22,
+                  "sectorRSPercentile": null
+                },
+                "levels": {
+                  "nearestSupport": null,
+                  "nearestResistance": null,
+                  "distanceToSupportPct": null,
+                  "distanceToResistancePct": null
+                },
+                "pivots": null,
+                "recentAction": {
+                  "lastCandlePattern": null
+                },
+                "intraday": {
+                  "vwap": null,
+                  "currentPrice": null,
+                  "vwapDeviation": null,
+                  "sma20_5m": null,
+                  "sessionDate": null
+                },
+                "composite": {
+                  "technicalScore": null,
+                  "technicalRank": null,
+                  "sectorTechnicalRank": null,
+                  "sectorTechnicalTotal": null
+                }
+              },
+              "entrySnapshotSource": "unavailable",
+              "regimeIn": "directional_expansion",
+              "regimeOut": "choppy",
+              "techDocIn": null,
+              "techDocOut": {
+                "symbol": "KO",
+                "atrPercent": 1.1,
+                "factors": {
+                  "aboveSMA20": false,
+                  "aboveSMA50": false,
+                  "aboveSMA200": true,
+                  "rsi": 44,
+                  "macdHistogram": -0.05,
+                  "macdAboveSignal": false,
+                  "upDayVolRatio": 0.8,
+                  "rsPercentile": 22
+                },
+                "updatedAt": {}
+              },
+              "dataMode": null,
+              "rankingsComputedAtMs": 1788964200000,
+              "tradeCountAtDecision": 0,
+              "tradesLenAtDecision": 0,
+              "capturedAt": "2026-09-09T15:00:00.000Z"
+            }
+          ],
+          [
+            {
+              "enabled": true,
+              "db": "<db>",
+              "agentId": "agent-1",
+              "archetype": "analyst",
+              "battleId": "battle-tick-1",
+              "battleDay": 1,
+              "timestamp": "2026-09-09T15:00:00.000Z",
+              "receiptSeq": 2,
+              "symbolIn": "JPM",
+              "symbolOut": "PG",
+              "source": "risk_manager",
+              "exitReason": "bust_avoidance",
+              "haikuSwapReason": null,
+              "resolvedTier": "support",
+              "resolvedSlotIndex": 1,
+              "entryMark": 201.1,
+              "entryATR": 1.6,
+              "entryAtrSource": "bench_atr",
+              "outgoingEntryPrice": 0,
+              "outgoingBaseATR": 1,
+              "thresholdHistory": null,
+              "outgoingSwappedInAt": null,
+              "outgoingSwappedInDay": null,
+              "archetypeIntegrityMode": "enforce",
+              "snapshotIn": null,
+              "snapshotOut": {
+                "symbol": "PG",
+                "sectorName": "Consumer Defensive",
+                "capturedAt": "2026-09-09T15:00:00.000Z",
+                "trend": {
+                  "shortTerm": null,
+                  "intermediate": null,
+                  "longTerm": null
+                },
+                "momentum": {
+                  "rsi": 52,
+                  "macdAboveSignal": true,
+                  "macdFreshBullishCross": null,
+                  "macdFreshBearishCross": null,
+                  "macdHistogram": 0.02,
+                  "divergence": null,
+                  "upDayVolRatio": 1
+                },
+                "volatility": {
+                  "bbPercentB": null,
+                  "bbUpper": null,
+                  "bbLower": null,
+                  "bBandwidthPercentile": 30,
+                  "atrPercent": 1
+                },
+                "volume": {
+                  "avgVolume": null,
+                  "ratio": null,
+                  "tier": null,
+                  "nr7Flag": false,
+                  "dailyRange": 1.4
+                },
+                "smaStack": {
+                  "aboveSMA20": true,
+                  "aboveSMA50": true,
+                  "aboveSMA200": true,
+                  "sma200_position": null,
+                  "distTo52wkHigh": null
+                },
+                "rs": {
+                  "rsPercentile": 47,
+                  "sectorRSPercentile": null
+                },
+                "levels": {
+                  "nearestSupport": null,
+                  "nearestResistance": null,
+                  "distanceToSupportPct": null,
+                  "distanceToResistancePct": null
+                },
+                "pivots": null,
+                "recentAction": {
+                  "lastCandlePattern": null
+                },
+                "intraday": {
+                  "vwap": null,
+                  "currentPrice": null,
+                  "vwapDeviation": null,
+                  "sma20_5m": null,
+                  "sessionDate": null
+                },
+                "composite": {
+                  "technicalScore": null,
+                  "technicalRank": null,
+                  "sectorTechnicalRank": null,
+                  "sectorTechnicalTotal": null
+                }
+              },
+              "entrySnapshotSource": "unavailable",
+              "regimeIn": "directional_contraction",
+              "regimeOut": "directional_contraction",
+              "techDocIn": null,
+              "techDocOut": {
+                "symbol": "PG",
+                "atrPercent": 1,
+                "factors": {
+                  "aboveSMA20": true,
+                  "aboveSMA50": true,
+                  "aboveSMA200": true,
+                  "rsi": 52,
+                  "macdHistogram": 0.02,
+                  "macdAboveSignal": true,
+                  "upDayVolRatio": 1,
+                  "rsPercentile": 47
+                },
+                "updatedAt": {}
+              },
+              "dataMode": null,
+              "rankingsComputedAtMs": 1788964200000,
+              "tradeCountAtDecision": 1,
+              "tradesLenAtDecision": 1,
+              "capturedAt": "2026-09-09T15:00:00.000Z"
+            }
+          ]
+        ],
+        "generateTradeNarration": [
+          [
+            {
+              "db": "<db>",
+              "battleId": "battle-tick-1",
+              "agentId": "agent-1",
+              "closedTrade": {
+                "symbolIn": "AMD",
+                "symbolOut": "KO",
+                "tier": "support",
+                "slotIndex": 0,
+                "swappedOutAt": "2026-09-09T15:00:00.000Z",
+                "entryPrice": 0,
+                "lockedPoints": 1.5
+              },
+              "evalId": null,
+              "ownerId": "owner-uid-1"
+            }
+          ],
+          [
+            {
+              "db": "<db>",
+              "battleId": "battle-tick-1",
+              "agentId": "agent-1",
+              "closedTrade": {
+                "symbolIn": "JPM",
+                "symbolOut": "PG",
+                "tier": "support",
+                "slotIndex": 1,
+                "swappedOutAt": "2026-09-09T15:00:00.000Z",
+                "entryPrice": 0,
+                "lockedPoints": 1.5
+              },
+              "evalId": null,
+              "ownerId": "owner-uid-1"
+            }
+          ]
+        ],
+        "generateAnticipation": [],
+        "logEvaluation": [
+          [
+            {
+              "battleId": "battle-tick-1",
+              "agentId": "agent-1",
+              "userId": "owner-uid-1",
+              "evalId": "eval_001",
+              "timestamp": "2026-09-09T15:00:00.000Z",
+              "battlePhase": "EARLY",
+              "decision": "HOLD",
+              "symbolOut": null,
+              "symbolIn": null,
+              "tier": null,
+              "rationale": "NVDA is pressing its first ATR line with the sector leading; nothing on the bench outranks what I hold. Holding the book as it stands.",
+              "hypothesis": "Hypothesis: NVDA clears +1x ATR before the close and holds the star slot.",
+              "conviction": 58,
+              "triggers": [
+                "forced_open"
+              ],
+              "scores": {
+                "active": 1,
+                "banked": 0,
+                "total": 1
+              },
+              "marketPosture": "selective",
+              "downgraded": false,
+              "tokenUsage": {
+                "input": 4321,
+                "output": 210
+              },
+              "failureClass": null,
+              "guardrailFault": null,
+              "buildMs": 0,
+              "callMs": 0
+            }
+          ]
+        ],
+        "logVisionTransition": [],
+        "logAnticipation": []
+      }
     },
     "transport_failed": {
       "thrown": null,
@@ -4278,7 +5610,55 @@
             }
           }
         ]
-      ]
+      ],
+      "writers": {
+        "executeSwapServer": [],
+        "reserveSymbol": [],
+        "confirmSwap": [],
+        "releaseReservation": [],
+        "captureSwapReceipt": [],
+        "generateTradeNarration": [],
+        "generateAnticipation": [],
+        "logEvaluation": [
+          [
+            {
+              "battleId": "battle-tick-1",
+              "agentId": "agent-1",
+              "userId": "owner-uid-1",
+              "evalId": "eval_001",
+              "timestamp": "2026-09-09T15:00:00.000Z",
+              "battlePhase": "EARLY",
+              "decision": "HOLD",
+              "symbolOut": null,
+              "symbolIn": null,
+              "tier": null,
+              "rationale": "Haiku call failed — defaulting to HOLD",
+              "hypothesis": null,
+              "conviction": 0,
+              "triggers": [
+                "forced_open"
+              ],
+              "scores": {
+                "active": 33,
+                "banked": 0,
+                "total": 33
+              },
+              "marketPosture": "selective",
+              "downgraded": false,
+              "tokenUsage": {
+                "input": null,
+                "output": null
+              },
+              "failureClass": "APIConnectionError",
+              "guardrailFault": null,
+              "buildMs": 0,
+              "callMs": 0
+            }
+          ]
+        ],
+        "logVisionTransition": [],
+        "logAnticipation": []
+      }
     },
     "invalid_tool_result": {
       "thrown": null,
@@ -5134,7 +6514,55 @@
             }
           }
         ]
-      ]
+      ],
+      "writers": {
+        "executeSwapServer": [],
+        "reserveSymbol": [],
+        "confirmSwap": [],
+        "releaseReservation": [],
+        "captureSwapReceipt": [],
+        "generateTradeNarration": [],
+        "generateAnticipation": [],
+        "logEvaluation": [
+          [
+            {
+              "battleId": "battle-tick-1",
+              "agentId": "agent-1",
+              "userId": "owner-uid-1",
+              "evalId": "eval_001",
+              "timestamp": "2026-09-09T15:00:00.000Z",
+              "battlePhase": "EARLY",
+              "decision": "HOLD",
+              "symbolOut": null,
+              "symbolIn": null,
+              "tier": null,
+              "rationale": "Haiku call failed — defaulting to HOLD",
+              "hypothesis": null,
+              "conviction": 0,
+              "triggers": [
+                "forced_open"
+              ],
+              "scores": {
+                "active": 33,
+                "banked": 0,
+                "total": 33
+              },
+              "marketPosture": "selective",
+              "downgraded": false,
+              "tokenUsage": {
+                "input": 4321,
+                "output": 210
+              },
+              "failureClass": "invalid_tool_result",
+              "guardrailFault": null,
+              "buildMs": 0,
+              "callMs": 0
+            }
+          ]
+        ],
+        "logVisionTransition": [],
+        "logAnticipation": []
+      }
     },
     "truncated_response": {
       "thrown": null,
@@ -5969,7 +7397,55 @@
             }
           }
         ]
-      ]
+      ],
+      "writers": {
+        "executeSwapServer": [],
+        "reserveSymbol": [],
+        "confirmSwap": [],
+        "releaseReservation": [],
+        "captureSwapReceipt": [],
+        "generateTradeNarration": [],
+        "generateAnticipation": [],
+        "logEvaluation": [
+          [
+            {
+              "battleId": "battle-tick-1",
+              "agentId": "agent-1",
+              "userId": "owner-uid-1",
+              "evalId": "eval_001",
+              "timestamp": "2026-09-09T15:00:00.000Z",
+              "battlePhase": "EARLY",
+              "decision": "HOLD",
+              "symbolOut": null,
+              "symbolIn": null,
+              "tier": null,
+              "rationale": "Haiku call failed — defaulting to HOLD",
+              "hypothesis": null,
+              "conviction": 0,
+              "triggers": [
+                "forced_open"
+              ],
+              "scores": {
+                "active": 33,
+                "banked": 0,
+                "total": 33
+              },
+              "marketPosture": "selective",
+              "downgraded": false,
+              "tokenUsage": {
+                "input": null,
+                "output": null
+              },
+              "failureClass": "truncated_response",
+              "guardrailFault": null,
+              "buildMs": 0,
+              "callMs": 0
+            }
+          ]
+        ],
+        "logVisionTransition": [],
+        "logAnticipation": []
+      }
     },
     "budget_skipped": {
       "thrown": null,
@@ -6428,7 +7904,55 @@
             }
           }
         ]
-      ]
+      ],
+      "writers": {
+        "executeSwapServer": [],
+        "reserveSymbol": [],
+        "confirmSwap": [],
+        "releaseReservation": [],
+        "captureSwapReceipt": [],
+        "generateTradeNarration": [],
+        "generateAnticipation": [],
+        "logEvaluation": [
+          [
+            {
+              "battleId": "battle-tick-1",
+              "agentId": "agent-1",
+              "userId": "owner-uid-1",
+              "evalId": "eval_001",
+              "timestamp": "2026-09-09T15:00:00.000Z",
+              "battlePhase": "EARLY",
+              "decision": "HOLD",
+              "symbolOut": null,
+              "symbolIn": null,
+              "tier": null,
+              "rationale": "Evaluation skipped — cron budget too low to start Haiku call. Defaulting to HOLD.",
+              "hypothesis": null,
+              "conviction": 0,
+              "triggers": [
+                "forced_open"
+              ],
+              "scores": {
+                "active": 33,
+                "banked": 0,
+                "total": 33
+              },
+              "marketPosture": "selective",
+              "downgraded": false,
+              "tokenUsage": {
+                "input": null,
+                "output": null
+              },
+              "failureClass": "budget_skipped",
+              "guardrailFault": null,
+              "buildMs": null,
+              "callMs": null
+            }
+          ]
+        ],
+        "logVisionTransition": [],
+        "logAnticipation": []
+      }
     },
     "refresh_failed": {
       "thrown": null,
@@ -6916,7 +8440,434 @@
             }
           }
         ]
-      ]
+      ],
+      "writers": {
+        "executeSwapServer": [
+          [
+            "<db>",
+            "battle-tick-1",
+            "<battle>",
+            "support",
+            0,
+            {
+              "symbol": "AMD",
+              "name": "AMD",
+              "baseATR": 3.4,
+              "isCrypto": false,
+              "sector": "Technology",
+              "benchType": "stock",
+              "slotIndex": 0
+            },
+            1,
+            {
+              "NVDA": {
+                "current": 123.4,
+                "previousClose": 121,
+                "changePercent": 1.98
+              },
+              "TSLA": {
+                "current": 244.9,
+                "previousClose": 249,
+                "changePercent": -1.65
+              },
+              "MSFT": {
+                "current": 412.3,
+                "previousClose": 409.5,
+                "changePercent": 0.68
+              },
+              "AMZN": {
+                "current": 186.2,
+                "previousClose": 184,
+                "changePercent": 1.2
+              },
+              "KO": {
+                "current": 61.578,
+                "previousClose": 62.3,
+                "changePercent": -0.48
+              },
+              "PG": {
+                "current": 163.647,
+                "previousClose": 165,
+                "changePercent": 0.67
+              },
+              "BTC": {
+                "current": 67450,
+                "previousClose": 66800,
+                "changePercent": 0.97
+              },
+              "AMD": {
+                "current": 162,
+                "previousClose": 159.5,
+                "changePercent": 1.57
+              },
+              "JPM": {
+                "current": 201.1,
+                "previousClose": 200.2,
+                "changePercent": 0.45
+              },
+              "SPY": {
+                "current": 560.2,
+                "previousClose": 556,
+                "changePercent": 0.76
+              },
+              "QQQ": {
+                "current": 480.1,
+                "previousClose": 477.3,
+                "changePercent": 0.59
+              },
+              "BTC-USD.CC": {
+                "current": 67450,
+                "previousClose": 66800,
+                "changePercent": 0.97
+              }
+            },
+            {
+              "id": "trade_001",
+              "action": "SWAP",
+              "trigger": "bust_avoidance",
+              "rationale": "Risk manager: KO at -0.91x ATR (-1.00% from entry). Hit -0.85x bust avoidance buffer. Emergency rotation to protect score.",
+              "hypothesis": null,
+              "evaluationId": "risk_bust_avoidance_KO_1788966000000",
+              "tradingDay": 1,
+              "entryRegime": "choppy",
+              "entryMarketPosture": "selective",
+              "entryConviction": 0,
+              "entryPreset": "balanced",
+              "entryMode": "autopilot",
+              "exitReason": "bust_avoidance",
+              "source": "risk_manager",
+              "archetype": null,
+              "hftKnobsSource": "archetype",
+              "swapProvenance": {
+                "tempoDesired": "standard",
+                "tempoEffective": "standard",
+                "selectionSource": "default",
+                "dialBandVersion": 2,
+                "knobConfigVersion": 2
+              }
+            },
+            {
+              "symbolOut": {
+                "symbol": "KO",
+                "sectorName": "Consumer Defensive",
+                "capturedAt": "2026-09-09T15:00:00.000Z",
+                "trend": {
+                  "shortTerm": null,
+                  "intermediate": null,
+                  "longTerm": null
+                },
+                "momentum": {
+                  "rsi": 44,
+                  "macdAboveSignal": false,
+                  "macdFreshBullishCross": null,
+                  "macdFreshBearishCross": null,
+                  "macdHistogram": -0.05,
+                  "divergence": null,
+                  "upDayVolRatio": 0.8
+                },
+                "volatility": {
+                  "bbPercentB": null,
+                  "bbUpper": null,
+                  "bbLower": null,
+                  "bBandwidthPercentile": 12,
+                  "atrPercent": 1.1
+                },
+                "volume": {
+                  "avgVolume": null,
+                  "ratio": null,
+                  "tier": null,
+                  "nr7Flag": true,
+                  "dailyRange": 0.6
+                },
+                "smaStack": {
+                  "aboveSMA20": false,
+                  "aboveSMA50": false,
+                  "aboveSMA200": true,
+                  "sma200_position": null,
+                  "distTo52wkHigh": null
+                },
+                "rs": {
+                  "rsPercentile": 22,
+                  "sectorRSPercentile": null
+                },
+                "levels": {
+                  "nearestSupport": null,
+                  "nearestResistance": null,
+                  "distanceToSupportPct": null,
+                  "distanceToResistancePct": null
+                },
+                "pivots": null,
+                "recentAction": {
+                  "lastCandlePattern": null
+                },
+                "intraday": {
+                  "vwap": null,
+                  "currentPrice": null,
+                  "vwapDeviation": null,
+                  "sma20_5m": null,
+                  "sessionDate": null
+                },
+                "composite": {
+                  "technicalScore": null,
+                  "technicalRank": null,
+                  "sectorTechnicalRank": null,
+                  "sectorTechnicalTotal": null
+                }
+              },
+              "symbolIn": {
+                "symbol": "AMD",
+                "sectorName": "Technology",
+                "capturedAt": "2026-09-09T15:00:00.000Z",
+                "trend": {
+                  "shortTerm": null,
+                  "intermediate": null,
+                  "longTerm": null
+                },
+                "momentum": {
+                  "rsi": 66,
+                  "macdAboveSignal": true,
+                  "macdFreshBullishCross": null,
+                  "macdFreshBearishCross": null,
+                  "macdHistogram": 0.5,
+                  "divergence": null,
+                  "upDayVolRatio": 1.4
+                },
+                "volatility": {
+                  "bbPercentB": null,
+                  "bbUpper": null,
+                  "bbLower": null,
+                  "bBandwidthPercentile": 20,
+                  "atrPercent": 4.5
+                },
+                "volume": {
+                  "avgVolume": null,
+                  "ratio": null,
+                  "tier": null,
+                  "nr7Flag": true,
+                  "dailyRange": 4.4
+                },
+                "smaStack": {
+                  "aboveSMA20": true,
+                  "aboveSMA50": true,
+                  "aboveSMA200": true,
+                  "sma200_position": null,
+                  "distTo52wkHigh": null
+                },
+                "rs": {
+                  "rsPercentile": 91,
+                  "sectorRSPercentile": null
+                },
+                "levels": {
+                  "nearestSupport": null,
+                  "nearestResistance": null,
+                  "distanceToSupportPct": null,
+                  "distanceToResistancePct": null
+                },
+                "pivots": null,
+                "recentAction": {
+                  "lastCandlePattern": null
+                },
+                "intraday": {
+                  "vwap": null,
+                  "currentPrice": null,
+                  "vwapDeviation": null,
+                  "sma20_5m": null,
+                  "sessionDate": null
+                },
+                "composite": {
+                  "technicalScore": null,
+                  "technicalRank": null,
+                  "sectorTechnicalRank": null,
+                  "sectorTechnicalTotal": null
+                }
+              }
+            }
+          ]
+        ],
+        "reserveSymbol": [],
+        "confirmSwap": [],
+        "releaseReservation": [],
+        "captureSwapReceipt": [
+          [
+            {
+              "enabled": true,
+              "db": "<db>",
+              "agentId": "agent-1",
+              "archetype": "analyst",
+              "battleId": "battle-tick-1",
+              "battleDay": 1,
+              "timestamp": "2026-09-09T15:00:00.000Z",
+              "receiptSeq": 1,
+              "symbolIn": "AMD",
+              "symbolOut": "KO",
+              "source": "risk_manager",
+              "exitReason": "bust_avoidance",
+              "haikuSwapReason": null,
+              "resolvedTier": "support",
+              "resolvedSlotIndex": 0,
+              "entryMark": 162,
+              "entryATR": 3.4,
+              "entryAtrSource": "bench_atr",
+              "outgoingEntryPrice": 0,
+              "outgoingBaseATR": 1.1,
+              "thresholdHistory": null,
+              "outgoingSwappedInAt": null,
+              "outgoingSwappedInDay": null,
+              "archetypeIntegrityMode": "enforce",
+              "snapshotIn": null,
+              "snapshotOut": {
+                "symbol": "KO",
+                "sectorName": "Consumer Defensive",
+                "capturedAt": "2026-09-09T15:00:00.000Z",
+                "trend": {
+                  "shortTerm": null,
+                  "intermediate": null,
+                  "longTerm": null
+                },
+                "momentum": {
+                  "rsi": 44,
+                  "macdAboveSignal": false,
+                  "macdFreshBullishCross": null,
+                  "macdFreshBearishCross": null,
+                  "macdHistogram": -0.05,
+                  "divergence": null,
+                  "upDayVolRatio": 0.8
+                },
+                "volatility": {
+                  "bbPercentB": null,
+                  "bbUpper": null,
+                  "bbLower": null,
+                  "bBandwidthPercentile": 12,
+                  "atrPercent": 1.1
+                },
+                "volume": {
+                  "avgVolume": null,
+                  "ratio": null,
+                  "tier": null,
+                  "nr7Flag": true,
+                  "dailyRange": 0.6
+                },
+                "smaStack": {
+                  "aboveSMA20": false,
+                  "aboveSMA50": false,
+                  "aboveSMA200": true,
+                  "sma200_position": null,
+                  "distTo52wkHigh": null
+                },
+                "rs": {
+                  "rsPercentile": 22,
+                  "sectorRSPercentile": null
+                },
+                "levels": {
+                  "nearestSupport": null,
+                  "nearestResistance": null,
+                  "distanceToSupportPct": null,
+                  "distanceToResistancePct": null
+                },
+                "pivots": null,
+                "recentAction": {
+                  "lastCandlePattern": null
+                },
+                "intraday": {
+                  "vwap": null,
+                  "currentPrice": null,
+                  "vwapDeviation": null,
+                  "sma20_5m": null,
+                  "sessionDate": null
+                },
+                "composite": {
+                  "technicalScore": null,
+                  "technicalRank": null,
+                  "sectorTechnicalRank": null,
+                  "sectorTechnicalTotal": null
+                }
+              },
+              "entrySnapshotSource": "unavailable",
+              "regimeIn": "directional_expansion",
+              "regimeOut": "choppy",
+              "techDocIn": null,
+              "techDocOut": {
+                "symbol": "KO",
+                "atrPercent": 1.1,
+                "factors": {
+                  "aboveSMA20": false,
+                  "aboveSMA50": false,
+                  "aboveSMA200": true,
+                  "rsi": 44,
+                  "macdHistogram": -0.05,
+                  "macdAboveSignal": false,
+                  "upDayVolRatio": 0.8,
+                  "rsPercentile": 22
+                },
+                "updatedAt": {}
+              },
+              "dataMode": null,
+              "rankingsComputedAtMs": 1788964200000,
+              "tradeCountAtDecision": 0,
+              "tradesLenAtDecision": 0,
+              "capturedAt": "2026-09-09T15:00:00.000Z"
+            }
+          ]
+        ],
+        "generateTradeNarration": [
+          [
+            {
+              "db": "<db>",
+              "battleId": "battle-tick-1",
+              "agentId": "agent-1",
+              "closedTrade": {
+                "symbolIn": "AMD",
+                "symbolOut": "KO",
+                "tier": "support",
+                "slotIndex": 0,
+                "swappedOutAt": "2026-09-09T15:00:00.000Z",
+                "entryPrice": 0,
+                "lockedPoints": 1.5
+              },
+              "evalId": null,
+              "ownerId": "owner-uid-1"
+            }
+          ]
+        ],
+        "generateAnticipation": [],
+        "logEvaluation": [
+          [
+            {
+              "battleId": "battle-tick-1",
+              "agentId": "agent-1",
+              "userId": "owner-uid-1",
+              "evalId": "eval_001",
+              "timestamp": "2026-09-09T15:00:00.000Z",
+              "battlePhase": "EARLY",
+              "decision": "HOLD",
+              "symbolOut": null,
+              "symbolIn": null,
+              "tier": null,
+              "rationale": "Haiku call failed — defaulting to HOLD",
+              "hypothesis": null,
+              "conviction": 0,
+              "triggers": [],
+              "scores": {
+                "active": 1,
+                "banked": 0,
+                "total": 1
+              },
+              "marketPosture": "selective",
+              "downgraded": false,
+              "tokenUsage": {
+                "input": null,
+                "output": null
+              },
+              "failureClass": "refresh_failed",
+              "guardrailFault": null,
+              "buildMs": null,
+              "callMs": null
+            }
+          ]
+        ],
+        "logVisionTransition": [],
+        "logAnticipation": []
+      }
     },
     "prompt_build_failed": {
       "thrown": null,
@@ -7375,7 +9326,55 @@
             }
           }
         ]
-      ]
+      ],
+      "writers": {
+        "executeSwapServer": [],
+        "reserveSymbol": [],
+        "confirmSwap": [],
+        "releaseReservation": [],
+        "captureSwapReceipt": [],
+        "generateTradeNarration": [],
+        "generateAnticipation": [],
+        "logEvaluation": [
+          [
+            {
+              "battleId": "battle-tick-1",
+              "agentId": "agent-1",
+              "userId": "owner-uid-1",
+              "evalId": "eval_001",
+              "timestamp": "2026-09-09T15:00:00.000Z",
+              "battlePhase": "EARLY",
+              "decision": "HOLD",
+              "symbolOut": null,
+              "symbolIn": null,
+              "tier": null,
+              "rationale": "Haiku call failed — defaulting to HOLD",
+              "hypothesis": null,
+              "conviction": 0,
+              "triggers": [
+                "forced_open"
+              ],
+              "scores": {
+                "active": 33,
+                "banked": 0,
+                "total": 33
+              },
+              "marketPosture": "selective",
+              "downgraded": false,
+              "tokenUsage": {
+                "input": null,
+                "output": null
+              },
+              "failureClass": "Error",
+              "guardrailFault": null,
+              "buildMs": 0,
+              "callMs": null
+            }
+          ]
+        ],
+        "logVisionTransition": [],
+        "logAnticipation": []
+      }
     },
     "no_trigger": {
       "thrown": null,
@@ -7752,7 +9751,19 @@
             }
           }
         ]
-      ]
+      ],
+      "writers": {
+        "executeSwapServer": [],
+        "reserveSymbol": [],
+        "confirmSwap": [],
+        "releaseReservation": [],
+        "captureSwapReceipt": [],
+        "generateTradeNarration": [],
+        "generateAnticipation": [],
+        "logEvaluation": [],
+        "logVisionTransition": [],
+        "logAnticipation": []
+      }
     },
     "proposal_pending": {
       "thrown": null,
@@ -8131,7 +10142,19 @@
             }
           }
         ]
-      ]
+      ],
+      "writers": {
+        "executeSwapServer": [],
+        "reserveSymbol": [],
+        "confirmSwap": [],
+        "releaseReservation": [],
+        "captureSwapReceipt": [],
+        "generateTradeNarration": [],
+        "generateAnticipation": [],
+        "logEvaluation": [],
+        "logVisionTransition": [],
+        "logAnticipation": []
+      }
     },
     "gameplan_pending": {
       "thrown": null,
@@ -8510,7 +10533,19 @@
             }
           }
         ]
-      ]
+      ],
+      "writers": {
+        "executeSwapServer": [],
+        "reserveSymbol": [],
+        "confirmSwap": [],
+        "releaseReservation": [],
+        "captureSwapReceipt": [],
+        "generateTradeNarration": [],
+        "generateAnticipation": [],
+        "logEvaluation": [],
+        "logVisionTransition": [],
+        "logAnticipation": []
+      }
     },
     "gameplan_pending_with_pass": {
       "thrown": null,
@@ -8889,7 +10924,19 @@
             }
           }
         ]
-      ]
+      ],
+      "writers": {
+        "executeSwapServer": [],
+        "reserveSymbol": [],
+        "confirmSwap": [],
+        "releaseReservation": [],
+        "captureSwapReceipt": [],
+        "generateTradeNarration": [],
+        "generateAnticipation": [],
+        "logEvaluation": [],
+        "logVisionTransition": [],
+        "logAnticipation": []
+      }
     },
     "gameplan_created": {
       "thrown": null,
@@ -9304,7 +11351,19 @@
             }
           }
         ]
-      ]
+      ],
+      "writers": {
+        "executeSwapServer": [],
+        "reserveSymbol": [],
+        "confirmSwap": [],
+        "releaseReservation": [],
+        "captureSwapReceipt": [],
+        "generateTradeNarration": [],
+        "generateAnticipation": [],
+        "logEvaluation": [],
+        "logVisionTransition": [],
+        "logAnticipation": []
+      }
     },
     "gameplan_created_with_pass": {
       "thrown": null,
@@ -9719,7 +11778,19 @@
             }
           }
         ]
-      ]
+      ],
+      "writers": {
+        "executeSwapServer": [],
+        "reserveSymbol": [],
+        "confirmSwap": [],
+        "releaseReservation": [],
+        "captureSwapReceipt": [],
+        "generateTradeNarration": [],
+        "generateAnticipation": [],
+        "logEvaluation": [],
+        "logVisionTransition": [],
+        "logAnticipation": []
+      }
     },
     "cpu_passive": {
       "thrown": null,
@@ -10008,7 +12079,19 @@
             }
           }
         ]
-      ]
+      ],
+      "writers": {
+        "executeSwapServer": [],
+        "reserveSymbol": [],
+        "confirmSwap": [],
+        "releaseReservation": [],
+        "captureSwapReceipt": [],
+        "generateTradeNarration": [],
+        "generateAnticipation": [],
+        "logEvaluation": [],
+        "logVisionTransition": [],
+        "logAnticipation": []
+      }
     },
     "degraded_quotes": {
       "thrown": null,
@@ -10256,7 +12339,19 @@
             }
           }
         ]
-      ]
+      ],
+      "writers": {
+        "executeSwapServer": [],
+        "reserveSymbol": [],
+        "confirmSwap": [],
+        "releaseReservation": [],
+        "captureSwapReceipt": [],
+        "generateTradeNarration": [],
+        "generateAnticipation": [],
+        "logEvaluation": [],
+        "logVisionTransition": [],
+        "logAnticipation": []
+      }
     },
     "tick_error": {
       "thrown": "final update failed",
@@ -10559,7 +12654,355 @@
           }
         }
       ],
-      "capture": []
+      "capture": [
+        [
+          {
+            "path": "agentBattles/battle-tick-1/ticks/battle-tick-1:1",
+            "data": {
+              "schemaVersion": 1,
+              "tickId": "battle-tick-1:1",
+              "battleId": "battle-tick-1",
+              "tickSeq": 1,
+              "evalId": "eval_001",
+              "agentId": "agent-1",
+              "ownerId": "owner-uid-1",
+              "gameMode": "baggerbomb_agent",
+              "day": "1",
+              "battlePhase": "EARLY",
+              "capturedAt": "2026-09-09T15:00:00.000Z",
+              "stageReached": "decision_resolved",
+              "exitReason": "tick_error",
+              "universeSize": 9,
+              "model": {
+                "outcome": "ok",
+                "failureClass": null,
+                "invalidField": null,
+                "timeoutKind": null,
+                "attempted": true,
+                "dispatched": true
+              },
+              "guardrail": {
+                "faultClass": null,
+                "sourceNote": null,
+                "overrideCount": 0,
+                "evaluated": false,
+                "deployedCount": 0,
+                "suppressionPassRan": false,
+                "suppressionPassFaulted": false
+              },
+              "checks": {
+                "proposedPairValidation": {
+                  "status": "not_evaluated",
+                  "result": null,
+                  "stage": null,
+                  "symbolOut": null,
+                  "symbolIn": null,
+                  "reason": null
+                },
+                "lock": {
+                  "status": "not_evaluated",
+                  "result": null,
+                  "stage": "decision_resolved",
+                  "symbolOut": null,
+                  "symbolIn": null,
+                  "reason": null
+                },
+                "distressedVeto": {
+                  "status": "not_evaluated",
+                  "result": null,
+                  "stage": "decision_resolved",
+                  "symbolOut": null,
+                  "symbolIn": null,
+                  "reason": null
+                },
+                "hurdle": {
+                  "status": "not_evaluated",
+                  "result": null,
+                  "stage": null,
+                  "symbolOut": null,
+                  "symbolIn": null,
+                  "reason": null
+                },
+                "swapCap": {
+                  "status": "not_evaluated",
+                  "result": null,
+                  "stage": null,
+                  "symbolOut": null,
+                  "symbolIn": null,
+                  "reason": null
+                },
+                "conviction": {
+                  "status": "not_evaluated",
+                  "result": null,
+                  "stage": null,
+                  "symbolOut": null,
+                  "symbolIn": null,
+                  "reason": null
+                },
+                "reservation": {
+                  "status": "not_evaluated",
+                  "result": null,
+                  "stage": null,
+                  "symbolOut": null,
+                  "symbolIn": null,
+                  "reason": null
+                },
+                "execution": {
+                  "status": "not_evaluated",
+                  "result": null,
+                  "stage": null,
+                  "symbolOut": null,
+                  "symbolIn": null,
+                  "reason": null
+                }
+              },
+              "risk": {
+                "verdicts": {
+                  "NVDA": {
+                    "action": "HOLD",
+                    "reason": null
+                  },
+                  "TSLA": {
+                    "action": "HOLD",
+                    "reason": null
+                  },
+                  "MSFT": {
+                    "action": "HOLD",
+                    "reason": null
+                  },
+                  "AMZN": {
+                    "action": "HOLD",
+                    "reason": null
+                  },
+                  "KO": {
+                    "action": "HOLD",
+                    "reason": null
+                  },
+                  "PG": {
+                    "action": "HOLD",
+                    "reason": null
+                  },
+                  "BTC": {
+                    "action": "HOLD",
+                    "reason": null
+                  }
+                },
+                "lockedCount": 0,
+                "forcedExitCount": 0,
+                "evaluatedCount": 7
+              },
+              "decision": {
+                "original": "HOLD",
+                "final": "HOLD",
+                "originalSymbolOut": null,
+                "originalSymbolIn": null,
+                "finalSymbolOut": null,
+                "finalSymbolIn": null,
+                "conviction": 58,
+                "tier": null,
+                "holdKind": null,
+                "downgraded": false,
+                "validationErrorCount": 0,
+                "replacedByDeterministic": false
+              },
+              "actions": [],
+              "controls": {
+                "rendered": "resolved",
+                "suppressedControlCount": 0,
+                "activeRuleRendered": "unknown",
+                "directiveThreadId": "thread-tf02-0001",
+                "directiveAdjustmentId": "TF-02",
+                "directiveCanonicalTextVersion": 1,
+                "directiveTextHash": "8b57763a04c0f1352f1783ad3bfaeba2a8b5775b99bc1de6785edffdfa06fff7",
+                "directiveSuppressed": null,
+                "standingLeanIds": [],
+                "standingLeanVersions": [],
+                "standingLeanTextHashes": [],
+                "activeRuleIds": [],
+                "activeRuleTextHashes": [],
+                "equippedConfigHash": null,
+                "controlEpoch": 1
+              },
+              "manifest": {
+                "evidenceKeys": [
+                  "NVDA",
+                  "TSLA",
+                  "MSFT",
+                  "AMZN",
+                  "KO",
+                  "PG",
+                  "BTC"
+                ],
+                "vintages": {},
+                "vintageLabels": {
+                  "quote": "tick",
+                  "vwap": "tick",
+                  "techAt": "2026-09-09T14:29:55.000Z",
+                  "fundAsOf": "2026-09-08",
+                  "rankingsAt": "2026-09-09T14:30:00.000Z"
+                },
+                "notRenderedFields": []
+              },
+              "callEnvelope": {
+                "requestedModel": "claude-haiku-4-5-20251001",
+                "returnedModel": null,
+                "temperature": 0.4,
+                "maxOutputTokens": 2048,
+                "inputTokens": 4321,
+                "outputTokens": 210,
+                "buildMs": 0,
+                "callMs": 0,
+                "httpStatus": null,
+                "promptBuiltAt": "2026-09-09T15:00:00.000Z"
+              },
+              "body": {
+                "status": "skipped",
+                "incomplete": null,
+                "requestSha256": null,
+                "responseSha256": null,
+                "requestBytes": null,
+                "responseBytes": null,
+                "expireAt": "2027-01-07T15:00:00.000Z"
+              },
+              "scores": {
+                "active": 33,
+                "banked": 0,
+                "total": 33,
+                "opponent": 0,
+                "bankedBadgePoints": 0
+              },
+              "capture": {
+                "preCommitMs": 0,
+                "deadlineMs": 3000,
+                "minRemainingBudgetMs": 10000,
+                "remainingBudgetMs": 290000,
+                "disposition": "written",
+                "rejectedFieldCount": 0,
+                "bodyMs": 0
+              }
+            }
+          },
+          {
+            "path": "agentBattles/battle-tick-1/tickBodies/battle-tick-1:1",
+            "data": {
+              "schemaVersion": 1,
+              "tickId": "battle-tick-1:1",
+              "battleId": "battle-tick-1",
+              "tickSeq": 1,
+              "evalId": "eval_001",
+              "capturedAt": "2026-09-09T15:00:00.000Z",
+              "expireAt": "2027-01-07T15:00:00.000Z",
+              "request": {
+                "body": null,
+                "bytes": null,
+                "sha256": null,
+                "truncated": false
+              },
+              "response": {
+                "body": null,
+                "bytes": null,
+                "sha256": null,
+                "truncated": false,
+                "status": null,
+                "returnedModel": null
+              },
+              "copyError": null,
+              "originalToolResult": {
+                "decision": "HOLD",
+                "rationale": "NVDA is pressing its first ATR line with the sector leading; nothing on the bench outranks what I hold. Holding the book as it stands.",
+                "hypothesis": "Hypothesis: NVDA clears +1x ATR before the close and holds the star slot.",
+                "conviction": 58,
+                "riskAssessment": "low",
+                "status_feed_update": "Holding the book — NVDA leading, TSLA on watch.",
+                "pvp_context": null,
+                "cited_rules": [],
+                "cited_forge_rules": [],
+                "overridden_forge_rules": [],
+                "ignoredDirectiveIds": [],
+                "directiveThreadId": null,
+                "trade_reasoning": null
+              },
+              "finalToolResult": {
+                "decision": "HOLD",
+                "rationale": "NVDA is pressing its first ATR line with the sector leading; nothing on the bench outranks what I hold. Holding the book as it stands.",
+                "hypothesis": "Hypothesis: NVDA clears +1x ATR before the close and holds the star slot.",
+                "conviction": 58,
+                "riskAssessment": "low",
+                "status_feed_update": "Holding the book — NVDA leading, TSLA on watch.",
+                "pvp_context": null,
+                "cited_rules": [],
+                "cited_forge_rules": [],
+                "overridden_forge_rules": [],
+                "ignoredDirectiveIds": [],
+                "directiveThreadId": null,
+                "trade_reasoning": null
+              },
+              "controlsAsRendered": {
+                "directiveText": "Require stronger confirmation before entering",
+                "standingLeanTexts": []
+              },
+              "controlSourceText": {
+                "activeRuleTemplates": []
+              },
+              "faults": {
+                "model": null,
+                "guardrail": null,
+                "capture": null
+              },
+              "validationErrors": [],
+              "rejectedFields": []
+            }
+          }
+        ]
+      ],
+      "writers": {
+        "executeSwapServer": [],
+        "reserveSymbol": [],
+        "confirmSwap": [],
+        "releaseReservation": [],
+        "captureSwapReceipt": [],
+        "generateTradeNarration": [],
+        "generateAnticipation": [],
+        "logEvaluation": [
+          [
+            {
+              "battleId": "battle-tick-1",
+              "agentId": "agent-1",
+              "userId": "owner-uid-1",
+              "evalId": "eval_001",
+              "timestamp": "2026-09-09T15:00:00.000Z",
+              "battlePhase": "EARLY",
+              "decision": "HOLD",
+              "symbolOut": null,
+              "symbolIn": null,
+              "tier": null,
+              "rationale": "NVDA is pressing its first ATR line with the sector leading; nothing on the bench outranks what I hold. Holding the book as it stands.",
+              "hypothesis": "Hypothesis: NVDA clears +1x ATR before the close and holds the star slot.",
+              "conviction": 58,
+              "triggers": [
+                "forced_open"
+              ],
+              "scores": {
+                "active": 33,
+                "banked": 0,
+                "total": 33
+              },
+              "marketPosture": "selective",
+              "downgraded": false,
+              "tokenUsage": {
+                "input": 4321,
+                "output": 210
+              },
+              "failureClass": null,
+              "guardrailFault": null,
+              "buildMs": 0,
+              "callMs": 0
+            }
+          ]
+        ],
+        "logVisionTransition": [],
+        "logAnticipation": []
+      }
     }
   }
 }
