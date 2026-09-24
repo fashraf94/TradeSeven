@@ -451,6 +451,29 @@ export function makeMaximalDeclarations() {
   };
 }
 
+/**
+ * Cockpit Build 0 — a frozen observation (spec §3.4) over this harness's quote
+ * table: every held and bench name, observed at FROZEN_NOW, fetched one
+ * second earlier, from the model seam. `symbols` overrides replace entries.
+ */
+export function makeObservation({ observedAtMs = Date.parse(FROZEN_NOW), source = 'model_prompt', symbols = {}, omit = [] } = {}) {
+  const table = makePriceTable();
+  const out = {};
+  for (const sym of [...HELD, ...BENCH]) {
+    if (omit.includes(sym) || !table[sym]) continue;
+    out[sym] = { px: table[sym].current, fetchedAtMs: observedAtMs - 1000 };
+  }
+  return { observedAtMs, source, symbols: { ...out, ...symbols } };
+}
+
+/**
+ * Cockpit Build 0 — the awaited executor return the calls context carries on
+ * the model path (spec §3.4): the model's autopilot SWAP KO (support 0) → AMD.
+ */
+export function makeExecutorResult(overrides = {}) {
+  return { symbolOut: 'KO', symbolIn: 'AMD', tier: 'support', slotIndex: 0, ...overrides };
+}
+
 /** The model's raw anticipation items: one full (with the `rationale` the stamp must cut), one minimal, one the queue drops (no symbol). */
 export function makeAnticipationCandidates() {
   return [

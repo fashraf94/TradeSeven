@@ -153,6 +153,13 @@ function checkFork(raw, universe) {
   };
 }
 
+const SOURCE_RANK = Object.freeze({ block: 0, calledShots: 1, watching: 2, playerAsk: 3, fork: 4 });
+
+/** Sort a removal list into SOURCE order (in place): the block, then each field in contract order, each array by index. */
+export function sortRemovedInSourceOrder(removed) {
+  return removed.sort((a, b) => (SOURCE_RANK[a.source] - SOURCE_RANK[b.source]) || ((a.index ?? -1) - (b.index ?? -1)));
+}
+
 /** The kind a surviving calledShots row mints as (§3.2 mapping). */
 export function kindOfShot(row) {
   if (row.direction === 'entry') return 'called_shot';
@@ -262,8 +269,7 @@ export function validateDeclarations(block, { universe = [], resolveHorizon = nu
     keptCandidates.push(c);
   }
   // A removal list in source order, whatever pass produced it.
-  const sourceRank = { block: 0, calledShots: 1, watching: 2, playerAsk: 3, fork: 4 };
-  removed.sort((a, b) => (sourceRank[a.source] - sourceRank[b.source]) || ((a.index ?? -1) - (b.index ?? -1)));
+  sortRemovedInSourceOrder(removed);
 
   const hasContent = kept.calledShots.length > 0 || kept.watching.length > 0 || kept.playerAsk !== null || kept.fork !== null;
   if (!hasContent) return { validated: null, removed, calls: [], phase: 'none' };
