@@ -34,6 +34,7 @@ const REPO = path.resolve(HERE, '..', '..', '..', '..');
 
 const flag = vi.hoisted(() => ({ on: false }));
 const svc = vi.hoisted(() => ({ calls: [], reply: null, stakes: [], snapshots: false, league: null, myGroup: null }));
+const sig = vi.hoisted(() => ({ subs: 0 }));
 const fetchSpy = vi.hoisted(() => vi.fn(async () => ({ ok: true, json: async () => ({ slots: [], battles: {} }) })));
 
 vi.mock('../../../config/featureFlags', async (importOriginal) => ({
@@ -96,6 +97,13 @@ vi.mock('../../../services/backingService', () => ({
   BackingApiError: class BackingApiError extends Error {},
 }));
 vi.mock('../../../utils/fetchWithAuth', () => ({ fetchWithAuth: fetchSpy }));
+// The stake signal (PRE-1): the REAL module behind a pass-through that counts
+// subscriptions — a listener is not a read, and the dark rows must see it too
+// (DARK-M1, the pre-flip fixes 2 review record).
+vi.mock('./backingStakeSignal', async (importOriginal) => {
+  const orig = await importOriginal();
+  return { ...orig, onStakePlaced: (listener) => { sig.subs += 1; return orig.onStakePlaced(listener); } };
+});
 vi.mock('../../../hooks/useLeagueState', () => ({ default: () => ({ state: svc.league ?? leagueState('open'), loading: false, isFixtures: true }) }));
 vi.mock('../../../contexts/UserContext', () => ({ useUser: () => ({ user: { uid: 'viewer-1', displayName: 'Viewer' } }) }));
 vi.mock('../../../services/tournamentGroupService', () => ({
@@ -155,10 +163,11 @@ async function mount(el) {
   return container;
 }
 
-beforeEach(() => { flag.on = false; svc.calls.length = 0; svc.reply = null; svc.stakes = []; svc.snapshots = false; svc.league = null; svc.myGroup = null; fetchSpy.mockClear(); __resetBackingTelemetry(); });
+beforeEach(() => { flag.on = false; svc.calls.length = 0; svc.reply = null; svc.stakes = []; svc.snapshots = false; svc.league = null; svc.myGroup = null; sig.subs = 0; fetchSpy.mockClear(); __resetBackingTelemetry(); });
 afterEach(async () => {
   for (const { root, container } of roots) { await act(async () => root.unmount()); container.remove(); }
   roots = [];
+  vi.useRealTimers();
 });
 
 describe('flag OFF — the League renders as it does today', () => {
@@ -284,6 +293,34 @@ describe('flag OFF — the League renders as it does today', () => {
       expect(container.querySelector('[data-backing]'), `${name}: a backing element while dark`).toBeNull();
       expect(svc.calls, `${name}: a backing read while dark`).toEqual([]);
       expect(backingCalls(), `${name}: a backing request while dark`).toEqual([]);
+    }
+  });
+
+  it('DARK-M1 — nothing LISTENS for a stake and no close TIMER is armed while dark (neither is a read, so the rows above cannot see them): the bare strip, the mobile landing, the desktop lobby and the Backing screen, mounted with effects running; lit, the same mounts do both', async () => {
+    const BackingLandingStrip = (await import('./BackingLandingStrip')).default;
+    for (const lit of [false, true]) {
+      flag.on = lit;
+      sig.subs = 0;
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+      vi.setSystemTime(new Date('2026-09-23T14:00:00.000Z')); // Wednesday — the listed pool closes Sunday
+      const before = vi.getTimerCount();
+      await mount(<BackingLandingStrip uid="viewer-1" accent="#5EEAD4" onOpen={() => {}} />);
+      const stripTimers = vi.getTimerCount() - before;
+      const stripSubs = sig.subs;
+      await mount(<LeagueHome {...homeProps} />);
+      await mount(<LeagueLobbyDesktop {...homeProps} />);
+      await mount(<BackingScreen uid="viewer-1" viewport="mobile" onBack={() => {}} onOpenTape={() => {}} />);
+      if (!lit) {
+        expect(stripTimers, 'dark: the strip arms no close timer').toBe(0);
+        expect(sig.subs, 'dark: nothing listens for a stake').toBe(0);
+      } else {
+        expect(stripTimers, 'lit: the strip arms its one close timer').toBe(1);
+        expect(stripSubs, 'lit: the strip listens').toBe(1);
+        expect(sig.subs, 'lit: every landing strip listens (bare, mobile, desktop)').toBeGreaterThanOrEqual(3);
+      }
+      for (const { root, container } of roots) { await act(async () => root.unmount()); container.remove(); }
+      roots = [];
+      vi.useRealTimers();
     }
   });
 

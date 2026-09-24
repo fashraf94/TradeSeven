@@ -18,15 +18,40 @@
 // mutable server state — so the rows see the wiring, not a stub of it.
 // MUTATION CHECKS (the build's C): the strip deaf to the stake signal, and
 // the strip with no close timer, each red a named row below.
+//
+// WHERE EACH MOMENT LIVES (WIRE-C3, the pre-flip fixes 2 review record): the
+// signal is for the DESKTOP landing, whose strip stays mounted behind the
+// full-window Backing host. On the MOBILE app the landing is swapped out while
+// the Backing screen is open (LeagueHome), so its strip is not mounted to hear
+// the stake: it reads fresh when the landing comes back — the real LeagueHome
+// row below drives exactly that. The signal module is wrapped by a
+// pass-through that counts live listeners, so a strip that never removes its
+// own is SEEN (DARK-N4).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
+import { leagueState } from '../leagueFixtures';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const flag = vi.hoisted(() => ({ on: true }));
 const server = vi.hoisted(() => ({ pools: {}, stakes: [], refuse: false, calls: [] }));
+const sig = vi.hoisted(() => ({ active: 0 }));
+
+// The REAL signal behind a pass-through that counts the listeners still live.
+vi.mock('./backingStakeSignal', async (importOriginal) => {
+  const orig = await importOriginal();
+  return {
+    ...orig,
+    onStakePlaced: (listener) => {
+      const off = orig.onStakePlaced(listener);
+      sig.active += 1;
+      let live = true;
+      return () => { if (live) { live = false; sig.active -= 1; } off(); };
+    },
+  };
+});
 
 vi.mock('../../../config/featureFlags', async (importOriginal) => ({
   ...(await importOriginal()),
@@ -78,7 +103,19 @@ vi.mock('../../../services/backingService', () => {
 });
 vi.mock('../../../services/tournamentGroupService', () => ({
   subscribeGroup: (_groupId, cb) => { cb(null); return () => {}; }, getGroup: async () => null, fetchDisplayNames: async () => ({}),
+  // LeagueHome's own reads (the mobile landing row): an unseated viewer.
+  subscribeMyGroup: (_uid, cb) => { cb(null); return () => {}; }, subscribeMyMostRecentVoidedGroup: () => () => {}, subscribeMyTrainingPod: () => () => {},
 }));
+// LeagueHome's other collaborators, as the landing suites stub them.
+vi.mock('../../../hooks/useLeagueState', () => ({ default: () => ({ state: leagueState('open'), loading: false, isFixtures: true }) }));
+vi.mock('../../../contexts/UserContext', () => ({ useUser: () => ({ user: { uid: 'viewer-1', displayName: 'Viewer' } }) }));
+vi.mock('../../../utils/fetchWithAuth', () => ({ fetchWithAuth: vi.fn(async () => ({ ok: true, json: async () => ({ slots: [], battles: {} }) })) }));
+vi.mock('../../../services/leagueSignals', () => ({ logLeagueSignal: () => {} }));
+vi.mock('../../../services/tournamentLobbyActions', () => ({ quickPlay: () => Promise.resolve({}), quickPlayTraining: () => Promise.resolve({}), mapLobbyError: () => 'error' }));
+vi.mock('../../../services/liveDraftActions', () => ({
+  fetchSlotSchedule: () => Promise.resolve({ slots: [] }), claimSlot: () => Promise.resolve({}), releaseSlot: () => Promise.resolve({}), mapSlotActionError: () => 'error',
+}));
+vi.mock('../LoadoutChooserSheet', () => ({ default: () => null }));
 // The Backing screen's other reads — the wallet, the attestation, the pitch, the card, the results — answered directly.
 const CARD = {
   groupId: 'lds-wed', odUserId: 'od-a', viewerUid: 'viewer-1', seat: { index: 1, count: 4, isCpu: false, isViewer: false, viewerSeated: false },
@@ -101,7 +138,9 @@ vi.mock('../../../hooks/useSpectatedTournamentBattles', () => ({ default: () => 
 
 const BackingLandingStrip = (await import('./BackingLandingStrip')).default;
 const BackingScreen = (await import('./BackingScreen')).default;
+const LeagueHome = (await import('../LeagueHome')).default;
 const { CLOSE_REREAD_GRACE_MS } = await import('./backingStripState');
+const { announceStakePlaced } = await import('./backingStakeSignal');
 
 let roots = [];
 async function flush() { for (let i = 0; i < 8; i += 1) await act(async () => { await Promise.resolve(); }); }
@@ -131,6 +170,7 @@ beforeEach(() => {
   server.stakes = [];
   server.refuse = false;
   server.calls = [];
+  sig.active = 0;
   // setInterval too, so a poll could not hide from the rows below on a real clock.
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
   vi.setSystemTime(NOW);
@@ -152,8 +192,8 @@ async function stakeThrough(screen) {
 }
 
 describe('PRE-1 — after a SUCCESSFUL stake the strip re-reads: "not staked" → "staked", without a reload', () => {
-  for (const viewport of ['desktop', 'mobile']) {
-    it(`${viewport}: the strip beside the Backing screen moves to STAKED on the server's success reply — the same mounted strip, its pod list read again`, async () => {
+  for (const viewport of ['desktop']) {
+    it(`${viewport}: the strip left mounted behind the Backing host moves to STAKED on the server's success reply — the same mounted strip, its pod list read again`, async () => {
       const wide = viewport === 'desktop';
       const { container } = await mount(
         <div>
@@ -179,6 +219,41 @@ describe('PRE-1 — after a SUCCESSFUL stake the strip re-reads: "not staked" �
       expect(landing.textContent).toContain(`${server.stakes[0].amount} BP`);
     });
   }
+
+  it('mobile (WIRE-C3): the real LeagueHome — open Backing from the strip, stake, go back — the landing\'s strip is not mounted while the screen is open, and reads the stake FRESH when the landing returns', async () => {
+    const { container } = await mount(<LeagueHome onOpenMyGame={() => {}} onOpenTrainingPod={() => {}} hasAgent agentLoadout={null} />);
+    expect(stripOf(container).getAttribute('data-strip-state')).toBe('open');
+    expect(sig.active, 'the landing strip listens').toBe(1);
+    const before = reads();
+    await press(stripOf(container));
+    // The landing is swapped out for the screen: no strip, nothing listening.
+    expect(stripOf(container)).toBeNull();
+    expect(sig.active, 'no strip is mounted to hear the stake').toBe(0);
+    await stakeThrough(container);
+    expect(container.querySelector('[data-backing="backed"]'), 'the stake control confirmed the stake').not.toBeNull();
+    expect(server.stakes).toHaveLength(1);
+    expect(reads(), 'the screen\'s own pod list, and its refresh after the stake').toBe(before + 2);
+    // Back to the landing: every TopBar back until the lobby returns.
+    for (let i = 0; i < 4 && !stripOf(container); i += 1) await press(container.querySelector('[data-backing="screen-back"]'));
+    const strip = stripOf(container);
+    expect(strip, 'the landing (and its strip) came back').not.toBeNull();
+    expect(strip.getAttribute('data-strip-state')).toBe('staked');
+    expect(container.textContent).toContain(`${server.stakes[0].amount} BP`);
+    // …from the returning strip's own FRESH read — one, and listening again.
+    expect(reads()).toBe(before + 3);
+    expect(sig.active).toBe(1);
+  });
+
+  it('the strip\'s stake listener is removed WITH it (DARK-N4): one while mounted, none after unmount — an announcement then reaches nothing and reads nothing', async () => {
+    const entry = await mount(<BackingLandingStrip uid="viewer-1" accent="#5EEAD4" onOpen={() => {}} />);
+    expect(sig.active).toBe(1);
+    await unmount(entry);
+    expect(sig.active, 'the listener is removed with the strip').toBe(0);
+    const before = reads();
+    await act(async () => { announceStakePlaced({ ok: true }); });
+    await flush();
+    expect(reads()).toBe(before);
+  });
 
   it('a REFUSED stake re-reads nothing — the strip stays as the server last said', async () => {
     server.refuse = true;
