@@ -27,12 +27,14 @@ Needs the serverless functions' credentials — `FIREBASE_PROJECT_ID` / `FIREBAS
 ```
 node scripts/backing-sybil-watch.js                     # the whole book, newest 2000 stakes
 node scripts/backing-sybil-watch.js --week=2026-W40     # one backing week
-node scripts/backing-sybil-watch.js --since=2026-09-01  # stakes placed on or after a day
+node scripts/backing-sybil-watch.js --since=2026-09-01  # stakes FIRST placed on or after a day
 node scripts/backing-sybil-watch.js --limit=500 --min-accounts=3
 node scripts/backing-sybil-watch.js --json > report.json
 ```
 
 Reads: one query over `backingStakes` (bounded by `--limit`, max 10 000), one `private/meta` read per stake in chunks of 50, one pool read per distinct pod. Each query uses **one** server-side dimension so no composite index is needed: `--week` is an equality on `weekKey` (sorted and bounded in memory), `--since` is a single-field range on `placedAt`, the default is the newest by `placedAt`; with both flags the week is the query and the instant is applied in memory. If the report says the limit was **REACHED**, narrow the scope rather than raising the limit.
+
+**`--since` and the default scope on a stake's FIRST placement.** Since the pre-flip cleanup (Amendment C §C2) a backer holds one stake per team per pod, and backing the same team again tops up that stake — its `placedAt` stays the first placement's. A stake opened before `--since` and topped up after it is out of scope, top-up and all. Each top-up's address and agent are in the stake's sealed meta (`topUps[]`) and the report reads every placement of every stake in scope, so use `--week` when a late top-up's address matters.
 
 ## Reading the report
 

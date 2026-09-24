@@ -19,6 +19,15 @@
 //
 // NO STAKE ACTIONS ANYWHERE ON THIS SURFACE (§5, D-r): backing is closed for
 // the week; the test asserts no Confirm, no Back button, no amount input.
+//
+// EVERY TEAM IS NAMED BY THE SERVER (Amendment C §C1, D-af): the stake rows and
+// the standing rows show the team's `label` (its primary agent's name) from
+// `inPlay.labelsById` — GET /api/backing/team-labels through useMyBacking —
+// and the two-layer reveal names the player and the agent APART from the
+// server's `player` / `agent` (RAWID-R-2), never guessed from a lone label.
+// Nothing here composes a name from an id; while a pod's names are on their
+// way its teams read the pending placeholder, and a team the server's names
+// do not carry reads "Unnamed team" (WIRING-5).
 
 import React from 'react';
 import { GROUP_STATUS, computeComposite } from '../../../constants/leagueTournament';
@@ -28,7 +37,7 @@ import { baseGroupName } from '../leagueAdapter';
 import useSpectatedTournamentBattles from '../../../hooks/useSpectatedTournamentBattles';
 import { DayTrail } from './BackingParts';
 import { CARD, WEEK } from './backingCopy';
-import { podDayOfFive, podStanding, seatDisplayName, weekDayOfFive } from './backingStripState';
+import { podDayOfFive, podStanding, podTeamLabel, podTeamLayers, weekDayOfFive } from './backingStripState';
 
 const SETTLED = new Set(['resolved', 'insufficient', 'refunded']);
 const card = { borderRadius: 18, padding: '13px 14px', background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}` };
@@ -92,12 +101,14 @@ function Chips({ symbols }) {
   );
 }
 
-function WeekCard({ groupId, stakes, pool, group, accent, onOpenTape, injectedBattles = null }) {
+function WeekCard({ groupId, stakes, pool, group, labelsById, accent, onOpenTape, injectedBattles = null }) {
   // The live read, unless the host handed this pod's battles in (only the dev
   // preview page does — fixtures, no network): then the hook stays disabled.
   const spectated = useSpectatedTournamentBattles(groupId, injectedBattles == null);
   const battles = injectedBattles ?? spectated.battles;
   const podName = baseGroupName(groupId);
+  // The server's `{ label, secondary }` for a seat of this pod (D-af).
+  const named = (id) => podTeamLabel(labelsById, groupId, id);
   // Settled is the POOL's fact — a complete pod whose pool has not resolved
   // is settling, not settled (FAB-1, the PR 4 review record).
   const settled = SETTLED.has(pool?.status);
@@ -132,7 +143,7 @@ function WeekCard({ groupId, stakes, pool, group, accent, onOpenTape, injectedBa
       <Mono style={{ fontSize: 9, color: LTOKENS.ink3, letterSpacing: '0.12em', textTransform: 'uppercase', display: 'block', marginBottom: 5 }}>{WEEK.backed}</Mono>
       <div data-backing="week-stakes" style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
         {teams.map((id) => (
-          <Mono key={id} style={{ fontSize: 12, color: LTOKENS.ink }}>{WEEK.stakeRow(seatDisplayName(group?.seatNames, id), amounts.get(id), stakeStatus(id))}</Mono>
+          <Mono key={id} style={{ fontSize: 12, color: LTOKENS.ink }}>{WEEK.stakeRow(named(id).label, amounts.get(id), stakeStatus(id))}</Mono>
         ))}
       </div>
 
@@ -144,7 +155,7 @@ function WeekCard({ groupId, stakes, pool, group, accent, onOpenTape, injectedBa
             return (
               <div key={row.odUserId} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '5px 2px', opacity: backed ? 1 : 0.7 }}>
                 <Mono style={{ fontSize: 12, fontWeight: 700, width: 14, textAlign: 'center', color: row.rank === 1 ? LTOKENS.gold : LTOKENS.ink3 }}>{row.rank}</Mono>
-                <span style={{ flex: 1, fontSize: 12.5, fontWeight: backed ? 700 : 500, color: LTOKENS.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{seatDisplayName(group?.seatNames, row.odUserId)}</span>
+                <span style={{ flex: 1, fontSize: 12.5, fontWeight: backed ? 700 : 500, color: LTOKENS.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{named(row.odUserId).label}</span>
                 <Score v={Number.isFinite(row.score) ? row.score : 0} size={12} />
               </div>
             );
@@ -159,9 +170,13 @@ function WeekCard({ groupId, stakes, pool, group, accent, onOpenTape, injectedBa
       <div data-backing="week-reveal" style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${LTOKENS.hair}` }}>
         <Eyebrow color={accent} style={{ marginBottom: 6 }}>{WEEK.revealTitle}</Eyebrow>
         {teams.map((id) => {
-          const name = seatDisplayName(group?.seatNames, id);
+          // The two layers, named apart — the SERVER's `player` and `agent`,
+          // never guessed from a lone label (RAWID-R-2): a label with no
+          // secondary may be either layer. The agent is the server's belted
+          // name, not the battle record's raw one (RAWID-2).
+          const { player: name, agent } = podTeamLayers(labelsById, groupId, id);
           const battle = battles?.[id] ?? null;
-          const agentName = battle?.agentContext?.agentName ?? CARD.agentFallbackName(name);
+          const agentName = agent ?? CARD.agentFallbackName(name);
           const picks = humanPicksFor(group, id);
           const six = agentSixFor(battle);
           if (picks.length === 0 && six.length === 0) {
@@ -240,6 +255,7 @@ export default function YourBacking({ inPlay, accent = LX.energy, onOpenTape, no
           stakes={stakes}
           pool={inPlay?.poolsById?.[groupId] ?? null}
           group={inPlay?.groupsById?.[groupId] ?? null}
+          labelsById={inPlay?.labelsById ?? null}
           accent={accent}
           onOpenTape={onOpenTape}
           injectedBattles={battlesByGroup ? (battlesByGroup[groupId] ?? {}) : null}

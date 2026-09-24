@@ -36,14 +36,14 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
 let DB = null;
 vi.mock('../_utils/firebaseAdmin.js', () => ({ getFirebaseAdmin: () => DB.db }));
 
-const { default: handler, stakeIdFor, stakeRefFor, stakeMetaRefFor, MAX_REQUEST_ID_LEN } = await import('./backing-stake.js');
+const { default: handler, stakeIdFor, stakeDebitKeyFor, stakeRefFor, stakeMetaRefFor, MAX_REQUEST_ID_LEN } = await import('./backing-stake.js');
 const {
   MIN_STAKE_BP, PER_TEAM_CAP_BP, ALLOWANCE_BP, VALIDITY_MIN_BACKERS,
 } = await import('../../src/constants/backing.js');
 const { TERMS_VERSION } = await import('../../src/constants/eligibility.js');
 const { ELIGIBILITY_COLLECTION } = await import('../_utils/eligibility.js');
 const { BACKING_INELIGIBLE } = await import('../_utils/backingEligibility.js');
-const { BACKING_WALLETS_COLLECTION } = await import('../_utils/backingWallet.js');
+const { BACKING_WALLETS_COLLECTION, stakeEntryIdFor } = await import('../_utils/backingWallet.js');
 const {
   BACKING_POOLS_COLLECTION, BACKING_STAKES_COLLECTION, POOL_STATUS, STAKE_STATUS,
 } = await import('../_utils/backingPools.js');
@@ -201,6 +201,11 @@ function world(over = {}) {
       acceptedAt: '2026-09-14T13:30:00.000Z', source: 'backing_beta',
     },
     'agentBattles/mine': { ownerId: UID, status: 'completed', completedAt: '2026-09-01T20:00:00.000Z' },
+    // Names on file for od-a (D-af): its primary agent and its player. od-b
+    // has none — the confirmation's neutral case.
+    'agents/agt-od-a': { ownerId: 'od-a', name: 'Shadow' },
+    // The production shape — names NESTED under `profile` (RAWID-1).
+    'users/od-a': { _v: 1, auth: { uid: 'od-a', email: 'ada@example.com' }, profile: { username: 'Ada', displayName: 'Ada', avatarUrl: null, bio: null } },
     ...over,
   };
 }
@@ -223,6 +228,10 @@ async function post(body, { method = 'POST', headers } = {}) {
   return res;
 }
 
+/** THE stake document for (backer, pool, team) — one per team per backer (Amendment C §C2, D-ag). */
+const SID = (team = 'od-a', uid = UID) => stakeIdFor(uid, GROUP_ID, team);
+/** The ledger entry a request's debit writes — one per REQUEST (D-ag). */
+const ENTRY = (requestId, uid = UID) => stakeEntryIdFor(stakeDebitKeyFor(uid, requestId));
 const stakeDoc = (store, id) => store.get(`${BACKING_STAKES_COLLECTION}/${id}`);
 const metaDoc = (store, id) => store.get(`${BACKING_STAKES_COLLECTION}/${id}/private/meta`);
 const poolDoc = (store) => store.get(`${BACKING_POOLS_COLLECTION}/${GROUP_ID}`);
@@ -326,7 +335,7 @@ describe('the happy path — the §6 stake, the sealed meta, the counters', () =
   it('writes the stake, its private meta, the wallet, the totals and the pool', async () => {
     const res = await post(VALID());
     expect(res.statusCode).toBe(200);
-    const id = stakeIdFor(UID, 'req-1');
+    const id = SID();
 
     expect(stakeDoc(DB.store, id)).toEqual({
       userId: UID,
@@ -338,6 +347,8 @@ describe('the happy path — the §6 stake, the sealed meta, the counters', () =
       weekKey: WEEK,
       requestId: 'req-1',
       status: STAKE_STATUS.LIVE,
+      // D-ag: the request's own debit, keyed to its ledger entry.
+      debits: [{ entryId: ENTRY('req-1'), amount: 100, at: NOW.toISOString() }],
     });
 
     // THE SPLIT (Amendment B §B5): the TRUE totals in the sealed doc, the
@@ -357,12 +368,17 @@ describe('the happy path — the §6 stake, the sealed meta, the counters', () =
       allowanceRemaining: ALLOWANCE_BP - 100,
       careerNet: -100,
     });
-    expect(DB.store.get(`${BACKING_WALLETS_COLLECTION}/${UID}/entries/stake:${id}`))
+    // ONE ENTRY PER REQUEST, `ref` the one stake document it funded (D-ag).
+    expect(DB.store.get(`${BACKING_WALLETS_COLLECTION}/${UID}/entries/${ENTRY('req-1')}`))
       .toMatchObject({ type: 'stake', delta: -100, ref: id, weekKey: WEEK });
 
     expect(res.body).toEqual({
       replay: false,
+      topUp: false,
+      added: 100,
       stake: { id, ...stakeDoc(DB.store, id) },
+      // D-af: the confirmation names the team by the server's label.
+      teamLabel: { label: 'Shadow', secondary: 'Ada' },
       pool: {
         status: 'open',
         backerProgress: { count: 1, floor: VALIDITY_MIN_BACKERS, met: false },
@@ -375,7 +391,7 @@ describe('the happy path — the §6 stake, the sealed meta, the counters', () =
 
   it('E1: the fingerprint and `excluded` are in private/meta — NEVER on the owner-readable stake', async () => {
     await post(VALID());
-    const id = stakeIdFor(UID, 'req-1');
+    const id = SID();
     const meta = metaDoc(DB.store, id);
     expect(Object.keys(meta).sort()).toEqual(['at', 'excluded', 'ipHash', 'uaHash']);
     expect(meta.excluded).toBe(false);
@@ -396,7 +412,33 @@ describe('the happy path — the §6 stake, the sealed meta, the counters', () =
   it('only the first IP of an x-forwarded-for chain is fingerprinted — the rate limiter\'s own rule', async () => {
     const { hashFingerprint } = await import('../_utils/backingFingerprint.js');
     await post(VALID());
-    expect(metaDoc(DB.store, stakeIdFor(UID, 'req-1')).ipHash).toBe(hashFingerprint('203.0.113.9'));
+    expect(metaDoc(DB.store, SID()).ipHash).toBe(hashFingerprint('203.0.113.9'));
+  });
+
+  it('D-ag: a TOP-UP keeps the first placement\'s fingerprint and records its own beside it, naming its debit — never written over; `excluded` survives', async () => {
+    const { hashFingerprint } = await import('../_utils/backingFingerprint.js');
+    await post(VALID());
+    const id = SID();
+    const first = metaDoc(DB.store, id);
+    DB.store.set(`${BACKING_STAKES_COLLECTION}/${id}/private/meta`, { ...first, excluded: true });   // an admin's flag
+    vi.setSystemTime(new Date(NOW.getTime() + 60_000));
+    const res = await post({ ...VALID(), amount: 150, requestId: 'req-2' }, { headers: { 'x-forwarded-for': '198.51.100.7', 'user-agent': 'Mozilla/5.0 (other)' } });
+    expect(res.statusCode).toBe(200);
+    expect(res.body.topUp).toBe(true);
+    const meta = metaDoc(DB.store, id);
+    // The first placement's fingerprint is where the Sybil watch reads it, unchanged.
+    expect({ ipHash: meta.ipHash, uaHash: meta.uaHash, at: meta.at }).toEqual({ ipHash: first.ipHash, uaHash: first.uaHash, at: first.at });
+    expect(meta.excluded).toBe(true);
+    expect(meta.topUps).toEqual([{
+      ipHash: hashFingerprint('198.51.100.7'), uaHash: hashFingerprint('Mozilla/5.0 (other)'),
+      entryId: ENTRY('req-2'), at: new Date(NOW.getTime() + 60_000).toISOString(),
+    }]);
+    // The debit it names is the stake's second — the watch splits the BP by it.
+    expect(stakeDoc(DB.store, id).debits.map((d) => [d.entryId, d.amount])).toEqual([[ENTRY('req-1'), 100], [ENTRY('req-2'), 150]]);
+    // ...and the owner-readable stake still carries none of it.
+    for (const field of ['ipHash', 'uaHash', 'excluded', 'fingerprint', 'topUps']) {
+      expect(stakeDoc(DB.store, id)).not.toHaveProperty(field);
+    }
   });
 
   it('records `hashAtStake` when the seat\'s agent IS resolvable', async () => {
@@ -407,7 +449,7 @@ describe('the happy path — the §6 stake, the sealed meta, the counters', () =
       },
     }));
     await post(VALID());
-    expect(stakeDoc(DB.store, stakeIdFor(UID, 'req-1')).hashAtStake).toBe('abc123hash');
+    expect(stakeDoc(DB.store, SID()).hashAtStake).toBe('abc123hash');
   });
 
   it('an UNRESOLVABLE agent still stakes, with hashAtStake null — never fail a stake over telemetry', async () => {
@@ -421,7 +463,7 @@ describe('the happy path — the §6 stake, the sealed meta, the counters', () =
       DB = makeVersionedDb(w);
       const res = await post(VALID());
       expect(res.statusCode).toBe(200);
-      expect(stakeDoc(DB.store, stakeIdFor(UID, 'req-1')).hashAtStake).toBeNull();
+      expect(stakeDoc(DB.store, SID()).hashAtStake).toBeNull();
     }
   });
 
@@ -437,7 +479,7 @@ describe('the happy path — the §6 stake, the sealed meta, the counters', () =
     }));
     const res = await post({ ...VALID(), teamOdUserId: 'cpu-1' });
     expect(res.statusCode).toBe(200);
-    expect(stakeDoc(DB.store, stakeIdFor(UID, 'req-1')).hashAtStake).toBeNull();
+    expect(stakeDoc(DB.store, SID('cpu-1')).hashAtStake).toBeNull();
   });
 
   it('records the LATEST completed battle\'s hash, not the oldest ("as of last deploy", §4)', async () => {
@@ -452,7 +494,7 @@ describe('the happy path — the §6 stake, the sealed meta, the counters', () =
       },
     }));
     await post(VALID());
-    expect(stakeDoc(DB.store, stakeIdFor(UID, 'req-1')).hashAtStake).toBe('FRESH-hash');
+    expect(stakeDoc(DB.store, SID()).hashAtStake).toBe('FRESH-hash');
   });
 
   it('a THROWING hash lookup still stakes — never fail a stake over telemetry', async () => {
@@ -475,7 +517,7 @@ describe('the happy path — the §6 stake, the sealed meta, the counters', () =
     };
     const res = await post(VALID());
     expect(res.statusCode).toBe(200);
-    expect(stakeDoc(DB.store, stakeIdFor(UID, 'req-1')).hashAtStake).toBeNull();
+    expect(stakeDoc(DB.store, SID()).hashAtStake).toBeNull();
   });
 
   it('the reply is SEALED: no pot, no exact count, no per-team total, no pays × (§3, §B2)', async () => {
@@ -495,6 +537,25 @@ describe('the happy path — the §6 stake, the sealed meta, the counters', () =
     // the answer does not say so.
     expect(body).not.toContain('350');
     expect(res.body.stake.amount).toBe(250);   // their OWN stake, still theirs (§B2)
+  });
+
+  it('D-af: the confirmation names the team by the SERVER\'s label — agent, then player, then "Unnamed team"; never the id', async () => {
+    expect((await post(VALID())).body.teamLabel).toEqual({ label: 'Shadow', secondary: 'Ada' });
+    const b = await post({ ...VALID(), requestId: 'req-b', teamOdUserId: 'od-b' });
+    expect(b.body.teamLabel).toEqual({ label: 'Unnamed team', secondary: null });
+    const cpu = await post({ ...VALID(), requestId: 'req-c', teamOdUserId: 'cpu-1' });
+    expect(cpu.body.teamLabel.label).toMatch(/^CPU — /);
+    for (const res of [b, cpu]) expect(JSON.stringify(res.body.teamLabel)).not.toMatch(/od-b|cpu-1/);
+  });
+
+  it('D-af: a name is never a reason to fail a stake — an unreadable agents collection still answers 200 with the player\'s name', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const real = DB.db.collection;
+    DB.db.collection = (name) => (name === 'agents' ? { where: () => ({ get: async () => { throw new Error('agents down'); } }) } : real(name));
+    const res = await post(VALID());
+    expect(res.statusCode).toBe(200);
+    expect(res.body.teamLabel).toEqual({ label: 'Ada', secondary: null });
+    warn.mockRestore();
   });
 
   it('the sealed totals doc holds the pot, the exact counts and the per-backer map (§B5)', async () => {
@@ -653,7 +714,7 @@ describe('the window and the belt (§4)', () => {
     const res = await post(VALID());
     expect(res.statusCode).toBe(409);
     expect(res.body).toMatchObject({ error: 'pool_closed', poolStatus: POOL_STATUS.OPEN });
-    expect(stakeDoc(DB.store, stakeIdFor(UID, 'req-1'))).toBeUndefined();
+    expect(stakeDoc(DB.store, SID())).toBeUndefined();
   });
 
   it('refuses a pool that is no longer open', async () => {
@@ -831,17 +892,19 @@ describe('eligibility (§8) — every refusal is a 403 carrying its reason', () 
 
 // ============================================================================
 describe('the cap and the allowance (§2, §8)', () => {
-  it('enforces the per-team cap ACROSS two stakes', async () => {
+  it('enforces the per-team cap ACROSS a stake and its top-up — on the TOTAL', async () => {
     expect((await post({ ...VALID(), amount: 300 })).statusCode).toBe(200);
     const res = await post({ ...VALID(), requestId: 'req-2', amount: 300 });
     expect(res.statusCode).toBe(409);
     expect(res.body).toMatchObject({ error: 'per_team_cap', staked: 300, cap: PER_TEAM_CAP_BP });
-    // The refused stake wrote nothing — not the doc, not the ledger.
-    expect(stakeDoc(DB.store, stakeIdFor(UID, 'req-2'))).toBeUndefined();
+    // The refused top-up wrote nothing — not the document, not the ledger.
+    expect(stakeDoc(DB.store, SID())).toMatchObject({ amount: 300 });
+    expect(stakeDoc(DB.store, SID()).debits).toHaveLength(1);
+    expect(DB.store.get(`${BACKING_WALLETS_COLLECTION}/${UID}/entries/${ENTRY('req-2')}`)).toBeUndefined();
     expect(walletDoc(DB.store).allowanceRemaining).toBe(ALLOWANCE_BP - 300);
   });
 
-  it('admits a second stake that lands exactly ON the cap', async () => {
+  it('admits a top-up that lands exactly ON the cap', async () => {
     expect((await post({ ...VALID(), amount: 300 })).statusCode).toBe(200);
     expect((await post({ ...VALID(), requestId: 'req-2', amount: 200 })).statusCode).toBe(200);
     expect(walletDoc(DB.store).allowanceRemaining).toBe(ALLOWANCE_BP - 500);
@@ -951,25 +1014,29 @@ describe('idempotency and the race (§8)', () => {
     expect(replay.body.replay).toBe(true);
   });
 
-  it('a DIFFERENT requestId is a DIFFERENT stake, even for the same team and amount', async () => {
+  it('a DIFFERENT requestId on the SAME team TOPS UP the one stake — two debits, one document (D-ag)', async () => {
     await post(VALID());
-    await post({ ...VALID(), requestId: 'req-2' });
+    const res = await post({ ...VALID(), requestId: 'req-2' });
+    expect(res.body).toMatchObject({ replay: false, topUp: true, added: 100 });
     expect(totalsDoc(DB.store).potTotal).toBe(200);
-    expect(stakeIdFor(UID, 'req-1')).not.toBe(stakeIdFor(UID, 'req-2'));
+    expect(stakeDoc(DB.store, SID())).toMatchObject({ amount: 200 });
+    expect(stakeDebitKeyFor(UID, 'req-1')).not.toBe(stakeDebitKeyFor(UID, 'req-2'));
   });
 
-  it('one requestId cannot reach another user\'s stake — the id mixes in the uid', () => {
-    expect(stakeIdFor('a', 'req-1')).not.toBe(stakeIdFor('b', 'req-1'));
-    expect(stakeIdFor(UID, 'req-1')).toMatch(/^stk_[0-9a-f]{40}$/);
+  it('the ids mix in the uid — one backer\'s request or team can never reach another\'s stake', () => {
+    expect(stakeIdFor('a', GROUP_ID, 'od-a')).not.toBe(stakeIdFor('b', GROUP_ID, 'od-a'));
+    expect(stakeDebitKeyFor('a', 'req-1')).not.toBe(stakeDebitKeyFor('b', 'req-1'));
+    expect(SID()).toMatch(/^stk_[0-9a-f]{40}$/);
+    expect(stakeDebitKeyFor(UID, 'req-1')).toMatch(/^dbt_[0-9a-f]{40}$/);
     // Path-safe whatever the client sends.
-    expect(stakeIdFor(UID, 'a/b/../c')).toMatch(/^stk_[0-9a-f]{40}$/);
-    expect(stakeRefFor(DB.db, stakeIdFor(UID, 'x')).path.split('/')).toHaveLength(2);
+    expect(stakeDebitKeyFor(UID, 'a/b/../c')).toMatch(/^dbt_[0-9a-f]{40}$/);
+    expect(stakeRefFor(DB.db, stakeIdFor(UID, 'g/x', 't/y')).path.split('/')).toHaveLength(2);
   });
 
-  it('the stake id is STABLE across a fingerprint-salt rotation', async () => {
-    const before = stakeIdFor(UID, 'req-1');
+  it('the ids are STABLE across a fingerprint-salt rotation', async () => {
+    const before = [SID(), stakeDebitKeyFor(UID, 'req-1')];
     process.env.BACKING_FINGERPRINT_SALT = 'rotated-salt';
-    expect(stakeIdFor(UID, 'req-1')).toBe(before);
+    expect([SID(), stakeDebitKeyFor(UID, 'req-1')]).toEqual(before);
   });
 
   it('TWO SIMULTANEOUS SUBMISSIONS with the SAME requestId yield ONE stake and ONE debit', async () => {
@@ -980,7 +1047,7 @@ describe('idempotency and the race (§8)', () => {
     expect(DB.stats.conflicts).toBeGreaterThan(0);   // they really did contend
     expect(totalsDoc(DB.store).potTotal).toBe(100);
     expect(walletDoc(DB.store).allowanceRemaining).toBe(ALLOWANCE_BP - 100);
-    expect(DB.writeLog.filter(([, p]) => p === `${BACKING_STAKES_COLLECTION}/${stakeIdFor(UID, 'req-1')}`))
+    expect(DB.writeLog.filter(([, p]) => p === `${BACKING_STAKES_COLLECTION}/${SID()}`))
       .toHaveLength(1);
   });
 
@@ -1033,7 +1100,7 @@ describe('idempotency and the race (§8)', () => {
     expect(stakeRes.body.error).toBe('pool_closed');
     expect(poolDoc(DB.store).status).not.toBe(POOL_STATUS.OPEN);
     // No stake document survived the close, and the wallet never moved.
-    expect(stakeDoc(DB.store, stakeIdFor(UID, 'req-1'))).toBeUndefined();
+    expect(stakeDoc(DB.store, SID())).toBeUndefined();
     expect(walletDoc(DB.store)?.allowanceRemaining ?? ALLOWANCE_BP).toBe(ALLOWANCE_BP);
   });
 });
@@ -1080,7 +1147,7 @@ describe('the replay is a replay of THIS request (§8)', () => {
     // scheme; refusing here means it never becomes one. Handing it back would
     // give a rival the victim's team and amount while the pool is SEALED (§3).
     DB = makeVersionedDb(world({
-      [`${BACKING_STAKES_COLLECTION}/${stakeIdFor(UID, 'req-1')}`]: foreign(),
+      [`${BACKING_STAKES_COLLECTION}/${SID()}`]: foreign(),
     }));
     const res = await post(VALID());
     expect(res.statusCode).toBe(409);
@@ -1100,12 +1167,15 @@ describe('the replay is a replay of THIS request (§8)', () => {
     expect((await post(VALID())).body.replay).toBe(true);
   });
 
-  it('the stake id separates (uid, requestId) injectively', () => {
-    // A bare newline join makes `a\nb`+`c` and `a`+`b\nc` one document. No
-    // Firebase uid contains a newline, but the repo documents an operator
+  it('the ids separate their parts injectively — (uid, groupId, team) and (uid, requestId)', () => {
+    // A bare separator join makes `a|b`+`c` and `a`+`b|c` one document. No
+    // Firebase uid contains one, but the repo documents an operator
     // custom-token path that mints arbitrary uids.
-    expect(stakeIdFor('a\nb', 'c')).not.toBe(stakeIdFor('a', 'b\nc'));
-    expect(stakeIdFor('ab', 'c')).not.toBe(stakeIdFor('a', 'bc'));
+    expect(stakeIdFor('a|b', 'c', 'd')).not.toBe(stakeIdFor('a', 'b|c', 'd'));
+    expect(stakeIdFor('ab', 'c', 'd')).not.toBe(stakeIdFor('a', 'bc', 'd'));
+    expect(stakeIdFor('a', 'bc', 'd')).not.toBe(stakeIdFor('a', 'b', 'cd'));
+    expect(stakeDebitKeyFor('a\nb', 'c')).not.toBe(stakeDebitKeyFor('a', 'b\nc'));
+    expect(stakeDebitKeyFor('ab', 'c')).not.toBe(stakeDebitKeyFor('a', 'bc'));
   });
 
   it('a stake whose ledger entry is already spent is NOT recreated for free', async () => {
@@ -1114,7 +1184,7 @@ describe('the replay is a replay of THIS request (§8)', () => {
     // would otherwise re-create the stake with NO debit (the wallet's
     // appliedEntries guard makes `stake:{id}` a no-op), increment the pot a
     // second time, and reset the admin's exclusion.
-    const id = stakeIdFor(UID, 'req-1');
+    const id = SID();
     await post(VALID());
     const potAfterFirst = totalsDoc(DB.store).potTotal;
     DB.store.set(`${BACKING_STAKES_COLLECTION}/${id}/private/meta`, { ...metaDoc(DB.store, id), excluded: true });
@@ -1145,16 +1215,17 @@ describe('failures answer, they do not leak', () => {
 describe('stake_confirmed — written SERVER-SIDE after the commit, never failing the stake (spec §10, Amendment B §B7.3; Backing Beta PR 5)', () => {
   const eventPath = (id) => `backingEvents/stake_confirmed:${id}`;
 
-  it('a NEW stake records ONE stake_confirmed keyed by the stake id, with the funnel props, AFTER the transaction', async () => {
+  it('a NEW stake records ONE stake_confirmed keyed by the REQUEST, with the funnel props, AFTER the transaction', async () => {
     const res = await post(VALID());
     expect(res.statusCode).toBe(200);
-    const id = stakeIdFor(UID, 'req-1');
-    expect(DB.store.get(eventPath(id))).toEqual({
+    const id = SID();
+    const key = stakeDebitKeyFor(UID, 'req-1');
+    expect(DB.store.get(eventPath(key))).toEqual({
       userId: UID, groupId: GROUP_ID, event: 'stake_confirmed', at: NOW.toISOString(),
-      props: { stakeId: id, teamOdUserId: 'od-a', amount: 100, weekKey: WEEK, formationPath: 'lobby', humanTeams: 2, isDev: false },
+      props: { stakeId: id, teamOdUserId: 'od-a', amount: 100, topUp: false, weekKey: WEEK, formationPath: 'lobby', humanTeams: 2, isDev: false },
     });
     // After the transaction: the record is the LAST write, and the only event write.
-    expect(DB.writeLog[DB.writeLog.length - 1]).toEqual(['set', eventPath(id)]);
+    expect(DB.writeLog[DB.writeLog.length - 1]).toEqual(['set', eventPath(key)]);
     expect(DB.writeLog.filter(([, p]) => p.startsWith('backingEvents/'))).toHaveLength(1);
     // The reply still carries nothing about the record — no client read of the sink.
     expect(JSON.stringify(res.body)).not.toContain('stake_confirmed');
@@ -1184,10 +1255,10 @@ describe('stake_confirmed — written SERVER-SIDE after the commit, never failin
       : real(name));
     const res = await post(VALID());
     expect(res.statusCode).toBe(200);
-    const id = stakeIdFor(UID, 'req-1');
+    const id = SID();
     expect(stakeDoc(DB.store, id)).toMatchObject({ status: STAKE_STATUS.LIVE, amount: 100 });
     expect(res.body.stake.id).toBe(id);
-    expect(DB.store.get(eventPath(id))).toBeUndefined();
+    expect(DB.store.get(eventPath(stakeDebitKeyFor(UID, 'req-1')))).toBeUndefined();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('stake_confirmed not recorded'), 'the sink is down');
     warn.mockRestore();
   });

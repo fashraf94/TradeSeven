@@ -228,16 +228,16 @@ describe('the page — the label, every state, the local actions', () => {
     expect(page.textContent.startsWith(PREVIEW_LABEL)).toBe(true);
   });
 
-  it('the switcher names every surface state the build asks for — 23 from PR 4, and PR 5\'s four results and two stats states', () => {
+  it('the switcher names every surface state the build asks for — 23 from PR 4, PR 5\'s four results and two stats states, and the pre-flip cleanup\'s top-up (D-ag)', () => {
     const byGroup = (g) => PREVIEW_STATES.filter((s) => s.group === g).map((s) => s.id);
     expect(byGroup('strip')).toEqual(['open', 'staked', 'week', 'between'].flatMap((k) => [`strip-${k}-no-bracket`, `strip-${k}-bracket`]));
     expect(byGroup('pods')).toEqual(['pods-below-floor', 'pods-qualified', 'pods-revealed', 'pods-your-pod']);
     expect(byGroup('card')).toEqual(['card-first-week', 'card-veteran', 'card-cpu', 'card-own']);
-    expect(byGroup('stake')).toEqual(['stake-attest', 'stake-attested', 'stake-refusal', 'stake-backed']);
+    expect(byGroup('stake')).toEqual(['stake-attest', 'stake-attested', 'stake-refusal', 'stake-backed', 'stake-top-up']);
     expect(byGroup('week')).toEqual(['week-before-monday', 'week-monday', 'week-mid-week']);
     expect(byGroup('results')).toEqual(['results-win', 'results-loss', 'results-refunded', 'results-insufficient']);
     expect(byGroup('stats')).toEqual(['stats-mine', 'stats-trainer']);
-    expect(PREVIEW_STATES).toHaveLength(29);
+    expect(PREVIEW_STATES).toHaveLength(30);
   });
 
   it('every state renders its surface, from the switcher — and the page speaks no forbidden term', async () => {
@@ -249,6 +249,49 @@ describe('the page — the label, every state, the local actions', () => {
         ...[...stage(page).querySelectorAll('[data-backing="strip"], [data-backing="pod-list"], [data-backing="team-card"], [data-backing="stake-control"], [data-backing="attestation"], [data-backing="backed"], [data-backing="your-backing-section"], [data-backing="results-card"], [data-backing="my-stats"], [data-backing="trainer-stats"]')].map((el) => el.textContent)].join(' ');
       expect(findForbiddenTerm(own), state.id).toBeNull();
     }
+    expectNoNetwork();
+  }, 60_000);
+
+  it('D-af: every state\'s teams are AGENT-NAMED, and no backing surface shows a raw account id (Amendment C §C1)', async () => {
+    // The raw-id guard's three shapes (src/components/League/backing/
+    // backingRawIds.guard.test.jsx walks every endpoint and surface; this row
+    // walks this page's own fixture states the same way).
+    const RAW_ID = [
+      /(?<![A-Za-z0-9])[A-Za-z0-9]{28}(?![A-Za-z0-9])/,
+      /(?<![\w-])od-[A-Za-z0-9][\w-]*/,
+      /(?<![\w-])cpu-\d+(?![\w-])/,
+    ];
+    const SURFACES = '[data-backing="strip"], [data-backing="pod-list"], [data-backing="team-card"], [data-backing="stake-control"], [data-backing="attestation"], [data-backing="backed"], [data-backing="your-backing-section"], [data-backing="results-card"], [data-backing="my-stats"], [data-backing="trainer-stats"]';
+    // Text node by text node, separated — `textContent` glues adjacent nodes
+    // ("6" + "book" + "NVDA" …) into runs no reader ever sees.
+    const nodesText = (el) => {
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      const out = [];
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) if (n.nodeValue.trim()) out.push(n.nodeValue);
+      return out.join(' \u2016 ');
+    };
+    const page = await mount(<BackingPreviewScreen />);
+    const offenders = [];
+    const seen = [];
+    for (const state of PREVIEW_STATES) {
+      await select(page, state.id);
+      for (const el of stage(page).querySelectorAll(SURFACES)) {
+        // The surface root's OWN attributes too — `querySelectorAll` searches
+        // descendants only (this build's review record, RAWID-4).
+        const attrs = [el, ...el.querySelectorAll('[aria-label], [title], [placeholder], [alt]')]
+          .flatMap((n) => ['aria-label', 'title', 'placeholder', 'alt'].map((a) => n.getAttribute(a)).filter(Boolean));
+        const text = [nodesText(el), ...attrs].join(' \u2016 ');
+        seen.push(text);
+        for (const re of RAW_ID) {
+          const m = text.match(re);
+          if (m) offenders.push(`${state.id}: ${JSON.stringify(m[0])}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+    // Not vacuous: the fixtures' teams read by their agents, the players beside them.
+    const all = seen.join(' ');
+    for (const name of ['Kestrel', 'Tarn', 'Orbit', 'Winner: Kestrel', 'Kestrel · 350 BP']) expect(all, name).toContain(name);
     expectNoNetwork();
   }, 60_000);
 

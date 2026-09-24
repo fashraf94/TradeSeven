@@ -6,6 +6,8 @@
 // names exactly the archetypes whose canonical line is not.
 
 import { describe, it, expect } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
 import { BACKING_SAFE_APPROACH, backingSafeApproach } from './backingApproach';
 import { findForbiddenTerm } from './backingLexicon';
 import { ARCHETYPE_IDENTITY } from '../data/archetypeIdentity';
@@ -30,6 +32,14 @@ describe('BACKING_SAFE_APPROACH — the twins of the canonical lines that fail t
     expect(ARCHETYPE_IDENTITY.diversifier.disposition).toMatch(/\bbets\b/);
     expect(BACKING_SAFE_APPROACH.diversifier).toBe('Keeps the portfolio spread across many sectors so no single one can sink you.');
     expect(BACKING_SAFE_APPROACH.diversifier).toMatch(/sink you/);
+  });
+
+  it('C4 / D-ai: the Diversifier line IS the founder-approved wording, character for character, as the committed Amendment C states it — twice', () => {
+    const amendment = fs.readFileSync(path.resolve(__dirname, '../../docs/FANTASYTRADES_BACKING_BETA_SPEC_V1_3_AMENDMENT_C.md'), 'utf8');
+    const approved = amendment.match(/^Approved: \*"([^"]+)"\*/m)?.[1];
+    const ruled = amendment.match(/^\| D-ai \| Diversifier line \| "([^"]+)" \|$/m)?.[1];
+    expect(approved).toBe(BACKING_SAFE_APPROACH.diversifier);
+    expect(ruled).toBe(BACKING_SAFE_APPROACH.diversifier);
   });
 });
 

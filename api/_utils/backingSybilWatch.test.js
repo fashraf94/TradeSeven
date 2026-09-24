@@ -6,7 +6,7 @@
 // address, a voided stake, a many-address account below the bar).
 
 import { describe, it, expect } from 'vitest';
-import { SYBIL_WATCH_VERSION, analyzeSybil, formatSybilReport, shortHash } from './backingSybilWatch.js';
+import { SYBIL_WATCH_VERSION, analyzeSybil, formatSybilReport, placementsOf, shortHash } from './backingSybilWatch.js';
 import { findForbiddenTerm } from '../../src/constants/backingLexicon.js';
 
 const IP_A = 'a'.repeat(64);
@@ -114,6 +114,63 @@ describe('analyzeSybil — the clusters', () => {
     const walk = (v) => { if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) { keys.add(k); walk(x); } };
     walk(report);
     for (const k of keys) expect(k).not.toMatch(/rank|score|verdict|fraud|guilty|ban/i);
+  });
+});
+
+describe('every placement is seen — a TOP-UP\'s address joins the watch (Amendment C §C2, D-ag)', () => {
+  // One stake per team per backer: u9 backed od-a in g1 from address C, then
+  // TOPPED UP the same stake from address A — the address u1 and u2 share.
+  const debits = [{ entryId: 'stake:dbt_first', amount: 100 }, { entryId: 'stake:dbt_top', amount: 250 }];
+  const TOPPED = {
+    stakes: [...BOOK.stakes, stake('s9', 'u9', 'g1', 'od-a', 350, { debits })],
+    metaByStakeId: {
+      ...BOOK.metaByStakeId,
+      s9: meta(IP_C, UA_2, { topUps: [{ ipHash: IP_A, uaHash: UA_1, entryId: 'stake:dbt_top', at: '2026-09-22T11:00:00.000Z' }] }),
+    },
+    poolsByGroupId: BOOK.poolsByGroupId,
+  };
+  const report = analyzeSybil(TOPPED, { unknownIpHash: UNKNOWN, now: new Date('2026-09-23T12:00:00.000Z') });
+  const clusterA = () => report.addressClusters.find((c) => c.ipHash === IP_A.slice(0, 12));
+
+  it('an address used ONLY for a top-up is an address this account staked from: u9 joins address A\'s cluster with the top-up\'s BP', () => {
+    expect(clusterA().accounts.map((x) => x.userId)).toEqual(['u1', 'u9', 'u2', 'u3']);
+    expect(clusterA().accounts.find((x) => x.userId === 'u9')).toEqual({ userId: 'u9', stakes: 1, bp: 250, pods: ['g1'], excluded: 0 });
+    // ...and the same-team concentration on od-a in g1 now counts three accounts.
+    expect(clusterA().sameTeam[0]).toMatchObject({ groupId: 'g1', teamOdUserId: 'od-a', accountCount: 3, accounts: ['u1', 'u2', 'u9'], bp: 750 });
+    // The device cluster (A + UA_1) sees it too.
+    expect(report.deviceClusters[0].accounts).toEqual(['u1', 'u2', 'u9']);
+  });
+
+  it('the stake\'s BP is split across its placements by its debits — never counted twice', () => {
+    expect(placementsOf(TOPPED.stakes.at(-1), TOPPED.metaByStakeId.s9)).toEqual([
+      { ipHash: IP_C, uaHash: UA_2, amount: 100 },
+      { ipHash: IP_A, uaHash: UA_1, amount: 250 },
+    ]);
+    // Address C (u9 alone — shown at minAccounts 1) holds the first placement's 100; A gained the top-up's 250.
+    const addressC = analyzeSybil(TOPPED, { minAccounts: 1 }).addressClusters.find((c) => c.ipHash === IP_C.slice(0, 12));
+    expect(addressC.bp).toBe(100);
+    expect(clusterA().bp).toBe(750 + 250);
+  });
+
+  it('stake counts are DISTINCT stakes: a stake placed and topped up from one address is one stake there, its BP whole', () => {
+    const sameAddress = analyzeSybil({
+      stakes: [stake('t1', 'u1', 'g1', 'od-a', 400, { debits: [{ entryId: 'e1', amount: 150 }, { entryId: 'e2', amount: 250 }] }), stake('t2', 'u2', 'g1', 'od-a', 100)],
+      metaByStakeId: { t1: meta(IP_A, UA_1, { topUps: [{ ipHash: IP_A, uaHash: UA_1, entryId: 'e2' }] }), t2: meta(IP_A, UA_1) },
+    });
+    expect(sameAddress.addressClusters[0]).toMatchObject({ accountCount: 2, stakeCount: 2, bp: 500 });
+    expect(sameAddress.addressClusters[0].accounts[0]).toEqual({ userId: 'u1', stakes: 1, bp: 400, pods: ['g1'], excluded: 0 });
+    expect(sameAddress.deviceClusters[0]).toMatchObject({ stakeCount: 2, bp: 500 });
+    expect(sameAddress.counts.counted).toBe(2);
+  });
+
+  it('a stake never topped up is exactly the row it always was; a malformed top-up entry costs nothing and never throws', () => {
+    expect(placementsOf(stake('x', 'u1', 'g1', 'od-a', 300), meta(IP_A, UA_1))).toEqual([{ ipHash: IP_A, uaHash: UA_1, amount: 300 }]);
+    // A top-up naming no debit carries 0 BP; the first placement keeps the whole stake.
+    expect(placementsOf(stake('x', 'u1', 'g1', 'od-a', 300), meta(IP_A, UA_1, { topUps: [null, { ipHash: 7 }] }))).toEqual([
+      { ipHash: IP_A, uaHash: UA_1, amount: 300 },
+      { ipHash: null, uaHash: null, amount: 0 },
+      { ipHash: null, uaHash: null, amount: 0 },
+    ]);
   });
 });
 

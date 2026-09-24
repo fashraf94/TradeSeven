@@ -37,12 +37,46 @@
 // one commit and re-runs the other against the committed balance. A close racing
 // a stake serializes on the POOL document the same way. The idempotency keys in
 // play are three, each guarding a different failure:
-//   · `requestId` → the stake's DETERMINISTIC doc id, so a double-submit is one
-//     document and a replay returns it unchanged, writing nothing;
-//   · `appliedEntries` on the wallet (PR 1) → `stake:{stakeId}` can move the
-//     ledger once, even if this route were ever called twice inside one tx;
+//   · (backer, pool, team) → the stake's DETERMINISTIC doc id (D-ag,
+//     Amendment C §C2): a backer holds ONE stake per team per pool, and backing
+//     that team again tops up the same document — see below;
+//   · `requestId` → the REQUEST's debit key: the ledger entry
+//     `stake:{debitKey}` and the stake document's `debits[]` both carry it, so
+//     a double-submit is one debit and a replay returns the stake unchanged,
+//     writing nothing, while a distinct top-up is a distinct debit;
 //   · the pool's STATUS → a closed pool refuses, so a stake cannot land after
 //     the close transaction has frozen the seats.
+//
+// ONE STAKE PER TEAM PER BACKER; A REPEAT TOPS UP (Amendment C §C2, D-ag). The
+// stake document's id derives from (uid, groupId, teamOdUserId) — `poolId =
+// groupId` (§1) — so a second request on a team the backer already holds
+// lands on the SAME document, inside this same single transaction:
+//   · its `amount` becomes the new total, and the per-team cap (500) is
+//     checked against that total — the backer's live stakes on the team plus
+//     this request;
+//   · the request is its OWN debit, with its own ledger entry
+//     (`stake:{debitKey}`, `ref` = the stake document) and its own entry on the
+//     document's `debits[]` — so Σ entries = the cached balance after every
+//     operation, and net BP per §2 is unchanged;
+//   · `private/totals` and the public capped counters move exactly as for any
+//     stake by a backer already counted on that team: the totals grow, the
+//     unique-backer count, teams-backed and the team's backer count do not
+//     (one fold, `totalsFromBackers`, keyed by backer and team);
+//   · settlement and the refund are untouched — they read the document's
+//     final `amount`, one payout / refund / month attribution per document.
+// So a backer holds ONE stake document per seat — at most four per pod (a
+// pod has four seats, and a CPU seat is backable) — and after the close a
+// pool's book is at most 4 × its distinct backers. NOTHING BOUNDS DISTINCT
+// BACKERS, so the ceilings are NOT unreachable by construction (this build's
+// review record, MONEY-1): 24 backers each backing all four seats reach the
+// refund's stuck state (96 live stakes — the PR 5 review record's MONEY-4)
+// and 31 reach the settlement ceiling (120). Amendment C §C2 expects "a few
+// dozen" stakes at beta scale; the ceilings stay in code as belts, the
+// batched refund remains the class fix, and the close has no write ceiling of
+// its own (MONEY-R-1 — reported for separate tasking). The first request's
+// `placedAt`, `requestId` and `hashAtStake` stay the document's; a top-up's
+// fingerprint is kept beside the first in the sealed meta (`topUps[]`), never
+// over it.
 //
 // THE FINGERPRINT IS NOT ON THE STAKE DOC (carry-in E1). `backingStakes/{id}` is
 // OWNER-READ, and Firestore rules cannot hide a field — an owner-readable doc
@@ -77,6 +111,13 @@
 // `requestId` idempotency, the wallet threading and the belt are as PR 2 left
 // them, because the amendment changes WHAT IS PUBLISHED, not what is decided.
 //
+// THE CONFIRMATION NAMES THE TEAM BY THE SERVER'S LABEL (Amendment C §C1,
+// D-af): the reply carries `teamLabel` — the seat's primary agent's name and
+// the player's display name — from the one resolver
+// (api/_utils/backingTeamLabels.js), so the "Backed" line the client renders
+// from this reply never composes a name from an id. Resolved AFTER the commit,
+// like `stake_confirmed`: a name is never a reason to fail a stake.
+//
 // DARK AT MERGE. `BACKING_BETA_ENABLED` is false and read at CALL time; the
 // co-located `.dark.test.js` proves the route answers 404 and touches nothing.
 
@@ -103,15 +144,18 @@ import {
 } from '../_utils/backingPools.js';
 import { checkBackingEligibility } from '../_utils/backingEligibility.js';
 import {
+  BACKING_WALLET_ENTRIES_SUBCOLLECTION,
   BackingLedgerError,
   debitStake,
   ensureAllowance,
   readWallet,
+  stakeEntryIdFor,
   walletRef,
 } from '../_utils/backingWallet.js';
 import { fingerprintOf, hashFingerprint } from '../_utils/backingFingerprint.js';
 import { STAKE_CONFIRMED_EVENT, recordBackingEvent, stakeConfirmedEventId } from '../_utils/backingEvents.js';
-import { MIN_STAKE_BP, PER_TEAM_CAP_BP } from '../../src/constants/backing.js';
+import { labelSeatOf, resolveTeamLabels } from '../_utils/backingTeamLabels.js';
+import { MIN_STAKE_BP, PER_TEAM_CAP_BP, UNNAMED_TEAM_LABEL } from '../../src/constants/backing.js';
 import { TOURNAMENT_GAME_MODE, TOURNAMENT_GROUPS_COLLECTION } from '../../src/constants/leagueTournament.js';
 import { BACKING_BETA_ENABLED } from '../../src/config/featureFlags.js';
 
@@ -125,28 +169,61 @@ export const STAKE_META_DOC = 'meta';
 export const MAX_REQUEST_ID_LEN = 200;
 
 /**
- * The stake's DETERMINISTIC document id, from (uid, requestId).
+ * The stake's DETERMINISTIC document id, from (uid, groupId, teamOdUserId) —
+ * THE ONE stake a backer holds on a team in a pool (D-ag, Amendment C §C2;
+ * `poolId = groupId`, §1).
  *
- * `requestId` is §8's idempotency key, and making it the DOC ID rather than a
- * field is what makes the guarantee structural: two racing submissions of the
- * same request contend on one document instead of creating two stakes that a
- * later de-duplication pass would have to reconcile. The uid is mixed in so one
- * caller's requestId can never collide with another's.
+ * Making (backer, pool, team) the DOC ID rather than a query is what makes
+ * "one per team" structural: a second request on the same team contends on
+ * the same document inside the stake transaction and tops it up — there is
+ * no second document for a later pass to reconcile. The uid is mixed in so
+ * one backer's team can never name another backer's stake.
  *
- * Hashed rather than concatenated because the client's string is OPAQUE: it may
- * carry `/` (which would split the path and make `.doc()` an odd-segment path),
- * unicode, or 200 characters. A hash is path-safe and fixed-length by
- * construction. It is NOT a secret — the id is returned to its own owner — so
- * SHA-256 here is a namespacing function, not a security control.
+ * Hashed rather than concatenated: the ids are opaque strings, and a hash is
+ * path-safe and fixed-length by construction. It is NOT a secret — the id is
+ * returned to its own owner — so SHA-256 here is a namespacing function, not a
+ * security control.
  */
-export function stakeIdFor(uid, requestId) {
-  // LENGTH-PREFIXED, not newline-joined. `a\nb` + `c` and `a` + `b\nc` hash to
-  // the same string under a bare separator, so two different (uid, requestId)
-  // pairs could name one document. No Firebase uid contains a newline, so it is
-  // unreachable through Auth — but the repo documents an operator custom-token
-  // path that mints arbitrary uids, and an injective encoding costs nothing.
+export function stakeIdFor(uid, groupId, teamOdUserId) {
+  // LENGTH-PREFIXED, not separator-joined: `a|b` + `c` and `a` + `b|c` would
+  // hash to one string under a bare separator, so two different triples could
+  // name one document. An injective encoding costs nothing.
+  const key = `${uid.length}:${uid}|${groupId.length}:${groupId}|${teamOdUserId.length}:${teamOdUserId}`;
+  return `stk_${hashFingerprint(`stake-team\n${key}`, { salted: false }).slice(0, 40)}`;
+}
+
+/**
+ * The REQUEST's debit key, from (uid, requestId) — §8's idempotency key for
+ * ONE submission (a stake or a top-up), and the key of its ledger entry,
+ * `stake:{debitKey}` (D-ag). Two racing submissions of the same request
+ * derive the same key, so the second finds it on the document (a replay) or
+ * on the ledger (a reuse); two DIFFERENT requests are two debits against one
+ * document. The uid is mixed in so one caller's requestId never collides with
+ * another's; hashed because the client's string is OPAQUE — it may carry `/`,
+ * unicode, or 200 characters, and the key names a document.
+ */
+export function stakeDebitKeyFor(uid, requestId) {
+  // LENGTH-PREFIXED, not newline-joined: `a\nb` + `c` and `a` + `b\nc` must
+  // not name one request. No Firebase uid contains a newline, but the repo
+  // documents an operator custom-token path that mints arbitrary uids.
   const key = `${uid.length}:${uid}|${requestId.length}:${requestId}`;
-  return `stk_${hashFingerprint(`stake-id\n${key}`, { salted: false }).slice(0, 40)}`;
+  return `dbt_${hashFingerprint(`stake-debit\n${key}`, { salted: false }).slice(0, 40)}`;
+}
+
+/**
+ * The debits that funded a stake document — one `{ entryId, amount, at }` per
+ * request, first to last. A document WITHOUT `debits[]` at the deterministic
+ * id — reachable only by an out-of-band write — is read as the one debit its
+ * own id keyed (`stake:{stakeId}`). It does NOT reach a stake written before
+ * D-ag: those live at the old (uid, requestId) id, which nothing reads any
+ * more, so a pre-cleanup request replayed after this deploy would be a new
+ * request (the review record's MONEY-2). None exists in production — the flag
+ * has been false on main throughout.
+ */
+export function debitsOf(stake, stakeId) {
+  if (Array.isArray(stake?.debits)) return stake.debits;
+  if (stake == null) return [];
+  return [{ entryId: stakeEntryIdFor(stakeId), amount: stake.amount, at: stake.placedAt ?? null }];
 }
 
 /** The `backingStakes/{stakeId}` reference. */
@@ -229,6 +306,23 @@ export class StakeRefusal extends Error {
   }
 }
 
+/**
+ * The confirmation's name for the team (D-af) — the one resolver's label for
+ * the seat, off the pod this request already read. NEVER THROWS: the stake is
+ * already on the record when this runs, and a name is never a reason to fail
+ * it (the resolver degrades on its own; this catch is the belt).
+ */
+export async function confirmationLabelFor(db, group, teamOdUserId, isCpu = false) {
+  try {
+    const seat = labelSeatOf({ group }, teamOdUserId, isCpu);
+    const labels = await resolveTeamLabels(db, [seat]);
+    return labels.teamLabelFor(seat);
+  } catch (err) {
+    console.warn('[backing-stake] team label unresolvable (the neutral name answers):', err?.message);
+    return { label: UNNAMED_TEAM_LABEL, secondary: null };
+  }
+}
+
 /** A 400 body: one plain reason, the attest.js shape. */
 function bad(res, error, message) {
   return res.status(400).json({ error, message });
@@ -272,7 +366,11 @@ export default async function handler(req, res) {
 
   const db = getFirebaseAdmin();
   const now = new Date();
-  const stakeId = stakeIdFor(user.uid, requestId);
+  // THE ONE DOCUMENT for this (backer, pool, team), and THIS REQUEST's debit
+  // (D-ag): a top-up is a second debit against the same document.
+  const stakeId = stakeIdFor(user.uid, groupId, teamOdUserId);
+  const debitKey = stakeDebitKeyFor(user.uid, requestId);
+  const entryId = stakeEntryIdFor(debitKey);
 
   try {
     // 6. The pod, then the two lazy jobs §4/§7 put on this endpoint.
@@ -303,32 +401,36 @@ export default async function handler(req, res) {
 
     // 7. ONE transaction.
     const outcome = await db.runTransaction(async (tx) => {
-      // ---- READ: the replay probe, FIRST. A duplicate submission is answered
-      // from the document it already wrote, whatever the window now says — that
-      // is what "returns the existing stake unchanged and writes nothing" means.
+      // ---- READ: the replay probe, FIRST — the team's ONE stake document
+      // (D-ag). A duplicate submission is answered from the document it
+      // already funded, whatever the window now says — that is what "returns
+      // the existing stake unchanged and writes nothing" means.
       const existing = await tx.get(stakeRefFor(db, stakeId));
-      if (existing.exists) {
-        const prior = existing.data();
-        // A REPLAY IS A REPLAY OF *THIS* REQUEST, not of whatever sits at the
-        // derived id. Two guards, both cheap:
-        //   · the OWNER must match. The id mixes the uid before hashing, so
-        //     reaching another backer's stake needs their uid (which is public —
-        //     it is `players[].odUserId`) AND their exact `requestId`. PR 2
-        //     ships no client, so whether that is guessable is PR 4's choice of
-        //     `requestId` scheme; refusing here means it never becomes one. The
-        //     alternative is handing a rival the victim's team and amount while
-        //     the pool is sealed (§3).
-        //   · the BODY must match. A `requestId` reused for a different pod,
-        //     team or amount would otherwise get 200 and a stake it did not ask
-        //     for; §8 makes a duplicate submission a no-op, not a silent
-        //     substitution.
-        if (prior?.userId !== user.uid
-          || prior?.groupId !== groupId
-          || prior?.teamOdUserId !== teamOdUserId
-          || prior?.amount !== amount) {
+      const prior = existing.exists ? existing.data() : null;
+      if (prior != null) {
+        // THE DOCUMENT MUST BE THIS CALLER'S STAKE ON THIS TEAM. The id mixes
+        // the uid, the pod and the team before hashing, so nothing reachable
+        // lands another backer's document here; refusing — rather than
+        // answering or topping up whatever sits at the id — means a collision
+        // or an out-of-band write can never hand a rival the victim's team and
+        // amount while the pool is sealed (§3), nor spend into their stake.
+        if (prior.userId !== user.uid || prior.groupId !== groupId || prior.teamOdUserId !== teamOdUserId) {
           return { refusal: { status: 409, error: 'request_id_conflict' } };
         }
-        return { replay: true, stake: { id: stakeId, ...prior } };
+        // A REPLAY IS A REPLAY OF *THIS* REQUEST: its debit is on the
+        // document's `debits[]`. The BODY must match — a `requestId` reused
+        // for a different amount would otherwise get 200 and a stake it did
+        // not ask for; §8 makes a duplicate submission a no-op, not a silent
+        // substitution. (Reused for a different pod or team, the request is
+        // found on the LEDGER instead — the pre-check below.)
+        const debits = debitsOf(prior, stakeId);
+        const index = debits.findIndex((d) => d?.entryId === entryId);
+        if (index >= 0) {
+          if (debits[index].amount !== amount) {
+            return { refusal: { status: 409, error: 'request_id_conflict' } };
+          }
+          return { replay: true, topUp: index > 0, added: debits[index].amount, stake: { id: stakeId, ...prior } };
+        }
       }
 
       // ---- READ: the pod and the pool, transactionally. The pool doc is also
@@ -417,11 +519,32 @@ export default async function handler(req, res) {
       const wallet0 = await readWallet(tx, wRef);
 
       // The sealed meta, read BEFORE any write so an admin's `excluded` flag
-      // survives (see the write below). Normally absent; present only when the
-      // parent stake was deleted out of band, since Firestore does not
-      // cascade-delete a subcollection.
+      // survives (see the write below). Present on every TOP-UP (the stake's
+      // own meta, which a top-up extends); on a first stake normally absent —
+      // present only when a parent stake was deleted out of band, since
+      // Firestore does not cascade-delete a subcollection.
       const metaSnap = await tx.get(stakeMetaRefFor(db, stakeId));
       const priorMeta = metaSnap.exists ? metaSnap.data() : null;
+
+      // ---- THE REQUEST IS ALREADY ON THE LEDGER, and this team's document
+      // does not carry it (the probe above would have answered it). So this
+      // `requestId` funded ANOTHER stake — a different pod or team — or a
+      // document removed out of band. Either way it is spent: refuse, BEFORE
+      // the first write. Which of the two is read off the entry's own `ref`
+      // (the document it funded), one extra read on this path only.
+      if (wallet0?.appliedEntries?.[entryId] !== undefined) {
+        const spent = await tx.get(wRef.collection(BACKING_WALLET_ENTRIES_SUBCOLLECTION).doc(entryId));
+        const fundedThisStake = spent.exists && spent.data()?.ref === stakeId;
+        return { refusal: { status: 409, error: fundedThisStake ? 'stake_already_spent' : 'request_id_conflict' } };
+      }
+
+      // ---- A STAKE THAT IS NO LONGER LIVE IS NOT TOPPED UP. Every path that
+      // settles or voids a stake runs on a pool the window has already closed,
+      // so this is an out-of-band state (an admin's hand on the document); a
+      // top-up would revive it — refused, before the first write.
+      if (prior != null && prior.status !== STAKE_STATUS.LIVE) {
+        return { refusal: { status: 409, error: 'stake_not_live' } };
+      }
 
       // ---- CHECK 4a: the allowance for THIS POOL'S backing week, granted
       // lazily if this is the first touch (§2, D-h). Threaded onward per the
@@ -445,47 +568,77 @@ export default async function handler(req, res) {
       //
       // The §12 check order is unchanged — allowance, then cap, then debit —
       // because the fix is HOW the refusal leaves, not WHERE the check sits.
-      if (onThisTeam + amount > PER_TEAM_CAP_BP) {
-        throw new StakeRefusal(409, 'per_team_cap', { staked: onThisTeam, cap: PER_TEAM_CAP_BP });
+      //
+      // THE CAP IS ON THE TOTAL (D-ag): `onThisTeam` is every live stake this
+      // backer holds on the team — the one document a top-up adds to — so the
+      // check is the NEW total against the cap, never the request alone.
+      //
+      // A BELT (the review record's MONEY-5): the base is never below the
+      // document this request tops up. The (userId, weekKey) query carries it
+      // whenever its `weekKey` is the pool's — always, unless written out of
+      // band — and a drifted document must not let a top-up past the cap.
+      const capBase = Math.max(onThisTeam, Number.isFinite(prior?.amount) ? prior.amount : 0);
+      if (capBase + amount > PER_TEAM_CAP_BP) {
+        throw new StakeRefusal(409, 'per_team_cap', { staked: capBase, cap: PER_TEAM_CAP_BP });
       }
 
       // ---- CHECK 4c: the debit. Refuses `insufficient_allowance` (typed).
-      const debit = debitStake(tx, wRef, wallet1, { stakeId, amount, weekKey, now });
-      // A REPLAYED LEDGER ENTRY WITH NO STAKE DOCUMENT IS NOT A STAKE. The
-      // wallet's `appliedEntries` guard makes `stake:{stakeId}` a no-op the
-      // second time, so if the stake DOCUMENT has been deleted out of band (an
-      // admin action; Firestore does not cascade-delete, so its `private/meta`
-      // survives) this path would otherwise re-create the stake FOR FREE — no
-      // debit, the pot incremented a second time, and the admin's `excluded`
-      // flag overwritten back to false. Refuse instead: the ledger says this
-      // stake id has already been spent.
+      // ONE DEBIT PER REQUEST (D-ag): the entry is `stake:{debitKey}`, its
+      // `ref` the one stake document the debit funds.
+      const debit = debitStake(tx, wRef, wallet1, { stakeId, entryKey: debitKey, amount, weekKey, now });
+      // A REPLAYED LEDGER ENTRY IS NEVER A STAKE. The wallet's
+      // `appliedEntries` guard makes `stake:{debitKey}` a no-op the second
+      // time, so a request whose debit is already on the ledger would
+      // otherwise land on the document FOR FREE — no debit, the pot and the
+      // stake's total incremented anyway, and (for a document deleted out of
+      // band — Firestore does not cascade-delete, so its `private/meta`
+      // survives) the admin's `excluded` flag overwritten. The ledger
+      // pre-check above answers every such request before the first write;
+      // this throw is the belt behind it.
       if (debit.replay === true) {
         throw new StakeRefusal(409, 'stake_already_spent');
       }
       const wallet2 = debit.wallet;
 
-      // ---- WRITE 5: the stake (§6 shape), plus its sealed meta (E1).
-      const stake = {
-        userId: user.uid,
-        groupId,
-        teamOdUserId,
-        amount,
-        hashAtStake,
-        placedAt: now.toISOString(),
-        weekKey,
-        requestId,
-        status: STAKE_STATUS.LIVE,
-      };
+      // ---- WRITE 5: the stake (§6 shape) — the ONE document for this team,
+      // created or TOPPED UP (D-ag) — plus its sealed meta (E1).
+      const nowIso = now.toISOString();
+      const thisDebit = { entryId, amount, at: nowIso };
+      const topUp = prior != null;
+      const stake = topUp
+        ? {
+          // The document as it stands — its first placement, request, hash and
+          // any field another writer owns ride through — with the new TOTAL
+          // and this request's debit appended. Σ debits = amount, always.
+          ...prior,
+          amount: prior.amount + amount,
+          debits: [...debitsOf(prior, stakeId), thisDebit],
+        }
+        : {
+          userId: user.uid,
+          groupId,
+          teamOdUserId,
+          amount,
+          hashAtStake,
+          placedAt: nowIso,
+          weekKey,
+          requestId,
+          status: STAKE_STATUS.LIVE,
+          debits: [thisDebit],
+        };
       tx.set(stakeRefFor(db, stakeId), stake);
       // The sealed meta (E1). `excluded` is an ADMIN fact and is written here
       // only on a doc that does not yet carry one — `metaSnap` is read above,
       // before any write — so a stake this route creates can never clear an
-      // exclusion an admin had already set.
-      tx.set(stakeMetaRefFor(db, stakeId), {
-        ...fingerprintOf(req),
-        excluded: priorMeta?.excluded === true,
-        at: now.toISOString(),
-      });
+      // exclusion an admin had already set. A TOP-UP keeps the first
+      // placement's fingerprint where the Sybil watch reads it and appends its
+      // own beside it (`topUps[]`, each naming the debit it made), so a second
+      // address or device on the same stake is recorded, never written over —
+      // and the watch reads every placement (api/_utils/backingSybilWatch.js).
+      const fingerprint = fingerprintOf(req);
+      tx.set(stakeMetaRefFor(db, stakeId), topUp && priorMeta != null
+        ? { ...priorMeta, excluded: priorMeta.excluded === true, topUps: [...(Array.isArray(priorMeta.topUps) ? priorMeta.topUps : []), { ...fingerprint, entryId, at: nowIso }] }
+        : { ...fingerprint, excluded: priorMeta?.excluded === true, at: nowIso });
 
       // ---- WRITE 6: THE SPLIT (Amendment B §B2/§B5). The true totals — the
       // pot and the exact counts — go to the SEALED doc; the public document
@@ -517,7 +670,7 @@ export default async function handler(req, res) {
         tx.set(poolRef, nextPool);
       }
 
-      return { replay: false, stake: { id: stakeId, ...stake }, pool: nextPool, wallet: wallet2 };
+      return { replay: false, topUp, added: amount, stake: { id: stakeId, ...stake }, pool: nextPool, wallet: wallet2 };
     });
 
     if (outcome.refusal) {
@@ -527,16 +680,25 @@ export default async function handler(req, res) {
 
     // Backing Beta PR 5 — `stake_confirmed` (spec §10; Amendment B §B7.3) is
     // written SERVER-SIDE, here, AFTER the transaction has committed and only
-    // for a NEW stake (a replay confirmed nothing new). It is telemetry: the
+    // for a NEW debit (a replay confirmed nothing new). It is telemetry: the
     // write is awaited (BUILD_RULES §5) but a failure is logged and NEVER
     // fails the stake — the stake is already on the record. The §10
     // segmentation keys (human seats per pod, formation path) ride along,
-    // read off the pod this request already holds; the id is the stake's, so
-    // a retried request can only rewrite identical bytes.
+    // read off the pod this request already holds.
+    //
+    // ONE CONFIRMATION PER REQUEST, and it says which it was (D-ag): the id is
+    // the request's debit key — a stake and each of its top-ups share one
+    // document but are separate confirmations, and a retried request can only
+    // rewrite identical bytes — and `topUp` records whether this request
+    // opened the stake or added to it. `amount` is what THIS request added.
+    // A DEV pod's confirmation is namespaced: the dev wallet is a separate
+    // ledger, so a `requestId` spent on a production pod is not refused on a
+    // dev one, and its confirmation must not overwrite the production
+    // record (the review record's MONEY-3).
     if (outcome.replay !== true) {
       try {
         await recordBackingEvent(db, {
-          eventId: stakeConfirmedEventId(stakeId),
+          eventId: stakeConfirmedEventId(outcome.pool?.isDev === true ? `dev:${debitKey}` : debitKey),
           userId: user.uid,
           groupId,
           event: STAKE_CONFIRMED_EVENT,
@@ -544,6 +706,7 @@ export default async function handler(req, res) {
             stakeId,
             teamOdUserId,
             amount,
+            topUp: outcome.topUp === true,
             weekKey: outcome.stake.weekKey,
             formationPath: outcome.pool?.formationPath ?? null,
             humanTeams: liveTeamsFor(group).filter((t) => !t.isCpu).length,
@@ -555,6 +718,9 @@ export default async function handler(req, res) {
         console.warn('[backing-stake] stake_confirmed not recorded (telemetry only):', err?.message);
       }
     }
+
+    // The confirmation's name for the team (D-af), after the commit.
+    const teamLabel = await confirmationLabelFor(db, group, teamOdUserId, seat?.isCpu === true);
 
     // THE SEALED PROJECTION (§3, Amendment B §B2): the reply carries the capped
     // validity signals, the close and the viewer's own stake — never the pot,
@@ -568,7 +734,12 @@ export default async function handler(req, res) {
     // read off that document, so the two cannot disagree (§9).
     return res.status(200).json({
       replay: outcome.replay === true,
+      // D-ag: whether this request topped up a stake the backer already held,
+      // and what it added — the stake's `amount` is the TOTAL on the team.
+      topUp: outcome.topUp === true,
+      added: outcome.added,
       stake: outcome.stake,
+      teamLabel,
       pool: outcome.pool
         ? {
           status: outcome.pool.status,

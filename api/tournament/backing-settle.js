@@ -30,8 +30,9 @@
 //   · a ceiling hold (`holdReason: 'stake_ceiling'`) is STRUCTURAL — the bound
 //     is Firestore's — so an override re-runs the assertion and re-holds.
 //     NO PRIMITIVE EXITS IT TODAY (MONEY-4, the PR 5 review record): there is
-//     no "admin void", and the refund holds at 96 live stakes (five backers
-//     at the per-backer cap reach it) with no way to reduce the book from
+//     no "admin void", and the refund holds at 96 live stakes (since D-ag —
+//     one stake per team per backer — 24 backers each backing all four seats
+//     of one pod reach it) with no way to reduce the book from
 //     this route. The one procedure is a Console repair, with two traps:
 //     a stake voided by hand must carry the GROUP'S OWN reason
 //     (`group_voided` / `group_expired` / `group_deleted`) and its ledger

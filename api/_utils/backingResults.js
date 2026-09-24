@@ -28,10 +28,25 @@
 // carry their `voidReason`. A closed or held pool that has not settled is
 // "settling" — a fact, never a guess at the result.
 //
+// EVERY TEAM IS NAMED BY THE SERVER (Amendment C §C1, D-af): each team row
+// carries `label` (its primary agent's name — after settlement, the agent
+// settlement recorded) and `secondary` (the player's display name), each of
+// the viewer's stakes its team's `teamLabel`, and the winner line its
+// `winnerLabels`, in the winning set's order. The names come from the caller's
+// `nameTeam` — the results reader binds it to ONE batched call of the one
+// resolver (api/_utils/backingTeamLabels.js) per response — so this module
+// stays pure and reads nothing. The pod's `seatNames` map is no longer sent:
+// a lobby pod carries none, which is how the winner line used to print a raw
+// account id (the PR 5 review record's HON-17).
+//
 // Imports the pool module under the revised June 2026 import rule (BUILD_RULES
 // §4); the co-located test's real import is the dependency-surface guard.
 
 import { POOL_STATUS, STAKE_STATUS, monthKeyForPool } from './backingPools.js';
+import { UNNAMED_TEAM_LABEL } from '../../src/constants/backing.js';
+
+/** A projection handed no naming function names every team neutrally — never by its id. */
+const NEUTRAL_NAME = () => ({ label: UNNAMED_TEAM_LABEL, secondary: null });
 
 /** The card's outcome words — derived from the pool's status, one mapping. */
 export const RESULT_OUTCOME = Object.freeze({
@@ -82,6 +97,12 @@ export function sharePctOf(stakeTotal, pot) {
  * hash recorded at the stake differs from the hash recorded at settlement,
  * false when they match, null when either is unknown or the seat is a CPU
  * (all CPUs share one hash — §1 suppresses the marker for them).
+ *
+ * A TOPPED-UP STAKE (D-ag — more than one debit) carries only its FIRST
+ * placement's hash, so a match proves nothing about the BP added later: the
+ * loadout may have moved and moved back in between (the review record's
+ * MONEY-8). It is never answered "unchanged" — a difference is still a
+ * change ("during the week" stays true), a match is not known.
  */
 export function loadoutChangedFor(stake, team) {
   if (!team || team.isCpu === true) return null;
@@ -89,7 +110,8 @@ export function loadoutChangedFor(stake, team) {
   const atSettlement = team?.hashAtSettlement;
   if (typeof atStake !== 'string' || atStake.length === 0) return null;
   if (typeof atSettlement !== 'string' || atSettlement.length === 0) return null;
-  return atStake !== atSettlement;
+  if (atStake !== atSettlement) return true;
+  return Array.isArray(stake?.debits) && stake.debits.length > 1 ? null : false;
 }
 
 /** The record delta of ONE stake once decided: won → payout − amount, lost → −amount, voided → 0 (neutral), live → null (undecided). */
@@ -104,10 +126,11 @@ export function stakeNetOf(stake) {
 
 /**
  * ONE pod's result, as the card renders it. Pure over the pool document, the
- * group document (names only — a deleted pod has none) and the viewer's own
- * stakes on the pod.
+ * group document (the pod's own status — a deleted pod has none), the
+ * viewer's own stakes on the pod, and `nameTeam(odUserId)` → `{ label,
+ * secondary }`, the caller's binding of the one label resolver.
  */
-export function projectResultPool({ groupId, poolId = null, pool, group = null, myStakes = [] }) {
+export function projectResultPool({ groupId, poolId = null, pool, group = null, myStakes = [], nameTeam = NEUTRAL_NAME }) {
   const outcome = outcomeOf(pool);
   const settled = outcome === RESULT_OUTCOME.SETTLED;
   const revealed = pool != null && pool.status !== POOL_STATUS.OPEN;
@@ -119,6 +142,7 @@ export function projectResultPool({ groupId, poolId = null, pool, group = null, 
   const teams = frozen.map((t) => ({
     odUserId: t.odUserId,
     isCpu: t.isCpu === true,
+    ...nameTeam(t.odUserId),
     backerCount: revealed && Number.isFinite(t.backerCount) ? t.backerCount : null,
     stakeTotal: revealed && Number.isFinite(t.stakeTotal) ? t.stakeTotal : null,
     sharePct: revealed ? sharePctOf(t.stakeTotal, pot) : null,
@@ -130,6 +154,7 @@ export function projectResultPool({ groupId, poolId = null, pool, group = null, 
   const stakes = (Array.isArray(myStakes) ? myStakes : []).map((s) => ({
     stakeId: s.id ?? s.stakeId ?? null,
     teamOdUserId: s.teamOdUserId,
+    teamLabel: nameTeam(s.teamOdUserId).label,
     amount: Number.isFinite(s.amount) ? s.amount : 0,
     status: s.status,
     // THE PAYOUT IS THE STAKE DOCUMENT'S — never stake × paysX (§3, §9).
@@ -152,11 +177,13 @@ export function projectResultPool({ groupId, poolId = null, pool, group = null, 
     outcome,
     formationPath: pool?.formationPath ?? null,
     slotId: pool?.slotId ?? null,
-    seatNames: group?.seatNames && typeof group.seatNames === 'object' ? group.seatNames : {},
     humanTeams: Number.isFinite(pool?.humanTeams) ? pool.humanTeams : null,
     potTotal: revealed ? pot : null,
     uniqueBackers: revealed && Number.isFinite(pool?.uniqueBackers) ? pool.uniqueBackers : null,
     winners: settled ? winners : [],
+    // The WINNER LINE's names, in the winning set's order — the server's, so
+    // the card never maps an id to a name (D-af).
+    winnerLabels: settled ? winners.map((id) => nameTeam(id).label) : [],
     winningStakes: settled && Number.isFinite(pool?.winningStakes) ? pool.winningStakes : null,
     paysX: settled && Number.isFinite(pool?.paysX) ? pool.paysX : null,
     closedAt: pool?.closedAt ?? null,

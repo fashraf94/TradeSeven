@@ -33,6 +33,21 @@
 // card (settled win, settled loss, refunded, insufficient) and
 // BackingStats.test.jsx for the two private stats surfaces. Nothing on this
 // page is real, and nothing leaves it.
+//
+// AGENT-NAMED TEAMS (Amendment C §C1, D-af — the pre-flip cleanup): every
+// fixture that names a team now carries the SERVER's names, in the shapes the
+// endpoints send them — `label` (the team's primary agent) and `secondary`
+// (the player) on each seat and team row, `teamLabel` on each of the viewer's
+// stakes, `winnerLabels` on a settled result, `labelsById` beside the in-play
+// stakes (GET /api/backing/team-labels — each team's label pair AND its two
+// layers, `player` and `agent`, named apart for Your Backing's reveal). The
+// screenshot harness carries the same shapes since this build's review
+// (WIRING-7); the other copied fixtures differ from their named sources by
+// exactly those fields, and by the pod-list and results `seatNames` maps,
+// which the endpoints no longer send; the group documents keep theirs (a slot
+// pod's does), and the surfaces ignore it — so the page shows what the
+// pre-flip build shows.
+
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import '../components/League/league.css';
@@ -67,16 +82,50 @@ const PREVIEW_MONDAY = new Date('2026-09-21T14:00:00.000Z');
 const SUNDAY_CLOSE = '2026-09-28T03:59:59.000Z'; // Sun 27 Sep 23:59 ET
 const WED_FIRE = '2026-09-23T23:00:00.000Z';     // a slot pod's fire, Wed 7:00 PM ET
 
+// ═══ the server's names (D-af) — each team by its PRIMARY AGENT, the player secondary ═══
+// Mira's agent is Kestrel and Draco's is Tarn (the cards below say so); the
+// house seats are named by their agents (cpuDisplayName, the one CPU format).
+const AGENT_NAMES = Object.freeze({
+  'od-a': Object.freeze({ label: 'Kestrel', secondary: 'Mira' }),
+  'od-b': Object.freeze({ label: 'Tarn', secondary: 'Draco' }),
+  'od-x': Object.freeze({ label: 'Orbit', secondary: 'Rigel' }),
+  'cpu-1': Object.freeze({ label: 'CPU — Trend Follower', secondary: null }),
+  'cpu-2': Object.freeze({ label: 'CPU — Contrarian', secondary: null }),
+  'cpu-3': Object.freeze({ label: 'CPU — Diversifier', secondary: null }),
+  'cpu-4': Object.freeze({ label: 'CPU — Speculator', secondary: null }),
+});
+const named = (id) => AGENT_NAMES[id] ?? { label: 'Unnamed team', secondary: null };
+const teamLabel = (id) => named(id).label;
+/**
+ * The two layers the team-labels route also answers for each team — the
+ * player and the agent, named apart (this build's review record, RAWID-R-2);
+ * a CPU seat is its own agent.
+ */
+const LAYERS = Object.freeze({
+  'od-a': Object.freeze({ player: 'Mira', agent: 'Kestrel' }),
+  'od-b': Object.freeze({ player: 'Draco', agent: 'Tarn' }),
+  'od-x': Object.freeze({ player: 'Rigel', agent: 'Orbit' }),
+  'cpu-1': Object.freeze({ player: 'CPU — Trend Follower', agent: 'CPU — Trend Follower' }),
+  'cpu-2': Object.freeze({ player: 'CPU — Contrarian', agent: 'CPU — Contrarian' }),
+  'cpu-3': Object.freeze({ player: 'CPU — Diversifier', agent: 'CPU — Diversifier' }),
+  'cpu-4': Object.freeze({ player: 'CPU — Speculator', agent: 'CPU — Speculator' }),
+});
+/** `labelsById` for the in-play pods — what useMyBacking fetches from the team-labels route, in its full shape. */
+const labelsFor = (...groupIds) => Object.fromEntries(groupIds.map((groupId) => [
+  groupId,
+  Object.fromEntries(Object.entries(AGENT_NAMES).map(([id, names]) => [id, { ...names, ...LAYERS[id] }])),
+]));
+
 // ═══ the strip's inputs — scripts/backing-screenshots/harness.render.jsx ═══
 const stripSeats = [
-  { odUserId: 'od-a', isCpu: false, isOwnSeat: false, backable: true },
-  { odUserId: 'od-b', isCpu: false, isOwnSeat: false, backable: true },
-  { odUserId: 'cpu-1', isCpu: true, isOwnSeat: false, backable: true },
-  { odUserId: 'cpu-2', isCpu: true, isOwnSeat: false, backable: true },
+  { odUserId: 'od-a', isCpu: false, ...named('od-a'), isOwnSeat: false, backable: true },
+  { odUserId: 'od-b', isCpu: false, ...named('od-b'), isOwnSeat: false, backable: true },
+  { odUserId: 'cpu-1', isCpu: true, ...named('cpu-1'), isOwnSeat: false, backable: true },
+  { odUserId: 'cpu-2', isCpu: true, ...named('cpu-2'), isOwnSeat: false, backable: true },
 ];
 const stripPod = (groupId, over = {}) => ({
   groupId, formationPath: 'lobby', slotId: null, baseLayerWeek: '2026-W40',
-  seatNames: { 'od-a': 'Mira', 'od-b': 'Draco' }, humanTeams: 2, teams: stripSeats,
+  humanTeams: 2, teams: stripSeats,
   pool: { status: 'open', closesAt: SUNDAY_CLOSE, closeReason: 'clock', backerProgress: { count: 1, floor: 3, met: false }, teamSpread: { met: false } },
   myStakes: [],
   ...over,
@@ -98,8 +147,8 @@ const STRIP_INPUTS = {
   },
   staked: {
     pods: [
-      stripPod('lobby-w40-a', { myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', amount: 250, status: 'live' }] }),
-      stripPod('lobby-w40-b', { myStakes: [{ stakeId: 's2', teamOdUserId: 'cpu-1', amount: 100, status: 'live' }] }),
+      stripPod('lobby-w40-a', { myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', teamLabel: teamLabel('od-a'), amount: 250, status: 'live' }] }),
+      stripPod('lobby-w40-b', { myStakes: [{ stakeId: 's2', teamOdUserId: 'cpu-1', teamLabel: teamLabel('cpu-1'), amount: 100, status: 'live' }] }),
       stripPod('lobby-w40-c'),
     ],
     inPlay: nothingInPlay,
@@ -113,6 +162,7 @@ const STRIP_INPUTS = {
       ],
       poolsById: { 'lobby-w39-a': { status: 'closed', closesAt: '2026-09-21T03:59:59.000Z' }, 'lobby-w39-b': { status: 'closed', closesAt: '2026-09-21T03:59:59.000Z' } },
       groupsById: { 'lobby-w39-a': battleGroup(), 'lobby-w39-b': battleGroup({ seatNames: { 'od-x': 'Rigel', 'od-a': 'Mira' } }) },
+      labelsById: labelsFor('lobby-w39-a', 'lobby-w39-b'),
       loading: false,
     },
   },
@@ -144,14 +194,14 @@ const PRACTICE_POD = { id: 'preview-practice-pod', status: GROUP_STATUS.BATTLE }
 
 // ═══ the pod list — PodList.test.jsx ═══
 const listTeams = (over = {}) => ([
-  { odUserId: 'od-a', isCpu: false, isOwnSeat: false, backable: true, ...(over['od-a'] || {}) },
-  { odUserId: 'od-b', isCpu: false, isOwnSeat: false, backable: true, ...(over['od-b'] || {}) },
-  { odUserId: 'cpu-1', isCpu: true, isOwnSeat: false, backable: true, ...(over['cpu-1'] || {}) },
-  { odUserId: 'cpu-2', isCpu: true, isOwnSeat: false, backable: true, ...(over['cpu-2'] || {}) },
+  { odUserId: 'od-a', isCpu: false, ...named('od-a'), isOwnSeat: false, backable: true, ...(over['od-a'] || {}) },
+  { odUserId: 'od-b', isCpu: false, ...named('od-b'), isOwnSeat: false, backable: true, ...(over['od-b'] || {}) },
+  { odUserId: 'cpu-1', isCpu: true, ...named('cpu-1'), isOwnSeat: false, backable: true, ...(over['cpu-1'] || {}) },
+  { odUserId: 'cpu-2', isCpu: true, ...named('cpu-2'), isOwnSeat: false, backable: true, ...(over['cpu-2'] || {}) },
 ]);
 const listPod = (groupId, over = {}) => ({
   groupId, formationPath: 'lobby', slotId: null, baseLayerWeek: '2026-W40',
-  seatNames: { 'od-a': 'Mira', 'od-b': 'Draco' }, humanTeams: 2,
+  humanTeams: 2,
   teams: listTeams(),
   pool: { status: 'open', backerProgress: { count: 2, floor: 3, met: false }, teamSpread: { met: false }, closesAt: SUNDAY_CLOSE, closeReason: 'clock' },
   myStakes: [],
@@ -174,7 +224,7 @@ const CARD_POD = { groupId: 'lobby-w40-a', pool: { status: 'open', closesAt: SUN
 const FIRST_WEEK_CARD = {
   groupId: 'lobby-w40-a', odUserId: 'od-b', viewerUid: 'viewer-1',
   seat: cardSeat({ index: 2 }),
-  team: { displayName: 'Draco', isCpu: false, pitch: 'Macro guy. Tarn keeps me from being too early.', derived: null,
+  team: { displayName: 'Draco', ...named('od-b'), isCpu: false, pitch: 'Macro guy. Tarn keeps me from being too early.', derived: null,
     agent: { name: 'Tarn', archetype: 'analyst', archetypeLabel: 'Fundamental Investor', approach: 'Buys quality companies and lets the fundamentals do the work.', traitCount: 3, ruleCount: 5 } },
   known: null,
   lastWeek: null,
@@ -182,7 +232,7 @@ const FIRST_WEEK_CARD = {
 const VETERAN_CARD = {
   groupId: 'lobby-w40-a', odUserId: 'od-a', viewerUid: 'viewer-1',
   seat: cardSeat(),
-  team: { displayName: 'Mira', isCpu: false, pitch: 'I take the leader in whatever sector has breadth on Monday.', derived: 'Held 2 of 3 all week · 2 moves · leaned technology',
+  team: { displayName: 'Mira', ...named('od-a'), isCpu: false, pitch: 'I take the leader in whatever sector has breadth on Monday.', derived: 'Held 2 of 3 all week · 2 moves · leaned technology',
     agent: { name: 'Kestrel', archetype: 'momentum_chaser', archetypeLabel: 'Trend Follower', approach: APPROACH, traitCount: 4, ruleCount: 7 } },
   known: { rp: 412, tier: 2, tierName: 'Analyst', weeksPlayed: 2, priorFinishes: [1, 2] },
   lastWeek: {
@@ -208,7 +258,7 @@ const VETERAN_CARD = {
 const CPU_CARD = {
   groupId: 'g-now', odUserId: 'cpu-1', viewerUid: 'viewer-1',
   seat: cardSeat({ index: 3, isCpu: true }),
-  team: { displayName: 'CPU — Trend Follower', isCpu: true, pitch: null, derived: null,
+  team: { displayName: 'CPU — Trend Follower', ...named('cpu-1'), isCpu: true, pitch: null, derived: null,
     agent: { name: 'CPU — Trend Follower', archetype: 'momentum_chaser', archetypeLabel: 'Trend Follower', approach: APPROACH, traitCount: 0, ruleCount: 0 } },
   known: null,
   lastWeek: null,
@@ -220,11 +270,17 @@ const OWN_CARD = { ...VETERAN_CARD, seat: cardSeat({ viewerSeated: true, isViewe
 const STAKE_CARD = {
   groupId: 'g1', odUserId: 'od-a', viewerUid: 'viewer-1',
   seat: { index: 1, count: 4, isCpu: false, isViewer: false, viewerSeated: false },
-  team: { displayName: 'Mira', isCpu: false, pitch: null, derived: null, agent: { name: 'Kestrel', archetype: 'momentum_chaser', archetypeLabel: 'Trend Follower', approach: 'x', traitCount: 4, ruleCount: 7 } },
+  team: { displayName: 'Mira', ...named('od-a'), isCpu: false, pitch: null, derived: null, agent: { name: 'Kestrel', archetype: 'momentum_chaser', archetypeLabel: 'Trend Follower', approach: 'x', traitCount: 4, ruleCount: 7 } },
   known: null, lastWeek: null,
 };
 const STAKE_POD = { groupId: 'g1', pool: { status: 'open', closesAt: SUNDAY_CLOSE }, myStakes: [] };
 const STAKE_WALLET = { known: true, left: 1000, total: 1000 };
+// D-ag (Amendment C §C2): the viewer already holds a live stake on this team —
+// one stake per team per backer, so Confirm ADDS to it (fixture:
+// StakeControl.jsdom.test.jsx, the top-up rows).
+const TOP_UP_ALREADY = 250;
+const TOP_UP_POD = { ...STAKE_POD, myStakes: [{ stakeId: 'preview-stake-0', teamOdUserId: 'od-a', teamLabel: teamLabel('od-a'), amount: TOP_UP_ALREADY, status: 'live' }] };
+const TOP_UP_WALLET = { ...STAKE_WALLET, left: STAKE_WALLET.left - TOP_UP_ALREADY };
 
 // ═══ Your Backing — YourBacking.test.jsx ═══
 const leg = (direction) => ({ direction, openedAt: '2026-09-21T11:00:00.000Z' });
@@ -253,6 +309,7 @@ const weekInPlay = (over = {}) => ({
   ],
   poolsById: { 'g-play': { status: 'closed' }, 'g-two': { status: 'closed' }, 'g-next': { status: 'open' } },
   groupsById: { 'g-play': weekGroup(), 'g-two': weekGroup({ seatNames: { 'od-x': 'Rigel' } }) },
+  labelsById: labelsFor('g-play', 'g-two', 'g-next', 'lds-wed'),
   ...over,
 });
 const KESTREL_BATTLE = {
@@ -283,48 +340,47 @@ const WEEK_INPUTS = {
 // ═══ the results card — BackingResultsCard.test.jsx (PR 5, Surface E) ═══
 // MUTATION CHECK 3's fixture: the stake document's payout (714) is NOT
 // stake × pays × (500 × 1.43 = 715); the card must show 714.
-const RESULT_SEATS = { 'od-a': 'Mira', 'od-b': 'Draco' };
 const resultPod = (over = {}) => ({
   groupId: 'lobby-w39-a', poolId: 'lobby-w39-a', weekKey: '2026-W39', status: 'resolved', outcome: 'settled', formationPath: 'lobby', slotId: null,
-  seatNames: RESULT_SEATS, humanTeams: 2, potTotal: 1000, uniqueBackers: 4, winners: ['od-a'], winningStakes: 700, paysX: 1.43,
+  humanTeams: 2, potTotal: 1000, uniqueBackers: 4, winners: ['od-a'], winnerLabels: [teamLabel('od-a')], winningStakes: 700, paysX: 1.43,
   closedAt: '2026-09-21T04:00:00.000Z', settledAt: '2026-09-25T22:30:00.000Z', refundedAt: null, refundReason: null, holdReason: null, monthKey: '2026-09',
   teams: [
-    { odUserId: 'od-a', isCpu: false, backerCount: 2, stakeTotal: 700, sharePct: 70, paysX: 1.43, won: true },
-    { odUserId: 'od-b', isCpu: false, backerCount: 2, stakeTotal: 300, sharePct: 30, paysX: 3.33, won: false },
-    { odUserId: 'cpu-1', isCpu: true, backerCount: 0, stakeTotal: 0, sharePct: 0, paysX: null, won: false },
+    { odUserId: 'od-a', isCpu: false, ...named('od-a'), backerCount: 2, stakeTotal: 700, sharePct: 70, paysX: 1.43, won: true },
+    { odUserId: 'od-b', isCpu: false, ...named('od-b'), backerCount: 2, stakeTotal: 300, sharePct: 30, paysX: 3.33, won: false },
+    { odUserId: 'cpu-1', isCpu: true, ...named('cpu-1'), backerCount: 0, stakeTotal: 0, sharePct: 0, paysX: null, won: false },
   ],
   myStakes: [
-    { stakeId: 's1', teamOdUserId: 'od-a', amount: 500, status: 'won', payout: 714, voidReason: null, net: 214, loadoutChanged: true },
-    { stakeId: 's2', teamOdUserId: 'od-b', amount: 100, status: 'lost', payout: 0, voidReason: null, net: -100, loadoutChanged: false },
+    { stakeId: 's1', teamOdUserId: 'od-a', teamLabel: teamLabel('od-a'), amount: 500, status: 'won', payout: 714, voidReason: null, net: 214, loadoutChanged: true },
+    { stakeId: 's2', teamOdUserId: 'od-b', teamLabel: teamLabel('od-b'), amount: 100, status: 'lost', payout: 0, voidReason: null, net: -100, loadoutChanged: false },
   ],
   myNet: 114, myWon: true,
   ...over,
 });
 const voidedPod = (outcome, refundReason) => resultPod({
   outcome, status: outcome === 'insufficient' ? 'insufficient' : 'refunded', refundReason, refundedAt: '2026-09-22T20:30:00.000Z',
-  winners: [], paysX: null, winningStakes: null, myNet: null, myWon: null,
+  winners: [], winnerLabels: [], paysX: null, winningStakes: null, myNet: null, myWon: null,
   teams: resultPod().teams.map((t) => ({ ...t, paysX: null, won: null })),
-  myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', amount: 500, status: 'voided', payout: null, voidReason: refundReason ?? 'insufficient', net: 0, loadoutChanged: null }],
+  myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', teamLabel: teamLabel('od-a'), amount: 500, status: 'voided', payout: null, voidReason: refundReason ?? 'insufficient', net: 0, loadoutChanged: null }],
   // A pool that DID miss the floor: two backers on two teams (§3 asks ≥3 backers).
   ...(outcome === 'insufficient' ? {
     potTotal: 800, uniqueBackers: 2,
     teams: [
-      { odUserId: 'od-a', isCpu: false, backerCount: 1, stakeTotal: 500, sharePct: 63, paysX: null, won: null },
-      { odUserId: 'od-b', isCpu: false, backerCount: 1, stakeTotal: 300, sharePct: 38, paysX: null, won: null },
-      { odUserId: 'cpu-1', isCpu: true, backerCount: 0, stakeTotal: 0, sharePct: 0, paysX: null, won: null },
+      { odUserId: 'od-a', isCpu: false, ...named('od-a'), backerCount: 1, stakeTotal: 500, sharePct: 63, paysX: null, won: null },
+      { odUserId: 'od-b', isCpu: false, ...named('od-b'), backerCount: 1, stakeTotal: 300, sharePct: 38, paysX: null, won: null },
+      { odUserId: 'cpu-1', isCpu: true, ...named('cpu-1'), backerCount: 0, stakeTotal: 0, sharePct: 0, paysX: null, won: null },
     ],
   } : {}),
 });
 const RESULT_PODS = {
   win: resultPod(),
   loss: resultPod({
-    winners: ['od-b'], winningStakes: 300, paysX: 3.33,
+    winners: ['od-b'], winnerLabels: [teamLabel('od-b')], winningStakes: 300, paysX: 3.33,
     teams: [
-      { odUserId: 'od-a', isCpu: false, backerCount: 2, stakeTotal: 700, sharePct: 70, paysX: 1.43, won: false },
-      { odUserId: 'od-b', isCpu: false, backerCount: 2, stakeTotal: 300, sharePct: 30, paysX: 3.33, won: true },
-      { odUserId: 'cpu-1', isCpu: true, backerCount: 0, stakeTotal: 0, sharePct: 0, paysX: null, won: false },
+      { odUserId: 'od-a', isCpu: false, ...named('od-a'), backerCount: 2, stakeTotal: 700, sharePct: 70, paysX: 1.43, won: false },
+      { odUserId: 'od-b', isCpu: false, ...named('od-b'), backerCount: 2, stakeTotal: 300, sharePct: 30, paysX: 3.33, won: true },
+      { odUserId: 'cpu-1', isCpu: true, ...named('cpu-1'), backerCount: 0, stakeTotal: 0, sharePct: 0, paysX: null, won: false },
     ],
-    myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', amount: 500, status: 'lost', payout: 0, voidReason: null, net: -500, loadoutChanged: false }],
+    myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', teamLabel: teamLabel('od-a'), amount: 500, status: 'lost', payout: 0, voidReason: null, net: -500, loadoutChanged: false }],
     myNet: -500, myWon: false,
   }),
   refunded: voidedPod('refunded', 'group_voided'),
@@ -376,6 +432,7 @@ export const PREVIEW_STATES = [
   { id: 'stake-attested', group: 'stake', label: 'Attestation done', variant: 'attested' },
   { id: 'stake-refusal', group: 'stake', label: 'A refusal', variant: 'refusal' },
   { id: 'stake-backed', group: 'stake', label: 'Backed', variant: 'backed' },
+  { id: 'stake-top-up', group: 'stake', label: 'Adding to a stake', variant: 'top-up' },
   { id: 'week-before-monday', group: 'week', label: 'Before Monday', week: 'before-monday' },
   { id: 'week-monday', group: 'week', label: 'Monday · draft reveal', week: 'monday' },
   { id: 'week-mid-week', group: 'week', label: 'Mid-week', week: 'mid-week' },
@@ -399,6 +456,9 @@ function captionFor(state) {
     case 'card':
       return `The team card (fixture: ${state.source}). Its call to action opens the stake control.`;
     case 'stake':
+      if (state.variant === 'top-up') {
+        return 'The stake control on a team you already back (fixture: StakeControl.jsdom.test.jsx). One stake per team: Confirm adds to it. Every answer is local fixture data.';
+      }
       return state.variant === 'refusal' || state.variant === 'backed'
         ? 'The stake control (fixture: StakeControl.jsdom.test.jsx). The preview pressed Confirm; the answer is local fixture data.'
         : 'The stake control (fixture: StakeControl.jsdom.test.jsx). Every answer is local fixture data.';
@@ -471,6 +531,9 @@ function OwnPitchCard({ card, onBack, onOpenTape, onNote }) {
 
 function StakeStage({ variant, card, onNote, onReset }) {
   const [eligibility, setEligibility] = useState(variant === 'attest' ? ELIGIBILITY.REQUIRED : ELIGIBILITY.ATTESTED);
+  const topUp = variant === 'top-up';
+  const pod = topUp ? TOP_UP_POD : STAKE_POD;
+  const wallet = topUp ? TOP_UP_WALLET : STAKE_WALLET;
   const requests = useRef(0);
   const services = useMemo(() => ({
     newRequestId: () => { requests.current += 1; return `preview-request-${requests.current}`; },
@@ -478,9 +541,11 @@ function StakeStage({ variant, card, onNote, onReset }) {
     placeStake: async ({ teamOdUserId, amount }) => {
       onNote(NOTHING_SAVED);
       if (variant === 'refusal') throw Object.assign(new Error('pool_closed'), { code: 'pool_closed' });
-      return { ok: true, replay: false, stake: { stakeId: `preview-stake-${requests.current}`, teamOdUserId, amount, status: 'live' }, allowanceRemaining: STAKE_WALLET.left - amount };
+      // A top-up answers as the endpoint does: the ONE stake's new total, and what this Confirm added.
+      const already = topUp ? TOP_UP_ALREADY : 0;
+      return { ok: true, replay: false, topUp, added: amount, stake: { stakeId: `preview-stake-${requests.current}`, teamOdUserId, amount: already + amount, status: 'live' }, allowanceRemaining: wallet.left - amount };
     },
-  }), [variant, onNote]);
+  }), [variant, onNote, topUp, wallet]);
   // "A refusal" and "Backed" land on their answer: the page presses the real
   // Confirm once (the control's own handler runs, against the local answers).
   const frame = useRef(null);
@@ -494,8 +559,8 @@ function StakeStage({ variant, card, onNote, onReset }) {
     <div ref={frame} style={{ borderRadius: 18, padding: '14px 15px', background: `linear-gradient(165deg, ${alpha(ACCENT, 0.06)}, ${LTOKENS.surface} 58%)`, border: `1px solid ${alpha(ACCENT, 0.26)}` }}>
       <StakeControl
         card={card}
-        pod={STAKE_POD}
-        wallet={STAKE_WALLET}
+        pod={pod}
+        wallet={wallet}
         eligibility={{ status: eligibility, refresh: () => setEligibility(ELIGIBILITY.ATTESTED) }}
         accent={ACCENT}
         services={services}

@@ -214,3 +214,38 @@ export const POOL_STRIP = Object.freeze({
   /** Shared by both states — the viewer's own stakes are visible throughout (§B2). */
   yourBacking: 'Your backing: {amount} BP',
 });
+
+// ==================== TEAM LABELS (Amendment C §C1 — D-af) ====================
+
+/**
+ * The neutral name for a team whose primary agent's name AND player's display
+ * name both fail to resolve — Amendment C §C1, VERBATIM: "if neither resolves,
+ * a neutral 'Unnamed team'." Never a raw account id, anywhere, in any state.
+ *
+ * ONE SOURCE, BOTH SIDES: the server's label resolver
+ * (api/_utils/backingTeamLabels.js) answers it as the last rung of its chain,
+ * and a client surface handed an entry that carries no label renders it rather
+ * than anything derived from the entry's id — so the fallback can never be the
+ * account id the pre-flip surfaces used to print (the PR 5 review record's
+ * HON-17 raw-uid winner line).
+ */
+export const UNNAMED_TEAM_LABEL = 'Unnamed team';
+
+/**
+ * The team-name placeholder while the SERVER's names for a pod are still on
+ * their way — client only: Your Backing and the strip's in-play half fetch
+ * their names (GET /api/backing/team-labels) after the stakes land. Not
+ * UNNAMED_TEAM_LABEL: that is §C1's word for a team neither an agent nor a
+ * player names, and a name that has not arrived yet is not that (this build's
+ * review record, WIRING-5). Never an id, by construction.
+ */
+export const TEAM_NAME_PENDING = '…';
+
+/**
+ * The most pods ONE request to GET /api/backing/team-labels may name — the
+ * route's own ceiling (api/backing/team-labels.js) and the size the client
+ * chunks a larger set into (src/hooks/useMyBacking.js `fetchLabelsFor`),
+ * one number for both ends. Your Backing covers three week keys and a backer
+ * holds one stake per team (D-ag), so this is a ceiling, not an expectation.
+ */
+export const TEAM_LABELS_MAX_PODS = 24;

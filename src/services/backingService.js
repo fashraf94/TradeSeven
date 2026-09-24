@@ -86,7 +86,8 @@ export function fetchTeamCard(groupId, odUserId) {
 
 /**
  * Place a stake. `requestId` is the caller's idempotency key — FRESH per
- * Confirm (newRequestId below); the server makes it the stake's document id.
+ * Confirm (newRequestId below); the server keys this request's DEBIT by it
+ * (one stake document per team; each Confirm is its own debit — D-ag).
  * The reply is the server's sealed projection; "Backed" renders only from it.
  */
 export function placeStake({ groupId, teamOdUserId, amount, requestId }) {
@@ -219,6 +220,22 @@ export function fetchMyBackingStats() {
 /** The viewer's trainer beta stats (spec §5 "Trainer stats — private to the trainer"). The server reads the token; no id is sent. */
 export function fetchTrainerStats() {
   return call(TRAINER_STATS_URL);
+}
+
+// ==================== THE PRE-FLIP CLEANUP — TEAM NAMES (Amendment C §C1, D-af) ====================
+
+export const BACKING_TEAM_LABELS_URL = '/api/backing/team-labels';
+
+/**
+ * The server's names for every team of the pods the viewer BACKED —
+ * `{ pods: { [groupId]: { [odUserId]: { label, secondary } } } }`, the label
+ * the team's primary agent's name (D-af). Your Backing and the strip's
+ * in-play half render these; the client never composes a name from an id.
+ * ONE request: the caller (useMyBacking) keeps each within the route's
+ * ceiling, TEAM_LABELS_MAX_PODS.
+ */
+export function fetchTeamLabels(groupIds) {
+  return call(`${BACKING_TEAM_LABELS_URL}?groupIds=${encodeURIComponent(groupIds.join(','))}`);
 }
 
 /**

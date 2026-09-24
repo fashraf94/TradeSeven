@@ -32,6 +32,9 @@ import {
   POOL_STRIP,
   LEXICON,
   FORBIDDEN_TERMS,
+  UNNAMED_TEAM_LABEL,
+  TEAM_LABELS_MAX_PODS,
+  TEAM_NAME_PENDING,
 } from './backing.js';
 import * as BACKING from './backing.js';
 
@@ -59,6 +62,15 @@ describe('backing constants — the module contract', () => {
       'POOL_EXCLUDED_SLOT_IDS',
       'POOL_MIN_WINDOW_MS',
       'POOL_STRIP',
+      // Amendment C §C1 (D-af): the team-labels route's ceiling, one number
+      // for the route and the client's chunking…
+      'TEAM_LABELS_MAX_PODS',
+      // …the placeholder while a pod's names are on their way (this build's
+      // review record, WIRING-5 — client only)…
+      'TEAM_NAME_PENDING',
+      // …and the neutral team label, one source for the server's resolver and
+      // the client's label-less fallback.
+      'UNNAMED_TEAM_LABEL',
       'VALIDITY_MIN_BACKERS',
       'VALIDITY_MIN_TEAMS',
     ]);
@@ -196,6 +208,9 @@ describe('copy — §5 fine print and the three §4 Confirm lines (D-t, D-q, D-n
       // slipped into the pool strip would be just as visible as one in the
       // fine print.
       ...Object.values(POOL_STRIP).flatMap((v) => (typeof v === 'string' ? [v] : Object.values(v))),
+      // Amendment C §C1's neutral team label is shipped copy on every surface
+      // that names a team.
+      UNNAMED_TEAM_LABEL,
     ];
     for (const term of FORBIDDEN_TERMS) {
       const re = new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
@@ -260,5 +275,33 @@ describe('copy — §5 fine print and the three §4 Confirm lines (D-t, D-q, D-n
   it('FORBIDDEN_TERMS and LEXICON do not overlap — the guard cannot forbid its own vocabulary', () => {
     const forbidden = new Set(FORBIDDEN_TERMS);
     for (const word of LEXICON) expect(forbidden.has(word.toLowerCase())).toBe(false);
+  });
+});
+
+describe('team labels — Amendment C §C1 (D-af)', () => {
+  it('the neutral label is the amendment\'s own words, verbatim', () => {
+    // "if neither resolves, a neutral 'Unnamed team'" — the last rung of the
+    // server resolver's chain and the client's label-less fallback alike.
+    expect(UNNAMED_TEAM_LABEL).toBe('Unnamed team');
+  });
+
+  it('the neutral label cannot be mistaken for an account id', () => {
+    // Not a 28-character Firebase uid, not a `cpu-{n}` seat id: the whole
+    // point of the neutral rung is that it is not an id (§C1: "Never a raw
+    // account id, anywhere, in any state").
+    expect(UNNAMED_TEAM_LABEL).not.toMatch(/^[A-Za-z0-9]{28}$/);
+    expect(UNNAMED_TEAM_LABEL).not.toMatch(/\bcpu-\d/);
+    expect(UNNAMED_TEAM_LABEL).toMatch(/\s/);
+  });
+
+  it('the pending placeholder is not a name, not the neutral label and not an id — a name on its way is not "Unnamed team"', () => {
+    expect(TEAM_NAME_PENDING).toBe('…');
+    expect(TEAM_NAME_PENDING).not.toBe(UNNAMED_TEAM_LABEL);
+    expect(TEAM_NAME_PENDING).not.toMatch(/[A-Za-z0-9]/);
+  });
+
+  it('the team-labels ceiling is a positive whole number of pods', () => {
+    expect(Number.isInteger(TEAM_LABELS_MAX_PODS) && TEAM_LABELS_MAX_PODS > 0).toBe(true);
+    expect(TEAM_LABELS_MAX_PODS).toBe(24);
   });
 });

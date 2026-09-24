@@ -19,6 +19,12 @@
 //   · the loadout-changed marker on the viewer's own stakes (§4 — disclosure);
 //   · a refunded or insufficient pool stated plainly with its reason, and its
 //     score-neutrality stated with it.
+// EVERY NAME IS THE SERVER'S (Amendment C §C1, D-af): the winner line reads
+// the projection's `winnerLabels`, each team row its `label` (the primary
+// agent's — after settlement, the agent settlement recorded) with the player
+// as `secondary`, each of the viewer's stakes its `teamLabel`. The card never
+// maps an id to a name; a name the projection does not carry reads "Unnamed
+// team" (the pre-flip card printed the raw uid — HON-17).
 // Tokens only (BUILD_RULES §10); no inline transition literal (§11).
 
 import React from 'react';
@@ -27,7 +33,7 @@ import { Mono, Icon, Tag, AgentAvatar } from '../LeagueParts';
 import { baseGroupName, seatColor } from '../leagueAdapter';
 import { MonoAttr } from './BackingParts';
 import { RESULTS, bp } from './backingCopy';
-import { seatDisplayName } from './backingStripState';
+import { teamLabelOf } from './backingStripState';
 import { GROUP_STATUS } from '../../../constants/leagueTournament';
 
 /** A pod with nothing left to play: complete, voided, expired — or gone. */
@@ -68,10 +74,12 @@ function LoadoutMark({ changed }) {
 
 export default function BackingResultsCard({ pod, accent = LX.energy, onOpenTape = null }) {
   if (!pod || typeof pod !== 'object') return null;
-  const names = (id) => seatDisplayName(pod.seatNames, id);
   const settled = pod.outcome === 'settled';
   const voided = pod.outcome === 'refunded' || pod.outcome === 'insufficient';
   const winners = Array.isArray(pod.winners) ? pod.winners : [];
+  // The winner line's names are the server's, one per winner in the winning
+  // set's order — a missing one reads the neutral name, never the winner's id.
+  const winnerNames = winners.map((_, i) => teamLabelOf(Array.isArray(pod.winnerLabels) ? pod.winnerLabels[i] : null));
   const mine = Array.isArray(pod.myStakes) ? pod.myStakes : [];
   const teams = Array.isArray(pod.teams) ? pod.teams : [];
   const revealed = Number.isFinite(pod.potTotal);
@@ -88,7 +96,7 @@ export default function BackingResultsCard({ pod, accent = LX.energy, onOpenTape
 
       {settled && (
         <div data-backing="results-winner" style={{ marginBottom: 10 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: LTOKENS.ink, lineHeight: 1.2 }}>{winners.length > 0 ? RESULTS.winner(winners.map(names)) : RESULTS.noWinner}</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: LTOKENS.ink, lineHeight: 1.2 }}>{winners.length > 0 ? RESULTS.winner(winnerNames) : RESULTS.noWinner}</div>
           {revealed && <Mono style={{ fontSize: 10.5, color: LTOKENS.ink2, display: 'block', marginTop: 3 }}>{RESULTS.pot(pod.potTotal, pod.uniqueBackers)}</Mono>}
         </div>
       )}
@@ -109,7 +117,7 @@ export default function BackingResultsCard({ pod, accent = LX.energy, onOpenTape
         <div data-backing="results-stakes" style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 10 }}>
           {mine.map((s) => (
             <div key={s.stakeId ?? `${s.teamOdUserId}-${s.amount}`} data-backing="results-stake" data-status={s.status} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <Mono style={{ fontSize: 12, color: LTOKENS.ink }}>{RESULTS.stakeRow(names(s.teamOdUserId), s.amount)}</Mono>
+              <Mono style={{ fontSize: 12, color: LTOKENS.ink }}>{RESULTS.stakeRow(teamLabelOf(s.teamLabel), s.amount)}</Mono>
               <MonoAttr data-backing="results-payout" style={{ fontSize: 12, fontWeight: 700, color: s.status === 'won' ? LTOKENS.gold : LTOKENS.ink3 }}>{stakeOutcomeWords(s)}</MonoAttr>
               {settled && <LoadoutMark changed={s.loadoutChanged} />}
             </div>
@@ -124,7 +132,8 @@ export default function BackingResultsCard({ pod, accent = LX.energy, onOpenTape
         <div data-backing="results-teams">
           <Mono style={sectionLabel}>{RESULTS.teams}</Mono>
           {teams.map((t) => {
-            const name = names(t.odUserId);
+            const name = teamLabelOf(t);
+            const secondary = typeof t.secondary === 'string' && t.secondary.length > 0 ? t.secondary : null;
             const won = t.won === true;
             // The right-hand figure: before a settlement the team's staked BP;
             // after it, the WINNING set's realized ratio (`pod.paysX`, one
@@ -142,6 +151,7 @@ export default function BackingResultsCard({ pod, accent = LX.energy, onOpenTape
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ fontSize: 12.5, fontWeight: won ? 700 : 600, color: LTOKENS.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                    {secondary && <span data-backing="results-team-secondary" style={{ fontSize: 11, color: LTOKENS.ink3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{secondary}</span>}
                     {won && <Tag color={LTOKENS.gold}>{RESULTS.won}</Tag>}
                   </div>
                   <Mono style={{ fontSize: 9.5, color: LTOKENS.ink3, display: 'block', marginTop: 2 }}>

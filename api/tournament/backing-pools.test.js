@@ -35,10 +35,10 @@ vi.mock('../_utils/firebaseAdmin.js', () => ({ getFirebaseAdmin: () => DB.db }))
 
 const { makeInMemoryDb } = await import('../_utils/__fixtures__/inMemoryFirestore.js');
 const {
-  default: handler, POD_LIST_MAX, listablePod, podListWeek, projectPod, REVEALED_STATUSES,
+  default: handler, POD_LIST_MAX, listablePod, liveStakeContradicts, podListWeek, projectPod, REVEALED_STATUSES,
 } = await import('./backing-pools.js');
 const {
-  BACKING_POOLS_COLLECTION, BACKING_STAKES_COLLECTION, POOL_STATUS, STAKE_STATUS,
+  BACKING_POOLS_COLLECTION, BACKING_STAKES_COLLECTION, POOL_STATUS, STAKE_STATUS, closePool,
 } = await import('../_utils/backingPools.js');
 const { VALIDITY_MIN_BACKERS, VALIDITY_MIN_TEAMS } = await import('../../src/constants/backing.js');
 
@@ -323,7 +323,10 @@ describe('THE SEAL — an OPEN pool reveals no per-team total and no pays × (§
     expect(body).not.toContain('paysX');
     expect(body).not.toContain('someone-else');
     for (const team of res.body.pods[0].teams) {
-      expect(Object.keys(team).sort()).toEqual(['backable', 'isCpu', 'isOwnSeat', 'odUserId']);
+      // Identity, the server's NAME for the seat (D-af — Amendment C §C1:
+      // `label` and `secondary` are names, nothing about the book) and
+      // backability. Nothing else.
+      expect(Object.keys(team).sort()).toEqual(['backable', 'isCpu', 'isOwnSeat', 'label', 'odUserId', 'secondary']);
     }
     // What an open pool MAY show (§3, Amendment B §B2): the CAPPED validity
     // signals, the close — and nothing about the book. Four backers are on this
@@ -441,8 +444,8 @@ describe('THE SEAL — an OPEN pool reveals no per-team total and no pays × (§
     });
     const teams = (await get()).body.pods[0].teams;
     expect(teams).toEqual([
-      { odUserId: 'od-a', isCpu: false, isOwnSeat: false, backable: false, stakeTotal: 400, backerCount: 2 },
-      { odUserId: 'od-b', isCpu: false, isOwnSeat: false, backable: false, stakeTotal: 200, backerCount: 1 },
+      { odUserId: 'od-a', isCpu: false, label: 'Ada', secondary: null, isOwnSeat: false, backable: false, stakeTotal: 400, backerCount: 2 },
+      { odUserId: 'od-b', isCpu: false, label: 'Bo', secondary: null, isOwnSeat: false, backable: false, stakeTotal: 200, backerCount: 1 },
     ]);
   });
 
@@ -516,8 +519,8 @@ describe('the viewer — their own pod, and their own stakes (§5)', () => {
     const res = await get();
     const g1 = res.body.pods.find((p) => p.groupId === 'g1');
     const g2 = res.body.pods.find((p) => p.groupId === 'g2');
-    expect(g1.myStakes).toEqual([{ stakeId: 'mine1', teamOdUserId: 'od-a', amount: 250, status: 'live' }]);
-    expect(g2.myStakes).toEqual([{ stakeId: 'mine2', teamOdUserId: 'od-b', amount: 100, status: 'live' }]);
+    expect(g1.myStakes).toEqual([{ stakeId: 'mine1', teamOdUserId: 'od-a', teamLabel: 'Ada', amount: 250, status: 'live' }]);
+    expect(g2.myStakes).toEqual([{ stakeId: 'mine2', teamOdUserId: 'od-b', teamLabel: 'Bo', amount: 100, status: 'live' }]);
     // Another backer's stake is not in the body at all — sealed (§3).
     expect(JSON.stringify(res.body)).not.toContain('theirs');
     // Nor is last week's.
@@ -533,7 +536,155 @@ describe('the viewer — their own pod, and their own stakes (§5)', () => {
       },
     });
     expect((await get()).body.pods[0].myStakes[0])
-      .toEqual({ stakeId: 'v1', teamOdUserId: 'od-a', amount: 250, status: 'voided', voidReason: 'insufficient' });
+      .toEqual({ stakeId: 'v1', teamOdUserId: 'od-a', teamLabel: 'Ada', amount: 250, status: 'voided', voidReason: 'insufficient' });
+  });
+});
+
+// ============================================================================
+describe('WIRE-R-1 — a lazy close THIS request ran re-reads the viewer\'s stakes before the reply (the PR 5 review record)', () => {
+  const liveStake = (over = {}) => ({ userId: UID, groupId: 'g1', teamOdUserId: 'od-a', amount: 250, weekKey: WEEK, status: STAKE_STATUS.LIVE, ...over });
+  const walletFor = (...stakeIds) => ({
+    lastAllowanceWeek: WEEK, allowanceRemaining: 750, careerNet: -250, seasons: {},
+    appliedEntries: { [`allowance:${WEEK}`]: 'x', ...Object.fromEntries(stakeIds.map((id) => [`stake:${id}`, 'x'])) },
+  });
+  const PAST_THE_CLOCK = new Date('2026-09-28T05:00:00.000Z');
+  const stakeReads = () => DB.readLog.filter(([channel, path]) => channel === 'get' && path.startsWith(`${BACKING_STAKES_COLLECTION}/`));
+
+  it('a close that VOIDS the viewer\'s stake (below the floor → insufficient) answers it voided, with its reason — never the `live` copy read before the close', async () => {
+    DB = seed([group('g1')], {
+      [`${BACKING_POOLS_COLLECTION}/g1`]: pool('g1'),
+      [`${BACKING_STAKES_COLLECTION}/mine1`]: liveStake(),
+      [`backingWallets/${UID}`]: walletFor('mine1'),
+    });
+    vi.setSystemTime(PAST_THE_CLOCK);
+    const pod = (await get()).body.pods[0];
+    expect(pod.pool.status).toBe(POOL_STATUS.INSUFFICIENT);                                  // this request closed it
+    expect(DB.store.get(`${BACKING_STAKES_COLLECTION}/mine1`).status).toBe(STAKE_STATUS.VOIDED); // and the close voided the stake
+    expect(pod.myStakes).toEqual([{ stakeId: 'mine1', teamOdUserId: 'od-a', teamLabel: 'Ada', amount: 250, status: 'voided', voidReason: 'insufficient' }]);
+    expect(stakeReads()).toEqual([['get', `${BACKING_STAKES_COLLECTION}/mine1`]]);             // re-read by id, once
+  });
+
+  it('a seat that LEFT before the close: the viewer\'s stake on it answers voided `seat_left`', async () => {
+    DB = seed([group('g1')], {
+      [`${BACKING_POOLS_COLLECTION}/g1`]: pool('g1'),
+      [`${BACKING_STAKES_COLLECTION}/mine1`]: liveStake({ teamOdUserId: 'od-gone' }),
+      [`backingWallets/${UID}`]: walletFor('mine1'),
+    });
+    vi.setSystemTime(PAST_THE_CLOCK);
+    const pod = (await get()).body.pods[0];
+    expect(pod.myStakes).toEqual([{ stakeId: 'mine1', teamOdUserId: 'od-gone', teamLabel: 'Unnamed team', amount: 250, status: 'voided', voidReason: 'seat_left' }]);
+  });
+
+  it('the steady state costs NO read: a pool this request did not move re-reads no stake — open and not due, or closed before the request', async () => {
+    DB = seed([group('g1'), group('g2')], {
+      [`${BACKING_POOLS_COLLECTION}/g1`]: pool('g1'),
+      [`${BACKING_POOLS_COLLECTION}/g2`]: pool('g2', { status: POOL_STATUS.INSUFFICIENT, teams: [] }),
+      [`${BACKING_STAKES_COLLECTION}/mine1`]: liveStake(),
+      [`${BACKING_STAKES_COLLECTION}/mine2`]: liveStake({ groupId: 'g2', status: STAKE_STATUS.VOIDED, voidReason: 'insufficient' }),
+    });
+    const res = await get();
+    expect(res.body.pods.find((p) => p.groupId === 'g1').myStakes[0].status).toBe('live');
+    expect(res.body.pods.find((p) => p.groupId === 'g2').myStakes[0].status).toBe('voided');
+    expect(stakeReads()).toEqual([]);
+  });
+
+  /**
+   * ANOTHER request's close, landing at the Nth read of the pool document —
+   * the real `closePool` against the same store, as a racing viewer's list,
+   * the stake route or the results reader would run it.
+   */
+  function closeOnPoolRead(n) {
+    const realCollection = DB.db.collection;
+    let reads = 0;
+    DB.db.collection = (name) => {
+      const col = realCollection(name);
+      if (name !== BACKING_POOLS_COLLECTION) return col;
+      return {
+        ...col,
+        doc: (id) => {
+          const ref = col.doc(id);
+          return {
+            ...ref,
+            get: async () => {
+              if (id === 'g1' && (reads += 1) === n) {
+                await closePool({ ...DB.db, collection: realCollection }, { id: 'g1', ...DB.store.get('tournamentGroups/g1') }, PAST_THE_CLOCK);
+              }
+              return ref.get();
+            },
+          };
+        },
+      };
+    };
+  }
+  const dueWorld = () => seed([group('g1')], {
+    [`${BACKING_POOLS_COLLECTION}/g1`]: pool('g1'),
+    [`${BACKING_STAKES_COLLECTION}/mine1`]: liveStake(),
+    [`backingWallets/${UID}`]: walletFor('mine1'),
+  });
+
+  it('WIRING-1: a close ANOTHER request commits between the stakes query and the pool read — the answered pool contradicts the live copy, so it is re-read: voided, with its reason', async () => {
+    DB = dueWorld();
+    vi.setSystemTime(PAST_THE_CLOCK);
+    closeOnPoolRead(1);                                   // before this request's plain read: `before` already says insufficient
+    const pod = (await get()).body.pods[0];
+    expect(pod.pool.status).toBe(POOL_STATUS.INSUFFICIENT);
+    expect(pod.myStakes).toEqual([{ stakeId: 'mine1', teamOdUserId: 'od-a', teamLabel: 'Ada', amount: 250, status: 'voided', voidReason: 'insufficient' }]);
+  });
+
+  it('WIRING-2: a close the list FINDS already committed (a racing request, or its own retried transaction) is adopted — the closed pool answered, nothing backable, the stake re-read', async () => {
+    DB = dueWorld();
+    vi.setSystemTime(PAST_THE_CLOCK);
+    closeOnPoolRead(2);                                   // between the plain read (open) and ensureClosed's own read
+    const pod = (await get()).body.pods[0];
+    expect(DB.store.get(`${BACKING_POOLS_COLLECTION}/g1`).status).toBe(POOL_STATUS.INSUFFICIENT);
+    expect(pod.pool.status).toBe(POOL_STATUS.INSUFFICIENT);
+    expect(pod.teams.every((t) => t.backable === false)).toBe(true);
+    expect(pod.myStakes).toEqual([{ stakeId: 'mine1', teamOdUserId: 'od-a', teamLabel: 'Ada', amount: 250, status: 'voided', voidReason: 'insufficient' }]);
+  });
+
+  it('a CLOSED pool\'s live stakes on its frozen teams contradict nothing — every list load until settlement costs NO stake read', async () => {
+    DB = seed([group('g1')], {
+      [`${BACKING_POOLS_COLLECTION}/g1`]: pool('g1', {
+        status: POOL_STATUS.CLOSED, teams: [{ odUserId: 'od-a', isCpu: false, stakeTotal: 250, backerCount: 1 }], potTotal: 250,
+      }),
+      [`${BACKING_STAKES_COLLECTION}/mine1`]: liveStake(),
+    });
+    const pod = (await get()).body.pods[0];
+    expect(pod.myStakes[0].status).toBe('live');
+    expect(stakeReads()).toEqual([]);
+  });
+
+  it('liveStakeContradicts — the one predicate, every pool status', () => {
+    const live = { status: STAKE_STATUS.LIVE, teamOdUserId: 'od-a' };
+    const frozen = (status, teams = [{ odUserId: 'od-a' }]) => ({ status, teams });
+    expect(liveStakeContradicts(pool('g1'), live)).toBe(false);                                    // open
+    expect(liveStakeContradicts(frozen(POOL_STATUS.CLOSED), live)).toBe(false);                    // closed, its seat frozen
+    expect(liveStakeContradicts(frozen(POOL_STATUS.RESOLVING), live)).toBe(false);                 // a hold keeps stakes live
+    expect(liveStakeContradicts(frozen(POOL_STATUS.CLOSED, [{ odUserId: 'od-b' }]), live)).toBe(true);   // its seat left at the close
+    for (const status of [POOL_STATUS.INSUFFICIENT, POOL_STATUS.REFUNDED, POOL_STATUS.RESOLVED]) {
+      expect(liveStakeContradicts(frozen(status), live), status).toBe(true);
+    }
+    expect(liveStakeContradicts(frozen(POOL_STATUS.INSUFFICIENT), { ...live, status: STAKE_STATUS.VOIDED })).toBe(false);
+    expect(liveStakeContradicts(null, live)).toBe(false);
+  });
+
+  it('a failed re-read keeps the copies read before and never takes down the list', async () => {
+    DB = seed([group('g1')], {
+      [`${BACKING_POOLS_COLLECTION}/g1`]: pool('g1'),
+      [`${BACKING_STAKES_COLLECTION}/mine1`]: liveStake(),
+      [`backingWallets/${UID}`]: walletFor('mine1'),
+    });
+    const realCollection = DB.db.collection;
+    DB.db.collection = (name) => {
+      const col = realCollection(name);
+      if (name !== BACKING_STAKES_COLLECTION) return col;
+      return { ...col, doc: (id) => ({ ...col.doc(id), get: async () => { throw new Error('stake read failed'); } }) };
+    };
+    vi.setSystemTime(PAST_THE_CLOCK);
+    const res = await get();
+    expect(res.statusCode).toBe(200);
+    expect(res.body.pods[0].pool.status).toBe(POOL_STATUS.INSUFFICIENT);
+    expect(res.body.pods[0].myStakes).toEqual([{ stakeId: 'mine1', teamOdUserId: 'od-a', teamLabel: 'Ada', amount: 250, status: 'live' }]);
   });
 });
 
@@ -590,10 +741,10 @@ describe('settle-on-read (§7) — PR 3', () => {
     dailyScores: bankedWeek(),
     ...over,
   });
-  /** A closed pool over three live stakes (u1 → od-a 300; u2, u3 → od-b), with totals and wallets. */
-  function closedWorld(poolOver = {}) {
+  /** A closed pool over three live stakes (u1 → od-a 300; u2, u3 → od-b), with totals and wallets; `s1Backer` renames u1. */
+  function closedWorld(poolOver = {}, { s1Backer = 'u1' } = {}) {
     const stakes = [
-      ['s1', 'u1', 'od-a', 300], ['s2', 'u2', 'od-b', 200], ['s3', 'u3', 'od-b', 100],
+      ['s1', s1Backer, 'od-a', 300], ['s2', 'u2', 'od-b', 200], ['s3', 'u3', 'od-b', 100],
     ];
     const extra = {
       [`${BACKING_POOLS_COLLECTION}/g1`]: pool('g1', {
@@ -607,7 +758,7 @@ describe('settle-on-read (§7) — PR 3', () => {
         ...poolOver,
       }),
       [`${BACKING_POOLS_COLLECTION}/g1/private/totals`]: {
-        backers: { u1: { total: 300, byTeam: { 'od-a': 300 } }, u2: { total: 200, byTeam: { 'od-b': 200 } }, u3: { total: 100, byTeam: { 'od-b': 100 } } },
+        backers: { [s1Backer]: { total: 300, byTeam: { 'od-a': 300 } }, u2: { total: 200, byTeam: { 'od-b': 200 } }, u3: { total: 100, byTeam: { 'od-b': 100 } } },
         byTeam: { 'od-a': { stakeTotal: 300, backerCount: 1 }, 'od-b': { stakeTotal: 300, backerCount: 2 } },
         potTotal: 600, uniqueBackers: 3, teamsBacked: 2, updatedAt: '2026-09-28T04:00:00.000Z',
       },
@@ -645,6 +796,13 @@ describe('settle-on-read (§7) — PR 3', () => {
     expect(DB.readLog.filter(([, p]) => p.startsWith('agentBattles'))).toEqual([]);
     expect(DB.readLog.filter(([ch]) => ch === 'tx.get')).toEqual([]);
   };
+
+  it('WIRING-3 (this build\'s review record): a settlement THIS read ran re-reads the VIEWER\'s stake — answered won, with its payout, never the live copy', async () => {
+    DB = seed([completeGroup()], closedWorld({}, { s1Backer: UID }));
+    const pod = (await get()).body.pods[0];
+    expect(pod.pool.status).toBe(POOL_STATUS.RESOLVED);
+    expect(pod.myStakes).toEqual([expect.objectContaining({ stakeId: 's1', teamOdUserId: 'od-a', amount: 300, status: 'won', payout: 600 })]);
+  });
 
   it('checks the FREEZE itself (A-C13): frozen → the list answers, the primitive is never called', async () => {
     state.frozen = true;
@@ -720,5 +878,81 @@ describe('settle-on-read (§7) — the documented limit on THIS route', () => {
     }
     expect(DB.store.get(`${BACKING_POOLS_COLLECTION}/g1`).status).toBe(POOL_STATUS.CLOSED);
     expect(DB.writeLog).toEqual([]);
+  });
+});
+
+// ============================================================================
+describe('D-af — every seat is named by the SERVER, by its primary agent (Amendment C §C1)', () => {
+  // Firebase-uid-shaped seats — the production id shape the pre-flip list
+  // printed on a lobby pod, which carries no `seatNames` (HON-17).
+  const ADA = 'AdaLovelace0000000000000001a';
+  const CY = 'CyHarrison000000000000003ccc';
+  const lobby = (id, over = {}) => group(id, {
+    seatNames: undefined,
+    players: [{ odUserId: ADA }, { odUserId: CY }, { odUserId: 'cpu-1', isCpu: true }],
+    ...over,
+  });
+  const names = () => ({
+    'agents/agt-ada': { ownerId: ADA, name: 'Shadow' },
+    'agents/agt-ada-clone': { ownerId: ADA, name: 'Clone', isTrainingClone: true },
+    // The production shape — names NESTED under `profile` (RAWID-1).
+    [`users/${ADA}`]: { _v: 1, auth: { uid: ADA, email: 'ada@example.com' }, profile: { username: 'ada', displayName: 'ada', avatarUrl: null, bio: null } },
+  });
+
+  it('a lobby pod with NO seatNames names every seat — agent, then player, then "Unnamed team"; never the id', async () => {
+    DB = seed([lobby('g1')], names());
+    const res = await get();
+    const teams = res.body.pods[0].teams;
+    expect(teams.map((t) => [t.odUserId, t.label, t.secondary])).toEqual([
+      [ADA, 'Shadow', 'ada'],
+      [CY, 'Unnamed team', null],
+      ['cpu-1', expect.stringMatching(/^CPU — /), null],
+    ]);
+    // The client is handed names, not the map it used to compose them from.
+    expect(res.body.pods[0]).not.toHaveProperty('seatNames');
+    for (const t of teams) {
+      expect(t.label).not.toBe(t.odUserId);
+      expect(t.secondary ?? '').not.toContain(t.odUserId);
+    }
+  });
+
+  it('the viewer\'s stakes carry their team\'s label — including a seat that has since LEFT the pod', async () => {
+    DB = seed([lobby('g1', { players: [{ odUserId: CY }, { odUserId: 'cpu-1', isCpu: true }] })], {
+      ...names(),
+      [`${BACKING_STAKES_COLLECTION}/mine`]: { userId: UID, groupId: 'g1', teamOdUserId: ADA, amount: 250, weekKey: WEEK, status: STAKE_STATUS.LIVE },
+    });
+    const pod = (await get()).body.pods[0];
+    expect(pod.teams.map((t) => t.odUserId)).not.toContain(ADA);     // ADA has left
+    expect(pod.myStakes).toEqual([expect.objectContaining({ teamOdUserId: ADA, teamLabel: 'Shadow' })]);
+  });
+
+  it('a SETTLED pool names each team by the agent settlement RECORDED, not the owner\'s current one', async () => {
+    DB = seed([lobby('g1', { status: 'battle' })], {
+      ...names(),
+      'agents/agt-ada-old': { ownerId: 'someone-else', name: 'Played The Week' },
+      [`${BACKING_POOLS_COLLECTION}/g1`]: pool('g1', {
+        status: POOL_STATUS.RESOLVED, potTotal: 300, uniqueBackers: 3, teamsBacked: 2, humanTeams: 2,
+        teams: [
+          { odUserId: ADA, isCpu: false, stakeTotal: 200, backerCount: 2, agentId: 'agt-ada-old' },
+          { odUserId: CY, isCpu: false, stakeTotal: 100, backerCount: 1, agentId: 'agt-gone' },
+        ],
+      }),
+    });
+    const teams = (await get()).body.pods[0].teams;
+    expect(teams.map((t) => [t.odUserId, t.label, t.secondary])).toEqual([
+      [ADA, 'Played The Week', 'ada'],
+      // A recorded agent that is gone falls to the player — and CY has none either.
+      [CY, 'Unnamed team', null],
+    ]);
+  });
+
+  it('BATCHED PER RESPONSE — one owner lookup for every pod on the list, each profile read once', async () => {
+    DB = seed([lobby('g1'), lobby('g2', { players: [{ odUserId: CY }, { odUserId: ADA }] })], names());
+    const res = await get();
+    expect(res.body.pods).toHaveLength(2);
+    const agentQueries = DB.readLog.filter(([ch, p]) => ch === 'get' && p === 'agents');
+    expect(agentQueries).toHaveLength(1);
+    const profileReads = DB.readLog.filter(([, p]) => p.startsWith('users/')).map(([, p]) => p);
+    expect(new Set(profileReads).size).toBe(profileReads.length);
   });
 });

@@ -48,11 +48,23 @@
 // THE TWO LAZY JOBS RIDE HERE (§4, §7). An eligible pod with no pool gets one
 // materialized; a pool past its `closesAt` gets closed. Both are idempotent and
 // both are the same functions the stake route and PR 3's settlement call, so
-// "who opens a pool" and "who closes one" each have one answer.
+// "who opens a pool" and "who closes one" each have one answer. When one of
+// them MOVES a pool, the viewer's own stakes on it are re-read before the
+// reply (WIRE-R-1, the PR 5 review record): a close that voids a stake must
+// not be answered with the copy read before it.
 //
 // READ-ONLY FOR THE VIEWER: this route writes nothing on its own account. The
 // pool documents it may create or close are the lazy jobs above, which belong to
 // the pool's own lifecycle and not to this request's viewer.
+//
+// EVERY SEAT IS NAMED BY THE SERVER (Amendment C §C1, D-af). Each team carries
+// `label` — its primary agent's name — and `secondary`, the player's display
+// name; each of the viewer's stakes carries its team's `teamLabel`. All of
+// them come from ONE batched call to the one resolver
+// (api/_utils/backingTeamLabels.js) per response, after the lazy jobs, so no
+// row reads anything of its own. The pod's `seatNames` map is no longer sent:
+// the client renders the label and never composes a name from an id — which
+// is how a lobby pod (no `seatNames`) used to print a raw account id.
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
@@ -61,6 +73,7 @@ import { deriveBaseLayerWeek, deriveBattleStartWeek } from '../_utils/liveDraftF
 import {
   BACKING_STAKES_COLLECTION,
   POOL_STATUS,
+  STAKE_STATUS,
   ensureClosed,
   listablePod,
   liveTeamsFor,
@@ -68,7 +81,9 @@ import {
   poolRefFor,
 } from '../_utils/backingPools.js';
 import { backingWeekFor } from '../_utils/backingWeek.js';
+import { labelSeatOf, podLabelSeats, resolveTeamLabels } from '../_utils/backingTeamLabels.js';
 import {
+  UNNAMED_TEAM_LABEL,
   VALIDITY_MIN_BACKERS,
   VALIDITY_MIN_TEAMS,
 } from '../../src/constants/backing.js';
@@ -165,7 +180,10 @@ function revealedPoolFigures(pool) {
   };
 }
 
-export function projectPod(group, pool, { viewerUid, myStakes = [] }) {
+/** A projection built without a resolver names every team neutrally — never by its id. */
+const NEUTRAL_LABELS = () => ({ label: UNNAMED_TEAM_LABEL, secondary: null });
+
+export function projectPod(group, pool, { viewerUid, myStakes = [], teamLabelFor = NEUTRAL_LABELS }) {
   const open = pool != null && pool.status === POOL_STATUS.OPEN;
   const revealed = pool != null && REVEALED_STATUSES.has(pool.status);
   // While OPEN the seats are derived live from `players[]` (§1); at close the
@@ -179,10 +197,17 @@ export function projectPod(group, pool, { viewerUid, myStakes = [] }) {
   // the viewer is seated is a fact about the pod now, not about the freeze.
   const viewerSeated = live.some((s) => s.odUserId === viewerUid);
 
+  // D-af (Amendment C §C1): the seat's name is the server's, off the ONE
+  // descriptor every backing endpoint builds (`labelSeatOf`).
+  const named = (odUserId, isCpu = false) => teamLabelFor(labelSeatOf({ group, pool }, odUserId, isCpu));
+
   const teams = seats.map((seat) => {
+    const { label, secondary } = named(seat.odUserId, seat.isCpu === true);
     const base = {
       odUserId: seat.odUserId,
       isCpu: seat.isCpu === true,
+      label,
+      secondary,
       isOwnSeat: seat.odUserId === viewerUid,
       backable: open === true && !viewerSeated,
     };
@@ -202,7 +227,6 @@ export function projectPod(group, pool, { viewerUid, myStakes = [] }) {
     slotId: typeof group.slotId === 'string' ? group.slotId : null,
     scheduledDraftAt: typeof group.scheduledDraftAt === 'string' ? group.scheduledDraftAt : null,
     baseLayerWeek: typeof group.baseLayerWeek === 'string' ? group.baseLayerWeek : null,
-    seatNames: group.seatNames && typeof group.seatNames === 'object' ? group.seatNames : {},
     humanTeams: seats.filter((s) => s.isCpu !== true).length,
     teams,
     pool: pool == null ? null : {
@@ -218,12 +242,46 @@ export function projectPod(group, pool, { viewerUid, myStakes = [] }) {
     myStakes: myStakes.map((s) => ({
       stakeId: s.id,
       teamOdUserId: s.teamOdUserId,
+      // A stake can name a seat that has since LEFT the pod; the label is
+      // still the server's, never the id (the resolver was primed with it).
+      teamLabel: named(s.teamOdUserId).label,
       amount: s.amount,
       status: s.status,
       ...(s.voidReason === undefined ? {} : { voidReason: s.voidReason }),
       ...(s.payout === undefined ? {} : { payout: s.payout }),
     })),
   };
+}
+
+/**
+ * A `live` copy of the viewer's stake that the pool AS ANSWERED says cannot
+ * still be live (this build's review record, WIRING-1). Every transition out
+ * of `open` other than to `closed` / `resolving` moves every live stake in the
+ * SAME transaction (`insufficient` / `refunded` void them, `resolved` settles
+ * them), and a close voids a stake on a seat missing from the frozen `teams[]`
+ * — so such a copy predates a transition this request did not see: another
+ * request's close landing between the stakes query and the pool read. Zero
+ * cost in the steady state: an open pool, or a closed one's stakes on its
+ * frozen teams, contradict nothing. Pure.
+ */
+export function liveStakeContradicts(pool, stake) {
+  if (stake?.status !== STAKE_STATUS.LIVE || pool == null || pool.status === POOL_STATUS.OPEN) return false;
+  if (pool.status !== POOL_STATUS.CLOSED && pool.status !== POOL_STATUS.RESOLVING) return true;
+  return Array.isArray(pool.teams) && !pool.teams.some((t) => t.odUserId === stake.teamOdUserId);
+}
+
+/**
+ * The viewer's stakes on a pod, RE-READ by id after this request's lazy jobs
+ * moved its pool (WIRE-R-1) — the documents as the close or the settlement
+ * left them, never the copies read before. The results reader's own
+ * `refreshStakes` (api/backing/results.js, WIRE-1), mirrored: a stake that has
+ * vanished keeps the copy that was read.
+ */
+async function refreshStakes(db, myStakes) {
+  return Promise.all(myStakes.map(async (s) => {
+    const snap = await db.collection(BACKING_STAKES_COLLECTION).doc(s.id).get();
+    return snap.exists ? { id: snap.id, ...snap.data() } : s;
+  }));
 }
 
 export default async function handler(req, res) {
@@ -273,9 +331,15 @@ export default async function handler(req, res) {
       stakesByGroup.set(stake.groupId, list);
     });
 
-    // 5c. The lazy jobs, then the projection. Bounded by POD_LIST_MAX.
-    const pods = await Promise.all(candidates.map(async (group) => {
+    // 5c. The lazy jobs, then — once every pool is where it will be answered
+    // from — the labels, then the projection. Bounded by POD_LIST_MAX.
+    const loaded = await Promise.all(candidates.map(async (group) => {
       let pool = null;
+      // The pool's status BEFORE this request's lazy jobs — the state the
+      // viewer's stakes (read in 5b) were read against. `undefined` until the
+      // first read lands, so a pod whose first read failed counts as moved.
+      let before;
+      let settleCalled = false;
       try {
         // A PLAIN READ FIRST, and a transaction only when there is nothing to
         // read. `materializePool` is transactional by necessity — two first
@@ -288,9 +352,15 @@ export default async function handler(req, res) {
           ? { pool: existing.data() }
           : await materializePool(db, group, now);
         pool = materialized.pool;
+        before = pool?.status ?? null;
         if (pool != null && pool.status === POOL_STATUS.OPEN) {
+          // THE POOL THE CLOSE ANSWERED, whichever way it answered (the results
+          // reader's rule — WIRE-1): closed by this request, or found already
+          // closed — by a racing request, or by this request's OWN close when
+          // the SDK re-ran a committed transaction after a lost acknowledgement
+          // (this build's review record, WIRING-2) — never the stale open copy.
           const closed = await ensureClosed(db, group, now);
-          if (closed.closed === true) pool = closed.pool;
+          if (closed.pool) pool = closed.pool;
         }
         // Backing Beta PR 3 — SETTLE-ON-READ (§7 "Retries", D-o): a CLOSED pool
         // whose pod now satisfies the settlement predicate is settled here, by
@@ -316,7 +386,8 @@ export default async function handler(req, res) {
         if (pool != null && pool.status === POOL_STATUS.CLOSED
           && settlementPredicate(group).final && !TOURNAMENT_ADVANCEMENT_FROZEN) {
           const settled = await settlePool(db, group.id, { now, source: SETTLEMENT_SOURCE.SETTLE_ON_READ });
-          if (settled.settled === true) pool = settled.pool;
+          settleCalled = true;
+          pool = settled.pool ?? pool;
         }
       } catch (err) {
         // ONE pod's pool must never take down the list: the pod still lists with
@@ -328,10 +399,39 @@ export default async function handler(req, res) {
           pool = existing.exists ? existing.data() : null;
         } catch { pool = null; }
       }
-      return projectPod(group, pool, {
-        viewerUid: user.uid,
-        myStakes: stakesByGroup.get(group.id) ?? [],
-      });
+      // WIRE-R-1 (the PR 5 review record — the pod list's twin of the results
+      // reader's WIRE-1): a lazy close moves the viewer's stakes on its own
+      // (`insufficient` voids them, a seat that left is voided) and a
+      // settle-on-read settles them, so when THIS request moved the pool — or
+      // called the settlement at all — the copies read in 5b are stale; and a
+      // `live` copy the answered pool contradicts is stale whoever moved it
+      // (`liveStakeContradicts`, WIRING-1). They are re-read by id before the
+      // reply — only then, so the steady state costs no read. A failed re-read
+      // keeps the copies (logged): one pod never takes down the list.
+      let myStakes = stakesByGroup.get(group.id) ?? [];
+      const stale = settleCalled
+        || (pool?.status ?? null) !== before
+        || myStakes.some((s) => liveStakeContradicts(pool, s));
+      if (myStakes.length > 0 && stale) {
+        try {
+          myStakes = await refreshStakes(db, myStakes);
+        } catch (err) {
+          console.warn(`[backing-pools] stakes not re-read for ${group.id}:`, err?.message);
+        }
+      }
+      return { group, pool, myStakes };
+    }));
+
+    // 5d. EVERY name this response carries, in ONE batch (D-af — no per-row
+    // reads): each pod's seats, its frozen teams (settlement's recorded agent)
+    // and the teams the viewer's own stakes name.
+    const labels = await resolveTeamLabels(db, loaded.flatMap(({ group, pool, myStakes }) => podLabelSeats({
+      group, pool, extraTeamIds: myStakes.map((s) => s.teamOdUserId),
+    })));
+    const pods = loaded.map(({ group, pool, myStakes }) => projectPod(group, pool, {
+      viewerUid: user.uid,
+      myStakes,
+      teamLabelFor: labels.teamLabelFor,
     }));
 
     // The week's own bounds, derived from the SAME battle Monday the label came

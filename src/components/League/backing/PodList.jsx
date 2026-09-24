@@ -29,6 +29,11 @@
 // landing-door canvas carries the strip, card, parts and data modules); this
 // list is built from the briefs' contract with the bundle's parts vocabulary
 // (Sealed, Chairs, BackersCall) and the League's PodCard row rhythm.
+//
+// EVERY SEAT IS NAMED BY THE SERVER (Amendment C §C1, D-af): the row shows the
+// team's `label` — its primary agent's name — with the player's display name
+// (`secondary`) on the line beneath where the server sent one. Nothing here
+// composes a name from an id; a seat without a label reads "Unnamed team".
 
 import React from 'react';
 import { POOL_STRIP } from '../../../constants/backing';
@@ -38,12 +43,13 @@ import { baseGroupName, seatColor } from '../leagueAdapter';
 import { BackersCall, MonoAttr, Sealed } from './BackingParts';
 import { POD_LIST, bp } from './backingCopy';
 import { liveStakeTotal } from './backingStakes';
-import { formatEtClose, seatDisplayName } from './backingStripState';
+import { formatEtClose, teamLabelOf } from './backingStripState';
 
 const REVEALED = new Set(['closed', 'insufficient', 'resolving', 'resolved', 'refunded']);
 
 function SeatRow({ pod, team, revealed, onOpenSeat, accent }) {
-  const name = seatDisplayName(pod.seatNames, team.odUserId);
+  const name = teamLabelOf(team);
+  const secondary = typeof team.secondary === 'string' && team.secondary.length > 0 ? team.secondary : null;
   const agent = { kind: team.isCpu ? 'cpu' : 'human', color: seatColor(team.odUserId, team.isCpu), you: team.isOwnSeat };
   const pays = revealed ? POD_LIST.revealed.pays(team.paysX) : null;
   return (
@@ -62,7 +68,8 @@ function SeatRow({ pod, team, revealed, onOpenSeat, accent }) {
           <span style={{ fontSize: 13.5, fontWeight: 700, color: LTOKENS.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
           {team.isOwnSeat && <Tag color={accent}>You</Tag>}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 1, minWidth: 0 }}>
+          {secondary && <span data-backing="seat-secondary" style={{ fontSize: 11, color: LTOKENS.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{secondary}</span>}
           {team.isCpu ? <KindMark agent={agent} /> : <Mono style={{ fontSize: 10, color: LTOKENS.ink3 }}>{POD_LIST.humanMark}</Mono>}
         </div>
       </div>

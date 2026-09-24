@@ -17,6 +17,9 @@
 //     refusal re-presents the step;
 //   · the per-team cap and the remaining allowance come from the wallet state
 //     and the viewer's own stakes, and bound the presets and the custom amount.
+//   · D-ag (Amendment C §C2): with a live stake on the team the Confirm step
+//     says it ADDS to that stake ("Adds to your {n} BP on {label}."), and a
+//     top-up reply shows the stake's new total with what this Confirm added.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React, { act } from 'react';
@@ -34,14 +37,15 @@ vi.mock('../../../services/backingService', () => ({
 
 const { default: StakeControl, validateAmount } = await import('./StakeControl');
 const { stakedOnTeam } = await import('./backingStakes');
-const { REFUSALS } = await import('./backingCopy');
+const { REFUSALS, STAKE } = await import('./backingCopy');
 
 class Refusal extends Error { constructor(code) { super(code); this.code = code; } }
 
 const card = () => ({
   groupId: 'g1', odUserId: 'od-a', viewerUid: 'viewer-1',
   seat: { index: 1, count: 4, isCpu: false, isViewer: false, viewerSeated: false },
-  team: { displayName: 'Mira', isCpu: false, pitch: null, derived: null, agent: { name: 'Kestrel', archetype: 'momentum_chaser', archetypeLabel: 'Trend Follower', approach: 'x', traitCount: 4, ruleCount: 7 } },
+  // D-af (Amendment C §C1): the team-card projection carries the seat's label (its primary agent) and the player as secondary.
+  team: { displayName: 'Mira', label: 'Kestrel', secondary: 'Mira', isCpu: false, pitch: null, derived: null, agent: { name: 'Kestrel', archetype: 'momentum_chaser', archetypeLabel: 'Trend Follower', approach: 'x', traitCount: 4, ruleCount: 7 } },
   known: null, lastWeek: null,
 });
 const pod = (myStakes = []) => ({ groupId: 'g1', pool: { status: 'open', closesAt: '2026-09-28T03:59:59.000Z' }, myStakes });
@@ -98,7 +102,7 @@ describe('the control, attested', () => {
     const { container } = await mount({ wallet: { known: true, left: 640, total: 1000 }, pod: pod([{ stakeId: 's1', teamOdUserId: 'od-a', amount: 150, status: 'live' }]) });
     expect(container.textContent).toContain('640');
     expect(container.textContent).toContain('of 1,000 BP');
-    expect(container.textContent).toContain(`Per-team cap ${PER_TEAM_CAP_BP} BP · 150 already on Mira`);
+    expect(container.textContent).toContain(`Per-team cap ${PER_TEAM_CAP_BP} BP · 150 already on Kestrel`);
   });
 
   it('Confirm sends a FRESH requestId and shows "Backed" ONLY after the server’s success reply', async () => {
@@ -115,9 +119,20 @@ describe('the control, attested', () => {
     await act(async () => { resolve({ replay: false, stake: { id: 'stk_1', amount: 250 }, pool: { status: 'open' }, allowanceRemaining: 750 }); });
     await settle();
     expect(q(container, '[data-backing="backed"]')).not.toBeNull();
-    expect(container.textContent).toContain('Backed · 250 BP');
+    // A reply without its own label names the team by the card's label — never an id (D-af).
+    expect(container.textContent).toContain('Backed · 250 BP on Kestrel');
     expect(container.textContent).toContain('Recorded by the server.');
     expect(props.onBacked).toHaveBeenCalledTimes(1);
+  });
+
+  it('D-af: "Backed" names the team by the stake REPLY\'s own label — the server confirmed this stake', async () => {
+    svc.placeStake.mockResolvedValue({ replay: false, stake: { id: 'stk_1', amount: 250 }, teamLabel: { label: 'Shadow', secondary: 'Mira' }, pool: { status: 'open' }, allowanceRemaining: 750 });
+    const { container } = await mount();
+    await click(q(container, '[data-preset="250"]'));
+    await click(confirmButton(container));
+    await settle();
+    expect(container.textContent).toContain('Backed · 250 BP on Shadow');
+    expect(container.textContent).not.toContain('od-a');
   });
 
   it('a refusal shows the plain sentence, never "Backed" — and the retry carries a NEW requestId', async () => {
@@ -136,7 +151,7 @@ describe('the control, attested', () => {
   });
 
   it('every refusal reason the endpoint can return has a plain sentence, and an unknown one falls back to the server sentence', () => {
-    for (const code of ['invalid_group_id', 'invalid_team', 'invalid_amount', 'below_min_stake', 'above_team_cap', 'invalid_request_id', 'no_pod', 'no_pool', 'pool_not_open', 'pool_closed', 'battle_started', 'account_required', 'eligibility_required', 'own_pod', 'seat_not_present', 'no_completed_battle', 'request_id_conflict', 'per_team_cap', 'stake_already_spent', 'insufficient_allowance', 'week_mismatch', 'server_error', 'network']) {
+    for (const code of ['invalid_group_id', 'invalid_team', 'invalid_amount', 'below_min_stake', 'above_team_cap', 'invalid_request_id', 'no_pod', 'no_pool', 'pool_not_open', 'pool_closed', 'battle_started', 'account_required', 'eligibility_required', 'own_pod', 'seat_not_present', 'no_completed_battle', 'request_id_conflict', 'per_team_cap', 'stake_already_spent', 'stake_not_live', 'insufficient_allowance', 'week_mismatch', 'server_error', 'network']) {
       expect(typeof REFUSALS[code], code).toBe('string');
       expect(REFUSALS[code].length, code).toBeGreaterThan(10);
       expect(REFUSALS[code]).not.toContain('_');
@@ -168,7 +183,7 @@ describe('the control, attested', () => {
 
   it('at the per-team cap the control says so and Confirm is disabled; presets above the allowance are disabled', async () => {
     const capped = await mount({ pod: pod([{ stakeId: 's1', teamOdUserId: 'od-a', amount: PER_TEAM_CAP_BP, status: 'live' }]) });
-    expect(capped.container.textContent).toContain('You are at the per-team cap on Mira.');
+    expect(capped.container.textContent).toContain('You are at the per-team cap on Kestrel.');
     expect(confirmButton(capped.container).disabled).toBe(true);
     await click(confirmButton(capped.container));
     expect(svc.placeStake).not.toHaveBeenCalled();
@@ -178,6 +193,58 @@ describe('the control, attested', () => {
     expect(q(poor.container, '[data-preset="250"]').disabled).toBe(true);
     expect(q(poor.container, '[data-preset="500"]').disabled).toBe(true);
     expect(confirmButton(poor.container).textContent).toBe('Confirm 100 BP');
+  });
+});
+
+describe('D-ag — one stake per team per backer: a repeat backing TOPS UP (Amendment C §C2)', () => {
+  it('with a live stake on this team, the Confirm step says it ADDS to that stake — the copy module\'s sentence, the seat\'s label', async () => {
+    const { container } = await mount({ pod: pod([{ stakeId: 's1', teamOdUserId: 'od-a', amount: 150, status: 'live' }]) });
+    const note = q(container, '[data-backing="top-up-note"]');
+    expect(note).not.toBeNull();
+    expect(note.textContent).toBe('Adds to your 150 BP on Kestrel.');
+    expect(note.textContent).toBe(STAKE.addsTo(150, 'Kestrel'));
+    // The cap is on the TOTAL: 150 already, so 350 is the most this Confirm can add.
+    expect(q(container, '[data-preset="500"]').disabled).toBe(true);
+    expect(confirmButton(container).textContent).toBe('Confirm 250 BP');
+  });
+
+  it('with no live stake on this team there is nothing to add to — no top-up sentence (a voided stake, or one on another team, is not this team\'s)', async () => {
+    const fresh = await mount();
+    expect(q(fresh.container, '[data-backing="top-up-note"]')).toBeNull();
+    const elsewhere = await mount({ pod: pod([{ stakeId: 's1', teamOdUserId: 'od-b', amount: 150, status: 'live' }, { stakeId: 's2', teamOdUserId: 'od-a', amount: 100, status: 'voided' }]) });
+    expect(q(elsewhere.container, '[data-backing="top-up-note"]')).toBeNull();
+    expect(elsewhere.container.textContent).not.toContain('Adds to your');
+  });
+
+  it('a top-up reply: "Backed" shows the stake\'s NEW total, and says what this Confirm added', async () => {
+    svc.placeStake.mockResolvedValue({ replay: false, topUp: true, added: 250, stake: { id: 'stk_1', amount: 400 }, teamLabel: { label: 'Kestrel', secondary: 'Mira' }, pool: { status: 'open' }, allowanceRemaining: 600 });
+    const { container } = await mount({ pod: pod([{ stakeId: 'stk_1', teamOdUserId: 'od-a', amount: 150, status: 'live' }]) });
+    await click(confirmButton(container));
+    await settle();
+    expect(svc.placeStake.mock.calls[0][0]).toEqual({ groupId: 'g1', teamOdUserId: 'od-a', amount: 250, requestId: 'req-1' });
+    expect(container.textContent).toContain('Backed · 400 BP on Kestrel');
+    expect(q(container, '[data-backing="topped-up"]').textContent).toBe(STAKE.toppedUp(250));
+    expect(container.textContent).toContain('Added 250 BP to your stake.');
+  });
+
+  it('a first stake\'s reply says nothing about adding', async () => {
+    svc.placeStake.mockResolvedValue({ replay: false, topUp: false, added: 250, stake: { id: 'stk_1', amount: 250 }, pool: { status: 'open' }, allowanceRemaining: 750 });
+    const { container } = await mount();
+    await click(q(container, '[data-preset="250"]'));
+    await click(confirmButton(container));
+    await settle();
+    expect(container.textContent).toContain('Backed · 250 BP on Kestrel');
+    expect(q(container, '[data-backing="topped-up"]')).toBeNull();
+    expect(container.textContent).not.toContain('Added ');
+  });
+
+  it('a stake that can no longer be added to (settled or voided since the list was read) gets its plain sentence, never "Backed"', async () => {
+    svc.placeStake.mockRejectedValue(new Refusal('stake_not_live'));
+    const { container } = await mount({ pod: pod([{ stakeId: 'stk_1', teamOdUserId: 'od-a', amount: 150, status: 'live' }]) });
+    await click(confirmButton(container));
+    await settle();
+    expect(container.textContent).toContain(REFUSALS.stake_not_live);
+    expect(q(container, '[data-backing="backed"]')).toBeNull();
   });
 });
 

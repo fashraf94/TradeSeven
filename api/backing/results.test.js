@@ -161,7 +161,9 @@ describe('SETTLE-ON-READ — the path the pod list never had (finding 1)', () =>
     expect(spy.settlePool.mock.calls[0][1]).toBe('g-w40');
     expect(spy.settlePool.mock.calls[0][2]).toMatchObject({ source: SETTLEMENT_SOURCE.SETTLE_ON_READ });
     expect(poolOf('g-w40')).toMatchObject({ status: POOL_STATUS.RESOLVED, settlementRef: SETTLEMENT_SOURCE.SETTLE_ON_READ, settledAt: NOW.toISOString(), winnerOdUserIds: ['od-a'] });
-    expect(res.body.pod).toMatchObject({ groupId: 'g-w40', outcome: 'settled', winners: ['od-a'], potTotal: 1000, seatNames: SEAT_NAMES });
+    // The winner line is the SERVER's name for the seat (D-af): here the pod's own seat name — no agent is on file.
+    expect(res.body.pod).toMatchObject({ groupId: 'g-w40', outcome: 'settled', winners: ['od-a'], winnerLabels: ['Mira'], potTotal: 1000 });
+    expect(res.body.pod).not.toHaveProperty('seatNames');
   });
 
   it('MUTATION CHECK 3 — the viewer\'s payout is `stake.payout` (714), never stake × paysX (715)', async () => {
@@ -218,7 +220,9 @@ describe('SETTLE-ON-READ — the path the pod list never had (finding 1)', () =>
     expect((await get({ groupId: 'g-exp' })).body.pod).toMatchObject({ outcome: 'refunded', refundReason: 'group_expired' });
     DB = makeInMemoryDb(pod('g-gone', { withGroup: false, stakes: BOOK() }));
     const res = await get({ groupId: 'g-gone' });
-    expect(res.body.pod).toMatchObject({ outcome: 'refunded', refundReason: 'group_deleted', seatNames: {} });
+    expect(res.body.pod).toMatchObject({ outcome: 'refunded', refundReason: 'group_deleted', winnerLabels: [] });
+    // A deleted pod has no seat names and this world no profiles or agents: the neutral label, never the id.
+    expect(res.body.pod.myStakes.map((s) => s.teamLabel)).toEqual(res.body.pod.myStakes.map(() => 'Unnamed team'));
   });
 
   it('an OPEN pool past its close is CLOSED first (the lazy close), then judged', async () => {
@@ -391,5 +395,57 @@ describe('WEEKS — the last completed week first, then history', () => {
     expect(res.body.weeks[1].pools[0]).toMatchObject({ groupId: 'g-held', outcome: 'settling', status: POOL_STATUS.RESOLVING, holdReason: 'agent_layer_absent' });
     // The hold is the admin's: the pass never touched it.
     expect(poolOf('g-held').status).toBe(POOL_STATUS.RESOLVING);
+  });
+});
+
+// ============================================================================
+describe('D-af — the winner line and the team rows are named by the SERVER (Amendment C §C1; HON-17)', () => {
+  it('HON-17: a lobby pod with NO seatNames and no names on file names its winner "Unnamed team" — never the account id', async () => {
+    DB = makeInMemoryDb({ ...pod('g-w40', { g: group({ seatNames: undefined }), stakes: BOOK() }) });
+    const res = await get({ groupId: 'g-w40' });
+    expect(res.body.pod).toMatchObject({ outcome: 'settled', winners: ['od-a'], winnerLabels: ['Unnamed team'] });
+    for (const t of res.body.pod.teams) expect(t.label).not.toBe(t.odUserId);
+    expect(res.body.pod.myStakes.map((s) => s.teamLabel)).not.toContain('od-a');
+  });
+
+  it('the winner is named by its PRIMARY AGENT, the player secondary — and the viewer\'s stake on it says the same name', async () => {
+    DB = makeInMemoryDb({ ...pod('g-w40', { stakes: BOOK() }), 'agents/agt-a': { ownerId: 'od-a', name: 'Shadow' } });
+    const res = await get({ groupId: 'g-w40' });
+    expect(res.body.pod.winnerLabels).toEqual(['Shadow']);
+    expect(res.body.pod.teams.find((t) => t.odUserId === 'od-a')).toMatchObject({ label: 'Shadow', secondary: 'Mira' });
+    expect(res.body.pod.teams.find((t) => t.odUserId === 'cpu-1').label).toMatch(/^CPU — /);
+    expect(res.body.pod.myStakes.find((s) => s.stakeId === 'v1').teamLabel).toBe('Shadow');
+  });
+
+  it('after settlement the RECORDED agent names the team, not the owner\'s current one', async () => {
+    DB = makeInMemoryDb({
+      ...pod('g-rec', {
+        status: POOL_STATUS.RESOLVED,
+        stakes: BOOK(),
+        poolOver: {
+          winnerOdUserIds: ['od-a'], winningStakes: 700, paysX: 1.43, settledAt: '2026-10-02T22:30:00.000Z', monthKey: '2026-09',
+          teams: [
+            { odUserId: 'od-a', isCpu: false, stakeTotal: 700, backerCount: 2, agentId: 'agt-played' },
+            { odUserId: 'od-b', isCpu: false, stakeTotal: 300, backerCount: 1, agentId: 'agt-b' },
+          ],
+        },
+      }),
+      'agents/agt-played': { ownerId: 'someone', name: 'Played The Week' },
+      'agents/agt-now': { ownerId: 'od-a', name: 'Current' },
+    });
+    const res = await get({ groupId: 'g-rec' });
+    expect(res.body.pod.winnerLabels).toEqual(['Played The Week']);
+    // od-b's recorded agent is gone: the player's own seat name, never the id.
+    expect(res.body.pod.teams.find((t) => t.odUserId === 'od-b')).toMatchObject({ label: 'Draco', secondary: null });
+  });
+
+  it('BATCHED PER RESPONSE — a page of weeks costs ONE owner lookup however many pods it names', async () => {
+    DB = makeInMemoryDb({
+      ...pod('g-w40', { stakes: BOOK() }),
+      ...pod('g-w39', { status: POOL_STATUS.RESOLVED, weekKey: '2026-W39', monday: '2026-09-21', stakes: [{ id: 'w39', userId: UID, teamOdUserId: 'od-b', amount: 100, status: STAKE_STATUS.LOST, payout: 0 }], poolOver: { winnerOdUserIds: ['od-a'], winningStakes: 100, paysX: 1, settledAt: '2026-09-25T22:30:00.000Z' } }),
+    });
+    const res = await get();
+    expect(res.body.weeks.map((w) => w.weekKey)).toEqual(['2026-W40', '2026-W39']);
+    expect(DB.readLog.filter(([ch, p]) => ch === 'get' && p === 'agents')).toHaveLength(1);
   });
 });

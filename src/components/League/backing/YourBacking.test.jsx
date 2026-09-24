@@ -12,6 +12,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
+import { TEAM_NAME_PENDING } from '../../../constants/backing';
 
 const battles = vi.hoisted(() => ({ byOwner: {} }));
 vi.mock('../../../hooks/useSpectatedTournamentBattles', () => ({
@@ -41,6 +42,15 @@ const group = (over = {}) => ({
   ...over,
 });
 
+// The team-labels route's answer, in full: each team's label pair AND its two
+// layers named apart (`player`, `agent` — this build's review record, RAWID-R-2).
+const LABELS = {
+  'od-a': { label: 'Kestrel', secondary: 'Mira', player: 'Mira', agent: 'Kestrel' },
+  'od-x': { label: 'Orbit', secondary: 'Rigel', player: 'Rigel', agent: 'Orbit' },
+  'cpu-3': { label: 'CPU — Diversifier', secondary: null, player: 'CPU — Diversifier', agent: 'CPU — Diversifier' },
+  'cpu-4': { label: 'CPU — Speculator', secondary: null, player: 'CPU — Speculator', agent: 'CPU — Speculator' },
+};
+
 const inPlay = (over = {}) => ({
   stakes: [
     { id: 's1', groupId: 'g-play', teamOdUserId: 'od-a', amount: 250, status: 'live', weekKey: '2026-W39' },
@@ -51,6 +61,10 @@ const inPlay = (over = {}) => ({
   ],
   poolsById: { 'g-play': { status: 'closed' }, 'g-two': { status: 'closed' }, 'g-next': { status: 'open' } },
   groupsById: { 'g-play': group(), 'g-two': group({ seatNames: { 'od-x': 'Rigel' } }) },
+  // D-af (Amendment C §C1): the SERVER's names (GET /api/backing/team-labels
+  // through useMyBacking) — each team by its primary agent, the player as the
+  // secondary. The group docs' seatNames above are ignored by the surface.
+  labelsById: { 'g-play': LABELS, 'g-two': LABELS, 'g-next': LABELS },
   ...over,
 });
 
@@ -67,8 +81,9 @@ describe('one card per backed pod, Monday–Friday', () => {
 
   it('names the team(s) backed with the amount, summed per team', () => {
     const html = render();
-    expect(html).toContain('Mira · 350 BP');
-    expect(html).toContain('Rigel · 200 BP');
+    // Each team by its primary agent (D-af).
+    expect(html).toContain('Kestrel · 350 BP');
+    expect(html).toContain('Orbit · 200 BP');
   });
 
   it('shows where the pod stands from the banked composites and the team’s rank at each banked close', () => {
@@ -160,8 +175,8 @@ describe('the PR 4 review record — FAB-1, DOM-6, FAB-2 (docs/audits/20260922_B
       { id: 's1', groupId: 'g-play', teamOdUserId: 'od-a', amount: 250, status: 'voided', weekKey: '2026-W39' },
       { id: 's3', groupId: 'g-two', teamOdUserId: 'od-x', amount: 200, status: 'live', weekKey: '2026-W39' },
     ] }) });
-    expect(html).toContain('Mira · 250 BP · void');
-    expect(html).toContain('Rigel · 200 BP<');
+    expect(html).toContain('Kestrel · 250 BP · void');
+    expect(html).toContain('Orbit · 200 BP<');
   });
 
   it('FAB-2: a layer that has not drafted says so for THAT layer — the other layer still shows', () => {
@@ -184,5 +199,52 @@ describe('the PR 4 review record — refutation pass (R-B-2)', () => {
     expect(html).toContain('Locked in · plays Monday');
     expect(html).not.toContain('Day ');
     expect(html).toContain('>Locked · plays Monday<');
+  });
+});
+
+describe('D-af — every team is named by the SERVER (Amendment C §C1)', () => {
+  it('the standing rows name every seat by its label — the house seats too', () => {
+    const html = render();
+    for (const name of ['Kestrel', 'Orbit', 'CPU — Diversifier', 'CPU — Speculator']) expect(html).toContain(name);
+  });
+
+  it('with NO labels delivered, every name reads "Unnamed team" — never an id, and never the group doc\'s seatNames', () => {
+    const html = render({ inPlay: inPlay({ labelsById: undefined }) });
+    expect(html).toContain('Unnamed team · 350 BP');
+    expect(html).not.toMatch(/od-[ax]|cpu-[34]/);
+    expect(html).not.toContain('Rigel · 200 BP');
+  });
+
+  it('WIRING-5: while a pod\'s names are ON THEIR WAY its teams read the pending placeholder — never "Unnamed team", never an id', () => {
+    const html = render({ inPlay: inPlay({ labelsById: {} }) });
+    expect(html).toContain(`${TEAM_NAME_PENDING} · 350 BP`);
+    expect(html).not.toContain('Unnamed team');
+    expect(html).not.toMatch(/od-[ax]|cpu-[34]/);
+  });
+});
+
+describe('the reveal names the two layers APART — this build\'s review record (RAWID-R-2, RAWID-2)', () => {
+  const SIX = { star: [{ symbol: 'NVDA' }, { symbol: 'AMD' }], core: [{ symbol: 'AVGO' }, { symbol: 'ANET' }], support: [{ symbol: 'VST' }, { symbol: 'META' }] };
+  const withBattle = (agentName) => { battles.byOwner = { 'od-a': { ownerId: 'od-a', status: 'active', _whyConcealed: true, agentContext: { agentName, initialPortfolio: SIX } } }; };
+  const labelled = (odA) => inPlay({ labelsById: { 'g-play': { ...LABELS, 'od-a': odA }, 'g-two': LABELS, 'g-next': LABELS } });
+
+  it('a player the server cannot name reads "Unnamed team" beside the agent — the human\'s picks are NEVER filed under the agent\'s name', () => {
+    withBattle('Kestrel');
+    const html = render({ inPlay: labelled({ label: 'Kestrel', secondary: null, player: null, agent: 'Kestrel' }) });
+    expect(html).toContain('What Unnamed team and Kestrel hold');
+    expect(html).not.toContain('What Kestrel and Kestrel hold');
+    // The human's three picks under the player's (neutral) name; the agent's six under the agent's.
+    expect(html).toContain('Unnamed team · 3');
+    expect(html).not.toMatch(/Kestrel · 3(?![0-9])/);
+    expect(html).toContain('Kestrel · 6');
+    battles.byOwner = {};
+  });
+
+  it('the agent is the SERVER\'s belted name — a battle record whose agent name is id-shaped never reaches the screen', () => {
+    withBattle('cpu-9');
+    const html = render({ inPlay: labelled({ label: 'Mira', secondary: null, player: 'Mira', agent: null }) });
+    expect(html).toContain('What Mira and Mira’s agent hold');
+    expect(html).not.toContain('cpu-9');
+    battles.byOwner = {};
   });
 });

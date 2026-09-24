@@ -34,14 +34,17 @@ const SETTLED = {
     { odUserId: 'cpu-1', isCpu: true, stakeTotal: 0, backerCount: 0, paysX: null, won: false, agentId: 'cpu-agent-1', hashAtSettlement: null },
   ],
 };
-const GROUP = { seatNames: { 'od-a': 'Mira', 'od-b': 'Draco' } };
+const GROUP = { status: 'complete' };
+/** The results reader's binding of the one label resolver (D-af), stubbed: agent names, player secondary. */
+const NAMES = { 'od-a': { label: 'Shadow', secondary: 'Mira' }, 'od-b': { label: 'Kestrel', secondary: 'Draco' }, 'cpu-1': { label: 'CPU — Momentum', secondary: null } };
+const nameTeam = (id) => NAMES[id] ?? { label: 'Unnamed team', secondary: null };
 const MY_STAKES = [
   { id: 's1', groupId: 'g1', teamOdUserId: 'od-a', amount: 500, status: STAKE_STATUS.WON, payout: 714, hashAtStake: 'hash-monday', weekKey: '2026-W40' },
   { id: 's2', groupId: 'g1', teamOdUserId: 'od-b', amount: 100, status: STAKE_STATUS.LOST, payout: 0, hashAtStake: 'hash-b', weekKey: '2026-W40' },
 ];
 
 describe('projectResultPool — the card\'s numbers are the documents\' (§9)', () => {
-  const pod = projectResultPool({ groupId: 'g1', poolId: 'g1', pool: SETTLED, group: GROUP, myStakes: MY_STAKES });
+  const pod = projectResultPool({ groupId: 'g1', poolId: 'g1', pool: SETTLED, group: GROUP, myStakes: MY_STAKES, nameTeam });
 
   it('MUTATION CHECK 3 — the payout per stake is `stake.payout`, NEVER stake × paysX', () => {
     const mine = pod.myStakes.find((s) => s.stakeId === 's1');
@@ -77,12 +80,55 @@ describe('projectResultPool — the card\'s numbers are the documents\' (§9)', 
     expect(loadoutChangedFor({ hashAtStake: 'x' }, undefined)).toBeNull();
   });
 
-  it('carries the pod\'s names, the outcome word and the ladder month; never a team\'s agentId or hash', () => {
-    expect(pod).toMatchObject({ groupId: 'g1', poolId: 'g1', weekKey: '2026-W40', outcome: RESULT_OUTCOME.SETTLED, seatNames: GROUP.seatNames, monthKey: '2026-09', settledAt: SETTLED.settledAt, refundReason: null, refundedAt: null, humanTeams: 2 });
+  it('MONEY-8 (this build\'s review record): a TOPPED-UP stake is never "unchanged" — its one hash is the FIRST placement\'s; a difference is still a change', () => {
+    const team = { odUserId: 'od-a', isCpu: false, hashAtSettlement: 'H1' };
+    const first = { entryId: 'stake:dbt_1', amount: 100 };
+    const topUp = { entryId: 'stake:dbt_2', amount: 150 };
+    // One placement: the marker is exactly what it always was.
+    expect(loadoutChangedFor({ hashAtStake: 'H1', debits: [first] }, team)).toBe(false);
+    expect(loadoutChangedFor({ hashAtStake: 'H1' }, team)).toBe(false);
+    // Topped up: a match says nothing about the 150 added later (the loadout
+    // may have moved and moved back) — not known, never "unchanged".
+    expect(loadoutChangedFor({ hashAtStake: 'H1', debits: [first, topUp] }, team)).toBeNull();
+    // A difference is a change "during the week", topped up or not.
+    expect(loadoutChangedFor({ hashAtStake: 'H0', debits: [first, topUp] }, team)).toBe(true);
+    // Through the projection, as the card reads it.
+    const projected = projectResultPool({
+      groupId: 'g1', poolId: 'g1', pool: { ...SETTLED, teams: SETTLED.teams.map((t) => (t.odUserId === 'od-a' ? { ...t, hashAtSettlement: 'H1' } : t)) },
+      myStakes: [{ id: 'sx', teamOdUserId: 'od-a', amount: 250, status: STAKE_STATUS.WON, payout: 300, hashAtStake: 'H1', debits: [first, topUp] }],
+    });
+    expect(projected.myStakes[0].loadoutChanged).toBeNull();
+  });
+
+  it('carries the outcome word and the ladder month; never a team\'s agentId or hash', () => {
+    expect(pod).toMatchObject({ groupId: 'g1', poolId: 'g1', weekKey: '2026-W40', outcome: RESULT_OUTCOME.SETTLED, monthKey: '2026-09', settledAt: SETTLED.settledAt, refundReason: null, refundedAt: null, humanTeams: 2 });
     for (const t of pod.teams) {
       expect(t).not.toHaveProperty('agentId');
       expect(t).not.toHaveProperty('hashAtSettlement');
     }
+  });
+
+  it('D-af: every name is the SERVER\'s — team rows, the viewer\'s stakes and the winner line; no seatNames map to compose from', () => {
+    expect(pod.teams.map((t) => [t.odUserId, t.label, t.secondary])).toEqual([
+      ['od-a', 'Shadow', 'Mira'], ['od-b', 'Kestrel', 'Draco'], ['cpu-1', 'CPU — Momentum', null],
+    ]);
+    expect(pod.myStakes.map((s) => [s.teamOdUserId, s.teamLabel])).toEqual([['od-a', 'Shadow'], ['od-b', 'Kestrel']]);
+    // The winner line's names, in the winning set's order.
+    expect(pod.winners).toEqual(['od-a']);
+    expect(pod.winnerLabels).toEqual(['Shadow']);
+    expect(pod).not.toHaveProperty('seatNames');
+  });
+
+  it('D-af: a projection handed NO naming function names every team neutrally — never by its id', () => {
+    const bare = projectResultPool({ groupId: 'g1', pool: SETTLED, myStakes: MY_STAKES });
+    for (const text of [...bare.teams.map((t) => t.label), ...bare.myStakes.map((s) => s.teamLabel), ...bare.winnerLabels]) {
+      expect(text).toBe('Unnamed team');
+    }
+  });
+
+  it('D-af: no winner line before a settlement — the names wait for the result', () => {
+    const closed = projectResultPool({ groupId: 'g1', pool: { ...SETTLED, status: POOL_STATUS.CLOSED }, myStakes: [], nameTeam });
+    expect(closed.winnerLabels).toEqual([]);
   });
 
   it('a REFUNDED pool is stated with its reason and instant; the viewer\'s voided stakes carry their voidReason, net 0, no payout', () => {
@@ -106,10 +152,11 @@ describe('projectResultPool — the card\'s numbers are the documents\' (§9)', 
     expect(open).toMatchObject({ outcome: RESULT_OUTCOME.OPEN, potTotal: null, uniqueBackers: null, teams: [] });
   });
 
-  it('a deleted pod has no names: seatNames is {} and the card still projects', () => {
-    const out = projectResultPool({ groupId: 'g1', pool: SETTLED, group: null, myStakes: MY_STAKES });
-    expect(out.seatNames).toEqual({});
+  it('a deleted pod still projects, and still names its teams through the resolver (no group doc needed)', () => {
+    const out = projectResultPool({ groupId: 'g1', pool: SETTLED, group: null, myStakes: MY_STAKES, nameTeam });
     expect(out.outcome).toBe(RESULT_OUTCOME.SETTLED);
+    expect(out.podStatus).toBeNull();
+    expect(out.winnerLabels).toEqual(['Shadow']);
   });
 });
 

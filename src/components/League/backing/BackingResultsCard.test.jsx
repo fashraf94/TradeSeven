@@ -19,19 +19,22 @@ import BackingResultsCard, { stakeOutcomeWords } from './BackingResultsCard';
 import { RESULTS } from './backingCopy';
 import { findForbiddenTerm } from '../../../constants/backingLexicon';
 
-const SEATS = { 'od-a': 'Mira', 'od-b': 'Draco' };
+// D-af (Amendment C §C1): the projection names every team — `label` the
+// primary agent's (after settlement, the agent settlement recorded),
+// `secondary` the player's, `teamLabel` on each stake, `winnerLabels` for the
+// winner line — exactly as api/_utils/backingResults.js projects it.
 const settled = (over = {}) => ({
   groupId: 'lobby-w40-a', poolId: 'lobby-w40-a', weekKey: '2026-W40', status: 'resolved', outcome: 'settled', formationPath: 'lobby', slotId: null,
-  seatNames: SEATS, humanTeams: 2, potTotal: 1000, uniqueBackers: 4, winners: ['od-a'], winningStakes: 700, paysX: 1.43,
+  humanTeams: 2, potTotal: 1000, uniqueBackers: 4, winners: ['od-a'], winnerLabels: ['Shadow'], winningStakes: 700, paysX: 1.43,
   closedAt: '2026-09-28T04:00:00.000Z', settledAt: '2026-10-02T22:30:00.000Z', refundedAt: null, refundReason: null, holdReason: null, monthKey: '2026-09',
   teams: [
-    { odUserId: 'od-a', isCpu: false, backerCount: 2, stakeTotal: 700, sharePct: 70, paysX: 1.43, won: true },
-    { odUserId: 'od-b', isCpu: false, backerCount: 2, stakeTotal: 300, sharePct: 30, paysX: 3.33, won: false },
-    { odUserId: 'cpu-1', isCpu: true, backerCount: 0, stakeTotal: 0, sharePct: 0, paysX: null, won: false },
+    { odUserId: 'od-a', isCpu: false, label: 'Shadow', secondary: 'Mira', backerCount: 2, stakeTotal: 700, sharePct: 70, paysX: 1.43, won: true },
+    { odUserId: 'od-b', isCpu: false, label: 'Kestrel', secondary: 'Draco', backerCount: 2, stakeTotal: 300, sharePct: 30, paysX: 3.33, won: false },
+    { odUserId: 'cpu-1', isCpu: true, label: 'CPU — Trend Follower', secondary: null, backerCount: 0, stakeTotal: 0, sharePct: 0, paysX: null, won: false },
   ],
   myStakes: [
-    { stakeId: 's1', teamOdUserId: 'od-a', amount: 500, status: 'won', payout: 714, voidReason: null, net: 214, loadoutChanged: true },
-    { stakeId: 's2', teamOdUserId: 'od-b', amount: 100, status: 'lost', payout: 0, voidReason: null, net: -100, loadoutChanged: false },
+    { stakeId: 's1', teamOdUserId: 'od-a', teamLabel: 'Shadow', amount: 500, status: 'won', payout: 714, voidReason: null, net: 214, loadoutChanged: true },
+    { stakeId: 's2', teamOdUserId: 'od-b', teamLabel: 'Kestrel', amount: 100, status: 'lost', payout: 0, voidReason: null, net: -100, loadoutChanged: false },
   ],
   myNet: 114, myWon: true,
   ...over,
@@ -56,10 +59,13 @@ describe('the settled card — every number is the projection\'s', () => {
 
   it('names the winner, the pot and the backers; the viewer\'s stakes with their words; the net', () => {
     const t = text(settled());
-    expect(t).toContain('Winner: Mira');
+    // Named by the PRIMARY AGENT (D-af); the player rides beside it on the team row.
+    expect(t).toContain('Winner: Shadow');
     expect(t).toContain('Pot 1,000 BP · 4 backers');
-    expect(t).toContain('Mira · 500 BP');
-    expect(t).toContain('Draco · 100 BP');
+    expect(t).toContain('Shadow · 500 BP');
+    expect(t).toContain('Kestrel · 100 BP');
+    expect(render(settled())).toContain('data-backing="results-team-secondary"');
+    expect(t).toContain('Mira');
     expect(t).toContain('lost');
     expect(t).toContain('+114 BP net');
     const html = render(settled());
@@ -113,13 +119,13 @@ describe('the settled card — every number is the projection\'s', () => {
 
   it('a tie names both winners and pays EVERY winner the pool\'s one realized ratio — never each team\'s own table figure (HON-2); a viewer with no stake is told so; the tape link opens the first backed team', () => {
     const tie = settled({
-      winners: ['od-a', 'od-b'], winningStakes: 1000, paysX: 1,
+      winners: ['od-a', 'od-b'], winnerLabels: ['Shadow', 'Kestrel'], winningStakes: 1000, paysX: 1,
       teams: settled().teams.map((tm) => ({ ...tm, won: !tm.isCpu })),
-      myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', amount: 500, status: 'won', payout: 500, voidReason: null, net: 0, loadoutChanged: null }],
+      myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', teamLabel: 'Shadow', amount: 500, status: 'won', payout: 500, voidReason: null, net: 0, loadoutChanged: null }],
       myNet: 0,
     });
     const tt = text(tie);
-    expect(tt).toContain('Winners (tie): Mira & Draco');
+    expect(tt).toContain('Winners (tie): Shadow & Kestrel');
     expect(tt.match(/paid ×1\.00/g)).toHaveLength(2);
     expect(tt).not.toContain('×1.43');
     expect(tt).not.toContain('×3.33');
@@ -176,5 +182,27 @@ describe('a refunded, insufficient or settling pool is stated plainly', () => {
       expect(findForbiddenTerm(text(pod))).toBeNull();
     }
     for (const s of Object.values(RESULTS.reason)) expect(findForbiddenTerm(s)).toBeNull();
+  });
+});
+
+describe('D-af — the winner line and the rows are the SERVER\'s names (Amendment C §C1; HON-17)', () => {
+  const UID = 'AdaLovelace0000000000000001a';
+
+  it('HON-17: a winner the projection names nothing for reads "Winner: Unnamed team" — never the account id', () => {
+    const pod = settled({
+      winners: [UID], winnerLabels: undefined,
+      teams: [{ odUserId: UID, isCpu: false, backerCount: 2, stakeTotal: 700, sharePct: 70, paysX: 1.43, won: true }],
+      myStakes: [{ stakeId: 's1', teamOdUserId: UID, amount: 500, status: 'won', payout: 714, voidReason: null, net: 214, loadoutChanged: null }],
+    });
+    const t = text(pod);
+    expect(t).toContain('Winner: Unnamed team');
+    expect(t).toContain('Unnamed team · 500 BP');
+    expect(render(pod).replace(/data-[a-z-]+="[^"]*"/g, '')).not.toContain(UID);
+  });
+
+  it('a tie with one name missing names it neutrally and still says it is a tie — never "No result recorded"', () => {
+    const t = text(settled({ winners: ['od-a', 'od-b'], winnerLabels: ['Shadow'] }));
+    expect(t).toContain('Winners (tie): Shadow & Unnamed team');
+    expect(t).not.toContain(RESULTS.noWinner);
   });
 });

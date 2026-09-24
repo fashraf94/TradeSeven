@@ -31,7 +31,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..', '..', '..');
 
 const flag = vi.hoisted(() => ({ on: false }));
-const svc = vi.hoisted(() => ({ calls: [], reply: null }));
+const svc = vi.hoisted(() => ({ calls: [], reply: null, stakes: [], snapshots: false }));
 const fetchSpy = vi.hoisted(() => vi.fn(async () => ({ ok: true, json: async () => ({ slots: [], battles: {} }) })));
 
 vi.mock('../../../config/featureFlags', async (importOriginal) => ({
@@ -52,8 +52,12 @@ vi.mock('../../../services/backingService', () => ({
       }],
     };
   }),
-  subscribeMyStakes: vi.fn((uid, weekKey, cb) => { svc.calls.push('subscribeMyStakes'); cb([]); return () => {}; }),
-  subscribePool: vi.fn(() => { svc.calls.push('subscribePool'); return () => {}; }),
+  subscribeMyStakes: vi.fn((uid, weekKey, cb) => { svc.calls.push('subscribeMyStakes'); cb(svc.stakes.filter((s) => s.weekKey === weekKey)); return () => {}; }),
+  subscribePool: vi.fn((groupId, cb) => { svc.calls.push('subscribePool'); if (svc.snapshots) cb(null); return () => {}; }),
+  // The pre-flip cleanup: Your Backing's names (GET /api/backing/team-labels,
+  // through useMyBacking) — counted like every other backing read, so a dark
+  // label request is SEEN (this build's review record, WIRING-9).
+  fetchTeamLabels: vi.fn(async () => { svc.calls.push('fetchTeamLabels'); return { pods: {} }; }),
   subscribeWallet: vi.fn(() => { svc.calls.push('subscribeWallet'); return () => {}; }),
   readEligibility: vi.fn(async () => { svc.calls.push('readEligibility'); return null; }),
   subscribePitch: vi.fn(() => { svc.calls.push('subscribePitch'); return () => {}; }),
@@ -94,7 +98,7 @@ vi.mock('../../../hooks/useLeagueState', () => ({ default: () => ({ state: leagu
 vi.mock('../../../contexts/UserContext', () => ({ useUser: () => ({ user: { uid: 'viewer-1', displayName: 'Viewer' } }) }));
 vi.mock('../../../services/tournamentGroupService', () => ({
   subscribeMyGroup: () => () => {}, subscribeMyMostRecentVoidedGroup: () => () => {}, subscribeMyTrainingPod: () => () => {},
-  subscribeGroup: () => () => {}, getGroup: async () => null, fetchDisplayNames: async () => ({}),
+  subscribeGroup: (_groupId, cb) => { if (svc.snapshots) cb(null); return () => {}; }, getGroup: async () => null, fetchDisplayNames: async () => ({}),
 }));
 vi.mock('../../../services/leagueSignals', () => ({ logLeagueSignal: () => {} }));
 vi.mock('../../../services/tournamentLobbyActions', () => ({ quickPlay: () => Promise.resolve({}), quickPlayTraining: () => {}, mapLobbyError: () => 'error' }));
@@ -146,7 +150,7 @@ async function mount(el) {
   return container;
 }
 
-beforeEach(() => { flag.on = false; svc.calls.length = 0; svc.reply = null; fetchSpy.mockClear(); __resetBackingTelemetry(); });
+beforeEach(() => { flag.on = false; svc.calls.length = 0; svc.reply = null; svc.stakes = []; svc.snapshots = false; fetchSpy.mockClear(); __resetBackingTelemetry(); });
 afterEach(async () => {
   for (const { root, container } of roots) { await act(async () => root.unmount()); container.remove(); }
   roots = [];
@@ -269,6 +273,14 @@ describe('flag OFF — the League renders as it does today', () => {
     expect(backingCalls()).toEqual([]);
     expect(container.textContent).toContain('Tap a seat to spectate');
   });
+  it('WIRING-9: a viewer WITH a backed pod, mounted dark, asks for NO names — the label request is counted, and never made', async () => {
+    svc.stakes = [{ id: 's1', groupId: 'g1', teamOdUserId: 'od-a', amount: 100, status: 'live', weekKey: '2026-W40' }];
+    svc.snapshots = true;
+    const container = await mount(<LeagueHome {...homeProps} />);
+    expect(container.querySelector('[data-backing]')).toBeNull();
+    expect(svc.calls).toEqual([]);
+    expect(backingCalls()).toEqual([]);
+  });
 });
 
 describe('flag ON — the same mounts light up (the pin is not vacuous)', () => {
@@ -291,6 +303,14 @@ describe('flag ON — the same mounts light up (the pin is not vacuous)', () => 
     expect(strip.textContent).toContain('Closes Sun 11:59 PM ET');
     expect(container.textContent).toContain('Tap a seat · Predictions');
     expect(container.textContent).not.toContain('Tap a seat to spectate');
+  });
+
+  it('WIRING-9: lit, a viewer with a backed pod asks for its names ONCE — the dark row above is not vacuous', async () => {
+    flag.on = true;
+    svc.stakes = [{ id: 's1', groupId: 'g1', teamOdUserId: 'od-a', amount: 100, status: 'live', weekKey: '2026-W40' }];
+    svc.snapshots = true;
+    await mount(<LeagueHome {...homeProps} />);
+    expect(svc.calls.filter((c) => c === 'fetchTeamLabels')).toHaveLength(1);
   });
 
   it('desktop: the strip renders in the left rail', async () => {

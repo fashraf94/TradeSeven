@@ -141,7 +141,7 @@ describe('the allowlist is CLOSED, the props vocabulary is CLOSED', () => {
 });
 
 describe('the pure pieces', () => {
-  it('validateBackingEventBody answers the same shape the route does; stakeConfirmedEventId is keyed by the stake; buildBackingEvent copies props', () => {
+  it('validateBackingEventBody answers the same shape the route does; stakeConfirmedEventId is keyed by its source id (the request\'s debit key since D-ag); buildBackingEvent copies props', () => {
     expect(validateBackingEventBody({ event: 'window_viewed' })).toEqual({ ok: true, event: 'window_viewed', groupId: null, props: {} });
     expect(validateBackingEventBody(null)).toMatchObject({ ok: false, error: 'unknown_event' });
     expect(validateBackingEventBody({ event: 'team_card_opened', groupId: 'g', props: { dwellMs: 1 } })).toEqual({ ok: true, event: 'team_card_opened', groupId: 'g', props: { dwellMs: 1 } });

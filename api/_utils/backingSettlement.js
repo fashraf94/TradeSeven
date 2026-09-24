@@ -157,8 +157,10 @@ const LOG_PREFIX = '[BackingSettlement]';
  * case would be 601, which is why the write PROJECTION below is asserted
  * beside the count rather than instead of it — the count is the legible
  * bound, the projection is the one Firestore enforces. Beta scale is nowhere
- * near either: ALLOWANCE_BP / MIN_STAKE_BP caps a backer at 20 stakes a week
- * and realistic pools carry ≤ 40 (pre-build check §2.6).
+ * near either: ALLOWANCE_BP / MIN_STAKE_BP caps a backer at 20 debits a week,
+ * one stake DOCUMENT per team per pod since D-ag (Amendment C §C2 — at most
+ * four per backer per pod), and realistic pools carry ≤ 40 (pre-build check
+ * §2.6).
  */
 export const SETTLEMENT_MAX_STAKES = 120;
 
@@ -268,7 +270,9 @@ const REFUND_VOID_REASONS = new Set([
  * be REFUNDED — the hold is structural and `fromHold` re-asserts the same
  * ceiling. The "≤ 40 stakes per pool" figure is ASSUMED beta scale, enforced
  * by nothing (the stake endpoint caps per backer and per team, never the
- * book), so five backers at the 20-stake cap reach it. No primitive exits it
+ * book), so 24 backers each backing all four seats of one pod reach it (one
+ * stake per team per backer since D-ag, Amendment C §C2 — the pre-cleanup
+ * figure was five backers at a 20-stake cap). No primitive exits it
  * today; the only procedure is the Console one described in
  * api/tournament/backing-settle.js, and a batched refund (priors costed at 0
  * once applied, wallets read before the ceiling) is the follow-up that would
