@@ -323,6 +323,24 @@ describe('WIRE-R-2 — a pod CANCELLED after its pool closed never reads "plays 
     expect(html).not.toContain('data-cancelled');
   });
 
+  it('WIRE-D1 — nor is a pod whose group read FAILED (useMyBacking records the error as `undefined`): no "cancelled", no promise about the stake — mobile and desktop', () => {
+    const failed = inPlay({
+      stakes: [{ id: 's1', groupId: 'lds-wed', teamOdUserId: 'od-a', amount: 250, status: 'live', weekKey: '2026-W40' }],
+      poolsById: { 'lds-wed': { status: 'closed' } },
+      groupsById: { 'lds-wed': undefined },
+      labelsById: { 'lds-wed': LABELS },
+    });
+    expect('lds-wed' in failed.groupsById).toBe(true);
+    for (const layout of ['mobile', 'desktop']) {
+      const html = render({ inPlay: failed, layout });
+      expect(html, layout).not.toContain(WEEK.cancelled);
+      expect(html, layout).not.toContain('data-cancelled');
+      expect(html, layout).not.toContain(`>${WEEK.status.cancelled}<`);
+    }
+    // Not vacuous: the same pod ANSWERED gone reads cancelled.
+    expect(render({ inPlay: cancelledPod({ g: null }) })).toContain(WEEK.cancelled);
+  });
+
   it('then SHOWS THE REFUND once it lands: the refunded pool\'s own words and reason — never the cancellation, never "Settled", never "plays Monday"', () => {
     const refunded = cancelledPod({
       g: group({ status: 'voided' }),
@@ -339,9 +357,15 @@ describe('WIRE-R-2 — a pod CANCELLED after its pool closed never reads "plays 
       expect(html).not.toContain(`>${WEEK.settled}<`);
       expect(t).not.toMatch(/plays Monday/);
     }
-    // A pod gone before its refund: the stake's own reason names it.
-    const gone = render({ inPlay: cancelledPod({ g: null, pool: { status: 'refunded' }, stakeOver: { status: 'voided', voidReason: 'group_deleted' } }) });
-    expect(text(gone)).toContain(RESULTS.reason.group_deleted);
+    // WIRE-D2 (§9): the reason is the POOL's, the one source the results card
+    // reads — never the viewer's stake. A tombstone refund writes none: both
+    // surfaces say the results card's own fallback, not two different sentences.
+    const gone = text(render({ inPlay: cancelledPod({ g: null, pool: { status: 'refunded' }, stakeOver: { status: 'voided', voidReason: 'group_deleted' } }) }));
+    expect(gone).toContain(RESULTS.reasonFallback);
+    expect(gone).not.toContain(RESULTS.reason.group_deleted);
+    // A pool that carries its reason says it.
+    const named = text(render({ inPlay: cancelledPod({ g: null, pool: { status: 'refunded', refundReason: 'group_deleted' }, stakeOver: { status: 'voided', voidReason: 'group_deleted' } }) }));
+    expect(named).toContain(RESULTS.reason.group_deleted);
   });
 
   it('beside a pod that PLAYS, the section\'s line is the playing pod\'s (the cancelled card speaks for itself); only cancelled pods — no line at all', () => {

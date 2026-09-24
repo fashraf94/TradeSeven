@@ -135,8 +135,9 @@ const CANCELLED_POOL_STATUSES = new Set(['closed', 'resolving', 'refunded']);
  * closed — its group `voided` or `expired`, or gone (the group read ANSWERED
  * with no document) — whose stakes the §7 refund returns rather than any week
  * playing out. Derived from the group status the surfaces already read (no
- * new endpoint): `answered` says the group read has landed, so a pod whose
- * read is still on its way is never taken for a missing one. Null when the
+ * new endpoint): `answered` says the group read has landed with an answer, so
+ * a pod whose read is still on its way — or whose read FAILED (WIRE-D1) — is
+ * never taken for a missing one. Null when the
  * pod is not cancelled; else `{ refunded }` — whether the refund has landed
  * (the pool `refunded`). A pool that closed `insufficient` voided its stakes
  * at the close and is not this state. Pure.

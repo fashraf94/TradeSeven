@@ -123,10 +123,12 @@ function Chips({ symbols }) {
  * stake status, the day trail of the first backed team, the status label, and
  * the two-layer reveal per backed team (the SERVER's `player` / `agent`,
  * never guessed from a lone label — RAWID-R-2). `groupAnswered` says the
- * pod's group read has landed (so a `group` of null is a pod that is GONE,
- * not one still loading). A pod cancelled after its pool closed (WIRE-R-2)
- * is `cancelled`, with its `notice`: the cancellation until the refund
- * lands, then the refund's own reason. Pure.
+ * pod's group read has landed WITH AN ANSWER (so a `group` of null is a pod
+ * that is GONE — not one still loading, nor one whose read failed: WIRE-D1).
+ * A pod cancelled after its pool closed (WIRE-R-2) is `cancelled`, with its
+ * `notice`: the cancellation until the refund lands, then the refund's own
+ * reason — the POOL's `refundReason`, the one source the results card reads
+ * (§9; WIRE-D2), never the viewer's stake. Pure.
  */
 export function weekCardModel({ groupId, stakes, pool, group, labelsById, battles, groupAnswered = group != null }) {
   const podName = baseGroupName(groupId);
@@ -138,7 +140,7 @@ export function weekCardModel({ groupId, stakes, pool, group, labelsById, battle
   const settling = !settled && group?.status === GROUP_STATUS.COMPLETE;
   // WIRE-R-2: voided, expired or gone after its pool closed — never "plays Monday".
   const cancellation = podCancellation({ pool, group, answered: groupAnswered });
-  const refundReason = pool?.refundReason ?? stakes.find((s) => typeof s?.voidReason === 'string')?.voidReason ?? null;
+  const refundReason = pool?.refundReason ?? null;
   const notice = cancellation == null ? null
     : cancellation.refunded ? (RESULTS.reason[refundReason] ?? RESULTS.reasonFallback)
       : WEEK.cancelled;
@@ -347,10 +349,13 @@ export default function YourBacking({ inPlay, accent = LX.energy, onOpenTape, no
   const pods = backedPodsFor(inPlay);
   if (pods.length === 0) return null;
   const groupsById = inPlay?.groupsById ?? {};
+  // The group read has ANSWERED: a document or its absence (null). Not yet
+  // read (no key) and read FAILED (`undefined` — useMyBacking) are not answers (WIRE-D1).
+  const answered = (groupId) => groupsById[groupId] !== undefined;
   // The week's line speaks for the pods that PLAY: a pod cancelled after its
   // pool closed (WIRE-R-2) says so on its own card, and never makes the
   // section read "plays Monday" or a battle day. Only cancelled pods: no line.
-  const playing = pods.filter(({ groupId }) => podCancellation({ pool: inPlay?.poolsById?.[groupId] ?? null, group: groupsById[groupId] ?? null, answered: groupId in groupsById }) == null);
+  const playing = pods.filter(({ groupId }) => podCancellation({ pool: inPlay?.poolsById?.[groupId] ?? null, group: groupsById[groupId] ?? null, answered: answered(groupId) }) == null);
   const allSettled = playing.every(({ groupId }) => SETTLED.has(inPlay?.poolsById?.[groupId]?.status));
   const allComplete = !allSettled && playing.every(({ groupId }) => SETTLED.has(inPlay?.poolsById?.[groupId]?.status) || inPlay?.groupsById?.[groupId]?.status === GROUP_STATUS.COMPLETE);
   // The day from the pods' own banking record (the League's reading — FAB-9); the calendar only while no pod document has been read.
@@ -373,7 +378,7 @@ export default function YourBacking({ inPlay, accent = LX.energy, onOpenTape, no
               stakes={stakes}
               pool={inPlay?.poolsById?.[groupId] ?? null}
               group={inPlay?.groupsById?.[groupId] ?? null}
-              groupAnswered={groupId in groupsById}
+              groupAnswered={answered(groupId)}
               labelsById={inPlay?.labelsById ?? null}
               accent={accent}
               onOpenTape={onOpenTape}
@@ -397,7 +402,7 @@ export default function YourBacking({ inPlay, accent = LX.energy, onOpenTape, no
           stakes={stakes}
           pool={inPlay?.poolsById?.[groupId] ?? null}
           group={inPlay?.groupsById?.[groupId] ?? null}
-          groupAnswered={groupId in groupsById}
+          groupAnswered={answered(groupId)}
           labelsById={inPlay?.labelsById ?? null}
           accent={accent}
           onOpenTape={onOpenTape}
