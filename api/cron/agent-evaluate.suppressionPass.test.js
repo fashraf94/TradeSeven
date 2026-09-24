@@ -46,7 +46,7 @@ describe('R11 — the suppression-path deterministic pass (red-first wiring)', (
   });
 
   it('both call sites thread the FULL argument object (dual-review blind spot: a dropped arg would crash the pass, not a pin)', () => {
-    const ARGS = 'runSuppressionDeterministicPass\\(\\{ db, battleRef, battle, prices, lockedPositions, stockRegimes, statusFeedEntries, pendingNarrations, summary, tournamentCtx, ctx, currentDay, currentScore, marketPosture, dialClamp, momentumData, technicalScoresMap, attributionAgentId, rankingsResult, vwapTicks, stagnationTicks \\}\\)';
+    const ARGS = 'runSuppressionDeterministicPass\\(\\{ db, battleRef, battle, prices, lockedPositions, stockRegimes, statusFeedEntries, pendingNarrations, summary, tournamentCtx, ctx, currentDay, currentScore, marketPosture, dialClamp, momentumData, technicalScoresMap, attributionAgentId, rankingsResult, vwapTicks, stagnationTicks, callsCtx \\}\\)';
     const full = source.match(new RegExp(ARGS, 'g')) || [];
     expect(full.length).toBe(2);
   });

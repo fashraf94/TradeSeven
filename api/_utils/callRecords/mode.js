@@ -67,3 +67,48 @@ export function createCallsContext({ mode, handlerStartMs }) {
     universe: null,
   };
 }
+
+/** Bounded diagnostic list of calls faults on one check. */
+const MAX_FAULTS = 8;
+
+/**
+ * THE ONE WAY THE CRON CALLS INTO THE CALL RECORDS (the captureStep
+ * precedent): inactive → nothing runs at all; active → `fn` runs inside a
+ * catch, so a calls defect costs the check a record, never a decision, a write
+ * or an exit. A fault is a bounded diagnostic and a log line.
+ *
+ * @template T
+ * @param {object} callsCtx
+ * @param {() => T} fn
+ * @returns {T|undefined}
+ */
+export function callsStep(callsCtx, fn) {
+  if (!callsCtx || !callsActive(callsCtx.mode)) return undefined;
+  try {
+    return fn();
+  } catch (err) {
+    noteCallsFault(callsCtx, err);
+    return undefined;
+  }
+}
+
+/** The async twin: awaited, isolated, never rejects. */
+export async function callsStepAsync(callsCtx, fn) {
+  if (!callsCtx || !callsActive(callsCtx.mode)) return undefined;
+  try {
+    return await fn();
+  } catch (err) {
+    noteCallsFault(callsCtx, err);
+    return undefined;
+  }
+}
+
+function noteCallsFault(callsCtx, err) {
+  try {
+    const message = String(err?.message || err).slice(0, 200);
+    const faults = Array.isArray(callsCtx.diag.faults) ? callsCtx.diag.faults : [];
+    if (faults.length < MAX_FAULTS) faults.push(message);
+    callsCtx.diag.faults = faults;
+    console.error(`[calls] fault (isolated — the check is unaffected): ${message}`);
+  } catch { /* the fault recorder itself is best-effort */ }
+}

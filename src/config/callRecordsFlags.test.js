@@ -33,6 +33,9 @@ import { resolveCallRecordsMode } from '../../api/_utils/callRecords/mode.js';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(HERE, 'featureFlags.js'), 'utf8');
 const GUARD = readFileSync(path.join(HERE, 'flagPinGuard.test.js'), 'utf8');
+const CRON = readFileSync(path.join(HERE, '..', '..', 'api', 'cron', 'agent-evaluate.js'), 'utf8');
+/** The cron's CODE — line and block comments removed (a comment may name the flag; code may not read it). */
+const CRON_CODE = CRON.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
 
 describe('CALL_RECORDS_MODE — the pin (BUILD_RULES §2)', () => {
   it("walk step 0: 'off' — no schema property, no reserve, no record read or written", () => {
@@ -63,5 +66,12 @@ describe('CALL_RECORDS_MODE — the pin (BUILD_RULES §2)', () => {
 
   it('the resolver returns the live value (one of the walked states)', () => {
     expect(resolveCallRecordsMode()).toBe(CALL_RECORDS_MODE);
+  });
+
+  it('the cron resolves the mode ONCE per check, through the resolver, and never reads the constant itself', () => {
+    expect(CRON.match(/resolveCallRecordsMode\(\)/g)).toHaveLength(1);
+    expect(CRON).toMatch(/const callsCtx = createCallsContext\(\{ mode: resolveCallRecordsMode\(\), handlerStartMs: cronStartTime \}\);/);
+    expect(CRON_CODE).not.toMatch(/\bCALL_RECORDS_MODE\b/);
+    expect(CRON_CODE).toContain('resolveCallRecordsMode()');
   });
 });

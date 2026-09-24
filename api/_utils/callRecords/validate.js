@@ -296,3 +296,25 @@ export function invalidationReason(row, observation) {
   if (Math.abs(level - entry.px) / entry.px > IMPLAUSIBLE_LEVEL_RATIO) return 'level_implausible';
   return null;
 }
+
+/**
+ * The tool-result seam (model path only, an ACCEPTED tool result): detach the
+ * model's block and validate it once, pre-commit, to decide the entry's
+ * `declarationsPhase`. `structuredClone`, never a JSON round trip: a present
+ * non-finite level (a `1e999` literal parses to Infinity) must survive the
+ * copy to be minted `invalidated`, not silently turned into a malformed null.
+ * An uncloneable value is a malformed block.
+ *
+ * @returns {{ raw: unknown, validation: ReturnType<typeof validateDeclarations>, phase: 'none'|'expected' }}
+ */
+export function captureDeclarations(block, ctx = {}) {
+  let raw;
+  try {
+    raw = block === undefined ? undefined : structuredClone(block);
+  } catch {
+    const validation = { validated: null, removed: [{ source: 'block', index: null, reason: 'malformed_block' }], calls: [], phase: 'none' };
+    return { raw: null, validation, phase: 'none' };
+  }
+  const validation = validateDeclarations(raw, ctx);
+  return { raw, validation, phase: validation.phase };
+}
