@@ -80,7 +80,8 @@ describe('the budget — one clock (row 6)', () => {
     const boundary = start + TIME_BUDGET_MS - TAIL_RESERVE_MS;
     const at = (available) => callsBudget({ handlerStartMs: start, timeBudgetMs: TIME_BUDGET_MS, nowMs: boundary - available, phaseMs: MODEL_PHASE_MS });
     expect(at(4_000)).toMatchObject({ run: true, available: 4_000, tailBoundaryMs: boundary, deadlineMs: boundary });
-    expect(at(3_999)).toMatchObject({ run: false, available: 3_999 });
+    // Below the threshold the clip is what binds: the formula's deadline is the tail boundary, never past it.
+    expect(at(3_999)).toMatchObject({ run: false, available: 3_999, deadlineMs: boundary });
     expect(at(60_000)).toMatchObject({ run: true, deadlineMs: boundary - 60_000 + MODEL_PHASE_MS });
     expect(at(-5)).toMatchObject({ run: false });
   });
@@ -90,7 +91,7 @@ describe('the budget — one clock (row 6)', () => {
     const boundary = start + TIME_BUDGET_MS - TAIL_RESERVE_MS;
     const at = (available) => callsBudget({ handlerStartMs: start, timeBudgetMs: TIME_BUDGET_MS, nowMs: boundary - available, phaseMs: NON_MODEL_PHASE_MS });
     expect(at(2_000)).toMatchObject({ run: true, deadlineMs: boundary });
-    expect(at(1_999)).toMatchObject({ run: false });
+    expect(at(1_999)).toMatchObject({ run: false, deadlineMs: boundary });
     // R3-3's case: an exit reached with 12.1 s left has 100 ms available — skipped, the tail untouched.
     expect(at(100)).toMatchObject({ run: false });
     expect(at(30_000).deadlineMs).toBe(boundary - 30_000 + NON_MODEL_PHASE_MS);
