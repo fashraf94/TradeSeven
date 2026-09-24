@@ -222,7 +222,29 @@ service cloud.firestore {
 
     // AGENT DASHBOARD — User-owned AI trading agents
     match /agents/{agentId} {
-      allow read: if request.auth != null;
+      // OWNER-ONLY READ (pre-flip honesty fix B — Backing spec V1.3 §11 gate
+      // 3). The agent document IS the live WHY the P7 battle-view projection
+      // conceals for non-owners during an active battle — activeRules,
+      // equippedBundleIds, standingLeans, dials, equippedTraits, the deployed
+      // strategy — so an authed-read rule handed every signed-in user, over
+      // the wire, what the projection withholds. Now a client reads only the
+      // documents whose ownerId is its own uid; the field-less failure of
+      // `resource.data.ownerId` on a malformed doc denies (fail closed).
+      //   • LIST queries must carry `where('ownerId', '==', uid)` to be
+      //     admitted (subscribeToUserAgent, ForgeLanding's existence check,
+      //     assembleBoardPrefill all do; the archived leaderboard's unfiltered
+      //     query is denied — a server projection is the path if revived).
+      //   • CPU agents (`cpu-agent-*`, ownerId `cpu-*`) match no client uid:
+      //     server-side (Admin SDK) reads only. Training/casual clones carry
+      //     the PLAYER's ownerId, so the owner's own-id subscriptions stand.
+      //   • Cross-user agent facts reach clients only through projections
+      //     (team-card, battle-view, backing team-labels).
+      //   • Subcollection reads below already required this (their get() on
+      //     the parent); the parent now matches. Writes are unchanged.
+      // Rows: test/rules/agentsOwnerRead.rules.mjs. Client census (every read
+      // site own-scoped): src/services/agentReadCensus.guard.test.js.
+      allow read: if request.auth != null
+                  && resource.data.ownerId == request.auth.uid;
       // Create-side allowlist (Mastery end-of-branch ruling B1/B2, 2026-07-21
       // — the §7.2 hardening the 2026-07-15 discovery deferred): sensitive
       // fields are born at server defaults or not at all, so a crafted
