@@ -2,8 +2,9 @@
 //
 // subscribeGroup's two answers to a listener ERROR (WIRE-D1, the pre-flip
 // fixes 2 review record): a caller that passes `onError` gets the error — so
-// "the read failed" is never "the pod is gone" (Your Backing's cancelled pod);
-// every other caller keeps the `callback(null)` it has always had.
+// "the read failed" is never "the pod is gone" (Your Backing's cancelled pod) —
+// and is never told "gone" by the local cache (WIRE-R-3); every other caller
+// keeps the `callback(null)` it has always had.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -34,10 +35,25 @@ describe('subscribeGroup — a listener error, told apart from a missing documen
     expect(callback).toHaveBeenLastCalledWith({ id: 'g1', status: 'battle' });
   });
 
-  it('without it: every other caller\'s answer is unchanged — an error is `callback(null)`', () => {
+  it('WIRE-R-3 — with `onError`, a "missing" from the local CACHE (offline, nothing cached) is not an answer: only the server\'s says the pod is gone', () => {
+    const callback = vi.fn();
+    subscribeGroup('g1', callback, vi.fn());
+    fs.next({ exists: () => false, metadata: { fromCache: true } });
+    expect(callback).not.toHaveBeenCalled();
+    // A cached DOCUMENT is still the pod.
+    fs.next({ exists: () => true, id: 'g1', data: () => ({ status: 'battle' }), metadata: { fromCache: true } });
+    expect(callback).toHaveBeenLastCalledWith({ id: 'g1', status: 'battle' });
+    fs.next({ exists: () => false, metadata: { fromCache: false } });
+    expect(callback).toHaveBeenLastCalledWith(null);
+  });
+
+  it('without it: every other caller\'s answer is unchanged — an error is `callback(null)`, and so is a cached "missing"', () => {
     const callback = vi.fn();
     subscribeGroup('g1', callback);
     fs.error(new Error('unavailable'));
+    expect(callback).toHaveBeenCalledWith(null);
+    callback.mockClear();
+    fs.next({ exists: () => false, metadata: { fromCache: true } });
     expect(callback).toHaveBeenCalledWith(null);
   });
 });

@@ -74,11 +74,15 @@ export async function fetchLiveComposites(groupId) {
  * unless the caller passes `onError`, which then receives the error INSTEAD:
  * a caller that must tell "the pod is gone" from "the read failed" (Your
  * Backing's cancelled pod — WIRE-D1, the pre-flip fixes 2 review record)
- * passes it; every other caller is unchanged.
+ * passes it; every other caller is unchanged. Such a caller is also never told
+ * "gone" by the local CACHE (WIRE-R-3): offline, the SDK raises a first event
+ * from its cache even with no cached document, which is "not known here", not
+ * "missing" — only the server's answer says a pod is gone.
  */
 export function subscribeGroup(groupId, callback, onError = null) {
   return onSnapshot(doc(db, TOURNAMENT_GROUPS_COLLECTION, groupId), (snapshot) => {
     if (!snapshot.exists()) {
+      if (typeof onError === 'function' && snapshot.metadata?.fromCache === true) return;
       callback(null);
       return;
     }
