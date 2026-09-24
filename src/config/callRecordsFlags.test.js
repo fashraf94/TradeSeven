@@ -17,7 +17,10 @@
 // calls block) and Build 2 (the UI). EACH step moves the first row below in
 // the same commit (a flip that leaves a pin behind reddens every other open PR
 // into main); a rollback moves it back. Nothing else in this file pins a
-// value — the rest are contracts that hold in every state.
+// value — the rest are contracts that hold in every state. The seven cron
+// suites that spread the real flags AND assert exact entry-key lists pin
+// CALL_RECORDS_MODE: 'off' in their own mocks, so the value and this row are
+// the whole flip (the Build 0 report records the dry run: full suite green).
 //
 // Dependency-surface guard (BUILD_RULES §4): the import of
 // api/_utils/callRecords/mode.js below is the runtime guard that the resolver

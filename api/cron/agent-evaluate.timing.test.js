@@ -95,7 +95,9 @@ vi.mock('../_utils/shadowLogger.js', async (importOriginal) => ({
 }));
 // The stamps ON, so "no evidence on a build_timeout entry" is a real exclusion
 // rather than a flag that was off anyway.
-vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({ ...(await importOriginal()), TICK_STAMPS_ENABLED: true }));
+// Cockpit Build 0: the call records are pinned OFF here explicitly (this suite's exact
+// entry-key lists are the off shape), so the shadow flip moves no line here.
+vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({ ...(await importOriginal()), TICK_STAMPS_ENABLED: true, CALL_RECORDS_MODE: 'off' }));
 
 // THE PROMPT BUILDER, doubled (fenced module — doubled in tests only, never
 // edited). The three builders are real everywhere else in the tick; this one

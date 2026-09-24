@@ -2788,6 +2788,12 @@ export const EVAL_DEFERRED_BEAT_ENABLED = false;
  * merges AND the `calls` composite index (firestore.indexes.json) is deployed —
  * never a build PR; the flip moves the pin row in
  * src/config/callRecordsFlags.test.js in the SAME commit (BUILD_RULES §2).
+ * Those two lines are the WHOLE flip: the seven cron suites that spread the
+ * real flags and assert exact entry-key lists pin CALL_RECORDS_MODE: 'off' in
+ * their own mocks (hermetic across the flip — the TICK_CAPTURE_ENABLED
+ * precedent), and the Build 0 report records a dry run of exactly this flip
+ * with the full suite green. The report also lists the rulings the shadow read
+ * waits on (provenance origin, next_check horizons).
  * 'on' waits on Build 1 and Build 2 (spec §1). A rollback is the same line
  * back to 'off': existing records are then neither read nor written.
  *
