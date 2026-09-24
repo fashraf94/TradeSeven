@@ -70,8 +70,13 @@ export const PRE_PHASE_B_ENTRY_KEYS = Object.freeze([
  * (those are Object.assign'd on afterwards, under TICK_STAMPS_ENABLED &&
  * promptBuilt). Under the harness's frozen clock every Date.now() pair is zero,
  * so their values are deterministic: 0 / 0 / FROZEN_NOW.
+ *
+ * `tickMs` (Sep 23, 2026 — eval-cron instrumentation D1) joins them on the same
+ * terms: the tick's wall time, admission (the lock) → the authoritative final
+ * update, composed right after `callMs` and restamped just before that update.
+ * Unconditional, numeric on every written entry, 0 under the frozen clock.
  */
-export const TIMING_ENTRY_KEYS = Object.freeze(['promptBuiltAt', 'buildMs', 'callMs']);
+export const TIMING_ENTRY_KEYS = Object.freeze(['promptBuiltAt', 'buildMs', 'callMs', 'tickMs']);
 
 /**
  * Fail-closed hygiene (Sep 19, 2026) — `holdKind` says WHY this tick's HOLD is

@@ -225,7 +225,8 @@ describe('pin 4 — the fenced decider is inert to the new keys (spec §1.6)', (
   // composes on every entry, plus the timeoutKind it adds inside haikuError.
   // `haikuError` is not on the whitelist at all, so its contents are already
   // unreachable — the key is listed so the source rows below say so out loud.
-  const TIMING_KEYS = ['promptBuiltAt', 'buildMs', 'callMs'];
+  // Eval-cron instrumentation (Sep 23, 2026) adds the fourth, `tickMs` (D1).
+  const TIMING_KEYS = ['promptBuiltAt', 'buildMs', 'callMs', 'tickMs'];
   const ADDITIVE_KEYS = [...TICK_STAMP_KEYS, ...TIMING_KEYS, 'timeoutKind', 'haikuError'];
 
   it('formatRecentEvals reads exactly the eight whitelisted entry keys by dot access and reads the entry no other way (no bracket, destructuring, spread or whole-object pass)', () => {

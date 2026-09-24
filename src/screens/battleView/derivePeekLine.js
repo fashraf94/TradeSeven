@@ -16,6 +16,8 @@
 //   3 checks · no change               a folded run — NO time: its `at` is the
 //                                      run's FIRST member and the card it
 //                                      stands for shows no time either
+//   Check deferred                     a check the loop never reached — the
+//                                      line's own eyebrow, no time, like a run
 //   3:52 PM · I'd hold the energy slot a message, the speaker's own words
 //
 // A CHECK IS NAMED BY ITS SLOT here as everywhere (D-83); a trade keeps its
@@ -77,6 +79,12 @@ export function peekLineFor(item) {
     // (TapeCards.CheckRunLine), so the strip now says exactly what the stream
     // says, which is the whole point of folding first (BUILD_RULES §9).
     return COPY.checksNoChange(item.count);
+  }
+  if (item._type === TAPE_KIND.CHECK_DEFERRED) {
+    // A check the loop never reached: the strip says what its line says —
+    // `Check deferred`, with no time, because the line it stands for
+    // (TapeCards.DeferredCheckLine) shows none either (BUILD_RULES §9).
+    return COPY.checkDeferredEyebrow;
   }
   if (item._type === TAPE_MESSAGE) {
     // A directive is the one message whose LINE is its directive, not its

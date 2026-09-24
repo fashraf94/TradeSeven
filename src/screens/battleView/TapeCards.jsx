@@ -1,6 +1,7 @@
 // src/screens/battleView/TapeCards.jsx
 //
-// The tape's two cards and its one collapsed line — Phase A2 (A2.2, D-72).
+// The tape's two cards and its one collapsed line — Phase A2 (A2.2, D-72) —
+// and the deferred-check line (the eval cron's `check_deferred` beat).
 //
 // Each renders ONE entry built by buildTape.js and nothing else: no fetch, no
 // join, no derivation. Everything they show is either a persisted fact or a
@@ -95,6 +96,13 @@ export const SPEECH_EYEBROW_COLOR = cssVar('text-muted');
  * is neither of those things.
  */
 export const BAGGER_EYEBROW_COLOR = cssVar('game-baggerbomb');
+
+/**
+ * A check the loop never reached (the deferred beat). Nothing was decided at
+ * it, so it wears exactly what an ABSENT check's label wears — one kind of
+ * fact, one colour, read off the map above rather than restated.
+ */
+export const DEFERRED_EYEBROW_COLOR = LABEL_COLOR[WHY_KIND.ABSENT];
 
 const mono = {
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
@@ -348,6 +356,23 @@ export function CheckRunLine({ entry }) {
       style={{ ...record(cssVar('text-muted')), ...mono, ...footnote, gap: 0 }}
     >
       {COPY.checksNoChange(entry.count)}
+    </div>
+  );
+}
+
+/**
+ * A check the loop never reached: the run's time budget ran out before this
+ * battle's turn (the server's `check_deferred` beat). A record like the rest —
+ * the flat shell, a token edge, a mono eyebrow — with one fixed line and no
+ * `Read more`: there is no rationale, no label and no `Woken by`, because no
+ * check ran. Both strings come from the copy module; nothing here is prose.
+ */
+export function DeferredCheckLine({ entry }) {
+  if (!entry) return null;
+  return (
+    <div data-tape-kind="checkDeferred" style={record(DEFERRED_EYEBROW_COLOR)}>
+      <div style={{ ...eyebrow, color: DEFERRED_EYEBROW_COLOR }}>{COPY.checkDeferredEyebrow}</div>
+      <p style={body}>{COPY.checkDeferredLine}</p>
     </div>
   );
 }

@@ -13,7 +13,7 @@ import { buildTape } from './buildTape';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
 import { TAPE_KIND } from './buildTape';
 import { TAPE_MESSAGE } from './scopeTape';
-import { LABEL_COLOR, TRADE_EYEBROW_COLOR, DIRECTIVE_EYEBROW_COLOR, SPEECH_EYEBROW_COLOR, BAGGER_EYEBROW_COLOR } from './TapeCards';
+import { LABEL_COLOR, TRADE_EYEBROW_COLOR, DIRECTIVE_EYEBROW_COLOR, SPEECH_EYEBROW_COLOR, BAGGER_EYEBROW_COLOR, DEFERRED_EYEBROW_COLOR } from './TapeCards';
 import { WHY_KIND } from './selectWhyState';
 
 const AT = '2026-09-01T19:45:00.000Z';
@@ -296,5 +296,36 @@ describe('baggerBubble — the one construction site for the moment (A3.6, hazar
     expect(baggerBubble('NVDA', '', 'Bagger', 1)).toBeNull();
     expect(baggerBubble('NVDA', '   ', 'Bagger', 1)).toBeNull();
     expect(baggerBubble(null, 'x', 'Bagger', 1)).toBeNull();
+  });
+});
+
+describe('the deferred beat — mirrored like any other record (eval-cron D3)', () => {
+  // Built by the REAL builder from the server's beat, like every fixture here.
+  const deferred = () => buildTape({
+    trades: [],
+    statusFeed: [{ kind: 'check_deferred', at: AT, reason: 'budget', runId: AT }],
+    evaluations: [],
+    receipts: null,
+    chatExchanges: [],
+  })[0];
+
+  it('the deferred LINE\'s own two strings and its own token colour — nothing composed', () => {
+    expect(deferred()._type).toBe(TAPE_KIND.CHECK_DEFERRED);
+    expect(bubbleFor(deferred())).toEqual({
+      eyebrow: COPY.checkDeferredEyebrow,
+      line: COPY.checkDeferredLine,
+      eyebrowColor: DEFERRED_EYEBROW_COLOR,
+      isRecord: true,
+    });
+    expect(DEFERRED_EYEBROW_COLOR).toMatch(/^var\(--ft-/);
+  });
+
+  it('MUTATION ROW — as the newest entry it IS the bubble, so the badge and the bubble name one entry', () => {
+    // Without its row the bubble walked back to the check the reader had
+    // already seen while the unread count named the beat (review L2-F2 / L4-F1).
+    const b = deriveBubble([check({ id: 'seen' }), { ...deferred(), id: 'deferred-1' }]);
+    expect(b.id).toBe('deferred-1');
+    expect(b.eyebrow).toBe('Check deferred');
+    expect(b.line).toBe(COPY.checkDeferredLine);
   });
 });

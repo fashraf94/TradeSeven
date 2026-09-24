@@ -1647,8 +1647,8 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
 
   // ── The unread mark (A4, hazard 14; re-sourced flip-prep item 4) ──────────
   //
-  // IT COUNTS WHAT THE TAPE RENDERS. Under the flag the `statusFeed` no longer
-  // feeds the stream at all — `tapeEntries` replaced it (D-72) — so keying the
+  // IT COUNTS WHAT THE TAPE RENDERS. Under the flag the raw `statusFeed` no
+  // longer feeds the stream — `tapeEntries` replaced it (D-72) — so keying the
   // mark on the feed promised "new activity" for events the tape does not show.
   //
   // The claim is STRONGER than the one first written here, which named "six
@@ -1656,8 +1656,11 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // (review L5-F9: that one is hazard 25's, not ruling 9's). The accurate
   // statement is simpler and larger: `api/` writes about thirty distinct
   // `action` values and `buildTape` produces an entry from NONE of them — the
-  // feed is read only by `joinFeedEntry`, for the `↳ from directive` echo on a
-  // trade card. Ruling 9's list (`first_message`, `eval_degraded`,
+  // feed is read by `joinFeedEntry`, for the `↳ from directive` echo on a
+  // trade card, and by `buildDeferredEntries` for the one feed entry that is a
+  // tape record of its own: the eval cron's `check_deferred` beat, which
+  // carries a `kind` and no `action`, and which this mark therefore counts
+  // because the tape renders it. Ruling 9's list (`first_message`, `eval_degraded`,
   // `guardrail_block`, `watchlist_refresh`, the narration twin, a `hold` with
   // a status line) is a sample of that, not the boundary.
   //
