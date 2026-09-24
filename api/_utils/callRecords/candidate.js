@@ -31,8 +31,12 @@ import { bindHorizon, battleExpiryMs } from './horizon.js';
 /** The fields a canonical form leaves out — the mutable state of a call. */
 export const MUTABLE_CALL_FIELDS = Object.freeze(['state', 'stateChangedAt', 'stateSource', 'playerResponse', 'outcome', 'refused']);
 
-/** Provenance reasons (contract §4 `provenance_unresolved`). */
-export const PROVENANCE_REASONS = Object.freeze(['hash_without_watchlist', 'snapshot_corrupt', 'config_hash_missing']);
+/**
+ * Provenance reasons (contract §4 `provenance_unresolved`): each names a
+ * watchlist snapshot that is PRESENT but unusable (founder ruling A-1 — an
+ * absent snapshot is agent_initiative, never unresolved).
+ */
+export const PROVENANCE_REASONS = Object.freeze(['snapshot_corrupt', 'config_hash_missing']);
 
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const nonEmptyString = (v) => typeof v === 'string' && v.length > 0;
@@ -80,14 +84,20 @@ export function canonicalRecord(record) {
 
 /**
  * hypothesisRef + origin from the FROZEN battle context (contract §4, the
- * complete origin rule). Never fetches; never infers origin from a null ref.
+ * complete origin rule, as amended by founder ruling A-1, 2026-09-24). Never
+ * fetches; never infers origin from a null ref.
  *
  *   valid snapshot + a validated version       → versioned { watchlistId, hypothesisVersion }, equipped
  *   valid snapshot + hash (no version)         → legacy { watchlistId, equippedConfigHash }, equipped
  *   valid snapshot, no hash, no version        → null, provenance_unresolved ('config_hash_missing')
- *   a hash without a snapshot                  → null, provenance_unresolved ('hash_without_watchlist')
  *   a corrupt snapshot (or a corrupt version)  → null, provenance_unresolved ('snapshot_corrupt')
- *   nothing frozen at all                      → null, agent_initiative
+ *   NO snapshot (absent or null)               → null, agent_initiative — whatever the config hash says
+ *
+ * Ruling A-1: the manifest's equippedConfigHash exists on every battle created
+ * with the manifest write on — it hashes `equippedWatchlist: null` as well — so
+ * a hash is no evidence of an equipped watchlist. `provenance_unresolved` is
+ * reserved for a snapshot that is PRESENT but unusable (review A-1: the
+ * contract's "hash without watchlist" case made agent_initiative unreachable).
  *
  * The VERSIONED branch reads `agentContext.equippedWatchlist.hypothesisVersion`
  * (a positive integer). HEAD's producer never writes one
@@ -96,13 +106,10 @@ export function canonicalRecord(record) {
  */
 export function resolveProvenance(battle) {
   const snapshot = battle?.agentContext?.equippedWatchlist;
+  // Ruling A-1: no frozen watchlist → the agent's own initiative, regardless of the hash.
+  if (snapshot === undefined || snapshot === null) return { hypothesisRef: null, origin: 'agent_initiative' };
   const hash = battle?.resolvedAgentManifest?.equippedConfigHash;
   const hasHash = nonEmptyString(hash);
-  if (snapshot === undefined || snapshot === null) {
-    return hasHash
-      ? { hypothesisRef: null, origin: 'provenance_unresolved', provenanceReason: 'hash_without_watchlist' }
-      : { hypothesisRef: null, origin: 'agent_initiative' };
-  }
   if (!isPlainObject(snapshot) || !nonEmptyString(snapshot.watchlistId) || !Array.isArray(snapshot.tickers)) {
     return { hypothesisRef: null, origin: 'provenance_unresolved', provenanceReason: 'snapshot_corrupt' };
   }

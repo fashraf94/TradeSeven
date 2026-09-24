@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildMintCandidate, resolveProvenance, mintEvidence, canonicalCall, canonicalRecord, stableStringify, callIdOf,
-  MUTABLE_CALL_FIELDS,
+  MUTABLE_CALL_FIELDS, PROVENANCE_REASONS,
 } from './candidate.js';
 import { DECLARATION_CAPS, jsonBytes } from './validate.js';
 import { buildResolvedAgentManifest } from '../resolvedAgentManifest.js';
@@ -132,40 +132,46 @@ describe('§3.12 row 12 — provenance (the complete origin rule)', () => {
   it('VERSIONED (synthetic — HEAD never writes a version): { watchlistId, hypothesisVersion }, equipped', () => {
     expect(resolveProvenance(withCtx({ ...snap, hypothesisVersion: 3 }, HASH))).toEqual({ hypothesisRef: { watchlistId: 'wl-1', hypothesisVersion: 3 }, origin: 'equipped' });
   });
-  it('UNRESOLVED: a hash without a watchlist; a corrupt snapshot; a corrupt version; a watchlist without a hash', () => {
-    expect(resolveProvenance(withCtx(null, HASH))).toEqual({ hypothesisRef: null, origin: 'provenance_unresolved', provenanceReason: 'hash_without_watchlist' });
+  it('UNRESOLVED only for a PRESENT but unusable snapshot: a corrupt snapshot; a corrupt version; a watchlist without a hash (ruling A-1)', () => {
     expect(resolveProvenance(withCtx({ name: 'no id', tickers: [] }, HASH))).toEqual({ hypothesisRef: null, origin: 'provenance_unresolved', provenanceReason: 'snapshot_corrupt' });
     expect(resolveProvenance(withCtx('wl-1', HASH)).provenanceReason).toBe('snapshot_corrupt');
     expect(resolveProvenance(withCtx({ ...snap, tickers: 'NVDA' }, HASH)).provenanceReason).toBe('snapshot_corrupt');
     expect(resolveProvenance(withCtx({ ...snap, hypothesisVersion: 'v2' }, HASH)).provenanceReason).toBe('snapshot_corrupt');
     expect(resolveProvenance(withCtx(snap, undefined))).toEqual({ hypothesisRef: null, origin: 'provenance_unresolved', provenanceReason: 'config_hash_missing' });
+    // The reason vocabulary names present-but-unusable snapshots only.
+    expect(PROVENANCE_REASONS).toEqual(['snapshot_corrupt', 'config_hash_missing']);
   });
-  it('NULL only when nothing was ever frozen → agent_initiative', () => {
-    expect(resolveProvenance(withCtx(undefined, undefined))).toEqual({ hypothesisRef: null, origin: 'agent_initiative' });
-    expect(resolveProvenance(withCtx(null, undefined))).toEqual({ hypothesisRef: null, origin: 'agent_initiative' });
+  it('NO watchlist snapshot (absent or null) → agent_initiative, hypothesisRef null — with or without a config hash (ruling A-1)', () => {
+    for (const [watchlist, hash] of [[undefined, undefined], [null, undefined], [undefined, HASH], [null, HASH]]) {
+      const res = resolveProvenance(withCtx(watchlist, hash));
+      expect(res).toEqual({ hypothesisRef: null, origin: 'agent_initiative' });
+      expect(res).not.toHaveProperty('provenanceReason');
+    }
   });
-  // PENDING A FOUNDER RULING (review A-1): with MANIFEST_WRITE_ENABLED every
-  // battle is created with a manifest whose equippedConfigHash exists even
-  // when NO watchlist is equipped (the hash covers `equippedWatchlist: null`),
-  // so the spec's rule mints every such call provenance_unresolved /
-  // hash_without_watchlist and agent_initiative is reached only by battles
-  // created before the flag. This row pins today's behavior against the REAL
-  // manifest builder — the code follows spec §3.6 and contract §4 as written;
-  // changing it needs a spec amendment, and this row changes with it.
-  it('A REAL battle manifest without a watchlist → provenance_unresolved (hash_without_watchlist), not agent_initiative [pending ruling A-1]', () => {
+  // FOUNDER RULING A-1 (2026-09-24; review A-1): with MANIFEST_WRITE_ENABLED
+  // every battle is created with a manifest whose equippedConfigHash exists
+  // even when NO watchlist is equipped (the hash covers `equippedWatchlist:
+  // null`). A hash alone is therefore no provenance: a battle without a frozen
+  // watchlist mints agent_initiative. Pinned against the REAL manifest builder
+  // and the shape createAgentBattle writes (`agentContext.equippedWatchlist: null`).
+  it('A REAL battle manifest without a watchlist → agent_initiative, hypothesisRef null — the hash is ignored (ruling A-1)', () => {
     const agentData = { id: 'agent-1', name: 'Agent', archetype: 'momentum', activeRules: [], equippedBundleIds: [], config: { risk: 50 } };
     const manifest = buildResolvedAgentManifest({ agentData, equippedWatchlist: null, gameMode: 'clash', now: FROZEN_NOW });
     expect(manifest.frozenLayers.equippedWatchlist).toBeNull();
     expect(manifest.equippedConfigHash).toMatch(/^[0-9a-f]{64}$/);
     const battle = makeTickBattle({ agentContext: { ...makeTickBattle().agentContext, equippedWatchlist: null }, resolvedAgentManifest: manifest });
-    expect(resolveProvenance(battle)).toEqual({ hypothesisRef: null, origin: 'provenance_unresolved', provenanceReason: 'hash_without_watchlist' });
+    expect(resolveProvenance(battle)).toEqual({ hypothesisRef: null, origin: 'agent_initiative' });
+    // …and the minted call carries it, with no provenanceReason key.
+    const [call] = buildMintCandidate(base({ battle })).calls;
+    expect(call).toMatchObject({ hypothesisRef: null, origin: 'agent_initiative' });
+    expect(call).not.toHaveProperty('provenanceReason');
   });
   it('a frozen watchlist never becomes initiative because its version is absent; the call carries the rule\'s output', () => {
     const c = buildMintCandidate(base({ battle: withCtx(snap, HASH) }));
     expect(c.calls[0]).toMatchObject({ hypothesisRef: { watchlistId: 'wl-1', equippedConfigHash: HASH }, origin: 'equipped' });
     expect(c.calls[0]).not.toHaveProperty('provenanceReason');
-    const u = buildMintCandidate(base({ battle: withCtx(null, HASH) }));
-    expect(u.calls[0]).toMatchObject({ hypothesisRef: null, origin: 'provenance_unresolved', provenanceReason: 'hash_without_watchlist' });
+    const u = buildMintCandidate(base({ battle: withCtx({ ...snap, tickers: 'NVDA' }, HASH) }));
+    expect(u.calls[0]).toMatchObject({ hypothesisRef: null, origin: 'provenance_unresolved', provenanceReason: 'snapshot_corrupt' });
   });
 });
 
