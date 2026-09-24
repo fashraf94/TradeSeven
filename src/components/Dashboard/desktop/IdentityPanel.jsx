@@ -26,6 +26,12 @@ import { getLevelProgressPct } from '../../../constants/agentProgression';
 // Backing Beta PR 4 (design brief rev3 §3): the scouting line's profile home.
 // Renders NOTHING while BACKING_BETA_ENABLED is dark (read at call time inside).
 import ScoutingLine from '../../League/backing/ScoutingLine';
+// Backing desktop layouts (desktop brief rev2 §5): the private record and the
+// trainer beta stats get their desktop home HERE, beside the pitch — the same
+// place the mobile build keeps them (EquipStation, under the line). Private,
+// never a ranking. Renders NOTHING while dark (read at call time inside), and
+// is mounted bare, so the flag-off panel is today's markup byte for byte.
+import BackingStatsEntry from '../../League/backing/BackingStatsEntry';
 
 function Tag({ children, color }) {
   return (
@@ -96,6 +102,8 @@ export default function IdentityPanel({ agent, accent, live, record, winRate, le
 
       {/* the scouting line — the player's own pitch for Backing (dark until the flag) */}
       <ScoutingLine uid={agent?.ownerId} agentName={agentName} accent={accent} />
+      {/* beside it, the private record and the trainer beta stats (dark until the flag) */}
+      <BackingStatsEntry uid={agent?.ownerId} accent={accent} />
 
       {/* career record */}
       <div style={{ padding: '16px 18px', borderRadius: 18, background: CMD.surface, border: `1px solid ${CMD.hair}` }}>

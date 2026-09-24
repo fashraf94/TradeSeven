@@ -34,6 +34,13 @@
 // team's `label` — its primary agent's name — with the player's display name
 // (`secondary`) on the line beneath where the server sent one. Nothing here
 // composes a name from an id; a seat without a label reads "Unnamed team".
+//
+// THE DESKTOP LEFT COLUMN reuses this list whole (Backing desktop layouts):
+// the same rows, the same seal, the same order the endpoint sends — a wider
+// screen shows more at once, never more about a pool. The one addition is
+// `selectedSeat` — the seat whose card is open in the centre column — marked
+// on its row (the viewer's own navigation, not a pool fact). Mobile passes
+// nothing: the markup main ships (backingMobilePin.test.jsx).
 
 import React from 'react';
 import { POOL_STRIP } from '../../../constants/backing';
@@ -47,7 +54,7 @@ import { formatEtClose, teamLabelOf } from './backingStripState';
 
 const REVEALED = new Set(['closed', 'insufficient', 'resolving', 'resolved', 'refunded']);
 
-function SeatRow({ pod, team, revealed, onOpenSeat, accent }) {
+function SeatRow({ pod, team, revealed, onOpenSeat, accent, selected = false }) {
   const name = teamLabelOf(team);
   const secondary = typeof team.secondary === 'string' && team.secondary.length > 0 ? team.secondary : null;
   const agent = { kind: team.isCpu ? 'cpu' : 'human', color: seatColor(team.odUserId, team.isCpu), you: team.isOwnSeat };
@@ -58,9 +65,12 @@ function SeatRow({ pod, team, revealed, onOpenSeat, accent }) {
       role="button"
       tabIndex={0}
       data-backing="seat"
+      aria-current={selected ? 'true' : undefined}
       onClick={() => onOpenSeat?.(pod, team)}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenSeat?.(pod, team); } }}
-      style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '9px 2px', cursor: 'pointer' }}
+      style={selected
+        ? { display: 'flex', alignItems: 'center', gap: 11, padding: '9px 8px', margin: '0 -6px', cursor: 'pointer', borderRadius: 11, background: alpha(accent, 0.09), boxShadow: `inset 2px 0 0 ${accent}` }
+        : { display: 'flex', alignItems: 'center', gap: 11, padding: '9px 2px', cursor: 'pointer' }}
     >
       <AgentAvatar agent={agent} size={32} />
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -84,7 +94,7 @@ function SeatRow({ pod, team, revealed, onOpenSeat, accent }) {
   );
 }
 
-export function PodEntry({ pod, onOpenSeat, accent = LX.energy }) {
+export function PodEntry({ pod, onOpenSeat, accent = LX.energy, selectedSeat = null }) {
   const pool = pod.pool ?? null;
   const open = pool?.status === 'open';
   const revealed = pool != null && REVEALED.has(pool.status);
@@ -120,7 +130,7 @@ export function PodEntry({ pod, onOpenSeat, accent = LX.energy }) {
 
       <div>
         {pod.teams.map((team) => (
-          <SeatRow key={team.odUserId} pod={pod} team={team} revealed={revealed} onOpenSeat={onOpenSeat} accent={accent} />
+          <SeatRow key={team.odUserId} pod={pod} team={team} revealed={revealed} onOpenSeat={onOpenSeat} accent={accent} selected={selectedSeat != null && selectedSeat.groupId === pod.groupId && selectedSeat.odUserId === team.odUserId} />
         ))}
       </div>
 
@@ -161,7 +171,7 @@ export function PodEntry({ pod, onOpenSeat, accent = LX.energy }) {
   );
 }
 
-export default function PodList({ pods, onOpenSeat, accent = LX.energy }) {
+export default function PodList({ pods, onOpenSeat, accent = LX.energy, selectedSeat = null }) {
   const list = Array.isArray(pods) ? pods : [];
   if (list.length === 0) {
     return (
@@ -173,7 +183,7 @@ export default function PodList({ pods, onOpenSeat, accent = LX.energy }) {
   return (
     <div data-backing="pod-list" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <Eyebrow color={LTOKENS.ink3}>{POD_LIST.title}</Eyebrow>
-      {list.map((pod) => <PodEntry key={pod.groupId} pod={pod} onOpenSeat={onOpenSeat} accent={accent} />)}
+      {list.map((pod) => <PodEntry key={pod.groupId} pod={pod} onOpenSeat={onOpenSeat} accent={accent} selectedSeat={selectedSeat} />)}
     </div>
   );
 }

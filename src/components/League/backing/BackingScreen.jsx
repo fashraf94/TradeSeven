@@ -25,6 +25,17 @@
 // stake_control_opened on entering the control — through the fire-and-forget,
 // per-session-deduplicated emitter (backingTelemetry.js). `stake_confirmed`
 // is the server's to write, never this screen's.
+//
+// THE DESKTOP LAYOUT (`viewport="desktop"` — Backing desktop layouts): the
+// same hooks, the same view state and the same events, laid out by
+// BackingDesk — three columns during the window, Your Backing and the results
+// each taking the whole screen. The funnel's events fire on what is ON SCREEN:
+// on mobile the list view shows the pods and Your Backing together; on desktop
+// the pods are the window section's (window_viewed) and Your Backing the week
+// section's (your_backing_viewed); the results section reads the results and
+// the private record only while it is open, and records results_viewed through
+// the results section's own hook. Mobile's markup is main's
+// (backingMobilePin.test.jsx).
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { BACKING_BETA_ENABLED } from '../../../config/featureFlags';
@@ -37,25 +48,46 @@ import useBackingWallet from '../../../hooks/useBackingWallet';
 import useEligibility from '../../../hooks/useEligibility';
 import useMyPitch from '../../../hooks/useMyPitch';
 import useTeamCard from '../../../hooks/useTeamCard';
+import useBackingResults from '../../../hooks/useBackingResults';
+import useMyBackingStats from '../../../hooks/useMyBackingStats';
 import { MonoAttr, PointsMeter, SealRule } from './BackingParts';
 import PodList from './PodList';
 import TeamCard from './TeamCard';
 import StakeControl from './StakeControl';
 import YourBacking, { backedPodsFor } from './YourBacking';
-import BackingResults from './BackingResults';
+import BackingResults, { useResultsViewed } from './BackingResults';
+import BackingDesk, { DESK_SECTION, deskDefaultSection, deskSections } from './BackingDesk';
 import { BACKING_EVENT, dwellSince, emitBackingEvent } from '../../../services/backingTelemetry';
-import { POD_LIST, SCREEN, STRIP, stripLines } from './backingCopy';
-import { STRIP_KIND, backingWeekKeys, deriveStripState } from './backingStripState';
+import { POD_LIST, SCREEN, screenStateLine } from './backingCopy';
+import { backingWeekKeys, deriveStripState } from './backingStripState';
 
 /** The shortest card visit worth a record — one frame; below it is StrictMode's mount-time cleanup, not a person. */
 const MIN_DWELL_MS = 16;
 
-// The header says what the strip says — one mapping (stripLines; R-B-1).
-function headerLine(state) {
-  const lines = stripLines(state);
-  if (lines.kind === STRIP_KIND.QUIET) return STRIP.sub.quiet;
-  return `${lines.head} · ${lines.when}`;
+/** No weeks — a stable empty list for the results hook while the section is not on screen. */
+const NO_WEEKS = Object.freeze([]);
+
+/**
+ * The desktop screen's own reads: the results and the private record, only
+ * while the results section is open (lazy, like the tab it is), and the
+ * window's own stakes for the rail — the strip's derivation over the pod list
+ * alone. Everything else arrives from BackingScreenLive, shared with mobile.
+ */
+function BackingDeskLive(props) {
+  const { uid, pods, section } = props;
+  const resultsShown = section === DESK_SECTION.RESULTS;
+  const results = useBackingResults({ limit: 1, enabled: resultsShown && Boolean(uid) });
+  const myStats = useMyBackingStats(resultsShown && Boolean(uid));
+  useResultsViewed(resultsShown ? results.weeks : NO_WEEKS);
+  const windowState = useMemo(() => deriveStripState({
+    pods: pods.pods, inPlay: null, now: new Date(), backingWeekCloses: pods.data?.backingWeekCloses ?? null,
+  }), [pods.pods, pods.data]);
+  return <BackingDesk {...props} windowState={windowState} results={results} myStats={myStats} />;
 }
+
+// The header says what the strip says — one mapping (screenStateLine, the
+// copy module's; R-B-1). The desktop layout's headers read the same line.
+const headerLine = screenStateLine;
 
 function TopBar({ label, onBack, accent, right }) {
   return (
@@ -82,6 +114,8 @@ function BackingScreenLive({ uid, accent, viewport, onBack, onOpenTape }) {
   const myPitch = useMyPitch(uid, Boolean(uid));
   const [view, setView] = useState({ kind: 'list', groupId: null, odUserId: null });
   const cardQuery = useTeamCard(view.groupId, view.odUserId, view.kind !== 'list');
+  // Desktop only: the section the viewer picked (null — the one the state points to).
+  const [deskSection, setDeskSection] = useState(null);
 
   const state = useMemo(() => deriveStripState({
     pods: pods.pods, inPlay, now: new Date(), backingWeekCloses: pods.data?.backingWeekCloses ?? null,
@@ -89,21 +123,29 @@ function BackingScreenLive({ uid, accent, viewport, onBack, onOpenTape }) {
 
   const pod = view.groupId ? pods.pods.find((p) => p.groupId === view.groupId) ?? null : null;
   const desktop = viewport === 'desktop';
+  const inPlayPods = backedPodsFor(inPlay);
+  const inPlayWeek = inPlayPods.flatMap((p) => p.stakes).find((s) => typeof s?.weekKey === 'string')?.weekKey ?? null;
+  // Desktop: the open section — the viewer's pick while it is still offered,
+  // else the one the strip's state points to.
+  const sections = deskSections(inPlayPods.length);
+  const section = desktop ? (deskSection != null && sections.includes(deskSection) ? deskSection : deskDefaultSection(state, inPlayPods.length)) : null;
+  // What is ON SCREEN. Mobile: the list view shows the pods and Your Backing
+  // together. Desktop: the pods are the window section's; Your Backing the week's.
+  const listShown = desktop ? section === DESK_SECTION.WINDOW : view.kind === 'list';
+  const yourBackingShown = desktop ? section === DESK_SECTION.WEEK : view.kind === 'list';
 
   // THE FUNNEL (§10) — fire-and-forget, deduplicated per session by the
   // emitter, so a re-render or a back-and-forth records nothing twice.
   // window_viewed: the list, once the pod list has answered (its week key).
   useEffect(() => {
-    if (view.kind !== 'list' || !pods.data) return;
+    if (!listShown || !pods.data) return;
     emitBackingEvent(BACKING_EVENT.WINDOW_VIEWED, { props: typeof upcomingWeek === 'string' ? { weekKey: upcomingWeek } : {} });
-  }, [view.kind, pods.data, upcomingWeek]);
+  }, [listShown, pods.data, upcomingWeek]);
   // your_backing_viewed: the list, while Your Backing has a pod to show.
-  const inPlayPods = backedPodsFor(inPlay);
-  const inPlayWeek = inPlayPods.flatMap((p) => p.stakes).find((s) => typeof s?.weekKey === 'string')?.weekKey ?? null;
   useEffect(() => {
-    if (view.kind !== 'list' || inPlayPods.length === 0) return;
+    if (!yourBackingShown || inPlayPods.length === 0) return;
     emitBackingEvent(BACKING_EVENT.YOUR_BACKING_VIEWED, { props: inPlayWeek ? { weekKey: inPlayWeek } : {} });
-  }, [view.kind, inPlayPods.length, inPlayWeek]);
+  }, [yourBackingShown, inPlayPods.length, inPlayWeek]);
   // team_card_opened: recorded on LEAVING the card (to the list, the control
   // or a closed screen), with the dwell — the one event whose prop needs the
   // whole visit. A dwell under one frame is not a visit: the DEV build's
@@ -130,8 +172,40 @@ function BackingScreenLive({ uid, accent, viewport, onBack, onOpenTape }) {
   const toList = () => setView({ kind: 'list', groupId: null, odUserId: null });
   const toCard = () => setView((v) => ({ ...v, kind: 'card' }));
 
+  if (desktop) {
+    // Leaving the window section ends a card visit (team_card_opened records on leaving the card).
+    const onSection = (next) => {
+      setDeskSection(next);
+      if (next !== DESK_SECTION.WINDOW && view.kind !== 'list') toList();
+    };
+    return (
+      <BackingDeskLive
+        accent={accent}
+        uid={uid}
+        pods={pods}
+        state={state}
+        inPlay={inPlay}
+        wallet={wallet}
+        eligibility={eligibility}
+        myPitch={myPitch}
+        view={view}
+        cardQuery={cardQuery}
+        pod={pod}
+        section={section}
+        sections={sections}
+        onSection={onSection}
+        onBack={onBack}
+        onOpenSeat={(groupId, odUserId) => setView({ kind: 'card', groupId, odUserId })}
+        onToStake={() => setView((v) => ({ ...v, kind: 'stake' }))}
+        onToCard={toCard}
+        onBacked={() => pods.refresh()}
+        onOpenTape={onOpenTape}
+      />
+    );
+  }
+
   return (
-    <div data-backing="screen" data-view={view.kind} style={{ position: 'relative', padding: desktop ? '18px 20px 28px' : '16px 18px calc(env(safe-area-inset-bottom, 0px) + 120px)', maxWidth: 720, margin: '0 auto', color: LTOKENS.ink }}>
+    <div data-backing="screen" data-view={view.kind} style={{ position: 'relative', padding: '16px 18px calc(env(safe-area-inset-bottom, 0px) + 120px)', maxWidth: 720, margin: '0 auto', color: LTOKENS.ink }}>
       {view.kind === 'list' && (
         <>
           <TopBar label={SCREEN.back} onBack={onBack} accent={accent} />

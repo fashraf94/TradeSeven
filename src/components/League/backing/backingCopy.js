@@ -187,6 +187,17 @@ export function stripLines(state) {
   return { kind, eyebrow: STRIP.eyebrow[kind], head, when, sub };
 }
 
+/**
+ * The Backing screen's state line — what the strip says, in one line (the
+ * header says what the strip says: one mapping, R-B-1). Shared by the mobile
+ * screen and the desktop layout's headers.
+ */
+export function screenStateLine(state) {
+  const lines = stripLines(state);
+  if (lines.kind === STRIP_KIND.QUIET) return STRIP.sub.quiet;
+  return `${lines.head} · ${lines.when}`;
+}
+
 // The open pool's two lines are Amendment B §B6's, VERBATIM, from
 // src/constants/backing.js POOL_STRIP (BackersCall renders them; DOM-3 /
 // SEAL-4, the PR 4 review record) — no prose of this module's own.
@@ -350,6 +361,7 @@ export const STAKE = Object.freeze({
   remaining: (left) => `${bp(left)} BP left this week`,
   disclosuresTitle: 'Before you confirm',
   confirm: (amount) => `Confirm ${bp(amount)} BP`,
+  stakeBp: (amount) => `${bp(amount)} BP`,
   confirmNone: 'Choose an amount',
   walletPending: 'Reading your points…',
   confirming: 'Confirming…',
@@ -542,6 +554,29 @@ export const RESULTS = Object.freeze({
   loadMore: 'Show earlier weeks',
   loadingMore: 'Loading…',
   tape: 'Open the tape',
+});
+
+// ==================== THE DESKTOP LAYOUTS (Backing desktop build) ====================
+
+/**
+ * The few labels only the desktop layout draws. Everything else on the desktop
+ * surfaces is the copy above, reused — the same words the mobile build ships.
+ *   · topUp — the stake control's designed top-up panel (design brief rev2 §3;
+ *     Amendment C §C2, D-ag): the stake already held, what this Confirm adds,
+ *     and the one stake's new total against the per-team cap. The Confirm line
+ *     itself stays STAKE.addsTo, verbatim.
+ *   · resultsCols — the results card's table heads (Surface E, desktop). The
+ *     cells keep §3's exact phrases (RESULTS.share — never a bare percentage).
+ */
+export const DESK = Object.freeze({
+  topUp: Object.freeze({
+    current: (label) => `Your stake on ${label}`,
+    adding: 'Adding',
+    total: 'New total',
+    ofCap: `of ${bp(PER_TEAM_CAP_BP)}`,
+    preset: (amount) => `+${bp(amount)}`,
+  }),
+  resultsCols: Object.freeze({ team: 'Team', backers: 'Backers', share: 'Share', pays: 'Pays ×' }),
 });
 
 // ==================== THE PRIVATE STATS (PR 5) ====================

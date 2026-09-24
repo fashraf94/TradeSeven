@@ -71,16 +71,14 @@ function DeskStrip({ s, kind, eyebrow, head, when, sub, c, onOpen }) {
           <Icon name="clock" size={12} color={LTOKENS.ink2} />{when}
         </Mono>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 19, fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1.15 }}>{head}</div>
-          {sub && <div style={{ fontSize: 12.5, color: LTOKENS.ink2, lineHeight: 1.45, marginTop: 5 }}>{sub}</div>}
-        </div>
+      {/* The head keeps its line: the action sits beside it while both fit, and wraps under it before it would squeeze it. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 auto', minWidth: 0, fontSize: 18, fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1.15 }}>{head}</div>
         {open ? (
           <span
             data-backing="strip-back"
             style={{
-              display: 'inline-flex', alignItems: 'center', gap: 7, flexShrink: 0, padding: '10px 15px', borderRadius: 12,
+              display: 'inline-flex', alignItems: 'center', gap: 7, flexShrink: 0, marginLeft: 'auto', padding: '9px 14px', borderRadius: 12,
               background: c, color: LTOKENS.bg, fontSize: 13.5, fontWeight: 700, letterSpacing: '-0.01em', whiteSpace: 'nowrap',
               boxShadow: `0 6px 18px ${alpha(c, 0.28)}`,
             }}
@@ -89,6 +87,7 @@ function DeskStrip({ s, kind, eyebrow, head, when, sub, c, onOpen }) {
           </span>
         ) : <Icon name="arrowR" size={18} color={c} />}
       </div>
+      {sub && <div style={{ fontSize: 12.5, color: LTOKENS.ink2, lineHeight: 1.45, marginTop: 6 }}>{sub}</div>}
 
       {kind === STRIP_KIND.STAKED && Array.isArray(s.stakes) && s.stakes.length > 0 && (
         <div data-backing="strip-stakes" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 6, marginTop: 12 }}>
