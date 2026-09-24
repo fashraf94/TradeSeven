@@ -21,8 +21,12 @@ import useMyPitch from '../../../hooks/useMyPitch';
 import PitchEditor from './PitchEditor';
 import { CARD, PROFILE } from './backingCopy';
 
-function ScoutingLineLive({ uid, agentName, accent, compact }) {
-  const pitch = useMyPitch(uid, Boolean(uid));
+/**
+ * The line's home, pure over the pitch (useMyPitch's return) — the live mount
+ * below feeds it; the dev preview page feeds it a local pitch (Backing desktop
+ * layouts: the profile home's desktop state), so the preview shows THIS view.
+ */
+export function ScoutingLineView({ pitch, agentName, accent = LX.energy, compact = false }) {
   return (
     // The compact home (EquipStation's fragment) spaces its sections with their
     // own margins; the framed home sits in a flex column with a gap. The margin
@@ -39,6 +43,11 @@ function ScoutingLineLive({ uid, agentName, accent, compact }) {
       </div>
     </div>
   );
+}
+
+function ScoutingLineLive({ uid, agentName, accent, compact }) {
+  const pitch = useMyPitch(uid, Boolean(uid));
+  return <ScoutingLineView pitch={pitch} agentName={agentName} accent={accent} compact={compact} />;
 }
 
 /** The profile home. Renders nothing — and runs nothing — while the flag is dark. */
