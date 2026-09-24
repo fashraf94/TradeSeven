@@ -31,7 +31,7 @@ import {
   isCpuUserId,
   round2,
 } from '../../src/constants/leagueTournament.js';
-import { resolveDisplayNames } from './tournamentLeaderboard.js';
+import { resolveDisplayNames, displayNameFrom } from './tournamentLeaderboard.js';
 import { toIso } from './tournamentTime.js';
 
 const LOG_PREFIX = '[TournamentRank]';
@@ -95,7 +95,7 @@ export async function applyGroupWeekToRanks(db, { groupId, seats, compositeByPla
         };
         tx.set(ref, {
           odUserId,
-          displayName: displayNames[odUserId] || odUserId,
+          displayName: displayNameFrom(displayNames, odUserId),
           isCpu,
           ...next,
           appliedGroups: { ...(prior?.appliedGroups || {}), [groupId]: event },

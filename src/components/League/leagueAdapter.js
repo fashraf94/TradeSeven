@@ -36,6 +36,7 @@ import {
   GROUP_STATUS,
   GROUP_SIZE,
   bracketRoundKey,
+  playerNameOrNeutral,
 } from '../../constants/leagueTournament';
 
 // CPU ring color — mirrors leagueTokens LX.cpu; the human palette is the fixture
@@ -180,7 +181,10 @@ export function battleToAgentBook(battle) {
 export function buildSeat({ odUserId, isCpu, score, picks = null, battle = null, names = {}, uid = null }) {
   const cpu = isCpu === true || isCpuUserId(odUserId);
   const you = !!uid && odUserId === uid;
-  const name = cpu ? cpuSeatName(odUserId) : (names[odUserId] || odUserId);
+  // A human seat NEVER shows its raw id: the resolved name, else the neutral
+  // "Player" — before the hook's names arrive, after a failed read, or when the
+  // name on file is itself id-shaped (leagueTournament.js playerNameOrNeutral).
+  const name = cpu ? cpuSeatName(odUserId) : playerNameOrNeutral(names[odUserId], odUserId);
   // archetype ONLY from a deployed battle (ruling D) — never fabricated.
   const archetype = battle?.agentContext?.archetype || null;
   const s = num(score);

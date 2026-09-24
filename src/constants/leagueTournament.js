@@ -471,6 +471,69 @@ export function buildCpuUserBoard(rankedPool, n) {
   return board;
 }
 
+// ==================== PLAYER DISPLAY NAMES (users/{uid}) ====================
+//
+// The ONE home of how League code names a HUMAN seat — shared by the client
+// reader (src/services/tournamentGroupService.js fetchDisplayNames), the
+// server reader (api/_utils/tournamentLeaderboard.js resolveDisplayNames) and
+// the seat mapper (src/components/League/leagueAdapter.js buildSeat), so the
+// three cannot drift (BUILD_RULES §9).
+//
+// THE PRODUCTION SHAPE IS NESTED. The one writer of users/{uid} —
+// src/firebase/authService.js, email sign-up and Google sign-in alike —
+// writes `profile: { username, displayName, … }` and no name at the top
+// level. The League readers read the top level only, found nothing, and
+// answered the raw 28-character account id, which every League seat, pod row
+// and month-board row then showed. The rungs, in order: `profile.displayName`,
+// `profile.username`, then the top-level `displayName` / `username` as a
+// legacy fallback — the same rungs, in the same order, as the backing
+// resolver's readProfileNames (api/_utils/backingTeamLabels.js).
+//
+// NEVER A RAW ACCOUNT ID. A seat with no usable name reads as
+// NEUTRAL_PLAYER_NAME, and a candidate that is itself id-shaped is refused —
+// so a name field that holds an id (a month-board row the old writer stored,
+// say) cannot reach a screen either.
+
+/** What a human seat reads as when no usable name is on file — never the raw id. */
+export const NEUTRAL_PLAYER_NAME = 'Player';
+
+/** A Firebase Auth uid: exactly 28 alphanumerics. */
+const ACCOUNT_ID_SHAPE = /^[A-Za-z0-9]{28}$/;
+
+/**
+ * A candidate display name, trimmed — or null when it is not one: not a
+ * string, blank, the seat's own id, a CPU seat id (`cpu-{n}`), or a Firebase
+ * uid's shape. A deliberately blunt belt (the backing resolver's): a player
+ * whose chosen name is exactly 28 alphanumerics falls to the next rung.
+ */
+export function usablePlayerName(text, odUserId = null) {
+  if (typeof text !== 'string') return null;
+  const name = text.trim();
+  if (name.length === 0) return null;
+  if (odUserId != null && name === odUserId) return null;
+  if (cpuNFromUserId(name) != null) return null;
+  if (ACCOUNT_ID_SHAPE.test(name)) return null;
+  return name;
+}
+
+/**
+ * The player's display name from their users/{uid} document — the section
+ * header's rungs — or null when the document holds no usable name. Pure.
+ */
+export function profileDisplayName(userDoc, odUserId = null) {
+  if (!userDoc || typeof userDoc !== 'object') return null;
+  const profile = userDoc.profile && typeof userDoc.profile === 'object' ? userDoc.profile : {};
+  return usablePlayerName(profile.displayName, odUserId)
+    ?? usablePlayerName(profile.username, odUserId)
+    ?? usablePlayerName(userDoc.displayName, odUserId)
+    ?? usablePlayerName(userDoc.username, odUserId);
+}
+
+/** The name a human seat SHOWS: a usable name, else NEUTRAL_PLAYER_NAME. Pure. */
+export function playerNameOrNeutral(name, odUserId = null) {
+  return usablePlayerName(name, odUserId) ?? NEUTRAL_PLAYER_NAME;
+}
+
 // ==================== SELF-SERVE LOBBY (P10 — founder-ruled June 13, 2026) ====================
 //
 // The waiting room BEFORE a group exists. A tournamentGroups doc is born at

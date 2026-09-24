@@ -28,6 +28,7 @@ import {
   monthKeyForGroup,
   cpuDisplayName,
   resolveDisplayNames,
+  displayNameFrom,
   buildGroupWeekRows,
   buildLeaderboardFeeds,
   upsertLeaderboardForGroups,
@@ -160,17 +161,79 @@ describe('cpuDisplayName — derived from the id alone', () => {
   });
 });
 
-describe('resolveDisplayNames', () => {
-  it('users/{uid} username || displayName, falling back to the id; CPUs never hit Firestore', async () => {
-    const { db } = makeDb({
-      'users/founder': { username: 'Flash' },
+describe('resolveDisplayNames — the League name chain (nested profile first, NEVER the id)', () => {
+  // THE PRODUCTION SHAPE (src/firebase/authService.js, the one writer of
+  // users/{uid}): names NESTED under `profile`, none at the top level. This
+  // battery used to seed only a top-level shape production never writes — so a
+  // reader that answered every real player's raw uid passed it.
+  const uid28 = (head) => `${head}${'0'.repeat(27 - head.length)}Z`; // a 28-character Firebase uid
+  const production = (uid, profile) => ({
+    _v: 1,
+    auth: { uid, email: `${uid.toLowerCase()}@example.com` },
+    profile: { avatarUrl: null, bio: null, ...profile },
+    stats: { xp: 0, level: 1 },
+  });
+  /** The battery's db, plus a record of every users/{id} read and a read that fails. */
+  function usersDb(initial, { failing = null } = {}) {
+    const { db: base } = makeDb(initial);
+    const reads = [];
+    const db = {
+      ...base,
+      collection: (name) => {
+        const col = base.collection(name);
+        if (name !== 'users') return col;
+        return {
+          ...col,
+          doc: (id) => {
+            reads.push(id);
+            return id === failing ? { get: async () => { throw new Error('unavailable'); } } : col.doc(id);
+          },
+        };
+      },
+    };
+    return { db, reads };
+  }
+
+  it('profile.displayName, then profile.username; the top level is a legacy fallback only; CPUs never hit Firestore', async () => {
+    const ADA = uid28('Ada');
+    const GRACE = uid28('Grace');
+    const { db, reads } = usersDb({
+      [`users/${ADA}`]: production(ADA, { username: 'ada', displayName: 'Ada L' }),
+      [`users/${GRACE}`]: production(GRACE, { username: 'grace', displayName: '   ' }),    // blank → next rung
+      'users/both': { ...production('both', { username: 'n', displayName: 'Nested' }), displayName: 'Top Level' },
+      'users/founder': { username: 'Flash' },                                            // legacy top-level shapes
       'users/u2': { displayName: 'Player Two' },
     });
-    const names = await resolveDisplayNames(db, ['founder', 'u2', 'u3', 'cpu-1']);
-    expect(names.founder).toBe('Flash');
-    expect(names.u2).toBe('Player Two');
-    expect(names.u3).toBe('u3');
-    expect(names['cpu-1']).toMatch(/^CPU/);
+    const names = await resolveDisplayNames(db, [ADA, GRACE, 'both', 'founder', 'u2', 'cpu-1']);
+    expect(names).toEqual({
+      [ADA]: 'Ada L', [GRACE]: 'grace', both: 'Nested', founder: 'Flash', u2: 'Player Two',
+      'cpu-1': cpuDisplayName('cpu-1'),
+    });
+    expect(reads).not.toContain('cpu-1');
+  });
+
+  it('NEVER the raw id: no document, a nameless profile, an id-valued name and a failed read each read "Player"', async () => {
+    const MISSING = uid28('Missing');
+    const NAMELESS = uid28('Nameless');
+    const SELF = uid28('Self');
+    const FAILS = uid28('Fails');
+    const { db } = usersDb({
+      [`users/${NAMELESS}`]: production(NAMELESS, { username: null, displayName: null }),
+      // a name field that holds an id — its own, another uid's shape, a CPU seat's
+      [`users/${SELF}`]: { ...production(SELF, { username: uid28('Other'), displayName: SELF }), displayName: 'cpu-3' },
+    }, { failing: FAILS });
+    const names = await resolveDisplayNames(db, [MISSING, NAMELESS, SELF, FAILS]);
+    expect(names).toEqual({ [MISSING]: 'Player', [NAMELESS]: 'Player', [SELF]: 'Player', [FAILS]: 'Player' });
+  });
+});
+
+describe('displayNameFrom — one seat\'s name out of a resolved map, never the id', () => {
+  it('the map\'s name; else the CPU\'s derived name; else "Player"', () => {
+    const uid = 'Q8f3kZ2mN7pL4xR9tB1cV6yH0jW5';
+    expect(displayNameFrom({ [uid]: 'Alice' }, uid)).toBe('Alice');
+    expect(displayNameFrom({}, 'cpu-2')).toBe(cpuDisplayName('cpu-2'));
+    expect(displayNameFrom({}, uid)).toBe('Player');
+    expect(displayNameFrom(undefined, uid)).toBe('Player');
   });
 });
 
@@ -384,6 +447,11 @@ describe('buildLeaderboardFeeds — consensus + contrarian (C-1, June 12, 2026)'
     // NVDA (4 holders) is too crowded; COIN (u3, composite 5) is below Q3.
     const { contrarian } = buildLeaderboardFeeds([g], { heldByGroup, displayNames: { u1: 'Alice' } });
     expect(contrarian).toEqual([{ symbol: 'AMD', holders: 1, names: ['Alice'], bestComposite: 100 }]);
+  });
+
+  it('CONTRARIAN names a holder the map misses "Player" — never the raw id (the displayNames default is {})', () => {
+    const { contrarian } = buildLeaderboardFeeds([g], { heldByGroup });
+    expect(contrarian).toEqual([{ symbol: 'AMD', holders: 1, names: ['Player'], bestComposite: 100 }]);
   });
 
   it('DEGRADE HONESTY: a group missing from heldByGroup drops to user-layer-only, never crashes', () => {
