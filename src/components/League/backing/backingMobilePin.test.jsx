@@ -632,6 +632,36 @@ describe('the DESKTOP funnel — each event on its own section, a card visit key
   });
 });
 
+describe('the DESKTOP section — the one the screen was opened on, held; the card closed by any route out of the window (WIRE-2, the desktop review record)', () => {
+  const took = () => funnel.calls.splice(0).map(([event]) => event);
+  it('opened by "Back a team" on a Monday–Friday viewer: the WINDOW, never the week its state points to', async () => {
+    __resetBackingTelemetry(); funnel.calls.length = 0;
+    hooked.pods = podsReply([pod('lobby-w40-a')]);
+    hooked.inPlay = weekInPlay();
+    const c = await mount(<BackingScreen uid="viewer-1" accent={ACCENT} viewport="desktop" initialSection="window" onBack={() => {}} onOpenTape={() => {}} />);
+    expect(c.querySelector('[data-backing="screen"]').getAttribute('data-desk-section')).toBe('window');
+    expect(took()).toEqual(['window_viewed']);
+  });
+  it('a section that moves with the data (none asked for) closes the open card — the window comes back without a stale one', async () => {
+    __resetBackingTelemetry(); funnel.calls.length = 0;
+    hooked.pods = podsReply([pod('lobby-w40-a')]);
+    hooked.inPlay = nothingInPlay;
+    const el = () => <BackingScreen uid="viewer-1" accent={ACCENT} viewport="desktop" onBack={() => {}} onOpenTape={() => {}} />;
+    const c = await mount(el());
+    const { root } = roots[roots.length - 1];
+    expect(c.querySelector('[data-backing="screen"]').getAttribute('data-desk-section')).toBe('window');
+    await press([...c.querySelectorAll('[data-desk-col="pods"] [data-backing="seat"]')].find((x) => x.textContent.includes('Kestrel')));
+    expect(c.querySelector('[data-desk-col="card"] [data-backing="team-card"]')).not.toBeNull();
+    // The week's stakes land: the state points to Your Backing, and the section follows.
+    hooked.inPlay = weekInPlay();
+    await act(async () => { root.render(el()); });
+    for (let i = 0; i < 6; i += 1) await act(async () => { await Promise.resolve(); });
+    expect(c.querySelector('[data-backing="screen"]').getAttribute('data-desk-section')).toBe('week');
+    await press(c.querySelector('[data-backing="desk-sections"] [data-desk-section="window"]'));
+    expect(c.querySelector('[data-desk-col="card"] [data-backing="desk-card-empty"]'), 'no stale card').not.toBeNull();
+  });
+});
+
 describe('the surfaces themselves — pure over their props', () => {
   it('PodList · open below the floor, qualified, revealed, your pod, a slot pod, empty', () => {
     pin('pods/below-floor', ssr(<PodList pods={[pod('g1', { pool: { ...pod('g1').pool, backerProgress: { count: 2, floor: 3, met: false } } })]} onOpenSeat={() => {}} />));
