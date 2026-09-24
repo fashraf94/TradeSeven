@@ -2,7 +2,9 @@
 //
 // Backing Beta PR 4 — the strip's DATA-BOUND mount for the League landing
 // (mobile: LeagueHome's lobby, under the entry center; desktop: the lobby's
-// left rail). Reads BACKING_BETA_ENABLED AT CALL TIME and renders NOTHING
+// centre column, under the draft-slot picker and the Auto-draft card or under
+// the seated hero — the desktop layouts build). Reads BACKING_BETA_ENABLED AT
+// CALL TIME and renders NOTHING
 // while dark — no hook runs, no fetch opens, no subscription starts, no
 // element mounts — so the flag-off landing is byte-identical to today
 // (backingDark.test.jsx pins it).
@@ -21,8 +23,8 @@ import React, { useMemo } from 'react';
 import { BACKING_BETA_ENABLED } from '../../../config/featureFlags';
 import useBackingPods from '../../../hooks/useBackingPods';
 import useMyBacking from '../../../hooks/useMyBacking';
-import BackingStrip from './BackingStrip';
-import { backingWeekKeys, deriveStripState } from './backingStripState';
+import BackingStrip, { DeskStripSlot } from './BackingStrip';
+import { backingWeekKeys, backingWindow, deriveStripState } from './backingStripState';
 
 function LiveStrip({ uid, accent, onOpen, wide }) {
   const pods = useBackingPods(true);
@@ -37,16 +39,19 @@ function LiveStrip({ uid, accent, onOpen, wide }) {
     now: new Date(),
     backingWeekCloses: pods.data?.backingWeekCloses ?? null,
   }), [pods.pods, pods.data, inPlay]);
+  // The window is the pod list's fact, not the strip state's (PLACE-1).
+  const windowOpen = useMemo(() => backingWindow(pods.pods) != null, [pods.pods]);
 
   // Nothing to say yet (first load) or nothing reachable (the list failed):
   // no strip rather than a strip that guesses.
   if (pods.loading && !pods.data) return null;
   if (pods.error && !pods.data) return null;
-  // The strip carries its own spacing on the mobile landing (the rail's flex
-  // gap spaces it on desktop), so a null render leaves no gap behind.
+  // The strip carries its own spacing on the mobile landing (the centre
+  // column's flex gap spaces it on desktop), so a null render leaves no gap behind.
+  if (wide) return <DeskStripSlot state={state} windowOpen={windowOpen} accent={accent} onOpen={onOpen} />;
   return (
-    <div data-backing="strip-slot" style={wide ? undefined : { marginBottom: 18 }}>
-      <BackingStrip state={state} accent={accent} onOpen={onOpen} wide={wide} />
+    <div data-backing="strip-slot" style={{ marginBottom: 18 }}>
+      <BackingStrip state={state} accent={accent} onOpen={onOpen} />
     </div>
   );
 }

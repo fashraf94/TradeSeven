@@ -567,6 +567,10 @@ export const RESULTS = Object.freeze({
  *     itself stays STAKE.addsTo, verbatim.
  *   · resultsCols — the results card's table heads (Surface E, desktop). The
  *     cells keep §3's exact phrases (RESULTS.share — never a bare percentage).
+ *     The last column's head names what its cells hold: "Pays ×" once the pool
+ *     has settled (the realized and the §3 conditional ratios), and "BP backed"
+ *     before that — a settling or void pool's cell is the team's staked BP, and
+ *     a losing or void team never "pays" (HON-2 / HON-6, the PR 5 record).
  */
 export const DESK = Object.freeze({
   topUp: Object.freeze({
@@ -576,7 +580,7 @@ export const DESK = Object.freeze({
     ofCap: `of ${bp(PER_TEAM_CAP_BP)}`,
     preset: (amount) => `+${bp(amount)}`,
   }),
-  resultsCols: Object.freeze({ team: 'Team', backers: 'Backers', share: 'Share', pays: 'Pays ×' }),
+  resultsCols: Object.freeze({ team: 'Team', backers: 'Backers', share: 'Share', pays: 'Pays ×', backed: 'BP backed' }),
 });
 
 // ==================== THE PRIVATE STATS (PR 5) ====================

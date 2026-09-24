@@ -48,6 +48,8 @@ const hooked = vi.hoisted(() => ({
   pods: null, inPlay: null, wallet: null, eligibility: null, pitch: null, cards: {},
   results: null, myStats: null, trainerStats: null, battles: {},
   slots: [], stakeReply: null,
+  // The bodies the telemetry emitter sends, in order (the funnel row below).
+  events: [],
 }));
 
 vi.mock('../../../config/featureFlags', async (importOriginal) => ({
@@ -81,7 +83,7 @@ vi.mock('../../../services/backingService', () => ({
   fetchBackingPods: vi.fn(), fetchTeamCard: vi.fn(), subscribeMyStakes: () => () => {}, subscribePool: () => () => {},
   subscribeWallet: () => () => {}, readEligibility: async () => null, subscribePitch: () => () => {}, fetchTapePod: async () => null,
   fetchTeamLabels: async () => ({ pods: {} }), fetchBackingResults: async () => ({ weeks: [] }), fetchMyBackingStats: async () => null,
-  fetchTrainerStats: async () => null, postBackingEvent: async () => ({ recorded: true }),
+  fetchTrainerStats: async () => null, postBackingEvent: async (body) => { hooked.events.push(body); return { recorded: true }; },
   placeStake: vi.fn(async () => hooked.stakeReply), attestEligibility: vi.fn(async () => ({})), savePitch: vi.fn(async () => ({})),
   newRequestId: () => 'pin-req', BackingApiError: class BackingApiError extends Error {},
 }));
@@ -128,6 +130,7 @@ const TrainerStats = (await import('./TrainerStats')).default;
 const BackingStatsEntry = (await import('./BackingStatsEntry')).default;
 const ScoutingLine = (await import('./ScoutingLine')).default;
 const { deriveStripState } = await import('./backingStripState');
+const { __resetBackingTelemetry } = await import('../../../services/backingTelemetry');
 
 // ═══ the clock and the fixtures (shapes: the preview page, the screenshot harness, the surfaces' own suites) ═══
 const NOW = new Date('2026-09-23T14:00:00.000Z');     // Wed 23 Sep, 10:00 ET
@@ -499,6 +502,95 @@ describe('the Backing screen — mobile: the list, a card, the stake control', (
     pin('screen/card-top-up', c.innerHTML);
     await press(c.querySelector('[data-backing="cta-back"]'));
     pin('screen/stake-top-up', c.innerHTML);
+  });
+});
+
+describe('the mobile funnel — WHICH view emits WHICH event, in order (DARK-1, the desktop review record)', () => {
+  // The desktop build rewired the screen's funnel effects (what is "on
+  // screen" per viewport; the card visit keyed on the seat on screen); on
+  // mobile they must fire exactly as main's do. The ordered bodies the
+  // emitter sends over one mobile journey are pinned like the markup — the
+  // golden row generated on main's code.
+  it('the list → a card → the stake control → back to the card → the list → another card → the list', async () => {
+    __resetBackingTelemetry();
+    hooked.events.length = 0;
+    hooked.pods = podsReply([pod('lobby-w40-a')]);
+    hooked.inPlay = weekInPlay();
+    hooked.results = { ...hooked.results, weeks: [{ weekKey: '2026-W39', pools: [RESULTS.win] }] };
+    let t = NOW.getTime();
+    const tick = (ms) => { t += ms; vi.setSystemTime(new Date(t)); };
+    const seat = (c, name) => [...c.querySelectorAll('[data-backing="seat"]')].find((el) => el.textContent.includes(name));
+    try {
+      const c = await mount(<BackingScreen uid="viewer-1" accent={ACCENT} viewport="mobile" onBack={() => {}} onOpenTape={() => {}} />);
+      tick(1000);
+      await press(seat(c, 'Kestrel'));                                   // the list → Kestrel's card
+      tick(5000);
+      await press(c.querySelector('[data-backing="cta-back"]'));         // → the stake control
+      tick(2000);
+      await press(c.querySelector('[data-backing="screen-back"]'));      // → back to the card
+      tick(3000);
+      await press(c.querySelector('[data-backing="screen-back"]'));      // → the list
+      tick(1000);
+      await press(seat(c, 'Tarn'));                                      // → Tarn's card
+      tick(4000);
+      await press(c.querySelector('[data-backing="screen-back"]'));      // → the list
+      // Not vacuous: the journey saw the window, Your Backing, the results, both cards and the control.
+      const names = hooked.events.map((e) => e.event);
+      for (const e of ['window_viewed', 'your_backing_viewed', 'results_viewed', 'team_card_opened', 'stake_control_opened']) expect(names, e).toContain(e);
+      pin('funnel/mobile-journey', JSON.stringify(hooked.events));
+    } finally {
+      vi.setSystemTime(NOW);
+    }
+  });
+});
+
+describe('the DESKTOP funnel — each event fires on its own section, a card visit is the card on screen (WIRE-2 / WIRE-3, the desktop review record)', () => {
+  // Beside the mobile funnel because this file stands in for every read the
+  // screen makes. No golden (main has no desktop screen): the rows state the
+  // desktop semantics — window_viewed on the window section, your_backing_viewed
+  // on Monday–Friday's, results_viewed on Friday's, never on another; the
+  // screen opens on the section the strip named and stays there; the card
+  // visit lasts while the card is ON SCREEN (the stake control beside it does
+  // not end it; re-selecting the open seat is not a new visit).
+  it('opened on Your Backing, then the window, a card, Back, a re-click, another card, the results', async () => {
+    __resetBackingTelemetry();
+    hooked.events.length = 0;
+    hooked.pods = podsReply([pod('lobby-w40-a')]);
+    hooked.inPlay = weekInPlay();
+    hooked.results = { ...hooked.results, weeks: [{ weekKey: '2026-W39', pools: [RESULTS.win] }] };
+    let t = NOW.getTime();
+    const tick = (ms) => { t += ms; vi.setSystemTime(new Date(t)); };
+    const seat = (c, name) => [...c.querySelectorAll('[data-desk-col="pods"] [data-backing="seat"]')].find((el) => el.textContent.includes(name));
+    const tab = (c, id) => c.querySelector(`[data-backing="desk-sections"] [data-desk-section="${id}"]`);
+    const names = () => hooked.events.map((e) => (e.event === 'team_card_opened' ? `${e.event}:${e.props.odUserId}:${e.props.dwellMs}` : e.props?.odUserId ? `${e.event}:${e.props.odUserId}` : e.event));
+    try {
+      const c = await mount(<BackingScreen uid="viewer-1" accent={ACCENT} viewport="desktop" initialSection="week" onBack={() => {}} onOpenTape={() => {}} />);
+      // The section the strip named, from the first frame — never the window first.
+      expect(c.querySelector('[data-backing="screen"]').getAttribute('data-desk-section')).toBe('week');
+      expect(names()).toEqual(['your_backing_viewed']);
+      await press(tab(c, 'window'));
+      expect(names()).toEqual(['your_backing_viewed', 'window_viewed']);
+      tick(1000);
+      await press(seat(c, 'Kestrel'));
+      tick(5000);
+      await press(c.querySelector('[data-desk-col="card"] [data-backing="cta-back"]'));
+      // The stake control opened BESIDE the card: the visit goes on.
+      expect(c.querySelector('[data-desk-col="right"] [data-backing="stake-control"]')).not.toBeNull();
+      expect(names()).toEqual(['your_backing_viewed', 'window_viewed', 'stake_control_opened:od-a']);
+      tick(2000);
+      await press(seat(c, 'Kestrel'));                          // the open seat again: not a new visit
+      expect(names()).toEqual(['your_backing_viewed', 'window_viewed', 'stake_control_opened:od-a']);
+      tick(1000);
+      await press(seat(c, 'Tarn'));                             // another seat ends Kestrel's visit: 8 s on screen
+      tick(3000);
+      await press(tab(c, 'results'));                           // leaving the window ends Tarn's: 3 s
+      expect(names()).toEqual(['your_backing_viewed', 'window_viewed', 'stake_control_opened:od-a', 'team_card_opened:od-a:8000', 'team_card_opened:od-b:3000', 'results_viewed']);
+      // …and the window comes back without a stale card.
+      await press(tab(c, 'window'));
+      expect(c.querySelector('[data-desk-col="card"] [data-backing="desk-card-empty"]')).not.toBeNull();
+    } finally {
+      vi.setSystemTime(NOW);
+    }
   });
 });
 

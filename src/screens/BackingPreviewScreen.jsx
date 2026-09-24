@@ -74,7 +74,7 @@ import { leagueState } from '../components/League/leagueFixtures';
 import { buildLeagueState } from '../components/League/leagueAdapter';
 import { GROUP_STATUS } from '../constants/leagueTournament';
 import { ELIGIBILITY } from '../hooks/useEligibility';
-import BackingStrip from '../components/League/backing/BackingStrip';
+import BackingStrip, { DeskStripSlot } from '../components/League/backing/BackingStrip';
 import PodList from '../components/League/backing/PodList';
 import TeamCard from '../components/League/backing/TeamCard';
 import StakeControl from '../components/League/backing/StakeControl';
@@ -85,7 +85,7 @@ import BackingResultsCard from '../components/League/backing/BackingResultsCard'
 import MyBackingStats from '../components/League/backing/MyBackingStats';
 import TrainerStats from '../components/League/backing/TrainerStats';
 import { RESULTS, STATS } from '../components/League/backing/backingCopy';
-import { deriveStripState } from '../components/League/backing/backingStripState';
+import { backingWindow, deriveStripState } from '../components/League/backing/backingStripState';
 import { BackingPreviewLitContext } from '../components/League/backing/backingPreview';
 // The desktop layouts — the real components, pure over the page's fixtures.
 import { DeskLobby } from '../components/League/LeagueLobbyDesktop';
@@ -706,13 +706,10 @@ function DeskFrame({ name, width, children }) {
 function DeskLandingStage({ state, onDoor, onLeagueNav, onNote }) {
   const inputs = STRIP_INPUTS[state.kind];
   const stripState = deriveStripState({ pods: inputs.pods, inPlay: inputs.inPlay, now: PREVIEW_NOW, backingWeekCloses: SUNDAY_CLOSE });
-  // The slot exactly as BackingLandingStrip renders it on the desktop landing
-  // (wide, bare — the page's test holds the two byte-equal for every state).
-  const slot = (
-    <div data-backing="strip-slot">
-      <BackingStrip state={stripState} accent={ACCENT} onOpen={onDoor} wide />
-    </div>
-  );
+  // The slot IS BackingLandingStrip's desktop slot — the one composition both
+  // render (DeskStripSlot); the window is the fixture pod list's, as the live
+  // mount reads it (backingWindow).
+  const slot = <DeskStripSlot state={stripState} windowOpen={backingWindow(inputs.pods) != null} accent={ACCENT} onOpen={onDoor} />;
   const slotServices = useMemo(() => ({
     fetchSlotSchedule: async () => ({ slots: DESK_SLOTS }),
     claimSlot: async () => { onNote(NOTHING_SAVED); return {}; },
@@ -871,7 +868,7 @@ export default function BackingPreviewScreen() {
 
   let stage;
   if (state.group === 'desk-landing') {
-    stage = <DeskLandingStage state={state} onDoor={() => select(DESK_DOOR[state.kind])} onLeagueNav={onLeagueNav} onNote={onNote} />;
+    stage = <DeskLandingStage state={state} onDoor={(section) => select(section === DESK_SECTION.WINDOW ? DESK_DOOR.open : DESK_DOOR[state.kind])} onLeagueNav={onLeagueNav} onNote={onNote} />;
   } else if (state.group === 'desk-window' || state.group === 'desk-week' || state.group === 'desk-results') {
     stage = <DeskScreenStage state={state} onNote={onNote} onLeagueNav={onLeagueNav} onOpenTape={onOpenTape} />;
   } else if (state.group === 'desk-profile') {

@@ -68,15 +68,20 @@ const MIN_DWELL_MS = 16;
 const NO_WEEKS = Object.freeze([]);
 
 /**
- * The desktop screen's own reads: the results and the private record, only
- * while the results section is open (lazy, like the tab it is), and the
- * window's own stakes for the rail — the strip's derivation over the pod list
- * alone. Everything else arrives from BackingScreenLive, shared with mobile.
+ * The desktop screen's own reads: the results, on OPEN — as the mobile screen
+ * reads them (its results block heads the list): the reader is the
+ * settle-on-read retry for a completed pod whose Friday settlement failed, so
+ * its cadence is the mobile build's, never the tab's (WIRE-1, the desktop
+ * review record) — while `results_viewed` fires only once the results are ON
+ * SCREEN; the private record, only while the results section is open (a pure
+ * read, lazy like the tab it is); and the window's own stakes for the rail —
+ * the strip's derivation over the pod list alone. Everything else arrives
+ * from BackingScreenLive, shared with mobile.
  */
 function BackingDeskLive(props) {
   const { uid, pods, section } = props;
   const resultsShown = section === DESK_SECTION.RESULTS;
-  const results = useBackingResults({ limit: 1, enabled: resultsShown && Boolean(uid) });
+  const results = useBackingResults({ limit: 1, enabled: Boolean(uid) });
   const myStats = useMyBackingStats(resultsShown && Boolean(uid));
   useResultsViewed(resultsShown ? results.weeks : NO_WEEKS);
   const windowState = useMemo(() => deriveStripState({
@@ -104,7 +109,7 @@ function TopBar({ label, onBack, accent, right }) {
   );
 }
 
-function BackingScreenLive({ uid, accent, viewport, onBack, onOpenTape }) {
+function BackingScreenLive({ uid, accent, viewport, onBack, onOpenTape, initialSection }) {
   const pods = useBackingPods(true);
   const upcomingWeek = pods.data?.baseLayerWeek ?? null;
   // Both weeks — see BackingLandingStrip (DOM-1); read each render (DOM-NOTE-5).
@@ -114,8 +119,10 @@ function BackingScreenLive({ uid, accent, viewport, onBack, onOpenTape }) {
   const myPitch = useMyPitch(uid, Boolean(uid));
   const [view, setView] = useState({ kind: 'list', groupId: null, odUserId: null });
   const cardQuery = useTeamCard(view.groupId, view.odUserId, view.kind !== 'list');
-  // Desktop only: the section the viewer picked (null — the one the state points to).
-  const [deskSection, setDeskSection] = useState(null);
+  // Desktop only: the section asked for — the strip's own (the section its
+  // state points to, or the window for "Back a team") and then the viewer's
+  // tabs. Null — the one the state points to.
+  const [deskSection, setDeskSection] = useState(initialSection ?? null);
 
   const state = useMemo(() => deriveStripState({
     pods: pods.pods, inPlay, now: new Date(), backingWeekCloses: pods.data?.backingWeekCloses ?? null,
@@ -125,10 +132,18 @@ function BackingScreenLive({ uid, accent, viewport, onBack, onOpenTape }) {
   const desktop = viewport === 'desktop';
   const inPlayPods = backedPodsFor(inPlay);
   const inPlayWeek = inPlayPods.flatMap((p) => p.stakes).find((s) => typeof s?.weekKey === 'string')?.weekKey ?? null;
-  // Desktop: the open section — the viewer's pick while it is still offered,
-  // else the one the strip's state points to.
+  // Desktop: the open section — the one asked for while it is offered, AND
+  // while the reads that would offer it are still arriving (the viewer's stake
+  // snapshot, each backed pod's pool): the screen opens on the section the
+  // strip pointed to and stays there as the snapshots land, rather than
+  // opening on the window and jumping (WIRE-2, the desktop review record).
+  // Else the one the state points to.
   const sections = deskSections(inPlayPods.length);
-  const section = desktop ? (deskSection != null && sections.includes(deskSection) ? deskSection : deskDefaultSection(state, inPlayPods.length)) : null;
+  const inPlayArriving = inPlay.loading === true
+    || (Array.isArray(inPlay.stakes) && inPlay.stakes.some((st) => typeof st?.groupId === 'string' && !(st.groupId in (inPlay.poolsById ?? {}))));
+  const section = desktop
+    ? (deskSection != null && (sections.includes(deskSection) || inPlayArriving) ? deskSection : deskDefaultSection(state, inPlayPods.length))
+    : null;
   // What is ON SCREEN. Mobile: the list view shows the pods and Your Backing
   // together. Desktop: the pods are the window section's; Your Backing the week's.
   const listShown = desktop ? section === DESK_SECTION.WINDOW : view.kind === 'list';
@@ -153,16 +168,25 @@ function BackingScreenLive({ uid, accent, viewport, onBack, onOpenTape }) {
   // cleanup would otherwise record a 0 ms dwell and, through the per-session
   // dedup, swallow the real one (WIRE-4, the PR 5 review record). A human
   // cannot leave a card in 16 ms, so no production visit is lost.
+  //
+  // The visit is the card ON SCREEN, keyed on its seat: mobile, the card
+  // view; desktop, the window section with a seat open — the card stays in
+  // the centre beside the stake control, so "Back" does not end the visit,
+  // and re-selecting the open seat is not a new one (WIRE-3, the desktop
+  // review record).
+  const cardSeat = (desktop ? section === DESK_SECTION.WINDOW && view.kind !== 'list' : view.kind === 'card') && view.groupId && view.odUserId
+    ? `${view.groupId}\n${view.odUserId}`
+    : null;
   useEffect(() => {
-    if (view.kind !== 'card' || !view.groupId || !view.odUserId) return undefined;
-    const { groupId, odUserId } = view;
+    if (!cardSeat) return undefined;
+    const [groupId, odUserId] = cardSeat.split('\n');
     const startedAt = Date.now();
     return () => {
       const dwellMs = dwellSince(startedAt);
       if (dwellMs < MIN_DWELL_MS) return;
       emitBackingEvent(BACKING_EVENT.TEAM_CARD_OPENED, { groupId, odUserId, props: { dwellMs } });
     };
-  }, [view]);
+  }, [cardSeat]);
   // stake_control_opened: on entering the control for a seat.
   useEffect(() => {
     if (view.kind !== 'stake' || !view.groupId || !view.odUserId) return;
@@ -171,6 +195,13 @@ function BackingScreenLive({ uid, accent, viewport, onBack, onOpenTape }) {
 
   const toList = () => setView({ kind: 'list', groupId: null, odUserId: null });
   const toCard = () => setView((v) => ({ ...v, kind: 'card' }));
+  // Desktop: the card lives in the window section — leaving it by ANY route
+  // (a tab, or the section falling back as the data moves) closes the card,
+  // so the window never comes back to a stale one (WIRE-2).
+  useEffect(() => {
+    if (!desktop || section === DESK_SECTION.WINDOW) return;
+    setView((v) => (v.kind === 'list' ? v : { kind: 'list', groupId: null, odUserId: null }));
+  }, [desktop, section]);
 
   if (desktop) {
     // Leaving the window section ends a card visit (team_card_opened records on leaving the card).
@@ -195,7 +226,7 @@ function BackingScreenLive({ uid, accent, viewport, onBack, onOpenTape }) {
         sections={sections}
         onSection={onSection}
         onBack={onBack}
-        onOpenSeat={(groupId, odUserId) => setView({ kind: 'card', groupId, odUserId })}
+        onOpenSeat={(groupId, odUserId) => setView((v) => (v.kind === 'card' && v.groupId === groupId && v.odUserId === odUserId ? v : { kind: 'card', groupId, odUserId }))}
         onToStake={() => setView((v) => ({ ...v, kind: 'stake' }))}
         onToCard={toCard}
         onBacked={() => pods.refresh()}
@@ -280,7 +311,7 @@ function BackingScreenLive({ uid, accent, viewport, onBack, onOpenTape }) {
 }
 
 /** The screen. Renders nothing — and runs nothing — while the flag is dark. */
-export default function BackingScreen({ uid, accent = LX.energy, viewport = 'mobile', onBack, onOpenTape }) {
+export default function BackingScreen({ uid, accent = LX.energy, viewport = 'mobile', onBack, onOpenTape, initialSection = null }) {
   if (!BACKING_BETA_ENABLED) return null;
-  return <BackingScreenLive uid={uid} accent={accent} viewport={viewport} onBack={onBack} onOpenTape={onOpenTape} />;
+  return <BackingScreenLive uid={uid} accent={accent} viewport={viewport} onBack={onBack} onOpenTape={onOpenTape} initialSection={initialSection} />;
 }

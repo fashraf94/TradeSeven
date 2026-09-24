@@ -193,12 +193,13 @@ export default function BackingResultsCard({ pod, accent = LX.energy, onOpenTape
   );
 }
 
-/** The desktop card — the same model, as a table (Team · Backers · Share · Pays ×). */
+/** The desktop card — the same model, as a table (Team · Backers · Share · Pays ×, or BP backed before a settlement). */
 export function BackingResultsCardDesk({ pod, accent = LX.energy, onOpenTape = null }) {
   if (!pod || typeof pod !== 'object') return null;
   const { settled, voided, winners, winnerNames, mine, teams, revealed, reasonKey, first, paysCell } = resultsCardModel(pod);
   const color = outcomeColor(pod.outcome, accent);
-  const cols = 'minmax(0, 1.4fr) 96px minmax(0, 1.3fr) 128px';
+  // The team column keeps room for a name at the narrowest desktop widths (PLACE-6); the share phrase wraps.
+  const cols = 'minmax(140px, 1.4fr) 96px minmax(0, 1.3fr) 128px';
   const head = { fontSize: 9, color: LTOKENS.ink3, letterSpacing: '0.12em', textTransform: 'uppercase' };
 
   return (
@@ -249,7 +250,8 @@ export function BackingResultsCardDesk({ pod, accent = LX.energy, onOpenTape = n
             <Mono style={head}>{DESK.resultsCols.team}</Mono>
             <Mono style={{ ...head, textAlign: 'right' }}>{DESK.resultsCols.backers}</Mono>
             <Mono style={{ ...head, textAlign: 'right' }}>{DESK.resultsCols.share}</Mono>
-            <Mono style={{ ...head, textAlign: 'right' }}>{DESK.resultsCols.pays}</Mono>
+            {/* The head names what the cells hold: the ratio once settled, the staked BP before (WIRE-6). */}
+            <Mono style={{ ...head, textAlign: 'right' }}>{settled ? DESK.resultsCols.pays : DESK.resultsCols.backed}</Mono>
           </div>
           {teams.map((t, i) => {
             const name = teamLabelOf(t);

@@ -46,10 +46,11 @@ import YourBacking from './YourBacking';
 import { BackingResultsCardDesk } from './BackingResultsCard';
 import MyBackingStats from './MyBackingStats';
 import { POD_LIST, RESULTS, SCREEN, STAKE, STATS, STRIP, WEEK, screenStateLine, stripLines } from './backingCopy';
-import { STRIP_KIND, stripWindowOpen } from './backingStripState';
+import { DESK_SECTION, STRIP_KIND, backingWindow } from './backingStripState';
 
 /** The three desktop sections, in their header order. */
-export const DESK_SECTION = Object.freeze({ WINDOW: 'window', WEEK: 'week', RESULTS: 'results' });
+// The three sections live beside the strip's states (the strip's action names one); re-exported here.
+export { DESK_SECTION };
 const SECTION_LABEL = Object.freeze({ window: POD_LIST.title, week: WEEK.title, results: RESULTS.title });
 
 /**
@@ -82,6 +83,11 @@ const DESK_STYLE = `
   .bkd-right { padding: 22px 22px 32px; background: ${alpha(LTOKENS.surface, 0.32)}; }
   .bkd-wide { box-sizing: border-box; flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 24px 30px 40px; }
   .bkd-results { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 22px; align-items: start; }
+  /* Last week's two portfolios sit side by side while the card column fits
+     both; narrower, they stack rather than clip the tape's moves (PLACE-6). */
+  @media (max-width: 1365px) {
+    .bkd-card .bk-book { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+  }
   @media (max-width: 1180px) {
     .bkd-grid { grid-template-columns: 340px minmax(0, 1fr) 340px; }
     .bkd-card { padding: 22px 22px 34px; }
@@ -89,7 +95,9 @@ const DESK_STYLE = `
   }
   @media (max-width: 980px) {
     .bkd-grid { grid-template-columns: minmax(0, 1fr); overflow-y: auto; }
-    .bkd-col { height: auto; overflow: visible; border-right: none; }
+    /* Stacked, each column is as tall as its content: min-height back to auto,
+       or a column's content paints over the next one (PLACE-3). */
+    .bkd-col { height: auto; min-height: auto; overflow: visible; border-right: none; }
     .bkd-results { grid-template-columns: minmax(0, 1fr); }
   }
 `;
@@ -211,8 +219,11 @@ function WindowView(props) {
     accent, uid, pods, state, windowState, wallet, eligibility, myPitch, view, cardQuery, pod,
     sections, section, onSection, onBack, onOpenSeat, onToStake, onToCard, onBacked, onOpenTape, services,
   } = props;
-  const lines = stripLines(state);
-  const open = stripWindowOpen(state) || stripWindowOpen(windowState);
+  // The chip is the WINDOW's: shown while any listed pool is open, reading
+  // that window's close — its gate and its words from one derivation, never
+  // the viewer's own strip line (a returning backer's "Settles after Friday's
+  // close" beside open pools; PLACE-5 / WIRE-4 / OBS-2, the desktop review).
+  const win = backingWindow(pods.pods);
   const card = cardQuery?.card ?? null;
   const selectedSeat = view.kind !== 'list' && view.groupId && view.odUserId ? { groupId: view.groupId, odUserId: view.odUserId } : null;
   const staking = view.kind === 'stake' && card != null;
@@ -222,10 +233,10 @@ function WindowView(props) {
       <div className="lg-scroll bkd-col bkd-pods" data-desk-col="pods">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 16 }}>
           <BackLink onBack={onBack} />
-          {open && (
+          {win && (
             <span data-backing="desk-close" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 999, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair2}`, whiteSpace: 'nowrap' }}>
               <Icon name="clock" size={11} color={LTOKENS.ink3} />
-              <Mono style={{ fontSize: 10, color: LTOKENS.ink2, fontWeight: 600, letterSpacing: '0.04em' }}>{lines.when}</Mono>
+              <Mono style={{ fontSize: 10, color: LTOKENS.ink2, fontWeight: 600, letterSpacing: '0.04em' }}>{stripLines(win).when}</Mono>
             </span>
           )}
         </div>
@@ -306,14 +317,18 @@ function WeekView({ accent, inPlay, onOpenTape, now, battlesByGroup, header }) {
 
 function ResultsView({ accent, results, myStats, onOpenTape, header }) {
   const weeks = Array.isArray(results?.weeks) ? results.weeks : [];
+  // "Nothing yet" and "unavailable" are ANSWERS: until a read has answered (a
+  // reply or an error) the section says it is loading — a hook enabled on this
+  // very render has not started yet, and its first commit is no answer (WIRE-5).
+  const resultsAnswered = results?.data != null || results?.error != null;
   return (
     <div className="lg-scroll bkd-wide" data-desk-section-view="results">
       {header}
       <div className="bkd-results">
         <div data-backing="results-section" data-layout="desktop" style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
           <Eyebrow color={LTOKENS.gold}>{RESULTS.eyebrow}</Eyebrow>
-          {results?.loading && weeks.length === 0 && <Mono style={{ fontSize: 11, color: LTOKENS.ink3 }}>{RESULTS.loading}</Mono>}
-          {!results?.loading && weeks.length === 0 && (
+          {(results?.loading || !resultsAnswered) && weeks.length === 0 && <Mono style={{ fontSize: 11, color: LTOKENS.ink3 }}>{RESULTS.loading}</Mono>}
+          {!results?.loading && resultsAnswered && weeks.length === 0 && (
             <div data-backing="results-empty" style={{ padding: '14px 15px', borderRadius: 13, border: `1px dashed ${LTOKENS.hair2}`, fontSize: 12.5, color: LTOKENS.ink2, lineHeight: 1.5 }}>
               {results?.error ? RESULTS.unavailable : RESULTS.empty}
             </div>
@@ -336,8 +351,8 @@ function ResultsView({ accent, results, myStats, onOpenTape, header }) {
           <Eyebrow color={LTOKENS.ink3}>{STATS.eyebrow}</Eyebrow>
           <div style={{ fontSize: 15, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.01em', margin: '4px 0 10px' }}>{STATS.title}</div>
           {myStats?.data ? <MyBackingStats stats={myStats.data} />
-            : myStats?.loading ? <Mono style={{ fontSize: 11, color: LTOKENS.ink3 }}>{STATS.loading}</Mono>
-              : <div role="alert" style={{ fontSize: 12, color: LTOKENS.ink2 }}>{STATS.unavailable}</div>}
+            : myStats?.error ? <div role="alert" style={{ fontSize: 12, color: LTOKENS.ink2 }}>{STATS.unavailable}</div>
+              : <Mono style={{ fontSize: 11, color: LTOKENS.ink3 }}>{STATS.loading}</Mono>}
           <div style={{ marginTop: 10, padding: '6px 9px', borderRadius: 8, background: alpha(LTOKENS.bg, 0.5), display: 'inline-block' }}>
             <Mono style={{ fontSize: 9, color: LTOKENS.ink3, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{STATS.label}</Mono>
           </div>

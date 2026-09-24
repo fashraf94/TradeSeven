@@ -44,7 +44,8 @@ vi.mock('../../../hooks/useMyBacking', () => ({ default: () => ({ stakes: [], po
 vi.mock('../../../hooks/useLeagueState', () => ({ default: () => ({ state: hooked.state, loading: false, isFixtures: false }) }));
 vi.mock('../../../contexts/UserContext', () => ({ useUser: () => ({ user: { uid: 'u1', displayName: 'Alice' } }) }));
 vi.mock('../../../services/tournamentGroupService', () => ({
-  subscribeMyGroup: (_uid, cb) => { if (hooked.myGroup) cb(hooked.myGroup); return () => {}; }, subscribeMyMostRecentVoidedGroup: () => () => {}, subscribeMyTrainingPod: () => () => {},
+  // The real subscription ALWAYS answers — the viewer's group, or null.
+  subscribeMyGroup: (_uid, cb) => { cb(hooked.myGroup ?? null); return () => {}; }, subscribeMyMostRecentVoidedGroup: () => () => {}, subscribeMyTrainingPod: () => () => {},
   subscribeGroup: () => () => {}, getGroup: async () => null, fetchDisplayNames: async () => ({}),
 }));
 vi.mock('../../../services/backingService', () => ({
@@ -90,9 +91,14 @@ const WITH_BRACKET = leagueState('open');
 const props = { onOpenMyGame: () => {}, onOpenTrainingPod: () => {}, hasAgent: true, agentLoadout: null };
 const render = (Landing) => renderToString(React.createElement(Landing, props));
 
-/** The flag-on landing with the strip removed and the label reverted — what "nothing else moves" means. */
+/**
+ * The flag-on landing with the strip removed and the label reverted — what
+ * "nothing else moves" means. The desktop slot is the strip's card and the
+ * lobby rule it brings (a <style>, last); the mobile slot, the strip button.
+ */
 const excise = (html) => html
-  .replace(/<div data-backing="strip-slot"[\s\S]*?<\/button><\/div>/, '')
+  .replace(/<div data-backing="strip-slot"><div data-backing="strip-card"[\s\S]*?<\/style><\/div>/, '')
+  .replace(/<div data-backing="strip-slot"[^>]*><button[\s\S]*?<\/button><\/div>/, '')
   .split('Tap a seat · Predictions').join('Tap a seat to spectate');
 
 const FUNNEL_MARKERS = ['Round 1 · 16', 'Round 2 · 8', 'YOUR PATH', 'width:354px', 'height:384px', 'seats TBD', '+2 below cut', 'FINAL 4'];
@@ -164,13 +170,16 @@ describe('no bracket — the strip and the weekly pods lead; no funnel frame, pl
     expect(off).not.toContain('data-backing');
   });
 
-  it('desktop — unseated: in the centre, directly under the draft-slot picker and the Auto-draft card, above the bracket line', () => {
+  it('desktop — unseated: in the centre, directly under the draft-slot picker and the Auto-draft card, above the bracket line', async () => {
     hooked.state = NO_BRACKET;
     hooked.pods = podsResponse();
+    // Mounted: the strip mounts once the seat subscription has answered (the
+    // slot picker's centre or the waiting room's — WIRE-7), so a server render,
+    // which runs no effect, has no strip to show.
     flag.on = true;
-    const on = render(LeagueLobbyDesktop);
+    const on = (await mount(React.createElement(LeagueLobbyDesktop, props))).innerHTML;
     flag.on = false;
-    const off = render(LeagueLobbyDesktop);
+    const off = (await mount(React.createElement(LeagueLobbyDesktop, props))).innerHTML;
     expect(on).toContain('data-backing="strip"');
     for (const m of ['YOUR PATH TO THE TROPHY', 'Round 1 · 16', 'FINAL 4']) expect(on).not.toContain(m);
     const strip = expectInCentre(on);
@@ -178,13 +187,13 @@ describe('no bracket — the strip and the weekly pods lead; no funnel frame, pl
     expect(strip, 'under the Auto-draft card').toBeGreaterThan(at(on, AUTO_DRAFT));
     expect(strip, 'above the bracket line').toBeLessThan(at(on, BRACKET_LINE));
     // Directly under: nothing of the landing's own sits between the Auto-draft card's close and the strip's slot.
-    expect(on).toMatch(/Auto-draft<\/button><\/div><\/div><div data-backing="strip-slot"><button[^>]*data-backing="strip"/);
+    expect(on).toMatch(/Auto-draft<\/button><\/div><\/div><div data-backing="strip-slot"><div data-backing="strip-card"[^>]*><div data-backing="strip-edge"[^>]*><\/div><button[^>]*data-backing="strip"/);
     // The desktop door, not the mobile strip: the accent edge and — the window open — the primary action.
     expect(on).toContain('data-strip-layout="desktop"');
     expect(on).toContain('data-backing="strip-edge"');
     expect(on).toContain('data-backing="strip-back"');
     // No reserved space: the slot carries no margin of its own (the column's gap spaces it).
-    expect(on).toMatch(/<div data-backing="strip-slot"><button/);
+    expect(on).toMatch(/<div data-backing="strip-slot"><div data-backing="strip-card"/);
     expect(excise(on)).toBe(off);
   });
 
@@ -226,9 +235,9 @@ describe('a bracket exists — the composition is unchanged by the mount; nothin
     hooked.state = WITH_BRACKET;
     hooked.pods = podsResponse();
     flag.on = true;
-    const on = render(LeagueLobbyDesktop);
+    const on = (await mount(React.createElement(LeagueLobbyDesktop, props))).innerHTML;
     flag.on = false;
-    const off = render(LeagueLobbyDesktop);
+    const off = (await mount(React.createElement(LeagueLobbyDesktop, props))).innerHTML;
     expect(excise(on)).toBe(off);
     const strip = expectInCentre(on);
     expect(strip).toBeGreaterThan(at(on, AUTO_DRAFT));

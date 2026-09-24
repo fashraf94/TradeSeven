@@ -71,6 +71,7 @@ const { PodCard } = await import('../components/League/LeaguePod');
 const { leagueState } = await import('../components/League/leagueFixtures');
 const { PREDICTIONS_LABEL, REFUSALS, RESULTS, STATS } = await import('../components/League/backing/backingCopy');
 const { findForbiddenTerm } = await import('../constants/backingLexicon');
+const { backingWindow } = await import('../components/League/backing/backingStripState');
 const BackingLandingStrip = (await import('../components/League/backing/BackingLandingStrip')).default;
 const StakeControl = (await import('../components/League/backing/StakeControl')).default;
 const YourBacking = (await import('../components/League/backing/YourBacking')).default;
@@ -372,7 +373,7 @@ function expectDeskState(page, state) {
   const text = s.textContent;
   switch (state.group) {
     case 'desk-landing': {
-      const strip = s.querySelector('.ld-center [data-backing="strip-slot"] > [data-backing="strip"]');
+      const strip = s.querySelector('.ld-center [data-backing="strip-slot"] > [data-backing="strip-card"] > [data-backing="strip"]');
       expect(strip, `${state.id}: the strip in the centre column's slot`).not.toBeNull();
       expect(strip.getAttribute('data-strip-state')).toBe(state.kind);
       expect(strip.getAttribute('data-strip-layout')).toBe('desktop');
@@ -386,8 +387,14 @@ function expectDeskState(page, state) {
         expect(at).toBeGreaterThan(html.indexOf('Can’t make a slot?'));
       }
       expect(at).toBeLessThan(html.indexOf('The monthly bracket opens when the season locks'));
-      if (state.kind === 'open' || state.kind === 'staked') expect(strip.querySelector('[data-backing="strip-back"]')?.textContent).toBe('Back a team');
-      else expect(strip.querySelector('[data-backing="strip-back"]')).toBeNull();
+      // "Back a team" rides the WINDOW — any open pool in the pod list —
+      // whatever the strip's own state (a returning backer's week strip too;
+      // PLACE-1), as the card's second button, never inside the strip's own.
+      const back = strip.closest('[data-backing="strip-card"]').querySelector('[data-backing="strip-back"]');
+      if (backingWindow(PREVIEW_FIXTURES.strip[state.kind].pods) != null) expect(back?.textContent).toBe('Back a team');
+      else expect(back).toBeNull();
+      if (state.kind === 'week') expect(back?.textContent, 'the week strip, with next week\'s pools open, carries the action').toBe('Back a team');
+      expect(strip.querySelector('[data-backing="strip-back"]')).toBeNull();
       break;
     }
     case 'desk-window': {
@@ -609,8 +616,9 @@ describe('the desktop landing slot — byte-equal to what the real (wide) mount 
       const real = renderToString(<BackingLandingStrip uid="u1" onOpen={() => {}} wide />);
       window.history.replaceState(null, '', `/?preview=backing&state=desk-landing-${kind}-unseated-no-bracket`);
       const html = renderToString(<BackingPreviewScreen />);
-      const slot = html.match(/<div data-backing="strip-slot"[\s\S]*?<\/button><\/div>/)?.[0];
-      expect(real).toMatch(/^<div data-backing="strip-slot"><button[^>]*data-strip-layout="desktop"/);
+      // The desktop slot: the strip's card, then the lobby rule it brings (a <style>, last).
+      const slot = html.match(/<div data-backing="strip-slot"><div data-backing="strip-card"[\s\S]*?<\/style><\/div>/)?.[0];
+      expect(real).toMatch(/^<div data-backing="strip-slot"><div data-backing="strip-card"[^>]*data-strip-layout="desktop"/);
       expect(slot).toBe(real);
     });
   }

@@ -99,7 +99,8 @@ vi.mock('../../../utils/fetchWithAuth', () => ({ fetchWithAuth: fetchSpy }));
 vi.mock('../../../hooks/useLeagueState', () => ({ default: () => ({ state: svc.league ?? leagueState('open'), loading: false, isFixtures: true }) }));
 vi.mock('../../../contexts/UserContext', () => ({ useUser: () => ({ user: { uid: 'viewer-1', displayName: 'Viewer' } }) }));
 vi.mock('../../../services/tournamentGroupService', () => ({
-  subscribeMyGroup: (_uid, cb) => { if (svc.myGroup) cb(svc.myGroup); return () => {}; }, subscribeMyMostRecentVoidedGroup: () => () => {}, subscribeMyTrainingPod: () => () => {},
+  // The real subscription ALWAYS answers — the viewer's group, or null.
+  subscribeMyGroup: (_uid, cb) => { cb(svc.myGroup ?? null); return () => {}; }, subscribeMyMostRecentVoidedGroup: () => () => {}, subscribeMyTrainingPod: () => () => {},
   subscribeGroup: (_groupId, cb) => { if (svc.snapshots) cb(null); return () => {}; }, getGroup: async () => null, fetchDisplayNames: async () => ({}),
 }));
 vi.mock('../../../services/leagueSignals', () => ({ logLeagueSignal: () => {} }));
@@ -222,8 +223,10 @@ describe('flag OFF — the League renders as it does today', () => {
     const lit = await mount(<BackingScreen uid="viewer-1" viewport="desktop" onBack={() => {}} onOpenTape={() => {}} />);
     expect(lit.querySelector('[data-layout="desktop"][data-backing="screen"]')).not.toBeNull();
     expect(svc.calls.filter((c) => c === 'fetchBackingPods')).toHaveLength(1);
-    // The results and the private record are read only when their section is open.
-    expect(svc.calls).not.toContain('fetchBackingResults');
+    // The results are read on OPEN, as the mobile screen reads them — the
+    // settle-on-read retry keeps the mobile build's cadence (WIRE-1); the
+    // private record, a pure read, only when its section is open.
+    expect(svc.calls.filter((c) => c === 'fetchBackingResults')).toHaveLength(1);
     expect(svc.calls).not.toContain('fetchMyBackingStats');
   });
 
@@ -420,7 +423,44 @@ describe('flag ON — the same mounts light up (the pin is not vacuous)', () => 
     expect(container.querySelector('.ld-rail-right [data-backing="strip"]')).toBeNull();
     expect(strip.getAttribute('data-strip-layout')).toBe('desktop');
     expect(strip.textContent).toContain('Backing open · 1 pod');
-    expect(strip.querySelector('[data-backing="strip-back"]')?.textContent).toBe('Back a team');
+    // The action is the strip card's SECOND button — a sibling, never nested in the strip's own.
+    const card = strip.closest('[data-backing="strip-card"]');
+    expect(card.querySelector('[data-backing="strip-back"]')?.textContent).toBe('Back a team');
+    expect(strip.querySelector('[data-backing="strip-back"]')).toBeNull();
+    expect(container.querySelectorAll('.ld-center [data-backing="strip"]')).toHaveLength(1);
+  });
+
+  it('desktop: "Back a team" opens the Backing screen on the WINDOW, whatever the strip\'s own section — and the host is a dialog that Escape closes (PLACE-1, PLACE-7)', async () => {
+    flag.on = true;
+    const container = await mount(<LeagueLobbyDesktop {...homeProps} />);
+    await act(async () => { container.querySelector('[data-backing="strip-back"]').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    for (let i = 0; i < 4; i += 1) await act(async () => { await Promise.resolve(); });
+    const host = container.querySelector('[data-backing="desk-host"]');
+    expect(host.getAttribute('role')).toBe('dialog');
+    expect(host.getAttribute('aria-modal')).toBe('true');
+    expect(host.querySelector('[data-backing="screen"]').getAttribute('data-desk-section')).toBe('window');
+    expect(document.activeElement).toBe(host);
+    await act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    expect(container.querySelector('[data-backing="desk-host"]')).toBeNull();
+  });
+
+  it('desktop: a SEATED viewer\'s strip mounts ONCE, in the waiting room — one pod-list read, not one under the slot picker and another under the waiting room (WIRE-7)', async () => {
+    flag.on = true;
+    // The seat lands AFTER the first paint, as a Firestore snapshot does.
+    let answer = null;
+    const groupSvc = await import('../../../services/tournamentGroupService');
+    const spy = vi.spyOn(groupSvc, 'subscribeMyGroup').mockImplementation((_uid, cb) => { answer = cb; return () => {}; });
+    try {
+      const container = await mount(<LeagueLobbyDesktop {...homeProps} />);
+      expect(container.querySelector('[data-backing="strip"]'), 'no strip before the seat is known').toBeNull();
+      await act(async () => { answer({ id: 'wk-real-1', status: 'battle' }); });
+      for (let i = 0; i < 6; i += 1) await act(async () => { await Promise.resolve(); });
+      expect(container.querySelector('.ld-center [data-backing="strip"]')).not.toBeNull();
+      expect(container.textContent).toContain('Watch a live game');
+      expect(svc.calls.filter((c) => c === 'fetchBackingPods')).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('desktop: the strip opens the Backing screen FULL-WINDOW in its three-column layout — pods, card, your backing', async () => {

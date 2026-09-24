@@ -56,15 +56,27 @@ export const STRIP_KIND = Object.freeze({
 });
 
 /**
- * Is the backing window open, as far as a strip state can say? The window
- * state itself, or the viewer's staked window with a pool still open (its
- * latest close is set). A staked window whose every pool already closed at
- * its fire is not — nothing is left to back there. Read by the desktop strip
- * for its "Back a team" action; derives nothing new from the pool.
+ * The desktop Backing screen's three sections (Backing desktop layouts): the
+ * window, Monday–Friday's Your Backing, Friday's results. Here, beside the
+ * strip's states, so the desktop strip can name the section its "Back a team"
+ * action opens without importing the screen.
  */
-export function stripWindowOpen(state) {
-  const kind = state?.kind;
-  return kind === STRIP_KIND.OPEN || (kind === STRIP_KIND.STAKED && typeof state?.closesAt === 'string' && state.closesAt.length > 0);
+export const DESK_SECTION = Object.freeze({ WINDOW: 'window', WEEK: 'week', RESULTS: 'results' });
+
+/**
+ * The backing window, from the pod list alone: open while ANY listed pool is
+ * open — whatever the viewer's own strip state says (a returning backer's
+ * week, a stake already closed at its slot fire) — closing at the latest of
+ * those pools' closes, the OPEN state's own figure. Null when no listed pool
+ * is open. The desktop strip's "Back a team" action and the Backing screen's
+ * close chip both read it: one source for "the window is open" and for its
+ * close (BUILD_RULES §9; PLACE-1 / PLACE-5, the desktop review record). It
+ * derives nothing the pod list does not already say.
+ */
+export function backingWindow(pods) {
+  const open = (Array.isArray(pods) ? pods : []).filter((p) => p?.pool?.status === 'open');
+  if (open.length === 0) return null;
+  return { kind: STRIP_KIND.OPEN, pods: open.length, closesAt: latestIso(open.map((p) => p.pool?.closesAt)) };
 }
 
 /** Pool statuses that mean the stakes have settled or been voided. */

@@ -47,6 +47,7 @@ import DeskSeasonRail from './DeskSeasonRail';
 // markup byte for byte (backingDark.test.jsx pins it against main's).
 import BackingLandingStrip from './backing/BackingLandingStrip';
 import BackingScreen from './backing/BackingScreen';
+import { SCREEN } from './backing/backingCopy';
 import { fetchTapePod } from '../../services/backingService';
 
 const ACCENT = LX.energy; // teal — the league energy accent (tournament surface)
@@ -249,7 +250,7 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
   // object reference each render.
   const [selectedPodId, setSelectedPodId] = React.useState(null);
   const [spec, setSpec] = React.useState(null);            // { pod, focusId }
-  const [backing, setBacking] = React.useState(false);     // the Backing overlay (opened only by the strip)
+  const [backing, setBacking] = React.useState(null);      // the Backing overlay — { section } — opened only by the strip
 
   // Active Training Game (build spec §4) — a member-scoped real-time listener,
   // the SAME proven subscription the mobile training tab uses. uid is derived
@@ -267,12 +268,19 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
   // conditional MyGameBar (no game → no bar) and the no-game slot-picker center.
   // Fixture mode has no myGroup, so the bar simply hides there.
   const [activeGroup, setActiveGroup] = React.useState(null);
+  // Whose seat the subscription has ANSWERED for (it always answers: the
+  // group, or null). The Backing strip mounts once the centre it rides is
+  // known — the slot picker's or the waiting room's — so a seated viewer's
+  // strip mounts ONCE, in its place, rather than under the slot picker first
+  // and again under the waiting room (two pod-list requests, two sets of
+  // stake listeners; WIRE-7, the desktop review record).
+  const [seatFor, setSeatFor] = React.useState(null);
   // Bound to the SAME activeGroup that supplies `status` at the WhileYouWait
   // mount below (BUILD_RULES §9). One hook for the surface, not one per pod.
   const preOpen = usePreOpenPhase(activeGroup);
   React.useEffect(() => {
     if (!uid) { setActiveGroup(null); return undefined; }
-    return subscribeMyGroup(uid, setActiveGroup);
+    return subscribeMyGroup(uid, (group) => { setActiveGroup(group); setSeatFor(uid); });
   }, [uid]);
 
   // Derived (never stale): the docked pod from the live state, or null.
@@ -290,13 +298,15 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
   // for DeskPodPanel when a pod is docked, so the tab has to survive up here.
   const [railTab, setRailTab] = React.useState('field');
   const openSpectate = (pod, focusId) => { if (!pod) return; setSpec({ pod, focusId }); signal('spectate-open', { podId: pod.id, focusId }); };
-  // Backing: the strip opens the overlay; a card's tape link closes it and
-  // opens Spectate on the COMPLETED week's real pod (backingService.fetchTapePod).
-  const openBacking = () => { setSpec(null); setBacking(true); };
+  // Backing: the strip opens the overlay, on the section it names (its own
+  // state's, or the window for "Back a team"); a card's tape link closes it
+  // and opens Spectate on the COMPLETED week's real pod (backingService.fetchTapePod).
+  const openBacking = (section) => { setSpec(null); setBacking({ section: typeof section === 'string' ? section : null }); };
+  const closeBacking = () => setBacking(null);
   const openTape = async (groupId, focusId) => {
     try {
       const pod = await fetchTapePod(groupId, uid);
-      if (pod) { setBacking(false); openSpectate(pod, focusId); }
+      if (pod) { setBacking(null); openSpectate(pod, focusId); }
     } catch (err) {
       console.warn('[LeagueLobbyDesktop] tape unavailable:', err?.message);
     }
@@ -310,9 +320,24 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
     setTab(next);
   };
 
+  // The full-window host is a dialog: Escape closes it, and it takes focus
+  // when it opens (PLACE-7). It opens only from the strip — never while dark,
+  // so neither runs anything then.
+  const hostRef = React.useRef(null);
+  const hostOpen = Boolean(backing) && !spec;
+  React.useEffect(() => {
+    if (!hostOpen) return undefined;
+    hostRef.current?.focus();
+    const onKey = (e) => { if (e.key === 'Escape') setBacking(null); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [hostOpen]);
+
   // The strip's mount — the centre column's own slot, under the entry (see
-  // DeskLobby). A component that renders null while dark: no element, no gap.
-  const backingSlot = <BackingLandingStrip uid={uid} accent={ACCENT} onOpen={openBacking} wide />;
+  // DeskLobby), once the seat is known (WIRE-7 above). A component that
+  // renders null while dark: no element, no gap.
+  const seatKnown = !uid || seatFor === uid;
+  const backingSlot = seatKnown ? <BackingLandingStrip uid={uid} accent={ACCENT} onOpen={openBacking} wide /> : null;
 
   return (
     <DeskLobby
@@ -349,9 +374,9 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
       )}
       {/* the Backing screen — full-window, its own three columns (desktop
           layout); opened only by the strip, so never while dark */}
-      {backing && !spec && (
-        <div data-backing="desk-host" style={{ position: 'fixed', inset: 0, zIndex: 1000, background: LTOKENS.bg, color: LTOKENS.ink }}>
-          <BackingScreen uid={uid} accent={ACCENT} viewport="desktop" onBack={() => setBacking(false)} onOpenTape={openTape} />
+      {hostOpen && (
+        <div ref={hostRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={SCREEN.eyebrow} data-backing="desk-host" style={{ position: 'fixed', inset: 0, zIndex: 1000, background: LTOKENS.bg, color: LTOKENS.ink, outline: 'none' }}>
+          <BackingScreen uid={uid} accent={ACCENT} viewport="desktop" initialSection={backing.section} onBack={closeBacking} onOpenTape={openTape} />
         </div>
       )}
     </DeskLobby>

@@ -16,7 +16,7 @@ import { describe, it, expect } from 'vitest';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
 import BackingResultsCard, { BackingResultsCardDesk, stakeOutcomeWords } from './BackingResultsCard';
-import { RESULTS } from './backingCopy';
+import { DESK, RESULTS } from './backingCopy';
 import { findForbiddenTerm } from '../../../constants/backingLexicon';
 
 // D-af (Amendment C §C1): the projection names every team — `label` the
@@ -229,6 +229,17 @@ describe('the desktop card — the same facts as a table, from the same model (B
     expect(html).toContain('paid 714 BP');
     expect(html).not.toContain('715');
     expect(html).toContain('data-layout="desktop"');
+  });
+
+  it('the last column\'s head names what its cells hold — "Pays ×" only once the pool has settled; before that the cells are staked BP and the head says so (WIRE-6: a void or settling team never "pays")', () => {
+    const headOf = (pod) => deskText(pod).match(/Team Backers Share (.+?) /)?.[1] ?? null;
+    expect(deskText(PODS.settled)).toContain(`Team Backers Share ${DESK.resultsCols.pays}`);
+    for (const name of ['refunded', 'insufficient', 'settling']) {
+      const t = deskText(PODS[name]);
+      expect(t, `${name}: the head over staked BP`).toContain(`Team Backers Share ${DESK.resultsCols.backed}`);
+      expect(t, `${name}: no "Pays ×" over a figure that is not a ratio`).not.toContain(DESK.resultsCols.pays);
+      expect(headOf(PODS[name])).not.toBeNull();
+    }
   });
 
   for (const [name, pod] of Object.entries(PODS)) {

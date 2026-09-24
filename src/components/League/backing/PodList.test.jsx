@@ -222,10 +222,25 @@ describe('D-af — the seats are named by the SERVER (Amendment C §C1)', () => 
 describe('SEAL at desktop width — the window side by side leaks nothing (the leaky pool renders byte-equal to the clean one)', () => {
   // Distinctive figures, so none can pass for a legitimate number on these
   // surfaces (the 1,000 allowance, the 500 cap, the viewer's own 250).
-  const LEAKED_POOL = { potTotal: 1234, uniqueBackers: 47, teamsBacked: 4, paysX: 6.43, sharePct: 61, backerCount: 47 };
+  //
+  // ANTI-SORTED (SEAL-2, the desktop review record): the leaked figures run
+  // AGAINST the list's own order, non-monotone in both directions — across the
+  // three pods (the pot: 1,234 · 4,321 · 321) and across each pod's four seats
+  // (a team's stake: 777 · 555 · 888 · 666) — so an order derived from any one
+  // of them (busiest pod first, most backed team first, biggest payout first,
+  // or the reverse) moves the leaky render away from the clean one, whose
+  // figures are absent. A fixture already in "most backed first" order could
+  // not see such a sort.
+  const LEAKED_POOLS = {
+    'g-leak': { potTotal: 1234, uniqueBackers: 47, teamsBacked: 4, paysX: 6.43, sharePct: 61, backerCount: 47 },
+    'g-high': { potTotal: 4321, uniqueBackers: 83, teamsBacked: 4, paysX: 7.19, sharePct: 57, backerCount: 83 },
+    'g-low': { potTotal: 321, uniqueBackers: 29, teamsBacked: 3, paysX: 5.87, sharePct: 53, backerCount: 29 },
+  };
   const LEAKED_TEAMS = {
-    'od-a': { stakeTotal: 777, backerCount: 13, paysX: 6.43, sharePct: 61, won: false },
-    'od-b': { stakeTotal: 555, backerCount: 11, paysX: 2.19, sharePct: 39, won: false },
+    'od-a': { stakeTotal: 777, backerCount: 13, paysX: 3.71, sharePct: 27, won: false },
+    'od-b': { stakeTotal: 555, backerCount: 11, paysX: 5.29, sharePct: 19, won: false },
+    'cpu-1': { stakeTotal: 888, backerCount: 17, paysX: 3.23, sharePct: 31, won: false },
+    'cpu-2': { stakeTotal: 666, backerCount: 12, paysX: 4.35, sharePct: 23, won: false },
   };
   const CARD = {
     groupId: 'g-leak', odUserId: 'od-a', viewerUid: 'viewer-1',
@@ -234,15 +249,16 @@ describe('SEAL at desktop width — the window side by side leaks nothing (the l
       agent: { name: 'Shadow', archetype: 'momentum_chaser', archetypeLabel: 'Trend Follower', approach: 'Rides the trend.', traitCount: 4, ruleCount: 7 } },
     known: null, lastWeek: null,
   };
-  const pool = (leaky) => ({ status: 'open', backerProgress: { count: 2, floor: 3, met: false }, teamSpread: { met: true }, closesAt: SUNDAY_CLOSE, closeReason: 'clock', ...(leaky ? LEAKED_POOL : {}) });
-  const leakyPod = (leaky) => openPod('g-leak', {
-    pool: pool(leaky),
+  const pool = (groupId, leaky) => ({ status: 'open', backerProgress: { count: 2, floor: 3, met: false }, teamSpread: { met: true }, closesAt: SUNDAY_CLOSE, closeReason: 'clock', ...(leaky ? LEAKED_POOLS[groupId] : {}) });
+  const podOf = (groupId, leaky, myStakes = []) => openPod(groupId, {
+    pool: pool(groupId, leaky),
     teams: teams(leaky ? LEAKED_TEAMS : {}),
-    myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', teamLabel: 'Shadow', amount: 250, status: 'live' }],
+    myStakes,
   });
+  const leakyPod = (leaky) => podOf('g-leak', leaky, [{ stakeId: 's1', teamOdUserId: 'od-a', teamLabel: 'Shadow', amount: 250, status: 'live' }]);
   const desk = (leaky, view) => {
     const p = leakyPod(leaky);
-    const pods = { data: { backingWeekCloses: SUNDAY_CLOSE }, pods: [p, openPod('g-other')], loading: false, error: null };
+    const pods = { data: { backingWeekCloses: SUNDAY_CLOSE }, pods: [p, podOf('g-high', leaky), podOf('g-low', leaky)], loading: false, error: null };
     const now = new Date('2026-09-23T14:00:00.000Z');
     return renderToString(
       <BackingDesk
@@ -276,7 +292,7 @@ describe('SEAL at desktop width — the window side by side leaks nothing (the l
       expect(leaky).toBe(clean);
       // …and, as a belt, none of the leaked figures is in the visible text.
       const t = text(leaky);
-      for (const figure of ['1,234', '1234', '777', '555', '6.43', '2.19', '61%', '39%', '47', '13 backers', '11 backers']) {
+      for (const figure of ['1,234', '1234', '4,321', '4321', '777', '555', '888', '666', '6.43', '7.19', '5.87', '3.71', '5.29', '3.23', '4.35', '61%', '57%', '53%', '27%', '19%', '31%', '23%', '47', '83', '13 backers', '11 backers', '17 backers', '12 backers']) {
         expect(t, `leaked "${figure}" while open, at desktop width`).not.toContain(figure);
       }
     });
@@ -284,8 +300,18 @@ describe('SEAL at desktop width — the window side by side leaks nothing (the l
 
   it('the desktop strip over the leaky pod list is the clean strip, byte for byte — never a pot, a count above three, a payout', () => {
     const now = new Date('2026-09-23T14:00:00.000Z');
-    const strip = (leaky) => renderToString(<BackingStrip wide state={deriveStripState({ pods: [leakyPod(leaky)], inPlay: null, now, backingWeekCloses: SUNDAY_CLOSE })} onOpen={() => {}} />);
+    // Two staked pods, the smaller pot first (SEAL-2): an order of the stake
+    // rows derived from a pod's pot moves the leaky strip away from the clean one.
+    const stakedPods = (leaky) => [
+      podOf('g-low', leaky, [{ stakeId: 's2', teamOdUserId: 'od-b', teamLabel: 'Kestrel', amount: 100, status: 'live' }]),
+      podOf('g-high', leaky, [{ stakeId: 's3', teamOdUserId: 'cpu-1', teamLabel: 'CPU — Trend Follower', amount: 200, status: 'live' }]),
+    ];
+    const strip = (leaky) => renderToString(<BackingStrip wide state={deriveStripState({ pods: stakedPods(leaky), inPlay: null, now, backingWeekCloses: SUNDAY_CLOSE })} onOpen={() => {}} />);
     expect(strip(false)).toContain('data-strip-layout="desktop"');
+    expect(strip(false)).toContain('data-backing="strip-stakes"');
     expect(strip(true)).toBe(strip(false));
+    // …and over the single leaky pod the list opens with, the open strip.
+    const one = (leaky) => renderToString(<BackingStrip wide state={deriveStripState({ pods: [leakyPod(leaky), podOf('g-high', leaky)], inPlay: null, now, backingWeekCloses: SUNDAY_CLOSE })} onOpen={() => {}} />);
+    expect(one(true)).toBe(one(false));
   });
 });

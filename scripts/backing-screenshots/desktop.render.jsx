@@ -48,7 +48,8 @@ vi.mock('../../src/config/featureFlags', async (importOriginal) => ({
 vi.mock('../../src/hooks/useLeagueState', () => ({ default: () => ({ state: hooked.league, loading: false, isFixtures: false }) }));
 vi.mock('../../src/contexts/UserContext', () => ({ useUser: () => ({ user: { uid: 'u1', displayName: 'Alice' } }) }));
 vi.mock('../../src/services/tournamentGroupService', () => ({
-  subscribeMyGroup: (_uid, cb) => { if (hooked.myGroup) cb(hooked.myGroup); return () => {}; },
+  // The real subscription ALWAYS answers — the viewer's group, or null.
+  subscribeMyGroup: (_uid, cb) => { cb(hooked.myGroup ?? null); return () => {}; },
   subscribeMyMostRecentVoidedGroup: () => () => {},
   subscribeMyTrainingPod: (_uid, cb) => { if (hooked.trainingPod) cb(hooked.trainingPod); return () => {}; },
   subscribeGroup: () => () => {}, getGroup: async () => null, fetchDisplayNames: async () => ({}), subscribeLeaderboard: () => () => {},
@@ -88,7 +89,7 @@ const IdentityPanel = (await import('../../src/components/Dashboard/desktop/Iden
 const { ELIGIBILITY } = await import('../../src/hooks/useEligibility');
 const { leagueState } = await import('../../src/components/League/leagueFixtures');
 const { buildLeagueState } = await import('../../src/components/League/leagueAdapter');
-const { LTOKENS } = await import('../../src/components/League/leagueTokens');
+const { LTOKENS, LX } = await import('../../src/components/League/leagueTokens');
 
 // ── the page shell: the League's tokens and stylesheet, the app's fonts, 1440×900 ──
 const CSS = ['src/theme/tokens.css', 'src/components/League/league.css'].map((f) => readFileSync(path.join(REPO, f), 'utf8')).join('\n');
@@ -436,7 +437,7 @@ describe('the private record and the trainer stats — their desktop home, besid
     <AppFrame screen="dashboard">
       <div style={{ height: '900px', padding: '22px 30px', background: LTOKENS.bg }}>
         <div style={{ width: '300px', height: '100%', overflowY: 'auto' }} className="lg-scroll">
-          <IdentityPanel agent={agent} accent="#5EEAD4" live={false} record="4-3" winRate={57} levelConfig={{ label: 'Starter' }} nextLevelInfo={{ label: 'Partner' }} onOpenRecord={() => {}} />
+          <IdentityPanel agent={agent} accent={LX.energy} live={false} record="4-3" winRate={57} levelConfig={{ label: 'Starter' }} nextLevelInfo={{ label: 'Partner' }} onOpenRecord={() => {}} />
         </div>
       </div>
     </AppFrame>

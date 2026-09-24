@@ -35,6 +35,10 @@
     "sha256": "52cd163b360fac00bec64a6f1d771c91f3943919ebb98729e9a6b1d544b307b1",
     "length": 19302
   },
+  "funnel/mobile-journey": {
+    "sha256": "4386b891227df4435f3fad1320037ca65b0c859cd733aea9ad32c7ab0d1c31ab",
+    "length": 510
+  },
   "landing-strip/between": {
     "sha256": "290757f5d28d051b277b7c64cb2c9ad9b2b01c5f3098443dc5f16539a8cb65c8",
     "length": 2481
