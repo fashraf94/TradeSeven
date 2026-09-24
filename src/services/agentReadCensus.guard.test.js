@@ -24,12 +24,25 @@
 //     construction, never a bare scan; and the dead leaderboard reader, which
 //     the rule now denies, degrades to [] rather than throwing.
 //
+//   · THE LITERAL SWEEP — the HANDLE regex reads only `collection(db, 'agents')`
+//     / `doc(db, 'agents', id)` shapes (the independent "find a screen this
+//     breaks" reviewer's finding, docs/audits/20260924_HONESTY_GATE3_DISCOVERY.md
+//     §5): it is blind to `doc(db, 'agents', fn())`, a template-literal path,
+//     `collectionGroup('agents')`, the compat `db.collection('agents')` or a
+//     second Firestore instance. So a third row pins the SET of files that
+//     carry the literal string `'agents'` / `"agents"` / `` `agents/ `` at all
+//     (comments stripped) — every spelling a handle can take still names the
+//     collection by its literal. STATED LIMIT: a computed string (`'age' +
+//     'nts'`) escapes both rows; nothing in src/ does that today.
+//
 // MUTATION CHECK: add `collection(db, 'agents')` to a new file, or drop the
 // ownerId filter from subscribeToUserAgent → a row reds.
 //
 // Subcollection handles (agents/{id}/rules, /bundles, /battlePatterns) are OUT
-// of this census: their rules already required the parent's ownerId to match
-// (the get() in each subcollection rule), and this change did not touch them.
+// of the handle census: their rules already required the parent's ownerId to
+// match (the get() in each subcollection rule), and this change did not touch
+// them. The literal sweep still lists their files, so a top-level read added
+// to one of them cannot hide behind its subcollection literals.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -53,7 +66,8 @@ const CENSUS = Object.freeze({
   },
   'components/Forge/ForgeLanding.jsx': {
     handles: 1, listQueries: 1,
-    evidence: 'the default-tab existence check: where(ownerId == user.uid).',
+    evidence: 'the default-tab existence check: where(ownerId == user.uid) — own-scoped; and the file is DEAD besides: '
+      + 'no live importer (ForgeWorkshop.jsx:3 replaced it; the reviewer\'s finding, record §5).',
   },
   'services/tournamentGroupService.js': {
     handles: 1, listQueries: 1,
@@ -78,6 +92,16 @@ const CENSUS = Object.freeze({
 const UNFILTERED_ALLOWED = Object.freeze({
   'services/agentService.js': ['createAgent', 'seedTestAgent', 'getLeaderboard', 'getLeaderboard'],
 });
+
+// Files that carry the literal collection name at all (comments stripped): the
+// census files, plus the three that touch only SUBcollections today.
+const LITERAL_FILES = Object.freeze([
+  ...Object.keys(CENSUS),
+  'hooks/useForge.js',          // agents/{id}/bundles only
+  'screens/SeasonReview.jsx',   // agents/{id}/bundles/{deployBundleId} only
+  'utils/dimensionMapper.js',   // agents/{id}/rules + /bundles only
+]);
+const LITERAL = /'agents'|"agents"|`agents[/`]/; // NOT global: .test() must not carry lastIndex across files
 
 const HANDLE = /\b(collection|doc)\(\s*db\s*,\s*(?:'agents'|"agents"|AGENTS_COLLECTION)\s*(?:,\s*[^,()]+\s*)?\)/g;
 const LIST = /\bcollection\(\s*db\s*,\s*(?:'agents'|"agents"|AGENTS_COLLECTION)\s*\)/g;
@@ -137,6 +161,14 @@ describe('SOURCE CENSUS — every client `agents` handle is own-scoped (or dead)
     expect(callers).toEqual([]);
     const importers = live.filter(([, src]) => /AgentLeaderboardTab/.test(src)).map(([rel]) => rel);
     expect(importers).toEqual([]);
+  });
+
+  it('THE LITERAL SWEEP — the set of files naming the `agents` collection by its literal, in any spelling, is exactly the census files plus the three subcollection-only files', () => {
+    const carrying = files
+      .filter((f) => LITERAL.test(stripComments(readFileSync(f, 'utf8'))))
+      .map((f) => path.relative(SRC, f))
+      .sort();
+    expect(carrying).toEqual([...LITERAL_FILES].sort());
   });
 
   it('no client file reads an agent by ANOTHER user\'s id — every by-id handle is keyed on the signed-in user\'s own agent (pinned by file)', () => {
