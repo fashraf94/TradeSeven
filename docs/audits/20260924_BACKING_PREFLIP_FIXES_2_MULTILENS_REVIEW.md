@@ -13,7 +13,7 @@
 | **Placement (N3)** | **Holds** — on every one of 100 mounted mobile landing states the strip sits directly under the Auto-draft card (unseated) or the hero's honesty line (seated), never below "Watch a live game" or the bracket line, the desktop's logic mirrored. **Fixed:** its spacing (the slot's own margin stacked with the column's gap — 14 px above / 32 below; now the column's gap, as on desktop: 14 / 14 — PLACE-B1), and the words around the sealed row (PLACE-A1 the first-week line was false for most returning trainers; A2 "This week" named next week's pool; A3 the seal outlasted the close; A4 the line at 2.91:1; A5 the row's wrap). |
 | **Wiring** | **Fixed:** the results reader dropped a pod — and its week, for good — when a re-read failed (WIRE-E1), and answered stale copies beside a contradicting pool (E3); the strip's close re-read disarmed every later close after one failed read (WIRE-R-1) and never followed up a pool still open (C1); a failed or cache-only group read could print "This pod was cancelled — your stake will be returned." over a pod in battle (WIRE-D1, WIRE-R-3), and a later failure could un-know a pod known to be voided (PLACE-R-1); two refund sentences for one pool (WIRE-D2, §9); the seal had no week bound (WIRE-A2) and a dev pod sealed the production record (WIRE-A3). |
 | **Findings** | **38 findings** across the four lenses (the SEAL lens 4 — one out of lens; DARK 6; PLACEMENT 15; WIRING 13). The refuters **CONFIRMED 37** and **PARTIALLY REFUTED 1** (WIRE-A2 — its stalled-week sub-claim: that seal is true), refuted four proposed fixes or sub-claims (SEAL-A1's re-read variant, SEAL-A2's padding, DARK-N2's reassurance, DARK-N4's read half), re-rated two (PLACE-A1 MAJOR → MINOR, PLACE-D5 NOTE → MINOR), and **added 17** (§3). Five findings surfaced in two lenses and are disposed once: WIRE-A1 = PLACE-A1, WIRE-D1 = PLACE-D1, WIRE-D2 = PLACE-D5, WIRE-D3(c) = PLACE-D2, DARK-N5 = PLACE-B1. |
-| **Fixed in this branch** | Every in-branch CONFIRMED finding rated MINOR or above, and every refuter-added in-branch MINOR, is fixed; every behavioural fix carries a row, and each fix's rows were mutation-checked — 54 mutants, 53 red, 1 partial by design (§6). |
+| **Fixed in this branch** | Every in-branch CONFIRMED finding rated MINOR or above, and every refuter-added in-branch MINOR, is fixed; every behavioural fix carries a row, and each fix's rows were mutation-checked — 55 mutants, 54 red, 1 partial by design (§6). |
 | **For separate tasking** | The lobby's pre-existing overlap at ≤1024px with the flag off — **reported again, as the prompt requires** (it is on `main` today); and 15 more items (§9). |
 | **For the founder** | The pre-existing exclusion-flag exposure (SEAL-A3 / SEAL-R-3); the copy of the first-week and sealed lines (the reply cannot tell a first week from an unbacked one); the one extra mobile render per "no seat" answer (DARK-N1, the desktop's accepted WIRE-7 cost); the spacing ruling (PLACE-B1 — the goldens' 20 moved rows also drop the slot's margin). (§10) |
 
@@ -142,7 +142,7 @@ Run by the coordinator's pass (§6) — each mutant on its own `git archive 42e7
 
 ## 6. Per-fix guard checks — the coordinator's mutation pass (LAST, on `42e7819c`)
 
-54 mutants — the prompt's two, every one of the build's own fixes, and every review fix — each on its own `git archive 42e7819c` extraction under `scratchpad/mut/trees/`, discarded after; a mutant is caught only when every NAMED row goes red. **53 RED, 1 PARTIAL (by design), 0 GREEN.**
+55 mutants — the prompt's two, every one of the build's own fixes, and every review fix — each on its own `git archive` extraction under `scratchpad/mut/trees/` (54 of `42e7819c`; A17 of this record's commit, whose code is the same), discarded after; a mutant is caught only when every NAMED row goes red. **54 RED, 1 PARTIAL (by design), 0 GREEN.**
 
 | Fix | Mutant | Red | Named rows that went red |
 | --- | --- | --- | --- |
@@ -162,6 +162,7 @@ Run by the coordinator's pass (§6) — each mutant on its own `git archive 42e7
 | | A14 SEAL-R-1 (the pods query unscoped) | 1 | "SEAL-R-1" |
 | | A15 PLACE-A1 back ("No closed weeks yet") | 1 | "PLACE-A1 / WIRE-A1 …" |
 | | A16 PLACE-A4 back (the line in the box, ink3) | 1 | "PLACE-A1 / WIRE-A1 …" |
+| | A17 PLACE-A2 back (the sealed row names "This week") | 1 | "PLACE-A1 / WIRE-A1 …" |
 | B · N3 | B1 the strip mounted back below "Watch a live game" (the prompt's) | 17 | see §4 |
 | | B2 the waiting room's slot below "Watch a live game" | 4 | "mobile — seated: directly under the waiting room"; "desktop — seated: … directly under the waiting room" |
 | | B3 the mobile seat gate removed | 2 | "mobile: a SEATED viewer's strip mounts ONCE"; "a server render of the mobile landing carries no strip" |
