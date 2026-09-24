@@ -254,6 +254,27 @@ export function listablePod(group) {
   return true;
 }
 
+/**
+ * A `live` copy of the viewer's stake that the pool AS ANSWERED says cannot
+ * still be live (the pre-flip cleanup's review record, WIRING-1). Every
+ * transition out of `open` other than to `closed` / `resolving` moves every
+ * live stake in the SAME transaction (`insufficient` / `refunded` void them,
+ * `resolved` settles them), and a close voids a stake on a seat missing from
+ * the frozen `teams[]` — so such a copy predates a transition the reading
+ * request did not see: another request's close or settlement landing between
+ * its stakes query and its pool read. Zero cost in the steady state: an open
+ * pool, or a closed one's stakes on its frozen teams, contradict nothing.
+ * Pure. ONE predicate for both readers of the viewer's stakes — the pod list
+ * (api/tournament/backing-pools.js) and the results reader
+ * (api/backing/results.js, WIRING-1's twin) — so the two cannot drift on
+ * when a copy is stale (§9).
+ */
+export function liveStakeContradicts(pool, stake) {
+  if (stake?.status !== STAKE_STATUS.LIVE || pool == null || pool.status === POOL_STATUS.OPEN) return false;
+  if (pool.status !== POOL_STATUS.CLOSED && pool.status !== POOL_STATUS.RESOLVING) return true;
+  return Array.isArray(pool.teams) && !pool.teams.some((t) => t.odUserId === stake.teamOdUserId);
+}
+
 /** The `backingPools/{poolId}` document reference. */
 export function poolRefFor(db, group) {
   return db.collection(BACKING_POOLS_COLLECTION).doc(poolIdFor(group));

@@ -49,7 +49,7 @@ vi.mock('../_utils/firebaseAdmin.js', () => ({ getFirebaseAdmin: () => DB.db }))
 
 const { makeInMemoryDb } = await import('../_utils/__fixtures__/inMemoryFirestore.js');
 const { default: handler, DEFAULT_WEEKS, MAX_WEEKS, SETTLE_ON_READ_SKIP, settleOnRead } = await import('./results.js');
-const { BACKING_POOLS_COLLECTION, BACKING_STAKES_COLLECTION, POOL_STATUS, STAKE_STATUS, totalsFromStakes } = await import('../_utils/backingPools.js');
+const { BACKING_POOLS_COLLECTION, BACKING_STAKES_COLLECTION, POOL_STATUS, STAKE_STATUS, closePool, totalsFromStakes } = await import('../_utils/backingPools.js');
 const { BACKING_WALLETS_COLLECTION } = await import('../_utils/backingWallet.js');
 const { SETTLEMENT_SOURCE } = await import('../_utils/backingSettlement.js');
 const { GROUP_STATUS, round2 } = await import('../../src/constants/leagueTournament.js');
@@ -447,5 +447,139 @@ describe('D-af — the winner line and the team rows are named by the SERVER (Am
     const res = await get();
     expect(res.body.weeks.map((w) => w.weekKey)).toEqual(['2026-W40', '2026-W39']);
     expect(DB.readLog.filter(([ch, p]) => ch === 'get' && p === 'agents')).toHaveLength(1);
+  });
+});
+
+// ============================================================================
+describe('WIRING-15 and WIRING-1\'s twin — the viewer\'s stakes are answered as they stand AFTER the pool (the pre-flip cleanup\'s review record; the pod list\'s rule, mirrored)', () => {
+  const stakeReads = () => DB.readLog.filter(([channel, p]) => channel === 'get' && p.startsWith(`${BACKING_STAKES_COLLECTION}/`));
+  const OPEN_PAST_CLOSE = { teams: undefined, potTotal: undefined, uniqueBackers: undefined, teamsBacked: undefined };
+
+  /**
+   * The Nth read of pool `id`'s document runs `first` BEFORE it answers —
+   * ANOTHER request's close or settlement landing at exactly that read,
+   * against the same store (the pod list suite's closeOnPoolRead, widened).
+   */
+  function onPoolRead(id, n, first) {
+    const realCollection = DB.db.collection;
+    const realDb = { ...DB.db, collection: realCollection };
+    let reads = 0;
+    DB.db.collection = (name) => {
+      const col = realCollection(name);
+      if (name !== BACKING_POOLS_COLLECTION) return col;
+      return {
+        ...col,
+        doc: (docId) => {
+          const ref = col.doc(docId);
+          if (docId !== id) return ref;
+          return { ...ref, get: async () => { if ((reads += 1) === n) await first(realDb); return ref.get(); } };
+        },
+      };
+    };
+  }
+  const anotherClose = (groupId) => async (realDb) => {
+    await closePool(realDb, { id: groupId, ...DB.store.get(`tournamentGroups/${groupId}`) }, NOW);
+  };
+
+  // ── ORDERING 1: another request's close (or settlement) lands between the stakes query and the pool read ──
+  it('WIRING-1\'s twin — ANOTHER request\'s close commits between the stakes query and the pool read: the pool already says insufficient, nothing here moved it, and the live copy it contradicts is RE-READ — voided, with its reason (one pod, and the weeks path)', async () => {
+    const world = () => makeInMemoryDb(pod('g-thin', { status: POOL_STATUS.OPEN, stakes: BOOK().slice(0, 2), poolOver: OPEN_PAST_CLOSE }));
+    DB = world();
+    onPoolRead('g-thin', 1, anotherClose('g-thin'));
+    const res = await get({ groupId: 'g-thin' });
+    expect(spy.settlePool).not.toHaveBeenCalled();
+    expect(poolOf('g-thin').status).toBe(POOL_STATUS.INSUFFICIENT);
+    expect(res.body.pod).toMatchObject({ status: POOL_STATUS.INSUFFICIENT, outcome: 'insufficient', myNet: null });
+    expect(res.body.pod.myStakes[0]).toMatchObject({ stakeId: 'v1', status: STAKE_STATUS.VOIDED, voidReason: 'insufficient', net: 0, payout: null });
+    expect(stakeReads()).toEqual([['get', `${BACKING_STAKES_COLLECTION}/v1`]]);
+    // The weeks path reads the same way.
+    DB = world();
+    onPoolRead('g-thin', 1, anotherClose('g-thin'));
+    const weeks = await get();
+    const thin = weeks.body.weeks.flatMap((w) => w.pools).find((p) => p.groupId === 'g-thin');
+    expect(thin).toMatchObject({ outcome: 'insufficient' });
+    expect(thin.myStakes[0]).toMatchObject({ status: STAKE_STATUS.VOIDED, voidReason: 'insufficient', net: 0 });
+  });
+
+  it('WIRING-1\'s twin — ANOTHER request\'s SETTLEMENT commits between the two reads: the pool already says resolved, this read calls nothing, and the live copy is re-read — won, with its payout', async () => {
+    const actual = await vi.importActual('../_utils/backingSettlement.js');
+    onPoolRead('g-w40', 1, async (realDb) => {
+      expect(await actual.settlePool(realDb, 'g-w40', { now: NOW, source: SETTLEMENT_SOURCE.FRIDAY_DUTY })).toMatchObject({ settled: true });
+    });
+    const res = await get({ groupId: 'g-w40' });
+    expect(spy.settlePool).not.toHaveBeenCalled();
+    expect(res.body.pod).toMatchObject({ outcome: 'settled', winners: ['od-a'] });
+    expect(res.body.pod.myStakes.find((s) => s.stakeId === 'v1')).toMatchObject({ status: STAKE_STATUS.WON, payout: 714, net: 214 });
+  });
+
+  // ── ORDERING 2: this request's close commits, then its settlement fails ──
+  /** The pod complete, its pool OPEN past its close; the viewer's stake on a seat that LEFT, three other backers on seated teams. */
+  const closeThenFail = () => makeInMemoryDb(pod('g-late', {
+    status: POOL_STATUS.OPEN,
+    stakes: [
+      { id: 'v1', userId: UID, teamOdUserId: 'od-gone', amount: 500 },
+      { id: 'o1', userId: 'u2', teamOdUserId: 'od-a', amount: 200 },
+      { id: 'o2', userId: 'u3', teamOdUserId: 'od-b', amount: 300 },
+      { id: 'o3', userId: 'u4', teamOdUserId: 'od-a', amount: 100 },
+    ],
+    poolOver: OPEN_PAST_CLOSE,
+  }));
+
+  it('WIRING-15 — the lazy close COMMITS, then the settlement THROWS: the pool is re-read as it now stands — closed, settling — and the viewer\'s stake with it (voided seat_left by the close), never `open` + `live`', async () => {
+    DB = closeThenFail();
+    spy.settlePool.mockImplementationOnce(async () => { throw new Error('settlement failed'); });
+    const res = await get({ groupId: 'g-late' });
+    expect(res.statusCode).toBe(200);
+    expect(spy.settlePool).toHaveBeenCalledTimes(1);
+    expect(poolOf('g-late').status).toBe(POOL_STATUS.CLOSED);                                     // the close committed
+    expect(stakeOf('v1')).toMatchObject({ status: STAKE_STATUS.VOIDED, voidReason: 'seat_left' });  // and voided the stake
+    expect(res.body.pod).toMatchObject({ status: POOL_STATUS.CLOSED, outcome: 'settling', podStatus: GROUP_STATUS.COMPLETE });
+    expect(res.body.pod.myStakes).toEqual([expect.objectContaining({ stakeId: 'v1', status: STAKE_STATUS.VOIDED, voidReason: 'seat_left', net: 0, payout: null })]);
+    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('settle-on-read failed for g-late'), 'settlement failed');
+    // The weeks path: the complete pod's closed pool is listed as settling, from the re-read documents.
+    DB = closeThenFail();
+    spy.settlePool.mockImplementationOnce(async () => { throw new Error('settlement failed'); });
+    const weeks = await get();
+    const late = weeks.body.weeks.flatMap((w) => w.pools).find((p) => p.groupId === 'g-late');
+    expect(late).toMatchObject({ status: POOL_STATUS.CLOSED, outcome: 'settling' });
+    expect(late.myStakes[0]).toMatchObject({ status: STAKE_STATUS.VOIDED, voidReason: 'seat_left' });
+  });
+
+  it('WIRING-15 — a pool that cannot be re-read after the failed pass is not answered at all (its one copy predates the close this request made)', async () => {
+    DB = closeThenFail();
+    spy.settlePool.mockImplementationOnce(async () => { throw new Error('settlement failed'); });
+    // Read 1: the reader's own; read 2: ensureClosed's; read 3: the re-read after the failure — it fails too.
+    onPoolRead('g-late', 3, async () => { throw new Error('read failed'); });
+    const res = await get({ groupId: 'g-late' });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({ viewerUid: UID, pod: null });
+    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('pool not re-read for g-late'), 'read failed');
+  });
+
+  it('the steady state costs NO stake read: a decided pool\'s decided stakes, and a closed pool\'s live stakes on its frozen teams (a pod in play), contradict nothing', async () => {
+    DB = makeInMemoryDb({
+      ...pod('g-play', { status: POOL_STATUS.CLOSED, g: group({ status: GROUP_STATUS.BATTLE, dailyScores: {} }), stakes: [{ id: 'p1', userId: UID, teamOdUserId: 'od-a', amount: 100 }] }),
+      ...pod('g-done', { status: POOL_STATUS.RESOLVED, stakes: [{ id: 'd1', userId: UID, teamOdUserId: 'od-a', amount: 100, status: STAKE_STATUS.WON, payout: 150 }], poolOver: { winnerOdUserIds: ['od-a'], winningStakes: 100, paysX: 1.5, settledAt: '2026-10-02T22:30:00.000Z' } }),
+    });
+    const weeks = await get();
+    expect(weeks.body.weeks[0].pools.map((p) => p.groupId)).toEqual(['g-done']);
+    const one = await get({ groupId: 'g-play' });
+    expect(one.body.pod.myStakes[0]).toMatchObject({ status: STAKE_STATUS.LIVE });
+    expect(spy.settlePool).not.toHaveBeenCalled();
+    expect(stakeReads()).toEqual([]);
+  });
+
+  it('a failed stake re-read keeps the copies read before (logged) and never takes down the reader — the pod list\'s posture', async () => {
+    DB = makeInMemoryDb(pod('g-thin', { status: POOL_STATUS.OPEN, stakes: BOOK().slice(0, 2), poolOver: OPEN_PAST_CLOSE }));
+    const realCollection = DB.db.collection;
+    DB.db.collection = (name) => {
+      const col = realCollection(name);
+      if (name !== BACKING_STAKES_COLLECTION) return col;
+      return { ...col, doc: (id) => ({ ...col.doc(id), get: async () => { throw new Error('stake read failed'); } }) };
+    };
+    const res = await get({ groupId: 'g-thin' });
+    expect(res.statusCode).toBe(200);
+    expect(res.body.pod.outcome).toBe('insufficient');
+    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('stakes not re-read for g-thin'), 'stake read failed');
   });
 });

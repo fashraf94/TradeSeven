@@ -73,9 +73,9 @@ import { deriveBaseLayerWeek, deriveBattleStartWeek } from '../_utils/liveDraftF
 import {
   BACKING_STAKES_COLLECTION,
   POOL_STATUS,
-  STAKE_STATUS,
   ensureClosed,
   listablePod,
+  liveStakeContradicts,
   liveTeamsFor,
   materializePool,
   poolRefFor,
@@ -253,22 +253,11 @@ export function projectPod(group, pool, { viewerUid, myStakes = [], teamLabelFor
   };
 }
 
-/**
- * A `live` copy of the viewer's stake that the pool AS ANSWERED says cannot
- * still be live (this build's review record, WIRING-1). Every transition out
- * of `open` other than to `closed` / `resolving` moves every live stake in the
- * SAME transaction (`insufficient` / `refunded` void them, `resolved` settles
- * them), and a close voids a stake on a seat missing from the frozen `teams[]`
- * — so such a copy predates a transition this request did not see: another
- * request's close landing between the stakes query and the pool read. Zero
- * cost in the steady state: an open pool, or a closed one's stakes on its
- * frozen teams, contradict nothing. Pure.
- */
-export function liveStakeContradicts(pool, stake) {
-  if (stake?.status !== STAKE_STATUS.LIVE || pool == null || pool.status === POOL_STATUS.OPEN) return false;
-  if (pool.status !== POOL_STATUS.CLOSED && pool.status !== POOL_STATUS.RESOLVING) return true;
-  return Array.isArray(pool.teams) && !pool.teams.some((t) => t.odUserId === stake.teamOdUserId);
-}
+// `liveStakeContradicts` (WIRING-1) now lives in api/_utils/backingPools.js,
+// so the results reader re-reads on the SAME predicate this list does (§9 —
+// WIRING-1's twin, the pre-flip cleanup's review record). Re-exported here
+// because this route's suite names it.
+export { liveStakeContradicts };
 
 /**
  * The viewer's stakes on a pod, RE-READ by id after this request's lazy jobs
