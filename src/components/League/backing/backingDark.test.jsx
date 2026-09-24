@@ -397,12 +397,16 @@ describe('flag ON — the same mounts light up (the pin is not vacuous)', () => 
     expect(svc.calls.filter((c) => c === 'fetchTeamLabels')).toHaveLength(1);
   });
 
-  it('desktop: the strip renders in the left rail', async () => {
+  it('desktop: the strip renders in the CENTRE column (under the entry), never a side rail — the desktop door, with its "Back a team" action while the window is open', async () => {
     flag.on = true;
     const container = await mount(<LeagueLobbyDesktop {...homeProps} />);
-    const strip = container.querySelector('.ld-rail-left [data-backing="strip"]');
+    const strip = container.querySelector('.ld-center [data-backing="strip"]');
     expect(strip).not.toBeNull();
+    expect(container.querySelector('.ld-rail-left [data-backing="strip"]')).toBeNull();
+    expect(container.querySelector('.ld-rail-right [data-backing="strip"]')).toBeNull();
+    expect(strip.getAttribute('data-strip-layout')).toBe('desktop');
     expect(strip.textContent).toContain('Backing open · 1 pod');
+    expect(strip.querySelector('[data-backing="strip-back"]')?.textContent).toBe('Back a team');
   });
 
   it('the screen header says what the strip says — one mapping (R-B-1): a window whose pool closed at its fire reads "Closed · plays Monday"', async () => {

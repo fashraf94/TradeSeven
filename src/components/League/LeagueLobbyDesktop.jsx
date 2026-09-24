@@ -37,9 +37,14 @@ import {
   LDFocus, DeskTabBar, DeskTrainingPanel, TRAIN,
 } from './LeagueDeskParts';
 import DeskSeasonRail from './DeskSeasonRail';
-// Backing Beta PR 4 — the landing strip on the left rail (the design's desktop
-// variant) and the Backing screen in the same focus overlay Spectate uses.
-// BackingLandingStrip renders NOTHING while BACKING_BETA_ENABLED is dark.
+// Backing desktop layouts — the strip is the desktop landing's door: in the
+// CENTRE column, directly under the draft-slot picker and the Auto-draft card
+// (unseated), or directly under the waiting room's headline and hero (seated)
+// — never below "Watch a live game" or the bracket line (founder rulings). The
+// Backing screen opens full-window, in its three-column desktop layout.
+// BackingLandingStrip renders NOTHING while BACKING_BETA_ENABLED is dark, and
+// the Backing host opens only from the strip, so the flag-off lobby is today's
+// markup byte for byte (backingDark.test.jsx pins it against main's).
 import BackingLandingStrip from './backing/BackingLandingStrip';
 import BackingScreen from './backing/BackingScreen';
 import { fetchTapePod } from '../../services/backingService';
@@ -107,6 +112,128 @@ function MyGameBar({ onOpen }) {
       <span style={{ fontSize: 13, fontWeight: 600, color: LTOKENS.ink }}>Open my game</span>
       <Mono style={{ fontSize: 10, color: LTOKENS.ink3 }}>your live battle · claims · draft</Mono>
     </button>
+  );
+}
+
+/**
+ * THE PAGE — the top bar, the three columns (or the Training surface) and the
+ * host's overlays (`children`), pure over its props. LeagueLobbyDesktop below
+ * owns the data and the state; the Backing dev preview page renders this page
+ * from fixtures (no network), so the desktop landing it shows IS this one.
+ * `backingSlot` is the strip's mount (the centre, under the entry); `slotServices`
+ * reaches the draft-slot picker and the Auto-draft lane (the preview only).
+ */
+export function DeskLobby({
+  st, uid = null, displayName = null, trainingOn = TRAINING_ON, tab = 'ranked', onSwitchTab,
+  activeGroup = null, preOpen = false, activeTrainingPod = null,
+  onOpenMyGame, onOpenTrainingPod, hasAgent, agentLoadout,
+  selectedPod = null, onPickPod, onClosePod, onOpenGroupById, railTab = 'field', onRailTab, onSpectate,
+  backingSlot = null, slotServices = null, children = null,
+}) {
+  const liveCount = React.useMemo(() => [...st.rounds.r1, ...st.rounds.r2, st.rounds.r3].filter((p) => p.status === 'live').length, [st]);
+  const humans = React.useMemo(() => Object.values(st.field).filter((p) => p.kind === 'human').length, [st]);
+  const cpus = React.useMemo(() => Object.values(st.field).filter((p) => p.kind === 'cpu').length, [st]); // REAL CPU count (not 16 − humans)
+  const onTraining = trainingOn && tab === 'training';
+
+  return (
+    <div className="ld-root" style={{ position: 'relative', backgroundImage: `radial-gradient(circle at 50% 0%, ${alpha(onTraining ? TRAIN.base : ACCENT, 0.06)}, transparent 55%)` }}>
+      <style>{LD_STYLE}</style>
+
+      {/* top bar — identity, headline, hero stats, tabs, CTA */}
+      <div className="ld-topbar">
+        <div style={{ minWidth: 0 }}>
+          <Eyebrow color={onTraining ? TRAIN.lt : ACCENT} style={{ marginBottom: 5 }}>TradeSeven · League</Eyebrow>
+          <div style={{ fontSize: 25, fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1 }}>
+            {onTraining ? 'Training Pod' : st.headline}
+          </div>
+        </div>
+        <div className="ld-stats">
+          {/* omit the BRACKET "pods live" stat while the bracket is forthcoming
+              (avoids a confusing "0 pods live" pre-season); shown in fixture mode. */}
+          {!st.bracketPending && <DeskStat n={liveCount} label={liveCount === 1 ? 'pod live' : 'pods live'} dot={LX.energy} />}
+          <DeskStat n={humans} label="players" dot={LX.human} muted={humans === 0} />
+          <DeskStat n={cpus} label="CPU agents" dot={LX.cpu} muted={cpus === 0} />
+        </div>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 16 }}>
+          {trainingOn && <DeskTabBar tab={tab} onSwitchTab={onSwitchTab} accent={ACCENT} />}
+        </div>
+      </div>
+
+      {/* body */}
+      {onTraining ? (
+        <div className="ld-grid ld-grid-training">
+          {/* MAIN — the training surface (active-game re-entry card or cold-start) */}
+          <div className="lg-scroll ld-train-main">
+            {onOpenMyGame && activeGroup && <MyGameBar onOpen={onOpenMyGame} />}
+            <DeskTrainingPanel
+              onOpenTrainingPod={onOpenTrainingPod}
+              activeTrainingPod={activeTrainingPod}
+              hasAgent={hasAgent}
+              agentLoadout={agentLoadout}
+              uid={uid}
+            />
+            <div style={{ marginTop: 'auto', paddingTop: 8 }}>
+              <Mono style={{ fontSize: 9, letterSpacing: '0.14em', color: LTOKENS.ink3, textTransform: 'uppercase', lineHeight: 1.6 }}>
+                Practice the parallel-layer battle · nothing on the line
+              </Mono>
+            </div>
+          </div>
+          {/* RIGHT — the standings rail, for context */}
+          <div className="ld-rail-right">
+            <DeskSeasonRail st={st} accent={ACCENT} uid={uid} tab={railTab} onTabChange={onRailTab} />
+          </div>
+        </div>
+      ) : (
+        <div className="ld-grid">
+          {/* LEFT — your group + live follows */}
+          <div className="lg-scroll ld-rail-left">
+            {onOpenMyGame && activeGroup && <MyGameBar onOpen={onOpenMyGame} />}
+            <DeskYourGroup st={st} accent={ACCENT} onOpen={onPickPod} />
+            <DeskFollowRail items={st.followLive} accent={ACCENT} onSpectate={onSpectate} />
+            <div style={{ marginTop: 'auto', paddingTop: 8 }}>
+              <Mono style={{ fontSize: 9, letterSpacing: '0.14em', color: LTOKENS.ink3, textTransform: 'uppercase', lineHeight: 1.6 }}>
+                Empty seats run as CPU · your group locks Monday
+              </Mono>
+            </div>
+          </div>
+
+          {/* CENTER — no game → the slot picker IS the entry (one entry story;
+              a claim routes straight into the seated surface via onOpenMyGame);
+              in a game → the Seated Waiting Room ("While you wait") replaces the
+              old bracket-funnel / forthcoming panel (both sub-states) as the
+              primary content, keeping the honest one-line bracket footnote.
+              SlotCenter owns the LEAGUE_LIVE_DRAFT gate internally (P2c) so
+              flag-off still keeps the Auto-draft entry affordance. The Backing
+              strip rides the centre's own slot (backingSlot) in both. */}
+          <div className="lg-scroll ld-center">
+            {!activeGroup ? (
+              <SlotCenter currentUserId={uid} displayName={displayName} onEntered={onOpenMyGame} backingSlot={backingSlot} services={slotServices} />
+            ) : (
+              <WhileYouWait
+                viewport="desktop"
+                status={activeGroup.status}
+                preOpen={preOpen}
+                st={st}
+                activeTrainingPod={activeTrainingPod}
+                onOpenTrainingPod={onOpenTrainingPod}
+                hasAgent={hasAgent}
+                onSpectate={onSpectate}
+                backingSlot={backingSlot}
+              />
+            )}
+          </div>
+
+          {/* RIGHT — leaderboard, swaps to the docked League Pod on click */}
+          <div className="ld-rail-right" style={{ border: `1px solid ${selectedPod ? alpha(ACCENT, 0.3) : LTOKENS.hair}` }}>
+            {selectedPod
+              ? <DeskPodPanel pod={selectedPod} accent={ACCENT} onClose={onClosePod} onSpectate={(seat) => onSpectate(selectedPod, seat.id)} />
+              : <DeskSeasonRail st={st} accent={ACCENT} uid={uid} onOpenGroup={onOpenGroupById} tab={railTab} onTabChange={onRailTab} />}
+          </div>
+        </div>
+      )}
+
+      {children}
+    </div>
   );
 }
 
@@ -183,107 +310,33 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
     setTab(next);
   };
 
-  const liveCount = React.useMemo(() => [...st.rounds.r1, ...st.rounds.r2, st.rounds.r3].filter((p) => p.status === 'live').length, [st]);
-  const humans = React.useMemo(() => Object.values(st.field).filter((p) => p.kind === 'human').length, [st]);
-  const cpus = React.useMemo(() => Object.values(st.field).filter((p) => p.kind === 'cpu').length, [st]); // REAL CPU count (not 16 − humans)
-  const onTraining = TRAINING_ON && tab === 'training';
+  // The strip's mount — the centre column's own slot, under the entry (see
+  // DeskLobby). A component that renders null while dark: no element, no gap.
+  const backingSlot = <BackingLandingStrip uid={uid} accent={ACCENT} onOpen={openBacking} wide />;
 
   return (
-    <div className="ld-root" style={{ position: 'relative', backgroundImage: `radial-gradient(circle at 50% 0%, ${alpha(onTraining ? TRAIN.base : ACCENT, 0.06)}, transparent 55%)` }}>
-      <style>{LD_STYLE}</style>
-
-      {/* top bar — identity, headline, hero stats, tabs, CTA */}
-      <div className="ld-topbar">
-        <div style={{ minWidth: 0 }}>
-          <Eyebrow color={onTraining ? TRAIN.lt : ACCENT} style={{ marginBottom: 5 }}>TradeSeven · League</Eyebrow>
-          <div style={{ fontSize: 25, fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1 }}>
-            {onTraining ? 'Training Pod' : st.headline}
-          </div>
-        </div>
-        <div className="ld-stats">
-          {/* omit the BRACKET "pods live" stat while the bracket is forthcoming
-              (avoids a confusing "0 pods live" pre-season); shown in fixture mode. */}
-          {!st.bracketPending && <DeskStat n={liveCount} label={liveCount === 1 ? 'pod live' : 'pods live'} dot={LX.energy} />}
-          <DeskStat n={humans} label="players" dot={LX.human} muted={humans === 0} />
-          <DeskStat n={cpus} label="CPU agents" dot={LX.cpu} muted={cpus === 0} />
-        </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 16 }}>
-          {TRAINING_ON && <DeskTabBar tab={tab} onSwitchTab={switchTab} accent={ACCENT} />}
-        </div>
-      </div>
-
-      {/* body */}
-      {onTraining ? (
-        <div className="ld-grid ld-grid-training">
-          {/* MAIN — the training surface (active-game re-entry card or cold-start) */}
-          <div className="lg-scroll ld-train-main">
-            {onOpenMyGame && activeGroup && <MyGameBar onOpen={onOpenMyGame} />}
-            <DeskTrainingPanel
-              onOpenTrainingPod={onOpenTrainingPod}
-              activeTrainingPod={activeTrainingPod}
-              hasAgent={hasAgent}
-              agentLoadout={agentLoadout}
-              uid={uid}
-            />
-            <div style={{ marginTop: 'auto', paddingTop: 8 }}>
-              <Mono style={{ fontSize: 9, letterSpacing: '0.14em', color: LTOKENS.ink3, textTransform: 'uppercase', lineHeight: 1.6 }}>
-                Practice the parallel-layer battle · nothing on the line
-              </Mono>
-            </div>
-          </div>
-          {/* RIGHT — the standings rail, for context */}
-          <div className="ld-rail-right">
-            <DeskSeasonRail st={st} accent={ACCENT} uid={uid} tab={railTab} onTabChange={setRailTab} />
-          </div>
-        </div>
-      ) : (
-        <div className="ld-grid">
-          {/* LEFT — your group + live follows */}
-          <div className="lg-scroll ld-rail-left">
-            {onOpenMyGame && activeGroup && <MyGameBar onOpen={onOpenMyGame} />}
-            <BackingLandingStrip uid={uid} accent={ACCENT} onOpen={openBacking} wide />
-            <DeskYourGroup st={st} accent={ACCENT} onOpen={pickPod} />
-            <DeskFollowRail items={st.followLive} accent={ACCENT} onSpectate={openSpectate} />
-            <div style={{ marginTop: 'auto', paddingTop: 8 }}>
-              <Mono style={{ fontSize: 9, letterSpacing: '0.14em', color: LTOKENS.ink3, textTransform: 'uppercase', lineHeight: 1.6 }}>
-                Empty seats run as CPU · your group locks Monday
-              </Mono>
-            </div>
-          </div>
-
-          {/* CENTER — no game → the slot picker IS the entry (one entry story;
-              a claim routes straight into the seated surface via onOpenMyGame);
-              in a game → the Seated Waiting Room ("While you wait") replaces the
-              old bracket-funnel / forthcoming panel (both sub-states) as the
-              primary content, keeping the honest one-line bracket footnote.
-              SlotCenter owns the LEAGUE_LIVE_DRAFT gate internally (P2c) so
-              flag-off still keeps the Auto-draft entry affordance. */}
-          <div className="lg-scroll ld-center">
-            {!activeGroup ? (
-              <SlotCenter currentUserId={uid} displayName={user?.displayName} onEntered={onOpenMyGame} />
-            ) : (
-              <WhileYouWait
-                viewport="desktop"
-                status={activeGroup.status}
-                preOpen={preOpen}
-                st={st}
-                activeTrainingPod={activeTrainingPod}
-                onOpenTrainingPod={onOpenTrainingPod}
-                hasAgent={hasAgent}
-                onSpectate={openSpectate}
-              />
-            )}
-          </div>
-
-          {/* RIGHT — leaderboard, swaps to the docked League Pod on click */}
-          <div className="ld-rail-right" style={{ border: `1px solid ${selectedPod ? alpha(ACCENT, 0.3) : LTOKENS.hair}` }}>
-            {selectedPod
-              ? <DeskPodPanel pod={selectedPod} accent={ACCENT} onClose={closePod} onSpectate={(seat) => openSpectate(selectedPod, seat.id)} />
-              : <DeskSeasonRail st={st} accent={ACCENT} uid={uid} onOpenGroup={openGroupById} tab={railTab} onTabChange={setRailTab} />}
-          </div>
-        </div>
-      )}
-
+    <DeskLobby
+      st={st}
+      uid={uid}
+      displayName={user?.displayName}
+      tab={tab}
+      onSwitchTab={switchTab}
+      activeGroup={activeGroup}
+      preOpen={preOpen}
+      activeTrainingPod={activeTrainingPod}
+      onOpenMyGame={onOpenMyGame}
+      onOpenTrainingPod={onOpenTrainingPod}
+      hasAgent={hasAgent}
+      agentLoadout={agentLoadout}
+      selectedPod={selectedPod}
+      onPickPod={pickPod}
+      onClosePod={closePod}
+      onOpenGroupById={openGroupById}
+      railTab={railTab}
+      onRailTab={setRailTab}
+      onSpectate={openSpectate}
+      backingSlot={backingSlot}
+    >
       {/* overlays — Spectate's claim CTA re-points at the entry (P3): closing
           the overlay lands on the center, which IS the slot picker for a
           no-game viewer (the retired Pick-your-mode modal is gone). */}
@@ -294,13 +347,13 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
           </div>
         </LDFocus>
       )}
+      {/* the Backing screen — full-window, its own three columns (desktop
+          layout); opened only by the strip, so never while dark */}
       {backing && !spec && (
-        <LDFocus width={760} onClose={() => setBacking(false)}>
-          <div className="lg-scroll" style={{ height: '86vh', maxHeight: 880, borderRadius: 24, overflowY: 'auto', overflowX: 'hidden', background: LTOKENS.bg, border: `1px solid ${LTOKENS.hair2}`, boxShadow: '0 30px 90px rgba(0,0,0,0.6)', position: 'relative' }}>
-            <BackingScreen uid={uid} accent={ACCENT} viewport="desktop" onBack={() => setBacking(false)} onOpenTape={openTape} />
-          </div>
-        </LDFocus>
+        <div data-backing="desk-host" style={{ position: 'fixed', inset: 0, zIndex: 1000, background: LTOKENS.bg, color: LTOKENS.ink }}>
+          <BackingScreen uid={uid} accent={ACCENT} viewport="desktop" onBack={() => setBacking(false)} onOpenTape={openTape} />
+        </div>
       )}
-    </div>
+    </DeskLobby>
   );
 }

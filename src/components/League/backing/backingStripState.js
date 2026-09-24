@@ -55,6 +55,18 @@ export const STRIP_KIND = Object.freeze({
   QUIET: 'quiet',
 });
 
+/**
+ * Is the backing window open, as far as a strip state can say? The window
+ * state itself, or the viewer's staked window with a pool still open (its
+ * latest close is set). A staked window whose every pool already closed at
+ * its fire is not — nothing is left to back there. Read by the desktop strip
+ * for its "Back a team" action; derives nothing new from the pool.
+ */
+export function stripWindowOpen(state) {
+  const kind = state?.kind;
+  return kind === STRIP_KIND.OPEN || (kind === STRIP_KIND.STAKED && typeof state?.closesAt === 'string' && state.closesAt.length > 0);
+}
+
 /** Pool statuses that mean the stakes have settled or been voided. */
 const SETTLED_POOL_STATUSES = new Set(['resolved', 'insufficient', 'refunded']);
 

@@ -28,6 +28,14 @@
 // No new endpoint / subscription / game machinery; client-only; dark-only tokens
 // from the shared map (LTOKENS/LX) — no useTheme(), no new palette; this is the
 // cheap V1.
+//
+// Backing desktop layouts — `backingSlot`: for a player already seated this
+// week the Backing strip sits DIRECTLY UNDER what occupies the entry position
+// (this room's headline and its hero, with the hero's own honesty line), and
+// NEVER below "Watch a live game" or the bracket line (founder ruling). The
+// desktop lobby passes it; rendered BARE, so a strip that renders null leaves
+// no element and no gap. Mobile passes nothing — byte-identical to main
+// (backingMobilePin.test.jsx).
 
 import React from 'react';
 import { LTOKENS, LX, alpha } from './leagueTokens';
@@ -71,6 +79,7 @@ export default function WhileYouWait({
   onOpenTrainingPod = null,
   hasAgent,
   onSpectate = null,
+  backingSlot = null,
 }) {
   const desktop = viewport === 'desktop';
   const [busy, setBusy] = React.useState(false);
@@ -188,6 +197,8 @@ export default function WhileYouWait({
       {error && (
         <div role="alert" style={{ fontSize: 12, color: LX.neg, lineHeight: 1.4, paddingLeft: 2 }}>{error}</div>
       )}
+
+      {backingSlot}
 
       {/* secondary — reuse-only Spectate (BaggerBomb pulled; see the header note) */}
       {liveWatchPod && onSpectate && (

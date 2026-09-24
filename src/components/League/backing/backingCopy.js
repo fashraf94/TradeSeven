@@ -85,6 +85,9 @@ export const STRIP = Object.freeze({
   stakeRow: (amount) => `${bp(amount)} BP`,
   lockedRow: 'locked',
   standingRank: (rank) => ordinal(rank),
+  // The desktop strip's primary-weight action while the window is open
+  // (founder ruling, Sept 24 — the strip's emphasis on the desktop landing).
+  backCta: 'Back a team',
 });
 
 // ==================== THE PREDICTIONS RELABEL (rev2 §1, rev3 §1) ====================

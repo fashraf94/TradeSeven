@@ -13,6 +13,17 @@
 // PICKER here — flag-off, the Auto-draft lane (a lobby feature, not a slot
 // feature) and the footnote stay mounted, so the League tab always keeps an
 // entry affordance and the flag remains a clean slots-only kill-switch.
+//
+// Backing desktop layouts — `backingSlot`: the Backing strip's desktop mount
+// (LeagueLobbyDesktop), DIRECTLY UNDER the draft-slot picker and the Auto-draft
+// card and ABOVE the bracket line (founder ruling: never below the bracket
+// line). Rendered BARE — no wrapper, no margin — so a strip that renders null
+// (the flag dark, the list loading) leaves no element and no gap; the column's
+// own flex gap spaces it when it renders. Mobile passes nothing: its markup is
+// the markup main ships (backingMobilePin.test.jsx).
+// `services` (optional) replaces the picker's and the Auto-draft lane's calls —
+// only the dev preview page passes it (fixture answers, no network); omitted,
+// each call is the real service, exactly as before.
 
 import React from 'react';
 import LiveDraftPicker from './LiveDraftPicker';
@@ -20,13 +31,14 @@ import AutoDraftFallback from './AutoDraftFallback';
 import { LEAGUE_LIVE_DRAFT } from '../../../config/featureFlags';
 import { PICKER_TOKENS, LTOKENS, MONO } from '../leagueTokens';
 
-export default function SlotCenter({ currentUserId, displayName = null, onEntered = null }) {
+export default function SlotCenter({ currentUserId, displayName = null, onEntered = null, backingSlot = null, services = null }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, width: '100%', maxWidth: 560, margin: '0 auto' }}>
       {LEAGUE_LIVE_DRAFT && (
-        <LiveDraftPicker tokens={PICKER_TOKENS} currentUserId={currentUserId} displayName={displayName} onEntered={onEntered} />
+        <LiveDraftPicker tokens={PICKER_TOKENS} currentUserId={currentUserId} displayName={displayName} onEntered={onEntered} services={services} />
       )}
-      <AutoDraftFallback tokens={PICKER_TOKENS} displayName={displayName} onEntered={onEntered} />
+      <AutoDraftFallback tokens={PICKER_TOKENS} displayName={displayName} onEntered={onEntered} services={services} />
+      {backingSlot}
       <div style={{ textAlign: 'center', paddingTop: 2 }}>
         <span style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: LTOKENS.ink3 }}>
           The monthly bracket opens when the season locks

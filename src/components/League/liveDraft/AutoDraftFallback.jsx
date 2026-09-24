@@ -7,11 +7,14 @@
 // never says "training". Same discipline as LiveDraftPicker: `tokens` is a
 // prop (the caller maps PICKER_TOKENS or passes useTheme tokens), one action
 // in flight, errors surfaced via mapLobbyError, success routes via onEntered.
+// `services` (optional) replaces the quickPlay call — only the Backing dev
+// preview page passes it; omitted, it is the real service, exactly as before.
 
 import React, { useRef, useState } from 'react';
 import { quickPlay, mapLobbyError } from '../../../services/tournamentLobbyActions';
 
-export default function AutoDraftFallback({ tokens, displayName = null, onEntered = null }) {
+export default function AutoDraftFallback({ tokens, displayName = null, onEntered = null, services = null }) {
+  const play = services?.quickPlay ?? quickPlay;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const inFlight = useRef(false);
@@ -22,7 +25,7 @@ export default function AutoDraftFallback({ tokens, displayName = null, onEntere
     setBusy(true);
     setError(null);
     try {
-      await quickPlay(displayName ? { displayName } : {});
+      await play(displayName ? { displayName } : {});
       if (onEntered) onEntered();
     } catch (e) {
       setError(mapLobbyError(e));

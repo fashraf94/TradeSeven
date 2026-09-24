@@ -20,18 +20,112 @@
 // Teal while the window is open and through the week; gold once last week is
 // banked (the design's rule). Tokens only (BUILD_RULES §10); the tap feedback
 // is the League's own `.lg-tap` class (no inline transition literal, §11).
+//
+// THE DESKTOP DOOR (`wide`, Backing desktop layouts): on the desktop landing
+// the strip sits in the centre column directly under the draft slots and must
+// read as the most important thing below them (founder ruling, Sept 24). It
+// gets louder ONLY with what it may already say: the accent edge, heavier; the
+// chairs motif and the close, larger; and — while the window is open — a
+// primary-weight "Back a team" action. Never a pot, a count above three,
+// urgency copy, or motion implying activity: the inputs are the same derived
+// state, and nothing on it moves. The mobile strip (not `wide`) is the markup
+// main ships (backingMobilePin.test.jsx).
 
 import React from 'react';
 import { LTOKENS, LX, alpha } from '../leagueTokens';
 import { Mono, Icon, LIcon, Score } from '../LeagueParts';
 import { Chairs, WeekRail } from './BackingParts';
 import { STRIP, stripLines } from './backingCopy';
-import { STRIP_KIND } from './backingStripState';
+import { STRIP_KIND, stripWindowOpen } from './backingStripState';
+
+function DeskStrip({ s, kind, eyebrow, head, when, sub, c, onOpen }) {
+  const open = stripWindowOpen(s);
+  const motif = kind === STRIP_KIND.WEEK
+    ? <WeekRail day={s.day} color={c} />
+    : kind === STRIP_KIND.BETWEEN
+      ? <LIcon name="crown" size={14} color={c} stroke={2.2} />
+      : <Chairs n={kind === STRIP_KIND.STAKED ? 1 : 0} color={c} size={11} />;
+  return (
+    <button
+      type="button"
+      className="lg-tap"
+      data-backing="strip"
+      data-strip-state={kind}
+      data-strip-layout="desktop"
+      onClick={onOpen}
+      aria-label={open ? `${eyebrow} · ${head} · ${STRIP.backCta}` : `${eyebrow} · ${head}`}
+      style={{
+        all: 'unset', boxSizing: 'border-box', display: 'block', width: '100%', cursor: 'pointer', textAlign: 'left',
+        position: 'relative', overflow: 'hidden', borderRadius: 16, padding: '16px 18px 16px 21px',
+        background: `linear-gradient(115deg, ${alpha(c, 0.16)}, ${LTOKENS.surface} 64%)`,
+        border: `1px solid ${alpha(c, 0.4)}`, boxShadow: `inset 0 1px 0 ${alpha(LTOKENS.ink, 0.05)}`, color: LTOKENS.ink,
+      }}
+    >
+      <div data-backing="strip-edge" style={{ position: 'absolute', left: 0, top: 12, bottom: 12, width: 3, borderRadius: 3, background: c, boxShadow: `0 0 12px ${alpha(c, 0.75)}` }} />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+          {motif}
+          <Mono style={{ fontSize: 10, color: c, letterSpacing: '0.12em', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{eyebrow}</Mono>
+        </div>
+        <Mono style={{ fontSize: 11, color: LTOKENS.ink2, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          <Icon name="clock" size={12} color={LTOKENS.ink2} />{when}
+        </Mono>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 19, fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1.15 }}>{head}</div>
+          {sub && <div style={{ fontSize: 12.5, color: LTOKENS.ink2, lineHeight: 1.45, marginTop: 5 }}>{sub}</div>}
+        </div>
+        {open ? (
+          <span
+            data-backing="strip-back"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 7, flexShrink: 0, padding: '10px 15px', borderRadius: 12,
+              background: c, color: LTOKENS.bg, fontSize: 13.5, fontWeight: 700, letterSpacing: '-0.01em', whiteSpace: 'nowrap',
+              boxShadow: `0 6px 18px ${alpha(c, 0.28)}`,
+            }}
+          >
+            {STRIP.backCta}<Icon name="arrowR" size={15} color={LTOKENS.bg} />
+          </span>
+        ) : <Icon name="arrowR" size={18} color={c} />}
+      </div>
+
+      {kind === STRIP_KIND.STAKED && Array.isArray(s.stakes) && s.stakes.length > 0 && (
+        <div data-backing="strip-stakes" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 6, marginTop: 12 }}>
+          {s.stakes.map((x) => (
+            <div key={x.stakeId ?? `${x.groupId}-${x.teamOdUserId}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 9, background: alpha(LTOKENS.bg, 0.5), border: `1px solid ${alpha(c, 0.2)}` }}>
+              <span style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{x.teamName}</span>
+              <Mono style={{ fontSize: 10, color: LTOKENS.ink3, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.podName}</Mono>
+              {x.closed && <Mono style={{ fontSize: 9.5, color: LTOKENS.ink3, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{STRIP.lockedRow}</Mono>}
+              <Mono style={{ fontSize: 12, fontWeight: 700, color: c }}>{STRIP.stakeRow(x.amount)}</Mono>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {kind === STRIP_KIND.WEEK && Array.isArray(s.teams) && s.teams.length > 0 && (
+        <div data-backing="strip-teams" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 6, marginTop: 12 }}>
+          {s.teams.map((x) => (
+            <div key={`${x.groupId}-${x.teamOdUserId}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 9, background: alpha(LTOKENS.bg, 0.5), border: `1px solid ${LTOKENS.hair}` }}>
+              <Mono style={{ fontSize: 13.5, fontWeight: 700, color: x.rank === 1 ? LTOKENS.gold : LTOKENS.ink }}>{STRIP.standingRank(x.rank)}</Mono>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{x.teamName}</div>
+                <Mono style={{ fontSize: 9.5, color: LTOKENS.ink3 }}>{x.podName}</Mono>
+              </div>
+              {Number.isFinite(x.score) && <Score v={x.score} size={12.5} />}
+            </div>
+          ))}
+        </div>
+      )}
+    </button>
+  );
+}
 
 export default function BackingStrip({ state, accent = LX.energy, onOpen, wide = false }) {
   const s = state && typeof state === 'object' ? state : { kind: STRIP_KIND.QUIET };
   const { kind, eyebrow, head, when, sub } = stripLines(s);
   const c = kind === STRIP_KIND.BETWEEN ? LTOKENS.gold : accent;
+  if (wide) return <DeskStrip s={s} kind={kind} eyebrow={eyebrow} head={head} when={when} sub={sub} c={c} onOpen={onOpen} />;
   const motif = kind === STRIP_KIND.WEEK
     ? <WeekRail day={s.day} color={c} />
     : kind === STRIP_KIND.BETWEEN
@@ -48,7 +142,7 @@ export default function BackingStrip({ state, accent = LX.energy, onOpen, wide =
       aria-label={`${eyebrow} · ${head}`}
       style={{
         all: 'unset', boxSizing: 'border-box', display: 'block', width: '100%', cursor: 'pointer', textAlign: 'left',
-        position: 'relative', overflow: 'hidden', borderRadius: 16, padding: wide ? '13px 16px' : '12px 14px',
+        position: 'relative', overflow: 'hidden', borderRadius: 16, padding: '12px 14px',
         background: `linear-gradient(115deg, ${alpha(c, 0.13)}, ${LTOKENS.surface} 62%)`,
         border: `1px solid ${alpha(c, 0.3)}`, boxShadow: `inset 0 1px 0 ${alpha(LTOKENS.ink, 0.05)}`, color: LTOKENS.ink,
       }}
@@ -85,7 +179,7 @@ export default function BackingStrip({ state, accent = LX.energy, onOpen, wide =
       )}
 
       {kind === STRIP_KIND.WEEK && Array.isArray(s.teams) && s.teams.length > 0 && (
-        <div data-backing="strip-teams" style={{ display: 'grid', gridTemplateColumns: wide ? '1fr' : 'repeat(2, minmax(0,1fr))', gap: 6, marginTop: 10 }}>
+        <div data-backing="strip-teams" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 6, marginTop: 10 }}>
           {s.teams.map((x) => (
             <div key={`${x.groupId}-${x.teamOdUserId}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', borderRadius: 9, background: alpha(LTOKENS.bg, 0.5), border: `1px solid ${LTOKENS.hair}` }}>
               <Mono style={{ fontSize: 13, fontWeight: 700, color: x.rank === 1 ? LTOKENS.gold : LTOKENS.ink }}>{STRIP.standingRank(x.rank)}</Mono>
