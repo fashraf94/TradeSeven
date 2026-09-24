@@ -396,6 +396,61 @@ export function makeSwapResult(overrides = {}) {
   });
 }
 
+/**
+ * Cockpit Build 0 — the model's `declarations` block (contract §2), a typical
+ * check: one entry shot with a counterpart, one exit confirmation, one watched
+ * name. Every symbol is on this harness's book or bench.
+ */
+export function makeDeclarations(overrides = {}) {
+  return {
+    calledShots: [
+      {
+        symbol: 'AMD', direction: 'entry', slot: 'support', counterpart: 'KO',
+        condition: { side: 'above', level: 163.5 }, horizonPhrase: 'this_session', defaultAction: 'act',
+        said: 'AMD into Support if it holds $163.50 — KO makes room.',
+      },
+      {
+        symbol: 'TSLA', direction: 'exit', slot: 'star',
+        condition: { side: 'below', level: 240 }, horizonPhrase: 'next_check', defaultAction: 'act',
+        said: 'Cutting TSLA if it loses $240 by the next check.',
+      },
+    ],
+    watching: ['JPM'],
+    playerAsk: null,
+    fork: null,
+    ...overrides,
+  };
+}
+
+/**
+ * The LARGEST block the calls validator admits (spec §3.2 caps): 6 shots with
+ * a 280-character `said`, 6 watched names, a 200-character question with four
+ * 60-character answers, a fork with four 140-character reasons and a
+ * 280-character `said`. The output-size measurement's upper bound.
+ */
+export function makeMaximalDeclarations() {
+  const said = (tag) => `${tag} `.padEnd(280, 'x');
+  const shot = (symbol, i) => ({
+    symbol, direction: i % 2 ? 'exit' : 'entry', slot: ['star', 'core', 'support'][i % 3], counterpart: 'KO',
+    condition: { side: i % 2 ? 'below' : 'above', level: 100.25 + i }, horizonPhrase: 'this_session', defaultAction: i % 2 ? 'hold' : 'act',
+    said: said(`shot ${i}`),
+  });
+  return {
+    calledShots: ['AMD', 'JPM', 'NVDA', 'TSLA', 'MSFT', 'AMZN'].map(shot),
+    watching: ['AMD', 'JPM', 'NVDA', 'TSLA', 'MSFT', 'AMZN'],
+    playerAsk: {
+      question: 'q '.padEnd(200, 'q'),
+      options: ['a', 'b', 'c', 'd'].map((o) => `${o} `.padEnd(60, o)),
+      symbol: 'AMD',
+    },
+    fork: {
+      slot: 'support', swapOut: 'KO',
+      options: ['AMD', 'JPM', 'NVDA', 'MSFT'].map((symbol) => ({ symbol, why: `${symbol} `.padEnd(140, 'w') })),
+      said: said('fork'),
+    },
+  };
+}
+
 /** The model's raw anticipation items: one full (with the `rationale` the stamp must cut), one minimal, one the queue drops (no symbol). */
 export function makeAnticipationCandidates() {
   return [
