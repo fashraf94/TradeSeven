@@ -241,7 +241,9 @@ function LobbyFooter() {
 // to today (backingDark.test.jsx). No frame, no placeholder, no reserved space
 // rides with it (the no-bracket ruling, Sept 18): the slot is rendered BARE —
 // no wrapper, no margin — so a strip that renders null leaves no element and
-// no gap; the strip carries its own spacing when it does render.
+// no gap; when it does render, the centre column's own gap spaces it, as on
+// desktop (LeagueHome's mount says `inColumn`, so the strip brings no margin
+// of its own — PLACE-B1, the pre-flip fixes 2 review record).
 export default function Lobby({ st, accent, onPickPod, onSpectate, onOpenMyGame, activeGroup = null, uid = null, displayName = null, onOpenTrainingPod = null, activeTrainingPod = null, hasAgent, backingSlot = null }) {
   return (
     <div style={{ padding: '16px 18px calc(env(safe-area-inset-bottom, 0px) + 120px)', maxWidth: 720, margin: '0 auto' }}>

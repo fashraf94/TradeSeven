@@ -141,9 +141,10 @@ export default function LeagueHome({ onOpenMyGame, onOpenTrainingPod, hasAgent, 
   };
   // The strip's mount — the centre's own slot, under the entry (N3), once the
   // seat is known (above). A component that renders null while dark: no
-  // element, no gap.
+  // element, no gap. The centre is a gapped column, as on desktop, so the
+  // strip brings no margin of its own there (`inColumn` — PLACE-B1).
   const seatKnown = !uid || seatFor === uid;
-  const backingSlot = seatKnown ? <BackingLandingStrip uid={uid} accent={ACCENT} onOpen={openBacking} /> : null;
+  const backingSlot = seatKnown ? <BackingLandingStrip uid={uid} accent={ACCENT} onOpen={openBacking} inColumn /> : null;
   // tab-switch: front-end navigation telemetry (NOT a §4 trading-signal).
   // Emitted only on a real switch, never on mount.
   const switchTab = (next) => { if (next === tab) return; signal('tab-switch', { from: tab, to: next }); setTab(next); };

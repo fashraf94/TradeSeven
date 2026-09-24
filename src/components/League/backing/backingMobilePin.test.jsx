@@ -31,14 +31,18 @@
 // `landing/{bracket,no-bracket}/on/{unseated-mounted,seated-mounted,
 // unseated-ssr}` and `{lobby,lobby-tabbed}/{bracket,no-bracket}/seated/
 // {open,staked,week,between}`. Checked row by row against main @ 40acd199's
-// markup: in 20 the strip's own markup is byte-identical and so is everything
-// else with it excised — the strip moved from below the bracket line (and,
-// seated, below "Watch a live game") to under the Auto-draft card / the hero;
-// in the 2 server renders the strip is absent — it mounts once the seat
-// subscription answers (the desktop's WIRE-7 rule, mirrored), and a server
-// render runs no effect. The other 74 rows, both funnels included, are
-// main's, byte for byte. The group mock answers null for an unseated viewer,
-// as the real subscription does; on main's code that moves no row.
+// markup: in 20 the strip moved from below the bracket line (and, seated,
+// below "Watch a live game") to under the Auto-draft card / the hero, INTO the
+// centre's gapped column — where, as on desktop, the column's own gap spaces
+// it, so its slot no longer carries its own `margin-bottom: 18px` (which,
+// stacked with the gap, spaced it 14 px above and 32 below — PLACE-B1, the
+// pre-flip fixes 2 review record); the strip's markup is otherwise
+// byte-identical, and so is everything else with it excised. In the 2 server
+// renders the strip is absent — it mounts once the seat subscription answers
+// (the desktop's WIRE-7 rule, mirrored), and a server render runs no effect.
+// The other 74 rows, both funnels included, are main's, byte for byte. The
+// group mock answers null for an unseated viewer, as the real subscription
+// does; on main's code that moves no row.
 
 import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import React, { act } from 'react';
@@ -464,7 +468,8 @@ describe('the mobile League landing — both flag states, both landings, unseate
     for (const kind of ['open', 'staked', 'week', 'between']) {
       it(`the presentational lobbies (Lobby, LobbyTabbed) · ${landing} · seated · the ${kind} strip in the slot`, () => {
         const st = LANDING[landing]();
-        const slot = <div data-backing="strip-slot" style={{ marginBottom: 18 }}><BackingStrip state={stripState(kind)} accent={ACCENT} onOpen={() => {}} /></div>;
+        // The slot as LeagueHome mounts it: in the centre's gapped column, no margin of its own (PLACE-B1).
+        const slot = <div data-backing="strip-slot"><BackingStrip state={stripState(kind)} accent={ACCENT} onOpen={() => {}} /></div>;
         const common = { st, accent: ACCENT, onPickPod: () => {}, onSpectate: () => {}, onOpenMyGame: () => {}, activeGroup: SEATED, uid: 'u1', displayName: 'Alice', onOpenTrainingPod: () => {}, activeTrainingPod: PRACTICE, hasAgent: true, backingSlot: slot };
         pin(`lobby/${landing}/seated/${kind}`, ssr(<Lobby {...common} />));
         pin(`lobby-tabbed/${landing}/seated/${kind}`, ssr(<LobbyTabbed {...common} tab="ranked" onSwitchTab={() => {}} agentLoadout={null} />));

@@ -602,10 +602,11 @@ function readInitialState() {
 function LandingStage({ state, onOpenStrip, onLeagueNav }) {
   const inputs = STRIP_INPUTS[state.kind];
   const stripState = deriveStripState({ pods: inputs.pods, inPlay: inputs.inPlay, now: PREVIEW_NOW, backingWeekCloses: SUNDAY_CLOSE });
-  // The slot exactly as BackingLandingStrip renders it on the mobile landing
-  // (the page's test holds the two byte-equal for every state).
+  // The slot exactly as BackingLandingStrip renders it on the mobile landing —
+  // in the centre's gapped column, no margin of its own (`inColumn`,
+  // PLACE-B1); the page's test holds the two byte-equal for every state.
   const slot = (
-    <div data-backing="strip-slot" style={{ marginBottom: 18 }}>
+    <div data-backing="strip-slot">
       <BackingStrip state={stripState} accent={ACCENT} onOpen={onOpenStrip} />
     </div>
   );

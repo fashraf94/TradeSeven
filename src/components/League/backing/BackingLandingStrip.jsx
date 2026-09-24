@@ -46,7 +46,7 @@ import { onStakePlaced } from './backingStakeSignal';
 /** setTimeout's ceiling (2^31 − 1 ms, ~24.8 days): no backing close is further out than that. */
 const MAX_TIMER_MS = 2147483647;
 
-function LiveStrip({ uid, accent, onOpen, wide }) {
+function LiveStrip({ uid, accent, onOpen, wide, inColumn }) {
   const pods = useBackingPods(true);
   const { refresh } = pods;
   // PRE-1: a confirmed stake re-reads the pod list (its `myStakes` are the
@@ -82,17 +82,21 @@ function LiveStrip({ uid, accent, onOpen, wide }) {
   // no strip rather than a strip that guesses.
   if (pods.loading && !pods.data) return null;
   if (pods.error && !pods.data) return null;
-  // The strip carries its own spacing on the mobile landing (the centre
-  // column's flex gap spaces it on desktop), so a null render leaves no gap behind.
+  // Inside a host's GAPPED column — the desktop centre, and the mobile
+  // landing's centre since N3 (`inColumn`) — the column's own flex gap spaces
+  // the strip, so its slot brings no margin: a margin there stacked with the
+  // gap (14 px above, 32 below — PLACE-B1, the pre-flip fixes 2 review
+  // record). A bare mount keeps its own spacing. Either way a null render
+  // leaves no element and no gap behind.
   if (wide) return <DeskStripSlot state={state} windowOpen={windowOpen} accent={accent} onOpen={onOpen} />;
   return (
-    <div data-backing="strip-slot" style={{ marginBottom: 18 }}>
+    <div data-backing="strip-slot" style={inColumn ? undefined : { marginBottom: 18 }}>
       <BackingStrip state={state} accent={accent} onOpen={onOpen} />
     </div>
   );
 }
 
-export default function BackingLandingStrip({ uid, accent, onOpen, wide = false }) {
+export default function BackingLandingStrip({ uid, accent, onOpen, wide = false, inColumn = false }) {
   if (!BACKING_BETA_ENABLED) return null;
-  return <LiveStrip uid={uid} accent={accent} onOpen={onOpen} wide={wide} />;
+  return <LiveStrip uid={uid} accent={accent} onOpen={onOpen} wide={wide} inColumn={inColumn} />;
 }
