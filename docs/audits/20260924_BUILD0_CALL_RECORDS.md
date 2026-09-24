@@ -496,3 +496,98 @@ Every command below ran in this session. Output was redirected to files, never p
     - E-5 (the flip parent read's size).
     - The pre-existing root rules-emulator regex drift (§9), offered as a separate task.
     - `TRADE_DECISION_TOOL` was never frozen before this build. Build 0 does not freeze the off literal either, because freezing it would change an object every existing import holds. Its on-tool shares nothing with it.
+
+## 12. Post-review rulings applied
+
+After this report was committed (`ac4292d8`), the founder ruled on the two spec-level findings of §8. Both rulings are applied on this branch, one commit each with its tests. This section **supersedes** the "pending ruling" statements for A-1 and E-3 in the executive verdict, in §8 and in §10 step 4. Those sections stand as they were written at review time. The third pre-flip decision, sign-off on the model-visible tool text (C-4), **remains open**, as does the `countTokens` measurement (C-5).
+
+| Ruling | Commit | In plain words | Mutation check |
+|---|---|---|---|
+| **A-1** | `b0105b0f8f343ea5be8d4259aad68e0e06380709` | A battle with no equipped watchlist labels its calls **"agent initiative"**, whatever its config fingerprint says. "Provenance unresolved" now means only that a watchlist was frozen but is unusable. | 4/4 killed |
+| **E-3** | `a78bbfb31f5958d069f4d07725054916d05b6e7a` | An "until the next check" call is judged **once, by that next check**: **hit** if its condition is met then, otherwise **expired**. Any later check can only expire it. Other horizons are unchanged. | 8/8 killed |
+
+### 12.1 A-1: no frozen watchlist means agent initiative
+
+**Ruling:** "origin is agent_initiative with hypothesisRef: null when the frozen agentContext.equippedWatchlist is absent, regardless of equippedConfigHash; provenance_unresolved only when a watchlist snapshot is present but unusable."
+
+**Code** (`api/_utils/callRecords/candidate.js`):
+- `resolveProvenance` (`:107-125`) returns `{ hypothesisRef: null, origin: 'agent_initiative' }` for an absent snapshot, `undefined` or `null` (`:109-110`), before the hash is read. `null` is the shape `createAgentBattle` writes when no watchlist is equipped.
+- A present snapshot that is unusable stays `provenance_unresolved`:
+  - `snapshot_corrupt` (`:114`, `:119`): a malformed snapshot or a malformed version.
+  - `config_hash_missing` (`:124`): a valid snapshot with neither a version nor a hash, so its legacy reference cannot be built.
+- `PROVENANCE_REASONS` (`:39`) drops the now-unreachable `hash_without_watchlist`.
+
+**Tests** (`candidate.test.js`):
+- The A-1 pin and the "A REAL battle manifest" row are now "A REAL battle manifest without a watchlist → agent_initiative, hypothesisRef null — the hash is ignored". They use the real `buildResolvedAgentManifest` with `equippedWatchlist: null`, and assert that the minted call carries no `provenanceReason`.
+- Absent and `null` snapshots are covered with and without a hash.
+- The unresolved row keeps only present-but-unusable snapshots.
+- The reason vocabulary is pinned.
+
+**Documents not edited:** contract §4's `origin` row still lists "hash without watchlist" under `provenance_unresolved`, and spec §3.6 defers to contract §4. Both are SHA-pinned inputs of this build (§0). The ruling supersedes them for Build 0; amending their text is the founder's to schedule.
+
+### 12.2 E-3: a next_check call is judged once, by its next check
+
+**Ruling:** "for calls with horizon.basis === 'next_check', the first check whose observedAtMs >= expiresAtMs evaluates the condition once — hit if met, else expired_unresolved; later checks expire it; other bases unchanged."
+
+**Code** (`api/_utils/callRecords/flip.js`):
+- `decideFlip` (`:113-122`) handles basis `next_check` with `observedAtMs ≥ expiresAt` (`:116`):
+  - a later check → `expired_unresolved` (`:117`);
+  - otherwise `hit` if the condition is met, else `expired_unresolved`.
+- Every other basis is unchanged: `observedAtMs > expiresAt` → `expired_unresolved`; up to and including the expiry instant, `hit` if met.
+- `conditionMet` (`:87`) holds the price test. A pick is never "met".
+- `planFlip` (`:158`) and the per-call transaction (`:209`) both receive `priorScanAtMs`, so the transaction re-decides with it, not only the page read (`:316`).
+- `runCallFlips` reads `priorScanAtMs` from `battle.cronState.callFlips.observedAtMs` (`:258`) and records its own observation instant in the status it returns (`:270`).
+
+**How "first" is told from "later".** A check is *later* when the battle's persisted scan status shows that a previous check's flip scan ran at or after the slot (`priorScanAtMs ≥ expiresAt`). Consequences:
+- **Normal case.** The check in the slot at `expiresAt` is the first, observes at slot + δ, and judges the call. This is the case review E-3 found could never hit.
+- **Deferred battle, or an excluded exit (no observation, no scan).** The next check that scans is the first and judges the call, as the ruling reads.
+- **Scan ran but did not reach the call.** The first check after the slot scanned, but its deadline cut the scan short or its transaction went unconfirmed. Every later check then only expires the call.
+- **Known edges, disclosed.**
+  - A non-model exit whose hook is budget-skipped (< 2,000 ms), or a model check whose calls phase is budget-skipped (< 4,000 ms), holds an observation but writes no scan status.
+  - A failed or unconfirmed status write likewise leaves the prior instant where it was.
+  - In both edges the next scanning check still counts as the first and judges the call, instead of only expiring it.
+- **Picks** (basis `next_check`, no price condition) expire at the first check at or after their slot. That now includes the exact slot instant, which the old rule (`>`) excluded; in practice nothing changes.
+
+**Wire change.** `cronState.callFlips` gains one field, `observedAtMs`: the status spec §3.8 names, `{ evalId, cursor, scanned, total, complete }`, plus this field, which the rule needs to tell a later check from the first. There is no reader in Build 0, and at off nothing is written (unchanged).
+
+**Tests** (`flip.test.js`):
+- The E-3 pin is replaced by three store-driven rows:
+  - **Hit at the next check:** slot + 20 s, condition met → `hit`, receipt px 170.
+  - **Miss at the next check:** condition not met → `expired_unresolved`, receipt px 160.
+  - **A later check:** the first check after the slot scans, but an older call takes its whole deadline, so the `next_check` call is never reached. The next check, 15 minutes later, finds the condition met and still only expires it.
+- Unit rows cover the exact slot instant, a prior scan before, at and after the slot, other bases unchanged, and picks at their slot.
+- The two status-shape pins include `observedAtMs`.
+
+**Documents not edited:** spec §3.8's "`observedAtMs > expiresAtMs` → `expired_unresolved`" and its status shape, and contract §5/§6, are SHA-pinned inputs (§0). The ruling supersedes them for `next_check`.
+
+### 12.3 Verification at `a78bbfb3`
+
+| Check | Result |
+|---|---|
+| Full suite, `npx vitest run` (redirected, never piped; exit recorded) | **789 files passed (3 skipped); 15,519 tests passed (64 skipped); exit 0** |
+| Lint gate, `npm run lint:gate` | **exit 0** |
+| Mutation check: its own `git archive` snapshot of `a78bbfb3`, each mutant restored byte-exact (sha256-checked) | **12/12 killed** (table below) |
+| Not re-run for these two commits | The rules emulator, `vite build` and the §7 battery. `git diff ac4292d8 a78bbfb3 --stat` touches only `candidate.js`, `flip.js` and their two test files: no rules, index, app or cron code. |
+| Review | These two commits implement founder rulings on findings the §8 verifiers had already confirmed. They were mutation-checked, not put through a new multi-lens review. |
+
+| Ruling | ID | Mutation | Result | First test that went red |
+|---|---|---|---|---|
+| A-1 | RA1a | the pre-ruling rule restored: no snapshot + a config hash → `provenance_unresolved` (`hash_without_watchlist`) | **KILLED** (2 failing) | candidate.test.js › NO watchlist snapshot (absent or null) → agent_initiative … (ruling A-1) |
+| A-1 | RA1b | a `null` snapshot (the shape `createAgentBattle` writes) treated as present → `snapshot_corrupt` | **KILLED** (2 failing) | candidate.test.js › NO watchlist snapshot (absent or null) → agent_initiative … (ruling A-1) |
+| A-1 | RA1c | a present but unusable snapshot mints `agent_initiative` | **KILLED** (2 failing) | candidate.test.js › UNRESOLVED only for a PRESENT but unusable snapshot … (ruling A-1) |
+| A-1 | RA1d | the reason vocabulary keeps the unreachable `hash_without_watchlist` | **KILLED** (1 failing) | candidate.test.js › UNRESOLVED only for a PRESENT but unusable snapshot … (ruling A-1) |
+| E-3 | RE3a | the ruling removed: `next_check` follows the strict rule again | **KILLED** (3 failing) | flip.test.js › a pick never hits — only expiry resolves it (its next_check slot included …) |
+| E-3 | RE3b | a later check judges the condition again (the prior scan ignored) | **KILLED** (2 failing) | flip.test.js › next_check (ruling E-3): the first check at or after the slot evaluates the condition once … |
+| E-3 | RE3c | the `next_check` rule applied to every basis | **KILLED** (2 failing) | flip.test.js › expiry wins outside the horizon; the exact expiry instant is still inside it |
+| E-3 | RE3d | the first check must be strictly after the slot (`>` instead of `>=`) | **KILLED** (2 failing) | flip.test.js › a pick never hits — only expiry resolves it (its next_check slot included …) |
+| E-3 | RE3e | a prior scan exactly AT the slot does not make this a later check | **KILLED** (1 failing) | flip.test.js › next_check (ruling E-3): the first check at or after the slot evaluates the condition once … |
+| E-3 | RE3f | the status does not record this scan's observation instant | **KILLED** (4 failing) | flip.test.js › a hit: state/stateChangedAt/stateSource flip, the receipt is created and referenced … |
+| E-3 | RE3g | the prior scan instant is not read from the persisted status | **KILLED** (1 failing) | flip.test.js › next_check, a LATER check: … the next one finds it met and still only expires it (ruling E-3) |
+| E-3 | RE3h | the transaction re-decides without the prior scan (only the page read has it) | **KILLED** (1 failing) | flip.test.js › next_check, a LATER check: … the next one finds it met and still only expires it (ruling E-3) |
+
+### 12.4 Where the rest of this report is now out of date
+- **Executive verdict, "Your decisions before switching to shadow":** items 1 (A-1) and 2 (E-3) are decided and applied. Item 3 (C-4, the model-visible tool text) remains.
+- **§8, rows A-1 and E-3:** their disposition is now *applied* (this section).
+- **§10 step 4:** A-1 and E-3 are done; the C-4 sign-off and the C-5 `countTokens` measurement remain.
+- **§3 anchors:** the `file:line` anchors for `candidate.js` and `flip.js` predate these commits; the anchors in §12 are current.
+- **The PR description** carries the report as it stood at `ac4292d8`; it does not include this section.
