@@ -69,7 +69,9 @@ vi.mock('../_utils/shadowLogger.js', async (importOriginal) => ({
   logVisionTransition: vi.fn(async () => false),
   logAnticipation: vi.fn(async () => false),
 }));
-vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({ ...(await importOriginal()), TICK_STAMPS_ENABLED: true }));
+// Cockpit Build 0: the call records are pinned OFF here explicitly (this suite's exact
+// entry-key lists are the off shape), so the shadow flip moves no line here.
+vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({ ...(await importOriginal()), TICK_STAMPS_ENABLED: true, CALL_RECORDS_MODE: 'off' }));
 // FAULT 1 — the composer.
 vi.mock('../_utils/tickStamps.js', async (importOriginal) => {
   const real = await importOriginal();

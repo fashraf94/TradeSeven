@@ -1,7 +1,7 @@
 // api/_utils/agentEvalToolSchema.js
 // Tool Use schema for the Haiku mid-battle evaluation call.
 
-export const TRADE_DECISION_TOOL = {
+const TRADE_DECISION_TOOL_BASE = {
   name: 'submit_trade_decision',
   description:
     'Submit your portfolio evaluation decision. HOLD keeps all positions. SWAP replaces one active position with a bench stock. If your conviction for SWAP is below 70, you MUST choose HOLD instead.',
@@ -193,3 +193,179 @@ export const TRADE_DECISION_TOOL = {
     },
   },
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cockpit Build 0 — the flag-conditional `declarations` property (spec
+// docs/design/COCKPIT_SPEC_V1_3.md §3.1; contract
+// docs/CALL_RECORD_FIELD_CONTRACT_V1_3.md §2).
+//
+// The tool the model receives is BUILT per check: with declarations off it is
+// the literal above, the same object — so every import, every pin, and the
+// trade-result validator (agentEvalToolResultValidation.js captures
+// `TRADE_DECISION_TOOL.input_schema` once, at import) are unchanged. With
+// declarations on it is that literal plus exactly one top-level property,
+// `declarations`, typed ['object','null'] and never in `required` (a required
+// block would reject every HOLD that declares nothing — the swap_type trap).
+//
+// THE TRADE VALIDATOR NEVER SEES THIS PROPERTY. The calls validator
+// (api/_utils/callRecords/validate.js) is the only validation boundary for the
+// block, and a bad block never alters the trade result.
+//
+// Reviewed as fenced-class (contract §2): extending the model's output schema
+// is model-visible at shadow/on even though no prompt section teaches it.
+
+/** Freeze a value and everything it holds (the on-tool shares nothing mutable — review C-6). */
+function deepFreeze(value) {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const v of Object.values(value)) deepFreeze(v);
+  }
+  return value;
+}
+
+/**
+ * The `declarations` property — contract §2's shape, in the model's terms.
+ * The wording states INTENT only (review C-4), and names the recipient Build 0
+ * really has (branch review BR-3): the block is stored only. It is not shown to
+ * the player, requests no response, executes or schedules nothing, and is not
+ * supplied to a later check. It never stands in for the decision or for
+ * anticipationCandidates. Every field is framed as a conditional record; no
+ * text tells the model to wait, withhold a trade, repeat itself in narration or
+ * seek permission. Model-visible text: fenced-class review (contract §2).
+ */
+export const DECLARATIONS_PROPERTY = deepFreeze({
+  type: ['object', 'null'],
+  description:
+    'Optional record of conditional intent from this check. These fields are stored only; they are not shown to the player, ' +
+    'do not request a response, do not execute or schedule a trade, and are not supplied to a later check. They do not change ' +
+    'this check\'s decision or anticipationCandidates. Most checks declare nothing: omit this or send null. At most 6 ' +
+    'calledShots. A level is a price in the symbol\'s own quote, read from what you were shown this check.',
+  properties: {
+    calledShots: {
+      type: 'array',
+      description:
+        'At most 6. Each records one conditional trade you are calling: SYMBOL trading above or below LEVEL before the horizon ' +
+        'ends. Declare only calls you actually hold.',
+      items: {
+        type: 'object',
+        required: ['symbol', 'direction', 'slot', 'condition', 'horizonPhrase', 'defaultAction', 'said'],
+        properties: {
+          symbol: {
+            type: 'string',
+            description: 'The ticker the condition watches. entry: the bench name you would bring in. exit: the held name you would move out.',
+          },
+          direction: {
+            type: 'string',
+            enum: ['entry', 'exit'],
+            description: 'entry = bring the symbol into the book. exit = move the held symbol out.',
+          },
+          slot: {
+            type: 'string',
+            enum: ['star', 'core', 'support'],
+            description: 'The slot the trade lands in (entry) or leaves (exit).',
+          },
+          counterpart: {
+            type: 'string',
+            description: 'Optional. entry: the held name it would replace. exit: the bench name that would come in. Omit if undecided.',
+          },
+          condition: {
+            type: 'object',
+            required: ['side', 'level'],
+            properties: {
+              side: { type: 'string', enum: ['above', 'below'], description: 'above = the price must trade above the level; below = under it.' },
+              level: { type: 'number', description: 'The price level.' },
+            },
+          },
+          horizonPhrase: {
+            type: 'string',
+            enum: ['next_check', 'this_session', 'this_battle', 'explicit'],
+            description: 'How long the call stands: until the next check, the end of this session, the end of this battle, or an explicit expiry.',
+          },
+          expiresAtMs: {
+            type: 'number',
+            description: 'Only with horizonPhrase explicit: the expiry instant as epoch milliseconds.',
+          },
+          defaultAction: {
+            type: 'string',
+            enum: ['act', 'hold'],
+            description: 'Intent recorded at declaration time if the condition is met: act = would favor a trade; hold = would favor holding. This records an intention, not an instruction or promise of execution.',
+          },
+          said: {
+            type: 'string',
+            description: 'The call as one conditional sentence, in your voice, at most 280 characters. Stored only; not shown to the player. The typed fields are the call; this sentence only presents it.',
+          },
+        },
+      },
+    },
+    watching: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'At most 6 tickers you are watching without calling a trade. Separate from anticipationCandidates, which it never replaces.',
+    },
+    playerAsk: {
+      type: ['object', 'null'],
+      description: 'Optional record of an unresolved research question and 2 to 4 possible answers. Stored only; no question is delivered and no answer is expected.',
+      required: ['question', 'options'],
+      properties: {
+        question: { type: 'string', description: 'At most 200 characters.' },
+        options: { type: 'array', items: { type: 'string' }, description: '2 to 4 possible answers, each at most 60 characters.' },
+        symbol: { type: 'string', description: 'Optional. The ticker the question is about.' },
+      },
+    },
+    fork: {
+      type: ['object', 'null'],
+      description: 'Optional record of an unresolved choice for one slot: 2 to 4 names from this battle that could replace swapOut. Stored only; no selection is requested or acted on.',
+      required: ['slot', 'swapOut', 'options', 'said'],
+      properties: {
+        slot: { type: 'string', enum: ['star', 'core', 'support'], description: 'The slot the choice concerns.' },
+        swapOut: { type: 'string', description: 'The held name an option would replace.' },
+        options: {
+          type: 'array',
+          description: '2 to 4 options.',
+          items: {
+            type: 'object',
+            required: ['symbol', 'why'],
+            properties: {
+              symbol: { type: 'string', description: 'A ticker from this battle.' },
+              why: { type: 'string', description: 'At most 140 characters.' },
+            },
+          },
+        },
+        said: { type: 'string', description: 'The choice as one conditional sentence, in your voice, at most 280 characters. Stored only; not shown to the player.' },
+      },
+    },
+  },
+});
+
+/**
+ * The declarations-on tool: the base literal plus exactly one property, built
+ * once — from a DEEP CLONE of the base, then deep-frozen, so it shares no
+ * object with the off tool (review C-6: a shared `required` array or property
+ * object would let a mutation of one reach the other, and the trade
+ * validator's captured schema with it). The base literal itself is untouched.
+ */
+const BASE_CLONE = structuredClone(TRADE_DECISION_TOOL_BASE);
+const TRADE_DECISION_TOOL_WITH_DECLARATIONS = deepFreeze({
+  ...BASE_CLONE,
+  input_schema: {
+    ...BASE_CLONE.input_schema,
+    properties: {
+      ...BASE_CLONE.input_schema.properties,
+      declarations: DECLARATIONS_PROPERTY,
+    },
+  },
+});
+
+/**
+ * The evaluation tool for one check. `declarations: true` only when the
+ * check's resolved CALL_RECORDS_MODE is not 'off'; anything else returns the
+ * base literal itself (identity, not a copy).
+ *
+ * @param {{ declarations?: boolean }} [opts]
+ */
+export function buildTradeDecisionTool({ declarations = false } = {}) {
+  return declarations === true ? TRADE_DECISION_TOOL_WITH_DECLARATIONS : TRADE_DECISION_TOOL_BASE;
+}
+
+/** The declarations-off tool — the constant every existing reader imports. */
+export const TRADE_DECISION_TOOL = buildTradeDecisionTool({ declarations: false });

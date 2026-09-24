@@ -109,6 +109,9 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   // Part 3: "a new capture flag also needs an explicit false mock in legacy
   // fixture tests"). A future flip must move this line deliberately.
   TICK_CAPTURE_ENABLED: false,
+  // Cockpit Build 0: the call records are pinned OFF here explicitly (this suite's
+  // exact entry-key lists are the off shape), so the shadow flip moves no line here.
+  CALL_RECORDS_MODE: 'off',
 }));
 
 const { processAgentBattle } = await import('./agent-evaluate.js');

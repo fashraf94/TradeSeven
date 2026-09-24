@@ -59,6 +59,9 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   TICK_STAMPS_ENABLED: true,
   ARCHETYPE_INTEGRITY_MODE: 'observe',
+  // Cockpit Build 0: the call records are pinned OFF here explicitly (this suite's
+  // exact entry-key lists are the off shape), so the shadow flip moves no line here.
+  CALL_RECORDS_MODE: 'off',
 }));
 
 const { processAgentBattle } = await import('./agent-evaluate.js');

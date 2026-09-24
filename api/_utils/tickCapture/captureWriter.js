@@ -22,10 +22,10 @@
 
 import { createHash } from 'node:crypto';
 import {
-  TICKS_SUBCOLLECTION, TICK_BODIES_SUBCOLLECTION, TICK_CAPTURE_SCHEMA_VERSION,
+  TICKS_SUBCOLLECTION, TICK_BODIES_SUBCOLLECTION,
   TICK_CAPTURE_DEADLINE_MS, TICK_CAPTURE_MIN_REMAINING_BUDGET_MS,
   TICK_CAPTURE_TEXT_FIELD_MAX_BYTES, TICK_CAPTURE_BODY_DOC_MAX_BYTES,
-  TICK_CAPTURE_BODY_RETENTION_DAYS, CHECK_NAMES,
+  TICK_CAPTURE_BODY_RETENTION_DAYS, CHECK_NAMES, resolveCaptureSchema,
 } from './captureConfig.js';
 import { buildUniverse, sanitizePermanentDocument, findFreeText } from './captureSerializer.js';
 
@@ -169,10 +169,17 @@ export function buildCaptureDocuments(state, {
   const capturedAt = new Date(nowMs).toISOString();
   const expireAt = new Date(nowMs + TICK_CAPTURE_BODY_RETENTION_DAYS * 86_400_000);
   const universe = buildUniverse(state.universeSets);
+  // THE EMITTED SCHEMA (Cockpit Build 0, spec §3.9): resolved ONCE for the tick
+  // (captureConfig.js resolveCaptureSchema, set on the context at its start)
+  // and read by BOTH composers below. A context that never set one is the
+  // version-1 pre-build shape. An unavailable contribution set (the pilot rows,
+  // unregistered at this baseline) is never emitted under a borrowed version.
+  const schema = state.captureSchema ?? resolveCaptureSchema({ callsEnabled: false, pilotEnabled: false });
+  if (!schema.available) throw new Error(`capture_schema_unavailable:${schema.reason}`);
 
   // ---- the body: ALL text, under the TTL ----------------------------------
   const body = {
-    schemaVersion: TICK_CAPTURE_SCHEMA_VERSION,
+    schemaVersion: schema.version,
     tickId: state.tickId,
     battleId: state.battleId,
     tickSeq: state.tickSeq,
@@ -205,7 +212,7 @@ export function buildCaptureDocuments(state, {
 
   // ---- the permanent record: ids, enums, numbers, symbols, timestamps, hashes
   const composed = {
-    schemaVersion: TICK_CAPTURE_SCHEMA_VERSION,
+    schemaVersion: schema.version,
     tickId: state.tickId,
     battleId: state.battleId,
     tickSeq: state.tickSeq,
@@ -267,6 +274,9 @@ export function buildCaptureDocuments(state, {
       replacedByDeterministic: state.decisionFacts.replacedByDeterministic === true,
     },
     actions: state.actions,
+    // Cockpit Build 0: the confirmed call references — present ONLY in the
+    // version-2 shape, so the version-1 record is byte-identical to before.
+    ...(schema.includeCalls ? { calls: (state.calls || []).map((c) => ({ callId: c.callId, n: c.n, kind: c.kind })) } : {}),
     controls: {
       rendered: state.controlFacts.rendered ?? 'not_rendered',
       suppressedControlCount: num(state.controlFacts.suppressedControlCount),

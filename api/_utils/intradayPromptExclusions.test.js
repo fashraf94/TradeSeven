@@ -156,3 +156,41 @@ describe('A9 §9.2 — the allowlists are pinned against their renderers', () =>
     expect(pickAnticipationEntry(MAXIMAL)).toEqual({ evalId: 'eval_1', timestamp: '2026-09-17T14:30:00.000Z' });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Cockpit Build 0 (docs/design/COCKPIT_SPEC_V1_3.md §3.11 "intradayPromptExclusions
+// (+ row)"; contract §9 "shadow: … nothing rendered, chat unchanged"). The
+// entry's `declarationsPhase` and the battle's call-record state
+// (cronState.declarationsPhase / callFlips / callsDiag) are READER data — the
+// four prompt-feeding readers never see them, so shadow changes no prompt.
+// ---------------------------------------------------------------------------
+describe('Cockpit Build 0 — the calls entry key and call-record state never reach a prompt reader', () => {
+  const CALLS_MARKERS = ['declarationsPhase', 'expected', 'callFlips', 'callsDiag', 'phaseResult'];
+  const WITH_PHASE = WITHOUT.map((e) => ({ ...e, declarationsPhase: 'expected' }));
+  const withCallsState = (b) => ({
+    ...b,
+    cronState: {
+      declarationsPhase: { evalId: 'eval_3', phase: 'written' },
+      callFlips: { evalId: 'eval_3', cursor: { mintedAt: 1789664000000, callId: 'b1:eval_2:call:0' }, scanned: 4, total: 4, complete: true },
+      callsDiag: { evalId: 'eval_3', exit: 'model_result', phaseResult: 'written', perId: [], removed: [], flips: null, truncated: false, faults: [], ms: 12 },
+    },
+  });
+
+  it('formatRecentEvals (fenced, key-explicit) is byte-identical with and without declarationsPhase', () => {
+    expect(formatRecentEvals(WITH_PHASE, 3)).toBe(formatRecentEvals(WITHOUT, 3));
+    for (const m of CALLS_MARKERS) expect(formatRecentEvals(WITH_PHASE, 3)).not.toContain(m);
+  });
+
+  it('the narrator record block and every allowlist exclude it', () => {
+    expect(buildYourRecordBlock({ evaluations: WITH_PHASE, directive: null })).toBe(buildYourRecordBlock({ evaluations: WITHOUT, directive: null }));
+    for (const list of [RECORD_ENTRY_FIELDS, REFLECTION_EVALUATION_FIELDS, ANTICIPATION_ENTRY_FIELDS]) expect(list).not.toContain('declarationsPhase');
+    expect(pickRecordEntry(WITH_PHASE[0])).not.toHaveProperty('declarationsPhase');
+  });
+
+  it('the reflection prompt is byte-identical with the entry key AND the battle-level call state present', () => {
+    const on = buildReflectionUserMessage(withCallsState(battle(WITH_PHASE)), { name: 'Nova', archetype: 'analyst' });
+    const off = buildReflectionUserMessage(battle(WITHOUT), { name: 'Nova', archetype: 'analyst' });
+    expect(JSON.stringify(on)).toBe(JSON.stringify(off));
+    for (const m of CALLS_MARKERS) expect(JSON.stringify(on)).not.toContain(m);
+  });
+});

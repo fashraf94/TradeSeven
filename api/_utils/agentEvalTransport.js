@@ -162,6 +162,12 @@ export function classifyTimeoutKind(err) {
  * @param {number} [p.promptBuildCeilingMs]
  * @param {number} [p.callCeilingMs]
  * @param {number} [p.postCallAllowanceMs]
+ * @param {number} [p.callsReserveMs] Cockpit Build 0 (docs/design/COCKPIT_SPEC_V1_3.md
+ *   §3.7): the call-records phase's admission reserve, ADDED to the post-call
+ *   allowance — 4,000 ms at CALL_RECORDS_MODE shadow/on (48,000 ms required),
+ *   0 at off (44,000 ms, today's number exactly). The caller resolves it from the
+ *   check's mode (api/_utils/callRecords/publish.js callsReserveMsFor); an
+ *   intentional scheduling effect of shadow/on, reported as such.
  * @returns {{ proceed: boolean, remainingMs: number, requiredMs: number }}
  */
 export function shouldStartHaikuCall({
@@ -170,9 +176,10 @@ export function shouldStartHaikuCall({
   promptBuildCeilingMs = PROMPT_BUILD_CEILING_MS,
   callCeilingMs = HAIKU_CALL_CEILING_MS,
   postCallAllowanceMs = HAIKU_POST_CALL_ALLOWANCE_MS,
+  callsReserveMs = 0,
 }) {
   const remainingMs = timeBudgetMs - elapsedMs;
-  const requiredMs = promptBuildCeilingMs + callCeilingMs + postCallAllowanceMs;
+  const requiredMs = promptBuildCeilingMs + callCeilingMs + postCallAllowanceMs + callsReserveMs;
   return { proceed: remainingMs >= requiredMs, remainingMs, requiredMs };
 }
 

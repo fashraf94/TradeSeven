@@ -118,6 +118,19 @@ export const BASE_ENTRY_KEYS = Object.freeze([
   ...PRE_PHASE_B_ENTRY_KEYS, ...TIMING_ENTRY_KEYS, ...FAIL_CLOSED_ENTRY_KEYS,
 ]);
 
+/**
+ * Cockpit Build 0 (spec docs/design/COCKPIT_SPEC_V1_3.md §2) — the entry key
+ * the call records add, in its OWN list and deliberately in NEITHER
+ * TIMING_ENTRY_KEYS nor BASE_ENTRY_KEYS: those are UNCONDITIONAL (every entry,
+ * every flag state), and `declarationsPhase` is CONDITIONAL — present on every
+ * entry the cron writes when CALL_RECORDS_MODE !== 'off' ('none' | 'expected'),
+ * and ABSENT on every entry at 'off'. Registering it in an unconditional list
+ * would either require it at off or weaken the off proof (round-2 review R2-8).
+ * The flag-off suites assert its absence; agent-evaluate.tickStamps.callsOn
+ * .test.js asserts its presence on those same paths at shadow/on.
+ */
+export const CALLS_ENTRY_KEYS = Object.freeze(['declarationsPhase']);
+
 export function makeDirective(overrides = {}) {
   return {
     text: 'Require stronger confirmation before entering',
@@ -381,6 +394,84 @@ export function makeSwapResult(overrides = {}) {
     status_feed_update: 'Rotating KO → AMD in support: relative strength and confirming volume.',
     ...overrides,
   });
+}
+
+/**
+ * Cockpit Build 0 — the model's `declarations` block (contract §2), a typical
+ * check: one entry shot with a counterpart, one exit confirmation, one watched
+ * name. Every symbol is on this harness's book or bench.
+ */
+export function makeDeclarations(overrides = {}) {
+  return {
+    calledShots: [
+      {
+        symbol: 'AMD', direction: 'entry', slot: 'support', counterpart: 'KO',
+        condition: { side: 'above', level: 163.5 }, horizonPhrase: 'this_session', defaultAction: 'act',
+        said: 'AMD into Support if it holds $163.50 — KO makes room.',
+      },
+      {
+        symbol: 'TSLA', direction: 'exit', slot: 'star',
+        condition: { side: 'below', level: 240 }, horizonPhrase: 'next_check', defaultAction: 'act',
+        said: 'Cutting TSLA if it loses $240 by the next check.',
+      },
+    ],
+    watching: ['JPM'],
+    playerAsk: null,
+    fork: null,
+    ...overrides,
+  };
+}
+
+/**
+ * The LARGEST block the calls validator admits (spec §3.2 caps): 6 shots with
+ * a 280-character `said`, 6 watched names, a 200-character question with four
+ * 60-character answers, a fork with four 140-character reasons and a
+ * 280-character `said`. The output-size measurement's upper bound.
+ */
+export function makeMaximalDeclarations() {
+  const said = (tag) => `${tag} `.padEnd(280, 'x');
+  const shot = (symbol, i) => ({
+    symbol, direction: i % 2 ? 'exit' : 'entry', slot: ['star', 'core', 'support'][i % 3], counterpart: 'KO',
+    condition: { side: i % 2 ? 'below' : 'above', level: 100.25 + i }, horizonPhrase: 'this_session', defaultAction: i % 2 ? 'hold' : 'act',
+    said: said(`shot ${i}`),
+  });
+  return {
+    calledShots: ['AMD', 'JPM', 'NVDA', 'TSLA', 'MSFT', 'AMZN'].map(shot),
+    watching: ['AMD', 'JPM', 'NVDA', 'TSLA', 'MSFT', 'AMZN'],
+    playerAsk: {
+      question: 'q '.padEnd(200, 'q'),
+      options: ['a', 'b', 'c', 'd'].map((o) => `${o} `.padEnd(60, o)),
+      symbol: 'AMD',
+    },
+    fork: {
+      slot: 'support', swapOut: 'KO',
+      options: ['AMD', 'JPM', 'NVDA', 'MSFT'].map((symbol) => ({ symbol, why: `${symbol} `.padEnd(140, 'w') })),
+      said: said('fork'),
+    },
+  };
+}
+
+/**
+ * Cockpit Build 0 — a frozen observation (spec §3.4) over this harness's quote
+ * table: every held and bench name, observed at FROZEN_NOW, fetched one
+ * second earlier, from the model seam. `symbols` overrides replace entries.
+ */
+export function makeObservation({ observedAtMs = Date.parse(FROZEN_NOW), source = 'model_prompt', symbols = {}, omit = [] } = {}) {
+  const table = makePriceTable();
+  const out = {};
+  for (const sym of [...HELD, ...BENCH]) {
+    if (omit.includes(sym) || !table[sym]) continue;
+    out[sym] = { px: table[sym].current, fetchedAtMs: observedAtMs - 1000 };
+  }
+  return { observedAtMs, source, symbols: { ...out, ...symbols } };
+}
+
+/**
+ * Cockpit Build 0 — the awaited executor return the calls context carries on
+ * the model path (spec §3.4): the model's autopilot SWAP KO (support 0) → AMD.
+ */
+export function makeExecutorResult(overrides = {}) {
+  return { symbolOut: 'KO', symbolIn: 'AMD', tier: 'support', slotIndex: 0, ...overrides };
 }
 
 /** The model's raw anticipation items: one full (with the `rationale` the stamp must cut), one minimal, one the queue drops (no symbol). */

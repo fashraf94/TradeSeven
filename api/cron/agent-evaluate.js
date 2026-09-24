@@ -35,7 +35,17 @@ import {
   computeBattlePhase,
   getCurrentTradingDayServer,
 } from '../_utils/agentEvalPromptAssembly.js';
-import { TRADE_DECISION_TOOL } from '../_utils/agentEvalToolSchema.js';
+import { buildTradeDecisionTool } from '../_utils/agentEvalToolSchema.js';
+// Cockpit Build 0 (docs/design/COCKPIT_SPEC_V1_3.md §2–§3): the call records.
+// Every call site below runs through callsStep — inert at CALL_RECORDS_MODE
+// 'off' (nothing inside it runs), isolated at shadow/on (a calls defect costs
+// the check a record, never a decision, a write or an exit).
+import { resolveCallRecordsMode, createCallsContext, callsActive, callsStep, callsStepAsync } from '../_utils/callRecords/mode.js';
+import { recordFetchedQuote, freezeObservation, freezeModelObservation, classifyEntryExit, carryExecutorResult, passExaminesHeldPrices } from '../_utils/callRecords/observe.js';
+import { captureDeclarations } from '../_utils/callRecords/validate.js';
+import { bindHorizon, battleExpiryMs } from '../_utils/callRecords/horizon.js';
+import { callsReserveMsFor, runModelCallsPhase } from '../_utils/callRecords/publish.js';
+import { runCallFlips, runExitCallsHook } from '../_utils/callRecords/flip.js';
 import { validateTradeToolResult, INVALID_TOOL_RESULT_CLASS } from '../_utils/agentEvalToolResultValidation.js';
 import { evaluateTriggers, fetchRecentNews, MAX_STORY_WAKE_ATTEMPTS, SEEN_STORY_ID_CAP } from '../_utils/agentTriggerGate.js';
 import { validateTradeDecision, executeSwapServer } from '../_utils/agentSwapExecution.js';
@@ -96,6 +106,7 @@ import { composeTickStamps } from '../_utils/tickStamps.js';
 // builder, and flag off every one of its call sites is the frozen inert NOOP.
 import { createTickCaptureContext, claimTickCaptureContext, markTickCaptureClaimed, currentTickCapture, currentCaptureScope, newTickCaptureScope, runInTickCaptureScope } from '../_utils/tickCapture/captureContext.js';
 import { finalizeTickCapture } from '../_utils/tickCapture/captureWriter.js';
+import { resolveCaptureSchema } from '../_utils/tickCapture/captureConfig.js';
 import { beginBodyCapture, endBodyCapture, makeObservingFetch } from '../_utils/tickCapture/captureBodyObserver.js';
 // THE THRESHOLD LINT (docs/audits/20260915_PHASE0_SIGNAL_LANGUAGE.md §7.2
 // shape 2): the pure, zero-import verdict on whether an anticipation
@@ -889,6 +900,21 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
   // this function ever touches.
   const tickCaptureScope = TICK_CAPTURE_ENABLED ? currentCaptureScope() : null;
 
+  // COCKPIT BUILD 0 (spec §3.3) — the request-local CALLS CONTEXT, declared out
+  // here for the capture context's reason: every exit, the `finally` included,
+  // must reach it. The mode is resolved ONCE, here, and never re-read during
+  // the check. Independent of tick capture. At 'off' every call site is inert.
+  const callsCtx = createCallsContext({ mode: resolveCallRecordsMode(), handlerStartMs: cronStartTime });
+  // Capture composition (§3.9): the emitted capture schema, resolved ONCE from
+  // the enabled contribution set and read by BOTH composers at finalization
+  // (either exit). Calls off → version 1, the pre-build shape; shadow/on →
+  // version 2 with `calls[]`. No pilot capture registration exists at this
+  // baseline, so the pilot contribution is structurally absent (rows 3–4
+  // unavailable).
+  captureStep(tickCapture, () => {
+    tickCapture.schema(resolveCaptureSchema({ callsEnabled: callsActive(callsCtx.mode), pilotEnabled: false }));
+  });
+
   // Phase 2 Voice Layer Rework — trade narrations queued during this tick.
   // Declared outside the try so the finally block can dispatch them
   // regardless of early-return or thrown-error exit path. Each entry is
@@ -1007,6 +1033,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           const data = await getStockAnalysisData(symbol, { forceRefresh: true, fields: ['daily', 'price'] });
           if (data?.price) {
             prices[symbol] = data.price;
+            // Calls (§3.3): the DETACHED fetched quote, before any replacement.
+            callsStep(callsCtx, () => recordFetchedQuote(callsCtx, symbol, data.price, Date.now()));
           }
           if (Array.isArray(data?.daily)) {
             dailySeries[symbol] = data.daily;
@@ -1252,6 +1280,11 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         // `undefined` (Firestore rejects it — ignoreUndefinedProperties is unset).
         vwapFireGuard: battle.cronState?.vwapFireGuard || {},
       });
+      // Calls (§3.4 passive row): held names with usable quotes, this exit's instant.
+      callsStep(callsCtx, () => {
+        callsCtx.exit = 'passive';
+        freezeObservation(callsCtx, { source: 'passive', observedAtMs: Date.now(), examined: portfolioSymbols });
+      });
       await battleRef.update(scoreUpdate);
       summary.evaluated++;
       summary.held++;
@@ -1259,6 +1292,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       captureStep(tickCapture, () => {
         tickCapture.exit('cpu_passive');
       });
+      // Calls (§3.8): this exit's flips, after its authoritative write, under the non-model rule.
+      if (callsActive(callsCtx.mode)) await callsStepAsync(callsCtx, () => runExitCallsHook(callsCtx, { db, battle, timeBudgetMs: TIME_BUDGET_MS }));
       return;
     }
 
@@ -1406,7 +1441,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           await Promise.allSettled(newTickersNeedingPrices.map(async (symbol) => {
             try {
               const data = await getStockAnalysisData(symbol, { forceRefresh: true, fields: ['daily', 'price'] });
-              if (data?.price) prices[symbol] = data.price;
+              if (data?.price) {
+                prices[symbol] = data.price;
+                callsStep(callsCtx, () => recordFetchedQuote(callsCtx, symbol, data.price, Date.now()));
+              }
             } catch (_e) { /* skip — best effort */ }
           }));
         }
@@ -2275,6 +2313,15 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp, vwapFireGuard });
       const existingFeed = battle.statusFeed || [];
       scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
+      // Calls (§3.4 proposal-pending row): held + bench names, this exit's instant.
+      callsStep(callsCtx, () => {
+        callsCtx.exit = 'proposal_pending';
+        freezeObservation(callsCtx, {
+          source: 'proposal_pending',
+          observedAtMs: Date.now(),
+          examined: [...flattenPortfolioServer(battle.portfolio), ...flattenBenchServer(battle.portfolio?.bench)].map((a) => a.symbol),
+        });
+      });
       await battleRef.update(scoreUpdate);
       summary.evaluated++;
       summary.held++;
@@ -2282,6 +2329,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         tickCapture.stage('proposal_handled');
         tickCapture.exit('proposal_pending');
       });
+      // Calls (§3.8): this exit's flips, after its authoritative write, under the non-model rule.
+      if (callsActive(callsCtx.mode)) await callsStepAsync(callsCtx, () => runExitCallsHook(callsCtx, { db, battle, timeBudgetMs: TIME_BUDGET_MS }));
       return;
     }
 
@@ -2300,10 +2349,18 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // the pass below runs the guardrail stops + profit target before the
     // early return that used to silently swallow them (Phase-0 item 2).
     if (gameplanHandled === 'skip_haiku') {
-      await runSuppressionDeterministicPass({ db, battleRef, battle, prices, lockedPositions, stockRegimes, statusFeedEntries, pendingNarrations, summary, tournamentCtx, ctx, currentDay, currentScore, marketPosture, dialClamp, momentumData, technicalScoresMap, attributionAgentId, rankingsResult, vwapTicks, stagnationTicks });
+      await runSuppressionDeterministicPass({ db, battleRef, battle, prices, lockedPositions, stockRegimes, statusFeedEntries, pendingNarrations, summary, tournamentCtx, ctx, currentDay, currentScore, marketPosture, dialClamp, momentumData, technicalScoresMap, attributionAgentId, rankingsResult, vwapTicks, stagnationTicks, callsCtx });
       finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp, vwapFireGuard });
       const existingFeed = battle.statusFeed || [];
       scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
+      // Calls (§3.4 gameplan-pending row): the observation is the R11 pass's own
+      // (frozen inside it). A pass that examined nothing (no deployed guardrail,
+      // or the executor flag off) still stamps THIS exit's instant with an EMPTY
+      // examined set (review A-2): the row flips — expiry runs, no hit can.
+      callsStep(callsCtx, () => {
+        callsCtx.exit = 'gameplan_pending';
+        freezeObservation(callsCtx, { source: 'gameplan_pass', observedAtMs: Date.now(), examined: [] });
+      });
       await battleRef.update(scoreUpdate);
       summary.evaluated++;
       summary.held++;
@@ -2311,6 +2368,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         tickCapture.stage('gameplan_handled');
         tickCapture.exit('gameplan_pending');
       });
+      // Calls (§3.8): this exit's flips, after its authoritative write, under the non-model rule.
+      if (callsActive(callsCtx.mode)) await callsStepAsync(callsCtx, () => runExitCallsHook(callsCtx, { db, battle, timeBudgetMs: TIME_BUDGET_MS }));
       return;
     }
 
@@ -2332,7 +2391,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       // already create for pending meetings today (they run before this gate on
       // every tick); the pass widens its frequency, never its mechanism.
       if (gameplanTrigger) {
-        await runSuppressionDeterministicPass({ db, battleRef, battle, prices, lockedPositions, stockRegimes, statusFeedEntries, pendingNarrations, summary, tournamentCtx, ctx, currentDay, currentScore, marketPosture, dialClamp, momentumData, technicalScoresMap, attributionAgentId, rankingsResult, vwapTicks, stagnationTicks });
+        await runSuppressionDeterministicPass({ db, battleRef, battle, prices, lockedPositions, stockRegimes, statusFeedEntries, pendingNarrations, summary, tournamentCtx, ctx, currentDay, currentScore, marketPosture, dialClamp, momentumData, technicalScoresMap, attributionAgentId, rankingsResult, vwapTicks, stagnationTicks, callsCtx });
         const todayET = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' });
         statusFeedEntries.push({
           timestamp: new Date().toISOString(),
@@ -2352,12 +2411,21 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp, vwapFireGuard });
         const existingFeed = battle.statusFeed || [];
         scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
+        // Calls (§3.4 gameplan-created row): the R11 pass's own observation; a
+        // pass that examined nothing stamps this exit's instant with an EMPTY
+        // set (review A-2) — expiry runs, no hit can.
+        callsStep(callsCtx, () => {
+          callsCtx.exit = 'gameplan_created';
+          freezeObservation(callsCtx, { source: 'gameplan_pass', observedAtMs: Date.now(), examined: [] });
+        });
         await battleRef.update(scoreUpdate);
         summary.evaluated++;
         captureStep(tickCapture, () => {
           tickCapture.stage('gameplan_handled');
           tickCapture.exit('gameplan_created');
         });
+        // Calls (§3.8): this exit's flips, after its authoritative write, under the non-model rule.
+        if (callsActive(callsCtx.mode)) await callsStepAsync(callsCtx, () => runExitCallsHook(callsCtx, { db, battle, timeBudgetMs: TIME_BUDGET_MS }));
         return;
       }
     }
@@ -2407,7 +2475,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           if (!prices[ticker]) {
             try {
               const data = await getStockAnalysisData(ticker, { forceRefresh: true, fields: ['daily', 'price'] });
-              if (data?.price) prices[ticker] = data.price;
+              if (data?.price) {
+                prices[ticker] = data.price;
+                callsStep(callsCtx, () => recordFetchedQuote(callsCtx, ticker, data.price, Date.now()));
+              }
             } catch (_e) { /* skip — catalyst is best-effort */ }
           }
         }
@@ -2474,12 +2545,24 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         const existingFeed = battle.statusFeed || [];
         scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
       }
+      // Calls (§3.4 no-trigger row): held + bench names, this exit's instant —
+      // after every augmentation fetch, never the initial quote-health instant.
+      callsStep(callsCtx, () => {
+        callsCtx.exit = 'no_trigger';
+        freezeObservation(callsCtx, {
+          source: 'no_trigger',
+          observedAtMs: Date.now(),
+          examined: [...flattenPortfolioServer(battle.portfolio), ...flattenBenchServer(battle.portfolio?.bench)].map((a) => a.symbol),
+        });
+      });
       await battleRef.update(scoreUpdate);
       summary.evaluated++;
       summary.held++;
       captureStep(tickCapture, () => {
         tickCapture.exit('no_trigger');
       });
+      // Calls (§3.8): this exit's flips, after its authoritative write, under the non-model rule.
+      if (callsActive(callsCtx.mode)) await callsStepAsync(callsCtx, () => runExitCallsHook(callsCtx, { db, battle, timeBudgetMs: TIME_BUDGET_MS }));
       return;
     }
 
@@ -2537,7 +2620,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // now the battle's risk swaps and score writes have already happened
     // mid-function — we skip only the Haiku call and keep the normal write
     // path. It still runs ONCE, before the build.
-    const budget = shouldStartHaikuCall({ elapsedMs: Date.now() - cronStartTime, timeBudgetMs: TIME_BUDGET_MS });
+    // Calls (§3.7): at shadow/on the pre-call requirement carries the calls
+    // phase's 4,000 ms admission reserve (48,000 ms); at off it is 0 and the
+    // requirement is today's 44,000 ms exactly.
+    const budget = shouldStartHaikuCall({ elapsedMs: Date.now() - cronStartTime, timeBudgetMs: TIME_BUDGET_MS, callsReserveMs: callsReserveMsFor(callsCtx.mode) });
     if (refreshFailure) {
       // F1b — a swap committed and its re-read failed. No model call: the
       // prompt would describe a book that is not the book.
@@ -2564,6 +2650,15 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       // counted by the handler, apart from these).
       summary.budgetSkipped = (summary.budgetSkipped || 0) + 1;
       console.warn(`${LOG_PREFIX} Haiku call skipped for battle ${battle.id}: ${haikuFailure.message}`);
+      // Calls (§3.4 budget-skipped row): held + bench names, this exit's instant.
+      callsStep(callsCtx, () => {
+        callsCtx.exit = 'budget_skipped';
+        freezeObservation(callsCtx, {
+          source: 'budget_skipped',
+          observedAtMs: Date.now(),
+          examined: [...flattenPortfolioServer(battle.portfolio), ...flattenBenchServer(battle.portfolio?.bench)].map((a) => a.symbol),
+        });
+      });
       captureStep(tickCapture, () => {
         tickCapture.model({ outcome: 'failed', failureClass: 'budget_skipped', message: haikuFailure.message });
       });
@@ -2632,6 +2727,17 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           tickCapture.stage('prompt_built');
           tickCapture.callEnvelope({ buildMs, promptBuiltAt });
         });
+        // Calls (§3.4 THE MODEL SEAM): the held rows and the flattened augmented
+        // bench this prompt was built from, at Date.parse(promptBuiltAt), from
+        // the detached fetched quotes; a row the prompt showed at an execution
+        // price is marked. Pure — no read of the doc (pin 3's window).
+        callsStep(callsCtx, () => freezeModelObservation(callsCtx, {
+          heldSymbols: assetScores.map((s) => s.symbol),
+          benchSymbols: flattenBenchServer(battle.portfolio?.bench).map((a) => a.symbol),
+          promptBuiltAt,
+          replacedSymbols: Object.keys(forcedEntryPrices),
+          battle,
+        }));
         const { systemPrompt, identityBlock, liveContextBlock } = built;
 
         // ---- Phase 2: the call, and ONLY now the backstop ----
@@ -2668,7 +2774,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
               { role: 'assistant', content: 'I understand my identity and strategic context. Show me the live battle state.' },
               { role: 'user', content: liveContextBlock },
             ],
-            tools: [TRADE_DECISION_TOOL],
+            // §3.1: the declarations property rides the tool only at shadow/on;
+            // at off this is the TRADE_DECISION_TOOL object itself — the same
+            // reference every import holds, unchanged.
+            tools: [buildTradeDecisionTool({ declarations: callsActive(callsCtx.mode) })],
             tool_choice: { type: 'tool', name: 'submit_trade_decision' },
           }, { timeout: 20_000, signal: abortCtrl.signal });
         } finally {
@@ -2714,6 +2823,13 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         // is recorded.
         const toolUse = response.content?.find(c => c.type === 'tool_use');
         const validation = validateTradeToolResult(toolUse?.input);
+        // Calls (§3.1): a max_tokens stop is a TRUNCATION EVENT at shadow/on.
+        callsStep(callsCtx, () => {
+          if (response.stop_reason === 'max_tokens') {
+            callsCtx.diag.truncated = true;
+            console.warn(`${LOG_PREFIX} [calls] truncation_event battle=${battle.id} stop_reason=max_tokens`);
+          }
+        });
         // Capture (spec §3): the ORIGINAL tool result exactly as the model
         // returned it, copied HERE — before the deterministic guardrail layer
         // can replace `haikuResult` below. Recorded whether or not it
@@ -2725,6 +2841,17 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           haikuResult = toolUse.input;
           captureStep(tickCapture, () => {
             tickCapture.model({ outcome: 'ok', failureClass: null });
+          });
+          // Calls (§3.2): the model's block from the ACCEPTED result, detached
+          // and validated once pre-commit. The trade result is never touched.
+          // The horizon is judged here against a PROVISIONAL mint instant (now);
+          // the mint re-judges it against the real one (an explicit expiry
+          // crossed in between is removed there).
+          callsStep(callsCtx, () => {
+            callsCtx.declarations = captureDeclarations(toolUse.input?.declarations, {
+              universe: callsCtx.universe,
+              resolveHorizon: bindHorizon({ promptBuiltAtMs: Date.parse(promptBuiltAt), mintedAtMs: Date.now(), battleExpiresAtMs: battleExpiryMs(battle) }),
+            });
           });
         } else if (!toolUse) {
           haikuFailure = {
@@ -3448,6 +3575,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
               validation.resolvedTier, validation.resolvedSlotIndex,
               benchAsset, currentDay, prices, evaluationMetadata, snapshot
             );
+            // Calls (§3.4): the committed executor result, carried apart from capture.
+            callsStep(callsCtx, () => carryExecutorResult(callsCtx, swapResult));
             // Capture (C-10 / C-6): the committed action, and the execution
             // check's actual outcome. Both read off the executor's own return.
             captureStep(tickCapture, () => {
@@ -4006,6 +4135,16 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       console.error(`${LOG_PREFIX} tick stamps failed for battle ${battle.id} (entry written unstamped; tick continues):`, stampErr?.message || stampErr);
     }
 
+    // ---- Cockpit Build 0 (spec §3.4; contract §2.1) — the entry's phase ----
+    // Present on EVERY entry this cron writes at shadow/on, absent at off:
+    // 'expected' only on the model-result row with typed content surviving the
+    // calls validator; 'none' otherwise (null / absent / malformed_block / fully
+    // removed, or no accepted model output). Removal reasons stay in diagnostics.
+    callsStep(callsCtx, () => {
+      callsCtx.exit = classifyEntryExit({ refreshFailure, haikuFailure, promptBuilt });
+      evaluation.declarationsPhase = callsCtx.exit === 'model_result' && callsCtx.declarations?.phase === 'expected' ? 'expected' : 'none';
+    });
+
     // ---- Tick capture: the tick's own facts, read off what it already has --
     // The CONTROLS come from the in-memory slots the prompt was rendered from,
     // never a fresh read (C-5): pin 3 of agent-evaluate.tickStamps.pins.test.js
@@ -4243,9 +4382,34 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     evaluation.tickMs = Date.now() - tickAdmittedAtMs;
     await battleRef.update(finalUpdate);
     summary.evaluated++;
+    // Calls (§3.6): the evaluation identity is COMMITTED only now.
+    callsStep(callsCtx, () => { callsCtx.evalIdentity = { evalId, evalSeq }; });
     captureStep(tickCapture, () => {
       tickCapture.stage('finalized');
       tickCapture.exit('completed');
+    });
+    // Calls (§3.7–§3.8): after the evaluation commit and before narration
+    // dispatch, under the shared clock with the 12 s tail protected. The
+    // model-result row runs the model-path phase — publication (when the entry
+    // said `expected`), the flips, one status write; the other entry-writing
+    // flip rows (budget-skipped, transport-failed-after-prompt) run their flips
+    // under the non-model rule; the excluded rows do nothing. Inert at off;
+    // isolated at shadow/on; never the trade's concern.
+    // At off: no await at all (review B-2) — the control flow is origin/main's exactly.
+    const callsPhase = !callsActive(callsCtx.mode) ? undefined : await callsStepAsync(callsCtx, () => (callsCtx.exit === 'model_result'
+      ? runModelCallsPhase(callsCtx, {
+        db,
+        battle,
+        timeBudgetMs: TIME_BUDGET_MS,
+        promptBuiltAt,
+        tickId: tickCapture.enabled ? (tickCapture.state?.tickId ?? null) : null,
+        flips: runCallFlips,
+      })
+      : runExitCallsHook(callsCtx, { db, battle, timeBudgetMs: TIME_BUDGET_MS })));
+    // Capture references (§3.7/§3.9): CONFIRMED publication results only,
+    // recorded before capture finalizes in the `finally`.
+    captureStep(tickCapture, () => {
+      for (const ref of callsPhase?.captureRefs || []) tickCapture.call(ref);
     });
   } catch (err) {
     // Tick capture (C-9): THE ERROR EXIT. Marked here so the `finally` below
@@ -5053,6 +5217,7 @@ export async function runSuppressionDeterministicPass({
   statusFeedEntries, pendingNarrations, summary, tournamentCtx, ctx,
   currentDay, currentScore, marketPosture, dialClamp, momentumData,
   technicalScoresMap, attributionAgentId, rankingsResult, vwapTicks, stagnationTicks,
+  callsCtx = null,
 }) {
   if (!PROFIT_TARGET_EXECUTOR_ENABLED) return;
 
@@ -5084,6 +5249,17 @@ export async function runSuppressionDeterministicPass({
       stockRegimes,
       sectorSlotObserveCap: null,
     });
+    // Calls (§3.4 gameplan rows): the held names whose prices this pass just
+    // EXAMINED — its stop / trailing-stop / profit-target scans read every held
+    // price — observed at this instant, before the pass can swap and re-read
+    // the book. A pass with no price-scanning guardrail (sector-only,
+    // maxPosition-only) examined no price: an EMPTY set (branch review BR-2) —
+    // expiry runs, no hit can. Inert at off; the pass's own behavior is untouched.
+    callsStep(callsCtx, () => freezeObservation(callsCtx, {
+      source: 'gameplan_pass',
+      observedAtMs: Date.now(),
+      examined: passExaminesHeldPrices(deployedGuardrails) ? flattenPortfolioServer(battle.portfolio).map((a) => a.symbol) : [],
+    }));
     // G2: the pass RAN and its guardrails were evaluated. Recorded at the
     // boundary that did it — on a suppression tick the main-path evaluation
     // never happens, so without this `evaluated` was written false for a tick

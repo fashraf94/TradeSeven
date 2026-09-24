@@ -42,7 +42,7 @@ vi.mock('./firebaseAdmin.js', () => ({ getFirebaseAdmin: () => ({}) }));
 
 const { buildEvalSystemPrompt, buildAgentIdentityBlock, buildLiveContextBlock } = await import('./agentEvalPromptAssembly.js');
 const { buildStrategySystemPrompt, buildStrategyUserPrompt, formatMarketCSV } = await import('./agentPromptAssembly.js');
-const { TRADE_DECISION_TOOL } = await import('./agentEvalToolSchema.js');
+const { TRADE_DECISION_TOOL, buildTradeDecisionTool } = await import('./agentEvalToolSchema.js');
 const { STRATEGY_TOOL } = await import('./agentToolSchema.js');
 const { EVAL_MAX_OUTPUT_TOKENS } = await import('./agentEvalTransport.js');
 
@@ -194,6 +194,14 @@ describe('M7-E2E — eval assembler: the COMPLETE mid-battle request at maximal 
     expect(input + EVAL_MAX_OUTPUT_TOKENS).toBeLessThan(MODEL_CONTEXT_TOKENS - STATED_HEADROOM_TOKENS);
     // Runaway catch: the tight named budget (duplicated block / double-append
     // at scale fails HERE, with margin to spare below the ceiling above).
+    expect(input).toBeLessThan(EVAL_FULL_REQUEST_INPUT_BUDGET);
+  });
+
+  it('Cockpit Build 0: the SAME maximal request with the CALL_RECORDS_MODE shadow/on tool (+ declarations) still fits both budgets', async () => {
+    const { system, identity, ack, live } = await assembleEvalRequest();
+    const shadowTools = JSON.stringify([buildTradeDecisionTool({ declarations: true })]);
+    const input = [system, identity, ack, live, shadowTools].reduce((n, s) => n + estimateTokens(s), 0);
+    expect(input + EVAL_MAX_OUTPUT_TOKENS).toBeLessThan(MODEL_CONTEXT_TOKENS - STATED_HEADROOM_TOKENS);
     expect(input).toBeLessThan(EVAL_FULL_REQUEST_INPUT_BUDGET);
   });
 
