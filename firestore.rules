@@ -450,6 +450,31 @@ service cloud.firestore {
                     && get(/databases/$(database)/documents/agentBattles/$(battleId)).data.ownerId == request.auth.uid;
         allow write: if false;
       }
+
+      // Cockpit Build 0 (docs/design/COCKPIT_SPEC_V1_3.md §3.10; contract
+      // docs/CALL_RECORD_FIELD_CONTRACT_V1_3.md §1, §2.1): the per-check
+      // declarations record, the calls minted from it, and each call's
+      // companion observation receipt. The intradayViews posture exactly: read
+      // by the parent battle's owner (mirrored via the parent's ownerId — a
+      // parent rule never reaches a subcollection), no client write for anyone.
+      // The evaluation cron writes through the Admin SDK; every player action on
+      // a call is an API route (Build 1). Proven by test/rules/
+      // {declarations,calls,callObservations}Denials.rules.mjs (npm run test:rules).
+      match /declarations/{evalId} {
+        allow read: if request.auth != null
+                    && get(/databases/$(database)/documents/agentBattles/$(battleId)).data.ownerId == request.auth.uid;
+        allow write: if false;
+      }
+      match /calls/{callId} {
+        allow read: if request.auth != null
+                    && get(/databases/$(database)/documents/agentBattles/$(battleId)).data.ownerId == request.auth.uid;
+        allow write: if false;
+      }
+      match /callObservations/{callId} {
+        allow read: if request.auth != null
+                    && get(/databases/$(database)/documents/agentBattles/$(battleId)).data.ownerId == request.auth.uid;
+        allow write: if false;
+      }
     }
 
     // Draft user stats — document ID is the userId
@@ -886,6 +911,15 @@ service cloud.firestore {
     // the posture is visible (the Wire precedent), and
     // test/rules/agentEvalRunsDenials.rules.mjs asserts it.
     match /agentEvalRuns/{runId} {
+      allow read, write: if false;  // Admin SDK only
+    }
+
+    // Cockpit Build 0 (spec §3.10; contract §9): callSweepQueue/{battleId}, the
+    // sweep queue the publication transaction arms (its own server-only
+    // collection — no new battle key). SERVER-ONLY: no client verb, not even for
+    // the owner of the battle a queue document names (the agentEvalRuns
+    // precedent). test/rules/callSweepQueueDenials.rules.mjs asserts it.
+    match /callSweepQueue/{battleId} {
       allow read, write: if false;  // Admin SDK only
     }
 
