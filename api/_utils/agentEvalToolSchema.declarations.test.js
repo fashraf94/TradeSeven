@@ -117,6 +117,8 @@ describe('buildTradeDecisionTool — declarations ON adds exactly one property',
     expect(DECLARATIONS_PROPERTY.description).toMatch(/do not execute or schedule a trade/);
     expect(DECLARATIONS_PROPERTY.description).toMatch(/They do not change this check's decision or anticipationCandidates\./);
     expect(DECLARATIONS_PROPERTY.properties.watching.description).toMatch(/Separate from anticipationCandidates/);
+    // The next_check slot is a judgment boundary, never a trade time (docs review C2).
+    expect(DECLARATIONS_PROPERTY.properties.calledShots.items.properties.horizonPhrase.description).toMatch(/the call records a condition and does not schedule a trade at that slot\./);
     // No promise of follow-through the build cannot keep.
     expect(text).not.toMatch(/you will act|make the trade when|you intend to trade/);
   });
@@ -137,12 +139,43 @@ describe('buildTradeDecisionTool — declarations ON adds exactly one property',
     for (const said of [shot.said, p.fork.properties.said]) {
       expect(said.description).toMatch(/^The (?:call|choice) as one conditional sentence, in your voice, at most 280 characters\. Stored only; not shown to the player\./);
     }
+    // Verbatim, so a later rewording (docs review C2) cannot drift a stored-only clause.
+    expect(shot.said.description).toBe('The call as one conditional sentence, in your voice, at most 280 characters. Stored only; not shown to the player. The typed fields are the call; this sentence only presents it.');
+    expect(p.fork.properties.said.description).toBe('The choice as one conditional sentence, in your voice, at most 280 characters. Stored only; not shown to the player.');
+    // The horizon's later check judges the STORED call from its own observation;
+    // nothing says the call reaches that check's model, a reader or an answerer.
+    expect(shot.horizonPhrase.description).toMatch(/the first check to reach the stored call judges it once, from that check's own observation/);
+    expect(shot.horizonPhrase.description).not.toMatch(/supplied|shown|deliver|answer|respon|player/i);
     // Nothing addresses the player as someone who will read or answer this.
     // Nothing tells the model to wait, withhold a trade, repeat itself in
     // narration or seek permission.
     const text = JSON.stringify(DECLARATIONS_PROPERTY);
     expect(text).not.toMatch(/player says|without the player|for the player|want the player|ask the player|the player (?:should|must|will|can|may)\b/i);
     expect(text).not.toMatch(/\bwait\b|suppress|withhold|narrat|permission|approv|confirm/i);
+  });
+
+  it('the horizon wording states the next_check judgment boundary: the slot bounds the judgment, a later first reach judges from its own observation, pre-slot hits stand, nothing is scheduled (contract V1.4 H2, docs review C2)', () => {
+    const shots = DECLARATIONS_PROPERTY.properties.calledShots;
+    const horizon = shots.items.properties.horizonPhrase;
+    // "before the horizon ends" still bounds every other basis; next_check defers to horizonPhrase.
+    expect(shots.description).toBe('At most 6. Each records one conditional trade you are calling: SYMBOL trading above or below LEVEL before the horizon ends (for next_check, as horizonPhrase describes). Declare only calls you actually hold.');
+    expect(horizon.description).toBe(
+      'How long the call stands: until its next_check judgment, the end of this session, the end of this battle, or an explicit expiry. ' +
+      // the slot is a judgment boundary, and the call records a condition rather than scheduling a trade
+      'next_check uses the next eligible evaluator slot as a judgment boundary: the call records a condition and does not schedule a trade at that slot. ' +
+      // pre-slot hits are unchanged
+      'Before the slot it can be hit as under any horizon. ' +
+      // at or after the slot: one judgment, from the reaching check's own observation
+      'At or after the slot, the first check to reach the stored call judges it once, from that check\'s own observation: hit if the condition is met, otherwise expired. ' +
+      // a later first reach
+      'That first reach may be a later check than the slot\'s own.',
+    );
+    // The retired wording is gone: next_check never reads as "until the next check", and no bound is left unqualified.
+    const text = JSON.stringify(DECLARATIONS_PROPERTY);
+    expect(text).not.toContain('until the next check');
+    expect(text).not.toContain('before the horizon ends.');
+    // The text explains the enum; it does not move it.
+    expect(horizon.enum).toEqual(['next_check', 'this_session', 'this_battle', 'explicit']);
   });
 });
 
@@ -210,12 +243,13 @@ describe('THE MEASUREMENT — output headroom and input cost (stated in the buil
     expect(EVAL_MAX_OUTPUT_TOKENS - OBSERVED_P99 - max).toBe(-277);
   });
 
-  it('the input cost at shadow/on: +4,154 chars of tool schema ≈ 1,039 tokens at chars/4, 1,385 at chars/3, per model call; zero at off', () => {
+  it('the input cost at shadow/on: +4,627 chars of tool schema ≈ 1,157 tokens at chars/4, 1,543 at chars/3, per model call; zero at off', () => {
     const delta = JSON.stringify(buildTradeDecisionTool({ declarations: true })).length - JSON.stringify(TRADE_DECISION_TOOL).length;
     // Branch review BR-3's stored-only wording: +280 chars over the C-4 text (3,874).
-    expect(delta).toBe(4154);
-    expect(tokens4('x'.repeat(delta))).toBe(1039);
-    expect(tokens3('x'.repeat(delta))).toBe(1385);
+    // Docs review C2's horizon wording: +473 chars over the BR-3 text (4,154).
+    expect(delta).toBe(4627);
+    expect(tokens4('x'.repeat(delta))).toBe(1157);
+    expect(tokens3('x'.repeat(delta))).toBe(1543);
     expect(JSON.stringify(buildTradeDecisionTool({ declarations: false })).length - JSON.stringify(TRADE_DECISION_TOOL).length).toBe(0);
   });
 });
