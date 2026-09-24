@@ -636,5 +636,16 @@ export const STATS = Object.freeze({
     pending: 'In play on you',
     poolsBackedOn: 'Pools',
     empty: 'Nobody has backed your team yet.',
+    // CLOSED WEEKS ONLY (SEAL-1, the desktop review record): the design's
+    // sealed "This week" row — "This week's pool is sealed even to the
+    // trainer" — with no figure in it. The design's "opens Fri 4:00 PM ET" is
+    // corrected as the strip's line was: the reveal is at CLOSE (spec §3/§4).
+    // Its team is not named: this surface has no server label for it (D-af).
+    sealedWeek: 'This week · your team’s pool',
+    sealedUntil: 'until it closes',
+    // No closed week to count yet, and this week sealed: never "Nobody has
+    // backed your team yet" over a book it cannot see (SEAL-R-2). The design's
+    // first-week line, its "opens" corrected to "closes".
+    sealedFirst: 'No closed weeks yet. Once a pool with your team in it closes, this shows how many backed you, how much, and how they did.',
   }),
 });

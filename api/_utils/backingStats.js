@@ -25,7 +25,12 @@
 //     flag "removes a stake from stats and social counts without touching
 //     settlement math") is dropped here — it is the one social count this
 //     layer computes — and is left alone in MY stats, which are the owner's
-//     own ledger.
+//     own ledger. AN OPEN POOL IS SEALED EVEN TO THE TRAINER (spec §3,
+//     Amendment B D-q, the desktop design's "Closed weeks only — this week's
+//     pool is sealed even to the trainer"; SEAL-1, the desktop review record):
+//     none of its stakes reaches any figure or tally, and the route states the
+//     seal from the POOL (`trainerHasOpenPool`), never from whether a stake
+//     exists (SEAL-R-2).
 //
 // SEASON = THE LADDER'S MONTH (§2): each pool's `monthKey` as settlement or
 // the refund stamped it (the wallet's own season key), else the pool's
@@ -37,7 +42,9 @@
 // READS ONLY. Bounded: the viewer's own stakes (one query), one pool per
 // distinct pod, one rank doc per distinct human team of a settled pool, and
 // — for the trainer — one sealed `private/meta` per stake for the exclusion
-// flag (beta scale: tens, not thousands; stated in the route).
+// flag, and the viewer's own pods (one member-scoped query) with one pool
+// read per pod they are seated in, for the seal (beta scale: tens, not
+// thousands; stated in the route).
 //
 // Imports the zero-import schema module from src/ under the revised June 2026
 // import rule (BUILD_RULES §4); the co-located test's real import of THIS
@@ -48,9 +55,12 @@ import {
   BACKING_STAKES_COLLECTION,
   POOL_STATUS,
   STAKE_STATUS,
+  liveTeamsFor,
+  poolRefFor,
 } from './backingPools.js';
 import { TERMINAL_RESULT_STATUSES, monthKeyOfPool } from './backingResults.js';
 import {
+  TOURNAMENT_GROUPS_COLLECTION,
   TOURNAMENT_RANKS_COLLECTION,
   etDateString,
   isCpuUserId,
@@ -119,6 +129,42 @@ export async function readExcludedStakeIds(db, stakeIds) {
     return [stakeId, snap.exists && snap.data()?.excluded === true];
   }));
   return new Set(flags.filter(([, excluded]) => excluded).map(([id]) => id));
+}
+
+/**
+ * THE SEAL'S OWN FACT (SEAL-1 / SEAL-R-2, the desktop review record): is the
+ * trainer's team in a pool that is still OPEN?
+ *
+ * KEYED ON THE POOL, NEVER ON STAKES. A "this week is sealed" line that showed
+ * only when a stake named the seat would itself tell the trainer that someone
+ * had backed them; and a fold that hid the open pool's stakes with no line at
+ * all would read "Nobody has backed your team yet" while four had. So the fact
+ * is read from the pods the viewer is SEATED in — the member-scoped
+ * `groupMembers array-contains` query (one field, no composite index; the
+ * `findActiveTrainingPodForUser` precedent) and a seat in `players[]`, the
+ * pool's own team derivation (`liveTeamsFor`) — and each one's pool document
+ * at its own id (`poolRefFor`, the dev namespace included): true when any
+ * reads `open`. Training pods never get a pool and are not read. A seat the
+ * viewer LEFT is not theirs: stakes on it are voided at the close and never
+ * count, and naming it here would be the stake-keyed signal above.
+ *
+ * The pool's STATUS is the seal, not its clock: a pool past `closesAt` that no
+ * read has closed yet is still sealed (the close may yet void its stakes).
+ * One pool read per seated pod — the viewer's own history, tens at beta scale.
+ */
+export async function trainerHasOpenPool(db, uid) {
+  if (typeof uid !== 'string' || uid.length === 0) return false;
+  const snap = await db.collection(TOURNAMENT_GROUPS_COLLECTION).where('groupMembers', 'array-contains', uid).get();
+  const refs = [];
+  snap.forEach((doc) => {
+    const group = { id: doc.id, ...doc.data() };
+    if (group.isTraining === true) return;
+    if (!liveTeamsFor(group).some((t) => t.odUserId === uid)) return;
+    // An id no pool can carry (`poolIdFor` refuses it) has no pool to read.
+    try { refs.push(poolRefFor(db, group)); } catch { /* no pool id — nothing sealed */ }
+  });
+  const pools = await Promise.all(refs.map((ref) => ref.get()));
+  return pools.some((pool) => pool.exists && pool.data()?.status === POOL_STATUS.OPEN);
 }
 
 /** The rank documents of many human teams (production namespace): odUserId → rank doc | null. */
@@ -355,6 +401,13 @@ const emptyTrainer = (monthKey = null) => ({
  * TRAINER STATS, pure. `stakes` name the viewer's seat; `excluded` is the Set
  * of admin-excluded stake ids (dropped here, §8); `poolsByGroup` is groupId →
  * { poolId, pool, isDev }.
+ *
+ * A STAKE ON AN OPEN POOL IS NOT READ AT ALL (SEAL-1, the desktop review
+ * record): it is skipped BEFORE every figure and every tally — backers, BP
+ * backed, backers' net, in play, pools, the stake counts, and the excluded,
+ * dev and unknown counters too — in the season buckets and the career alike,
+ * so no part of this answer moves while the book is sealed. It counts from
+ * the moment its pool's status leaves `open` (the close's reveal).
  */
 export function computeTrainerStats({ stakes = [], poolsByGroup = new Map(), excluded = new Set(), now = new Date() } = {}) {
   const season = currentSeasonKey(now);
@@ -370,8 +423,10 @@ export function computeTrainerStats({ stakes = [], poolsByGroup = new Map(), exc
 
   for (const s of stakes) {
     if (!COUNTED_STAKE_STATUSES.includes(s?.status)) continue;
-    if (excluded.has(s.id)) { excludedStakes += 1; continue; }
     const located = poolsByGroup.get(s.groupId) ?? null;
+    // THE SEAL, first: nothing below may see a stake on an open pool.
+    if (located?.pool?.status === POOL_STATUS.OPEN) continue;
+    if (excluded.has(s.id)) { excludedStakes += 1; continue; }
     if (!located?.pool) { unknownPools += 1; continue; }
     if (located.isDev === true || (typeof located.poolId === 'string' && located.poolId.startsWith('dev-'))) { devPoolsSkipped += 1; continue; }
     const monthKey = monthKeyOfPool(located.pool);

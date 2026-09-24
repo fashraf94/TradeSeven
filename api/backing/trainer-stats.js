@@ -13,8 +13,19 @@
 //   3  auth — the uid from the VERIFIED token; NO query parameter names a team
 //   4  THE FLAG — 404 while BACKING_BETA_ENABLED is dark, AFTER auth
 //   5  the stakes that name the viewer's SEAT (the committed
-//      `(teamOdUserId, status)` composite — firestore.indexes.json, PR 5),
+//      `(teamOdUserId, status)` composite — firestore.indexes.json, PR 5)
+//      and, beside them, the seal (the viewer's own pods and their pools);
 //      each stake's sealed exclusion flag, the pools, the pure fold
+//
+// CLOSED WEEKS ONLY — AN OPEN POOL IS SEALED EVEN TO THE TRAINER (spec §3,
+// Amendment B D-q, the desktop design; SEAL-1, the desktop review record).
+// The fold reads no stake on an open pool — no count, no sum, no tally moves
+// while the book is sealed — and the reply carries `thisWeek: { sealed: true }`
+// instead, whenever the trainer's team sits in a pool still open. That marker
+// is read from the POOL (`trainerHasOpenPool`), never from the stakes: a
+// seal line that appeared only when someone had staked would say so by
+// itself (SEAL-R-2). No figure of an open pool is in this reply under any
+// key; the trainer-stats suite walks the whole body to prove it.
 //
 // COMPUTED AT READ TIME FROM STAKES — settlement is not changed for this:
 // `trainerStats` on the wallet document (§6) stays unwritten, and this route
@@ -37,6 +48,7 @@ import {
   readExcludedStakeIds,
   readPoolsFor,
   readStakesWhere,
+  trainerHasOpenPool,
 } from '../_utils/backingStats.js';
 import { BACKING_BETA_ENABLED } from '../../src/config/featureFlags.js';
 
@@ -59,16 +71,21 @@ export default async function handler(req, res) {
   const db = getFirebaseAdmin();
   const now = new Date();
   try {
-    // 5a. The stakes on the viewer's SEAT — in play or decided (voided stakes were never in the book).
-    const stakes = await readStakesWhere(db, 'teamOdUserId', user.uid, { statuses: [...COUNTED_STAKE_STATUSES] });
+    // 5a. The stakes on the viewer's SEAT — in play or decided (voided stakes
+    // were never in the book) — and, beside them, the seal: whether the
+    // viewer's team sits in a pool still open, read from their own pods.
+    const [stakes, sealed] = await Promise.all([
+      readStakesWhere(db, 'teamOdUserId', user.uid, { statuses: [...COUNTED_STAKE_STATUSES] }),
+      trainerHasOpenPool(db, user.uid),
+    ]);
     // 5b. The exclusion flags and the pools, in parallel.
     const [excluded, poolsByGroup] = await Promise.all([
       readExcludedStakeIds(db, stakes.map((s) => s.id)),
       readPoolsFor(db, stakes.map((s) => s.groupId)),
     ]);
-    // 5c. The pure fold.
+    // 5c. The pure fold — closed weeks only (an open pool's stakes are not read).
     const stats = computeTrainerStats({ stakes, poolsByGroup, excluded, now });
-    return res.status(200).json({ viewerUid: user.uid, ...stats });
+    return res.status(200).json({ viewerUid: user.uid, ...stats, ...(sealed ? { thisWeek: { sealed: true } } : {}) });
   } catch (err) {
     console.error('[backing-trainer-stats] failed:', err?.message);
     return res.status(500).json({ error: 'server_error', message: 'Could not load your trainer stats.' });

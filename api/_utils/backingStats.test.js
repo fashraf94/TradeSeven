@@ -9,7 +9,10 @@
 //     judged BEFORE the pool closed, this pod's own event excluded; a pool
 //     with no prior history on any team is EXCLUDED and counted separately;
 //   · an admin-excluded stake is dropped from the trainer's social counts;
-//   · dev pools are skipped, and the skip is counted.
+//   · dev pools are skipped, and the skip is counted;
+//   · an OPEN pool is sealed even to the trainer: none of its stakes reaches
+//     any figure or tally (SEAL-1, the desktop review record), and the seal
+//     itself is read from the trainer's own pods, never from stakes (SEAL-R-2).
 //
 // DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): the real import of the module is
 // the runtime guard for its api/ -> src/ imports. Never mock it.
@@ -31,7 +34,8 @@ import {
   readPoolByGroupId,
   readPoolsFor,
   readRanksFor,
-  readStakesWhere, rankEventsOf } from './backingStats.js';
+  readStakesWhere, rankEventsOf,
+  trainerHasOpenPool } from './backingStats.js';
 import { STAKE_PRIVATE_SUBCOLLECTION as WRITER_SUB, STAKE_META_DOC as WRITER_DOC } from '../tournament/backing-stake.js';
 
 const NOW = new Date('2026-10-05T14:00:00.000Z'); // Monday Oct 5 — the season is 2026-10; last week's pools banked in 2026-09
@@ -186,7 +190,7 @@ describe('computeTrainerStats — the viewer as a team, pure', () => {
     { id: 't1', groupId: 'g-a', userId: 'u1', teamOdUserId: 'me', amount: 300, status: 'won', payout: 450 },
     { id: 't2', groupId: 'g-a', userId: 'u2', teamOdUserId: 'me', amount: 100, status: 'won', payout: 150 },
     { id: 't3', groupId: 'g-c', userId: 'u1', teamOdUserId: 'me', amount: 100, status: 'lost', payout: 0 },
-    { id: 't4', groupId: 'g-d', userId: 'u3', teamOdUserId: 'me', amount: 100, status: 'live' },
+    { id: 't4', groupId: 'g-d', userId: 'u3', teamOdUserId: 'me', amount: 100, status: 'live' },          // on an OPEN pool: sealed
     { id: 't5', groupId: 'g-a', userId: 'u4', teamOdUserId: 'me', amount: 500, status: 'won', payout: 750 }, // excluded by an admin
     { id: 't6', groupId: 'g-e', userId: 'u5', teamOdUserId: 'me', amount: 100, status: 'voided' },          // never in the book
     { id: 't7', groupId: 'g-dev', userId: 'u1', teamOdUserId: 'me', amount: 100, status: 'won', payout: 200 },
@@ -200,17 +204,44 @@ describe('computeTrainerStats — the viewer as a team, pure', () => {
   ]);
   const out = computeTrainerStats({ stakes, poolsByGroup, excluded: new Set(['t5']), now: NOW });
 
-  it('unique backers, BP backed and the backers\' net — over the stakes that count, the excluded one dropped, the voided one never in', () => {
+  it('unique backers, BP backed and the backers\' net — over the stakes that count, the excluded one dropped, the voided one never in, the OPEN pool\'s stake never read (SEAL-1)', () => {
     expect(out.label).toBe(BETA_STATS_LABEL);
-    expect(out.career).toMatchObject({ uniqueBackers: 3, bpBacked: 600, backersNet: 100, pending: 100, poolsBackedOn: 3, stakes: 4, decidedStakes: 3 });
+    // t4 sits on g-d, an OPEN pool: before SEAL-1 it counted (3 backers, 600 BP,
+    // 100 BP in play on 3 pools, 4 stakes) — the trainer's own sealed book.
+    expect(out.career).toMatchObject({ uniqueBackers: 2, bpBacked: 500, backersNet: 100, pending: 0, poolsBackedOn: 2, stakes: 3, decidedStakes: 3 });
     expect(out.excludedStakes).toBe(1);
     expect(out.devPoolsSkipped).toBe(1);
   });
 
-  it('season buckets follow each pool\'s ladder month; the current season is October\'s (the open pool\'s pending stake)', () => {
+  it('season buckets follow each pool\'s ladder month; the current season is October\'s — empty: its only stake is on an OPEN pool, sealed (SEAL-1)', () => {
     expect(out.seasonKey).toBe('2026-10');
     expect(out.seasons['2026-09']).toMatchObject({ uniqueBackers: 2, bpBacked: 500, backersNet: 100, pending: 0, poolsBackedOn: 2 });
-    expect(out.season).toMatchObject({ monthKey: '2026-10', uniqueBackers: 1, bpBacked: 100, backersNet: 0, pending: 100, poolsBackedOn: 1 });
+    expect(out.season).toMatchObject({ monthKey: '2026-10', uniqueBackers: 0, bpBacked: 0, backersNet: 0, pending: 0, poolsBackedOn: 0, stakes: 0 });
+    expect(Object.keys(out.seasons)).toEqual(['2026-09']);
+  });
+
+  it('SEAL-1 — a stake on an OPEN pool reaches NO figure and NO tally: an excluded one is not counted excluded, a dev one not counted skipped; each counts once its pool closes', () => {
+    const openDev = { poolId: 'dev-g-open-dev', isDev: true, pool: { status: 'open', battleMondayEtDate: '2026-10-12' } };
+    const sealedExtra = [
+      { id: 's1', groupId: 'g-d', userId: 'u8', teamOdUserId: 'me', amount: 400, status: 'live' },          // another backer on the open pool
+      { id: 's2', groupId: 'g-d', userId: 'u9', teamOdUserId: 'me', amount: 250, status: 'live' },          // admin-excluded, on the open pool
+      { id: 's3', groupId: 'g-open-dev', userId: 'u1', teamOdUserId: 'me', amount: 100, status: 'live' },   // an open DEV pool
+    ];
+    const withSealed = computeTrainerStats({
+      stakes: [...stakes, ...sealedExtra],
+      poolsByGroup: new Map([...poolsByGroup, ['g-open-dev', openDev]]),
+      excluded: new Set(['t5', 's2']),
+      now: NOW,
+    });
+    // Byte-equal to the answer without them: the sealed book moves nothing.
+    expect(withSealed).toEqual(out);
+    // The same stakes on a CLOSED pool count — the row can fail.
+    const closed = new Map([...poolsByGroup, ['g-d', { poolId: 'g-d', isDev: false, pool: { status: 'closed', battleMondayEtDate: '2026-10-12' } }], ['g-open-dev', { ...openDev, pool: { ...openDev.pool, status: 'closed' } }]]);
+    const revealed = computeTrainerStats({ stakes: [...stakes, ...sealedExtra], poolsByGroup: closed, excluded: new Set(['t5', 's2']), now: NOW });
+    expect(revealed.career).toMatchObject({ uniqueBackers: 4, bpBacked: 1000, pending: 500, poolsBackedOn: 3, stakes: 5 });
+    expect(revealed.excludedStakes).toBe(2);
+    expect(revealed.devPoolsSkipped).toBe(2);
+    expect(revealed.season).toMatchObject({ monthKey: '2026-10', uniqueBackers: 2, bpBacked: 500, pending: 500 });
   });
 
   it('COUNTED_STAKE_STATUSES is exactly live / won / lost — the query\'s `in` and the fold agree', () => {
@@ -256,6 +287,39 @@ describe('the reads, on the in-memory store', () => {
     expect([...ranks.keys()]).toEqual(['od-a', 'od-z']);
     expect(ranks.get('od-a')).toEqual({ rp: 10, history: [] });
     expect(ranks.get('od-z')).toBeNull();
+  });
+
+  it('trainerHasOpenPool — the SEAL is the pool\'s fact, read from the pods the viewer is SEATED in: never from stakes (SEAL-R-2), never a training pod, the dev namespace at its own id', async () => {
+    const seat = (id, isCpu = false) => ({ odUserId: id, ...(isCpu ? { isCpu: true } : {}) });
+    const pod = (over = {}) => ({ status: 'forming', groupMembers: ['me', 'od-x'], players: [seat('me'), seat('od-x'), seat('cpu-1', true)], ...over });
+    const seal = async (store) => { const { db, readLog } = makeInMemoryDb(store); return { open: await trainerHasOpenPool(db, 'me'), readLog }; };
+
+    // Seated in a pod whose pool is OPEN, nobody has staked: sealed all the same.
+    expect((await seal({ 'tournamentGroups/g1': pod(), 'backingPools/g1': { status: 'open' } })).open).toBe(true);
+    // The pool closed: nothing sealed.
+    expect((await seal({ 'tournamentGroups/g1': pod(), 'backingPools/g1': { status: 'closed' } })).open).toBe(false);
+    // No pool yet (never materialized): nothing sealed.
+    expect((await seal({ 'tournamentGroups/g1': pod() })).open).toBe(false);
+    // A seat the viewer LEFT (a slot pod before its fire): not theirs, whatever stakes it carries.
+    const left = await seal({
+      'tournamentGroups/g1': pod({ groupMembers: ['od-x'], players: [seat('od-x')] }),
+      'backingPools/g1': { status: 'open' },
+      'backingStakes/s1': { userId: 'u1', groupId: 'g1', teamOdUserId: 'me', amount: 100, status: 'live' },
+    });
+    expect(left.open).toBe(false);
+    expect(left.readLog.filter(([, p]) => p.startsWith('backingStakes'))).toEqual([]);
+    // A training pod has no pool and is not read.
+    const training = await seal({ 'tournamentGroups/t1': pod({ isTraining: true }), 'backingPools/t1': { status: 'open' } });
+    expect(training.open).toBe(false);
+    expect(training.readLog.filter(([, p]) => p.startsWith('backingPools'))).toEqual([]);
+    // A dev pod's pool lives at dev-{id}.
+    expect((await seal({ 'tournamentGroups/g2': pod({ isDev: true }), 'backingPools/dev-g2': { status: 'open' } })).open).toBe(true);
+    // The query is member-scoped: the one groups read, and a signed-out caller reads nothing.
+    const one = await seal({ 'tournamentGroups/g1': pod(), 'backingPools/g1': { status: 'open' } });
+    expect(one.readLog.filter(([, p]) => p === 'tournamentGroups')).toHaveLength(1);
+    const { db, readLog } = makeInMemoryDb({ 'tournamentGroups/g1': pod(), 'backingPools/g1': { status: 'open' } });
+    expect(await trainerHasOpenPool(db, null)).toBe(false);
+    expect(readLog).toEqual([]);
   });
 
   it('the sealed meta path this module READS is the path the stake endpoint WRITES (one home, pinned)', () => {
