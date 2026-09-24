@@ -43,6 +43,7 @@ import { buildTradeDecisionTool } from '../_utils/agentEvalToolSchema.js';
 import { resolveCallRecordsMode, createCallsContext, callsActive, callsStep } from '../_utils/callRecords/mode.js';
 import { recordFetchedQuote, freezeObservation, freezeModelObservation, classifyEntryExit, carryExecutorResult } from '../_utils/callRecords/observe.js';
 import { captureDeclarations } from '../_utils/callRecords/validate.js';
+import { bindHorizon, battleExpiryMs } from '../_utils/callRecords/horizon.js';
 import { validateTradeToolResult, INVALID_TOOL_RESULT_CLASS } from '../_utils/agentEvalToolResultValidation.js';
 import { evaluateTriggers, fetchRecentNews, MAX_STORY_WAKE_ATTEMPTS, SEEN_STORY_ID_CAP } from '../_utils/agentTriggerGate.js';
 import { validateTradeDecision, executeSwapServer } from '../_utils/agentSwapExecution.js';
@@ -2807,8 +2808,14 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           });
           // Calls (§3.2): the model's block from the ACCEPTED result, detached
           // and validated once pre-commit. The trade result is never touched.
+          // The horizon is judged here against a PROVISIONAL mint instant (now);
+          // the mint re-judges it against the real one (an explicit expiry
+          // crossed in between is removed there).
           callsStep(callsCtx, () => {
-            callsCtx.declarations = captureDeclarations(toolUse.input?.declarations, { universe: callsCtx.universe });
+            callsCtx.declarations = captureDeclarations(toolUse.input?.declarations, {
+              universe: callsCtx.universe,
+              resolveHorizon: bindHorizon({ promptBuiltAtMs: Date.parse(promptBuiltAt), mintedAtMs: Date.now(), battleExpiresAtMs: battleExpiryMs(battle) }),
+            });
           });
         } else if (!toolUse) {
           haikuFailure = {
