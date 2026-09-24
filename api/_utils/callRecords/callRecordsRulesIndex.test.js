@@ -20,6 +20,8 @@ import { runCallFlips, resetFlipIndexMemo, FLIP_QUERY } from './flip.js';
 import { createCallsContext } from './mode.js';
 import { makeTickBattle, makeObservation, FROZEN_NOW } from '../__fixtures__/tickStampsHarness.js';
 import { makeCallsDb } from '../__fixtures__/callRecordsStore.js';
+// The emulator suites' shared copy of the parser (no emulator is touched on import).
+import { ruleBlocks as suiteRuleBlocks } from '../../../test/rules/callRecordsRulesSuite.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '../../..');
@@ -37,7 +39,9 @@ function ruleBlocks(text, pathRe) {
       if (text[i] === '{') depth += 1;
       else if (text[i] === '}') depth -= 1;
     }
-    blocks.push(text.slice(re.lastIndex, i - 1).split('\n').map((l) => l.replace(/\/\/.*$/, '').trim()).filter(Boolean));
+    // CRLF-safe (review BR-5): `.` stops at a CR, so an LF-only split left the
+    // CR in place and the anchored strip missed every inline comment.
+    blocks.push(text.slice(re.lastIndex, i - 1).split(/\r?\n/).map((l) => l.replace(/\/\/.*$/, '').trim()).filter(Boolean));
   }
   return blocks;
 }
@@ -64,6 +68,23 @@ describe('firestore.rules — the call records (source tripwire; behavior proven
     const named = RULES.split('\n').filter((l) => l.includes('callSweepQueue') && !l.trim().startsWith('//'));
     expect(named.map((l) => l.trim())).toEqual(['match /callSweepQueue/{battleId} {']);
   });
+});
+
+describe('both rules-text parsers read a CRLF checkout exactly as they read LF (branch review BR-5)', () => {
+  const LF = RULES.replace(/\r\n/g, '\n');
+  const CRLF = LF.replace(/\n/g, '\r\n');
+  const PATHS = [
+    /\/callSweepQueue\/\{[^}/]+\}/, /\/agentBattles\/\{battleId\}/,
+    /\/declarations\/\{evalId\}/, /\/calls\/\{callId\}/, /\/callObservations\/\{callId\}/,
+  ];
+  for (const [label, parse] of [['this suite\'s parser', ruleBlocks], ['the rules-suite copy (test/rules/callRecordsRulesSuite.mjs)', suiteRuleBlocks]]) {
+    it(`${label}: every block, comments stripped, is identical under CRLF — the queue's inline comment included`, () => {
+      expect(CRLF).toContain('if false;  // Admin SDK only\r\n');
+      for (const re of PATHS) expect(parse(CRLF, re), String(re)).toEqual(parse(LF, re));
+      expect(parse(CRLF, /\/callSweepQueue\/\{[^}/]+\}/)).toEqual([['allow read, write: if false;']]);
+      expect(parse(CRLF, /\/calls\/\{callId\}/)).toEqual([OWNER_READ]);
+    });
+  }
 });
 
 // ---------------------------------------------------------------------------

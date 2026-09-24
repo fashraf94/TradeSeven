@@ -27,7 +27,14 @@
 //
 // `executeSwapServer` is doubled through a hoisted variable so the literal call
 // string never appears here (the call-site census in agent-evaluate.test.js).
+//
+// PORTABILITY (branch review BR-5): the process runs in UTC whatever the
+// machine's timezone (the first import below). The fixture is checked out as LF
+// under any core.autocrlf (.gitattributes). The raw-byte SHA-256 pin stays
+// exactly as strict as before.
 
+// FIRST, before any module can build a local-time Date.
+import '../_utils/__fixtures__/pinTimezoneUtc.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -405,6 +412,20 @@ describe('calls OFF — byte-identical to the frozen pre-change fixture on every
 
   it('the fixture file is exactly the one captured from the pre-change tree (SHA-256 pinned — review C-9)', () => {
     expect(createHash('sha256').update(readFileSync(GOLDEN_PATH)).digest('hex')).toBe(GOLDEN_SHA256);
+  });
+
+  it('the fixture is checked out as LF on every platform: its .gitattributes entry pins it, and the checked-out bytes carry no CR (review BR-5)', () => {
+    const attributes = readFileSync(resolve(HERE, '../../.gitattributes'), 'utf8').split(/\r?\n/).map((l) => l.trim());
+    expect(attributes).toContain('api/_utils/__fixtures__/callRecordsOffGolden.json text eol=lf');
+    expect(readFileSync(GOLDEN_PATH).includes(0x0d)).toBe(false);
+  });
+
+  it('the process runs in UTC whatever the machine timezone, pinned by the FIRST import (review BR-5)', () => {
+    expect(process.env.TZ).toBe('UTC');
+    expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe('UTC');
+    expect(new Date(2026, 8, 9, 12).toISOString()).toBe('2026-09-09T12:00:00.000Z');
+    const firstImport = readFileSync(fileURLToPath(import.meta.url), 'utf8').split(/\r?\n/).find((l) => l.startsWith('import '));
+    expect(firstImport).toBe("import '../_utils/__fixtures__/pinTimezoneUtc.js';");
   });
 
   it('the tool schema is byte-identical to the frozen constant', () => {

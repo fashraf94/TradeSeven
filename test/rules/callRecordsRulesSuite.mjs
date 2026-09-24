@@ -59,7 +59,9 @@ export function ruleBlocks(text, pathRe) {
       if (text[i] === '{') depth += 1;
       else if (text[i] === '}') depth -= 1;
     }
-    blocks.push(text.slice(re.lastIndex, i - 1).split('\n').map((l) => l.replace(/\/\/.*$/, '').trim()).filter(Boolean));
+    // CRLF-safe (review BR-5): `.` stops at a CR, so an LF-only split left the
+    // CR in place and the anchored strip missed every inline comment.
+    blocks.push(text.slice(re.lastIndex, i - 1).split(/\r?\n/).map((l) => l.replace(/\/\/.*$/, '').trim()).filter(Boolean));
   }
   return blocks;
 }

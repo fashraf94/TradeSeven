@@ -1,0 +1,5 @@
+# Byte-identity fixtures. The Cockpit off golden is pinned by the SHA-256 of
+# its checked-out bytes (api/cron/agent-evaluate.callRecords.offGolden.test.js),
+# so it is checked out with LF on every platform, core.autocrlf=true included
+# (branch review BR-5). Deliberately narrow: no repo-wide rule.
+api/_utils/__fixtures__/callRecordsOffGolden.json text eol=lf
