@@ -225,18 +225,21 @@ function deepFreeze(value) {
 
 /**
  * The `declarations` property — contract §2's shape, in the model's terms.
- * The wording states INTENT only (review C-4): nothing in Build 0 executes a
- * call or shows one to a later check, and the block never stands in for the
- * decision or for anticipationCandidates. Model-visible text: fenced-class
- * review (contract §2).
+ * The wording states INTENT only (review C-4), and names the recipient Build 0
+ * really has (branch review BR-3): the block is stored only. It is not shown to
+ * the player, requests no response, executes or schedules nothing, and is not
+ * supplied to a later check. It never stands in for the decision or for
+ * anticipationCandidates. Every field is framed as a conditional record; no
+ * text tells the model to wait, withhold a trade, repeat itself in narration or
+ * seek permission. Model-visible text: fenced-class review (contract §2).
  */
 export const DECLARATIONS_PROPERTY = deepFreeze({
   type: ['object', 'null'],
   description:
-    'Optional. A record of calls you are making about possible next moves, as typed fields. It is recorded only: it executes ' +
-    'nothing, and it never replaces this check\'s decision or your anticipationCandidates, which you fill exactly as you would ' +
-    'without it. Most checks declare nothing: omit this or send null. At most 6 calledShots. A level is a price in the ' +
-    'symbol\'s own quote, read from what you were shown this check.',
+    'Optional record of conditional intent from this check. These fields are stored only; they are not shown to the player, ' +
+    'do not request a response, do not execute or schedule a trade, and are not supplied to a later check. They do not change ' +
+    'this check\'s decision or anticipationCandidates. Most checks declare nothing: omit this or send null. At most 6 ' +
+    'calledShots. A level is a price in the symbol\'s own quote, read from what you were shown this check.',
   properties: {
     calledShots: {
       type: 'array',
@@ -285,11 +288,11 @@ export const DECLARATIONS_PROPERTY = deepFreeze({
           defaultAction: {
             type: 'string',
             enum: ['act', 'hold'],
-            description: 'Your stated intent if the condition is met and the player says nothing: act = you intend to trade; hold = you intend not to trade without the player. Stating it executes nothing.',
+            description: 'Intent recorded at declaration time if the condition is met: act = would favor a trade; hold = would favor holding. This records an intention, not an instruction or promise of execution.',
           },
           said: {
             type: 'string',
-            description: 'The call in one sentence, in your voice, at most 280 characters. The typed fields are the call; this sentence only presents it.',
+            description: 'The call as one conditional sentence, in your voice, at most 280 characters. Stored only; not shown to the player. The typed fields are the call; this sentence only presents it.',
           },
         },
       },
@@ -301,21 +304,21 @@ export const DECLARATIONS_PROPERTY = deepFreeze({
     },
     playerAsk: {
       type: ['object', 'null'],
-      description: 'Optional. One question for the player, with 2 to 4 short answers.',
+      description: 'Optional record of an unresolved research question and 2 to 4 possible answers. Stored only; no question is delivered and no answer is expected.',
       required: ['question', 'options'],
       properties: {
         question: { type: 'string', description: 'At most 200 characters.' },
-        options: { type: 'array', items: { type: 'string' }, description: '2 to 4 answers, each at most 60 characters.' },
+        options: { type: 'array', items: { type: 'string' }, description: '2 to 4 possible answers, each at most 60 characters.' },
         symbol: { type: 'string', description: 'Optional. The ticker the question is about.' },
       },
     },
     fork: {
       type: ['object', 'null'],
-      description: 'Optional. A choice you want the player to make for one slot: 2 to 4 names from this battle, one of which would replace swapOut.',
+      description: 'Optional record of an unresolved choice for one slot: 2 to 4 names from this battle that could replace swapOut. Stored only; no selection is requested or acted on.',
       required: ['slot', 'swapOut', 'options', 'said'],
       properties: {
-        slot: { type: 'string', enum: ['star', 'core', 'support'], description: 'The slot being decided.' },
-        swapOut: { type: 'string', description: 'The held name the chosen option would replace.' },
+        slot: { type: 'string', enum: ['star', 'core', 'support'], description: 'The slot the choice concerns.' },
+        swapOut: { type: 'string', description: 'The held name an option would replace.' },
         options: {
           type: 'array',
           description: '2 to 4 options.',
@@ -328,7 +331,7 @@ export const DECLARATIONS_PROPERTY = deepFreeze({
             },
           },
         },
-        said: { type: 'string', description: 'One sentence, in your voice, at most 280 characters.' },
+        said: { type: 'string', description: 'The choice as one conditional sentence, in your voice, at most 280 characters. Stored only; not shown to the player.' },
       },
     },
   },

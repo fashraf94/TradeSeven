@@ -15,7 +15,7 @@
 | **Did the off switch really come with a one-line flip?** | **Yes, now.** Review found that the documented flip would have turned 17 existing tests red. Those 7 test files now pin the switch. A dry run of the real flip (the value plus its pin) passes the full suite: **789 files / 15,515 tests, exit 0**. |
 | **Independent review** | Five reviewers read the change along separate lenses and raised **31 findings**. A second reviewer was told to disprove each one: 30 held, 1 held only in part (B-1), 3 severities were lowered, and none was disproved outright. Every code-level finding is fixed in this PR, each with a test shown to fail without its fix. |
 | **Your decisions before switching to "shadow"** | 1. **Origin label (A-1).** As the spec is written, every battle without an equipped watchlist labels its calls "provenance unresolved", never "agent initiative". 2. **"Until the next check" calls (E-3).** These can never be marked *hit*: they expire at the next check's scheduled start, just before that check can look at prices. 3. **New text the AI reads (C-4).** The tool description needs your or Astra's sign-off. |
-| **Cost once switched on** | About **970 more input tokens** per AI call. Up to **4 s** more per battle check on the AI path (2 s on others). A battle needs **48 s** left, instead of 44 s, to start its AI call. |
+| **Cost once switched on** | About **1,040 more input tokens** per AI call (970 before the BR-3 rewording, §13). Up to **4 s** more per battle check on the AI path (2 s on others). A battle needs **48 s** left, instead of 44 s, to start its AI call. |
 | **Next steps** | Astra reviews the branch. You merge after 6 PM ET; nothing changes at merge. Then: publish the rules, create the `calls` index in the Console, make the three rulings above, and open the one-line "shadow" PR. |
 
 ---
@@ -243,9 +243,9 @@ The negative cell is stated, not hidden: a p99 response carrying a maximal block
   - **Latency.** A typical block adds 125 output tokens and a maximal one up to 1,085. The unchanged 20 s SDK / 22 s backstop ceilings then see more timeouts.
 - The shadow read measures both paths against a rollback trigger (§10).
 
-**Input cost (review C-5).** +3,874 chars of tool schema per model call at shadow/on; zero at off.
-- **969 tokens at chars/4, 1,292 at chars/3**, both pinned.
-- The maximal eval request (the M7-E2E fixture) goes from **9,093 to 10,062 tokens** at chars/4, against the 12,000 input budget. That shadow-tool row is now in `composition.m7e2eBudget.test.js`.
+**Input cost (review C-5).** +4,154 chars of tool schema per model call at shadow/on; zero at off. (The C-4 wording measured +3,874 chars, 969 / 1,292 tokens; branch review BR-3's stored-only wording adds 280 chars, §13.)
+- **1,039 tokens at chars/4, 1,385 at chars/3**, both pinned.
+- The maximal eval request (the M7-E2E fixture) goes from **9,093 to 10,132 tokens** at chars/4, against the 12,000 input budget. That shadow-tool row is now in `composition.m7e2eBudget.test.js`.
 - The budget is defined at chars/4. At chars/3 the *off* request already reads 12,122. A real `countTokens` measurement is on the pre-flip checklist.
 
 **Wall time (ms, on the shared handler clock `TIME_BUDGET_MS = 290,000`).**
@@ -389,7 +389,7 @@ They widened three findings: A-4 (the uncapped removal list), D-2 (a second flak
 | C-1 | P1 → P1 | The documented flip (value plus pin) turned 17 tests red in 7 suites (`+ "declarationsPhase"`), and flagPinGuard cannot see a string flag. | CONFIRMED | **Fixed** `e87694a0`: the seven suites pin `CALL_RECORDS_MODE: 'off'`; runway text updated; **flip dry run** in §9. |
 | C-2 | P2 → P2 | The off golden did not compare arguments to mocked writers. The verifier's mutant in the model-SWAP `evaluationMetadata` left the **entire** suite green. The tick_error capture was `[]`. | CONFIRMED | **Fixed** `ec19cd58`: writer arguments recorded, handler-level finalize, `passRan` rows. RC2 killed. |
 | C-3 | P2 → P2 | "The trade result is never altered by the block" was not established (truncation and latency). | CONFIRMED (mechanism) | **Report corrected** (§6): stated as a measured risk. Shadow metrics and a proposed rollback trigger are in §10. |
-| C-4 | P2 → P2 | The descriptions promised follow-through that no mechanism keeps, addressed a player who sees nothing, and overlapped the user-visible `anticipationCandidates`. | CONFIRMED (text; drift unmeasured) | **Fixed** `53fb58aa`: intent-only wording; "never replaces this check's decision or your anticipationCandidates". **Model-visible text needs founder/Astra sign-off**; drift metrics are in §10. |
+| C-4 | P2 → P2 | The descriptions promised follow-through that no mechanism keeps, addressed a player who sees nothing, and overlapped the user-visible `anticipationCandidates`. | CONFIRMED (text; drift unmeasured) | **Partly fixed** `53fb58aa`: intent-only wording; "never replaces this check's decision or your anticipationCandidates". Branch review BR-3 found the player still addressed; **completed by the BR-3 rewording (§13)**. **Model-visible text needs founder/Astra sign-off**; drift metrics are in §10. |
 | C-5 | P3 → P3 | Input cost stated only at chars/4; M7-E2E measured only the off tool. | CONFIRMED | **Fixed** `53fb58aa`: both bounds pinned; M7-E2E shadow row; measured 9,093 → 10,062. `countTokens` is on the checklist. |
 | C-6 | P3 → P3 | Shallow freeze: the on and off tools shared nested objects, so a push to the on-tool's `required` mutated the off tool and the validator. | CONFIRMED | **Fixed** `53fb58aa`: deep freeze and the on-tool's own clone (RC6 killed). The cron comment calling the tool "frozen" is corrected (`54e19147`). |
 | C-7 | P3 → P3 | Fence citation: the flatten helpers live in `agentScoring.js`. | CONFIRMED | **Fixed** in this report. |
