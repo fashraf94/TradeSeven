@@ -63,6 +63,8 @@ import {
   cpuNFromUserId,
   rankByScores,
   round2,
+  profileDisplayName,
+  NEUTRAL_PLAYER_NAME,
 } from '../../src/constants/leagueTournament.js';
 import { fetchEligibleGroupsByStatus } from './tournamentGroupService.js';
 import { cpuAgentName } from './tournamentCpu.js';
@@ -92,9 +94,14 @@ export function cpuDisplayName(odUserId) {
 
 /**
  * Resolve display names for human players from users/{uid} (authenticated-
- * read profile docs; the PvP precedent reads username || displayName —
- * firebaseService.js:1715). Read failures degrade to the odUserId — the
- * leaderboard never blocks on a profile read. CPU ids never hit Firestore.
+ * read profile docs) through the League's ONE name chain
+ * (leagueTournament.js profileDisplayName): the NESTED `profile.displayName`,
+ * then `profile.username` — the shape src/firebase/authService.js writes —
+ * with the top-level fields a legacy fallback only. A missing, nameless or
+ * unreadable profile reads as NEUTRAL_PLAYER_NAME — NEVER the raw id, which
+ * this map once answered for every human (it read only the top level) and
+ * the month board and rank docs then stored. The leaderboard never blocks on
+ * a profile read. CPU ids never hit Firestore.
  */
 export async function resolveDisplayNames(db, odUserIds) {
   const names = {};
@@ -105,14 +112,25 @@ export async function resolveDisplayNames(db, odUserIds) {
     }
     try {
       const snap = await db.collection('users').doc(odUserId).get();
-      const profile = snap.exists ? snap.data() : null;
-      names[odUserId] = profile?.username || profile?.displayName || odUserId;
+      names[odUserId] = (snap.exists ? profileDisplayName(snap.data(), odUserId) : null) ?? NEUTRAL_PLAYER_NAME;
     } catch (err) {
-      console.warn(`${LOG_PREFIX} users/${odUserId} read failed — falling back to id:`, err.message);
-      names[odUserId] = odUserId;
+      console.warn(`${LOG_PREFIX} users/${odUserId} read failed — storing "${NEUTRAL_PLAYER_NAME}":`, err.message);
+      names[odUserId] = NEUTRAL_PLAYER_NAME;
     }
   }));
   return names;
+}
+
+/**
+ * One seat's name out of a resolveDisplayNames map — NEVER the raw id. The
+ * writers resolve every seat they name, so this is a belt: a seat the map
+ * does not cover reads as its CPU name (derived from the id, as the resolver
+ * derives it) or NEUTRAL_PLAYER_NAME. Pure.
+ */
+export function displayNameFrom(displayNames, odUserId) {
+  const name = displayNames?.[odUserId];
+  if (typeof name === 'string' && name.length > 0) return name;
+  return isCpuUserId(odUserId) ? cpuDisplayName(odUserId) : NEUTRAL_PLAYER_NAME;
 }
 
 // ==================== WEEKLY LADDER — PLACEMENT POINTS (dark) ====================
@@ -285,7 +303,7 @@ export function buildLeaderboardFeeds(groups, { heldByGroup = {}, displayNames =
         return {
           symbol,
           holders,
-          names: inQuartile.map(uid => displayNames[uid] || uid),
+          names: inQuartile.map(uid => displayNameFrom(displayNames, uid)),
           bestComposite: round2(bestComposite),
         };
       })
@@ -383,7 +401,7 @@ export async function upsertLeaderboardForGroups(db, groups, { now = new Date(),
             entries[row.odUserId] = {
               ...prior,
               odUserId: row.odUserId,
-              displayName: displayNames[row.odUserId] || row.odUserId,
+              displayName: displayNameFrom(displayNames, row.odUserId),
               isCpu: row.isCpu,
               weeks,
               // The month total: Σ over the weeks map, recomputed every

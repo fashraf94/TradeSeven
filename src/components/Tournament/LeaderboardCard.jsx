@@ -7,12 +7,18 @@
 // chips, you-row teal highlight, row → tier-2 spectator entry via
 // currentGroupId. The consensus/contrarian cards read the C-1 derived feeds.
 // Tokens-native; static (reduced-motion-safe by construction).
+//
+// STORED NAMES PASS THE ID BELT (leagueTournament.js playerNameOrNeutral).
+// Before the League name chain read the nested users/{uid}.profile, the writer
+// stored every human's RAW uid as displayName (and in the contrarian feed's
+// names); those month docs are never rewritten, so a stored name that is an id
+// reads "Player" here rather than reaching the screen.
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Trophy } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { subscribeLeaderboard } from '../../services/tournamentGroupService';
-import { leaderboardDocId, shiftMonthKey } from '../../constants/leagueTournament';
+import { leaderboardDocId, shiftMonthKey, playerNameOrNeutral } from '../../constants/leagueTournament';
 import { etMonthKey, monthNavState, rankLeaderboardEntries, decomposeEntryWeeks } from '../../utils/tournamentSurfaces';
 import { WEEKLY_LADDER_PLACEMENT_ENABLED } from '../../config/featureFlags';
 
@@ -103,7 +109,7 @@ function LegacyEntryRow({ entry, rank, mine, onOpenGroup }) {
       }}>
       <span style={{ color: tokens.textFaint, fontVariantNumeric: 'tabular-nums', width: 22 }}>#{rank}</span>
       <span style={{ flex: 1, fontWeight: mine ? 800 : 500, color: mine ? '#14b8a6' : tokens.textPrimary }}>
-        {mine ? 'You' : entry.displayName}
+        {mine ? 'You' : playerNameOrNeutral(entry.displayName, entry.odUserId)}
         {entry.isCpu && <span style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8' }}> CPU</span>}
       </span>
       <span style={{ fontSize: 10, color: tokens.textFaint }}>{Object.keys(entry.weeks || {}).length} wk</span>
@@ -136,6 +142,7 @@ function SeasonEntryRow({ entry, rank, mine, expanded, onToggle, onOpenGroup }) 
   const clickable = !!entry.currentGroupId && !!onOpenGroup;
   const isCpu = entry.isCpu === true;
   const total = entry.placementPoints ?? 0;
+  const name = mine ? 'You' : playerNameOrNeutral(entry.displayName, entry.odUserId);
 
   return (
     <div style={{
@@ -147,7 +154,7 @@ function SeasonEntryRow({ entry, rank, mine, expanded, onToggle, onOpenGroup }) 
         <button
           onClick={onToggle}
           aria-expanded={expanded}
-          aria-label={`${mine ? 'You' : entry.displayName} — ${total} placement points across ${weeks.length} weeks`}
+          aria-label={`${name} — ${total} placement points across ${weeks.length} weeks`}
           style={{
             flex: 1, display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0,
             background: 'none', border: 'none', padding: 0, textAlign: 'left', cursor: 'pointer',
@@ -155,7 +162,7 @@ function SeasonEntryRow({ entry, rank, mine, expanded, onToggle, onOpenGroup }) 
             color: mine ? '#14b8a6' : isCpu ? tokens.textMuted : tokens.textPrimary,
           }}>
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {mine ? 'You' : entry.displayName}
+            {name}
           </span>
           {isCpu && (
             <span style={{
@@ -238,7 +245,7 @@ function LeaderboardFeeds({ feeds }) {
           {contrarian.map(c => (
             <div key={c.symbol} style={row}>
               <span style={{ fontWeight: 700, color: tokens.textPrimary }}>{c.symbol}</span>
-              <span style={{ flex: 1, color: tokens.textFaint }}>{(c.names || []).join(', ')}</span>
+              <span style={{ flex: 1, color: tokens.textFaint }}>{(c.names || []).map((n) => playerNameOrNeutral(n)).join(', ')}</span>
               <span style={{ fontWeight: 700, color: '#10b981' }}>+{c.bestComposite}</span>
             </div>
           ))}

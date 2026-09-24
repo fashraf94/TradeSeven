@@ -33,6 +33,8 @@ import {
   selectMyTrainingPod,
   selectBaseLayerField,
   BASE_LAYER_FIELD_OVERFETCH,
+  profileDisplayName,
+  NEUTRAL_PLAYER_NAME,
 } from '../constants/leagueTournament';
 
 /** One-shot group read. Returns { id, ...data } or null. */
@@ -334,12 +336,15 @@ export function subscribeBaseLayerGroups(baseLayerWeek, callback, { max = 12 } =
 
 /**
  * Resolve human display names for the redesign surfaces (League Next-Arc Phase 1,
- * founder ruling A): the CLIENT twin of the leaderboard writer's resolveDisplayNames
- * — `users/{uid}.username || displayName`, degrading to the bare id on any read
- * failure (never blocks a render). CPU seats are EXCLUDED here: their names are
- * synthesized deterministically from the archetype in leagueAdapter.cpuSeatName
- * (no doc read). One-shot batched read (not a subscription) — names are stable.
- * Returns a { [uid]: name } map.
+ * founder ruling A): the CLIENT twin of the leaderboard writer's resolveDisplayNames,
+ * through the SAME name chain (leagueTournament.js profileDisplayName) — the
+ * NESTED `users/{uid}.profile.displayName`, then `.profile.username`, the shape
+ * src/firebase/authService.js writes; the top-level fields are a legacy fallback
+ * only. A missing, nameless or unreadable profile reads as NEUTRAL_PLAYER_NAME —
+ * NEVER the raw id — and a read failure never blocks a render. CPU seats are
+ * EXCLUDED here: their names are synthesized deterministically from the archetype
+ * in leagueAdapter.cpuSeatName (no doc read). One-shot batched read (not a
+ * subscription) — names are stable. Returns a { [uid]: name } map.
  */
 export async function fetchDisplayNames(odUserIds) {
   const names = {};
@@ -347,11 +352,10 @@ export async function fetchDisplayNames(odUserIds) {
   await Promise.all(humans.map(async (uid) => {
     try {
       const snap = await getDoc(doc(db, 'users', uid));
-      const profile = snap.exists() ? snap.data() : null;
-      names[uid] = (profile && (profile.username || profile.displayName)) || uid;
+      names[uid] = (snap.exists() ? profileDisplayName(snap.data(), uid) : null) ?? NEUTRAL_PLAYER_NAME;
     } catch (error) {
-      console.warn(`[TournamentGroupService] users/${uid} read failed — falling back to id:`, error?.message);
-      names[uid] = uid;
+      console.warn(`[TournamentGroupService] users/${uid} read failed — showing "${NEUTRAL_PLAYER_NAME}":`, error?.message);
+      names[uid] = NEUTRAL_PLAYER_NAME;
     }
   }));
   return names;
