@@ -18,16 +18,46 @@
 // funnel, draws no frame for one, and moves nothing else on the landing. When
 // a bracket exists, the landing's existing composition is unchanged by this
 // mount (backingLanding.test.jsx pins the order of markers both ways).
+//
+// THE STRIP RE-READS (PRE-1 / N4, the desktop review record) — on exactly two
+// moments, and never on a loop:
+//   · a stake the server CONFIRMED (backingStakeSignal — the Backing screen
+//     announces the stake route's success reply), so a strip left mounted
+//     behind the Backing host moves from "not staked" to "staked";
+//   · the earliest `closesAt` among the listed OPEN pools passing (one timer,
+//     to that close, re-armed from each reply and cleared on unmount), so the
+//     strip moves from open to closed — the read itself runs the server's
+//     lazy close — without a reload.
+// The viewer's in-play pools need neither: they are live subscriptions.
 
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { BACKING_BETA_ENABLED } from '../../../config/featureFlags';
 import useBackingPods from '../../../hooks/useBackingPods';
 import useMyBacking from '../../../hooks/useMyBacking';
 import BackingStrip, { DeskStripSlot } from './BackingStrip';
-import { backingWeekKeys, backingWindow, deriveStripState } from './backingStripState';
+import { backingWeekKeys, backingWindow, deriveStripState, nextCloseRereadAt } from './backingStripState';
+import { onStakePlaced } from './backingStakeSignal';
+
+/** setTimeout's ceiling (2^31 − 1 ms, ~24.8 days): no backing close is further out than that. */
+const MAX_TIMER_MS = 2147483647;
 
 function LiveStrip({ uid, accent, onOpen, wide }) {
   const pods = useBackingPods(true);
+  const { refresh } = pods;
+  // PRE-1: a confirmed stake re-reads the pod list (its `myStakes` are the
+  // strip's STAKED state for a listed pod).
+  useEffect(() => onStakePlaced(() => refresh()), [refresh]);
+  // N4: ONE timer, to the earliest close among the listed open pools — its
+  // instant recomputed from each reply, so the next close re-arms it; cleared
+  // on unmount. A close already passed arms nothing (no loop).
+  const rereadAt = useMemo(() => nextCloseRereadAt(pods.pods, Date.now()), [pods.pods]);
+  useEffect(() => {
+    if (rereadAt == null) return undefined;
+    const delay = Math.max(0, rereadAt - Date.now());
+    if (delay > MAX_TIMER_MS) return undefined;
+    const timer = setTimeout(refresh, delay);
+    return () => clearTimeout(timer);
+  }, [rereadAt, refresh]);
   // The current battle week (in play or settling) and the window's week (a
   // committed stake on a pool closed at its fire) are both the viewer's
   // backing (DOM-1). Read each render, not memoised: the key rolls at Monday

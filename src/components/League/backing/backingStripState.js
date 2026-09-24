@@ -92,6 +92,35 @@ export function backingWindow(pods) {
   return { kind: STRIP_KIND.OPEN, pods: open.length, closesAt: latestIso(open.map((p) => p.pool?.closesAt)) };
 }
 
+/**
+ * How long after a pool's `closesAt` the strip re-reads for it (N4, the
+ * desktop review record). The server closes a pool on the first read AFTER
+ * its close (`ensureClosed`), so a read at the very instant could find it
+ * still open; a few seconds covers an ordinary clock drift between the two.
+ */
+export const CLOSE_REREAD_GRACE_MS = 5000;
+
+/**
+ * The instant the strip next re-reads the pod list for a close (N4): the
+ * earliest `closesAt` among the listed pods' OPEN pools, plus the grace — only
+ * one still ahead of `nowMs`. A close already behind us arms nothing, so a
+ * reply that still says open after its close (the server's clock behind ours)
+ * cannot loop the re-read: one timer to the next close, never a poll. Null
+ * when no listed pool is open. Pure.
+ */
+export function nextCloseRereadAt(pods, nowMs) {
+  let best = null;
+  for (const p of Array.isArray(pods) ? pods : []) {
+    if (p?.pool?.status !== 'open') continue;
+    const closesMs = typeof p.pool.closesAt === 'string' ? new Date(p.pool.closesAt).getTime() : NaN;
+    if (!Number.isFinite(closesMs)) continue;
+    const at = closesMs + CLOSE_REREAD_GRACE_MS;
+    if (at <= nowMs) continue;
+    if (best === null || at < best) best = at;
+  }
+  return best;
+}
+
 /** Pool statuses that mean the stakes have settled or been voided. */
 const SETTLED_POOL_STATUSES = new Set(['resolved', 'insufficient', 'refunded']);
 

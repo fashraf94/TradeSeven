@@ -545,3 +545,41 @@ describe('WIRE-R-2 — a pod CANCELLED after its pool closed never reads "plays 
     expect(podCancellation({ pool: null, group: { status: 'voided' } })).toBeNull();
   });
 });
+
+describe('N4 — nextCloseRereadAt: the ONE instant the strip re-reads for a close (the desktop review record)', () => {
+  it('the earliest close among the listed OPEN pools, plus the grace — never a closed pool\'s, never an unreadable one, never one already behind us', async () => {
+    const { CLOSE_REREAD_GRACE_MS, nextCloseRereadAt } = await import('./backingStripState');
+    const wedMs = new Date(WED_FIRE).getTime();
+    const sunMs = new Date(SUNDAY_CLOSE).getTime();
+    const pods = [pod('g-sun'), pod('g-wed', { pool: openPool({ closesAt: WED_FIRE }) }), pod('g-closed', { pool: openPool({ status: 'closed', closesAt: '2026-09-23T15:00:00.000Z' }) }), pod('g-bad', { pool: openPool({ closesAt: 'not a date' }) })];
+    expect(nextCloseRereadAt(pods, WED.getTime())).toBe(wedMs + CLOSE_REREAD_GRACE_MS);
+    // Inside the grace the passed close still holds the timer (a re-render there must not drop its re-read)…
+    expect(nextCloseRereadAt(pods, wedMs + 1)).toBe(wedMs + CLOSE_REREAD_GRACE_MS);
+    // …and once its re-read is due, it arms nothing more: the next close takes over.
+    expect(nextCloseRereadAt(pods, wedMs + CLOSE_REREAD_GRACE_MS)).toBe(sunMs + CLOSE_REREAD_GRACE_MS);
+    expect(nextCloseRereadAt(pods, sunMs + CLOSE_REREAD_GRACE_MS)).toBeNull();
+    expect(nextCloseRereadAt([], WED.getTime())).toBeNull();
+    expect(nextCloseRereadAt(null, WED.getTime())).toBeNull();
+    expect(CLOSE_REREAD_GRACE_MS).toBeGreaterThan(0);
+  });
+
+  it('the stake signal (PRE-1): every listener hears a confirmed stake, a failing one never silences the rest, and an unsubscribed one hears nothing', async () => {
+    const { announceStakePlaced, onStakePlaced } = await import('./backingStakeSignal');
+    const heard = [];
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      const offA = onStakePlaced((reply) => heard.push(['a', reply.stake.stakeId]));
+      const offBad = onStakePlaced(() => { throw new Error('boom'); });
+      const offB = onStakePlaced((reply) => heard.push(['b', reply.stake.stakeId]));
+      announceStakePlaced({ stake: { stakeId: 's1' } });
+      expect(heard).toEqual([['a', 's1'], ['b', 's1']]);
+      offA(); offBad(); offB();
+      announceStakePlaced({ stake: { stakeId: 's2' } });
+      expect(heard).toHaveLength(2);
+      expect(onStakePlaced('not a function')).toBeTypeOf('function');
+    } finally {
+      console.warn = warn;
+    }
+  });
+});
