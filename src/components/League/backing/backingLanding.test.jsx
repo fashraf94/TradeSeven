@@ -24,6 +24,15 @@
 // (jsdom, the group subscription answering) — a seat only exists once the
 // subscription answers. MUTATION CHECK (the build's #2): the strip mounted
 // below "Watch a live game" reds the seated placement row.
+//
+// THE MOBILE PLACEMENT (Backing pre-flip fixes 2 — N3, the desktop review
+// record; the desktop brief's "resolve it on both"): the mobile strip rides
+// the same centre slot — directly under the draft-slot picker and the
+// Auto-draft card (unseated) or directly under the waiting room's hero
+// (seated) — never below "Watch a live game" or the bracket line, and it
+// mounts once the seat subscription has answered (the desktop's WIRE-7 rule),
+// so the mobile rows MOUNT the landing too. MUTATION CHECK (the build's B):
+// the strip mounted back below "Watch a live game" reds the mobile seated row.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import React, { act } from 'react';
@@ -142,24 +151,25 @@ afterEach(async () => {
 });
 
 describe('no bracket — the strip and the weekly pods lead; no funnel frame, placeholder or reserved space', () => {
-  it('mobile', () => {
+  it('mobile — unseated: directly under the draft-slot picker and the Auto-draft card, above the bracket line and the field (N3)', async () => {
     hooked.state = NO_BRACKET;
     hooked.pods = podsResponse();
+    // Mounted: the strip mounts once the seat subscription has answered (N3 /
+    // WIRE-7), so a server render, which runs no effect, has no strip to show.
     flag.on = true;
-    const on = render(LeagueHome);
+    const on = (await mount(React.createElement(LeagueHome, props))).innerHTML;
     flag.on = false;
-    const off = render(LeagueHome);
+    const off = (await mount(React.createElement(LeagueHome, props))).innerHTML;
 
-    expect(on).toContain('data-backing="strip"');
     expect(on).toContain('data-strip-state="open"');
     for (const m of FUNNEL_MARKERS) expect(on, `funnel marker "${m}" on the no-bracket landing`).not.toContain(m);
-    // The strip sits directly under the ranked-entry center, above the field.
-    const center = on.indexOf('Pick a draft slot');
-    const strip = on.indexOf('data-backing="strip"');
-    const field = on.indexOf('The field · weekly base-layer groups');
-    expect(center).toBeGreaterThan(-1);
-    expect(strip).toBeGreaterThan(center);
-    expect(field).toBeGreaterThan(strip);
+    const strip = at(on, STRIP_MARK);
+    expect(strip, 'under the draft-slot picker').toBeGreaterThan(at(on, PICKER));
+    expect(strip, 'under the Auto-draft card').toBeGreaterThan(at(on, AUTO_DRAFT));
+    expect(strip, 'above the bracket line').toBeLessThan(at(on, BRACKET_LINE));
+    expect(strip, 'above the field').toBeLessThan(at(on, 'The field · weekly base-layer groups'));
+    // Directly under: nothing of the landing's own sits between the Auto-draft card's close and the strip's slot.
+    expect(on).toMatch(/Auto-draft<\/button><\/div><\/div><div data-backing="strip-slot"[^>]*><button[^>]*data-backing="strip"/);
     // No empty slot wrapper: the wrapper exists only around a rendered strip…
     expect(on).not.toMatch(/data-backing="strip-slot"[^>]*><\/div>/);
     // …and nothing rides inside the slot ahead of the strip (a placeholder
@@ -168,6 +178,25 @@ describe('no bracket — the strip and the weekly pods lead; no funnel frame, pl
     // MUTATION CHECK #6 — nothing else moved: minus the strip (and the label), byte-equal to the flag-off landing.
     expect(excise(on)).toBe(off);
     expect(off).not.toContain('data-backing');
+  });
+
+  it('mobile — seated: directly under the waiting room\'s hero, above "Watch a live game" and the bracket line (N3)', async () => {
+    hooked.state = NO_BRACKET;
+    hooked.pods = podsResponse();
+    hooked.myGroup = { id: 'wk-real-1', status: 'battle' };
+    flag.on = true;
+    const on = (await mount(React.createElement(LeagueHome, props))).innerHTML;
+    flag.on = false;
+    const off = (await mount(React.createElement(LeagueHome, props))).innerHTML;
+    const strip = at(on, STRIP_MARK);
+    expect(on, 'the seated centre is the waiting room').not.toContain(PICKER);
+    expect(strip, 'under the waiting room\'s hero').toBeGreaterThan(at(on, HERO));
+    expect(strip, 'above "Watch a live game"').toBeLessThan(at(on, WATCH));
+    expect(strip, 'above the bracket line').toBeLessThan(at(on, BRACKET_LINE));
+    // Directly under the hero and its one honesty line.
+    expect(on).toMatch(/Practice runs never touch the leaderboard\.<\/span><div data-backing="strip-slot"[^>]*><button[^>]*data-backing="strip"/);
+    expect(on.match(/data-backing="strip"/g), 'one strip').toHaveLength(1);
+    expect(excise(on)).toBe(off);
   });
 
   it('desktop — unseated: in the centre, directly under the draft-slot picker and the Auto-draft card, above the bracket line', async () => {
@@ -222,20 +251,31 @@ describe('no bracket — the strip and the weekly pods lead; no funnel frame, pl
 });
 
 describe('a bracket exists — the composition is unchanged by the mount; nothing else moves', () => {
-  it('mobile', () => {
+  it('mobile — unseated and seated: the strip in the centre\'s own slot, and nothing else moves', async () => {
     hooked.state = WITH_BRACKET;
     hooked.pods = podsResponse();
     flag.on = true;
-    const on = render(LeagueHome);
+    const on = (await mount(React.createElement(LeagueHome, props))).innerHTML;
     flag.on = false;
-    const off = render(LeagueHome);
-    expect(on).toContain('data-backing="strip"');
+    const off = (await mount(React.createElement(LeagueHome, props))).innerHTML;
     expect(on).toMatch(/data-backing="strip-slot"[^>]*><button[^>]*data-backing="strip"/);
     expect(excise(on)).toBe(off);
-    // The group card and the field still render, in their places, after the strip.
-    const strip = on.indexOf('data-backing="strip"');
-    expect(on.indexOf('Your group ·')).toBeGreaterThan(strip);
-    expect(on.indexOf('The field · weekly base-layer groups')).toBeGreaterThan(strip);
+    // Under the Auto-draft card, above the bracket line; the group card and the field still render, in their places, after it.
+    const strip = at(on, STRIP_MARK);
+    expect(strip).toBeGreaterThan(at(on, AUTO_DRAFT));
+    expect(strip).toBeLessThan(at(on, BRACKET_LINE));
+    expect(at(on, 'Your group ·')).toBeGreaterThan(strip);
+    expect(at(on, 'The field · weekly base-layer groups')).toBeGreaterThan(strip);
+    hooked.myGroup = { id: 'wk-real-1', status: 'battle' };
+    flag.on = true;
+    const seatedOn = (await mount(React.createElement(LeagueHome, props))).innerHTML;
+    flag.on = false;
+    const seatedOff = (await mount(React.createElement(LeagueHome, props))).innerHTML;
+    expect(excise(seatedOn)).toBe(seatedOff);
+    const seated = at(seatedOn, STRIP_MARK);
+    expect(seated).toBeGreaterThan(at(seatedOn, HERO));
+    expect(seated).toBeLessThan(at(seatedOn, WATCH));
+    expect(seated).toBeLessThan(at(seatedOn, BRACKET_LINE));
   });
 
   it('desktop — unseated and seated: the strip in the same centre position, and nothing else moves', async () => {
@@ -263,33 +303,40 @@ describe('a bracket exists — the composition is unchanged by the mount; nothin
 });
 
 describe('the strip itself on the landing', () => {
-  it('reads the close from each pool’s closesAt — a Wednesday fire close reads Wednesday, never Sunday', () => {
+  it('reads the close from each pool’s closesAt — a Wednesday fire close reads Wednesday, never Sunday', async () => {
     hooked.state = NO_BRACKET;
     hooked.pods = podsResponse(WED_FIRE);
     flag.on = true;
-    const on = render(LeagueHome);
+    const on = (await mount(React.createElement(LeagueHome, props))).innerHTML;
     expect(on).toContain('Closes Wed 7:00 PM ET');
     expect(on).not.toContain('Sun 11:59');
   });
 
-  it('while the pod list is still loading, no strip and no placeholder frame render — the landing is the flag-off landing', () => {
+  it('while the pod list is still loading, no strip and no placeholder frame render — the landing is the flag-off landing', async () => {
     hooked.state = NO_BRACKET;
     hooked.pods = { data: null, pods: [], loading: true, error: null, refresh: () => {} };
     flag.on = true;
-    const on = render(LeagueHome);
+    const on = (await mount(React.createElement(LeagueHome, props))).innerHTML;
     flag.on = false;
-    const off = render(LeagueHome);
+    const off = (await mount(React.createElement(LeagueHome, props))).innerHTML;
     expect(on).not.toContain('data-backing');
     expect(on.split('Tap a seat · Predictions').join('Tap a seat to spectate')).toBe(off);
   });
 
-  it('with no pods and no stakes the strip says there is nothing to back yet — never "0 pods"', () => {
+  it('with no pods and no stakes the strip says there is nothing to back yet — never "0 pods"', async () => {
     hooked.state = NO_BRACKET;
     hooked.pods = { data: { baseLayerWeek: '2026-W40', backingWeekCloses: SUNDAY_CLOSE, pods: [] }, pods: [], loading: false, error: null, refresh: () => {} };
     flag.on = true;
-    const on = render(LeagueHome);
+    const on = (await mount(React.createElement(LeagueHome, props))).innerHTML;
     expect(on).toContain('data-strip-state="quiet"');
     expect(on).toContain('No pods to back yet');
     expect(on).not.toContain('0 pods');
+  });
+
+  it('a server render of the mobile landing carries no strip: it mounts once the seat subscription has answered (N3 / WIRE-7)', () => {
+    hooked.state = NO_BRACKET;
+    hooked.pods = podsResponse();
+    flag.on = true;
+    expect(render(LeagueHome)).not.toContain('data-backing="strip"');
   });
 });

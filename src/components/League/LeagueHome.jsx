@@ -27,7 +27,9 @@ import LeagueVoidedNotice from './LeagueVoidedNotice';
 // Backing Beta PR 4 — the landing strip (the door) and the screen it opens.
 // BackingLandingStrip reads BACKING_BETA_ENABLED at call time and renders
 // NOTHING while dark, so the slot below emits no element and opens no read;
-// the screen is reachable only through the strip.
+// the screen is reachable only through the strip. The strip sits directly
+// under the ranked-entry position — the slot picker and the Auto-draft card,
+// or the seated hero — as on desktop (N3, the desktop review record).
 import BackingLandingStrip from './backing/BackingLandingStrip';
 import BackingScreen from './backing/BackingScreen';
 import { fetchTapePod } from '../../services/backingService';
@@ -83,9 +85,17 @@ export default function LeagueHome({ onOpenMyGame, onOpenTrainingPod, hasAgent, 
   // conditional MyGameBar (no game → no bar) and the no-game slot-picker center.
   // Fixture mode has no myGroup, so the bar simply hides there.
   const [activeGroup, setActiveGroup] = React.useState(null);
+  // Whose seat the subscription has ANSWERED for (it always answers: the
+  // group, or null). The Backing strip rides the centre's own slot — the slot
+  // picker's or the waiting room's (N3) — so it mounts once that centre is
+  // known: a seated viewer's strip mounts ONCE, in its place, rather than
+  // under the slot picker first and again under the waiting room (two
+  // pod-list requests, two sets of stake listeners). The desktop lobby's rule
+  // (WIRE-7, the desktop review record), mirrored.
+  const [seatFor, setSeatFor] = React.useState(null);
   React.useEffect(() => {
     if (!uid) { setActiveGroup(null); return undefined; }
-    return subscribeMyGroup(uid, setActiveGroup);
+    return subscribeMyGroup(uid, (group) => { setActiveGroup(group); setSeatFor(uid); });
   }, [uid]);
 
   // L-A follow-up (B) — the member voided-card on the DEFAULT League landing (this
@@ -129,7 +139,11 @@ export default function LeagueHome({ onOpenMyGame, onOpenTrainingPod, hasAgent, 
       console.warn('[LeagueHome] tape unavailable:', err?.message);
     }
   };
-  const backingSlot = <BackingLandingStrip uid={uid} accent={ACCENT} onOpen={openBacking} />;
+  // The strip's mount — the centre's own slot, under the entry (N3), once the
+  // seat is known (above). A component that renders null while dark: no
+  // element, no gap.
+  const seatKnown = !uid || seatFor === uid;
+  const backingSlot = seatKnown ? <BackingLandingStrip uid={uid} accent={ACCENT} onOpen={openBacking} /> : null;
   // tab-switch: front-end navigation telemetry (NOT a §4 trading-signal).
   // Emitted only on a real switch, never on mount.
   const switchTab = (next) => { if (next === tab) return; signal('tab-switch', { from: tab, to: next }); setTab(next); };

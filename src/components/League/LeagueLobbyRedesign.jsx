@@ -159,14 +159,22 @@ function MyGameBar({ onOpenMyGame }) {
 // content, keeping the honest one-line bracket footnote. SlotCenter owns the
 // LEAGUE_LIVE_DRAFT gate internally (P2c) so flag-off still keeps the Auto-draft
 // entry affordance.
-function BracketFunnelSection({ st, activeGroup = null, currentUserId = null, displayName = null, onEnterGame = null, activeTrainingPod = null, onOpenTrainingPod = null, hasAgent, onSpectate = null }) {
+//
+// `backingSlot` — the Backing strip — rides the centre's OWN slot, as on the
+// desktop lobby (N3, the desktop review record; the desktop brief's "resolve
+// it on both"): directly under the draft-slot picker and the Auto-draft card
+// (SlotCenter), or directly under the waiting room's headline and hero
+// (WhileYouWait), never below "Watch a live game" or the bracket line. Both
+// render it bare, so a strip that renders null (the flag dark, the list
+// loading) leaves no element and no gap.
+function BracketFunnelSection({ st, activeGroup = null, currentUserId = null, displayName = null, onEnterGame = null, activeTrainingPod = null, onOpenTrainingPod = null, hasAgent, onSpectate = null, backingSlot = null }) {
   // Bound to the SAME activeGroup that supplies `status` below (BUILD_RULES §9).
   // Must sit above the early return (rules of hooks).
   const preOpen = usePreOpenPhase(activeGroup);
   if (!activeGroup) {
     return (
       <div style={{ marginBottom: 18 }}>
-        <SlotCenter currentUserId={currentUserId} displayName={displayName} onEntered={onEnterGame} />
+        <SlotCenter currentUserId={currentUserId} displayName={displayName} onEntered={onEnterGame} backingSlot={backingSlot} />
       </div>
     );
   }
@@ -180,6 +188,7 @@ function BracketFunnelSection({ st, activeGroup = null, currentUserId = null, di
       onOpenTrainingPod={onOpenTrainingPod}
       hasAgent={hasAgent}
       onSpectate={onSpectate}
+      backingSlot={backingSlot}
     />
   );
 }
@@ -222,14 +231,17 @@ function LobbyFooter() {
 // single-column lobby, byte-identical — the extracted sections compose to the
 // same output, FollowRail included.
 // Backing Beta PR 4 — `backingSlot` (design brief rev2 §1 / rev3 §1): the
-// landing strip's mount, DIRECTLY UNDER the ranked-entry center (the slot
-// picker / waiting room) and above the group and the field. The host passes a
-// node that renders NOTHING while BACKING_BETA_ENABLED is dark, so the
-// flag-off composition is byte-identical to today (backingDark.test.jsx).
-// No frame, no placeholder, no reserved space rides with it (the no-bracket
-// ruling, Sept 18): the slot is rendered BARE — no wrapper, no margin — so a
-// strip that renders null leaves no element and no gap; the strip carries its
-// own spacing when it does render.
+// landing strip's mount, DIRECTLY UNDER whatever occupies the ranked-entry
+// position — the draft-slot picker and the Auto-draft card, or the waiting
+// room's headline and hero — never below "Watch a live game" or the bracket
+// line: it rides the centre's own slot (BracketFunnelSection → SlotCenter /
+// WhileYouWait), the desktop lobby's placement mirrored (N3, the desktop
+// review record). The host passes a node that renders NOTHING while
+// BACKING_BETA_ENABLED is dark, so the flag-off composition is byte-identical
+// to today (backingDark.test.jsx). No frame, no placeholder, no reserved space
+// rides with it (the no-bracket ruling, Sept 18): the slot is rendered BARE —
+// no wrapper, no margin — so a strip that renders null leaves no element and
+// no gap; the strip carries its own spacing when it does render.
 export default function Lobby({ st, accent, onPickPod, onSpectate, onOpenMyGame, activeGroup = null, uid = null, displayName = null, onOpenTrainingPod = null, activeTrainingPod = null, hasAgent, backingSlot = null }) {
   return (
     <div style={{ padding: '16px 18px calc(env(safe-area-inset-bottom, 0px) + 120px)', maxWidth: 720, margin: '0 auto' }}>
@@ -237,8 +249,7 @@ export default function Lobby({ st, accent, onPickPod, onSpectate, onOpenMyGame,
       <LobbyHero st={st} accent={accent} />
       <FollowRail items={st.followLive} onSpectate={onSpectate} />
       <BracketFunnelSection st={st} activeGroup={activeGroup} currentUserId={uid} displayName={displayName} onEnterGame={onOpenMyGame}
-        activeTrainingPod={activeTrainingPod} onOpenTrainingPod={onOpenTrainingPod} hasAgent={hasAgent} onSpectate={onSpectate} />
-      {backingSlot}
+        activeTrainingPod={activeTrainingPod} onOpenTrainingPod={onOpenTrainingPod} hasAgent={hasAgent} onSpectate={onSpectate} backingSlot={backingSlot} />
       <YourGroup st={st} accent={accent} onPick={onPickPod} />
       <FieldSection st={st} accent={accent} onSpectate={onSpectate} />
       <LobbyFooter />
@@ -490,8 +501,7 @@ export function LobbyTabbed({ st, accent, tab, onSwitchTab, onPickPod, onSpectat
           <>
             <PulseSlot />
             <BracketFunnelSection st={st} activeGroup={activeGroup} currentUserId={uid} displayName={displayName} onEnterGame={onOpenMyGame}
-              activeTrainingPod={activeTrainingPod} onOpenTrainingPod={onOpenTrainingPod} hasAgent={hasAgent} onSpectate={onSpectate} />
-            {backingSlot}
+              activeTrainingPod={activeTrainingPod} onOpenTrainingPod={onOpenTrainingPod} hasAgent={hasAgent} onSpectate={onSpectate} backingSlot={backingSlot} />
             <YourGroup st={st} accent={accent} onPick={onPickPod} />
             <FieldSection st={st} accent={accent} onSpectate={onSpectate} />
             <LobbyFooter />

@@ -463,6 +463,26 @@ describe('flag ON — the same mounts light up (the pin is not vacuous)', () => 
     }
   });
 
+  it('mobile: a SEATED viewer\'s strip mounts ONCE, in the waiting room — one pod-list read, not one under the slot picker and another under the waiting room (N3 + WIRE-7)', async () => {
+    flag.on = true;
+    // The seat lands AFTER the first paint, as a Firestore snapshot does.
+    let answer = null;
+    const groupSvc = await import('../../../services/tournamentGroupService');
+    const spy = vi.spyOn(groupSvc, 'subscribeMyGroup').mockImplementation((_uid, cb) => { answer = cb; return () => {}; });
+    try {
+      const container = await mount(<LeagueHome {...homeProps} />);
+      expect(container.querySelector('[data-backing="strip"]'), 'no strip before the seat is known').toBeNull();
+      expect(svc.calls.filter((c) => c === 'fetchBackingPods'), 'no pod-list read before the seat is known').toHaveLength(0);
+      await act(async () => { answer({ id: 'wk-real-1', status: 'battle' }); });
+      for (let i = 0; i < 6; i += 1) await act(async () => { await Promise.resolve(); });
+      expect(container.querySelectorAll('[data-backing="strip"]')).toHaveLength(1);
+      expect(container.textContent).toContain('Watch a live game');
+      expect(svc.calls.filter((c) => c === 'fetchBackingPods')).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('desktop: the strip opens the Backing screen FULL-WINDOW in its three-column layout — pods, card, your backing', async () => {
     flag.on = true;
     const container = await mount(<LeagueLobbyDesktop {...homeProps} />);
@@ -541,7 +561,8 @@ describe('the flag is read at CALL time in every host — never captured at modu
     ['src/components/Dashboard/desktop/IdentityPanel.jsx', '<ScoutingLine'],
     ['src/components/League/LeagueHome.jsx', '<BackingLandingStrip'],
     ['src/components/League/LeagueLobbyDesktop.jsx', '<BackingLandingStrip'],
-    ['src/components/League/LeagueLobbyRedesign.jsx', '{backingSlot}'],
+    // (LeagueLobbyRedesign.jsx no longer mounts the slot itself: it threads it
+    // into the shared centre below — N3 — and a row further down holds it so.)
     // PR 5: the results card under the film room, the stats under the line.
     ['src/components/League/LeagueSpectate.jsx', '<SpectateBackingResults'],
     ['src/components/Dashboard/EquipStation.jsx', '<BackingStatsEntry'],
@@ -639,11 +660,19 @@ describe('the flag is read at CALL time in every host — never captured at modu
   }
 
   it('the hosts mount the strip through a component that returns null while dark — no wrapper, no reserved space', () => {
-    for (const rel of ['src/components/League/LeagueLobbyRedesign.jsx', 'src/components/League/liveDraft/SlotCenter.jsx', 'src/components/League/WhileYouWait.jsx']) {
+    for (const rel of ['src/components/League/liveDraft/SlotCenter.jsx', 'src/components/League/WhileYouWait.jsx']) {
       const host = readFileSync(path.join(REPO, rel), 'utf8');
       expect(host, `${rel} renders the slot bare`).toContain('{backingSlot}');
       expect(host, `${rel} wraps the slot`).not.toMatch(/backingSlot && </);
     }
+    // The mobile lobby THREADS the slot into the shared centre (N3, pre-flip
+    // fixes 2) — SlotCenter's slot unseated, WhileYouWait's seated, the
+    // desktop lobby's placement — and never mounts it as a child of its own:
+    // a bare {backingSlot} there is the strip back below "Watch a live game"
+    // and the bracket line. Attribute values stripped, none may remain.
+    const lobby = stripComments(readFileSync(path.join(REPO, 'src/components/League/LeagueLobbyRedesign.jsx'), 'utf8'));
+    expect(lobby.match(/backingSlot=\{backingSlot\}/g), 'the slot is handed to the centre: both lobbies, both centres').toHaveLength(4);
+    expect(stripAttributeBraces(lobby), 'the mobile lobby mounts the slot itself').not.toContain('{backingSlot}');
     for (const rel of ['src/components/League/backing/BackingLandingStrip.jsx', 'src/components/League/backing/ScoutingLine.jsx', 'src/components/League/backing/BackingScreen.jsx', 'src/components/League/backing/SpectateBackingResults.jsx', 'src/components/League/backing/BackingStatsEntry.jsx']) {
       expect(readFileSync(path.join(REPO, rel), 'utf8'), `${rel} returns null while dark`).toContain('if (!BACKING_BETA_ENABLED) return null;');
     }

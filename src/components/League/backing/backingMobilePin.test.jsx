@@ -11,9 +11,9 @@
 // clock, and its markup's sha-256 is compared with the golden beside this file
 // (__fixtures__/backingMobilePin.golden.json). THE GOLDEN WAS GENERATED ON THE
 // UNTOUCHED TREE — main @ 97693a41, before any desktop edit — so a green row
-// means the mobile markup is the markup main ships, byte for byte. A row that
-// reds names the surface; regenerate on a `git archive` of main and diff the
-// markup to see what moved.
+// means the mobile markup is the markup main ships, byte for byte (but for the
+// 22 rows N3 moved on purpose — below). A row that reds names the surface;
+// regenerate on a `git archive` of main and diff the markup to see what moved.
 //
 // Both flag states where the host is a landing (the flag-off mobile League is
 // held here too — the shared hosts changed shape), the lit state for every
@@ -24,6 +24,21 @@
 //
 // Regenerate (only ever on main's code): UPDATE_BACKING_PINS=1 npx vitest run
 // src/components/League/backing/backingMobilePin.test.jsx
+//
+// REGENERATED ONCE, FOR N3 (Backing pre-flip fixes 2 — the mobile strip moved
+// to its ruled place, directly under the ranked-entry position). 22 of the 96
+// rows moved, every one a lit landing or a seated presentational lobby:
+// `landing/{bracket,no-bracket}/on/{unseated-mounted,seated-mounted,
+// unseated-ssr}` and `{lobby,lobby-tabbed}/{bracket,no-bracket}/seated/
+// {open,staked,week,between}`. Checked row by row against main @ 40acd199's
+// markup: in 20 the strip's own markup is byte-identical and so is everything
+// else with it excised — the strip moved from below the bracket line (and,
+// seated, below "Watch a live game") to under the Auto-draft card / the hero;
+// in the 2 server renders the strip is absent — it mounts once the seat
+// subscription answers (the desktop's WIRE-7 rule, mirrored), and a server
+// render runs no effect. The other 74 rows, both funnels included, are
+// main's, byte for byte. The group mock answers null for an unseated viewer,
+// as the real subscription does; on main's code that moves no row.
 
 import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import React, { act } from 'react';
@@ -57,7 +72,9 @@ vi.mock('../../../config/featureFlags', async (importOriginal) => ({
 vi.mock('../../../hooks/useLeagueState', () => ({ default: () => ({ state: hooked.league, loading: false, isFixtures: false }) }));
 vi.mock('../../../contexts/UserContext', () => ({ useUser: () => ({ user: { uid: 'u1', displayName: 'Alice' } }) }));
 vi.mock('../../../services/tournamentGroupService', () => ({
-  subscribeMyGroup: (_uid, cb) => { if (hooked.myGroup) cb(hooked.myGroup); return () => {}; },
+  // The real subscription ALWAYS answers — the viewer's group, or null — and
+  // the mobile strip mounts once it has (N3 / WIRE-7, pre-flip fixes 2).
+  subscribeMyGroup: (_uid, cb) => { cb(hooked.myGroup ?? null); return () => {}; },
   subscribeMyMostRecentVoidedGroup: () => () => {},
   subscribeMyTrainingPod: (_uid, cb) => { if (hooked.trainingPod) cb(hooked.trainingPod); return () => {}; },
   subscribeGroup: () => () => {}, getGroup: async () => null, fetchDisplayNames: async () => ({}),
