@@ -26,6 +26,13 @@
 // The dev preview page's every state is walked the same way in its own suite
 // (src/screens/BackingPreviewScreen.test.jsx), which owns that page's mocks.
 //
+// THE DESKTOP LAYOUTS (item F): ROW 2 also renders every desktop surface from
+// the SAME responses — the Backing screen's window (no card, each seat's card,
+// the desktop stake control on a team the viewer already backs — the top-up
+// state — and its "Backed"), the week and the results sections (the desktop
+// week cards, the results tables, the private record beside them) and the
+// desktop strip — and walks their visible text the same way.
+//
 // MUTATION CHECK (the prompt's): put a uid back in the winner line — the
 // results projection's `winnerLabels` answering `winners`, or the card
 // rendering `pod.winners` — and a row here reds.
@@ -76,6 +83,8 @@ const { default: BackingResultsCard } = await import('./BackingResultsCard');
 const { default: MyBackingStats } = await import('./MyBackingStats');
 const { default: TrainerStats } = await import('./TrainerStats');
 const { deriveStripState } = await import('./backingStripState');
+const { default: BackingDesk } = await import('./BackingDesk');
+const { BackingResultsCardDesk } = await import('./BackingResultsCard');
 
 // ==================== THE ID SHAPES ====================
 
@@ -355,6 +364,40 @@ describe('ROW 2 — every backing surface, rendered from those responses, shows 
     surfaces.push(['MyBackingStats', await render(<MyBackingStats stats={R.myStats.body} />)]);
     surfaces.push(['TrainerStats', await render(<TrainerStats stats={R.trainerStats.body} />)]);
 
+    // ── the desktop layouts, from the same responses ──
+    const deskPods = { data: R.pods.body, pods, loading: false, error: null };
+    const windowState = deriveStripState({ pods, inPlay: null, now: NOW });
+    const desk = (over) => (
+      <BackingDesk
+        uid={VIEWER} pods={deskPods} state={deriveStripState({ pods, inPlay, now: NOW })} windowState={windowState} inPlay={inPlay}
+        wallet={{ known: true, left: 900, total: 1000 }} eligibility={{ status: 'attested', refresh: () => {} }}
+        view={{ kind: 'list', groupId: null, odUserId: null }} pod={p1} section="window" now={NOW} services={services} battlesByGroup={{}}
+        results={{ weeks: R.resultsList.body.weeks, loading: false, nextBefore: null }} myStats={{ data: R.myStats.body, loading: false }}
+        onOpenTape={() => {}} onBack={() => {}}
+        {...over}
+      />
+    );
+    surfaces.push(['BackingDesk (window · no card)', await render(desk({}))]);
+    for (const [seatId, res] of Object.entries(R.cards)) {
+      surfaces.push([`BackingDesk (window · ${seatId.startsWith('cpu-') ? seatId : 'a human seat'}'s card)`, await render(desk({ view: { kind: 'card', groupId: P1, odUserId: seatId }, cardQuery: { card: res.body, loading: false } }))]);
+    }
+    const deskStake = await render(desk({ view: { kind: 'stake', groupId: P1, odUserId: BARE }, cardQuery: { card: R.cards[BARE].body, loading: false } }));
+    expect(deskStake.querySelector('[data-desk-col="right"] [data-backing="top-up"]'), 'the desktop stake control is in its top-up state (the viewer backs this seat)').not.toBeNull();
+    surfaces.push(['BackingDesk (window · the stake control, top-up)', deskStake]);
+    const deskBacked = await render(desk({ view: { kind: 'stake', groupId: P1, odUserId: BARE }, cardQuery: { card: R.cards[BARE].body, loading: false } }));
+    await act(async () => { deskBacked.querySelector('[data-desk-col="right"] [data-backing="confirm"]').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    for (let i = 0; i < 3; i += 1) await act(async () => { await Promise.resolve(); });
+    expect(deskBacked.querySelector('[data-desk-col="right"] [data-backing="backed"]')).not.toBeNull();
+    surfaces.push(['BackingDesk (window · Backed)', deskBacked]);
+    surfaces.push(['BackingDesk (the week, whole screen)', await render(desk({ section: 'week', sections: ['window', 'week', 'results'] }))]);
+    surfaces.push(['BackingDesk (the results, whole screen)', await render(desk({ section: 'results' }))]);
+    surfaces.push(['BackingStrip desktop (week)', await render(<BackingStrip wide state={deriveStripState({ pods, inPlay, now: NOW })} />)]);
+    surfaces.push(['BackingStrip desktop (window)', await render(<BackingStrip wide state={windowState} />)]);
+    for (const week of R.resultsList.body.weeks) {
+      for (const pod of week.pools) surfaces.push([`BackingResultsCardDesk ${pod.groupId}`, await render(<BackingResultsCardDesk pod={pod} onOpenTape={() => {}} />)]);
+    }
+    surfaces.push(['BackingResultsCardDesk (one pod)', await render(<BackingResultsCardDesk pod={R.resultsOne.body.pod} />)]);
+
     // THE SCAN FIRST, so a raw id planted on any surface is reported BY the
     // scan (surface, match and context) — not by a name check below that
     // happens to run earlier.
@@ -372,11 +415,17 @@ describe('ROW 2 — every backing surface, rendered from those responses, shows 
     expect(offenders).toEqual([]);
 
     // Not vacuous: the surfaces rendered, and they rendered the names.
-    expect(surfaces.length).toBeGreaterThan(10);
+    expect(surfaces.length).toBeGreaterThan(20);
     const all = surfaces.map(([, c]) => visibleText(c)).join(' ');
     expect(all).toContain('Winner: Unnamed team');
     expect(all).toContain('Shadow');
     expect(all).toContain('Backed · 100 BP on Unnamed team');
+    // …and the desktop surfaces rendered theirs: the top-up line and the rail
+    // name the backed seat by the server's label, never its id (D-af).
+    const desktop = surfaces.filter(([name]) => /Desk|desktop/.test(name)).map(([, c]) => visibleText(c)).join(' ');
+    expect(desktop).toContain('Adds to your 100 BP on Unnamed team.');
+    expect(desktop).toContain('Winner: Unnamed team');
+    expect(desktop).toContain('Shadow');
     // The player's name from the NESTED profile (RAWID-1) reaches the card:
     // the human-and-agent unit names both halves.
     expect(all).toContain('Back ada & Shadow');

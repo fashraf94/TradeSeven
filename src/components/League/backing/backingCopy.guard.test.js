@@ -71,6 +71,16 @@ const LISTED = [
   // them, so their words are held to the same lexicon.
   'api/_utils/backingTeamLabels.js',
   'api/backing/team-labels.js',
+  // The desktop layouts build: every host that now mounts a backing surface
+  // on desktop — the lobby (the strip in the centre, the full-window screen),
+  // the shared centre it opened (the strip's slot under the entry and under
+  // the waiting room), the stats' desktop home beside the pitch — and the
+  // desktop screenshot harness (its fixture copy reaches the pictures).
+  'src/components/League/LeagueLobbyDesktop.jsx',
+  'src/components/League/liveDraft/SlotCenter.jsx',
+  'src/components/League/WhileYouWait.jsx',
+  'src/components/Dashboard/desktop/IdentityPanel.jsx',
+  'scripts/backing-screenshots/desktop.render.jsx',
 ].map((rel) => path.join(REPO, rel));
 
 const GUARDED = [...DIR_SOURCES, ...LISTED];
@@ -89,7 +99,9 @@ describe('the backing copy guard — no forbidden term in any backing UI file', 
   it('guards a non-empty set that includes the copy module, the strip, the card, the control and the routes', () => {
     expect(GUARDED.length).toBeGreaterThan(10);
     const names = GUARDED.map((f) => path.basename(f));
-    for (const must of ['backingCopy.js', 'BackingStrip.jsx', 'TeamCard.jsx', 'StakeControl.jsx', 'PodList.jsx', 'YourBacking.jsx', 'BackingScreen.jsx', 'team-card.js', 'pitch.js', 'deriveWeekLine.js', 'BackingResultsCard.jsx', 'MyBackingStats.jsx', 'TrainerStats.jsx', 'results.js', 'my-stats.js', 'trainer-stats.js', 'event.js', 'backingTelemetry.js']) {
+    for (const must of ['backingCopy.js', 'BackingStrip.jsx', 'TeamCard.jsx', 'StakeControl.jsx', 'PodList.jsx', 'YourBacking.jsx', 'BackingScreen.jsx', 'team-card.js', 'pitch.js', 'deriveWeekLine.js', 'BackingResultsCard.jsx', 'MyBackingStats.jsx', 'TrainerStats.jsx', 'results.js', 'my-stats.js', 'trainer-stats.js', 'event.js', 'backingTelemetry.js',
+      // the desktop layouts build
+      'BackingDesk.jsx', 'LeagueLobbyDesktop.jsx', 'SlotCenter.jsx', 'WhileYouWait.jsx', 'IdentityPanel.jsx', 'desktop.render.jsx']) {
       expect(names, `${must} is not under the guard`).toContain(must);
     }
     for (const f of GUARDED) expect(() => readFileSync(f), `${f} does not exist`).not.toThrow();
@@ -121,6 +133,13 @@ describe('the guard is not vacuous', () => {
     expect(stripped).not.toMatch(/\bbet\b/);
     expect(stripped).not.toMatch(/\bwager\b/);
     expect(stripped).toContain('https://x');
+  });
+
+  it('the desktop layouts\' own words are under the scan: the DESK labels and the strip\'s "Back a team" (positive control)', () => {
+    const copy = strippedSource(path.join(HERE, 'backingCopy.js'));
+    expect(copy).toContain('Back a team');
+    expect(copy).toContain('New total');
+    expect(copy).toContain('Pays ×');
   });
 
   it('the copy module actually carries the lexicon it is held to (positive control)', () => {

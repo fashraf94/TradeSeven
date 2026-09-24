@@ -8,6 +8,10 @@
 //
 // The spectator battle hook is mocked (it polls an endpoint); everything else
 // is the real component over real-shaped docs. react-dom/server.
+//
+// THE DESKTOP LAYOUT (Backing desktop layouts — Monday–Friday takes the whole
+// screen): the same cards, wide, from the same model — the rows at the end
+// hold the two layouts to the same facts and the same absence of any action.
 
 import { describe, it, expect, vi } from 'vitest';
 import React from 'react';
@@ -246,5 +250,32 @@ describe('the reveal names the two layers APART — this build\'s review record 
     expect(html).toContain('What Mira and Mira’s agent hold');
     expect(html).not.toContain('cpu-9');
     battles.byOwner = {};
+  });
+});
+
+describe('the desktop layout — the same facts, wide, and still nothing to click but the tape', () => {
+  const strip = (html) => html.replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/&#x27;/g, '\u2019').replace(/\s+/g, ' ');
+  it('every pod\'s card states the same backed rows, standing, trail and two-layer reveal in both layouts', () => {
+    battles.byOwner = { 'od-a': { ownerId: 'od-a', agentContext: { initialPortfolio: { star: [{ symbol: 'NVDA' }], core: [{ symbol: 'AVGO' }], support: [{ symbol: 'VST' }] } } } };
+    const mobile = strip(render());
+    const desktop = strip(render({ layout: 'desktop' }));
+    for (const fact of [
+      'Kestrel · 350 BP', 'Orbit · 200 BP',                 // the backed rows (the server's labels)
+      'Where the pod stands', 'Kestrel', 'Orbit', 'CPU — Diversifier', 'CPU — Speculator',
+      'This week · both layers', 'What Mira and Kestrel hold', 'Mira · 3', 'Kestrel · 6', 'NVDA', 'AMD', 'VST', 'AVGO',
+      'MON', 'TUE', 'WED', 'Day 3 of 5', 'Open the tape',
+    ]) {
+      expect(mobile, `mobile: ${fact}`).toContain(fact);
+      expect(desktop, `desktop: ${fact}`).toContain(fact);
+    }
+    battles.byOwner = {};
+  });
+
+  it('the desktop cards are the wide layout, one per backed pod, with no stake action', () => {
+    const html = render({ layout: 'desktop' });
+    expect(html).toContain('data-layout="desktop"');
+    expect((html.match(/data-backing="week-card"/g) || []).length).toBe(2);
+    expect(html).not.toContain('data-group="g-next"');
+    expect(html).not.toMatch(/Confirm|data-backing="confirm"|data-backing="cta-back"|type="number"|data-backing="custom-amount"/);
   });
 });

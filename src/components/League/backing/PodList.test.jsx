@@ -10,12 +10,37 @@
 // that rendered `pool.potTotal` while open reds this row.
 //
 // react-dom/server: no effects, no listeners — the list is pure over its props.
+//
+// THE SEAL AT DESKTOP WIDTH (Backing desktop layouts, item F): a wider screen
+// shows more at once — the pod list, the open team card, your backing and the
+// stake control side by side — and no per-team figure, pot, payout or count
+// above three may appear ANYWHERE while a pool is open, including in the
+// side-by-side view. The desktop rows render the whole window (BackingDesk)
+// and the desktop strip over the leaky pool and require the markup to be
+// BYTE-EQUAL to the same render over the same pool with the leaked fields
+// removed: a leaked figure, an order or an emphasis derived from one, cannot
+// survive that equality. MUTATION CHECK (the build's #1): a per-team share
+// rendered on the desktop pod list while open reds these rows.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
 import { POOL_STRIP } from '../../../constants/backing';
-import PodList from './PodList';
+
+// The desktop window mounts the stake control and Your Backing, whose service
+// seams pull the env-gated Firebase client — stood in for, as their own
+// suites do. Nothing here calls them: the rows are server renders.
+vi.mock('../../../services/backingService', () => ({
+  placeStake: vi.fn(), attestEligibility: vi.fn(), newRequestId: () => 'seal-req', readEligibility: vi.fn(),
+  BackingApiError: class BackingApiError extends Error {},
+}));
+vi.mock('../../../hooks/useSpectatedTournamentBattles', () => ({ default: () => ({ battles: {}, loading: false, error: null }) }));
+
+const { default: PodList } = await import('./PodList');
+const { default: BackingDesk } = await import('./BackingDesk');
+const { default: BackingStrip } = await import('./BackingStrip');
+const { deriveStripState } = await import('./backingStripState');
+const { ELIGIBILITY } = await import('../../../hooks/useEligibility');
 
 const SUNDAY_CLOSE = '2026-09-28T03:59:59.000Z';
 const WED_FIRE = '2026-09-23T23:00:00.000Z';
@@ -190,5 +215,77 @@ describe('D-af — the seats are named by the SERVER (Amendment C §C1)', () => 
     expect(html).not.toContain('Mira');
     expect(html).not.toContain('od-a<');
     expect(html).toContain('Unnamed team');
+  });
+});
+
+// ═══ THE SEAL AT DESKTOP WIDTH ═══
+describe('SEAL at desktop width — the window side by side leaks nothing (the leaky pool renders byte-equal to the clean one)', () => {
+  // Distinctive figures, so none can pass for a legitimate number on these
+  // surfaces (the 1,000 allowance, the 500 cap, the viewer's own 250).
+  const LEAKED_POOL = { potTotal: 1234, uniqueBackers: 47, teamsBacked: 4, paysX: 6.43, sharePct: 61, backerCount: 47 };
+  const LEAKED_TEAMS = {
+    'od-a': { stakeTotal: 777, backerCount: 13, paysX: 6.43, sharePct: 61, won: false },
+    'od-b': { stakeTotal: 555, backerCount: 11, paysX: 2.19, sharePct: 39, won: false },
+  };
+  const CARD = {
+    groupId: 'g-leak', odUserId: 'od-a', viewerUid: 'viewer-1',
+    seat: { index: 1, count: 4, isCpu: false, isViewer: false, viewerSeated: false },
+    team: { displayName: 'Mira', label: 'Shadow', secondary: 'Mira', isCpu: false, pitch: 'Breadth first.', derived: null,
+      agent: { name: 'Shadow', archetype: 'momentum_chaser', archetypeLabel: 'Trend Follower', approach: 'Rides the trend.', traitCount: 4, ruleCount: 7 } },
+    known: null, lastWeek: null,
+  };
+  const pool = (leaky) => ({ status: 'open', backerProgress: { count: 2, floor: 3, met: false }, teamSpread: { met: true }, closesAt: SUNDAY_CLOSE, closeReason: 'clock', ...(leaky ? LEAKED_POOL : {}) });
+  const leakyPod = (leaky) => openPod('g-leak', {
+    pool: pool(leaky),
+    teams: teams(leaky ? LEAKED_TEAMS : {}),
+    myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', teamLabel: 'Shadow', amount: 250, status: 'live' }],
+  });
+  const desk = (leaky, view) => {
+    const p = leakyPod(leaky);
+    const pods = { data: { backingWeekCloses: SUNDAY_CLOSE }, pods: [p, openPod('g-other')], loading: false, error: null };
+    const now = new Date('2026-09-23T14:00:00.000Z');
+    return renderToString(
+      <BackingDesk
+        uid="viewer-1"
+        pods={pods}
+        state={deriveStripState({ pods: pods.pods, inPlay: null, now, backingWeekCloses: SUNDAY_CLOSE })}
+        windowState={deriveStripState({ pods: pods.pods, inPlay: null, now, backingWeekCloses: SUNDAY_CLOSE })}
+        inPlay={{ stakes: [], poolsById: {}, groupsById: {}, labelsById: {} }}
+        wallet={{ known: true, left: 750, total: 1000 }}
+        eligibility={{ status: ELIGIBILITY.ATTESTED, refresh: () => {} }}
+        view={view === 'list' ? { kind: 'list', groupId: null, odUserId: null } : { kind: view, groupId: 'g-leak', odUserId: 'od-a' }}
+        cardQuery={{ card: CARD, loading: false }}
+        pod={p}
+        section="window"
+        now={now}
+      />,
+    );
+  };
+  const text = (html) => html.replace(/<style>[\s\S]*?<\/style>/g, ' ').replace(/<[^>]*>/g, ' ');
+
+  for (const view of ['list', 'card', 'stake']) {
+    it(`the whole window — the pod list, ${view === 'list' ? 'no card yet' : `the open card${view === 'stake' ? ' and the stake control' : ' and your backing'}`} — is the clean window, byte for byte`, () => {
+      const leaky = desk(true, view);
+      const clean = desk(false, view);
+      // Not vacuous: the window rendered the pod, the seal, the viewer's own stake.
+      expect(clean).toContain('data-backing="pod"');
+      expect(clean).toContain('SEALED');
+      expect(clean).toContain(POOL_STRIP.yourBacking.replace('{amount}', '250'));
+      if (view !== 'list') expect(clean).toContain('data-backing="team-card"');
+      if (view === 'stake') expect(clean).toContain('data-layout="desktop"');
+      expect(leaky).toBe(clean);
+      // …and, as a belt, none of the leaked figures is in the visible text.
+      const t = text(leaky);
+      for (const figure of ['1,234', '1234', '777', '555', '6.43', '2.19', '61%', '39%', '47', '13 backers', '11 backers']) {
+        expect(t, `leaked "${figure}" while open, at desktop width`).not.toContain(figure);
+      }
+    });
+  }
+
+  it('the desktop strip over the leaky pod list is the clean strip, byte for byte — never a pot, a count above three, a payout', () => {
+    const now = new Date('2026-09-23T14:00:00.000Z');
+    const strip = (leaky) => renderToString(<BackingStrip wide state={deriveStripState({ pods: [leakyPod(leaky)], inPlay: null, now, backingWeekCloses: SUNDAY_CLOSE })} onOpen={() => {}} />);
+    expect(strip(false)).toContain('data-strip-layout="desktop"');
+    expect(strip(true)).toBe(strip(false));
   });
 });

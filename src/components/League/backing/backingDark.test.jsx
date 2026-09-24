@@ -213,6 +213,20 @@ describe('flag OFF — the League renders as it does today', () => {
     expect(svc.calls).toContain('fetchBackingPods');
   });
 
+  it('the DESKTOP backing screen mounted directly while dark renders nothing and opens NO read — the desktop layout rides the same gate', async () => {
+    const container = await mount(<BackingScreen uid="viewer-1" viewport="desktop" onBack={() => {}} onOpenTape={() => {}} />);
+    expect(container.innerHTML).toBe('');
+    expect(svc.calls).toEqual([]);
+    expect(backingCalls()).toEqual([]);
+    flag.on = true;
+    const lit = await mount(<BackingScreen uid="viewer-1" viewport="desktop" onBack={() => {}} onOpenTape={() => {}} />);
+    expect(lit.querySelector('[data-layout="desktop"][data-backing="screen"]')).not.toBeNull();
+    expect(svc.calls.filter((c) => c === 'fetchBackingPods')).toHaveLength(1);
+    // The results and the private record are read only when their section is open.
+    expect(svc.calls).not.toContain('fetchBackingResults');
+    expect(svc.calls).not.toContain('fetchMyBackingStats');
+  });
+
   it('the Spectate FINAL state carries no backing element and opens NO read while dark; lit, the same mount fetches THIS pod\'s result once and renders the card — and a LIVE pod never does (PR 5, Surface E)', async () => {
     const finalPod = leagueState('open').baseGames.find((p) => p.base && p.status === 'final');
     const livePod = leagueState('open').baseGames.find((p) => p.base && p.status === 'live');
@@ -409,6 +423,31 @@ describe('flag ON — the same mounts light up (the pin is not vacuous)', () => 
     expect(strip.querySelector('[data-backing="strip-back"]')?.textContent).toBe('Back a team');
   });
 
+  it('desktop: the strip opens the Backing screen FULL-WINDOW in its three-column layout — pods, card, your backing', async () => {
+    flag.on = true;
+    const container = await mount(<LeagueLobbyDesktop {...homeProps} />);
+    expect(container.querySelector('[data-backing="desk-host"]')).toBeNull();
+    await act(async () => { container.querySelector('[data-backing="strip"]').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    for (let i = 0; i < 4; i += 1) await act(async () => { await Promise.resolve(); });
+    const host = container.querySelector('[data-backing="desk-host"]');
+    expect(host).not.toBeNull();
+    expect(host.getAttribute('style')).toContain('position: fixed');
+    expect(host.querySelector('[data-backing="screen"][data-layout="desktop"]')).not.toBeNull();
+    for (const col of ['pods', 'card', 'right']) expect(host.querySelector(`[data-desk-col="${col}"]`), `the ${col} column`).not.toBeNull();
+  });
+
+  it('desktop pod rows keep "Predictions" lit (the spectate label dark), and "Watch a live game" stays plain watching — no backing in it', () => {
+    const pod = leagueState('open').baseGames[0];
+    flag.on = true;
+    expect(ssr(<DeskPodPanel pod={pod} accent="#5EEAD4" onClose={() => {}} onSpectate={() => {}} />)).toContain('>Tap a seat · Predictions<');
+    const seated = ssr(<WhileYouWait viewport="desktop" status="battle" st={leagueState('open')} onSpectate={() => {}} onOpenTrainingPod={() => {}} hasAgent />);
+    const watch = seated.slice(seated.indexOf('Watch a live game'));
+    expect(watch).toContain('spectate a live pod');
+    expect(watch.slice(0, watch.indexOf('</button>'))).not.toMatch(/[Bb]ack|data-backing|Prediction/);
+    flag.on = false;
+    expect(ssr(<DeskPodPanel pod={pod} accent="#5EEAD4" onClose={() => {}} onSpectate={() => {}} />)).toContain('>Tap a seat to spectate<');
+  });
+
   it('the screen header says what the strip says — one mapping (R-B-1): a window whose pool closed at its fire reads "Closed · plays Monday"', async () => {
     flag.on = true;
     svc.reply = {
@@ -466,6 +505,11 @@ describe('the flag is read at CALL time in every host — never captured at modu
     // PR 5: the results card under the film room, the stats under the line.
     ['src/components/League/LeagueSpectate.jsx', '<SpectateBackingResults'],
     ['src/components/Dashboard/EquipStation.jsx', '<BackingStatsEntry'],
+    // The desktop layouts build: the strip's slot in the shared centre (under
+    // the entry, under the waiting room) and the stats beside the pitch.
+    ['src/components/League/liveDraft/SlotCenter.jsx', '{backingSlot}'],
+    ['src/components/League/WhileYouWait.jsx', '{backingSlot}'],
+    ['src/components/Dashboard/desktop/IdentityPanel.jsx', '<BackingStatsEntry'],
   ];
   const stripComments = (src) => src.replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   /**
@@ -555,9 +599,11 @@ describe('the flag is read at CALL time in every host — never captured at modu
   }
 
   it('the hosts mount the strip through a component that returns null while dark — no wrapper, no reserved space', () => {
-    const lobby = readFileSync(path.join(REPO, 'src/components/League/LeagueLobbyRedesign.jsx'), 'utf8');
-    expect(lobby).toContain('{backingSlot}');
-    expect(lobby).not.toMatch(/backingSlot && <div/);
+    for (const rel of ['src/components/League/LeagueLobbyRedesign.jsx', 'src/components/League/liveDraft/SlotCenter.jsx', 'src/components/League/WhileYouWait.jsx']) {
+      const host = readFileSync(path.join(REPO, rel), 'utf8');
+      expect(host, `${rel} renders the slot bare`).toContain('{backingSlot}');
+      expect(host, `${rel} wraps the slot`).not.toMatch(/backingSlot && </);
+    }
     for (const rel of ['src/components/League/backing/BackingLandingStrip.jsx', 'src/components/League/backing/ScoutingLine.jsx', 'src/components/League/backing/BackingScreen.jsx', 'src/components/League/backing/SpectateBackingResults.jsx', 'src/components/League/backing/BackingStatsEntry.jsx']) {
       expect(readFileSync(path.join(REPO, rel), 'utf8'), `${rel} returns null while dark`).toContain('if (!BACKING_BETA_ENABLED) return null;');
     }

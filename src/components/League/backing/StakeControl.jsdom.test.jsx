@@ -358,3 +358,75 @@ describe('the PR 4 review record — refutation pass (R-A-8)', () => {
     expect(q(container, '[data-preset="500"]').getAttribute('style')).toContain('rgb(');
   });
 });
+
+// ═══ THE DESKTOP LAYOUT (Backing desktop layouts — the right column) ═══
+describe('the desktop layout — the same control, laid out as designed', () => {
+  const desk = (props = {}) => mount({ layout: 'desktop', onCancel: vi.fn(), ...props });
+  const topUpPod = () => pod([{ stakeId: 's1', teamOdUserId: 'od-a', teamLabel: 'Kestrel', amount: 250, status: 'live' }]);
+
+  it('the three lines render verbatim, in order, directly above Confirm — never collapsed', async () => {
+    const { container } = await desk();
+    const html = container.innerHTML;
+    const i3 = html.indexOf(DISCLOSURES.validity);
+    expect(html.indexOf(DISCLOSURES.loadouts)).toBeGreaterThan(-1);
+    expect(html.indexOf(DISCLOSURES.payout)).toBeGreaterThan(html.indexOf(DISCLOSURES.loadouts));
+    expect(i3).toBeGreaterThan(html.indexOf(DISCLOSURES.payout));
+    expect(html.indexOf('data-backing="confirm"')).toBeGreaterThan(i3);
+    expect(html).not.toContain('<details');
+  });
+
+  it('THE TOP-UP STATE: the stake held, what this Confirm adds, the new total against the cap — and "Adds to your 250 BP on Kestrel." on Confirm', async () => {
+    const { container } = await desk({ pod: topUpPod(), wallet: { known: true, left: 750, total: 1000 } });
+    expect(q(container, '[data-backing="top-up"]')).not.toBeNull();
+    expect(q(container, '[data-backing="top-up-held"]').textContent).toBe('250 BP');
+    expect(q(container, '[data-backing="top-up-adding"]').textContent).toBe('+250');
+    expect(q(container, '[data-backing="top-up-total"]').textContent).toBe('500');
+    expect(container.textContent).toContain(`of ${PER_TEAM_CAP_BP}`);
+    // The presets read as additions; the one over the cap is disabled.
+    expect([...container.querySelectorAll('[data-preset]')].map((b) => b.textContent)).toEqual(['+100', '+250', '+500']);
+    expect(q(container, '[data-preset="500"]').disabled).toBe(true);
+    // The confirm line rides the Confirm button itself, verbatim.
+    expect(q(confirmButton(container), '[data-backing="top-up-note"]').textContent).toBe(STAKE.addsTo(250, 'Kestrel'));
+    expect(confirmButton(container).textContent).toContain('Confirm 250 BP');
+    // The new total follows the amount chosen — the two figures Confirm sends.
+    await click(q(container, '[data-preset="100"]'));
+    expect(q(container, '[data-backing="top-up-adding"]').textContent).toBe('+100');
+    expect(q(container, '[data-backing="top-up-total"]').textContent).toBe('350');
+  });
+
+  it('a first stake has no top-up panel and no "Adds to" line', async () => {
+    const { container } = await desk();
+    expect(q(container, '[data-backing="top-up"]')).toBeNull();
+    expect(q(container, '[data-backing="top-up-note"]')).toBeNull();
+    expect([...container.querySelectorAll('[data-preset]')].map((b) => b.textContent)).toEqual(['100', '250', '500']);
+  });
+
+  it('Confirm is the same Confirm: a fresh requestId, "Backed" only from the server, the top-up\'s new total from the reply', async () => {
+    svc.placeStake.mockResolvedValue({ ok: true, replay: false, topUp: true, added: 250, teamLabel: 'Kestrel', stake: { stakeId: 's1', teamOdUserId: 'od-a', amount: 500, status: 'live' }, allowanceRemaining: 500 });
+    const { container } = await desk({ pod: topUpPod(), wallet: { known: true, left: 750, total: 1000 } });
+    await click(confirmButton(container));
+    await settle();
+    expect(svc.placeStake).toHaveBeenCalledTimes(1);
+    expect(svc.placeStake.mock.calls[0][0]).toMatchObject({ groupId: 'g1', teamOdUserId: 'od-a', amount: 250, requestId: 'req-1' });
+    expect(q(container, '[data-backing="backed"]').textContent).toContain('Backed · 500 BP on Kestrel');
+    expect(q(container, '[data-backing="topped-up"]').textContent).toBe(STAKE.toppedUp(250));
+  });
+
+  it('"Back to the card" returns the column — under the control and under the attestation step', async () => {
+    const { container, props } = await desk();
+    await click(q(container, '[data-backing="stake-cancel"]'));
+    expect(props.onCancel).toHaveBeenCalledTimes(1);
+    const unattested = await desk({ eligibility: { status: 'required', refresh: vi.fn() } });
+    expect(q(unattested.container, '[data-backing="attestation"]')).not.toBeNull();
+    await click(q(unattested.container, '[data-backing="stake-cancel"]'));
+    expect(unattested.props.onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('the mobile layout carries none of the desktop additions', async () => {
+    const { container } = await mount({ pod: topUpPod(), wallet: { known: true, left: 750, total: 1000 }, onCancel: vi.fn() });
+    expect(q(container, '[data-backing="top-up"]')).toBeNull();
+    expect(q(container, '[data-backing="stake-cancel"]')).toBeNull();
+    expect(q(confirmButton(container), '[data-backing="top-up-note"]')).toBeNull();
+    expect(q(container, '[data-backing="top-up-note"]').textContent).toBe(STAKE.addsTo(250, 'Kestrel'));
+  });
+});

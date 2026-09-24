@@ -15,7 +15,7 @@
 import { describe, it, expect } from 'vitest';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
-import BackingResultsCard, { stakeOutcomeWords } from './BackingResultsCard';
+import BackingResultsCard, { BackingResultsCardDesk, stakeOutcomeWords } from './BackingResultsCard';
 import { RESULTS } from './backingCopy';
 import { findForbiddenTerm } from '../../../constants/backingLexicon';
 
@@ -205,4 +205,52 @@ describe('D-af — the winner line and the rows are the SERVER\'s names (Amendme
     expect(t).toContain('Winners (tie): Shadow & Unnamed team');
     expect(t).not.toContain(RESULTS.noWinner);
   });
+});
+
+// ═══ THE DESKTOP CARD (Backing desktop layouts — Friday takes the whole screen) ═══
+describe('the desktop card — the same facts as a table, from the same model (BUILD_RULES §9)', () => {
+  const deskText = (pod) => renderToString(<BackingResultsCardDesk pod={pod} />)
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&amp;/g, '&').replace(/&#x27;/g, '\u2019').replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/\s+/g, ' ');
+  const PODS = {
+    settled: settled(),
+    tie: settled({ winners: ['od-a', 'od-b'], winnerLabels: ['Shadow', 'Kestrel'], paysX: 1, teams: settled().teams.map((t) => ({ ...t, won: t.odUserId !== 'cpu-1' })) }),
+    refunded: settled({ outcome: 'refunded', status: 'refunded', refundReason: 'group_voided', winners: [], winnerLabels: [], paysX: null, myNet: null, myWon: null,
+      myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', teamLabel: 'Shadow', amount: 500, status: 'voided', payout: null, voidReason: 'group_voided', net: 0, loadoutChanged: null }] }),
+    insufficient: settled({ outcome: 'insufficient', status: 'insufficient', winners: [], winnerLabels: [], paysX: null, myNet: null, myWon: null,
+      myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', teamLabel: 'Shadow', amount: 500, status: 'voided', payout: null, voidReason: 'insufficient', net: 0, loadoutChanged: null }] }),
+    settling: settled({ outcome: 'settling', status: 'closed', podStatus: 'battle', winners: [], winnerLabels: [], paysX: null, myNet: null, myWon: null,
+      myStakes: [{ stakeId: 's1', teamOdUserId: 'od-a', teamLabel: 'Shadow', amount: 500, status: 'live', payout: null, voidReason: null, net: null, loadoutChanged: null }] }),
+  };
+
+  it('MUTATION CHECK 3 holds on desktop: the stake document\'s payout (714), never stake × pays × (715)', () => {
+    const html = renderToString(<BackingResultsCardDesk pod={settled()} />);
+    expect(html).toContain('paid 714 BP');
+    expect(html).not.toContain('715');
+    expect(html).toContain('data-layout="desktop"');
+  });
+
+  for (const [name, pod] of Object.entries(PODS)) {
+    it(`${name}: every fact the mobile card states, the desktop card states — the winner, the reason, the stakes, the net, and per team the backers, the EXACT share phrase and the pays figure`, () => {
+      const mobile = text(pod);
+      const desktop = deskText(pod);
+      const facts = [
+        ...(pod.outcome === 'settled' ? [RESULTS.winner(pod.winnerLabels)] : []),
+        ...(pod.outcome === 'refunded' ? [RESULTS.reason.group_voided, RESULTS.neutral] : []),
+        ...(pod.outcome === 'insufficient' ? [RESULTS.reason.insufficient] : []),
+        ...pod.myStakes.map((st) => RESULTS.stakeRow(st.teamLabel, st.amount)),
+        ...pod.myStakes.map((st) => stakeOutcomeWords(st)),
+        ...(Number.isFinite(pod.myNet) ? [RESULTS.net(pod.myNet)] : []),
+        ...pod.teams.flatMap((t) => [t.label, RESULTS.backers(t.backerCount), RESULTS.share(t.sharePct)]),
+      ];
+      for (const fact of facts) {
+        expect(mobile, `the mobile card states "${fact}"`).toContain(fact);
+        expect(desktop, `the desktop card states "${fact}"`).toContain(fact);
+      }
+      // The share is never a bare percentage: every "N%" on the desktop card is §3's phrase.
+      for (const m of desktop.matchAll(/(\d+)%/g)) expect(desktop.slice(m.index, m.index + m[0].length + 32)).toMatch(/^\d+% of BP in this pool backed them/);
+      expect(findForbiddenTerm(desktop)).toBeNull();
+    });
+  }
 });
