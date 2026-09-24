@@ -12,7 +12,12 @@
 //   · dev pools are skipped, and the skip is counted;
 //   · an OPEN pool is sealed even to the trainer: none of its stakes reaches
 //     any figure or tally (SEAL-1, the desktop review record), and the seal
-//     itself is read from the trainer's own pods, never from stakes (SEAL-R-2).
+//     itself is read from the trainer's own pods, never from stakes (SEAL-R-2);
+//   · the trainer's reads (the pre-flip fixes 2 review record): a live copy
+//     the pool contradicts is stale and never counted (SEAL-A1); the seal is
+//     bounded to the pods of this week or later and never a dev pod's
+//     (WIRE-A2, WIRE-A3); round 2 closes a seated pod's pool past its close
+//     (PLACE-A3); no stake on an open pool costs a read (SEAL-A2).
 //
 // DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): the real import of the module is
 // the runtime guard for its api/ -> src/ imports. Never mock it.
@@ -30,12 +35,18 @@ import {
   currentSeasonKey,
   isTerminalPool,
   priorPlacementBefore,
+  closeIsDue,
+  countedStakes,
+  flaggedStakeIds,
   readExcludedStakeIds,
   readPoolByGroupId,
   readPoolsFor,
   readRanksFor,
+  readSeatedPods,
   readStakesWhere, rankEventsOf,
-  trainerHasOpenPool } from './backingStats.js';
+  readTrainerPools,
+  sealPodsOf,
+  trainerSealed } from './backingStats.js';
 import { STAKE_PRIVATE_SUBCOLLECTION as WRITER_SUB, STAKE_META_DOC as WRITER_DOC } from '../tournament/backing-stake.js';
 
 const NOW = new Date('2026-10-05T14:00:00.000Z'); // Monday Oct 5 — the season is 2026-10; last week's pools banked in 2026-09
@@ -244,6 +255,25 @@ describe('computeTrainerStats — the viewer as a team, pure', () => {
     expect(revealed.season).toMatchObject({ monthKey: '2026-10', uniqueBackers: 2, bpBacked: 500, pending: 500 });
   });
 
+  it('SEAL-A1 — a `live` copy the pool AS READ contradicts is stale and never counted: a close that voided it (a seat that left, a deleted pod, below the floor) landed after the stakes were read; a live copy on a closed pool that seats the team is in play', () => {
+    const live = (id, userId, amount) => ({ id, groupId: 'g-x', userId, teamOdUserId: 'me', amount, status: 'live' });
+    const book = [live('x1', 'u1', 100), live('x2', 'u2', 300)];
+    const fold = (xPool) => computeTrainerStats({ stakes: [...stakes, ...book], poolsByGroup: new Map([...poolsByGroup, ['g-x', { poolId: 'g-x', isDev: false, pool: xPool }]]), excluded: new Set(['t5']), now: NOW });
+    const seats = (...ids) => ids.map((odUserId) => ({ odUserId, isCpu: odUserId.startsWith('cpu-') }));
+    const at = { battleMondayEtDate: '2026-10-12' };
+    // Each close that VOIDS the seat's stakes: the copies read before it move nothing — the answer is the one without them.
+    for (const [why, xPool] of [
+      ['a seat that left (the frozen teams omit it)', { ...at, status: 'closed', teams: seats('od-x', 'cpu-1', 'cpu-2') }],
+      ['a deleted pod (the tombstone: refunded, no teams)', { ...at, status: 'refunded', teams: [] }],
+      ['below the floor', { ...at, status: 'insufficient', teams: seats('me', 'od-x') }],
+    ]) {
+      expect(fold(xPool), why).toEqual(out);
+    }
+    // The close that KEEPS them: in play on the trainer — the row can fail.
+    const kept = fold({ ...at, status: 'closed', teams: seats('me', 'od-x', 'cpu-1') });
+    expect(kept.career).toMatchObject({ uniqueBackers: 2, bpBacked: 900, pending: 400, poolsBackedOn: 3, stakes: 5 });
+  });
+
   it('COUNTED_STAKE_STATUSES is exactly live / won / lost — the query\'s `in` and the fold agree', () => {
     expect([...COUNTED_STAKE_STATUSES].sort()).toEqual(['live', 'lost', 'won']);
     expect(computeTrainerStats({ stakes: [{ id: 'v', groupId: 'g-a', userId: 'u', teamOdUserId: 'me', amount: 100, status: 'voided' }], poolsByGroup, now: NOW }).career.stakes).toBe(0);
@@ -289,37 +319,113 @@ describe('the reads, on the in-memory store', () => {
     expect(ranks.get('od-z')).toBeNull();
   });
 
-  it('trainerHasOpenPool — the SEAL is the pool\'s fact, read from the pods the viewer is SEATED in: never from stakes (SEAL-R-2), never a training pod, the dev namespace at its own id', async () => {
-    const seat = (id, isCpu = false) => ({ odUserId: id, ...(isCpu ? { isCpu: true } : {}) });
-    const pod = (over = {}) => ({ status: 'forming', groupMembers: ['me', 'od-x'], players: [seat('me'), seat('od-x'), seat('cpu-1', true)], ...over });
-    const seal = async (store) => { const { db, readLog } = makeInMemoryDb(store); return { open: await trainerHasOpenPool(db, 'me'), readLog }; };
+  // ── THE TRAINER'S READS (SEAL-1 / SEAL-R-2; SEAL-A2, WIRE-A2, WIRE-A3, PLACE-A3) ──
+  const seat = (id, isCpu = false) => ({ odUserId: id, ...(isCpu ? { isCpu: true } : {}) });
+  // A pod of next week (W42 — NOW is Monday Oct 5, W41) the viewer sits in.
+  const pod = (over = {}) => ({ status: 'forming', baseLayerWeek: '2026-W42', groupMembers: ['me', 'od-x'], players: [seat('me'), seat('od-x'), seat('cpu-1', true)], ...over });
+  const OPEN = { status: 'open', closesAt: '2026-10-12T03:59:00.000Z', battleMondayEtDate: '2026-10-12' };
+  /** The seal as the route reads it: seated pods → the seal's pods → round 2 → the line. */
+  const sealOf = async (store, now = NOW) => {
+    const { db, readLog, writeLog } = makeInMemoryDb(store);
+    const seated = await readSeatedPods(db, 'me');
+    const pools = await readTrainerPools(db, { seatedPods: seated, sealPods: sealPodsOf(seated, now), stakes: [], now });
+    return { open: trainerSealed(pools), pools, readLog, writeLog };
+  };
 
+  it('the SEAL is the pool\'s fact, read from the pods the viewer is SEATED in: never from stakes (SEAL-R-2), never a training pod; the dev namespace at its own id, and a dev pod never seals (WIRE-A3)', async () => {
     // Seated in a pod whose pool is OPEN, nobody has staked: sealed all the same.
-    expect((await seal({ 'tournamentGroups/g1': pod(), 'backingPools/g1': { status: 'open' } })).open).toBe(true);
+    expect((await sealOf({ 'tournamentGroups/g1': pod(), 'backingPools/g1': OPEN })).open).toBe(true);
     // The pool closed: nothing sealed.
-    expect((await seal({ 'tournamentGroups/g1': pod(), 'backingPools/g1': { status: 'closed' } })).open).toBe(false);
+    expect((await sealOf({ 'tournamentGroups/g1': pod(), 'backingPools/g1': { ...OPEN, status: 'closed' } })).open).toBe(false);
     // No pool yet (never materialized): nothing sealed.
-    expect((await seal({ 'tournamentGroups/g1': pod() })).open).toBe(false);
+    expect((await sealOf({ 'tournamentGroups/g1': pod() })).open).toBe(false);
     // A seat the viewer LEFT (a slot pod before its fire): not theirs, whatever stakes it carries.
-    const left = await seal({
+    const left = await sealOf({
       'tournamentGroups/g1': pod({ groupMembers: ['od-x'], players: [seat('od-x')] }),
-      'backingPools/g1': { status: 'open' },
+      'backingPools/g1': OPEN,
       'backingStakes/s1': { userId: 'u1', groupId: 'g1', teamOdUserId: 'me', amount: 100, status: 'live' },
     });
     expect(left.open).toBe(false);
-    expect(left.readLog.filter(([, p]) => p.startsWith('backingStakes'))).toEqual([]);
+    expect(left.readLog.filter(([, p]) => p.startsWith('backingStakes') || p.startsWith('backingPools'))).toEqual([]);
     // A training pod has no pool and is not read.
-    const training = await seal({ 'tournamentGroups/t1': pod({ isTraining: true }), 'backingPools/t1': { status: 'open' } });
+    const training = await sealOf({ 'tournamentGroups/t1': pod({ isTraining: true }), 'backingPools/t1': OPEN });
     expect(training.open).toBe(false);
     expect(training.readLog.filter(([, p]) => p.startsWith('backingPools'))).toEqual([]);
-    // A dev pod's pool lives at dev-{id}.
-    expect((await seal({ 'tournamentGroups/g2': pod({ isDev: true }), 'backingPools/dev-g2': { status: 'open' } })).open).toBe(true);
+    // A dev pod's pool is read at dev-{id} — and never seals the production record (the fold skips dev pools).
+    const dev = await sealOf({ 'tournamentGroups/g2': pod({ isDev: true }), 'backingPools/dev-g2': OPEN });
+    expect(dev.pools.get('g2')).toMatchObject({ poolId: 'dev-g2', isDev: true, seal: true, pool: { status: 'open' } });
+    expect(dev.open).toBe(false);
     // The query is member-scoped: the one groups read, and a signed-out caller reads nothing.
-    const one = await seal({ 'tournamentGroups/g1': pod(), 'backingPools/g1': { status: 'open' } });
+    const one = await sealOf({ 'tournamentGroups/g1': pod(), 'backingPools/g1': OPEN });
     expect(one.readLog.filter(([, p]) => p === 'tournamentGroups')).toHaveLength(1);
-    const { db, readLog } = makeInMemoryDb({ 'tournamentGroups/g1': pod(), 'backingPools/g1': { status: 'open' } });
-    expect(await trainerHasOpenPool(db, null)).toBe(false);
+    const { db, readLog } = makeInMemoryDb({ 'tournamentGroups/g1': pod(), 'backingPools/g1': OPEN });
+    expect(await readSeatedPods(db, null)).toEqual([]);
     expect(readLog).toEqual([]);
+  });
+
+  it('WIRE-A2 — the seal is BOUNDED to the pods of this week or later: an earlier week\'s pool no path closed never seals and is never read; this week\'s and a pod with no readable week are kept', async () => {
+    const pods = [
+      { id: 'w40', baseLayerWeek: '2026-W40' }, { id: 'w41', baseLayerWeek: '2026-W41' }, { id: 'w42', baseLayerWeek: '2026-W42' },
+      { id: 'w01', baseLayerWeek: '2027-W01' }, { id: 'w52', baseLayerWeek: '2025-W52' }, { id: 'none' }, { id: 'odd', baseLayerWeek: 'week 40' },
+    ];
+    expect(sealPodsOf(pods, NOW).map((g) => g.id)).toEqual(['w41', 'w42', 'w01', 'none', 'odd']);
+    // Sunday 23:00 ET is still W41; Monday 00:00 ET is W42 (the ET week, not the UTC one).
+    expect(sealPodsOf(pods, new Date('2026-10-12T03:00:00.000Z')).map((g) => g.id)).toContain('w41');
+    expect(sealPodsOf(pods, new Date('2026-10-12T04:00:00.000Z')).map((g) => g.id)).not.toContain('w41');
+    // Forty earlier weeks' pods, one left open by a lifecycle gap: one pool read — next week's — and no seal from the stale one.
+    const store = { 'tournamentGroups/g-next': pod(), 'backingPools/g-next': { ...OPEN, status: 'closed' } };
+    for (let w = 1; w <= 40; w += 1) store[`tournamentGroups/old-${w}`] = pod({ baseLayerWeek: `2025-W${String(w).padStart(2, '0')}` });
+    store['backingPools/old-7'] = { ...OPEN, closesAt: '2025-02-16T04:59:00.000Z' };
+    const bounded = await sealOf(store);
+    expect(bounded.open).toBe(false);
+    expect(bounded.readLog.filter(([, p]) => p.startsWith('backingPools'))).toEqual([['get', 'backingPools/g-next']]);
+    expect(bounded.writeLog).toEqual([]);
+  });
+
+  it('PLACE-A3 — round 2 CLOSES a seated pod\'s pool that is open past its close (the lazy close every pool reader runs): the seal lifts at the close, not when another reader happens by; a pool not yet due, or a dev pool, is never written', async () => {
+    const book = {
+      'backingStakes/s1': { userId: 'u1', groupId: 'g1', teamOdUserId: 'me', amount: 100, status: 'live' },
+      'backingStakes/s2': { userId: 'u2', groupId: 'g1', teamOdUserId: 'od-x', amount: 200, status: 'live' },
+    };
+    const store = { 'tournamentGroups/g1': pod(), 'backingPools/g1': OPEN, ...book };
+    // Not yet due: sealed, and nothing written.
+    const before = await sealOf(store);
+    expect(before.open).toBe(true);
+    expect(before.writeLog).toEqual([]);
+    // Past its close (Monday 00:00 ET, W42 now this week): closed by this read, the pool as the close left it.
+    const after = await sealOf(store, new Date('2026-10-12T04:00:00.000Z'));
+    expect(after.open).toBe(false);
+    expect(after.pools.get('g1').pool.status).not.toBe('open');
+    expect(after.writeLog.some(([, p]) => p === 'backingPools/g1')).toBe(true);
+    // A dev pod's pool past its close is left alone: it neither seals nor counts here.
+    const dev = await sealOf({ 'tournamentGroups/g2': pod({ isDev: true }), 'backingPools/dev-g2': OPEN }, new Date('2026-10-12T04:00:00.000Z'));
+    expect(dev.open).toBe(false);
+    expect(dev.writeLog).toEqual([]);
+    expect(closeIsDue(OPEN, NOW)).toBe(false);
+    expect(closeIsDue(OPEN, new Date('2026-10-12T03:59:00.000Z'))).toBe(true);
+    expect(closeIsDue({ status: 'open' }, NOW)).toBe(true); // an unreadable close is closed, the conservative direction (ensureClosed's rule)
+  });
+
+  it('SEAL-A2 — the stakes round 2 and round 3 read for: a DECIDED stake always, a LIVE one only on a pod the viewer sits in (never a departed seat\'s or a deleted pod\'s); an exclusion flag only on a pool that is not open', async () => {
+    const st = (id, groupId, status) => ({ id, groupId, status, teamOdUserId: 'me' });
+    const all = [st('d1', 'g-left', 'won'), st('d2', 'g-gone', 'lost'), st('l1', 'g-seat', 'live'), st('l2', 'g-left', 'live'), st('l3', 'g-gone', 'live')];
+    expect(countedStakes(all, new Set(['g-seat'])).map((s) => s.id)).toEqual(['d1', 'd2', 'l1']);
+    const pools = new Map([
+      ['g-seat', { pool: { status: 'open' } }],
+      ['g-left', { pool: { status: 'resolved' } }],
+      ['g-gone', { pool: null }],
+      ['g-void', { pool: { status: 'closed', teams: [{ odUserId: 'od-x' }] } }],
+    ]);
+    // l1 is on an open pool, d2's pool is unknown, v1's live copy is contradicted by its pool: only d1's flag is read.
+    expect(flaggedStakeIds([...all, st('v1', 'g-void', 'live')], pools)).toEqual(['d1']);
+    // Round 2 reads the seal pods and the pods counted stakes name — once each, whatever the books hold.
+    const { db, readLog } = makeInMemoryDb({ 'tournamentGroups/g-seat': pod(), 'backingPools/g-seat': OPEN, 'backingPools/g-left': { status: 'resolved' } });
+    const seated = await readSeatedPods(db, 'me');
+    readLog.length = 0;
+    const read = await readTrainerPools(db, { seatedPods: seated, sealPods: sealPodsOf(seated, NOW), stakes: countedStakes(all, new Set(['g-seat'])), now: NOW });
+    expect([...read.keys()]).toEqual(['g-seat', 'g-left', 'g-gone']);
+    expect(read.get('g-left')).toMatchObject({ poolId: 'g-left', seal: false, pool: { status: 'resolved' } });
+    expect(readLog.map(([, p]) => p)).toEqual(['backingPools/g-seat', 'backingPools/g-left', 'backingPools/g-gone', 'backingPools/dev-g-gone']);
   });
 
   it('the sealed meta path this module READS is the path the stake endpoint WRITES (one home, pinned)', () => {

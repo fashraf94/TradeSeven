@@ -28,9 +28,11 @@
 //     own ledger. AN OPEN POOL IS SEALED EVEN TO THE TRAINER (spec §3,
 //     Amendment B D-q, the desktop design's "Closed weeks only — this week's
 //     pool is sealed even to the trainer"; SEAL-1, the desktop review record):
-//     none of its stakes reaches any figure or tally, and the route states the
-//     seal from the POOL (`trainerHasOpenPool`), never from whether a stake
-//     exists (SEAL-R-2).
+//     none of its stakes reaches any figure or tally, the route states the
+//     seal from the POOL (`trainerSealed`, over the pods of this week or later
+//     the trainer sits in), never from whether a stake exists (SEAL-R-2), and
+//     the reads the reply costs never depend on a sealed book (the trainer's
+//     reads, below).
 //
 // SEASON = THE LADDER'S MONTH (§2): each pool's `monthKey` as settlement or
 // the refund stamped it (the wallet's own season key), else the pool's
@@ -39,12 +41,15 @@
 // `dev-` wallet, and mixing them into a production record would be two
 // ledgers in one number. The skip is counted, not silent.
 //
-// READS ONLY. Bounded: the viewer's own stakes (one query), one pool per
-// distinct pod, one rank doc per distinct human team of a settled pool, and
-// — for the trainer — one sealed `private/meta` per stake for the exclusion
-// flag, and the viewer's own pods (one member-scoped query) with one pool
-// read per pod they are seated in, for the seal (beta scale: tens, not
-// thousands; stated in the route).
+// READS, bounded — and one write every pool reader makes. My stats: the
+// viewer's own stakes (one query), one pool per distinct pod, one rank doc per
+// distinct human team of a settled pool. Trainer stats: the viewer's own pods
+// (one member-scoped query), one pool read per pod of this week or later they
+// sit in and per pod a counted stake names, and one sealed `private/meta` per
+// countable stake for the exclusion flag (beta scale: tens, not thousands;
+// stated in the route) — and THE LAZY CLOSE on a seated pod's pool open past
+// its close (`ensureClosed`, the pod list's and the results reader's write;
+// PLACE-A3). Nothing else is written.
 //
 // Imports the zero-import schema module from src/ under the revised June 2026
 // import rule (BUILD_RULES §4); the co-located test's real import of THIS
@@ -55,13 +60,16 @@ import {
   BACKING_STAKES_COLLECTION,
   POOL_STATUS,
   STAKE_STATUS,
+  ensureClosed,
+  liveStakeContradicts,
   liveTeamsFor,
-  poolRefFor,
+  poolIdFor,
 } from './backingPools.js';
 import { TERMINAL_RESULT_STATUSES, monthKeyOfPool } from './backingResults.js';
 import {
   TOURNAMENT_GROUPS_COLLECTION,
   TOURNAMENT_RANKS_COLLECTION,
+  currentBaseLayerWeek,
   etDateString,
   isCpuUserId,
   monthKeyFromEtDate,
@@ -131,40 +139,169 @@ export async function readExcludedStakeIds(db, stakeIds) {
   return new Set(flags.filter(([, excluded]) => excluded).map(([id]) => id));
 }
 
+// ==================== THE TRAINER'S READS — SEALED BY CONSTRUCTION ====================
+//
+// SEAL-1 (the desktop review record) and its review (SEAL-A1, SEAL-A2,
+// WIRE-A2, PLACE-A3 — the pre-flip fixes 2 review record): the trainer's reply
+// may say nothing about a sealed book — not in its figures, not in its seal
+// line, not in the reads it costs. The route reads in three rounds, and no
+// round's set of documents depends on the book of a pool still sealed:
+//   1  the stakes on the seat ‖ the pods the viewer SITS in (`readSeatedPods`);
+//   2  ONE pool read per SEAL pod — a seated pod of this week or later
+//      (`sealPodsOf`), read whatever its book holds — and per pod a counted
+//      stake names that is not among them (`readTrainerPools`). A counted
+//      stake is DECIDED (its pool is settled: nothing sealed) or LIVE on a pod
+//      the viewer sits in (`countedStakes`): a seal pod, read anyway, or a pod
+//      of an EARLIER week, whose pool — if still open — is past its close, and
+//      this same round closes it (below), so that read is the reveal's, not
+//      the seal's. A live stake on a pod the viewer no longer sits in (a seat
+//      left, a pod deleted) is sealed or refund-bound and is never read;
+//   3  the exclusion flag (`private/meta`) of each stake the fold can count —
+//      never one on an open pool (`flaggedStakeIds`).
+// Round 2 runs THE LAZY CLOSE on every seated pod's pool that is open past its
+// close (`ensureClosed`, as the pod list, the results reader and the stake
+// route run it — PLACE-A3): the seal lifts when the close is due, not when
+// some other reader happens by. The seal line (`trainerSealed`) is read off
+// round 2's documents — the same ones the fold reads — so the two cannot
+// disagree about a pool that closed between two reads.
+
+/** A well-formed base-layer week key ('YYYY-Www') — the only shape the seal's week bound compares. */
+const WEEK_KEY = /^\d{4}-W\d{2}$/;
+
 /**
- * THE SEAL'S OWN FACT (SEAL-1 / SEAL-R-2, the desktop review record): is the
- * trainer's team in a pool that is still OPEN?
- *
- * KEYED ON THE POOL, NEVER ON STAKES. A "this week is sealed" line that showed
- * only when a stake named the seat would itself tell the trainer that someone
- * had backed them; and a fold that hid the open pool's stakes with no line at
- * all would read "Nobody has backed your team yet" while four had. So the fact
- * is read from the pods the viewer is SEATED in — the member-scoped
- * `groupMembers array-contains` query (one field, no composite index; the
+ * The pods the viewer is SEATED in — the member-scoped `groupMembers
+ * array-contains` query (one field, no composite index; the
  * `findActiveTrainingPodForUser` precedent) and a seat in `players[]`, the
- * pool's own team derivation (`liveTeamsFor`) — and each one's pool document
- * at its own id (`poolRefFor`, the dev namespace included): true when any
- * reads `open`. Training pods never get a pool and are not read. A seat the
- * viewer LEFT is not theirs: stakes on it are voided at the close and never
- * count, and naming it here would be the stake-keyed signal above.
- *
- * The pool's STATUS is the seal, not its clock: a pool past `closesAt` that no
- * read has closed yet is still sealed (the close may yet void its stakes).
- * One pool read per seated pod — the viewer's own history, tens at beta scale.
+ * pool's own team derivation (`liveTeamsFor`). Training pods never get a pool
+ * and are left out. A seat the viewer LEFT is not theirs. `{ id, ...data }`.
  */
-export async function trainerHasOpenPool(db, uid) {
-  if (typeof uid !== 'string' || uid.length === 0) return false;
+export async function readSeatedPods(db, uid) {
+  if (typeof uid !== 'string' || uid.length === 0) return [];
   const snap = await db.collection(TOURNAMENT_GROUPS_COLLECTION).where('groupMembers', 'array-contains', uid).get();
-  const refs = [];
+  const pods = [];
   snap.forEach((doc) => {
     const group = { id: doc.id, ...doc.data() };
     if (group.isTraining === true) return;
     if (!liveTeamsFor(group).some((t) => t.odUserId === uid)) return;
-    // An id no pool can carry (`poolIdFor` refuses it) has no pool to read.
-    try { refs.push(poolRefFor(db, group)); } catch { /* no pool id — nothing sealed */ }
+    pods.push(group);
   });
-  const pools = await Promise.all(refs.map((ref) => ref.get()));
-  return pools.some((pool) => pool.exists && pool.data()?.status === POOL_STATUS.OPEN);
+  return pods;
+}
+
+/**
+ * THE SEAL'S WEEK BOUND (WIRE-A2): of the seated pods, the ones a sealed pool
+ * can belong to — every pod NOT of an earlier week than `now`'s
+ * (`currentBaseLayerWeek`, ET; week keys compare as strings). A pool is open,
+ * in the ordinary run, only before its pod's battle week begins (its close
+ * precedes the pod's Monday); this week's pods are kept for a close that is due
+ * but not yet run (round 2 runs it). So the seal line never reads an earlier
+ * week's pool — one a lifecycle gap left open cannot seal the record for ever
+ * — and the reads stay at a pod or two. A pod with no readable week is kept:
+ * a malformed field never drops a pod from the seal. Pure.
+ */
+export function sealPodsOf(pods, now = new Date()) {
+  const current = currentBaseLayerWeek(now);
+  return (Array.isArray(pods) ? pods : []).filter((g) => !(
+    typeof g?.baseLayerWeek === 'string' && WEEK_KEY.test(g.baseLayerWeek) && g.baseLayerWeek < current
+  ));
+}
+
+/**
+ * The stakes the trainer fold may read at all: a DECIDED stake always (its
+ * week closed and counts, even on a pod since deleted), a LIVE one only on a
+ * pod the viewer sits in. A live stake on a pod the viewer left is sealed
+ * until the close voids it (`seat_left`), and one on a deleted pod is
+ * refund-bound — neither is ever the trainer's figure, and reading its pool
+ * would make the reply's reads depend on a sealed book (SEAL-A2). Pure.
+ */
+export function countedStakes(stakes, seatedIds) {
+  return (Array.isArray(stakes) ? stakes : []).filter((s) => s?.status !== STAKE_STATUS.LIVE || seatedIds.has(s?.groupId));
+}
+
+/** `ensureClosed`'s own due rule: past `closesAt`, or no readable `closesAt` at all (the conservative direction). Pure. */
+export function closeIsDue(pool, now = new Date()) {
+  const closesMs = new Date(pool?.closesAt).getTime();
+  return !(Number.isFinite(closesMs) && new Date(now).getTime() < closesMs);
+}
+
+/** A seated pod's pool at its own id (`poolIdFor` — the dev namespace included); an id no pool can carry reads as none. */
+async function readSeatPool(db, group) {
+  let poolId;
+  try { poolId = poolIdFor(group); } catch { return { poolId: null, pool: null, isDev: false }; }
+  const snap = await db.collection(BACKING_POOLS_COLLECTION).doc(poolId).get();
+  return { poolId: snap.exists ? poolId : null, pool: snap.exists ? snap.data() : null, isDev: group.isDev === true };
+}
+
+/**
+ * THE LAZY CLOSE (PLACE-A3) for a seated pod's pool that is open past its
+ * close: `ensureClosed`, and the pool as the close left it — closed by this
+ * request or found closed by another. A failed close is logged and the pool
+ * RE-READ (the pod list's rule; the close may have committed before the
+ * failure): a failed re-read fails the request, as any plain read does. A dev
+ * pool is left alone: it neither seals nor counts in this record.
+ */
+async function closeIfDue(db, group, located, now) {
+  if (located.isDev === true || located.pool?.status !== POOL_STATUS.OPEN || !closeIsDue(located.pool, now)) return located;
+  try {
+    const closed = await ensureClosed(db, group, now);
+    return closed.pool ? { ...located, pool: closed.pool } : located;
+  } catch (err) {
+    console.warn(`[backing-trainer-stats] close not run for ${group.id}:`, err?.message);
+    const snap = await db.collection(BACKING_POOLS_COLLECTION).doc(located.poolId).get();
+    return { ...located, pool: snap.exists ? snap.data() : null };
+  }
+}
+
+/**
+ * ROUND 2 — the trainer's pools, ONE read each: every SEAL pod's, whatever its
+ * book holds, and every pod's a counted stake names that is not among them — a
+ * seated pod's at its own id, any other's by `readPoolByGroupId`'s two
+ * namespaces (a decided stake's pod, since left or deleted). Each seated pod's
+ * pool then takes the lazy close when it is due (`closeIfDue`). The same map
+ * feeds the fold, the seal line and round 3. groupId → { poolId, pool, isDev, seal }.
+ */
+export async function readTrainerPools(db, { seatedPods = [], sealPods = [], stakes = [], now = new Date() } = {}) {
+  const seatedById = new Map([...seatedPods, ...sealPods].map((g) => [g.id, g]));
+  const sealIds = new Set(sealPods.map((g) => g.id));
+  const named = stakes.map((s) => s?.groupId).filter((g) => typeof g === 'string' && g.length > 0 && !sealIds.has(g));
+  const entries = await Promise.all([...sealIds, ...new Set(named)].map(async (groupId) => {
+    const group = seatedById.get(groupId) ?? null;
+    const located = group ? await closeIfDue(db, group, await readSeatPool(db, group), now) : await readPoolByGroupId(db, groupId);
+    return [groupId, { ...located, seal: sealIds.has(groupId) }];
+  }));
+  return new Map(entries);
+}
+
+/**
+ * THE SEAL LINE (SEAL-1 / SEAL-R-2): is a SEAL pod's pool (a seated pod of
+ * this week or later) still OPEN once round 2 has run its due closes? Read off
+ * round 2's pools — the ones the fold reads — and keyed on the POOL, never on
+ * stakes: a line that showed only when a stake named the seat would itself
+ * say someone had backed the team, and a fold that hid an open pool's stakes
+ * with no line would read "Nobody has backed your team yet" while four had.
+ * The pool's STATUS is the seal: a close that failed leaves it sealed (the
+ * close may yet void its stakes). A dev pod never seals the production record
+ * the fold keeps (it skips dev pools — WIRE-A3). Pure.
+ */
+export function trainerSealed(poolsByGroup) {
+  for (const located of poolsByGroup instanceof Map ? poolsByGroup.values() : []) {
+    if (located?.seal === true && located.isDev !== true && located.pool?.status === POOL_STATUS.OPEN) return true;
+  }
+  return false;
+}
+
+/**
+ * The stakes whose exclusion flag round 3 reads: the ones the fold can count —
+ * on a pool round 2 found, not open, the copy not contradicted by it. Never a
+ * stake on an open pool (SEAL-A2). Pure.
+ */
+export function flaggedStakeIds(stakes, poolsByGroup) {
+  return (Array.isArray(stakes) ? stakes : [])
+    .filter((s) => {
+      const pool = poolsByGroup.get(s?.groupId)?.pool ?? null;
+      return pool != null && pool.status !== POOL_STATUS.OPEN && !liveStakeContradicts(pool, s);
+    })
+    .map((s) => s.id);
 }
 
 /** The rank documents of many human teams (production namespace): odUserId → rank doc | null. */
@@ -407,7 +544,10 @@ const emptyTrainer = (monthKey = null) => ({
  * backed, backers' net, in play, pools, the stake counts, and the excluded,
  * dev and unknown counters too — in the season buckets and the career alike,
  * so no part of this answer moves while the book is sealed. It counts from
- * the moment its pool's status leaves `open` (the close's reveal).
+ * the moment its pool's status leaves `open` (the close's reveal) — as the
+ * close left it: a `live` copy the pool contradicts is stale and skipped
+ * (SEAL-A1). The route hands in `countedStakes` (a live stake on a pod the
+ * trainer no longer sits in is never read) and round 2's pools.
  */
 export function computeTrainerStats({ stakes = [], poolsByGroup = new Map(), excluded = new Set(), now = new Date() } = {}) {
   const season = currentSeasonKey(now);
@@ -426,6 +566,13 @@ export function computeTrainerStats({ stakes = [], poolsByGroup = new Map(), exc
     const located = poolsByGroup.get(s.groupId) ?? null;
     // THE SEAL, first: nothing below may see a stake on an open pool.
     if (located?.pool?.status === POOL_STATUS.OPEN) continue;
+    // …nor a `live` copy the pool AS READ says cannot still be live (SEAL-A1,
+    // the pre-flip fixes 2 review record): a close or a settlement landed
+    // between the stakes query and the pool read — it voided the stake (a seat
+    // that left, a deleted pod, below the floor) or decided it — so the copy
+    // predates it, and counting it would show the trainer a stake the close
+    // never revealed. It counts, as it now stands, on the next read.
+    if (liveStakeContradicts(located?.pool, s)) continue;
     if (excluded.has(s.id)) { excludedStakes += 1; continue; }
     if (!located?.pool) { unknownPools += 1; continue; }
     if (located.isDev === true || (typeof located.poolId === 'string' && located.poolId.startsWith('dev-'))) { devPoolsSkipped += 1; continue; }

@@ -13,6 +13,13 @@
 // watch the figures arrive. MUTATION CHECK (the build's A): an open pool
 // counted reds the walk row.
 //
+// THE READS (the pre-flip fixes 2 review record): a close that lands between
+// the stakes query and the pool read reveals nothing the close did not
+// (SEAL-A1); what the reply COSTS — every read, in order — is identical
+// whatever the open book holds (SEAL-A2); the seal never comes from an earlier
+// week's pool or a dev pod (WIRE-A2, WIRE-A3); a pool this route reads past its
+// close is closed by this route (PLACE-A3).
+//
 // DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): the route's real import is the
 // runtime guard for its api/ -> src/ imports. Never mock the constants.
 
@@ -43,6 +50,7 @@ const { closePool } = await import('../_utils/backingPools.js');
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const NOW = new Date('2026-10-05T14:00:00.000Z');
 const resolved = { status: 'resolved', battleMondayEtDate: '2026-09-28', monthKey: '2026-09' };
+const G_C_CLOSES = '2026-10-12T03:59:00.000Z'; // g-c's pool closes Sunday 23:59 ET, before its battle Monday
 // The trainer's own pod for next week — g-c, whose pool is OPEN (stake d rides on it).
 const seatedPod = (over = {}) => ({
   status: 'forming', baseLayerWeek: '2026-W42', isLiveDraft: false,
@@ -62,7 +70,7 @@ const world = () => ({
   'backingStakes/z': { userId: 'u1', groupId: 'g-a', teamOdUserId: 'someone-else', amount: 400, status: 'won', payout: 800, weekKey: '2026-W40' },
   'backingPools/g-a': resolved,
   'backingPools/g-b': { ...resolved, battleMondayEtDate: '2026-09-21' },
-  'backingPools/g-c': { status: 'open', battleMondayEtDate: '2026-10-12' },
+  'backingPools/g-c': { status: 'open', battleMondayEtDate: '2026-10-12', closesAt: G_C_CLOSES },
   'backingPools/g-d': { status: 'insufficient', battleMondayEtDate: '2026-09-21' },
 });
 
@@ -119,11 +127,14 @@ describe('the trainer\'s three figures, season and career, labeled beta stats', 
     expect(stakeReads.length).toBeGreaterThan(0);
   });
 
-  it('reads the sealed meta of every counted stake (the exclusion flag) and the pools once each', async () => {
+  it('reads the sealed meta of every COUNTABLE stake (the exclusion flag) — never one on the open pool (SEAL-A2) — and the pools once each, writing nothing while no close is due', async () => {
     await get();
     const metaReads = DB.readLog.filter(([, p]) => /^backingStakes\/[a-z]\/private\/meta$/.test(p)).map(([, p]) => p).sort();
-    expect(metaReads).toEqual(['backingStakes/a/private/meta', 'backingStakes/b/private/meta', 'backingStakes/c/private/meta', 'backingStakes/d/private/meta', 'backingStakes/e/private/meta']);
-    expect(DB.readLog.filter(([, p]) => p === 'backingPools/g-a')).toHaveLength(1);
+    expect(metaReads).toEqual(['backingStakes/a/private/meta', 'backingStakes/b/private/meta', 'backingStakes/c/private/meta', 'backingStakes/e/private/meta']);
+    for (const poolPath of ['backingPools/g-a', 'backingPools/g-b', 'backingPools/g-c']) {
+      expect(DB.readLog.filter(([, p]) => p === poolPath), poolPath).toHaveLength(1);
+    }
+    expect(DB.writeLog).toEqual([]);
   });
 
   it('the query is the committed (teamOdUserId, status) composite — firestore.indexes.json carries it', () => {
@@ -186,7 +197,7 @@ describe('SEAL-1 — closed weeks only: a trainer with an OPEN pool sees no live
       ['five backers, one excluded', withBook(BOOKS.thick)],
       ['an open DEV pod beside it, staked', withBook(BOOKS.thick, {
         'tournamentGroups/g-dev': seatedPod({ isDev: true }),
-        'backingPools/dev-g-dev': { status: 'open', battleMondayEtDate: '2026-10-12', isDev: true },
+        'backingPools/dev-g-dev': { status: 'open', battleMondayEtDate: '2026-10-12', closesAt: G_C_CLOSES, isDev: true },
         'backingStakes/dv': { userId: 'u9', groupId: 'g-dev', teamOdUserId: 'me', amount: 300, status: 'live', weekKey: '2026-W42' },
       })],
     ]) {
@@ -222,5 +233,176 @@ describe('SEAL-1 — closed weeks only: a trainer with an OPEN pool sees no live
     const leftThick = await replyFor(withBook(BOOKS.thick, leftPod));
     expect(leftEmpty).not.toHaveProperty('thisWeek');
     expect(walk(leftThick)).toEqual(walk(leftEmpty));
+  });
+});
+
+describe('the trainer\'s reads — the pre-flip fixes 2 review (SEAL-A1, SEAL-A2, WIRE-A2, WIRE-A3, PLACE-A3)', () => {
+  const walk = (value, at = '$', out = []) => {
+    if (value !== null && typeof value === 'object') {
+      const keys = Object.keys(value).sort();
+      if (keys.length === 0) out.push([at, Array.isArray(value) ? '[]' : '{}']);
+      for (const key of keys) walk(value[key], `${at}.${key}`, out);
+    } else {
+      out.push([at, value]);
+    }
+    return out;
+  };
+  const OTHERS = { // three more backers on g-c's open book, beside stake d (u3 · 100): 4 human backers, 3 on the trainer
+    'backingStakes/o1': { userId: 'u1', groupId: 'g-c', teamOdUserId: 'me', amount: 250, status: 'live', weekKey: '2026-W42' },
+    'backingStakes/o3': { userId: 'u7', groupId: 'g-c', teamOdUserId: 'me', amount: 50, status: 'live', weekKey: '2026-W42' },
+    'backingStakes/o4': { userId: 'u8', groupId: 'g-c', teamOdUserId: 'od-x', amount: 200, status: 'live', weekKey: '2026-W42' },
+  };
+  const LEFT = { groupMembers: ['od-x', 'cpu-1', 'cpu-2'], players: [{ odUserId: 'od-x' }, { odUserId: 'cpu-1', isCpu: true }, { odUserId: 'cpu-2', isCpu: true }] };
+  /** Run `first` (another request) at the Nth read of `backingPools/{id}` — after the stakes query, before this request reads that pool. */
+  function onPoolRead(id, n, first) {
+    const realCollection = DB.db.collection;
+    const realDb = { ...DB.db, collection: realCollection };
+    let reads = 0;
+    DB.db.collection = (name) => {
+      const col = realCollection(name);
+      if (name !== 'backingPools') return col;
+      return {
+        ...col,
+        doc: (docId) => {
+          const ref = col.doc(docId);
+          if (docId !== id) return ref;
+          return { ...ref, get: async () => { if ((reads += 1) === n) await first(realDb); return ref.get(); } };
+        },
+      };
+    };
+  }
+  const groupOf = (id) => ({ id, ...DB.store.get(`tournamentGroups/${id}`) });
+
+  it('SEAL-A1 — ANOTHER request\'s close commits between the stakes query and the pool read: the live copies it voided (a seat that left, a pod deleted, below the floor) reach no figure — the reply is the one the close leaves, never "3 backers · 400 BP"', async () => {
+    const CLOSE_AT = new Date('2026-10-12T04:00:00.000Z');
+    const cases = {
+      'the seat left, then the close (seat_left)': async (realDb) => {
+        DB.store.set('tournamentGroups/g-c', { ...DB.store.get('tournamentGroups/g-c'), ...LEFT });
+        await closePool(realDb, groupOf('g-c'), CLOSE_AT);
+      },
+      'the pod deleted, then the tombstone close (refunded)': async (realDb) => {
+        DB.store.delete('tournamentGroups/g-c');
+        await closePool(realDb, { id: 'g-c', isDev: false, missing: true }, CLOSE_AT);
+      },
+    };
+    for (const [why, race] of Object.entries(cases)) {
+      DB = makeInMemoryDb({ ...world(), ...OTHERS });
+      onPoolRead('g-c', 1, race);
+      const raced = await get();
+      expect(raced.statusCode, why).toBe(200);
+      expect(DB.store.get('backingPools/g-c').status, why).not.toBe('open');
+      // The same store, read again now the close has landed: the reply the close leaves.
+      const settled = (await get()).body;
+      expect(walk(raced.body), why).toEqual(walk(settled));
+      expect(raced.body.career, why).toMatchObject({ uniqueBackers: 2, bpBacked: 500, pending: 0, poolsBackedOn: 2 });
+      expect(raced.body, why).not.toHaveProperty('thisWeek');
+    }
+    // Below the floor: the one stake on a thin book is voided `insufficient` — the copy counts nowhere.
+    DB = makeInMemoryDb(world());
+    onPoolRead('g-c', 1, async (realDb) => { await closePool(realDb, groupOf('g-c'), CLOSE_AT); });
+    const thin = await get();
+    expect(DB.store.get('backingPools/g-c').status).toBe('insufficient');
+    expect(thin.body.career).toMatchObject({ uniqueBackers: 2, bpBacked: 500, pending: 0, poolsBackedOn: 2 });
+    // Not vacuous: a close that KEEPS the seat (the book above the floor) reveals its figures in the same raced read.
+    DB = makeInMemoryDb({ ...world(), ...OTHERS });
+    onPoolRead('g-c', 1, async (realDb) => { await closePool(realDb, groupOf('g-c'), CLOSE_AT); });
+    const kept = await get();
+    expect(DB.store.get('backingPools/g-c').status).toBe('closed');
+    expect(kept.body.career).toMatchObject({ uniqueBackers: 4, bpBacked: 900, pending: 400, poolsBackedOn: 3 });
+  });
+
+  it('SEAL-A2 — what the reply COSTS is the seal\'s, not the book\'s: every read, in order, is identical whatever the open pool holds — for a trainer with closed weeks, a first-week trainer, and a departed seat', async () => {
+    const BOOKS = {
+      empty: {},
+      one: { 'backingStakes/d': world()['backingStakes/d'] },
+      thick: { 'backingStakes/d': world()['backingStakes/d'], ...OTHERS, 'backingStakes/o1/private/meta': { ipHash: 'h', uaHash: 'h', excluded: true } },
+    };
+    const base = world();
+    delete base['backingStakes/d'];
+    const firstWeek = { 'tournamentGroups/g-c': base['tournamentGroups/g-c'], 'backingPools/g-c': base['backingPools/g-c'] };
+    const trainers = {
+      'closed weeks behind them': base,
+      'a first week (nothing closed yet)': firstWeek,
+      'a departed seat': { ...base, 'tournamentGroups/g-c': { ...base['tournamentGroups/g-c'], ...LEFT } },
+    };
+    for (const [who, store] of Object.entries(trainers)) {
+      const logs = {};
+      const bodies = {};
+      for (const [book, stakes] of Object.entries(BOOKS)) {
+        DB = makeInMemoryDb({ ...store, ...stakes });
+        const res = await get();
+        expect(res.statusCode).toBe(200);
+        logs[book] = DB.readLog.map(([channel, p]) => `${channel} ${p}`);
+        bodies[book] = walk(res.body);
+      }
+      expect(logs.one, `${who}: one backer`).toEqual(logs.empty);
+      expect(logs.thick, `${who}: four backers, one excluded`).toEqual(logs.empty);
+      expect(bodies.thick, who).toEqual(bodies.empty);
+      // Never a read of an open pool's stake meta, never a pool read keyed on a stake of a departed seat.
+      expect(logs.thick.filter((l) => /backingStakes\/(d|o\d)\//.test(l)), who).toEqual([]);
+    }
+  });
+
+  it('WIRE-A2 — the seal is bounded to this week or later: an earlier week\'s pod whose pool no path closed never seals "next week" and is never read; forty old pods cost no pool read', async () => {
+    const store = { ...world(), 'backingPools/g-c': { ...world()['backingPools/g-c'], status: 'closed', teams: [{ odUserId: 'me' }] } };
+    store['tournamentGroups/g-w30'] = { ...world()['tournamentGroups/g-c'], status: 'voided', baseLayerWeek: '2026-W30' };
+    store['backingPools/g-w30'] = { status: 'open', battleMondayEtDate: '2026-07-20', closesAt: '2026-07-20T03:59:00.000Z' };
+    for (let w = 1; w <= 40; w += 1) store[`tournamentGroups/old-${w}`] = { ...world()['tournamentGroups/g-c'], status: 'complete', baseLayerWeek: `2025-W${String(w).padStart(2, '0')}` };
+    DB = makeInMemoryDb(store);
+    const res = await get();
+    expect(res.body).not.toHaveProperty('thisWeek');
+    expect(DB.readLog.filter(([, p]) => p === 'backingPools/g-w30' || p.startsWith('backingPools/old-'))).toEqual([]);
+    expect(DB.store.get('backingPools/g-w30').status).toBe('open'); // never read, never written here
+  });
+
+  it('WIRE-A3 — a seated DEV pod with an open dev pool never seals the production record (the fold skips dev pools), and is never closed here', async () => {
+    const store = { ...world(), 'backingPools/g-c': { ...world()['backingPools/g-c'], status: 'closed', teams: [{ odUserId: 'me' }] } };
+    store['tournamentGroups/g-dev'] = { ...world()['tournamentGroups/g-c'], isDev: true };
+    store['backingPools/dev-g-dev'] = { status: 'open', battleMondayEtDate: '2026-10-12', closesAt: G_C_CLOSES, isDev: true };
+    DB = makeInMemoryDb(store);
+    expect((await get()).body).not.toHaveProperty('thisWeek');
+    vi.setSystemTime(new Date('2026-10-12T04:30:00.000Z'));
+    DB = makeInMemoryDb(store);
+    expect((await get()).body).not.toHaveProperty('thisWeek');
+    expect(DB.writeLog).toEqual([]);
+  });
+
+  it('PLACE-A3 — a pool this route reads past its close is CLOSED by this route (the lazy close every pool reader runs): the seal lifts and the figures appear at the close, not when another reader happens by', async () => {
+    DB = makeInMemoryDb({ ...world(), ...OTHERS });
+    expect((await get()).body.thisWeek).toEqual({ sealed: true });
+    vi.setSystemTime(new Date('2026-10-12T04:30:00.000Z')); // Monday 00:30 ET — g-c's close has passed; nobody else has read it
+    const res = await get();
+    expect(DB.store.get('backingPools/g-c').status).toBe('closed');
+    expect(res.body).not.toHaveProperty('thisWeek');
+    expect(res.body.career).toMatchObject({ uniqueBackers: 4, bpBacked: 900, pending: 400, poolsBackedOn: 3 });
+    expect(res.body.season).toMatchObject({ monthKey: '2026-10', uniqueBackers: 3, bpBacked: 400, pending: 400, poolsBackedOn: 1 });
+  });
+
+  it('PLACE-A3 — a close that FAILS is logged and the pool re-read: still open → still sealed (never a figure); committed before the failure → the reveal', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.setSystemTime(new Date('2026-10-12T04:30:00.000Z'));
+    // The transaction never commits: the re-read pool is still open — sealed, and no figure of it.
+    DB = makeInMemoryDb({ ...world(), ...OTHERS });
+    DB.db.runTransaction = async () => { throw new Error('contention'); };
+    const failed = await get();
+    expect(failed.statusCode).toBe(200);
+    expect(failed.body.thisWeek).toEqual({ sealed: true });
+    expect(failed.body.career).toMatchObject({ uniqueBackers: 2, bpBacked: 500, pending: 0, poolsBackedOn: 2 });
+    expect(console.warn).toHaveBeenCalled();
+    expect(DB.readLog.filter(([, p]) => p === 'backingPools/g-c').length).toBeGreaterThanOrEqual(2);
+    // The transaction commits, then its acknowledgement is lost: the re-read pool is closed — the reveal, no seal.
+    DB = makeInMemoryDb({ ...world(), ...OTHERS });
+    const realTx = DB.db.runTransaction;
+    DB.db.runTransaction = async (fn) => { await realTx(fn); throw new Error('ack lost'); };
+    const lost = await get();
+    expect(DB.store.get('backingPools/g-c').status).toBe('closed');
+    expect(lost.body).not.toHaveProperty('thisWeek');
+    expect(lost.body.career).toMatchObject({ uniqueBackers: 4, bpBacked: 900, pending: 400 });
+    // A re-read that fails too is the request's 500 — never an answer built on a guess. (g-c's
+    // pool is read by round 2, then by ensureClosed's own cheap read, then re-read: the third.)
+    DB = makeInMemoryDb({ ...world(), ...OTHERS });
+    DB.db.runTransaction = async () => { throw new Error('contention'); };
+    onPoolRead('g-c', 3, async () => { throw new Error('unavailable'); });
+    expect((await get()).statusCode).toBe(500);
   });
 });
