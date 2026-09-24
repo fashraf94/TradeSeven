@@ -36,7 +36,7 @@ node scripts/backing-screenshots/shoot.mjs $SHOTS docs/design/backing/desktop/sc
 ```
 
 - `desktop.render.jsx` — frames each page the way App lays out a desktop
-  width: the real `DesktopSidebar` (fixed, 220px) with the surface beside it.
+  width by default: the real `DesktopSidebar` collapsed to its 64px rail (App.jsx starts it collapsed) with the surface beside it.
   It walks the real flow — the lobby's strip → the Backing screen → a seat →
   "Back" — and writes: the landing (not seated / seated × no bracket /
   bracket), each strip state, the Backing screen during the window (no card

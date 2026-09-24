@@ -85,7 +85,7 @@ function DeskStrip({ s, kind, eyebrow, head, when, sub, c, onOpen, windowOpen })
             {motif}
             <Mono style={{ fontSize: 10, color: c, letterSpacing: '0.12em', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{eyebrow}</Mono>
           </div>
-          <Mono style={{ fontSize: 11, color: LTOKENS.ink2, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          <Mono style={{ fontSize: 11, color: LTOKENS.ink2, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
             <Icon name="clock" size={12} color={LTOKENS.ink2} />{when}
           </Mono>
         </div>
@@ -98,7 +98,7 @@ function DeskStrip({ s, kind, eyebrow, head, when, sub, c, onOpen, windowOpen })
         {kind === STRIP_KIND.STAKED && Array.isArray(s.stakes) && s.stakes.length > 0 && (
           <div data-backing="strip-stakes" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 6, marginTop: 12 }}>
             {s.stakes.map((x) => (
-              <div key={x.stakeId ?? `${x.groupId}-${x.teamOdUserId}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 9, background: alpha(LTOKENS.bg, 0.5), border: `1px solid ${alpha(c, 0.2)}` }}>
+              <div key={x.stakeId ?? `${x.groupId}-${x.teamOdUserId}`} style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', columnGap: 8, rowGap: 2, padding: '7px 10px', borderRadius: 9, background: alpha(LTOKENS.bg, 0.5), border: `1px solid ${alpha(c, 0.2)}` }}>
                 <span style={{ fontSize: 13, fontWeight: 600, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{x.teamName}</span>
                 <Mono style={{ fontSize: 10, color: LTOKENS.ink3, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.podName}</Mono>
                 {x.closed && <Mono style={{ fontSize: 9.5, color: LTOKENS.ink3, letterSpacing: '0.08em', textTransform: 'uppercase', flexShrink: 0 }}>{STRIP.lockedRow}</Mono>}
@@ -109,7 +109,7 @@ function DeskStrip({ s, kind, eyebrow, head, when, sub, c, onOpen, windowOpen })
         )}
 
         {kind === STRIP_KIND.WEEK && Array.isArray(s.teams) && s.teams.length > 0 && (
-          <div data-backing="strip-teams" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 6, marginTop: 12 }}>
+          <div data-backing="strip-teams" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(150px, 100%), 1fr))', gap: 6, marginTop: 12 }}>
             {s.teams.map((x) => (
               <div key={`${x.groupId}-${x.teamOdUserId}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 9, background: alpha(LTOKENS.bg, 0.5), border: `1px solid ${LTOKENS.hair}` }}>
                 <Mono style={{ fontSize: 13.5, fontWeight: 700, color: x.rank === 1 ? LTOKENS.gold : LTOKENS.ink }}>{STRIP.standingRank(x.rank)}</Mono>
@@ -151,7 +151,12 @@ function DeskStrip({ s, kind, eyebrow, head, when, sub, c, onOpen, windowOpen })
 // own lit mount, so the flag-off lobby (its markup, its LD_STYLE) is exactly
 // today's; the smaller overlap the lobby has without the strip is reported for
 // separate tasking.
-const DESK_LOBBY_STYLE = '@media (max-width: 1180px) { .ld-grid > .ld-center, .ld-grid > .ld-rail-left, .ld-grid > .ld-rail-right { min-height: auto; } }';
+// Not the right rail: its leaderboard would unroll and push the left rail's
+// "Open my game" below the fold (refute-placement, PLACE-2). And the strip's
+// own keyboard focus, which the inline `all: unset` would otherwise hide
+// (PLACE-7) — scoped to the lit desktop card, so no other surface changes.
+const DESK_LOBBY_STYLE = `@media (max-width: 1180px) { .ld-grid > .ld-center, .ld-grid > .ld-rail-left { min-height: auto; } }
+[data-backing="strip-card"] .lg-tap:focus-visible { outline: 2px solid ${LX.energy} !important; outline-offset: 2px !important; }`;
 
 /**
  * The desktop landing's strip slot — ONE composition: BackingLandingStrip's

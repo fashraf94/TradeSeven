@@ -125,7 +125,10 @@ function MyGameBar({ onOpen }) {
  * reaches the draft-slot picker and the Auto-draft lane (the preview only).
  */
 export function DeskLobby({
-  st, uid = null, displayName = null, trainingOn = TRAINING_ON, tab = 'ranked', onSwitchTab,
+  // `uid` carries no default: a signed-out viewer's is `undefined`, exactly as
+  // main hands it to the slot picker (a null default would match a seat whose
+  // odUserId is null — DARK-R-1, the desktop review record).
+  st, uid, displayName = null, trainingOn = TRAINING_ON, tab = 'ranked', onSwitchTab,
   activeGroup = null, preOpen = false, activeTrainingPod = null,
   onOpenMyGame, onOpenTrainingPod, hasAgent, agentLoadout,
   selectedPod = null, onPickPod, onClosePod, onOpenGroupById, railTab = 'field', onRailTab, onSpectate,

@@ -201,8 +201,7 @@ export function BackingResultsCardDesk({ pod, accent = LX.energy, onOpenTape = n
   if (!pod || typeof pod !== 'object') return null;
   const { settled, voided, winners, winnerNames, mine, teams, revealed, reasonKey, first, paysCell } = resultsCardModel(pod);
   const color = outcomeColor(pod.outcome, accent);
-  // The team column keeps room for a name at the narrowest desktop widths (PLACE-6); the share phrase wraps.
-  const cols = 'minmax(140px, 1.4fr) 96px minmax(0, 1.3fr) 128px';
+  const cols = 'minmax(0, 1.4fr) 96px minmax(0, 1.3fr) 128px';
   const head = { fontSize: 9, color: LTOKENS.ink3, letterSpacing: '0.12em', textTransform: 'uppercase' };
 
   return (

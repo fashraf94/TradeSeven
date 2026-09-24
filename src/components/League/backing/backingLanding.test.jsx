@@ -197,7 +197,9 @@ describe('no bracket — the strip and the weekly pods lead; no funnel frame, pl
     // The lobby rule the strip brings (PLACE-2): at the ≤1180px layouts the lobby's grid items
     // size to their content, so the taller centre never paints over the rail reflowed beneath
     // it — riding the lit slot, so the flag-off lobby (its LD_STYLE) is today's.
-    expect(on).toMatch(/@media \(max-width: 1180px\) \{ \.ld-grid > \.ld-center, \.ld-grid > \.ld-rail-left, \.ld-grid > \.ld-rail-right \{ min-height: auto; \} \}/);
+    expect(on).toMatch(/@media \(max-width: 1180px\) \{ \.ld-grid > \.ld-center, \.ld-grid > \.ld-rail-left \{ min-height: auto; \} \}/);
+    // …never the right rail: its leaderboard would unroll and push "Open my game" below the fold.
+    expect(on).not.toMatch(/\.ld-rail-right \{ min-height: auto/);
     expect(off).not.toContain('min-height: auto');
     expect(excise(on)).toBe(off);
   });

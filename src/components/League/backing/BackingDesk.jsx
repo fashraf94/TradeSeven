@@ -76,6 +76,8 @@ export function deskSections(backedPods = 0) {
 // desktops tighten the side columns, then stack.
 const DESK_STYLE = `
   .bkd-root { height: 100%; min-height: 0; display: flex; flex-direction: column; background: ${LTOKENS.bg}; color: ${LTOKENS.ink}; font-family: var(--app-font, 'Space Grotesk', system-ui, sans-serif); }
+  /* Keyboard focus, which the controls' inline all:unset would otherwise hide (PLACE-7) — this screen's only. */
+  .bkd-root .lg-tap:focus-visible { outline: 2px solid ${LX.energy} !important; outline-offset: 2px !important; }
   .bkd-grid { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 400px minmax(0, 1fr) 380px; }
   .bkd-col { box-sizing: border-box; min-height: 0; height: 100%; overflow-y: auto; overflow-x: hidden; }
   .bkd-pods { padding: 22px 22px 32px; border-right: 1px solid ${LTOKENS.hair}; background: ${alpha(LTOKENS.surface, 0.32)}; }
@@ -91,7 +93,8 @@ const DESK_STYLE = `
   @media (max-width: 1180px) {
     .bkd-grid { grid-template-columns: 340px minmax(0, 1fr) 340px; }
     .bkd-card { padding: 22px 22px 34px; }
-    .bkd-results { grid-template-columns: minmax(0, 1fr) 360px; }
+    /* The record goes under the results, so the table keeps its team names (PLACE-6). */
+    .bkd-results { grid-template-columns: minmax(0, 1fr); }
   }
   @media (max-width: 980px) {
     .bkd-grid { grid-template-columns: minmax(0, 1fr); overflow-y: auto; }
@@ -231,6 +234,19 @@ function WindowView(props) {
   const win = backingWindow(pods.pods);
   const card = cardQuery?.card ?? null;
   const selectedSeat = view.kind !== 'list' && view.groupId && view.odUserId ? { groupId: view.groupId, odUserId: view.odUserId } : null;
+  // STACKED (≤980px, the columns one under another) a seat pick lands on the
+  // card and "Back" on the control — far below the pod list the viewer is in —
+  // so the column that changed is brought into view; side by side, nothing
+  // moves (PLACE-3, the desktop review record).
+  const cardCol = React.useRef(null);
+  const rightCol = React.useRef(null);
+  const moved = view.kind !== 'list' && view.groupId && view.odUserId ? `${view.kind}:${view.groupId}:${view.odUserId}` : null;
+  React.useEffect(() => {
+    if (!moved || typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    if (!window.matchMedia('(max-width: 980px)').matches) return;
+    const col = moved.startsWith('card:') ? cardCol.current : rightCol.current;
+    col?.scrollIntoView?.({ block: 'start' });
+  }, [moved]);
   const staking = view.kind === 'stake' && card != null;
   return (
     <div className="bkd-grid" data-desk-section-view="window">
@@ -263,7 +279,7 @@ function WindowView(props) {
       </div>
 
       {/* CENTRE — the team card; the stake control never displaces it */}
-      <div className="lg-scroll bkd-col bkd-card" data-desk-col="card">
+      <div ref={cardCol} className="lg-scroll bkd-col bkd-card" data-desk-col="card">
         <div style={{ maxWidth: 640, margin: '0 auto' }}>
           {view.kind === 'list' ? <CardEmpty accent={accent} />
             : cardQuery?.loading ? <Mono style={{ fontSize: 11, color: LTOKENS.ink3 }}>{SCREEN.loading}</Mono>
@@ -282,7 +298,7 @@ function WindowView(props) {
       </div>
 
       {/* RIGHT — your backing so far; the stake control (and its attestation step) swaps in here */}
-      <div className="lg-scroll bkd-col bkd-right" data-desk-col="right">
+      <div ref={rightCol} className="lg-scroll bkd-col bkd-right" data-desk-col="right">
         {staking ? (
           <div data-backing="desk-stake">
             <StakeControl

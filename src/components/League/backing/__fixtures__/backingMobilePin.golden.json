@@ -35,9 +35,246 @@
     "sha256": "52cd163b360fac00bec64a6f1d771c91f3943919ebb98729e9a6b1d544b307b1",
     "length": 19302
   },
-  "funnel/mobile-journey": {
-    "sha256": "4386b891227df4435f3fad1320037ca65b0c859cd733aea9ad32c7ab0d1c31ab",
-    "length": 510
+  "funnel/journey": {
+    "sha256": "5bc18ca34b8f8348ca7a3d461713e0411b88593dbb259ce662ae9d55bbdd0095",
+    "length": 988,
+    "steps": [
+      [
+        "list",
+        [
+          [
+            "results_viewed",
+            "lobby-w39-a",
+            null,
+            {
+              "weekKey": "2026-W39"
+            }
+          ],
+          [
+            "results_viewed",
+            "lobby-w39-b",
+            null,
+            {
+              "weekKey": "2026-W39"
+            }
+          ],
+          [
+            "window_viewed",
+            null,
+            null,
+            {
+              "weekKey": "2026-W40"
+            }
+          ],
+          [
+            "your_backing_viewed",
+            null,
+            null,
+            {
+              "weekKey": "2026-W39"
+            }
+          ]
+        ]
+      ],
+      [
+        "card",
+        []
+      ],
+      [
+        "stake",
+        [
+          [
+            "team_card_opened",
+            "lobby-w40-a",
+            "od-a",
+            {
+              "dwellMs": 20000
+            }
+          ],
+          [
+            "stake_control_opened",
+            "lobby-w40-a",
+            "od-a",
+            {}
+          ]
+        ]
+      ],
+      [
+        "stake → card",
+        []
+      ],
+      [
+        "card → list",
+        [
+          [
+            "team_card_opened",
+            "lobby-w40-a",
+            "od-a",
+            {
+              "dwellMs": 25000
+            }
+          ],
+          [
+            "results_viewed",
+            "lobby-w39-a",
+            null,
+            {
+              "weekKey": "2026-W39"
+            }
+          ],
+          [
+            "results_viewed",
+            "lobby-w39-b",
+            null,
+            {
+              "weekKey": "2026-W39"
+            }
+          ],
+          [
+            "window_viewed",
+            null,
+            null,
+            {
+              "weekKey": "2026-W40"
+            }
+          ],
+          [
+            "your_backing_viewed",
+            null,
+            null,
+            {
+              "weekKey": "2026-W39"
+            }
+          ]
+        ]
+      ],
+      [
+        "card (Tarn)",
+        []
+      ],
+      [
+        "card → list, inside one frame",
+        [
+          [
+            "results_viewed",
+            "lobby-w39-a",
+            null,
+            {
+              "weekKey": "2026-W39"
+            }
+          ],
+          [
+            "results_viewed",
+            "lobby-w39-b",
+            null,
+            {
+              "weekKey": "2026-W39"
+            }
+          ],
+          [
+            "window_viewed",
+            null,
+            null,
+            {
+              "weekKey": "2026-W40"
+            }
+          ],
+          [
+            "your_backing_viewed",
+            null,
+            null,
+            {
+              "weekKey": "2026-W39"
+            }
+          ]
+        ]
+      ]
+    ]
+  },
+  "funnel/late-data": {
+    "sha256": "f1d564595235351940ad270fc2445f56618641e531af7f4bad8553092302efdb",
+    "length": 512,
+    "steps": [
+      [
+        "list, pods loading",
+        []
+      ],
+      [
+        "pods answer",
+        [
+          [
+            "window_viewed",
+            null,
+            null,
+            {
+              "weekKey": "2026-W40"
+            }
+          ]
+        ]
+      ],
+      [
+        "card",
+        []
+      ],
+      [
+        "in play arrives on the card",
+        []
+      ],
+      [
+        "results arrive on the card",
+        []
+      ],
+      [
+        "card → list",
+        [
+          [
+            "team_card_opened",
+            "lobby-w40-a",
+            "od-a",
+            {
+              "dwellMs": 20000
+            }
+          ],
+          [
+            "results_viewed",
+            "lobby-w39-a",
+            null,
+            {
+              "weekKey": "2026-W39"
+            }
+          ],
+          [
+            "window_viewed",
+            null,
+            null,
+            {
+              "weekKey": "2026-W40"
+            }
+          ],
+          [
+            "your_backing_viewed",
+            null,
+            null,
+            {
+              "weekKey": "2026-W39"
+            }
+          ]
+        ]
+      ],
+      [
+        "the week key moves on the list",
+        [
+          [
+            "window_viewed",
+            null,
+            null,
+            {
+              "weekKey": "2026-W41"
+            }
+          ]
+        ]
+      ]
+    ]
   },
   "landing-strip/between": {
     "sha256": "290757f5d28d051b277b7c64cb2c9ad9b2b01c5f3098443dc5f16539a8cb65c8",

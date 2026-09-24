@@ -8,9 +8,9 @@
 // "Back" — and writes each state as a static page (`desk-*.html`) under
 // $BACKING_SHOTS_DIR for shoot.mjs to photograph at 1440×900.
 //
-// THE FRAME IS THE APP'S: the real DesktopSidebar (fixed, 220px) and the
-// League beside it at margin-left 220px, exactly as App.jsx lays out the
-// League tab at a desktop width; the Backing screen opens full-window over
+// THE FRAME IS THE APP'S: the real DesktopSidebar in its default collapsed
+// state (fixed, 64px) and the League beside it at margin-left 64px, exactly as
+// App.jsx lays out the League tab at a desktop width by default; the Backing screen opens full-window over
 // both, as the lobby hosts it. The private-record page shows the real
 // IdentityPanel — the Command surface's left column, the stats' desktop home
 // beside the pitch — in that frame; the Command surface's other two columns
@@ -134,13 +134,15 @@ function write(name, title, container) {
   return html;
 }
 
-// The League tab exactly as App lays it out on a desktop: the sidebar, the League beside it.
+// The League tab exactly as App lays it out on a desktop by DEFAULT: the
+// sidebar collapsed to its 64px rail (App.jsx `sidebarCollapsed` starts true),
+// the League beside it (PLACE-R-1, the desktop review record).
 // `screen` is the sidebar's active item — the Command surface (the profile pages) is Compete's.
-const sidebarProps = { screen: 'league', setScreen: () => {}, setShowForge: () => {}, showForge: false, user: { username: 'Alice', wins: 4, losses: 3 }, unreadCount: 0, collapsed: false, onToggleCollapse: () => {}, onLogout: () => {} };
+const sidebarProps = { screen: 'league', setScreen: () => {}, setShowForge: () => {}, showForge: false, user: { username: 'Alice', wins: 4, losses: 3 }, unreadCount: 0, collapsed: true, onToggleCollapse: () => {}, onLogout: () => {} };
 const AppFrame = ({ screen = 'league', children }) => (
   <ThemeProvider>
     <DesktopSidebar {...sidebarProps} screen={screen} />
-    <div style={{ marginLeft: '220px' }}>{children}</div>
+    <div style={{ marginLeft: '64px' }}>{children}</div>
   </ThemeProvider>
 );
 const lobby = () => <AppFrame><LeagueLobbyDesktop onOpenMyGame={() => {}} onOpenTrainingPod={() => {}} hasAgent agentLoadout={null} /></AppFrame>;

@@ -48,8 +48,6 @@ const hooked = vi.hoisted(() => ({
   pods: null, inPlay: null, wallet: null, eligibility: null, pitch: null, cards: {},
   results: null, myStats: null, trainerStats: null, battles: {},
   slots: [], stakeReply: null,
-  // The bodies the telemetry emitter sends, in order (the funnel row below).
-  events: [],
 }));
 
 vi.mock('../../../config/featureFlags', async (importOriginal) => ({
@@ -83,10 +81,20 @@ vi.mock('../../../services/backingService', () => ({
   fetchBackingPods: vi.fn(), fetchTeamCard: vi.fn(), subscribeMyStakes: () => () => {}, subscribePool: () => () => {},
   subscribeWallet: () => () => {}, readEligibility: async () => null, subscribePitch: () => () => {}, fetchTapePod: async () => null,
   fetchTeamLabels: async () => ({ pods: {} }), fetchBackingResults: async () => ({ weeks: [] }), fetchMyBackingStats: async () => null,
-  fetchTrainerStats: async () => null, postBackingEvent: async (body) => { hooked.events.push(body); return { recorded: true }; },
+  fetchTrainerStats: async () => null, postBackingEvent: async () => ({ recorded: true }),
   placeStake: vi.fn(async () => hooked.stakeReply), attestEligibility: vi.fn(async () => ({})), savePitch: vi.fn(async () => ({})),
   newRequestId: () => 'pin-req', BackingApiError: class BackingApiError extends Error {},
 }));
+// THE FUNNEL's recorder (DARK-1 / DARK-R-2, the desktop build's review record):
+// every §10 emit the screen ASKS for, BEFORE the emitter's per-session dedup
+// (a re-emit never reaches the sink, so the sink cannot see a wrong-view or a
+// dependency regression). A pass-through: the real emitter still runs, so no
+// other row sees a change. The design is the dark refuter's, mutation-tested.
+const funnel = vi.hoisted(() => ({ calls: [] }));
+vi.mock('../../../services/backingTelemetry', async (importOriginal) => {
+  const orig = await importOriginal();
+  return { ...orig, emitBackingEvent: (...args) => { funnel.calls.push(args); return orig.emitBackingEvent(...args); } };
+});
 vi.mock('../../../utils/fetchWithAuth', () => ({ fetchWithAuth: vi.fn(async () => ({ ok: true, json: async () => ({}) })) }));
 vi.mock('../../../services/leagueSignals', () => ({ logLeagueSignal: () => {} }));
 vi.mock('../../../services/tournamentLobbyActions', () => ({ quickPlay: () => Promise.resolve({}), quickPlayTraining: () => Promise.resolve({}), mapLobbyError: () => 'error' }));
@@ -365,6 +373,15 @@ function pin(name, markup) {
   expect(fp, `${name}: the mobile markup moved (today's is ${golden[name]?.length} chars, this is ${fp.length})`).toEqual(golden[name]);
 }
 
+/** A behaviour row: the ordered events themselves ride the golden (readable), beside their fingerprint. */
+function pinFunnel(name, steps) {
+  const fp = { ...fingerprint(JSON.stringify(steps)), steps };
+  seen[name] = fp;
+  if (UPDATE) return;
+  expect(golden[name], `${name}: no golden row — regenerate on main's code`).toBeDefined();
+  expect(fp, `${name}: the mobile funnel moved — which view emits which §10 event`).toEqual(golden[name]);
+}
+
 let roots = [];
 async function mount(element) {
   const container = document.createElement('div');
@@ -505,93 +522,113 @@ describe('the Backing screen — mobile: the list, a card, the stake control', (
   });
 });
 
-describe('the mobile funnel — WHICH view emits WHICH event, in order (DARK-1, the desktop review record)', () => {
-  // The desktop build rewired the screen's funnel effects (what is "on
-  // screen" per viewport; the card visit keyed on the seat on screen); on
-  // mobile they must fire exactly as main's do. The ordered bodies the
-  // emitter sends over one mobile journey are pinned like the markup — the
-  // golden row generated on main's code.
-  it('the list → a card → the stake control → back to the card → the list → another card → the list', async () => {
-    __resetBackingTelemetry();
-    hooked.events.length = 0;
+describe('the mobile funnel — WHICH view emits WHICH event, in order (DARK-1 / DARK-R-2, the desktop review record)', () => {
+  // Behaviour, not markup: which mobile view emits which §10 event, captured
+  // before the dedup and kept per view step, pinned against a golden generated
+  // on main's code. The desktop build rewrote the list events' gating
+  // (listShown / yourBackingShown), keyed the card visit on its seat and moved
+  // results_viewed into a shared hook. The fake clock moves past MIN_DWELL
+  // (16 ms) before a card is left, so team_card_opened fires; it is put back
+  // after, for the rows that follow.
+  const took = () => funnel.calls.splice(0).map(([event, o = {}]) => [event, o.groupId ?? null, o.odUserId ?? null, o.props ?? {}]);
+  const seatEl = (c, name) => [...c.querySelectorAll('[data-backing="seat"]')].find((el) => el.textContent.includes(name));
+  it('list → card → stake → card → list → a second card left inside one frame', async () => {
+    __resetBackingTelemetry(); funnel.calls.length = 0;
     hooked.pods = podsReply([pod('lobby-w40-a')]);
     hooked.inPlay = weekInPlay();
-    hooked.results = { ...hooked.results, weeks: [{ weekKey: '2026-W39', pools: [RESULTS.win] }] };
-    let t = NOW.getTime();
-    const tick = (ms) => { t += ms; vi.setSystemTime(new Date(t)); };
-    const seat = (c, name) => [...c.querySelectorAll('[data-backing="seat"]')].find((el) => el.textContent.includes(name));
+    hooked.results = { ...hooked.results, weeks: [{ weekKey: '2026-W39', pools: [RESULTS.win, { ...RESULTS.refunded, groupId: 'lobby-w39-b', poolId: 'lobby-w39-b' }] }] };
+    const steps = [];
     try {
       const c = await mount(<BackingScreen uid="viewer-1" accent={ACCENT} viewport="mobile" onBack={() => {}} onOpenTape={() => {}} />);
-      tick(1000);
-      await press(seat(c, 'Kestrel'));                                   // the list → Kestrel's card
-      tick(5000);
-      await press(c.querySelector('[data-backing="cta-back"]'));         // → the stake control
-      tick(2000);
-      await press(c.querySelector('[data-backing="screen-back"]'));      // → back to the card
-      tick(3000);
-      await press(c.querySelector('[data-backing="screen-back"]'));      // → the list
-      tick(1000);
-      await press(seat(c, 'Tarn'));                                      // → Tarn's card
-      tick(4000);
-      await press(c.querySelector('[data-backing="screen-back"]'));      // → the list
-      // Not vacuous: the journey saw the window, Your Backing, the results, both cards and the control.
-      const names = hooked.events.map((e) => e.event);
-      for (const e of ['window_viewed', 'your_backing_viewed', 'results_viewed', 'team_card_opened', 'stake_control_opened']) expect(names, e).toContain(e);
-      pin('funnel/mobile-journey', JSON.stringify(hooked.events));
-    } finally {
-      vi.setSystemTime(NOW);
-    }
+      steps.push(['list', took()]);
+      await press(seatEl(c, 'Kestrel')); steps.push(['card', took()]);
+      vi.setSystemTime(new Date(NOW.getTime() + 20000));
+      await press(c.querySelector('[data-backing="cta-back"]')); steps.push(['stake', took()]);
+      await press(c.querySelector('[data-backing="screen-back"]')); steps.push(['stake → card', took()]);
+      vi.setSystemTime(new Date(NOW.getTime() + 45000));
+      await press(c.querySelector('[data-backing="screen-back"]')); steps.push(['card → list', took()]);
+      await press(seatEl(c, 'Tarn')); steps.push(['card (Tarn)', took()]);
+      vi.setSystemTime(new Date(NOW.getTime() + 45005));
+      await press(c.querySelector('[data-backing="screen-back"]')); steps.push(['card → list, inside one frame', took()]);
+    } finally { vi.setSystemTime(NOW); }
+    // Not vacuous: the journey saw the window, Your Backing, the results, a card visit and the control.
+    const events = steps.flatMap(([, list]) => list.map(([event]) => event));
+    for (const e of ['window_viewed', 'your_backing_viewed', 'results_viewed', 'team_card_opened', 'stake_control_opened']) expect(events, e).toContain(e);
+    pinFunnel('funnel/journey', steps);
+  });
+  it('data arriving while the list is off screen — the effects\' dependencies', async () => {
+    __resetBackingTelemetry(); funnel.calls.length = 0;
+    hooked.pods = { data: null, pods: [], loading: true, error: null, refresh: () => {} };
+    const el = () => <BackingScreen uid="viewer-1" accent={ACCENT} viewport="mobile" onBack={() => {}} onOpenTape={() => {}} />;
+    const steps = [];
+    try {
+      const c = await mount(el());
+      const { root } = roots[roots.length - 1];
+      const rerender = async () => { await act(async () => { root.render(el()); }); for (let i = 0; i < 6; i += 1) await act(async () => { await Promise.resolve(); }); };
+      steps.push(['list, pods loading', took()]);
+      hooked.pods = podsReply([pod('lobby-w40-a')]); await rerender(); steps.push(['pods answer', took()]);
+      await press(seatEl(c, 'Kestrel')); steps.push(['card', took()]);
+      hooked.inPlay = weekInPlay(); await rerender(); steps.push(['in play arrives on the card', took()]);
+      hooked.results = { ...hooked.results, weeks: [{ weekKey: '2026-W39', pools: [RESULTS.win] }] }; await rerender(); steps.push(['results arrive on the card', took()]);
+      vi.setSystemTime(new Date(NOW.getTime() + 20000));
+      await press(c.querySelector('[data-backing="screen-back"]')); steps.push(['card → list', took()]);
+      const moved = podsReply([pod('lobby-w40-a')]);
+      hooked.pods = { ...moved, data: { ...moved.data, baseLayerWeek: '2026-W41' } }; await rerender(); steps.push(['the week key moves on the list', took()]);
+    } finally { vi.setSystemTime(NOW); }
+    pinFunnel('funnel/late-data', steps);
   });
 });
 
-describe('the DESKTOP funnel — each event fires on its own section, a card visit keyed on its seat (WIRE-2 / WIRE-3, the desktop review record)', () => {
-  // Beside the mobile funnel because this file stands in for every read the
-  // screen makes. No golden (main has no desktop screen): the rows state the
-  // desktop semantics — window_viewed on the window section, your_backing_viewed
-  // on Monday–Friday's, results_viewed on Friday's, never on another; the
-  // screen opens on the section the strip named and stays there; a card visit
-  // is keyed on its seat (re-selecting the open seat is not a new visit) and
-  // ends where the event's contract says — "Back" into the control, another
-  // seat, or the window section closing — the same meaning as on mobile.
-  it('opened on Your Backing, then the window, a card, a re-click, Back, back to the card, another card, the results', async () => {
-    __resetBackingTelemetry();
-    hooked.events.length = 0;
+describe('the DESKTOP funnel — each event on its own section, a card visit keyed on its seat (WIRE-2 / WIRE-3, the desktop review record)', () => {
+  // No golden (main has no desktop screen): the steps below ARE the desktop
+  // semantics, captured before the dedup — window_viewed on the window
+  // section, your_backing_viewed on Monday–Friday's, results_viewed on
+  // Friday's, never on another; the screen opens on the section the strip
+  // named; a card visit is keyed on its seat (re-selecting the open seat is
+  // not a new visit) and ends where the event's contract says — "Back" into
+  // the control, another seat, the window section closing — as on mobile.
+  it('opened on Your Backing, then the window, a card, a re-click, Back, back to the card, another card, the results, the window again', async () => {
+    __resetBackingTelemetry(); funnel.calls.length = 0;
     hooked.pods = podsReply([pod('lobby-w40-a')]);
     hooked.inPlay = weekInPlay();
     hooked.results = { ...hooked.results, weeks: [{ weekKey: '2026-W39', pools: [RESULTS.win] }] };
     let t = NOW.getTime();
     const tick = (ms) => { t += ms; vi.setSystemTime(new Date(t)); };
+    const took = () => funnel.calls.splice(0).map(([event, o = {}]) => (event === 'team_card_opened' ? `${event}:${o.odUserId}:${o.props.dwellMs}` : o.odUserId ? `${event}:${o.odUserId}` : event));
     const seat = (c, name) => [...c.querySelectorAll('[data-desk-col="pods"] [data-backing="seat"]')].find((el) => el.textContent.includes(name));
     const tab = (c, id) => c.querySelector(`[data-backing="desk-sections"] [data-desk-section="${id}"]`);
-    const names = () => hooked.events.map((e) => (e.event === 'team_card_opened' ? `${e.event}:${e.props.odUserId}:${e.props.dwellMs}` : e.props?.odUserId ? `${e.event}:${e.props.odUserId}` : e.event));
+    const steps = [];
     try {
       const c = await mount(<BackingScreen uid="viewer-1" accent={ACCENT} viewport="desktop" initialSection="week" onBack={() => {}} onOpenTape={() => {}} />);
       // The section the strip named, from the first frame — never the window first.
       expect(c.querySelector('[data-backing="screen"]').getAttribute('data-desk-section')).toBe('week');
-      expect(names()).toEqual(['your_backing_viewed']);
-      await press(tab(c, 'window'));
-      expect(names()).toEqual(['your_backing_viewed', 'window_viewed']);
-      tick(1000);
-      await press(seat(c, 'Kestrel'));
-      tick(2000);
-      await press(seat(c, 'Kestrel'));                          // the open seat again: not a new visit
-      tick(60000);
-      await press(c.querySelector('[data-desk-col="card"] [data-backing="cta-back"]'));
-      // "Back" ends the visit — the whole 62 s, never the 2 s before the re-click — and opens the control.
+      steps.push(['opened on Your Backing', took()]);
+      await press(tab(c, 'window')); steps.push(['the window', took()]);
+      tick(1000); await press(seat(c, 'Kestrel')); steps.push(['Kestrel\'s card', took()]);
+      tick(2000); await press(seat(c, 'Kestrel')); steps.push(['the open seat again', took()]);
+      tick(60000); await press(c.querySelector('[data-desk-col="card"] [data-backing="cta-back"]'));
       expect(c.querySelector('[data-desk-col="right"] [data-backing="stake-control"]')).not.toBeNull();
-      expect(names()).toEqual(['your_backing_viewed', 'window_viewed', 'team_card_opened:od-a:62000', 'stake_control_opened:od-a']);
-      await press(c.querySelector('[data-desk-col="right"] [data-backing="stake-cancel"]'));   // back to the card
-      tick(1000);
-      await press(seat(c, 'Tarn'));                             // Kestrel's second visit ends (recorded once per session)
-      tick(3000);
-      await press(tab(c, 'results'));                           // leaving the window ends Tarn's: 3 s
-      expect(names()).toEqual(['your_backing_viewed', 'window_viewed', 'team_card_opened:od-a:62000', 'stake_control_opened:od-a', 'team_card_opened:od-b:3000', 'results_viewed']);
-      // …and the window comes back without a stale card.
+      steps.push(['Back', took()]);
+      await press(c.querySelector('[data-desk-col="right"] [data-backing="stake-cancel"]')); steps.push(['back to the card', took()]);
+      tick(1000); await press(seat(c, 'Tarn')); steps.push(['Tarn\'s card', took()]);
+      tick(3000); await press(tab(c, 'results')); steps.push(['the results', took()]);
       await press(tab(c, 'window'));
-      expect(c.querySelector('[data-desk-col="card"] [data-backing="desk-card-empty"]')).not.toBeNull();
+      expect(c.querySelector('[data-desk-col="card"] [data-backing="desk-card-empty"]'), 'the window comes back without a stale card').not.toBeNull();
+      steps.push(['the window again', took()]);
     } finally {
       vi.setSystemTime(NOW);
     }
+    expect(steps).toEqual([
+      ['opened on Your Backing', ['your_backing_viewed']],
+      ['the window', ['window_viewed']],
+      ['Kestrel\'s card', []],
+      ['the open seat again', []],                                   // not a new visit — the 62 s below are whole
+      ['Back', ['team_card_opened:od-a:62000', 'stake_control_opened:od-a']],
+      ['back to the card', []],
+      ['Tarn\'s card', ['team_card_opened:od-a:1000']],             // the second visit (the sink keeps the first)
+      ['the results', ['team_card_opened:od-b:3000', 'results_viewed']],
+      ['the window again', ['window_viewed']],
+    ]);
   });
 });
 
