@@ -644,15 +644,21 @@ export const STATS = Object.freeze({
     poolsBackedOn: 'Pools',
     empty: 'Nobody has backed your team yet.',
     // CLOSED WEEKS ONLY (SEAL-1, the desktop review record): the design's
-    // sealed "This week" row — "This week's pool is sealed even to the
-    // trainer" — with no figure in it. The design's "opens Fri 4:00 PM ET" is
-    // corrected as the strip's line was: the reveal is at CLOSE (spec §3/§4).
-    // Its team is not named: this surface has no server label for it (D-af).
-    sealedWeek: 'This week · your team’s pool',
+    // sealed row — "This week's pool is sealed even to the trainer" — with no
+    // figure in it. The design's "opens Fri 4:00 PM ET" is corrected as the
+    // strip's line was: the reveal is at CLOSE (spec §3/§4). And its week is
+    // named as the pod list names it (§9; PLACE-A2, the pre-flip fixes 2
+    // review record): a pool is open only before its pod's battle Monday — the
+    // route closes one past its close before it answers — so the sealed pool
+    // is NEXT week's pod's, "Next week's groups of four" on the pod list. Its
+    // team is not named: this surface has no server label for it (D-af).
+    sealedWeek: 'Next week · your team’s pool',
     sealedUntil: 'until it closes',
-    // No closed week to count yet, and this week sealed: never "Nobody has
-    // backed your team yet" over a book it cannot see (SEAL-R-2). The design's
-    // first-week line, its "opens" corrected to "closes".
-    sealedFirst: 'No closed weeks yet. Once a pool with your team in it closes, this shows how many backed you, how much, and how they did.',
+    // Nothing counted from a closed week, and a pool sealed: never "Nobody has
+    // backed your team yet" over a book it cannot see (SEAL-R-2). True for a
+    // first week AND for a team whose closed weeks nobody backed (PLACE-A1 /
+    // WIRE-A1): the reply cannot tell those apart, and "No closed weeks yet"
+    // would be false for the second. The design's first-week line, so worded.
+    sealedFirst: 'No backers in a closed week yet. Once your team’s pool closes, this shows how many backed you, how much, and how they did.',
   }),
 });

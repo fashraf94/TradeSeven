@@ -9,11 +9,12 @@
 // CLOSED WEEKS ONLY (SEAL-1, the desktop review record; the desktop design's
 // "this week's pool is sealed even to the trainer"): the reply counts no
 // stake on an open pool, and says `thisWeek: { sealed: true }` when the
-// trainer's team sits in one. Then the design's sealed "This week" row
-// renders — a ruled absence with no figure in it — and, with no closed week
-// to count, the design's first-week line rather than "Nobody has backed your
-// team yet", which the trainer cannot know of a sealed book (SEAL-R-2). The
-// row keys on the reply's marker, which the server reads from the POOL, never
+// trainer's team sits in one. Then the design's sealed row renders — a ruled
+// absence with no figure in it, its week named as the pod list names it — and,
+// with nothing counted from a closed week, the design's first-week line (in
+// the design's own type: PLACE-A4) rather than "Nobody has backed your team
+// yet", which the trainer cannot know of a sealed book (SEAL-R-2). The row
+// keys on the reply's marker, which the server reads from the POOL, never
 // from whether a stake exists. The same view is the trainer stats' home on
 // both viewports (EquipStation; IdentityPanel beside the pitch).
 
@@ -40,12 +41,13 @@ function Column({ title, bucket }) {
   );
 }
 
-/** The design's sealed "This week" row — the week named, a lock, SEALED; no figure. */
+/** The design's sealed row — the week named, a lock, SEALED; no figure. */
 function SealedWeek() {
   return (
     <div data-backing="trainer-sealed-week" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', padding: '8px 11px', borderRadius: 10, border: `1px dashed ${LTOKENS.hair2}`, background: alpha(LTOKENS.bg, 0.4) }}>
       <Mono style={{ fontSize: 10.5, color: LTOKENS.ink2 }}>{STATS.trainer.sealedWeek}</Mono>
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+      {/* SEALED stays on the right when a narrow home wraps the row (PLACE-A5). */}
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
         <Icon name="lock" size={10} color={LTOKENS.ink3} stroke={2} />
         <Mono style={{ fontSize: 9.5, color: LTOKENS.ink2, letterSpacing: '0.12em', fontWeight: 600 }}>{POD_LIST.sealed}</Mono>
         <Mono style={{ fontSize: 9.5, color: LTOKENS.ink3 }}>· {STATS.trainer.sealedUntil}</Mono>
@@ -62,8 +64,11 @@ export default function TrainerStats({ stats }) {
     <div data-backing="trainer-stats" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ fontSize: 12, color: LTOKENS.ink2, lineHeight: 1.45 }}>{STATS.trainer.sub}</div>
       {sealed && <SealedWeek />}
-      {empty ? (
-        <div data-backing="trainer-empty" style={{ ...box, fontSize: 12, color: LTOKENS.ink3 }}>{sealed ? STATS.trainer.sealedFirst : STATS.trainer.empty}</div>
+      {empty && sealed ? (
+        // The design's first-week line: its own type, no box (PLACE-A4).
+        <div data-backing="trainer-empty" style={{ fontSize: 12.5, color: LTOKENS.ink2, lineHeight: 1.5 }}>{STATS.trainer.sealedFirst}</div>
+      ) : empty ? (
+        <div data-backing="trainer-empty" style={{ ...box, fontSize: 12, color: LTOKENS.ink3 }}>{STATS.trainer.empty}</div>
       ) : (
         <div style={{ ...box, display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
           <Column title={STATS.season} bucket={stats.season} />

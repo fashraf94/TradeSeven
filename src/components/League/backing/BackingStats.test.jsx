@@ -16,6 +16,7 @@ vi.mock('../../../hooks/useMyBackingStats', () => ({ default: () => ({ data: nul
 vi.mock('../../../hooks/useTrainerStats', () => ({ default: () => ({ data: null, loading: false, error: null, refresh: () => {} }) }));
 const { StatsEntryView } = await import('./BackingStatsEntry');
 import { POD_LIST, STATS } from './backingCopy';
+import { LTOKENS } from '../leagueTokens';
 import { findForbiddenTerm } from '../../../constants/backingLexicon';
 
 const text = (el) => renderToString(el).replace(/<[^>]+>/g, ' ');
@@ -99,6 +100,21 @@ describe('TrainerStats — closed weeks only: the design\'s sealed "This week" r
     expect(t).toContain(STATS.trainer.sealedFirst);
     expect(t).not.toContain(STATS.trainer.empty);
     expect(t).toContain(STATS.trainer.sealedWeek);
+  });
+
+  it('PLACE-A1 / WIRE-A1 — the line is TRUE for a returning team whose closed weeks nobody backed (the reply is the same as a first week\'s): it never says "No closed weeks yet"; PLACE-A2 — the sealed pool is named NEXT week\'s, as the pod list names it; PLACE-A4 — the line in the design\'s type, no box', () => {
+    expect(STATS.trainer.sealedFirst).not.toMatch(/No closed weeks/i);
+    expect(STATS.trainer.sealedFirst).toMatch(/^No backers in a closed week yet\./);
+    expect(STATS.trainer.sealedWeek).toMatch(/^Next week · /);
+    expect(STATS.trainer.sealedWeek).not.toMatch(/This week/);
+    const html = renderToString(<TrainerStats stats={FIRST_WEEK} />);
+    const line = /<div data-backing="trainer-empty" style="([^"]*)"/.exec(html)?.[1] ?? '';
+    expect(line).toContain('font-size:12.5px');
+    expect(line).toContain(`color:${LTOKENS.ink2}`);
+    expect(line).not.toContain('border');
+    // The plain empty line (no seal) keeps its box.
+    const plain = /<div data-backing="trainer-empty" style="([^"]*)"/.exec(renderToString(<TrainerStats stats={{ ...FIRST_WEEK, thisWeek: undefined }} />))?.[1] ?? '';
+    expect(plain).toContain('border');
   });
 
   it('no seal in the reply: no sealed row, and the plain empty line stands', () => {
