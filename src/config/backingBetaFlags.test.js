@@ -353,6 +353,9 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       // PR 3: settlement reads the pool/totals refs and runs ensureClosed.
       'api/_utils/backingSettlement.js',
       // PR 5: the stats readers locate pools by group id (prod, then dev).
+      // The pre-flip fixes 2 (PLACE-A3): the trainer's reads also run the
+      // lazy close (ensureClosed) on a SEATED pod's pool past its close — the
+      // one write, as every other pool reader makes it.
       'api/_utils/backingStats.js',
       // PR 5: the two client-facing readers — reads only, own-uid only.
       'api/backing/my-stats.js',

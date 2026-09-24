@@ -25,6 +25,8 @@ const svc = vi.hoisted(() => ({
   stakeListeners: [],
   poolListeners: {},
   groupListeners: {},
+  groupErrors: {},
+  deferGroups: false,
 }));
 vi.mock('../services/backingService', () => ({
   fetchTeamLabels: (...a) => svc.fetchTeamLabels(...a),
@@ -32,7 +34,7 @@ vi.mock('../services/backingService', () => ({
   subscribePool: (groupId, cb) => { (svc.poolListeners[groupId] ??= []).push(cb); if (!svc.deferPools) cb(svc.pools[groupId] ?? null); return () => {}; },
 }));
 vi.mock('../services/tournamentGroupService', () => ({
-  subscribeGroup: (groupId, cb) => { (svc.groupListeners[groupId] ??= []).push(cb); cb(svc.groups[groupId] ?? null); return () => {}; },
+  subscribeGroup: (groupId, cb, onError) => { (svc.groupListeners[groupId] ??= []).push(cb); (svc.groupErrors[groupId] ??= []).push(onError); if (!svc.deferGroups) cb(svc.groups[groupId] ?? null); return () => {}; },
 }));
 
 const { default: useMyBacking, fetchLabelsFor, LABELS_RETRY_MS } = await import('./useMyBacking');
@@ -67,6 +69,8 @@ beforeEach(() => {
   svc.stakeListeners = [];
   svc.poolListeners = {};
   svc.groupListeners = {};
+  svc.groupErrors = {};
+  svc.deferGroups = false;
   svc.fetchTeamLabels = vi.fn(async (ids) => ({ pods: Object.fromEntries(ids.map((g) => [g, { 'od-a': { label: 'Shadow', secondary: 'Mira' } }])) }));
 });
 afterEach(async () => {
@@ -194,5 +198,34 @@ describe('the names\' lifecycle — this build\'s review record (WIRING-4/5/6/8,
     await flush();
     expect(latest.labelsById.g1['od-a'].label).toBe('Shadow');
     expect(svc.fetchTeamLabels).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('WIRE-D1 — a group read that FAILS is not an answer (the pre-flip fixes 2 review record)', () => {
+  const fail = async (groupId) => { await act(async () => { for (const onError of svc.groupErrors[groupId]) onError(Object.assign(new Error('denied'), { code: 'permission-denied' })); }); await flush(); };
+
+  it('BEFORE any answer, the error is recorded as `undefined` — the key present, never the `null` of a pod that is gone — and the names\' gate still opens', async () => {
+    svc.deferGroups = true;
+    await mount({ uid: 'me', keys: ['2026-W39'] });
+    expect('g1' in latest.groupsById).toBe(false); // not read yet
+    await fail('g1');
+    await fail('g2');
+    expect('g1' in latest.groupsById).toBe(true);
+    expect(latest.groupsById.g1).toBeUndefined();
+    expect(latest.groupsById.g2).toBeUndefined();
+    // The names still resolve: a failed group read never holds the gate shut.
+    expect(svc.fetchTeamLabels).toHaveBeenCalledTimes(1);
+    expect(latest.labelsById.g1).toBeDefined();
+  });
+
+  it('PLACE-R-1 — AFTER an answer, a later failure keeps it: a pod known to be in battle stays in battle, a pod known to be gone stays gone', async () => {
+    svc.groups = { g1: { id: 'g1', status: 'battle', players: [{ odUserId: 'od-a' }] } };
+    await mount({ uid: 'me', keys: ['2026-W39'] });
+    expect(latest.groupsById.g1).toMatchObject({ status: 'battle' });
+    expect(latest.groupsById.g2).toBeNull(); // answered: no such document
+    await fail('g1');
+    await fail('g2');
+    expect(latest.groupsById.g1).toMatchObject({ status: 'battle' });
+    expect(latest.groupsById.g2).toBeNull();
   });
 });

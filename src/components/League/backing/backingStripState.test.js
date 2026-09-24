@@ -491,3 +491,102 @@ describe('the desktop door (Backing desktop layouts): the window is the pod list
     expect(stripSection(null)).toBe(DESK_SECTION.WINDOW);
   });
 });
+
+describe('WIRE-R-2 — a pod CANCELLED after its pool closed never reads "plays Monday" (the desktop review record)', () => {
+  /** The viewer's live stake on a slot pod whose pool closed at its fire; `g` is the pod as read. */
+  const cancelled = (g, pool = { status: 'closed' }) => ({
+    stakes: [{ id: 's1', groupId: 'lds-wed', teamOdUserId: 'od-a', amount: 250, status: 'live', weekKey: '2026-W40' }],
+    poolsById: { 'lds-wed': pool },
+    groupsById: { 'lds-wed': g },
+    labelsById: labelsFor('lds-wed'),
+  });
+  const lines = (state) => stripLines(state);
+
+  it('a live stake on a pod VOIDED or EXPIRED after its pool closed is not the window\'s — never "Closed · plays Monday", never in play', () => {
+    for (const status of ['voided', 'expired']) {
+      // Nothing else: the strip does not invent a window, a week or a result for it.
+      const alone = deriveStripState({ pods: [], inPlay: cancelled(inPlayGroup({ status })), now: WED, backingWeekCloses: SUNDAY_CLOSE });
+      expect(alone.kind, status).toBe(STRIP_KIND.QUIET);
+      expect(lines(alone).when).not.toMatch(/plays Monday/);
+      // Beside an open window, the window — the cancelled stake is not in it.
+      const beside = deriveStripState({ pods: [pod('g-open')], inPlay: cancelled(inPlayGroup({ status })), now: WED, backingWeekCloses: SUNDAY_CLOSE });
+      expect(beside).toMatchObject({ kind: STRIP_KIND.OPEN, pods: 1 });
+      expect(lines(beside).when).not.toMatch(/plays Monday/);
+      // A HELD pool on the cancelled pod reads the same.
+      expect(deriveStripState({ pods: [], inPlay: cancelled(inPlayGroup({ status }), { status: 'resolving' }), now: WED }).kind).toBe(STRIP_KIND.QUIET);
+    }
+    // The same stake on a pod that will play IS the window's, locked — the row can fail.
+    const playing = deriveStripState({ pods: [], inPlay: cancelled(inPlayGroup({ status: 'drafting', dailyScores: {} })), now: WED });
+    expect(playing.kind).toBe(STRIP_KIND.STAKED);
+    expect(lines(playing).when).toBe('Closed · plays Monday');
+  });
+
+  it('a GONE pod (the group read answered with no document) is not guessed either', () => {
+    expect(deriveStripState({ pods: [], inPlay: cancelled(null), now: WED }).kind).toBe(STRIP_KIND.QUIET);
+  });
+
+  it('once the refund lands the stake is settled (voided on a refunded pool) — the between state, as every voided stake is (R-A-4)', () => {
+    const refunded = cancelled(inPlayGroup({ status: 'voided' }), { status: 'refunded', refundReason: 'group_voided' });
+    refunded.stakes[0] = { ...refunded.stakes[0], status: 'voided', voidReason: 'group_voided' };
+    expect(deriveStripState({ pods: [], inPlay: refunded, now: WED, backingWeekCloses: SUNDAY_CLOSE }).kind).toBe(STRIP_KIND.BETWEEN);
+  });
+
+  it('podCancellation — cancelled only after the pool closed, only on a voided / expired / GONE pod, and never on a read still on its way', async () => {
+    const { podCancellation } = await import('./backingStripState');
+    expect(podCancellation({ pool: { status: 'closed' }, group: { status: 'voided' } })).toEqual({ refunded: false });
+    expect(podCancellation({ pool: { status: 'resolving' }, group: { status: 'expired' } })).toEqual({ refunded: false });
+    expect(podCancellation({ pool: { status: 'refunded' }, group: { status: 'voided' } })).toEqual({ refunded: true });
+    expect(podCancellation({ pool: { status: 'closed' }, group: null, answered: true })).toEqual({ refunded: false });
+    expect(podCancellation({ pool: { status: 'closed' }, group: null, answered: false })).toBeNull();
+    expect(podCancellation({ pool: { status: 'closed' }, group: { status: 'battle' } })).toBeNull();
+    expect(podCancellation({ pool: { status: 'refunded' }, group: { status: 'battle' } })).toBeNull();   // an admin refund of a pod that plays
+    expect(podCancellation({ pool: { status: 'insufficient' }, group: { status: 'voided' } })).toBeNull(); // voided at the close already
+    expect(podCancellation({ pool: { status: 'open' }, group: { status: 'expired' } })).toBeNull();
+    expect(podCancellation({ pool: null, group: { status: 'voided' } })).toBeNull();
+  });
+});
+
+describe('N4 — nextCloseRereadAt: the ONE instant the strip re-reads for a close (the desktop review record)', () => {
+  it('the earliest close among the listed OPEN pools, plus the grace — then, ONCE, the follow-up a minute on (WIRE-C1) — never a closed pool\'s, never an unreadable one, never one already behind us', async () => {
+    const { CLOSE_REREAD_GRACE_MS, CLOSE_REREAD_FOLLOW_UP_MS, nextCloseRereadAt } = await import('./backingStripState');
+    const wedMs = new Date(WED_FIRE).getTime();
+    const sunMs = new Date(SUNDAY_CLOSE).getTime();
+    const pods = [pod('g-sun'), pod('g-wed', { pool: openPool({ closesAt: WED_FIRE }) }), pod('g-closed', { pool: openPool({ status: 'closed', closesAt: '2026-09-23T15:00:00.000Z' }) }), pod('g-bad', { pool: openPool({ closesAt: 'not a date' }) })];
+    expect(nextCloseRereadAt(pods, WED.getTime())).toBe(wedMs + CLOSE_REREAD_GRACE_MS);
+    // Inside the grace the passed close still holds the timer (a re-render there must not drop its re-read)…
+    expect(nextCloseRereadAt(pods, wedMs + 1)).toBe(wedMs + CLOSE_REREAD_GRACE_MS);
+    // …once its re-read is due, a pool STILL listed open gets its one follow-up (a clock ahead, a failed read)…
+    expect(nextCloseRereadAt(pods, wedMs + CLOSE_REREAD_GRACE_MS)).toBe(wedMs + CLOSE_REREAD_FOLLOW_UP_MS);
+    // …and after that it arms nothing more for that close: the next close takes over.
+    expect(nextCloseRereadAt(pods, wedMs + CLOSE_REREAD_FOLLOW_UP_MS)).toBe(sunMs + CLOSE_REREAD_GRACE_MS);
+    expect(nextCloseRereadAt(pods, sunMs + CLOSE_REREAD_GRACE_MS)).toBe(sunMs + CLOSE_REREAD_FOLLOW_UP_MS);
+    expect(nextCloseRereadAt(pods, sunMs + CLOSE_REREAD_FOLLOW_UP_MS)).toBeNull();
+    // A pool the first re-read found CLOSED is not listed open: no follow-up for it.
+    const closedWed = [pod('g-sun'), pod('g-wed', { pool: openPool({ status: 'closed', closesAt: WED_FIRE }) })];
+    expect(nextCloseRereadAt(closedWed, wedMs + CLOSE_REREAD_GRACE_MS)).toBe(sunMs + CLOSE_REREAD_GRACE_MS);
+    expect(nextCloseRereadAt([], WED.getTime())).toBeNull();
+    expect(nextCloseRereadAt(null, WED.getTime())).toBeNull();
+    expect(CLOSE_REREAD_GRACE_MS).toBeGreaterThan(0);
+    expect(CLOSE_REREAD_FOLLOW_UP_MS).toBeGreaterThan(CLOSE_REREAD_GRACE_MS);
+  });
+
+  it('the stake signal (PRE-1): every listener hears a confirmed stake, a failing one never silences the rest, and an unsubscribed one hears nothing', async () => {
+    const { announceStakePlaced, onStakePlaced } = await import('./backingStakeSignal');
+    const heard = [];
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      const offA = onStakePlaced((reply) => heard.push(['a', reply.stake.stakeId]));
+      const offBad = onStakePlaced(() => { throw new Error('boom'); });
+      const offB = onStakePlaced((reply) => heard.push(['b', reply.stake.stakeId]));
+      announceStakePlaced({ stake: { stakeId: 's1' } });
+      expect(heard).toEqual([['a', 's1'], ['b', 's1']]);
+      offA(); offBad(); offB();
+      announceStakePlaced({ stake: { stakeId: 's2' } });
+      expect(heard).toHaveLength(2);
+      expect(onStakePlaced('not a function')).toBeTypeOf('function');
+    } finally {
+      console.warn = warn;
+    }
+  });
+});

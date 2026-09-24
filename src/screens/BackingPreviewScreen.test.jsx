@@ -598,14 +598,14 @@ describe('the flag, forced on LOCALLY — featureFlags.js decides everywhere els
 
 describe('the landing slot — byte-equal to what the real mount renders', () => {
   for (const kind of ['open', 'staked', 'week', 'between']) {
-    it(`the “${kind}” strip in the page’s landing is BackingLandingStrip’s output for the same inputs`, () => {
+    it(`the “${kind}” strip in the page’s landing is BackingLandingStrip’s output for the same inputs, mounted as LeagueHome mounts it (in the centre’s column)`, () => {
       const inputs = PREVIEW_FIXTURES.strip[kind];
       vi.useFakeTimers({ toFake: ['Date'] });
       vi.setSystemTime(PREVIEW_FIXTURES.now);
       flag.on = true;
       hooked.pods = { data: { baseLayerWeek: '2026-W40', backingWeekCloses: PREVIEW_FIXTURES.backingWeekCloses, pods: inputs.pods }, pods: inputs.pods, loading: false, error: null, refresh: () => {} };
       hooked.inPlay = inputs.inPlay;
-      const real = renderToString(<BackingLandingStrip uid="u1" onOpen={() => {}} />);
+      const real = renderToString(<BackingLandingStrip uid="u1" onOpen={() => {}} inColumn />);
       window.history.replaceState(null, '', `/?preview=backing&state=strip-${kind}-no-bracket`);
       const html = renderToString(<BackingPreviewScreen />);
       const slot = html.match(/<div data-backing="strip-slot"[\s\S]*?<\/button><\/div>/)?.[0];

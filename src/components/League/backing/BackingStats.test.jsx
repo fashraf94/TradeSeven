@@ -5,12 +5,18 @@
 // no consequences, no comparison to other players: the rows assert the label,
 // the figures and the absence of any ranking word.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
 import MyBackingStats from './MyBackingStats';
 import TrainerStats from './TrainerStats';
-import { STATS } from './backingCopy';
+
+// The stats' home imports the two live reads; the view under test is fed its replies directly.
+vi.mock('../../../hooks/useMyBackingStats', () => ({ default: () => ({ data: null, loading: false, error: null, refresh: () => {} }) }));
+vi.mock('../../../hooks/useTrainerStats', () => ({ default: () => ({ data: null, loading: false, error: null, refresh: () => {} }) }));
+const { StatsEntryView } = await import('./BackingStatsEntry');
+import { POD_LIST, STATS } from './backingCopy';
+import { LTOKENS } from '../leagueTokens';
 import { findForbiddenTerm } from '../../../constants/backingLexicon';
 
 const text = (el) => renderToString(el).replace(/<[^>]+>/g, ' ');
@@ -63,6 +69,68 @@ describe('TrainerStats — the viewer as a team, labeled beta stats', () => {
   it('a team nobody backed says so; a null reply renders nothing', () => {
     expect(text(<TrainerStats stats={{ ...TRAINER, career: { ...TRAINER.career, stakes: 0 } }} />)).toContain(STATS.trainer.empty);
     expect(renderToString(<TrainerStats stats={null} />)).toBe('');
+  });
+});
+
+describe('TrainerStats — closed weeks only: the design\'s sealed "This week" row (SEAL-1 / SEAL-R-2, the desktop review record)', () => {
+  const SEALED = { ...TRAINER, thisWeek: { sealed: true } };
+  const FIRST_WEEK = {
+    ...SEALED,
+    career: { uniqueBackers: 0, bpBacked: 0, backersNet: 0, pending: 0, poolsBackedOn: 0, stakes: 0, decidedStakes: 0 },
+    season: { monthKey: '2026-10', uniqueBackers: 0, bpBacked: 0, backersNet: 0, pending: 0, poolsBackedOn: 0, stakes: 0, decidedStakes: 0 },
+  };
+  const rowOf = (html) => /<div data-backing="trainer-sealed-week"[\s\S]*?<\/span><\/div>/.exec(html)?.[0] ?? null;
+
+  it('with the reply\'s seal, the row renders ABOVE the closed weeks — "This week", a lock, SEALED — and carries no figure at all', () => {
+    const html = renderToString(<TrainerStats stats={SEALED} />);
+    const row = rowOf(html);
+    expect(row, 'the sealed row renders').not.toBeNull();
+    const words = row.replace(/<[^>]+>/g, ' ');
+    expect(words).toContain(STATS.trainer.sealedWeek);
+    expect(words).toContain(POD_LIST.sealed);
+    expect(words).toContain(STATS.trainer.sealedUntil);
+    expect(words, 'no number in the sealed row').not.toMatch(/\d/);
+    // Above the closed weeks' columns, which still read.
+    expect(html.indexOf('data-backing="trainer-sealed-week"')).toBeLessThan(html.indexOf('data-backing="stats-column"'));
+    expect(text(<TrainerStats stats={SEALED} />)).toContain('600 BP');
+  });
+
+  it('no closed week yet and this week sealed: the design\'s first-week line — NEVER "Nobody has backed your team yet" over a book the trainer cannot see', () => {
+    const t = text(<TrainerStats stats={FIRST_WEEK} />);
+    expect(t).toContain(STATS.trainer.sealedFirst);
+    expect(t).not.toContain(STATS.trainer.empty);
+    expect(t).toContain(STATS.trainer.sealedWeek);
+  });
+
+  it('PLACE-A1 / WIRE-A1 — the line is TRUE for a returning team whose closed weeks nobody backed, or whose backers were voided at a below-floor close (the reply is the same as a first week\'s): never "No closed weeks yet", never "No backers"; PLACE-A2 — the sealed pool is named NEXT week\'s, as the pod list names it; PLACE-A4 — the line in the design\'s type, no box', () => {
+    expect(STATS.trainer.sealedFirst).not.toMatch(/No closed weeks/i);
+    expect(STATS.trainer.sealedFirst).not.toMatch(/No backers/i);
+    expect(STATS.trainer.sealedFirst).toMatch(/^Nothing counted from a closed week yet\./);
+    expect(STATS.trainer.sealedWeek).toMatch(/^Next week · /);
+    expect(STATS.trainer.sealedWeek).not.toMatch(/This week/);
+    const html = renderToString(<TrainerStats stats={FIRST_WEEK} />);
+    const line = /<div data-backing="trainer-empty" style="([^"]*)"/.exec(html)?.[1] ?? '';
+    expect(line).toContain('font-size:12.5px');
+    expect(line).toContain(`color:${LTOKENS.ink2}`);
+    expect(line).not.toContain('border');
+    // The plain empty line (no seal) keeps its box.
+    const plain = /<div data-backing="trainer-empty" style="([^"]*)"/.exec(renderToString(<TrainerStats stats={{ ...FIRST_WEEK, thisWeek: undefined }} />))?.[1] ?? '';
+    expect(plain).toContain('border');
+  });
+
+  it('no seal in the reply: no sealed row, and the plain empty line stands', () => {
+    expect(renderToString(<TrainerStats stats={TRAINER} />)).not.toContain('trainer-sealed-week');
+    const empty = { ...FIRST_WEEK, thisWeek: undefined };
+    expect(text(<TrainerStats stats={empty} />)).toContain(STATS.trainer.empty);
+    expect(text(<TrainerStats stats={empty} />)).not.toContain(STATS.trainer.sealedFirst);
+    expect(renderToString(<TrainerStats stats={{ ...TRAINER, thisWeek: { sealed: false } }} />)).not.toContain('trainer-sealed-week');
+  });
+
+  it('the stats\' home on both viewports (EquipStation; IdentityPanel beside the pitch) is the one view — the "As a team" tab carries the row', () => {
+    const read = (data) => ({ data, loading: false, error: null, refresh: () => {} });
+    const html = renderToString(<StatsEntryView mine={read(MINE)} trainer={read(SEALED)} initialTab="trainer" />);
+    expect(html).toContain('data-backing="trainer-sealed-week"');
+    for (const s of [STATS.trainer.sealedWeek, STATS.trainer.sealedUntil, STATS.trainer.sealedFirst]) expect(findForbiddenTerm(s)).toBeNull();
   });
 });
 

@@ -14,13 +14,14 @@
 // feature) and the footnote stay mounted, so the League tab always keeps an
 // entry affordance and the flag remains a clean slots-only kill-switch.
 //
-// Backing desktop layouts — `backingSlot`: the Backing strip's desktop mount
-// (LeagueLobbyDesktop), DIRECTLY UNDER the draft-slot picker and the Auto-draft
-// card and ABOVE the bracket line (founder ruling: never below the bracket
-// line). Rendered BARE — no wrapper, no margin — so a strip that renders null
-// (the flag dark, the list loading) leaves no element and no gap; the column's
-// own flex gap spaces it when it renders. Mobile passes nothing: its markup is
-// the markup main ships (backingMobilePin.test.jsx).
+// Backing desktop layouts — `backingSlot`: the Backing strip's mount on BOTH
+// viewports (LeagueLobbyDesktop; the mobile lobby since N3, the desktop review
+// record), DIRECTLY UNDER the draft-slot picker and the Auto-draft card and
+// ABOVE the bracket line (founder ruling: never below the bracket line).
+// Rendered BARE — no wrapper, no margin — so a strip that renders null (the
+// flag dark, the list loading) leaves no element and no gap; the column's own
+// flex gap spaces it when it renders. With no slot passed the markup is the
+// markup main ships (backingMobilePin.test.jsx).
 // `services` (optional) replaces the picker's and the Auto-draft lane's calls —
 // only the dev preview page passes it (fixture answers, no network); omitted,
 // each call is the real service, exactly as before.

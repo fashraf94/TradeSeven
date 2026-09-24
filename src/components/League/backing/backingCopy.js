@@ -474,7 +474,14 @@ export const WEEK = Object.freeze({
     awaiting: 'Locked · plays Monday',
     settling: 'Settling',
     complete: 'Complete',
+    // A pod voided, expired or gone after its pool closed (WIRE-R-2): never
+    // "plays Monday". Once its refund lands the card reads the results card's
+    // own words for a refunded pool (RESULTS.outcome.refunded).
+    cancelled: 'Cancelled',
   }),
+  // The card's line for that pod until the refund lands (the build prompt's
+  // words, verbatim); then the refund's own reason (RESULTS.reason).
+  cancelled: 'This pod was cancelled — your stake will be returned.',
 });
 
 // ==================== THE RESULTS CARD (Surface E — PR 5) ====================
@@ -636,5 +643,24 @@ export const STATS = Object.freeze({
     pending: 'In play on you',
     poolsBackedOn: 'Pools',
     empty: 'Nobody has backed your team yet.',
+    // CLOSED WEEKS ONLY (SEAL-1, the desktop review record): the design's
+    // sealed row — "This week's pool is sealed even to the trainer" — with no
+    // figure in it. The design's "opens Fri 4:00 PM ET" is corrected as the
+    // strip's line was: the reveal is at CLOSE (spec §3/§4). And its week is
+    // named as the pod list names it (§9; PLACE-A2, the pre-flip fixes 2
+    // review record): a pool is open only before its pod's battle Monday — the
+    // route closes one past its close before it answers — so the sealed pool
+    // is NEXT week's pod's, "Next week's groups of four" on the pod list. Its
+    // team is not named: this surface has no server label for it (D-af).
+    sealedWeek: 'Next week · your team’s pool',
+    sealedUntil: 'until it closes',
+    // Nothing counted from a closed week, and a pool sealed: never "Nobody has
+    // backed your team yet" over a book it cannot see (SEAL-R-2). True for a
+    // first week, for a team whose closed weeks nobody backed, AND for one
+    // whose backers were voided at a below-floor close (PLACE-A1 / WIRE-A1):
+    // the reply cannot tell those apart, and "No closed weeks yet" or "No
+    // backers…" would each be false for one of them. The design's first-week
+    // line, so worded.
+    sealedFirst: 'Nothing counted from a closed week yet. Once your team’s pool closes, this shows how many backed you, how much, and how they did.',
   }),
 });

@@ -32,10 +32,10 @@
 // Backing desktop layouts — `backingSlot`: for a player already seated this
 // week the Backing strip sits DIRECTLY UNDER what occupies the entry position
 // (this room's headline and its hero, with the hero's own honesty line), and
-// NEVER below "Watch a live game" or the bracket line (founder ruling). The
-// desktop lobby passes it; rendered BARE, so a strip that renders null leaves
-// no element and no gap. Mobile passes nothing — byte-identical to main
-// (backingMobilePin.test.jsx).
+// NEVER below "Watch a live game" or the bracket line (founder ruling). Both
+// lobbies pass it (the mobile one since N3, the desktop review record);
+// rendered BARE, so a strip that renders null leaves no element and no gap.
+// With no slot passed the markup is main's (backingMobilePin.test.jsx).
 
 import React from 'react';
 import { LTOKENS, LX, alpha } from './leagueTokens';

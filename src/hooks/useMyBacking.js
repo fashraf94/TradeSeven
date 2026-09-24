@@ -100,16 +100,27 @@ export default function useMyBacking(uid, weekKeys, enabled = true) {
     const unsubs = [];
     for (const groupId of ids) {
       unsubs.push(subscribePool(groupId, (pool) => setPoolsById((prev) => ({ ...prev, [groupId]: pool }))));
-      unsubs.push(subscribeGroup(groupId, (group) => setGroupsById((prev) => ({ ...prev, [groupId]: group }))));
+      // A group read that FAILED is no answer: never the `null` of a pod that
+      // is gone (WIRE-D1 — a failed read is not a cancelled pod). Before any
+      // answer it is recorded as `undefined` — the key present, so the names'
+      // gate below still opens; after one, the LAST ANSWER stands (PLACE-R-1:
+      // a later failure never unknows a pod already known — voided, or in
+      // battle).
+      unsubs.push(subscribeGroup(
+        groupId,
+        (group) => setGroupsById((prev) => ({ ...prev, [groupId]: group })),
+        () => setGroupsById((prev) => (prev[groupId] !== undefined ? prev : { ...prev, [groupId]: undefined })),
+      ));
     }
     return () => { unsubs.forEach((u) => { try { u(); } catch { /* already closed */ } }); };
   }, [enabled, groupKey]);
 
   // The names' key: what they depend on, per backed pod — its team set (the
   // viewer's stake teams and the live seats) and whether it settled — and
-  // null until every backed pod's pool AND group snapshot has landed (both
-  // subscriptions answer null on a missing document or an error, so the gate
-  // always opens). A snapshot that moves none of it re-asks nothing.
+  // null until every backed pod's pool AND group snapshot has landed (the pool
+  // answers null on a missing document or an error, the group null or
+  // `undefined`, so the gate always opens). A snapshot that moves none of it
+  // re-asks nothing.
   const labelsKey = useMemo(() => {
     if (!groupKey) return '';
     const ids = groupKey.split(',');

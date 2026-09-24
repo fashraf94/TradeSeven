@@ -60,6 +60,7 @@ import BackingDesk, { DESK_SECTION, deskDefaultSection, deskSections } from './B
 import { BACKING_EVENT, dwellSince, emitBackingEvent } from '../../../services/backingTelemetry';
 import { POD_LIST, SCREEN, screenStateLine } from './backingCopy';
 import { backingWeekKeys, deriveStripState } from './backingStripState';
+import { announceStakePlaced } from './backingStakeSignal';
 
 /** The shortest card visit worth a record — one frame; below it is StrictMode's mount-time cleanup, not a person. */
 const MIN_DWELL_MS = 16;
@@ -197,6 +198,11 @@ function BackingScreenLive({ uid, accent, viewport, onBack, onOpenTape, initialS
 
   const toList = () => setView({ kind: 'list', groupId: null, odUserId: null });
   const toCard = () => setView((v) => ({ ...v, kind: 'card' }));
+  // A stake the server confirmed — the stake control calls this on the stake
+  // route's success reply only: this screen's pod list re-reads the ledger,
+  // and the landing strip — still mounted behind the desktop host — hears of
+  // it and re-reads its own (PRE-1, the desktop review record).
+  const onBacked = (reply) => { pods.refresh(); announceStakePlaced(reply); };
   // Desktop: the card lives in the window section — leaving it by ANY route
   // (a tab, or the section falling back as the data moves) closes the card,
   // so the window never comes back to a stale one (WIRE-2).
@@ -231,7 +237,7 @@ function BackingScreenLive({ uid, accent, viewport, onBack, onOpenTape, initialS
         onOpenSeat={(groupId, odUserId) => setView((v) => (v.kind === 'card' && v.groupId === groupId && v.odUserId === odUserId ? v : { kind: 'card', groupId, odUserId }))}
         onToStake={() => setView((v) => ({ ...v, kind: 'stake' }))}
         onToCard={toCard}
-        onBacked={() => pods.refresh()}
+        onBacked={onBacked}
         onOpenTape={onOpenTape}
       />
     );
@@ -298,7 +304,7 @@ function BackingScreenLive({ uid, accent, viewport, onBack, onOpenTape, initialS
               wallet={wallet}
               eligibility={eligibility}
               accent={accent}
-              onBacked={() => pods.refresh()}
+              onBacked={onBacked}
               onClose={toCard}
             />
           </div>

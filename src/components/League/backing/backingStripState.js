@@ -92,8 +92,73 @@ export function backingWindow(pods) {
   return { kind: STRIP_KIND.OPEN, pods: open.length, closesAt: latestIso(open.map((p) => p.pool?.closesAt)) };
 }
 
+/**
+ * How long after a pool's `closesAt` the strip re-reads for it (N4, the
+ * desktop review record). The server closes a pool on the first read AFTER
+ * its close (`ensureClosed`), so a read at the very instant could find it
+ * still open; a few seconds covers an ordinary clock drift between the two.
+ */
+export const CLOSE_REREAD_GRACE_MS = 5000;
+
+/**
+ * The ONE follow-up re-read for a close (WIRE-C1, the pre-flip fixes 2 review
+ * record): a minute after the close, for a pool the first re-read still found
+ * open — a client clock ahead of the server's by more than the grace — or
+ * whose re-read failed. Bounded: two re-reads per close at most, then nothing.
+ */
+export const CLOSE_REREAD_FOLLOW_UP_MS = 60000;
+
+/**
+ * The instant the strip next re-reads the pod list for a close (N4): for each
+ * listed pod's OPEN pool, its `closesAt` plus the grace and, once, plus the
+ * follow-up — the earliest still ahead of `nowMs`. An instant behind us arms
+ * nothing, so a reply that still says open after both (a clock far ahead of
+ * the server's, a close never run) cannot loop the re-read: at most two reads
+ * per close, one timer to the next instant, never a poll. Null when no listed
+ * pool is open. Pure.
+ */
+export function nextCloseRereadAt(pods, nowMs) {
+  let best = null;
+  for (const p of Array.isArray(pods) ? pods : []) {
+    if (p?.pool?.status !== 'open') continue;
+    const closesMs = typeof p.pool.closesAt === 'string' ? new Date(p.pool.closesAt).getTime() : NaN;
+    if (!Number.isFinite(closesMs)) continue;
+    for (const at of [closesMs + CLOSE_REREAD_GRACE_MS, closesMs + CLOSE_REREAD_FOLLOW_UP_MS]) {
+      if (at <= nowMs) continue;
+      if (best === null || at < best) best = at;
+    }
+  }
+  return best;
+}
+
 /** Pool statuses that mean the stakes have settled or been voided. */
 const SETTLED_POOL_STATUSES = new Set(['resolved', 'insufficient', 'refunded']);
+
+/** A pod's group statuses that mean it will never play (terminal, forward-only — §5, §7). */
+const CANCELLED_GROUP_STATUSES = new Set([GROUP_STATUS.VOIDED, GROUP_STATUS.EXPIRED]);
+
+/** Pool statuses a cancelled pod's pool can hold: closed (or held) with its refund on the way, or refunded. */
+const CANCELLED_POOL_STATUSES = new Set(['closed', 'resolving', 'refunded']);
+
+/**
+ * WIRE-R-2 (the desktop review record): a backed pod CANCELLED after its pool
+ * closed — its group `voided` or `expired`, or gone (the group read ANSWERED
+ * with no document) — whose stakes the §7 refund returns rather than any week
+ * playing out. Derived from the group status the surfaces already read (no
+ * new endpoint): `answered` says the group read has landed with an answer, so
+ * a pod whose read is still on its way — or whose read FAILED (WIRE-D1) — is
+ * never taken for a missing one. Null when the
+ * pod is not cancelled; else `{ refunded }` — whether the refund has landed
+ * (the pool `refunded`). A pool that closed `insufficient` voided its stakes
+ * at the close and is not this state. Pure.
+ */
+export function podCancellation({ pool, group, answered = true }) {
+  const status = pool?.status ?? null;
+  if (!CANCELLED_POOL_STATUSES.has(status)) return null;
+  const gone = answered === true && group == null;
+  if (!gone && !CANCELLED_GROUP_STATUSES.has(group?.status)) return null;
+  return { refunded: status === 'refunded' };
+}
 
 const ET = 'America/New_York';
 
@@ -254,6 +319,9 @@ export function deriveStripState({ pods = [], inPlay = null, now = new Date(), b
   //   window  — live, on a pool OPEN or CLOSED at its fire, the pod not yet in battle (DOM-1)
   //   live    — live, pool closed, pod in battle (or complete with the pool unresolved: settling — FAB-1)
   //   settled — the pool resolved / insufficient / refunded, or the stake itself no longer live (R-A-4)
+  // — or in NONE of them: a stake whose pool or pod is not known yet, and a
+  // live stake on a pod CANCELLED after its pool closed (voided or expired —
+  // WIRE-R-2), which will never play and whose refund has not landed.
   const window = new Map();
   const live = [];
   const settled = [];
@@ -267,7 +335,12 @@ export function deriveStripState({ pods = [], inPlay = null, now = new Date(), b
     const podStatus = groupStatus ?? group?.status ?? null;
     if (status !== 'open') {
       if (status !== 'closed' && status !== 'resolving') return; // a status this module does not know: not guessed
-      if (podStatus == null && !listed) return; // closed, and the pod's state is not known yet: not guessed
+      if (podStatus == null && !listed) return; // closed, and the pod's state is not known yet (or gone): not guessed
+      // CANCELLED after its pool closed (WIRE-R-2): a voided or expired pod
+      // never plays, so its stake is not the window's ("Closed · plays
+      // Monday") and not in play; its refund has not landed, so it is not
+      // settled either. None of the strip's states — Your Backing says so.
+      if (CANCELLED_GROUP_STATUSES.has(podStatus)) return;
       if (podStatus === GROUP_STATUS.BATTLE || podStatus === GROUP_STATUS.COMPLETE) {
         live.push({ stake, pool, group, settling: podStatus === GROUP_STATUS.COMPLETE });
         return;

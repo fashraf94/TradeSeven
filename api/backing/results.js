@@ -14,7 +14,9 @@
 //   4  THE FLAG — 404 while BACKING_BETA_ENABLED is dark, AFTER auth
 //   5  query — `groupId` (one pod) OR `before` + `limit` (weeks, newest first)
 //   6  the viewer's own stakes (ONE query), the pools they name, the
-//      settle-on-read pass, the projection
+//      settle-on-read pass, the viewer's stakes RE-READ after the pool
+//      wherever the pool moved them or contradicts them (`loadPod`), the
+//      projection
 //
 // THIS IS THE SETTLE-ON-READ PATH THE POD LIST COULD NEVER BE (PR 3 review,
 // finding 1). The pod list is keyed to the NEXT battle Monday's week and never
@@ -67,7 +69,14 @@ import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { isValidForgeId } from '../_utils/idValidation.js';
-import { BACKING_STAKES_COLLECTION, POOL_STATUS, ensureClosed, readGroup } from '../_utils/backingPools.js';
+import {
+  BACKING_POOLS_COLLECTION,
+  BACKING_STAKES_COLLECTION,
+  POOL_STATUS,
+  ensureClosed,
+  liveStakeContradicts,
+  readGroup,
+} from '../_utils/backingPools.js';
 import {
   SETTLEMENT_SOURCE,
   refundReasonForGroup,
@@ -155,30 +164,65 @@ async function refreshStakes(db, myStakes) {
 /**
  * One pod, loaded and passed through settle-on-read — the documents as the
  * pass left them, ready for `projectPods`. The settle-on-read pass never takes
- * the reader down: a pod whose SETTLEMENT fails projects with what was read
+ * the reader down: a pod whose SETTLEMENT fails projects as it now stands
  * (the two loads before it are plain reads and surface as the request's 500
  * like any other read failure).
+ *
+ * THE VIEWER'S STAKES ARE ANSWERED AS THEY STAND AFTER THE POOL — the pod
+ * list's rule, mirrored (WIRE-R-1 / WIRING-1 there; WIRING-15 and WIRING-1's
+ * twin here, the pre-flip cleanup's review record). The copies come from the
+ * ONE stakes query in 6a, read BEFORE any pool, so they are re-read by id
+ * whenever they can be stale:
+ *   · the pass MOVED the pool, or called the primitive — the lazy close moves
+ *     stakes on its own (`insufficient` voids them, a deleted pod's tombstone
+ *     refunds them, a seat that left is voided) without the primitive being
+ *     called (WIRE-1, the PR 5 review record);
+ *   · the answered pool CONTRADICTS a `live` copy (`liveStakeContradicts`, the
+ *     one predicate the pod list re-reads on): ANOTHER request's close or
+ *     settlement committed between the stakes query and this pod's pool read,
+ *     so `before` already carries the new status and nothing here moved it
+ *     (WIRING-1's twin);
+ *   · the pass FAILED after moving the pool — the lazy close committed, then
+ *     the settlement threw — so the pool is RE-READ as it now stands, never
+ *     answered from the copy read before the pass, and the same rule runs on
+ *     it (WIRING-15).
+ * Zero reads in the steady state: a decided pool's decided stakes and a closed
+ * pool's live stakes on its frozen teams contradict nothing. BOTH RE-READS ARE
+ * PLAIN READS, and a failed one is the request's 500 like any other (the
+ * pre-flip fixes 2 review record): a pool that cannot be re-read is never
+ * dropped from its week — a page would step past it and never come back
+ * (WIRE-E1) — and stakes that cannot be re-read are never answered from copies
+ * this request knows may be stale, beside a pool that contradicts them
+ * (WIRE-E3). The reader's pages keep their cursor on an error, so the read is
+ * retried, not lost. (The pod list keeps its own rule — one pod never takes
+ * down the list — for a list of pods still to be backed.)
  */
 async function loadPod(db, { groupId, myStakes, now }) {
   const group = await readGroup(db, groupId);
   let located = await readPoolByGroupId(db, groupId);
   if (located.pool == null) return null;
-  let stakes = myStakes;
+  // The status BEFORE the pass — the state the viewer's copies are judged against.
+  const before = located.pool.status;
+  let called = false;
   try {
-    // The status BEFORE the pass: the lazy close moves stakes on its own
-    // (`insufficient` voids them, a deleted pod's tombstone refunds them, a
-    // seat that left is voided) without the primitive being called, so the
-    // viewer's copies are re-read whenever the pool's status moved — not only
-    // when the primitive ran (WIRE-1, the PR 5 review record).
-    const before = located.pool.status;
     const passed = await settleOnRead(db, { groupId, group, pool: located.pool, now });
+    called = passed.called === true;
     if (passed.pool) located = { ...located, pool: passed.pool };
-    if (passed.called || located.pool.status !== before) stakes = await refreshStakes(db, myStakes);
   } catch (err) {
-    // ONE pod's settlement must never take down the reader: the pod projects
-    // as it stands and the failure is logged for the operator.
+    // ONE pod's settlement must never take down the reader: the failure is
+    // logged for the operator, and the pod projects as it NOW stands — the
+    // pool RE-READ (a plain read: its own failure is the request's 500).
     console.warn(`[backing-results] settle-on-read failed for ${groupId}:`, err?.message);
+    const snap = await db.collection(BACKING_POOLS_COLLECTION).doc(located.poolId).get();
+    located = { ...located, pool: snap.exists ? snap.data() : null };
+    if (located.pool == null) return null;
   }
+  let stakes = myStakes;
+  const stale = called
+    || located.pool.status !== before
+    || myStakes.some((s) => liveStakeContradicts(located.pool, s));
+  // A plain read, too: never the stale copies instead (WIRE-E3).
+  if (myStakes.length > 0 && stale) stakes = await refreshStakes(db, myStakes);
   return { groupId, poolId: located.poolId, pool: located.pool, group, myStakes: stakes };
 }
 

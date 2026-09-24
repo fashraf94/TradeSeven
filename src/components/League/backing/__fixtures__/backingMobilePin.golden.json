@@ -309,16 +309,16 @@
     "length": 59653
   },
   "landing/bracket/on/seated-mounted": {
-    "sha256": "fc3656f348cca2413dcfbdd68e49cedf127e92f2a357c2e27bb7a530ffa677bc",
-    "length": 66554
+    "sha256": "19732890a1ebd2f4e6255e9ae332e346938bd668b5d27d70db99cdd489989d6f",
+    "length": 66525
   },
   "landing/bracket/on/unseated-mounted": {
-    "sha256": "a4c979a2aae5293c430f41d5c2e1f5ba10642d11779e7a420841f3d6134c25d3",
-    "length": 63901
+    "sha256": "c997865e35f4ab889626d8b9d29990f777ca1f7a7701a79245b740d8d0c800e7",
+    "length": 63872
   },
   "landing/bracket/on/unseated-ssr": {
-    "sha256": "e5636220ca27cffbfc6e3c4ff9162125a209e5d7c9af9fbff8e7715b3a4d21b9",
-    "length": 62452
+    "sha256": "673341e3daec78a239bfa121a024d18755fcc8452167bd3675def2110501911f",
+    "length": 59659
   },
   "landing/no-bracket/off/seated-mounted": {
     "sha256": "1869ce3cb0346ec315123d012cf45e0057f49b815ff74041774c2cc5b59b8ffd",
@@ -333,80 +333,80 @@
     "length": 23472
   },
   "landing/no-bracket/on/seated-mounted": {
-    "sha256": "f277688edad0917bdefad2db3822f322714bd24c431de77ebade17aaccc17345",
-    "length": 30647
+    "sha256": "db2b8f20fd4f1083008c8f49e47a6e9cf0bb7eae8eb6df3d8f20f2498074eacd",
+    "length": 30618
   },
   "landing/no-bracket/on/unseated-mounted": {
-    "sha256": "ea31b9bc3d9d8d3c1aa1a497ef7034601c6f7cb91137c7fc5625033099d22c23",
-    "length": 27994
+    "sha256": "346bee26e4828ba9fc83dc24afbedc001a19dada6282383aad66140e19767a0d",
+    "length": 27965
   },
   "landing/no-bracket/on/unseated-ssr": {
-    "sha256": "57e62b16a04016c971bc103babd64f00bf3e20f07e9b18596c2870a7bb5e0595",
-    "length": 26267
+    "sha256": "3655cc7a49f98b10bff98d779fd9c1fddfad98d2a0aca7158065a6cb42759bcc",
+    "length": 23474
   },
   "lobby-tabbed/bracket/seated/between": {
-    "sha256": "74c467e21bdd20373f58c91067905d544e02d05d5630c6c669c9e23cb793bf55",
-    "length": 65514
+    "sha256": "20e651aa27820db1baa889a8a8d054df88d2630da18ac958ea22ad7c1baa9102",
+    "length": 65487
   },
   "lobby-tabbed/bracket/seated/open": {
-    "sha256": "d33ea498094f8e6a66da7394d47e32f97814c396ec027b5a97f6a7a66a1e8fde",
-    "length": 65826
+    "sha256": "c566adac00113775f96ab5b3069463fb10f62932e228c811a65d5e45a39b2a1c",
+    "length": 65799
   },
   "lobby-tabbed/bracket/seated/staked": {
-    "sha256": "582344fbe1beae9a405ac7b8eb7c1cf2ed7d6fd60b21bbd8452db8a29ec3b97a",
-    "length": 67173
+    "sha256": "381ac5e83314f9cb330e3889c6cb341e551a366c5c3d941b52977dc3ba3e6af0",
+    "length": 67146
   },
   "lobby-tabbed/bracket/seated/week": {
-    "sha256": "b0c30e478b4bf3735e4f49c07bf0c41dc8eb839d3dfe3d7d14621756c940655b",
-    "length": 67444
+    "sha256": "03859d8e91ea2f903106a2fb480d36769904e7a7b34fb4430ecf8f4aa10eede4",
+    "length": 67417
   },
   "lobby-tabbed/no-bracket/seated/between": {
-    "sha256": "4ff5763980a44f3c35fc951fc3088f6c0c1067323bf5593527c193dfd11bc282",
-    "length": 29329
+    "sha256": "d105ee1bc0cabf211925e5b7f19896a56d398b2f3edc4ef2a4fa2dffcb22607e",
+    "length": 29302
   },
   "lobby-tabbed/no-bracket/seated/open": {
-    "sha256": "decf079ee5998e309c319f6ae8bd066ec7215e793c7c001c9153853728abdc28",
-    "length": 29641
+    "sha256": "83f4228f1075db731028971158fe6450874e953038318a74d7f04ad4309d2792",
+    "length": 29614
   },
   "lobby-tabbed/no-bracket/seated/staked": {
-    "sha256": "8ff436b1928492d33815d9e3329fada60738b4664f4ab6f0f683c29a295fdbb6",
-    "length": 30988
+    "sha256": "74d5f4468f6d450a460bb976617f28bc248eabfacbbb4e738fbe7c68c23bb7b1",
+    "length": 30961
   },
   "lobby-tabbed/no-bracket/seated/week": {
-    "sha256": "287016a3cb290074ddf3be83074db95fcb626060437c8cf560a5d4bc4a8ab8f0",
-    "length": 31259
+    "sha256": "b67f8aff1be89367a9a8db156f53bc2c78a7b03b75d7fc898381e0b1e14c8b66",
+    "length": 31232
   },
   "lobby/bracket/seated/between": {
-    "sha256": "5274564d385a8343c5f5c5e3abeb34d940bc390baf84b0c7070156261a0db7bf",
-    "length": 75419
+    "sha256": "33208bebb77ad89652ea093ef027aada933e4ae7f58eb43fc90e270dba801f71",
+    "length": 75392
   },
   "lobby/bracket/seated/open": {
-    "sha256": "a8f40a753d35d6e4ed0ea44ce7bde487eba82c095950cb849fb5de3313612c64",
-    "length": 75731
+    "sha256": "85bf47e977d1b64c3e82678bd56a3409abcf9e6f525f7974a47690c61adbde0f",
+    "length": 75704
   },
   "lobby/bracket/seated/staked": {
-    "sha256": "4c203dc1f16d21e7cc8f75072c4d757665fe5ede9aea59a657391ddf0bbc6edf",
-    "length": 77078
+    "sha256": "9ff86ca98e59e2eb071710230d2f785ee1855366eb7819e3fd5f77f0f110690c",
+    "length": 77051
   },
   "lobby/bracket/seated/week": {
-    "sha256": "b470f1f54624b0613c1a17fcb72e504ce9701540e18bb21687197919f3af9084",
-    "length": 77349
+    "sha256": "8648f614e177f92c9793b33094edf68ac2ce448aa63bfa1dd2dfdbb75b44d528",
+    "length": 77322
   },
   "lobby/no-bracket/seated/between": {
-    "sha256": "ec3c03bd439340c42618e5eb78c93f7b134b62c446ac1fd21ef3bbe81866fc27",
-    "length": 26840
+    "sha256": "2cc70500ee39e48bad344fc0ff4b9b89f04f9eb085900d4c4b2f1ad814b2d6d6",
+    "length": 26813
   },
   "lobby/no-bracket/seated/open": {
-    "sha256": "bd8aff8800c7311e7de1455fbccfafcf20a06bec9a210d2283453f37be1a512c",
-    "length": 27152
+    "sha256": "5b4334e30d5fb92f0949f02cbd6097647cab7b6e28d73e519449dee978a18500",
+    "length": 27125
   },
   "lobby/no-bracket/seated/staked": {
-    "sha256": "57cd459dfdd019cbde8f94772111eb10d86812a89396494915da252e777b8e81",
-    "length": 28499
+    "sha256": "0848dfd3329093507ca0302f7779c91d7ded2e6477c3fdce901e547530756a62",
+    "length": 28472
   },
   "lobby/no-bracket/seated/week": {
-    "sha256": "d549f3bf30cad8d3edf70e51778e05e6febf91df242eccbbc8362650f135cdb9",
-    "length": 28770
+    "sha256": "deb708f0c1fda773bc110a6923efb275e9f2fe9209b1ff7f5a3c290b2a72ff6c",
+    "length": 28743
   },
   "pod-card/off": {
     "sha256": "6136bbecff4afe9a7eca4876129575d7d1db2ab3676cfb0905d3af42f1976614",

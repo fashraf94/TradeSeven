@@ -34,6 +34,7 @@ const REPO = path.resolve(HERE, '..', '..', '..', '..');
 
 const flag = vi.hoisted(() => ({ on: false }));
 const svc = vi.hoisted(() => ({ calls: [], reply: null, stakes: [], snapshots: false, league: null, myGroup: null }));
+const sig = vi.hoisted(() => ({ subs: 0, announces: 0 }));
 const fetchSpy = vi.hoisted(() => vi.fn(async () => ({ ok: true, json: async () => ({ slots: [], battles: {} }) })));
 
 vi.mock('../../../config/featureFlags', async (importOriginal) => ({
@@ -96,6 +97,17 @@ vi.mock('../../../services/backingService', () => ({
   BackingApiError: class BackingApiError extends Error {},
 }));
 vi.mock('../../../utils/fetchWithAuth', () => ({ fetchWithAuth: fetchSpy }));
+// The stake signal (PRE-1): the REAL module behind a pass-through that counts
+// subscriptions — a listener is not a read, and the dark rows must see it too
+// (DARK-M1, the pre-flip fixes 2 review record).
+vi.mock('./backingStakeSignal', async (importOriginal) => {
+  const orig = await importOriginal();
+  return {
+    ...orig,
+    onStakePlaced: (listener) => { sig.subs += 1; return orig.onStakePlaced(listener); },
+    announceStakePlaced: (reply) => { sig.announces += 1; return orig.announceStakePlaced(reply); },
+  };
+});
 vi.mock('../../../hooks/useLeagueState', () => ({ default: () => ({ state: svc.league ?? leagueState('open'), loading: false, isFixtures: true }) }));
 vi.mock('../../../contexts/UserContext', () => ({ useUser: () => ({ user: { uid: 'viewer-1', displayName: 'Viewer' } }) }));
 vi.mock('../../../services/tournamentGroupService', () => ({
@@ -138,6 +150,12 @@ const Spectate = (await import('../LeagueSpectate')).default;
 const BackingStatsEntry = (await import('./BackingStatsEntry')).default;
 const WhileYouWait = (await import('../WhileYouWait')).default;
 const { DeskPodPanel } = await import('../LeagueDeskParts');
+const { default: Lobby, LobbyTabbed } = await import('../LeagueLobbyRedesign');
+const BackingLandingStrip = (await import('./BackingLandingStrip')).default;
+// Every module above is loaded: a stake listener registered on IMPORT — not in
+// any mount — is counted here, before a row resets the count (DARK-R-3, the
+// pre-flip fixes 2 review record).
+const SUBS_AT_IMPORT = sig.subs;
 
 const homeProps = { onOpenMyGame: () => {}, onOpenTrainingPod: () => {}, hasAgent: true, agentLoadout: null };
 const ssr = (el) => renderToString(el);
@@ -155,10 +173,11 @@ async function mount(el) {
   return container;
 }
 
-beforeEach(() => { flag.on = false; svc.calls.length = 0; svc.reply = null; svc.stakes = []; svc.snapshots = false; svc.league = null; svc.myGroup = null; fetchSpy.mockClear(); __resetBackingTelemetry(); });
+beforeEach(() => { flag.on = false; svc.calls.length = 0; svc.reply = null; svc.stakes = []; svc.snapshots = false; svc.league = null; svc.myGroup = null; sig.subs = 0; sig.announces = 0; fetchSpy.mockClear(); __resetBackingTelemetry(); });
 afterEach(async () => {
   for (const { root, container } of roots) { await act(async () => root.unmount()); container.remove(); }
   roots = [];
+  vi.useRealTimers();
 });
 
 describe('flag OFF — the League renders as it does today', () => {
@@ -285,6 +304,60 @@ describe('flag OFF — the League renders as it does today', () => {
       expect(svc.calls, `${name}: a backing read while dark`).toEqual([]);
       expect(backingCalls(), `${name}: a backing request while dark`).toEqual([]);
     }
+  });
+
+  it('DARK-M1 — nothing LISTENS for a stake and no close TIMER is armed while dark (neither is a read, so the rows above cannot see them): the bare strip, the mobile landing, the desktop lobby and the Backing screen, mounted with effects running; lit, the same mounts do both', async () => {
+    // Not on import either (DARK-R-3): the count taken once every module had loaded.
+    expect(SUBS_AT_IMPORT, 'a stake listener registered on import').toBe(0);
+    for (const lit of [false, true]) {
+      flag.on = lit;
+      sig.subs = 0;
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+      vi.setSystemTime(new Date('2026-09-23T14:00:00.000Z')); // Wednesday — the listed pool closes Sunday
+      const before = vi.getTimerCount();
+      await mount(<BackingLandingStrip uid="viewer-1" accent="#5EEAD4" onOpen={() => {}} />);
+      const stripTimers = vi.getTimerCount() - before;
+      const stripSubs = sig.subs;
+      await mount(<LeagueHome {...homeProps} />);
+      await mount(<LeagueLobbyDesktop {...homeProps} />);
+      await mount(<BackingScreen uid="viewer-1" viewport="mobile" onBack={() => {}} onOpenTape={() => {}} />);
+      if (!lit) {
+        expect(stripTimers, 'dark: the strip arms no close timer').toBe(0);
+        expect(sig.subs, 'dark: nothing listens for a stake').toBe(0);
+        expect(sig.announces, 'dark: nothing announces a stake').toBe(0);
+      } else {
+        expect(stripTimers, 'lit: the strip arms its one close timer').toBe(1);
+        expect(stripSubs, 'lit: the strip listens').toBe(1);
+        expect(sig.subs, 'lit: every landing strip listens (bare, mobile, desktop)').toBeGreaterThanOrEqual(3);
+      }
+      for (const { root, container } of roots) { await act(async () => root.unmount()); container.remove(); }
+      roots = [];
+      vi.useRealTimers();
+    }
+  });
+
+  it('DARK-N2 / DARK-R-1 — while dark, BOTH mobile lobbies render byte-identically with the real strip in their slot and with NO slot at all — seated and unseated, with and without a bracket: no host-side wrapper, however named, survives the strip\'s null render', () => {
+    const noBracket = () => buildLeagueState({ fieldGroups: [{
+      id: 'wk-real-1', status: 'battle', roundNumber: 1, baseLayerWeek: '2026-W39',
+      players: [{ odUserId: 'u1', picks: [] }, { odUserId: 'cpu-1', isCpu: true, picks: [] }, { odUserId: 'u2', picks: [] }, { odUserId: 'cpu-2', isCpu: true, picks: [] }],
+      dailyScores: { day1: { closeScores: { u1: { compositePoints: 3.2 }, u2: { compositePoints: 1.1 } } } },
+    }], names: { u1: 'Alice', u2: 'Bob' }, uid: 'viewer-1' }).state;
+    const strip = <BackingLandingStrip uid="viewer-1" accent="#5EEAD4" onOpen={() => {}} />;
+    let compared = 0;
+    for (const [landing, st] of [['bracket', leagueState('open')], ['no-bracket', noBracket()]]) {
+      for (const activeGroup of [null, { id: 'wk-real-1', status: 'battle' }]) {
+        const common = { st, accent: '#5EEAD4', onPickPod: () => {}, onSpectate: () => {}, onOpenMyGame: () => {}, activeGroup, uid: 'viewer-1', displayName: 'Viewer', onOpenTrainingPod: () => {}, activeTrainingPod: null, hasAgent: true };
+        const tabbed = { tab: 'ranked', onSwitchTab: () => {}, agentLoadout: null };
+        const where = `${landing} · ${activeGroup ? 'seated' : 'unseated'}`;
+        expect(ssr(<Lobby {...common} backingSlot={strip} />), `Lobby · ${where}`).toBe(ssr(<Lobby {...common} backingSlot={null} />));
+        expect(ssr(<LobbyTabbed {...common} {...tabbed} backingSlot={strip} />), `LobbyTabbed · ${where}`).toBe(ssr(<LobbyTabbed {...common} {...tabbed} backingSlot={null} />));
+        compared += 2;
+      }
+    }
+    expect(compared).toBe(8);
+    // Not vacuous: lit, the same slot renders the strip.
+    flag.on = true;
+    expect(ssr(<Lobby st={leagueState('open')} accent="#5EEAD4" onPickPod={() => {}} onSpectate={() => {}} onOpenMyGame={() => {}} activeGroup={null} uid="viewer-1" displayName="Viewer" onOpenTrainingPod={() => {}} activeTrainingPod={null} hasAgent backingSlot={<div data-backing="strip-slot" />} />)).toContain('data-backing="strip-slot"');
   });
 
   it('a mounted landing (effects running) opens NO backing read and makes NO backing request', async () => {
@@ -463,6 +536,26 @@ describe('flag ON — the same mounts light up (the pin is not vacuous)', () => 
     }
   });
 
+  it('mobile: a SEATED viewer\'s strip mounts ONCE, in the waiting room — one pod-list read, not one under the slot picker and another under the waiting room (N3 + WIRE-7)', async () => {
+    flag.on = true;
+    // The seat lands AFTER the first paint, as a Firestore snapshot does.
+    let answer = null;
+    const groupSvc = await import('../../../services/tournamentGroupService');
+    const spy = vi.spyOn(groupSvc, 'subscribeMyGroup').mockImplementation((_uid, cb) => { answer = cb; return () => {}; });
+    try {
+      const container = await mount(<LeagueHome {...homeProps} />);
+      expect(container.querySelector('[data-backing="strip"]'), 'no strip before the seat is known').toBeNull();
+      expect(svc.calls.filter((c) => c === 'fetchBackingPods'), 'no pod-list read before the seat is known').toHaveLength(0);
+      await act(async () => { answer({ id: 'wk-real-1', status: 'battle' }); });
+      for (let i = 0; i < 6; i += 1) await act(async () => { await Promise.resolve(); });
+      expect(container.querySelectorAll('[data-backing="strip"]')).toHaveLength(1);
+      expect(container.textContent).toContain('Watch a live game');
+      expect(svc.calls.filter((c) => c === 'fetchBackingPods')).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('desktop: the strip opens the Backing screen FULL-WINDOW in its three-column layout — pods, card, your backing', async () => {
     flag.on = true;
     const container = await mount(<LeagueLobbyDesktop {...homeProps} />);
@@ -541,7 +634,8 @@ describe('the flag is read at CALL time in every host — never captured at modu
     ['src/components/Dashboard/desktop/IdentityPanel.jsx', '<ScoutingLine'],
     ['src/components/League/LeagueHome.jsx', '<BackingLandingStrip'],
     ['src/components/League/LeagueLobbyDesktop.jsx', '<BackingLandingStrip'],
-    ['src/components/League/LeagueLobbyRedesign.jsx', '{backingSlot}'],
+    // (LeagueLobbyRedesign.jsx no longer mounts the slot itself: it threads it
+    // into the shared centre below — N3 — and a row further down holds it so.)
     // PR 5: the results card under the film room, the stats under the line.
     ['src/components/League/LeagueSpectate.jsx', '<SpectateBackingResults'],
     ['src/components/Dashboard/EquipStation.jsx', '<BackingStatsEntry'],
@@ -639,11 +733,19 @@ describe('the flag is read at CALL time in every host — never captured at modu
   }
 
   it('the hosts mount the strip through a component that returns null while dark — no wrapper, no reserved space', () => {
-    for (const rel of ['src/components/League/LeagueLobbyRedesign.jsx', 'src/components/League/liveDraft/SlotCenter.jsx', 'src/components/League/WhileYouWait.jsx']) {
+    for (const rel of ['src/components/League/liveDraft/SlotCenter.jsx', 'src/components/League/WhileYouWait.jsx']) {
       const host = readFileSync(path.join(REPO, rel), 'utf8');
       expect(host, `${rel} renders the slot bare`).toContain('{backingSlot}');
       expect(host, `${rel} wraps the slot`).not.toMatch(/backingSlot && </);
     }
+    // The mobile lobby THREADS the slot into the shared centre (N3, pre-flip
+    // fixes 2) — SlotCenter's slot unseated, WhileYouWait's seated, the
+    // desktop lobby's placement — and never mounts it as a child of its own:
+    // a bare {backingSlot} there is the strip back below "Watch a live game"
+    // and the bracket line. Attribute values stripped, none may remain.
+    const lobby = stripComments(readFileSync(path.join(REPO, 'src/components/League/LeagueLobbyRedesign.jsx'), 'utf8'));
+    expect(lobby.match(/backingSlot=\{backingSlot\}/g), 'the slot is handed to the centre: both lobbies, both centres').toHaveLength(4);
+    expect(stripAttributeBraces(lobby), 'the mobile lobby mounts the slot itself').not.toContain('{backingSlot}');
     for (const rel of ['src/components/League/backing/BackingLandingStrip.jsx', 'src/components/League/backing/ScoutingLine.jsx', 'src/components/League/backing/BackingScreen.jsx', 'src/components/League/backing/SpectateBackingResults.jsx', 'src/components/League/backing/BackingStatsEntry.jsx']) {
       expect(readFileSync(path.join(REPO, rel), 'utf8'), `${rel} returns null while dark`).toContain('if (!BACKING_BETA_ENABLED) return null;');
     }
