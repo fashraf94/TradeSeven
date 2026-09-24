@@ -591,3 +591,227 @@ After this report was committed (`ac4292d8`), the founder ruled on the two spec-
 - **§10 step 4:** A-1 and E-3 are done; the C-4 sign-off and the C-5 `countTokens` measurement remain.
 - **§3 anchors:** the `file:line` anchors for `candidate.js` and `flip.js` predate these commits; the anchors in §12 are current.
 - **The PR description** carries the report as it stood at `ac4292d8`; it does not include this section.
+
+## 13. Branch review applied (BR-1, BR-2, BR-3, BR-5, BR-6)
+
+Astra reviewed this branch at `43b61987`. The review is `docs/audits/20260924_BUILD0_CALL_RECORDS_REVIEW.md` on branch `docs/review-build0-call-records` (commit `3f6001611163f8487f65bdd8ec6b355b6f519d1c`, 214 lines, SHA-256 `944c70d99a28c16e5c9d37d68e9cc6c431ad29f4f648ec743d175b3164a960aa`).
+
+Its verdict was **MERGE WITH CHANGES**: merging at off is allowed, but **do not enable shadow yet**. Five of its six findings are applied below, one commit each. Each commit carries its tests and is mutation-checked on its own snapshot. **BR-4, a contract and spec amendment, was not part of this request and remains open.** Per the review, BR-4 still blocks shadow.
+
+This section **supersedes** two earlier statements:
+- **§12.2:** its "later check" rule and its status field `observedAtMs`. BR-1 replaces the battle-level clock with a per-call judgment.
+- **§8, row C-4:** its "Fixed" disposition, now marked "Partly fixed" with a pointer here.
+
+Those sections otherwise stand as they were written.
+
+| Finding | Commit | In plain words | Mutation check |
+|---|---|---|---|
+| **BR-1** (P2) | `98a03431e08981cef2744380c16fa4ac8e16c660` | An "until the next check" call is judged by **the first check that actually reaches it** at or after its slot. It is **hit** if its price condition is met then, otherwise **expired**. It counts as judged only when that check's database transaction commits. A check that fails, is skipped or runs out of time before reaching the call judges nothing, and the next check that reaches it judges it from its own prices. No battle-wide clock takes part. | 8/8 killed |
+| **BR-2** (P2) | `2479aebc260005747ccd65aae793024d98a16e9e` | A game-plan check can mark a call **hit** only if its safety pass actually looked at prices, which means a stop-loss, trailing stop or profit target. A pass that checked only sector weight or position size looked at no price. It can still expire calls, but it can never mark one hit. | 6/6 killed |
+| **BR-3** (P2) | `4507ef8235aafc59c89eb692e5cd7511f24488db` | The text the AI reads now says plainly that these records are stored only: nobody sees them, nobody answers them, nothing trades on them, and the next check never receives them. | 8/8 killed |
+| **BR-5** (P3) | `e152624f814ce1274b5484d1f700089c88b78501` | The "nothing changes at off" proof now passes on any machine, including one with Windows-style line endings or a non-UTC timezone. | 5/5 killed |
+| **BR-6** (P3) | `9b00a7c322d836e9dcf377a7e664833cd486f81b` | The report now claims only what the off proof shows. The 19 scenarios never call the tournament ledger or the anticipation writers, so the proof shows those stay uncalled, not that their arguments are unchanged. | Documentation only |
+| **BR-4** (P2) | none | **Open.** The pinned contract (§4, §5, §6) and spec (§3.6, §3.8) still state the pre-ruling A-1 rule and the old E-3 expiry. Publishing a versioned amendment was not requested here. | none |
+
+### 13.1 BR-1: a next_check call is judged per call, by the transaction that commits
+
+**Code** (`api/_utils/callRecords/flip.js`):
+- **`decideFlip(call, observation)`** (`:114-122`) takes no prior-scan argument.
+  - For basis `next_check` with `observedAtMs ≥ expiresAt` (`:117`), it returns `hit` if the condition is met, else `expired_unresolved`.
+  - Every other basis is unchanged.
+- **`planFlip(call, { observation, evalId, executorResult })`** (`:158`) and the per-call transaction in `flipOne` (`:204-210`) carry no prior-scan instant either.
+  - The transaction re-reads the call and its parent battle (`:204`).
+  - `planFlip` skips any call that is no longer open (`:159`, `not_open`).
+  - That re-read, not a battle clock, is what makes the judgment happen once. The state and the receipt are written in the same transaction.
+- **`runCallFlips`** no longer reads `battle.cronState.callFlips.observedAtMs`.
+  - Its status is again spec §3.8's shape, `{ evalId, cursor, scanned, total, complete }` (`:265`).
+  - The `observedAtMs` field that §12.2 added is gone.
+
+**Consequences, as the review adjudicated them:**
+- **Racing scans.** A race guarantees **one committed judgment**, with one terminal state and one receipt. It does not guarantee that the earliest observation wins.
+- **A late first reach.** It can leave a receipt observed well after the slot while the parent battle is still active. That receipt is the reaching check's own observation, not a quote from the missed slot.
+- **Build 1's sweep.** It must honor this opportunity to be judged, or record a separately agreed unobserved-expiry policy. Expiring every `next_check` call at its slot would recreate E-3. No sweep exists at this build.
+
+**Tests** (`flip.test.js`):
+- **Unit rows:**
+  - A judgment at or after the slot uses this observation: at the exact slot, +20 s, +15 min, +45 min, and unobserved.
+  - A new "no battle clock" row passes a prior-scan instant before, at and after the slot. None of them changes a judgment.
+  - Other bases are unchanged.
+- **Store-driven rows**, the review's list:
+  - A hit and a miss at the next check.
+  - A call first reached by a later check → **hit**. This reverses §12.2's row, as the review required.
+  - A persisted status carrying a scan instant decides nothing.
+  - A failed first query.
+  - A missing index, then recovery.
+  - A budget-skipped hook.
+  - A failed status write: the committed transition stands, and no later check judges the call again.
+  - An aborted transaction.
+  - An unconfirmed transaction that commits late: that commit is the judgment.
+  - Two competing judgments: one terminal state and one receipt. The loser re-reads a terminal call and skips it.
+
+### 13.2 BR-2: a gameplan pass observes only the prices it examined
+
+**Code:**
+- **`api/_utils/callRecords/observe.js`:**
+  - `PRICE_SCANNING_GUARDRAIL_TYPES` (`:146`) lists `stopLoss`, `trailingStop` and `profitTarget`.
+  - `passExaminesHeldPrices(guardrails)` (`:161`) mirrors the fenced `applyGuardrails`' own preconditions. Guardrails are indexed by type, the last entry of a type wins, and a scan runs only on a numeric value.
+- **`api/cron/agent-evaluate.js:5258-5262`** (`runSuppressionDeterministicPass`):
+  - The gameplan observation's `examined` set is every held name when the pass examined held prices. Otherwise it is empty.
+  - An empty set still lets expiry run; no hit is possible.
+  - The one-instant observation rule is unchanged, and so is the pass's own behavior. The change is inert at off.
+
+**Fenced functions called, never edited:**
+- `applyGuardrails` (`api/_utils/agentGuardrails.js`).
+- `flattenPortfolioServer` (`api/_utils/agentScoring.js`).
+
+The cron already called both at this site. The new tests also call them directly.
+
+**Tests:**
+- **`observe.test.js`:**
+  - Ten guardrail configurations: sector-only, maxPosition-only, each price kind, mixed, non-numeric, and last-wins in both orders.
+  - Each runs the real `applyGuardrails` with a Proxy recording every price read.
+  - The adapter must agree with the helper: every held price is read exactly when it returns `true`, and none is read when it returns `false`.
+  - A second row pins the verdicts and the kind list.
+- **`agent-evaluate.tickStamps.callsOn.test.js`**, the review's two counterexamples:
+  - Setup: gameplan pending and gameplan created, each with only a 40% sector cap and an older open "KO below $62.50" call.
+  - The capture shows that the pass ran.
+  - KO is quoted at 62.0, yet its call stays open with no receipt.
+  - An expired call still expires, with a `gameplan_pass` receipt and px null.
+  - The existing stop-loss rows are the positive control: a price-scanning pass on the same exits does hit.
+
+### 13.3 BR-3: the declarations text names its real recipient
+
+**Code** (`api/_utils/agentEvalToolSchema.js`):
+- **The block text** (`:239-242`) is the review's suggested wording: "Optional record of conditional intent from this check. These fields are stored only; they are not shown to the player, do not request a response, do not execute or schedule a trade, and are not supplied to a later check. They do not change this check's decision or anticipationCandidates." The omission, cap and quote-source guidance is kept.
+- **The fields:**
+  - `defaultAction` (`:291`), `playerAsk` (`:307`) and `fork` (`:317`) use the review's text.
+  - Both `said` fields (`:295`, `:334`) are now a conditional sentence, stored only and not shown to the player.
+  - The `fork` sub-fields no longer speak of a choice being made.
+- **Unchanged:** no field, enum or type moved, and the off tool is untouched. The off golden passes.
+
+**Tests** (`agentEvalToolSchema.declarations.test.js`):
+- A BR-3 row asserts the block clause by clause, the kept guidance and the exact field texts.
+- It also asserts that no text addresses the player as a reader or answerer, or mentions waiting, suppressing, withholding, narration, permission, approval or confirmation.
+- The C-4 row follows the new wording.
+- The honesty sweep, the threshold-copy pin and the M7-E2E budget still pass.
+
+**Cost.** The pins moved in the same commit, and §6 and the executive verdict were updated with them.
+- The tool schema grows by **4,154 chars** per model call at shadow or on, up from 3,874.
+- That is **1,039 tokens at chars/4** and **1,385 at chars/3**.
+- The largest eval request (the M7-E2E fixture) is now 10,132 tokens, against a 12,000-token budget.
+
+**Sign-off.** Astra signed off **the direction** of these edits. That is not a sign-off on this exact text or on future model behavior, so the model-visible diff above still needs that confirmation before shadow.
+
+### 13.4 BR-5: the off proof is portable across checkout and timezone
+
+**Reproduced first.** Setup: a `git -c core.autocrlf=true archive` of `4507ef82`, run in `TZ=America/Chicago` over the seven focused suites. Result: 83 passed and **5 failed**.
+- Four failures are this build's: the golden SHA-256, two gameplan golden rows, and the queue-comment parser.
+- The fifth predates Build 0 (13.8).
+
+**Code:**
+- **`.gitattributes`** is new and has one narrow line: `api/_utils/__fixtures__/callRecordsOffGolden.json text eol=lf`. The raw-byte SHA-256 check stays exactly as strict.
+- **Both rules-comment parsers** now split on `/\r?\n/`: `callRecordsRulesIndex.test.js:44` and its emulator-suite copy, `test/rules/callRecordsRulesSuite.mjs:64`.
+- **`api/_utils/__fixtures__/pinTimezoneUtc.js`** sets `process.env.TZ = 'UTC'`.
+  - It is the golden test's **first** import (`:37`).
+  - Vitest runs each file in its own child process here, so the pin never leaks into another file. A probe confirmed this.
+
+**Tests:**
+- **The golden suite:**
+  - It asserts the attribute entry and CR-free fixture bytes.
+  - It asserts that the process runs in UTC, with the pin as the first import.
+- **The index suite** runs **both** parsers over a CRLF copy of `firestore.rules`. It expects exactly the LF result, inline comment included.
+
+**After the fix:**
+- **Same reproduction at `e152624f`:** **91 of 92 passed**. The one failure predates Build 0: `intradayPromptExclusions.test.js` › "the anticipation note reads only evalId and timestamp". It fails the same way on a CRLF archive of the base, `987a9a68` (13.8).
+- **Git-level check, attribute dropped:** in a scratch clone, archiving with `core.autocrlf=true` put 13,008 CRs into the fixture. The SHA pin and the LF row went red (2 failing).
+- **Git-level check, branch unmutated:** archived the same way, the fixture had 0 CRs and 25 of 25 passed.
+
+### 13.5 BR-6: the off-proof claim narrowed
+
+The executive verdict and §4's first invariant row now claim only the payloads the 19 scenarios exercise. The counts below were recomputed from the committed fixture.
+
+| Writer | Calls across the 19 scenarios |
+|---|---|
+| `executeSwapServer` | 4 |
+| `captureSwapReceipt` | 4 |
+| `generateTradeNarration` | 4 |
+| `logEvaluation` | 11 |
+| `reserveSymbol`, `confirmSwap`, `releaseReservation`, `generateAnticipation`, `logVisionTransition`, `logAnticipation` | 0 each |
+
+- **The zero-call writers:** the proof shows only that they are never called.
+- **The comparison's limits** are now stated: arguments are compared as JSON recorded after the scenario, with the database and battle replaced by placeholders.
+- **The review's alternative fix** was not done: extending coverage with a tournament reserve/confirm/release path and a dispatched anticipation, with payload snapshots.
+
+### 13.6 Verification at `9b00a7c3`
+
+| Check | Result |
+|---|---|
+| Full suite, `npx vitest run` (redirected to a file, never piped; exit recorded) | **789 files passed (3 skipped); 15,537 tests passed (64 skipped); exit 0** |
+| Lint gate, `npm run lint:gate` | **exit 0** |
+| Rules emulator, `npm run test:rules` | **16 files / 298 tests passed; exit 0** |
+| Production build, `vite build`, on a `git archive` snapshot | **exit 0** |
+| Mutation battery: a `git archive` snapshot of `9b00a7c3`; each mutant restored byte-exact (sha256-checked); 600 s hang guard | **27 of 27 killed**, 0 errors (13.7) |
+| CRLF + America/Chicago, the seven focused suites (`git -c core.autocrlf=true archive`, `TZ=America/Chicago`) | At `4507ef82`, before BR-5: 5 failed, 83 passed. At `e152624f`: 1 failed, 91 passed. The remaining failure predates Build 0 (13.8). `9b00a7c3` adds only report text. |
+| Fenced files | `git diff --name-only 987a9a68 9b00a7c3` over the eleven BUILD_RULES §1 files is **empty** |
+| Review | These commits implement a completed external review's findings. They were mutation-checked, not put through a new multi-lens review. |
+
+### 13.7 Mutation table
+
+| Finding | ID | Mutation | Result | First test that went red |
+|---|---|---|---|---|
+| BR-1 | B1a | the next_check judgment removed (the strict rule again: never hit after the slot) | **KILLED** (10 failing) | flip.test.js › a pick never hits — only expiry resolves it (its next_check slot included: the first check there expires it) |
+| BR-1 | B1b | judged only strictly AFTER the slot (> instead of >=) | **KILLED** (2 failing) | flip.test.js › a pick never hits — only expiry resolves it (its next_check slot included: the first check there expires it) |
+| BR-1 | B1c | a clock heuristic: a first reach more than 10 min after the slot expires the call | **KILLED** (8 failing) | flip.test.js › next_check (E-3 / BR-1): at or after the slot the condition is judged from THIS observation — hit if met, else expired; before it, the … |
+| BR-1 | B1d | decideFlip honors a caller-supplied prior-scan instant (the battle clock, unit level) | **KILLED** (1 failing) | flip.test.js › no battle clock: a prior scan instant — before, at or after the slot — cannot change a judgment, whatever a caller passes (BR-1) |
+| BR-1 | B1e | BR-1 reverted end to end: the transaction reads the persisted scan instant from the battle and a later scan expires the call | **KILLED** (2 failing) | flip.test.js › no battle clock: a prior scan instant — before, at or after the slot — cannot change a judgment, whatever a caller passes (BR-1) |
+| BR-1 | B1f | the status regains a scan instant (observedAtMs) | **KILLED** (4 failing) | flip.test.js › a hit: state/stateChangedAt/stateSource flip, the receipt is created and referenced, nothing immutable moves |
+| BR-1 | B1g | the not_open skip removed: a terminal call is planned again | **KILLED** (4 failing) | flip.test.js › not open / minting check / observation at or before the mint / nothing to do |
+| BR-1 | B1h | the transaction trusts the page read: its re-read call is treated as still open | **KILLED** (3 failing) | flip.test.js › two COMPETING judgments leave ONE terminal state and ONE receipt: the loser re-reads a terminal call and skips it (BR-1) |
+| BR-2 | B2a | the adapter always says the pass examined held prices | **KILLED** (4 failing) | agent-evaluate.tickStamps.callsOn.test.js › gameplan_pending with a SECTOR-ONLY guardrail: the pass ran and examined no price, so it records an EMPTY … |
+| BR-2 | B2b | the numeric-value precondition dropped (any configured scan kind counts) | **KILLED** (2 failing) | observe.test.js › the adapter agrees with the REAL helper on every configuration: every held price read ⟺ passExaminesHeldPrices, and no held price re … |
+| BR-2 | B2c | profitTarget dropped from the price-scanning kinds | **KILLED** (2 failing) | observe.test.js › the adapter agrees with the REAL helper on every configuration: every held price read ⟺ passExaminesHeldPrices, and no held price re … |
+| BR-2 | B2d | first-wins indexing (the fenced helper is last-wins) | **KILLED** (2 failing) | observe.test.js › the adapter agrees with the REAL helper on every configuration: every held price read ⟺ passExaminesHeldPrices, and no held price re … |
+| BR-2 | B2e | the cron ignores the adapter: any pass freezes every held name (the pre-BR-2 behavior) | **KILLED** (2 failing) | agent-evaluate.tickStamps.callsOn.test.js › gameplan_pending with a SECTOR-ONLY guardrail: the pass ran and examined no price, so it records an EMPTY … |
+| BR-2 | B2f | over-correction: the pass never examines anything, even with a stop deployed | **KILLED** (3 failing) | agent-evaluate.tickStamps.callsOn.test.js › gameplan_pending: the open call flips on THIS exit's observation — receipt from 'gameplan_pass', nothing p … |
+| BR-3 | B3a | defaultAction addresses the player again (the C-4 text) | **KILLED** (3 failing) | agentEvalToolSchema.declarations.test.js › the wording states intent only: nothing executes, and the block never replaces the decision or anticipation … |
+| BR-3 | B3b | the block no longer says it is not shown to the player | **KILLED** (2 failing) | agentEvalToolSchema.declarations.test.js › the wording names the recipient Build 0 really has: stored only, never shown to the player, no response req … |
+| BR-3 | B3c | the block no longer says it is not supplied to a later check | **KILLED** (2 failing) | agentEvalToolSchema.declarations.test.js › the wording names the recipient Build 0 really has: stored only, never shown to the player, no response req … |
+| BR-3 | B3d | playerAsk asks for a question FOR the player again | **KILLED** (2 failing) | agentEvalToolSchema.declarations.test.js › the wording names the recipient Build 0 really has: stored only, never shown to the player, no response req … |
+| BR-3 | B3e | fork asks for a choice the player should make again | **KILLED** (2 failing) | agentEvalToolSchema.declarations.test.js › the wording names the recipient Build 0 really has: stored only, never shown to the player, no response req … |
+| BR-3 | B3f | a `said` loses its stored-only framing | **KILLED** (2 failing) | agentEvalToolSchema.declarations.test.js › the wording names the recipient Build 0 really has: stored only, never shown to the player, no response req … |
+| BR-3 | B3g | a permission instruction slipped into an unpinned field (watching) | **KILLED** (2 failing) | agentEvalToolSchema.declarations.test.js › the wording names the recipient Build 0 really has: stored only, never shown to the player, no response req … |
+| BR-3 | B3h | the omission guidance dropped from the block | **KILLED** (2 failing) | agentEvalToolSchema.declarations.test.js › the wording names the recipient Build 0 really has: stored only, never shown to the player, no response req … |
+| BR-5 | B5a | the UTC pin import removed from the golden test (run in `TZ=America/Chicago`) | **KILLED** (3 failing) | agent-evaluate.callRecords.offGolden.test.js › the process runs in UTC whatever the machine timezone, pinned by the FIRST import (review BR-5) |
+| BR-5 | B5b | the pin module sets nothing (run in `TZ=America/Chicago`) | **KILLED** (3 failing) | agent-evaluate.callRecords.offGolden.test.js › the process runs in UTC whatever the machine timezone, pinned by the FIRST import (review BR-5) |
+| BR-5 | B5c | the .gitattributes LF entry removed | **KILLED** (1 failing) | agent-evaluate.callRecords.offGolden.test.js › the fixture is checked out as LF on every platform: its .gitattributes entry pins it, and the checked-o … |
+| BR-5 | B5d | this suite's rules parser reverted to an LF-only split | **KILLED** (1 failing) | callRecordsRulesIndex.test.js › this suite's parser: every block, comments stripped, is identical under CRLF — the queue's inline comment included |
+| BR-5 | B5e | the rules-suite copy of the parser reverted to an LF-only split | **KILLED** (1 failing) | callRecordsRulesIndex.test.js › the rules-suite copy (test/rules/callRecordsRulesSuite.mjs): every block, comments stripped, is identical under CRLF — … |
+
+### 13.8 Still open, and found outside this task
+
+**Open before shadow:**
+1. **BR-4.** A versioned contract and spec amendment that incorporates A-1 and the per-call E-3 rule.
+   - It retires the contrary clauses: contract §4's "hash without watchlist", spec §3.6, spec §3.8's `observedAtMs > expiresAtMs` for `next_check`, and contract §5 and §6.
+   - It moves their hash pins together.
+   - The review also asks it to keep the "one committed judgment" wording and to align the tool's `next_check` horizon text with the judgment boundary. That text is model-visible, and this build did not change it.
+2. **C-4 / BR-3 sign-off** on the exact model-visible text diff (13.3).
+3. **C-5:** a real `countTokens` measurement of the tool with declarations.
+4. **Deployment prerequisites (§10):** publish the rules and create the `calls` index.
+
+**Found outside the task** (reported, not fixed):
+- **The gameplan expiry is built in process-local time** (`api/cron/agent-evaluate.js:5949-5952`). This is a **product** issue, not only a test issue, and it predates Build 0.
+  - The code builds "4:00 PM ET" by parsing an ET wall-clock string as local time, then calling `setHours(16)` in local time. That is correct only in a process running in ET.
+  - In a UTC process the result is 16:00Z, which is 12:00 ET during daylight time. The golden captured exactly that.
+  - The review names correcting it as a separate task.
+- **`api/_utils/intradayPromptExclusions.test.js:54-62`:** a source regex with a literal `\n` fails on a CRLF checkout. It fails the same way at `987a9a68`, so it predates Build 0.
+- **`test/rules/agentEvalRunsDenials.rules.mjs:133`** has the same LF-only rules parser this build fixed in its own two copies. Its target block (`firestore.rules:914`) carries an inline comment, so its posture row would fail on a CRLF checkout. It predates Build 0 and was not run here under CRLF.
+
+### 13.9 Where the rest of this report is now out of date
+- **Executive verdict, "Your decisions before switching to shadow":**
+  - Item 2 (E-3) is superseded by BR-1's per-call rule.
+  - Item 3 (C-4) now means confirming the BR-3 text diff.
+  - BR-4 is a new prerequisite.
+- **Executive verdict, "Independent review" and "Next steps":** Astra's branch review is done (this section). Its shadow gate is BR-1 through BR-4, and BR-4 remains.
+- **§12.2** describes the battle-clock rule and the status field `observedAtMs`. BR-1 removed both (13.1).
+- **§3 anchors:** the `file:line` anchors for `flip.js`, `observe.js`, `agentEvalToolSchema.js` and `agent-evaluate.js` predate these commits. The anchors in §13 are current.
+- **The PR description** is now a two-paragraph summary that links to this report.
