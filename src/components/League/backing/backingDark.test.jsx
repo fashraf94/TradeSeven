@@ -34,7 +34,7 @@ const REPO = path.resolve(HERE, '..', '..', '..', '..');
 
 const flag = vi.hoisted(() => ({ on: false }));
 const svc = vi.hoisted(() => ({ calls: [], reply: null, stakes: [], snapshots: false, league: null, myGroup: null }));
-const sig = vi.hoisted(() => ({ subs: 0 }));
+const sig = vi.hoisted(() => ({ subs: 0, announces: 0 }));
 const fetchSpy = vi.hoisted(() => vi.fn(async () => ({ ok: true, json: async () => ({ slots: [], battles: {} }) })));
 
 vi.mock('../../../config/featureFlags', async (importOriginal) => ({
@@ -102,7 +102,11 @@ vi.mock('../../../utils/fetchWithAuth', () => ({ fetchWithAuth: fetchSpy }));
 // (DARK-M1, the pre-flip fixes 2 review record).
 vi.mock('./backingStakeSignal', async (importOriginal) => {
   const orig = await importOriginal();
-  return { ...orig, onStakePlaced: (listener) => { sig.subs += 1; return orig.onStakePlaced(listener); } };
+  return {
+    ...orig,
+    onStakePlaced: (listener) => { sig.subs += 1; return orig.onStakePlaced(listener); },
+    announceStakePlaced: (reply) => { sig.announces += 1; return orig.announceStakePlaced(reply); },
+  };
 });
 vi.mock('../../../hooks/useLeagueState', () => ({ default: () => ({ state: svc.league ?? leagueState('open'), loading: false, isFixtures: true }) }));
 vi.mock('../../../contexts/UserContext', () => ({ useUser: () => ({ user: { uid: 'viewer-1', displayName: 'Viewer' } }) }));
@@ -146,6 +150,12 @@ const Spectate = (await import('../LeagueSpectate')).default;
 const BackingStatsEntry = (await import('./BackingStatsEntry')).default;
 const WhileYouWait = (await import('../WhileYouWait')).default;
 const { DeskPodPanel } = await import('../LeagueDeskParts');
+const { default: Lobby, LobbyTabbed } = await import('../LeagueLobbyRedesign');
+const BackingLandingStrip = (await import('./BackingLandingStrip')).default;
+// Every module above is loaded: a stake listener registered on IMPORT — not in
+// any mount — is counted here, before a row resets the count (DARK-R-3, the
+// pre-flip fixes 2 review record).
+const SUBS_AT_IMPORT = sig.subs;
 
 const homeProps = { onOpenMyGame: () => {}, onOpenTrainingPod: () => {}, hasAgent: true, agentLoadout: null };
 const ssr = (el) => renderToString(el);
@@ -163,7 +173,7 @@ async function mount(el) {
   return container;
 }
 
-beforeEach(() => { flag.on = false; svc.calls.length = 0; svc.reply = null; svc.stakes = []; svc.snapshots = false; svc.league = null; svc.myGroup = null; sig.subs = 0; fetchSpy.mockClear(); __resetBackingTelemetry(); });
+beforeEach(() => { flag.on = false; svc.calls.length = 0; svc.reply = null; svc.stakes = []; svc.snapshots = false; svc.league = null; svc.myGroup = null; sig.subs = 0; sig.announces = 0; fetchSpy.mockClear(); __resetBackingTelemetry(); });
 afterEach(async () => {
   for (const { root, container } of roots) { await act(async () => root.unmount()); container.remove(); }
   roots = [];
@@ -297,7 +307,8 @@ describe('flag OFF — the League renders as it does today', () => {
   });
 
   it('DARK-M1 — nothing LISTENS for a stake and no close TIMER is armed while dark (neither is a read, so the rows above cannot see them): the bare strip, the mobile landing, the desktop lobby and the Backing screen, mounted with effects running; lit, the same mounts do both', async () => {
-    const BackingLandingStrip = (await import('./BackingLandingStrip')).default;
+    // Not on import either (DARK-R-3): the count taken once every module had loaded.
+    expect(SUBS_AT_IMPORT, 'a stake listener registered on import').toBe(0);
     for (const lit of [false, true]) {
       flag.on = lit;
       sig.subs = 0;
@@ -313,6 +324,7 @@ describe('flag OFF — the League renders as it does today', () => {
       if (!lit) {
         expect(stripTimers, 'dark: the strip arms no close timer').toBe(0);
         expect(sig.subs, 'dark: nothing listens for a stake').toBe(0);
+        expect(sig.announces, 'dark: nothing announces a stake').toBe(0);
       } else {
         expect(stripTimers, 'lit: the strip arms its one close timer').toBe(1);
         expect(stripSubs, 'lit: the strip listens').toBe(1);
@@ -322,6 +334,30 @@ describe('flag OFF — the League renders as it does today', () => {
       roots = [];
       vi.useRealTimers();
     }
+  });
+
+  it('DARK-N2 / DARK-R-1 — while dark, BOTH mobile lobbies render byte-identically with the real strip in their slot and with NO slot at all — seated and unseated, with and without a bracket: no host-side wrapper, however named, survives the strip\'s null render', () => {
+    const noBracket = () => buildLeagueState({ fieldGroups: [{
+      id: 'wk-real-1', status: 'battle', roundNumber: 1, baseLayerWeek: '2026-W39',
+      players: [{ odUserId: 'u1', picks: [] }, { odUserId: 'cpu-1', isCpu: true, picks: [] }, { odUserId: 'u2', picks: [] }, { odUserId: 'cpu-2', isCpu: true, picks: [] }],
+      dailyScores: { day1: { closeScores: { u1: { compositePoints: 3.2 }, u2: { compositePoints: 1.1 } } } },
+    }], names: { u1: 'Alice', u2: 'Bob' }, uid: 'viewer-1' }).state;
+    const strip = <BackingLandingStrip uid="viewer-1" accent="#5EEAD4" onOpen={() => {}} />;
+    let compared = 0;
+    for (const [landing, st] of [['bracket', leagueState('open')], ['no-bracket', noBracket()]]) {
+      for (const activeGroup of [null, { id: 'wk-real-1', status: 'battle' }]) {
+        const common = { st, accent: '#5EEAD4', onPickPod: () => {}, onSpectate: () => {}, onOpenMyGame: () => {}, activeGroup, uid: 'viewer-1', displayName: 'Viewer', onOpenTrainingPod: () => {}, activeTrainingPod: null, hasAgent: true };
+        const tabbed = { tab: 'ranked', onSwitchTab: () => {}, agentLoadout: null };
+        const where = `${landing} · ${activeGroup ? 'seated' : 'unseated'}`;
+        expect(ssr(<Lobby {...common} backingSlot={strip} />), `Lobby · ${where}`).toBe(ssr(<Lobby {...common} backingSlot={null} />));
+        expect(ssr(<LobbyTabbed {...common} {...tabbed} backingSlot={strip} />), `LobbyTabbed · ${where}`).toBe(ssr(<LobbyTabbed {...common} {...tabbed} backingSlot={null} />));
+        compared += 2;
+      }
+    }
+    expect(compared).toBe(8);
+    // Not vacuous: lit, the same slot renders the strip.
+    flag.on = true;
+    expect(ssr(<Lobby st={leagueState('open')} accent="#5EEAD4" onPickPod={() => {}} onSpectate={() => {}} onOpenMyGame={() => {}} activeGroup={null} uid="viewer-1" displayName="Viewer" onOpenTrainingPod={() => {}} activeTrainingPod={null} hasAgent backingSlot={<div data-backing="strip-slot" />} />)).toContain('data-backing="strip-slot"');
   });
 
   it('a mounted landing (effects running) opens NO backing read and makes NO backing request', async () => {
