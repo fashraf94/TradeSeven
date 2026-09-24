@@ -16,6 +16,9 @@
 //        archetype labels, so a CPU reads the SAME across the lobby and the
 //        leaderboard. Human names are injected by the hook (users/{uid} read).
 //        Pod names use an evocative scheme — never "Round 2 · Game 3".
+//  • WHY — seat.reasoning ← battleToReasoning: the COMPLETED battle's recorded
+//    words only (strategy read + swap rationale), null otherwise; the surface's
+//    empty state is honest, and no fixture sentence can reach a real seat.
 //  • C — live tape (price/change) is OUT of this adapter: book items carry tk +
 //        dir. `c:0` keeps the UNCHANGED LeagueSpectate bookChange finite (no NaN);
 //        `p` is omitted so PortfolioMini suppresses the price/change cells.
@@ -28,6 +31,9 @@
 //        aware); watchers/presence omitted; userBook weight omitted (none stored).
 
 import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
+// node-clean by construction — the server's grounded narrator imports it too
+// (decisionRecord.js header); the adapter test's import stays the §4 guard.
+import { renderMotive } from '../../data/decisionRecord';
 import {
   isCpuUserId,
   cpuNFromUserId,
@@ -173,6 +179,48 @@ export function battleToAgentBook(battle) {
 }
 
 /**
+ * The film room's WHY for one seat ← the COMPLETED battle the WHY-projecting
+ * endpoint returns (pre-flip honesty fix A — Backing spec V1.3 §11 gate 3;
+ * GET /api/tournament/battle-view: full WHY unlocks at completion). Lines, in
+ * order: the agent's strategy read (agentContext.innerMonologue.strategy — the
+ * paragraph Flat6BattleView opens its Film Room with), then one line per
+ * recorded swap in the agent's own words (trades[].rationale, else the
+ * hypothesis — the team-card projection's rule), each through renderMotive so
+ * an engine-authored motive never puts a guardrail CODE on the screen
+ * (decisionRecord.js, hazard 29).
+ *
+ * null — never [] — when there is no battle, the battle is not completed, the
+ * WHY is concealed (`_whyConcealed`), or nothing was recorded: the surface
+ * renders its honest empty state. An ACTIVE battle yields null EVEN FOR ITS
+ * OWNER (whose full WHY is on the wire): the film room is sealed until the pod
+ * settles, and this adapter never hands a live seat's reasoning to the DOM.
+ * Fixture text never enters here — the fixture world attaches its own
+ * (leagueFixtures.FIXTURE_REASONING) behind the useLeagueState seam.
+ */
+export function battleToReasoning(battle) {
+  if (!battle || battle.status !== 'completed' || battle._whyConcealed === true) return null;
+  const lines = [];
+  const strategy = battle.agentContext?.innerMonologue?.strategy;
+  if (typeof strategy === 'string' && strategy.trim().length > 0) {
+    lines.push({ key: 'strategy', label: null, text: strategy.trim() });
+  }
+  const trades = Array.isArray(battle.trades) ? battle.trades : [];
+  trades.forEach((t, i) => {
+    if (!t || typeof t !== 'object') return;
+    const raw = typeof t.rationale === 'string' && t.rationale.trim().length > 0
+      ? t.rationale
+      : (typeof t.hypothesis === 'string' && t.hypothesis.trim().length > 0 ? t.hypothesis : null);
+    const text = raw ? renderMotive(raw) : null;
+    if (!text) return;
+    const label = typeof t.symbolOut === 'string' && typeof t.symbolIn === 'string'
+      ? `${t.symbolOut} → ${t.symbolIn}`
+      : null;
+    lines.push({ key: `trade-${i}`, label, text });
+  });
+  return lines.length > 0 ? lines : null;
+}
+
+/**
  * One Seat from whatever data a path has: the player's id/isCpu (always), the
  * cumulative composite score, optional picks (group docs only) and the projected
  * battle (the subscribed group only). Books degrade to [] (→ PortfolioMini's
@@ -201,6 +249,8 @@ export function buildSeat({ odUserId, isCpu, score, picks = null, battle = null,
     pscore: s,
     userBook: picksToUserBook(picks),
     agentBook: battleToAgentBook(battle),
+    // the film room's WHY: ONLY from a completed battle's recorded words (never fixture text)
+    reasoning: battleToReasoning(battle),
   };
 }
 
