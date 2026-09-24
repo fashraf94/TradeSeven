@@ -363,6 +363,20 @@ describe('the reads, on the in-memory store', () => {
     expect(readLog).toEqual([]);
   });
 
+  it('SEAL-R-1 — the pods query is MEMBER-SCOPED: exactly `groupMembers array-contains <uid>`, one clause (the fixture ignores array-contains, so the row records the clause the route sends)', async () => {
+    const { db } = makeInMemoryDb({ 'tournamentGroups/g1': pod(), 'tournamentGroups/g-other': pod({ groupMembers: ['od-z'], players: [seat('od-z')] }) });
+    const clauses = [];
+    const realCollection = db.collection;
+    db.collection = (name) => {
+      const col = realCollection(name);
+      if (name !== 'tournamentGroups') return col;
+      return { ...col, where: (...args) => { clauses.push(args); return col.where(...args); }, get: async () => { clauses.push(['UNSCOPED']); return col.get(); } };
+    };
+    const seated = await readSeatedPods(db, 'me');
+    expect(clauses).toEqual([['groupMembers', 'array-contains', 'me']]);
+    expect(seated.map((g) => g.id)).toEqual(['g1']);
+  });
+
   it('WIRE-A2 — the seal is BOUNDED to the pods of this week or later: an earlier week\'s pool no path closed never seals and is never read; this week\'s and a pod with no readable week are kept', async () => {
     const pods = [
       { id: 'w40', baseLayerWeek: '2026-W40' }, { id: 'w41', baseLayerWeek: '2026-W41' }, { id: 'w42', baseLayerWeek: '2026-W42' },
