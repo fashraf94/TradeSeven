@@ -214,18 +214,35 @@ const TRADE_DECISION_TOOL_BASE = {
 // Reviewed as fenced-class (contract §2): extending the model's output schema
 // is model-visible at shadow/on even though no prompt section teaches it.
 
-/** The `declarations` property — contract §2's shape, in the model's terms. */
-export const DECLARATIONS_PROPERTY = Object.freeze({
+/** Freeze a value and everything it holds (the on-tool shares nothing mutable — review C-6). */
+function deepFreeze(value) {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const v of Object.values(value)) deepFreeze(v);
+  }
+  return value;
+}
+
+/**
+ * The `declarations` property — contract §2's shape, in the model's terms.
+ * The wording states INTENT only (review C-4): nothing in Build 0 executes a
+ * call or shows one to a later check, and the block never stands in for the
+ * decision or for anticipationCandidates. Model-visible text: fenced-class
+ * review (contract §2).
+ */
+export const DECLARATIONS_PROPERTY = deepFreeze({
   type: ['object', 'null'],
   description:
-    'Optional. Calls you are making about your next moves, as typed fields. Most checks declare nothing: omit this or send null. ' +
-    'At most 6 calledShots. A level is a price in the symbol\'s own quote, read from what you were shown this check.',
+    'Optional. A record of calls you are making about possible next moves, as typed fields. It is recorded only: it executes ' +
+    'nothing, and it never replaces this check\'s decision or your anticipationCandidates, which you fill exactly as you would ' +
+    'without it. Most checks declare nothing: omit this or send null. At most 6 calledShots. A level is a price in the ' +
+    'symbol\'s own quote, read from what you were shown this check.',
   properties: {
     calledShots: {
       type: 'array',
       description:
-        'At most 6. Each is one conditional trade you are calling: if SYMBOL trades above or below LEVEL before the horizon ends, ' +
-        'you will act, or you will hold for the player. Declare only what you would really do.',
+        'At most 6. Each records one conditional trade you are calling: SYMBOL trading above or below LEVEL before the horizon ' +
+        'ends. Declare only calls you actually hold.',
       items: {
         type: 'object',
         required: ['symbol', 'direction', 'slot', 'condition', 'horizonPhrase', 'defaultAction', 'said'],
@@ -268,7 +285,7 @@ export const DECLARATIONS_PROPERTY = Object.freeze({
           defaultAction: {
             type: 'string',
             enum: ['act', 'hold'],
-            description: 'If the player says nothing: act = make the trade when the condition is met; hold = do not trade without the player.',
+            description: 'Your stated intent if the condition is met and the player says nothing: act = you intend to trade; hold = you intend not to trade without the player. Stating it executes nothing.',
           },
           said: {
             type: 'string',
@@ -280,7 +297,7 @@ export const DECLARATIONS_PROPERTY = Object.freeze({
     watching: {
       type: 'array',
       items: { type: 'string' },
-      description: 'At most 6 tickers you are watching without calling a trade.',
+      description: 'At most 6 tickers you are watching without calling a trade. Separate from anticipationCandidates, which it never replaces.',
     },
     playerAsk: {
       type: ['object', 'null'],
@@ -317,17 +334,24 @@ export const DECLARATIONS_PROPERTY = Object.freeze({
   },
 });
 
-/** The declarations-on tool: the base literal plus exactly one property, built once. */
-const TRADE_DECISION_TOOL_WITH_DECLARATIONS = {
-  ...TRADE_DECISION_TOOL_BASE,
+/**
+ * The declarations-on tool: the base literal plus exactly one property, built
+ * once — from a DEEP CLONE of the base, then deep-frozen, so it shares no
+ * object with the off tool (review C-6: a shared `required` array or property
+ * object would let a mutation of one reach the other, and the trade
+ * validator's captured schema with it). The base literal itself is untouched.
+ */
+const BASE_CLONE = structuredClone(TRADE_DECISION_TOOL_BASE);
+const TRADE_DECISION_TOOL_WITH_DECLARATIONS = deepFreeze({
+  ...BASE_CLONE,
   input_schema: {
-    ...TRADE_DECISION_TOOL_BASE.input_schema,
+    ...BASE_CLONE.input_schema,
     properties: {
-      ...TRADE_DECISION_TOOL_BASE.input_schema.properties,
+      ...BASE_CLONE.input_schema.properties,
       declarations: DECLARATIONS_PROPERTY,
     },
   },
-};
+});
 
 /**
  * The evaluation tool for one check. `declarations: true` only when the

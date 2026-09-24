@@ -94,8 +94,30 @@ describe('buildTradeDecisionTool — declarations ON adds exactly one property',
     expect(SRC).not.toContain('20-day');
   });
 
-  it('the property object is frozen (no reader can mutate the model-visible schema)', () => {
-    expect(Object.isFrozen(DECLARATIONS_PROPERTY)).toBe(true);
+  it('the property is DEEP-frozen, and the on-tool shares no object with the off tool (review C-6)', () => {
+    const frozenAll = (v) => !(v && typeof v === 'object') || (Object.isFrozen(v) && Object.values(v).every(frozenAll));
+    expect(frozenAll(DECLARATIONS_PROPERTY)).toBe(true);
+    const on = buildTradeDecisionTool({ declarations: true });
+    expect(frozenAll(on)).toBe(true);
+    // No aliasing: the on-tool's arrays/objects are never the off tool's own.
+    expect(on.input_schema.required).not.toBe(TRADE_DECISION_TOOL.input_schema.required);
+    expect(on.input_schema.required).toEqual(TRADE_DECISION_TOOL.input_schema.required);
+    for (const key of Object.keys(TRADE_DECISION_TOOL.input_schema.properties)) {
+      expect(on.input_schema.properties[key], key).not.toBe(TRADE_DECISION_TOOL.input_schema.properties[key]);
+      expect(on.input_schema.properties[key], key).toEqual(TRADE_DECISION_TOOL.input_schema.properties[key]);
+    }
+    // A write attempted through the on-tool can never reach the off tool the validator captured.
+    expect(() => { on.input_schema.required.push('declarations'); }).toThrow();
+    expect(TRADE_DECISION_TOOL.input_schema.required).not.toContain('declarations');
+  });
+
+  it('the wording states intent only: nothing executes, and the block never replaces the decision or anticipationCandidates (review C-4)', () => {
+    const text = JSON.stringify(DECLARATIONS_PROPERTY);
+    expect(DECLARATIONS_PROPERTY.description).toMatch(/executes nothing/);
+    expect(DECLARATIONS_PROPERTY.description).toMatch(/never replaces this check's decision or your anticipationCandidates/);
+    expect(DECLARATIONS_PROPERTY.properties.watching.description).toMatch(/Separate from anticipationCandidates/);
+    // No promise of follow-through the build cannot keep.
+    expect(text).not.toMatch(/you will act|make the trade when/);
   });
 });
 
@@ -163,10 +185,11 @@ describe('THE MEASUREMENT — output headroom and input cost (stated in the buil
     expect(EVAL_MAX_OUTPUT_TOKENS - OBSERVED_P99 - max).toBe(-277);
   });
 
-  it('the input cost at shadow/on: +3,611 chars of tool schema ≈ 903 tokens (chars/4) per model call; zero at off', () => {
+  it('the input cost at shadow/on: +3,874 chars of tool schema ≈ 969 tokens at chars/4, 1,292 at chars/3, per model call; zero at off', () => {
     const delta = JSON.stringify(buildTradeDecisionTool({ declarations: true })).length - JSON.stringify(TRADE_DECISION_TOOL).length;
-    expect(delta).toBe(3611);
-    expect(tokens4('x'.repeat(delta))).toBe(903);
+    expect(delta).toBe(3874);
+    expect(tokens4('x'.repeat(delta))).toBe(969);
+    expect(tokens3('x'.repeat(delta))).toBe(1292);
     expect(JSON.stringify(buildTradeDecisionTool({ declarations: false })).length - JSON.stringify(TRADE_DECISION_TOOL).length).toBe(0);
   });
 });
