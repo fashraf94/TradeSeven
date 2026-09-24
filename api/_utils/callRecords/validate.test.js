@@ -8,7 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   validateDeclarations, invalidationReason, kindOfShot, DECLARATION_CAPS, CALL_KINDS, REMOVAL_REASONS,
-  INVALIDATION_REASONS, jsonBytes,
+  INVALIDATION_REASONS, jsonBytes, removedRecordFields, RECORD_BOOKKEEPING_ALLOWANCE_BYTES,
 } from './validate.js';
 import { makeDeclarations, makeMaximalDeclarations } from '../__fixtures__/tickStampsHarness.js';
 import { CALL_KINDS as CAPTURE_CALL_KINDS } from '../tickCapture/captureConfig.js';
@@ -126,6 +126,29 @@ describe('malformed — the row, never its siblings', () => {
     expect(r.validated.playerAsk).not.toHaveProperty('symbol');
   });
 
+  it('a BLANK optional string (counterpart, playerAsk symbol) is absent too — the key dropped, the row kept (review A-3)', () => {
+    for (const blank of ['', '   ']) {
+      const r = run({ calledShots: [shot({ counterpart: blank })], playerAsk: ask({ symbol: blank }) });
+      expect(r.removed).toEqual([]);
+      expect(r.calls[0].row).not.toHaveProperty('counterpart');
+      expect(r.validated.calledShots[0]).not.toHaveProperty('counterpart');
+      expect(r.validated.playerAsk).not.toHaveProperty('symbol');
+    }
+    // A blank REQUIRED string is still malformed.
+    expect(run({ calledShots: [shot({ symbol: '' })] }).removed).toEqual([{ source: 'calledShots', index: 0, reason: 'malformed' }]);
+  });
+
+  it('a string with a LONE surrogate is malformed wherever text is required — it cannot be stored as UTF-8; a surrogate PAIR is text (review E-4)', () => {
+    const lone = ['\uD83D', '\uDE00', 'AMD \uD83D holds', 'x\uDE00y'];
+    const r = run({ calledShots: [...lone.map((said) => shot({ said })), shot({ said: 'AMD \uD83D\uDE00 holds' })] });
+    expect(r.removed).toEqual(lone.map((_, index) => ({ source: 'calledShots', index, reason: 'malformed' })));
+    expect(r.calls.map((c) => c.row.said)).toEqual(['AMD \uD83D\uDE00 holds']);
+    expect(run({ calledShots: [shot({ counterpart: 'K\uDC00O' })] }).removed).toEqual([{ source: 'calledShots', index: 0, reason: 'malformed' }]);
+    expect(run({ watching: ['NVDA\uD800'] }).removed).toEqual([{ source: 'watching', index: 0, reason: 'malformed' }]);
+    expect(run({ playerAsk: ask({ options: ['yes', 'n\uDFFFo'] }) }).removed).toEqual([{ source: 'playerAsk', index: null, reason: 'malformed' }]);
+    expect(run({ fork: fork({ said: '\uDBFF?' }) }).removed).toEqual([{ source: 'fork', index: null, reason: 'malformed' }]);
+  });
+
   it('a wrong-typed array field is malformed as a whole field', () => {
     const r = run({ calledShots: 'x', watching: { a: 1 }, playerAsk: ask() });
     expect(r.removed).toEqual([
@@ -194,6 +217,30 @@ describe('THE CAPS — removed as oversize, never rewritten', () => {
     expect(r.removed).toEqual([{ source: 'calledShots', index: 1, reason: 'oversize' }]);
     expect(r.calls.map((x) => [x.n, x.row.symbol])).toEqual([[0, 'NVDA'], [1, 'MSFT']]);
     expect(jsonBytes(r.validated)).toBeLessThanOrEqual(DECLARATION_CAPS.declarationsDocBytes);
+  });
+
+  it('the cap is the record AS STORED: the bounded removal list and the identity allowance count, and bookkeeping never evicts a valid row (review E-2)', () => {
+    const junk = Array.from({ length: 1_200 }, () => ({}));
+    const r = run({ calledShots: [shot({ symbol: 'NVDA' }), ...junk, shot({ symbol: 'MSFT' })], watching: ['JPM', ...Array(1_250).fill(0)] });
+    expect(r.calls.map((c) => c.row.symbol)).toEqual(['NVDA', 'MSFT']);
+    expect(r.validated.watching).toEqual(['JPM']);
+    expect(r.removed.every((x) => x.reason === 'malformed')).toBe(true);
+    expect(r.removed).toHaveLength(1_200 + 1_250);
+    const stored = jsonBytes({ ...r.validated, ...removedRecordFields(r.removed) }) + RECORD_BOOKKEEPING_ALLOWANCE_BYTES;
+    expect(stored).toBeLessThanOrEqual(DECLARATION_CAPS.declarationsDocBytes);
+  });
+
+  it('removedRecordFields: the first 16 removals listed in source order, the rest counted per (source, reason) — never an overflow key when nothing overflows', () => {
+    const rows = [
+      ...Array.from({ length: 20 }, (_, i) => ({ source: 'watching', index: i, reason: 'malformed' })),
+      ...Array.from({ length: 3 }, (_, i) => ({ source: 'calledShots', index: i, reason: 'oversize' })),
+      { source: 'fork', index: null, reason: 'too_few_options' },
+    ];
+    const out = removedRecordFields([...rows].reverse());
+    expect(out.removed).toEqual([...rows.slice(20, 23), ...rows.slice(0, 13)]);
+    expect(out.removedOverflow).toEqual([{ source: 'watching', reason: 'malformed', count: 7 }, { source: 'fork', reason: 'too_few_options', count: 1 }]);
+    expect(removedRecordFields(rows.slice(0, 16))).toEqual({ removed: rows.slice(0, 16) });
+    expect(removedRecordFields([])).toEqual({ removed: [] });
   });
 
   it('the largest block the caps admit survives whole (the output-size fixture is a VALID block)', () => {

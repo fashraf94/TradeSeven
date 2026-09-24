@@ -9,6 +9,8 @@ import {
   buildMintCandidate, resolveProvenance, mintEvidence, canonicalCall, canonicalRecord, stableStringify, callIdOf,
   MUTABLE_CALL_FIELDS,
 } from './candidate.js';
+import { DECLARATION_CAPS, jsonBytes } from './validate.js';
+import { buildResolvedAgentManifest } from '../resolvedAgentManifest.js';
 import { FROZEN_NOW, makeTickBattle, makeDeclarations, makeObservation } from '../__fixtures__/tickStampsHarness.js';
 
 const UNIVERSE = ['NVDA', 'TSLA', 'MSFT', 'AMZN', 'KO', 'PG', 'BTC', 'AMD', 'JPM'];
@@ -142,6 +144,22 @@ describe('§3.12 row 12 — provenance (the complete origin rule)', () => {
     expect(resolveProvenance(withCtx(undefined, undefined))).toEqual({ hypothesisRef: null, origin: 'agent_initiative' });
     expect(resolveProvenance(withCtx(null, undefined))).toEqual({ hypothesisRef: null, origin: 'agent_initiative' });
   });
+  // PENDING A FOUNDER RULING (review A-1): with MANIFEST_WRITE_ENABLED every
+  // battle is created with a manifest whose equippedConfigHash exists even
+  // when NO watchlist is equipped (the hash covers `equippedWatchlist: null`),
+  // so the spec's rule mints every such call provenance_unresolved /
+  // hash_without_watchlist and agent_initiative is reached only by battles
+  // created before the flag. This row pins today's behavior against the REAL
+  // manifest builder — the code follows spec §3.6 and contract §4 as written;
+  // changing it needs a spec amendment, and this row changes with it.
+  it('A REAL battle manifest without a watchlist → provenance_unresolved (hash_without_watchlist), not agent_initiative [pending ruling A-1]', () => {
+    const agentData = { id: 'agent-1', name: 'Agent', archetype: 'momentum', activeRules: [], equippedBundleIds: [], config: { risk: 50 } };
+    const manifest = buildResolvedAgentManifest({ agentData, equippedWatchlist: null, gameMode: 'clash', now: FROZEN_NOW });
+    expect(manifest.frozenLayers.equippedWatchlist).toBeNull();
+    expect(manifest.equippedConfigHash).toMatch(/^[0-9a-f]{64}$/);
+    const battle = makeTickBattle({ agentContext: { ...makeTickBattle().agentContext, equippedWatchlist: null }, resolvedAgentManifest: manifest });
+    expect(resolveProvenance(battle)).toEqual({ hypothesisRef: null, origin: 'provenance_unresolved', provenanceReason: 'hash_without_watchlist' });
+  });
   it('a frozen watchlist never becomes initiative because its version is absent; the call carries the rule\'s output', () => {
     const c = buildMintCandidate(base({ battle: withCtx(snap, HASH) }));
     expect(c.calls[0]).toMatchObject({ hypothesisRef: { watchlistId: 'wl-1', equippedConfigHash: HASH }, origin: 'equipped' });
@@ -195,6 +213,51 @@ describe('built ONCE, frozen, canonical', () => {
     expect(c.record.playerAsk).toEqual({ question: 'Hold AMD?', options: ['yes', 'no'] });
     expect(c.publicationBytes).toBeGreaterThan(0);
     expect(c.publicationBytes).toBeLessThan(64 * 1024);
+  });
+
+  // The STORED record is bounded whatever the block (review E-2): the tool
+  // schema caps nothing, so a degenerate block of malformed rows must neither
+  // grow the record past 16 KB nor push a valid row out on bookkeeping bytes.
+  const junkRows = (n) => Array.from({ length: n }, () => ({}));
+  const [validShot, validExit] = makeDeclarations().calledShots;
+  for (const [label, raw, kept] of [
+    ['1 valid shot + 300 empty rows', { calledShots: [validShot, ...junkRows(300)] }, 1],
+    ['1 valid shot + 1,200 empty rows', { calledShots: [validShot, ...junkRows(1_200)] }, 1],
+    ['2 valid shots + watching [NVDA, 0 × 1,250]', { calledShots: [validShot, validExit], watching: ['NVDA', ...Array(1_250).fill(0)] }, 2],
+  ]) {
+    it(`${label}: the stored record stays ≤ 16 KB, every valid call is kept, every removal is accounted for`, () => {
+      const c = buildMintCandidate(base({ raw }));
+      expect(c.calls).toHaveLength(kept);
+      expect(c.removed.every((r) => r.reason === 'malformed')).toBe(true);
+      expect(jsonBytes(c.record)).toBeLessThanOrEqual(DECLARATION_CAPS.declarationsDocBytes);
+      expect(c.publicationBytes).toBeLessThanOrEqual(DECLARATION_CAPS.publicationBytes);
+      // The first 16 removals are listed one by one; the rest are counted per (source, reason).
+      expect(c.record.removed).toEqual(c.removed.slice(0, DECLARATION_CAPS.removedListed));
+      const counted = c.record.removedOverflow.reduce((sum, o) => sum + o.count, 0);
+      expect(c.record.removed.length + counted).toBe(c.removed.length);
+      if (raw.watching) expect(c.record.watching).toEqual(['NVDA']);
+    });
+  }
+
+  it('a block just under 16 KB by itself: the removals and identity push the RECORD over, so the crossing row is removed oversize (review A-4)', () => {
+    const wide = Array.from({ length: 6 }, (_, i) => String.fromCharCode(65 + i).repeat(2_600));
+    const raw = { calledShots: [validShot, ...junkRows(60)], watching: wide };
+    expect(jsonBytes({ calledShots: [validShot], watching: wide, playerAsk: null, fork: null })).toBeLessThan(DECLARATION_CAPS.declarationsDocBytes);
+    const c = buildMintCandidate(base({ raw }));
+    expect(jsonBytes(c.record)).toBeLessThanOrEqual(DECLARATION_CAPS.declarationsDocBytes);
+    expect(c.removed.filter((r) => r.reason === 'oversize').map((r) => r.source)).toEqual(['watching']);
+    expect(c.calls).toHaveLength(1);
+  });
+
+  it('a block that fits with its removal list but not with its identity and minted list: the crossing row is removed oversize (the allowance counts)', () => {
+    const wideOf = (len) => Array.from({ length: 6 }, (_, i) => String.fromCharCode(65 + i).repeat(len));
+    const blockBytes = (len) => jsonBytes({ calledShots: [validShot], watching: wideOf(len), playerAsk: null, fork: null, removed: [] });
+    let len = 2_600;
+    while (blockBytes(len + 1) <= DECLARATION_CAPS.declarationsDocBytes - 20) len += 1;
+    const c = buildMintCandidate(base({ raw: { calledShots: [validShot], watching: wideOf(len) } }));
+    expect(jsonBytes(c.record)).toBeLessThanOrEqual(DECLARATION_CAPS.declarationsDocBytes);
+    expect(c.removed).toEqual([{ source: 'watching', index: 5, reason: 'oversize' }]);
+    expect(c.calls).toHaveLength(1);
   });
 
   it('a declarations-only block (watching / playerAsk) is a record with no calls', () => {

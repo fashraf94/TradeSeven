@@ -25,7 +25,7 @@
 //
 // Pure: no I/O, no clock (the mint instant is handed in).
 
-import { validateDeclarations, invalidationReason, sortRemovedInSourceOrder, DECLARATION_CAPS, jsonBytes } from './validate.js';
+import { validateDeclarations, invalidationReason, sortRemovedInSourceOrder, removedRecordFields, DECLARATION_CAPS, jsonBytes } from './validate.js';
 import { bindHorizon, battleExpiryMs } from './horizon.js';
 
 /** The fields a canonical form leaves out — the mutable state of a call. */
@@ -217,7 +217,7 @@ export function buildMintCandidate({ battleId, evalId, evalSeq, mintedAtMs, raw,
       evalSeq,
       mintedAt: mintedAtMs,
       ...block,
-      removed: sortRemovedInSourceOrder([...removed]),
+      ...removedRecordFields(removed),
       minted,
     };
     return { record, calls };

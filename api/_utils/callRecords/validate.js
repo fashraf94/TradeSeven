@@ -46,7 +46,21 @@ export const DECLARATION_CAPS = Object.freeze({
   minOptions: 2,
   declarationsDocBytes: 16 * 1024,
   publicationBytes: 64 * 1024,
+  // The removal rows a record lists ONE BY ONE (source order); every further
+  // removal is still accounted for, as a (source, reason) count in
+  // `removedOverflow` (review E-2): the tool schema bounds nothing, so a
+  // degenerate block of hundreds of malformed rows must not grow the record
+  // past its 16 KB cap or push a valid row out on bookkeeping bytes.
+  removedListed: 16,
 });
+
+/**
+ * The bytes the document cap reserves for the parts of the stored record the
+ * validator does not compose — its identity fields (battleId, evalId, evalSeq,
+ * mintedAt) and the `minted` list (≤ 7 entries: 6 shots + 1 fork). The cap is
+ * applied to the record AS STORED, not to the typed block alone (review E-2).
+ */
+export const RECORD_BOOKKEEPING_ALLOWANCE_BYTES = 2_048;
 
 /** The typed removal reasons. */
 export const REMOVAL_REASONS = Object.freeze([
@@ -74,12 +88,23 @@ const HORIZON_PHRASES = Object.freeze(['next_check', 'this_session', 'this_battl
 
 const encoder = new TextEncoder();
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
-const nonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
+// A lone surrogate is not text: gRPC serializes it as invalid UTF-8 (the write
+// fails for the WHOLE publication) or as U+FFFD (the stored copy no longer
+// matches its canonical form). Such a string is malformed, row by row (review E-4).
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+const nonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0 && !LONE_SURROGATE.test(v);
 const chars = (s) => [...s].length;
 /** The UTF-8 size of a value's JSON — the document-cap measure. */
 export const jsonBytes = (v) => encoder.encode(JSON.stringify(v)).length;
 /** An optional field: absent (undefined or null) or present. */
 const absent = (v) => v === undefined || v === null;
+/**
+ * An OPTIONAL string sent blank ('' or whitespace) is absent, not malformed
+ * (review A-3): §3.2 makes a row malformed for a REQUIRED field absent or
+ * wrong-typed, and the schema's own "omit if undecided" makes '' a plausible
+ * way to say nothing. The key is dropped; the row survives.
+ */
+const absentOrBlank = (v) => absent(v) || (typeof v === 'string' && v.trim().length === 0);
 
 /**
  * One calledShots row → { ok, row, reason }. The row is projected onto its
@@ -91,7 +116,7 @@ function checkShot(raw) {
   if (!nonEmptyString(symbol)) return { ok: false, reason: 'malformed' };
   if (!DIRECTIONS.includes(direction)) return { ok: false, reason: 'malformed' };
   if (!SLOTS.includes(slot)) return { ok: false, reason: 'malformed' };
-  if (!absent(counterpart) && !nonEmptyString(counterpart)) return { ok: false, reason: 'malformed' };
+  if (!absentOrBlank(counterpart) && !nonEmptyString(counterpart)) return { ok: false, reason: 'malformed' };
   if (!isPlainObject(condition) || !SIDES.includes(condition.side)) return { ok: false, reason: 'malformed' };
   // PRESENT and a number — a non-finite number is born (and minted invalidated).
   if (typeof condition.level !== 'number') return { ok: false, reason: 'malformed' };
@@ -106,7 +131,7 @@ function checkShot(raw) {
     symbol,
     direction,
     slot,
-    ...(absent(counterpart) ? {} : { counterpart }),
+    ...(absentOrBlank(counterpart) ? {} : { counterpart }),
     condition: { side: condition.side, level: condition.level },
     horizonPhrase,
     // `expiresAtMs` is applicable only with `explicit`; elsewhere it is dropped, never read.
@@ -122,12 +147,12 @@ function checkPlayerAsk(raw) {
   const { question, options, symbol } = raw;
   if (!nonEmptyString(question)) return { ok: false, reason: 'malformed' };
   if (!Array.isArray(options) || options.some((o) => !nonEmptyString(o))) return { ok: false, reason: 'malformed' };
-  if (!absent(symbol) && !nonEmptyString(symbol)) return { ok: false, reason: 'malformed' };
+  if (!absentOrBlank(symbol) && !nonEmptyString(symbol)) return { ok: false, reason: 'malformed' };
   if (options.length < DECLARATION_CAPS.minOptions) return { ok: false, reason: 'too_few_options' };
   if (options.length > DECLARATION_CAPS.askOptions) return { ok: false, reason: 'oversize' };
   if (chars(question) > DECLARATION_CAPS.question) return { ok: false, reason: 'oversize' };
   if (options.some((o) => chars(o) > DECLARATION_CAPS.option)) return { ok: false, reason: 'oversize' };
-  return { ok: true, row: { question, options: [...options], ...(absent(symbol) ? {} : { symbol }) } };
+  return { ok: true, row: { question, options: [...options], ...(absentOrBlank(symbol) ? {} : { symbol }) } };
 }
 
 function checkFork(raw, universe) {
@@ -158,6 +183,27 @@ const SOURCE_RANK = Object.freeze({ block: 0, calledShots: 1, watching: 2, playe
 /** Sort a removal list into SOURCE order (in place): the block, then each field in contract order, each array by index. */
 export function sortRemovedInSourceOrder(removed) {
   return removed.sort((a, b) => (SOURCE_RANK[a.source] - SOURCE_RANK[b.source]) || ((a.index ?? -1) - (b.index ?? -1)));
+}
+
+/**
+ * The removal list AS THE RECORD STORES IT (review E-2): the first
+ * `removedListed` rows one by one, in source order, and — only when there are
+ * more — `removedOverflow`, the rest counted per (source, reason) in the order
+ * each pair first appears. Every removed row's reason stays on the record;
+ * the record's size stays bounded whatever the block. Does not mutate.
+ *
+ * @returns {{ removed: Array<{source:string,index:number|null,reason:string}>, removedOverflow?: Array<{source:string,reason:string,count:number}> }}
+ */
+export function removedRecordFields(removed) {
+  const sorted = sortRemovedInSourceOrder([...(Array.isArray(removed) ? removed : [])]);
+  const listed = sorted.slice(0, DECLARATION_CAPS.removedListed).map((r) => ({ source: r.source, index: r.index ?? null, reason: r.reason }));
+  const overflow = [];
+  for (const r of sorted.slice(DECLARATION_CAPS.removedListed)) {
+    const group = overflow.find((o) => o.source === r.source && o.reason === r.reason);
+    if (group) group.count += 1;
+    else overflow.push({ source: r.source, reason: r.reason, count: 1 });
+  }
+  return overflow.length > 0 ? { removed: listed, removedOverflow: overflow } : { removed: listed };
 }
 
 /** The kind a surviving calledShots row mints as (§3.2 mapping). */
@@ -241,9 +287,11 @@ export function validateDeclarations(block, { universe = [], resolveHorizon = nu
   }
 
   // ---- the count caps and the document cap, in source order ---------------
+  // The cap is the record AS STORED: the kept block, the bounded removal list
+  // and the identity/minted allowance (review E-2) — never the block alone.
   const kept = { calledShots: [], watching: [], playerAsk: null, fork: null };
   const keptCandidates = [];
-  const recordOf = () => kept;
+  const storedBytes = () => jsonBytes({ ...kept, ...removedRecordFields(removed) }) + RECORD_BOOKKEEPING_ALLOWANCE_BYTES;
   for (const c of candidates) {
     if (c.source === 'calledShots' && kept.calledShots.length >= DECLARATION_CAPS.shots) {
       removed.push({ source: c.source, index: c.index, reason: 'oversize' });
@@ -258,7 +306,7 @@ export function validateDeclarations(block, { universe = [], resolveHorizon = nu
     else if (c.source === 'watching') kept.watching.push(c.row);
     else if (c.source === 'playerAsk') kept.playerAsk = c.row;
     else kept.fork = c.row;
-    if (jsonBytes(recordOf()) > DECLARATION_CAPS.declarationsDocBytes) {
+    if (storedBytes() > DECLARATION_CAPS.declarationsDocBytes) {
       if (c.source === 'calledShots') kept.calledShots.pop();
       else if (c.source === 'watching') kept.watching.pop();
       else if (c.source === 'playerAsk') kept.playerAsk = null;
