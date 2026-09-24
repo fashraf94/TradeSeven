@@ -131,7 +131,8 @@ beforeEach(() => {
   server.stakes = [];
   server.refuse = false;
   server.calls = [];
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+  // setInterval too, so a poll could not hide from the rows below on a real clock.
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
   vi.setSystemTime(NOW);
   vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
@@ -219,8 +220,11 @@ describe('N4 — when the earliest close among the listed OPEN pools passes, the
     // Re-armed for the next close (Sunday's), and only for it.
     await advance(new Date(SUNDAY_CLOSE).getTime() + CLOSE_REREAD_GRACE_MS - Date.now() - 1);
     expect(reads()).toBe(2);
-    // Unmounted before it fires: the timer is cleared — nothing more is read.
+    expect(vi.getTimerCount(), 'one timer armed — Sunday\'s').toBe(1);
+    // Unmounted before it fires: the timer is CLEARED (a stray one would fire
+    // into an unmounted strip and read nothing — so the count says it).
     await unmount(entry);
+    expect(vi.getTimerCount(), 'the timer is cleared on unmount').toBe(0);
     await advance(60 * 60 * 1000);
     expect(reads(), 'no read after unmount').toBe(2);
   });
