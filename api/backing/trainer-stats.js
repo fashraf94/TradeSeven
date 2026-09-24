@@ -29,7 +29,9 @@
 // (SEAL-R-2). No figure of an open pool is in this reply under any key; the
 // trainer-stats suite walks the whole body to prove it. Nor is one in what the
 // reply costs: no round's set of reads depends on a sealed book (SEAL-A2, the
-// pre-flip fixes 2 review record). The figures appear once the pool closes —
+// pre-flip fixes 2 review record) — only the stakes query's own response grows
+// with it (PLACE-R-4; a composite index would remove that — separate tasking).
+// The figures appear once the pool closes —
 // and a pool this route reads past its close is closed by this route
 // (`ensureClosed`, as every other pool reader closes it; PLACE-A3).
 //

@@ -102,9 +102,10 @@ describe('TrainerStats — closed weeks only: the design\'s sealed "This week" r
     expect(t).toContain(STATS.trainer.sealedWeek);
   });
 
-  it('PLACE-A1 / WIRE-A1 — the line is TRUE for a returning team whose closed weeks nobody backed (the reply is the same as a first week\'s): it never says "No closed weeks yet"; PLACE-A2 — the sealed pool is named NEXT week\'s, as the pod list names it; PLACE-A4 — the line in the design\'s type, no box', () => {
+  it('PLACE-A1 / WIRE-A1 — the line is TRUE for a returning team whose closed weeks nobody backed, or whose backers were voided at a below-floor close (the reply is the same as a first week\'s): never "No closed weeks yet", never "No backers"; PLACE-A2 — the sealed pool is named NEXT week\'s, as the pod list names it; PLACE-A4 — the line in the design\'s type, no box', () => {
     expect(STATS.trainer.sealedFirst).not.toMatch(/No closed weeks/i);
-    expect(STATS.trainer.sealedFirst).toMatch(/^No backers in a closed week yet\./);
+    expect(STATS.trainer.sealedFirst).not.toMatch(/No backers/i);
+    expect(STATS.trainer.sealedFirst).toMatch(/^Nothing counted from a closed week yet\./);
     expect(STATS.trainer.sealedWeek).toMatch(/^Next week · /);
     expect(STATS.trainer.sealedWeek).not.toMatch(/This week/);
     const html = renderToString(<TrainerStats stats={FIRST_WEEK} />);

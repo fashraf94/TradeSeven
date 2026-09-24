@@ -145,7 +145,11 @@ export async function readExcludedStakeIds(db, stakeIds) {
 // WIRE-A2, PLACE-A3 — the pre-flip fixes 2 review record): the trainer's reply
 // may say nothing about a sealed book — not in its figures, not in its seal
 // line, not in the reads it costs. The route reads in three rounds, and no
-// round's set of documents depends on the book of a pool still sealed:
+// round's set of READS — the queries it issues, the documents it fetches —
+// depends on the book of a pool still sealed. (One thing does, and is stated:
+// round 1's stakes query answers with every stake on the seat, the sealed ones
+// among them, so its response grows with the book — one round trip either
+// way; leaving them out needs a composite index, separate tasking — PLACE-R-4.)
 //   1  the stakes on the seat ‖ the pods the viewer SITS in (`readSeatedPods`);
 //   2  ONE pool read per SEAL pod — a seated pod of this week or later
 //      (`sealPodsOf`), read whatever its book holds — and per pod a counted

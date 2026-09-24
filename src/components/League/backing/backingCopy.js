@@ -656,9 +656,11 @@ export const STATS = Object.freeze({
     sealedUntil: 'until it closes',
     // Nothing counted from a closed week, and a pool sealed: never "Nobody has
     // backed your team yet" over a book it cannot see (SEAL-R-2). True for a
-    // first week AND for a team whose closed weeks nobody backed (PLACE-A1 /
-    // WIRE-A1): the reply cannot tell those apart, and "No closed weeks yet"
-    // would be false for the second. The design's first-week line, so worded.
-    sealedFirst: 'No backers in a closed week yet. Once your team’s pool closes, this shows how many backed you, how much, and how they did.',
+    // first week, for a team whose closed weeks nobody backed, AND for one
+    // whose backers were voided at a below-floor close (PLACE-A1 / WIRE-A1):
+    // the reply cannot tell those apart, and "No closed weeks yet" or "No
+    // backers…" would each be false for one of them. The design's first-week
+    // line, so worded.
+    sealedFirst: 'Nothing counted from a closed week yet. Once your team’s pool closes, this shows how many backed you, how much, and how they did.',
   }),
 });
