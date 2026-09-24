@@ -159,12 +159,17 @@ function WideHeader({ state, loading, sections, section, onSection, onBack, acce
 }
 
 // ── the window: the right column's resting state — your backing so far ─────
-function DeskRail({ windowState, wallet, uid, accent, onOpenSeat }) {
+function DeskRail({ windowState, win, wallet, uid, accent, onOpenSeat }) {
   const stakes = windowState?.kind === STRIP_KIND.STAKED && Array.isArray(windowState.stakes) ? windowState.stakes : [];
+  // With no stake of the viewer's in the window, the rail's resting words
+  // follow the WINDOW (backingWindow — the chip's source): open, the strip's
+  // open line; not open, its quiet one — never "Window open" over no open
+  // pool (WIRE-R-1, the desktop review record).
+  const eyebrow = stakes.length > 0 ? STRIP.head.staked(windowState.pods) : win ? STRIP.eyebrow.open : STRIP.eyebrow.quiet;
   return (
     <div data-backing="desk-rail" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-        <Eyebrow color={stakes.length > 0 ? accent : LTOKENS.ink3}>{stakes.length > 0 ? STRIP.head.staked(windowState.pods) : STRIP.eyebrow.open}</Eyebrow>
+        <Eyebrow color={stakes.length > 0 ? accent : LTOKENS.ink3}>{eyebrow}</Eyebrow>
         {uid && <PointsMeter left={wallet?.left ?? null} total={wallet?.total ?? 0} compact />}
       </div>
       {stakes.length > 0 ? (
@@ -192,7 +197,7 @@ function DeskRail({ windowState, wallet, uid, accent, onOpenSeat }) {
           </div>
         </div>
       ) : (
-        <div data-backing="desk-rail-empty" style={{ padding: '13px 14px', borderRadius: 13, border: `1px dashed ${LTOKENS.hair2}`, fontSize: 12.5, color: LTOKENS.ink2, lineHeight: 1.5 }}>{STRIP.sub.open}</div>
+        <div data-backing="desk-rail-empty" style={{ padding: '13px 14px', borderRadius: 13, border: `1px dashed ${LTOKENS.hair2}`, fontSize: 12.5, color: LTOKENS.ink2, lineHeight: 1.5 }}>{win ? STRIP.sub.open : STRIP.sub.quiet}</div>
       )}
       <div>
         <Mono style={{ fontSize: 9, color: LTOKENS.ink3, letterSpacing: '0.12em', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>{STAKE.disclosuresTitle}</Mono>
@@ -298,7 +303,7 @@ function WindowView(props) {
             </div>
           </div>
         ) : (
-          <DeskRail windowState={windowState} wallet={wallet} uid={uid} accent={accent} onOpenSeat={onOpenSeat} />
+          <DeskRail windowState={windowState} win={win} wallet={wallet} uid={uid} accent={accent} onOpenSeat={onOpenSeat} />
         )}
       </div>
     </div>

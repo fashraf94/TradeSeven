@@ -169,12 +169,14 @@ function BackingScreenLive({ uid, accent, viewport, onBack, onOpenTape, initialS
   // dedup, swallow the real one (WIRE-4, the PR 5 review record). A human
   // cannot leave a card in 16 ms, so no production visit is lost.
   //
-  // The visit is the card ON SCREEN, keyed on its seat: mobile, the card
-  // view; desktop, the window section with a seat open — the card stays in
-  // the centre beside the stake control, so "Back" does not end the visit,
-  // and re-selecting the open seat is not a new one (WIRE-3, the desktop
-  // review record).
-  const cardSeat = (desktop ? section === DESK_SECTION.WINDOW && view.kind !== 'list' : view.kind === 'card') && view.groupId && view.odUserId
+  // The visit is keyed on its seat, not on the view object, so re-selecting
+  // the open seat is not a new visit (WIRE-3(a), the desktop review record).
+  // It ends where this event's contract says, on both viewports: leaving the
+  // card for the list or the control, or the screen closing — on desktop also
+  // the window section closing (the card lives there). The desktop card stays
+  // in view beside the control, but the visit is the reading before "Back",
+  // as on mobile (WIRE-3(b) refuted: one meaning for the dwell).
+  const cardSeat = (!desktop || section === DESK_SECTION.WINDOW) && view.kind === 'card' && view.groupId && view.odUserId
     ? `${view.groupId}\n${view.odUserId}`
     : null;
   useEffect(() => {

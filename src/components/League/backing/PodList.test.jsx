@@ -315,3 +315,46 @@ describe('SEAL at desktop width — the window side by side leaks nothing (the l
     expect(one(true)).toBe(one(false));
   });
 });
+
+describe('the desktop window reads the WINDOW — the pod list\'s open pools — for its close chip and its rail (PLACE-5 / WIRE-4 / OBS-2 / WIRE-R-1)', () => {
+  const now = new Date('2026-09-23T14:00:00.000Z');
+  const WEEK_STATE = { kind: 'week', day: 3, settling: false, pods: 1, teams: [] };
+  const deskOver = (pods, state) => {
+    const reply = { data: { backingWeekCloses: SUNDAY_CLOSE }, pods, loading: false, error: null };
+    return renderToString(
+      <BackingDesk
+        uid="viewer-1"
+        pods={reply}
+        state={state ?? deriveStripState({ pods, inPlay: null, now, backingWeekCloses: SUNDAY_CLOSE })}
+        windowState={deriveStripState({ pods, inPlay: null, now, backingWeekCloses: SUNDAY_CLOSE })}
+        inPlay={{ stakes: [], poolsById: {}, groupsById: {}, labelsById: {} }}
+        wallet={{ known: true, left: 1000, total: 1000 }}
+        eligibility={{ status: ELIGIBILITY.ATTESTED, refresh: () => {} }}
+        view={{ kind: 'list', groupId: null, odUserId: null }}
+        section="window"
+        now={now}
+      />,
+    );
+  };
+  const chip = (html) => html.match(/<span data-backing="desk-close"[\s\S]*?<\/span><\/span>/)?.[0]?.replace(/<[^>]+>/g, '') ?? null;
+
+  it('a returning backer (the strip\'s state: the week) sees the WINDOW\'s close beside open pools — never "Settles after Friday\'s close"', () => {
+    const html = deskOver([openPod('g-next')], WEEK_STATE);
+    expect(chip(html)).toBe('Closes Sun 11:59 PM ET');
+    expect(chip(html)).not.toContain('Friday');
+  });
+
+  it('no open pool: no chip, and the rail rests on the quiet line — never "Window open" over no open pool', () => {
+    const closed = openPod('g-shut', { pool: { status: 'closed', backerProgress: { count: 1, floor: 3, met: false }, teamSpread: { met: false }, closesAt: WED_FIRE, closeReason: 'fire' } });
+    for (const pods of [[], [closed]]) {
+      const html = deskOver(pods);
+      expect(html).not.toContain('data-backing="desk-close"');
+      const rail = html.slice(html.indexOf('data-backing="desk-rail"'));
+      expect(rail).not.toContain('Window open');
+      expect(rail).toContain('No pods to back yet');
+    }
+    // …and with a pool open, the rail's open line (the row is not vacuous).
+    const open = deskOver([openPod('g-next')]);
+    expect(open.slice(open.indexOf('data-backing="desk-rail"'))).toContain('Window open');
+  });
+});

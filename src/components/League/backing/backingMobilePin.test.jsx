@@ -544,15 +544,16 @@ describe('the mobile funnel — WHICH view emits WHICH event, in order (DARK-1, 
   });
 });
 
-describe('the DESKTOP funnel — each event fires on its own section, a card visit is the card on screen (WIRE-2 / WIRE-3, the desktop review record)', () => {
+describe('the DESKTOP funnel — each event fires on its own section, a card visit keyed on its seat (WIRE-2 / WIRE-3, the desktop review record)', () => {
   // Beside the mobile funnel because this file stands in for every read the
   // screen makes. No golden (main has no desktop screen): the rows state the
   // desktop semantics — window_viewed on the window section, your_backing_viewed
   // on Monday–Friday's, results_viewed on Friday's, never on another; the
-  // screen opens on the section the strip named and stays there; the card
-  // visit lasts while the card is ON SCREEN (the stake control beside it does
-  // not end it; re-selecting the open seat is not a new visit).
-  it('opened on Your Backing, then the window, a card, Back, a re-click, another card, the results', async () => {
+  // screen opens on the section the strip named and stays there; a card visit
+  // is keyed on its seat (re-selecting the open seat is not a new visit) and
+  // ends where the event's contract says — "Back" into the control, another
+  // seat, or the window section closing — the same meaning as on mobile.
+  it('opened on Your Backing, then the window, a card, a re-click, Back, back to the card, another card, the results', async () => {
     __resetBackingTelemetry();
     hooked.events.length = 0;
     hooked.pods = podsReply([pod('lobby-w40-a')]);
@@ -572,19 +573,19 @@ describe('the DESKTOP funnel — each event fires on its own section, a card vis
       expect(names()).toEqual(['your_backing_viewed', 'window_viewed']);
       tick(1000);
       await press(seat(c, 'Kestrel'));
-      tick(5000);
-      await press(c.querySelector('[data-desk-col="card"] [data-backing="cta-back"]'));
-      // The stake control opened BESIDE the card: the visit goes on.
-      expect(c.querySelector('[data-desk-col="right"] [data-backing="stake-control"]')).not.toBeNull();
-      expect(names()).toEqual(['your_backing_viewed', 'window_viewed', 'stake_control_opened:od-a']);
       tick(2000);
       await press(seat(c, 'Kestrel'));                          // the open seat again: not a new visit
-      expect(names()).toEqual(['your_backing_viewed', 'window_viewed', 'stake_control_opened:od-a']);
+      tick(60000);
+      await press(c.querySelector('[data-desk-col="card"] [data-backing="cta-back"]'));
+      // "Back" ends the visit — the whole 62 s, never the 2 s before the re-click — and opens the control.
+      expect(c.querySelector('[data-desk-col="right"] [data-backing="stake-control"]')).not.toBeNull();
+      expect(names()).toEqual(['your_backing_viewed', 'window_viewed', 'team_card_opened:od-a:62000', 'stake_control_opened:od-a']);
+      await press(c.querySelector('[data-desk-col="right"] [data-backing="stake-cancel"]'));   // back to the card
       tick(1000);
-      await press(seat(c, 'Tarn'));                             // another seat ends Kestrel's visit: 8 s on screen
+      await press(seat(c, 'Tarn'));                             // Kestrel's second visit ends (recorded once per session)
       tick(3000);
       await press(tab(c, 'results'));                           // leaving the window ends Tarn's: 3 s
-      expect(names()).toEqual(['your_backing_viewed', 'window_viewed', 'stake_control_opened:od-a', 'team_card_opened:od-a:8000', 'team_card_opened:od-b:3000', 'results_viewed']);
+      expect(names()).toEqual(['your_backing_viewed', 'window_viewed', 'team_card_opened:od-a:62000', 'stake_control_opened:od-a', 'team_card_opened:od-b:3000', 'results_viewed']);
       // …and the window comes back without a stale card.
       await press(tab(c, 'window'));
       expect(c.querySelector('[data-desk-col="card"] [data-backing="desk-card-empty"]')).not.toBeNull();
