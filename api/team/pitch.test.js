@@ -201,3 +201,52 @@ describe('the route\'s literal collection matches the reader\'s constant (§9 �
     expect(src.indexOf('await requireAuth(')).toBeLessThan(src.indexOf('if (!backingLitFor(user.uid))'));
   });
 });
+
+// THE ACTIVATION PR — the founder smoke override on THIS door, as behaviour
+// (DEV-R-1 in the activation review record). The one override-lit door that
+// writes a production document: `teamPitches/{uid}` — the founder's own
+// record, declared in the runbook and the PR as the second document outside
+// the dev namespace (with `eligibility/{uid}`), never cleaned up by the script.
+describe('the founder smoke override (the activation PR) on the pitch door', () => {
+  const lit = () => {
+    vi.stubEnv('VERCEL_ENV', 'preview');
+    vi.stubEnv('BACKING_SMOKE_ENABLED', 'true');
+    vi.stubEnv('BACKING_SMOKE_UIDS', 'someone-else, owner-1');
+  };
+  afterEach(() => { vi.unstubAllEnvs(); });
+
+  it('dark flag, lit preview, allowlisted uid: the door answers 200 and writes exactly teamPitches/{uid} — the DECLARED production record', async () => {
+    state.flag = false;
+    lit();
+    const res = await post({ text: 'A founder\'s own sentence.' });
+    expect(res.statusCode).toBe(200);
+    expect(DB.store.get('teamPitches/owner-1')).toEqual({ text: 'A founder\'s own sentence.', updatedAt: NOW.toISOString() });
+    expect([...DB.store.keys()]).toEqual(['teamPitches/owner-1']);
+  });
+
+  it('the SAME uid and env in PRODUCTION reads dark: 404, nothing written', async () => {
+    state.flag = false;
+    lit();
+    vi.stubEnv('VERCEL_ENV', 'production');
+    const res = await post({ text: 'x' });
+    expect(res.statusCode).toBe(404);
+    expect(res.body).toEqual({ error: 'Not found' });
+    expect([...DB.store.keys()]).toEqual([]);
+  });
+
+  it('a NON-allowlisted uid, a missing switch, or no deployment variable: 404, nothing written', async () => {
+    state.flag = false;
+    for (const arm of [
+      () => { lit(); state.uid = 'stranger-1'; },
+      () => { lit(); vi.stubEnv('BACKING_SMOKE_ENABLED', ''); },
+      () => { lit(); vi.stubEnv('VERCEL_ENV', ''); },
+    ]) {
+      vi.unstubAllEnvs();
+      state.uid = 'owner-1';
+      arm();
+      const res = await post({ text: 'x' });
+      expect(res.statusCode).toBe(404);
+      expect([...DB.store.keys()]).toEqual([]);
+    }
+  });
+});

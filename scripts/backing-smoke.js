@@ -23,10 +23,18 @@
 //            ledgers (Σ entries = the cached balances).
 //   cleanup  delete every document a run created, from the manifest this
 //            script writes — refusing the whole run on any target outside the
-//            dev namespace (backingSmokeLib.js devTargetVerdict).
+//            dev namespace (backingSmokeLib.js devTargetVerdict). A wallet or
+//            event a still-live run also names is KEPT until that run's own
+//            cleanup (the founder backs every run from one dev wallet).
 //
-// `--dry-run` on every writing command: reads, prints the plan, writes nothing.
-// The manifest: scripts/output/backing-smoke-manifest.json (gitignored).
+// `--dry-run` on every writing command: reads, prints the plan, writes nothing
+// — MECHANICALLY: `status` and every `--dry-run` hold a Firestore handle whose
+// every write path throws (backingSmokeLib.js readOnlyHandle, the precheck's
+// proxy), so "writes nothing" rests on a throw, not on discipline.
+// The manifest: scripts/output/backing-smoke-manifest.json (gitignored). A
+// pod whose manifest entry is gone (another machine, a fresh clone) is still
+// reachable by `--pod=<id>`: the run is rebuilt from the live document's own
+// smoke marker, never guessed.
 //
 // WHAT A RUN WRITES, exactly, and where each lives:
 //   tournamentGroups/{smk_…}                 the pod — isDev, smoke-marked
@@ -43,12 +51,13 @@
 // Needs the same creds as the serverless functions — FIREBASE_PROJECT_ID /
 // FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY — from .env.local in the repo
 // root (scripts/loadLocalEnv.js documents the format). From the repo root:
-//   node scripts/backing-smoke.js seed
+//   node scripts/backing-smoke.js seed [--founder=<uid>]
 //   node scripts/backing-smoke.js advance [--winner=<odUserId>]
 //   node scripts/backing-smoke.js refund
 //   node scripts/backing-smoke.js status [--founder=<uid>]
-//   node scripts/backing-smoke.js cleanup [--pod=<groupId>]
-// Every command takes --pod=<groupId> (default: the latest run) and --dry-run.
+//   node scripts/backing-smoke.js cleanup [--pod=<groupId>] [--founder=<uid>]
+// Every command but seed takes --pod=<groupId> (default: the latest run);
+// every writing command takes --dry-run.
 
 // MUST be imported before firebaseAdmin.js — loads .env.local as a side effect.
 import { requireFirebaseCreds, PROJECT_ROOT } from './loadLocalEnv.js';
@@ -87,12 +96,15 @@ import {
   latestRun,
   ledgerInvariant,
   parseArgs,
+  readOnlyHandle,
   removeRun,
+  runFromLiveGroup,
   runStamp,
   smokeEligibilityFor,
   smokeIds,
   syntheticToken,
   upcomingBattleWeek,
+  validSmokeRun,
 } from './backingSmokeLib.js';
 
 const { command, flags, unknown } = parseArgs(process.argv.slice(2));
@@ -139,13 +151,25 @@ function writeManifest(manifest) {
   mkdirSync(path.dirname(MANIFEST_PATH), { recursive: true });
   writeFileSync(MANIFEST_PATH, `${JSON.stringify(manifest, null, 2)}\n`);
 }
-/** The run this command works on: --pod, else the latest seeded. */
-function pickRun(manifest) {
-  const run = flags.pod ? manifest.runs.find((r) => r.groupId === flags.pod) ?? null : latestRun(manifest);
+/**
+ * The run this command works on: --pod (the manifest's entry, else the run
+ * rebuilt from the LIVE document's smoke marker — a pod seeded on another
+ * machine or whose manifest is gone), else the latest seeded. A run outside
+ * the smoke shape (a bent manifest) is refused before anything is read.
+ */
+async function resolveRun(db, manifest) {
+  let run = flags.pod ? manifest.runs.find((r) => r.groupId === flags.pod) ?? null : latestRun(manifest);
+  if (!run && flags.pod) {
+    const live = await readGroup(db, flags.pod);
+    run = live ? runFromLiveGroup(flags.pod, live) : null;
+    if (run) say(`(pod ${flags.pod} is not in the manifest at ${MANIFEST_PATH}; its run was rebuilt from the live document's smoke marker)`);
+  }
   if (!run) {
-    stop(3,
-      flags.pod ? `No run for pod ${flags.pod} in the manifest (${MANIFEST_PATH}).` : `No smoke pod in the manifest (${MANIFEST_PATH}).`,
-      'Run `node scripts/backing-smoke.js seed` first.');
+    if (flags.pod) stop(3, `No run for pod ${flags.pod}: not in the manifest (${MANIFEST_PATH}) and not a live pod this script seeded.`, 'Check the id (`status` lists what the manifest knows); a pod that is already gone needs nothing.');
+    stop(3, `No smoke pod in the manifest (${MANIFEST_PATH}).`, 'Run `node scripts/backing-smoke.js seed` first.');
+  }
+  if (!validSmokeRun(run)) {
+    stop(6, `REFUSED: the run for pod ${run.groupId} is not in the smoke's shape (pod id, pool id or backers) — the manifest at ${MANIFEST_PATH} has been edited or is from another build. Move it aside; \`cleanup --pod=<id>\` rebuilds a run from the live pod.`);
   }
   return run;
 }
@@ -183,6 +207,12 @@ async function readWalletWithEntries(db, uid) {
 }
 
 const bp = (n) => `${Number.isFinite(n) ? n : 0} BP`;
+/** An instant in ET, the way the strip says it ("Sun 11:59 PM ET"), with the raw instant beside it. */
+const ET_FMT = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+const et = (iso) => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? String(iso) : `${ET_FMT.format(d).replace(',', '')} ET (${iso})`;
+};
 const nameOf = (group, id) => group?.seatNames?.[id] ?? (String(id).startsWith('cpu-') ? `CPU ${String(id).slice(4)}` : id);
 
 // ==================== SEED ====================
@@ -195,7 +225,7 @@ async function seed(db) {
 
   let userPool = [];
   try { userPool = await fetchRankedUserPool(db); } catch (err) { say(`(the ranked universe is unreadable — ${err.message}; using the fallback list)`); }
-  const groupDoc = buildSmokeGroup({ ids, nowIso, userPool });
+  const groupDoc = buildSmokeGroup({ ids, nowIso, userPool, founderUid: flags.founder });
   const group = { id: ids.groupId, ...groupDoc };
 
   // THE WINDOW MUST BE OPEN AND LONG ENOUGH — the same rule the production
@@ -217,10 +247,11 @@ async function seed(db) {
   say(`${DRY}SEED — a dev pod for the battle week of Monday ${battleMondayEtDate} (label ${baseLayerWeek})`);
   rule();
   say(`Pod:      tournamentGroups/${ids.groupId}   (isDev, forming, lobby)`);
-  say(`Pool:     backingPools/${ids.poolId}   closes ${eligibility.closesAt} (${eligibility.closeReason})`);
+  say(`Pool:     backingPools/${ids.poolId}   closes ${et(eligibility.closesAt)} (${eligibility.closeReason})`);
   say(`Seats:    ${nameOf(group, ids.seatUids[0])} (${ids.seatUids[0]}), ${nameOf(group, ids.seatUids[1])} (${ids.seatUids[1]}), ${ids.cpuIds.join(', ')}`);
   say(`Backers:  ${ids.backerUids[0]} → ${bp(SMOKE_STAKES[0].amount)} on ${nameOf(group, ids.seatUids[SMOKE_STAKES[0].seat])}; ${ids.backerUids[1]} → ${bp(SMOKE_STAKES[1].amount)} on ${nameOf(group, ids.seatUids[SMOKE_STAKES[1].seat])}`);
-  say(`Wallets:  backingWallets/dev-${ids.backerUids[0]}, backingWallets/dev-${ids.backerUids[1]}  (yours: backingWallets/dev-<your uid>, once you back a team)`);
+  say(`Wallets:  backingWallets/dev-${ids.backerUids[0]}, backingWallets/dev-${ids.backerUids[1]}  (yours: backingWallets/dev-${flags.founder ?? '<your uid>'}, once you back a team)`);
+  say(`Deadline: back a team on the preview BEFORE the pool closes — ${et(eligibility.closesAt)}; with only the two test backers it would close as insufficient.`);
   if (flags.dryRun) { say(''); say('Dry run: nothing was written. Run without --dry-run to seed.'); return; }
 
   // 1. The pod — recorded in the manifest FIRST, so a failure below still cleans up.
@@ -228,7 +259,7 @@ async function seed(db) {
   const run = {
     groupId: ids.groupId, poolId: ids.poolId, stamp: ids.stamp, createdAt: nowIso,
     battleMondayEtDate, baseLayerWeek, seatUids: ids.seatUids, cpuIds: ids.cpuIds, backerUids: ids.backerUids,
-    uids: [...ids.backerUids], stakes: [],
+    founderUid: flags.founder ?? null, uids: [...ids.backerUids], stakes: [],
   };
   writeManifest(addRun(readManifest(), run));
   say(''); say(`✓ pod written and recorded in ${MANIFEST_PATH}`);
@@ -256,18 +287,19 @@ async function seed(db) {
 
   rule();
   say('NEXT — on the preview, signed in as the allowlisted account:');
-  say('  1. Open the League tab. The strip should read "Backing open · 1 pod".');
-  say(`  2. Open it. The one pod listed is this one (${nameOf(group, ids.seatUids[0])}, ${nameOf(group, ids.seatUids[1])}, two CPUs).`);
-  say('  3. Attest (18+ and the beta terms), back a team (any seat), then back the same team again to top up.');
-  say('  4. The pod row should show the SEALED lockup and the three chairs with "Threshold met" once you are in.');
+  say('  1. Open the League tab. The strip should read "Backing open · 1 pod" (more than 1: a previous smoke pod was not cleaned up).');
+  say(`  2. Open it. The one pod listed is this one (${nameOf(group, ids.seatUids[0])}, ${nameOf(group, ids.seatUids[1])}, CPU — Contrarian, CPU — Diversifier).`);
+  say('  3. Tap a seat, then its "Back …" button; confirm the two statements (Continue); back the team; then back the same team again to top up.');
+  say('  4. The pod row then reads "Pool qualified" with a check mark where the chairs were, still SEALED — no pot, no per-team figures.');
   say('  5. Then: node scripts/backing-smoke.js advance   (or: refund)');
+  say('Do 1–5 before Sunday 11:59 PM ET, and run cleanup before then too: at Monday 00:00 ET a smoke pod still in the database shows in every player\'s League tab.');
   rule();
 }
 
 // ==================== ADVANCE ====================
 
 async function advance(db) {
-  const run = pickRun(readManifest());
+  const run = await resolveRun(db, readManifest());
   const group = await requireSmokePod(db, run);
   const now = new Date();
   const nowIso = now.toISOString();
@@ -283,6 +315,26 @@ async function advance(db) {
   say(`${DRY}ADVANCE — pod ${run.groupId}, pool backingPools/${run.poolId} (${pool.status})`);
   rule();
   say(`Book now: ${totals.uniqueBackers ?? 0} backers, ${totals.teamsBacked ?? 0} teams, pot ${bp(totals.potTotal)}`);
+  // A pool that is neither open nor closed-with-a-book has nothing to settle:
+  // it closed on its own past Sunday 11:59 PM ET before the founder backed a
+  // team (insufficient), was refunded, or already resolved. Said BEFORE the
+  // week is banked, so no `complete` pod is left on a dead pool (SCRIPT-05).
+  if (pool.status !== POOL_STATUS.OPEN && pool.status !== POOL_STATUS.CLOSED) {
+    stop(3,
+      `The pool is ${pool.status}, so there is nothing to settle.`,
+      pool.status === POOL_STATUS.INSUFFICIENT
+        ? 'It closed on its own (Sunday 11:59 PM ET) before your stake was in, with only the two test backers. Run `cleanup`, `seed` again, and back a team before Sunday.'
+        : pool.status === POOL_STATUS.RESOLVED
+          ? 'This pod already advanced and settled. Run `cleanup`, then `seed` again.'
+          : pool.status === POOL_STATUS.REFUNDED
+            ? 'This pod was refunded (the refund walk). Run `cleanup`, then `seed` again.'
+            : 'Run `cleanup`, then `seed` again.');
+  }
+  // …and the POD must still be the lobby pod the seed made: a voided pod
+  // (the refund walk) or a completed one is never banked again (SCRIPT-R-1).
+  if (group.status !== GROUP_STATUS.FORMING) {
+    stop(3, `The pod is ${group.status}, not forming — it already advanced or was refunded. Run \`cleanup\`, then \`seed\` again.`);
+  }
   if (pool.status === POOL_STATUS.OPEN && ((totals.uniqueBackers ?? 0) < 3 || (totals.teamsBacked ?? 0) < 2)) {
     stop(3,
       `The pool is not valid yet (${totals.uniqueBackers ?? 0} of 3 backers, ${totals.teamsBacked ?? 0} of 2 teams): your own stake is missing.`,
@@ -338,15 +390,15 @@ async function advance(db) {
     say(`  ${id}: careerNet ${bp(wallet?.careerNet)}, ${entries.length} entries — ledger ${inv.ok ? 'OK' : 'MISMATCH'}`);
   }
   rule();
-  say('NEXT — on the preview: open Backing → the results (the strip reads "Last week\'s result"), and Your Backing; the Spectate final state of the pod carries the results card.');
-  say('Then: node scripts/backing-smoke.js cleanup   (and seed again for the refund walk)');
+  say('NEXT — on the preview: refresh the League tab (the strip reads "Last week’s result"), tap it for the results card ("paid ×…"), and Your Backing ("Settled"); "Open the tape" on either card opens the spectate view with the same card.');
+  say(`Then: node scripts/backing-smoke.js cleanup${flags.founder ? ` --founder=${flags.founder}` : ''}   (and seed again for the refund walk)`);
   rule();
 }
 
 // ==================== REFUND ====================
 
 async function refund(db) {
-  const run = pickRun(readManifest());
+  const run = await resolveRun(db, readManifest());
   const group = await requireSmokePod(db, run);
   const now = new Date();
   const nowIso = now.toISOString();
@@ -355,6 +407,12 @@ async function refund(db) {
   const pool = poolSnap.data();
   if (group.status === GROUP_STATUS.COMPLETE || pool.status === POOL_STATUS.RESOLVED) {
     stop(3, 'This pod already advanced and settled; a settled pool cannot be refunded. Run `cleanup`, `seed` again, back a team, then `refund`.');
+  }
+  if (pool.status === POOL_STATUS.INSUFFICIENT || pool.status === POOL_STATUS.REFUNDED) {
+    stop(3, `The pool is already ${pool.status}: every stake on it is void — there is nothing left to refund. Run \`cleanup\`, then \`seed\` again.`);
+  }
+  if (group.status !== GROUP_STATUS.FORMING) {
+    stop(3, `The pod is ${group.status}, not forming — it was already voided or advanced. Run \`cleanup\`, then \`seed\` again.`);
   }
   rule();
   say(`${DRY}REFUND — pod ${run.groupId}, pool backingPools/${run.poolId} (${pool.status})`);
@@ -396,17 +454,17 @@ async function refund(db) {
     say(`  ${id}: careerNet ${bp(wallet?.careerNet)}, ${entries.length} entries — ledger ${inv.ok ? 'OK' : 'MISMATCH'}`);
   }
   rule();
-  say('NEXT — on the preview: Your Backing shows the pod as cancelled with the refund. Then: node scripts/backing-smoke.js cleanup');
+  say(`NEXT — on the preview: Your Backing tags the pod "Refunded · stakes void" and your stake "void". Then: node scripts/backing-smoke.js cleanup${flags.founder ? ` --founder=${flags.founder}` : ''}`);
   rule();
 }
 
 // ==================== STATUS ====================
 
 async function status(db) {
-  const run = pickRun(readManifest());
+  const run = await resolveRun(db, readManifest());
   const group = await readGroup(db, run.groupId);
   rule();
-  say(`STATUS — pod ${run.groupId} (seeded ${run.createdAt})`);
+  say(`STATUS — pod ${run.groupId} (seeded ${run.createdAt}${run.recovered ? '; run rebuilt from the live pod' : ''}${run.founderUid ? `; founder ${run.founderUid}` : ''})`);
   rule();
   if (group == null) { say('The pod no longer exists (cleaned up?).'); return; }
   say(`Pod:      status ${group.status}, isDev ${group.isDev === true}, week ${group.baseLayerWeek}, banked days ${Object.keys(group.dailyScores ?? {}).filter((k) => /^day\d+$/.test(k)).length}`);
@@ -415,7 +473,7 @@ async function status(db) {
   const pool = poolSnap.data();
   const totalsSnap = await poolTotalsRefFor(db, group).get();
   const totals = totalsSnap.exists ? totalsSnap.data() : {};
-  say(`Pool:     backingPools/${run.poolId} — ${pool.status}; closes ${pool.closesAt}${pool.settledAt ? `; settled ${pool.settledAt} (pays ${pool.paysX}×)` : ''}${pool.refundedAt ? `; refunded ${pool.refundedAt} (${pool.refundReason})` : ''}${pool.holdReason ? `; HELD: ${pool.holdReason}` : ''}`);
+  say(`Pool:     backingPools/${run.poolId} — ${pool.status}; closes ${et(pool.closesAt)}${pool.settledAt ? `; settled ${pool.settledAt} (pays ${pool.paysX}×)` : ''}${pool.refundedAt ? `; refunded ${pool.refundedAt} (${pool.refundReason})` : ''}${pool.holdReason ? `; HELD: ${pool.holdReason}` : ''}`);
   say(`Book:     ${totals.uniqueBackers ?? 0} backers, ${totals.teamsBacked ?? 0} teams, pot ${bp(totals.potTotal)} (sealed; public: backers ${pool.backerProgress?.count ?? '—'} of ${pool.backerProgress?.floor ?? 3}, spread ${pool.teamSpread?.met ? 'met' : 'not met'})`);
   say('');
   say('STAKES:');
@@ -428,7 +486,7 @@ async function status(db) {
   if (flags.founder && !stakes.some((s) => s.userId === flags.founder)) say(`  (no stake from ${flags.founder} yet — back a team on the preview)`);
   say('');
   say('WALLETS (dev namespace) — Σ entries = the cached balances:');
-  const uids = [...new Set([...stakes.map((s) => s.userId), ...run.backerUids, ...(flags.founder ? [flags.founder] : [])])];
+  const uids = [...new Set([...stakes.map((s) => s.userId), ...run.backerUids, ...(run.founderUid ? [run.founderUid] : []), ...(flags.founder ? [flags.founder] : [])])];
   for (const uid of uids) {
     const { id, wallet, entries } = await readWalletWithEntries(db, uid);
     if (!wallet) { say(`  ${id}: no wallet yet`); continue; }
@@ -440,14 +498,40 @@ async function status(db) {
 
 // ==================== CLEANUP ====================
 
+/** The users a run's cleanup would sweep: its backers, its founder (from the marker, the manifest or --founder), and anyone whose stake names its pod. */
+const runUids = (run, stakes) => [...new Set([
+  ...run.backerUids,
+  ...stakes.map((s) => s.userId),
+  ...(run.founderUid ? [run.founderUid] : []),
+  ...(flags.founder ? [flags.founder] : []),
+])];
+
 async function cleanup(db) {
   const manifest = readManifest();
-  const runs = flags.pod ? manifest.runs.filter((r) => r.groupId === flags.pod) : manifest.runs;
-  if (runs.length === 0) stop(3, flags.pod ? `No run for pod ${flags.pod} in the manifest.` : 'Nothing to clean: the manifest lists no runs.');
+  let runs = flags.pod ? manifest.runs.filter((r) => r.groupId === flags.pod) : manifest.runs;
+  if (runs.length === 0 && flags.pod) {
+    // Not in the manifest: rebuild the run from the live pod's own marker.
+    const live = await readGroup(db, flags.pod);
+    const rebuilt = live ? runFromLiveGroup(flags.pod, live) : null;
+    if (rebuilt) { runs = [rebuilt]; say(`(pod ${flags.pod} is not in the manifest; its run was rebuilt from the live document's smoke marker)`); }
+  }
+  if (runs.length === 0) stop(3, flags.pod ? `No run for pod ${flags.pod}: not in the manifest and not a live pod this script seeded.` : 'Nothing to clean: the manifest lists no runs.');
+  for (const run of runs) {
+    if (!validSmokeRun(run)) stop(6, `REFUSED — nothing deleted: the run for pod ${run.groupId} is not in the smoke's shape (pod id, pool id or backers). The manifest at ${MANIFEST_PATH} has been edited or is from another build; move it aside.`);
+  }
+  // The runs that STAY after this command: a wallet or an event of a user
+  // one of them still names is theirs too (the founder backs every run from
+  // the one dev wallet), so it is kept until that run's own cleanup (DEV-4).
+  const staying = manifest.runs.filter((r) => !runs.some((x) => x.groupId === r.groupId) && validSmokeRun(r));
+  const stayingUids = new Map(); // uid -> the pod that still names it
+  for (const r of staying) {
+    for (const uid of runUids(r, await readStakes(db, r.groupId))) if (!stayingUids.has(uid)) stayingUids.set(uid, r.groupId);
+  }
+  const eventGroupOf = (data) => (typeof data?.groupId === 'string' ? data.groupId : typeof data?.props?.groupId === 'string' ? data.props.groupId : null);
 
   for (const run of runs) {
     rule();
-    say(`${DRY}CLEANUP — pod ${run.groupId}`);
+    say(`${DRY}CLEANUP — pod ${run.groupId}${run.recovered ? ' (run rebuilt from the live pod)' : ''}`);
     rule();
     const group = await readGroup(db, run.groupId);
     // The targets, each judged by the one verdict BEFORE anything is deleted.
@@ -477,9 +561,13 @@ async function cleanup(db) {
       if (meta.exists) consider(meta.ref, s);
       consider(ref, s);
     }
-    // Every backer's DEV wallet and ledger — the founder's too, found by his stake.
-    const uids = [...new Set([...run.backerUids, ...stakes.map((s) => s.userId)])];
+    // Every backer's DEV wallet and ledger — the founder's too (the marker,
+    // the manifest, --founder, or his stake) — unless a run that stays still
+    // names the user: then the wallet is theirs as much as this run's.
+    const uids = runUids(run, stakes);
+    const kept = [];
     for (const uid of uids) {
+      if (stayingUids.has(uid)) { kept.push(uid); continue; }
       const wRef = db.collection(BACKING_WALLETS_COLLECTION).doc(walletIdFor(uid, { dev: true }));
       const wSnap = await wRef.get();
       const entries = await wRef.collection(BACKING_WALLET_ENTRIES_SUBCOLLECTION).get();
@@ -492,7 +580,9 @@ async function cleanup(db) {
     const [poolSnap, totalsSnap] = await Promise.all([poolRef.get(), totalsRef.get()]);
     if (totalsSnap.exists) consider(totalsRef, totalsSnap.data());
     if (poolSnap.exists) consider(poolRef, poolSnap.data());
-    // The dev-marked events of this run's users (the founder's clicks included).
+    // The dev-marked events of this run's users (the founder's clicks
+    // included). A user a staying run still names keeps the events that do
+    // not name THIS pod (a `window_viewed` belongs to every live run).
     const runWithUids = { ...run, uids };
     for (const uid of uids) {
       const evSnap = await db.collection(BACKING_EVENTS_COLLECTION).where('userId', '==', uid).get();
@@ -500,6 +590,7 @@ async function cleanup(db) {
         const data = d.data();
         const marked = data?.isDev === true || data?.props?.isDev === true || d.id.startsWith('dev:') || d.id.startsWith('stake_confirmed:dev:');
         if (!marked) return; // an unmarked event is not the smoke's — left alone, not refused
+        if (stayingUids.has(uid) && eventGroupOf(data) !== run.groupId) return; // another live run's, or every run's
         const verdict = devTargetVerdict(d.ref.path, data, runWithUids);
         if (!verdict.ok) refusals.push(verdict.reason); else targets.push({ path: d.ref.path, ref: d.ref });
       });
@@ -510,6 +601,7 @@ async function cleanup(db) {
     }
     say(`${targets.length} document(s) to delete:`);
     for (const t of targets) say(`  - ${t.path}`);
+    for (const uid of kept) say(`  · kept: backingWallets/${walletIdFor(uid, { dev: true })} (+ ledger) and the dev-marked events that do not name this pod — still named by run ${stayingUids.get(uid)}; that run's cleanup sweeps them`);
     say('  (never: eligibility/* — your attestation is your real consent record and stays)');
     if (flags.dryRun) { say(''); say('Dry run: nothing was deleted.'); continue; }
 
@@ -526,7 +618,8 @@ async function cleanup(db) {
 
 // ==================== MAIN ====================
 
-const db = getFirebaseAdmin();
+// `status` and every `--dry-run` hold a handle whose write paths THROW.
+const db = command === 'status' || flags.dryRun ? readOnlyHandle(getFirebaseAdmin()) : getFirebaseAdmin();
 const COMMANDS = { seed, advance, refund, status, cleanup };
 COMMANDS[command](db).then(() => process.exit(0)).catch((err) => {
   console.error('');

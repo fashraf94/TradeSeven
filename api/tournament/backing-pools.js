@@ -92,6 +92,7 @@ import { SETTLEMENT_SOURCE, settlePool, settlementPredicate } from '../_utils/ba
 import { TOURNAMENT_GROUPS_COLLECTION } from '../../src/constants/leagueTournament.js';
 import { TOURNAMENT_ADVANCEMENT_FROZEN } from '../../src/config/featureFlags.js';
 import { backingLitFor, smokeOverrideFor } from '../_utils/backingSmoke.js';
+import { walletIdFor } from '../_utils/backingWallet.js';
 
 export const config = { maxDuration: 15 };
 
@@ -448,6 +449,11 @@ export default async function handler(req, res) {
       backingWeekStart: week?.startIso ?? null,
       backingWeekCloses: week?.closeIso ?? null,
       viewerUid: user.uid,
+      // A SMOKE session's stakes debit its DEV wallet (`dev-{uid}`,
+      // backingStake.js), so the list names the wallet document the client's
+      // allowance meter must read; every other caller's answer is unchanged
+      // — no key (DEV-5, the activation review record).
+      ...(smoke ? { walletId: walletIdFor(user.uid, { dev: true }) } : {}),
       pods,
     });
   } catch (err) {

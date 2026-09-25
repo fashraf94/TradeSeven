@@ -80,10 +80,12 @@ export function smokeOverrideFor(uid, env = process.env) {
 
 /** The backing layer, for this caller: the code flag, or the smoke override. */
 export function backingLitFor(uid, env = process.env) {
-  return Boolean(BACKING_BETA_ENABLED) || smokeOverrideFor(uid, env);
+  // `=== true`, as the client hook reads it (useBackingLit.js): one semantics
+  // for the flag on both sides (LIGHT-R-2, the activation review record).
+  return BACKING_BETA_ENABLED === true || smokeOverrideFor(uid, env);
 }
 
 /** The attestation door, for this caller: the code flag, or the smoke override. */
 export function eligibilityLitFor(uid, env = process.env) {
-  return Boolean(ELIGIBILITY_ATTESTATION_ENABLED) || smokeOverrideFor(uid, env);
+  return ELIGIBILITY_ATTESTATION_ENABLED === true || smokeOverrideFor(uid, env);
 }

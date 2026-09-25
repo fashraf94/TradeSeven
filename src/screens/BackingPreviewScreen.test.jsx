@@ -692,3 +692,23 @@ describe('the gate — reachable under the dev server or on a Vercel preview, ne
     expect(importers).toEqual(['src/main.jsx']);
   });
 });
+
+// WIRE-4 (the activation review record): the page's lit context is the app's
+// own now (backingPreview.js re-exports BackingLitContext), so a GATED default
+// export mounted under the page's provider would light and open a real
+// subscription the mocked hooks above would hide from the network rows. The
+// page imports the pure views only — never one of the five gated defaults.
+describe('the page never mounts a gated default export (WIRE-4)', () => {
+  it('every import from the five gated modules is named-only, and the two pure views are the ones imported', () => {
+    const src = readFileSync(path.join(REPO, 'src/screens/BackingPreviewScreen.jsx'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    for (const mod of ['BackingLandingStrip', 'BackingScreen', 'BackingStatsEntry', 'ScoutingLine', 'SpectateBackingResults']) {
+      const imports = src.match(new RegExp(String.raw`import\s[^;]*?from\s+'[^']*/backing/${mod}'`, 'g')) ?? [];
+      for (const line of imports) {
+        expect(line, `${mod}: a default import would mount a gated surface under the page's lit context`).toMatch(/^import\s*\{[^}]*\}\s*from/);
+      }
+    }
+    expect(src).toContain("import { ScoutingLineView } from '../components/League/backing/ScoutingLine'");
+    expect(src).toContain("import { StatsEntryView } from '../components/League/backing/BackingStatsEntry'");
+    expect(src).not.toMatch(/import\s+BackingLandingStrip\b|import\s+BackingScreen\b|import\s+SpectateBackingResults\b/);
+  });
+});

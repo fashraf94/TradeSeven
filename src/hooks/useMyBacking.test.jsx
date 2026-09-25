@@ -247,6 +247,19 @@ describe('the pool subscription follows the stake\'s poolId (the activation PR â
     expect(latest.poolsById.g2).toEqual({ status: 'closed' });
   });
 
+  it('a stake that NAMES its pool wins over the groupId fallback whatever order the stakes arrive in (WIRE-5)', async () => {
+    for (const order of [[0, 1], [1, 0]]) {
+      svc.stakeListeners = []; svc.poolListeners = {}; svc.groupListeners = {}; svc.groupErrors = {};
+      const named = { id: 's1', groupId: 'g1', poolId: 'dev-g1', teamOdUserId: 'od-a', amount: 100, status: 'live', weekKey: '2026-W39' };
+      const bare = { id: 's2', groupId: 'g1', teamOdUserId: 'od-b', amount: 100, status: 'live', weekKey: '2026-W39' };
+      svc.stakes = order.map((i) => [named, bare][i]);
+      svc.pools = { 'dev-g1': { status: 'closed', isDev: true }, g1: { status: 'open' } };
+      await mount({ uid: 'u1', keys: ['2026-W39'] });
+      expect(Object.keys(svc.poolListeners), `order ${order}`).toEqual(['dev-g1']);
+      expect(latest.poolsById.g1, `order ${order}`).toEqual({ status: 'closed', isDev: true });
+    }
+  });
+
   it('a pool id that moves re-subscribes at the new document', async () => {
     svc.stakes = [{ id: 's1', groupId: 'g1', teamOdUserId: 'od-a', amount: 100, status: 'live', weekKey: '2026-W39' }];
     svc.pools = { g1: { status: 'open' }, 'dev-g1': { status: 'closed', isDev: true } };

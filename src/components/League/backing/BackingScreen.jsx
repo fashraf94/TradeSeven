@@ -115,7 +115,8 @@ function BackingScreenLive({ uid, accent, viewport, onBack, onOpenTape, initialS
   const upcomingWeek = pods.data?.baseLayerWeek ?? null;
   // Both weeks — see BackingLandingStrip (DOM-1); read each render (DOM-NOTE-5).
   const inPlay = useMyBacking(uid, backingWeekKeys(new Date(), upcomingWeek), Boolean(uid));
-  const wallet = useBackingWallet(uid, upcomingWeek, Boolean(uid));
+  // The wallet document the list names (a smoke session's `dev-{uid}`), else the viewer's own.
+  const wallet = useBackingWallet(uid, upcomingWeek, Boolean(uid), pods.data?.walletId ?? null);
   const eligibility = useEligibility(uid, Boolean(uid));
   const myPitch = useMyPitch(uid, Boolean(uid));
   const [view, setView] = useState({ kind: 'list', groupId: null, odUserId: null });

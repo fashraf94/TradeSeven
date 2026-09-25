@@ -27,14 +27,19 @@ export function allowanceLeft(wallet, weekKey) {
   return ALLOWANCE_BP;
 }
 
-export default function useBackingWallet(uid, weekKey, enabled = true) {
+// `walletId`: the wallet DOCUMENT to read when it is not the viewer's own uid
+// — the pod list names `dev-{uid}` for a founder smoke session (the activation
+// PR: a smoke stake debits the dev wallet, so the meter must read it or it
+// would show the full allowance for the whole walk). Null — the uid's own.
+export default function useBackingWallet(uid, weekKey, enabled = true, walletId = null) {
   const [state, setState] = useState({ wallet: null, known: false });
+  const docId = typeof walletId === 'string' && walletId.length > 0 ? walletId : uid;
   useEffect(() => {
     if (!enabled || !uid) { setState({ wallet: null, known: false }); return undefined; }
     setState({ wallet: null, known: false });
-    const unsub = subscribeWallet(uid, (wallet, err) => setState({ wallet, known: !err }));
+    const unsub = subscribeWallet(docId, (wallet, err) => setState({ wallet, known: !err }));
     return () => unsub();
-  }, [enabled, uid]);
+  }, [enabled, uid, docId]);
   // `known`: the server's record has been read — a MISSING document is a
   // record (no wallet yet; the full allowance ahead). Until the first snapshot
   // lands, or after a failed read, the allowance is unknown and no surface

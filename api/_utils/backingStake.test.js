@@ -95,6 +95,21 @@ describe('a SMOKE session backs dev pods only (the dev-only row — mutation che
     expect(DB.stats.commits).toBe(0);
   });
 
+  it('a smoke stake on a MISSING pod never runs the §7 lazy close — an orphaned PRODUCTION pool under the id is left untouched, the answer is still no_pod (DEV-1, the activation review record)', async () => {
+    // No tournamentGroups document; an OPEN production pool under the id.
+    const orphan = () => ({ [`${BACKING_POOLS_COLLECTION}/${GROUP_ID}`]: pool(), ...eligible() });
+    const DB = makeVersionedDb(orphan());
+    const out = await placeStake(DB.db, args({ smoke: true, allowDev: true }));
+    expect(out.refusal).toEqual({ status: 409, error: 'no_pod', message: 'That pod is no longer available.' });
+    expect(DB.writeLog).toEqual([]);
+    expect(DB.store.get(`${BACKING_POOLS_COLLECTION}/${GROUP_ID}`).status).toBe(POOL_STATUS.OPEN);
+    // …while a NON-smoke caller on the same world still runs the close (§7), as on main.
+    const DB2 = makeVersionedDb(orphan());
+    const out2 = await placeStake(DB2.db, args());
+    expect(out2.refusal?.error).toBe('no_pod');
+    expect(DB2.writeLog.length).toBeGreaterThan(0);
+  });
+
   it('refuses on the FRESH in-transaction read too — a pod whose dev flag vanished between the reads', async () => {
     const DB = makeVersionedDb(devWorld());
     // The cheap read sees a dev pod; the transaction's read sees a production one.
@@ -113,7 +128,8 @@ describe('a SMOKE session backs dev pods only (the dev-only row — mutation che
       return { ...col, doc: (id) => (id === GROUP_ID ? { ...groupRef, get: flip } : col.doc(id)) };
     };
     const out = await placeStake(DB.db, args({ smoke: true, allowDev: true }));
-    expect(out.refusal?.error).toBe(SMOKE_REQUIRES_DEV);
+    // The same answer as the cheap read's, message included (WIRE-2).
+    expect(out.refusal).toEqual({ status: 409, error: SMOKE_REQUIRES_DEV, message: 'A smoke session backs dev pods only.' });
     expect(stakeWrites(DB.writeLog)).toEqual([]);
   });
 

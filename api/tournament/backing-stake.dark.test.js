@@ -132,8 +132,12 @@ describe('the darkness is the FLAG, not an accident of the mocks', () => {
 // THE ACTIVATION PR — the founder smoke override CANNOT light these routes for
 // a non-allowlisted uid, on a production deployment, or without both env vars:
 // the same 404, the same zero Firestore touches. (The lit case — an allowlisted
-// uid on a preview — is each route's own lit suite's row; this file's database
-// double throws on any touch, so only darkness can be asserted here.)
+// uid on a preview — is the helper's own lit row (backingSmoke.test.js) plus
+// the GATE_OF source pin that every door calls it on the token's uid
+// (backingBetaFlags.test.js); the doors whose BEHAVIOUR differs for a smoke
+// session — the pod list, the stake, the event sink, attest, the pitch —
+// carry their own lit rows besides. This file's database double throws on
+// any touch, so only darkness can be asserted here — LIGHT-6.)
 describe('the founder smoke override cannot light a dark route (the activation PR)', () => {
   const lit = (uid) => {
     vi.stubEnv('VERCEL_ENV', 'preview');

@@ -104,7 +104,10 @@ export default function useMyBacking(uid, weekKeys, enabled = true) {
     const out = {};
     for (const s of stakes) {
       if (typeof s?.groupId !== 'string') continue;
-      out[s.groupId] = typeof s.poolId === 'string' && s.poolId.length > 0 ? s.poolId : s.groupId;
+      // A stake that NAMES its pool wins over the `groupId` fallback whatever
+      // order the stakes arrive in (WIRE-5, the activation review record).
+      if (typeof s.poolId === 'string' && s.poolId.length > 0) out[s.groupId] = s.poolId;
+      else if (!(s.groupId in out)) out[s.groupId] = s.groupId;
     }
     return out;
   }, [stakes]);

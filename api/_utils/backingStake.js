@@ -283,8 +283,12 @@ export async function placeStake(db, {
   const group = await readGroup(db, groupId);
   if (group == null) {
     // A deleted pod still refunds whatever its pool held (§7); the stake
-    // itself has nowhere to go.
-    await ensureClosed(db, groupId, at);
+    // itself has nowhere to go. NOT for a SMOKE SESSION: `ensureClosed` on a
+    // missing pod probes the PRODUCTION pool first, and a smoke session has
+    // no business closing anything outside the dev namespace — a smoke pod
+    // that is gone was cleaned up, dev pool included (DEV-1, the activation
+    // review record). The answer is the same either way.
+    if (smoke !== true) await ensureClosed(db, groupId, at);
     return { refusal: { status: 409, error: 'no_pod', message: 'That pod is no longer available.' } };
   }
   // A SMOKE SESSION BACKS DEV PODS ONLY — decided on the pod's own `isDev`,
@@ -358,7 +362,7 @@ export async function placeStake(db, {
     if (!stakeablePod(txGroup)) return { refusal: { status: 409, error: 'no_pool' } };
     // The smoke belt again, on the FRESH read: a pod that is not dev on this
     // read is not a smoke session's to back.
-    if (smoke === true && txGroup.isDev !== true) return { refusal: { status: 409, error: SMOKE_REQUIRES_DEV } };
+    if (smoke === true && txGroup.isDev !== true) return { refusal: { status: 409, error: SMOKE_REQUIRES_DEV, message: 'A smoke session backs dev pods only.' } };
 
     const poolRef = poolRefFor(db, txGroup);
     const poolSnap = await tx.get(poolRef);

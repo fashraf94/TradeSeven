@@ -176,6 +176,23 @@ describe('the founder smoke override (the activation PR): a smoke session\'s eve
     expect(doc).toMatchObject({ userId: state.uid, groupId: 'grp-1', event: 'window_viewed', isDev: true, props: { weekKey: '2026-W40' } });
   });
 
+  it('the decision is the TOKEN\'s uid: a foreign uid in the body changes nothing — still the `dev:` id, still `isDev`, recorded under the token\'s uid (LIGHT-1)', async () => {
+    state.flag = false;
+    lit();
+    const res = await post({ event: 'window_viewed', groupId: 'grp-1', props: { weekKey: '2026-W40' }, uid: 'someone-else', userId: 'someone-else' });
+    expect(res.statusCode).toBe(200);
+    const [path, doc] = events()[0];
+    expect(path).toMatch(/^backingEvents\/dev:bev_window_viewed_/);
+    expect(doc).toMatchObject({ userId: state.uid, isDev: true });
+    // …and a NON-allowlisted token carrying the allowlisted uid in its body is dark.
+    DB.writeLog.length = 0;
+    const founder = state.uid;
+    state.uid = 'someone-else';
+    const dark = await post({ event: 'window_viewed', groupId: 'grp-1', props: { weekKey: '2026-W40' }, uid: founder, userId: founder });
+    expect(dark.statusCode).toBe(404);
+    expect(DB.writeLog).toEqual([]);
+  });
+
   it('a LIT non-smoke caller (the flag on) is unchanged: a plain id, no `isDev` key', async () => {
     state.flag = true;
     lit();

@@ -142,4 +142,17 @@ describe('BackingLitProvider', () => {
     expect(hook).not.toMatch(/fetch|backingService|UserContext/);
     expect(provider).toContain("from '../../../services/backingService'");
   });
+
+  it('the app root mounts the provider ONCE, inside UserProvider and around <App /> — the mount the founder\'s smoke depends on (LIGHT-2; the wrong ORDER is a crash for every viewer, not a dark app: useUser throws outside UserProvider — LIGHT-R-1)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const path = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const main = readFileSync(path.join(here, '..', 'main.jsx'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    expect(main).toContain("import BackingLitProvider from './components/League/backing/BackingLitProvider'");
+    expect(main).toMatch(/<UserProvider>[\s\S]*<BackingLitProvider>[\s\S]*<App \/>[\s\S]*<\/BackingLitProvider>[\s\S]*<\/UserProvider>/);
+    expect(main.match(/<BackingLitProvider>/g)).toHaveLength(1);
+    // …and never on the no-auth fixture page's branch (it has no UserProvider).
+    expect(main).not.toMatch(/<BackingLitProvider>[\s\S]*<BackingPreviewScreen \/>/);
+  });
 });

@@ -20,8 +20,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   FALLBACK_USER_POOL, SMOKE_STAKES, SMOKE_TOOL, addDays, addRun, buildSmokeGroup, buildSyntheticWeek, devTargetVerdict,
-  emptyManifest, latestRun, ledgerInvariant, parseArgs, removeRun, runStamp, smokeEligibilityFor, smokeIds, syntheticToken, upcomingBattleWeek,
+  emptyManifest, latestRun, ledgerInvariant, parseArgs, readOnlyHandle, removeRun, runFromLiveGroup, runStamp, smokeEligibilityFor, smokeIds,
+  syntheticToken, upcomingBattleWeek, validSmokeRun,
 } from './backingSmokeLib.js';
+import { SMOKE_POD_TOOL, smokeListablePod } from '../api/_utils/backingPools.js';
 import { makeVersionedDb } from '../api/_utils/__fixtures__/versionedFirestore.js';
 import { poolEligible } from '../api/_utils/backingWeek.js';
 import { BACKING_POOLS_COLLECTION, BACKING_STAKES_COLLECTION, POOL_STATUS, VOID_REASONS, closePool, materializePool, poolIdFor, walletIdFor as _unused } from '../api/_utils/backingPools.js';
@@ -81,6 +83,17 @@ describe('the seed', () => {
     expect(doc.isTraining).toBeUndefined();
     expect(buildSmokeGroup({ ids, nowIso: NOW.toISOString(), userPool: Array.from({ length: 20 }, (_, i) => `S${i}`) }).userPool).toHaveLength(20);
   });
+  it('the marker is the ONE constant the smoke pod list admits on, and carries the run\'s backers (and the founder when named) so cleanup can rebuild the run from the live pod (SCRIPT-07, SCRIPT-08)', () => {
+    const ids = smokeIds(STAMP);
+    expect(SMOKE_TOOL).toBe(SMOKE_POD_TOOL);
+    const doc = buildSmokeGroup({ ids, nowIso: NOW.toISOString(), userPool: [] });
+    expect(doc.smoke).toEqual({ tool: SMOKE_TOOL, stamp: STAMP, createdAt: NOW.toISOString(), backerUids: ids.backerUids });
+    expect(smokeListablePod({ id: ids.groupId, ...doc })).toBe(true);
+    expect(smokeListablePod({ id: ids.groupId, ...doc, smoke: undefined })).toBe(false);
+    const named = buildSmokeGroup({ ids, nowIso: NOW.toISOString(), userPool: [], founderUid: FOUNDER });
+    expect(named.smoke.founderUid).toBe(FOUNDER);
+    expect(buildSmokeGroup({ ids, nowIso: NOW.toISOString(), userPool: [], founderUid: '' }).smoke.founderUid).toBeUndefined();
+  });
 });
 
 describe('the synthetic week', () => {
@@ -100,6 +113,17 @@ describe('the synthetic week', () => {
     const values = Object.values(composites);
     expect(new Set(values).size).toBe(values.length); // no ties
     expect(getWeeklyComposite(banked, ids.seatUids[1])).toBe(Math.max(...values));
+  });
+  it('a CPU seat named winner IS the winner — on both layers, no ties (SCRIPT-03: `--winner=cpu-98` is honoured, never silently overridden)', () => {
+    for (const winner of group.groupMembers) {
+      const dailyScores = buildSyntheticWeek({ group, battleMondayEtDate: '2026-09-28', winnerOdUserId: winner, recordedAtIso: NOW.toISOString() });
+      const banked = { ...group, dailyScores, status: GROUP_STATUS.COMPLETE };
+      const { winners, composites } = winningSet(banked);
+      expect(winners, winner).toEqual([winner]);
+      expect(new Set(Object.values(composites)).size).toBe(4);
+      expect(agentLayerAbsent(banked)).toBe(false);
+      for (const uid of ids.seatUids) expect(dailyScores.day1.closeScores[uid].agentPoints, uid).toBeGreaterThan(0);
+    }
   });
   it('refuses a winner who is not seated, and a missing Monday', () => {
     expect(() => buildSyntheticWeek({ group, battleMondayEtDate: '2026-09-28', winnerOdUserId: 'nobody', recordedAtIso: NOW.toISOString() })).toThrow(/not a member/);
@@ -135,13 +159,13 @@ describe('the synthetic eligibility checker', () => {
 });
 
 describe('the cleanup verdict (mutation check 4: a non-dev target reds these rows)', () => {
-  const run = { groupId: 'smk_1', poolId: 'dev-smk_1', uids: ['smk_backer_1_1', FOUNDER] };
+  const run = { groupId: 'smk_1', poolId: 'dev-smk_1', backerUids: ['smk_backer_1_1'], uids: ['smk_backer_1_1', FOUNDER] };
   const ok = (p, d) => expect(devTargetVerdict(p, d, run).ok, p).toBe(true);
   const refused = (p, d, why) => { const v = devTargetVerdict(p, d, run); expect(v.ok, p).toBe(false); if (why) expect(v.reason).toMatch(why); };
   it('admits exactly this run\'s dev-namespaced documents', () => {
     ok('backingPools/dev-smk_1', {}); ok('backingPools/dev-smk_1/private/totals', {});
     ok('backingWallets/dev-smk_backer_1_1', {}); ok(`backingWallets/dev-${FOUNDER}/entries/allowance:2026-W40`, {});
-    ok('backingStakes/stk_abc', { groupId: 'smk_1' }); ok('backingStakes/stk_abc/private/meta', { groupId: 'smk_1' });
+    ok('backingStakes/stk_abc', { groupId: 'smk_1', poolId: 'dev-smk_1' }); ok('backingStakes/stk_abc/private/meta', { groupId: 'smk_1', poolId: 'dev-smk_1' });
     ok('backingEvents/stake_confirmed:dev:dbt_1', { userId: FOUNDER, props: { isDev: true } });
     ok('backingEvents/dev:bev_window_viewed_x', { userId: FOUNDER, isDev: true });
     ok('tournamentGroups/smk_1', { isDev: true, smoke: { tool: SMOKE_TOOL } });
@@ -152,8 +176,10 @@ describe('the cleanup verdict (mutation check 4: a non-dev target reds these row
     refused('backingPools/dev-other', {}, /not this run/);
     refused(`backingWallets/${FOUNDER}`, {}, /outside the dev namespace/);
     refused('backingWallets/dev-x/other/y', {}, /unexpected subcollection/);
-    refused('backingStakes/stk_abc', { groupId: 'prod-pod' }, /does not name this run/);
-    refused('backingStakes/stk_abc/private/other', { groupId: 'smk_1' }, /unexpected subcollection/);
+    refused('backingStakes/stk_abc', { groupId: 'prod-pod', poolId: 'dev-smk_1' }, /does not name this run's pod/);
+    refused('backingStakes/stk_abc', { groupId: 'smk_1', poolId: 'smk_1' }, /does not name this run's dev pool/);
+    refused('backingStakes/stk_abc', { groupId: 'smk_1' }, /does not name this run's dev pool/);
+    refused('backingStakes/stk_abc/private/other', { groupId: 'smk_1', poolId: 'dev-smk_1' }, /unexpected subcollection/);
     refused('backingEvents/bev_window_viewed_x', { userId: FOUNDER }, /without the dev marker/);
     refused('backingEvents/dev:bev_x', { userId: 'stranger', isDev: true }, /outside this run/);
     refused('tournamentGroups/prod-pod', { isDev: true, smoke: { tool: SMOKE_TOOL } }, /not this run/);
@@ -164,6 +190,80 @@ describe('the cleanup verdict (mutation check 4: a non-dev target reds these row
     refused('agentBattles/x', {}, /never touches/);
     refused('backingPools', {}, /not a document path/);
     refused('backingPools/dev-smk_1/private', {}, /not a document path/);
+  });
+  it('REFUSES EVERYTHING for a run outside the smoke shape — a bent manifest naming a production pod can admit nothing, not even a dev wallet (DEV-3)', () => {
+    const bent = [
+      { groupId: 'prod-pod-abc', poolId: 'dev-prod-pod-abc', backerUids: [] },           // not the smoke prefix
+      { groupId: 'smk_1', poolId: 'smk_1', backerUids: [] },                             // a production pool id
+      { groupId: 'smk_1', poolId: 'dev-smk_2', backerUids: [] },                         // another pod's pool
+      { groupId: 'smk_1', poolId: 'dev-smk_1' },                                         // no backers list
+      { groupId: 'smk_1', poolId: 'dev-smk_1', backerUids: ['ok', 42] },                 // a non-string backer
+      null,
+    ];
+    for (const r of bent) {
+      expect(validSmokeRun(r), JSON.stringify(r)).toBe(false);
+      for (const p of ['backingStakes/stk_1', 'backingWallets/dev-x', 'backingPools/dev-smk_1', 'tournamentGroups/smk_1', 'backingEvents/dev:bev_1']) {
+        const v = devTargetVerdict(p, { groupId: 'prod-pod-abc', poolId: 'prod-pod-abc', isDev: true, smoke: { tool: SMOKE_TOOL }, userId: 'ok', isDev_: true }, r);
+        expect(v.ok, `${JSON.stringify(r)} ${p}`).toBe(false);
+        expect(v.reason).toMatch(/not a smoke run/);
+      }
+    }
+    expect(validSmokeRun(run)).toBe(true);
+    expect(validSmokeRun({ groupId: 'smk_1', poolId: 'dev-smk_1', backerUids: [] })).toBe(true);
+  });
+});
+
+describe('a run rebuilt from the LIVE pod (cleanup --pod on a machine without the manifest — SCRIPT-07)', () => {
+  const ids = smokeIds(STAMP);
+  const doc = buildSmokeGroup({ ids, nowIso: NOW.toISOString(), userPool: [], founderUid: FOUNDER });
+  it('rebuilds exactly the manifest\'s shape from a marked isDev pod, marked `recovered`', () => {
+    const run = runFromLiveGroup(ids.groupId, doc);
+    expect(run).toMatchObject({
+      groupId: ids.groupId, poolId: ids.poolId, stamp: STAMP, createdAt: NOW.toISOString(), baseLayerWeek: '2026-W40',
+      seatUids: ids.seatUids, cpuIds: ids.cpuIds, backerUids: ids.backerUids, founderUid: FOUNDER, uids: ids.backerUids, stakes: [], recovered: true,
+    });
+    expect(validSmokeRun(run)).toBe(true);
+    expect(runFromLiveGroup(ids.groupId, { ...doc, smoke: { tool: SMOKE_TOOL, stamp: STAMP } }).backerUids).toEqual([]);
+  });
+  it('is null — never a guess — for an unmarked pod, a production pod, a foreign dev pod, a `dev-` id, or a pod outside the smoke prefix', () => {
+    expect(runFromLiveGroup(ids.groupId, { ...doc, smoke: undefined })).toBeNull();
+    expect(runFromLiveGroup(ids.groupId, { ...doc, smoke: { tool: 'scripts/seed-tournament-group.js' } })).toBeNull();
+    expect(runFromLiveGroup(ids.groupId, { ...doc, isDev: false })).toBeNull();
+    expect(runFromLiveGroup('prod-pod', { ...doc })).toBeNull();
+    expect(runFromLiveGroup(`dev-${ids.groupId}`, { ...doc })).toBeNull();
+    expect(runFromLiveGroup(ids.groupId, null)).toBeNull();
+  });
+});
+
+describe('the read-only handle (status and every --dry-run — DEV-6 / SCRIPT-10)', () => {
+  const fake = () => {
+    const doc = { set: () => 'wrote', update: () => 'wrote', delete: () => 'wrote', get: async () => ({ exists: true, data: () => ({ a: 1 }), ref: { set: () => 'wrote' } }), collection: () => query, path: 'c/d', id: 'd', parent: { doc: () => doc }, firestore: {} };
+    const query = { where: () => query, orderBy: () => query, limit: () => query, get: async () => ({ size: 1, forEach: (f) => f({ id: 'x', data: () => ({}), ref: doc }) }), doc: () => doc, add: () => 'wrote', listCollections: async () => [query] };
+    const db = { collection: () => query, batch: () => ({ delete: () => {}, commit: () => 'wrote' }), runTransaction: async () => 'wrote', doc: () => doc, collectionGroup: () => query };
+    return db;
+  };
+  it('every write path THROWS — on the handle and on everything chained from it — and reads pass through', async () => {
+    const db = readOnlyHandle(fake());
+    expect(() => db.batch()).toThrow(/READ-ONLY VIOLATION/);
+    expect(() => db.runTransaction()).toThrow(/READ-ONLY VIOLATION/);
+    expect(() => db.collection('x').doc('y').set({})).toThrow(/READ-ONLY VIOLATION: db\.collection\.doc\.set/);
+    expect(() => db.collection('x').doc('y').update({})).toThrow(/READ-ONLY VIOLATION/);
+    expect(() => db.collection('x').doc('y').delete()).toThrow(/READ-ONLY VIOLATION/);
+    expect(() => db.collection('x').add({})).toThrow(/READ-ONLY VIOLATION/);
+    expect(() => db.collection('x').where('a', '==', 1).doc('y').set({})).toThrow(/READ-ONLY VIOLATION/);
+    expect(() => db.collection('x').doc('y').collection('z').doc('w').delete()).toThrow(/READ-ONLY VIOLATION/);
+    // The escape hatches are blocked on ACCESS.
+    expect(() => db.collection('x').doc('y').parent).toThrow(/escape hatch/);
+    expect(() => db.collection('x').doc('y').firestore).toThrow(/escape hatch/);
+    // Reads, chaining, plain properties and Promise results pass.
+    expect(db.collection('x').doc('y').path).toBe('c/d');
+    expect(db.collection('x').doc('y').id).toBe('d');
+    const snap = await db.collection('x').doc('y').get();
+    expect(snap.exists).toBe(true);
+    expect(snap.data()).toEqual({ a: 1 });
+    expect((await db.collection('x').where('a', '==', 1).orderBy('b').limit(5).get()).size).toBe(1);
+    expect(await db.collection('x').doc('y').listCollections?.()).toBeUndefined();
+    expect((await db.collection('x').listCollections()).length).toBe(1);
   });
 });
 
@@ -206,6 +306,9 @@ describe('the manifest and the command line', () => {
     expect(parseArgs(['status', '--founder=me', '--json'])).toMatchObject({ command: 'status', flags: { founder: 'me', json: true } });
     expect(parseArgs(['nuke'])).toMatchObject({ command: null });
     expect(parseArgs(['cleanup', '--force'])).toMatchObject({ command: 'cleanup', unknown: ['--force'] });
+    // `seed` mints a run; a --pod there is a mistake, reported, not ignored (SCRIPT-12).
+    expect(parseArgs(['seed', '--pod=smk_1'])).toMatchObject({ command: 'seed', flags: { pod: null }, unknown: ['--pod=smk_1'] });
+    expect(parseArgs(['cleanup', '--pod=smk_1', '--founder=me'])).toMatchObject({ command: 'cleanup', flags: { pod: 'smk_1', founder: 'me' }, unknown: [] });
   });
 });
 
@@ -256,21 +359,30 @@ describe('the walk — seed, the founder\'s stake, close, the synthetic week, se
     expect(DB.store.has(`${BACKING_WALLETS_COLLECTION}/${FOUNDER}`)).toBe(false);
   });
 
-  it('the walk writes NOTHING outside the dev namespace — every written path is a dev pool, a dev wallet, a stake of the dev pod, or the dev pod itself; the founder\'s eligibility is READ, never written', async () => {
-    const DB = makeVersionedDb(founderWorld());
-    await seedOn(DB);
-    await founderStakes(DB, ids.seatUids[1], 100, 'founder-1');
-    const run = { groupId: ids.groupId, poolId: ids.poolId, uids: [...ids.backerUids, FOUNDER] };
+  // EVERY path the harness saw written, through the cleanup verdict: a dev
+  // pool, a dev wallet, a stake of the dev pod (naming the dev pool), or the
+  // dev pod itself — nothing else, ever (the dev-only row; DEV-7: run after
+  // the seed, after advance and after refund alike).
+  const run = { groupId: ids.groupId, poolId: ids.poolId, backerUids: ids.backerUids, uids: [...ids.backerUids, FOUNDER] };
+  function expectOnlyDevWrites(DB, atLeast) {
     const written = [...new Set(DB.writeLog.map(([, p]) => p))];
-    expect(written.length).toBeGreaterThan(10);
+    expect(written.length).toBeGreaterThanOrEqual(atLeast);
     for (const p of written) {
       const [col, id] = p.split('/');
-      // A stake's sealed meta is judged by its PARENT's groupId (the script passes the parent too).
+      // A stake's sealed meta is judged by its PARENT (the script passes the parent too).
       const doc = col === 'backingStakes' ? DB.store.get(`${col}/${id}`) : (DB.store.get(p) ?? DB.store.get(`${col}/${id}`));
       expect(devTargetVerdict(p, doc, run).ok, p).toBe(true);
     }
     expect(written.some((p) => p.startsWith(`${ELIGIBILITY_COLLECTION}/`))).toBe(false);
-    expect(written.some((p) => /^backingPools\/[^d]/.test(p) || /^backingWallets\/[^d]/.test(p))).toBe(false);
+    expect(written.some((p) => /^backingPools\/(?!dev-)/.test(p) || /^backingWallets\/(?!dev-)/.test(p))).toBe(false);
+    return written;
+  }
+
+  it('the walk writes NOTHING outside the dev namespace — every written path is a dev pool, a dev wallet, a stake of the dev pod, or the dev pod itself; the founder\'s eligibility is READ, never written', async () => {
+    const DB = makeVersionedDb(founderWorld());
+    await seedOn(DB);
+    await founderStakes(DB, ids.seatUids[1], 100, 'founder-1');
+    expectOnlyDevWrites(DB, 10);
   });
 
   it('advance: close at a simulated instant, bank the synthetic week, complete, settle — the winner\'s backers are paid, Σ entries = the cached balances everywhere', async () => {
@@ -302,8 +414,12 @@ describe('the walk — seed, the founder\'s stake, close, the synthetic week, se
     }
     expect(DB.store.get(`${BACKING_WALLETS_COLLECTION}/dev-${FOUNDER}`).careerNet).toBe(50);
     expect(DB.store.get(`${BACKING_WALLETS_COLLECTION}/dev-${ids.backerUids[1]}`).careerNet).toBe(-150);
-    // No production wallet, no production pool, ever.
+    // No production wallet, no production pool, ever — and every path the
+    // close, the banking write and the settlement touched passes the verdict.
     expect([...DB.store.keys()].filter((p) => /^backingWallets\/(?!dev-)/.test(p) || /^backingPools\/(?!dev-)/.test(p))).toEqual([]);
+    const written = expectOnlyDevWrites(DB, 12);
+    expect(written).toContain(`tournamentGroups/${ids.groupId}`);
+    expect(written.some((p) => p.startsWith(`${BACKING_WALLETS_COLLECTION}/dev-${FOUNDER}/entries/`))).toBe(true);
   });
 
   it('refund: close, void the dev pod, refund through the real primitive — every stake voided group_voided, every backer nets to zero', async () => {
@@ -323,6 +439,8 @@ describe('the walk — seed, the founder\'s stake, close, the synthetic week, se
       expect(ledgerInvariant(wallet, entries).ok, uid).toBe(true);
     }
     expect(DB.store.get(`${BACKING_POOLS_COLLECTION}/${ids.poolId}`).status).toBe(POOL_STATUS.REFUNDED);
+    // …and every path the close, the void write and the refund touched passes the verdict.
+    expectOnlyDevWrites(DB, 12);
   });
 
   it('a Sunday seed is refused by the same rule the production path applies — the window is too short', () => {

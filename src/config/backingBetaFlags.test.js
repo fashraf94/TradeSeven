@@ -276,6 +276,20 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       const authAt = Math.max(src.indexOf('await requireAuth('), src.indexOf('requireAdminSecret(req, res)'));
       expect(authAt, `${rel} carries no auth call before the flag`).toBeGreaterThan(-1);
       expect(authAt, `${rel} reads the flag before auth`).toBeLessThan(src.indexOf(gate));
+      // The DEV-NAMESPACE decisions (the pod list, the stake, the event sink
+      // ask `smokeOverrideFor` to route a smoke session to dev pools, dev
+      // wallets and dev-marked events) are made for the TOKEN's uid too —
+      // never a body or query field, which would let a lit caller opt into
+      // the dev namespace or out of the marker (LIGHT-1, the activation
+      // review record).
+      for (const call of src.match(/smokeOverrideFor\([^)]*\)/g) ?? []) {
+        expect(call, `${rel} asks the override for something other than the token's uid`).toBe('smokeOverrideFor(user.uid)');
+      }
+    }
+    // …and those three decisions EXIST, each exactly once (non-vacuous).
+    for (const rel of ['api/backing/event.js', 'api/tournament/backing-pools.js', 'api/tournament/backing-stake.js']) {
+      const src = read(rel).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+      expect(src.match(/smokeOverrideFor\(user\.uid\)/g), `${rel} decides the dev namespace once`).toHaveLength(1);
     }
     // The ONE helper that reads the flag for the user routes — and the ONLY
     // helper under api/_utils that reads it at all: a second reader would be
@@ -325,6 +339,10 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       // PR 5: my-stats reads the viewer's OWN wallet (walletRef) — a read, the
       // one client-facing reader of the ledger.
       'api/backing/my-stats.js',
+      // The activation PR: the pod list names a SMOKE session's dev wallet
+      // document (walletIdFor) so the client's allowance meter reads where
+      // the smoke's stakes debit — a name, not a read (DEV-5).
+      'api/tournament/backing-pools.js',
       // PR 3: the admin route maps BackingLedgerError to a typed refusal.
       'api/tournament/backing-settle.js',
       'api/tournament/backing-stake.js',
@@ -433,7 +451,10 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
     // read by EVERY door that gates on a caller's uid — the eleven user routes
     // — and by nothing else; the stake primitive by the route alone
     // (scripts/backing-smoke.js is outside this walk, and nothing under api/
-    // or src/ may reach it but the route).
+    // or src/ may reach it but the route). The pitch door is among them by
+    // the task's own terms; its one write, teamPitches/{uid}, is the
+    // founder's own record and is DECLARED (DEV-2 / LIGHT-3, the activation
+    // review record; api/team/pitch.test.js pins the behaviour).
     expect(importersOf('api/_utils/backingSmoke.js')).toEqual([
       'api/backing/event.js',
       'api/backing/lit.js',
@@ -598,7 +619,7 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
         expect(HOSTS.has(rel), `${rel} reaches ${target} from outside the enumerated hosts`).toBe(true);
       }
     }
-  });
+  }, 20000); // explicit timeout: a full source-tree walk that sits near the 5 s default under parallel jsdom load (WIRE-7)
 
   it('BACKING_BETA_ENABLED never lights alone: the flip PR flips both flags (spec §12) — a backing-only flip would ship a dead Confirm (DOM-NOTE-1)', () => {
     // The stake control routes every first stake through the attestation
