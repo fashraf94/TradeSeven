@@ -324,8 +324,14 @@ export function subscribeMyTrainingPod(uid, callback) {
  * cap is applied AFTER the training filter, on a wider read window. Callback
  * receives an array of { id, ...group } (training-excluded, capped to `max`).
  * Returns the unsubscribe fn.
+ *
+ * TEST-POD EXCLUSION: `isDev` pods match this query too (the preview and the
+ * live site share one Firestore), so the same selector drops them unless
+ * `includeDev` is `true` — which the one caller passes only for a lit viewer
+ * (useRealLeagueState → useBackingLit()). Default false: a read that is not
+ * told the viewer is testing never shows a test pod.
  */
-export function subscribeBaseLayerGroups(baseLayerWeek, callback, { max = 12 } = {}) {
+export function subscribeBaseLayerGroups(baseLayerWeek, callback, { max = 12, includeDev = false } = {}) {
   if (!baseLayerWeek) {
     callback([]);
     return () => {};
@@ -338,7 +344,7 @@ export function subscribeBaseLayerGroups(baseLayerWeek, callback, { max = 12 } =
   );
   return onSnapshot(groupsQuery, (snapshot) => {
     const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-    callback(selectBaseLayerField(docs, max));
+    callback(selectBaseLayerField(docs, max, { includeDev }));
   }, (error) => {
     console.error('[TournamentGroupService] Base-layer groups subscription error:', error);
     callback([]);

@@ -622,6 +622,9 @@ describe('the flag is read at CALL time in every host — never captured at modu
     // PR 5: the Spectate final state's card and the private stats' home.
     'src/components/League/backing/SpectateBackingResults.jsx',
     'src/components/League/backing/BackingStatsEntry.jsx',
+    // The hide-test-pods fix: the League field's read shows `isDev` pods to a
+    // lit viewer only (leagueDevPods.guard.test.jsx holds the behaviour).
+    'src/hooks/useRealLeagueState.js',
   ]) {
     it(`${rel} reads the one hook at call time and never the bare flag`, () => {
       const src = readFileSync(path.join(REPO, rel), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');

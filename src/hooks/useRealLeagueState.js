@@ -18,6 +18,13 @@
 // state is null, so the seam (useLeagueState) returns byte-identical fixtures.
 // When ENABLED, the adapter is the sole source of truth: absent sections come
 // back honestly empty (never the fixture fill), so no `fallback` is threaded.
+//
+// TEST PODS: the field read drops `isDev` pods unless the viewer is lit
+// (useBackingLit() — the allowlisted founder on a preview). Read HERE, once, and
+// handed to the one read every League surface derives from — the pod cards, the
+// "Leaderboard · the field" rail, the player/CPU counts, the hero — so no
+// surface filters on its own. src/components/League/leagueDevPods.guard.test.jsx
+// holds it through the rendered lobbies.
 
 import { useEffect, useMemo, useState } from 'react';
 import { auth } from '../firebase/config';
@@ -30,6 +37,7 @@ import {
 } from '../services/tournamentGroupService';
 import { getMarketState } from '../utils/marketSchedule';
 import useSpectatedTournamentBattles from './useSpectatedTournamentBattles';
+import { useBackingLit } from './useBackingLit';
 import { buildLeagueState } from '../components/League/leagueAdapter';
 
 // Every odUserId across the reads — the set the human-name read resolves.
@@ -87,12 +95,20 @@ export default function useRealLeagueState(enabled) {
     return () => unsub();
   }, [enabled, bracketId]);
 
+  // Is this viewer testing? The pod list's posture (listablePod): only a lit
+  // viewer sees a test pod. Its answer arrives after the first render (the
+  // provider's one ask), so the field re-subscribes when it changes. At the
+  // flip, useBackingLit() lights EVERY viewer — the guard's flip-tripwire row
+  // reds until the flip PR re-keys this (the override, and with it the only
+  // viewer who should see a test pod, goes in that commit).
+  const lit = useBackingLit();
+
   // the base-layer "field" for this ISO week (capped, recency-ordered)
   useEffect(() => {
     if (!enabled || !currentWeek) { setFieldGroups([]); setFieldReady(true); return undefined; }
-    const unsub = subscribeBaseLayerGroups(currentWeek, (g) => { setFieldGroups(g); setFieldReady(true); });
+    const unsub = subscribeBaseLayerGroups(currentWeek, (g) => { setFieldGroups(g); setFieldReady(true); }, { includeDev: lit });
     return () => unsub();
-  }, [enabled, currentWeek]);
+  }, [enabled, currentWeek, lit]);
 
   // the WHY-projected battles for the subscribed group (owner/completed → full
   // WHY; non-owner active → WHAT-only + _whyConcealed). The ONLY reasoning source.
