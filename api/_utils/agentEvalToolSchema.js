@@ -231,7 +231,10 @@ function deepFreeze(value) {
  * supplied to a later check. It never stands in for the decision or for
  * anticipationCandidates. Every field is framed as a conditional record; no
  * text tells the model to wait, withhold a trade, repeat itself in narration or
- * seek permission. Model-visible text: fenced-class review (contract §2).
+ * seek permission. The horizon text states contract V1.4 H2 (docs review C2):
+ * next_check's slot is a judgment boundary, a later first reach judges from its
+ * own observation, pre-slot hits are unchanged, and nothing is scheduled.
+ * Model-visible text: fenced-class review (contract §2).
  */
 export const DECLARATIONS_PROPERTY = deepFreeze({
   type: ['object', 'null'],
@@ -245,7 +248,7 @@ export const DECLARATIONS_PROPERTY = deepFreeze({
       type: 'array',
       description:
         'At most 6. Each records one conditional trade you are calling: SYMBOL trading above or below LEVEL before the horizon ' +
-        'ends. Declare only calls you actually hold.',
+        'ends (for next_check, as horizonPhrase describes). Declare only calls you actually hold.',
       items: {
         type: 'object',
         required: ['symbol', 'direction', 'slot', 'condition', 'horizonPhrase', 'defaultAction', 'said'],
@@ -279,7 +282,12 @@ export const DECLARATIONS_PROPERTY = deepFreeze({
           horizonPhrase: {
             type: 'string',
             enum: ['next_check', 'this_session', 'this_battle', 'explicit'],
-            description: 'How long the call stands: until the next check, the end of this session, the end of this battle, or an explicit expiry.',
+            description:
+              'How long the call stands: until its next_check judgment, the end of this session, the end of this battle, or an ' +
+              'explicit expiry. next_check uses the next eligible evaluator slot as a judgment boundary: the call records a condition ' +
+              'and does not schedule a trade at that slot. Before the slot it can be hit as under any horizon. At or after the slot, ' +
+              'the first check to reach the stored call judges it once, from that check\'s own observation: hit if the condition is ' +
+              'met, otherwise expired. That first reach may be a later check than the slot\'s own.',
           },
           expiresAtMs: {
             type: 'number',
