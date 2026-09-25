@@ -12,6 +12,12 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import { FantasyTimesProvider } from './contexts/FantasyTimesContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import { backingPreviewRequested } from './components/League/backing/backingPreview';
+// Backing activation — the founder smoke override's client half: ONE ask of
+// GET /api/backing/lit per signed-in session, held in a context every backing
+// surface gate reads (default false — src/hooks/useBackingLit.js). Renders
+// nothing of its own; while the flag is dark and the answer is false, the app
+// renders exactly as today.
+import BackingLitProvider from './components/League/backing/BackingLitProvider';
 
 // Initialize Firebase on app startup
 console.log('Loading Firebase...');
@@ -47,11 +53,13 @@ if (backingPreviewRequested(window.location, { DEV: import.meta.env.DEV, VITE_VE
     <StrictMode>
       <ErrorBoundary name="FantasyTrades App">
         <UserProvider>
-          <ThemeProvider>
-            <FantasyTimesProvider>
-              <App />
-            </FantasyTimesProvider>
-          </ThemeProvider>
+          <BackingLitProvider>
+            <ThemeProvider>
+              <FantasyTimesProvider>
+                <App />
+              </FantasyTimesProvider>
+            </ThemeProvider>
+          </BackingLitProvider>
         </UserProvider>
       </ErrorBoundary>
       <Analytics />

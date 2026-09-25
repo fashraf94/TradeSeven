@@ -73,6 +73,18 @@ const post = (url, payload) => call(url, { method: 'POST', body: JSON.stringify(
 
 // ==================== ENDPOINTS ====================
 
+export const BACKING_LIT_URL = '/api/backing/lit';
+
+/**
+ * Is the backing layer lit for THIS viewer? (The activation PR — the founder
+ * smoke override's client half.) `{ lit: boolean }` for the caller's own
+ * verified uid; asked once per signed-in session by BackingLitProvider
+ * (src/hooks/useBackingLit.js). The client never decides this itself.
+ */
+export function fetchBackingLit() {
+  return call(BACKING_LIT_URL);
+}
+
 /** The pod list for the next battle Monday's week, sealed while open. */
 export function fetchBackingPods() {
   return call(BACKING_POOLS_URL);

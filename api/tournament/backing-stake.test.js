@@ -340,6 +340,9 @@ describe('the happy path — the §6 stake, the sealed meta, the counters', () =
     expect(stakeDoc(DB.store, id)).toEqual({
       userId: UID,
       groupId: GROUP_ID,
+      // The activation PR: the pool this stake sits in — `groupId` here,
+      // `dev-{groupId}` on a dev pod — the client's subscription key.
+      poolId: GROUP_ID,
       teamOdUserId: 'od-a',
       amount: 100,
       hashAtStake: null,
@@ -1261,5 +1264,70 @@ describe('stake_confirmed — written SERVER-SIDE after the commit, never failin
     expect(DB.store.get(eventPath(stakeDebitKeyFor(UID, 'req-1')))).toBeUndefined();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('stake_confirmed not recorded'), 'the sink is down');
     warn.mockRestore();
+  });
+});
+
+// ============================================================================
+// THE ACTIVATION PR — a SMOKE session backs DEV pods only, through this route.
+describe('the founder smoke override (the activation PR)', () => {
+  const lit = () => {
+    vi.stubEnv('VERCEL_ENV', 'preview');
+    vi.stubEnv('BACKING_SMOKE_ENABLED', 'true');
+    vi.stubEnv('BACKING_SMOKE_UIDS', `other-1, ${UID}`);
+  };
+  afterEach(() => { vi.unstubAllEnvs(); });
+
+  it('dark flag, lit preview, allowlisted uid, a PRODUCTION pod: 409 smoke_requires_dev and NOTHING written (mutation check 3 — the dev-only row)', async () => {
+    state.flag = false;
+    lit();
+    const res = await post(VALID());
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual({ error: 'smoke_requires_dev', message: 'A smoke session backs dev pods only.' });
+    expect(DB.writeLog).toEqual([]);
+  });
+
+  it('…a DEV pod with NO pool yet: the route opens it at `dev-{groupId}` (allowDev) and the stake lands in the dev wallet, `poolId` on the document, the confirmation marked dev', async () => {
+    state.flag = false;
+    lit();
+    DB = makeVersionedDb(world({ [`tournamentGroups/${GROUP_ID}`]: group({ isDev: true }) }));
+    DB.store.delete(`${BACKING_POOLS_COLLECTION}/${GROUP_ID}`);
+    const res = await post(VALID());
+    expect(res.statusCode).toBe(200);
+    expect(DB.store.get(`${BACKING_POOLS_COLLECTION}/dev-${GROUP_ID}`)?.isDev).toBe(true);
+    expect(DB.store.has(`${BACKING_POOLS_COLLECTION}/${GROUP_ID}`)).toBe(false);
+    expect(res.body.stake.poolId).toBe(`dev-${GROUP_ID}`);
+    expect(walletDoc(DB.store, `dev-${UID}`).careerNet).toBe(-100);
+    expect(walletDoc(DB.store, UID)).toBeUndefined();
+    const confirmed = DB.store.get(`backingEvents/stake_confirmed:dev:${stakeDebitKeyFor(UID, 'req-1')}`);
+    expect(confirmed).toMatchObject({ isDev: true, props: { isDev: true } });
+    // Nothing outside the dev namespace: every backing write names a dev id
+    // or the dev group's own stake documents.
+    for (const [, p] of DB.writeLog) {
+      const [col, id] = p.split('/');
+      if (col === BACKING_POOLS_COLLECTION || col === BACKING_WALLETS_COLLECTION) expect(id, p).toMatch(/^dev-/);
+      if (col === 'backingEvents') expect(id, p).toMatch(/^stake_confirmed:dev:/);
+      if (col === BACKING_STAKES_COLLECTION) expect(DB.store.get(`${col}/${id}`)?.groupId ?? GROUP_ID).toBe(GROUP_ID);
+    }
+  });
+
+  it('the SAME uid and env in PRODUCTION: 404 — the override is ignored, nothing read', async () => {
+    state.flag = false;
+    lit();
+    vi.stubEnv('VERCEL_ENV', 'production');
+    const res = await post(VALID());
+    expect(res.statusCode).toBe(404);
+    expect(DB.writeLog).toEqual([]);
+  });
+
+  it('a NON-smoke lit caller (the flag on) is unchanged: `smoke` and `allowDev` are never passed — a dev pod without a pool still answers no_pool', async () => {
+    state.flag = true;
+    state.uid = 'someone-else';
+    lit();
+    DB = makeVersionedDb(world({ [`tournamentGroups/${GROUP_ID}`]: group({ isDev: true }) }));
+    DB.store.delete(`${BACKING_POOLS_COLLECTION}/${GROUP_ID}`);
+    const res = await post(VALID());
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toMatchObject({ error: 'no_pool', reason: 'dev_pod' });
+    expect(DB.store.has(`${BACKING_POOLS_COLLECTION}/dev-${GROUP_ID}`)).toBe(false);
   });
 });

@@ -221,6 +221,10 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
         // two private stats readers and the results reader (the settle-on-read
         // host). Each 404s AFTER requireAuth; one darkness file covers them.
         'api/backing/event.js',
+        // The activation PR: the client's one question about the founder
+        // smoke override — the ONE backing route that answers while dark
+        // (`{ lit: false }`), so its gate is the answer, not a 404 (below).
+        'api/backing/lit.js',
         'api/backing/my-stats.js',
         'api/backing/results.js',
         // The pre-flip cleanup (Amendment C §C1, D-af): the team-labels reader
@@ -235,6 +239,17 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
         'api/tournament/backing-stake.js',
       ]);
 
+    // THE ACTIVATION PR: a USER route no longer reads the bare flag — it reads
+    // `backingLitFor(user.uid)` (api/_utils/backingSmoke.js): the flag, OR
+    // the founder smoke override for THIS verified uid on a Vercel preview.
+    // The ADMIN re-run has no caller uid (the cron secret is not a person),
+    // so it keeps the bare flag; the lit route ANSWERS the decision instead
+    // of 404ing on it. Every other shape reds this row.
+    const GATE_OF = (rel) => {
+      if (rel === 'api/tournament/backing-settle.js') return 'if (!BACKING_BETA_ENABLED) return res.status(404)';
+      if (rel === 'api/backing/lit.js') return 'json({ lit: backingLitFor(user.uid) === true })';
+      return 'if (!backingLitFor(user.uid)) return res.status(404)';
+    };
     for (const rel of routesNamed('backing')) {
       // CODE ONLY: comments are stripped before any index check, so a comment
       // that names `requireAdminSecret(req, res)` above a flag read that has
@@ -244,9 +259,14 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       // block comment cannot leave a dangling fragment.
       const src = read(rel).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
       // The call-time read, inside the handler, in the SHOW_IT / research.js
-      // shape - never a module-scope derivation and never an accessor.
-      expect(src, `${rel} does not 404 on the flag`)
-        .toContain('if (!BACKING_BETA_ENABLED) return res.status(404)');
+      // shape - never a module-scope derivation; through the ONE helper for
+      // every user route.
+      const gate = GATE_OF(rel);
+      expect(src, `${rel} does not gate in the house shape (${gate})`).toContain(gate);
+      if (rel !== 'api/tournament/backing-settle.js') {
+        expect(src, `${rel} reads the bare flag — every user route reads through backingLitFor`).not.toContain('BACKING_BETA_ENABLED');
+        expect(src, `${rel} does not import the helper`).toContain("from '../_utils/backingSmoke.js'");
+      }
       // ...and it is checked AFTER auth: the auth call must precede the flag
       // read in the source, or an anonymous caller is answered differently
       // while dark and while lit - a free oracle on the rollout state. A
@@ -255,9 +275,13 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       // an absent call (indexOf -1) must never pass this row vacuously.
       const authAt = Math.max(src.indexOf('await requireAuth('), src.indexOf('requireAdminSecret(req, res)'));
       expect(authAt, `${rel} carries no auth call before the flag`).toBeGreaterThan(-1);
-      expect(authAt, `${rel} reads the flag before auth`)
-        .toBeLessThan(src.indexOf('if (!BACKING_BETA_ENABLED)'));
+      expect(authAt, `${rel} reads the flag before auth`).toBeLessThan(src.indexOf(gate));
     }
+    // The ONE helper that reads the flag for the user routes — and the ONLY
+    // helper under api/_utils that reads it at all: a second reader would be
+    // a second gate no dark suite covers (the row above this one).
+    const readers = listSources('api').filter((rel) => rel.startsWith('api/_utils/') && /\bBACKING_BETA_ENABLED\b/.test(read(rel).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')));
+    expect(readers).toEqual(['api/_utils/backingSmoke.js', 'api/_utils/tournamentAdvancement.js']);
 
     // And the darkness is proved by a suite, not by a reviewer's reading. The
     // two PR 2 routes are covered by the shared PR 2 darkness file; the PR 3
@@ -270,8 +294,9 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
     expect(settleDark).toContain('BACKING_BETA_ENABLED: false');
     // PR 5: the four api/backing/ routes share one darkness file.
     const pr5Dark = read('api/backing/backing-routes.dark.test.js');
-    for (const rel of ['./event.js', './my-stats.js', './results.js', './trainer-stats.js', './team-labels.js']) expect(pr5Dark).toContain(rel);
+    for (const rel of ['./event.js', './my-stats.js', './results.js', './trainer-stats.js', './team-labels.js', './lit.js']) expect(pr5Dark).toContain(rel);
     expect(pr5Dark).toContain('BACKING_BETA_ENABLED: false');
+    expect(pr5Dark).toContain("toEqual({ lit: false })");
   });
 
   it('EVERY importer of the backing modules is enumerated — the "no unreviewed caller" ratchet (the PR 0 importersOf precedent)', () => {
@@ -294,6 +319,9 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       // PR 3: settlement composes creditPayout + recordStakeLoss inside its
       // own transaction (the PR 1 threading contract's third caller).
       'api/_utils/backingSettlement.js',
+      // The activation PR: the stake transaction moved out of the route into
+      // the primitive; the route keeps the typed error for its catch.
+      'api/_utils/backingStake.js',
       // PR 5: my-stats reads the viewer's OWN wallet (walletRef) — a read, the
       // one client-facing reader of the ledger.
       'api/backing/my-stats.js',
@@ -303,9 +331,11 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
     ]);
     expect(importersOf('api/_utils/backingWeek.js')).toEqual([
       'api/_utils/backingPools.js',
+      // The activation PR: the week's bounds are read by the stake PRIMITIVE
+      // now (the transaction moved), no longer by the route.
+      'api/_utils/backingStake.js',
       'api/_utils/backingWallet.js',
       'api/tournament/backing-pools.js',
-      'api/tournament/backing-stake.js',
     ]);
     expect(importersOf('src/constants/backing.js')).toEqual([
       // PR 5: the telemetry writer reads the FIXED event allowlist.
@@ -315,6 +345,9 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       // (UNNAMED_TEAM_LABEL) — the results projection's default, the
       // resolver's last rung — and the team-labels route's ceiling.
       'api/_utils/backingResults.js',
+      // The activation PR: the primitive's argument belt reads the economy's
+      // bounds; the route still reads them for its 400s.
+      'api/_utils/backingStake.js',
       'api/_utils/backingTeamLabels.js',
       'api/_utils/backingWallet.js',
       'api/_utils/backingWeek.js',
@@ -352,6 +385,9 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       'api/_utils/backingResults.js',
       // PR 3: settlement reads the pool/totals refs and runs ensureClosed.
       'api/_utils/backingSettlement.js',
+      // The activation PR: the stake primitive (the lazy jobs, the pool and
+      // totals refs, the fold) — the transaction that moved out of the route.
+      'api/_utils/backingStake.js',
       // PR 5: the stats readers locate pools by group id (prod, then dev).
       // The pre-flip fixes 2 (PLACE-A3): the trainer's reads also run the
       // lazy close (ensureClosed) on a SEATED pod's pool past its close — the
@@ -386,11 +422,32 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       'api/tournament/backing-settle.js',
     ]);
     expect(importersOf('api/_utils/backingEligibility.js')).toEqual([
+      // The activation PR: the §8 check runs inside the stake PRIMITIVE now.
+      'api/_utils/backingStake.js',
       // attest.js reads the sign-in-provider helper for Amendment A §A3.
       'api/eligibility/attest.js',
-      'api/tournament/backing-stake.js',
     ]);
-    expect(importersOf('api/_utils/backingFingerprint.js')).toEqual(['api/tournament/backing-stake.js']);
+    // The primitive hashes the ids; the route fingerprints the request.
+    expect(importersOf('api/_utils/backingFingerprint.js')).toEqual(['api/_utils/backingStake.js', 'api/tournament/backing-stake.js']);
+    // THE ACTIVATION PR's two helpers, by exact importer. The smoke helper is
+    // read by EVERY door that gates on a caller's uid — the eleven user routes
+    // — and by nothing else; the stake primitive by the route alone
+    // (scripts/backing-smoke.js is outside this walk, and nothing under api/
+    // or src/ may reach it but the route).
+    expect(importersOf('api/_utils/backingSmoke.js')).toEqual([
+      'api/backing/event.js',
+      'api/backing/lit.js',
+      'api/backing/my-stats.js',
+      'api/backing/results.js',
+      'api/backing/team-labels.js',
+      'api/backing/trainer-stats.js',
+      'api/eligibility/attest.js',
+      'api/team/pitch.js',
+      'api/tournament/backing-pools.js',
+      'api/tournament/backing-stake.js',
+      'api/tournament/team-card.js',
+    ]);
+    expect(importersOf('api/_utils/backingStake.js')).toEqual(['api/tournament/backing-stake.js']);
     // PR 5's four helpers, by exact importer (DARK-4, the PR 5 review record):
     // the telemetry writer (the sink route and the stake route's server-side
     // stake_confirmed), the results projection (the results reader), the
@@ -422,6 +479,8 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       'api/_utils/backingFingerprint.js', 'api/_utils/backingSettlement.js', 'api/_utils/teamPitch.js',
       'api/_utils/backingEvents.js', 'api/_utils/backingResults.js', 'api/_utils/backingStats.js', 'api/_utils/backingSybilWatch.js',
       'api/_utils/backingTeamLabels.js',
+      // The activation PR: the smoke helper and the stake primitive.
+      'api/_utils/backingSmoke.js', 'api/_utils/backingStake.js',
     ]) {
       for (const rel of importersOf(helper).filter((r) => r.startsWith('api/') && !r.startsWith('api/_utils/'))) {
         expect(DOORS.has(rel), `${rel} reaches ${helper} but is not an enumerated backing door`).toBe(true);
@@ -441,6 +500,10 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       // …and the pre-flip cleanup's resolver: names reach the client through
       // the endpoints, never by bundling the resolver.
       'api/_utils/backingTeamLabels.js',
+      // The activation PR: the client learns the override's decision through
+      // GET /api/backing/lit, never by bundling the helper; the primitive is
+      // the server's.
+      'api/_utils/backingSmoke.js', 'api/_utils/backingStake.js',
     ]) {
       expect(importersOf(target).filter((rel) => rel.startsWith('src/')), `${target} is imported from src/`)
         .toEqual([]);
@@ -482,6 +545,9 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       'src/components/League/LeagueHome.jsx',
       'src/components/League/LeagueLobbyDesktop.jsx',
       'src/components/League/backing/AttestationStep.jsx',
+      // The activation PR: the ONE ask of GET /api/backing/lit — the founder
+      // smoke override's client half — mounted once at the app root.
+      'src/components/League/backing/BackingLitProvider.jsx',
       'src/components/League/backing/StakeControl.jsx',
       'src/hooks/useBackingPods.js',
       // PR 5: the results and the two stats readers, and the telemetry
@@ -515,7 +581,10 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       'src/main.jsx',
       'src/screens/BackingPreviewScreen.jsx',
     ]);
-    const BACKING_HOOK = /^src\/hooks\/use(BackingPods|MyBacking|BackingWallet|Eligibility|MyPitch|TeamCard|BackingResults|MyBackingStats|TrainerStats)\.js$/;
+    // The activation PR adds the lit hook (useBackingLit — the context every
+    // surface gate reads) to the enumerated hooks; its importers are the
+    // surfaces, the pod card (a host), the preview gate and the provider.
+    const BACKING_HOOK = /^src\/hooks\/use(BackingPods|MyBacking|BackingWallet|Eligibility|MyPitch|TeamCard|BackingResults|MyBackingStats|TrainerStats|BackingLit)\.js$/;
     const targets = [
       ...listSources('src/components/League/backing'),
       ...SOURCES.filter((rel) => BACKING_HOOK.test(rel)),
@@ -546,10 +615,12 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
     const PR4_ROUTES = ['api/tournament/team-card.js', 'api/team/pitch.js'];
     for (const rel of PR4_ROUTES) {
       const src = read(rel).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
-      expect(src, `${rel} does not 404 on the flag`).toContain('if (!BACKING_BETA_ENABLED) return res.status(404)');
+      // The activation PR: through the one helper, never the bare flag.
+      expect(src, `${rel} does not 404 on the flag`).toContain('if (!backingLitFor(user.uid)) return res.status(404)');
+      expect(src, `${rel} reads the bare flag`).not.toContain('BACKING_BETA_ENABLED');
       const authAt = src.indexOf('await requireAuth(');
       expect(authAt, `${rel} carries no auth call before the flag`).toBeGreaterThan(-1);
-      expect(authAt, `${rel} reads the flag before auth`).toBeLessThan(src.indexOf('if (!BACKING_BETA_ENABLED)'));
+      expect(authAt, `${rel} reads the flag before auth`).toBeLessThan(src.indexOf('if (!backingLitFor(user.uid))'));
     }
     const dark = read('api/tournament/team-card.dark.test.js');
     expect(dark).toContain('./team-card.js');
@@ -576,10 +647,10 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
     // …and, since PR 4, the backing surfaces, their six hooks and the service
     // (R-B-6 in the PR 4 review record): a host reaching them through the
     // alias would slip the host ratchet above.
-    const ALIASED = /\b(?:from|import)\s*\(?\s*['"]@\/(?:constants\/backing|config\/backing|components\/League\/backing\/|hooks\/use(?:BackingPods|MyBacking|BackingWallet|Eligibility|MyPitch|TeamCard|BackingResults|MyBackingStats|TrainerStats)\b|services\/backing(?:Service|Telemetry)\b)[^'"]*['"]/;
+    const ALIASED = /\b(?:from|import)\s*\(?\s*['"]@\/(?:constants\/backing|config\/backing|components\/League\/backing\/|hooks\/use(?:BackingPods|MyBacking|BackingWallet|Eligibility|MyPitch|TeamCard|BackingResults|MyBackingStats|TrainerStats|BackingLit)\b|services\/backing(?:Service|Telemetry)\b)[^'"]*['"]/;
     // …nor a Vite glob (`import.meta.glob('…/backing/*')`), the one other
     // spelling the importer walk cannot resolve (DARK-6, the PR 5 record).
-    const GLOBBED = /import\.meta\.glob\(\s*['"][^'"]*(?:League\/backing|hooks\/use(?:BackingPods|MyBacking|BackingWallet|Eligibility|MyPitch|TeamCard|BackingResults|MyBackingStats|TrainerStats)|services\/backing(?:Service|Telemetry)|constants\/backing)/;
+    const GLOBBED = /import\.meta\.glob\(\s*['"][^'"]*(?:League\/backing|hooks\/use(?:BackingPods|MyBacking|BackingWallet|Eligibility|MyPitch|TeamCard|BackingResults|MyBackingStats|TrainerStats|BackingLit)|services\/backing(?:Service|Telemetry)|constants\/backing)/;
     for (const rel of SOURCES) {
       expect(ALIASED.test(read(rel)), `${rel} reaches a backing module through a @/ alias`).toBe(false);
       expect(GLOBBED.test(read(rel)), `${rel} reaches a backing module through import.meta.glob`).toBe(false);

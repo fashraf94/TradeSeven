@@ -152,3 +152,46 @@ describe('the pure pieces', () => {
     expect(doc).toEqual({ userId: 'u', groupId: null, event: 'x', at: NOW.toISOString(), props: { a: 1 } });
   });
 });
+
+// ============================================================================
+// THE ACTIVATION PR — a SMOKE session's clicks are marked dev, at a dev-prefixed id.
+describe('the founder smoke override (the activation PR): a smoke session\'s events carry the dev marker', () => {
+  const lit = () => {
+    vi.stubEnv('VERCEL_ENV', 'preview');
+    vi.stubEnv('BACKING_SMOKE_ENABLED', 'true');
+    vi.stubEnv('BACKING_SMOKE_UIDS', `other-1, ${state.uid}`);
+  };
+  afterEach(() => { vi.unstubAllEnvs(); });
+
+  it('dark flag, lit preview, allowlisted uid: the event is recorded at a `dev:` id with `isDev: true` — the funnel never reads it as the beta\'s', async () => {
+    state.flag = false;
+    lit();
+    const res = await post({ event: 'window_viewed', groupId: 'grp-1', props: { weekKey: '2026-W40' } });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({ recorded: true });
+    const written = events();
+    expect(written).toHaveLength(1);
+    const [path, doc] = written[0];
+    expect(path).toMatch(/^backingEvents\/dev:bev_window_viewed_/);
+    expect(doc).toMatchObject({ userId: state.uid, groupId: 'grp-1', event: 'window_viewed', isDev: true, props: { weekKey: '2026-W40' } });
+  });
+
+  it('a LIT non-smoke caller (the flag on) is unchanged: a plain id, no `isDev` key', async () => {
+    state.flag = true;
+    lit();
+    state.uid = 'someone-else';
+    await post({ event: 'window_viewed', groupId: 'grp-1', props: { weekKey: '2026-W40' } });
+    const [path, doc] = events()[0];
+    expect(path).toMatch(/^backingEvents\/bev_window_viewed_/);
+    expect(doc).not.toHaveProperty('isDev');
+  });
+
+  it('the SAME uid and env in PRODUCTION: 404 and nothing written', async () => {
+    state.flag = false;
+    lit();
+    vi.stubEnv('VERCEL_ENV', 'production');
+    const res = await post({ event: 'window_viewed', props: {} });
+    expect(res.statusCode).toBe(404);
+    expect(DB.writeLog).toEqual([]);
+  });
+});

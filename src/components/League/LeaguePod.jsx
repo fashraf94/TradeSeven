@@ -9,14 +9,14 @@ import React from 'react';
 import { rankPod } from './leagueFixtures';
 import { LTOKENS, LX, alpha } from './leagueTokens';
 // Backing Beta PR 4 (design brief rev2 §1 / rev3 §1): the spectate affordance
-// reads "Predictions" while BACKING_BETA_ENABLED — LABEL ONLY, read at call
-// time inside PodCard; the onSpectate handler is untouched either way. The dev
-// preview page (src/screens/BackingPreviewScreen.jsx) forces the flag on for
-// its own subtree through BackingPreviewLitContext (default false — nothing
-// else provides it), so the label is lit there and nowhere else.
-import { BACKING_BETA_ENABLED } from '../../config/featureFlags';
+// reads "Predictions" while the backing layer is lit — LABEL ONLY, read at
+// call time inside PodCard through useBackingLit() (the activation PR: the
+// flag, or the server's answer for this viewer under BackingLitProvider); the
+// onSpectate handler is untouched either way. The dev preview page
+// (src/screens/BackingPreviewScreen.jsx) provides the same context `true`
+// for its own subtree, so the label is lit there too.
 import { PREDICTIONS_LABEL } from './backing/backingCopy';
-import { BackingPreviewLitContext } from './backing/backingPreview';
+import { useBackingLit } from '../../hooks/useBackingLit';
 import {
   Eyebrow, Mono, Icon, LIcon, Tag, AgentAvatar, KindMark, Score, StatusBadge, Watchers,
 } from './LeagueParts';
@@ -81,7 +81,7 @@ export function PodRow({ seat, accent, onSpectate, dim, base }) {
 
 // ── the four-player game card / pod standing (THE primary surface) ─────────
 export function PodCard({ pod, accent, onSpectate, featured = false }) {
-  const previewLit = React.useContext(BackingPreviewLitContext) === true;
+  const lit = useBackingLit();
   const ranked = rankPod(pod);
   const resolved = pod.status === 'final';
   const base = !!pod.base;
@@ -121,7 +121,7 @@ export function PodCard({ pod, accent, onSpectate, featured = false }) {
         {onSpectate && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <LIcon name="eyeR" size={13} color={accent} />
-            <Mono style={{ fontSize: 10.5, color: accent, fontWeight: 600, letterSpacing: '0.04em' }}>{BACKING_BETA_ENABLED || previewLit ? PREDICTIONS_LABEL : 'Tap a seat to spectate'}</Mono>
+            <Mono style={{ fontSize: 10.5, color: accent, fontWeight: 600, letterSpacing: '0.04em' }}>{lit ? PREDICTIONS_LABEL : 'Tap a seat to spectate'}</Mono>
           </div>
         )}
       </div>

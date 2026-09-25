@@ -13,7 +13,7 @@
 // own record and nothing else; the words say so on the surface.
 
 import React, { useState } from 'react';
-import { BACKING_BETA_ENABLED } from '../../../config/featureFlags';
+import { useBackingLit } from '../../../hooks/useBackingLit';
 import { LTOKENS, LX, alpha } from '../leagueTokens';
 import { Eyebrow, Mono } from '../LeagueParts';
 import useMyBackingStats from '../../../hooks/useMyBackingStats';
@@ -67,7 +67,8 @@ function BackingStatsEntryLive({ accent, compact }) {
 
 /** The profile home. Renders nothing — and runs nothing — while the flag is dark. */
 export default function BackingStatsEntry({ uid, accent = LX.energy, compact = false }) {
-  if (!BACKING_BETA_ENABLED) return null;
+  const lit = useBackingLit();
+  if (!lit) return null;
   if (!uid) return null;
   return <BackingStatsEntryLive accent={accent} compact={compact} />;
 }

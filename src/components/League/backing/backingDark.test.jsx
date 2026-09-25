@@ -33,7 +33,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..', '..', '..');
 
 const flag = vi.hoisted(() => ({ on: false }));
-const svc = vi.hoisted(() => ({ calls: [], reply: null, stakes: [], snapshots: false, league: null, myGroup: null }));
+const svc = vi.hoisted(() => ({ calls: [], reply: null, stakes: [], snapshots: false, league: null, myGroup: null, lit: false }));
 const sig = vi.hoisted(() => ({ subs: 0, announces: 0 }));
 const fetchSpy = vi.hoisted(() => vi.fn(async () => ({ ok: true, json: async () => ({ slots: [], battles: {} }) })));
 
@@ -93,6 +93,8 @@ vi.mock('../../../services/backingService', () => ({
     return { label: 'beta stats', seasonKey: '2026-09', career: zero, season: { monthKey: '2026-09', ...zero }, seasons: {}, excludedStakes: 0 };
   }),
   postBackingEvent: vi.fn(async () => { svc.calls.push('postBackingEvent'); return { recorded: true }; }),
+  // The activation PR: the ONE ask of GET /api/backing/lit (BackingLitProvider).
+  fetchBackingLit: vi.fn(async () => { svc.calls.push('fetchBackingLit'); return { lit: svc.lit === true }; }),
   placeStake: vi.fn(), attestEligibility: vi.fn(), savePitch: vi.fn(), newRequestId: () => 'req',
   BackingApiError: class BackingApiError extends Error {},
 }));
@@ -152,6 +154,8 @@ const WhileYouWait = (await import('../WhileYouWait')).default;
 const { DeskPodPanel } = await import('../LeagueDeskParts');
 const { default: Lobby, LobbyTabbed } = await import('../LeagueLobbyRedesign');
 const BackingLandingStrip = (await import('./BackingLandingStrip')).default;
+const BackingLitProvider = (await import('./BackingLitProvider')).default;
+const { BackingLitContext } = await import('../../../hooks/useBackingLit');
 // Every module above is loaded: a stake listener registered on IMPORT — not in
 // any mount — is counted here, before a row resets the count (DARK-R-3, the
 // pre-flip fixes 2 review record).
@@ -173,7 +177,7 @@ async function mount(el) {
   return container;
 }
 
-beforeEach(() => { flag.on = false; svc.calls.length = 0; svc.reply = null; svc.stakes = []; svc.snapshots = false; svc.league = null; svc.myGroup = null; sig.subs = 0; sig.announces = 0; fetchSpy.mockClear(); __resetBackingTelemetry(); });
+beforeEach(() => { flag.on = false; svc.calls.length = 0; svc.reply = null; svc.stakes = []; svc.snapshots = false; svc.league = null; svc.myGroup = null; svc.lit = false; sig.subs = 0; sig.announces = 0; fetchSpy.mockClear(); __resetBackingTelemetry(); });
 afterEach(async () => {
   for (const { root, container } of roots) { await act(async () => root.unmount()); container.remove(); }
   roots = [];
@@ -604,6 +608,12 @@ describe('flag ON — the same mounts light up (the pin is not vacuous)', () => 
 });
 
 describe('the flag is read at CALL time in every host — never captured at module scope', () => {
+  // THE ACTIVATION PR: every surface gate and the pod card read the ONE hook
+  // (useBackingLit — the flag, OR the server's answer for this viewer under
+  // BackingLitProvider), never the bare flag: a surface that read the flag
+  // directly could never light for the founder's smoke, and one that read
+  // the context alone would ignore the flip. The hook itself reads the flag
+  // at call time with no module-level derivation.
   for (const rel of [
     'src/components/League/LeaguePod.jsx',
     'src/components/League/backing/BackingLandingStrip.jsx',
@@ -613,15 +623,23 @@ describe('the flag is read at CALL time in every host — never captured at modu
     'src/components/League/backing/SpectateBackingResults.jsx',
     'src/components/League/backing/BackingStatsEntry.jsx',
   ]) {
-    it(`${rel} has no module-level derivation of BACKING_BETA_ENABLED`, () => {
+    it(`${rel} reads the one hook at call time and never the bare flag`, () => {
       const src = readFileSync(path.join(REPO, rel), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-      expect(src).toContain('BACKING_BETA_ENABLED');
-      // A top-level `const X = … BACKING_BETA_ENABLED …` would freeze the read
-      // at import time (the LEAGUE_REDESIGN idiom is deliberate elsewhere; here
-      // the contract is call-time).
-      expect(src).not.toMatch(/^const [^\n]*BACKING_BETA_ENABLED/m);
+      expect(src).toContain('useBackingLit()');
+      expect(src).not.toContain('BACKING_BETA_ENABLED');
+      expect(src).not.toMatch(/^const [^\n]*useBackingLit/m);
     });
   }
+  it('the hook reads the flag at call time — no module-level derivation, no hostname, no env', () => {
+    const src = readFileSync(path.join(REPO, 'src/hooks/useBackingLit.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    expect(src).toContain('BACKING_BETA_ENABLED');
+    expect(src).not.toMatch(/^const [^\n]*BACKING_BETA_ENABLED/m);
+    expect(src).not.toMatch(/location|hostname|import\.meta\.env|VERCEL/);
+    expect(src).not.toMatch(/fetch|backingService/);
+    const provider = readFileSync(path.join(REPO, 'src/components/League/backing/BackingLitProvider.jsx'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    expect(provider).not.toMatch(/location|hostname|import\.meta\.env|VERCEL/);
+    expect(provider).toContain('fetchBackingLit()');
+  });
 
   // A host that wraps a dark-gated mount in an element of its own leaves that
   // element behind while dark — the one defect class the flag-on-minus-strip
@@ -747,7 +765,77 @@ describe('the flag is read at CALL time in every host — never captured at modu
     expect(lobby.match(/backingSlot=\{backingSlot\}/g), 'the slot is handed to the centre: both lobbies, both centres').toHaveLength(4);
     expect(stripAttributeBraces(lobby), 'the mobile lobby mounts the slot itself').not.toContain('{backingSlot}');
     for (const rel of ['src/components/League/backing/BackingLandingStrip.jsx', 'src/components/League/backing/ScoutingLine.jsx', 'src/components/League/backing/BackingScreen.jsx', 'src/components/League/backing/SpectateBackingResults.jsx', 'src/components/League/backing/BackingStatsEntry.jsx']) {
-      expect(readFileSync(path.join(REPO, rel), 'utf8'), `${rel} returns null while dark`).toContain('if (!BACKING_BETA_ENABLED) return null;');
+      // The activation PR: the gate is the one hook's answer, and it is the
+      // FIRST thing the outer component does — no hook of its own above it.
+      expect(readFileSync(path.join(REPO, rel), 'utf8'), `${rel} returns null while dark`).toMatch(/\{\n  const lit = useBackingLit\(\);\n  if \(!lit\) return null;/);
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE ACTIVATION PR — the founder smoke override's client half. The server's
+// answer to GET /api/backing/lit, held by BackingLitProvider, is the ONLY way a
+// surface lights while the flag is dark; the ask is made once per signed-in
+// session; a false answer, a failed ask, or no provider at all is today's dark
+// League byte for byte.
+describe('the founder smoke override (the activation PR) — lit by the server\'s answer, never by the client', () => {
+  const wrap = (el) => <BackingLitProvider>{el}</BackingLitProvider>;
+
+  it('flag OFF, the server answers { lit: false }: ONE ask, no backing element, no backing read, the spectate label unchanged', async () => {
+    svc.lit = false;
+    const container = await mount(wrap(<LeagueHome {...homeProps} />));
+    expect(svc.calls.filter((c) => c === 'fetchBackingLit')).toHaveLength(1);
+    expect(svc.calls.filter((c) => c !== 'fetchBackingLit')).toEqual([]);
+    expect(container.querySelector('[data-backing]')).toBeNull();
+    expect(container.textContent).toContain('Tap a seat to spectate');
+    expect(backingCalls()).toEqual([]);
+  });
+
+  it('flag OFF, the server answers { lit: true }: the SAME mount lights — the strip renders, the pod list is fetched, the label reads Predictions (the founder\'s smoke)', async () => {
+    svc.lit = true;
+    const container = await mount(wrap(<LeagueHome {...homeProps} />));
+    expect(svc.calls.filter((c) => c === 'fetchBackingLit')).toHaveLength(1);
+    expect(svc.calls.filter((c) => c === 'fetchBackingPods')).toHaveLength(1);
+    expect(container.querySelector('[data-backing="strip"]')).not.toBeNull();
+    expect(container.textContent).toContain('Tap a seat · Predictions');
+    expect(container.textContent).not.toContain('Tap a seat to spectate');
+  });
+
+  it('a FAILED ask reads dark — the server\'s silence is not a yes', async () => {
+    const { fetchBackingLit } = await import('../../../services/backingService');
+    fetchBackingLit.mockImplementationOnce(async () => { svc.calls.push('fetchBackingLit'); throw Object.assign(new Error('network'), { code: 'network' }); });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const container = await mount(wrap(<LeagueHome {...homeProps} />));
+      expect(container.querySelector('[data-backing]')).toBeNull();
+      expect(svc.calls.filter((c) => c !== 'fetchBackingLit')).toEqual([]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('the context alone lights a surface — and its DEFAULT is false, so a bare mount is dark whatever the server would say', () => {
+    expect(ssr(<BackingLitContext.Provider value><ScoutingLine uid="viewer-1" agentName="Prime" /></BackingLitContext.Provider>)).toContain('data-backing="scouting-line"');
+    expect(ssr(<BackingLitContext.Provider value={false}><ScoutingLine uid="viewer-1" agentName="Prime" /></BackingLitContext.Provider>)).toBe('');
+    expect(ssr(<ScoutingLine uid="viewer-1" agentName="Prime" />)).toBe('');
+    const pod = leagueState('open').baseGames[0];
+    expect(ssr(<BackingLitContext.Provider value><PodCard pod={pod} accent="#5EEAD4" onSpectate={() => {}} /></BackingLitContext.Provider>)).toContain('>Tap a seat · Predictions<');
+    expect(ssr(<PodCard pod={pod} accent="#5EEAD4" onSpectate={() => {}} />)).toContain('>Tap a seat to spectate<');
+  });
+
+  it('the provider asks NOTHING for a signed-out viewer, and NOTHING while the flag is already on', async () => {
+    const userCtx = await import('../../../contexts/UserContext');
+    const spy = vi.spyOn(userCtx, 'useUser').mockImplementation(() => ({ user: null }));
+    try {
+      await mount(wrap(<ScoutingLine uid="viewer-1" agentName="Prime" />));
+      expect(svc.calls).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
+    flag.on = true;
+    svc.calls.length = 0;
+    const lit = await mount(wrap(<ScoutingLine uid="viewer-1" agentName="Prime" />));
+    expect(lit.querySelector('[data-backing="scouting-line"]')).not.toBeNull();
+    expect(svc.calls.filter((c) => c === 'fetchBackingLit')).toEqual([]);
   });
 });

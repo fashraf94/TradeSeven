@@ -22,7 +22,7 @@
 //     exists or not and cannot use the route as a rollout oracle;
 //   · ZERO Firestore touches — no read, no write, no transaction.
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({ uid: 'viewer-1' }));
 
@@ -53,6 +53,10 @@ const { default: resultsHandler } = await import('./results.js');
 const { default: myStatsHandler } = await import('./my-stats.js');
 const { default: trainerStatsHandler } = await import('./trainer-stats.js');
 const { default: teamLabelsHandler } = await import('./team-labels.js');
+// The activation PR: the one backing route that ANSWERS while dark — the
+// client's question about the founder smoke override — held to the same
+// zero-touch, auth-first discipline below.
+const { default: litHandler } = await import('./lit.js');
 
 const mkRes = () => ({
   statusCode: null, body: null,
@@ -111,9 +115,87 @@ for (const [label, handler, method, valid] of ROUTES) {
   });
 }
 
+describe('GET /api/backing/lit — dark (the activation PR)', () => {
+  it('answers { lit: false } — never a 404, never a read: the client learns "not lit" and nothing else', async () => {
+    const res = await call(litHandler, { method: 'GET', query: {} });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({ lit: false });
+    expect(touched).toEqual({ reads: 0, writes: 0, transactions: 0 });
+  });
+
+  it('still authenticates first — an anonymous caller gets 401, not an answer', async () => {
+    state.uid = null;
+    const res = await call(litHandler, { method: 'GET', query: {} });
+    expect(res.statusCode).toBe(401);
+    expect(touched).toEqual({ reads: 0, writes: 0, transactions: 0 });
+  });
+
+  it('still refuses the wrong method (405)', async () => {
+    const res = await call(litHandler, { method: 'POST', query: {} });
+    expect(res.statusCode).toBe(405);
+    expect(touched).toEqual({ reads: 0, writes: 0, transactions: 0 });
+  });
+});
+
 describe('the darkness is the FLAG, not an accident of the mocks', () => {
   it('the repo ships BACKING_BETA_ENABLED false — the pin suite owns the flip', async () => {
     const real = await vi.importActual('../../src/config/featureFlags.js');
     expect(real.BACKING_BETA_ENABLED).toBe(false);
+  });
+});
+
+// ============================================================================
+// THE ACTIVATION PR — the founder smoke override CANNOT light these routes for
+// a non-allowlisted uid, on a production deployment, or without both env vars:
+// the same 404, the same zero Firestore touches. (The lit case — an allowlisted
+// uid on a preview — is each route's own lit suite's row; this file's database
+// double throws on any touch, so only darkness can be asserted here.)
+describe('the founder smoke override cannot light a dark route (the activation PR)', () => {
+  const lit = (uid) => {
+    vi.stubEnv('VERCEL_ENV', 'preview');
+    vi.stubEnv('BACKING_SMOKE_ENABLED', 'true');
+    vi.stubEnv('BACKING_SMOKE_UIDS', `other-1, ${uid}`);
+  };
+  afterEach(() => { vi.unstubAllEnvs(); });
+  const ARMS = [
+    ['a PRODUCTION deployment, both env vars set, the uid allowlisted', (uid) => { lit(uid); vi.stubEnv('VERCEL_ENV', 'production'); }],
+    ['a NON-allowlisted uid on a lit preview', (uid) => { lit(uid); vi.stubEnv('BACKING_SMOKE_UIDS', 'someone-else'); }],
+    ['a missing switch (BACKING_SMOKE_ENABLED unset)', (uid) => { lit(uid); vi.stubEnv('BACKING_SMOKE_ENABLED', ''); }],
+    ['a missing allowlist (BACKING_SMOKE_UIDS unset)', (uid) => { lit(uid); vi.stubEnv('BACKING_SMOKE_UIDS', ''); }],
+    ['an unset deployment (VERCEL_ENV absent — local, a bare node process)', (uid) => { lit(uid); vi.stubEnv('VERCEL_ENV', ''); }],
+  ];
+  for (const [label, arm] of ARMS) {
+    it(`${label}: every route still 404s with the missing-route body and touches Firestore zero times`, async () => {
+      const routes = ROUTES; const UID = state.uid;
+      for (const route of routes) {
+        vi.unstubAllEnvs();
+        arm(UID);
+        const res = await call(route[1], { method: route[2], ...route[3] });
+        expect(res.statusCode, route[0]).toBe(404);
+        expect(res.body, route[0]).toEqual({ error: 'Not found' });
+      }
+      expect(touched).toEqual({ reads: 0, writes: 0, transactions: 0 });
+    });
+  }
+});
+
+describe('…and GET /api/backing/lit answers { lit: false } under every one of those arms', () => {
+  afterEach(() => { vi.unstubAllEnvs(); });
+  it('production / non-allowlisted / no switch / no allowlist / no deployment — all { lit: false }, zero touches', async () => {
+    const arms = [
+      () => { vi.stubEnv('VERCEL_ENV', 'production'); vi.stubEnv('BACKING_SMOKE_ENABLED', 'true'); vi.stubEnv('BACKING_SMOKE_UIDS', state.uid); },
+      () => { vi.stubEnv('VERCEL_ENV', 'preview'); vi.stubEnv('BACKING_SMOKE_ENABLED', 'true'); vi.stubEnv('BACKING_SMOKE_UIDS', 'someone-else'); },
+      () => { vi.stubEnv('VERCEL_ENV', 'preview'); vi.stubEnv('BACKING_SMOKE_ENABLED', ''); vi.stubEnv('BACKING_SMOKE_UIDS', state.uid); },
+      () => { vi.stubEnv('VERCEL_ENV', 'preview'); vi.stubEnv('BACKING_SMOKE_ENABLED', 'true'); vi.stubEnv('BACKING_SMOKE_UIDS', ''); },
+      () => { vi.stubEnv('VERCEL_ENV', ''); vi.stubEnv('BACKING_SMOKE_ENABLED', 'true'); vi.stubEnv('BACKING_SMOKE_UIDS', state.uid); },
+    ];
+    for (const arm of arms) {
+      vi.unstubAllEnvs();
+      arm();
+      const res = await call(litHandler, { method: 'GET', query: {} });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toEqual({ lit: false });
+    }
+    expect(touched).toEqual({ reads: 0, writes: 0, transactions: 0 });
   });
 });

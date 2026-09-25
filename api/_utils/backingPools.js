@@ -255,6 +255,22 @@ export function listablePod(group) {
 }
 
 /**
+ * May this pod appear in a SMOKE user's pod list? (The activation PR; spec
+ * §11 gate 4.) The mirror of `listablePod`: `stakeablePod` plus the
+ * OPPOSITE dev clause — ONLY an `isDev` pod, never a production one — so a
+ * smoke session on a preview (api/_utils/backingSmoke.js) sees the dev
+ * namespace and nothing else. Training pods are excluded as on the
+ * production list. Built ON the stakeable predicate for the same §9 reason:
+ * the smoke list can never admit a pod the stake path would refuse.
+ */
+export function smokeListablePod(group) {
+  if (!stakeablePod(group)) return false;
+  if (group?.isDev !== true) return false;
+  if (group?.isTraining === true) return false;
+  return true;
+}
+
+/**
  * A `live` copy of the viewer's stake that the pool AS ANSWERED says cannot
  * still be live (the pre-flip cleanup's review record, WIRING-1). Every
  * transition out of `open` other than to `closed` / `resolving` moves every

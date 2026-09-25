@@ -20,7 +20,7 @@
 //     exists or not and cannot use the route as a rollout oracle;
 //   · ZERO Firestore touches — no read, no write, no transaction.
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({ uid: 'viewer-1' }));
 
@@ -101,3 +101,38 @@ for (const [label, handler, method, valid] of ROUTES) {
     });
   });
 }
+
+// ============================================================================
+// THE ACTIVATION PR — the founder smoke override CANNOT light these routes for
+// a non-allowlisted uid, on a production deployment, or without both env vars:
+// the same 404, the same zero Firestore touches. (The lit case — an allowlisted
+// uid on a preview — is each route's own lit suite's row; this file's database
+// double throws on any touch, so only darkness can be asserted here.)
+describe('the founder smoke override cannot light a dark route (the activation PR)', () => {
+  const lit = (uid) => {
+    vi.stubEnv('VERCEL_ENV', 'preview');
+    vi.stubEnv('BACKING_SMOKE_ENABLED', 'true');
+    vi.stubEnv('BACKING_SMOKE_UIDS', `other-1, ${uid}`);
+  };
+  afterEach(() => { vi.unstubAllEnvs(); });
+  const ARMS = [
+    ['a PRODUCTION deployment, both env vars set, the uid allowlisted', (uid) => { lit(uid); vi.stubEnv('VERCEL_ENV', 'production'); }],
+    ['a NON-allowlisted uid on a lit preview', (uid) => { lit(uid); vi.stubEnv('BACKING_SMOKE_UIDS', 'someone-else'); }],
+    ['a missing switch (BACKING_SMOKE_ENABLED unset)', (uid) => { lit(uid); vi.stubEnv('BACKING_SMOKE_ENABLED', ''); }],
+    ['a missing allowlist (BACKING_SMOKE_UIDS unset)', (uid) => { lit(uid); vi.stubEnv('BACKING_SMOKE_UIDS', ''); }],
+    ['an unset deployment (VERCEL_ENV absent — local, a bare node process)', (uid) => { lit(uid); vi.stubEnv('VERCEL_ENV', ''); }],
+  ];
+  for (const [label, arm] of ARMS) {
+    it(`${label}: every route still 404s with the missing-route body and touches Firestore zero times`, async () => {
+      const routes = ROUTES; const UID = state.uid;
+      for (const route of routes) {
+        vi.unstubAllEnvs();
+        arm(UID);
+        const res = await call(route[1], { method: route[2], ...route[3] });
+        expect(res.statusCode, route[0]).toBe(404);
+        expect(res.body, route[0]).toEqual({ error: 'Not found' });
+      }
+      expect(touched).toEqual({ reads: 0, writes: 0, transactions: 0 });
+    });
+  }
+});

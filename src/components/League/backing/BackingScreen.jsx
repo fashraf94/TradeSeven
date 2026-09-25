@@ -38,7 +38,7 @@
 // (backingMobilePin.test.jsx).
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { BACKING_BETA_ENABLED } from '../../../config/featureFlags';
+import { useBackingLit } from '../../../hooks/useBackingLit';
 import { FINE_PRINT } from '../../../constants/backing';
 import { LTOKENS, LX, alpha } from '../leagueTokens';
 import { Eyebrow, Mono, Icon, LIcon } from '../LeagueParts';
@@ -320,6 +320,7 @@ function BackingScreenLive({ uid, accent, viewport, onBack, onOpenTape, initialS
 
 /** The screen. Renders nothing — and runs nothing — while the flag is dark. */
 export default function BackingScreen({ uid, accent = LX.energy, viewport = 'mobile', onBack, onOpenTape, initialSection = null }) {
-  if (!BACKING_BETA_ENABLED) return null;
+  const lit = useBackingLit();
+  if (!lit) return null;
   return <BackingScreenLive uid={uid} accent={accent} viewport={viewport} onBack={onBack} onOpenTape={onOpenTape} initialSection={initialSection} />;
 }

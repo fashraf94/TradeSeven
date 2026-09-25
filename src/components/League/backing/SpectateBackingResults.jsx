@@ -11,7 +11,7 @@
 // server-side. Emits `results_viewed` once per session per pod (§10).
 
 import React, { useEffect } from 'react';
-import { BACKING_BETA_ENABLED } from '../../../config/featureFlags';
+import { useBackingLit } from '../../../hooks/useBackingLit';
 import { LTOKENS, LX } from '../leagueTokens';
 import { Eyebrow } from '../LeagueParts';
 import useBackingResults from '../../../hooks/useBackingResults';
@@ -43,7 +43,8 @@ function SpectateBackingResultsLive({ groupId, accent }) {
 
 /** The Spectate mount. Renders nothing — and runs nothing — while the flag is dark, and nothing for a live or bracket pod. */
 export default function SpectateBackingResults({ pod, accent = LX.energy }) {
-  if (!BACKING_BETA_ENABLED) return null;
+  const lit = useBackingLit();
+  if (!lit) return null;
   if (!pod || pod.base !== true || pod.status !== 'final' || typeof pod.id !== 'string' || pod.id.length === 0) return null;
   return <SpectateBackingResultsLive groupId={pod.id} accent={accent} />;
 }

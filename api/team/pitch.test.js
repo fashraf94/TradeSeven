@@ -194,7 +194,10 @@ describe('the route\'s literal collection matches the reader\'s constant (§9 �
   it('reads the flag at CALL time, after auth, in the house shape', () => {
     const src = readFileSync(path.join(REPO, 'api/team/pitch.js'), 'utf8')
       .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-    expect(src).toContain('if (!BACKING_BETA_ENABLED) return res.status(404)');
-    expect(src.indexOf('await requireAuth(')).toBeLessThan(src.indexOf('if (!BACKING_BETA_ENABLED)'));
+    // The activation PR: the gate reads THROUGH the smoke helper — the flag,
+    // or the founder override for this uid on a preview — never the bare flag.
+    expect(src).toContain('if (!backingLitFor(user.uid)) return res.status(404)');
+    expect(src).not.toContain('BACKING_BETA_ENABLED');
+    expect(src.indexOf('await requireAuth(')).toBeLessThan(src.indexOf('if (!backingLitFor(user.uid))'));
   });
 });

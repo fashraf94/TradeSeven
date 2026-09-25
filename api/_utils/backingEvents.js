@@ -111,10 +111,20 @@ export function stakeConfirmedEventId(sourceId) {
   return `${STAKE_CONFIRMED_EVENT}:${sourceId}`;
 }
 
-/** The §6 document, built from its parts. Pure. */
-export function buildBackingEvent({ userId, groupId = null, event, props = {}, now = new Date() }) {
+/**
+ * The §6 document, built from its parts. Pure. `isDev` (the activation PR)
+ * is written ONLY when true — a smoke session's event (the founder on a
+ * preview; a dev pod's `stake_confirmed`) carries the marker at the top
+ * level so the funnel (§10) and the cleanup can tell it from the beta's; every
+ * other document is byte-identical to before.
+ */
+export function buildBackingEvent({ userId, groupId = null, event, props = {}, now = new Date(), isDev = false }) {
   const at = new Date(now).toISOString();
-  return { userId, groupId, event, at, props: props && typeof props === 'object' ? { ...props } : {} };
+  return {
+    userId, groupId, event, at,
+    props: props && typeof props === 'object' ? { ...props } : {},
+    ...(isDev === true ? { isDev: true } : {}),
+  };
 }
 
 /**
@@ -122,11 +132,11 @@ export function buildBackingEvent({ userId, groupId = null, event, props = {}, n
  *
  * @returns {Promise<{eventId: string, doc: Object}>}
  */
-export async function recordBackingEvent(db, { eventId, userId, groupId = null, event, props = {}, now = new Date() }) {
+export async function recordBackingEvent(db, { eventId, userId, groupId = null, event, props = {}, now = new Date(), isDev = false }) {
   if (typeof eventId !== 'string' || eventId.length === 0 || eventId.includes('/')) throw new Error('recordBackingEvent: a path-safe eventId is required');
   if (typeof userId !== 'string' || userId.length === 0) throw new Error('recordBackingEvent: userId is required');
   if (typeof event !== 'string' || event.length === 0) throw new Error('recordBackingEvent: event is required');
-  const doc = buildBackingEvent({ userId, groupId, event, props, now });
+  const doc = buildBackingEvent({ userId, groupId, event, props, now, isDev });
   await db.collection('backingEvents').doc(eventId).set(doc);
   return { eventId, doc };
 }
