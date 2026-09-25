@@ -45,18 +45,22 @@ describe('the override — every condition, each alone', () => {
 
   it('the code flag lights only as the boolean `true` — a truthy non-boolean (a string) reads DARK on the server as on the client (LIGHT-R-2)', () => {
     const dark = { ...LIT_ENV, BACKING_SMOKE_ENABLED: 'false' };
-    for (const value of ['true', 'false', 1, {}, [true]]) {
-      flags.backing = value;
-      flags.eligibility = value;
-      expect(backingLitFor('someone-else', dark), String(value)).toBe(false);
-      expect(eligibilityLitFor('someone-else', dark), String(value)).toBe(false);
+    try {
+      for (const value of ['true', 'false', 1, {}, [true]]) {
+        flags.backing = value;
+        flags.eligibility = value;
+        expect(backingLitFor('someone-else', dark), String(value)).toBe(false);
+        expect(eligibilityLitFor('someone-else', dark), String(value)).toBe(false);
+      }
+      flags.backing = true;
+      flags.eligibility = true;
+      expect(backingLitFor('someone-else', dark)).toBe(true);
+      expect(eligibilityLitFor('someone-else', dark)).toBe(true);
+    } finally {
+      // Restored whatever the verdict — a red here must not leak into the rows below.
+      flags.backing = false;
+      flags.eligibility = false;
     }
-    flags.backing = true;
-    flags.eligibility = true;
-    expect(backingLitFor('someone-else', dark)).toBe(true);
-    expect(eligibilityLitFor('someone-else', dark)).toBe(true);
-    flags.backing = false;
-    flags.eligibility = false;
   });
 
   it('PRODUCTION ignores the override entirely — both env vars set, the uid allowlisted, still DARK', () => {
