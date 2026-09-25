@@ -79,6 +79,7 @@ import {
   liveTeamsFor,
   materializePool,
   poolRefFor,
+  smokeListablePod,
 } from '../_utils/backingPools.js';
 import { backingWeekFor } from '../_utils/backingWeek.js';
 import { labelSeatOf, podLabelSeats, resolveTeamLabels } from '../_utils/backingTeamLabels.js';
@@ -89,7 +90,9 @@ import {
 } from '../../src/constants/backing.js';
 import { SETTLEMENT_SOURCE, settlePool, settlementPredicate } from '../_utils/backingSettlement.js';
 import { TOURNAMENT_GROUPS_COLLECTION } from '../../src/constants/leagueTournament.js';
-import { BACKING_BETA_ENABLED, TOURNAMENT_ADVANCEMENT_FROZEN } from '../../src/config/featureFlags.js';
+import { TOURNAMENT_ADVANCEMENT_FROZEN } from '../../src/config/featureFlags.js';
+import { backingLitFor, smokeOverrideFor } from '../_utils/backingSmoke.js';
+import { walletIdFor } from '../_utils/backingWallet.js';
 
 export const config = { maxDuration: 15 };
 
@@ -113,7 +116,9 @@ export const REVEALED_STATUSES = new Set([
 // The listability predicate now lives in api/_utils/backingPools.js, so the
 // stake transaction gates on the SAME function this list filters with (§9).
 // Re-exported here because it is this route's filter and its suite names it.
-export { listablePod };
+// `smokeListablePod` is its mirror for a SMOKE session (the activation PR):
+// ONLY `isDev` pods, never a production one.
+export { listablePod, smokeListablePod };
 
 /** The week label the list is keyed to (§5). Exported for the suite. */
 export function podListWeek(now = new Date()) {
@@ -285,10 +290,18 @@ export default async function handler(req, res) {
   if (!user) return;
 
   // 4. THE FLAG, read at call time, after auth.
-  if (!BACKING_BETA_ENABLED) return res.status(404).json({ error: 'Not found' });
+  // Backing activation: the code flag, OR the founder smoke override for THIS
+  // uid on a Vercel preview (api/_utils/backingSmoke.js) — never the bare flag.
+  if (!backingLitFor(user.uid)) return res.status(404).json({ error: 'Not found' });
 
   const db = getFirebaseAdmin();
   const now = new Date();
+  // A SMOKE SESSION (the founder on a preview, allowlisted — the override
+  // that lit this caller) is listed the DEV NAMESPACE ONLY and may
+  // materialize a dev pod's pool; a production viewer never sees a dev pod
+  // (D-DEVFIELD) and never opens one.
+  const smoke = smokeOverrideFor(user.uid);
+  const listable = smoke ? smokeListablePod : listablePod;
 
   try {
     // 5a. The week, and the ONE reused composite.
@@ -302,7 +315,7 @@ export default async function handler(req, res) {
     const candidates = [];
     snap.forEach((doc) => {
       const group = { id: doc.id, ...doc.data() };
-      if (listablePod(group)) candidates.push(group);
+      if (listable(group)) candidates.push(group);
     });
 
     // 5b. The viewer's own stakes for this week — ONE query, the committed
@@ -339,7 +352,7 @@ export default async function handler(req, res) {
         const existing = await poolRefFor(db, group).get();
         const materialized = existing.exists
           ? { pool: existing.data() }
-          : await materializePool(db, group, now);
+          : await materializePool(db, group, now, { allowDev: smoke });
         pool = materialized.pool;
         before = pool?.status ?? null;
         if (pool != null && pool.status === POOL_STATUS.OPEN) {
@@ -436,6 +449,11 @@ export default async function handler(req, res) {
       backingWeekStart: week?.startIso ?? null,
       backingWeekCloses: week?.closeIso ?? null,
       viewerUid: user.uid,
+      // A SMOKE session's stakes debit its DEV wallet (`dev-{uid}`,
+      // backingStake.js), so the list names the wallet document the client's
+      // allowance meter must read; every other caller's answer is unchanged
+      // — no key (DEV-5, the activation review record).
+      ...(smoke ? { walletId: walletIdFor(user.uid, { dev: true }) } : {}),
       pods,
     });
   } catch (err) {

@@ -255,6 +255,34 @@ export function listablePod(group) {
 }
 
 /**
+ * The marker `scripts/backing-smoke.js` stamps on every pod it seeds
+ * (`smoke.tool`). A smoke session is listed those pods and no other; the
+ * script's own cleanup verdict demands the same marker before it deletes.
+ */
+export const SMOKE_POD_TOOL = 'scripts/backing-smoke.js';
+
+/**
+ * May this pod appear in a SMOKE user's pod list? (The activation PR; spec
+ * §11 gate 4.) The mirror of `listablePod`: `stakeablePod` plus the
+ * OPPOSITE dev clause — ONLY an `isDev` pod, never a production one — so a
+ * smoke session on a preview (api/_utils/backingSmoke.js) sees the dev
+ * namespace and nothing else. Training pods are excluded as on the
+ * production list. Built ON the stakeable predicate for the same §9 reason:
+ * the smoke list can never admit a pod the stake path would refuse.
+ */
+export function smokeListablePod(group) {
+  if (!stakeablePod(group)) return false;
+  if (group?.isDev !== true) return false;
+  if (group?.isTraining === true) return false;
+  // …and ONLY a pod the smoke script seeded (its `smoke.tool` marker): a
+  // teammate's dev pod, or a `seed-tournament-group` pod, is not the
+  // smoke's — listing it would open a dev pool the smoke's cleanup never
+  // sweeps (SCRIPT-08, the activation review record).
+  if (group?.smoke?.tool !== SMOKE_POD_TOOL) return false;
+  return true;
+}
+
+/**
  * A `live` copy of the viewer's stake that the pool AS ANSWERED says cannot
  * still be live (the pre-flip cleanup's review record, WIRING-1). Every
  * transition out of `open` other than to `closed` / `resolving` moves every

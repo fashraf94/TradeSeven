@@ -956,3 +956,105 @@ describe('D-af — every seat is named by the SERVER, by its primary agent (Amen
     expect(new Set(profileReads).size).toBe(profileReads.length);
   });
 });
+
+// ============================================================================
+// THE ACTIVATION PR — a SMOKE session's list is the DEV NAMESPACE ONLY.
+describe('the founder smoke override (the activation PR): a smoke session is listed dev pods and nothing else', () => {
+  // The marker scripts/backing-smoke.js stamps on every pod it seeds: a smoke
+  // session is listed THOSE dev pods and no other (SCRIPT-08).
+  const SMOKE_MARK = { tool: 'scripts/backing-smoke.js', stamp: '20260922_abc123' };
+  const lit = () => {
+    vi.stubEnv('VERCEL_ENV', 'preview');
+    vi.stubEnv('BACKING_SMOKE_ENABLED', 'true');
+    vi.stubEnv('BACKING_SMOKE_UIDS', `other-1, ${UID}`);
+  };
+  afterEach(() => { vi.unstubAllEnvs(); });
+
+  it('dark flag, lit preview, allowlisted uid: ONLY the isDev pod is listed — the production pod is dropped (mutation check: the dev-only row)', async () => {
+    state.flag = false;
+    lit();
+    DB = seed([group('prod-1'), group('smoke-1', { isDev: true, smoke: SMOKE_MARK }), group('train-1', { isDev: true, isTraining: true })]);
+    const res = await get();
+    expect(res.statusCode).toBe(200);
+    expect(res.body.pods.map((p) => p.groupId)).toEqual(['smoke-1']);
+  });
+
+  it('…and the dev pod\'s pool is MATERIALIZED at `dev-{groupId}` (allowDev), never at the production id', async () => {
+    state.flag = false;
+    lit();
+    DB = seed([group('smoke-1', { isDev: true, smoke: SMOKE_MARK })]);
+    const res = await get();
+    expect(res.body.pods[0].pool?.status).toBe('open');
+    expect(DB.store.has(`${BACKING_POOLS_COLLECTION}/dev-smoke-1`)).toBe(true);
+    expect(DB.store.has(`${BACKING_POOLS_COLLECTION}/smoke-1`)).toBe(false);
+    expect(DB.store.get(`${BACKING_POOLS_COLLECTION}/dev-smoke-1`).isDev).toBe(true);
+  });
+
+  it('the SAME uid and env in PRODUCTION reads dark: 404, no read', async () => {
+    state.flag = false;
+    lit();
+    vi.stubEnv('VERCEL_ENV', 'production');
+    DB = seed([group('smoke-1', { isDev: true, smoke: SMOKE_MARK })]);
+    const res = await get();
+    expect(res.statusCode).toBe(404);
+    expect(res.body).toEqual({ error: 'Not found' });
+  });
+
+  it('a NON-allowlisted uid on the lit preview reads dark', async () => {
+    state.flag = false;
+    lit();
+    state.uid = 'someone-else';
+    expect((await get()).statusCode).toBe(404);
+  });
+
+  it('a LIT viewer who is not a smoke user (the flag on) is unchanged: production pods only, never a dev pod, no dev pool opened', async () => {
+    state.flag = true;
+    lit(); // the env is irrelevant to a non-smoke caller
+    state.uid = 'someone-else';
+    DB = seed([group('prod-1'), group('smoke-1', { isDev: true, smoke: SMOKE_MARK })]);
+    const res = await get();
+    expect(res.body.pods.map((p) => p.groupId)).toEqual(['prod-1']);
+    expect(DB.store.has(`${BACKING_POOLS_COLLECTION}/dev-smoke-1`)).toBe(false);
+  });
+
+  it('an isDev pod WITHOUT the smoke marker — a teammate\'s dev pod, a seed-tournament-group pod — is NOT listed for a smoke session, and its pool is never opened (SCRIPT-08)', async () => {
+    state.flag = false;
+    lit();
+    DB = seed([group('smoke-1', { isDev: true, smoke: SMOKE_MARK }), group('other-dev', { isDev: true }), group('mis-marked', { isDev: true, smoke: { tool: 'scripts/seed-tournament-group.js' } })]);
+    const res = await get();
+    expect(res.statusCode).toBe(200);
+    expect(res.body.pods.map((p) => p.groupId)).toEqual(['smoke-1']);
+    expect(DB.store.has(`${BACKING_POOLS_COLLECTION}/dev-smoke-1`)).toBe(true);
+    expect(DB.store.has(`${BACKING_POOLS_COLLECTION}/dev-other-dev`)).toBe(false);
+    expect(DB.store.has(`${BACKING_POOLS_COLLECTION}/dev-mis-marked`)).toBe(false);
+  });
+
+  it('a smoke session\'s answer names its DEV wallet (`walletId: dev-{uid}`) — where its stakes debit; a lit non-smoke caller\'s answer carries no such key (DEV-5)', async () => {
+    state.flag = false;
+    lit();
+    DB = seed([group('smoke-1', { isDev: true, smoke: SMOKE_MARK })]);
+    const res = await get();
+    expect(res.statusCode).toBe(200);
+    expect(res.body.walletId).toBe(`dev-${UID}`);
+    state.flag = true;
+    state.uid = 'someone-else';
+    DB = seed([group('prod-1')]);
+    const res2 = await get();
+    expect(res2.statusCode).toBe(200);
+    expect(Object.keys(res2.body)).not.toContain('walletId');
+  });
+
+  it('smokeListablePod is the mirror predicate — only an isDev pod CARRYING THE SMOKE MARKER, still never training, terminal or the excluded slot', async () => {
+    const { smokeListablePod } = await import('./backing-pools.js');
+    expect(smokeListablePod(group('g', { isDev: true, smoke: SMOKE_MARK }))).toBe(true);
+    expect(smokeListablePod(group('g', { isDev: true }))).toBe(false);
+    expect(smokeListablePod(group('g', { isDev: true, smoke: { tool: 'something-else' } }))).toBe(false);
+    expect(smokeListablePod(group('g', { smoke: SMOKE_MARK }))).toBe(false);
+    expect(smokeListablePod(group('g'))).toBe(false);
+    expect(smokeListablePod(group('g', { isDev: true, smoke: SMOKE_MARK, isTraining: true }))).toBe(false);
+    expect(smokeListablePod(group('g', { isDev: true, smoke: SMOKE_MARK, status: 'voided' }))).toBe(false);
+    expect(smokeListablePod(group('g', { isDev: true, smoke: SMOKE_MARK, status: 'expired' }))).toBe(false);
+    expect(smokeListablePod(group('g', { isDev: true, smoke: SMOKE_MARK, slotId: 'mon-0845' }))).toBe(false);
+    expect(smokeListablePod(group('g', { isDev: true, smoke: SMOKE_MARK, status: 'battle' }))).toBe(true);
+  });
+});

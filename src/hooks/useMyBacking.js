@@ -94,12 +94,32 @@ export default function useMyBacking(uid, weekKeys, enabled = true) {
     [stakes],
   );
 
+  // The pool each backed pod's stakes name — `poolId` on the stake document
+  // (the activation PR): `dev-{groupId}` on a dev pod, `groupId` otherwise;
+  // a stake written before the field reads its pool at `groupId`, as before.
+  // Keyed by groupId like everything else here; only the SUBSCRIPTION's
+  // document id differs. Part of the join's key so a pool id that moves
+  // re-subscribes (SEAL-2's client half, the PR 4 review record).
+  const poolIdByGroup = useMemo(() => {
+    const out = {};
+    for (const s of stakes) {
+      if (typeof s?.groupId !== 'string') continue;
+      // A stake that NAMES its pool wins over the `groupId` fallback whatever
+      // order the stakes arrive in (WIRE-5, the activation review record).
+      if (typeof s.poolId === 'string' && s.poolId.length > 0) out[s.groupId] = s.poolId;
+      else if (!(s.groupId in out)) out[s.groupId] = s.groupId;
+    }
+    return out;
+  }, [stakes]);
+  const poolKey = useMemo(() => groupKey.split(',').filter(Boolean).map((id) => `${id}=${poolIdByGroup[id] ?? id}`).join(','), [groupKey, poolIdByGroup]);
+
   useEffect(() => {
     if (!enabled || !groupKey) { setPoolsById({}); setGroupsById({}); return undefined; }
     const ids = groupKey.split(',');
+    const poolIds = Object.fromEntries(poolKey.split(',').filter(Boolean).map((pair) => pair.split('=')));
     const unsubs = [];
     for (const groupId of ids) {
-      unsubs.push(subscribePool(groupId, (pool) => setPoolsById((prev) => ({ ...prev, [groupId]: pool }))));
+      unsubs.push(subscribePool(poolIds[groupId] ?? groupId, (pool) => setPoolsById((prev) => ({ ...prev, [groupId]: pool }))));
       // A group read that FAILED is no answer: never the `null` of a pod that
       // is gone (WIRE-D1 — a failed read is not a cancelled pod). Before any
       // answer it is recorded as `undefined` — the key present, so the names'
@@ -113,7 +133,7 @@ export default function useMyBacking(uid, weekKeys, enabled = true) {
       ));
     }
     return () => { unsubs.forEach((u) => { try { u(); } catch { /* already closed */ } }); };
-  }, [enabled, groupKey]);
+  }, [enabled, groupKey, poolKey]);
 
   // The names' key: what they depend on, per backed pod — its team set (the
   // viewer's stake teams and the live seats) and whether it settled — and

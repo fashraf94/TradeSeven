@@ -87,7 +87,8 @@ import { projectResultPool, weeksOf } from '../_utils/backingResults.js';
 import { labelSeatOf, podLabelSeats, resolveTeamLabels } from '../_utils/backingTeamLabels.js';
 import { isTerminalPool, readPoolByGroupId, readStakesWhere } from '../_utils/backingStats.js';
 import { GROUP_STATUS } from '../../src/constants/leagueTournament.js';
-import { BACKING_BETA_ENABLED, TOURNAMENT_ADVANCEMENT_FROZEN } from '../../src/config/featureFlags.js';
+import { TOURNAMENT_ADVANCEMENT_FROZEN } from '../../src/config/featureFlags.js';
+import { backingLitFor } from '../_utils/backingSmoke.js';
 
 export const config = { maxDuration: 30 };
 
@@ -262,7 +263,9 @@ export default async function handler(req, res) {
   if (!user) return;
 
   // 4. THE FLAG, read at call time, after auth.
-  if (!BACKING_BETA_ENABLED) return res.status(404).json({ error: 'Not found' });
+  // Backing activation: the code flag, OR the founder smoke override for THIS
+  // uid on a Vercel preview (api/_utils/backingSmoke.js) — never the bare flag.
+  if (!backingLitFor(user.uid)) return res.status(404).json({ error: 'Not found' });
 
   // 5. Query.
   const q = req.query && typeof req.query === 'object' ? req.query : {};

@@ -188,21 +188,59 @@ describe('nothing else reaches it (PR 0)', () => {
     expect(importers).toContain('api/eligibility/attest.js');
   });
 
-  it('the route reads the flag at CALL time, never at module scope, and there is no accessor to miss', () => {
+  it('the route reads the flag at CALL time through the ONE helper — never at module scope, never the bare flag', () => {
+    // THE ACTIVATION PR: the door reads `eligibilityLitFor(uid)` — the
+    // constant, OR the founder smoke override for this uid on a Vercel preview
+    // (api/_utils/backingSmoke.js) — so the bare identifier no longer appears
+    // in the route's code at all; the helper carries the one call-time read.
     const src = read('api/eligibility/attest.js');
-    expect(src).toContain('if (!ELIGIBILITY_ATTESTATION_ENABLED) return res.status(404)');
+    expect(src).toContain('if (!eligibilityLitFor(user.uid)) return res.status(404)');
     // Comments stripped (the deskHonesty rule): the header names the flag to
     // explain it, which is documentation, not a read.
-    const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
-    expect(code.match(/ELIGIBILITY_ATTESTATION_ENABLED/g)).toHaveLength(2); // the import and the one call-time read
+    const strip = (text) => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+    const code = strip(src);
+    expect(code.match(/ELIGIBILITY_ATTESTATION_ENABLED/g)).toBeNull();
+    expect(code).toContain("import { eligibilityLitFor } from '../_utils/backingSmoke.js';");
+    expect(code.indexOf('await requireAuth(')).toBeLessThan(code.indexOf('if (!eligibilityLitFor(user.uid))'));
+    // The helper reads the constant exactly once, at call time (the import and
+    // the read), and derives nothing at module scope.
+    const helper = strip(read('api/_utils/backingSmoke.js'));
+    expect(helper.match(/\bELIGIBILITY_ATTESTATION_ENABLED\b/g)).toHaveLength(2);
+    expect(helper).not.toMatch(/^const [^\n]*ELIGIBILITY_ATTESTATION_ENABLED/m);
     // No accessor exists for this flag, so a hermetic mock of the constant is
     // the whole story (the SHOW_IT trap). Pinned by COUNT, not by name (review
     // F-D1: a name regex was spelling-bound): comment-stripped, featureFlags.js
     // mentions the identifier exactly once — its own export — so any accessor
     // or derivation that reads it, whatever it is called, reds this row.
-    const flagsCode = read('src/config/featureFlags.js').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+    const flagsCode = strip(read('src/config/featureFlags.js'));
     expect(flagsCode.match(/\bELIGIBILITY_ATTESTATION_ENABLED\b/g),
       'something in featureFlags.js reads the flag besides its own export — an accessor or derivation a hermetic mock of the constant cannot see; override the accessor in this suite\'s featureFlags mock too (the research.dark.test.js isShowItOn precedent) and move this count in the same commit').toHaveLength(1);
+  });
+
+  it('the OVERRIDE cannot light this door in production, for a non-allowlisted uid, or without both env vars (the activation PR)', async () => {
+    // The dark suite\'s own environment is dark; each row below stubs the env
+    // and expects the same 404, the same zero reads — the override is
+    // honoured only on a preview, for an allowlisted uid, with the switch on.
+    // (The LIT preview case — the door answering — is attest.test.js\'s row.)
+    const lit = () => { vi.stubEnv('VERCEL_ENV', 'preview'); vi.stubEnv('BACKING_SMOKE_ENABLED', 'true'); vi.stubEnv('BACKING_SMOKE_UIDS', state.uid); };
+    try {
+      for (const [label, arm] of [
+        ['production', () => { lit(); vi.stubEnv('VERCEL_ENV', 'production'); }],
+        ['a non-allowlisted uid', () => { lit(); vi.stubEnv('BACKING_SMOKE_UIDS', 'someone-else'); }],
+        ['no switch', () => { lit(); vi.stubEnv('BACKING_SMOKE_ENABLED', 'false'); }],
+        ['no allowlist', () => { lit(); vi.stubEnv('BACKING_SMOKE_UIDS', ''); }],
+      ]) {
+        vi.unstubAllEnvs();
+        arm();
+        const res = await post(VALID);
+        expect(res.statusCode, label).toBe(404);
+        expect(res.body, label).toEqual({ error: 'Not found' });
+      }
+      expect(state.reads).toBe(0);
+      expect(state.transactions).toBe(0);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('adds no cron entry (spec §7: zero new crons)', () => {

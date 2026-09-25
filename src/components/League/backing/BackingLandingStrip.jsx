@@ -36,7 +36,7 @@
 // The viewer's in-play pools need neither: they are live subscriptions.
 
 import React, { useEffect, useMemo } from 'react';
-import { BACKING_BETA_ENABLED } from '../../../config/featureFlags';
+import { useBackingLit } from '../../../hooks/useBackingLit';
 import useBackingPods from '../../../hooks/useBackingPods';
 import useMyBacking from '../../../hooks/useMyBacking';
 import BackingStrip, { DeskStripSlot } from './BackingStrip';
@@ -97,6 +97,7 @@ function LiveStrip({ uid, accent, onOpen, wide, inColumn }) {
 }
 
 export default function BackingLandingStrip({ uid, accent, onOpen, wide = false, inColumn = false }) {
-  if (!BACKING_BETA_ENABLED) return null;
+  const lit = useBackingLit();
+  if (!lit) return null;
   return <LiveStrip uid={uid} accent={accent} onOpen={onOpen} wide={wide} inColumn={inColumn} />;
 }

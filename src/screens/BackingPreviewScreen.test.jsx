@@ -42,7 +42,7 @@ const REPO = path.resolve(HERE, '..', '..');
 
 const net = vi.hoisted(() => ({ fetch: [], fetchWithAuth: [], firestore: [], xhr: [], ws: [], beacon: [] }));
 const flag = vi.hoisted(() => ({ on: false }));
-const hooked = vi.hoisted(() => ({ pods: null, inPlay: null }));
+const hooked = vi.hoisted(() => ({ pods: null, inPlay: null, throwOnUse: false }));
 
 vi.mock('../firebase/config', () => ({ db: { preview: 'no database' }, auth: { currentUser: null }, default: {} }));
 vi.mock('firebase/firestore', async (importOriginal) => {
@@ -62,8 +62,11 @@ vi.mock('../config/featureFlags', async (importOriginal) => ({
   ...(await importOriginal()),
   get BACKING_BETA_ENABLED() { return flag.on; },
 }));
-vi.mock('../hooks/useBackingPods', () => ({ default: () => hooked.pods }));
-vi.mock('../hooks/useMyBacking', () => ({ default: () => hooked.inPlay }));
+// `hooked.throwOnUse`: the WIRE-4 row below arms both mocks to THROW, so a
+// gated backing surface mounted under the page's lit context — through any
+// module — surfaces as a render error instead of a hidden subscription.
+vi.mock('../hooks/useBackingPods', () => ({ default: () => { if (hooked.throwOnUse) throw new Error('a gated backing surface mounted under the preview page (useBackingPods)'); return hooked.pods; } }));
+vi.mock('../hooks/useMyBacking', () => ({ default: () => { if (hooked.throwOnUse) throw new Error('a gated backing surface mounted under the preview page (useMyBacking)'); return hooked.inPlay; } }));
 
 const { default: BackingPreviewScreen, PREVIEW_LABEL, NOTHING_SAVED, PREVIEW_STATES, PREVIEW_DESKTOP_STATES, PREVIEW_FIXTURES } = await import('./BackingPreviewScreen');
 const { backingPreviewAllowed, backingPreviewRequested, PRODUCTION_VERCEL_HOSTS } = await import('../components/League/backing/backingPreview');
@@ -141,7 +144,7 @@ async function select(page, stateId) {
 }
 const byText = (root, selector, text) => [...root.querySelectorAll(selector)].find((el) => el.textContent.trim() === text) ?? null;
 
-beforeEach(() => { flag.on = false; resetNet(); __resetBackingTelemetry(); window.history.replaceState(null, '', '/?preview=backing'); });
+beforeEach(() => { flag.on = false; hooked.throwOnUse = false; resetNet(); __resetBackingTelemetry(); window.history.replaceState(null, '', '/?preview=backing'); });
 afterEach(async () => {
   for (const { root, container } of roots) { await act(async () => root.unmount()); container.remove(); }
   roots = [];
@@ -690,5 +693,43 @@ describe('the gate — reachable under the dev server or on a Vercel preview, ne
       .filter((f) => /BackingPreviewScreen['"]/.test(readFileSync(f, 'utf8')))
       .map((f) => path.relative(REPO, f).split(path.sep).join('/'));
     expect(importers).toEqual(['src/main.jsx']);
+  });
+});
+
+// WIRE-4 (the activation review record): the page's lit context is the app's
+// own now (backingPreview.js re-exports BackingLitContext), so a GATED default
+// export mounted under the page's provider would light and open a real
+// subscription the mocked hooks above would hide from the network rows. The
+// page imports the pure views only — never one of the five gated defaults.
+describe('the page never mounts a gated default export (WIRE-4)', () => {
+  it('BEHAVIOUR: every mobile and desktop state mounts with the two data hooks armed to THROW — a gated surface reaching the page through ANY module would red this row (the refuter\'s pin)', async () => {
+    hooked.throwOnUse = true;
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const page = await mount(<BackingPreviewScreen />);
+      for (const state of PREVIEW_STATES) await select(page, state.id);
+      for (const state of PREVIEW_DESKTOP_STATES) await select(page, state.id);
+      expect(errors.mock.calls.map((c) => String(c[0])).filter((m) => m.includes('gated backing surface'))).toEqual([]);
+      expectNoNetwork();
+    } finally {
+      errors.mockRestore();
+    }
+    // Non-vacuous: the armed mock DOES throw when a gated surface renders LIT
+    // (dark, the strip returns null before it reaches the hook).
+    flag.on = true;
+    expect(() => renderToString(<BackingLandingStrip uid="x" accent="#5EEAD4" onOpen={() => {}} />)).toThrow(/gated backing surface/);
+  }, 90_000); // every state of both switchers, pressed — the same budget the per-state rows carry
+
+  it('every import from the five gated modules is named-only, and the two pure views are the ones imported', () => {
+    const src = readFileSync(path.join(REPO, 'src/screens/BackingPreviewScreen.jsx'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    for (const mod of ['BackingLandingStrip', 'BackingScreen', 'BackingStatsEntry', 'ScoutingLine', 'SpectateBackingResults']) {
+      const imports = src.match(new RegExp(String.raw`import\s[^;]*?from\s+'[^']*/backing/${mod}'`, 'g')) ?? [];
+      for (const line of imports) {
+        expect(line, `${mod}: a default import would mount a gated surface under the page's lit context`).toMatch(/^import\s*\{[^}]*\}\s*from/);
+      }
+    }
+    expect(src).toContain("import { ScoutingLineView } from '../components/League/backing/ScoutingLine'");
+    expect(src).toContain("import { StatsEntryView } from '../components/League/backing/BackingStatsEntry'");
+    expect(src).not.toMatch(/import\s+BackingLandingStrip\b|import\s+BackingScreen\b|import\s+SpectateBackingResults\b/);
   });
 });

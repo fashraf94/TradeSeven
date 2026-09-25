@@ -362,3 +362,47 @@ describe('buildAttestation — the shape, exported for the record', () => {
     expect(Object.keys(ATTESTATION_COPY).sort()).toEqual(['adult', 'terms']);
   });
 });
+
+// ============================================================================
+// THE ACTIVATION PR — the founder smoke override reaches THIS door too: an
+// allowlisted uid on a lit Vercel preview attests with the code flag DARK.
+// The founder's own eligibility/{uid} is the ONE document a smoke walk writes
+// outside the dev namespace — it is his real consent record.
+describe('the founder smoke override (the activation PR)', () => {
+  const lit = () => {
+    vi.stubEnv('VERCEL_ENV', 'preview');
+    vi.stubEnv('BACKING_SMOKE_ENABLED', 'true');
+    vi.stubEnv('BACKING_SMOKE_UIDS', `other-1, ${state.uid}`);
+  };
+  afterEach(() => { vi.unstubAllEnvs(); });
+
+  it('dark flag, lit preview, allowlisted uid: the door answers and the attestation is written — the real doc, at the real id', async () => {
+    state.flag = false;
+    lit();
+    const res = await post(VALID);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.eligible).toBe(true);
+    expect(state.committed).toHaveLength(1);
+    expect(state.committed[0].path).toBe(`eligibility/${state.uid}`);
+    expect(state.committed[0].data).toMatchObject({ termsVersion: TERMS_VERSION, source: 'backing_beta' });
+  });
+
+  it('the SAME uid and env in PRODUCTION: 404, nothing written — the override is ignored entirely', async () => {
+    state.flag = false;
+    lit();
+    vi.stubEnv('VERCEL_ENV', 'production');
+    const res = await post(VALID);
+    expect(res.statusCode).toBe(404);
+    expect(res.body).toEqual({ error: 'Not found' });
+    expect(state.committed).toEqual([]);
+  });
+
+  it('a NON-allowlisted uid on the lit preview: 404, nothing written', async () => {
+    state.flag = false;
+    lit();
+    state.uid = 'someone-else';
+    const res = await post(VALID);
+    expect(res.statusCode).toBe(404);
+    expect(state.committed).toEqual([]);
+  });
+});

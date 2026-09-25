@@ -38,7 +38,7 @@ import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { buildPitchDoc, normalizePitch } from '../_utils/teamPitch.js';
-import { BACKING_BETA_ENABLED } from '../../src/config/featureFlags.js';
+import { backingLitFor } from '../_utils/backingSmoke.js';
 
 export const config = { maxDuration: 10 };
 
@@ -54,7 +54,9 @@ export default async function handler(req, res) {
   if (!user) return;
 
   // 4. THE FLAG, read at call time, after auth. Dark ⇒ the route does not exist.
-  if (!BACKING_BETA_ENABLED) return res.status(404).json({ error: 'Not found' });
+  // Backing activation: the code flag, OR the founder smoke override for THIS
+  // uid on a Vercel preview (api/_utils/backingSmoke.js) — never the bare flag.
+  if (!backingLitFor(user.uid)) return res.status(404).json({ error: 'Not found' });
 
   // 5. Body — one field, one validator.
   const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};

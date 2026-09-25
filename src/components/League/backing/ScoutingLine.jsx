@@ -14,7 +14,7 @@
 // hook is what makes an edit in one home appear in the other.
 
 import React from 'react';
-import { BACKING_BETA_ENABLED } from '../../../config/featureFlags';
+import { useBackingLit } from '../../../hooks/useBackingLit';
 import { LTOKENS, LX } from '../leagueTokens';
 import { Eyebrow, Mono, Icon } from '../LeagueParts';
 import useMyPitch from '../../../hooks/useMyPitch';
@@ -52,7 +52,8 @@ function ScoutingLineLive({ uid, agentName, accent, compact }) {
 
 /** The profile home. Renders nothing — and runs nothing — while the flag is dark. */
 export default function ScoutingLine({ uid, agentName, accent = LX.energy, compact = false }) {
-  if (!BACKING_BETA_ENABLED) return null;
+  const lit = useBackingLit();
+  if (!lit) return null;
   if (!uid) return null;
   return <ScoutingLineLive uid={uid} agentName={agentName} accent={accent} compact={compact} />;
 }

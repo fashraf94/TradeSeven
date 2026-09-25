@@ -229,3 +229,44 @@ describe('WIRE-D1 — a group read that FAILS is not an answer (the pre-flip fix
     expect(latest.groupsById.g2).toBeNull();
   });
 });
+
+// ============================================================================
+// THE ACTIVATION PR — the subscription follows the stake's own `poolId`
+// (`dev-{groupId}` on a dev pod), keyed by groupId for every consumer.
+describe('the pool subscription follows the stake\'s poolId (the activation PR — SEAL-2\'s client half)', () => {
+  it('a stake carrying poolId subscribes at THAT document and files the pool under its groupId; a stake without one subscribes at groupId, as before', async () => {
+    svc.stakes = [
+      { id: 's1', groupId: 'g1', poolId: 'dev-g1', teamOdUserId: 'od-a', amount: 100, status: 'live', weekKey: '2026-W39' },
+      { id: 's2', groupId: 'g2', teamOdUserId: 'od-b', amount: 100, status: 'live', weekKey: '2026-W39' },
+    ];
+    svc.pools = { 'dev-g1': { status: 'closed', isDev: true }, g2: { status: 'closed' } };
+    await mount({ uid: 'u1', keys: ['2026-W39'] });
+    expect(Object.keys(svc.poolListeners).sort()).toEqual(['dev-g1', 'g2']);
+    expect(svc.poolListeners.g1).toBeUndefined();
+    expect(latest.poolsById.g1).toEqual({ status: 'closed', isDev: true });
+    expect(latest.poolsById.g2).toEqual({ status: 'closed' });
+  });
+
+  it('a stake that NAMES its pool wins over the groupId fallback whatever order the stakes arrive in (WIRE-5)', async () => {
+    for (const order of [[0, 1], [1, 0]]) {
+      svc.stakeListeners = []; svc.poolListeners = {}; svc.groupListeners = {}; svc.groupErrors = {};
+      const named = { id: 's1', groupId: 'g1', poolId: 'dev-g1', teamOdUserId: 'od-a', amount: 100, status: 'live', weekKey: '2026-W39' };
+      const bare = { id: 's2', groupId: 'g1', teamOdUserId: 'od-b', amount: 100, status: 'live', weekKey: '2026-W39' };
+      svc.stakes = order.map((i) => [named, bare][i]);
+      svc.pools = { 'dev-g1': { status: 'closed', isDev: true }, g1: { status: 'open' } };
+      await mount({ uid: 'u1', keys: ['2026-W39'] });
+      expect(Object.keys(svc.poolListeners), `order ${order}`).toEqual(['dev-g1']);
+      expect(latest.poolsById.g1, `order ${order}`).toEqual({ status: 'closed', isDev: true });
+    }
+  });
+
+  it('a pool id that moves re-subscribes at the new document', async () => {
+    svc.stakes = [{ id: 's1', groupId: 'g1', teamOdUserId: 'od-a', amount: 100, status: 'live', weekKey: '2026-W39' }];
+    svc.pools = { g1: { status: 'open' }, 'dev-g1': { status: 'closed', isDev: true } };
+    await mount({ uid: 'u1', keys: ['2026-W39'] });
+    expect(Object.keys(svc.poolListeners)).toEqual(['g1']);
+    await emit(svc.stakeListeners.map((l) => l.cb), [{ id: 's1', groupId: 'g1', poolId: 'dev-g1', teamOdUserId: 'od-a', amount: 100, status: 'live', weekKey: '2026-W39' }]);
+    expect(Object.keys(svc.poolListeners).sort()).toEqual(['dev-g1', 'g1']);
+    expect(latest.poolsById.g1).toEqual({ status: 'closed', isDev: true });
+  });
+});

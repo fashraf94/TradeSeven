@@ -113,7 +113,7 @@ import {
   isWeekBanked,
   rankDocId,
 } from '../../src/constants/leagueTournament.js';
-import { BACKING_BETA_ENABLED } from '../../src/config/featureFlags.js';
+import { backingLitFor } from '../_utils/backingSmoke.js';
 
 export const config = { maxDuration: 10 };
 
@@ -562,7 +562,9 @@ export default async function handler(req, res) {
   if (!user) return;
 
   // 4. THE FLAG, read at call time, after auth.
-  if (!BACKING_BETA_ENABLED) return res.status(404).json({ error: 'Not found' });
+  // Backing activation: the code flag, OR the founder smoke override for THIS
+  // uid on a Vercel preview (api/_utils/backingSmoke.js) — never the bare flag.
+  if (!backingLitFor(user.uid)) return res.status(404).json({ error: 'Not found' });
 
   // 5. Input.
   const groupId = typeof req.query?.groupId === 'string' ? req.query.groupId : '';

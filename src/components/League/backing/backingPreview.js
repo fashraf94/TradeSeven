@@ -4,12 +4,14 @@
 // in one small module so the preview page (src/screens/BackingPreviewScreen.jsx)
 // is the only thing that uses them:
 //
-//   · BackingPreviewLitContext — BACKING_BETA_ENABLED forced on LOCALLY, for the
-//     subtree under a provider. Default false, and nothing in the app provides
-//     it except the preview page. The one flag read inside the surfaces the
-//     preview renders is the pod card's "Predictions" label (LeaguePod.jsx),
-//     which reads `BACKING_BETA_ENABLED || context`. featureFlags.js is not
-//     touched; outside the preview the label follows the flag exactly as before.
+//   · BackingPreviewLitContext — THE lit context (src/hooks/useBackingLit.js,
+//     the activation PR), provided `true` for the subtree under the preview
+//     page. Default false; in the app it is provided by BackingLitProvider
+//     with the server's answer for the signed-in viewer. Every backing surface
+//     gate and the pod card's "Predictions" label read
+//     `BACKING_BETA_ENABLED || context` through `useBackingLit()`.
+//     featureFlags.js is not touched; outside the preview and off the
+//     override, every surface follows the flag exactly as before.
 //   · backingPreviewAllowed / backingPreviewRequested — the gate src/main.jsx
 //     consults before it mounts the preview page INSTEAD of the app.
 //
@@ -26,10 +28,15 @@
 // a local production build (`vite preview` on localhost), any other host. A
 // refused request renders the app exactly as today.
 
-import { createContext } from 'react';
+import { BackingLitContext } from '../../../hooks/useBackingLit';
 
-/** True only under the dev preview page's provider. */
-export const BackingPreviewLitContext = createContext(false);
+/**
+ * The preview page's provider value: THE lit context (the activation PR —
+ * src/hooks/useBackingLit.js), which every backing surface gate reads.
+ * Default false; the preview page provides `true` for its fixture subtree,
+ * and the app root provides the server's answer for a signed-in viewer.
+ */
+export const BackingPreviewLitContext = BackingLitContext;
 
 /** The URL parameter the preview answers to — the repo's `?preview=` dev-screen gate (App.jsx `?preview=baggerbomb`). */
 export const BACKING_PREVIEW_PARAM = 'backing';

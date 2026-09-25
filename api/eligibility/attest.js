@@ -56,7 +56,7 @@ import { requireAuth } from '../_utils/authMiddleware.js';
 import { eligibilityRef } from '../_utils/eligibility.js';
 import { ANONYMOUS_SIGN_IN_PROVIDER, signInProviderOf } from '../_utils/backingEligibility.js';
 import { TERMS_VERSION } from '../../src/constants/eligibility.js';
-import { ELIGIBILITY_ATTESTATION_ENABLED } from '../../src/config/featureFlags.js';
+import { eligibilityLitFor } from '../_utils/backingSmoke.js';
 
 /** The `source` every doc this route writes carries (§6). */
 export const ATTESTATION_SOURCE = 'backing_beta';
@@ -121,7 +121,9 @@ export default async function handler(req, res) {
   if (!user) return;
 
   // 4. THE FLAG, read at call time, after auth. Dark ⇒ the route does not exist.
-  if (!ELIGIBILITY_ATTESTATION_ENABLED) return res.status(404).json({ error: 'Not found' });
+  // Backing activation: the code flag, OR the founder smoke override for THIS
+  // uid on a Vercel preview (api/_utils/backingSmoke.js) — never the bare flag.
+  if (!eligibilityLitFor(user.uid)) return res.status(404).json({ error: 'Not found' });
 
   // 4b. THE ACCOUNT (Amendment A §A3, D-ab). An anonymous account cannot hold a
   //     consent record, so it is refused here rather than being allowed to write

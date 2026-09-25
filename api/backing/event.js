@@ -33,7 +33,7 @@ import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { newBackingEventId, recordBackingEvent, validateBackingEventBody } from '../_utils/backingEvents.js';
-import { BACKING_BETA_ENABLED } from '../../src/config/featureFlags.js';
+import { backingLitFor, smokeOverrideFor } from '../_utils/backingSmoke.js';
 
 export const config = { maxDuration: 10 };
 
@@ -49,7 +49,9 @@ export default async function handler(req, res) {
   if (!user) return;
 
   // 4. THE FLAG, read at call time, after auth.
-  if (!BACKING_BETA_ENABLED) return res.status(404).json({ error: 'Not found' });
+  // Backing activation: the code flag, OR the founder smoke override for THIS
+  // uid on a Vercel preview (api/_utils/backingSmoke.js) — never the bare flag.
+  if (!backingLitFor(user.uid)) return res.status(404).json({ error: 'Not found' });
 
   // 5. Body — the allowlist and the closed prop vocabulary.
   let body = req.body;
@@ -59,15 +61,20 @@ export default async function handler(req, res) {
   const checked = validateBackingEventBody(body);
   if (!checked.ok) return res.status(400).json({ error: checked.error, message: checked.message });
 
-  // 6. The write, awaited.
+  // 6. The write, awaited. A SMOKE SESSION's event (the founder on a preview,
+  // allowlisted — api/_utils/backingSmoke.js) is written at a `dev:`-prefixed
+  // id with the top-level dev marker, so the smoke's clicks never read as the
+  // beta's funnel (§10) and the cleanup script can find them.
   const db = getFirebaseAdmin();
+  const smoke = smokeOverrideFor(user.uid);
   try {
     await recordBackingEvent(db, {
-      eventId: newBackingEventId(checked.event),
+      eventId: smoke ? `dev:${newBackingEventId(checked.event)}` : newBackingEventId(checked.event),
       userId: user.uid,
       groupId: checked.groupId,
       event: checked.event,
       props: checked.props,
+      ...(smoke ? { isDev: true } : {}),
       now: new Date(),
     });
     return res.status(200).json({ recorded: true });

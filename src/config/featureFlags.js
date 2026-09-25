@@ -2467,6 +2467,15 @@ export function isShowItOn() {
  * every test (the TICK_STAMPS_ENABLED / SHOW_IT_ENABLED rule). No accessor:
  * the server reads the bare constant, and there is no client gate in PR 0.
  *
+ * THE FOUNDER SMOKE OVERRIDE (the activation PR; spec V1.3 §11 gate 4 as
+ * amended by Amendment A §A7): on a Vercel PREVIEW only, with
+ * BACKING_SMOKE_ENABLED=true and the caller's verified uid in
+ * BACKING_SMOKE_UIDS, the attestation door reads lit for THAT uid through
+ * api/_utils/backingSmoke.js (`eligibilityLitFor(uid)` = this constant OR the
+ * override). Production ignores it entirely; this constant does not move, and
+ * the counsel-copy tripwire below keys on the constant, so it cannot fire from
+ * the override. The flip PR DELETES the override (the ?fuseHero=1 precedent).
+ *
  * FLIP MAP (the flip PR reconciles these in the SAME commit — BUILD_RULES §2):
  *   • src/config/eligibilityFlags.test.js — the dark pin row moves to true;
  *   • src/config/flagPinGuard.test.js — drop ELIGIBILITY_ATTESTATION_ENABLED
@@ -2516,6 +2525,17 @@ export const ELIGIBILITY_ATTESTATION_ENABLED = false;
  * Read at CALL time inside the handler that gates on it — never a module-scope
  * derivation — so a hermetic featureFlags mock with an explicit value governs
  * every test (the TICK_STAMPS_ENABLED / SHOW_IT_ENABLED rule). No accessor.
+ *
+ * THE FOUNDER SMOKE OVERRIDE (the activation PR; §11 gate 4 as amended by
+ * Amendment A §A7): every USER route above reads `backingLitFor(uid)`
+ * (api/_utils/backingSmoke.js) — this constant OR, on a Vercel PREVIEW only,
+ * with BACKING_SMOKE_ENABLED=true and the caller's verified uid in
+ * BACKING_SMOKE_UIDS, the override for that uid — and every client surface
+ * reads the server's answer to GET /api/backing/lit (src/hooks/useBackingLit.js).
+ * A smoke session is listed and may back DEV pods only. Production ignores the
+ * override entirely; this constant does not move. The admin re-run and the
+ * Friday duty hook have no caller uid and keep the bare constant. The flip PR
+ * DELETES the override with the two env vars (the ?fuseHero=1 precedent).
  *
  * FLIP MAP (the flip PR reconciles these in the SAME commit — BUILD_RULES §2):
  *   • src/config/backingBetaFlags.test.js — the dark pin row moves to true;
