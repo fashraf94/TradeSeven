@@ -119,10 +119,10 @@ Run on `review/mut`, a fresh `git archive` of the fix commit `26c6d429`, by `run
 
 | Check | Mutant | File | Result | The row(s) that red |
 |---|---|---|---|---|
-| M1 (named check 1) | the override honoured in PRODUCTION (`isPreviewDeployment` also true for `production`) | `api/_utils/backingSmoke.js` | 11 failed | 264 passed (275) | the dark rows red across six files — `backingSmoke.test.js` "PRODUCTION ignores the override entirely", `lit.test.js`, the production arms of `backing-routes.dark`, `backing-stake.dark`, `team-card.dark`, `attest.dark`, the pod list's and the event sink's production rows |
-| M2 (named check 2) | a NON-allowlisted uid lit (`includes(uid)` → `length > 0`) | `api/_utils/backingSmoke.js` | 12 failed | 161 passed (173) | the non-allowlisted rows red across eight files — the helper's, the lit route's, the three dark suites', attest's, the pod list's and the pitch door's |
-| M3 (named check 3) | a smoke stake written to a PRODUCTION pool (both belts removed) | `api/_utils/backingStake.js` | 4 failed | 123 passed (127) | `backingStake.test.js` "refuses a smoke stake on a PRODUCTION pod before any write" and "refuses on the FRESH in-transaction read too", the route's `smoke_requires_dev` row, the lib walk's dev-only row |
-| M4 (named check 4) | cleanup admits a non-`dev-` pool id | `scripts/backingSmokeLib.js` | 1 failed | 24 passed (25) | `backingSmokeLib.test.js` "REFUSES a pool, wallet, stake, event, pod or collection outside the dev namespace or outside this run" |
+| M1 (named check 1) | the override honoured in PRODUCTION (`isPreviewDeployment` also true for `production`) | `api/_utils/backingSmoke.js` | 11 failed · 264 passed (275) | the dark rows red across six files — `backingSmoke.test.js` "PRODUCTION ignores the override entirely", `lit.test.js`, the production arms of `backing-routes.dark`, `backing-stake.dark`, `team-card.dark`, `attest.dark`, the pod list's and the event sink's production rows |
+| M2 (named check 2) | a NON-allowlisted uid lit (`includes(uid)` → `length > 0`) | `api/_utils/backingSmoke.js` | 12 failed · 161 passed (173) | the non-allowlisted rows red across eight files — the helper's, the lit route's, the three dark suites', attest's, the pod list's and the pitch door's |
+| M3 (named check 3) | a smoke stake written to a PRODUCTION pool (both belts removed) | `api/_utils/backingStake.js` | 4 failed · 123 passed (127) | `backingStake.test.js` "refuses a smoke stake on a PRODUCTION pod before any write" and "refuses on the FRESH in-transaction read too", the route's `smoke_requires_dev` row, the lib walk's dev-only row |
+| M4 (named check 4) | cleanup admits a non-`dev-` pool id | `scripts/backingSmokeLib.js` | 1 failed · 24 passed (25) | `backingSmokeLib.test.js` "REFUSES a pool, wallet, stake, event, pod or collection outside the dev namespace or outside this run" |
 
 ## 5. CONFIRMED / REFUTED
 
@@ -139,45 +139,45 @@ The same pass, one mutant per fix or pin (M5–M18 the build's own guards; M19�
 
 | Mutant | What it breaks | File | Result | Guard |
 |---|---|---|---|---|
-| M5 | the pod list lists a smoke user with the PRODUCTION predicate | `api/tournament/backing-pools.js` | 3 failed | 57 passed (60) | the dev-only listing rows |
-| M6 | `smokeListablePod` admits a non-dev pod | `api/_utils/backingPools.js` | 1 failed | 59 passed (60) | the mirror-predicate row |
-| M7 | the client hook ignores the flag (context only) | `src/hooks/useBackingLit.js` | 19 failed | 53 passed (72) | 19 rows: the flag-on rows of the hook suite and the dark suite |
-| M8 | the provider never asks | `src/components/League/backing/BackingLitProvider.jsx` | 5 failed | 67 passed (72) | the provider rows (one ask per uid; the lit answer lights) |
-| M9 | a surface reads something other than the hook (BackingScreen) | `src/components/League/backing/BackingScreen.jsx` | 1 failed | 62 passed (63) | the gate-shape source row |
-| M10 | `useMyBacking` subscribes at `groupId`, ignoring `poolId` | `src/hooks/useMyBacking.js` | 3 failed | 13 passed (16) | the poolId subscription rows |
-| M11 | the telemetry sink drops the smoke marker | `api/backing/event.js` | 2 failed | 9 passed (11) | the `dev:` id + `isDev` rows |
-| M12 | `poolId` omitted from a new stake document | `api/_utils/backingStake.js` | 5 failed | 97 passed (102) | the document-shape rows in the primitive's and the route's suites |
-| M13 | the lit route answers `{ lit: true }` to everyone | `api/backing/lit.js` | 6 failed | 32 passed (38) | the lit route's dark rows and the routes dark suite |
-| M14 | `backingLitFor` ignores the code flag (override only) | `api/_utils/backingSmoke.js` | 47 failed | 32 passed (79) | 47 rows — the flag-on rows everywhere |
-| M15 | attest reads the bare flag again | `api/eligibility/attest.js` | 1 failed | 9 passed (10) | the attest dark suite's gate row |
-| M16 | the synthetic week banks a ZERO agent half for humans (D-ae hold) | `scripts/backingSmokeLib.js` | 3 failed | 22 passed (25) | the synthetic-week rows |
-| M17 | the synthetic checker skips seat-present | `scripts/backingSmokeLib.js` | 1 failed | 24 passed (25) | the synthetic checker row |
-| M18 | the stake route passes `smoke`/`allowDev` for EVERY lit caller | `api/tournament/backing-stake.js` | 61 failed | 30 passed (91) | 61 rows — every production stake in the route suite is refused |
-| M19 (DEV-1) | a smoke session runs the §7 lazy close on a missing pod again | `api/_utils/backingStake.js` | 1 failed | 10 passed (11) | the DEV-1 row |
-| M20 (DEV-3) | the verdict judges targets against a run of any shape | `scripts/backingSmokeLib.js` | 1 failed | 24 passed (25) | the run-shape row |
-| M21 (DEV-3) | a stake admitted on `groupId` alone | `scripts/backingSmokeLib.js` | 1 failed | 24 passed (25) | the verdict's refusal row |
-| M22 (SCRIPT-08) | the smoke list admits any isDev pod, marker or not | `api/_utils/backingPools.js` | 3 failed | 82 passed (85) | the marker rows in the pod list suite and the lib suite |
-| M23 (DEV-5) | the pod list names no wallet for a smoke session | `api/tournament/backing-pools.js` | 1 failed | 59 passed (60) | the `walletId` row |
-| M24 (DEV-5) | the wallet hook ignores the named document | `src/hooks/useBackingWallet.js` | 1 failed | 2 passed (3) | the subscription suite's named-document row |
-| M25 (SCRIPT-03) | a CPU `--winner` silently overridden again | `scripts/backingSmokeLib.js` | 1 failed | 24 passed (25) | the CPU-winner row |
-| M26 (LIGHT-1) | the event sink decides the dev namespace on a BODY uid | `api/backing/event.js` | 2 failed | 22 passed (24) | the ratchet's `smokeOverrideFor(user.uid)` pin and the behavioural row |
-| M27 (LIGHT-2) | the provider not mounted at the app root | `src/main.jsx` | 1 failed | 8 passed (9) | the mount row |
-| M28 (WIRE-4) | the fixture page imports a gated default export | `src/screens/BackingPreviewScreen.jsx` | 1 failed | 35 passed (36) | the import pin (see §6 note on the behavioural pin) |
-| M29 (DEV-6) | the read-only handle lets a mutator through | `scripts/backingSmokeLib.js` | 1 failed | 24 passed (25) | the handle's row |
-| M30 (WIRE-5) | a bare stake overwrites the named pool | `src/hooks/useMyBacking.js` | 1 failed | 15 passed (16) | the order-independence row |
-| M31 (SCRIPT-07) | a run rebuilt from an UNMARKED live pod | `scripts/backingSmokeLib.js` | 1 failed | 24 passed (25) | the null-never-a-guess row |
-| M32 (DEV-R-1) | the pitch door ignores the override | `api/team/pitch.js` | 2 failed | 16 passed (18) | the pitch suite's override rows |
-| M33 (SCRIPT-12) | `seed` silently accepts `--pod` | `scripts/backingSmokeLib.js` | 1 failed | 24 passed (25) | the command-line row |
-| M34 (LIGHT-R-2) | the server helper lights on a truthy non-boolean flag | `api/_utils/backingSmoke.js` | 11 passed (11) | SURVIVED on the fix commit `26c6d429` (no row distinguished `Boolean(flag)` from `flag === true` while the flag pins hold it boolean); a row was added in the follow-up commit and the mutant re-run — see the re-run table |
+| M5 | the pod list lists a smoke user with the PRODUCTION predicate | `api/tournament/backing-pools.js` | 3 failed · 57 passed (60) | the dev-only listing rows |
+| M6 | `smokeListablePod` admits a non-dev pod | `api/_utils/backingPools.js` | 1 failed · 59 passed (60) | the mirror-predicate row |
+| M7 | the client hook ignores the flag (context only) | `src/hooks/useBackingLit.js` | 19 failed · 53 passed (72) | 19 rows: the flag-on rows of the hook suite and the dark suite |
+| M8 | the provider never asks | `src/components/League/backing/BackingLitProvider.jsx` | 5 failed · 67 passed (72) | the provider rows (one ask per uid; the lit answer lights) |
+| M9 | a surface reads something other than the hook (BackingScreen) | `src/components/League/backing/BackingScreen.jsx` | 1 failed · 62 passed (63) | the gate-shape source row |
+| M10 | `useMyBacking` subscribes at `groupId`, ignoring `poolId` | `src/hooks/useMyBacking.js` | 3 failed · 13 passed (16) | the poolId subscription rows |
+| M11 | the telemetry sink drops the smoke marker | `api/backing/event.js` | 2 failed · 9 passed (11) | the `dev:` id + `isDev` rows |
+| M12 | `poolId` omitted from a new stake document | `api/_utils/backingStake.js` | 5 failed · 97 passed (102) | the document-shape rows in the primitive's and the route's suites |
+| M13 | the lit route answers `{ lit: true }` to everyone | `api/backing/lit.js` | 6 failed · 32 passed (38) | the lit route's dark rows and the routes dark suite |
+| M14 | `backingLitFor` ignores the code flag (override only) | `api/_utils/backingSmoke.js` | 47 failed · 32 passed (79) | 47 rows — the flag-on rows everywhere |
+| M15 | attest reads the bare flag again | `api/eligibility/attest.js` | 1 failed · 9 passed (10) | the attest dark suite's gate row |
+| M16 | the synthetic week banks a ZERO agent half for humans (D-ae hold) | `scripts/backingSmokeLib.js` | 3 failed · 22 passed (25) | the synthetic-week rows |
+| M17 | the synthetic checker skips seat-present | `scripts/backingSmokeLib.js` | 1 failed · 24 passed (25) | the synthetic checker row |
+| M18 | the stake route passes `smoke`/`allowDev` for EVERY lit caller | `api/tournament/backing-stake.js` | 61 failed · 30 passed (91) | 61 rows — every production stake in the route suite is refused |
+| M19 (DEV-1) | a smoke session runs the §7 lazy close on a missing pod again | `api/_utils/backingStake.js` | 1 failed · 10 passed (11) | the DEV-1 row |
+| M20 (DEV-3) | the verdict judges targets against a run of any shape | `scripts/backingSmokeLib.js` | 1 failed · 24 passed (25) | the run-shape row |
+| M21 (DEV-3) | a stake admitted on `groupId` alone | `scripts/backingSmokeLib.js` | 1 failed · 24 passed (25) | the verdict's refusal row |
+| M22 (SCRIPT-08) | the smoke list admits any isDev pod, marker or not | `api/_utils/backingPools.js` | 3 failed · 82 passed (85) | the marker rows in the pod list suite and the lib suite |
+| M23 (DEV-5) | the pod list names no wallet for a smoke session | `api/tournament/backing-pools.js` | 1 failed · 59 passed (60) | the `walletId` row |
+| M24 (DEV-5) | the wallet hook ignores the named document | `src/hooks/useBackingWallet.js` | 1 failed · 2 passed (3) | the subscription suite's named-document row |
+| M25 (SCRIPT-03) | a CPU `--winner` silently overridden again | `scripts/backingSmokeLib.js` | 1 failed · 24 passed (25) | the CPU-winner row |
+| M26 (LIGHT-1) | the event sink decides the dev namespace on a BODY uid | `api/backing/event.js` | 2 failed · 22 passed (24) | the ratchet's `smokeOverrideFor(user.uid)` pin and the behavioural row |
+| M27 (LIGHT-2) | the provider not mounted at the app root | `src/main.jsx` | 1 failed · 8 passed (9) | the mount row |
+| M28 (WIRE-4) | the fixture page imports a gated default export | `src/screens/BackingPreviewScreen.jsx` | 1 failed · 35 passed (36) | the import pin (see §6 note on the behavioural pin) |
+| M29 (DEV-6) | the read-only handle lets a mutator through | `scripts/backingSmokeLib.js` | 1 failed · 24 passed (25) | the handle's row |
+| M30 (WIRE-5) | a bare stake overwrites the named pool | `src/hooks/useMyBacking.js` | 1 failed · 15 passed (16) | the order-independence row |
+| M31 (SCRIPT-07) | a run rebuilt from an UNMARKED live pod | `scripts/backingSmokeLib.js` | 1 failed · 24 passed (25) | the null-never-a-guess row |
+| M32 (DEV-R-1) | the pitch door ignores the override | `api/team/pitch.js` | 2 failed · 16 passed (18) | the pitch suite's override rows |
+| M33 (SCRIPT-12) | `seed` silently accepts `--pod` | `scripts/backingSmokeLib.js` | 1 failed · 24 passed (25) | the command-line row |
+| M34 (LIGHT-R-2) | the server helper lights on a truthy non-boolean flag | `api/_utils/backingSmoke.js` | 0 failed · 11 passed (11) | SURVIVED on the fix commit `26c6d429` (no row distinguished `Boolean(flag)` from `flag === true` while the flag pins hold it boolean); a row was added in the follow-up commit and the mutant re-run — see the re-run table |
 
 **Re-runs on the follow-up commits** (the two rows of `37f590aa`, the leak-proof row of `5783c5df`; a fresh extraction each):
 
 | Mutant | Tree | What it breaks | Result | Guard |
 |---|---|---|---|---|
-| M28 (WIRE-4) | `37f590aa` | the fixture page imports a gated default export | 1 failed | 36 passed (37) | the import pin |
-| M35 (WIRE-4) | `37f590aa` | the REAL strip mounted under the fixture page's lit context through the slot (a host-module arrival, the refuter's case) | 18 failed | 19 passed (37) | the behavioural row (hooks armed to throw) — and 17 page rows besides, since a lit strip under the page's mocks cannot render |
-| M34 (LIGHT-R-2) | `37f590aa` | the server helper lights on a truthy non-boolean flag | 7 failed | 5 passed (12) | the new row — the six knock-on reds were the failed row's flag mocks leaking into the rows below; `5783c5df` restores them in a `finally` |
-| M34 (LIGHT-R-2) | `5783c5df` | the same | 1 failed | 11 passed (12) — restored byte-identical | the new row alone |
+| M28 (WIRE-4) | `37f590aa` | the fixture page imports a gated default export | 1 failed · 36 passed (37) | the import pin |
+| M35 (WIRE-4) | `37f590aa` | the REAL strip mounted under the fixture page's lit context through the slot (a host-module arrival, the refuter's case) | 18 failed · 19 passed (37) | the behavioural row (hooks armed to throw) — and 17 page rows besides, since a lit strip under the page's mocks cannot render |
+| M34 (LIGHT-R-2) | `37f590aa` | the server helper lights on a truthy non-boolean flag | 7 failed · 5 passed (12) | the new row — the six knock-on reds were the failed row's flag mocks leaking into the rows below; `5783c5df` restores them in a `finally` |
+| M34 (LIGHT-R-2) | `5783c5df` | the same | 1 failed · 11 passed (12) — restored byte-identical | the new row alone |
 
 ## 7. Verification
 
