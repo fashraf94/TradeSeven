@@ -66,6 +66,11 @@ import { buildCpuAgentDoc } from './tournamentCpu.js';
 // pair createAgentBattle uses to stamp timing.tradingDays, rather than pinning a
 // date string, so a calendar or getNextMarketClose change moves the row with it.
 import { getNextMarketClose, formatDateString } from './marketSchedule.js';
+// The dev duty's smoke skip: the selection home, the marker, and the smoke
+// script's OWN pod builder (the pod the skip exists for, not a look-alike).
+import { fetchEligibleGroupsByStatus } from './tournamentGroupService.js';
+import { SMOKE_POD_TOOL } from './backingPools.js';
+import { buildSmokeGroup, smokeIds } from '../../scripts/backingSmokeLib.js';
 
 // Monday 2026-06-15 08:00 ET (EDT). Friday evening + EST arms below.
 const MON_MORNING_EDT = new Date('2026-06-15T12:00:00.000Z');
@@ -1193,6 +1198,94 @@ describe('runOrchestratorTick — routing, markers, inertness', () => {
     const result = await runOrchestratorTick(db, { now: MON_MORNING_EDT });
     expect(result.complete).toBe(false);
     expect(store.get('tournamentOrchestrator/state')).toBeUndefined();
+  });
+});
+
+// ==================== THE DEV DUTY SKIPS SMOKE PODS ====================
+//
+// The backing activation review record, DEV-R-3 / §8 item 5: the dev duty
+// buttons (api/tournament/run-duty.js — includeDevGroups: true) processed the
+// backing smoke script's pod like any dev pod — the Monday pipeline would
+// resolve its draft, build agent boards and deploy agents for its synthetic
+// seats. The one selection home every duty reads through
+// (fetchEligibleGroupsByStatus) now skips a pod carrying the smoke marker when
+// dev groups are included, one log line each; every other dev pod runs as
+// before, and the production tick never admits either.
+//
+// MUTATION CHECK: drop the skip in fetchEligibleGroupsByStatus → the dev-duty
+// row reds (the smoke pod is counted, resolved and written).
+
+describe('the dev duty skips smoke pods (run-duty — includeDevGroups: true)', () => {
+  const SMOKE = smokeIds('20260615_qa7p2x');
+  /** mondayDb's all-CPU pod, stamped isDev (an admin-seeded dev pod), beside the smoke script's own seeded pod. */
+  function devDb() {
+    const made = mondayDb();
+    made.store.get('tournamentGroups/b-r1-g2').isDev = true;
+    const smoke = buildSmokeGroup({ ids: SMOKE, nowIso: '2026-06-12T15:00:00.000Z', userPool: SYMBOLS });
+    made.store.set(`tournamentGroups/${SMOKE.groupId}`, structuredClone(smoke));
+    return { ...made, smoke };
+  }
+  const skipLines = () => logSpy.mock.calls.map((c) => c.join(' ')).filter((l) => l.includes('skipped smoke pod'));
+
+  it('the dev duty processes the plain dev pod as today and skips the smoke pod — untouched, not counted, every skip logged naming it', async () => {
+    const { db, store, writeLog, smoke } = devDb();
+    expect(smoke.isDev).toBe(true);
+    expect(smoke.smoke.tool).toBe(SMOKE_POD_TOOL);
+    const fetchImpl = vi.fn(async () => ({ ok: true }));
+    // Exactly as run-duty drives it: the forced duty, the injected clock, dev groups in.
+    const result = await runOrchestratorTick(db, {
+      now: MON_MORNING_EDT, forceDuty: DUTY.MONDAY_PIPELINE, simulated: true, includeDevGroups: true, fetchImpl, pacingMs: 0,
+    });
+
+    // The other dev pod: resolved, drafted, deployed — as before.
+    expect(result).toMatchObject({ duty: DUTY.MONDAY_PIPELINE, groups: 1, resolved: 1, drafted: 1, errors: 0 });
+    expect(store.get('tournamentGroups/b-r1-g2').status).toBe(GROUP_STATUS.BATTLE);
+    expect(bodiesFor(fetchImpl, 'b-r1-g2')).toHaveLength(4);
+    // The smoke pod: not a write under its path, not a deploy, still as the script left it.
+    expect(writeLog.filter(([, path]) => path.startsWith(`tournamentGroups/${SMOKE.groupId}`))).toEqual([]);
+    expect(bodiesFor(fetchImpl, SMOKE.groupId)).toEqual([]);
+    expect(store.get(`tournamentGroups/${SMOKE.groupId}`)).toEqual(smoke);
+    // …and every skip is said, naming the pod (one per selection that met it:
+    // this tick, the Monday pipeline's FORMING read).
+    const lines = skipLines();
+    expect(lines.length).toBeGreaterThan(0);
+    for (const line of lines) expect(line).toContain(SMOKE.groupId);
+  });
+
+  it('the production tick is unchanged: no dev pod, smoke or not, is selected — and no skip line, since the isDev rule drops the smoke pod first', async () => {
+    const { db, writeLog } = devDb();
+    const result = await runOrchestratorTick(db, { now: MON_MORNING_EDT, fetchImpl: vi.fn(async () => ({ ok: true })), pacingMs: 0 });
+    expect(result.duty).toBe(DUTY.MONDAY_PIPELINE);
+    expect(result.groups).toBe(0);
+    expect(writeLog).toHaveLength(0);
+    expect(skipLines()).toEqual([]);
+  });
+
+  it('the selection itself: dev groups in → every dev pod but the smoke one; out → no dev pod at all; a real pod in both', async () => {
+    const { db } = devDb();
+    const { bracketGameId, ...base } = formingCpuGroup();
+    const realDoc = { ...base, groupMembers: ['cpu-12', 'cpu-13', 'cpu-14', 'cpu-15'], players: ['cpu-12', 'cpu-13', 'cpu-14', 'cpu-15'].map((odUserId) => ({ odUserId, picks: [], isCpu: true })) };
+    await db.collection('tournamentGroups').doc('g-real').set(realDoc);
+    const devIn = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.FORMING, { includeDev: true });
+    expect(devIn.map((g) => g.id).sort()).toEqual(['b-r1-g2', 'g-real']);
+    expect(skipLines()).toHaveLength(1);
+    const devOut = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.FORMING);
+    expect(devOut.map((g) => g.id)).toEqual(['g-real']);
+    expect(skipLines()).toHaveLength(1); // the production default logs nothing new
+    // Only the marker skips: an isDev pod with another tool's marker is a dev pod like any other.
+    const other = structuredClone(await db.collection('tournamentGroups').doc(SMOKE.groupId).get().then((s) => s.data()));
+    other.smoke.tool = 'scripts/some-other-seeder.js';
+    await db.collection('tournamentGroups').doc(SMOKE.groupId).set(other);
+    const again = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.FORMING, { includeDev: true });
+    expect(again.map((g) => g.id).sort()).toEqual(['b-r1-g2', 'g-real', SMOKE.groupId].sort());
+    // The production read is exactly as before, whatever a doc carries: the
+    // skip lives on the dev-inclusive read alone. (The smoke seed always stamps
+    // isDev, so production never meets a marked pod; this holds the line for a
+    // doc that is not.)
+    const said = skipLines().length;
+    await db.collection('tournamentGroups').doc('g-marked').set({ ...structuredClone(realDoc), smoke: { tool: SMOKE_POD_TOOL } });
+    expect((await fetchEligibleGroupsByStatus(db, GROUP_STATUS.FORMING)).map((g) => g.id).sort()).toEqual(['g-marked', 'g-real']);
+    expect(skipLines()).toHaveLength(said);
   });
 });
 

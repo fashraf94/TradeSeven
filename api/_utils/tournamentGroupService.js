@@ -10,7 +10,10 @@
 // Imports the zero-import schema module from src/ under the revised June 2026
 // import rule (BUILD_RULES §4): transitive surface is Node-clean by
 // construction. The co-located test's real import of THIS module is the
-// consumer-side dependency-surface guard.
+// consumer-side dependency-surface guard. It also reads ONE constant from the
+// backing pool module — the smoke marker (SMOKE_POD_TOOL), so the dev duty's
+// skip and the smoke pod list admit on the same string; that module's graph is
+// Node-clean too (every api/ route that imports it runs under the same rule).
 
 import {
   TOURNAMENT_GROUPS_COLLECTION,
@@ -19,6 +22,7 @@ import {
   createTournamentGroupDoc,
   selectMyTrainingPod,
 } from '../../src/constants/leagueTournament.js';
+import { SMOKE_POD_TOOL } from './backingPools.js';
 
 // Forward-only lifecycle (GROUP_STATUS ratified unchanged at P1, founder
 // June 11, 2026). forming→battle is the P1 single-shot resolution path;
@@ -302,6 +306,21 @@ export function getPlayer(group, odUserId) {
  *     completeBankedTrainingPods) and Friday advancement run their OWN queries and
  *     keep training (a training pod still banks + completes), so they are
  *     unaffected by this opt-in.
+ *
+ * SMOKE PODS ARE NEVER THE DEV DUTY'S (the backing activation review record,
+ * DEV-R-3 / §8 item 5): with `includeDev: true`, a pod carrying the backing
+ * smoke script's marker (`smoke.tool === SMOKE_POD_TOOL`) is skipped, one log
+ * line each. scripts/backing-smoke.js drives that pod end to end (seed,
+ * advance, refund, cleanup); the dev duty buttons (run-duty) would otherwise
+ * resolve its draft and deploy agents for its synthetic seats. Every other dev
+ * pod is processed as before, and the production default (`includeDev: false`)
+ * is unchanged — it never admits an `isDev` pod, smoke or not. Every duty the
+ * orchestrator runs selects through this one function, so this is the one skip.
+ * The nightly dev-inclusive readers (completeBankedTrainingPods,
+ * placeCpuClaimsForTrainingPods, aggregateTournamentLeaderboards) read through
+ * it too and would skip one the same way; none can meet one today — a smoke pod
+ * is never training, and it is only ever forming, complete or voided unless the
+ * dev duty this skip closes drives it to BATTLE.
  */
 export async function fetchEligibleGroupsByStatus(db, status, { includeDev = false, excludeTraining = false } = {}) {
   const snap = await db.collection(TOURNAMENT_GROUPS_COLLECTION)
@@ -312,6 +331,10 @@ export async function fetchEligibleGroupsByStatus(db, status, { includeDev = fal
     const data = doc.data();
     if (data.players?.length !== GROUP_SIZE) return;
     if (!includeDev && data.isDev === true) return;
+    if (includeDev && data.smoke?.tool === SMOKE_POD_TOOL) {
+      console.log(`[TournamentGroups] dev duty: skipped smoke pod ${doc.id} (${status}) — ${SMOKE_POD_TOOL} drives it, not the orchestrator`);
+      return;
+    }
     if (excludeTraining && data.isTraining === true) return;
     groups.push({ id: doc.id, ...data });
   });

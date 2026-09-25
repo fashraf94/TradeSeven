@@ -411,6 +411,11 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       // lazy close (ensureClosed) on a SEATED pod's pool past its close — the
       // one write, as every other pool reader makes it.
       'api/_utils/backingStats.js',
+      // The hide-test-pods fix (the activation review record's §8 item 5):
+      // the tournament's one group-selection home reads the smoke marker
+      // (SMOKE_POD_TOOL) and nothing else, so the dev duty skips a smoke pod
+      // on the same string the smoke pod list admits on.
+      'api/_utils/tournamentGroupService.js',
       // PR 5: the two client-facing readers — reads only, own-uid only.
       'api/backing/my-stats.js',
       'api/backing/results.js',
@@ -601,10 +606,19 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
       // on production — held by src/screens/BackingPreviewScreen.test.jsx.
       'src/main.jsx',
       'src/screens/BackingPreviewScreen.jsx',
+      // The League field's read (the hide-test-pods fix — the activation
+      // review record's §8 item 1): it reads the lit hook, and nothing else
+      // from backing, to show `isDev` pods to a lit viewer only. Its dark
+      // contract: the call-time row in backingDark.test.jsx (the one hook — a
+      // pure context read, no request — never the bare flag), and
+      // src/components/League/leagueDevPods.guard.test.jsx (dark → no test
+      // pod in any card, rail row or count).
+      'src/hooks/useRealLeagueState.js',
     ]);
     // The activation PR adds the lit hook (useBackingLit — the context every
     // surface gate reads) to the enumerated hooks; its importers are the
-    // surfaces, the pod card (a host), the preview gate and the provider.
+    // surfaces, the pod card (a host), the preview gate, the provider and the
+    // League field's read (a host).
     const BACKING_HOOK = /^src\/hooks\/use(BackingPods|MyBacking|BackingWallet|Eligibility|MyPitch|TeamCard|BackingResults|MyBackingStats|TrainerStats|BackingLit)\.js$/;
     const targets = [
       ...listSources('src/components/League/backing'),

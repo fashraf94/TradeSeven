@@ -810,7 +810,8 @@ export function selectMyTrainingPod(docs) {
 // `max` — so training pods neither show NOR consume a slot. Read volume is trivial
 // at this scale, and it avoids the query-level `where('isTraining','!=',true)`
 // route, which would need a NEW composite index AND silently drop docs that omit
-// the field. For the default 12-slot field this is a ~30-doc read window.
+// the field. For the default 12-slot field this is a ~30-doc read window. Test
+// (`isDev`) pods ride the same window and the same client-side drop.
 export const BASE_LAYER_FIELD_OVERFETCH = 2.5;
 
 /**
@@ -830,13 +831,26 @@ export const BASE_LAYER_FIELD_OVERFETCH = 2.5;
  * read over-fetches by BASE_LAYER_FIELD_OVERFETCH so this client filter has room
  * to work. Pure — the exclusion + cap are unit-tested without Firestore. `docs`
  * are { id, ...group }.
+ *
+ * TEST PODS (`isDev: true` — an admin-seeded dev pod, the backing smoke
+ * script's pod) are dropped too, unless the caller passes `includeDev: true`.
+ * The preview and the live site share one Firestore, so a dev pod stamped with
+ * this week matches the same query for EVERY viewer — before settlement as an
+ * upcoming card, after it as a final card whose made-up scores top the field
+ * leaderboard. The one caller (useRealLeagueState) passes `includeDev: true`
+ * only for a LIT viewer (useBackingLit() — the allowlisted founder on a
+ * preview): the pod list's posture (api/_utils/backingPools.js listablePod).
+ * Only the boolean `true` includes them; a doc that omits `isDev` is not a test
+ * pod. Dropped BEFORE the cap, so a dev pod never takes a real group's slot.
  */
-export function selectBaseLayerField(docs, max = 12) {
+export function selectBaseLayerField(docs, max = 12, { includeDev = false } = {}) {
   return (docs ?? [])
     // L-A: a VOIDED group carries no valid standing — exclude it from THE FIELD
     // (defense-in-depth: the current-week query already drops off-week groups,
     // but a current-week void must never surface in standings).
     .filter(g => g?.isTraining !== true && g?.status !== GROUP_STATUS.VOIDED)
+    // Test pods: only a viewer who is testing sees them (docstring above).
+    .filter(g => includeDev === true || g?.isDev !== true)
     .sort((a, b) => String(b?.updatedAt ?? '').localeCompare(String(a?.updatedAt ?? '')))
     .slice(0, max);
 }
