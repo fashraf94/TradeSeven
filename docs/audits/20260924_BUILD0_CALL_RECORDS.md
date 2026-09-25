@@ -815,3 +815,178 @@ The executive verdict and §4's first invariant row now claim only the payloads 
 - **§12.2** describes the battle-clock rule and the status field `observedAtMs`. BR-1 removed both (13.1).
 - **§3 anchors:** the `file:line` anchors for `flip.js`, `observe.js`, `agentEvalToolSchema.js` and `agent-evaluate.js` predate these commits. The anchors in §13 are current.
 - **The PR description** is now a two-paragraph summary that links to this report.
+
+## 14. Contract V1.4 second cut, Amendment A, and the C2 horizon wording
+
+Astra's docs review `docs/audits/20260924_CONTRACT_V1_4_REVIEW.md` blessed the exact BR-3 text. It asked for **amendments to the handoff**:
+- **C1** and a §6 clarification in the contract;
+- **C3:** the V1.4 hash in Amendment A and in the current pilot handoff;
+- Amendment A's measurement and source rows;
+- **C2:** the AI's horizon wording.
+
+The review is on branch `docs/review-contract-v1-4` @ `c8fa1b0bd393e3c16dac7ead291a036f94213980`, and on `main` through PR #907, merge `ad72ee0f`. This section applies them in three commits, except the pilot-handoff half of C3: no pilot handoff was supplied (14.6, item 5). It adds no field and changes no flag; `CALL_RECORDS_MODE` still ships `'off'` (`src/config/featureFlags.js:2806`).
+
+| # | Commit | In plain words | Check |
+|---|---|---|---|
+| 1 | `f152fccd83c862196bd0f04227974956f5f75cb4` | The contract's second cut and the corrected Amendment A, copied byte for byte from the files supplied. The contract now says that a timed-out attempt may still have committed (C1), and that "expiry wins" gives way to the `next_check` rule. Amendment A now names the contract by its full path and cites both reviews by commit and branch. It also restates the measurement and adds the C2 row. | `cmp` clean for both files |
+| 2 | `3b761dd3feb5666c6575f7ee1bf1f1a112a97264` | Amendment A's placeholder `<V1_4_SHA>` is replaced by the contract's hash (C3). Nothing else in the file moved. | the committed file equals the upload with only that substitution |
+| 3 | `d188a2d9393ebc6b1f4fb118af4b51b6f8eb848c` | The text the AI reads for an "until the next check" call now matches the contract (C2). The next scheduled check is where such a call is **judged**, not a time to trade. If that check never reaches the call, the first later check that does judges it from its own prices. A call can still be hit before then, and nothing is scheduled. | 11 of 11 mutants killed |
+
+**The final V1.4 hash** is **`0b7d1d2a00a087902bc5fb3f73c5fad5ee8af3e275ab2abbebed77fff80b2667`**.
+- It is `git show HEAD:docs/CALL_RECORD_FIELD_CONTRACT_V1_4.md | sha256sum` at commit 1, over 22,020 bytes (Git blob `7815a1eda1cffe5c125e50284d0507a7a66ccb41`).
+- Node's `createHash('sha256')` over the `git show` buffer gives the same value.
+- Commits 2 and 3 do not touch the file, so this is also its hash at the branch head.
+- It replaces the review's pin of the first cut, `21489201…fa08823`.
+
+### 14.1 Pins
+
+| Pin | Value |
+|---|---|
+| Fetch | `git fetch origin` ran first (BUILD_RULES §3); `origin/main` advanced `2a1a16b1..ad72ee0f`. |
+| Branch | `claude/cockpit-build0-followups-wpua91` (the session's assigned name for the requested `claude/cockpit-build0-followups`), at fetched `origin/main` @ **`ad72ee0fa2983f6c7afeee391ab2a7d6b1145086`** (merge of PR #907), clean tree. |
+| Review read | `docs/audits/20260924_CONTRACT_V1_4_REVIEW.md`: identical on `origin/docs/review-contract-v1-4` and on `main` (`git diff` empty). |
+| Contract V1.4, final | 22,020 bytes · SHA-256 **`0b7d1d2a00a087902bc5fb3f73c5fad5ee8af3e275ab2abbebed77fff80b2667`** |
+| Amendment A | 5,180 bytes · SHA-256 `a9c976d59631138702555e4d934d3a056d48092574a2fbd8526e6d0ae84d0d2a` (commit 2) |
+| `api/_utils/agentEvalToolSchema.js` | SHA-256 `4941a78531489388a423ac6cbaeadad5e1823ff8b6a2dfc59fb722c34e053438` at commit 3. The review's pin for the BR-3 text, `9dc54b35…6d9e22`, reproduces at `ad72ee0f`. |
+| `JSON.stringify(DECLARATIONS_PROPERTY)`, UTF-8 | SHA-256 **`44b70a2c568d2b608218ab56082c797ba1af6301cf4fa374b1ea8674ec3758c0`**, 4,611 chars. Before commit 3 it reproduces the review's `7ebcea6d…507f64`, 4,138 chars. |
+
+### 14.2 The docs (commits 1 and 2)
+
+**Contract V1.4, second cut.** A word diff against the first cut shows three hunks and no field-shape change:
+- **Header (`:3`):** the status reads "second cut" and names C1, the §6 clarification and their source.
+- **§5 `next_check` (`:75`), C1:**
+  - The new text: "An attempt that does not commit — failed, skipped or deadline-cut before its write — has judged nothing; an **unconfirmed** attempt has an unknown outcome and may commit late, so a later transaction judges from its own observation **only if its fresh read still finds the call open**."
+  - This is the review's one-line fix. It matches the shipped transaction, which starts inside `withTimeout` and re-reads the call and its parent (`api/_utils/callRecords/flip.js:202-204`).
+- **§6 (`:86`):**
+  - Expiry now wins "subject to the `next_check` judgment rule in §5 (H2)".
+  - It adds: "**Eligible pre-slot hits are unchanged for every basis, `next_check` included.**"
+
+**Amendment A.** Four hunks:
+- **Contract-of-record line (`:3`):** the full path and the committed-blob hash, filled in by commit 2. The V1.3 pins are kept as the historical Build 0 inputs (C3).
+- **Source (`:4`):**
+  - The "on `main`" claim is limited to the build report and its fixes.
+  - Astra's branch review is cited at `3f600161…` on `docs/review-build0-call-records`, with its SHA-256.
+  - The docs review is cited on `docs/review-contract-v1-4`.
+  - This is the review's P3 source-header fix.
+- **§3.1 horizon wording (`:13`), a new row:** C2, open before shadow. Commit 3 implements it.
+- **§3.13 shadow read (`:15`):**
+  - The row now reads "additional input schema … +4,154 serialized chars".
+  - 10,132 is labelled "a fixture estimate, not a measurement".
+  - Real token counts and truncation observations are pending.
+  - Input size says nothing about output headroom.
+  - This is the review's measurement fix.
+
+**Amendment A was committed as supplied, except for the hash.**
+- Its §3.13 figures, +4,154 chars and 10,132 tokens, describe the BR-3 text. Commit 3 moves them to +4,627 and 10,250 (14.4).
+- Its own C2 row anticipates this ("size pins updated").
+- The new figures are for its next revision; this build does not edit the founder's text.
+
+### 14.3 C2: the horizon text the AI reads (commit 3)
+
+This text is model-visible, so it goes through fenced-class review (contract §2). `agentEvalToolSchema.js` is already registered in `PROMPT_CONTRIBUTING_MODULES` (`api/_utils/__fixtures__/promptHonestyRegistry.js:54`), and the honesty sweep passes.
+
+| Field | Before (the BR-3 text) | After |
+|---|---|---|
+| `calledShots` (`api/_utils/agentEvalToolSchema.js:249-251`) | "At most 6. Each records one conditional trade you are calling: SYMBOL trading above or below LEVEL before the horizon ends. Declare only calls you actually hold." | "At most 6. Each records one conditional trade you are calling: SYMBOL trading above or below LEVEL before the horizon ends **(for next_check, as horizonPhrase describes)**. Declare only calls you actually hold." |
+| `horizonPhrase` (`:285-290`) | "How long the call stands: until the next check, the end of this session, the end of this battle, or an explicit expiry." | "How long the call stands: until its next_check judgment, the end of this session, the end of this battle, or an explicit expiry. next_check uses the next eligible evaluator slot as a judgment boundary: the call records a condition and does not schedule a trade at that slot. Before the slot it can be hit as under any horizon. At or after the slot, the first check to reach the stored call judges it once, from that check's own observation: hit if the condition is met, otherwise expired. That first reach may be a later check than the slot's own." |
+
+Each C2 requirement, the sentence that carries it, and the source it mirrors:
+
+| C2 requirement (review §C2; Amendment A `:13`) | Sentence | Source |
+|---|---|---|
+| The next eligible slot is a judgment boundary. | "next_check uses the next eligible evaluator slot as a judgment boundary" | contract §5 (`:75`); `resolveHorizon` → `nextEligibleSlot` (`api/_utils/callRecords/horizon.js:145-148`) |
+| It records a condition rather than scheduling a trade. | "the call records a condition and does not schedule a trade at that slot" | the block's own "do not execute or schedule a trade", unchanged |
+| Pre-slot hits are unchanged. | "Before the slot it can be hit as under any horizon." | contract §6 (`:86`); `decideFlip` (`flip.js:121`) |
+| One judgment at or after the slot, from that check's own observation. | "At or after the slot, the first check to reach the stored call judges it once, from that check's own observation: hit if the condition is met, otherwise expired." | contract §5 (`:75`); `decideFlip` (`flip.js:117-118`) |
+| A later first reach can judge. | "That first reach may be a later check than the slot's own." | contract §5 (`:75`): "A late first reach may therefore judge after the slot" |
+
+**What did not change:**
+- **BR-3.** The block text and every stored-only clause are untouched. A walk of the serialized on-tool finds exactly two leaves that differ: the two descriptions above.
+- **Shape.** With every `description` stripped, the on-tool serializes identically before and after. No field, enum, type or required list moved.
+- **The off tool.** It is byte-identical at 8,537 chars and equals the frozen golden fixture. The off golden suite passes.
+- **Recipient.** The later check judges "the stored call" from its own observation. The new text names no reader, answerer or recipient, and the block's "not supplied to a later check" is unchanged.
+
+**Tests** (`api/_utils/agentEvalToolSchema.declarations.test.js`):
+- **Size pins (`:246-254`):**
+  - 4,154 → 4,627 chars;
+  - 1,039 → 1,157 tokens at chars/4;
+  - 1,385 → 1,543 at chars/3.
+- **C-4 row (`:114-124`):** it also asserts the no-schedule clause (`:120-121`).
+- **BR-3 row (`:126-155`):**
+  - It pins both `said` texts verbatim, not only their prefix (`:142-144`).
+  - It asserts that the horizon text judges the stored call from the check's own observation (`:145-147`).
+  - It asserts that the horizon text uses no recipient word: `supplied`, `shown`, `deliver`, `answer`, `respon`, `player` (`:148`).
+- **New row (`:157-179`):**
+  - It pins both descriptions exactly, sentence by sentence, each C2 element labelled.
+  - It asserts that "until the next check" and an unqualified "before the horizon ends." are gone.
+  - It asserts that the enum is unchanged.
+
+### 14.4 Cost
+
+| Quantity | BR-3 text | C2 text |
+|---|---|---|
+| Tool schema added at shadow/on, per model call | +4,154 chars | **+4,627 chars** (+473) |
+| The same, in tokens at chars/4 / chars/3 | 1,039 / 1,385 | **1,157 / 1,543** |
+| M7-E2E maximal eval request at shadow/on (chars/4 fixture estimate, against 12,000) | 10,132 | **10,250** |
+| The same request at off | 9,093 | 9,093 (unchanged) |
+| Output block, typical / maximal | 498 / 4,338 chars | unchanged (descriptions are input only) |
+
+**How the M7-E2E figures were re-measured.** The suite's own estimate was logged on a `git archive` snapshot.
+- At the BR-3 text the estimate is 10,132, reproducing §13.3's figure.
+- At the C2 text it is 10,250.
+- Both remain fixture estimates. A real `countTokens` measurement is still a pre-flip gate (C-5).
+
+### 14.5 Verification at `d188a2d9`
+
+| Check | Result |
+|---|---|
+| Full suite, `npx vitest run` (redirected to a file, never piped; exit recorded) | **792 files passed (3 skipped); 15,751 tests passed (64 skipped); exit 0** |
+| Lint gate, `npm run lint:gate` | **exit 0** |
+| Off golden, `api/cron/agent-evaluate.callRecords.offGolden.test.js` | **25 of 25 passed, exit 0**; the off tool equals the golden fixture byte for byte |
+| Focused suites: declarations, tool schema, off golden, M7-E2E, threshold copy, honesty sweep, calls-on ticks | **7 files / 160 tests, exit 0** |
+| Mutation battery on a `git archive` snapshot of `d188a2d9`: each mutant an exact-once replacement, restored byte-exact (sha256-checked), 600 s hang guard | **11 of 11 killed**, 0 errors (table below) |
+| Fenced files | `git diff --name-only ad72ee0f d188a2d9` over the eleven BUILD_RULES §1 files is **empty**. The change calls no fenced function. |
+| Production build and rules emulator | not run: no `src/`, rules or index file changed |
+| Review | Below the BUILD_RULES §2 threshold: 5 files, well under 1,500 lines. The model-visible text still needs Astra's confirmation (14.6). |
+
+| ID | Mutation | Result | Rows that went red |
+|---|---|---|---|
+| C2a | C2 reverted in full: both descriptions back to the BR-3 text | **KILLED** (4) | C-4 · BR-3 · **horizon row** · size pin |
+| C2b | `horizonPhrase` back to "until the next check" | **KILLED** (4) | C-4 · BR-3 · **horizon row** · size pin |
+| C2c | the pre-slot hit sentence dropped | **KILLED** (2) | **horizon row** · size pin |
+| C2d | the later-first-reach sentence dropped | **KILLED** (2) | **horizon row** · size pin |
+| C2e | the slot schedules a trade | **KILLED** (3) | C-4 · **horizon row** · size pin |
+| C2f | **same length:** the judgment inverted ("expired if the condition is met, otherwise hit") | **KILLED** (1) | **horizon row only** |
+| C2g | **same length:** the *first* reaching check becomes the *final* one | **KILLED** (2) | BR-3 · **horizon row** |
+| C2h | `calledShots` loses its next_check qualifier | **KILLED** (2) | **horizon row** · size pin |
+| C2i | **same length:** a BR-3 `said` text drifts ("only" → "also") | **KILLED** (1) | **BR-3 only** (the new verbatim pin) |
+| C2j | the horizon says the reaching check is supplied the call | **KILLED** (3) | BR-3 · **horizon row** · size pin |
+| C2k | the fork `said` gains a trailing sentence | **KILLED** (2) | BR-3 · size pin |
+
+The three same-length mutants show that the new assertions catch changes the size pin cannot. C2f is caught by the horizon row alone, and C2i by the BR-3 row's new verbatim pin alone.
+
+### 14.6 Still open before shadow
+
+1. **Astra's confirmation of the exact C2 text** (14.3).
+   - The text is model-visible, so it needs fenced-class, coordinated review.
+   - The docs review proposed the correction, but it "does not edit or pre-approve a future model-visible diff". Commit 3 is that diff.
+   - The serialization pin to confirm against is `44b70a2c…3758c0`.
+2. **C-5:** a real `countTokens` measurement of the tool with declarations. Every figure above is a chars/4 or chars/3 estimate.
+3. **Deployment prerequisites (§10):** publish the rules and create the `calls` index.
+4. **Amendment A's §3.13 figures** describe the pre-C2 text (14.2). Its next revision should carry +4,627 chars and 10,250 tokens, or whatever the confirmed text measures.
+5. **The pilot handoff pin.** No pilot handoff was supplied or edited here. Review C3 asks the current pilot handoff to carry the V1.4 hash; the hash above is the one to carry.
+
+**Status of §13.8's items:**
+- **Item 1 (BR-4)** is addressed in this repository, except the pilot handoff pin (item 5 above), and awaits Astra's re-review:
+  - the versioned contract and amendment (PR #905);
+  - their second cut and the V1.4 pin (commits 1 and 2);
+  - the horizon alignment (commit 3, pending item 1 above).
+- **Item 2 (the BR-3 text)** was confirmed by the docs review, §3.
+
+### 14.7 Where the rest of this report is now out of date
+- **Executive verdict, "Cost once switched on":** about **1,160** more input tokens per AI call, not 1,040 (14.4).
+- **§6, "Input cost," and §13.3, "Cost":**
+  - The schema grows by +4,627 chars: 1,157 tokens at chars/4, 1,543 at chars/3.
+  - The M7-E2E request is 10,250 tokens, not 10,132.
+- **§3 and §13.3 anchors in `agentEvalToolSchema.js`:** everything after `:233` moved with commit 3. The property now starts at `:239`, and the anchors in 14.3 are current.
+- **§13.8 item 1:** see 14.6.
