@@ -77,8 +77,8 @@ function maximalBattle({ withCompat }) {
 }
 
 describe('M7 — the eval budget at system+identity scope (production-convention estimate)', () => {
-  it('EVAL_MAX_OUTPUT_TOKENS is 2048 (the output half of the request budget)', () => {
-    expect(EVAL_MAX_OUTPUT_TOKENS).toBe(2048);
+  it('EVAL_MAX_OUTPUT_TOKENS is 3072 (the output half of the request budget)', () => {
+    expect(EVAL_MAX_OUTPUT_TOKENS).toBe(3072);
   });
 
   it('the MAXIMAL system+identity request — advisories LIT on all 14 rules — fits the named input budget', () => {

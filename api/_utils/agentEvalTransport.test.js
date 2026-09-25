@@ -22,8 +22,10 @@ describe('EVAL_MAX_OUTPUT_TOKENS — the eval output ceiling', () => {
   // Raised 1024 → 2048 (DR-13 truncation baseline): ~21% of production evals
   // were silently truncating their rationale/cited-rules tail at 1024; true
   // uncapped output tops out ~1421 (p99 ~1240), so 2048 clears it with headroom.
-  it('is 2048 (the post-baseline ceiling)', () => {
-    expect(EVAL_MAX_OUTPUT_TOKENS).toBe(2048);
+  // Raised 2048 → 3072 (Sep 2026): the maximal Cockpit `declarations` block
+  // measures 1,463 real tokens, which truncated a p99 response at 2048.
+  it('is 3072 (the measured-declarations ceiling)', () => {
+    expect(EVAL_MAX_OUTPUT_TOKENS).toBe(3072);
   });
 
   it('leaves headroom above the observed p99 (~1240) and max (~1421) eval output', () => {

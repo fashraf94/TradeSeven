@@ -229,18 +229,19 @@ describe('THE MEASUREMENT — output headroom and input cost (stated in the buil
     expect(tokens4(typical)).toBe(125);
   });
 
-  it('THE MARGINS: typical fits with ~1,000 tokens to spare on a mean response; the maximal block can truncate a p99 response', () => {
+  it('THE MARGINS: at the 3,072 ceiling a p99 response carrying the maximal block fits', () => {
     const max = tokens4(JSON.stringify(makeMaximalDeclarations()));
     const typical = tokens4(JSON.stringify(makeDeclarations()));
-    expect(EVAL_MAX_OUTPUT_TOKENS).toBe(2048);
-    expect(EVAL_MAX_OUTPUT_TOKENS - OBSERVED_MEAN - typical).toBe(1016);
-    expect(EVAL_MAX_OUTPUT_TOKENS - OBSERVED_P99 - typical).toBe(683);
-    expect(EVAL_MAX_OUTPUT_TOKENS - OBSERVED_MEAN - max).toBe(56);
-    // NEGATIVE, stated rather than hidden: a p99 response carrying a maximal
-    // block exceeds the ceiling. `declarations` is the LAST property, so a
-    // truncation cuts it (and the calls validator sees a partial block) before
-    // any earlier field; shadow reports each such tick as a truncation event.
-    expect(EVAL_MAX_OUTPUT_TOKENS - OBSERVED_P99 - max).toBe(-277);
+    // Raised 2048 → 3072 (Sep 2026). At 2048 the p99 + maximal row was -277
+    // here (and worse measured: the maximal block is 1,463 REAL tokens,
+    // docs/audits/20260925_EVAL_REQUEST_TOKEN_MEASUREMENT.md). `declarations`
+    // is the LAST property, so a truncation would cut it (and the calls
+    // validator would see a partial block) before any earlier field.
+    expect(EVAL_MAX_OUTPUT_TOKENS).toBe(3072);
+    expect(EVAL_MAX_OUTPUT_TOKENS - OBSERVED_MEAN - typical).toBe(2040);
+    expect(EVAL_MAX_OUTPUT_TOKENS - OBSERVED_P99 - typical).toBe(1707);
+    expect(EVAL_MAX_OUTPUT_TOKENS - OBSERVED_MEAN - max).toBe(1080);
+    expect(EVAL_MAX_OUTPUT_TOKENS - OBSERVED_P99 - max).toBe(747);
   });
 
   it('the input cost at shadow/on: +4,627 chars of tool schema ≈ 1,157 tokens at chars/4, 1,543 at chars/3, per model call; zero at off', () => {
