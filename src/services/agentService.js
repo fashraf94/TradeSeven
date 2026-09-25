@@ -59,6 +59,10 @@ export const subscribeToAgentDoc = (agentId, callback) => {
   });
 };
 
+// RULE NOTE (pre-flip honesty fix B): `agents/{id}` is OWNER-READ — a client
+// can fetch only an agent whose ownerId is its own uid (firestore.rules
+// `match /agents`). Zero callers at the 2026-09-24 census; a cross-user agent
+// fact belongs to a server projection (team-card / battle-view), never here.
 export const getAgentById = async (agentId) => {
   try {
     const docRef = doc(db, AGENTS_COLLECTION, agentId);
@@ -71,6 +75,11 @@ export const getAgentById = async (agentId) => {
   }
 };
 
+// RULE NOTE (pre-flip honesty fix B): this unfiltered collection query is
+// DENIED by the owner-read rule (a client list on `agents` must be filtered on
+// its own ownerId) — it returns [] through the catch below. Its only caller is
+// AgentLeaderboardTab.ARCHIVED.jsx, which nothing imports (2026-09-24 census).
+// A revived leaderboard is a server projection, not a client read.
 export const getLeaderboard = async (limitCount = 50) => {
   try {
     // Primary query: agents with 5+ games

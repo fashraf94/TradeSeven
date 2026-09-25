@@ -8,8 +8,14 @@
 // These shapes ARE the spec §4 data contract the presentation layer binds to:
 //   Pod   { id, name, round, group?, seats:[Seat|null]×4, status, clock, watchers, base? }
 //   Seat  { id, name, kind:'human'|'cpu', arch, archName, owner?, color, score,
-//           pscore, you?, userBook:BookItem[3], agentBook:BookItem[6] }
+//           pscore, you?, userBook:BookItem[3], agentBook:BookItem[6],
+//           reasoning: ReasoningLine[] | null }
 //   BookItem { tk, dir:'long'|'short', w, p, c }
+//   ReasoningLine { key, label: string|null, text }  — the film room's WHY for
+//           a SETTLED seat. Written ONLY by an adapter: here from FIXTURE_REASONING
+//           (dev fixtures), in leagueAdapter.battleToReasoning from the completed
+//           battle the WHY-projecting endpoint returns. Surfaces never look
+//           reasoning up by id (pre-flip honesty fix A).
 //   LeagueState { fill, rounds:{r1,r2,r3}, path, yourGroup, baseGames, followLive, ... }
 //
 // FIXTURES-FIRST: the real Firestore read-model (subscribeBracket/Group +
@@ -91,6 +97,40 @@ const FIELD = {
   vega: P('vega', 'Vega', 'cpu', 'sentinel', null, -2.2),
 };
 
+// ── fixture reasoning — FIXTURE-ONLY TEXT ────────────────────────────────────
+// The demo film room's sentences, keyed by fixture seat id. Attached to fixture
+// seats by leagueState() below (as `seat.reasoning`) and nowhere else: no
+// surface imports this map, so it can render only where the fixture adapter is
+// in use — the LEAGUE_NEXT_ARC_ENABLED-off / no-dev-param world behind the
+// useLeagueState seam. The real adapter (leagueAdapter.js) never reads it; its
+// seats carry the completed battle's recorded words or null. Moved out of
+// LeagueSpectate.jsx (pre-flip honesty fix A — Backing spec V1.3 §11 gate 3),
+// where `REASONING[player.id]` sat on the real path. Exported for the honesty
+// test, which asserts none of these values renders on a real-adapter pod.
+export const FIXTURE_REASONING = {
+  atlas: "Leaned the defensive rotation early; flipped the NVDA pick to short on the CPI print while the agent held the long book steady.",
+  vela: "Faded the euphoria in semis and claimed the staples capitulation overnight. Trimmed into strength twice.",
+  orion: "Played the regime, not the tickers. Crude backwardation plus a flight-to-safety bid carried both layers.",
+  lyra: "Rode momentum a session too long — should've cut the SMCI squeeze risk. Picks lagged, the agent book saved it.",
+  cygnus: "Capital first. Sat small through the drawdown, never averaged down, banked the recovery.",
+  draco: "Top-down energy call was right but I sized the COIN pick too heavy; the crypto drawdown ate the edge.",
+  mira: "Pressed the chip leaders on the pick layer; let the agent diversify under me. High variance, paid off.",
+  rigel: "Mean-reversion on the picks, defensive agent book. Low ceiling, high floor — exactly the plan.",
+  helios: "Bought confirmed strength, cut weakness fast. Guardrails kept the NVDA short from getting away.",
+  ember: "Faded the extremes a touch early. Reversion thesis held by the close.",
+  basalt: "Defensive book, low variance. Goal was to not lose — accomplished.",
+  quartz: "Macro tilt into energy + gold. Cleanest read of the week.",
+  cobalt: "Chased momentum into a rotation. Wrong regime — the high-beta book bled.",
+  nova: "Reversion calls were early; the tape never gave the snap-back in time.",
+  sirius: "Energy + duration barbell. Steady, unspectacular, advanced anyway.",
+  vega: "Sentinel book did its job on defense but the picks had no upside to bank.",
+};
+/** A fixture seat's reasoning lines (the Seat contract shape), or null. */
+function fixtureReasoning(id) {
+  const text = FIXTURE_REASONING[id];
+  return text ? [{ key: 'fixture', label: null, text }] : null;
+}
+
 const YOU = 'atlas';
 const FOLLOWING = ['vela', 'orion', 'cygnus', 'mira']; // who "you" follow
 
@@ -122,6 +162,8 @@ export function leagueState(fill) {
     field[p.id] = {
       ...p, kind: human ? 'human' : 'cpu', color: human ? (COLORS[p.id] || LX.human) : LX.cpu,
       owner: human ? p.owner : null, you: p.id === YOU,
+      // the film room's WHY — fixture text, attached ONLY here (see FIXTURE_REASONING)
+      reasoning: fixtureReasoning(p.id),
     };
   });
   // a pod = { id, name, round, group?, seats:[Seat|null]×4, status, clock, watchers }

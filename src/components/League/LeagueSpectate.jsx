@@ -6,9 +6,21 @@
 //
 // HONESTY (single lock rule): isReasoningLocked(pod) is the ONE definition of
 // "locked". A live/upcoming pod's private reasoning is NEVER referenced in the
-// DOM — REASONING is read only inside the unlocked branch. (When wired to real
-// data, the server WHY-projection enforces the same gate; useSpectatedTournament-
-// Battles already omits reasoning for live pods.)
+// DOM — `player.reasoning` is read only inside the unlocked branch. (The server
+// WHY-projection enforces the same gate; useSpectatedTournamentBattles omits
+// reasoning for live pods.)
+//
+// WHERE THE FILM ROOM'S WORDS COME FROM (pre-flip honesty fix A — Backing spec
+// V1.3 §11 gate 3): this file carries NO reasoning text of its own and looks
+// nothing up by id. `seat.reasoning` (ReasoningLine[] | null, the leagueFixtures
+// contract) is written by exactly two adapters — the fixture world attaches
+// FIXTURE_REASONING in leagueFixtures.leagueState (dev only, behind the
+// useLeagueState seam), and the real adapter derives it from the COMPLETED
+// battle the WHY-projecting endpoint returns (leagueAdapter.battleToReasoning
+// ← GET /api/tournament/battle-view; null for a live or concealed battle, and
+// for backing's tape pod when the endpoint is unavailable). A seat with nothing
+// recorded renders the honest empty state (NO_REASONING_RECORDED) — never a
+// fixture sentence. LeagueSpectate.honesty.test.jsx pins both halves.
 
 import React from 'react';
 import { rankPod, isReasoningLocked } from './leagueFixtures';
@@ -24,25 +36,10 @@ import { CutLine } from './LeaguePod';
 // wrapper of this file's own would survive the null render).
 import SpectateBackingResults from './backing/SpectateBackingResults';
 
-// fixture reasoning — only ever rendered for a SETTLED pod (the film room).
-const REASONING = {
-  atlas: "Leaned the defensive rotation early; flipped the NVDA pick to short on the CPI print while the agent held the long book steady.",
-  vela: "Faded the euphoria in semis and claimed the staples capitulation overnight. Trimmed into strength twice.",
-  orion: "Played the regime, not the tickers. Crude backwardation plus a flight-to-safety bid carried both layers.",
-  lyra: "Rode momentum a session too long — should've cut the SMCI squeeze risk. Picks lagged, the agent book saved it.",
-  cygnus: "Capital first. Sat small through the drawdown, never averaged down, banked the recovery.",
-  draco: "Top-down energy call was right but I sized the COIN pick too heavy; the crypto drawdown ate the edge.",
-  mira: "Pressed the chip leaders on the pick layer; let the agent diversify under me. High variance, paid off.",
-  rigel: "Mean-reversion on the picks, defensive agent book. Low ceiling, high floor — exactly the plan.",
-  helios: "Bought confirmed strength, cut weakness fast. Guardrails kept the NVDA short from getting away.",
-  ember: "Faded the extremes a touch early. Reversion thesis held by the close.",
-  basalt: "Defensive book, low variance. Goal was to not lose — accomplished.",
-  quartz: "Macro tilt into energy + gold. Cleanest read of the week.",
-  cobalt: "Chased momentum into a rotation. Wrong regime — the high-beta book bled.",
-  nova: "Reversion calls were early; the tape never gave the snap-back in time.",
-  sirius: "Energy + duration barbell. Steady, unspectacular, advanced anyway.",
-  vega: "Sentinel book did its job on defense but the picks had no upside to bank.",
-};
+// The honest empty state for a settled seat with nothing recorded — the real
+// adapter's null (no completed battle, or none with recorded words). Exported
+// for the honesty test.
+export const NO_REASONING_RECORDED = 'No reasoning recorded for this battle.';
 
 // fake-but-stable head-to-head history vs you
 const RIVALRY = { vela: '2–1', orion: '2–1', cygnus: '1–1', mira: '0–2', lyra: '1–0', draco: '1–1' };
@@ -99,6 +96,11 @@ function FilmRoom({ player, locked }) {
       </div>
     );
   }
+  // unlocked: the seat's OWN recorded lines (the adapter's), else the honest
+  // empty state. Nothing here is keyed by id.
+  const lines = Array.isArray(player.reasoning)
+    ? player.reasoning.filter((l) => l && typeof l.text === 'string' && l.text.trim().length > 0)
+    : [];
   return (
     <div style={{ borderRadius: 16, padding: 16, background: `linear-gradient(160deg, ${alpha(LTOKENS.gold, 0.06)}, ${LTOKENS.surface} 60%)`, border: `1px solid ${alpha(LTOKENS.gold, 0.22)}` }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12 }}>
@@ -112,7 +114,16 @@ function FilmRoom({ player, locked }) {
             <span style={{ fontSize: 13, fontWeight: 700, color: LTOKENS.ink }}>{player.name}</span>
             <KindMark agent={player} />
           </div>
-          <div style={{ fontSize: 12.5, color: LTOKENS.ink2, lineHeight: 1.5 }}>{REASONING[player.id]}</div>
+          {lines.length > 0 ? lines.map((l, i) => (
+            // one unlabelled line renders the exact DOM this panel always had (the
+            // mobile byte-pin holds); a swap line carries its label, later lines a gap.
+            <div key={l.key} style={{ fontSize: 12.5, color: LTOKENS.ink2, lineHeight: 1.5, ...(i > 0 ? { marginTop: 8 } : null) }}>
+              {l.label && <Mono style={{ display: 'block', fontSize: 9.5, color: LTOKENS.ink3, letterSpacing: '0.06em', marginBottom: 2 }}>{l.label}</Mono>}
+              {l.text}
+            </div>
+          )) : (
+            <div data-spectate="no-reasoning" style={{ fontSize: 12.5, color: LTOKENS.ink3, lineHeight: 1.5 }}>{NO_REASONING_RECORDED}</div>
+          )}
         </div>
       </div>
     </div>
