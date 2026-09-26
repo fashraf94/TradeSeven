@@ -2823,7 +2823,7 @@ export const EVAL_DEFERRED_BEAT_ENABLED = false;
  * precedent).
  */
 // Pinned by: callRecordsFlags.test.js (a STRING tri-state — pinned directly, outside flagPinGuard's `*_ENABLED` scan; this value and the pin move together — BUILD_RULES §2).
-export const CALL_RECORDS_MODE = 'off';
+export const CALL_RECORDS_MODE = 'shadow';
 
 /** The three founder-walked states, in walk order. */
 export const CALL_RECORDS_MODES = Object.freeze(['off', 'shadow', 'on']);

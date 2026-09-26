@@ -41,10 +41,10 @@ const CRON = readFileSync(path.join(HERE, '..', '..', 'api', 'cron', 'agent-eval
 const CRON_CODE = CRON.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
 
 describe('CALL_RECORDS_MODE — the pin (BUILD_RULES §2)', () => {
-  it("walk step 0: 'off' — no schema property, no reserve, no record read or written", () => {
+  it("walk step 1: 'shadow' — declarations and calls minted, states flipped, nothing rendered", () => {
     // THE ROW THAT MOVES WITH THE WALK. 'off' → 'shadow' → 'on', each in its
     // own founder PR, each updating this literal in the same commit.
-    expect(CALL_RECORDS_MODE).toBe('off');
+    expect(CALL_RECORDS_MODE).toBe('shadow');
   });
 
   it('the mode list is the three walked states, in walk order, frozen — and holds the live value', () => {
