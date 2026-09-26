@@ -2786,7 +2786,7 @@ export const EVAL_DEFERRED_BEAT_ENABLED = false;
  * CALL_RECORDS_MODE — a STRING TRI-STATE, resolved ONCE per evaluation check
  * by resolveCallRecordsMode() (api/_utils/callRecords/mode.js), carried in the
  * check's calls context and never re-read mid-check:
- *   'off'    (shipped) — no `declarations` property in the evaluation tool
+ *   'off'    no `declarations` property in the evaluation tool
  *            schema; no admission reserve; no observation snapshot; no read or
  *            write of `declarations/`, `calls/`, `callObservations/` or
  *            `callSweepQueue/`; no `declarationsPhase` on any entry and no
@@ -2795,7 +2795,7 @@ export const EVAL_DEFERRED_BEAT_ENABLED = false;
  *            Every battle write, prompt byte and capture document is
  *            byte-identical to the frozen pre-change fixture
  *            (api/cron/agent-evaluate.callRecords.offGolden.test.js).
- *   'shadow' the model may declare; the validated block is recorded
+ *   'shadow' (shipped) — the model may declare; the validated block is recorded
  *            (declarations record + calls + sweep-queue arm, one transaction
  *            after the evaluation commit), encounter flips and receipts run,
  *            capture carries `calls[]` references — and NOTHING is rendered:
@@ -2823,7 +2823,7 @@ export const EVAL_DEFERRED_BEAT_ENABLED = false;
  * precedent).
  */
 // Pinned by: callRecordsFlags.test.js (a STRING tri-state — pinned directly, outside flagPinGuard's `*_ENABLED` scan; this value and the pin move together — BUILD_RULES §2).
-export const CALL_RECORDS_MODE = 'off';
+export const CALL_RECORDS_MODE = 'shadow';
 
 /** The three founder-walked states, in walk order. */
 export const CALL_RECORDS_MODES = Object.freeze(['off', 'shadow', 'on']);
