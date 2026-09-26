@@ -56,7 +56,12 @@ export const EVAL_MODEL_ID = 'claude-haiku-4-5-20251001';
 // output reaches ~1421 (p99 ~1240); 2048 clears the observed distribution with
 // headroom at a negligible realistic cost delta (output is content-bound, not
 // cap-bound — the ceiling only un-truncates the ~21% tail).
-export const EVAL_MAX_OUTPUT_TOKENS = 2048;
+// Raised 2048 → 3072 (Sep 2026) for the Cockpit `declarations` property: the
+// maximal block measures 1,463 real tokens (messages.countTokens,
+// scripts/measure-eval-request-tokens.mjs), so a p99 response carrying it
+// truncated at 2048. Measured input is 11,851 at declarations-on, so the
+// ledger form still holds with room: 11,851 + 3,072 < 50,000.
+export const EVAL_MAX_OUTPUT_TOKENS = 3072;
 
 /**
  * Classify a Haiku transport failure for instrumentation (Phase 2).

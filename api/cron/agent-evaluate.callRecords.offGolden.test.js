@@ -132,7 +132,12 @@ const WRITERS = {
 const HERE = dirname(fileURLToPath(import.meta.url));
 const GOLDEN_PATH = resolve(HERE, '../_utils/__fixtures__/callRecordsOffGolden.json');
 /** The fixture's SHA-256 as captured from the pre-change tree (review C-9). */
-const GOLDEN_SHA256 = '15a442dd066ba17104621083dc13deba3bd671167da538b4f232815fb6381091';
+// Moved once by a VALUE-ONLY reconciliation, not a regeneration (founder
+// ruling, Sep 25 2026): EVAL_MAX_OUTPUT_TOKENS 2048 → 3072 changes exactly the
+// 15 `max_tokens` / `maxOutputTokens` values in the fixture and nothing else —
+// with only those edited, every byte-identity row passed and only this pin
+// failed. Captured SHA was 15a442dd066ba17104621083dc13deba3bd671167da538b4f232815fb6381091.
+const GOLDEN_SHA256 = '053396e6bbd3c139540913b35f546444dcd4625eca3e00c9e08a4abe4467d444';
 const ENV = globalThis.process?.env || {};
 const GENERATE = ENV.GENERATE_CALLS_OFF_GOLDEN === '1';
 if (GENERATE && ENV.CI) throw new Error('GENERATE_CALLS_OFF_GOLDEN is a local, deliberate act — never on CI');

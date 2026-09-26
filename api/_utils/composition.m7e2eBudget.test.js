@@ -203,6 +203,13 @@ describe('M7-E2E — eval assembler: the COMPLETE mid-battle request at maximal 
     const input = [system, identity, ack, live, shadowTools].reduce((n, s) => n + estimateTokens(s), 0);
     expect(input + EVAL_MAX_OUTPUT_TOKENS).toBeLessThan(MODEL_CONTEXT_TOKENS - STATED_HEADROOM_TOKENS);
     expect(input).toBeLessThan(EVAL_FULL_REQUEST_INPUT_BUDGET);
+    // Ledger form at the REAL count of this same request (messages.countTokens,
+    // scripts/measure-eval-request-tokens.mjs — docs/audits/
+    // 20260925_EVAL_REQUEST_TOKEN_MEASUREMENT.md): 11,851 + 3,072 < 50,000.
+    const MEASURED_INPUT_DECLARATIONS_ON = 11_851;
+    expect(EVAL_MAX_OUTPUT_TOKENS).toBe(3072);
+    expect(MEASURED_INPUT_DECLARATIONS_ON + EVAL_MAX_OUTPUT_TOKENS).toBe(14_923);
+    expect(MEASURED_INPUT_DECLARATIONS_ON + EVAL_MAX_OUTPUT_TOKENS).toBeLessThan(MODEL_CONTEXT_TOKENS - STATED_HEADROOM_TOKENS);
   });
 
   it('advisories ride the IDENTITY message only — zero advisory bytes in the live-context message (double-append guard)', async () => {
