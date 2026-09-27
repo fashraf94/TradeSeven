@@ -127,9 +127,13 @@ export const TAPE_NUMBER_CLASSES = Object.freeze({
   tapeVersion: 'recorded',
   runCount: 'derived',
   dayNumber: 'derived',
+  // A tickSeq is the platform's MINTED identifier — recorded wherever it
+  // appears, a `no_record` row and the gap lists included: that a minted number
+  // has no record is the row's STATE, never the number's class (review
+  // L1-F9a / L4-F8 — one number, one class).
   'passes.close.tickSeqRange[]': 'recorded',
-  'passes.close.gaps[]': 'derived',
-  'passes.close.unattributedGaps[]': 'derived',
+  'passes.close.gaps[]': 'recorded',
+  'passes.close.unattributedGaps[]': 'recorded',
   'passes.close.sources.*': 'derived',
   'passes.candles.attempts': 'derived',
   // BA-4 — the score
@@ -171,9 +175,14 @@ export const TAPE_NUMBER_CLASSES = Object.freeze({
   'actions[].replayInputs.ghost.atr': 'recorded',
   'actions[].replayInputs.ghost.thresholdHistory.maxMultiplier': 'recorded',
   'actions[].replayInputs.ghost.thresholdHistory.minMultiplier': 'recorded',
+  // A copy of a recorded entry price; which precedence applied is the string
+  // `basis` beside it (review L1-F9b, refuted: recorded stands).
   'actions[].replayInputs.ghost.thresholdBaseline.value': 'recorded',
   'actions[].replayInputs.bought.entryPrice': 'recorded',
   'actions[].replayInputs.bought.atr': 'recorded',
+  // Exactly what the executor's swap write sets for the incoming symbol
+  // (agentSwapExecution.js:307-311), and the fill it bought at — platform
+  // writes (review L1-F9b, refuted: recorded stands).
   'actions[].replayInputs.bought.thresholdHistory.maxMultiplier': 'recorded',
   'actions[].replayInputs.bought.thresholdHistory.minMultiplier': 'recorded',
   'actions[].replayInputs.bought.thresholdBaseline.value': 'recorded',
@@ -218,6 +227,7 @@ export const TAPE_NUMBER_CLASSES = Object.freeze({
   'calls[].expiresAt': 'recorded',
   'calls[].resolvedAt': 'recorded',
   'calls[].horizon.expiresAt': 'recorded',
+  'calls[].hypothesisRef.hypothesisVersion': 'recorded',
   // rationale
   'rationale[].tickSeq': 'recorded',
 });

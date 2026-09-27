@@ -146,7 +146,9 @@ describe('never guessed — a missing input is named and its numbers are null', 
     expect(early.reconciliation.closedLegDelta).toBeNull();
     expect(early.ghost.series).toEqual([{ tickSeq: 1, at: utc('13:30:50'), points: null }, { tickSeq: 2, at: utc('13:45:20'), points: 10 }]);
     expect(early.holdPath[0]).toEqual({ tickSeq: 7, at: utc('13:30:10'), points: null });
-    expect(early.missingInputs).toEqual(expect.arrayContaining(['price:OUTX@swap', 'price:INX@swap', 'price:OUTX@1', 'price:INX@1']));
+    // the bought name is scored FROM the swap: it has no swap sample to miss (review L2-F2)
+    expect(early.missingInputs).toEqual(expect.arrayContaining(['price:OUTX@swap', 'price:OUTX@1', 'price:INX@1']));
+    expect(early.missingInputs).not.toContain('price:INX@swap');
     expect(early.gapPoints).toBe(0);                       // the close is still known
   });
 
@@ -183,8 +185,8 @@ describe('reconciliation and comparables', () => {
 describe('THE SCORER IS THE IMPORTED ONE (BUILD_RULES §4)', () => {
   it('every rebuilt point comes from calculateAssetScoreServer, called with the leg\'s own inputs and empty extremes', () => {
     replayAction({ action: action(), checks: CHECKS, barsBySymbol: { OUTX: bars(flatRows(D, 101)), INX: bars(flatRows(D, 50)), ...COMPARABLES() }, session: S });
-    // 2 legs × (swap + 3 scored later checks + close)
-    expect(calculateAssetScoreServer).toHaveBeenCalledTimes(10);
+    // the sold leg: swap + 3 scored later checks + close; the bought leg: 3 later checks + close
+    expect(calculateAssetScoreServer).toHaveBeenCalledTimes(9);
     const [asset, priceChange, history, extremes, thresholdPriceChange] = calculateAssetScoreServer.mock.calls[0];
     // a tiered battle's mode-resolved stamp is null — the scorer resolves CONVICTION_MULTIPLIERS[tier] as live
     expect(asset).toEqual({ symbol: 'OUTX', baseATR: 10, tier: 'support', direction: null, tierMultiplier: null });

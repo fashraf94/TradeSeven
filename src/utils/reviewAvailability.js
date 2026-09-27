@@ -28,11 +28,16 @@
 // STAGE 3 (FILM_ROOM_V2_ENABLED on — after A2): ONE bounded read of
 // `agentBattles/{id}/tape/{finalEtDate}` (finalEtDate = the last
 // `timing.tradingDays`). ready = completed AND that tape's
-// `passes.close.status === 'written'`. pending = not ready, the battle
-// completed TODAY (ET) and tonight's close pass is still to run for it (the
-// writer flag on, before `15 2 * * 2-6` UTC plus its maxDuration). Otherwise
-// unavailable — a pre-backfill battle is never "pending". Stage 3 guarantees a
-// written close pass, not candles: the hub's copy is "Open battle tape".
+// `passes.close.status === 'written'`. pending = not ready, the writer flag
+// on, a tiered battle (a flat6/tournament battle only ever gets
+// `skipped_mode`, BA-3), and the close pass that will tape its completion has
+// not yet run: its own session night when it completed before that night's
+// pass, else the NEXT session night — the pass owns completions since the
+// previous session's day began (closePass.js completionsSinceMs), so a
+// holiday, weekend or after-pass completion is taped then, never on a night
+// with no pass (review L3-F2). Otherwise unavailable — a pre-backfill battle
+// is never "pending". Stage 3 guarantees a written close pass, not candles:
+// the hub's copy is "Open battle tape".
 //
 // Both flags are read at CALL time. The Stage 3 reader is injectable (tests)
 // and the Firebase client SDK is imported lazily, only on that branch.
@@ -41,12 +46,13 @@ import { FILM_ROOM_V2_ENABLED, FILM_TAPE_WRITE_ENABLED } from '../config/feature
 import {
   FILM_ROOM_ROUTE, TAPE_SUBCOLLECTION, CLOSE_PASS_UTC_HOUR, CLOSE_PASS_UTC_MINUTE, CLOSE_PASS_MAX_DURATION_S,
 } from '../constants/filmTape';
+import { resolveModeConfig } from '../constants/agentGameModes';
+import { isMarketHoliday } from './marketHolidays';
 
 /** The bound on the Stage 3 tape read. */
 export const TAPE_READ_TIMEOUT_MS = 4_000;
 
 const ET_DATE = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' });
-const ET_WEEKDAY = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short' });
 
 function toMs(v) {
   if (typeof v === 'number') return Number.isFinite(v) ? v : null;
@@ -67,21 +73,34 @@ function stageOne(battle, target) {
   return result(false, target, 'unavailable');
 }
 
+const ymdParts = (ymd) => ymd.split('-').map(Number);
+const nextYmd = (ymd) => { const [y, m, d] = ymdParts(ymd); return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10); };
+/** A session night: a weekday that is not a market holiday (the client calendar). */
+const isSessionDay = (ymd) => {
+  const [y, m, d] = ymdParts(ymd);
+  const wd = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  return wd !== 0 && wd !== 6 && !isMarketHoliday(ymd);
+};
+/** The pass for session D fires at 02:15 UTC on the next UTC day (`15 2 * * 2-6` — 22:15 EDT / 21:15 EST of D). */
+const passStartMs = (ymd) => { const [y, m, d] = ymdParts(ymd); return Date.UTC(y, m - 1, d + 1, CLOSE_PASS_UTC_HOUR, CLOSE_PASS_UTC_MINUTE, 0); };
+
 /**
- * Is tonight's close pass still to run for a battle that completed at
- * `completedMs`? The pass for ET date D fires at 02:15 UTC on the next UTC
- * calendar day (`15 2 * * 2-6` — 22:15 EDT / 21:15 EST of D itself) and may
- * run for its full maxDuration. Only a weekday completion is on a pass night.
+ * The session whose close pass tapes a completion at `completedMs`: its own ET
+ * date when that is a session and the pass had not yet started, else the next
+ * session (the pass owns completions since the previous session's day began).
  */
+export function owningPassDate(completedMs) {
+  const own = etDateOf(completedMs);
+  if (isSessionDay(own) && completedMs < passStartMs(own)) return own;
+  let d = nextYmd(own);
+  for (let i = 0; i < 14 && !isSessionDay(d); i += 1) d = nextYmd(d);
+  return d;
+}
+
+/** Is the close pass that tapes this completion still to run (it may run its full maxDuration)? */
 export function closePassStillScheduled(completedMs, nowMs) {
   if (completedMs === null || nowMs === null) return false;
-  const day = etDateOf(completedMs);
-  if (day !== etDateOf(nowMs)) return false;
-  const weekday = ET_WEEKDAY.format(new Date(completedMs));
-  if (weekday === 'Sat' || weekday === 'Sun') return false;
-  const [y, m, d] = day.split('-').map(Number);
-  const passEndMs = Date.UTC(y, m - 1, d + 1, CLOSE_PASS_UTC_HOUR, CLOSE_PASS_UTC_MINUTE, 0) + CLOSE_PASS_MAX_DURATION_S * 1000;
-  return nowMs < passEndMs;
+  return nowMs < passStartMs(owningPassDate(completedMs)) + CLOSE_PASS_MAX_DURATION_S * 1000;
 }
 
 /** The default Stage 3 reader: one client getDoc, bounded. Never throws — a failed or denied read is "no tape". */
@@ -111,7 +130,8 @@ async function stageThree(battle, target, { readTape, nowMs }) {
     try { tape = await readTape(battle.id, finalEtDate); } catch { tape = null; }
   }
   if (tape && tape.passes && tape.passes.close && tape.passes.close.status === 'written') return result(true, target, 'ready');
-  if (FILM_TAPE_WRITE_ENABLED && closePassStillScheduled(toMs(battle.completedAt), nowMs)) return result(false, target, 'pending');
+  const tiered = resolveModeConfig(battle.gameMode).label === 'tiered';
+  if (FILM_TAPE_WRITE_ENABLED && tiered && closePassStillScheduled(toMs(battle.completedAt), nowMs)) return result(false, target, 'pending');
   return result(false, target, 'unavailable');
 }
 

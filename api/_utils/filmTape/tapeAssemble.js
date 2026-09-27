@@ -17,7 +17,7 @@ import {
   TAPE_VERSION, TAPE_NUMBER_CLASSES, TICK_EXIT_STATES, NON_CHECK_STATES, NO_CHANGE_GATE_STATUSES,
   EXIT_MECHANISMS, MARKET_COMPARABLES, CALL_CONTRACT_VERSION,
 } from '../../../src/constants/filmTape.js';
-import { toMs, inDay, etDateOf, sessionFor, previousSession, withinCandleWindow } from './tapeTime.js';
+import { toMs, inDay, etDateOf, etDayBounds, sessionFor, previousSession, withinCandleWindow } from './tapeTime.js';
 
 /** `evaluations[]` is `slice(-150)` (api/cron/agent-evaluate.js:4257). */
 export const EVALUATIONS_CAP = 150;
@@ -37,7 +37,23 @@ export const PLATFORM_RATIONALE_TEXTS = Object.freeze([
   'Haiku call failed — defaulting to HOLD',
 ]);
 
+/**
+ * Prefixes of platform-written text the deterministic guardrail layer puts in
+ * an entry's rationale / hypothesis when it forces a SWAP over the model's
+ * answer (agent-evaluate.js:3222-3223 — `haikuError` stays null there): not
+ * the agent's words either (review L1-F2).
+ */
+export const PLATFORM_RATIONALE_PREFIXES = Object.freeze([
+  'Guardrail override (',
+  'Hypothesis: deterministic guardrail enforcement',
+]);
+
+const platformWritten = (text) => text !== null
+  && (PLATFORM_RATIONALE_TEXTS.includes(text) || PLATFORM_RATIONALE_PREFIXES.some((p) => text.startsWith(p)));
+
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+/** A positive price, or null (0 is the executor's no-entry sentinel). */
+const pos = (v) => (num(v) !== null && v > 0 ? v : null);
 const str = (v) => (typeof v === 'string' && v ? v : null);
 const round2 = (v) => (v === null ? null : Math.round(v * 100) / 100);
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -194,6 +210,25 @@ function gapRow(seq, battleId) {
  * Order check rows: sequence-bearing rows by tickSeq (a gap sits right after
  * the record before it, since its own time is unknown), the rest by time.
  */
+/**
+ * A check whose capture failed but whose evaluation entry survives is ONE
+ * check (review L1-Q1): when exactly one missing sequence number and exactly
+ * one entry-only row fall between the same two recorded ticks, the entry row
+ * stands for it and no separate `no_record` row is added. The number stays in
+ * passes.close.gaps — its tick record is still missing.
+ */
+export function absorbedGap(seq, { dayTicks, entryOnly }) {
+  const before = dayTicks.filter((t) => t.tickSeq < seq).at(-1) ?? null;
+  const after = dayTicks.find((t) => t.tickSeq > seq) ?? null;
+  const lo = before ? toMs(before.capturedAt) : -Infinity;
+  const hi = after ? toMs(after.capturedAt) : Infinity;
+  const loSeq = before ? before.tickSeq : -Infinity;
+  const hiSeq = after ? after.tickSeq : Infinity;
+  const gapsBetween = hiSeq - loSeq - 1;
+  const entriesBetween = entryOnly.filter((r) => { const ms = toMs(r.at); return ms !== null && ms > lo && ms < hi; }).length;
+  return gapsBetween === 1 && entriesBetween === 1;
+}
+
 export function orderChecks(rows) {
   const keyed = [];
   let lastMs = -Infinity;
@@ -313,22 +348,25 @@ export function buildReplayInputs({ row, receipt, trade, battle }) {
   if (ghost.thresholdHistory === null) ghostMissing.push('ghost.thresholdHistory');
   if (ghost.thresholdBaseline === null || ghost.thresholdBaseline.value === null) ghostMissing.push('ghost.thresholdBaseline');
 
-  const entryMark = num(receipt?.entryMark);
+  // The bought name's fill: the receipt's entryMark, else the tick action's
+  // entryPrice — both are incomingAsset.swapPrice (learningSchemas.js:141;
+  // agent-evaluate.js:2027 and the five sibling capture sites).
+  const boughtEntry = row.inBasis?.price ?? null;
   const bought = {
-    entryPrice: entryMark,
+    entryPrice: boughtEntry,
     atr: num(receipt?.entryATR),
     tier,
     direction: null,
     // The executor resets the incoming symbol's history at the swap
     // (agentSwapExecution.js:307-311) — a platform write, not a default.
     thresholdHistory: { maxMultiplier: 0, minMultiplier: 0 },
-    thresholdBaseline: entryMark !== null ? { value: entryMark, basis: 'swap_price' } : null,
+    thresholdBaseline: boughtEntry !== null ? { value: boughtEntry, basis: 'swap_price' } : null,
     sources: {
-      entryPrice: entryMark !== null ? 'receipt.entryMark' : null,
+      entryPrice: row.inBasisSource ?? null,
       atr: num(receipt?.entryATR) !== null ? `receipt.entryATR (${str(receipt?.entryAtrSource) ?? 'source unrecorded'})` : null,
       tier: tierSource,
       thresholdHistory: 'executor reset at the swap (agentSwapExecution.js:307-311)',
-      thresholdBaseline: entryMark !== null ? 'receipt.entryMark (swapPrice)' : null,
+      thresholdBaseline: boughtEntry !== null ? `${row.inBasisSource} (the swap price)` : null,
     },
   };
   const boughtMissing = [];
@@ -368,10 +406,20 @@ export function buildActions({ battle, bounds, dayTicks, trades, receiptsDay }) 
   for (const s of byKey.values()) {
     const { action, tick, trade, receipt } = s;
     const exitReason = str(action?.exitReason) ?? str(trade?.exitReason) ?? str(receipt?.exitReason);
-    const entryPrice = num(action?.entryPrice) ?? num(trade?.entryPrice) ?? num(receipt?.guardrailReplay?.outgoingEntryPrice);
-    const entryPriceSource = num(action?.entryPrice) !== null ? 'ticks.actions.entryPrice'
-      : num(trade?.entryPrice) !== null ? 'trades.entryPrice'
-        : num(receipt?.guardrailReplay?.outgoingEntryPrice) !== null ? 'receipt.guardrailReplay.outgoingEntryPrice' : null;
+    // The SOLD position's own entry: the trade keeps it (closedTrade.entryPrice,
+    // agentSwapExecution.js:191-193), the receipt copies it (outgoingEntryPrice).
+    // NEVER ticks.actions[].entryPrice — every capture site writes the BOUGHT
+    // name's fill there (`entryPrice: …incomingAsset?.swapPrice`,
+    // agent-evaluate.js:2027 and siblings). 0 is the executor's no-entry
+    // sentinel: absent, never a price.
+    const entryPrice = pos(trade?.entryPrice) ?? pos(receipt?.guardrailReplay?.outgoingEntryPrice);
+    const entryPriceSource = pos(trade?.entryPrice) !== null ? 'trades.entryPrice'
+      : pos(receipt?.guardrailReplay?.outgoingEntryPrice) !== null ? 'receipt.guardrailReplay.outgoingEntryPrice' : null;
+    // The BOUGHT name's fill (incomingAsset.swapPrice): the receipt's entryMark,
+    // else the tick action's entryPrice (the permanent record).
+    const inPrice = pos(receipt?.entryMark) ?? pos(action?.entryPrice);
+    const inBasisSource = pos(receipt?.entryMark) !== null ? 'receipt.entryMark'
+      : pos(action?.entryPrice) !== null ? 'ticks.actions.entryPrice (incomingAsset.swapPrice)' : null;
     const entryInstant = receipt ? (toMs(receipt.guardrailReplay?.outgoingSwappedInAt) ?? toMs(battle?.activatedAt)) : null;
     const row = {
       key: s.key,
@@ -390,7 +438,7 @@ export function buildActions({ battle, bounds, dayTicks, trades, receiptsDay }) 
       exitPrice: num(trade?.exitPrice),
       lockedPoints: num(action?.lockedPoints) ?? num(trade?.lockedPoints),
       lockedGainPct: num(trade?.lockedGainPct),
-      inBasis: num(receipt?.entryMark) !== null ? { price: receipt.entryMark, at: s.at } : null,
+      inBasis: inPrice !== null ? { price: inPrice, at: s.at } : null,
       // Derived: the swap instant minus the position's recorded entry instant
       // (the receipt keeps it; the trade loses it — 0B §3-B2).
       holdingMs: entryInstant !== null && toMs(s.at) !== null ? toMs(s.at) - entryInstant : null,
@@ -408,7 +456,7 @@ export function buildActions({ battle, bounds, dayTicks, trades, receiptsDay }) 
     if (crypto) {
       row.replayReason = 'crypto_not_supported';
     } else {
-      const { replayInputs, replayMissing } = buildReplayInputs({ row: { ...row, entryPriceSource }, receipt, trade, battle });
+      const { replayInputs, replayMissing } = buildReplayInputs({ row: { ...row, entryPriceSource, inBasisSource }, receipt, trade, battle });
       row.replayInputs = replayInputs;
       row.replayMissing = replayMissing;
     }
@@ -426,19 +474,60 @@ export function buildActions({ battle, bounds, dayTicks, trades, receiptsDay }) 
 
 function cardStateOf(exchange) {
   const status = str(exchange.archetypeGate?.status);
-  if (status === 'committed') return 'committed';
+  // A committed gate filed a directive only when the exchange carries its
+  // record — OBSERVE mode and a withheld turn store `committed` with
+  // `directive: null` (chat.js:855-857, :937-938): nothing was filed.
+  if (status === 'committed') return isObj(exchange.directive) ? 'committed' : 'not_filed';
   if (!exchange.archetypeGate && str(exchange.directiveThreadId) && isObj(exchange.directive)) return 'committed';
   if (NO_CHANGE_GATE_STATUSES.includes(status)) return 'no_change';
   // fit_mismatch — and any status this build does not know — filed nothing.
   return 'not_filed';
 }
 
-export function buildDirectives({ battle, bounds, entriesAll, dayTicks, checkRows, actionRows, tickSeqByEvalId }) {
+/**
+ * BA-9 — what followed a filing, up to `endMs` (the next committed filing or
+ * the day's end): counts of checks, holds and swaps — sequence only, never
+ * compliance. Shared by the assembler and the merge (which recounts from the
+ * merged rows when it kept rows the new read lacked — review L1-F8).
+ */
+export function afterOf({ filedAt, endMs, checkRows, actionRows }) {
+  const filedMs = toMs(filedAt);
+  const inWindow = (at) => { const ms = toMs(at); return ms !== null && filedMs !== null && ms > filedMs && ms < endMs; };
+  const followed = (checkRows || []).filter((r) => !NON_CHECK_STATES.includes(r.state) && inWindow(r.at));
+  return {
+    checks: followed.length,
+    holds: followed.filter((r) => r.decision?.final === 'HOLD').length,
+    swaps: (actionRows || []).filter((a) => inWindow(a.at)).length,
+  };
+}
+
+/**
+ * The exchanges a day's directive cards come from (review L1-F4): the ET day,
+ * reaching back on the battle's FIRST trading day to its activation (a fullday
+ * battle deployed after hours is active — and takes directives — the evening
+ * before its session), and on a later day to the end of the previous trading
+ * day (a weekend filing belongs to the next session). The windows partition
+ * time, so every card lands on exactly one tape.
+ */
+export function directiveWindow({ battle, etDate, bounds }) {
+  const days = Array.isArray(battle?.timing?.tradingDays) ? battle.timing.tradingDays : null;
+  const i = days ? days.indexOf(etDate) : -1;
+  if (i === 0) {
+    const act = toMs(battle?.activatedAt) ?? toMs(battle?.createdAt);
+    return { startMs: act !== null ? Math.min(act, bounds.startMs) : bounds.startMs, endMs: bounds.endMs };
+  }
+  if (i > 0) return { startMs: Math.min(etDayBounds(days[i - 1]).endMs, bounds.startMs), endMs: bounds.endMs };
+  return { startMs: bounds.startMs, endMs: bounds.endMs };
+}
+
+export function buildDirectives({ battle, bounds, entriesAll, dayTicks, checkRows, actionRows, tickSeqByEvalId, window = null }) {
+  const win = window ?? { startMs: bounds.startMs, endMs: bounds.endMs };
+  const inWin = (at) => { const ms = toMs(at); return ms !== null && ms >= win.startMs && ms < win.endMs; };
   const exchanges = (Array.isArray(battle?.chatExchanges) ? battle.chatExchanges : [])
     .filter((x) => isObj(x) && str(x.timestamp))
     .sort((a, b) => (toMs(a.timestamp) ?? 0) - (toMs(b.timestamp) ?? 0));
   const committedAll = exchanges.filter((x) => cardStateOf(x) === 'committed' && (x.archetypeGate || str(x.directiveThreadId)));
-  const dayCards = exchanges.filter((x) => inDay(x.timestamp, bounds) && str(x.userMessage) && (isObj(x.archetypeGate) || str(x.directiveThreadId)));
+  const dayCards = exchanges.filter((x) => inWin(x.timestamp) && str(x.userMessage) && (isObj(x.archetypeGate) || str(x.directiveThreadId)));
   const entriesByTime = [...entriesAll].sort((a, b) => (toMs(a.timestamp) ?? 0) - (toMs(b.timestamp) ?? 0));
   const ticksBySeq = [...dayTicks].sort((a, b) => a.tickSeq - b.tickSeq);
 
@@ -458,26 +547,26 @@ export function buildDirectives({ battle, bounds, entriesAll, dayTicks, checkRow
       retained = prev ? str(prev.directive?.text) : null;
     }
 
-    // Heard: the first entry after the filing stamped with this thread and no
-    // suppression; else the first tick whose controls say the same.
+    // Heard: the EARLIER of the first entry after the filing stamped with this
+    // thread and no suppression, and the first tick whose controls say the
+    // same — an evicted first entry never lets a later one win (review L1-F7).
     let heard = null;
     if (threadId) {
       const e = entriesByTime.find((en) => (toMs(en.timestamp) ?? -1) >= filedMs
         && en.heard?.directiveThreadId === threadId && en.heard?.suppressed === null);
-      if (e) heard = { at: e.timestamp, tickSeq: tickSeqByEvalId.get(e.evalId) ?? null, source: 'entry' };
-      if (!heard) {
-        const t = ticksBySeq.find((tk) => (toMs(tk.capturedAt) ?? -1) >= filedMs
-          && tk.controls?.directiveThreadId === threadId && tk.controls?.directiveSuppressed === null);
-        if (t) heard = { at: t.capturedAt, tickSeq: t.tickSeq, source: 'tick' };
-      }
+      const t = ticksBySeq.find((tk) => (toMs(tk.capturedAt) ?? -1) >= filedMs
+        && tk.controls?.directiveThreadId === threadId && tk.controls?.directiveSuppressed === null);
+      const found = [
+        e ? { at: e.timestamp, tickSeq: tickSeqByEvalId.get(e.evalId) ?? null, source: 'entry' } : null,
+        t ? { at: t.capturedAt, tickSeq: t.tickSeq, source: 'tick' } : null,
+      ].filter(Boolean).sort((a, b) => (toMs(a.at) ?? 0) - (toMs(b.at) ?? 0));
+      heard = found[0] ?? null;
     }
 
     // After: counts of what followed, up to the next committed filing or the
     // day's end — sequence only, never compliance (BA-9).
     const nextCommitted = committedAll.find((c) => (toMs(c.timestamp) ?? 0) > filedMs);
     const endMs = Math.min(bounds.endMs, nextCommitted ? toMs(nextCommitted.timestamp) : Infinity);
-    const inWindow = (at) => { const ms = toMs(at); return ms !== null && ms > filedMs && ms < endMs; };
-    const followed = checkRows.filter((r) => !NON_CHECK_STATES.includes(r.state) && inWindow(r.at));
 
     return {
       key: threadId ?? `exchange:${filedAt}`,
@@ -497,11 +586,7 @@ export function buildDirectives({ battle, bounds, entriesAll, dayTicks, checkRow
       // reply was composed around an adjustment the gate did not file.
       agentReplyDiffers: !committed && str(gate?.selectedAdjustmentId) !== null,
       heard,
-      after: {
-        checks: followed.length,
-        holds: followed.filter((r) => r.decision?.final === 'HOLD').length,
-        swaps: actionRows.filter((a) => inWindow(a.at)).length,
-      },
+      after: afterOf({ filedAt, endMs, checkRows, actionRows }),
     };
   });
 }
@@ -519,9 +604,10 @@ export function buildPlans({ entriesDay, tickByEvalId }) {
         key: `${str(e.evalId) ?? e.timestamp}:${i}`,
         evalId: str(e.evalId),
         tickSeq: Number.isInteger(tick?.tickSeq) ? tick.tickSeq : null,
-        // The check instant: the tick's capturedAt when the record exists (the
-        // instant BA-11 samples at), else the entry's own timestamp.
-        at: str(tick?.capturedAt) ?? str(e.timestamp),
+        // The entry's own time (BA-10) — when the model wrote the plan, just
+        // after it returned; the tick's capturedAt comes later, after narration
+        // and dispatch (review L1-Q4). The plan's price is sampled here.
+        at: str(e.timestamp) ?? str(tick?.capturedAt),
         symbol: c.symbol,
         direction: str(c.direction),
         signalSummary: str(c.signalSummary),
@@ -541,7 +627,7 @@ export function buildRationale({ entriesDay, tickByEvalId }) {
     const rationale = str(e.rationale);
     const hypothesis = str(e.hypothesis);
     if (!rationale && !hypothesis) continue;
-    if (e.haikuError || PLATFORM_RATIONALE_TEXTS.includes(rationale)) { platformAuthored += 1; continue; }
+    if (e.haikuError || platformWritten(rationale) || platformWritten(hypothesis)) { platformAuthored += 1; continue; }
     const tick = tickByEvalId.get(e.evalId) || null;
     rows.push({
       key: str(e.evalId) ?? `ts:${e.timestamp}`,
@@ -601,7 +687,11 @@ export function buildCalls({ calls, bounds, nowIso, callRecordsMode }) {
 // ── score and battle (BA-4) ────────────────────────────────────────────────
 
 export function buildScore({ battle, etDate, tickRowsScored, rawTickBySeq, entryRowsScored, priorTape }) {
-  const scored = tickRowsScored.length ? tickRowsScored : entryRowsScored;
+  // Every admitted check with scores: its tick row, or — when capture missed
+  // it — its entry row (review L1-F5: a later entry-only check is the day's
+  // last admitted check even when earlier checks have tick records).
+  const scored = [...tickRowsScored, ...entryRowsScored]
+    .sort((a, b) => ((toMs(a.at) ?? 0) - (toMs(b.at) ?? 0)) || ((a.tickSeq ?? 0) - (b.tickSeq ?? 0)));
   let lastCheck = null;
   let firstCheck = null;
   if (scored.length) {
@@ -650,6 +740,34 @@ export function buildBattleBlock({ battle, resolveResult }) {
 
 const statusFrom = (reasons, hasRows) => (reasons.length ? (hasRows ? 'partial' : 'unavailable') : 'complete');
 
+const SLOT_MS = 15 * 60_000;
+const ET_HHMM = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
+
+/**
+ * The evaluator's market-hours slots on `etDate` (every 15 min from the open,
+ * before the close) that the battle was live for and that left NO run record.
+ * Every run past the market-hours gate writes one, and a run killed at the
+ * platform ceiling leaves none — "a missing market-hours slot is the signal of
+ * a killed run" (agent-evaluate.js:241-247). Its checks may be missing or its
+ * deferrals unlisted, so the checks section cannot claim completeness
+ * (review L1-F12).
+ */
+export function missingRunSlots({ etDate, runs, battle, nowMs }) {
+  const s = sessionFor(etDate);
+  if (!s?.isTradingDay) return [];
+  const from = Math.max(s.openMs, toMs(battle?.activatedAt) ?? s.openMs);
+  const to = Math.min(s.closeMs, toMs(battle?.completedAt) ?? Infinity, nowMs);
+  const covered = new Set(runs.map((r) => toMs(r?.startedAt))
+    .filter((ms) => ms !== null && ms >= s.openMs && ms < s.closeMs)
+    .map((ms) => Math.floor((ms - s.openMs) / SLOT_MS)));
+  const out = [];
+  for (let k = 0, t = s.openMs; t < s.closeMs; k += 1, t += SLOT_MS) {
+    if (t < from || t > to) continue;
+    if (!covered.has(k)) out.push(t);
+  }
+  return out;
+}
+
 /**
  * Assemble the close pass's document for one battle-day. The candle-owned
  * fields (actions[].replay, plans[].price, passes.candles, coverage.replay,
@@ -690,7 +808,7 @@ export function assembleTape({
     ...tickRows,
     ...entryOnly,
     ...deferredRuns.map(deferredRow),
-    ...gaps.attributed.filter((s) => !rawTickBySeq.has(s)).map((s) => gapRow(s, battleId)),
+    ...gaps.attributed.filter((s) => !rawTickBySeq.has(s) && !absorbedGap(s, { dayTicks, entryOnly })).map((s) => gapRow(s, battleId)),
   ]);
   const capture = dayTicks.length === 0 ? 'absent'
     : (gaps.attributed.length || gaps.unattributed.length || entryOnly.length ? 'partial' : 'present');
@@ -698,7 +816,8 @@ export function assembleTape({
   // ---- actions, directives, plans, rationale, calls
   const receiptsDay = (receiptsRead.receipts || []).filter((r) => isObj(r) && inDay(r.timestamp, bounds));
   const actions = buildActions({ battle, bounds, dayTicks, trades, receiptsDay });
-  const directives = buildDirectives({ battle, bounds, entriesAll: entries.all, dayTicks, checkRows: checks, actionRows: actions, tickSeqByEvalId });
+  const cardWindow = directiveWindow({ battle, etDate, bounds });
+  const directives = buildDirectives({ battle, bounds, entriesAll: entries.all, dayTicks, checkRows: checks, actionRows: actions, tickSeqByEvalId, window: cardWindow });
   const plans = buildPlans({ entriesDay: entries.day, tickByEvalId });
   const rationale = buildRationale({ entriesDay: entries.day, tickByEvalId });
   const calls = callsRead.ok ? buildCalls({ calls: callsRead.calls, bounds, nowIso, callRecordsMode }) : [];
@@ -728,7 +847,7 @@ export function assembleTape({
     battle, etDate,
     tickRowsScored: tickRows.filter((r) => r.scores),
     rawTickBySeq,
-    entryRowsScored: orderChecks(entries.day.map(entryRow)).filter((r) => r.scores),
+    entryRowsScored: entryOnly.filter((r) => r.scores),
     priorTape,
   });
 
@@ -745,6 +864,12 @@ export function assembleTape({
   if (entryOnly.length && capture !== 'absent') checkReasons.push(`${entryOnly.length} evaluation entr(y/ies) have no tick record; their sequence numbers are among the gaps`);
   if (!runsRead.ok) checkReasons.push(`run records unreadable (${runsRead.error}) — deferrals unknown`);
   else if (!runs.length) checkReasons.push('no evaluation-run records exist for this day — deferrals cannot be listed');
+  else {
+    const missingSlots = missingRunSlots({ etDate, runs, battle, nowMs });
+    if (missingSlots.length) {
+      checkReasons.push(`no run record for ${missingSlots.length} evaluator slot(s) (${missingSlots.map((t) => ET_HHMM.format(new Date(t))).join(', ')} ET) — a check in them may be missing or its deferral unlisted`);
+    }
+  }
   if (deferralsTruncated) checkReasons.push('a run record\'s deferred list was truncated — deferrals past its first 200 ids are not listed (deferralsTruncated)');
   if (entryReasons.length) checkReasons.push('tickMs unavailable where the entry is absent');
   const coverage = {
@@ -763,15 +888,17 @@ export function assembleTape({
 
   const heardReasons = [];
   if (entries.evictionPossible && capture !== 'present') heardReasons.push('evaluation entries may be evicted and capture is incomplete — a heard stamp may be missing');
+  const earlyCards = directives.filter((d) => (toMs(d.filedAt) ?? bounds.startMs) < bounds.startMs).length;
+  const directiveNotes = earlyCards ? [`${earlyCards} card(s) filed before this ET day (after the battle's activation or the previous trading day) are shown here`] : [];
   coverage.directives = coverageOf(statusFrom(heardReasons, true), {
-    span: spanOf(directives.map((d) => d.filedAt)), sources: ['chatExchanges', 'evaluations.heard', 'ticks.controls'], note: heardReasons.join('; ') || null,
+    span: spanOf(directives.map((d) => d.filedAt)), sources: ['chatExchanges', 'evaluations.heard', 'ticks.controls'], note: [...heardReasons, ...directiveNotes].join('; ') || null,
   });
 
   const entrySpan = spanOf(entries.day.map((e) => e.timestamp));
   coverage.plans = coverageOf(statusFrom(entryReasons, entries.day.length > 0), {
     span: entrySpan, sources: ['evaluations.candidates'], note: entryReasons.join('; ') || null,
   });
-  const rationaleNote = [...entryReasons, ...(rationale.platformAuthored ? [`${rationale.platformAuthored} entr(y/ies) carried platform-written placeholder text, not the agent's words — not copied`] : [])];
+  const rationaleNote = [...entryReasons, ...(rationale.platformAuthored ? [`${rationale.platformAuthored} entr(y/ies) carried platform-written text (a placeholder or a guardrail override), not the agent's words — not copied`] : [])];
   coverage.rationale = coverageOf(statusFrom(entryReasons, entries.day.length > 0), {
     span: entrySpan, sources: ['evaluations'], note: rationaleNote.join('; ') || null,
   });
@@ -783,7 +910,12 @@ export function assembleTape({
   const expected = entries.day.filter((e) => e.declarationsPhase === 'expected' && str(e.evalId)).map((e) => e.evalId);
   const phased = entries.day.some((e) => e.declarationsPhase === 'none' || e.declarationsPhase === 'expected');
   if (!callsRead.ok) callReasons.push(`call records unreadable (${callsRead.error})`);
-  else if (!phased && !calls.length && !entries.evictionPossible) callReasons.push('no evaluation entry of this day carries a declarations phase — call records were not being minted');
+  const callNotes = [];
+  if (callsRead.ok && !calls.length && !entries.evictionPossible) {
+    // Facts, not reasons: nothing is missing, so the status is not lowered.
+    if (!entries.day.length) callNotes.push('no check of this day reached the model — no call could be minted');
+    else if (!phased) callNotes.push('no evaluation entry of this day carries a declarations phase');
+  }
   if (entries.evictionPossible) callReasons.push('declaration phases unknown for evicted entries');
   if (declarationsRead && !declarationsRead.ok) callReasons.push(`declaration records unreadable (${declarationsRead.error})`);
   else if (declarationsRead) {
@@ -792,7 +924,7 @@ export function assembleTape({
   }
   coverage.calls = coverageOf(statusFrom(callReasons, calls.length > 0), {
     span: spanOf(calls.map((c) => c.mintedAt)), sources: ['calls', 'declarations'],
-    note: [callReasons.join('; '), 'state as observed at copiedAt, not a reconstruction of the day'].filter(Boolean).join('; '),
+    note: [...callReasons, ...callNotes, 'state as observed at copiedAt, not a reconstruction of the day'].join('; '),
   });
 
   const within = withinCandleWindow(etDate, nowMs);

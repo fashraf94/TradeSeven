@@ -25,21 +25,25 @@
 // `missingInputs` — never guessed. No shared 1-minute bar cache exists at
 // HEAD (build report §1.1 item 6), so `source` is always `eodhd_1m`.
 //
-// WRITE: the series documents under tape/{etDate}/series/{symbol}, then ONE
-// transaction on the tape that rewrites only `actions[].replay`,
+// WRITE: ONE transaction on the tape that writes the series documents under
+// tape/{etDate}/series/{symbol} and rewrites only `actions[].replay`,
 // `plans[].price`, `passes.candles`, `coverage.replay` and `coverage.series`
 // — every other field of every row is written back exactly as read inside the
 // transaction, so a close pass that commits first is kept, and one that
 // commits second keeps these (tapeMerge.js never takes candle fields from its
-// own read).
+// own read). A close pass that GREW the tape's symbol set mid-run leaves it
+// queued for the next morning (`requeued`). A retry keeps the more complete of
+// the stored and the fresh result, so no attempt loses what an earlier one
+// saved (§8 invariant 7). The writer flag is read at call time here too.
 
 import { TICKER_TO_SECTOR } from '../rankingConfig.js';
 import { resolveModeConfig } from '../../../src/constants/agentGameModes.js';
 import { isCryptoSymbol } from '../marketDataCache.js';
 import {
   TAPE_VERSION, SERIES_NUMBER_CLASSES, CANDLE_SELECTABLE_STATUSES, CANDLE_MAX_ATTEMPTS, MARKET_COMPARABLES,
-  NON_CHECK_STATES, SERIES_INTERVAL,
+  NON_CHECK_STATES, SERIES_INTERVAL, SERIES_SUBCOLLECTION,
 } from '../../../src/constants/filmTape.js';
+import { FILM_TAPE_WRITE_ENABLED } from '../../../src/config/featureFlags.js';
 import { sessionBars, priceAt, sessionOpenOf, aggregate10m } from './bars.js';
 import { replayAction, REPLAY_LABEL } from './tapeReplay.js';
 import { coverageOf } from './tapeAssemble.js';
@@ -169,17 +173,31 @@ function seriesCoverage(requested, missing, session) {
   });
 }
 
-/** The next `passes.candles` after a run. */
-export function nextCandleState({ prev, requested, missing, nowIso }) {
+/**
+ * The next `passes.candles` after a run. `missing` is the symbols NO attempt
+ * has obtained; `retryable` is true while a kept replay or price still lacks
+ * bars (its symbols obtained on different mornings) — a later attempt can
+ * complete it, so the pass is not `written` yet.
+ */
+export function nextCandleState({ prev, requested, missing, retryable = false, nowIso }) {
   const attempts = (Number.isInteger(prev?.attempts) ? prev.attempts : 0) + 1;
   let status;
   let reason = null;
-  if (missing.length === 0) status = 'written';
+  if (missing.length === 0 && !retryable) status = 'written';
   else if (attempts >= CANDLE_MAX_ATTEMPTS) { status = 'failed'; reason = 'attempts_exhausted'; }
-  else if (missing.length < requested.length) { status = 'partial'; reason = 'symbols_missing'; }
-  else { status = 'failed'; reason = 'fetch_failed'; }
+  else if (missing.length > 0 && missing.length === requested.length) { status = 'failed'; reason = 'fetch_failed'; }
+  else if (missing.length > 0) { status = 'partial'; reason = 'symbols_missing'; }
+  else { status = 'partial'; reason = 'replay_incomplete'; }
   return { status, writtenAt: nowIso, attempts, reason, source: 'eodhd_1m', symbolsRequested: requested, symbolsMissing: missing };
 }
+
+/** How complete a replay is: a gap first, then legs, then fewer missing inputs. */
+const replayRank = (r) => (r ? (r.gapPoints !== null ? 1000 : 0) + ((r.ghost ? 1 : 0) + (r.bought ? 1 : 0)) * 100 - (r.missingInputs || []).length : -1);
+/** How complete a plan's prices are: how many of the two points exist. */
+const priceRank = (p) => (p ? (p.atPlan ? 1 : 0) + (p.atClose ? 1 : 0) : -1);
+/** The stored result unless the fresh one is at least as complete (review L2-F1). */
+const keepBetter = (stored, fresh, rank) => (stored && rank(stored) > rank(fresh) ? stored : fresh);
+const needsBars = (missingInputs) => (missingInputs || []).some((m) => m.startsWith('bars:'));
 
 /**
  * Process one tape document: fetch, replay, price the plans, write the series
@@ -196,21 +214,9 @@ export async function processTape({ db, ref, tape, nowMs, fetchCandles, memo, us
     if (bars) barsBySymbol[entry.symbol] = bars;
   }
   const requested = plan.map((e) => e.symbol);
-  const missing = requested.filter((s) => !barsBySymbol[s]);
 
-  // Series documents (candle-owned; one per symbol with bars), one batch.
-  const batch = db.batch();
-  const seriesRefs = [];
-  for (const entry of plan) {
-    const bars = barsBySymbol[entry.symbol];
-    if (!bars) continue;
-    const sref = ref.collection('series').doc(entry.symbol);
-    batch.set(sref, seriesDoc({ tape, entry, bars, session, nowIso }));
-    seriesRefs.push(sref.path);
-  }
-  if (seriesRefs.length) await batch.commit();
-
-  // The targeted update, inside a transaction on the tape.
+  // ONE transaction on the tape: the targeted update AND the series documents,
+  // both computed from the tape as it stands at commit (review L2-F4).
   let result = null;
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
@@ -221,16 +227,34 @@ export async function processTape({ db, ref, tape, nowMs, fetchCandles, memo, us
     // run never planned would be written as missing under a pass claiming
     // `written`; instead the tape is left exactly as the close pass left it
     // (pending, sources_changed) and the next morning plans from it as it stands.
-    const unplanned = symbolPlan(cur).map((e) => e.symbol).filter((sym) => !requested.includes(sym));
+    const curPlan = symbolPlan(cur);
+    const unplanned = curPlan.map((e) => e.symbol).filter((sym) => !requested.includes(sym));
     if (unplanned.length) { result = { status: 'requeued', unplanned }; return; }
+
+    // A retry never loses what an earlier attempt saved (§8 invariant 7,
+    // BA-19; review L2-F1): per action and per plan the more complete of the
+    // stored and the fresh result is kept, and a symbol an earlier attempt
+    // obtained keeps its series document and is not missing.
     const replays = new Map();
     const actions = (Array.isArray(cur.actions) ? cur.actions : []).map((a) => {
-      const r = replayAction({ action: a, checks: cur.checks, barsBySymbol, session, sectors: cur.comparables?.sectors || {}, tierStamp: resolveModeConfig(cur.gameMode).flatMultiplier });
-      replays.set(a.key, r);
-      return { ...a, replay: r };
+      const fresh = replayAction({ action: a, checks: cur.checks, barsBySymbol, session, sectors: cur.comparables?.sectors || {}, tierStamp: resolveModeConfig(cur.gameMode).flatMultiplier });
+      const kept = keepBetter(a.replay ?? null, fresh, replayRank);
+      replays.set(a.key, kept);
+      return { ...a, replay: kept };
     });
-    const plans = (Array.isArray(cur.plans) ? cur.plans : []).map((p) => ({ ...p, price: planPrice(p, barsBySymbol[p.symbol] || null, session) }));
-    const candles = nextCandleState({ prev: cur.passes?.candles, requested, missing, nowIso });
+    const plans = (Array.isArray(cur.plans) ? cur.plans : []).map((p) => ({ ...p, price: keepBetter(p.price ?? null, planPrice(p, barsBySymbol[p.symbol] || null, session), priceRank) }));
+    const prev = cur.passes?.candles;
+    const obtainedBefore = new Set((prev?.symbolsRequested || []).filter((sym) => !(prev?.symbolsMissing || []).includes(sym)));
+    const missing = requested.filter((sym) => !barsBySymbol[sym] && !obtainedBefore.has(sym));
+    const retryable = [...replays.values()].some((r) => r && needsBars(r.missingInputs)) || plans.some((p) => p.price && needsBars(p.price.missingInputs));
+    const candles = nextCandleState({ prev, requested, missing, retryable, nowIso });
+    let series = 0;
+    for (const entry of curPlan) {
+      const bars = barsBySymbol[entry.symbol];
+      if (!bars) continue;
+      tx.set(ref.collection(SERIES_SUBCOLLECTION).doc(entry.symbol), seriesDoc({ tape: cur, entry, bars, session, nowIso }));
+      series += 1;
+    }
     tx.update(ref, sanitizeForFirestore({
       actions,
       plans,
@@ -238,9 +262,9 @@ export async function processTape({ db, ref, tape, nowMs, fetchCandles, memo, us
       'coverage.replay': replayCoverage(cur, replays, session),
       'coverage.series': seriesCoverage(requested, missing, session),
     }));
-    result = { status: candles.status, attempts: candles.attempts, requested: requested.length, missing };
+    result = { status: candles.status, attempts: candles.attempts, requested: requested.length, missing, series };
   });
-  return { ...result, series: seriesRefs.length };
+  return result;
 }
 
 /**
@@ -252,8 +276,17 @@ export async function processTape({ db, ref, tape, nowMs, fetchCandles, memo, us
  * @param {() => number} p.clock
  */
 export async function runCandlePass({ db, fetchCandles, clock = Date.now, startMs = clock(), budgetMs = 300_000 }) {
+  // The writer flag at CALL time, here too — not only in the handler — so no
+  // caller can write a tape while the writer is dark (review L3-F4).
+  if (!FILM_TAPE_WRITE_ENABLED) throw new Error('film_tape_write_disabled');
   const nowMs = clock();
   const runEtDate = etDateOf(nowMs);
+  if (!sessionFor(runEtDate)) {
+    // Outside the maintained market calendar the window cannot be counted:
+    // fail loudly, never build a query on a null date (review L3-F7).
+    console.error(`[film-tape-candles] calendar_missing: the market calendar has no entry for ${runEtDate} — no candle pass until it is maintained`);
+    return { runEtDate, skipped: true, reason: 'calendar_missing', selected: 0, written: [], partial: [], failed: [], requeued: [], expired: [], notReached: [], units: 0, requests: 0, fetchErrors: [] };
+  }
   const windowStart = candleWindowStart(runEtDate);
   const scanStart = sessionsBack(runEtDate, 10 + EXPIRY_SCAN_MARGIN_SESSIONS) ?? windowStart;
   const snap = await db.collectionGroup('tape')
@@ -273,9 +306,16 @@ export async function runCandlePass({ db, fetchCandles, clock = Date.now, startM
     const attempts = Number.isInteger(c.attempts) ? c.attempts : 0;
     if (attempts >= CANDLE_MAX_ATTEMPTS) continue;                       // terminal — its own status says so
     if (!windowStart || tape.etDate < windowStart) {
-      // Aged out while still waiting: close it out, so no reader sees a retry that is not scheduled.
-      await ref.update({ 'passes.candles.status': 'failed', 'passes.candles.reason': 'retry_window_elapsed', 'passes.candles.writtenAt': iso(nowMs) });
-      summary.expired.push(ref.path);
+      // Aged out while still waiting: close it out, so no reader sees a retry
+      // that is not scheduled. Isolated: one failed marker never costs the
+      // morning (review L2-F6) — the tape is simply seen again tomorrow.
+      try {
+        await ref.update({ 'passes.candles.status': 'failed', 'passes.candles.reason': 'retry_window_elapsed', 'passes.candles.writtenAt': iso(nowMs) });
+        summary.expired.push(ref.path);
+      } catch (err) {
+        summary.failed.push({ path: ref.path, error: `close-out: ${String(err?.message || err).slice(0, 160)}` });
+        console.error(`[film-tape-candles] ${ref.path} close-out failed: ${err?.message || err}`);
+      }
       continue;
     }
     if (tape.etDate >= runEtDate) continue;                              // the session is not over
@@ -297,14 +337,20 @@ export async function runCandlePass({ db, fetchCandles, clock = Date.now, startM
       console.error(`[film-tape-candles] ${ref.path} failed: ${reason}`);
       // A thrown run is still an attempt: count it, so a persistent failure
       // reaches its terminal state on the third morning instead of retrying
-      // until it ages out.
+      // until it ages out — counted from the tape AS IT STANDS, inside a
+      // transaction, never from the selection's snapshot (review L2-F4).
       try {
-        const next = attempts + 1;
-        await ref.update({
-          'passes.candles.attempts': next,
-          'passes.candles.status': 'failed',
-          'passes.candles.reason': next >= CANDLE_MAX_ATTEMPTS ? 'attempts_exhausted' : `error: ${reason}`,
-          'passes.candles.writtenAt': iso(clock()),
+        await db.runTransaction(async (tx) => {
+          const cur = await tx.get(ref);
+          const c = cur.exists ? cur.data()?.passes?.candles : null;
+          if (!isObj(c) || !CANDLE_SELECTABLE_STATUSES.includes(c.status)) return;
+          const next = (Number.isInteger(c.attempts) ? c.attempts : 0) + 1;
+          tx.update(ref, {
+            'passes.candles.attempts': next,
+            'passes.candles.status': 'failed',
+            'passes.candles.reason': next >= CANDLE_MAX_ATTEMPTS ? 'attempts_exhausted' : `error: ${reason}`,
+            'passes.candles.writtenAt': iso(clock()),
+          });
         });
       } catch (markErr) {
         console.error(`[film-tape-candles] ${ref.path} failure could not be recorded: ${markErr?.message || markErr}`);

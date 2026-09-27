@@ -24,9 +24,13 @@
 // re-invocation of the same range continues where the last one stopped.
 
 import { findActiveAgentBattles } from '../agentBattleService.js';
+import { FILM_TAPE_WRITE_ENABLED } from '../../../src/config/featureFlags.js';
 import { writeTapeDay, markCloseFailed } from './writeTapeDay.js';
+import { resolveBattleResult } from './battleResult.js';
+import { buildBattleBlock } from './tapeAssemble.js';
+import { stableStringify } from './tapeMerge.js';
 import { readEvalRunsForDay, readTape } from './tapeSources.js';
-import { etDayBounds, etDateOf, isSessionDate, sessionDatesBetween, sessionFor } from './tapeTime.js';
+import { etDayBounds, etDateOf, toMs, previousSession, sessionDatesBetween, sessionFor, nextCalendarDate } from './tapeTime.js';
 
 export const TIME_FLOOR_MS = 30_000;
 /** The longest range one backfill request may name (sessions). */
@@ -42,22 +46,55 @@ export function isBattleDay(battle, etDate) {
   return Boolean(from && from <= etDate && (!to || to >= etDate));
 }
 
+/**
+ * The first instant whose completions tonight's pass (for session `etDate`)
+ * owns: the start of the PREVIOUS session's ET day. So a battle marked
+ * complete on a holiday, over a weekend, or after last night's pass has run
+ * (the evaluator's next-weekday sweep runs regardless of market hours; decide
+ * marks the old battle complete when its owner deploys the next) reaches its
+ * final-day tape on the next session night (review L1-F3 / L3-F1). Overlap
+ * with last night is harmless: an already-recorded completion is skipped by a
+ * one-document read, and the merge writes nothing when nothing changed.
+ */
+export function completionsSinceMs(etDate) {
+  const prev = previousSession(etDate);
+  return etDayBounds(prev ?? etDate).startMs;
+}
+
 /** The date a battle's tape is written for on the pass for `etDate`, or null. */
-export function tapeDateFor(battle, etDate) {
+export function tapeDateFor(battle, etDate, { completedSinceMs = etDayBounds(etDate).startMs } = {}) {
   if (isBattleDay(battle, etDate)) return etDate;
   const days = battle?.timing?.tradingDays;
-  if (battle?.status === 'completed' && etDateOf(battle.completedAt) === etDate && Array.isArray(days) && days.length) {
+  const doneMs = toMs(battle?.completedAt);
+  if (battle?.status === 'completed' && doneMs !== null && Array.isArray(days) && days.length) {
     const finalDay = days[days.length - 1];
-    if (finalDay < etDate) return finalDay;
+    if (finalDay < etDate && doneMs >= completedSinceMs && doneMs < etDayBounds(etDate).endMs) return finalDay;
   }
   return null;
 }
 
-async function completedOn(db, bounds) {
+/** Does this stored tape already record the battle block the battle has now? */
+export function completionRecorded(stored, battle) {
+  if (!stored || battle?.status !== 'completed') return false;
+  return stableStringify(stored.battle ?? null) === stableStringify(buildBattleBlock({ battle, resolveResult: resolveBattleResult }));
+}
+
+async function completedBetween(db, fromIso, toIso) {
   const snap = await db.collection('agentBattles')
-    .where('completedAt', '>=', bounds.startIso).where('completedAt', '<', bounds.endIso).get();
+    .where('completedAt', '>=', fromIso).where('completedAt', '<', toIso).get();
   return (snap?.docs || []).map((d) => ({ id: d.id, ...(typeof d.data === 'function' ? d.data() : d.data) }))
     .filter((b) => b.status === 'completed');
+}
+
+/**
+ * The session for `etDate` — or a loud `calendar_missing` when the market
+ * calendar is not maintained for its year (marketSchedule.js:165-166: callers
+ * exit with calendar_missing, never a quiet "no session"; review L3-F7).
+ */
+function sessionOrMissing(etDate) {
+  const s = sessionFor(etDate);
+  if (!s) console.error(`[film-tape-close] calendar_missing: the market calendar has no entry for ${etDate} — nothing is taped until it is maintained`);
+  return s;
 }
 
 const elapsedFrom = (startMs, clock) => clock() - startMs;
@@ -83,11 +120,18 @@ async function safeMarkFailed(db, battle, etDate, err, clock, summary) {
  * @param {string} [p.etDate]
  */
 export async function runClosePass({ db, clock = Date.now, startMs = clock(), budgetMs = 300_000, etDate = null, write = writeTapeDay }) {
+  // The writer flag at CALL time, here too (review L3-F4) — before any read.
+  if (!FILM_TAPE_WRITE_ENABLED) throw new Error('film_tape_write_disabled');
   const date = etDate ?? etDateOf(clock());
-  if (!isSessionDate(date)) return { skipped: true, reason: 'not_a_trading_day', etDate: date };
+  const session = sessionOrMissing(date);
+  if (!session) return { skipped: true, reason: 'calendar_missing', etDate: date };
+  if (!session.isTradingDay) return { skipped: true, reason: 'not_a_trading_day', etDate: date };
+  // Never tape a session in progress: its record is not whole yet (review L1-F11).
+  if (clock() < session.closeMs) return { skipped: true, reason: 'session_not_closed', etDate: date };
   const bounds = etDayBounds(date);
+  const sinceMs = completionsSinceMs(date);
   const runsRead = await readEvalRunsForDay(db, bounds);
-  const [active, completed] = await Promise.all([findActiveAgentBattles(db), completedOn(db, bounds)]);
+  const [active, completed] = await Promise.all([findActiveAgentBattles(db), completedBetween(db, new Date(sinceMs).toISOString(), bounds.endIso)]);
   const byId = new Map();
   for (const b of [...active, ...completed]) if (b?.id && !byId.has(b.id)) byId.set(b.id, b);
   const battles = [...byId.values()].sort((a, b) => (a.id < b.id ? -1 : 1));
@@ -99,9 +143,14 @@ export async function runClosePass({ db, clock = Date.now, startMs = clock(), bu
       console.error(`[film-tape-close] time floor reached: ${summary.notReached.length} battle(s) not taped for ${date} — the backfill entry is their only path`);
       break;
     }
-    const target = tapeDateFor(battle, date);
+    const target = tapeDateFor(battle, date, { completedSinceMs: sinceMs });
     if (!target) { summary.notBattleDay.push(battle.id); continue; }
     try {
+      if (target !== date && completionRecorded(await readTape(db, battle.id, target), battle)) {
+        // A final-day re-merge whose completion the tape already records.
+        summary.unchanged.push(battle.id);
+        continue;
+      }
       const r = await write(battle.id, target, { db, now: clock(), battle, runsRead: target === date ? runsRead : undefined });
       if (r.status === 'skipped_mode') summary.skippedMode.push(battle.id);
       else if (r.status === 'unchanged') summary.unchanged.push(battle.id);
@@ -124,6 +173,9 @@ export function parseBackfillRange(value, { nowMs = null } = {}) {
   if (!m) return { error: 'invalid_range' };
   const [, from, to] = m;
   if (from > to) return { error: 'invalid_range' };
+  // Every calendar date in the range must be in the maintained market calendar
+  // — otherwise "no sessions" would be a guess (review L3-F7).
+  for (let d = from; d <= to; d = nextCalendarDate(d)) if (!sessionFor(d)) return { error: 'calendar_missing' };
   const dates = sessionDatesBetween(from, to);
   if (!dates.length) return { error: 'no_sessions_in_range' };
   if (dates.length > BACKFILL_MAX_SESSIONS) return { error: 'range_too_long' };
@@ -151,6 +203,7 @@ async function candidatesFor(db, bounds) {
  * resume; the same request resumes by the queue flag alone.
  */
 export async function runBackfill({ db, clock = Date.now, startMs = clock(), budgetMs = 300_000, dates, write = writeTapeDay }) {
+  if (!FILM_TAPE_WRITE_ENABLED) throw new Error('film_tape_write_disabled');
   const summary = { dates, written: [], alreadyDone: [], skippedMode: [], unchanged: [], failed: [], complete: true, resumeFrom: null };
   for (const date of dates) {
     const bounds = etDayBounds(date);
@@ -163,7 +216,12 @@ export async function runBackfill({ db, clock = Date.now, startMs = clock(), bud
         return summary;
       }
       const stored = await readTape(db, battle.id, date);
-      if (['written', 'skipped_mode'].includes(stored?.passes?.close?.status)) { summary.alreadyDone.push({ battleId: battle.id, etDate: date }); continue; }
+      const days = battle?.timing?.tradingDays;
+      const isFinalDay = Array.isArray(days) && days.length > 0 && days[days.length - 1] === date;
+      // The queue flag — except a completed battle's FINAL day whose tape was
+      // written before the completion: the backfill is its repair path too.
+      const owesCompletion = isFinalDay && battle.status === 'completed' && stored?.passes?.close?.status === 'written' && !completionRecorded(stored, battle);
+      if (['written', 'skipped_mode'].includes(stored?.passes?.close?.status) && !owesCompletion) { summary.alreadyDone.push({ battleId: battle.id, etDate: date }); continue; }
       try {
         const r = await write(battle.id, date, { db, now: clock(), battle, runsRead });
         if (r.status === 'skipped_mode') summary.skippedMode.push({ battleId: battle.id, etDate: date });

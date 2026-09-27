@@ -25,6 +25,11 @@ import {
 } from './__fixtures__/tapeFixtures.js';
 import { numbersWithClasses, formatNumberPath, COVERAGE_SECTIONS, PROVENANCE_CLASSES } from '../../../src/constants/filmTape.js';
 import { stableStringify } from './tapeMerge.js';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 const NOW = Date.parse('2026-09-25T02:15:30.000Z'); // the close pass for 2026-09-24
 const tapePath = (battleId, etDate) => `agentBattles/${battleId}/tape/${etDate}`;
@@ -146,7 +151,7 @@ describe('checks (BA-7, BA-8)', () => {
     const { tape } = await writeFor(await budgetDay());
     expect(tape.checks.filter((c) => c.state === 'budget_skipped')).toHaveLength(3);
     expect(tape.rationale).toEqual([]);
-    expect(tape.coverage.rationale.note).toMatch(/platform-written placeholder/);
+    expect(tape.coverage.rationale.note).toMatch(/platform-written text/);
   });
 });
 
@@ -171,9 +176,46 @@ describe('actions (BA-5, BA-6) and the replay inputs', () => {
     const { tape } = await writeFor(await capturedDay());
     const { ghost, bought } = tape.actions[0].replayInputs;
     expect(ghost).toMatchObject({ entryPrice: 150, atr: 3.1, tier: 'core', thresholdHistory: { maxMultiplier: 0.4, minMultiplier: -1.2 }, thresholdBaseline: { value: 150, basis: 'starting_price' } });
-    expect(ghost.sources).toMatchObject({ entryPrice: 'ticks.actions.entryPrice', atr: 'receipt.guardrailReplay.outgoingBaseATR', tier: 'trades.tier', thresholdHistory: 'receipt.guardrailReplay.thresholdHistory' });
+    expect(ghost.sources).toMatchObject({ entryPrice: 'trades.entryPrice', atr: 'receipt.guardrailReplay.outgoingBaseATR', tier: 'trades.tier', thresholdHistory: 'receipt.guardrailReplay.thresholdHistory' });
     expect(bought).toMatchObject({ entryPrice: 240, atr: 4.2, tier: 'core', thresholdHistory: { maxMultiplier: 0, minMultiplier: 0 }, thresholdBaseline: { value: 240, basis: 'swap_price' } });
+    expect(bought.sources.entryPrice).toBe('receipt.entryMark');
     expect(tape.actions[0].replayMissing).toEqual([]);
+  });
+
+  it('the tick action\'s entryPrice is the BOUGHT name\'s fill (review L1-F1): it is the bought basis, never the sold position\'s entry', async () => {
+    // The capture sites write `entryPrice: …incomingAsset?.swapPrice` (TSLA's 240 here).
+    const fx = await capturedDay();
+    expect(fx.ticks.find((t) => t.tickSeq === 5).actions[0].entryPrice).toBe(240);
+    // trade evicted, receipt present → the sold entry is the receipt's copy (150), the tick's 240 is the bought basis
+    fx.battle.trades = [];
+    let { tape } = await writeFor(fx);
+    expect(tape.actions[0]).toMatchObject({ entryPrice: 150, inBasis: { price: 240, at: fx.swapRisk.at } });
+    expect(tape.actions[0].replayInputs.ghost.sources.entryPrice).toBe('receipt.guardrailReplay.outgoingEntryPrice');
+    // trade and receipt both gone → the sold entry is unknown (null, named); the tick still gives the bought basis
+    const fx2 = await capturedDay();
+    fx2.battle.trades = [];
+    fx2.receipts = [];
+    ({ tape } = await writeFor(fx2));
+    expect(tape.actions[0].entryPrice).toBeNull();
+    expect(tape.actions[0].inBasis).toEqual({ price: 240, at: fx2.swapRisk.at });
+    expect(tape.actions[0].replayMissing).toContain('ghost.entryPrice');
+  });
+
+  it('an entry price of 0 is the executor\'s no-entry sentinel: absent and named, never a price (review L2-F7)', async () => {
+    const fx = await capturedDay();
+    fx.battle.trades[0] = { ...fx.battle.trades[0], entryPrice: 0 };
+    fx.receipts[0].guardrailReplay.outgoingEntryPrice = 0;
+    const { tape } = await writeFor(fx);
+    expect(tape.actions[0].entryPrice).toBeNull();
+    expect(tape.actions[0].replayInputs.ghost).toBeNull();
+    expect(tape.actions[0].replayMissing).toEqual(expect.arrayContaining(['ghost.entryPrice']));
+  });
+
+  it('CONTRACT TRIPWIRE: every capture site writes the bought name\'s fill as the action\'s entryPrice — if one ever changes, this reading must be revisited', () => {
+    const src = readFileSync(resolve(HERE, '../../cron/agent-evaluate.js'), 'utf8');
+    const sites = [...src.matchAll(/^\s*entryPrice: (\w+)\.incomingAsset\?\.swapPrice \?\? null,$/gm)];
+    expect(sites).toHaveLength(6);
+    expect(src.match(/^\s*entryPrice: [^\n]*$/gm).filter((l) => !/incomingAsset\?\.swapPrice/.test(l)).filter((l) => /\?\? null,$/.test(l))).toEqual([]);
   });
 
   it('an action with no matching trade is still an action (tradeMatched false); no receipt → both legs null, inputs named', async () => {
@@ -182,9 +224,11 @@ describe('actions (BA-5, BA-6) and the replay inputs', () => {
     fx.receipts = [];
     const { tape } = await writeFor(fx);
     expect(tape.actions).toHaveLength(2);
-    expect(tape.actions[0]).toMatchObject({ tradeMatched: false, receiptMatched: false, exitPrice: null, tier: null, holdingMs: null, inBasis: null });
+    // the tick action still records the bought name's fill (the permanent record)
+    expect(tape.actions[0]).toMatchObject({ tradeMatched: false, receiptMatched: false, entryPrice: null, exitPrice: null, tier: null, holdingMs: null, inBasis: { price: 240, at: fx.swapRisk.at } });
     expect(tape.actions[0].replayInputs).toEqual({ ghost: null, bought: null });
-    expect(tape.actions[0].replayMissing).toEqual(expect.arrayContaining(['ghost.atr', 'ghost.tier', 'ghost.thresholdHistory', 'bought.entryPrice', 'bought.atr']));
+    expect(tape.actions[0].replayMissing).toEqual(expect.arrayContaining(['ghost.entryPrice', 'ghost.atr', 'ghost.tier', 'ghost.thresholdHistory', 'bought.atr', 'bought.tier']));
+    expect(tape.actions[0].replayMissing).not.toContain('bought.entryPrice');
   });
 
   it('an original pick sold on a non-activation day: the baseline is the unrecorded previousClose — the ghost leg is null, never guessed', async () => {

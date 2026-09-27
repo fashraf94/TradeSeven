@@ -29,7 +29,7 @@ import { makeTapeDb } from './__fixtures__/tapeFirestore.js';
 import { seedDay, capturedDay, skippedModeDay } from './__fixtures__/tapeFixtures.js';
 import { flatRows, stepRows, fetcherOf } from './__fixtures__/tapeBars.js';
 import {
-  numbersWithClasses, PROVENANCE_CLASSES, PROVENANCE_LABELS, TAPE_NUMBER_CLASSES,
+  numbersWithClasses, PROVENANCE_CLASSES, PROVENANCE_LABELS, TAPE_NUMBER_CLASSES, SERIES_NUMBER_CLASSES,
 } from '../../../src/constants/filmTape.js';
 
 const D = '2026-09-24';
@@ -42,15 +42,31 @@ const TITLES = {
   rationale: 'Rationale', evidence: 'Evidence', replay: 'Replay', series: 'Series',
 };
 
+/** Every string value in the documents — what a “quoted” span may legitimately be. */
+function storedStrings(...docs) {
+  const out = new Set();
+  const walk = (v) => {
+    if (typeof v === 'string') out.add(v.replace(/\s*\n\s*/g, ' '));
+    else if (Array.isArray(v)) v.forEach(walk);
+    else if (v && typeof v === 'object') Object.values(v).forEach(walk);
+  };
+  docs.forEach(walk);
+  return out;
+}
+
 /**
  * Every digit the read-out prints that is NOT inside a labelled number, an
- * instant, an identifier (code span) or quoted recorded text. The fixed copy
- * that carries digits is the spec's own labels.
+ * instant, an identifier (code span) or quoted recorded text — and neither of
+ * those two can hide a stored number (review L4-F7): a code span is blanked
+ * only when it is not a bare number, a “quoted” span only when its text is a
+ * string the documents actually store. The fixed copy that carries digits is
+ * the spec's own labels.
  */
-function strayDigits(markdown) {
+function strayDigits(markdown, docs = []) {
+  const strings = storedStrings(...docs);
   let s = markdown;
-  s = s.replace(/`[^`]*`/g, ' ');                                          // identifiers, paths, instants
-  s = s.replace(/“[^”]*”/g, ' ');                                          // recorded text (BA-22)
+  s = s.replace(/`([^`]*)`/g, (m, inner) => (/^[-+]?\d+(\.\d+)?%?$/.test(inner.trim()) ? m : ' '));   // identifiers, paths, instants — never a bare number
+  s = s.replace(/“([^”]*)”/g, (m, inner) => (strings.has(inner) ? ' ' : m));                           // recorded text the documents store (BA-22)
   s = s.replace(/-?\d+(\.\d+)?%? \((recorded|derived|rebuilt|market)\)/g, ' '); // labelled numbers
   s = s.replace(/\b\d{1,2}:\d{2} (AM|PM) ET\b/g, ' ');                       // ET clock
   // the spec's own class labels that spell a digit ("1-minute bars"), and the series interval in words
@@ -124,11 +140,14 @@ describe('BA-21 — every number labelled by the class its document declares', (
   });
 
   it('no digit is printed outside a labelled number, an instant, an identifier or quoted recorded text', () => {
-    expect(strayDigits(md)).toEqual([]);
+    expect(strayDigits(md, [fullTape, ...seriesDocs])).toEqual([]);
   });
 
   it('the scan is live: an unlabelled number in the output is caught', () => {
-    expect(strayDigits(`${md}\n- total 42`)).toEqual(['- total 42']);
+    expect(strayDigits(`${md}\n- total 42`, [fullTape, ...seriesDocs])).toEqual(['- total 42']);
+    // …and a stored number cannot hide in a code span or in quotes (review L4-F7)
+    expect(strayDigits(`${md}\n- banked \`-12.5\``, [fullTape, ...seriesDocs])).toEqual(['- banked `-12.5`']);
+    expect(strayDigits(`${md}\n- banked “-12.5”`, [fullTape, ...seriesDocs])).toEqual(['- banked “-12.5”']);
   });
 
   it('the class comes from the DOCUMENT: drop a declaration and the number prints UNCLASSIFIED', () => {
@@ -154,6 +173,126 @@ describe('BA-21 — every number labelled by the class its document declares', (
     expect(etClock('2026-09-24T14:07:30.000Z')).toBe('10:07 AM ET');
     expect(etClock(Date.parse('2026-09-24T20:00:00.000Z'))).toBe('4:00 PM ET');
     expect(etClock(null)).toBe('—');
+  });
+});
+
+describe('the class each printed number carries is its own field\'s (review L4-F7)', () => {
+  it('replay, reconciliation, comparables and plan prices print the class their field declares', () => {
+    const a = fullTape.actions.find((x) => x.replay && x.replay.gapPoints !== null);
+    const r = a.replay;
+    expect(md).toContain(`result: banked ${a.lockedPoints} (recorded)`);
+    expect(md).toContain(`gap at the close (banked + bought − sold): ${r.gapPoints} (rebuilt)`);
+    expect(md).toContain(`closedLegDelta ${r.reconciliation.closedLegDelta} (rebuilt)`);
+    expect(md).toContain(`sold name, as if never sold: at the swap ${r.ghost.atSwap} (rebuilt) · at the close ${r.ghost.atClose} (rebuilt)`);
+    expect(md).toContain(`market: SPY ${r.marketChangeAfter.SPY}% (market)`);
+    const p = fullTape.plans.find((x) => x.price?.atPlan);
+    expect(md).toContain(`${p.price.atPlan.value} (market) @`);
+  });
+
+  it('THE DECLARATION IS PINNED — every path and its class; a flipped class fails here, not in a founder\'s read-out', () => {
+    expect(TAPE_NUMBER_CLASSES).toEqual({
+      tapeVersion: 'recorded',
+      runCount: 'derived',
+      dayNumber: 'derived',
+      'passes.close.tickSeqRange[]': 'recorded',
+      'passes.close.gaps[]': 'recorded',
+      'passes.close.unattributedGaps[]': 'recorded',
+      'passes.close.sources.*': 'derived',
+      'passes.candles.attempts': 'derived',
+      'score.lastCheck.tickSeq': 'recorded',
+      'score.lastCheck.active': 'recorded',
+      'score.lastCheck.banked': 'recorded',
+      'score.lastCheck.total': 'recorded',
+      'score.lastCheck.opponent': 'recorded',
+      'score.lastCheck.bankedBadgePoints': 'recorded',
+      'score.firstCheck.tickSeq': 'recorded',
+      'score.firstCheck.total': 'recorded',
+      'score.dayChange.value': 'derived',
+      'score.dayChange.reference': 'recorded',
+      'battle.final.total': 'recorded',
+      'battle.final.opponent': 'recorded',
+      'checks[].tickSeq': 'recorded',
+      'checks[].scores.active': 'recorded',
+      'checks[].scores.banked': 'recorded',
+      'checks[].scores.total': 'recorded',
+      'checks[].tickMs': 'recorded',
+      'checks[].guardrail.deployedCount': 'recorded',
+      'checks[].evidence.*.px': 'recorded',
+      'checks[].evidence.*.chg': 'recorded',
+      'checks[].evidence.*.atrX': 'recorded',
+      'checks[].evidence.*.vwapDev': 'recorded',
+      'checks[].evidence.*.bbPct': 'recorded',
+      'actions[].tickSeq': 'recorded',
+      'actions[].slotIndex': 'recorded',
+      'actions[].entryPrice': 'recorded',
+      'actions[].exitPrice': 'recorded',
+      'actions[].lockedPoints': 'recorded',
+      'actions[].lockedGainPct': 'recorded',
+      'actions[].inBasis.price': 'recorded',
+      'actions[].holdingMs': 'derived',
+      'actions[].subsequentTradesInSlot': 'derived',
+      'actions[].replayInputs.ghost.entryPrice': 'recorded',
+      'actions[].replayInputs.ghost.atr': 'recorded',
+      'actions[].replayInputs.ghost.thresholdHistory.maxMultiplier': 'recorded',
+      'actions[].replayInputs.ghost.thresholdHistory.minMultiplier': 'recorded',
+      'actions[].replayInputs.ghost.thresholdBaseline.value': 'recorded',
+      'actions[].replayInputs.bought.entryPrice': 'recorded',
+      'actions[].replayInputs.bought.atr': 'recorded',
+      'actions[].replayInputs.bought.thresholdHistory.maxMultiplier': 'recorded',
+      'actions[].replayInputs.bought.thresholdHistory.minMultiplier': 'recorded',
+      'actions[].replayInputs.bought.thresholdBaseline.value': 'recorded',
+      'actions[].replay.ghost.atSwap': 'rebuilt',
+      'actions[].replay.ghost.atClose': 'rebuilt',
+      'actions[].replay.ghost.series[].tickSeq': 'recorded',
+      'actions[].replay.ghost.series[].points': 'rebuilt',
+      'actions[].replay.bought.atSwap': 'rebuilt',
+      'actions[].replay.bought.atClose': 'rebuilt',
+      'actions[].replay.bought.series[].tickSeq': 'recorded',
+      'actions[].replay.bought.series[].points': 'rebuilt',
+      'actions[].replay.holdPath[].tickSeq': 'recorded',
+      'actions[].replay.holdPath[].points': 'rebuilt',
+      'actions[].replay.swapPath[].tickSeq': 'recorded',
+      'actions[].replay.swapPath[].points': 'rebuilt',
+      'actions[].replay.gapPoints': 'rebuilt',
+      'actions[].replay.lockedPoints': 'recorded',
+      'actions[].replay.subsequentTradesInSlot': 'derived',
+      'actions[].replay.reconciliation.closedLegDelta': 'rebuilt',
+      'actions[].replay.reconciliation.boughtVsEvidence.tickSeq': 'recorded',
+      'actions[].replay.reconciliation.boughtVsEvidence.recordedPx': 'recorded',
+      'actions[].replay.reconciliation.boughtVsEvidence.recordedChg': 'recorded',
+      'actions[].replay.reconciliation.boughtVsEvidence.rebuiltPx': 'market',
+      'actions[].replay.reconciliation.boughtVsEvidence.rebuiltChg': 'rebuilt',
+      'actions[].replay.reconciliation.boughtVsEvidence.pxDelta': 'rebuilt',
+      'actions[].replay.reconciliation.boughtVsEvidence.chgDelta': 'rebuilt',
+      'actions[].replay.marketChangeAfter.*': 'market',
+      'actions[].replay.sectorChangeAfter.*': 'market',
+      'directives[].canonicalTextVersion': 'recorded',
+      'directives[].heard.tickSeq': 'recorded',
+      'directives[].after.checks': 'derived',
+      'directives[].after.holds': 'derived',
+      'directives[].after.swaps': 'derived',
+      'plans[].tickSeq': 'recorded',
+      'plans[].price.atPlan.value': 'market',
+      'plans[].price.atClose.value': 'market',
+      'calls[].mintedAt': 'recorded',
+      'calls[].expiresAt': 'recorded',
+      'calls[].resolvedAt': 'recorded',
+      'calls[].horizon.expiresAt': 'recorded',
+      'calls[].hypothesisRef.hypothesisVersion': 'recorded',
+      'rationale[].tickSeq': 'recorded',
+    });
+    expect(SERIES_NUMBER_CLASSES).toEqual({
+      tapeVersion: 'recorded',
+      'sessionOpen.value': 'market',
+      'bars[].o': 'market',
+      'bars[].h': 'market',
+      'bars[].l': 'market',
+      'bars[].c': 'market',
+      'bars[].v': 'market',
+      'bars[].n': 'market',
+      'atChecks[].tickSeq': 'recorded',
+      'atChecks[].price': 'market',
+    });
   });
 });
 
@@ -226,7 +365,7 @@ describe('documents without day sections', () => {
     expect(out).toContain("_No day sections: the close pass has not written this day's record (skipped_mode)._");
     expect(out).toContain('## Number ledger');
     expect(out).not.toContain('UNCLASSIFIED');
-    expect(strayDigits(out)).toEqual([]);
+    expect(strayDigits(out, [doc])).toEqual([]);
   });
 
   it('a failed close pass prints its failure and last error, never an empty day', async () => {
@@ -238,7 +377,7 @@ describe('documents without day sections', () => {
     expect(out).toContain('- **close** — failed');
     expect(out).toContain('ticks_read_failed: boom');
     expect(out).not.toContain('UNCLASSIFIED');
-    expect(strayDigits(out)).toEqual([]);
+    expect(strayDigits(out, [doc])).toEqual([]);
   });
 
   it('no document at all', () => {

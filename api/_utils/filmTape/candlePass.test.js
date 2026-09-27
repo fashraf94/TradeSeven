@@ -212,12 +212,16 @@ describe('retry (§6) — attempts, the 10-session window, failed after three', 
 
   it('a thrown run still counts as an attempt', async () => {
     const fx = await capturedDay();
-    const t = makeTapeDb(seedDay({}, fx), { hooks: { failBatch: true } });
+    const t = makeTapeDb(seedDay({}, fx));
     await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT });
+    t.db.failNextTransactions(1); // the candle transaction throws; the failure record is its own transaction
     const s = await runCandlePass({ db: t.db, fetchCandles: fetcherOf(allBars()).fetchCandles, clock: () => MORNING, startMs: MORNING });
     expect(s.failed).toHaveLength(1);
     expect(t.store.get(tapePath()).passes.candles).toMatchObject({ status: 'failed', attempts: 1 });
-    expect(t.store.get(tapePath()).passes.candles.reason).toMatch(/^error: batch_failed_by_test/);
+    expect(t.store.get(tapePath()).passes.candles.reason).toMatch(/^error: tx_failed_by_test/);
+    // nothing of the failed attempt landed: no series document, no replay
+    expect([...t.store.keys()].some((k) => k.startsWith(`${tapePath()}/series/`))).toBe(false);
+    expect(t.store.get(tapePath()).actions.every((a) => a.replay === null)).toBe(true);
   });
 
   it('oldest first; below the 30 s floor the rest wait for tomorrow untouched', async () => {

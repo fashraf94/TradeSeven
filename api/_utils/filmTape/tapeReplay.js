@@ -111,29 +111,39 @@ export function replayAction({ action, checks, barsBySymbol, session, sectors = 
     { kind: 'close', tickSeq: null, atMs: session.closeMs },
   ];
 
-  const legOf = (legInputs, symbol, bars, name) => {
+  const legOf = (legInputs, symbol, bars, name, legSamples) => {
     if (!legInputs || !bars) return null;
-    const run = runLeg({ inputs: legInputs, symbol, bars, samples, tierStamp });
+    const run = runLeg({ inputs: legInputs, symbol, bars, samples: legSamples, tierStamp });
     for (const s of run) if (s.missing) missingInputs.push(`price:${symbol}@${s.kind === 'check' ? (s.tickSeq ?? iso(s.atMs)) : s.kind}`);
     const at = (kind) => run.find((s) => s.kind === kind) ?? null;
     return {
       name,
       run,
       out: {
-        atSwap: at('swap')?.points ?? null,
+        ...(name === 'ghost' ? { atSwap: at('swap')?.points ?? null } : {}),
         atClose: at('close')?.points ?? null,
         series: run.filter((s) => s.kind === 'check').map((s) => ({ tickSeq: s.tickSeq, at: iso(s.atMs), points: s.points })),
       },
     };
   };
-  const ghost = legOf(inputs.ghost, action.symbolOut, barsOut, 'ghost');
-  const bought = legOf(inputs.bought, action.symbolIn, barsIn, 'bought');
+  // The sold name is sampled AT the swap too (its standing at the sale is the
+  // reconciliation's subject). The bought name is scored FROM the swap: its
+  // samples are the later checks and the close only — the last minute that
+  // completed before the swap is a price from before it was bought, and
+  // scoring it against the fill could ratchet a badge the live position never
+  // saw (review L2-F2; BA-11, §6 "each later check's … price and at the close").
+  const ghost = legOf(inputs.ghost, action.symbolOut, barsOut, 'ghost', samples);
+  const bought = legOf(inputs.bought, action.symbolIn, barsIn, 'bought', samples.filter((smp) => smp.kind !== 'swap'));
   const locked = typeof action.lockedPoints === 'number' && Number.isFinite(action.lockedPoints) ? action.lockedPoints : null;
   if (locked === null) missingInputs.push('lockedPoints');
 
   const holdPath = ghost ? ghost.run.map((s) => ({ tickSeq: s.tickSeq, at: iso(s.atMs), points: s.points })) : null;
+  // The swap path opens AT the sale with exactly what the sale banked.
   const swapPath = bought && locked !== null
-    ? bought.run.map((s) => ({ tickSeq: s.tickSeq, at: iso(s.atMs), points: s.points === null ? null : round2(locked + s.points) }))
+    ? [
+      { tickSeq: samples[0].tickSeq, at: iso(samples[0].atMs), points: locked },
+      ...bought.run.map((s) => ({ tickSeq: s.tickSeq, at: iso(s.atMs), points: s.points === null ? null : round2(locked + s.points) })),
+    ]
     : null;
   const gapPoints = ghost && bought && locked !== null && ghost.out.atClose !== null && bought.out.atClose !== null
     ? round2((locked + bought.out.atClose) - ghost.out.atClose)

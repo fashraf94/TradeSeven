@@ -17,7 +17,7 @@ vi.mock('../config/featureFlags', async (importOriginal) => ({
   get FILM_TAPE_WRITE_ENABLED() { return flags.writer; },
 }));
 
-import { getReviewAvailability, closePassStillScheduled } from './reviewAvailability';
+import { getReviewAvailability, closePassStillScheduled, owningPassDate } from './reviewAvailability';
 
 const MON_1605_EDT = '2026-09-28T20:05:00.000Z';   // Monday, 16:05 ET — a fullday battle's completion
 const MON_1900_EDT = Date.parse('2026-09-28T23:00:00.000Z');
@@ -152,13 +152,19 @@ describe('Stage 3 — FILM_ROOM_V2_ENABLED on: one bounded read of tape/{finalEt
       .toEqual({ ready: false, target: 'filmRoom', availability: 'unavailable' });
   });
 
+  it('a flat6/tournament battle is never "pending": its pass writes skipped_mode, never a readable tape (BA-3)', async () => {
+    const r = recorder(null);
+    expect(await getReviewAvailability(base({ gameMode: 'baggerbomb_tournament' }), { readTape: r.readTape, now: MON_1900_EDT }))
+      .toEqual({ ready: false, target: 'filmRoom', availability: 'unavailable' });
+  });
+
   it('ignores the legacy review entirely — a dailyReviews entry never makes Stage 3 ready', async () => {
     expect(await getReviewAvailability(base({ dailyReviews: [{ date: 'd' }], reviewPending: true }), { readTape: recorder(null).readTape, now: THU }))
       .toEqual({ ready: false, target: 'filmRoom', availability: 'unavailable' });
   });
 });
 
-describe('closePassStillScheduled — tonight\'s pass, by the schedule (15 2 * * 2-6 UTC + maxDuration)', () => {
+describe('closePassStillScheduled — the pass that tapes the completion, by the schedule (15 2 * * 2-6 UTC + maxDuration)', () => {
   it('a weekday completion is pending until 02:15 UTC + 300 s the next UTC day', () => {
     const done = Date.parse(MON_1605_EDT);
     expect(closePassStillScheduled(done, MON_1900_EDT)).toBe(true);
@@ -172,8 +178,24 @@ describe('closePassStillScheduled — tonight\'s pass, by the schedule (15 2 * *
     const late = Date.parse('2026-09-29T01:30:00.000Z'); // Mon 21:30 EDT
     expect(closePassStillScheduled(late, late + 60_000)).toBe(true);
   });
-  it('a weekend completion has no pass night', () => {
+  it('a weekend completion is taped by the next session\'s pass (review L3-F1/F2): pending until Monday night\'s pass has run', () => {
     const sat = Date.parse('2026-09-26T16:00:00.000Z');
-    expect(closePassStillScheduled(sat, sat + 3_600_000)).toBe(false);
+    expect(owningPassDate(sat)).toBe('2026-09-28');
+    expect(closePassStillScheduled(sat, sat + 3_600_000)).toBe(true);
+    expect(closePassStillScheduled(sat, Date.parse('2026-09-29T02:19:59.000Z'))).toBe(true);
+    expect(closePassStillScheduled(sat, Date.parse('2026-09-29T02:20:00.000Z'))).toBe(false);
+  });
+  it('a holiday completion is never promised the holiday night (no pass runs then) — it is taped by the next session\'s pass', () => {
+    const thanksgiving = Date.parse('2026-11-26T15:00:00.000Z'); // Thu 10:00 EST, a market holiday
+    expect(owningPassDate(thanksgiving)).toBe('2026-11-27');
+    // past the hour a Thursday pass would have ended: still pending, for Friday's
+    expect(closePassStillScheduled(thanksgiving, Date.parse('2026-11-27T03:00:00.000Z'))).toBe(true);
+    expect(closePassStillScheduled(thanksgiving, Date.parse('2026-11-28T02:20:00.000Z'))).toBe(false);
+  });
+  it('a completion after tonight\'s pass started belongs to the next session\'s pass', () => {
+    const late = Date.parse('2026-09-29T03:30:00.000Z'); // Mon 23:30 EDT, after Monday's 22:15 pass
+    expect(owningPassDate(late)).toBe('2026-09-29');
+    expect(closePassStillScheduled(late, late + 60_000)).toBe(true);
+    expect(closePassStillScheduled(late, Date.parse('2026-09-30T02:20:00.000Z'))).toBe(false);
   });
 });

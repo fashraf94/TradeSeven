@@ -135,7 +135,7 @@ function replayLines(doc, i, r) {
     `    - ${PROVENANCE_LABELS.rebuilt}; hypothetical: ${r.hypothetical ? 'yes' : 'no'}`
       + `${r.subsequentTradesInSlot > 0 ? ` · later trades in this slot (${labelled(doc, p('subsequentTradesInSlot'), r.subsequentTradesInSlot)}): both continued lines are hypothetical` : ''}`,
     `    - sold name, as if never sold: at the swap ${labelled(doc, p('ghost', 'atSwap'), r.ghost?.atSwap)} · at the close ${labelled(doc, p('ghost', 'atClose'), r.ghost?.atClose)}`,
-    `    - bought name, from the swap: at the swap ${labelled(doc, p('bought', 'atSwap'), r.bought?.atSwap)} · at the close ${labelled(doc, p('bought', 'atClose'), r.bought?.atClose)} · banked at the swap ${labelled(doc, p('lockedPoints'), r.lockedPoints)}`,
+    `    - bought name, scored from the swap: at the close ${labelled(doc, p('bought', 'atClose'), r.bought?.atClose)} · banked by the sale ${labelled(doc, p('lockedPoints'), r.lockedPoints)}`,
     `    - hold path: ${pathLine(doc, i, 'holdPath', r)}`,
     `    - swap path: ${pathLine(doc, i, 'swapPath', r)}`,
     `    - gap at the close (banked + bought − sold): ${labelled(doc, p('gapPoints'), r.gapPoints)}`,

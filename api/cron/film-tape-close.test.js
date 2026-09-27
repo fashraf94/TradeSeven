@@ -106,6 +106,17 @@ describe('the handler — guard, flag, wiring', () => {
     expect(t.writeLog).toEqual([]);
   });
 
+  it('with an ADMIN_SECRET set, a backfill needs BOTH guards: the cron Bearer and the x-admin-secret header (review L3-F5)', async () => {
+    process.env.ADMIN_SECRET = 'admin-secret';
+    admin.db = (await worldOf()).db;
+    const call = async (headers) => { const r = res(); await handler({ headers, query: { backfill: 'bad-range' } }, r); return r.statusCode; };
+    expect(await call({ authorization: 'Bearer admin-secret' })).toBe(401);                            // fails the cron guard
+    expect(await call({ authorization: 'Bearer cron-secret' })).toBe(401);                             // fails the admin check
+    expect(await call({ 'x-vercel-cron': '1' })).toBe(401);                                            // the scheduled call never backfills
+    expect(await call({ authorization: 'Bearer cron-secret', 'x-admin-secret': 'admin-secret' })).toBe(400); // both: through to the range check
+    expect(await call({ 'x-vercel-cron': '1', 'x-admin-secret': 'admin-secret' })).toBe(400);
+  });
+
   it('the backfill entry validates its range', async () => {
     admin.db = (await worldOf()).db;
     vi.useFakeTimers({ toFake: ['Date'] });

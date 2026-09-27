@@ -17,12 +17,21 @@
  * this file is auth + flag + wiring.
  *
  * BACKFILL (BA-15): `?backfill=YYYY-MM-DD..YYYY-MM-DD` runs the same writer over
- * a session range. ADMIN-ONLY: it requires the admin secret as a header or
- * Bearer token (adminSecretAuth.js) — the Vercel cron header alone never runs a
- * backfill, and the scheduled invocation carries no query. Same flag, same
- * budget, resumable (the tape's own passes.close.status is the queue flag). A
- * range reaching a session that has not closed is refused (400
- * range_not_closed) — no tape for a day that has not happened.
+ * a session range. It needs BOTH guards: the cron guard every cron has
+ * (`Authorization: Bearer $CRON_SECRET`), AND the admin secret in the
+ * `x-admin-secret` header (adminSecretAuth.js). When ADMIN_SECRET differs from
+ * CRON_SECRET, a Bearer ADMIN_SECRET alone fails the cron guard — send both
+ * headers (review L3-F5):
+ *
+ *   curl -H "Authorization: Bearer $CRON_SECRET" -H "x-admin-secret: $ADMIN_SECRET" \
+ *     "https://<host>/api/cron/film-tape-close?backfill=2026-09-21..2026-09-25"
+ *
+ * The Vercel cron header alone never runs a backfill, and the scheduled
+ * invocation carries no query. Same flag, same budget, resumable (the tape's
+ * own passes.close.status is the queue flag — except a completed battle's final
+ * day written before the completion, which the backfill re-merges). A range
+ * reaching a session that has not closed is refused (400 range_not_closed); a
+ * date outside the maintained market calendar, 400 calendar_missing.
  *
  * Dark: FILM_TAPE_WRITE_ENABLED false → 200 { skipped: true, reason: 'flag_off' }
  * before the Firestore handle is even taken — zero reads, zero writes.

@@ -73,15 +73,20 @@ describe('READ-ONLY by construction', () => {
     expect(Object.keys(makeFirestoreReader(t.db)).sort()).toEqual(['readRecentTapes', 'readSeries', 'readTape']);
   });
 
-  it('a whole run with the writer flag OFF writes nothing and reads only tape paths', async () => {
+  it.each([
+    ['--battle --date', { battle: 'b-captured', date: '2026-09-24', recent: null }],
+    ['--battle --recent', { battle: 'b-multi', date: null, recent: '2' }],
+    ['--recent (collection group)', { battle: null, date: null, recent: '3' }],
+  ])('%s with the writer flag OFF writes nothing and reads only tape paths', async (_, flagsIn) => {
     const writes = t.writeLog.length;
     const reads = t.readLog.length;
-    const out = await runExport(makeFirestoreReader(t.db), { battle: 'b-captured', date: '2026-09-24', recent: null });
-    expect(out.days).toEqual([{ battleId: 'b-captured', etDate: '2026-09-24' }]);
+    const out = await runExport(makeFirestoreReader(t.db), flagsIn);
+    expect(out.days.length).toBeGreaterThan(0);
     expect(t.writeLog.length).toBe(writes);
     const touched = t.readLog.slice(reads).map((r) => (typeof r === 'string' ? r : JSON.stringify(r)));
     expect(touched.length).toBeGreaterThan(0);
-    for (const r of touched) expect(r).toMatch(/agentBattles\/[^/]+\/tape|collectionGroup:tape|\/series/);
+    // the in-memory store labels a collection-group query `group:<name>` (review L4-F9)
+    for (const r of touched) expect(r).toMatch(/^(agentBattles\/[^/]+\/tape(\/\d{4}-\d{2}-\d{2}(\/series)?)?|group:tape)$/);
   });
 
   it('main() is behind the CLI entrypoint — importing this module did nothing', () => {

@@ -15,15 +15,19 @@
 // (buildCaptureDocuments over a createTickCaptureContext), which runs the
 // permanent-record allowlist — `makeTick` asserts NOTHING was rejected, so a
 // fixture field the real record could not carry fails here. The evidence,
-// candidates and heard stamps come from tickStamps.js's own composers. Shapes
-// with no pure composer in reach (the entry envelope, trades, receipts, run
-// records, calls, chat exchanges) follow the writers cited in the build
-// report §1.3.
+// candidates and heard stamps come from tickStamps.js's own composers, and the
+// run records from the evaluator's own `composeEvalRunRecord` (review L4-F12).
+// The entry envelope, trades, calls and chat exchanges have no pure composer
+// in reach and follow the writers cited in the build report §1.3. Receipts are
+// built to learningSchemas.js by hand: `buildRawReceipt` (captureReceipt.js,
+// pure) composes them from predicate snapshots the tape never reads — the
+// fields the tape does read are the schema's, named in §1.2.
 
 import { createTickCaptureContext } from '../../tickCapture/captureContext.js';
 import { buildCaptureDocuments, resolveBodyHolder } from '../../tickCapture/captureWriter.js';
 import { resolveCaptureSchema } from '../../tickCapture/captureConfig.js';
 import { composeEvidenceStamp, composeCandidatesStamp, deriveHeardStamp } from '../../tickStamps.js';
+import { composeEvalRunRecord } from '../../../cron/agent-evaluate.js';
 
 export const OWNER = 'owner-1';
 export const AGENT = 'agent-1';
@@ -144,8 +148,45 @@ export function seedDay(store, { battleId, battle, ticks = [], receipts = [], ca
   for (const r of receipts) store[`learningReceipts/${battleId}/receipts/${AGENT}_seq${r.receiptSeq}`] = r;
   for (const c of calls) store[`agentBattles/${battleId}/calls/${c.callId}`] = c;
   for (const id of declarations) store[`agentBattles/${battleId}/declarations/${id}`] = { battleId, evalId: id, calledShots: [], watching: ['NFLX'], playerAsk: null, fork: null, minted: [] };
-  for (const r of runs) store[`agentEvalRuns/${r.startedAt}`] = r;
+  for (const r of runs) {
+    // One run record serves every battle of its slot: two fixtures seeded into
+    // one store share it, as one real run would (deferred ids unioned).
+    const k = `agentEvalRuns/${r.startedAt}`;
+    const prev = store[k];
+    store[k] = prev ? {
+      ...prev,
+      deferredBattleIds: [...new Set([...(prev.deferredBattleIds || []), ...(r.deferredBattleIds || [])])],
+      deferredTruncated: Math.max(prev.deferredTruncated || 0, r.deferredTruncated || 0),
+    } : r;
+  }
   return store;
+}
+
+/**
+ * The evaluator's run records for a session: one per market-hours slot (every
+ * 15 min from the open, before the close — agent-evaluate.js:241-247 writes one
+ * per run past the market-hours gate). `overrides` merges fields into the run
+ * of a slot keyed 'HH:MM' UTC; `skip` drops slots (a killed run leaves none).
+ * September 2026 is EDT: 13:30Z is the 09:30 ET open.
+ */
+export function sessionRuns(D, { overrides = {}, skip = [] } = {}) {
+  const out = [];
+  for (let m = 13 * 60 + 30; m < 20 * 60; m += 15) {
+    const hhmm = `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+    if (skip.includes(hhmm)) continue;
+    const o = overrides[hhmm] || {};
+    const startTime = at(D, `${hhmm}:00`);
+    // The evaluator's own composer: the 200-id cap and the truncation count are its.
+    out.push(composeEvalRunRecord({
+      startTime,
+      endTime: startTime + (o.wallMs ?? 240_000),
+      battlesTotal: o.battlesTotal ?? 5,
+      evaluated: o.evaluated ?? 5,
+      summary: { lockSkipped: 0, triggered: o.triggered ?? 1, modelCalls: o.modelCalls ?? 1, budgetSkipped: o.budgetSkipped ?? 0 },
+      deferredBattleIds: o.deferredIds ?? [],
+    }));
+  }
+  return out;
 }
 
 const HELD = ['AAPL', 'MSFT', 'NVDA', 'AMD', 'KO', 'PEP'];
@@ -168,7 +209,9 @@ export async function capturedDay({ battleId = 'b-captured' } = {}) {
   let seq = 0;
   let heldNow = [...held0];
   const swapRisk = { at: iso(at(D, '14:30:10')), out: 'AMD', inn: 'TSLA' };
-  const swapModel = { at: iso(at(D, '16:15:05')), out: 'MSFT', inn: 'NFLX' };
+  // Each swap happens INSIDE the check that records it: tick 5 runs 14:30:00–14:30:20,
+  // tick 12 16:30:00–16:30:20 (review NEW-2 — the swap instant precedes its own capture).
+  const swapModel = { at: iso(at(D, '16:30:05')), out: 'MSFT', inn: 'NFLX' };
   for (const m of tickSlots) {
     seq += 1;
     const hh = String(Math.floor(m / 60)).padStart(2, '0');
@@ -182,9 +225,13 @@ export async function capturedDay({ battleId = 'b-captured' } = {}) {
     if (seq === 20) kind = 'gameplan_pending';
     if (seq === 21) kind = 'degraded_quotes';
     const evalId = ['completed', 'budget'].includes(kind) ? `${battleId}:e${seq}` : null;
+    // The capture sites write the BOUGHT name's fill as the action's entryPrice
+    // (`entryPrice: …incomingAsset?.swapPrice`, agent-evaluate.js:2027 and its
+    // five siblings) — TSLA's 240 and NFLX's 700 here, the receipts' entryMark —
+    // never the sold position's entry (150 / 420, which the trades keep).
     const actions = [];
-    if (seq === 5) actions.push({ source: 'risk_manager', exitReason: 'bust_avoidance', symbolOut: swapRisk.out, symbolIn: swapRisk.inn, swappedOutAt: swapRisk.at, lockedPoints: -12.5, entryPrice: 150 });
-    if (seq === 12) actions.push({ source: 'haiku', exitReason: 'haiku_decision', symbolOut: swapModel.out, symbolIn: swapModel.inn, swappedOutAt: swapModel.at, lockedPoints: 8.25, entryPrice: 420 });
+    if (seq === 5) actions.push({ source: 'risk_manager', exitReason: 'bust_avoidance', symbolOut: swapRisk.out, symbolIn: swapRisk.inn, swappedOutAt: swapRisk.at, lockedPoints: -12.5, entryPrice: 240 });
+    if (seq === 12) actions.push({ source: 'haiku', exitReason: 'haiku_decision', symbolOut: swapModel.out, symbolIn: swapModel.inn, swappedOutAt: swapModel.at, lockedPoints: 8.25, entryPrice: 700 });
     const symbols = [...new Set([...heldNow, 'TSLA', 'NFLX'])];
     const tick = await makeTick({
       battleId, tickSeq: seq, capturedAtMs,
@@ -268,10 +315,13 @@ export async function capturedDay({ battleId = 'b-captured' } = {}) {
       evidence: { tickId: null, availability: 'off', priceAsOf: null }, hypothesisRef: null, origin: 'agent_initiative', state: 'expired_unresolved', stateChangedAt: at('2026-09-23', '20:00:00'), stateSource: 'sweep',
     },
   ];
-  const runs = [
-    { startedAt: iso(at(D, '15:00:00')), endedAt: iso(at(D, '15:04:50')), wallMs: 290000, budgetMs: 290000, battlesTotal: 40, evaluated: 30, lockSkipped: 0, deferred: 10, deferredBattleIds: ['b-other', battleId], deferredTruncated: 0, triggered: 12, modelCalls: 12, budgetSkipped: 0 },
-    { startedAt: iso(at(D, '18:00:00')), endedAt: iso(at(D, '18:04:10')), wallMs: 250000, budgetMs: 290000, battlesTotal: 400, evaluated: 150, lockSkipped: 0, deferred: 250, deferredBattleIds: Array.from({ length: 200 }, (_, i) => `b-many-${i}`), deferredTruncated: 50, triggered: 40, modelCalls: 40, budgetSkipped: 0 },
-  ];
+  const runs = sessionRuns(D, {
+    overrides: {
+      '15:00': { wallMs: 290000, battlesTotal: 40, evaluated: 30, deferredIds: ['b-other', battleId], triggered: 12, modelCalls: 12 },
+      // 250 deferred: the composer lists the first 200 and counts the other 50 (deferredTruncated)
+      '18:00': { wallMs: 250000, battlesTotal: 400, evaluated: 150, deferredIds: Array.from({ length: 250 }, (_, i) => `b-many-${i}`), triggered: 40, modelCalls: 40 },
+    },
+  });
   return { battleId, etDate: D, battle, ticks, receipts, calls, declarations: [`${battleId}:e11`], runs, swapRisk, swapModel };
 }
 
@@ -296,7 +346,7 @@ export async function noTriggerDay({ battleId = 'b-quiet' } = {}) {
     if (wake) evaluations.push(makeEntry({ evalId, timestampMs: capturedAtMs - 5_000, total: 20 + seq, held: HELD, declarationsPhase: 'none' }));
   }
   const battle = battleDoc({ cronState: { tickSeq: seq }, evaluations });
-  const runs = [{ startedAt: iso(at(D, '13:30:00')), endedAt: iso(at(D, '13:31:00')), wallMs: 60000, budgetMs: 290000, battlesTotal: 5, evaluated: 5, lockSkipped: 0, deferred: 0, deferredBattleIds: [], deferredTruncated: 0, triggered: 1, modelCalls: 1, budgetSkipped: 0 }];
+  const runs = sessionRuns(D);
   return { battleId, etDate: D, battle, ticks, receipts: [], calls: [], declarations: [], runs };
 }
 
@@ -317,7 +367,7 @@ export async function budgetDay({ battleId = 'b-budget' } = {}) {
     if (skipped) evaluations.push(makeEntry({ evalId, timestampMs: capturedAtMs - 5_000, total: 5, held: HELD, budgetSkipped: true }));
   }
   const battle = battleDoc({ cronState: { tickSeq: 6 }, evaluations });
-  const runs = [{ startedAt: iso(at(D, '13:30:00')), endedAt: iso(at(D, '13:35:00')), wallMs: 290000, budgetMs: 290000, battlesTotal: 90, evaluated: 90, lockSkipped: 0, deferred: 0, deferredBattleIds: [], deferredTruncated: 0, triggered: 30, modelCalls: 10, budgetSkipped: 20 }];
+  const runs = sessionRuns(D, { overrides: { '13:30': { wallMs: 300000, battlesTotal: 90, evaluated: 90, triggered: 30, modelCalls: 10, budgetSkipped: 20 } } });
   return { battleId, etDate: D, battle, ticks, receipts: [], calls: [], declarations: [], runs };
 }
 
@@ -366,7 +416,7 @@ export async function multiDay({ battleId = 'b-multi', full = false } = {}) {
     timing: { tradingDays: days, currentTradingDay: 5, timezone: 'America/New_York' },
     cronState: { tickSeq: seq }, evaluations,
   });
-  const runs = days.map((D) => ({ startedAt: iso(at(D, '13:30:00')), endedAt: iso(at(D, '13:34:00')), wallMs: 240000, budgetMs: 290000, battlesTotal: 3, evaluated: 3, lockSkipped: 0, deferred: 0, deferredBattleIds: [], deferredTruncated: 0, triggered: 3, modelCalls: 3, budgetSkipped: 0 }));
+  const runs = days.flatMap((D) => sessionRuns(D));
   return { battleId, days, battle, ticks, all, receipts: [], calls: [], declarations: [], runs };
 }
 
