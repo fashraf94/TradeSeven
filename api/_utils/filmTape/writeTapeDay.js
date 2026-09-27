@@ -9,8 +9,10 @@
 // agentEvalRuns, the intradayViews presence and the prior day's tape
 // (tapeSources.js). It WRITES exactly one document — `tape/{etDate}` — inside a
 // transaction that reads the stored copy first and merges monotonically
-// (tapeMerge.js). Nothing else is ever written (BA-1): not the battle document,
-// not `ticks`, not `calls`, not any other collection.
+// (tapeMerge.js). The same transaction re-reads the battle document's status,
+// so an assembly made before the battle completed can never record it active
+// (BA-27). Nothing else is ever written (BA-1): not the battle document, not
+// `ticks`, not `calls`, not any other collection.
 //
 // FILM_TAPE_WRITE_ENABLED is read at call time, here as well as in the
 // handlers, so no caller can write a tape while the writer is dark.
@@ -20,10 +22,10 @@ import { resolveModeConfig } from '../../../src/constants/agentGameModes.js';
 import { TAPE_VERSION, TAPE_NUMBER_CLASSES } from '../../../src/constants/filmTape.js';
 import {
   readBattle, readDayTicks, readReceipts, readCalls, readDeclarationPresence, readEvalRunsForDay,
-  readIntradayViewsPresent, readTape, tapeRef,
+  readIntradayViewsPresent, readTape, tapeRef, battleRef,
 } from './tapeSources.js';
-import { assembleTape, assembleSkippedModeTape, dayEntries } from './tapeAssemble.js';
-import { mergeTape, sanitizeForFirestore } from './tapeMerge.js';
+import { assembleTape, assembleSkippedModeTape, dayEntries, buildBattleBlock } from './tapeAssemble.js';
+import { mergeTape, sanitizeForFirestore, lifecycleRank } from './tapeMerge.js';
 import { etDayBounds, previousSession, withinCandleWindow, toMs } from './tapeTime.js';
 import { resolveBattleResult } from './battleResult.js';
 
@@ -94,13 +96,25 @@ export async function writeTapeDay(battleId, etDate, opts = {}) {
 
   const withinWindow = withinCandleWindow(etDate, nowMs);
   const ref = tapeRef(db, battleId, etDate);
+  const resolveResult = opts.resolveResult ?? resolveBattleResult;
   let outcome = null;
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     const stored = snap && snap.exists ? (typeof snap.data === 'function' ? snap.data() : snap.data) : null;
-    const { doc, changed } = mergeTape(stored, assembled, { nowIso, withinWindow });
-    if (changed) tx.set(ref, doc);
-    outcome = { doc, changed };
+    // BA-27: the battle's status as it stands NOW, read in this transaction. A
+    // later lifecycle state than the assembly saw (it completed meanwhile)
+    // replaces the battle block whole; the merge never moves it back.
+    let doc = assembled;
+    if (assembled.passes.close.status !== 'skipped_mode') {
+      const bSnap = await tx.get(battleRef(db, battleId));
+      const now = bSnap && bSnap.exists ? { id: battleId, ...(typeof bSnap.data === 'function' ? bSnap.data() : bSnap.data) } : null;
+      if (now && lifecycleRank(now.status) > lifecycleRank(assembled.battle?.status)) {
+        doc = { ...assembled, battleStatusAtWrite: typeof now.status === 'string' ? now.status : null, battle: buildBattleBlock({ battle: now, resolveResult }) };
+      }
+    }
+    const { doc: merged, changed } = mergeTape(stored, doc, { nowIso, withinWindow });
+    if (changed) tx.set(ref, merged);
+    outcome = { doc: merged, changed };
   });
   const status = assembled.passes.close.status === 'skipped_mode'
     ? 'skipped_mode'

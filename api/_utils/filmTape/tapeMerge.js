@@ -197,6 +197,9 @@ function mergeUnit(storedUnit, newUnit, { rank = null } = {}) {
 }
 
 const RESULT_RANK = { not_completed: 0, derived: 1, stored: 2 };
+/** BA-27 — a battle's lifecycle only moves forward: completed is terminal. */
+const LIFECYCLE_RANK = Object.freeze({ active: 1, completed: 2 });
+export const lifecycleRank = (status) => LIFECYCLE_RANK[status] ?? 0;
 const round2 = (v) => Math.round(v * 100) / 100;
 
 /**
@@ -301,13 +304,30 @@ export function mergeTape(stored, assembled, { nowIso, withinWindow }) {
       return { ...d, after: afterOf({ filedAt: d.filedAt, endMs: Math.min(dayEnd, next ?? Infinity), checkRows: merged.checks, actionRows: merged.actions }) };
     });
   }
+  // BA-27: the battle block is an ordered lifecycle. A stale assembly (an
+  // overlapping close or backfill run that read the battle before it
+  // completed) can add facts but never move the battle backward: the LATER
+  // lifecycle state wins whole — status, completedAt, final, result and
+  // battleStatusAtWrite move together — and within one state the fields merge.
   const sBattle = isObj(stored.battle) ? stored.battle : {};
-  merged.battle = {
-    status: assembled.battle?.status ?? sBattle.status ?? null,
-    completedAt: assembled.battle?.completedAt ?? sBattle.completedAt ?? null,
-    final: mergeUnit(sBattle.final, assembled.battle?.final),
-    result: mergeUnit(sBattle.result, assembled.battle?.result, { rank: (u) => RESULT_RANK[u?.basis] ?? 0 }),
-  };
+  const aBattle = isObj(assembled.battle) ? assembled.battle : {};
+  const sStage = lifecycleRank(sBattle.status);
+  const aStage = lifecycleRank(aBattle.status);
+  if (sStage > aStage) {
+    merged.battle = { status: sBattle.status ?? null, completedAt: sBattle.completedAt ?? null, final: sBattle.final ?? null, result: sBattle.result ?? null };
+  } else if (aStage > sStage) {
+    merged.battle = { status: aBattle.status ?? null, completedAt: aBattle.completedAt ?? null, final: aBattle.final ?? null, result: aBattle.result ?? null };
+  } else {
+    merged.battle = {
+      status: aBattle.status ?? sBattle.status ?? null,
+      completedAt: aBattle.completedAt ?? sBattle.completedAt ?? null,
+      final: mergeUnit(sBattle.final, aBattle.final),
+      result: mergeUnit(sBattle.result, aBattle.result, { rank: (u) => RESULT_RANK[u?.basis] ?? 0 }),
+    };
+  }
+  merged.battleStatusAtWrite = lifecycleRank(stored.battleStatusAtWrite) > lifecycleRank(assembled.battleStatusAtWrite)
+    ? stored.battleStatusAtWrite
+    : (assembled.battleStatusAtWrite ?? stored.battleStatusAtWrite ?? null);
   merged.comparables = {
     market: assembled.comparables?.market ?? stored.comparables?.market ?? [],
     sectors: { ...(stored.comparables?.sectors || {}), ...(assembled.comparables?.sectors || {}) },

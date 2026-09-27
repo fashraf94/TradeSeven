@@ -26,10 +26,12 @@ vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => ({
 import { writeTapeDay, markCloseFailed } from './writeTapeDay.js';
 import { runCandlePass } from './candlePass.js';
 import { scanProtectedStoreWrites, siteKey } from '../compositionProtectedStoresScan.js';
-import { stableStringify } from './tapeMerge.js';
+import { stableStringify, mergeTape } from './tapeMerge.js';
+import { assembleTape } from './tapeAssemble.js';
+import { etDayBounds } from './tapeTime.js';
 import { formatTapeMarkdown } from './tapeExport.js';
 import { makeTapeDb } from './__fixtures__/tapeFirestore.js';
-import { seedDay, capturedDay, earlyCloseDay, noTriggerDay, sessionRuns } from './__fixtures__/tapeFixtures.js';
+import { seedDay, capturedDay, earlyCloseDay, noTriggerDay, completedDay, sessionRuns } from './__fixtures__/tapeFixtures.js';
 import { composeEvalRunRecord } from '../../cron/agent-evaluate.js';
 import { flatRows, sessionRows, fetcherOf } from './__fixtures__/tapeBars.js';
 import { sessionFor } from './tapeTime.js';
@@ -513,5 +515,44 @@ describe('F5 — BA-26: an unknown check is never "complete", and a caveat learn
       expect(tapeOf(t2, onDay.battleId).coverage[s].status, s).toBe('partial');
       expect(tapeOf(t2, onDay.battleId).coverage[s].note, s).toMatch(/150-entry cap/);
     }
+  });
+});
+
+// ── F7 — BA-27: completion is terminal ──────────────────────────────────────
+
+describe('F7 — BA-27: a stale assembly can add facts; it can never move the battle backward', () => {
+  /** assembleTape over a fixture day, as the close pass would assemble it from `battle`. */
+  const assembleFrom = (fx, battle, nowMs) => assembleTape({
+    battle: { ...battle, id: fx.battleId }, etDate: D, bounds: etDayBounds(D), nowMs,
+    ticksRead: { ok: true, ticks: fx.ticks, prevSeq: null, nextSeq: null, method: 'capturedAt_range' },
+    runsRead: { ok: true, runs: fx.runs }, receiptsRead: { ok: true, receipts: fx.receipts }, callsRead: { ok: true, calls: fx.calls },
+    declarationsRead: { ok: true, present: new Set(fx.declarations) }, resolveResult: () => 'win',
+  });
+
+  it('F7 R11: an ACTIVE day assembled before the completion, merged after the completed day landed — the battle stays completed, every lifecycle field together', async () => {
+    const fx = await completedDay();
+    fx.battle.scoreState = { ...fx.battle.scoreState, currentScore: 42 };
+    const active = { ...structuredClone(fx.battle), status: 'active', completedAt: null };
+    const completedDoc = mergeTape(null, assembleFrom(fx, fx.battle, NIGHT), { nowIso: new Date(NIGHT).toISOString(), withinWindow: true }).doc;
+    expect(completedDoc.battle).toMatchObject({ status: 'completed', final: { total: 42 }, result: { value: 'win' } });
+    const { doc } = mergeTape(completedDoc, assembleFrom(fx, active, NIGHT - 60_000), { nowIso: new Date(NIGHT + 60_000).toISOString(), withinWindow: true });
+    expect(doc.battle).toEqual(completedDoc.battle);                      // status, completedAt, final, result — one unit
+    expect(doc.battleStatusAtWrite).toBe('completed');
+  });
+
+  it('F7: the writer re-reads the battle inside its transaction — a stale active battle handed to it cannot write "active" over a completion that has landed', async () => {
+    const fx = await completedDay();
+    const t = world(fx);
+    const stale = { ...structuredClone(fx.battle), id: fx.battleId, status: 'active', completedAt: null };
+    // first write, from the stale object: the battle document already says completed
+    await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT, battle: stale });
+    let tape = tapeOf(t, fx.battleId);
+    expect(tape.battleStatusAtWrite).toBe('completed');
+    expect(tape.battle).toMatchObject({ status: 'completed', completedAt: '2026-09-24T20:05:00.000Z', final: { total: 46, opponent: 36 } });
+    // and again over the stored completed tape
+    await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT + 60_000, battle: stale });
+    tape = tapeOf(t, fx.battleId);
+    expect(tape.battleStatusAtWrite).toBe('completed');
+    expect(tape.battle.status).toBe('completed');
   });
 });
