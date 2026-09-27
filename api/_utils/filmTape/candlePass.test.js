@@ -282,6 +282,41 @@ describe('the write — targeted, and safe against the close pass in either orde
     expect(after.coverage.series).toEqual(enriched.coverage.series);
   });
 
+  it('a close pass that ADDS a symbol while the candle pass is fetching: no "written" over bars it never fetched — the tape stays queued', async () => {
+    const fx = await capturedDay();
+    const t = makeTapeDb(seedDay({}, fx));
+    await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT });
+    const inner = fetcherOf({ ...allBars(), SNOW: flatRows(D, 180) });
+    let landed = false;
+    const fetchCandles = async (symbol, opts) => {
+      if (!landed) {
+        landed = true;
+        // mid-fetch: a re-run of the close pass picks up a plan on a name the pass did not plan for
+        const battle = t.store.get('agentBattles/b-captured');
+        battle.evaluations.find((e) => e.evalId === 'b-captured:e11').candidates.push({ symbol: 'SNOW', direction: 'potential_entry', signalSummary: 'Watching', threshold: 'Above 185.' });
+        t.store.set('agentBattles/b-captured', battle);
+        await writeTapeDay(fx.battleId, D, { db: t.db, now: MORNING });
+      }
+      return inner.fetchCandles(symbol, opts);
+    };
+    const s1 = await runCandlePass({ db: t.db, fetchCandles, clock: () => MORNING, startMs: MORNING });
+    let tape = t.store.get(tapePath());
+    expect(tape.plans.some((p) => p.symbol === 'SNOW')).toBe(true);
+    // left exactly as the close pass left it: still pending, no attempt spent, nothing claimed
+    expect(tape.passes.candles).toMatchObject({ status: 'pending', attempts: 0 });
+    expect(tape.plans.every((p) => p.price === null)).toBe(true);
+    expect(tape.actions.every((a) => a.replay === null)).toBe(true);
+    expect(s1.requeued).toEqual([tapePath()]);
+    expect(inner.calls.some((c) => c.symbol === 'SNOW')).toBe(false);
+    // the next morning plans from the tape as it now stands and completes it
+    const s2 = await runCandlePass({ db: t.db, fetchCandles: inner.fetchCandles, clock: () => MORNING + 86_400_000, startMs: MORNING + 86_400_000 });
+    tape = t.store.get(tapePath());
+    expect(s2.written).toHaveLength(1);
+    expect(tape.passes.candles).toMatchObject({ status: 'written', attempts: 1, symbolsMissing: [] });
+    expect(tape.plans.find((p) => p.symbol === 'SNOW').price.atClose.value).toBe(180);
+    expect(t.store.has(`${tapePath()}/series/SNOW`)).toBe(true);
+  });
+
   it('a close pass landing BETWEEN the candle pass\'s read and its commit: the candle transaction retries and keeps both', async () => {
     const fx = await capturedDay();
     let armed = false;

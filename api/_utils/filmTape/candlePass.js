@@ -216,6 +216,13 @@ export async function processTape({ db, ref, tape, nowMs, fetchCandles, memo, us
     const snap = await tx.get(ref);
     if (!snap.exists) { result = { status: 'gone' }; return; }
     const cur = snap.data();
+    // The close pass may have re-merged this tape while its bars were being
+    // fetched (a backfill request, say). A symbol the tape NOW needs that this
+    // run never planned would be written as missing under a pass claiming
+    // `written`; instead the tape is left exactly as the close pass left it
+    // (pending, sources_changed) and the next morning plans from it as it stands.
+    const unplanned = symbolPlan(cur).map((e) => e.symbol).filter((sym) => !requested.includes(sym));
+    if (unplanned.length) { result = { status: 'requeued', unplanned }; return; }
     const replays = new Map();
     const actions = (Array.isArray(cur.actions) ? cur.actions : []).map((a) => {
       const r = replayAction({ action: a, checks: cur.checks, barsBySymbol, session, sectors: cur.comparables?.sectors || {}, tierStamp: resolveModeConfig(cur.gameMode).flatMultiplier });
@@ -258,7 +265,7 @@ export async function runCandlePass({ db, fetchCandles, clock = Date.now, startM
     .filter((x) => isObj(x.tape?.passes?.candles))
     .sort((a, b) => (a.tape.etDate < b.tape.etDate ? -1 : a.tape.etDate > b.tape.etDate ? 1 : (a.ref.path < b.ref.path ? -1 : 1)));
 
-  const summary = { runEtDate, windowStart, selected: 0, written: [], partial: [], failed: [], expired: [], notReached: [], units: 0, requests: 0, fetchErrors: [] };
+  const summary = { runEtDate, windowStart, selected: 0, written: [], partial: [], failed: [], requeued: [], expired: [], notReached: [], units: 0, requests: 0, fetchErrors: [] };
   const usage = { requests: 0, errors: [] };
   const memo = new Map();
   for (const [i, { ref, tape }] of found.entries()) {
@@ -282,6 +289,7 @@ export async function runCandlePass({ db, fetchCandles, clock = Date.now, startM
       const row = { path: ref.path, ...r };
       if (r.status === 'written') summary.written.push(row);
       else if (r.status === 'partial') summary.partial.push(row);
+      else if (r.status === 'requeued') summary.requeued.push(ref.path);
       else summary.failed.push(row);
     } catch (err) {
       const reason = String(err?.message || err).slice(0, 200);
