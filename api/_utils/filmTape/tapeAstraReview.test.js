@@ -604,6 +604,26 @@ describe('F6 — BA-28: the hub helper says "pending" only when the close pass\'
     expect(t.writeLog).toEqual([]);
   });
 
+  it('F6 (second pass): when the owning pass writes nothing, the next session\'s pass re-selects the completion — "pending" until that pass too has run, as the writer does', async () => {
+    flags.v2 = true;
+    const battle = tiered({ timing: { tradingDays: ['2026-09-28'] }, activatedAt: '2026-09-28T12:00:00.000Z', completedAt: '2026-09-28T20:05:00.000Z' });
+    expect((await helper(battle, '2026-09-29T02:21:00.000Z')).availability).toBe('pending');      // Monday's pass ran and wrote nothing
+    expect((await helper(battle, '2026-09-30T02:20:00.000Z')).availability).toBe('unavailable');  // Tuesday's pass has had its run too
+    const t = storeWith(battle);
+    const s = await passAt(t, '2026-09-30T02:15:30.000Z');                                        // Tuesday's pass, the Monday tape still absent
+    expect(s.written.map((w) => [w.battleId, w.etDate])).toEqual([[battle.id, '2026-09-28']]);
+  });
+
+  it('F6 (early completion): a battle completed before its final day is pending until the pass that tapes the FINAL day — not the pass that tapes the completion\'s own day', async () => {
+    flags.v2 = true;
+    const battle = tiered({ timing: { tradingDays: ['2026-09-24', '2026-09-25', '2026-09-28'] }, activatedAt: '2026-09-24T12:00:00.000Z', completedAt: '2026-09-25T20:05:00.000Z' });
+    expect((await helper(battle, '2026-09-26T12:00:00.000Z')).availability).toBe('pending');      // Friday's pass taped Friday; Monday's will tape Monday
+    const t = storeWith(battle);
+    expect((await passAt(t, '2026-09-26T02:15:30.000Z')).written.map((w) => w.etDate)).toEqual(['2026-09-25']);
+    expect((await passAt(t, '2026-09-29T02:15:30.000Z')).written.map((w) => w.etDate)).toEqual(['2026-09-28']);
+    expect((await helper(battle, '2026-09-29T02:20:00.000Z')).availability).toBe('unavailable');  // no read back here: no pass left
+  });
+
   it('F6: one calendar and one rule — the server schedule and the helper use the same module functions, and the helper keeps exactly three keys', async () => {
     const calendar = await import('../../../src/utils/marketCalendar.js');
     const schedule = await import('../../../src/utils/tapeSchedule.js');

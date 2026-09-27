@@ -119,20 +119,9 @@ export function tapeDateFor(battle, etDate, { completedSinceMs = etDayBounds(etD
 
 // ── the owning pass, from the helper's side ─────────────────────────────────
 
-/**
- * The session whose close pass tapes a completion at `completedMs`: its own
- * ET date when that is a session and its pass had not yet started, else the
- * next session (the pass owns completions since the previous session's day
- * began). null when the walk leaves the maintained calendar — the server
- * refuses `calendar_missing` there, so no pass will run.
- */
-export function owningPassDate(completedMs) {
-  if (toMs(completedMs) === null) return null;
-  const own = etDateOf(completedMs);
-  const ownSession = getSessionForDate(own);
-  if (!ownSession) return null;
-  if (ownSession.isTradingDay && completedMs < closePassStartMs(own)) return own;
-  let d = nextCalendarDate(own);
+/** The first session after `etDate`, or null when the walk leaves the maintained calendar. */
+export function nextSessionDate(etDate) {
+  let d = nextCalendarDate(etDate);
   for (let i = 0; i < 14; i += 1) {
     const s = getSessionForDate(d);
     if (!s) return null;
@@ -140,6 +129,22 @@ export function owningPassDate(completedMs) {
     d = nextCalendarDate(d);
   }
   return null;
+}
+
+/**
+ * The session whose close pass is the FIRST to select a completion at
+ * `completedMs`: its own ET date when that is a session and its pass had not
+ * yet started, else the next session (the pass owns completions since the
+ * previous session's day began). null when the walk leaves the maintained
+ * calendar — the server refuses `calendar_missing` there, so no pass will run.
+ */
+export function owningPassDate(completedMs) {
+  if (toMs(completedMs) === null) return null;
+  const own = etDateOf(completedMs);
+  const ownSession = getSessionForDate(own);
+  if (!ownSession) return null;
+  if (ownSession.isTradingDay && completedMs < closePassStartMs(own)) return own;
+  return nextSessionDate(own);
 }
 
 /**
@@ -155,17 +160,24 @@ export function validFinalTradingDay(battle) {
 
 /**
  * BA-28 — will a scheduled close pass tape this completed battle's final day,
- * with that pass still to run its course at `nowMs`? The writer's own rule:
- * the owning pass, then tapeDateFor over that pass's completion window must
- * name the final day.
+ * with that pass still to run its course at `nowMs`? The writer's own rule,
+ * over EVERY pass whose selection reaches the completion: the owning pass,
+ * then each next session's pass while its window (completionsSinceMs to the
+ * end of its ET day) still holds `completedAt` — the writer re-selects a
+ * completion the next session night, so a final day the owning pass did not
+ * tape (it failed, was not reached, or was an earlier trading day's pass) is
+ * taped then. Pending while one of those passes, still to run, names the
+ * final day by tapeDateFor. Every pass is inside the maintained calendar.
  */
 export function closePassWillTape(battle, nowMs) {
   if (battle?.status !== 'completed' || toMs(nowMs) === null) return false;
   const finalDay = validFinalTradingDay(battle);
   const doneMs = toMs(battle?.completedAt);
   if (!finalDay || doneMs === null) return false;
-  const pass = owningPassDate(doneMs);
-  if (!pass) return false;
-  if (tapeDateFor(battle, pass, { completedSinceMs: completionsSinceMs(pass) }) !== finalDay) return false;
-  return nowMs < closePassEndMs(pass);
+  for (let pass = owningPassDate(doneMs); pass; pass = nextSessionDate(pass)) {
+    const sinceMs = completionsSinceMs(pass);
+    if (doneMs < sinceMs) return false;       // this pass's window has moved past the completion, and every later one's
+    if (nowMs < closePassEndMs(pass) && tapeDateFor(battle, pass, { completedSinceMs: sinceMs }) === finalDay) return true;
+  }
+  return false;
 }

@@ -22,6 +22,7 @@ import { getReviewAvailability, closePassStillScheduled, owningPassDate } from '
 const MON_1605_EDT = '2026-09-28T20:05:00.000Z';   // Monday, 16:05 ET — a fullday battle's completion
 const MON_1900_EDT = Date.parse('2026-09-28T23:00:00.000Z');
 const TUE_0221_UTC = Date.parse('2026-09-29T02:21:00.000Z'); // after 02:15 + 300 s — the pass has had its full run
+const WED_0220_UTC = Date.parse('2026-09-30T02:20:00.000Z'); // Tuesday's pass, too, has had its full run
 const THU = Date.parse('2026-10-01T15:00:00.000Z');
 
 const base = (over = {}) => ({
@@ -125,8 +126,14 @@ describe('Stage 3 — FILM_ROOM_V2_ENABLED on: one bounded read of tape/{finalEt
   it('unavailable: completed with no tape and no pass scheduled (a pre-backfill battle is never "pending")', async () => {
     expect(await getReviewAvailability(base(), { readTape: recorder(null).readTape, now: THU }))
       .toEqual({ ready: false, target: 'filmRoom', availability: 'unavailable' });
-    // After tonight's pass has had its full run and wrote nothing:
+    // After tonight's pass has had its full run and wrote nothing, Tuesday's
+    // pass re-selects the completion (its window opens at Monday's start) and
+    // tapes the final day, as the writer does — so pending until that pass,
+    // too, has had its full run (BA-28; this row said unavailable at
+    // TUE_0221_UTC under the owning-pass-only rule):
     expect(await getReviewAvailability(base(), { readTape: recorder(null).readTape, now: TUE_0221_UTC }))
+      .toEqual({ ready: false, target: 'filmRoom', availability: 'pending' });
+    expect(await getReviewAvailability(base(), { readTape: recorder(null).readTape, now: WED_0220_UTC }))
       .toEqual({ ready: false, target: 'filmRoom', availability: 'unavailable' });
     // A close pass that FAILED is not written:
     expect(await getReviewAvailability(base(), { readTape: recorder({ passes: { close: { status: 'failed' } } }).readTape, now: THU }))

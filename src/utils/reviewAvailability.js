@@ -34,11 +34,13 @@
 // final day and has not yet run its course — the one rule in
 // src/utils/tapeSchedule.js that the server's close pass selects by
 // (closePassWillTape; BA-28): every `timing.tradingDays` entry a session of
-// the maintained calendar, the owning pass inside that calendar (its own
-// session night when it completed before that night's pass, else the next
-// session night — review L3-F2), and tapeDateFor at that pass naming the final
-// day. The calendar is the server's (src/utils/marketCalendar.js); this file
-// carries no holiday list of its own. Otherwise unavailable — a malformed
+// the maintained calendar, and a pass inside that calendar whose selection
+// reaches the completion — the owning pass (its own session night when it
+// completed before that night's pass, else the next session night — review
+// L3-F2), or the next session's pass, which re-selects it — still to run, with
+// tapeDateFor at that pass naming the final day. The calendar is the server's
+// (src/utils/marketCalendar.js); this file carries no holiday list of its
+// own. Otherwise unavailable — a malformed
 // timeline, a pass beyond the maintained calendar, or a pre-backfill battle is
 // never "pending". Stage 3 guarantees a written close pass, not candles: the
 // hub's copy is "Open battle tape".
@@ -68,7 +70,12 @@ function stageOne(battle, target) {
 /** The session whose close pass tapes a completion — the shared rule (src/utils/tapeSchedule.js). */
 export { owningPassDate };
 
-/** Is the close pass that tapes this completion still to run (it may run its full maxDuration)? */
+/**
+ * Is the OWNING pass — the first to select this completion — still to run (it
+ * may run its full maxDuration)? The schedule fact only: Stage 3 decides by
+ * closePassWillTape, which also follows the next session's pass and the final
+ * day.
+ */
 export function closePassStillScheduled(completedMs, nowMs) {
   if (completedMs === null || nowMs === null) return false;
   const pass = owningPassDate(completedMs);
