@@ -13,6 +13,14 @@
 // `retry_window_elapsed` — so nothing reads as scheduled that is not. There is
 // no other retry path.
 //
+// WRITE-PATH BOUNDARY (BA-23): the query returns every collection named `tape`
+// anywhere in the database, so a result is never trusted by its collection
+// name. Before any expiry, failure record, fetch or write, its path must be
+// exactly agentBattles/{battleId}/tape/{etDate} with a well-formed etDate, and
+// the document must name that battle and that day; every downstream reference
+// is then BUILT from those validated ids (tapeRef), never taken from the query.
+// A result that fails is skipped and counted (`invalid`), never written.
+//
 // SYMBOLS PER TAPE: held at any check ∪ actions[].symbolOut ∪ symbolIn ∪
 // plans[].symbol ∪ SPY, RSP ∪ TICKER_TO_SECTOR of each held, sold or planned
 // name. Crypto is out of scope (BA-3).
@@ -41,13 +49,14 @@ import { resolveModeConfig } from '../../../src/constants/agentGameModes.js';
 import { isCryptoSymbol } from '../marketDataCache.js';
 import {
   TAPE_VERSION, SERIES_NUMBER_CLASSES, CANDLE_SELECTABLE_STATUSES, CANDLE_MAX_ATTEMPTS, MARKET_COMPARABLES,
-  NON_CHECK_STATES, SERIES_INTERVAL, SERIES_SUBCOLLECTION,
+  NON_CHECK_STATES, SERIES_INTERVAL, SERIES_SUBCOLLECTION, TAPE_SUBCOLLECTION,
 } from '../../../src/constants/filmTape.js';
 import { FILM_TAPE_WRITE_ENABLED } from '../../../src/config/featureFlags.js';
 import { sessionBars, priceAt, sessionOpenOf, aggregate10m } from './bars.js';
 import { replayAction, REPLAY_LABEL } from './tapeReplay.js';
 import { coverageOf } from './tapeAssemble.js';
 import { sanitizeForFirestore } from './tapeMerge.js';
+import { tapeRef } from './tapeSources.js';
 import { etDateOf, sessionFor, sessionsBack, candleWindowStart, toMs } from './tapeTime.js';
 
 export const TIME_FLOOR_MS = 30_000;
@@ -59,6 +68,25 @@ export const PLAN_PRICE_NOTE = "prices shown to the day's close, which is not th
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const iso = (ms) => new Date(ms).toISOString();
+
+/** A real calendar date written YYYY-MM-DD (2026-02-30 and 2026-9-24 are not). */
+function wellFormedEtDate(s) {
+  if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toISOString().slice(0, 10) === s;
+}
+
+/**
+ * BA-23 — the battle and day of a tape reference, from its PATH, or null when
+ * the path is not exactly agentBattles/{battleId}/tape/{etDate} with a
+ * well-formed etDate (a foreign parent, a wrong depth, a malformed date).
+ */
+export function tapeIdOf(path) {
+  const seg = typeof path === 'string' ? path.split('/') : [];
+  if (seg.length !== 4 || seg[0] !== 'agentBattles' || seg[2] !== TAPE_SUBCOLLECTION) return null;
+  const [, battleId, , etDate] = seg;
+  return battleId && wellFormedEtDate(etDate) ? { battleId, etDate } : null;
+}
 
 /** The symbol set and each symbol's roles for one tape (spec §6). */
 export function symbolPlan(tape) {
@@ -285,7 +313,7 @@ export async function runCandlePass({ db, fetchCandles, clock = Date.now, startM
     // Outside the maintained market calendar the window cannot be counted:
     // fail loudly, never build a query on a null date (review L3-F7).
     console.error(`[film-tape-candles] calendar_missing: the market calendar has no entry for ${runEtDate} — no candle pass until it is maintained`);
-    return { runEtDate, skipped: true, reason: 'calendar_missing', selected: 0, written: [], partial: [], failed: [], requeued: [], expired: [], notReached: [], units: 0, requests: 0, fetchErrors: [] };
+    return { runEtDate, skipped: true, reason: 'calendar_missing', selected: 0, written: [], partial: [], failed: [], requeued: [], expired: [], notReached: [], invalid: [], units: 0, requests: 0, fetchErrors: [] };
   }
   const windowStart = candleWindowStart(runEtDate);
   const scanStart = sessionsBack(runEtDate, 10 + EXPIRY_SCAN_MARGIN_SESSIONS) ?? windowStart;
@@ -294,47 +322,60 @@ export async function runCandlePass({ db, fetchCandles, clock = Date.now, startM
     .where('etDate', '>=', scanStart)
     .orderBy('etDate', 'asc')
     .get();
-  const found = (snap?.docs || []).map((d) => ({ ref: d.ref, tape: typeof d.data === 'function' ? d.data() : d.data }))
-    .filter((x) => isObj(x.tape?.passes?.candles))
-    .sort((a, b) => (a.tape.etDate < b.tape.etDate ? -1 : a.tape.etDate > b.tape.etDate ? 1 : (a.ref.path < b.ref.path ? -1 : 1)));
+  // BA-23: validate every result's path BEFORE anything else touches it, and
+  // build its reference from the validated ids — the query's own reference is
+  // never written to.
+  const found = [];
+  const invalid = [];
+  for (const d of snap?.docs || []) {
+    const id = tapeIdOf(d?.ref?.path);
+    const tape = typeof d?.data === 'function' ? d.data() : d?.data;
+    if (!id || !isObj(tape) || tape.battleId !== id.battleId || tape.etDate !== id.etDate) { invalid.push(String(d?.ref?.path ?? '(no path)')); continue; }
+    if (!isObj(tape.passes?.candles)) continue;
+    found.push({ id, path: `agentBattles/${id.battleId}/${TAPE_SUBCOLLECTION}/${id.etDate}`, ref: tapeRef(db, id.battleId, id.etDate), tape });
+  }
+  found.sort((a, b) => (a.id.etDate < b.id.etDate ? -1 : a.id.etDate > b.id.etDate ? 1 : (a.path < b.path ? -1 : 1)));
+  if (invalid.length) {
+    console.error(`[film-tape-candles] skipped ${invalid.length} tape reference(s) outside agentBattles/{battleId}/tape/{etDate}: ${invalid.slice(0, 20).join(', ')}`);
+  }
 
-  const summary = { runEtDate, windowStart, selected: 0, written: [], partial: [], failed: [], requeued: [], expired: [], notReached: [], units: 0, requests: 0, fetchErrors: [] };
+  const summary = { runEtDate, windowStart, selected: 0, written: [], partial: [], failed: [], requeued: [], expired: [], notReached: [], invalid, units: 0, requests: 0, fetchErrors: [] };
   const usage = { requests: 0, errors: [] };
   const memo = new Map();
-  for (const [i, { ref, tape }] of found.entries()) {
+  for (const [i, { id, path, ref, tape }] of found.entries()) {
     const c = tape.passes.candles;
     const attempts = Number.isInteger(c.attempts) ? c.attempts : 0;
     if (attempts >= CANDLE_MAX_ATTEMPTS) continue;                       // terminal — its own status says so
-    if (!windowStart || tape.etDate < windowStart) {
+    if (!windowStart || id.etDate < windowStart) {
       // Aged out while still waiting: close it out, so no reader sees a retry
       // that is not scheduled. Isolated: one failed marker never costs the
       // morning (review L2-F6) — the tape is simply seen again tomorrow.
       try {
         await ref.update({ 'passes.candles.status': 'failed', 'passes.candles.reason': 'retry_window_elapsed', 'passes.candles.writtenAt': iso(nowMs) });
-        summary.expired.push(ref.path);
+        summary.expired.push(path);
       } catch (err) {
-        summary.failed.push({ path: ref.path, error: `close-out: ${String(err?.message || err).slice(0, 160)}` });
-        console.error(`[film-tape-candles] ${ref.path} close-out failed: ${err?.message || err}`);
+        summary.failed.push({ path, error: `close-out: ${String(err?.message || err).slice(0, 160)}` });
+        console.error(`[film-tape-candles] ${path} close-out failed: ${err?.message || err}`);
       }
       continue;
     }
-    if (tape.etDate >= runEtDate) continue;                              // the session is not over
+    if (id.etDate >= runEtDate) continue;                                // the session is not over
     if (budgetMs - (clock() - startMs) < TIME_FLOOR_MS) {
-      summary.notReached = found.slice(i).map((x) => x.ref.path);
+      summary.notReached = found.slice(i).map((x) => x.path);
       break;
     }
     summary.selected += 1;
     try {
       const r = await processTape({ db, ref, tape, nowMs: clock(), fetchCandles, memo, usage });
-      const row = { path: ref.path, ...r };
+      const row = { path, ...r };
       if (r.status === 'written') summary.written.push(row);
       else if (r.status === 'partial') summary.partial.push(row);
-      else if (r.status === 'requeued') summary.requeued.push(ref.path);
+      else if (r.status === 'requeued') summary.requeued.push(path);
       else summary.failed.push(row);
     } catch (err) {
       const reason = String(err?.message || err).slice(0, 200);
-      summary.failed.push({ path: ref.path, error: reason });
-      console.error(`[film-tape-candles] ${ref.path} failed: ${reason}`);
+      summary.failed.push({ path, error: reason });
+      console.error(`[film-tape-candles] ${path} failed: ${reason}`);
       // A thrown run is still an attempt: count it, so a persistent failure
       // reaches its terminal state on the third morning instead of retrying
       // until it ages out — counted from the tape AS IT STANDS, inside a
@@ -353,7 +394,7 @@ export async function runCandlePass({ db, fetchCandles, clock = Date.now, startM
           });
         });
       } catch (markErr) {
-        console.error(`[film-tape-candles] ${ref.path} failure could not be recorded: ${markErr?.message || markErr}`);
+        console.error(`[film-tape-candles] ${path} failure could not be recorded: ${markErr?.message || markErr}`);
       }
     }
   }

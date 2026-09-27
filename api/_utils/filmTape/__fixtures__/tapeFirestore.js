@@ -13,6 +13,10 @@
 //     whole function (up to 5 attempts), as Firestore does. `hooks.afterTxRead`
 //     lets a test land a concurrent write between a transaction's read and its
 //     commit;
+//   · `hooks.beforeWrite(op, path)` runs before every write of any form and
+//     may throw — a test fails one path's writes wherever its reference was
+//     built (a transaction checks all its writes before applying any, so it
+//     stays all-or-nothing);
 //   · a write log and a read log (paths), so a suite can assert exactly what
 //     was touched — zero writes, never a tickBodies read, only tape paths.
 
@@ -67,7 +71,9 @@ export function makeTapeDb(initial = {}, { hooks = {} } = {}) {
   let failNextTx = 0;
 
   const bump = (path) => versions.set(path, (versions.get(path) || 0) + 1);
-  const put = (path, data, op) => { store.set(path, clone(data)); bump(path); writeLog.push({ op, path }); };
+  const guard = (op, path) => { if (hooks.beforeWrite) hooks.beforeWrite(op, path); };
+  const commit = (path, data, op) => { store.set(path, clone(data)); bump(path); writeLog.push({ op, path }); };
+  const put = (path, data, op) => { guard(op, path); commit(path, data, op); };
 
   const snapOf = (path) => {
     const data = store.get(path);
@@ -175,17 +181,25 @@ export function makeTapeDb(initial = {}, { hooks = {} } = {}) {
             if (hooks.afterTxRead) await hooks.afterTxRead(ref.path, db);
             return snap;
           },
-          set: (ref, data) => { ops.push(() => put(ref.path, data, 'tx.set')); },
+          set: (ref, data) => { ops.push({ op: 'tx.set', path: ref.path, apply: () => commit(ref.path, data, 'tx.set') }); },
           update: (ref, updates) => {
-            ops.push(() => {
-              if (!store.has(ref.path)) throw new Error(`tx.update on missing doc ${ref.path}`);
-              const cur = clone(store.get(ref.path)); applyDotPathUpdate(cur, updates); put(ref.path, cur, 'tx.update');
+            ops.push({
+              op: 'tx.update',
+              path: ref.path,
+              apply: () => {
+                if (!store.has(ref.path)) throw new Error(`tx.update on missing doc ${ref.path}`);
+                const cur = clone(store.get(ref.path)); applyDotPathUpdate(cur, updates); commit(ref.path, cur, 'tx.update');
+              },
             });
           },
           create: (ref, data) => {
-            ops.push(() => {
-              if (store.has(ref.path)) { const e = new Error(`ALREADY_EXISTS: ${ref.path}`); e.code = 6; throw e; }
-              put(ref.path, data, 'tx.create');
+            ops.push({
+              op: 'tx.create',
+              path: ref.path,
+              apply: () => {
+                if (store.has(ref.path)) { const e = new Error(`ALREADY_EXISTS: ${ref.path}`); e.code = 6; throw e; }
+                commit(ref.path, data, 'tx.create');
+              },
             });
           },
         };
@@ -193,7 +207,8 @@ export function makeTapeDb(initial = {}, { hooks = {} } = {}) {
         if (failNextTx > 0) { failNextTx -= 1; throw new Error('tx_failed_by_test'); }
         const conflict = [...reads.entries()].some(([p, v]) => (versions.get(p) || 0) !== v);
         if (conflict) { db.txRetries += 1; continue; }
-        for (const op of ops) op();
+        for (const o of ops) guard(o.op, o.path);   // all-or-nothing: a refused write fails the whole commit
+        for (const o of ops) o.apply();
         return out;
       }
       throw new Error('transaction contention: 5 attempts');

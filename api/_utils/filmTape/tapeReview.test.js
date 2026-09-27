@@ -409,22 +409,15 @@ describe('L2 — the candle pass never loses what it saved', () => {
 
   it('L2-F6: one failed close-out marker never costs the morning — the other tapes are processed', async () => {
     const fx = await capturedDay();
-    const t = world(fx);
+    // The aged tape's writes fail on its PATH: since review F1 the candle pass
+    // builds every reference from the validated ids, never the query's own.
+    const t = makeTapeDb(seedDay({}, fx), {
+      hooks: { beforeWrite: (op, path) => { if (path === 'agentBattles/b-aged/tape/2026-09-09') throw new Error('14 UNAVAILABLE'); } },
+    });
     await write(t, fx);
     const aged = { ...structuredClone(tapeOf(t, fx.battleId)), battleId: 'b-aged', etDate: '2026-09-09' };
     t.store.set('agentBattles/b-aged/tape/2026-09-09', aged);
-    const wrapQuery = (q) => ({
-      where: (...a) => wrapQuery(q.where(...a)),
-      orderBy: (...a) => wrapQuery(q.orderBy(...a)),
-      limit: (...a) => wrapQuery(q.limit(...a)),
-      get: async () => {
-        const snap = await q.get();
-        return { ...snap, docs: snap.docs.map((d) => (d.ref.path === 'agentBattles/b-aged/tape/2026-09-09'
-          ? { ...d, ref: { ...d.ref, update: async () => { throw new Error('14 UNAVAILABLE'); } } } : d)) };
-      },
-    });
-    const db = { ...t.db, collectionGroup: (name) => wrapQuery(t.db.collectionGroup(name)) };
-    const s = await runCandlePass({ db, fetchCandles: fetcherOf(allBars()).fetchCandles, clock: () => MORNING, startMs: MORNING });
+    const s = await runCandlePass({ db: t.db, fetchCandles: fetcherOf(allBars()).fetchCandles, clock: () => MORNING, startMs: MORNING });
     expect(s.failed.map((f) => f.path)).toContain('agentBattles/b-aged/tape/2026-09-09');
     expect(s.written.map((w) => w.path)).toEqual([tapePath(fx.battleId)]);
   });
