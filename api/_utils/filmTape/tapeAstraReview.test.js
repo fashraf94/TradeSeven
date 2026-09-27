@@ -682,3 +682,28 @@ describe('F8 — BA-29: every candle run sweeps, in a bounded batch, non-termina
     expect(s.invalid).toContain(foreign);
   });
 });
+
+// ── R08 — BA-30: aftermath counts use every merged boundary ─────────────────
+
+describe('R08 — BA-30: a directive\'s aftermath is recounted from every merged directive boundary, preserved ones included', () => {
+  it('R08: a later committed filing that left the source but stays on the tape still ends the earlier directive\'s aftermath', async () => {
+    const fx = await capturedDay();
+    fx.battle.chatExchanges.push({
+      userMessage: 'Now tilt defensive.', agentResponse: 'Filed.', hasDirective: true, directiveThreadId: 'th-2',
+      directive: { text: 'Tilt defensive.', expiry: 'end_of_battle', directiveThreadId: 'th-2', adjustmentId: 'SP-defensive', canonicalTextVersion: 1 },
+      timestamp: '2026-09-24T18:00:00.000Z', mode: 'battle',
+      archetypeGate: { classification: 'in_archetype', selectedAdjustmentId: 'SP-defensive', status: 'committed', repairUsed: false, originalUserAsk: 'X', counterOfferText: null, rejectionReason: null },
+    });
+    const t = world(fx);
+    await write(t, fx);
+    const bounded = tapeOf(t, fx.battleId).directives.find((d) => d.threadId === 'th-1').after;
+    // the later filing leaves the source (no normal writer does this — chatExchanges is arrayUnion'd; review R08, unpromoted)
+    const battle = t.store.get(`agentBattles/${fx.battleId}`);
+    battle.chatExchanges = battle.chatExchanges.filter((x) => x.directiveThreadId !== 'th-2');
+    t.store.set(`agentBattles/${fx.battleId}`, battle);
+    await write(t, fx, NIGHT + 60_000);
+    const tape = tapeOf(t, fx.battleId);
+    expect(tape.directives.map((d) => d.threadId)).toContain('th-2');      // preserved from the first write
+    expect(tape.directives.find((d) => d.threadId === 'th-1').after).toEqual(bounded);   // still ends at th-2's filing
+  });
+});

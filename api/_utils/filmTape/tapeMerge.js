@@ -294,16 +294,17 @@ export function mergeTape(stored, assembled, { nowIso, withinWindow }) {
   const lastCheck = mergeUnit(sScore.lastCheck, aScore.lastCheck, { rank: (u) => toMs(u?.at) ?? -Infinity });
   const firstCheck = mergeUnit(sScore.firstCheck, aScore.firstCheck, { rank: (u) => -(toMs(u?.at) ?? Infinity) });
   merged.score = { lastCheck, firstCheck, dayChange: mergeDayChange(sScore, aScore, lastCheck) };
-  if (carried.checks.rows > 0 || carried.actions.rows > 0) {
-    // Rows the new read lacked were kept: recount what followed each filing
-    // from the MERGED rows, so a directive's aftermath never shrinks (L1-F8a).
-    const dayEnd = etDayBounds(assembled.etDate).endMs;
-    const committedAt = merged.directives.filter((d) => d.cardState === 'committed').map((d) => toMs(d.filedAt)).filter((v) => v !== null).sort((a, b) => a - b);
-    merged.directives = merged.directives.map((d) => {
-      const next = committedAt.find((t) => t > (toMs(d.filedAt) ?? Infinity));
-      return { ...d, after: afterOf({ filedAt: d.filedAt, endMs: Math.min(dayEnd, next ?? Infinity), checkRows: merged.checks, actionRows: merged.actions }) };
-    });
-  }
+  // What followed each filing, recounted on every merge from the MERGED check
+  // and action rows, each directive's aftermath ending at the next committed
+  // filing among ALL merged directives — a preserved one included (BA-30,
+  // review R08) — so it neither shrinks when rows are kept (L1-F8a) nor runs
+  // on past a filing the new read no longer sees.
+  const dayEnd = etDayBounds(assembled.etDate).endMs;
+  const committedAt = merged.directives.filter((d) => d.cardState === 'committed').map((d) => toMs(d.filedAt)).filter((v) => v !== null).sort((a, b) => a - b);
+  merged.directives = merged.directives.map((d) => {
+    const next = committedAt.find((t) => t > (toMs(d.filedAt) ?? Infinity));
+    return { ...d, after: afterOf({ filedAt: d.filedAt, endMs: Math.min(dayEnd, next ?? Infinity), checkRows: merged.checks, actionRows: merged.actions }) };
+  });
   // BA-27: the battle block is an ordered lifecycle. A stale assembly (an
   // overlapping close or backfill run that read the battle before it
   // completed) can add facts but never move the battle backward: the LATER
