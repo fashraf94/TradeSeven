@@ -204,6 +204,10 @@
     {
       "path": "/api/cron/agent-batch-review",
       "schedule": "25 20,21 * * 1-5"
+    },
+    {
+      "path": "/api/cron/film-tape-close",
+      "schedule": "15 2 * * 2-6"
     }
   ]
 }
