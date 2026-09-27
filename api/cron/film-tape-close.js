@@ -20,7 +20,9 @@
  * a session range. ADMIN-ONLY: it requires the admin secret as a header or
  * Bearer token (adminSecretAuth.js) — the Vercel cron header alone never runs a
  * backfill, and the scheduled invocation carries no query. Same flag, same
- * budget, resumable (the tape's own passes.close.status is the queue flag).
+ * budget, resumable (the tape's own passes.close.status is the queue flag). A
+ * range reaching a session that has not closed is refused (400
+ * range_not_closed) — no tape for a day that has not happened.
  *
  * Dark: FILM_TAPE_WRITE_ENABLED false → 200 { skipped: true, reason: 'flag_off' }
  * before the Firestore handle is even taken — zero reads, zero writes.
@@ -54,7 +56,7 @@ export default async function handler(req, res) {
   const backfill = req.query?.backfill;
   if (backfill !== undefined) {
     if (!isAdminSecretValid(req)) return res.status(401).json({ error: 'Unauthorized' });
-    const range = parseBackfillRange(backfill);
+    const range = parseBackfillRange(backfill, { nowMs: startMs });
     if (range.error) return res.status(400).json({ error: range.error });
     try {
       const summary = await runBackfill({

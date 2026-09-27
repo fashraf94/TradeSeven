@@ -26,7 +26,7 @@
 import { findActiveAgentBattles } from '../agentBattleService.js';
 import { writeTapeDay, markCloseFailed } from './writeTapeDay.js';
 import { readEvalRunsForDay, readTape } from './tapeSources.js';
-import { etDayBounds, etDateOf, isSessionDate, sessionDatesBetween } from './tapeTime.js';
+import { etDayBounds, etDateOf, isSessionDate, sessionDatesBetween, sessionFor } from './tapeTime.js';
 
 export const TIME_FLOOR_MS = 30_000;
 /** The longest range one backfill request may name (sessions). */
@@ -113,8 +113,13 @@ export async function runClosePass({ db, clock = Date.now, startMs = clock(), bu
   return summary;
 }
 
-/** `YYYY-MM-DD..YYYY-MM-DD` → the session dates in it, or an error word. */
-export function parseBackfillRange(value) {
+/**
+ * `YYYY-MM-DD..YYYY-MM-DD` → the session dates in it, or an error word. With
+ * `nowMs`, a range reaching a session that has not closed yet is refused
+ * (`range_not_closed`): that day has no record to tape, and an empty tape for
+ * it would read as a day without activity (BA-20).
+ */
+export function parseBackfillRange(value, { nowMs = null } = {}) {
   const m = /^(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/.exec(String(value || '').trim());
   if (!m) return { error: 'invalid_range' };
   const [, from, to] = m;
@@ -122,6 +127,7 @@ export function parseBackfillRange(value) {
   const dates = sessionDatesBetween(from, to);
   if (!dates.length) return { error: 'no_sessions_in_range' };
   if (dates.length > BACKFILL_MAX_SESSIONS) return { error: 'range_too_long' };
+  if (nowMs !== null && dates.some((d) => !(sessionFor(d)?.closeMs <= nowMs))) return { error: 'range_not_closed' };
   return { from, to, dates };
 }
 

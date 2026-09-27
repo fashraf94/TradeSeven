@@ -108,7 +108,9 @@ describe('the handler — guard, flag, wiring', () => {
 
   it('the backfill entry validates its range', async () => {
     admin.db = (await worldOf()).db;
-    for (const [bad, word] of [['2026-09-24', 'invalid_range'], ['2026-09-26..2026-09-24', 'invalid_range'], ['2026-09-26..2026-09-27', 'no_sessions_in_range'], ['2026-01-02..2026-06-30', 'range_too_long']]) {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.parse('2026-09-28T15:00:00Z')); // Monday 11:00 ET: that session is open
+    for (const [bad, word] of [['2026-09-24', 'invalid_range'], ['2026-09-26..2026-09-24', 'invalid_range'], ['2026-09-26..2026-09-27', 'no_sessions_in_range'], ['2026-01-02..2026-06-30', 'range_too_long'], ['2026-09-21..2026-09-28', 'range_not_closed']]) {
       const r = res();
       await handler({ headers: { authorization: 'Bearer cron-secret' }, query: { backfill: bad } }, r);
       expect(r.statusCode, bad).toBe(400);
@@ -214,6 +216,15 @@ describe('the backfill (BA-15) — resumable by the queue flag', () => {
     expect(parseBackfillRange('2026-09-21..2026-09-25').dates).toEqual(['2026-09-21', '2026-09-22', '2026-09-23', '2026-09-24', '2026-09-25']);
     expect(parseBackfillRange('2026-09-25..2026-09-28').dates).toEqual(['2026-09-25', '2026-09-28']);
     expect(parseBackfillRange('nope').error).toBe('invalid_range');
+  });
+
+  it('parseBackfillRange: a range reaching a session that has not closed is refused — no tape for a day that has not happened', () => {
+    const closeOf0925 = Date.parse('2026-09-25T20:00:00.000Z'); // 16:00 EDT
+    expect(parseBackfillRange('2026-09-24..2026-09-25', { nowMs: closeOf0925 - 1 }).error).toBe('range_not_closed');
+    expect(parseBackfillRange('2026-09-24..2026-09-25', { nowMs: closeOf0925 }).dates).toEqual(['2026-09-24', '2026-09-25']);
+    expect(parseBackfillRange('2026-09-28..2026-10-02', { nowMs: closeOf0925 }).error).toBe('range_not_closed');
+    // an early-close session closes at 13:00 ET
+    expect(parseBackfillRange('2026-11-27..2026-11-27', { nowMs: Date.parse('2026-11-27T18:00:00.000Z') }).dates).toEqual(['2026-11-27']);
   });
 
   it('writes every battle-day in the range; a re-invocation after a budget stop resumes where it stopped', async () => {
