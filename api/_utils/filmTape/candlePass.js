@@ -227,6 +227,34 @@ const priceRank = (p) => (p ? (p.atPlan ? 1 : 0) + (p.atClose ? 1 : 0) : -1);
 const keepBetter = (stored, fresh, rank) => (stored && rank(stored) > rank(fresh) ? stored : fresh);
 const needsBars = (missingInputs) => (missingInputs || []).some((m) => m.startsWith('bars:'));
 
+/** Will no candle pass ever select this tape again (its own status says so)? */
+export function candlesTerminal(c) {
+  if (!isObj(c) || !CANDLE_SELECTABLE_STATUSES.includes(c.status)) return true;
+  if ((Number.isInteger(c.attempts) ? c.attempts : 0) >= CANDLE_MAX_ATTEMPTS) return true;
+  return c.status === 'failed' && c.reason === 'retry_window_elapsed';
+}
+
+/**
+ * THE CLOSE-OUT WRITER (spec §6; BA-23): a tape that aged out of the candle
+ * window while still waiting is marked `failed`, `retry_window_elapsed`, so
+ * nothing reads as scheduled that is not. The reference is built from the
+ * validated ids, and the tape is re-read inside the transaction and marked
+ * only while it is still waiting — a close pass that re-queued or finished it
+ * meanwhile is never overwritten. Resolves to whether it marked.
+ */
+export async function markRetryWindowElapsed(db, { battleId, etDate }, nowIso) {
+  const ref = tapeRef(db, battleId, etDate);
+  let marked = false;
+  await db.runTransaction(async (tx) => {
+    marked = false;
+    const snap = await tx.get(ref);
+    if (!snap.exists || candlesTerminal(snap.data()?.passes?.candles)) return;
+    tx.update(ref, { 'passes.candles.status': 'failed', 'passes.candles.reason': 'retry_window_elapsed', 'passes.candles.writtenAt': nowIso });
+    marked = true;
+  });
+  return marked;
+}
+
 /**
  * Process one tape document: fetch, replay, price the plans, write the series
  * and the targeted update. Returns what it did.
@@ -343,16 +371,13 @@ export async function runCandlePass({ db, fetchCandles, clock = Date.now, startM
   const usage = { requests: 0, errors: [] };
   const memo = new Map();
   for (const [i, { id, path, ref, tape }] of found.entries()) {
-    const c = tape.passes.candles;
-    const attempts = Number.isInteger(c.attempts) ? c.attempts : 0;
-    if (attempts >= CANDLE_MAX_ATTEMPTS) continue;                       // terminal — its own status says so
+    if (candlesTerminal(tape.passes.candles)) continue;                 // terminal — its own status says so
     if (!windowStart || id.etDate < windowStart) {
       // Aged out while still waiting: close it out, so no reader sees a retry
       // that is not scheduled. Isolated: one failed marker never costs the
       // morning (review L2-F6) — the tape is simply seen again tomorrow.
       try {
-        await ref.update({ 'passes.candles.status': 'failed', 'passes.candles.reason': 'retry_window_elapsed', 'passes.candles.writtenAt': iso(nowMs) });
-        summary.expired.push(path);
+        if (await markRetryWindowElapsed(db, id, iso(nowMs))) summary.expired.push(path);
       } catch (err) {
         summary.failed.push({ path, error: `close-out: ${String(err?.message || err).slice(0, 160)}` });
         console.error(`[film-tape-candles] ${path} close-out failed: ${err?.message || err}`);

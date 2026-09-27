@@ -12,6 +12,10 @@
 // mocked by spreading the real one.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve, relative } from 'node:path';
+import { parse } from 'acorn';
 
 const flags = vi.hoisted(() => ({ writer: true }));
 vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => ({
@@ -19,8 +23,9 @@ vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => ({
   get FILM_TAPE_WRITE_ENABLED() { return flags.writer; },
 }));
 
-import { writeTapeDay } from './writeTapeDay.js';
+import { writeTapeDay, markCloseFailed } from './writeTapeDay.js';
 import { runCandlePass } from './candlePass.js';
+import { scanProtectedStoreWrites, siteKey } from '../compositionProtectedStoresScan.js';
 import { stableStringify } from './tapeMerge.js';
 import { makeTapeDb } from './__fixtures__/tapeFirestore.js';
 import { seedDay, capturedDay } from './__fixtures__/tapeFixtures.js';
@@ -120,4 +125,82 @@ describe('F1 — BA-23: a collection-group result is never written on the streng
     expect([...s.invalid].sort()).toEqual([...bad].sort());
     expect(tapeOf(t, 'b-captured').passes.candles.status).toBe('written');
   });
+});
+
+// ── F9 — BA-23: the scanner sees every physical write site the tape runs ────
+
+const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+/** The tape's own source files: the passes, the handlers and the read-out — never a test or a fixture. */
+const TAPE_SOURCE = /^(api\/_utils\/filmTape\/[^/]+\.js|api\/cron\/film-tape-[^/]+\.js|scripts\/export-film-tape\.js)$/;
+
+/**
+ * The enclosing named function of a source position, by the scanner's own
+ * rule (compositionProtectedStoresScan.js scanFile): the smallest function
+ * declaration, or const-bound arrow/function expression, containing it.
+ */
+function enclosingFnAt(file, line, column) {
+  const src = readFileSync(resolve(REPO, file), 'utf8');
+  const ast = parse(src, { ecmaVersion: 'latest', sourceType: 'module', allowHashBang: true });
+  const lineStart = [0];
+  for (let i = 0; i < src.length; i += 1) if (src[i] === '\n') lineStart.push(i + 1);
+  const pos = lineStart[line - 1] + (column - 1);
+  const ranges = [];
+  const walk = (n) => {
+    if (!n || typeof n.type !== 'string') return;
+    if (n.type === 'FunctionDeclaration' && n.id) ranges.push({ start: n.start, end: n.end, name: n.id.name });
+    if (n.type === 'VariableDeclarator' && n.id?.type === 'Identifier' && (n.init?.type === 'ArrowFunctionExpression' || n.init?.type === 'FunctionExpression')) ranges.push({ start: n.init.start, end: n.init.end, name: n.id.name });
+    for (const k of Object.keys(n)) { const v = n[k]; if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v.type === 'string') walk(v); }
+  };
+  walk(ast);
+  let best = null;
+  for (const r of ranges) if (pos >= r.start && pos <= r.end && (!best || r.end - r.start < best.end - best.start)) best = r;
+  return best?.name ?? '<top>';
+}
+
+/** The first frame of a recorded write call inside the tape's own source: { file, line, column }. */
+function callerOf(stack) {
+  for (const l of stack.split('\n')) {
+    const m = l.match(/\(?(\/[^()\s]+?\.js):(\d+):(\d+)\)?\s*$/);
+    if (!m) continue;
+    const file = relative(REPO, m[1]).split('\\').join('/');
+    if (TAPE_SOURCE.test(file)) return { file, line: Number(m[2]), column: Number(m[3]) };
+  }
+  return null;
+}
+
+describe('F9 — BA-23: every physical write site is a named writer the protected-store scanner sees', () => {
+  it('F9: the scanner\'s census of the tape\'s write sites equals the write sites that actually run — by function, method and count', async () => {
+    // STATIC: every Firestore-shaped write the scanner finds in the tape's source.
+    const scan = scanProtectedStoreWrites(REPO);
+    const staticCounts = {};
+    for (const s of scan.all.filter((x) => TAPE_SOURCE.test(x.file))) {
+      const k = `${s.file}::${s.fn}::${s.method}`;
+      staticCounts[k] = (staticCounts[k] ?? 0) + 1;
+    }
+    // Every one of them is on the deny-by-default allowlist (the human review record).
+    for (const s of scan.needsListing.filter((x) => TAPE_SOURCE.test(x.file))) expect(scan.all).toContain(s);
+
+    // RUNTIME: drive every write path the tape has, recording each write CALL's caller.
+    const fx = await capturedDay();
+    const t = makeTapeDb(seedDay({}, fx), { hooks: { recordCallSites: true } });
+    await write(t, fx);                                                                    // the close pass's merge write
+    await markCloseFailed(t.db, { id: fx.battleId, ownerId: 'owner-1' }, '2026-09-23', 'census', { now: NIGHT }); // a failure with no stored tape
+    await markCloseFailed(t.db, { id: fx.battleId }, D, 'census', { now: NIGHT });        // a failure beside a stored tape
+    const copy = (battleId, etDate) => t.store.set(tapePath(battleId, etDate), { ...structuredClone(tapeOf(t, fx.battleId)), battleId, etDate });
+    copy('b-aged', '2026-09-08');                                                         // aged out of the window: the close-out
+    copy('b-weekend', '2026-09-19');                                                      // throws not_a_session: the failure record
+    await morning(t);                                                                     // series + targeted update on b-captured
+    const runtime = {};
+    for (const c of t.callSites) {
+      const at = callerOf(c.stack);
+      expect(at, `a write to ${c.path} was called from outside the tape's source`).not.toBeNull();
+      const method = c.op.replace(/^(tx|batch)\./, '');
+      const k = `${at.file}::${enclosingFnAt(at.file, at.line, at.column)}::${method}`;
+      (runtime[k] ??= new Set()).add(`${at.file}:${at.line}`);
+    }
+    const runtimeCounts = Object.fromEntries(Object.entries(runtime).map(([k, lines]) => [k, lines.size]));
+    expect(runtimeCounts).toEqual(staticCounts);
+    // The physical census the review names: seven sites.
+    expect(Object.values(staticCounts).reduce((a, b) => a + b, 0)).toBe(7);
+  }, 60_000);
 });

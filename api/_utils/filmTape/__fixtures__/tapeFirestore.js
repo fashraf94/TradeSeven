@@ -18,7 +18,11 @@
 //     built (a transaction checks all its writes before applying any, so it
 //     stays all-or-nothing);
 //   · a write log and a read log (paths), so a suite can assert exactly what
-//     was touched — zero writes, never a tickBodies read, only tape paths.
+//     was touched — zero writes, never a tickBodies read, only tape paths;
+//   · with `hooks.recordCallSites`, every write CALL (not its commit — a
+//     transaction applies its writes later) is logged with the caller's stack
+//     in `callSites`, so a suite can enumerate the physical write sites that
+//     actually ran (the census row, review F9).
 
 const clone = (v) => (v === undefined ? undefined : structuredClone(v));
 
@@ -68,6 +72,8 @@ export function makeTapeDb(initial = {}, { hooks = {} } = {}) {
   const versions = new Map();
   const writeLog = [];
   const readLog = [];
+  const callSites = [];
+  const noteCall = (op, path) => { if (hooks.recordCallSites) callSites.push({ op, path, stack: new Error().stack }); };
   let failNextTx = 0;
 
   const bump = (path) => versions.set(path, (versions.get(path) || 0) + 1);
@@ -86,17 +92,20 @@ export function makeTapeDb(initial = {}, { hooks = {} } = {}) {
       id: path.split('/').pop(),
       get: async () => { readLog.push(path); return snapOf(path); },
       set: async (data, opts) => {
+        noteCall('set', path);
         if (opts?.merge && store.has(path)) { const cur = clone(store.get(path)); Object.assign(cur, clone(data)); put(path, cur, 'set'); } else put(path, data, 'set');
       },
       update: async (updates) => {
+        noteCall('update', path);
         if (!store.has(path)) throw new Error(`update on missing doc ${path}`);
         const cur = clone(store.get(path)); applyDotPathUpdate(cur, updates); put(path, cur, 'update');
       },
       create: async (data) => {
+        noteCall('create', path);
         if (store.has(path)) { const e = new Error(`ALREADY_EXISTS: ${path}`); e.code = 6; throw e; }
         put(path, data, 'create');
       },
-      delete: async () => { store.delete(path); bump(path); writeLog.push({ op: 'delete', path }); },
+      delete: async () => { noteCall('delete', path); store.delete(path); bump(path); writeLog.push({ op: 'delete', path }); },
       collection: (sub) => collectionRef(`${path}/${sub}`),
     };
   }
@@ -156,14 +165,15 @@ export function makeTapeDb(initial = {}, { hooks = {} } = {}) {
     batch() {
       const ops = [];
       return {
-        set: (ref, data) => { ops.push(() => put(ref.path, data, 'batch.set')); },
+        set: (ref, data) => { noteCall('batch.set', ref.path); ops.push(() => put(ref.path, data, 'batch.set')); },
         update: (ref, updates) => {
+          noteCall('batch.update', ref.path);
           ops.push(() => {
             if (!store.has(ref.path)) throw new Error(`batch.update on missing doc ${ref.path}`);
             const cur = clone(store.get(ref.path)); applyDotPathUpdate(cur, updates); put(ref.path, cur, 'batch.update');
           });
         },
-        delete: (ref) => { ops.push(() => { store.delete(ref.path); bump(ref.path); writeLog.push({ op: 'batch.delete', path: ref.path }); }); },
+        delete: (ref) => { noteCall('batch.delete', ref.path); ops.push(() => { store.delete(ref.path); bump(ref.path); writeLog.push({ op: 'batch.delete', path: ref.path }); }); },
         commit: async () => { if (hooks.failBatch) throw new Error('batch_failed_by_test'); for (const op of ops) op(); },
       };
     },
@@ -181,8 +191,9 @@ export function makeTapeDb(initial = {}, { hooks = {} } = {}) {
             if (hooks.afterTxRead) await hooks.afterTxRead(ref.path, db);
             return snap;
           },
-          set: (ref, data) => { ops.push({ op: 'tx.set', path: ref.path, apply: () => commit(ref.path, data, 'tx.set') }); },
+          set: (ref, data) => { noteCall('tx.set', ref.path); ops.push({ op: 'tx.set', path: ref.path, apply: () => commit(ref.path, data, 'tx.set') }); },
           update: (ref, updates) => {
+            noteCall('tx.update', ref.path);
             ops.push({
               op: 'tx.update',
               path: ref.path,
@@ -193,6 +204,7 @@ export function makeTapeDb(initial = {}, { hooks = {} } = {}) {
             });
           },
           create: (ref, data) => {
+            noteCall('tx.create', ref.path);
             ops.push({
               op: 'tx.create',
               path: ref.path,
@@ -217,5 +229,5 @@ export function makeTapeDb(initial = {}, { hooks = {} } = {}) {
     failNextTransactions(n) { failNextTx = n; },
   };
 
-  return { db, store, writeLog, readLog, docRef };
+  return { db, store, writeLog, readLog, callSites, docRef };
 }
