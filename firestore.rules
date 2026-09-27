@@ -497,6 +497,23 @@ service cloud.firestore {
                     && get(/databases/$(database)/documents/agentBattles/$(battleId)).data.ownerId == request.auth.uid;
         allow write: if false;
       }
+
+      // Film Room Build A — the tape (docs/specs/FILM_ROOM_BUILD_A_TAPE_SPEC_V1_2_20260927.md
+      // §5): one document per battle-day and one per symbol under it, written
+      // only by the close and candle passes through the Admin SDK. BOTH
+      // document kinds carry their own `ownerId` (the rule reads the document
+      // itself, not the parent); no client write for anyone. A get of a tape
+      // that does not exist is denied (resource is null) — readers treat that as
+      // "no tape". Proven by test/rules/filmTapeDenials.rules.mjs (npm run test:rules).
+      match /tape/{etDate} {
+        allow read: if request.auth != null && resource.data.ownerId == request.auth.uid;
+        allow write: if false;
+
+        match /series/{symbol} {
+          allow read: if request.auth != null && resource.data.ownerId == request.auth.uid;
+          allow write: if false;
+        }
+      }
     }
 
     // Draft user stats — document ID is the userId
