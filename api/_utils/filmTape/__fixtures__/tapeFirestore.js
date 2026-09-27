@@ -129,28 +129,37 @@ export function makeTapeDb(initial = {}, { hooks = {} } = {}) {
     return out;
   }
 
-  function makeQuery(source, filters = [], order = [], max = null, label = source.label) {
+  function makeQuery(source, filters = [], order = [], max = null, label = source.label, after = null) {
+    // Firestore's ordering: the order-by fields, then the document path.
+    const cmp = (va, pa, vb, pb) => {
+      for (let i = 0; i < order.length; i += 1) {
+        const c = compare(va[i], vb[i]);
+        if (c !== 0) return order[i].dir === 'desc' ? -c : c;
+      }
+      return pa < pb ? -1 : pa > pb ? 1 : 0;
+    };
+    const valuesOf = (p) => order.map(({ field }) => getPath(store.get(p), field));
     const run = () => {
       let paths = source.paths().filter((p) => filters.every((f) => matches(store.get(p), f)));
-      if (order.length) {
-        paths = [...paths].sort((pa, pb) => {
-          for (const { field, dir } of order) {
-            const c = compare(getPath(store.get(pa), field), getPath(store.get(pb), field));
-            if (c !== 0) return dir === 'desc' ? -c : c;
-          }
-          return pa < pb ? -1 : 1;
-        });
-      }
+      if (order.length) paths = [...paths].sort((pa, pb) => cmp(valuesOf(pa), pa, valuesOf(pb), pb));
+      // startAfter(snapshot): a VALUE cursor, as Firestore's — the cursor
+      // document's ordered values when it was read, then its path; it need
+      // not still match the query.
+      if (after) paths = paths.filter((p) => cmp(valuesOf(p), p, after.values, after.path) > 0);
       if (max !== null) paths = paths.slice(0, max);
       readLog.push(label);
       const docs = paths.map(snapOf);
       return { docs, empty: docs.length === 0, size: docs.length, forEach: (cb) => docs.forEach(cb) };
     };
     return {
-      where: (field, op, value) => makeQuery(source, [...filters, { field, op, value }], order, max, label),
-      orderBy: (field, dir = 'asc') => makeQuery(source, filters, [...order, { field, dir }], max, label),
-      limit: (n) => makeQuery(source, filters, order, n, label),
-      select: () => makeQuery(source, filters, order, max, label),
+      where: (field, op, value) => makeQuery(source, [...filters, { field, op, value }], order, max, label, after),
+      orderBy: (field, dir = 'asc') => makeQuery(source, filters, [...order, { field, dir }], max, label, after),
+      limit: (n) => makeQuery(source, filters, order, n, label, after),
+      select: () => makeQuery(source, filters, order, max, label, after),
+      startAfter: (snap) => {
+        const data = typeof snap?.data === 'function' ? snap.data() : snap?.data;
+        return makeQuery(source, filters, order, max, label, { values: order.map(({ field }) => getPath(data, field)), path: snap.ref.path });
+      },
       get: async () => run(),
       _paths: () => { const s = run(); return s.docs.map((d) => d.ref.path); },
     };

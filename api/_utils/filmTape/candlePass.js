@@ -13,6 +13,17 @@
 // `retry_window_elapsed` — so nothing reads as scheduled that is not. There is
 // no other retry path.
 //
+// THE EXPIRY SWEEP (BA-29): the selection reaches back only five sessions
+// past the window, so a tape left waiting through a longer outage or a
+// writer-off period would fall behind it forever. Each run therefore first
+// sweeps, in a bounded batch (EXPIRY_SWEEP: close-outs, page size, documents
+// read), the non-terminal tapes older than the scan — pending and partial
+// over their whole history, which each close-out removes from its query, so
+// the sweep resumes where it stopped; failed (retryable) within a lookback,
+// since terminal failures stay `failed` and would otherwise be re-read
+// forever. It runs before the fetches, so a busy morning can never starve
+// it. The founder's repair path for such a day is the backfill entry.
+//
 // WRITE-PATH BOUNDARY (BA-23): the query returns every collection named `tape`
 // anywhere in the database, so a result is never trusted by its collection
 // name. Before any expiry, failure record, fetch or write, its path must be
@@ -66,6 +77,12 @@ export const TIME_FLOOR_MS = 30_000;
 export const UNITS_PER_REQUEST = 5;
 /** How far past the window the scan looks, to close out tapes that aged out while waiting. */
 export const EXPIRY_SCAN_MARGIN_SESSIONS = 5;
+/**
+ * BA-29 — the expiry sweep's bounds per run: close-outs, documents per page,
+ * documents read, and how far back (sessions before the scan) retryable
+ * `failed` tapes are looked for.
+ */
+export const EXPIRY_SWEEP = Object.freeze({ maxMarks: 100, page: 100, maxReads: 1000, failedLookbackSessions: 60 });
 export const PLAN_PRICE_NOTE = "prices shown to the day's close, which is not the plan's horizon";
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -398,6 +415,53 @@ export async function processTape({ db, ref, tape, nowMs, fetchCandles, memo, us
   return result;
 }
 
+const docData = (d) => (typeof d?.data === 'function' ? d.data() : d?.data);
+const idOfResult = (d) => {
+  const id = tapeIdOf(d?.ref?.path);
+  const tape = docData(d);
+  return id && isObj(tape) && tape.battleId === id.battleId && tape.etDate === id.etDate ? { id, tape } : null;
+};
+
+/**
+ * BA-29 — close out, in a bounded batch, the non-terminal tapes older than
+ * `before` (the scan's lower edge). One query per status, oldest first, paged
+ * with a cursor; every result's path validated (BA-23); a terminal tape never
+ * written. Stops at the batch bounds or the time floor, and says whether it
+ * reached the end (`complete`).
+ */
+async function sweepExpired({ db, before, failedFrom, nowIso, limits, summary, clock, startMs, budgetMs }) {
+  const out = { reads: 0, expired: 0, complete: true };
+  for (const status of ['pending', 'partial', 'failed']) {
+    let cursor = null;
+    for (;;) {
+      if (out.expired >= limits.maxMarks || out.reads >= limits.maxReads || budgetMs - (clock() - startMs) < TIME_FLOOR_MS) { out.complete = false; return out; }
+      let q = db.collectionGroup('tape').where('passes.candles.status', '==', status).where('etDate', '<', before);
+      if (status === 'failed' && failedFrom) q = q.where('etDate', '>=', failedFrom);
+      q = q.orderBy('etDate', 'asc');
+      if (cursor) q = q.startAfter(cursor);
+      const size = Math.min(limits.page, limits.maxReads - out.reads);
+      const docs = (await q.limit(size).get())?.docs || [];
+      out.reads += docs.length;
+      for (const d of docs) {
+        const ok = idOfResult(d);
+        if (!ok) { summary.invalid.push(String(d?.ref?.path ?? '(no path)')); continue; }
+        if (candlesTerminal(ok.tape.passes?.candles)) continue;
+        if (out.expired >= limits.maxMarks) { out.complete = false; return out; }
+        const path = `agentBattles/${ok.id.battleId}/${TAPE_SUBCOLLECTION}/${ok.id.etDate}`;
+        try {
+          if (await markRetryWindowElapsed(db, ok.id, nowIso)) { out.expired += 1; summary.expired.push(path); }
+        } catch (err) {
+          summary.failed.push({ path, error: `close-out: ${String(err?.message || err).slice(0, 160)}` });
+          console.error(`[film-tape-candles] ${path} close-out failed: ${err?.message || err}`);
+        }
+      }
+      if (docs.length < size) break;            // this status has nothing older left
+      cursor = docs[docs.length - 1];
+    }
+  }
+  return out;
+}
+
 /**
  * The morning run.
  *
@@ -406,7 +470,7 @@ export async function processTape({ db, ref, tape, nowMs, fetchCandles, memo, us
  * @param {(symbol: string, opts: object) => Promise<Array>} p.fetchCandles
  * @param {() => number} p.clock
  */
-export async function runCandlePass({ db, fetchCandles, clock = Date.now, startMs = clock(), budgetMs = 300_000 }) {
+export async function runCandlePass({ db, fetchCandles, clock = Date.now, startMs = clock(), budgetMs = 300_000, sweep = {} }) {
   // The writer flag at CALL time, here too — not only in the handler — so no
   // caller can write a tape while the writer is dark (review L3-F4).
   if (!FILM_TAPE_WRITE_ENABLED) throw new Error('film_tape_write_disabled');
@@ -416,10 +480,18 @@ export async function runCandlePass({ db, fetchCandles, clock = Date.now, startM
     // Outside the maintained market calendar the window cannot be counted:
     // fail loudly, never build a query on a null date (review L3-F7).
     console.error(`[film-tape-candles] calendar_missing: the market calendar has no entry for ${runEtDate} — no candle pass until it is maintained`);
-    return { runEtDate, skipped: true, reason: 'calendar_missing', selected: 0, written: [], partial: [], failed: [], requeued: [], expired: [], notReached: [], invalid: [], units: 0, requests: 0, fetchErrors: [] };
+    return { runEtDate, skipped: true, reason: 'calendar_missing', selected: 0, written: [], partial: [], failed: [], requeued: [], expired: [], notReached: [], invalid: [], sweep: null, units: 0, requests: 0, fetchErrors: [] };
   }
   const windowStart = candleWindowStart(runEtDate);
   const scanStart = sessionsBack(runEtDate, 10 + EXPIRY_SCAN_MARGIN_SESSIONS) ?? windowStart;
+  const summary = { runEtDate, windowStart, selected: 0, written: [], partial: [], failed: [], requeued: [], expired: [], notReached: [], invalid: [], sweep: null, units: 0, requests: 0, fetchErrors: [] };
+  // BA-29: the bounded sweep behind the scan, FIRST — so no morning's work can starve it.
+  if (scanStart) {
+    summary.sweep = await sweepExpired({
+      db, before: scanStart, failedFrom: sessionsBack(scanStart, EXPIRY_SWEEP.failedLookbackSessions), nowIso: iso(nowMs),
+      limits: { ...EXPIRY_SWEEP, ...sweep }, summary, clock, startMs, budgetMs,
+    });
+  }
   const snap = await db.collectionGroup('tape')
     .where('passes.candles.status', 'in', [...CANDLE_SELECTABLE_STATUSES])
     .where('etDate', '>=', scanStart)
@@ -429,20 +501,18 @@ export async function runCandlePass({ db, fetchCandles, clock = Date.now, startM
   // build its reference from the validated ids — the query's own reference is
   // never written to.
   const found = [];
-  const invalid = [];
   for (const d of snap?.docs || []) {
-    const id = tapeIdOf(d?.ref?.path);
-    const tape = typeof d?.data === 'function' ? d.data() : d?.data;
-    if (!id || !isObj(tape) || tape.battleId !== id.battleId || tape.etDate !== id.etDate) { invalid.push(String(d?.ref?.path ?? '(no path)')); continue; }
+    const ok = idOfResult(d);
+    if (!ok) { summary.invalid.push(String(d?.ref?.path ?? '(no path)')); continue; }
+    const { id, tape } = ok;
     if (!isObj(tape.passes?.candles)) continue;
     found.push({ id, path: `agentBattles/${id.battleId}/${TAPE_SUBCOLLECTION}/${id.etDate}`, ref: tapeRef(db, id.battleId, id.etDate), tape });
   }
   found.sort((a, b) => (a.id.etDate < b.id.etDate ? -1 : a.id.etDate > b.id.etDate ? 1 : (a.path < b.path ? -1 : 1)));
-  if (invalid.length) {
-    console.error(`[film-tape-candles] skipped ${invalid.length} tape reference(s) outside agentBattles/{battleId}/tape/{etDate}: ${invalid.slice(0, 20).join(', ')}`);
+  if (summary.invalid.length) {
+    console.error(`[film-tape-candles] skipped ${summary.invalid.length} tape reference(s) outside agentBattles/{battleId}/tape/{etDate}: ${summary.invalid.slice(0, 20).join(', ')}`);
   }
 
-  const summary = { runEtDate, windowStart, selected: 0, written: [], partial: [], failed: [], requeued: [], expired: [], notReached: [], invalid, units: 0, requests: 0, fetchErrors: [] };
   const usage = { requests: 0, errors: [] };
   const memo = new Map();
   for (const [i, { id, path, ref, tape }] of found.entries()) {

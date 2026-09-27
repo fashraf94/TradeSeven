@@ -48,6 +48,7 @@ function recordingDb() {
     where: (field, op, value) => query(scope, name, { ...state, filters: [...state.filters, { field, op, value }] }),
     orderBy: (field, dir = 'asc') => query(scope, name, { ...state, orders: [...state.orders, { field, dir }] }),
     limit: () => query(scope, name, state),
+    startAfter: () => query(scope, name, state),
     get: async () => { issued.push({ scope, name, ...state }); return { docs: [], empty: true, size: 0, forEach() {} }; },
   });
   const collection = (name) => ({ ...query('COLLECTION', name), doc: () => ({ collection }) });
@@ -71,24 +72,32 @@ function servedSingleField({ collectionGroup, fieldPath, order, queryScope }, ov
 }
 
 describe('THE INDEX PINS — the queries as issued, against firestore.indexes.json', () => {
-  it('the candle pass\'s selection needs the tape collection-group composite (status, etDate) — and the file declares it', async () => {
+  it('the candle pass\'s queries — the expiry sweep (BA-29) and the selection — all need the tape collection-group composite (status, etDate), and the file declares it', async () => {
     const { db, issued } = recordingDb();
     await runCandlePass({ db, fetchCandles: async () => [], clock: () => Date.parse('2026-09-29T11:00:30Z') });
-    expect(issued).toHaveLength(1);
-    expect(issued[0].filters[0]).toEqual({ field: 'passes.candles.status', op: 'in', value: [...CANDLE_SELECTABLE_STATUSES] });
-    const need = requiredComposite(issued[0]);
-    expect(need).toEqual({
-      collectionGroup: 'tape', queryScope: 'COLLECTION_GROUP',
-      fields: [{ fieldPath: 'passes.candles.status', order: 'ASCENDING' }, { fieldPath: 'etDate', order: 'ASCENDING' }],
-    });
-    expect(servedComposite(need)).toBe(true);
+    // the sweep behind the scan: one query per non-terminal status; then the selection
+    expect(issued.map((q) => q.filters[0])).toEqual([
+      { field: 'passes.candles.status', op: '==', value: 'pending' },
+      { field: 'passes.candles.status', op: '==', value: 'partial' },
+      { field: 'passes.candles.status', op: '==', value: 'failed' },
+      { field: 'passes.candles.status', op: 'in', value: [...CANDLE_SELECTABLE_STATUSES] },
+    ]);
+    for (const q of issued) {
+      const need = requiredComposite(q);
+      expect(need).toEqual({
+        collectionGroup: 'tape', queryScope: 'COLLECTION_GROUP',
+        fields: [{ fieldPath: 'passes.candles.status', order: 'ASCENDING' }, { fieldPath: 'etDate', order: 'ASCENDING' }],
+      });
+      expect(servedComposite(need)).toBe(true);
+    }
   });
 
-  it('red without the entry: the same query against the file minus the tape composite is not served', async () => {
+  it('red without the entry: none of those queries is served by the file minus the tape composite', async () => {
     const { db, issued } = recordingDb();
     await runCandlePass({ db, fetchCandles: async () => [], clock: () => Date.parse('2026-09-29T11:00:30Z') });
     const without = INDEXES.indexes.filter((ix) => ix.collectionGroup !== 'tape');
-    expect(servedComposite(requiredComposite(issued[0]), without)).toBe(false);
+    expect(issued.length).toBeGreaterThan(0);
+    for (const q of issued) expect(servedComposite(requiredComposite(q), without)).toBe(false);
   });
 
   it('`export --recent <n>` without --battle orders the tape collection group by etDate descending — the file declares that single-field index at collection-group scope', async () => {

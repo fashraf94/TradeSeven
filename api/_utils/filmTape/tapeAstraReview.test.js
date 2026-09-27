@@ -621,3 +621,64 @@ describe('F6 — BA-28: the hub helper says "pending" only when the close pass\'
     expect(Object.keys(await helper(battle, '2026-09-28T23:00:00.000Z')).sort()).toEqual(['availability', 'ready', 'target']);
   });
 });
+
+// ── F8 — BA-29: expiry is a sweep ───────────────────────────────────────────
+
+describe('F8 — BA-29: every candle run sweeps, in a bounded batch, non-terminal tapes older than the window', () => {
+  /** A copy of the written capturedDay tape planted for another battle and day, with its candle block overridden. */
+  async function withOldTapes(specs) {
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    const base = tapeOf(t, fx.battleId);
+    for (const { battleId, etDate, candles = {}, path } of specs) {
+      const tape = { ...structuredClone(base), battleId, etDate, passes: { ...base.passes, candles: { ...base.passes.candles, ...candles } } };
+      t.store.set(path ?? tapePath(battleId, etDate), tape);
+    }
+    return { t, fx };
+  }
+  const run = (t, at = MORNING, sweep) => runCandlePass({ db: t.db, fetchCandles: fetcherOf(allBars()).fetchCandles, clock: () => at, startMs: at, ...(sweep ? { sweep } : {}) });
+
+  it('F8 R20: a pending 2026-09-01 tape — behind the 2026-09-25 scan (which starts 2026-09-03) — is closed out: failed, retry_window_elapsed', async () => {
+    const { t } = await withOldTapes([{ battleId: 'b-sept1', etDate: '2026-09-01', candles: { status: 'pending', attempts: 0 } }]);
+    const s = await run(t);
+    expect(t.store.get(tapePath('b-sept1', '2026-09-01')).passes.candles).toMatchObject({ status: 'failed', reason: 'retry_window_elapsed', attempts: 0 });
+    expect(s.expired).toContain(tapePath('b-sept1', '2026-09-01'));
+    expect(s.written.map((w) => w.path)).toEqual([tapePath('b-captured')]);   // the morning's own work still done
+  });
+
+  it('F8: bounded and resumable — at most maxMarks close-outs a run; the next morning continues where this one stopped', async () => {
+    const old = ['2026-08-25', '2026-08-26', '2026-08-27'].map((d, i) => ({ battleId: `b-old${i}`, etDate: d, candles: { status: i === 1 ? 'partial' : 'pending', attempts: 1 } }));
+    const { t } = await withOldTapes(old);
+    const s1 = await run(t, MORNING, { maxMarks: 2 });
+    expect(s1.sweep).toMatchObject({ expired: 2, complete: false });
+    const still = old.filter((o) => t.store.get(tapePath(o.battleId, o.etDate)).passes.candles.reason !== 'retry_window_elapsed');
+    expect(still).toHaveLength(1);
+    const s2 = await run(t, MORNING + 86_400_000, { maxMarks: 2 });
+    expect(s2.sweep).toMatchObject({ expired: 1, complete: true });
+    for (const o of old) expect(t.store.get(tapePath(o.battleId, o.etDate)).passes.candles.reason, o.etDate).toBe('retry_window_elapsed');
+  });
+
+  it('F8: terminal tapes are never rewritten, and a pending tape behind more of them than a page still gets closed out', async () => {
+    const terminal = Array.from({ length: 5 }, (_, i) => ({ battleId: `b-done${i}`, etDate: `2026-08-1${i}`, candles: { status: 'failed', attempts: 3, reason: 'attempts_exhausted' } }));
+    const elapsed = { battleId: 'b-elapsed', etDate: '2026-08-20', candles: { status: 'failed', attempts: 1, reason: 'retry_window_elapsed' } };
+    const pending = { battleId: 'b-late', etDate: '2026-08-31', candles: { status: 'pending', attempts: 0 } };
+    const retryable = { battleId: 'b-retry', etDate: '2026-08-28', candles: { status: 'failed', attempts: 1, reason: 'fetch_failed' } };
+    const { t } = await withOldTapes([...terminal, elapsed, pending, retryable]);
+    const before = t.writeLog.length;
+    const s = await run(t, MORNING, { page: 2 });
+    const wrote = t.writeLog.slice(before).map((w) => w.path);
+    for (const o of [...terminal, elapsed]) expect(wrote, o.battleId).not.toContain(tapePath(o.battleId, o.etDate));
+    expect(t.store.get(tapePath('b-late', '2026-08-31')).passes.candles).toMatchObject({ status: 'failed', reason: 'retry_window_elapsed' });
+    expect(t.store.get(tapePath('b-retry', '2026-08-28')).passes.candles).toMatchObject({ status: 'failed', reason: 'retry_window_elapsed', attempts: 1 });
+    expect(s.sweep.complete).toBe(true);
+  });
+
+  it('F8 (BA-23): the sweep validates every path too — an old foreign tape is skipped and counted, never closed out', async () => {
+    const foreign = 'otherRoot/otherOwner/tape/2026-09-01';
+    const { t } = await withOldTapes([{ battleId: 'b-captured', etDate: '2026-09-01', candles: { status: 'pending' }, path: foreign }]);
+    const s = await run(t);
+    expect(under(t, 'otherRoot')).toEqual([]);
+    expect(s.invalid).toContain(foreign);
+  });
+});
