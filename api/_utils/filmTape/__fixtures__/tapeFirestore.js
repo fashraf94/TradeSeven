@@ -191,6 +191,8 @@ export function makeTapeDb(initial = {}, { hooks = {} } = {}) {
             if (hooks.afterTxRead) await hooks.afterTxRead(ref.path, db);
             return snap;
           },
+          // The Admin SDK's Transaction#getAll: several documents, one read.
+          getAll: async (...refs) => { const out = []; for (const r of refs) out.push(await tx.get(r)); return out; },
           set: (ref, data) => { noteCall('tx.set', ref.path); ops.push({ op: 'tx.set', path: ref.path, apply: () => commit(ref.path, data, 'tx.set') }); },
           update: (ref, updates) => {
             noteCall('tx.update', ref.path);

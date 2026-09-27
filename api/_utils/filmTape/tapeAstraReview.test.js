@@ -282,3 +282,57 @@ describe('F2 — BA-24: sample freshness and session completeness', () => {
     expect(s.written).toHaveLength(1);
   });
 });
+
+// ── F3 — BA-25: nothing shrinks on retry ────────────────────────────────────
+
+describe('F3 — BA-25: a retry never replaces a saved series with a poorer one', () => {
+  const DAY = 86_400_000;
+  const firstBars = (price, n) => sessionRows(D, () => price, { extras: false }).slice(0, n);
+  const seriesAt = (t, id, sym) => t.store.get(`${tapePath(id)}/series/${sym}`);
+
+  it('F3 R03: morning 1 saves AAPL whole (39 bars) while SPY fails; morning 2 brings SPY but one AAPL minute — the 39 bars stay, marked preservedFrom', async () => {
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    await morning(t, allBars({ SPY: new Error('EODHD 500') }));
+    const saved = structuredClone(seriesAt(t, fx.battleId, 'AAPL'));
+    expect(saved.bars).toHaveLength(39);
+    expect(tapeOf(t, fx.battleId).passes.candles.status).toBe('partial');   // retryable: SPY missing
+    await morning(t, allBars({ AAPL: firstBars(231, 1) }), MORNING + DAY);
+    const aapl = seriesAt(t, fx.battleId, 'AAPL');
+    expect(aapl.bars).toEqual(saved.bars);                                  // 39, not 1
+    expect(aapl.atChecks).toEqual(saved.atChecks);
+    expect(aapl.preservedFrom).toBe(saved.writtenAt);
+    const tape = tapeOf(t, fx.battleId);
+    expect(tape.coverage.series.preservedFrom).toBe(saved.writtenAt);
+    expect(tape.coverage.series.note).toMatch(/kept from an earlier attempt: AAPL \(a shorter response\)/);
+    expect(seriesAt(t, fx.battleId, 'SPY').bars).toHaveLength(39);          // what morning 2 did bring is written
+  });
+
+  it('F3: a LONGER response replaces the saved series — the whole session wins over a saved hole, and nothing is marked preserved', async () => {
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    await morning(t, allBars({ AAPL: firstBars(231, 300) }));              // 30 of 39 ten-minute bars
+    expect(seriesAt(t, fx.battleId, 'AAPL').bars).toHaveLength(30);
+    expect(tapeOf(t, fx.battleId).passes.candles).toMatchObject({ status: 'partial', symbolsIncomplete: ['AAPL'] });
+    await morning(t, allBars(), MORNING + DAY);
+    const aapl = seriesAt(t, fx.battleId, 'AAPL');
+    expect(aapl.bars).toHaveLength(39);
+    expect(aapl.preservedFrom ?? null).toBeNull();
+    expect(tapeOf(t, fx.battleId).passes.candles).toMatchObject({ status: 'written', symbolsIncomplete: [] });
+  });
+
+  it('F3: a saved series whose refetch fails stands, and the coverage judges it by its own bars — never "no bars", never complete when it is short', async () => {
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    await morning(t, allBars({ AAPL: firstBars(231, 300) }));
+    await morning(t, allBars({ AAPL: new Error('EODHD 500') }), MORNING + DAY);
+    const tape = tapeOf(t, fx.battleId);
+    expect(seriesAt(t, fx.battleId, 'AAPL').bars).toHaveLength(30);
+    expect(tape.passes.candles).toMatchObject({ status: 'partial', reason: 'bars_incomplete', symbolsMissing: [], symbolsIncomplete: ['AAPL'] });
+    expect(tape.coverage.series.note).toMatch(/AAPL: 30 of 39 ten-minute bars/);
+    expect(tape.coverage.series.note).toMatch(/kept from an earlier attempt: AAPL \(no bars this attempt\)/);
+  });
+});

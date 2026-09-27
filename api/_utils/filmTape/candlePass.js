@@ -156,8 +156,12 @@ function planPrice(plan, bars, session) {
   return { atPlan: pricePoint(p), atClose: pricePoint(c), note: PLAN_PRICE_NOTE, missingInputs: missing, retryableInputs: retryable };
 }
 
+/** The checks a series prices: every row that records a check the battle ran, with its time. */
+const seriesChecks = (tape) => (Array.isArray(tape.checks) ? tape.checks : []).filter((c) => !NON_CHECK_STATES.includes(c.state) && toMs(c.at) !== null);
+const checkKey = (tickSeq, at) => `${Number.isInteger(tickSeq) ? tickSeq : ''}|${at}`;
+
 function seriesDoc({ tape, entry, bars, session, nowIso }) {
-  const checks = (Array.isArray(tape.checks) ? tape.checks : []).filter((c) => !NON_CHECK_STATES.includes(c.state) && toMs(c.at) !== null);
+  const checks = seriesChecks(tape);
   return sanitizeForFirestore({
     tapeVersion: TAPE_VERSION,
     battleId: tape.battleId,
@@ -214,18 +218,48 @@ export function seriesGaps(doc, session) {
   return gaps;
 }
 
-function seriesCoverage(requested, missing, gapsBySymbol, session) {
+/** A kept series priced fewer checks than the tape now has: built before those checks were recorded. */
+function uncoveredChecks(doc, checks) {
+  const have = new Set((Array.isArray(doc?.atChecks) ? doc.atChecks : []).map((a) => checkKey(a?.tickSeq, a?.at)));
+  const n = checks.filter((c) => !have.has(checkKey(c.tickSeq, c.at))).length;
+  return n ? [`built before ${n} check(s) were recorded`] : [];
+}
+
+/** The minutes a series document's 10-minute bars hold. */
+const seriesMinutes = (doc) => (Array.isArray(doc?.bars) ? doc.bars.reduce((n, b) => n + (Number.isFinite(b?.n) ? b.n : 0), 0) : 0);
+/** The checks a series document prices from a fresh bar. */
+const pricedChecks = (doc) => (Array.isArray(doc?.atChecks) ? doc.atChecks.filter((a) => typeof a?.price === 'number').length : 0);
+
+/**
+ * BA-25 — per symbol, the better of the SAVED series and the one this attempt
+ * built: more minutes covered wins, then more checks priced; a tie goes to
+ * the new build. A shorter non-empty response never replaces a longer saved
+ * series, and a saved series with no new response simply stands.
+ */
+export function keepSeries(saved, fresh) {
+  if (!saved) return { doc: fresh ?? null, kept: false };
+  if (!fresh) return { doc: saved, kept: true };
+  const sm = seriesMinutes(saved);
+  const fm = seriesMinutes(fresh);
+  const savedBetter = sm > fm || (sm === fm && pricedChecks(saved) > pricedChecks(fresh));
+  return savedBetter ? { doc: saved, kept: true } : { doc: fresh, kept: false };
+}
+
+function seriesCoverage(requested, missing, gapsBySymbol, session, keptFrom = []) {
   const incomplete = Object.keys(gapsBySymbol).sort();
   const status = missing.length === 0 && incomplete.length === 0 ? 'complete' : (missing.length < requested.length ? 'partial' : 'unavailable');
   const notes = [];
   if (missing.length) notes.push(`no bars for: ${missing.join(', ')}`);
   // symbolsMissing empty is not evidence that bars were complete (BA-24)
   if (incomplete.length) notes.push(`incomplete — ${incomplete.map((sym) => `${sym}: ${gapsBySymbol[sym].join(', ')}`).join('; ')}`);
-  return coverageOf(status, {
+  if (keptFrom.length) notes.push(`kept from an earlier attempt: ${keptFrom.map((k) => `${k.symbol} (${k.why})`).join(', ')}`);
+  const cov = coverageOf(status, {
     span: { from: iso(session.openMs), to: iso(session.closeMs) },
     sources: ['eodhd_1m'],
     note: notes.join('; ') || null,
   });
+  // The section holds series an earlier attempt built (BA-25): say from when.
+  return { ...cov, preservedFrom: keptFrom.map((k) => k.since).filter(Boolean).sort()[0] ?? null };
 }
 
 /**
@@ -255,6 +289,8 @@ const priceRank = (p) => (p ? (typeof p.atPlan?.value === 'number' ? 1 : 0) + (t
 /** The stored result unless the fresh one is at least as complete (review L2-F1). */
 const keepBetter = (stored, fresh, rank) => (stored && rank(stored) > rank(fresh) ? stored : fresh);
 const needsBars = (missingInputs) => (missingInputs || []).some((m) => m.startsWith('bars:'));
+/** Several documents in one transaction read — getAll when the SDK has it (one round trip). */
+const readAll = (tx, refs) => (!refs.length ? Promise.resolve([]) : (typeof tx.getAll === 'function' ? tx.getAll(...refs) : Promise.all(refs.map((r) => tx.get(r)))));
 /** Does a kept replay or price lack an input a later fetch could still supply (bars, or a stale sample — BA-24)? */
 const awaitsBars = (x) => (Array.isArray(x?.retryableInputs) ? x.retryableInputs.length > 0 : needsBars(x?.missingInputs));
 
@@ -318,10 +354,17 @@ export async function processTape({ db, ref, tape, nowMs, fetchCandles, memo, us
     const unplanned = curPlan.map((e) => e.symbol).filter((sym) => !requested.includes(sym));
     if (unplanned.length) { result = { status: 'requeued', unplanned }; return; }
 
+    // The saved series, read in the same transaction (BA-25). All reads come
+    // before any write.
+    const seriesRef = (sym) => ref.collection(SERIES_SUBCOLLECTION).doc(sym);
+    const savedSnaps = await readAll(tx, curPlan.map((e) => seriesRef(e.symbol)));
+    const saved = new Map();
+    savedSnaps.forEach((sn, i) => { if (sn?.exists) saved.set(curPlan[i].symbol, typeof sn.data === 'function' ? sn.data() : sn.data); });
+
     // A retry never loses what an earlier attempt saved (§8 invariant 7,
-    // BA-19; review L2-F1): per action and per plan the more complete of the
-    // stored and the fresh result is kept, and a symbol an earlier attempt
-    // obtained keeps its series document and is not missing.
+    // BA-19, BA-25; reviews L2-F1, F3): per action and per plan the more
+    // complete of the stored and the fresh result is kept, and per symbol the
+    // better series — a saved one is never replaced by a poorer response.
     const replays = new Map();
     const actions = (Array.isArray(cur.actions) ? cur.actions : []).map((a) => {
       const fresh = replayAction({ action: a, checks: cur.checks, barsBySymbol, session, sectors: cur.comparables?.sectors || {}, tierStamp: resolveModeConfig(cur.gameMode).flatMultiplier });
@@ -331,39 +374,42 @@ export async function processTape({ db, ref, tape, nowMs, fetchCandles, memo, us
     });
     const plans = (Array.isArray(cur.plans) ? cur.plans : []).map((p) => ({ ...p, price: keepBetter(p.price ?? null, planPrice(p, barsBySymbol[p.symbol] || null, session), priceRank) }));
     const prev = cur.passes?.candles;
-    const obtainedBefore = new Set((prev?.symbolsRequested || []).filter((sym) => !(prev?.symbolsMissing || []).includes(sym)));
-    const incompleteBefore = new Set(prev?.symbolsIncomplete || []);
-    const missing = requested.filter((sym) => !barsBySymbol[sym] && !obtainedBefore.has(sym));
     const retryable = [...replays.values()].some((r) => r && awaitsBars(r)) || plans.some((p) => p.price && awaitsBars(p.price));
-    // Per symbol, what its series lacks against a whole session (BA-24): the
-    // series written now, or — for a symbol this run did not obtain — as an
-    // earlier attempt recorded it.
+    // Per symbol, the kept series (BA-25) and what it lacks against a whole
+    // session and against the checks the tape has now (BA-24). A symbol with
+    // no series at all — saved or new — is missing.
+    const checksNow = seriesChecks(cur);
     const gapsBySymbol = {};
-    const docs = [];
+    const keptFrom = [];
+    const missing = [];
+    const writes = [];
     for (const entry of curPlan) {
       const bars = barsBySymbol[entry.symbol];
-      if (!bars) {
-        if (obtainedBefore.has(entry.symbol) && incompleteBefore.has(entry.symbol)) gapsBySymbol[entry.symbol] = ['incomplete as an earlier attempt left it'];
-        continue;
+      const fresh = bars ? seriesDoc({ tape: cur, entry, bars, session, nowIso }) : null;
+      const old = saved.get(entry.symbol) ?? null;
+      const { doc, kept } = keepSeries(old, fresh);
+      if (!doc) { missing.push(entry.symbol); continue; }
+      let out = doc;
+      if (kept) {
+        const since = old.preservedFrom ?? old.writtenAt ?? null;
+        keptFrom.push({ symbol: entry.symbol, why: fresh ? 'a shorter response' : 'no bars this attempt', since });
+        if ((old.preservedFrom ?? null) !== since) { out = { ...old, preservedFrom: since }; writes.push({ entry, doc: out }); }
+      } else {
+        writes.push({ entry, doc: out });
       }
-      const doc = seriesDoc({ tape: cur, entry, bars, session, nowIso });
-      const gaps = seriesGaps(doc, session);
+      const gaps = [...seriesGaps(out, session), ...uncoveredChecks(out, checksNow)];
       if (gaps.length) gapsBySymbol[entry.symbol] = gaps;
-      docs.push({ entry, doc });
     }
     const candles = nextCandleState({ prev, requested, missing, incomplete: Object.keys(gapsBySymbol).sort(), retryable, nowIso });
-    let series = 0;
-    for (const { entry, doc } of docs) {
-      tx.set(ref.collection(SERIES_SUBCOLLECTION).doc(entry.symbol), doc);
-      series += 1;
-    }
+    for (const { entry, doc } of writes) tx.set(seriesRef(entry.symbol), doc);
     tx.update(ref, sanitizeForFirestore({
       actions,
       plans,
       'passes.candles': candles,
       'coverage.replay': replayCoverage(cur, replays, session),
-      'coverage.series': seriesCoverage(requested, missing, gapsBySymbol, session),
+      'coverage.series': seriesCoverage(requested, missing, gapsBySymbol, session, keptFrom),
     }));
+    const series = writes.length;
     result = { status: candles.status, attempts: candles.attempts, requested: requested.length, missing, series };
   });
   return result;
