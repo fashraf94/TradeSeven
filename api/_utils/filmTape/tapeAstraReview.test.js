@@ -27,9 +27,11 @@ import { writeTapeDay, markCloseFailed } from './writeTapeDay.js';
 import { runCandlePass } from './candlePass.js';
 import { scanProtectedStoreWrites, siteKey } from '../compositionProtectedStoresScan.js';
 import { stableStringify } from './tapeMerge.js';
+import { formatTapeMarkdown } from './tapeExport.js';
 import { makeTapeDb } from './__fixtures__/tapeFirestore.js';
-import { seedDay, capturedDay } from './__fixtures__/tapeFixtures.js';
-import { flatRows, fetcherOf } from './__fixtures__/tapeBars.js';
+import { seedDay, capturedDay, earlyCloseDay } from './__fixtures__/tapeFixtures.js';
+import { flatRows, sessionRows, fetcherOf } from './__fixtures__/tapeBars.js';
+import { sessionFor } from './tapeTime.js';
 
 const D = '2026-09-24';
 const NIGHT = Date.parse('2026-09-25T02:15:30.000Z');
@@ -203,4 +205,80 @@ describe('F9 — BA-23: every physical write site is a named writer the protecte
     // The physical census the review names: seven sites.
     expect(Object.values(staticCounts).reduce((a, b) => a + b, 0)).toBe(7);
   }, 60_000);
+});
+
+// ── F2 — BA-24: a stale bar never stands for an instant; a short session is not a whole one ───
+
+describe('F2 — BA-24: sample freshness and session completeness', () => {
+  /** The session's first `n` one-minute bars and nothing after — a hole through the close. */
+  const firstBars = (price, n) => sessionRows(D, () => price, { extras: false }).slice(0, n);
+
+  it('F2 R02: AMD with only its first 61 bars (the last closes 10:31 ET) — no close replay, the input named, the stale bar\'s time shown, never "complete", never "written"', async () => {
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    await morning(t, allBars({ AMD: firstBars(144, 61) }));
+    const tape = tapeOf(t, fx.battleId);
+    const risk = tape.actions.find((a) => a.symbolOut === 'AMD');
+    expect(risk.replay.ghost.atSwap).toEqual(expect.any(Number));          // 10:30:10 — the 10:29 bar closed 10 s before: fresh
+    expect(risk.replay.ghost.atClose).toBeNull();
+    expect(risk.replay.gapPoints).toBeNull();
+    expect(risk.replay.missingInputs).toContain('price:AMD@close');
+    expect(risk.replay.holdPath.at(-1)).toMatchObject({ tickSeq: null, points: null, barClosedAt: '2026-09-24T14:31:00.000Z' });
+    expect(tape.coverage.replay.status).toBe('partial');
+    const amd = t.store.get(`${tapePath(fx.battleId)}/series/AMD`);
+    expect(amd.bars).toHaveLength(7);                                       // 09:30 … 10:30 — of 39
+    const late = amd.atChecks.filter((a) => a.at > '2026-09-24T14:36:00.000Z');
+    expect(late.length).toBeGreaterThan(0);
+    expect(late.every((a) => a.price === null && a.barClosedAt === '2026-09-24T14:31:00.000Z')).toBe(true);
+    expect(tape.coverage.series.status).toBe('partial');
+    expect(tape.coverage.series.note).toMatch(/AMD: 7 of 39 ten-minute bars/);
+    expect(tape.passes.candles).toMatchObject({ status: 'partial', reason: 'bars_incomplete', symbolsMissing: [], symbolsIncomplete: ['AMD'] }); // retryable: symbolsMissing empty is not completeness
+    // the founder read-out shows the null with its bar's age, and the incomplete symbol
+    const md = formatTapeMarkdown(tape, [amd]);
+    expect(md).toContain('close — (last bar closed 10:31 AM ET)');
+    expect(md).toMatch(/missing: none · incomplete: AMD/);
+  });
+
+  it('F2: every sample kind obeys the age rule — the bought leg, a plan\'s two prices, the comparables — null with the stale bar\'s time and the input named', async () => {
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    await morning(t, allBars({ NFLX: firstBars(704, 61), SPY: firstBars(560, 61) }));
+    const tape = tapeOf(t, fx.battleId);
+    const model = tape.actions.find((a) => a.symbolIn === 'NFLX');           // swapped 12:30:05 ET
+    expect(model.replay.bought.atClose).toBeNull();
+    expect(model.replay.missingInputs).toEqual(expect.arrayContaining(['price:NFLX@close', 'price:SPY@swap', 'price:SPY@close']));
+    expect(model.replay.marketChangeAfter.SPY).toBeNull();
+    expect(model.replay.reconciliation.boughtVsEvidence).toBeNull();      // a stale price is never reconciled against the record
+    const plan = tape.plans.find((p) => p.symbol === 'NFLX');               // planned 12:00 ET
+    expect(plan.price.atPlan).toEqual({ value: null, at: '2026-09-24T14:31:00.000Z', basis: 'stale_bar' });
+    expect(plan.price.atClose).toEqual({ value: null, at: '2026-09-24T14:31:00.000Z', basis: 'stale_bar' });
+    expect(plan.price.missingInputs).toEqual(['price:NFLX@plan', 'price:NFLX@close']);
+    expect(tape.passes.candles.status).toBe('partial');
+  });
+
+  it('F2 (M11): an early-close session is a whole session — the real processTape keeps 21 ten-minute bars (from the calendar) and writes the pass', async () => {
+    const fx = await earlyCloseDay();
+    const t = world(fx);
+    await write(t, fx, Date.parse('2026-11-28T02:15:30.000Z'));
+    const bars = {};
+    for (const [sym, p] of Object.entries(PRICES)) bars[sym] = flatRows(fx.etDate, p, { openUtc: '14:30' }); // EST: 09:30 ET = 14:30Z
+    const at = Date.parse('2026-11-28T11:00:30.000Z');
+    const s = await runCandlePass({ db: t.db, fetchCandles: fetcherOf(bars).fetchCandles, clock: () => at, startMs: at });
+    const session = sessionFor(fx.etDate);
+    expect(session.isEarlyClose).toBe(true);
+    const expected = (session.closeMs - session.openMs) / 600_000;          // the calendar's 13:00 close: 21
+    expect(expected).toBe(21);
+    const series = [...t.store.entries()].filter(([k]) => k.startsWith(`${tapePath(fx.battleId, fx.etDate)}/series/`)).map(([, v]) => v);
+    expect(series.length).toBeGreaterThan(5);
+    for (const doc of series) {
+      expect(doc.bars, doc.symbol).toHaveLength(expected);
+      expect(doc.bars.reduce((n, b) => n + b.n, 0), doc.symbol).toBe(210);
+    }
+    const tape = tapeOf(t, fx.battleId, fx.etDate);
+    expect(tape.coverage.series.status).toBe('complete');
+    expect(tape.passes.candles).toMatchObject({ status: 'written', symbolsMissing: [] });
+    expect(s.written).toHaveLength(1);
+  });
 });

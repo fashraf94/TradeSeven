@@ -139,8 +139,10 @@ describe('never guessed — a missing input is named and its numbers are null', 
   });
 
   it('an instant before any minute of the session has completed has no price: a visible null, never interpolated', () => {
-    // A minute's price is the last COMPLETED bar however far back — so the one
-    // honest "no price" is before the session's first bar completes (09:31).
+    // Before the session's first bar completes (09:31) there is no price at
+    // all — and no later fetch can supply one, so it is not retryable. (A
+    // price from a bar more than 5 minutes old is null too — BA-24, the F2
+    // rows in tapeAstraReview.test.js.)
     const early = replayAction({ action: action({ at: utc('13:30:10') }), checks: [check(1, '13:30:50'), check(2, '13:45:20')], barsBySymbol: { OUTX: bars(flatRows(D, 101)), INX: bars(flatRows(D, 50)), ...COMPARABLES() }, session: S });
     expect(early.ghost.atSwap).toBeNull();                 // no minute had completed at 09:30:10
     expect(early.reconciliation.closedLegDelta).toBeNull();
@@ -149,6 +151,7 @@ describe('never guessed — a missing input is named and its numbers are null', 
     // the bought name is scored FROM the swap: it has no swap sample to miss (review L2-F2)
     expect(early.missingInputs).toEqual(expect.arrayContaining(['price:OUTX@swap', 'price:OUTX@1', 'price:INX@1']));
     expect(early.missingInputs).not.toContain('price:INX@swap');
+    expect(early.retryableInputs).toEqual([]);             // nothing a later fetch could supply
     expect(early.gapPoints).toBe(0);                       // the close is still known
   });
 

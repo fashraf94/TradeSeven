@@ -152,7 +152,8 @@ describe('never guessed — a missing symbol', () => {
   it('a missing plan symbol prices nothing: both prices null and the dependency named', async () => {
     const { tape } = await nightThenMorning({ bars: allBars({ NFLX: [] }) });
     const nflx = tape.plans.find((p) => p.symbol === 'NFLX');
-    expect(nflx.price).toEqual({ atPlan: null, atClose: null, note: PLAN_PRICE_NOTE, missingInputs: ['bars:NFLX'] });
+    // bars a later morning may still fetch: retryable (BA-24)
+    expect(nflx.price).toEqual({ atPlan: null, atClose: null, note: PLAN_PRICE_NOTE, missingInputs: ['bars:NFLX'], retryableInputs: ['bars:NFLX'] });
   });
 });
 

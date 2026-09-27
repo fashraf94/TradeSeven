@@ -120,10 +120,13 @@ function sectionChecks(doc) {
   ].join('\n');
 }
 
+/** A null sample shows how old its bar was (BA-24): "— (last bar closed 10:31 AM ET)". */
+const staleNote = (point) => (point && point.barClosedAt ? ` (last bar closed ${etClock(point.barClosedAt)})` : '');
+
 function pathLine(doc, i, key, r) {
   const path = r[key];
   if (!Array.isArray(path)) return '—';
-  return path.map((s, j) => `${s.at === r.closeAt ? 'close' : etClock(s.at)} ${labelled(doc, ['actions', i, 'replay', key, j, 'points'], s.points)}`).join(' · ') || '—';
+  return path.map((s, j) => `${s.at === r.closeAt ? 'close' : etClock(s.at)} ${labelled(doc, ['actions', i, 'replay', key, j, 'points'], s.points)}${staleNote(s)}`).join(' · ') || '—';
 }
 
 function replayLines(doc, i, r) {
@@ -297,7 +300,8 @@ export function formatTapeMarkdown(doc, seriesDocs = []) {
     `  - read: ${Object.entries(close.sources || {}).map(([k, v]) => `${k} ${labelled(doc, ['passes', 'close', 'sources', k], v)}`).join(' · ') || '—'}`,
     `- **candles** — ${candles.status ?? '—'}${candles.reason ? ` (${code(candles.reason)})` : ''} · attempts ${labelled(doc, ['passes', 'candles', 'attempts'], candles.attempts)}`
       + ` · source ${candles.source ? code(candles.source) : '—'} · written ${code(candles.writtenAt)}`
-      + ` · requested: ${(candles.symbolsRequested || []).join(', ') || 'none'} · missing: ${(candles.symbolsMissing || []).join(', ') || 'none'}`,
+      + ` · requested: ${(candles.symbolsRequested || []).join(', ') || 'none'} · missing: ${(candles.symbolsMissing || []).join(', ') || 'none'}`
+      + ` · incomplete: ${(candles.symbolsIncomplete || []).join(', ') || 'none'}`,
   ];
   const out = [...header, '', ...passes];
   if (Array.isArray(doc.checks)) {

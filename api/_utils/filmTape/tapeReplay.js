@@ -23,8 +23,14 @@
 // Samples: the swap instant, then every later check whose tick scored the book
 // (stageReached at or past `scores_marked`, as the live evaluator ratchets the
 // history only on those), then the session close — each at the last minute
-// that COMPLETED at or before the instant (bars.js priceAt). A sample with no
-// price is skipped, left null in its series and named in missingInputs.
+// that COMPLETED at or before the instant (bars.js priceAt), and only when
+// that minute closed within 5 minutes of the instant (BA-24, bars.js
+// sampleAt). A sample with no fresh price is skipped, left null in its series
+// with its stale bar's close time beside it (`barClosedAt`), and named in
+// missingInputs. The comparables and the evidence reconciliation obey the
+// same rule. `retryableInputs` is the part of missingInputs a later fetch
+// could still supply (bars, and samples after the session's first minute) —
+// the candle pass keeps such a tape queued inside its window.
 //
 // reconciliation.closedLegDelta = rebuilt ghost at the swap − lockedPoints:
 // agreement AT THE SALE, stated as that and nothing more. boughtVsEvidence
@@ -34,7 +40,7 @@
 import { calculateAssetScoreServer } from '../agentScoring.js';
 import { STAGES } from '../tickCapture/captureConfig.js';
 import { NON_CHECK_STATES } from '../../../src/constants/filmTape.js';
-import { priceAt, pctChange } from './bars.js';
+import { sampleAt, sampleCanExist, pctChange } from './bars.js';
 import { toMs } from './tapeTime.js';
 
 export const REPLAY_LABEL = "one-step hypothetical through the day's close; later trades in this slot are not replayed; not the effect of the swap on the battle";
@@ -42,6 +48,8 @@ const SCORED_FROM = STAGES.indexOf('scores_marked');
 
 const round2 = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v * 100) / 100 : null);
 const iso = (ms) => new Date(ms).toISOString();
+/** A sample on a path: its points, and — when no fresh price stood for it — the stale bar's close time beside the null (BA-24). */
+const point = (s) => ({ tickSeq: s.tickSeq, at: iso(s.atMs), points: s.points, ...(s.missing && s.staleBarClosedAt !== null ? { barClosedAt: iso(s.staleBarClosedAt) } : {}) });
 
 /** Did this check's tick score the book (so the live history ratcheted)? */
 export function scoredCheck(row) {
@@ -59,8 +67,8 @@ function runLeg({ inputs, symbol, bars, samples, tierStamp }) {
   let history = { maxMultiplier: inputs.thresholdHistory.maxMultiplier, minMultiplier: inputs.thresholdHistory.minMultiplier };
   const out = [];
   for (const s of samples) {
-    const p = priceAt(bars, s.atMs);
-    if (!p) { out.push({ ...s, points: null, missing: true }); continue; }
+    const p = sampleAt(bars, s.atMs);
+    if (!p || !p.valid) { out.push({ ...s, points: null, missing: true, staleBarClosedAt: p ? p.barClosedAt : null }); continue; }
     const priceChange = ((p.price - inputs.entryPrice) / inputs.entryPrice) * 100;
     const base = inputs.thresholdBaseline.value;
     const thresholdPriceChange = ((p.price - base) / base) * 100;
@@ -94,11 +102,15 @@ export function replayAction({ action, checks, barsBySymbol, session, sectors = 
   if (action.replayReason === 'crypto_not_supported') return null;
   const swapMs = toMs(action.at);
   const missingInputs = [...(action.replayMissing || [])];
+  const retryableInputs = [];
+  /** A market-data sample with no fresh price: named, and retryable unless no minute could have closed yet. */
+  const missSample = (name, atMs) => { missingInputs.push(name); if (sampleCanExist(session, atMs)) retryableInputs.push(name); };
+  const missBars = (sym) => { missingInputs.push(`bars:${sym}`); retryableInputs.push(`bars:${sym}`); };
   const inputs = action.replayInputs || { ghost: null, bought: null };
   const barsOut = barsBySymbol[action.symbolOut] || null;
   const barsIn = barsBySymbol[action.symbolIn] || null;
-  if (!barsOut) missingInputs.push(`bars:${action.symbolOut}`);
-  if (!barsIn) missingInputs.push(`bars:${action.symbolIn}`);
+  if (!barsOut) missBars(action.symbolOut);
+  if (!barsIn) missBars(action.symbolIn);
 
   // The check that MADE the swap is the swap sample, not a later check: its
   // capturedAt falls a few seconds after the swap instant, inside the same minute.
@@ -114,7 +126,7 @@ export function replayAction({ action, checks, barsBySymbol, session, sectors = 
   const legOf = (legInputs, symbol, bars, name, legSamples) => {
     if (!legInputs || !bars) return null;
     const run = runLeg({ inputs: legInputs, symbol, bars, samples: legSamples, tierStamp });
-    for (const s of run) if (s.missing) missingInputs.push(`price:${symbol}@${s.kind === 'check' ? (s.tickSeq ?? iso(s.atMs)) : s.kind}`);
+    for (const s of run) if (s.missing) missSample(`price:${symbol}@${s.kind === 'check' ? (s.tickSeq ?? iso(s.atMs)) : s.kind}`, s.atMs);
     const at = (kind) => run.find((s) => s.kind === kind) ?? null;
     return {
       name,
@@ -122,7 +134,7 @@ export function replayAction({ action, checks, barsBySymbol, session, sectors = 
       out: {
         ...(name === 'ghost' ? { atSwap: at('swap')?.points ?? null } : {}),
         atClose: at('close')?.points ?? null,
-        series: run.filter((s) => s.kind === 'check').map((s) => ({ tickSeq: s.tickSeq, at: iso(s.atMs), points: s.points })),
+        series: run.filter((s) => s.kind === 'check').map(point),
       },
     };
   };
@@ -137,12 +149,12 @@ export function replayAction({ action, checks, barsBySymbol, session, sectors = 
   const locked = typeof action.lockedPoints === 'number' && Number.isFinite(action.lockedPoints) ? action.lockedPoints : null;
   if (locked === null) missingInputs.push('lockedPoints');
 
-  const holdPath = ghost ? ghost.run.map((s) => ({ tickSeq: s.tickSeq, at: iso(s.atMs), points: s.points })) : null;
+  const holdPath = ghost ? ghost.run.map(point) : null;
   // The swap path opens AT the sale with exactly what the sale banked.
   const swapPath = bought && locked !== null
     ? [
       { tickSeq: samples[0].tickSeq, at: iso(samples[0].atMs), points: locked },
-      ...bought.run.map((s) => ({ tickSeq: s.tickSeq, at: iso(s.atMs), points: s.points === null ? null : round2(locked + s.points) })),
+      ...bought.run.map((s) => ({ ...point(s), points: s.points === null ? null : round2(locked + s.points) })),
     ]
     : null;
   const gapPoints = ghost && bought && locked !== null && ghost.out.atClose !== null && bought.out.atClose !== null
@@ -154,8 +166,9 @@ export function replayAction({ action, checks, barsBySymbol, session, sectors = 
   let boughtVsEvidence = null;
   if (barsIn && inputs.bought) {
     const row = later.find((c) => c.evidence && c.evidence[action.symbolIn] && typeof c.evidence[action.symbolIn].px === 'number');
-    const rebuilt = row ? priceAt(barsIn, toMs(row.at)) : null;
-    if (row && rebuilt) {
+    const rebuilt = row ? sampleAt(barsIn, toMs(row.at)) : null;
+    // A stale bar is never reconciled against the recorded price (BA-24).
+    if (row && rebuilt?.valid) {
       const ev = row.evidence[action.symbolIn];
       const rebuiltChg = round2(((rebuilt.price - inputs.bought.entryPrice) / inputs.bought.entryPrice) * 100);
       boughtVsEvidence = {
@@ -172,11 +185,16 @@ export function replayAction({ action, checks, barsBySymbol, session, sectors = 
     }
   }
 
-  // Comparables from the swap to the close (market class — bars alone).
+  // Comparables from the swap to the close (market class — bars alone), each
+  // end a fresh sample or the change is null with the missing end named.
   const changeAfter = (sym) => {
     const bars = barsBySymbol[sym];
-    if (!bars) { missingInputs.push(`bars:${sym}`); return null; }
-    return pctChange(priceAt(bars, swapMs)?.price, priceAt(bars, session.closeMs)?.price);
+    if (!bars) { missBars(sym); return null; }
+    const from = sampleAt(bars, swapMs);
+    const to = sampleAt(bars, session.closeMs);
+    if (!from?.valid) missSample(`price:${sym}@swap`, swapMs);
+    if (!to?.valid) missSample(`price:${sym}@close`, session.closeMs);
+    return from?.valid && to?.valid ? pctChange(from.price, to.price) : null;
   };
   const marketChangeAfter = { SPY: changeAfter('SPY'), RSP: changeAfter('RSP') };
   const sectorChangeAfter = {};
@@ -202,5 +220,6 @@ export function replayAction({ action, checks, barsBySymbol, session, sectors = 
     marketChangeAfter,
     sectorChangeAfter,
     missingInputs: [...new Set(missingInputs)],
+    retryableInputs: [...new Set(retryableInputs)],
   };
 }

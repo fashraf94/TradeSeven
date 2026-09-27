@@ -52,7 +52,7 @@ import {
   NON_CHECK_STATES, SERIES_INTERVAL, SERIES_SUBCOLLECTION, TAPE_SUBCOLLECTION,
 } from '../../../src/constants/filmTape.js';
 import { FILM_TAPE_WRITE_ENABLED } from '../../../src/config/featureFlags.js';
-import { sessionBars, priceAt, sessionOpenOf, aggregate10m } from './bars.js';
+import { sessionBars, sampleAt, sampleCanExist, expectedSeriesBars, sessionOpenOf, aggregate10m } from './bars.js';
 import { replayAction, REPLAY_LABEL } from './tapeReplay.js';
 import { coverageOf } from './tapeAssemble.js';
 import { sanitizeForFirestore } from './tapeMerge.js';
@@ -133,21 +133,27 @@ async function barsFor({ symbol, etDate, session, nowMs, fetchCandles, memo, usa
   return out;
 }
 
+/**
+ * A plan's price point (BA-10, BA-24): the last completed minute's close when
+ * that minute closed within 5 minutes of the instant; a stale bar gives
+ * `{ value: null, at: <its close>, basis: 'stale_bar' }` — the null with its
+ * age beside it; no completed minute at all gives null.
+ */
+const pricePoint = (smp) => (!smp ? null : smp.valid
+  ? { value: smp.price, at: iso(smp.barClosedAt), basis: 'last_completed_minute' }
+  : { value: null, at: iso(smp.barClosedAt), basis: 'stale_bar' });
+
 function planPrice(plan, bars, session) {
-  if (isCryptoSymbol(plan.symbol)) return { atPlan: null, atClose: null, note: PLAN_PRICE_NOTE, missingInputs: ['crypto_not_supported'] };
-  if (!bars) return { atPlan: null, atClose: null, note: PLAN_PRICE_NOTE, missingInputs: [`bars:${plan.symbol}`] };
+  if (isCryptoSymbol(plan.symbol)) return { atPlan: null, atClose: null, note: PLAN_PRICE_NOTE, missingInputs: ['crypto_not_supported'], retryableInputs: [] };
+  if (!bars) return { atPlan: null, atClose: null, note: PLAN_PRICE_NOTE, missingInputs: [`bars:${plan.symbol}`], retryableInputs: [`bars:${plan.symbol}`] };
   const atPlanMs = toMs(plan.at);
-  const p = atPlanMs === null ? null : priceAt(bars, atPlanMs);
-  const c = priceAt(bars, session.closeMs);
+  const p = atPlanMs === null ? null : sampleAt(bars, atPlanMs);
+  const c = sampleAt(bars, session.closeMs);
   const missing = [];
-  if (!p) missing.push(`price:${plan.symbol}@plan`);
-  if (!c) missing.push(`price:${plan.symbol}@close`);
-  return {
-    atPlan: p ? { value: p.price, at: iso(p.barClosedAt), basis: 'last_completed_minute' } : null,
-    atClose: c ? { value: c.price, at: iso(c.barClosedAt), basis: 'last_completed_minute' } : null,
-    note: PLAN_PRICE_NOTE,
-    missingInputs: missing,
-  };
+  const retryable = [];
+  if (!p?.valid) { missing.push(`price:${plan.symbol}@plan`); if (sampleCanExist(session, atPlanMs)) retryable.push(`price:${plan.symbol}@plan`); }
+  if (!c?.valid) { missing.push(`price:${plan.symbol}@close`); retryable.push(`price:${plan.symbol}@close`); }
+  return { atPlan: pricePoint(p), atClose: pricePoint(c), note: PLAN_PRICE_NOTE, missingInputs: missing, retryableInputs: retryable };
 }
 
 function seriesDoc({ tape, entry, bars, session, nowIso }) {
@@ -164,9 +170,10 @@ function seriesDoc({ tape, entry, bars, session, nowIso }) {
     sessionOpen: sessionOpenOf(bars, session),
     provenance: 'market',
     bars: aggregate10m(bars, session),
+    // BA-24: a stale bar's price never stands for the check — null, with that bar's close time beside it.
     atChecks: checks.map((c) => {
-      const p = priceAt(bars, toMs(c.at));
-      return { tickSeq: Number.isInteger(c.tickSeq) ? c.tickSeq : null, at: c.at, price: p ? p.price : null, barClosedAt: p ? iso(p.barClosedAt) : null };
+      const p = sampleAt(bars, toMs(c.at));
+      return { tickSeq: Number.isInteger(c.tickSeq) ? c.tickSeq : null, at: c.at, price: p?.valid ? p.price : null, barClosedAt: p ? iso(p.barClosedAt) : null };
     }),
     numberClasses: SERIES_NUMBER_CLASSES,
     writtenAt: nowIso,
@@ -192,40 +199,64 @@ function replayCoverage(tape, replays, session) {
   });
 }
 
-function seriesCoverage(requested, missing, session) {
-  const status = missing.length === 0 ? 'complete' : (missing.length < requested.length ? 'partial' : 'unavailable');
+/**
+ * BA-24 — what a series document lacks against a whole session: fewer
+ * 10-minute bars than the calendar's count, or a check with no fresh price at
+ * an instant a minute could have closed by. Empty when whole.
+ */
+export function seriesGaps(doc, session) {
+  const gaps = [];
+  const expected = expectedSeriesBars(session);
+  const have = Array.isArray(doc?.bars) ? doc.bars.length : 0;
+  if (have < expected) gaps.push(`${have} of ${expected} ten-minute bars`);
+  const stale = (Array.isArray(doc?.atChecks) ? doc.atChecks : []).filter((a) => a && a.price === null && sampleCanExist(session, toMs(a.at))).length;
+  if (stale) gaps.push(`no fresh price at ${stale} check(s)`);
+  return gaps;
+}
+
+function seriesCoverage(requested, missing, gapsBySymbol, session) {
+  const incomplete = Object.keys(gapsBySymbol).sort();
+  const status = missing.length === 0 && incomplete.length === 0 ? 'complete' : (missing.length < requested.length ? 'partial' : 'unavailable');
+  const notes = [];
+  if (missing.length) notes.push(`no bars for: ${missing.join(', ')}`);
+  // symbolsMissing empty is not evidence that bars were complete (BA-24)
+  if (incomplete.length) notes.push(`incomplete — ${incomplete.map((sym) => `${sym}: ${gapsBySymbol[sym].join(', ')}`).join('; ')}`);
   return coverageOf(status, {
     span: { from: iso(session.openMs), to: iso(session.closeMs) },
     sources: ['eodhd_1m'],
-    note: missing.length ? `no bars for: ${missing.join(', ')}` : null,
+    note: notes.join('; ') || null,
   });
 }
 
 /**
  * The next `passes.candles` after a run. `missing` is the symbols NO attempt
- * has obtained; `retryable` is true while a kept replay or price still lacks
- * bars (its symbols obtained on different mornings) — a later attempt can
- * complete it, so the pass is not `written` yet.
+ * has obtained; `incomplete` the symbols whose kept series is not a whole
+ * session (BA-24); `retryable` is true while a kept replay or price still
+ * lacks an input a later fetch could supply — bars obtained on different
+ * mornings, or a stale sample (BA-24) — so the pass is not `written` yet.
  */
-export function nextCandleState({ prev, requested, missing, retryable = false, nowIso }) {
+export function nextCandleState({ prev, requested, missing, incomplete = [], retryable = false, nowIso }) {
   const attempts = (Number.isInteger(prev?.attempts) ? prev.attempts : 0) + 1;
   let status;
   let reason = null;
-  if (missing.length === 0 && !retryable) status = 'written';
+  if (missing.length === 0 && incomplete.length === 0 && !retryable) status = 'written';
   else if (attempts >= CANDLE_MAX_ATTEMPTS) { status = 'failed'; reason = 'attempts_exhausted'; }
   else if (missing.length > 0 && missing.length === requested.length) { status = 'failed'; reason = 'fetch_failed'; }
   else if (missing.length > 0) { status = 'partial'; reason = 'symbols_missing'; }
+  else if (incomplete.length > 0) { status = 'partial'; reason = 'bars_incomplete'; }
   else { status = 'partial'; reason = 'replay_incomplete'; }
-  return { status, writtenAt: nowIso, attempts, reason, source: 'eodhd_1m', symbolsRequested: requested, symbolsMissing: missing };
+  return { status, writtenAt: nowIso, attempts, reason, source: 'eodhd_1m', symbolsRequested: requested, symbolsMissing: missing, symbolsIncomplete: incomplete };
 }
 
 /** How complete a replay is: a gap first, then legs, then fewer missing inputs. */
 const replayRank = (r) => (r ? (r.gapPoints !== null ? 1000 : 0) + ((r.ghost ? 1 : 0) + (r.bought ? 1 : 0)) * 100 - (r.missingInputs || []).length : -1);
-/** How complete a plan's prices are: how many of the two points exist. */
-const priceRank = (p) => (p ? (p.atPlan ? 1 : 0) + (p.atClose ? 1 : 0) : -1);
+/** How complete a plan's prices are: how many of the two points carry a (fresh) value. */
+const priceRank = (p) => (p ? (typeof p.atPlan?.value === 'number' ? 1 : 0) + (typeof p.atClose?.value === 'number' ? 1 : 0) : -1);
 /** The stored result unless the fresh one is at least as complete (review L2-F1). */
 const keepBetter = (stored, fresh, rank) => (stored && rank(stored) > rank(fresh) ? stored : fresh);
 const needsBars = (missingInputs) => (missingInputs || []).some((m) => m.startsWith('bars:'));
+/** Does a kept replay or price lack an input a later fetch could still supply (bars, or a stale sample — BA-24)? */
+const awaitsBars = (x) => (Array.isArray(x?.retryableInputs) ? x.retryableInputs.length > 0 : needsBars(x?.missingInputs));
 
 /** Will no candle pass ever select this tape again (its own status says so)? */
 export function candlesTerminal(c) {
@@ -301,14 +332,29 @@ export async function processTape({ db, ref, tape, nowMs, fetchCandles, memo, us
     const plans = (Array.isArray(cur.plans) ? cur.plans : []).map((p) => ({ ...p, price: keepBetter(p.price ?? null, planPrice(p, barsBySymbol[p.symbol] || null, session), priceRank) }));
     const prev = cur.passes?.candles;
     const obtainedBefore = new Set((prev?.symbolsRequested || []).filter((sym) => !(prev?.symbolsMissing || []).includes(sym)));
+    const incompleteBefore = new Set(prev?.symbolsIncomplete || []);
     const missing = requested.filter((sym) => !barsBySymbol[sym] && !obtainedBefore.has(sym));
-    const retryable = [...replays.values()].some((r) => r && needsBars(r.missingInputs)) || plans.some((p) => p.price && needsBars(p.price.missingInputs));
-    const candles = nextCandleState({ prev, requested, missing, retryable, nowIso });
-    let series = 0;
+    const retryable = [...replays.values()].some((r) => r && awaitsBars(r)) || plans.some((p) => p.price && awaitsBars(p.price));
+    // Per symbol, what its series lacks against a whole session (BA-24): the
+    // series written now, or — for a symbol this run did not obtain — as an
+    // earlier attempt recorded it.
+    const gapsBySymbol = {};
+    const docs = [];
     for (const entry of curPlan) {
       const bars = barsBySymbol[entry.symbol];
-      if (!bars) continue;
-      tx.set(ref.collection(SERIES_SUBCOLLECTION).doc(entry.symbol), seriesDoc({ tape: cur, entry, bars, session, nowIso }));
+      if (!bars) {
+        if (obtainedBefore.has(entry.symbol) && incompleteBefore.has(entry.symbol)) gapsBySymbol[entry.symbol] = ['incomplete as an earlier attempt left it'];
+        continue;
+      }
+      const doc = seriesDoc({ tape: cur, entry, bars, session, nowIso });
+      const gaps = seriesGaps(doc, session);
+      if (gaps.length) gapsBySymbol[entry.symbol] = gaps;
+      docs.push({ entry, doc });
+    }
+    const candles = nextCandleState({ prev, requested, missing, incomplete: Object.keys(gapsBySymbol).sort(), retryable, nowIso });
+    let series = 0;
+    for (const { entry, doc } of docs) {
+      tx.set(ref.collection(SERIES_SUBCOLLECTION).doc(entry.symbol), doc);
       series += 1;
     }
     tx.update(ref, sanitizeForFirestore({
@@ -316,7 +362,7 @@ export async function processTape({ db, ref, tape, nowMs, fetchCandles, memo, us
       plans,
       'passes.candles': candles,
       'coverage.replay': replayCoverage(cur, replays, session),
-      'coverage.series': seriesCoverage(requested, missing, session),
+      'coverage.series': seriesCoverage(requested, missing, gapsBySymbol, session),
     }));
     result = { status: candles.status, attempts: candles.attempts, requested: requested.length, missing, series };
   });

@@ -9,6 +9,7 @@
 //   multiDay        — a five-day battle whose evaluations[] sits at 150
 //   skippedModeDay  — a flat6/tournament battle (BA-3)
 //   preCaptureDay   — a day before the capture flip: no ticks, entries + trades
+//   earlyCloseDay   — an early-close session (2026-11-27: 210 minutes, 21 ten-minute bars)
 //
 // FAITHFUL BY CONSTRUCTION where the platform's composer is pure: every tick
 // document is produced by the capture writer's own composer
@@ -167,11 +168,13 @@ export function seedDay(store, { battleId, battle, ticks = [], receipts = [], ca
  * 15 min from the open, before the close — agent-evaluate.js:241-247 writes one
  * per run past the market-hours gate). `overrides` merges fields into the run
  * of a slot keyed 'HH:MM' UTC; `skip` drops slots (a killed run leaves none).
- * September 2026 is EDT: 13:30Z is the 09:30 ET open.
+ * September 2026 is EDT: 13:30Z is the 09:30 ET open (the defaults); an EST
+ * or early-close session passes its own open and close ('HH:MM' UTC).
  */
-export function sessionRuns(D, { overrides = {}, skip = [] } = {}) {
+export function sessionRuns(D, { overrides = {}, skip = [], openUtc = '13:30', closeUtc = '20:00' } = {}) {
   const out = [];
-  for (let m = 13 * 60 + 30; m < 20 * 60; m += 15) {
+  const minutes = (hhmm) => { const [h, mm] = hhmm.split(':').map(Number); return h * 60 + mm; };
+  for (let m = minutes(openUtc); m < minutes(closeUtc); m += 15) {
     const hhmm = `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
     if (skip.includes(hhmm)) continue;
     const o = overrides[hhmm] || {};
@@ -418,6 +421,39 @@ export async function multiDay({ battleId = 'b-multi', full = false } = {}) {
   });
   const runs = days.flatMap((D) => sessionRuns(D));
   return { battleId, days, battle, ticks, all, receipts: [], calls: [], declarations: [], runs };
+}
+
+/**
+ * An EARLY-CLOSE session: 2026-11-27, the day after Thanksgiving — EST, so
+ * 14:30Z is the 09:30 ET open and the 13:00 ET close is 18:00Z (210 minutes,
+ * 21 ten-minute bars). Checks every 15 minutes from the open, one wake.
+ */
+export async function earlyCloseDay({ battleId = 'b-early' } = {}) {
+  const D = '2026-11-27';
+  const ticks = [];
+  const evaluations = [];
+  let seq = 0;
+  for (let m = 14 * 60 + 30; m < 18 * 60; m += 15) {
+    seq += 1;
+    const hh = String(Math.floor(m / 60)).padStart(2, '0');
+    const mm = String(m % 60).padStart(2, '0');
+    const capturedAtMs = at(D, `${hh}:${mm}:20`);
+    const wake = seq === 5;
+    const evalId = wake ? `${battleId}:e${seq}` : null;
+    ticks.push(await makeTick({
+      battleId, tickSeq: seq, capturedAtMs, exitReason: wake ? 'completed' : 'no_trigger', stages: STAGES_TO[wake ? 'completed' : 'no_trigger'],
+      evalId, scores: scoresAt(20 + seq), verdicts: verdictsFor(HELD), decision: wake ? { original: 'HOLD', final: 'HOLD' } : null,
+      guardrail: { evaluated: false, deployedCount: 0 }, evidenceKeys: wake ? HELD : [], symbols: HELD,
+    }));
+    if (wake) evaluations.push(makeEntry({ evalId, timestampMs: capturedAtMs - 5_000, total: 20 + seq, held: HELD, declarationsPhase: 'none' }));
+  }
+  const battle = battleDoc({
+    createdAt: '2026-11-27T13:00:00.000Z', activatedAt: '2026-11-27T13:00:00.000Z',
+    timing: { tradingDays: [D], currentTradingDay: 1, timezone: 'America/New_York' },
+    cronState: { tickSeq: seq }, evaluations,
+  });
+  const runs = sessionRuns(D, { openUtc: '14:30', closeUtc: '18:00' });
+  return { battleId, etDate: D, battle, ticks, receipts: [], calls: [], declarations: [], runs };
 }
 
 /** A flat6/tournament battle (BA-3): skipped_mode and nothing else. */

@@ -23,6 +23,14 @@
 // check", never the bar containing it. A check at 10:07:30 reads the 10:06
 // bar (completed 10:07:00), never 10:07 (completes 10:08:00). The day's close
 // is the same rule at the session close: the 15:59 bar.
+//
+// A SAMPLE IS VALID ONLY WHEN FRESH (BA-24): that bar must have completed
+// within 5 minutes of the instant — so the close sample's bar completed at or
+// after the calendar close minus 5 minutes. A bar hours old is not the price
+// at the instant: the sample is null, and its bar's close time is kept beside
+// the null so the age shows. A session whose 10-minute bars are fewer than the
+// calendar's count (39 regular, 21 on an early close — derived from the
+// session's own bounds, never a constant) is not a whole session.
 
 import { filterToLatestSession } from '../marketDataCache.js';
 import { CLOSING_ROW_POLICY } from '../intradayConfig.js';
@@ -31,6 +39,8 @@ import { etDateOf } from './tapeTime.js';
 
 export const BAR_MS = 60_000;
 export const SERIES_BUCKET_MS = 10 * 60_000;
+/** BA-24: a sample's bar must have completed within this long of the instant. */
+export const SAMPLE_MAX_AGE_MS = 5 * 60_000;
 
 /** A bar's start instant from EODHD's `datetime` ('YYYY-MM-DD HH:mm:ss' UTC, or ISO with Z). */
 export function barStartMs(datetime) {
@@ -77,6 +87,30 @@ export function priceAt(bars, instantMs) {
     if (b.t + BAR_MS <= instantMs) hit = b; else break;
   }
   return hit ? { price: hit.c, barClosedAt: hit.t + BAR_MS } : null;
+}
+
+/**
+ * BA-24 — the sample at an instant: the last completed bar (priceAt) and
+ * whether it is fresh enough to stand for the instant. null when no bar of
+ * the session had completed; else `{ price, barClosedAt, valid }`.
+ */
+export function sampleAt(bars, instantMs) {
+  const p = priceAt(bars, instantMs);
+  return p ? { ...p, valid: instantMs - p.barClosedAt <= SAMPLE_MAX_AGE_MS } : null;
+}
+
+/**
+ * Could any bar of the session have completed by this instant? Before the
+ * first minute closes (09:31 ET) no price exists at all — that null is the
+ * record's shape, not a hole a later fetch could fill.
+ */
+export function sampleCanExist(session, instantMs) {
+  return typeof instantMs === 'number' && instantMs >= session.openMs + BAR_MS;
+}
+
+/** The 10-minute bars a whole session holds — from the calendar's own bounds (39 regular, 21 early close). */
+export function expectedSeriesBars(session) {
+  return Math.ceil((session.closeMs - session.openMs) / SERIES_BUCKET_MS);
 }
 
 /** The session's opening price: the open of the bar starting at the open, else null. */
