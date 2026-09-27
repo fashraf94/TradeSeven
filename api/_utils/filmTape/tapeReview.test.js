@@ -4,7 +4,7 @@
 // adversarial review that the build's own suites could not fail on, each named
 // by its finding id (L1-…, L2-…, L3-…, L4-…). Every row was red against the
 // reviewed tip (19f897e7) or pins a behaviour a mutation of the fix turns red
-// (the mutation lens, §7.4).
+// (the mutation lens and the re-run of L4's mutants, §7.5).
 //
 // DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): the REAL imports of the writer,
 // the close pass, the candle pass, the assembler and the read-out. Never mock
@@ -21,7 +21,7 @@ vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => ({
 import { writeTapeDay } from './writeTapeDay.js';
 import { runCandlePass } from './candlePass.js';
 import { runClosePass, runBackfill, parseBackfillRange } from './closePass.js';
-import { assembleTape } from './tapeAssemble.js';
+import { assembleTape, directiveWindow } from './tapeAssemble.js';
 import { etDayBounds } from './tapeTime.js';
 import { formatTapeMarkdown } from './tapeExport.js';
 import { makeTapeDb } from './__fixtures__/tapeFirestore.js';
@@ -80,6 +80,16 @@ describe('L1 — the tape document', () => {
     const tape = tapeOf(t, fx.battleId);
     expect(tape.directives[0]).toMatchObject({ threadId: 'th-0', filedAt: '2026-09-23T23:30:00.000Z', cardState: 'committed', canonicalText: 'Keep swaps rare.', playerText: 'Trade calmly tomorrow.' });
     expect(tape.coverage.directives.note).toMatch(/filed before this ET day/);
+  });
+
+  it('L5 S3: on a later trading day the window opens where the previous one closed — a weekend filing lands on Monday\'s tape, never Friday\'s', () => {
+    const battle = { activatedAt: '2026-09-25T12:00:00.000Z', timing: { tradingDays: ['2026-09-25', '2026-09-28'] } };
+    const fri = directiveWindow({ battle, etDate: '2026-09-25', bounds: etDayBounds('2026-09-25') });
+    const mon = directiveWindow({ battle, etDate: '2026-09-28', bounds: etDayBounds('2026-09-28') });
+    const saturday = Date.parse('2026-09-26T15:00:00.000Z');
+    expect(saturday >= fri.startMs && saturday < fri.endMs).toBe(false);
+    expect(saturday >= mon.startMs && saturday < mon.endMs).toBe(true);
+    expect(mon.startMs).toBe(fri.endMs); // the windows partition time: every card lands on exactly one tape
   });
 
   it('L1-F5: a later admitted check known only by its entry is the day\'s last recorded score', async () => {
@@ -157,6 +167,31 @@ describe('L1 — the tape document', () => {
     expect(cov.status).toBe('complete');
     expect(cov.note).toMatch(/no check of this day reached the model — no call could be minted/);
     expect(cov.note).not.toMatch(/not being minted/);
+  });
+
+  it('L4-F6 m15: a day whose entries carry no declarations phase says so — a fact, so nothing is missing', async () => {
+    const fx = await noTriggerDay();
+    for (const e of fx.battle.evaluations) delete e.declarationsPhase;
+    const t = world(fx);
+    await write(t, fx);
+    const cov = tapeOf(t, fx.battleId).coverage.calls;
+    expect(cov.status).toBe('complete');
+    expect(cov.note).toMatch(/no evaluation entry of this day carries a declarations phase/);
+  });
+
+  it('L4-F6 m13: entries at the 150 cap with capture incomplete — a heard stamp may be missing, and the directives section says so', async () => {
+    const fx = await capturedDay();
+    const e0 = fx.battle.evaluations[0];
+    const pads = Array.from({ length: 150 - fx.battle.evaluations.length }, (_, i) => ({
+      ...e0, evalId: `pad${i}`, heard: null, timestamp: new Date(Date.parse(`${D}T12:00:00.000Z`) + i * 1_000).toISOString(),
+    }));
+    fx.battle.evaluations = [...pads, ...fx.battle.evaluations];
+    const t = world(fx);
+    await write(t, fx);
+    const doc = tapeOf(t, fx.battleId);
+    expect(doc.passes.close.capture).not.toBe('present');
+    expect(doc.coverage.directives.status).toBe('partial');
+    expect(doc.coverage.directives.note).toMatch(/evaluation entries may be evicted and capture is incomplete — a heard stamp may be missing/);
   });
 
   it('L1-F12: an evaluator slot with no run record (a killed run) keeps the checks section from claiming complete', async () => {
@@ -458,6 +493,29 @@ describe('L4-F5 — the merge keeps facts a later read lost', () => {
     expect(tapeOf(t, 'b-multi', '2026-09-22').score.dayChange).toEqual(before);
   });
 
+  it('L5 M42a: the last check keeps the later instant when a re-run cannot see that check', async () => {
+    const fx = await noTriggerDay();
+    const t = world(fx);
+    await write(t, fx);
+    const before = tapeOf(t, fx.battleId).score.lastCheck;
+    const last = fx.ticks[fx.ticks.length - 1].tickSeq;
+    expect(before.tickSeq).toBe(last);
+    t.store.delete(`agentBattles/${fx.battleId}/ticks/${fx.battleId}:${last}`);
+    await write(t, fx, NIGHT + 60_000);
+    expect(tapeOf(t, fx.battleId).score.lastCheck).toEqual(before);
+  });
+
+  it('L5 M42a (first check): the first check keeps the earlier instant when a re-run cannot see that check', async () => {
+    const fx = await noTriggerDay();
+    const t = world(fx);
+    await write(t, fx);
+    const before = tapeOf(t, fx.battleId).score.firstCheck;
+    expect(before.tickSeq).toBe(1);
+    t.store.delete(`agentBattles/${fx.battleId}/ticks/${fx.battleId}:1`);
+    await write(t, fx, NIGHT + 60_000);
+    expect(tapeOf(t, fx.battleId).score.firstCheck).toEqual(before);
+  });
+
   it('m04: a stored result is not replaced by a derived one', async () => {
     const fx = await completedDay();
     fx.battle.result = 'win';
@@ -513,6 +571,17 @@ describe('L4-F5 — the merge keeps facts a later read lost', () => {
     for (const s of [1, 2, 3]) t.store.delete(`agentBattles/${fx.battleId}/ticks/${fx.battleId}:${s}`);
     await write(t, fx, NIGHT + 60_000);
     expect(tapeOf(t, fx.battleId).coverage.checks.span.from).toBe(span.from);
+  });
+
+  it('L5 S2: a section\'s span end never moves earlier', async () => {
+    const fx = await noTriggerDay();
+    const t = world(fx);
+    await write(t, fx);
+    const span = tapeOf(t, fx.battleId).coverage.checks.span;
+    const last = fx.ticks[fx.ticks.length - 1].tickSeq;
+    t.store.delete(`agentBattles/${fx.battleId}/ticks/${fx.battleId}:${last}`);
+    await write(t, fx, NIGHT + 60_000);
+    expect(tapeOf(t, fx.battleId).coverage.checks.span.to).toBe(span.to);
   });
 });
 

@@ -7,7 +7,18 @@
 
 ## Executive verdict (for Flash)
 
-*(Filled in at the end of the build — see the bottom of this section once stages A–C are complete.)*
+**A1 is built and dark. The review found one blocker; it is fixed, as is every other confirmed finding.
+The branch is pushed. Nothing is merged, flipped or deployed.**
+
+| | |
+|---|---|
+| **What was built** | Everything A1 names. <br>• **Close pass** (22:15 ET): writes `agentBattles/{id}/tape/{etDate}` for every tiered battle-day. The write is merge-monotone and carries per-section coverage and the BA-21 number classes. <br>• **Candle pass** (07:00 ET): fills the BA-11 replay, plan prices and `tape/{etDate}/series/{symbol}` from prior-session 1-minute bars. It retries up to 3 times within 10 sessions, and a retry never loses what an earlier attempt saved. <br>• **Hub helper** `getReviewAvailability`: Stage 1 is live; Stage 3 is behind `FILM_ROOM_V2_ENABLED`. <br>• **Admin backfill entry**: resumable through the tape's own `passes.close.status`. <br>• **Founder read-out** `scripts/export-film-tape.js` (BA-18): every number is labelled by its class and every section is headed by its coverage line. §2 has the details with `file:line`. |
+| **Dark** | Both flags are `false`, with `DARK_BY_DESIGN` in the first commit (`af61db14`). With the writer off, both handlers answer 200 `flag_off` with zero reads, zero writes and zero fetches, and every pass refuses at call time. No existing module imports a tape module. |
+| **Fence** | No BUILD_RULES §1 file was edited (`git diff --name-only ef80da13..HEAD`, §2.5). The fenced scorer is imported, never copied. |
+| **Verification at the tip** | Full suite on Linux: **0 failing**: 819 files, 16,271 tests (16,207 passed, 64 skipped), exit 0. Baseline was 805 files, 0 failing. Rules suite on the emulator: 18 files, 332 tests, all passed, exit 0. `npm run lint:gate`: exit 0. `vite build`: exit 0. |
+| **Review (BUILD_RULES §2)** | Four lenses, one refuter per lens and a mutation lens, each on its own snapshot tree (§7). <br>• **The blocker**, found independently by three reviewers: the tape took the *bought* name's fill as the *sold* position's entry, so every replay on a captured swap was wrong by hundreds of points. The fixtures hid it. It is fixed, and it is guarded by 6 rows that go red without the fix plus a tripwire on the six capture sites. <br>• **The other confirmed findings** are fixed, each with a row named by its finding id; the review file holds 50 rows. 25 of the first 44 were red at the reviewed tip. The other 19 pin code that was already right but that no row could fail on: 18 of them go red under a named mutant, and the 19th restates a rule another row pins. The 6 rows added after the two mutation runs are each proven by their mutant (§7.3, §7.5). |
+| **Founder actions owed** | 1. **Before the first candle morning:** create the two `tape` indexes by hand in the Console (§6.3). They are declared in `firestore.indexes.json` but not deployed. <br>2. Review the six HUMAN REVIEW notes on the protected-store allowlist (§6.1). <br>3. Update the BUILD_RULES §6 cron count from 41/100 to 43/100 in a founder-cited PR (§6.2). <br>4. Astra rules on the class judgments (§6.4). <br>5. Run the flip's backfill before the **Saturday 2026-10-03 candle run (07:00 ET)**. That run is the last one that serves 2026-09-21. After it, that day's tape is written `skipped: outside_candle_window` and never gets a replay; each later day gains one more session (§6.7). |
+| **Not done, by instruction** | No PR, no merge, no flag flip, no index deploy. |
 
 ---
 
@@ -57,12 +68,12 @@ replay passes `{}` too. Its inputs, and how the live evaluator fills them for a 
 
 | Leg | Input | Persistent source (VERIFIED) | Gaps |
 |---|---|---|---|
-| **ghost** (sold name, as if never sold) | entry price | `ticks.actions[].entryPrice` (`captureContext.js:256-270`, permanent); `trades[].entryPrice` (`agentSwapExecution.js:255-273`, capped 50); receipt `guardrailReplay.outgoingEntryPrice` (`learningSchemas.js:155-156`) | none |
+| **ghost** (sold name, as if never sold) | entry price | `trades[].entryPrice` = `closedTrade.entryPrice` (`agentSwapExecution.js:191-193`, `:255-273`, capped 50); receipt `guardrailReplay.outgoingEntryPrice` (`learningSchemas.js:155-156`). **CORRECTED IN REVIEW (§7, L1-F1 — the blocker):** this row first named `ticks.actions[].entryPrice` as the permanent source; it is NOT — every capture site writes the BOUGHT name's fill there (`entryPrice: …incomingAsset?.swapPrice`, `agent-evaluate.js:2027, 3589, 4834, 5051, 5441, 5679`), which is the bought leg's source below | none when the trade has been evicted and there is no receipt; `0` is the executor's no-entry sentinel (`swapPrice \|\| startingPrices \|\| 0`) — a day-2+ sale of a name swapped in on an earlier day records 0 (the nightly reset deletes `swapPrice`), so the leg is null with `ghost.entryPrice` named (§5) |
 | | ATR | receipt `guardrailReplay.outgoingBaseATR` (`learningSchemas.js:157`). Risk and model paths record the **scoring** ATR, defaulted (`agent-evaluate.js:2160` `score.baseATR`; `:3402` `activeBaseATR ?? 2.5`); the proposal, R11 and gameplan paths record the raw slot value, null when the slot had none (`:4915`, `:5116`, `:5536`, `:5766`) | **none** when the receipt is absent or its value is null — the trade does not store ATR |
 | | tier | `trades[].tier` (slot tier, `agentSwapExecution.js:259`); receipt `resolvedTier` | none when both are absent (`ticks.actions[]` carries no tier) |
 | | threshold history | receipt `guardrailReplay.thresholdHistory` = `battle.thresholdHistory[symbolOut]` at the decision (`learningSchemas.js:161`; e.g. `agent-evaluate.js:3704`) | **none** without the receipt |
 | | **threshold baseline** *(not named by the spec)* | derivable from recorded facts in two of three cases: **(a)** the position was swapped in the same trading day — receipt `outgoingSwappedInDay` non-null, because the nightly reset deletes `swappedInDay` together with `swapPrice` (`api/cron/agent-daily-scores.js:152-165`) — so baseline = `swapPrice` = the recorded entry price; **(b)** the swap happened on the battle's activation day (ET date of `swappedOutAt` = ET date of `activatedAt`, the evaluator's own test `agent-evaluate.js:1085-1088`) with a starting price, so baseline = `startingPrices[sym]` = the recorded entry price | **(c)** an original pick sold on a later day (or a battle deployed the evening before its session, where `isActivationDay` is false): baseline = the Guard-2-validated `previousClose` — **recorded nowhere** (trade, receipt, tick and entry all lack it; 0B §3-B2 lists the Guard-3 baseline among the executor's unpersisted intermediates, and the executor's `closedTrade` at `agentSwapExecution.js:255-273` confirms it at HEAD). **Degrade:** the ghost leg is `null` with `ghost.thresholdBaseline` in `missingInputs`. |
-| **bought** (swapped-in name, from the swap) | entry price | receipt `entryMark` = `incomingAsset.swapPrice` (`learningSchemas.js:141`) | none without the receipt (the slot's `swapPrice` is mutable and cleared nightly) |
+| **bought** (swapped-in name, from the swap) | entry price | receipt `entryMark` = `incomingAsset.swapPrice` (`learningSchemas.js:141`); the tick action's `entryPrice` records the same fill permanently (the six capture sites above) | none when neither the receipt nor a tick record exists |
 | | ATR | receipt `entryATR` = `incomingAsset.baseATR`, with `entryAtrSource` (`learningSchemas.js:142-148`) | none without the receipt |
 | | tier | the same slot: `trades[].tier`; receipt `resolvedTier` | as ghost |
 | | threshold history | **{ maxMultiplier: 0, minMultiplier: 0 }** — the executor resets it for the incoming symbol at the swap (`agentSwapExecution.js:307-311`); a code invariant, not a stored value | none |
@@ -117,7 +128,558 @@ tick-capture export `scripts/export-tick-capture.js --from 2026-09-21` already p
    `agent-evaluate.js:3931-3934`). BA-22 renders `rationale` as "the agent's words", so those rows
    are not copied into `rationale[]`; the check's own state carries the fact.
 
-*(Appendix A — the anchor re-location table — follows §6.)*
+*(§2–§7 follow; Appendix A — the anchor re-location table — comes last.)*
+
+---
+
+## 2. What each stage built
+
+**Every `file:line` anchor in §2–§6 is VERIFIED.** Each was read at the branch tip named in §7.7
+in this session, by a script that printed every cited line. Anchors into files the branch does
+not touch (`agent-evaluate.js`, `agentSwapExecution.js`, `learningSchemas.js` and the like) were
+VERIFIED at the gate (§1), and those files are unchanged since. New modules live under
+`api/_utils/filmTape/` unless another path is given. None of them is imported by an existing
+production module; the only importers are the two new cron handlers, the export script and the
+tests. So with both flags off, no existing code path changes.
+
+### 2.1 Stage A — the close pass, the writer, the rules, the hub helper
+
+| Piece | Where | What it does |
+|---|---|---|
+| Flags | `src/config/featureFlags.js:2837-2886` | `FILM_TAPE_WRITE_ENABLED = false` (:2868) and `FILM_ROOM_V2_ENABLED = false` (:2886). Each carries a `// Pinned by: filmTapeFlags.test.js` pointer, and both are in `DARK_BY_DESIGN` (`src/config/flagPinGuard.test.js:180-183`) from the first commit, `af61db14`. They are read at call time inside each function, never at module load. The writer's docstring names the flip map and the flip prerequisites: both indexes, the two crons and the rules block. |
+| Constants | `src/constants/filmTape.js` (no imports) | The vocabularies: coverage (:34-41), the BA-8 check states (:48-60), card states (:63-65) and candle statuses (:83-89). The schedules and the budget the time windows are computed from (:98-105), pinned to `vercel.json` by `tapeWiring.test.js`. The BA-21 declarations `TAPE_NUMBER_CLASSES` (:125) and `SERIES_NUMBER_CLASSES` (:235). `classOfNumber` (:260) returns exactly one match or null; `numbersWithClasses` is at :286. |
+| ET time | `tapeTime.js` | ET day bounds through `Intl` (`etDayBounds` :63). Sessions from the platform calendar (`sessionFor` :78, `previousSession` :113). The close-pass window (:130). The candle window (`candleWindowStart` :156, `withinCandleWindow` :161). |
+| Sources (read-only) | `tapeSources.js` | The day's ticks by `capturedAt`, plus one neighbour on each side (`readDayTicks` :39; the fallback reads the battle's ticks by `tickSeq`, §1.5-5). Receipts (:71), calls (:77), declaration presence (:83), the day's `agentEvalRuns` (:98), intraday-view presence (:105) and the stored tape (:115). Every reader returns `{ ok: false, error }` instead of throwing. **No `tickBodies` read anywhere.** |
+| Assembly (pure) | `tapeAssemble.js` | **Checks:** tick, entry, deferred and `no_record` rows (`tickState` :141, `gapRow` :205, `orderChecks` :232, `gapAnalysis` :254). A lost capture whose entry survived is one row (`absorbedGap` :220). **Actions:** joined by the swap key (`swapKey` :289; `buildActions` :383). The sold entry comes from the trade, else the receipt's `outgoingEntryPrice` (:415-417). The bought fill comes from the receipt's `entryMark`, else the tick action (:420-421). A `0` entry is treated as absent and named. **Replay inputs per leg:** `ghostBaseline` :296, `buildReplayInputs` :321. **Directive cards:** a card is committed only when a directive record exists (`cardStateOf` :475). A card belongs to the first battle day on or after its filing (`directiveWindow` :512). Heard is the earlier of the first stamped entry and the first tick control, and never a suppressed one (`buildDirectives` :523, :553-563). `after` is counted from the rows (`afterOf` :493). **Plans:** at the entry's time (:596). **Rationale:** platform-written text is counted but not copied (:623; texts and prefixes :35-51). **Calls:** observed at `copiedAt` (:652). **Score:** taken from the time-ordered union of scored tick rows and scored entry rows (`buildScore` :689). **Battle block:** :721. **Evaluator slots with no run record:** `missingRunSlots` :755. **The document:** passes, per-section coverage and the class declaration (`assembleTape` :776; coverage :868-933). **`skipped_mode`:** :997. |
+| Merge (pure) | `tapeMerge.js` | BA-19. Rows are unioned by key with ranked column groups (`SECTION_RULES` :88, `mergeRows` :141). Units are kept by rank: the last check keeps the later instant, the first check the earlier, and the day change keeps its reference (`mergeUnit` :186, `mergeDayChange` :203). Coverage takes the max rank, with `preservedFrom` (:213). `mergeTape` (:239) carries the candle fields from the stored row, recounts `after` from the merged rows and unions the gaps. `mergeCandles` (:348) re-queues when inputs grew or improved inside the window; outside it the status becomes `partial` with `sources_changed_outside_window`. No write happens when the content is unchanged (`contentOf` :45, `finish` :370). |
+| Writer | `writeTapeDay.js` | Refuses before any read when the flag is off (:55). A non-tiered battle gets `skipped_mode`. Read, merge and write happen in ONE transaction (:98-102). `markCloseFailed` (:117) never erases a written day. |
+| Close pass | `closePass.js`; `api/cron/film-tape-close.js` | **`runClosePass` (:122)** checks in order: the flag (:124), `calendar_missing` (:127), `not_a_trading_day` (:128) and `session_not_closed` (:130). It then selects active battles plus completions since the previous session's ET day (:134; `completionsSinceMs` :59). Per battle, `tapeDateFor` (:65) picks the day itself, or the final day for a completion not yet on the tape (`completionRecorded` :77). There is a 30 s floor, and a failure is recorded and isolated (`safeMarkFailed` :102). **Backfill:** `parseBackfillRange` (:171) accepts sessions only, with `calendar_missing` (:178) and `range_not_closed` (:182). `runBackfill` (:205) uses the tape's own `passes.close.status` as the queue flag, and re-merges a final day that was written before its completion (:223-224). **Handler:** cron guard (:55-57), then the flag before the Firestore handle (:61). A backfill also needs the admin secret (:67). `maxDuration: 300` (:48). The cron entries are `vercel.json:208-215`. |
+| Battle result | `battleResult.js:12` | The platform's own completion comparison (`resolveCompletionDisposition`, imported from `api/cron/agent-evaluate.js`), labelled `derived`. |
+| Rules | `firestore.rules:508-516`; `test/rules/filmTapeDenials.rules.mjs` | The owner reads, checked against the document's own `ownerId`, on both document kinds. Every client write is denied. |
+| Hub helper | `src/utils/reviewAvailability.js` | `getReviewAvailability(battle)` (:143) returns exactly `{ ready, target, availability }` (:65). Stage 1 (`stageOne` :68) reads only the battle document. Stage 3 (`stageThree` :124) sits behind `FILM_ROOM_V2_ENABLED` (:147) and makes one bounded read (4 s). It says `pending` only for a tiered battle, with the writer on, whose owning pass is still to run (`owningPassDate` :92, `closePassStillScheduled` :101, :133-134). |
+
+### 2.2 Stage B — the candle pass, the replay, the series
+
+| Piece | Where | What it does |
+|---|---|---|
+| Bars | `bars.js` | Converts an EODHD row to its start in ms (:36). Cuts the session in three steps: the target date, then the existing `filterToLatestSession` clamp, then the closing-row policy (`sessionBars` :50). **The price at an instant is the last bar that COMPLETED at or before it** (`priceAt` :73; the rule is at :77). Session open (:83). Ten-minute aggregation anchored on the open (:89). |
+| Replay | `tapeReplay.js` | BA-11. `runLeg` (:58) scores one leg with the IMPORTED `calculateAssetScoreServer` (:34, called at :71-72), using the leg's own inputs, extremes `{}` and the mode-resolved tier stamp. `replayAction` (:93) samples three kinds of point: <br>• the swap's own check (the ghost's swap sample; it is excluded from the later checks, :105-107); <br>• the later scored checks; <br>• the close. <br>The bought leg is scored from the swap, so it uses the later checks and the close only (:136). `swapPath[0]` is the banked points (:142). It also computes `gapPoints` (:148), `closedLegDelta` (:153), `boughtVsEvidence`, market and sector change, and `missingInputs`. The fixed label is `REPLAY_LABEL` (:40). |
+| Candle pass | `candlePass.js`; `api/cron/film-tape-candles.js` | **`runCandlePass` (:278):** the flag (:281), then `calendar_missing` (:287). Selection is a collection-group query on `tape` for `pending/partial/failed` with `attempts < 3`, inside the 10-session window, oldest first (:292-295). The close-out of an aged-out tape is isolated (:312-315). There is a 30 s floor (:322). A thrown attempt is counted in a transaction, from the tape as it stands (:342-355). <br>**`processTape` (:206)** runs ONE transaction (:221). It re-plans from its own read and leaves a tape that grew mid-fetch queued (:231-232). It keeps the more complete replay and price per row (`keepBetter` :199), counts symbols obtained by an earlier attempt (:247-248), writes the series (`tx.set` :255) and makes the targeted update (`tx.update` :258). <br>**Supporting functions:** the symbol set, including plan-only names (`symbolPlan` :64); the fetch through `fetchIntradayCandles` at `'1m'`, one request per symbol per session, memoised (`barsFor` :90); plan prices (:108); series documents (:125); the retry state machine (`nextCandleState` :182). <br>**Handler:** cron guard (:36-38), the flag before the Firestore handle (:42), `maxDuration: 300` (:29). |
+
+### 2.3 Stage C — the backfill end to end, and the founder read-out
+
+| Piece | Where | What it does |
+|---|---|---|
+| Read-out formatter (pure) | `tapeExport.js` | Every stored number goes through `labelled()` with the class its own document declares (:49). Counts go through `counted()` as `derived` (:56). Recorded text is printed in “quotes” (:61), and identifiers and intervals in code spans (:67). Every section starts with `coverageLine()` (:73). A closing ledger lists every numeric leaf (:261). The entry point is `formatTapeMarkdown` (:274). |
+| Export script | `scripts/export-film-tape.js` | Flags: `--battle <id> --date <etDate>`; `--recent <n>`, scoped to one battle or, without `--battle`, the whole `tape` collection group; and `--out`. `runExport` is at :131. The reader has read methods only (`makeFirestoreReader` :160). There is no flag import, no fetcher and no write call. Markdown goes to stdout and the project line to stderr. `main()` sits behind the CLI guard (:180). |
+| Backfill end to end | `api/cron/film-tape-backfill.e2e.test.js` | An admin request goes through the real handler over 2026-09-21..25. <br>• The run stops at the budget floor and names where to resume (:109). <br>• The same request resumes through the queue flag and leaves the written days byte-identical (:127). <br>• A third request writes nothing (:145). <br>• The next candle morning enriches every day (:155). <br>• The read-out reads everything back with the writer flag off (:171). <br>• BA-1 and BA-2 hold over the whole run (:185). |
+
+### 2.4 Commits
+
+| SHA | Stage | Subject |
+|---|---|---|
+| `af61db14` | A | the writer and screen flags, dark by design; build report §1 (gate) |
+| `7f29ae6e` | A | writeTapeDay — the §4 record, merge-monotone, coverage and number classes |
+| `ed88bbf7` | A | the close pass (22:15 ET) and the admin backfill entry |
+| `76a42e39` | A | rules — owner read, no client write, on tape and series |
+| `74d4c2ea` | A | the hub helper getReviewAvailability (spec §11) |
+| `a83fdcd7` | B | the replay (BA-11) and the session bars |
+| `c8d8c7d6` | B | the candle pass (07:00 ET) — selection, retry, fetch, series, targeted write |
+| `3233fb2e` | B fix, found in C | the swap's own check is the swap sample, not a later check |
+| `5ac942ae` | A fix, found in C | the backfill refuses a range reaching an unclosed session |
+| `19f897e7` | C | the founder read-out (BA-18) and the backfill end to end — **the reviewed tip** |
+| `cc4df0b2` | review | register the tape's writers and the replay's scorer call with the repo ratchets |
+| `b5b96669` | review | a candle run whose tape grew mid-fetch leaves it queued, never "written" |
+| `452890be` | review | the confirmed findings, fixed with red-first rows (§7). *Its message says "27 of its 44 rows were red"; the recorded run says **25** (§7.3), and this report is the correction.* |
+| `4b1550aa` | review | the tape's indexes declared, the wiring pinned, the rules row tightened |
+| `4121e2cb` | review | allowlist the candle pass's transactional failure record |
+| this commit (the tip) | review | six more guard rows for the mutants that survived at `4121e2cb` (§7.5); a stale class declaration removed (§7.4); the flag docstring names both indexes; §2 to §7 of this report |
+
+### 2.5 Fence, cron count and footprint (re-verified at the tip)
+
+- **Fence.** `git diff --name-only ef80da13..HEAD` names **no** BUILD_RULES §1 file. The files checked were `decide.js`, `agentSwapExecution.js`, `agentScoring.js`, `agentRiskManager.js`, `agentArchetypeConfig.js`, `agentBattleService.js`, `agentPromptAssembly.js`, `agentEvalPromptAssembly.js`, `agentGuardrails.js`, `archetypeScoring.js` and `tournamentUserScoring.js`. The diff also does not touch the §2.3 import-boundary baseline or the prompt-honesty registry. Fenced exports are **called, never edited**: `calculateAssetScoreServer` (`tapeReplay.js:71`) and `findActiveAgentBattles` (`closePass.js:134`).
+- **Crons.** `vercel.json` goes from **41 before to 43 after**: `film-tape-close` at `15 2 * * 2-6` and `film-tape-candles` at `0 11 * * 2-6`. The two tests that pin the count moved with it (`api/agent/research.dark.test.js`, `api/cron/compute-index-intelligence.axes.test.js`).
+- **Footprint.** 45 files changed against `ef80da13`: 36 added and 9 existing files edited; 9,626 insertions and 6 deletions, most of the insertions tests and this report. Existing files edited, all outside the fence:
+  - `src/config/featureFlags.js`: the two flags appended;
+  - `src/config/flagPinGuard.test.js`: two `DARK_BY_DESIGN` rows;
+  - `firestore.rules`: one block;
+  - `firestore.indexes.json`: one composite and one field override (§6.3);
+  - `vercel.json`: two entries;
+  - the two count pins;
+  - `api/_utils/flat6TierStamp.passthrough.test.js`: site count 6 → 7, naming the replay;
+  - `api/_utils/compositionProtectedStoresAllowlist.json`: six keys and their notes (§6.1).
+
+## 3. Claim sheet for Astra
+
+There is one row per spec §8 invariant and one per §14 finding. Each row names the code that
+carries the claim and the tests that fail without it. Tests are cited as `file:line` with their row
+names shortened. `tapeReview.test.js` rows are named by their review finding id (§7). "A2" marks a
+claim whose screen half belongs to the A2 build; for those, A1's data half is named.
+
+### 3.1 Spec §8 — the honesty invariants
+
+| # | Invariant | Code | Tests |
+|---|---|---|---|
+| 1 | Every number carries one of four classes and is labelled by it; there is no fifth | The declaration is `src/constants/filmTape.js:125` / `:235`. The resolver `classOfNumber` (:260) returns one match or null. The declaration is stored on every tape and series document (`numberClasses`). The read-out labels each number from the document's own declaration (`tapeExport.js:49`). | `writeTapeDay.test.js:72` "every number … exactly one of the four classes — on every fixture"; `candlePass.test.js:352` "every number is classed — the tape after the candle pass, and every series document"; `tapePure.test.js:125` "an ambiguous declaration is a bug", `:128` "no fifth"; `tapeExport.test.js:142` "no digit is printed outside a labelled number…", `:146` "the scan is live", `:153` "the class comes from the DOCUMENT", `:180` per-field classes, `:192` **THE DECLARATION IS PINNED** (golden, review L4-F7) |
+| 2 | Nothing implies a mechanism armed, a guard held, or a datum seen that was not given — including a minute not completed at the check | Risk is a recorded decision or `null` (`riskOf`, `tapeAssemble.js:115`). Heard is never taken from a suppressed stamp (`:553-563`). Prices come from the last COMPLETED minute (`bars.js:73-79`). Diagnostics are labelled "not seen by the agent". | `bars.test.js:54` "a check at 10:07:30 ET reads the 10:06 bar…", `:60`, `:65` "before the first bar completes there is no price"; `tapeReplay.test.js:79`; `writeTapeDay.test.js:107` (BA-7); `tapeReview.test.js` L4-F2 "a suppressed stamp is never heard"; `tapeExport.test.js:304` (BA-7), `:351` (BA-14) |
+| 3 | The player's words and the filed text are two fields; the paraphrase never appears; agent text appears only as attributed quotation | `buildDirectives` (`tapeAssemble.js:523`) copies `userMessage` and the filed text separately. It never copies `originalUserAsk`, the counter-offer or the rejection. A card counts as filed only with a directive record (`cardStateOf` :475). `buildRationale` (:623) never copies platform-written text, whether placeholders or guardrail overrides (:35-51). | `writeTapeDay.test.js:266` "the player's words and the filed text are two fields", `:281` "never copies the model's paraphrase…", `:150` "the platform's placeholder text is not copied"; `tapeReview.test.js` L1-F2 (guardrail override), L1-Q3 (committed gate without a record); `tapeExport.test.js:310` (BA-9), `:319` (BA-22 / invariant 3) |
+| 4 | A plan gets prices, never a verdict; a call is copied, never judged | Plans carry `price.atPlan` / `atClose` and a basis, nothing else (`candlePass.js:108`); the price is sampled at the entry's time. Calls are copied with `copiedAt` (`tapeAssemble.js:652`). | `candlePass.test.js:62`, `:152`; `writeTapeDay.test.js:323`, `:330`; `tapeReview.test.js` L1-Q4; `tapeExport.test.js:326` (BA-10), `:339` (BA-16) |
+| 5 | The tape never writes outside its subcollections and never reads a body | Every write is under `agentBattles/*/tape/**`: `writeTapeDay.js:98-102` and `:117-148`; `candlePass.js:221-270`, `:313` and `:343-355`. No tape module references `tickBodies`. The protected-store scan lists exactly six tape write sites (§6.1). | `writeTapeDay.test.js:506`; `candlePass.test.js:254`, `:263`; `film-tape-backfill.e2e.test.js:185`; `film-tape-close.test.js:85` |
+| 6 | Writer off: no cron writes, byte-identical. V2 off: the old screen. Stage 2 changes nothing a player sees | Both handlers answer 200 `flag_off` before `getFirebaseAdmin` (`film-tape-close.js:61`, `film-tape-candles.js:42`). Every pass refuses at call time (`writeTapeDay.js:55`, `:118`; `closePass.js:124`, `:206`; `candlePass.js:281`, review L3-F4). No existing module imports a tape module. The helper's Stage 3 needs `FILM_ROOM_V2_ENABLED` (`reviewAvailability.js:147`). | `film-tape-close.test.js:69` and `film-tape-candles.test.js:57`: zero reads, zero writes and zero fetches, and the admin handle is never taken; `writeTapeDay.test.js:521`; `tapeReview.test.js` L3-F4 "every pass refuses … before any read"; `reviewAvailability.test.js:93` (Stage 2), `:149`; `filmTapeFlags.test.js:38`, `:68`; `export-film-tape.test.js:76` (reads with the flag OFF, writes nothing). The screen half is A2's: A1 changes no screen. |
+| 7 | A gap renders as a gap and truncation as truncated; a later run never loses a fact; every section states its coverage | Gaps: `no_record` rows and `passes.close.gaps` (`gapRow` :205, `gapAnalysis` :254), with one row per lost capture (`absorbedGap` :220). Truncation: `deferralsTruncated`. Missing evaluator slots: `missingRunSlots` :755. Merge-monotone: `tapeMerge.js:141`, `:186-213`, `:239`. A candle retry keeps the better result (`candlePass.js:199`, `:241-248`). Coverage is stated per section (`tapeAssemble.js:868-933`). | `writeTapeDay.test.js:87`, `:100`, `:384`, `:402`, `:415`, `:444`, `:50`; `tapePure.test.js:138-158`; `tapeReview.test.js`: L2-F1 (both rows), L2-F3a / L1-F6, L1-F12, L1-Q1, L1-F10, m02–m10, C2–C6, L4-F6 m13/m15, L5 M42a (both), L5 S2; `tapeExport.test.js:113` (every section headed by its coverage) |
+| 8 | The hub learns three things: ready, one availability word, and where | `reviewAvailability.js:65` builds exactly `{ ready, target, availability }`. | `reviewAvailability.test.js:43-56` "returns exactly three keys, for every state" (Stage 1 and Stage 3), `:58` "never carries a score, a result, a stage or a reason" |
+| 9 | Nothing selects a decisive action, ranks outcomes, or arranges facts toward an unsupported conclusion | Neither §4 nor the code has a ranking or "biggest swing" field. Actions are in time order. The replay carries its fixed label (`REPLAY_LABEL`, `tapeReplay.js:40`), and a later trade in the same slot marks both continued lines hypothetical (`subsequentTradesInSlot`, `tapeAssemble.js` in `buildActions`; printed by `tapeExport.js:129`). | `tapeExport.test.js:332` (BA-11 label); `tapeReview.test.js` L4-F3 "a later trade in the same slot counts, and the read-out marks both continued lines hypothetical". A2 renders. |
+
+### 3.2 Spec §14 — the Sep 27 review, finding by finding
+
+| Finding | A1 code | A1 tests |
+|---|---|---|
+| 1 Replay arithmetic; the gap includes banked points; hypothetical when later trades exist | `replayAction` (`tapeReplay.js:93`): `gapPoints = (lockedPoints + bought.atClose) − ghost.atClose` (:148); `closedLegDelta` (:153); `swapPath[0]` = the banked points (:142); `subsequentTradesInSlot` is carried. The visual treatment is A2's. | `tapeReplay.test.js:47` "gapPoints 0, not −10", `:161` closedLegDelta, `:91` the swap's own check; `tapeReview.test.js` L4-F3 |
+| 2 Headline wording; result only when completed; day change unavailable rather than substituted | `buildScore` (`tapeAssemble.js:689`) takes the last recorded score from ticks or entries; `buildBattleBlock` (:721). The final day learns of a completion that lands after its pass (review L1-F3 / L3-F1, `closePass.js:59-77`, `:134`, `:223`). | `writeTapeDay.test.js:345`, `:353`, `:361`, `:368` "unavailable (never a silent substitute)"; `tapeReview.test.js` L1-F5, m02, m04, and the five close-pass completion rows |
+| 3 Risk wording; a missing risk record | `riskOf` (`tapeAssemble.js:115`) returns `null` without a record | `writeTapeDay.test.js:107`; `tapeExport.test.js:304` |
+| 4 Directive card labels; no proposed text under "Filed"; the retained directive; the reply labelled; receipt vocabulary | `buildDirectives` (`tapeAssemble.js:523`): `cardState` from the gate statuses, and only with a directive record (:475); `canonicalText` only when committed; `retainedDirectiveText`; `heard`; `agentReplyDiffers`. A filing before the first session lands on the first tape (`directiveWindow` :512). | `writeTapeDay.test.js:266`, `:287`, `:298`, `:306`, `:314`; `tapeReview.test.js` L1-F4, L5 S3, L1-F7 (both), L1-Q3, L4-F2, d01; `tapeExport.test.js:310` |
+| 5 One-day horizon verdicts; plan highs and lows; the horizon note | Plans carry two prices, a basis and the horizon note, with no highs or lows (`candlePass.js:108`, `PLAN_PRICE_NOTE` :58) | `candlePass.test.js:62`, `:152`; `tapeExport.test.js:326` |
+| 6 Copy `evidence`; both legs' inputs; plan-only symbols in the fetch | `copyEvidence` (`tapeAssemble.js:99`); `buildReplayInputs` (:321), with the sold entry from the trade or receipt and the bought fill from `entryMark` or the tick (:415-421); `symbolPlan` (`candlePass.js:64`) | `writeTapeDay.test.js:115`, `:175`, `:185` (L1-F1), `:204` (L2-F7), `:214` (contract tripwire); `candlePass.test.js:82` |
+| 7 Flip-day notice | A2 | — |
+| 8 Ways to mislead | Invariant 9 above. The labels are stored with the data (`REPLAY_LABEL`, `PLAN_PRICE_NOTE`). | As invariant 9 |
+| 9 Hub copy; unavailable vs pending; the interface narrowed | `reviewAvailability.js`. Stage 3 says `pending` only for a tiered battle, with the writer on, while the pass that will tape its completion is still to run. That pass is the next session's for a holiday, weekend or after-pass completion (review L3-F2). See the interpretation note in §6.8. | `reviewAvailability.test.js:118`, `:125` "a pre-backfill battle is never pending", `:149` "with the writer dark … never pending", `:155` (flat6), `:168-195` (the owning pass) |
+| 10 Call provenance; observed-state semantics | `buildCalls` (`tapeAssemble.js:652`): `copiedAt`, `contractVersion`, `tapeWriteMode`, `recordMode: null`, and a call resolved on the day even if minted earlier | `writeTapeDay.test.js:330`; `tapePure.test.js:163`; `tapeReview.test.js` d03 |
+| Inv 1 Provenance for every number | As §3.1 row 1 | As §3.1 row 1 |
+| Inv 2 HOLD as assurance; diagnostics under Why?; the minute's close after the check | As §3.1 row 2. Diagnostics are carried as presence only (`diagnostics.intradayViews`). | As §3.1 row 2 |
+| Inv 3 Reply/rationale contradiction | `agentReplyDiffers` and the fixed labels; guardrail-override text is never shown as the agent's words | `writeTapeDay.test.js:266`; `tapeReview.test.js` L1-F2; `tapeExport.test.js:310`, `:319` |
+| Inv 7 Preservation; missingness; truncation display | As §3.1 row 7 | As §3.1 row 7 |
+| Inv 8 Helper surface | As §3.1 row 8 | As §3.1 row 8 |
+| Inv 6 Wording per flag | As §3.1 row 6 | As §3.1 row 6 |
+| Retry path; the "next pass" promise | `nextCandleState` (`candlePass.js:182`) and the 10-session window. An aged-out tape becomes `failed retry_window_elapsed`. A retry keeps the better result. The helper's `closePassStillScheduled` promises only a pass the schedule will run. | `candlePass.test.js:138-213` (the retry rows); `tapeReview.test.js` L2-F1, L2-F4, L2-F6, o01; `reviewAvailability.test.js:168-195` |
+| Cut "biggest swing" | Neither §4 nor the code has it | (absence) |
+| Add per-section coverage | `tapeAssemble.js:868-933`; `candlePass.js:148-181`; the merge rule `tapeMerge.js:213` | `writeTapeDay.test.js:50`; `tapeExport.test.js:113`; `tapeReview.test.js` C2–C6, m13, m15 |
+
+## 4. Measured cost (fixture set, in-memory store; CPU only)
+
+Measured at the tip by a scratch harness (`zz_measure`, not committed). It runs the real
+`writeTapeDay` and `runCandlePass` over the fixture set and counts the store's reads and writes.
+CPU times are single runs on a shared 4-core container while other review jobs were running, so they are upper bounds, not benchmarks.
+
+| Fixture battle-day | Status | Checks | Actions | Tape size (JSON bytes) | Assemble + merge (ms) | Firestore reads | Writes |
+|---|---|---|---|---|---|---|---|
+| capturedDay (26 rows incl. deferred + no_record) | written | 26 | 2 | 32,982 | 12.4 | 10 | 1 |
+| noTriggerDay | written | 26 | 0 | 23,526 | 4.2 | 9 | 1 |
+| budgetDay | written | 6 | 0 | 10,638 | 2.1 | 9 | 1 |
+| completedDay | written | 26 | 0 | 23,573 | 4.5 | 9 | 1 |
+| skippedModeDay (flat6) | skipped_mode | 0 | 0 | 4,411 | 0.6 | 2 | 1 |
+| preCaptureDay | written | 2 | 1 | 10,540 | 1.1 | 9 | 1 |
+| multiDay: 40 checks, each with a six-symbol evidence stamp (×5 days) | written | 40 | 0 | 71,470 – 71,805 | 10.7 – 16.5 | 9 – 10 | 1 |
+| capturedDay after the candle pass | written | 26 | 2 | 43,070 | — | — | — |
+
+- **Size.** The largest tape has 40 checks, each with a six-symbol evidence stamp, and is about
+  72 KB of JSON. That is inside the spec's "well under 200 KB" and far from Firestore's 1 MiB limit.
+  A series document is at most 6,312 bytes; a 14-symbol day's series total 88,312
+  bytes across 14 documents.
+- **Per-battle wall time.** CPU is 0.6–16.5 ms. Production time is dominated by the 9–10
+  Firestore round trips per battle-day: the battle document, the day's ticks plus two neighbours,
+  receipts, calls, declarations, run records, intraday views, the prior day's tape, and the
+  transaction's read and write. At 30–80 ms a round trip, that is about 0.3–0.9 s per battle. The
+  270 s usable budget (300 s less the 30 s floor) therefore covers roughly 300–900 battles a night.
+  Beyond that, the rest are named `notReached`, and the backfill entry is their path. The
+  completion re-merge (review L1-F3) adds one query per pass. It also adds one document read per
+  completion already on its tape, which is skipped on that read.
+- **Candle units per morning.** Each distinct (symbol, session) costs one request of 5 units
+  (`api/_utils/intraday/intradayFetch.js:105`, G1; `UNITS_PER_REQUEST`, `candlePass.js:55`). The
+  fixture morning selected 6 tapes: one 14-symbol day, and five 12-symbol days of another battle,
+  with the shared session memoised. It made **62 requests = 310 units** in 2,141 ms
+  of CPU. A production morning costs about 5 × Σ over sessions of |∪ symbols of that session's
+  tapes|. For example, 20 battles × ~12 symbols, with SPY/RSP, the sector ETFs and common names
+  shared, is about 150–240 requests, or **750–1,200 units**. A tape left `partial` refetches its
+  whole symbol set on each of its two retry mornings (a 14-symbol day costs 70 units per retry).
+
+## 5. `missingInputs` — the dependency list
+
+Each missing input is carried as `null` plus the input's name, never as a guessed number (spec §6:
+"a dependency, not permission to guess").
+
+| Missing input (as named on the tape) | When | What would close it |
+|---|---|---|
+| `ghost.thresholdBaseline` | An original pick sold on a day other than the battle's activation day, or a battle deployed the evening before its first session. The scorer's Guard-2 `previousClose` baseline is recorded nowhere (§1.2 case c). | Persist the baseline the executor used on the receipt (`guardrailReplay.thresholdBaseline`). The executor computes it inside the fenced `agentSwapExecution.js:218-233`, so this is founder-gated fence contact or an evaluator-side copy — a separate task. |
+| `ghost.entryPrice` | The trade was evicted (the 50 cap) and there is no receipt. **Or** the recorded entry is `0`, the executor's no-entry sentinel (`swapPrice \|\| startingPrices \|\| 0`, `agentSwapExecution.js:191-193`). That happens on **every day-2+ sale of a name swapped in on an earlier day**, because the nightly reset deletes `swapPrice` (`agent-daily-scores.js:152-165`) and `startingPrices` holds only the creation portfolio. The tape treats `0` as absent and names it (review L2-F7). | Keep the position's entry through the nightly reset. That is a live-scoring question too (§6.9). |
+| `ghost.atr`, `ghost.thresholdHistory` | There is no learning receipt for the swap: capture flags were off at the time, or `classifyEvidence` ≠ `live_agent` | None in A1; the receipt is their only durable home (§1.2) |
+| `bought.entryPrice` | There is neither a receipt (`entryMark`) nor a tick record of the action (its `entryPrice` is the bought fill) | None |
+| `bought.atr` | No receipt (`entryATR`) | None in A1 |
+| `ghost.atr` / `bought.atr` (a null value) | The proposal, R11 and gameplan paths record the slot's raw `baseATR`, which is null when the slot had none. The live scorer then defaulted to 2.5 internally; the tape does not assume that. | Record the scoring ATR on those three receipt paths |
+| `ghost.tier` / `bought.tier` | Neither the trade (capped at 50) nor the receipt survives | None; tick actions carry no tier |
+| `bars:SYMBOL` | The fetch returned no regular-session bars for the symbol | The candle pass retries up to 3 mornings within 10 sessions; after that the tape says `failed` |
+| `price:SYMBOL@<tickSeq \| swap \| close>` | The sample instant came before the session's first minute completed, or the bars have a hole there | None; the sample stays null |
+| `lockedPoints` | An action row without recorded locked points | None |
+| `replayReason: crypto_not_supported` (a reason, not an input; BA-3's "reason" is stored as `replayReason`, review L1-Q5) | Crypto legs and crypto plans | Out of scope (BA-3) |
+| Deferral instant | `agentEvalRuns` keeps no per-battle deferral time, so a `deferred` row carries its run's `startedAt` | Persist `deferredAt` per id on the run record |
+| `recordMode` (calls) | The call record carries no minting mode at V1.4 | Add it to the call record contract |
+| Shared bar cache (the `source`) | None exists at HEAD: the intraday ring holds 5-minute buckets for actionable symbols only (`api/_utils/intradayConfig.js:107`), so `source` is always `eodhd_1m` | A 1-minute session cache, if one is ever built |
+
+## 6. Found, not fixed — for the founder
+
+1. **Protected-store allowlist: human review owed.** The repo's deny-by-default write scan
+   (`api/_utils/compositionProtectedStores.scan.test.js`) requires "a human must review the writer"
+   for every new unresolved write site. The six tape sites are listed at count 1, each with a
+   `_notes_film_tape_a1` note, in `api/_utils/compositionProtectedStoresAllowlist.json`:
+   - `writeTapeDay::set`
+   - `markCloseFailed::set`
+   - `markCloseFailed::update`
+   - `processTape::set` (the series)
+   - `processTape::update` (the targeted update)
+   - `runCandlePass::update` (the transactional failure record)
+
+   Your review of those six notes is the human step.
+2. **The BUILD_RULES §6 cron budget text** still reads 41/100. After this merges it is 43/100.
+   BUILD_RULES changes only by founder-cited PR, so it is not edited here.
+3. **Indexes to create by hand in the Console.** Both are declared in `firestore.indexes.json` on
+   this branch, per the index-drift rule's dual write (`FIRESTORE_INDEX_DRIFT_CLEANUP.md` (repo root),
+   "Related notes"). **This build deploys neither** and never runs
+   `firebase deploy --only firestore:indexes`.
+
+   | # | Console entry | Serves | When it is needed |
+   |---|---|---|---|
+   | 1 | **Composite**: collection ID `tape`, query scope **Collection group**, fields **`passes.candles.status` Ascending, `etDate` Ascending** | The candle pass's selection: `collectionGroup('tape').where('passes.candles.status','in',[pending,partial,failed]).where('etDate','>=',…).orderBy('etDate','asc')` (`candlePass.js:292-295`) | **Before the first candle morning after the writer flip.** Without it the query fails `FAILED_PRECONDITION`, the handler returns 500, and nothing is processed. The failure is loud and loses nothing if the index is made inside the 10-session window. |
+   | 2 | **Single-field exemption**: collection ID `tape`, field **`etDate`**. Add **Descending** at **Collection group** scope and keep the collection-scope defaults (asc, desc, array-contains). | `export-film-tape --recent <n>` **without** `--battle`: `collectionGroup('tape').orderBy('etDate','desc')` (`scripts/export-film-tape.js:169-170`) | Only for that read-out mode. No cron needs it. A battle-scoped `--recent` needs nothing. |
+
+   **Nothing else.** Every other query is a single-field range on one collection, served by the
+   automatic indexes: `agentBattles.completedAt`, `ticks.capturedAt`, `ticks.tickSeq`,
+   `agentEvalRuns.startedAt` and `intradayViews.evaluatedAt`. The issued queries are checked
+   against the file by `tapeWiring.test.js:74-109`, which goes red without the entries.
+4. **Class judgments for Astra.** BA-21 has no fifth class.
+   - **(a)** A missing check's `tickSeq` (in a `no_record` row, and in `passes.close.gaps[]` /
+     `unattributedGaps[]`) is now classed **`recorded` everywhere**. That settles review
+     L1-F9a / L4-F8a, where the same number carried two classes. The declaration is per path, and
+     `checks[].tickSeq` must stay `recorded` for tick rows. The number is an identifier the counter
+     minted, not a measurement. Two refuters proposed `derived` instead. For the gaps lists that is
+     one line each in `src/constants/filmTape.js`. For the `no_record` row it would also need the
+     number moved to a field of its own, because the declaration is per path.
+   - **(b)** `boughtVsEvidence.pxDelta` / `chgDelta` and `closedLegDelta` are arithmetic between a
+     rebuilt or market value and a recorded one. They are labelled `rebuilt`.
+   - **(c)** `bought.thresholdHistory` {0, 0} is labelled `recorded`. It is the executor's own write
+     at the swap (`agentSwapExecution.js:307-311`), and review L1-F9b / L4-F8b was refuted on that
+     ground.
+5. **Coverage notes carry counts inside prose**, for example "1 minted check(s) of this day have
+   no record (tickSeq 13)". The read-out prints a note as the tape's own quoted words. Every number
+   a note repeats is classed at its numeric home, and the read-out test proves no *stored* number
+   hides inside quotes. A2 should render a note as the section's coverage statement, not as numbers.
+6. **H-2** (a final-day legacy review dated the day after) is untouched, per spec §11 and §12. It
+   is its own one-line PR.
+7. **Backfill timing against the candle window** (review L3-Q2). A backfilled day is written
+   `pending` for candles only while the next candle run still serves it; otherwise it is written
+   `skipped: outside_candle_window`, and that is final. The last candle run that serves
+   **2026-09-21** is **Saturday 2026-10-03, 07:00 ET** (`candleWindowStart('2026-10-03')` =
+   2026-09-21). Each later day gains one session. So the flip PR's backfill should run before that
+   morning, and earlier still if retries are wanted, because a day backfilled at the edge gets one
+   attempt.
+8. **Two spec widenings made in review, for the record.**
+   - **§5 selection.** The spec selects "completed with `completedAt` on the ET date". Tiered
+     battles expire at 20:00 ET, after the evaluator's last run, and so complete on a later date:
+     the next weekday's sweep, a holiday or a weekend redeploy (review L1-F3 / L3-F1, which also
+     found the gap in the spec's sentence). The pass therefore selects completions since the
+     previous session's ET day and re-merges the final day. The backfill re-merges a final day that
+     was written before its completion.
+   - **§11 Stage 3.** The spec says "`'pending'` only when the battle completed today and tonight's
+     close pass is scheduled for it". The helper now says `pending` until **the pass that will tape
+     the completion** has run. That is the next session's pass for a weekend or holiday completion,
+     or for one after the night's pass started. It never says `pending` for a flat6 battle (its pass
+     writes `skipped_mode`) and never with the writer dark. This keeps §11's rule, "never 'pending'
+     for work nothing will do", now that such completions are taped. Stage 3 cannot be reached until
+     flip (2).
+9. **Out of scope, for separate tasking (unverified).** Live scoring of a position swapped in on an
+   earlier day may use an entry of `0` from day 2. The nightly reset deletes `swapPrice`,
+   `previousSwapPrice` is never read, and `startingPrices` has no swap-in writer (raised by L2 and
+   its refuter). The tape does not depend on it (§5 `ghost.entryPrice`). Whether live scoring does
+   is a question for the scoring owner.
+10. **The close cron's import graph** (review L3-Q3, judged not a finding). `battleResult.js`
+    imports `api/cron/agent-evaluate.js` to reach the pure `resolveCompletionDisposition`. That
+    adds about 60–130 ms to the close cron's cold start. The refuter found no import-time side
+    effects, and the candle cron does not import it. Optional follow-up: move that function into an
+    `api/_utils` module that `agent-evaluate.js` re-exports.
+11. **No per-fetch time bound** (an L2 question). `fetchIntradayCandles` uses a bare `fetch`, and
+    the 30 s floor is checked between tapes. A tape started with more than 30 s left could be killed
+    at 300 s. Its attempt is then not counted, because the kill skips the transactional failure
+    record, and the tape stays selectable. Not measured against EODHD latency.
+
+    **Double invocation** (also L2's). A double-fired cron or a manual run on the same morning spends two attempts, because there is no per-run idempotency key. The third attempt is terminal, so a tape can lose a retry that way.
+
+## 7. The §2 adversarial review — the written record
+
+### 7.1 How it ran
+
+- **Four lenses** reviewed the stage-C tip, `19f897e7`. Each worked on its own `git archive`
+  snapshot, with `node_modules` symlinked. Each was told to *break* the build and to prove every
+  finding with a scratch repro kept in its snapshot:
+  - **L1** — tape domain correctness: assembly, merge, the writer and the close pass;
+  - **L2** — the candle pass, the replay and the bars;
+  - **L3** — wiring, lifecycle, the flag-off guarantee, the rules, the crons and the hub helper;
+  - **L4** — test integrity and the founder read-out. L4 used a mutation harness of 51 mutants
+    over the tape suites.
+- **One refuter per lens** (R-L1 to R-L4), each on its own snapshot, re-ran the repros and tried to
+  refute each finding. Each gave a verdict and its own severity.
+- **The coordinator** found one defect while the lenses ran: a candle run whose tape grew mid-fetch
+  was marked `written` (`b5b96669`; L2-F4 and L4-F4 then found the same thing). The coordinator also
+  caught two repo ratchets through the full suite (`cc4df0b2`).
+- **The mutation lens L5 ran last**, on its own snapshot of `4b1550aa`. That is the fixed code; the
+  one later commit, `4121e2cb`, changes only the allowlist JSON. **The coordinator also re-ran L4's
+  mutants at `4121e2cb`** (§7.5).
+- No subagent wrote to the main working tree. Read-only git commands outside the permitted form are
+  disclosed in §7.6.
+
+### 7.2 Verdicts and dispositions
+
+Severity is the lens's severity, then the refuter's. "Row" names the guard: a `tapeReview.test.js`
+row by its finding id unless another file is given.
+
+| Finding | Severity (lens → refuter) | Refuter verdict | Disposition |
+|---|---|---|---|
+| **L1-F1 = L4-F1 = R-L2 NEW-1** — the tick action's `entryPrice` is the BOUGHT name's fill, but it was read as the SOLD position's entry. The ghost leg, `gapPoints`, `closedLegDelta` and the read-out's "entry" were all wrong on every captured swap (e.g. `gapPoints` 665.5 instead of 70.5), and the fixture hid it. | **BLOCKER → BLOCKER** (three reviewers independently) | CONFIRMED | **Fixed** `452890be`. The sold entry now comes from `trades[].entryPrice`, else the receipt's `outgoingEntryPrice`. The tick value is the bought basis. The fixture's tick actions carry what the writers write. Rows: `writeTapeDay.test.js:185`, `:204`, and `:214` (a contract tripwire on the six capture sites). Six rows go red with the old assembler. §1.2's table is corrected in place. |
+| L1-F2 — guardrail-override text was copied as the agent's words | major → major | CONFIRMED | Fixed (`PLATFORM_RATIONALE_PREFIXES`). Row L1-F2. |
+| **L1-F3 = L3-F1** — a completion that lands after the final day's pass (on a holiday, a weekend, or after that night's pass) never reached the final-day tape, and the backfill could not repair it | major → major; R-L1: wider than filed; R-L3: latent until the flip, 12 of 318 sessions through 2027 | CONFIRMED | Fixed. The pass selects completions since the previous session's ET day and re-merges the final day; the backfill re-merges a final day written before its completion; a completion already recorded is skipped on one read. Five rows (the close-pass completion block). Spec §5 widening: §6.8. |
+| L1-F4 — a directive filed before the first session was on no tape, while its coverage said `complete` | major → major | CONFIRMED | Fixed (`directiveWindow`). Row L1-F4. |
+| L1-F5 — the last score ignored a later check known only by its entry | major → minor | CONFIRMED | Fixed (the time-ordered union in `buildScore`). Row L1-F5. |
+| **L1-F6 = L2-F3a** — a re-run whose receipts read failed wiped the saved replay inputs while coverage said `complete` / preserved | major → major (R-L1); minor (R-L2) | CONFIRMED | Fixed. The input group is ranked by how many legs it holds. Row L2-F3a / L1-F6. |
+| L1-F7 — heard could come out late; a re-run could move it later | minor, latent | CONFIRMED | Fixed. Heard is the earlier of entry and tick, and the merge keeps the earlier. Two rows. |
+| L1-F8 — first check, `after` counts and `lockedPoints` could be lost on eviction | minor, latent | CONFIRMED | Fixed. First check ranks earliest, `after` is recounted from the merged rows, and `lockedPoints` and `entryPrice` are column groups. Guarded by the merge rows (m02, m10), L5 M42a's first-check row and `tapePure.test.js:138`. |
+| L1-F9 / L4-F8 — number classes | (a) nit, (b) —, (c) minor latent | (a) CONFIRMED, (b) **REFUTED** by both, (c) CONFIRMED | (a) Minted tickSeqs are classed `recorded` everywhere, a class judgment for Astra (§6.4). (b) No change. (c) `hypothesisVersion` is declared. The golden is `tapeExport.test.js:192`. |
+| L1-F10 — a phantom `preservedFrom`, and one extra write | minor → nit | PARTIALLY | Fixed; only surviving leftovers count as carried. Row L1-F10. |
+| L1-F11 — the close pass could tape a session still in progress | minor | CONFIRMED | Fixed (`session_not_closed`). Row L1-F11. |
+| L1-F12 — a missing run record (a killed run) read as `complete` | minor | CONFIRMED | Fixed (`missingRunSlots`). Row L1-F12. |
+| L1-F13 — "not being minted" was asserted without reading the mode | minor → nit | CONFIRMED | Fixed. The note now states facts, not a conclusion. Rows L1-F13 and m15. |
+| L1-Q1 — a lost capture with a surviving entry was shown as two rows | question → minor | CONFIRMED | Fixed (`absorbedGap`). Row L1-Q1. |
+| **L1-Q2 = L2-F3b** (and R-L4's outside-list item) — inputs that became complete never re-queued the candle pass | question → minor / note | CONFIRMED | Fixed. Improved inputs re-queue within the window. Row L2-F3b. |
+| L1-Q3 — a committed gate with no directive record read as filed | question → minor, latent | CONFIRMED | Fixed. A card counts as committed only with a directive record. Row L1-Q3. |
+| L1-Q4 — the plan time was the tick's capture time | question → nit | PARTIALLY | Fixed; the plan uses the entry's time. Row L1-Q4. |
+| L1-Q5 — `replayReason` vs BA-3's "reason" | question | **REFUTED** | No change. The key is named in §5. |
+| L2-F1 — a candle retry recomputed and wiped earlier facts | major → major | CONFIRMED | Fixed. The better result is kept per row, and earlier-obtained symbols count. Two L2-F1 rows. |
+| L2-F2 — the bought leg was sampled before its purchase; `swapPath[0]` ≠ `lockedPoints` | major → major | CONFIRMED | Fixed. The bought leg is scored from later checks and the close only, and `swapPath[0]` is the banked points. Guarded by `tapeReplay.test.js` (the fork and early-instant rows). |
+| **L2-F4 = L4-F4** — the candle write came from a stale plan; the thrown path counted from a stale snapshot | minor → minor (R-L2); major (L4) | CONFIRMED at `19f897e7` | Main part fixed in `b5b96669` (`candlePass.test.js:289`, red first). The thrown path is fixed in `452890be`, which counts attempts in a transaction (row L2-F4). |
+| L2-F5 — outside the window, a grown tape kept a stale `written` | minor → note (latent) | PARTIALLY | Fixed: `partial`, with an outside-window note. Row L2-F5 / o02. |
+| L2-F6 — one failed aged-out marker cost the whole morning | minor | CONFIRMED | Fixed; the close-out is isolated. Row L2-F6. |
+| L2-F7 — a `0` entry was not named | minor → note (minor once NEW-1 was fixed) | PARTIALLY | Fixed; `0` is treated as absent and named. `writeTapeDay.test.js:204`. |
+| **L2-F8 = L3-F6 = L4-F9** — no index declared for the tape's collection-group queries | minor (must precede the flip) | CONFIRMED / PARTIALLY | Fixed by declaration in `4b1550aa`, checked by `tapeWiring.test.js:74-109`. Console creation is owed (§6.3). |
+| R-L2 NEW-2 — fixture timing (the swap was recorded on a later check) | note | — | Fixed in the fixture. |
+| L3-F2 — Stage 3 said `pending` on a holiday; `gameMode` was ignored (the refuter's adjacent find) | minor → minor | PARTIALLY | Fixed: `owningPassDate`, and tiered only. `reviewAvailability.test.js:155`, `:181-195`. Spec §11 widening: §6.8. |
+| L3-F3 — the schedules were not tied to the constants | minor → minor | PARTIALLY (the `maxDuration` half REFUTED) | Fixed: `tapeWiring.test.js:115-128`. |
+| L3-F4 — `runCandlePass` did not read the flag | minor → note | CONFIRMED | Fixed; every pass refuses. Row L3-F4. |
+| L3-F5 — the backfill auth comment was wrong | minor → note | CONFIRMED | Fixed: `film-tape-close.js:19-33`, `film-tape-close.test.js:109`. |
+| L3-F7 — after the maintained calendar ends, the pass went quiet instead of loud | minor → note | CONFIRMED | Fixed (`calendar_missing` in all three passes). Row L3-F7. |
+| L3-F8 — the report pointed to sections that did not exist yet | minor (docs) | — | This report's §2–§7. |
+| L3-Q1 / Q2 / Q3 | questions | Q3: **not a finding** | §6.2, §6.7, §6.10. |
+| L4-F2 — no fixture had a suppressed stamp | major → major | CONFIRMED | Row L4-F2 (red under d02). |
+| L4-F3 — `subsequentTradesInSlot > 0` was never exercised | major → major | CONFIRMED | Row L4-F3 (red under o04 and o05). |
+| L4-F5 — six merge rules could be deleted with the suite green | major → minor | PARTIALLY (5 of 6; m04 an equivalent mutant) | Rows m02–m10 (all red under their mutants, m04 included). |
+| L4-F6 — seven BA-20 reasons could be deleted with the suite green | major → major | CONFIRMED (7 of 7) | Rows C2–C6 at `452890be`. **m13 and m15 were still uncovered at `4121e2cb`** (the refuter flagged this; the re-run confirmed it). The final commit adds rows L4-F6 m13 and m15, each red under its mutant. |
+| L4-F7 — the read-out test's quote and code-span exemption hid numbers; classes were pinned for four paths only | major → major | CONFIRMED | Fixed: the scan was tightened, per-field class rows added, and the golden declaration at `tapeExport.test.js:192`. e01–e04 are now red. |
+| L4-F10 — named cases no test could fail on | minor → minor | PARTIALLY (4 of 5; o02 unreachable) | Rows d01, d03, o01, o03, and o02 anyway. |
+| L4-F11 — the rules source row sliced to the end of the file | minor | **REFUTED** as a guard gap (the emulator rows catch it) | Tightened anyway (`4b1550aa`). |
+| L4-F12 — the fixture header wrongly said no composer existed | minor → nit | CONFIRMED | Fixed. Run records now come from `composeEvalRunRecord`. |
+
+**Tally.** One blocker, found independently by three reviewers.
+
+- **Refuted outright:** L1-Q5, and L4-F11 as a guard gap.
+- **Refuted in part:** L1-F9b / L4-F8b, L4-F8c, the `maxDuration` half of L3-F3, L4-F5's m04 (an equivalent mutant) and L4-F10's o02 (unreachable).
+- **Not a finding:** L3-Q3.
+
+Everything else was confirmed or partly confirmed. **Every confirmed finding is fixed**, including the ones judged latent or a nit. The open questions that were not fixed are carried to §6 (6.7, 6.9, 6.10, 6.11).
+
+### 7.3 Red first
+
+- **`tapeReview.test.js` against `19f897e7`'s source**, with the review's fixtures: **25 of 44 rows
+  red** (`scratchpad redfirst.log`). The commit message of `452890be` says 27; that is wrong, and
+  this is the correction. The 19 rows that were green close guards that could not fail: L4-F2, d01
+  (×2), d03, o01, o03, L4-F3, m02, m04–m07, m10, C2–C6, and L2-F1's later-success row. Their proof
+  is the mutant, not the old tree: 18 of them go red under a named mutant (§7.5). The 19th, L2-F1's
+  later-success row, is a companion. The rule it restates (a later success clears the tape) is pinned
+  by `candlePass.test.js:181`, which goes red when `keepBetter` always keeps the stored result;
+  the review row itself stays green under that mutant.
+- **The blocker's rows.** With `19f897e7`'s `tapeAssemble.js`, **6** `writeTapeDay.test.js` rows
+  go red. The seventh, the contract tripwire, reads the capture sites' source and is green by design.
+- **`b5b96669`'s row** was red first: the tape read `written` with attempts 1.
+- **The final commit's six rows** (L4-F6 m13 and m15; L5 M42a and its first-check twin; L5 S2; L5 S3) pass on the real code, and each is red under its mutant (§7.5). They guard code that was already right but that no row could fail on.
+
+### 7.4 What changed, by commit
+
+| Commit | Content |
+|---|---|
+| `cc4df0b2` | The repo ratchets the full suite caught. The replay's scorer call carries the mode-resolved tier stamp, and the flat6 site pin moves 6 → 7. The tape's write sites are allowlisted with HUMAN REVIEW notes. |
+| `b5b96669` | A candle run whose tape grew mid-fetch leaves it queued. |
+| `452890be` | Every confirmed L1–L4 finding in the tape, merge, candle, replay, close-pass and helper code, with the 44 review rows. |
+| `4b1550aa` | Both indexes declared; the wiring pins (queries against the index file; schedules and budget against the constants); the rules source row reads exactly the tape block. |
+| `4121e2cb` | The transactional failure record is allowlisted (the sixth site). |
+| this commit (the tip) | Six guard rows for the mutants that survived at `4121e2cb`: L4-F6 m13 and m15 (from L4's re-run), and L5 M42a with its first-check twin, L5 S2 and L5 S3 (from L5). Each is red under its mutant. A stale class declaration removed: `actions[].replay.bought.atSwap`, which no longer exists since L2-F2. The flag docstring names both indexes. The report's §2–§7. |
+
+### 7.5 Mutation results
+
+**L5, the mutation lens** (its own snapshot of `4b1550aa`; each mutant applied alone, its tests run,
+the file restored and checked with `cmp`):
+
+L5's baseline on the unmutated tree was 14 files / 272 tests green, and the rules suite was 21 tests green under the emulator. **58 of 59 named runs went red.** The one hollow named guard is **M42a**, and the extra probes found **S1–S3** hollow in the same way. The final commit's rows now cover all four (see below).
+
+| id | Edit (file:line at `4b1550aa`) | Result | First failing test |
+|---|---|---|---|
+| M1 | `tapeReplay.js:149` `gapPoints` without the banked points | RED (5) | "a sale banking 10 … → gapPoints 0, not −10" |
+| M2 | `bars.js:77` price from the bar containing the instant | RED (6) | "a check at 10:07:30 ET reads the 10:06 bar …" |
+| M3 | `tapeMerge.js:169` stored leftover rows dropped | RED (2) | "a stored row the new read lacks is kept …" |
+| M4 | `tapeMerge.js:165` candle columns from the new row | RED (2) | "a close pass AFTER the candle pass keeps every candle field" |
+| M5 | `tapeMerge.js:214` coverage is the new coverage | RED (3) | L2-F3a (preservedFrom) |
+| M6 | `tapeAssemble.js:84` `evictionPossible = false` | RED (1) | "multi-day at 150 …" |
+| M7 | `reviewAvailability.js:71-73` a fourth key `stage: 1` | RED (7) | "stage 1 returns exactly three keys" |
+| M8 | `film-tape-close.js:60` the admin handle before the flag | RED (1) | "FLAG OFF: … the admin handle is never taken" |
+| M9 | `writeTapeDay.js:55` flag throw deleted | RED (1) | "flag off: writeTapeDay refuses before any read or write" |
+| M10 | `candlePass.js:281` flag throw deleted | RED (1) | L3-F4 |
+| M11 | `tapeReplay.js:71-74` a local scorer | RED (5) | "swap the imported scorer and every rebuilt number follows it" |
+| M12 | `candlePass.js:187` no attempts-exhausted branch | RED (1) | "… a fourth morning never selects it" |
+| M13 | `tapeExport.js:52` `labelled()` prints the bare value | RED (11) | the digit scan |
+| M14 | `tapeExport.js:208` Plans without its coverage line | RED (1) | "plans: the line after its heading is its coverage" |
+| M15 | `tapeExport.js:110` raw `c.tickMs` | RED (2) | the digit scan |
+| M16 | `tapeExport.js:164` `lockedPoints` smuggled through `quoted()` | RED (3) | the digit scan |
+| M17 | `filmTape.js:202` `gapPoints` declared `recorded` | RED (3) | the declaration pin |
+| M18 | `closePass.js:224` backfill never skips written days | RED (3) | e2e "request 2 … written days are skipped" |
+| M19 | `closePass.js:182` `range_not_closed` deleted | RED (2) | "the backfill entry validates its range" |
+| M20 | `tapeReplay.js:106-107` own-check exclusion removed | RED (1) | "the check that made the swap is the swap sample …" |
+| M21 | `tapeAssemble.js:415` **the blocker re-introduced** (tick `entryPrice` first) | RED (6) | "the tick action's entryPrice is the BOUGHT name's fill (L1-F1)" |
+| M22 | `tapeAssemble.js:56` `pos` accepts 0 | RED (1) | L2-F7 |
+| M23 | `tapeAssemble.js:46-49` prefixes emptied | RED (1) | L1-F2 |
+| M24 | `tapeAssemble.js:513` `directiveWindow` → the ET day | RED (1) | L1-F4 (the first-day branch; see S3) |
+| M25 | `tapeAssemble.js:693` the score from tick rows only | RED (1) | L1-F5 |
+| M26 | `tapeAssemble.js:563` heard prefers the entry | RED (1) | L1-F7 |
+| M27 | `tapeAssemble.js:556, 558` suppression ignored (each half alone is also RED) | RED (1) | L4-F2 |
+| M28 | `tapeAssemble.js:480` a committed gate is always filed | RED (1) | L1-Q3 |
+| M29 | `tapeAssemble.js:756` `missingRunSlots` → `[]` | RED (1) | L1-F12 |
+| M30 | `tapeAssemble.js:221` `absorbedGap` → false | RED (1) | L1-Q1 |
+| M31 | `tapeMerge.js:96` input group by anchor presence | RED (1) | L2-F3a / L1-F6 |
+| M32 | `tapeMerge.js:109` heard as a plain group | RED (1) | L1-F7 (merge) |
+| M33 | `tapeMerge.js:358` `|| improved` dropped | RED (1) | L2-F3b |
+| M34 | `tapeMerge.js:362` outside-window re-queue dropped | RED (1) | L2-F5 / o02 |
+| M35 | `candlePass.js:199` `keepBetter` → fresh (the plan half alone is also RED) | RED (1) | L2-F1 |
+| M36 | `candlePass.js:248` `obtainedBefore` ignored | RED (1) | L2-F1 |
+| M37 | `candlePass.js:312-318` aged-out try/catch removed | RED (1) | L2-F6 |
+| M38 | `tapeReplay.js:136` bought leg over all samples | RED (2) | `price:INX@swap`; scorer call count |
+| M39 | `closePass.js:61` completions since today only | RED (4) | the holiday / weekend / after-pass rows |
+| M40a | `firestore.rules:509` tape read → any signed-in user | RED (6) | 5 emulator rows + the text pin |
+| M40b | `firestore.rules:514` series write → any signed-in user | RED (4) | 3 emulator write-denial rows + the text pin |
+| M41 | `reviewAvailability.js:94` `owningPassDate` → own date | RED (3) | "a weekend completion … Monday's pass" |
+| **M42a** | `tapeMerge.js:265` `lastCheck` takes the new read | **GREEN 272/272 — hollow** | none |
+| M42b–f | `tapeMerge.js` result rank / intraday views / `deferralsTruncated` / sectors / span `from` | RED (1 each) | m04, m05, m06, m07, m10 |
+| M43a–e | `tapeAssemble.js` the five C-row reasons deleted | RED (1 each) | C2, C3, C4, C5, C6 |
+| M44 | `filmTape.js:65` NO_CHANGE → `['no_change']` | RED (2) | d01 |
+| M45 | `candlePass.js:299` newest first | RED (1) | o01 |
+| M46 | `tapeAssemble.js:468` `subsequentTradesInSlot = 0` | RED (1) | L4-F3 |
+| M47 | `firestore.indexes.json` the tape composite deleted | RED (1) | the composite pin |
+| M48 | `vercel.json:210` `15 3 * * 2-6` | RED (1) | the close-pass schedule pin |
+
+**L5's extra probes**, each run against all 14 files:
+
+| id | Edit | Result |
+|---|---|---|
+| S1 | `tapeMerge.js:266` `firstCheck` takes the new read | **GREEN — hollow** |
+| S2 | `tapeMerge.js:222` span `to` from the new read | **GREEN — hollow** |
+| S3 | `tapeAssemble.js:519` the later-day window → the ET day (a weekend filing lands on no tape) | **GREEN — hollow** |
+| S4 | `film-tape-candles.js:41` the admin handle before the flag | RED |
+| S5 | `writeTapeDay.js:118` `markCloseFailed`'s flag throw deleted | RED |
+| S6 / S7 | `closePass.js:124` / `:206` the pass and backfill flag throws, each alone | RED / RED |
+
+**Closed in the final commit.** The rows are "L5 M42a" (the last check), its first-check twin (S1),
+"L5 S2" (the span's end) and "L5 S3" (the weekend filing). The code was right in each case; no row
+could fail on it. Each row passes on the real code and is **red under its mutant**, re-run in a fresh
+snapshot. L5 also noted two things that are not findings: M38's rows pin the cause (the swap is left
+out of the bought leg's samples) rather than the downstream ratchet, and M43a is caught by C2's note,
+not its status.
+
+**The re-run of L4's mutants at `4121e2cb`.** L4's harness (`mut.mjs`) was pointed at two fresh
+snapshots. It ran 46 mutants over the tape suites, the close and candle handler suites, the export
+script, the helper and the flag pins; the backfill e2e was left out for speed, since leaving a file
+out can only hide a red, never make one. Before any mutant, each tree's baseline was 265/265 green.
+The mutants: the 25 that survived L4 at `19f897e7`, three of them re-targeted to the changed code
+(m02, m15, o02); the e05 control; o06; m08 and m09; and 17 of L4's originally-red r-mutants that
+still apply.
+
+- **44 of 46 went red.** r15 went red on a second run. It needs the byte-identical copy of the scorer
+  (`agentScoringLocalCopy.js`) that L4 had created by hand; with the copy in place for the run, and
+  deleted after, it goes red on 2 rows.
+- **2 survived: m13 and m15.** These are the L4-F6 reasons the refuter had flagged. The final commit
+  adds a row for each. Re-run against the new rows, **both go red** (1 row each).
+
+| Mutant | Defect | Red | First red row |
+|---|---|---|---|
+| d01 | NO_CHANGE statuses narrowed to `no_change` | 2 | `tapeReview.test.js` — L1 — the tape document L4-F10 d01: gate status no_proposal is a "no change" card |
+| d02 | heard ignores suppression (entry and tick) | 1 | `tapeReview.test.js` — L1 — the tape document L4-F2: a suppressed stamp is never "heard" — on the entry or on the tick |
+| d03 | a call resolved on the day but minted earlier is dropped | 1 | `tapeReview.test.js` — L1 — the tape document L4-F10 d03: a call minted the day before and resolved on the day is on the day's tape |
+| e01 | `lockedPoints` printed as quoted text | 3 | `tapeExport.test.js` — BA-21 — every number labelled by the class its document declares no digit is printed outside a labelled number… |
+| e02 | `lockedPoints` printed as a code span | 3 | `tapeExport.test.js` — BA-21 — every number labelled by the class its document declares no digit is printed outside a labelled number… |
+| e03 | `ghost.atClose` labelled through another field (prints `recorded`) | 1 | `tapeExport.test.js` — the class each printed number carries is its own field's (review L4-F7) replay, reconciliation, comparables an… |
+| e04 | seven rebuilt/market declarations flipped to `recorded` | 2 | `tapeExport.test.js` — the class each printed number carries is its own field's (review L4-F7) replay, reconciliation, comparables an… |
+| e05 | control: one bare unlabelled number | 3 | `tapeExport.test.js` — BA-21 — every number labelled by the class its document declares no digit is printed outside a labelled number… |
+| m02b | score units taken from the new read (re-targeted) | 1 | `tapeReview.test.js` — L4-F5 — the merge keeps facts a later read lost m02: the day change keeps its reference when the prior day's t… |
+| m04 | battle result / final taken from the new read | 1 | `tapeReview.test.js` — L4-F5 — the merge keeps facts a later read lost m04: a stored result is not replaced by a derived one |
+| m05 | intraday-view presence taken from the new read | 1 | `tapeReview.test.js` — L4-F5 — the merge keeps facts a later read lost m05: intraday views seen once stay "present" |
+| m06 | `deferralsTruncated` not sticky | 1 | `tapeReview.test.js` — L4-F5 — the merge keeps facts a later read lost m06: a truncated deferral list stays recorded when the run rec… |
+| m07 | sectors not unioned | 1 | `tapeReview.test.js` — L4-F5 — the merge keeps facts a later read lost m07: a sector seen once stays among the comparables |
+| m08 | coverage taken from the new read | 1 | `writeTapeDay.test.js` — BA-19 — merge-monotone monotonicity: write, evict the source, write again — every fact kept, the section marke… |
+| m09 | `preservedFrom` never set | 2 | `tapeReview.test.js` — L2 — the candle pass never loses what it saved L2-F3a / L1-F6: a re-run whose receipts are gone keeps the save… |
+| m10 | coverage span not unioned | 1 | `tapeReview.test.js` — L4-F5 — the merge keeps facts a later read lost m10: a section's span never shrinks |
+| m11 | the "entry absent" reason removed | 1 | `tapeReview.test.js` — L4-F6 — every BA-20 reason lowers its section C5: a tick naming an evalId whose entry is absent → plans, ratio… |
+| m12 | actions always provable | 1 | `tapeReview.test.js` — L4-F6 — every BA-20 reason lowers its section C6: capture incomplete with trades[] at its 50 cap → actions par… |
+| m13 | the "heard stamp may be missing" reason removed | 0 → 1 | **survived at `4121e2cb`** → the final commit's row goes red (1) |
+| m14 | the "declarations record absent" reason removed | 1 | `tapeReview.test.js` — L4-F6 — every BA-20 reason lowers its section C4: an expected declarations record that is absent → calls parti… |
+| m15b | the "no declarations phase" note removed (re-targeted) | 0 → 1 | **survived at `4121e2cb`** → the final commit's row goes red (1) |
+| m16 | the "run records unreadable" reason removed | 1 | `tapeReview.test.js` — L4-F6 — every BA-20 reason lowers its section C2: run records unreadable → checks partial, and says why |
+| m17 | the "receipts unreadable" reason removed | 1 | `tapeReview.test.js` — L4-F6 — every BA-20 reason lowers its section C3: learning receipts unreadable → actions not complete, and say… |
+| o01 | candle selection newest first | 2 | `tapeReview.test.js` — L2 — the candle pass never loses what it saved L4-F10 o01: oldest first — with the floor reached after one tap… |
+| o02b | re-queue ignores the candle window (re-targeted) | 1 | `tapeReview.test.js` — L2 — the candle pass never loses what it saved L2-F5 / L4-F10 o02: outside the candle window, an action added … |
+| o03 | plan-set growth never re-queues | 1 | `tapeReview.test.js` — L2 — the candle pass never loses what it saved L4-F10 o03: a plan added after the candle pass re-queues it |
+| o04 | `subsequentTradesInSlot` always 0 | 1 | `tapeReview.test.js` — L2 — the candle pass never loses what it saved L4-F3: a later trade in the same slot counts, and the read-out … |
+| o05 | the read-out drops "both continued lines hypothetical" | 1 | `tapeReview.test.js` — L2 — the candle pass never loses what it saved L4-F3: a later trade in the same slot counts, and the read-out … |
+| o06 | `closedLegDelta` sign flipped | 2 | `tapeReplay.test.js` — reconciliation and comparables closedLegDelta is the rebuilt ghost at the sale minus the banked points |
+| r01 | close handler without the flag check | 1 | `film-tape-close.test.js` — the handler — guard, flag, wiring FLAG OFF: 200 flag_off — zero Firestore reads, zero writes, and the admin ha… |
+| r02 | candle handler without the flag check | 1 | `film-tape-candles.test.js` — film-tape-candles handler FLAG OFF: 200 flag_off — zero reads, zero writes, zero fetches, the admin handle nev… |
+| r03 | writer without the flag check | 1 | `writeTapeDay.test.js` — boundaries (BA-1, BA-2, BA-3) and the flag flag off: writeTapeDay refuses before any read or write |
+| r04 | flag captured at module load | 1 | `film-tape-close.test.js` — the handler — guard, flag, wiring FLAG OFF: 200 flag_off — zero Firestore reads, zero writes, and the admin ha… |
+| r05 | always write (no unchanged check) | 1 | `writeTapeDay.test.js` — BA-19 — merge-monotone idempotence: the same inputs write the same document — the second run writes nothing |
+| r06 | `gapPoints` without the banked points | 5 | `candlePass.test.js` — the morning after — replay, plan prices, series replays every action, prices every plan, writes a series per s… |
+| r07 | price from the bar CONTAINING the instant | 6 | `bars.test.js` — price at an instant = the close of the last minute COMPLETED at or before it (BA-11) a check at 10:07:30 ET re… |
+| r08 | price from two bars back | 6 | `bars.test.js` — price at an instant = the close of the last minute COMPLETED at or before it (BA-11) a check at 10:07:30 ET re… |
+| r09 | plan-only symbols not fetched | 2 | `candlePass.test.js` — the morning after — replay, plan prices, series a plan-only symbol is fetched and has its own series, role "pl… |
+| r10 | no terminal state after three attempts | 1 | `candlePass.test.js` — retry (§6) — attempts, the 10-session window, failed after three counts each morning; the third unsuccessful a… |
+| r11 | a thrown run not counted | 2 | `candlePass.test.js` — retry (§6) — attempts, the 10-session window, failed after three a thrown run still counts as an attempt |
+| r12 | writer without a transaction | 1 | `writeTapeDay.test.js` — BA-19 — merge-monotone the close pass never erases candle fields — sequential and mid-transaction |
+| r13 | writer merges a stale pre-read | 1 | `writeTapeDay.test.js` — BA-19 — merge-monotone the close pass never erases candle fields — sequential and mid-transaction |
+| r15 | the scorer imported from a byte-identical local copy | 2 | `tapeReplay.test.js` — THE SCORER IS THE IMPORTED ONE — swap the imported scorer and every rebuilt number follows it |
+| r18 | the replay section without its coverage line | 1 | `tapeExport.test.js` — BA-20 — every section is headed by its coverage line replay: the line after its heading is its coverage, with … |
+| r19 | candle fields taken from the new read | 3 | `candlePass.test.js` — the write — targeted, and safe against the close pass in either order a close pass AFTER the candle pass keeps… |
+| r20 | missing bars guessed from another symbol | 2 | `candlePass.test.js` — never guessed — a missing symbol goes to symbolsMissing; its dependents are null with the input named; the pas… |
+
+### 7.6 Process deviations (disclosed)
+
+- **R-L1** ran `git -C /home/user/TradeSeven status --porcelain` once. It is read-only but may
+  refresh the index's stat cache. Nothing was written.
+- **R-L2** ran three read-only commands beyond the permitted `git show <sha>:<path>`:
+  - `git show b5b96669 --stat`
+  - `git show b5b96669 -- <two paths>`
+  - `git log --oneline` over `19f897e7..b5b96669`
+- **R-L3** attempted one `git show --stat 19f897e7` from the main tree. It failed and changed
+  nothing.
+- **R-L4** ran read-only `git log`, `git merge-base --is-ancestor`, `git cat-file -e` and one
+  `git status --porcelain` in the main tree. Nothing was written.
+- **The coordinator's first launch of the re-run failed** (relative spec paths) before any mutant
+  was applied. Its three-way parallel baseline also timed out two heavy rows under load: the e2e
+  candle morning took 10.4 s against its normal 2.2 s, and the candle-pass morning took 5.5 s
+  against its normal 0.6 s. The re-run was relaunched on two trees, and both baselines were green.
+- **The lenses and refuters ran no emulator** (as instructed). The rules mutations are L5's:
+  M40a and M40b, both RED under the emulator. L5's final emulator confirmation was skipped at the
+  coordinator's request, because the coordinator's own rules run held the port; that run passed
+  (§7.7).
+
+### 7.7 Verification at the tip
+
+| Check | Result |
+|---|---|
+| Tip | the commit that carries this report, the branch tip at push (parent `4121e2cb`). A commit cannot name its own SHA, so it is posted with the push. The code verified here is that commit's code; no code changed after these runs on `claude/hopeful-keller-0xgl6p` |
+| Full suite, Linux (`npx vitest run`, JSON reporter, output redirected) | **819 files, 16,271 tests: 16,207 passed, 64 skipped, 0 failed; exit 0.** The baseline at `ef80da13` was 805 files and 15,993 tests (15,929 passed, 64 skipped, 0 failed). The difference is exactly the 14 new tape test files and their 278 tests. No pre-existing file fails. |
+| Rules suite on the emulator (`npm run test:rules`) | **18 files, 332 tests, all passed; exit 0.** The baseline was 17 files and 311 tests; the difference is `test/rules/filmTapeDenials.rules.mjs` (21 tests). |
+| `npm run lint:gate` | exit 0 (`eslint . --config eslint.gate.config.js --max-warnings 0`) |
+| `npx vite build` | exit 0; built in 19.6 s. Its four `css-syntax-error` warnings are pre-existing: the same four appear in the build before the review fixes, and this branch adds no CSS. |
+| Fence | `git diff --name-only ef80da13..HEAD` names no §1 file (§2.5) |
+| Crons | 41 → 43 (`node -e` over `vercel.json`) |
 
 ---
 

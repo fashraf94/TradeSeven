@@ -191,7 +191,6 @@ export const TAPE_NUMBER_CLASSES = Object.freeze({
   'actions[].replay.ghost.atClose': 'rebuilt',
   'actions[].replay.ghost.series[].tickSeq': 'recorded',
   'actions[].replay.ghost.series[].points': 'rebuilt',
-  'actions[].replay.bought.atSwap': 'rebuilt',
   'actions[].replay.bought.atClose': 'rebuilt',
   'actions[].replay.bought.series[].tickSeq': 'recorded',
   'actions[].replay.bought.series[].points': 'rebuilt',

@@ -2856,9 +2856,13 @@ export const CALL_RECORDS_MODES = Object.freeze(['off', 'shadow', 'on']);
  * registration row around to assert the DARK_BY_DESIGN entry is GONE, and drops
  * the entry from src/config/flagPinGuard.test.js — all in the same commit
  * (BUILD_RULES §2). The tape's behaviour suites mock this flag explicitly both
- * ways and do NOT move with the flip. FLIP PREREQUISITES: the collection-group
- * index on `tape` (passes.candles.status, etDate) created by hand in the
- * Console; the two `vercel.json` entries deployed; the rules block deployed.
+ * ways and do NOT move with the flip. FLIP PREREQUISITES: the two `tape`
+ * indexes declared in firestore.indexes.json — the collection-group composite
+ * (passes.candles.status ASC, etDate ASC) the candle pass selects on, and the
+ * `etDate` field override that adds DESCENDING at collection-group scope for
+ * `export-film-tape --recent` — each ALSO created by hand in the Console (the
+ * index-drift rule is dual-write; this build deploys neither); the two
+ * `vercel.json` entries deployed; the rules block deployed.
  */
 // Pinned by: filmTapeFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const FILM_TAPE_WRITE_ENABLED = false;
