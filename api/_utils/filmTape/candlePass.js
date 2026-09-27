@@ -44,11 +44,10 @@
 // the stored and the fresh result, so no attempt loses what an earlier one
 // saved (§8 invariant 7). The writer flag is read at call time here too.
 
-import { TICKER_TO_SECTOR } from '../rankingConfig.js';
 import { resolveModeConfig } from '../../../src/constants/agentGameModes.js';
 import { isCryptoSymbol } from '../marketDataCache.js';
 import {
-  TAPE_VERSION, SERIES_NUMBER_CLASSES, CANDLE_SELECTABLE_STATUSES, CANDLE_MAX_ATTEMPTS, MARKET_COMPARABLES,
+  TAPE_VERSION, SERIES_NUMBER_CLASSES, CANDLE_SELECTABLE_STATUSES, CANDLE_MAX_ATTEMPTS,
   NON_CHECK_STATES, SERIES_INTERVAL, SERIES_SUBCOLLECTION, TAPE_SUBCOLLECTION,
 } from '../../../src/constants/filmTape.js';
 import { FILM_TAPE_WRITE_ENABLED } from '../../../src/config/featureFlags.js';
@@ -57,6 +56,9 @@ import { replayAction, REPLAY_LABEL } from './tapeReplay.js';
 import { coverageOf } from './tapeAssemble.js';
 import { sanitizeForFirestore } from './tapeMerge.js';
 import { tapeRef } from './tapeSources.js';
+import { symbolPlan, candleInputFingerprint } from './candleInputs.js';
+
+export { symbolPlan };
 import { etDateOf, sessionFor, sessionsBack, candleWindowStart, toMs } from './tapeTime.js';
 
 export const TIME_FLOOR_MS = 30_000;
@@ -86,29 +88,6 @@ export function tapeIdOf(path) {
   if (seg.length !== 4 || seg[0] !== 'agentBattles' || seg[2] !== TAPE_SUBCOLLECTION) return null;
   const [, battleId, , etDate] = seg;
   return battleId && wellFormedEtDate(etDate) ? { battleId, etDate } : null;
-}
-
-/** The symbol set and each symbol's roles for one tape (spec §6). */
-export function symbolPlan(tape) {
-  const roles = new Map();
-  const add = (sym, role) => {
-    if (typeof sym !== 'string' || !sym || isCryptoSymbol(sym)) return;
-    if (!roles.has(sym)) roles.set(sym, new Set());
-    roles.get(sym).add(role);
-  };
-  for (const c of Array.isArray(tape.checks) ? tape.checks : []) {
-    for (const s of Object.keys(isObj(c.risk) ? c.risk : {})) add(s, 'held');
-    for (const s of Object.keys(isObj(c.evidence) ? c.evidence : {})) add(s, 'held');
-  }
-  for (const a of Array.isArray(tape.actions) ? tape.actions : []) { add(a.symbolOut, 'sold'); add(a.symbolIn, 'held'); }
-  for (const p of Array.isArray(tape.plans) ? tape.plans : []) add(p.symbol, 'plan');
-  for (const s of Object.keys(isObj(tape.comparables?.sectors) ? tape.comparables.sectors : {})) if (!roles.has(s)) add(s, 'held');
-  const named = [...roles.keys()];
-  for (const s of named) add(TICKER_TO_SECTOR[s], 'sector');
-  for (const s of MARKET_COMPARABLES) add(s, 'market');
-  const primary = (set) => (set.has('sold') ? 'sold' : set.has('held') ? 'held' : set.has('plan') ? 'plan' : set.has('market') ? 'market' : 'sector');
-  return [...roles.entries()].map(([symbol, set]) => ({ symbol, role: primary(set), roles: [...set].sort() }))
-    .sort((a, b) => (a.symbol < b.symbol ? -1 : 1));
 }
 
 /**
@@ -269,7 +248,7 @@ function seriesCoverage(requested, missing, gapsBySymbol, session, keptFrom = []
  * lacks an input a later fetch could supply — bars obtained on different
  * mornings, or a stale sample (BA-24) — so the pass is not `written` yet.
  */
-export function nextCandleState({ prev, requested, missing, incomplete = [], retryable = false, nowIso }) {
+export function nextCandleState({ prev, requested, missing, incomplete = [], retryable = false, inputFingerprint = null, nowIso }) {
   const attempts = (Number.isInteger(prev?.attempts) ? prev.attempts : 0) + 1;
   let status;
   let reason = null;
@@ -279,7 +258,11 @@ export function nextCandleState({ prev, requested, missing, incomplete = [], ret
   else if (missing.length > 0) { status = 'partial'; reason = 'symbols_missing'; }
   else if (incomplete.length > 0) { status = 'partial'; reason = 'bars_incomplete'; }
   else { status = 'partial'; reason = 'replay_incomplete'; }
-  return { status, writtenAt: nowIso, attempts, reason, source: 'eodhd_1m', symbolsRequested: requested, symbolsMissing: missing, symbolsIncomplete: incomplete };
+  return {
+    status, writtenAt: nowIso, attempts, reason, source: 'eodhd_1m', symbolsRequested: requested, symbolsMissing: missing, symbolsIncomplete: incomplete,
+    // BA-25: what this output was built from; the close pass compares it with the merged tape's.
+    ...(inputFingerprint ? { inputFingerprint } : {}),
+  };
 }
 
 /** How complete a replay is: a gap first, then legs, then fewer missing inputs. */
@@ -400,7 +383,7 @@ export async function processTape({ db, ref, tape, nowMs, fetchCandles, memo, us
       const gaps = [...seriesGaps(out, session), ...uncoveredChecks(out, checksNow)];
       if (gaps.length) gapsBySymbol[entry.symbol] = gaps;
     }
-    const candles = nextCandleState({ prev, requested, missing, incomplete: Object.keys(gapsBySymbol).sort(), retryable, nowIso });
+    const candles = nextCandleState({ prev, requested, missing, incomplete: Object.keys(gapsBySymbol).sort(), retryable, inputFingerprint: candleInputFingerprint(cur), nowIso });
     for (const { entry, doc } of writes) tx.set(seriesRef(entry.symbol), doc);
     tx.update(ref, sanitizeForFirestore({
       actions,

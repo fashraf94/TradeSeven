@@ -16,13 +16,18 @@
 //   · The candle pass's fields (actions[].replay, plans[].price,
 //     passes.candles, coverage.replay, coverage.series) are NEVER taken from
 //     the new read: they are copied from the stored document, so a close-pass
-//     re-run cannot erase them. When the action or plan set grew, the candle
-//     pass is re-queued: `passes.candles.status: 'pending'`,
-//     `reason: 'sources_changed'`.
+//     re-run cannot erase them. When the candle pass's inputs changed — the
+//     action or plan set grew (`sources_changed`), or anything else in its
+//     input fingerprint moved (`inputs_changed`, BA-25: a recovered check, an
+//     evidence stamp, a replay input) — it is re-queued inside its window
+//     (`pending`, attempts 0); outside it a `written` pass is lowered to
+//     `partial`. Either way `changedInputs` names what changed, and the
+//     output built before the change stays, labelled, until replaced.
 //   · Nothing changed → no write at all, so the stored bytes stand.
 
 import { COVERAGE_RANK, CANDLE_COVERAGE_SECTIONS } from '../../../src/constants/filmTape.js';
 import { orderChecks, afterOf } from './tapeAssemble.js';
+import { candleInputFingerprint, changedInputParts } from './candleInputs.js';
 import { toMs, etDayBounds } from './tapeTime.js';
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -332,9 +337,8 @@ export function mergeTape(stored, assembled, { nowIso, withinWindow }) {
     let cov = isObj(stored.coverage?.[section]) && stored.passes?.candles?.reason !== 'close_pass_failed'
       ? stored.coverage[section]
       : assembled.coverage?.[section];
-    if (merged.passes.candles?.reason === OUTSIDE_WINDOW_REASON && isObj(cov) && !(cov.note || '').includes(OUTSIDE_WINDOW_NOTE)) {
-      cov = { ...cov, status: cov.status === 'complete' ? 'partial' : cov.status, note: [cov.note, OUTSIDE_WINDOW_NOTE].filter(Boolean).join('; ') };
-    }
+    const changed = merged.passes.candles?.changedInputs;
+    if (Array.isArray(changed) && changed.length && isObj(cov) && cov.status !== 'unavailable') cov = builtBefore(cov, changed, withinWindow);
     merged.coverage[section] = cov;
   }
 
@@ -350,22 +354,44 @@ function mergeCandles(stored, assembled, merged, { withinWindow }) {
   if (!isObj(sc) || sc.reason === 'close_pass_failed') return assembled.passes.candles;
   const oldActions = keySet(stored.actions);
   const oldPlans = keySet(stored.plans);
-  const grew = [...keySet(merged.actions)].some((k) => !oldActions.has(k)) || [...keySet(merged.plans)].some((k) => !oldPlans.has(k));
+  const grewActions = [...keySet(merged.actions)].some((k) => !oldActions.has(k));
+  const grewPlans = [...keySet(merged.plans)].some((k) => !oldPlans.has(k));
   // Inputs that became complete on this read are a changed source too: the
   // replay built from the poorer inputs must be rebuilt (review L2-F3b).
   const storedByKey = new Map((Array.isArray(stored.actions) ? stored.actions : []).filter(isObj).map((a) => [a.key, a]));
   const improved = (merged.actions || []).some((a) => { const was = storedByKey.get(a.key); return was && inputLegs(a) > inputLegs(was); });
-  if ((grew || improved) && ['written', 'partial', 'failed'].includes(sc.status)) {
-    if (withinWindow) return { ...sc, status: 'pending', reason: 'sources_changed', attempts: 0 };
-    // Outside the window no candle pass comes back for it: the tape says so
-    // rather than keep a `written` it no longer is (review L2-F5).
-    return { ...sc, status: 'partial', reason: OUTSIDE_WINDOW_REASON };
-  }
-  return sc;
+  // BA-25: anything else the candle output was built from — the checks it
+  // sampled, their stages, the evidence it reconciled against, the symbol set.
+  const parts = changedInputParts(sc.inputFingerprint, candleInputFingerprint(merged));
+  if (grewActions || improved) parts.push('actions');
+  if (grewPlans) parts.push('plans');
+  const changed = [...new Set(parts)].sort((a, b) => PART_ORDER.indexOf(a) - PART_ORDER.indexOf(b));
+  // Nothing was built yet (never processed): nothing to re-queue or label.
+  if (!changed.length || (!isObj(sc.inputFingerprint) && !['written', 'partial', 'failed'].includes(sc.status))) return sc;
+  const reason = grewActions || grewPlans || improved ? 'sources_changed' : 'inputs_changed';
+  if (withinWindow && ['written', 'partial', 'failed'].includes(sc.status)) return { ...sc, status: 'pending', reason, attempts: 0, changedInputs: changed };
+  // Outside the window no candle pass comes back for it: a `written` the
+  // output no longer is becomes `partial`, saying why (review L2-F5); a
+  // partial or failed pass keeps its status, and the change is recorded.
+  if (!withinWindow && sc.status === 'written') return { ...sc, status: 'partial', reason: `${reason}_outside_window`, changedInputs: changed };
+  return { ...sc, changedInputs: changed };
 }
 
-const OUTSIDE_WINDOW_REASON = 'sources_changed_outside_window';
-const OUTSIDE_WINDOW_NOTE = 'actions or plans recorded after the candle pass, outside its retry window — not replayed or priced';
+const PART_ORDER = ['checks', 'evidence', 'actions', 'plans', 'symbols'];
+const BUILT_BEFORE = 'built before the candle inputs changed';
+
+/**
+ * BA-25 — label candle output built from inputs that have since changed: at
+ * most `partial`, and the note names what changed and whether a candle pass
+ * is still to come. Replaces an earlier such label, never stacks it.
+ */
+function builtBefore(cov, changed, withinWindow) {
+  const note = typeof cov.note === 'string' ? cov.note : '';
+  const at = note.indexOf(BUILT_BEFORE);
+  const kept = at === -1 ? note : note.slice(0, at).replace(/;\s*$/, '');
+  const label = `${BUILT_BEFORE} (${changed.join(', ')}) — ${withinWindow ? 'awaiting the next candle pass' : 'outside its retry window, not rebuilt'}`;
+  return { ...cov, status: cov.status === 'complete' ? 'partial' : cov.status, note: [kept, label].filter(Boolean).join('; ') };
+}
 
 function finish(stored, doc, nowIso, carried) {
   const clean = sanitizeForFirestore(doc);

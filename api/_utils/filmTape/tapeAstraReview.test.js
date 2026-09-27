@@ -336,3 +336,94 @@ describe('F3 — BA-25: a retry never replaces a saved series with a poorer one'
     expect(tape.coverage.series.note).toMatch(/kept from an earlier attempt: AAPL \(no bars this attempt\)/);
   });
 });
+
+// ── F4 — BA-25: candle output tracks its inputs ─────────────────────────────
+
+describe('F4 — BA-25: when the candle pass\'s inputs change, its output is re-queued or labelled — never left "written"', () => {
+  const DAY = 86_400_000;
+  /** capturedDay written WITHOUT tick 10 and enriched; returns the world and the withheld tick. */
+  async function withoutTick10() {
+    const fx = await capturedDay();
+    const tick10 = fx.ticks.find((tk) => tk.tickSeq === 10);
+    const t = world({ ...fx, ticks: fx.ticks.filter((tk) => tk.tickSeq !== 10) });
+    await write(t, fx);
+    await morning(t);
+    expect(tapeOf(t, fx.battleId).passes.candles.status).toBe('written');
+    t.store.set(`agentBattles/${fx.battleId}/ticks/${tick10.tickId}`, tick10);            // the real check is recovered
+    return { t, fx };
+  }
+
+  it('F4 R06: tick 10 recovered after the candle pass re-queues it — pending, inputs_changed; the earlier output stays, labelled; the next morning prices tick 10', async () => {
+    const { t, fx } = await withoutTick10();
+    const aaplBefore = structuredClone(t.store.get(`${tapePath(fx.battleId)}/series/AAPL`));
+    expect(aaplBefore.atChecks.some((a) => a.tickSeq === 10)).toBe(false);
+    await write(t, fx, MORNING + 3_600_000);                                          // the close pass re-runs
+    const tape = tapeOf(t, fx.battleId);
+    expect(tape.checks.some((c) => c.tickSeq === 10 && c.rowSource === 'tick')).toBe(true);
+    expect(tape.passes.candles).toMatchObject({ status: 'pending', reason: 'inputs_changed', attempts: 0, changedInputs: ['checks'] });
+    expect(tape.actions.every((a) => a.replay && a.replay.gapPoints !== null)).toBe(true);      // stays in place until replaced
+    for (const s of ['replay', 'series']) {
+      expect(tape.coverage[s].status, s).toBe('partial');
+      expect(tape.coverage[s].note, s).toMatch(/built before the candle inputs changed \(checks\) — awaiting the next candle pass/);
+    }
+    expect(formatTapeMarkdown(tape, [])).toContain('inputs changed since it was built: checks');
+    await morning(t, allBars(), MORNING + DAY);
+    const after = tapeOf(t, fx.battleId);
+    expect(after.passes.candles).toMatchObject({ status: 'written' });
+    expect(after.passes.candles.changedInputs).toBeUndefined();
+    expect(after.coverage.series.note ?? '').not.toMatch(/built before/);
+    expect(t.store.get(`${tapePath(fx.battleId)}/series/AAPL`).atChecks.find((a) => a.tickSeq === 10)).toMatchObject({ price: 231 });
+  });
+
+  it('F4: outside the window, changed inputs lower a written pass to partial and name what changed; the output stays, labelled "not rebuilt"', async () => {
+    const { t, fx } = await withoutTick10();
+    await write(t, fx, Date.parse('2026-10-26T02:15:30.000Z'));                        // a month on: no candle pass comes back
+    const tape = tapeOf(t, fx.battleId);
+    expect(tape.passes.candles).toMatchObject({ status: 'partial', reason: 'inputs_changed_outside_window', changedInputs: ['checks'] });
+    expect(tape.actions.every((a) => a.replay && a.replay.gapPoints !== null)).toBe(true);
+    for (const s of ['replay', 'series']) {
+      expect(tape.coverage[s].status, s).toBe('partial');
+      expect(tape.coverage[s].note, s).toMatch(/built before the candle inputs changed \(checks\) — outside its retry window, not rebuilt/);
+    }
+  });
+
+  it('F4: a re-run with unchanged inputs changes nothing — the fingerprint is stored by the candle pass and matched by the close pass', async () => {
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    await morning(t);
+    const enriched = structuredClone(tapeOf(t, fx.battleId));
+    expect(enriched.passes.candles.inputFingerprint).toEqual({
+      checks: expect.any(String), evidence: expect.any(String), actions: expect.any(String), plans: expect.any(String), symbols: expect.any(String),
+    });
+    expect((await write(t, fx, MORNING + 3_600_000)).status).toBe('unchanged');
+    expect(stableStringify(tapeOf(t, fx.battleId))).toBe(stableStringify(enriched));
+  });
+});
+
+describe('F4 — the fingerprint moves with every input the ruling names, and with nothing the candle pass writes', () => {
+  it('F4: each named input moves its own part; replay, prices, candle status and coverage move nothing', async () => {
+    const { candleInputFingerprint, changedInputParts } = await import('./candleInputs.js');
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    const base = tapeOf(t, fx.battleId);
+    const fp = candleInputFingerprint(base);
+    const moved = (mutate) => { const d = structuredClone(base); mutate(d); return changedInputParts(fp, candleInputFingerprint(d)); };
+    const firstTick = (d) => d.checks.find((c) => c.rowSource === 'tick' && c.state === 'no_trigger');
+    expect(moved((d) => { firstTick(d).at = '2026-09-24T13:30:21.000Z'; })).toEqual(['checks']);                 // a check's time
+    expect(moved((d) => { firstTick(d).stageReached = 'quotes_checked'; })).toEqual(['checks']);                  // its stageReached
+    expect(moved((d) => { d.checks.push({ ...structuredClone(firstTick(d)), key: 'seq:99', tickSeq: 99 }); })).toEqual(['checks']); // a recovered check
+    expect(moved((d) => { d.checks.find((c) => c.evidence).evidence = null; })).toEqual(['evidence']);            // evidence presence
+    expect(moved((d) => { d.actions[0].replayInputs = { ...d.actions[0].replayInputs, ghost: null }; })).toEqual(['actions']); // replay-input presence
+    expect(moved((d) => { d.plans.push({ ...structuredClone(d.plans[0]), key: 'x:9', symbol: 'SNOW' }); })).toEqual(['plans', 'symbols']);
+    expect(moved((d) => { d.comparables.sectors.SNOW = 'XLK'; })).toEqual(['symbols']);                          // the symbol-role set
+    expect(moved((d) => {
+      for (const a of d.actions) a.replay = { gapPoints: 1 };
+      for (const p of d.plans) p.price = { atPlan: { value: 1 } };
+      d.passes.candles = { status: 'written', attempts: 3 };
+      d.coverage.replay = { status: 'complete' };
+      d.writtenAt = 'later';
+    })).toEqual([]);
+  });
+});

@@ -301,7 +301,8 @@ export function formatTapeMarkdown(doc, seriesDocs = []) {
     `- **candles** — ${candles.status ?? '—'}${candles.reason ? ` (${code(candles.reason)})` : ''} · attempts ${labelled(doc, ['passes', 'candles', 'attempts'], candles.attempts)}`
       + ` · source ${candles.source ? code(candles.source) : '—'} · written ${code(candles.writtenAt)}`
       + ` · requested: ${(candles.symbolsRequested || []).join(', ') || 'none'} · missing: ${(candles.symbolsMissing || []).join(', ') || 'none'}`
-      + ` · incomplete: ${(candles.symbolsIncomplete || []).join(', ') || 'none'}`,
+      + ` · incomplete: ${(candles.symbolsIncomplete || []).join(', ') || 'none'}`
+      + `${Array.isArray(candles.changedInputs) && candles.changedInputs.length ? ` · inputs changed since it was built: ${candles.changedInputs.join(', ')}` : ''}`,
   ];
   const out = [...header, '', ...passes];
   if (Array.isArray(doc.checks)) {
