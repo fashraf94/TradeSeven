@@ -23,7 +23,7 @@ import { makeTapeDb } from './__fixtures__/tapeFirestore.js';
 import {
   seedDay, capturedDay, noTriggerDay, budgetDay, completedDay, multiDay, skippedModeDay, preCaptureDay,
 } from './__fixtures__/tapeFixtures.js';
-import { numbersWithClasses, formatNumberPath, COVERAGE_SECTIONS, PROVENANCE_CLASSES } from '../../../src/constants/filmTape.js';
+import { numbersWithClasses, formatNumberPath, COVERAGE_SECTIONS, CANDLE_COVERAGE_SECTIONS, PROVENANCE_CLASSES } from '../../../src/constants/filmTape.js';
 import { stableStringify } from './tapeMerge.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -59,8 +59,12 @@ describe('the §4 document', () => {
     expect(Object.keys(tape.passes.close.sources).sort()).toEqual(['calls', 'declarations', 'evaluations', 'receipts', 'runs', 'ticks', 'trades']);
     expect(Object.keys(tape.passes.candles).sort()).toEqual(['attempts', 'reason', 'source', 'status', 'symbolsMissing', 'symbolsRequested', 'writtenAt']);
     expect(Object.keys(tape.coverage).sort()).toEqual([...COVERAGE_SECTIONS].sort());
+    // BA-20's five keys; a close-pass section also keeps its caveats (BA-26), and a
+    // section that reads checks' evaluation entries counts its unknown checks.
+    const READS_ENTRIES = ['directives', 'plans', 'calls', 'rationale', 'evidence'];
     for (const s of COVERAGE_SECTIONS) {
-      expect(Object.keys(tape.coverage[s]).sort(), s).toEqual(['note', 'preservedFrom', 'sources', 'span', 'status']);
+      const extra = CANDLE_COVERAGE_SECTIONS.includes(s) ? [] : ['caveats', ...(READS_ENTRIES.includes(s) ? ['unknownChecks'] : [])];
+      expect(Object.keys(tape.coverage[s]).sort(), s).toEqual(['note', 'preservedFrom', 'sources', 'span', 'status', ...extra].sort());
       expect(['complete', 'partial', 'unavailable']).toContain(tape.coverage[s].status);
     }
     expect(Object.keys(tape.score).sort()).toEqual(['dayChange', 'firstCheck', 'lastCheck']);
@@ -337,7 +341,9 @@ describe('plans, rationale, calls', () => {
     });
     expect(tape.calls[0]).not.toHaveProperty('said');
     expect(tape.calls[0]).not.toHaveProperty('condition');
-    expect(tape.coverage.calls.status).toBe('complete');
+    // BA-26: tick 13 was minted and left no record — whether it expected a
+    // declarations record is unknown, so the section is partial and says so.
+    expect(tape.coverage.calls).toMatchObject({ status: 'partial', unknownChecks: 1 });
   });
 });
 

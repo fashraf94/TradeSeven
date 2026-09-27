@@ -29,7 +29,8 @@ import { scanProtectedStoreWrites, siteKey } from '../compositionProtectedStores
 import { stableStringify } from './tapeMerge.js';
 import { formatTapeMarkdown } from './tapeExport.js';
 import { makeTapeDb } from './__fixtures__/tapeFirestore.js';
-import { seedDay, capturedDay, earlyCloseDay } from './__fixtures__/tapeFixtures.js';
+import { seedDay, capturedDay, earlyCloseDay, noTriggerDay, sessionRuns } from './__fixtures__/tapeFixtures.js';
+import { composeEvalRunRecord } from '../../cron/agent-evaluate.js';
 import { flatRows, sessionRows, fetcherOf } from './__fixtures__/tapeBars.js';
 import { sessionFor } from './tapeTime.js';
 
@@ -425,5 +426,92 @@ describe('F4 — the fingerprint moves with every input the ruling names, and wi
       d.coverage.replay = { status: 'complete' };
       d.writtenAt = 'later';
     })).toEqual([]);
+  });
+});
+
+// ── F5 — BA-26 (and BA-20 amended): coverage is evidence, not rank ──────────
+
+describe('F5 — BA-26: an unknown check is never "complete", and a caveat learned later survives the merge', () => {
+  const ENTRY_SECTIONS = ['plans', 'rationale', 'evidence', 'calls', 'directives'];
+
+  it('F5 R05: the model check lost its tick, its entry and its run — no section that would have read it is complete, and the calls note states only what was observed', async () => {
+    const fx = await noTriggerDay();                                   // the one model check is tick 9 (15:30Z)
+    fx.ticks = fx.ticks.filter((tk) => tk.tickSeq !== 9);
+    fx.battle.evaluations = [];
+    fx.runs = sessionRuns(D, { skip: ['15:30'] });
+    const t = world(fx);
+    await write(t, fx);
+    const cov = tapeOf(t, fx.battleId).coverage;
+    expect(cov.checks.status).toBe('partial');                         // tick 9 is a known gap
+    for (const s of ENTRY_SECTIONS) {
+      expect(cov[s].status, s).not.toBe('complete');
+      expect(cov[s].unknownChecks, s).toBe(1);
+    }
+    expect(cov.calls.note).toMatch(/no model check recorded among the 25 known check\(s\); 1 check\(s\) have no record/);
+    expect(cov.calls.note).not.toMatch(/reached the model/);
+  });
+
+  it('F5 R14: a tick names its evalId but the entry is absent — calls and directives are no longer complete, and nothing claims the model was never reached', async () => {
+    const fx = await noTriggerDay();
+    fx.battle.evaluations = [];                                        // tick 9 keeps its evalId
+    const t = world(fx);
+    await write(t, fx);
+    const cov = tapeOf(t, fx.battleId).coverage;
+    expect(cov.plans.status).toBe('unavailable');
+    for (const s of ['calls', 'directives']) {
+      expect(cov[s].status, s).not.toBe('complete');
+      expect(cov[s].unknownChecks, s).toBe(1);
+    }
+    expect(cov.calls.note).not.toMatch(/no model check|reached the model/);
+    expect(cov.calls.note).toMatch(/evaluation entry is absent/);
+  });
+
+  it('F5 R12: a late run record whose deferred list was truncated lowers a complete checks section on the re-run — and the caveat outlives the run records', async () => {
+    const fx = await noTriggerDay();
+    const t = world(fx);
+    await write(t, fx);
+    expect(tapeOf(t, fx.battleId).coverage.checks).toMatchObject({ status: 'complete', note: null });
+    // a duplicate invocation inside the already-covered 15:30Z slot: 250 deferred, 200 listed
+    const start = Date.parse('2026-09-24T15:32:00.000Z');
+    const late = composeEvalRunRecord({
+      startTime: start, endTime: start + 250_000, battlesTotal: 400, evaluated: 150,
+      summary: { lockSkipped: 0, triggered: 10, modelCalls: 10, budgetSkipped: 0 },
+      deferredBattleIds: Array.from({ length: 250 }, (_, i) => `b-other-${i}`),
+    });
+    t.store.set(`agentEvalRuns/${late.startedAt}`, late);
+    await write(t, fx, NIGHT + 60_000);
+    let tape = tapeOf(t, fx.battleId);
+    expect(tape.passes.close.deferralsTruncated).toBe(true);
+    expect(tape.coverage.checks.status).toBe('partial');
+    expect(tape.coverage.checks.note).toMatch(/deferred list was truncated/);
+    // the run records gone on a later re-run: the flag and the caveat stay
+    for (const k of [...t.store.keys()].filter((key) => key.startsWith('agentEvalRuns/'))) t.store.delete(k);
+    await write(t, fx, NIGHT + 120_000);
+    tape = tapeOf(t, fx.battleId);
+    expect(tape.passes.close.deferralsTruncated).toBe(true);
+    expect(tape.coverage.checks.status).toBe('partial');
+    expect(tape.coverage.checks.note).toMatch(/deferred list was truncated/);
+  });
+
+  it('F5 R13 (BA-20 amended): at the 150 cap with the oldest surviving entry before this day nothing of the day was evicted — the cap alone does not lower coverage; with the oldest on this day it does', async () => {
+    const pad = (fx, fromIso) => {
+      const e = fx.battle.evaluations[0];
+      const pads = Array.from({ length: 149 }, (_, i) => ({ ...structuredClone(e), evalId: `old${i}`, timestamp: new Date(Date.parse(fromIso) + i * 1_000).toISOString() }));
+      fx.battle.evaluations = [...pads, ...fx.battle.evaluations];
+      expect(fx.battle.evaluations).toHaveLength(150);
+    };
+    const before = await noTriggerDay();
+    pad(before, '2026-09-23T14:00:00.000Z');                            // the oldest surviving entry predates the day
+    const t1 = world(before);
+    await write(t1, before);
+    for (const s of ['plans', 'rationale', 'evidence', 'calls']) expect(tapeOf(t1, before.battleId).coverage[s].status, s).toBe('complete');
+    const onDay = await noTriggerDay();
+    pad(onDay, '2026-09-24T13:00:00.000Z');                             // the oldest surviving entry is on the day: its first entries may be gone
+    const t2 = world(onDay);
+    await write(t2, onDay);
+    for (const s of ['plans', 'rationale', 'evidence']) {
+      expect(tapeOf(t2, onDay.battleId).coverage[s].status, s).toBe('partial');
+      expect(tapeOf(t2, onDay.battleId).coverage[s].note, s).toMatch(/150-entry cap/);
+    }
   });
 });

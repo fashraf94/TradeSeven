@@ -215,6 +215,17 @@ function mergeDayChange(sScore, aScore, lastCheck) {
 }
 const VIEWS_RANK = { unknown: 0, absent: 1, present: 2 };
 
+/**
+ * One section's coverage across two runs (BA-19, BA-26). Facts keep their
+ * earlier rank: when the new read is poorer because a source was evicted or
+ * unreadable (a LIMIT of that read), the stored coverage stands, marked
+ * preservedFrom. But a CAVEAT — a fact about the day's record that either
+ * run learned (a truncated deferral list, a gap, an unknown check) — always
+ * lowers it: caveats are unioned and never dropped, the note carries every
+ * one, and the status is at most `partial` while any stands. So the status is
+ * the lower of what the later run can vouch for and what the earlier run
+ * recorded. `unknownChecks` keeps the larger count.
+ */
 function mergeCoverage(section, storedDoc, newCov, carried) {
   const storedCov = storedDoc?.coverage?.[section];
   const storedAt = storedCov?.preservedFrom ?? storedDoc?.writtenAt ?? null;
@@ -228,6 +239,16 @@ function mergeCoverage(section, storedDoc, newCov, carried) {
     : null;
   base.sources = [...new Set([...(storedCov.sources || []), ...(newCov?.sources || [])])];
   base.preservedFrom = (sRank > nRank || carried) ? storedAt : null;
+  if (Array.isArray(storedCov.caveats) || Array.isArray(newCov?.caveats)) {
+    const caveats = [...new Set([...(storedCov.caveats || []), ...(newCov?.caveats || [])])];
+    const note = typeof base.note === 'string' ? base.note : '';
+    base.caveats = caveats;
+    base.note = [note, ...caveats.filter((c) => !note.includes(c))].filter(Boolean).join('; ') || null;
+    if (caveats.length && base.status === 'complete') base.status = 'partial';
+  }
+  if (Number.isInteger(storedCov.unknownChecks) || Number.isInteger(newCov?.unknownChecks)) {
+    base.unknownChecks = Math.max(Number.isInteger(storedCov.unknownChecks) ? storedCov.unknownChecks : 0, Number.isInteger(newCov?.unknownChecks) ? newCov.unknownChecks : 0);
+  }
   return base;
 }
 

@@ -161,12 +161,18 @@ describe('L1 — the tape document', () => {
   it('L1-F13: a day no check of which reached the model says so — nothing is missing, so the calls section is complete', async () => {
     const fx = await noTriggerDay();
     fx.battle.evaluations = [];
+    // Check 9 is a no-trigger check too, so no check of the day reached the
+    // model. (Emptying evaluations[] alone kept tick 9's evalId: a model check
+    // with its entry absent — Astra's R14, now F5 in tapeAstraReview.test.js.)
+    fx.ticks = fx.ticks.map((tk) => (tk.tickSeq === 9 ? { ...tk, exitReason: 'no_trigger', stageReached: 'trigger_evaluated', evalId: null, decision: null } : tk));
     const t = world(fx);
     await write(t, fx);
     const cov = tapeOf(t, fx.battleId).coverage.calls;
     expect(cov.status).toBe('complete');
-    expect(cov.note).toMatch(/no check of this day reached the model — no call could be minted/);
-    expect(cov.note).not.toMatch(/not being minted/);
+    // BA-26's wording: what was observed among the known checks, never a categorical claim about the day
+    expect(cov.note).toMatch(/no model check recorded among the 26 known check\(s\)/);
+    expect(cov.note).not.toMatch(/reached the model|not being minted/);
+    expect(cov.unknownChecks).toBe(0);
   });
 
   it('L4-F6 m15: a day whose entries carry no declarations phase says so — a fact, so nothing is missing', async () => {

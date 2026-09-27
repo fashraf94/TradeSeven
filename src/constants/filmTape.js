@@ -136,6 +136,9 @@ export const TAPE_NUMBER_CLASSES = Object.freeze({
   'passes.close.unattributedGaps[]': 'recorded',
   'passes.close.sources.*': 'derived',
   'passes.candles.attempts': 'derived',
+  // BA-26: minted checks whose record of what they read or produced is absent
+  // — a count of recorded identifiers, stored on the sections that read them
+  'coverage.*.unknownChecks': 'derived',
   // BA-4 — the score
   'score.lastCheck.tickSeq': 'recorded',
   'score.lastCheck.active': 'recorded',

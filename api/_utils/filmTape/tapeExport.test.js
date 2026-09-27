@@ -199,6 +199,7 @@ describe('the class each printed number carries is its own field\'s (review L4-F
       'passes.close.unattributedGaps[]': 'recorded',
       'passes.close.sources.*': 'derived',
       'passes.candles.attempts': 'derived',
+      'coverage.*.unknownChecks': 'derived',
       'score.lastCheck.tickSeq': 'recorded',
       'score.lastCheck.active': 'recorded',
       'score.lastCheck.banked': 'recorded',
