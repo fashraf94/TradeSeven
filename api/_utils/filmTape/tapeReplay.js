@@ -55,9 +55,8 @@ export function scoredCheck(row) {
  * Score one leg along the samples. Returns per-sample points (null where no
  * price) and the value at the close.
  */
-function runLeg({ inputs, symbol, bars, samples }) {
+function runLeg({ inputs, symbol, bars, samples, tierStamp }) {
   let history = { maxMultiplier: inputs.thresholdHistory.maxMultiplier, minMultiplier: inputs.thresholdHistory.minMultiplier };
-  const asset = { symbol, baseATR: inputs.atr, tier: inputs.tier, direction: inputs.direction ?? null };
   const out = [];
   for (const s of samples) {
     const p = priceAt(bars, s.atMs);
@@ -65,7 +64,14 @@ function runLeg({ inputs, symbol, bars, samples }) {
     const priceChange = ((p.price - inputs.entryPrice) / inputs.entryPrice) * 100;
     const base = inputs.thresholdBaseline.value;
     const thresholdPriceChange = ((p.price - base) / base) * 100;
-    const r = calculateAssetScoreServer(asset, priceChange, history, {}, thresholdPriceChange);
+    // The rebuild carries the MODE-RESOLVED tier stamp, as every live caller
+    // does (flat6TierStamp.passthrough.test.js): null for a tiered battle — the
+    // only mode the tape replays (BA-3) — so the scorer resolves
+    // CONVICTION_MULTIPLIERS[tier] exactly as the live evaluator did.
+    const r = calculateAssetScoreServer(
+      { symbol, baseATR: inputs.atr, tier: inputs.tier, direction: inputs.direction ?? null, tierMultiplier: tierStamp ?? null },
+      priceChange, history, {}, thresholdPriceChange,
+    );
     history = { maxMultiplier: r.history.maxMultiplier, minMultiplier: r.history.minMultiplier };
     out.push({ ...s, points: r.totalPoints, price: p.price, missing: false });
   }
@@ -82,8 +88,9 @@ function runLeg({ inputs, symbol, bars, samples }) {
  * @param {Record<string, object[]>} p.barsBySymbol  sessionBars per symbol (missing symbol → absent)
  * @param {object} p.session         marketSchedule.getSessionForDate(etDate)
  * @param {Record<string,string|null>} p.sectors  comparables.sectors
+ * @param {number|null} [p.tierStamp]  resolveModeConfig(gameMode).flatMultiplier — null for tiered
  */
-export function replayAction({ action, checks, barsBySymbol, session, sectors = {} }) {
+export function replayAction({ action, checks, barsBySymbol, session, sectors = {}, tierStamp = null }) {
   if (action.replayReason === 'crypto_not_supported') return null;
   const swapMs = toMs(action.at);
   const missingInputs = [...(action.replayMissing || [])];
@@ -106,7 +113,7 @@ export function replayAction({ action, checks, barsBySymbol, session, sectors = 
 
   const legOf = (legInputs, symbol, bars, name) => {
     if (!legInputs || !bars) return null;
-    const run = runLeg({ inputs: legInputs, symbol, bars, samples });
+    const run = runLeg({ inputs: legInputs, symbol, bars, samples, tierStamp });
     for (const s of run) if (s.missing) missingInputs.push(`price:${symbol}@${s.kind === 'check' ? (s.tickSeq ?? iso(s.atMs)) : s.kind}`);
     const at = (kind) => run.find((s) => s.kind === kind) ?? null;
     return {

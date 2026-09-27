@@ -136,8 +136,11 @@ describe('flat6 stamp pass-through — the caller-supply class guard (static)', 
       }
     }
     // Site count pinned so a NEW caller registers here and gets classified
-    // deliberately: 4 cron rebuilds + 1 executor rebuild + 1 daily pass-through.
-    expect(total).toBe(6);
+    // deliberately: 4 cron rebuilds + 1 executor rebuild + 1 daily pass-through
+    // + 1 Film Room tape replay rebuild (api/_utils/filmTape/tapeReplay.js —
+    // its literal carries the mode-resolved stamp; the tape replays tiered
+    // battles only, BA-3, so the stamp is null there and the tier decides).
+    expect(total).toBe(7);
   });
 });
 

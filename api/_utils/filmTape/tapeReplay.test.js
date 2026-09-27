@@ -186,11 +186,23 @@ describe('THE SCORER IS THE IMPORTED ONE (BUILD_RULES §4)', () => {
     // 2 legs × (swap + 3 scored later checks + close)
     expect(calculateAssetScoreServer).toHaveBeenCalledTimes(10);
     const [asset, priceChange, history, extremes, thresholdPriceChange] = calculateAssetScoreServer.mock.calls[0];
-    expect(asset).toEqual({ symbol: 'OUTX', baseATR: 10, tier: 'support', direction: null });
+    // a tiered battle's mode-resolved stamp is null — the scorer resolves CONVICTION_MULTIPLIERS[tier] as live
+    expect(asset).toEqual({ symbol: 'OUTX', baseATR: 10, tier: 'support', direction: null, tierMultiplier: null });
     expect(priceChange).toBeCloseTo(1, 10);
     expect(history).toEqual({ maxMultiplier: 0, minMultiplier: 0 });
     expect(extremes).toEqual({});
     expect(thresholdPriceChange).toBeCloseTo(1, 10);
+  });
+
+  it('the rebuild carries the mode-resolved tier stamp: null (tiered) scores by tier; a flat stamp is honoured', () => {
+    const run = (tierStamp) => replayAction({ action: action(), checks: CHECKS, barsBySymbol: { OUTX: bars(flatRows(D, 101)), INX: bars(flatRows(D, 50)), ...COMPARABLES() }, session: S, tierStamp });
+    const tiered = run(undefined);
+    expect(calculateAssetScoreServer.mock.calls.every(([a]) => a.tierMultiplier === null)).toBe(true);
+    expect(tiered.ghost.atClose).toBe(10); // +1% on support (1.0×) = 10
+    calculateAssetScoreServer.mockClear();
+    const stamped = run(2.0);
+    expect(calculateAssetScoreServer.mock.calls.every(([a]) => a.tierMultiplier === 2.0)).toBe(true);
+    expect(stamped.ghost.atClose).toBe(20); // the scorer honoured the stamp over the tier
   });
 
   it('swap the imported scorer and every rebuilt number follows it — a local copy could not', () => {

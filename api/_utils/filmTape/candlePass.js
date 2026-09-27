@@ -34,6 +34,7 @@
 // own read).
 
 import { TICKER_TO_SECTOR } from '../rankingConfig.js';
+import { resolveModeConfig } from '../../../src/constants/agentGameModes.js';
 import { isCryptoSymbol } from '../marketDataCache.js';
 import {
   TAPE_VERSION, SERIES_NUMBER_CLASSES, CANDLE_SELECTABLE_STATUSES, CANDLE_MAX_ATTEMPTS, MARKET_COMPARABLES,
@@ -197,18 +198,17 @@ export async function processTape({ db, ref, tape, nowMs, fetchCandles, memo, us
   const requested = plan.map((e) => e.symbol);
   const missing = requested.filter((s) => !barsBySymbol[s]);
 
-  // Series documents (candle-owned; one per symbol with bars).
-  const batch = db.batch ? db.batch() : null;
+  // Series documents (candle-owned; one per symbol with bars), one batch.
+  const batch = db.batch();
   const seriesRefs = [];
   for (const entry of plan) {
     const bars = barsBySymbol[entry.symbol];
     if (!bars) continue;
     const sref = ref.collection('series').doc(entry.symbol);
-    const doc = seriesDoc({ tape, entry, bars, session, nowIso });
-    if (batch) batch.set(sref, doc); else await sref.set(doc);
+    batch.set(sref, seriesDoc({ tape, entry, bars, session, nowIso }));
     seriesRefs.push(sref.path);
   }
-  if (batch && seriesRefs.length) await batch.commit();
+  if (seriesRefs.length) await batch.commit();
 
   // The targeted update, inside a transaction on the tape.
   let result = null;
@@ -218,7 +218,7 @@ export async function processTape({ db, ref, tape, nowMs, fetchCandles, memo, us
     const cur = snap.data();
     const replays = new Map();
     const actions = (Array.isArray(cur.actions) ? cur.actions : []).map((a) => {
-      const r = replayAction({ action: a, checks: cur.checks, barsBySymbol, session, sectors: cur.comparables?.sectors || {} });
+      const r = replayAction({ action: a, checks: cur.checks, barsBySymbol, session, sectors: cur.comparables?.sectors || {}, tierStamp: resolveModeConfig(cur.gameMode).flatMultiplier });
       replays.set(a.key, r);
       return { ...a, replay: r };
     });
