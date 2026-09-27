@@ -93,7 +93,11 @@ export function replayAction({ action, checks, barsBySymbol, session, sectors = 
   if (!barsOut) missingInputs.push(`bars:${action.symbolOut}`);
   if (!barsIn) missingInputs.push(`bars:${action.symbolIn}`);
 
-  const later = (checks || []).filter((c) => scoredCheck(c) && toMs(c.at) > swapMs && toMs(c.at) <= session.closeMs);
+  // The check that MADE the swap is the swap sample, not a later check: its
+  // capturedAt falls a few seconds after the swap instant, inside the same minute.
+  const ownSeq = Number.isInteger(action.tickSeq) ? action.tickSeq : null;
+  const later = (checks || []).filter((c) => scoredCheck(c) && toMs(c.at) > swapMs && toMs(c.at) <= session.closeMs
+    && !(ownSeq !== null && c.tickSeq === ownSeq));
   const samples = [
     { kind: 'swap', tickSeq: Number.isInteger(action.tickSeq) ? action.tickSeq : null, atMs: swapMs },
     ...later.map((c) => ({ kind: 'check', tickSeq: Number.isInteger(c.tickSeq) ? c.tickSeq : null, atMs: toMs(c.at), key: c.key })),

@@ -88,6 +88,17 @@ describe('sampling — the battle\'s own checks, at the last completed minute be
     expect(r.ghost.atClose).toBe(125); // +11% on support = 110 base; 1.1 × ATR crosses bagger (+15)
   });
 
+  it('the check that made the swap is the swap sample, never also a later check', () => {
+    // tick 7 swapped at 15:00:30 and was captured at 15:00:45 — after the swap instant, in the same check.
+    const own = check(7, '15:00:45', { state: 'completed', stageReached: 'scores_marked' });
+    const r = replayAction({ action: action(), checks: [own, ...CHECKS], barsBySymbol: { OUTX: bars(flatRows(D, 101)), INX: bars(flatRows(D, 50)), ...COMPARABLES() }, session: S });
+    expect(r.ghost.series.map((p) => p.tickSeq)).toEqual([8, 9, 11]);
+    expect(r.holdPath.map((p) => p.tickSeq)).toEqual([7, 8, 9, 11, null]); // the swap sample carries the action's tickSeq, once
+    // an action with no tickSeq falls back to time alone
+    const r2 = replayAction({ action: action({ tickSeq: null }), checks: [own, ...CHECKS], barsBySymbol: { OUTX: bars(flatRows(D, 101)), INX: bars(flatRows(D, 50)), ...COMPARABLES() }, session: S });
+    expect(r2.ghost.series.map((p) => p.tickSeq)).toEqual([7, 8, 9, 11]);
+  });
+
   it('only checks whose tick scored the book are samples (the live history ratchets on those alone)', () => {
     expect(scoredCheck(check(1, '14:00:00'))).toBe(true);
     expect(scoredCheck(check(2, '14:00:00', { state: 'degraded_quotes', stageReached: 'quotes_checked' }))).toBe(false);
