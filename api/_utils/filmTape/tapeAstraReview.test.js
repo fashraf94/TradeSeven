@@ -28,7 +28,7 @@ import { writeTapeDay, markCloseFailed } from './writeTapeDay.js';
 import { runCandlePass } from './candlePass.js';
 import { runClosePass } from './closePass.js';
 import { getReviewAvailability } from '../../../src/utils/reviewAvailability.js';
-import { scanProtectedStoreWrites, siteKey } from '../compositionProtectedStoresScan.js';
+import { scanProtectedStoreWrites } from '../compositionProtectedStoresScan.js';
 import { stableStringify, mergeTape } from './tapeMerge.js';
 import { assembleTape } from './tapeAssemble.js';
 import { etDayBounds } from './tapeTime.js';
