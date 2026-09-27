@@ -124,11 +124,25 @@ describe('the rule reads the document itself', () => {
   it('the parent battle\'s own execution-control update still works for the owner (sibling rule untouched)', async () => {
     await assertSucceeds(updateDoc(doc(asOwner(), BATTLE), { executionMode: 'autopilot' }));
   });
-  it('the rules text carries the block exactly as the spec wrote it, on both kinds', () => {
-    const block = RULES_TEXT.slice(RULES_TEXT.indexOf('match /tape/{etDate}'));
-    const rule = 'allow read: if request.auth != null && resource.data.ownerId == request.auth.uid;';
-    expect(block.split(rule).length - 1).toBeGreaterThanOrEqual(2);
+  it('the rules text carries the block exactly as the spec wrote it, on both kinds — and nothing else inside it', () => {
+    // Exactly the tape block: from its match to the brace that closes it
+    // (review L4-F11: slicing to the end of the file let a relaxed series rule
+    // hide behind the thirty `allow write: if false;` that follow it).
+    const start = RULES_TEXT.indexOf('match /tape/{etDate}');
+    let depth = 0;
+    let end = -1;
+    for (let i = RULES_TEXT.indexOf('{', start + 'match /tape/{etDate}'.length); i < RULES_TEXT.length; i += 1) {
+      if (RULES_TEXT[i] === '{') depth += 1;
+      if (RULES_TEXT[i] === '}') { depth -= 1; if (depth === 0) { end = i + 1; break; } }
+    }
+    const block = RULES_TEXT.slice(start, end);
+    const allows = block.split('\n').map((l) => l.trim()).filter((l) => l.startsWith('allow '));
+    expect(allows).toEqual([
+      'allow read: if request.auth != null && resource.data.ownerId == request.auth.uid;',
+      'allow write: if false;',
+      'allow read: if request.auth != null && resource.data.ownerId == request.auth.uid;',
+      'allow write: if false;',
+    ]);
     expect(block).toContain('match /series/{symbol}');
-    expect((block.match(/allow write: if false;/g) || []).length).toBeGreaterThanOrEqual(2);
   });
 });
