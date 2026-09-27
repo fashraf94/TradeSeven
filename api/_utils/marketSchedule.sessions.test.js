@@ -1,6 +1,12 @@
 // api/_utils/marketSchedule.sessions.test.js
 // Intraday Data — Build 1, contract §5.1 / G5: getSessionForDate and
 // getPreviousSessionDate on the canonical calendar (marketSchedule.js).
+//
+// DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): marketSchedule.js imports the
+// calendar from src/utils/marketCalendar.js (Film Room BA-28 — one calendar
+// for the server and the hub helper). This file's REAL, unmocked import of
+// marketSchedule.js is the runtime guard for that api/ → src/ import: it fails
+// here if a browser-only dependency ever enters its graph. Never mock it.
 import { describe, it, expect } from 'vitest';
 import { getSessionForDate, getPreviousSessionDate, MAINTAINED_HOLIDAY_YEARS } from './marketSchedule.js';
 

@@ -30,48 +30,17 @@ import { resolveBattleResult } from './battleResult.js';
 import { buildBattleBlock } from './tapeAssemble.js';
 import { stableStringify } from './tapeMerge.js';
 import { readEvalRunsForDay, readTape } from './tapeSources.js';
-import { etDayBounds, etDateOf, toMs, previousSession, sessionDatesBetween, sessionFor, nextCalendarDate } from './tapeTime.js';
+import { etDayBounds, etDateOf, sessionDatesBetween, sessionFor, nextCalendarDate } from './tapeTime.js';
+import { isBattleDay, completionsSinceMs, tapeDateFor } from '../../../src/utils/tapeSchedule.js';
 
 export const TIME_FLOOR_MS = 30_000;
 /** The longest range one backfill request may name (sessions). */
 export const BACKFILL_MAX_SESSIONS = 60;
 
-/** Is `etDate` one of the battle's trading days? */
-export function isBattleDay(battle, etDate) {
-  const days = battle?.timing?.tradingDays;
-  if (Array.isArray(days) && days.length) return days.includes(etDate);
-  // Legacy documents without the list: active from the activation date through completion.
-  const from = etDateOf(battle?.activatedAt ?? battle?.createdAt);
-  const to = battle?.completedAt ? etDateOf(battle.completedAt) : null;
-  return Boolean(from && from <= etDate && (!to || to >= etDate));
-}
-
-/**
- * The first instant whose completions tonight's pass (for session `etDate`)
- * owns: the start of the PREVIOUS session's ET day. So a battle marked
- * complete on a holiday, over a weekend, or after last night's pass has run
- * (the evaluator's next-weekday sweep runs regardless of market hours; decide
- * marks the old battle complete when its owner deploys the next) reaches its
- * final-day tape on the next session night (review L1-F3 / L3-F1). Overlap
- * with last night is harmless: an already-recorded completion is skipped by a
- * one-document read, and the merge writes nothing when nothing changed.
- */
-export function completionsSinceMs(etDate) {
-  const prev = previousSession(etDate);
-  return etDayBounds(prev ?? etDate).startMs;
-}
-
-/** The date a battle's tape is written for on the pass for `etDate`, or null. */
-export function tapeDateFor(battle, etDate, { completedSinceMs = etDayBounds(etDate).startMs } = {}) {
-  if (isBattleDay(battle, etDate)) return etDate;
-  const days = battle?.timing?.tradingDays;
-  const doneMs = toMs(battle?.completedAt);
-  if (battle?.status === 'completed' && doneMs !== null && Array.isArray(days) && days.length) {
-    const finalDay = days[days.length - 1];
-    if (finalDay < etDate && doneMs >= completedSinceMs && doneMs < etDayBounds(etDate).endMs) return finalDay;
-  }
-  return null;
-}
+// The selection rule — isBattleDay, completionsSinceMs, tapeDateFor — is the
+// shared module's (src/utils/tapeSchedule.js), the ONE rule the hub helper
+// also answers `pending` by (BA-28); re-exported here.
+export { isBattleDay, completionsSinceMs, tapeDateFor };
 
 /** Does this stored tape already record the battle block the battle has now? */
 export function completionRecorded(stored, battle) {

@@ -7,66 +7,18 @@
 
 import { getSessionForDate, getPreviousSessionDate, isMarketHoliday, MAINTAINED_HOLIDAY_YEARS } from '../marketSchedule.js';
 import {
-  CLOSE_PASS_UTC_HOUR, CLOSE_PASS_UTC_MINUTE, CLOSE_PASS_MAX_DURATION_S,
   CANDLE_PASS_UTC_HOUR, CANDLE_RETRY_WINDOW_SESSIONS,
 } from '../../../src/constants/filmTape.js';
+import {
+  toMs, etDateOf, nextCalendarDate, etDayBounds, closePassStartMs, closePassEndMs,
+} from '../../../src/utils/tapeSchedule.js';
 
-const ET_PARTS = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
-});
+// The ET-day arithmetic and the close pass's schedule are the shared module's
+// (src/utils/tapeSchedule.js — one implementation for the server and the hub
+// helper, BA-28); re-exported here for the tape's modules.
+export { toMs, etDateOf, nextCalendarDate, etDayBounds };
 
 const isEtDate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
-
-/** Epoch ms from an ISO string, a number or a Timestamp-like; null otherwise. */
-export function toMs(v) {
-  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
-  if (typeof v === 'string' && v) { const ms = Date.parse(v); return Number.isFinite(ms) ? ms : null; }
-  if (v && typeof v.toMillis === 'function') return toMs(v.toMillis());
-  if (v instanceof Date) return toMs(v.getTime());
-  return null;
-}
-
-/** The ET calendar date (YYYY-MM-DD) of an instant, or null. */
-export function etDateOf(instant) {
-  const ms = toMs(instant);
-  if (ms === null) return null;
-  const parts = ET_PARTS.formatToParts(new Date(ms));
-  const get = (t) => parts.find((p) => p.type === t)?.value;
-  return `${get('year')}-${get('month')}-${get('day')}`;
-}
-
-/** The instant of ET wall-clock `hour:minute` on `etDate`, probing both offsets with Intl. */
-function etWallClockMs(etDate, hour, minute) {
-  const [y, m, d] = etDate.split('-').map(Number);
-  for (const offsetHours of [4, 5]) {
-    const candidate = Date.UTC(y, m - 1, d, hour + offsetHours, minute, 0);
-    const parts = ET_PARTS.formatToParts(new Date(candidate));
-    const get = (t) => parts.find((p) => p.type === t)?.value;
-    let h = parseInt(get('hour'), 10);
-    if (h === 24) h = 0;
-    if (`${get('year')}-${get('month')}-${get('day')}` === etDate && h === hour && parseInt(get('minute'), 10) === minute) return candidate;
-  }
-  return null;
-}
-
-/** The calendar day after `etDate`, as YYYY-MM-DD. */
-export function nextCalendarDate(etDate) {
-  const [y, m, d] = etDate.split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, d + 1, 12)).toISOString().slice(0, 10);
-}
-
-/**
- * ET midnight to the next ET midnight, as epoch ms and ISO strings. The tape's
- * "day" for every record: ticks by `capturedAt`, entries by `timestamp`,
- * receipts and trades by `swappedOutAt`, run records by `startedAt`.
- */
-export function etDayBounds(etDate) {
-  if (!isEtDate(etDate)) return null;
-  const startMs = etWallClockMs(etDate, 0, 0);
-  const endMs = etWallClockMs(nextCalendarDate(etDate), 0, 0);
-  if (startMs === null || endMs === null) return null;
-  return { etDate, startMs, endMs, startIso: new Date(startMs).toISOString(), endIso: new Date(endMs).toISOString() };
-}
 
 /** Is the instant inside [start, end)? */
 export function inDay(instant, bounds) {
@@ -129,9 +81,7 @@ export function isHoliday(etDate) {
  */
 export function closePassWindowFor(etDate) {
   if (!isSessionDate(etDate)) return null;
-  const [y, m, d] = etDate.split('-').map(Number);
-  const startMs = Date.UTC(y, m - 1, d + 1, CLOSE_PASS_UTC_HOUR, CLOSE_PASS_UTC_MINUTE, 0);
-  return { startMs, endMs: startMs + CLOSE_PASS_MAX_DURATION_S * 1000 };
+  return { startMs: closePassStartMs(etDate), endMs: closePassEndMs(etDate) };
 }
 
 /**

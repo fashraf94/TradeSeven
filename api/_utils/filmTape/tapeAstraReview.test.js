@@ -17,14 +17,17 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve, relative } from 'node:path';
 import { parse } from 'acorn';
 
-const flags = vi.hoisted(() => ({ writer: true }));
+const flags = vi.hoisted(() => ({ writer: true, v2: false }));
 vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   get FILM_TAPE_WRITE_ENABLED() { return flags.writer; },
+  get FILM_ROOM_V2_ENABLED() { return flags.v2; },
 }));
 
 import { writeTapeDay, markCloseFailed } from './writeTapeDay.js';
 import { runCandlePass } from './candlePass.js';
+import { runClosePass } from './closePass.js';
+import { getReviewAvailability } from '../../../src/utils/reviewAvailability.js';
 import { scanProtectedStoreWrites, siteKey } from '../compositionProtectedStoresScan.js';
 import { stableStringify, mergeTape } from './tapeMerge.js';
 import { assembleTape } from './tapeAssemble.js';
@@ -54,7 +57,7 @@ const morning = (t, bars = allBars(), at = MORNING) => runCandlePass({ db: t.db,
 const under = (t, prefix) => t.writeLog.filter((w) => w.path === prefix || w.path.startsWith(`${prefix}/`));
 
 let errSpy;
-beforeEach(() => { flags.writer = true; errSpy = vi.spyOn(console, 'error').mockImplementation(() => {}); });
+beforeEach(() => { flags.writer = true; flags.v2 = false; errSpy = vi.spyOn(console, 'error').mockImplementation(() => {}); });
 afterEach(() => { errSpy.mockRestore(); });
 
 // ── F1 — BA-23: the candle pass writes only agentBattles/{battleId}/tape/{etDate} ─────────
@@ -554,5 +557,67 @@ describe('F7 — BA-27: a stale assembly can add facts; it can never move the ba
     tape = tapeOf(t, fx.battleId);
     expect(tape.battleStatusAtWrite).toBe('completed');
     expect(tape.battle.status).toBe('completed');
+  });
+});
+
+// ── F6 — BA-28: one calendar, one eligibility rule ──────────────────────────
+
+describe('F6 — BA-28: the hub helper says "pending" only when the close pass\'s own selection will tape the battle', () => {
+  const tiered = (over) => ({
+    id: 'b-hub', ownerId: 'owner-1', agentId: 'agent-1', gameMode: 'baggerbomb_agent', status: 'completed',
+    dailyReviews: [], evaluations: [], trades: [], chatExchanges: [], scoreState: { currentScore: 12, opponentScore: 8 }, ...over,
+  });
+  const helper = (battle, nowIso, readTape = async () => null) => getReviewAvailability(battle, { readTape, now: Date.parse(nowIso) });
+  const passAt = (t, iso) => runClosePass({ db: t.db, clock: () => Date.parse(iso) });
+  const storeWith = (battle) => makeTapeDb({ [`agentBattles/${battle.id}`]: battle });
+
+  it('F6 R04: timing.tradingDays = ["not-a-date"] — "unavailable", and the close pass that night tapes nothing', async () => {
+    flags.v2 = true;
+    const battle = tiered({ timing: { tradingDays: ['not-a-date'] }, activatedAt: '2026-09-28T12:00:00.000Z', completedAt: '2026-09-28T20:05:00.000Z' });
+    expect(await helper(battle, '2026-09-28T23:00:00.000Z')).toEqual({ ready: false, target: 'filmRoom', availability: 'unavailable' });
+    const t = storeWith(battle);
+    const s = await passAt(t, '2026-09-29T02:15:30.000Z');
+    expect(s.notBattleDay).toContain(battle.id);                       // the writer agrees: selected, never taped
+    expect(t.writeLog).toEqual([]);
+  });
+
+  it('F6 R17: a completion on the 2027-01-18 holiday is pending until the 2027-01-19 session\'s pass has run — the pass that tapes the 2027-01-15 final day', async () => {
+    flags.v2 = true;
+    const battle = tiered({ timing: { tradingDays: ['2027-01-15'] }, activatedAt: '2027-01-15T12:00:00.000Z', completedAt: '2027-01-18T15:00:00.000Z' });
+    expect((await helper(battle, '2027-01-18T22:00:00.000Z')).availability).toBe('pending');
+    expect((await helper(battle, '2027-01-19T12:00:00.000Z')).availability).toBe('pending');  // the next morning: Tuesday's pass is still to run
+    expect((await helper(battle, '2027-01-20T02:20:00.000Z')).availability).toBe('unavailable'); // it has had its full run and nothing was read back
+    const t = storeWith(battle);
+    expect(await passAt(t, '2027-01-19T02:15:30.000Z')).toMatchObject({ skipped: true, reason: 'not_a_trading_day' }); // no pass on the holiday
+    const s = await passAt(t, '2027-01-20T02:15:30.000Z');
+    expect(s.written.map((w) => [w.battleId, w.etDate])).toEqual([[battle.id, '2027-01-15']]);
+    const tape = t.store.get(`agentBattles/${battle.id}/tape/2027-01-15`);
+    expect(await helper(battle, '2027-01-20T02:21:00.000Z', async () => tape)).toEqual({ ready: true, target: 'filmRoom', availability: 'ready' });
+  });
+
+  it('F6 R09: an owning pass beyond the maintained calendar (2028) — "unavailable", and the close pass refuses calendar_missing', async () => {
+    flags.v2 = true;
+    const battle = tiered({ timing: { tradingDays: ['2027-12-31'] }, activatedAt: '2027-12-31T12:00:00.000Z', completedAt: '2028-01-03T15:00:00.000Z' });
+    expect((await helper(battle, '2028-01-03T20:00:00.000Z')).availability).toBe('unavailable');
+    const t = storeWith(battle);
+    expect(await passAt(t, '2028-01-04T02:15:30.000Z')).toMatchObject({ skipped: true, reason: 'calendar_missing' });
+    expect(t.writeLog).toEqual([]);
+  });
+
+  it('F6: one calendar and one rule — the server schedule and the helper use the same module functions, and the helper keeps exactly three keys', async () => {
+    const calendar = await import('../../../src/utils/marketCalendar.js');
+    const schedule = await import('../../../src/utils/tapeSchedule.js');
+    const server = await import('../marketSchedule.js');
+    const close = await import('./closePass.js');
+    const hub = await import('../../../src/utils/reviewAvailability.js');
+    expect(server.getSessionForDate).toBe(calendar.getSessionForDate);
+    expect(server.getPreviousSessionDate).toBe(calendar.getPreviousSessionDate);
+    expect(server.isMarketHoliday).toBe(calendar.isMarketHoliday);
+    expect(close.tapeDateFor).toBe(schedule.tapeDateFor);
+    expect(close.completionsSinceMs).toBe(schedule.completionsSinceMs);
+    expect(hub.owningPassDate).toBe(schedule.owningPassDate);
+    flags.v2 = true;
+    const battle = tiered({ timing: { tradingDays: ['2026-09-28'] }, completedAt: '2026-09-28T20:05:00.000Z' });
+    expect(Object.keys(await helper(battle, '2026-09-28T23:00:00.000Z')).sort()).toEqual(['availability', 'ready', 'target']);
   });
 });
