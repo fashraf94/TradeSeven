@@ -140,6 +140,13 @@ describe('Stage 3 — FILM_ROOM_V2_ENABLED on: one bounded read of tape/{finalEt
       .toEqual({ ready: false, target: 'filmRoom', availability: 'unavailable' });
   });
 
+  it('a final day that cannot exist (2026-02-30) is never read — unavailable, no read spent', async () => {
+    const r = recorder({ passes: { close: { status: 'written' } } });
+    expect(await getReviewAvailability(base({ timing: { tradingDays: ['2026-02-30'] } }), { readTape: r.readTape, now: MON_1900_EDT }))
+      .toEqual({ ready: false, target: 'filmRoom', availability: 'unavailable' });
+    expect(r.calls).toEqual([]);
+  });
+
   it('active: not completed — unavailable, and no read is spent', async () => {
     const r = recorder({ passes: { close: { status: 'written' } } });
     expect(await getReviewAvailability(base({ status: 'active', completedAt: null }), { readTape: r.readTape, now: MON_1900_EDT }))

@@ -25,7 +25,7 @@ vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => ({
 }));
 
 import { writeTapeDay, markCloseFailed } from './writeTapeDay.js';
-import { runCandlePass } from './candlePass.js';
+import { runCandlePass, markRetryWindowElapsed } from './candlePass.js';
 import { runClosePass } from './closePass.js';
 import { getReviewAvailability } from '../../../src/utils/reviewAvailability.js';
 import { scanProtectedStoreWrites } from '../compositionProtectedStoresScan.js';
@@ -133,6 +133,27 @@ describe('F1 — BA-23: a collection-group result is never written on the streng
     expect([...s.invalid].sort()).toEqual([...bad].sort());
     expect(tapeOf(t, 'b-captured').passes.candles.status).toBe('written');
   });
+
+  it('F1 (self-named): a document that names the very ids its path spells — at a foreign parent, one level too deep, or on an impossible date — is still skipped and counted; never selected, never closed out', async () => {
+    // Each shape passes the document-identity check, so only the path rule can refuse it (mutation run, build report §8).
+    const SELF = 'otherRoot/b-self/tape/2026-09-24';
+    const NESTED = `${tapePath('b-captured')}/tape/2026-09-24`;
+    const IMPOSSIBLE = 'agentBattles/b-captured/tape/2026-02-30';     // older than the scan: only the expiry sweep reads it
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    const tape = tapeOf(t, fx.battleId);
+    t.store.set(SELF, { ...structuredClone(tape), battleId: 'b-self' });
+    t.store.set(NESTED, structuredClone(tape));
+    t.store.set(IMPOSSIBLE, { ...structuredClone(tape), etDate: '2026-02-30' });
+    const s = await morning(t);
+    expect([...s.invalid].sort()).toEqual([IMPOSSIBLE, NESTED, SELF].sort());
+    expect(s.selected).toBe(1);                                                // only the sanctioned tape was processed
+    expect(s.expired).toEqual([]);
+    for (const p of [SELF, NESTED, IMPOSSIBLE]) expect(under(t, p), p).toEqual([]);
+    expect(t.writeLog.some((w) => w.path.startsWith('agentBattles/b-self'))).toBe(false);
+    expect(tapeOf(t, 'b-captured').passes.candles.status).toBe('written');     // positive control
+  });
 });
 
 // ── F9 — BA-23: the scanner sees every physical write site the tape runs ────
@@ -177,6 +198,27 @@ function callerOf(stack) {
 }
 
 describe('F9 — BA-23: every physical write site is a named writer the protected-store scanner sees', () => {
+  it('F9: the close-out writer re-reads the tape in its own transaction — it marks a tape still waiting, never a written, exhausted or already closed-out one', async () => {
+    // Its callers pre-check the status they queried; this is the guard for a tape that changed after that query (mutation run, build report §8).
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    const base = tapeOf(t, fx.battleId);
+    const OLD = '2026-09-08';
+    const plant = (battleId, candles) => t.store.set(tapePath(battleId, OLD), { ...structuredClone(base), battleId, etDate: OLD, passes: { ...base.passes, candles: { ...base.passes.candles, ...candles } } });
+    plant('b-waiting', { status: 'pending', attempts: 1 });
+    plant('b-written', { status: 'written', attempts: 1 });
+    plant('b-spent', { status: 'failed', attempts: 3, reason: 'attempts_exhausted' });
+    plant('b-closed', { status: 'failed', attempts: 1, reason: 'retry_window_elapsed' });
+    const nowIso = new Date(MORNING).toISOString();
+    const before = t.writeLog.length;
+    for (const id of ['b-written', 'b-spent', 'b-closed']) expect(await markRetryWindowElapsed(t.db, { battleId: id, etDate: OLD }, nowIso), id).toBe(false);
+    expect(t.writeLog.slice(before)).toEqual([]);
+    expect(await markRetryWindowElapsed(t.db, { battleId: 'b-waiting', etDate: OLD }, nowIso)).toBe(true);
+    expect(t.writeLog.slice(before).map((w) => w.path)).toEqual([tapePath('b-waiting', OLD)]);
+    expect(t.store.get(tapePath('b-waiting', OLD)).passes.candles).toMatchObject({ status: 'failed', reason: 'retry_window_elapsed', attempts: 1, writtenAt: nowIso });
+  });
+
   it('F9: the scanner\'s census of the tape\'s write sites equals the write sites that actually run — by function, method and count', async () => {
     // STATIC: every Firestore-shaped write the scanner finds in the tape's source.
     const scan = scanProtectedStoreWrites(REPO);
@@ -264,6 +306,40 @@ describe('F2 — BA-24: sample freshness and session completeness', () => {
     expect(tape.passes.candles.status).toBe('partial');
   });
 
+  it('F2 (hole): a six-minute hole inside an otherwise whole AAPL session — the 10:00:20 ET check has no fresh price, so the series is incomplete and the pass stays queued, never written over the hole', async () => {
+    // Every ten-minute bucket still has bars, so only the sample-age rule can see the hole (mutation run, build report §8).
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    const holeFrom = Date.parse('2026-09-24T13:54:00.000Z');
+    const holeTo = Date.parse('2026-09-24T14:00:00.000Z');
+    const holed = flatRows(D, PRICES.AAPL).filter((r) => r.timestamp * 1000 < holeFrom || r.timestamp * 1000 >= holeTo);
+    const s = await morning(t, allBars({ AAPL: holed }));
+    const aapl = t.store.get(`${tapePath('b-captured')}/series/AAPL`);
+    expect(aapl.bars).toHaveLength(39);
+    expect(aapl.atChecks.find((a) => a.at === '2026-09-24T14:00:20.000Z')).toMatchObject({ price: null, barClosedAt: '2026-09-24T13:54:00.000Z' });
+    expect(tapeOf(t, 'b-captured').passes.candles).toMatchObject({ status: 'partial', reason: 'bars_incomplete', symbolsIncomplete: ['AAPL'] });
+    expect(tapeOf(t, 'b-captured').coverage.series.note).toMatch(/AAPL: no fresh price at 1 check\(s\)/);
+    expect(s.written).toEqual([]);
+  });
+
+  it('F2 (plan close): a plan-only name whose bars stop at 15:53 ET — its series is whole and every check priced, but the plan\'s close price is stale: null beside its bar\'s time, retryable, and the pass stays queued', async () => {
+    // Nothing else is stale, so only the plan's own close sample keeps the tape queued (mutation run, build report §8).
+    const fx = await capturedDay();
+    fx.battle.evaluations.find((e) => e.evalId === 'b-captured:e11').candidates.push({ symbol: 'SNOW', direction: 'potential_entry', signalSummary: 'Watching', threshold: 'Above 185.' });
+    const t = world(fx);
+    await write(t, fx);
+    const cut = Date.parse('2026-09-24T19:54:00.000Z');
+    const s = await morning(t, allBars({ SNOW: flatRows(D, PRICES.SNOW).filter((r) => r.timestamp * 1000 < cut) }));
+    const tape = tapeOf(t, 'b-captured');
+    const snow = tape.plans.find((p) => p.symbol === 'SNOW');
+    expect(snow.price.atClose).toEqual({ value: null, at: '2026-09-24T19:54:00.000Z', basis: 'stale_bar' });
+    expect(snow.price.retryableInputs).toEqual(['price:SNOW@close']);
+    expect(t.store.get(`${tapePath('b-captured')}/series/SNOW`).bars).toHaveLength(39);
+    expect(tape.passes.candles).toMatchObject({ status: 'partial', symbolsMissing: [], symbolsIncomplete: [] });
+    expect(s.written).toEqual([]);
+  });
+
   it('F2 (M11): an early-close session is a whole session — the real processTape keeps 21 ten-minute bars (from the calendar) and writes the pass', async () => {
     const fx = await earlyCloseDay();
     const t = world(fx);
@@ -341,6 +417,22 @@ describe('F3 — BA-25: a retry never replaces a saved series with a poorer one'
     expect(tape.coverage.series.note).toMatch(/AAPL: 30 of 39 ten-minute bars/);
     expect(tape.coverage.series.note).toMatch(/kept from an earlier attempt: AAPL \(no bars this attempt\)/);
   });
+
+  it('F3 (tie): a response covering as many minutes as the saved series but pricing fewer checks does not replace it', async () => {
+    // The same minute count with the hole moved: only the checks-priced rule decides (mutation run, build report §8).
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    const without = (from, to) => flatRows(D, PRICES.AAPL).filter((r) => r.timestamp * 1000 < Date.parse(from) || r.timestamp * 1000 >= Date.parse(to));
+    await morning(t, allBars({ AAPL: without('2026-09-24T19:20:00.000Z', '2026-09-24T19:26:00.000Z'), SPY: new Error('EODHD 500') }));
+    const saved = structuredClone(seriesAt(t, fx.battleId, 'AAPL'));
+    expect(saved.atChecks.find((a) => a.at === '2026-09-24T14:00:20.000Z').price).toBe(PRICES.AAPL);   // that hole touches no check's sample
+    await morning(t, allBars({ AAPL: without('2026-09-24T13:54:00.000Z', '2026-09-24T14:00:00.000Z') }), MORNING + DAY);
+    const aapl = seriesAt(t, fx.battleId, 'AAPL');
+    expect(aapl.atChecks).toEqual(saved.atChecks);                                // the 10:00:20 ET check keeps its price
+    expect(aapl.preservedFrom).toBe(saved.writtenAt);
+    expect(tapeOf(t, fx.battleId).passes.candles).toMatchObject({ status: 'written', symbolsIncomplete: [] });
+  });
 });
 
 // ── F4 — BA-25: candle output tracks its inputs ─────────────────────────────
@@ -379,6 +471,28 @@ describe('F4 — BA-25: when the candle pass\'s inputs change, its output is re-
     expect(after.passes.candles.changedInputs).toBeUndefined();
     expect(after.coverage.series.note ?? '').not.toMatch(/built before/);
     expect(t.store.get(`${tapePath(fx.battleId)}/series/AAPL`).atChecks.find((a) => a.tickSeq === 10)).toMatchObject({ price: 231 });
+  });
+
+  it('F4 (kept series): tick 10 recovered, then a shorter AAPL response keeps the saved series — built before tick 10, so it is incomplete, says why, and the pass stays queued', async () => {
+    // A kept series is judged against the checks the tape has NOW (uncoveredChecks; mutation run, build report §8).
+    const { t, fx } = await withoutTick10();
+    await write(t, fx, MORNING + 3_600_000);                                          // re-queued: inputs_changed
+    await morning(t, allBars({ AAPL: sessionRows(D, () => PRICES.AAPL, { extras: false }).slice(0, 300) }), MORNING + DAY);
+    expect(t.store.get(`${tapePath(fx.battleId)}/series/AAPL`).atChecks.some((a) => a.tickSeq === 10)).toBe(false);   // kept: 39 bars over 30
+    const tape = tapeOf(t, fx.battleId);
+    expect(tape.passes.candles).toMatchObject({ status: 'partial', reason: 'bars_incomplete', symbolsIncomplete: ['AAPL'] });
+    expect(tape.coverage.series.note).toMatch(/AAPL: built before 1 check\(s\) were recorded/);
+  });
+
+  it('F4 (one label): a second close run over the same changed inputs keeps ONE "built before" label — and writes nothing', async () => {
+    // The label is replaced, never stacked (mutation run, build report §8).
+    const { t, fx } = await withoutTick10();
+    await write(t, fx, MORNING + 3_600_000);
+    const writes = t.writeLog.length;
+    const r = await write(t, fx, MORNING + 7_200_000);
+    expect(r.status).toBe('unchanged');
+    expect(t.writeLog.length).toBe(writes);
+    for (const s of ['replay', 'series']) expect(tapeOf(t, fx.battleId).coverage[s].note.match(/built before the candle inputs changed/g), s).toHaveLength(1);
   });
 
   it('F4: outside the window, changed inputs lower a written pass to partial and name what changed; the output stays, labelled "not rebuilt"', async () => {
@@ -519,6 +633,36 @@ describe('F5 — BA-26: an unknown check is never "complete", and a caveat learn
       expect(tapeOf(t2, onDay.battleId).coverage[s].note, s).toMatch(/150-entry cap/);
     }
   });
+
+  it('F5 (lost, not evicted): below the cap, an absent entry older than every surviving one is LOST — a caveat that is kept, and one more unknown check', async () => {
+    // Only the cap can make an absent entry "evicted" (mutation run, build report §8).
+    const fx = await capturedDay();
+    fx.battle.evaluations = fx.battle.evaluations.filter((e) => e.evalId !== 'b-captured:e5');   // tick 5's entry — the day's oldest
+    const t = world(fx);
+    await write(t, fx);
+    const cov = tapeOf(t, fx.battleId).coverage;
+    for (const s of ['plans', 'rationale', 'evidence', 'calls']) {
+      expect(cov[s].unknownChecks, s).toBe(2);                          // tick 13's gap and the lost entry
+      expect(cov[s].caveats.join(' '), s).toMatch(/1 check\(s\) recorded an evalId whose evaluation entry is absent/);
+      expect(cov[s].note, s).not.toMatch(/evicted/);
+    }
+  });
+
+  it('F5 (sticky count): a later read that sees fewer unknown checks never lowers the stored count — the count and its caveat stay (BA-26)', async () => {
+    const fx = await capturedDay();
+    const e5 = fx.battle.evaluations.find((e) => e.evalId === 'b-captured:e5');
+    fx.battle.evaluations = fx.battle.evaluations.filter((e) => e !== e5);
+    const t = world(fx);
+    await write(t, fx);
+    expect(tapeOf(t, fx.battleId).coverage.plans.unknownChecks).toBe(2);
+    const battle = t.store.get(`agentBattles/${fx.battleId}`);
+    t.store.set(`agentBattles/${fx.battleId}`, { ...battle, evaluations: [e5, ...battle.evaluations] });   // this read sees e5
+    await write(t, fx, NIGHT + 3_600_000);
+    const plans = tapeOf(t, fx.battleId).coverage.plans;
+    expect(plans.unknownChecks).toBe(2);
+    expect(plans.status).toBe('partial');
+    expect(plans.caveats.join(' ')).toMatch(/1 check\(s\) recorded an evalId whose evaluation entry is absent/);
+  });
 });
 
 // ── F7 — BA-27: completion is terminal ──────────────────────────────────────
@@ -624,6 +768,32 @@ describe('F6 — BA-28: the hub helper says "pending" only when the close pass\'
     expect((await helper(battle, '2026-09-29T02:20:00.000Z')).availability).toBe('unavailable');  // no read back here: no pass left
   });
 
+  it('F6 (final day untaped): a battle completed two sessions before its final day — a pass is still to run, but none will tape the FINAL day — "unavailable", as the writer does', async () => {
+    flags.v2 = true;
+    const battle = tiered({ timing: { tradingDays: ['2026-09-24', '2026-09-25', '2026-09-28', '2026-09-29'] }, activatedAt: '2026-09-24T12:00:00.000Z', completedAt: '2026-09-25T20:05:00.000Z' });
+    expect((await helper(battle, '2026-09-26T12:00:00.000Z')).availability).toBe('unavailable');  // Monday's pass will run — and tape Monday, not Tuesday
+    const t = storeWith(battle);
+    for (const at of ['2026-09-26T02:15:30.000Z', '2026-09-29T02:15:30.000Z', '2026-09-30T02:15:30.000Z']) await passAt(t, at);
+    expect([...t.store.keys()].filter((k) => k.startsWith(`agentBattles/${battle.id}/tape/`)).sort())
+      .toEqual([`agentBattles/${battle.id}/tape/2026-09-25`, `agentBattles/${battle.id}/tape/2026-09-28`]);  // never 2026-09-29
+  });
+
+  it('F6 (impossible final day): tradingDays ["2026-02-30"] is "unavailable" — the close pass can never write that day', async () => {
+    flags.v2 = true;
+    const battle = tiered({ timing: { tradingDays: ['2026-02-30'] }, activatedAt: '2026-09-28T12:00:00.000Z', completedAt: '2026-09-28T20:05:00.000Z' });
+    expect((await helper(battle, '2026-09-28T23:00:00.000Z')).availability).toBe('unavailable');
+    const s = await passAt(storeWith(battle), '2026-09-29T02:15:30.000Z');
+    expect(s.written).toEqual([]);
+    expect(s.failed.map((f) => f.reason)).toEqual(['writeTapeDay: invalid etDate 2026-02-30']);
+  });
+
+  it('F6 (calendar edge): a completion after the calendar\'s last pass (2027-12-31, 22:00 ET) — the next session is beyond the maintained calendar: "unavailable", and that pass refuses calendar_missing', async () => {
+    flags.v2 = true;
+    const battle = tiered({ timing: { tradingDays: ['2027-12-31'] }, activatedAt: '2027-12-31T12:00:00.000Z', completedAt: '2028-01-01T03:00:00.000Z' });
+    expect((await helper(battle, '2028-01-01T12:00:00.000Z')).availability).toBe('unavailable');
+    expect(await passAt(storeWith(battle), '2028-01-04T02:15:30.000Z')).toMatchObject({ skipped: true, reason: 'calendar_missing' });
+  });
+
   it('F6: one calendar and one rule — the server schedule and the helper use the same module functions, and the helper keeps exactly three keys', async () => {
     const calendar = await import('../../../src/utils/marketCalendar.js');
     const schedule = await import('../../../src/utils/tapeSchedule.js');
@@ -700,6 +870,59 @@ describe('F8 — BA-29: every candle run sweeps, in a bounded batch, non-termina
     const s = await run(t);
     expect(under(t, 'otherRoot')).toEqual([]);
     expect(s.invalid).toContain(foreign);
+  });
+
+  // The sweep's bounds, each pinned by its own row (mutation run, build report §8).
+  it('F8 (look-back): a retryable failed tape older than the 60-session look-back is left as it is — the stated bound; one inside it is closed out', async () => {
+    const { t } = await withOldTapes([
+      { battleId: 'b-ancient', etDate: '2026-05-01', candles: { status: 'failed', attempts: 1, reason: 'fetch_failed' } },
+      { battleId: 'b-recent', etDate: '2026-08-03', candles: { status: 'failed', attempts: 1, reason: 'fetch_failed' } },
+    ]);
+    await run(t);
+    expect(t.store.get(tapePath('b-ancient', '2026-05-01')).passes.candles).toMatchObject({ status: 'failed', reason: 'fetch_failed' });
+    expect(t.store.get(tapePath('b-recent', '2026-08-03')).passes.candles).toMatchObject({ status: 'failed', reason: 'retry_window_elapsed' });
+  });
+
+  it('F8 (cost): a terminal tape behind the scan costs the sweep a query result, never a transaction', async () => {
+    const { t } = await withOldTapes([
+      { battleId: 'b-spent', etDate: '2026-08-12', candles: { status: 'failed', attempts: 3, reason: 'attempts_exhausted' } },
+      { battleId: 'b-elapsed', etDate: '2026-08-13', candles: { status: 'failed', attempts: 1, reason: 'retry_window_elapsed' } },
+    ]);
+    const before = t.readLog.length;
+    const s = await run(t);
+    expect(t.readLog.slice(before).filter((r) => /^tx:agentBattles\/b-(spent|elapsed)\//.test(r))).toEqual([]);
+    expect(s.sweep).toMatchObject({ expired: 0, complete: true });
+  });
+
+  it('F8 (read bound): the sweep stops at maxReads and says it is incomplete — the rest waits for the next morning', async () => {
+    const old = ['2026-08-24', '2026-08-25', '2026-08-26', '2026-08-27', '2026-08-28'].map((d, i) => ({ battleId: `b-r${i}`, etDate: d, candles: { status: 'pending', attempts: 0 } }));
+    const { t } = await withOldTapes(old);
+    const s = await run(t, MORNING, { maxReads: 3, page: 2 });
+    expect(s.sweep).toMatchObject({ reads: 3, expired: 3, complete: false });
+    expect(old.filter((o) => t.store.get(tapePath(o.battleId, o.etDate)).passes.candles.status === 'pending')).toHaveLength(2);
+  });
+
+  it('F8 (time floor): with the budget spent, the sweep reads nothing and says it is incomplete', async () => {
+    const { t } = await withOldTapes([{ battleId: 'b-late', etDate: '2026-08-31', candles: { status: 'pending', attempts: 0 } }]);
+    const s = await runCandlePass({ db: t.db, fetchCandles: fetcherOf(allBars()).fetchCandles, clock: () => MORNING, startMs: MORNING - 280_000 });
+    expect(s.sweep).toMatchObject({ reads: 0, expired: 0, complete: false });
+    expect(t.store.get(tapePath('b-late', '2026-08-31')).passes.candles.status).toBe('pending');
+  });
+
+  it('F8 (isolated): one close-out the sweep cannot write never costs the morning — the other old tape is closed out and the day is enriched', async () => {
+    const fx = await capturedDay();
+    const hooks = {};
+    const t = makeTapeDb(seedDay({}, fx), { hooks });
+    await write(t, fx);
+    const base = tapeOf(t, fx.battleId);
+    for (const [battleId, etDate] of [['b-fail', '2026-08-31'], ['b-ok', '2026-08-28']]) {
+      t.store.set(tapePath(battleId, etDate), { ...structuredClone(base), battleId, etDate, passes: { ...base.passes, candles: { ...base.passes.candles, status: 'pending', attempts: 0 } } });
+    }
+    hooks.beforeWrite = (op, path) => { if (path === tapePath('b-fail', '2026-08-31')) throw new Error('14 UNAVAILABLE'); };
+    const s = await run(t);
+    expect(s.failed).toEqual([expect.objectContaining({ path: tapePath('b-fail', '2026-08-31'), error: expect.stringMatching(/^close-out: /) })]);
+    expect(t.store.get(tapePath('b-ok', '2026-08-28')).passes.candles).toMatchObject({ status: 'failed', reason: 'retry_window_elapsed' });
+    expect(s.written.map((w) => w.path)).toEqual([tapePath('b-captured')]);
   });
 });
 
