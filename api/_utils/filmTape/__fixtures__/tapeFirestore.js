@@ -147,6 +147,20 @@ export function makeTapeDb(initial = {}, { hooks = {} } = {}) {
   }
 
   const db = {
+    batch() {
+      const ops = [];
+      return {
+        set: (ref, data) => { ops.push(() => put(ref.path, data, 'batch.set')); },
+        update: (ref, updates) => {
+          ops.push(() => {
+            if (!store.has(ref.path)) throw new Error(`batch.update on missing doc ${ref.path}`);
+            const cur = clone(store.get(ref.path)); applyDotPathUpdate(cur, updates); put(ref.path, cur, 'batch.update');
+          });
+        },
+        delete: (ref) => { ops.push(() => { store.delete(ref.path); bump(ref.path); writeLog.push({ op: 'batch.delete', path: ref.path }); }); },
+        commit: async () => { if (hooks.failBatch) throw new Error('batch_failed_by_test'); for (const op of ops) op(); },
+      };
+    },
     collection: (name) => collectionRef(name),
     collectionGroup: (name) => makeQuery({ paths: () => groupMembers(name), label: `group:${name}` }),
     async runTransaction(fn) {
