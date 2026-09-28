@@ -53,6 +53,10 @@ const under = (t, prefix) => t.writeLog.filter((w) => w.path === prefix || w.pat
 const morning = (t, bars = allBars(), at = MORNING) => runCandlePass({ db: t.db, fetchCandles: fetcherOf(bars).fetchCandles, clock: () => at, startMs: at });
 const amdTsla = (tape) => tape.actions.find((a) => a.symbolOut === 'AMD');
 const koPlan = (tape) => tape.plans.find((p) => p.symbol === 'KO');
+/** Rows with the minutes in [fromUtc, toUtc) removed. */
+const withoutMinutes = (rows, fromUtc, toUtc) => rows.filter((r) => r.timestamp * 1000 < Date.parse(`${D}T${fromUtc}:00.000Z`) || r.timestamp * 1000 >= Date.parse(`${D}T${toUtc}:00.000Z`));
+/** AMD flat at 144 but for a spike to 160 over 11:20–11:30 ET — sampled only by the tickSeq-8 check (11:30:20 ET). */
+const amdSpike = () => flatRows(D, PRICES.AMD).map((r) => { const t0 = r.timestamp * 1000; return t0 >= Date.parse(`${D}T15:20:00.000Z`) && t0 < Date.parse(`${D}T15:31:00.000Z`) ? { ...r, open: 160, high: 160.01, low: 159.99, close: 160 } : r; });
 /** A unit's facts without its provenance: what a unit built from whole bars would hold. */
 const factsOf = (unit) => ({ ...unit, preservedFrom: undefined });
 
@@ -120,8 +124,7 @@ describe('BA-36 (R1-1) — a retry merges plan prices and replay points point by
     await write(t, fx);
     // The sold name spikes to 160 over 11:20–11:30 ET — the tickSeq-8 check (11:30:20 ET) samples it, and the
     // scorer's history ratchets a bagger that every later point keeps. Without that sample, no later point has it.
-    const spike = flatRows(D, PRICES.AMD).map((r) => { const t0 = r.timestamp * 1000; return t0 >= Date.parse(`${D}T15:20:00.000Z`) && t0 < Date.parse(`${D}T15:31:00.000Z`) ? { ...r, open: 160, high: 160.01, low: 159.99, close: 160 } : r; });
-    const withoutMinutes = (rows, fromUtc, toUtc) => rows.filter((r) => r.timestamp * 1000 < Date.parse(`${D}T${fromUtc}:00.000Z`) || r.timestamp * 1000 >= Date.parse(`${D}T${toUtc}:00.000Z`));
+    const spike = amdSpike();
     // morning 1: the bought name (TSLA) stale at the 11:15:20 and 11:45:20 ET checks (tickSeq 7 and 9) — two missing samples
     await morning(t, allBars({ AMD: spike, TSLA: withoutMinutes(holed(PRICES.TSLA, '15:09', '15:15'), '15:39', '15:45') }));
     const m1 = structuredClone(tapeOf(t, fx.battleId));
@@ -435,5 +438,48 @@ describe('BA-24 confirmed (R1-3) — the read-out prints, per series, "N of M se
     const series = seriesOf(t, fx.battleId, fx.etDate);
     const section = seriesSection(formatTapeMarkdown(tapeOf(t, fx.battleId, fx.etDate), series));
     for (const s of series) expect(section, s.symbol).toContain(`- ${s.symbol}: 210 (market) of 210 (market) session minutes traded`);
+  });
+});
+
+// ── The §2 review of round 3 (build report §10.10) ──────────────────────────
+
+describe('BA-36 (round-3 review L1-1) — a replay that is itself a merge keeps naming the samples its kept points were scored without', () => {
+  /**
+   * The spike day of the null-guard row: morning 1 (TSLA stale at tickSeq 7 and 9), morning 2 (AMD stale at 8,
+   * the more complete unit). Their merge keeps morning 2's AMD points after 8 — scored without the spike's
+   * sample — and names it: price:AMD@8. Every AMD point of that merge is non-null.
+   */
+  async function mergedSpikeDay() {
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    await morning(t, allBars({ AMD: amdSpike(), TSLA: withoutMinutes(holed(PRICES.TSLA, '15:09', '15:15'), '15:39', '15:45') }));
+    await morning(t, allBars({ AMD: withoutMinutes(amdSpike(), '15:24', '15:30') }), MORNING + DAY);
+    const merged = amdTsla(tapeOf(t, fx.battleId)).replay;
+    expect(merged.missingInputs).toEqual(['price:AMD@8']);
+    expect(merged.holdPath.every((p) => typeof p.points === 'number')).toBe(true);   // a list that LOOKS whole
+    return { fx, t, merged };
+  }
+
+  it('L1-1: a third morning with morning 2\'s response again merges into the merge — price:AMD@8 stays named, the replay never reads complete, and the pass is never written', async () => {
+    const { fx, t, merged } = await mergedSpikeDay();
+    await morning(t, allBars({ AMD: withoutMinutes(amdSpike(), '15:24', '15:30') }), MORNING + 4 * DAY);
+    const tape = tapeOf(t, fx.battleId);
+    const replay = amdTsla(tape).replay;
+    expect(replay.missingInputs).toContain('price:AMD@8');
+    expect(replay.ghost.atClose).toBe(merged.ghost.atClose);                  // the same path, still named
+    expect(tape.coverage.replay.status).toBe('partial');
+    expect(tape.passes.candles.status).not.toBe('written');
+  });
+
+  it('L1-1: a third morning that fetches nothing keeps the merge whole — and its names with it: never complete, never written', async () => {
+    const { fx, t, merged } = await mergedSpikeDay();
+    await morning(t, Object.fromEntries(Object.keys(PRICES).map((s) => [s, new Error('EODHD 500')])), MORNING + 4 * DAY);
+    const tape = tapeOf(t, fx.battleId);
+    const replay = amdTsla(tape).replay;
+    expect(replay.missingInputs).toContain('price:AMD@8');
+    expect(factsOf(replay)).toEqual(factsOf(merged));
+    expect(tape.coverage.replay.status).toBe('partial');
+    expect(tape.passes.candles.status).not.toBe('written');
   });
 });

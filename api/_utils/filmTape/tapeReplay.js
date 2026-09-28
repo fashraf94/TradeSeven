@@ -303,20 +303,31 @@ function mergeLeg(s, f, storedWins) {
 /**
  * The samples a merged leg is missing: each null point, and — for a point kept
  * from an attempt that lacked an EARLIER sample of the leg — that sample too,
- * since the scorer's history runs through every earlier sample (BA-11). A kept
- * point the other attempt scored to the same value on a whole path (every
- * earlier sample of the leg priced) is vouched for by it, and names nothing.
+ * since the scorer's history runs through every earlier sample (BA-11). An
+ * attempt lacked a sample when its point there is null OR its own
+ * missingInputs names it: a stored replay that is itself a merge holds points
+ * filled from another attempt while its later points were scored without them,
+ * and only its names say so (round-3 review L1-1). A kept point the other
+ * attempt scored to the same value on a whole path — every earlier sample of
+ * the leg priced and unnamed — is vouched for by it, and names nothing.
  */
-function legNames(symbol, leg, merged, sides) {
+function legNames(symbol, leg, merged, sides, named) {
   const out = [];
-  const wholeBefore = (list, i) => Array.isArray(list) && list.length === merged.list.length && list.slice(0, i).every(hasPoint);
+  const nameAt = (list, h) => `price:${symbol}@${sampleKey(leg, list, h)}`;
+  const lacking = (side, i) => {
+    const list = sides[side];
+    const miss = [];
+    for (let h = 0; h < i; h += 1) if (!hasPoint(list[h]) || named[side].has(nameAt(list, h))) miss.push(nameAt(list, h));
+    return miss;
+  };
+  const wholeBefore = (side, i) => Array.isArray(sides[side]) && sides[side].length === merged.list.length && lacking(side, i).length === 0;
   merged.list.forEach((e, i) => {
-    if (!hasPoint(e)) { out.push(`price:${symbol}@${sampleKey(leg, merged.list, i)}`); return; }
-    const src = sides[merged.from[i]];
-    if (wholeBefore(src, i)) return;
-    const other = sides[merged.from[i] === 's' ? 'f' : 's'];
-    if (wholeBefore(other, i) && hasPoint(other[i]) && other[i].points === e.points) return;
-    for (let h = 0; h < i; h += 1) if (!hasPoint(src[h])) out.push(`price:${symbol}@${sampleKey(leg, src, h)}`);
+    if (!hasPoint(e)) { out.push(nameAt(merged.list, i)); return; }
+    const side = merged.from[i];
+    if (wholeBefore(side, i)) return;
+    const other = side === 's' ? 'f' : 's';
+    if (wholeBefore(other, i) && hasPoint(sides[other][i]) && sides[other][i].points === e.points) return;
+    out.push(...lacking(side, i));
   });
   return out;
 }
@@ -358,8 +369,9 @@ export function mergeReplay(stored, fresh, { symbolOut, symbolIn }) {
 
   const named = [...new Set([...(fresh.missingInputs || []), ...(stored.missingInputs || [])])];
   const keep = new Set(named.filter((n) => !n.startsWith('bars:') && !n.startsWith('price:')));
+  const namedBy = { s: new Set(stored.missingInputs || []), f: new Set(fresh.missingInputs || []) };
   const legGap = (symbol, leg, merged, sides) => {
-    if (merged) for (const n of legNames(symbol, leg, merged, sides)) keep.add(n);
+    if (merged) for (const n of legNames(symbol, leg, merged, sides, namedBy)) keep.add(n);
     else if (named.includes(`bars:${symbol}`)) keep.add(`bars:${symbol}`);
   };
   legGap(symbolOut, 'ghost', ghost, { s: sl.ghost, f: fl.ghost });
