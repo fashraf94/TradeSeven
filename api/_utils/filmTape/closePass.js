@@ -22,6 +22,17 @@
 // document's own `passes.close.status` — the only store the tape may write
 // (BA-1) — so a pair already `written` (or `skipped_mode`) is skipped and a
 // re-invocation of the same range continues where the last one stopped.
+//
+// REFRESH (BA-29 amended): the same entry with `refresh` re-merges the WRITTEN
+// days in the range through writeTapeDay instead of skipping them — the
+// founder's repair path for a written day whose sources grew. It is
+// merge-monotone and idempotent: a day whose sources did not change writes
+// nothing and is listed `unchanged`; one that changed is listed `refreshed`.
+// It reopens no candle work outside the candle window: writeTapeDay's merge
+// labels such a day's candle output instead (BA-25). The default backfill is
+// unchanged. A refresh re-reads every written day of its range, so a refresh
+// stopped by the time floor resumes by naming a range that starts at its
+// `resumeFrom` date.
 
 import { findActiveAgentBattles } from '../agentBattleService.js';
 import { FILM_TAPE_WRITE_ENABLED } from '../../../src/config/featureFlags.js';
@@ -169,11 +180,16 @@ async function candidatesFor(db, bounds) {
 /**
  * The admin backfill (BA-15): every battle-day in the range, oldest first,
  * skipping pairs already written. Stops at the time floor and names where to
- * resume; the same request resumes by the queue flag alone.
+ * resume; the same request resumes by the queue flag alone. With `refresh`
+ * (BA-29 amended), a written pair is re-merged instead of skipped, and listed
+ * `refreshed` when that changed it, `unchanged` when it did not.
  */
-export async function runBackfill({ db, clock = Date.now, startMs = clock(), budgetMs = 300_000, dates, write = writeTapeDay }) {
+export async function runBackfill({ db, clock = Date.now, startMs = clock(), budgetMs = 300_000, dates, write = writeTapeDay, refresh = false }) {
   if (!FILM_TAPE_WRITE_ENABLED) throw new Error('film_tape_write_disabled');
-  const summary = { dates, written: [], alreadyDone: [], skippedMode: [], unchanged: [], failed: [], complete: true, resumeFrom: null };
+  const summary = {
+    dates, written: [], alreadyDone: [], skippedMode: [], unchanged: [], failed: [], complete: true, resumeFrom: null,
+    ...(refresh ? { refresh: true, refreshed: [] } : {}),
+  };
   for (const date of dates) {
     const bounds = etDayBounds(date);
     const runsRead = await readEvalRunsForDay(db, bounds);
@@ -185,16 +201,20 @@ export async function runBackfill({ db, clock = Date.now, startMs = clock(), bud
         return summary;
       }
       const stored = await readTape(db, battle.id, date);
+      const closeStatus = stored?.passes?.close?.status;
       const days = battle?.timing?.tradingDays;
       const isFinalDay = Array.isArray(days) && days.length > 0 && days[days.length - 1] === date;
       // The queue flag — except a completed battle's FINAL day whose tape was
       // written before the completion: the backfill is its repair path too.
-      const owesCompletion = isFinalDay && battle.status === 'completed' && stored?.passes?.close?.status === 'written' && !completionRecorded(stored, battle);
-      if (['written', 'skipped_mode'].includes(stored?.passes?.close?.status) && !owesCompletion) { summary.alreadyDone.push({ battleId: battle.id, etDate: date }); continue; }
+      const owesCompletion = isFinalDay && battle.status === 'completed' && closeStatus === 'written' && !completionRecorded(stored, battle);
+      // BA-29 amended: refresh re-merges a written day instead of skipping it.
+      const reMerge = refresh && closeStatus === 'written';
+      if (['written', 'skipped_mode'].includes(closeStatus) && !owesCompletion && !reMerge) { summary.alreadyDone.push({ battleId: battle.id, etDate: date }); continue; }
       try {
         const r = await write(battle.id, date, { db, now: clock(), battle, runsRead });
         if (r.status === 'skipped_mode') summary.skippedMode.push({ battleId: battle.id, etDate: date });
         else if (r.status === 'unchanged') summary.unchanged.push({ battleId: battle.id, etDate: date });
+        else if (reMerge) summary.refreshed.push({ battleId: battle.id, etDate: date, bytes: r.bytes });
         else summary.written.push({ battleId: battle.id, etDate: date, bytes: r.bytes });
       } catch (err) {
         await safeMarkFailed(db, battle, date, err, clock, summary);

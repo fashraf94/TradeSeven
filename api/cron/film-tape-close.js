@@ -33,6 +33,18 @@
  * reaching a session that has not closed is refused (400 range_not_closed); a
  * date outside the maintained market calendar, 400 calendar_missing.
  *
+ * REFRESH (BA-29 amended) — the repair path for a written day whose sources
+ * grew: `&refresh=1` beside the backfill range, with the same two guards,
+ * re-merges the WRITTEN days of the range instead of skipping them. A day
+ * whose sources did not change writes nothing (`unchanged`); one that changed
+ * is `refreshed`. It reopens no candle work outside the candle window.
+ *
+ *   curl -H "Authorization: Bearer $CRON_SECRET" -H "x-admin-secret: $ADMIN_SECRET" \
+ *     "https://<host>/api/cron/film-tape-close?backfill=2026-09-21..2026-09-25&refresh=1"
+ *
+ * `refresh` takes only `1`, and only with `backfill` (400 invalid_refresh,
+ * 400 refresh_requires_backfill).
+ *
  * Dark: FILM_TAPE_WRITE_ENABLED false → 200 { skipped: true, reason: 'flag_off' }
  * before the Firestore handle is even taken — zero reads, zero writes.
  *
@@ -63,19 +75,25 @@ export default async function handler(req, res) {
   }
 
   const backfill = req.query?.backfill;
+  const refreshParam = req.query?.refresh;
+  if (refreshParam !== undefined && backfill === undefined) return res.status(400).json({ error: 'refresh_requires_backfill' });
   if (backfill !== undefined) {
     if (!isAdminSecretValid(req)) return res.status(401).json({ error: 'Unauthorized' });
+    if (refreshParam !== undefined && refreshParam !== '1') return res.status(400).json({ error: 'invalid_refresh' });
+    const refresh = refreshParam === '1';
     const range = parseBackfillRange(backfill, { nowMs: startMs });
     if (range.error) return res.status(400).json({ error: range.error });
     try {
       const summary = await runBackfill({
-        db: getFirebaseAdmin(), clock: Date.now, startMs, budgetMs: config.maxDuration * 1000, dates: range.dates,
+        db: getFirebaseAdmin(), clock: Date.now, startMs, budgetMs: config.maxDuration * 1000, dates: range.dates, refresh,
       });
-      console.log(`${LOG_PREFIX} backfill ${range.from}..${range.to}`, JSON.stringify({
+      const mode = refresh ? 'refresh' : 'backfill';
+      console.log(`${LOG_PREFIX} ${mode} ${range.from}..${range.to}`, JSON.stringify({
         complete: summary.complete, resumeFrom: summary.resumeFrom, written: summary.written.length,
+        ...(refresh ? { refreshed: summary.refreshed.length, unchanged: summary.unchanged.length } : {}),
         alreadyDone: summary.alreadyDone.length, failed: summary.failed.length,
       }));
-      return res.status(200).json({ mode: 'backfill', ...summary, ms: Date.now() - startMs });
+      return res.status(200).json({ mode, ...summary, ms: Date.now() - startMs });
     } catch (err) {
       console.error(`${LOG_PREFIX} backfill error:`, err?.message || err);
       return res.status(500).json({ error: err?.message || String(err) });

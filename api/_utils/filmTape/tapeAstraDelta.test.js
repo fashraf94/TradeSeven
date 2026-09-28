@@ -29,7 +29,11 @@ vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => ({
   get FILM_TAPE_WRITE_ENABLED() { return flags.writer; },
   get FILM_ROOM_V2_ENABLED() { return flags.v2; },
 }));
+// The close handler's Firestore handle is the in-memory store (DF8's rows drive the real entry).
+const admin = vi.hoisted(() => ({ db: null }));
+vi.mock('../firebaseAdmin.js', () => ({ getFirebaseAdmin: () => admin.db }));
 
+import closeHandler from '../../cron/film-tape-close.js';
 import { writeTapeDay } from './writeTapeDay.js';
 import { runCandlePass, markRetryWindowElapsed, nextCandleState } from './candlePass.js';
 import { runClosePass, runBackfill } from './closePass.js';
@@ -827,5 +831,95 @@ describe('DF7 — BA-27 amended: on equal lifecycle rank the battle re-read in t
     t.store.set(`agentBattles/${fx.battleId}`, battle);
     await write(t, fx, NIGHT + 120_000);
     expect(tapeOf(t, fx.battleId).battle).toEqual(canonical);
+  });
+});
+
+// ── DF8 — BA-29 amended: backfill refresh is the repair path ────────────────
+
+describe('DF8 — BA-29 amended: the admin backfill\'s refresh mode re-merges written days; the default backfill is unchanged', () => {
+  const RANGE = `${D}..${D}`;
+  const REFRESH_AT = Date.parse('2026-09-28T15:00:00.000Z');   // Monday 11:00 ET — inside 2026-09-24's candle window
+  const saved = {};
+  beforeEach(() => {
+    saved.CRON_SECRET = process.env.CRON_SECRET; saved.ADMIN_SECRET = process.env.ADMIN_SECRET;
+    process.env.CRON_SECRET = 'cron-secret'; process.env.ADMIN_SECRET = 'admin-secret';
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    for (const k of ['CRON_SECRET', 'ADMIN_SECRET']) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }
+  });
+  /** The real handler, as the founder calls it: both guards, the given query, at `at`. */
+  async function call(t, query, at = REFRESH_AT, headers = { authorization: 'Bearer cron-secret', 'x-admin-secret': 'admin-secret' }) {
+    admin.db = t.db;
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(at);
+    const r = { statusCode: null, body: null };
+    r.status = (c) => { r.statusCode = c; return r; };
+    r.json = (b) => { r.body = b; return r; };
+    await closeHandler({ headers, query }, r);
+    vi.useRealTimers();
+    return r;
+  }
+  /** capturedDay written WITHOUT tick 10, then tick 10 restored to the source (the day's sources grew). */
+  async function grownDay({ candles = false } = {}) {
+    const fx = await capturedDay();
+    const tick10 = fx.ticks.find((tk) => tk.tickSeq === 10);
+    const t = world({ ...fx, ticks: fx.ticks.filter((tk) => tk.tickSeq !== 10) });
+    await write(t, fx);
+    if (candles) await morning(t);
+    expect(tapeOf(t, fx.battleId).passes.close.gaps).toContain(10);
+    t.store.set(`agentBattles/${fx.battleId}/ticks/${tick10.tickId}`, tick10);
+    return { fx, t };
+  }
+
+  it('D09: a written day whose source grew — `?backfill=…&refresh=1` re-merges it: tick 10 is on the tape, no longer a gap, and the response lists the day as refreshed', async () => {
+    const { fx, t } = await grownDay();
+    const r = await call(t, { backfill: RANGE, refresh: '1' });
+    expect(r.statusCode).toBe(200);
+    expect(r.body).toMatchObject({ mode: 'refresh', complete: true, refreshed: [{ battleId: fx.battleId, etDate: D }], unchanged: [], alreadyDone: [] });
+    const tape = tapeOf(t, fx.battleId);
+    expect(tape.passes.close.gaps).not.toContain(10);
+    expect(tape.checks.find((c) => c.tickSeq === 10)).toMatchObject({ rowSource: 'tick' });
+  });
+
+  it('BA-29 amended: refresh is idempotent — a written day whose sources did not change writes nothing and is listed unchanged', async () => {
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    const writes = t.writeLog.length;
+    const r = await call(t, { backfill: RANGE, refresh: '1' });
+    expect(r.body).toMatchObject({ mode: 'refresh', complete: true, refreshed: [], unchanged: [{ battleId: fx.battleId, etDate: D }], written: [], alreadyDone: [] });
+    expect(t.writeLog.length).toBe(writes);
+  });
+
+  it('BA-29 amended: the default backfill is unchanged — the same grown day is `alreadyDone` and keeps its gap', async () => {
+    const { fx, t } = await grownDay();
+    const writes = t.writeLog.length;
+    const r = await call(t, { backfill: RANGE });
+    expect(r.body).toMatchObject({ mode: 'backfill', complete: true, alreadyDone: [{ battleId: fx.battleId, etDate: D }], written: [] });
+    expect(r.body).not.toHaveProperty('refreshed');
+    expect(tapeOf(t, fx.battleId).passes.close.gaps).toContain(10);
+    expect(t.writeLog.length).toBe(writes);
+  });
+
+  it('BA-29 amended: outside the candle window a refresh re-merges the day but reopens no candle work — a written pass becomes partial, labelled, never pending', async () => {
+    const { fx, t } = await grownDay({ candles: true });
+    const r = await call(t, { backfill: RANGE, refresh: '1' }, Date.parse('2026-10-26T15:00:00.000Z'));
+    expect(r.body.refreshed).toEqual([expect.objectContaining({ battleId: fx.battleId, etDate: D })]);
+    const tape = tapeOf(t, fx.battleId);
+    expect(tape.passes.candles).toMatchObject({ status: 'partial', reason: 'inputs_changed_outside_window', changedInputs: ['checks'] });
+    expect(tape.coverage.replay.note).toMatch(/built before the candle inputs changed \(checks\) — outside its retry window, not rebuilt/);
+  });
+
+  it('BA-29 amended: refresh is admin-only like the rest of the entry, needs a range, and takes only `1`', async () => {
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    const writes = t.writeLog.length;
+    expect((await call(t, { backfill: RANGE, refresh: '1' }, REFRESH_AT, { authorization: 'Bearer cron-secret' })).statusCode).toBe(401);
+    expect((await call(t, { backfill: RANGE, refresh: '1' }, REFRESH_AT, { 'x-vercel-cron': '1' })).statusCode).toBe(401);
+    expect(await call(t, { refresh: '1' })).toMatchObject({ statusCode: 400, body: { error: 'refresh_requires_backfill' } });
+    expect(await call(t, { backfill: RANGE, refresh: 'yes' })).toMatchObject({ statusCode: 400, body: { error: 'invalid_refresh' } });
+    expect(t.writeLog.length).toBe(writes);
   });
 });
