@@ -264,13 +264,13 @@ function sectionReplay(doc) {
  * provider omits a minute in which no trade printed, so this is no
  * completeness criterion — wholeness stays the calendar's bucket count with a
  * fresh price at every check (BA-24). Both numbers carry the class the series
- * document declares for `bars[].m` (market). A bar without a finite `m`
- * leaves the count unknown, printed `—` — never a 0 stated as a market fact
- * (round-3 review L3-6).
+ * document declares for `bars[].m` (market). A bar without a finite `m`, or
+ * no bar at all, leaves the count unknown, printed `—` — never a 0 stated as
+ * a market fact (round-3 review L3-6; lens 4, L4-7).
  */
 function minutesTraded(s, doc) {
   const bars = Array.isArray(s?.bars) ? s.bars : [];
-  const traded = bars.every((b) => isNum(b?.m)) ? bars.reduce((n, b) => n + b.m, 0) : null;
+  const traded = bars.length && bars.every((b) => isNum(b?.m)) ? bars.reduce((n, b) => n + b.m, 0) : null;
   const session = getSessionForDate(s?.etDate ?? doc?.etDate);
   const cls = classOfNumber(s?.numberClasses, ['bars', 0, 'm']) ?? 'UNCLASSIFIED';
   return `${traded === null ? '—' : `${traded} (${cls})`} of ${session?.isTradingDay ? `${session.sessionLenMin} (${cls})` : '—'} session minutes traded`;

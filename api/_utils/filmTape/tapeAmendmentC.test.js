@@ -462,6 +462,18 @@ describe('BA-24 confirmed (R1-3) — the read-out prints, per series, "N of M se
     expect(section).toContain('- KO: 390 (market) of 390 (market) session minutes traded');
   });
 
+  it('R1-3 (review lens 4, L4-7): a series with no bars at all prints its minutes as unknown too — an empty sum is no market fact', async () => {
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    await morning(t);
+    const series = seriesOf(t, fx.battleId).map((x) => structuredClone(x));
+    series.find((x) => x.symbol === 'SPY').bars = [];
+    const section = seriesSection(formatTapeMarkdown(tapeOf(t, fx.battleId), series));
+    expect(section).toContain('- SPY: — of 390 (market) session minutes traded');
+    expect(section).toContain('- KO: 390 (market) of 390 (market) session minutes traded');
+  });
+
   it('R1-3: the session minutes are the calendar\'s — an early close counts 210, never a constant 390', async () => {
     const fx = await earlyCloseDay();
     const t = world(fx);
