@@ -28,7 +28,7 @@ import { sessionBars } from './bars.js';
 import { sessionFor } from './tapeTime.js';
 import { formatTapeMarkdown } from './tapeExport.js';
 import { makeTapeDb } from './__fixtures__/tapeFirestore.js';
-import { seedDay, capturedDay, noTriggerDay, earlyCloseDay } from './__fixtures__/tapeFixtures.js';
+import { seedDay, capturedDay, noTriggerDay, earlyCloseDay, makeTick } from './__fixtures__/tapeFixtures.js';
 import { flatRows, fetcherOf } from './__fixtures__/tapeBars.js';
 
 const D = '2026-09-24';
@@ -481,5 +481,59 @@ describe('BA-36 (round-3 review L1-1) — a replay that is itself a merge keeps 
     expect(factsOf(replay)).toEqual(factsOf(merged));
     expect(tape.coverage.replay.status).toBe('partial');
     expect(tape.passes.candles.status).not.toBe('written');
+  });
+});
+
+describe('BA-20 / BA-37 (round-3 review L2-1) — a swap whose trade record may have been evicted never reads complete', () => {
+  /** capturedDay with its tickSeq-13 record captured too, so capture is `present`. */
+  async function presentCaptureDay() {
+    const fx = await capturedDay();
+    const held = ['AAPL', 'NFLX', 'NVDA', 'TSLA', 'KO', 'PEP'];
+    const t13 = await makeTick({
+      battleId: fx.battleId, tickSeq: 13, capturedAtMs: Date.parse('2026-09-24T16:45:20.000Z'), exitReason: 'no_trigger',
+      stages: ['quotes_checked', 'scores_marked', 'risk_evaluated', 'proposal_handled', 'gameplan_handled', 'trigger_evaluated'],
+      scores: { active: 18, banked: 5, total: 23, opponent: 10, bankedBadgePoints: 0 },
+      verdicts: Object.fromEntries(held.map((s) => [s, { action: 'HOLD', reason: null }])), guardrail: { evaluated: false, deployedCount: 0 }, symbols: held,
+    });
+    return { ...fx, ticks: [...fx.ticks, t13].sort((a, b) => a.tickSeq - b.tickSeq) };
+  }
+  /** `n` later swaps, a day on — trades[] keeps the last 50, so these push the day's out. */
+  const laterTrades = (base, n) => Array.from({ length: n }, (_, i) => ({
+    ...base, symbolOut: `LX${i}`, symbolIn: `LY${i}`, slotIndex: 0, tier: 'support', swappedOutAt: new Date(Date.parse('2026-09-25T14:00:00.000Z') + i * 60_000).toISOString(),
+  }));
+  const CAP_NOTE = /trades\[\] is at its 50-entry cap and its oldest surviving entry is not before this day — 1 swap\(s\) have no trade record here \(evicted\)/;
+
+  it('L2-1: capture present, trades[] at its 50-entry cap with its oldest entry on the day, and the AMD trade evicted — the action stands, unmatched, and actions coverage is partial with the cap named, never complete', async () => {
+    const fx = await presentCaptureDay();
+    const [amd, msft] = fx.battle.trades;
+    const t = world({ ...fx, battle: { ...structuredClone(fx.battle), trades: [msft, ...laterTrades(amd, 49)] } });
+    await write(t, fx);
+    const tape = tapeOf(t, fx.battleId);
+    expect(tape.passes.close.capture).toBe('present');
+    expect(amdTsla(tape)).toMatchObject({ tradeMatched: false, exitPrice: null, lockedGainPct: null });
+    expect(tape.coverage.actions.status).toBe('partial');
+    expect(tape.coverage.actions.note).toMatch(CAP_NOTE);
+  });
+
+  it('L2-1 through BA-37: the trade leaves trades[] between the selection and the transaction — the tape, assembled from the re-read, says the join is unknown instead of complete', async () => {
+    const fx = await presentCaptureDay();
+    const [amd, msft] = fx.battle.trades;
+    const selected = { ...structuredClone(fx.battle), id: fx.battleId, trades: [amd, msft, ...laterTrades(amd, 48)] };   // AMD still there
+    const t = world({ ...fx, battle: { ...structuredClone(fx.battle), trades: [msft, ...laterTrades(amd, 49)] } });   // the document: evicted
+    await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT, battle: selected });
+    const tape = tapeOf(t, fx.battleId);
+    expect(amdTsla(tape).tradeMatched).toBe(false);
+    expect(tape.coverage.actions.status).toBe('partial');
+    expect(tape.coverage.actions.note).toMatch(CAP_NOTE);
+  });
+
+  it('GUARD: trades[] at its cap with its oldest entry on the day, but every swap of the day matched its trade — nothing of the day was evicted, and actions coverage stays complete', async () => {
+    const fx = await presentCaptureDay();
+    const [amd, msft] = fx.battle.trades;
+    const t = world({ ...fx, battle: { ...structuredClone(fx.battle), trades: [amd, msft, ...laterTrades(amd, 48)] } });
+    await write(t, fx);
+    const tape = tapeOf(t, fx.battleId);
+    expect(tape.actions.every((a) => a.tradeMatched)).toBe(true);
+    expect(tape.coverage.actions.status).toBe('complete');
   });
 });
