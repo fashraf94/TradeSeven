@@ -23,8 +23,11 @@
 // failed, over their whole history. Each close-out makes its tape terminal
 // and so removes it from every query: the sweep resumes where it stopped
 // without a cursor. It runs before the fetches, so a busy morning can never
-// starve it. The founder's repair path for such a day is the backfill entry's
-// refresh mode.
+// starve it — and it has its own clock (BA-33): the time is checked before
+// every close-out, not only before each page, and the sweep spends at most its
+// 60 s share of the run, so a sustained backlog can never starve the morning's
+// own work either. The founder's repair path for such a day is the backfill
+// entry's refresh mode.
 //
 // WRITE-PATH BOUNDARY (BA-23): the query returns every collection named `tape`
 // anywhere in the database, so a result is never trusted by its collection
@@ -92,11 +95,12 @@ export const UNITS_PER_REQUEST = 5;
 export const EXPIRY_SCAN_MARGIN_SESSIONS = 5;
 /**
  * BA-29 — the expiry sweep's bounds per run: close-outs, documents per page,
- * documents read. (BA-32 removed the 60-session look-back for retryable
- * `failed` tapes: it only bounded re-reads of terminal ones, which no query
- * returns any more.)
+ * documents read, and (BA-33) the share of the run it may spend — 60 s; the
+ * rest belongs to enrichment. (BA-32 removed the 60-session look-back for
+ * retryable `failed` tapes: it only bounded re-reads of terminal ones, which
+ * no query returns any more.)
  */
-export const EXPIRY_SWEEP = Object.freeze({ maxMarks: 100, page: 100, maxReads: 1000 });
+export const EXPIRY_SWEEP = Object.freeze({ maxMarks: 100, page: 100, maxReads: 1000, shareMs: 60_000 });
 export const PLAN_PRICE_NOTE = "prices shown to the day's close, which is not the plan's horizon";
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -477,15 +481,23 @@ const idOfResult = (d) => {
  * `before` (the scan's lower edge). One query per NON-TERMINAL status (BA-32),
  * oldest first, paged with a cursor; every result's path validated (BA-23).
  * A close-out makes its tape terminal, which takes it out of every query, so
- * the next run resumes past it. Stops at the batch bounds or the time floor,
- * and says whether it reached the end (`complete`).
+ * the next run resumes past it. BA-33: before every page AND every close-out
+ * it checks its own bounds — close-outs, documents read, its 60 s share of the
+ * run, and the run's time floor — and stops at the first one reached, saying
+ * it is not `complete` and which bound stopped it (`stoppedBy`).
  */
 async function sweepExpired({ db, before, nowIso, limits, summary, clock, startMs, budgetMs }) {
-  const out = { reads: 0, expired: 0, complete: true };
+  const sweepStart = clock();
+  const out = { reads: 0, expired: 0, complete: true, stoppedBy: null };
+  const timeUp = () => (clock() - sweepStart >= limits.shareMs ? 'share' : (budgetMs - (clock() - startMs) < TIME_FLOOR_MS ? 'floor' : null));
+  const closeOutBound = () => (out.expired >= limits.maxMarks ? 'marks' : timeUp());
+  const pageBound = () => closeOutBound() ?? (out.reads >= limits.maxReads ? 'reads' : null);
+  const stop = (why) => { out.complete = false; out.stoppedBy = why; return out; };
   for (const status of CANDLE_SELECTABLE_STATUSES) {
     let cursor = null;
     for (;;) {
-      if (out.expired >= limits.maxMarks || out.reads >= limits.maxReads || budgetMs - (clock() - startMs) < TIME_FLOOR_MS) { out.complete = false; return out; }
+      const bound = pageBound();
+      if (bound) return stop(bound);
       let q = db.collectionGroup('tape').where('passes.candles.status', '==', status).where('etDate', '<', before);
       q = q.orderBy('etDate', 'asc');
       if (cursor) q = q.startAfter(cursor);
@@ -496,7 +508,8 @@ async function sweepExpired({ db, before, nowIso, limits, summary, clock, startM
         const ok = idOfResult(d);
         if (!ok) { summary.invalid.push(String(d?.ref?.path ?? '(no path)')); continue; }
         if (candlesTerminal(ok.tape.passes?.candles)) continue;
-        if (out.expired >= limits.maxMarks) { out.complete = false; return out; }
+        const bound = closeOutBound();                                   // BA-33: the clock, before every close-out
+        if (bound) return stop(bound);
         const path = `agentBattles/${ok.id.battleId}/${TAPE_SUBCOLLECTION}/${ok.id.etDate}`;
         try {
           if (await markRetryWindowElapsed(db, ok.id, nowIso)) { out.expired += 1; summary.expired.push(path); }

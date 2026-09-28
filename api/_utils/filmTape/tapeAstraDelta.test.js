@@ -658,3 +658,43 @@ describe('DF4 — BA-32: expired and exhausted are their own statuses, and no ca
     expect(md).toMatch(/\*\*candles\*\* — expired \(`retry_window_elapsed`\).* · terminal: its retry window elapsed — no candle pass will run for this day again/);
   });
 });
+
+// ── DF5 — BA-33: the sweep has its own clock ────────────────────────────────
+
+describe('DF5 — BA-33: the sweep checks the time before every close-out and spends at most 60 s of the run', () => {
+  /** capturedDay written, 100 pending tapes behind the scan, and a clock every close-out transaction charges 4 s. */
+  async function slowCloseOuts() {
+    const fx = await capturedDay();
+    const hooks = {};
+    const t = makeTapeDb(seedDay({}, fx), { hooks });
+    await write(t, fx);
+    for (let i = 0; i < 100; i += 1) plantOld(t, `b-old${String(i).padStart(3, '0')}`, AUGUST[i % AUGUST.length]);
+    const clock = { now: MORNING };
+    hooks.afterTxRead = async (path) => { if (/^agentBattles\/b-old\d+\/tape\//.test(path)) clock.now += 4_000; };
+    const run = (startMs, at = startMs) => { clock.now = Math.max(clock.now, at); return runCandlePass({ db: t.db, fetchCandles: fetcherOf(allBars()).fetchCandles, clock: () => clock.now, startMs }); };
+    return { t, clock, run };
+  }
+  const expiredCount = (t) => [...t.store.entries()].filter(([k, v]) => k.startsWith('agentBattles/b-old') && v.passes?.candles?.reason === 'retry_window_elapsed').length;
+
+  it('D06: one page of 100 close-outs at 4 s each would take 400 s of a 300 s run — the sweep stops at its 60 s share, mid-page, and the day is still enriched', async () => {
+    const { t, clock, run } = await slowCloseOuts();
+    const s = await run(MORNING);
+    expect(s.sweep).toMatchObject({ expired: 15, complete: false, stoppedBy: 'share' });
+    expect(expiredCount(t)).toBe(15);
+    expect(s.notReached).toEqual([]);
+    expect(s.written.map((w) => w.path)).toEqual([tapePath('b-captured')]);
+    expect(clock.now - MORNING).toBe(60_000);
+  });
+
+  it('BA-33: with 50 s left and a 30 s floor, the sweep stops before the close-out that would cross the floor — mid-page — reports it, and the next morning resumes', async () => {
+    const { t, clock, run } = await slowCloseOuts();
+    const s = await run(MORNING - 250_000, MORNING);                       // 50 s of the 300 s budget left
+    expect(s.sweep).toMatchObject({ expired: 6, complete: false, stoppedBy: 'floor' });
+    expect(s.notReached).toEqual([tapePath('b-captured')]);                 // the floor holds for the run's own work too
+    expect(expiredCount(t)).toBe(6);
+    const s2 = await run(MORNING + DAY);
+    expect(s2.sweep).toMatchObject({ expired: 15, stoppedBy: 'share' });
+    expect(expiredCount(t)).toBe(21);
+    expect(clock.now - (MORNING + DAY)).toBe(60_000);
+  });
+});
