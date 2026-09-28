@@ -40,7 +40,7 @@ import { runClosePass, runBackfill } from './closePass.js';
 import { candleInputFingerprint } from './candleInputs.js';
 import { sampleAt } from './bars.js';
 import { sessionFor } from './tapeTime.js';
-import { stableStringify } from './tapeMerge.js';
+import { stableStringify, mergeTape } from './tapeMerge.js';
 import { getReviewAvailability } from '../../../src/utils/reviewAvailability.js';
 import { scanProtectedStoreWrites, siteKey } from '../compositionProtectedStoresScan.js';
 import { makeTapeDb } from './__fixtures__/tapeFirestore.js';
@@ -665,7 +665,12 @@ describe('DF3 — BA-26 amended: a read that hits a limit while the section\'s d
 
   // The §2 review of this round (build report §9.11, R2-1): "a read with no limit" is not yet a read
   // that OBSERVED the new dependencies — an assembly older than them has no limit and never saw them.
-  it('BA-26 amended (review R2-1): a limit-free read assembled from the battle as the pass selected it — before the evaluation arrived — never saw the new dependency: unresolved_dependency stands, calls stays partial', async () => {
+  // Since BA-37 (Amendment C) the writer assembles from the battle it re-reads, so the next three rows
+  // no longer reach that rule through the writer: the re-read brings the evaluation, and the
+  // declarations lookup made before it never covered it — a limit of the read (tapeAssemble.js,
+  // declarationsUnread). The rule itself is pinned by the pure-merge row after them and by the mixed
+  // row (round-3 review L3-2).
+  it('BA-26 amended (review R2-1; under BA-37): a write handed the battle as the pass selected it — before the evaluation arrived — assembles from the re-read battle, whose evaluation the declarations lookup never covered: unresolved_dependency stands, calls stays partial', async () => {
     const { fx, t, hooks, unreadable, selected } = await recoveredEvaluation();
     hooks.beforeRead = (label) => { if (unreadable(label)) throw new Error('14 UNAVAILABLE'); };
     await write(t, fx, NIGHT + 60_000);                                        // sees the evaluation; calls and declarations unreadable
@@ -681,7 +686,7 @@ describe('DF3 — BA-26 amended: a read that hits a limit while the section\'s d
     expect(calls.status).toBe('partial');
   });
 
-  it('BA-26 amended (review R2-1): the same through the writer\'s own transaction retry — a read assembled before the evaluation arrived retries against the tape that has it, and leaves unresolved_dependency standing', async () => {
+  it('BA-26 amended (review R2-1; under BA-37): the same through the writer\'s own transaction retry — the retry re-assembles from the battle that now has the evaluation, which the declarations lookup never covered, and leaves unresolved_dependency standing', async () => {
     const { fx, t, hooks, unreadable, recover } = await recoveredEvaluation({ later: true });
     let landed = false;
     hooks.afterTxRead = async (path) => {
@@ -702,7 +707,7 @@ describe('DF3 — BA-26 amended: a read that hits a limit while the section\'s d
     expect(calls.caveats.filter((c) => UNRESOLVED.test(c))).toHaveLength(2);
   });
 
-  it('BA-26 amended (review R2-1): when the limited read is the tape\'s FIRST write, a later read that predates its evaluation never lifts calls to complete — it did not observe what the section depends on', async () => {
+  it('BA-26 amended (review R2-1; under BA-37): when the limited read is the tape\'s FIRST write, a later write handed a battle that predates its evaluation assembles from the re-read one, carries the unread-declarations limit, and never lifts calls to complete', async () => {
     const fx = await noTriggerDay();
     const hooks = {};
     const t = makeTapeDb(seedDay({}, fx), { hooks });
@@ -721,6 +726,27 @@ describe('DF3 — BA-26 amended: a read that hits a limit while the section\'s d
     const calls = tapeOf(t, fx.battleId).coverage.calls;
     expect(calls.caveats).toEqual([expect.stringMatching(/expected a declarations record that is absent/)]);
     expect(calls.status).not.toBe('complete');
+  });
+
+  it('BA-26 amended (review R2-1), the merge itself: a limit-free assembly that never saw a dependency the stored section has never lifts that section — the stored coverage stands (round-3 review L3-2: the rule the three rows above no longer reach through the writer)', async () => {
+    const fx = await noTriggerDay();
+    const hooks = {};
+    const t = makeTapeDb(seedDay({}, fx), { hooks });
+    const battle = t.store.get(`agentBattles/${fx.battleId}`);
+    battle.evaluations.push({ ...structuredClone(battle.evaluations[0]), evalId: 'b-quiet:e-recovered', timestamp: '2026-09-24T17:07:00.000Z', promptBuiltAt: '2026-09-24T17:06:52.000Z', declarationsPhase: 'expected' });
+    t.store.set(`agentBattles/${fx.battleId}`, battle);
+    hooks.beforeRead = (label) => { if (label === `agentBattles/${fx.battleId}/calls` || label.startsWith(`agentBattles/${fx.battleId}/declarations/`)) throw new Error('14 UNAVAILABLE'); };
+    await write(t, fx);                                                        // the stored tape: it saw the evaluation, calls and declarations unreadable
+    const stored = structuredClone(tapeOf(t, fx.battleId));
+    const fx2 = await noTriggerDay();                                          // the same day assembled from a battle without it, every source readable
+    const t2 = world(fx2);
+    await write(t2, fx2, NIGHT + 60_000);
+    const assembled = structuredClone(tapeOf(t2, fx2.battleId));
+    expect(assembled.coverage.calls.status).toBe('complete');
+    const { doc } = mergeTape(stored, assembled, { nowIso: iso(NIGHT + 60_000), withinWindow: true, canonicalBattle: true });
+    expect(doc.coverage.calls.status).toBe(stored.coverage.calls.status);
+    expect(doc.coverage.calls.status).not.toBe('complete');
+    expect(doc.coverage.calls.preservedFrom).toBe(stored.writtenAt);
   });
 
   it('BA-26 amended (review R2-1): a read that brings one new dependency but never saw another vouches for neither — unresolved_dependency, "a read assembled before", until a read observes both', async () => {
