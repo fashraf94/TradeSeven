@@ -9,10 +9,12 @@
 // agentEvalRuns, the intradayViews presence and the prior day's tape
 // (tapeSources.js). It WRITES exactly one document — `tape/{etDate}` — inside a
 // transaction that reads the stored copy first and merges monotonically
-// (tapeMerge.js). The same transaction re-reads the battle document's status,
-// so an assembly made before the battle completed can never record it active
-// (BA-27). Nothing else is ever written (BA-1): not the battle document, not
-// `ticks`, not `calls`, not any other collection.
+// (tapeMerge.js). The same transaction re-reads the battle document, so an
+// assembly made before the battle completed can never record it active
+// (BA-27), and on an equal lifecycle rank the re-read is authoritative for
+// the whole completion block — a stale completed assembly cannot rewind it
+// (BA-27 amended). Nothing else is ever written (BA-1): not the battle
+// document, not `ticks`, not `calls`, not any other collection.
 //
 // FILM_TAPE_WRITE_ENABLED is read at call time, here as well as in the
 // handlers, so no caller can write a tape while the writer is dark.
@@ -101,18 +103,22 @@ export async function writeTapeDay(battleId, etDate, opts = {}) {
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     const stored = snap && snap.exists ? (typeof snap.data === 'function' ? snap.data() : snap.data) : null;
-    // BA-27: the battle's status as it stands NOW, read in this transaction. A
-    // later lifecycle state than the assembly saw (it completed meanwhile)
-    // replaces the battle block whole; the merge never moves it back.
+    // BA-27: the battle as it stands NOW, read in this transaction. At a later
+    // lifecycle state than the assembly saw (it completed meanwhile) — and, BA-27
+    // amended, at the SAME state — the re-read is authoritative: its completion
+    // block (status, completedAt, final, result, battleStatusAtWrite) replaces
+    // the assembly's whole, and the merge treats it as canonical.
     let doc = assembled;
+    let canonicalBattle = false;
     if (assembled.passes.close.status !== 'skipped_mode') {
       const bSnap = await tx.get(battleRef(db, battleId));
       const now = bSnap && bSnap.exists ? { id: battleId, ...(typeof bSnap.data === 'function' ? bSnap.data() : bSnap.data) } : null;
-      if (now && lifecycleRank(now.status) > lifecycleRank(assembled.battle?.status)) {
+      if (now && lifecycleRank(now.status) >= lifecycleRank(assembled.battle?.status)) {
         doc = { ...assembled, battleStatusAtWrite: typeof now.status === 'string' ? now.status : null, battle: buildBattleBlock({ battle: now, resolveResult }) };
+        canonicalBattle = true;
       }
     }
-    const { doc: merged, changed } = mergeTape(stored, doc, { nowIso, withinWindow });
+    const { doc: merged, changed } = mergeTape(stored, doc, { nowIso, withinWindow, canonicalBattle });
     if (changed) tx.set(ref, merged);
     outcome = { doc: merged, changed };
   });

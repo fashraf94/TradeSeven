@@ -193,13 +193,11 @@ export function mergeRows(section, storedRows, newRows) {
 
 const carriedAny = (c) => c.rows > 0 || Object.keys(c.groups).length > 0;
 
-/** A value-and-basis unit: the new unit unless it lost a value the stored one has. */
-function mergeUnit(storedUnit, newUnit, { rank = null } = {}) {
+/** A ranked unit: the new unit unless the stored one ranks above it (or the new read has none). */
+function mergeUnit(storedUnit, newUnit, rank) {
   if (!present(newUnit)) return present(storedUnit) ? storedUnit : null;
   if (!present(storedUnit)) return newUnit;
-  if (rank) return (rank(newUnit) >= rank(storedUnit)) ? newUnit : storedUnit;
-  if (isObj(newUnit) && 'value' in newUnit && newUnit.value === null && isObj(storedUnit) && present(storedUnit.value)) return storedUnit;
-  return newUnit;
+  return rank(newUnit) >= rank(storedUnit) ? newUnit : storedUnit;
 }
 
 const RESULT_RANK = { not_completed: 0, derived: 1, stored: 2 };
@@ -310,15 +308,42 @@ function mergeCoverage(section, storedDoc, newCov, carried, { limits = [], depen
 
 function keySet(rows) { return new Set((Array.isArray(rows) ? rows : []).map((r) => r?.key).filter(Boolean)); }
 
+/** Two completion blocks that tell the same completion: status, instant, final score and result value. */
+const sameCompletion = (a, b) => stableStringify([a?.status ?? null, a?.completedAt ?? null, a?.final ?? null, a?.result?.value ?? null])
+  === stableStringify([b?.status ?? null, b?.completedAt ?? null, b?.final ?? null, b?.result?.value ?? null]);
+
+/**
+ * BA-27 (amended) — which document's completion block the tape keeps. The
+ * battle block is an ordered lifecycle and moves as ONE unit with
+ * battleStatusAtWrite — never field by field. The later lifecycle state wins.
+ * On a tie, a block re-read from the battle document inside the write
+ * transaction (`canonicalBattle`) is authoritative: it replaces a stored block
+ * it contradicts, and one it agrees with stands only while it records a richer
+ * result basis (a stored `result` field the battle document has since lost).
+ * On a tie with no canonical re-read, the stored block stands: a stale
+ * assembly never replaces a completion the tape recorded.
+ */
+function battleWinner(stored, assembled, canonicalBattle) {
+  if (!isObj(stored.battle)) return 'assembled';
+  const sStage = lifecycleRank(stored.battle.status);
+  const aStage = lifecycleRank(assembled.battle?.status);
+  if (sStage !== aStage) return sStage > aStage ? 'stored' : 'assembled';
+  if (!canonicalBattle) return 'stored';
+  const richer = (RESULT_RANK[stored.battle.result?.basis] ?? 0) > (RESULT_RANK[assembled.battle?.result?.basis] ?? 0);
+  return sameCompletion(stored.battle, assembled.battle) && richer ? 'stored' : 'assembled';
+}
+
 /**
  * Merge the assembled document into the stored one.
  *
  * @param {object|null} stored     the tape as read inside the write transaction
  * @param {object} assembled       tapeAssemble.js output for this run
- * @param {{ nowIso: string, withinWindow: boolean }} ctx
+ * @param {{ nowIso: string, withinWindow: boolean, canonicalBattle?: boolean }} ctx
+ *   `canonicalBattle`: the assembled battle block was re-read from the battle
+ *   document inside the write transaction (writeTapeDay.js, BA-27 amended)
  * @returns {{ doc: object, changed: boolean, carried: object }}
  */
-export function mergeTape(stored, assembledIn, { nowIso, withinWindow }) {
+export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonicalBattle = false }) {
   // The read's limits (BA-26 amended) steer the coverage merge; they are never stored.
   const { readLimits = {}, ...assembled } = isObj(assembledIn) ? assembledIn : {};
   const isSkipped = assembled?.passes?.close?.status === 'skipped_mode';
@@ -352,8 +377,8 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow }) {
   const aScore = isObj(assembled.score) ? assembled.score : {};
   // The day's LAST admitted check keeps the later instant, the FIRST the
   // earlier — a read that lost rows never moves either (review L1-F8a).
-  const lastCheck = mergeUnit(sScore.lastCheck, aScore.lastCheck, { rank: (u) => toMs(u?.at) ?? -Infinity });
-  const firstCheck = mergeUnit(sScore.firstCheck, aScore.firstCheck, { rank: (u) => -(toMs(u?.at) ?? Infinity) });
+  const lastCheck = mergeUnit(sScore.lastCheck, aScore.lastCheck, (u) => toMs(u?.at) ?? -Infinity);
+  const firstCheck = mergeUnit(sScore.firstCheck, aScore.firstCheck, (u) => -(toMs(u?.at) ?? Infinity));
   merged.score = { lastCheck, firstCheck, dayChange: mergeDayChange(sScore, aScore, lastCheck) };
   // What followed each filing, recounted on every merge from the MERGED check
   // and action rows, each directive's aftermath ending at the next committed
@@ -366,30 +391,15 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow }) {
     const next = committedAt.find((t) => t > (toMs(d.filedAt) ?? Infinity));
     return { ...d, after: afterOf({ filedAt: d.filedAt, endMs: Math.min(dayEnd, next ?? Infinity), checkRows: merged.checks, actionRows: merged.actions }) };
   });
-  // BA-27: the battle block is an ordered lifecycle. A stale assembly (an
-  // overlapping close or backfill run that read the battle before it
-  // completed) can add facts but never move the battle backward: the LATER
-  // lifecycle state wins whole — status, completedAt, final, result and
-  // battleStatusAtWrite move together — and within one state the fields merge.
-  const sBattle = isObj(stored.battle) ? stored.battle : {};
-  const aBattle = isObj(assembled.battle) ? assembled.battle : {};
-  const sStage = lifecycleRank(sBattle.status);
-  const aStage = lifecycleRank(aBattle.status);
-  if (sStage > aStage) {
-    merged.battle = { status: sBattle.status ?? null, completedAt: sBattle.completedAt ?? null, final: sBattle.final ?? null, result: sBattle.result ?? null };
-  } else if (aStage > sStage) {
-    merged.battle = { status: aBattle.status ?? null, completedAt: aBattle.completedAt ?? null, final: aBattle.final ?? null, result: aBattle.result ?? null };
-  } else {
-    merged.battle = {
-      status: aBattle.status ?? sBattle.status ?? null,
-      completedAt: aBattle.completedAt ?? sBattle.completedAt ?? null,
-      final: mergeUnit(sBattle.final, aBattle.final),
-      result: mergeUnit(sBattle.result, aBattle.result, { rank: (u) => RESULT_RANK[u?.basis] ?? 0 }),
-    };
-  }
-  merged.battleStatusAtWrite = lifecycleRank(stored.battleStatusAtWrite) > lifecycleRank(assembled.battleStatusAtWrite)
-    ? stored.battleStatusAtWrite
-    : (assembled.battleStatusAtWrite ?? stored.battleStatusAtWrite ?? null);
+  // BA-27 (amended): the battle block is an ordered lifecycle, and it moves as
+  // ONE unit — status, completedAt, final, result and battleStatusAtWrite. A
+  // stale assembly (an overlapping close or backfill run that read the battle
+  // earlier) can add facts to the rest of the tape but never move the block
+  // backward, and never rewind a recorded completion (battleWinner).
+  const winner = battleWinner(stored, assembled, canonicalBattle) === 'stored' ? stored : assembled;
+  const block = isObj(winner.battle) ? winner.battle : {};
+  merged.battle = { status: block.status ?? null, completedAt: block.completedAt ?? null, final: block.final ?? null, result: block.result ?? null };
+  merged.battleStatusAtWrite = winner.battleStatusAtWrite ?? block.status ?? null;
   merged.comparables = {
     market: assembled.comparables?.market ?? stored.comparables?.market ?? [],
     sectors: { ...(stored.comparables?.sectors || {}), ...(assembled.comparables?.sectors || {}) },

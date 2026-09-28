@@ -40,7 +40,7 @@ import { stableStringify } from './tapeMerge.js';
 import { getReviewAvailability } from '../../../src/utils/reviewAvailability.js';
 import { scanProtectedStoreWrites, siteKey } from '../compositionProtectedStoresScan.js';
 import { makeTapeDb } from './__fixtures__/tapeFirestore.js';
-import { seedDay, capturedDay, noTriggerDay, earlyCloseDay } from './__fixtures__/tapeFixtures.js';
+import { seedDay, capturedDay, noTriggerDay, completedDay, earlyCloseDay } from './__fixtures__/tapeFixtures.js';
 import { flatRows, sessionRows, fetcherOf } from './__fixtures__/tapeBars.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -786,5 +786,46 @@ describe('DF6 — BA-34: a retry merges the series bucket by bucket and check by
     const aapl = t.store.get(seriesPath(fx.battleId, 'AAPL'));
     expect(aapl.bars.map((b) => b.m)).toEqual(aapl.bars.map((b) => b.n));
     expect(bucket(aapl, '2026-09-24T15:20:00.000Z').m).toBe(4);
+  });
+});
+
+// ── DF7 — BA-27 amended: on a tie, the canonical battle wins ────────────────
+
+describe('DF7 — BA-27 amended: on equal lifecycle rank the battle re-read in the transaction is authoritative for the whole completion block', () => {
+  const stale = (fx, over) => ({ ...structuredClone(fx.battle), id: fx.battleId, ...over });
+
+  it('D08: stored and canonical agree — completed 16:05 ET, 46–36, a win — and a stale COMPLETED assembly (15:55 ET, 9–50, a loss) handed to the writer changes nothing', async () => {
+    const fx = await completedDay();
+    const t = world(fx);
+    await write(t, fx);
+    const before = structuredClone(tapeOf(t, fx.battleId));
+    expect(before.battle).toMatchObject({ status: 'completed', completedAt: '2026-09-24T20:05:00.000Z', final: { total: 46, opponent: 36 }, result: { value: 'win' } });
+    const r = await writeTapeDay(fx.battleId, D, {
+      db: t.db, now: NIGHT + 60_000,
+      battle: stale(fx, { completedAt: '2026-09-24T19:55:00.000Z', scoreState: { ...fx.battle.scoreState, currentScore: 9, opponentScore: 50 } }),
+    });
+    const tape = tapeOf(t, fx.battleId);
+    expect(tape.battle).toEqual(before.battle);                              // status, completedAt, final, result — one unit
+    expect(tape.battleStatusAtWrite).toBe('completed');
+    expect(r.status).toBe('unchanged');
+  });
+
+  it('BA-27 amended: a stored completion block the re-read contradicts is replaced by the re-read\'s, whole — and one it agrees with keeps its richer basis', async () => {
+    const fx = await completedDay();
+    fx.battle.result = 'win';                                                // the battle document stores its result
+    const t = world(fx);
+    await write(t, fx);
+    const canonical = structuredClone(tapeOf(t, fx.battleId).battle);
+    expect(canonical.result).toEqual({ value: 'win', basis: 'stored' });
+    // a block written from a stale read, planted: the re-read on the next write contradicts it
+    t.store.set(tapePath(fx.battleId), { ...tapeOf(t, fx.battleId), battle: { status: 'completed', completedAt: '2026-09-24T19:55:00.000Z', final: { total: 9, opponent: 50, at: '2026-09-24T19:55:00.000Z' }, result: { value: 'loss', basis: 'derived' } } });
+    await write(t, fx, NIGHT + 60_000);
+    expect(tapeOf(t, fx.battleId).battle).toEqual(canonical);
+    // the battle document loses its `result` field: the re-read agrees on the completion, so the stored basis stays
+    const battle = t.store.get(`agentBattles/${fx.battleId}`);
+    delete battle.result;
+    t.store.set(`agentBattles/${fx.battleId}`, battle);
+    await write(t, fx, NIGHT + 120_000);
+    expect(tapeOf(t, fx.battleId).battle).toEqual(canonical);
   });
 });
