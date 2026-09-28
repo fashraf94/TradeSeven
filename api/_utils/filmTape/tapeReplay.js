@@ -36,6 +36,17 @@
 // agreement AT THE SALE, stated as that and nothing more. boughtVsEvidence
 // compares the rebuilt price of the bought name with the price the platform
 // recorded in the first later evidence stamp that carries it.
+//
+// A RETRY MERGES POINT BY POINT (BA-36, mergeReplay): two replays built from
+// the same inputs (one `builtFrom`) are merged sample by sample, leg by leg —
+// a saved point is never replaced by null, a saved null is no fact and gives
+// way to the new point, and where both hold a value the more complete replay's
+// stands (a tie keeps the stored one). A leg's points are one scored path: the
+// scorer's history runs through every earlier sample of that leg, so a point
+// kept from an attempt that lacked an earlier sample keeps that sample named
+// in missingInputs — the merge never reads complete on a path no single
+// attempt scored. The views (holdPath, swapPath, gap, closedLegDelta) are
+// composed from the merged legs by composeLegs, the build's own composition.
 
 import { calculateAssetScoreServer } from '../agentScoring.js';
 import { sampleAt, sampleCanExist, pctChange } from './bars.js';
@@ -50,8 +61,38 @@ export const REPLAY_LABEL = "one-step hypothetical through the day's close; late
 
 const round2 = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v * 100) / 100 : null);
 const iso = (ms) => new Date(ms).toISOString();
+const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 /** A sample on a path: its points, and — when no fresh price stood for it — the stale bar's close time beside the null (BA-24). */
 const point = (s) => ({ tickSeq: s.tickSeq, at: iso(s.atMs), points: s.points, ...(s.missing && s.staleBarClosedAt !== null ? { barClosedAt: iso(s.staleBarClosedAt) } : {}) });
+
+/**
+ * The replay's views from each leg's samples (BA-11), as `point` entries in
+ * the order they were taken: the sold name's — the swap, the later checks, the
+ * close — and the bought name's — the later checks, the close. The swap path
+ * opens at the sale with exactly what the sale banked. One composition, used
+ * by the build and by a merge (BA-36), so a merged replay is stated exactly as
+ * a built one.
+ */
+export function composeLegs({ ghostPts, boughtPts, locked, swap }) {
+  const ghost = ghostPts
+    ? { atSwap: ghostPts[0]?.points ?? null, atClose: ghostPts[ghostPts.length - 1]?.points ?? null, series: ghostPts.slice(1, -1).map((p) => ({ ...p })) }
+    : null;
+  const bought = boughtPts
+    ? { atClose: boughtPts[boughtPts.length - 1]?.points ?? null, series: boughtPts.slice(0, -1).map((p) => ({ ...p })) }
+    : null;
+  return {
+    ghost,
+    bought,
+    holdPath: ghostPts ? ghostPts.map((p) => ({ ...p })) : null,
+    swapPath: bought && locked !== null
+      ? [{ tickSeq: swap.tickSeq, at: swap.at, points: locked }, ...boughtPts.map((p) => ({ ...p, points: p.points === null ? null : round2(locked + p.points) }))]
+      : null,
+    gapPoints: ghost && bought && locked !== null && ghost.atClose !== null && bought.atClose !== null
+      ? round2((locked + bought.atClose) - ghost.atClose)
+      : null,
+    closedLegDelta: ghost && locked !== null && ghost.atSwap !== null ? round2(ghost.atSwap - locked) : null,
+  };
+}
 
 /**
  * Score one leg along the samples. Returns per-sample points (null where no
@@ -115,20 +156,11 @@ export function replayAction({ action, checks, barsBySymbol, session, sectors = 
     { kind: 'close', tickSeq: null, atMs: session.closeMs },
   ];
 
-  const legOf = (legInputs, symbol, bars, name, legSamples) => {
+  const legOf = (legInputs, symbol, bars, legSamples) => {
     if (!legInputs || !bars) return null;
     const run = runLeg({ inputs: legInputs, symbol, bars, samples: legSamples, tierStamp });
     for (const s of run) if (s.missing) missSample(`price:${symbol}@${s.kind === 'check' ? (s.tickSeq ?? iso(s.atMs)) : s.kind}`, s.atMs);
-    const at = (kind) => run.find((s) => s.kind === kind) ?? null;
-    return {
-      name,
-      run,
-      out: {
-        ...(name === 'ghost' ? { atSwap: at('swap')?.points ?? null } : {}),
-        atClose: at('close')?.points ?? null,
-        series: run.filter((s) => s.kind === 'check').map(point),
-      },
-    };
+    return run;
   };
   // The sold name is sampled AT the swap too (its standing at the sale is the
   // reconciliation's subject). The bought name is scored FROM the swap: its
@@ -136,25 +168,20 @@ export function replayAction({ action, checks, barsBySymbol, session, sectors = 
   // completed before the swap is a price from before it was bought, and
   // scoring it against the fill could ratchet a badge the live position never
   // saw (review L2-F2; BA-11, §6 "each later check's … price and at the close").
-  const ghost = legOf(inputs.ghost, action.symbolOut, barsOut, 'ghost', samples);
-  const bought = legOf(inputs.bought, action.symbolIn, barsIn, 'bought', samples.filter((smp) => smp.kind !== 'swap'));
+  const ghostRun = legOf(inputs.ghost, action.symbolOut, barsOut, samples);
+  const boughtRun = legOf(inputs.bought, action.symbolIn, barsIn, samples.filter((smp) => smp.kind !== 'swap'));
   const locked = typeof action.lockedPoints === 'number' && Number.isFinite(action.lockedPoints) ? action.lockedPoints : null;
   if (locked === null) missingInputs.push('lockedPoints');
 
-  const holdPath = ghost ? ghost.run.map(point) : null;
-  // The swap path opens AT the sale with exactly what the sale banked.
-  const swapPath = bought && locked !== null
-    ? [
-      { tickSeq: samples[0].tickSeq, at: iso(samples[0].atMs), points: locked },
-      ...bought.run.map((s) => ({ ...point(s), points: s.points === null ? null : round2(locked + s.points) })),
-    ]
-    : null;
-  const gapPoints = ghost && bought && locked !== null && ghost.out.atClose !== null && bought.out.atClose !== null
-    ? round2((locked + bought.out.atClose) - ghost.out.atClose)
-    : null;
+  // The views and the gap (composeLegs); closedLegDelta is agreement at the sale.
+  const legs = composeLegs({
+    ghostPts: ghostRun ? ghostRun.map(point) : null,
+    boughtPts: boughtRun ? boughtRun.map(point) : null,
+    locked,
+    swap: { tickSeq: samples[0].tickSeq, at: iso(samples[0].atMs) },
+  });
 
-  // Reconciliation — agreement at the sale, and the bought name against its first recorded evidence.
-  const closedLegDelta = ghost && locked !== null && ghost.out.atSwap !== null ? round2(ghost.out.atSwap - locked) : null;
+  // Reconciliation — the bought name against its first recorded evidence.
   let boughtVsEvidence = null;
   if (barsIn && inputs.bought) {
     const row = later.find((c) => c.evidence && c.evidence[action.symbolIn] && typeof c.evidence[action.symbolIn].px === 'number');
@@ -203,15 +230,160 @@ export function replayAction({ action, checks, barsBySymbol, session, sectors = 
     closeAt: iso(session.closeMs),
     lockedPoints: locked,
     subsequentTradesInSlot: action.subsequentTradesInSlot ?? null,
-    ghost: ghost ? ghost.out : null,
-    bought: bought ? bought.out : null,
-    holdPath,
-    swapPath,
-    gapPoints,
-    reconciliation: { closedLegDelta, boughtVsEvidence },
+    ghost: legs.ghost,
+    bought: legs.bought,
+    holdPath: legs.holdPath,
+    swapPath: legs.swapPath,
+    gapPoints: legs.gapPoints,
+    reconciliation: { closedLegDelta: legs.closedLegDelta, boughtVsEvidence },
     marketChangeAfter,
     sectorChangeAfter,
     missingInputs: [...new Set(missingInputs)],
     retryableInputs: [...new Set(retryableInputs)],
+  };
+}
+
+// ── BA-36 — a retry merges a replay point by point ─────────────────────────
+
+/** How complete a replay is: a gap first, then legs, then fewer missing inputs (review L2-F1). */
+export const replayRank = (r) => (r ? (r.gapPoints !== null ? 1000 : 0) + ((r.ghost ? 1 : 0) + (r.bought ? 1 : 0)) * 100 - (r.missingInputs || []).length : -1);
+
+const hasPoint = (e) => isNum(e?.points);
+
+/** Does a replay hold any fact — a scored point, a reconciliation, a comparable (BA-31: a unit that "exists")? */
+export function replayHasFact(r) {
+  if (!r) return false;
+  const legs = legSamples(r);
+  return [legs.ghost, legs.bought].some((list) => Array.isArray(list) && list.some(hasPoint))
+    || Boolean(r.reconciliation?.boughtVsEvidence)
+    || [...Object.values(r.marketChangeAfter || {}), ...Object.values(r.sectorChangeAfter || {})].some(isNum);
+}
+
+/**
+ * A built replay's two legs as the samples each was scored at, in order: the
+ * sold name's swap, later checks and close (its holdPath); the bought name's
+ * later checks and close. Null for a leg that was not built.
+ */
+function legSamples(r) {
+  const ghost = r?.ghost && Array.isArray(r.holdPath) ? r.holdPath : null;
+  let bought = null;
+  if (r?.bought) {
+    const tail = Array.isArray(r.swapPath) ? r.swapPath[r.swapPath.length - 1] : null;
+    bought = [...(Array.isArray(r.bought.series) ? r.bought.series : []),
+      { tickSeq: null, at: r.closeAt ?? tail?.at ?? null, points: isNum(r.bought.atClose) ? r.bought.atClose : null, ...(tail?.barClosedAt ? { barClosedAt: tail.barClosedAt } : {}) }];
+  }
+  return { ghost, bought };
+}
+
+/** The sample a leg's i-th entry stands for, as missingInputs names it (`price:SYMBOL@<swap | tickSeq | instant | close>`). */
+const sampleKey = (leg, list, i) => (i === list.length - 1 ? 'close' : (leg === 'ghost' && i === 0 ? 'swap' : (list[i].tickSeq ?? list[i].at)));
+
+/**
+ * One leg, sample by sample: a saved point is never replaced by null; a saved
+ * null is no fact, so the new entry stands there; where both hold a value, the
+ * more complete replay's stands, and a tie keeps the stored one. A leg only
+ * one attempt built is that attempt's, whole.
+ */
+function mergeLeg(s, f, storedWins) {
+  if (!s || !f) {
+    if (!s && !f) return null;
+    const side = s ? 's' : 'f';
+    return { list: s ?? f, from: (s ?? f).map(() => side) };
+  }
+  if (s.length !== f.length) {
+    // The same builtFrom samples the same instants, so this is no merge case — keep the leg holding more.
+    const side = f.filter(hasPoint).length > s.filter(hasPoint).length ? 'f' : 's';
+    const list = side === 's' ? s : f;
+    return { list, from: list.map(() => side) };
+  }
+  const from = s.map((se, i) => (!hasPoint(se) ? 'f' : (!hasPoint(f[i]) ? 's' : (storedWins ? 's' : 'f'))));
+  return { list: from.map((side, i) => (side === 's' ? s[i] : f[i])), from };
+}
+
+/**
+ * The samples a merged leg is missing: each null point, and — for a point kept
+ * from an attempt that lacked an EARLIER sample of the leg — that sample too,
+ * since the scorer's history runs through every earlier sample (BA-11). A kept
+ * point the other attempt scored to the same value on a whole path (every
+ * earlier sample of the leg priced) is vouched for by it, and names nothing.
+ */
+function legNames(symbol, leg, merged, sides) {
+  const out = [];
+  const wholeBefore = (list, i) => Array.isArray(list) && list.length === merged.list.length && list.slice(0, i).every(hasPoint);
+  merged.list.forEach((e, i) => {
+    if (!hasPoint(e)) { out.push(`price:${symbol}@${sampleKey(leg, merged.list, i)}`); return; }
+    const src = sides[merged.from[i]];
+    if (wholeBefore(src, i)) return;
+    const other = sides[merged.from[i] === 's' ? 'f' : 's'];
+    if (wholeBefore(other, i) && hasPoint(other[i]) && other[i].points === e.points) return;
+    for (let h = 0; h < i; h += 1) if (!hasPoint(src[h])) out.push(`price:${symbol}@${sampleKey(leg, src, h)}`);
+  });
+  return out;
+}
+
+/** Keyed market changes (marketChangeAfter, sectorChangeAfter), key by key, by the same rule. */
+function mergeKeyed(s, f, storedWins) {
+  const out = {};
+  for (const k of [...new Set([...Object.keys(s || {}), ...Object.keys(f || {})])]) {
+    const sv = s?.[k] ?? null;
+    const fv = f?.[k] ?? null;
+    out[k] = !isNum(sv) ? fv : (!isNum(fv) ? sv : (storedWins ? sv : fv));
+  }
+  return out;
+}
+
+/**
+ * BA-36 — the replay a retry keeps when the stored and the new one share
+ * `builtFrom`, merged point by point (see the header). The caller (the candle
+ * pass's keepUnit) decides whether the merge kept anything earlier, and marks
+ * it `preservedFrom`. `missingInputs` names exactly what the merged replay
+ * lacks: its null points, the samples its kept points were built without, and
+ * — for a leg or a comparable neither attempt priced — why; the inputs the
+ * action row itself lacks are the same on both.
+ */
+export function mergeReplay(stored, fresh, { symbolOut, symbolIn }) {
+  const storedWins = replayRank(stored) >= replayRank(fresh);
+  const sl = legSamples(stored);
+  const fl = legSamples(fresh);
+  const ghost = mergeLeg(sl.ghost, fl.ghost, storedWins);
+  const bought = mergeLeg(sl.bought, fl.bought, storedWins);
+  const locked = isNum(fresh.lockedPoints) ? fresh.lockedPoints : null;
+  const swapEntry = (Array.isArray(fresh.swapPath) ? fresh.swapPath[0] : null) ?? (Array.isArray(stored.swapPath) ? stored.swapPath[0] : null) ?? ghost?.list[0] ?? null;
+  const legs = composeLegs({ ghostPts: ghost?.list ?? null, boughtPts: bought?.list ?? null, locked, swap: { tickSeq: swapEntry?.tickSeq ?? null, at: swapEntry?.at ?? null } });
+  const marketChangeAfter = mergeKeyed(stored.marketChangeAfter, fresh.marketChangeAfter, storedWins);
+  const sectorChangeAfter = mergeKeyed(stored.sectorChangeAfter, fresh.sectorChangeAfter, storedWins);
+  const sB = stored.reconciliation?.boughtVsEvidence ?? null;
+  const fB = fresh.reconciliation?.boughtVsEvidence ?? null;
+  const boughtVsEvidence = !sB ? fB : (!fB ? sB : (storedWins ? sB : fB));
+
+  const named = [...new Set([...(fresh.missingInputs || []), ...(stored.missingInputs || [])])];
+  const keep = new Set(named.filter((n) => !n.startsWith('bars:') && !n.startsWith('price:')));
+  const legGap = (symbol, leg, merged, sides) => {
+    if (merged) for (const n of legNames(symbol, leg, merged, sides)) keep.add(n);
+    else if (named.includes(`bars:${symbol}`)) keep.add(`bars:${symbol}`);
+  };
+  legGap(symbolOut, 'ghost', ghost, { s: sl.ghost, f: fl.ghost });
+  legGap(symbolIn, 'bought', bought, { s: sl.bought, f: fl.bought });
+  for (const [symbol, value] of Object.entries({ ...marketChangeAfter, ...sectorChangeAfter })) {
+    if (isNum(value)) continue;
+    const priced = named.filter((n) => n === `price:${symbol}@swap` || n === `price:${symbol}@close`);
+    if (priced.length) priced.forEach((n) => keep.add(n));
+    else if (named.includes(`bars:${symbol}`)) keep.add(`bars:${symbol}`);
+  }
+  const missingInputs = named.filter((n) => keep.has(n));
+  const retry = new Set([...(fresh.retryableInputs || []), ...(stored.retryableInputs || [])]);
+  const { preservedFrom: _earlier, ...base } = fresh;
+  return {
+    ...base,
+    ghost: legs.ghost,
+    bought: legs.bought,
+    holdPath: legs.holdPath,
+    swapPath: legs.swapPath,
+    gapPoints: legs.gapPoints,
+    reconciliation: { closedLegDelta: legs.closedLegDelta, boughtVsEvidence },
+    marketChangeAfter,
+    sectorChangeAfter,
+    missingInputs,
+    retryableInputs: missingInputs.filter((n) => retry.has(n)),
   };
 }

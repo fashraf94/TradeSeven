@@ -70,6 +70,15 @@
 // `passes.candles.inputFingerprint` is the inputs this pass read — the close
 // pass's re-queue trigger — and is never read as proof that any unit was
 // rebuilt.
+//
+// A RETRY MERGES UNITS POINT BY POINT (BA-36, keepUnit): a stored replay or
+// plan price and the one this attempt built, sharing `builtFrom`, merge fact by
+// fact — a saved value is never replaced by null, a saved null gives way to the
+// new value, and where both hold one the more complete unit's stands (a tie
+// keeps the stored). Built from different inputs, BA-31 governs: the unit
+// current with the tape's inputs wins whole, and a stale one is kept only when
+// no current unit holds a fact. A unit that keeps any earlier fact carries
+// `preservedFrom`, and so does its section's coverage.
 
 import { resolveModeConfig } from '../../../src/constants/agentGameModes.js';
 import { isCryptoSymbol } from '../marketDataCache.js';
@@ -79,7 +88,7 @@ import {
 } from '../../../src/constants/filmTape.js';
 import { FILM_TAPE_WRITE_ENABLED } from '../../../src/config/featureFlags.js';
 import { sessionBars, sampleAt, sampleCanExist, expectedSeriesBars, sessionOpenOf, aggregate10m } from './bars.js';
-import { replayAction, REPLAY_LABEL } from './tapeReplay.js';
+import { replayAction, REPLAY_LABEL, mergeReplay, replayRank, replayHasFact } from './tapeReplay.js';
 import { coverageOf } from './tapeAssemble.js';
 import { sanitizeForFirestore, stableStringify } from './tapeMerge.js';
 import { tapeRef } from './tapeSources.js';
@@ -202,6 +211,9 @@ function seriesDoc({ tape, entry, bars, session, nowIso, builtFrom }) {
 /** BA-31: the label a kept unit carries while its inputs have changed since it was built. */
 const staleLabel = (what, names) => `${what} built before its inputs changed, kept (not rebuilt this attempt): ${names.join(', ')}`;
 
+/** The earliest `preservedFrom` among units that kept an earlier attempt's facts (BA-36), or null. */
+const earliestPreserved = (units) => units.map((u) => u?.preservedFrom).filter(Boolean).sort()[0] ?? null;
+
 function replayCoverage(tape, replays, session, stale = []) {
   const actions = Array.isArray(tape.actions) ? tape.actions : [];
   if (!actions.length) return coverageOf('complete', { sources: ['eodhd_1m'], note: `no actions this day · ${REPLAY_LABEL}` });
@@ -217,11 +229,13 @@ function replayCoverage(tape, replays, session, stale = []) {
   const whole = full === inScope && !outOfScope && !stale.length;
   const status = whole ? 'complete' : (full > 0 || [...replays.values()].some((r) => r && (r.ghost || r.bought)) ? 'partial' : 'unavailable');
   const spanFrom = actions.map((a) => toMs(a.at)).filter((v) => v !== null).sort((a, b) => a - b)[0];
-  return coverageOf(status, {
+  const cov = coverageOf(status, {
     span: spanFrom !== undefined ? { from: iso(spanFrom), to: iso(session.closeMs) } : null,
     sources: ['eodhd_1m', 'actions[].replayInputs'],
     note: [REPLAY_LABEL, ...reasons].join('; '),
   });
+  // The section holds replay facts an earlier attempt saved (BA-36): say from when.
+  return { ...cov, preservedFrom: earliestPreserved([...replays.values()]) };
 }
 
 /**
@@ -304,7 +318,7 @@ export function keepSeries(saved, fresh) {
  * no price lacks an input (review R1-2): a price missing a sample is named,
  * and holds the section at most `partial`.
  */
-function seriesCoverage(requested, missing, gapsBySymbol, session, keptFrom = [], stalePrices = [], unpricedPlans = []) {
+function seriesCoverage(requested, missing, gapsBySymbol, session, keptFrom = [], stalePrices = [], unpricedPlans = [], prices = []) {
   const incomplete = Object.keys(gapsBySymbol).sort();
   const whole = missing.length === 0 && incomplete.length === 0 && stalePrices.length === 0 && unpricedPlans.length === 0;
   const status = whole ? 'complete' : (missing.length < requested.length ? 'partial' : 'unavailable');
@@ -320,8 +334,9 @@ function seriesCoverage(requested, missing, gapsBySymbol, session, keptFrom = []
     sources: ['eodhd_1m'],
     note: notes.join('; ') || null,
   });
-  // The section holds series an earlier attempt built (BA-25): say from when.
-  return { ...cov, preservedFrom: keptFrom.map((k) => k.since).filter(Boolean).sort()[0] ?? null };
+  // The section holds series an earlier attempt built (BA-25), or plan-price
+  // facts one saved (BA-36): say from when.
+  return { ...cov, preservedFrom: [...keptFrom.map((k) => k.since), earliestPreserved(prices)].filter(Boolean).sort()[0] ?? null };
 }
 
 /**
@@ -349,12 +364,69 @@ export function nextCandleState({ prev, requested, missing, incomplete = [], ret
   };
 }
 
-/** How complete a replay is: a gap first, then legs, then fewer missing inputs. */
-const replayRank = (r) => (r ? (r.gapPoints !== null ? 1000 : 0) + ((r.ghost ? 1 : 0) + (r.bought ? 1 : 0)) * 100 - (r.missingInputs || []).length : -1);
 /** How complete a plan's prices are: how many of the two points carry a (fresh) value. */
 const priceRank = (p) => (p ? (typeof p.atPlan?.value === 'number' ? 1 : 0) + (typeof p.atClose?.value === 'number' ? 1 : 0) : -1);
-/** The stored result unless the fresh one is at least as complete (review L2-F1). */
-const keepBetter = (stored, fresh, rank) => (stored && rank(stored) > rank(fresh) ? stored : fresh);
+/** The two points a plan's price holds (BA-10), with the sample each is named by when it has no value. */
+const PRICE_POINTS = Object.freeze({ atPlan: 'plan', atClose: 'close' });
+const hasValue = (pt) => typeof pt?.value === 'number' && Number.isFinite(pt.value);
+/** Does a plan price hold any fact — a point with a value (BA-31: a unit that "exists")? */
+export const priceHasFact = (p) => Object.keys(PRICE_POINTS).some((k) => hasValue(p?.[k]));
+
+/**
+ * BA-36 — the plan price a retry keeps when the stored and the new one share
+ * `builtFrom`, merged point by point: a saved point is never replaced by null;
+ * a saved null is no fact, so the new point stands there; where both hold a
+ * value, the more complete price's stands, and a tie keeps the stored. The two
+ * points are independent samples, so `missingInputs` names exactly the points
+ * left without a value — by their sample when either attempt had bars, else by
+ * the bars (planPrice's own words).
+ */
+export function mergePrice(stored, fresh, { symbol }) {
+  const storedWins = priceRank(stored) >= priceRank(fresh);
+  const named = [...new Set([...(fresh.missingInputs || []), ...(stored.missingInputs || [])])];
+  const keep = new Set(named.filter((n) => !n.startsWith('bars:') && !n.startsWith('price:')));
+  const { preservedFrom: _earlier, ...out } = fresh;
+  for (const [k, sample] of Object.entries(PRICE_POINTS)) {
+    const s = stored[k] ?? null;
+    const f = fresh[k] ?? null;
+    out[k] = !hasValue(s) ? f : (!hasValue(f) ? s : (storedWins ? s : f));
+    if (hasValue(out[k])) continue;
+    if (named.includes(`price:${symbol}@${sample}`)) keep.add(`price:${symbol}@${sample}`);
+    else if (named.includes(`bars:${symbol}`)) keep.add(`bars:${symbol}`);
+  }
+  const retry = new Set([...(fresh.retryableInputs || []), ...(stored.retryableInputs || [])]);
+  out.missingInputs = named.filter((n) => keep.has(n));
+  out.retryableInputs = out.missingInputs.filter((n) => retry.has(n));
+  return out;
+}
+
+/**
+ * BA-36 / BA-31 — the unit (an action's replay, a plan's price) a retry keeps
+ * from the stored one and the one this attempt built, which is always built
+ * from the tape's inputs now (`builtFrom`). Sharing `builtFrom`, they merge
+ * point by point (`merge`). Built from other inputs, the stored unit is stale:
+ * the current unit wins whole, and the stale one is kept only when no current
+ * unit holds a fact (an attempt that could fetch nothing for it). A unit that
+ * keeps any earlier fact carries `preservedFrom` — its own, when it kept one
+ * already, else `since` (the candle pass's last write before this attempt); a
+ * merge that holds exactly the new unit's facts replaces the stored one
+ * cleanly, preservedFrom gone (the BA-34 superset rule).
+ */
+export function keepUnit(stored, fresh, { merge, hasFact, since = null }) {
+  if (!fresh) return stored ?? null;
+  if (!stored) return fresh;
+  let out;
+  if (stored.builtFrom !== fresh.builtFrom) {
+    if (hasFact(fresh) || !hasFact(stored)) return fresh;
+    out = stored;
+  } else {
+    out = merge(stored, fresh);
+  }
+  const factsOf = (u) => stableStringify({ ...u, preservedFrom: null });
+  if (factsOf(out) === factsOf(fresh)) return fresh;
+  return { ...out, preservedFrom: stored.preservedFrom ?? since };
+}
+
 const needsBars = (missingInputs) => (missingInputs || []).some((m) => m.startsWith('bars:'));
 /** Several documents in one transaction read — getAll when the SDK has it (one round trip). */
 const readAll = (tx, refs) => (!refs.length ? Promise.resolve([]) : (typeof tx.getAll === 'function' ? tx.getAll(...refs) : Promise.all(refs.map((r) => tx.get(r)))));
@@ -432,29 +504,34 @@ export async function processTape({ db, ref, tape, nowMs, fetchCandles, memo, us
     savedSnaps.forEach((sn, i) => { if (sn?.exists) saved.set(curPlan[i].symbol, typeof sn.data === 'function' ? sn.data() : sn.data); });
 
     // A retry never loses what an earlier attempt saved (§8 invariant 7,
-    // BA-19, BA-25; reviews L2-F1, F3): per action and per plan the more
-    // complete of the stored and the fresh result is kept, and per symbol the
-    // better series — a saved one is never replaced by a poorer response.
-    // BA-31: each fresh unit carries the identity of the inputs it was built
-    // from; a kept one keeps its own, and is stale when that is no longer its
-    // inputs' identity on the tape now.
+    // BA-19, BA-25; reviews L2-F1, F3): per action and per plan the stored and
+    // the fresh unit merge point by point (BA-36, keepUnit), and per symbol the
+    // series merge fact by fact (BA-34) — a saved fact is never replaced by a
+    // poorer response. BA-31: each fresh unit carries the identity of the
+    // inputs it was built from; a kept one keeps its own, and is stale when
+    // that is no longer its inputs' identity on the tape now.
+    const prev = cur.passes?.candles;
+    const since = prev?.writtenAt ?? null;
     const replays = new Map();
     const stale = { replays: [], prices: [] };
     const actions = (Array.isArray(cur.actions) ? cur.actions : []).map((a) => {
       const builtFrom = replayBuiltFrom(cur, a, session);
       const built = replayAction({ action: a, checks: cur.checks, barsBySymbol, session, sectors: cur.comparables?.sectors || {}, tierStamp: resolveModeConfig(cur.gameMode).flatMultiplier });
-      const kept = keepBetter(a.replay ?? null, built ? { ...built, builtFrom } : null, replayRank);
+      const kept = keepUnit(a.replay ?? null, built ? { ...built, builtFrom } : null, {
+        merge: (s, f) => mergeReplay(s, f, { symbolOut: a.symbolOut, symbolIn: a.symbolIn }), hasFact: replayHasFact, since,
+      });
       replays.set(a.key, kept);
       if (kept && kept.builtFrom !== builtFrom) stale.replays.push(a);
       return { ...a, replay: kept };
     });
     const plans = (Array.isArray(cur.plans) ? cur.plans : []).map((p) => {
       const builtFrom = priceBuiltFrom(p);
-      const kept = keepBetter(p.price ?? null, { ...planPrice(p, barsBySymbol[p.symbol] || null, session), builtFrom }, priceRank);
+      const kept = keepUnit(p.price ?? null, { ...planPrice(p, barsBySymbol[p.symbol] || null, session), builtFrom }, {
+        merge: (s, f) => mergePrice(s, f, { symbol: p.symbol }), hasFact: priceHasFact, since,
+      });
       if (kept && kept.builtFrom !== builtFrom) stale.prices.push(p);
       return { ...p, price: kept };
     });
-    const prev = cur.passes?.candles;
     const retryable = [...replays.values()].some((r) => r && awaitsBars(r)) || plans.some((p) => p.price && awaitsBars(p.price));
     // Per symbol, the kept series (BA-25) and what it lacks against a whole
     // session and against the checks the tape has now (BA-24). A symbol with
@@ -498,7 +575,7 @@ export async function processTape({ db, ref, tape, nowMs, fetchCandles, memo, us
       'passes.candles': candles,
       'coverage.replay': replayCoverage(cur, replays, session, stale.replays),
       'coverage.series': seriesCoverage(requested, missing, gapsBySymbol, session, keptFrom, stale.prices,
-        plans.filter((p) => Array.isArray(p.price?.missingInputs) && p.price.missingInputs.length > 0)),
+        plans.filter((p) => Array.isArray(p.price?.missingInputs) && p.price.missingInputs.length > 0), plans.map((p) => p.price)),
     }));
     const series = writes.length;
     result = { status: candles.status, attempts: candles.attempts, requested: requested.length, missing, series };

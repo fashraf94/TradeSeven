@@ -345,8 +345,11 @@ describe('L2 — the candle pass never loses what it saved', () => {
     const outage = Object.fromEntries(Object.keys(PRICES).map((s) => [s, new Error('outage')]));
     await morning(t, outage, MORNING + DAY);
     const m2 = tapeOf(t, fx.battleId);
-    expect(m2.actions.map((a) => a.replay)).toEqual(m1.actions.map((a) => a.replay));
-    expect(m2.plans.map((p) => p.price)).toEqual(m1.plans.map((p) => p.price));
+    // BA-36: the kept units hold morning 1's facts, and each says it was kept (preservedFrom)
+    const facts = (u) => ({ ...u, preservedFrom: undefined });
+    expect(m2.actions.map((a) => facts(a.replay))).toEqual(m1.actions.map((a) => a.replay));
+    expect(m2.plans.map((p) => facts(p.price))).toEqual(m1.plans.map((p) => p.price));
+    for (const u of [...m2.actions.map((a) => a.replay), ...m2.plans.map((p) => p.price)]) expect(u.preservedFrom).toBe(m1.passes.candles.writtenAt);
     expect(m2.passes.candles).toMatchObject({ status: 'partial', attempts: 2, symbolsMissing: ['XLP'] });
     expect(m2.coverage.replay.status).toBe(m1.coverage.replay.status);
     expect([...t.store.keys()].filter((k) => k.startsWith(`${tapePath(fx.battleId)}/series/`)).sort()).toEqual(series1);
