@@ -80,16 +80,17 @@ const plantOld = (t, battleId, etDate, candles = {}) => t.store.set(tapePath(bat
   passes: { close: { status: 'written' }, candles: { status: 'pending', attempts: 0, reason: null, ...candles } },
 });
 
-/** capturedDay written WITHOUT tick 10 and enriched (written, complete); returns the world and the withheld tick. */
-async function withoutTick10(bars = allBars()) {
+/** capturedDay written WITHOUT tick `seq` and enriched (written, complete); returns the world and the withheld tick. */
+async function withoutTick(seq, bars = allBars()) {
   const fx = await capturedDay();
-  const tick10 = fx.ticks.find((tk) => tk.tickSeq === 10);
-  const t = world({ ...fx, ticks: fx.ticks.filter((tk) => tk.tickSeq !== 10) });
+  const tick = fx.ticks.find((tk) => tk.tickSeq === seq);
+  const t = world({ ...fx, ticks: fx.ticks.filter((tk) => tk.tickSeq !== seq) });
   await write(t, fx);
   await morning(t, bars);
   expect(tapeOf(t, fx.battleId).passes.candles.status).toBe('written');
-  return { t, fx, tick10, recover: () => t.store.set(`agentBattles/${fx.battleId}/ticks/${tick10.tickId}`, tick10) };
+  return { t, fx, tick, tick10: tick, recover: () => t.store.set(`agentBattles/${fx.battleId}/ticks/${tick.tickId}`, tick) };
 }
+const withoutTick10 = (bars) => withoutTick(10, bars);
 
 let errSpy;
 beforeEach(() => { flags.writer = true; flags.v2 = false; errSpy = vi.spyOn(console, 'error').mockImplementation(() => {}); });
@@ -882,6 +883,26 @@ describe('DF6 — BA-34: a retry merges the series bucket by bucket and check by
     const aapl = t.store.get(seriesPath(fx.battleId, 'AAPL'));
     expect(aapl.bars.map((b) => b.m)).toEqual(aapl.bars.map((b) => b.n));
     expect(bucket(aapl, '2026-09-24T15:20:00.000Z').m).toBe(4);
+  });
+
+  // The §2 review of this round (build report §9.11, R1-5): a saved sample whose check the tape no
+  // longer has — an entry row superseded by its tick — is no fact about any check.
+  it('BA-34 (review R1-5): a check known first by its entry, then by its tick, is one check — the entry-instant sample leaves with the superseded row, and a whole refetch replaces the series cleanly', async () => {
+    const { t, fx, recover } = await withoutTick(11);
+    const entryAt = tapeOf(t, fx.battleId).checks.find((c) => c.evalId === 'b-captured:e11').at;
+    expect(t.store.get(seriesPath(fx.battleId, 'AAPL')).atChecks.find((a) => a.at === entryAt)).toMatchObject({ tickSeq: null, price: PRICES.AAPL });
+    recover();
+    await write(t, fx, MORNING + 3_600_000);                                   // the tick row supersedes the entry row
+    await morning(t, allBars(), MORNING + DAY);                               // a whole refetch
+    const tape = tapeOf(t, fx.battleId);
+    const checkAts = new Set(tape.checks.filter((c) => !['deferred', 'no_record'].includes(c.state) && c.at).map((c) => c.at));
+    for (const sym of ['AAPL', 'KO', 'SPY']) {
+      const doc = t.store.get(seriesPath(fx.battleId, sym));
+      expect(doc.atChecks.filter((a) => !checkAts.has(a.at)), sym).toEqual([]);
+      expect(doc.preservedFrom ?? null, sym).toBeNull();
+    }
+    expect(tape.coverage.series.note ?? '').not.toMatch(/kept from an earlier attempt/);
+    expect(tape.passes.candles.status).toBe('written');
   });
 });
 

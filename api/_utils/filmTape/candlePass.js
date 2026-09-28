@@ -260,8 +260,11 @@ const factsOf = (doc) => stableStringify({ bars: doc?.bars ?? [], atChecks: doc?
  *     and a tie keeps the stored bar; a bucket only one side has is kept;
  *   · per check, a saved price is never replaced by null, and is replaced by
  *     another price only when that price's bar completed LATER — the new
- *     price is non-null, so its bar is inside BA-24's freshness rule; a saved
- *     price for a check the new build does not sample is kept;
+ *     price is non-null, so its bar is inside BA-24's freshness rule;
+ *   · the checks are the tape's checks NOW, which the new build samples every
+ *     one of: a saved sample for a check the tape no longer has — an entry
+ *     row its tick record superseded — is no fact about any check, and goes
+ *     with the row (review R1-5);
  *   · the session open: the stored one unless it has none.
  *
  * A merge that keeps any earlier fact is `kept` (the caller marks it
@@ -282,19 +285,12 @@ export function keepSeries(saved, fresh) {
   });
   const keyOf = (a) => checkKey(a?.tickSeq, a?.at);
   const savedAt = new Map((Array.isArray(saved.atChecks) ? saved.atChecks : []).filter(isObj).map((a) => [keyOf(a), a]));
-  const sampled = new Set();
   const atChecks = (Array.isArray(fresh.atChecks) ? fresh.atChecks : []).map((f) => {
-    sampled.add(keyOf(f));
     const s = savedAt.get(keyOf(f));
     if (typeof s?.price !== 'number') return f;                          // a null is no fact to keep
     if (typeof f.price !== 'number') return s;                           // never a price replaced by null
     return (toMs(f.barClosedAt) ?? -Infinity) > (toMs(s.barClosedAt) ?? -Infinity) ? f : s;
   });
-  const orphans = [...savedAt.values()].filter((s) => typeof s.price === 'number' && !sampled.has(keyOf(s)));
-  if (orphans.length) {
-    atChecks.push(...orphans);
-    atChecks.sort((a, b) => (toMs(a.at) ?? 0) - (toMs(b.at) ?? 0));
-  }
   const merged = { ...fresh, bars, atChecks, sessionOpen: saved.sessionOpen ?? fresh.sessionOpen ?? null };
   if (factsOf(merged) === factsOf(fresh)) return { doc: fresh, kept: false };
   return { doc: merged, kept: true, why: seriesMinutes(fresh) < seriesMinutes(saved) ? 'a shorter response' : 'facts this response lacked' };
