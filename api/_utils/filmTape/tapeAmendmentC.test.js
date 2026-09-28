@@ -28,7 +28,7 @@ import { sessionBars } from './bars.js';
 import { sessionFor } from './tapeTime.js';
 import { formatTapeMarkdown } from './tapeExport.js';
 import { makeTapeDb } from './__fixtures__/tapeFirestore.js';
-import { seedDay, capturedDay, noTriggerDay, earlyCloseDay, makeTick } from './__fixtures__/tapeFixtures.js';
+import { seedDay, capturedDay, noTriggerDay, earlyCloseDay, multiDay, makeTick } from './__fixtures__/tapeFixtures.js';
 import { flatRows, fetcherOf } from './__fixtures__/tapeBars.js';
 
 const D = '2026-09-24';
@@ -535,5 +535,63 @@ describe('BA-20 / BA-37 (round-3 review L2-1) — a swap whose trade record may 
     const tape = tapeOf(t, fx.battleId);
     expect(tape.actions.every((a) => a.tradeMatched)).toBe(true);
     expect(tape.coverage.actions.status).toBe('complete');
+  });
+});
+
+describe('BA-37 (round-3 review L2-3) — the gap horizon is the minted count of the battle copy the tick read was made for', () => {
+  const D1 = '2026-09-21';
+  const DAY1_NIGHT = Date.parse('2026-09-22T02:15:30.000Z');
+  const DAY2_OPEN = Date.parse('2026-09-22T13:30:10.000Z');     // 09:30:10 ET day 2: its first check minted, not yet captured
+  /** multiDay at day 1's close (tickSeq 40), day 1 taped on its own night unless `taped` is false; `mintInTx()` mints check 41 just before the transaction re-reads the battle. */
+  async function dayOneTaped({ drop = [], taped = true } = {}) {
+    const fx = await multiDay({ full: true });
+    const hooks = {};
+    const atClose = { ...structuredClone(fx.battle), evaluations: fx.all.slice(0, 40), cronState: { tickSeq: 40 } };
+    const t = makeTapeDb(seedDay({}, { ...fx, battle: atClose, ticks: fx.ticks.filter((tk) => tk.tickSeq <= 40 && !drop.includes(tk.tickSeq)) }), { hooks });
+    if (taped) await writeTapeDay(fx.battleId, D1, { db: t.db, now: DAY1_NIGHT });
+    const bp = `agentBattles/${fx.battleId}`;
+    const mintInTx = () => {
+      let armed = true;
+      hooks.afterTxRead = async (path) => {
+        if (!armed || path !== tapePath(fx.battleId, D1)) return;   // the tick read is done; the battle re-read comes next
+        armed = false;
+        t.store.set(bp, { ...structuredClone(t.store.get(bp)), cronState: { tickSeq: 41 } });
+      };
+    };
+    const capture41 = () => { const t41 = fx.ticks.find((tk) => tk.tickSeq === 41); t.store.set(`${bp}/ticks/${t41.tickId}`, t41); };
+    return { fx, t, mintInTx, capture41 };
+  }
+
+  it('L2-3: a check minted between the tick read and the transaction is no gap of the read — day 1\'s refresh at day 2\'s open tapes no unattributed gap, and once the check is captured no caveat outlives it', async () => {
+    const { fx, t, mintInTx, capture41 } = await dayOneTaped();
+    const before = structuredClone(tapeOf(t, fx.battleId, D1));
+    expect(before.coverage.checks.status).toBe('complete');
+    mintInTx();
+    await writeTapeDay(fx.battleId, D1, { db: t.db, now: DAY2_OPEN });
+    let tape = tapeOf(t, fx.battleId, D1);
+    expect(t.store.get(`agentBattles/${fx.battleId}`).cronState.tickSeq).toBe(41);   // the re-read saw the mint
+    expect(tape.passes.close.unattributedGaps).toEqual([]);
+    expect(tape.passes.close.capture).toBe('present');
+    expect(tape.coverage.checks).toEqual(before.coverage.checks);
+    capture41();
+    await writeTapeDay(fx.battleId, D1, { db: t.db, now: Date.parse('2026-09-22T15:00:00.000Z') });
+    tape = tapeOf(t, fx.battleId, D1);
+    expect(tape.coverage.checks.caveats).toEqual([]);
+    expect(Object.values(tape.coverage).filter((c) => (c.caveats || []).some((x) => /tickSeq 41/.test(x)))).toEqual([]);
+  });
+
+  it('L2-3: the horizon still counts what the selection copy minted — a first write whose tick read lacks check 40 names 40 as the day\'s gap, and never 41, minted after the read', async () => {
+    const { fx, t, mintInTx } = await dayOneTaped({ drop: [40], taped: false });
+    mintInTx();
+    await writeTapeDay(fx.battleId, D1, { db: t.db, now: DAY1_NIGHT });
+    const tape = tapeOf(t, fx.battleId, D1);
+    expect(t.store.get(`agentBattles/${fx.battleId}`).cronState.tickSeq).toBe(41);
+    expect(tape.passes.close.gaps).toEqual([40]);
+    expect(tape.passes.close.unattributedGaps).toEqual([]);
+    expect(tape.checks.filter((c) => c.rowSource === 'gap').map((c) => c.tickSeq)).toEqual([40]);
+    expect(tape.coverage.checks.caveats).toEqual([
+      '1 minted check(s) of this day have no record (tickSeq 40)',
+      '1 evaluation entr(y/ies) have no tick record; their sequence numbers are among the gaps',   // e40 survives on the battle
+    ]);
   });
 });

@@ -100,6 +100,8 @@ export async function writeTapeDay(battleId, etDate, opts = {}) {
       intradayViewsPresent, priorTape,
       callRecordsMode: opts.callRecordsMode ?? CALL_RECORDS_MODE,
       resolveResult: opts.resolveResult ?? resolveBattleResult,
+      // the gap horizon stays the copy the tick read was made for
+      mintedMax: battle?.cronState?.tickSeq ?? null,
     });
     assembled = assembleFrom(battle);
   }

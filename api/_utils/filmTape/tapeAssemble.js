@@ -806,6 +806,7 @@ export function assembleTape({
   battle, etDate, bounds, nowMs,
   ticksRead, runsRead, receiptsRead, callsRead, declarationsRead,
   intradayViewsPresent = null, priorTape = null, callRecordsMode = null, resolveResult = null,
+  mintedMax = battle?.cronState?.tickSeq,
 }) {
   const nowIso = new Date(nowMs).toISOString();
   const battleId = battle.id;
@@ -829,7 +830,10 @@ export function assembleTape({
     seqs: dayTicks.map((t) => t.tickSeq),
     prevSeq: ticksRead.prevSeq,
     nextSeq: ticksRead.nextSeq,
-    mintedMax: num(battle?.cronState?.tickSeq),
+    // The minted count the tick read was made against: a battle re-read after
+    // it (BA-37) may count a check minted since, which is no gap of this read
+    // (round-3 review L2-3). Defaults to the battle's own count.
+    mintedMax: num(mintedMax),
     earlierSessionExists: days ? days.some((d) => d < etDate) : true,
     laterSessionStarted: days ? days.some((d) => d > etDate && nowSessionStarted(d)) : true,
   });
