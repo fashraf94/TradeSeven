@@ -462,7 +462,9 @@ describe('flag OFF — the desktop League renders EXACTLY as today (golden, gene
 });
 
 describe('flag ON — the same mounts light up (the pin is not vacuous)', () => {
-  it('mobile: the strip renders from the pod list, the label reads Predictions, and the pod list was fetched exactly once', async () => {
+  it('mobile: the strip renders from the pod list, the label reads Predictions, and the pod list was fetched exactly once', async ({ onTestFinished }) => {
+    vi.setSystemTime(new Date('2026-09-24T16:00:00.000Z')); // the fixture's week, 2026-W39, whose window closes into 2026-W40
+    onTestFinished(() => { vi.useRealTimers(); });
     flag.on = true;
     const container = await mount(<LeagueHome {...homeProps} />);
     expect(svc.calls.filter((c) => c === 'fetchBackingPods')).toHaveLength(1);
