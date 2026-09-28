@@ -501,11 +501,11 @@ describe('F4 — BA-25: when the candle pass\'s inputs change, its output is re-
     for (const s of ['replay', 'series']) expect(tapeOf(t, fx.battleId).coverage[s].note.match(/built before the candle inputs changed/g), s).toHaveLength(1);
   });
 
-  it('F4: outside the window, changed inputs lower a written pass to partial and name what changed; the output stays, labelled "not rebuilt"', async () => {
+  it('F4: outside the window, changed inputs expire a written pass (Amendment C, BA-25 amended) and name what changed; the output stays, labelled "not rebuilt"', async () => {
     const { t, fx } = await withoutTick10();
     await write(t, fx, Date.parse('2026-10-26T02:15:30.000Z'));                        // a month on: no candle pass comes back
     const tape = tapeOf(t, fx.battleId);
-    expect(tape.passes.candles).toMatchObject({ status: 'partial', reason: 'inputs_changed_outside_window', changedInputs: ['checks'] });
+    expect(tape.passes.candles).toMatchObject({ status: 'expired', reason: 'inputs_changed_outside_window', changedInputs: ['checks'] });
     expect(tape.actions.every((a) => a.replay && a.replay.gapPoints !== null)).toBe(true);
     for (const s of ['replay', 'series']) {
       expect(tape.coverage[s].status, s).toBe('partial');

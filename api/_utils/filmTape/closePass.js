@@ -32,7 +32,8 @@
 // merge-monotone and idempotent: a day whose sources did not change writes
 // nothing and is listed `unchanged`; one that changed is listed `refreshed`.
 // It reopens no candle work outside the candle window: writeTapeDay's merge
-// labels such a day's candle output instead (BA-25). The default backfill is
+// expires such a day's written candle pass and labels its output instead
+// (BA-25 amended). The default backfill is
 // unchanged. A refresh re-reads every written day of its range, so a refresh
 // stopped by the time floor resumes by naming a range that starts at its
 // `resumeFrom` date.

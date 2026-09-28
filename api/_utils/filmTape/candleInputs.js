@@ -23,8 +23,8 @@
 // The candle pass stores the fingerprint of the tape it read in
 // `passes.candles.inputFingerprint`; the close pass compares it with the
 // merged tape's (tapeMerge.js mergeCandles). A difference re-queues the candle
-// pass inside its window, or — outside it — lowers a `written` pass to
-// `partial`, names what changed, and labels the output built before it. The
+// pass inside its window, or — outside it — expires a `written` pass (BA-25
+// amended), names what changed, and labels the output built before it. The
 // review's DF1: a digest of which inputs were PRESENT let a corrected entry
 // price or evidence price leave a replay built from the old value "written".
 //

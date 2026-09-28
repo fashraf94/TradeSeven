@@ -39,6 +39,10 @@ const TERMINAL_CANDLE_WORDS = Object.freeze({
   expired: 'its retry window elapsed — no candle pass will run for this day again',
   exhausted: 'its attempts are spent — no candle pass will run for this day again',
 });
+/** BA-25 amended — a terminal reason with words of its own, before its status's. */
+const TERMINAL_REASON_WORDS = Object.freeze({
+  inputs_changed_outside_window: 'its inputs changed outside its retry window — the output built before the change stays; no candle pass will run for this day again',
+});
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 
@@ -309,7 +313,7 @@ export function formatTapeMarkdown(doc, seriesDocs = []) {
       + ` · requested: ${(candles.symbolsRequested || []).join(', ') || 'none'} · missing: ${(candles.symbolsMissing || []).join(', ') || 'none'}`
       + ` · incomplete: ${(candles.symbolsIncomplete || []).join(', ') || 'none'}`
       + `${Array.isArray(candles.changedInputs) && candles.changedInputs.length ? ` · inputs changed since it was built: ${candles.changedInputs.join(', ')}` : ''}`
-      + `${CANDLE_TERMINAL_STATUSES.includes(candles.status) ? ` · terminal: ${TERMINAL_CANDLE_WORDS[candles.status]}` : ''}`,
+      + `${CANDLE_TERMINAL_STATUSES.includes(candles.status) ? ` · terminal: ${TERMINAL_REASON_WORDS[candles.reason] ?? TERMINAL_CANDLE_WORDS[candles.status]}` : ''}`,
   ];
   const out = [...header, '', ...passes];
   if (Array.isArray(doc.checks)) {

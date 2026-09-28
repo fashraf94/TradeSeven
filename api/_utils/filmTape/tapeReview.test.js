@@ -411,7 +411,7 @@ describe('L2 — the candle pass never loses what it saved', () => {
     t.store.set(`agentBattles/${fx.battleId}`, battle);
     await write(t, fx, Date.parse('2026-10-26T02:15:30.000Z')); // a month on: no candle pass comes back
     const tape = tapeOf(t, fx.battleId);
-    expect(tape.passes.candles).toMatchObject({ status: 'partial', reason: 'sources_changed_outside_window' });
+    expect(tape.passes.candles).toMatchObject({ status: 'expired', reason: 'inputs_changed_outside_window' });   // Amendment C, BA-25 amended
     expect(tape.coverage.replay.status).toBe('partial');
     expect(tape.coverage.replay.note).toMatch(/outside its retry window/);
   });

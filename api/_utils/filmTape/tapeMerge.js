@@ -24,10 +24,12 @@
 //     action or plan set grew (`sources_changed`), or anything else in its
 //     input fingerprint moved (`inputs_changed`, BA-25: a recovered check, an
 //     evidence stamp, a replay input) — it is re-queued inside its window
-//     (`pending`, attempts 0); outside it a `written` pass is lowered to
-//     `partial`; a TERMINAL pass (`expired`, `exhausted`) keeps its status
-//     (BA-32). Every way, `changedInputs` names what changed, and the output
-//     built before the change stays, labelled, until replaced.
+//     (`pending`, attempts 0); outside it a `written` pass is `expired` with
+//     reason `inputs_changed_outside_window` (BA-25 amended — never
+//     `partial`, which promises a retry the window forbids); a TERMINAL pass
+//     (`expired`, `exhausted`) keeps its status (BA-32). Every way,
+//     `changedInputs` names what changed, and the output built before the
+//     change stays, labelled, until replaced.
 //   · Nothing changed → no write at all, so the stored bytes stand.
 
 import { createHash } from 'node:crypto';
@@ -504,10 +506,13 @@ function mergeCandles(stored, assembled, merged, { withinWindow }) {
   // Retryable work inside the window is re-queued. A TERMINAL pass never is
   // (BA-32; the BA-25 reading): no candle query selects it again.
   if (withinWindow && ['written', 'partial', 'failed'].includes(sc.status)) return { ...sc, status: 'pending', reason, attempts: 0, changedInputs: changed };
-  // Outside the window no candle pass comes back for it: a `written` the
-  // output no longer is becomes `partial`, saying why (review L2-F5); any
-  // other pass keeps its status, and the change is recorded.
-  if (!withinWindow && sc.status === 'written') return { ...sc, status: 'partial', reason: `${reason}_outside_window`, changedInputs: changed };
+  // Outside the window no candle pass comes back for it (BA-25 amended): a
+  // `written` the output no longer is becomes `expired`, reason
+  // `inputs_changed_outside_window` — terminal, so no candle query and no
+  // sweep ever selects it; never `partial`, which promises a retry the window
+  // forbids (review R3-3). Its output stays, labelled as built before the
+  // change. Any other pass keeps its status, and the change is recorded.
+  if (!withinWindow && sc.status === 'written') return { ...sc, status: 'expired', reason: 'inputs_changed_outside_window', changedInputs: changed };
   return { ...sc, changedInputs: changed };
 }
 

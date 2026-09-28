@@ -1168,12 +1168,12 @@ describe('DF8 — BA-29 amended: the admin backfill\'s refresh mode re-merges wr
     expect(t.writeLog.length).toBe(writes);
   });
 
-  it('BA-29 amended: outside the candle window a refresh re-merges the day but reopens no candle work — a written pass becomes partial, labelled, never pending', async () => {
+  it('BA-29 amended: outside the candle window a refresh re-merges the day but reopens no candle work — a written pass is expired (Amendment C, BA-25 amended), labelled, never pending', async () => {
     const { fx, t } = await grownDay({ candles: true });
     const r = await call(t, { backfill: RANGE, refresh: '1' }, Date.parse('2026-10-26T15:00:00.000Z'));
     expect(r.body.refreshed).toEqual([expect.objectContaining({ battleId: fx.battleId, etDate: D })]);
     const tape = tapeOf(t, fx.battleId);
-    expect(tape.passes.candles).toMatchObject({ status: 'partial', reason: 'inputs_changed_outside_window', changedInputs: ['checks'] });
+    expect(tape.passes.candles).toMatchObject({ status: 'expired', reason: 'inputs_changed_outside_window', changedInputs: ['checks'] });
     expect(tape.coverage.replay.note).toMatch(/built before the candle inputs changed \(checks\) — outside its retry window, not rebuilt/);
   });
 

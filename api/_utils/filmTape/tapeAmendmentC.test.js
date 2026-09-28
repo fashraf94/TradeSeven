@@ -26,6 +26,7 @@ import { replayAction } from './tapeReplay.js';
 import { replayBuiltFrom, priceBuiltFrom } from './candleInputs.js';
 import { sessionBars } from './bars.js';
 import { sessionFor } from './tapeTime.js';
+import { formatTapeMarkdown } from './tapeExport.js';
 import { makeTapeDb } from './__fixtures__/tapeFirestore.js';
 import { seedDay, capturedDay, noTriggerDay } from './__fixtures__/tapeFixtures.js';
 import { flatRows, fetcherOf } from './__fixtures__/tapeBars.js';
@@ -47,6 +48,8 @@ const holed = (price, fromUtc, toUtc) => flatRows(D, price).filter((r) => r.time
 const world = (fx) => makeTapeDb(seedDay({}, fx));
 const write = (t, fx, now = NIGHT) => writeTapeDay(fx.battleId, D, { db: t.db, now });
 const tapeOf = (t, id, d = D) => t.store.get(tapePath(id, d));
+const seriesOf = (t, id, d = D) => [...t.store.entries()].filter(([k]) => k.startsWith(`${tapePath(id, d)}/series/`)).map(([, v]) => v);
+const under = (t, prefix) => t.writeLog.filter((w) => w.path === prefix || w.path.startsWith(`${prefix}/`));
 const morning = (t, bars = allBars(), at = MORNING) => runCandlePass({ db: t.db, fetchCandles: fetcherOf(bars).fetchCandles, clock: () => at, startMs: at });
 const amdTsla = (tape) => tape.actions.find((a) => a.symbolOut === 'AMD');
 const koPlan = (tape) => tape.plans.find((p) => p.symbol === 'KO');
@@ -328,5 +331,70 @@ describe('BA-37 (R2-3) — writeTapeDay assembles from the battle document it re
     calls = tapeOf(t, fx.battleId).coverage.calls;
     expect(calls.caveats).toEqual([]);
     expect(calls.status).toBe('complete');
+  });
+});
+
+// ── BA-25 amended — outside the window, changed inputs expire the pass (R3-3) ─
+
+describe('BA-25 amended (R3-3) — outside the candle window, a written pass whose inputs changed is expired, never partial', () => {
+  const OUTSIDE = Date.parse('2026-10-26T15:00:00.000Z');          // a month on: no candle pass comes back for 2026-09-24
+  const NEXT_MORNING = Date.parse('2026-10-27T11:00:30.000Z');
+  const TERMINAL = 'terminal: its inputs changed outside its retry window — the output built before the change stays; no candle pass will run for this day again';
+
+  /** capturedDay written without tick 10 and enriched (written), then tick 10 restored to the source. */
+  async function grownDay() {
+    const fx = await capturedDay();
+    const tick10 = fx.ticks.find((tk) => tk.tickSeq === 10);
+    const t = makeTapeDb(seedDay({}, { ...fx, ticks: fx.ticks.filter((tk) => tk.tickSeq !== 10) }));
+    await write(t, fx);
+    await morning(t);
+    expect(tapeOf(t, fx.battleId).passes.candles.status).toBe('written');
+    t.store.set(`agentBattles/${fx.battleId}/ticks/${tick10.tickId}`, tick10);
+    return { fx, t };
+  }
+
+  it('R3-3: a refresh outside the window re-merges the recovered check — the written pass is expired with reason inputs_changed_outside_window, its output kept and labelled; the next sweep never touches it, and the read-out says no pass will come', async () => {
+    const { fx, t } = await grownDay();
+    const before = structuredClone(tapeOf(t, fx.battleId));
+    const r = await runBackfill({ db: t.db, clock: () => OUTSIDE, dates: [D], refresh: true });
+    expect(r.refreshed).toEqual([expect.objectContaining({ battleId: fx.battleId, etDate: D })]);
+    const tape = tapeOf(t, fx.battleId);
+    expect(tape.passes.candles).toMatchObject({ status: 'expired', reason: 'inputs_changed_outside_window', changedInputs: ['checks'] });
+    expect(tape.actions.map((a) => a.replay)).toEqual(before.actions.map((a) => a.replay));   // the output stays
+    expect(tape.plans.map((p) => p.price)).toEqual(before.plans.map((p) => p.price));
+    for (const s of ['replay', 'series']) {
+      expect(tape.coverage[s].status, s).toBe('partial');
+      expect(tape.coverage[s].note, s).toMatch(/built before the candle inputs changed \(checks\) — outside its retry window, not rebuilt/);
+    }
+    // the next morning: the sweep never selects it, and nothing under it is written
+    const writes = under(t, tapePath(fx.battleId)).length;
+    const s = await morning(t, allBars(), NEXT_MORNING);
+    expect(s.expired).not.toContain(tapePath(fx.battleId));
+    expect(under(t, tapePath(fx.battleId))).toHaveLength(writes);
+    expect(tapeOf(t, fx.battleId).passes.candles).toEqual(tape.passes.candles);
+    // the read-out prints the terminal words beside the pass
+    const md = formatTapeMarkdown(tapeOf(t, fx.battleId), seriesOf(t, fx.battleId));
+    expect(md).toContain(`\`inputs_changed_outside_window\``);
+    expect(md).toContain(TERMINAL);
+  });
+
+  it('BA-25 amended: through the nightly close pass as well — an action recorded after the candle pass, merged a month on, expires the written pass with the same reason, and names what changed (the actions, and the symbol it brings)', async () => {
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    await morning(t);
+    const battle = t.store.get(`agentBattles/${fx.battleId}`);
+    battle.trades.push({ ...battle.trades[1], symbolOut: 'PEP', symbolIn: 'COST', slotIndex: 0, tier: 'support', entryPrice: 170, exitPrice: 171, lockedPoints: 0.6, lockedGainPct: 0.588, swappedOutAt: '2026-09-24T18:00:10.000Z' });
+    t.store.set(`agentBattles/${fx.battleId}`, battle);
+    await write(t, fx, Date.parse('2026-10-26T02:15:30.000Z'));
+    const tape = tapeOf(t, fx.battleId);
+    expect(tape.passes.candles).toMatchObject({ status: 'expired', reason: 'inputs_changed_outside_window', changedInputs: ['actions', 'symbols'] });
+    expect(tape.coverage.replay.note).toMatch(/built before the candle inputs changed \(actions, symbols\) — outside its retry window, not rebuilt/);
+  });
+
+  it('GUARD: inside the window a written pass whose inputs changed is re-queued (pending, inputs_changed), never expired', async () => {
+    const { fx, t } = await grownDay();
+    await runBackfill({ db: t.db, clock: () => Date.parse('2026-09-28T15:00:00.000Z'), dates: [D], refresh: true });
+    expect(tapeOf(t, fx.battleId).passes.candles).toMatchObject({ status: 'pending', reason: 'inputs_changed', changedInputs: ['checks'] });
   });
 });
