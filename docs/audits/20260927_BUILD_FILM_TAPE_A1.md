@@ -7,6 +7,24 @@
 
 ## Executive verdict (for Flash)
 
+> **Update: Astra's delta review of `8e754eb8`.** Astra returned DO NOT MERGE, with eight findings
+> (DF1–DF8) and a hygiene item. Spec V1.2 Amendment B rules on them as BA-31 to BA-35, with BA-26,
+> BA-27 and BA-29 amended. All nine are fixed, each red first, and the controls stayed green at
+> every commit. This round's own §2 review found five more defects, each in this round's code or
+> made reachable by it, and they are fixed the same way; it also found two gaps in the tests, now
+> closed. **§9** records the round:
+>
+> - one row per finding;
+> - the class declarations and the new candle status vocabulary (`expired`, `exhausted`);
+> - the census, still seven sites;
+> - the cost, re-measured: round trips unchanged;
+> - a 67-mutant run: 66 red, and one equivalent;
+> - the D05 residual, stated plainly;
+> - four items for Fable to rule on, and a short backlog.
+>
+> The branch is now `claude/tender-cray-k5or48`. §9 supersedes the parts of §8 it names. There is
+> still no PR, no merge, no flag flip and no index deploy.
+
 > **Update, 2026-09-28: Astra's branch review.** Astra reviewed `e7e527e7` and returned DO NOT MERGE,
 > with nine findings (F1–F9) and R08. All of them are fixed on this branch under spec V1.2 Amendment A
 > (BA-23 to BA-30), each red first. **§8** records the round:
@@ -1223,6 +1241,632 @@ transaction checks every write before applying any; write call-site recording at
      normal validation environment.
 6. **Routed, not fixed:** the live-scoring defect (§6.9; Astra §7, R21) goes to the Command Center
    arc.
+
+---
+
+## 9. Astra delta findings and fixes (spec V1.2 Amendment B)
+
+Astra's delta review of this branch at `8e754eb8`
+(`docs/audits/20260929_ASTRA_DELTA_REVIEW_FILM_TAPE_A1.md`) returned **DO NOT MERGE**. It confirmed
+that F1–F9 and R08 are closed. It then found eight new gaps (DF1–DF8, repros D01–D13) and one
+hygiene item (its §4, control C13), and it pinned what already worked with sixteen controls
+(C01–C16). Amendment B (`docs/specs/FILM_ROOM_BUILD_A_TAPE_SPEC_V1_2_AMENDMENT_B_20260929.md`)
+accepts every finding and Astra's contest of the BA-26 reading. It rules on them as BA-31 to BA-35,
+with BA-26, BA-27 and BA-29 amended, and it governs where it and Amendment A differ. This section
+records the fix round. It **supersedes** these parts of §8:
+
+- the BA-26 reading in §8.8, that a limit never overrides stored coverage (withdrawn by Amendment B;
+  §9.9);
+- the BA-29 look-back bullet in §8.8 (the look-back is removed, BA-32);
+- the "Out of scope" note on a malformed final day in §8.8 (now rejected, BA-35);
+- every place §8 calls a closed-out tape `failed`, `retry_window_elapsed` (it is `expired` now,
+  and the third failed attempt is `exhausted`, BA-32);
+- §8.10 item 5's "BA-29 names the backfill entry as your repair path" (the repair path is the
+  backfill's `refresh=1`, BA-29 amended).
+
+Everything else in §8 stands as written for `8e754eb8`.
+
+**The branch.** This session is bound to `claude/tender-cray-k5or48`, cut from `8e754eb8`. Per the
+prompt, it replaces `claude/hopeful-keller-0xgl6p` for review and merge. The old branch is untouched.
+
+**Same rules as before.** No PR, no merge, no flag flip, no index deploy. No BUILD_RULES §1 file is
+edited. Nothing outside the ruling table was widened. The live-scoring defect (Astra §4, R21; §6.9
+here) is not touched.
+
+**Two inputs were not as expected. Both are disclosed.**
+
+- **Amendment B was not attached.** The upload slot carried Amendment A (byte-identical to the
+  committed file). The founder supplied Amendment B in the session, and it is committed verbatim
+  as supplied between its markers.
+- **Astra's evidence zip was not attached.** Nothing from it is committed. Every control and every
+  repro below was rebuilt as a row from the review's text, and each rebuilt repro was seen red at
+  `8e754eb8` before its fix.
+
+### 9.1 Gate
+
+| Item | Result |
+|---|---|
+| Branch and tip | After `git fetch`, `claude/hopeful-keller-0xgl6p` was at `8e754eb8692abc5e0e2540170d23f7ea20aa2118` as named. The code tip was `124f5782`, and the tree was clean. `claude/tender-cray-k5or48` was fast-forwarded to `8e754eb8` |
+| The two documents, committed first (docs only) | `939fe5f9`. Astra's delta review is byte-exact to the attachment (sha256 `651c468c…6e57`). Amendment B is verbatim as supplied (sha256 `6a6febce…fb01`) |
+| Baseline at `8e754eb8`, Linux | **Full suite:** 820 files, 16,322 tests: 16,257 passed, 64 skipped, **1 failed**; exit 1. The failure is not a tape row, and it depends on the date (below). **Tape suites:** 15 files, 329 tests, all passed. **Rules suite on the emulator:** 18 files, 332 tests, all passed |
+| The review and Amendment B | Read in full. Every repro was rebuilt as a row and **seen red at `8e754eb8`** before its fix (§9.2). Every control was rebuilt as a row and seen green there (§9.3) |
+
+**The one baseline failure is outside the tape, and not fixed.** The failing row is in
+`src/components/League/backing/backingDark.test.jsx`: "flag ON — the same mounts light up … mobile:
+the strip renders from the pod list …", `expected 3 to be 2` at `:476`. Its expected count is
+computed from the wall clock (`backingWeekKeys(new Date(), '2026-W40')`, `:475-476`), while the
+fixture's weeks are fixed (2026-W39 and 2026-W40). It passed on 2026-09-27 (§8.9). It fails on
+2026-09-28, the first day of ISO week 2026-W40 and the day of this run. It fails identically at
+`origin/main` `ef80da13`, where the branch was cut, and no tape file touches it. BUILD_RULES §3
+says a bug outside the task is reported, not fixed, so it is reported in §9.13. The prompt
+expected 0 failing; this row is the only difference, at the baseline and at the tip.
+
+### 9.2 One row per finding
+
+"Red first" means the row failed at `8e754eb8` before its fix commit and passes after it. Every row
+is in `api/_utils/filmTape/tapeAstraDelta.test.js` unless another file is named, and each is named
+by its repro id. Rows marked **guard** pass at both SHAs: they pin the other side of the ruling.
+§9.7 names the mutants that each row fails under.
+
+| Finding (Astra's severity) | Ruling | Commit | The fix | Red-first rows (red at `8e754eb8`) | Mutants (§9.7) |
+|---|---|---|---|---|---|
+| **DF1** (major). Fingerprint equality did not mean replay-input equality (D01, D02, D13). | BA-31 | `d5011981` | The candle input identity is **value-sensitive**. `candleInputFingerprint` (`candleInputs.js:109`) digests the values each consumer reads, from one set of extractors (`checkValues`, `evidenceValues`, `actionValues`, `planValues`, `:89-102`). Per action: both legs' replay-input values (entry, ATR, tier, direction, threshold history, baseline), `lockedPoints`, the swap instant and `subsequentTradesInSlot`. Per check: the evidence `px` and `chg` that `boughtVsEvidence` reads. Per symbol: its role and its sector ETF. Provenance and bookkeeping stay out, so preserving a fact never moves it (C01). The §2 review added the recount of `subsequentTradesInSlot` from merged rows (R2-2, `e0e3f472`), so a read that lost a trade does not move it either. | D01 (AMD's entry 150 → 200 and its banked points −12.5 → 20: re-queued, and a rebuild gives another gap); D02 (TSLA's recorded evidence price 103 → 140: evidence named as changed, and the next morning reconciles against 140); D13 (the real close writer copies a corrected entry, 150 → 300, re-queues, and the next morning rebuilds from 300) | X31a, X31b and X31c, all red. X31b and X31c survived the first run; the new DF1 row kills both |
+| **DF2** (major). Keeping an old replay removed its stale label (D10). | BA-31 | `281aacda` | Each output unit stores **`builtFrom`**, the hash of its own inputs when it was built: each `actions[].replay` (`replayBuiltFrom`, `candleInputs.js:155`), each `plans[].price` (`priceBuiltFrom`, `:164`) and each series document (`seriesBuiltFrom`, `:167`). A unit is current only while its `builtFrom` equals the hash of its inputs on the tape now. A kept unit keeps its own `builtFrom`. While it is stale, its section is at most `partial` and names it, and the pass stays `partial` with reason `built_before_inputs_changed` (`candlePass.js:343`, `:444-487`). `inputFingerprint` stays the re-queue trigger. The §2 review added that a plan price missing an input also holds `coverage.series` partial (R1-2, `6d3d2a2d`). | D10 (tick 10 recovered, then every refetch fails: replay coverage read `complete`); a plan re-keyed to another symbol kept the old symbol's price as `written`; `builtFrom` on every unit, unmoved by provenance | X31d–X31i, all red. X31g survived the first run; a new DF2 row kills it. The review's R1-2m is red |
+| **DF3** (major). Old complete coverage masked new unreadable dependencies (D03). | BA-26 amended | `3cf7e277` | Each close-pass section stores **`dependsOn`**, the hash of the ids it depends on (`sectionDependsOn`, `tapeMerge.js:253`). Each limit names its source (`LIMIT_SOURCES`, `tapeAssemble.js:30`), and a read's limits reach the merge as `readLimits`, which is stripped before anything is written (`tapeMerge.js:357`). When the merged dependencies differ from the stored `dependsOn` and the read hit a limit, the limit becomes the caveat `unresolved_dependency: <source> on a read after this section's dependencies changed`. It holds the section at most `partial`, and it stays until a read with no limit observes the new dependencies (`mergeCoverage`, `:281`). The §2 review tightened "observes": the read's own dependencies must be all the merged ones (R2-1, `55c46ea4`, §9.9). | D03 (calls and declarations unreadable on the read that brings a new evaluation: calls merged to `complete`); the sticky-then-cleared row. **Guard:** dependencies that change on a read with no limit are simply observed | X26a–X26f, all red (X26a and X26c were re-targeted after R2-1). The review's R2-1a–d are red |
+| **DF4** (major). The bounded sweep did not resume past rows it could not remove (D04, D12, D05). | BA-32 | `c8239172` | Terminal candle work has its own statuses: **`expired`** (reason `retry_window_elapsed`, written by the close-out writer, `candlePass.js:389`) and **`exhausted`** (reason `attempts_exhausted`, the third unsuccessful attempt, fetched `:339` or thrown `:673-677`). `failed` means retryable only. Every candle query selects only `pending`, `partial` or `failed` (`CANDLE_SELECTABLE_STATUSES`, `src/constants/filmTape.js:89`), so a terminal tape never occupies a query result, and a close-out takes its tape out of every query. The 60-session look-back is removed. A terminal tape whose inputs change keeps its status (BA-25), and its label says no pass will rebuild it. The read-out prints the terminal words (`tapeExport.js:38`). D05 is the accepted residual (§9.10). | D04 (1,000 terminal rows read on each of two mornings); D12 (both retryable tapes left `fetch_failed`); the third attempt, fetched or thrown, ends `exhausted`; an exhausted tape inside its window is not re-queued; the read-out's terminal words. **D05** passes at both SHAs: it is the residual row | X32a–X32h, all red. The review's R3-4a and R3-4b are red |
+| **DF5** (major). The sweep's time floor was checked only between pages (D06). | BA-33 | `e72f007e` | The sweep checks its bounds before every page **and before every close-out** (`candlePass.js:529-531`, `:548`). It may spend at most **60 s** of a run (`EXPIRY_SWEEP.shareMs`, `:103`) and never crosses the run's 30 s floor. When a bound stops it, it reports `complete: false` and `stoppedBy` (`marks`, `reads`, `share` or `floor`), and it resumes the next morning without a cursor (BA-32). The §2 review put the selection's own close-outs under the same clock (R1-4, `70597a4b`). | D06 (4 s per close-out: 100 close-outs, 400 s of a 300 s run, the day's tape `notReached`); the floor row (50 s left: it stops before the close-out that would cross the floor, mid-page) | X33a–X33c, all red. The review's R1-4m and R1-4n are red |
+| **DF6** (major). Equal-sized series could lose saved facts (D07, D11). | BA-34 | `6f93e5ad` | Each 10-minute bar stores **`m`**, the number of 1-minute bars it was built from (`bars.js:134-135`). `keepSeries` (`candlePass.js:276`) merges saved and new **fact by fact**. Per bucket, the bar built from more minutes wins, and a tie keeps the stored bar. Per check, a saved price is never replaced by null, and is replaced by another price only when that price's bar completed later. A merge that keeps any earlier fact carries `preservedFrom`; a true superset replaces cleanly and clears it (C07). Coverage is computed from the merged series. A saved sample whose check left the tape leaves with it. The first version kept such samples; the §2 review showed they block the clean replace (R1-5, `50d6ac8f`). | D07 (the saved 12:00:20 ET price, 100, became null); D11 (the whole 11:50 ET bucket was replaced by a 4-minute one); a tie of other values keeping the stored bars; `m` declared. **Guard:** a later-completed bar replaces a saved price, and an earlier one never does | X34a–X34h, all red except X34c, which is equivalent (§9.7). X34g is retired, and the review's R1-5m is red |
+| **DF7** (major). Completed-to-completed merges could rewind the result (D08). | BA-27 amended | `2e3c8771` | The writer takes the battle re-read in its transaction when that re-read is at the assembly's lifecycle state **or later** (`writeTapeDay.js:116`). Its completion block (`status`, `completedAt`, `final`, `result`, `battleStatusAtWrite`) replaces the assembly's whole, and the merge is told it is canonical (`:118-121`). In the merge (`battleWinner`, `tapeMerge.js:335`) the block moves as one unit. The later lifecycle state wins, as before. On a tie, the canonical re-read replaces a stored block it contradicts. A stored block it agrees with stands only while it records a richer result basis. On a tie with no canonical re-read, the stored block stands. | D08 (the tape moved to 15:55 / 9–50 / loss). **Guard:** a planted block the re-read contradicts is replaced whole, and an agreeing re-read keeps the stored basis | X27a–X27e, all red. X27c and X27d survived the first run; two new DF7 rows kill them |
+| **DF8** (minor). The backfill repair still skipped a written day whose sources grew (D09). | BA-29 amended | `2b24cb9b` | The backfill entry gains **`&refresh=1`**, admin-only like the rest of the entry. `runBackfill({ refresh })` re-merges the written days of the range through `writeTapeDay` (`closePass.js:221`). A day whose sources did not change writes nothing and is listed `unchanged`; one that changed is `refreshed`; the response carries `mode: 'refresh'`. The default backfill is unchanged. Refresh reopens no candle work outside the window: such a day's written pass becomes `partial`, labelled. `refresh` takes only `1`, and only with `backfill` (400 `invalid_refresh`, 400 `refresh_requires_backfill`), after the flag check (`api/cron/film-tape-close.js:78-83`). | D09 (restoring tick 10 and running the backfill left the pair `alreadyDone` with its gap); the idempotence row; the outside-window row; the guards (400s where the old handler ran a pass). **Guard:** the default backfill leaves the same grown day `alreadyDone` | X29a–X29f, all red. The review's R2-2m and R3-1m are red |
+| **§4 hygiene**. A malformed final day got a failure record under its malformed id (C13). | BA-35 | `1a92fd6c` | `runClosePass` validates the target as a calendar session (`isEtDate`, `isSessionDate` from `src/utils/tapeSchedule.js`, the module the helper reads) **before** it reads the stored tape, calls `writeTapeDay` or calls `markCloseFailed` (`closePass.js:133-134`). An invalid target is listed in `summary.invalid` as `{ battleId, etDate }`, and nothing is read or written under it. The backfill needs no check, because its dates are sessions by construction. | C13, inverted as the prompt directs: `2026-02-30` and a Saturday final day both wrote at `8e754eb8` | X35a and X35b, both red |
+
+**Commits, oldest first.**
+
+- `939fe5f9`: the docs-only first commit.
+- `c4e1fb7a`: the controls C01–C16 as rows, before any fix, all green at `8e754eb8`.
+- One commit per ruling, in the order above: `d5011981`, `281aacda`, `3cf7e277`, `c8239172`,
+  `e72f007e`, `6f93e5ad`, `2e3c8771`, `2b24cb9b` and `1a92fd6c`.
+- The §2 review's fixes, each red first at its parent (§9.11): `55c46ea4` (R2-1), `e0e3f472`
+  (R2-2), `70597a4b` (R1-4), `50d6ac8f` (R1-5), `6d3d2a2d` (R1-2), and `59e0b09c` (R3-1 and R3-4,
+  rows only).
+- `ef9eafb6`: the mutation run's survivor rows (§9.7).
+
+The report commit follows.
+
+### 9.3 The controls, C01–C16
+
+The controls went in first (`c4e1fb7a`), before any fix, and no control row has been edited since:
+`git log -p` on the file shows only import lines changing after `c4e1fb7a`. Fifteen were green at
+`8e754eb8`. C13 is the exception: the prompt inverts it (BA-35), so it went in with that fix, red at
+`8e754eb8`. **Every commit kept them green.** Each of the round's 17 code commits (`c4e1fb7a` …
+`ef9eafb6`) was re-run in its own `git archive` snapshot: the 15 tape suites and the delta file,
+with 120 s timeouts. Every row passed at every commit, from 344 tests to 387. The controls were 15 /
+15 through `2b24cb9b` and 16 / 16 from `1a92fd6c`, where C13 joined.
+
+| Control | What it pins | Row (all in `tapeAstraDelta.test.js`) |
+|---|---|---|
+| C01 | Unchanged facts, preserved facts and an add-then-remove before the close pass all leave the input identity equal; bookkeeping never moves it | C01 |
+| C02 | A terminal tape whose inputs change keeps its terminal status: merged twice, it records `changedInputs`, lowers its coverage once and carries one label | C02 |
+| C03 | An unchanged dependency set keeps complete coverage through a read that fails, and a known caveat stays on later runs | C03 |
+| C04 | An ordinary backlog of 205 aged-out tapes closes 100 / 100 / 5 over three mornings, and the first morning still enriches the day | C04 |
+| C05 | A close-out that throws mid-page costs only itself; the next morning closes it | C05 |
+| C06 | A terminal tape behind the scan never costs a transaction; a foreign row is skipped, counted and never written | C06 |
+| C07 | A six-minute halt from 10:55 ET leaves the 11:00:20 check null beside the 10:55 bar's close (`partial`); a whole refetch prices it, writes the pass and clears `preservedFrom` | C07 |
+| C08 | A close sample may be exactly five minutes old (15:55:00 ET), never a second older; an early close is whole at 21 buckets | C08 |
+| C09 | A response covering as many minutes but pricing fewer checks never costs the saved series a price | C09 |
+| C10 | A saved series built before a recovered check, whose refetch fails, says "built before 1 check(s) were recorded", and the pass stays queued | C10 |
+| C11 | Two backfills overlapping a completion: the stale one retries its transaction, and the tape keeps completed, 42 | C11 |
+| C12 | The hub's `pending` is backed by a real close-pass write: the Tuesday follow-up, a final day two sessions before the completion, and a timeline that skips a session | C12 |
+| C13 | **Inverted by BA-35.** A selected battle whose final day is impossible (`2026-02-30`) or no session (a Saturday) is counted in `summary.invalid`, and nothing is written | C13 (inverted), with the BA-35 fix |
+| C14 | A check already saved on the tape stays after its source disappears, and the candle pass still owes the rebuild | C14 |
+| C15 | The scanner sees exactly the write sites the allowlist names: seven, one each, each with its human-review note | C15 |
+| C16 | One calendar: the schedule module imports only the calendar and the tape constants, both import nothing, and the server re-exports the very same functions | C16 |
+
+**Two controls reach the terminal state through the code's own writer** (C02 through
+`markRetryWindowElapsed`, C06 through it and `nextCandleState`). They do not name a status value, so
+each states the same fact under the old vocabulary and BA-32's. **C10's refetch fails.** The review
+does not say how its refetch went. With a shorter response, BA-34 now takes that response's fresh
+price for the recovered check, so the label would no longer be owed, and the row would test nothing.
+
+### 9.4 Class declarations, and the candle status vocabulary
+
+**Class declarations** (BA-21; `src/constants/filmTape.js`):
+
+| Field | Where it lives | Type | Class |
+|---|---|---|---|
+| `bars[].m` | `tape/{etDate}/series/{symbol}`: the 1-minute bars a 10-minute bar was built from (BA-34) | number | **`market`**, declared in `SERIES_NUMBER_CLASSES` (`:254`) |
+| `bars[].n` | the same count under the name A1 shipped; kept so no reader breaks | number | `market` (unchanged) |
+| `builtFrom` | each `actions[].replay`, each `plans[].price`, each series document (BA-31) | string, 16 hex characters | **none**: a string carries no class |
+| `coverage.<section>.dependsOn` | the seven close-pass sections: checks, actions, directives, plans, calls, rationale, evidence (BA-26 amended) | string, 16 hex characters | **none** |
+| `passes.candles.inputFingerprint` | unchanged in shape: five strings | strings | none (unchanged) |
+| `readLimits` | the assembly's hand-off to the merge; **never stored** (`mergeTape` strips it) | — | — |
+
+The read-out's declaration golden (`tapeExport.test.js`) gained `bars[].m` and no other number. The
+class-walk rows pass at the tip: `candlePass.test.js` "every number is classed — the tape after the
+candle pass, and every series document", and `writeTapeDay.test.js` "every number in the document
+carries exactly one of the four classes" on every fixture. On this round's code they walk `m` on
+every series bar and find no unclassed number.
+
+**The candle status vocabulary** (BA-32; `CANDLE_PASS_STATUSES`, `src/constants/filmTape.js:87`):
+
+| Status | Terminal? | Selected by a candle query? | Reason(s) it carries | Written by |
+|---|---|---|---|---|
+| `pending` | no | yes | none; or `inputs_changed` / `sources_changed` when the close pass re-queues | the close pass |
+| `partial` | no | yes | `symbols_missing`, `bars_incomplete`, `built_before_inputs_changed` (**new**, BA-31), `replay_incomplete`; the close pass also lowers a written pass outside the window | the candle pass, the close pass |
+| `failed` | no: **retryable only** | yes | `fetch_failed`; `error: …` for a thrown attempt | the candle pass |
+| `written` | yes, done | no | none | the candle pass |
+| **`expired`** (new) | **yes** | **never** | `retry_window_elapsed` | the close-out writer `markRetryWindowElapsed` |
+| **`exhausted`** (new) | **yes** | **never** | `attempts_exhausted` (third unsuccessful attempt, fetched or thrown) | the candle pass |
+| `skipped` | yes | no | `outside_candle_window`, `close_pass_failed`, … | the close pass |
+
+`CANDLE_SELECTABLE_STATUSES` is `pending`, `partial` and `failed`; `CANDLE_TERMINAL_STATUSES` is
+`expired` and `exhausted`. The wiring pins (`tapeWiring.test.js`) assert that no issued query names
+a terminal status, and that the sweep bounds `etDate` from above only. The read-out appends, for a
+terminal day: "terminal: its retry window elapsed — no candle pass will run for this day again" (or
+"its attempts are spent — …").
+
+### 9.5 The write census: still seven
+
+No write site was added, moved to another function or removed. Every site still writes through a
+reference `tapeRef` builds from ids the writer was given or validated. C15 and the F9 census row both
+pass at the tip: the scanner's census, the runtime census and the allowlist agree on seven keys at
+count 1. Two allowlist notes were updated to name the new statuses (`markRetryWindowElapsed::update`
+writes `expired`; `runCandlePass::update` writes `failed` or, on the third attempt, `exhausted`), so
+the founder's human review still covers seven notes, and two changed wording.
+
+| # | Site at the tip | Function | Operation | Allowlist key (count) |
+|---|---|---|---|---|
+| 1 | `writeTapeDay.js:122` | `writeTapeDay` | `tx.set` | `writeTapeDay::set` (1) |
+| 2 | `writeTapeDay.js:147` | `markCloseFailed` | `tx.update` | `markCloseFailed::update` (1) |
+| 3 | `writeTapeDay.js:153` | `markCloseFailed` | `tx.set` | `markCloseFailed::set` (1) |
+| 4 | `candlePass.js:494` | `processTape` | `tx.set` (series) | `processTape::set` (1) |
+| 5 | `candlePass.js:495` | `processTape` | `tx.update` | `processTape::update` (1) |
+| 6 | `candlePass.js:389` | `markRetryWindowElapsed` | `tx.update` (now writes `expired`). Called by the sweep (`:552`) and by the selection (`:638`), both now under one clock (R1-4) | `markRetryWindowElapsed::update` (1), note updated |
+| 7 | `candlePass.js:674` | `runCandlePass` | `tx.update` (thrown attempt; `exhausted` on the third) | `runCandlePass::update` (1), note updated |
+
+The refresh path writes only through site 1: it calls `writeTapeDay`, as the default backfill does.
+BA-35 means the close pass no longer reaches sites 1–3 with a malformed target. The review's
+fixes added no write site: R1-4 bounds the existing close-out calls, and the rest change what a
+write contains, not where it goes.
+
+### 9.6 Cost, re-measured
+
+The §8.5 scratch harness (never committed) ran unchanged on three snapshots: `8e754eb8`, `1a92fd6c`
+(the rulings' fixes) and the code tip `ef9eafb6` (with the review's fixes). The last two gave
+identical numbers. It runs the real `writeTapeDay` and `runCandlePass` over the fixture set on the in-memory
+store and counts operations. A `getAll` of N documents is one round trip that bills N reads.
+
+**Round trips did not change**, so the §8.5 budget figures stand.
+
+| | `8e754eb8` | `1a92fd6c` and `ef9eafb6` |
+|---|---|---|
+| Close pass, per battle-day: reads / round trips / writes | capturedDay 11 / 12 / 1; noTriggerDay, budgetDay, completedDay, preCaptureDay 10 / 11 / 1; skippedModeDay 2 / 3 / 1; multiDay 10–11 / 11–12 / 1 | **identical** |
+| Candle morning (6 tapes, 70 series): requests, reads, round trips, writes | 58, 80, 22, 76 | **identical** |
+| The next morning, nothing selectable | 4 queries | 4 queries (the sweep's three and the selection) |
+
+- **Size.** Each close-pass tape grew by **217 bytes**: the seven `dependsOn` strings. A flat6 tape
+  is unchanged. After the candle morning the six tapes grew by 1,519 bytes in all (each replay's and
+  each price's `builtFrom`). The 70 series grew by 22,680 bytes in all, about 324 bytes each: `m` on
+  every bar, and `builtFrom`. The largest tape is 73,091 bytes (it was 72,843), and the largest
+  series 8,352 bytes (it was 8,028), both far inside the spec's "well under 200 KB".
+- **The sweep.** BA-33 adds no read: the clock is checked before each close-out, with no call.
+  BA-32 **lowers** the sweep's cost when terminal tapes exist. At `8e754eb8` each terminal `failed`
+  tape inside the look-back was re-read every morning (D04: 1,000 reads, twice). Now no terminal
+  tape is ever a query result, so a morning with no work left reads nothing past its three empty
+  queries.
+- **Refresh, the new path** (admin-invoked only). Over a written day whose sources did not change,
+  `refresh=1` costs 13 reads, 14 round trips and **0 writes**: the backfill's own reads, the tape
+  read, and one `writeTapeDay` that finds nothing to write. The default backfill over the same day
+  costs 4 reads, 4 round trips and 0 writes. A refreshed day that changed costs the same plus one
+  write. So refresh is the close pass's cost for each written day of its range, and a range should
+  be as narrow as the repair needs.
+
+### 9.7 Mutation results
+
+**How it ran.** Each mutant was applied alone in a `git archive` snapshot with `node_modules`
+symlinked; the working tree was never mutated. After each mutant, 18 files ran with the JSON
+reporter:
+
+- the 15 tape suites;
+- `tapeAstraDelta.test.js`;
+- the protected-store scan;
+- the calendar's session rows.
+
+In the final run the per-test and per-hook timeouts were 120 s, so load could not fake a red. The
+first run raised only the per-test timeout: in X31f's run, one other file's setup hook timed out
+beside the real failing assertion. Each mutated file was restored from memory and byte-checked.
+Every red below was checked in its JSON report: each rests on an assertion that failed, never on a
+timeout or on a file that failed to load.
+
+**The set.** The prompt asks for the builder's own mutants, at least one per ruling's key rule, plus
+Astra's nine (M01–M06, M08, M10, M11; there is no M07 or M09).
+
+- **First run, at `1a92fd6c`, before the §2 review:** 56 mutants. These were Astra's nine and 47
+  of the rulings' own: BA-31 X31a–i, BA-26 X26a–f, BA-32 X32a–h, BA-33 X33a–c, BA-34 X34a–h,
+  BA-27 X27a–e, BA-29 X29a–f and BA-35 X35a–b. **49 were red and 7 survived.** Each survivor now
+  has a row (`ef9eafb6`) or a stated reason:
+  - **X31b** (a leg's entry by presence) and **X31c** (lockedPoints by presence). D01 moves both
+    at once, and the real writer moves a leg's entry and its baseline together. The new DF1 row
+    moves each value alone.
+  - **X31g** (a kept series built from other inputs not labelled). The real merge cannot reach
+    it. The new DF2 row plants the unit.
+  - **X27c** (a tie with no canonical re-read takes the assembly). The writer always re-reads.
+    The new DF7 row pins the merge's rule directly.
+  - **X27d** (a richer stored basis beats a contradicting re-read). The guard's planted block had
+    the poorer basis. The new DF7 row gives it the richer one.
+  - **X34c is equivalent.** `sessionBars` drops any bar whose OHLC is not finite, so a null
+    sample is always a stale one. Its bar completed earlier than any fresh sample's bar at the
+    same instant, so the later-completion rule already keeps the saved price, and no input can
+    tell the explicit null guard apart. The guard stays as the ruling's own words.
+  - **X34g is retired.** It dropped orphan samples, and R1-5 made that the rule. Its opposite,
+    **R1-5m** (orphans kept), joins the set.
+- **Final run, at the code tip `ef9eafb6`:** 67 mutants. These are the first set less X34g, with
+  X26a and X26c re-targeted to the code R2-1 rewrote, plus 12 new mutants:
+  - one or more for each §2 review fix: R2-1a–d, R2-2m, R1-4m, R1-4n, R1-2m and R1-5m;
+  - R3's three test-integrity mutants: R3-1m, R3-4a and R3-4b.
+
+  **Result: 66 of 67 red.** The one survivor is X34c, the equivalent mutant above. X31b, X31c,
+  X31g, X27c and X27d, which survived the first run, are red under the rows added for them. Astra's
+  nine are all red, M11 included.
+
+**The guard rows fail under these mutants in the final run:**
+
+- DF3's guard: X26c.
+- DF6's guard: X34d, and also M01, M11 and X34e.
+- DF7's guard: X27a and X27b.
+- DF8's guard: X29b.
+
+D05's residual row pins BA-23's validation in the sweep. This round's set does not mutate BA-23
+(§8.6's F1 mutants did, at `124f5782`), so no mutant here fails it.
+
+**The controls fail under the mutants of what they guard:**
+
+- C01: M04 and X26f.
+- C03: X26d and X26f.
+- C04–C06: X32a and X32b.
+- C07: M11, X34b, X34f and X34h.
+- C08: M11.
+- C09: M11 and X34e.
+- C13: X35a and X35b.
+
+The other controls pin behaviour no ruling here touched.
+
+| id | ruling | defect introduced | first run (`1a92fd6c`) | final run (`ef9eafb6`) | first row that fails (final run) |
+|---|---|---|---|---|---|
+| M01 | Astra | price from the minute CONTAINING the instant, not the last completed one | RED (10) | RED (10) | bars.test.js: a check at 10:07:30 ET reads the 10:06 bar (completed 10:07:00), never the 10:07 bar that conta… |
+| M02 | Astra | the gap omits the banked points | RED (5) | RED (6) | candlePass.test.js: replays every action, prices every plan, writes a series per symbol, and marks the pass written |
+| M03 | Astra | the bought tick fill first as the sold entry | RED (8) | RED (8) | tapeAstraDelta.test.js: D01: the sold position's entry and the banked points change, every input still present — the me… |
+| M04 | Astra | the close assembly replaces the stored candle columns | RED (11) | RED (11) | candlePass.test.js: a close pass AFTER the candle pass keeps every candle field (write candles, run the close pass,… |
+| M05 | Astra | a fourth helper key, score | RED (20) | RED (20) | reviewAvailability.test.js: stage 1 returns exactly three keys, for every state |
+| M06 | Astra | the close handler's dark-flag guard removed | RED (1) | RED (2) | film-tape-close.test.js: FLAG OFF: 200 flag_off — zero Firestore reads, zero writes, and the admin handle is never taken |
+| M08 | Astra | a suppressed heard entry accepted | RED (1) | RED (1) | tapeReview.test.js: L4-F2: a suppressed stamp is never "heard" — on the entry or on the tick |
+| M10 | Astra | evaluations eviction detection disabled | RED (3) | RED (3) | tapeAstraReview.test.js: F5 R13 (BA-20 amended): at the 150 cap with the oldest surviving entry before this day nothing … |
+| M11 | Astra | a nonempty session shorter than 390 minutes collapsed to one minute | RED (20) | RED (21) | bars.test.js: drops pre-market, the 16:00 closing-auction row, after-hours and the next day's rows |
+| X31a | BA-31 | evidence part back to presence | RED (1) | RED (1) | tapeAstraDelta.test.js: D02: a recorded evidence price the reconciliation read changes (103 → 140) — the close pass nam… |
+| X31b | BA-31 | a leg's entry by presence | **survived** | RED (1) | tapeAstraDelta.test.js: BA-31: each value the replay consumes moves the identity on its own — the banked points alone r… |
+| X31c | BA-31 | lockedPoints by presence | **survived** | RED (1) | tapeAstraDelta.test.js: BA-31: each value the replay consumes moves the identity on its own — the banked points alone r… |
+| X31d | BA-31 | a stale kept replay not detected | RED (1) | RED (1) | tapeAstraDelta.test.js: D10: tick 10 recovered, then every refetch fails — the replay kept from before tick 10 is still… |
+| X31e | BA-31 | a kept replay relabelled current (stamped with the current builtFrom) | RED (1) | RED (1) | tapeAstraDelta.test.js: D10: tick 10 recovered, then every refetch fails — the replay kept from before tick 10 is still… |
+| X31f | BA-31 | a stale kept plan price not detected | RED (1) | RED (1) | tapeAstraDelta.test.js: BA-31: a plan whose symbol changed under the same key keeps the price built for the old symbol … |
+| X31g | BA-31 | a kept series built from other inputs not labelled | **survived** | RED (1) | tapeAstraDelta.test.js: BA-31: a kept series whose builtFrom is not its inputs' identity now is labelled and never writ… |
+| X31h | BA-31 | stale units do not keep the pass from written | RED (1) | RED (1) | tapeAstraDelta.test.js: BA-31: a plan whose symbol changed under the same key keeps the price built for the old symbol … |
+| X31i | BA-31 | replay coverage ignores staleness | RED (1) | RED (1) | tapeAstraDelta.test.js: D10: tick 10 recovered, then every refetch fails — the replay kept from before tick 10 is still… |
+| X26a | BA-26 | a limit over changed dependencies adds no caveat | RED (2) | RED (4) | tapeAstraDelta.test.js: D03: calls and declarations unreadable on the read that brings a new evaluation expecting a dec… |
+| X26b | BA-26 | unresolved_dependency never cleared | RED (1) | RED (3) | tapeAstraDelta.test.js: BA-26 amended: the caveat is sticky while the source stays unreadable, and a read that observes… |
+| X26c | BA-26 | unresolved_dependency whenever dependencies change, limit or not (never cleared) | RED (2) | RED (4) | tapeAstraDelta.test.js: BA-26 amended: the caveat is sticky while the source stays unreadable, and a read that observes… |
+| X26d | BA-26 | every limit adds the caveat, dependencies unchanged or not | RED (2) | RED (4) | tapeAstraDelta.test.js: C03: an unchanged dependency set keeps its complete coverage through a read that fails — and a … |
+| X26e | BA-26 | readLimits leaks into the stored document | RED (1) | RED (1) | writeTapeDay.test.js: has every top-level field, both passes, and a coverage object (BA-20) for every section |
+| X26f | BA-26 | no dependsOn on the first write | RED (8) | RED (8) | tapeAstraDelta.test.js: C01: the input identity moves with no bookkeeping — unchanged facts, preserved facts, and an ad… |
+| X32a | BA-32 | the close-out writes failed (not expired) | RED (14) | RED (14) | candlePass.test.js: a tape that aged out of the 10-session window while waiting is closed out: expired, retry_windo… |
+| X32b | BA-32 | the third attempt stays failed | RED (4) | RED (6) | candlePass.test.js: counts each morning; the third unsuccessful attempt is terminal; a fourth morning never selects… |
+| X32c | BA-32 | a thrown third attempt stays failed | RED (1) | RED (1) | tapeAstraDelta.test.js: BA-32: the third unsuccessful attempt — fetched or thrown — ends `exhausted`, keeping its reaso… |
+| X32d | BA-32 | the 60-session look-back restored | RED (3) | RED (3) | tapeAstraDelta.test.js: D12: a retryable failed tape behind a thousand closed-out ones on its own date is closed out th… |
+| X32e | BA-32 | the sweep queries the terminal statuses too | RED (4) | RED (4) | tapeAstraDelta.test.js: D04: a thousand closed-out tapes behind the scan cost the sweep nothing on two consecutive morn… |
+| X32f | BA-32 | an exhausted tape re-queued inside its window | RED (1) | RED (1) | tapeAstraDelta.test.js: BA-32: an exhausted tape inside its window whose inputs change keeps `exhausted` — changedInput… |
+| X32g | BA-32 | the read-out drops the terminal words | RED (1) | RED (1) | tapeAstraDelta.test.js: BA-32: the read-out says a terminal day will get no candle pass again |
+| X32h | BA-32 | the label promises a pass to an exhausted tape | RED (1) | RED (1) | tapeAstraDelta.test.js: BA-32: an exhausted tape inside its window whose inputs change keeps `exhausted` — changedInput… |
+| X33a | BA-33 | no clock before each close-out (per page only) | RED (2) | RED (2) | tapeAstraDelta.test.js: D06: one page of 100 close-outs at 4 s each would take 400 s of a 300 s run — the sweep stops a… |
+| X33b | BA-33 | no 60 s share | RED (2) | RED (3) | tapeAstraDelta.test.js: D06: one page of 100 close-outs at 4 s each would take 400 s of a 300 s run — the sweep stops a… |
+| X33c | BA-33 | the floor dropped from the sweep's clock | RED (2) | RED (2) | tapeAstraDelta.test.js: BA-33: with 50 s left and a 30 s floor, the sweep stops before the close-out that would cross t… |
+| X34a | BA-34 | a bucket tie goes to the new bar | RED (1) | RED (1) | tapeAstraDelta.test.js: BA-34: a tie keeps the stored bar — a response with the same minutes but other values leaves th… |
+| X34b | BA-34 | the bar from FEWER minutes wins | RED (3) | RED (3) | tapeAstraDelta.test.js: C07: a six-minute halt from 10:55 ET leaves the 11:00:20 check null beside the 10:55 bar's clos… |
+| X34c | BA-34 | a saved price replaced by null | **survived** | **survived** | — (equivalent, see above) |
+| X34d | BA-34 | a saved price replaced by an EARLIER-completed bar | RED (1) | RED (1) | tapeAstraDelta.test.js: BA-34: a saved price is replaced by a price whose bar completed LATER (inside the freshness rul… |
+| X34e | BA-34 | a merge that keeps saved facts not marked | RED (7) | RED (7) | tapeAstraDelta.test.js: C09: a response covering as many minutes but pricing fewer checks never costs the saved series … |
+| X34f | BA-34 | a true superset not replacing cleanly | RED (2) | RED (3) | tapeAstraDelta.test.js: C07: a six-minute halt from 10:55 ET leaves the 11:00:20 check null beside the 10:55 bar's clos… |
+| X34h | BA-34 | m not stored | RED (4) | RED (4) | tapeAstraDelta.test.js: C07: a six-minute halt from 10:55 ET leaves the 11:00:20 check null beside the 10:55 bar's clos… |
+| X27a | BA-27 | the writer takes the re-read only when strictly later | RED (2) | RED (3) | tapeAstraDelta.test.js: BA-27 amended: a stored completion block the re-read contradicts is replaced by the re-read's, … |
+| X27b | BA-27 | a canonical tie always takes the re-read, even when it only lost a stored basis | RED (2) | RED (2) | tapeAstraDelta.test.js: BA-27 amended: a stored completion block the re-read contradicts is replaced by the re-read's, … |
+| X27c | BA-27 | a tie with no canonical re-read takes the assembly | **survived** | RED (1) | tapeAstraDelta.test.js: BA-27 amended: on a tie with no canonical re-read, the stored completion block stands — a stale… |
+| X27d | BA-27 | a richer stored basis beats a canonical re-read that contradicts it | **survived** | RED (1) | tapeAstraDelta.test.js: BA-27 amended: a stored block the re-read contradicts is replaced even when it records the rich… |
+| X27e | BA-27 | battleStatusAtWrite not moved with the block | RED (1) | RED (1) | tapeAstraReview.test.js: F7 R11: an ACTIVE day assembled before the completion, merged after the completed day landed — … |
+| X29a | BA-29 | refresh ignored | RED (3) | RED (3) | tapeAstraDelta.test.js: D09: a written day whose source grew — `?backfill=…&refresh=1` re-merges it: tick 10 is on the … |
+| X29b | BA-29 | the default backfill re-merges written days | RED (5) | RED (5) | film-tape-backfill.e2e.test.js: request 2 (the same request): the written days are skipped by their own passes.close.status; th… |
+| X29c | BA-29 | an unchanged refreshed day listed as refreshed | RED (1) | RED (1) | tapeAstraDelta.test.js: BA-29 amended: refresh is idempotent — a written day whose sources did not change writes nothin… |
+| X29d | BA-29 | refresh bypasses the admin secret | RED (1) | RED (1) | tapeAstraDelta.test.js: BA-29 amended: refresh is admin-only like the rest of the entry, needs a range, and takes only … |
+| X29e | BA-29 | refresh without a range runs the close pass | RED (1) | RED (1) | tapeAstraDelta.test.js: BA-29 amended: refresh is admin-only like the rest of the entry, needs a range, and takes only … |
+| X29f | BA-29 | any refresh value accepted | RED (1) | RED (1) | tapeAstraDelta.test.js: BA-29 amended: refresh is admin-only like the rest of the entry, needs a range, and takes only … |
+| X35a | BA-35 | no target validation | RED (2) | RED (2) | tapeAstraDelta.test.js: C13 (inverted by BA-35): a selected battle whose final day is impossible (2026-02-30) or no ses… |
+| X35b | BA-35 | the date shape checked, not the session | RED (1) | RED (1) | tapeAstraDelta.test.js: C13 (inverted by BA-35): a selected battle whose final day is impossible (2026-02-30) or no ses… |
+| R3-1m | BA-29 | with the flag off, a refresh-shaped request takes the Firestore handle before the flag check | — | RED (1) | tapeAstraDelta.test.js: BA-29 amended (review R3-1): with the writer dark, every refresh-shaped request is 200 flag_off… |
+| R3-4a | BA-32 | the read-out loses the exhausted words | — | RED (1) | tapeAstraDelta.test.js: BA-32: the read-out says a terminal day will get no candle pass again |
+| R3-4b | BA-32 | exhausted is not a terminal status | — | RED (1) | tapeAstraDelta.test.js: BA-32: the read-out says a terminal day will get no candle pass again |
+| R2-1a | BA-26 (review R2-1) | any limit-free read clears unresolved_dependency, observed or not | — | RED (3) | tapeAstraDelta.test.js: BA-26 amended (review R2-1): a limit-free read assembled from the battle as the pass selected i… |
+| R2-1b | BA-26 (review R2-1) | a read that did not observe every dependency may lift the stored coverage | — | RED (1) | tapeAstraDelta.test.js: BA-26 amended (review R2-1): when the limited read is the tape's FIRST write, a later read that… |
+| R2-1c | BA-26 (review R2-1) | no caveat for a read that did not observe changed dependencies | — | RED (1) | tapeAstraDelta.test.js: BA-26 amended (review R2-1): a read that brings one new dependency but never saw another vouche… |
+| R2-1d | BA-26 (review R2-1) | the read's own dependencies are not given to the coverage merge | — | RED (4) | tapeAstraDelta.test.js: BA-26 amended (review R2-1): a limit-free read assembled from the battle as the pass selected i… |
+| R2-2m | BA-31/BA-29 (review R2-2) | the later-trades count is not recounted from the merged rows | — | RED (1) | tapeAstraDelta.test.js: BA-29 amended (review R2-2): a refresh after the day's trades left trades[], on a read with the… |
+| R1-4m | BA-33 (review R1-4) | no bound before the selection's own close-outs | — | RED (1) | tapeAstraDelta.test.js: BA-33 (review R1-4): the selection's own close-outs — tapes aged out inside the scan — share th… |
+| R1-4n | BA-33 (review R1-4) | the selection's close-outs do not spend the shared clock | — | RED (1) | tapeAstraDelta.test.js: BA-33 (review R1-4): the selection's own close-outs — tapes aged out inside the scan — share th… |
+| R1-2m | BA-31 (review R1-2) | a plan price missing an input does not lower coverage.series | — | RED (1) | tapeAstraDelta.test.js: BA-31 (review R1-2): a plan price missing an input holds coverage.series — which carries plan p… |
+| R1-5m | BA-34 (review R1-5) | a saved sample whose check left the tape is kept (orphans) | — | RED (1) | tapeAstraDelta.test.js: BA-34 (review R1-5): a check known first by its entry, then by its tick, is one check — the ent… |
+
+### 9.8 Existing rows that changed, and why
+
+Each change is stated in its commit. None weakens what the row pinned; where a ruling changed the
+behaviour a row pinned, the row now pins the ruling.
+
+| Row (file) | Commit | What changed, and why |
+|---|---|---|
+| the missing-plan-symbol price (`candlePass.test.js`) | DF2 `281aacda` | Its exact price shape gains the price's `builtFrom` (BA-31). |
+| the retry rows and the close-out row (`candlePass.test.js`) | DF4 `c8239172` | The third attempt now ends `exhausted`, and an aged-out tape `expired`, each with its old reason (BA-32). The describe block's title says so. |
+| F1 (expiry), F9 (writer), F8 R20, F8 (terminal and page), F8 (isolated) (`tapeAstraReview.test.js`) | DF4 `c8239172` | The same facts under BA-32's vocabulary. Planted terminal tapes are `exhausted` or `expired`, and closed-out tapes are expected `expired`. |
+| F8 (look-back) (`tapeAstraReview.test.js`) | DF4 `c8239172` | **Inverted.** It pinned the 60-session bound, which BA-32 removes. It now asserts that both retryable tapes are closed out, however old. |
+| F8 (cost) (`tapeAstraReview.test.js`) | DF4 `c8239172` | Stronger: a terminal tape now costs the sweep no query result either (`reads: 0`), as well as no transaction. |
+| the index pins (`tapeWiring.test.js`) | DF4 `c8239172` | Two assertions added: no issued query names a terminal status, and the sweep bounds `etDate` from above only. The composite each query needs is unchanged. |
+| the §4 shape row (`writeTapeDay.test.js`) | DF3 `3cf7e277` | A close-pass section's keys gain `dependsOn`, and the stored tape must not carry `readLimits`. |
+| the declaration golden (`tapeExport.test.js`) | DF6 `6f93e5ad` | Gains `bars[].m: 'market'`. |
+| F4 (kept series) (`tapeAstraReview.test.js`) | DF6 `6f93e5ad` | **Rewritten.** Under BA-25 a shorter AAPL response left the saved series whole, still "built before 1 check(s)". Under BA-34 that response's fresh price for tick 10 joins the saved buckets. The row now asserts the merge: the 39 saved buckets stay, tick 10 is priced, `preservedFrom` is set and the pass is `written`. The "built before" label for a kept series lacking a check is pinned by C10, a refetch that fails. |
+| F6 (impossible final day) (`tapeAstraReview.test.js`) | BA-35 `1a92fd6c` | It asserted the old failure record under `2026-02-30`. It now asserts `summary.invalid`, no failure and zero writes. The helper's `unavailable` is unchanged. |
+
+**The fixture grew by one hook.** The in-memory store gains `hooks.beforeRead(label)`, which may throw,
+so a row can make one source unreadable for one run (C03, D03). It runs before every document get,
+query and transaction read. No existing row uses it.
+
+### 9.9 Readings and bounds, stated
+
+- **BA-31, what each identity covers.**
+  - The **fingerprint's** five parts keep their names, so `changedInputs` still says what changed.
+    - Checks: id, `tickSeq`, time, state, `stageReached`, `rowSource`.
+    - Evidence: per check, each symbol's recorded `px` and `chg`.
+    - Actions: the key, time, `tickSeq`, both symbols, `replayReason`, `replayMissing`, both
+      legs' values, `lockedPoints` and `subsequentTradesInSlot`.
+    - Plans: id, time, symbol.
+    - Symbols: each symbol's role, and each symbol's sector ETF (`comparables.sectors`, which
+      `sectorChangeAfter` reads).
+  - A **replay's** `builtFrom` covers:
+    - its action's values;
+    - the checks it samples after the swap (`laterChecks`, now shared with `tapeReplay.js`, so the
+      replay and its identity always read the same checks);
+    - the bought name's recorded evidence at those checks;
+    - both legs' sector ETFs.
+  - A **plan price's** `builtFrom` covers the plan's id, time and symbol.
+  - A **series'** `builtFrom` covers the symbol and the instants of the checks it prices: their
+    numbers and times. **The roles a series document states are descriptive** (R1-7). Its numbers
+    do not depend on them, so they are not in its `builtFrom`; the tape's own symbol plan is the
+    authority for roles. A series merged by BA-34 takes the new build's `builtFrom`, because the
+    merge prices every check the tape has now.
+- **BA-31, where plan-price coverage is reported.** Plans have no coverage section of their own:
+  the spec lists nine sections. Plan prices report under `coverage.series`, the section of the
+  pass's market samples. It is complete only when every kept price is current **and has all its
+  inputs** (R1-2), the same rule that governs a replay under `coverage.replay`. A stale or
+  input-missing price keeps the section `partial` and is named in its note. The pass's own status
+  follows the price's retryable inputs, as before.
+- **BA-31, what `inputFingerprint` means.** It records the inputs the candle pass read, and it stays
+  the close pass's re-queue trigger. Nothing reads it as proof that every unit was rebuilt;
+  coverage reads each unit's `builtFrom`.
+- **BA-31, derived counts are recounted from merged rows.** `subsequentTradesInSlot` is recounted on
+  every merge from the merged action rows (R2-2), as each directive's `after` already is (BA-30). A
+  read that lost a trade therefore keeps the count, and the identity does not move.
+- **BA-26 amended, what each section depends on.**
+  - Checks: check keys.
+  - Actions: action keys.
+  - Directives: directive keys and eval ids.
+  - Plans: eval ids and plan keys.
+  - Rationale: eval ids and rationale keys.
+  - Evidence: eval ids.
+  - Calls: eval ids and call keys.
+
+  **Eval ids stand for the declaration expectations**, because the tape stores no declarations
+  phase: a new evaluation is a new expectation. The reading withdrawn by Amendment B, "a limit never
+  overrides stored coverage", is gone from the code.
+- **BA-26 amended, what "a read observes them" means** (R2-1). A read observes the section's
+  dependencies only when it hits no limit **and** its own dependency identity equals the merged
+  one. A read assembled before some dependencies existed is limited by its age: the battle as a
+  pass selected it, or a transaction retried against a newer tape.
+  - It never lifts the stored coverage; the stored coverage stands, marked `preservedFrom`.
+  - It never clears `unresolved_dependency`.
+  - When the section's dependencies changed since the stored coverage was saved, it adds
+    `unresolved_dependency: a read assembled before this section's dependencies changed`.
+
+  A key that no later read will return, because its source lost it, therefore holds the section's
+  stored coverage from then on. That errs on the safe side. A limit over unchanged dependencies
+  still preserves stored coverage (C03).
+- **BA-32, an exhausted tape inside its window.** Its inputs changing does not re-queue it. It
+  keeps `exhausted`, records `changedInputs`, and its coverage label says its attempts are spent
+  and it will not be rebuilt. This is the BA-25 reading, applied to the new terminal status.
+- **BA-33, one clock for every close-out.** Every close-out a run makes shares one clock (R1-4):
+  the sweep's, and the selection's for a tape that aged out inside the scan. Together they spend
+  at most 60 s and 100 close-outs, and never pass the run's 30 s floor. The clock is read before
+  each page query and each close-out, so one slow query can overrun the share by its own length,
+  and nothing more: R1's P11 saw a 70 s page query stop the sweep before its first close-out. The sweep reports
+  `stoppedBy` (`marks`, `reads`, `share` or `floor`). The selection lists each close-out it defers
+  in `closeOutsDeferred` with its bound, and leaves that tape waiting.
+- **BA-34, what a merged series keeps.** `n` stays beside `m` with the same value, so no reader of
+  `n` breaks. The merge runs over the tape's checks now, which the new build samples every one of.
+  A saved sample whose check left the tape (an entry row its tick record superseded) leaves with
+  it (R1-5): it is no fact about any check. The session's first draft of this reading kept such
+  samples; the review showed they block BA-34's own clean replace. "Completed later" compares each
+  sample's `barClosedAt`, the instant its bar completed. The session open is the stored one unless
+  it has none.
+- **BA-27 amended, "a richer result basis".** On a tie, a stored completion block that agrees with
+  the canonical re-read stands only while its result basis ranks higher. Agreeing means the same
+  status, `completedAt`, final and result value; the richer basis is, for example, a stored
+  `result` the battle document has since lost (the §7 review's m04 row stays green). On any
+  contradiction the re-read's block replaces the stored one whole, even when the stored block's
+  basis is richer.
+- **BA-29 amended, how a refresh resumes.**
+  - A refresh stopped by the time floor returns `complete: false` and `resumeFrom`.
+  - It resumes when called again with a range starting at `resumeFrom`'s date. The queue flag
+    cannot resume it, because every written day is re-merged by design.
+  - **The limit, stated (R3-2):** a single date whose written battles take longer than one run's
+    budget cannot finish: roughly 270 to 1,350 battles, depending on per-battle latency. The
+    response says so honestly (`complete: false`), and a resume cursor is backlog.
+- **BA-35, where the check sits.** The close pass checks its target. The backfill needs no check:
+  its dates are parsed range sessions (`sessionDatesBetween` keeps only sessions).
+
+### 9.10 D05, the accepted residual, stated plainly
+
+A candle query result whose path is not `agentBattles/{battleId}/tape/{etDate}`, or whose document
+names another battle or day, is skipped, listed in `summary.invalid`, and **never written**, by the
+sweep or by the selection (BA-23). It is not removed from the query, and the sweep keeps no cursor
+past it. **So if enough of them sit ahead of a valid aged-out tape in the sweep's order** (1,000,
+the sweep's read bound), every morning spends its reads on them, and the valid tape stays `pending`
+behind them. It never becomes `expired`, and its label still promises a candle pass that will not
+come, until someone removes the foreign rows. That is what Astra's D05 observed, and this round
+does not change it. Nothing is written to the foreign rows or to the valid tape, and the day's own
+enrichment still runs.
+
+Amendment B accepts this because no sanctioned writer can create such a row. Every tape write goes
+through `tapeRef` from validated ids (§9.5), and BA-35 now refuses a malformed target before the
+close pass writes anything. **A non-zero `summary.invalid` in a production candle run is an alert,
+not a steady state**: investigate who wrote the rows. The row "D05 (the accepted residual)" pins
+the part the prompt names: zero writes to the foreign rows, all 1,000 counted in `summary.invalid`,
+and the morning's own tape still written. It was green at `8e754eb8` and is green now.
+
+### 9.11 The §2 adversarial review — the written record
+
+**How it ran.** This round changes 21 files and 1,845 lines at `1a92fd6c`, so BUILD_RULES §2
+requires the review. Three reviewers ran in parallel, one lens each:
+
+- **R1**, the candle pass: BA-31, BA-32, BA-33 and BA-34;
+- **R2**, the close-pass merge: BA-26 amended, BA-27 amended, BA-31's identity in the merge, and
+  BA-32's labels;
+- **R3**, the entry points and test integrity: flag-off, refresh, BA-35, and whether each changed
+  row still pins what it pinned.
+
+Each worked in its own `git archive` snapshot of `1a92fd6c`, with `node_modules` symlinked. Each was
+read-only on git and wrote only probes in its snapshot. Each finding came back with an executed
+probe, and each was re-run here before any disposition. Probes that "passed" at `8e754eb8` in a
+first run were re-checked, because that snapshot's in-memory store lacks the `beforeRead` hook
+(R2 caught this itself).
+
+**Dispositions.** A finding is fixed here when it is a defect in how this round implemented a
+ruling, or when this round's code makes it reachable. One that predates the round and is outside
+Amendment B's table is reported, not fixed (BUILD_RULES §3; the prompt: "Do not widen beyond this
+table"). Each is marked with the exit criterion's blocking classes.
+
+| Id | Reviewer | Finding | Verified here | Disposition |
+|---|---|---|---|---|
+| **R2-1** | BLOCKER (false `complete`) | `unresolved_dependency` was cleared by any read with no limit, even one assembled before the dependency existed: the battle as a pass selected it, or a transaction retried against a newer tape. Calls then read `complete` while the new evaluation's declarations record was absent. When the limited read was the tape's first write, the stale read lifted `unavailable` to `complete` outright. | **CONFIRMED**. Three rows, all red at `1a92fd6c`. A fourth, the mixed case, went in with the survivor rows (`ef9eafb6`) and is red under R2-1a and R2-1c | **FIXED** `55c46ea4` (BA-26 amended): a read that did not observe every dependency is limited by its age (§9.9) |
+| **R1-2** | BLOCKER (false `complete`) | `coverage.series`, which carries plan-price coverage (§9.9), counted stale plan prices but not plan prices missing their inputs. A tape could end `exhausted` with a plan price unbuilt and `coverage.series` complete. | **CONFIRMED**. The row was red at `50d6ac8f` | **FIXED** `6d3d2a2d` (BA-31): a plan price missing an input holds the section at most `partial`, and the note names it |
+| **R1-5** | MAJOR (this round's code) | `keepSeries` kept saved samples for checks the tape no longer has (an entry row superseded by its tick). Every series carried a phantom check, `preservedFrom` never cleared, and the note called every symbol "kept from an earlier attempt". | **CONFIRMED**. The row was red at `70597a4b` | **FIXED** `50d6ac8f` (BA-34: a true superset replaces cleanly): orphans leave with their row |
+| **R1-4** | MAJOR | The selection's own close-outs (tapes aged out inside the scan) ran with no clock and no cap. 100 at 4 s left the day's tape `notReached`. | **CONFIRMED**. The row was red at `e0e3f472` | **FIXED** `70597a4b` (BA-33, "a deadline before every close-out"): one shared clock and cap for every close-out a run makes |
+| **R2-2** | MAJOR, predates the round | `subsequentTradesInSlot` was counted from the new read only. A trade evicted from trades[], read while its receipt was unreadable, turned 1 into null, re-queued the candle pass and baked null into the replay. | **CONFIRMED**, the same at `8e754eb8`. The row (a real `refresh=1`) was red at `55c46ea4` | **FIXED** `e0e3f472`. This round's refresh makes it reachable, and BA-29 amended requires refresh to be merge-monotone. The count is recounted from the merged rows |
+| **R3-1** | MINOR (tests) | Nothing pinned flag-off for a refresh-shaped request: a mutant that runs a refresh before the flag check survived the committed suite. The product code was correct. | **CONFIRMED** | **FIXED** `59e0b09c`: the flag-off row covers every refresh shape, and is red under R3-1m |
+| **R3-4** | MINOR (tests) | The read-out's `exhausted` words were not pinned (two mutants survived). | **CONFIRMED** | **FIXED** `59e0b09c`: the read-out row covers both terminal statuses, and is red under R3-4a and R3-4b |
+| **R1-1** | BLOCKER (loses a saved fact) | `keepBetter` gives a tie to the fresh unit. A plan price saved as `{atPlan 70.5, atClose null}` is replaced by `{atPlan null, atClose 70.5}`, and a replay point can go the same way. | **CONFIRMED**. It predates the round: the tie rule is review L2-F1's | **NOT FIXED**. It is outside the table: BA-34 rules on series only. **For ruling** (§9.13). The proposed fix is BA-34's per-point rule applied to plan prices and replays |
+| **R2-3** | MAJOR, root predates the round | A stale assembly (the selection-time battle) rewinds a corrected value (an entry 300 back to 150). At the tip BA-31 then re-queues and rebuilds from the stale value. At `8e754eb8` the row rewound silently beside a replay built from 300. | **CONFIRMED** | **NOT FIXED**. It is outside the table. **For ruling**: the root fix re-assembles inside the transaction when the re-read battle's source fields differ |
+| **R1-3** | "BLOCKER under BA-20; contestable" | Series completeness counts 10-minute buckets, not minutes. 377 minutes in 39 buckets reads whole. | **REFUTED under the governing rule.** BA-24 defines a whole series as the calendar's bucket count with a fresh price at every check, and "F2 (plan close)" pins it | Not changed. **For ruling**: `m` now makes a minutes rule possible |
+| **R1-6** | MINOR | `barMinutes` reads only `m`, so a saved bucket without `m` loses to any new one. | **REFUTED as unreachable.** No production series exists, and every series this code writes has `m` | Not changed |
+| **R1-7** | MINOR | `seriesBuiltFrom` leaves out the roles the series document states. | **CONFIRMED** as described | **Documented** (§9.9): roles are descriptive, and `builtFrom` covers what the numbers are built from. Backlog |
+| **R1-8** | MINOR | With exactly `maxMarks` closable tapes, the sweep reports `complete: false` though nothing remains. | **CONFIRMED** | Backlog. It is conservative, and the next morning reads nothing |
+| **R2-4** | MINOR, predates the round | A terminal candle status keeps the coverage label "awaiting the candle pass". The close-out and the thrown third attempt write the status but not the labels, while the read-out now prints the terminal words beside them. | **CONFIRMED**, the same at `8e754eb8` with `failed` | Backlog. Proposed fix: rewrite the candle sections' outlook wherever a terminal status is written |
+| **R2-5** | MINOR, predates the round | An identical limited re-read writes once more (`preservedFrom` flips), so a refresh can list such a day `refreshed` once. | **CONFIRMED** | Backlog |
+| **R3-2** | MINOR (liveness) | A refresh resumes only by date. A date whose written battles exceed one run's budget can never finish: roughly 270 to 1,350 battles, depending on per-battle latency. | **CONFIRMED** | **Documented limit** (§9.9). Backlog: a resume cursor such as `&after=<battleId>` |
+| **R3-3** | MINOR (rulings pull) | Outside the window, a refresh lowers `written` to `partial` (BA-25). `partial` is selectable, so the next sweep closes it out `expired`, `retry_window_elapsed`. The notes and `changedInputs` survive; the `inputs_changed_outside_window` reason does not. | **CONFIRMED** | **For ruling**. BA-25's text says `partial`, and BA-32 makes `partial` selectable |
+| **R3-5** | MINOR, latent | A refresh would replace a written tape with a `skipped_mode` document if the battle's mode changed. | **CONFIRMED** as latent: no writer changes `gameMode` after creation | Backlog. Proposed guard: never merge `skipped_mode` over a written close pass |
+| (found here) | — | When a day's replay legs were never complete (no ATR ever recorded), the replay-inputs group ties at zero legs, and the read that knows less supplies `replayMissing`. | Seen while fixing R2-2 | Backlog. It predates the round |
+
+**Hypotheses the reviewers tested that held** (each with its probe):
+
+- R1 mutated 33 single values. Every one that changes a candle output moves both `builtFrom` and
+  the fingerprint, with two exceptions: a tick row's `evalId` and `gameMode`. Neither can change
+  on a written tape.
+- A kept stale unit is never `written`.
+- The series merge rules hold, apart from R1-5.
+- No terminal tape is ever read by a candle query.
+- Sweep resumption and isolation hold.
+- Series references are built from validated ids, and the census is seven.
+- Flag-off holds in the passes and the handler.
+- `dependsOn` is set on exactly the seven close-pass sections, `readLimits` is never stored, and
+  every limit names a source.
+- A limit over unchanged dependencies keeps coverage `complete`.
+- BA-27 amended's tie rules hold.
+- `expired` and `exhausted` are never re-queued.
+- R3 sent 28 refresh-shaped requests with the flag off. All returned `flag_off`, with no read, no
+  write and the handle never taken.
+- Refresh is admin-only and idempotent across four fixtures and five candle states, and reopens no
+  candle work outside the window.
+- The default backfill is unchanged.
+- BA-35 rejects a holiday, a pre-calendar date and a timestamp string.
+- Every write in every probe landed under `agentBattles/*/tape/**`.
+- With the product files reverted to `8e754eb8`, `tapeAstraDelta` gives 25 red and 20 green,
+  matching this session's own red-first run. The repro and ruling rows are red; the 15 controls,
+  D05 and four guards are green.
+- No changed row was weakened beyond what its ruling requires.
+
+### 9.12 Verification at the tip
+
+| Check | Result |
+|---|---|
+| Code tip | `ef9eafb6`. The report commit that follows changes only this file, and no test reads it. |
+| Full suite, Linux (`npx vitest run`, JSON reporter, output redirected) | **821 files, 16,380 tests: 16,315 passed, 64 skipped, 1 failed; exit 1.** The one failure is the date-dependent `backingDark.test.jsx` row outside the tape (§9.1). It fails the same way at `8e754eb8` and at `origin/main`. At `8e754eb8` the suite was 820 files and 16,322 tests (16,257 passed, 64 skipped, the same 1 failed). The difference is exactly `tapeAstraDelta.test.js`'s 58 rows. No other file fails. An intermediate run at `1a92fd6c`, before the §2 review, gave 821 files and 16,367 tests with the same single failure. |
+| Tape suites | **16 files, 387 tests, all passed**: the 15 tape files and `tapeAstraDelta.test.js`. The 15 tape files keep their 329 tests: rows changed (§9.8), but none was added or removed. `tapeAstraDelta.test.js` has 58 rows. |
+| Every commit of the round | All 17 code commits, `c4e1fb7a` … `ef9eafb6`, were re-run, each in its own snapshot: the 15 tape suites and the delta file. **Every row passed at every commit** (344 → 387 tests). The controls were 15 / 15 through `2b24cb9b` and 16 / 16 from `1a92fd6c` (§9.3) |
+| Rules suite on the emulator (`npm run test:rules`) | **18 files, 332 tests, all passed; exit 0**, run at `ef9eafb6`. The same as the baseline: this round touches no rule. |
+| `npm run lint:gate` | exit 0 |
+| `npx vite build` | exit 0; built in 29.3 s. The same four pre-existing `css-syntax-error` warnings. |
+| Mutation | **67 mutants at `ef9eafb6`: 66 red, and X34c equivalent** (§9.7). Astra's nine are all red. The first run, at `1a92fd6c`, had 56 mutants with 49 red. Each of its survivors got a row, was retired, or is shown to be equivalent. |
+| Write census | Seven sites. C15 and the F9 census row pass: scanner, runtime and allowlist agree on seven keys at count 1 (§9.5) |
+| Cost | Round trips unchanged from `8e754eb8` at both `1a92fd6c` and `ef9eafb6` (§9.6) |
+| Fence | `git diff --name-only 8e754eb8..HEAD` names none of BUILD_RULES §1's files |
+| Flags, crons, rules, indexes | `featureFlags.js` (both tape flags `false`, `:2868` and `:2886`), `vercel.json` (43 crons), `firestore.rules` and `firestore.indexes.json` are unchanged since `8e754eb8`. Nothing is deployed. |
+
+### 9.13 Founder actions, updated
+
+§6 and §8.10 stand, with these changes:
+
+1. **Human review: still seven notes, and two are reworded.** `markRetryWindowElapsed::update` now
+   writes `expired`, and `runCandlePass::update` writes `exhausted` on the third attempt (§9.5). No
+   site was added.
+2. **Indexes: nothing new.** Every candle query still needs the one declared composite
+   (`passes.candles.status` ==, then an `etDate` range, ordered by `etDate`). They now name only
+   non-terminal statuses, and the wiring pin checks all four. §6.3's two Console entries are still
+   the whole list, and still not deployed.
+3. **Class declarations for Astra** (§9.4): `bars[].m` is `market`. `builtFrom` and `dependsOn` are
+   strings and carry no class.
+4. **Your repair path is `refresh=1`, not the default backfill** (BA-29 amended). To re-merge
+   written days whose sources grew:
+   `?backfill=<from>..<to>&refresh=1`, with both guards. Read `refreshed` and `unchanged` in the
+   response. A refresh stopped by the time floor answers `complete: false` and `resumeFrom`. Call
+   it again with a range starting at `resumeFrom`'s date. A single date whose written battles take
+   longer than one run's budget cannot finish (R3-2): roughly 270 to 1,350 battles. At today's scale
+   that is far off.
+5. **An alert to wire at the flip:** a candle run whose `summary.invalid` is not empty means
+   something wrote tape-shaped rows outside the sanctioned paths (D05, §9.10). The run logs one
+   error line for them, `[film-tape-candles] skipped N tape reference(s) outside
+   agentBattles/{battleId}/tape/{etDate}: …`, and the response body lists them. Alert on that line.
+6. **Rulings requested** (the §2 review, §9.11). Each is outside Amendment B's table, so none is
+   fixed here:
+   - **R1-1** (a lost fact, predating the round). A candle retry's tie gives the fresh plan price
+     or replay point, even when the saved one had a value the fresh one lacks. The proposal:
+     BA-34's per-point rule for plan prices and replays.
+   - **R2-3** (a value rewound, predating the round). A close or backfill pass holding an older
+     battle document writes its older values over newer ones. The proposal: re-assemble inside the
+     transaction when the re-read battle's source fields differ.
+   - **R1-3**: whether a series is whole by its bucket count (BA-24 today) or by its minutes, now
+     that `m` is stored.
+   - **R3-3**: whether a refresh outside the window should lower `written` straight to a terminal
+     status, instead of the `partial` that BA-25 names and that the next sweep then closes out.
+   - **R2-4, R2-5, R3-5, R1-7, R1-8**, and the replay-inputs tie at zero legs: backlog, with the
+     proposals in §9.11.
+7. **Out of this task, reported: a date-dependent test outside the tape** (§9.1).
+   `src/components/League/backing/backingDark.test.jsx:475-476` computes its expected week keys
+   from the wall clock. From 2026-09-28 it fails on `main` (`ef80da13`) and on this branch alike.
+   Fix: pin the row's clock (`vi.setSystemTime`) to the fixture's week.
+8. **Routed, not fixed, as before:** the live-scoring defect (§6.9; Astra §4, R21).
+9. **Not done, by instruction:** no PR, no merge, no flag flip, no index deploy.
 
 ---
 
