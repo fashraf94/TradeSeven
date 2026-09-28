@@ -59,16 +59,18 @@ describe('the §4 document', () => {
     expect(Object.keys(tape.passes.close.sources).sort()).toEqual(['calls', 'declarations', 'evaluations', 'receipts', 'runs', 'ticks', 'trades']);
     expect(Object.keys(tape.passes.candles).sort()).toEqual(['attempts', 'reason', 'source', 'status', 'symbolsMissing', 'symbolsRequested', 'writtenAt']);
     expect(Object.keys(tape.coverage).sort()).toEqual([...COVERAGE_SECTIONS].sort());
-    // BA-20's five keys; a close-pass section also keeps its caveats (BA-26), and a
+    // BA-20's five keys; a close-pass section also keeps its caveats (BA-26) and
+    // the identity of what it depends on (dependsOn, BA-26 amended), and a
     // section that reads checks' evaluation entries counts its unknown checks.
     const READS_ENTRIES = ['directives', 'plans', 'calls', 'rationale', 'evidence'];
     for (const s of COVERAGE_SECTIONS) {
-      const extra = CANDLE_COVERAGE_SECTIONS.includes(s) ? [] : ['caveats', ...(READS_ENTRIES.includes(s) ? ['unknownChecks'] : [])];
+      const extra = CANDLE_COVERAGE_SECTIONS.includes(s) ? [] : ['caveats', 'dependsOn', ...(READS_ENTRIES.includes(s) ? ['unknownChecks'] : [])];
       expect(Object.keys(tape.coverage[s]).sort(), s).toEqual(['note', 'preservedFrom', 'sources', 'span', 'status', ...extra].sort());
       expect(['complete', 'partial', 'unavailable']).toContain(tape.coverage[s].status);
     }
     expect(Object.keys(tape.score).sort()).toEqual(['dayChange', 'firstCheck', 'lastCheck']);
     expect(Object.keys(tape.battle).sort()).toEqual(['completedAt', 'final', 'result', 'status']);
+    expect(tape).not.toHaveProperty('readLimits');                     // the read's limits steer the merge; never stored
     expect(tape.comparables.market).toEqual(['SPY', 'RSP']);
     expect(tape.diagnostics).toEqual({ intradayViews: 'absent' });
   });

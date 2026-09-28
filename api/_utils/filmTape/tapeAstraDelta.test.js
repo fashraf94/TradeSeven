@@ -510,3 +510,61 @@ describe('DF2 — BA-31: a kept unit keeps its own builtFrom and its stale label
     for (const doc of series) expect(seriesBuiltFrom(moved, doc.symbol), doc.symbol).toBe(doc.builtFrom);
   });
 });
+
+// ── DF3 — BA-26 amended: a limit preserves coverage only for unchanged dependencies ─
+
+describe('DF3 — BA-26 amended: a read that hits a limit while the section\'s dependencies changed holds it partial with unresolved_dependency', () => {
+  /** noTriggerDay written with complete calls coverage, then an evaluation recovered for the day that expected a declarations record. */
+  async function recoveredEvaluation() {
+    const fx = await noTriggerDay();
+    const hooks = {};
+    const t = makeTapeDb(seedDay({}, fx), { hooks });
+    await write(t, fx);
+    expect(tapeOf(t, fx.battleId).coverage.calls).toMatchObject({ status: 'complete' });
+    const battle = t.store.get(`agentBattles/${fx.battleId}`);
+    battle.evaluations.push({ ...structuredClone(battle.evaluations[0]), evalId: 'b-quiet:e-recovered', timestamp: '2026-09-24T17:07:00.000Z', promptBuiltAt: '2026-09-24T17:06:52.000Z', declarationsPhase: 'expected' });
+    t.store.set(`agentBattles/${fx.battleId}`, battle);
+    const unreadable = (label) => label === `agentBattles/${fx.battleId}/calls` || label.startsWith(`agentBattles/${fx.battleId}/declarations/`);
+    return { fx, t, hooks, unreadable };
+  }
+
+  it('D03: calls and declarations unreadable on the read that brings a new evaluation expecting a declarations record — calls coverage is partial, both sources named, never the old "complete"', async () => {
+    const { fx, t, hooks, unreadable } = await recoveredEvaluation();
+    hooks.beforeRead = (label) => { if (unreadable(label)) throw new Error('14 UNAVAILABLE'); };
+    await write(t, fx, NIGHT + 60_000);
+    const tape = tapeOf(t, fx.battleId);
+    expect(tape.checks.some((c) => c.evalId === 'b-quiet:e-recovered')).toBe(true);
+    expect(tape.coverage.calls.status).toBe('partial');
+    expect(tape.coverage.calls.caveats).toEqual(expect.arrayContaining([
+      "unresolved_dependency: call records (unreadable) on a read after this section's dependencies changed",
+      "unresolved_dependency: declaration records (unreadable) on a read after this section's dependencies changed",
+    ]));
+    expect(tape.coverage.calls.note).toMatch(/unresolved_dependency: call records \(unreadable\)/);
+    expect(tape.coverage.calls.dependsOn).toEqual(expect.any(String));
+  });
+
+  it('BA-26 amended: the caveat is sticky while the source stays unreadable, and a read that observes the new dependency clears it — the section then says what that read found', async () => {
+    const { fx, t, hooks, unreadable } = await recoveredEvaluation();
+    hooks.beforeRead = (label) => { if (unreadable(label)) throw new Error('14 UNAVAILABLE'); };
+    await write(t, fx, NIGHT + 60_000);
+    await write(t, fx, NIGHT + 120_000);                                    // still unreadable, nothing new: still held
+    expect(tapeOf(t, fx.battleId).coverage.calls.status).toBe('partial');
+    expect(tapeOf(t, fx.battleId).coverage.calls.caveats.filter((c) => c.startsWith('unresolved_dependency'))).toHaveLength(2);
+    delete hooks.beforeRead;                                                // readable again, and the expected record exists
+    t.store.set(`agentBattles/${fx.battleId}/declarations/b-quiet:e-recovered`, { battleId: fx.battleId, evalId: 'b-quiet:e-recovered', calledShots: [], watching: [], playerAsk: null, fork: null, minted: [] });
+    await write(t, fx, NIGHT + 180_000);
+    const calls = tapeOf(t, fx.battleId).coverage.calls;
+    expect(calls.caveats.some((c) => c.startsWith('unresolved_dependency'))).toBe(false);
+    expect(calls.note ?? '').not.toMatch(/unresolved_dependency/);
+    expect(calls.status).toBe('complete');
+  });
+
+  it('BA-26 amended: dependencies that change on a read that hits no limit are simply observed — no unresolved_dependency, the read\'s own coverage', async () => {
+    const { fx, t } = await recoveredEvaluation();
+    t.store.set(`agentBattles/${fx.battleId}/declarations/b-quiet:e-recovered`, { battleId: fx.battleId, evalId: 'b-quiet:e-recovered', calledShots: [], watching: [], playerAsk: null, fork: null, minted: [] });
+    await write(t, fx, NIGHT + 60_000);
+    const calls = tapeOf(t, fx.battleId).coverage.calls;
+    expect(calls.status).toBe('complete');
+    expect(calls.caveats).toEqual([]);
+  });
+});

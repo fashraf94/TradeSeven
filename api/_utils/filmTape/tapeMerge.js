@@ -13,6 +13,10 @@
 //     stored row does, the stored group is kept whole — never a mixed pair.
 //   · Each section's coverage is the better of stored and new, and a section
 //     that kept anything from the stored copy is marked `preservedFrom`.
+//     Each close-pass section stores `dependsOn`, the identity of the ids it
+//     depends on; a read that hit a LIMIT while those changed cannot vouch
+//     for the new ones, so the limit becomes the caveat
+//     `unresolved_dependency` until a read observes them (BA-26 amended).
 //   · The candle pass's fields (actions[].replay, plans[].price,
 //     passes.candles, coverage.replay, coverage.series) are NEVER taken from
 //     the new read: they are copied from the stored document, so a close-pass
@@ -25,6 +29,7 @@
 //     output built before the change stays, labelled, until replaced.
 //   · Nothing changed → no write at all, so the stored bytes stand.
 
+import { createHash } from 'node:crypto';
 import { COVERAGE_RANK, CANDLE_COVERAGE_SECTIONS } from '../../../src/constants/filmTape.js';
 import { orderChecks, afterOf } from './tapeAssemble.js';
 import { candleInputFingerprint, changedInputParts } from './candleInputs.js';
@@ -218,21 +223,59 @@ function mergeDayChange(sScore, aScore, lastCheck) {
 }
 const VIEWS_RANK = { unknown: 0, absent: 1, present: 2 };
 
+// ── BA-26 amended: what each close-pass section depends on ──────────────────
+
+/** The close-pass sections, which the merge merges (the candle sections are the candle pass's, BA-31). */
+export const CLOSE_COVERAGE_SECTIONS = Object.freeze(['checks', 'actions', 'directives', 'plans', 'calls', 'rationale', 'evidence']);
+const keysOf = (list) => (Array.isArray(list) ? list : []).map((r) => r?.key).filter((k) => typeof k === 'string').sort();
+const evalIdsOf = (doc) => [...new Set((Array.isArray(doc?.checks) ? doc.checks : []).map((c) => c?.evalId).filter((v) => typeof v === 'string'))].sort();
+
 /**
- * One section's coverage across two runs (BA-19, BA-26). Facts keep their
- * earlier rank: when the new read is poorer because a source was evicted or
- * unreadable (a LIMIT of that read), the stored coverage stands, marked
- * preservedFrom. But a CAVEAT — a fact about the day's record that either
- * run learned (a truncated deferral list, a gap, an unknown check) — always
- * lowers it: caveats are unioned and never dropped, the note carries every
- * one, and the status is at most `partial` while any stands. So the status is
- * the lower of what the later run can vouch for and what the earlier run
- * recorded. `unknownChecks` keeps the larger count.
+ * The ids a section's coverage depends on, from the document itself: its check
+ * rows, the evaluations they name (a check's entry is where its plans,
+ * rationale, evidence, heard stamps and declaration phase are read — so an
+ * eval id stands for its declaration expectation, which the tape does not
+ * store), and its action, directive, plan, call and rationale keys.
  */
-function mergeCoverage(section, storedDoc, newCov, carried) {
+function dependencyIds(section, doc) {
+  switch (section) {
+    case 'checks': return { checks: keysOf(doc?.checks) };
+    case 'actions': return { actions: keysOf(doc?.actions) };
+    case 'directives': return { directives: keysOf(doc?.directives), evals: evalIdsOf(doc) };
+    case 'plans': return { evals: evalIdsOf(doc), plans: keysOf(doc?.plans) };
+    case 'rationale': return { evals: evalIdsOf(doc), rationale: keysOf(doc?.rationale) };
+    case 'evidence': return { evals: evalIdsOf(doc) };
+    case 'calls': return { evals: evalIdsOf(doc), calls: keysOf(doc?.calls) };
+    default: return null;
+  }
+}
+
+/** BA-26 amended — a section's `dependsOn`: the hash of the ids it depends on (a string; no number class). */
+export const sectionDependsOn = (section, doc) => createHash('sha256').update(JSON.stringify(dependencyIds(section, doc))).digest('hex').slice(0, 16);
+
+/** The caveat a limit becomes when it met changed dependencies, naming its source (tapeAssemble.js LIMIT_SOURCES). */
+export const UNRESOLVED_DEPENDENCY = 'unresolved_dependency';
+const unresolved = (source) => `${UNRESOLVED_DEPENDENCY}: ${source} on a read after this section's dependencies changed`;
+
+/**
+ * One section's coverage across two runs (BA-19, BA-26 amended). Facts keep
+ * their earlier rank: when the new read is poorer because a source was
+ * evicted or unreadable (a LIMIT of that read), the stored coverage stands,
+ * marked preservedFrom — but only while the section's dependencies are the
+ * ones that coverage was saved for (`dependsOn`). A limit met while they
+ * changed cannot vouch for the new ones: it becomes the caveat
+ * `unresolved_dependency`, naming its source, held until a read with no limit
+ * observes them. Every other CAVEAT — a fact about the day's record that
+ * either run learned (a truncated deferral list, a gap, an unknown check) —
+ * always lowers it: caveats are unioned and never dropped, the note carries
+ * every one, and the status is at most `partial` while any stands. So the
+ * status is the lower of what the later run can vouch for and what the
+ * earlier run recorded. `unknownChecks` keeps the larger count.
+ */
+function mergeCoverage(section, storedDoc, newCov, carried, { limits = [], dependsOn = null } = {}) {
   const storedCov = storedDoc?.coverage?.[section];
   const storedAt = storedCov?.preservedFrom ?? storedDoc?.writtenAt ?? null;
-  if (!isObj(storedCov)) return newCov;
+  if (!isObj(storedCov)) return isObj(newCov) ? { ...newCov, dependsOn } : newCov;
   const sRank = COVERAGE_RANK[storedCov.status] ?? 0;
   const nRank = COVERAGE_RANK[newCov?.status] ?? 0;
   const base = sRank > nRank ? { ...storedCov } : { ...newCov };
@@ -243,12 +286,21 @@ function mergeCoverage(section, storedDoc, newCov, carried) {
   base.sources = [...new Set([...(storedCov.sources || []), ...(newCov?.sources || [])])];
   base.preservedFrom = (sRank > nRank || carried) ? storedAt : null;
   if (Array.isArray(storedCov.caveats) || Array.isArray(newCov?.caveats)) {
-    const caveats = [...new Set([...(storedCov.caveats || []), ...(newCov?.caveats || [])])];
-    const note = typeof base.note === 'string' ? base.note : '';
+    let caveats = [...new Set([...(storedCov.caveats || []), ...(newCov?.caveats || [])])];
+    let resolved = [];
+    if (!limits.length) {
+      // A read with no limit observed every source: the dependencies it has are observed.
+      resolved = caveats.filter((c) => c.startsWith(`${UNRESOLVED_DEPENDENCY}:`));
+      caveats = caveats.filter((c) => !resolved.includes(c));
+    } else if (storedCov.dependsOn !== dependsOn) {
+      caveats = [...new Set([...caveats, ...limits.map(unresolved)])];
+    }
+    const note = (typeof base.note === 'string' ? base.note : '').split('; ').filter((part) => part && !resolved.includes(part)).join('; ');
     base.caveats = caveats;
     base.note = [note, ...caveats.filter((c) => !note.includes(c))].filter(Boolean).join('; ') || null;
     if (caveats.length && base.status === 'complete') base.status = 'partial';
   }
+  base.dependsOn = dependsOn;
   if (Number.isInteger(storedCov.unknownChecks) || Number.isInteger(newCov?.unknownChecks)) {
     base.unknownChecks = Math.max(Number.isInteger(storedCov.unknownChecks) ? storedCov.unknownChecks : 0, Number.isInteger(newCov?.unknownChecks) ? newCov.unknownChecks : 0);
   }
@@ -265,11 +317,19 @@ function keySet(rows) { return new Set((Array.isArray(rows) ? rows : []).map((r)
  * @param {{ nowIso: string, withinWindow: boolean }} ctx
  * @returns {{ doc: object, changed: boolean, carried: object }}
  */
-export function mergeTape(stored, assembled, { nowIso, withinWindow }) {
+export function mergeTape(stored, assembledIn, { nowIso, withinWindow }) {
+  // The read's limits (BA-26 amended) steer the coverage merge; they are never stored.
+  const { readLimits = {}, ...assembled } = isObj(assembledIn) ? assembledIn : {};
   const isSkipped = assembled?.passes?.close?.status === 'skipped_mode';
   if (!isObj(stored) || !isObj(stored.passes?.close)) {
     const doc = { ...assembled, writtenAt: nowIso, firstWrittenAt: nowIso, runCount: 1 };
     doc.passes = { ...doc.passes, close: { ...doc.passes.close, writtenAt: nowIso } };
+    if (isObj(doc.coverage)) {
+      doc.coverage = { ...doc.coverage };
+      for (const section of CLOSE_COVERAGE_SECTIONS) {
+        if (isObj(doc.coverage[section])) doc.coverage[section] = { ...doc.coverage[section], dependsOn: sectionDependsOn(section, doc) };
+      }
+    }
     return { doc: sanitizeForFirestore(doc), changed: true, carried: {} };
   }
   if (isSkipped) {
@@ -373,7 +433,10 @@ export function mergeTape(stored, assembled, { nowIso, withinWindow }) {
     rationale: carriedAny(carried.rationale),
   };
   for (const section of Object.keys(carriedFor)) {
-    merged.coverage[section] = mergeCoverage(section, stored, assembled.coverage?.[section], carriedFor[section]);
+    merged.coverage[section] = mergeCoverage(section, stored, assembled.coverage?.[section], carriedFor[section], {
+      limits: Array.isArray(readLimits[section]) ? readLimits[section] : [],
+      dependsOn: sectionDependsOn(section, merged),
+    });
   }
   for (const section of CANDLE_COVERAGE_SECTIONS) {
     let cov = isObj(stored.coverage?.[section]) && stored.passes?.candles?.reason !== 'close_pass_failed'

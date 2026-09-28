@@ -23,6 +23,18 @@ import { toMs, inDay, etDateOf, etDayBounds, sessionFor, previousSession, within
 export const EVALUATIONS_CAP = 150;
 /** `trades[]` is `slice(-50)` in the fenced executor (api/_utils/agentSwapExecution.js:354). */
 export const TRADES_CAP = 50;
+/**
+ * BA-26 amended — the sources a read can be LIMITED by, named as the caveat
+ * `unresolved_dependency` names them when a limit meets changed dependencies.
+ */
+export const LIMIT_SOURCES = Object.freeze({
+  runs: 'run records (unreadable)',
+  receipts: 'learning receipts (unreadable)',
+  calls: 'call records (unreadable)',
+  declarations: 'declaration records (unreadable)',
+  evaluationsCap: `evaluations[] (at its ${EVALUATIONS_CAP}-entry cap)`,
+  tradesCap: `trades[] (at its ${TRADES_CAP}-entry cap)`,
+});
 /** Bound on any sequence-number walk, so a corrupt counter cannot run away. */
 const MAX_SEQ_SPAN = 5000;
 
@@ -866,11 +878,16 @@ export function assembleTape({
   // or a LIMIT of this read (a source unreadable, an array at its cap). Both
   // lower this read's status; only caveats are kept on the section
   // (`caveats`) and survive every later merge (tapeMerge.js) — a limit is
-  // what preserved facts make up for (BA-19).
+  // what preserved facts make up for (BA-19), but only for dependencies the
+  // stored coverage already covered (BA-26 amended): each limit names its
+  // SOURCE, and the sources this read was limited by go to the merge in
+  // `readLimits` — never stored — so a limit met while the section's
+  // dependencies changed becomes the caveat `unresolved_dependency`.
   const caveat = (text) => ({ text, caveat: true });
-  const limit = (text) => ({ text, caveat: false });
+  const limit = (text, source) => ({ text, caveat: false, source });
   const texts = (rs) => rs.map((r) => r.text);
   const caveatsOf = (rs) => rs.filter((r) => r.caveat).map((r) => r.text);
+  const limitsOf = (rs) => [...new Set(rs.filter((r) => !r.caveat).map((r) => r.source))];
 
   // A tick that names an evalId whose entry is absent: EVICTED when the array
   // is at its cap and the check predates its oldest surviving entry (a limit
@@ -887,8 +904,8 @@ export function assembleTape({
   const knownChecks = checks.filter((r) => !NON_CHECK_STATES.includes(r.state)).length;
 
   const entryReasons = [];
-  if (entries.evictionPossible) entryReasons.push(limit(`evaluations[] is at its ${EVALUATIONS_CAP}-entry cap and its oldest surviving entry is not before this day — the day's first entries may have been evicted`));
-  if (evictedEntries) entryReasons.push(limit(`${evictedEntries} check(s) recorded an evalId whose evaluation entry is absent (evicted: older than the oldest surviving entry)`));
+  if (entries.evictionPossible) entryReasons.push(limit(`evaluations[] is at its ${EVALUATIONS_CAP}-entry cap and its oldest surviving entry is not before this day — the day's first entries may have been evicted`, LIMIT_SOURCES.evaluationsCap));
+  if (evictedEntries) entryReasons.push(limit(`${evictedEntries} check(s) recorded an evalId whose evaluation entry is absent (evicted: older than the oldest surviving entry)`, LIMIT_SOURCES.evaluationsCap));
   if (lostEntries) entryReasons.push(caveat(`${lostEntries} check(s) recorded an evalId whose evaluation entry is absent`));
   const unknownReason = (what) => (unknownChecks
     ? [caveat(`${unknownChecks} minted check(s) of this day have no record of what they read or produced (no tick record, or an evaluation entry that is absent) — ${what} unknown for them`)]
@@ -900,7 +917,7 @@ export function assembleTape({
   if (gaps.attributed.length) checkReasons.push(caveat(`${gaps.attributed.length} minted check(s) of this day have no record (tickSeq ${gaps.attributed.join(', ')})`));
   if (gaps.unattributed.length) checkReasons.push(caveat(`${gaps.unattributed.length} minted check(s) adjacent to this day have no record and their day cannot be established (tickSeq ${gaps.unattributed.join(', ')})`));
   if (entryOnly.length && capture !== 'absent') checkReasons.push(caveat(`${entryOnly.length} evaluation entr(y/ies) have no tick record; their sequence numbers are among the gaps`));
-  if (!runsRead.ok) checkReasons.push(limit(`run records unreadable (${runsRead.error}) — deferrals unknown`));
+  if (!runsRead.ok) checkReasons.push(limit(`run records unreadable (${runsRead.error}) — deferrals unknown`, LIMIT_SOURCES.runs));
   else if (!runs.length) checkReasons.push(caveat('no evaluation-run records exist for this day — deferrals cannot be listed'));
   else {
     const missingSlots = missingRunSlots({ etDate, runs, battle, nowMs });
@@ -910,7 +927,7 @@ export function assembleTape({
   }
   if (deferralsTruncated) checkReasons.push(caveat('a run record\'s deferred list was truncated — deferrals past its first 200 ids are not listed (deferralsTruncated)'));
   if (lostEntries) checkReasons.push(caveat('tickMs unavailable where the entry is absent'));
-  else if (entryReasons.length) checkReasons.push(limit('tickMs unavailable where the entry is absent'));
+  else if (entryReasons.length) checkReasons.push(limit('tickMs unavailable where the entry is absent', LIMIT_SOURCES.evaluationsCap));
   const coverage = {
     checks: coverageOf(statusFrom(checkReasons, checks.length > 0), {
       span: checksSpan, sources: ['ticks', 'agentEvalRuns', ...(entries.day.length ? ['evaluations'] : [])], note: texts(checkReasons).join('; ') || null,
@@ -920,15 +937,15 @@ export function assembleTape({
 
   const actionReasons = [];
   const actionsProvable = (capture === 'present') || !trades.evictionPossible;
-  if (!actionsProvable) actionReasons.push(limit('capture is incomplete for this day and trades[] is at its 50-entry cap — a swap on an unrecorded check may be missing'));
-  if (!receiptsRead.ok) actionReasons.push(limit(`learning receipts unreadable (${receiptsRead.error}) — replay inputs and holding times unavailable`));
+  if (!actionsProvable) actionReasons.push(limit('capture is incomplete for this day and trades[] is at its 50-entry cap — a swap on an unrecorded check may be missing', LIMIT_SOURCES.tradesCap));
+  if (!receiptsRead.ok) actionReasons.push(limit(`learning receipts unreadable (${receiptsRead.error}) — replay inputs and holding times unavailable`, LIMIT_SOURCES.receipts));
   coverage.actions = coverageOf(statusFrom(actionReasons, actions.length > 0 || actionsProvable), {
     span: spanOf(actions.map((a) => a.at)), sources: ['ticks.actions', 'trades', 'learningReceipts'], note: texts(actionReasons).join('; ') || null,
     caveats: caveatsOf(actionReasons),
   });
 
   const heardReasons = [];
-  if (entries.evictionPossible && capture !== 'present') heardReasons.push(limit('evaluation entries may be evicted and capture is incomplete — a heard stamp may be missing'));
+  if (entries.evictionPossible && capture !== 'present') heardReasons.push(limit('evaluation entries may be evicted and capture is incomplete — a heard stamp may be missing', LIMIT_SOURCES.evaluationsCap));
   heardReasons.push(...unknownReason('a heard stamp, and the checks after a filing, are'));
   const earlyCards = directives.filter((d) => (toMs(d.filedAt) ?? bounds.startMs) < bounds.startMs).length;
   const directiveNotes = earlyCards ? [`${earlyCards} card(s) filed before this ET day (after the battle's activation or the previous trading day) are shown here`] : [];
@@ -958,7 +975,7 @@ export function assembleTape({
   const callReasons = [];
   const expected = entries.day.filter((e) => e.declarationsPhase === 'expected' && str(e.evalId)).map((e) => e.evalId);
   const phased = entries.day.some((e) => e.declarationsPhase === 'none' || e.declarationsPhase === 'expected');
-  if (!callsRead.ok) callReasons.push(limit(`call records unreadable (${callsRead.error})`));
+  if (!callsRead.ok) callReasons.push(limit(`call records unreadable (${callsRead.error})`, LIMIT_SOURCES.calls));
   const callNotes = [];
   if (callsRead.ok && !calls.length && !entries.evictionPossible) {
     // Facts, not reasons — and only what was observed (BA-26): never a
@@ -967,8 +984,8 @@ export function assembleTape({
       callNotes.push(`no model check recorded among the ${knownChecks} known check(s)${unknownGaps ? `; ${unknownGaps} check(s) have no record` : ''}`);
     } else if (entries.day.length && !phased) callNotes.push('no evaluation entry of this day carries a declarations phase');
   }
-  if (entries.evictionPossible) callReasons.push(limit('declaration phases unknown for evicted entries'));
-  if (declarationsRead && !declarationsRead.ok) callReasons.push(limit(`declaration records unreadable (${declarationsRead.error})`));
+  if (entries.evictionPossible) callReasons.push(limit('declaration phases unknown for evicted entries', LIMIT_SOURCES.evaluationsCap));
+  if (declarationsRead && !declarationsRead.ok) callReasons.push(limit(`declaration records unreadable (${declarationsRead.error})`, LIMIT_SOURCES.declarations));
   else if (declarationsRead) {
     const absent = expected.filter((id) => !declarationsRead.present.has(id));
     if (absent.length) callReasons.push(caveat(`${absent.length} check(s) expected a declarations record that is absent (failed or unconfirmed — contract §2.1)`));
@@ -1044,6 +1061,12 @@ export function assembleTape({
     comparables: { market: [...MARKET_COMPARABLES], sectors },
     diagnostics: { intradayViews: intradayViewsPresent === true ? 'present' : (intradayViewsPresent === false ? 'absent' : 'unknown') },
     numberClasses: TAPE_NUMBER_CLASSES,
+    // BA-26 amended: the sources this read was limited by, per section — for
+    // the merge only; tapeMerge.js strips it before anything is written.
+    readLimits: {
+      checks: limitsOf(checkReasons), actions: limitsOf(actionReasons), directives: limitsOf(heardReasons),
+      plans: limitsOf(planReasons), rationale: limitsOf(rationaleReasons), evidence: limitsOf(evidenceReasons), calls: limitsOf(callReasons),
+    },
   };
 }
 
