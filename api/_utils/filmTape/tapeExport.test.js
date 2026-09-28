@@ -290,6 +290,7 @@ describe('the class each printed number carries is its own field\'s (review L4-F
       'bars[].c': 'market',
       'bars[].v': 'market',
       'bars[].n': 'market',
+      'bars[].m': 'market',
       'atChecks[].tickSeq': 'recorded',
       'atChecks[].price': 'market',
     });

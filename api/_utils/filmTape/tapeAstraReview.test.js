@@ -473,15 +473,21 @@ describe('F4 — BA-25: when the candle pass\'s inputs change, its output is re-
     expect(t.store.get(`${tapePath(fx.battleId)}/series/AAPL`).atChecks.find((a) => a.tickSeq === 10)).toMatchObject({ price: 231 });
   });
 
-  it('F4 (kept series): tick 10 recovered, then a shorter AAPL response keeps the saved series — built before tick 10, so it is incomplete, says why, and the pass stays queued', async () => {
-    // A kept series is judged against the checks the tape has NOW (uncoveredChecks; mutation run, build report §8).
+  it('F4 (kept series, BA-34): tick 10 recovered, then a shorter AAPL response — the saved buckets stay, tick 10 is priced from the new response, and the retry loses nothing and owes nothing', async () => {
+    // Under BA-25 this kept the saved series WHOLE, still "built before 1 check(s)". BA-34 merges fact by
+    // fact, so the response's fresh price for tick 10 joins the saved buckets. The "built before" label for
+    // a kept series lacking a check is pinned by the delta review's C10 (tapeAstraDelta.test.js).
     const { t, fx } = await withoutTick10();
+    const before = structuredClone(t.store.get(`${tapePath(fx.battleId)}/series/AAPL`));
     await write(t, fx, MORNING + 3_600_000);                                          // re-queued: inputs_changed
     await morning(t, allBars({ AAPL: sessionRows(D, () => PRICES.AAPL, { extras: false }).slice(0, 300) }), MORNING + DAY);
-    expect(t.store.get(`${tapePath(fx.battleId)}/series/AAPL`).atChecks.some((a) => a.tickSeq === 10)).toBe(false);   // kept: 39 bars over 30
+    const aapl = t.store.get(`${tapePath(fx.battleId)}/series/AAPL`);
+    expect(aapl.bars).toEqual(before.bars);                                           // 39 saved buckets: ties keep them, and nine the response lacks
+    expect(aapl.atChecks.find((a) => a.tickSeq === 10)).toMatchObject({ price: PRICES.AAPL });
+    expect(aapl.preservedFrom).toBe(before.writtenAt);
     const tape = tapeOf(t, fx.battleId);
-    expect(tape.passes.candles).toMatchObject({ status: 'partial', reason: 'bars_incomplete', symbolsIncomplete: ['AAPL'] });
-    expect(tape.coverage.series.note).toMatch(/AAPL: built before 1 check\(s\) were recorded/);
+    expect(tape.passes.candles).toMatchObject({ status: 'written', symbolsIncomplete: [] });
+    expect(tape.coverage.series.note ?? '').not.toMatch(/built before/);
   });
 
   it('F4 (one label): a second close run over the same changed inputs keeps ONE "built before" label — and writes nothing', async () => {

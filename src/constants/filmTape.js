@@ -250,6 +250,8 @@ export const SERIES_NUMBER_CLASSES = Object.freeze({
   'bars[].c': 'market',
   'bars[].v': 'market',
   'bars[].n': 'market',
+  // BA-34: the 1-minute bars a 10-minute bar was built from — what a retry's merge compares
+  'bars[].m': 'market',
   'atChecks[].tickSeq': 'recorded',
   'atChecks[].price': 'market',
 });

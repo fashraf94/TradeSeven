@@ -81,7 +81,7 @@ import { FILM_TAPE_WRITE_ENABLED } from '../../../src/config/featureFlags.js';
 import { sessionBars, sampleAt, sampleCanExist, expectedSeriesBars, sessionOpenOf, aggregate10m } from './bars.js';
 import { replayAction, REPLAY_LABEL } from './tapeReplay.js';
 import { coverageOf } from './tapeAssemble.js';
-import { sanitizeForFirestore } from './tapeMerge.js';
+import { sanitizeForFirestore, stableStringify } from './tapeMerge.js';
 import { tapeRef } from './tapeSources.js';
 import { symbolPlan, candleInputFingerprint, replayBuiltFrom, priceBuiltFrom, seriesBuiltFrom } from './candleInputs.js';
 
@@ -246,24 +246,58 @@ function uncoveredChecks(doc, checks) {
   return n ? [`built before ${n} check(s) were recorded`] : [];
 }
 
+/** The 1-minute bars a 10-minute bar was built from (BA-34). */
+const barMinutes = (b) => (Number.isFinite(b?.m) ? b.m : 0);
 /** The minutes a series document's 10-minute bars hold. */
-const seriesMinutes = (doc) => (Array.isArray(doc?.bars) ? doc.bars.reduce((n, b) => n + (Number.isFinite(b?.n) ? b.n : 0), 0) : 0);
-/** The checks a series document prices from a fresh bar. */
-const pricedChecks = (doc) => (Array.isArray(doc?.atChecks) ? doc.atChecks.filter((a) => typeof a?.price === 'number').length : 0);
+const seriesMinutes = (doc) => (Array.isArray(doc?.bars) ? doc.bars.reduce((n, b) => n + barMinutes(b), 0) : 0);
+const factsOf = (doc) => stableStringify({ bars: doc?.bars ?? [], atChecks: doc?.atChecks ?? [], sessionOpen: doc?.sessionOpen ?? null });
 
 /**
- * BA-25 — per symbol, the better of the SAVED series and the one this attempt
- * built: more minutes covered wins, then more checks priced; a tie goes to
- * the new build. A shorter non-empty response never replaces a longer saved
- * series, and a saved series with no new response simply stands.
+ * BA-34 — per symbol, the series a retry writes, merged FACT BY FACT from the
+ * SAVED document and the one this attempt built (never by counting):
+ *
+ *   · per 10-minute bucket, the bar built from more 1-minute bars (`m`) wins,
+ *     and a tie keeps the stored bar; a bucket only one side has is kept;
+ *   · per check, a saved price is never replaced by null, and is replaced by
+ *     another price only when that price's bar completed LATER — the new
+ *     price is non-null, so its bar is inside BA-24's freshness rule; a saved
+ *     price for a check the new build does not sample is kept;
+ *   · the session open: the stored one unless it has none.
+ *
+ * A merge that keeps any earlier fact is `kept` (the caller marks it
+ * preservedFrom); a new build that holds every saved fact — a true superset —
+ * replaces the saved one cleanly. A saved series with no new response simply
+ * stands. The new build's description (roles, `builtFrom`, `writtenAt`) is
+ * the merged document's: it covers the checks the tape has now (BA-31).
  */
 export function keepSeries(saved, fresh) {
   if (!saved) return { doc: fresh ?? null, kept: false };
-  if (!fresh) return { doc: saved, kept: true };
-  const sm = seriesMinutes(saved);
-  const fm = seriesMinutes(fresh);
-  const savedBetter = sm > fm || (sm === fm && pricedChecks(saved) > pricedChecks(fresh));
-  return savedBetter ? { doc: saved, kept: true } : { doc: fresh, kept: false };
+  if (!fresh) return { doc: saved, kept: true, why: 'no bars this attempt' };
+  const savedBars = new Map((Array.isArray(saved.bars) ? saved.bars : []).filter(isObj).map((b) => [b.t, b]));
+  const freshBars = new Map((Array.isArray(fresh.bars) ? fresh.bars : []).filter(isObj).map((b) => [b.t, b]));
+  const bars = [...new Set([...savedBars.keys(), ...freshBars.keys()])].sort().map((t) => {
+    const s = savedBars.get(t);
+    const f = freshBars.get(t);
+    return !s ? f : (!f ? s : (barMinutes(f) > barMinutes(s) ? f : s));
+  });
+  const keyOf = (a) => checkKey(a?.tickSeq, a?.at);
+  const savedAt = new Map((Array.isArray(saved.atChecks) ? saved.atChecks : []).filter(isObj).map((a) => [keyOf(a), a]));
+  const sampled = new Set();
+  const atChecks = (Array.isArray(fresh.atChecks) ? fresh.atChecks : []).map((f) => {
+    sampled.add(keyOf(f));
+    const s = savedAt.get(keyOf(f));
+    if (typeof s?.price !== 'number') return f;                          // a null is no fact to keep
+    if (typeof f.price !== 'number') return s;                           // never a price replaced by null
+    return (toMs(f.barClosedAt) ?? -Infinity) > (toMs(s.barClosedAt) ?? -Infinity) ? f : s;
+  });
+  const orphans = [...savedAt.values()].filter((s) => typeof s.price === 'number' && !sampled.has(keyOf(s)));
+  if (orphans.length) {
+    atChecks.push(...orphans);
+    atChecks.sort((a, b) => (toMs(a.at) ?? 0) - (toMs(b.at) ?? 0));
+  }
+  const merged = { ...fresh, bars, atChecks, sessionOpen: saved.sessionOpen ?? fresh.sessionOpen ?? null };
+  if (factsOf(merged) === factsOf(fresh)) return { doc: fresh, kept: false };
+  return { doc: merged, kept: true, why: seriesMinutes(fresh) < seriesMinutes(saved) ? 'a shorter response' : 'facts this response lacked' };
 }
 
 /**
@@ -435,13 +469,15 @@ export async function processTape({ db, ref, tape, nowMs, fetchCandles, memo, us
       const builtFrom = seriesBuiltFrom(cur, entry.symbol);
       const fresh = bars ? seriesDoc({ tape: cur, entry, bars, session, nowIso, builtFrom }) : null;
       const old = saved.get(entry.symbol) ?? null;
-      const { doc, kept } = keepSeries(old, fresh);
+      const { doc, kept, why } = keepSeries(old, fresh);
       if (!doc) { missing.push(entry.symbol); continue; }
       let out = doc;
       if (kept) {
+        // It holds a fact an earlier attempt saved (BA-34): say from when.
         const since = old.preservedFrom ?? old.writtenAt ?? null;
-        keptFrom.push({ symbol: entry.symbol, why: fresh ? 'a shorter response' : 'no bars this attempt', since });
-        if ((old.preservedFrom ?? null) !== since) { out = { ...old, preservedFrom: since }; writes.push({ entry, doc: out }); }
+        keptFrom.push({ symbol: entry.symbol, why, since });
+        if (doc !== old) { out = { ...doc, preservedFrom: since }; writes.push({ entry, doc: out }); }
+        else if ((old.preservedFrom ?? null) !== since) { out = { ...old, preservedFrom: since }; writes.push({ entry, doc: out }); }
       } else {
         writes.push({ entry, doc: out });
       }

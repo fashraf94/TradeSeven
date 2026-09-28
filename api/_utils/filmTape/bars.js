@@ -119,15 +119,20 @@ export function sessionOpenOf(bars, session) {
   return first && first.t === session.openMs ? { value: first.o, at: new Date(first.t).toISOString() } : null;
 }
 
-/** 1-minute → 10-minute bars (BA-12), anchored on the session open; `n` is how many minutes each holds. */
+/**
+ * 1-minute → 10-minute bars (BA-12), anchored on the session open. `m` is the
+ * number of 1-minute bars each was built from (BA-34, class `market`): a
+ * retry's merge keeps, bucket by bucket, the bar built from more minutes. `n`
+ * is the same count under the name A1 shipped; both are declared `market`.
+ */
 export function aggregate10m(bars, session) {
   const buckets = new Map();
   for (const b of Array.isArray(bars) ? bars : []) {
     const k = Math.floor((b.t - session.openMs) / SERIES_BUCKET_MS);
     if (k < 0) continue;
     const cur = buckets.get(k);
-    if (!cur) buckets.set(k, { t: new Date(session.openMs + k * SERIES_BUCKET_MS).toISOString(), o: b.o, h: b.h, l: b.l, c: b.c, v: b.v, n: 1 });
-    else { cur.h = Math.max(cur.h, b.h); cur.l = Math.min(cur.l, b.l); cur.c = b.c; cur.v += b.v; cur.n += 1; }
+    if (!cur) buckets.set(k, { t: new Date(session.openMs + k * SERIES_BUCKET_MS).toISOString(), o: b.o, h: b.h, l: b.l, c: b.c, v: b.v, n: 1, m: 1 });
+    else { cur.h = Math.max(cur.h, b.h); cur.l = Math.min(cur.l, b.l); cur.c = b.c; cur.v += b.v; cur.n += 1; cur.m += 1; }
   }
   return [...buckets.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
 }

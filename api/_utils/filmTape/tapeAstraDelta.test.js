@@ -41,7 +41,7 @@ import { getReviewAvailability } from '../../../src/utils/reviewAvailability.js'
 import { scanProtectedStoreWrites, siteKey } from '../compositionProtectedStoresScan.js';
 import { makeTapeDb } from './__fixtures__/tapeFirestore.js';
 import { seedDay, capturedDay, noTriggerDay, earlyCloseDay } from './__fixtures__/tapeFixtures.js';
-import { flatRows, fetcherOf } from './__fixtures__/tapeBars.js';
+import { flatRows, sessionRows, fetcherOf } from './__fixtures__/tapeBars.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const ALLOWLIST = JSON.parse(readFileSync(resolve(REPO, 'api/_utils/compositionProtectedStoresAllowlist.json'), 'utf8'));
@@ -696,5 +696,95 @@ describe('DF5 — BA-33: the sweep checks the time before every close-out and sp
     expect(s2.sweep).toMatchObject({ expired: 15, stoppedBy: 'share' });
     expect(expiredCount(t)).toBe(21);
     expect(clock.now - (MORNING + DAY)).toBe(60_000);
+  });
+});
+
+// ── DF6 — BA-34: a series merges fact by fact, not by count ──────────────────
+
+describe('DF6 — BA-34: a retry merges the series bucket by bucket and check by check — an equal count never costs a saved fact', () => {
+  const at = (series, instant) => series.atChecks.find((a) => a.at === instant);
+  const bucket = (series, instant) => series.bars.find((b) => b.t === instant);
+  /** noTriggerDay; AAPL at 100 with a six-minute hole before 11:30 ET, then (next morning) one before 12:00 ET. */
+  async function twoHoleMornings() {
+    const fx = await noTriggerDay();
+    const t = world(fx);
+    await write(t, fx);
+    await morning(t, allBars({ AAPL: holed(100, '15:24', '15:30') }));
+    const saved = structuredClone(t.store.get(seriesPath(fx.battleId, 'AAPL')));
+    expect(tapeOf(t, fx.battleId).passes.candles).toMatchObject({ status: 'partial', symbolsIncomplete: ['AAPL'] });
+    await morning(t, allBars({ AAPL: holed(100, '15:54', '16:00') }), MORNING + DAY);
+    return { fx, t, saved, aapl: t.store.get(seriesPath(fx.battleId, 'AAPL')) };
+  }
+  /** A session rising a cent a minute, with the minutes in [fromUtc, toUtc) removed. */
+  const rising = (fromUtc = null, toUtc = null) => sessionRows(D, (i) => 100 + i / 100, { extras: false })
+    .filter((r) => !fromUtc || r.timestamp * 1000 < Date.parse(`${D}T${fromUtc}:00.000Z`) || r.timestamp * 1000 >= Date.parse(`${D}T${toUtc}:00.000Z`));
+
+  it('D07: two responses of 384 minutes and 24 priced checks, holed at different times — the saved 12:00:20 ET price (100) is never replaced by null, and the other check is priced from the new one', async () => {
+    const { saved, aapl } = await twoHoleMornings();
+    expect(at(saved, '2026-09-24T16:00:20.000Z')).toMatchObject({ tickSeq: 11, price: 100 });
+    expect(at(saved, '2026-09-24T15:30:20.000Z')).toMatchObject({ tickSeq: 9, price: null });
+    expect(at(aapl, '2026-09-24T16:00:20.000Z')).toMatchObject({ tickSeq: 11, price: 100 });       // kept
+    expect(at(aapl, '2026-09-24T15:30:20.000Z')).toMatchObject({ tickSeq: 9, price: 100 });        // restored by the new response
+    expect(aapl.atChecks.filter((a) => a.price === 100)).toHaveLength(25);
+    expect(aapl.preservedFrom).toBe(saved.writtenAt);
+  });
+
+  it('D11: bucket by bucket, the bar built from more minutes wins — the saved whole 11:50 ET bucket stays over the new 4-minute one, the new whole 11:20 ET bucket replaces the saved 4-minute one; the merged day is whole', async () => {
+    const { fx, t, saved, aapl } = await twoHoleMornings();
+    expect(bucket(saved, '2026-09-24T15:50:00.000Z')).toMatchObject({ n: 10 });
+    expect(bucket(saved, '2026-09-24T15:20:00.000Z')).toMatchObject({ n: 4 });
+    expect(bucket(aapl, '2026-09-24T15:50:00.000Z')).toMatchObject({ n: 10, m: 10 });
+    expect(bucket(aapl, '2026-09-24T15:20:00.000Z')).toMatchObject({ n: 10, m: 10 });
+    expect(aapl.bars).toHaveLength(39);
+    expect(aapl.bars.every((b) => b.m === 10)).toBe(true);
+    const tape = tapeOf(t, fx.battleId);
+    expect(tape.coverage.series.status).toBe('complete');                   // coverage from the merged series
+    expect(tape.passes.candles.status).toBe('written');
+  });
+
+  it('BA-34: a tie keeps the stored bar — a response with the same minutes but other values leaves the saved bars and prices, marked preservedFrom', async () => {
+    const fx = await noTriggerDay();
+    const t = world(fx);
+    await write(t, fx);
+    await morning(t, allBars({ AAPL: flatRows(D, 231), SPY: new Error('EODHD 500') }));
+    const saved = structuredClone(t.store.get(seriesPath(fx.battleId, 'AAPL')));
+    await morning(t, allBars({ AAPL: flatRows(D, 232) }), MORNING + DAY);
+    const aapl = t.store.get(seriesPath(fx.battleId, 'AAPL'));
+    expect(aapl.bars).toEqual(saved.bars);
+    expect(aapl.atChecks).toEqual(saved.atChecks);
+    expect(aapl.preservedFrom).toBe(saved.writtenAt);
+  });
+
+  it('BA-34: a saved price is replaced by a price whose bar completed LATER (inside the freshness rule) — and never by one whose bar completed earlier', async () => {
+    const fx = await noTriggerDay();
+    const t = world(fx);
+    await write(t, fx);
+    // morning 1: 11:57–11:59 ET missing — the 12:00:20 check reads the 11:56 bar (closed 11:57:00): fresh, not the latest
+    await morning(t, allBars({ AAPL: rising('15:57', '16:00'), SPY: new Error('EODHD 500') }));
+    expect(at(t.store.get(seriesPath(fx.battleId, 'AAPL')), '2026-09-24T16:00:20.000Z')).toMatchObject({ price: 101.46, barClosedAt: '2026-09-24T15:57:00.000Z' });
+    // morning 2: whole — the 11:59 bar closed later (12:00:00): it replaces
+    await morning(t, allBars({ AAPL: rising() }), MORNING + DAY);
+    expect(at(t.store.get(seriesPath(fx.battleId, 'AAPL')), '2026-09-24T16:00:20.000Z')).toMatchObject({ price: 101.49, barClosedAt: '2026-09-24T16:00:00.000Z' });
+    // and the other way round: a whole day saved, an earlier bar offered — the saved price stays
+    const fx2 = await noTriggerDay({ battleId: 'b-quiet2' });
+    const t2 = world(fx2);
+    await write(t2, fx2);
+    await morning(t2, allBars({ AAPL: rising(), SPY: new Error('EODHD 500') }));
+    await morning(t2, allBars({ AAPL: rising('15:57', '16:00') }), MORNING + DAY);
+    const kept = t2.store.get(seriesPath(fx2.battleId, 'AAPL'));
+    expect(at(kept, '2026-09-24T16:00:20.000Z')).toMatchObject({ price: 101.49, barClosedAt: '2026-09-24T16:00:00.000Z' });
+    expect(kept.preservedFrom).toEqual(expect.any(String));
+  });
+
+  it('BA-34: each 10-minute bar stores m, the number of 1-minute bars it was built from, declared market', async () => {
+    const { SERIES_NUMBER_CLASSES, classOfNumber } = await import('../../../src/constants/filmTape.js');
+    expect(classOfNumber(SERIES_NUMBER_CLASSES, ['bars', 0, 'm'])).toBe('market');
+    const fx = await noTriggerDay();
+    const t = world(fx);
+    await write(t, fx);
+    await morning(t, allBars({ AAPL: holed(100, '15:24', '15:30') }));
+    const aapl = t.store.get(seriesPath(fx.battleId, 'AAPL'));
+    expect(aapl.bars.map((b) => b.m)).toEqual(aapl.bars.map((b) => b.n));
+    expect(bucket(aapl, '2026-09-24T15:20:00.000Z').m).toBe(4);
   });
 });
