@@ -516,6 +516,25 @@ describe('BA-36 (round-3 review L1-1) — a replay that is itself a merge keeps 
     expect(tape.passes.candles.status).not.toBe('written');
   });
 
+  it('L1-1 (review lens 4, L4-3): the vouching side counts its own names too — a merge whose later AMD points lack the spike never vouches for a new attempt that lacks it as well: price:AMD@8 stays named', async () => {
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    // morning 1: AMD whole (the spike sampled); TSLA stale at tickSeq 7, 9 and 10; RSP's close stale
+    await morning(t, allBars({ AMD: amdSpike(), TSLA: withoutMinutes(withoutMinutes(holed(PRICES.TSLA, '15:09', '15:15'), '15:39', '15:45'), '15:54', '16:00'), RSP: holed(PRICES.RSP, '19:54', '20:00') }));
+    // morning 2: AMD stale at tickSeq 8, RSP's close stale — the more complete unit
+    await morning(t, allBars({ AMD: withoutMinutes(amdSpike(), '15:24', '15:30'), RSP: holed(PRICES.RSP, '19:54', '20:00') }), MORNING + DAY);
+    const merged = amdTsla(tapeOf(t, fx.battleId)).replay;
+    expect([...merged.missingInputs].sort()).toEqual(['price:AMD@8', 'price:RSP@close']);
+    expect(merged.holdPath.every((p) => typeof p.points === 'number')).toBe(true);   // its list looks whole; its names say otherwise
+    // morning 3: AMD stale at tickSeq 8 again, RSP whole — it outranks the merge, and its later AMD points equal the merge's
+    await morning(t, allBars({ AMD: withoutMinutes(amdSpike(), '15:24', '15:30') }), MORNING + 4 * DAY);
+    const tape = tapeOf(t, fx.battleId);
+    expect(amdTsla(tape).replay.missingInputs).toContain('price:AMD@8');
+    expect(tape.coverage.replay.status).not.toBe('complete');
+    expect(tape.passes.candles.status).not.toBe('written');
+  });
+
   it('L1-1: a third morning that fetches nothing keeps the merge whole — and its names with it: never complete, never written', async () => {
     const { fx, t, merged } = await mergedSpikeDay();
     await morning(t, Object.fromEntries(Object.keys(PRICES).map((s) => [s, new Error('EODHD 500')])), MORNING + 4 * DAY);
@@ -582,6 +601,19 @@ describe('BA-20 / BA-37 (round-3 review L2-1) — a swap whose trade record may 
     expect(amdTsla(tape).tradeMatched).toBe(true);
     expect(tape.coverage.actions.status).toBe('complete');
     expect(tape.coverage.actions.note).toBeNull();
+  });
+
+  it('L2-1 (review lens 4, L4-5): an unparseable oldest trade time places no swap after it — every unmatched swap still counts, and the evicted AMD swap holds actions partial', async () => {
+    const fx = await presentCaptureDay();
+    const [amd, msft] = fx.battle.trades;
+    const later = laterTrades(amd, 48);
+    const t = world({ ...fx, battle: { ...structuredClone(fx.battle), trades: [{ ...later[0], symbolOut: 'LXU', swappedOutAt: 'not-a-time' }, msft, ...later] } });
+    await write(t, fx);
+    const tape = tapeOf(t, fx.battleId);
+    expect(tape.passes.close.capture).toBe('present');
+    expect(amdTsla(tape).tradeMatched).toBe(false);
+    expect(tape.coverage.actions.status).toBe('partial');
+    expect(tape.coverage.actions.note).toMatch(CAP_NOTE);
   });
 
   it('GUARD: trades[] at its cap with its oldest entry on the day, but every swap of the day matched its trade — nothing of the day was evicted, and actions coverage stays complete', async () => {
@@ -749,6 +781,17 @@ describe('BA-36 / BA-24 (round-3 review L1-4) — a saved null that carries its 
     const price = koPlan(tapeOf(t, fx.battleId)).price;
     expect(price.atClose).toEqual(koPlan(m1).price.atClose);
     expect(price.atClose.at).toBe('2026-09-24T19:54:00.000Z');
+  });
+
+  it('L1-4 (review lens 4, L4-4): the same tie for a replay point — the sold name stale at the swap on both mornings, its bar closing 10:20 ET on morning 1 and 10:22 ET on morning 2: 10:20 stays', async () => {
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    await morning(t, allBars({ AMD: holed(PRICES.AMD, '14:20', '14:30') }));
+    const m1 = amdTsla(tapeOf(t, fx.battleId)).replay;
+    expect(m1.holdPath[0]).toMatchObject({ points: null, barClosedAt: '2026-09-24T14:20:00.000Z' });
+    await morning(t, allBars({ AMD: holed(PRICES.AMD, '14:22', '14:30') }), MORNING + DAY);
+    expect(amdTsla(tapeOf(t, fx.battleId)).replay.holdPath[0]).toEqual(m1.holdPath[0]);
   });
 });
 
