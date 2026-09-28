@@ -693,6 +693,26 @@ describe('BA-37 (round-3 review L2-3) — the gap horizon is the minted count of
     expect(Object.entries(tape.coverage).filter(([k, c]) => !['replay', 'series'].includes(k) && c.status === 'complete').map(([k]) => k)).toEqual(['actions']);
   });
 
+  it('L2-3 (refuter of lens 4): a selected copy whose cronState counts nothing yet — no check minted at selection, as a new battle is written — sets no horizon: the re-read\'s first mint is no gap of day 1', async () => {
+    const fx = await multiDay({ full: true });
+    const hooks = {};
+    const bp = `agentBattles/${fx.battleId}`;
+    const unminted = { ...structuredClone(fx.battle), evaluations: [], cronState: { lastEvaluatedAt: null, cronErrors: [] } };   // createAgentBattle's shape: no tickSeq
+    const t = makeTapeDb(seedDay({}, { ...fx, battle: unminted, ticks: [] }), { hooks });
+    await writeTapeDay(fx.battleId, D1, { db: t.db, now: DAY1_NIGHT });
+    let armed = true;
+    hooks.afterTxRead = async (path) => {
+      if (!armed || path !== tapePath(fx.battleId, D1)) return;
+      armed = false;
+      t.store.set(bp, { ...structuredClone(t.store.get(bp)), cronState: { ...t.store.get(bp).cronState, tickSeq: 1 } });   // day 2's first check, minted inside the write
+    };
+    await writeTapeDay(fx.battleId, D1, { db: t.db, now: DAY2_OPEN });
+    const tape = tapeOf(t, fx.battleId, D1);
+    expect(t.store.get(bp).cronState.tickSeq).toBe(1);
+    expect(tape.passes.close.unattributedGaps).toEqual([]);
+    expect(Object.values(tape.coverage).filter((c) => (c.caveats || []).some((x) => /tickSeq 1\)/.test(x)))).toEqual([]);
+  });
+
   it('L2-3: the horizon still counts what the selection copy minted — a first write whose tick read lacks check 40 names 40 as the day\'s gap, and never 41, minted after the read', async () => {
     const { fx, t, mintInTx } = await dayOneTaped({ drop: [40], taped: false });
     mintInTx();
