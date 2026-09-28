@@ -528,19 +528,20 @@ describe('BA-36 (round-3 review L1-1) — a replay that is itself a merge keeps 
   });
 });
 
+/** capturedDay with its tickSeq-13 record captured too, so capture is `present`. */
+async function presentCaptureDay() {
+  const fx = await capturedDay();
+  const held = ['AAPL', 'NFLX', 'NVDA', 'TSLA', 'KO', 'PEP'];
+  const t13 = await makeTick({
+    battleId: fx.battleId, tickSeq: 13, capturedAtMs: Date.parse('2026-09-24T16:45:20.000Z'), exitReason: 'no_trigger',
+    stages: ['quotes_checked', 'scores_marked', 'risk_evaluated', 'proposal_handled', 'gameplan_handled', 'trigger_evaluated'],
+    scores: { active: 18, banked: 5, total: 23, opponent: 10, bankedBadgePoints: 0 },
+    verdicts: Object.fromEntries(held.map((s) => [s, { action: 'HOLD', reason: null }])), guardrail: { evaluated: false, deployedCount: 0 }, symbols: held,
+  });
+  return { ...fx, ticks: [...fx.ticks, t13].sort((a, b) => a.tickSeq - b.tickSeq) };
+}
+
 describe('BA-20 / BA-37 (round-3 review L2-1) — a swap whose trade record may have been evicted never reads complete', () => {
-  /** capturedDay with its tickSeq-13 record captured too, so capture is `present`. */
-  async function presentCaptureDay() {
-    const fx = await capturedDay();
-    const held = ['AAPL', 'NFLX', 'NVDA', 'TSLA', 'KO', 'PEP'];
-    const t13 = await makeTick({
-      battleId: fx.battleId, tickSeq: 13, capturedAtMs: Date.parse('2026-09-24T16:45:20.000Z'), exitReason: 'no_trigger',
-      stages: ['quotes_checked', 'scores_marked', 'risk_evaluated', 'proposal_handled', 'gameplan_handled', 'trigger_evaluated'],
-      scores: { active: 18, banked: 5, total: 23, opponent: 10, bankedBadgePoints: 0 },
-      verdicts: Object.fromEntries(held.map((s) => [s, { action: 'HOLD', reason: null }])), guardrail: { evaluated: false, deployedCount: 0 }, symbols: held,
-    });
-    return { ...fx, ticks: [...fx.ticks, t13].sort((a, b) => a.tickSeq - b.tickSeq) };
-  }
   /** `n` later swaps, a day on — trades[] keeps the last 50, so these push the day's out. */
   const laterTrades = (base, n) => Array.from({ length: n }, (_, i) => ({
     ...base, symbolOut: `LX${i}`, symbolIn: `LY${i}`, slotIndex: 0, tier: 'support', swappedOutAt: new Date(Date.parse('2026-09-25T14:00:00.000Z') + i * 60_000).toISOString(),
@@ -634,6 +635,18 @@ describe('BA-37 (round-3 review L2-3) — the gap horizon is the minted count of
     tape = tapeOf(t, fx.battleId, D1);
     expect(tape.coverage.checks.caveats).toEqual([]);
     expect(Object.values(tape.coverage).filter((c) => (c.caveats || []).some((x) => /tickSeq 41/.test(x)))).toEqual([]);
+  });
+
+  it('L2-3 (review lens 4, L4-2): a selected copy that carries no minted count falls back to the battle assembled from — the day\'s last check, minted and never captured, stays a gap, and nothing reads complete over it', async () => {
+    const fx = await presentCaptureDay();
+    const last = Math.max(...fx.ticks.map((tk) => tk.tickSeq));
+    const t = world({ ...fx, ticks: fx.ticks.filter((tk) => tk.tickSeq !== last) });
+    const { cronState: _count, ...noCount } = structuredClone(t.store.get(`agentBattles/${fx.battleId}`));
+    await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT, battle: { id: fx.battleId, ...noCount } });
+    const tape = tapeOf(t, fx.battleId);
+    expect(tape.passes.close.gaps).toEqual([last]);
+    expect(tape.passes.close.capture).toBe('partial');
+    expect(Object.entries(tape.coverage).filter(([k, c]) => !['replay', 'series'].includes(k) && c.status === 'complete').map(([k]) => k)).toEqual(['actions']);
   });
 
   it('L2-3: the horizon still counts what the selection copy minted — a first write whose tick read lacks check 40 names 40 as the day\'s gap, and never 41, minted after the read', async () => {

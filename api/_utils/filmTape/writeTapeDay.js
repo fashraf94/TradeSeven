@@ -100,8 +100,10 @@ export async function writeTapeDay(battleId, etDate, opts = {}) {
       intradayViewsPresent, priorTape,
       callRecordsMode: opts.callRecordsMode ?? CALL_RECORDS_MODE,
       resolveResult: opts.resolveResult ?? resolveBattleResult,
-      // the gap horizon stays the copy the tick read was made for
-      mintedMax: battle?.cronState?.tickSeq ?? null,
+      // The gap horizon stays the copy the tick read was made for. A copy with
+      // no count falls back to the battle assembled from, which can add a gap
+      // but never hide one (review lens 4, L4-2).
+      mintedMax: battle?.cronState?.tickSeq ?? b?.cronState?.tickSeq ?? null,
     });
     assembled = assembleFrom(battle);
   }
