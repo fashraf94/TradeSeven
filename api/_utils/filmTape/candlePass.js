@@ -299,18 +299,22 @@ export function keepSeries(saved, fresh) {
 /**
  * The series section: the series documents, and — since plan prices have no
  * section of their own (spec §4 lists nine) — the plans' prices, the other
- * market samples this pass takes (BA-31: plan-price coverage is complete only
- * when every price is current).
+ * market samples this pass takes. BA-31: plan-price coverage is complete only
+ * when every price is current, and — as a replay's (replayCoverage) — only when
+ * no price lacks an input (review R1-2): a price missing a sample is named,
+ * and holds the section at most `partial`.
  */
-function seriesCoverage(requested, missing, gapsBySymbol, session, keptFrom = [], stalePrices = []) {
+function seriesCoverage(requested, missing, gapsBySymbol, session, keptFrom = [], stalePrices = [], unpricedPlans = []) {
   const incomplete = Object.keys(gapsBySymbol).sort();
-  const status = missing.length === 0 && incomplete.length === 0 && stalePrices.length === 0 ? 'complete' : (missing.length < requested.length ? 'partial' : 'unavailable');
+  const whole = missing.length === 0 && incomplete.length === 0 && stalePrices.length === 0 && unpricedPlans.length === 0;
+  const status = whole ? 'complete' : (missing.length < requested.length ? 'partial' : 'unavailable');
   const notes = [];
   if (missing.length) notes.push(`no bars for: ${missing.join(', ')}`);
   // symbolsMissing empty is not evidence that bars were complete (BA-24)
   if (incomplete.length) notes.push(`incomplete — ${incomplete.map((sym) => `${sym}: ${gapsBySymbol[sym].join(', ')}`).join('; ')}`);
   if (keptFrom.length) notes.push(`kept from an earlier attempt: ${keptFrom.map((k) => `${k.symbol} (${k.why})`).join(', ')}`);
   if (stalePrices.length) notes.push(staleLabel('plan price', stalePrices.map((p) => p.symbol)));
+  if (unpricedPlans.length) notes.push(`plan price missing inputs: ${unpricedPlans.map((p) => `${p.symbol} (${p.price.missingInputs.join(', ')})`).join('; ')}`);
   const cov = coverageOf(status, {
     span: { from: iso(session.openMs), to: iso(session.closeMs) },
     sources: ['eodhd_1m'],
@@ -493,7 +497,8 @@ export async function processTape({ db, ref, tape, nowMs, fetchCandles, memo, us
       plans,
       'passes.candles': candles,
       'coverage.replay': replayCoverage(cur, replays, session, stale.replays),
-      'coverage.series': seriesCoverage(requested, missing, gapsBySymbol, session, keptFrom, stale.prices),
+      'coverage.series': seriesCoverage(requested, missing, gapsBySymbol, session, keptFrom, stale.prices,
+        plans.filter((p) => Array.isArray(p.price?.missingInputs) && p.price.missingInputs.length > 0)),
     }));
     const series = writes.length;
     result = { status: candles.status, attempts: candles.attempts, requested: requested.length, missing, series };

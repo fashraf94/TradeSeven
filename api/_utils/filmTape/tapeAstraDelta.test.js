@@ -514,6 +514,21 @@ describe('DF2 — BA-31: a kept unit keeps its own builtFrom and its stale label
     for (const a of moved.actions) expect(replayBuiltFrom(moved, a, session), a.key).toBe(a.replay.builtFrom);
     for (const doc of series) expect(seriesBuiltFrom(moved, doc.symbol), doc.symbol).toBe(doc.builtFrom);
   });
+
+  // The §2 review of this round (build report §9.11, R1-2): coverage.series carries the plan prices,
+  // so a price that lacks a sample is not "complete" there — as a replay missing one is not.
+  it('BA-31 (review R1-2): a plan price missing an input holds coverage.series — which carries plan prices — at most partial and names it, even once the pass is spent', async () => {
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    const koHoled = allBars({ KO: holed(PRICES.KO, '19:54', '20:00') });      // KO's close sample is stale every morning
+    for (const at of [MORNING, MORNING + DAY, MORNING + 4 * DAY]) await morning(t, koHoled, at);
+    const tape = tapeOf(t, fx.battleId);
+    expect(tape.plans.find((p) => p.symbol === 'KO').price.missingInputs).toEqual(['price:KO@close']);
+    expect(tape.passes.candles.status).toBe('exhausted');
+    expect(tape.coverage.series.status).toBe('partial');
+    expect(tape.coverage.series.note).toMatch(/plan price missing inputs: KO \(price:KO@close\)/);
+  });
 });
 
 // ── DF3 — BA-26 amended: a limit preserves coverage only for unchanged dependencies ─
