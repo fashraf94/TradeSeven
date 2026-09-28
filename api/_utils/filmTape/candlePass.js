@@ -88,7 +88,7 @@ import {
 } from '../../../src/constants/filmTape.js';
 import { FILM_TAPE_WRITE_ENABLED } from '../../../src/config/featureFlags.js';
 import { sessionBars, sampleAt, sampleCanExist, expectedSeriesBars, sessionOpenOf, aggregate10m } from './bars.js';
-import { replayAction, REPLAY_LABEL, mergeReplay, replayRank, replayHasFact } from './tapeReplay.js';
+import { replayAction, REPLAY_LABEL, mergeReplay, replayHasFact } from './tapeReplay.js';
 import { coverageOf } from './tapeAssemble.js';
 import { sanitizeForFirestore, stableStringify } from './tapeMerge.js';
 import { tapeRef } from './tapeSources.js';
