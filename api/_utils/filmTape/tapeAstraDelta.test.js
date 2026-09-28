@@ -343,3 +343,91 @@ describe('THE CONTROLS (C01–C16) — green at the reviewed tip, green after ev
     for (const fn of ['getSessionForDate', 'getPreviousSessionDate', 'isMarketHoliday']) expect(server[fn], fn).toBe(calendar[fn]);
   });
 });
+
+// ── DF1 — BA-31: the candle input identity is value-sensitive ────────────────
+
+describe('DF1 — BA-31: a changed input VALUE re-queues or labels the candle output, even when nothing appears or disappears', () => {
+  const tsla = (tape) => tape.actions.find((a) => a.symbolIn === 'TSLA');
+
+  it('D01: the sold position\'s entry and the banked points change, every input still present — the merge re-queues the replay built from the old values, and a rebuild gives a different gap', async () => {
+    const { assembleTape } = await import('./tapeAssemble.js');
+    const { mergeTape } = await import('./tapeMerge.js');
+    const { replayAction } = await import('./tapeReplay.js');
+    const { sessionBars } = await import('./bars.js');
+    const { etDayBounds } = await import('./tapeTime.js');
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    await morning(t);
+    const stored = tapeOf(t, fx.battleId);
+    expect(stored.passes.candles.status).toBe('written');
+    // the same day, re-read: AMD's entry 150 → 200 (the trade), the banked points −12.5 → 20 (the tick's action)
+    const ticks = structuredClone(fx.ticks);
+    ticks.find((tk) => tk.tickSeq === 5).actions[0].lockedPoints = 20;
+    const trades = structuredClone(fx.battle.trades);
+    trades[0].entryPrice = 200;
+    const assembled = assembleTape({
+      battle: { ...fx.battle, trades, id: fx.battleId }, etDate: D, bounds: etDayBounds(D), nowMs: MORNING + 3_600_000,
+      ticksRead: { ok: true, ticks, prevSeq: null, nextSeq: null, method: 'capturedAt_range' },
+      runsRead: { ok: true, runs: fx.runs }, receiptsRead: { ok: true, receipts: fx.receipts }, callsRead: { ok: true, calls: fx.calls },
+      declarationsRead: { ok: true, present: new Set(fx.declarations) },
+    });
+    const { doc } = mergeTape(stored, assembled, { nowIso: iso(MORNING + 3_600_000), withinWindow: true });
+    const row = tsla(doc);
+    expect([row.entryPrice, row.lockedPoints, row.replayInputs.ghost.entryPrice]).toEqual([200, 20, 200]);
+    expect(doc.passes.candles).toMatchObject({ status: 'pending', reason: 'inputs_changed', attempts: 0, changedInputs: ['actions'] });
+    for (const s of ['replay', 'series']) {
+      expect(doc.coverage[s].status, s).toBe('partial');
+      expect(doc.coverage[s].note, s).toMatch(/built before the candle inputs changed \(actions\) — awaiting the next candle pass/);
+    }
+    // why it matters: the kept replay's gap is not the gap of the inputs the tape now holds
+    const barsBySymbol = {};
+    for (const [sym, rows] of Object.entries(allBars())) barsBySymbol[sym] = sessionBars(rows, D, sessionFor(D));
+    const rebuilt = replayAction({ action: row, checks: doc.checks, barsBySymbol, session: sessionFor(D), sectors: doc.comparables.sectors });
+    expect(rebuilt.gapPoints).not.toBe(row.replay.gapPoints);
+  });
+
+  it('D02: a recorded evidence price the reconciliation read changes (103 → 140) — the close pass names the evidence as changed, and the next morning reconciles against 140', async () => {
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    await morning(t);
+    const before = tsla(tapeOf(t, fx.battleId)).replay.reconciliation.boughtVsEvidence;
+    const e6 = fx.battle.evaluations.find((e) => e.evalId === 'b-captured:e6');
+    expect(before).toMatchObject({ tickSeq: 6, recordedPx: e6.evidence.TSLA.px });
+    expect(before.recordedPx).toBe(103);
+    const battle = t.store.get(`agentBattles/${fx.battleId}`);
+    battle.evaluations.find((e) => e.evalId === 'b-captured:e6').evidence.TSLA.px = 140;
+    t.store.set(`agentBattles/${fx.battleId}`, battle);
+    await write(t, fx, MORNING + 3_600_000);
+    const tape = tapeOf(t, fx.battleId);
+    expect(tape.checks.find((c) => c.evalId === 'b-captured:e6').evidence.TSLA.px).toBe(140);
+    expect(tape.passes.candles).toMatchObject({ status: 'pending', reason: 'inputs_changed', changedInputs: ['evidence'] });
+    expect(tape.coverage.replay).toMatchObject({ status: 'partial' });
+    await morning(t, allBars(), MORNING + DAY);
+    expect(tsla(tapeOf(t, fx.battleId)).replay.reconciliation.boughtVsEvidence).toMatchObject({ tickSeq: 6, recordedPx: 140 });
+    expect(tapeOf(t, fx.battleId).passes.candles.status).toBe('written');
+  });
+
+  it('D13: through the real close writer, the sold position\'s recorded entry is corrected 150 → 300 — the tape copies it, re-queues the replay built from 150, and the next morning rebuilds from 300', async () => {
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    await morning(t);
+    const before = structuredClone(tsla(tapeOf(t, fx.battleId)).replay);
+    const battle = t.store.get(`agentBattles/${fx.battleId}`);
+    battle.trades.find((tr) => tr.symbolOut === 'AMD').entryPrice = 300;
+    t.store.set(`agentBattles/${fx.battleId}`, battle);
+    await write(t, fx, MORNING + 3_600_000);
+    let tape = tapeOf(t, fx.battleId);
+    expect(tsla(tape).replayInputs.ghost.entryPrice).toBe(300);
+    expect(tsla(tape).replay).toEqual(before);                                 // kept in place, labelled, until replaced
+    expect(tape.passes.candles).toMatchObject({ status: 'pending', reason: 'inputs_changed', changedInputs: ['actions'] });
+    expect(tape.coverage.replay.status).toBe('partial');
+    await morning(t, allBars(), MORNING + DAY);
+    tape = tapeOf(t, fx.battleId);
+    expect(tsla(tape).replay.ghost.atSwap).not.toBe(before.ghost.atSwap);
+    expect(tape.passes.candles.status).toBe('written');
+    expect(tape.coverage.replay.status).toBe('complete');
+  });
+});

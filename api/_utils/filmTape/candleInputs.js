@@ -5,19 +5,28 @@
 // the same thing (spec §6; BA-25). PURE: a tape document in, values out.
 //
 //   symbolPlan              the symbol set and each symbol's roles (spec §6)
-//   candleInputFingerprint  a digest of every input the candle output depends
-//                           on — check ids and times, their states and
-//                           stageReached, evidence presence, action ids and
-//                           their replay-input presence, plan ids and times,
-//                           the symbol-role set. Never a candle-owned field
-//                           (replay, price, series), so the candle pass's own
-//                           write never moves it.
+//   candleInputFingerprint  a digest, part by part, of the VALUES the candle
+//                           output consumes (BA-31, value-sensitive): per
+//                           check its id, time, state and stageReached; the
+//                           evidence prices and changes the reconciliation
+//                           reads; per action both legs' replay-input values
+//                           (entry, ATR, tier, direction, threshold history,
+//                           baseline), lockedPoints, the swap instant and
+//                           subsequentTradesInSlot; per plan its id, instant
+//                           and symbol; the symbol-role set and the sector
+//                           each symbol is compared with. Never a candle-owned
+//                           field (replay, price, series) and never provenance
+//                           or bookkeeping (preservedFrom, writtenAt, copiedAt,
+//                           `sources`, coverage), so neither the candle pass's
+//                           own write nor preserving a fact moves it.
 //
-// The candle pass stores the fingerprint of the tape it built from in
+// The candle pass stores the fingerprint of the tape it read in
 // `passes.candles.inputFingerprint`; the close pass compares it with the
 // merged tape's (tapeMerge.js mergeCandles). A difference re-queues the candle
 // pass inside its window, or — outside it — lowers a `written` pass to
-// `partial`, names what changed, and labels the output built before it.
+// `partial`, names what changed, and labels the output built before it. The
+// review's DF1: a digest of which inputs were PRESENT let a corrected entry
+// price or evidence price leave a replay built from the old value "written".
 
 import { createHash } from 'node:crypto';
 import { TICKER_TO_SECTOR } from '../rankingConfig.js';
@@ -59,18 +68,44 @@ const digest = (list) => createHash('sha256')
   .digest('hex').slice(0, 16);
 const orNull = (v) => (v === undefined ? null : v);
 
-/** BA-25 — one digest per input part the candle output depends on (strings only; no number to class). */
+// ── the canonical values (BA-31) — one extraction, read by every digest ────
+
+/** A row that records a check the battle ran, at a known time: what the series and the replay sample. */
+export const isCheck = (c) => isObj(c) && !NON_CHECK_STATES.includes(c.state) && toMs(c.at) !== null;
+/** A check's identity: id, time, and what decides whether a replay samples it (state, stageReached, rowSource). */
+export const checkValues = (c) => [orNull(c.key), orNull(c.tickSeq), orNull(c.at), orNull(c.state), orNull(c.stageReached), orNull(c.rowSource)];
+/** The evidence values the reconciliation (boughtVsEvidence) reads for one symbol at one check: its price and its change. */
+export const evidenceValues = (ev) => (isObj(ev) ? [orNull(ev.px), orNull(ev.chg)] : null);
+/** One leg's replay-input VALUES — never its `sources`, which say where each came from. */
+const legValues = (leg) => (isObj(leg)
+  ? [orNull(leg.entryPrice), orNull(leg.atr), orNull(leg.tier), orNull(leg.direction),
+    orNull(leg.thresholdHistory?.maxMultiplier), orNull(leg.thresholdHistory?.minMultiplier), orNull(leg.thresholdBaseline?.value)]
+  : null);
+/** Everything the replay reads from its action row: both legs' values, lockedPoints, the swap instant, subsequentTradesInSlot, and its key, check, symbols and stated gaps. */
+export const actionValues = (a) => [orNull(a.key), orNull(a.at), orNull(a.tickSeq), orNull(a.symbolOut), orNull(a.symbolIn),
+  orNull(a.replayReason), Array.isArray(a.replayMissing) ? a.replayMissing : [],
+  legValues(a.replayInputs?.ghost), legValues(a.replayInputs?.bought), orNull(a.lockedPoints), orNull(a.subsequentTradesInSlot)];
+/** What a plan's price reads: its id, its instant, its symbol. */
+export const planValues = (p) => [orNull(p.key), orNull(p.at), orNull(p.symbol)];
+
+/**
+ * BA-31 — one digest per input part, over the VALUES the candle output
+ * consumes (strings only; no number to class). The parts keep the names the
+ * tape uses to say what changed (`changedInputs`).
+ */
 export function candleInputFingerprint(tape) {
-  const checks = rows(tape?.checks).filter((c) => !NON_CHECK_STATES.includes(c.state) && toMs(c.at) !== null);
+  const checks = rows(tape?.checks).filter(isCheck);
+  const sectors = isObj(tape?.comparables?.sectors) ? tape.comparables.sectors : {};
   return {
-    checks: digest(checks.map((c) => [orNull(c.key), orNull(c.tickSeq), c.at, orNull(c.state), orNull(c.stageReached), orNull(c.rowSource)])),
-    evidence: digest(checks.filter((c) => isObj(c.evidence)).map((c) => [orNull(c.key), c.at,
-      Object.keys(c.evidence).filter((s) => typeof c.evidence[s]?.px === 'number').sort()])),
-    actions: digest(rows(tape?.actions).map((a) => [orNull(a.key), orNull(a.at), orNull(a.tickSeq), orNull(a.symbolOut), orNull(a.symbolIn),
-      orNull(a.replayReason), Boolean(a.replayInputs?.ghost), Boolean(a.replayInputs?.bought), typeof a.lockedPoints === 'number',
-      orNull(a.subsequentTradesInSlot)])),
-    plans: digest(rows(tape?.plans).map((p) => [orNull(p.key), orNull(p.at), orNull(p.symbol)])),
-    symbols: digest(symbolPlan(tape || {}).map((e) => [e.symbol, e.roles.join('+')])),
+    checks: digest(checks.map(checkValues)),
+    evidence: digest(checks.filter((c) => isObj(c.evidence)).map((c) => [orNull(c.key), orNull(c.at),
+      Object.keys(c.evidence).sort().map((s) => [s, evidenceValues(c.evidence[s])])])),
+    actions: digest(rows(tape?.actions).map(actionValues)),
+    plans: digest(rows(tape?.plans).map(planValues)),
+    symbols: digest([
+      ...symbolPlan(tape || {}).map((e) => ['role', e.symbol, e.roles.join('+')]),
+      ...Object.keys(sectors).sort().map((s) => ['sector', s, orNull(sectors[s])]),
+    ]),
   };
 }
 
