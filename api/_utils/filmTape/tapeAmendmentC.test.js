@@ -472,6 +472,15 @@ describe('BA-36 (round-3 review L1-1) — a replay that is itself a merge keeps 
     expect(tape.passes.candles.status).not.toBe('written');
   });
 
+  it('L1-1: a third morning with morning 1\'s response again — AMD whole, the spike sampled — never reads complete on the merge\'s path: price:AMD@8 stays named, never written', async () => {
+    const { fx, t } = await mergedSpikeDay();
+    await morning(t, allBars({ AMD: amdSpike(), TSLA: withoutMinutes(holed(PRICES.TSLA, '15:09', '15:15'), '15:39', '15:45') }), MORNING + 4 * DAY);
+    const tape = tapeOf(t, fx.battleId);
+    expect(amdTsla(tape).replay.missingInputs).toContain('price:AMD@8');
+    expect(tape.coverage.replay.status).toBe('partial');
+    expect(tape.passes.candles.status).not.toBe('written');
+  });
+
   it('L1-1: a third morning that fetches nothing keeps the merge whole — and its names with it: never complete, never written', async () => {
     const { fx, t, merged } = await mergedSpikeDay();
     await morning(t, Object.fromEntries(Object.keys(PRICES).map((s) => [s, new Error('EODHD 500')])), MORNING + 4 * DAY);
@@ -709,5 +718,52 @@ describe('BA-36 (round-3 review L1-5) — preservedFrom marks a kept earlier fac
     expect(msft(tape).preservedFrom).toBe(m1.passes.candles.writtenAt);
     expect(tape.coverage.replay.preservedFrom).toBe(m1.passes.candles.writtenAt);
     expect(tape.coverage.replay.status).toBe('partial');
+  });
+});
+
+describe('BA-36 — a replay\'s keyed changes, its reconciliation and its ties, point by point (rows for the round\'s mutation survivors)', () => {
+  it('BA-36: a saved market change and a saved reconciliation are never replaced by null EVEN when the new attempt is the more complete unit — AMD stale at three checks on morning 1; SPY\'s close and TSLA at the evidence check stale on morning 2', async () => {
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    await morning(t, allBars({ AMD: withoutMinutes(withoutMinutes(holed(PRICES.AMD, '15:09', '15:15'), '15:24', '15:30'), '15:39', '15:45') }));
+    const m1Tape = structuredClone(tapeOf(t, fx.battleId));
+    const m1 = amdTsla(m1Tape).replay;
+    expect(m1.missingInputs).toEqual(['price:AMD@7', 'price:AMD@8', 'price:AMD@9']);
+    expect(m1.marketChangeAfter.SPY).toEqual(expect.any(Number));
+    expect(m1.reconciliation.boughtVsEvidence).toMatchObject({ tickSeq: 6, rebuiltPx: PRICES.TSLA });
+    const m2Bars = allBars({ SPY: holed(PRICES.SPY, '19:54', '20:00'), TSLA: holed(PRICES.TSLA, '14:39', '14:45') });
+    const t2 = world(fx);                                                       // morning 2's response alone: the more complete unit
+    await write(t2, fx);
+    await morning(t2, m2Bars, MORNING + DAY);
+    const alone = amdTsla(tapeOf(t2, fx.battleId)).replay;
+    expect(alone.missingInputs).toEqual(['price:TSLA@6', 'price:SPY@close']);
+    expect(alone.marketChangeAfter.SPY).toBeNull();
+    expect(alone.reconciliation.boughtVsEvidence).toBeNull();
+    await morning(t, m2Bars, MORNING + DAY);
+    const tape = tapeOf(t, fx.battleId);
+    const replay = amdTsla(tape).replay;
+    expect(replay.marketChangeAfter.SPY).toBe(m1.marketChangeAfter.SPY);
+    expect(replay.reconciliation.boughtVsEvidence).toEqual(m1.reconciliation.boughtVsEvidence);
+    expect(factsOf(replay)).toEqual(builtFromWholeBars(tape).replay);
+    expect(replay.preservedFrom).toBe(m1Tape.passes.candles.writtenAt);          // it keeps facts morning 1 saved
+    expect(tape.coverage.replay.status).toBe('complete');
+    expect(tape.passes.candles.status).toBe('written');
+  });
+
+  it('BA-36: where both replays hold a value, a tie keeps the stored unit\'s — TSLA priced 242 on morning 1 and 243 on morning 2, SPY\'s close stale on both: the replay keeps morning 1\'s points', async () => {
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    await morning(t, allBars({ SPY: holed(PRICES.SPY, '19:54', '20:00') }));
+    const m1 = structuredClone(tapeOf(t, fx.battleId));
+    const r1 = amdTsla(m1).replay;
+    await morning(t, allBars({ SPY: holed(PRICES.SPY, '19:54', '20:00'), TSLA: flatRows(D, PRICES.TSLA + 1) }), MORNING + DAY);
+    const replay = amdTsla(tapeOf(t, fx.battleId)).replay;
+    expect(replay.missingInputs).toEqual(['price:SPY@close']);
+    expect({ bought: replay.bought, swapPath: replay.swapPath, gapPoints: replay.gapPoints, reconciliation: replay.reconciliation })
+      .toEqual({ bought: r1.bought, swapPath: r1.swapPath, gapPoints: r1.gapPoints, reconciliation: r1.reconciliation });
+    expect(replay.gapPoints).toBe(70.5);                                      // 76.5 from morning 2's 243
+    expect(replay.preservedFrom).toBe(m1.passes.candles.writtenAt);
   });
 });
