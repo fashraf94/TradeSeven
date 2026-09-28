@@ -959,7 +959,7 @@ export function assembleTape({
   // price and locked gain are unknown here, a limit of this read (BA-20: every
   // source under its cap; round-3 review L2-1). When every swap that could
   // have been evicted matched, nothing of the day was.
-  else if (trades.evictionPossible && unmatched) actionReasons.push(limit(`trades[] is at its ${TRADES_CAP}-entry cap and its oldest surviving entry is not before this day — ${unmatched} swap(s) have no trade record here (evicted): tier, slot, exit price and locked gain unknown`, LIMIT_SOURCES.tradesCap));
+  else if (trades.evictionPossible && unmatched) actionReasons.push(limit(`trades[] is at its ${TRADES_CAP}-entry cap and its oldest surviving entry is not before this day — ${unmatched} swap(s) have no trade record here (possibly evicted): tier, slot, exit price and locked gain unknown`, LIMIT_SOURCES.tradesCap));
   if (!receiptsRead.ok) actionReasons.push(limit(`learning receipts unreadable (${receiptsRead.error}) — replay inputs and holding times unavailable`, LIMIT_SOURCES.receipts));
   coverage.actions = coverageOf(statusFrom(actionReasons, actions.length > 0 || actionsProvable), {
     span: spanOf(actions.map((a) => a.at)), sources: ['ticks.actions', 'trades', 'learningReceipts'], note: texts(actionReasons).join('; ') || null,

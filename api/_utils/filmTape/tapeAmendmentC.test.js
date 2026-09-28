@@ -577,7 +577,7 @@ describe('BA-20 / BA-37 (round-3 review L2-1) — a swap whose trade record may 
   const laterTrades = (base, n) => Array.from({ length: n }, (_, i) => ({
     ...base, symbolOut: `LX${i}`, symbolIn: `LY${i}`, slotIndex: 0, tier: 'support', swappedOutAt: new Date(Date.parse('2026-09-25T14:00:00.000Z') + i * 60_000).toISOString(),
   }));
-  const CAP_NOTE = /trades\[\] is at its 50-entry cap and its oldest surviving entry is not before this day — 1 swap\(s\) have no trade record here \(evicted\)/;
+  const CAP_NOTE = /trades\[\] is at its 50-entry cap and its oldest surviving entry is not before this day — 1 swap\(s\) have no trade record here \(possibly evicted\)/;
 
   it('L2-1: capture present, trades[] at its 50-entry cap with its oldest entry on the day, and the AMD trade evicted — the action stands, unmatched, and actions coverage is partial with the cap named, never complete', async () => {
     const fx = await presentCaptureDay();
