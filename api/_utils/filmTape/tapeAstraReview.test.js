@@ -784,13 +784,16 @@ describe('F6 — BA-28: the hub helper says "pending" only when the close pass\'
       .toEqual([`agentBattles/${battle.id}/tape/2026-09-25`, `agentBattles/${battle.id}/tape/2026-09-28`]);  // never 2026-09-29
   });
 
-  it('F6 (impossible final day): tradingDays ["2026-02-30"] is "unavailable" — the close pass can never write that day', async () => {
+  it('F6 (impossible final day): tradingDays ["2026-02-30"] is "unavailable" — the close pass can never write that day, nor a failure record under it (BA-35)', async () => {
     flags.v2 = true;
     const battle = tiered({ timing: { tradingDays: ['2026-02-30'] }, activatedAt: '2026-09-28T12:00:00.000Z', completedAt: '2026-09-28T20:05:00.000Z' });
     expect((await helper(battle, '2026-09-28T23:00:00.000Z')).availability).toBe('unavailable');
-    const s = await passAt(storeWith(battle), '2026-09-29T02:15:30.000Z');
+    const t = storeWith(battle);
+    const s = await passAt(t, '2026-09-29T02:15:30.000Z');
     expect(s.written).toEqual([]);
-    expect(s.failed.map((f) => f.reason)).toEqual(['writeTapeDay: invalid etDate 2026-02-30']);
+    expect(s.failed).toEqual([]);
+    expect(s.invalid).toEqual([{ battleId: battle.id, etDate: '2026-02-30' }]);
+    expect(t.writeLog).toEqual([]);
   });
 
   it('F6 (calendar edge): a completion after the calendar\'s last pass (2027-12-31, 22:00 ET) — the next session is beyond the maintained calendar: "unavailable", and that pass refuses calendar_missing', async () => {

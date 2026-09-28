@@ -104,7 +104,7 @@ export default async function handler(req, res) {
     const summary = await runClosePass({ db: getFirebaseAdmin(), clock: Date.now, startMs, budgetMs: config.maxDuration * 1000 });
     console.log(`${LOG_PREFIX}`, JSON.stringify({
       etDate: summary.etDate, battles: summary.battles, written: summary.written?.length ?? 0,
-      unchanged: summary.unchanged?.length ?? 0, skippedMode: summary.skippedMode?.length ?? 0,
+      unchanged: summary.unchanged?.length ?? 0, skippedMode: summary.skippedMode?.length ?? 0, invalid: summary.invalid?.length ?? 0,
       failed: summary.failed?.length ?? 0, notReached: summary.notReached?.length ?? 0, skipped: summary.skipped ?? false,
     }));
     return res.status(200).json({ mode: 'close', ...summary, ms: Date.now() - startMs });

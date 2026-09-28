@@ -10,7 +10,10 @@
 // date is one of its trading days (`timing.tradingDays`); a battle that
 // completed tonight after its last session gets its final day re-merged so the
 // final-day tape records the completion. flat6/tournament battles get the
-// BA-3 `skipped_mode` document.
+// BA-3 `skipped_mode` document. BA-35: a target date that is not a session of
+// the calendar (a malformed final day such as 2026-02-30, a weekend) is
+// counted in `invalid` before anything reads or writes it — never a failure
+// record under a malformed tape id.
 //
 // BUDGET: a remaining-time floor (30 s) checked before each battle, and an
 // isolating try/catch per battle — a failed battle writes its failure record
@@ -42,7 +45,7 @@ import { buildBattleBlock } from './tapeAssemble.js';
 import { stableStringify } from './tapeMerge.js';
 import { readEvalRunsForDay, readTape } from './tapeSources.js';
 import { etDayBounds, etDateOf, sessionDatesBetween, sessionFor, nextCalendarDate } from './tapeTime.js';
-import { isBattleDay, completionsSinceMs, tapeDateFor } from '../../../src/utils/tapeSchedule.js';
+import { isBattleDay, completionsSinceMs, tapeDateFor, isEtDate, isSessionDate } from '../../../src/utils/tapeSchedule.js';
 
 export const TIME_FLOOR_MS = 30_000;
 /** The longest range one backfill request may name (sessions). */
@@ -116,7 +119,7 @@ export async function runClosePass({ db, clock = Date.now, startMs = clock(), bu
   for (const b of [...active, ...completed]) if (b?.id && !byId.has(b.id)) byId.set(b.id, b);
   const battles = [...byId.values()].sort((a, b) => (a.id < b.id ? -1 : 1));
 
-  const summary = { etDate: date, battles: battles.length, written: [], unchanged: [], skippedMode: [], notBattleDay: [], failed: [], notReached: [] };
+  const summary = { etDate: date, battles: battles.length, written: [], unchanged: [], skippedMode: [], notBattleDay: [], invalid: [], failed: [], notReached: [] };
   for (const [i, battle] of battles.entries()) {
     if (budgetMs - elapsedFrom(startMs, clock) < TIME_FLOOR_MS) {
       summary.notReached = battles.slice(i).map((b) => b.id);
@@ -125,6 +128,13 @@ export async function runClosePass({ db, clock = Date.now, startMs = clock(), bu
     }
     const target = tapeDateFor(battle, date, { completedSinceMs: sinceMs });
     if (!target) { summary.notBattleDay.push(battle.id); continue; }
+    // BA-35: the target must be a session of the calendar before writeTapeDay
+    // or markCloseFailed — an invalid one is counted, and nothing is written.
+    if (!isEtDate(target) || !isSessionDate(target)) {
+      summary.invalid.push({ battleId: battle.id, etDate: String(target) });
+      console.error(`[film-tape-close] battle ${battle.id}: its tape date ${String(target)} is not a session of the calendar — nothing written (BA-35)`);
+      continue;
+    }
     try {
       if (target !== date && completionRecorded(await readTape(db, battle.id, target), battle)) {
         // A final-day re-merge whose completion the tape already records.

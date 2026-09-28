@@ -923,3 +923,22 @@ describe('DF8 — BA-29 amended: the admin backfill\'s refresh mode re-merges wr
     expect(t.writeLog.length).toBe(writes);
   });
 });
+
+// ── BA-35 — malformed targets are rejected before any write ─────────────────
+
+describe('BA-35 — the close pass validates the target as a calendar session before writeTapeDay or markCloseFailed', () => {
+  const selected = (id, tradingDays) => ({
+    id, ownerId: 'owner-1', agentId: 'agent-1', gameMode: 'baggerbomb_agent', status: 'completed', timing: { tradingDays },
+    activatedAt: '2026-09-24T12:00:00.000Z', completedAt: '2026-09-28T20:05:00.000Z', dailyReviews: [], evaluations: [], trades: [], chatExchanges: [], scoreState: { currentScore: 12, opponentScore: 8 },
+  });
+
+  it('C13 (inverted by BA-35): a selected battle whose final day is impossible (2026-02-30) or no session (a Saturday) is counted in summary.invalid — and nothing is written, not even a failure record', async () => {
+    const t = makeTapeDb({ 'agentBattles/b-feb30': selected('b-feb30', ['2026-02-30']), 'agentBattles/b-sat': selected('b-sat', ['2026-09-26']) });
+    const s = await runClosePass({ db: t.db, clock: () => Date.parse('2026-09-29T02:15:30.000Z') });   // Monday's pass
+    expect(t.writeLog).toEqual([]);
+    expect(s.failed).toEqual([]);
+    expect(s.written).toEqual([]);
+    expect(s.invalid).toEqual([{ battleId: 'b-feb30', etDate: '2026-02-30' }, { battleId: 'b-sat', etDate: '2026-09-26' }]);
+    expect(t.readLog.some((r) => r.includes('/tape/'))).toBe(false);           // not even read
+  });
+});
