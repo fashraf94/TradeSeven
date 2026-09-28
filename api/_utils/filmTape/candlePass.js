@@ -54,6 +54,17 @@
 // queued for the next morning (`requeued`). A retry keeps the more complete of
 // the stored and the fresh result, so no attempt loses what an earlier one
 // saved (§8 invariant 7). The writer flag is read at call time here too.
+//
+// WHAT EACH OUTPUT WAS BUILT FROM (BA-31): every unit this pass builds — each
+// action's replay, each plan's price, each series document — carries
+// `builtFrom`, the identity of that unit's own inputs (candleInputs.js). A
+// unit kept from an earlier attempt keeps its own `builtFrom`; when that no
+// longer matches its inputs on the tape now, the unit is STALE: its section's
+// coverage is at most `partial` and names it, and the pass stays queued. A
+// retry that could not rebuild a unit never relabels it current. The stored
+// `passes.candles.inputFingerprint` is the inputs this pass read — the close
+// pass's re-queue trigger — and is never read as proof that any unit was
+// rebuilt.
 
 import { resolveModeConfig } from '../../../src/constants/agentGameModes.js';
 import { isCryptoSymbol } from '../marketDataCache.js';
@@ -67,7 +78,7 @@ import { replayAction, REPLAY_LABEL } from './tapeReplay.js';
 import { coverageOf } from './tapeAssemble.js';
 import { sanitizeForFirestore } from './tapeMerge.js';
 import { tapeRef } from './tapeSources.js';
-import { symbolPlan, candleInputFingerprint } from './candleInputs.js';
+import { symbolPlan, candleInputFingerprint, replayBuiltFrom, priceBuiltFrom, seriesBuiltFrom } from './candleInputs.js';
 
 export { symbolPlan };
 import { etDateOf, sessionFor, sessionsBack, candleWindowStart, toMs } from './tapeTime.js';
@@ -156,7 +167,7 @@ function planPrice(plan, bars, session) {
 const seriesChecks = (tape) => (Array.isArray(tape.checks) ? tape.checks : []).filter((c) => !NON_CHECK_STATES.includes(c.state) && toMs(c.at) !== null);
 const checkKey = (tickSeq, at) => `${Number.isInteger(tickSeq) ? tickSeq : ''}|${at}`;
 
-function seriesDoc({ tape, entry, bars, session, nowIso }) {
+function seriesDoc({ tape, entry, bars, session, nowIso, builtFrom }) {
   const checks = seriesChecks(tape);
   return sanitizeForFirestore({
     tapeVersion: TAPE_VERSION,
@@ -176,11 +187,15 @@ function seriesDoc({ tape, entry, bars, session, nowIso }) {
       return { tickSeq: Number.isInteger(c.tickSeq) ? c.tickSeq : null, at: c.at, price: p?.valid ? p.price : null, barClosedAt: p ? iso(p.barClosedAt) : null };
     }),
     numberClasses: SERIES_NUMBER_CLASSES,
+    builtFrom,
     writtenAt: nowIso,
   });
 }
 
-function replayCoverage(tape, replays, session) {
+/** BA-31: the label a kept unit carries while its inputs have changed since it was built. */
+const staleLabel = (what, names) => `${what} built before its inputs changed, kept (not rebuilt this attempt): ${names.join(', ')}`;
+
+function replayCoverage(tape, replays, session, stale = []) {
   const actions = Array.isArray(tape.actions) ? tape.actions : [];
   if (!actions.length) return coverageOf('complete', { sources: ['eodhd_1m'], note: `no actions this day · ${REPLAY_LABEL}` });
   const outOfScope = actions.filter((a) => a.replayReason === 'crypto_not_supported').length;
@@ -190,7 +205,10 @@ function replayCoverage(tape, replays, session) {
   if (outOfScope) reasons.push(`${outOfScope} crypto leg(s) not replayed (crypto_not_supported)`);
   const missing = [...new Set([...replays.values()].flatMap((r) => (r ? r.missingInputs : [])))];
   if (missing.length) reasons.push(`missing inputs: ${missing.join(', ')}`);
-  const status = full === inScope && !outOfScope ? 'complete' : (full > 0 || [...replays.values()].some((r) => r && (r.ghost || r.bought)) ? 'partial' : 'unavailable');
+  // BA-31: a replay is complete only while it is current — built from the inputs the tape holds now.
+  if (stale.length) reasons.push(staleLabel('replay', stale.map((a) => `${a.symbolOut} → ${a.symbolIn}`)));
+  const whole = full === inScope && !outOfScope && !stale.length;
+  const status = whole ? 'complete' : (full > 0 || [...replays.values()].some((r) => r && (r.ghost || r.bought)) ? 'partial' : 'unavailable');
   const spanFrom = actions.map((a) => toMs(a.at)).filter((v) => v !== null).sort((a, b) => a - b)[0];
   return coverageOf(status, {
     span: spanFrom !== undefined ? { from: iso(spanFrom), to: iso(session.closeMs) } : null,
@@ -241,14 +259,21 @@ export function keepSeries(saved, fresh) {
   return savedBetter ? { doc: saved, kept: true } : { doc: fresh, kept: false };
 }
 
-function seriesCoverage(requested, missing, gapsBySymbol, session, keptFrom = []) {
+/**
+ * The series section: the series documents, and — since plan prices have no
+ * section of their own (spec §4 lists nine) — the plans' prices, the other
+ * market samples this pass takes (BA-31: plan-price coverage is complete only
+ * when every price is current).
+ */
+function seriesCoverage(requested, missing, gapsBySymbol, session, keptFrom = [], stalePrices = []) {
   const incomplete = Object.keys(gapsBySymbol).sort();
-  const status = missing.length === 0 && incomplete.length === 0 ? 'complete' : (missing.length < requested.length ? 'partial' : 'unavailable');
+  const status = missing.length === 0 && incomplete.length === 0 && stalePrices.length === 0 ? 'complete' : (missing.length < requested.length ? 'partial' : 'unavailable');
   const notes = [];
   if (missing.length) notes.push(`no bars for: ${missing.join(', ')}`);
   // symbolsMissing empty is not evidence that bars were complete (BA-24)
   if (incomplete.length) notes.push(`incomplete — ${incomplete.map((sym) => `${sym}: ${gapsBySymbol[sym].join(', ')}`).join('; ')}`);
   if (keptFrom.length) notes.push(`kept from an earlier attempt: ${keptFrom.map((k) => `${k.symbol} (${k.why})`).join(', ')}`);
+  if (stalePrices.length) notes.push(staleLabel('plan price', stalePrices.map((p) => p.symbol)));
   const cov = coverageOf(status, {
     span: { from: iso(session.openMs), to: iso(session.closeMs) },
     sources: ['eodhd_1m'],
@@ -265,15 +290,16 @@ function seriesCoverage(requested, missing, gapsBySymbol, session, keptFrom = []
  * lacks an input a later fetch could supply — bars obtained on different
  * mornings, or a stale sample (BA-24) — so the pass is not `written` yet.
  */
-export function nextCandleState({ prev, requested, missing, incomplete = [], retryable = false, inputFingerprint = null, nowIso }) {
+export function nextCandleState({ prev, requested, missing, incomplete = [], retryable = false, stale = false, inputFingerprint = null, nowIso }) {
   const attempts = (Number.isInteger(prev?.attempts) ? prev.attempts : 0) + 1;
   let status;
   let reason = null;
-  if (missing.length === 0 && incomplete.length === 0 && !retryable) status = 'written';
+  if (missing.length === 0 && incomplete.length === 0 && !retryable && !stale) status = 'written';
   else if (attempts >= CANDLE_MAX_ATTEMPTS) { status = 'failed'; reason = 'attempts_exhausted'; }
   else if (missing.length > 0 && missing.length === requested.length) { status = 'failed'; reason = 'fetch_failed'; }
   else if (missing.length > 0) { status = 'partial'; reason = 'symbols_missing'; }
   else if (incomplete.length > 0) { status = 'partial'; reason = 'bars_incomplete'; }
+  else if (stale) { status = 'partial'; reason = 'built_before_inputs_changed'; }   // BA-31: a kept unit not rebuilt
   else { status = 'partial'; reason = 'replay_incomplete'; }
   return {
     status, writtenAt: nowIso, attempts, reason, source: 'eodhd_1m', symbolsRequested: requested, symbolsMissing: missing, symbolsIncomplete: incomplete,
@@ -365,14 +391,25 @@ export async function processTape({ db, ref, tape, nowMs, fetchCandles, memo, us
     // BA-19, BA-25; reviews L2-F1, F3): per action and per plan the more
     // complete of the stored and the fresh result is kept, and per symbol the
     // better series — a saved one is never replaced by a poorer response.
+    // BA-31: each fresh unit carries the identity of the inputs it was built
+    // from; a kept one keeps its own, and is stale when that is no longer its
+    // inputs' identity on the tape now.
     const replays = new Map();
+    const stale = { replays: [], prices: [] };
     const actions = (Array.isArray(cur.actions) ? cur.actions : []).map((a) => {
-      const fresh = replayAction({ action: a, checks: cur.checks, barsBySymbol, session, sectors: cur.comparables?.sectors || {}, tierStamp: resolveModeConfig(cur.gameMode).flatMultiplier });
-      const kept = keepBetter(a.replay ?? null, fresh, replayRank);
+      const builtFrom = replayBuiltFrom(cur, a, session);
+      const built = replayAction({ action: a, checks: cur.checks, barsBySymbol, session, sectors: cur.comparables?.sectors || {}, tierStamp: resolveModeConfig(cur.gameMode).flatMultiplier });
+      const kept = keepBetter(a.replay ?? null, built ? { ...built, builtFrom } : null, replayRank);
       replays.set(a.key, kept);
+      if (kept && kept.builtFrom !== builtFrom) stale.replays.push(a);
       return { ...a, replay: kept };
     });
-    const plans = (Array.isArray(cur.plans) ? cur.plans : []).map((p) => ({ ...p, price: keepBetter(p.price ?? null, planPrice(p, barsBySymbol[p.symbol] || null, session), priceRank) }));
+    const plans = (Array.isArray(cur.plans) ? cur.plans : []).map((p) => {
+      const builtFrom = priceBuiltFrom(p);
+      const kept = keepBetter(p.price ?? null, { ...planPrice(p, barsBySymbol[p.symbol] || null, session), builtFrom }, priceRank);
+      if (kept && kept.builtFrom !== builtFrom) stale.prices.push(p);
+      return { ...p, price: kept };
+    });
     const prev = cur.passes?.candles;
     const retryable = [...replays.values()].some((r) => r && awaitsBars(r)) || plans.some((p) => p.price && awaitsBars(p.price));
     // Per symbol, the kept series (BA-25) and what it lacks against a whole
@@ -385,7 +422,8 @@ export async function processTape({ db, ref, tape, nowMs, fetchCandles, memo, us
     const writes = [];
     for (const entry of curPlan) {
       const bars = barsBySymbol[entry.symbol];
-      const fresh = bars ? seriesDoc({ tape: cur, entry, bars, session, nowIso }) : null;
+      const builtFrom = seriesBuiltFrom(cur, entry.symbol);
+      const fresh = bars ? seriesDoc({ tape: cur, entry, bars, session, nowIso, builtFrom }) : null;
       const old = saved.get(entry.symbol) ?? null;
       const { doc, kept } = keepSeries(old, fresh);
       if (!doc) { missing.push(entry.symbol); continue; }
@@ -398,16 +436,22 @@ export async function processTape({ db, ref, tape, nowMs, fetchCandles, memo, us
         writes.push({ entry, doc: out });
       }
       const gaps = [...seriesGaps(out, session), ...uncoveredChecks(out, checksNow)];
+      // BA-31: a kept series built from other inputs is stale — named once (a
+      // missing check already says "built before …").
+      if (out.builtFrom !== builtFrom && !gaps.some((g) => g.startsWith('built before'))) gaps.push('built before its inputs changed');
       if (gaps.length) gapsBySymbol[entry.symbol] = gaps;
     }
-    const candles = nextCandleState({ prev, requested, missing, incomplete: Object.keys(gapsBySymbol).sort(), retryable, inputFingerprint: candleInputFingerprint(cur), nowIso });
+    const candles = nextCandleState({
+      prev, requested, missing, incomplete: Object.keys(gapsBySymbol).sort(), retryable,
+      stale: stale.replays.length > 0 || stale.prices.length > 0, inputFingerprint: candleInputFingerprint(cur), nowIso,
+    });
     for (const { entry, doc } of writes) tx.set(seriesRef(entry.symbol), doc);
     tx.update(ref, sanitizeForFirestore({
       actions,
       plans,
       'passes.candles': candles,
-      'coverage.replay': replayCoverage(cur, replays, session),
-      'coverage.series': seriesCoverage(requested, missing, gapsBySymbol, session, keptFrom),
+      'coverage.replay': replayCoverage(cur, replays, session, stale.replays),
+      'coverage.series': seriesCoverage(requested, missing, gapsBySymbol, session, keptFrom, stale.prices),
     }));
     const series = writes.length;
     result = { status: candles.status, attempts: candles.attempts, requested: requested.length, missing, series };

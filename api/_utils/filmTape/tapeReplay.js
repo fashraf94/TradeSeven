@@ -38,26 +38,20 @@
 // recorded in the first later evidence stamp that carries it.
 
 import { calculateAssetScoreServer } from '../agentScoring.js';
-import { STAGES } from '../tickCapture/captureConfig.js';
-import { NON_CHECK_STATES } from '../../../src/constants/filmTape.js';
 import { sampleAt, sampleCanExist, pctChange } from './bars.js';
 import { toMs } from './tapeTime.js';
+import { scoredCheck, laterChecks } from './candleInputs.js';
+
+// Which checks a replay samples is candleInputs.js's rule, so a unit's
+// `builtFrom` (BA-31) and the replay it identifies read the same checks.
+export { scoredCheck };
 
 export const REPLAY_LABEL = "one-step hypothetical through the day's close; later trades in this slot are not replayed; not the effect of the swap on the battle";
-const SCORED_FROM = STAGES.indexOf('scores_marked');
 
 const round2 = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v * 100) / 100 : null);
 const iso = (ms) => new Date(ms).toISOString();
 /** A sample on a path: its points, and — when no fresh price stood for it — the stale bar's close time beside the null (BA-24). */
 const point = (s) => ({ tickSeq: s.tickSeq, at: iso(s.atMs), points: s.points, ...(s.missing && s.staleBarClosedAt !== null ? { barClosedAt: iso(s.staleBarClosedAt) } : {}) });
-
-/** Did this check's tick score the book (so the live history ratcheted)? */
-export function scoredCheck(row) {
-  if (!row || NON_CHECK_STATES.includes(row.state) || toMs(row.at) === null) return false;
-  if (row.rowSource === 'entry') return true; // an entry is written only on the full path
-  const idx = STAGES.indexOf(row.stageReached);
-  return idx >= SCORED_FROM;
-}
 
 /**
  * Score one leg along the samples. Returns per-sample points (null where no
@@ -114,9 +108,7 @@ export function replayAction({ action, checks, barsBySymbol, session, sectors = 
 
   // The check that MADE the swap is the swap sample, not a later check: its
   // capturedAt falls a few seconds after the swap instant, inside the same minute.
-  const ownSeq = Number.isInteger(action.tickSeq) ? action.tickSeq : null;
-  const later = (checks || []).filter((c) => scoredCheck(c) && toMs(c.at) > swapMs && toMs(c.at) <= session.closeMs
-    && !(ownSeq !== null && c.tickSeq === ownSeq));
+  const later = laterChecks(checks, action, session);
   const samples = [
     { kind: 'swap', tickSeq: Number.isInteger(action.tickSeq) ? action.tickSeq : null, atMs: swapMs },
     ...later.map((c) => ({ kind: 'check', tickSeq: Number.isInteger(c.tickSeq) ? c.tickSeq : null, atMs: toMs(c.at), key: c.key })),

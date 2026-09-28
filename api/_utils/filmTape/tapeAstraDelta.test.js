@@ -431,3 +431,82 @@ describe('DF1 — BA-31: a changed input VALUE re-queues or labels the candle ou
     expect(tape.coverage.replay.status).toBe('complete');
   });
 });
+
+// ── DF2 — BA-31: every candle output unit records what it was built from ────
+
+describe('DF2 — BA-31: a kept unit keeps its own builtFrom and its stale label; a retry that could not rebuild it never relabels it current', () => {
+  const OUTAGE = Object.fromEntries(Object.keys(PRICES).map((s) => [s, new Error('EODHD 500')]));
+
+  it('D10: tick 10 recovered, then every refetch fails — the replay kept from before tick 10 is still labelled, its coverage stays partial and the pass is not written', async () => {
+    const { t, fx, recover } = await withoutTick10();
+    recover();
+    await write(t, fx, MORNING + 3_600_000);
+    expect(tapeOf(t, fx.battleId).coverage.replay.note).toMatch(/built before the candle inputs changed \(checks\)/);
+    await morning(t, OUTAGE, MORNING + DAY);
+    const tape = tapeOf(t, fx.battleId);
+    const amd = tape.actions.find((a) => a.symbolOut === 'AMD');
+    expect(amd.replay.holdPath.some((p) => p.tickSeq === 10)).toBe(false);          // kept: built before tick 10
+    expect(tape.coverage.replay.status).toBe('partial');
+    expect(tape.coverage.replay.note).toMatch(/replay built before its inputs changed, kept \(not rebuilt this attempt\): AMD → TSLA/);
+    expect(amd.replay.builtFrom).toEqual(expect.any(String));
+    expect(tape.coverage.replay.note).not.toMatch(/MSFT → NFLX/);                   // swapped after tick 10: its inputs did not change
+    expect(tape.passes.candles.status).not.toBe('written');
+    // and the next morning that can rebuild it does: current, complete, written
+    await morning(t, allBars(), MORNING + 2 * DAY);
+    const after = tapeOf(t, fx.battleId);
+    expect(after.actions.find((a) => a.symbolOut === 'AMD').replay.holdPath.some((p) => p.tickSeq === 10)).toBe(true);
+    expect(after.coverage.replay).toMatchObject({ status: 'complete' });
+    expect(after.passes.candles.status).toBe('written');
+  });
+
+  it('BA-31: a plan whose symbol changed under the same key keeps the price built for the old symbol only as stale — labelled, never "written", until a price for the new symbol replaces it', async () => {
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    await morning(t);
+    const before = structuredClone(tapeOf(t, fx.battleId).plans);
+    // the entry's candidates re-read in the other order: plan :0 is now KO, plan :1 NFLX
+    const battle = t.store.get(`agentBattles/${fx.battleId}`);
+    const e11 = battle.evaluations.find((e) => e.evalId === 'b-captured:e11');
+    e11.candidates = [e11.candidates[1], e11.candidates[0]];
+    t.store.set(`agentBattles/${fx.battleId}`, battle);
+    await write(t, fx, MORNING + 3_600_000);
+    const requeued = tapeOf(t, fx.battleId);
+    expect(requeued.passes.candles).toMatchObject({ status: 'pending', changedInputs: ['plans'] });
+    expect(requeued.plans.map((p) => [p.symbol, p.price.atClose.value])).toEqual([['KO', before[0].price.atClose.value], ['NFLX', before[1].price.atClose.value]]);
+    // the plan symbols' bars fail: the old prices are kept, and they are stale
+    await morning(t, allBars({ KO: new Error('EODHD 500'), NFLX: new Error('EODHD 500') }), MORNING + DAY);
+    let tape = tapeOf(t, fx.battleId);
+    expect(tape.coverage.series.status).toBe('partial');
+    expect(tape.coverage.series.note).toMatch(/plan price built before its inputs changed, kept \(not rebuilt this attempt\): KO, NFLX/);
+    expect(tape.passes.candles).toMatchObject({ status: 'partial', reason: 'built_before_inputs_changed' });
+    await morning(t, allBars(), MORNING + 2 * DAY);
+    tape = tapeOf(t, fx.battleId);
+    expect(tape.plans.map((p) => [p.symbol, p.price.atClose.value])).toEqual([['KO', PRICES.KO], ['NFLX', PRICES.NFLX]]);
+    expect(tape.coverage.series.status).toBe('complete');
+    expect(tape.passes.candles.status).toBe('written');
+  });
+
+  it('BA-31: builtFrom is on every unit — each replay, each plan price, each series document — as a string with no number class; preserving a fact never changes it', async () => {
+    const { replayBuiltFrom, priceBuiltFrom, seriesBuiltFrom } = await import('./candleInputs.js');
+    const { numbersWithClasses } = await import('../../../src/constants/filmTape.js');
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    await morning(t);
+    const tape = tapeOf(t, fx.battleId);
+    const session = sessionFor(D);
+    for (const a of tape.actions) expect(a.replay.builtFrom, a.key).toBe(replayBuiltFrom(tape, a, session));
+    for (const p of tape.plans) expect(p.price.builtFrom, p.key).toBe(priceBuiltFrom(p));
+    const series = [...t.store.entries()].filter(([k]) => k.startsWith(`${tapePath(fx.battleId)}/series/`)).map(([, v]) => v);
+    for (const doc of series) expect(doc.builtFrom, doc.symbol).toBe(seriesBuiltFrom(tape, doc.symbol));
+    for (const doc of [tape, ...series]) expect(numbersWithClasses(doc, doc.numberClasses).some((n) => n.path.includes('builtFrom'))).toBe(false);
+    // provenance and bookkeeping never move a unit's identity
+    const moved = structuredClone(tape);
+    moved.writtenAt = 'later';
+    for (const s of Object.keys(moved.coverage)) moved.coverage[s] = { ...moved.coverage[s], preservedFrom: 'x' };
+    for (const a of moved.actions) a.replayInputs.ghost.sources = { entryPrice: 'elsewhere' };
+    for (const a of moved.actions) expect(replayBuiltFrom(moved, a, session), a.key).toBe(a.replay.builtFrom);
+    for (const doc of series) expect(seriesBuiltFrom(moved, doc.symbol), doc.symbol).toBe(doc.builtFrom);
+  });
+});

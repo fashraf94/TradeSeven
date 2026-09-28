@@ -27,11 +27,24 @@
 // `partial`, names what changed, and labels the output built before it. The
 // review's DF1: a digest of which inputs were PRESENT let a corrected entry
 // price or evidence price leave a replay built from the old value "written".
+//
+//   replayBuiltFrom / priceBuiltFrom / seriesBuiltFrom — BA-31: the identity
+//                           of ONE output unit's own inputs (an action's
+//                           replay, a plan's price, a symbol's series), from
+//                           the same values. The candle pass stores it on the
+//                           unit as `builtFrom`; a unit is current only while
+//                           it equals the hash of its inputs on the tape now,
+//                           so a unit kept from an earlier attempt is known
+//                           for what it is (the review's DF2).
+//   laterChecks, scoredCheck — the checks a replay samples, shared with the
+//                           replay itself (tapeReplay.js) so the identity and
+//                           the replay can never disagree on them.
 
 import { createHash } from 'node:crypto';
 import { TICKER_TO_SECTOR } from '../rankingConfig.js';
 import { isCryptoSymbol } from '../marketDataCache.js';
 import { MARKET_COMPARABLES, NON_CHECK_STATES } from '../../../src/constants/filmTape.js';
+import { STAGES } from '../tickCapture/captureConfig.js';
 import { toMs } from './tapeTime.js';
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -108,6 +121,51 @@ export function candleInputFingerprint(tape) {
     ]),
   };
 }
+
+// ── BA-31: each output unit's own identity ──────────────────────────────────
+
+const SCORED_FROM = STAGES.indexOf('scores_marked');
+const unitHash = (value) => createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 16);
+
+/** Did this check's tick score the book (so the live history ratcheted)? */
+export function scoredCheck(row) {
+  if (!row || NON_CHECK_STATES.includes(row.state) || toMs(row.at) === null) return false;
+  if (row.rowSource === 'entry') return true; // an entry is written only on the full path
+  const idx = STAGES.indexOf(row.stageReached);
+  return idx >= SCORED_FROM;
+}
+
+/**
+ * The checks a replay samples after its swap: every check that scored the
+ * book, after the swap instant and through the session close — never the
+ * check that made the swap (its capture falls inside the same minute).
+ */
+export function laterChecks(checks, action, session) {
+  const swapMs = toMs(action?.at);
+  const ownSeq = Number.isInteger(action?.tickSeq) ? action.tickSeq : null;
+  return (Array.isArray(checks) ? checks : []).filter((c) => scoredCheck(c) && toMs(c.at) > swapMs && toMs(c.at) <= session.closeMs
+    && !(ownSeq !== null && c.tickSeq === ownSeq));
+}
+
+/**
+ * BA-31 — what one action's replay is built from: the action's own values, the
+ * checks it samples, the evidence the reconciliation reads at them, and the
+ * sector each leg is compared with.
+ */
+export function replayBuiltFrom(tape, action, session) {
+  const later = laterChecks(tape?.checks, action, session);
+  const sectors = isObj(tape?.comparables?.sectors) ? tape.comparables.sectors : {};
+  return unitHash(['replay', actionValues(action), later.map(checkValues),
+    later.map((c) => evidenceValues(isObj(c.evidence) ? c.evidence[action.symbolIn] : null)),
+    [orNull(sectors[action.symbolOut]), orNull(sectors[action.symbolIn])]]);
+}
+
+/** BA-31 — what one plan's price is built from: its id, instant and symbol. */
+export const priceBuiltFrom = (plan) => unitHash(['price', planValues(plan)]);
+
+/** BA-31 — what one symbol's series is built from: the symbol, and the checks it prices (their numbers and times). */
+export const seriesBuiltFrom = (tape, symbol) => unitHash(['series', symbol,
+  rows(tape?.checks).filter(isCheck).map((c) => [Number.isInteger(c.tickSeq) ? c.tickSeq : null, c.at])]);
 
 /** The parts of two fingerprints that differ, in CANDLE_INPUT_PARTS order. */
 export function changedInputParts(before, now) {
