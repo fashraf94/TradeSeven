@@ -28,7 +28,7 @@ import { sessionBars } from './bars.js';
 import { sessionFor } from './tapeTime.js';
 import { formatTapeMarkdown } from './tapeExport.js';
 import { makeTapeDb } from './__fixtures__/tapeFirestore.js';
-import { seedDay, capturedDay, noTriggerDay } from './__fixtures__/tapeFixtures.js';
+import { seedDay, capturedDay, noTriggerDay, earlyCloseDay } from './__fixtures__/tapeFixtures.js';
 import { flatRows, fetcherOf } from './__fixtures__/tapeBars.js';
 
 const D = '2026-09-24';
@@ -396,5 +396,44 @@ describe('BA-25 amended (R3-3) — outside the candle window, a written pass who
     const { fx, t } = await grownDay();
     await runBackfill({ db: t.db, clock: () => Date.parse('2026-09-28T15:00:00.000Z'), dates: [D], refresh: true });
     expect(tapeOf(t, fx.battleId).passes.candles).toMatchObject({ status: 'pending', reason: 'inputs_changed', changedInputs: ['checks'] });
+  });
+});
+
+// ── BA-24 confirmed — minutes shown as a fact, never a verdict (R1-3) ─────────
+
+describe('BA-24 confirmed (R1-3) — the read-out prints, per series, "N of M session minutes traded" beside the coverage line', () => {
+  /** The Series section's lines, from its heading to its table. */
+  const seriesSection = (md) => { const lines = md.split('\n'); const at = lines.indexOf('## Series'); return lines.slice(at, lines.indexOf('', at + 1)); };
+
+  it('R1-3: a series missing three minutes no check reads is whole by its buckets — coverage complete — and the read-out says 387 of 390 session minutes traded, class market; a whole series says 390 of 390', async () => {
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    await morning(t, allBars({ AAPL: holed(PRICES.AAPL, '13:40', '13:43') }));      // 09:40–09:42 ET: no check falls after them within five minutes
+    const tape = tapeOf(t, fx.battleId);
+    const series = seriesOf(t, fx.battleId);
+    const aapl = series.find((s) => s.symbol === 'AAPL');
+    expect(aapl.bars).toHaveLength(39);
+    expect(aapl.bars.reduce((n, b) => n + b.m, 0)).toBe(387);
+    expect(tape.coverage.series.status).toBe('complete');                      // minutes are no completeness criterion
+    expect(tape.passes.candles.status).toBe('written');
+    const section = seriesSection(formatTapeMarkdown(tape, series));
+    expect(section[1]).toMatch(/^> coverage: \*\*complete\*\*/);                // still headed by its coverage line
+    expect(section).toContain('- AAPL: 387 (market) of 390 (market) session minutes traded');
+    expect(section).toContain('- SPY: 390 (market) of 390 (market) session minutes traded');
+    expect(section.filter((l) => l.endsWith('session minutes traded'))).toHaveLength(series.length);   // one line per series
+  });
+
+  it('R1-3: the session minutes are the calendar\'s — an early close counts 210, never a constant 390', async () => {
+    const fx = await earlyCloseDay();
+    const t = world(fx);
+    await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: Date.parse('2026-11-28T02:15:30.000Z') });
+    const bars = {};
+    for (const [sym, p] of Object.entries(PRICES)) bars[sym] = flatRows(fx.etDate, p, { openUtc: '14:30' });
+    const at = Date.parse('2026-11-28T11:00:30.000Z');
+    await runCandlePass({ db: t.db, fetchCandles: fetcherOf(bars).fetchCandles, clock: () => at, startMs: at });
+    const series = seriesOf(t, fx.battleId, fx.etDate);
+    const section = seriesSection(formatTapeMarkdown(tapeOf(t, fx.battleId, fx.etDate), series));
+    for (const s of series) expect(section, s.symbol).toContain(`- ${s.symbol}: 210 (market) of 210 (market) session minutes traded`);
   });
 });

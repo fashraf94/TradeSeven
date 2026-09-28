@@ -31,6 +31,7 @@
 import {
   PROVENANCE_LABELS, COVERAGE_SECTIONS, CANDLE_TERMINAL_STATUSES, classOfNumber, numbersWithClasses, formatNumberPath,
 } from '../../../src/constants/filmTape.js';
+import { getSessionForDate } from '../../../src/utils/marketCalendar.js';
 
 const ET_TIME = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' });
 
@@ -256,6 +257,23 @@ function sectionReplay(doc) {
   return ['## Replay', coverageLine(doc.coverage?.replay), '', '_Per action, under Actions._'].join('\n');
 }
 
+/**
+ * BA-24 confirmed (review R1-3) — a series' minutes as a FACT, never a
+ * verdict: the 1-minute bars its 10-minute bars were built from (Σ bars[].m)
+ * against the calendar's session minutes (390, 210 on an early close). The
+ * provider omits a minute in which no trade printed, so this is no
+ * completeness criterion — wholeness stays the calendar's bucket count with a
+ * fresh price at every check (BA-24). Both numbers carry the class the series
+ * document declares for `bars[].m` (market).
+ */
+function minutesTraded(s, doc) {
+  const bars = Array.isArray(s?.bars) ? s.bars : [];
+  const traded = bars.reduce((n, b) => n + (isNum(b?.m) ? b.m : 0), 0);
+  const session = getSessionForDate(s?.etDate ?? doc?.etDate);
+  const cls = classOfNumber(s?.numberClasses, ['bars', 0, 'm']) ?? 'UNCLASSIFIED';
+  return `${traded} (${cls}) of ${session?.isTradingDay ? `${session.sessionLenMin} (${cls})` : '—'} session minutes traded`;
+}
+
 function sectionSeries(doc, seriesDocs) {
   const rows = seriesDocs.map((s) => {
     const bars = Array.isArray(s.bars) ? s.bars : [];
@@ -265,7 +283,9 @@ function sectionSeries(doc, seriesDocs) {
       last ? `${labelled(s, ['bars', bars.length - 1, 'c'], last.c)} @ ${etClock(last.t)}` : '—',
       counted(bars.length), counted(Array.isArray(s.atChecks) ? s.atChecks.length : 0)];
   });
-  return ['## Series', coverageLine(doc.coverage?.series), '', `_${PROVENANCE_LABELS.market}._`, '',
+  // One line per series beside the coverage line: its minutes, a fact (R1-3).
+  const minutes = seriesDocs.map((s) => `- ${s.symbol ?? '—'}: ${minutesTraded(s, doc)}`);
+  return ['## Series', coverageLine(doc.coverage?.series), ...minutes, '', `_${PROVENANCE_LABELS.market}._`, '',
     seriesDocs.length
       ? table(['symbol', 'role', 'interval', 'session open', 'last 10-minute close', 'bars', 'check prices'], rows)
       : '_No series documents._'].join('\n');
