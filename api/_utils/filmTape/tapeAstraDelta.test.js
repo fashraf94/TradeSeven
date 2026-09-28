@@ -518,19 +518,28 @@ describe('DF2 — BA-31: a kept unit keeps its own builtFrom and its stale label
 // ── DF3 — BA-26 amended: a limit preserves coverage only for unchanged dependencies ─
 
 describe('DF3 — BA-26 amended: a read that hits a limit while the section\'s dependencies changed holds it partial with unresolved_dependency', () => {
-  /** noTriggerDay written with complete calls coverage, then an evaluation recovered for the day that expected a declarations record. */
-  async function recoveredEvaluation() {
+  /**
+   * noTriggerDay written with complete calls coverage, then an evaluation recovered for the day that
+   * expected a declarations record — at once, or (`later`) when the row calls `recover()`. `selected`
+   * is the battle document as a pass selected it before the evaluation arrived.
+   */
+  async function recoveredEvaluation({ later = false } = {}) {
     const fx = await noTriggerDay();
     const hooks = {};
     const t = makeTapeDb(seedDay({}, fx), { hooks });
     await write(t, fx);
     expect(tapeOf(t, fx.battleId).coverage.calls).toMatchObject({ status: 'complete' });
-    const battle = t.store.get(`agentBattles/${fx.battleId}`);
-    battle.evaluations.push({ ...structuredClone(battle.evaluations[0]), evalId: 'b-quiet:e-recovered', timestamp: '2026-09-24T17:07:00.000Z', promptBuiltAt: '2026-09-24T17:06:52.000Z', declarationsPhase: 'expected' });
-    t.store.set(`agentBattles/${fx.battleId}`, battle);
+    const selected = { id: fx.battleId, ...structuredClone(t.store.get(`agentBattles/${fx.battleId}`)) };
+    const recover = () => {
+      const battle = t.store.get(`agentBattles/${fx.battleId}`);
+      battle.evaluations.push({ ...structuredClone(battle.evaluations[0]), evalId: 'b-quiet:e-recovered', timestamp: '2026-09-24T17:07:00.000Z', promptBuiltAt: '2026-09-24T17:06:52.000Z', declarationsPhase: 'expected' });
+      t.store.set(`agentBattles/${fx.battleId}`, battle);
+    };
+    if (!later) recover();
     const unreadable = (label) => label === `agentBattles/${fx.battleId}/calls` || label.startsWith(`agentBattles/${fx.battleId}/declarations/`);
-    return { fx, t, hooks, unreadable };
+    return { fx, t, hooks, unreadable, selected, recover };
   }
+  const UNRESOLVED = /^unresolved_dependency: /;
 
   it('D03: calls and declarations unreadable on the read that brings a new evaluation expecting a declarations record — calls coverage is partial, both sources named, never the old "complete"', async () => {
     const { fx, t, hooks, unreadable } = await recoveredEvaluation();
@@ -570,6 +579,66 @@ describe('DF3 — BA-26 amended: a read that hits a limit while the section\'s d
     const calls = tapeOf(t, fx.battleId).coverage.calls;
     expect(calls.status).toBe('complete');
     expect(calls.caveats).toEqual([]);
+  });
+
+  // The §2 review of this round (build report §9.11, R2-1): "a read with no limit" is not yet a read
+  // that OBSERVED the new dependencies — an assembly older than them has no limit and never saw them.
+  it('BA-26 amended (review R2-1): a limit-free read assembled from the battle as the pass selected it — before the evaluation arrived — never saw the new dependency: unresolved_dependency stands, calls stays partial', async () => {
+    const { fx, t, hooks, unreadable, selected } = await recoveredEvaluation();
+    hooks.beforeRead = (label) => { if (unreadable(label)) throw new Error('14 UNAVAILABLE'); };
+    await write(t, fx, NIGHT + 60_000);                                        // sees the evaluation; calls and declarations unreadable
+    delete hooks.beforeRead;
+    await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT + 120_000, battle: selected });   // every source readable; the battle predates the evaluation
+    let calls = tapeOf(t, fx.battleId).coverage.calls;
+    expect(calls.status).toBe('partial');
+    expect(calls.caveats.filter((c) => UNRESOLVED.test(c))).toHaveLength(2);
+    // a read that does observe it resolves both into what it found
+    await write(t, fx, NIGHT + 180_000);
+    calls = tapeOf(t, fx.battleId).coverage.calls;
+    expect(calls.caveats).toEqual([expect.stringMatching(/expected a declarations record that is absent/)]);
+    expect(calls.status).toBe('partial');
+  });
+
+  it('BA-26 amended (review R2-1): the same through the writer\'s own transaction retry — a read assembled before the evaluation arrived retries against the tape that has it, and leaves unresolved_dependency standing', async () => {
+    const { fx, t, hooks, unreadable, recover } = await recoveredEvaluation({ later: true });
+    let landed = false;
+    hooks.afterTxRead = async (path) => {
+      if (landed || path !== tapePath(fx.battleId)) return;
+      landed = true;
+      recover();
+      hooks.beforeRead = (label) => { if (unreadable(label)) throw new Error('14 UNAVAILABLE'); };
+      await write(t, fx, NIGHT + 90_000);                                      // commits inside the first write's transaction
+      delete hooks.beforeRead;
+      expect(tapeOf(t, fx.battleId).coverage.calls.caveats.filter((c) => UNRESOLVED.test(c))).toHaveLength(2);
+    };
+    const retries = t.db.txRetries;
+    await write(t, fx, NIGHT + 60_000);                                        // assembled, every source readable, before the evaluation existed
+    expect(t.db.txRetries).toBeGreaterThan(retries);
+    const calls = tapeOf(t, fx.battleId).coverage.calls;
+    expect(tapeOf(t, fx.battleId).checks.some((c) => c.evalId === 'b-quiet:e-recovered')).toBe(true);
+    expect(calls.status).toBe('partial');
+    expect(calls.caveats.filter((c) => UNRESOLVED.test(c))).toHaveLength(2);
+  });
+
+  it('BA-26 amended (review R2-1): when the limited read is the tape\'s FIRST write, a later read that predates its evaluation never lifts calls to complete — it did not observe what the section depends on', async () => {
+    const fx = await noTriggerDay();
+    const hooks = {};
+    const t = makeTapeDb(seedDay({}, fx), { hooks });
+    const selected = { id: fx.battleId, ...structuredClone(t.store.get(`agentBattles/${fx.battleId}`)) };
+    const battle = t.store.get(`agentBattles/${fx.battleId}`);
+    battle.evaluations.push({ ...structuredClone(battle.evaluations[0]), evalId: 'b-quiet:e-recovered', timestamp: '2026-09-24T17:07:00.000Z', promptBuiltAt: '2026-09-24T17:06:52.000Z', declarationsPhase: 'expected' });
+    t.store.set(`agentBattles/${fx.battleId}`, battle);
+    hooks.beforeRead = (label) => { if (label === `agentBattles/${fx.battleId}/calls` || label.startsWith(`agentBattles/${fx.battleId}/declarations/`)) throw new Error('14 UNAVAILABLE'); };
+    await write(t, fx);                                                        // the first write: calls and declarations unreadable
+    expect(tapeOf(t, fx.battleId).coverage.calls.status).toBe('unavailable');
+    delete hooks.beforeRead;
+    await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT + 60_000, battle: selected });   // every source readable; the battle predates the evaluation
+    expect(tapeOf(t, fx.battleId).coverage.calls.status).not.toBe('complete');
+    // the read that observes it says what it found: the expected record is absent
+    await write(t, fx, NIGHT + 120_000);
+    const calls = tapeOf(t, fx.battleId).coverage.calls;
+    expect(calls.caveats).toEqual([expect.stringMatching(/expected a declarations record that is absent/)]);
+    expect(calls.status).not.toBe('complete');
   });
 });
 
