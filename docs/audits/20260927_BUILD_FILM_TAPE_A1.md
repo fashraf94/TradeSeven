@@ -20,9 +20,9 @@
 >   (`inputs_changed_outside_window`), never `partial`, and the read-out says so.
 > - **R1-3 (BA-24 confirmed):** the read-out prints each series' minutes as a fact ("387 of 390
 >   session minutes traded"). Coverage is unchanged.
-> - **The founder-authorized fix:** the date-dependent `backingDark` row now pins its clock. The
->   full suite has **zero failing files** (822 files, 16,422 tests). The pin alone holds only until
->   2026-10-04 (below).
+> - **The founder-authorized fix:** the date-dependent `backingDark` row now pins its clock. By the
+>   L3-1 ruling below, it also counts only its own subscriptions, so it holds on any date. The full
+>   suite has **zero failing files** (822 files, 16,424 tests at `b52b842e`).
 >
 > **The round's own §2 review.** It ran in two waves, four lenses with a refuter each, and every
 > finding was re-run here.
@@ -36,19 +36,22 @@
 >   short backlog.
 >
 > **Cost, census, mutation.** The exact I/O is identical to `436199e4`'s, so round trips are
-> unchanged. The write census is still seven. 56 mutants at the code tip: 53 red, and three shown
+> unchanged. The write census is still seven. 58 mutants at the code tip: 55 red, and three shown
 > equivalent.
 >
-> **Needs you:**
+> **Ruled 2026-09-28 (§10.14; Amendment C's addendum):**
 >
-> 1. **L3-1:** authorize a two-line fix inside the `backingDark` row. Without it the row, and so the
->    PR's CI, fails from Monday 2026-10-05.
-> 2. **L4-1:** decide on one line for round 2's series merge. It drops a saved stale bar's age, the
->    loss L1-4 fixed for plan prices. By L1-4's reading that is a lost saved fact inside Astra's
->    closure verification.
-> 3. **L1-2:** rule on which governs where a replay tie and a series check's "later bar" disagree.
-> 4. **L2-1:** confirm the exit criterion's reading. It is a false `complete` whose root predates the
->    round, and it is fixed here.
+> 1. **L3-1, authorized.** The `backingDark` row clears its mock before mounting (`4668f5bd`), so it
+>    no longer fails from Monday 2026-10-05.
+> 2. **L4-1, authorized (BA-34 extended).** A series check's stale bar age is a saved fact: of two
+>    null samples, the one whose bar closed later is kept (`b52b842e`). It was red first, and its
+>    mutants are red.
+> 3. **L1-2, a display rule.** Replay points and series samples keep their own merge rules. The A2
+>    screen never shows a series price as the price behind a replay point. No code changes.
+> 4. **L2-1, kept.** A newly found false `complete` blocks whatever its root, so the narrow fix
+>    stays.
+>
+> Nothing from this round waits on you. §10.13 items 5 and 6 stand.
 >
 > The branch is now `claude/elegant-sagan-oncgqm`. §10 supersedes the parts of §9 it names. There is
 > still no PR, no merge, no flag flip and no index deploy.
@@ -2578,6 +2581,8 @@ made one.
 
 ### 10.13 Founder actions, updated
 
+**Ruled 2026-09-28 (§10.14):** items 1–4 below are decided, and items 5 and 6 stand.
+
 §6, §8.10 and §9.13 stand, with these changes:
 
 1. **The `backingDark` pin holds only until Sunday 2026-10-04 (L3-1).** From Monday 2026-10-05 the
@@ -2637,6 +2642,56 @@ made one.
 5. **Human review, indexes, class declarations:** unchanged from §9.13. Still seven notes, the same
    two Console index entries (not deployed), and no new number class: `preservedFrom` is a string.
 6. **Not done, by instruction:** no PR, no merge, no flag flip, no index deploy.
+
+### 10.14 Founder rulings on §10.13, 2026-09-28
+
+The founder ruled on §10.13's four decisions. The rulings are appended verbatim to Amendment C as
+its addendum, in `b52b842e`. Two commits carry them out, each red first. This section supersedes:
+
+- §10.12's rows for L4-1 and L1-2;
+- §10.13 items 1–4.
+
+§10.13 items 5 and 6 stand.
+
+| Item | Ruling | Commit | The change | Red-first row | Mutant |
+|---|---|---|---|---|---|
+| **L3-1** | Authorized, test only | `4668f5bd` | The two-line patch from §10.13 item 1, exactly: the `backingService` import moves up, and `subscribeMyStakes.mockClear()` runs before the mount (`backingDark.test.jsx:468-469`). Nothing else in the file changes | The row itself: at `0b113a69` it fails with the real clock shifted to 2026-10-05 ("expected 4 to be 3"). With the patch the file passes 64 / 64 on the real clock and at 2026-09-28, 2026-10-05, 2026-12-31, 2027-06-15 and 2026-03-10 | The wiring defect, last week's key dropped at `BackingLandingStrip.jsx:71`: the patched row goes red ("week key 2026-W38 is read"). At `0b113a69` the row stayed green under it |
+| **L4-1** | Authorized: BA-34 extended | `b52b842e` | `keepSeries`' per-check merge (`candlePass.js:307-311`). When the saved and new samples both lack a price, the saved one is kept if its bar closed later. A saved age beats a bare null, and between two ages the later bar wins. A new price still fills a saved null, and the other rules of BA-34 are unchanged | Two rows in `tapeAmendmentC.test.js`, both red at `0b113a69`: <br>• A saved age is never replaced by a bare null. AAPL is stale at the 10:00 ET check on morning 1, and has no bar before 10:10 ET on morning 2. <br>• Between two ages the later bar wins, in both orders | X34i (the old line) is red under both rows. X34j (any saved age wins, even an older one) is red under the second |
+
+**The other two rulings, recorded:**
+
+- **L1-2: a display rule, with no merge change.** Replay points and series samples stay separate
+  facts, each with its own merge rule, and neither is corrected to the other. The A2 screen never
+  pairs a replay point with the series price at that check as the price behind it. A replay point
+  is shown only with its own sampled inputs. No code changes here: nothing displays per-check series
+  prices today (the read-out prints only their count), so the rule binds A2.
+- **L2-1: kept.** Under the exit criterion, a newly found false `complete` in code the closure pass
+  reviews blocks whatever its root. So the narrow fix stays (`aa147ab6`, `79baa031`, `0df5bb5f`),
+  and §10.13 item 4 is closed.
+
+**Review.** Each change is the variant the review's refuters tested (§10.10):
+
+- the L3-1 patch, by the lens-3 refuter on nine dates;
+- the L4-1 rule ("a later age wins"), by the lens-4 refuter over the film-tape suite.
+
+Here, each is red first and mutation-checked.
+
+**Cost.** L4-1 adds no read or write: it is CPU only, inside the candle transaction's merge. L3-1 is
+a test.
+
+**Verification at the new code tip `b52b842e`.** The report commit that follows changes only this
+file.
+
+| Check | Result |
+|---|---|
+| Full suite, Linux (`npx vitest run`, JSON reporter, output redirected) | **822 files, 0 failing files; 16,424 tests: 16,360 passed, 64 skipped, 0 failed; exit 0** |
+| Tape suites | **17 files, 431 tests, all passed**, and controls C01–C16 16 / 16. Each of the two commits was re-run in its own snapshot: 429 tests at `4668f5bd`, 431 at `b52b842e` |
+| Rules suite on the emulator | **18 files, 332 tests, all passed; exit 0** |
+| `npm run lint:gate` | exit 0. `backingDark.test.jsx` carries only its two older errors under the full config |
+| `npx vite build` | exit 0; built in 23.1 s. The same four pre-existing `css-syntax-error` warnings |
+| Mutation | **58 mutants at `b52b842e`: 55 red, and three equivalent.** These are §10.9's 56 plus X34i and X34j. The three survivors are X36b, X36o and X36q, as argued in §10.9. No verdict changed from §10.9's runs, and no result rests on a timeout or a file that failed to load |
+| Write census | Seven sites, in the same functions; C15 and both F9 census rows pass. `keepSeries` grew by seven lines, so the candle pass's sites moved: `candlePass.js:478` (`markRetryWindowElapsed`), `:588` and `:589` (`processTape`), and `:768` (`runCandlePass`). The writer's stay at `writeTapeDay.js:139`, `:164` and `:170` |
+| Fence, flags, deploys | No BUILD_RULES §1 file edited. Flags, crons, rules and indexes are unchanged, and nothing is deployed. There is no PR, no merge, no flag flip and no index deploy |
 
 ---
 
