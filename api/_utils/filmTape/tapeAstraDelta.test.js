@@ -30,8 +30,8 @@ vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => ({
   get FILM_ROOM_V2_ENABLED() { return flags.v2; },
 }));
 // The close handler's Firestore handle is the in-memory store (DF8's rows drive the real entry).
-const admin = vi.hoisted(() => ({ db: null }));
-vi.mock('../firebaseAdmin.js', () => ({ getFirebaseAdmin: () => admin.db }));
+const admin = vi.hoisted(() => ({ db: null, taken: 0 }));
+vi.mock('../firebaseAdmin.js', () => ({ getFirebaseAdmin: () => { admin.taken += 1; return admin.db; } }));
 
 import closeHandler from '../../cron/film-tape-close.js';
 import { writeTapeDay } from './writeTapeDay.js';
@@ -745,6 +745,13 @@ describe('DF4 — BA-32: expired and exhausted are their own statuses, and no ca
     const { t } = await withClosedOut(1);
     const md = formatTapeMarkdown(t.store.get(tapePath('b-t0000', AUGUST[0])), []);
     expect(md).toMatch(/\*\*candles\*\* — expired \(`retry_window_elapsed`\).* · terminal: its retry window elapsed — no candle pass will run for this day again/);
+    // and an exhausted day, its state written by the pass's own rule (review R3-4); a retryable failure gets no such words
+    const spent = structuredClone(t.store.get(tapePath('b-t0000', AUGUST[0])));
+    spent.passes.candles = nextCandleState({ prev: { attempts: 2 }, requested: ['AAPL'], missing: ['AAPL'], nowIso: iso(MORNING) });
+    expect(formatTapeMarkdown(spent, [])).toMatch(/\*\*candles\*\* — exhausted \(`attempts_exhausted`\).* · terminal: its attempts are spent — no candle pass will run for this day again/);
+    spent.passes.candles = nextCandleState({ prev: { attempts: 1 }, requested: ['AAPL'], missing: ['AAPL'], nowIso: iso(MORNING) });
+    expect(spent.passes.candles.status).toBe('failed');
+    expect(formatTapeMarkdown(spent, [])).not.toMatch(/terminal:/);
   });
 });
 
@@ -1067,6 +1074,28 @@ describe('DF8 — BA-29 amended: the admin backfill\'s refresh mode re-merges wr
       expect(tapeOf(t, fx.battleId).passes.candles, iso(at)).toMatchObject({ status: 'written' });
       expect(tapeOf(t, fx.battleId).passes.candles.changedInputs ?? [], iso(at)).toEqual([]);
     }
+  });
+
+  // The §2 review of this round (build report §9.11, R3-1): the flag-off pin covers the new query too.
+  it('BA-29 amended (review R3-1): with the writer dark, every refresh-shaped request is 200 flag_off — nothing read, nothing written, the Firestore handle never taken', async () => {
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    flags.writer = false;
+    const reads = t.readLog.length;
+    const writes = t.writeLog.length;
+    admin.taken = 0;
+    const cronOnly = { authorization: 'Bearer cron-secret' };
+    const both = { ...cronOnly, 'x-admin-secret': 'admin-secret' };
+    for (const query of [{ backfill: RANGE, refresh: '1' }, { refresh: '1' }, { backfill: RANGE, refresh: 'yes' }, { backfill: 'bad', refresh: '1' }]) {
+      for (const headers of [both, cronOnly]) {
+        const r = await call(t, query, REFRESH_AT, headers);
+        expect([r.statusCode, r.body], JSON.stringify({ query, admin: 'x-admin-secret' in headers })).toEqual([200, { skipped: true, reason: 'flag_off' }]);
+      }
+    }
+    expect(admin.taken).toBe(0);
+    expect(t.readLog.length).toBe(reads);
+    expect(t.writeLog.length).toBe(writes);
   });
 
   it('BA-29 amended: refresh is admin-only like the rest of the entry, needs a range, and takes only `1`', async () => {
