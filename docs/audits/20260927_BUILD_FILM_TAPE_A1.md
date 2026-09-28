@@ -7,6 +7,52 @@
 
 ## Executive verdict (for Flash)
 
+> **Update, 2026-09-28 (round 3): spec V1.2 Amendment C.** Fable ruled on the four items §9.11 left
+> open. All four are done, each red first, and the controls stayed 16 / 16 at every commit. **§10**
+> records the round:
+>
+> - **R1-1 (BA-36):** a candle retry now merges plan prices and replay points point by point. A
+>   saved value is never replaced by null. A merged replay never reads `complete` on a path no
+>   single attempt scored.
+> - **R2-3 (BA-37):** the writer assembles from the battle it re-reads inside its transaction, so a
+>   stale copy can no longer rewind a corrected value. No read is added.
+> - **R3-3 (BA-25 amended):** outside the window, a written pass whose inputs changed is `expired`
+>   (`inputs_changed_outside_window`), never `partial`, and the read-out says so.
+> - **R1-3 (BA-24 confirmed):** the read-out prints each series' minutes as a fact ("387 of 390
+>   session minutes traded"). Coverage is unchanged.
+> - **The founder-authorized fix:** the date-dependent `backingDark` row now pins its clock. The
+>   full suite has **zero failing files** (822 files, 16,422 tests). The pin alone holds only until
+>   2026-10-04 (below).
+>
+> **The round's own §2 review.** It ran in two waves, four lenses with a refuter each, and every
+> finding was re-run here.
+>
+> - **One blocker**, in this round's BA-36 code (L1-1): a merged replay could read `complete` with
+>   wrong points. It is fixed.
+> - **One latent false `complete`**, which the second wave found in a fix of the first (L4-2). It
+>   is fixed, and the fix was refined when its own refuter showed the first version reopened a
+>   phantom gap.
+> - Every other confirmed finding in this round's code is fixed or has a row. The rest is in a
+>   short backlog.
+>
+> **Cost, census, mutation.** The exact I/O is identical to `436199e4`'s, so round trips are
+> unchanged. The write census is still seven. 56 mutants at the code tip: 53 red, and three shown
+> equivalent.
+>
+> **Needs you:**
+>
+> 1. **L3-1:** authorize a two-line fix inside the `backingDark` row. Without it the row, and so the
+>    PR's CI, fails from Monday 2026-10-05.
+> 2. **L4-1:** decide on one line for round 2's series merge. It drops a saved stale bar's age, the
+>    loss L1-4 fixed for plan prices. By L1-4's reading that is a lost saved fact inside Astra's
+>    closure verification.
+> 3. **L1-2:** rule on which governs where a replay tie and a series check's "later bar" disagree.
+> 4. **L2-1:** confirm the exit criterion's reading. It is a false `complete` whose root predates the
+>    round, and it is fixed here.
+>
+> The branch is now `claude/elegant-sagan-oncgqm`. §10 supersedes the parts of §9 it names. There is
+> still no PR, no merge, no flag flip and no index deploy.
+
 > **Update: Astra's delta review of `8e754eb8`.** Astra returned DO NOT MERGE, with eight findings
 > (DF1–DF8) and a hygiene item. Spec V1.2 Amendment B rules on them as BA-31 to BA-35, with BA-26,
 > BA-27 and BA-29 amended. All nine are fixed, each red first, and the controls stayed green at
@@ -1867,6 +1913,730 @@ table"). Each is marked with the exit criterion's blocking classes.
    Fix: pin the row's clock (`vi.setSystemTime`) to the fixture's week.
 8. **Routed, not fixed, as before:** the live-scoring defect (§6.9; Astra §4, R21).
 9. **Not done, by instruction:** no PR, no merge, no flag flip, no index deploy.
+
+---
+
+## 10. Round 3 — spec V1.2 Amendment C (the round-2 review's rulings)
+
+Amendment C (`docs/specs/FILM_ROOM_BUILD_A_TAPE_SPEC_V1_2_AMENDMENT_C_20260928.md`) rules on the four
+items §9.11 left open:
+
+- R1-1, R2-3 and R3-3 are fixed under **BA-36**, **BA-37** and **BA-25 amended**.
+- R1-3 gets a ruling, **BA-24 confirmed**. The passes don't change; the read-out gets one line.
+- The amendment authorizes one test-only fix outside the tape: the date-dependent `backingDark` row
+  (§9.13 item 7).
+- It carries the rest of §9.11's backlog forward unchanged.
+
+Where Amendment C differs from V1.2 or Amendments A and B, Amendment C governs.
+
+The round's own §2 review (§10.10) found one more blocker, in this round's BA-36 code (L1-1). It is
+fixed. So is every other confirmed finding in this round's code, or reachable through it. That
+includes one latent false `complete` that a second review wave found in a fix of the first (L4-2).
+
+Two confirmed findings are not fixed, because their fixes need the founder's word:
+
+- the `backingDark` pin holds only until 2026-10-04 (L3-1, §10.13);
+- the series merge drops a saved stale bar's age, as the plan prices did before L1-4 (L4-1). It is
+  round-2 code, outside Amendment C's table (§10.13).
+
+This section supersedes these parts of §9:
+
+- every place §9 says a written candle pass outside the window is lowered to `partial` (§9.2 DF8,
+  §9.9's refresh reading, §9.13 item 4). It is now `expired`, reason `inputs_changed_outside_window`
+  (BA-25 amended, §10.3);
+- §9.11's "For ruling" dispositions of R1-1, R2-3, R1-3 and R3-3. They are ruled and done (§10.2);
+- §9.13 item 7, the `backingDark` row. It is pinned as authorized (§10.2), with the caveat in §10.13.
+
+Everything else in §9 stands as written for `436199e4`.
+
+**The branch.** This session is bound to `claude/elegant-sagan-oncgqm`. It was cut from `436199e4`,
+the tip of `claude/tender-cray-k5or48`, after `git fetch origin`. Per the prompt, it replaces
+`claude/tender-cray-k5or48` for review and merge. That branch is untouched.
+
+**Same rules as before.**
+
+- There is no PR, no merge, no flag flip and no index deploy.
+- No BUILD_RULES §1 file is edited.
+- The prompt's table was not widened.
+
+Three pieces of code go beyond the table's words, and each is stated where it lands:
+
+- **The declarations lookup** (§10.3). It is a direct consequence of BA-37.
+- **The review's fixes** (§10.10). Each fixes a defect in how this round implemented a ruling, or
+  one that this round's code makes reachable.
+- **The unused-import cleanup `deb99868`.** It removes a leftover of this round's own `c04f6940`.
+
+### 10.1 Gate
+
+| Item | Result |
+|---|---|
+| Branch and tip | After `git fetch origin`, `claude/tender-cray-k5or48` was at `436199e46c1c78edf48ec03fff00cc0e41b87b52`, as named. Its code tip is `ef9eafb6`, and the tree was clean. `claude/elegant-sagan-oncgqm` was at `origin/main` `ef80da13`, the branch's merge base, and was cut from `436199e4` |
+| Amendment C, committed first (docs only) | `765d8a5a`, verbatim between the prompt's markers (sha256 `b50f97dd…435a`, 3,790 bytes) |
+| Baseline at `765d8a5a` (code identical to `436199e4`), Linux | **Tape suites:** 16 files, 387 tests, all passed. **Rules suite on the emulator:** 18 files, 332 tests, all passed. **Full suite:** 821 files, 16,380 tests; 16,315 passed, 64 skipped and **1 failed**, exit 1. The one failure is exactly the expected one: `backingDark.test.jsx:476`, "expected 3 to be 2" |
+| §9.11 read in full | The probes for R1-1, R2-3 and R3-3 were rebuilt as rows. Each row was **seen red at `436199e4`** before its fix, in a `git archive` snapshot of `765d8a5a` (§10.2) |
+
+### 10.2 One row per item
+
+**How to read this table.**
+
+- "Red first" means the row failed at `436199e4` before its fix. Each row was run in a `git archive`
+  snapshot of `765d8a5a`, whose code is identical to `436199e4`, and each failed at the assertion
+  that names its defect.
+- Every row is in `api/_utils/filmTape/tapeAmendmentC.test.js`.
+- A row marked **guard** passes on both sides of its ruling: it pins the other side.
+- `file:line` citations are at the code tip `3c16385a`, each re-read there. They include the review's
+  amendments to the same functions (§10.10).
+- §10.9 names the mutants each row fails under.
+
+| Item | Ruling | Commit | The fix | Red-first rows (red at `436199e4`) | Mutants (§10.9) |
+|---|---|---|---|---|---|
+| **R1-1** (BLOCKER: loses a saved fact). A candle retry's tie gave the fresh plan price or replay point, even when the saved one held a value the fresh one lacked | **BA-36** | `c04f6940` | **The per-point merge.** `keepUnit` (`candlePass.js:423`) merges units that share `builtFrom` point by point, through `mergePrice` (`:388`) and `mergeReplay` (`tapeReplay.js:361`). The rules: <br>• A saved value is never replaced by null. <br>• A saved null gives way to the new value. <br>• Where both hold a value, the more complete unit's value stands, and a tie keeps the stored one. <br>A replay leg merges sample by sample (`mergeLeg`, `:291`). A point kept from an attempt that lacked an earlier sample keeps that sample named, unless the other attempt vouches for the value (`legNames`, `:320`). The views are composed by `composeLegs` (`:78`), which `replayAction` now uses too. <br>**Built from other inputs (BA-31):** the current unit wins whole, and a stale one is kept only when no current unit holds a fact. <br>A unit that kept an earlier fact carries `preservedFrom`, and so does its section (`replayCoverage` `candlePass.js:238`, `seriesCoverage` `:339`) | 1. §9.11's example: a plan price saved as {atPlan 70.5, atClose null} meets {atPlan null, atClose 70.5}. The merge keeps both, marks the price, and writes the pass. <br>2. The same for a replay point: each close comes from the morning that had it. <br>3. The null guard when the new attempt is the MORE complete unit, and the path naming (a spike at tickSeq 8). <br>4. Holes in different symbols (TSLA at a check, SPY's close) merge into the replay whole bars build. This is the vouching case. <br>5. A tie keeps the stored value (KO 70.5 against 71). <br>6–7. Built from other inputs, the current replay and the current price win whole. <br>**Guard:** every refetch failing keeps the stale replay, labelled | X36a–X36z |
+| **R2-3** (MAJOR, root predates round 2). A pass holding an older battle document wrote its older values over newer ones (entry 300 → 150). BA-31 then re-queued a rebuild from the stale value | **BA-37** | `79d40a60` | **The writer assembles from the battle it re-reads** (`writeTapeDay.js:126-137`). <br>• The tiered assembly is a function of the battle document over this run's subcollection reads (`assembleFrom`, `:97`). <br>• When the transaction's re-read differs from the selection-time copy, the assembly re-runs on the re-read before the merge, and the re-read's completion block is canonical. <br>• No read is added. <br>**The declarations lookup** now records the ids it looked up (`tapeSources.js:97`). An expected evaluation the lookup never covered is a limit, `declarationsUnread`, never "absent" (`tapeAssemble.js:1011-1020`) | 1. The prompt's row: the selection-time battle has entry 150 and the re-read 300. The tape carries 300, nothing is re-queued, and the reads equal a current write's. <br>2. R2-3 through the real backfill: two overlapping refreshes with a correction between them. Nothing is rewound, and the next morning rebuilds from 300. <br>3. A re-read that gained an evaluation expecting a declarations record (the record exists) assembles its check and never calls the record absent. The section is unresolved until a read looks it up | X37a–X37j |
+| **R3-3** (MINOR, the ruling's pull). Outside the window a refresh lowered `written` to `partial`. The next sweep then closed it out as `expired`, `retry_window_elapsed`, and the real reason was lost | **BA-25 amended** | `e2008106` | Outside the window, a `written` pass whose inputs changed becomes **`expired`, reason `inputs_changed_outside_window`** (`tapeMerge.js:515`). <br>• It is terminal: never selected, never swept. <br>• Its output stays, labelled, and `changedInputs` names what changed. <br>• Inside the window nothing changes. <br>• The read-out prints the reason's terminal words (`tapeExport.js:44-46`, `:338`) | 1. R3-3 through a real refresh: the pass is expired, the reason and output are kept, and the output is labelled. The next morning writes nothing under it, and the read-out prints the words. <br>2. The same through the nightly close pass: an action recorded later, with `changedInputs` = actions, symbols. <br>**Guards:** inside the window the pass is re-queued. A `partial` pass outside the window keeps its status (the review's L3-5, `d64b88a1`) | X25a–X25e |
+| **R1-3** ("contestable"). Series completeness counts buckets, not minutes | **BA-24 confirmed** (a ruling; the passes don't change) | `93c7e569` | **One read-out line per series**, beside the Series coverage line: "N of M session minutes traded" (`tapeExport.js:271-277`, `:289-290`). <br>• N is Σ `bars[].m`, and M is the calendar's `sessionLenMin`. Both are class `market`. <br>• N prints as `—` unless the series has bars and every bar carries a finite `m` (the review's L3-6 and L4-7). <br>• The line has no coverage effect | 1. A series missing three minutes that no check reads is whole by its buckets (coverage complete, pass written). It says 387 of 390, a whole one says 390 of 390, and there is one line per series. <br>2. An early close counts 210 of 210 | X13a–X13g |
+| **`backingDark`** (outside the tape; founder-authorized, test only) | Amendment C, "Out-of-scope fix" | `8d1f18e2` | `backingDark.test.jsx:465-467`: the row pins its clock with `vi.setSystemTime` to the fixture's week (2026-09-24, in 2026-W39, whose window closes into 2026-W40). It restores the clock after, through the test context's `onTestFinished` → `vi.useRealTimers`. Nothing else in the file changes (+3 −1). **It holds only until 2026-10-04** (L3-1, §10.13). The commit says the row's keys are three "whatever day the suite runs". That is true of the row's own keys, but not of the row: it also counts keys earlier rows subscribed on the real clock | The row itself: red at baseline on 2026-09-28 ("expected 3 to be 2", `:476`), green with the pin (64 / 64 in the file) | — |
+
+**Commits, oldest first:**
+
+- The rulings: `765d8a5a` (Amendment C, docs only); `c04f6940` BA-36; `79d40a60` BA-37; `e2008106`
+  BA-25 amended; `93c7e569` BA-24 confirmed.
+- The founder-authorized fix: `8d1f18e2`, the `backingDark` pin.
+- The §2 review's commits: `75118d63` … `48f611c7` for wave 1, and `bbf81e12` … `3c16385a` for
+  wave 2 (§10.10).
+- This report.
+
+### 10.3 Readings and bounds, stated
+
+- **BA-36, the per-point rule, point by point.** For each point:
+  - a saved value is never replaced by null;
+  - a saved null is no fact, so the new point stands there. `keepSeries` does the same per check,
+    and "fact by fact, the way BA-34 merges series" asks for it;
+  - where both attempts hold a value, the value of the **more complete unit** stands, and a tie keeps
+    the stored unit's. The unit is the replay (`replayRank`) or the plan price (`priceRank`), as
+    BA-36 names it;
+  - where **neither** holds a value, the null that carries its stale bar's age is the more complete
+    point: `at` for a price, `barClosedAt` for a leg sample (BA-24). Between two such nulls the same
+    unit rule decides. A bare null never replaces an aged one. This is review L1-4, `077b1f04`.
+    Before it, the merge dropped the age that BA-24 keeps beside the null. The series merge does not
+    keep an age this way yet: that is L4-1, round-2 code left to the founder (§10.13).
+
+  A plan price has two independent points (`atPlan`, `atClose`). With two points and "a tie keeps
+  the stored", the null guard can never be what decides, so its price mutant is equivalent (§10.9).
+  The guard does decide in a replay, which has many points, and is pinned there.
+- **BA-36, a replay leg is one scored path.** The fenced scorer carries a history (the maximum and
+  minimum multipliers) from sample to sample. So a leg's point at a check depends on every earlier
+  sample of that leg. A point kept from an attempt that lacked an earlier sample was scored without
+  it: a bagger that sample would have ratcheted is missing from it. The merged replay therefore keeps
+  that earlier sample **named** in `missingInputs` (retryable, like any sample) for as long as such a
+  point stands. So the merge never reads `complete` on a path no single attempt scored.
+
+  **An attempt lacked a sample** when its point there is null, **or** when its own `missingInputs`
+  names it. A stored replay that is itself a merge holds points filled in from another attempt, while
+  its later points were scored without them, and only its names say so. This is review L1-1
+  (`75118d63`, `tapeReplay.js:326`). Before it, a third attempt could drop the name, and the replay
+  read `complete` with wrong points. That was the round's blocker (§10.10).
+
+  **One exception.** When the other attempt scored the **same value** at that point on a whole path,
+  it vouches for the value, and nothing is named. "Whole" means every earlier sample of the leg
+  priced and unnamed. The row "holes in different symbols" is that case. The row "a saved point is
+  never replaced by null EVEN when…" is the case where a spike makes the two values differ.
+
+  **The views.** A leg built by only one attempt is that attempt's, whole. The views (`holdPath`,
+  `ghost`, `bought`, `swapPath`), `gapPoints` and `closedLegDelta` are composed from the merged legs
+  by `composeLegs`, the one function `replayAction` now also composes through. The refactor alone
+  was checked output-neutral: 16 files, 387 tests, all green before the merge was wired. Review lens
+  1 compared 8,400 randomized replays byte for byte with the pre-round code (§10.10).
+
+  **What the rule gives up.** It is sound but not always precise. A stored merge that names a sample
+  marks every later point it keeps as lacking that sample. That includes a point it took from a whole
+  path. So a replay whose numbers are all right can stay `partial` until an attempt is whole for it,
+  or until the pass exhausts. A false `partial` does not block under the exit criterion. A per-point
+  record of what each point lacked would be exact; it is backlog (§10.12).
+- **BA-36 / BA-31, "no current unit exists".** The unit built this attempt is always built from the
+  tape's inputs now. It "exists" when it holds a fact:
+  - for a replay: a scored point, a reconciliation, or a market change;
+  - for a plan price: a priced point.
+
+  An attempt that could fetch nothing for a unit builds one with no fact, and then the stale unit is
+  kept and labelled (D10 and the GUARD row). Otherwise the current unit wins whole, even when it holds
+  fewer facts than the stale one: the stale facts describe inputs the tape no longer holds. At
+  `436199e4`, the rank rule kept a richer stale unit.
+- **BA-36, `preservedFrom`.** A unit that keeps any earlier fact carries `preservedFrom`. That covers
+  a value, a stale bar's age, and a stale unit kept whole.
+  - **Its value** is the stored unit's own `preservedFrom` when it has one, else the candle pass's
+    previous `writtenAt`. A unit has no `writtenAt` of its own. A thrown attempt also stamps
+    `passes.candles.writtenAt`, and then the instant is the failed attempt's (L1-3, backlog).
+  - **A clean replace.** A merge that holds exactly the new unit replaces the stored one, and
+    `preservedFrom` goes (BA-34's superset rule).
+  - **Names alone keep nothing.** A merge that holds the new unit's facts plus names the stored
+    attempt also lacked keeps those names, with no `preservedFrom` (review L1-5, `8388ca92`,
+    `candlePass.js:433-437`).
+  - **The section.** It carries the earliest such instant: `coverage.replay` for replays, and
+    `coverage.series` for plan prices (plans have no section of their own, §9.9).
+- **BA-37, when "the re-read differs".** The writer compares the re-read battle document with the
+  selection-time copy by their canonical form (`stableStringify`, key order ignored). It re-assembles
+  only when they differ, from the same subcollection reads. The comparison and the re-assembly are CPU
+  only. The exact I/O of a close pass, a candle morning and a refresh is identical to `436199e4`'s
+  (§10.8).
+- **BA-37, the completion block.** The re-read is now what the tape is assembled from, so its block
+  is canonical. The old guard, "the re-read only at the assembly's lifecycle or later", went with the
+  assembly it compared against. A stored completion still never moves backward: that is the merge's
+  lifecycle rule (BA-27, `battleWinner`), and C11, D08 and F7 stay green.
+- **BA-37, no battle document.** A re-read that finds no battle document has nothing to assemble
+  from. The selected copy may be stale, so the battle-day fails with `battle_not_found`, as it does
+  before the reads (`writeTapeDay.js:72`, `:134`). The caller records the failure beside a written
+  tape, never over it (`markCloseFailed`). This is review L2-6, `c14a69e8`. Nothing in `api/` or
+  `scripts/` deletes a battle, and clients cannot (`firestore.rules:461`), so the path is latent.
+- **BA-37, the gap horizon.** The tick read is made before the transaction, for the copy the pass
+  selected. A check minted between the tick read and the re-read is no gap of that read. So the
+  assembly takes its minted count from that copy (`assembleTape`'s `mintedMax`,
+  `tapeAssemble.js:809`, `:836`; passed at `writeTapeDay.js:108`), not from the re-read. A check the
+  copy counts and the read lacks is still the day's gap. This is review L2-3, `f6accdfe`. It is
+  latent at HEAD, because every battle is one trading day (§10.10).
+
+  A copy with no `cronState` at all falls back to the battle being assembled from, which can add a
+  gap but never hide one. That is review lens 4's L4-2 (`bbf81e12`): before it, such a copy gave no
+  horizon, and a minted check the read lacks vanished under a `complete`.
+
+  A `cronState` with no count yet means nothing had been minted at selection; `createAgentBattle`
+  writes it that way. So it sets no horizon, and does not fall back (`3c16385a`, from lens 4's
+  refuter). Falling back there reopened L2-3's phantom.
+- **BA-37, the mode.** Whether a battle gets a full tape or `skipped_mode` is still decided on the
+  selection-time copy, and the `skipped_mode` path never re-reads, as before. A battle's `gameMode`
+  is written once, at creation; the case where it changes is R3-5 (backlog).
+- **BA-37, the declarations lookup: the one addition beyond the table.** The declarations presence
+  read is a subcollection read made before the transaction, for the evaluations the selection-time
+  copy expected. A re-read battle can have gained an evaluation that expects a declarations record,
+  which this read never looked up. Counting it "absent" would record a false caveat, and caveats are
+  sticky, so it would stand for good. So:
+  - the read now records the ids it looked up (`readDeclarationPresence` → `checked`);
+  - an expected id outside that set is a **limit** of this read, `LIMIT_SOURCES.declarationsUnread`;
+  - by BA-26 amended the limit becomes `unresolved_dependency: declaration records (not looked up for
+    an evaluation newer than the read) …` until a read looks it up.
+
+  No read is added. The row "a re-read that gained an evaluation…" pins it, with the record present
+  in the store.
+- **BA-37 and BA-20, a trade evicted from `trades[]`.** The array keeps its newest 50 trades. With
+  capture present, a swap whose trade record is gone reads unmatched. Its tier, slot, exit price and
+  locked gain are then unknown. So actions coverage carries a `tradesCap` limit when:
+  - the array is at its cap, with its oldest surviving entry not before the day; and
+  - a day's swap that could have been evicted (one not newer than that oldest entry) is unmatched.
+
+  When every such swap matched, nothing of the day was evicted, and coverage stays `complete`. This
+  is review L2-1, `aa147ab6`, narrowed by its refuter in `79baa031` (`tapeAssemble.js:950-962`).
+  The note says "(possibly evicted)" (`0df5bb5f`, L4-9): the read knows the cap and the missing
+  record, not the cause. The root predates the round; BA-37's re-read adds a path to it (§10.10).
+- **BA-37, a re-read that lost data.** When the battle document lost entries between the selection
+  and the write (evictions at the 150-entry or 50-trade caps), the tape is assembled from what the
+  document holds now. Merge-monotonicity keeps every row the stored tape already holds. The eviction
+  caveats and limits of BA-20 and BA-26 amended, and the trade limit above, state what the read could
+  not see.
+- **BA-25 amended, which passes expire.** Only a `written` pass expires outside the window. A
+  `pending`, `partial` or `failed` pass outside the window keeps its status and records
+  `changedInputs`. It stays selectable, and the sweep closes it out (`expired`,
+  `retry_window_elapsed`). A GUARD row pins that side (`d64b88a1`).
+
+  The ruling names one reason, `inputs_changed_outside_window`, whatever changed. That covers a grown
+  action or plan set too: the old `sources_changed_outside_window` is gone, and `changedInputs`
+  still names the parts. `passes.candles.writtenAt` is left as the candle pass wrote it.
+- **BA-24 confirmed, the minutes line's classes.** "N of M session minutes traded" labels both
+  numbers with the class the series document declares for `bars[].m` (`market`). So the line's class
+  comes from the document, as every other number the read-out prints does (BA-21).
+  - M is the calendar's `sessionLenMin` (`src/utils/marketCalendar.js`, the one calendar, BA-28):
+    390, or 210 on an early close.
+  - N is printed only when the series has bars and every bar carries a finite `m`; otherwise it is
+    `—` (review L3-6, `48f611c7`; L4-7, `14ea84c4`). Every series this code writes has bars, and
+    every bar carries `m`.
+
+### 10.4 The read-out's new lines
+
+The Series section, for the R1-3 row's day (AAPL missing 09:40–09:42 ET, every other symbol whole):
+
+```
+## Series
+> coverage: **complete** · `2026-09-24T13:30:00.000Z` → `2026-09-24T20:00:00.000Z` · sources: `eodhd_1m` · preserved from: —
+- AAPL: 387 (market) of 390 (market) session minutes traded
+- AMD: 390 (market) of 390 (market) session minutes traded
+- KO: 390 (market) of 390 (market) session minutes traded
+…
+```
+
+A series with no bars, or whose bars do not all carry a finite `m`, prints `- SPY: — of 390
+(market) session minutes traded`.
+
+The Passes line of an expired `inputs_changed_outside_window` day ends:
+
+```
+candles — expired (`inputs_changed_outside_window`) … · inputs changed since it was built: checks · terminal: its inputs changed outside its retry window — the output built before the change stays; no candle pass will run for this day again
+```
+
+The other terminal reasons keep §9.4's words.
+
+### 10.5 Existing rows that changed, and why
+
+Each change is stated in its commit. Where a ruling changed the behaviour a row pinned, the row now
+pins the ruling, and none pins less than its ruling requires. No control row (C01–C16) was touched.
+
+| Row (file) | Commit | What changed, and why |
+|---|---|---|
+| L2-F1 "an outage on the retry morning keeps morning 1's replays, prices…" (`tapeReview.test.js`) | BA-36 `c04f6940` | **Stronger.** BA-36 marks every unit that keeps an earlier fact. The row now pins that the kept replays and prices hold morning 1's facts exactly, **and** that each carries `preservedFrom` equal to morning 1's candle `writtenAt` |
+| R2-1 "a read that brings one new dependency but never saw another vouches for neither" (`tapeAstraDelta.test.js`) | BA-37 `79d40a60` | The row handed the writer a battle copy that differed from the stored document. BA-37 makes the writer assemble from the battle it re-reads, so the stale copy no longer reaches the assembly. The mixed battle is now the battle document itself, which is where a read can see it. It pins the same rule: the read brings `e-second` but not the tape's `e-first`; the section is held with "a read assembled before…"; a read of both clears it. It stays red under R2-1a, R2-1c and R2-1d (§10.9) |
+| F4 "outside the window, changed inputs … a written pass" (`tapeAstraReview.test.js`) | BA-25 amended `e2008106` | `partial` → `expired`, with the same reason and label. The title says so |
+| L2-F5 "outside the candle window, an action added later is stated as not replayed" (`tapeReview.test.js`) | BA-25 amended `e2008106` | `partial`, `sources_changed_outside_window` → `expired`, `inputs_changed_outside_window`: the one reason BA-25 amended names |
+| DF8 "outside the candle window a refresh re-merges the day but reopens no candle work" (`tapeAstraDelta.test.js`) | BA-25 amended `e2008106` | `partial` → `expired`. The title says so |
+| The three R2-1 rows that hand the writer a stale `selected` copy (`tapeAstraDelta.test.js`: "a limit-free read assembled from the battle as the pass selected it", "the same through the writer's own transaction retry", "when the limited read is the tape's FIRST write") | Re-titled in `abb1308c` (review L3-2) | **Their assertions are unchanged, and they are still green.** Under BA-37 the writer assembles them from the re-read, and that read's declarations lookup predates the recovered evaluation. So they now reach the `declarationsUnread` limit, not R2-1's "unobserved" rule, and mutant R2-1b survived every tape row. The titles now say what they pin. A new pure-`mergeTape` row pins R2-1's rule itself, and all four R2-1 mutants are red (§10.9) |
+
+### 10.6 The controls, C01–C16, at every commit
+
+No control row was edited this round. Each commit was re-run in its own `git archive` snapshot:
+the 17 tape files (the 16 of §9.12 and `tapeAmendmentC.test.js`), with 120 s timeouts and the JSON
+reporter.
+
+**Every row passed at every commit, and the controls were 16 / 16 throughout.**
+
+| Commit | What | Tape files | Tests (all passed) | Controls |
+|---|---|---|---|---|
+| `765d8a5a` | Baseline (code = `436199e4`) | 16 | 387 | 16 / 16 |
+| `c04f6940` | BA-36 | 17 | 395 | 16 / 16 |
+| `79d40a60` | BA-37 | 17 | 398 | 16 / 16 |
+| `e2008106` | BA-25 amended | 17 | 401 | 16 / 16 |
+| `93c7e569` | BA-24 confirmed (read-out) | 17 | 403 | 16 / 16 |
+| `8d1f18e2` | `backingDark` pin (test only) | 17 | 403 | 16 / 16 |
+| `75118d63` | Review L1-1 | 17 | 405 | 16 / 16 |
+| `aa147ab6` | Review L2-1 | 17 | 408 | 16 / 16 |
+| `f6accdfe` | Review L2-3 | 17 | 410 | 16 / 16 |
+| `c14a69e8` | Review L2-6 | 17 | 412 | 16 / 16 |
+| `077b1f04` | Review L1-4 | 17 | 415 | 16 / 16 |
+| `deb99868` | Unused import removed | 17 | 415 | 16 / 16 |
+| `8388ca92` | Review L1-5 | 17 | 416 | 16 / 16 |
+| `7bfddd92` | Survivor rows (test only) | 17 | 419 | 16 / 16 |
+| `79baa031` | Review L2-1, refuter's refinement | 17 | 420 | 16 / 16 |
+| `abb1308c` | Review L3-2 (test only) | 17 | 421 | 16 / 16 |
+| `d64b88a1` | Review L3-5 (test only) | 17 | 422 | 16 / 16 |
+| `48f611c7` | Review L3-6 | 17 | 423 | 16 / 16 |
+| `bbf81e12` | Lens 4, L4-2 | 17 | 424 | 16 / 16 |
+| `608e93d5` | Lens 4, L4-3 to L4-5 (test only) | 17 | 427 | 16 / 16 |
+| `14ea84c4` | Lens 4, L4-7 | 17 | 428 | 16 / 16 |
+| `0df5bb5f` | Lens 4, L4-9 (the note's words) | 17 | 428 | 16 / 16 |
+| `3c16385a` | Lens 4's refuter: the horizon rule refined | 17 | 429 | 16 / 16 |
+
+### 10.7 The write census: still seven
+
+No write site was added, moved to another function, or removed:
+
+- BA-36 changes what the candle transaction's update holds (`preservedFrom` on units and sections).
+- BA-37 changes what `writeTapeDay`'s `tx.set` holds, not where it writes. Its `battle_not_found`
+  throw (L2-6) writes nothing: the caller's existing `markCloseFailed` sites record the failure.
+- BA-25 amended changes one status value inside the same merge.
+- R1-3 is the read-out, which writes nothing.
+
+The seven sites of §9.5 stand, in the same functions. Their line numbers moved:
+
+| # | Site at the tip | Function | Operation | Allowlist key (count) |
+|---|---|---|---|---|
+| 1 | `writeTapeDay.js:139` | `writeTapeDay` | `tx.set` | `writeTapeDay::set` (1) |
+| 2 | `writeTapeDay.js:164` | `markCloseFailed` | `tx.update` | `markCloseFailed::update` (1) |
+| 3 | `writeTapeDay.js:170` | `markCloseFailed` | `tx.set` | `markCloseFailed::set` (1) |
+| 4 | `candlePass.js:581` | `processTape` | `tx.set` (series) | `processTape::set` (1) |
+| 5 | `candlePass.js:582` | `processTape` | `tx.update` | `processTape::update` (1) |
+| 6 | `candlePass.js:471` | `markRetryWindowElapsed` | `tx.update` | `markRetryWindowElapsed::update` (1) |
+| 7 | `candlePass.js:761` | `runCandlePass` | `tx.update` | `runCandlePass::update` (1) |
+
+C15 and the F9 census row pass at the tip: the scanner's census, the runtime census and the
+allowlist agree on seven keys at count 1. The allowlist is unchanged, so its seven human-review notes
+are unchanged. Every write in every round-3 row lands under `agentBattles/*/tape/**`. Review lens 3's
+runtime census found 0 writes outside `agentBattles/{id}/tape/{etDate}` or its `series/{symbol}`
+child: 14 tape files, 356 rows, 4,867 committed writes.
+
+### 10.8 Cost: round trips unchanged, so the §8.5 / §9.6 figures stand
+
+The prompt asks for a re-measurement only if round trips changed. They did not. A scratch probe
+(never committed) ran the same sequence over the fixture set in `git archive` snapshots of four
+commits:
+
+- `436199e4`, the base;
+- `8d1f18e2`, the rulings;
+- `48f611c7`, after wave 1's fixes;
+- `3c16385a`, the code tip.
+
+It compared the exact read labels, write paths and fetch requests, in order. The four outputs are
+byte-identical.
+
+| Step (six fixture battles, 2026-09-24) | Reads | Writes | Requests | The four commits |
+|---|---|---|---|---|
+| The close pass (a `writeTapeDay` per battle) | 53 | 6 | — | **identical** |
+| The candle morning | 55 | 51 | 14 | **identical** |
+| The next morning (nothing selectable) | 4 | 0 | — | **identical** |
+| A refresh over the day | 41 | 0 | — | **identical** |
+
+- **BA-37 adds no read.** The re-read it assembles from is the transaction read the writer always
+  made (BA-27). The R2-3 row also asserts that a write handed a stale copy makes exactly the reads of
+  the same write handed the current battle. Review lenses 2 and 3 measured the same (11, 11, then 10
+  for a run handed a stale battle). The re-assembly is CPU only, and only when the re-read differs.
+- **The review's fixes add no read.**
+  - L2-3's horizon and its refinements (L4-2, `3c16385a`) use values the writer already holds.
+  - L2-6 throws after the same read.
+  - L2-1, L1-4 and L1-5 are CPU only.
+  - L3-6, L4-7 and L4-9 are the read-out and its words.
+- **Size.** The only new stored fields are `preservedFrom` strings, on a unit that kept an earlier
+  fact and on its section. They carry no number class.
+
+### 10.9 Mutation results
+
+**Run 1, at `8d1f18e2` (the rulings, before the review): 32 mutants, one per rule clause, each
+applied alone in a `git archive` snapshot, over the tape files and the scanner and calendar rows.**
+
+- **27 red.**
+- **Two are equivalent, with the reasons:**
+  - **X36b**, a plan price's null guard dropped. A stored value at a point that the fresh price lacks
+    means the fresh price has at most one value, at the other point, and the stored at least one. So
+    `priceRank(fresh) ≤ priceRank(stored)`, the stored unit wins, and the stored value stands either
+    way.
+  - **X36q**, the series section ignoring plan prices that kept a fact. A plan price keeps an earlier
+    value only when this attempt's bars for its symbol lack the minute the stored bars had. So the
+    symbol's series keeps the stored bars too, and `keepSeries` marks it with an instant no later
+    than the price's. The section's earliest instant is the same with or without the prices.
+- **Three survived, and each now has a row** (`7bfddd92`). Each row is red at `436199e4` and under
+  its mutant:
+  - **X36c**: a saved market or sector change replaced by null;
+  - **X36r**: a saved reconciliation replaced by null;
+  - **X36e**: a replay tie going to the new unit.
+
+  Review lens 3 found X36c and X36e independently (its M36k and M36m).
+
+**Review lens 3's own run, at `8d1f18e2`: 37 mutants over 371 tape rows, 31 killed.**
+
+- Two are equivalent (RO2 and RO11), and one is masked (M36f).
+- The other four became findings, and each now has a row:
+  - M25d → L3-5, `d64b88a1`;
+  - R2-1b → L3-2, `abb1308c`;
+  - M36k and M36m → `7bfddd92`.
+
+**The final run, at the code tip.**
+
+**How it ran:**
+
+- Each mutant was applied alone in a `git archive` snapshot with `node_modules` symlinked. After
+  each, the tape files, the protected-store scan and the calendar's session rows ran with the JSON
+  reporter and 120 s timeouts.
+- Each mutated file was restored from memory and byte-checked, and each mutant was checked to parse
+  (`node --check`).
+- **A kill counts only when an assertion failed.** Two failures under load in an interim run at
+  `48f611c7` turned out to be timeouts: the F9 census row carries its own 60 s limit, and vitest
+  reports that timeout only as the test's stack. So the harness now counts that as a timeout, and
+  the interim run was superseded.
+- One mutant as first written, X36w, did not parse. Its load errors were caught, and it was
+  corrected and re-run.
+- No final-run result rests on a timeout or on a file that failed to load.
+
+**The set: 56 mutants.**
+
+- **Run 1's 32**, 13 of them re-targeted to the lines the review rewrote.
+- **15 for wave 1's fixes:** X36s–X36y, X37f–X37h, X20a–X20c, X25e and X13f.
+- **Lens 3's four R2-1 mutants:** R21a–R21d.
+- **Five for wave 2:** X36z, X20d, X37i, X37j and X13g.
+
+Fifty-two ran at `0df5bb5f`. Four ran at `3c16385a`, after the last code change: X36w corrected,
+X37g and X37i re-targeted to the new horizon line, and X37j new. The 52 target code that is
+identical at the two commits.
+
+**Result: 53 of 56 red. The three survivors are equivalent:**
+
+- **X36b and X36q**, for the reasons given under run 1.
+- **X36o**, no clean replace. Since L1-5 (`8388ca92`), a merge equal to the new unit is also equal
+  to it apart from its names, and that branch returns the same content, without `preservedFrom`. So
+  the clean-replace line decides nothing a caller can observe. X36o was red in run 1, before L1-5.
+
+Every survivor of run 1 and of lens 3's run is red here.
+
+**The guard rows fail under these mutants:**
+
+- "GUARD (BA-31): a stale unit is kept only when no current unit holds a fact": X36i, X36j and
+  X25c.
+- L2-1's all-matched GUARD: X20b, lens 2's broad fix.
+- BA-25 amended's two GUARDs: X25c (inside the window) and X25e (a `partial` pass outside it).
+
+The controls C10 and C14 fail under X25c. The other controls pin behaviour no mutant here touches.
+
+| id | rule | defect introduced | run 1 (`8d1f18e2`) | final run | first row that fails (final run) |
+|---|---|---|---|---|---|
+| X36a | BA-36 | per-point null guard dropped (replay legs): a saved point gives way to the more complete unit's null | RED (1) | RED (6) (`0df5bb5f`) | tapeAmendmentC.test.js: BA-36: a saved point is never replaced by null EVEN when the new attempt is the more c… |
+| X36b | BA-36 | per-point null guard dropped (plan prices) | SURVIVED | SURVIVED — equivalent (`0df5bb5f`) | — |
+| X36c | BA-36 | per-point null guard dropped (market and sector changes) | SURVIVED | RED (1) (`0df5bb5f`) | tapeAmendmentC.test.js: BA-36: a saved market change and a saved reconciliation are never replaced by null EVE… |
+| X36d | BA-36 | a tie goes to the new unit (plan prices) | RED (1) | RED (2) (`0df5bb5f`) | tapeAmendmentC.test.js: BA-36: where both attempts hold a value, a tie keeps the stored unit's — KO priced 70.… |
+| X36e | BA-36 | a tie goes to the new unit (replays) | SURVIVED | RED (2) (`0df5bb5f`) | tapeAmendmentC.test.js: L1-4 (review lens 4, L4-4): the same tie for a replay point — the sold name stale at t… |
+| X36f | BA-36 | a saved null is kept over a new value (replay legs) (and over a null) | RED (3) | RED (8) (`0df5bb5f`) | tapeAmendmentC.test.js: R1-1: a replay point goes the same way — the sold name's close from morning 1, the bou… |
+| X36g | BA-36 | a saved null is kept over a new value (plan prices) (and over a null) | RED (1) | RED (1) (`0df5bb5f`) | tapeAmendmentC.test.js: R1-1: a plan price saved as { atPlan 70.5, atClose null } meets { atPlan null, atClose… |
+| X36h | BA-36 / BA-31 | a stale unit holding facts is kept over a current one (the rank rule of 436199e4) | RED (11) | RED (11) (`0df5bb5f`) | tapeAmendmentC.test.js: BA-36 / BA-31: built from other inputs, the unit current with the tape's inputs wins W… |
+| X36i | BA-36 / BA-31 | a current unit wins even when it holds no fact | RED (3) | RED (3) (`0df5bb5f`) | tapeAmendmentC.test.js: GUARD (BA-31): a stale unit is kept only when no current unit holds a fact — every ref… |
+| X36j | BA-36 / BA-31 | a kept stale unit relabelled current (X31e, re-targeted to keepUnit) | RED (3) | RED (3) (`0df5bb5f`) | tapeAmendmentC.test.js: GUARD (BA-31): a stale unit is kept only when no current unit holds a fact — every ref… |
+| X36k | BA-36 | path naming dropped: a point built without an earlier sample names nothing | RED (1) | RED (5) (`0df5bb5f`) | tapeAmendmentC.test.js: BA-36: a saved point is never replaced by null EVEN when the new attempt is the more c… |
+| X36l | BA-36 | vouching dropped: an equal value on a whole path still names the sample | RED (1) | RED (2) (`0df5bb5f`) | tapeAmendmentC.test.js: BA-36: holes in different symbols on two mornings — the bought name at one check on mo… |
+| X36m | BA-36 | vouching without the value check: any whole-path point vouches | RED (1) | RED (5) (`0df5bb5f`) | tapeAmendmentC.test.js: BA-36: a saved point is never replaced by null EVEN when the new attempt is the more c… |
+| X36n | BA-36 | a unit that kept an earlier fact carries no preservedFrom | RED (6) | RED (11) (`0df5bb5f`) | tapeAmendmentC.test.js: R1-1: a plan price saved as { atPlan 70.5, atClose null } meets { atPlan null, atClose… |
+| X36o | BA-36 | no clean replace: a merge holding exactly the new facts still marks preservedFrom | RED (1) | SURVIVED — equivalent (`0df5bb5f`) | — |
+| X36p | BA-36 | the replay section carries no preservedFrom | RED (1) | RED (2) (`0df5bb5f`) | tapeAmendmentC.test.js: BA-36: holes in different symbols on two mornings — the bought name at one check on mo… |
+| X36q | BA-36 | the series section ignores plan prices that kept an earlier fact | SURVIVED | SURVIVED — equivalent (`0df5bb5f`) | — |
+| X36r | BA-36 | a saved reconciliation (boughtVsEvidence) replaced by null | SURVIVED | RED (1) (`0df5bb5f`) | tapeAmendmentC.test.js: BA-36: a saved market change and a saved reconciliation are never replaced by null EVE… |
+| X36s | BA-36 (L1-1) | a side's own names ignored: a merged replay's list that looks whole vouches (the rule of 8d1f18e2) | — | RED (4) (`0df5bb5f`) | tapeAmendmentC.test.js: L1-1: a third morning with morning 2's response again merges into the merge — price:AM… |
+| X36t | BA-36 (L1-5) | a merge that differs only by its names still marks preservedFrom (the rule of 077b1f04) | — | RED (1) (`0df5bb5f`) | tapeAmendmentC.test.js: L1-5: SPY stale at the swap on morning 1 and at the close on morning 2 — the AMD merge… |
+| X36u | BA-36 (L1-5) | a names-only merge replaced by the new unit: the stored attempt's names dropped | — | RED (1) (`0df5bb5f`) | tapeAmendmentC.test.js: L1-5: SPY stale at the swap on morning 1 and at the close on morning 2 — the AMD merge… |
+| X36v | BA-36/BA-24 (L1-4) | plan prices: a bare null replaces a saved null that carries its stale bar's age (the rule of c14a69e8) | — | RED (2) (`0df5bb5f`) | tapeAmendmentC.test.js: L1-4: KO's close stale on morning 1 (its last bar closed 15:54 ET), KO unreachable on … |
+| X36w | BA-36/BA-24 (L1-4) | replay legs: a bare null replaces a saved null that carries its stale bar's close time (the rule of c14a69e8) | — | RED (2) (`3c16385a`) | tapeAmendmentC.test.js: L1-4: the same for a replay point — the sold name stale at the swap on morning 1 (its … |
+| X36x | BA-36/BA-24 (L1-4) | plan prices: between two aged nulls the new one always stands (a tie no longer keeps the stored) | — | RED (1) (`0df5bb5f`) | tapeAmendmentC.test.js: L1-4: where both attempts' nulls carry an age, the more complete unit's stands and a t… |
+| X36y | BA-36/BA-24 (L1-4) | replay legs: between two aged nulls the new one always stands | — | RED (1) (`0df5bb5f`) | tapeAmendmentC.test.js: L1-4 (review lens 4, L4-4): the same tie for a replay point — the sold name stale at t… |
+| X37a | BA-37 | no re-assembly: the selection-time assembly with the re-read's completion block (436199e4) | RED (3) | RED (5) (`0df5bb5f`) | tapeAmendmentC.test.js: R2-3: the selection-time battle has entry 150, the re-read has 300 — the tape carries … |
+| X37b | BA-37 | re-assembly on the wrong branch: a differing re-read keeps the selection-time assembly | RED (5) | RED (7) (`0df5bb5f`) | tapeAmendmentC.test.js: R2-3: the selection-time battle has entry 150, the re-read has 300 — the tape carries … |
+| X37c | BA-37 | the re-read taken only when its lifecycle is strictly later (X27a, re-targeted) | RED (6) | RED (8) (`0df5bb5f`) | tapeAmendmentC.test.js: R2-3: the selection-time battle has entry 150, the re-read has 300 — the tape carries … |
+| X37d | BA-37 | an evaluation the lookup never covered is counted absent | RED (3) | RED (3) (`0df5bb5f`) | tapeAmendmentC.test.js: BA-37: a re-read that gained an evaluation expecting a declarations record assembles i… |
+| X37e | BA-37 | the unread limit dropped: an evaluation never looked up is neither absent nor a limit | RED (4) | RED (4) (`0df5bb5f`) | tapeAmendmentC.test.js: BA-37: a re-read that gained an evaluation expecting a declarations record assembles i… |
+| X37f | BA-37 (L2-6) | no battle document at the re-read: the selection copy is assembled from (the rule of f6accdfe) | — | RED (2) (`0df5bb5f`) | tapeAmendmentC.test.js: L2-6: the battle document is gone at the re-read — the write handed the stale selectio… |
+| X37g | BA-37 (L2-3) | the gap horizon is the re-read battle's minted count (the rule of aa147ab6) | — | RED (3) (`3c16385a`) | tapeAmendmentC.test.js: L2-3: a check minted between the tick read and the transaction is no gap of the read —… |
+| X37h | BA-37 (L2-3) | no gap horizon at all: a minted check the tick read lacks at the day's end is no gap | — | RED (2) (`0df5bb5f`) | tapeAmendmentC.test.js: L2-3 (review lens 4, L4-2): a selected copy that carries no minted count falls back to… |
+| X20a | BA-20/BA-37 (L2-1) | no limit when capture is present and a possibly evicted swap is unmatched (the rule of 75118d63) | — | RED (3) (`0df5bb5f`) | tapeAmendmentC.test.js: L2-1: capture present, trades[] at its 50-entry cap with its oldest entry on the day, … |
+| X20b | BA-20/BA-37 (L2-1) | the limit whenever trades[] may have evicted, every swap matched or not (lens 2's broad fix) | — | RED (2) (`0df5bb5f`) | tapeAmendmentC.test.js: L2-1 (refuter): a swap newer than trades[]'s oldest surviving entry was never evicted … |
+| X20c | BA-20/BA-37 (L2-1) | every unmatched swap counts as evicted, even one newer than the oldest surviving trade (the rule of 7bfddd92) | — | RED (1) (`0df5bb5f`) | tapeAmendmentC.test.js: L2-1 (refuter): a swap newer than trades[]'s oldest surviving entry was never evicted … |
+| X25a | BA-25 amended | outside the window a written pass is lowered to partial (the rule of 436199e4) | RED (5) | RED (5) (`0df5bb5f`) | tapeAmendmentC.test.js: R3-3: a refresh outside the window re-merges the recovered check — the written pass is… |
+| X25b | BA-25 amended | expired, but under the sweep's reason (retry_window_elapsed) | RED (5) | RED (5) (`0df5bb5f`) | tapeAmendmentC.test.js: R3-3: a refresh outside the window re-merges the recovered check — the written pass is… |
+| X25c | BA-25 amended | inside the window a written pass whose inputs changed is expired too | RED (19) | RED (19) (`0df5bb5f`) | tapeAmendmentC.test.js: BA-36 / BA-31: built from other inputs, the unit current with the tape's inputs wins W… |
+| X25d | BA-25 amended | the read-out prints the status's words, not the reason's | RED (1) | RED (1) (`0df5bb5f`) | tapeAmendmentC.test.js: R3-3: a refresh outside the window re-merges the recovered check — the written pass is… |
+| X25e | BA-25 amended (L3-5) | outside the window a partial or failed pass whose inputs changed is expired too (lens 3's M25d) | — | RED (1) (`0df5bb5f`) | tapeAmendmentC.test.js: GUARD: the ruling is for a WRITTEN pass — a partial pass whose inputs change outside t… |
+| X13a | BA-24 confirmed (R1-3) | the minutes line counts 10-minute bars, not their minutes | RED (2) | RED (4) (`0df5bb5f`) | tapeAmendmentC.test.js: R1-3: a series missing three minutes no check reads is whole by its buckets — coverage… |
+| X13b | BA-24 confirmed (R1-3) | the session minutes a constant 390, not the calendar's | RED (1) | RED (1) (`0df5bb5f`) | tapeAmendmentC.test.js: R1-3: the session minutes are the calendar's — an early close counts 210, never a cons… |
+| X13c | BA-24 confirmed (R1-3) | the minutes line dropped | RED (2) | RED (4) (`0df5bb5f`) | tapeAmendmentC.test.js: R1-3: a series missing three minutes no check reads is whole by its buckets — coverage… |
+| X13d | BA-24 confirmed (R1-3) | the minutes labelled derived, not market | RED (2) | RED (4) (`0df5bb5f`) | tapeAmendmentC.test.js: R1-3: a series missing three minutes no check reads is whole by its buckets — coverage… |
+| X13e | BA-24 confirmed (R1-3) | the minutes lines placed before the coverage line | RED (2) | RED (2) (`0df5bb5f`) | tapeAmendmentC.test.js: R1-3: a series missing three minutes no check reads is whole by its buckets — coverage… |
+| X13f | BA-24 (L3-6) | a bar without a finite m counts as 0 minutes (the rule of d64b88a1) | — | RED (2) (`0df5bb5f`) | tapeAmendmentC.test.js: R1-3 (round-3 review L3-6): a series whose bars do not all carry a finite `m` prints i… |
+| R21a | BA-26 amended (R2-1; L3-2) | any limit-free read clears unresolved_dependency, observed or not | — | RED (1) (`0df5bb5f`) | tapeAstraDelta.test.js: BA-26 amended (review R2-1): a read that brings one new dependency but never saw anoth… |
+| R21b | BA-26 amended (R2-1; L3-2) | a read that did not observe every dependency may lift the stored coverage | — | RED (1) (`0df5bb5f`) | tapeAstraDelta.test.js: BA-26 amended (review R2-1), the merge itself: a limit-free assembly that never saw a … |
+| R21c | BA-26 amended (R2-1; L3-2) | no caveat for a read that did not observe changed dependencies | — | RED (1) (`0df5bb5f`) | tapeAstraDelta.test.js: BA-26 amended (review R2-1): a read that brings one new dependency but never saw anoth… |
+| R21d | BA-26 amended (R2-1; L3-2) | the read's own dependencies are not given to the coverage merge | — | RED (2) (`0df5bb5f`) | tapeAstraDelta.test.js: BA-26 amended (review R2-1), the merge itself: a limit-free assembly that never saw a … |
+| X37i | BA-37 (L4-2) | a selected copy without a minted count gives no horizon, hiding a minted, uncaptured check (the rule of 48f611c7) | — | RED (1) (`3c16385a`) | tapeAmendmentC.test.js: L2-3 (review lens 4, L4-2): a selected copy that carries no minted count falls back to… |
+| X36z | BA-36 (L4-3) | the vouching side is judged by its priced points only, not its own names | — | RED (1) (`0df5bb5f`) | tapeAmendmentC.test.js: L1-1 (review lens 4, L4-3): the vouching side counts its own names too — a merge whose… |
+| X20d | BA-20/BA-37 (L4-5) | an unparseable oldest trade time places every swap after it: nothing counts as evicted | — | RED (1) (`0df5bb5f`) | tapeAmendmentC.test.js: L2-1 (review lens 4, L4-5): an unparseable oldest trade time places no swap after it —… |
+| X13g | BA-24 (L4-7) | a series with no bars prints 0 minutes (the rule of 48f611c7) | — | RED (1) (`0df5bb5f`) | tapeAmendmentC.test.js: R1-3 (review lens 4, L4-7): a series with no bars at all prints its minutes as unknown… |
+| X37j | BA-37 (refuter of lens 4) | a cronState with no count yet falls back to the re-read's count (the rule of bbf81e12) | — | RED (1) (`3c16385a`) | tapeAmendmentC.test.js: L2-3 (refuter of lens 4): a selected copy whose cronState counts nothing yet — no chec… |
+
+### 10.10 The §2 adversarial review — the written record
+
+**How it ran.** BUILD_RULES §2 requires the review. It measures the cumulative branch diff: 59 files
+and 16,334 lines against `main` at the code tip. This round alone changes 16 files and 1,448 lines
+against `436199e4`, 983 of them when wave 1 ran. The review ran in two waves. Every reviewer worked
+in its own `git archive` snapshot, with `node_modules` symlinked, and was read-only on git and on the
+shared tree:
+
+- **Wave 1, on the rulings (`8d1f18e2`).** Three lenses, then one refuter per lens:
+  - **Lens 1**: BA-36's merge;
+  - **Lens 2**: BA-37 and BA-25 amended;
+  - **Lens 3**: the read-out, test integrity, flag-off and the write census.
+
+  Each refuter was told to **refute** each finding with its own executed repro, and to check each
+  proposed fix. Every finding came back with an executed probe, and each was re-run or reproduced
+  here before any disposition.
+- **Wave 2, on the fixes (`48f611c7`).** Lens 4 reviewed wave 1's fixes adversarially. A fourth
+  refuter then tried to refute each of its findings. It found that wave 2's own first L4-2 fix
+  reopened L2-3's phantom, and supplied the variant that landed in `3c16385a`. Wave 2's fixes
+  (`bbf81e12` … `3c16385a`) are small: one horizon rule, one guard and one word, plus rows. Each is
+  red first and mutation-checked (§10.9).
+
+**Dispositions.** A finding is fixed here when:
+
+- it is a defect in how this round implemented a ruling; or
+- this round's code makes it reachable; or
+- it is a test that cannot fail under the defect it names.
+
+A finding that predates the round, outside Amendment C's table, is reported, not fixed (BUILD_RULES
+§3; the prompt: "Do not widen beyond this table"). Each is marked with the exit criterion's blocking
+classes: a false `complete`, a lost saved fact, a write outside `agentBattles/*/tape/**`, or a
+flag-off break.
+
+| Id | Lens | Finding | Refuted? | Disposition |
+|---|---|---|---|---|
+| **L1-1** | 1: BLOCKER (false `complete`) | Merging an already-merged replay dropped the name of a sample its kept points were scored without. `legNames` judged "whole before" from a list that looked whole. A third attempt (within one queueing; the attempt limit is 3) then read `complete` and `written` with wrong points (ghost −70 where whole bars give +25). A later whole attempt tied it and could not replace it | **CONFIRMED**, and worse than reported. The refuter showed that a third morning with AMD **whole** also ends `written`, and that the wrong unit sticks after a re-queue. The pre-round rule kept the name every time. The fix is sound: 2,146,689 exhaustive 3-attempt chains gave 239,085 false `complete` at `8d1f18e2` and 0 with the fix, and 500,261 random 2–5-attempt merges gave 0 | **FIXED** `75118d63` (BA-36). A side is whole before a point only if its earlier samples are priced **and** unnamed in its own `missingInputs`. Rows: a third morning with morning 2's response, and a total outage (both red at `8d1f18e2`). The refuter's third variant (morning 1 again) was added in `7bfddd92`, red at `8d1f18e2`. The rule's imprecision (a false `partial`, not blocking) is backlog |
+| **L1-2** | 1: MAJOR (display agreement) | At one check the replay point and the series price can come from different attempts: BA-36's "a tie keeps the stored" against BA-34's "the later bar wins" | **CONFIRMED as behaviour; MAJOR not supported.** Nothing displays the per-check series price; the read-out prints only a count. Each side follows its ruling. The pre-round rule split in the mirror direction | **For ruling** (§10.13). It matters for the A2 screen. No code change |
+| **L1-3** | 1: MINOR | After a thrown attempt, `preservedFrom` names the failed attempt's time, because the thrown path stamps `passes.candles.writtenAt` (`candlePass.js:761`) | **CONFIRMED**. Only a provenance timestamp; no fact or status | Backlog. Proposal: a per-unit write time, or a separate failure stamp |
+| **L1-4** | 1: MINOR (regression) | A plan-price outage replaced a saved null carrying its stale bar's age (BA-24) with a bare null. A replay's swap sample did the same | **CONFIRMED** | **FIXED** `077b1f04` for prices and legs. Three rows are red at `c14a69e8`: price, leg, and a tie between two ages |
+| **L1-5** | 1: MINOR | `preservedFrom` was set on a merge that kept no fact from the stored unit, only a name | **CONFIRMED**, cosmetic | **FIXED** `8388ca92`. The row is red at `deb99868` |
+| **L2-1** | 2: BLOCKER claimed (false `complete`) | With capture present, actions read `complete` while `trades[]` sat at its cap with a day's trade evicted: exit price and gain unknown, and no cap named. BA-37 adds a path: the eviction lands between the selection and the transaction | **CONFIRMED** false `complete` (BA-20, BA-8). **The BLOCKER claim is REFUTED for this round**: the root predates it (the same line at `8e754eb8`), and BA-37's path needs a swap after a day closes, which single-day battles cannot make. The pre-existing path needs 51 swaps in one day. Lens 2's broad fix is **not sound**: it lowers a day with nothing evicted. The narrow fix is sound | **FIXED** `aa147ab6`, narrow: the limit only when a swap is unmatched. `79baa031` takes the refuter's refinement: only a swap not newer than the oldest survivor counts. Rows: direct, through BA-37, the all-matched GUARD, and the newer-swap row (red at `7bfddd92`) |
+| **L2-2** | 2: MAJOR | Once a corrected trade is evicted, a refresh would fall back to the receipt's original entry price | **REFUTED**: unreachable. Only the executor appends to `trades[]`, nothing corrects it, and every receipt's `outgoingEntryPrice` is that same `closedTrade.entryPrice` | Not changed. Backlog note: the `entryPrice` group ranks by presence, not source precedence |
+| **L2-3** | 2: MINOR | A check minted between the tick read and the transaction's re-read became an unattributed gap on the previous day, with a sticky caveat | **REFUTED as reachable at HEAD**: every battle is one trading day (`agentBattleService.js:35`, fenced), so no battle mints in a later session while an earlier day is taped. The mechanism reproduces, and the fix is sound | **FIXED** `f6accdfe` (the horizon is the selected copy's count). It is kept because it makes BA-37's re-read agree with the reads it assembles over. The pre-existing class (a check in flight at the tick read) is backlog |
+| **L2-4** | 2: MINOR | BA-25 amended expires only a `written` pass; a `partial` one waits for the sweep | **CONFIRMED as stated; not a defect.** It is the ruling's scope; only the reason word differs, and both words are true | Backlog. The GUARD row `d64b88a1` pins the ruling's side |
+| **L2-5** | 2: MINOR | `processTape`'s transaction does not re-check for a terminal status | **CONFIRMED, benign.** The commit is always built from the tape as it stands | Backlog. Proposal: check the selectable statuses in that transaction too |
+| **L2-6** | 2: MINOR | A re-read that finds no battle fell back to the selection copy and rewound 300 to 150 | **REFUTED as reachable**: clients cannot delete battles (`firestore.rules:461`), and no code does. The fix is sound | **FIXED** `c14a69e8`: `battle_not_found`, as before the reads. It is kept: BA-37 assembles from the document it re-reads, and there is none |
+| **L3-1** | 3: test integrity ("MAJOR in effect") | The `backingDark` pin passes only while the real clock is in 2026-W39/W40. The row counts `subscribeMyStakes.mock.calls`, which earlier rows filled on the real clock | **CONFIRMED** here and by the refuter, with a different clock mechanism. The boundary is Monday 2026-10-05 00:00 ET: 64 / 64 at 03:50Z, "expected 4 to be 3" at 04:10Z. The refuter also showed that the committed row is blind to a wiring defect: with last week's key dropped at `BackingLandingStrip.jsx:71`, it stays green because earlier rows supply that key. The mock-clear fix makes it red. The refuter recommends landing the fix under the existing authorization | **NOT FIXED: outside the authorization's words**, "pinning that row's clock … Touch nothing else in that file". Clearing a mock is not pinning a clock. The patch is two lines inside the row, and passes on every date tried. It awaits the founder (§10.13) |
+| **L3-2** | 3: test integrity | Three R2-1 rows now reach BA-37's limit, not R2-1's rule; R2-1b survived every row | **CONFIRMED**. R2-1b survived 327 / 327 rows at `8d1f18e2` and 344 / 344 at `79baa031`. A probe log shows the three rows reach `declarationsUnread`, and only the mixed row reaches the unobserved branch. The refuter found no writer path after BA-37 that turns R2-1b into a false `complete`: a missing guard | **FIXED** `abb1308c`: re-titled, plus a pure-merge row. All four R2-1 mutants are red |
+| **L3-3** | 3: test integrity | No row fails when `mergeKeyed`'s null guard is dropped | **CONFIRMED** at `8d1f18e2`. Through the real candle pass the mutant loses a saved SPY change. The replay then names the sample, so the status is not falsely `complete`. It is closed at `79baa031` | **FIXED** `7bfddd92` (the X36c row) |
+| **L3-4** | 3: test integrity | No row pins a replay tie | **CONFIRMED** at `8d1f18e2`: a tie between AMD at 144 and at 160 flips under the mutant. It is closed at `79baa031` | **FIXED** `7bfddd92` (the X36e row) |
+| **L3-5** | 3: test integrity | BA-25 amended's `written`-only boundary is unpinned | **CONFIRMED**. The mutant survived 344 / 344 at `79baa031`. The refuter's note: that a non-`written` pass keeps its status is the code's reading of BA-25 amended (`tapeMerge.js:514`), not a sentence of the spec | **FIXED** `d64b88a1` (GUARD) |
+| **L3-6** | 3: MINOR, latent | A bar without `m` counted as 0 and printed as a market fact | **REFUTED as reachable**; the code fact is accurate. Every series document the candle pass writes carries a finite `m` on every bar: 37 documents and 1,263 bars in the refuter's run. It holds by construction: `aggregate10m` sets `m` on every bucket (`bars.js:134-135`), and an empty response gives no series (`candlePass.js:154`) | **FIXED** `48f611c7`. The row is red at `d64b88a1` |
+| **L3-7** | 3: MINOR, pre-existing | A plan added after the candle pass and merged outside the window shows `pending` prices beside the terminal line | **CONFIRMED**, and it predates Amendment C. The `pending` cells date from stage C (`19f897e7`, `tapeExport.js:219-220`). The BA-32 sweep alone produces the same contradiction on a day never enriched. Coverage stays honest (`partial`) | Backlog, in the R2-4 family |
+| (found here) | — | This round's `c04f6940` left `replayRank` imported but unused in the candle pass: the one default-config lint error the round added | — | **FIXED** `deb99868`. The round now adds no lint error; three older ones remain in its files |
+| **L4-1** | 4: MINOR (the L1-4 class) | `keepSeries`' per-check merge (`candlePass.js:304`) lets a saved stale sample `{price: null, barClosedAt}` give way to a bare null. L1-4 fixed the same for plan prices and replay legs. It was also noticed here while fixing L1-4 | **CONFIRMED**, and the refuter would call it **blocking class** by the reading L1-4 was fixed under. DF6 (`6f93e5ad`) introduced it: `8e754eb8`'s whole-document rule kept the age. It is code changed since `8e754eb8`, so it is inside Astra's closure verification. The merged document then contradicts its own bars. It is never a false `complete` | **For the founder** (§10.13). It is round-2 code (BA-34, `6f93e5ad`), outside Amendment C's table. A tested one-line fix exists |
+| **L4-2** | 4: LATENT false `complete`, **new in `f6accdfe`** | A selected copy without `cronState.tickSeq` gave no gap horizon. The day's last minted, uncaptured check vanished, capture read `present`, and five sections read `complete` | **CONFIRMED as latent.** Every caller passes the full document. The fix as landed (lens 4's exact line) is **not sound**: `createAgentBattle` writes `cronState` with no `tickSeq` (`agentBattleService.js:290-299`), and falling back for such a copy reopens L2-3's phantom. The refuter supplied a narrower variant | **FIXED** `bbf81e12`, then **refined** in `3c16385a` to the refuter's variant: only a copy with no `cronState` at all falls back, and a `cronState` with no count sets no horizon. Rows: L4-2's, red at `48f611c7`, and the refuter's scenario, red at `0df5bb5f` |
+| **L4-3** | 4: test gap (`75118d63`) | No row pins that the vouching side counts its own names. The mutant X36z passed every row, and lens 4's randomized probe found false `complete`s under it | **CONFIRMED**. Under the mutant a third morning reads `complete` and `written` with gap 70.5, where whole bars give −24.5. The landed row is a real guard | **FIXED** `608e93d5`: a row, red under X36z alone |
+| **L4-4** | 4: test gap (`077b1f04`) | No row pins a replay leg's tie between two aged nulls | **CONFIRMED**. The mutant only swaps an age, never a status. The landed row is a real guard | **FIXED** `608e93d5`: a row, red under X36y alone |
+| **L4-5** | 4: test gap (`79baa031`) | No row pins that an unparseable oldest trade time still counts every unmatched swap | **CONFIRMED**. The mutant gives a false `complete`, but only legacy or missing timestamps reach the branch; the executor writes ISO times (`agentSwapExecution.js:165`, `:265`). The landed row is a real guard | **FIXED** `608e93d5`: a row, red under X20d alone |
+| **L4-6** | 4: MINOR, predates the round | A check minted before the battle read and captured after the tick read still becomes a permanent caveat on six sections. Some sections' caveats say "of this day" for a gap whose day is unknown | **CONFIRMED**, pre-existing: identical with the changed product files swapped to `436199e4`. A false `partial` | Backlog, with L2-3's class |
+| **L4-7** | 4: MINOR, unreachable (`48f611c7`) | A series with no bars printed "0 (market) of 390" | **CONFIRMED**, unreachable: the pass never writes a series without bars. The landed fix is sound | **FIXED** `14ea84c4`. The row is red at `608e93d5` |
+| **L4-8** | 4: NOTE | L1-1's rule is sound but sticky: a rank tie keeps a merged unit's named points even when a new attempt has that leg whole. The row "a third morning with morning 1's response again" pins today's rule | **CONFIRMED** (note). It never gives a false `complete`, but it costs completion and retries when the data for a whole replay was already in hand | Backlog, with L1-1's precision |
+| **L4-9** | 4: NOTE | (a) One name, e.g. `price:AMD@8`, means both "this sample is missing" and "later points were scored without it". (b) The L2-1 note said "(evicted)" as a fact | **CONFIRMED**, both parts. The evaluations note at `tapeAssemble.js:919` already says "may have been evicted" | (a) Backlog, for the A2 screen. (b) **FIXED** `0df5bb5f`: "(possibly evicted)" |
+| **L4-10** | 4: NIT | `tapeAstraDelta.test.js:43` imports `stableStringify` unused | **CONFIRMED**. It came in with `c4e1fb7a`, round 1 | Not changed: it predates the round (present at `436199e4`). It is one of the three older lint errors |
+
+**Hypotheses the reviewers tested that held** (each with its probe):
+
+- **Lens 1.**
+  - `composeLegs` is byte-identical to the pre-round composition over 8,400 randomized replays.
+  - No saved number is lost across 1,600 randomized two- and three-attempt merges.
+  - Two-attempt merges never read a false `complete` (800).
+  - A merged replay's views agree with its legs (240).
+  - The BA-31 edges behave as read.
+- **Lens 2.**
+  - BA-37 adds no read.
+  - Each transaction retry assembles from its own re-read.
+  - Evicted evaluations are handled honestly.
+  - A stored completion never moves back.
+  - An unread declarations record is never "absent".
+  - Expired and exhausted keep their status, the sweep never selects an expired pass, and the hub
+    helper still answers `ready`.
+  - All four entry points refuse with zero reads and writes when the flag is off.
+  - No write lands outside the tape.
+- **Lens 3.**
+  - All 14 non-GUARD rows were red at the pre-round code, and no changed row pins less than its
+    ruling.
+  - The read-out's edge inputs behave (early close, holidays, an empty series).
+  - The census is seven, and 4,867 runtime writes all landed under the tape.
+  - The round's rows pass with the real clock at three other dates, and in shuffled order.
+- **Refuter 1.** The L1-1 fix is sound: exhaustive and random chains give no false `complete`.
+- **Refuter 2.** The narrow L2-1 fix, the L2-3 fix and the L2-6 fix are sound, each run over the
+  327-row film-tape suite with its probe.
+- **Refuter 3.** Each of lens 3's proposed fixes is sound, and the rows added for L3-2 to L3-6 close
+  their findings. The L3-1 patch passes on nine dates and is not vacuous. None of lens 3's seven
+  findings reaches a blocking class.
+- **Lens 4.**
+  - The merge fixes: a randomized check of 400 chains, each of 2 to 4 attempts. That is 2,400
+    replay merges and 2,400 plan-price merges. Every counter was 0: a lost value, a lost age, an
+    unnamed null, a retryable outside missing, a false `complete`, a broken invariant, a
+    `preservedFrom` mismatch.
+  - The probe can fail: with `75118d63` reverted it finds 170 false `complete`s.
+  - Through the real candle pass, 60 seeds of three mornings each gave zero false `complete`s and
+    zero writes off the tape path; with `75118d63` reverted it finds two.
+  - L2-1's branches hold, and L2-6's first write records only the failure.
+  - Flag-off holds at all four entry points.
+- **Refuter 4.**
+  - The landed rows for L4-3, L4-4 and L4-5 are real guards.
+  - The L4-1 and L4-7 fixes are sound.
+  - L4-6 is pre-existing.
+  - Across its whole run, `/home/user/TradeSeven` was never written.
+
+### 10.11 Verification at the tip
+
+| Check | Result |
+|---|---|
+| Code tip | `3c16385a`. The report commit that follows changes only this file, and no test reads it |
+| Full suite, Linux (`npx vitest run`, JSON reporter, output redirected) | **822 files, 0 failing files; 16,422 tests: 16,358 passed, 64 skipped, 0 failed; exit 0.** The baseline had 821 files and 1 failing (`backingDark`, §10.1). The extra file is `tapeAmendmentC.test.js`. The pinned `backingDark` row passes here; from 2026-10-05 it would not (L3-1, §10.13) |
+| Tape suites | **17 files, 429 tests, all passed**: the 16 of §9.12 (387 tests at the baseline, 388 now with the pure-merge row, §10.5) and `tapeAmendmentC.test.js`'s 41 rows |
+| Every commit of the round | All 22 commits after `765d8a5a` were re-run, each in its own snapshot (§10.6). **Every row passed at every commit** (387 → 429 tests), and the controls were 16 / 16 throughout |
+| Rules suite on the emulator (`npm run test:rules`) | **18 files, 332 tests, all passed; exit 0.** Unchanged from the baseline: this round touches no rule |
+| `npm run lint:gate` | exit 0. Under the full config (`npm run lint`), the round's files carry no error the round added. Three older errors remain in them (`tapeAstraDelta.test.js:43`; two in `backingDark.test.jsx` outside the pinned row) |
+| `npx vite build` | exit 0; built in 22.4 s. The same four pre-existing `css-syntax-error` warnings |
+| Mutation | **56 mutants at the code tip: 53 red, and three equivalent** (X36b, X36o, X36q; §10.9) |
+| Write census | Seven sites. C15 and the F9 census row pass: scanner, runtime and allowlist agree on seven keys at count 1 (§10.7) |
+| Cost | Round trips unchanged: the exact I/O is byte-identical at `436199e4`, `8d1f18e2`, `48f611c7` and `3c16385a` (§10.8) |
+| Fence | `git diff --name-only 436199e4..HEAD` names none of BUILD_RULES §1's files |
+| Flags, crons, rules, indexes | Unchanged since `436199e4`: `featureFlags.js` (both tape flags `false`, `:2868` and `:2886`), `vercel.json`, `firestore.rules` and `firestore.indexes.json`. Nothing is deployed |
+
+### 10.12 The backlog
+
+**Carried by Amendment C ("recorded once").** None of these blocks the merge under the exit
+criterion, and none was touched this round. Each is listed once, with §9.11's proposal where §9.11
+made one.
+
+| Item | What it is | §9.11's proposal |
+|---|---|---|
+| R2-4 | A terminal candle status keeps the coverage label "awaiting the candle pass". The close-out and a thrown third attempt write the status, not the label; the read-out prints the terminal words beside it | Rewrite the candle sections' outlook wherever a terminal status is written |
+| R2-5 | An identical limited re-read writes once more (`preservedFrom` flips), so a refresh can list such a day `refreshed` once | None made |
+| R3-5 | A refresh would merge a `skipped_mode` document over a written tape if a battle's mode ever changed (latent: no writer changes `gameMode`) | Never merge `skipped_mode` over a written close pass |
+| R1-7 | A series' `builtFrom` leaves out the roles the series document states; roles are descriptive (§9.9) | None beyond the documented reading |
+| R1-8 | A sweep with exactly `maxMarks` closable tapes reports `complete: false` though nothing remains (conservative; the next morning reads nothing) | None made |
+| R3-2 | A refresh resumes by date only; a date whose written battles exceed one run's budget cannot finish (§9.9) | A resume cursor such as `&after=<battleId>` |
+| Replay inputs at zero legs | When a day's replay legs were never complete, the replay-inputs group ties at zero legs, and the read that knows less supplies `replayMissing` | None made |
+
+**Added by this round's review.** None blocks under the exit criterion.
+
+| Item | What it is | Proposal |
+|---|---|---|
+| L1-1's precision (with L4-8) | The fixed rule is sound but can hold a replay whose numbers are all right at `partial` until an attempt is whole for it, or until the pass exhausts. It also never uses a whole leg that arrives on a lower-ranked attempt. The row "a third morning with morning 1's response again" pins today's rule, so this change would update it | A per-point record of the earlier samples each point's own path lacked (`lacks`), carried with the point. Refuter 1 checked it in a model only |
+| L1-2 | The replay point and the series price at one check can come from different attempts (a replay tie keeps the stored; a series check takes the later bar) | **For ruling**: break replay ties toward the attempt whose samples completed later, or let the series' check samples follow the kept replay |
+| L1-3 | After a thrown attempt, `preservedFrom` names the failed attempt's time | A per-unit write time, or a failure stamp apart from `writtenAt` |
+| L2-2 | The `entryPrice` group ranks by presence, not by source precedence (unreachable today) | Rank by source |
+| L2-3's class (with L4-6) | A check in flight at the tick read (minted before the selection) is taped as an unattributed gap on the previous day, and its caveat outlives the capture, on six sections. Some sections' caveats say "of this day" for a gap whose day is unknown. This predates the round, and single-day battles cannot reach it | Make a trailing gap past a later session's open a limit, not a caveat, and count only attributed gaps in the other sections |
+| L2-4 | BA-25 amended expires only a `written` pass; a `partial` one ends `retry_window_elapsed` | None needed unless the ruling widens |
+| L2-5 | `processTape`'s transaction does not re-check for a terminal status | Check the selectable statuses there, as the sweep and the thrown path do |
+| L3-7 | A plan added after the candle pass, merged outside the window, shows `pending` prices beside the terminal line (the R2-4 family) | Print "— (no candle pass will run)" when the pass is terminal |
+| L4-1, `keepSeries` both-null | A saved check sample's stale bar age gives way to a bare null: L1-4's class, in round 2's BA-34 code | **For the founder** (§10.13): L1-4's rule for series checks, one tested line |
+| L4-9 (a) | One name, e.g. `price:AMD@8`, stands both for a missing sample and for later points scored without it. The read-out prints the name beside a value at that check | Separate words for the two meanings, for the A2 screen |
+
+### 10.13 Founder actions, updated
+
+§6, §8.10 and §9.13 stand, with these changes:
+
+1. **The `backingDark` pin holds only until Sunday 2026-10-04 (L3-1).** From Monday 2026-10-05 the
+   row fails again ("expected 4 to be 3"), on this branch and so on the PR's Linux CI.
+   - **Why:** the row counts week keys that earlier rows subscribed on the real clock, in a mock
+     that is never cleared.
+   - **The fix** is two lines inside the same row: move the `backingService` import up and call
+     `subscribeMyStakes.mockClear()` before the mount. It passes 64 / 64 with the real clock at
+     2026-09-28, 2026-10-05, 2026-12-31, 2027-06-15 and 2026-03-10, and on nine dates in the lens-3
+     refuter's run.
+   - **It also matters on the days the pin works.** With last week's key dropped in the wiring
+     (`BackingLandingStrip.jsx:71`), the committed row stays green, because earlier rows supply that
+     key. With the fix, the row goes red, as it should.
+   - **Why it is not applied:** the authorization covers "pinning that row's clock … Touch nothing
+     else in that file", and clearing a mock is not pinning a clock. The lens-3 refuter would land it
+     under the existing authorization. The call is yours.
+   - **Your call:** authorize it, and it is one test-only commit with this diff:
+
+     ```diff
+     @@ -465,13 +465,14 @@ describe('flag ON — the same mounts light up (the pin is not vacuous)', () =>
+        it('mobile: the strip renders from the pod list, the label reads Predictions, and the pod list was fetched exactly once', async ({ onTestFinished }) => {
+          vi.setSystemTime(new Date('2026-09-24T16:00:00.000Z')); // the fixture's week, 2026-W39, whose window closes into 2026-W40
+          onTestFinished(() => { vi.useRealTimers(); });
+     +    const { subscribeMyStakes } = await import('../../../services/backingService');
+     +    subscribeMyStakes.mockClear(); // this row's subscriptions only: earlier rows subscribed on the real clock
+          flag.on = true;
+          const container = await mount(<LeagueHome {...homeProps} />);
+          expect(svc.calls.filter((c) => c === 'fetchBackingPods')).toHaveLength(1);
+          expect(svc.calls).toContain('subscribeMyStakes');
+          // The viewer's backing is read under LAST week's key, this week's and the
+          // window's (R-A-1 in the PR 4 review record) — one stake subscription each.
+     -    const { subscribeMyStakes } = await import('../../../services/backingService');
+          const keys = new Set(subscribeMyStakes.mock.calls.map((c) => c[1]));
+     ```
+2. **The series merge and a stale bar's age (L4-1).** `keepSeries` keeps a saved check price over a
+   null, but not a saved null's stale bar age over a bare null. L1-4 closed exactly that for plan
+   prices and replay legs, whose regression it was.
+   - **Where it sits:** round-2 code (BA-34, `6f93e5ad`), outside Amendment C's table, so it is not
+     changed here.
+   - **Why it may matter now:** DF6 introduced it (`8e754eb8`'s whole-document rule kept the age),
+     and that code is inside Astra's closure verification. This round's L1-4 counts an age as a
+     saved fact, and so does the code's own `factsOf`. By that reading L4-1 "loses a saved fact",
+     a blocking class; the refuter calls it that. By the spec's literal words, which protect only
+     non-null values, it is backlog, and so is L1-4.
+   - **The fix** is one line, tested by lens 4 and its refuter: when the saved sample has no price
+     and the new one has none either, keep the saved one if its bar closed later. A saved age then
+     beats a bare null. Between two ages the later bar wins, which is BA-34's own rule.
+   - **Your call:** authorize it for this branch before Astra's pass, or leave it in the backlog.
+3. **Rulings requested:** L1-2, whether a replay tie or a series check's "later bar" should govern
+   where the two disagree. Nothing displays the per-check series price today. The A2 screen will.
+4. **The exit criterion, one reading to confirm.** L2-1 is a false `complete` whose root predates
+   this round, and it is fixed here.
+   - Its refuter found that the only path this round adds, through BA-37, is unreachable at HEAD.
+     By that reading L2-1 would not block and could have waited in the backlog.
+   - Read as "any newly found false `complete`", it blocks.
+   - The fix is narrow, one limit line, and pinned. Say if you would rather it came out.
+5. **Human review, indexes, class declarations:** unchanged from §9.13. Still seven notes, the same
+   two Console index entries (not deployed), and no new number class: `preservedFrom` is a string.
+6. **Not done, by instruction:** no PR, no merge, no flag flip, no index deploy.
 
 ---
 
