@@ -41,12 +41,14 @@
 // the same inputs (one `builtFrom`) are merged sample by sample, leg by leg —
 // a saved point is never replaced by null, a saved null is no fact and gives
 // way to the new point, and where both hold a value the more complete replay's
-// stands (a tie keeps the stored one). A leg's points are one scored path: the
-// scorer's history runs through every earlier sample of that leg, so a point
-// kept from an attempt that lacked an earlier sample keeps that sample named
-// in missingInputs — the merge never reads complete on a path no single
-// attempt scored. The views (holdPath, swapPath, gap, closedLegDelta) are
-// composed from the merged legs by composeLegs, the build's own composition.
+// stands (a tie keeps the stored one); where neither does, the null with its
+// stale bar's close time beside it stands. A leg's points are one scored
+// path: the scorer's history runs through every earlier sample of that leg,
+// so a point kept from an attempt that lacked an earlier sample keeps that
+// sample named in missingInputs — the merge never reads complete on a path no
+// single attempt scored. The views (holdPath, swapPath, gap, closedLegDelta)
+// are composed from the merged legs by composeLegs, the build's own
+// composition.
 
 import { calculateAssetScoreServer } from '../agentScoring.js';
 import { sampleAt, sampleCanExist, pctChange } from './bars.js';
@@ -281,8 +283,10 @@ const sampleKey = (leg, list, i) => (i === list.length - 1 ? 'close' : (leg === 
 /**
  * One leg, sample by sample: a saved point is never replaced by null; a saved
  * null is no fact, so the new entry stands there; where both hold a value, the
- * more complete replay's stands, and a tie keeps the stored one. A leg only
- * one attempt built is that attempt's, whole.
+ * more complete replay's stands, and a tie keeps the stored one. Where neither
+ * does, a null with its stale bar's close time beside it (BA-24) is the more
+ * complete sample, and between two such the same rule holds (round-3 review
+ * L1-4). A leg only one attempt built is that attempt's, whole.
  */
 function mergeLeg(s, f, storedWins) {
   if (!s || !f) {
@@ -296,7 +300,9 @@ function mergeLeg(s, f, storedWins) {
     const list = side === 's' ? s : f;
     return { list, from: list.map(() => side) };
   }
-  const from = s.map((se, i) => (!hasPoint(se) ? 'f' : (!hasPoint(f[i]) ? 's' : (storedWins ? 's' : 'f'))));
+  const sideOf = (se, fe) => (hasPoint(se) ? (!hasPoint(fe) || storedWins ? 's' : 'f')
+    : (hasPoint(fe) || !se?.barClosedAt || (fe?.barClosedAt && !storedWins) ? 'f' : 's'));
+  const from = s.map((se, i) => sideOf(se, f[i]));
   return { list: from.map((side, i) => (side === 's' ? s[i] : f[i])), from };
 }
 

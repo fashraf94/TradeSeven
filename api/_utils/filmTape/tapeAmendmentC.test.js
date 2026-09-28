@@ -636,3 +636,49 @@ describe('BA-37 (round-3 review L2-6) — a transaction whose re-read finds no b
     expect({ ...tape, passes: { ...tape.passes, close: { ...tape.passes.close, lastError: before.passes.close.lastError } } }).toEqual(before);
   });
 });
+
+describe('BA-36 / BA-24 (round-3 review L1-4) — a saved null that carries its stale bar\'s age is never replaced by a bare null', () => {
+  it('L1-4: KO\'s close stale on morning 1 (its last bar closed 15:54 ET), KO unreachable on morning 2 — the close stays null with 15:54 ET beside it, and the plan keeps its plan-time price', async () => {
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    await morning(t, allBars({ KO: holed(PRICES.KO, '19:54', '20:00') }));
+    const m1 = structuredClone(tapeOf(t, fx.battleId));
+    const staleClose = koPlan(m1).price.atClose;
+    expect(staleClose).toEqual({ value: null, at: '2026-09-24T19:54:00.000Z', basis: 'stale_bar' });
+    await morning(t, allBars({ KO: new Error('EODHD 500') }), MORNING + DAY);
+    const price = koPlan(tapeOf(t, fx.battleId)).price;
+    expect(price.atClose).toEqual(staleClose);
+    expect(price.atPlan).toEqual(koPlan(m1).price.atPlan);
+    expect(price.missingInputs).toEqual(['price:KO@close']);
+    expect(price.preservedFrom).toBe(m1.passes.candles.writtenAt);
+  });
+
+  it('L1-4: the same for a replay point — the sold name stale at the swap on morning 1 (its 10:20–10:30 ET minutes missing), no AMD bar before the swap at all on morning 2: the swap point stays null with 10:20 ET beside it', async () => {
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    await morning(t, allBars({ AMD: holed(PRICES.AMD, '14:20', '14:30') }));
+    const m1 = structuredClone(tapeOf(t, fx.battleId));
+    const swap1 = amdTsla(m1).replay.holdPath[0];
+    expect(swap1).toMatchObject({ points: null, barClosedAt: '2026-09-24T14:20:00.000Z' });
+    await morning(t, allBars({ AMD: withoutMinutes(flatRows(D, PRICES.AMD), '13:30', '14:31') }), MORNING + DAY);
+    const replay = amdTsla(tapeOf(t, fx.battleId)).replay;
+    expect(replay.holdPath[0]).toEqual(swap1);
+    expect(replay.holdPath.slice(1)).toEqual(amdTsla(m1).replay.holdPath.slice(1));
+    expect(replay.missingInputs).toEqual(['price:AMD@swap']);
+    expect(replay.preservedFrom).toBe(m1.passes.candles.writtenAt);
+  });
+
+  it('L1-4: where both attempts\' nulls carry an age, the more complete unit\'s stands and a tie keeps the stored — KO\'s close stale at 15:54 ET on morning 1 and 15:52 ET on morning 2: 15:54 stays', async () => {
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    await morning(t, allBars({ KO: holed(PRICES.KO, '19:54', '20:00') }));
+    const m1 = structuredClone(tapeOf(t, fx.battleId));
+    await morning(t, allBars({ KO: holed(PRICES.KO, '19:52', '20:00') }), MORNING + DAY);
+    const price = koPlan(tapeOf(t, fx.battleId)).price;
+    expect(price.atClose).toEqual(koPlan(m1).price.atClose);
+    expect(price.atClose.at).toBe('2026-09-24T19:54:00.000Z');
+  });
+});

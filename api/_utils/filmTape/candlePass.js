@@ -369,6 +369,8 @@ const priceRank = (p) => (p ? (typeof p.atPlan?.value === 'number' ? 1 : 0) + (t
 /** The two points a plan's price holds (BA-10), with the sample each is named by when it has no value. */
 const PRICE_POINTS = Object.freeze({ atPlan: 'plan', atClose: 'close' });
 const hasValue = (pt) => typeof pt?.value === 'number' && Number.isFinite(pt.value);
+/** A null point's age (BA-24): the close time of the stale bar that could not stand for it, or null. */
+const staleAt = (pt) => (pt && !hasValue(pt) ? (pt.at ?? null) : null);
 /** Does a plan price hold any fact — a point with a value (BA-31: a unit that "exists")? */
 export const priceHasFact = (p) => Object.keys(PRICE_POINTS).some((k) => hasValue(p?.[k]));
 
@@ -376,10 +378,12 @@ export const priceHasFact = (p) => Object.keys(PRICE_POINTS).some((k) => hasValu
  * BA-36 — the plan price a retry keeps when the stored and the new one share
  * `builtFrom`, merged point by point: a saved point is never replaced by null;
  * a saved null is no fact, so the new point stands there; where both hold a
- * value, the more complete price's stands, and a tie keeps the stored. The two
- * points are independent samples, so `missingInputs` names exactly the points
- * left without a value — by their sample when either attempt had bars, else by
- * the bars (planPrice's own words).
+ * value, the more complete price's stands, and a tie keeps the stored. Where
+ * neither does, a null that carries its stale bar's age (BA-24) is the more
+ * complete point, and between two such the same rule holds (round-3 review
+ * L1-4). The two points are independent samples, so `missingInputs` names
+ * exactly the points left without a value — by their sample when either
+ * attempt had bars, else by the bars (planPrice's own words).
  */
 export function mergePrice(stored, fresh, { symbol }) {
   const storedWins = priceRank(stored) >= priceRank(fresh);
@@ -389,7 +393,8 @@ export function mergePrice(stored, fresh, { symbol }) {
   for (const [k, sample] of Object.entries(PRICE_POINTS)) {
     const s = stored[k] ?? null;
     const f = fresh[k] ?? null;
-    out[k] = !hasValue(s) ? f : (!hasValue(f) ? s : (storedWins ? s : f));
+    out[k] = hasValue(s) ? (!hasValue(f) || storedWins ? s : f)
+      : (hasValue(f) || !staleAt(s) || (staleAt(f) && !storedWins) ? f : s);
     if (hasValue(out[k])) continue;
     if (named.includes(`price:${symbol}@${sample}`)) keep.add(`price:${symbol}@${sample}`);
     else if (named.includes(`bars:${symbol}`)) keep.add(`bars:${symbol}`);
