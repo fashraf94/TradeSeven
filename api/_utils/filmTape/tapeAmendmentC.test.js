@@ -536,6 +536,18 @@ describe('BA-20 / BA-37 (round-3 review L2-1) — a swap whose trade record may 
     expect(tape.coverage.actions.note).toMatch(CAP_NOTE);
   });
 
+  it('L2-1 (refuter): a swap newer than trades[]\'s oldest surviving entry was never evicted — its missing trade record is no limit of the read: the row stands unmatched, and actions coverage names no cap', async () => {
+    const fx = await presentCaptureDay();
+    const [amd] = fx.battle.trades;                                            // the MSFT trade is absent, never evicted: AMD, older, survives
+    const t = world({ ...fx, battle: { ...structuredClone(fx.battle), trades: [amd, ...laterTrades(amd, 49)] } });
+    await write(t, fx);
+    const tape = tapeOf(t, fx.battleId);
+    expect(tape.actions.find((a) => a.symbolOut === 'MSFT').tradeMatched).toBe(false);
+    expect(amdTsla(tape).tradeMatched).toBe(true);
+    expect(tape.coverage.actions.status).toBe('complete');
+    expect(tape.coverage.actions.note).toBeNull();
+  });
+
   it('GUARD: trades[] at its cap with its oldest entry on the day, but every swap of the day matched its trade — nothing of the day was evicted, and actions coverage stays complete', async () => {
     const fx = await presentCaptureDay();
     const [amd, msft] = fx.battle.trades;

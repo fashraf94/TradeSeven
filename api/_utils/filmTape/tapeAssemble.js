@@ -949,13 +949,16 @@ export function assembleTape({
 
   const actionReasons = [];
   const actionsProvable = (capture === 'present') || !trades.evictionPossible;
-  const unmatched = actions.filter((a) => !a.tradeMatched).length;
+  // The cap keeps the newest trades, so only a swap not newer than the oldest
+  // surviving one can have lost its trade record to it.
+  const oldestTradeMs = trades.all.length ? toMs(trades.all[0].swappedOutAt) : null;
+  const unmatched = actions.filter((a) => !a.tradeMatched && (oldestTradeMs === null || (toMs(a.at) ?? -Infinity) <= oldestTradeMs)).length;
   if (!actionsProvable) actionReasons.push(limit('capture is incomplete for this day and trades[] is at its 50-entry cap — a swap on an unrecorded check may be missing', LIMIT_SOURCES.tradesCap));
   // Every swap recorded on its check, but trades[] at its cap may have evicted
   // the trade record of one this read found unmatched: its tier, slot, exit
   // price and locked gain are unknown here, a limit of this read (BA-20: every
-  // source under its cap; round-3 review L2-1). When every swap matched,
-  // nothing of the day was evicted.
+  // source under its cap; round-3 review L2-1). When every swap that could
+  // have been evicted matched, nothing of the day was.
   else if (trades.evictionPossible && unmatched) actionReasons.push(limit(`trades[] is at its ${TRADES_CAP}-entry cap and its oldest surviving entry is not before this day — ${unmatched} swap(s) have no trade record here (evicted): tier, slot, exit price and locked gain unknown`, LIMIT_SOURCES.tradesCap));
   if (!receiptsRead.ok) actionReasons.push(limit(`learning receipts unreadable (${receiptsRead.error}) — replay inputs and holding times unavailable`, LIMIT_SOURCES.receipts));
   coverage.actions = coverageOf(statusFrom(actionReasons, actions.length > 0 || actionsProvable), {
