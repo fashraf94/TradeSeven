@@ -395,6 +395,24 @@ describe('BA-25 amended (R3-3) — outside the candle window, a written pass who
     expect(tape.coverage.replay.note).toMatch(/built before the candle inputs changed \(actions, symbols\) — outside its retry window, not rebuilt/);
   });
 
+  it('GUARD: the ruling is for a WRITTEN pass — a partial pass whose inputs change outside the window keeps its status, the change recorded, and the next sweep closes it out (retry_window_elapsed) — round-3 review L3-5', async () => {
+    const fx = await capturedDay();
+    const tick10 = fx.ticks.find((tk) => tk.tickSeq === 10);
+    const t = makeTapeDb(seedDay({}, { ...fx, ticks: fx.ticks.filter((tk) => tk.tickSeq !== 10) }));
+    await write(t, fx);
+    await morning(t, allBars({ XLP: new Error('EODHD 500') }));
+    const before = structuredClone(tapeOf(t, fx.battleId).passes.candles);
+    expect(before.status).toBe('partial');
+    t.store.set(`agentBattles/${fx.battleId}/ticks/${tick10.tickId}`, tick10);
+    await runBackfill({ db: t.db, clock: () => OUTSIDE, dates: [D], refresh: true });
+    const after = tapeOf(t, fx.battleId).passes.candles;
+    expect(after).toMatchObject({ status: 'partial', changedInputs: ['checks'] });
+    expect(after.reason).not.toBe('inputs_changed_outside_window');
+    const s = await morning(t, allBars(), NEXT_MORNING);
+    expect(s.expired).toContain(tapePath(fx.battleId));
+    expect(tapeOf(t, fx.battleId).passes.candles).toMatchObject({ status: 'expired', reason: 'retry_window_elapsed' });
+  });
+
   it('GUARD: inside the window a written pass whose inputs changed is re-queued (pending, inputs_changed), never expired', async () => {
     const { fx, t } = await grownDay();
     await runBackfill({ db: t.db, clock: () => Date.parse('2026-09-28T15:00:00.000Z'), dates: [D], refresh: true });
