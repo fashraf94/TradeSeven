@@ -124,10 +124,12 @@ export async function writeTapeDay(battleId, etDate, opts = {}) {
     if (assembleFrom) {
       const bSnap = await tx.get(battleRef(db, battleId));
       const now = bSnap && bSnap.exists ? { id: battleId, ...(typeof bSnap.data === 'function' ? bSnap.data() : bSnap.data) } : null;
-      if (now) {
-        doc = stableStringify(now) === stableStringify(battle) ? assembled : assembleFrom(now);
-        canonicalBattle = true;
-      }
+      // No battle document to assemble from: the selected copy may be stale,
+      // so the battle-day fails and says why, as it does before the reads
+      // (round-3 review L2-6).
+      if (!now) throw new Error('battle_not_found');
+      doc = stableStringify(now) === stableStringify(battle) ? assembled : assembleFrom(now);
+      canonicalBattle = true;
     }
     const { doc: merged, changed } = mergeTape(stored, doc, { nowIso, withinWindow, canonicalBattle });
     if (changed) tx.set(ref, merged);

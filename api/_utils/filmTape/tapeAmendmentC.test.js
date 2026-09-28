@@ -595,3 +595,44 @@ describe('BA-37 (round-3 review L2-3) — the gap horizon is the minted count of
     ]);
   });
 });
+
+describe('BA-37 (round-3 review L2-6) — a transaction whose re-read finds no battle document assembles nothing', () => {
+  /** capturedDay taped (close and candles) with the AMD entry corrected to 300; `selected` is the copy from before the correction (150). */
+  async function correctedAndTaped({ hooks } = {}) {
+    const fx = await capturedDay();
+    const t = makeTapeDb(seedDay({}, fx), { hooks });
+    const bp = `agentBattles/${fx.battleId}`;
+    const selected = { id: fx.battleId, ...structuredClone(t.store.get(bp)) };
+    const b = structuredClone(t.store.get(bp));
+    b.trades.find((tr) => tr.symbolOut === 'AMD').entryPrice = 300;
+    t.store.set(bp, b);
+    await write(t, fx);
+    await morning(t);
+    return { fx, t, bp, selected };
+  }
+
+  it('L2-6: the battle document is gone at the re-read — the write handed the stale selection copy (entry 150) fails battle_not_found, and the stored tape keeps 300, unchanged', async () => {
+    const { fx, t, bp, selected } = await correctedAndTaped();
+    const before = structuredClone(tapeOf(t, fx.battleId));
+    expect(amdTsla(before).replayInputs.ghost.entryPrice).toBe(300);
+    t.store.delete(bp);
+    await expect(writeTapeDay(fx.battleId, D, { db: t.db, now: MORNING + 3_600_000, battle: selected })).rejects.toThrow('battle_not_found');
+    expect(tapeOf(t, fx.battleId)).toEqual(before);
+  });
+
+  it('L2-6 through the real backfill: the battle document is deleted between the selection and the transaction — the day fails battle_not_found, recorded beside the written tape, which keeps 300 and its status', async () => {
+    const hooks = {};
+    const { fx, t, bp } = await correctedAndTaped({ hooks });
+    const before = structuredClone(tapeOf(t, fx.battleId));
+    const at = Date.parse('2026-09-28T15:00:00.000Z');
+    let armed = true;
+    hooks.afterTxRead = async (path) => { if (armed && path === tapePath(fx.battleId)) { armed = false; t.store.delete(bp); } };
+    const s = await runBackfill({ db: t.db, clock: () => at, dates: [D], refresh: true });
+    expect(s.failed).toEqual([{ battleId: fx.battleId, etDate: D, reason: 'battle_not_found' }]);
+    const tape = tapeOf(t, fx.battleId);
+    expect(amdTsla(tape).replayInputs.ghost.entryPrice).toBe(300);
+    expect(tape.passes.close.status).toBe('written');
+    expect(tape.passes.close.lastError).toEqual({ at: new Date(at).toISOString(), reason: 'battle_not_found' });
+    expect({ ...tape, passes: { ...tape.passes, close: { ...tape.passes.close, lastError: before.passes.close.lastError } } }).toEqual(before);
+  });
+});
