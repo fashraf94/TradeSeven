@@ -17,6 +17,10 @@
 //     may throw — a test fails one path's writes wherever its reference was
 //     built (a transaction checks all its writes before applying any, so it
 //     stays all-or-nothing);
+//   · `hooks.beforeRead(label)` runs before every read — a document get (its
+//     path), a query (its collection path or `group:<name>`), a transaction
+//     read (`tx:<path>`) — and may throw, so a test makes one source
+//     unreadable for one run (the delta review's D03 / C03);
 //   · a write log and a read log (paths), so a suite can assert exactly what
 //     was touched — zero writes, never a tickBodies read, only tape paths;
 //   · with `hooks.recordCallSites`, every write CALL (not its commit — a
@@ -74,6 +78,7 @@ export function makeTapeDb(initial = {}, { hooks = {} } = {}) {
   const readLog = [];
   const callSites = [];
   const noteCall = (op, path) => { if (hooks.recordCallSites) callSites.push({ op, path, stack: new Error().stack }); };
+  const noteRead = (label) => { readLog.push(label); if (hooks.beforeRead) hooks.beforeRead(label); };
   let failNextTx = 0;
 
   const bump = (path) => versions.set(path, (versions.get(path) || 0) + 1);
@@ -90,7 +95,7 @@ export function makeTapeDb(initial = {}, { hooks = {} } = {}) {
     return {
       path,
       id: path.split('/').pop(),
-      get: async () => { readLog.push(path); return snapOf(path); },
+      get: async () => { noteRead(path); return snapOf(path); },
       set: async (data, opts) => {
         noteCall('set', path);
         if (opts?.merge && store.has(path)) { const cur = clone(store.get(path)); Object.assign(cur, clone(data)); put(path, cur, 'set'); } else put(path, data, 'set');
@@ -147,7 +152,7 @@ export function makeTapeDb(initial = {}, { hooks = {} } = {}) {
       // not still match the query.
       if (after) paths = paths.filter((p) => cmp(valuesOf(p), p, after.values, after.path) > 0);
       if (max !== null) paths = paths.slice(0, max);
-      readLog.push(label);
+      noteRead(label);
       const docs = paths.map(snapOf);
       return { docs, empty: docs.length === 0, size: docs.length, forEach: (cb) => docs.forEach(cb) };
     };
@@ -194,7 +199,7 @@ export function makeTapeDb(initial = {}, { hooks = {} } = {}) {
         const ops = [];
         const tx = {
           get: async (ref) => {
-            readLog.push(`tx:${ref.path}`);
+            noteRead(`tx:${ref.path}`);
             reads.set(ref.path, versions.get(ref.path) || 0);
             const snap = snapOf(ref.path);
             if (hooks.afterTxRead) await hooks.afterTxRead(ref.path, db);
