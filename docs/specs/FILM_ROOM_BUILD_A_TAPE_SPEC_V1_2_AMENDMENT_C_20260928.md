@@ -30,3 +30,15 @@ R2-4 (terminal status keeps the "awaiting the candle pass" outlook wording), R2-
 ## Exit criterion (unchanged from Amendment B)
 
 Astra's next pass is a closure verification of DF1–DF8, the round-2 review fixes and BA-36, BA-37 and BA-25 amended, with adversarial review of only the code changed since `8e754eb8`. A new finding blocks the merge only if it produces a false `complete`, loses a saved fact, writes outside `agentBattles/*/tape/**`, or breaks flag-off. Anything else joins the backlog.
+
+## Addendum — founder rulings on the round-3 review (2026-09-28)
+- **L4-1 (BA-34 extended).** A series check sample's stale bar age is a saved fact, as for plan
+  prices and replay legs (L1-4). When saved and new samples both lack a price, the one whose bar
+  closed later is kept; a saved age is never replaced by a bare null.
+- **L1-2 (display rule, no merge change).** Replay points and series samples are separate facts
+  with their own merge rules; neither is corrected to the other. The A2 screen never pairs a
+  replay point with the series price at that check as the price behind it; a replay point is
+  shown only with its own sampled inputs.
+- **L2-1 (kept).** Under the exit criterion, a newly found false `complete` in code the closure
+  pass reviews blocks whatever its root; the narrow fix stays.
+- **L3-1 (authorized).** The backingDark row clears its mock before mounting.

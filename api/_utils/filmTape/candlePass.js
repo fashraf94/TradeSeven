@@ -274,7 +274,10 @@ const factsOf = (doc) => stableStringify({ bars: doc?.bars ?? [], atChecks: doc?
  *     and a tie keeps the stored bar; a bucket only one side has is kept;
  *   · per check, a saved price is never replaced by null, and is replaced by
  *     another price only when that price's bar completed LATER — the new
- *     price is non-null, so its bar is inside BA-24's freshness rule;
+ *     price is non-null, so its bar is inside BA-24's freshness rule. Where
+ *     neither holds a price, the stale bar's age beside the null is the fact
+ *     (BA-24): the sample whose bar closed later is kept, so a saved age is
+ *     never replaced by a bare null (BA-34 extended, founder ruling on L4-1);
  *   · the checks are the tape's checks NOW, which the new build samples every
  *     one of: a saved sample for a check the tape no longer has — an entry
  *     row its tick record superseded — is no fact about any check, and goes
@@ -301,7 +304,11 @@ export function keepSeries(saved, fresh) {
   const savedAt = new Map((Array.isArray(saved.atChecks) ? saved.atChecks : []).filter(isObj).map((a) => [keyOf(a), a]));
   const atChecks = (Array.isArray(fresh.atChecks) ? fresh.atChecks : []).map((f) => {
     const s = savedAt.get(keyOf(f));
-    if (typeof s?.price !== 'number') return f;                          // a null is no fact to keep
+    if (typeof s?.price !== 'number') {
+      // a saved null gives way to a price, and to a null whose bar closed later
+      const sAge = toMs(s?.barClosedAt);
+      return typeof f.price !== 'number' && sAge !== null && sAge > (toMs(f.barClosedAt) ?? -Infinity) ? s : f;
+    }
     if (typeof f.price !== 'number') return s;                           // never a price replaced by null
     return (toMs(f.barClosedAt) ?? -Infinity) > (toMs(s.barClosedAt) ?? -Infinity) ? f : s;
   });

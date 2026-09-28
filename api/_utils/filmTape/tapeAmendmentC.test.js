@@ -902,3 +902,33 @@ describe('BA-36 — a replay\'s keyed changes, its reconciliation and its ties, 
     expect(replay.preservedFrom).toBe(m1.passes.candles.writtenAt);
   });
 });
+
+describe('BA-34 extended (founder ruling on review L4-1) — a series check sample\'s stale bar age is a saved fact: the later bar is kept', () => {
+  /** AAPL's sample at tickSeq 3, the 10:00:20 ET check, and its series document. */
+  const aaplDoc = (t, id) => seriesOf(t, id).find((x) => x.symbol === 'AAPL');
+  const aaplAt3 = (t, id) => aaplDoc(t, id).atChecks.find((a) => a.tickSeq === 3);
+
+  it('L4-1: a saved age is never replaced by a bare null — AAPL stale at the 10:00 ET check on morning 1 (its bar closed 09:50 ET), no AAPL bar before 10:10 ET on morning 2: the sample keeps 09:50 ET beside its null', async () => {
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    await morning(t, allBars({ AAPL: holed(PRICES.AAPL, '13:50', '14:00') }));
+    const m1 = structuredClone(aaplAt3(t, fx.battleId));
+    expect(m1).toMatchObject({ tickSeq: 3, price: null, barClosedAt: '2026-09-24T13:50:00.000Z' });
+    await morning(t, allBars({ AAPL: withoutMinutes(flatRows(D, PRICES.AAPL), '13:30', '14:10') }), MORNING + DAY);
+    expect(aaplAt3(t, fx.battleId)).toEqual(m1);
+    expect(aaplDoc(t, fx.battleId).preservedFrom).toEqual(expect.any(String));   // the series says it kept an earlier fact
+    expect(tapeOf(t, fx.battleId).coverage.series.status).toBe('partial');       // still no price at that check
+  });
+
+  it('L4-1: between two ages the later bar wins — a saved 09:50 ET bar stays against a new 09:40 ET one, and a new 09:50 ET bar replaces a saved 09:40 ET one', async () => {
+    for (const [first, second] of [[['13:50', '14:00'], ['13:40', '14:00']], [['13:40', '14:00'], ['13:50', '14:00']]]) {
+      const fx = await capturedDay();
+      const t = world(fx);
+      await write(t, fx);
+      await morning(t, allBars({ AAPL: holed(PRICES.AAPL, ...first) }));
+      await morning(t, allBars({ AAPL: holed(PRICES.AAPL, ...second) }), MORNING + DAY);
+      expect(aaplAt3(t, fx.battleId), `morning 1 bar to ${first[0]}Z, morning 2 bar to ${second[0]}Z`).toMatchObject({ price: null, barClosedAt: '2026-09-24T13:50:00.000Z' });
+    }
+  });
+});
