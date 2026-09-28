@@ -770,6 +770,29 @@ describe('DF5 — BA-33: the sweep checks the time before every close-out and sp
     expect(expiredCount(t)).toBe(21);
     expect(clock.now - (MORNING + DAY)).toBe(60_000);
   });
+
+  // The §2 review of this round (build report §9.11, R1-4): a tape that aged out INSIDE the scan is
+  // closed out by the selection, not the sweep — "a deadline before every close-out" holds there too.
+  it('BA-33 (review R1-4): the selection\'s own close-outs — tapes aged out inside the scan — share the sweep\'s clock: 100 at 4 s each stop at the 60 s share, the rest wait for tomorrow, and the day is still enriched', async () => {
+    const fx = await capturedDay();
+    const hooks = {};
+    const t = makeTapeDb(seedDay({}, fx), { hooks });
+    await write(t, fx);
+    const BAND = ['2026-09-03', '2026-09-04', '2026-09-08', '2026-09-09', '2026-09-10'];   // the 2026-09-25 run: inside its scan, behind its window
+    for (let i = 0; i < 100; i += 1) plantOld(t, `b-old${String(i).padStart(3, '0')}`, BAND[i % BAND.length]);
+    const clock = { now: MORNING };
+    hooks.afterTxRead = async (path) => { if (/^agentBattles\/b-old\d+\/tape\//.test(path)) clock.now += 4_000; };
+    const s = await runCandlePass({ db: t.db, fetchCandles: fetcherOf(allBars()).fetchCandles, clock: () => clock.now, startMs: MORNING });
+    expect(s.sweep).toMatchObject({ expired: 0, complete: true });
+    expect(s.expired).toHaveLength(15);
+    expect(s.closeOutsDeferred).toEqual(Array.from({ length: 85 }, () => expect.objectContaining({ bound: 'share' })));
+    expect(expiredCount(t)).toBe(15);
+    expect(s.notReached).toEqual([]);
+    expect(s.written.map((w) => w.path)).toEqual([tapePath('b-captured')]);
+    expect(clock.now - MORNING).toBe(60_000);
+    // the deferred ones wait, still pending — no reader sees them closed out before they are
+    expect([...t.store.entries()].filter(([k, v]) => k.startsWith('agentBattles/b-old') && v.passes.candles.status === 'pending')).toHaveLength(85);
+  });
 });
 
 // ── DF6 — BA-34: a series merges fact by fact, not by count ──────────────────

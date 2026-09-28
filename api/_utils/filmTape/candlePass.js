@@ -579,16 +579,24 @@ export async function runCandlePass({ db, fetchCandles, clock = Date.now, startM
     // Outside the maintained market calendar the window cannot be counted:
     // fail loudly, never build a query on a null date (review L3-F7).
     console.error(`[film-tape-candles] calendar_missing: the market calendar has no entry for ${runEtDate} — no candle pass until it is maintained`);
-    return { runEtDate, skipped: true, reason: 'calendar_missing', selected: 0, written: [], partial: [], failed: [], requeued: [], expired: [], notReached: [], invalid: [], sweep: null, units: 0, requests: 0, fetchErrors: [] };
+    return { runEtDate, skipped: true, reason: 'calendar_missing', selected: 0, written: [], partial: [], failed: [], requeued: [], expired: [], closeOutsDeferred: [], notReached: [], invalid: [], sweep: null, units: 0, requests: 0, fetchErrors: [] };
   }
   const windowStart = candleWindowStart(runEtDate);
   const scanStart = sessionsBack(runEtDate, 10 + EXPIRY_SCAN_MARGIN_SESSIONS) ?? windowStart;
-  const summary = { runEtDate, windowStart, selected: 0, written: [], partial: [], failed: [], requeued: [], expired: [], notReached: [], invalid: [], sweep: null, units: 0, requests: 0, fetchErrors: [] };
+  const summary = { runEtDate, windowStart, selected: 0, written: [], partial: [], failed: [], requeued: [], expired: [], closeOutsDeferred: [], notReached: [], invalid: [], sweep: null, units: 0, requests: 0, fetchErrors: [] };
+  // BA-33: every close-out this run makes — the sweep's, and the selection's
+  // for a tape that aged out inside the scan — shares one clock: together at
+  // most `shareMs` of the run and `maxMarks` close-outs, and never past the
+  // floor. A close-out a bound defers waits, still waiting, for a later run
+  // (review R1-4).
+  const limits = { ...EXPIRY_SWEEP, ...sweep };
+  const closeOuts = { ms: 0, marks: 0 };
   // BA-29: the bounded sweep behind the scan, FIRST — so no morning's work can starve it.
   if (scanStart) {
-    summary.sweep = await sweepExpired({
-      db, before: scanStart, nowIso: iso(nowMs), limits: { ...EXPIRY_SWEEP, ...sweep }, summary, clock, startMs, budgetMs,
-    });
+    const began = clock();
+    summary.sweep = await sweepExpired({ db, before: scanStart, nowIso: iso(nowMs), limits, summary, clock, startMs, budgetMs });
+    closeOuts.ms += clock() - began;
+    closeOuts.marks += summary.sweep.expired;
   }
   const snap = await db.collectionGroup('tape')
     .where('passes.candles.status', 'in', [...CANDLE_SELECTABLE_STATUSES])
@@ -617,14 +625,21 @@ export async function runCandlePass({ db, fetchCandles, clock = Date.now, startM
     if (candlesTerminal(tape.passes.candles)) continue;                 // terminal — its own status says so
     if (!windowStart || id.etDate < windowStart) {
       // Aged out while still waiting: close it out, so no reader sees a retry
-      // that is not scheduled. Isolated: one failed marker never costs the
-      // morning (review L2-F6) — the tape is simply seen again tomorrow.
+      // that is not scheduled — within the close-outs' shared bounds (BA-33).
+      // Isolated: one failed marker never costs the morning (review L2-F6) —
+      // the tape is simply seen again tomorrow.
+      const bound = closeOuts.marks >= limits.maxMarks ? 'marks'
+        : closeOuts.ms >= limits.shareMs ? 'share'
+          : budgetMs - (clock() - startMs) < TIME_FLOOR_MS ? 'floor' : null;
+      if (bound) { summary.closeOutsDeferred.push({ path, bound }); continue; }
+      const began = clock();
       try {
-        if (await markRetryWindowElapsed(db, id, iso(nowMs))) summary.expired.push(path);
+        if (await markRetryWindowElapsed(db, id, iso(nowMs))) { summary.expired.push(path); closeOuts.marks += 1; }
       } catch (err) {
         summary.failed.push({ path, error: `close-out: ${String(err?.message || err).slice(0, 160)}` });
         console.error(`[film-tape-candles] ${path} close-out failed: ${err?.message || err}`);
       }
+      closeOuts.ms += clock() - began;
       continue;
     }
     if (id.etDate >= runEtDate) continue;                                // the session is not over
