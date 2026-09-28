@@ -414,8 +414,11 @@ export function mergePrice(stored, fresh, { symbol }) {
  * unit holds a fact (an attempt that could fetch nothing for it). A unit that
  * keeps any earlier fact carries `preservedFrom` — its own, when it kept one
  * already, else `since` (the candle pass's last write before this attempt); a
- * merge that holds exactly the new unit's facts replaces the stored one
- * cleanly, preservedFrom gone (the BA-34 superset rule).
+ * merge that holds exactly the new unit replaces the stored one cleanly,
+ * preservedFrom gone (the BA-34 superset rule). A merge that holds the new
+ * unit's facts and more names — samples the stored attempt also lacked —
+ * keeps no earlier fact, so it carries the names and no preservedFrom
+ * (round-3 review L1-5).
  */
 export function keepUnit(stored, fresh, { merge, hasFact, since = null }) {
   if (!fresh) return stored ?? null;
@@ -427,8 +430,10 @@ export function keepUnit(stored, fresh, { merge, hasFact, since = null }) {
   } else {
     out = merge(stored, fresh);
   }
-  const factsOf = (u) => stableStringify({ ...u, preservedFrom: null });
-  if (factsOf(out) === factsOf(fresh)) return fresh;
+  const unitOf = (u) => stableStringify({ ...u, preservedFrom: null });
+  if (unitOf(out) === unitOf(fresh)) return fresh;
+  const factsOf = (u) => stableStringify({ ...u, preservedFrom: null, missingInputs: null, retryableInputs: null });
+  if (factsOf(out) === factsOf(fresh)) return out;
   return { ...out, preservedFrom: stored.preservedFrom ?? since };
 }
 

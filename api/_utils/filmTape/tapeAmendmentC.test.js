@@ -682,3 +682,32 @@ describe('BA-36 / BA-24 (round-3 review L1-4) — a saved null that carries its 
     expect(price.atClose.at).toBe('2026-09-24T19:54:00.000Z');
   });
 });
+
+describe('BA-36 (round-3 review L1-5) — preservedFrom marks a kept earlier fact, never a kept name alone', () => {
+  it('L1-5: SPY stale at the swap on morning 1 and at the close on morning 2 — the AMD merge holds exactly morning 2\'s numbers and both names: no preservedFrom; the MSFT replay, which keeps morning 1\'s SPY change, carries it', async () => {
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    await morning(t, allBars({ SPY: holed(PRICES.SPY, '14:20', '14:30') }));
+    const m1 = structuredClone(tapeOf(t, fx.battleId));
+    expect(amdTsla(m1).replay.missingInputs).toEqual(['price:SPY@swap']);
+    const t2 = world(fx);                                                       // morning 2's response alone, for its numbers
+    await write(t2, fx);
+    await morning(t2, allBars({ SPY: holed(PRICES.SPY, '19:54', '20:00') }), MORNING + DAY);
+    const alone = amdTsla(tapeOf(t2, fx.battleId)).replay;
+    expect(alone.missingInputs).toEqual(['price:SPY@close']);
+    await morning(t, allBars({ SPY: holed(PRICES.SPY, '19:54', '20:00') }), MORNING + DAY);
+    const tape = tapeOf(t, fx.battleId);
+    const replay = amdTsla(tape).replay;
+    expect(replay.missingInputs).toEqual(['price:SPY@close', 'price:SPY@swap']);   // neither attempt priced SPY's change: both samples named
+    expect({ ...replay, missingInputs: null, retryableInputs: null }).toEqual({ ...alone, missingInputs: null, retryableInputs: null });
+    expect(replay.preservedFrom).toBeUndefined();
+    // the other replay's swap (12:30 ET) was fresh on morning 1: its SPY change is a saved fact, kept
+    const msft = (x) => x.actions.find((a) => a.symbolOut === 'MSFT').replay;
+    expect(msft(tape).marketChangeAfter.SPY).toBe(msft(m1).marketChangeAfter.SPY);
+    expect(msft(tape).marketChangeAfter.SPY).toEqual(expect.any(Number));
+    expect(msft(tape).preservedFrom).toBe(m1.passes.candles.writtenAt);
+    expect(tape.coverage.replay.preservedFrom).toBe(m1.passes.candles.writtenAt);
+    expect(tape.coverage.replay.status).toBe('partial');
+  });
+});
