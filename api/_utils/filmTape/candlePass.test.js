@@ -158,7 +158,7 @@ describe('never guessed — a missing symbol', () => {
   });
 });
 
-describe('retry (§6) — attempts, the 10-session window, failed after three', () => {
+describe('retry (§6) — attempts, the 10-session window, exhausted after three (BA-32)', () => {
   it('counts each morning; the third unsuccessful attempt is terminal; a fourth morning never selects it', async () => {
     const fx = await capturedDay();
     const t = makeTapeDb(seedDay({}, fx));
@@ -175,8 +175,8 @@ describe('retry (§6) — attempts, the 10-session window, failed after three', 
     expect(seen).toEqual([
       ['partial', 1, 'symbols_missing', true],
       ['partial', 2, 'symbols_missing', true],
-      ['failed', 3, 'attempts_exhausted', true],
-      ['failed', 3, 'attempts_exhausted', false],
+      ['exhausted', 3, 'attempts_exhausted', true],                    // BA-32: terminal, its reason kept
+      ['exhausted', 3, 'attempts_exhausted', false],
     ]);
   });
 
@@ -200,7 +200,7 @@ describe('retry (§6) — attempts, the 10-session window, failed after three', 
     expect(nextCandleState({ prev: { attempts: 1 }, requested: ['A'], missing: ['A'], nowIso: 'x' })).toMatchObject({ status: 'failed', reason: 'fetch_failed', attempts: 2 });
   });
 
-  it('a tape that aged out of the 10-session window while waiting is closed out: failed, retry_window_elapsed, never fetched', async () => {
+  it('a tape that aged out of the 10-session window while waiting is closed out: expired, retry_window_elapsed, never fetched', async () => {
     const fx = await capturedDay();
     const t = makeTapeDb(seedDay({}, fx));
     await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT });
@@ -209,7 +209,7 @@ describe('retry (§6) — attempts, the 10-session window, failed after three', 
     const s = await runCandlePass({ db: t.db, fetchCandles: fetcher.fetchCandles, clock: () => late, startMs: late });
     expect(s.expired).toEqual([tapePath()]);
     expect(fetcher.calls).toEqual([]);
-    expect(t.store.get(tapePath()).passes.candles).toMatchObject({ status: 'failed', reason: 'retry_window_elapsed', attempts: 0 });
+    expect(t.store.get(tapePath()).passes.candles).toMatchObject({ status: 'expired', reason: 'retry_window_elapsed', attempts: 0 });
   });
 
   it('a thrown run still counts as an attempt', async () => {

@@ -29,10 +29,16 @@
 // BA-11, BA-22), so a founder reading tape days reads the product's language.
 
 import {
-  PROVENANCE_LABELS, COVERAGE_SECTIONS, classOfNumber, numbersWithClasses, formatNumberPath,
+  PROVENANCE_LABELS, COVERAGE_SECTIONS, CANDLE_TERMINAL_STATUSES, classOfNumber, numbersWithClasses, formatNumberPath,
 } from '../../../src/constants/filmTape.js';
 
 const ET_TIME = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' });
+
+/** BA-32 — what a terminal candle status means for the founder: no candle pass will come again. */
+const TERMINAL_CANDLE_WORDS = Object.freeze({
+  expired: 'its retry window elapsed — no candle pass will run for this day again',
+  exhausted: 'its attempts are spent — no candle pass will run for this day again',
+});
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 
@@ -302,7 +308,8 @@ export function formatTapeMarkdown(doc, seriesDocs = []) {
       + ` · source ${candles.source ? code(candles.source) : '—'} · written ${code(candles.writtenAt)}`
       + ` · requested: ${(candles.symbolsRequested || []).join(', ') || 'none'} · missing: ${(candles.symbolsMissing || []).join(', ') || 'none'}`
       + ` · incomplete: ${(candles.symbolsIncomplete || []).join(', ') || 'none'}`
-      + `${Array.isArray(candles.changedInputs) && candles.changedInputs.length ? ` · inputs changed since it was built: ${candles.changedInputs.join(', ')}` : ''}`,
+      + `${Array.isArray(candles.changedInputs) && candles.changedInputs.length ? ` · inputs changed since it was built: ${candles.changedInputs.join(', ')}` : ''}`
+      + `${CANDLE_TERMINAL_STATUSES.includes(candles.status) ? ` · terminal: ${TERMINAL_CANDLE_WORDS[candles.status]}` : ''}`,
   ];
   const out = [...header, '', ...passes];
   if (Array.isArray(doc.checks)) {

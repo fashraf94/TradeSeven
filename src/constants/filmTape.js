@@ -80,9 +80,15 @@ export const EXIT_MECHANISMS = Object.freeze({
 });
 
 // ── The candle pass (spec §6) ───────────────────────────────────────────────
-export const CANDLE_PASS_STATUSES = Object.freeze(['pending', 'written', 'partial', 'failed', 'skipped']);
-/** Selected for (re)processing while attempts < CANDLE_MAX_ATTEMPTS. */
+// BA-32: terminal candle work has statuses of its own — `expired` (the
+// 10-session retry window elapsed while it waited) and `exhausted` (the third
+// attempt did not succeed), each keeping its reason — and `failed` means
+// retryable only. No candle query ever selects a terminal status.
+export const CANDLE_PASS_STATUSES = Object.freeze(['pending', 'written', 'partial', 'failed', 'expired', 'exhausted', 'skipped']);
+/** The non-terminal statuses: the only ones any candle query selects (the sweep and the selection, BA-32). */
 export const CANDLE_SELECTABLE_STATUSES = Object.freeze(['pending', 'partial', 'failed']);
+/** BA-32 — no candle pass will run for a tape in one of these again. */
+export const CANDLE_TERMINAL_STATUSES = Object.freeze(['expired', 'exhausted']);
 export const CANDLE_MAX_ATTEMPTS = 3;
 /** "up to 10 trading days old" — the only retry path there is. */
 export const CANDLE_RETRY_WINDOW_SESSIONS = 10;

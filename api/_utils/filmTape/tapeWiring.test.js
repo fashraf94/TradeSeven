@@ -34,7 +34,7 @@ import { config as closeConfig } from '../../cron/film-tape-close.js';
 import { config as candlesConfig } from '../../cron/film-tape-candles.js';
 import {
   CLOSE_PASS_SCHEDULE_UTC, CLOSE_PASS_UTC_HOUR, CLOSE_PASS_UTC_MINUTE, CLOSE_PASS_MAX_DURATION_S,
-  CANDLE_PASS_SCHEDULE_UTC, CANDLE_PASS_UTC_HOUR, CANDLE_SELECTABLE_STATUSES,
+  CANDLE_PASS_SCHEDULE_UTC, CANDLE_PASS_UTC_HOUR, CANDLE_SELECTABLE_STATUSES, CANDLE_TERMINAL_STATUSES,
 } from '../../../src/constants/filmTape.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -89,7 +89,13 @@ describe('THE INDEX PINS — the queries as issued, against firestore.indexes.js
         fields: [{ fieldPath: 'passes.candles.status', order: 'ASCENDING' }, { fieldPath: 'etDate', order: 'ASCENDING' }],
       });
       expect(servedComposite(need)).toBe(true);
+      // BA-32: only non-terminal statuses are ever selected — a terminal tape never occupies a query result
+      const statuses = [].concat(q.filters[0].value);
+      expect(statuses.every((st) => CANDLE_SELECTABLE_STATUSES.includes(st))).toBe(true);
+      expect(statuses.some((st) => CANDLE_TERMINAL_STATUSES.includes(st))).toBe(false);
     }
+    // BA-32: the sweep bounds etDate from above only — the 60-session look-back is gone
+    for (const q of issued.slice(0, 3)) expect(q.filters.filter((f) => f.field === 'etDate')).toEqual([{ field: 'etDate', op: '<', value: expect.any(String) }]);
   });
 
   it('red without the entry: none of those queries is served by the file minus the tape composite', async () => {

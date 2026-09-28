@@ -568,3 +568,93 @@ describe('DF3 — BA-26 amended: a read that hits a limit while the section\'s d
     expect(calls.caveats).toEqual([]);
   });
 });
+
+// ── DF4 — BA-32: terminal candle work leaves the queues ─────────────────────
+
+describe('DF4 — BA-32: expired and exhausted are their own statuses, and no candle query ever returns one', () => {
+  /** capturedDay written, plus `n` tapes behind the scan closed out by the code's own close-out writer. */
+  async function withClosedOut(n, etDateOf = (i) => AUGUST[i % AUGUST.length]) {
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    for (let i = 0; i < n; i += 1) {
+      const id = { battleId: `b-t${String(i).padStart(4, '0')}`, etDate: etDateOf(i) };
+      plantOld(t, id.battleId, id.etDate);
+      expect(await markRetryWindowElapsed(t.db, id, iso(MORNING - DAY))).toBe(true);
+    }
+    return { fx, t };
+  }
+
+  it('D04: a thousand closed-out tapes behind the scan cost the sweep nothing on two consecutive mornings — not a query result, not a transaction', async () => {
+    const { t } = await withClosedOut(1000);
+    for (const at of [MORNING, MORNING + DAY]) {
+      const reads = t.readLog.length;
+      const s = await morning(t, allBars(), at);
+      expect(s.sweep, iso(at)).toMatchObject({ reads: 0, expired: 0, complete: true });
+      expect(t.readLog.slice(reads).filter((r) => r.startsWith('tx:agentBattles/b-t')), iso(at)).toEqual([]);
+    }
+    expect(t.store.get(tapePath('b-t0000', AUGUST[0])).passes.candles).toMatchObject({ status: 'expired', reason: 'retry_window_elapsed' });
+  }, 60_000);
+
+  it('D12: a retryable failed tape behind a thousand closed-out ones on its own date is closed out the first morning — and so is one older than the old 60-session look-back', async () => {
+    const { t } = await withClosedOut(1000, () => '2026-08-12');
+    plantOld(t, 'b-zz-retry', '2026-08-12', { status: 'failed', attempts: 1, reason: 'fetch_failed' });   // later in the ordering
+    plantOld(t, 'b-ancient', '2026-05-01', { status: 'failed', attempts: 1, reason: 'fetch_failed' });    // past the removed look-back
+    const s = await morning(t);
+    for (const [id, d] of [['b-zz-retry', '2026-08-12'], ['b-ancient', '2026-05-01']]) {
+      expect(t.store.get(tapePath(id, d)).passes.candles, id).toMatchObject({ status: 'expired', reason: 'retry_window_elapsed', attempts: 1 });
+      expect(s.expired, id).toContain(tapePath(id, d));
+    }
+    expect(s.sweep).toMatchObject({ reads: 2, expired: 2, complete: true });
+  }, 60_000);
+
+  it('D05 (the accepted residual): a thousand foreign pending rows ahead of a valid tape are skipped, counted in summary.invalid and never written', async () => {
+    // BA-32: no sanctioned writer can create such a row (BA-35), so the sweep
+    // keeps no cursor past it; a non-zero invalid count in production is an
+    // alert, not a steady state. The valid tape behind them waits — documented,
+    // not fixed.
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    for (let i = 0; i < 1000; i += 1) t.store.set(`otherRoot/o${String(i).padStart(4, '0')}/tape/2026-08-03`, { battleId: `o${i}`, etDate: '2026-08-03', passes: { candles: { status: 'pending', attempts: 0 } } });
+    plantOld(t, 'b-valid', '2026-08-31');
+    const s = await morning(t);
+    expect(under(t, 'otherRoot')).toEqual([]);
+    expect(s.invalid.filter((p) => p.startsWith('otherRoot/'))).toHaveLength(1000);
+    expect(s.written.map((w) => w.path)).toEqual([tapePath('b-captured')]);
+  }, 60_000);
+
+  it('BA-32: the third unsuccessful attempt — fetched or thrown — ends `exhausted`, keeping its reason; `failed` is retryable only', async () => {
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    const tp = tapePath(fx.battleId);
+    t.store.set(tp, { ...tapeOf(t, fx.battleId), passes: { ...tapeOf(t, fx.battleId).passes, candles: { ...tapeOf(t, fx.battleId).passes.candles, status: 'failed', attempts: 2, reason: 'fetch_failed' } } });
+    t.db.failNextTransactions(1);                                           // the attempt throws: the failure record counts it
+    await morning(t);
+    expect(t.store.get(tp).passes.candles).toMatchObject({ status: 'exhausted', attempts: 3, reason: 'attempts_exhausted' });
+    expect(nextCandleState({ prev: { attempts: 2 }, requested: ['A'], missing: ['A'], nowIso: 'x' })).toMatchObject({ status: 'exhausted', reason: 'attempts_exhausted', attempts: 3 });
+    expect(nextCandleState({ prev: { attempts: 1 }, requested: ['A'], missing: ['A'], nowIso: 'x' })).toMatchObject({ status: 'failed', reason: 'fetch_failed', attempts: 2 });
+  });
+
+  it('BA-32: an exhausted tape inside its window whose inputs change keeps `exhausted` — changedInputs recorded, and the label says no candle pass will rebuild it', async () => {
+    const fx = await capturedDay();
+    const tick10 = fx.ticks.find((tk) => tk.tickSeq === 10);
+    const t = world({ ...fx, ticks: fx.ticks.filter((tk) => tk.tickSeq !== 10) });
+    await write(t, fx);
+    for (const at of [MORNING, MORNING + DAY, MORNING + 4 * DAY]) await morning(t, allBars({ TSLA: new Error('EODHD 500') }), at);
+    expect(tapeOf(t, fx.battleId).passes.candles).toMatchObject({ status: 'exhausted', attempts: 3 });
+    t.store.set(`agentBattles/${fx.battleId}/ticks/${tick10.tickId}`, tick10);
+    await write(t, fx, MORNING + 4 * DAY + 3_600_000);                     // still inside the candle window
+    const tape = tapeOf(t, fx.battleId);
+    expect(tape.passes.candles).toMatchObject({ status: 'exhausted', reason: 'attempts_exhausted', changedInputs: ['checks'] });
+    for (const s of ['replay', 'series']) expect(tape.coverage[s].note, s).toMatch(/built before the candle inputs changed \(checks\) — its attempts are spent, not rebuilt/);
+  });
+
+  it('BA-32: the read-out says a terminal day will get no candle pass again', async () => {
+    const { formatTapeMarkdown } = await import('./tapeExport.js');
+    const { t } = await withClosedOut(1);
+    const md = formatTapeMarkdown(t.store.get(tapePath('b-t0000', AUGUST[0])), []);
+    expect(md).toMatch(/\*\*candles\*\* — expired \(`retry_window_elapsed`\).* · terminal: its retry window elapsed — no candle pass will run for this day again/);
+  });
+});

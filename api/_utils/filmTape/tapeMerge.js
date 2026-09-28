@@ -25,8 +25,9 @@
 //     input fingerprint moved (`inputs_changed`, BA-25: a recovered check, an
 //     evidence stamp, a replay input) — it is re-queued inside its window
 //     (`pending`, attempts 0); outside it a `written` pass is lowered to
-//     `partial`. Either way `changedInputs` names what changed, and the
-//     output built before the change stays, labelled, until replaced.
+//     `partial`; a TERMINAL pass (`expired`, `exhausted`) keeps its status
+//     (BA-32). Every way, `changedInputs` names what changed, and the output
+//     built before the change stays, labelled, until replaced.
 //   · Nothing changed → no write at all, so the stored bytes stand.
 
 import { createHash } from 'node:crypto';
@@ -443,7 +444,7 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow }) {
       ? stored.coverage[section]
       : assembled.coverage?.[section];
     const changed = merged.passes.candles?.changedInputs;
-    if (Array.isArray(changed) && changed.length && isObj(cov) && cov.status !== 'unavailable') cov = builtBefore(cov, changed, withinWindow);
+    if (Array.isArray(changed) && changed.length && isObj(cov) && cov.status !== 'unavailable') cov = builtBefore(cov, changed, withinWindow, merged.passes.candles?.status);
     merged.coverage[section] = cov;
   }
 
@@ -474,10 +475,12 @@ function mergeCandles(stored, assembled, merged, { withinWindow }) {
   // Nothing was built yet (never processed): nothing to re-queue or label.
   if (!changed.length || (!isObj(sc.inputFingerprint) && !['written', 'partial', 'failed'].includes(sc.status))) return sc;
   const reason = grewActions || grewPlans || improved ? 'sources_changed' : 'inputs_changed';
+  // Retryable work inside the window is re-queued. A TERMINAL pass never is
+  // (BA-32; the BA-25 reading): no candle query selects it again.
   if (withinWindow && ['written', 'partial', 'failed'].includes(sc.status)) return { ...sc, status: 'pending', reason, attempts: 0, changedInputs: changed };
   // Outside the window no candle pass comes back for it: a `written` the
-  // output no longer is becomes `partial`, saying why (review L2-F5); a
-  // partial or failed pass keeps its status, and the change is recorded.
+  // output no longer is becomes `partial`, saying why (review L2-F5); any
+  // other pass keeps its status, and the change is recorded.
   if (!withinWindow && sc.status === 'written') return { ...sc, status: 'partial', reason: `${reason}_outside_window`, changedInputs: changed };
   return { ...sc, changedInputs: changed };
 }
@@ -485,16 +488,24 @@ function mergeCandles(stored, assembled, merged, { withinWindow }) {
 const PART_ORDER = ['checks', 'evidence', 'actions', 'plans', 'symbols'];
 const BUILT_BEFORE = 'built before the candle inputs changed';
 
+/** Whether a candle pass is still to come for this output, in the label's words — never for a terminal pass (BA-32). */
+function rebuildOutlook(withinWindow, status) {
+  if (status === 'exhausted') return 'its attempts are spent, not rebuilt';
+  if (status === 'expired' || !withinWindow) return 'outside its retry window, not rebuilt';
+  return 'awaiting the next candle pass';
+}
+
 /**
  * BA-25 — label candle output built from inputs that have since changed: at
  * most `partial`, and the note names what changed and whether a candle pass
- * is still to come. Replaces an earlier such label, never stacks it.
+ * is still to come (never, for a terminal pass — BA-32). Replaces an earlier
+ * such label, never stacks it.
  */
-function builtBefore(cov, changed, withinWindow) {
+function builtBefore(cov, changed, withinWindow, status) {
   const note = typeof cov.note === 'string' ? cov.note : '';
   const at = note.indexOf(BUILT_BEFORE);
   const kept = at === -1 ? note : note.slice(0, at).replace(/;\s*$/, '');
-  const label = `${BUILT_BEFORE} (${changed.join(', ')}) — ${withinWindow ? 'awaiting the next candle pass' : 'outside its retry window, not rebuilt'}`;
+  const label = `${BUILT_BEFORE} (${changed.join(', ')}) — ${rebuildOutlook(withinWindow, status)}`;
   return { ...cov, status: cov.status === 'complete' ? 'partial' : cov.status, note: [kept, label].filter(Boolean).join('; ') };
 }
 

@@ -4,25 +4,27 @@
 // (api/cron/film-tape-candles.js) is auth + flag + wiring; the fetcher, the
 // database and the clock are arguments here.
 //
-// SELECTION AND RETRY: a collection-group query on `tape` for
-// `passes.candles.status ∈ {pending, partial, failed}` from a lower etDate
-// bound, oldest first; a tape is PROCESSED when it is at most 10 sessions old
-// (candleWindowStart) and has attempts < 3. Each run increments `attempts`;
-// the third unsuccessful attempt ends in `failed` with a reason. A tape that
-// aged out of the window while still waiting is marked `failed`,
-// `retry_window_elapsed` — so nothing reads as scheduled that is not. There is
-// no other retry path.
+// SELECTION AND RETRY: a collection-group query on `tape` for the NON-TERMINAL
+// statuses `passes.candles.status ∈ {pending, partial, failed}` from a lower
+// etDate bound, oldest first; a tape is PROCESSED when it is at most 10
+// sessions old (candleWindowStart). Each run increments `attempts`; the third
+// unsuccessful attempt ends `exhausted` (reason `attempts_exhausted`). A tape
+// that aged out of the window while still waiting ends `expired` (reason
+// `retry_window_elapsed`) — so nothing reads as scheduled that is not. There
+// is no other retry path. BA-32: `expired` and `exhausted` are TERMINAL, and
+// no candle query selects them, so a terminal tape never occupies a query
+// result; `failed` means retryable only.
 //
-// THE EXPIRY SWEEP (BA-29): the selection reaches back only five sessions
-// past the window, so a tape left waiting through a longer outage or a
-// writer-off period would fall behind it forever. Each run therefore first
+// THE EXPIRY SWEEP (BA-29, BA-32): the selection reaches back only five
+// sessions past the window, so a tape left waiting through a longer outage or
+// a writer-off period would fall behind it forever. Each run therefore first
 // sweeps, in a bounded batch (EXPIRY_SWEEP: close-outs, page size, documents
-// read), the non-terminal tapes older than the scan — pending and partial
-// over their whole history, which each close-out removes from its query, so
-// the sweep resumes where it stopped; failed (retryable) within a lookback,
-// since terminal failures stay `failed` and would otherwise be re-read
-// forever. It runs before the fetches, so a busy morning can never starve
-// it. The founder's repair path for such a day is the backfill entry.
+// read), the non-terminal tapes older than the scan — pending, partial and
+// failed, over their whole history. Each close-out makes its tape terminal
+// and so removes it from every query: the sweep resumes where it stopped
+// without a cursor. It runs before the fetches, so a busy morning can never
+// starve it. The founder's repair path for such a day is the backfill entry's
+// refresh mode.
 //
 // WRITE-PATH BOUNDARY (BA-23): the query returns every collection named `tape`
 // anywhere in the database, so a result is never trusted by its collection
@@ -90,10 +92,11 @@ export const UNITS_PER_REQUEST = 5;
 export const EXPIRY_SCAN_MARGIN_SESSIONS = 5;
 /**
  * BA-29 — the expiry sweep's bounds per run: close-outs, documents per page,
- * documents read, and how far back (sessions before the scan) retryable
- * `failed` tapes are looked for.
+ * documents read. (BA-32 removed the 60-session look-back for retryable
+ * `failed` tapes: it only bounded re-reads of terminal ones, which no query
+ * returns any more.)
  */
-export const EXPIRY_SWEEP = Object.freeze({ maxMarks: 100, page: 100, maxReads: 1000, failedLookbackSessions: 60 });
+export const EXPIRY_SWEEP = Object.freeze({ maxMarks: 100, page: 100, maxReads: 1000 });
 export const PLAN_PRICE_NOTE = "prices shown to the day's close, which is not the plan's horizon";
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -295,7 +298,7 @@ export function nextCandleState({ prev, requested, missing, incomplete = [], ret
   let status;
   let reason = null;
   if (missing.length === 0 && incomplete.length === 0 && !retryable && !stale) status = 'written';
-  else if (attempts >= CANDLE_MAX_ATTEMPTS) { status = 'failed'; reason = 'attempts_exhausted'; }
+  else if (attempts >= CANDLE_MAX_ATTEMPTS) { status = 'exhausted'; reason = 'attempts_exhausted'; }   // BA-32: terminal
   else if (missing.length > 0 && missing.length === requested.length) { status = 'failed'; reason = 'fetch_failed'; }
   else if (missing.length > 0) { status = 'partial'; reason = 'symbols_missing'; }
   else if (incomplete.length > 0) { status = 'partial'; reason = 'bars_incomplete'; }
@@ -320,20 +323,23 @@ const readAll = (tx, refs) => (!refs.length ? Promise.resolve([]) : (typeof tx.g
 /** Does a kept replay or price lack an input a later fetch could still supply (bars, or a stale sample — BA-24)? */
 const awaitsBars = (x) => (Array.isArray(x?.retryableInputs) ? x.retryableInputs.length > 0 : needsBars(x?.missingInputs));
 
-/** Will no candle pass ever select this tape again (its own status says so)? */
+/**
+ * Will no candle pass ever select this tape again? Its own status says so
+ * (BA-32): anything but a non-terminal status — expired, exhausted, written,
+ * skipped — is never selected.
+ */
 export function candlesTerminal(c) {
-  if (!isObj(c) || !CANDLE_SELECTABLE_STATUSES.includes(c.status)) return true;
-  if ((Number.isInteger(c.attempts) ? c.attempts : 0) >= CANDLE_MAX_ATTEMPTS) return true;
-  return c.status === 'failed' && c.reason === 'retry_window_elapsed';
+  return !isObj(c) || !CANDLE_SELECTABLE_STATUSES.includes(c.status);
 }
 
 /**
- * THE CLOSE-OUT WRITER (spec §6; BA-23): a tape that aged out of the candle
- * window while still waiting is marked `failed`, `retry_window_elapsed`, so
- * nothing reads as scheduled that is not. The reference is built from the
- * validated ids, and the tape is re-read inside the transaction and marked
- * only while it is still waiting — a close pass that re-queued or finished it
- * meanwhile is never overwritten. Resolves to whether it marked.
+ * THE CLOSE-OUT WRITER (spec §6; BA-23, BA-32): a tape that aged out of the
+ * candle window while still waiting is marked `expired`,
+ * `retry_window_elapsed`, so nothing reads as scheduled that is not — and it
+ * leaves every candle query. The reference is built from the validated ids,
+ * and the tape is re-read inside the transaction and marked only while it is
+ * still waiting — a close pass that re-queued or finished it meanwhile is
+ * never overwritten. Resolves to whether it marked.
  */
 export async function markRetryWindowElapsed(db, { battleId, etDate }, nowIso) {
   const ref = tapeRef(db, battleId, etDate);
@@ -342,7 +348,7 @@ export async function markRetryWindowElapsed(db, { battleId, etDate }, nowIso) {
     marked = false;
     const snap = await tx.get(ref);
     if (!snap.exists || candlesTerminal(snap.data()?.passes?.candles)) return;
-    tx.update(ref, { 'passes.candles.status': 'failed', 'passes.candles.reason': 'retry_window_elapsed', 'passes.candles.writtenAt': nowIso });
+    tx.update(ref, { 'passes.candles.status': 'expired', 'passes.candles.reason': 'retry_window_elapsed', 'passes.candles.writtenAt': nowIso });
     marked = true;
   });
   return marked;
@@ -468,19 +474,19 @@ const idOfResult = (d) => {
 
 /**
  * BA-29 — close out, in a bounded batch, the non-terminal tapes older than
- * `before` (the scan's lower edge). One query per status, oldest first, paged
- * with a cursor; every result's path validated (BA-23); a terminal tape never
- * written. Stops at the batch bounds or the time floor, and says whether it
- * reached the end (`complete`).
+ * `before` (the scan's lower edge). One query per NON-TERMINAL status (BA-32),
+ * oldest first, paged with a cursor; every result's path validated (BA-23).
+ * A close-out makes its tape terminal, which takes it out of every query, so
+ * the next run resumes past it. Stops at the batch bounds or the time floor,
+ * and says whether it reached the end (`complete`).
  */
-async function sweepExpired({ db, before, failedFrom, nowIso, limits, summary, clock, startMs, budgetMs }) {
+async function sweepExpired({ db, before, nowIso, limits, summary, clock, startMs, budgetMs }) {
   const out = { reads: 0, expired: 0, complete: true };
-  for (const status of ['pending', 'partial', 'failed']) {
+  for (const status of CANDLE_SELECTABLE_STATUSES) {
     let cursor = null;
     for (;;) {
       if (out.expired >= limits.maxMarks || out.reads >= limits.maxReads || budgetMs - (clock() - startMs) < TIME_FLOOR_MS) { out.complete = false; return out; }
       let q = db.collectionGroup('tape').where('passes.candles.status', '==', status).where('etDate', '<', before);
-      if (status === 'failed' && failedFrom) q = q.where('etDate', '>=', failedFrom);
       q = q.orderBy('etDate', 'asc');
       if (cursor) q = q.startAfter(cursor);
       const size = Math.min(limits.page, limits.maxReads - out.reads);
@@ -532,8 +538,7 @@ export async function runCandlePass({ db, fetchCandles, clock = Date.now, startM
   // BA-29: the bounded sweep behind the scan, FIRST — so no morning's work can starve it.
   if (scanStart) {
     summary.sweep = await sweepExpired({
-      db, before: scanStart, failedFrom: sessionsBack(scanStart, EXPIRY_SWEEP.failedLookbackSessions), nowIso: iso(nowMs),
-      limits: { ...EXPIRY_SWEEP, ...sweep }, summary, clock, startMs, budgetMs,
+      db, before: scanStart, nowIso: iso(nowMs), limits: { ...EXPIRY_SWEEP, ...sweep }, summary, clock, startMs, budgetMs,
     });
   }
   const snap = await db.collectionGroup('tape')
@@ -600,10 +605,11 @@ export async function runCandlePass({ db, fetchCandles, clock = Date.now, startM
           const c = cur.exists ? cur.data()?.passes?.candles : null;
           if (!isObj(c) || !CANDLE_SELECTABLE_STATUSES.includes(c.status)) return;
           const next = (Number.isInteger(c.attempts) ? c.attempts : 0) + 1;
+          const spent = next >= CANDLE_MAX_ATTEMPTS;                       // BA-32: the third attempt is terminal
           tx.update(ref, {
             'passes.candles.attempts': next,
-            'passes.candles.status': 'failed',
-            'passes.candles.reason': next >= CANDLE_MAX_ATTEMPTS ? 'attempts_exhausted' : `error: ${reason}`,
+            'passes.candles.status': spent ? 'exhausted' : 'failed',
+            'passes.candles.reason': spent ? 'attempts_exhausted' : `error: ${reason}`,
             'passes.candles.writtenAt': iso(clock()),
           });
         });
