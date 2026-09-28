@@ -9,12 +9,16 @@
 // agentEvalRuns, the intradayViews presence and the prior day's tape
 // (tapeSources.js). It WRITES exactly one document — `tape/{etDate}` — inside a
 // transaction that reads the stored copy first and merges monotonically
-// (tapeMerge.js). The same transaction re-reads the battle document, so an
-// assembly made before the battle completed can never record it active
-// (BA-27), and on an equal lifecycle rank the re-read is authoritative for
-// the whole completion block — a stale completed assembly cannot rewind it
-// (BA-27 amended). Nothing else is ever written (BA-1): not the battle
-// document, not `ticks`, not `calls`, not any other collection.
+// (tapeMerge.js). The same transaction re-reads the battle document, and the
+// tape is ASSEMBLED FROM THAT RE-READ (BA-37): when it differs from the copy
+// the pass selected, the writer re-assembles before merging, from the same
+// subcollection reads (made before the transaction; they stand) — no read is
+// added. So a stale selection-time value never overwrites a newer recorded one
+// and never re-queues the candle pass (BA-31), an assembly made before the
+// battle completed can never record it active (BA-27), and the re-read is
+// authoritative for the whole completion block (BA-27 amended). Nothing else
+// is ever written (BA-1): not the battle document, not `ticks`, not `calls`,
+// not any other collection.
 //
 // FILM_TAPE_WRITE_ENABLED is read at call time, here as well as in the
 // handlers, so no caller can write a tape while the writer is dark.
@@ -26,8 +30,8 @@ import {
   readBattle, readDayTicks, readReceipts, readCalls, readDeclarationPresence, readEvalRunsForDay,
   readIntradayViewsPresent, readTape, tapeRef, battleRef,
 } from './tapeSources.js';
-import { assembleTape, assembleSkippedModeTape, dayEntries, buildBattleBlock } from './tapeAssemble.js';
-import { mergeTape, sanitizeForFirestore, lifecycleRank } from './tapeMerge.js';
+import { assembleTape, assembleSkippedModeTape, dayEntries } from './tapeAssemble.js';
+import { mergeTape, sanitizeForFirestore, stableStringify } from './tapeMerge.js';
 import { etDayBounds, previousSession, withinCandleWindow, toMs } from './tapeTime.js';
 import { resolveBattleResult } from './battleResult.js';
 
@@ -68,6 +72,9 @@ export async function writeTapeDay(battleId, etDate, opts = {}) {
   if (!battle) throw new Error('battle_not_found');
 
   let assembled;
+  // BA-37: the tiered assembly as a function of the battle document, over this
+  // run's subcollection reads — re-run on the transaction's re-read.
+  let assembleFrom = null;
   if (!isTieredBattle(battle)) {
     assembled = assembleSkippedModeTape({ battle, etDate, nowMs });
   } else {
@@ -87,34 +94,36 @@ export async function writeTapeDay(battleId, etDate, opts = {}) {
     const expected = dayEntries(battle, bounds).day
       .filter((e) => e.declarationsPhase === 'expected' && typeof e.evalId === 'string').map((e) => e.evalId);
     const declarationsRead = await readDeclarationPresence(db, battleId, expected);
-    assembled = assembleTape({
-      battle, etDate, bounds, nowMs,
+    assembleFrom = (b) => assembleTape({
+      battle: b, etDate, bounds, nowMs,
       ticksRead, runsRead, receiptsRead, callsRead, declarationsRead,
       intradayViewsPresent, priorTape,
       callRecordsMode: opts.callRecordsMode ?? CALL_RECORDS_MODE,
       resolveResult: opts.resolveResult ?? resolveBattleResult,
     });
+    assembled = assembleFrom(battle);
   }
 
   const withinWindow = withinCandleWindow(etDate, nowMs);
   const ref = tapeRef(db, battleId, etDate);
-  const resolveResult = opts.resolveResult ?? resolveBattleResult;
   let outcome = null;
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     const stored = snap && snap.exists ? (typeof snap.data === 'function' ? snap.data() : snap.data) : null;
-    // BA-27: the battle as it stands NOW, read in this transaction. At a later
-    // lifecycle state than the assembly saw (it completed meanwhile) — and, BA-27
-    // amended, at the SAME state — the re-read is authoritative: its completion
-    // block (status, completedAt, final, result, battleStatusAtWrite) replaces
-    // the assembly's whole, and the merge treats it as canonical.
+    // BA-37: the battle as it stands NOW, read in this transaction, is what
+    // the tape is assembled from. When it differs from the copy the pass
+    // selected, the tape is re-assembled from it before the merge, over the
+    // same subcollection reads. Its completion block (status, completedAt,
+    // final, result, battleStatusAtWrite) is then the re-read's, and the merge
+    // treats it as canonical (BA-27 amended); the merge's own lifecycle rule
+    // still never moves a stored completion backward (BA-27).
     let doc = assembled;
     let canonicalBattle = false;
-    if (assembled.passes.close.status !== 'skipped_mode') {
+    if (assembleFrom) {
       const bSnap = await tx.get(battleRef(db, battleId));
       const now = bSnap && bSnap.exists ? { id: battleId, ...(typeof bSnap.data === 'function' ? bSnap.data() : bSnap.data) } : null;
-      if (now && lifecycleRank(now.status) >= lifecycleRank(assembled.battle?.status)) {
-        doc = { ...assembled, battleStatusAtWrite: typeof now.status === 'string' ? now.status : null, battle: buildBattleBlock({ battle: now, resolveResult }) };
+      if (now) {
+        doc = stableStringify(now) === stableStringify(battle) ? assembled : assembleFrom(now);
         canonicalBattle = true;
       }
     }

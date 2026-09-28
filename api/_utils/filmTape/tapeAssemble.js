@@ -32,6 +32,7 @@ export const LIMIT_SOURCES = Object.freeze({
   receipts: 'learning receipts (unreadable)',
   calls: 'call records (unreadable)',
   declarations: 'declaration records (unreadable)',
+  declarationsUnread: 'declaration records (not looked up for an evaluation newer than the read)',
   evaluationsCap: `evaluations[] (at its ${EVALUATIONS_CAP}-entry cap)`,
   tradesCap: `trades[] (at its ${TRADES_CAP}-entry cap)`,
 });
@@ -994,7 +995,13 @@ export function assembleTape({
   if (entries.evictionPossible) callReasons.push(limit('declaration phases unknown for evicted entries', LIMIT_SOURCES.evaluationsCap));
   if (declarationsRead && !declarationsRead.ok) callReasons.push(limit(`declaration records unreadable (${declarationsRead.error})`, LIMIT_SOURCES.declarations));
   else if (declarationsRead) {
-    const absent = expected.filter((id) => !declarationsRead.present.has(id));
+    // BA-37: the lookup covers the evaluations of the battle document it was
+    // made for; the writer may assemble from a newer one, and an evaluation
+    // that gained since was never looked up — unknown (a limit), never absent.
+    const looked = declarationsRead.checked instanceof Set ? declarationsRead.checked : null;
+    const unread = looked ? expected.filter((id) => !looked.has(id)) : [];
+    const absent = expected.filter((id) => (!looked || looked.has(id)) && !declarationsRead.present.has(id));
+    if (unread.length) callReasons.push(limit(`${unread.length} check(s) expected a declarations record this read did not look up (an evaluation newer than the read)`, LIMIT_SOURCES.declarationsUnread));
     if (absent.length) callReasons.push(caveat(`${absent.length} check(s) expected a declarations record that is absent (failed or unconfirmed — contract §2.1)`));
   }
   if (lostEntries) callReasons.push(caveat(`${lostEntries} check(s) recorded an evalId whose evaluation entry is absent — whether they expected a declarations record is unknown`));

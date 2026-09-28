@@ -79,7 +79,13 @@ export async function readCalls(db, battleId) {
   return { ok: r.ok, calls: r.value || [], error: r.error };
 }
 
-/** Which of `evalIds` have a `declarations/{evalId}` record (contract §2.1: presence proves written). */
+/**
+ * Which of `evalIds` have a `declarations/{evalId}` record (contract §2.1:
+ * presence proves written), and which ids were looked up (`checked`) — an
+ * evaluation the battle gains after this read was never looked up, so it is
+ * unknown here, never absent (BA-37: the writer may assemble from a newer
+ * battle document than the one this read was made for).
+ */
 export async function readDeclarationPresence(db, battleId, evalIds) {
   const r = await attempt(async () => {
     const present = new Set();
@@ -88,7 +94,7 @@ export async function readDeclarationPresence(db, battleId, evalIds) {
     snaps.forEach((s, i) => { if (s && s.exists) present.add(evalIds[i]); });
     return present;
   });
-  return { ok: r.ok, present: r.value || new Set(), error: r.error };
+  return { ok: r.ok, present: r.value || new Set(), checked: new Set(evalIds), error: r.error };
 }
 
 /**

@@ -21,12 +21,13 @@ vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => ({
 
 import { writeTapeDay } from './writeTapeDay.js';
 import { runCandlePass } from './candlePass.js';
+import { runBackfill } from './closePass.js';
 import { replayAction } from './tapeReplay.js';
 import { replayBuiltFrom, priceBuiltFrom } from './candleInputs.js';
 import { sessionBars } from './bars.js';
 import { sessionFor } from './tapeTime.js';
 import { makeTapeDb } from './__fixtures__/tapeFirestore.js';
-import { seedDay, capturedDay } from './__fixtures__/tapeFixtures.js';
+import { seedDay, capturedDay, noTriggerDay } from './__fixtures__/tapeFixtures.js';
 import { flatRows, fetcherOf } from './__fixtures__/tapeBars.js';
 
 const D = '2026-09-24';
@@ -237,5 +238,95 @@ describe('BA-36 (R1-1) — a retry merges plan prices and replay points point by
     expect(factsOf(amdTsla(tape).replay)).toEqual(before);
     expect(tape.coverage.replay.note).toMatch(/replay built before its inputs changed, kept \(not rebuilt this attempt\): AMD → TSLA/);
     expect(tape.passes.candles.status).not.toBe('written');
+  });
+});
+
+// ── BA-37 — the writer assembles from the battle it re-reads (R2-3) ──────────
+
+describe('BA-37 (R2-3) — writeTapeDay assembles from the battle document it re-reads inside its transaction', () => {
+  /** capturedDay whose battle document records the AMD entry corrected to 300; `selected` is the battle as a pass selected it before the correction (150). */
+  async function correctedDay({ hooks } = {}) {
+    const fx = await capturedDay();
+    const t = makeTapeDb(seedDay({}, fx), { hooks });
+    const selected = { id: fx.battleId, ...structuredClone(t.store.get(`agentBattles/${fx.battleId}`)) };
+    const correct = () => {
+      const battle = t.store.get(`agentBattles/${fx.battleId}`);
+      battle.trades.find((tr) => tr.symbolOut === 'AMD').entryPrice = 300;
+      t.store.set(`agentBattles/${fx.battleId}`, battle);
+    };
+    return { fx, t, selected, correct };
+  }
+
+  it('R2-3: the selection-time battle has entry 150, the re-read has 300 — the tape carries 300 and re-queues nothing, with no read added', async () => {
+    const { fx, t, selected, correct } = await correctedDay();
+    correct();
+    await write(t, fx);
+    await morning(t);
+    const before = structuredClone(tapeOf(t, fx.battleId));
+    expect(amdTsla(before).replayInputs.ghost.entryPrice).toBe(300);
+    expect(before.passes.candles.status).toBe('written');
+    const from = t.readLog.length;
+    const r = await writeTapeDay(fx.battleId, D, { db: t.db, now: MORNING + 3_600_000, battle: selected });
+    const staleReads = t.readLog.slice(from);
+    const tape = tapeOf(t, fx.battleId);
+    expect(amdTsla(tape).replayInputs.ghost.entryPrice).toBe(300);
+    expect(tape.passes.candles).toEqual(before.passes.candles);                // nothing re-queued
+    expect(r.status).toBe('unchanged');
+    expect(tape).toEqual(before);
+    // zero extra reads: exactly the reads of the same write handed the battle as it stands
+    const at = t.readLog.length;
+    await writeTapeDay(fx.battleId, D, { db: t.db, now: MORNING + 7_200_000, battle: { id: fx.battleId, ...structuredClone(t.store.get(`agentBattles/${fx.battleId}`)) } });
+    expect(staleReads).toEqual(t.readLog.slice(at));
+  });
+
+  it('R2-3 through the real backfill: a correction lands while one refresh is mid-write and a second refresh tapes it — the first, holding the older battle, never rewinds 300 to 150, and the next morning rebuilds from 300', async () => {
+    const hooks = {};
+    const { fx, t, correct } = await correctedDay({ hooks });
+    await write(t, fx);
+    await morning(t);                                                       // the replay is built from 150
+    const at = Date.parse('2026-09-28T15:00:00.000Z');                     // Monday 11:00 ET — inside the day's candle window
+    let armed = true;
+    let second = null;
+    hooks.afterTxRead = async (path) => {
+      if (!armed || path !== tapePath(fx.battleId)) return;
+      armed = false;
+      correct();
+      second = await runBackfill({ db: t.db, clock: () => at, dates: [D], refresh: true });   // lands first, with 300
+    };
+    const first = await runBackfill({ db: t.db, clock: () => at, dates: [D], refresh: true });  // selected the battle at 150
+    expect(second.refreshed).toEqual([expect.objectContaining({ battleId: fx.battleId, etDate: D })]);
+    expect(first.unchanged).toEqual([{ battleId: fx.battleId, etDate: D }]);
+    let tape = tapeOf(t, fx.battleId);
+    expect(amdTsla(tape).replayInputs.ghost.entryPrice).toBe(300);
+    expect(tape.passes.candles).toMatchObject({ status: 'pending', reason: 'inputs_changed', changedInputs: ['actions'] });
+    await morning(t, allBars(), Date.parse('2026-09-29T11:00:30.000Z'));
+    tape = tapeOf(t, fx.battleId);
+    expect(amdTsla(tape).replay).toEqual(builtFromWholeBars(tape).replay);   // rebuilt from 300
+    expect(tape.passes.candles.status).toBe('written');
+  });
+
+  it('BA-37: a re-read that gained an evaluation expecting a declarations record assembles its check, and never calls the record absent — the lookup was made before the evaluation existed; the section is unresolved until a read looks it up', async () => {
+    const fx = await noTriggerDay();
+    const t = world(fx);
+    await write(t, fx);
+    expect(tapeOf(t, fx.battleId).coverage.calls.status).toBe('complete');
+    const selected = { id: fx.battleId, ...structuredClone(t.store.get(`agentBattles/${fx.battleId}`)) };
+    const battle = t.store.get(`agentBattles/${fx.battleId}`);
+    battle.evaluations.push({ ...structuredClone(battle.evaluations[0]), evalId: 'b-quiet:e-late', timestamp: '2026-09-24T17:07:00.000Z', promptBuiltAt: '2026-09-24T17:06:52.000Z', declarationsPhase: 'expected' });
+    t.store.set(`agentBattles/${fx.battleId}`, battle);
+    // the record EXISTS: calling it absent would be a false, sticky caveat
+    t.store.set(`agentBattles/${fx.battleId}/declarations/b-quiet:e-late`, { battleId: fx.battleId, evalId: 'b-quiet:e-late', calledShots: [], watching: [], playerAsk: null, fork: null, minted: [] });
+    await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT + 60_000, battle: selected });
+    let tape = tapeOf(t, fx.battleId);
+    expect(tape.checks.some((c) => c.evalId === 'b-quiet:e-late')).toBe(true);        // assembled from the re-read
+    let calls = tape.coverage.calls;
+    expect(calls.caveats.some((c) => /absent/.test(c))).toBe(false);
+    expect(calls.status).toBe('partial');
+    expect(calls.caveats).toEqual(["unresolved_dependency: declaration records (not looked up for an evaluation newer than the read) on a read after this section's dependencies changed"]);
+    // a read that looks it up finds it: resolved, complete
+    await write(t, fx, NIGHT + 120_000);
+    calls = tapeOf(t, fx.battleId).coverage.calls;
+    expect(calls.caveats).toEqual([]);
+    expect(calls.status).toBe('complete');
   });
 });

@@ -734,17 +734,19 @@ describe('DF3 — BA-26 amended: a read that hits a limit while the section\'s d
     t.store.set(battlePath, b1);
     await write(t, fx, NIGHT + 60_000);                                        // observed: calls complete over it
     expect(tapeOf(t, fx.battleId).coverage.calls.status).toBe('complete');
-    // a read of a battle that has a second new evaluation but not the first
-    const mixed = { id: fx.battleId, ...structuredClone(t.store.get(battlePath)) };
+    // a read of a battle that has a second new evaluation but not the first — the battle document
+    // itself, since the writer assembles from the battle it re-reads (Amendment C, BA-37)
+    const mixed = structuredClone(t.store.get(battlePath));
     mixed.evaluations = mixed.evaluations.filter((e) => e.evalId !== 'b-quiet:e-first');
     mixed.evaluations.push(evaluation(mixed, 'b-quiet:e-second', '37'));
-    await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT + 120_000, battle: mixed });
+    t.store.set(battlePath, mixed);
+    await write(t, fx, NIGHT + 120_000);
     let calls = tapeOf(t, fx.battleId).coverage.calls;
     expect(calls.status).toBe('partial');
     expect(calls.caveats).toEqual(["unresolved_dependency: a read assembled before this section's dependencies changed"]);
     // a read that observes both clears it
     const b2 = t.store.get(battlePath);
-    b2.evaluations.push(evaluation(b2, 'b-quiet:e-second', '37'));
+    b2.evaluations.splice(b2.evaluations.length - 1, 0, evaluation(b2, 'b-quiet:e-first', '07'));
     t.store.set(battlePath, b2);
     await write(t, fx, NIGHT + 180_000);
     calls = tapeOf(t, fx.battleId).coverage.calls;
