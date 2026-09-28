@@ -435,6 +435,54 @@ describe('DF1 — BA-31: a changed input VALUE re-queues or labels the candle ou
     expect(tape.passes.candles.status).toBe('written');
     expect(tape.coverage.replay.status).toBe('complete');
   });
+
+  it('BA-31: each value the replay consumes moves the identity on its own — the banked points alone re-queue through the real writer, and each leg value alone moves the actions part', async () => {
+    // D01 changes the entry and the banked points together, and the real writer
+    // moves a leg's entry and its threshold baseline together (ghostBaseline):
+    // either would mask the other. Here each value moves alone (§9 mutation run).
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    await morning(t);
+    const before = structuredClone(tsla(tapeOf(t, fx.battleId)));
+    const tick5 = fx.ticks.find((tk) => tk.tickSeq === 5);
+    const tickRef = `agentBattles/${fx.battleId}/ticks/${tick5.tickId}`;
+    const rec = t.store.get(tickRef);
+    rec.actions[0].lockedPoints = 20;                                       // −12.5 → 20; the entry untouched
+    t.store.set(tickRef, rec);
+    await write(t, fx, MORNING + 3_600_000);
+    let tape = tapeOf(t, fx.battleId);
+    expect([tsla(tape).lockedPoints, tsla(tape).replayInputs]).toEqual([20, before.replayInputs]);
+    expect(tape.passes.candles).toMatchObject({ status: 'pending', reason: 'inputs_changed', changedInputs: ['actions'] });
+    expect(tape.coverage.replay.status).toBe('partial');
+    await morning(t, allBars(), MORNING + DAY);
+    tape = tapeOf(t, fx.battleId);
+    expect(tsla(tape).replay.gapPoints).not.toBe(before.replay.gapPoints);
+    expect(tape.passes.candles.status).toBe('written');
+    // each value alone, on the stored tape: the identity's actions part moves every time
+    const fp = candleInputFingerprint(tape).actions;
+    const i = tape.actions.indexOf(tsla(tape));
+    const edits = {
+      'ghost.entryPrice': (a) => { a.replayInputs.ghost.entryPrice += 1; },
+      'ghost.atr': (a) => { a.replayInputs.ghost.atr += 1; },
+      'ghost.tier': (a) => { a.replayInputs.ghost.tier = 'star'; },
+      'ghost.direction': (a) => { a.replayInputs.ghost.direction = a.replayInputs.ghost.direction === 'short' ? 'long' : 'short'; },
+      'ghost.thresholdHistory.maxMultiplier': (a) => { a.replayInputs.ghost.thresholdHistory.maxMultiplier += 1; },
+      'ghost.thresholdHistory.minMultiplier': (a) => { a.replayInputs.ghost.thresholdHistory.minMultiplier -= 1; },
+      'ghost.thresholdBaseline.value': (a) => { a.replayInputs.ghost.thresholdBaseline.value += 1; },
+      'bought.entryPrice': (a) => { a.replayInputs.bought.entryPrice += 1; },
+      'bought.atr': (a) => { a.replayInputs.bought.atr += 1; },
+      'bought.thresholdBaseline.value': (a) => { a.replayInputs.bought.thresholdBaseline.value += 1; },
+      lockedPoints: (a) => { a.lockedPoints += 1; },
+      subsequentTradesInSlot: (a) => { a.subsequentTradesInSlot = (a.subsequentTradesInSlot ?? 0) + 1; },
+      at: (a) => { a.at = new Date(Date.parse(a.at) + 60_000).toISOString(); },
+    };
+    for (const [name, edit] of Object.entries(edits)) {
+      const moved = structuredClone(tape);
+      edit(moved.actions[i]);
+      expect(candleInputFingerprint(moved).actions, name).not.toBe(fp);
+    }
+  });
 });
 
 // ── DF2 — BA-31: every candle output unit records what it was built from ────
@@ -528,6 +576,24 @@ describe('DF2 — BA-31: a kept unit keeps its own builtFrom and its stale label
     expect(tape.passes.candles.status).toBe('exhausted');
     expect(tape.coverage.series.status).toBe('partial');
     expect(tape.coverage.series.note).toMatch(/plan price missing inputs: KO \(price:KO@close\)/);
+  });
+
+  it('BA-31: a kept series whose builtFrom is not its inputs\' identity now is labelled and never written — even when it samples every check the tape has', async () => {
+    // The real merge cannot produce this (a changed check set leaves a check unsampled, named "built
+    // before N check(s)"); the rule is the identity's, so it is pinned on a planted unit (§9 mutation run).
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    await morning(t);
+    const sp = seriesPath(fx.battleId, 'AAPL');
+    t.store.set(sp, { ...t.store.get(sp), builtFrom: 'built-from-other-inputs' });
+    const cur = tapeOf(t, fx.battleId);
+    t.store.set(tapePath(fx.battleId), { ...cur, passes: { ...cur.passes, candles: { ...cur.passes.candles, status: 'pending' } } });
+    await morning(t, allBars({ AAPL: new Error('EODHD 500') }), MORNING + DAY);
+    const tape = tapeOf(t, fx.battleId);
+    expect(tape.coverage.series.status).toBe('partial');
+    expect(tape.coverage.series.note).toMatch(/AAPL: built before its inputs changed/);
+    expect(tape.passes.candles).toMatchObject({ status: 'partial', symbolsIncomplete: ['AAPL'] });
   });
 });
 
@@ -655,6 +721,35 @@ describe('DF3 — BA-26 amended: a read that hits a limit while the section\'s d
     const calls = tapeOf(t, fx.battleId).coverage.calls;
     expect(calls.caveats).toEqual([expect.stringMatching(/expected a declarations record that is absent/)]);
     expect(calls.status).not.toBe('complete');
+  });
+
+  it('BA-26 amended (review R2-1): a read that brings one new dependency but never saw another vouches for neither — unresolved_dependency, "a read assembled before", until a read observes both', async () => {
+    const fx = await noTriggerDay();
+    const t = world(fx);
+    await write(t, fx);
+    const battlePath = `agentBattles/${fx.battleId}`;
+    const evaluation = (battle, evalId, minute) => ({ ...structuredClone(battle.evaluations[0]), evalId, timestamp: `2026-09-24T17:${minute}:00.000Z`, promptBuiltAt: `2026-09-24T17:${minute}:00.000Z` });
+    const b1 = t.store.get(battlePath);
+    b1.evaluations.push(evaluation(b1, 'b-quiet:e-first', '07'));
+    t.store.set(battlePath, b1);
+    await write(t, fx, NIGHT + 60_000);                                        // observed: calls complete over it
+    expect(tapeOf(t, fx.battleId).coverage.calls.status).toBe('complete');
+    // a read of a battle that has a second new evaluation but not the first
+    const mixed = { id: fx.battleId, ...structuredClone(t.store.get(battlePath)) };
+    mixed.evaluations = mixed.evaluations.filter((e) => e.evalId !== 'b-quiet:e-first');
+    mixed.evaluations.push(evaluation(mixed, 'b-quiet:e-second', '37'));
+    await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT + 120_000, battle: mixed });
+    let calls = tapeOf(t, fx.battleId).coverage.calls;
+    expect(calls.status).toBe('partial');
+    expect(calls.caveats).toEqual(["unresolved_dependency: a read assembled before this section's dependencies changed"]);
+    // a read that observes both clears it
+    const b2 = t.store.get(battlePath);
+    b2.evaluations.push(evaluation(b2, 'b-quiet:e-second', '37'));
+    t.store.set(battlePath, b2);
+    await write(t, fx, NIGHT + 180_000);
+    calls = tapeOf(t, fx.battleId).coverage.calls;
+    expect(calls.caveats).toEqual([]);
+    expect(calls.status).toBe('complete');
   });
 });
 
@@ -965,6 +1060,40 @@ describe('DF7 — BA-27 amended: on equal lifecycle rank the battle re-read in t
     delete battle.result;
     t.store.set(`agentBattles/${fx.battleId}`, battle);
     await write(t, fx, NIGHT + 120_000);
+    expect(tapeOf(t, fx.battleId).battle).toEqual(canonical);
+  });
+
+  it('BA-27 amended: on a tie with no canonical re-read, the stored completion block stands — a stale assembly never replaces a completion the tape recorded', async () => {
+    // writeTapeDay always re-reads the battle, so the merge's own rule for a tie WITHOUT one (the
+    // battle document gone at the re-read) is pinned on the merge directly (§9 mutation run).
+    const { assembleTape } = await import('./tapeAssemble.js');
+    const { mergeTape } = await import('./tapeMerge.js');
+    const { etDayBounds } = await import('./tapeTime.js');
+    const fx = await completedDay();
+    const t = world(fx);
+    await write(t, fx);
+    const stored = tapeOf(t, fx.battleId);
+    const assembled = assembleTape({
+      battle: stale(fx, { completedAt: '2026-09-24T19:55:00.000Z', scoreState: { ...fx.battle.scoreState, currentScore: 9, opponentScore: 50 } }),
+      etDate: D, bounds: etDayBounds(D), nowMs: NIGHT + 60_000,
+      ticksRead: { ok: true, ticks: fx.ticks, prevSeq: null, nextSeq: null, method: 'capturedAt_range' },
+      runsRead: { ok: true, runs: fx.runs }, receiptsRead: { ok: true, receipts: fx.receipts }, callsRead: { ok: true, calls: fx.calls },
+      declarationsRead: { ok: true, present: new Set(fx.declarations) },
+    });
+    expect(assembled.battle).toMatchObject({ status: 'completed', completedAt: '2026-09-24T19:55:00.000Z' });
+    const { doc } = mergeTape(stored, assembled, { nowIso: iso(NIGHT + 60_000), withinWindow: true });
+    expect(doc.battle).toEqual(stored.battle);
+    expect(doc.battleStatusAtWrite).toBe(stored.battleStatusAtWrite);
+  });
+
+  it('BA-27 amended: a stored block the re-read contradicts is replaced even when it records the richer result basis — the richer basis stands only for the same completion', async () => {
+    const fx = await completedDay();                                           // no stored `result` on the battle: the re-read's basis is derived
+    const t = world(fx);
+    await write(t, fx);
+    const canonical = structuredClone(tapeOf(t, fx.battleId).battle);
+    expect(canonical.result).toMatchObject({ value: 'win', basis: 'derived' });
+    t.store.set(tapePath(fx.battleId), { ...tapeOf(t, fx.battleId), battle: { status: 'completed', completedAt: '2026-09-24T19:55:00.000Z', final: { total: 9, opponent: 50, at: '2026-09-24T19:55:00.000Z' }, result: { value: 'loss', basis: 'stored' } } });
+    await write(t, fx, NIGHT + 60_000);
     expect(tapeOf(t, fx.battleId).battle).toEqual(canonical);
   });
 });
