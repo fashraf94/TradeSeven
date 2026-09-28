@@ -445,6 +445,23 @@ describe('BA-24 confirmed (R1-3) — the read-out prints, per series, "N of M se
     expect(section.filter((l) => l.endsWith('session minutes traded'))).toHaveLength(series.length);   // one line per series
   });
 
+  it('R1-3 (round-3 review L3-6): a series whose bars do not all carry a finite `m` prints its minutes as unknown — never a 0 stated as a market fact', async () => {
+    const fx = await capturedDay();
+    const t = world(fx);
+    await write(t, fx);
+    await morning(t);
+    const tape = tapeOf(t, fx.battleId);
+    const series = seriesOf(t, fx.battleId).map((x) => structuredClone(x));
+    const spy = series.find((x) => x.symbol === 'SPY');
+    const aapl = series.find((x) => x.symbol === 'AAPL');
+    spy.bars = spy.bars.map((b) => { const { m: _m, ...rest } = b; return rest; });   // no bar carries m
+    aapl.bars[3] = { ...aapl.bars[3], m: '10' };                                 // one bar's m is not a number
+    const section = seriesSection(formatTapeMarkdown(tape, series));
+    expect(section).toContain('- SPY: — of 390 (market) session minutes traded');
+    expect(section).toContain('- AAPL: — of 390 (market) session minutes traded');
+    expect(section).toContain('- KO: 390 (market) of 390 (market) session minutes traded');
+  });
+
   it('R1-3: the session minutes are the calendar\'s — an early close counts 210, never a constant 390', async () => {
     const fx = await earlyCloseDay();
     const t = world(fx);
