@@ -465,13 +465,14 @@ describe('flag ON — the same mounts light up (the pin is not vacuous)', () => 
   it('mobile: the strip renders from the pod list, the label reads Predictions, and the pod list was fetched exactly once', async ({ onTestFinished }) => {
     vi.setSystemTime(new Date('2026-09-24T16:00:00.000Z')); // the fixture's week, 2026-W39, whose window closes into 2026-W40
     onTestFinished(() => { vi.useRealTimers(); });
+    const { subscribeMyStakes } = await import('../../../services/backingService');
+    subscribeMyStakes.mockClear(); // this row's subscriptions only: earlier rows subscribed on the real clock
     flag.on = true;
     const container = await mount(<LeagueHome {...homeProps} />);
     expect(svc.calls.filter((c) => c === 'fetchBackingPods')).toHaveLength(1);
     expect(svc.calls).toContain('subscribeMyStakes');
     // The viewer's backing is read under LAST week's key, this week's and the
     // window's (R-A-1 in the PR 4 review record) — one stake subscription each.
-    const { subscribeMyStakes } = await import('../../../services/backingService');
     const keys = new Set(subscribeMyStakes.mock.calls.map((c) => c[1]));
     const { backingWeekKeys } = await import('./backingStripState');
     for (const k of backingWeekKeys(new Date(), '2026-W40')) expect(keys.has(k), `week key ${k} is read`).toBe(true);
