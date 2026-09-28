@@ -484,11 +484,18 @@ export function buildActions({ battle, bounds, dayTicks, trades, receiptsDay }) 
     rows.push(row);
   }
   rows.sort((a, b) => (toMs(a.at) ?? 0) - (toMs(b.at) ?? 0) || (a.key < b.key ? -1 : 1));
-  for (const row of rows) {
-    if (row.tier === null || row.slotIndex === null) continue;
-    row.subsequentTradesInSlot = rows.filter((o) => o !== row && o.tier === row.tier && o.slotIndex === row.slotIndex && (toMs(o.at) ?? 0) > (toMs(row.at) ?? 0)).length;
-  }
+  for (const row of rows) row.subsequentTradesInSlot = subsequentTradesInSlot(row, rows);
   return rows;
+}
+
+/**
+ * How many later swaps among `rows` share this swap's tier and slot — past the
+ * first, its continued lines are hypothetical (BA-11). Null without a tier or
+ * a slot. The merge recounts it from the MERGED rows (review R2-2).
+ */
+export function subsequentTradesInSlot(row, rows) {
+  if (row.tier == null || row.slotIndex == null) return null;
+  return rows.filter((o) => o !== row && o.tier === row.tier && o.slotIndex === row.slotIndex && (toMs(o.at) ?? 0) > (toMs(row.at) ?? 0)).length;
 }
 
 // ── directives (BA-9) ──────────────────────────────────────────────────────

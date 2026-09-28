@@ -980,6 +980,36 @@ describe('DF8 — BA-29 amended: the admin backfill\'s refresh mode re-merges wr
     expect(tape.coverage.replay.note).toMatch(/built before the candle inputs changed \(checks\) — outside its retry window, not rebuilt/);
   });
 
+  /** Fifty later trades — trades[] keeps the last 50, so the day's own leave it. */
+  const evictingTrades = () => Array.from({ length: 50 }, (_, i) => ({
+    symbolOut: 'KO', symbolIn: 'PEP', name: 'KO', tier: 'support', slotIndex: 0, entryPrice: 70, exitPrice: 71, lockedPoints: 1, lockedGainPct: 1,
+    swappedOutAt: new Date(Date.parse('2026-09-25T14:00:00.000Z') + i * 60_000).toISOString(), swapDay: 2, isCrypto: false, id: `t${i}`, source: 'haiku', exitReason: 'haiku_decision',
+  }));
+
+  // The §2 review of this round (build report §9.11, R2-2): refresh re-merges written days, so a day
+  // whose trades have since left trades[] is re-read without them — the merge must stay monotone.
+  it('BA-29 amended (review R2-2): a refresh after the day\'s trades left trades[], on a read with the receipts unreadable, keeps each swap\'s later-trades count — recounted from the merged rows — and no candle input reads as changed, inside the window or outside it', async () => {
+    const fx = await capturedDay();
+    fx.battle.trades.find((tr) => tr.symbolOut === 'MSFT').tier = 'core';       // MSFT → NFLX joins AMD → TSLA's slot (core, 1)
+    const hooks = {};
+    const t = makeTapeDb(seedDay({}, fx), { hooks });
+    await write(t, fx);
+    await morning(t);
+    const amd = () => tapeOf(t, fx.battleId).actions.find((a) => a.symbolOut === 'AMD');
+    expect([amd().subsequentTradesInSlot, amd().replay.subsequentTradesInSlot, tapeOf(t, fx.battleId).passes.candles.status]).toEqual([1, 1, 'written']);
+    const battle = t.store.get(`agentBattles/${fx.battleId}`);
+    battle.trades = evictingTrades();
+    t.store.set(`agentBattles/${fx.battleId}`, battle);
+    hooks.beforeRead = (label) => { if (label.startsWith('learningReceipts/')) throw new Error('14 UNAVAILABLE'); };
+    for (const at of [REFRESH_AT, Date.parse('2026-10-26T15:00:00.000Z')]) {
+      const r = await call(t, { backfill: RANGE, refresh: '1' }, at);
+      expect(r.statusCode, iso(at)).toBe(200);
+      expect([amd().tier, amd().slotIndex, amd().subsequentTradesInSlot], iso(at)).toEqual(['core', 1, 1]);
+      expect(tapeOf(t, fx.battleId).passes.candles, iso(at)).toMatchObject({ status: 'written' });
+      expect(tapeOf(t, fx.battleId).passes.candles.changedInputs ?? [], iso(at)).toEqual([]);
+    }
+  });
+
   it('BA-29 amended: refresh is admin-only like the rest of the entry, needs a range, and takes only `1`', async () => {
     const fx = await capturedDay();
     const t = world(fx);

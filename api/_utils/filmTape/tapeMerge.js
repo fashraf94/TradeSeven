@@ -32,7 +32,7 @@
 
 import { createHash } from 'node:crypto';
 import { COVERAGE_RANK, CANDLE_COVERAGE_SECTIONS } from '../../../src/constants/filmTape.js';
-import { orderChecks, afterOf } from './tapeAssemble.js';
+import { orderChecks, afterOf, subsequentTradesInSlot } from './tapeAssemble.js';
 import { candleInputFingerprint, changedInputParts } from './candleInputs.js';
 import { toMs, etDayBounds } from './tapeTime.js';
 
@@ -380,6 +380,12 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
     merged[section] = rows;
     carried[section] = c;
   }
+  // Each swap's later-trades count, recounted from the MERGED action rows, as
+  // `after` is below (BA-30): a read that lost a trade — evicted from trades[]
+  // before a refresh re-read the day — keeps the tier and slot the tape
+  // recorded, so the count, and the candle input identity built from it
+  // (BA-31), do not move (review R2-2).
+  merged.actions = merged.actions.map((row, _, rows) => ({ ...row, subsequentTradesInSlot: subsequentTradesInSlot(row, rows) }));
 
   // Object sections: value units are never swapped for an emptier read.
   const sScore = isObj(stored.score) ? stored.score : {};
