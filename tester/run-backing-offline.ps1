@@ -46,6 +46,7 @@ try {
     --user 1000:1000 `
     --tmpfs /tmp:rw,nosuid,nodev,size=128m,uid=1000,gid=1000 `
     --tmpfs /app/node_modules/.vite:rw,nosuid,nodev,size=64m,uid=1000,gid=1000 `
+    --tmpfs /app/node_modules/.vite-temp:rw,nosuid,nodev,size=64m,uid=1000,gid=1000 `
     --mount "type=bind,source=$output,target=/evidence" `
     $image --output /evidence --commit $commit
   $runExit = $LASTEXITCODE

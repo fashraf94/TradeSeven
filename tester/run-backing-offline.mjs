@@ -61,10 +61,14 @@ const run = spawnSync(process.execPath, command.slice(1), {
 const log = `${run.stdout ?? ''}${run.stderr ?? ''}`;
 if (run.error) finish('BLOCKED', run.error.code === 'ETIMEDOUT' ? 'Timeout after 180 seconds' : `Runner error: ${run.error.code ?? run.error.message}`, { log, exitCode: run.status });
 if (run.signal) finish('BLOCKED', `Test process ended with signal ${run.signal}`, { log, exitCode: run.status });
-if (run.status !== 0) finish('FAIL', `Vitest exited ${run.status}`, { log, exitCode: run.status });
+const plain = log.replace(/\x1b\[[0-9;]*m/g, '');
+if (run.status !== 0) {
+  const outcome = /Test Files\s+[^\n]*failed/.test(plain) ? 'FAIL' : 'BLOCKED';
+  const reason = outcome === 'FAIL' ? `Vitest exited ${run.status} with failing tests` : `Vitest stopped before reporting test results (exit ${run.status})`;
+  finish(outcome, reason, { log, exitCode: run.status });
+}
 
 // A zero exit without both selected files in the summary is not evidence of a pass.
-const plain = log.replace(/\x1b\[[0-9;]*m/g, '');
 const files = plain.match(/Test Files\s+(\d+) passed\s+\((\d+)\)/);
 const tests = plain.match(/Tests\s+(\d+) passed\s+\((\d+)\)/);
 if (!files || !tests || Number(files[1]) !== 2 || Number(files[2]) !== 2 || Number(tests[1]) < 1 || tests[1] !== tests[2]) {
