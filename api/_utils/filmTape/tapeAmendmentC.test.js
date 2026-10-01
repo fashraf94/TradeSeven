@@ -31,6 +31,12 @@ import { makeTapeDb } from './__fixtures__/tapeFirestore.js';
 import { seedDay, capturedDay, noTriggerDay, earlyCloseDay, multiDay, makeTick } from './__fixtures__/tapeFixtures.js';
 import { flatRows, fetcherOf } from './__fixtures__/tapeBars.js';
 
+// CI headroom: a 30 s timeout for every row in this file. Under a two-worker
+// full run, 11 rows here and in tapeAstraDelta.test.js took 5.55–8.38 s and
+// timed out at vitest's 5 s default; unchanged, they pass at 30 s
+// (docs/audits/20260929_ASTRA_CLOSURE_REVIEW_FILM_TAPE_A1.md §5).
+vi.setConfig({ testTimeout: 30_000 });
+
 const D = '2026-09-24';
 const NIGHT = Date.parse('2026-09-25T02:15:30.000Z');
 const MORNING = Date.parse('2026-09-25T11:00:30.000Z'); // run 2026-09-25: window from 2026-09-11

@@ -47,6 +47,13 @@ import { makeTapeDb } from './__fixtures__/tapeFirestore.js';
 import { seedDay, capturedDay, noTriggerDay, completedDay, earlyCloseDay } from './__fixtures__/tapeFixtures.js';
 import { flatRows, sessionRows, fetcherOf } from './__fixtures__/tapeBars.js';
 
+// CI headroom: a 30 s timeout for every row in this file (a row that passes
+// its own, like the 60 s rows below, keeps it). Under a two-worker full run,
+// 11 rows here and in tapeAmendmentC.test.js took 5.55–8.38 s and timed out
+// at vitest's 5 s default; unchanged, they pass at 30 s
+// (docs/audits/20260929_ASTRA_CLOSURE_REVIEW_FILM_TAPE_A1.md §5).
+vi.setConfig({ testTimeout: 30_000 });
+
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const ALLOWLIST = JSON.parse(readFileSync(resolve(REPO, 'api/_utils/compositionProtectedStoresAllowlist.json'), 'utf8'));
 
