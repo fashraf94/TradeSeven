@@ -2863,9 +2863,18 @@ export const CALL_RECORDS_MODES = Object.freeze(['off', 'shadow', 'on']);
  * `export-film-tape --recent` — each ALSO created by hand in the Console (the
  * index-drift rule is dual-write; this build deploys neither); the two
  * `vercel.json` entries deployed; the rules block deployed.
+ *
+ * FLIPPED true 2026-10-01 — founder-cited (Flash, 2026-10-01), in its own flip
+ * PR: the pin in filmTapeFlags.test.js moved to true, its registration row now
+ * asserts the DARK_BY_DESIGN entry is gone, and the entry was dropped from
+ * flagPinGuard.test.js, all in the flip commit. FILM_ROOM_V2_ENABLED below
+ * stays false, so the screen and the hub helper's Stage 3 stay dark. ROLLBACK:
+ * set this back to false (with the pin and the DARK_BY_DESIGN entry moving
+ * back in the same commit) — both crons then answer `flag_off` again, and the
+ * tapes already written stay where they are, unread.
  */
 // Pinned by: filmTapeFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const FILM_TAPE_WRITE_ENABLED = false;
+export const FILM_TAPE_WRITE_ENABLED = true;
 
 /**
  * FILM_ROOM_V2_ENABLED — the screen flag (spec §7, A2). In A1 it gates ONE
