@@ -2827,3 +2827,60 @@ export const CALL_RECORDS_MODE = 'shadow';
 
 /** The three founder-walked states, in walk order. */
 export const CALL_RECORDS_MODES = Object.freeze(['off', 'shadow', 'on']);
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * FILM ROOM BUILD A — THE TAPE (spec
+ * docs/specs/FILM_ROOM_BUILD_A_TAPE_SPEC_V1_2_20260927.md; build report
+ * docs/audits/20260927_BUILD_FILM_TAPE_A1.md).
+ *
+ * FILM_TAPE_WRITE_ENABLED — the writer flag. On, the close pass
+ * (api/cron/film-tape-close.js, 22:15 ET) writes
+ * `agentBattles/{id}/tape/{etDate}` for every battle-day, the candle pass
+ * (api/cron/film-tape-candles.js, 07:00 ET) fills the replay, the plan prices
+ * and `tape/{etDate}/series/{symbol}` from prior-session 1-minute bars, and the
+ * admin backfill entry (`?backfill=YYYY-MM-DD..YYYY-MM-DD`) writes past days.
+ * Read at CALL TIME inside each handler, before any read or write.
+ *
+ * Off → both handlers answer `{ skipped: true, reason: 'flag_off' }` with ZERO
+ * Firestore reads and ZERO writes (the flag-off rows of
+ * api/cron/film-tape-close.test.js and film-tape-candles.test.js prove it
+ * against a recording store). The tape writes only its own subcollections
+ * (BA-1) and never a body (BA-2), so no existing document changes either way;
+ * with the screen flag below still off, a lit writer changes nothing a player
+ * sees (spec §8 item 6, "Stage 2").
+ *
+ * FLIP (spec §10, its own founder PR, never a build PR): the flip PR runs the
+ * BA-15 backfill from 2026-09-21 and smokes the first taped day. It moves the
+ * pin in src/config/filmTapeFlags.test.js to true AND turns that file's
+ * registration row around to assert the DARK_BY_DESIGN entry is GONE, and drops
+ * the entry from src/config/flagPinGuard.test.js — all in the same commit
+ * (BUILD_RULES §2). The tape's behaviour suites mock this flag explicitly both
+ * ways and do NOT move with the flip. FLIP PREREQUISITES: the two `tape`
+ * indexes declared in firestore.indexes.json — the collection-group composite
+ * (passes.candles.status ASC, etDate ASC) the candle pass selects on, and the
+ * `etDate` field override that adds DESCENDING at collection-group scope for
+ * `export-film-tape --recent` — each ALSO created by hand in the Console (the
+ * index-drift rule is dual-write; this build deploys neither); the two
+ * `vercel.json` entries deployed; the rules block deployed.
+ */
+// Pinned by: filmTapeFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const FILM_TAPE_WRITE_ENABLED = false;
+
+/**
+ * FILM_ROOM_V2_ENABLED — the screen flag (spec §7, A2). In A1 it gates ONE
+ * thing: the Stage 3 branch of the hub helper `getReviewAvailability`
+ * (src/utils/reviewAvailability.js, spec §11), which reads
+ * `tape/{finalEtDate}` instead of the legacy `dailyReviews[]`. Off → the
+ * helper resolves Stage 1 from the battle document alone, with no read. The
+ * A2 build (its own later slot) adds FilmRoomScreenV2 behind the same flag;
+ * nothing player-visible exists behind it in A1.
+ *
+ * FLIP: after A2 builds and Flash has read five real tape days through
+ * scripts/export-film-tape.js (spec §10 flip 2), in the sequence's screen-flip
+ * slot — its own founder PR, never a build PR. The flip moves the pin in
+ * src/config/filmTapeFlags.test.js to true, turns the registration row around,
+ * and drops the DARK_BY_DESIGN entry in the same commit (BUILD_RULES §2).
+ */
+// Pinned by: filmTapeFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const FILM_ROOM_V2_ENABLED = false;

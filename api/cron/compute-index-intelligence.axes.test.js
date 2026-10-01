@@ -115,8 +115,10 @@ describe('compute-index-intelligence — Phase A axis block wiring', () => {
     const vercel = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'vercel.json'), 'utf8');
     // 39 at this arc's landing; 41 since Intraday Data Build 1 added its two
     // entries (/api/cron/intraday-poll, /api/cron/intraday-validate — contract
-    // §5.1 / §10.1, G10). The axis block itself still adds none.
-    expect((vercel.match(/"schedule"/g) || []).length).toBe(41);
+    // §5.1 / §10.1, G10); 43 with the Film Room tape's close and candle
+    // passes (/api/cron/film-tape-close, /api/cron/film-tape-candles — tape
+    // spec V1.2 §5–§6). The axis block itself still adds none.
+    expect((vercel.match(/"schedule"/g) || []).length).toBe(43);
     expect(vercel).toMatch(/"\/api\/cron\/intraday-poll"/);
     expect(vercel).toMatch(/"\/api\/cron\/intraday-validate"/);
     expect(vercel).not.toMatch(/rankingSnapshots/);

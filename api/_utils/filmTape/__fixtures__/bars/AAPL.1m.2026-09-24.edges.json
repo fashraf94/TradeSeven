@@ -1,0 +1,12 @@
+[
+  { "timestamp": 1790236800, "gmtoffset": 0, "datetime": "2026-09-24 08:00:00", "open": 229.1, "high": 229.3, "low": 229.0, "close": 229.2, "volume": 1200 },
+  { "timestamp": 1790256600, "gmtoffset": 0, "datetime": "2026-09-24 13:30:00", "open": 230.0, "high": 230.4, "low": 229.9, "close": 230.2, "volume": 51000 },
+  { "timestamp": 1790256660, "gmtoffset": 0, "datetime": "2026-09-24 13:31:00", "open": 230.2, "high": 230.5, "low": 230.1, "close": 230.4, "volume": 22000 },
+  { "timestamp": 1790257560, "gmtoffset": 0, "datetime": "2026-09-24 13:46:00", "open": 231.0, "high": 231.2, "low": 230.9, "close": 231.1, "volume": 9000 },
+  { "timestamp": 1790257620, "gmtoffset": 0, "datetime": "2026-09-24 13:47:00", "open": 231.1, "high": 231.6, "low": 231.0, "close": 231.5, "volume": 9500 },
+  { "timestamp": 1790279940, "gmtoffset": 0, "datetime": "2026-09-24 19:59:00", "open": 232.8, "high": 233.0, "low": 232.7, "close": 232.9, "volume": 310000 },
+  { "timestamp": 1790280000, "gmtoffset": 0, "datetime": "2026-09-24 20:00:00", "open": 233.4, "high": 233.4, "low": 233.4, "close": 233.4, "volume": 2400000 },
+  { "timestamp": 1790280060, "gmtoffset": 0, "datetime": "2026-09-24 20:01:00", "open": 233.3, "high": 233.5, "low": 233.2, "close": 233.3, "volume": 8000 },
+  { "timestamp": 1790323200, "gmtoffset": 0, "datetime": "2026-09-25 08:00:00", "open": 234.0, "high": 234.1, "low": 233.9, "close": 234.0, "volume": 700 },
+  { "timestamp": 1790343000, "gmtoffset": 0, "datetime": "2026-09-25 13:30:00", "open": 235.0, "high": 235.2, "low": 234.8, "close": 235.1, "volume": 40000 }
+]
