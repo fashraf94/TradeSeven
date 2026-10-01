@@ -597,3 +597,40 @@ Per battle (model-ok checks only), to show whether a move is the same battles ch
 }
 ```
 
+
+## 5. Decision
+
+**Founder decision, 2026-10-01: roll back.** The §10 trigger is accepted as written. Anticipation candidates per check moved **−30.4 %** (1.72 → 1.20) against the 25 % relative limit (§2), so `CALL_RECORDS_MODE` returns to `'off'`.
+
+**The rollback commit, on this branch.** It is the exact reverse of the flip, `64ecd855` + `a59fa85b`. Both files are now byte-identical to their pre-flip state at `9f39875d`.
+
+| File | Change |
+|---|---|
+| `src/config/featureFlags.js` | `CALL_RECORDS_MODE = 'shadow'` → `'off'` |
+| `src/config/featureFlags.js` (docstring) | the "(shipped)" label moves from `'shadow'` back to `'off'` |
+| `src/config/callRecordsFlags.test.js` | the pin row goes back to `walk step 0: 'off' — no schema property, no reserve, no record read or written`, with `expect(CALL_RECORDS_MODE).toBe('off')` |
+
+**The records are frozen in place.** At `'off'` the cron neither reads nor writes `declarations/`, `calls/`, `callObservations/` or `callSweepQueue/` (`featureFlags.js` docstring; spec §2).
+
+The documents this read counted stay exactly as listed in §4:
+- 4 declarations records;
+- 9 calls, all terminal, none open;
+- 9 receipts;
+- 4 stale queue documents.
+
+**Nothing is deleted.** The `cronState.declarationsPhase` / `callFlips` / `callsDiag` keys already on battle documents also stay, and nothing reads them at `'off'`.
+
+**What comes next.** Shadow resumes with **revised declarations wording**, after a **paired experiment** isolates the schema's effect on anticipation candidates: the same recorded inputs, run with the schema off and with it at shadow. Those are separate tasks, and nothing in this branch starts them.
+
+**Pushed ≠ deployed.** The rollback takes effect only when you merge and deploy. Until then, production stays at `'shadow'`.
+
+**Verification of the rollback commit, on Windows (`C:\Users\fashr\portfolio-duel`).** Output was redirected to files, never piped, and each exit code was asserted with `test $rc -eq 0`.
+
+| Check | Result |
+|---|---|
+| Full suite, `npx vitest run` | **exit 1 (assert failed).** 42 files / 90 tests failed; 757 files / 15,603 tests passed. **None of the failures comes from the rollback:** |
+| … the same 42 files at the pre-rollback commit `11482c9d` (a clean `git worktree`) | **35 of the 42 fail there too**, so they predate this change. They are environment-dependent on this checkout (for example `intradayPromptExclusions.test.js`, which the Amendment A follow-ups already list as CRLF-sensitive). The prior flip's green run was in a Linux container. |
+| … the other 7, re-run alone on the rollback tree | **6 pass**: the `backing*`, `leagueDevPods` and `AgentBattleScreen.*.jsdom` suites, which are load-sensitive under the full parallel run. **3 tests fail** in `p4Equivalence.battery.test.js`, the `decide.js` source tripwires. Cause: in this working copy the three `__p4_snapshots__/decide.*.source.snap.txt` files have LF endings (last modified 2026-08-12), while `decide.js` has CRLF. `decide.js` is byte-identical in both trees (SHA-256 `c0dd397b…`), and a fresh checkout passes. This is local line-ending drift, not fixed here. |
+| The flag's own suites: `callRecordsFlags`, `flagPinGuard`, `api/_utils/callRecords/`, `callsOn`, `offGolden`, `m7e2eBudget`, and the seven exact-key cron suites | **20 files / 398 tests passed; exit 0** |
+| `npm run lint:gate` | **exit 1.** All 1,379 errors (565 report lines) are in `.vercel/output/`, a local, git-ignored build artifact. The pre-rollback worktree, which has no `.vercel/`, passes. **Re-run as `npx eslint . --config eslint.gate.config.js --max-warnings 0 --ignore-pattern ".vercel/**"`: exit 0.** |
+| Fence (BUILD_RULES §1) | No fenced file was edited and no fenced function was called |
