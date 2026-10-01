@@ -6,8 +6,9 @@
 // pointer the flag-pin guard keeps honest, and a DARK_BY_DESIGN registration a
 // deliberate flip drops in the same commit.
 //
-// Both flags ship FALSE by design. FILM_TAPE_WRITE_ENABLED is the writer
-// (close pass, candle pass, backfill); FILM_ROOM_V2_ENABLED is the screen flag,
+// Both flags were built FALSE. FILM_TAPE_WRITE_ENABLED is the writer (close
+// pass, candle pass, backfill) — flipped true 2026-10-01 (founder-cited, Flash);
+// FILM_ROOM_V2_ENABLED is the screen flag, still false,
 // which in A1 gates only the hub helper's Stage 3 branch. An accidental flip
 // fails the guard loudly with its runway note; a DELIBERATE flip moves the
 // flag's first row below to `true` and turns its registration row around, in
@@ -35,9 +36,10 @@ const docstringOf = (name) => {
 };
 
 describe('FILM_TAPE_WRITE_ENABLED — the pin (BUILD_RULES §2)', () => {
-  it('ships DARK: FILM_TAPE_WRITE_ENABLED is false at merge — the founder flips it in its own PR', () => {
-    // THE ROW THAT MOVES WITH THE FLIP, in the flip PR's own commit.
-    expect(FILM_TAPE_WRITE_ENABLED).toBe(false);
+  it('is LIT: FILM_TAPE_WRITE_ENABLED is true — flipped 2026-10-01 in the founder\'s own flip PR', () => {
+    // THE ROW THAT MOVED WITH THE FLIP, in the flip commit itself; a rollback
+    // moves it back, together with the DARK_BY_DESIGN entry.
+    expect(FILM_TAPE_WRITE_ENABLED).toBe(true);
   });
 
   it('is a plain boolean export the flag-pin guard can scan, with a Pinned-by pointer naming this file', () => {
@@ -47,10 +49,13 @@ describe('FILM_TAPE_WRITE_ENABLED — the pin (BUILD_RULES §2)', () => {
     expect(preceding).toContain('Pinned by: filmTapeFlags.test.js');
   });
 
-  it('is registered DARK_BY_DESIGN in the guard — the entry a deliberate flip drops in the same commit', () => {
-    // Keyed on the entry form (`FLAG:` at the start of a line), so a comment
-    // that merely names the flag cannot satisfy it.
-    expect(GUARD).toMatch(/^\s*FILM_TAPE_WRITE_ENABLED:/m);
+  it('is NO LONGER registered DARK_BY_DESIGN — the deliberate flip dropped the entry in the same commit, and a rollback re-adds it', () => {
+    // Turned around at the flip. Keyed on the entry form (`FLAG:` at the start
+    // of a line), so the explanatory ABSENT comment left in its place does not
+    // satisfy it.
+    expect(GUARD).not.toMatch(/^\s*FILM_TAPE_WRITE_ENABLED:/m);
+    // …and the drop is explained where the entry used to be, not silent.
+    expect(GUARD).toContain('FILM_TAPE_WRITE_ENABLED intentionally ABSENT');
   });
 
   it('its docstring names the flip map, the prerequisites, and what a lit writer never touches', () => {
@@ -61,6 +66,8 @@ describe('FILM_TAPE_WRITE_ENABLED — the pin (BUILD_RULES §2)', () => {
     expect(doc).toContain('ZERO');
     expect(doc).toContain('BA-1');
     expect(doc).toContain('index');
+    expect(doc).toContain('FLIPPED true 2026-10-01');
+    expect(doc).toContain('ROLLBACK');
   });
 });
 
