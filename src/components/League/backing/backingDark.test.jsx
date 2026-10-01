@@ -462,18 +462,23 @@ describe('flag OFF — the desktop League renders EXACTLY as today (golden, gene
 });
 
 describe('flag ON — the same mounts light up (the pin is not vacuous)', () => {
-  it('mobile: the strip renders from the pod list, the label reads Predictions, and the pod list was fetched exactly once', async ({ onTestFinished }) => {
-    vi.setSystemTime(new Date('2026-09-24T16:00:00.000Z')); // the fixture's week, 2026-W39, whose window closes into 2026-W40
-    onTestFinished(() => { vi.useRealTimers(); });
-    const { subscribeMyStakes } = await import('../../../services/backingService');
-    subscribeMyStakes.mockClear(); // this row's subscriptions only: earlier rows subscribed on the real clock
+  // Pinned clock: the fixtures are hard-wired to week 2026-W40, so the key
+  // count below must not drift with the real date.
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-09-23T14:00:00.000Z')); });
+  afterEach(() => vi.useRealTimers());
+
+  it('mobile: the strip renders from the pod list, the label reads Predictions, and the pod list was fetched exactly once', async () => {
     flag.on = true;
+    // The stake mock is never cleared, so earlier lit rows' keys (read on their
+    // own clocks) would leak into the set below — count only THIS mount's calls.
+    const { subscribeMyStakes } = await import('../../../services/backingService');
+    const callsBefore = subscribeMyStakes.mock.calls.length;
     const container = await mount(<LeagueHome {...homeProps} />);
     expect(svc.calls.filter((c) => c === 'fetchBackingPods')).toHaveLength(1);
     expect(svc.calls).toContain('subscribeMyStakes');
     // The viewer's backing is read under LAST week's key, this week's and the
     // window's (R-A-1 in the PR 4 review record) — one stake subscription each.
-    const keys = new Set(subscribeMyStakes.mock.calls.map((c) => c[1]));
+    const keys = new Set(subscribeMyStakes.mock.calls.slice(callsBefore).map((c) => c[1]));
     const { backingWeekKeys } = await import('./backingStripState');
     for (const k of backingWeekKeys(new Date(), '2026-W40')) expect(keys.has(k), `week key ${k} is read`).toBe(true);
     expect(keys.size).toBe(backingWeekKeys(new Date(), '2026-W40').length);
