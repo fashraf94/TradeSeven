@@ -83,7 +83,7 @@ describe('§4.2 — current qualification reasons, and the independent previousC
     ['invalid-number', rec({ price: Infinity }), false],
     ['invalid-number', rec({ price: -5 }), false],
     ['invalid-number', rec({ price: '103' }), false],
-  ])('%s', (reason, record, qualified) => {
+  ])('%s (case %#)', (reason, record, qualified) => {
     const q = interpretQuote(record, { nowMs: NOW });
     expect(q.current.reason).toBe(reason);
     expect(q.current.qualified).toBe(qualified);
@@ -394,7 +394,7 @@ describe('C-1 / B-1 / B-2 / B-3+ / P8 / P9 — the precision matrix from ONE sel
     [-0, 0, ['+0.00', '+0.00'], 'tie', 'Tied'],
     [10.204, 10.2, ['+10.20', '+10.20'], 'player', 'You lead by less than 0.01'],
     [10.206, 10.194, ['+10.21', '+10.19'], 'player', 'You lead by 0.02'],
-  ])('%p vs %p', (my, opp, digits, lead, prose) => {
+  ])('case %#: %o vs %o', (my, opp, digits, lead, prose) => {
     const c = stored(my, opp);
     expect(c.digits).toEqual(digits);
     expect(c.lead).toBe(lead);
