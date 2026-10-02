@@ -31,6 +31,10 @@
 // narration / decide prompt.
 
 import { getCurrentTradingDayServer } from './agentEvalPromptAssembly.js';
+// Cockpit Build 1a (spec §6): the check context the cron attaches in memory —
+// the resolved mode and one frozen instant — which a CALL-FAMILY directive
+// needs to be active at all.
+import { checkContextOf } from './callRecords/mode.js';
 
 // Pure function — testable without a clock dependency. Use this from
 // tests; production callers should use isDirectiveActive(directive, battle)
@@ -39,6 +43,10 @@ export function isDirectiveActiveOnDay(directive, tradingDays, currentDay) {
   // Malformed directive — nothing to surface.
   if (!directive || typeof directive !== 'object') return false;
   if (!directive.text || !directive.directiveThreadId) return false;
+  // Cockpit Build 1a (spec §6): the day rule never activates a call-family
+  // directive — that takes the check context (isDirectiveActive below); a
+  // caller of the pure rule has none, and fails closed.
+  if (isCallDirective(directive)) return false;
 
   const expiry = directive.expiry || 'end_of_battle';
 
@@ -73,7 +81,67 @@ export function isDirectiveActiveOnDay(directive, tradingDays, currentDay) {
 }
 
 export function isDirectiveActive(directive, battle) {
+  // Cockpit Build 1a (spec §6): a CALL-FAMILY directive is active only for a
+  // reader holding the check context the cron attached in memory — the
+  // battle's resolved mode 'on' and one finite check instant at or before the
+  // directive's lifetime end. Voice, and every other reader without the
+  // context, fail closed. Ordinary directives are unchanged, the
+  // unknown-expiry branch included.
+  if (isCallDirective(directive)) return isCallDirectiveActiveAt(directive, checkContextOf(battle));
   const tradingDays = battle?.timing?.tradingDays || [];
   const currentDay = getCurrentTradingDayServer(tradingDays);
   return isDirectiveActiveOnDay(directive, tradingDays, currentDay);
+}
+
+// ==================== Cockpit Build 1a — the call directive family (spec §6) ====================
+
+/** The family marker a call directive carries (callActions.js writes it; the only other value is absent). */
+export const CALL_DIRECTIVE_FAMILY = 'call';
+
+/** Is this a call-family directive? By the stored marker alone. */
+export function isCallDirective(directive) {
+  return !!directive && typeof directive === 'object' && directive.family === CALL_DIRECTIVE_FAMILY;
+}
+
+/**
+ * Activeness for the CHECK (the cron's readers): the resolved mode is 'on',
+ * the check instant is finite, and it is at or before the directive's lifetime
+ * end (`expiresAtMs` — the horizon's expiry, plus 15 minutes for next_check;
+ * a bounded advisory lifetime, NOT an H2 guarantee). Malformed → inactive.
+ *
+ * @param {object} directive
+ * @param {{ mode: string|null, instantMs: number|null }} ctx
+ */
+export function isCallDirectiveActiveAt(directive, ctx) {
+  if (!isCallDirective(directive)) return false;
+  if (!directive.text || !directive.directiveThreadId) return false;
+  const expiresAtMs = directive.expiresAtMs;
+  const instantMs = ctx?.instantMs;
+  if (ctx?.mode !== 'on') return false;
+  if (typeof instantMs !== 'number' || !Number.isFinite(instantMs)) return false;
+  if (typeof expiresAtMs !== 'number' || !Number.isFinite(expiresAtMs)) return false;
+  return instantMs <= expiresAtMs;
+}
+
+/**
+ * THE ENDPOINT'S PENDING PREDICATE (spec §6; Amendment B §3), separate from
+ * check activeness: does the parent's slot hold a LIVE call-family directive
+ * that a second call-family filing must not displace? True iff the slot is
+ * call-family, the resolved mode is 'on', `nowMs` is at or before its lifetime
+ * end, its thread is not killed, and it belongs to a DIFFERENT call than the
+ * one being answered. Never consults cron-only fields.
+ *
+ * @param {{ directive: object, mode: string, nowMs: number, killedIds?: Iterable<string>, thisCallId?: string|null }} p
+ */
+export function isCallDirectivePendingAt({ directive, mode, nowMs, killedIds = [], thisCallId = null }) {
+  if (!isCallDirective(directive)) return false;
+  if (mode !== 'on') return false;
+  if (!directive.text || !directive.directiveThreadId) return false;
+  if (typeof nowMs !== 'number' || !Number.isFinite(nowMs)) return false;
+  if (typeof directive.expiresAtMs !== 'number' || !Number.isFinite(directive.expiresAtMs)) return false;
+  if (nowMs > directive.expiresAtMs) return false;
+  const killed = killedIds instanceof Set ? killedIds : new Set(killedIds || []);
+  if (killed.has(directive.directiveThreadId)) return false;
+  if (thisCallId !== null && directive.callId === thisCallId) return false;
+  return true;
 }

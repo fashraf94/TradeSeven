@@ -34,6 +34,10 @@ const state = vi.hoisted(() => ({
   attempts: 0,
   reads: 0,
   committed: [],
+  events: {},
+  // Cockpit Build 1a — CALL_RECORDS_MODE and COCKPIT_ALLOWLIST_UIDS, settable per row (real values 'off', []).
+  callsMode: 'off',
+  allow: [],
 }));
 
 vi.mock('../_utils/security.js', () => ({ applySecurityMiddleware: () => false }));
@@ -50,6 +54,8 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => {
       state.modeCalls.push(uid);
       return actual.resolveVoiceGroundingMode(state.mode, uid, state.canaryUids);
     },
+    get CALL_RECORDS_MODE() { return state.callsMode; },
+    get COCKPIT_ALLOWLIST_UIDS() { return state.allow; },
   };
 });
 vi.mock('../_utils/agentChatBudget.js', async (importOriginal) => ({
@@ -91,10 +97,21 @@ function applyWrite(w) {
     }
   } else if (w.col === 'agentChatBudget') {
     state.budgetDocs[w.id] = { ...(state.budgetDocs[w.id] || {}), ...w.data };
+  } else if (w.op === 'create') {
+    // Build 1a: a call event (agentBattles/{id}/callEvents/{eventId}) — create-once.
+    const path = `${w.col}/${w.id}`;
+    if (state.events[path]) throw new Error(`6 ALREADY_EXISTS: ${path}`);
+    state.events[path] = w.data;
   }
 }
 const db = {
-  collection: (col) => ({ doc: (id) => ({ __col: col, __id: id, get: async () => readDoc(col, id) }) }),
+  collection: (col) => ({
+    doc: (id) => ({
+      __col: col, __id: id, get: async () => readDoc(col, id),
+      // Build 1a: a sub-collection document ref (the call events the shared writer may create).
+      collection: (sub) => ({ doc: (sid) => ({ __col: `${col}/${id}/${sub}`, __id: sid }) }),
+    }),
+  }),
   runTransaction: async (fn) => {
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       state.attempts += 1;
@@ -109,6 +126,7 @@ const db = {
         },
         update: (ref, data) => buffer.push({ col: ref.__col, id: ref.__id, data, op: 'update' }),
         set: (ref, data, opts) => buffer.push({ col: ref.__col, id: ref.__id, data, opts, op: 'set' }),
+        create: (ref, data) => buffer.push({ col: ref.__col, id: ref.__id, data, op: 'create' }),
       };
       const result = await fn(tx);
       if (state.injectBeforeCommit && attempt === 1) {
@@ -158,6 +176,73 @@ beforeEach(() => {
   state.attempts = 0;
   state.reads = 0;
   state.committed = [];
+  state.events = {};
+  state.callsMode = 'off';
+  state.allow = [];
+});
+
+// ---- Cockpit Build 1a (spec §6; Amendment B §3): the chip over a CALL-FAMILY slot, with belief ----
+describe('file-directive — Build 1a: replacing a call-family slot', () => {
+  const CALL_SLOT = {
+    text: "Hold off on the AMD entry until today's close.", expiry: 'until_ms', directiveThreadId: 'thread-call-0001', createdAt: '2026-09-09T14:20:00.000Z',
+    family: 'call', expiresAtMs: 4_102_444_800_000, basis: 'this_session', callId: 'battle-1:eval_001:call:0', kind: 'call_hold',
+    action: { direction: 'entry', symbol: 'AMD', slot: 'support', counterpart: 'KO' }, answerId: 'battle-1:eval_001:call:0:answer:hold:',
+    filedAt: '2026-09-09T14:20:00.000Z', textVersion: 'callActions.v1',
+  };
+
+  it('with the right belief at calls off: replaced-prior, the exchange stamped `supersedes` with the call thread, no event, still ONE battle update', async () => {
+    state.battle = makeBattle({ directive: CALL_SLOT });
+    const res = await post({ ...BODY, expectedDirectiveThreadId: 'thread-call-0001' });
+    expect(res.statusCode).toBe(200);
+    expect(res.body.status).toBe(FILING_STATUS.REPLACED_PRIOR);
+    expect(res.body.replacedDirectiveThreadId).toBe('thread-call-0001');
+    expect(state.committed.map((w) => w.op)).toEqual(['update']);
+    const w = battleWrite();
+    expect(Object.keys(w.data).sort()).toEqual(['chatBudgetUsed', 'chatExchanges', 'directive']);
+    expect(w.data.directive).not.toHaveProperty('family');
+    const ex = w.data.chatExchanges.items[0];
+    expect(ex.supersedes).toEqual({ directiveThreadId: 'thread-call-0001', at: ex.timestamp });
+    expect(state.events).toEqual({});
+  });
+
+  it('at calls ON for an allowlisted owner: the `superseded` event is created in the SAME transaction, at the prior thread\'s id', async () => {
+    state.callsMode = 'on';
+    state.allow = ['owner-1'];
+    state.battle = makeBattle({ directive: CALL_SLOT });
+    const res = await post({ ...BODY, expectedDirectiveThreadId: 'thread-call-0001' });
+    expect(res.statusCode).toBe(200);
+    expect(state.committed.map((w) => w.op)).toEqual(['update', 'create']);
+    expect(state.events['agentBattles/battle-1/callEvents/thread-call-0001:superseded']).toMatchObject({
+      kind: 'superseded', callIds: ['battle-1:eval_001:call:0'], supersededDirectiveThreadId: 'thread-call-0001',
+    });
+    expect(battleWrite().data.chatExchanges.items[0].supersedes.directiveThreadId).toBe('thread-call-0001');
+  });
+
+  it('the chip KEEPS its belief check: a stale belief against a call-family slot is a conflict, nothing written, no stamp, no event', async () => {
+    state.callsMode = 'on';
+    state.allow = ['owner-1'];
+    state.battle = makeBattle({ directive: CALL_SLOT });
+    const res = await post({ ...BODY, expectedDirectiveThreadId: null });
+    expect(res.statusCode).toBe(409);
+    expect(res.body.currentDirectiveThreadId).toBe('thread-call-0001');
+    expect(state.committed).toEqual([]);
+    expect(state.events).toEqual({});
+  });
+
+  it('an ORDINARY prior slot with the right belief: the pre-build payload exactly — no stamp, no event, at every calls mode', async () => {
+    for (const [mode, allow] of [['off', []], ['on', ['owner-1']]]) {
+      state.callsMode = mode;
+      state.allow = allow;
+      state.committed = [];
+      state.events = {};
+      state.battle = makeBattle({ directive: { text: 'x', expiry: 'end_of_battle', directiveThreadId: 'thread-old', createdAt: 'c', adjustmentId: 'DV-01', canonicalTextVersion: 1 } });
+      const res = await post({ ...BODY, expectedDirectiveThreadId: 'thread-old' });
+      expect(res.statusCode).toBe(200);
+      expect(state.committed.map((w) => w.op)).toEqual(['update']);
+      expect(battleWrite().data.chatExchanges.items[0]).not.toHaveProperty('supersedes');
+      expect(state.events).toEqual({});
+    }
+  });
 });
 
 describe('file-directive — the gate and the body', () => {

@@ -190,7 +190,7 @@ function makeFakeFirestore({
   // Phase E2 — tournament group + pending-claims aggregate, with injectable failures.
   group = null, pendingClaimCount = 0, groupReadError = false, claimsReadError = false,
 }) {
-  const written = { setCalls: [], updateCalls: [] };
+  const written = { setCalls: [], updateCalls: [], batchCommits: [] };
 
   // The claims aggregate query: .where().where().count().get() → { data: () => ({ count }) }.
   const claimsQuery = {
@@ -229,12 +229,26 @@ function makeFakeFirestore({
         update: async (updates) => {
           written.updateCalls.push({ id: docId, updates });
         },
-        collection: (subName) => (subName === 'claims' ? claimsQuery : { where: () => ({}) }),
+        // Build 1a: a sub-collection document ref (the call events the shared writer may create).
+        collection: (subName) => (subName === 'claims' ? claimsQuery : { where: () => ({}), doc: (subId) => ({ id: subId, path: `${name}/${docId}/${subName}/${subId}` }) }),
       };
     },
   });
 
-  return { db: { collection }, written };
+  // Build 1a: the WriteBatch the shared writer uses on chat's plain path when a
+  // `superseded` event is due — the update and the create commit together.
+  const batch = () => {
+    const ops = [];
+    return {
+      update: (ref, updates) => ops.push({ op: 'update', id: ref.id, updates }),
+      create: (ref, data) => ops.push({ op: 'create', path: ref.path, data }),
+      commit: async () => {
+        written.batchCommits.push(ops);
+        for (const o of ops) if (o.op === 'update') written.updateCalls.push({ id: o.id, updates: o.updates });
+      },
+    };
+  };
+  return { db: { collection, batch }, written };
 }
 
 function makeReqRes(body) {
@@ -681,6 +695,66 @@ describe('agent/chat — archetype integrity gate (Phase E1)', () => {
   };
 
   it('flag-OFF is the legacy path: no gate fields, model directive flows through (keystone regression)', async () => {
+    archetypeFlag.mode = 'off';
+    callGemmaVoiceImpl.current = async () => gemma({ response: 'ok', hasDirective: true, directive: { text: 'lean tech', expiry: 'end_of_battle' } });
+    const { res: r0 } = await run();
+    expect(r0.statusCode).toBe(200);
+  });
+
+  // ---- Cockpit Build 1a (spec §6; Amendment B §3): chat's latest-wins replacement, no client belief ----
+  const CALL_SLOT = {
+    text: "Hold off on the AMD entry until today's close.", expiry: 'until_ms', directiveThreadId: 'thread-call-0001', createdAt: '2026-09-09T14:20:00.000Z',
+    family: 'call', expiresAtMs: 4_102_444_800_000, basis: 'this_session', callId: 'battle-1:eval_001:call:0', kind: 'call_hold',
+    action: { direction: 'entry', symbol: 'AMD', slot: 'support', counterpart: 'KO' }, answerId: 'battle-1:eval_001:call:0:answer:hold:',
+    filedAt: '2026-09-09T14:20:00.000Z', textVersion: 'callActions.v1',
+  };
+  const ORDINARY_SLOT = { text: 'Narrow to the single strongest sector(s)', expiry: 'end_of_battle', directiveThreadId: 'thread-tf03-0001', createdAt: '2026-09-09T14:20:00.000Z', adjustmentId: 'TF-03', canonicalTextVersion: 1 };
+
+  it('Build 1a: a chat filing over a CALL-FAMILY slot is latest-wins with NO belief — the exchange is stamped `supersedes` with the call thread; at calls off it is still one plain update, no event', async () => {
+    archetypeFlag.mode = 'off';
+    callsFlag.mode = 'off';
+    callGemmaVoiceImpl.current = async () => gemma({ response: 'ok', hasDirective: true, directive: { text: 'lean tech', expiry: 'end_of_battle' } });
+    const { res, written } = await run({ directive: CALL_SLOT });
+    expect(res.statusCode).toBe(200);
+    expect(res.body.hasDirective).toBe(true);
+    const upd = mainUpdate(written).updates;
+    expect(Object.keys(upd)).toEqual(['chatExchanges', 'chatBudgetUsed', 'recentElicitationTargets', 'directive']);
+    expect(upd.directive.directiveThreadId).not.toBe('thread-call-0001');
+    expect(upd.directive).not.toHaveProperty('family');
+    const ex = exchangeOf(written);
+    expect(ex.supersedes).toEqual({ directiveThreadId: 'thread-call-0001', at: ex.timestamp });
+    expect(written.batchCommits).toEqual([]);
+  });
+
+  it('Build 1a: the same replacement at calls ON for an allowlisted owner commits the update and the `superseded` event in ONE batch', async () => {
+    archetypeFlag.mode = 'off';
+    callsFlag.mode = 'on';
+    callsFlag.allow = ['test-user'];
+    callGemmaVoiceImpl.current = async () => gemma({ response: 'ok', hasDirective: true, directive: { text: 'lean tech', expiry: 'end_of_battle' } });
+    const { res, written } = await run({ directive: CALL_SLOT });
+    expect(res.statusCode).toBe(200);
+    expect(written.batchCommits).toHaveLength(1);
+    const [ops] = written.batchCommits;
+    expect(ops.map((o) => o.op)).toEqual(['update', 'create']);
+    expect(ops[1].path).toBe('agentBattles/battle-1/callEvents/thread-call-0001:superseded');
+    expect(ops[1].data).toMatchObject({ kind: 'superseded', callIds: ['battle-1:eval_001:call:0'], supersededDirectiveThreadId: 'thread-call-0001' });
+    expect(exchangeOf(written).supersedes).toEqual({ directiveThreadId: 'thread-call-0001', at: exchangeOf(written).timestamp });
+  });
+
+  it('Build 1a: replacing an ORDINARY slot writes exactly the pre-build payload — no stamp, no batch, whatever the calls mode', async () => {
+    for (const [mode, allow] of [['off', []], ['on', ['test-user']]]) {
+      archetypeFlag.mode = 'off';
+      callsFlag.mode = mode;
+      callsFlag.allow = allow;
+      callGemmaVoiceImpl.current = async () => gemma({ response: 'ok', hasDirective: true, directive: { text: 'lean tech', expiry: 'end_of_battle' } });
+      const { written } = await run({ directive: ORDINARY_SLOT });
+      expect(Object.keys(mainUpdate(written).updates)).toEqual(['chatExchanges', 'chatBudgetUsed', 'recentElicitationTargets', 'directive']);
+      expect(exchangeOf(written)).not.toHaveProperty('supersedes');
+      expect(written.batchCommits).toEqual([]);
+    }
+  });
+
+  it('flag-OFF is the legacy path: no gate fields, model directive flows through (keystone regression — the original row)', async () => {
     archetypeFlag.mode = 'off';
     callGemmaVoiceImpl.current = async () => gemma({ response: 'ok', hasDirective: true, directive: { text: 'lean tech', expiry: 'end_of_battle' } });
     const { res, written } = await run();

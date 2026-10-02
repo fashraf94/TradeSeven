@@ -298,3 +298,25 @@ describe('Build 1a rollback — at off a battle carrying call state renders as i
     expect(serialize(live.updates)).not.toMatch(/declarationsPhase|callFlips|callsDiag/);
   });
 });
+
+describe('Build 1a rollback — a CALL directive in the slot is inert at off (spec §3 rollback fixture, §15.1)', () => {
+  const golden = JSON.parse(readFileSync(GOLDEN_PATH, 'utf8'));
+
+  it('a persisted CALL directive in the slot, its thread exchange, an answered open call, a hit and pending sweep work: byte-identical to the NO-DIRECTIVE capture — absent from the prompt, the epoch log and the stamps; the call stores neither read nor written', async () => {
+    const { snapshot, db, seed } = await runScenario('call_directive_in_slot');
+    const live = JSON.parse(serialize(snapshot));
+    const frozen = golden.scenarios.no_directive;
+    expect(serialize(live.updates)).toBe(serialize(frozen.updates));
+    expect(serialize(live.prompts)).toBe(serialize(frozen.prompts));
+    expect(serialize(live.capture)).toBe(serialize(frozen.capture));
+    expect(serialize(live.summary)).toBe(serialize(frozen.summary));
+    expect(live.thrown).toBe(frozen.thrown);
+    expect(serialize(live.prompts)).not.toContain(CALL_THREAD);
+    expect(serialize(live.prompts)).not.toContain('Hold off on the AMD entry');
+    expect(serialize(live.prompts)).not.toContain('ACTIVE DIRECTIVE (from your Coach)');
+    expect(callsTouches(db)).toEqual({ reads: 0, writes: 0, queries: 0 });
+    for (const sub of CALL_SUBCOLLECTIONS) expect(storedCollection(db, sub)).toEqual(seed[sub]);
+    expect(storedDoc(db, 'callSweepQueue')).toEqual(seed.queue);
+    expect(serialize(live.updates)).not.toMatch(/declarationsPhase|callFlips|callsDiag|__callsMode|__checkInstantMs|family/);
+  });
+});

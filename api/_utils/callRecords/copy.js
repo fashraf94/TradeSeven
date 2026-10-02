@@ -191,6 +191,16 @@ export function renderSupersededEvent({ at } = {}) {
   return t ? `Superseded by a later filing at ${t} ET` : 'Superseded by a later filing';
 }
 
+/**
+ * A judgment that reaches a call after its directive's bounded lifetime ended
+ * (spec §6; Amendment B §4): the answer expired before this check. Never
+ * implies the answer was heard.
+ */
+export function renderAnswerExpiredLine({ promptBuiltAt } = {}) {
+  const label = checkLabel(promptBuiltAt);
+  return `Answer expired before ${label ?? 'this check'}`;
+}
+
 // ---------------------------------------------------------------------------
 // THE LINT — scripts/declarations-wording-experiment.mjs:376-397, verbatim.
 // (copy.test.js holds the two source blocks side by side; a drift here is red.)

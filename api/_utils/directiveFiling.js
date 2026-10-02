@@ -21,6 +21,32 @@
 // ZERO imports: consumed by both routes and by their tests.
 
 /**
+ * Cockpit Build 1a (spec §6; contract Amendment B §3, §4): the CALL-FAMILY
+ * fields both shapes carry when the filing is a call directive (the answer
+ * endpoint's plan, api/_utils/callRecords/callActions.js) — and nothing at
+ * all otherwise, so an ordinary filing's record and slot are byte-identical to
+ * today's. The only thread key stays `directiveThreadId`; no alias.
+ *
+ *   family: 'call' · expiry: 'until_ms' · expiresAtMs · basis · callId · kind
+ *   action: { direction, symbol, slot, counterpart?, pickSymbol?, swapOut? }
+ *   answerId · filedAt · textVersion: 'callActions.v1'
+ */
+function callFields(normalized) {
+  if (normalized?.family !== 'call') return {};
+  return {
+    family: 'call',
+    expiresAtMs: normalized.expiresAtMs,
+    basis: normalized.basis ?? null,
+    callId: normalized.callId,
+    kind: normalized.kind,
+    action: normalized.action,
+    answerId: normalized.answerId,
+    filedAt: normalized.filedAt,
+    textVersion: normalized.textVersion,
+  };
+}
+
+/**
  * The exchange's `directive` record (chat.js `exchange.directive`).
  *
  * @param {{ text: string, expiry?: string, adjustmentId?: string, canonicalTextVersion?: number }} normalized
@@ -39,6 +65,7 @@ export function buildDirectiveRecord(normalized, directiveThreadId) {
       adjustmentId: normalized.adjustmentId,
       canonicalTextVersion: normalized.canonicalTextVersion ?? null,
     } : {}),
+    ...callFields(normalized),
   };
 }
 
@@ -57,6 +84,7 @@ export function buildDirectiveSlot(normalized, directiveThreadId, createdAt) {
       adjustmentId: normalized.adjustmentId,
       canonicalTextVersion: normalized.canonicalTextVersion ?? null,
     } : {}),
+    ...callFields(normalized),
   };
 }
 

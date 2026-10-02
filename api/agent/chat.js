@@ -61,6 +61,9 @@ import { buildDirectiveRecord, buildDirectiveSlot, BATTLE_CHAT_BUDGET } from '..
 // per-battle calls mode it keys on (resolved once per turn, below).
 import { selectLegacyChatHistory } from '../_utils/chatHistoryWindow.js';
 import { resolveCallRecordsMode } from '../_utils/callRecords/mode.js';
+// Cockpit Build 1a (spec §6): the shared slot writer — chat's plain update,
+// byte for byte, from this turn's validated plan.
+import { fileDirectiveTransactional } from '../_utils/directiveWriter.js';
 
 export const config = { maxDuration: 30 };
 
@@ -1077,18 +1080,32 @@ export default async function handler(req, res) {
 
     const recentTargets = [...(battle.recentElicitationTargets || []), elicitationTarget.dimension].slice(-3);
 
-    await battleRef.update({
-      chatExchanges: FieldValue.arrayUnion(exchange),
-      // The League arena ask does NOT touch the per-battle counter — it charges its
-      // own per-day store (below). Omitting the increment here is what keeps the two
-      // budgets from double-counting. (chatExchanges stays: it is the sanctioned
-      // createAgentBattle field + the Catalog #9 durable record — unchanged.)
-      ...(!isLeagueAsk ? { [budgetField]: FieldValue.increment(1) } : {}),
-      recentElicitationTargets: recentTargets,
-      // The slot, from the same ONE shape (see the exchange record above).
-      ...(directiveThreadId ? {
-        directive: buildDirectiveSlot(lintedDirective, directiveThreadId, new Date().toISOString()),
-      } : {}),
+    // Cockpit Build 1a (spec §6): the SHARED SLOT WRITER (directiveWriter.js) —
+    // the same payload as before, byte for byte, from the plan this turn
+    // validated above: latest-wins, no client belief (HEAD's chat semantics,
+    // preserved). The writer adds exactly one thing, and only when this filing
+    // replaces a CALL-FAMILY slot: the `supersedes` stamp on the exchange and,
+    // at resolved 'on', the `superseded` call event in the same commit.
+    await fileDirectiveTransactional(null, battleRef, {
+      db,
+      battleId,
+      arrayUnion: FieldValue.arrayUnion,
+      exchange,
+      filed: !!directiveThreadId,
+      priorSlot: battle.directive ?? null,
+      callsMode,
+      fields: {
+        // The League arena ask does NOT touch the per-battle counter — it charges its
+        // own per-day store (below). Omitting the increment here is what keeps the two
+        // budgets from double-counting. (chatExchanges stays: it is the sanctioned
+        // createAgentBattle field + the Catalog #9 durable record — unchanged.)
+        ...(!isLeagueAsk ? { [budgetField]: FieldValue.increment(1) } : {}),
+        recentElicitationTargets: recentTargets,
+        // The slot, from the same ONE shape (see the exchange record above).
+        ...(directiveThreadId ? {
+          directive: buildDirectiveSlot(lintedDirective, directiveThreadId, new Date().toISOString()),
+        } : {}),
+      },
     });
 
     // 20. (removed) Directives are now battle-scoped only. Previously we
