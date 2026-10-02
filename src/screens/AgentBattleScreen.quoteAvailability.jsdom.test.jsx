@@ -378,7 +378,7 @@ const record = () => ({
   presence: [...seen.presence],
 });
 
-// BEGIN GENERATED OFF REFERENCES — captured at the pre-build SHA 44d0c63eba4e3099552d3ec3dbde6a89660a7e06 (14 entries; loadingReturn added after the first capture, captured at the same SHA).
+// BEGIN GENERATED OFF REFERENCES — captured at the pre-build SHA 44d0c63eba4e3099552d3ec3dbde6a89660a7e06 (15 entries; loadingReturn and swapTransition added after the first capture, captured at the same SHA).
 // Regenerate ONLY by re-running this file's OFF rows at that SHA with
 // SHADOW_OFF_CAPTURE_DIR set; never by blessing build output.
 const OFF = {
@@ -1633,6 +1633,618 @@ const OFF = {
    ]
   ],
   "research": []
+ },
+ "swapTransition": {
+  "before": {
+   "html": {
+    "sha256": "479a3241f9860013f4cb74eebfcff340d5d622ed13f0c625f9c22917f5c5cd76",
+    "length": 77894
+   },
+   "priceCalls": [
+    [
+     "stock",
+     [
+      "AAPL",
+      "NVDA",
+      "MSFT",
+      "TSLA",
+      "AMZN",
+      "META",
+      "GOOGL",
+      "AMD",
+      "NFLX",
+      "ORCL",
+      "CRM",
+      "INTC"
+     ]
+    ],
+    [
+     "crypto",
+     [
+      "BTC",
+      "ETH"
+     ]
+    ],
+    [
+     "stock",
+     [
+      "AAPL",
+      "NVDA",
+      "MSFT",
+      "TSLA",
+      "AMZN",
+      "META",
+      "GOOGL",
+      "AMD",
+      "NFLX",
+      "ORCL",
+      "CRM",
+      "INTC"
+     ]
+    ],
+    [
+     "crypto",
+     [
+      "BTC",
+      "ETH"
+     ]
+    ]
+   ],
+   "fsLog": [
+    [
+     "subscribe",
+     "doc",
+     "ab-1",
+     3
+    ]
+   ],
+   "research": [
+    {
+     "asset": {
+      "symbol": "TSLA",
+      "name": "TSLA",
+      "price": 255,
+      "percentChange": 2.82258064516129,
+      "threshold": 4,
+      "lockedPrice": null,
+      "currentPrice": 255
+     },
+     "onClose": "function",
+     "showActionButton": false,
+     "isGameContext": true,
+     "version": 2,
+     "defaultTab": "baggerbomb",
+     "defaultTimeframe": "bomb",
+     "wsPrice": 255
+    }
+   ],
+   "breakdown": [
+    {
+     "asset": {
+      "symbol": "MSFT",
+      "gain": 1,
+      "threshold": 2,
+      "tierMultiplier": 1,
+      "baggerBombs": 0,
+      "busts": 0,
+      "basePoints": 10,
+      "baggerBombPoints": 0,
+      "bustPoints": 0,
+      "totalScore": 15,
+      "startingPrice": 400,
+      "currentPrice": 404
+     },
+     "entryPrice": 400
+    },
+    {
+     "asset": {
+      "symbol": "MSFT",
+      "gain": 1,
+      "threshold": 2,
+      "tierMultiplier": 1,
+      "baggerBombs": 0,
+      "busts": 0,
+      "basePoints": 10,
+      "baggerBombPoints": 0,
+      "bustPoints": 0,
+      "totalScore": 15,
+      "startingPrice": 400,
+      "currentPrice": 404
+     },
+     "entryPrice": 400
+    }
+   ],
+   "presence": []
+  },
+  "afterSwap": {
+   "html": {
+    "sha256": "b64f91c1f3af1b475c5e67a28d2781fe3e1ef90fdfabc8d84ebeb371136d4998",
+    "length": 77912
+   },
+   "priceCalls": [
+    [
+     "stock",
+     [
+      "AAPL",
+      "NVDA",
+      "MSFT",
+      "TSLA",
+      "AMZN",
+      "META",
+      "GOOGL",
+      "AMD",
+      "NFLX",
+      "ORCL",
+      "CRM",
+      "INTC"
+     ]
+    ],
+    [
+     "crypto",
+     [
+      "BTC",
+      "ETH"
+     ]
+    ],
+    [
+     "stock",
+     [
+      "AAPL",
+      "NVDA",
+      "MSFT",
+      "TSLA",
+      "AMZN",
+      "META",
+      "GOOGL",
+      "AMD",
+      "NFLX",
+      "ORCL",
+      "CRM",
+      "INTC"
+     ]
+    ],
+    [
+     "crypto",
+     [
+      "BTC",
+      "ETH"
+     ]
+    ],
+    [
+     "stock",
+     [
+      "AAPL",
+      "NVDA",
+      "XOM",
+      "TSLA",
+      "AMZN",
+      "META",
+      "GOOGL",
+      "AMD",
+      "NFLX",
+      "ORCL",
+      "CRM",
+      "INTC"
+     ]
+    ],
+    [
+     "crypto",
+     [
+      "BTC",
+      "ETH"
+     ]
+    ]
+   ],
+   "fsLog": [
+    [
+     "subscribe",
+     "doc",
+     "ab-1",
+     3
+    ]
+   ],
+   "research": [
+    {
+     "asset": {
+      "symbol": "TSLA",
+      "name": "TSLA",
+      "price": 255,
+      "percentChange": 2.82258064516129,
+      "threshold": 4,
+      "lockedPrice": null,
+      "currentPrice": 255
+     },
+     "onClose": "function",
+     "showActionButton": false,
+     "isGameContext": true,
+     "version": 2,
+     "defaultTab": "baggerbomb",
+     "defaultTimeframe": "bomb",
+     "wsPrice": 255
+    },
+    {
+     "asset": {
+      "symbol": "TSLA",
+      "name": "TSLA",
+      "price": 255,
+      "percentChange": 2.82258064516129,
+      "threshold": 4,
+      "lockedPrice": null,
+      "currentPrice": 255
+     },
+     "onClose": "function",
+     "showActionButton": false,
+     "isGameContext": true,
+     "version": 2,
+     "defaultTab": "baggerbomb",
+     "defaultTimeframe": "bomb",
+     "wsPrice": 255
+    },
+    {
+     "asset": {
+      "symbol": "TSLA",
+      "name": "TSLA",
+      "price": 255,
+      "percentChange": 2.82258064516129,
+      "threshold": 4,
+      "lockedPrice": null,
+      "currentPrice": 255
+     },
+     "onClose": "function",
+     "showActionButton": false,
+     "isGameContext": true,
+     "version": 2,
+     "defaultTab": "baggerbomb",
+     "defaultTimeframe": "bomb",
+     "wsPrice": 255
+    }
+   ],
+   "breakdown": [
+    {
+     "asset": {
+      "symbol": "MSFT",
+      "gain": 1,
+      "threshold": 2,
+      "tierMultiplier": 1,
+      "baggerBombs": 0,
+      "busts": 0,
+      "basePoints": 10,
+      "baggerBombPoints": 0,
+      "bustPoints": 0,
+      "totalScore": 15,
+      "startingPrice": 400,
+      "currentPrice": 404
+     },
+     "entryPrice": 400
+    },
+    {
+     "asset": {
+      "symbol": "MSFT",
+      "gain": 1,
+      "threshold": 2,
+      "tierMultiplier": 1,
+      "baggerBombs": 0,
+      "busts": 0,
+      "basePoints": 10,
+      "baggerBombPoints": 0,
+      "bustPoints": 0,
+      "totalScore": 15,
+      "startingPrice": 400,
+      "currentPrice": 404
+     },
+     "entryPrice": 400
+    },
+    {
+     "asset": {
+      "symbol": "MSFT",
+      "gain": 1,
+      "threshold": 2,
+      "tierMultiplier": 1,
+      "baggerBombs": 0,
+      "busts": 0,
+      "basePoints": 10,
+      "baggerBombPoints": 0,
+      "bustPoints": 0,
+      "totalScore": 15,
+      "startingPrice": 400,
+      "currentPrice": 404
+     },
+     "entryPrice": 400
+    },
+    {
+     "asset": {
+      "symbol": "MSFT",
+      "gain": 1,
+      "threshold": 2,
+      "tierMultiplier": 1,
+      "baggerBombs": 0,
+      "busts": 0,
+      "basePoints": 10,
+      "baggerBombPoints": 0,
+      "bustPoints": 0,
+      "totalScore": 15,
+      "startingPrice": 400,
+      "currentPrice": 404
+     },
+     "entryPrice": 400
+    }
+   ],
+   "presence": []
+  },
+  "polled": {
+   "html": {
+    "sha256": "f499c3689dc9f22f13c1f073226655e0c25699c4936cad1905d469fa6903eb02",
+    "length": 77874
+   },
+   "priceCalls": [
+    [
+     "stock",
+     [
+      "AAPL",
+      "NVDA",
+      "MSFT",
+      "TSLA",
+      "AMZN",
+      "META",
+      "GOOGL",
+      "AMD",
+      "NFLX",
+      "ORCL",
+      "CRM",
+      "INTC"
+     ]
+    ],
+    [
+     "crypto",
+     [
+      "BTC",
+      "ETH"
+     ]
+    ],
+    [
+     "stock",
+     [
+      "AAPL",
+      "NVDA",
+      "MSFT",
+      "TSLA",
+      "AMZN",
+      "META",
+      "GOOGL",
+      "AMD",
+      "NFLX",
+      "ORCL",
+      "CRM",
+      "INTC"
+     ]
+    ],
+    [
+     "crypto",
+     [
+      "BTC",
+      "ETH"
+     ]
+    ],
+    [
+     "stock",
+     [
+      "AAPL",
+      "NVDA",
+      "XOM",
+      "TSLA",
+      "AMZN",
+      "META",
+      "GOOGL",
+      "AMD",
+      "NFLX",
+      "ORCL",
+      "CRM",
+      "INTC"
+     ]
+    ],
+    [
+     "crypto",
+     [
+      "BTC",
+      "ETH"
+     ]
+    ],
+    [
+     "stock",
+     [
+      "AAPL",
+      "NVDA",
+      "XOM",
+      "TSLA",
+      "AMZN",
+      "META",
+      "GOOGL",
+      "AMD",
+      "NFLX",
+      "ORCL",
+      "CRM",
+      "INTC"
+     ]
+    ],
+    [
+     "crypto",
+     [
+      "BTC",
+      "ETH"
+     ]
+    ]
+   ],
+   "fsLog": [
+    [
+     "subscribe",
+     "doc",
+     "ab-1",
+     3
+    ]
+   ],
+   "research": [
+    {
+     "asset": {
+      "symbol": "TSLA",
+      "name": "TSLA",
+      "price": 255,
+      "percentChange": 2.82258064516129,
+      "threshold": 4,
+      "lockedPrice": null,
+      "currentPrice": 255
+     },
+     "onClose": "function",
+     "showActionButton": false,
+     "isGameContext": true,
+     "version": 2,
+     "defaultTab": "baggerbomb",
+     "defaultTimeframe": "bomb",
+     "wsPrice": 255
+    },
+    {
+     "asset": {
+      "symbol": "TSLA",
+      "name": "TSLA",
+      "price": 255,
+      "percentChange": 2.82258064516129,
+      "threshold": 4,
+      "lockedPrice": null,
+      "currentPrice": 255
+     },
+     "onClose": "function",
+     "showActionButton": false,
+     "isGameContext": true,
+     "version": 2,
+     "defaultTab": "baggerbomb",
+     "defaultTimeframe": "bomb",
+     "wsPrice": 255
+    },
+    {
+     "asset": {
+      "symbol": "TSLA",
+      "name": "TSLA",
+      "price": 255,
+      "percentChange": 2.82258064516129,
+      "threshold": 4,
+      "lockedPrice": null,
+      "currentPrice": 255
+     },
+     "onClose": "function",
+     "showActionButton": false,
+     "isGameContext": true,
+     "version": 2,
+     "defaultTab": "baggerbomb",
+     "defaultTimeframe": "bomb",
+     "wsPrice": 255
+    },
+    {
+     "asset": {
+      "symbol": "TSLA",
+      "name": "TSLA",
+      "price": 255,
+      "percentChange": 2.82258064516129,
+      "threshold": 4,
+      "lockedPrice": null,
+      "currentPrice": 255
+     },
+     "onClose": "function",
+     "showActionButton": false,
+     "isGameContext": true,
+     "version": 2,
+     "defaultTab": "baggerbomb",
+     "defaultTimeframe": "bomb",
+     "wsPrice": 255
+    }
+   ],
+   "breakdown": [
+    {
+     "asset": {
+      "symbol": "MSFT",
+      "gain": 1,
+      "threshold": 2,
+      "tierMultiplier": 1,
+      "baggerBombs": 0,
+      "busts": 0,
+      "basePoints": 10,
+      "baggerBombPoints": 0,
+      "bustPoints": 0,
+      "totalScore": 15,
+      "startingPrice": 400,
+      "currentPrice": 404
+     },
+     "entryPrice": 400
+    },
+    {
+     "asset": {
+      "symbol": "MSFT",
+      "gain": 1,
+      "threshold": 2,
+      "tierMultiplier": 1,
+      "baggerBombs": 0,
+      "busts": 0,
+      "basePoints": 10,
+      "baggerBombPoints": 0,
+      "bustPoints": 0,
+      "totalScore": 15,
+      "startingPrice": 400,
+      "currentPrice": 404
+     },
+     "entryPrice": 400
+    },
+    {
+     "asset": {
+      "symbol": "MSFT",
+      "gain": 1,
+      "threshold": 2,
+      "tierMultiplier": 1,
+      "baggerBombs": 0,
+      "busts": 0,
+      "basePoints": 10,
+      "baggerBombPoints": 0,
+      "bustPoints": 0,
+      "totalScore": 15,
+      "startingPrice": 400,
+      "currentPrice": 404
+     },
+     "entryPrice": 400
+    },
+    {
+     "asset": {
+      "symbol": "MSFT",
+      "gain": 1,
+      "threshold": 2,
+      "tierMultiplier": 1,
+      "baggerBombs": 0,
+      "busts": 0,
+      "basePoints": 10,
+      "baggerBombPoints": 0,
+      "bustPoints": 0,
+      "totalScore": 15,
+      "startingPrice": 400,
+      "currentPrice": 404
+     },
+     "entryPrice": 400
+    },
+    {
+     "asset": {
+      "symbol": "MSFT",
+      "gain": 1,
+      "threshold": 2,
+      "tierMultiplier": 1,
+      "baggerBombs": 0,
+      "busts": 0,
+      "basePoints": 10,
+      "baggerBombPoints": 0,
+      "bustPoints": 0,
+      "totalScore": 15,
+      "startingPrice": 400,
+      "currentPrice": 404
+     },
+     "entryPrice": 400
+    }
+   ],
+   "presence": []
+  }
  },
  "tabbedActive": {
   "breakdown": [],
@@ -3294,5 +3906,344 @@ describe('§7.2 item 4 — the controlled extremes are TODAY\'s only', () => {
     await mountGated();
     await click(symbolEl('AAPL', 'player'));
     expect(lastResearch().controlledQuote).toEqual({ posKey: 'player:star:0', symbol: 'AAPL', price: 153, extremes: null });
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Refuter D (cumulative review; findings F7, F8, F10, F11, F16 of the
+// test-integrity lens) — rows the spec's acceptance text names and the suite
+// above does not run. Each block is labeled by the finding it answers. A row
+// marked PARITY is a spec-literal variant that no expressible defect on the
+// current tree distinguishes from a row above (recorded as such in
+// REFUTATION.md); the others fail under the mutation named beside them.
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ── F7: ON-F2a "Real held symbol click on EACH SIDE while missing, fallback,
+//        unknown or stale". The CPU side's matrix, and the CPU STALE click —
+//        the one CPU state the rows above never click (a retained tuple with
+//        no current). Fails under F7_cpuStaleDetails (REFUTATION.md).
+describe('ON-F2a (F7) — the CPU side: every unqualified state, including STALE', () => {
+  const CPU_UNQUALIFIED = {
+    missing: (t) => without(t, 'GOOGL'),
+    'configured fallback': (t) => ({ ...t, GOOGL: STOCK_FALLBACK('GOOGL') }),
+    'unknown origin': (t) => ({ ...t, GOOGL: { ...t.GOOGL, quoteOrigin: undefined } }),
+    'previous-close substitution': (t) => ({ ...t, GOOGL: { ...t.GOOGL, price: 160, quoteOrigin: { version: 1, price: 'provider-previous-close', previousClose: 'provider-previous-close' } } }),
+    'websocket-written cache record': (t) => ({ ...t, GOOGL: { ...t.GOOGL, price: 999, source: 'websocket' } }),
+  };
+  for (const [name, mutate] of Object.entries(CPU_UNQUALIFIED)) {
+    it(`${name} (CPU): no priced modal, no builder call, no request — the notice, with the CPU entry still labeled "Entry"`, async () => {
+      priceBox.table = mutate(genuineTable());
+      await mountGated();
+      const calls = priceBox.calls.length;
+      const before = seen.research.length;
+      await click(symbolEl('GOOGL', 'cpu'));
+      expect(modalOpen()).toBeNull();
+      expect(seen.research.length).toBe(before);
+      expect(notice()).toEqual({ symbol: 'GOOGL', text: expect.stringContaining('Quote unavailable — price details unavailable') });
+      expect(notice().text).toContain('Entry $160.00');
+      expect(priceBox.calls.length).toBe(calls);
+      expect(rowStatus('GOOGL')).toEqual(['Quote unavailable']);
+    });
+  }
+
+  it('stale (CPU): a good quote, then a failed poll — the CPU row reads the plain status and its click opens NO priced view; the retained tuple is never a detail', async () => {
+    priceBox.table = genuineTable();
+    await mountGated();
+    expect(await openedPrice('GOOGL', 'cpu')).toBe(162); // healthy first: the CPU click works
+    priceBox.mode = 'throw';
+    await poll();
+    expect(rowStatus('GOOGL')).toEqual(['Quote unavailable']); // D-85: no dollars on the CPU side
+    const calls = priceBox.calls.length;
+    const before = seen.research.length;
+    await click(symbolEl('GOOGL', 'cpu'));
+    expect(modalOpen()).toBeNull();
+    expect(seen.research.length).toBe(before);
+    expect(notice()).toEqual({ symbol: 'GOOGL', text: expect.stringContaining('Entry $160.00') });
+    expect(priceBox.calls.length).toBe(calls);
+  });
+});
+
+// ── F8: ON-F2b "Repeat across battle A→B with the same symbol, a same-symbol
+//        swap at an identical price, and leaving/re-entering a position, ON
+//        BOTH SIDES" — each scenario on the side the rows above do not run it
+//        on. The CPU re-entry row fails under F8_cpuLineageNoSwapId; the CPU
+//        lifecycle row fails under F7_cpuStaleDetails (REFUTATION.md).
+describe('ON-F2b (F8) — the same lifecycle on the OTHER side of each scenario', () => {
+  it('CPU: a same-position quote updates in place; a failure closes before any stale render; recovery does not reopen; a click uses the recovered value', async () => {
+    priceBox.table = genuineTable();
+    await mountGated();
+    await click(symbolEl('GOOGL', 'cpu'));
+    expect(modalOpen()).toBe('GOOGL');
+    expect(lastResearch().controlledQuote.posKey).toBe('cpu:star:0');
+    expect(seen.researchMounts).toBe(1);
+    priceBox.table = { ...genuineTable(), GOOGL: quote('GOOGL', { price: 163 }) };
+    await poll();
+    expect(lastResearch().asset.price).toBe(163);
+    expect(lastResearch().controlledQuote.price).toBe(163);
+    expect(seen.researchMounts).toBe(1); // updated, not remounted
+    const rendersBeforeFailure = seen.research.length;
+    priceBox.table = without(genuineTable(), 'GOOGL');
+    await poll();
+    expect(modalOpen()).toBeNull();
+    expect(seen.research.length).toBe(rendersBeforeFailure); // never rendered with stale dollars
+    priceBox.table = { ...genuineTable(), GOOGL: quote('GOOGL', { price: 164 }) };
+    await poll();
+    expect(modalOpen()).toBeNull(); // recovery does not auto-reopen
+    await click(symbolEl('GOOGL', 'cpu'));
+    expect(lastResearch().controlledQuote.price).toBe(164);
+  });
+
+  it('CPU: battle A→B with the same symbol closes the view, and B never reopens it', async () => {
+    priceBox.table = genuineTable();
+    await mountGated();
+    await click(symbolEl('GOOGL', 'cpu'));
+    expect(modalOpen()).toBe('GOOGL');
+    await mount({ ...openingProp(), agentBattleId: 'ab-2' });
+    expect(modalOpen()).toBeNull();
+    expect(shell()).toBe('pending');
+    await deliverDoc('ab-2', ACTIVE_DOC);
+    expect(modalOpen()).toBeNull();
+  });
+
+  it('CPU: a same-symbol re-entry at an IDENTICAL price (swap identity only) is a NEW position generation — the open view closes, the evidence restarts empty, the poll restarts', async () => {
+    priceBox.table = genuineTable();
+    await mountGated();
+    await click(symbolEl('GOOGL', 'cpu'));
+    expect(lastResearch().controlledQuote.posKey).toBe('cpu:star:0');
+    const calls = priceBox.calls.length;
+    priceBox.mode = 'defer';
+    // The CPU snapshot transition: the same symbol in the same slot at the same
+    // price, carrying swap identity (§3.2: "the same lifecycle rule to CPU
+    // snapshot transitions"). scoreState.tradeCount is the PLAYER's and does
+    // not move, so the slot's own lineage is the only evidence.
+    const reentered = { ...CPU_PORTFOLIO, star: [{ symbol: 'GOOGL', price: 160, swapPrice: 160, swappedInAt: '2026-10-01T16:30:00.000Z', swappedInDay: 1 }, CPU_PORTFOLIO.star[1]] };
+    await deliverDoc('ab-1', { ...ACTIVE_DOC, opponent: { odUserId: 'cpu', portfolio: reentered } });
+    expect(modalOpen()).toBeNull();                 // identity-bound detail closed
+    expect(unavailableRows()).toContain('GOOGL');   // no inherited observation
+    expect(priceBox.calls.length).toBe(calls + 2);  // the poll restarted for the new lineage (stock + crypto)
+    await settle();
+    expect(unavailableRows()).toEqual([]);
+    await click(symbolEl('GOOGL', 'cpu'));
+    expect(lastResearch().controlledQuote).toMatchObject({ posKey: 'cpu:star:0', price: 162 });
+    expect(lastResearch().asset.lockedPrice).toBe(160); // the identical entry, still the entry
+  });
+
+  it('player: leaving and re-entering a position closes the view on leaving and keeps it closed on re-entry', async () => {
+    priceBox.table = { ...genuineTable(), SHOP: quote('AAPL', { price: 71, previousClose: 70 }) };
+    await mountGated();
+    await click(symbolEl('AAPL', 'player'));
+    expect(modalOpen()).toBe('AAPL');
+    const aaplGone = { ...PLAYER_PORTFOLIO, star: [{ symbol: 'SHOP', price: 70 }, PLAYER_PORTFOLIO.star[1]], startingPrices: { ...PLAYER_PORTFOLIO.startingPrices, SHOP: 70 } };
+    await deliverDoc('ab-1', { ...ACTIVE_DOC, portfolio: aaplGone });
+    expect(modalOpen()).toBeNull();
+    await deliverDoc('ab-1', ACTIVE_DOC);
+    expect(modalOpen()).toBeNull();
+    await click(symbolEl('AAPL', 'player'));
+    expect(lastResearch().controlledQuote.posKey).toBe('player:star:0');
+  });
+});
+
+// ── F10: ON-F3a "Stocks AND crypto … Assert row, badges, totals, the
+//        last-quote tuple and no extra requests". (a) Crypto at the screen, on
+//        both sides — PARITY: after the two batch halves merge, the screen's
+//        ordering path is market-agnostic, and the batch suite parameterizes
+//        both markets through the real gate. (b) The stock case on a DAY-2
+//        fixture, where the retained previousClose is load-bearing for the
+//        badge and the total: fails under F10_importRejectedClose (which the
+//        gate and batch suites also catch — REFUTATION.md).
+describe('ON-F3a (F10, parity) — crypto at the screen, on both sides', () => {
+  const CRYPTO_CASES = [
+    { name: 'R1 strictly older (both timed) → R2 kept', r1Ts: OLDER, keepR2: true, asOf: 'Oct 1, 12:50 PM EDT' },
+    { name: 'R1 newer → R1 adopted', r1Ts: NEWER, keepR2: false, asOf: 'Oct 1, 12:55 PM EDT' },
+    { name: 'equal times → R1 adopted (latest arrival)', r1Ts: T2, keepR2: false, asOf: 'Oct 1, 12:50 PM EDT' },
+    { name: 'R1 untimed → adopted with no time', r1Ts: undefined, keepR2: false, asOf: null },
+  ];
+  const SYMBOLS = [
+    { sym: 'BTC', side: 'player', r2: 62000, r1: 61500, label: { r2: '$62,000.00', r1: '$61,500.00' } },
+    { sym: 'ETH', side: 'cpu', r2: 2600, r1: 2550 },
+  ];
+  for (const s of SYMBOLS) {
+    for (const c of CRYPTO_CASES) {
+      it(`${s.sym} (${s.side}): ${c.name}`, async () => {
+        priceBox.mode = 'defer';
+        priceBox.table = genuineTable();
+        await mountGated();
+        await poll(); // R2 issued
+        expect(priceBox.pending.map((p) => p.kind)).toEqual(['stock', 'crypto', 'stock', 'crypto']);
+        await resolvePending(2);
+        await resolvePending(3, { [s.sym]: quote(s.sym, { price: s.r2, previousClose: PREV[s.sym], timestamp: T2 }) });
+        expect(await openedPrice(s.sym, s.side)).toBe(s.r2);
+        await resolvePending(1, { [s.sym]: quote(s.sym, { price: s.r1, previousClose: PREV[s.sym] - 100, timestamp: c.r1Ts }) });
+        await resolvePending(0);
+        const expectPrice = c.keepR2 ? s.r2 : s.r1;
+        expect(await openedPrice(s.sym, s.side)).toBe(expectPrice);
+        expect(priceBox.calls.length).toBe(4); // mount + one poll: nothing more
+        priceBox.mode = 'throw';
+        await poll();
+        // The retained tuple: dated on the player's side only (D-85); the CPU side shows the plain status.
+        const dated = s.side === 'player' && c.asOf ? `Last quote ${c.keepR2 ? s.label.r2 : s.label.r1} · as of ${c.asOf}` : 'Quote unavailable';
+        expect(rowStatus(s.sym)).toEqual([dated]);
+      });
+    }
+  }
+});
+
+describe('ON-F3a (F10) — badges, totals, the row and the tuple at the screen, on a DAY-2 fixture', () => {
+  // Day two, AAPL entered at 100 (Star, ATR 2.5), no history, no banked points:
+  // the threshold baseline is the retained GENUINE close, so a wrongly
+  // imported close moves the badge and the total (ON-DAY2's 75 is 60 + 15).
+  const DAY2 = {
+    ...ACTIVE_DOC,
+    activatedAt: '2026-09-30T13:30:00.000Z',
+    timing: { ...ACTIVE_DOC.timing, currentTradingDay: 2 },
+    thresholdHistory: {},
+    trades: [],
+    scoreState: { currentScore: 0, opponentScore: 0, lastScoredAt: null, tradeCount: 0 },
+    portfolio: { ...PLAYER_PORTFOLIO, star: [{ symbol: 'AAPL', price: 100 }, PLAYER_PORTFOLIO.star[1]], startingPrices: { ...PLAYER_PORTFOLIO.startingPrices, AAPL: 100 } },
+    scoring: { thresholds: { ...ACTIVE_DOC.scoring.thresholds, AAPL: { threshold: 2.5 } } },
+  };
+  async function breakdownOf(symbol, side) {
+    await click(pointsEl(symbol, side));
+    const b = seen.breakdown[seen.breakdown.length - 1];
+    return { total: b.asset.totalScore, baggers: b.asset.baggerBombs, busts: b.asset.busts, currentPrice: b.asset.currentPrice };
+  }
+  const rowPrice = (symbol) => container.querySelector(`[data-row-price="${symbol}"]`)?.textContent ?? null;
+  // R2: 103 with a genuine close of 100 (3% → ×1.2 → Bagger: 60 + 15 = 75).
+  // R1: 101 with a genuine close of 101.5 (if adopted: 1% → 20, no badge; if
+  // only its close were imported: baseline 101.5 → ×0.59 → 60, no badge).
+  const CASES = [
+    { name: 'R1 strictly older → R2 kept WHOLE: price, close, badge and total unchanged', r1Ts: OLDER, expect: { total: 75, baggers: 1, busts: 0, currentPrice: 103 }, prose: 'You lead by 75', price: '$103.00', asOf: 'Oct 1, 12:50 PM EDT' },
+    { name: 'R1 newer → R1 adopted WHOLE: price, close, no badge, total', r1Ts: NEWER, expect: { total: 20, baggers: 0, busts: 0, currentPrice: 101 }, prose: 'You lead by 20', price: '$101.00', asOf: 'Oct 1, 12:55 PM EDT' },
+    { name: 'equal times → R1 adopted (latest arrival) with its own close', r1Ts: T2, expect: { total: 20, baggers: 0, busts: 0, currentPrice: 101 }, prose: 'You lead by 20', price: '$101.00', asOf: 'Oct 1, 12:50 PM EDT' },
+  ];
+  // The TOTAL is read from the comparison prose (one derivation from the
+  // selected pair, C-1 item 4): the counter digits ramp between two consecutive
+  // same-kind (browser→browser) pairs by design (A-2), so they are not the
+  // place to read a changed total synchronously.
+  const prose = () => container.querySelector('[data-comparison-prose]')?.textContent ?? null;
+  for (const c of CASES) {
+    it(c.name, async () => {
+      priceBox.mode = 'defer';
+      priceBox.table = flatTable(); // every other position flat: the player total is AAPL's points alone
+      await mountGated(openingProp(), DAY2);
+      await poll(); // R2 issued
+      await resolvePending(2, { AAPL: quote('AAPL', { price: 103, previousClose: 100, timestamp: T2 }) });
+      await resolvePending(3);
+      expect(await breakdownOf('AAPL', 'player')).toEqual({ total: 75, baggers: 1, busts: 0, currentPrice: 103 });
+      expect(counters()).toEqual(['+75', '+0']); // the first browser pair enters on a switch: instant
+      expect(prose()).toBe('You lead by 75');
+      expect(rowPrice('AAPL')).toBe('$103.00');
+      await resolvePending(1);
+      await resolvePending(0, { AAPL: quote('AAPL', { price: 101, previousClose: 101.5, timestamp: c.r1Ts }) });
+      expect(await breakdownOf('AAPL', 'player')).toEqual(c.expect);
+      expect(label().kind).toBe('browser');
+      expect(prose()).toBe(c.prose);
+      expect(rowPrice('AAPL')).toBe(c.price);
+      expect(priceBox.calls.length).toBe(4); // no extra requests
+      priceBox.mode = 'throw';
+      await poll();
+      expect(rowStatus('AAPL')).toEqual([`Last quote ${c.price} · as of ${c.asOf}`]);
+      expect(counters()).toEqual([]); // the comparison is unavailable now (no stored pair)
+    });
+  }
+});
+
+// ── F11: ON-ROW "closed-trade points are kept with NO DOUBLE COUNT" and
+//        ON-VALID "the established browser arithmetic" — the gated browser
+//        TOTAL with banked points, which no row above pins (every switch
+//        fixture above uses NEW_DOC, whose `trades` is empty). Fails under
+//        F11b_doubleBanked (REFUTATION.md).
+describe('ON-ROW / ON-VALID (F11) — closed-trade points enter the gated browser total exactly once', () => {
+  it('flat quotes, one closed trade of 7 points: the player total IS the banked sum, the swapped-in row carries none of it, the CPU total is 0', async () => {
+    priceBox.table = flatTable();
+    await mountGated(openingProp(), { ...ACTIVE_DOC, thresholdHistory: {}, trades: [{ symbolOut: 'XOM', symbolIn: 'TSLA', lockedPoints: 7, executedAt: '2026-10-01T15:00:00.000Z' }] });
+    expect(label().kind).toBe('browser');
+    expect(counters()).toEqual(['+7', '+0']);
+    expect(container.querySelector('[data-comparison-prose]').textContent).toBe('You lead by 7');
+    await click(pointsEl('TSLA', 'player'));
+    expect(seen.breakdown[seen.breakdown.length - 1].asset.totalScore).toBe(0);
+  });
+
+  it('moving quotes: the total equals Σ(row points) + banked 7.5, from the SAME breakdown totals the rows show', async () => {
+    priceBox.table = genuineTable();
+    await mountGated(); // ACTIVE_DOC: one closed trade, 7.5 locked
+    let sum = 0;
+    for (const tier of ['star', 'core', 'support']) {
+      for (const a of PLAYER_PORTFOLIO[tier]) {
+        await click(pointsEl(a.symbol, 'player'));
+        sum += seen.breakdown[seen.breakdown.length - 1].asset.totalScore;
+      }
+    }
+    const expected = Math.round(sum + 7.5); // the shipped formula, in the shipped summation order
+    expect(sum).toBeGreaterThan(0); // the fixture moves: not the banked sum alone
+    expect(counters()[0]).toBe(`+${expected}`);
+  });
+});
+
+// ── F16: ON-F4a "Layouts and controller states agree" — the legacy-header
+//        (controller on, pane off) layout. PARITY: the rows are ONE `boardRows`
+//        element rendered by both controller-on layouts (AgentBattleScreen.jsx
+//        :2414, :3060, :3217), so no pane-off-only holdings defect is expressible.
+describe('ON-F4a (F16, parity) — the legacy-header (pane-off) layout agrees', () => {
+  const OLD = { ...PLAYER_PORTFOLIO, core: [{ symbol: 'MSFT', price: 400 }, { symbol: 'XOM', price: 110 }] };
+  it('legacy header (controller, pane off): only NEW drives holdings, requests and enrichment; later player and CPU changes follow the snapshot', async () => {
+    Object.assign(flags, { controller: true, pane: false });
+    priceBox.table = { ...genuineTable(), XOM: quote('AAPL', { price: 112, previousClose: 111 }), SHOP: quote('AAPL', { price: 71, previousClose: 70 }), CRWD: quote('AAPL', { price: 300, previousClose: 298 }) };
+    await mountGated(openingProp({ portfolio: OLD }));
+    expect(priceBox.calls[0][1]).toContain('TSLA');
+    expect(priceBox.calls.flatMap((c) => c[1])).not.toContain('XOM');
+    expect(html()).not.toContain('>XOM<');
+    expect(shownSymbols('player')).toContain('TSLA');
+    await deliverDoc('ab-1', { ...ACTIVE_DOC, portfolio: { ...PLAYER_PORTFOLIO, star: [{ symbol: 'SHOP', price: 70 }, PLAYER_PORTFOLIO.star[1]], startingPrices: { ...PLAYER_PORTFOLIO.startingPrices, SHOP: 70 } } });
+    expect(shownSymbols('player')[0]).toBe('SHOP');
+    expect(priceBox.calls.at(-2)[1]).toContain('SHOP');
+    await deliverDoc('ab-1', { ...ACTIVE_DOC, opponent: { odUserId: 'cpu', portfolio: { ...CPU_PORTFOLIO, star: [{ symbol: 'CRWD', price: 300 }, CPU_PORTFOLIO.star[1]] } } });
+    expect(shownSymbols('cpu')[0]).toBe('CRWD');
+    expect(priceBox.calls.at(-2)[1]).toContain('CRWD');
+    expect(label().kind).toBe('browser'); // the legacy header consumes the same completeness
+  });
+});
+
+// ── F15: OFF-5 "swaps" — a swap DELIVERED MID-SESSION with the flag off, with
+//        the breakdown and the legacy research view open; then a poll. The
+//        OFF rows above hold a statically swapped-in position only. Its
+//        reference (`swapTransition`) is in the generated block above, captured
+//        at the pre-build SHA like the others.
+describe('OFF-5 (F15) — a mid-session swap, flag off', () => {
+  // The legacy header's counters ramp on animation frames, which this harness
+  // does not fake (Date and setInterval only): whether a frame has fired by
+  // record() time differs between a filtered and a full-file run (observed: 3
+  // bytes of markup, REFUTATION.md F15). The counter is pinned frame by frame
+  // by OFF-AS; this row pins the SWAP path, so frames are held for its duration
+  // and the digits rest at their mount text in every run and on both trees.
+  it('OFF swapTransition: breakdown and research open across a swap; the poll restarts for the incoming symbol; a later poll', async () => {
+    const realRaf = window.requestAnimationFrame;
+    const realCaf = window.cancelAnimationFrame;
+    window.requestAnimationFrame = () => 0;
+    window.cancelAnimationFrame = () => {};
+    try {
+    priceBox.table = { ...genuineTable(), XOM: quote('AAPL', { price: 112, previousClose: 111 }) };
+    await mount(openingProp());
+    await deliverDoc('ab-1', ACTIVE_DOC);
+    await click(pointsEl('MSFT', 'player'));
+    await click(symbolEl('TSLA', 'player'));
+    const before = record();
+    // The swap writer's shape (agentSwapExecution.js): the incoming position
+    // carries swapPrice / swappedInAt / swappedInDay and no price; tradeCount
+    // increments; the closed trade records its locked points.
+    const swapped = {
+      ...ACTIVE_DOC,
+      portfolio: { ...PLAYER_PORTFOLIO, core: [{ symbol: 'XOM', swapPrice: 112, swappedInAt: '2026-10-01T16:40:00.000Z', swappedInDay: 1 }, PLAYER_PORTFOLIO.core[1]] },
+      scoreState: { ...ACTIVE_DOC.scoreState, tradeCount: 2 },
+      trades: [...ACTIVE_DOC.trades, { symbolOut: 'MSFT', symbolIn: 'XOM', lockedPoints: 3, executedAt: '2026-10-01T16:40:00.000Z' }],
+    };
+    await deliverDoc('ab-1', swapped);
+    const afterSwap = record();
+    await poll();
+    offReference('swapTransition', { before, afterSwap, polled: record() }, OFF.swapTransition);
+    } finally {
+      window.requestAnimationFrame = realRaf;
+      window.cancelAnimationFrame = realCaf;
+    }
   });
 });

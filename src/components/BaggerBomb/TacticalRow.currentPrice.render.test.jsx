@@ -315,3 +315,39 @@ describe('ON-ROW — an unavailable side withholds every current-derived channel
     expect(html).not.toMatch(/>\+0</);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Refuter D (cumulative review, F11 hardening — a NIT): ON-ROW names the
+// channels one by one ("proximity, heat, fuse, crossings, points"). The rows
+// above catch a re-enabled channel incidentally (the fuse's segment widths and
+// the radiance's height carry a `%`, which `not.toContain('%')` trips on; see
+// REFUTATION.md, mutation F11a_fuseInUnavailable). This row pins each channel
+// by a marker of its own, so the guard no longer depends on that accident.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('ON-ROW (refuter D, F11 hardening) — each withheld channel is absent by its OWN marker', () => {
+  it('fuse, fuse segments, radiance, proximity, percent, price and points: present on a usable side, absent on an unavailable one', () => {
+    const levels = { baggerBomb: 275, bust: 250 };
+    const usable = row({ leftAsset: { ...PLAYER, dailyLevels: levels }, rightAsset: null, showCurrentPrice: true });
+    const held = row({ leftAsset: UNAVAILABLE('NVDA'), rightAsset: null, showCurrentPrice: true });
+    const MARKERS = {
+      fuse: 'user-select:none',                 // ChamberFuse's track container
+      fuseSegments: 'box-shadow 0.3s ease-out', // every FuseSegment's transition
+      radiance: 'radial-gradient',              // the leading-edge glow
+      proximity: 'to Bagger',                   // ProximityLabel's text
+      percent: '▲',                             // the % change arrow
+      price: 'data-row-price',                  // the D-85 current price
+      points: '>+24</span>',                    // DataStrike's points
+    };
+    for (const [channel, marker] of Object.entries(MARKERS)) {
+      expect(usable, `${channel}: present on a usable side`).toContain(marker);
+      expect(held, `${channel}: absent on an unavailable side`).not.toContain(marker);
+    }
+    // The CPU side withholds the same channels (the price never shows there anyway).
+    const cpuHeld = row({ leftAsset: PLAYER, rightAsset: UNAVAILABLE('AMD'), showCurrentPrice: true });
+    const right = cpuHeld.slice(cpuHeld.indexOf('data-quote-unavailable="AMD"'));
+    for (const [channel, marker] of Object.entries(MARKERS)) {
+      expect(right, `${channel}: absent on an unavailable CPU side`).not.toContain(marker);
+    }
+  });
+});
