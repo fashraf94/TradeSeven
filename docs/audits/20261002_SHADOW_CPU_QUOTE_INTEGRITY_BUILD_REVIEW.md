@@ -7,7 +7,22 @@
 **Final SHA:** recorded in the PR (this file is part of the commit it would have to name).
 **Flag:** `SHADOW_CPU_QUOTE_INTEGRITY_ENABLED = false` — default-off, pinned, `DARK_BY_DESIGN`, no URL / environment / localStorage override.
 
-<!-- REVIEW-VERDICT -->
+## Verdict
+
+**The dark build is complete and reviewable; the flag stays `false`.** Merge and activation are separate founder decisions.
+
+| Item | Result |
+|---|---|
+| Contract coverage | Every accepted v1.6 requirement in the authorized scope is implemented: value-specific provenance, the identified context, C-2 lookup evidence with C-4's cache confirmation, one selected comparison through all four consumers, research containment with the no-body scaffold, and flag-off parity. |
+| Flag | `SHADOW_CPU_QUOTE_INTEGRITY_ENABLED = false`, pinned, `DARK_BY_DESIGN`, no URL / environment / localStorage override; other rollout flags untouched. |
+| Flag-off parity | Pinned by **160 OFF references** captured at the base SHA (every reference added during the review independently re-captured: identical). With the flag off every consumer takes the shipped path. The one flag-independent change is the additive provenance metadata the contract requires in both states (`quoteOrigin` on proxy records, `isFallback` on the stock fallback; §4.1) — numbers, requests and caching unchanged; every other flag-off change is a value-preserving relocation pinned by those references. |
+| Tests | Full suite on the final tree: **17,041 tests — 16,977 passed, 0 failed, 64 skipped** (the same 64 as the base). Every one of the base SHA's 16,428 tests is present with an **unchanged status**; the build adds 613. The build's 19 suites: **804 tests, all passing** — including both theme guards in full. |
+| `vite build` | Passes. |
+| Cumulative adversarial review | Five independent lenses, five refuters and a delta review of the fixes (BUILD_RULES §2). **3 major and 10 minor findings CONFIRMED and fixed** — one major was a regression of the fix round itself, caught by the delta review — each with rows proven red before the fix and green after. 3 findings REFUTED outright; parts of three others refuted or downgraded, each with its reason. **No confirmed finding is open.** |
+| Mutation evidence | **99 / 99** non-equivalent mutants killed on the final tree (103 in the catalogue: every §8.3 obligation plus the review's own); 3 recorded equivalents and 1 behaviour-preserving control survive as expected; every mutated file restored (sha256 manifest diff: 0 lines). |
+| Browser | The no-body scaffold and the ArenaHeader bar's committed width were verified in Chromium against the real libraries. Everything else that needs a browser, the provider or the Firestore transport is a **pre-activation check** (§9). |
+| Scope | 38 implementation/support files + this record = 39. The four theme-guard files were added by the founder's decision of 2026-10-02 (§2). Nothing else outside the approved scope was touched; no fenced file (BUILD_RULES §1) was edited. |
+| Deviations | Two contract descriptions narrowed to keep the contract's own flag-off rules (C-2 / B-6: lookup evidence only behind the gated screen's opt-in), and one hardening adopted from the review (no WebSocket subscription on the gated path) — §9. |
 
 ---
 
@@ -53,7 +68,7 @@ Every anchor the contract cites was re-read at `44d0c63e` before any edit (VERIF
 | 35–36 | `src/theme/motion.guard.test.js`, `src/theme/tokens.guard.test.js` | approved expansion — file 12 appended to both `GUARDED_FILES` lists; no guard logic, coverage, exemption or allowance changed |
 | 37–38 | `src/theme/motionGuardBaseline.json`, `src/theme/tokenGuardBaseline.json` | approved expansion — file 12's zero-violation entries in the existing schemas: motion `count: 0` with an authority note; token `{}` |
 
-**Cumulative diff vs base:** 20 tracked files +2,594 / −310; 14 new files, 14,530 lines (much of it the inlined base-SHA references). Review threshold (≥10 files, ≥1,500 lines) met on both counts.
+**Cumulative diff vs base (final tree):** 39 files — 24 modified (+2,798 / −365) and 15 new (16,606 lines, this record included; much of it the inlined base-SHA references). The review threshold (≥10 files or ≥1,500 lines) is met on both counts.
 
 **Scope note — the theme guards (files 35–38).** Adding file 12 under `src/screens/battleView/` tripped the "every file in src/screens/battleView/ is on this list (hazard 34)" row of both theme guards. The fix needed four files outside the approved 34, so nothing was written there until the founder decided. Founder decision, 2026-10-02: approved, solely to register the helper — append it to both guarded lists, add zero-violation baseline entries in the existing schemas, keep the registration in the same commit as the helper, change nothing else, and fix the helper rather than grant an allowance if it had a genuine violation. It had none: the helper contains no `transition={{` opener and no hex literal at all.
 
@@ -64,7 +79,25 @@ Every anchor the contract cites was re-read at `44d0c63e` before any edit (VERIF
 
 ## 3. What was built
 
-<!-- IMPLEMENTATION -->
+Everything below is reached only through `isShadowCpuQuoteIntegrityOn()` (`src/config/featureFlags.js:2948`), a plain read of `SHADOW_CPU_QUOTE_INTEGRITY_ENABLED = false` (`src/config/featureFlags.js:2945`), or through an optional input that only the gated screen passes. With the flag off, every consumer takes the shipped path. Line numbers are at the final commit.
+
+**Flag (§3.1, A-9).** Constant, accessor, `// Pinned by:` pointer and default-off prose appended after the previous end of file. `DARK_BY_DESIGN` entry with its runway note (`src/config/flagPinGuard.test.js:188`). No URL, environment or localStorage override; the pin suite asserts the accessor is a pure constant read.
+
+**Provenance (§4.1–4.2, R-3, R-12).** Both proxies add `quoteOrigin: { version: 1, price, previousClose }` inside the existing record, mirroring the unchanged `close || previousClose || 0` truthiness term for term (`api/stocks/prices.js:24`, `api/crypto/prices.js:14`). The batch service copies the origin exactly and adds nothing when it is absent (`src/services/eodhdAPI.js:117`); stock fallbacks gain `isFallback: true` and `configured-fallback` origins (`src/services/eodhdAPI.js:124`); numbers, cache keys, TTLs and requests are unchanged in both flag states.
+
+**Gated interpretation (file 12, pure).** `readQuoteOrigins` (`src/screens/battleView/shadowCpuQuoteIntegrity.js:93`): `unproven` for missing, malformed or unknown origins; `isFallback` contradicts a genuine claim; `source === 'websocket'` makes the current unknown (R-3). `readMarketTime` (`src/screens/battleView/shadowCpuQuoteIntegrity.js:121`): Unix seconds → ms explicitly; a future time fails as a time only (A-7/V-9). `interpretQuote` (`src/screens/battleView/shadowCpuQuoteIntegrity.js:141`): a usable current needs `provider-close` and a finite positive value; the market time is read only for a qualified current; previousClose qualifies independently. `adoptQuote` (`src/screens/battleView/shadowCpuQuoteIntegrity.js:218`): §4.3 Option 1 — a strictly older (both timed) arrival is rejected whole; equal, absent or unattached times adopt the arrival with its own time; A-8 keeps a genuine previousClose independently.
+
+**Identity and lifecycle (§3.1, §3.2, C-2, B-4/B-5, C-4, A-4).**
+- `useAgentBattleId` (`src/hooks/useAgentBattleId.js:39`): without options it is the shipped hook exactly — return shape, render passes, commits and the three-argument listener call. With the gated screen's `{ confirmCache: true }` (flag on, query path only) it adds one `lookup` object per generation (agent, generation, status, battle ID, `fromCache`, error identity, all from the CURRENT agent's lookup or else `pending`), stamps no-auth as an error (B-4), treats an empty result from cache as unconfirmed (B-5), and asks the existing listener for metadata events so an unconfirmed empty can recover (C-4); a confirmed empty is sticky for its generation. The generation advances when the agent changes while opted in and whenever the opt-in flips, so the direct-ID route (called with `null` and no opt-in) retires it (review delta D-1).
+- `useAgentBattle` (`src/hooks/useAgentBattle.js:28`): with `{ integrity: true }` it adds one atomic envelope `{ requestedId, snapshotId, status, data, error }` (`src/hooks/useAgentBattle.js:120`); retired subscription callbacks are dropped; legacy fields unchanged.
+- The screen resolves one requested ID (`src/screens/AgentBattleScreen.jsx:1051`) and one gate (`src/screens/AgentBattleScreen.jsx:1059`; `src/screens/battleView/shadowCpuQuoteIntegrity.js:315`): pending, "No active battle", "Battle unavailable" (carrying the current error's code as `data-battle-error`), excluded → the shipped path, admitted → the gated path. The [A-4] exclusion memory ends when another ID is requested, and an excluded battle's lookup error follows legacy (the legacy-retained ID is kept). Terminal states render `GatedShell` (`src/screens/AgentBattleScreen.jsx:363`), whose pending state reuses the shipped loading indicator verbatim (`src/screens/AgentBattleScreen.jsx:339`).
+- Admitted: one identified context per matching snapshot (`src/screens/battleView/shadowCpuQuoteIntegrity.js:404`), lineage reconciliation with conservative invalidation (`src/screens/battleView/shadowCpuQuoteIntegrity.js:454`), position tokens (`src/screens/battleView/shadowCpuQuoteIntegrity.js:496`) and identity-checked arrivals (`src/screens/battleView/shadowCpuQuoteIntegrity.js:509`).
+
+**Quotes and scoring (§4.3, §6).** The gated poll (`src/screens/AgentBattleScreen.jsx:1315`) issues the same two batch calls at the same cadence, only for the identified held positions; each kind's result stands alone (`Promise.allSettled`, §4.3 rule 2); a failure leaves positions stale or unavailable, never entry or a fallback. Gated enrichment (`src/screens/AgentBattleScreen.jsx:1146`) scores a position through the shared `enrichHeldPosition` (`src/screens/AgentBattleScreen.jsx:181`) only from `q.accepted.price` and `q.genuineClose`; unavailable rows carry `quoteAvailability` and no current-derived field, and `TacticalRow` branches before any formatting (`src/components/BaggerBomb/TacticalRow.jsx:257`). The gated path subscribes no WebSocket symbols (`src/screens/AgentBattleScreen.jsx:1260`).
+
+**One selected comparison (§5, C-1, B-1, B-3+, P8, P9).** `selectComparison` (`src/screens/battleView/shadowCpuQuoteIntegrity.js:656`) picks the browser pair (complete, finite), the qualified stored pair (`src/screens/battleView/shadowCpuQuoteIntegrity.js:547`) with its actual stored date, time and zone, a stored final, or "unavailable"; it computes the three-way lead (a tie emphasizes neither side), the two-branch bar width (`src/screens/battleView/shadowCpuQuoteIntegrity.js:568`) and the margin prose from the displayed hundredths (`src/screens/battleView/shadowCpuQuoteIntegrity.js:595`). The screen selects it once (`src/screens/AgentBattleScreen.jsx:1537`) and hands the same object to all four consumers: `ArenaHeader` (`src/screens/battleView/ArenaHeader.jsx:135`), the legacy `ScoreHeader` (`src/screens/AgentBattleScreen.jsx:571`), `CharacterAvatar` (`src/screens/battleView/CharacterAvatar.jsx:267`) and `CharacterPane` (`src/screens/battleView/CharacterPane.jsx:301`). Each branches on it before any `??` / `|| 0` default. A switch remounts the counters (`SwitchCounter`, `src/screens/battleView/ArenaHeader.jsx:112` — `AnimatedScore`'s new `instant` and `fractionDigits`, `src/components/shared/AnimatedScore.jsx:26`) and the bar's teal half with `initial={false}` (`src/screens/battleView/ArenaHeader.jsx:374`), so the switching commit carries the selected digits, label, tint and width. The ArenaHeader's label and seam share one child slot, as the base's seam did, so the flag-off markup (and its SSR `useId`s) is byte-identical.
+
+**Held research containment (§7.2, E-1, B-7–B-10).** A held click opens research only for a usable position of the current context (`src/screens/AgentBattleScreen.jsx:2335`), passing `controlledQuote` (`src/screens/AgentBattleScreen.jsx:3412`) — the qualified price, the position key and today's session-qualified extremes; otherwise a notice (`src/screens/AgentBattleScreen.jsx:417`). The modal validates the contract and fails closed (`src/components/draft/AssetResearchModal.jsx:129`), never fetches a held price (`src/components/draft/AssetResearchModal.jsx:153`), admits navigation only through the screen (`src/screens/AgentBattleScreen.jsx:1674`), and sends the daily change — never the entry return — to "Why is it moving?" (`src/components/draft/AssetResearchModal.jsx:1368`). The research hook's controlled mode (`src/components/Research/useResearchData.js:101`) polls nothing, uses only today's supplied values (`src/components/Research/useResearchData.js:75`; B-7, B-8) and draws a no-body scaffold for today (`src/components/Research/useResearchData.js:61`; B-10), which the chart recognizes and never reads as an open (`src/components/Research/StockChart.jsx:85`); `OHLCDisplay` shows "—" for a missing open with a neutral close colour, only when asked.
 
 ## 4. OFF references (captured at the base SHA)
 
@@ -76,7 +109,37 @@ Every anchor the contract cites was re-read at `44d0c63e` before any edit (VERIF
 
 ## 5. Tests and validation
 
-<!-- TESTS -->
+**Harness.** Every suite exercises the real production module with mocks only at the stated boundaries: Firestore `onSnapshot` (under the REAL `useAgentBattleId` / `useAgentBattle`), the price network (`stockAPI` / `fetch`), the WebSocket prices hook, `lightweight-charts` (chart suite), the heavy research tabs, and framer-motion in the screen suite (stubbed for deterministic markup — except the gated tug-of-war bar, which the stub hands to the real library so its committed inline width is observable per commit). The canonical display scorer is never mocked; the real `standingFromDuel`, `computeTugOfWarWidth` and `formatScoreDisplay` are the oracles.
+
+**The build's suites at the final commit.**
+
+| # | Suite | Tests |
+|---|---|---|
+| 2 | `src/config/flagPinGuard.test.js` (pin registry incl. the new `DARK_BY_DESIGN` entry) | 6 |
+| 3 | `src/config/shadowCpuQuoteIntegrityFlags.test.js` | 10 |
+| 6–7 | `api/stocks/prices.quoteOrigin.test.js`, `api/crypto/prices.quoteOrigin.test.js` | 47 + 46 |
+| 9 | `src/services/eodhdAPI.placeholderPrices.test.js` | 46 |
+| 11 | `src/hooks/useAgentBattle.quoteSnapshot.test.jsx` | 11 |
+| 13 | `src/screens/battleView/shadowCpuQuoteIntegrity.test.js` | 104 |
+| 15 | `src/screens/AgentBattleScreen.quoteAvailability.jsdom.test.jsx` | 142 |
+| 17 | `src/components/BaggerBomb/TacticalRow.currentPrice.render.test.jsx` | 22 |
+| 19 | `src/screens/battleView/ArenaHeader.render.test.jsx` (real framer-motion rows included) | 41 |
+| 21, 23 | `CharacterAvatar.render.test.jsx`, `CharacterPane.comparison.render.test.jsx` | 27 + 9 |
+| 25 | `src/components/draft/AssetResearchModal.controlledQuote.test.jsx` | 22 |
+| 27 | `src/components/Research/useResearchData.controlledQuote.test.jsx` | 24 |
+| 29 | `src/components/shared/AnimatedScore.instant.test.jsx` | 18 |
+| 32 | `src/components/Research/StockChart.controlledSession.test.jsx` | 24 |
+| 34 | `src/hooks/useAgentBattleId.lookupEvidence.test.jsx` | 33 |
+| 35–36 | `src/theme/motion.guard.test.js`, `src/theme/tokens.guard.test.js` (complete suites) | 81 + 91 |
+| | **Total** | **804, all passing** |
+
+**OFF references.** **160 inline references in 14 test files** — the 153 of the first capture plus 7 added in the review round (screen `loadingReturn` and `swapTransition`; header `presenceOnMarkup`; hook `cachedThenServerSameId`, `sameErrorAcrossAgents`, `agentChangePasses`, `returnShape`), each block stamped with the base SHA. Every reference was captured by running the test file's OFF rows against the base production files (`git archive 44d0c63e`) with `SHADOW_OFF_CAPTURE_DIR` set — never by blessing build output. During the review the test-integrity lens re-derived all 153 first-round references from the base files (153 / 153), refuter B independently re-captured the 9 header digests and the hook rows, refuter D the 13 screen references plus `swapTransition`, and I re-captured every reference added in the review round (screen 15 / 15, hook 11 / 11, header `presenceOnMarkup` 9 / 9): all identical. Two files (`ArenaHeader.render.test.jsx`, `eodhdAPI.placeholderPrices.test.js`) need the pure helper copied alongside at the base SHA, as their reference headers now state; with it, their 28 references reproduce exactly.
+
+**Full suite.** `npx vitest run` on the final tree: **836 test files, 17,041 tests — 16,977 passed, 0 failed, 64 skipped.** Against the base-SHA baseline (16,428 tests: 16,364 passed, 64 skipped, run in an isolated `git archive` extraction): every baseline test is present with the **same status** (0 missing, 0 status changes); the build adds 613 tests, every one uniquely named. The same 64 tests are skipped in both runs. The two theme-guard suites, which failed their hazard-34 row before the approved registration, pass in full (§2).
+
+**`vite build`** (BUILD_RULES §2 — no test imports `App.jsx`): `npx vite build` succeeded on the final tree (✓ built in 18.9 s); its only warning is the existing chunk-size notice.
+
+**Rows labelled ON that also pass against base production code** (test-integrity F14 — parity or positive-control rows, not guards of new behaviour): the screen's "term explanations stay accessible", ON-ID (2) "an unchanged successful result", "the direct-ID route never subscribes the lookup query", the [A-4] excluded-then-errored row (a guard that is also a parity statement), and ON-DAY2's "no retained close → 75" rows; in the service suite the pre-upgrade-record, [A-8], missing/stale→recovery, [C-3] and unknown-origin-control rows; in the hook suites "one listener, same call shape", "no `integrity` key", "(13) no timers" and "metadata-only events re-run legacy setters"; in the research suites "stock daily change: the same figure legacy computes", "open supplied … the open shows" and "a real daily candle of today keeps its observed open". The review round added further spec-literal parity rows, each labelled PARITY in its block comment (refuter D's CPU matrix, crypto ordering at the screen, pane-off ON-F4a).
 
 ## 6. Browser verification and its limits
 
@@ -106,12 +169,203 @@ So in a real browser the switch commits and paints the selected width in the swi
 
 ## 7. Cumulative adversarial review
 
-<!-- REVIEW -->
+**Method (BUILD_RULES §2).** Five independent lenses — provenance (provider → every gated consumer), lifecycle / cache / identity, off-state / dark-merge guarantee, presentation agreement, test integrity — each on its own copy of the build tree (`snapshot-r1.tar`, sha256 `444174d8…`) under the session scratchpad, `node_modules` symlinked, read-only on git and on the shared tree. Every finding was then handed to one of four refuters (A–D), each on its own fresh copy, instructed to refute it with a concrete repro; a finding that survived an honest attempt is CONFIRMED. The fixes were then reviewed as a delta by a sixth, independent reviewer on a copy of the fixed tree (one major finding, CONFIRMED by a further refuter and fixed — see below), and the mutation pass ran last on its own tree (§8).
+
+**Lens totals.** Provenance: 1 minor (test gap), 1 question. Lifecycle: 1 major, 1 minor, 2 questions. Off-state: 3 minor, 2 nits, no questions. Presentation: no confirmed defect; 1 hypothesis the lens refuted itself (H-1, a `SwitchCounter` lane race: React 19 renders Sync and Default lanes together, executed repro), 1 question, 3 nits. Test integrity: 1 major, 6 minor, 8 nits and 1 note; it also re-captured all 153 OFF references against the base production files (153 / 153 reproduced) and ran 41 mutations of its own.
+
+| Finding | Lens · severity | Claim | Refutation | Disposition |
+|---|---|---|---|---|
+| lifecycle **F-1** | lifecycle · **major** | The [A-4] exclusion memory never ends: A (excluded) → B → A, and A's new subscription errors before its first snapshot → the legacy path renders the retained B (direct route) or the opening prop (query route) and polls | **CONFIRMED** (A): reproduced on the direct route, the query route and a same-agent ab-1 → ab-9 → ab-1 sequence; the shipped 98-row screen suite was green with it. Latent under today's `App.jsx` navigation (it remounts the screen between battles) but supported by the contract (§3.2, ON-ID 1) | **Fixed.** The memory is cleared during render as soon as another ID is requested (`src/screens/AgentBattleScreen.jsx:1057`); 4 new screen rows; mutant `a4-memory-kept-across-ids` killed |
+| off-state **F3** | off-state · minor | With the flag on, an EXCLUDED battle on the query path is torn down to "Battle unavailable" by a later lookup error; flag off keeps the legacy screen | **CONFIRMED** (A), on the reading that A-4 and OFF-7 ("legacy behaviour resumes") cover an excluded battle; the C-4 table governs the gated path, which A-4 switches off. A showed an F3-only fix is unsafe (another agent's error would revive the battle) | **Fixed with F-1 as one change:** while the memory names the ID the legacy hook still retains (`queriedId`, retained only through an error callback) and the lookup is in error, the screen keeps requesting it (`src/screens/AgentBattleScreen.jsx:1049`) and `resolveGate` lets the envelope decide (`src/screens/battleView/shadowCpuQuoteIntegrity.js:331`). Confirmed-empty and unconfirmed-empty after exclusion are unchanged ("No active battle" / "Battle unavailable"). 5 screen rows + 1 gate row; mutants `a4-lookup-error-teardown`, `a4-gate-no-fallthrough`, `a4-hold-excluded-not-retained` killed (`a4-hold-without-legacy-retention` is a recorded equivalent, §8) |
+| lifecycle **F-2** | lifecycle · minor | One poll's two batch calls share one `Promise.all` / `catch`: a stock rejection discards the crypto call's genuine answers | **CONFIRMED** (A): §4.3 rule 2, "A later request failure does not disqualify another request's genuine success"; conservative direction, never a wrong number | **Fixed:** `Promise.allSettled`, each kind applied on its own (`src/screens/AgentBattleScreen.jsx:1331`); same calls, order and cadence; 4 rows; mutant `batch-one-failure-poisons-all` killed |
+| off-state **F1** | off-state · minor | With presence on (the shipped default), the default `ArenaHeader`'s serialized markup differs from base: a new child slot shifts the face's SSR `useId`s | **CONFIRMED** (B): SSR ids differ (`_R_4au_` → `_R_8ku_`); the client DOM (`createRoot`) is identical; OFF-6 parity is serialized-markup parity and the repo's own "ONE CHILD SLOT" rule applies | **Fixed:** label and seam share one child slot (`src/screens/battleView/ArenaHeader.jsx:346`). New OFF row `presenceOnMarkup` (9 digests captured at the base SHA; B's independent capture matched mine digest for digest); presence-on SSR of the header and of the screen's paneOn golden byte-identical to base; mutant `arena-extra-slot` killed |
+| off-state **F2** | off-state · minor | Flag off, `useAgentBattleId` commits once more than base when a cached first result is followed by a server event with the same ID | **CONFIRMED** (B): SDK-legal flag-off with the pinned SDK (needs a concurrent reference to the document; rare); same root cause as the build's known residual (the `nullToNull` extra commit) | **Fixed:** the C-2 evidence machinery runs only behind the gated screen's opt-in `{ confirmCache: true }`; without it the hook is the pre-build hook (`src/hooks/useAgentBattleId.js:151`). 4 new OFF rows captured at the base SHA plus `nullToNull` now exact; the known residual is gone. **Deviation, recorded in §9:** B-6's "flag off included" render pass and C-2's always-present `lookup` become opt-in-only (the direct-ID route gets no `lookup`, which it ignores anyway; a missing `lookup` fails closed to pending). Mutant `refB-evidence-flag-off` killed |
+| provenance **F-1** | provenance · minor | A bare WebSocket overlay fed into gated SCORING survives the screen suite | **CONFIRMED** (C): the production code is correct (scoring reads only `q.accepted.price`), but no row could fail | **Fixed:** an ON-F2a row with an overlay for a player, a CPU and a crypto holding (mutant `refC-MUT-A-ws-into-scoring` killed; its hoist-only control survives as it must). Hardening adopted from C: the gated path subscribes no WebSocket symbols at all (`src/screens/AgentBattleScreen.jsx:1260`), so the pending shell never subscribes the opening prop's symbols; pinned by a row recording the hook's argument (mutant `ws-gated-subscribe` killed) |
+| test integrity **F1** | test integrity · **major** | The legacy `ScoreHeader`'s gated tie tint (P8) has no test; "tie as a player lead" survives | **CONFIRMED** (C): both tie-as-player and tie-as-CPU mutants survived 98/98 | **Fixed:** tie-tint assertions at the stored 0–0 step of §5.4 in every layout and in the browser 0–0 control, with positive controls (mutants `refC-MUT-B…`, `refC-MUT-B2…` killed) |
+| test integrity **F2** | test integrity · minor | Screen-level ON-ID (1) cannot fail under "accept evidence from a retired generation" | **CONFIRMED** (C) | **Fixed:** the row asserts that the retired callback opens no document listener and the current one does (mutant `refC-MUT-C-retired-evidence` killed at the screen) |
+| test integrity **F3** | test integrity · minor | `initial === false` assertions are vacuous; the legacy header's switch remount has no committed-width guard | **CONFIRMED** with a refinement (C): the assertions guard the prop, not the switch; the shipped "A→B never ramps" row actually remounted the whole screen | **Fixed:** the screen suite renders the gated bar with the real framer-motion inside its stub and asserts the committed inline width per commit, with negative control NC1 (same kind: old width, same node), a within-battle context switch, and A→B on a persistent screen. Mutants `v3-no-context-switch`, `refC-MUT-D2/D3/D4` killed |
+| test integrity **F7** | test integrity · minor | ON-F2a's unqualified-click matrix ran on the player side only | **PARTIALLY CONFIRMED** (D): the CPU **stale** click is a distinct state no row clicked (a CPU-only "keep the stale tuple" mutant survived 98/98); CPU × fallback / unknown / substitution / WebSocket are the same screen state as the covered CPU × missing (parity) | **Fixed:** a CPU block — 5 spec-literal parity rows + the stale guard row (mutant `refD-F7-cpu-stale-details` killed) |
+| test integrity **F8** | test integrity · minor | ON-F2b's scenarios each ran on one side | **PARTIALLY CONFIRMED** (D): a CPU same-symbol re-entry at an identical price (swap identity only) and the CPU lifecycle sequence were unguarded (a CPU-only lineage mutant survived 198/198) | **Fixed:** 2 guard rows + 2 parity rows (mutants `refD-F8-cpu-lineage-no-swap-id` and `refD-F7-cpu-stale-details` killed) |
+| test integrity F9 | test integrity · minor | ON-F2c exercised chat names only | **REFUTED** (D): bench, chat and tape names reach the screen through ONE `AgentChat` callback with one payload shape; the bench roster is an input of that component, and the pane's bench and tape have no research door — no screen mutation can tell them apart | No change |
+| test integrity F10 | test integrity · minor → nit | ON-F3a at the screen was stock-only and asserted no badges or totals | **PARTIALLY CONFIRMED, downgraded** (D): the defect class (importing a rejected record's close) is killed by 5 gate and batch rows; the screen path after the stock/crypto merge is market-agnostic | **Rows added:** 8 crypto parity rows (both sides) and 3 day-2 rows asserting badge count, total, row price, header prose, tuple and request count |
+| test integrity F11 | test integrity · nit / **minor** | ON-ROW's withheld channels were proven structurally; no double-count check | Channels **REFUTED** (D: re-enabling the fuse fails both shipped ON-ROW rows, incidentally); the double count **CONFIRMED, minor**: a mutant adding the banked points twice to the gated total survived 98/98 (every switch fixture had no closed trades) | **Fixed:** 2 rows pin the gated browser total with banked points (mutant `refD-F11b-double-banked` killed); a per-channel marker row hardens the TacticalRow suite (mutant `refD-F11a-fuse-in-unavailable` killed) |
+| test integrity F15 | test integrity · nit | OFF-5 had no swap-transition capture | **REFUTED as a defect** (D): the flag-off swap path is not on the production diff except the poll effect's dependency array, which flag-off is the same restart condition | **Row added:** OFF `swapTransition` (a swap delivered mid-session with the breakdown and legacy research open, then a poll), reference captured at the base SHA; my independent re-capture of all 15 screen references matches |
+| test integrity F16 | test integrity · nit | ON-F4a omitted the pane-off layout | **REFUTED** (D): the rows are one `boardRows` element for every controller-on layout and holdings come from layout-free selectors | Parity row added |
+| test integrity F4 | note | §8.3 "skip the −0.00 normalization" is an equivalent mutant: after `Math.round(v·100)/100` the only negative zero is `-0`, and `(-0).toFixed(2)` is `"0.00"` with `-0 >= 0` true | Not a defect | Kept as defensive code; recorded as an equivalent mutant (§8) |
+| test integrity F5 / off-state N1 | nit | The "regenerate at the base SHA" recipe of two test files needs the new helper present | Verified: with the helper copied in, all 28 references of both files reproduce exactly | **Fixed:** the recipe is stated in both files' reference headers |
+| off-state N2 | nit | `GatedShell` copied the spinner's raw `transition={{…}}` (BUILD_RULES §11) | — | **Fixed:** the pending shell reuses the shipped indicator (`BattleLoadingIndicator`), which the legacy loading return now also renders; new OFF row `loadingReturn` captured at the base SHA (mutant `loading-indicator-markup` killed). Its background uses `cssVar('bg-dashboard')`, and the gated counter's colour `cssVar('teal')` (§10) |
+| lifecycle Q-1 | question | "Battle unavailable" did not carry the error identity anywhere observable | — | **Addressed:** `data-battle-error` carries the current error's code; ON-ID (4)(5), (6) and (10) assert it, and that a retired lookup's code never shows (mutant `shell-error-any-generation` killed) |
+| provenance Q-1 / lifecycle Q-2 | question | The WebSocket hook was fed the opening prop's symbols while pending | — | **Addressed** by the hardening above |
+| presentation Q-1 | question | Crypto classification differs between the screen (33 symbols) and the modal (100): 67 symbols are crypto to the modal only. If held, the screen would poll them as stocks and the hook would drop (never misdate) their ET-dated extremes after 8 PM ET | No wrong number | **Residual** (§9): whether a held position can carry such a symbol is a pick-universe question |
+| presentation N-1 | nit | The stored-time label has no year | — | **Residual** (§9) |
+| presentation N-2 | nit | `comparison.accessibleText` is built but unused | — | **Residual** (the DOM text carries the same content) |
+| presentation N-3 | nit | Three consumers derive the duel inline instead of calling `duelFor` | — | **Residual** (consumer rows assert all four equal `duelFor`) |
+| test integrity F6 | nit | Capture mode asserts nothing | No live risk (nothing sets the variable) | **Residual** |
+| test integrity F12 | nit | ON-F5a frames are not captured at the screen (per commit only) | Frame-stepped in `AnimatedScore.instant.test.jsx` | **Residual** |
+| test integrity F13 | nit | The proxy suite hand-rolls the client's `parseFloat || 0` | The real path is covered by the service suite | **Residual** |
+| test integrity F14 | nit | 15 ON-labelled rows pass unchanged against base production code (feature absent) | They are parity or positive-control rows | **Recorded** (§5) |
+
+
+**The fix round, reviewed as a delta.** A sixth reviewer took a copy of the fixed tree (`snapshot-r2.tar`), diffed it against the reviewed one, re-captured every new OFF reference from the base production files (37 / 37), ran 23 mutations of its own against the new rows (all red where claimed) and checked the theme-guard registration (exact; both guards go red when the helper gains a raw `transition={{` or a core hex).
+
+| Finding | Severity | Claim | Refutation | Disposition |
+|---|---|---|---|---|
+| delta **D-1** | **major** (a regression of the fix round) | Making the C-2 evidence opt-in left the generation blind to an un-gated phase: with the flag on, query A → the direct-ID route (the hook called with `null`, no opt-in) → query A returned to the retired generation, and its listener's evidence settled the screen — the old battle subscribed and shown before the current lookup delivered | **CONFIRMED** (refuter E) at hook and screen level, with the reviewed tree as a positive control; latent under today's navigation, contrary to C-2's letter ("advances exactly when the requested `agentId` changes") | **Fixed:** the tracked pair records the opt-in and the generation advances when it flips (`src/hooks/useAgentBattleId.js:59`). Flag off nothing is ever written; every base-captured OFF row holds; StrictMode advances once per change. 4 hook rows + 1 screen row, all red with the fix reverted (mutant `d1-generation-blind-to-opt-in` killed) |
+| delta N-1 | nit | The delta brief's file list omitted a comment-only change to `eodhdAPI.placeholderPrices.test.js` (the regeneration note) | — | Scope accounting only (file 9 is in scope) |
+| delta Q-1 | question | After an excluded battle's lookup error, a later snapshot that passes admission would take the gated path while the lookup is in error | **Not reachable** (refuter E's writer census: nothing in `api/` or `src/` changes `gameMode`, `groupId` or the opponent on a live battle document; the only opponent writer is an orphaned endpoint that refuses once an opponent exists) | **Residual** (wording; §9) |
+
+**The mutation pass's own findings.** The full pass (§8) left four mutants alive on the first complete run; each was resolved before the final run:
+
+| Mutant | Why it survived | Disposition |
+|---|---|---|
+| `accept-retired-position-callback` | The poll effect's `active` flag already drops a retired effect's answers; the per-position identity check guards only an answer that resolves between the commit that changed a position and that effect's cleanup — a window `act()` cannot stage | `positionToken` / `applyQuoteArrival` moved unchanged into the pure gate module (`src/screens/battleView/shadowCpuQuoteIntegrity.js:509`) and pinned by 3 unit rows → killed |
+| `accept-retired-snapshot-callback` (`useAgentBattle`) and the matching `useAgentBattleId` guard | The rows delivered retired callbacks before the new subscription settled, where the generation check alone hides them | One row in each hook suite delivers them AFTER the current one settled (an overwrite would knock the screen back to pending) → killed |
+| `omit-consumer-avatar` | The rows inspect the faces rendered in a window; the pane's mark did not re-render, so a stale or legacy duel went unseen | The face recorder also tracks every mounted face's current input (payloads and markup unchanged); a row asserts every live face shows the one selected duel at each step → killed, together with new pane and arena variants |
+| `details-by-symbol` | A changed position always restarts with no quote, so the status check closes the view in the same render as the identity check | **Equivalent** (recorded). The §8.3 obligation it names is now also expressed at the click resolver (`details-by-symbol-resolver`) → killed |
+
+
+**Totals.** **3 major** (lifecycle F-1, test-integrity F1, delta D-1) and **10 minor** findings CONFIRMED — lifecycle F-2; off-state F1, F2, F3; provenance F-1; test-integrity F2, F3, F7 (partly), F8 (partly) and F11's double count — **all fixed**, each with rows proven red before the fix and green after. Test-integrity F10 was downgraded to a nit (rows added). **REFUTED:** test-integrity F9, F15 (as a defect; the swap capture was added anyway) and F16, F11's channel half, and presentation H-1 (refuted by the lens itself). The remaining nits and questions are dispositioned row by row above. No confirmed finding is open.
 
 ## 8. Mutation checks
 
-<!-- MUTATIONS -->
+**Method.** A catalogue of **103 mutants**: every mutation the contract's §8.3 requires (the v1.3 list and each amendment's items), plus those the lenses, the refuters and the mutation pass itself added. Each is one exact edit set in production code and names the suites that must fail. The runner applied them one at a time to an isolated copy of the final tree (never the repository), ran those suites, restored the files, and finally compared a sha256 manifest of every `src/` and `api/` file with the one taken before the run: **restore diff 0 lines**.
+
+**Result: 99 / 99 non-equivalent mutants killed**; none survived. 3 recorded equivalents survive as expected, and 1 behaviour-preserving control survives as it must.
+
+| # | Mutant | Obligation | In | Result (failed / run) |
+|---|---|---|---|---|
+| 1 | `drop-proxy-origin-stock` | drop a proxy origin | stock proxy | killed (22 / 47) |
+| 2 | `drop-proxy-origin-crypto` | drop a proxy origin | crypto proxy | killed (20 / 46) |
+| 3 | `promote-prevclose-stock` | promote previousClose-as-current | stock proxy | killed (7 / 47) |
+| 4 | `promote-prevclose-gate` | promote previousClose-as-current (gate) | gate | killed (7 / 246) |
+| 5 | `genuine-from-absent-marker` | infer "genuine" from an absent marker | gate | killed (6 / 246) |
+| 6 | `accept-websocket-current` | accept a WebSocket-overwritten current | gate | killed (5 / 246) |
+| 7 | `runtime-rejection-untimed` | reintroduce runtime rejection (untimed current rejected) | gate | killed (16 / 292) |
+| 8 | `poison-after-failure` | poison an earlier success after a later failure | screen | killed (23 / 142) |
+| 9 | `omit-strict-older` | omit the strict-older comparison | gate | killed (11 / 292) |
+| 10 | `reject-equal-times` | reject equal arrivals | gate | killed (19 / 292) |
+| 11 | `reject-untimed-arrival` | reject untimed arrivals | gate | killed (11 / 292) |
+| 12 | `import-prevclose-from-rejected` | import previousClose from a rejected older record | gate | killed (6 / 292) |
+| 13 | `restore-prop-sources` | restore controller-off prop sources | screen | killed (12 / 142) |
+| 14 | `accept-retired-position-callback` | accept retired position callbacks | gate | killed (2 / 246) |
+| 15 | `accept-retired-snapshot-callback` | accept retired snapshot callbacks | useAgentBattle | killed (1 / 11) |
+| 16 | `terminal-states-loading` | leave terminal states loading | screen | killed (2 / 142) |
+| 17 | `details-by-symbol` | EQUIVALENT (recorded): key the open view's validity by symbol — a changed position always restarts with no quote, so the status check closes the view in the same render | screen | **survived** (equivalent) (0 / 142) |
+| 18 | `merged-wsprice` | pass the merged price map into controlled wsPrice | screen | killed (1 / 142) |
+| 19 | `nonheld-bypass-admission` | let non-held navigation bypass held admission | research modal | killed (3 / 22) |
+| 20 | `block-all-nonheld` | block all non-held research | screen | killed (1 / 142) |
+| 21 | `held-price-fill-modal` | enable a held-price fill | research modal | killed (10 / 22) |
+| 22 | `held-price-poll-hook` | enable a held-price poll | useResearchData | killed (6 / 46) |
+| 23 | `unavailable-numeric-defaults` | pass unavailable through numeric defaults | TacticalRow | killed (46 / 164) |
+| 24 | `omit-consumer-avatar` | omit a consumer | screen | killed (1 / 142) |
+| 25 | `omit-consumer-scoreheader` | omit a consumer (legacy header) | screen | killed (5 / 142) |
+| 26 | `separate-renders-label` | update labels and scores in separate renders (counter not keyed: old-source ramp) | ArenaHeader | killed (4 / 183) |
+| 27 | `require-lastscoredat` | require lastScoredAt for complete active quotes | gate | killed (21 / 246) |
+| 28 | `constructor-zeros` | accept constructor zeros without a time | gate | killed (8 / 246) |
+| 29 | `stored-time-now` | replace stored time with now | gate | killed (5 / 246) |
+| 30 | `enable-while-off` | enable new behaviour while off | featureFlags | killed (5 / 16) |
+| 31 | `enable-for-excluded` | enable new behaviour for an excluded battle | gate | killed (8 / 256) |
+| 32 | `b11-instant-value-only` | [B-11] run the instant reset only when value changes | AnimatedScore | killed (1 / 18) |
+| 33 | `v1-effect-sync` | [V-1] sync instant via an effect (first commit shows the old value) | AnimatedScore | killed (4 / 18) |
+| 34 | `v1-no-generation-guard` | [V-1] drop the generation guard | AnimatedScore | killed (1 / 18) |
+| 35 | `v1-keep-transition` | [V-1] keep the CSS transition on the instant render | AnimatedScore | killed (3 / 18) |
+| 36 | `v1-cleanup-default-effect` | [V-1] add a cleanup to the default value effect | AnimatedScore | killed (6 / 18) |
+| 37 | `v2-zero-duration-only` | [V-2] a zero-duration transition only, no same-commit width | ArenaHeader | killed (6 / 183) |
+| 38 | `v3-no-context-switch` | [V-3] no instant on a context change | gate | killed (5 / 287) |
+| 39 | `v4-null-score-keys` | [V-4] pass null score keys | gate | killed (5 / 246) |
+| 40 | `c1-round-stored` | [C-1] round a stored pair to whole numbers | gate | killed (22 / 287) |
+| 41 | `c1-tie-as-player` | [C-1] use >= (tie as player lead) for the gated tint | gate | killed (6 / 145) |
+| 42 | `c1-bar-from-helper` | [C-1/B-1] derive the gated bar from computeTugOfWarWidth for every pair | gate | killed (6 / 246) |
+| 43 | `b1-signed-for-nonneg` | [B-1] use the signed formula for non-negative pairs | gate | killed (1 / 145) |
+| 44 | `c1-threshold-raw` | [C-1] compare the threshold on raw values | AnimatedScore | killed (1 / 18) |
+| 45 | `c1-skip-negzero` | EQUIVALENT (recorded, test-integrity F4): [C-1] skip the -0.00 normalization — Math.round leaves only -0, and (-0).toFixed(2) is "0.00" with -0 >= 0 | AnimatedScore | **survived** (equivalent) (0 / 122) |
+| 46 | `c1-format-without-fd` | [C-1] change formatting when fractionDigits is absent | AnimatedScore | killed (14 / 18) |
+| 47 | `c1-browser-two-decimals` | [C-1] format browser pairs with two decimals | gate | killed (16 / 287) |
+| 48 | `b3-tied-equal-digits` | [B-3+] show "Tied" for equal digits with different stored values | gate | killed (2 / 104) |
+| 49 | `b3-margin-from-stored` | [B-3+] compute margins from stored values | gate | killed (1 / 104) |
+| 50 | `b4-noauth-empty` | [B-4] stamp no-auth as empty | useAgentBattleId | killed (2 / 175) |
+| 51 | `b5-fromcache-confirmed` | [B-5] treat empty fromCache:true as confirmed | useAgentBattleId | killed (6 / 175) |
+| 52 | `c4-omit-metadata` | [C-4] omit includeMetadataChanges with the flag on | useAgentBattleId | killed (6 / 175) |
+| 53 | `c4-options-when-off` | [C-4] pass an options object with the flag off | useAgentBattleId | killed (10 / 33) |
+| 54 | `c4-downgrade-confirmed` | [C-4] downgrade a confirmed empty on a later fromCache:true event | useAgentBattleId | killed (2 / 175) |
+| 55 | `c2-settle-unchanged-id` | [C-2] settle on an unchanged ID / accept retired-generation evidence | useAgentBattleId | killed (11 / 175) |
+| 56 | `c2-missing-lookup-settled` | [C-2] treat a missing lookup as settled | gate | killed (1 / 104) |
+| 57 | `c2-lookup-on-direct` | [C-2] consult lookup on the direct-ID route | gate | killed (113 / 246) |
+| 58 | `static-face-reactive` | [static legacy face] leave the pane-off face reactive in admitted battles | screen | killed (4 / 142) |
+| 59 | `b7-prior-session-patch` | [B-7] patch a prior-session bar with today's extremes | useResearchData | killed (1 / 24) |
+| 60 | `b8-priority2-et` | [B-8] select Priority 2 by ET date for crypto | useResearchData | killed (2 / 46) |
+| 61 | `b9-entry-return-change` | [B-9] send the entry-relative return as change | research modal | killed (5 / 22) |
+| 62 | `b10-show-scaffold-open` | [B-10] show the scaffold's open on hover | StockChart | killed (3 / 24) |
+| 63 | `b10-aggregate-scaffold-open` | [B-10] aggregate the scaffold's open | StockChart | killed (1 / 24) |
+| 64 | `b10-synth-body` | [B-10] draw a synthesized open as a body in controlled mode | useResearchData | killed (8 / 24) |
+| 65 | `b10-scaffold-outside` | [B-10] apply the scaffold outside controlled held research | StockChart | killed (6 / 24) |
+| 66 | `v6-only-tdc` | [V-6] substitute supplied extremes only in todayDailyCandle | useResearchData | killed (9 / 24) |
+| 67 | `v6-zero-open-close` | [V-6] write open: 0 / close: 0 in controlled mode | useResearchData | killed (6 / 46) |
+| 68 | `e1-lastcandle-open` | [E-1] fall back to the last candle's open in controlled mode | StockChart | killed (4 / 24) |
+| 69 | `e1-1w-today-open` | [E-1] show today's open as the week's in 1W | StockChart | killed (2 / 24) |
+| 70 | `e1-close-colour` | [E-1] colour the close from a missing open | OHLCDisplay | killed (5 / 24) |
+| 71 | `a5-rewrite-same-position` | [A-5/V-8] treat the nightly rewrite as the same position | gate | killed (2 / 246) |
+| 72 | `v9-future-invalidates-price` | [V-9] let a future timestamp invalidate the price | gate | killed (2 / 246) |
+| 73 | `a4-clear-excluded-on-error` | [A-4] clear an excluded battle on a later error | gate | killed (3 / 246) |
+| 74 | `guard-motion-literal` | [guards] a raw transition literal in the registered helper | gate | killed (1 / 81) |
+| 75 | `guard-core-hex` | [guards] a core-palette hex in the registered helper | gate | killed (1 / 91) |
+| 76 | `loading-indicator-markup` | [OFF-6] change the shared loading indicator markup | screen | killed (2 / 142) |
+| 77 | `shell-error-any-generation` | [C-2] show no error identity on the unavailable shell | screen | killed (3 / 142) |
+| 78 | `arena-extra-slot` | [OFF-6] an extra child slot in the ArenaHeader container (SSR useId shift) | ArenaHeader | killed (1 / 41) |
+| 79 | `a4-memory-kept-across-ids` | [A-4/F-1] keep the exclusion memory when another ID is requested | screen | killed (4 / 142) |
+| 80 | `a4-lookup-error-teardown` | [A-4/F3] tear an excluded battle down on its lookup error (drop the legacy retention) | screen | killed (1 / 142) |
+| 81 | `a4-gate-no-fallthrough` | [A-4/F3] resolveGate: a lookup error is unavailable even for the excluded requested ID | gate | killed (2 / 246) |
+| 82 | `a4-hold-without-legacy-retention` | EQUIVALENT (recorded): drop the `excludedFor === queriedId` conjunct — the fallback returns queriedId itself | screen | **survived** (equivalent) (0 / 142) |
+| 83 | `a4-hold-excluded-not-retained` | [A-4/F3] hold the EXCLUDED id on any lookup error, even where legacy drops it (unconfirmed empty) | screen | killed (1 / 142) |
+| 84 | `batch-one-failure-poisons-all` | [§4.3 rule 2] one rejected batch call withholds BOTH kinds | screen | killed (2 / 142) |
+| 85 | `ws-gated-subscribe` | [§4.2/§3.1] subscribe the WebSocket hook on the gated path | screen | killed (1 / 142) |
+| 86 | `refC-MUT-A-ws-into-scoring` | [§4.2] a bare WebSocket overlay reaches gated scoring (screen merge) | screen | killed (1 / 142) |
+| 87 | `refC-HOIST-ONLY-control` | CONTROL: the hoist alone must change nothing (expected SURVIVED) | screen | **survived** (control) (0 / 142) |
+| 88 | `refC-MUT-B-tie-as-player` | [C-1/P8] legacy ScoreHeader tints a tie as a player lead | screen | killed (2 / 142) |
+| 89 | `refC-MUT-B2-tie-as-cpu` | [C-1/P8] legacy ScoreHeader tints a tie as a CPU lead | screen | killed (2 / 142) |
+| 90 | `refC-MUT-C-retired-evidence` | [C-2] accept evidence from a retired generation (screen-level guard) | useAgentBattleId | killed (7 / 175) |
+| 91 | `refC-MUT-D2-legacy-no-key` | [V-2] legacy header: no remount on a switch | screen | killed (2 / 142) |
+| 92 | `refC-MUT-D3-legacy-no-initial` | [V-2/B-12 NC2] legacy header: remount without initial={false} | screen | killed (4 / 142) |
+| 93 | `refC-MUT-D4-legacy-remount-always` | [V-2] legacy header: remount on every render (same-kind spring lost) | screen | killed (2 / 142) |
+| 94 | `refB-evidence-flag-off` | [C-2/ON-ID 9] run the lookup-evidence machinery without the opt-in (flag-off extra commits / render pass / lookup key) | useAgentBattleId | killed (7 / 175) |
+| 95 | `refD-F7-cpu-stale-details` | [ON-F2a] a CPU detail keeps using the last accepted (stale) tuple | screen | killed (2 / 142) |
+| 96 | `refD-F8-cpu-lineage-no-swap-id` | [ON-F2b/§3.2] the CPU lineage drops the swap identity (same-symbol re-entry at an identical price = same position) | gate | killed (1 / 246) |
+| 97 | `refD-F11a-fuse-in-unavailable` | [ON-ROW] re-enable the fuse in the unavailable row | TacticalRow | killed (3 / 164) |
+| 98 | `refD-F11b-double-banked` | [ON-ROW/ON-VALID] the gated browser total adds the banked points twice | screen | killed (2 / 142) |
+| 99 | `hook-drop-active-guard` | [C-2] accept a retired listener's queued callback (drop only the `active` guard; the generation check stays) | useAgentBattleId | killed (1 / 175) |
+| 100 | `omit-consumer-pane` | omit a consumer (the character pane) | screen | killed (4 / 142) |
+| 101 | `omit-consumer-arena` | omit a consumer (ArenaHeader) | screen | killed (31 / 142) |
+| 102 | `details-by-symbol-resolver` | [§7.2] key details by symbol only: resolve a row click by symbol, ignoring the row's position key | gate | killed (1 / 246) |
+| 103 | `d1-generation-blind-to-opt-in` | [C-2] the generation ignores an un-gated phase (query → direct → query returns to the retired generation) | useAgentBattleId | killed (5 / 175) |
+
+**Recorded equivalents.** `c1-skip-negzero` — after `Math.round(v·100)/100` the only negative zero is `-0`, and `(-0).toFixed(2)` is `"0.00"` with `-0 >= 0`, so the output is `+0.00` with or without the guard (test-integrity F4); the guard stays as defensive code. `a4-hold-without-legacy-retention` — the fallback returns the legacy-retained `queriedId` itself, which can only be null (same outcome) or the excluded ID while the memory is set. `details-by-symbol` — a changed position always restarts with no quote, so the status check closes the open view in the same render; the obligation it names is pinned at the click resolver (`details-by-symbol-resolver`). The control `refC-HOIST-ONLY-control` moves a block without changing behaviour and must survive.
+
+**Other mutation evidence in this review** (each in its reviewer's own snapshot, every file restored and hash-verified): the test-integrity lens ran 41 mutations of its own; refuter A, 3 fix variants (including the unsafe F3-only fix); refuter B, the review-tree hook and header against the new OFF rows; refuter C, 8 characterization mutants; refuter D, 5; refuter E, the D-1 fix reverted; the delta reviewer, 23 against the new rows. Every mutant that revealed a gap during the review is in the catalogue above, killed by the row added for it.
 
 ## 9. Residuals, pre-activation checks and separate tasks
 
-<!-- RESIDUALS -->
+**Deviations from the contract's wording (each keeps a stronger requirement of the same contract).**
+- **C-2 / B-6 — lookup evidence is opt-in.** The contract adds `lookup` to every `useAgentBattleId` call and allows one extra render pass flag-off (B-6), while also requiring "no extra commit" (C-2) and flag-off commit parity (ON-ID 9). Review showed evidence writes alone commit the calling screen flag-off (off-state F2 and the `nullToNull` case). The evidence now runs only behind `{ confirmCache: true }` — the gated screen's existing query-path call — and the hook is otherwise the pre-build hook (same return shape, render passes, commits and listener call). The direct-ID route therefore gets no `lookup` (the contract says it ignores `lookup` entirely); a gated caller that failed to opt in would fail closed to the pending shell (ON-ID 8). The build's former known residual (one extra flag-off commit in `nullToNull`) no longer exists. With the flag on, the generation also advances when the opt-in flips (delta D-1), which adds one render pass — no commit — on a query ↔ direct switch.
+- **No WebSocket subscription on the gated path.** Adopted from refuter C as hardening of §4.2 and §3.1 ("issue no quote request built from opening props"): the gated path passes the hook an empty list; flag-off and excluded battles make the shipped call. Consequence: on the gated path the non-held research modal receives no `wsPrice` (the WebSocket transport is disabled in production today, so nothing changes in practice).
+
+**Residuals (known, disclosed, not fixed here).**
+1. **ChartHeader `0.00%` pill** (out-of-scope file): in controlled research it renders `percentChange || change || 0` until the research hook's daily change loads.
+2. **Crypto timestamps** are normalized as Unix seconds explicitly (V-11); units are unverified against the live provider.
+3. **Crypto classification differs** between the screen (33 symbols) and the modal/hook/chart (100): 67 symbols are crypto to the modal only. If such a symbol were held, the screen would poll it as a stock and its ET-dated extremes would be dropped (never misdated) between 8 PM and midnight ET. No wrong number; whether a held position can carry such a symbol is a pick-universe question.
+4. **The stored-time label has no year** ("Oct 1, 12:47 PM EDT"): a pair last scored in an earlier year reads like this year's.
+5. `comparison.accessibleText` is built but unused (the DOM text carries the same content); three consumers derive the duel inline rather than calling `duelFor` (rows assert all four agree).
+6. **Colours copied for parity** in new branches, with no `--ft-*` token to consume: the unavailable row's clickable symbol keeps the shipped `#14b8a6`, and the gated CPU counter keeps the legacy `tokens.textFaint || '#64748b'` fallback (both non-core, outside the token guard's palette).
+7. **Test notes:** capture mode asserts nothing (no live risk: nothing sets `SHADOW_OFF_CAPTURE_DIR`); ON-F5a is probed per commit at the screen (frames are stepped in `AnimatedScore.instant.test.jsx`); the proxy suite hand-rolls the client's `parseFloat || 0` (the real path is covered by the service suite); the "−0.00" guard is an equivalent mutant.
+8. **Excluded → admitted on a live document (delta Q-1):** if a live battle document ever changed from an excluded mode to an admitted one after a lookup error, the gate would take the gated path while the lookup is in error. Unreachable with today's writers; recorded for the founder as a wording question.
+9. **Lifecycle F-1 was latent under today's navigation**: `App.jsx` reaches the battle screen through another screen, which remounts it; the in-place A→B→A the contract supports is now handled regardless.
+
+**Pre-activation checks** (required before any flag flip; none was run in this build, by design):
+1. **Real-browser paint of the legacy `ScoreHeader` bar** on a comparison switch, in the pane-off and tabbed layouts. The screen suite now renders that bar with the real framer-motion and checks the committed width per commit, but jsdom does not paint.
+2. **The full gated screen in a real browser**, from a local dev build with the constant flipped and never committed: pending, "No active battle", "Battle unavailable", admission and exclusion, switches between browser and stored pairs, unavailable rows, held research containment and the notice.
+3. **Firestore WebChannel behaviour for C-4** in a browser: an offline start, then recovery from "Battle unavailable" (`unconfirmed-empty`) to "No active battle" or to a battle; the raise logic is verified, but browser online detection and reconnection timing are not (≈104 s was observed on the emulator).
+4. **Provider behaviour against the live service:** after-hours timestamps, `"NA"`, crypto timestamp units and crypto high/low session semantics.
+5. **A visual pass of the bomb view's scaffold candle** (its pixel footprint could not be attributed in the browser check).
+6. **Firestore `-0` round-trip** for stored scores (the formatter normalizes it regardless).
+7. **The flip PR reconciles its own pins in the same commit** (BUILD_RULES §2): the false pin in `src/config/shadowCpuQuoteIntegrityFlags.test.js`, the `DARK_BY_DESIGN` entry and the default-off prose in `featureFlags.js`.
+
+**Separate tasks, outside this build** (as authorized): entry timing; the swapped-position entry question (a separate read-only investigation, contract §10.3); server scoring, settlement and the server-side substitution path (R-4); League; shared-pricing redesign; the ChartHeader pill; unifying crypto classification.
