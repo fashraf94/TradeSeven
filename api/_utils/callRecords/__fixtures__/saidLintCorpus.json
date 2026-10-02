@@ -1,0 +1,4530 @@
+{
+  "provenance": {
+    "source": "experiments/declarations-wording/raw/round2 (git-ignored; local to the founder's machine)",
+    "run": {
+      "seed": 20261001,
+      "sampleCreatedAt": "2026-10-02T02:11:22.995Z",
+      "analyzedAt": "2026-10-02T03:22:31.291Z",
+      "round": 2
+    },
+    "population": "minted called shots of arms D and D2 over the 193 checks complete in every arm × rep (386 calls per arm)",
+    "rule": "round-2 lexical rule — scripts/declarations-wording-experiment.mjs:376-397, verbatim in api/_utils/callRecords/copy.js (saidFlagsRound2)",
+    "text": "agent text only (the declared `said`); no player text",
+    "builtBy": "scripts/build-said-lint-corpus.mjs"
+  },
+  "counts": {
+    "D": {
+      "shots": 167,
+      "flagged": 23
+    },
+    "D2": {
+      "shots": 314,
+      "flagged": 60
+    }
+  },
+  "rows": [
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_004",
+      "said": "NVDA trading below $228.00 before session close would signal breakdown of its NR7 setup; would trigger exit review.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_004",
+      "said": "SHOP trading below $150.00 before session close would break its support and trigger exit review.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_004",
+      "said": "TXN trading above $285.00 would confirm breakout above NR7 range; would validate hold thesis.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_006",
+      "said": "SNOW trades above $354.34 (1.0x ATR bonus level) by close.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_006",
+      "said": "If AMAT breaks below $505, the NR7 setup fails and I would reconsider the position.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_006",
+      "said": "SHOP below 149.07 (0.25x ATR reversal from peak) would trigger reconsideration of hold.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_006",
+      "said": "SHOP above 154.28 (BaggerBomb +1.0x ATR) locks in +15 bonus points.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_008",
+      "said": "SNOW trades above 353.13 (1.0x ATR bonus level) by close, I lock in +15 BaggerBomb points.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_008",
+      "said": "If AMAT closes below 507 (entry level) and the NR7 breakout fails, I would rotate it out.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "close(s) above/below"
+      ]
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_008",
+      "said": "If LRCX closes below 323 (entry level) and the NR7 breakout fails, I would rotate it out.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "close(s) above/below"
+      ]
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_002",
+      "said": "HOOD exits Star if it trades below -0.95x ATR ($116.69) before close, triggering Bust penalty.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_002",
+      "said": "AMD exits Star if it trades below -0.95x ATR ($609.41) before close, triggering Bust penalty.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_002",
+      "said": "HOOD reaches +1.0x ATR bonus (+$7.78 = $131.26) — if it holds above this level through close, lock in +15 pts and consider profit-taking into COIN.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "holds/holding above/below … for/through"
+      ]
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_002",
+      "said": "AMD reaches +1.0x ATR bonus (+$7.33 = $625.04) — if it holds above this level through close, lock in +15 pts and evaluate sector rotation.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "holds/holding above/below … for/through"
+      ]
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_002",
+      "said": "HOOD trading below $120.80 (1.0x ATR down from entry) would trigger a Bust penalty — holding unless it breaks below that level by close.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_002",
+      "said": "AMD trading below $610.31 (1.0x ATR down from entry) would trigger a Bust penalty — holding unless it breaks below that level by close.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_002",
+      "said": "META trading above $758 (+1.0x ATR from entry) would lock in the +1.0x ATR bonus (+15 pts) — holding to capture it.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_002",
+      "said": "MSFT trading above $507.49 (+2.0x ATR from entry) would reach the +2.0x ATR TenBagger threshold (+50 pts) — unlikely but watching.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_003",
+      "said": "HOOD trades below $122.50 (entry -0.9%) by close, I exit to protect the Star slot.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_003",
+      "said": "AMD trades below $610 (entry -1.3%), I reassess but likely hold for NR7 breakout confirmation.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_003",
+      "said": "MU trades above $1100 (+2.5% from current) and HOOD fails NR7 breakout, I rotate MU into Core.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_003",
+      "said": "HOOD trades below $124.50 on the next check, I'm rotating to MU in Star tier.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_005",
+      "said": "GOOGL trading below $354.50 (Bust threshold) by close would validate the defensive exit.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_005",
+      "said": "MU above $1100 (+2.1%) would confirm momentum continuation and justify holding through the session.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_009",
+      "said": "HOOD trading above $125.18 by end of session would confirm NR7 breakout and validate the hold.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_009",
+      "said": "AMD trading above $625.06 by end of session would confirm NR7 breakout and validate the hold.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_009",
+      "said": "META trading below $720.00 would signal -0.5x ATR breach; exit becomes likely to protect Core points.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_010",
+      "said": "HOOD trades below $116.00 (Bust threshold, -1.0x ATR) before session end, I will exit to protect banked points.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_010",
+      "said": "AMD trades below $575.00 (Bust threshold, -1.0x ATR) before session end, I will exit to protect banked points.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_010",
+      "said": "HOOD trades above $132.00 (+0.5x ATR bonus threshold) by session end, confirming the NR7 breakout thesis.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_010",
+      "said": "AMD trades above $641.00 (+0.5x ATR bonus threshold) by session end, confirming the NR7 breakout thesis.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_013",
+      "said": "HOOD trades below entry ($123.48) before close, I exit the Star position to lock gains and avoid Bust penalty.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_013",
+      "said": "AMD trades below entry ($617.71) before close, I exit the Star position to lock gains and avoid Bust penalty.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_013",
+      "said": "HOOD trading below entry ($123.48) would signal NR7 breakout failed; I would reassess.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_014",
+      "said": "HOOD trades below $124.13 (reversing 0.04x ATR from current peak) by the next check, I would consider exiting the NR7 setup and rotating to DHR.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_015",
+      "said": "HOOD trades below $123.80 before close, NR7 setup has failed; exit to Support tier.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_018",
+      "said": "HOOD trading below $121.50 (entry -1.6%) by close would trigger a defensive exit from Star tier.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_018",
+      "said": "AMD trading below $610.00 (entry -1.3%) by close would trigger a defensive exit from Star tier.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_018",
+      "said": "META trading below $720.00 (entry -4.1%, approaching -0.5x ATR penalty) by close would trigger rotation to bench Tech strength.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_019",
+      "said": "HOOD exits Star if it trades below $125.00 by close (0.25x ATR reversal from peak).",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_019",
+      "said": "AMD exits Star if it trades below $620.00 by close (0.25x ATR reversal from peak).",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "NScUWgRyhGH9wSs9g6jv:eval_001",
+      "said": "MU will trade below $1044.42 (−0.5x ATR) by the next check, triggering S36 automatic swap.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "NScUWgRyhGH9wSs9g6jv:eval_001",
+      "said": "MSFT will break above $523.71 (upper Bollinger band) by end-of-session, confirming mean-reversion setup.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "NScUWgRyhGH9wSs9g6jv:eval_007",
+      "said": "MU will trade below -0.5x ATR on the next check if NR7 contraction reverses to downside; if so, I would exit.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "NScUWgRyhGH9wSs9g6jv:eval_007",
+      "said": "MSFT will trade below -0.5x ATR on the next check if Bollinger squeeze breaks downside; if so, I would exit.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "NScUWgRyhGH9wSs9g6jv:eval_010",
+      "said": "MSFT trading below $489.56 (its 50-day SMA) by end of session would signal squeeze failure; I would exit if that occurs.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "NScUWgRyhGH9wSs9g6jv:eval_010",
+      "said": "KLAC trading above $195.81 (current price, +0.52x ATR) at the next check would confirm momentum; I would consider entry when freeze expires if it holds.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "NScUWgRyhGH9wSs9g6jv:eval_010",
+      "said": "ORCL trading below $138.11 (entry) by end of session would signal entry failure; I would hold unless it breaches -1.0x ATR ($127.62).",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "NTNj46p7dAmAZ4ObPZGi:eval_002",
+      "said": "AMD trades below $593 (Bust threshold, -1.0x ATR) before close, I rotate out to stop the bleed.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "NTNj46p7dAmAZ4ObPZGi:eval_002",
+      "said": "MU trades below $1,024 (Bust threshold, -1.0x ATR) before close, I rotate out to stop the bleed.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "NTNj46p7dAmAZ4ObPZGi:eval_003",
+      "said": "AMD trading below -1.0x ATR ($587.16) before close triggers defensive exit.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "NTNj46p7dAmAZ4ObPZGi:eval_004",
+      "said": "AMD exits below $603.80 (current price) if it breaks -1.0x ATR Bust threshold by end-of-day.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "NTNj46p7dAmAZ4ObPZGi:eval_004",
+      "said": "MU exits below $1045.19 (current price) if it breaks -1.0x ATR Bust threshold by end-of-day.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_003",
+      "said": "MU trading below $1,050 by end of session would signal NR7 breakout failure — reassess hold.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_003",
+      "said": "INTC trading above $120 and holding through next check would confirm strength for potential swap into PWR or MAR after 1:00 PM.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "next check/eval (not next_check)"
+      ]
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_006",
+      "said": "MU exits if it trades below entry ($1065.08) and closes below daily VWAP by end of session.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "close(s) above/below"
+      ]
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_006",
+      "said": "AMD exits if it breaks below $600 support (hard stop for NR7 failure).",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_007",
+      "said": "PWR trades below $641.24 (entry level) by end of session, I'll consider rotation to a bench defensive name.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_007",
+      "said": "AMD trades above $612 (upper NR7 boundary) on the next check, I'll hold for the breakout confirmation.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_011",
+      "said": "CRWD exits below $266.50 (0.15x ATR below current) if momentum stalls without volume confirmation by close.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "volume"
+      ]
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_011",
+      "said": "AMD breaks above $610 (NR7 upper band breakout) and holds through next check, confirming volatility expansion.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "next check/eval (not next_check)"
+      ]
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_011",
+      "said": "If AMD trades below $595 (breaking the NR7 support), I would exit to avoid the Bust penalty.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_011",
+      "said": "If CRWD falls below $260 (reversing more than 0.25x ATR from its peak), I would reconsider the hold.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_012",
+      "said": "MU trades below $1065 (entry price) for 2 consecutive 15-min checks, triggering S15 auto-swap to MSFT.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "consecutive"
+      ]
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_012",
+      "said": "AMAT trades below $512 (entry price) for 2 consecutive 15-min checks; S15 would trigger, but I will hold pending NR7 breakout confirmation.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "consecutive"
+      ]
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_012",
+      "said": "PANW trades above $430 (1.0x ATR bonus threshold) by close of trading today.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_012",
+      "said": "MU trades below $1,070 on the next 15-min check without a clear upside breakout confirmation.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_012",
+      "said": "AMAT trades below $510 on the next 15-min check without a clear upside breakout confirmation.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_014",
+      "said": "MU trades below entry ($1065.08) on the next check, I would consider rotating to SNOW if the NR7 setup fails to deliver breakout momentum.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_014",
+      "said": "AMAT trades below entry ($512.01) on the next check, I would evaluate a swap to INTC (+2.63% today, technicalScore=85).",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_015",
+      "said": "MU trades below $1,070 on the next 15-min check, I would reconsider hold vs swap.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_015",
+      "said": "AMAT breaks above $515 on the next 15-min check with volume confirmation, I would hold through bonus window.",
+      "basis": "next_check",
+      "flagged": true,
+      "terms": [
+        "volume"
+      ]
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_016",
+      "said": "SNOW trading above $366 (1.0x ATR bonus) by close would lock +15 pts.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_016",
+      "said": "If MU closes below entry on the next check with low volume, I would reconsider the position.",
+      "basis": "next_check",
+      "flagged": true,
+      "terms": [
+        "volume",
+        "close(s) above/below"
+      ]
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_017",
+      "said": "SNOW trades above 350.46 (1.0x ATR bonus) by close.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_017",
+      "said": "If MU breaks below 1055 on the next check, the NR7 breakout thesis fails and I'll reassess hold vs. exit.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_017",
+      "said": "MU trading above 1076.02 (upper NR7 band) by next check would confirm the squeeze breakout and favor holding through the bonus window.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_017",
+      "said": "AMAT trading above 517.01 (upper NR7 band) by next check would confirm the squeeze breakout and favor holding through the bonus window.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_017",
+      "said": "If PANW breaks below 391.45 (approaching -1.0x ATR Bust at -7.6%), I would rotate it out to a bench candidate like SNOW or INTC.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_017",
+      "said": "If MAR breaks below 355.84 (approaching -1.0x ATR Bust at -2.8%), I would rotate it out to a bench candidate like MSFT or DHR.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_018",
+      "said": "MU trades below $1050 before close: consider exit to lock remaining points.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_018",
+      "said": "AMAT trades below $500 before close: consider exit to protect against further deterioration.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_018",
+      "said": "CRWD trades above $275 before close: strong candidate for profit-take if momentum stalls.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_004",
+      "said": "SNOW exits below $317.04 support by close if volume confirms the break.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "volume"
+      ]
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_008",
+      "said": "ACN trades above $210 by end of session",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_008",
+      "said": "If SNOW closes below $339.96 (entry level), the NR7 setup has failed and exit becomes plausible",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "close(s) above/below"
+      ]
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_009",
+      "said": "AMAT trades above $532.45 (current price) by next check: lock in the +1.0x ATR bonus and reassess hold vs. take-profit.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_009",
+      "said": "SNOW trades above $347.50 (NR7 resistance) by next check: NR7 breakout confirmed, squeeze has fired.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_010",
+      "said": "AMAT trades above $536.20 (the +1.0x ATR BaggerBomb threshold) by session close.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_012",
+      "said": "SNOW trading below $338.73 (entry) on the next check would signal NR7 setup failure; I would reassess.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_012",
+      "said": "SNOW trading above $344.91 (resistance) on the next check would confirm NR7 breakout; I would hold through the move.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_013",
+      "said": "SNOW trading above $344.91 resistance by close would confirm NR7 breakout and lock in +1.0x ATR bonus path.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_014",
+      "said": "SNOW trades below $339.45 by close.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_016",
+      "said": "AMAT trading below $523.0 by close would signal momentum failure — would reconsider hold.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_016",
+      "said": "SNOW trading below $339.0 would break the NR7 support and signal reversal — would flag for exit.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "dZYtJZznAgpQSr14L8SQ:eval_003",
+      "said": "AMD breaks below $590 (approximately -0.8x ATR) by the next check, I would exit to EMR or DHR.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "dZYtJZznAgpQSr14L8SQ:eval_003",
+      "said": "ETN closes below $385.88 support by the next check, I would rotate to EMR.",
+      "basis": "next_check",
+      "flagged": true,
+      "terms": [
+        "close(s) above/below"
+      ]
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "dZYtJZznAgpQSr14L8SQ:eval_005",
+      "said": "MAR trades above $360.51 by end of session, confirming the +1.0x ATR bonus is in reach.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "dZYtJZznAgpQSr14L8SQ:eval_005",
+      "said": "If ETN breaks below $437.30 (-1.0x ATR, Bust threshold), exit preemptively to protect banked points.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "dZYtJZznAgpQSr14L8SQ:eval_006",
+      "said": "ISRG trading below $413.00 before close would reverse 0.25x ATR from entry, clearing S6 resistance and making a swap plausible.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "dZYtJZznAgpQSr14L8SQ:eval_006",
+      "said": "GME trading below $23.50 (entry minus 0.5x ATR) would break the short-term momentum and trigger a reassessment.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "dZYtJZznAgpQSr14L8SQ:eval_006",
+      "said": "ETN trading below $425.00 (approaching -0.56x ATR / Bust risk) would warrant a defensive swap to protect banked points.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "dZYtJZznAgpQSr14L8SQ:eval_011",
+      "said": "NVDA exits if it trades below $227.00 (approaching -0.5x ATR) before close.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_004",
+      "said": "LRCX will not trade below entry ($314.47) by close.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_004",
+      "said": "TXN will not break below $275 (support) by close.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_004",
+      "said": "GME will not fall below $22.50 (NR7 low) by close.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_005",
+      "said": "GME trades below $23.00 by close, I rotate out to protect the -25 pt lock.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_005",
+      "said": "LRCX trades above $325 (1.0x ATR bonus zone), I hold through the threshold to capture the +15 pt BaggerBomb.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_005",
+      "said": "TXN breaks above $283 (NR7 upside breakout), I hold for continuation into the +5.3% threshold zone.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_007",
+      "said": "TXN trades below $275 (approximately -2.3% from current, or -0.4x ATR) before the close.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_007",
+      "said": "LRCX trades below $312 (approximately -2.5% from current, or -0.35x ATR) before the close.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_007",
+      "said": "GME trades below $21.50 (approximately -7.8% from entry, or -1.1x ATR), triggering Bust penalty risk.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_008",
+      "said": "LRCX trading below $315 before close would signal NR7 breakout failure; I would consider rotating to AMD if it holds above $611.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_008",
+      "said": "GME trading below $22.50 before close would trigger a -0.5x ATR approach; I would rotate to SHOP if it confirms above $146.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_008",
+      "said": "TXN breaking above $283 would resolve the NR7 contraction into a bullish breakout; I would hold through the move.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_009",
+      "said": "TXN trading below $277.36 (lower Bollinger Band) by session close would signal downside breakout; I would evaluate a defensive rotation.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_009",
+      "said": "LRCX trading above $328.47 (upper Bollinger Band) by session close would confirm upside breakout; I would hold through the BaggerBomb threshold.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_010",
+      "said": "TXN breaks below $280.50 (entry -0.37%) by close, I exit the NR7 contraction as failed.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_010",
+      "said": "TXN holds above $283.50 (entry +0.70%) by close, the NR7 breakout confirms and I stay.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_010",
+      "said": "TXN trades below $277 by close, I exit the failed NR7 squeeze.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_011",
+      "said": "TXN trading below $279.50 before session end would signal NR7 compression failure; I would reconsider hold.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_011",
+      "said": "TXN trading above $283.50 before session end would confirm NR7 breakout and validate the hold thesis.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "jR53kNbElhXSAL0LSwo8:eval_005",
+      "said": "ETN trading below $438.18 (entry) would signal downside breakout; I would exit the position.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "jR53kNbElhXSAL0LSwo8:eval_005",
+      "said": "PLTR trading above $195 with volume confirmation would be a strong entry signal to replace ETN if it breaks down.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "volume"
+      ]
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "jR53kNbElhXSAL0LSwo8:eval_009",
+      "said": "PLTR trades above 192.08 by close, I confirm the breakout and hold through EOD.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "jR53kNbElhXSAL0LSwo8:eval_009",
+      "said": "If ETN breaks above 445.17 (NR7 upper band + 0.5% buffer), I hold and let it run toward the +1.0x ATR threshold.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "jR53kNbElhXSAL0LSwo8:eval_009",
+      "said": "PLTR to trade above $193.08 (current +0.8% from entry) by close, validating momentum continuation.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "jR53kNbElhXSAL0LSwo8:eval_009",
+      "said": "ETN to break below $436 on volume would signal NR7 setup failure; would trigger defensive exit.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "volume"
+      ]
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "jR53kNbElhXSAL0LSwo8:eval_010",
+      "said": "ETN trading below $438.50 (reversal of -0.15% from current) by the next check would signal NR7 setup failure; would consider exit.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "lk1CmAN46sdJAk7VHz8G:eval_003",
+      "said": "If MU trades below $1,060 on the next check, the NR7 downside breakout invalidates the hold thesis and I would rotate it out.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "lk1CmAN46sdJAk7VHz8G:eval_003",
+      "said": "If BE holds above $290 through the next 2 hours without further extension, I would consider swapping it into Support tier to capture residual momentum.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "holds/holding above/below … for/through"
+      ]
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "lk1CmAN46sdJAk7VHz8G:eval_004",
+      "said": "If MU trades below 1045.41 (breaking the NR7 support), I would consider rotating to a bench candidate with directional_expansion setup.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "lk1CmAN46sdJAk7VHz8G:eval_004",
+      "said": "If TXN breaks below 276.71 (NR7 support), I'm watching for a reversal signal before acting.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "lk1CmAN46sdJAk7VHz8G:eval_004",
+      "said": "If BE holds above 295.0 and consolidates, I would consider swapping it into Core tier to capture the momentum setup.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "lk1CmAN46sdJAk7VHz8G:eval_004",
+      "said": "If AMD breaks below 605.46 (1.0x ATR support), I'm watching for a regime shift from directional_expansion to choppy.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "lk1CmAN46sdJAk7VHz8G:eval_007",
+      "said": "MU trading below $1048.75 (0.5x ATR below current) before close would signal NR7 setup failure and warrant exit consideration.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "lk1CmAN46sdJAk7VHz8G:eval_007",
+      "said": "TXN trading below $278.00 (0.5x ATR below current) before close would signal NR7 setup failure and warrant exit consideration.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "lk1CmAN46sdJAk7VHz8G:eval_007",
+      "said": "BE trading above $305.00 (holding +1.0x ATR) through the next check would confirm momentum continuation and make it a candidate to replace LRCX (choppy regime).",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "next check/eval (not next_check)"
+      ]
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "lwXrd9405FlQG6zc3M23:eval_004",
+      "said": "NVDA trades below entry ($228.38) and fails to confirm the NR7 breakout by end of session, I would swap it out for a bench candidate showing stronger momentum.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "lwXrd9405FlQG6zc3M23:eval_004",
+      "said": "SNOW trades below entry ($339.56) and fails to confirm the NR7 breakout by end of session, I would evaluate a swap for a bench candidate with confirmed momentum.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "lwXrd9405FlQG6zc3M23:eval_004",
+      "said": "ACN remains above $216.38 (current +18% move) after 2:00 PM time-block expires, I would consider a swap into Support if conviction reaches 70%+.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "lwXrd9405FlQG6zc3M23:eval_005",
+      "said": "NVDA trades above 232.65 (R +1.51%) by the next check.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "lwXrd9405FlQG6zc3M23:eval_005",
+      "said": "SNOW trades above 344.91 (R +1.54%) by the next check.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "lwXrd9405FlQG6zc3M23:eval_005",
+      "said": "GME trades above 24.65 (entry price) by the next check, confirming NR7 upside breakout.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "lwXrd9405FlQG6zc3M23:eval_006",
+      "said": "NVDA trading below entry ($228.38) would signal failed breakout; I would reconsider hold if it closes below entry with no recovery attempt.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "close(s) above/below"
+      ]
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "lwXrd9405FlQG6zc3M23:eval_006",
+      "said": "SNOW trading below entry ($339.56) would signal failed NR7 breakout; I would reconsider hold if it closes below entry.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "close(s) above/below"
+      ]
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "lwXrd9405FlQG6zc3M23:eval_006",
+      "said": "GME trading below $23.00 (1.5x ATR below entry) would trigger Bust territory; I would exit defensively if it breaches this level.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "lwXrd9405FlQG6zc3M23:eval_007",
+      "said": "GME trades below $24.00 before the next check, the NR7 setup fails and I exit.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "lwXrd9405FlQG6zc3M23:eval_007",
+      "said": "NVDA holds above $232.65 (its next resistance) through the close, I hold for the +1.0x ATR bonus.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "holds/holding above/below … for/through"
+      ]
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "lwXrd9405FlQG6zc3M23:eval_007",
+      "said": "SNOW trades below $317.04 (support) before the next check, the NR7 setup fails and I exit.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "lwXrd9405FlQG6zc3M23:eval_009",
+      "said": "NVDA below $227.50 (approaching -1.0x ATR Bust threshold) would trigger exit consideration if no reversal signal appears.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "lwXrd9405FlQG6zc3M23:eval_009",
+      "said": "GME below $23.00 (approaching -1.0x ATR Bust threshold) would trigger exit consideration if no reversal signal appears.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "lwXrd9405FlQG6zc3M23:eval_016",
+      "said": "NVDA trading above 232.65 (+1.7%) before close would trigger +1.0x ATR BaggerBomb bonus.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "lwXrd9405FlQG6zc3M23:eval_017",
+      "said": "NVDA trades above 232.65 by close, locking in the +2.0% BaggerBomb threshold.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "xKLKthncJhPcYzloF42M:eval_003",
+      "said": "AMD trades above $641.65 (top of NR7 range) by end of session.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "xKLKthncJhPcYzloF42M:eval_003",
+      "said": "INTC trades above $128.07 (top of NR7 range) by end of session.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "xKLKthncJhPcYzloF42M:eval_003",
+      "said": "PWR trades above $654.37 (top of NR7 range) by end of session.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "xKLKthncJhPcYzloF42M:eval_004",
+      "said": "AMD trading below entry ($630) on the next check would signal NR7 setup failure.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "xKLKthncJhPcYzloF42M:eval_004",
+      "said": "INTC trading below entry ($124.18) on the next check would signal NR7 setup failure.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "xKLKthncJhPcYzloF42M:eval_004",
+      "said": "PWR trading above $655 (0.5x ATR bonus threshold) would lock in gains and confirm NR7 breakout.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "xKLKthncJhPcYzloF42M:eval_008",
+      "said": "AMD trading above $632.50 by the next check would confirm NR7 breakout and validate the hold thesis.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "xKLKthncJhPcYzloF42M:eval_008",
+      "said": "If PANW trades below $376.25 (current price, -0.51x ATR Bust threshold), I will swap it out to protect points.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "xKLKthncJhPcYzloF42M:eval_011",
+      "said": "If AMD trades below $625 on the next check, I would rotate to TXN (Tech, +2.34% today, technicalScore 86).",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "xKLKthncJhPcYzloF42M:eval_011",
+      "said": "If PWR closes below $643.50 (entry), I would swap to EMR (Industrials, +1.67%, technicalScore 86, RS vs SPY strong).",
+      "basis": "next_check",
+      "flagged": true,
+      "terms": [
+        "close(s) above/below"
+      ]
+    },
+    {
+      "arm": "D",
+      "rep": 2,
+      "check": "xKLKthncJhPcYzloF42M:eval_011",
+      "said": "If AMD breaks above $632.50 on the next check, the NR7 squeeze confirms and I hold for further upside into close.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "xKLKthncJhPcYzloF42M:eval_015",
+      "said": "AMD above $629.26 (entry price) before close triggers BaggerBomb bonus entry.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D",
+      "rep": 1,
+      "check": "xKLKthncJhPcYzloF42M:eval_015",
+      "said": "PWR above $647.96 (entry price) before close triggers BaggerBomb bonus entry.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_002",
+      "said": "If TXN trades below $280 by the next check, the NR7 breakout setup has failed and I would exit to a stronger momentum candidate.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_002",
+      "said": "If AMAT reaches $515 (approximately +0.6x ATR / +0.58%), I would lock in the gain and rotate to a bench candidate with higher momentum edge.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_003",
+      "said": "TXN breaks above $284.50 by next check — confirms NR7 breakout.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_003",
+      "said": "GME trades above $25.50 by session close — fresh breakout confirmation into new high.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_003",
+      "said": "TXN breaks below $281 (entry) on failed NR7 breakout within the next 15 minutes — exit signal.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_003",
+      "said": "TXN breaks above $285 (+0.5x ATR) by end of session — validates the NR7 squeeze thesis, hold for bonus run.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_004",
+      "said": "TXN below $280.21 (entry $281.69 minus 0.5x ATR) would signal NR7 breakout failed; would reconsider hold.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_004",
+      "said": "SHOP exits below resistance at +0.49% (150.36) if NR7 breakout fails by end of day.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_004",
+      "said": "NVDA exits below resistance at +0.81% (232.65) if momentum stalls by end of day.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_004",
+      "said": "MAR exits below entry (361.36) if NR7 contraction fails to resolve within 15 minutes.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_005",
+      "said": "AMAT breaks above $511 by end of session, I hold through the NR7 breakout.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_005",
+      "said": "LRCX breaks above $328 by end of session, I hold through the NR7 breakout.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_005",
+      "said": "NVDA reaches $232.65 (its next bonus threshold at +1.0x ATR), I hold to lock in BaggerBomb.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_007",
+      "said": "NVDA trades below $229.15 (>0.25 ATR reversal from peak) before end-of-day, S6 rule override becomes plausible.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_007",
+      "said": "NVDA trades above $232.65 (its +1.0x ATR bonus level) before end-of-day, locking in +15 point bonus.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_007",
+      "said": "NVDA above +2.0% (bonus threshold at $232.65) by session close — locks in +15 BaggerBomb bonus.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_008",
+      "said": "SNOW above 353.14 (1.0x ATR bonus) by close triggers BaggerBomb +15 pts.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_008",
+      "said": "If NVDA breaks below entry 227.21, I'll evaluate a defensive exit to protect the +14 pts banked.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_013",
+      "said": "NVDA below 228.24 (reversing 0.25x ATR from peak) would trigger S6 exit condition; I would rotate to INTC or AMD if confirmed.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "if confirmed"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_013",
+      "said": "INTC holds above daily VWAP and 5-minute MACD histogram turns positive (S12 gate), I would bring it in as a rotation candidate from a stalled NR7 or threshold-proximity exit.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_013",
+      "said": "NVDA trading below 228.5 (0.5x ATR from peak) before close — would signal momentum failure and trigger exit consideration.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_013",
+      "said": "LRCX trading above 328.0 (breakout from NR7 contraction) by close — would confirm directional expansion and validate hold.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_013",
+      "said": "MSFT trading above 520.0 (1.0x ATR move from open) by close — would signal institutional momentum and become a late-session swap candidate if an active holding breaks.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_014",
+      "said": "NVDA below $230.13 (reversal of 0.25x ATR from peak) would expire S6 lock and make exit viable.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_014",
+      "said": "LRCX below $325.94 (reversal of 0.25x ATR from peak) would expire S6 lock and signal breakout failure.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_015",
+      "said": "GME breaks below $24.30 (lower NR7 bound) by close, would signal failed breakout and justify exit to bench strength.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_015",
+      "said": "AMAT breaks below $510 (lower NR7 bound) by close, would signal failed contraction resolution and justify rotation.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_015",
+      "said": "LRCX breaks above $330.50 (+0.8x ATR, upper NR7 bound) by close, would confirm upside breakout and validate hold through resolution.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_016",
+      "said": "LRCX below entry ($323.86) by close triggers exit consideration if NR7 fails to resolve upward.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_017",
+      "said": "LRCX below $320 (0.25x ATR reversal from peak) by close would trigger threshold-lock release; hold unless it breaks.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "2yNCARN1NkOcJlsKgVP0:eval_017",
+      "said": "SNOW below $317.04 (support / -7.88%) by close triggers Bust penalty; would exit if it breaches.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_001",
+      "said": "AMD above +1.0x ATR threshold ($659.95) by end of session — evaluate for bonus lock and potential rotation.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_001",
+      "said": "HOOD above +1.0x ATR threshold ($131.21) by end of session — evaluate for bonus lock.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_001",
+      "said": "MU sustains above $1,100 and a Star position reaches +1.0x ATR — evaluate Core-tier entry to replace ETN.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_002",
+      "said": "HOOD below $121.50 (entry -1.37%) signals NR7 setup failure; would exit Star tier.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_002",
+      "said": "AMD below $610.00 (entry -1.25%) signals NR7 setup failure; would exit Star tier.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_002",
+      "said": "META below $740.00 (entry -1.43%) triggers re-evaluation; holding unless volume confirms breakdown.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "volume"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_003",
+      "said": "HOOD below -1.0x ATR (Bust threshold at $116.26) by close triggers defensive exit.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_003",
+      "said": "AMD below -1.0x ATR (Bust threshold at $602.02) by close triggers defensive exit.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_003",
+      "said": "HOOD below $120.50 (1.0x ATR down from entry) triggers Bust penalty — would exit to protect banked points if this level breaks intraday.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_003",
+      "said": "AMD below $609.00 (1.0x ATR down from entry) triggers Bust penalty — would exit to protect banked points if this level breaks intraday.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_003",
+      "said": "MSFT above $502.00 (+1.0x ATR from entry) signals BB squeeze breakout — would hold and watch for +1.5x ATR bonus target at $514.46.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_004",
+      "said": "HOOD below entry ($123.48) by close would signal NR7 setup failed; exit to protect Star tier multiplier.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_004",
+      "said": "AMD below entry ($617.71) by close would invalidate NR7 breakout thesis; exit to preserve Star capital.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_004",
+      "said": "MSFT breaks support ($489.01) on BB squeeze failure; exit to lock in minimal loss before further deterioration.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_005",
+      "said": "MU above $1085 (current $1077.28) by close — validates momentum continuation and supports holding through +1.0x ATR bonus window.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_005",
+      "said": "GOOGL below $350 (current $355.66) — confirms Bust penalty imminent; exit was correct.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_006",
+      "said": "HOOD below $123.00 on the next 15-min candle signals NR7 setup failure; would rotate out.",
+      "basis": "next_check",
+      "flagged": true,
+      "terms": [
+        "candle"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_006",
+      "said": "AMD below $600.00 would signal breakdown of NR7 setup; holding unless it closes below this level.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "close(s) above/below"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_008",
+      "said": "HOOD breaks above $124.65 (NR7 upper breakout level) by end of day.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_008",
+      "said": "AMD breaks above $625 (NR7 upper breakout level) by end of day.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_008",
+      "said": "ETN breaks above $444.50 (NR7 upper breakout level) by end of day.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_008",
+      "said": "META breaks below $738 (-1.0x ATR threshold) — triggers Bust penalty. Swap to NVDA or INTC.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_009",
+      "said": "HOOD trades below $123.00 by end of session, NR7 breakout setup fails.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_009",
+      "said": "AMD trades below $615.00 by end of session, NR7 breakout setup fails.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_009",
+      "said": "MSFT trades above $500.00 (BB squeeze breakout), confirming volatility expansion.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_009",
+      "said": "HOOD breaks below $122.00 (entry support) before close, I rotate to a bench momentum play.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_009",
+      "said": "AMD breaks below $610.00 (entry support) before close, I cut and redeploy to a stronger setup.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_009",
+      "said": "META breaks below $735.00 (entry support) before close, I swap to DHR or another Healthcare outperformer.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_010",
+      "said": "HOOD below entry ($123.48) by close would signal NR7 setup failure; consider exit.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_011",
+      "said": "HOOD above $130.40 (+1.0x ATR bonus threshold, +5.6% from current) by end of session would lock +15 bonus pts at Star tier.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_011",
+      "said": "AMD above $631.08 (+1.0x ATR bonus threshold, +2.3% from current) by end of session would lock +15 bonus pts at Star tier.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_011",
+      "said": "META below $739.27 (-1.5x ATR penalty zone) would trigger Bust penalty; exit to COIN if confirmed.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "if confirmed"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_012",
+      "said": "HOOD above $132.14 (+7.2% from entry, +0.5x ATR breakout) by end of session would confirm NR7 release and lock in BaggerBomb bonus.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_012",
+      "said": "AMD above $658.76 (+6.6% from entry, +0.5x ATR breakout) by end of session would confirm NR7 release and approach BaggerBomb threshold.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_013",
+      "said": "HOOD above 132.68 (reaching +0.5x ATR bonus at +6.8%) by session close.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_013",
+      "said": "AMD above 659.54 (reaching +0.5x ATR bonus at +6.6%) by session close.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_013",
+      "said": "META below 726.75 (breaking -0.5x ATR at -3.3%) would trigger Core rotation.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_015",
+      "said": "HOOD below entry ($123.48) by close would signal NR7 setup failed; would exit Star tier.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_015",
+      "said": "AMD below entry ($617.71) by close would signal NR7 setup failed; would exit Star tier.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_015",
+      "said": "HOOD above +6.5% (+$8.00 from entry) would confirm NR7 breakout and lock in momentum hold through +1.0x ATR target.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_015",
+      "said": "AMD above +3.65% (+$22.68 from entry) would confirm NR7 breakout is underway; hold through +1.0x ATR target.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_017",
+      "said": "HOOD trades above +0.5x ATR ($124.87) by end of session, confirming NR7 breakout.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_017",
+      "said": "AMD trades above +0.5x ATR ($625.65) by end of session, confirming NR7 breakout.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_017",
+      "said": "META trades below -0.5x ATR ($730.77) by end of session, triggering rotation to DHR or bench alternative.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_017",
+      "said": "HOOD above $125.41 (0.5x ATR bonus trigger) by close.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_017",
+      "said": "AMD above $632.65 (0.5x ATR bonus trigger) by close.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_017",
+      "said": "META below $720 (approaching -0.5x ATR) would trigger rotation consideration.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_018",
+      "said": "HOOD above $131.59 (+7.1% bonus threshold) by session close — NR7 breakout confirmation.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_018",
+      "said": "AMD above $660.13 (+6.5% bonus threshold) by session close — NR7 breakout confirmation.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "DRgA4vrEIZ0kN574vexk:eval_018",
+      "said": "META below $723.47 (-0.5x ATR) — triggers swap evaluation to DHR or INTC.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "NScUWgRyhGH9wSs9g6jv:eval_004",
+      "said": "MSFT below $489.56 (its support level, -3.71% from entry) by end of session triggers a defensive exit to protect Support tier points.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "NScUWgRyhGH9wSs9g6jv:eval_004",
+      "said": "NVDA below $228.62 (entry price, -1.0x ATR threshold) by end of session would trigger S6 automatic swap, but I am holding pending confirmation of breakdown.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "confirmation of"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "NScUWgRyhGH9wSs9g6jv:eval_006",
+      "said": "MU exits Star if it trades below -0.7x ATR ($1061.89) by next check — S36 automatic swap trigger.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "NScUWgRyhGH9wSs9g6jv:eval_006",
+      "said": "MSFT exits Support if it trades below -0.7x ATR ($504.77) by next check — S36 automatic swap trigger.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "NScUWgRyhGH9wSs9g6jv:eval_006",
+      "said": "AMAT above $511.45 (1.0x ATR bonus threshold) by session close would validate the momentum rotation.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "NScUWgRyhGH9wSs9g6jv:eval_006",
+      "said": "If MU breaks below $1048.42 (lower Bollinger Band), NR7 setup fails and exit becomes likely.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "NScUWgRyhGH9wSs9g6jv:eval_007",
+      "said": "MU below $1070 (entry) on next check would signal NR7 setup failure.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "NScUWgRyhGH9wSs9g6jv:eval_007",
+      "said": "MSFT above $510 (upper band) by close would confirm BB squeeze breakout.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "NScUWgRyhGH9wSs9g6jv:eval_009",
+      "said": "MU below $1,052 (approximately -0.5x ATR from entry) by next check would warrant defensive rotation.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "NScUWgRyhGH9wSs9g6jv:eval_009",
+      "said": "MSFT above $515.00 resistance by end of session would confirm BB squeeze breakout; holding to see if it reaches bonus threshold.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "NScUWgRyhGH9wSs9g6jv:eval_009",
+      "said": "KLAC above $200 (support level) by end of session would make it a candidate to replace a weaker Support position if momentum sustains.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "NScUWgRyhGH9wSs9g6jv:eval_010",
+      "said": "MSFT above $515 (upper Bollinger Band breakout) by session close — would favor holding if it clears this level with volume, as it would validate the squeeze setup.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "volume"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "NScUWgRyhGH9wSs9g6jv:eval_010",
+      "said": "KLAC above $198 (0.5x ATR outperformance sustained) by session close — would favor rotating a Core position into KLAC if it holds this level, pending freeze expiry at 19:31 UTC.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "NScUWgRyhGH9wSs9g6jv:eval_010",
+      "said": "ORCL below $135 (approaching -1.0x ATR hard stop at $128.17) — would trigger S6 automatic swap if it breaches this level before freeze expires.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "NTNj46p7dAmAZ4ObPZGi:eval_001",
+      "said": "AMD breaks above +0.5x ATR ($633.58) by end of session, confirming S1 Volatility Squeeze Breakout.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "NTNj46p7dAmAZ4ObPZGi:eval_001",
+      "said": "CRWD breaks above +0.5x ATR ($255.88) by end of session, confirming S1 Volatility Squeeze Breakout.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "NTNj46p7dAmAZ4ObPZGi:eval_002",
+      "said": "AMD below -1.0x ATR (Bust threshold ~$594.44) by close triggers exit to stop penalty lock.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "NTNj46p7dAmAZ4ObPZGi:eval_002",
+      "said": "MU below -1.0x ATR (Bust threshold ~$1024.14) by close triggers exit to stop penalty lock.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "NTNj46p7dAmAZ4ObPZGi:eval_003",
+      "said": "AMD below $604.09 (entry price) by end of session triggers exit consideration if it continues toward -1.0x ATR.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "NTNj46p7dAmAZ4ObPZGi:eval_004",
+      "said": "AMD below -1.0x ATR (-0.71% further decline) before close triggers defensive exit evaluation.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "NTNj46p7dAmAZ4ObPZGi:eval_005",
+      "said": "AMD below -0.70x ATR (approaching Bust) by end of session triggers defensive exit.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "NTNj46p7dAmAZ4ObPZGi:eval_006",
+      "said": "AMD below $604.00 (breaking -1.0x ATR / Bust threshold) by close triggers defensive rotation.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "NTNj46p7dAmAZ4ObPZGi:eval_006",
+      "said": "AMD exits below $606.00 (current price) by end-of-session if Bust accelerates.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "NTNj46p7dAmAZ4ObPZGi:eval_007",
+      "said": "AMD below $608.00 (current entry) by next check would trigger -0.56x ATR threshold; if confirmed, defensive swap to healthcare warranted.",
+      "basis": "next_check",
+      "flagged": true,
+      "terms": [
+        "if confirmed"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "NTNj46p7dAmAZ4ObPZGi:eval_007",
+      "said": "PFE above $28.75 (current price) through close would signal sustained relative strength; candidate for entry if AMD deteriorates.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "NTNj46p7dAmAZ4ObPZGi:eval_008",
+      "said": "PANW below $387.62 (reversing >0.25x ATR from peak) would trigger S6 reversal condition; I would evaluate exit.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "NTNj46p7dAmAZ4ObPZGi:eval_008",
+      "said": "CRWD below $258.78 (reversing >0.25x ATR from peak) would trigger S6 reversal condition; I would evaluate exit.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "NTNj46p7dAmAZ4ObPZGi:eval_008",
+      "said": "AMD below $593.76 (-1.0x ATR / Bust threshold) would trigger automatic Survival Mode exit.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "NTNj46p7dAmAZ4ObPZGi:eval_010",
+      "said": "EMR above $159.30 (entry) by market close — confirms relative strength hold.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "NTNj46p7dAmAZ4ObPZGi:eval_010",
+      "said": "If PANW breaks below $380.00 (0.2x ATR from current), reconsider hold due to threshold proximity loss.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "NTNj46p7dAmAZ4ObPZGi:eval_010",
+      "said": "PANW below 388.0 (0.32x ATR) before close would break S6 threshold lock; exit only if confirmed by volume.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "volume",
+        "if confirmed"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "NTNj46p7dAmAZ4ObPZGi:eval_010",
+      "said": "EMR holds above 159.0 through close, confirming defensive entry thesis.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "holds/holding above/below … for/through"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "NTNj46p7dAmAZ4ObPZGi:eval_012",
+      "said": "PANW holds above entry ($391.25) through market close — do not exit; let it run toward +1.0x ATR bonus.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "holds/holding above/below … for/through"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "NTNj46p7dAmAZ4ObPZGi:eval_012",
+      "said": "AMD breaks below $590 (approaching -1.0x ATR Bust) — evaluate emergency exit to stop bleeding.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "NTNj46p7dAmAZ4ObPZGi:eval_012",
+      "said": "CRWD holds above entry ($259.58) through close — do not exit; let it run toward +1.0x ATR bonus.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "holds/holding above/below … for/through"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_005",
+      "said": "MU above 1084.51 (+1.32% from entry, +0.19x ATR) by session end — triggers BaggerBomb bonus. Hold through.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_005",
+      "said": "CRWD above 269.44 (+2.18% from entry, +0.29x ATR) by session end — triggers BaggerBomb bonus. Hold through.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_005",
+      "said": "AMD below 599.37 (-1.32% from entry, -0.18x ATR) on next check — NR7 breakout failed, regime deteriorated. Swap to MSFT.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_006",
+      "said": "MU below $1,050 (entry $1,065) by end of day would signal NR7 breakout failed; would reconsider hold.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_007",
+      "said": "MU below $1050 by close would signal NR7 breakdown; would reconsider hold if volume confirms reversal.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "volume"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_007",
+      "said": "PWR below $630 triggers -1.0x ATR Bust; would rotate to PANW or INTC if confirmed.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "if confirmed"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_007",
+      "said": "AMD above $615 next check confirms NR7 breakout; hold for +1.0x ATR bonus run.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_008",
+      "said": "AMD breaks above +0.5x ATR ($615.89) by close, confirming NR7 breakout.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_008",
+      "said": "MU breaks above +0.5x ATR ($1086.51) by close, confirming NR7 breakout.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_008",
+      "said": "AMAT breaks above +0.5x ATR ($519.03) by close, confirming NR7 breakout.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_008",
+      "said": "PWR breaks below -0.5x ATR ($634.19), triggering defensive exit into MSFT.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_008",
+      "said": "MU trading below 1050 (entry 1065.08) by end of session would trigger Bust penalty review.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_008",
+      "said": "MSFT trading above 520 (current 518.06) would confirm breakout and favor entry if PWR deteriorates.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_008",
+      "said": "PANW trading above 410 (current 403.74) would extend its run and favor entry if AMD breaks below -1.0x ATR.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_011",
+      "said": "AMD below $595 (breaking -1.0x ATR) by close triggers exit to protect banked points.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_011",
+      "said": "CRWD above $269 (+0.25x ATR) by close would confirm momentum hold through session.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_011",
+      "said": "MSFT above $520 (+0.3x ATR from current) by close would make it a candidate for next rotation window.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_012",
+      "said": "AMD breaks below $600.50 (approximately -1.2x ATR from entry) by close, I rotate to MSFT or PANW.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_012",
+      "said": "AMAT breaks below $508.50 (approximately -0.5x ATR from entry) by close, I rotate to SNOW or PANW.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_012",
+      "said": "MU holds above entry ($1065.08) through close — I hold for the +6.2% bonus run. If it breaks below entry before 2:00 PM, I'll reassess.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "holds/holding above/below … for/through"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_012",
+      "said": "CRWD holds above entry ($262.74) through close — I hold for the +5.7% bonus run. If it breaks below entry, I'll cut it.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "holds/holding above/below … for/through"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_012",
+      "said": "PWR breaks below current ($644.77) before 2:00 PM, I rotate to SNOW or PANW immediately (S14 override on hard stop).",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_013",
+      "said": "MU breaks below $1068 before close, I would exit to lock in +9 pts and rotate to MSFT or INTC.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_013",
+      "said": "CRWD breaks below $264 before close, I would exit to lock in +16 pts and rotate to SNOW or INTC.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_013",
+      "said": "MAR breaks below $357 on the next check, I would rotate to MSFT or INTC for sector rotation.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "next check/eval (not next_check)"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_013",
+      "said": "MU holds above entry ($1065.08) through close or I rotate it out.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "holds/holding above/below … for/through"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_013",
+      "said": "AMAT holds above entry ($510.01) through close or I rotate it out.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "holds/holding above/below … for/through"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_013",
+      "said": "CRWD holds above $265 through close or I rotate it out.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "holds/holding above/below … for/through"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_014",
+      "said": "CRWD below $264 by close would signal momentum failure; I would then reconsider hold vs. exit.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_014",
+      "said": "MU above $1,080 at next check would confirm NR7 breakout; I would monitor for +0.5x ATR follow-through.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_014",
+      "said": "AMAT above $510 at next check would confirm NR7 breakout; I would monitor for +0.5x ATR follow-through.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_014",
+      "said": "MU closes below entry ($1,065.08) on above-average volume before end of session, signaling NR7 setup failure.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "volume",
+        "close(s) above/below"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_014",
+      "said": "AMAT closes below entry ($512.01) on above-average volume before end of session, signaling NR7 setup failure.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "volume",
+        "close(s) above/below"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_016",
+      "said": "SNOW above $369 (1.0x ATR bonus) by close — BaggerBomb locked.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_016",
+      "said": "MU below entry ($1,065) on next check — NR7 breakout failed, exit signal.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_016",
+      "said": "AMAT below current ($509) on next check — NR7 breakout stalling, watch for exit.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_016",
+      "said": "MAR below $357.50 (Bust threshold) by next check triggers exit.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_016",
+      "said": "SNOW holds above $357.80 (1.0x ATR bonus level) through close = +15 pts locked.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "holds/holding above/below … for/through"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_017",
+      "said": "MU below $1050.15 (7-day low) by close = failed NR7 breakout; would reconsider hold.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_017",
+      "said": "AMAT below $500.73 (7-day low) by close = failed NR7 breakout; would reconsider hold.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_017",
+      "said": "INTC above $122 (1.0x ATR from current) = strong momentum confirmation; candidate for swap if active position breaks.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_021",
+      "said": "CRWD below +0.10x ATR at next check, I rotate out to lock +12 points before momentum breaks.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_021",
+      "said": "PANW below daily VWAP for 2 consecutive checks triggers S15 forced exit.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "consecutive"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "bzfCEJYCyK0I9wLKMYse:eval_022",
+      "said": "CRWD below entry $262.74 by close would signal momentum failure; hold if it stays above.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_002",
+      "said": "SNOW trades above $344.91 (its +0.98% resistance) by end of session, confirming NR7 breakout.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_002",
+      "said": "AMAT falls below $515.00 (entry -0.75%), reversing more than 0.25x ATR from its peak, triggering S6 swap resistance override.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_004",
+      "said": "SNOW above $344.91 resistance by close — NR7 breakout confirmed.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_004",
+      "said": "MU below current level ($1043.69) on volume spike — consider exit if Bust penalty approaches.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "volume"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_004",
+      "said": "AMAT above $530 (1.0x ATR bonus zone) — ride the directional_expansion momentum.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_005",
+      "said": "SNOW above $347.50 on the next check — NR7 breakout confirmed.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_006",
+      "said": "If SNOW trades below $340 before 2:00 PM, I would consider a defensive exit to avoid locking in losses on a failed NR7 breakout.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_006",
+      "said": "If AMAT breaks below $520 (losing the +0.41x ATR cushion), I would reassess hold vs. swap given S4 and S6 constraints.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_006",
+      "said": "SNOW above $347.50 by close — breakout confirmation on NR7 squeeze.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_010",
+      "said": "SNOW trades above $347.50 (NR7 upper resistance) by end of session.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_010",
+      "said": "AMAT reaches +1.0x ATR (~$536.20) before close.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_011",
+      "said": "SNOW below $335 by close triggers exit to protect breakeven entry and redeploy late-session capital.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_011",
+      "said": "ACN holds above $220 at next check — if intraday VWAP confirmation arrives, reconsider entry despite time pressure.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_012",
+      "said": "AMAT below $520.00 before close would signal momentum loss; I would hold unless it breaks -0.5x ATR.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_012",
+      "said": "SNOW below $338.00 on the next check triggers a defensive exit to stop the bleed before close.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_012",
+      "said": "SNOW above $344.91 resistance confirms NR7 breakout; I would hold and watch for +1.0x ATR extension.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_013",
+      "said": "SNOW above $344.91 by close; NR7 breakout thesis validates.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_015",
+      "said": "AMAT must hold above $525 through close to preserve the +0.61x ATR position and avoid reversing into penalty territory.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_015",
+      "said": "SNOW breaks above $344.91 resistance within the final 45 minutes, confirming NR7 breakout and validating hold through close.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_015",
+      "said": "AMAT holds above $525 (within 1.2% of current) through close, or I'm watching for a late-session fade.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "holds/holding above/below … for/through"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_015",
+      "said": "SNOW breaks above $344.91 resistance within the final 45 minutes, confirming NR7 squeeze breakout.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_015",
+      "said": "MU holds above $1075 (within 1.2% of current) through close, or momentum is fading.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "holds/holding above/below … for/through"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "d3GNkrizM0zeBx4G9cKV:eval_017",
+      "said": "AMAT above $535.82 (BaggerBomb +1.0x ATR) by close — lock +50 bonus points.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "d3T2JZcGAX7u1aiqFTMm:eval_005",
+      "said": "MU breaks above $1,079 (NR7 upper bound) by next check — confirms directional expansion breakout.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "d3T2JZcGAX7u1aiqFTMm:eval_005",
+      "said": "PANW closes below $380.57 (entry) — signals regime shift to choppy; would consider rotation.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "close(s) above/below"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "d3T2JZcGAX7u1aiqFTMm:eval_005",
+      "said": "AMD trades above $620 — reaches +1.0x ATR bonus territory (+$615.58).",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "d3T2JZcGAX7u1aiqFTMm:eval_005",
+      "said": "MU below $1,060 (entry -0.37%) by close would signal NR7 breakout failure; reassess hold vs. rotation.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "d3T2JZcGAX7u1aiqFTMm:eval_005",
+      "said": "PANW below $375 (approximately -0.65x ATR) would trigger Bust threshold; rotate to AMAT or DHR.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "d3T2JZcGAX7u1aiqFTMm:eval_007",
+      "said": "MU trades above $1,079 (NR7 upper bound) by the next check, confirming squeeze breakout.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "d3T2JZcGAX7u1aiqFTMm:eval_007",
+      "said": "MU above $1,079 by next check confirms NR7 breakout and directional_expansion regime shift.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "d3T2JZcGAX7u1aiqFTMm:eval_008",
+      "said": "MU above $1,079 (NR7 upper bound) by next check — confirms breakout from consolidation.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "d3T2JZcGAX7u1aiqFTMm:eval_008",
+      "said": "MU breaks above $1,079 (NR7 upper bound) by end of session.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "d3T2JZcGAX7u1aiqFTMm:eval_008",
+      "said": "PANW trades below $377 (-0.5x ATR) by end of session.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "d3T2JZcGAX7u1aiqFTMm:eval_010",
+      "said": "MU above $1,079 (NR7 upper bound) by next check confirms breakout; hold through bonus window.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "d3T2JZcGAX7u1aiqFTMm:eval_010",
+      "said": "PANW below $382 on next check signals failed support; exit becomes viable.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "d3T2JZcGAX7u1aiqFTMm:eval_011",
+      "said": "MU below $1,065 on the next check; NR7 breakout setup has failed.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "d3T2JZcGAX7u1aiqFTMm:eval_014",
+      "said": "If MU trades below $1,072 before close, I would reconsider the hold given late-phase clock pressure.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "d3T2JZcGAX7u1aiqFTMm:eval_014",
+      "said": "MU below $1,070 on declining volume by next check would signal NR7 breakdown; reconsider hold.",
+      "basis": "next_check",
+      "flagged": true,
+      "terms": [
+        "volume"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "d3T2JZcGAX7u1aiqFTMm:eval_014",
+      "said": "MU above $1,079 (NR7 upper bound) by close would validate breakout; hold through move.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "dZYtJZznAgpQSr14L8SQ:eval_002",
+      "said": "AMD closes below -0.9x ATR (Bust imminent) before bench stocks unlock at 2:01 PM — defensive exit to protect banked points.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "close(s) above/below"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "dZYtJZznAgpQSr14L8SQ:eval_002",
+      "said": "LRCX breaks above $316.50 (range high) on the next 15-min check — NR7 breakout confirmation in directional_expansion regime.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "dZYtJZznAgpQSr14L8SQ:eval_002",
+      "said": "NVDA holds above $235 (buyback story bid support) through end of day — bullish catalyst holding.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "holds/holding above/below … for/through"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "dZYtJZznAgpQSr14L8SQ:eval_004",
+      "said": "DHR holds above entry ($226.13) through close, confirming the swap thesis.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "holds/holding above/below … for/through"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "dZYtJZznAgpQSr14L8SQ:eval_004",
+      "said": "If ETN breaks below $415 (-0.75x ATR), I would rotate it out to stop the bleed before Bust penalty.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "dZYtJZznAgpQSr14L8SQ:eval_006",
+      "said": "ETN below $425.68 (Bust threshold) by close triggers defensive exit to non-industrial bench candidate.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "dZYtJZznAgpQSr14L8SQ:eval_006",
+      "said": "ETN below $425.13 (Bust threshold) by close triggers exit to stop penalty bleed.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "dZYtJZznAgpQSr14L8SQ:eval_007",
+      "said": "GME above $25.28 (0.50x ATR) by next check — momentum confirmed, hold through bonus.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "dZYtJZznAgpQSr14L8SQ:eval_007",
+      "said": "ETN below $423.18 (entry price, -1.0x ATR threshold) — Bust penalty risk, exit to Survival Mode.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "dZYtJZznAgpQSr14L8SQ:eval_009",
+      "said": "MAR above 360.29 (+1.0x ATR bonus level) by close = BaggerBomb +15 pts locked.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "dZYtJZznAgpQSr14L8SQ:eval_009",
+      "said": "NVDA below 228.81 (-1.0x ATR Bust threshold) = exit to stop -10 penalty lock.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "dZYtJZznAgpQSr14L8SQ:eval_010",
+      "said": "NVDA below 228.5 (approaching -1.0x ATR Bust) by close would trigger exit to PFE or TMO if conviction rises.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_003",
+      "said": "LRCX holds above $320 (−0.5x ATR) through close, or I reassess the NR7 thesis.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "holds/holding above/below … for/through"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_003",
+      "said": "TXN holds above $278 (−0.5x ATR) through close, or the NR7 setup is invalidated.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "holds/holding above/below … for/through"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_003",
+      "said": "If MAR breaks below $353 (−0.2x ATR), I will rotate to a stronger sector candidate.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_005",
+      "said": "GME below -0.5x ATR on volume >1.2x before close = exit signal.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "volume"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_005",
+      "said": "LRCX holds above $318 (entry +0.25x ATR) through close = no exit.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "holds/holding above/below … for/through"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_005",
+      "said": "TXN holds above $278 (-1.25% from entry) through close = no exit.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "holds/holding above/below … for/through"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_005",
+      "said": "GME below $23.10 by next check triggers Bust penalty exit.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_005",
+      "said": "LRCX holds above $318 through session close; if it breaks below, momentum reversal is confirmed.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "holds/holding above/below … for/through"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_008",
+      "said": "TXN breaks above $283.15 (NR7 upper band) by close, confirming breakout.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_008",
+      "said": "LRCX extends above $322 (current +0.25x ATR), reaching +1.0x ATR bonus by close.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_008",
+      "said": "If GME falls below $22.50 (-0.5x ATR), I would rotate to AMD or WBD.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_009",
+      "said": "TXN exits below 280.5 (today's open) by close if NR7 fails to break upward.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_009",
+      "said": "LRCX exits below 318.0 (50-day MA proxy) by close if NR7 reverses downward.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_009",
+      "said": "LRCX holds above $322.00 by close, confirming upside breakout from NR7 contraction.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_009",
+      "said": "TXN breaks below $279.00 (7-day low) on volume, signaling downside resolution of NR7 contraction.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "volume"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_010",
+      "said": "TXN below $277.41 support (on volume) by close would signal NR7 breakdown.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "volume"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_010",
+      "said": "TXN breaks below session open ($281.53) by next check, NR7 setup has failed and exit becomes viable.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_012",
+      "said": "TXN trading below $277.90 (lower NR7 band) by close signals failed breakout; exit to preserve capital.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_013",
+      "said": "TXN breaks below $280.99 (lower NR7 bound) before close, I reassess for defensive exit.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "jR12Be56QNCKfVQi1vUs:eval_013",
+      "said": "TXN breaks above $285.60 (upper NR7 bound) before close, NR7 breakout confirmed.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "jR53kNbElhXSAL0LSwo8:eval_003",
+      "said": "MSFT exits Support if it trades below $489.01 (current support level) on above-average volume before session close.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "volume"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "jR53kNbElhXSAL0LSwo8:eval_003",
+      "said": "PLTR enters Core if it holds above $189 at the next check, contingent on MSFT failing to break its BB squeeze.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "jR53kNbElhXSAL0LSwo8:eval_003",
+      "said": "CRWD enters Star if it holds above $258 and an active Tech position (INTC/AMD) reverses below -0.5x ATR.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "jR53kNbElhXSAL0LSwo8:eval_003",
+      "said": "INTC exits Star if it trades below $119.50 (approx -0.5x ATR support) on volume, signaling choppy regime breakdown.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "volume"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "jR53kNbElhXSAL0LSwo8:eval_003",
+      "said": "MSFT breaks below $489.01 support on the next check — exit to protect against Bust penalty.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "jR53kNbElhXSAL0LSwo8:eval_003",
+      "said": "PLTR trades above $192.65 (0.75x ATR from open) by end of session — consider entry if it holds above VWAP.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "jR53kNbElhXSAL0LSwo8:eval_004",
+      "said": "INTC below $119 (approaching -1.0x ATR Bust threshold) by close triggers defensive exit from Star tier.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "jR53kNbElhXSAL0LSwo8:eval_004",
+      "said": "INTC above entry ($121.06) by close locks in breakeven and justifies holding through close.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "jR53kNbElhXSAL0LSwo8:eval_004",
+      "said": "ETN above $445 (upper BB breakout) on next check confirms NR7 breakout — hold and ride momentum.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "jR53kNbElhXSAL0LSwo8:eval_005",
+      "said": "ETN below entry $438.18 by close triggers exit to PLTR.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "jR53kNbElhXSAL0LSwo8:eval_005",
+      "said": "ETN breaks below $438.18 (entry) on volume before session end, exit becomes likely.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "volume"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "jR53kNbElhXSAL0LSwo8:eval_005",
+      "said": "PLTR closes above $195 on volume today; if it does, I'd consider it for Core tier on next swap window.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "volume",
+        "close(s) above/below"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "jR53kNbElhXSAL0LSwo8:eval_007",
+      "said": "ETN breaks below entry ($437.98) on the session — exit to stop the bleed.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "jR53kNbElhXSAL0LSwo8:eval_007",
+      "said": "PLTR holds above +4% ($194.50) through next evaluation — signals sustained momentum for Core rotation.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "holds/holding above/below … for/through",
+        "next check/eval (not next_check)"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "jR53kNbElhXSAL0LSwo8:eval_009",
+      "said": "PLTR above daily VWAP with 5-minute MACD positive histogram by next check — entry into Core.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "jR53kNbElhXSAL0LSwo8:eval_009",
+      "said": "ETN closes below $438 on heavy volume — exit Support tier to reduce drag.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "volume",
+        "close(s) above/below"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "jR53kNbElhXSAL0LSwo8:eval_010",
+      "said": "If ETN trades below $438.50 (below NR7 low) by the next check, the breakout setup has failed and I would reconsider the position.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "jR53kNbElhXSAL0LSwo8:eval_012",
+      "said": "ETN breaks above $441 (NR7 upper band) by next check — if it holds, squeeze-breakout thesis is confirmed and I hold through the bonus window.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "jR53kNbElhXSAL0LSwo8:eval_012",
+      "said": "PANW holds above $390 (+0.75x ATR) with positive MACD histogram through session close — conviction rises to 75+, making a swap from META viable if META shows weakness.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "holds/holding above/below … for/through"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "jR53kNbElhXSAL0LSwo8:eval_012",
+      "said": "ETN breaks above $440.47 (NR7 upper band + 0.5%) by close of trading today.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "jR53kNbElhXSAL0LSwo8:eval_012",
+      "said": "PANW reaches $415 (+1.0x ATR, +7.2% from current) by close of trading today, triggering the BaggerBomb bonus.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "jR53kNbElhXSAL0LSwo8:eval_012",
+      "said": "META falls below $740 (-0.24% from current, testing support) by the next evaluation in 15 minutes.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "next check/eval (not next_check)"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "lk1CmAN46sdJAk7VHz8G:eval_003",
+      "said": "BE above $310 by close — potential Core entry if current holdings confirm weakness.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "lk1CmAN46sdJAk7VHz8G:eval_003",
+      "said": "MU below $1065 — would reconsider hold if it breaks support on volume.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "volume"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "lk1CmAN46sdJAk7VHz8G:eval_003",
+      "said": "LRCX below $318 — would flag for exit if NR7 breaks downside.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "lk1CmAN46sdJAk7VHz8G:eval_005",
+      "said": "MU closes below entry ($1069.37) by end of session, I would rotate to BE or AMAT.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "close(s) above/below"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "lk1CmAN46sdJAk7VHz8G:eval_005",
+      "said": "BE holds above $293 and a green position hits BaggerBomb, I would bring BE into Support tier.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "lk1CmAN46sdJAk7VHz8G:eval_008",
+      "said": "MU below $1050 (entry $1069.37) by close, NR7 breakout failed — exit Star position.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "lk1CmAN46sdJAk7VHz8G:eval_008",
+      "said": "TXN below $275 (entry $281.16) by close, NR7 breakout failed — exit Support position.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "lk1CmAN46sdJAk7VHz8G:eval_008",
+      "said": "BE holds above $300 (current $293.36) and VWAP confirmation, consider entry to Support if MU or TXN triggers exit.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "lk1CmAN46sdJAk7VHz8G:eval_009",
+      "said": "MU trades below $1050 (entry -1.8%) by close, I rotate to bench strength.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "lk1CmAN46sdJAk7VHz8G:eval_009",
+      "said": "TXN trades below $275 (entry -2.2%) by close, I cut and preserve Support tier points.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "lk1CmAN46sdJAk7VHz8G:eval_010",
+      "said": "MU breaks below $1,055 (entry support) by next check, NR7 setup fails.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "lk1CmAN46sdJAk7VHz8G:eval_010",
+      "said": "BE consolidates above $280 and AMAT/KLAC pull back >1% by close, I would rotate BE into Support tier.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "lk1CmAN46sdJAk7VHz8G:eval_010",
+      "said": "MU below $1065 (entry $1069.37) by close signals NR7 setup failure; rotate to BE or AMAT.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "lk1CmAN46sdJAk7VHz8G:eval_010",
+      "said": "MU above $1077 (+0.7x ATR from entry) confirms NR7 breakout; hold through +1.0x ATR bonus target.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "lk1CmAN46sdJAk7VHz8G:eval_010",
+      "said": "TXN above $287 (+0.5x ATR from entry) confirms NR7 breakout; hold through +1.0x ATR bonus target.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "lk1CmAN46sdJAk7VHz8G:eval_011",
+      "said": "MU closes below entry ($1,069.37) without confirming +0.5x ATR breakout by end of session — exit Star position.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "close(s) above/below"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "lwXrd9405FlQG6zc3M23:eval_003",
+      "said": "LRCX holds above $337.50 (current momentum level) through close — confirms breakout thesis.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "holds/holding above/below … for/through"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "lwXrd9405FlQG6zc3M23:eval_003",
+      "said": "SNOW breaks above $344.91 (resistance) — validates squeeze breakout on the tightest BB width (25th pctl).",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "lwXrd9405FlQG6zc3M23:eval_003",
+      "said": "GME reclaims entry ($24.65) — NR7 breakout reverses the -1.01% red and confirms directional_expansion.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "lwXrd9405FlQG6zc3M23:eval_005",
+      "said": "If NVDA trades below $227.50 (breaking the NR7 support) before close, I would consider exiting the failed breakout setup.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "lwXrd9405FlQG6zc3M23:eval_006",
+      "said": "GME below $24.00 (entry -2.6%) by close triggers exit to avoid Bust penalty.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "lwXrd9405FlQG6zc3M23:eval_006",
+      "said": "NVDA above $232.65 (+1.51% resistance) holds the NR7 breakout thesis; if it breaks, I hold through.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "lwXrd9405FlQG6zc3M23:eval_006",
+      "said": "SNOW below $317.04 support (-6.66%) signals breakdown; I would exit if NR7 setup fails.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "lwXrd9405FlQG6zc3M23:eval_007",
+      "said": "NVDA exits if it trades below $228.38 (entry) before close, signaling failed NR7 breakout.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "lwXrd9405FlQG6zc3M23:eval_007",
+      "said": "SNOW holds above $339.56 (entry); if it breaks below on volume, NR7 setup has failed and exit becomes likely.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "volume"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "lwXrd9405FlQG6zc3M23:eval_007",
+      "said": "GEV holds above $1,000 on the next 15-min check; if confirmed with volume, rotation into GEV becomes actionable.",
+      "basis": "next_check",
+      "flagged": true,
+      "terms": [
+        "volume",
+        "if confirmed"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "lwXrd9405FlQG6zc3M23:eval_012",
+      "said": "NVDA below entry (228.38) by close would signal breakout failure; hold through close to see if NR7 resolves.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "lwXrd9405FlQG6zc3M23:eval_012",
+      "said": "SNOW below entry (339.56) by close would signal squeeze failure; hold to see if NR7 confirms.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "lwXrd9405FlQG6zc3M23:eval_012",
+      "said": "GME below -1.0x ATR (23.65) by close would trigger Bust penalty; monitor for defensive exit if volume surges down.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "volume"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "lwXrd9405FlQG6zc3M23:eval_015",
+      "said": "NVDA above 232.65 (R level, +1.9% to bonus) by close triggers BaggerBomb.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "lwXrd9405FlQG6zc3M23:eval_015",
+      "said": "LRCX above 342.20 (+4.0% to next bonus) by close locks in threshold.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "lwXrd9405FlQG6zc3M23:eval_015",
+      "said": "SHOP above 159.50 (+6.0% to next bonus) by close maintains momentum.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "lwXrd9405FlQG6zc3M23:eval_016",
+      "said": "NVDA above 232.65 (its +1.7% threshold to +1.0x ATR BaggerBomb) by close.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "lwXrd9405FlQG6zc3M23:eval_016",
+      "said": "LRCX holds above entry (340.06) through close, validating +0.49x ATR hold.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "holds/holding above/below … for/through"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "xKLKthncJhPcYzloF42M:eval_002",
+      "said": "AMD closes below $625 today, I cut it to stop the bleed before NR7 fails.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "close(s) above/below"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "xKLKthncJhPcYzloF42M:eval_002",
+      "said": "INTC closes below $122 today, I exit before it hits -1.0x ATR Bust threshold.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "close(s) above/below"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "xKLKthncJhPcYzloF42M:eval_002",
+      "said": "PWR breaks above $650 on the day, I hold through the NR7 breakout for bonus capture.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "xKLKthncJhPcYzloF42M:eval_003",
+      "said": "AMD above $641.28 (NR7 upper breakout) by end of session.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "xKLKthncJhPcYzloF42M:eval_003",
+      "said": "INTC above $131.57 (NR7 upper breakout) by end of session.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "xKLKthncJhPcYzloF42M:eval_003",
+      "said": "PWR above $658.37 (NR7 upper breakout) by end of session.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "xKLKthncJhPcYzloF42M:eval_003",
+      "said": "HUM above $416.41 (resistance) on next check; if confirmed, evaluate swap into PANW.",
+      "basis": "next_check",
+      "flagged": true,
+      "terms": [
+        "if confirmed"
+      ]
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "xKLKthncJhPcYzloF42M:eval_005",
+      "said": "AMD above 631.76 (breakout above NR7 high) by next check confirms momentum continuation.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "xKLKthncJhPcYzloF42M:eval_005",
+      "said": "INTC above 125.08 (breakout above NR7 high) by next check confirms momentum continuation.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "xKLKthncJhPcYzloF42M:eval_005",
+      "said": "PWR above 657.39 (breakout above NR7 high) by next check confirms momentum continuation.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "xKLKthncJhPcYzloF42M:eval_005",
+      "said": "PANW below 375.40 (breaks below support at -1.56% from entry) signals regime failure; would trigger exit.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "xKLKthncJhPcYzloF42M:eval_006",
+      "said": "AMD breaks above intraday high of $636.91 by session close, confirming NR7 volatility expansion.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "xKLKthncJhPcYzloF42M:eval_006",
+      "said": "INTC breaks above intraday high of $127.24 by session close, confirming NR7 volatility expansion.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "xKLKthncJhPcYzloF42M:eval_006",
+      "said": "PANW breaks below $370 support, triggering defensive exit to stop -0.5x ATR bleed.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "xKLKthncJhPcYzloF42M:eval_006",
+      "said": "AMD trades below $620 (NR7 support) by close, I exit to lock in learning and rotate to bench strength.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "xKLKthncJhPcYzloF42M:eval_006",
+      "said": "INTC trades below $120 (NR7 support) by close, I exit to stop the bleed.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "xKLKthncJhPcYzloF42M:eval_007",
+      "said": "AMD above $632.50 (entry + 0.5x ATR) by next check signals NR7 breakout confirmation.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "xKLKthncJhPcYzloF42M:eval_007",
+      "said": "PWR above $650.00 (entry + 0.5x ATR) by next check signals NR7 breakout confirmation.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "xKLKthncJhPcYzloF42M:eval_007",
+      "said": "PANW below $324.22 (support, -14.19%) triggers -15 penalty lock; would rotate to bench.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "xKLKthncJhPcYzloF42M:eval_010",
+      "said": "AMD breaks below $627.50 on the next check, I would consider a defensive exit despite the green.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "xKLKthncJhPcYzloF42M:eval_010",
+      "said": "PWR breaks below $648 on the next check, I would rotate to EMR or TXN for relative strength.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "xKLKthncJhPcYzloF42M:eval_010",
+      "said": "PANW breaks below $375 (support level), I will exit and rotate to a bench candidate with positive momentum.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "xKLKthncJhPcYzloF42M:eval_011",
+      "said": "AMD below $628 (lower NR7 band) by close signals squeeze failure; would exit.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "xKLKthncJhPcYzloF42M:eval_011",
+      "said": "PWR below $643.50 (entry price) by close signals NR7 setup failed; would exit.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 1,
+      "check": "xKLKthncJhPcYzloF42M:eval_011",
+      "said": "HUM above $402.81 and holding VWAP by close; would consider entry if time permits and conviction rises.",
+      "basis": "this_session",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "xKLKthncJhPcYzloF42M:eval_011",
+      "said": "AMD breaks below $626.00 (lower NR7 range) on the next check, I would exit and rotate to a stronger setup.",
+      "basis": "next_check",
+      "flagged": false,
+      "terms": []
+    },
+    {
+      "arm": "D2",
+      "rep": 2,
+      "check": "xKLKthncJhPcYzloF42M:eval_011",
+      "said": "PWR holds above $640.19 through close, I'm holding for the +1.0x ATR bonus. If it breaks below, I'll re-evaluate.",
+      "basis": "this_session",
+      "flagged": true,
+      "terms": [
+        "holds/holding above/below … for/through"
+      ]
+    }
+  ]
+}
