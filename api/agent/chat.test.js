@@ -28,6 +28,7 @@ const {
   grounding,
   promptBuilder,
   budget,
+  callsFlag,
 } = vi.hoisted(() => ({
   authReturnValue: { current: { uid: 'test-user' } },
   gateArgs: { current: [] },     // pass-through capture of gateDirective's args
@@ -51,6 +52,9 @@ const {
   // the uids it was asked about are captured (the route must ask for the
   // TOKEN's uid, never the body's).
   grounding: { mode: 'off', calls: [] },
+  // Cockpit Build 1a — CALL_RECORDS_MODE and COCKPIT_ALLOWLIST_UIDS, settable per
+  // row; the real values are 'off' and [] (every pre-existing row keeps them).
+  callsFlag: { mode: 'off', allow: [] },
   // The prompt-builder stub: distinguishable per build (old / new), and a
   // per-test way to make one side THROW (the shadow-assembly rows).
   promptBuilder: { throwWhen: null },
@@ -154,6 +158,8 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   // (dark), which is what every pre-existing row keeps.
   get SHOW_IT_ENABLED() { return showIt.on; },
   get DIRECTIVE_FIT_CHECK_ENABLED() { return fitCheckFlag.on; },
+  get CALL_RECORDS_MODE() { return callsFlag.mode; },
+  get COCKPIT_ALLOWLIST_UIDS() { return callsFlag.allow; },
 }));
 
 // The per-day budget module is exercised in agentChatBudget.test.js; here it is
@@ -280,6 +286,8 @@ beforeEach(() => {
   showIt.on = false;
   grounding.mode = 'off';
   grounding.calls = [];
+  callsFlag.mode = 'off';
+  callsFlag.allow = [];
   promptBuilder.throwWhen = null;
   budget.resolveImpl = () => ({ groupId: 'group-xyz', dayN: 1 });
   budget.readImpl = async () => ({ count: 0, remaining: 10 });
@@ -1937,5 +1945,74 @@ describe('agent/chat — the research follow-up reply lint (Phase C §5)', () =>
     const { res, exchange } = await run(verdict);
     expect(res.body.agentMessage).toBe(verdict);
     expect(exchange.researchLint).toBeUndefined();
+  });
+});
+
+// ==================== Cockpit Build 1a — the history windows' cockpit rule (spec §3) ====================
+
+describe('agent/chat — Cockpit Build 1a: cockpit filings leave the history windows BEFORE the slice unless the battle resolves on', () => {
+  const pair = (n) => ({ userMessage: `Question ${n}?`, agentResponse: `Answer ${n}.`, timestamp: `2026-09-09T14:${String(n).padStart(2, '0')}:00.000Z`, mode: 'battle' });
+  const cockpit = (n) => ({
+    userMessage: null, agentResponse: '', hasDirective: true,
+    directive: { text: "Hold off on the AMD entry until today's close.", expiry: 'until_ms', directiveThreadId: `thread-call-000${n}`, family: 'call' },
+    directiveThreadId: `thread-call-000${n}`, suggestedActions: null, elicitationTarget: 'directive_filed',
+    timestamp: `2026-09-09T14:${String(n + 30).padStart(2, '0')}:00.000Z`, mode: 'battle', messageType: 'directive_filed', source: 'cockpit', groundingVersion: 1,
+  });
+  // Twelve ordinary pairs with two cockpit filings among them: one inside the last ten, one last.
+  const exchanges = [...Array.from({ length: 10 }, (_, i) => pair(i + 1)), cockpit(1), pair(11), pair(12), cockpit(2)];
+  const BATTLE = { ...VALID_BATTLE, chatExchanges: exchanges };
+  const history = (first, count) => Array.from({ length: count }, (_, i) => i + first).flatMap((n) => [{ role: 'user', content: `Question ${n}?` }, { role: 'assistant', content: `Answer ${n}.` }]);
+  const PRE_BUILD = history(3, 10);  // the last ten of the twelve pairs — the filings never counted
+  const CHIP_LIKE = history(5, 8);   // the last ten of fourteen entries: the filings take two slots, then drop out
+  const tagged = (list) => list.map((m) => (m.role === 'assistant' ? { ...m, content: `[user_initiated] ${m.content}` } : m));
+  let gemmaOpts;
+  const run = async () => {
+    gemmaOpts = [];
+    voiceLayerArgs.current = [];
+    callGemmaVoiceImpl.current = async (opts) => { gemmaOpts.push(opts); return '{"response":"ok"}'; };
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: BATTLE });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi' });
+    await handler(req, res);
+    return res;
+  };
+
+  it("calls 'off' (shipped): the model's history is the PRE-BUILD window — the two filings removed before the slice; the prompt builder is told the mode", async () => {
+    callsFlag.mode = 'off';
+    const res = await run();
+    expect(res.statusCode).toBe(200);
+    expect(gemmaOpts[0].conversationHistory).toEqual(PRE_BUILD);
+    expect(voiceLayerArgs.current[0].callsMode).toBe('off');
+  });
+
+  it("calls 'shadow', and 'on' for a NON-allowlisted owner: the same pre-build window", async () => {
+    callsFlag.mode = 'shadow';
+    await run();
+    expect(gemmaOpts[0].conversationHistory).toEqual(PRE_BUILD);
+    expect(voiceLayerArgs.current[0].callsMode).toBe('shadow');
+    callsFlag.mode = 'on';
+    callsFlag.allow = ['somebody-else'];
+    await run();
+    expect(gemmaOpts[0].conversationHistory).toEqual(PRE_BUILD);
+    expect(voiceLayerArgs.current[0].callsMode).toBe('off');
+  });
+
+  it("calls 'on' for the ALLOWLISTED owner: the chip-like window — the filings take their slots and drop out as agent-initiated entries", async () => {
+    callsFlag.mode = 'on';
+    callsFlag.allow = ['test-user'];
+    await run();
+    expect(gemmaOpts[0].conversationHistory).toEqual(CHIP_LIKE);
+    expect(voiceLayerArgs.current[0].callsMode).toBe('on');
+  });
+
+  it("grounded 'on' turns apply the same rule to the grounded window", async () => {
+    grounding.mode = 'on';
+    callsFlag.mode = 'off';
+    await run();
+    expect(gemmaOpts[0].conversationHistory).toEqual(tagged(PRE_BUILD));
+    callsFlag.mode = 'on';
+    callsFlag.allow = ['test-user'];
+    await run();
+    expect(gemmaOpts[0].conversationHistory).toEqual(tagged(CHIP_LIKE));
   });
 });

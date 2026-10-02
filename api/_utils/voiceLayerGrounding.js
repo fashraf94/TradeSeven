@@ -86,6 +86,10 @@ import {
   provenanceLine,
 } from '../../src/data/decisionRecord.js';
 import { FLAT6_GAME_MODE } from '../../src/constants/agentGameModes.js';
+// Cockpit Build 1a (spec §3): the history windows' cockpit rule — filings
+// with `source: 'cockpit'` leave BEFORE the slice unless the resolved mode is
+// 'on' (chatHistoryWindow.js; the pre-build fixture holds the bytes).
+import { excludeCockpitFilings } from './chatHistoryWindow.js';
 // §6.2 — chips minted by id: the allowlist helpers, called directly (the
 // gate's internals are private — discrepancy 5). This makes the module a
 // direct importer of archetypeAdjustments.js, recorded in
@@ -455,13 +459,18 @@ export function historyMessageType(exchange) {
  * agent-initiated lines that fall inside the last HISTORY_WINDOW exchanges,
  * in write order.
  */
-export function selectHistoryWindow(chatExchanges, { window = HISTORY_WINDOW } = {}) {
+export function selectHistoryWindow(chatExchanges, { window = HISTORY_WINDOW, callsMode = null } = {}) {
   // THE RESEARCH CARDS COME OUT BEFORE THE SLICE (review B-7). They are not
   // conversation, so counting them against the window would let three taps cost
   // three turns of the history the window exists to carry. They are excluded
   // again inside the loop — see below — because that exclusion is the D-121
   // guarantee and must not depend on this line staying here.
-  const all = Array.isArray(chatExchanges) ? chatExchanges : [];
+  // Build 1a (spec §3): COCKPIT FILINGS COME OUT BEFORE THE SLICE too, unless
+  // the battle's resolved calls mode is 'on' — at 'on' they are chip filings
+  // (sliced in, excluded below as agent-initiated with no user half); at any
+  // other mode, or none, the window is the one the same exchanges gave before
+  // any cockpit filing existed. By the durable `source` marker; no store read.
+  const all = excludeCockpitFilings(Array.isArray(chatExchanges) ? chatExchanges : [], callsMode);
   const recent = all
     .filter((ex) => !(ex && typeof ex === 'object' && historyMessageType(ex) === RESEARCH_MESSAGE_TYPE))
     .slice(-window);
@@ -499,8 +508,8 @@ export function selectHistoryWindow(chatExchanges, { window = HISTORY_WINDOW } =
 }
 
 /** The alternating user/assistant array the model call receives, each assistant line tagged. */
-export function buildGroundedConversationHistory(chatExchanges) {
-  const { pairs } = selectHistoryWindow(chatExchanges);
+export function buildGroundedConversationHistory(chatExchanges, { callsMode = null } = {}) {
+  const { pairs } = selectHistoryWindow(chatExchanges, { callsMode });
   return pairs.flatMap((p) => [
     { role: 'user', content: p.userMessage },
     { role: 'assistant', content: `[${p.type}] ${p.agentText}` },
@@ -510,8 +519,8 @@ export function buildGroundedConversationHistory(chatExchanges) {
 export const EARLIER_MESSAGES_HEADING = 'YOUR EARLIER MESSAGES IN THIS CONVERSATION (the ones you started, newest last — conversation, not decision evidence; the tag names the kind of message it was)';
 
 /** The grounded agent-initiated lines in the window, as a block for the system prompt; null when none. */
-export function buildEarlierMessagesBlock(chatExchanges) {
-  const { agentLines } = selectHistoryWindow(chatExchanges);
+export function buildEarlierMessagesBlock(chatExchanges, { callsMode = null } = {}) {
+  const { agentLines } = selectHistoryWindow(chatExchanges, { callsMode });
   if (agentLines.length === 0) return null;
   const lines = agentLines.map((l) => {
     const t = etTime(l.timestamp);
@@ -573,8 +582,9 @@ function renderResearchCard(card) {
  * block — or null when the battle has none, in which case the prompt gains
  * nothing at all and neither the heading nor the rule appears.
  */
-export function buildPlatformResearchBlock(chatExchanges, { window = HISTORY_WINDOW } = {}) {
-  const recent = Array.isArray(chatExchanges) ? chatExchanges.slice(-window) : [];
+export function buildPlatformResearchBlock(chatExchanges, { window = HISTORY_WINDOW, callsMode = null } = {}) {
+  // Build 1a (spec §3): cockpit filings leave before THIS slice as well.
+  const recent = Array.isArray(chatExchanges) ? excludeCockpitFilings(chatExchanges, callsMode).slice(-window) : [];
   const rendered = recent
     .filter((ex) => ex && typeof ex === 'object' && historyMessageType(ex) === RESEARCH_MESSAGE_TYPE)
     .map((ex) => renderResearchCard(ex.card))

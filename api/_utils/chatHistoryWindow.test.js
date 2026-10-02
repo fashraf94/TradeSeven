@@ -34,6 +34,7 @@ import {
   selectHistoryWindow, buildGroundedConversationHistory, buildEarlierMessagesBlock, buildPlatformResearchBlock,
 } from './voiceLayerGrounding.js';
 import { RESEARCH_MESSAGE_TYPE } from '../../src/data/decisionRecord.js';
+import { selectLegacyChatHistory, excludeCockpitFilings, isCockpitFiling, COCKPIT_SOURCE } from './chatHistoryWindow.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURE_PATH = resolve(HERE, '__fixtures__/historyWindowPreBuild.json');
@@ -167,5 +168,74 @@ describe('the pre-build history-window fixture (captured from the untouched tree
     expect(serialize(windowOutputs(fixture.exchangesWithoutCockpit))).toBe(serialize(fixture.outputs.withoutCockpit));
     expect(serialize(EXCHANGES_WITHOUT_COCKPIT)).toBe(serialize(fixture.exchangesWithoutCockpit));
     expect(serialize(withCockpitFilings())).toBe(serialize(fixture.exchangesWithCockpit));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE BUILD: with cockpit filings present, every window equals the pre-build
+// window at off / shadow / no mode, and the chip-like window at on.
+
+/** The build's window outputs for one list and one resolved mode. */
+function builtOutputs(chatExchanges, callsMode) {
+  return {
+    legacyHistory: selectLegacyChatHistory(chatExchanges, { callsMode }),
+    grounded: selectHistoryWindow(chatExchanges, { callsMode }),
+    groundedHistory: buildGroundedConversationHistory(chatExchanges, { callsMode }),
+    earlierMessagesBlock: buildEarlierMessagesBlock(chatExchanges, { callsMode }),
+    platformResearchBlock: buildPlatformResearchBlock(chatExchanges, { callsMode }),
+  };
+}
+
+describe('Build 1a — cockpit filings leave every window BEFORE the slice unless the resolved mode is on (spec §3)', () => {
+  const fixture = JSON.parse(readFileSync(FIXTURE_PATH, 'utf8'));
+  const withC = fixture.exchangesWithCockpit;
+
+  for (const mode of ['off', 'shadow', null, undefined]) {
+    it(`mode ${String(mode)}: every window with the two cockpit filings present equals the PRE-BUILD window without them`, () => {
+      expect(serialize(builtOutputs(withC, mode))).toBe(serialize(fixture.outputs.withoutCockpit));
+    });
+  }
+
+  it("mode on: the chip-like treatment — sliced in, then excluded (the untouched tree's own output with the filings present)", () => {
+    expect(serialize(builtOutputs(withC, 'on'))).toBe(serialize(fixture.outputs.withCockpit));
+  });
+
+  it('without cockpit filings the build equals the pre-build window in every mode (behavior-preserving)', () => {
+    for (const mode of ['off', 'shadow', 'on', null]) {
+      expect(serialize(builtOutputs(fixture.exchangesWithoutCockpit, mode)), String(mode)).toBe(serialize(fixture.outputs.withoutCockpit));
+    }
+  });
+
+  it('selectLegacyChatHistory IS the pre-build chat.js expression on any cockpit-free list (the historical definition above)', () => {
+    for (const list of [fixture.exchangesWithoutCockpit, [], [pair(1, T(1))], [pair(1, T(1)), { userMessage: null, agentResponse: 'x', messageType: 'anticipation' }], undefined]) {
+      expect(selectLegacyChatHistory(list, { callsMode: 'off' })).toEqual(legacyChatHistoryAtHead(list));
+      expect(selectLegacyChatHistory(list)).toEqual(legacyChatHistoryAtHead(list));
+    }
+  });
+
+  it('the filter keys on the durable source marker only — a chip filing is never removed; a non-array passes through', () => {
+    const filing = makeCockpitFiling(3, T(10));
+    expect(isCockpitFiling(filing)).toBe(true);
+    expect(isCockpitFiling({ ...filing, source: 'chip' })).toBe(false);
+    expect(isCockpitFiling({ ...filing, source: undefined })).toBe(false);
+    expect(isCockpitFiling(null)).toBe(false);
+    expect(COCKPIT_SOURCE).toBe('cockpit');
+    const list = [pair(1, T(1)), { ...filing, source: 'chip' }, filing];
+    expect(excludeCockpitFilings(list, 'off')).toEqual([list[0], list[1]]);
+    expect(excludeCockpitFilings(list, 'shadow')).toEqual([list[0], list[1]]);
+    expect(excludeCockpitFilings(list, 'on')).toBe(list);
+    expect(excludeCockpitFilings('not-a-list', 'off')).toBe('not-a-list');
+  });
+
+  it('source pins: chat.js reads the shared helper for the legacy window and hands the grounded builders the resolved mode; the voice prompt passes callsMode through', () => {
+    const chat = readFileSync(resolve(HERE, '../agent/chat.js'), 'utf8');
+    expect(chat).toContain("import { selectLegacyChatHistory } from '../_utils/chatHistoryWindow.js';");
+    expect(chat).toContain('const conversationHistoryOld = selectLegacyChatHistory(battle.chatExchanges, { callsMode });');
+    expect(chat.match(/buildGroundedConversationHistory\(battle\.chatExchanges, \{ callsMode \}\)/g)).toHaveLength(2);
+    expect(chat).not.toMatch(/\.slice\(-10\)/);
+    expect(chat).toContain('const callsMode = resolveCallRecordsMode(battle);');
+    const prompt = readFileSync(resolve(HERE, 'voiceLayerPrompt.js'), 'utf8');
+    expect(prompt).toContain('buildEarlierMessagesBlock(battle?.chatExchanges, { callsMode })');
+    expect(prompt).toContain('buildPlatformResearchBlock(battle?.chatExchanges, { callsMode })');
   });
 });

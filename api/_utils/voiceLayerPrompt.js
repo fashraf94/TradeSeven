@@ -2873,6 +2873,12 @@ export function buildVoiceLayerPrompt({
   // this assembly is for ('on', or the shadow copy). Default false → the
   // untouched assembly, byte for byte (the goldens).
   grounded = false,
+  // Cockpit Build 1a (spec §3): the battle's RESOLVED calls mode, from the
+  // caller (chat.js resolves it once per turn). The grounded history blocks
+  // remove cockpit filings before their slice unless it is 'on'; null — every
+  // other caller — gets the exclusion, so the assembly is byte-identical to the
+  // pre-build prompt whenever no cockpit filing exists.
+  callsMode = null,
 }) {
   const stats = agent?.stats || {};
   const gamesPlayed = stats.gamesPlayed || 0;
@@ -3239,7 +3245,7 @@ You've been working together for ${gamesPlayed} games (${wins}W-${losses}L). You
 
   // Block 5.5 (grounded only): the narrator's OWN earlier messages that carry
   // the grounding marker — conversation, not decision evidence (§3.4).
-  const earlierMessages = grounded ? buildEarlierMessagesBlock(battle?.chatExchanges) : null;
+  const earlierMessages = grounded ? buildEarlierMessagesBlock(battle?.chatExchanges, { callsMode }) : null;
 
   // Block 5.4 (Phase C §5 / D-121): the research cards in the window, under
   // their OWN typed heading with their own dates and the platform-data label —
@@ -3248,7 +3254,7 @@ You've been working together for ${gamesPlayed} games (${wins}W-${losses}L). You
   // would be read as the character's own words. Null when the battle holds no
   // card, and gated so the prompt is byte-identical while the flag is dark.
   const platformResearch = grounded && SHOW_IT_ENABLED
-    ? buildPlatformResearchBlock(battle?.chatExchanges)
+    ? buildPlatformResearchBlock(battle?.chatExchanges, { callsMode })
     : null;
 
   // Few-Shot Example (BOTTOM — high attention)

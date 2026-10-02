@@ -23,7 +23,6 @@ import { gateDirective, renderDirectiveStatus } from '../_utils/directiveGate.js
 import { sanitizeChatText } from '../_utils/chatTextSanitize.js';
 // Phase C / D-121 — the persisted research type, so BOTH history builders key on
 // the same name and neither excludes a card by accident.
-import { RESEARCH_MESSAGE_TYPE } from '../../src/data/decisionRecord.js';
 import { getEffectiveArchetype } from '../_utils/directiveIdentity.js';
 // The agent-belongs-to-this-battle check the deterministic filing route has
 // carried since it shipped (file-directive.js check 3), now shared rather than
@@ -58,6 +57,10 @@ import { getTournamentClaimWindow, formatEtDate } from '../_utils/tournamentTime
 // the two writers cannot drift (BUILD_RULES §9). The output here is unchanged
 // field for field; chat.test.js's ENFORCE and flag-OFF rows pin it.
 import { buildDirectiveRecord, buildDirectiveSlot, BATTLE_CHAT_BUDGET } from '../_utils/directiveFiling.js';
+// Cockpit Build 1a (spec §3): the history windows' cockpit rule and the
+// per-battle calls mode it keys on (resolved once per turn, below).
+import { selectLegacyChatHistory } from '../_utils/chatHistoryWindow.js';
+import { resolveCallRecordsMode } from '../_utils/callRecords/mode.js';
 
 export const config = { maxDuration: 30 };
 
@@ -448,6 +451,12 @@ export default async function handler(req, res) {
       return res.status(403).json({ error: 'Not authorized to chat in this battle' });
     }
 
+    // Cockpit Build 1a (spec §3): the battle's RESOLVED calls mode, once per
+    // turn, on the authoritative battle just read — the history windows filter
+    // cockpit filings before slicing unless it is 'on'; the calls block (§9)
+    // renders only at 'on'. Never re-read mid-turn.
+    const callsMode = resolveCallRecordsMode(battle);
+
     // 7b. Verify the agent belongs to THIS battle. `agentId` is required above,
     //     so the check is unconditional — the same stance file-directive.js
     //     takes, through the same predicate. Checked here, at the first point
@@ -661,19 +670,16 @@ export default async function handler(req, res) {
     // `buildResearchExchange` happens to write no `userMessage`. Adding that
     // field for any reason would have re-admitted the card, which is the exact
     // "a refactor cannot re-admit it by dropping a marker" the ruling forbids.
-    const previousExchanges = (battle.chatExchanges || [])
-      .filter(ex => ex?.messageType !== RESEARCH_MESSAGE_TYPE)
-      .slice(-10)
-      .filter(ex => typeof ex?.userMessage === 'string' && ex.userMessage.length > 0);
+    // Cockpit Build 1a (spec §3): the shipped window, byte for byte — research
+    // cards out, the last ten, the null-user drop — now in chatHistoryWindow.js,
+    // with cockpit filings removed BEFORE the slice unless the resolved calls
+    // mode is 'on' (the pre-build fixture holds the bytes).
     // Voice-layer grounding §3.4: under the flag the window has ONE rule —
     // user-initiated pairs, tagged by messageType; agent-initiated exchanges
     // ride the system prompt when they carry the grounding marker (legacy
-    // proactive exchanges stay excluded). The legacy filter above is the
-    // shipped path, byte for byte.
-    const conversationHistoryOld = previousExchanges.flatMap(ex => [
-      { role: 'user', content: ex.userMessage },
-      { role: 'assistant', content: ex.agentResponse || ex.agentMessage || '' },
-    ]);
+    // proactive exchanges stay excluded). The legacy window is the shipped
+    // path.
+    const conversationHistoryOld = selectLegacyChatHistory(battle.chatExchanges, { callsMode });
     // The grounded window: SENT under 'on' — a throw there fails the turn, as
     // any failure of the sent prompt does. Under 'shadow' it is the
     // COUNTERPART, built for the record only, so a failure is RECORDED on the
@@ -682,10 +688,10 @@ export default async function handler(req, res) {
     let conversationHistoryNew = null;
     let counterpartError = null;
     if (grounded) {
-      conversationHistoryNew = buildGroundedConversationHistory(battle.chatExchanges);
+      conversationHistoryNew = buildGroundedConversationHistory(battle.chatExchanges, { callsMode });
     } else if (shadowAssembly) {
       try {
-        conversationHistoryNew = buildGroundedConversationHistory(battle.chatExchanges);
+        conversationHistoryNew = buildGroundedConversationHistory(battle.chatExchanges, { callsMode });
       } catch (err) {
         counterpartError = describeAssemblyError(err);
       }
@@ -706,6 +712,9 @@ export default async function handler(req, res) {
       dailyGrades: battle.dailyGrades || [],
       capabilitiesManifest,
       grounded: g,
+      // Cockpit Build 1a (spec §3): the resolved calls mode, for the grounded
+      // history blocks' cockpit rule.
+      callsMode,
     });
     const systemPrompt = buildPrompt(grounded);
     if (shadowAssembly) {
