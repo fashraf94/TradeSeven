@@ -3760,6 +3760,42 @@ describe('ON-ID — lookup identity evidence through the real screen', () => {
     expect(shell()).toBeNull();
   });
 
+  it('(1b) direct↔query in place: query agent-1 (ab-1 admitted) → direct ab-2 → query agent-1 again: pending, and the retired lookup\'s ab-1 is never subscribed or shown before the current lookup delivers', async () => {
+    priceBox.table = genuineTable();
+    flags.gate = true;
+    await mount(queryProp('agent-1'));
+    const gen1 = activeListener('query', 'agent-1');
+    await deliverQuery('agent-1', ['ab-1']);
+    await deliverDoc('ab-1', ACTIVE_DOC);
+    expect(shell()).toBeNull();
+    // The direct-ID route: the hook is called with null and no opt-in (row 7).
+    await mount({ ...openingProp(), agentBattleId: 'ab-2' });
+    expect(shell()).toBe('pending');
+    await deliverDoc('ab-2', ACTIVE_DOC);
+    expect(shell()).toBeNull();
+    const docSubscribes = () => fsBox.log.filter(([op, kind]) => op === 'subscribe' && kind === 'doc').length;
+    const before = docSubscribes();
+    // Back to the query path, the same agent: generation 1's `success ab-1` is retired evidence.
+    await mount(queryProp('agent-1'));
+    expect(shell()).toBe('pending');
+    // C-2 / C-4: "Evidence from a retired generation never settles the screen, whatever its ID."
+    expect(activeListener('doc', 'ab-1')).toBeUndefined();
+    expect(activeListener('doc', 'ab-2')).toBeUndefined();
+    expect(docSubscribes()).toBe(before);
+    expect(boardShown()).toBe(false);
+    await act(async () => { gen1.next(querySnap(['ab-1'])); }); // a callback queued on the retired listener
+    await flush();
+    expect(shell()).toBe('pending');
+    expect(docSubscribes()).toBe(before);
+    // The CURRENT lookup delivers: agent-1 has since moved on to ab-3.
+    await deliverQuery('agent-1', ['ab-3']);
+    expect(activeListener('doc', 'ab-3')).toBeTruthy();
+    expect(docSubscribes()).toBe(before + 1);
+    await deliverDoc('ab-3', ACTIVE_DOC);
+    expect(shell()).toBeNull();
+    expect(boardShown()).toBe(true);
+  });
+
   it('(2) an unchanged successful result: no pending flash, no resubscribe', async () => {
     priceBox.table = genuineTable();
     flags.gate = true;

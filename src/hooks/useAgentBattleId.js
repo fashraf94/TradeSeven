@@ -50,10 +50,14 @@ const useAgentBattleId = (agentId, { confirmCache } = {}) => {
   // no effect, no subscription change. A value — never an updater — so a
   // StrictMode double render cannot advance it twice. Gated only: flag-off the
   // tracked pair is never written, so the caller renders exactly as before.
-  const [track, setTrack] = useState(() => ({ agentId, generation: 1 }));
+  // The generation also advances when the opt-in flips, so an un-gated phase
+  // (the gated screen's direct-ID route calls this with null and no opt-in)
+  // retires the generation: a return to the same agent never settles on the
+  // retired listener's evidence (C-2; review delta D-1).
+  const [track, setTrack] = useState(() => ({ agentId, gated, generation: 1 }));
   let current = track;
-  if (gated && !Object.is(track.agentId, agentId)) {
-    current = { agentId, generation: track.generation + 1 };
+  if (track.gated !== gated || (gated && !Object.is(track.agentId, agentId))) {
+    current = { agentId, gated, generation: track.generation + 1 };
     setTrack(current);
   }
   const [evidence, setEvidence] = useState(null);

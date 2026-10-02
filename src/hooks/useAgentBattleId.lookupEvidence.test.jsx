@@ -653,6 +653,67 @@ describe('ON-ID — lookup evidence on the existing listener', () => {
     expect(last().lookup).toMatchObject({ agentId: 'agent-A', generation: 3, status: 'success', battleId: 'battle-1' });
   });
 
+  it('(1b) the direct-ID route in place: query A (success) → direct (null, NO opt-in) → query A again: a NEW generation, pending until the new listener delivers', () => {
+    render('agent-A', { options: GATED });
+    deliver(snap(['battle-1']));
+    expect(last().lookup).toMatchObject({ agentId: 'agent-A', generation: 1, status: 'success', battleId: 'battle-1' });
+    const retired = current();
+    render(null); // the direct-ID route's exact call shape: ONE argument, no opt-in (row 7)
+    expect('lookup' in last()).toBe(false);
+    expect(active()).toHaveLength(0);
+    render('agent-A', { options: GATED });
+    // C-2: the un-gated phase retired generation 1. Its evidence — the same
+    // agent, the same ID — never settles the new lookup, whatever its ID.
+    expect(last().lookup).toMatchObject({ agentId: 'agent-A', status: 'pending', battleId: null, error: null });
+    expect(last().lookup.generation).toBeGreaterThan(1);
+    act(() => { retired.next(snap(['battle-1'])); }); // a callback queued on the retired listener
+    expect(last().lookup.status).toBe('pending');
+    // One listener per gated phase; the direct route opened none.
+    expect(fsBox.log).toEqual([['subscribe', 0, 4], ['unsubscribe', 0], ['subscribe', 1, 4]]);
+    deliver(snap(['battle-7']));
+    expect(last().lookup).toMatchObject({ agentId: 'agent-A', status: 'success', battleId: 'battle-7' });
+  });
+
+  it('(1b) direct first: direct → query A (success) → direct → query A again: the same rule', () => {
+    render(null);
+    render('agent-A', { options: GATED });
+    deliver(snap(['battle-1']));
+    expect(last().lookup).toMatchObject({ status: 'success', battleId: 'battle-1' });
+    render(null);
+    render('agent-A', { options: GATED });
+    expect(last().lookup).toMatchObject({ status: 'pending', battleId: null });
+  });
+
+  it('(1b)(9) StrictMode: each opt-in flip advances the generation by exactly one (A → direct → A ends at 3)', () => {
+    render('agent-A', { strict: true, options: GATED });
+    deliver(snap(['battle-1']));
+    render(null, { strict: true });
+    render('agent-A', { strict: true, options: GATED });
+    expect(last().lookup).toMatchObject({ agentId: 'agent-A', generation: 3, status: 'pending' });
+    deliver(snap(['battle-1']));
+    expect(last().lookup).toMatchObject({ generation: 3, status: 'success', battleId: 'battle-1' });
+  });
+
+  it('(9) [B-6] gated: an opt-in flip adds one render pass and nothing else — the commits and the listener log are the legacy hook\'s', () => {
+    let passes = 0;
+    function Counting({ agentId, gated }) {
+      passes += 1;
+      const r = gated ? useAgentBattleId(agentId, GATED) : useAgentBattleId(agentId);
+      useLayoutEffect(() => { commits.push(r); });
+      return null;
+    }
+    act(() => { root.render(<Counting agentId="agent-A" gated />); });
+    deliver(snap(['battle-1']));
+    let p = passes; let c = commits.length;
+    act(() => { root.render(<Counting agentId={null} gated={false} />); }); // → direct route
+    // prop render + adjustment pass + the legacy effect's `setAgentBattleId(null)` commit render
+    expect({ passes: passes - p, commits: commits.length - c }).toEqual({ passes: 3, commits: 2 });
+    p = passes; c = commits.length;
+    act(() => { root.render(<Counting agentId="agent-A" gated />); }); // → query path
+    expect({ passes: passes - p, commits: commits.length - c }).toEqual({ passes: 2, commits: 1 });
+    expect(fsBox.log).toEqual([['subscribe', 0, 4], ['unsubscribe', 0], ['subscribe', 1, 4]]);
+  });
+
   it('(2) an unchanged successful result stays settled: no pending flash, no resubscribe', () => {
     render('agent-A', { options: GATED });
     deliver(snap(['battle-1']));
