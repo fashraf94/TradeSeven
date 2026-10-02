@@ -22,6 +22,9 @@
 //   node scripts/declarations-wording-experiment.mjs estimate   # countTokens + cost guard ($25)
 //   node scripts/declarations-wording-experiment.mjs run        # 8 calls per check, concurrency ≤ 4, resumable
 //   node scripts/declarations-wording-experiment.mjs analyze    # §4 measures + §5 pass table
+//
+// Round 2 (arms A/D/D2, every recoverable check, $35 ceiling, raw/round2/):
+// append --round=2 to each command, e.g. `... select --round=2`.
 
 import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
@@ -34,18 +37,28 @@ import { validateTradeToolResult } from '../api/_utils/agentEvalToolResultValida
 import { captureDeclarations } from '../api/_utils/callRecords/validate.js';
 import { bindHorizon, battleExpiryMs } from '../api/_utils/callRecords/horizon.js';
 import { selectBattleUniverse } from '../src/data/battleUniverse.js';
-import { ARMS, ARM_LABELS, armTool, assertDescriptionOnlyDiff } from './declarationsWordingArms.mjs';
+import { ARMS, ARMS_ROUND2, ARM_LABELS, armTool, assertDescriptionOnlyDiff } from './declarationsWordingArms.mjs';
 
 // ---------------------------------------------------------------- constants
+
+// Round 1 (default) reproduces the merged experiment. `--round=2` (round 2
+// brief): every recoverable check, no stratification cap, arms A/D/D2, a $35
+// ceiling, the round-2 `said` rule and bars, and its own raw folder.
+const ROUND = Number((process.argv.find((a) => a.startsWith('--round=')) || '--round=1').slice('--round='.length));
+if (ROUND !== 1 && ROUND !== 2) throw new Error(`unknown --round=${ROUND}`);
+const R2 = ROUND === 2;
+const RUN_ARMS = R2 ? ARMS_ROUND2 : ARMS;
+const CANDIDATE_ARMS = RUN_ARMS.filter((a) => a !== 'A');
+const DESC_ARMS = CANDIDATE_ARMS.filter((a) => a !== 'B');
 
 export const SEED = 20261001;
 const DAY_FIRST = '2026-09-21';
 const DAY_LAST = '2026-10-01';
-const TARGET_CHECKS = 80;
-const PER_BATTLE_MAX = 8;
+const TARGET_CHECKS = R2 ? Infinity : 80;
+const PER_BATTLE_MAX = R2 ? Infinity : 8;
 const REPS = 2;
 const CONCURRENCY = 4;
-const COST_CEILING_USD = 25;
+const COST_CEILING_USD = R2 ? 35 : 25;
 const OUTPUT_ALLOWANCE_TOKENS = 1500;
 // Haiku 4.5 list prices, $ per million tokens (claude-api skill, cached 2026-09-25).
 const PRICE_IN = 1.0;
@@ -56,7 +69,8 @@ const PROD_TEMPERATURE = 0.4;
 const PROD_TOOL_CHOICE = { type: 'tool', name: 'submit_trade_decision' };
 const EXPECTED_KEYS = ['model', 'max_tokens', 'temperature', 'system', 'messages', 'tools', 'tool_choice'];
 
-const RAW_DIR = path.join(PROJECT_ROOT, 'experiments', 'declarations-wording', 'raw');
+const RAW_ROOT = path.join(PROJECT_ROOT, 'experiments', 'declarations-wording', 'raw');
+const RAW_DIR = R2 ? path.join(RAW_ROOT, 'round2') : RAW_ROOT;
 const CALLS_DIR = path.join(RAW_DIR, 'calls');
 const SAMPLE_PATH = path.join(RAW_DIR, 'sample.json');
 const ESTIMATE_PATH = path.join(RAW_DIR, 'estimate.json');
@@ -262,14 +276,14 @@ function client() {
 
 async function estimate() {
   const s = readJson(SAMPLE_PATH);
-  const desc = assertDescriptionOnlyDiff();
+  const desc = assertDescriptionOnlyDiff(DESC_ARMS);
   const anthropic = client();
   // One request per arm: the LARGEST recorded request, so the estimate is conservative.
   const largest = s.sample.reduce((a, c) => (JSON.stringify(c.request).length > JSON.stringify(a.request).length ? c : a));
   const perArm = {};
   let total = 0;
   const callsPerArm = s.sample.length * REPS;
-  for (const arm of ARMS) {
+  for (const arm of RUN_ARMS) {
     const req = replayRequest(largest.request, arm);
     const { input_tokens: inputTokens } = await anthropic.messages.countTokens({
       model: req.model, system: req.system, messages: req.messages, tools: req.tools, tool_choice: req.tool_choice,
@@ -321,15 +335,15 @@ async function oneCall(anthropic, task, failures) {
 async function run() {
   const est = readJson(ESTIMATE_PATH);
   if (!est.pass) throw new Error(`estimate $${est.totalUsd} exceeds the ceiling — not running`);
-  assertDescriptionOnlyDiff();
+  assertDescriptionOnlyDiff(DESC_ARMS);
   const s = readJson(SAMPLE_PATH);
   mkdirSync(CALLS_DIR, { recursive: true });
   const anthropic = client();
   const tasks = [];
-  for (const check of s.sample) for (const arm of ARMS) for (let rep = 1; rep <= REPS; rep += 1) {
+  for (const check of s.sample) for (const arm of RUN_ARMS) for (let rep = 1; rep <= REPS; rep += 1) {
     if (!existsSync(callPath(arm, rep, check))) tasks.push({ arm, rep, check });
   }
-  console.log(`tasks to run: ${tasks.length} (of ${s.sample.length * ARMS.length * REPS})`);
+  console.log(`tasks to run: ${tasks.length} (of ${s.sample.length * RUN_ARMS.length * REPS})`);
   const failures = [];
   let next = 0; let done = 0; let failed = 0;
   const worker = async () => {
@@ -349,9 +363,57 @@ async function run() {
 /** The §4.4 lexical rule. */
 const SAID_NC_ADDS = /\b(close|closes|closing|holds|holding|through)\b|\bon the day\b|\bend of day\b|\bconfirm/i;
 const SAID_OTHER_ADDS = /next check|next eval/i;
-export function saidInconsistent(row) {
+function saidInconsistentRound1(row) {
   if (typeof row?.said !== 'string') return false;
   return row.horizonPhrase === 'next_check' ? SAID_NC_ADDS.test(row.said) : SAID_OTHER_ADDS.test(row.said);
+}
+
+/**
+ * The round-2 rule ("added conditions in said"), as frozen in the brief. Each
+ * entry is [label, pattern]; a line is flagged when any applicable pattern
+ * matches. Bare thesis language ("would confirm the breakout") matches none.
+ */
+const SAID_R2_ANY = [
+  ['volume', /\bvolume/i],
+  ['rvol', /\brvol/i],
+  ['candle', /\bcandle/i],
+  ['consecutive', /\bconsecutive/i],
+  ['if confirmed', /\bif confirmed\b/i],
+  ['on confirmation', /\bon confirmation\b/i],
+  ['confirmation of', /\bconfirmation of\b/i],
+  ['close(s) above/below', /\bcloses? (above|below)\b/i],
+  ['holds/holding above/below … for/through', /\bhold(s|ing) (above|below)\b.*\b(for|through)\b/i],
+];
+const SAID_R2_NEXT_CHECK = [
+  ['by/before the close (next_check)', /\b(by|before) the close\b/i],
+  ['end of (the) day/session (next_check)', /\bend of (the )?(day|session)\b/i],
+  ['on the day (next_check)', /\bon the day\b/i],
+];
+const SAID_R2_OTHER = [['next check/eval (not next_check)', /next check|next eval/i]];
+/** The labels of every round-2 pattern the line trips (empty = not flagged). */
+export function saidFlagsRound2(row) {
+  if (typeof row?.said !== 'string') return [];
+  const rules = [...SAID_R2_ANY, ...(row.horizonPhrase === 'next_check' ? SAID_R2_NEXT_CHECK : SAID_R2_OTHER)];
+  return rules.filter(([, re]) => re.test(row.said)).map(([label]) => label);
+}
+export function saidInconsistent(row, round = ROUND) {
+  return round === 2 ? saidFlagsRound2(row).length > 0 : saidInconsistentRound1(row);
+}
+
+/** A per-arm PRNG salt; single-letter arms keep their round-1 value. */
+const armSalt = (arm) => [...arm].reduce((sum, ch, i) => sum + ch.charCodeAt(0) * (i ? 1000 : 1), 0);
+
+const logFact = (() => { const t = [0]; return (n) => { for (let i = t.length; i <= n; i += 1) t[i] = t[i - 1] + Math.log(i); return t[n]; }; })();
+const logChoose = (n, k) => logFact(n) - logFact(k) - logFact(n - k);
+/**
+ * One-sided Fisher exact test: P(arm invalid ≥ observed) under the
+ * hypergeometric null, for the 2×2 table [arm invalid, arm valid; A invalid, A valid].
+ */
+export function fisherOneSidedGreater(armBad, armN, refBad, refN) {
+  const K = armBad + refBad; const N = armN + refN;
+  let p = 0;
+  for (let k = armBad; k <= Math.min(K, armN); k += 1) p += Math.exp(logChoose(K, k) + logChoose(N - K, armN - k) - logChoose(N, armN));
+  return Math.min(1, p);
 }
 
 function bootstrapRelative(diffs, base, seed) {
@@ -376,7 +438,7 @@ function analyze() {
   for (const f of readdirSync(CALLS_DIR)) { const r = readJson(path.join(CALLS_DIR, f)); recs.set(`${r.arm}|${r.rep}|${r.battleId}|${r.evalId}`, r); }
   const get = (arm, rep, c) => recs.get(`${arm}|${rep}|${c.battleId}|${c.evalId}`) ?? null;
   // Paired analysis uses only checks with every one of the 8 calls present.
-  const complete = s.sample.filter((c) => ARMS.every((a) => [1, 2].every((rep) => get(a, rep, c))));
+  const complete = s.sample.filter((c) => RUN_ARMS.every((a) => [1, 2].every((rep) => get(a, rep, c))));
   const failuresRaw = existsSync(FAILURES_PATH) ? readFileSync(FAILURES_PATH, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
 
   // Spend
@@ -392,7 +454,7 @@ function analyze() {
 
   const perArm = {};
   const aMean = (c) => (ancOf(get('A', 1, c)?.toolUseInput) + ancOf(get('A', 2, c)?.toolUseInput)) / 2;
-  for (const arm of ARMS) {
+  for (const arm of RUN_ARMS) {
     const callsAll = s.sample.flatMap((c) => [1, 2].map((rep) => ({ c, rep, r: get(arm, rep, c) }))).filter((x) => x.r);
     const callsC = complete.flatMap((c) => [1, 2].map((rep) => ({ c, rep, r: get(arm, rep, c) })));
     // 1. anticipation
@@ -403,16 +465,26 @@ function analyze() {
       meanPerCall: mean(callsC.map((x) => ancOf(x.r.toolUseInput))),
       pairedMeanDiff: mean(diffs),
       pairedRelative: mean(base) > 0 ? mean(diffs) / mean(base) : null,
-      ci95: arm === 'A' ? null : bootstrapRelative(diffs, base, SEED + arm.charCodeAt(0)),
+      ci95: arm === 'A' ? null : bootstrapRelative(diffs, base, SEED + armSalt(arm)),
     };
     // 2–4. declarations
     let declaring = 0; const declaringChecks = new Set(); const kindMix = {}; const horizonMix = {}; const shotHorizonMix = {};
     const removals = {}; const callsPerDeclaring = []; let shots = 0; let inconsistent = 0; const flagged = []; const examples = [];
+    const allShots = []; const flagTerms = {};
+    // Pacing: per battle-day and rep, declaring checks and minted calls (every check of the day is in a round-2 sample).
+    const pacing = new Map();
+    const paceOf = (c) => {
+      const k = `${c.battleId}|${c.day}`;
+      if (!pacing.has(k)) pacing.set(k, { battleId: c.battleId, day: c.day, archetype: c.archetype, checks: new Set(), declaring: { 1: 0, 2: 0 }, minted: { 1: 0, 2: 0 } });
+      return pacing.get(k);
+    };
     for (const { c, rep, r } of callsC) {
+      const pace = paceOf(c); pace.checks.add(c.evalId);
       const v = validate(c, r.toolUseInput);
       for (const rm of v.validation.removed) inc(removals, `${rm.source}:${rm.reason}`);
       if (v.phase !== 'expected') continue;
       declaring += 1; declaringChecks.add(`${c.battleId}|${c.evalId}`);
+      pace.declaring[rep] += 1; pace.minted[rep] += v.validation.calls.length;
       const val = v.validation.validated;
       callsPerDeclaring.push(v.validation.calls.length);
       for (const call of v.validation.calls) {
@@ -421,7 +493,11 @@ function analyze() {
         inc(horizonMix, h);
         if (call.source === 'calledShots') {
           inc(shotHorizonMix, h); shots += 1;
-          if (saidInconsistent(call.row)) { inconsistent += 1; flagged.push({ check: `${c.battleId}:${c.evalId}`, rep, symbol: call.row.symbol, horizonPhrase: call.row.horizonPhrase, said: call.row.said }); }
+          const terms = R2 ? saidFlagsRound2(call.row) : [];
+          for (const t of terms) inc(flagTerms, t);
+          const line = { check: `${c.battleId}:${c.evalId}`, rep, symbol: call.row.symbol, horizonPhrase: call.row.horizonPhrase, said: call.row.said, flagged: saidInconsistent(call.row), terms };
+          allShots.push(line);
+          if (line.flagged) { inconsistent += 1; flagged.push(line); }
         }
       }
       if (val.watching.length) inc(kindMix, 'watching', val.watching.length);
@@ -439,13 +515,30 @@ function analyze() {
     // 6. health (every call that returned, complete or not)
     const maxTok = callsAll.filter((x) => x.r.stopReason === 'max_tokens').length;
     const noTool = callsAll.filter((x) => !x.r.toolUseInput).length;
-    const invalid = callsAll.filter((x) => x.r.toolUseInput && !validateTradeToolResult(x.r.toolUseInput).valid).length;
+    const invalidRows = callsAll
+      .map((x) => ({ x, v: x.r.toolUseInput ? validateTradeToolResult(x.r.toolUseInput) : null }))
+      .filter(({ v }) => v && !v.valid);
+    const invalid = invalidRows.length;
+    const invalidByField = {}; const invalidByReason = {};
+    for (const { v } of invalidRows) { inc(invalidByField, v.invalidField); inc(invalidByReason, v.reason); }
+    const invalidChecks = new Set(invalidRows.map(({ x }) => `${x.c.battleId}:${x.c.evalId}`)).size;
+    const paceRows = [...pacing.values()];
+    const pacingByArchetype = {};
+    for (const archetype of [...new Set(paceRows.map((p) => p.archetype))].sort()) {
+      const rows = paceRows.filter((p) => p.archetype === archetype);
+      const perDay = (k) => rows.map((p) => (p[k][1] + p[k][2]) / 2);
+      const summary = (xs) => ({ mean: mean(xs), median: pct(xs, 50), min: Math.min(...xs), max: Math.max(...xs) });
+      pacingByArchetype[archetype] = {
+        battleDays: rows.length, checksPerBattleDay: summary(rows.map((p) => p.checks.size)),
+        declaringChecks: summary(perDay('declaring')), mintedCalls: summary(perDay('minted')),
+      };
+    }
     const outs = callsAll.map((x) => x.r.usage?.output_tokens);
     const ins = callsAll.map((x) => x.r.usage?.input_tokens);
     // examples: seeded pick of five
-    const er = rng(SEED + 7 + arm.charCodeAt(0));
+    const er = rng(SEED + 7 + armSalt(arm));
     const ex = shuffle(examples, er).slice(0, 5);
-    const fr = rng(SEED + 11 + arm.charCodeAt(0));
+    const fr = rng(SEED + 11 + armSalt(arm));
     perArm[arm] = {
       label: ARM_LABELS[arm], calls: nCalls, callsReturned: callsAll.length,
       anticipation,
@@ -455,11 +548,16 @@ function analyze() {
       kindMix, horizonMix, shotHorizonMix, removals,
       longHorizonShare: totalCalls ? longHorizon / totalCalls : null, totalCalls,
       shotLongHorizonShare: shots ? ((shotHorizonMix.this_session || 0) + (shotHorizonMix.this_battle || 0)) / shots : null,
-      said: { shots, inconsistent, rate: shots ? inconsistent / shots : null, sample: shuffle(flagged, fr).slice(0, 10) },
+      said: {
+        shots, inconsistent, rate: shots ? inconsistent / shots : null, sample: shuffle(flagged, fr).slice(0, 10),
+        ...(R2 ? { flagTerms, random20: shuffle(allShots, rng(SEED + 13 + armSalt(arm))).slice(0, 20) } : {}),
+      },
+      ...(R2 ? { pacingByArchetype, pacingRows: paceRows.map((p) => ({ battleId: p.battleId, day: p.day, archetype: p.archetype, checks: p.checks.size, declaring: p.declaring, minted: p.minted })) } : {}),
       decisionAgreementWithA: agreeD ? agreeN / agreeD : null,
       health: {
         maxTokensRate: callsAll.length ? maxTok / callsAll.length : null, maxTokens: maxTok,
         invalidToolResultRate: callsAll.length ? invalid / callsAll.length : null, invalid,
+        invalidByField, invalidByReason, invalidChecks, callsReturned: callsAll.length,
         noToolUseRate: callsAll.length ? noTool / callsAll.length : null, noToolUse: noTool,
         outputP50: pct(outs, 50), outputP95: pct(outs, 95), inputMean: mean(ins.filter(Number.isFinite)),
       },
@@ -481,17 +579,43 @@ function analyze() {
   // §5 pass table (frozen bars)
   const A = perArm.A;
   const pass = {};
-  for (const arm of ['B', 'C', 'D']) {
+  for (const arm of CANDIDATE_ARMS) {
     const x = perArm[arm];
+    if (R2) {
+      x.health.fisherP = fisherOneSidedGreater(x.health.invalid, x.health.callsReturned, A.health.invalid, A.health.callsReturned);
+    }
     const bars = {
       anticipation: x.anticipation.pairedRelative >= -0.10 && x.anticipation.ci95.lo >= -0.20,
-      declarationRate: x.declarationRate >= 0.15,
+      declarationRate: R2 ? x.declarationRate >= 0.15 && x.declarationRate <= 0.40 : x.declarationRate >= 0.15,
       horizon: x.longHorizonShare != null && x.longHorizonShare >= 0.5,
       said: x.said.rate != null && x.said.rate <= 0.10,
       decisionAgreement: x.decisionAgreementWithA >= noise.decisionAgreementA1A2 - 0.05,
-      health: x.health.maxTokensRate <= 0.02 && x.health.invalidToolResultRate <= A.health.invalidToolResultRate + 0.01,
+      health: R2
+        ? x.health.maxTokensRate <= 0.02 && x.health.invalidToolResultRate <= 0.03 && x.health.fisherP >= 0.05
+        : x.health.maxTokensRate <= 0.02 && x.health.invalidToolResultRate <= A.health.invalidToolResultRate + 0.01,
     };
     pass[arm] = { bars, overall: Object.values(bars).every(Boolean) };
+  }
+
+  // Round 2 only: round 1's own D results beside this round's, and round 1's
+  // D called shots re-scored under the round-2 `said` rule (descriptive).
+  let round1 = null;
+  if (R2 && existsSync(path.join(RAW_ROOT, 'results.json'))) {
+    const r1 = readJson(path.join(RAW_ROOT, 'results.json'));
+    const s1 = readJson(path.join(RAW_ROOT, 'sample.json'));
+    const recs1 = new Map();
+    for (const f of readdirSync(path.join(RAW_ROOT, 'calls'))) { const r = readJson(path.join(RAW_ROOT, 'calls', f)); if (r.arm === 'D') recs1.set(`${r.rep}|${r.battleId}|${r.evalId}`, r); }
+    let shots1 = 0; let flagged1 = 0;
+    for (const c of s1.sample) for (const rep of [1, 2]) {
+      const r = recs1.get(`${rep}|${c.battleId}|${c.evalId}`); if (!r) continue;
+      const v = captureDeclarations(r.toolUseInput?.declarations, {
+        universe: s1.battlesMeta[c.battleId].universe,
+        resolveHorizon: bindHorizon({ promptBuiltAtMs: c.promptBuiltAtMs, mintedAtMs: c.mintedAtMs, battleExpiresAtMs: s1.battlesMeta[c.battleId].battleExpiresAtMs }),
+      });
+      if (v.phase !== 'expected') continue;
+      for (const call of v.validation.calls) if (call.source === 'calledShots') { shots1 += 1; if (saidFlagsRound2(call.row).length) flagged1 += 1; }
+    }
+    round1 = { D: r1.perArm.D, noise: r1.noise, checksComplete: r1.checksComplete, saidRound2RuleOnRound1D: { shots: shots1, flagged: flagged1, rate: shots1 ? flagged1 / shots1 : null } };
   }
 
   const out = {
@@ -499,10 +623,10 @@ function analyze() {
     callsReturned: recs.size, failureAttempts: failuresRaw.length,
     failuresByStatus: failuresRaw.reduce((o, f) => inc(o, String(f.status ?? f.name)), {}),
     spend: { inputTokens: inTok, outputTokens: outTok, cacheWrite: cacheW, cacheRead: cacheR, usd: spentUsd },
-    noise, perArm, pass,
+    noise, perArm, pass, round: ROUND, round1,
   };
   writeFileSync(RESULTS_PATH, JSON.stringify(out, null, 1));
-  console.log(JSON.stringify({ ...out, perArm: Object.fromEntries(Object.entries(perArm).map(([k, v]) => [k, { ...v, examples: `${v.examples.length} examples`, said: { ...v.said, sample: `${v.said.sample.length} lines` } }])) }, null, 1));
+  console.log(JSON.stringify({ ...out, perArm: Object.fromEntries(Object.entries(perArm).map(([k, v]) => [k, { ...v, examples: `${v.examples.length} examples`, pacingRows: undefined, said: { ...v.said, sample: `${v.said.sample.length} lines`, random20: undefined } }])) }, null, 1));
   writeFileSync(RESULTS_MD_PATH, renderMarkdown(out));
 }
 
@@ -515,11 +639,11 @@ const mix = (o) => (Object.keys(o).length ? Object.entries(o).sort((a, b) => b[1
 function renderMarkdown(o) {
   const L = [];
   const p = (s = '') => L.push(s);
-  const arms = ARMS.map((a) => [a, o.perArm[a]]);
+  const arms = RUN_ARMS.map((a) => [a, o.perArm[a]]);
   p('### Measures by arm');
   p();
-  p('| Measure | A: off | B: shadow (current) | C: shadow, revised | D: on (draft) |');
-  p('|---|---|---|---|---|');
+  p(`| Measure | ${arms.map(([a]) => `${a}: ${ARM_LABELS[a]}`).join(' | ')} |`);
+  p(`|---|${arms.map(() => '---').join('|')}|`);
   const row = (label, f) => p(`| ${label} | ${arms.map(([, x]) => f(x)).join(' | ')} |`);
   row('Calls analyzed (complete checks × 2)', (x) => String(x.calls));
   row('Anticipation candidates per call (mean)', (x) => N(x.anticipation.meanPerCall));
@@ -533,6 +657,7 @@ function renderMarkdown(o) {
   row('Decision agreement with A (rep-aligned)', (x) => P(x.decisionAgreementWithA));
   row('`max_tokens` stop rate', (x) => `${P(x.health.maxTokensRate, 2)} (${x.health.maxTokens})`);
   row('`invalid_tool_result` rate', (x) => `${P(x.health.invalidToolResultRate, 2)} (${x.health.invalid})`);
+  if (o.round === 2) row('…one-sided Fisher p vs A', (x) => (x.health.fisherP == null ? '—' : N(x.health.fisherP, 3)));
   row('No `tool_use` block', (x) => String(x.health.noToolUse));
   row('Output tokens p50 / p95', (x) => `${x.health.outputP50} / ${x.health.outputP95}`);
   row('Input tokens (mean, billed)', (x) => N(x.health.inputMean, 0));
@@ -549,18 +674,81 @@ function renderMarkdown(o) {
   p();
   p('### Pass table (§5, frozen bars)');
   p();
-  p('| Bar | B | C | D |');
-  p('|---|---|---|---|');
-  const bars = [['anticipation', 'Anticipation: paired diff ≥ −10% and CI low ≥ −20%'], ['declarationRate', 'Declaration rate ≥ 15%'], ['horizon', '≥ 50% of calls this_session / this_battle'], ['said', '`said` inconsistency ≤ 10%'], ['decisionAgreement', 'Decision agreement ≥ A1-vs-A2 − 5 pts'], ['health', '`max_tokens` ≤ 2% and invalid ≤ A + 1 pt']];
-  for (const [k, label] of bars) p(`| ${label} | ${['B', 'C', 'D'].map((a) => (o.pass[a].bars[k] ? 'PASS' : 'FAIL')).join(' | ')} |`);
-  p(`| **Overall** | ${['B', 'C', 'D'].map((a) => (o.pass[a].overall ? '**PASS**' : '**FAIL**')).join(' | ')} |`);
+  p(`| Bar | ${CANDIDATE_ARMS.join(' | ')} |`);
+  p(`|---|${CANDIDATE_ARMS.map(() => '---').join('|')}|`);
+  const R2b = o.round === 2;
+  const bars = [
+    ['anticipation', 'Anticipation: paired diff ≥ −10% and CI low ≥ −20%'],
+    ['declarationRate', R2b ? 'Declaration rate 15%–40% of calls' : 'Declaration rate ≥ 15%'],
+    ['horizon', '≥ 50% of calls this_session / this_battle'],
+    ['said', R2b ? 'Added conditions in `said` ≤ 10% of called shots' : '`said` inconsistency ≤ 10%'],
+    ['decisionAgreement', 'Decision agreement ≥ A1-vs-A2 − 5 pts'],
+    ['health', R2b ? '`max_tokens` ≤ 2%, invalid ≤ 3% and Fisher p ≥ 0.05' : '`max_tokens` ≤ 2% and invalid ≤ A + 1 pt'],
+  ];
+  for (const [k, label] of bars) p(`| ${label} | ${CANDIDATE_ARMS.map((a) => (o.pass[a].bars[k] ? 'PASS' : 'FAIL')).join(' | ')} |`);
+  p(`| **Overall** | ${CANDIDATE_ARMS.map((a) => (o.pass[a].overall ? '**PASS**' : '**FAIL**')).join(' | ')} |`);
+  if (R2b) {
+    p();
+    p('### Pacing per battle-day, by archetype (mean of the two reps; mean · median · min–max across battle-days)');
+    p();
+    p('| Arm | Archetype | Battle-days | Checks per battle-day | Declaring checks per battle-day | Minted calls per battle-day |');
+    p('|---|---|---|---|---|---|');
+    const sm = (q) => `${N(q.mean, 1)} · ${N(q.median, 1)} · ${N(q.min, 1)}–${N(q.max, 1)}`;
+    for (const [a, x] of arms) for (const [arch, q] of Object.entries(x.pacingByArchetype)) p(`| ${a} | ${arch} | ${q.battleDays} | ${sm(q.checksPerBattleDay)} | ${sm(q.declaringChecks)} | ${sm(q.mintedCalls)} |`);
+    p();
+    p('### Health detail by field (`invalid_tool_result`, first failing field as production records it)');
+    p();
+    p('| Arm | Invalid / returned | Distinct checks | By field | By reason |');
+    p('|---|---|---|---|---|');
+    for (const [a, x] of arms) p(`| ${a} | ${x.health.invalid} / ${x.health.callsReturned} | ${x.health.invalidChecks} | ${mix(x.health.invalidByField)} | ${mix(x.health.invalidByReason)} |`);
+    p();
+    p('### `said` flags by matched term (a line can match more than one)');
+    p();
+    p('| Arm | Terms |');
+    p('|---|---|');
+    for (const [a, x] of arms) p(`| ${a} | ${mix(x.said.flagTerms)} |`);
+    if (o.round1) {
+      const d1 = o.round1.D; const d2 = o.perArm.D;
+      p();
+      p('### D: round 1 vs round 2');
+      p();
+      p('| Measure | D, round 1 | D, round 2 |');
+      p('|---|---|---|');
+      const both = (label, f) => p(`| ${label} | ${f(d1)} | ${f(d2)} |`);
+      p(`| Checks (complete) | ${o.round1.checksComplete} | ${o.checksComplete} |`);
+      both('Calls analyzed', (x) => String(x.calls));
+      both('Anticipation per call (mean)', (x) => N(x.anticipation.meanPerCall));
+      both('Paired difference vs A', (x) => `${P(x.anticipation.pairedRelative)} [${P(x.anticipation.ci95.lo)}, ${P(x.anticipation.ci95.hi)}]`);
+      both('Declaration rate', (x) => `${P(x.declarationRate)} (${x.declaringCalls})`);
+      both('Minted calls per declaring call', (x) => N(x.callsPerDeclaringCall));
+      both('this_session / this_battle share', (x) => `${P(x.longHorizonShare)} of ${x.totalCalls}`);
+      p(`| \`said\` flagged, round-1 rule | ${P(d1.said.rate)} (${d1.said.inconsistent}/${d1.said.shots}) | not computed |`);
+      const r1r2 = o.round1.saidRound2RuleOnRound1D;
+      p(`| \`said\` flagged, round-2 rule | ${P(r1r2.rate)} (${r1r2.flagged}/${r1r2.shots}) | ${P(d2.said.rate)} (${d2.said.inconsistent}/${d2.said.shots}) |`);
+      both('Decision agreement with A', (x) => P(x.decisionAgreementWithA));
+      p(`| A1-vs-A2 agreement (noise floor) | ${P(o.round1.noise.decisionAgreementA1A2)} | ${P(o.noise.decisionAgreementA1A2)} |`);
+      both('`max_tokens` stops', (x) => `${P(x.health.maxTokensRate, 2)} (${x.health.maxTokens})`);
+      both('`invalid_tool_result`', (x) => `${P(x.health.invalidToolResultRate, 2)} (${x.health.invalid})`);
+      both('Output tokens p50 / p95', (x) => `${x.health.outputP50} / ${x.health.outputP95}`);
+    }
+  }
   p();
   p('### Flagged `said` lines (up to 10 per arm, agent text only)');
   for (const [a, x] of arms) {
     p();
     p(`**Arm ${a}** (${x.said.inconsistent} flagged of ${x.said.shots})`);
     if (!x.said.sample.length) p('- none');
-    for (const f of x.said.sample) p(`- \`${f.symbol}\` · \`${f.horizonPhrase}\`: "${f.said}"`);
+    for (const f of x.said.sample) p(`- \`${f.symbol}\` · \`${f.horizonPhrase}\`: "${f.said}"${f.terms?.length ? ` — *${f.terms.join('; ')}*` : ''}`);
+  }
+  if (R2b) {
+    p();
+    p('### 20 randomly sampled `said` lines per arm, flagged or not (seeded, agent text only)');
+    for (const [a, x] of arms) {
+      p();
+      p(`**Arm ${a}** (${x.said.random20.length} of ${x.said.shots})`);
+      if (!x.said.random20.length) p('- none');
+      x.said.random20.forEach((f, i) => p(`${i + 1}. ${f.flagged ? '**FLAGGED** ' : ''}\`${f.symbol}\` · \`${f.horizonPhrase}\`: "${f.said}"${f.terms.length ? ` — *${f.terms.join('; ')}*` : ''}`));
+    }
   }
   p();
   p('### Example `declarations` blocks (five per arm, seeded pick, agent text only)');

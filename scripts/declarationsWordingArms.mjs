@@ -1,6 +1,7 @@
 // scripts/declarationsWordingArms.mjs
 //
-// Declarations wording experiment — the four tool arms (experiment brief §2).
+// Declarations wording experiment — the tool arms (round 1 brief §2; round 2
+// adds D2).
 //
 // The arms differ ONLY in the `tools` array of an otherwise byte-identical
 // recorded request. A and B are the HEAD tools themselves
@@ -60,6 +61,14 @@ export const ARM_D_FORK =
 export const ARM_D_PLAYER_ASK =
   'Optional. A research question you want the player\'s view on, with 2 to 4 possible answers. The player may answer it.';
 
+// ---------------------------------------------------------------- arm D2 (round 2)
+
+/** Round 2: D with exactly one override, the called-shot `said`. */
+export const ARM_D2_SAID =
+  'One sentence the player reads on the tile, under the call. Restate only the condition: the symbol, above or below the ' +
+  'level, and the horizon. Never add volume, closing prices, candles, holding periods, or confirmation requirements. The ' +
+  'call is graded only on the price crossing the level within the horizon.';
+
 // ---------------------------------------------------------------- builders
 
 /** B with the named description overrides applied. Structure untouched. */
@@ -75,13 +84,16 @@ function withOverrides({ declarations, horizonPhrase, said, fork, playerAsk }) {
   return tool;
 }
 
+/** Round 1 ran A–D; round 2 runs A, D and D2. */
 export const ARMS = Object.freeze(['A', 'B', 'C', 'D']);
+export const ARMS_ROUND2 = Object.freeze(['A', 'D', 'D2']);
 
 export const ARM_LABELS = Object.freeze({
   A: 'off',
   B: 'shadow (current)',
   C: 'shadow, revised',
   D: 'on (draft)',
+  D2: 'D + said override',
 });
 
 /** The tool object for one arm. A and B are the HEAD objects themselves. */
@@ -92,6 +104,9 @@ export function armTool(arm) {
     case 'C': return withOverrides({ declarations: ARM_C_DECLARATIONS, horizonPhrase: ARM_C_HORIZON_PHRASE, said: ARM_C_SAID });
     case 'D': return withOverrides({
       declarations: ARM_D_DECLARATIONS, horizonPhrase: ARM_D_HORIZON_PHRASE, said: ARM_D_SAID, fork: ARM_D_FORK, playerAsk: ARM_D_PLAYER_ASK,
+    });
+    case 'D2': return withOverrides({
+      declarations: ARM_D_DECLARATIONS, horizonPhrase: ARM_D_HORIZON_PHRASE, said: ARM_D2_SAID, fork: ARM_D_FORK, playerAsk: ARM_D_PLAYER_ASK,
     });
     default: throw new Error(`unknown arm ${arm}`);
   }
@@ -111,11 +126,11 @@ export function stripDescriptions(value) {
   return value;
 }
 
-/** Throws unless C and D equal B once descriptions are stripped (order-sensitive JSON). */
-export function assertDescriptionOnlyDiff() {
+/** Throws unless each arm equals B once descriptions are stripped (order-sensitive JSON). */
+export function assertDescriptionOnlyDiff(arms = ['C', 'D']) {
   const b = JSON.stringify(stripDescriptions(armTool('B')));
   const result = {};
-  for (const arm of ['C', 'D']) {
+  for (const arm of arms) {
     const x = JSON.stringify(stripDescriptions(armTool(arm)));
     if (x !== b) throw new Error(`arm ${arm} differs from B beyond descriptions`);
     if (JSON.stringify(armTool(arm)) === JSON.stringify(armTool('B'))) throw new Error(`arm ${arm} is identical to B — overrides did not apply`);
