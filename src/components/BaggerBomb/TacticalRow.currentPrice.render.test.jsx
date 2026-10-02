@@ -19,7 +19,7 @@
 //
 // renderToString: the markup is the whole claim.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
 import { createHash } from 'node:crypto';
@@ -270,14 +270,18 @@ describe('ON-ROW — an unavailable side withholds every current-derived channel
   it('the click payload names the side only when the screen opts in (the legacy callback is untouched)', async () => {
     const { JSDOM } = await import('jsdom');
     const dom = new JSDOM('<!doctype html><div id="r"></div>');
-    const prevWindow = globalThis.window;
-    const prevDocument = globalThis.document;
-    globalThis.window = dom.window;
-    globalThis.document = dom.window.document;
     try {
+      // Browser globals, stubbed BEFORE react-dom/client is imported: once
+      // `window` exists, its development build reads `navigator.userAgent` at
+      // import. Node 21+ supplies a `navigator`; Node 20 (CI's runtime) does
+      // not, so JSDOM's is stubbed under every Node. `unstubAllGlobals` puts
+      // each back exactly as found: its original descriptor, or absent.
+      vi.stubGlobal('window', dom.window);
+      vi.stubGlobal('document', dom.window.document);
+      vi.stubGlobal('navigator', dom.window.navigator);
+      vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
       const { createRoot } = await import('react-dom/client');
       const { act } = React;
-      globalThis.IS_REACT_ACT_ENVIRONMENT = true;
       const calls = [];
       const host = dom.window.document.getElementById('r');
       const r = createRoot(host);
@@ -297,8 +301,7 @@ describe('ON-ROW — an unavailable side withholds every current-derived channel
       expect(calls.map((a) => a.length)).toEqual([1, 1]);
       act(() => r.unmount());
     } finally {
-      globalThis.window = prevWindow;
-      globalThis.document = prevDocument;
+      vi.unstubAllGlobals();
     }
   });
 
