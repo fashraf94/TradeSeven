@@ -187,6 +187,8 @@ const { default: handler, GEMMA_TIMEOUT_MS, TURN_DEADLINE_MS, SHADOW_LOG_CAP_MS,
 
 function makeFakeFirestore({
   agent, battle, marketCtx = null, drb = null, voiceCache = null,
+  // Cockpit Build 1a — the battle's call records (null: a sub-collection query throws, as a fake without one would); every calls query is recorded.
+  calls = null, callsQueries = [],
   // Phase E2 — tournament group + pending-claims aggregate, with injectable failures.
   group = null, pendingClaimCount = 0, groupReadError = false, claimsReadError = false,
 }) {
@@ -229,8 +231,26 @@ function makeFakeFirestore({
         update: async (updates) => {
           written.updateCalls.push({ id: docId, updates });
         },
-        // Build 1a: a sub-collection document ref (the call events the shared writer may create).
-        collection: (subName) => (subName === 'claims' ? claimsQuery : { where: () => ({}), doc: (subId) => ({ id: subId, path: `${name}/${docId}/${subName}/${subId}` }) }),
+        // Build 1a: a sub-collection document ref (the call events the shared writer may create),
+        // and — for `calls` with records injected — a chainable query served from them.
+        collection: (subName) => {
+          if (subName === 'claims') return claimsQuery;
+          const docRef = (subId) => ({ id: subId, path: `${name}/${docId}/${subName}/${subId}` });
+          if (subName !== 'calls' || !Array.isArray(calls)) return { where: () => ({}), doc: docRef };
+          const makeQ = (state) => ({
+            where: (field, op, value) => makeQ({ ...state, filters: [...state.filters, { field, op, value }] }),
+            orderBy: (field, dir = 'asc') => makeQ({ ...state, orders: [...state.orders, { field, dir }] }),
+            limit: (n) => makeQ({ ...state, limit: n }),
+            get: async () => {
+              callsQueries.push(state);
+              let rows = calls.filter((c) => state.filters.every((f) => f.op === '==' && c[f.field] === f.value));
+              for (const o of state.orders) rows = [...rows].sort((a, b) => (o.dir === 'desc' ? b[o.field] - a[o.field] : a[o.field] - b[o.field]));
+              if (state.limit) rows = rows.slice(0, state.limit);
+              return { docs: rows.map((c) => ({ id: c.callId, data: () => ({ ...c }) })), size: rows.length, empty: rows.length === 0 };
+            },
+          });
+          return { ...makeQ({ filters: [], orders: [], limit: null }), doc: docRef };
+        },
       };
     },
   });
@@ -2088,5 +2108,66 @@ describe('agent/chat — Cockpit Build 1a: cockpit filings leave the history win
     callsFlag.allow = ['test-user'];
     await run();
     expect(gemmaOpts[0].conversationHistory).toEqual(tagged(CHIP_LIKE));
+  });
+});
+
+// ==================== Cockpit Build 1a — the chat calls block (spec §9) ====================
+
+describe('agent/chat — Cockpit Build 1a: the calls block is read and rendered at resolved on only', () => {
+  const CLOSE = Date.parse('2026-09-09T20:00:00.000Z');
+  const CALLS = [
+    { callId: 'battle-1:eval_001:call:0', kind: 'called_shot', symbol: 'AMD', direction: 'entry', slot: 'support', counterpart: 'KO', condition: { side: 'above', level: 161 }, horizon: { phrase: 'this_session', expiresAt: CLOSE, basis: 'this_session' }, defaultAction: 'act', state: 'open', mintedAt: 10, playerResponse: null, outcome: null },
+    { callId: 'battle-1:eval_001:call:1', kind: 'called_shot', symbol: 'KO', direction: 'exit', slot: 'support', counterpart: 'AMD', condition: { side: 'below', level: 62.5 }, horizon: { phrase: 'this_session', expiresAt: CLOSE, basis: 'this_session' }, defaultAction: 'hold', state: 'hit', mintedAt: 20, playerResponse: null, outcome: { receiptRef: 'r' } },
+  ];
+  let callsQueries;
+  const run = async () => {
+    callsQueries = [];
+    voiceLayerArgs.current = [];
+    callGemmaVoiceImpl.current = async () => '{"response":"ok"}';
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: { ...VALID_BATTLE, evaluations: [] }, calls: CALLS, callsQueries });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi' });
+    await handler(req, res);
+    return res;
+  };
+
+  it("calls 'off', 'shadow', and 'on' for a NON-allowlisted owner: no calls query at all, callsBlock null — the prompt bytes are the goldens'", async () => {
+    for (const [mode, allow] of [['off', []], ['shadow', ['test-user']], ['on', ['somebody-else']]]) {
+      callsFlag.mode = mode;
+      callsFlag.allow = allow;
+      const res = await run();
+      expect(res.statusCode, mode).toBe(200);
+      expect(callsQueries, mode).toEqual([]);
+      expect(voiceLayerArgs.current[0].callsBlock, mode).toBeNull();
+    }
+  });
+
+  it("calls 'on' for the ALLOWLISTED owner: the four bounded queries are issued in the prologue and the rendered block reaches the prompt builder", async () => {
+    callsFlag.mode = 'on';
+    callsFlag.allow = ['test-user'];
+    const res = await run();
+    expect(res.statusCode).toBe(200);
+    expect(callsQueries).toHaveLength(4);
+    expect(callsQueries[0]).toEqual({ filters: [{ field: 'state', op: '==', value: 'open' }], orders: [{ field: 'mintedAt', dir: 'desc' }], limit: 6 });
+    expect(callsQueries.slice(1).map((q) => q.filters[0].value)).toEqual(['hit', 'expired_unresolved', 'ended_with_battle']);
+    const block = voiceLayerArgs.current[0].callsBlock;
+    expect(block).toContain('CALLS ON THE RECORD');
+    expect(block).toContain("- battle-1:eval_001:call:0 · AMD above $161.00 by");
+    expect(block).toContain("- battle-1:eval_001:call:1 · KO below $62.50 by");
+    expect(block.indexOf('call:0')).toBeLessThan(block.indexOf('call:1')); // open first, then history
+  });
+
+  it("a calls read that throws degrades to null: the turn still answers 200", async () => {
+    callsFlag.mode = 'on';
+    callsFlag.allow = ['test-user'];
+    callsQueries = [];
+    voiceLayerArgs.current = [];
+    callGemmaVoiceImpl.current = async () => '{"response":"ok"}';
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: VALID_BATTLE, calls: null }); // no calls support: the sub-collection query throws
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi' });
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(voiceLayerArgs.current[0].callsBlock).toBeNull();
   });
 });

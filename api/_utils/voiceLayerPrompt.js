@@ -2879,6 +2879,11 @@ export function buildVoiceLayerPrompt({
   // other caller — gets the exclusion, so the assembly is byte-identical to the
   // pre-build prompt whenever no cockpit filing exists.
   callsMode = null,
+  // Cockpit Build 1a (spec §9): the chat calls block, rendered by
+  // api/_utils/callRecords/callsBlock.js and read by chat.js at resolved 'on'
+  // only; null — every other caller and every other mode — pushes nothing, so
+  // the assembly is byte-identical to the goldens.
+  callsBlock = null,
 }) {
   const stats = agent?.stats || {};
   const gamesPlayed = stats.gamesPlayed || 0;
@@ -3319,6 +3324,7 @@ You've been working together for ${gamesPlayed} games (${wins}W-${losses}L). You
   if (archetypeBlock) blocks.push(archetypeBlock, grounded ? GROUNDED_THIRD_PATH_RULE : THIRD_PATH_RULE, buildUserLeversBlock(capabilitiesManifest), TWO_LEG_SIGNAL_RULE);
 
   blocks.push(battleState); // Block 5   (BOTTOM)
+  if (callsBlock) blocks.push(callsBlock); // Block 5.3 (Cockpit Build 1a — resolved 'on' only)
   if (platformResearch) blocks.push(platformResearch); // Block 5.4 (Phase C, flag-gated)
   if (earlierMessages) blocks.push(earlierMessages); // Block 5.5 (grounded only)
   blocks.push(

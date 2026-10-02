@@ -595,6 +595,24 @@
       ]
     },
     {
+      "collectionGroup": "calls",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "state",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "mintedAt",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "tape",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
@@ -610,6 +628,24 @@
     }
   ],
   "fieldOverrides": [
+    {
+      "collectionGroup": "callSweepQueue",
+      "fieldPath": "nextExpiresAt",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "arrayConfig": "CONTAINS",
+          "queryScope": "COLLECTION"
+        }
+      ]
+    },
     {
       "collectionGroup": "tickBodies",
       "fieldPath": "request",

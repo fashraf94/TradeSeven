@@ -53,20 +53,25 @@ const OWNER_READ = [
 ];
 
 describe('firestore.rules — the call records (source tripwire; behavior proven in test/rules)', () => {
-  for (const [sub, idVar] of [['declarations', 'evalId'], ['calls', 'callId'], ['callObservations', 'callId']]) {
+  for (const [sub, idVar] of [['declarations', 'evalId'], ['calls', 'callId'], ['callObservations', 'callId'], ['callEvents', 'eventId']]) {
     it(`agentBattles/{battleId}/${sub}/{${idVar}}: ONE block — owner read via the parent, no client write`, () => {
       expect(ruleBlocks(RULES, new RegExp(`/${sub}/\\{${idVar}\\}`))).toEqual([OWNER_READ]);
     });
   }
-  it('the three subcollection blocks sit INSIDE the agentBattles/{battleId} match (so $(battleId) is bound)', () => {
+  it('the four subcollection blocks sit INSIDE the agentBattles/{battleId} match (so $(battleId) is bound)', () => {
     const [battleBlock] = ruleBlocks(RULES, /\/agentBattles\/\{battleId\}/);
     const text = battleBlock.join('\n');
-    for (const sub of ['declarations', 'calls', 'callObservations']) expect(text).toContain(`match /${sub}/{`);
+    for (const sub of ['declarations', 'calls', 'callObservations', 'callEvents']) expect(text).toContain(`match /${sub}/{`);
   });
   it('callSweepQueue/{battleId}: ONE top-level block, server-only — `allow read, write: if false;`', () => {
     expect(ruleBlocks(RULES, /\/callSweepQueue\/\{[^}/]+\}/)).toEqual([['allow read, write: if false;']]);
     const named = RULES.split('\n').filter((l) => l.includes('callSweepQueue') && !l.trim().startsWith('//'));
     expect(named.map((l) => l.trim())).toEqual(['match /callSweepQueue/{battleId} {']);
+  });
+  it('callSweepState/{docId}: ONE top-level block, server-only (Build 1a §8, §10)', () => {
+    expect(ruleBlocks(RULES, /\/callSweepState\/\{[^}/]+\}/)).toEqual([['allow read, write: if false;']]);
+    const named = RULES.split('\n').filter((l) => l.includes('callSweepState') && !l.trim().startsWith('//'));
+    expect(named.map((l) => l.trim())).toEqual(['match /callSweepState/{docId} {']);
   });
 });
 
@@ -152,9 +157,36 @@ describe('§3.12 row 10 — the flip scan\'s exact query validates against fires
     expect(served(need, reshaped)).toBe(false);
   });
 
-  it('exactly ONE calls composite, collection-scoped', () => {
+  it('exactly TWO calls composites, collection-scoped: Build 0\'s ASC scan and Build 1a\'s DESC chat block (§9)', () => {
     const calls = INDEXES.indexes.filter((ix) => ix.collectionGroup === 'calls');
-    expect(calls).toHaveLength(1);
-    expect(calls[0].queryScope).toBe('COLLECTION');
+    expect(calls).toHaveLength(2);
+    for (const ix of calls) expect(ix.queryScope).toBe('COLLECTION');
+    expect(calls[1].fields).toEqual([{ fieldPath: 'state', order: 'ASCENDING' }, { fieldPath: 'mintedAt', order: 'DESCENDING' }, { fieldPath: '__name__', order: 'DESCENDING' }]);
+  });
+
+  it("Build 1a §9: the chat block's four queries (open; hit / expired_unresolved / ended_with_battle, newest first) are served by the DESC composite — and NOT by the ASC one", async () => {
+    const { makeCallsFirestore } = await import('../__fixtures__/callsFirestore.js');
+    const { readCallsForBlock } = await import('./callsBlock.js');
+    const db = makeCallsFirestore({ docs: {} });
+    await readCallsForBlock(db, 'battle-x');
+    const shapes = db.__access.queries;
+    expect(shapes).toHaveLength(4);
+    for (const shape of shapes) {
+      const need = requiredIndex(shape);
+      expect(need.fields).toEqual([{ fieldPath: 'state', order: 'ASCENDING' }, { fieldPath: 'mintedAt', order: 'DESCENDING' }, { fieldPath: '__name__', order: 'DESCENDING' }]);
+      expect(served(need)).toBe(true);
+      expect(served(need, INDEXES.indexes.filter((ix) => !(ix.collectionGroup === 'calls' && ix.fields[1].order === 'DESCENDING')))).toBe(false);
+    }
+  });
+
+  it('Build 1a §8: the sweep queue\'s nextExpiresAt index is declared as a fieldOverride carrying exactly the automatic triple (ASC, DESC, CONTAINS at collection scope)', () => {
+    const override = INDEXES.fieldOverrides.find((o) => o.collectionGroup === 'callSweepQueue' && o.fieldPath === 'nextExpiresAt');
+    expect(override).toBeDefined();
+    expect(override.indexes).toEqual([
+      { order: 'ASCENDING', queryScope: 'COLLECTION' },
+      { order: 'DESCENDING', queryScope: 'COLLECTION' },
+      { arrayConfig: 'CONTAINS', queryScope: 'COLLECTION' },
+    ]);
+    expect(INDEXES.fieldOverrides.filter((o) => o.collectionGroup === 'agentBattles')).toEqual([]); // the reconciliation route uses the automatic index; no override replaces it
   });
 });

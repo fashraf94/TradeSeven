@@ -64,6 +64,9 @@ import { resolveCallRecordsMode } from '../_utils/callRecords/mode.js';
 // Cockpit Build 1a (spec §6): the shared slot writer — chat's plain update,
 // byte for byte, from this turn's validated plan.
 import { fileDirectiveTransactional } from '../_utils/directiveWriter.js';
+// Cockpit Build 1a (spec §9): the chat calls block — three bounded reads at
+// resolved 'on' only; null everywhere else (the prompt is byte-identical).
+import { buildCallsBlockForChat } from '../_utils/callRecords/callsBlock.js';
 
 export const config = { maxDuration: 30 };
 
@@ -571,6 +574,10 @@ export default async function handler(req, res) {
     // group/claims read failure degrades to an all-false manifest and NEVER blocks
     // the turn or the market-context reads beside it.
     let capabilitiesManifest = null;
+    // Cockpit Build 1a (spec §9): the calls block text, read in the same
+    // parallel prologue at resolved 'on' in battle mode; null otherwise, and
+    // null on any failure (the turn continues without it).
+    let callsBlockText = null;
     const wantManifest = ARCHETYPE_INTEGRITY_MODE !== 'off' && mode !== 'review';
     const fetchGroup = wantManifest && battle.gameMode === TOURNAMENT_GAME_MODE && !!battle.groupId;
     const groupRef = fetchGroup
@@ -578,7 +585,7 @@ export default async function handler(req, res) {
       : null;
     try {
       const today = new Date().toISOString().split('T')[0];
-      const [marketCtxDoc, drbDoc, cacheDoc, groupDoc, claimsAgg] = await Promise.all([
+      const [marketCtxDoc, drbDoc, cacheDoc, groupDoc, claimsAgg, callsBlockRead] = await Promise.all([
         db.collection('indexIntelligence').doc('marketContext').get(),
         db.collection('indexIntelligence').doc('dailyRegimeBrief').get(),
         db.collection('voiceLayerCache').doc(battleId).get(),
@@ -597,7 +604,13 @@ export default async function handler(req, res) {
                 return null;
               })
           : Promise.resolve(null),
+        // Cockpit Build 1a (spec §9): resolved 'on' + battle mode only; never a
+        // read below that, never a thrown turn (the helper degrades to null).
+        callsMode === 'on' && mode === 'battle'
+          ? buildCallsBlockForChat(db, battleId, battle, { callsMode })
+          : Promise.resolve(null),
       ]);
+      callsBlockText = callsBlockRead ?? null;
       if (marketCtxDoc.exists) {
         const ctx = marketCtxDoc.data();
         const regimeLine = `Regime: ${ctx.regime}. ${ctx.regimeDetail || ''}`.trim();
@@ -718,6 +731,8 @@ export default async function handler(req, res) {
       // Cockpit Build 1a (spec §3): the resolved calls mode, for the grounded
       // history blocks' cockpit rule.
       callsMode,
+      // Cockpit Build 1a (spec §9): the calls block — null below resolved 'on'.
+      callsBlock: callsBlockText,
     });
     const systemPrompt = buildPrompt(grounded);
     if (shadowAssembly) {

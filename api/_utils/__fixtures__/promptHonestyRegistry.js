@@ -54,6 +54,7 @@ export const PROMPT_CONTRIBUTING_MODULES = [
   'agentEvalToolSchema.js',  // Cockpit Build 0: the evaluation tool's descriptions are model-visible prose; the flag-conditional `declarations` property extends them (contract §2 — registered in the same PR, review C-8)
   'callRecords/copy.js',     // Cockpit Build 1a: the call lines and receipt text (the chat calls block renders them into the voice prompt at 'on' — spec §4, §9)
   'callRecords/callActions.js', // Cockpit Build 1a: the canonical call-directive templates — model-visible through the directive block (spec §6; Amendment B §12)
+  'callRecords/callsBlock.js', // Cockpit Build 1a: the chat calls block rendered into the voice prompt at resolved 'on' (spec §9)
 ];
 
 // Every OTHER same-directory module the two fenced assemblers import,
