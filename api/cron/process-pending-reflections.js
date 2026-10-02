@@ -23,6 +23,9 @@ import { generateReflection } from '../agent/reflect.js';
 import { getWireFlags } from '../_utils/wireFlags.js';
 import { runWireReplaySweep } from '../_utils/wireReplaySweep.js';
 import { runEditorialReview, EDITORIAL_MIN_BUDGET_MS } from '../_utils/wireEditorialRun.js';
+// Cockpit Build 1a (spec §8): the call sweep — the LAST tenant, under the
+// handler's remaining protected budget; inert before any read below global 'on'.
+import { runCallSweep } from '../_utils/callRecords/sweep.js';
 
 export const config = { maxDuration: 60 };
 
@@ -152,6 +155,21 @@ export default async function handler(req, res) {
       editorial = { action: 'error', error: String(edErr?.message || edErr) };
     }
 
+    // ---- 6. Cockpit Build 1a — the call sweep (rider, LAST; spec §8) ----
+    // Fourth tenant, after the editorial: its deadline is min(now + 20 s,
+    // handlerStart + 45 s) — capped by this handler's remaining budget, never
+    // added to it. Below global 'on' it returns before any read, and the
+    // response carries no new key (byte-identical at off / shadow). A sweep
+    // failure can never break the reflections (isolating try/catch).
+    let callSweep = null;
+    try {
+      callSweep = await runCallSweep({ db, handlerStartMs: startTime });
+      if (callSweep && !callSweep.skipped) console.log(`${LOG_PREFIX} Call sweep:`, callSweep);
+    } catch (sweepErr) {
+      console.error(`${LOG_PREFIX} Call sweep failed (isolated):`, sweepErr?.message || sweepErr);
+      callSweep = { action: 'error', error: String(sweepErr?.message || sweepErr) };
+    }
+
     const duration = Date.now() - startTime;
     console.log(`${LOG_PREFIX} Complete in ${duration}ms:`, summary);
     return res.status(200).json({
@@ -159,6 +177,7 @@ export default async function handler(req, res) {
       ...(snapshot.empty ? { message: 'No pending reflections' } : {}),
       wireSweep,
       ...(editorial ? { editorial } : {}),
+      ...(callSweep && !callSweep.skipped ? { callSweep } : {}),
       duration,
     });
   } catch (err) {

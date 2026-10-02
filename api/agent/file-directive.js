@@ -90,6 +90,10 @@ import {
 } from '../_utils/agentChatBudget.js';
 import { toIso } from '../_utils/tournamentTime.js';
 import { buildDirectiveRecord, buildDirectiveSlot, BATTLE_CHAT_BUDGET } from '../_utils/directiveFiling.js';
+// Cockpit Build 1a (spec §6): the shared slot writer and the battle's resolved
+// calls mode (for the `superseded` event when a call-family slot is replaced).
+import { fileDirectiveTransactional } from '../_utils/directiveWriter.js';
+import { resolveCallRecordsMode } from '../_utils/callRecords/mode.js';
 import { GROUNDING_VERSION } from '../_utils/voiceLayerGrounding.js';
 import { DIRECTIVE_FILED_MESSAGE_TYPE } from '../../src/data/decisionRecord.js';
 
@@ -279,10 +283,20 @@ export default async function handler(req, res) {
         groupId: isLeague && battle.groupId ? battle.groupId : null,
       });
 
-      tx.update(battleRef, {
-        chatExchanges: FieldValue.arrayUnion(exchange),
-        directive: slot,
-        ...battleBudgetUpdate,
+      // Cockpit Build 1a (spec §6): the SHARED SLOT WRITER (directiveWriter.js) —
+      // the same writes as before from this transaction's validated plan (the
+      // belief check above is kept); it adds the `supersedes` stamp and, at
+      // resolved 'on', the `superseded` event only when a CALL-FAMILY slot is
+      // replaced.
+      await fileDirectiveTransactional(tx, battleRef, {
+        db,
+        battleId,
+        arrayUnion: FieldValue.arrayUnion,
+        exchange,
+        filed: true,
+        priorSlot: battle.directive ?? null,
+        callsMode: resolveCallRecordsMode(battle),
+        fields: { directive: slot, ...battleBudgetUpdate },
       });
       commitBudget();
 

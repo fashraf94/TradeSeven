@@ -183,6 +183,8 @@ const DARK_BY_DESIGN = {
   // instruction. Its pin in filmTapeFlags.test.js now asserts the live true
   // value AND, turned around, that this entry is gone — a rollback moves both
   // lines back together. FILM_ROOM_V2_ENABLED (below) stays dark.
+  RESPONSE_FORK_ATTRIBUTION_ENABLED:
+    'Cockpit Build 1a (spec §11, Astra B1R2-9) — the response-fork hook\'s CAUSAL attribution ("In response to …"). Build 1a records prompt inclusion only; the causal field needs the round-3 declarations schema + nudge and its replay gate, then flips in the founder\'s own one-line PR, never a build PR. The flip moves the pin in cockpitFlags.test.js to true AND removes this entry in the same commit',
   FILM_ROOM_V2_ENABLED:
     'Film Room Build A — the screen flag (spec §7, A2): in A1 it gates only the Stage 3 branch of the hub helper getReviewAvailability (src/utils/reviewAvailability.js); A2 adds FilmRoomScreenV2 behind it. Flips only after A2 builds and Flash has read five real tape days through scripts/export-film-tape.js (spec §10 flip 2), in its own founder PR, never a build PR. The flip moves the pin in filmTapeFlags.test.js to true AND turns that file\'s registration row around to assert this entry is gone',
   // ANTICIPATION_THRESHOLD_LINT_MODE intentionally ABSENT, and it must stay

@@ -1,0 +1,806 @@
+{
+  "capturedFrom": "origin/main @ 9dfbea21dbb1c22f2e35009d95ef60a51f00078a — the untouched tree, before any Build 1a source change",
+  "exchangesWithoutCockpit": [
+    {
+      "userMessage": "Question 1?",
+      "agentResponse": "Answer 1.",
+      "scratchpad": null,
+      "hasDirective": false,
+      "directive": null,
+      "directiveThreadId": null,
+      "suggestedActions": null,
+      "elicitationTarget": "risk_appetite",
+      "timestamp": "2026-09-09T13:31:00.000Z",
+      "mode": "battle"
+    },
+    {
+      "userMessage": null,
+      "agentResponse": "Agent's live. Leaning into semis today.",
+      "scratchpad": null,
+      "hasDirective": false,
+      "directive": null,
+      "suggestedActions": null,
+      "elicitationTarget": "first_message",
+      "timestamp": "2026-09-09T13:32:00.000Z",
+      "mode": "battle",
+      "messageType": "first_message",
+      "groundingVersion": 1
+    },
+    {
+      "userMessage": "Question 2?",
+      "agentResponse": "Answer 2.",
+      "scratchpad": null,
+      "hasDirective": false,
+      "directive": null,
+      "directiveThreadId": null,
+      "suggestedActions": null,
+      "elicitationTarget": "risk_appetite",
+      "timestamp": "2026-09-09T13:40:00.000Z",
+      "mode": "battle"
+    },
+    {
+      "userMessage": null,
+      "agentResponse": "Legacy proactive line (no marker).",
+      "scratchpad": null,
+      "hasDirective": false,
+      "directive": null,
+      "suggestedActions": null,
+      "elicitationTarget": "anticipation",
+      "timestamp": "2026-09-09T13:45:00.000Z",
+      "mode": "battle",
+      "isAutoDebrief": true
+    },
+    {
+      "userMessage": "Question 3?",
+      "agentResponse": "Answer 3.",
+      "scratchpad": null,
+      "hasDirective": false,
+      "directive": null,
+      "directiveThreadId": null,
+      "suggestedActions": null,
+      "elicitationTarget": "risk_appetite",
+      "timestamp": "2026-09-09T13:50:00.000Z",
+      "mode": "battle"
+    },
+    {
+      "userMessage": null,
+      "agentResponse": "",
+      "scratchpad": null,
+      "hasDirective": false,
+      "directive": null,
+      "suggestedActions": null,
+      "elicitationTarget": "research",
+      "timestamp": "2026-09-09T13:55:00.000Z",
+      "mode": "battle",
+      "messageType": "research",
+      "groundingVersion": 1,
+      "card": {
+        "symbol": "AMD",
+        "platformDataLabel": "platform data as of 2026-09-09",
+        "technicals": {
+          "label": "Technicals (as of 2026-09-09)",
+          "facts": [
+            "RS 88th %ile",
+            "above the 20-day"
+          ]
+        },
+        "fundamentals": null,
+        "standing": {
+          "line": "Bench, support candidate"
+        }
+      }
+    },
+    {
+      "userMessage": null,
+      "agentResponse": "",
+      "scratchpad": null,
+      "hasDirective": true,
+      "directive": {
+        "text": "Require stronger confirmation before entering",
+        "expiry": "end_of_battle",
+        "directiveThreadId": "thread-chip-0001",
+        "adjustmentId": "TF-02",
+        "canonicalTextVersion": 1
+      },
+      "directiveThreadId": "thread-chip-0001",
+      "suggestedActions": null,
+      "elicitationTarget": "directive_filed",
+      "timestamp": "2026-09-09T14:00:00.000Z",
+      "mode": "battle",
+      "messageType": "directive_filed",
+      "source": "chip",
+      "groundingVersion": 1
+    },
+    {
+      "userMessage": "Question 4?",
+      "agentResponse": "Answer 4.",
+      "scratchpad": null,
+      "hasDirective": false,
+      "directive": null,
+      "directiveThreadId": null,
+      "suggestedActions": null,
+      "elicitationTarget": "risk_appetite",
+      "timestamp": "2026-09-09T14:05:00.000Z",
+      "mode": "battle"
+    },
+    {
+      "userMessage": "Question 5?",
+      "agentResponse": "Answer 5.",
+      "scratchpad": null,
+      "hasDirective": false,
+      "directive": null,
+      "directiveThreadId": null,
+      "suggestedActions": null,
+      "elicitationTarget": "risk_appetite",
+      "timestamp": "2026-09-09T14:10:00.000Z",
+      "mode": "battle"
+    },
+    {
+      "userMessage": "Question 6?",
+      "agentResponse": "Answer 6.",
+      "scratchpad": null,
+      "hasDirective": false,
+      "directive": null,
+      "directiveThreadId": null,
+      "suggestedActions": null,
+      "elicitationTarget": "risk_appetite",
+      "timestamp": "2026-09-09T14:15:00.000Z",
+      "mode": "battle"
+    },
+    {
+      "userMessage": "Question 7?",
+      "agentResponse": "Answer 7.",
+      "scratchpad": null,
+      "hasDirective": false,
+      "directive": null,
+      "directiveThreadId": null,
+      "suggestedActions": null,
+      "elicitationTarget": "risk_appetite",
+      "timestamp": "2026-09-09T14:20:00.000Z",
+      "mode": "battle"
+    },
+    {
+      "userMessage": "Question 8?",
+      "agentResponse": "Answer 8.",
+      "scratchpad": null,
+      "hasDirective": false,
+      "directive": null,
+      "directiveThreadId": null,
+      "suggestedActions": null,
+      "elicitationTarget": "risk_appetite",
+      "timestamp": "2026-09-09T14:25:00.000Z",
+      "mode": "battle"
+    },
+    {
+      "userMessage": "Question 9?",
+      "agentResponse": "Answer 9.",
+      "scratchpad": null,
+      "hasDirective": false,
+      "directive": null,
+      "directiveThreadId": null,
+      "suggestedActions": null,
+      "elicitationTarget": "risk_appetite",
+      "timestamp": "2026-09-09T14:30:00.000Z",
+      "mode": "battle"
+    },
+    {
+      "userMessage": "Question 10?",
+      "agentResponse": "Answer 10.",
+      "scratchpad": null,
+      "hasDirective": false,
+      "directive": null,
+      "directiveThreadId": null,
+      "suggestedActions": null,
+      "elicitationTarget": "risk_appetite",
+      "timestamp": "2026-09-09T14:35:00.000Z",
+      "mode": "battle"
+    }
+  ],
+  "exchangesWithCockpit": [
+    {
+      "userMessage": "Question 1?",
+      "agentResponse": "Answer 1.",
+      "scratchpad": null,
+      "hasDirective": false,
+      "directive": null,
+      "directiveThreadId": null,
+      "suggestedActions": null,
+      "elicitationTarget": "risk_appetite",
+      "timestamp": "2026-09-09T13:31:00.000Z",
+      "mode": "battle"
+    },
+    {
+      "userMessage": null,
+      "agentResponse": "Agent's live. Leaning into semis today.",
+      "scratchpad": null,
+      "hasDirective": false,
+      "directive": null,
+      "suggestedActions": null,
+      "elicitationTarget": "first_message",
+      "timestamp": "2026-09-09T13:32:00.000Z",
+      "mode": "battle",
+      "messageType": "first_message",
+      "groundingVersion": 1
+    },
+    {
+      "userMessage": "Question 2?",
+      "agentResponse": "Answer 2.",
+      "scratchpad": null,
+      "hasDirective": false,
+      "directive": null,
+      "directiveThreadId": null,
+      "suggestedActions": null,
+      "elicitationTarget": "risk_appetite",
+      "timestamp": "2026-09-09T13:40:00.000Z",
+      "mode": "battle"
+    },
+    {
+      "userMessage": null,
+      "agentResponse": "Legacy proactive line (no marker).",
+      "scratchpad": null,
+      "hasDirective": false,
+      "directive": null,
+      "suggestedActions": null,
+      "elicitationTarget": "anticipation",
+      "timestamp": "2026-09-09T13:45:00.000Z",
+      "mode": "battle",
+      "isAutoDebrief": true
+    },
+    {
+      "userMessage": "Question 3?",
+      "agentResponse": "Answer 3.",
+      "scratchpad": null,
+      "hasDirective": false,
+      "directive": null,
+      "directiveThreadId": null,
+      "suggestedActions": null,
+      "elicitationTarget": "risk_appetite",
+      "timestamp": "2026-09-09T13:50:00.000Z",
+      "mode": "battle"
+    },
+    {
+      "userMessage": null,
+      "agentResponse": "",
+      "scratchpad": null,
+      "hasDirective": false,
+      "directive": null,
+      "suggestedActions": null,
+      "elicitationTarget": "research",
+      "timestamp": "2026-09-09T13:55:00.000Z",
+      "mode": "battle",
+      "messageType": "research",
+      "groundingVersion": 1,
+      "card": {
+        "symbol": "AMD",
+        "platformDataLabel": "platform data as of 2026-09-09",
+        "technicals": {
+          "label": "Technicals (as of 2026-09-09)",
+          "facts": [
+            "RS 88th %ile",
+            "above the 20-day"
+          ]
+        },
+        "fundamentals": null,
+        "standing": {
+          "line": "Bench, support candidate"
+        }
+      }
+    },
+    {
+      "userMessage": null,
+      "agentResponse": "",
+      "scratchpad": null,
+      "hasDirective": true,
+      "directive": {
+        "text": "Hold off on the AMD entry until today's close.",
+        "expiry": "until_ms",
+        "directiveThreadId": "thread-call-0001",
+        "family": "call",
+        "expiresAtMs": 1788984000000,
+        "basis": "this_session",
+        "callId": "battle-1:eval_001:call:0",
+        "kind": "call_hold",
+        "action": {
+          "direction": "entry",
+          "symbol": "AMD",
+          "slot": "support",
+          "counterpart": "KO"
+        },
+        "answerId": "battle-1:eval_001:call:0:answer:hold:",
+        "filedAt": "2026-09-09T13:57:00.000Z",
+        "textVersion": "callActions.v1"
+      },
+      "directiveThreadId": "thread-call-0001",
+      "suggestedActions": null,
+      "elicitationTarget": "directive_filed",
+      "timestamp": "2026-09-09T13:57:00.000Z",
+      "mode": "battle",
+      "messageType": "directive_filed",
+      "source": "cockpit",
+      "groundingVersion": 1,
+      "callId": "battle-1:eval_001:call:0"
+    },
+    {
+      "userMessage": null,
+      "agentResponse": "",
+      "scratchpad": null,
+      "hasDirective": true,
+      "directive": {
+        "text": "Require stronger confirmation before entering",
+        "expiry": "end_of_battle",
+        "directiveThreadId": "thread-chip-0001",
+        "adjustmentId": "TF-02",
+        "canonicalTextVersion": 1
+      },
+      "directiveThreadId": "thread-chip-0001",
+      "suggestedActions": null,
+      "elicitationTarget": "directive_filed",
+      "timestamp": "2026-09-09T14:00:00.000Z",
+      "mode": "battle",
+      "messageType": "directive_filed",
+      "source": "chip",
+      "groundingVersion": 1
+    },
+    {
+      "userMessage": "Question 4?",
+      "agentResponse": "Answer 4.",
+      "scratchpad": null,
+      "hasDirective": false,
+      "directive": null,
+      "directiveThreadId": null,
+      "suggestedActions": null,
+      "elicitationTarget": "risk_appetite",
+      "timestamp": "2026-09-09T14:05:00.000Z",
+      "mode": "battle"
+    },
+    {
+      "userMessage": "Question 5?",
+      "agentResponse": "Answer 5.",
+      "scratchpad": null,
+      "hasDirective": false,
+      "directive": null,
+      "directiveThreadId": null,
+      "suggestedActions": null,
+      "elicitationTarget": "risk_appetite",
+      "timestamp": "2026-09-09T14:10:00.000Z",
+      "mode": "battle"
+    },
+    {
+      "userMessage": "Question 6?",
+      "agentResponse": "Answer 6.",
+      "scratchpad": null,
+      "hasDirective": false,
+      "directive": null,
+      "directiveThreadId": null,
+      "suggestedActions": null,
+      "elicitationTarget": "risk_appetite",
+      "timestamp": "2026-09-09T14:15:00.000Z",
+      "mode": "battle"
+    },
+    {
+      "userMessage": "Question 7?",
+      "agentResponse": "Answer 7.",
+      "scratchpad": null,
+      "hasDirective": false,
+      "directive": null,
+      "directiveThreadId": null,
+      "suggestedActions": null,
+      "elicitationTarget": "risk_appetite",
+      "timestamp": "2026-09-09T14:20:00.000Z",
+      "mode": "battle"
+    },
+    {
+      "userMessage": "Question 8?",
+      "agentResponse": "Answer 8.",
+      "scratchpad": null,
+      "hasDirective": false,
+      "directive": null,
+      "directiveThreadId": null,
+      "suggestedActions": null,
+      "elicitationTarget": "risk_appetite",
+      "timestamp": "2026-09-09T14:25:00.000Z",
+      "mode": "battle"
+    },
+    {
+      "userMessage": "Question 9?",
+      "agentResponse": "Answer 9.",
+      "scratchpad": null,
+      "hasDirective": false,
+      "directive": null,
+      "directiveThreadId": null,
+      "suggestedActions": null,
+      "elicitationTarget": "risk_appetite",
+      "timestamp": "2026-09-09T14:30:00.000Z",
+      "mode": "battle"
+    },
+    {
+      "userMessage": "Question 10?",
+      "agentResponse": "Answer 10.",
+      "scratchpad": null,
+      "hasDirective": false,
+      "directive": null,
+      "directiveThreadId": null,
+      "suggestedActions": null,
+      "elicitationTarget": "risk_appetite",
+      "timestamp": "2026-09-09T14:35:00.000Z",
+      "mode": "battle"
+    },
+    {
+      "userMessage": null,
+      "agentResponse": "",
+      "scratchpad": null,
+      "hasDirective": true,
+      "directive": {
+        "text": "Hold off on the AMD entry until today's close.",
+        "expiry": "until_ms",
+        "directiveThreadId": "thread-call-0002",
+        "family": "call",
+        "expiresAtMs": 1788984000000,
+        "basis": "this_session",
+        "callId": "battle-1:eval_002:call:0",
+        "kind": "call_hold",
+        "action": {
+          "direction": "entry",
+          "symbol": "AMD",
+          "slot": "support",
+          "counterpart": "KO"
+        },
+        "answerId": "battle-1:eval_002:call:0:answer:hold:",
+        "filedAt": "2026-09-09T14:36:00.000Z",
+        "textVersion": "callActions.v1"
+      },
+      "directiveThreadId": "thread-call-0002",
+      "suggestedActions": null,
+      "elicitationTarget": "directive_filed",
+      "timestamp": "2026-09-09T14:36:00.000Z",
+      "mode": "battle",
+      "messageType": "directive_filed",
+      "source": "cockpit",
+      "groundingVersion": 1,
+      "callId": "battle-1:eval_002:call:0"
+    }
+  ],
+  "outputs": {
+    "withoutCockpit": {
+      "legacyHistory": [
+        {
+          "role": "user",
+          "content": "Question 3?"
+        },
+        {
+          "role": "assistant",
+          "content": "Answer 3."
+        },
+        {
+          "role": "user",
+          "content": "Question 4?"
+        },
+        {
+          "role": "assistant",
+          "content": "Answer 4."
+        },
+        {
+          "role": "user",
+          "content": "Question 5?"
+        },
+        {
+          "role": "assistant",
+          "content": "Answer 5."
+        },
+        {
+          "role": "user",
+          "content": "Question 6?"
+        },
+        {
+          "role": "assistant",
+          "content": "Answer 6."
+        },
+        {
+          "role": "user",
+          "content": "Question 7?"
+        },
+        {
+          "role": "assistant",
+          "content": "Answer 7."
+        },
+        {
+          "role": "user",
+          "content": "Question 8?"
+        },
+        {
+          "role": "assistant",
+          "content": "Answer 8."
+        },
+        {
+          "role": "user",
+          "content": "Question 9?"
+        },
+        {
+          "role": "assistant",
+          "content": "Answer 9."
+        },
+        {
+          "role": "user",
+          "content": "Question 10?"
+        },
+        {
+          "role": "assistant",
+          "content": "Answer 10."
+        }
+      ],
+      "grounded": {
+        "pairs": [
+          {
+            "type": "user_initiated",
+            "userMessage": "Question 3?",
+            "agentText": "Answer 3."
+          },
+          {
+            "type": "user_initiated",
+            "userMessage": "Question 4?",
+            "agentText": "Answer 4."
+          },
+          {
+            "type": "user_initiated",
+            "userMessage": "Question 5?",
+            "agentText": "Answer 5."
+          },
+          {
+            "type": "user_initiated",
+            "userMessage": "Question 6?",
+            "agentText": "Answer 6."
+          },
+          {
+            "type": "user_initiated",
+            "userMessage": "Question 7?",
+            "agentText": "Answer 7."
+          },
+          {
+            "type": "user_initiated",
+            "userMessage": "Question 8?",
+            "agentText": "Answer 8."
+          },
+          {
+            "type": "user_initiated",
+            "userMessage": "Question 9?",
+            "agentText": "Answer 9."
+          },
+          {
+            "type": "user_initiated",
+            "userMessage": "Question 10?",
+            "agentText": "Answer 10."
+          }
+        ],
+        "agentLines": []
+      },
+      "groundedHistory": [
+        {
+          "role": "user",
+          "content": "Question 3?"
+        },
+        {
+          "role": "assistant",
+          "content": "[user_initiated] Answer 3."
+        },
+        {
+          "role": "user",
+          "content": "Question 4?"
+        },
+        {
+          "role": "assistant",
+          "content": "[user_initiated] Answer 4."
+        },
+        {
+          "role": "user",
+          "content": "Question 5?"
+        },
+        {
+          "role": "assistant",
+          "content": "[user_initiated] Answer 5."
+        },
+        {
+          "role": "user",
+          "content": "Question 6?"
+        },
+        {
+          "role": "assistant",
+          "content": "[user_initiated] Answer 6."
+        },
+        {
+          "role": "user",
+          "content": "Question 7?"
+        },
+        {
+          "role": "assistant",
+          "content": "[user_initiated] Answer 7."
+        },
+        {
+          "role": "user",
+          "content": "Question 8?"
+        },
+        {
+          "role": "assistant",
+          "content": "[user_initiated] Answer 8."
+        },
+        {
+          "role": "user",
+          "content": "Question 9?"
+        },
+        {
+          "role": "assistant",
+          "content": "[user_initiated] Answer 9."
+        },
+        {
+          "role": "user",
+          "content": "Question 10?"
+        },
+        {
+          "role": "assistant",
+          "content": "[user_initiated] Answer 10."
+        }
+      ],
+      "earlierMessagesBlock": null,
+      "platformResearchBlock": "PLATFORM RESEARCH — data the PLATFORM holds, shown to the user on a card at the dates below. NOT your earlier words, NOT what the trading process saw at any check, NOT evidence for any decision.\n  AMD — platform data as of 2026-09-09\n    Technicals (as of 2026-09-09): RS 88th %ile · above the 20-day\n    Standing: Bench, support candidate\nTHE RESEARCH RULE:\n- A research card is the platform's data at its labelled date. You may describe it, and you may read ITS OWN numbers aloud with their labels and dates — that is the one exception to never quoting raw data numbers, and it extends to nothing else in this prompt.\n- You do not recommend, forecast, or state what the trading process will do with it.\n- It is not yours and it is not the check's: never say you saw it, looked it up, ran it, or that it was your evidence, and never say it explains or caused any decision on the record.\n- If the user asks about a name with no card here, you have no card for it — say so."
+    },
+    "withCockpit": {
+      "legacyHistory": [
+        {
+          "role": "user",
+          "content": "Question 4?"
+        },
+        {
+          "role": "assistant",
+          "content": "Answer 4."
+        },
+        {
+          "role": "user",
+          "content": "Question 5?"
+        },
+        {
+          "role": "assistant",
+          "content": "Answer 5."
+        },
+        {
+          "role": "user",
+          "content": "Question 6?"
+        },
+        {
+          "role": "assistant",
+          "content": "Answer 6."
+        },
+        {
+          "role": "user",
+          "content": "Question 7?"
+        },
+        {
+          "role": "assistant",
+          "content": "Answer 7."
+        },
+        {
+          "role": "user",
+          "content": "Question 8?"
+        },
+        {
+          "role": "assistant",
+          "content": "Answer 8."
+        },
+        {
+          "role": "user",
+          "content": "Question 9?"
+        },
+        {
+          "role": "assistant",
+          "content": "Answer 9."
+        },
+        {
+          "role": "user",
+          "content": "Question 10?"
+        },
+        {
+          "role": "assistant",
+          "content": "Answer 10."
+        }
+      ],
+      "grounded": {
+        "pairs": [
+          {
+            "type": "user_initiated",
+            "userMessage": "Question 4?",
+            "agentText": "Answer 4."
+          },
+          {
+            "type": "user_initiated",
+            "userMessage": "Question 5?",
+            "agentText": "Answer 5."
+          },
+          {
+            "type": "user_initiated",
+            "userMessage": "Question 6?",
+            "agentText": "Answer 6."
+          },
+          {
+            "type": "user_initiated",
+            "userMessage": "Question 7?",
+            "agentText": "Answer 7."
+          },
+          {
+            "type": "user_initiated",
+            "userMessage": "Question 8?",
+            "agentText": "Answer 8."
+          },
+          {
+            "type": "user_initiated",
+            "userMessage": "Question 9?",
+            "agentText": "Answer 9."
+          },
+          {
+            "type": "user_initiated",
+            "userMessage": "Question 10?",
+            "agentText": "Answer 10."
+          }
+        ],
+        "agentLines": []
+      },
+      "groundedHistory": [
+        {
+          "role": "user",
+          "content": "Question 4?"
+        },
+        {
+          "role": "assistant",
+          "content": "[user_initiated] Answer 4."
+        },
+        {
+          "role": "user",
+          "content": "Question 5?"
+        },
+        {
+          "role": "assistant",
+          "content": "[user_initiated] Answer 5."
+        },
+        {
+          "role": "user",
+          "content": "Question 6?"
+        },
+        {
+          "role": "assistant",
+          "content": "[user_initiated] Answer 6."
+        },
+        {
+          "role": "user",
+          "content": "Question 7?"
+        },
+        {
+          "role": "assistant",
+          "content": "[user_initiated] Answer 7."
+        },
+        {
+          "role": "user",
+          "content": "Question 8?"
+        },
+        {
+          "role": "assistant",
+          "content": "[user_initiated] Answer 8."
+        },
+        {
+          "role": "user",
+          "content": "Question 9?"
+        },
+        {
+          "role": "assistant",
+          "content": "[user_initiated] Answer 9."
+        },
+        {
+          "role": "user",
+          "content": "Question 10?"
+        },
+        {
+          "role": "assistant",
+          "content": "[user_initiated] Answer 10."
+        }
+      ],
+      "earlierMessagesBlock": null,
+      "platformResearchBlock": null
+    }
+  }
+}
