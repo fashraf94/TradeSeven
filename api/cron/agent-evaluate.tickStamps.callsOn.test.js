@@ -28,7 +28,11 @@ import { makeCallsDb, storedDoc, storedCollection, callsTouches } from '../_util
 const mocks = vi.hoisted(() => ({ getStockAnalysisData: vi.fn(), fetchIntradayBatch: vi.fn(), create: vi.fn() }));
 const { swapMock } = vi.hoisted(() => ({ swapMock: vi.fn() }));
 const { buildHook } = vi.hoisted(() => ({ buildHook: { throwMessage: null } }));
-const flagState = vi.hoisted(() => ({ callsMode: 'shadow', tickCapture: true }));
+// Build 1a (spec §3): activation is per battle — at 'on' the battle's owner
+// must be allowlisted. The fixture battle's owner is allowlisted by default so
+// every 'on' row below exercises a battle that RESOLVES 'on'; the allowlist row
+// drives a non-allowlisted owner through the same check.
+const flagState = vi.hoisted(() => ({ callsMode: 'shadow', tickCapture: true, allow: ['owner-uid-1'] }));
 
 vi.mock('@anthropic-ai/sdk', () => ({
   default: class AnthropicMock { constructor() { this.messages = { create: (...args) => mocks.create(...args) }; } },
@@ -70,6 +74,7 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => {
   return {
     ...actual,
     get CALL_RECORDS_MODE() { return flagState.callsMode; },
+    get COCKPIT_ALLOWLIST_UIDS() { return flagState.allow; },
     get TICK_CAPTURE_ENABLED() { return flagState.tickCapture; },
   };
 });
@@ -116,8 +121,10 @@ async function runTick({
   breakRefreshAfterSwap = false, buildThrows = null, seed = {}, db: injected = null, beforeModel = null,
   failFinalUpdate = false, swapThrows = null, onSwap = null,
   onFetch = null, onIntraday = null, newsStories = null, swapPriceOf = null,
+  allowlist = ['owner-uid-1'],
 } = {}) {
   flagState.callsMode = mode;
+  flagState.allow = allowlist;
   flagState.tickCapture = capture;
   buildHook.throwMessage = buildThrows;
   mocks.create.mockClear();
@@ -640,6 +647,21 @@ describe('§3.12 row 1 — composition: the four rows, every unrelated flag fixe
     expect(capturedPermanent(db)).toMatchObject({ schemaVersion: 1 });
     expect(capturedPermanent(db)).not.toHaveProperty('calls');
     expect(callsTouches(db)).toEqual({ reads: 0, writes: 0, queries: 0 });
+  });
+
+  it('the allowlist row (Build 1a §3) — calls on · the owner NOT allowlisted: the battle resolves off — the HEAD tool, the version-1 capture shape, no phase key, the calls data neither read nor written', async () => {
+    const [call] = earlierCalls([KO_OUT]);
+    const { db, tool, entry } = await runTick({ mode: 'on', allowlist: ['somebody-else'], seed: seedOf([call]), result: makeHoldResult({ declarations: makeDeclarations() }) });
+    expect(tool).toBe(TRADE_DECISION_TOOL);
+    expect(capturedPermanent(db)).toMatchObject({ schemaVersion: 1 });
+    expect(capturedPermanent(db)).not.toHaveProperty('calls');
+    expect(callsTouches(db)).toEqual({ reads: 0, writes: 0, queries: 0 });
+    expect(entry).not.toHaveProperty('declarationsPhase');
+    expect(storedDoc(db, 'calls', call.callId).state).toBe('open');
+    // …and with an EMPTY list (the shipped state) the same.
+    const empty = await runTick({ mode: 'on', allowlist: [], seed: seedOf([call]), result: makeHoldResult({ declarations: makeDeclarations() }) });
+    expect(empty.tool).toBe(TRADE_DECISION_TOOL);
+    expect(callsTouches(empty.db)).toEqual({ reads: 0, writes: 0, queries: 0 });
   });
 
   for (const mode of ['shadow', 'on']) {

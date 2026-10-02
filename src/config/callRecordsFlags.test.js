@@ -71,10 +71,14 @@ describe('CALL_RECORDS_MODE — the pin (BUILD_RULES §2)', () => {
     expect(resolveCallRecordsMode()).toBe(CALL_RECORDS_MODE);
   });
 
-  it('the cron resolves the mode ONCE per check, through the resolver, and never reads the constant itself', () => {
-    expect(CRON.match(/resolveCallRecordsMode\(\)/g)).toHaveLength(1);
-    expect(CRON).toMatch(/const callsCtx = createCallsContext\(\{ mode: resolveCallRecordsMode\(\), handlerStartMs: cronStartTime \}\);/);
+  it('the cron resolves the mode ONCE per check, through the resolver ON THE BATTLE (Build 1a §3), and never reads the constant itself', () => {
+    expect(CRON.match(/resolveCallRecordsMode\(/g)).toHaveLength(1);
+    expect(CRON).toMatch(/const callsCtx = createCallsContext\(\{ mode: resolveCallRecordsMode\(battle\), handlerStartMs: cronStartTime \}\);/);
+    // The check context is attached right there, before the control-epoch call (Build 1a §3).
+    expect(CRON).toMatch(/resolveCallRecordsMode\(battle\), handlerStartMs: cronStartTime \}\);[\s\S]{0,700}attachCheckContext\(battle, \{ mode: callsCtx\.mode, nowMs: Date\.now\(\) \}\);/);
+    expect(CRON.indexOf('attachCheckContext(battle,')).toBeLessThan(CRON.indexOf('await recordControlEpochIfNeeded('));
     expect(CRON_CODE).not.toMatch(/\bCALL_RECORDS_MODE\b/);
-    expect(CRON_CODE).toContain('resolveCallRecordsMode()');
+    expect(CRON_CODE).not.toMatch(/\bCOCKPIT_ALLOWLIST_UIDS\b/);
+    expect(CRON_CODE).toContain('resolveCallRecordsMode(battle)');
   });
 });
