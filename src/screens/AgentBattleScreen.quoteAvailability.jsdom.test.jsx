@@ -158,7 +158,7 @@ vi.mock('framer-motion', async () => {
 // ── Recorders for the consumers whose own behaviour has its own suites ──────
 const seen = vi.hoisted(() => ({ research: [], breakdown: [], presence: [], chatPayload: { symbol: 'TSLA' }, admission: null, closeResearch: null, researchMounts: 0 }));
 vi.mock('../components/draft/AssetResearchModal', () => ({
-  default: (props) => {
+  default: function ResearchModalRecorder(props) {
     // The admission callback is recorded only when supplied (gated non-held
     // views), so every legacy entry serializes exactly as captured.
     seen.research.push(JSON.parse(JSON.stringify({

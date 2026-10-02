@@ -698,7 +698,10 @@ describe('ON-ID — lookup evidence on the existing listener', () => {
     let passes = 0;
     function Counting({ agentId, gated }) {
       passes += 1;
-      const r = gated ? useAgentBattleId(agentId, GATED) : useAgentBattleId(agentId);
+      // Options are selected before the one unconditional call, as in `Probe`;
+      // `undefined` takes the hook's `= {}` default, the legacy call shape.
+      const options = gated ? GATED : undefined;
+      const r = useAgentBattleId(agentId, options);
       useLayoutEffect(() => { commits.push(r); });
       return null;
     }
