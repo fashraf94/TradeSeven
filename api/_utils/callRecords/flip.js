@@ -49,6 +49,18 @@ import { withTimeout } from '../intraday/evaluatorHook.js';
 import { callsActive } from './mode.js';
 import { observationUsable, FLIP_EXITS } from './observe.js';
 import { buildReceipt, receiptPathOf } from './receipt.js';
+// Build 1a (spec §6, §10): the `expired` event inside the flip transaction at
+// resolved 'on' (with the answer-expired line when a never-heard directive's
+// lifetime ended before this observation); shadow writes stay Build 0's.
+import { buildCallEvent, createCallEvent } from './events.js';
+import { renderExpiredEvent, renderAnswerExpiredLine } from './copy.js';
+import { directiveRecordOf, selectedPickOf } from './threads.js';
+
+/** The pick an answered pick call selected (its directive record's own action), or null — Build 1a (spec §7). */
+function selectedPickFor(call, parent) {
+  if (call?.kind !== 'pick' || call?.playerResponse?.kind !== 'directive') return null;
+  return selectedPickOf(parent, call.playerResponse.directiveThreadId);
+}
 import {
   callsBudget, writeCallsStatus, composeCallsDiag, CallsAbort, isCallsTimeout,
   NON_MODEL_PHASE_MS, STATUS_RESERVE_MS,
@@ -155,14 +167,16 @@ export function matchesWholeTrade(call, executorResult, { selectedSymbol = null 
  * why nothing happens; otherwise `next` (a transition or null) and `acted`.
  * Pure — the page read uses it as a hint and the transaction as the authority.
  */
-export function planFlip(call, { observation, evalId, executorResult }) {
+export function planFlip(call, { observation, evalId, executorResult, selectedSymbol = null }) {
   if (!call || call.state !== 'open') return { skip: 'not_open' };
   if (evalId !== null && call.evalId === evalId) return { skip: 'minting_check' };
   if (!(finite(call.mintedAt) && observation.observedAtMs > call.mintedAt)) return { skip: 'before_mint' };
   const next = decideFlip(call, observation);
+  // Build 1a (spec §7): the SELECTED pick, when the pick was answered, binds the
+  // match — an option that was not the selection is not the called trade.
   const acted = evalId !== null && executorResult != null
     && !(isPlainObject(call.outcome) && call.outcome.actedEvalId)
-    && matchesWholeTrade(call, executorResult);
+    && matchesWholeTrade(call, executorResult, { selectedSymbol });
   if (!next && !acted) return { skip: 'no_change' };
   return { next, acted };
 }
@@ -191,7 +205,7 @@ function isIndexMissing(err) {
 // ---------------------------------------------------------------------------
 
 /** One call's transaction. Never throws. */
-async function flipOne({ db, battleId, callId, observation, evalId, executorResult, deadlineMs }) {
+async function flipOne({ db, battleId, callId, observation, evalId, executorResult, deadlineMs, events = null }) {
   const budgetMs = Math.min(FLIP_TX_MS, deadlineMs - Date.now());
   if (budgetMs <= 0) return { result: 'not_started' };
   const attemptDeadlineMs = Date.now() + budgetMs;
@@ -206,7 +220,7 @@ async function flipOne({ db, battleId, callId, observation, evalId, executorResu
       if (!parent || parent.status !== 'active') return { result: 'skipped', reason: 'parent_terminal' };
       if (!callSnap?.exists) return { result: 'skipped', reason: 'missing' };
       const call = callSnap.data();
-      const plan = planFlip(call, { observation, evalId, executorResult });
+      const plan = planFlip(call, { observation, evalId, executorResult, selectedSymbol: selectedPickFor(call, parent) });
       if (plan.skip) return { result: 'skipped', reason: plan.skip };
       // The reads can outlast the ceiling: nothing is written — so no commit is
       // issued — once it has passed (review E-1).
@@ -219,6 +233,17 @@ async function flipOne({ db, battleId, callId, observation, evalId, executorResu
         change.state = plan.next;
         change.stateChangedAt = observation.observedAtMs;
         change.stateSource = 'check';
+        if (events?.enabled && plan.next === 'expired_unresolved') {
+          const lines = [renderExpiredEvent({ reason: 'check' })];
+          const pr = call.playerResponse;
+          const lifetime = pr?.kind === 'directive' && pr.heardEvalId == null ? directiveRecordOf(parent, pr.directiveThreadId)?.expiresAtMs : null;
+          if (typeof lifetime === 'number' && Number.isFinite(lifetime) && lifetime < observation.observedAtMs) lines.push(renderAnswerExpiredLine({ promptBuiltAt: events.promptBuiltAt }));
+          createCallEvent(tx, db, battleId, {
+            kind: 'expired',
+            idParams: { callId },
+            event: buildCallEvent({ kind: 'expired', at: events.nowMs ?? observation.observedAtMs, callIds: [callId], text: lines.join(' · '), evidence: { evalId, promptBuiltAt: events.promptBuiltAt ?? null, checkLabel: null } }),
+          });
+        }
       }
       if (plan.acted) outcome.actedEvalId = evalId;
       change.outcome = outcome;
@@ -243,7 +268,7 @@ async function flipOne({ db, battleId, callId, observation, evalId, executorResu
  * @param {number} p.deadlineMs  the shared deadline (minus the status slice)
  * @returns {Promise<{ status: object|null, diag: object }|null>}
  */
-export async function runCallFlips(callsCtx, { db, battle, deadlineMs }) {
+export async function runCallFlips(callsCtx, { db, battle, deadlineMs, events = null }) {
   if (!callsCtx || !callsActive(callsCtx.mode)) return null;
   const observation = callsCtx.observation;
   if (!observationUsable(observation)) return { status: null, diag: { stopped: 'no_observation' } };
@@ -257,6 +282,9 @@ export async function runCallFlips(callsCtx, { db, battle, deadlineMs }) {
     scanned: 0, hit: 0, expired: 0, acted: 0, receipts: 0, skipped: {}, unconfirmed: 0, failed: 0,
     pages: 0, wrapped: false, complete: false, index: flipIndex.state, stopped: null, ms: 0,
   };
+  // Build 1a (spec §7): the calls whose transition committed in THIS scan —
+  // the heard writer's scope beside the open ones. Returned, never persisted.
+  const flippedIds = new Set();
   const finish = (cursor, complete) => {
     diag.complete = complete;
     diag.index = flipIndex.state;
@@ -264,6 +292,7 @@ export async function runCallFlips(callsCtx, { db, battle, deadlineMs }) {
     return {
       status: { evalId, cursor: complete ? null : cursor, scanned: diag.scanned, total: complete ? diag.scanned : null, complete },
       diag,
+      flippedIds,
     };
   };
 
@@ -308,13 +337,14 @@ export async function runCallFlips(callsCtx, { db, battle, deadlineMs }) {
       const call = doc.data();
       const position = { mintedAt: call?.mintedAt, callId: doc.id };
       diag.scanned += 1;
-      const plan = planFlip(call, { observation, evalId, executorResult });
+      const plan = planFlip(call, { observation, evalId, executorResult, selectedSymbol: selectedPickFor(call, battle) });
       if (plan.skip) {
         diag.skipped[plan.skip] = (diag.skipped[plan.skip] || 0) + 1;
       } else {
-        const res = await flipOne({ db, battleId, callId: doc.id, observation, evalId, executorResult, deadlineMs });
+        const res = await flipOne({ db, battleId, callId: doc.id, observation, evalId, executorResult, deadlineMs, events });
         if (res.result === 'not_started') { diag.scanned -= 1; diag.stopped = 'deadline'; return finish(cursor, false); }
         if (res.result === 'flipped') {
+          if (res.next) flippedIds.add(doc.id);
           if (res.next === 'hit') diag.hit += 1;
           if (res.next === 'expired_unresolved') diag.expired += 1;
           if (res.next) diag.receipts += 1;
@@ -369,7 +399,11 @@ export async function runExitCallsHook(callsCtx, { db, battle, timeBudgetMs }) {
     console.log(`[calls] flips skipped battle=${battle.id} exit=${callsCtx.exit} available=${budget.available}ms (< ${NON_MODEL_PHASE_MS})`);
     return { skipped: 'budget', available: budget.available, flips: null, status: 'skipped' };
   }
-  const flips = await runCallFlips(callsCtx, { db, battle, deadlineMs: budget.deadlineMs - STATUS_RESERVE_MS });
+  const flips = await runCallFlips(callsCtx, {
+    db, battle, deadlineMs: budget.deadlineMs - STATUS_RESERVE_MS,
+    // Build 1a (spec §10): a non-model exit's expiry writes its event too, at resolved 'on' only (no prompt on these rows).
+    events: callsCtx.mode === 'on' ? { enabled: true, promptBuiltAt: null, nowMs: startedMs } : null,
+  });
   const fields = {
     ...(flips?.status ? { 'cronState.callFlips': flips.status } : {}),
     'cronState.callsDiag': composeCallsDiag({

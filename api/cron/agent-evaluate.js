@@ -41,6 +41,9 @@ import { buildTradeDecisionTool } from '../_utils/agentEvalToolSchema.js';
 // 'off' (nothing inside it runs), isolated at shadow/on (a calls defect costs
 // the check a record, never a decision, a write or an exit).
 import { resolveCallRecordsMode, createCallsContext, attachCheckContext, callsActive, callsStep, callsStepAsync } from '../_utils/callRecords/mode.js';
+// Cockpit Build 1a (spec §7): the heard writer — injected into the model phase
+// like the flips, so publish.js imports neither.
+import { runHeardPhase } from '../_utils/callRecords/heard.js';
 import { recordFetchedQuote, freezeObservation, freezeModelObservation, classifyEntryExit, carryExecutorResult, passExaminesHeldPrices } from '../_utils/callRecords/observe.js';
 import { captureDeclarations } from '../_utils/callRecords/validate.js';
 import { bindHorizon, battleExpiryMs } from '../_utils/callRecords/horizon.js';
@@ -4412,6 +4415,11 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         promptBuiltAt,
         tickId: tickCapture.enabled ? (tickCapture.state?.tickId ?? null) : null,
         flips: runCallFlips,
+        // Build 1a (spec §7, §11): the heard writer and the committed entry's
+        // heard stamp — the thread that was IN this check's prompt (never the
+        // model's echo). Inert below resolved 'on'.
+        heardWriter: runHeardPhase,
+        heard: evaluation.heard ?? null,
       })
       : runExitCallsHook(callsCtx, { db, battle, timeBudgetMs: TIME_BUDGET_MS })));
     // Capture references (§3.7/§3.9): CONFIRMED publication results only,

@@ -44,6 +44,8 @@ import { withCaptureStore } from './tickCaptureHarness.js';
 export const CALL_SUBCOLLECTIONS = Object.freeze(['calls', 'declarations', 'callObservations']);
 /** The top-level sweep queue. */
 export const QUEUE_COLLECTION = 'callSweepQueue';
+/** Build 1a: the call events subcollection (written at resolved 'on' only; never seeded by the Build 0 rows). */
+export const EVENTS_SUBCOLLECTION = 'callEvents';
 
 const NAME = '__name__';
 /** No legitimate row issues more than a handful of queries; a runaway scan issues thousands. */
@@ -255,7 +257,7 @@ export function makeCallsDb({ seed = {}, abortFirstTransactionWithSeq = null, ..
             ...ref,
             async update(payload) { await ref.update(payload); bump(path); },
             collection: (sub) => {
-              if (!CALL_SUBCOLLECTIONS.includes(sub)) return ref.collection(sub);
+              if (!CALL_SUBCOLLECTIONS.includes(sub) && sub !== EVENTS_SUBCOLLECTION) return ref.collection(sub);
               const collectionPath = `${path}/${sub}`;
               const q = makeQuery(collectionPath);
               return { ...q, doc: (docId) => makeCallsRef(`${collectionPath}/${docId}`, docId) };

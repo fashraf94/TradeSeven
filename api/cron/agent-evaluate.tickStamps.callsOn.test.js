@@ -792,3 +792,47 @@ describe('shadow changes no prompt (contract §9: "nothing rendered")', () => {
     expect(JSON.stringify(b)).not.toMatch(/callFlips|callsDiag|declarationsPhase/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cockpit Build 1a (spec §7, §11; the four-layer pick proof's model-visible
+// layer): at resolved 'on' an answered call's directive is IN the prompt, the
+// committed entry hears it, and the heard writer stamps the call and writes the
+// event in the model phase. At shadow the same slot is inactive everywhere.
+describe('Build 1a — heard end to end on the real check (spec §7)', () => {
+  const THREAD = 'thread-call-0001';
+  const callSlotFor = (call) => ({
+    text: "Hold off on the AMD entry until today's close.", expiry: 'until_ms', directiveThreadId: THREAD, createdAt: '2026-09-09T14:20:00.000Z',
+    family: 'call', expiresAtMs: call.horizon.expiresAt, basis: 'this_session', callId: call.callId, kind: 'call_hold',
+    action: { direction: 'entry', symbol: 'AMD', slot: 'support', counterpart: 'KO' }, answerId: `${call.callId}:answer:hold:`,
+    filedAt: '2026-09-09T14:20:00.000Z', textVersion: 'callActions.v1',
+  });
+  const answered = (call) => ({ ...call, playerResponse: { answer: 'hold', kind: 'directive', directiveThreadId: THREAD, callId: call.callId, filedAt: '2026-09-09T14:20:00.000Z', heardEvalId: null }, directiveThreadId: THREAD });
+
+  it("at 'on' (allowlisted): the canonical text is in the prompt, the entry's heard stamp names the thread, heardEvalId is stamped and the heard event is written in the model phase", async () => {
+    const [call] = earlierCalls([{ ...AMD_IN, condition: { side: 'above', level: 170 } }]); // not hit at 162
+    const slot = callSlotFor(call);
+    const { db, entry } = await runTick({ mode: 'on', battle: makeTickBattle({ directive: slot, chatExchanges: [] }), seed: seedOf([answered(call)]) });
+    const prompt = JSON.stringify(mocks.create.mock.calls[0][0]);
+    expect(prompt).toContain("Hold off on the AMD entry until today's close.");
+    expect(prompt).toContain(`threadId: ${THREAD}`);
+    expect(entry.heard).toEqual({ directiveThreadId: THREAD, suppressed: null });
+    const after = storedDoc(db, 'calls', call.callId);
+    expect(after.playerResponse.heardEvalId).toBe(entry.evalId);
+    expect(after.state).toBe('open');
+    expect(storedCollection(db, 'callEvents')[`${call.callId}:heard:${entry.evalId}`]).toMatchObject({ kind: 'heard', callIds: [call.callId], text: 'Heard at the 11:00 check', evidence: { evalId: entry.evalId } });
+    expect(db.__store.battle.cronState.callsDiag.heard).toMatchObject({ thread: THREAD, heard: 1 });
+    expect(db.__store.battle.directive).toEqual(slot); // a hold is not retired by hearing
+  });
+
+  it("at 'shadow' the same slot is INACTIVE: not in the prompt, no heard stamp, nothing stamped, no event — and the slot untouched", async () => {
+    const [call] = earlierCalls([{ ...AMD_IN, condition: { side: 'above', level: 170 } }]);
+    const slot = callSlotFor(call);
+    const { db, entry } = await runTick({ mode: 'shadow', battle: makeTickBattle({ directive: slot, chatExchanges: [] }), seed: seedOf([answered(call)]) });
+    const prompt = JSON.stringify(mocks.create.mock.calls[0][0]);
+    expect(prompt).not.toContain('Hold off on the AMD entry');
+    expect(entry).not.toHaveProperty('heard');
+    expect(storedDoc(db, 'calls', call.callId).playerResponse.heardEvalId).toBeNull();
+    expect(storedCollection(db, 'callEvents')).toEqual({});
+    expect(db.__store.battle.directive).toEqual(slot);
+  });
+});
