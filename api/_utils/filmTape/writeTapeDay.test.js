@@ -13,9 +13,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const flags = vi.hoisted(() => ({ writer: true }));
+// CALL_RECORDS_MODE is pinned to 'shadow' here explicitly: the calls row asserts
+// the tapeWriteMode a shadow run stamps, so a flip or rollback of the live flag
+// moves no line here (the e87694a0 precedent for the seven cron suites).
 vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   get FILM_TAPE_WRITE_ENABLED() { return flags.writer; },
+  CALL_RECORDS_MODE: 'shadow',
 }));
 
 import { writeTapeDay, markCloseFailed } from './writeTapeDay.js';
