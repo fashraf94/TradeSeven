@@ -88,15 +88,17 @@ vi.mock('../contexts/ThemeContext', () => {
 });
 
 // ── The price network and the WebSocket overlay ─────────────────────────────
-const priceBox = vi.hoisted(() => ({ calls: [], table: {}, mode: 'resolve', pending: [] }));
+const priceBox = vi.hoisted(() => ({ calls: [], table: {}, mode: 'resolve', modeFor: {}, pending: [] }));
 vi.mock('../services/eodhdAPI', () => {
   const answer = (kind, symbols) => {
     priceBox.calls.push([kind, [...symbols]]);
     const build = () => Object.fromEntries(symbols.filter((s) => priceBox.table[s] !== undefined).map((s) => [s, priceBox.table[s]]));
-    if (priceBox.mode === 'defer') {
+    // `modeFor[kind]` overrides `mode` for one batch kind (§4.3 rule 2 rows).
+    const mode = priceBox.modeFor[kind] || priceBox.mode;
+    if (mode === 'defer') {
       return new Promise((resolve, reject) => priceBox.pending.push({ kind, symbols: [...symbols], resolve, reject, build }));
     }
-    if (priceBox.mode === 'throw') return Promise.reject(new Error('network down'));
+    if (mode === 'throw') return Promise.reject(new Error('network down'));
     return Promise.resolve(build());
   };
   return {
@@ -107,8 +109,10 @@ vi.mock('../services/eodhdAPI', () => {
     POPULAR_CRYPTO: [{ symbol: 'BTC' }, { symbol: 'ETH' }],
   };
 });
-const wsBox = vi.hoisted(() => ({ prices: {} }));
-vi.mock('../hooks/useWebSocketPrices', () => ({ useWebSocketPrices: () => ({ prices: wsBox.prices, status: 'disconnected' }) }));
+const wsBox = vi.hoisted(() => ({ prices: {}, args: [] }));
+vi.mock('../hooks/useWebSocketPrices', () => ({
+  useWebSocketPrices: (symbols) => { wsBox.args.push(symbols); return { prices: wsBox.prices, status: 'disconnected' }; },
+}));
 
 // ── framer-motion, stubbed (deterministic markup; motion props observable) ───
 const framerSeen = vi.hoisted(() => ({ bars: [] }));
@@ -117,12 +121,21 @@ vi.mock('framer-motion', async () => {
   const MOTION_PROPS = new Set(['initial', 'animate', 'exit', 'transition', 'variants', 'whileHover', 'whileTap', 'whileFocus',
     'whileInView', 'layout', 'layoutId', 'drag', 'dragConstraints', 'dragElastic', 'dragMomentum', 'onDragEnd', 'onDragStart',
     'dragTransition', 'dragControls', 'dragListener', 'onAnimationComplete', 'onAnimationStart', 'custom', 'viewport', 'onUpdate']);
+  // The gated tug-of-war bar — `initial={false}` plus `data-bar-pct`, in BOTH
+  // headers — is rendered by the REAL library, so its committed inline width is
+  // observable per commit (B-12 at the screen: a keyed remount commits the
+  // target; the same-kind negative control commits the OLD width). A flag-off
+  // bar carries neither prop and stays stubbed, so every OFF digest is unchanged.
+  const actual = await vi.importActual('framer-motion');
   const cache = {};
   const make = (tag) => {
     if (!cache[tag]) {
       cache[tag] = ReactMod.forwardRef(function MotionStub(props, ref) {
         if (props.animate && typeof props.animate === 'object' && 'width' in props.animate) {
           framerSeen.bars.push({ width: props.animate.width, initial: props.initial, barPct: props['data-bar-pct'] ?? null });
+        }
+        if (props.initial === false && props['data-bar-pct'] != null) {
+          return ReactMod.createElement(actual.motion[tag], { ...props, ref });
         }
         const dom = {};
         for (const [k, v] of Object.entries(props)) if (!MOTION_PROPS.has(k)) dom[k] = v;
@@ -212,8 +225,10 @@ beforeEach(() => {
   priceBox.calls.length = 0;
   priceBox.pending.length = 0;
   priceBox.mode = 'resolve';
+  priceBox.modeFor = {};
   priceBox.table = {};
   wsBox.prices = {};
+  wsBox.args.length = 0;
   framerSeen.bars.length = 0;
   seen.research.length = 0;
   seen.breakdown.length = 0;
@@ -1880,6 +1895,10 @@ function captureCommit() {
     digits: counters(),
     barPct: bar ? Number(bar.getAttribute('data-bar-pct')) : null,
     tealBg: bar ? bar.style.background : null,
+    redBg: bar ? bar.parentElement.children[2].style.background : null,
+    // The teal half's inline width AT COMMIT (real framer-motion for the gated
+    // bar, see the stub): the selected width on a switch render, else the old one.
+    width: bar ? bar.style.width : null,
     // Face renders happen in the render phase of the commit they belong to.
     faceCount: seen.presence.length,
   });
@@ -1922,6 +1941,9 @@ function assertCommitsCoherent(list) {
     const twoDecimals = c.kind === 'last-scored' || c.kind === 'final';
     for (const d of c.digits) expect(d, JSON.stringify(c)).toMatch(twoDecimals ? /^[+-]?\d+\.\d{2}$/ : /^[+-]?\d+$/);
     expect(c.barPct, JSON.stringify(c)).not.toBeNull();
+    // V-2/B-12: the committed inline width is ALWAYS a number — a keyed remount
+    // WITHOUT `initial={false}` would commit no width at all (header NC2).
+    expect(c.width, JSON.stringify(c)).toMatch(/^\d+(\.\d+)?%$/);
   }
 }
 
@@ -1982,6 +2004,12 @@ describe('ON — §5.4 the mandatory new-battle sequence (every layout)', () => 
       expect(label().kind).toBe('last-scored');
       expect(counters()).toEqual(['+0.00', '+0.00']);
       expect(container.querySelector('[data-comparison-prose]').textContent).toBe('Tied');
+      // P8: an exact tie emphasizes NEITHER side — in THIS layout's header (the
+      // legacy ScoreHeader included; its shipped `>=` tints a tie as a player lead).
+      const tieBar = barEl();
+      expect(tieBar.getAttribute('data-bar-pct')).toBe('50');
+      expect(tealStrong(tieBar.style.background)).toBe(false);
+      expect(redStrong(tieBar.parentElement.children[2].style.background)).toBe(false);
 
       // 5. Completed: only qualified stored finals — complete quotes cannot repair them.
       priceBox.table = genuineTable();
@@ -2004,11 +2032,19 @@ describe('ON — §5.4 the mandatory new-battle sequence (every layout)', () => 
     expect(label().kind).toBe('browser');
     expect(counters()).toEqual(['+0', '+0']);
     expect(container.querySelector('[data-comparison-prose]').textContent).toBe('Tied');
+    const tieBar = barEl();
+    expect(tieBar.getAttribute('data-bar-pct')).toBe('50');
+    expect(tealStrong(tieBar.style.background)).toBe(false);
+    expect(redStrong(tieBar.parentElement.children[2].style.background)).toBe(false);
   });
 });
 
 // ── ON-F5a: atomic source switches, captured at EVERY commit ─────────────────
 const tealStrong = (bg) => /rgba\(var\(--ft-teal-rgb\), 1\)\)$/.test(bg || '') || (bg || '').startsWith('linear-gradient(90deg, rgb(94, 234, 212)');
+/** The CPU half emphasized: ArenaHeader's copper at full alpha, or the legacy header's solid red. */
+const redStrong = (bg) => /^linear-gradient\(90deg, rgba\(var\(--ft-copper-rgb\), 1\)/.test(bg || '') || (bg || '').startsWith('linear-gradient(90deg, rgb(239, 68, 68)');
+/** The teal half's DOM node (either header) — a switch remounts it, a same-kind change keeps it. */
+const barEl = () => container.querySelector('[data-arena-bar] [data-bar-pct], [data-score-bar] [data-bar-pct]');
 /** Player positions up ~6%, CPU positions down ~6%: the browser estimate has the PLAYER leading. */
 function playerLeadsTable() {
   const t = flatTable();
@@ -2029,6 +2065,7 @@ describe('ON-F5a — one selected pair per commit, through all four consumers (p
       expect(label().kind).toBe('browser');
       const browserDigits = counters();
       expect(container.querySelector('[data-comparison-prose]').textContent).toMatch(/^You lead by \d+$/);
+      const browserBarEl = barEl();
 
       // → stored (a player-side failure): the FIRST stored commit is wholly stored.
       commits.length = 0;
@@ -2042,6 +2079,12 @@ describe('ON-F5a — one selected pair per commit, through all four consumers (p
       expect(toStored.prose).toBe('CPU leads by 9.30');
       expect(toStored.barPct).toBe(Math.round(computeTugOfWarWidth(3.1, 12.4)));
       expect(tealStrong(toStored.tealBg)).toBe(false);
+      expect(redStrong(toStored.redBg)).toBe(true);
+      // B-12 at the screen (real framer-motion for the bar): the switch commit's
+      // inline width IS the selected width — a keyed remount with initial={false}.
+      expect(toStored.width).toBe(`${computeTugOfWarWidth(3.1, 12.4)}%`);
+      const storedBarEl = barEl();
+      expect(storedBarEl).not.toBe(browserBarEl);
       const storedFaces = facesOf(commits, toStored, facesFrom);
       expect(storedFaces.length).toBeGreaterThan(0);
       for (const f of [...storedFaces, ...seen.presence.slice(toStored.faceCount)]) {
@@ -2051,6 +2094,25 @@ describe('ON-F5a — one selected pair per commit, through all four consumers (p
       // The bar's teal half remounted on the switch with `initial={false}` (framer stub).
       const storedBar = framerSeen.bars.filter((b) => b.barPct === toStored.barPct).at(-1);
       expect(storedBar.initial).toBe(false);
+
+      // NEGATIVE CONTROL (B-12 NC1): same kind, same context — a new stored pair
+      // re-targets the SAME instance, so at commit the inline width is still the
+      // old one (the spring, not a remount, carries it to the new target later).
+      commits.length = 0;
+      await deliverDoc('ab-1', { ...NEW_DOC, scoreState: STORED(5, 12.4) });
+      const sameKind = commits.find((c) => c.kind === 'last-scored' && c.prose === 'CPU leads by 7.40');
+      expect(sameKind.barPct).toBe(Math.round(computeTugOfWarWidth(5, 12.4)));
+      expect(sameKind.width).toBe(`${computeTugOfWarWidth(3.1, 12.4)}%`);
+      expect(barEl()).toBe(storedBarEl);
+      // V-3 WITHOUT an unmount: a trade-count change the lineage cannot explain
+      // starts a new battle generation (evidence reset, same stored KIND, new
+      // CONTEXT identity) — a switch: a fresh instance committed AT its target.
+      commits.length = 0;
+      await deliverDoc('ab-1', { ...NEW_DOC, scoreState: { ...STORED(7, 12.4), tradeCount: 2 } });
+      const newContext = commits.find((c) => c.kind === 'last-scored' && c.prose === 'CPU leads by 5.40');
+      expect(newContext.width).toBe(`${computeTugOfWarWidth(7, 12.4)}%`);
+      const newContextBarEl = barEl();
+      expect(newContextBarEl).not.toBe(storedBarEl);
 
       // → browser (a CPU-side failure resolved): wholly browser again, player tint.
       commits.length = 0;
@@ -2062,6 +2124,9 @@ describe('ON-F5a — one selected pair per commit, through all four consumers (p
       expect(toBrowser.prose).toMatch(/^You lead by \d+$/);
       expect(toBrowser.barPct).toBe(90); // opposite signs pin at 90 (B-2)
       expect(tealStrong(toBrowser.tealBg)).toBe(true);
+      expect(redStrong(toBrowser.redBg)).toBe(false);
+      expect(toBrowser.width).toBe('90%'); // the switch commit, at target
+      expect(barEl()).not.toBe(newContextBarEl);
       const browserFaces = facesOf(commits, toBrowser, facesFrom);
       expect(browserFaces.length).toBeGreaterThan(0);
       for (const f of [...browserFaces, ...seen.presence.slice(toBrowser.faceCount)]) {
@@ -2086,13 +2151,20 @@ describe('ON-F5a — one selected pair per commit, through all four consumers (p
     await mountProbed(openingProp());
     await deliverDoc('ab-1', NEW_DOC);
     expect(label().kind).toBe('browser');
-    const before = framerSeen.bars.length;
-    await mount({ ...openingProp(), agentBattleId: 'ab-2' });
+    const barA = barEl();
+    // The SAME screen instance: the Profiler wrapper is kept (a bare re-render
+    // would change the root element type and remount the whole screen).
+    await mountProbed({ ...openingProp(), agentBattleId: 'ab-2' });
     expect(shell()).toBe('pending');
+    expect(container.querySelector('[data-bar-pct]')).toBeNull(); // nothing of A lingers
     await deliverDoc('ab-2', NEW_DOC);
     expect(label().kind).toBe('browser');
-    // A fresh bar instance mounted at its target (initial={false}) for battle B.
-    expect(framerSeen.bars.slice(before).some((b) => b.initial === false)).toBe(true);
+    // B's first comparison commit: a fresh bar instance committed AT its target
+    // (initial={false}) — never A's width, never a ramp from it.
+    const firstB = commits.find((c) => c.kind === 'browser');
+    expect(firstB.width).toBe('90%');
+    expect(barEl()).not.toBe(barA);
+    assertCommitsCoherent(commits);
   });
 });
 
@@ -2122,6 +2194,21 @@ describe('ON-F2a — a held symbol click on either side', () => {
     expect('wsPrice' in r).toBe(false);
     expect('onNavigateAdmission' in r).toBe(false);
     expect(priceBox.calls.length).toBe(calls);
+  });
+
+  it('a bare WebSocket overlay for HELD symbols (both sides, crypto too) never reaches gated SCORING: rows, counters and the comparison equal the overlay-free render (§4.2 screen merge, R-3)', async () => {
+    priceBox.table = genuineTable();
+    await mountGated();
+    const reference = { board: container.querySelector('[data-board]').innerHTML, digits: counters(), label: label() };
+    expect(reference.label.kind).toBe('browser');
+    act(() => root.unmount());
+    root = createRoot(container);
+    wsBox.prices = { AAPL: 999, GOOGL: 1, BTC: 1 }; // provenance-less numbers for a player, a CPU and a crypto holding
+    priceBox.table = genuineTable();
+    await mountGated();
+    expect(label()).toEqual(reference.label);
+    expect(counters()).toEqual(reference.digits);
+    expect(container.querySelector('[data-board]').innerHTML).toBe(reference.board);
   });
 
   it('valid (CPU, and crypto): the CPU position, its own entry; crypto extremes carry no open (V-11)', async () => {
@@ -2744,6 +2831,239 @@ describe('ON-F4b — A→B, late callbacks, terminal states, recovery', () => {
   });
 });
 
+// ── [A-4] the exclusion memory, and an excluded battle's lookup error ───────
+// Review round (refuter A, lifecycle F-1 / offstate F3): the memory names ONE
+// requested ID and ends when any other ID is requested — a return to it starts
+// unclassified, so R-5 governs again; and on the query path an excluded
+// battle's lookup error follows legacy, which keeps the retained ID.
+const EXCLUDED_DOC = { ...ACTIVE_DOC, gameMode: 'baggerbomb_tournament' };
+const B_DOC = { ...ACTIVE_DOC, agentId: 'agent-2', agentContext: { agentName: 'Borealis', archetype: 'degen' } };
+const atQuery = (agentId) => ({ ...openingProp({ direct: false }), agentId });
+const boardShown = () => container.querySelector('[data-board]') !== null;
+const docListenerAlive = (id) => !!activeListener('doc', id);
+async function failQuery(agentId, err = { code: 'permission-denied', message: 'Missing or insufficient permissions.' }) {
+  const l = activeListener('query', agentId);
+  if (!l) throw new Error(`no active query listener for ${agentId}`);
+  await act(async () => { l.error(err); });
+  await flush();
+}
+
+describe('ON-F4b [A-4] — the exclusion memory ends with the requested ID', () => {
+  it('direct route: A excluded → B admitted → A again → A\'s NEW subscription errors before its snapshot → "Battle unavailable"; no B content, no request', async () => {
+    priceBox.table = genuineTable();
+    flags.gate = true;
+    await mount(openingProp());
+    await deliverDoc('ab-1', EXCLUDED_DOC);
+    expect(shell()).toBeNull();
+    await mount({ ...openingProp(), agentBattleId: 'ab-2' });
+    expect(shell()).toBe('pending');
+    await deliverDoc('ab-2', B_DOC);
+    expect(label()?.kind).toBe('browser');
+    await mount(openingProp());
+    expect(shell()).toBe('pending');
+    const calls = priceBox.calls.length;
+    await failDoc('ab-1');
+    expect({ shell: shell(), board: boardShown(), retainedB: container.textContent.includes('Borealis'), requested: priceBox.calls.length - calls })
+      .toEqual({ shell: 'unavailable', board: false, retainedB: false, requested: 0 });
+  });
+
+  it('query route: P (excluded ab-1) → Q (admitted ab-2) → P again → doc error before its snapshot → "Battle unavailable"; never Q\'s battle or the opening prop', async () => {
+    priceBox.table = genuineTable();
+    flags.gate = true;
+    await mount(atQuery('agent-1'));
+    await deliverQuery('agent-1', ['ab-1']);
+    await deliverDoc('ab-1', EXCLUDED_DOC);
+    expect(shell()).toBeNull();
+    await mount(atQuery('agent-2'));
+    await deliverQuery('agent-2', ['ab-2']);
+    await deliverDoc('ab-2', B_DOC);
+    expect(label()?.kind).toBe('browser');
+    await mount(atQuery('agent-1'));
+    await deliverQuery('agent-1', ['ab-1']);
+    expect(shell()).toBe('pending');
+    const calls = priceBox.calls.length;
+    await failDoc('ab-1');
+    expect({ shell: shell(), board: boardShown(), retainedQ: container.textContent.includes('Borealis'), requested: priceBox.calls.slice(calls).map((c) => c[0]) })
+      .toEqual({ shell: 'unavailable', board: false, retainedQ: false, requested: [] });
+  });
+
+  it('same agent, same lookup generation: ab-1 excluded → the query moves to ab-9 → back to ab-1 (a new subscription) → error before its snapshot → "Battle unavailable"', async () => {
+    priceBox.table = genuineTable();
+    flags.gate = true;
+    await mount(atQuery('agent-1'));
+    await deliverQuery('agent-1', ['ab-1']);
+    await deliverDoc('ab-1', EXCLUDED_DOC);
+    expect(shell()).toBeNull();
+    await deliverQuery('agent-1', ['ab-9']);
+    expect(shell()).toBe('pending');
+    expect(docListenerAlive('ab-1')).toBe(false);
+    await deliverQuery('agent-1', ['ab-1']);
+    expect(shell()).toBe('pending');
+    const calls = priceBox.calls.length;
+    await failDoc('ab-1');
+    expect({ shell: shell(), board: boardShown(), requested: priceBox.calls.length - calls }).toEqual({ shell: 'unavailable', board: false, requested: 0 });
+  });
+
+  it('another ID never inherits the memory: A excluded → B\'s subscription errors before ready → "Battle unavailable"', async () => {
+    priceBox.table = genuineTable();
+    flags.gate = true;
+    await mount(openingProp());
+    await deliverDoc('ab-1', EXCLUDED_DOC);
+    await mount({ ...openingProp(), agentBattleId: 'ab-2' });
+    await failDoc('ab-2');
+    expect(shell()).toBe('unavailable');
+  });
+});
+
+describe('ON-F4b [A-4] / OFF-7 — an excluded battle on the query path, then a lookup error', () => {
+  it('same generation: the legacy screen stays — retained ID, live document listener, the same board and header as flag-off, no (un)subscribe', async () => {
+    priceBox.table = genuineTable();
+    await mount(atQuery('agent-1'));
+    await deliverQuery('agent-1', ['ab-1']);
+    await deliverDoc('ab-1', EXCLUDED_DOC);
+    await failQuery('agent-1');
+    const off = { shell: shell(), doc: docListenerAlive('ab-1'), board: legacyView().board, header: legacyView().header };
+    expect(off.shell).toBeNull();
+    expect(off.doc).toBe(true);
+    expect(off.board).toContain('AAPL');
+    act(() => root.unmount());
+    root = createRoot(container);
+    fsBox.listeners.length = 0; fsBox.log.length = 0; priceBox.calls.length = 0;
+
+    flags.gate = true;
+    await mount(atQuery('agent-1'));
+    await deliverQuery('agent-1', ['ab-1']);
+    await deliverDoc('ab-1', EXCLUDED_DOC);
+    expect(shell()).toBeNull();
+    const logBefore = fsBox.log.length;
+    await failQuery('agent-1');
+    expect({ shell: shell(), doc: docListenerAlive('ab-1'), board: legacyView().board, header: legacyView().header }).toEqual(off);
+    expect(fsBox.log.slice(logBefore)).toEqual([]);
+  });
+
+  it('another agent\'s lookup error never revives the excluded battle: P excluded ab-1 → Q → Q\'s lookup errors → "Battle unavailable", no ab-1 resubscribe', async () => {
+    priceBox.table = genuineTable();
+    flags.gate = true;
+    await mount(atQuery('agent-1'));
+    await deliverQuery('agent-1', ['ab-1']);
+    await deliverDoc('ab-1', EXCLUDED_DOC);
+    expect(shell()).toBeNull();
+    await mount(atQuery('agent-2'));
+    expect(shell()).toBe('pending');
+    const logBefore = fsBox.log.length;
+    await failQuery('agent-2');
+    expect({ shell: shell(), board: boardShown(), ab1: docListenerAlive('ab-1'), docSubscribes: fsBox.log.slice(logBefore).filter((e) => e[0] === 'subscribe' && e[1] === 'doc') })
+      .toEqual({ shell: 'unavailable', board: false, ab1: false, docSubscribes: [] });
+  });
+
+  it('after the legacy retention an agent change starts pending and releases the ab-1 listener', async () => {
+    priceBox.table = genuineTable();
+    flags.gate = true;
+    await mount(atQuery('agent-1'));
+    await deliverQuery('agent-1', ['ab-1']);
+    await deliverDoc('ab-1', EXCLUDED_DOC);
+    await failQuery('agent-1');
+    await mount(atQuery('agent-2'));
+    expect({ shell: shell(), ab1: docListenerAlive('ab-1'), board: boardShown() }).toEqual({ shell: 'pending', ab1: false, board: false });
+  });
+
+  it('a server-confirmed empty lookup still ends at "No active battle" for an excluded battle (any battle type)', async () => {
+    priceBox.table = genuineTable();
+    flags.gate = true;
+    await mount(atQuery('agent-1'));
+    await deliverQuery('agent-1', ['ab-1']);
+    await deliverDoc('ab-1', EXCLUDED_DOC);
+    await deliverQuery('agent-1', [], { fromCache: false });
+    expect({ shell: shell(), ab1: docListenerAlive('ab-1') }).toEqual({ shell: 'no-battle', ab1: false });
+  });
+
+  it('an unconfirmed empty (fromCache: true) is "Battle unavailable" — legacy nulls the ID on any empty snapshot, so nothing is retained', async () => {
+    priceBox.table = genuineTable();
+    flags.gate = true;
+    await mount(atQuery('agent-1'));
+    await deliverQuery('agent-1', ['ab-1']);
+    await deliverDoc('ab-1', EXCLUDED_DOC);
+    await deliverQuery('agent-1', [], { fromCache: true });
+    expect({ shell: shell(), ab1: docListenerAlive('ab-1') }).toEqual({ shell: 'unavailable', ab1: false });
+  });
+});
+
+// ── §4.3 rule 2: one poll, two batch calls ──────────────────────────────────
+// Review round (refuter A, lifecycle F-2): "A later request failure does not
+// disqualify another request's genuine success."
+describe('§4.3 rule 2 — one poll, two independent batch calls', () => {
+  const HELD = ['AAPL', 'NVDA', 'MSFT', 'TSLA', 'AMZN', 'META', 'BTC', 'GOOGL', 'AMD', 'NFLX', 'ORCL', 'CRM', 'INTC', 'ETH'];
+  const STOCKS = HELD.filter((s) => !CRYPTO.has(s));
+
+  it('the stock call rejects, the crypto call resolves: crypto rows stay priced, stock rows are withheld, last-scored; same calls in the same order', async () => {
+    priceBox.table = genuineTable();
+    await mountGated();
+    expect(unavailableRows()).toEqual([]);
+    priceBox.modeFor.stock = 'throw';
+    await poll();
+    expect(priceBox.calls.slice(-2).map((c) => c[0])).toEqual(['stock', 'crypto']);
+    expect({ crypto: unavailableRows().filter((s) => CRYPTO.has(s)).sort(), stocks: unavailableRows().filter((s) => !CRYPTO.has(s)).sort(), comparison: label()?.kind })
+      .toEqual({ crypto: [], stocks: [...STOCKS].sort(), comparison: 'last-scored' });
+  });
+
+  it('the crypto call rejects, the stock call resolves: only BTC and ETH are withheld', async () => {
+    priceBox.table = genuineTable();
+    await mountGated();
+    priceBox.modeFor.crypto = 'throw';
+    await poll();
+    expect({ crypto: unavailableRows().filter((s) => CRYPTO.has(s)).sort(), stocks: unavailableRows().filter((s) => !CRYPTO.has(s)), comparison: label()?.kind })
+      .toEqual({ crypto: ['BTC', 'ETH'], stocks: [], comparison: 'last-scored' });
+  });
+
+  it('both calls reject: every held row is withheld; last-scored', async () => {
+    priceBox.table = genuineTable();
+    await mountGated();
+    priceBox.mode = 'throw';
+    await poll();
+    expect({ rows: [...unavailableRows()].sort(), comparison: label()?.kind }).toEqual({ rows: [...HELD].sort(), comparison: 'last-scored' });
+  });
+
+  it('after a stock-only failure the next good poll restores every row and the browser comparison', async () => {
+    priceBox.table = genuineTable();
+    await mountGated();
+    priceBox.modeFor.stock = 'throw';
+    await poll();
+    priceBox.modeFor = {};
+    await poll();
+    expect({ rows: unavailableRows(), comparison: label()?.kind }).toEqual({ rows: [], comparison: 'browser' });
+  });
+});
+
+// ── §4.2 / §3.1: the gated path subscribes no WebSocket symbols ──────────────
+// Review round (refuter C's hardening): nothing gated reads a bare WebSocket
+// number, and while pending the legacy list would come from the opening prop.
+describe('§4.2 / §3.1 — no WebSocket subscription on the gated path', () => {
+  it('pending, admitted and terminal: the hook only ever gets an empty list; flag-off and an excluded battle: the shipped held-symbol list', async () => {
+    const HELD_SOME = ['AAPL', 'MSFT', 'BTC', 'GOOGL', 'ETH'];
+    priceBox.table = genuineTable();
+    flags.gate = true;
+    await mount(openingProp());
+    expect(shell()).toBe('pending');
+    await deliverDoc('ab-1', ACTIVE_DOC);
+    expect(label().kind).toBe('browser');
+    await failDoc('ab-1');
+    expect(shell()).toBe('unavailable');
+    expect(wsBox.args.length).toBeGreaterThan(0);
+    expect(wsBox.args.every((a) => Array.isArray(a) && a.length === 0)).toBe(true);
+
+    for (const [gate, doc] of [[false, ACTIVE_DOC], [true, EXCLUDED_DOC]]) {
+      act(() => root.unmount());
+      root = createRoot(container);
+      fsBox.listeners.length = 0; fsBox.log.length = 0; wsBox.args.length = 0;
+      flags.gate = gate;
+      await mount(openingProp());
+      await deliverDoc('ab-1', doc);
+      expect(shell()).toBeNull();
+      expect(wsBox.args.at(-1)).toEqual(expect.arrayContaining(HELD_SOME));
+    }
+  });
+});
+
 // ── ON-ID at the screen (query path) ─────────────────────────────────────────
 describe('ON-ID — lookup identity evidence through the real screen', () => {
   const queryProp = (agentId = 'agent-1') => ({ ...openingProp({ direct: false }), agentId });
@@ -2760,11 +3080,19 @@ describe('ON-ID — lookup identity evidence through the real screen', () => {
     expect(shell()).toBe('pending');
     await mount(queryProp('agent-1'));
     expect(shell()).toBe('pending');
+    const docSubscribes = () => fsBox.log.filter(([op, kind]) => op === 'subscribe' && kind === 'doc').length;
+    const subscribedBefore = docSubscribes();
     await act(async () => { gen1.next(querySnap(['ab-1'])); });
     await flush();
     expect(shell()).toBe('pending');
+    // The pending shell looks the same either way; settling from the retired
+    // evidence would have SUBSCRIBED ab-1 here. It must not.
+    expect(activeListener('doc', 'ab-1')).toBeUndefined();
+    expect(docSubscribes()).toBe(subscribedBefore);
     await deliverQuery('agent-1', ['ab-1']);
     expect(shell()).toBe('pending'); // now awaiting the matching snapshot
+    expect(activeListener('doc', 'ab-1')).toBeTruthy(); // the CURRENT generation's evidence does subscribe
+    expect(docSubscribes()).toBe(subscribedBefore + 1);
     await deliverDoc('ab-1', ACTIVE_DOC);
     expect(shell()).toBeNull();
   });

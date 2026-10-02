@@ -260,6 +260,15 @@ describe('§3.1 — gate resolution (R-5, C-2, B-4, B-5, C-4, A-4)', () => {
     expect(d({ requestedId: 'ab-1', status: 'error' }, 'ab-1').mode).toBe('excluded');
     expect(d({ requestedId: 'ab-1', status: 'error' }, 'ab-0').mode).toBe('unavailable');
   });
+  it('[A-4] query path: a lookup error while the screen keeps the EXCLUDED requested id falls through to the envelope (legacy); any other id stays "Battle unavailable"', () => {
+    const lookup = { status: 'error', battleId: null, error: { code: 'permission-denied' } };
+    const EXCLUDED = { ...READY, data: { ...READY.data, gameMode: 'baggerbomb_tournament' } };
+    const r = (envelope, excludedFor) => resolveGate({ integrityOn: true, directId: null, lookup, envelope, requestedId: 'ab-1', excludedFor });
+    expect(r(EXCLUDED, 'ab-1').mode).toBe('excluded');
+    expect(r({ requestedId: 'ab-1', status: 'error', error: { code: 'x' } }, 'ab-1').mode).toBe('excluded'); // its own doc error: A-4 too
+    expect(r(EXCLUDED, null)).toMatchObject({ mode: 'unavailable', reason: 'lookup-error', error: lookup.error });
+    expect(r(EXCLUDED, 'ab-0')).toMatchObject({ mode: 'unavailable', reason: 'lookup-error' });
+  });
 });
 
 describe('§3.2 — context, lineage and conservative invalidation', () => {

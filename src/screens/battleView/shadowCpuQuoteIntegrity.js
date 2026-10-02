@@ -308,7 +308,9 @@ export function gatedRequestedId({ directId, lookup }) {
  *   'admitted'    the gated path.
  * Lookup states come first (query path only; the direct-ID path ignores
  * `lookup` entirely). [A-4] once a requested ID was classified excluded, its
- * later subscription errors stay legacy until the requested ID changes.
+ * later subscription errors — and, on the query path, a lookup error while the
+ * screen keeps the legacy-retained ID — stay legacy until the requested ID
+ * changes. `excludedFor` must name the CURRENT requested ID or be null.
  */
 export function resolveGate({ integrityOn, directId, lookup, envelope, requestedId, excludedFor = null }) {
   if (!integrityOn) return { mode: 'legacy', reason: 'flag-off', error: null };
@@ -323,6 +325,10 @@ export function resolveGate({ integrityOn, directId, lookup, envelope, requested
       case 'idle':
         return { mode: 'no-battle', reason: 'nothing-to-resolve', error: null };
       case 'error':
+        // [A-4] an EXCLUDED battle's lookup error follows legacy: the screen
+        // keeps the legacy-retained ID and its document subscription, so the
+        // envelope decides (still excluded → legacy).
+        if (excludedFor !== null && excludedFor === requestedId) break;
         return { mode: 'unavailable', reason: 'lookup-error', error: lookup.error ?? null };
       default:
         return { mode: 'pending', reason: 'lookup-pending', error: null };

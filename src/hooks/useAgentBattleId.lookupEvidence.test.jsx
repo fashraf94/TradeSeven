@@ -13,9 +13,12 @@
 // SDK-observed sequences (companion note, S1–S6) can be replayed.
 //
 // ON-ID (9), flag-off parity: the legacy fields (agentBattleId, loading,
-// error) per commit, the listener count and the subscribe/unsubscribe order
-// were captured at the pre-build SHA (SHADOW_OFF_CAPTURE_DIR) and are asserted
-// here. The one difference C-2 makes necessary is stated where it occurs.
+// error) per commit, the listener count, the subscribe/unsubscribe order, the
+// caller's render passes on an agent change and the return shape were captured
+// at the pre-build SHA (SHADOW_OFF_CAPTURE_DIR) and are asserted here, exactly.
+// The one-argument call (every flag-off caller, and the direct-ID route) IS the
+// pre-build hook: the C-2 evidence and the C-4 metadata events exist only
+// behind the gated screen's opt-in, `{ confirmCache: true }` (the ON rows).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React, { act, useLayoutEffect, StrictMode } from 'react';
@@ -111,8 +114,10 @@ const fail = (err, listener = current()) => act(() => { listener.error(err); });
 
 const legacy = (r) => ({ agentBattleId: r.agentBattleId, loading: r.loading, error: r.error });
 const legacyCommits = () => commits.map(legacy);
+/** The gated screen's call shape (C-4, flag on, query path): the ONE opt-in. */
+const GATED = { confirmCache: true };
 
-// BEGIN GENERATED OFF REFERENCES — captured at the pre-build SHA 44d0c63eba4e3099552d3ec3dbde6a89660a7e06 (7 entries).
+// BEGIN GENERATED OFF REFERENCES — captured at the pre-build SHA 44d0c63eba4e3099552d3ec3dbde6a89660a7e06 (11 entries).
 // Regenerate ONLY by re-running this file's OFF rows at that SHA with
 // SHADOW_OFF_CAPTURE_DIR set; never by blessing build output.
 const OFF = {
@@ -172,6 +177,48 @@ const OFF = {
    [
     "subscribe",
     2,
+    3
+   ]
+  ]
+ },
+ "agentChangePasses": {
+  "commits": 1,
+  "log": [
+   [
+    "subscribe",
+    0,
+    3
+   ],
+   [
+    "unsubscribe",
+    0
+   ],
+   [
+    "subscribe",
+    1,
+    3
+   ]
+  ],
+  "passes": 1
+ },
+ "cachedThenServerSameId": {
+  "commits": [
+   {
+    "agentBattleId": null,
+    "error": null,
+    "loading": true
+   },
+   {
+    "agentBattleId": "battle-1",
+    "error": null,
+    "loading": false
+   }
+  ],
+  "listeners": 1,
+  "log": [
+   [
+    "subscribe",
+    0,
     3
    ]
   ]
@@ -368,6 +415,49 @@ const OFF = {
    "kind": "query"
   }
  },
+ "returnShape": {
+  "keys": [
+   "agentBattleId",
+   "loading",
+   "error"
+  ]
+ },
+ "sameErrorAcrossAgents": {
+  "commits": [
+   {
+    "agentBattleId": null,
+    "error": null,
+    "loading": true
+   },
+   {
+    "agentBattleId": null,
+    "error": "permission-denied",
+    "loading": false
+   },
+   {
+    "agentBattleId": null,
+    "error": "permission-denied",
+    "loading": false
+   }
+  ],
+  "listeners": 2,
+  "log": [
+   [
+    "subscribe",
+    0,
+    3
+   ],
+   [
+    "unsubscribe",
+    0
+   ],
+   [
+    "subscribe",
+    1,
+    3
+   ]
+  ]
+ },
  "strictMode": {
   "commits": [
    {
@@ -470,18 +560,51 @@ describe('ON-ID (9) — flag-off parity of the legacy fields, listeners and orde
     deliver(snap([]));
     render('agent-Q');
     deliver(snap([]));
-    const actual = { commits: legacyCommits(), log: fsBox.log, listeners: fsBox.listeners.length };
-    if (CAPTURE_DIR) { offReference('nullToNull', actual, OFF.nullToNull); return; }
-    // THE ONE STATED DIFFERENCE (C-2 + ON-ID row 3): Q's empty result arrives
-    // with the legacy values unchanged, so the pre-build hook never committed
-    // it. Settling the CURRENT generation needs that commit — exactly one, at
-    // the end, with legacy values identical to the commit before it. Listener
-    // count and subscribe/unsubscribe order are unchanged.
-    const ref = OFF.nullToNull;
-    expect(actual.log).toEqual(ref.log);
-    expect(actual.listeners).toBe(ref.listeners);
-    expect(actual.commits).toEqual([...ref.commits, ref.commits[ref.commits.length - 1]]);
-    expect(commits[commits.length - 1].lookup).toMatchObject({ agentId: 'agent-Q', generation: 2, status: 'empty' });
+    // Q's empty result arrives with the legacy values unchanged, so the
+    // pre-build hook never committed it — and flag-off neither does this one:
+    // without the opt-in no evidence is written. (Gated, ON-ID row 3 below.)
+    offReference('nullToNull', { commits: legacyCommits(), log: fsBox.log, listeners: fsBox.listeners.length }, OFF.nullToNull);
+  });
+
+  it('OFF cachedThenServerSameId: a from-cache first result, then the same ID in a server data event — no commit the pre-build hook did not make', () => {
+    // SDK-legal flag-off (QueryListener.shouldRaiseInitialEvent raises a
+    // from-cache first snapshot whenever the memory cache holds the documents;
+    // the next DATA change arrives fromCache:false with the same ID). The
+    // legacy setters are no-ops, so the pre-build hook commits nothing.
+    render('agent-A');
+    deliver(snap(['battle-1'], { fromCache: true }));
+    deliver(snap(['battle-1'], { fromCache: false }));
+    deliver(snap(['battle-1'], { fromCache: false }));
+    offReference('cachedThenServerSameId', { commits: legacyCommits(), log: fsBox.log, listeners: fsBox.listeners.length }, OFF.cachedThenServerSameId);
+  });
+
+  it('OFF sameErrorAcrossAgents: agent A fails, then agent B fails with the same message (legacy values never change)', () => {
+    render('agent-A');
+    fail({ message: 'permission-denied', code: 'permission-denied' });
+    render('agent-B');
+    fail({ message: 'permission-denied', code: 'permission-denied' });
+    offReference('sameErrorAcrossAgents', { commits: legacyCommits(), log: fsBox.log, listeners: fsBox.listeners.length }, OFF.sameErrorAcrossAgents);
+  });
+
+  it('OFF agentChangePasses: an agent change re-renders the caller exactly as before — no render-phase adjustment, no extra commit', () => {
+    let passes = 0;
+    function Counting({ agentId }) {
+      passes += 1;
+      const r = useAgentBattleId(agentId); // ONE argument: the flag-off call
+      useLayoutEffect(() => { commits.push(r); });
+      return null;
+    }
+    act(() => { root.render(<Counting agentId="agent-A" />); });
+    const passesBefore = passes;
+    const commitsBefore = commits.length;
+    act(() => { root.render(<Counting agentId="agent-B" />); });
+    offReference('agentChangePasses', { passes: passes - passesBefore, commits: commits.length - commitsBefore, log: fsBox.log }, OFF.agentChangePasses);
+  });
+
+  it('OFF returnShape: the one-argument call returns exactly the legacy keys', () => {
+    render('agent-A');
+    deliver(snap(['battle-1']));
+    offReference('returnShape', { keys: Object.keys(commits[commits.length - 1]) }, OFF.returnShape);
   });
 
   it('OFF noAuth: no signed-in user runs no query', () => {
@@ -513,13 +636,13 @@ const lookups = () => commits.map((r) => r.lookup);
 
 describe('ON-ID — lookup evidence on the existing listener', () => {
   it('(1) A→B→A ending on the original ID: pending until generation 3 settles; generation 1\'s same ID never settles it', () => {
-    render('agent-A');
+    render('agent-A', { options: GATED });
     deliver(snap(['battle-1']));
     expect(last().lookup).toMatchObject({ agentId: 'agent-A', generation: 1, status: 'success', battleId: 'battle-1' });
     const genOneListener = current();
-    render('agent-B');
+    render('agent-B', { options: GATED });
     expect(last().lookup).toMatchObject({ agentId: 'agent-B', generation: 2, status: 'pending', battleId: null });
-    render('agent-A');
+    render('agent-A', { options: GATED });
     expect(last().lookup).toMatchObject({ agentId: 'agent-A', generation: 3, status: 'pending' });
     // The legacy field still says battle-1 — the very thing C-2 refuses to trust.
     expect(last().agentBattleId).toBe('battle-1');
@@ -531,30 +654,30 @@ describe('ON-ID — lookup evidence on the existing listener', () => {
   });
 
   it('(2) an unchanged successful result stays settled: no pending flash, no resubscribe', () => {
-    render('agent-A');
+    render('agent-A', { options: GATED });
     deliver(snap(['battle-1']));
     const before = commits.length;
     deliver(snap(['battle-1']));
     deliver(snap(['battle-1']));
     expect(commits.length).toBe(before);
     expect(lookups().slice(1).every((l) => l.status !== 'pending')).toBe(true);
-    expect(fsBox.log).toEqual([['subscribe', 0, 3]]);
+    expect(fsBox.log).toEqual([['subscribe', 0, 4]]);
   });
 
   it('(3) null→null: pending until Q\'s OWN empty arrives — never settled from P\'s evidence', () => {
-    render('agent-P');
+    render('agent-P', { options: GATED });
     deliver(snap([]));
     expect(last().lookup).toMatchObject({ agentId: 'agent-P', status: 'empty' });
-    render('agent-Q');
+    render('agent-Q', { options: GATED });
     expect(last().lookup).toMatchObject({ agentId: 'agent-Q', generation: 2, status: 'pending' });
     deliver(snap([]));
     expect(last().lookup).toMatchObject({ agentId: 'agent-Q', generation: 2, status: 'empty', battleId: null, fromCache: false });
   });
 
   it('(4) late success, empty or error from a retired generation — including one queued before unsubscribe — is ignored', () => {
-    render('agent-A');
+    render('agent-A', { options: GATED });
     const retired = current();
-    render('agent-B');
+    render('agent-B', { options: GATED });
     for (const late of [() => retired.next(snap(['battle-9'])), () => retired.next(snap([])), () => retired.error({ message: 'boom', code: 'internal' })]) {
       act(late);
       expect(last().lookup).toMatchObject({ agentId: 'agent-B', generation: 2, status: 'pending', error: null, battleId: null });
@@ -562,10 +685,10 @@ describe('ON-ID — lookup evidence on the existing listener', () => {
   });
 
   it('(5) error identity: the current generation\'s error, never a retired one\'s', () => {
-    render('agent-A');
+    render('agent-A', { options: GATED });
     fail({ message: 'permission-denied', code: 'permission-denied' });
     expect(last().lookup).toMatchObject({ status: 'error', error: { code: 'permission-denied', message: 'permission-denied' } });
-    render('agent-B');
+    render('agent-B', { options: GATED });
     expect(last().lookup.status).toBe('pending');
     expect(last().lookup.error).toBeNull();
     // …while the legacy field still carries A's error (no re-arm, by design).
@@ -576,34 +699,35 @@ describe('ON-ID — lookup evidence on the existing listener', () => {
 
   it('(6) [B-4] no auth → error { code: "no-auth" } (never empty); no agent → idle', () => {
     authBox.currentUser = null;
-    render('agent-A');
+    render('agent-A', { options: GATED });
     expect(last().lookup).toMatchObject({ status: 'error', error: { code: 'no-auth' }, battleId: null });
     expect(fsBox.listeners).toHaveLength(0);
     authBox.currentUser = { uid: 'owner-1' };
-    render(null);
+    render(null, { options: GATED });
     expect(last().lookup).toMatchObject({ agentId: null, status: 'idle' });
   });
 
-  it('(7) direct-ID route: the screen calls the hook with null → idle, no listener', () => {
+  it('(7) direct-ID route: the screen calls the hook with null and NO opt-in → no listener and no lookup at all (nothing to ignore)', () => {
     render(null);
-    expect(last().lookup).toMatchObject({ status: 'idle', agentId: null });
     expect(fsBox.listeners).toHaveLength(0);
+    expect('lookup' in last()).toBe(false);
+    expect(legacy(last())).toEqual({ agentBattleId: null, loading: false, error: null });
   });
 
   it('(9) StrictMode: one agent change advances the generation by exactly one', () => {
-    render('agent-A', { strict: true });
+    render('agent-A', { strict: true, options: GATED });
     deliver(snap(['battle-1']));
-    render('agent-B', { strict: true });
+    render('agent-B', { strict: true, options: GATED });
     expect(last().lookup.generation).toBe(2);
     deliver(snap(['battle-2']));
     expect(last().lookup).toMatchObject({ generation: 2, status: 'success', battleId: 'battle-2' });
   });
 
-  it('(9) [B-6] an agent change adds a render pass but no commit, effect or subscription change', () => {
+  it('(9) [B-6] gated: an agent change adds a render pass but no commit, effect or subscription change', () => {
     let passes = 0;
     function Counting({ agentId }) {
       passes += 1;
-      const r = useAgentBattleId(agentId);
+      const r = useAgentBattleId(agentId, GATED);
       useLayoutEffect(() => { commits.push(r); });
       return null;
     }
@@ -613,7 +737,7 @@ describe('ON-ID — lookup evidence on the existing listener', () => {
     act(() => { root.render(<Counting agentId="agent-B" />); });
     expect(commits.length - commitsBefore).toBe(1); // the parent's own prop commit only
     expect(passes - passesBefore).toBe(2); // + the render-time adjustment pass
-    expect(fsBox.log).toEqual([['subscribe', 0, 3], ['unsubscribe', 0], ['subscribe', 1, 3]]);
+    expect(fsBox.log).toEqual([['subscribe', 0, 4], ['unsubscribe', 0], ['subscribe', 1, 4]]);
   });
 
   it('(10) [B-5/C-4] S2: empty fromCache:true → unconfirmed-empty → empty fromCache:false (metadata event) → confirmed empty', () => {

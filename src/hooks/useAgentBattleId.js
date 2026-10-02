@@ -9,6 +9,16 @@
 // effects exactly: the ID survives an agent change and an error, and loading is
 // never re-armed. That is why an unchanged ID proves nothing about whether the
 // CURRENT agent's lookup has settled, and why `lookup` exists.
+//
+// THE OPT-IN. `{ confirmCache: true }` is what the gated screen passes (C-4:
+// flag on, query path) and it is the only call that reads `lookup`. It turns on
+// BOTH the metadata events on the existing listener (C-4) and the C-2 evidence.
+// Without it — every flag-off call, and the direct-ID route — this is the
+// shipped hook exactly: no evidence state is written, no render-phase
+// adjustment runs and no `lookup` is returned, so render passes, commits,
+// listener calls and the return shape all match the pre-build captures
+// (ON-ID 9, OFF-6; review off-state F2 and known residual #4). A gated caller
+// that forgot to opt in sees no `lookup` and the screen fails closed (pending).
 
 import { useState, useEffect } from 'react';
 import { collection, query, where, limit, onSnapshot } from 'firebase/firestore';
@@ -30,6 +40,7 @@ const useAgentBattleId = (agentId, { confirmCache } = {}) => {
   const [agentBattleId, setAgentBattleId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const gated = confirmCache === true;
 
   // C-2: which agent the evidence is for, and the lookup GENERATION, which
   // advances exactly when the requested agent changes. Tracked with React's
@@ -37,26 +48,27 @@ const useAgentBattleId = (agentId, { confirmCache } = {}) => {
   // discarded concurrent render cannot leave it half-applied (a stuck pending).
   // The adjustment re-renders the caller once before commit (B-6): no commit,
   // no effect, no subscription change. A value — never an updater — so a
-  // StrictMode double render cannot advance it twice.
+  // StrictMode double render cannot advance it twice. Gated only: flag-off the
+  // tracked pair is never written, so the caller renders exactly as before.
   const [track, setTrack] = useState(() => ({ agentId, generation: 1 }));
   let current = track;
-  if (!Object.is(track.agentId, agentId)) {
+  if (gated && !Object.is(track.agentId, agentId)) {
     current = { agentId, generation: track.generation + 1 };
     setTrack(current);
   }
   const [evidence, setEvidence] = useState(null);
-  const metadataEvents = confirmCache === true;
 
   useEffect(() => {
     // The generation this listener belongs to, and whether it is still the
     // live one. Every evidence write is stamped with both and made in the same
     // synchronous block as the legacy setters it accompanies, so it batches
     // with them; writes from a retired closure are dropped (the listener is
-    // unsubscribed anyway — this covers callbacks already queued).
+    // unsubscribed anyway — this covers callbacks already queued). Without the
+    // opt-in nothing is written at all.
     const generation = track.generation;
     let active = true;
     const stamp = (status, extra = {}) => {
-      if (!active) return;
+      if (!active || !gated) return;
       const next = { agentId, generation, status, battleId: null, fromCache: null, error: null, ...extra };
       setEvidence((prev) => (sameEvidence(prev, next) ? prev : next));
     };
@@ -93,7 +105,7 @@ const useAgentBattleId = (agentId, { confirmCache } = {}) => {
       }
       setLoading(false);
       setError(null);
-      if (!active) return;
+      if (!active || !gated) return;
       if (!snapshot.empty) {
         // A non-empty result is `success` whether or not it came from cache;
         // the document subscription and admission still decide what is shown.
@@ -122,7 +134,7 @@ const useAgentBattleId = (agentId, { confirmCache } = {}) => {
     // C-4: the EXISTING listener, asked for metadata-only events when — and
     // only when — the gated screen passes confirmCache. Otherwise it is created
     // exactly as before: same arguments, same arity, no options object.
-    const unsubscribe = metadataEvents
+    const unsubscribe = gated
       ? onSnapshot(q, { includeMetadataChanges: true }, onNext, onError)
       : onSnapshot(q, onNext, onError);
 
@@ -130,7 +142,9 @@ const useAgentBattleId = (agentId, { confirmCache } = {}) => {
       active = false;
       unsubscribe();
     };
-  }, [agentId, track.generation, metadataEvents]);
+  }, [agentId, track.generation, gated]);
+
+  if (!gated) return { agentBattleId, loading, error };
 
   // Evidence counts only for the CURRENT agent and generation; anything else —
   // including a retired lookup that returned the very same ID — is pending.

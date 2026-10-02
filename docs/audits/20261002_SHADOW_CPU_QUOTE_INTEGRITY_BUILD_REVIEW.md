@@ -1,6 +1,6 @@
 # Shadow vs CPU quote integrity — dark build record and cumulative review
 
-**Date:** 2026-10-02 · **Contract:** `SHADOW_CPU_PLACEHOLDER_PRICE_SPEC_V1_6.md` (controlling; external), with the v1.6 revision/verification note and the Fable v1.5 focused review as supporting evidence.
+**Date:** 2026-10-02 · **Contract:** `SHADOW_CPU_PLACEHOLDER_PRICE_SPEC_V1_6.md` (controlling; external), with the v1.6 revision/verification note (`SHADOW_CPU_V1_6_REVISION_AND_VERIFICATION_NOTE.md`) and the v1.5 focused review (`20261002_SHADOW_CPU_SPEC_V1_5_FOCUSED_REVIEW.md`) as supporting evidence.
 **Authorization:** founder, 2026-10-02 — dark implementation of v1.6; D10 (scoring-display contact and the 34 code/test files + one audit record) approved; P10 and P11 adopted (C-4's cache confirmation, B-3+'s precision wording). Same day, a second founder decision expanded the scope by four theme-guard files solely to register the new helper (§2): 38 implementation/support files + this record = 39. Merge and activation are separate founder decisions.
 **Branch:** `claude/shadow-cpu-quote-integrity-v16`, cut fresh from `origin/main`.
 **Base SHA (pre-build, OFF references captured here):** `44d0c63eba4e3099552d3ec3dbde6a89660a7e06`.

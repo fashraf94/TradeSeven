@@ -357,6 +357,9 @@ function identifiedFields(identified) {
   };
 }
 
+/** The gated path's WebSocket symbol list: none (a stable identity). */
+const NO_WS_SYMBOLS = Object.freeze([]);
+
 /**
  * The screen's loading indicator, shared verbatim by the legacy loading return
  * and the gated pending shell, so the gated path adds no motion or colour of
@@ -1059,19 +1062,33 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     ...(integrityOn && !directId ? [{ confirmCache: true }] : []),
   );
   const legacyBattleId = directId || queriedId;
+  // [A-4] a requested ID once classified EXCLUDED keeps legacy behaviour until
+  // the requested ID changes. A value adjusted during render: set when the gate
+  // classifies the current ID excluded, CLEARED (below) as soon as any other
+  // ID is requested — so a return to that ID starts unclassified, and R-5
+  // governs it again (a new subscription's error is "Battle unavailable").
+  const [excludedFor, setExcludedFor] = useState(null);
   // The requested battle: flag-off the shipped `directId || queriedId`; gated,
   // the direct ID or the CURRENT lookup generation's success — never the
-  // retained legacy ID, which survives agent changes and errors.
-  const requestedId = integrityOn ? gatedRequestedId({ directId, lookup }) : legacyBattleId;
+  // retained legacy ID, which survives agent changes and errors. One
+  // exception, and it IS the legacy behaviour: an excluded battle's lookup
+  // error. The legacy hook retains the ID only through its error callback (an
+  // empty snapshot, confirmed or not, nulls it), so `queriedId` still naming
+  // the excluded ID is exactly the condition under which legacy keeps it.
+  const excludedLookupError = integrityOn && !directId && excludedFor !== null
+    && excludedFor === queriedId && lookup?.status === 'error';
+  const requestedId = integrityOn
+    ? (gatedRequestedId({ directId, lookup }) ?? (excludedLookupError ? queriedId : null))
+    : legacyBattleId;
   const battleHook = useAgentBattle(requestedId, ...(integrityOn ? [{ integrity: true }] : []));
 
   // ── Quote integrity: admission and terminal states (§3.1, R-5, C-2) ───────
-  // [A-4] a requested ID once classified EXCLUDED keeps legacy behaviour for
-  // its later subscription errors, until the requested ID changes. Adjusted
-  // during render with a value; resolveGate compares it to the current ID.
-  const [excludedFor, setExcludedFor] = useState(null);
+  if (excludedFor !== null && excludedFor !== requestedId) setExcludedFor(null);
   const envelope = integrityOn ? (battleHook.integrity ?? null) : null;
-  const gate = resolveGate({ integrityOn, directId, lookup, envelope, requestedId, excludedFor });
+  const gate = resolveGate({
+    integrityOn, directId, lookup, envelope, requestedId,
+    excludedFor: excludedFor === requestedId ? excludedFor : null,
+  });
   if (gate.mode === 'excluded' && excludedFor !== requestedId) setExcludedFor(requestedId);
   // `gatedPath`: flag on and not excluded — pending, the two terminal shells,
   // or an admitted battle. Excluded and flag-off take the shipped path whole.
@@ -1265,7 +1282,11 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
 
   // ── WebSocket prices ──────────────────────────────────────────────────────
 
-  const { prices: wsPrices } = useWebSocketPrices(allSymbols);
+  // Gated (pending, terminal or admitted): no WebSocket subscription at all.
+  // Bare WebSocket numbers carry no provenance and never reach gated held
+  // positions (§4.2), and while the shell is pending this list would be built
+  // from the opening prop (§3.1). Flag-off and excluded: the shipped call.
+  const { prices: wsPrices } = useWebSocketPrices(gatedPath ? NO_WS_SYMBOLS : allSymbols);
 
   const effectivePrices = useMemo(() => {
     if (!wsPrices || Object.keys(wsPrices).length === 0) return currentPrices;
@@ -1332,21 +1353,28 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       const stockSymbols = plan.symbols.filter(s => !isCryptoSymbol(s));
       const cryptoSymbols = plan.symbols.filter(s => isCryptoSymbol(s));
       const run = async () => {
-        try {
-          const [stockData, cryptoData] = await Promise.all([
-            stockSymbols.length > 0 ? stockAPI.getMultipleStockPrices(stockSymbols) : {},
-            cryptoSymbols.length > 0 ? stockAPI.getMultipleCryptoPrices(cryptoSymbols) : {},
-          ]);
-          if (!active) return;
-          const records = { ...(stockData || {}), ...(cryptoData || {}) };
-          const nowMs = Date.now();
-          setQuoteBook((prev) => applyQuoteArrival(prev, plan.positions, (sym) => interpretQuote(records[sym], { nowMs })));
-        } catch (error) {
-          if (!active) return;
-          console.error('[AgentBattle] Error fetching prices:', error);
-          const nowMs = Date.now();
-          setQuoteBook((prev) => applyQuoteArrival(prev, plan.positions, () => interpretQuote(null, { nowMs })));
-        }
+        // §4.3 rule 2: the two batch calls are independent requests. A kind
+        // whose call rejected withholds only ITS positions (stale or
+        // unavailable); the other kind's genuine answers apply as usual. Same
+        // calls, same order, same cadence.
+        const [stockResult, cryptoResult] = await Promise.allSettled([
+          stockSymbols.length > 0 ? stockAPI.getMultipleStockPrices(stockSymbols) : {},
+          cryptoSymbols.length > 0 ? stockAPI.getMultipleCryptoPrices(cryptoSymbols) : {},
+        ]);
+        if (!active) return;
+        const answerOf = (result) => {
+          if (result.status === 'fulfilled') return result.value || {};
+          console.error('[AgentBattle] Error fetching prices:', result.reason);
+          return null;
+        };
+        const stockData = answerOf(stockResult);
+        const cryptoData = answerOf(cryptoResult);
+        const records = { ...(stockData || {}), ...(cryptoData || {}) };
+        const nowMs = Date.now();
+        setQuoteBook((prev) => applyQuoteArrival(prev, plan.positions, (sym) => {
+          const failed = isCryptoSymbol(sym) ? cryptoData === null : stockData === null;
+          return interpretQuote(failed ? null : records[sym], { nowMs });
+        }));
       };
       run();
       const interval = setInterval(run, PRICE_POLL_INTERVAL);
