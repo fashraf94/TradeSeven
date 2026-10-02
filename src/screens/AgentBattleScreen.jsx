@@ -2394,7 +2394,9 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
           heldResearch = {
             asset: {
               symbol: pos.symbol,
-              name: pos.asset.name || pos.symbol,
+              // The modal renders the name as text: a malformed one falls
+              // back to the symbol rather than throwing (§3.1).
+              name: typeof pos.asset.name === 'string' && pos.asset.name ? pos.asset.name : pos.symbol,
               // The qualified current, and the recorded entry — no builder
               // fallback chain, no entry-relative change riding along.
               price: q.accepted.price,

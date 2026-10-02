@@ -4641,7 +4641,7 @@ describe('F1 review follow-ups B-2 / B-3 / B-4 — malformed fields a gated row 
     });
   }
 
-  it('B-4: isCash: 1 with a symbol is shown as the held position it is scored as — the same digits as without the flag, and no CASH row', async () => {
+  it('B-4: isCash: 1 with a symbol is shown as the held position it is scored as — the same digits as the well-formed document, and no CASH row', async () => {
     priceBox.table = genuineTable();
     await mountGated();
     const reference = { digits: counters(), label: label() };
@@ -4683,6 +4683,24 @@ describe('F1 — the terminal shells with a malformed opening prop (lens C, C-3)
       expect(shell()).toBe('no-battle');
       expect(priceBox.calls).toEqual([]);
       expect(wsBox.args.every((a) => a.length === 0)).toBe(true);
+    });
+  }
+});
+
+describe('F1 delta review D-1 — the controlled research view never receives a malformed name', () => {
+  // The real AssetResearchModal renders the name as text (the suite mocks it,
+  // so the payload is the observable): a non-string name falls back to the
+  // symbol; a string one is kept.
+  for (const [what, name, shown] of [['an object', { x: 1 }, 'AAPL'], ['a number', 7, 'AAPL'], ['a string (control)', 'Apple Inc.', 'Apple Inc.']]) {
+    it(`a held position whose name is ${what}: the controlled view's name is ${JSON.stringify(shown)}`, async () => {
+      priceBox.table = genuineTable();
+      const doc = JSON.parse(JSON.stringify(ACTIVE_DOC));
+      doc.portfolio.star = [{ ...doc.portfolio.star[0], name }, doc.portfolio.star[1]];
+      await mountGated(openingProp(), doc);
+      await click(symbolEl('AAPL', 'player'));
+      expect(modalOpen()).toBe('AAPL');
+      expect(lastResearch().controlledQuote.posKey).toBe('player:star:0');
+      expect(lastResearch().asset.name).toBe(shown);
     });
   }
 });
