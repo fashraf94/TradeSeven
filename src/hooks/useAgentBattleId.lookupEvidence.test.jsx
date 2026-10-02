@@ -684,6 +684,24 @@ describe('ON-ID — lookup evidence on the existing listener', () => {
     }
   });
 
+  it('(4) a retired listener\'s queued callback AFTER the current generation settled changes nothing — no overwrite back to pending', () => {
+    // Review round (mutation pass): row (4) above delivers the retired
+    // callbacks while generation 2 is still pending, where the generation
+    // check alone hides them. Here generation 2 has settled first: without the
+    // `active` guard a retired write would REPLACE the current evidence, and
+    // the gated screen would fall back to pending and drop the subscription.
+    render('agent-A', { options: GATED });
+    const retired = current();
+    render('agent-B', { options: GATED });
+    deliver(snap(['battle-2']));
+    const settled = { agentId: 'agent-B', generation: 2, status: 'success', battleId: 'battle-2', error: null };
+    expect(last().lookup).toMatchObject(settled);
+    for (const late of [() => retired.next(snap(['battle-9'])), () => retired.next(snap([], { fromCache: false })), () => retired.error({ message: 'boom', code: 'internal' })]) {
+      act(late);
+      expect(last().lookup).toMatchObject(settled);
+    }
+  });
+
   it('(5) error identity: the current generation\'s error, never a retired one\'s', () => {
     render('agent-A', { options: GATED });
     fail({ message: 'permission-denied', code: 'permission-denied' });

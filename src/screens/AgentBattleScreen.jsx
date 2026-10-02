@@ -56,13 +56,14 @@ import {
   QUOTE_INTEGRITY_COPY,
   EMPTY_POSITION_QUOTE,
   interpretQuote,
-  adoptQuote,
   lastQuoteLabel,
   sessionExtremes,
   gatedRequestedId,
   resolveGate,
   buildBattleContext,
   reconcileLineage,
+  positionToken,
+  applyQuoteArrival,
   selectComparison,
   duelFor,
   resolveResearchTarget,
@@ -309,36 +310,6 @@ const enrichCash = (asset) => ({
 
 const EMPTY_ENRICHED = Object.freeze({ star: [], core: [], support: [] });
 const EMPTY_QUOTE_BOOK = Object.freeze({ lineage: null, quotes: Object.freeze({}) });
-
-/** One position's identity: battle key, battle generation, slot and lineage
- *  generation. Quote evidence and detail selections are keyed by it. */
-function positionToken(lineage, posKey) {
-  const p = lineage?.positions?.[posKey];
-  return p && lineage.battleKey ? `${lineage.battleKey}#${lineage.battleGeneration}#${posKey}#${p.gen}` : null;
-}
-
-/**
- * One poll's answer (or failure) applied to the retained evidence. A position
- * whose identity changed since the request was issued is skipped (§4.3 rule 1:
- * a retired context cannot update a new position); everything else goes
- * through adoptQuote (rules 2–5).
- */
-function applyQuoteArrival(prev, positions, interpFor) {
-  const lin = prev.lineage;
-  if (!lin || !lin.battleKey) return prev;
-  let quotes = prev.quotes;
-  for (const p of positions) {
-    const token = positionToken(lin, p.posKey);
-    if (!token || token !== p.token) continue;
-    const held = quotes[p.posKey]?.token === token ? quotes[p.posKey].state : EMPTY_POSITION_QUOTE;
-    const next = adoptQuote(held, interpFor(p.symbol));
-    if (quotes[p.posKey]?.token !== token || next !== held) {
-      if (quotes === prev.quotes) quotes = { ...prev.quotes };
-      quotes[p.posKey] = { token, state: next };
-    }
-  }
-  return quotes === prev.quotes ? prev : { ...prev, quotes };
-}
 
 /** useAgentBattle's derived fields, from the IDENTIFIED snapshot (gated path). */
 function identifiedFields(identified) {

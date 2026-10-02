@@ -23,6 +23,8 @@ import {
   positionLineageKey,
   buildBattleContext,
   reconcileLineage,
+  positionToken,
+  applyQuoteArrival,
   parseStoredInstant,
   qualifyStoredPair,
   selectComparison,
@@ -268,6 +270,40 @@ describe('§3.1 — gate resolution (R-5, C-2, B-4, B-5, C-4, A-4)', () => {
     expect(r({ requestedId: 'ab-1', status: 'error', error: { code: 'x' } }, 'ab-1').mode).toBe('excluded'); // its own doc error: A-4 too
     expect(r(EXCLUDED, null)).toMatchObject({ mode: 'unavailable', reason: 'lookup-error', error: lookup.error });
     expect(r(EXCLUDED, 'ab-0')).toMatchObject({ mode: 'unavailable', reason: 'lookup-error' });
+  });
+});
+
+describe('§4.3 rule 1 — an answer applies only to the position identity it was requested for', () => {
+  // Review round (mutation pass): the screen's poll effect drops a retired
+  // effect's answers, but an answer can resolve after the commit that changed
+  // a position and before that effect's cleanup runs. applyQuoteArrival is the
+  // guard for that window; it is pure, so it is pinned here.
+  const SLOT = 'player:star:0';
+  const lineage = (gen, battleKey = 'ab-1') => ({ battleKey, battleGeneration: 1, positions: { [SLOT]: { gen } } });
+  const asked = (lin) => [{ posKey: SLOT, symbol: 'AAPL', token: positionToken(lin, SLOT) }];
+  const answer = (price) => () => interpretQuote(rec({ price }), { nowMs: NOW });
+
+  it('the identity the request was issued for: adopted, keyed by that identity', () => {
+    const lin = lineage(1);
+    const next = applyQuoteArrival({ lineage: lin, quotes: {} }, asked(lin), answer(103));
+    expect(next.quotes[SLOT].token).toBe(positionToken(lin, SLOT));
+    expect(next.quotes[SLOT].state.status).toBe('usable');
+    expect(next.quotes[SLOT].state.accepted.price).toBe(103);
+  });
+
+  it('a same-slot, same-symbol re-entry (a NEW lineage generation) never inherits the retired request\'s answer', () => {
+    const prev = { lineage: lineage(2), quotes: {} };
+    const next = applyQuoteArrival(prev, asked(lineage(1)), answer(999));
+    expect(next).toBe(prev);
+    expect(next.quotes[SLOT]).toBeUndefined();
+  });
+
+  it('nor does a new battle (same slot, another battle key), nor a position that is gone', () => {
+    const prevB = { lineage: lineage(1, 'ab-2'), quotes: {} };
+    expect(applyQuoteArrival(prevB, asked(lineage(1, 'ab-1')), answer(999))).toBe(prevB);
+    const prevGone = { lineage: { battleKey: 'ab-1', battleGeneration: 1, positions: {} }, quotes: {} };
+    expect(applyQuoteArrival(prevGone, asked(lineage(1)), answer(999))).toBe(prevGone);
+    expect(positionToken(prevGone.lineage, SLOT)).toBeNull();
   });
 });
 

@@ -830,6 +830,26 @@ describe('ON — the atomic envelope from the existing subscription', () => {
     expect(env().data.executionMode).toBe('autopilot');
   });
 
+  it('a retired subscription\'s queued callback AFTER the new battle\'s first snapshot changes nothing — B is never knocked back to pending', () => {
+    // Review round (mutation pass): the row above delivers the retired
+    // callbacks BEFORE B's snapshot, so B's snapshot would hide an overwrite.
+    // Here they arrive after it: dropping the `active` guard would overwrite
+    // B's envelope with A's generation-1 write and the screen would fall back
+    // to the pending shell until B's next snapshot.
+    render('battle-A', { options: ON });
+    deliver(docSnap('battle-A', DOC_A));
+    const retired = current();
+    render('battle-B', { options: ON });
+    deliver(docSnap('battle-B', DOC_B));
+    const ready = { requestedId: 'battle-B', generation: 2, status: 'ready', snapshotId: 'battle-B', error: null };
+    expect(env()).toMatchObject(ready);
+    act(() => { retired.next(docSnap('battle-A', { ...DOC_A, status: 'completed' })); });
+    expect(env()).toMatchObject(ready);
+    act(() => { retired.error({ message: 'late', code: 'internal' }); });
+    expect(env()).toMatchObject(ready);
+    expect(env().data.executionMode).toBe('autopilot');
+  });
+
   it('A→B→A: generation 3 waits for its own snapshot; generation 1\'s evidence never counts', () => {
     render('battle-A', { options: ON });
     deliver(docSnap('battle-A', DOC_A));

@@ -491,6 +491,38 @@ export function reconcileLineage(prev, { battleKey, context }) {
 const ISO_FULL = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|([+-])(\d{2}):(\d{2}))$/;
 const daysIn = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
 
+/** One position's identity: battle key, battle generation, slot and lineage
+ *  generation. Quote evidence and detail selections are keyed by it. */
+export function positionToken(lineage, posKey) {
+  const p = lineage?.positions?.[posKey];
+  return p && lineage.battleKey ? `${lineage.battleKey}#${lineage.battleGeneration}#${posKey}#${p.gen}` : null;
+}
+
+/**
+ * One poll's answer (or failure) applied to the retained evidence. A position
+ * whose identity changed since the request was issued is skipped (§4.3 rule 1:
+ * a retired context cannot update a new position); everything else goes
+ * through adoptQuote (rules 2–5). The screen's poll effect already drops a
+ * retired effect's answers; this check covers an answer that resolves after
+ * the commit that changed a position and before that effect's cleanup runs.
+ */
+export function applyQuoteArrival(prev, positions, interpFor) {
+  const lin = prev.lineage;
+  if (!lin || !lin.battleKey) return prev;
+  let quotes = prev.quotes;
+  for (const p of positions) {
+    const token = positionToken(lin, p.posKey);
+    if (!token || token !== p.token) continue;
+    const held = quotes[p.posKey]?.token === token ? quotes[p.posKey].state : EMPTY_POSITION_QUOTE;
+    const next = adoptQuote(held, interpFor(p.symbol));
+    if (quotes[p.posKey]?.token !== token || next !== held) {
+      if (quotes === prev.quotes) quotes = { ...prev.quotes };
+      quotes[p.posKey] = { token, state: next };
+    }
+  }
+  return quotes === prev.quotes ? prev : { ...prev, quotes };
+}
+
 /**
  * A stored instant: a full ISO date-time with an explicit zone that parses to
  * a finite, positive, non-future instant. Date-only strings, blanks,

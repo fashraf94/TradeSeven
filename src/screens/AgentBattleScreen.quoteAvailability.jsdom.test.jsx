@@ -187,12 +187,23 @@ vi.mock('../components/Agent/AgentChat', () => ({
     </div>
   ),
 }));
-vi.mock('../components/AgentPresence/AgentPresenceMount', () => ({
-  default: (props) => {
-    seen.presence.push(JSON.parse(JSON.stringify({ duel: props.duel ?? null, reactivityLevel: props.reactivityLevel ?? null })));
-    return <span data-test-face="1" />;
-  },
-}));
+// `faceBox.live`: each MOUNTED face's current duel input, keyed by instance —
+// so a row can assert what every face on screen shows right now, including a
+// face that did not re-render (the recorded payloads and markup are unchanged).
+const faceBox = vi.hoisted(() => ({ seq: 0, live: new Map() }));
+vi.mock('../components/AgentPresence/AgentPresenceMount', async () => {
+  const ReactMod = await import('react');
+  return {
+    default: function FaceRecorder(props) {
+      const id = ReactMod.useRef(0);
+      if (id.current === 0) { faceBox.seq += 1; id.current = faceBox.seq; }
+      seen.presence.push(JSON.parse(JSON.stringify({ duel: props.duel ?? null, reactivityLevel: props.reactivityLevel ?? null })));
+      faceBox.live.set(id.current, JSON.parse(JSON.stringify(props.duel ?? null)));
+      ReactMod.useEffect(() => () => { faceBox.live.delete(id.current); }, []);
+      return <span data-test-face="1" />;
+    },
+  };
+});
 vi.mock('../components/Agent/LiveActivityPanel', () => ({ default: () => null, BreakthroughAlerts: () => null }));
 
 import AgentBattleScreen from './AgentBattleScreen';
@@ -233,6 +244,8 @@ beforeEach(() => {
   seen.research.length = 0;
   seen.breakdown.length = 0;
   seen.presence.length = 0;
+  faceBox.seq = 0;
+  faceBox.live.clear();
   seen.chatPayload = { symbol: 'TSLA' };
   seen.admission = null;
   seen.closeResearch = null;
@@ -3674,6 +3687,44 @@ describe('§4.2 / §3.1 — no WebSocket subscription on the gated path', () => 
       expect(wsBox.args.at(-1)).toEqual(expect.arrayContaining(HELD_SOME));
     }
   });
+});
+
+// ── ON-F5a: every LIVE face shows the one selected duel ─────────────────────
+// Review round (mutation pass): the rows above inspect the faces RENDERED in a
+// window; a consumer that stopped receiving the comparison (the pane's mark)
+// would keep showing a stale or legacy duel without re-rendering. Here the
+// current input of every mounted face is read at each step.
+describe('ON-F5a — every live presence face (headers, the mark, the pane) shows the ONE selected duel', () => {
+  const liveDuels = () => [...faceBox.live.values()];
+  for (const shell of [{ name: 'desktop', desktop: true }, { name: 'phone', desktop: false }]) {
+    it(`arena (controller + pane), ${shell.name}: unavailable → browser → stored → unavailable`, async () => {
+      Object.assign(flags, { controller: true, pane: true, presence: true });
+      setShell(shell.desktop);
+      priceBox.mode = 'defer';
+      priceBox.table = genuineTable();
+      await mountProbed(openingProp());
+      await deliverDoc('ab-1', NEW_DOC);
+      expect(label()).toEqual({ kind: 'unavailable', text: 'Comparison unavailable' });
+      expect(liveDuels().length).toBeGreaterThanOrEqual(2); // the header face and the mark at least
+      for (const d of liveDuels()) expect(d).toEqual({ statusFeed: null });
+
+      await settle();
+      expect(label().kind).toBe('browser');
+      const browser = liveDuels()[0];
+      expect(Object.keys(browser).sort()).toEqual(['opponentScore', 'playerScore', 'statusFeed']);
+      for (const d of liveDuels()) expect(d).toEqual(browser);
+
+      priceBox.table = without(genuineTable(), 'AAPL');
+      await pollAndSettle();
+      await deliverDoc('ab-1', { ...NEW_DOC, scoreState: STORED(3.1, 12.4) });
+      expect(label().kind).toBe('last-scored');
+      for (const d of liveDuels()) expect(d).toEqual({ playerScore: 3.1, opponentScore: 12.4, statusFeed: null });
+
+      await deliverDoc('ab-1', { ...NEW_DOC, scoreState: { currentScore: 0, lastScoredAt: null, tradeCount: 0 } });
+      expect(label().kind).toBe('unavailable');
+      for (const d of liveDuels()) expect(d).toEqual({ statusFeed: null });
+    });
+  }
 });
 
 // ── ON-ID at the screen (query path) ─────────────────────────────────────────
