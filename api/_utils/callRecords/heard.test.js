@@ -314,6 +314,25 @@ describe('the events the Build 0 phase creates inside its transactions at resolv
     expect(r3.diag.acted).toBe(1);
   });
 
+  it('runModelCallsPhase at on with a SUPPRESSED heard stamp: the declared event carries NO promptDirectiveThreadId and no inclusion line; the heard phase stops at "suppressed"', async () => {
+    const db = makeDb({ battle: committedBattle() });
+    const ctx = { ...ctxOn(), evalIdentity: { evalId: EVAL, evalSeq: 1 }, observation: makeObservation(), executorResult: null, universe: UNIVERSE, declarations: { raw: makeDeclarations(), phase: 'expected', validation: { removed: [] } } };
+    const suppressed = { directiveThreadId: THREAD, suppressed: 'mode_not_enforce' };
+    const res = await runModelCallsPhase(ctx, { db, battle: stored(db, `agentBattles/${BATTLE_ID}`), timeBudgetMs: 290_000, promptBuiltAt: PROMPT_AT, tickId: null, flips: runCallFlips, heardWriter: runHeardPhase, heard: suppressed });
+    expect(res.wire).toBe('written');
+    const ev = events(db)[`${EVAL}:declared`];
+    expect(ev).toBeDefined();
+    expect(ev).not.toHaveProperty('promptDirectiveThreadId');
+    expect(ev.text).not.toContain("Directive in this check's prompt");
+    expect(res.heard).toMatchObject({ stopped: 'suppressed' });
+    // The unsuppressed twin carries the inclusion fact.
+    const db2 = makeDb({ battle: committedBattle() });
+    const res2 = await runModelCallsPhase({ ...ctx }, { db: db2, battle: stored(db2, `agentBattles/${BATTLE_ID}`), timeBudgetMs: 290_000, promptBuiltAt: PROMPT_AT, tickId: null, flips: runCallFlips, heardWriter: runHeardPhase, heard: HEARD });
+    expect(res2.wire).toBe('written');
+    expect(events(db2)[`${EVAL}:declared`]).toMatchObject({ promptDirectiveThreadId: THREAD });
+    expect(events(db2)[`${EVAL}:declared`].text).toContain("Directive in this check's prompt: Hold off on the AMD entry until today's close.");
+  });
+
   it('runModelCallsPhase at on: the flips, then the heard phase under the same deadline; the diag carries heard; at shadow no heard key, no heard writer call', async () => {
     const db = makeDb({ battle: committedBattle() });
     const ctx = { ...ctxOn(), declarations: null, observation: makeObservation({ observedAtMs: NOW }), executorResult: SWAP_AMD_FOR_KO };

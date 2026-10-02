@@ -2866,7 +2866,7 @@ export const COCKPIT_ALLOWLIST_UIDS = Object.freeze([]);
  * the pin in cockpitFlags.test.js to true AND drops this flag from
  * DARK_BY_DESIGN in src/config/flagPinGuard.test.js in the same commit.
  */
-// Pinned by: cockpitFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+// Pinned by: cockpitFlags.test.js, events.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const RESPONSE_FORK_ATTRIBUTION_ENABLED = false;
 
 /**
