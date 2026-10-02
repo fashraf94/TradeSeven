@@ -35,7 +35,10 @@ vi.mock('../_utils/mandateClosePass.js', async (importActual) => {
 });
 
 // The model call runEvalSweep reaches through runBookEval's default; mocked as a
-// counting spy for the fresh-read-under-lease double-bill assertion.
+// counting spy for the fresh-read-under-lease double-bill assertion. The eval
+// sweeps below pin `transport: 'direct'` so callMandateModelDirect is the
+// exercised path regardless of the live MANDATE_TRANSPORT_MODE default (batch
+// transport has its own harness, mandateBatchInterleavings.test.js).
 let modelImpl = null;
 const modelSpy = vi.fn((...args) => modelImpl(...args));
 vi.mock('../_utils/mandateModelCall.js', async (importActual) => {
@@ -189,7 +192,7 @@ describe('(c) the in-lease fresh read (not the page copy) prevents a double bill
     modelImpl = async () => ({ decision: { ok: true, input: { verb: 'HOLD', rationale: 'x' } }, usage: null });
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { req, res } = fakeReqRes();
-    await runEvalSweep(req, res, { now: EVAL_NOW, tick: EVAL_TICK, db });
+    await runEvalSweep(req, res, { now: EVAL_NOW, tick: EVAL_TICK, db, transport: 'direct' });
     spy.mockRestore();
     expect(modelSpy).toHaveBeenCalledTimes(1);
     expect(db._get('mandates/m1').execState.lastEvalTickKey).toBe('2026-08-12_open30');
@@ -208,7 +211,7 @@ describe('(c) the in-lease fresh read (not the page copy) prevents a double bill
     });
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { req, res, captured } = fakeReqRes();
-    await runEvalSweep(req, res, { now: EVAL_NOW, tick: EVAL_TICK, db });
+    await runEvalSweep(req, res, { now: EVAL_NOW, tick: EVAL_TICK, db, transport: 'direct' });
     spy.mockRestore();
     expect(modelSpy).toHaveBeenCalledTimes(0);   // the re-check prevented the double bill
     expect(captured.body.skipped).toBeGreaterThanOrEqual(1);
@@ -230,7 +233,7 @@ describe('(d) no_vintage is an eval failure that reaches quarantine', () => {
     const errs = [];
     const spy = vi.spyOn(console, 'error').mockImplementation((m) => errs.push(String(m)));
     const { req, res, captured } = fakeReqRes();
-    await runEvalSweep(req, res, { now: EVAL_NOW, tick: EVAL_TICK, db });
+    await runEvalSweep(req, res, { now: EVAL_NOW, tick: EVAL_TICK, db, transport: 'direct' });
     spy.mockRestore();
 
     const book = db._get('mandates/m1');
