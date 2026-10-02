@@ -110,7 +110,9 @@ describe('the wire (spec §5)', () => {
   });
 
   it('429 after 20 requests on one battle within a minute (process-local), other battles unaffected', async () => {
-    for (let i = 0; i < CALL_RESPONSE_RATE_LIMIT.limit; i++) await post(answerBody({ answer: 'go' }));
+    // The window is PINNED (spec §5: 20 per 60 s), never derived from the constant — a drifted limit fails here (mutation M16).
+    expect(CALL_RESPONSE_RATE_LIMIT).toEqual({ limit: 20, windowMs: 60_000 });
+    for (let i = 0; i < 20; i++) expect((await post(answerBody({ answer: 'go' }))).statusCode).not.toBe(429);
     const res = await post(answerBody({ answer: 'go' }));
     expect(res.statusCode).toBe(429);
     expect(res.body).toEqual({ error: 'rate_limited' });
@@ -388,6 +390,23 @@ describe('rows 7–8: directive answers — the guards in order, then one commit
     expect(stored(activeDb, `agentBattles/${BATTLE_ID}`).chatBudgetUsed).toBe(0);
     expect(stored(activeDb, 'agentChatBudget/group-xyz_owner-uid-1_3')).toMatchObject({ count: 1, uid: 'owner-uid-1', dayN: 3 });
     expect(stored(activeDb, `agentBattles/${BATTLE_ID}`).chatExchanges[0].groupId).toBe('group-xyz');
+  });
+
+  it('the League cap is >= the daily limit: a budget doc already AT 10 refuses (409 budget) and writes nothing; one below files and lands exactly at 10 (mutation M15)', async () => {
+    const budgetDoc = (count) => ({ 'agentChatBudget/group-xyz_owner-uid-1_3': { groupId: 'group-xyz', uid: 'owner-uid-1', dayN: 3, count, updatedAt: '2026-09-09T13:00:00.000Z' } });
+    activeDb = makeDb({ battle: makeTickBattle({ directive: null, gameMode: 'baggerbomb_tournament', groupId: 'group-xyz' }), extra: budgetDoc(10) });
+    const atCap = await post(answerBody());
+    expect(atCap.statusCode).toBe(409);
+    expect(atCap.body).toEqual({ error: 'refused', reason: 'budget' });
+    expect(stored(activeDb, P('calls', CALL)).playerResponse).toBeNull();
+    expect(stored(activeDb, P('calls', CALL)).refused).toBeNull();
+    expect(stored(activeDb, `agentBattles/${BATTLE_ID}`).directive).toBeNull();
+    expect(stored(activeDb, 'agentChatBudget/group-xyz_owner-uid-1_3').count).toBe(10);
+    activeDb = makeDb({ battle: makeTickBattle({ directive: null, gameMode: 'baggerbomb_tournament', groupId: 'group-xyz' }), extra: budgetDoc(9) });
+    const below = await post(answerBody());
+    expect(below.statusCode).toBe(200);
+    expect(below.body.remaining).toBe(0);
+    expect(stored(activeDb, 'agentChatBudget/group-xyz_owner-uid-1_3').count).toBe(10);
   });
 
   it('a competing write between the reads and the commit: the body re-runs against the changed documents (one charge, one event, no double filing)', async () => {

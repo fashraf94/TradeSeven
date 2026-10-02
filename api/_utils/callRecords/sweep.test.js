@@ -432,6 +432,19 @@ describe('heard repair, retirement and the queue row (spec §7, §8)', () => {
     expect(stored(db, Q(B1))).toEqual({ battleId: B1, nextExpiresAt: CLOSE + 5, pendingHeard: ['late-call'], updatedAt: NOW });
   });
 
+  it('a row whose ONLY remaining work is a pending heard (no open call, no expiry) is KEPT with nextExpiresAt null — never deleted (mutation M32)', async () => {
+    const id = `${B1}:eval_001:call:0`;
+    const hitAnswered = call(B1, 0, { state: 'hit', stateChangedAt: NOW - 60_000, stateSource: 'check', playerResponse: { answer: 'hold', kind: 'directive', directiveThreadId: THREAD, callId: id, filedAt: '2026-09-09T14:20:00.000Z', heardEvalId: null }, directiveThreadId: THREAD });
+    // The only retained stamp predates the answer: not found; the lifetime (today's close) is not over: still pending.
+    const battle = battleDoc(B1, { directive: null, chatExchanges: [{ directiveThreadId: THREAD, directive: callSlot(B1, id) }], evaluations: [{ evalId: 'eval_002', timestamp: '2026-09-09T14:00:00.000Z', promptBuiltAt: '2026-09-09T14:00:00.000Z', decision: 'HOLD', heard: { directiveThreadId: THREAD, suppressed: null } }] });
+    const db = oneBattle({ battle, calls: [hitAnswered], queue: { battleId: B1, nextExpiresAt: null, pendingHeard: [id], updatedAt: 1 } });
+    const res = await run(db);
+    expect(res.deleted).toBeUndefined();
+    expect(res.heardRepaired).toBeUndefined();
+    expect(callsOf(db, B1)[id].playerResponse.heardEvalId).toBeNull();
+    expect(stored(db, Q(B1))).toEqual({ battleId: B1, nextExpiresAt: null, pendingHeard: [id], updatedAt: NOW });
+  });
+
   it('an orphaned queue row (no parent) is settled away', async () => {
     const db = makeDb({ [Q('gone')]: { battleId: 'gone', nextExpiresAt: NOW - 1, updatedAt: 1 } });
     const res = await run(db);

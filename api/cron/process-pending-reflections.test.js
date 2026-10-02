@@ -181,6 +181,16 @@ describe('budget floor + flag gate', () => {
   });
 });
 
+describe('Cockpit Build 1a — the call sweep rides LAST and is invisible below global on (spec §8, §15.7)', () => {
+  it("at CALL_RECORDS_MODE 'off' (the live default) the response carries NO callSweep key — the handler's response shape is the pre-build one (mutation M52)", async () => {
+    const res = makeRes();
+    await handler(cronReq(), res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).not.toHaveProperty('callSweep');
+    expect(Object.keys(res.body)).toEqual(expect.arrayContaining(['wireSweep', 'duration']));
+  });
+});
+
 describe('auth', () => {
   it('rejects a non-cron caller without the bearer secret', async () => {
     const res = makeRes();
