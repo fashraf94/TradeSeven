@@ -11,6 +11,28 @@ const TIMEFRAMES = [
   { key: '1W', label: '1W' },
 ];
 
+// ── Controlled held research (Shadow vs CPU quote integrity) ────────────────
+// SHADOW_CPU_PLACEHOLDER_PRICE_SPEC_V1_6.md §7.2 E-1, §7.2.1, B-10; build
+// record docs/audits/20261002_SHADOW_CPU_QUOTE_INTEGRITY_BUILD_REVIEW.md.
+// Opt-in through `controlledSession` (only the research modal's controlled
+// held view passes it); absent, none of this is reached.
+const ET_SESSION = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' });
+/** V-11 session date of an instant: ET for stocks, UTC for crypto. */
+const sessionDateOf = (ms, crypto) => (crypto ? new Date(ms).toISOString().slice(0, 10) : ET_SESSION.format(new Date(ms)));
+/** A daily/weekly chart time is a local-midnight parse of a calendar date
+ *  (chartUtils.formatTime); this recovers that calendar date. */
+const calendarDateOf = (time) => {
+  const d = new Date(time * 1000);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+/** The Monday (YYYY-MM-DD) of the week holding a session date. */
+const weekStartOf = (dateKey) => {
+  const d = new Date(`${dateKey}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+  return d.toISOString().slice(0, 10);
+};
+const positive = (v) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null);
+
 /**
  * StockChart - Interactive candlestick chart with volume, timeframe selector, and overlays.
  * Uses lightweight-charts v5 API.
@@ -28,6 +50,7 @@ const StockChart = ({
   symbol,            // Stock/crypto ticker for getDailyHL lookup
   todayDailyCandle,  // Today's daily OHLCV candle with authoritative high/low
   realtimeExtremes,  // Battle hook's real-time intraday high/low { high, low } (optional backup)
+  controlledSession, // Optional { crypto }: controlled held research. Absent = legacy.
 }) => {
   const chartContainerRef = useRef(null);
   const chartRef = useRef(null);
@@ -53,6 +76,20 @@ const StockChart = ({
   const isBombView = timeframe === 'bomb' || timeframe === 'spectate';
   const isSpectateView = timeframe === 'spectate';
 
+  // Controlled held research: "today" is the session date (UTC for crypto),
+  // the readout shows only observed current-session values ("—" otherwise),
+  // and the hook's no-body scaffold is recognised from the RAW last element —
+  // prepareChartData keeps only time/OHLCV — by its chart time (B-10).
+  const controlled = !!controlledSession;
+  const controlledCrypto = !!controlledSession?.crypto;
+  const scaffoldTime = useMemo(() => {
+    if (!controlled || !ohlcvData || ohlcvData.length === 0) return null;
+    const rawLast = ohlcvData[ohlcvData.length - 1];
+    if (!rawLast?._scaffold) return null;
+    return formatTime(rawLast.date || rawLast.datetime || rawLast.timestamp);
+  }, [controlled, ohlcvData]);
+  const isScaffold = (c) => scaffoldTime != null && !!c && c.time === scaffoldTime && c.open === c.close;
+
   const bombLevels = useMemo(() => {
     if (!isBombView || !bombData?.threshold || !bombData?.baselinePrice) return [];
     return calculateBombLevels(bombData.baselinePrice, bombData.threshold);
@@ -71,7 +108,12 @@ const StockChart = ({
     const todayStartET = new Date(nowET.getFullYear(), nowET.getMonth(), nowET.getDate());
     const todayStartUnix = Math.floor(todayStartET.getTime() / 1000);
 
-    const todayCandles = ohlcvData.filter(candle => {
+    // Controlled: today's session by its session date (UTC for crypto).
+    const controlledToday = controlled ? sessionDateOf(Date.now(), controlledCrypto) : null;
+    const todayCandles = controlled ? ohlcvData.filter(candle => {
+      const t = candle.timestamp || formatTime(candle.date || candle.datetime);
+      return typeof t === 'number' && sessionDateOf(t * 1000, controlledCrypto) === controlledToday;
+    }) : ohlcvData.filter(candle => {
       // Handle both unix timestamp and date string formats
       const t = candle.time || candle.timestamp;
       if (typeof t === 'number') return t >= todayStartUnix;
@@ -92,7 +134,7 @@ const StockChart = ({
       });
     });
     return [...triggered];
-  }, [isBombView, bombLevels, ohlcvData, bombData?.baselinePrice]);
+  }, [isBombView, bombLevels, ohlcvData, bombData?.baselinePrice, controlled, controlledCrypto]);
 
   // Nearest bomb level to current price (for distance indicator)
   // Filters out already-triggered levels so the annotation advances to the next uncrossed target
@@ -128,6 +170,35 @@ const StockChart = ({
   // Bomb view: compute today's daily aggregate OHLC from intraday candles + WS daily H/L
   const bombDailyOhlc = useMemo(() => {
     if (!isBombView || !chartData || chartData.length === 0) return null;
+
+    if (controlled) {
+      // Today's aggregate from TODAY's bars only — a prior-session bar never
+      // stands in — plus the hook's session-qualified todayDailyCandle. No
+      // WebSocket daily high/low and no realtimeExtremes prop (E-1 items 2, 5).
+      const today = sessionDateOf(Date.now(), controlledCrypto);
+      const todays = chartData.filter(c => sessionDateOf(c.time * 1000, controlledCrypto) === today);
+      let high = todays.length > 0 ? Math.max(...todays.map(c => c.high)) : null;
+      let low = todays.length > 0 ? Math.min(...todays.map(c => c.low)) : null;
+      const tdHigh = positive(todayDailyCandle?.high);
+      const tdLow = positive(todayDailyCandle?.low);
+      if (tdHigh != null) high = high == null ? tdHigh : Math.max(high, tdHigh);
+      if (tdLow != null) low = low == null ? tdLow : Math.min(low, tdLow);
+      // The open slot: the first real bar of today's session, else an
+      // observed open the hook carries; never the scaffold's, never a prior
+      // bar's — and never for crypto (V-11).
+      let open = null;
+      if (!controlledCrypto) {
+        if (todays.length > 0 && !isScaffold(todays[0])) open = todays[0].open;
+        else open = positive(todayDailyCandle?.open);
+      }
+      return {
+        open,
+        high,
+        low,
+        close: todays.length > 0 ? todays[todays.length - 1].close : null,
+        volume: todays.reduce((sum, c) => sum + (c.volume || 0), 0),
+      };
+    }
 
     // Determine "today" in ET (handles DST, works regardless of user timezone)
     const etDateFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' });
@@ -174,7 +245,7 @@ const StockChart = ({
       close: aggClose,
       volume: candles.reduce((sum, c) => sum + (c.volume || 0), 0),
     };
-  }, [isBombView, chartData, symbol, todayDailyCandle, realtimeExtremes]);
+  }, [isBombView, chartData, symbol, todayDailyCandle, realtimeExtremes, controlled, controlledCrypto, scaffoldTime]);
 
   // OHLC header display logic:
   // - When hovering a specific candle: show that candle's exact OHLC (no daily merge)
@@ -185,6 +256,33 @@ const StockChart = ({
     // When hovering a specific candle, show that candle's exact OHLC
     if (isHoveringCandleRef.current) {
       return ohlcData;
+    }
+
+    if (controlled) {
+      if (isBombView) return bombDailyOhlc;
+      // 1D / 1W at rest: the last bar only when it is the CURRENT session's
+      // (1D) or week's (1W) — supplied today values are never merged into a
+      // prior-session candle. Today's open slot holds only an observed open:
+      // 1W never takes today's open as the week's; crypto never has one.
+      const lc = chartData[chartData.length - 1];
+      const today = sessionDateOf(Date.now(), controlledCrypto);
+      const lcDate = lc ? calendarDateOf(lc.time) : '';
+      const current = !!lc && (timeframe === '1W' ? lcDate >= weekStartOf(today) : lcDate === today);
+      const tdHigh = positive(todayDailyCandle?.high);
+      const tdLow = positive(todayDailyCandle?.low);
+      const tdOpen = timeframe === '1W' ? null : positive(todayDailyCandle?.open);
+      if (!current) {
+        return { open: controlledCrypto ? null : tdOpen, high: tdHigh, low: tdLow, close: null, volume: 0 };
+      }
+      let open = null;
+      if (!controlledCrypto) open = tdOpen ?? (isScaffold(lc) ? null : lc.open);
+      return {
+        open,
+        high: tdHigh != null ? Math.max(lc.high, tdHigh) : lc.high,
+        low: tdLow != null ? Math.min(lc.low, tdLow) : lc.low,
+        close: lc.close,
+        volume: lc.volume || 0,
+      };
     }
 
     // Resting state: merge with daily aggregate for best-known H/L
@@ -215,7 +313,7 @@ const StockChart = ({
     }
 
     return ohlcData;
-  }, [ohlcData, isBombView, bombDailyOhlc, todayDailyCandle]);
+  }, [ohlcData, isBombView, bombDailyOhlc, todayDailyCandle, controlled, controlledCrypto, chartData, timeframe, scaffoldTime]);
 
   // Main chart setup
   useEffect(() => {
@@ -543,7 +641,8 @@ const StockChart = ({
             : null;
           isHoveringCandleRef.current = true;
           setOhlcData({
-            open: candle.open,
+            // B-10 / E-1 item 4: the scaffold's open is rendering only.
+            open: controlled && isScaffold({ time: param.time, open: candle.open, close: candle.close }) ? null : candle.open,
             high: candle.high,
             low: candle.low,
             close: candle.close,
@@ -592,7 +691,7 @@ const StockChart = ({
       chartRef.current = null;
       candleSeriesRef.current = null;
     };
-  }, [chartData, height, timeframe, isBombView, isSpectateView, bombLevels, triggeredLevels, spectateLevel, bombDailyOhlc, symbol]);
+  }, [chartData, height, timeframe, isBombView, isSpectateView, bombLevels, triggeredLevels, spectateLevel, bombDailyOhlc, symbol, controlled, scaffoldTime]);
 
   // Bomb view: subtle style enhancement when price is within 0.5% of a threshold
   // No animation — just thicker line + brighter color to signal proximity
@@ -843,7 +942,7 @@ const StockChart = ({
         />
 
         {/* OHLC overlay — hidden in spectate view (back button uses same position) */}
-        {!isSpectateView && <OHLCDisplay data={displayOhlc} />}
+        {!isSpectateView && <OHLCDisplay data={displayOhlc} showUnavailable={controlled} />}
 
         {/* Spectate mode: Back button */}
         {isSpectateView && (

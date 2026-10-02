@@ -60,8 +60,21 @@
 // TOKENS ONLY. Every colour is cssVar() or rgba(var(--ft-*-rgb), a). This file
 // is on tokens.guard.test.js's GUARDED_FILES and motion.guard.test.js's list
 // from birth, with both baselines in this commit (hazard 34).
+//
+// THE SELECTED COMPARISON (Shadow vs CPU quote integrity — contract
+// SHADOW_CPU_PLACEHOLDER_PRICE_SPEC_V1_6.md §5.3 A-2, V-1–V-4, C-1, B-1, P8;
+// build record docs/audits/20261002_SHADOW_CPU_QUOTE_INTEGRITY_BUILD_REVIEW.md).
+// `comparison === undefined` is this header exactly as above. Passed (only by
+// the gated screen), EVERY score cue comes from that one object: the digits
+// (two decimals for stored pairs), the source label and prose, the bar width
+// and its seam, the tint (three-way: a tie emphasizes neither side), the wash
+// and the face's duel input. Unavailable shows no digits, no bar and no lead
+// tint — the face stays, with neutral standing. A change of kind or context
+// identity is a SWITCH: the counters remount with `instant` on mount and the
+// bar's teal half remounts with `initial={false}`, so the committed width is
+// the selected width in that same commit; same-kind changes keep the tween.
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Activity } from 'lucide-react';
 import AnimatedScore from '../../components/shared/AnimatedScore';
@@ -89,6 +102,19 @@ function arenaWash(seamPct) {
     + ` rgba(${cpu}, 0.20) 100%)`;
 }
 
+/**
+ * The gated counter: a fresh AnimatedScore per comparison switch (the caller
+ * keys it on the switch), `instant` on its mount render only — so a switch
+ * never counts up from zero or ramps across sources, while consecutive pairs
+ * of the same kind keep the shipped ramp and flash. Shared with the screen's
+ * legacy ScoreHeader, so both headers switch by one mechanism.
+ */
+export function SwitchCounter(props) {
+  const mounted = useRef(false);
+  useEffect(() => { mounted.current = true; }, []);
+  return <AnimatedScore {...props} instant={!mounted.current} />;
+}
+
 export default function ArenaHeader({
   agentBattle,
   isDesktop = false,
@@ -102,15 +128,29 @@ export default function ArenaHeader({
   onOpenBook = null,
   bookOpen = false,
   bookName = null,
+  // Shadow vs CPU quote integrity: the ONE selected comparison, or undefined
+  // for the legacy header (see the note above).
+  comparison = undefined,
 }) {
-  const myScore = playerScore ?? (agentBattle?.scoreState?.currentScore || 0);
-  const oppScore = opponentScore ?? (agentBattle?.scoreState?.opponentScore || 0);
+  const gated = comparison !== undefined;
+  const available = !gated || comparison.available === true;
+  const myScore = gated ? (available ? comparison.pair[0] : null) : (playerScore ?? (agentBattle?.scoreState?.currentScore || 0));
+  const oppScore = gated ? (available ? comparison.pair[1] : null) : (opponentScore ?? (agentBattle?.scoreState?.opponentScore || 0));
   const agentName = agentBattle?.agentContext?.agentName || 'Your Agent';
   const tradeCount = agentBattle?.scoreState?.tradeCount || 0;
 
   // THE one number. The tint's hinge and both halves of the bar read it.
-  const myWidth = computeTugOfWarWidth(myScore, oppScore);
+  // Gated: the selected comparison's two-branch width (B-1) — never a second
+  // derivation here.
+  const myWidth = gated ? (available ? comparison.barWidth : null) : computeTugOfWarWidth(myScore, oppScore);
   const isLeading = myScore >= oppScore;
+  // Which half is emphasized. Legacy: the player on `>=` (a tie reads as a
+  // player lead, as shipped). Gated: the three-way lead — a tie neither (P8).
+  const tealStrong = gated ? comparison.lead === 'player' : isLeading;
+  const copperStrong = gated ? comparison.lead === 'cpu' : !isLeading;
+  const duel = gated
+    ? (available ? { playerScore: myScore, opponentScore: oppScore, statusFeed: null } : { statusFeed: null })
+    : { playerScore: myScore, opponentScore: oppScore, statusFeed: null };
 
   const transition = motionToken('smooth', { reducedMotion });
   const bookable = typeof onOpenBook === 'function';
@@ -143,7 +183,7 @@ export default function ArenaHeader({
     >
       {/* The wash. Hazard 39: no background of its own and no second starfield —
           the existing canvas shows through both of these layers. */}
-      <div aria-hidden="true" style={{ position: 'absolute', inset: 0, background: arenaWash(myWidth) }} />
+      {available && <div aria-hidden="true" style={{ position: 'absolute', inset: 0, background: arenaWash(myWidth) }} />}
       <div
         aria-hidden="true"
         style={{
@@ -194,7 +234,7 @@ export default function ArenaHeader({
                 <AgentPresenceMount
                   surface="duel"
                   agent={agentBattle}
-                  duel={{ playerScore: myScore, opponentScore: oppScore, statusFeed: null }}
+                  duel={duel}
                   size={faceSize}
                   enableEnvironment={false}
                   // D-91: still, and deaf to the raw feed. The mount wires the two
@@ -225,7 +265,10 @@ export default function ArenaHeader({
               >
                 {agentName}
               </span>
-              <AnimatedScore value={myScore} defaultColor={cssVar('teal')} size={scoreSize} />
+              {!gated && <AnimatedScore value={myScore} defaultColor={cssVar('teal')} size={scoreSize} />}
+              {gated && available && (
+                <SwitchCounter key={comparison.switchKey} value={myScore} defaultColor={cssVar('teal')} size={scoreSize} fractionDigits={comparison.fractionDigits} />
+              )}
             </div>
           </div>
 
@@ -286,53 +329,84 @@ export default function ArenaHeader({
             >
               CPU
             </span>
-            <AnimatedScore value={oppScore} defaultColor={cssVar('copper')} size={scoreSize} />
+            {!gated && <AnimatedScore value={oppScore} defaultColor={cssVar('copper')} size={scoreSize} />}
+            {gated && available && (
+              <SwitchCounter key={comparison.switchKey} value={oppScore} defaultColor={cssVar('copper')} size={scoreSize} fractionDigits={comparison.fractionDigits} />
+            )}
           </div>
         </div>
 
-        {/* The seam. Both halves read myWidth; the divider sits on it. */}
-        <div
-          data-arena-bar="1"
-          // The seam as a NUMBER, so a test (and the jsdom suites) can read the
-          // one derivation directly rather than inferring it from a gradient
-          // string or from a framer `animate` value, which SSR does not paint.
-          data-seam-pct={Math.round(myWidth)}
-          aria-hidden="true"
-          style={{
-            position: 'relative',
-            width: '100%',
-            height: isDesktop ? 8 : 7,
-            borderRadius: 4,
-            background: `rgba(var(--ft-shadow-rgb), 0.55)`,
-            boxShadow: `inset 0 0 0 1px rgba(var(--ft-scrim-rgb), 0.10)`,
-            display: 'flex',
-            overflow: 'hidden',
-          }}
-        >
-          <motion.div
-            // The number the BAR was given, stated (review lens 4 F7). SSR does
-            // not paint a framer `animate` value, so without this the bar's own
-            // width was readable by no test and a second derivation used only
-            // here survived the §9 row that claims there is one seam.
-            data-bar-pct={Math.round(myWidth)}
-            animate={{ width: `${myWidth}%` }}
-            transition={transition}
-            style={{
-              height: '100%',
-              borderRadius: '4px 0 0 4px',
-              background: `linear-gradient(90deg, rgba(var(--ft-teal-rgb), ${isLeading ? 0.35 : 0.2}), rgba(var(--ft-teal-rgb), ${isLeading ? 1 : 0.55}))`,
-            }}
-          />
-          <div style={{ width: 2, height: '100%', flexShrink: 0, background: `rgba(var(--ft-scrim-rgb), 0.55)` }} />
-          <div
-            style={{
-              flex: 1,
-              height: '100%',
-              borderRadius: '0 4px 4px 0',
-              background: `linear-gradient(90deg, rgba(var(--ft-copper-rgb), ${!isLeading ? 1 : 0.55}), rgba(var(--ft-copper-rgb), ${!isLeading ? 0.35 : 0.2}))`,
-            }}
-          />
-        </div>
+        {/* The selected comparison's source label and prose (gated only), from
+            the same object as the digits — or, unavailable, its honest text —
+            then the seam. ONE child slot, as at the base SHA: flag off this
+            slot holds only the seam, so no sibling index (and no SSR useId
+            beneath this container) shifts. */}
+        {(() => {
+          // The seam. Both halves read myWidth; the divider sits on it.
+          const seam = available && (
+            <div
+              data-arena-bar="1"
+              // The seam as a NUMBER, so a test (and the jsdom suites) can read the
+              // one derivation directly rather than inferring it from a gradient
+              // string or from a framer `animate` value, which SSR does not paint.
+              data-seam-pct={Math.round(myWidth)}
+              aria-hidden="true"
+              style={{
+                position: 'relative',
+                width: '100%',
+                height: isDesktop ? 8 : 7,
+                borderRadius: 4,
+                background: `rgba(var(--ft-shadow-rgb), 0.55)`,
+                boxShadow: `inset 0 0 0 1px rgba(var(--ft-scrim-rgb), 0.10)`,
+                display: 'flex',
+                overflow: 'hidden',
+              }}
+            >
+              <motion.div
+                // The number the BAR was given, stated (review lens 4 F7). SSR does
+                // not paint a framer `animate` value, so without this the bar's own
+                // width was readable by no test and a second derivation used only
+                // here survived the §9 row that claims there is one seam.
+                data-bar-pct={Math.round(myWidth)}
+                // Gated: a switch remounts the teal half with `initial={false}`, so
+                // framer renders the target width as the mount style — the committed
+                // width IS the selected width (V-2). Legacy: neither prop.
+                key={gated ? comparison.switchKey : undefined}
+                {...(gated ? { initial: false } : {})}
+                animate={{ width: `${myWidth}%` }}
+                transition={transition}
+                style={{
+                  height: '100%',
+                  borderRadius: '4px 0 0 4px',
+                  background: `linear-gradient(90deg, rgba(var(--ft-teal-rgb), ${tealStrong ? 0.35 : 0.2}), rgba(var(--ft-teal-rgb), ${tealStrong ? 1 : 0.55}))`,
+                }}
+              />
+              <div style={{ width: 2, height: '100%', flexShrink: 0, background: `rgba(var(--ft-scrim-rgb), 0.55)` }} />
+              <div
+                style={{
+                  flex: 1,
+                  height: '100%',
+                  borderRadius: '0 4px 4px 0',
+                  background: `linear-gradient(90deg, rgba(var(--ft-copper-rgb), ${copperStrong ? 1 : 0.55}), rgba(var(--ft-copper-rgb), ${copperStrong ? 0.35 : 0.2}))`,
+                }}
+              />
+            </div>
+          );
+          if (!gated) return seam;
+          return (
+            <>
+              <div
+                data-comparison-label="1"
+                data-comparison-kind={comparison.kind}
+                style={{ display: 'flex', justifyContent: 'center', gap: 8, flexWrap: 'wrap', fontSize: 10.5, color: cssVar('text-muted') }}
+              >
+                <span>{comparison.label}</span>
+                {comparison.prose && <span data-comparison-prose="1">{comparison.prose}</span>}
+              </div>
+              {seam}
+            </>
+          );
+        })()}
 
         {/* The turn line, rehosted unchanged — same props, same landing tick.
             The book hint rides beside it on desktop only. */}

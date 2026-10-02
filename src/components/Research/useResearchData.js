@@ -14,14 +14,148 @@ import { getMarketState } from '../../utils/marketSchedule';
  * This function skips today's candle (if present) to always return the
  * previous trading day's close — the correct daily baseline.
  */
-function getPreviousClose(dailyData) {
+function getPreviousClose(dailyData, todayKey = null) {
   if (!dailyData || dailyData.length === 0) return null;
-  const todayET = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  const todayET = todayKey || new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
   const prevCandle = dailyData.find(d => {
     const candleDate = (d.date || d.datetime || '').substring(0, 10);
     return candleDate && candleDate !== todayET;
   });
   return prevCandle ? Number(prevCandle.close) : Number(dailyData[0].close);
+}
+
+// ── Controlled held-quote mode (Shadow vs CPU quote integrity) ──────────────
+// Contract SHADOW_CPU_PLACEHOLDER_PRICE_SPEC_V1_6.md §7.2 items 3–4, A-3,
+// V-6, V-11, B-7, B-8, B-9, B-10; build record
+// docs/audits/20261002_SHADOW_CPU_QUOTE_INTEGRITY_BUILD_REVIEW.md.
+// Opt-in through `options.controlled` (only the battle screen's controlled
+// research view passes it); absent, every line below is unreachable and the
+// hook is exactly the shipped one.
+
+const ET_DATE = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' });
+const isPos = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0;
+/** V-11 session date: ET for stocks, UTC for crypto. */
+const sessionDateOf = (ms, crypto) => (crypto ? new Date(ms).toISOString().slice(0, 10) : ET_DATE.format(new Date(ms)));
+/** A candle's session: a daily/weekly date string IS its session date; an
+ *  intraday bar's is its instant's ET (stock) or UTC (crypto) date. */
+function candleSessionDate(c, crypto) {
+  const raw = c.date || c.datetime || '';
+  if (typeof raw === 'string' && raw.length >= 10 && !raw.includes('T') && !raw.includes(':')) return raw.substring(0, 10);
+  const ms = c.timestamp ? c.timestamp * 1000 : new Date(raw).getTime();
+  return Number.isFinite(ms) ? sessionDateOf(ms, crypto) : '';
+}
+/** The Monday (YYYY-MM-DD) of the week holding a session date. */
+function weekStartOf(dateKey) {
+  const d = new Date(`${dateKey}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+  return d.toISOString().slice(0, 10);
+}
+/**
+ * A synthetic live bar in controlled mode. With an OBSERVED current-session
+ * open it keeps a real body; without one it is the no-body SCAFFOLD (B-10):
+ * open = close = the qualified current — rendering scaffolding only, flagged
+ * so the chart never shows, aggregates or sends that open. High and low are
+ * the supplied session-qualified extremes when present, otherwise the current
+ * (never a synthesized open folded in, never the dormant WebSocket high/low).
+ */
+function controlledLiveBar(base, current, extremes, observedOpen) {
+  const hi = isPos(extremes?.high) ? extremes.high : current;
+  const lo = isPos(extremes?.low) ? extremes.low : current;
+  if (isPos(observedOpen)) {
+    return { ...base, open: observedOpen, high: Math.max(hi, current, observedOpen), low: Math.min(lo, current, observedOpen), close: current, volume: 0 };
+  }
+  return { ...base, open: current, high: Math.max(hi, current), low: Math.min(lo, current), close: current, volume: 0, _scaffold: true };
+}
+/**
+ * The supplied extremes if — and only if — they belong to the hook's own
+ * current session (re-checked at use; the screen qualified them at its
+ * render, and a view can stay open across a session boundary). Only finite
+ * positive fields survive; crypto never carries an observed open (V-11).
+ */
+function todaysSupplied(supplied, todayKey, crypto) {
+  if (!supplied || supplied.sessionDate !== todayKey) return null;
+  const out = {};
+  if (isPos(supplied.high)) out.high = supplied.high;
+  if (isPos(supplied.low)) out.low = supplied.low;
+  if (!crypto && isPos(supplied.open)) out.open = supplied.open;
+  return Object.keys(out).length > 0 ? out : null;
+}
+/** A real candle of the CURRENT period, extended by the current and — when
+ *  the candle is in their session — the supplied extremes. Its open is kept. */
+function patchLive(candle, current, extremes) {
+  return {
+    ...candle,
+    high: Math.max(Number(candle.high), current, extremes?.high ?? 0),
+    low: Math.min(Number(candle.low), current, extremes?.low ?? Infinity),
+    close: current,
+  };
+}
+/**
+ * Controlled-mode live candles (V-6 a–c, B-7, B-10). Same periods and the
+ * same market-hours guard as the legacy synthesis, but: no WebSocket daily
+ * high/low, no polled extremes (the supplied, session-checked ones instead),
+ * never a synthesized open — a bar without an observed current-session open
+ * is the no-body scaffold — and no prior-session bar redrawn with today's
+ * extremes.
+ */
+function controlledCandles(processed, { timeframe, current, crypto, supplied, nowMs }) {
+  const today = sessionDateOf(nowMs, crypto);
+  const sup = todaysSupplied(supplied, today, crypto);
+  let result = processed;
+  const last = result[result.length - 1];
+  const lastDateStr = last.date || last.datetime || '';
+  const lastIsToday = candleSessionDate(last, crypto) === today;
+
+  if (timeframe === 'bomb' || timeframe === 'spectate') {
+    const etNow = new Date(nowMs).toLocaleString('en-US', {
+      timeZone: 'America/New_York', hour: 'numeric', minute: 'numeric', hour12: false,
+    });
+    const [nH, nM] = etNow.split(':').map(Number);
+    const inMarketHours = crypto || (nH * 60 + nM >= 570 && nH * 60 + nM < 960);
+    if (!inMarketHours) return result;
+    const lastTime = last.timestamp ? last.timestamp * 1000 : new Date(lastDateStr).getTime();
+    if (lastTime && (nowMs - lastTime) > 30 * 60 * 1000) {
+      // B-7: the last real bar takes the supplied extremes only when it
+      // belongs to their session; yesterday's 15:30 bar keeps its own.
+      if (sup && lastIsToday) {
+        const lastReal = { ...last };
+        let patchedReal = false;
+        if (sup.high && sup.high > Number(lastReal.high)) { lastReal.high = sup.high; patchedReal = true; }
+        if (sup.low && sup.low < Number(lastReal.low)) { lastReal.low = sup.low; patchedReal = true; }
+        if (patchedReal) result = [...result.slice(0, -1), lastReal];
+      }
+      const nowHalf = new Date(nowMs);
+      nowHalf.setMinutes(nowHalf.getMinutes() >= 30 ? 30 : 0, 0, 0);
+      // A half-hour bar never has an observed open (the day's open is not
+      // the bar's): always the scaffold.
+      result = [...result, controlledLiveBar({
+        date: nowHalf.toISOString(),
+        datetime: nowHalf.toISOString(),
+        timestamp: Math.floor(nowHalf.getTime() / 1000),
+      }, current, sup, null)];
+    } else if (lastTime) {
+      result = [...result.slice(0, -1), patchLive(last, current, lastIsToday ? sup : null)];
+    }
+  } else if (timeframe === '1W') {
+    const weekStart = weekStartOf(today);
+    if (lastDateStr.substring(0, 10) < weekStart) {
+      // The current week's open is never observed here: scaffold.
+      result = [...result, controlledLiveBar({ date: weekStart }, current, sup, null)];
+    } else {
+      result = [...result.slice(0, -1), patchLive(last, current, sup)];
+    }
+  } else if (timeframe === '1D') {
+    const lastKey = lastDateStr.substring(0, 10);
+    const dow = new Date(`${today}T00:00:00Z`).getUTCDay();
+    const shouldAppend = crypto || (dow !== 0 && dow !== 6);
+    if (lastKey < today && shouldAppend) {
+      // A supplied observed open (stocks) keeps a real body; otherwise the scaffold.
+      result = [...result, controlledLiveBar({ date: today }, current, sup, sup?.open ?? null)];
+    } else if (lastKey === today) {
+      result = [...result.slice(0, -1), patchLive(last, current, sup)];
+    }
+  }
+  return result;
 }
 
 /**
@@ -34,7 +168,20 @@ function getPreviousClose(dailyData) {
  * @param {boolean} options.isCrypto - Whether the asset is crypto (trades 24/7)
  * @returns {Object} { ohlcvData, timeframe, setTimeframe, indicators, levels, smaData, loading, error }
  */
-export default function useResearchData(symbol, { currentPrice, isCrypto, initialTimeframe } = {}) {
+export default function useResearchData(symbol, { currentPrice, isCrypto, initialTimeframe, controlled = null } = {}) {
+  // Controlled held-quote mode: the parent's session-qualified extremes stand in
+  // for the polled ones EVERYWHERE they are read (V-6 a), and nothing here
+  // fetches a quote. `controlled.extremes` = { sessionDate, high?, low?, open? }
+  // from the same accepted REST observation, or null.
+  const controlledMode = !!controlled;
+  const supplied = controlledMode ? (controlled.extremes || null) : null;
+  const suppliedSession = supplied?.sessionDate ?? null;
+  const suppliedHigh = supplied?.high;
+  const suppliedLow = supplied?.low;
+  const suppliedOpen = supplied?.open;
+  // The previous close skips the CURRENT session's candle: ET for every symbol
+  // in legacy; ET for stocks and UTC for crypto in controlled mode (V-11).
+  const prevCloseKey = () => (controlledMode ? sessionDateOf(Date.now(), !!isCrypto) : null);
   const [rawData, setRawData] = useState(null);    // Raw API response (newest-first)
   const [timeframe, setTimeframe] = useState(initialTimeframe || '1D');  // UI timeframe: '1D' | '1W' | '1M' | 'bomb' | 'spectate'
   const [loading, setLoading] = useState(false);
@@ -148,7 +295,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
           // Compute daily change from daily data (rawData is newest-first)
           if (apiTimeframe === '1d' && data.length >= 1) {
             cacheRef.current[`${symbol}_1d`] = data;
-            const prevClose = getPreviousClose(data);
+            const prevClose = getPreviousClose(data, prevCloseKey());
             if (prevClose) {
               setPreviousClose(prevClose);
               const currClose = currentPrice > 0 ? currentPrice : 0;
@@ -185,7 +332,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     const dailyCacheKey = `${symbol}_1d_dailychange`;
     const cached = cacheRef.current[`${symbol}_1d`] || cacheRef.current[dailyCacheKey];
     if (cached && cached.length >= 1) {
-      const pc = getPreviousClose(cached);
+      const pc = getPreviousClose(cached, prevCloseKey());
       if (pc) {
         setPreviousClose(pc);
         const curr = currentPrice > 0 ? currentPrice : 0;
@@ -198,7 +345,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
       .then(data => {
         if (data && data.length >= 1) {
           cacheRef.current[dailyCacheKey] = data;
-          const pc = getPreviousClose(data);
+          const pc = getPreviousClose(data, prevCloseKey());
           if (pc) {
             setPreviousClose(pc);
             const curr = currentPrice > 0 ? currentPrice : 0;
@@ -285,7 +432,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     if (!currentPrice || currentPrice <= 0) return;
     const dailyData = cacheRef.current[`${symbol}_1d`] || cacheRef.current[`${symbol}_1d_dailychange`];
     if (!dailyData || dailyData.length < 1) return;
-    const prevClose = getPreviousClose(dailyData);
+    const prevClose = getPreviousClose(dailyData, prevCloseKey());
     if (prevClose > 0) {
       setPreviousClose(prevClose);
       setDailyChange(((currentPrice - prevClose) / prevClose) * 100);
@@ -398,6 +545,9 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
   // This reduces chart re-renders from ~60/min to ~20/min while keeping the live candle responsive.
   const throttledPrice = useMemo(() => {
     if (!currentPrice || currentPrice <= 0) return 0;
+    // Controlled: the parent's qualified current is already a discrete
+    // observation, and the live bar must carry exactly that value.
+    if (controlledMode) return currentPrice;
     const now = Date.now();
     const prev = liveCandleThrottleRef.current;
     const priceDelta = prev.price > 0 ? Math.abs(currentPrice - prev.price) / prev.price : 1;
@@ -407,7 +557,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
       return currentPrice;
     }
     return prev.price;
-  }, [currentPrice]);
+  }, [currentPrice, controlledMode]);
 
   // Append synthetic "live" candle if the last candle is stale and we have a live price.
   // This bridges the gap between EODHD historical data (which only includes completed
@@ -415,6 +565,15 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
   const ohlcvData = useMemo(() => {
     if (!processedCandles || processedCandles.length === 0) return processedCandles;
     if (!throttledPrice || throttledPrice <= 0) return processedCandles;
+    if (controlledMode) {
+      return controlledCandles(processedCandles, {
+        timeframe,
+        current: throttledPrice,
+        crypto: !!isCrypto,
+        supplied: { sessionDate: suppliedSession, high: suppliedHigh, low: suppliedLow, open: suppliedOpen },
+        nowMs: Date.now(),
+      });
+    }
 
     let result = processedCandles;
     const wsHL = getDailyHL(symbol);
@@ -531,7 +690,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     }
 
     return result;
-  }, [processedCandles, throttledPrice, timeframe, isCrypto, realtimeExtremes]);
+  }, [processedCandles, throttledPrice, timeframe, isCrypto, realtimeExtremes, controlledMode, suppliedSession, suppliedHigh, suppliedLow, suppliedOpen]);
 
   // Compute closing prices (newest-first, as expected by indicator functions)
   const closingPrices = useMemo(() => {
@@ -602,6 +761,9 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
   // it returns stale/null data. The real-time API has live intraday extremes.
   useEffect(() => {
     if (!symbol) return;
+    // Controlled held mode: no quote request and no interval, ever (§7.2 item
+    // 4); the parent supplies the extremes.
+    if (controlledMode) return;
     let currentSymbol = symbol;
 
     const fetchRealtimeExtremes = async () => {
@@ -622,12 +784,30 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     fetchRealtimeExtremes();
     const interval = setInterval(fetchRealtimeExtremes, 60000);
     return () => { currentSymbol = null; clearInterval(interval); };
-  }, [symbol]);
+  }, [symbol, controlledMode]);
 
   // Today's authoritative high/low for chart header.
   // Priority 1: Real-time API (live during market hours)
   // Priority 2: Daily OHLCV cache (works after market close)
   const todayDailyCandle = useMemo(() => {
+    if (controlledMode) {
+      // A-3 / V-6 (b) / B-8: Priority 1 is the supplied, session-checked
+      // extremes; Priority 2 the daily candle of the CURRENT session date (ET
+      // for stocks, UTC for crypto), which is observed research data. Only
+      // present fields: no `close`, no zero, never a missing open filled in —
+      // and no open at all for crypto (V-11).
+      const today = sessionDateOf(Date.now(), !!isCrypto);
+      const sup = todaysSupplied({ sessionDate: suppliedSession, high: suppliedHigh, low: suppliedLow, open: suppliedOpen }, today, !!isCrypto);
+      if (sup) return { ...sup, _source: 'controlled' };
+      const daily = cacheRef.current[`${symbol}_1d`] || cacheRef.current[`${symbol}_1d_dailychange`];
+      const found = daily?.find(d => (d.date || d.datetime || '').substring(0, 10) === today);
+      if (!found) return null;
+      const out = {};
+      if (isPos(Number(found.high))) out.high = Number(found.high);
+      if (isPos(Number(found.low))) out.low = Number(found.low);
+      if (!isCrypto && isPos(Number(found.open))) out.open = Number(found.open);
+      return Object.keys(out).length > 0 ? { ...out, _source: 'daily' } : null;
+    }
     if (realtimeExtremes && (realtimeExtremes.high > 0 || realtimeExtremes.low > 0)) {
       return { high: realtimeExtremes.high, low: realtimeExtremes.low, open: realtimeExtremes.open || 0, close: 0, _source: 'realtime' };
     }
@@ -639,7 +819,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
       return candleDate === todayET;
     });
     return todayCandle || null;
-  }, [symbol, rawData, previousClose, realtimeExtremes]);
+  }, [symbol, rawData, previousClose, realtimeExtremes, controlledMode, isCrypto, suppliedSession, suppliedHigh, suppliedLow, suppliedOpen]);
 
   return {
     ohlcvData,       // Oldest-first, processed for current timeframe
@@ -655,6 +835,10 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     dailyChange,     // Daily % change computed from OHLCV (null until data loads)
     previousClose,   // Yesterday's closing price from daily OHLCV (null until data loads)
     todayDailyCandle, // Today's daily candle with authoritative high/low (null until data loads)
-    realtimeExtremes, // Live intraday high/low from real-time API (null until fetched)
+    // Live intraday high/low from real-time API (null until fetched); in
+    // controlled mode, the supplied extremes when they are the current session's.
+    realtimeExtremes: controlledMode
+      ? todaysSupplied(supplied, sessionDateOf(Date.now(), !!isCrypto), !!isCrypto)
+      : realtimeExtremes,
   };
 }

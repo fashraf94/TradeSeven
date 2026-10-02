@@ -14,7 +14,7 @@ import useAgentBattleId from '../hooks/useAgentBattleId';
 import useAgentBattle from '../hooks/useAgentBattle';
 import AnimatedScore from '../components/shared/AnimatedScore';
 import { AgentPresenceMount } from '../components/AgentPresence';
-import { isAgentPresenceOn, isMatchupsBackdropOn, isBattleViewControllerOn, isCharacterPaneOn, isShowItOn } from '../config/featureFlags';
+import { isAgentPresenceOn, isMatchupsBackdropOn, isBattleViewControllerOn, isCharacterPaneOn, isShowItOn, isShadowCpuQuoteIntegrityOn } from '../config/featureFlags';
 import { getAuth } from 'firebase/auth';
 // Phase C §1 — the door's count, from the ONE cap display function (D-122).
 import { countResearchUsed } from '../data/researchCap';
@@ -47,7 +47,26 @@ import { PeekStrip } from './battleView/PeekStrip';
 import { derivePeekLine } from './battleView/derivePeekLine';
 import { useChatSheet, useViewportHeight, viewportInsetFrom, isSheetOpen, SHEET_PEEK_PX, SHEET_DETENT } from './battleView/useChatSheet';
 import { computeTugOfWarWidth } from './battleView/computeTugOfWarWidth';
-import ArenaHeader from './battleView/ArenaHeader';
+import ArenaHeader, { SwitchCounter } from './battleView/ArenaHeader';
+// Shadow vs CPU quote integrity (SHADOW_CPU_QUOTE_INTEGRITY_ENABLED — dark).
+// The pure gate; read only when isShadowCpuQuoteIntegrityOn() is true. Contract
+// SHADOW_CPU_PLACEHOLDER_PRICE_SPEC_V1_6.md; build record
+// docs/audits/20261002_SHADOW_CPU_QUOTE_INTEGRITY_BUILD_REVIEW.md.
+import {
+  QUOTE_INTEGRITY_COPY,
+  EMPTY_POSITION_QUOTE,
+  interpretQuote,
+  adoptQuote,
+  lastQuoteLabel,
+  sessionExtremes,
+  gatedRequestedId,
+  resolveGate,
+  buildBattleContext,
+  reconcileLineage,
+  selectComparison,
+  duelFor,
+  resolveResearchTarget,
+} from './battleView/shadowCpuQuoteIntegrity';
 import CharacterAvatar from './battleView/CharacterAvatar';
 import CharacterPane, { ARCHETYPE_MIN_VIEWPORT_PX } from './battleView/CharacterPane';
 import PaneBench from './battleView/PaneBench';
@@ -143,6 +162,328 @@ function computeDayLabel(timing) {
   if (total <= 1) return '';
   const current = currentTradingDay || 1;
   return `Day ${current} of ${total}`;
+}
+
+// ─── Held-position scoring (shared by the legacy and gated paths) ───────────
+
+/** Entry precedence within one snapshot, unchanged: swapPrice, then the shared
+ *  starting-price map, then the position's recorded price (§3.2). */
+const entryPriceOf = (asset, startingPrices) => asset.swapPrice || startingPrices[asset.symbol] || asset.price || 0;
+
+/**
+ * One held (non-cash) position, scored by the canonical scorer from a current
+ * price and a previous close. The legacy enrichment passes the merged price map
+ * and the symbol-keyed closes exactly as before; the gated path passes only the
+ * position's qualified current and its retained GENUINE close. Same arithmetic,
+ * one copy (the scoring-copy lesson, BUILD_RULES §4).
+ */
+function enrichHeldPosition(asset, tier, { curPrice, previousClose, startingPrices, thresholds, thresholdHistory, activatedAt, createdAt }) {
+  const openPrice = entryPriceOf(asset, startingPrices);
+  const threshold = thresholds[asset.symbol] || {};
+  const baseATR = threshold.threshold || DEFAULT_THRESHOLD;
+
+  let priceChange = openPrice > 0
+    ? ((curPrice - openPrice) / openPrice) * 100
+    : 0;
+
+  if (asset.direction === 'short') {
+    priceChange = -priceChange;
+  }
+
+  // Day-1 activation gate — mirrors the server boundary at
+  // api/cron/agent-evaluate.js:303 (and agent-daily-scores.js:60-64): compare
+  // today's ET calendar date to the battle's activation date. On the activation
+  // day the threshold/badge baseline is the ENTRY price (startingPrices), so a
+  // stock that gapped from its prior close and then sat flat from entry can't
+  // fabricate Bust/Crash/Meltdown while the display reads +0.00%. previousClose
+  // only takes over on day 2+.
+  //
+  // A wall-clock ET-date comparison is used on purpose, NOT timing.currentTradingDay:
+  // currentTradingDay is a denormalized value the daily-scores cron writes only
+  // when it runs (agent-daily-scores.js:51,188 — calendar-derived but
+  // idempotency-gated with no missed-day catch-up), so a skipped nightly run
+  // would leave it stale at 1 while the server's date-based gate had already
+  // rolled to day 2 — a full-day client/server divergence. The date comparison
+  // advances with the clock, exactly like the server's authoritative gate.
+  // Falls back to "activation day" when no timestamp exists (conservative: entry
+  // baseline, never a phantom badge).
+  //
+  // activatedAt/createdAt are ISO strings on the agentBattles doc
+  // (agentBattleService.js:44,75-76), so new Date(it) is correct today. The
+  // .toDate?.() normalization is defensive: were either ever stored as a
+  // Firestore Timestamp, new Date(timestamp) would be Invalid Date and the gate
+  // would silently fall to false → phantom badges return. .toDate?.() is a no-op
+  // for strings/numbers (?. short-circuits) and unwraps a Timestamp if present.
+  const toEtDate = (raw) => {
+    const d = raw?.toDate?.() ?? new Date(raw);
+    return d.toLocaleDateString('en-US', { timeZone: 'America/New_York' });
+  };
+  const activationTs = activatedAt || createdAt;
+  const isActivationDay = activationTs ? toEtDate(Date.now()) === toEtDate(activationTs) : true;
+
+  // Threshold baseline must match the asset's entry into the portfolio.
+  // For swapped-in assets, swapPrice prevents retroactive BaggerBomb credit
+  // for pre-swap moves since previousClose (first in both branches, regardless
+  // of day). On the activation day entry beats previousClose; on day 2+ the
+  // original previousClose-first order is preserved.
+  const thresholdBaseline = asset.swapPrice
+    || (isActivationDay
+      ? (startingPrices[asset.symbol] || previousClose || openPrice)
+      : (previousClose || startingPrices[asset.symbol] || openPrice));
+  let thresholdPriceChange = thresholdBaseline > 0
+    ? ((curPrice - thresholdBaseline) / thresholdBaseline) * 100
+    : priceChange;
+
+  if (asset.direction === 'short') {
+    thresholdPriceChange = -thresholdPriceChange;
+  }
+
+  const multiplier = baseATR > 0 ? thresholdPriceChange / baseATR : 0;
+
+  // Merge server-persisted peaks (maintained by the agent-evaluate cron) with
+  // the live multiplier so threshold bonus points stay visible when the price
+  // reverses between cron ticks. Core invariant: maxMultiplier monotonically
+  // increases, minMultiplier monotonically decreases.
+  const persistedHistory = thresholdHistory?.[asset.symbol] || {};
+  const history = {
+    maxMultiplier: Math.max(persistedHistory.maxMultiplier || 0, multiplier > 0 ? multiplier : 0),
+    minMultiplier: Math.min(persistedHistory.minMultiplier || 0, multiplier < 0 ? multiplier : 0),
+  };
+
+  // P8 hygiene item 1 — apply the direction sign EXACTLY ONCE. priceChange,
+  // thresholdPriceChange, multiplier and history above are already in
+  // position-P&L terms (the two `direction === 'short'` adjustments). The
+  // canonical scorer ALSO negates priceChange/thresholdPriceChange internally
+  // for a short, so it is called WITHOUT `direction`: forwarding it would
+  // double-negate and silently flip a short's score to a long's. Dormant for
+  // long-only agents (the only portfolios this screen renders today), but the
+  // contract is load-bearing the moment any short reaches here. Note we keep
+  // the caller-owns-direction convention (not flat6's scorer-owns) because the
+  // scorer negates the scalar args but NOT the caller-supplied `history`,
+  // which is already adjusted above. Locked by agentBattleScoring.test.js —
+  // do NOT add `direction` back to this call.
+  // LOAD-BEARING full-asset spread: on tournament docs the D2 flat6
+  // `tierMultiplier: 1.0` stamp rides `...asset` into the scorer's override —
+  // narrowing this to a field subset re-scores flat6 display at slot labels
+  // (the C-2 server defect class, fixed 2026-08).
+  const score = calculateAssetScoreV3(
+    { ...asset, baseATR, tier, direction: undefined },
+    priceChange,
+    history,
+    {},
+    thresholdPriceChange
+  );
+
+  return {
+    ...asset,
+    priceChange,
+    thresholdPriceChange,
+    baseATR,
+    points: score.totalPoints,
+    badges: score.badges,
+    history,
+    currentPrice: curPrice,
+    // Phase A: the entry the row's % is computed from, carried so the Why?
+    // facts read the ROW's number (never the adapter's book — rulings §3.3).
+    openPrice,
+    // A2.1 (ruling 1): the baseline the THRESHOLD percent is measured from —
+    // the one field the Why? tier lines need. `Bagger $ · Bust $` is
+    // `thresholdBaseline × (1 ± baseATR/100)`, the exact inverse of the
+    // percent the row renders beside it (deriveTierPrices). Computed here
+    // already; before A2.1 it was simply not returned.
+    thresholdBaseline,
+  };
+}
+
+/** A cash position, exactly as the legacy enrichment returns it. */
+const enrichCash = (asset) => ({
+  ...asset,
+  priceChange: 0,
+  baseATR: 0,
+  points: 0,
+  badges: [],
+  history: { maxMultiplier: 0, minMultiplier: 0 },
+});
+
+// ─── Quote integrity: screen-local lifecycle helpers (gated path only) ───────
+
+const EMPTY_ENRICHED = Object.freeze({ star: [], core: [], support: [] });
+const EMPTY_QUOTE_BOOK = Object.freeze({ lineage: null, quotes: Object.freeze({}) });
+
+/** One position's identity: battle key, battle generation, slot and lineage
+ *  generation. Quote evidence and detail selections are keyed by it. */
+function positionToken(lineage, posKey) {
+  const p = lineage?.positions?.[posKey];
+  return p && lineage.battleKey ? `${lineage.battleKey}#${lineage.battleGeneration}#${posKey}#${p.gen}` : null;
+}
+
+/**
+ * One poll's answer (or failure) applied to the retained evidence. A position
+ * whose identity changed since the request was issued is skipped (§4.3 rule 1:
+ * a retired context cannot update a new position); everything else goes
+ * through adoptQuote (rules 2–5).
+ */
+function applyQuoteArrival(prev, positions, interpFor) {
+  const lin = prev.lineage;
+  if (!lin || !lin.battleKey) return prev;
+  let quotes = prev.quotes;
+  for (const p of positions) {
+    const token = positionToken(lin, p.posKey);
+    if (!token || token !== p.token) continue;
+    const held = quotes[p.posKey]?.token === token ? quotes[p.posKey].state : EMPTY_POSITION_QUOTE;
+    const next = adoptQuote(held, interpFor(p.symbol));
+    if (quotes[p.posKey]?.token !== token || next !== held) {
+      if (quotes === prev.quotes) quotes = { ...prev.quotes };
+      quotes[p.posKey] = { token, state: next };
+    }
+  }
+  return quotes === prev.quotes ? prev : { ...prev, quotes };
+}
+
+/** useAgentBattle's derived fields, from the IDENTIFIED snapshot (gated path). */
+function identifiedFields(identified) {
+  return {
+    battle: identified,
+    statusFeed: identified?.statusFeed || [],
+    executionMode: identified?.executionMode || 'copilot',
+    pendingProposal: identified?.pendingProposal || null,
+    strategyPreset: identified?.strategyPreset || 'balanced',
+    gameplanMeeting: identified?.gameplanMeeting || null,
+    chatExchanges: identified?.chatExchanges || [],
+    chatBudgetUsed: identified?.chatBudgetUsed || 0,
+    feedBookmarks: identified?.feedBookmarks || [],
+    loading: false,
+    error: null,
+  };
+}
+
+/**
+ * The screen's loading indicator, shared verbatim by the legacy loading return
+ * and the gated pending shell, so the gated path adds no motion or colour of
+ * its own (BUILD_RULES §10/§11). Flag off it renders exactly the shipped markup.
+ */
+function BattleLoadingIndicator({ tokens }) {
+  return (
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      gap: 12,
+    }}>
+      <motion.div
+        animate={{ rotate: 360 }}
+        transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
+      >
+        <Bot size={24} color="#5eead4" />
+      </motion.div>
+      <span style={{ fontSize: 13, color: tokens.textMuted }}>Loading agent battle...</span>
+    </div>
+  );
+}
+
+/**
+ * The gated screen's pending / "No active battle" / "Battle unavailable"
+ * shell (R-5): no rows, scores, details or quote requests — the existing back
+ * control and one line.
+ */
+function GatedShell({ mode, error = null, tokens, onBack }) {
+  const text = mode === 'no-battle'
+    ? QUOTE_INTEGRITY_COPY.noActiveBattle
+    : mode === 'unavailable'
+      ? QUOTE_INTEGRITY_COPY.battleUnavailable
+      : null;
+  // "Battle unavailable" carries the CURRENT lookup's or subscription's error
+  // identity (C-2) — exposed as data only, never as user-facing copy.
+  const errorCode = mode === 'unavailable' && error ? String(error.code ?? 'unknown') : undefined;
+  return (
+    <div data-battle-shell={mode} data-battle-error={errorCode} style={{
+      minHeight: '100vh',
+      background: tokens.bgApp || cssVar('bg-dashboard'),
+      display: 'flex',
+      flexDirection: 'column',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', padding: '8px 12px 0' }}>
+        <button
+          type="button"
+          onClick={onBack}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            color: cssVar('teal'),
+            fontSize: 13,
+            fontWeight: 600,
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            padding: '8px 6px',
+            minHeight: 44,
+            borderRadius: 8,
+          }}
+        >
+          <ChevronLeft size={16} />
+          <span>Back</span>
+        </button>
+      </div>
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {text ? (
+          <span role="status" style={{ fontSize: 14, fontWeight: 600, color: tokens.textMuted }}>{text}</span>
+        ) : (
+          <div role="status">
+            <BattleLoadingIndicator tokens={tokens} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** §7.2 item 1: a held name whose quote is not qualified opens no priced view —
+ *  this notice instead, with the recorded entry still labeled "Entry". */
+function QuoteUnavailableNotice({ notice, onDismiss }) {
+  return (
+    <div
+      role="status"
+      data-quote-notice={notice.symbol}
+      style={{
+        position: 'fixed',
+        left: '50%',
+        bottom: 24,
+        transform: 'translateX(-50%)',
+        zIndex: 60,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        padding: '10px 14px',
+        borderRadius: 10,
+        background: cssVar('bg-agent'),
+        border: `1px solid rgba(${cssVar('scrim-rgb')}, 0.16)`,
+        color: cssVar('text-secondary'),
+        fontSize: 12,
+        maxWidth: 'calc(100vw - 32px)',
+      }}
+    >
+      <span style={{ fontWeight: 700, color: cssVar('text-primary') }}>{notice.symbol}</span>
+      <span>{QUOTE_INTEGRITY_COPY.priceDetailsUnavailable}</span>
+      {notice.entryLabel && <span data-quote-notice-entry="1">{notice.entryLabel}</span>}
+      <button
+        type="button"
+        onClick={onDismiss}
+        style={{
+          background: 'transparent',
+          border: `1px solid rgba(${cssVar('scrim-rgb')}, 0.2)`,
+          borderRadius: 8,
+          color: cssVar('teal'),
+          fontSize: 11,
+          fontWeight: 700,
+          padding: '4px 8px',
+          cursor: 'pointer',
+        }}
+      >
+        {QUOTE_INTEGRITY_COPY.dismiss}
+      </button>
+    </div>
+  );
 }
 
 // ─── Responsive hook ──────────────────────────────────────────────────────────
@@ -248,15 +589,27 @@ function ScoreHeader({
   // A4.3 (review F16): a SHORT accessible name for that button instead of
   // its whole content (names, scores, the day label).
   onOpenBook = null, bookOpen = false, bookName = null,
+  // Shadow vs CPU quote integrity (§5.3, A-2, V-1–V-4, C-1, B-1, P8): the ONE
+  // selected comparison from the gated screen, or undefined — this header
+  // exactly as shipped. Branched HERE, before the `??`, `|| 0`, tug and
+  // presence paths below, so an unavailable comparison never reaches a
+  // numeric default.
+  comparison = undefined,
 }) {
-  const myScore = playerScore ?? (agentBattle?.scoreState?.currentScore || 0);
-  const oppScore = opponentScore ?? (agentBattle?.scoreState?.opponentScore || 0);
+  const gated = comparison !== undefined;
+  const available = !gated || comparison.available === true;
+  const myScore = gated ? (available ? comparison.pair[0] : null) : (playerScore ?? (agentBattle?.scoreState?.currentScore || 0));
+  const oppScore = gated ? (available ? comparison.pair[1] : null) : (opponentScore ?? (agentBattle?.scoreState?.opponentScore || 0));
   const dayLabel = computeDayLabel(agentBattle?.timing);
   const agentName = agentBattle?.agentContext?.agentName || 'Your Agent';
   const tradeCount = agentBattle?.scoreState?.tradeCount || 0;
 
-  const myWidth = computeTugOfWarWidth(myScore, oppScore);
+  // Gated: the selected comparison's two-branch width, never a second
+  // derivation; the tint follows the three-way lead (a tie emphasizes neither).
+  const myWidth = gated ? (available ? comparison.barWidth : null) : computeTugOfWarWidth(myScore, oppScore);
   const isLeading = myScore >= oppScore;
+  const tealStrong = gated ? comparison.lead === 'player' : isLeading;
+  const redStrong = gated ? comparison.lead === 'cpu' : !isLeading;
 
   return (
     <motion.div
@@ -310,9 +663,13 @@ function ScoreHeader({
             <AgentPresenceMount
               surface="duel"
               agent={agentBattle}
-              duel={{ playerScore: myScore, opponentScore: oppScore, statusFeed }}
+              // Gated (admitted battles, founder decision v1.5): static and deaf
+              // to the feed in BOTH branches, fed the selected pair or — when
+              // unavailable — no score keys at all (neutral standing).
+              duel={gated ? duelFor(comparison) : { playerScore: myScore, opponentScore: oppScore, statusFeed }}
               size={isDesktop ? 60 : 44}
               enableEnvironment={false}
+              {...(gated ? { reactivityLevel: 'static' } : {})}
             />
           )}
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
@@ -326,7 +683,10 @@ function ScoreHeader({
             }}>
               {agentName}
             </span>
-            <AnimatedScore value={myScore} defaultColor="#5eead4" size={28} />
+            {!gated && <AnimatedScore value={myScore} defaultColor="#5eead4" size={28} />}
+            {gated && available && (
+              <SwitchCounter key={comparison.switchKey} value={myScore} defaultColor={cssVar('teal')} size={28} fractionDigits={comparison.fractionDigits} />
+            )}
           </div>
         </div>
 
@@ -380,49 +740,81 @@ function ScoreHeader({
               CPU
             </span>
           </div>
-          <AnimatedScore
-            value={oppScore}
-            defaultColor={tokens.textFaint || '#64748b'}
-            size={28}
-          />
+          {!gated && (
+            <AnimatedScore
+              value={oppScore}
+              defaultColor={tokens.textFaint || '#64748b'}
+              size={28}
+            />
+          )}
+          {gated && available && (
+            <SwitchCounter key={comparison.switchKey} value={oppScore} defaultColor={tokens.textFaint || '#64748b'} size={28} fractionDigits={comparison.fractionDigits} />
+          )}
         </div>
       </div>
 
       {/* Tug-of-war bar */}
-      <div style={{
-        width: '100%',
-        height: 6,
-        borderRadius: 3,
-        background: 'rgba(255,255,255,0.06)',
-        overflow: 'hidden',
-        display: 'flex',
-      }}>
-        <motion.div
-          animate={{ width: `${myWidth}%` }}
-          transition={{ type: 'spring', stiffness: 200, damping: 25 }}
-          style={{
-            height: '100%',
-            background: isLeading
-              ? 'linear-gradient(90deg, #5eead4, #2dd4bf)'
-              : 'rgba(94,234,212,0.4)',
-            borderRadius: '3px 0 0 3px',
-          }}
-        />
-        <div style={{
-          width: 2,
-          height: '100%',
-          background: 'rgba(255,255,255,0.15)',
-          flexShrink: 0,
-        }} />
-        <div style={{
-          flex: 1,
-          height: '100%',
-          background: !isLeading
-            ? 'linear-gradient(90deg, #ef4444, #dc2626)'
-            : 'rgba(239,68,68,0.3)',
-          borderRadius: '0 3px 3px 0',
-        }} />
-      </div>
+      {(() => {
+        const bar = (
+          <div
+            {...(gated ? { 'data-score-bar': '1' } : {})}
+            style={{
+            width: '100%',
+            height: 6,
+            borderRadius: 3,
+            background: 'rgba(255,255,255,0.06)',
+            overflow: 'hidden',
+            display: 'flex',
+          }}>
+            <motion.div
+              // Gated: a comparison switch remounts this half with
+              // `initial={false}`, so the committed width IS the selected
+              // width in that commit (V-2); same-kind changes keep the spring.
+              key={gated ? comparison.switchKey : undefined}
+              {...(gated ? { initial: false, 'data-bar-pct': Math.round(myWidth) } : {})}
+              animate={{ width: `${myWidth}%` }}
+              transition={{ type: 'spring', stiffness: 200, damping: 25 }}
+              style={{
+                height: '100%',
+                background: tealStrong
+                  ? 'linear-gradient(90deg, #5eead4, #2dd4bf)'
+                  : 'rgba(94,234,212,0.4)',
+                borderRadius: '3px 0 0 3px',
+              }}
+            />
+            <div style={{
+              width: 2,
+              height: '100%',
+              background: 'rgba(255,255,255,0.15)',
+              flexShrink: 0,
+            }} />
+            <div style={{
+              flex: 1,
+              height: '100%',
+              background: redStrong
+                ? 'linear-gradient(90deg, #ef4444, #dc2626)'
+                : 'rgba(239,68,68,0.3)',
+              borderRadius: '0 3px 3px 0',
+            }} />
+          </div>
+        );
+        if (!gated) return bar;
+        // Gated: the source label and prose come from the same object as the
+        // digits; unavailable shows its honest text and no bar at all.
+        return (
+          <>
+            <div
+              data-comparison-label="1"
+              data-comparison-kind={comparison.kind}
+              style={{ display: 'flex', justifyContent: 'center', gap: 8, flexWrap: 'wrap', fontSize: 10.5, color: tokens.textMuted }}
+            >
+              <span>{comparison.label}</span>
+              {comparison.prose && <span data-comparison-prose="1">{comparison.prose}</span>}
+            </div>
+            {available && bar}
+          </>
+        );
+      })()}
 
       {/* Turn line (Phase A, controller flag only): checked · next, from the
           same adapter arithmetic the Desk ships. Null flag-off. */}
@@ -537,6 +929,10 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // render scope, never the constant. Dark today, so every door below is absent
   // whole and the two panels render exactly as they do at HEAD.
   const showItOn = isShowItOn();
+  // Shadow vs CPU quote integrity — DARK (SHADOW_CPU_QUOTE_INTEGRITY_ENABLED).
+  // The accessor at render scope, like the three above. False: every gated
+  // line below is inert and the screen is the shipped one.
+  const integrityOn = isShadowCpuQuoteIntegrityOn();
   const prefersReducedMotion = useReducedMotion();
   const reducedMotion = Boolean(prefersReducedMotion);
   // A coarse clock for the turn line: once a minute or on visibilitychange,
@@ -555,6 +951,12 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   const [researchAsset, setResearchAsset] = useState(null);
   const [breakdownAsset, setBreakdownAsset] = useState(null);
   const [selectedTerm, setSelectedTerm] = useState(null);
+  // Quote integrity (gated path only, §7): detail selections tracked by battle
+  // context, side and position generation — never a frozen enriched asset.
+  // Null and untouched flag-off.
+  const [researchView, setResearchView] = useState(null); // { kind: 'held'|'nonheld', … , ctx }
+  const [quoteNotice, setQuoteNotice] = useState(null);   // { symbol, entryLabel, ctx }
+  const [breakdownSel, setBreakdownSel] = useState(null); // { posKey, token }
 
   // Price state
   const [currentPrices, setCurrentPrices] = useState({});
@@ -649,8 +1051,44 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
 
   // Use direct agentBattleId if available (from dashboard), else look up via agentId
   const directId = battle?.agentBattleId || null;
-  const { agentBattleId: queriedId, loading: idLoading } = useAgentBattleId(directId ? null : battle?.agentId);
-  const agentBattleId = directId || queriedId;
+  // Gated (query path only): the EXISTING listener also delivers metadata-only
+  // events (C-4), and the lookup's identity evidence decides the ID (C-2).
+  // Flag-off: the exact shipped one-argument calls.
+  const { agentBattleId: queriedId, loading: idLoading, lookup } = useAgentBattleId(
+    directId ? null : battle?.agentId,
+    ...(integrityOn && !directId ? [{ confirmCache: true }] : []),
+  );
+  const legacyBattleId = directId || queriedId;
+  // The requested battle: flag-off the shipped `directId || queriedId`; gated,
+  // the direct ID or the CURRENT lookup generation's success — never the
+  // retained legacy ID, which survives agent changes and errors.
+  const requestedId = integrityOn ? gatedRequestedId({ directId, lookup }) : legacyBattleId;
+  const battleHook = useAgentBattle(requestedId, ...(integrityOn ? [{ integrity: true }] : []));
+
+  // ── Quote integrity: admission and terminal states (§3.1, R-5, C-2) ───────
+  // [A-4] a requested ID once classified EXCLUDED keeps legacy behaviour for
+  // its later subscription errors, until the requested ID changes. Adjusted
+  // during render with a value; resolveGate compares it to the current ID.
+  const [excludedFor, setExcludedFor] = useState(null);
+  const envelope = integrityOn ? (battleHook.integrity ?? null) : null;
+  const gate = resolveGate({ integrityOn, directId, lookup, envelope, requestedId, excludedFor });
+  if (gate.mode === 'excluded' && excludedFor !== requestedId) setExcludedFor(requestedId);
+  // `gatedPath`: flag on and not excluded — pending, the two terminal shells,
+  // or an admitted battle. Excluded and flag-off take the shipped path whole.
+  const gatedPath = integrityOn && gate.mode !== 'legacy' && gate.mode !== 'excluded';
+  const admitted = gatedPath && gate.mode === 'admitted';
+  // The identified snapshot: that callback's data with the AUTHORITATIVE
+  // document id (a data field named `id` cannot override it). It is the
+  // `agentBattle` of the gated path, so the turn line, Why? and the
+  // comparison's stored time read one object (V-12).
+  const identifiedData = admitted ? envelope.data : null;
+  const identifiedId = admitted ? envelope.snapshotId : null;
+  const identifiedBattle = useMemo(
+    () => (identifiedData ? { ...identifiedData, id: identifiedId } : null),
+    [identifiedData, identifiedId],
+  );
+  const gatedFields = useMemo(() => identifiedFields(identifiedBattle), [identifiedBattle]);
+  const agentBattleId = integrityOn ? requestedId : legacyBattleId;
   const {
     battle: agentBattle,
     statusFeed,
@@ -661,7 +1099,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     chatExchanges,
     feedBookmarks,
     loading: battleLoading,
-  } = useAgentBattle(agentBattleId);
+  } = gatedPath ? gatedFields : battleHook;
 
   const loading = idLoading || battleLoading;
 
@@ -669,6 +1107,116 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   if (activeTab === 'command') {
     lastSeenFeedLengthRef.current = statusFeed.length;
   }
+
+  // ── Quote integrity: the identified context, lineage and quote evidence ──
+  //
+  // Gated path only (§3.2, §4.2–§4.3). ONE context from the admitted snapshot
+  // feeds rows, completeness, requests and details — never the opening prop,
+  // whatever the controller and pane flags say. Each held position carries a
+  // lineage generation; its quote evidence is keyed by that identity, so a
+  // swap, a same-symbol re-entry, the nightly rewrite, a battle change or a
+  // subscription reset starts it EMPTY and a retired request cannot write it.
+  const gatedContext = useMemo(
+    () => (admitted ? buildBattleContext(identifiedData, { battleId: requestedId }) : null),
+    [admitted, identifiedData, requestedId],
+  );
+  const gatedBattleKey = admitted ? `${requestedId}|${envelope.generation}` : null;
+  const [quoteBook, setQuoteBook] = useState(EMPTY_QUOTE_BOOK);
+  if (integrityOn) {
+    if (gatedContext) {
+      // Adjusted while rendering: reconcileLineage returns the SAME object when
+      // nothing changed, so this settles in one extra pass and never loops.
+      if (reconcileLineage(quoteBook.lineage, { battleKey: gatedBattleKey, context: gatedContext }) !== quoteBook.lineage) {
+        setQuoteBook((prev) => {
+          const lineage = reconcileLineage(prev.lineage, { battleKey: gatedBattleKey, context: gatedContext });
+          if (lineage === prev.lineage) return prev;
+          return { lineage, quotes: lineage.battleGeneration === prev.lineage?.battleGeneration ? prev.quotes : {} };
+        });
+      }
+    } else if (quoteBook.lineage && quoteBook.lineage.battleKey !== null) {
+      // Leaving the admitted state (pending, a terminal shell): close the
+      // context. The generation keeps counting, so nothing from before can
+      // match an identity issued after.
+      setQuoteBook((prev) => (prev.lineage && prev.lineage.battleKey !== null
+        ? { lineage: { ...prev.lineage, battleKey: null }, quotes: {} }
+        : prev));
+    }
+  }
+  const gatedLineage = gatedContext && quoteBook.lineage?.battleKey === gatedBattleKey ? quoteBook.lineage : null;
+  const gatedContextKey = gatedLineage ? `${requestedId}#${gatedLineage.battleGeneration}` : null;
+  const quoteTokenOf = (posKey) => positionToken(gatedLineage, posKey);
+  const quoteStateOf = (posKey) => {
+    const token = quoteTokenOf(posKey);
+    const q = quoteBook.quotes[posKey];
+    return token && q && q.token === token ? q.state : EMPTY_POSITION_QUOTE;
+  };
+
+  // The gated rows. A position with a qualified current is scored by the SAME
+  // function as the legacy row, from that current and the position's retained
+  // genuine close only; anything else carries the availability contract and NO
+  // current-derived field (TacticalRow branches before any formatting).
+  const gatedEnriched = useMemo(() => {
+    if (!gatedContext || !gatedLineage) return null;
+    const scoring = {
+      startingPrices: gatedContext.startingPrices,
+      thresholds: gatedContext.thresholds,
+      thresholdHistory: identifiedBattle?.thresholdHistory,
+      activatedAt: identifiedBattle?.activatedAt,
+      createdAt: identifiedBattle?.createdAt,
+    };
+    const byPos = {};
+    const side = (name, portfolio) => {
+      const out = {};
+      for (const tier of ['star', 'core', 'support']) {
+        const list = portfolio && typeof portfolio === 'object' && Array.isArray(portfolio[tier]) ? portfolio[tier] : [];
+        out[tier] = list.map((asset, slot) => {
+          if (!asset || typeof asset !== 'object') return null;
+          if (asset.isCash === true) return enrichCash(asset);
+          const posKey = `${name}:${tier}:${slot}`;
+          const token = quoteTokenOf(posKey);
+          const q = quoteStateOf(posKey);
+          let enriched;
+          if (q.status === 'usable') {
+            enriched = enrichHeldPosition(asset, tier, { ...scoring, curPrice: q.accepted.price, previousClose: q.genuineClose });
+          } else {
+            const entry = typeof asset.symbol === 'string' ? entryPriceOf(asset, gatedContext.startingPrices) : 0;
+            enriched = {
+              ...asset,
+              quoteAvailability: {
+                status: 'unavailable',
+                label: QUOTE_INTEGRITY_COPY.quoteUnavailable,
+                lastQuoteLabel: lastQuoteLabel(q),
+                entryLabel: entry > 0 ? QUOTE_INTEGRITY_COPY.entry(BATTLE_VIEW_COPY.price(entry)) : null,
+              },
+            };
+          }
+          enriched = { ...enriched, quotePosKey: posKey, quoteToken: token };
+          byPos[posKey] = enriched;
+          return enriched;
+        });
+      }
+      return out;
+    };
+    const player = side('player', gatedContext.playerPortfolio);
+    const cpu = side('cpu', gatedContext.cpuPortfolio);
+    return { player, cpu, byPos };
+    // quoteTokenOf / quoteStateOf read exactly gatedLineage and quoteBook.quotes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gatedContext, gatedLineage, quoteBook.quotes, identifiedBattle?.thresholdHistory, identifiedBattle?.activatedAt, identifiedBattle?.createdAt]);
+
+  // Completeness (§5.2): a structurally valid snapshot and a qualified current
+  // for EVERY required held position on both sides (risk-locked included).
+  const quotesComplete = !!gatedEnriched && gatedContext.portfoliosValid
+    && gatedContext.held.every((p) => gatedEnriched.byPos[p.posKey] && !gatedEnriched.byPos[p.posKey].quoteAvailability);
+
+  // The poll plan: the held positions and their identities at request time.
+  // Its key is content — chat- and feed-only snapshots leave it unchanged, so
+  // they never restart polling; a portfolio, entry or lineage change does.
+  const gatedPollPlan = gatedLineage && gatedContext.held.length > 0 ? {
+    positions: gatedContext.held.map((p) => ({ posKey: p.posKey, symbol: p.symbol, token: quoteTokenOf(p.posKey) })),
+    symbols: gatedContext.requiredSymbols,
+  } : null;
+  const gatedPollKey = gatedPollPlan ? JSON.stringify(gatedPollPlan) : null;
 
   // ── Row sources ───────────────────────────────────────────────────────────
   //
@@ -772,10 +1320,45 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   }, [allSymbols, startingPrices]);
 
   useEffect(() => {
+    if (gatedPath) {
+      // Quote integrity (gated path): the same two batch calls, the same
+      // cadence — but only for an admitted battle's identified held positions,
+      // never before its matching snapshot, and with no fallback to entry.
+      // Each answer is applied to the identities captured at request time
+      // (§4.3 rule 1); a failure leaves positions stale or unavailable.
+      if (!gatedPollPlan) return undefined;
+      const plan = gatedPollPlan;
+      let active = true;
+      const stockSymbols = plan.symbols.filter(s => !isCryptoSymbol(s));
+      const cryptoSymbols = plan.symbols.filter(s => isCryptoSymbol(s));
+      const run = async () => {
+        try {
+          const [stockData, cryptoData] = await Promise.all([
+            stockSymbols.length > 0 ? stockAPI.getMultipleStockPrices(stockSymbols) : {},
+            cryptoSymbols.length > 0 ? stockAPI.getMultipleCryptoPrices(cryptoSymbols) : {},
+          ]);
+          if (!active) return;
+          const records = { ...(stockData || {}), ...(cryptoData || {}) };
+          const nowMs = Date.now();
+          setQuoteBook((prev) => applyQuoteArrival(prev, plan.positions, (sym) => interpretQuote(records[sym], { nowMs })));
+        } catch (error) {
+          if (!active) return;
+          console.error('[AgentBattle] Error fetching prices:', error);
+          const nowMs = Date.now();
+          setQuoteBook((prev) => applyQuoteArrival(prev, plan.positions, () => interpretQuote(null, { nowMs })));
+        }
+      };
+      run();
+      const interval = setInterval(run, PRICE_POLL_INTERVAL);
+      return () => { active = false; clearInterval(interval); };
+    }
     fetchPrices();
     const interval = setInterval(fetchPrices, PRICE_POLL_INTERVAL);
     return () => clearInterval(interval);
-  }, [fetchPrices]);
+    // Flag-off the deps are [fetchPrices, false, null]: exactly the shipped
+    // restart behaviour. Gated, only the content key restarts the poll.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gatedPath ? null : fetchPrices, gatedPath, gatedPollKey]);
 
   // ── Price beacon: removed 2026-07-16 (founder ruling) ────────────────────
   //
@@ -803,138 +1386,24 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   const enrichAsset = useCallback((asset, tier) => {
     if (!asset) return null;
 
-    if (asset.isCash) {
-      return {
-        ...asset,
-        priceChange: 0,
-        baseATR: 0,
-        points: 0,
-        badges: [],
-        history: { maxMultiplier: 0, minMultiplier: 0 },
-      };
-    }
+    if (asset.isCash) return enrichCash(asset);
 
-    const openPrice = asset.swapPrice || startingPrices[asset.symbol] || asset.price || 0;
+    const openPrice = entryPriceOf(asset, startingPrices);
     const curPrice = effectivePrices[asset.symbol] || openPrice;
-    const threshold = thresholds[asset.symbol] || {};
-    const baseATR = threshold.threshold || DEFAULT_THRESHOLD;
-
-    let priceChange = openPrice > 0
-      ? ((curPrice - openPrice) / openPrice) * 100
-      : 0;
-
-    if (asset.direction === 'short') {
-      priceChange = -priceChange;
-    }
-
-    // Day-1 activation gate — mirrors the server boundary at
-    // api/cron/agent-evaluate.js:303 (and agent-daily-scores.js:60-64): compare
-    // today's ET calendar date to the battle's activation date. On the activation
-    // day the threshold/badge baseline is the ENTRY price (startingPrices), so a
-    // stock that gapped from its prior close and then sat flat from entry can't
-    // fabricate Bust/Crash/Meltdown while the display reads +0.00%. previousClose
-    // only takes over on day 2+.
-    //
-    // A wall-clock ET-date comparison is used on purpose, NOT timing.currentTradingDay:
-    // currentTradingDay is a denormalized value the daily-scores cron writes only
-    // when it runs (agent-daily-scores.js:51,188 — calendar-derived but
-    // idempotency-gated with no missed-day catch-up), so a skipped nightly run
-    // would leave it stale at 1 while the server's date-based gate had already
-    // rolled to day 2 — a full-day client/server divergence. The date comparison
-    // advances with the clock, exactly like the server's authoritative gate.
-    // Falls back to "activation day" when no timestamp exists (conservative: entry
-    // baseline, never a phantom badge).
-    //
-    // activatedAt/createdAt are ISO strings on the agentBattles doc
-    // (agentBattleService.js:44,75-76), so new Date(it) is correct today. The
-    // .toDate?.() normalization is defensive: were either ever stored as a
-    // Firestore Timestamp, new Date(timestamp) would be Invalid Date and the gate
-    // would silently fall to false → phantom badges return. .toDate?.() is a no-op
-    // for strings/numbers (?. short-circuits) and unwraps a Timestamp if present.
-    const toEtDate = (raw) => {
-      const d = raw?.toDate?.() ?? new Date(raw);
-      return d.toLocaleDateString('en-US', { timeZone: 'America/New_York' });
-    };
-    const activationTs = agentBattle?.activatedAt || agentBattle?.createdAt;
-    const isActivationDay = activationTs ? toEtDate(Date.now()) === toEtDate(activationTs) : true;
-
-    // Threshold baseline must match the asset's entry into the portfolio.
-    // For swapped-in assets, swapPrice prevents retroactive BaggerBomb credit
-    // for pre-swap moves since previousClose (first in both branches, regardless
-    // of day). On the activation day entry beats previousClose; on day 2+ the
-    // original previousClose-first order is preserved.
-    const thresholdBaseline = asset.swapPrice
-      || (isActivationDay
-        ? (startingPrices[asset.symbol] || previousClosePrices[asset.symbol] || openPrice)
-        : (previousClosePrices[asset.symbol] || startingPrices[asset.symbol] || openPrice));
-    let thresholdPriceChange = thresholdBaseline > 0
-      ? ((curPrice - thresholdBaseline) / thresholdBaseline) * 100
-      : priceChange;
-
-    if (asset.direction === 'short') {
-      thresholdPriceChange = -thresholdPriceChange;
-    }
-
-    const multiplier = baseATR > 0 ? thresholdPriceChange / baseATR : 0;
-
-    // Merge server-persisted peaks (maintained by the agent-evaluate cron) with
-    // the live multiplier so threshold bonus points stay visible when the price
-    // reverses between cron ticks. Core invariant: maxMultiplier monotonically
-    // increases, minMultiplier monotonically decreases.
-    const persistedHistory = agentBattle?.thresholdHistory?.[asset.symbol] || {};
-    const history = {
-      maxMultiplier: Math.max(persistedHistory.maxMultiplier || 0, multiplier > 0 ? multiplier : 0),
-      minMultiplier: Math.min(persistedHistory.minMultiplier || 0, multiplier < 0 ? multiplier : 0),
-    };
-
-    // P8 hygiene item 1 — apply the direction sign EXACTLY ONCE. priceChange,
-    // thresholdPriceChange, multiplier and history above are already in
-    // position-P&L terms (the two `direction === 'short'` adjustments). The
-    // canonical scorer ALSO negates priceChange/thresholdPriceChange internally
-    // for a short, so it is called WITHOUT `direction`: forwarding it would
-    // double-negate and silently flip a short's score to a long's. Dormant for
-    // long-only agents (the only portfolios this screen renders today), but the
-    // contract is load-bearing the moment any short reaches here. Note we keep
-    // the caller-owns-direction convention (not flat6's scorer-owns) because the
-    // scorer negates the scalar args but NOT the caller-supplied `history`,
-    // which is already adjusted above. Locked by agentBattleScoring.test.js —
-    // do NOT add `direction` back to this call.
-    // LOAD-BEARING full-asset spread: on tournament docs the D2 flat6
-    // `tierMultiplier: 1.0` stamp rides `...asset` into the scorer's override —
-    // narrowing this to a field subset re-scores flat6 display at slot labels
-    // (the C-2 server defect class, fixed 2026-08).
-    const score = calculateAssetScoreV3(
-      { ...asset, baseATR, tier, direction: undefined },
-      priceChange,
-      history,
-      {},
-      thresholdPriceChange
-    );
-
-    return {
-      ...asset,
-      priceChange,
-      thresholdPriceChange,
-      baseATR,
-      points: score.totalPoints,
-      badges: score.badges,
-      history,
-      currentPrice: curPrice,
-      // Phase A: the entry the row's % is computed from, carried so the Why?
-      // facts read the ROW's number (never the adapter's book — rulings §3.3).
-      openPrice,
-      // A2.1 (ruling 1): the baseline the THRESHOLD percent is measured from —
-      // the one field the Why? tier lines need. `Bagger $ · Bust $` is
-      // `thresholdBaseline × (1 ± baseATR/100)`, the exact inverse of the
-      // percent the row renders beside it (deriveTierPrices). Computed here
-      // already; before A2.1 it was simply not returned.
-      thresholdBaseline,
-    };
+    return enrichHeldPosition(asset, tier, {
+      curPrice,
+      previousClose: previousClosePrices[asset.symbol],
+      startingPrices,
+      thresholds,
+      thresholdHistory: agentBattle?.thresholdHistory,
+      activatedAt: agentBattle?.activatedAt,
+      createdAt: agentBattle?.createdAt,
+    });
   }, [effectivePrices, startingPrices, thresholds, previousClosePrices, agentBattle?.thresholdHistory, agentBattle?.activatedAt, agentBattle?.createdAt]);
 
   // ── Enriched portfolios ───────────────────────────────────────────────────
 
-  const enrichedPlayerPortfolio = useMemo(() => {
+  const legacyEnrichedPlayerPortfolio = useMemo(() => {
     const p = playerPortfolioSource;
     if (!p) return { star: [], core: [], support: [] };
     return {
@@ -943,6 +1412,9 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       support: (p.support || []).map(a => enrichAsset(a, 'support')),
     };
   }, [playerPortfolioSource, enrichAsset]);
+  // Gated: the identified context's rows (empty until admitted); flag-off and
+  // excluded: the shipped enrichment above.
+  const enrichedPlayerPortfolio = gatedPath ? (gatedEnriched?.player ?? EMPTY_ENRICHED) : legacyEnrichedPlayerPortfolio;
 
   // A3.6 (D-97) — THE PLAYER'S BOOK, FLAT, each piece carrying the tier whose
   // row it sits in. Two consumers need exactly this: the bagger watch (which
@@ -963,7 +1435,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     return out;
   }, [enrichedPlayerPortfolio]);
 
-  const enrichedOpponentPortfolio = useMemo(() => {
+  const legacyEnrichedOpponentPortfolio = useMemo(() => {
     const p = opponentPortfolioSource;
     if (!p) return { star: [], core: [], support: [] };
     return {
@@ -972,6 +1444,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       support: (p.support || []).map(a => enrichAsset(a, 'support')),
     };
   }, [opponentPortfolioSource, enrichAsset]);
+  const enrichedOpponentPortfolio = gatedPath ? (gatedEnriched?.cpu ?? EMPTY_ENRICHED) : legacyEnrichedOpponentPortfolio;
 
   // ── The plan at deploy (A2.1b, D-76) ──────────────────────────────────────
   // Derived ONCE from the subscribed doc: frozen at creation, so it changes
@@ -1055,6 +1528,23 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       ? (agentBattle?.scoreState?.opponentScore ?? opponentTotalScore)
       : opponentTotalScore;
 
+  // ── Quote integrity: the ONE selected comparison (§5.2–§5.3, C-1) ─────────
+  // Selected once per render for an admitted battle and handed to every
+  // comparison consumer (ArenaHeader, the legacy header, the avatar and the
+  // pane). Browser totals count only when EVERY required current qualified;
+  // otherwise the qualified stored pair with its actual time, else an explicit
+  // unavailable object — never a default 0–0. Undefined everywhere else, which
+  // each consumer reads as "exactly as shipped".
+  const comparison = admitted && gatedContextKey ? selectComparison({
+    status: agentBattle?.status,
+    complete: quotesComplete,
+    browserPair: quotesComplete ? [playerTotalScore, opponentTotalScore] : null,
+    scoreState: agentBattle?.scoreState,
+    contextKey: gatedContextKey,
+    nowMs: Date.now(),
+  }) : undefined;
+  const comparisonProp = comparison !== undefined ? { comparison } : {};
+
   // ── Notification dots ─────────────────────────────────────────────────────
 
   const hasPendingProposal = pendingProposal && !pendingProposal.resolvedAt;
@@ -1127,6 +1617,81 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     setBreakdownAsset(asset);
   }, []);
 
+  // ── Quote integrity: research admission and detail containment (§7) ──────
+  //
+  // A held name resolves to ONE position of the identified context (row →
+  // its own position; side-tagged → that side; untagged and held by both →
+  // the player; CPU-only → the CPU; several same-side → withheld). A
+  // qualified one opens the controlled view; anything else opens no priced
+  // view — the notice instead, with no builder call and no request. A name
+  // held by neither side takes the legacy builder/modal path untouched.
+  const openResearchTarget = (symbol, target, payload) => {
+    if (target.kind === 'held') {
+      const pos = target.position;
+      const token = quoteTokenOf(pos.posKey);
+      if (token && quoteStateOf(pos.posKey).status === 'usable') {
+        setQuoteNotice(null);
+        setResearchAsset(null);
+        setResearchView({ kind: 'held', posKey: pos.posKey, token, symbol: pos.symbol, ctx: gatedContextKey });
+        return;
+      }
+      const entry = entryPriceOf(pos.asset, gatedContext.startingPrices);
+      setResearchView(null);
+      setResearchAsset(null);
+      setQuoteNotice({
+        symbol: pos.symbol,
+        entryLabel: entry > 0 ? QUOTE_INTEGRITY_COPY.entry(BATTLE_VIEW_COPY.price(entry)) : null,
+        ctx: gatedContextKey,
+      });
+      return;
+    }
+    if (target.kind === 'withheld') {
+      setResearchView(null);
+      setResearchAsset(null);
+      setQuoteNotice({ symbol, entryLabel: null, ctx: gatedContextKey });
+      return;
+    }
+    setQuoteNotice(null);
+    setResearchView({ kind: 'nonheld', symbol, displayed: symbol, ctx: gatedContextKey });
+    setResearchAsset(payload && typeof payload === 'object' ? payload : { symbol });
+  };
+  const handleGatedSymbolClick = useCallback((payload, clickSide) => {
+    if (payload?.type === 'term') {
+      setSelectedTerm(payload.token);
+      return;
+    }
+    const symbol = typeof payload === 'string' ? payload : payload?.symbol;
+    if (!symbol || !gatedContext || !gatedContextKey) return;
+    const side = clickSide?.side === 'player' || clickSide?.side === 'cpu'
+      ? clickSide.side
+      : (payload?.side === 'player' || payload?.side === 'cpu' ? payload.side : null);
+    const target = resolveResearchTarget(symbol, gatedContext.held, { posKey: payload?.quotePosKey ?? null, side });
+    openResearchTarget(symbol, target, payload);
+    // openResearchTarget reads the same lineage, quotes and context.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gatedContext, gatedContextKey, gatedLineage, quoteBook.quotes]);
+  // The scoped navigation admission for a NON-held view (§7.2 item 2): an
+  // unheld → unheld step stays legacy; a held name goes through rule 1 first.
+  const handleNavigateAdmission = useCallback((symbol) => {
+    if (!gatedContext || !gatedContextKey || typeof symbol !== 'string') return false;
+    const target = resolveResearchTarget(symbol, gatedContext.held, {});
+    if (target.kind === 'non-held') {
+      setResearchView((v) => (v && v.kind === 'nonheld' ? { ...v, displayed: symbol } : v));
+      return true;
+    }
+    openResearchTarget(symbol, target, { symbol });
+    return false;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gatedContext, gatedContextKey, gatedLineage, quoteBook.quotes]);
+  const closeGatedResearch = useCallback(() => {
+    setResearchView(null);
+    setResearchAsset(null);
+  }, []);
+  const handleGatedPointsClick = useCallback((asset) => {
+    if (!asset || asset.quoteAvailability || !asset.quotePosKey || !asset.quoteToken) return;
+    setBreakdownSel({ posKey: asset.quotePosKey, token: asset.quoteToken });
+  }, []);
+
   // ── Why? (Phase A, controller flag) ───────────────────────────────────────
   // A tap on the LEFT side of a row toggles that row's panel; the score header
   // toggles the book's. The one door prefills the composer with a string the
@@ -1137,10 +1702,12 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     if (!asset?.symbol) return;
     // Toggle on the row AND its symbol: after a swap replaced the open row's
     // piece, the first tap on the new piece opens it (review finding F5).
+    // Gated rows also carry their position identity, so the open panel is
+    // bound to that position generation (absent flag-off: the shipped shape).
     setWhyOpen(prev => (
       prev?.key === rowKey && prev.symbol === asset.symbol
         ? null
-        : { key: rowKey, symbol: asset.symbol }
+        : { key: rowKey, symbol: asset.symbol, ...(asset.quoteToken ? { token: asset.quoteToken } : {}) }
     ));
   }, []);
   // D-89: the panel's open COUNT, not just its open state. The panel's
@@ -1759,6 +2326,81 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     });
   }, [researchAsset, effectivePrices, thresholds, startingPrices]);
 
+  // ── Quote integrity: render-time eligibility of open details (§7) ────────
+  //
+  // Decided HERE, in render, so a view whose eligibility is gone is never
+  // committed once more with stale current dollars: the battle context
+  // changed (or left the admitted state), the selected position's lineage
+  // changed, its current stopped qualifying, or a non-held name became held.
+  // Each closes — and stays closed: recovery needs a new click.
+  let heldResearch = null;
+  let breakdownGated = null;
+  if (gatedPath) {
+    if (researchView) {
+      let valid = admitted && researchView.ctx === gatedContextKey;
+      if (valid && researchView.kind === 'held') {
+        const pos = gatedContext.positions.find((p) => p.posKey === researchView.posKey);
+        const q = quoteStateOf(researchView.posKey);
+        valid = !!pos && quoteTokenOf(researchView.posKey) === researchView.token && q.status === 'usable';
+        if (valid) {
+          const crypto = isCryptoSymbol(pos.symbol);
+          const entry = entryPriceOf(pos.asset, gatedContext.startingPrices);
+          heldResearch = {
+            asset: {
+              symbol: pos.symbol,
+              name: pos.asset.name || pos.symbol,
+              // The qualified current, and the recorded entry — no builder
+              // fallback chain, no entry-relative change riding along.
+              price: q.accepted.price,
+              currentPrice: q.accepted.price,
+              lockedPrice: entry > 0 ? entry : null,
+              threshold: gatedContext.thresholds[pos.symbol]?.threshold || DEFAULT_THRESHOLD,
+              ...(crypto ? { isCrypto: true } : {}),
+            },
+            controlledQuote: {
+              posKey: pos.posKey,
+              symbol: pos.symbol,
+              price: q.accepted.price,
+              extremes: sessionExtremes(q, { nowMs: Date.now(), crypto }),
+            },
+          };
+        }
+      } else if (valid && researchView.kind === 'nonheld') {
+        valid = resolveResearchTarget(researchView.displayed, gatedContext.held, {}).kind === 'non-held';
+      }
+      if (!valid) {
+        setResearchView(null);
+        setResearchAsset(null);
+      }
+    }
+    if (quoteNotice && !(admitted && quoteNotice.ctx === gatedContextKey)) setQuoteNotice(null);
+    if (breakdownSel) {
+      const cur = gatedEnriched?.byPos?.[breakdownSel.posKey];
+      if (admitted && cur && cur.quoteToken === breakdownSel.token && !cur.quoteAvailability) breakdownGated = cur;
+      else setBreakdownSel(null);
+    }
+    if (whyOpen) {
+      const [whyTier, whySlot] = String(whyOpen.key).split('-');
+      const left = enrichedPlayerPortfolio[whyTier]?.[Number(whySlot)];
+      if (!(admitted && left && !left.quoteAvailability && left.quoteToken && left.quoteToken === whyOpen.token)) setWhyOpen(null);
+    }
+  }
+
+  // The breakdown's sources: gated, the CURRENT enriched position (re-derived
+  // every render, never the clicked object) and the identified context's maps;
+  // flag-off, exactly the shipped ones.
+  const bdAsset = gatedPath ? breakdownGated : breakdownAsset;
+  const bdStartingPrices = gatedPath ? (gatedContext?.startingPrices || {}) : startingPrices;
+  const bdThresholds = gatedPath ? (gatedContext?.thresholds || {}) : thresholds;
+
+  // ── Quote integrity: pending and terminal shells (R-5, C-2) ──────────────
+  // After every hook, like the loading return below. Pending shows no previous
+  // battle, rows, comparison, details or quote request; the terminal states
+  // name themselves. Excluded and flag-off never reach this.
+  if (gatedPath && !admitted) {
+    return <GatedShell mode={gate.mode} error={gate.error} tokens={tokens} onBack={onBack} />;
+  }
+
   // ── Loading state ─────────────────────────────────────────────────────────
 
   if (loading && !agentBattle) {
@@ -1770,20 +2412,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
         alignItems: 'center',
         justifyContent: 'center',
       }}>
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: 12,
-        }}>
-          <motion.div
-            animate={{ rotate: 360 }}
-            transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
-          >
-            <Bot size={24} color="#5eead4" />
-          </motion.div>
-          <span style={{ fontSize: 13, color: tokens.textMuted }}>Loading agent battle...</span>
-        </div>
+        <BattleLoadingIndicator tokens={tokens} />
       </div>
     );
   }
@@ -1808,8 +2437,11 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               tier={tier.key}
               allocationLabel={`${tier.emoji} ${tier.allocation}`}
               isCryptoSlot={tier.hasCrypto && i === tier.slots - 1}
-              onSymbolClick={handleSymbolClick}
-              onPointsClick={handlePointsClick}
+              onSymbolClick={gatedPath ? handleGatedSymbolClick : handleSymbolClick}
+              onPointsClick={gatedPath ? handleGatedPointsClick : handlePointsClick}
+              // Quote integrity (§7.2 item 1): the row names its side in the
+              // click callbacks. Absent flag-off, so the row is the shipped one.
+              {...(gatedPath ? { reportClickSide: true } : {})}
               // A2 (D-85): the player's current price beside the % change.
               // Keyed on the FLAG, not on `whyable` — the price is a fact about
               // a piece, not a property of the Why? door — and read inside the
@@ -1924,7 +2556,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       battleStatus={agentBattle?.status}
       statusFeed={statusFeed}
       trades={agentBattle?.trades || []}
-      onSymbolClick={handleSymbolClick}
+      onSymbolClick={gatedPath ? handleGatedSymbolClick : handleSymbolClick}
       onSwitchToGameTape={openGameTape}
       knownTickers={knownTickers}
       dailyGrades={agentBattle?.dailyGrades || {}}
@@ -1982,6 +2614,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       agentBattle={agentBattle}
       playerScore={displayPlayerScore}
       opponentScore={displayOpponentScore}
+      {...comparisonProp}
       bubble={paneBubble}
       unread={paneUnread}
       onOpen={handleExpandChat}
@@ -2002,6 +2635,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       agentBattle={agentBattle}
       playerScore={displayPlayerScore}
       opponentScore={displayOpponentScore}
+      {...comparisonProp}
       open={pane.open}
       section={pane.section}
       onSelectSection={pane.setSection}
@@ -2255,6 +2889,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
             isDesktop={isDesktop}
             playerScore={displayPlayerScore}
             opponentScore={displayOpponentScore}
+            {...comparisonProp}
             dayLabel={computeDayLabel(agentBattle?.timing)}
             turnLine={turnLine}
             landingKey={landingKey}
@@ -2271,6 +2906,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
             isDesktop={isDesktop}
             playerScore={displayPlayerScore}
             opponentScore={displayOpponentScore}
+            {...comparisonProp}
             statusFeed={statusFeed}
             turnLine={turnLine}
             landingKey={landingKey}
@@ -2616,7 +3252,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                 battleStatus={agentBattle?.status}
                 statusFeed={statusFeed}
                 trades={agentBattle?.trades || []}
-                onSymbolClick={handleSymbolClick}
+                onSymbolClick={gatedPath ? handleGatedSymbolClick : handleSymbolClick}
                 onSwitchToGameTape={() => setActiveTab('gametape')}
                 knownTickers={knownTickers}
                 // Phase 6: review-mode props
@@ -2758,7 +3394,38 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
         tokens={tokens}
       />
 
-      {stableResearchAsset && (
+      {gatedPath ? (
+        /* Quote integrity (§7.2): ONE child slot, like the shipped modal. A
+           held position opens only with a qualified current — the controlled
+           view, bound to that observation (no builder chain, no wsPrice, no
+           price fetch). A non-held name keeps the legacy builder and modal,
+           with navigation to a held name routed back through admission. */
+        heldResearch ? (
+          <AssetResearchModal
+            key={`held|${heldResearch.controlledQuote.posKey}|${researchView.token}`}
+            asset={heldResearch.asset}
+            onClose={closeGatedResearch}
+            showActionButton={false}
+            isGameContext={true}
+            version={2}
+            defaultTab="baggerbomb"
+            defaultTimeframe="bomb"
+            controlledQuote={heldResearch.controlledQuote}
+          />
+        ) : (researchView?.kind === 'nonheld' && stableResearchAsset ? (
+          <AssetResearchModal
+            asset={stableResearchAsset}
+            onClose={closeGatedResearch}
+            showActionButton={false}
+            isGameContext={true}
+            version={2}
+            defaultTab="baggerbomb"
+            defaultTimeframe="bomb"
+            wsPrice={effectivePrices[stableResearchAsset?.symbol]}
+            onNavigateAdmission={handleNavigateAdmission}
+          />
+        ) : null)
+      ) : stableResearchAsset && (
         <AssetResearchModal
           asset={stableResearchAsset}
           onClose={() => setResearchAsset(null)}
@@ -2778,44 +3445,51 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       />
 
 
-      {breakdownAsset && (
+      {bdAsset && (
         <ScoreBreakdownPopover
           asset={{
-            symbol: breakdownAsset.symbol,
-            gain: breakdownAsset.priceChange || 0,
-            threshold: thresholds[breakdownAsset.symbol]?.threshold || breakdownAsset.baseATR || 2.5,
+            symbol: bdAsset.symbol,
+            gain: bdAsset.priceChange || 0,
+            threshold: bdThresholds[bdAsset.symbol]?.threshold || bdAsset.baseATR || 2.5,
             // P4 flat6: the per-asset override (tournament docs) wins; tiered
             // assets never carry it — resolution unchanged for them.
-            tierMultiplier: breakdownAsset.tierMultiplier ?? (CONVICTION_MULTIPLIERS[breakdownAsset.tier] || 1.0),
-            baggerBombs: breakdownAsset.badges?.filter(b =>
+            tierMultiplier: bdAsset.tierMultiplier ?? (CONVICTION_MULTIPLIERS[bdAsset.tier] || 1.0),
+            baggerBombs: bdAsset.badges?.filter(b =>
               b === 'bagger' || b === 'doubleBagger' || b === 'tenBagger'
             ).length || 0,
-            busts: breakdownAsset.badges?.filter(b =>
+            busts: bdAsset.badges?.filter(b =>
               b === 'bust' || b === 'crash' || b === 'meltdown'
             ).length || 0,
-            basePoints: Math.round((breakdownAsset.priceChange || 0) * 10 * (breakdownAsset.tierMultiplier ?? (CONVICTION_MULTIPLIERS[breakdownAsset.tier] || 1.0))),
+            basePoints: Math.round((bdAsset.priceChange || 0) * 10 * (bdAsset.tierMultiplier ?? (CONVICTION_MULTIPLIERS[bdAsset.tier] || 1.0))),
             // P4 (companion c): badge values sourced from the canonical
             // constants instead of inline literals — value-identical today,
             // drift-proof tomorrow (the scoring-copy lesson, BUILD_RULES §4).
-            baggerBombPoints: breakdownAsset.badges?.reduce((sum, b) => {
+            baggerBombPoints: bdAsset.badges?.reduce((sum, b) => {
               if (b === 'bagger' || b === 'doubleBagger' || b === 'tenBagger') return sum + THRESHOLD_POINTS[b];
               return sum;
             }, 0) || 0,
-            bustPoints: breakdownAsset.badges?.reduce((sum, b) => {
+            bustPoints: bdAsset.badges?.reduce((sum, b) => {
               if (b === 'bust' || b === 'crash' || b === 'meltdown') return sum + THRESHOLD_POINTS[b];
               return sum;
             }, 0) || 0,
-            totalScore: breakdownAsset.points || 0,
-            startingPrice: startingPrices?.[breakdownAsset.symbol] || breakdownAsset.swapPrice || 0,
-            currentPrice: breakdownAsset.currentPrice || 0,
+            totalScore: bdAsset.points || 0,
+            startingPrice: bdStartingPrices?.[bdAsset.symbol] || bdAsset.swapPrice || 0,
+            currentPrice: bdAsset.currentPrice || 0,
           }}
           events={[]}
-          onClose={() => setBreakdownAsset(null)}
-          entryPrice={startingPrices?.[breakdownAsset.symbol] || breakdownAsset.swapPrice || 0}
+          onClose={gatedPath ? () => setBreakdownSel(null) : () => setBreakdownAsset(null)}
+          entryPrice={bdStartingPrices?.[bdAsset.symbol] || bdAsset.swapPrice || 0}
           battleCreatedAt={agentBattle?.createdAt || null}
           priceHistory={[]}
           bankedBadgePoints={0}
         />
+      )}
+
+      {/* Quote integrity (§7.2 item 1): the notice a held name with no
+          qualified current opens instead of a priced view. Appended LAST, so
+          no shipped sibling moves; never rendered flag-off. */}
+      {gatedPath && quoteNotice && (
+        <QuoteUnavailableNotice notice={quoteNotice} onDismiss={() => setQuoteNotice(null)} />
       )}
     </div>
   );

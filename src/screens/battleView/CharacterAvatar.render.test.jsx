@@ -10,7 +10,9 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import path from 'node:path';
 import CharacterAvatar from './CharacterAvatar.jsx';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
 import { SPEECH_EYEBROW_COLOR } from './TapeCards';
@@ -246,5 +248,194 @@ describe('Review lens 4 F2 / F4 / F5 — the honesty rules, guarded by something
     const still = render({ unread: 1, reducedMotion: true });
     expect(moving).toContain('opacity:0');
     expect(still).not.toContain('opacity:0');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shadow vs CPU quote integrity (spec SHADOW_CPU_PLACEHOLDER_PRICE_SPEC_V1_6.md
+// §5.3 R-7/V-4, OFF-6; build record
+// docs/audits/20261002_SHADOW_CPU_QUOTE_INTEGRITY_BUILD_REVIEW.md).
+//
+// OFF-6 — without the new `comparison` prop the mark's markup and the face's
+// `duel` input are byte-identical to the pre-build SHA (captured there with
+// SHADOW_OFF_CAPTURE_DIR).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const OFF_REFERENCE_SHA = '44d0c63eba4e3099552d3ec3dbde6a89660a7e06';
+const CAPTURE_DIR = process.env.SHADOW_OFF_CAPTURE_DIR || '';
+const digest = (s) => ({ sha256: createHash('sha256').update(s).digest('hex'), length: s.length });
+function offReference(name, actual, expected) {
+  if (CAPTURE_DIR) {
+    writeFileSync(path.join(CAPTURE_DIR, `characterAvatar.${name}.json`), JSON.stringify(actual, null, 1));
+    return;
+  }
+  expect(actual, `OFF-6 reference ${name} (captured at ${OFF_REFERENCE_SHA})`).toEqual(expected);
+}
+
+const OFF_VARIANTS = {
+  mobileBubble: { isDesktop: false },
+  desktopBubble: { isDesktop: true },
+  quiet: { unread: 0, bubble: null },
+  standalone: { unread: 0, bubble: { ...BUBBLE, standalone: true } },
+  pairPassed: { playerScore: 4, opponentScore: 9 },
+  inset: { viewportInset: 34, reducedMotion: true },
+};
+
+// BEGIN GENERATED OFF REFERENCES — captured at the pre-build SHA 44d0c63eba4e3099552d3ec3dbde6a89660a7e06 (7 entries).
+// Regenerate ONLY by re-running this file's OFF rows at that SHA with
+// SHADOW_OFF_CAPTURE_DIR set; never by blessing build output.
+const OFF6 = {
+ "desktopBubble": {
+  "length": 2061,
+  "sha256": "3897dd6ec53c6f4083523c14e918f0dc625e6ed683376a55f230be54de7e29c7"
+ },
+ "inset": {
+  "length": 2050,
+  "sha256": "6a17ee341ccadb12d2b2d38dddde990735bb816fb42fddd92fa2acc333bab3dc"
+ },
+ "mobileBubble": {
+  "length": 2061,
+  "sha256": "c2b02892aa74d0ebca64b3ec8b09e15433d3e50ea8d3e98189e4af7f0e57e76e"
+ },
+ "pairPassed": {
+  "length": 2061,
+  "sha256": "c2b02892aa74d0ebca64b3ec8b09e15433d3e50ea8d3e98189e4af7f0e57e76e"
+ },
+ "presenceDuel": [
+  {
+   "duel": {
+    "opponentScore": 3,
+    "playerScore": 12,
+    "statusFeed": null
+   },
+   "reactivityLevel": "static",
+   "size": 40
+  },
+  {
+   "duel": {
+    "opponentScore": 3,
+    "playerScore": 12,
+    "statusFeed": null
+   },
+   "reactivityLevel": "static",
+   "size": 44
+  },
+  {
+   "duel": {
+    "opponentScore": 3,
+    "playerScore": 12,
+    "statusFeed": null
+   },
+   "reactivityLevel": "static",
+   "size": 40
+  },
+  {
+   "duel": {
+    "opponentScore": 3,
+    "playerScore": 12,
+    "statusFeed": null
+   },
+   "reactivityLevel": "static",
+   "size": 40
+  },
+  {
+   "duel": {
+    "opponentScore": 9,
+    "playerScore": 4,
+    "statusFeed": null
+   },
+   "reactivityLevel": "static",
+   "size": 40
+  },
+  {
+   "duel": {
+    "opponentScore": 3,
+    "playerScore": 12,
+    "statusFeed": null
+   },
+   "reactivityLevel": "static",
+   "size": 40
+  },
+  {
+   "duel": {
+    "opponentScore": 0,
+    "playerScore": 0,
+    "statusFeed": null
+   },
+   "reactivityLevel": "static",
+   "size": 40
+  }
+ ],
+ "quiet": {
+  "length": 683,
+  "sha256": "8d50511096aedb6d2d46265dafed2caecfe6c5d66eed7aa9896cd44a4350e975"
+ },
+ "standalone": {
+  "length": 1707,
+  "sha256": "c499b19ee59e05afeb50f0e1120287fc7f5a675c00708aab8bbecf2404769473"
+ }
+};
+// END GENERATED OFF REFERENCES
+
+describe('OFF-6 — CharacterAvatar default markup is byte-identical to the pre-build SHA', () => {
+  for (const [name, props] of Object.entries(OFF_VARIANTS)) {
+    it(`OFF ${name}`, () => {
+      offReference(name, digest(render(props)), OFF6[name]);
+    });
+  }
+
+  it('OFF presenceDuel: the face receives exactly the pre-build duel input', async () => {
+    vi.resetModules();
+    const seen = [];
+    vi.doMock('../../config/featureFlags', async (importOriginal) => ({
+      ...(await importOriginal()),
+      isAgentPresenceOn: () => true,
+    }));
+    vi.doMock('../../components/AgentPresence/AgentPresenceMount', () => ({
+      default: (props) => { seen.push({ duel: props.duel, reactivityLevel: props.reactivityLevel, size: props.size }); return null; },
+    }));
+    const Fresh = (await import('./CharacterAvatar.jsx')).default;
+    for (const [, props] of Object.entries(OFF_VARIANTS)) {
+      renderToString(<Fresh agentBattle={BATTLE} bubble={BUBBLE} unread={3} onOpen={() => {}} {...props} />);
+    }
+    renderToString(<Fresh agentBattle={{ ...BATTLE, scoreState: {} }} onOpen={() => {}} />);
+    vi.doUnmock('../../components/AgentPresence/AgentPresenceMount');
+    vi.doUnmock('../../config/featureFlags');
+    vi.resetModules();
+    offReference('presenceDuel', seen, OFF6.presenceDuel);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ON — the mark's face as a comparison consumer (R-7, V-4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('ON — CharacterAvatar reads the ONE selected comparison', () => {
+  const NOW_MS = Date.parse('2026-10-01T17:00:00.000Z');
+
+  it('available: the duel is exactly the selected pair; unavailable: score keys omitted; controls kept', async () => {
+    const { selectComparison } = await import('./shadowCpuQuoteIntegrity.js');
+    vi.resetModules();
+    const seen = [];
+    vi.doMock('../../config/featureFlags', async (importOriginal) => ({ ...(await importOriginal()), isAgentPresenceOn: () => true }));
+    vi.doMock('../../components/AgentPresence/AgentPresenceMount', () => ({ default: (props) => { seen.push(props.duel); return null; } }));
+    const Fresh = (await import('./CharacterAvatar.jsx')).default;
+    const avail = selectComparison({ status: 'active', complete: true, browserPair: [4, 9], scoreState: null, contextKey: 'c', nowMs: NOW_MS });
+    const unav = selectComparison({ status: 'active', complete: false, browserPair: null, scoreState: null, contextKey: 'c', nowMs: NOW_MS });
+    const a = strip(renderToString(<Fresh agentBattle={BATTLE} playerScore={50} opponentScore={1} comparison={avail} bubble={BUBBLE} unread={3} onOpen={() => {}} />));
+    const u = strip(renderToString(<Fresh agentBattle={BATTLE} playerScore={50} opponentScore={1} comparison={unav} bubble={BUBBLE} unread={3} onOpen={() => {}} />));
+    vi.doUnmock('../../components/AgentPresence/AgentPresenceMount');
+    vi.doUnmock('../../config/featureFlags');
+    vi.resetModules();
+    expect(seen[0]).toEqual({ playerScore: 4, opponentScore: 9, statusFeed: null });
+    expect(seen[1]).toEqual({ statusFeed: null });
+    expect('playerScore' in seen[1]).toBe(false);
+    // The open button, its accessible name, the unread badge and the bubble stay.
+    for (const html of [a, u]) {
+      expect(html).toContain('data-character-mark="1"');
+      expect(html).toContain(`aria-label="${esc(COPY.paneOpenName(3))}"`);
+      expect(html).toContain('data-unread-badge="1"');
+      expect(html).toContain('data-character-bubble="1"');
+    }
   });
 });

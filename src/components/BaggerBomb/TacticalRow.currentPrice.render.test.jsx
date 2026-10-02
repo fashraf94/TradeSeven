@@ -22,6 +22,9 @@
 import { describe, it, expect } from 'vitest';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
+import { createHash } from 'node:crypto';
+import { writeFileSync } from 'node:fs';
+import path from 'node:path';
 import TacticalRow, { AssetSide } from './TacticalRow';
 import { computeProximity } from './computeProximity';
 import { BATTLE_VIEW_COPY } from '../../screens/battleView/battleViewCopy';
@@ -131,5 +134,184 @@ describe('D-85 — the current price on the player\'s row', () => {
     // flag-off, where every asset already carries `currentPrice`.
     expect(row()).not.toContain('264.75');
     expect(row({ showCurrentPrice: true })).toContain('264.75');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shadow vs CPU quote integrity (spec SHADOW_CPU_PLACEHOLDER_PRICE_SPEC_V1_6.md
+// §7.1, OFF-6, ON-ROW; build record
+// docs/audits/20261002_SHADOW_CPU_QUOTE_INTEGRITY_BUILD_REVIEW.md).
+//
+// OFF-6 — with none of the new optional props, the row's serialized markup is
+// byte-identical to the pre-build SHA. The digests below were captured there
+// by running this file with SHADOW_OFF_CAPTURE_DIR set.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const OFF_REFERENCE_SHA = '44d0c63eba4e3099552d3ec3dbde6a89660a7e06';
+const CAPTURE_DIR = process.env.SHADOW_OFF_CAPTURE_DIR || '';
+const digest = (s) => ({ sha256: createHash('sha256').update(s).digest('hex'), length: s.length });
+function offReference(name, actual, expected) {
+  if (CAPTURE_DIR) {
+    writeFileSync(path.join(CAPTURE_DIR, `tacticalRow.${name}.json`), JSON.stringify(actual, null, 1));
+    return;
+  }
+  expect(actual, `OFF-6 reference ${name} (captured at ${OFF_REFERENCE_SHA})`).toEqual(expected);
+}
+
+const OFF_VARIANTS = {
+  default: { leftAsset: PLAYER, rightAsset: CPU, tier: 'star' },
+  currentPrice: { leftAsset: PLAYER, rightAsset: CPU, tier: 'star', showCurrentPrice: true },
+  whyClosed: {
+    leftAsset: PLAYER, rightAsset: CPU, tier: 'core', onWhy: () => {}, whyOpen: false,
+    whyLabel: 'Why?', whyName: 'Why? NVDA', whyId: 'why-core-0', renderWhy: () => <div data-why-panel="1">panel</div>,
+  },
+  whyOpen: {
+    leftAsset: PLAYER, rightAsset: CPU, tier: 'core', onWhy: () => {}, whyOpen: true, showCurrentPrice: true,
+    whyLabel: 'Why?', whyName: 'Why? NVDA', whyId: 'why-core-0', renderWhy: () => <div data-why-panel="1">panel</div>,
+  },
+  cashAndEmpty: { leftAsset: { symbol: 'CASH', isCash: true, previousAsset: 'TSLA' }, rightAsset: null, tier: 'support' },
+  negativeWithBadges: {
+    leftAsset: { ...PLAYER, priceChange: -6.4, thresholdPriceChange: -6.4, points: -71, badges: ['bust', 'crash'], history: { maxMultiplier: 0, minMultiplier: -2.6 } },
+    rightAsset: { ...CPU, priceChange: 0, thresholdPriceChange: 0, points: 0 }, tier: 'support', isCryptoSlot: true,
+  },
+  bagger: { leftAsset: PLAYER, rightAsset: CPU, tier: 'star', baggerBurst: true, baggerFooter: 'Bagger hit · +15 banked', reducedMotion: false },
+  swapTarget: { leftAsset: PLAYER, rightAsset: CPU, tier: 'star', swapTargetMode: true, onLeftAssetSelect: () => {}, opponentDimmed: true },
+  clickable: { leftAsset: PLAYER, rightAsset: CPU, tier: 'star', onSymbolClick: () => {}, onPointsClick: () => {} },
+};
+
+// BEGIN GENERATED OFF REFERENCES — captured at the pre-build SHA 44d0c63eba4e3099552d3ec3dbde6a89660a7e06 (9 entries).
+// Regenerate ONLY by re-running this file's OFF rows at that SHA with
+// SHADOW_OFF_CAPTURE_DIR set; never by blessing build output.
+const OFF6 = {
+ "bagger": {
+  "length": 7802,
+  "sha256": "0f783a5e23a5a51b1d4b68c0d7c43e907acc02c178fad83cf7b2eb524f533f29"
+ },
+ "cashAndEmpty": {
+  "length": 1110,
+  "sha256": "819e21e98f0dd20d3e451e2f8a53919fdb0724e58c644069fdeabb598f52c295"
+ },
+ "clickable": {
+  "length": 7394,
+  "sha256": "4ce2f18a362c75707a274fd0a5631bb7b71558c94d971910db113707e97c8655"
+ },
+ "currentPrice": {
+  "length": 7584,
+  "sha256": "9e670d208ec0d4070f3a4272936496da0627c259cf7389ff653988a04f415fdf"
+ },
+ "default": {
+  "length": 7394,
+  "sha256": "7716fd3c6deda62f0ddf2d2674af5613064debb58d39eb4390277313fea9cdb8"
+ },
+ "negativeWithBadges": {
+  "length": 8000,
+  "sha256": "1f11e5dd0b1c6cfc4f26261482c7ddc9fac16f90c25915cc469910eb868581c1"
+ },
+ "swapTarget": {
+  "length": 7556,
+  "sha256": "cee570892a6990d2f0bf55415eedcebdabf66502acef5dbc45c1151ca9040a60"
+ },
+ "whyClosed": {
+  "length": 7718,
+  "sha256": "7069667440cb079a31c697a34c387b2166b5e62dccb55531a85f2885f966b241"
+ },
+ "whyOpen": {
+  "length": 7940,
+  "sha256": "b5954aa8705ea7715e41ce68b129bdd1e7f0bf5510223ca098d4b07cb21838b3"
+ }
+};
+// END GENERATED OFF REFERENCES
+
+describe('OFF-6 — TacticalRow default markup is byte-identical to the pre-build SHA', () => {
+  for (const [name, props] of Object.entries(OFF_VARIANTS)) {
+    it(`OFF ${name}`, () => {
+      offReference(name, digest(strip(renderToString(<TacticalRow {...props} />))), OFF6[name]);
+    });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ON-ROW — the optional availability contract (§7.1)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const UNAVAILABLE = (symbol, over = {}) => ({
+  symbol,
+  baseATR: 2.5,
+  openPrice: 150,
+  quoteAvailability: { status: 'unavailable', reason: 'missing', label: 'Quote unavailable', lastQuoteLabel: null, entryLabel: 'Entry $150.00', ...over },
+});
+
+describe('ON-ROW — an unavailable side withholds every current-derived channel together', () => {
+  it('both sides: symbol and status stay; percent, price, points, badges, fuse, proximity and radiance are absent', () => {
+    const html = row({ leftAsset: UNAVAILABLE('NVDA'), rightAsset: UNAVAILABLE('AMD'), showCurrentPrice: true });
+    expect(html).toContain('data-quote-unavailable="NVDA"');
+    expect(html).toContain('data-quote-unavailable="AMD"');
+    expect(html.match(/Quote unavailable/g)).toHaveLength(2);
+    expect(html).not.toMatch(/[▲▼]/);
+    expect(html).not.toContain('%');
+    expect(html).not.toContain('data-row-price');
+    expect(html).not.toContain('$0.00');
+    expect(html).not.toMatch(/>[+-]?\d+<\/span>/); // no DataStrike points
+    // The recorded entry is the player's line only.
+    expect(html).toContain('data-row-entry="NVDA"');
+    expect(html).not.toContain('data-row-entry="AMD"');
+  });
+
+  it('a dated stale label shows on the player side only; the CPU side keeps the plain status', () => {
+    const label = 'Last quote $153.50 · as of Oct 1, 12:50 PM EDT';
+    const html = row({
+      leftAsset: UNAVAILABLE('NVDA', { reason: 'configured-fallback', lastQuoteLabel: label }),
+      rightAsset: UNAVAILABLE('AMD', { reason: 'configured-fallback', lastQuoteLabel: label }),
+    });
+    expect(html.match(/Last quote \$153\.50/g)).toHaveLength(1);
+    expect(html).toContain('Quote unavailable');
+  });
+
+  it('the click payload names the side only when the screen opts in (the legacy callback is untouched)', async () => {
+    const { JSDOM } = await import('jsdom');
+    const dom = new JSDOM('<!doctype html><div id="r"></div>');
+    const prevWindow = globalThis.window;
+    const prevDocument = globalThis.document;
+    globalThis.window = dom.window;
+    globalThis.document = dom.window.document;
+    try {
+      const { createRoot } = await import('react-dom/client');
+      const { act } = React;
+      globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+      const calls = [];
+      const host = dom.window.document.getElementById('r');
+      const r = createRoot(host);
+      const clickAll = () => {
+        for (const el of host.querySelectorAll('div')) {
+          if (el.firstChild && (el.firstChild.textContent === 'NVDA' || el.firstChild.textContent === 'AMD') && el.style.cursor === 'pointer') {
+            act(() => { el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); });
+          }
+        }
+      };
+      act(() => { r.render(<TacticalRow leftAsset={PLAYER} rightAsset={UNAVAILABLE('AMD')} tier="star" onSymbolClick={(...a) => calls.push(a)} reportClickSide />); });
+      clickAll();
+      expect(calls.map((a) => [a[0].symbol, a[1]])).toEqual([['NVDA', { side: 'player' }], ['AMD', { side: 'cpu' }]]);
+      calls.length = 0;
+      act(() => { r.render(<TacticalRow leftAsset={PLAYER} rightAsset={CPU} tier="star" onSymbolClick={(...a) => calls.push(a)} />); });
+      clickAll();
+      expect(calls.map((a) => a.length)).toEqual([1, 1]);
+      act(() => r.unmount());
+    } finally {
+      globalThis.window = prevWindow;
+      globalThis.document = prevDocument;
+    }
+  });
+
+  it('a usable side in the same row renders exactly as shipped next to an unavailable one', () => {
+    const mixed = row({ leftAsset: PLAYER, rightAsset: UNAVAILABLE('AMD'), showCurrentPrice: true });
+    expect(mixed).toContain('$264.75');
+    expect(mixed).toContain('▲ +2.34%');
+    expect(mixed).toContain('data-quote-unavailable="AMD"');
+  });
+
+  it('MUTATION ROW — withholding is a branch, not a zero: an unavailable side never renders +0 / +0.00%', () => {
+    const html = row({ leftAsset: { ...UNAVAILABLE('NVDA'), priceChange: 0, points: 0 }, rightAsset: null });
+    expect(html).not.toContain('+0.00%');
+    expect(html).not.toMatch(/>\+0</);
   });
 });

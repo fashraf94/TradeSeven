@@ -48,6 +48,8 @@ import SmartMoneyTab from '../Research/SmartMoneyTab';
  * - actionConfig: { label, onClick, variant, disabled? } (optional) - custom action button
  *   - variant: 'primary' | 'danger' | 'secondary'
  * - showActionButton: boolean (default: true) - show/hide action section
+ * - controlledQuote / onNavigateAdmission: optional battle-screen contracts
+ *   (Shadow vs CPU quote integrity) — see the note at the component.
  */
 
 // Mock fundamental data (in production, fetch from API)
@@ -104,17 +106,51 @@ const AssetResearchModal = ({
   defaultTimeframe = null,
   realtimeExtremes = null,
   wsPrice = null,
+  // Shadow vs CPU quote integrity (SHADOW_CPU_PLACEHOLDER_PRICE_SPEC_V1_6.md
+  // §7.2 items 2–5, A-3, B-9; build record
+  // docs/audits/20261002_SHADOW_CPU_QUOTE_INTEGRITY_BUILD_REVIEW.md). Both
+  // are supplied only by the gated battle screen; absent, nothing changes.
+  //
+  // controlledQuote: { posKey, symbol, price, extremes } for a HELD position
+  //   whose current quote qualified. The modal then shows exactly the parent's
+  //   payload (no symbol-keyed saved price), never fetches a price (both fill
+  //   effects and the hook's extremes poll are off), ignores wsPrice, hands
+  //   the session-qualified extremes to the research hook, allows no internal
+  //   navigation or back history, and sends "Why is it moving?" the hook's
+  //   daily change only when finite. A malformed contract fails closed.
+  // onNavigateAdmission(symbol, name) → boolean: for a NON-held view; every
+  //   internal navigation (forward or back) asks first. `false` means the
+  //   screen took the held name through its own admission — the modal stays
+  //   put and makes no request for it.
+  controlledQuote = null,
+  onNavigateAdmission = null,
 }) => {
+  const controlledMode = controlledQuote != null;
+  const controlledValid = controlledMode
+    && typeof controlledQuote === 'object'
+    && typeof controlledQuote.posKey === 'string' && controlledQuote.posKey.length > 0
+    && typeof controlledQuote.symbol === 'string' && controlledQuote.symbol === asset?.symbol
+    && typeof controlledQuote.price === 'number' && Number.isFinite(controlledQuote.price) && controlledQuote.price > 0
+    && (controlledQuote.extremes == null
+      || (typeof controlledQuote.extremes === 'object' && typeof controlledQuote.extremes.sessionDate === 'string'));
+  const failClosed = controlledMode && !controlledValid;
+  const controlledPrice = controlledValid ? controlledQuote.price : null;
+
   // Stock navigation — allows swapping to a different stock via leaderboard
-  const [currentAsset, setCurrentAsset] = useState(asset);
+  const [navAsset, setCurrentAsset] = useState(asset);
   const [stockHistory, setStockHistory] = useState([]);
+  // Controlled: the CURRENT parent payload, bound to the qualified current.
+  const controlledAsset = useMemo(() => (
+    controlledPrice != null ? { ...asset, price: controlledPrice, currentPrice: controlledPrice } : null
+  ), [asset, controlledPrice]);
+  const currentAsset = controlledMode ? controlledAsset : navAsset;
 
   // Sync when the external prop changes (modal opened for a different stock)
   useEffect(() => {
     setCurrentAsset(asset);
     setStockHistory([]);
     // Assets opened without a price (index ETFs, stocks from FantasyTimes) — fetch from EODHD
-    if (!(asset?.price > 0)) {
+    if (!controlledMode && !(asset?.price > 0)) {
       getStockPrice(asset.symbol).then(data => {
         if (!data?.price || isNaN(data.price)) return;
         setCurrentAsset(prev => {
@@ -148,20 +184,24 @@ const AssetResearchModal = ({
   const { isMobile, isTablet } = useIsMobile();
 
   const handleNavigateToStock = useCallback((ticker, name) => {
+    if (controlledMode) return;
+    if (typeof onNavigateAdmission === 'function' && onNavigateAdmission(ticker, name) === false) return;
     isInternalNavRef.current = true;
     setStockHistory(prev => [...prev, currentAsset]);
     setCurrentAsset({ symbol: ticker, name: name || ticker });
-  }, [currentAsset]);
+  }, [currentAsset, controlledMode, onNavigateAdmission]);
 
   const handleNavigateBack = useCallback(() => {
+    if (controlledMode) return;
     if (stockHistory.length === 0) return;
-    isInternalNavRef.current = true;
     const prev = stockHistory[stockHistory.length - 1];
+    if (typeof onNavigateAdmission === 'function' && onNavigateAdmission(prev?.symbol, prev?.name) === false) return;
+    isInternalNavRef.current = true;
     setStockHistory(h => h.slice(0, -1));
     setCurrentAsset(prev);
-  }, [stockHistory]);
+  }, [stockHistory, controlledMode, onNavigateAdmission]);
 
-  const canGoBack = stockHistory.length > 0;
+  const canGoBack = !controlledMode && stockHistory.length > 0;
   const isOriginalAsset = currentAsset?.symbol === asset?.symbol;
 
   const handleClose = useCallback(() => {
@@ -181,10 +221,13 @@ const AssetResearchModal = ({
     : isMobile ? 200 : isTablet ? 260 : 300;
 
   // v2: Research data hook for chart + enhanced technical tab
-  const researchData = useResearchData(version >= 2 ? currentAsset?.symbol : null, {
-    currentPrice: (isOriginalAsset ? wsPrice : null) || currentAsset?.price || currentAsset?.currentPrice || 0,
+  const researchData = useResearchData(version >= 2 && !failClosed ? currentAsset?.symbol : null, {
+    currentPrice: controlledMode
+      ? (controlledPrice ?? 0)
+      : (isOriginalAsset ? wsPrice : null) || currentAsset?.price || currentAsset?.currentPrice || 0,
     isCrypto: isCrypto,
     initialTimeframe: defaultTimeframe,
+    ...(controlledMode ? { controlled: { extremes: controlledValid ? (controlledQuote.extremes || null) : null } } : {}),
   });
 
   // Always prefer daily change from OHLCV data over parent-provided percentChange.
@@ -263,6 +306,7 @@ const AssetResearchModal = ({
   }, [currentAsset?.symbol, defaultTab]);
 
   useEffect(() => {
+    if (failClosed) return;
     if (currentAsset?.symbol && !isCrypto) {
       setProfileLoading(true);
       setDescExpanded(false);
@@ -277,6 +321,7 @@ const AssetResearchModal = ({
   // Fetch current price for internally-navigated stocks (not the original asset).
   // The original asset gets wsPrice from parent; navigated stocks need their own price fetch.
   useEffect(() => {
+    if (controlledMode) return; // Controlled held research never fetches a price.
     if (isOriginalAsset || !currentAsset?.symbol) return;
     if (currentAsset?.price > 0) return; // Already has price (e.g., restored from history)
 
@@ -292,6 +337,7 @@ const AssetResearchModal = ({
   }, [currentAsset?.symbol, isOriginalAsset]);
 
   if (!asset) return null;
+  if (failClosed) return null;
 
   const sectorColor = getSectorColor(sector);
   const fundamentals = getMockFundamentals(currentAsset.symbol);
@@ -712,7 +758,8 @@ const AssetResearchModal = ({
                   bombData={bombData}
                   symbol={currentAsset?.symbol}
                   todayDailyCandle={researchData.todayDailyCandle}
-                  realtimeExtremes={isOriginalAsset ? realtimeExtremes : null}
+                  realtimeExtremes={isOriginalAsset && !controlledMode ? realtimeExtremes : null}
+                  controlledSession={controlledMode ? { crypto: !!isCrypto } : undefined}
                 />
               )}
             </div>
@@ -1318,7 +1365,9 @@ const AssetResearchModal = ({
       <WhyMovingPopup
         symbol={currentAsset?.symbol}
         name={currentAsset?.name}
-        change={currentAsset?.percentChange || currentAsset?.change}
+        change={controlledMode
+          ? (Number.isFinite(researchData.dailyChange) ? researchData.dailyChange : undefined)
+          : currentAsset?.percentChange || currentAsset?.change}
         price={currentAsset?.price}
         isOpen={whyMovingOpen}
         onClose={() => setWhyMovingOpen(false)}
