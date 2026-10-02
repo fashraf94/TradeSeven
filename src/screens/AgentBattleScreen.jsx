@@ -311,6 +311,38 @@ const enrichCash = (asset) => ({
 const EMPTY_ENRICHED = Object.freeze({ star: [], core: [], support: [] });
 const EMPTY_QUOTE_BOOK = Object.freeze({ lineage: null, quotes: Object.freeze({}) });
 
+/**
+ * The retained evidence of the slots a lineage still has (§4.3 rule 1). A slot
+ * that vanished — a malformed tier, a shrunk one — restarts at generation 1
+ * when it returns, so its token can repeat a retired one: what it held goes
+ * with it, and the returning position starts EMPTY. Same object if all stay.
+ */
+function keepLiveSlots(quotes, lineage) {
+  const keys = Object.keys(quotes);
+  const live = keys.filter((k) => lineage.positions[k]);
+  return live.length === keys.length ? quotes : Object.fromEntries(live.map((k) => [k, quotes[k]]));
+}
+
+/**
+ * A position as a gated row may show it. TacticalRow renders `symbol` and a
+ * cash row's `previousAsset` as text, and reads `isCash` by truthiness; the
+ * gated context holds a position by a string symbol and `isCash === true`. A
+ * malformed field is dropped (or set to that rule) rather than rendered, so a
+ * malformed admitted portfolio cannot throw, and a row never contradicts its
+ * scoring (§3.1, BUILD_RULES §9). Well-formed positions come back unchanged.
+ */
+function gatedRowAsset(asset) {
+  const badSymbol = asset.symbol != null && typeof asset.symbol !== 'string';
+  const badPrevious = asset.isCash === true && asset.previousAsset != null && typeof asset.previousAsset !== 'string';
+  const badCashFlag = asset.isCash !== true && !!asset.isCash;
+  if (!badSymbol && !badPrevious && !badCashFlag) return asset;
+  const row = { ...asset };
+  if (badSymbol) delete row.symbol;
+  if (badPrevious) delete row.previousAsset;
+  if (badCashFlag) row.isCash = false;
+  return row;
+}
+
 /** useAgentBattle's derived fields, from the IDENTIFIED snapshot (gated path). */
 function identifiedFields(identified) {
   return {
@@ -1120,7 +1152,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
         setQuoteBook((prev) => {
           const lineage = reconcileLineage(prev.lineage, { battleKey: gatedBattleKey, context: gatedContext });
           if (lineage === prev.lineage) return prev;
-          return { lineage, quotes: lineage.battleGeneration === prev.lineage?.battleGeneration ? prev.quotes : {} };
+          return { lineage, quotes: lineage.battleGeneration === prev.lineage?.battleGeneration ? keepLiveSlots(prev.quotes, lineage) : {} };
         });
       }
     } else if (quoteBook.lineage && quoteBook.lineage.battleKey !== null) {
@@ -1159,8 +1191,9 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       const out = {};
       for (const tier of ['star', 'core', 'support']) {
         const list = portfolio && typeof portfolio === 'object' && Array.isArray(portfolio[tier]) ? portfolio[tier] : [];
-        out[tier] = list.map((asset, slot) => {
-          if (!asset || typeof asset !== 'object') return null;
+        out[tier] = list.map((raw, slot) => {
+          if (!raw || typeof raw !== 'object') return null;
+          const asset = gatedRowAsset(raw);
           if (asset.isCash === true) return enrichCash(asset);
           const posKey = `${name}:${tier}:${slot}`;
           const token = quoteTokenOf(posKey);
@@ -1673,7 +1706,8 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       return;
     }
     const symbol = typeof payload === 'string' ? payload : payload?.symbol;
-    if (!symbol || !gatedContext || !gatedContextKey) return;
+    // A symbol is a non-empty string or nothing: a malformed one opens nothing.
+    if (typeof symbol !== 'string' || !symbol || !gatedContext || !gatedContextKey) return;
     const side = clickSide?.side === 'player' || clickSide?.side === 'cpu'
       ? clickSide.side
       : (payload?.side === 'player' || payload?.side === 'cpu' ? payload.side : null);

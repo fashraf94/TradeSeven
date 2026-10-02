@@ -4387,7 +4387,9 @@ function mirroredProp(side, doc) {
   else prop.opponent = { portfolio: doc.opponent.portfolio };
   return prop;
 }
-/** An independent oracle: the named, non-cash positions in a side's array tiers. */
+/** The expected requests: the named, non-cash positions in a side's array tiers. It restates the
+ *  context's held rule (a malformed side's valid positions are still polled); the `gone` checks
+ *  below are the independent part. */
 function heldSymbolsOf(portfolio) {
   if (!portfolio || typeof portfolio !== 'object' || Array.isArray(portfolio)) return [];
   return ['star', 'core', 'support'].flatMap((tier) => (Array.isArray(portfolio[tier]) ? portfolio[tier] : []))
@@ -4417,7 +4419,7 @@ describe('F1 — the review\'s fixture: one side\'s star tier is an object, the 
         expect(requestedSymbols().filter((s) => gone.includes(s))).toEqual([]);
         expect(new Set(requestedSymbols())).toEqual(new Set([...heldSymbolsOf(doc.portfolio), ...heldSymbolsOf(doc.opponent.portfolio)]));
         expect(wsBox.args.every((a) => a.length === 0)).toBe(true);
-        if (controller) expect(counters()).toEqual(['+12.40', '+3.10']);
+        expect(counters()).toEqual(['+12.40', '+3.10']);
       });
     }
   }
@@ -4460,7 +4462,8 @@ describe('F1 — without a qualified stored pair, and once completed', () => {
       await mountGated(openingProp(), doc);
       expect(shell()).toBeNull();
       expect(label()).toEqual({ kind: 'unavailable', text: 'Comparison unavailable' });
-      expect(counters()).not.toContain('+0.00');
+      expect(counters()).toEqual([]);
+      expect(container.querySelector('[data-bar-pct]')).toBeNull();
     });
 
     it(`${side}: completed with a qualified final → the stored final, scored time and all`, async () => {
@@ -4540,4 +4543,146 @@ describe('F2 — the gated path subscribes no symbols of its own; the socket hoo
     expect('wsPrice' in lastResearch()).toBe(false);
     expect(lastResearch().controlledQuote.price).toBe(153);
   });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The F1 delta review (BUILD_RULES §2) — lens B's confirmed findings and lens
+// C's coverage gap, each refuted independently before any change:
+//   B-1  a slot that vanishes (a malformed tier, a shrunk one) and returns
+//        holding ANOTHER position restarted at generation 1, so its token
+//        repeated and the retired quote priced the new position — complete
+//        with the wrong price. Retained evidence now keeps only live slots.
+//   B-2  a position whose symbol is not a string threw at render (an object)
+//        or on a tap (a number, a boolean, an array).
+//   B-3  a cash position whose previousAsset is an object threw at render.
+//   B-4  isCash: 1 with a symbol was held and scored, yet its row read CASH.
+//   C-3  the terminal shells were never reached with a malformed opening prop.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('F1 review follow-up B-1 — a slot that vanishes and returns holding another position starts EMPTY', () => {
+  for (const controller of [true, false]) {
+    it(`controller ${controller ? 'on' : 'off'}: through a malformed interlude, the new position is unavailable until its own quote — never the retired one's`, async () => {
+      priceBox.table = { ...genuineTable(), XOM: quote('AAPL', { price: 112, previousClose: 111 }) };
+      flags.controller = controller;
+      await mountGated(); // AAPL accepted at 153 in player:star:0
+      expect(label().kind).toBe('browser');
+      await deliverDoc('ab-1', malformedDoc('player', 'a tier that is an object')); // the star tier vanishes
+      priceBox.mode = 'defer';
+      const back = JSON.parse(JSON.stringify(ACTIVE_DOC));
+      back.portfolio.star = [{ symbol: 'XOM', price: 100 }, back.portfolio.star[1]];
+      await deliverDoc('ab-1', back);
+      expect(rowStatus('XOM')).toEqual(['Quote unavailable']);
+      expect(container.querySelector('[data-row-price="XOM"]')).toBeNull();
+      expect(label().kind).toBe('last-scored');
+      priceBox.mode = 'throw'; // a failed poll: still XOM's own (empty) evidence, never "Last quote $153.00"
+      await poll();
+      expect(rowStatus('XOM')).toEqual(['Quote unavailable']);
+    });
+  }
+
+  it('without any malformed data: a tier that shrinks by one slot and regrows with another piece', async () => {
+    priceBox.table = genuineTable();
+    await mountGated(); // TSLA accepted at 255 in player:core:1
+    const shrunk = JSON.parse(JSON.stringify(ACTIVE_DOC));
+    shrunk.portfolio.core = [shrunk.portfolio.core[0]];
+    await deliverDoc('ab-1', shrunk);
+    priceBox.mode = 'defer';
+    const regrown = JSON.parse(JSON.stringify(ACTIVE_DOC));
+    regrown.portfolio.core = [regrown.portfolio.core[0], { symbol: 'XOM', price: 100 }];
+    await deliverDoc('ab-1', regrown);
+    expect(rowStatus('XOM')).toEqual(['Quote unavailable']);
+    expect(container.querySelector('[data-row-price="XOM"]')).toBeNull();
+    expect(label().kind).toBe('last-scored');
+  });
+});
+
+describe('F1 review follow-ups B-2 / B-3 / B-4 — malformed fields a gated row would render', () => {
+  /** The one unavailable row with no symbol, and its tappable symbol element. */
+  const symbollessRow = () => [...container.querySelectorAll('span')]
+    .filter((s) => s.textContent === 'Quote unavailable' && !s.hasAttribute('data-row-quote-status'));
+  const cashRows = () => [...container.querySelectorAll('div, span')].filter((e) => e.children.length === 0 && e.textContent.trim() === 'CASH').length;
+
+  for (const [what, bad] of [['an object', { code: 'AAPL' }], ['a number', 42], ['a boolean', true], ['an array', ['QQQ']]]) {
+    for (const side of ['player', 'cpu']) {
+      it(`B-2 ${side}: a position whose symbol is ${what} — no throw, gated and incomplete; a tap or a chat payload opens nothing`, async () => {
+        priceBox.table = genuineTable();
+        const doc = JSON.parse(JSON.stringify(ACTIVE_DOC));
+        const owner = side === 'player' ? doc.portfolio : doc.opponent.portfolio;
+        owner.star = [{ symbol: bad, price: 150 }, owner.star[1]];
+        await mountGated(openingProp(), doc);
+        expect(shell()).toBeNull();
+        expect(label()).toEqual({ kind: 'last-scored', text: expect.stringContaining(STORED_INCOMPLETE) });
+        expect(symbollessRow()).toHaveLength(1);
+        await click(symbollessRow()[0].previousElementSibling);
+        expect(modalOpen()).toBeNull();
+        await chatClick({ symbol: bad });
+        expect(modalOpen()).toBeNull();
+        expect(container.querySelector('[data-board]')).not.toBeNull();
+      });
+    }
+  }
+
+  for (const side of ['player', 'cpu']) {
+    it(`B-3 ${side}: a cash position whose previousAsset is an object — no throw, cash without "Was:"; a string one still shows`, async () => {
+      priceBox.table = genuineTable();
+      const withCash = (previousAsset) => {
+        const doc = JSON.parse(JSON.stringify(ACTIVE_DOC));
+        const owner = side === 'player' ? doc.portfolio : doc.opponent.portfolio;
+        owner.support = [owner.support[0], owner.support[1], { isCash: true, previousAsset }];
+        return doc;
+      };
+      await mountGated(openingProp(), withCash({ symbol: 'XOM' }));
+      expect(shell()).toBeNull();
+      expect(cashRows()).toBe(1);
+      expect(container.textContent).not.toContain('Was:');
+      expect(label().kind).toBe('browser'); // cash needs no quote; every held quote qualified
+      await deliverDoc('ab-1', withCash('XOM')); // control: the shipped string form renders
+      expect(container.textContent).toContain('Was: XOM');
+    });
+  }
+
+  it('B-4: isCash: 1 with a symbol is shown as the held position it is scored as — the same digits as without the flag, and no CASH row', async () => {
+    priceBox.table = genuineTable();
+    await mountGated();
+    const reference = { digits: counters(), label: label() };
+    expect(cashRows()).toBe(0);
+    const doc = JSON.parse(JSON.stringify(ACTIVE_DOC));
+    doc.portfolio.star = [{ ...doc.portfolio.star[0], isCash: 1 }, doc.portfolio.star[1]];
+    await deliverDoc('ab-1', doc);
+    await poll();
+    expect({ digits: counters(), label: label() }).toEqual(reference);
+    expect(cashRows()).toBe(0);
+    expect(symbolEl('AAPL', 'player')).toBeTruthy();
+  });
+});
+
+describe('F1 — the terminal shells with a malformed opening prop (lens C, C-3)', () => {
+  for (const controller of [true, false]) {
+    for (const [what, end] of [['the document is missing', (id) => deliverDoc(id, null)], ['the subscription errors', (id) => failDoc(id)]]) {
+      it(`controller ${controller ? 'on' : 'off'}: ${what} → "Battle unavailable", nothing built from the prop`, async () => {
+        flags.controller = controller;
+        priceBox.table = genuineTable();
+        const doc = malformedDoc('player', 'a tier that is an object');
+        flags.gate = true;
+        await mount(mirroredProp('player', doc));
+        expect(shell()).toBe('pending');
+        await end('ab-1');
+        expect(shell()).toBe('unavailable');
+        expect(priceBox.calls).toEqual([]);
+        expect(wsBox.args.every((a) => a.length === 0)).toBe(true);
+      });
+    }
+    it(`controller ${controller ? 'on' : 'off'}: the query path's confirmed empty lookup → "No active battle", nothing built from the prop`, async () => {
+      flags.controller = controller;
+      priceBox.table = genuineTable();
+      const doc = malformedDoc('player', 'a tier that is an object');
+      flags.gate = true;
+      await mount({ ...atQuery('agent-1'), creator: { portfolio: doc.portfolio } });
+      expect(shell()).toBe('pending');
+      await deliverQuery('agent-1', [], { fromCache: false });
+      expect(shell()).toBe('no-battle');
+      expect(priceBox.calls).toEqual([]);
+      expect(wsBox.args.every((a) => a.length === 0)).toBe(true);
+    });
+  }
 });
