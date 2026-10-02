@@ -947,7 +947,7 @@ export default async function handler(req, res) {
     // it and a rule beside it saying there should not be one.
     const researchFollowUp = grounded
       && SHOW_IT_ENABLED
-      && buildPlatformResearchBlock(battle?.chatExchanges) !== null;
+      && buildPlatformResearchBlock(battle?.chatExchanges, { callsMode }) !== null;
     const researchLintFailed = researchFollowUp && !passesResearchReplyLint(parsed.response);
     // THE WHOLE TURN IS WITHHELD, NOT JUST ITS WORDS (review B-1). Clearing the
     // response while leaving the directive intact filed a strategic instruction

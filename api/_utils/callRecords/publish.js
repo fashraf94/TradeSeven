@@ -53,7 +53,7 @@ import { buildMintCandidate, canonicalCall, canonicalRecord } from './candidate.
 // transaction and the heard phase after the flips — at resolved 'on' only;
 // shadow writes stay Build 0's, byte for byte.
 import { buildCallEvent, createCallEvent } from './events.js';
-import { renderDeclaredEvent } from './copy.js';
+import { renderDeclaredEvent, saidPassesLint } from './copy.js';
 import { heardThreadOf, directiveRecordOf } from './threads.js';
 
 /** The admission reserve added to the pre-call requirement at shadow/on (§3.7). */
@@ -191,9 +191,14 @@ export async function publishDeclarations({ db, battleId, candidate, evalSeq, tx
       // resolved 'on' only. `promptDirectiveThreadId` records a directive PRESENT
       // in the declaring check's prompt — prompt inclusion, never causation; no
       // causal field or text exists in 1a (RESPONSE_FORK_ATTRIBUTION_ENABLED false).
-      if (events?.enabled) {
+      // A declarations-only check (watching / playerAsk, no call) declares nothing (review L2-6).
+      if (events?.enabled && candidate.calls.length > 0) {
         const thread = events.promptDirectiveThreadId ?? null;
         const lines = [renderDeclaredEvent({ calls: candidate.calls, nowMs: events.nowMs })];
+        // saidOk (spec §10): the lint verdict over the declared calls' own wording — true when every
+        // `said` passes, false when any fails, null when none was said (review L5-8).
+        const verdicts = candidate.calls.filter((c) => typeof c.said === 'string' && c.said.trim()).map((c) => saidPassesLint(c.said, c.horizon?.basis));
+        const saidOk = verdicts.length === 0 ? null : verdicts.every(Boolean);
         if (thread && events.promptDirectiveText) lines.push(`Directive in this check's prompt: ${events.promptDirectiveText}`);
         createCallEvent(tx, db, battleId, {
           kind: 'declared',
@@ -203,6 +208,7 @@ export async function publishDeclarations({ db, battleId, candidate, evalSeq, tx
             at: events.nowMs ?? null,
             callIds: candidate.calls.map((c) => c.callId),
             text: lines.filter(Boolean).join(' · ') || null,
+            saidOk,
             evidence: { evalId, promptBuiltAt: events.promptBuiltAt ?? null, checkLabel: events.checkLabel ?? null },
             ...(thread ? { promptDirectiveThreadId: thread } : {}),
           }),

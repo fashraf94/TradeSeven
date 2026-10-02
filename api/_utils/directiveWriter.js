@@ -90,36 +90,56 @@ export async function fileDirectiveTransactional(tx, battleRef, plan) {
   const stamped = stamp ? { ...exchange, supersedes: stamp } : exchange;
   const payload = { chatExchanges: arrayUnion(stamped), ...fields };
 
-  let event = null;
-  if (stamp && callsMode === 'on') {
+  const eventFor = (slot, s) => {
     const atMs = Date.parse(exchange.timestamp);
-    event = {
+    return {
       kind: 'superseded',
-      idParams: { directiveThreadId: stamp.directiveThreadId },
+      idParams: { directiveThreadId: s.directiveThreadId },
       event: buildCallEvent({
         kind: 'superseded',
         at: Number.isFinite(atMs) ? atMs : null,
-        callIds: nonEmpty(priorSlot.callId) ? [priorSlot.callId] : [],
+        callIds: nonEmpty(slot?.callId) ? [slot.callId] : [],
         text: renderSupersededEvent({ at: exchange.timestamp }),
-        extra: { supersededBy: exchange.directiveThreadId ?? null, supersededDirectiveThreadId: stamp.directiveThreadId },
+        extra: { supersededBy: exchange.directiveThreadId ?? null, supersededDirectiveThreadId: s.directiveThreadId },
       }),
     };
-  }
+  };
 
   if (tx) {
+    // The caller's transaction read the parent moments ago: its slot is the one being replaced.
     tx.update(battleRef, payload);
-    const supersededEventId = event ? createCallEvent(tx, db, battleId, event) : null;
+    const supersededEventId = stamp && callsMode === 'on' ? createCallEvent(tx, db, battleId, eventFor(priorSlot, stamp)) : null;
     return { exchange: stamped, supersedes: stamp, supersededEventId };
   }
-  if (!event) {
+  if (!(stamp && callsMode === 'on')) {
     await battleRef.update(payload);
     return { exchange: stamped, supersedes: stamp, supersededEventId: null };
   }
-  // Chat's plain path with an event due: one atomic batch (the update and the create commit together).
+  // Chat's plain path with an event due. The turn-start slot is stale by the model call's latency
+  // (review L1-2 / L5-13): re-read the slot AT COMMIT and record what is actually being replaced — a
+  // retired or ordinary slot gets no stamp and no event; a different call-family slot gets its own.
+  const freshSnap = await battleRef.get();
+  const freshSlot = freshSnap?.exists ? (freshSnap.data()?.directive ?? null) : null;
+  const freshStamp = supersedesStamp(freshSlot, { newThreadId: exchange?.directiveThreadId ?? null, at: exchange?.timestamp ?? null });
+  const freshExchange = freshStamp ? { ...exchange, supersedes: freshStamp } : exchange;
+  const freshPayload = { chatExchanges: arrayUnion(freshExchange), ...fields };
+  if (!freshStamp) {
+    await battleRef.update(freshPayload);
+    return { exchange: freshExchange, supersedes: null, supersededEventId: null };
+  }
+  const id = eventIdOf('superseded', { directiveThreadId: freshStamp.directiveThreadId });
   const batch = db.batch();
-  batch.update(battleRef, payload);
-  const id = eventIdOf('superseded', event.idParams);
-  batch.create(callEventRef(db, battleId, id), event.event);
-  await batch.commit();
-  return { exchange: stamped, supersedes: stamp, supersededEventId: id };
+  batch.update(battleRef, freshPayload);
+  batch.create(callEventRef(db, battleId, id), eventFor(freshSlot, freshStamp).event);
+  try {
+    await batch.commit();
+  } catch (err) {
+    // The supersession is already on record (a concurrent writer created the event): the filing itself must still land.
+    if (err?.code === 6 || /ALREADY_EXISTS/i.test(String(err?.message || err))) {
+      await battleRef.update(freshPayload);
+      return { exchange: freshExchange, supersedes: freshStamp, supersededEventId: null };
+    }
+    throw err;
+  }
+  return { exchange: freshExchange, supersedes: freshStamp, supersededEventId: id };
 }

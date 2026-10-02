@@ -2120,13 +2120,13 @@ describe('agent/chat — Cockpit Build 1a: the calls block is read and rendered 
     { callId: 'battle-1:eval_001:call:1', kind: 'called_shot', symbol: 'KO', direction: 'exit', slot: 'support', counterpart: 'AMD', condition: { side: 'below', level: 62.5 }, horizon: { phrase: 'this_session', expiresAt: CLOSE, basis: 'this_session' }, defaultAction: 'hold', state: 'hit', mintedAt: 20, playerResponse: null, outcome: { receiptRef: 'r' } },
   ];
   let callsQueries;
-  const run = async () => {
+  const run = async (body = {}, battleOver = {}) => {
     callsQueries = [];
     voiceLayerArgs.current = [];
     callGemmaVoiceImpl.current = async () => '{"response":"ok"}';
-    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: { ...VALID_BATTLE, evaluations: [] }, calls: CALLS, callsQueries });
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: { ...VALID_BATTLE, evaluations: [], ...battleOver }, calls: CALLS, callsQueries });
     activeFirestore = fixture.db;
-    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi' });
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi', ...body });
     await handler(req, res);
     return res;
   };
@@ -2155,6 +2155,15 @@ describe('agent/chat — Cockpit Build 1a: the calls block is read and rendered 
     expect(block).toContain("- battle-1:eval_001:call:0 · AMD above $161.00 by");
     expect(block).toContain("- battle-1:eval_001:call:1 · KO below $62.50 by");
     expect(block.indexOf('call:0')).toBeLessThan(block.indexOf('call:1')); // open first, then history
+  });
+
+  it("calls 'on' for the ALLOWLISTED owner in REVIEW mode: the block is chat-prologue only — no calls query, callsBlock null (spec §9; review L4-9)", async () => {
+    callsFlag.mode = 'on';
+    callsFlag.allow = ['test-user'];
+    const res = await run({ mode: 'review' }, { status: 'completed' });
+    expect(res.statusCode).toBe(200);
+    expect(callsQueries).toEqual([]);
+    expect(voiceLayerArgs.current[0].callsBlock).toBeNull();
   });
 
   it("a calls read that throws degrades to null: the turn still answers 200", async () => {

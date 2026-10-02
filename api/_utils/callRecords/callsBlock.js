@@ -15,15 +15,19 @@
 //   awaiting       — the "hit awaiting an answer" class: EMPTY in 1a
 //                    (reserved for 1b — the re-ask and second answers)
 // Each row: the call id, the call line (copy.js), the state, the answer, and
-// the §2 fact with its check time (acted → "exited X for Y at the HH:MM
-// check"; heard → "heard at the HH:MM check"; a directive answer not yet
-// confirmed → "not confirmed heard"). ≤ 1,200 chars, whole-row truncation
-// with "… n more"; priority: open rows, then history.
+// the §2 fact with its check time (acted → "acted at the HH:MM check", only
+// from a check that heard the thread; heard → "heard at the HH:MM check"; a
+// directive answer not yet confirmed → "not confirmed heard"). The third §2
+// fact, no_matching_trade, lives in callEvents only and is NOT rendered here
+// (the block reads calls; Build 2 merges the events — review V2-G7).
+// ≤ 1,200 chars, whole-row truncation with "… n more"; priority: open rows,
+// then history.
 //
 // Model-visible prose: registered in PROMPT_CONTRIBUTING_MODULES.
 
 import { withTimeout } from '../intraday/evaluatorHook.js';
 import { renderCallLine, checkLabel, ANSWER_WORDS } from './copy.js';
+import { selectedPickOf } from './threads.js';
 
 export const CALLS_BLOCK_CHAR_CAP = 1_200;
 export const CALLS_BLOCK_OPEN_LIMIT = 6;
@@ -45,28 +49,33 @@ function promptBuiltAtOf(evaluations, evalId) {
 /** The §2 fact for one call, with its check time, or null when nothing is confirmed. */
 export function renderCallFact(call, { evaluations = [] } = {}) {
   const pr = call?.playerResponse;
+  if (pr?.kind !== 'directive') return null;
+  // "Not confirmed heard" until a check that heard the thread is on record; "acted" only from a
+  // heard check — a flip stamp from a check that never heard the answer (a trade predating it) is a
+  // coincident action, not the §2 fact (review L5-9).
+  if (!nonEmpty(pr.heardEvalId)) return 'not confirmed heard';
   const acted = call?.outcome?.actedEvalId;
-  if (nonEmpty(acted)) {
-    const label = checkLabel(promptBuiltAtOf(evaluations, acted));
+  const actedBuiltAt = nonEmpty(acted) ? promptBuiltAtOf(evaluations, acted) : null;
+  const filedMs = Date.parse(pr.filedAt ?? '');
+  const actedMs = Date.parse(actedBuiltAt ?? '');
+  const coincident = Number.isFinite(filedMs) && Number.isFinite(actedMs) && actedMs < filedMs;
+  if (nonEmpty(acted) && !coincident) {
+    const label = checkLabel(actedBuiltAt);
     return `acted${label ? ` at ${label}` : ''}`;
   }
-  if (pr?.kind === 'directive') {
-    if (nonEmpty(pr.heardEvalId)) {
-      const label = checkLabel(promptBuiltAtOf(evaluations, pr.heardEvalId));
-      return `heard${label ? ` at ${label}` : ''}`;
-    }
-    return 'not confirmed heard';
-  }
-  return null;
+  const label = checkLabel(promptBuiltAtOf(evaluations, pr.heardEvalId));
+  return `heard${label ? ` at ${label}` : ''}`;
 }
 
 /** One row: id · line · state · answer · fact. Null when the call cannot be rendered. */
-export function renderCallsRow(call, { nowMs = Date.now(), evaluations = [] } = {}) {
+export function renderCallsRow(call, { nowMs = Date.now(), evaluations = [], battle = null } = {}) {
   const line = renderCallLine(call, { nowMs });
   if (!line || !nonEmpty(call?.callId)) return null;
   const parts = [call.callId, line, call.state ?? 'unknown'];
   const answer = call.playerResponse?.answer;
-  if (ANSWER_WORDS[answer]) parts.push(`answered: ${ANSWER_WORDS[answer]}${answer === 'pick' && nonEmpty(call.playerResponse?.pickSymbol) ? ` ${call.playerResponse.pickSymbol}` : ''}`);
+  // The selected pick lives in the directive's own record (spec §5), never on playerResponse (review L6-2 / L5-3).
+  const pick = answer === 'pick' ? selectedPickOf(battle, call.playerResponse?.directiveThreadId) : null;
+  if (ANSWER_WORDS[answer]) parts.push(`answered: ${ANSWER_WORDS[answer]}${nonEmpty(pick) ? ` ${pick}` : ''}`);
   const fact = renderCallFact(call, { evaluations });
   if (fact) parts.push(fact);
   return `- ${parts.join(' · ')}`;
@@ -83,8 +92,8 @@ export function mergeHistory(pages, limit = CALLS_BLOCK_HISTORY_LIMIT) {
  * THE BLOCK from already-read calls. Open rows first, then history; whole-row
  * truncation under the cap with "… n more". Null when there is nothing to say.
  */
-export function buildCallsBlock({ open = [], history = [], awaiting = [] }, { nowMs = Date.now(), evaluations = [] } = {}) {
-  const rows = [...open, ...awaiting, ...history].map((c) => renderCallsRow(c, { nowMs, evaluations })).filter(Boolean);
+export function buildCallsBlock({ open = [], history = [], awaiting = [] }, { nowMs = Date.now(), evaluations = [], battle = null } = {}) {
+  const rows = [...open, ...awaiting, ...history].map((c) => renderCallsRow(c, { nowMs, evaluations, battle })).filter(Boolean);
   if (rows.length === 0) return null;
   const lines = [CALLS_BLOCK_HEADING];
   let length = CALLS_BLOCK_HEADING.length;
@@ -123,7 +132,7 @@ export async function buildCallsBlockForChat(db, battleId, battle, { callsMode, 
   if (callsMode !== 'on') return null;
   try {
     const read = await readCallsForBlock(db, battleId);
-    return buildCallsBlock(read, { nowMs, evaluations: battle?.evaluations });
+    return buildCallsBlock(read, { nowMs, evaluations: battle?.evaluations, battle });
   } catch (err) {
     console.warn('[calls] chat calls block degraded to null:', err?.message || err);
     return null;

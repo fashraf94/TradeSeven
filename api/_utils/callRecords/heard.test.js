@@ -122,8 +122,11 @@ describe('planHeard — scope and the three facts', () => {
     const pickParent = makeTickBattle({ directive: pickSlot });
     const pick = shot(PICK, { kind: 'pick', symbol: null, direction: null, counterpart: null, swapOut: 'KO', options: [{ symbol: 'AMD' }, { symbol: 'JPM' }], condition: null, defaultAction: null, horizon: { phrase: 'next_check', expiresAt: NOW + 900_000, basis: 'next_check' }, playerResponse: { answer: 'pick', kind: 'directive', directiveThreadId: THREAD, callId: PICK, filedAt: '2026-09-09T14:20:00.000Z', heardEvalId: null }, directiveThreadId: THREAD });
     expect(planHeard(pick, pickParent, { ...args, executorResult: { symbolOut: 'KO', symbolIn: 'JPM', tier: 'support', slotIndex: 0 } })).toMatchObject({ acted: true, retire: true, pick: 'JPM' });
-    // AMD came in instead of the selected JPM: an option, but not the selection → not acted; the leg (KO out of support) happened → not "no match" either.
-    expect(planHeard(pick, pickParent, { ...args, executorResult: { symbolOut: 'KO', symbolIn: 'AMD', tier: 'support', slotIndex: 0 } })).toMatchObject({ acted: false, noMatch: false });
+    // AMD came in instead of the selected JPM: not the selection → not acted; for a pick the request IS the selection, so the slot traded otherwise is a NON-MATCHING trade (review L6-3; a ruling item).
+    expect(planHeard(pick, pickParent, { ...args, executorResult: { symbolOut: 'KO', symbolIn: 'AMD', tier: 'support', slotIndex: 0 } })).toMatchObject({ acted: false, noMatch: true, legTraded: true, retire: true });
+    // A result that leaves the pick's slot alone is a non-matching trade too; a null result is unknown.
+    expect(planHeard(pick, pickParent, { ...args, executorResult: { symbolOut: 'PG', symbolIn: 'JPM', tier: 'core', slotIndex: 0 } })).toMatchObject({ acted: false, noMatch: true, legTraded: false, retire: false });
+    expect(planHeard(pick, pickParent, args)).toMatchObject({ acted: false, noMatch: false });
   });
 });
 
@@ -139,11 +142,21 @@ describe('runHeardPhase — one transaction per call, at resolved on (spec §7)'
       [`${CALL}:heard:${EVAL}`]: { kind: 'heard', at: NOW + 30_000, callIds: [CALL], text: 'Heard at the 11:00 check', saidOk: null, evidence: { evalId: EVAL, promptBuiltAt: PROMPT_AT, checkLabel: 'the 11:00 check' } },
     });
     expect(db.__txAttempts).toBe(1);
+    // The page is the THREAD's calls only (review L4-1): the where clause is load-bearing — a battle carries dozens of calls.
+    expect(db.__access.queries[0]).toMatchObject({ collectionPath: `agentBattles/${BATTLE_ID}/calls`, filters: [{ field: 'directiveThreadId', op: '==', value: THREAD }], limit: 8 });
     // A later check that hears the same thread: monotonic — the first stamp stands, no second event.
     const again = await run(db, { evalId: 'eval_008' });
     expect(again).toMatchObject({ scanned: 1, heard: 0, skipped: { nothing_to_do: 1 } });
     expect(stored(db, P('calls', CALL)).playerResponse.heardEvalId).toBe(EVAL);
     expect(Object.keys(events(db))).toEqual([`${CALL}:heard:${EVAL}`]);
+  });
+
+  it("the heard page is the THREAD's calls only: nine other calls ahead of the answered one by id, and the answer is still heard (review L4-1)", async () => {
+    const others = Object.fromEntries(Array.from({ length: 9 }, (_, n) => [`${BATTLE_ID}:eval_000:call:${n}`, shot(`${BATTLE_ID}:eval_000:call:${n}`)]));
+    const db = makeDb({ calls: { ...others, [CALL]: answered() } });
+    const diag = await run(db);
+    expect(diag).toMatchObject({ scanned: 1, heard: 1 });
+    expect(stored(db, P('calls', CALL)).playerResponse.heardEvalId).toBe(EVAL);
   });
 
   it('a SUPPRESSED stamp never writes; no stamp never writes; below resolved on nothing runs — and no call is read', async () => {
@@ -198,6 +211,29 @@ describe('runHeardPhase — one transaction per call, at resolved on (spec §7)'
     expect(Object.keys(events(db2))).toEqual([`${CALL}:heard:${EVAL}`]);
   });
 
+  it('a SECOND check on an already-heard call whose present result misses the leg writes the no_matching_trade event ALONE — no empty update (the Admin SDK rejects one; review L2-1)', async () => {
+    const db = makeDb({ calls: { [CALL]: answered(CALL, {}, { heardEvalId: 'eval_006' }) } });
+    const res = await runHeardPhase(ctxOn(), { db, battleId: BATTLE_ID, evalId: EVAL, promptBuiltAt: PROMPT_AT, heard: HEARD, executorResult: { symbolOut: 'PG', symbolIn: 'JPM', tier: 'support', slotIndex: 1 }, deadlineMs: Date.now() + 5_000 });
+    expect(res).toMatchObject({ noMatch: 1, failed: 0, heard: 0 });
+    expect(events(db)[`${CALL}:no_match:${EVAL}`]).toMatchObject({ kind: 'no_matching_trade', callIds: [CALL], text: 'No matching trade recorded at the 11:00 check' });
+    expect(stored(db, P('calls', CALL)).playerResponse.heardEvalId).toBe('eval_006');
+  });
+
+  it('a PICK whose slot was traded for the OTHER option: the no_matching_trade receipt names the committed trade and the selection it was not, and the call_pick directive is RETIRED; a result elsewhere keeps the generic receipt and the directive (review L6-3 / V2-G2)', async () => {
+    const pickSlot = callSlot({ callId: PICK, kind: 'call_pick', answerId: `${PICK}:answer:pick:JPM`, action: { direction: null, symbol: null, slot: 'support', pickSymbol: 'JPM', swapOut: 'KO' } });
+    const pick = shot(PICK, { kind: 'pick', symbol: null, direction: null, counterpart: null, swapOut: 'KO', options: [{ symbol: 'AMD' }, { symbol: 'JPM' }], condition: null, defaultAction: null, horizon: { phrase: 'next_check', expiresAt: NOW + 900_000, basis: 'next_check' }, playerResponse: { answer: 'pick', kind: 'directive', directiveThreadId: THREAD, callId: PICK, filedAt: '2026-09-09T14:20:00.000Z', heardEvalId: null }, directiveThreadId: THREAD });
+    const db = makeDb({ battle: makeTickBattle({ directive: pickSlot, chatExchanges: [exchangeFor(pickSlot)] }), calls: { [PICK]: pick } });
+    const res = await runHeardPhase(ctxOn(), { db, battleId: BATTLE_ID, evalId: EVAL, promptBuiltAt: PROMPT_AT, heard: HEARD, executorResult: { symbolOut: 'KO', symbolIn: 'AMD', tier: 'support', slotIndex: 0 }, deadlineMs: Date.now() + 5_000 });
+    expect(res).toMatchObject({ heard: 1, acted: 0, noMatch: 1, retired: 1, failed: 0 });
+    expect(events(db)[`${PICK}:no_match:${EVAL}`].text).toBe('The agent exited KO for AMD at the 11:00 check — not the selected JPM');
+    expect(stored(db, `agentBattles/${BATTLE_ID}`).directive).toBeNull();
+    expect(stored(db, P('calls', PICK)).outcome).toBeNull();
+    const db2 = makeDb({ battle: makeTickBattle({ directive: pickSlot, chatExchanges: [exchangeFor(pickSlot)] }), calls: { [PICK]: pick } });
+    await runHeardPhase(ctxOn(), { db: db2, battleId: BATTLE_ID, evalId: EVAL, promptBuiltAt: PROMPT_AT, heard: HEARD, executorResult: { symbolOut: 'PG', symbolIn: 'MSFT', tier: 'core', slotIndex: 0 }, deadlineMs: Date.now() + 5_000 });
+    expect(events(db2)[`${PICK}:no_match:${EVAL}`].text).toBe('No matching trade recorded at the 11:00 check');
+    expect(stored(db2, `agentBattles/${BATTLE_ID}`).directive).toEqual(pickSlot);
+  });
+
   it('scope: a call that HIT in this same phase is still reconciled (flippedIds); one that hit earlier is post-terminal — 1b', async () => {
     const db = makeDb({ calls: { [CALL]: answered(CALL, { state: 'hit', stateSource: 'check' }) } });
     expect(await run(db, { flippedIds: new Set([CALL]), executorResult: SWAP_AMD_FOR_KO })).toMatchObject({ heard: 1, acted: 1 });
@@ -245,7 +281,7 @@ describe('the events the Build 0 phase creates inside its transactions at resolv
     const res = await publishDeclarations({ db, battleId: BATTLE_ID, candidate, evalSeq: 1, txDeadlineMs: far(), rereadDeadlineMs: far() + 500, events: { enabled: true, nowMs: NOW + 20_000, promptBuiltAt: PROMPT_AT, promptDirectiveThreadId: THREAD, promptDirectiveText: callSlot().text } });
     expect(res.wire).toBe('written');
     const ev = events(db)[`${EVAL}:declared`];
-    expect(ev).toMatchObject({ kind: 'declared', at: NOW + 20_000, callIds: candidate.calls.map((c) => c.callId), promptDirectiveThreadId: THREAD, evidence: { evalId: EVAL, promptBuiltAt: PROMPT_AT } });
+    expect(ev).toMatchObject({ kind: 'declared', at: NOW + 20_000, callIds: candidate.calls.map((c) => c.callId), promptDirectiveThreadId: THREAD, saidOk: true, evidence: { evalId: EVAL, promptBuiltAt: PROMPT_AT, checkLabel: 'the 11:00 check' } });
     expect(ev.text).toMatch(/^Called: /);
     expect(ev.text).toContain("Directive in this check's prompt: Hold off on the AMD entry until today's close.");
     expect(ev.text).not.toMatch(/In response to/);
@@ -254,6 +290,14 @@ describe('the events the Build 0 phase creates inside its transactions at resolv
     await publishDeclarations({ db: db2, battleId: BATTLE_ID, candidate: candidateOf(), evalSeq: 1, txDeadlineMs: far(), rereadDeadlineMs: far() + 500, events: { enabled: true, nowMs: NOW + 20_000, promptBuiltAt: PROMPT_AT, promptDirectiveThreadId: null, promptDirectiveText: null } });
     expect(events(db2)[`${EVAL}:declared`]).not.toHaveProperty('promptDirectiveThreadId');
     expect(events(db2)[`${EVAL}:declared`].text).not.toContain('Directive in this check');
+  });
+
+  it('a declarations-only check (watching, no call) publishes its record but DECLARES nothing: no declared event (review L2-6)', async () => {
+    const db = makeCallsFirestore({ docs: { [`agentBattles/${BATTLE_ID}`]: committedBattle() } });
+    const candidate = buildMintCandidate({ battleId: BATTLE_ID, evalId: EVAL, evalSeq: 1, mintedAtMs: NOW + 20_000, raw: { calledShots: [], watching: ['AMD'], playerAsk: null, fork: null }, universe: UNIVERSE, observation: makeObservation(), promptBuiltAt: PROMPT_AT, tickId: null, battle: committedBattle() });
+    expect(candidate.calls).toEqual([]);
+    await publishDeclarations({ db, battleId: BATTLE_ID, candidate, evalSeq: 1, txDeadlineMs: far(), rereadDeadlineMs: far() + 500, events: { enabled: true, nowMs: NOW + 20_000, promptBuiltAt: PROMPT_AT, promptDirectiveThreadId: THREAD, promptDirectiveText: 'x' } });
+    expect(events(db)).toEqual({});
   });
 
   it('a publication that ABORTS leaves no declared event (atomic); an identical retry creates no second one; at shadow (events null) none at all', async () => {
@@ -283,7 +327,7 @@ describe('the events the Build 0 phase creates inside its transactions at resolv
     expect(res.diag.expired).toBe(1);
     expect([...res.flippedIds]).toEqual([CALL]);
     expect(stored(db, P('calls', CALL)).state).toBe('expired_unresolved');
-    expect(events(db)[`${CALL}:expired`]).toMatchObject({ kind: 'expired', at: NOW, callIds: [CALL], text: 'Expired — a check observed it past its deadline · Answer expired before the 11:00 check', evidence: { evalId: EVAL, promptBuiltAt: PROMPT_AT } });
+    expect(events(db)[`${CALL}:expired`]).toMatchObject({ kind: 'expired', at: NOW, callIds: [CALL], text: 'Expired — a check observed it past its deadline · Answer expired before the 11:00 check', evidence: { evalId: EVAL, promptBuiltAt: PROMPT_AT, checkLabel: 'the 11:00 check' } });
     // Heard before: no answer-expired line.
     const db2 = makeDb({ battle, calls: { [CALL]: answered(CALL, { horizon: { phrase: 'explicit', expiresAt: NOW - 5, basis: 'explicit' } }, { heardEvalId: 'eval_002' }) } });
     await runCallFlips({ ...ctx }, { db: db2, battle: stored(db2, `agentBattles/${BATTLE_ID}`), deadlineMs: Date.now() + 5_000, events: { enabled: true, promptBuiltAt: PROMPT_AT, nowMs: NOW } });
@@ -293,6 +337,28 @@ describe('the events the Build 0 phase creates inside its transactions at resolv
     await runCallFlips({ ...ctx, mode: 'shadow' }, { db: db3, battle: stored(db3, `agentBattles/${BATTLE_ID}`), deadlineMs: Date.now() + 5_000, events: null });
     expect(stored(db3, P('calls', CALL)).state).toBe('expired_unresolved');
     expect(events(db3)).toEqual({});
+  });
+
+  it("the expired event says what the check JUDGED (review L5-6): a next_check shot at its slot → the condition unmet; a pick → the agent's choice recorded, or none; the evidence carries the check label (review L5-7)", async () => {
+    const ctxFor = (executorResult) => ({ ...createCallsContext({ mode: 'on', handlerStartMs: NOW }), exit: 'model_result', evalIdentity: { evalId: EVAL, evalSeq: 7 }, observation: makeObservation({ observedAtMs: NOW }), executorResult });
+    const ev = { enabled: true, promptBuiltAt: PROMPT_AT, nowMs: NOW };
+    // A next_check shot whose slot has passed, unmet at the observed price (AMD 162 vs above 170).
+    const slotShot = shot(CALL, { condition: { side: 'above', level: 170 }, horizon: { phrase: 'next_check', expiresAt: NOW - 60_000, basis: 'next_check' } });
+    const db = makeDb({ battle: makeTickBattle({ directive: null }), calls: { [CALL]: slotShot } });
+    await runCallFlips(ctxFor(null), { db, battle: stored(db, `agentBattles/${BATTLE_ID}`), deadlineMs: Date.now() + 5_000, events: ev });
+    expect(stored(db, P('calls', CALL)).state).toBe('expired_unresolved');
+    expect(events(db)[`${CALL}:expired`]).toMatchObject({ text: 'Expired — the check at its slot found the condition unmet', evidence: { evalId: EVAL, promptBuiltAt: PROMPT_AT, checkLabel: 'the 11:00 check' } });
+    // A pick at its slot: the agent brought in the selected JPM → its choice is on record; no trade → no choice recorded.
+    const pickSlot = callSlot({ callId: PICK, kind: 'call_pick', answerId: `${PICK}:answer:pick:JPM`, action: { direction: null, symbol: null, slot: 'support', pickSymbol: 'JPM', swapOut: 'KO' } });
+    const pick = shot(PICK, { kind: 'pick', symbol: null, direction: null, counterpart: null, swapOut: 'KO', options: [{ symbol: 'AMD' }, { symbol: 'JPM' }], condition: null, defaultAction: null, horizon: { phrase: 'next_check', expiresAt: NOW - 60_000, basis: 'next_check' }, playerResponse: { answer: 'pick', kind: 'directive', directiveThreadId: THREAD, callId: PICK, filedAt: '2026-09-09T14:20:00.000Z', heardEvalId: null }, directiveThreadId: THREAD });
+    const battle = makeTickBattle({ directive: pickSlot, chatExchanges: [exchangeFor(pickSlot)] });
+    const chosen = makeDb({ battle, calls: { [PICK]: pick } });
+    await runCallFlips(ctxFor({ symbolOut: 'KO', symbolIn: 'JPM', tier: 'support', slotIndex: 0 }), { db: chosen, battle: stored(chosen, `agentBattles/${BATTLE_ID}`), deadlineMs: Date.now() + 5_000, events: ev });
+    expect(stored(chosen, P('calls', PICK)).outcome).toMatchObject({ actedEvalId: EVAL });
+    expect(events(chosen)[`${PICK}:expired`].text).toBe("Expired — the check at its slot recorded the agent's own choice");
+    const unchosen = makeDb({ battle, calls: { [PICK]: pick } });
+    await runCallFlips(ctxFor(null), { db: unchosen, battle: stored(unchosen, `agentBattles/${BATTLE_ID}`), deadlineMs: Date.now() + 5_000, events: ev });
+    expect(events(unchosen)[`${PICK}:expired`].text).toBe('Expired — the check at its slot recorded no choice');
   });
 
   it('the flip binds the SELECTED pick: an option that was not the selection no longer counts as the called trade (Build 0 counted any option)', async () => {
@@ -312,6 +378,18 @@ describe('the events the Build 0 phase creates inside its transactions at resolv
     const unanswered = makeDb({ battle: makeTickBattle({ directive: null }), calls: { [PICK]: { ...pick, playerResponse: null, directiveThreadId: null } } });
     const r3 = await runCallFlips(ctxFor({ symbolOut: 'KO', symbolIn: 'AMD', tier: 'support', slotIndex: 0 }), { db: unanswered, battle: stored(unanswered, `agentBattles/${BATTLE_ID}`), deadlineMs: Date.now() + 5_000, events: null });
     expect(r3.diag.acted).toBe(1);
+  });
+
+  it("the declared event's inclusion line names the HEARD thread's record, not whatever sits in the slot now — a chat turn may have replaced it mid-check (review L4-7)", async () => {
+    const ordinary = { text: 'Require stronger confirmation before entering', expiry: 'end_of_battle', directiveThreadId: 'thread-ordinary', createdAt: '2026-09-09T14:59:00.000Z' };
+    const db = makeDb({ battle: committedBattle({ directive: ordinary, chatExchanges: [exchangeFor(callSlot())] }) });
+    const ctx = { ...ctxOn(), evalIdentity: { evalId: EVAL, evalSeq: 1 }, observation: makeObservation(), executorResult: null, universe: UNIVERSE, declarations: { raw: makeDeclarations(), phase: 'expected', validation: { removed: [] } } };
+    const res = await runModelCallsPhase(ctx, { db, battle: stored(db, `agentBattles/${BATTLE_ID}`), timeBudgetMs: 290_000, promptBuiltAt: PROMPT_AT, tickId: null, flips: runCallFlips, heardWriter: runHeardPhase, heard: HEARD });
+    expect(res.wire).toBe('written');
+    const ev = events(db)[`${EVAL}:declared`];
+    expect(ev.promptDirectiveThreadId).toBe(THREAD);
+    expect(ev.text).toContain("Directive in this check's prompt: Hold off on the AMD entry until today's close.");
+    expect(ev.text).not.toContain('Require stronger confirmation');
   });
 
   it('runModelCallsPhase at on with a SUPPRESSED heard stamp: the declared event carries NO promptDirectiveThreadId and no inclusion line; the heard phase stops at "suppressed"', async () => {

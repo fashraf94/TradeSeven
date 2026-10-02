@@ -77,6 +77,10 @@ function applyUpdateValue(existing, v) {
   return clone(v);
 }
 function alreadyExists(path) { const e = new Error(`6 ALREADY_EXISTS: Document already exists: ${path}`); e.code = 6; return e; }
+/** The Admin SDK's rule (write-batch.js): an update must name at least one field. */
+function assertNonEmptyUpdate(data, what) {
+  if (!data || typeof data !== 'object' || Object.keys(data).length === 0) throw new Error(`${what}: At least one field must be updated.`);
+}
 function notFound(path) { const e = new Error(`5 NOT_FOUND: No document to update: ${path}`); e.code = 5; return e; }
 function compareValues(a, b) {
   if (a === b) return 0;
@@ -130,7 +134,7 @@ export function makeCallsFirestore({ docs: initial = {} } = {}) {
       async get() { access.reads.push(path); return snapOf(path, ref); },
       async create(data) { assertNoUndefined(data, `create(${path})`); applyWrite({ op: 'create', path, data }); },
       async set(data, opts) { assertNoUndefined(data, `set(${path})`); applyWrite({ op: 'set', path, data, opts }); },
-      async update(data) { assertNoUndefined(data, `update(${path})`); applyWrite({ op: 'update', path, data }); },
+      async update(data) { assertNoUndefined(data, `update(${path})`); assertNonEmptyUpdate(data, `update(${path})`); applyWrite({ op: 'update', path, data }); },
       async delete() { applyWrite({ op: 'delete', path, data: null }); },
       collection: (sub) => makeCollection(`${path}/${sub}`),
     };
@@ -148,7 +152,7 @@ export function makeCallsFirestore({ docs: initial = {} } = {}) {
       async get() {
         access.queries.push(clone({ collectionPath, ...state }));
         if (access.queries.length > MAX_QUERIES) throw new Error(`callsFirestore: runaway — more than ${MAX_QUERIES} queries on one store`);
-        if (hooks.failQuery) { const err = hooks.failQuery; throw err; }
+        if (hooks.failQuery) { const err = typeof hooks.failQuery === 'function' ? hooks.failQuery({ collectionPath, ...clone(state) }) : hooks.failQuery; if (err) throw err; }
         const prefix = `${collectionPath}/`;
         let rows = [...docs.entries()]
           .filter(([p]) => p.startsWith(prefix) && !p.slice(prefix.length).includes('/'))
@@ -219,7 +223,7 @@ export function makeCallsFirestore({ docs: initial = {} } = {}) {
     batch() {
       const writes = [];
       return {
-        update(ref, data) { assertNoUndefined(data, `batch.update(${ref.path})`); writes.push({ op: 'update', path: ref.path, data: clone(data) }); return this; },
+        update(ref, data) { assertNoUndefined(data, `batch.update(${ref.path})`); assertNonEmptyUpdate(data, `batch.update(${ref.path})`); writes.push({ op: 'update', path: ref.path, data: clone(data) }); return this; },
         set(ref, data, opts) { assertNoUndefined(data, `batch.set(${ref.path})`); writes.push({ op: 'set', path: ref.path, data: clone(data), opts }); return this; },
         create(ref, data) { assertNoUndefined(data, `batch.create(${ref.path})`); writes.push({ op: 'create', path: ref.path, data: clone(data) }); return this; },
         delete(ref) { writes.push({ op: 'delete', path: ref.path, data: null }); return this; },
@@ -252,7 +256,7 @@ export function makeCallsFirestore({ docs: initial = {} } = {}) {
           async getAll(...refs) { readsBeforeWrites(); return Promise.all(refs.map((r) => tx.get(r))); },
           create(ref, data) { assertNoUndefined(data, `tx.create(${ref.path})`); writes.push({ op: 'create', path: ref.path, data: clone(data) }); return tx; },
           set(ref, data, opts) { assertNoUndefined(data, `tx.set(${ref.path})`); writes.push({ op: 'set', path: ref.path, data: clone(data), opts }); return tx; },
-          update(ref, data) { assertNoUndefined(data, `tx.update(${ref.path})`); writes.push({ op: 'update', path: ref.path, data: clone(data) }); return tx; },
+          update(ref, data) { assertNoUndefined(data, `tx.update(${ref.path})`); assertNonEmptyUpdate(data, `tx.update(${ref.path})`); writes.push({ op: 'update', path: ref.path, data: clone(data) }); return tx; },
           delete(ref) { writes.push({ op: 'delete', path: ref.path, data: null }); return tx; },
         };
         const result = await cb(tx);

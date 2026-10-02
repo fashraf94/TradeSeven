@@ -824,6 +824,34 @@ describe('Build 1a — heard end to end on the real check (spec §7)', () => {
     expect(db.__store.battle.directive).toEqual(slot); // a hold is not retired by hearing
   });
 
+  it("at 'on': a PICK directive's canonical text reaches the prompt verbatim and is heard — the four-layer proof's model-visible hop for the pick itself (spec §16; review L6-5)", async () => {
+    const pickId = 'battle-tick-1:eval_000:call:7';
+    const nowMs = Date.parse(FROZEN_NOW);
+    const pick = {
+      callId: pickId, kind: 'pick', battleId: 'battle-tick-1', evalId: 'eval_000', evalSeq: 0, mintedAt: EARLIER_MINT_MS,
+      symbol: null, direction: null, slot: 'support', counterpart: null, swapOut: 'KO', options: [{ symbol: 'AMD', why: 'a' }, { symbol: 'JPM', why: 'b' }], condition: null,
+      horizon: { phrase: 'next_check', expiresAt: nowMs + 900_000, basis: 'next_check' }, defaultAction: null, said: 'AMD or JPM for KO.',
+      evidence: { tickId: null, availability: 'off', priceAsOf: null }, hypothesisRef: null, origin: 'agent_initiative',
+      state: 'open', stateChangedAt: EARLIER_MINT_MS, stateSource: 'mint', directiveThreadId: THREAD, outcome: null, refused: null,
+      playerResponse: { answer: 'pick', kind: 'directive', directiveThreadId: THREAD, callId: pickId, filedAt: '2026-09-09T14:20:00.000Z', heardEvalId: null },
+    };
+    const slot = {
+      text: 'Bring in JPM for KO at the next check.', expiry: 'until_ms', directiveThreadId: THREAD, createdAt: '2026-09-09T14:20:00.000Z',
+      family: 'call', expiresAtMs: nowMs + 1_800_000, basis: 'next_check', callId: pickId, kind: 'call_pick',
+      action: { direction: null, symbol: null, slot: 'support', pickSymbol: 'JPM', swapOut: 'KO' }, answerId: `${pickId}:answer:pick:JPM`,
+      filedAt: '2026-09-09T14:20:00.000Z', textVersion: 'callActions.v1',
+    };
+    const { db, entry } = await runTick({ mode: 'on', battle: makeTickBattle({ directive: slot, chatExchanges: [] }), seed: seedOf([pick]) });
+    const prompt = JSON.stringify(mocks.create.mock.calls[0][0]);
+    expect(prompt).toContain('Bring in JPM for KO at the next check.');
+    expect(prompt).toContain(`threadId: ${THREAD}`);
+    expect(entry.heard).toEqual({ directiveThreadId: THREAD, suppressed: null });
+    const after = storedDoc(db, 'calls', pickId);
+    expect(after.playerResponse.heardEvalId).toBe(entry.evalId);
+    expect(after.state).toBe('open'); // the slot (15 min out) has not arrived: not judged, so not retired
+    expect(storedCollection(db, 'callEvents')[`${pickId}:heard:${entry.evalId}`]).toMatchObject({ kind: 'heard', callIds: [pickId] });
+  });
+
   it("at 'shadow' the same slot is INACTIVE: not in the prompt, no heard stamp, nothing stamped, no event — and the slot untouched", async () => {
     const [call] = earlierCalls([{ ...AMD_IN, condition: { side: 'above', level: 170 } }]);
     const slot = callSlotFor(call);

@@ -119,6 +119,15 @@ describe('the wire (spec §5)', () => {
     const other = await post(answerBody({ battleId: 'battle-other', answer: 'go' }));
     expect(other.statusCode).not.toBe(429);
   });
+
+  it("the window is the OWNER's: 20 requests by another signed-in user (each 403) never lock the owner out (review L1-1 / L6-4)", async () => {
+    state.uid = 'somebody-else';
+    for (let i = 0; i < 20; i++) expect((await post(answerBody({ answer: 'go' }))).statusCode).toBe(403);
+    expect((await post(answerBody({ answer: 'go' }))).statusCode).toBe(429); // the stranger's own window is full
+    state.uid = 'owner-uid-1';
+    const owner = await post(answerBody({ answer: 'go' }));
+    expect(owner.statusCode).toBe(200);
+  });
 });
 
 describe('rows 1–2: owner and the resolved mode — the 404 lands before any call read', () => {
@@ -334,13 +343,63 @@ describe('rows 7–8: directive answers — the guards in order, then one commit
     expect(stored(activeDb, `agentBattles/${BATTLE_ID}`).chatBudgetUsed).toBe(0);
   });
 
-  it('the agent binding, as the chip: a battle whose agent doc is missing or whose archetype cannot be derived files nothing', async () => {
+  it("the battle's agent: a missing agent doc or an underivable archetype files nothing (the request carries no agentId to bind — review L4-10)", async () => {
     activeDb = makeDb({ agent: null });
     activeDb.__docs.delete('agents/agent-1');
     expect((await post(answerBody())).body).toEqual({ error: 'agent_binding', reason: 'agent_not_found' });
     const noArch = makeTickBattle({ directive: null }); noArch.agentContext = { ...noArch.agentContext, archetype: null };
     activeDb = makeDb({ battle: noArch, agent: { name: 'x' } });
     expect((await post(answerBody())).body).toEqual({ error: 'agent_binding', reason: 'archetype_unknown' });
+  });
+
+  it('the guards are ORDERED, not just present: one state that trips several resolves to the FIRST — expired, then parent_not_active, then belief_mismatch, then directive_pending (review L4-2)', async () => {
+    const first = await post(answerBody({ callId: HOLD_CALL, answer: 'go_now' }));
+    expect(first.statusCode).toBe(200);
+    const pendingThread = first.body.directiveThreadId;
+    const battleRef = `agentBattles/${BATTLE_ID}`;
+    // The target call HIT, the parent completed, the belief stale, another directive pending: expired wins.
+    activeDb.__docs.set(P('calls', CALL), { ...stored(activeDb, P('calls', CALL)), state: 'hit' });
+    activeDb.__docs.set(battleRef, { ...stored(activeDb, battleRef), status: 'completed' });
+    expect((await post(answerBody({ expectedDirectiveThreadId: null }))).body).toEqual({ error: 'refused', reason: 'expired' });
+    activeDb.__docs.set(P('calls', CALL), { ...stored(activeDb, P('calls', CALL)), state: 'open' });
+    expect((await post(answerBody({ expectedDirectiveThreadId: null }))).body).toEqual({ error: 'refused', reason: 'parent_not_active' });
+    activeDb.__docs.set(battleRef, { ...stored(activeDb, battleRef), status: 'active' });
+    expect((await post(answerBody({ expectedDirectiveThreadId: null }))).body).toEqual({ error: 'refused', reason: 'belief_mismatch', currentDirectiveThreadId: pendingThread });
+    expect(stored(activeDb, P('calls', CALL)).refused).toBeNull();
+    expect((await post(answerBody({ expectedDirectiveThreadId: pendingThread }))).body).toEqual({ error: 'refused', reason: 'directive_pending', pendingDirectiveThreadId: pendingThread, pendingCallId: HOLD_CALL });
+    expect(stored(activeDb, P('calls', CALL)).refused).toMatchObject({ reason: 'directive_pending' });
+  });
+
+  it('a pending call-family slot whose thread the control epoch KILLED no longer blocks: the new answer files and `refused` stays null (review L4-3)', async () => {
+    const first = await post(answerBody({ callId: HOLD_CALL, answer: 'go_now' }));
+    const pendingThread = first.body.directiveThreadId;
+    const battleRef = `agentBattles/${BATTLE_ID}`;
+    activeDb.__docs.set(battleRef, { ...stored(activeDb, battleRef), controlEpochLog: [{ suppressedDirectiveIds: [pendingThread] }] });
+    const res = await post(answerBody({ callId: CALL, answer: 'hold', expectedDirectiveThreadId: pendingThread }));
+    expect(res.statusCode).toBe(200);
+    expect(res.body.directiveThreadId).toBeTruthy();
+    expect(stored(activeDb, P('calls', CALL)).refused).toBeNull();
+    expect(stored(activeDb, battleRef).directive.directiveThreadId).toBe(res.body.directiveThreadId);
+  });
+
+  it('replacing an EXPIRED call-family slot from the endpoint creates the `superseded` event in the same transaction, at the prior thread\'s id (review L4-4)', async () => {
+    const first = await post(answerBody({ callId: HOLD_CALL, answer: 'go_now' }));
+    const pendingThread = first.body.directiveThreadId;
+    const battleRef = `agentBattles/${BATTLE_ID}`;
+    const parent = stored(activeDb, battleRef);
+    activeDb.__docs.set(battleRef, { ...parent, directive: { ...parent.directive, expiresAtMs: NOW - 1 } }); // the pending directive's lifetime is over
+    const later = await post(answerBody({ callId: CALL, answer: 'hold', expectedDirectiveThreadId: pendingThread }));
+    expect(later.statusCode).toBe(200);
+    expect(storedUnder(activeDb, `agentBattles/${BATTLE_ID}/callEvents`)[`${pendingThread}:superseded`]).toMatchObject({ kind: 'superseded', callIds: [HOLD_CALL], supersededBy: later.body.directiveThreadId, supersededDirectiveThreadId: pendingThread });
+    expect(stored(activeDb, battleRef).chatExchanges[1].supersedes).toEqual({ directiveThreadId: pendingThread, at: expect.any(String) });
+  });
+
+  it('boundary instants (review L4-8): an ack or a directive answer at EXACTLY the deadline is expired; one millisecond before, it lands', async () => {
+    vi.setSystemTime(new Date(CLOSE));
+    expect((await post(answerBody({ answer: 'go' }))).body).toEqual({ error: 'refused', reason: 'expired' });
+    expect((await post(answerBody({ answer: 'hold' }))).body).toEqual({ error: 'refused', reason: 'expired' });
+    vi.setSystemTime(new Date(CLOSE - 1));
+    expect((await post(answerBody({ answer: 'go' }))).statusCode).toBe(200);
   });
 
   it('ANOTHER call-family directive pending in the slot → 409 directive_pending, and `refused` is written on THIS call — the only persisted refusal', async () => {
@@ -438,6 +497,15 @@ describe('rows 7–8: directive answers — the guards in order, then one commit
 });
 
 describe('nothing in the endpoint enforces an answer or trades (spec §1 "Out: enforcement")', () => {
+  it("the pending guard carries the renderer's suppression state (integrity mode not 'enforce' → never pending), source-pinned (review L1-3 / L5-10)", async () => {
+    const { readFileSync } = await import('node:fs');
+    const { resolve, dirname } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const src = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), './call-response.js'), 'utf8');
+    expect(src).toContain("suppressed: ARCHETYPE_INTEGRITY_MODE !== 'enforce'");
+    expect(src).toContain("import { ARCHETYPE_INTEGRITY_MODE } from '../../src/config/featureFlags.js';");
+  });
+
   it('the module imports no executor, no trade validator and no fenced module; it never calls executeSwapServer', async () => {
     const { readFileSync } = await import('node:fs');
     const { resolve, dirname } = await import('node:path');

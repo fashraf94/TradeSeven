@@ -46,6 +46,10 @@ describe('the event shape (§10)', () => {
     expect(declared).toEqual({ kind: 'declared', at: null, callIds: [], text: null, saidOk: true, evidence: { evalId: 'e', promptBuiltAt: 'p', checkLabel: 'the 10:15 check' }, promptDirectiveThreadId: 'thread-t' });
     expect(buildCallEvent({ kind: 'declared', at: 1, callIds: [], text: 'x', promptDirectiveThreadId: null })).not.toHaveProperty('promptDirectiveThreadId');
     expect(buildCallEvent({ kind: 'declared', at: 1, callIds: [], text: 'x', promptDirectiveThreadId: undefined })).not.toHaveProperty('promptDirectiveThreadId');
+    // One source for the check label (BUILD_RULES §9; review L5-7 / V2-G4): derived from promptBuiltAt when the writer gives none; a writer's own label wins.
+    expect(buildCallEvent({ kind: 'heard', at: 1, callIds: ['c'], text: 't', evidence: { evalId: 'e', promptBuiltAt: '2026-09-09T15:00:00.000Z' } }).evidence).toEqual({ evalId: 'e', promptBuiltAt: '2026-09-09T15:00:00.000Z', checkLabel: 'the 11:00 check' });
+    expect(buildCallEvent({ kind: 'heard', at: 1, callIds: ['c'], text: 't', evidence: { promptBuiltAt: '2026-09-09T15:00:00.000Z', checkLabel: 'given' } }).evidence.checkLabel).toBe('given');
+    expect(buildCallEvent({ kind: 'heard', at: 1, callIds: ['c'], text: 't', evidence: { promptBuiltAt: 'garbage' } }).evidence.checkLabel).toBeNull();
     expect(() => buildCallEvent({ kind: 'held', at: 1 })).toThrow(/unknown kind/);
     expect(JSON.stringify(buildCallEvent({ kind: 'acted', at: 1, callIds: ['c'], text: 't' }))).not.toContain('undefined');
   });

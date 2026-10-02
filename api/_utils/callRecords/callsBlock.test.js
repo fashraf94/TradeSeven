@@ -47,13 +47,24 @@ describe('rows and facts (spec §9, §2)', () => {
     const ack = shot(5, { playerResponse: { answer: 'go', kind: 'ack', callId: 'c', filedAt: 'f' } });
     expect(renderCallFact(ack)).toBeNull();
     expect(renderCallsRow(ack, { nowMs: NOW })).toContain('answered: Go');
-    expect(renderCallFact(shot(6, { outcome: { actedEvalId: 'eval_zzz' } }), { evaluations: EVALS })).toBe('acted'); // an evalId outside the retained window: no time invented
+    // A flip stamp WITHOUT a directive answer is the agent's own choice, not a §2 fact: no fact (review L5-9).
+    expect(renderCallFact(shot(6, { outcome: { actedEvalId: 'eval_zzz' } }), { evaluations: EVALS })).toBeNull();
+    // acted with an evalId outside the retained window: no time invented.
+    expect(renderCallFact(shot(6, { playerResponse: { answer: 'go_now', kind: 'directive', directiveThreadId: 't', callId: 'c', filedAt: 'f', heardEvalId: 'eval_010' }, outcome: { actedEvalId: 'eval_zzz' } }), { evaluations: EVALS })).toBe('acted');
+    // A stamp from a check BEFORE the answer was filed is coincident: not confirmed heard until heard, then heard — never acted (review L5-9).
+    expect(renderCallFact(shot(6, { playerResponse: { answer: 'go_now', kind: 'directive', directiveThreadId: 't', callId: 'c', filedAt: '2026-09-09T14:20:00.000Z', heardEvalId: null }, outcome: { actedEvalId: 'eval_010' } }), { evaluations: EVALS })).toBe('not confirmed heard');
+    expect(renderCallFact(shot(6, { playerResponse: { answer: 'go_now', kind: 'directive', directiveThreadId: 't', callId: 'c', filedAt: '2026-09-09T14:20:00.000Z', heardEvalId: 'eval_011' }, outcome: { actedEvalId: 'eval_010' } }), { evaluations: EVALS })).toBe('heard at the 10:30 check');
     expect(renderCallsRow({ ...shot(7), condition: null }, { nowMs: NOW })).toBeNull();
   });
 
   it('a pick row shows the request line and the chosen symbol', () => {
     const pick = shot(8, { kind: 'pick', symbol: null, direction: null, swapOut: 'KO', options: [{ symbol: 'AMD' }, { symbol: 'JPM' }], condition: null, defaultAction: null, horizon: { phrase: 'next_check', expiresAt: NOW + 900_000, basis: 'next_check' }, playerResponse: { answer: 'pick', kind: 'directive', directiveThreadId: 't', callId: 'c', filedAt: 'f', heardEvalId: null, pickSymbol: 'JPM' } });
-    expect(renderCallsRow(pick, { nowMs: NOW })).toBe(`- ${B}:eval_008:call:8 · support: AMD or JPM for KO · open · answered: Pick JPM · not confirmed heard`);
+    // The selection lives in the directive's own record (spec §5): the row reads it from the battle's slot or thread exchange, never from playerResponse (review L6-2 / L5-3).
+    const answeredPick = { ...pick, playerResponse: { answer: 'pick', kind: 'directive', directiveThreadId: 't', callId: pick.callId, filedAt: 'f', heardEvalId: null }, directiveThreadId: 't' };
+    expect(renderCallsRow(answeredPick, { nowMs: NOW })).toBe(`- ${B}:eval_008:call:8 · support: AMD or JPM for KO · open · answered: Pick · not confirmed heard`);
+    const record = { text: 'Bring in JPM for KO at the next check.', expiry: 'until_ms', directiveThreadId: 't', family: 'call', callId: pick.callId, kind: 'call_pick', action: { direction: null, symbol: null, slot: 'support', pickSymbol: 'JPM', swapOut: 'KO' } };
+    expect(renderCallsRow(answeredPick, { nowMs: NOW, battle: { directive: null, chatExchanges: [{ directiveThreadId: 't', directive: record }] } })).toBe(`- ${B}:eval_008:call:8 · support: AMD or JPM for KO · open · answered: Pick JPM · not confirmed heard`);
+    expect(renderCallsRow(answeredPick, { nowMs: NOW, battle: { directive: { ...record, createdAt: 'c' }, chatExchanges: [] } })).toContain('answered: Pick JPM');
   });
 });
 

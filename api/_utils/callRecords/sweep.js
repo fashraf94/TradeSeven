@@ -179,7 +179,7 @@ async function boundedTx(db, deadlineMs, label, body) {
 }
 
 /** One call's transition (terminal rule or expiry). Fresh reads; create-once receipt and event. */
-async function transitionOne({ db, battleId, callId, nowMs, deadlineMs, mode }) {
+async function transitionOne({ db, battleId, callId, nowMs, deadlineMs }) {
   const battleRef = db.collection('agentBattles').doc(battleId);
   const callRef = battleRef.collection('calls').doc(callId);
   const receiptRef = battleRef.collection('callObservations').doc(callId);
@@ -213,7 +213,6 @@ async function transitionOne({ db, battleId, callId, nowMs, deadlineMs, mode }) 
       idParams: { callId },
       event: buildCallEvent({ kind: next === 'ended_with_battle' ? 'ended_with_battle' : 'expired', at: nowMs, callIds: [callId], text: lines.join(' · '), evidence: {}, extra: { source: SWEEP_SOURCE, reason } }),
     });
-    void mode;
     return { result: 'transitioned', next, reason };
   });
 }
@@ -233,8 +232,11 @@ async function repairHeardOne({ db, battleId, callId, parent, nowMs, deadlineMs 
     if (!entry) {
       const lifetime = directiveRecordOf(parent, pr.directiveThreadId)?.expiresAtMs;
       const terminal = call.state !== 'open';
-      // Not confirmed heard: settled only once no later check can hear it and the call is terminal.
-      if (terminal && noLaterCheckCanHear(parent?.evaluations, lifetime)) return { result: 'settled', reason: 'not_confirmed_heard' };
+      // Not confirmed heard: settled once the call is terminal AND no later check can hear it — a
+      // retained check postdating the lifetime, or a parent no longer active (no check will ever run
+      // again; review L5-1 / L2-3).
+      const parentTerminal = !!parent && parent.status !== 'active';
+      if (terminal && (parentTerminal || noLaterCheckCanHear(parent?.evaluations, lifetime))) return { result: 'settled', reason: 'not_confirmed_heard' };
       return { result: 'pending', reason: TICK_STAMPS_ENABLED ? 'not_found' : 'stamps_disabled' };
     }
     if (Date.now() >= attemptDeadlineMs) throw new CallsAbort('deadline');
@@ -252,16 +254,20 @@ async function repairHeardOne({ db, battleId, callId, parent, nowMs, deadlineMs 
  * The queue row's settlement after a battle's pass: RE-READ in the transaction,
  * recompute, delete only when empty. Work enrolled since this pass read the
  * row — the endpoint's pendingHeard additions, a publication's newer
- * nextExpiresAt — is detected by comparing the fresh row to the row as read
- * (never by timestamps, which collide within a millisecond) and merged in, so
- * a stale pass cannot delete new work.
+ * nextExpiresAt — is detected by comparing the fresh row to the row as read,
+ * by value AND by updatedAt (a publication arming min(existing, new) can
+ * preserve the values while adding an open call), and merged in, so a stale
+ * pass cannot delete new work.
  */
 async function settleQueueRow({ db, battleId, rowAsRead = null, nextExpiresAt, pendingHeard, settled = new Set(), nowMs, deadlineMs }) {
   return boundedTx(db, deadlineMs, 'calls_sweep_queue', async (tx, attemptDeadlineMs) => {
     const snap = await tx.get(queueRef(db, battleId));
     const fresh = normalizeQueueRow(snap?.exists ? snap.data() : null, battleId);
     const asRead = normalizeQueueRow(rowAsRead, battleId);
-    const changed = JSON.stringify([fresh.nextExpiresAt, fresh.pendingHeard]) !== JSON.stringify([asRead.nextExpiresAt, asRead.pendingHeard]);
+    // Changed by VALUE, or by a concurrent writer's updatedAt (review L2-2 / L5-2): either way the fresh
+    // row's work is merged in and nothing of it is deleted.
+    const changed = JSON.stringify([fresh.nextExpiresAt, fresh.pendingHeard]) !== JSON.stringify([asRead.nextExpiresAt, asRead.pendingHeard])
+      || (!!snap?.exists && fresh.updatedAt !== asRead.updatedAt);
     const ourNext = finite(nextExpiresAt) ? nextExpiresAt : null;
     const heard = changed
       ? [...new Set([...pendingHeard, ...fresh.pendingHeard.filter((id) => !settled.has(id))])]
@@ -310,7 +316,9 @@ async function sweepBattle({ db, battleId, parent, row, nowMs, deadlineMs, summa
   };
   // 1. Transitions over the open calls.
   let open;
-  try { open = await openCallsOf(db, battleId, deadlineMs); } catch (err) { tally(isCallsTimeout(err) ? 'unconfirmed' : 'failed'); return { cut: true }; }
+  // A timed-out page ends the invocation (the deadline); any other failure is this battle's alone —
+  // tallied, the row left for the next wrap, the pass continues (review L2-5).
+  try { open = await openCallsOf(db, battleId, deadlineMs); } catch (err) { if (isCallsTimeout(err)) { tally('unconfirmed'); return { cut: true }; } tally('failed'); return { cut: false }; }
   const remainingOpen = [];
   for (const call of open) {
     if (Date.now() >= deadlineMs) return { cut: true };
@@ -321,7 +329,7 @@ async function sweepBattle({ db, battleId, parent, row, nowMs, deadlineMs, summa
       remainingOpen.push(call);
       continue;
     }
-    const res = await transitionOne({ db, battleId, callId: call.callId, nowMs, deadlineMs, mode: 'on' });
+    const res = await transitionOne({ db, battleId, callId: call.callId, nowMs, deadlineMs });
     if (note(res)) return { cut: true };
     if (res.result === 'transitioned') tally(res.next === 'ended_with_battle' ? 'ended' : 'expired');
     else if (res.result !== 'skipped') remainingOpen.push(call);
@@ -342,9 +350,16 @@ async function sweepBattle({ db, battleId, parent, row, nowMs, deadlineMs, summa
   const retire = await retirePastLifetime({ db, battleId, slot: parent.directive, nowMs, deadlineMs });
   if (note(retire)) return { cut: true };
   if (retire.result === 'retired') tally('retired');
-  // 4. The queue row: the minimum remaining finite expiry (a full page keeps its own minimum), the pending set; delete only when empty.
-  const expiries = remainingOpen.map((c) => c.horizon?.expiresAt).filter(finite);
-  const nextExpiresAt = expiries.length ? Math.min(...expiries) : null;
+  // 4. The queue row: the minimum remaining finite expiry, the pending set; delete only when empty.
+  // A FULL page may hide more open calls (review L2-4): with nothing left on this page the row is
+  // kept due at its own value (or now) so the next pass reads the rest instead of deleting work.
+  // The live call-family slot's lifetime arms the row too (review V2-G8): a slot whose calls all
+  // resolved early is otherwise never visited again, so never retired — and the client strip and the
+  // supersedes stamp still see it. The pass after the lifetime retires it, then the row empties.
+  const slotLifetime = isCallDirective(parent.directive) && finite(parent.directive.expiresAtMs) && parent.directive.expiresAtMs >= nowMs ? [parent.directive.expiresAtMs] : [];
+  const expiries = [...remainingOpen.map((c) => c.horizon?.expiresAt).filter(finite), ...slotLifetime];
+  const pageFull = open.length >= OPEN_CALLS_PAGE;
+  const nextExpiresAt = expiries.length ? Math.min(...expiries) : (pageFull ? (finite(row.nextExpiresAt) ? row.nextExpiresAt : nowMs) : null);
   const queue = await settleQueueRow({ db, battleId, rowAsRead: row, nextExpiresAt, pendingHeard: stillPending, settled, nowMs, deadlineMs });
   if (note(queue)) return { cut: true };
   if (queue.result === 'deleted') tally('deleted');
@@ -354,7 +369,7 @@ async function sweepBattle({ db, battleId, parent, row, nowMs, deadlineMs, summa
 /** Enroll a battle's open calls that lack a queue row (the reconciliation route). */
 async function reconcileBattle({ db, battleId, nowMs, deadlineMs, summary }) {
   let open;
-  try { open = await openCallsOf(db, battleId, deadlineMs); } catch { summary.failed = (summary.failed || 0) + 1; return { cut: true }; }
+  try { open = await openCallsOf(db, battleId, deadlineMs); } catch (err) { if (isCallsTimeout(err)) { summary.unconfirmed = (summary.unconfirmed || 0) + 1; return { cut: true }; } summary.failed = (summary.failed || 0) + 1; return { cut: false }; }
   if (open.length === 0) return { cut: false };
   const expiries = open.map((c) => c.horizon?.expiresAt).filter(finite);
   if (expiries.length === 0) return { cut: false };

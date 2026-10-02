@@ -35,7 +35,13 @@ function makeDoubles() {
     update: (ref, data) => ops.push({ op: 'update', path: ref.path, data }),
     create: (ref, data) => ops.push({ op: 'create', path: ref.path, data }),
   };
-  const battleRef = { path: 'agentBattles/battle-1', update: async (data) => { ops.push({ op: 'plainUpdate', path: 'agentBattles/battle-1', data }); } };
+  // Build 1a review L1-2: chat's plain path re-reads the slot at commit; `fresh` is what that read returns.
+  const fresh = { directive: undefined, exists: true, commitError: null };
+  const battleRef = {
+    path: 'agentBattles/battle-1',
+    update: async (data) => { ops.push({ op: 'plainUpdate', path: 'agentBattles/battle-1', data }); },
+    get: async () => { ops.push({ op: 'get', path: 'agentBattles/battle-1' }); return { exists: fresh.exists, data: () => ({ directive: fresh.directive }) }; },
+  };
   let batches = 0;
   const db = {
     collection: (c) => ({ doc: (id) => ({ path: `${c}/${id}`, collection: (sub) => ({ doc: (sid) => ({ path: `${c}/${id}/${sub}/${sid}` }) }) }) }),
@@ -45,11 +51,11 @@ function makeDoubles() {
       return {
         update: (ref, data) => buffered.push({ op: 'batchUpdate', path: ref.path, data }),
         create: (ref, data) => buffered.push({ op: 'batchCreate', path: ref.path, data }),
-        commit: async () => { ops.push(...buffered); ops.push({ op: 'batchCommit' }); },
+        commit: async () => { if (fresh.commitError) { const err = fresh.commitError; fresh.commitError = null; throw err; } ops.push(...buffered); ops.push({ op: 'batchCommit' }); },
       };
     },
   };
-  return { ops, tx, battleRef, db, batches: () => batches };
+  return { ops, tx, battleRef, db, batches: () => batches, fresh };
 }
 
 describe('supersedesStamp — only when the replaced slot is call-family and names a different thread', () => {
@@ -148,13 +154,48 @@ describe('fileDirectiveTransactional — the three writers\' one payload (spec �
   });
 
   it("the plain path at ON with a call-family prior: ONE WriteBatch carrying the update and the event's create, committed together", async () => {
-    const { ops, battleRef, db, batches } = makeDoubles();
+    const { ops, battleRef, db, batches, fresh } = makeDoubles();
+    fresh.directive = callSlot(); // the slot at commit is still the one the turn started with
     const exchange = exchangeOf(NEWER_THREAD);
     await fileDirectiveTransactional(null, battleRef, { db, battleId: 'battle-1', arrayUnion, exchange, filed: true, priorSlot: callSlot(), callsMode: 'on', fields: plainFields });
     expect(batches()).toBe(1);
-    expect(ops.map((o) => o.op)).toEqual(['batchUpdate', 'batchCreate', 'batchCommit']);
-    expect(ops[0].data.chatExchanges.items[0].supersedes).toEqual({ directiveThreadId: 'thread-call-0001', at: exchange.timestamp });
-    expect(ops[1].path).toBe('agentBattles/battle-1/callEvents/thread-call-0001:superseded');
+    expect(ops.map((o) => o.op)).toEqual(['get', 'batchUpdate', 'batchCreate', 'batchCommit']);
+    expect(ops[1].data.chatExchanges.items[0].supersedes).toEqual({ directiveThreadId: 'thread-call-0001', at: exchange.timestamp });
+    expect(ops[2].path).toBe('agentBattles/battle-1/callEvents/thread-call-0001:superseded');
+  });
+
+  it('the plain path at ON re-reads the slot AT COMMIT: a prior slot retired meanwhile → no stamp, no event, a plain update; a different call-family slot → its own stamp and event (review L1-2 / L5-13)', async () => {
+    const retired = makeDoubles();
+    retired.fresh.directive = null;
+    const exchange = exchangeOf(NEWER_THREAD);
+    const res = await fileDirectiveTransactional(null, retired.battleRef, { db: retired.db, battleId: 'battle-1', arrayUnion, exchange, filed: true, priorSlot: callSlot(), callsMode: 'on', fields: plainFields });
+    expect(retired.ops.map((o) => o.op)).toEqual(['get', 'plainUpdate']);
+    expect(retired.ops[1].data.chatExchanges.items[0]).toEqual(exchange);
+    expect(res).toMatchObject({ supersedes: null, supersededEventId: null });
+    expect(retired.batches()).toBe(0);
+    const replaced = makeDoubles();
+    replaced.fresh.directive = callSlot({ directiveThreadId: 'thread-call-0002', callId: 'other-call' });
+    const res2 = await fileDirectiveTransactional(null, replaced.battleRef, { db: replaced.db, battleId: 'battle-1', arrayUnion, exchange, filed: true, priorSlot: callSlot(), callsMode: 'on', fields: plainFields });
+    expect(replaced.ops.map((o) => o.op)).toEqual(['get', 'batchUpdate', 'batchCreate', 'batchCommit']);
+    expect(replaced.ops[1].data.chatExchanges.items[0].supersedes).toEqual({ directiveThreadId: 'thread-call-0002', at: exchange.timestamp });
+    expect(replaced.ops[2].path).toBe('agentBattles/battle-1/callEvents/thread-call-0002:superseded');
+    expect(replaced.ops[2].data.callIds).toEqual(['other-call']);
+    expect(res2.supersededEventId).toBe('thread-call-0002:superseded');
+  });
+
+  it('the plain path at ON when the superseded event ALREADY EXISTS (a concurrent writer recorded it): the filing still lands as a plain update; any other commit failure propagates (review L1-2)', async () => {
+    const { ops, battleRef, db, fresh } = makeDoubles();
+    fresh.directive = callSlot();
+    fresh.commitError = Object.assign(new Error('6 ALREADY_EXISTS: Document already exists: agentBattles/battle-1/callEvents/thread-call-0001:superseded'), { code: 6 });
+    const exchange = exchangeOf(NEWER_THREAD);
+    const res = await fileDirectiveTransactional(null, battleRef, { db, battleId: 'battle-1', arrayUnion, exchange, filed: true, priorSlot: callSlot(), callsMode: 'on', fields: plainFields });
+    expect(ops.map((o) => o.op)).toEqual(['get', 'plainUpdate']);
+    expect(ops[1].data.chatExchanges.items[0].supersedes).toEqual({ directiveThreadId: 'thread-call-0001', at: exchange.timestamp });
+    expect(res).toMatchObject({ supersedes: { directiveThreadId: 'thread-call-0001' }, supersededEventId: null });
+    const other = makeDoubles();
+    other.fresh.directive = callSlot();
+    other.fresh.commitError = new Error('14 UNAVAILABLE');
+    await expect(fileDirectiveTransactional(null, other.battleRef, { db: other.db, battleId: 'battle-1', arrayUnion, exchange, filed: true, priorSlot: callSlot(), callsMode: 'on', fields: plainFields })).rejects.toThrow('UNAVAILABLE');
   });
 
   it('refuses to run without arrayUnion (a plan is never half-built)', async () => {

@@ -167,11 +167,19 @@ describe('every event renderer (spec §4, §10)', () => {
   it('no matching trade / expired / ended / superseded', () => {
     expect(renderNoMatchingTradeEvent({ promptBuiltAt: '2026-09-09T14:30:00.000Z' })).toBe('No matching trade recorded at the 10:30 check');
     expect(renderNoMatchingTradeEvent({})).toBe('No matching trade recorded at this check');
+    // A pick's slot traded for something other than the selection: the committed symbols and the selection it was not (review V2-G2).
+    expect(renderNoMatchingTradeEvent({ promptBuiltAt: '2026-09-09T14:30:00.000Z', executorResult: { symbolOut: 'KO', symbolIn: 'AMD' }, selectedSymbol: 'JPM' })).toBe('The agent exited KO for AMD at the 10:30 check — not the selected JPM');
+    expect(renderNoMatchingTradeEvent({ executorResult: { symbolOut: 'KO', symbolIn: 'JPM' }, selectedSymbol: 'JPM' })).toBe('No matching trade recorded at this check');
+    expect(renderNoMatchingTradeEvent({ executorResult: { symbolOut: 'KO', symbolIn: null }, selectedSymbol: 'JPM' })).toBe('No matching trade recorded at this check');
     expect(renderExpiredEvent({ reason: 'unobserved' })).toBe('Expired — no check observed it before its session closed');
     expect(renderExpiredEvent({ reason: 'past_deadline' })).toBe('Expired — the deadline passed before a check observed it');
     expect(renderExpiredEvent({ reason: 'check' })).toBe('Expired — a check observed it past its deadline');
     expect(renderExpiredEvent({ reason: 'whatever' })).toBe('Expired');
-    expect(Object.keys(EXPIRY_REASON_TEXT)).toEqual(['unobserved', 'past_deadline', 'check']);
+    // The check's own judgments (review L5-6): a next_check shot judged at its slot; a pick by the agent's choice there.
+    expect(renderExpiredEvent({ reason: 'slot_judged' })).toBe('Expired — the check at its slot found the condition unmet');
+    expect(renderExpiredEvent({ reason: 'pick_chosen' })).toBe("Expired — the check at its slot recorded the agent's own choice");
+    expect(renderExpiredEvent({ reason: 'pick_unchosen' })).toBe('Expired — the check at its slot recorded no choice');
+    expect(Object.keys(EXPIRY_REASON_TEXT)).toEqual(['unobserved', 'past_deadline', 'check', 'slot_judged', 'pick_chosen', 'pick_unchosen']);
     expect(renderEndedWithBattleEvent()).toBe('Ended with the battle');
     expect(renderSupersededEvent({ at: '2026-09-09T14:21:00.000Z' })).toBe('Superseded by a later filing at 10:21 ET');
     expect(renderSupersededEvent({})).toBe('Superseded by a later filing');

@@ -133,9 +133,12 @@ export function isCallDirectiveActiveAt(directive, ctx) {
  *
  * @param {{ directive: object, mode: string, nowMs: number, killedIds?: Iterable<string>, thisCallId?: string|null }} p
  */
-export function isCallDirectivePendingAt({ directive, mode, nowMs, killedIds = [], thisCallId = null }) {
+export function isCallDirectivePendingAt({ directive, mode, nowMs, killedIds = [], thisCallId = null, suppressed = false }) {
   if (!isCallDirective(directive)) return false;
   if (mode !== 'on') return false;
+  // A slot the renderer suppresses (integrity mode not 'enforce') is never heard, so it is never
+  // pending (spec §6 "not killed/suppressed"; review L1-3 / L5-10).
+  if (suppressed === true) return false;
   if (!directive.text || !directive.directiveThreadId) return false;
   if (typeof nowMs !== 'number' || !Number.isFinite(nowMs)) return false;
   if (typeof directive.expiresAtMs !== 'number' || !Number.isFinite(directive.expiresAtMs)) return false;

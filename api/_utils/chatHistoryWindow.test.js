@@ -234,6 +234,8 @@ describe('Build 1a — cockpit filings leave every window BEFORE the slice unles
     expect(chat.match(/buildGroundedConversationHistory\(battle\.chatExchanges, \{ callsMode \}\)/g)).toHaveLength(2);
     expect(chat).not.toMatch(/\.slice\(-10\)/);
     expect(chat).toContain('const callsMode = resolveCallRecordsMode(battle);');
+    // The research-reply lint judges the SAME window the prompt rendered (BUILD_RULES §9 display-agreement; review L3 B-1).
+    expect(chat).toContain('buildPlatformResearchBlock(battle?.chatExchanges, { callsMode }) !== null');
     const prompt = readFileSync(resolve(HERE, 'voiceLayerPrompt.js'), 'utf8');
     expect(prompt).toContain('buildEarlierMessagesBlock(battle?.chatExchanges, { callsMode })');
     expect(prompt).toContain('buildPlatformResearchBlock(battle?.chatExchanges, { callsMode })');

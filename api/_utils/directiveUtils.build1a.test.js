@@ -106,6 +106,9 @@ describe('isCallDirectivePendingAt — the endpoint predicate, separate from che
     expect(isCallDirectivePendingAt({ ...base(), killedIds: [THREAD] })).toBe(false);
     expect(isCallDirectivePendingAt({ ...base(), killedIds: new Set([THREAD]) })).toBe(false);
     for (const mode of ['off', 'shadow', null]) expect(isCallDirectivePendingAt({ ...base(), mode }), String(mode)).toBe(false);
+    // The renderer's integrity-mode suppression: a suppressed slot is never heard, so never pending (spec §6; review L1-3 / L5-10).
+    expect(isCallDirectivePendingAt({ ...base(), suppressed: true })).toBe(false);
+    expect(isCallDirectivePendingAt({ ...base(), suppressed: false })).toBe(true);
     expect(isCallDirectivePendingAt({ ...base(), directive: makeDirective() })).toBe(false);
     expect(isCallDirectivePendingAt({ ...base(), directive: null })).toBe(false);
     expect(isCallDirectivePendingAt({ ...base(), directive: callSlot({ expiresAtMs: 'soon' }) })).toBe(false);

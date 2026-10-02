@@ -24,6 +24,8 @@
 // `mintedAt` convention); absent evidence is null, never undefined (Firestore
 // rejects undefined). Pure except createCallEvent, which only buffers a write.
 
+import { checkLabel } from './copy.js';
+
 export const EVENTS_SUBCOLLECTION = 'callEvents';
 
 export const CALL_EVENT_KINDS = Object.freeze([
@@ -72,7 +74,8 @@ export function buildCallEvent({ kind, at, callIds, text, saidOk = null, evidenc
     evidence: {
       evalId: nonEmpty(evidence?.evalId) ? evidence.evalId : null,
       promptBuiltAt: nonEmpty(evidence?.promptBuiltAt) ? evidence.promptBuiltAt : null,
-      checkLabel: nonEmpty(evidence?.checkLabel) ? evidence.checkLabel : null,
+      // One source for the label (BUILD_RULES §9; review L5-7 / V2-G4): derived from promptBuiltAt when the writer gives none.
+      checkLabel: nonEmpty(evidence?.checkLabel) ? evidence.checkLabel : (checkLabel(evidence?.promptBuiltAt ?? null) ?? null),
     },
     ...(nonEmpty(promptDirectiveThreadId) ? { promptDirectiveThreadId } : {}),
     ...extra,

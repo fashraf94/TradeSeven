@@ -68,13 +68,13 @@ import { deriveKilledDirectiveIds } from '../_utils/controlPromptRenderer.js';
 import { buildDirectiveRecord, buildDirectiveSlot, BATTLE_CHAT_BUDGET } from '../_utils/directiveFiling.js';
 import { fileDirectiveTransactional } from '../_utils/directiveWriter.js';
 import { getEffectiveArchetype } from '../_utils/directiveIdentity.js';
-import { agentBelongsToBattle } from '../_utils/agentBattleBinding.js';
 import { TOURNAMENT_GAME_MODE } from '../../src/constants/leagueTournament.js';
 import { resolveBudgetDay, agentChatBudgetDocId, AGENT_CHAT_BUDGET_COLLECTION, AGENT_CHAT_DAILY_LIMIT } from '../_utils/agentChatBudget.js';
 import { toIso } from '../_utils/tournamentTime.js';
 import { GROUNDING_VERSION } from '../_utils/voiceLayerGrounding.js';
 import { DIRECTIVE_FILED_MESSAGE_TYPE } from '../../src/data/decisionRecord.js';
 import { COCKPIT_SOURCE } from '../_utils/chatHistoryWindow.js';
+import { ARCHETYPE_INTEGRITY_MODE } from '../../src/config/featureFlags.js';
 
 export const config = { maxDuration: 10 };
 
@@ -92,13 +92,13 @@ const normalizeCount = (raw) => (Number.isFinite(raw) && raw > 0 ? Math.floor(ra
 
 // ---- the per-battle rate window (process-local) ------------------------------
 const windows = new Map();
-/** Record one request against the battle; true when the window is already full. */
-export function battleRateLimited(battleId, nowMs = Date.now()) {
+/** Record one request against the key (`${uid}:${battleId}` — the owner's own window); true when the window is already full. */
+export function battleRateLimited(key, nowMs = Date.now()) {
   const { limit, windowMs } = CALL_RESPONSE_RATE_LIMIT;
-  const kept = (windows.get(battleId) || []).filter((t) => nowMs - t < windowMs);
-  if (kept.length >= limit) { windows.set(battleId, kept); return true; }
+  const kept = (windows.get(key) || []).filter((t) => nowMs - t < windowMs);
+  if (kept.length >= limit) { windows.set(key, kept); return true; }
   kept.push(nowMs);
-  windows.set(battleId, kept);
+  windows.set(key, kept);
   return false;
 }
 /** Tests only. */
@@ -188,7 +188,8 @@ export default async function handler(req, res) {
   if (answer === 'pick' && !pickSymbol) {
     return res.status(400).json({ error: 'invalid_request', message: 'pickSymbol is required for a pick' });
   }
-  if (battleRateLimited(battleId)) {
+  // Keyed on (uid, battle): a third party naming the battleId cannot spend the owner's window (review L1-1 / L6-4).
+  if (battleRateLimited(`${user.uid}:${battleId}`)) {
     return res.status(429).json({ error: 'rate_limited' });
   }
 
@@ -250,14 +251,15 @@ export default async function handler(req, res) {
       const kind = directiveKindFor(call, answer);
       const eligible = isCallActionEligible(kind, call, parent, { pickSymbol });
       if (!eligible.ok) return { kind: 'ineligible_action', reason: eligible.reason };
-      // The agent binding, as the chip: the battle's own agent, an effective archetype.
+      // The battle's own agent (its agentId) and an effective archetype. The request carries no agentId
+      // to bind against, so there is nothing to compare (review L4-10).
       const agentId = parent.agentId;
-      if (!agentBelongsToBattle(parent, agentId)) return { kind: 'agent_binding', reason: 'agent_battle_mismatch' };
+      if (!nonEmpty(agentId)) return { kind: 'agent_binding', reason: 'agent_not_found' };
       const agentSnap = await tx.get(db.collection('agents').doc(agentId));
       if (!agentSnap.exists) return { kind: 'agent_binding', reason: 'agent_not_found' };
       if (!getEffectiveArchetype(parent, agentSnap.data())) return { kind: 'agent_binding', reason: 'archetype_unknown' };
       // No OTHER call-family directive pending in the slot.
-      if (isCallDirectivePendingAt({ directive: parent.directive, mode: 'on', nowMs, killedIds: deriveKilledDirectiveIds(parent.controlEpochLog), thisCallId: callId })) {
+      if (isCallDirectivePendingAt({ directive: parent.directive, mode: 'on', nowMs, killedIds: deriveKilledDirectiveIds(parent.controlEpochLog), thisCallId: callId, suppressed: ARCHETYPE_INTEGRITY_MODE !== 'enforce' })) {
         const pending = parent.directive;
         const refusal = { at: filedAt, reason: 'directive_pending', pendingDirectiveThreadId: pending.directiveThreadId, ...(nonEmpty(pending.callId) ? { pendingCallId: pending.callId } : {}) };
         tx.update(callRef, { refused: refusal });

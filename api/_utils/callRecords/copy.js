@@ -162,8 +162,15 @@ export function renderActedEvent({ executorResult, promptBuiltAt } = {}) {
 }
 
 /** `no_matching_trade`: the check heard the thread and its present, parsed result did not match the call's leg. */
-export function renderNoMatchingTradeEvent({ promptBuiltAt } = {}) {
+export function renderNoMatchingTradeEvent({ promptBuiltAt, executorResult = null, selectedSymbol = null } = {}) {
   const label = checkLabel(promptBuiltAt);
+  // A pick whose slot the agent traded for something other than the selection: the committed
+  // executor symbols (never intent) and the selection it was not (review L6-3 / V2-G2).
+  const out = executorResult?.symbolOut;
+  const inn = executorResult?.symbolIn;
+  if (nonEmpty(out) && nonEmpty(inn) && nonEmpty(selectedSymbol) && inn !== selectedSymbol) {
+    return `The agent exited ${out} for ${inn}${label ? ` at ${label}` : ''} — not the selected ${selectedSymbol}`;
+  }
   return `No matching trade recorded${label ? ` at ${label}` : ' at this check'}`;
 }
 
@@ -172,6 +179,9 @@ export const EXPIRY_REASON_TEXT = Object.freeze({
   unobserved: 'no check observed it before its session closed',
   past_deadline: 'the deadline passed before a check observed it',
   check: 'a check observed it past its deadline',
+  slot_judged: 'the check at its slot found the condition unmet',
+  pick_chosen: "the check at its slot recorded the agent's own choice",
+  pick_unchosen: 'the check at its slot recorded no choice',
 });
 
 /** `expired`: the reason, in words. */

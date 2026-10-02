@@ -345,6 +345,7 @@ describe('heard repair, retirement and the queue row (spec §7, §8)', () => {
   it('findHeardEvaluation: the EARLIEST retained unsuppressed stamp for the exact thread at or after the answer; none → null; stamps disabled → null', () => {
     const evs = [heardEntry('eval_002', '2026-09-09T14:00:00.000Z'), heardEntry('eval_003', '2026-09-09T14:30:00.000Z', 'epoch_killed'), heardEntry('eval_004', '2026-09-09T14:45:00.000Z'), heardEntry('eval_005', '2026-09-09T15:00:00.000Z')];
     expect(findHeardEvaluation(evs, { directiveThreadId: THREAD, filedAt: '2026-09-09T14:20:00.000Z' }).evalId).toBe('eval_004'); // eval_002 predates the answer; eval_003 suppressed
+    expect(findHeardEvaluation([heardEntry('eval_009', '2026-09-09T14:20:00.000Z')], { directiveThreadId: THREAD, filedAt: '2026-09-09T14:20:00.000Z' }).evalId).toBe('eval_009'); // AT the answer's instant counts (review L4-8)
     expect(findHeardEvaluation(evs, { directiveThreadId: 'other', filedAt: '2026-09-09T14:20:00.000Z' })).toBeNull();
     expect(findHeardEvaluation([], { directiveThreadId: THREAD, filedAt: 'x' })).toBeNull();
     flag.stamps = false;
@@ -358,7 +359,8 @@ describe('heard repair, retirement and the queue row (spec §7, §8)', () => {
     expect(res.heardRepaired).toBe(1);
     expect(callsOf(db, B1)[`${B1}:eval_001:call:0`].playerResponse.heardEvalId).toBe('eval_004');
     expect(events(db, B1)[`${B1}:eval_001:call:0:heard:eval_004`]).toMatchObject({ kind: 'heard', text: 'Heard at the 10:45 check', evidence: { evalId: 'eval_004', promptBuiltAt: '2026-09-09T14:45:00.000Z', checkLabel: 'the 10:45 check' }, source: 'sweep' });
-    expect(stored(db, Q(B1))).toBeNull();
+    // The live call_hold slot (lifetime CLOSE) keeps the row ARMED at its lifetime end (review V2-G8); nothing else remains.
+    expect(stored(db, Q(B1))).toMatchObject({ battleId: B1, nextExpiresAt: CLOSE, pendingHeard: [] });
     // A cron stamp already there: monotonic — untouched, the entry settles, no event.
     const db2 = oneBattle({ battle, calls: [answered({ state: 'hit', stateSource: 'check' }, )], queue: { battleId: B1, nextExpiresAt: null, pendingHeard: [`${B1}:eval_001:call:0`], updatedAt: 1 } });
     db2.__docs.set(P(B1, 'calls', `${B1}:eval_001:call:0`), { ...answered({ state: 'hit', stateSource: 'check' }), playerResponse: { ...answered().playerResponse, heardEvalId: 'eval_002' } });
@@ -443,6 +445,115 @@ describe('heard repair, retirement and the queue row (spec §7, §8)', () => {
     expect(res.heardRepaired).toBeUndefined();
     expect(callsOf(db, B1)[id].playerResponse.heardEvalId).toBeNull();
     expect(stored(db, Q(B1))).toEqual({ battleId: B1, nextExpiresAt: null, pendingHeard: [id], updatedAt: NOW });
+  });
+
+  it('not confirmed heard under a TERMINAL parent: no later check can ever hear it, so the pending entry settles and the row is deleted (review L5-1 / L2-3)', async () => {
+    const id = `${B1}:eval_001:call:0`;
+    const ended = call(B1, 0, { state: 'ended_with_battle', stateChangedAt: NOW - 60_000, stateSource: 'sweep', playerResponse: { answer: 'hold', kind: 'directive', directiveThreadId: THREAD, callId: id, filedAt: '2026-09-09T14:20:00.000Z', heardEvalId: null }, directiveThreadId: THREAD });
+    const battle = battleDoc(B1, { status: 'completed', directive: null, chatExchanges: [{ directiveThreadId: THREAD, directive: callSlot(B1, id) }], evaluations: [{ evalId: 'eval_002', timestamp: '2026-09-09T14:00:00.000Z', promptBuiltAt: '2026-09-09T14:00:00.000Z', decision: 'HOLD', heard: { directiveThreadId: THREAD, suppressed: null } }] });
+    const db = oneBattle({ battle, calls: [ended], queue: { battleId: B1, nextExpiresAt: null, pendingHeard: [id], updatedAt: 1 } });
+    const res = await run(db);
+    expect(res.heardSettled).toBe(1);
+    expect(res.deleted).toBe(1);
+    expect(callsOf(db, B1)[id].playerResponse.heardEvalId).toBeNull();
+    expect(stored(db, Q(B1))).toBeNull();
+  });
+
+  it('a VALUE-PRESERVING concurrent publication (nextExpiresAt = min(existing, new) unchanged, updatedAt moved) is still a change: the row is kept, never deleted (review L2-2 / L5-2)', async () => {
+    const later = CLOSE + 24 * 3_600_000;
+    const newId = `${B1}:eval_001:call:9`;
+    const db = oneBattle({ calls: [call(B1, 0)], queue: { battleId: B1, nextExpiresAt: CLOSE, pendingHeard: [], updatedAt: 1 } });
+    let injected = false;
+    db.__hooks.afterQuery = async ({ collectionPath }) => {
+      if (injected || collectionPath !== `agentBattles/${B1}/calls`) return;
+      injected = true;
+      // A publication between the pass's open-calls read and its settle: a new open call whose expiry is LATER, so the row's value stays the existing minimum.
+      await db.doc(P(B1, 'calls', newId)).set(call(B1, 9, { mintedAt: CLOSE + 10, horizon: { phrase: 'this_session', expiresAt: later, basis: 'this_session' } }));
+      await db.doc(Q(B1)).set({ battleId: B1, nextExpiresAt: CLOSE, updatedAt: CLOSE + 10 }, { merge: true });
+    };
+    const res = await run(db, { nowMs: CLOSE + 60_000, handlerStartMs: CLOSE + 60_000 });
+    expect(res.expired).toBe(1);
+    expect(res.deleted).toBeUndefined();
+    expect(res.enrolled).toBeUndefined();
+    expect(callsOf(db, B1)[newId].state).toBe('open');
+    expect(stored(db, Q(B1))).toMatchObject({ battleId: B1, pendingHeard: [] });
+    expect(stored(db, Q(B1)).nextExpiresAt).not.toBeNull();
+  });
+
+  it('a FULL open-calls page (50) may hide more: with every call on the page transitioned the row is KEPT due, and the next pass finishes (review L2-4)', async () => {
+    const many = Array.from({ length: 51 }, (_, n) => call(B1, n, { mintedAt: NOW - 3_600_000 + n }));
+    const db = oneBattle({ battle: battleDoc(B1, { status: 'completed' }), calls: many, queue: { battleId: B1, nextExpiresAt: CLOSE, pendingHeard: [], updatedAt: 1 } });
+    const first = await run(db);
+    expect(first.ended).toBe(50);
+    expect(first.deleted).toBeUndefined();
+    expect(stored(db, Q(B1))).toMatchObject({ battleId: B1, nextExpiresAt: CLOSE, pendingHeard: [] });
+    const second = await run(db);
+    expect(second.ended).toBe(1);
+    expect(second.deleted).toBe(1);
+    expect(stored(db, Q(B1))).toBeNull();
+  });
+
+  it("one battle's failing open-calls query (an index error) is that battle's failure alone: tallied, the pass continues to the next row (review L2-5)", async () => {
+    const db = makeDb({
+      [`agentBattles/${B1}`]: battleDoc(B1), [P(B1, 'calls', call(B1, 0).callId)]: call(B1, 0), [Q(B1)]: { battleId: B1, nextExpiresAt: CLOSE - 1, pendingHeard: [], updatedAt: 1 },
+      [`agentBattles/${B2}`]: battleDoc(B2), [P(B2, 'calls', call(B2, 0).callId)]: call(B2, 0, { horizon: { phrase: 'this_session', expiresAt: NOW - 1, basis: 'this_session' } }), [Q(B2)]: { battleId: B2, nextExpiresAt: CLOSE, pendingHeard: [], updatedAt: 1 },
+    });
+    let failures = 0;
+    db.__hooks.failQuery = ({ collectionPath }) => {
+      if (collectionPath !== `agentBattles/${B1}/calls` || failures > 0) return null;
+      failures += 1;
+      return Object.assign(new Error('9 FAILED_PRECONDITION: The query requires an index.'), { code: 9 });
+    };
+    const res = await run(db);
+    expect(res.failed).toBe(1);
+    expect(res.cut).toBe(false);
+    expect(res.expired).toBe(1); // B2's call, past its deadline, was still transitioned
+    expect(stored(db, Q(B1))).toMatchObject({ battleId: B1 }); // left for the next wrap
+  });
+
+  it('a battle whose only call HIT while its call_hold is inside its lifetime keeps its queue row ARMED at the lifetime end; the pass after the lifetime retires the slot, then the row empties (review V2-G8)', async () => {
+    const id = `${B1}:eval_001:call:0`;
+    const slot = callSlot(B1, id, { expiresAtMs: CLOSE });
+    const hit = call(B1, 0, { state: 'hit', stateChangedAt: NOW - 60_000, stateSource: 'check', playerResponse: { answer: 'hold', kind: 'directive', directiveThreadId: THREAD, callId: id, filedAt: '2026-09-09T14:20:00.000Z', heardEvalId: 'eval_002' }, directiveThreadId: THREAD });
+    const db = oneBattle({ battle: battleDoc(B1, { directive: slot, chatExchanges: [{ directiveThreadId: THREAD, directive: slot }] }), calls: [hit], queue: { battleId: B1, nextExpiresAt: CLOSE, pendingHeard: [], updatedAt: 1 } });
+    const first = await run(db);
+    expect(first.deleted).toBeUndefined();
+    expect(first.retired).toBeUndefined();
+    expect(stored(db, Q(B1))).toMatchObject({ battleId: B1, nextExpiresAt: CLOSE, pendingHeard: [] });
+    expect(stored(db, `agentBattles/${B1}`).directive).toEqual(slot);
+    const second = await run(db, { nowMs: CLOSE + 60_000, handlerStartMs: CLOSE + 60_000 });
+    expect(second.retired).toBe(1);
+    expect(second.deleted).toBe(1);
+    expect(stored(db, `agentBattles/${B1}`).directive).toBeNull();
+    expect(stored(db, Q(B1))).toBeNull();
+  });
+
+  it("the sweep's expiry of a never-heard directive answer whose lifetime ended carries the answer-expired line (review L4-6)", async () => {
+    const id = `${B1}:eval_001:call:0`;
+    const expiredCall = call(B1, 0, { horizon: { phrase: 'this_session', expiresAt: NOW - 60_000, basis: 'this_session' }, playerResponse: { answer: 'hold', kind: 'directive', directiveThreadId: THREAD, callId: id, filedAt: '2026-09-09T14:20:00.000Z', heardEvalId: null }, directiveThreadId: THREAD });
+    const battle = battleDoc(B1, { directive: null, chatExchanges: [{ directiveThreadId: THREAD, directive: callSlot(B1, id, { expiresAtMs: NOW - 1 }) }] });
+    const db = oneBattle({ battle, calls: [expiredCall], queue: { battleId: B1, nextExpiresAt: NOW - 60_000, pendingHeard: [], updatedAt: 1 } });
+    const res = await run(db);
+    expect(res.expired).toBe(1);
+    expect(events(db, B1)[`${id}:expired`].text).toBe('Expired — the deadline passed before a check observed it · Answer expired before this check');
+  });
+
+  it('boundary and merge instants (review L4-8): a slot at EXACTLY its lifetime end is not retired; a concurrent LATER expiry never delays the row (the minimum wins)', async () => {
+    const id = `${B1}:eval_001:call:0`;
+    const atLifetime = oneBattle({ battle: battleDoc(B1, { directive: callSlot(B1, id, { expiresAtMs: NOW }) }), calls: [], queue: { battleId: B1, nextExpiresAt: null, pendingHeard: [], updatedAt: 1 } });
+    const res = await run(atLifetime);
+    expect(res.retired).toBeUndefined();
+    expect(stored(atLifetime, `agentBattles/${B1}`).directive).toEqual(callSlot(B1, id, { expiresAtMs: NOW }));
+    const db = oneBattle({ calls: [call(B1, 0)], queue: { battleId: B1, nextExpiresAt: CLOSE, pendingHeard: [], updatedAt: 1 } });
+    let injected = false;
+    db.__hooks.afterQuery = async ({ collectionPath }) => {
+      if (injected || collectionPath !== `agentBattles/${B1}/calls`) return;
+      injected = true;
+      await db.doc(Q(B1)).set({ battleId: B1, nextExpiresAt: CLOSE + 3_600_000, updatedAt: NOW + 1 }, { merge: true });
+    };
+    const res2 = await run(db);
+    expect(res2.deleted).toBeUndefined();
+    expect(stored(db, Q(B1)).nextExpiresAt).toBe(CLOSE);
   });
 
   it('an orphaned queue row (no parent) is settled away', async () => {

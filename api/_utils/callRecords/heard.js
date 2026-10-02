@@ -92,9 +92,16 @@ export function planHeard(call, parent, { thread, evalId, promptBuiltAt, executo
   const priorActed = isPlainObject(call.outcome) && nonEmpty(call.outcome.actedEvalId) ? call.outcome.actedEvalId : null;
   const acted = present && (priorActed === null || priorActed === evalId)
     && matchesWholeTrade(call, executorResult, { selectedSymbol: pick });
-  const noMatch = present && !acted && !legMatches(call, executorResult);
-  const retire = acted && (call.kind === 'pick' || call.defaultAction === 'hold');
-  return { stampHeard, acted, noMatch, retire, pick, answerId: directiveRecordOf(parent, thread)?.answerId ?? null };
+  // No matching trade: a present result that is not the called trade. For a SHOT, a trade touching
+  // the leg without matching the whole trade stays silent (the §2 "affected leg" rule); for a PICK
+  // the request IS the selection, so any present result other than the selected swap — the slot
+  // traded for the other option included — is a non-matching trade (review L6-3; a ruling item).
+  const legTraded = legMatches(call, executorResult);
+  const noMatch = present && !acted && (call.kind === 'pick' || !legTraded);
+  // Retire: a go / pick directive acted on; and a PICK whose slot was traded for something other than
+  // the selection — its swap-out is gone, so the directive can bind nothing (review L6-3 / V2-G2).
+  const retire = (acted && (call.kind === 'pick' || call.defaultAction === 'hold')) || (noMatch && call.kind === 'pick' && legTraded);
+  return { stampHeard, acted, noMatch, retire, legTraded, pick, answerId: directiveRecordOf(parent, thread)?.answerId ?? null };
 }
 
 /** One call's transaction. Never throws. */
@@ -126,12 +133,14 @@ async function heardOne({ db, battleId, callId, thread, evalId, promptBuiltAt, e
       if (plan.acted) {
         change.outcome = { ...(isPlainObject(call.outcome) ? call.outcome : {}), actedEvalId: evalId };
         createCallEvent(tx, db, battleId, { kind: 'acted', idParams: { callId, evalId }, event: buildCallEvent({ kind: 'acted', at: nowMs, callIds: [callId], text: renderActedEvent({ executorResult, promptBuiltAt }), evidence }) });
-        if (plan.retire && parent) retired = retireCallDirective(tx, battleRef, parent, { directiveThreadId: thread, answerId: plan.answerId });
       }
       if (plan.noMatch) {
-        createCallEvent(tx, db, battleId, { kind: 'no_matching_trade', idParams: { callId, evalId }, event: buildCallEvent({ kind: 'no_matching_trade', at: nowMs, callIds: [callId], text: renderNoMatchingTradeEvent({ promptBuiltAt }), evidence }) });
+        createCallEvent(tx, db, battleId, { kind: 'no_matching_trade', idParams: { callId, evalId }, event: buildCallEvent({ kind: 'no_matching_trade', at: nowMs, callIds: [callId], text: renderNoMatchingTradeEvent({ promptBuiltAt, executorResult: plan.legTraded ? executorResult : null, selectedSymbol: plan.pick }), evidence }) });
       }
-      tx.update(callRef, change);
+      if (plan.retire && parent) retired = retireCallDirective(tx, battleRef, parent, { directiveThreadId: thread, answerId: plan.answerId });
+      // A no_matching_trade alone changes no field: the Admin SDK rejects an empty update map, so the
+      // event rides a create-only transaction (review L2-1).
+      if (Object.keys(change).length > 0) tx.update(callRef, change);
       return { result: 'written', heard: plan.stampHeard, acted: plan.acted, noMatch: plan.noMatch, retired };
     }), budgetMs, 'calls_heard');
   } catch (err) {

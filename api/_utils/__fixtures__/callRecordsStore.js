@@ -297,7 +297,7 @@ export function makeCallsDb({ seed = {}, abortFirstTransactionWithSeq = null, ..
           async getAll(...refs) { readsBeforeWrites(); return Promise.all(refs.map((r) => tx.get(r))); },
           create(ref, data) { assertNoUndefined(data, `tx.create(${ref.path})`); writes.push({ op: 'create', ref, path: ref.path, data: deepClone(data) }); return tx; },
           set(ref, data, opts) { assertNoUndefined(data, `tx.set(${ref.path})`); writes.push({ op: 'set', ref, path: ref.path, data: deepClone(data), opts }); return tx; },
-          update(ref, data) { assertNoUndefined(data, `tx.update(${ref.path})`); writes.push({ op: 'update', ref, path: ref.path, data: deepClone(data) }); return tx; },
+          update(ref, data) { assertNoUndefined(data, `tx.update(${ref.path})`); if (!data || Object.keys(data).length === 0) throw new Error(`tx.update(${ref.path}): At least one field must be updated.`); writes.push({ op: 'update', ref, path: ref.path, data: deepClone(data) }); return tx; },
         };
         const result = await cb(tx);
         if (hooks.afterTxBody) await hooks.afterTxBody({ attempt, readPaths: [...reads.keys()], writes });

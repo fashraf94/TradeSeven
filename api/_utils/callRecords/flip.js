@@ -234,7 +234,11 @@ async function flipOne({ db, battleId, callId, observation, evalId, executorResu
         change.stateChangedAt = observation.observedAtMs;
         change.stateSource = 'check';
         if (events?.enabled && plan.next === 'expired_unresolved') {
-          const lines = [renderExpiredEvent({ reason: 'check' })];
+          // The reason in the check's own words (review L5-6): a next_check shot is JUDGED at its slot
+          // (the condition was not met), a pick by the agent's own choice there; any other basis expired
+          // because this check observed it past its deadline.
+          const reason = call.kind === 'pick' ? (plan.acted ? 'pick_chosen' : 'pick_unchosen') : (call.horizon?.basis === 'next_check' ? 'slot_judged' : 'check');
+          const lines = [renderExpiredEvent({ reason })];
           const pr = call.playerResponse;
           const lifetime = pr?.kind === 'directive' && pr.heardEvalId == null ? directiveRecordOf(parent, pr.directiveThreadId)?.expiresAtMs : null;
           if (typeof lifetime === 'number' && Number.isFinite(lifetime) && lifetime < observation.observedAtMs) lines.push(renderAnswerExpiredLine({ promptBuiltAt: events.promptBuiltAt }));
