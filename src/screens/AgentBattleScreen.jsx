@@ -330,6 +330,8 @@ function identifiedFields(identified) {
 
 /** The gated path's WebSocket symbol list: none (a stable identity). */
 const NO_WS_SYMBOLS = Object.freeze([]);
+/** The legacy symbol list on the gated path: none (a stable identity). */
+const NO_LEGACY_SYMBOLS = Object.freeze([]);
 
 /**
  * The screen's loading indicator, shared verbatim by the legacy loading return
@@ -1239,6 +1241,12 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   const thresholds = agentBattle?.scoring?.thresholds || {};
 
   const allSymbols = useMemo(() => {
+    // Gated (pending, terminal or admitted), nothing reads this list: the
+    // socket gets NO_WS_SYMBOLS and the poll plans from the identified
+    // context. Its sources there are the opening prop or an admitted document
+    // whose tiers may be malformed — and that battle must stay gated and
+    // incomplete, not throw (§3.1). So it is not built from them at all.
+    if (gatedPath) return NO_LEGACY_SYMBOLS;
     const symbols = new Set();
     const addFromPortfolio = (portfolio) => {
       if (!portfolio) return;
@@ -1249,7 +1257,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     addFromPortfolio(playerPortfolioSource);
     addFromPortfolio(opponentPortfolioSource);
     return [...symbols];
-  }, [playerPortfolioSource, opponentPortfolioSource]);
+  }, [gatedPath, playerPortfolioSource, opponentPortfolioSource]);
 
   // ── WebSocket prices ──────────────────────────────────────────────────────
 
@@ -1403,6 +1411,9 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // ── Enriched portfolios ───────────────────────────────────────────────────
 
   const legacyEnrichedPlayerPortfolio = useMemo(() => {
+    // Gated: discarded just below, and read from the same sources as the
+    // symbol list — so, like it, never computed there (§3.1).
+    if (gatedPath) return EMPTY_ENRICHED;
     const p = playerPortfolioSource;
     if (!p) return { star: [], core: [], support: [] };
     return {
@@ -1410,7 +1421,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       core: (p.core || []).map(a => enrichAsset(a, 'core')),
       support: (p.support || []).map(a => enrichAsset(a, 'support')),
     };
-  }, [playerPortfolioSource, enrichAsset]);
+  }, [gatedPath, playerPortfolioSource, enrichAsset]);
   // Gated: the identified context's rows (empty until admitted); flag-off and
   // excluded: the shipped enrichment above.
   const enrichedPlayerPortfolio = gatedPath ? (gatedEnriched?.player ?? EMPTY_ENRICHED) : legacyEnrichedPlayerPortfolio;
@@ -1435,6 +1446,8 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   }, [enrichedPlayerPortfolio]);
 
   const legacyEnrichedOpponentPortfolio = useMemo(() => {
+    // Gated: discarded just below, as the player's is (§3.1).
+    if (gatedPath) return EMPTY_ENRICHED;
     const p = opponentPortfolioSource;
     if (!p) return { star: [], core: [], support: [] };
     return {
@@ -1442,7 +1455,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       core: (p.core || []).map(a => enrichAsset(a, 'core')),
       support: (p.support || []).map(a => enrichAsset(a, 'support')),
     };
-  }, [opponentPortfolioSource, enrichAsset]);
+  }, [gatedPath, opponentPortfolioSource, enrichAsset]);
   const enrichedOpponentPortfolio = gatedPath ? (gatedEnriched?.cpu ?? EMPTY_ENRICHED) : legacyEnrichedOpponentPortfolio;
 
   // ── The plan at deploy (A2.1b, D-76) ──────────────────────────────────────

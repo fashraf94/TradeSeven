@@ -391,7 +391,7 @@ const record = () => ({
   presence: [...seen.presence],
 });
 
-// BEGIN GENERATED OFF REFERENCES — captured at the pre-build SHA 44d0c63eba4e3099552d3ec3dbde6a89660a7e06 (15 entries; loadingReturn and swapTransition added after the first capture, captured at the same SHA).
+// BEGIN GENERATED OFF REFERENCES — captured at the pre-build SHA 44d0c63eba4e3099552d3ec3dbde6a89660a7e06 (19 entries; loadingReturn and swapTransition added after the first capture, and the four malformedTier* parity rows for the F1 correction, all captured at the same SHA).
 // Regenerate ONLY by re-running this file's OFF rows at that SHA with
 // SHADOW_OFF_CAPTURE_DIR set; never by blessing build output.
 const OFF = {
@@ -2301,6 +2301,18 @@ const OFF = {
    ]
   ],
   "research": []
+ },
+ "malformedTierFlagOffPlayer": {
+  "thrown": "(portfolio[tier] || []).forEach is not a function"
+ },
+ "malformedTierFlagOffCpu": {
+  "thrown": "(portfolio[tier] || []).forEach is not a function"
+ },
+ "malformedTierExcludedPlayer": {
+  "thrown": "(portfolio[tier] || []).forEach is not a function"
+ },
+ "malformedTierExcludedCpu": {
+  "thrown": "(portfolio[tier] || []).forEach is not a function"
  }
 };
 // END GENERATED OFF REFERENCES
@@ -4332,5 +4344,200 @@ describe('OFF-5 (F15) — a mid-session swap, flag off', () => {
       window.requestAnimationFrame = realRaf;
       window.cancelAnimationFrame = realCaf;
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// F1 (final independent review, 2026-10-02) — §3.1 / §5.2: an ADMITTED battle
+// whose portfolio is missing or malformed stays gated and incomplete. It never
+// throws, never escapes to legacy, and never reads as complete or as an
+// all-cash success. Before the fix, the legacy symbol loop and both legacy
+// enrichment memos — whose results the gated path discards — iterated the
+// subscribed document (controller on) or the opening prop (controller off, and
+// the pending shell), and threw on a non-array tier.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The contract's missing and malformed cases, applied to one side's portfolio. */
+const MALFORMED_PORTFOLIOS = {
+  'a tier that is an object': (p, sym) => ({ ...p, star: { symbol: sym } }),
+  'a tier that is a string': (p, sym) => ({ ...p, star: sym }),
+  'a tier that is a number': (p) => ({ ...p, star: 7 }),
+  'no portfolio field': () => undefined,
+  'a null portfolio': () => null,
+  'an empty portfolio object': () => ({}),
+  'every tier empty': (p) => ({ ...p, star: [], core: [], support: [] }),
+  'a string portfolio': () => 'broken',
+  'an array portfolio': (p, sym) => [{ symbol: sym }],
+  'a position that is not an object': (p, sym) => ({ ...p, star: [sym, 42] }),
+  'a position with neither a symbol nor cash': (p) => ({ ...p, star: [{ price: 150 }] }),
+};
+function malformedDoc(side, kase, base = ACTIVE_DOC) {
+  const doc = JSON.parse(JSON.stringify(base));
+  const value = side === 'player'
+    ? MALFORMED_PORTFOLIOS[kase](PLAYER_PORTFOLIO, 'AAPL')
+    : MALFORMED_PORTFOLIOS[kase](CPU_PORTFOLIO, 'GOOGL');
+  const owner = side === 'player' ? doc : doc.opponent;
+  if (value === undefined) delete owner.portfolio; else owner.portfolio = value;
+  return doc;
+}
+/** The opening prop exactly as a client snapshot of that same document would be. */
+function mirroredProp(side, doc) {
+  const prop = openingProp();
+  if (side === 'player') prop.creator = { portfolio: doc.portfolio };
+  else prop.opponent = { portfolio: doc.opponent.portfolio };
+  return prop;
+}
+/** An independent oracle: the named, non-cash positions in a side's array tiers. */
+function heldSymbolsOf(portfolio) {
+  if (!portfolio || typeof portfolio !== 'object' || Array.isArray(portfolio)) return [];
+  return ['star', 'core', 'support'].flatMap((tier) => (Array.isArray(portfolio[tier]) ? portfolio[tier] : []))
+    .filter((a) => a && typeof a === 'object' && a.isCash !== true && typeof a.symbol === 'string' && a.symbol.length > 0)
+    .map((a) => a.symbol);
+}
+const requestedSymbols = () => priceBox.calls.flatMap(([, syms]) => syms);
+const STORED_INCOMPLETE = 'Last scored Oct 1, 12:47 PM EDT · browser quotes incomplete';
+
+describe('F1 — the review\'s fixture: one side\'s star tier is an object, the opening prop well formed', () => {
+  for (const side of ['player', 'cpu']) {
+    for (const controller of [true, false]) {
+      it(`${side} side, controller ${controller ? 'on' : 'off'}: gated and incomplete, the qualified stored pair shown, no throw`, async () => {
+        priceBox.table = genuineTable();
+        flags.controller = controller;
+        const doc = malformedDoc(side, 'a tier that is an object');
+        flags.gate = true;
+        await mount(openingProp());
+        expect(shell()).toBe('pending');
+        await deliverDoc('ab-1', doc);
+        expect(shell()).toBeNull();
+        expect(label()).toEqual({ kind: 'last-scored', text: expect.stringContaining(STORED_INCOMPLETE) });
+        expect(label().text).toContain('You lead by 9.30');
+        // The identified document's positions are polled — never the opening
+        // prop's star, which the document does not hold as an array.
+        const gone = side === 'player' ? ['AAPL', 'NVDA'] : ['GOOGL', 'AMD'];
+        expect(requestedSymbols().filter((s) => gone.includes(s))).toEqual([]);
+        expect(new Set(requestedSymbols())).toEqual(new Set([...heldSymbolsOf(doc.portfolio), ...heldSymbolsOf(doc.opponent.portfolio)]));
+        expect(wsBox.args.every((a) => a.length === 0)).toBe(true);
+        if (controller) expect(counters()).toEqual(['+12.40', '+3.10']);
+      });
+    }
+  }
+});
+
+describe('F1 — every contract case, both sides, both controller states; the opening prop mirrors the document', () => {
+  for (const side of ['player', 'cpu']) {
+    for (const controller of [true, false]) {
+      for (const kase of Object.keys(MALFORMED_PORTFOLIOS)) {
+        it(`${side}, controller ${controller ? 'on' : 'off'}: ${kase}`, async () => {
+          priceBox.table = genuineTable();
+          flags.controller = controller;
+          const doc = malformedDoc(side, kase);
+          flags.gate = true;
+          // The pending shell renders and builds nothing from the opening prop.
+          await mount(mirroredProp(side, doc));
+          expect(shell()).toBe('pending');
+          expect(priceBox.calls).toEqual([]);
+          await deliverDoc('ab-1', doc);
+          // Admitted, never an escape to legacy: gated rows and requests only.
+          expect(shell()).toBeNull();
+          expect(new Set(requestedSymbols())).toEqual(new Set([...heldSymbolsOf(doc.portfolio), ...heldSymbolsOf(doc.opponent.portfolio)]));
+          expect(wsBox.args.every((a) => a.length === 0)).toBe(true);
+          // Incomplete even though every polled quote is genuine — not complete,
+          // not an all-cash success — so the qualified stored pair is shown.
+          expect(label()).toEqual({ kind: 'last-scored', text: expect.stringContaining(STORED_INCOMPLETE) });
+          await poll();
+          expect(label().kind).toBe('last-scored');
+        });
+      }
+    }
+  }
+});
+
+describe('F1 — without a qualified stored pair, and once completed', () => {
+  for (const side of ['player', 'cpu']) {
+    it(`${side}: no qualified stored pair → "Comparison unavailable", never a default 0–0`, async () => {
+      priceBox.table = genuineTable();
+      const doc = malformedDoc(side, 'a tier that is an object', { ...ACTIVE_DOC, scoreState: { currentScore: 0, opponentScore: 0, tradeCount: 1 } });
+      await mountGated(openingProp(), doc);
+      expect(shell()).toBeNull();
+      expect(label()).toEqual({ kind: 'unavailable', text: 'Comparison unavailable' });
+      expect(counters()).not.toContain('+0.00');
+    });
+
+    it(`${side}: completed with a qualified final → the stored final, scored time and all`, async () => {
+      priceBox.table = genuineTable();
+      const doc = malformedDoc(side, 'a tier that is a string', { ...ACTIVE_DOC, status: 'completed', scoreState: STORED(12.4, 3.1) });
+      await mountGated(openingProp(), doc);
+      expect(shell()).toBeNull();
+      expect(label()).toEqual({ kind: 'final', text: expect.stringContaining('Final · scored Oct 1, 12:47 PM EDT') });
+    });
+  }
+});
+
+describe('F1 — parity: the same documents on the shipped path are untouched (flag off, or excluded)', () => {
+  // Negative controls as well: where the gated guard does not apply, the same
+  // input still throws exactly as it did at the base SHA. The guard is the
+  // gated path's alone; the shipped behaviour is pinned by references
+  // captured there.
+  const routes = { FlagOff: false, Excluded: true };
+  for (const [route, gate] of Object.entries(routes)) {
+    for (const side of ['player', 'cpu']) {
+      const name = `malformedTier${route}${side === 'player' ? 'Player' : 'Cpu'}`;
+      it(`OFF ${name}: controller on, ${side} star tier an object — the shipped outcome`, async () => {
+        priceBox.table = genuineTable();
+        const base = gate ? { ...ACTIVE_DOC, groupId: 'group-1' } : ACTIVE_DOC; // a group stamp is excluded (§3.1)
+        flags.gate = gate;
+        await mount(openingProp());
+        let thrown = null;
+        try { await deliverDoc('ab-1', malformedDoc(side, 'a tier that is an object', base)); } catch (e) { thrown = String(e?.message ?? e); }
+        offReference(name, { thrown }, OFF[name]);
+      });
+    }
+  }
+});
+
+describe('F1 — the guards end with the gated path: pending, then excluded, controller off', () => {
+  // With the controller off the legacy sources are the opening prop both
+  // while pending and once excluded, so only `gatedPath` in the memos' inputs
+  // makes them rebuild: without it the legacy list would stay the gated
+  // empty one, and the excluded battle would poll and subscribe nothing.
+  it('a group-stamped record after the pending shell: the same screen, requests and subscription as flag-off', async () => {
+    flags.controller = false;
+    const doc = { ...ACTIVE_DOC, groupId: 'g-1' };
+    const view = () => ({ text: container.textContent, lastCalls: priceBox.calls.slice(-2), ws: wsBox.args[wsBox.args.length - 1] ?? null });
+    priceBox.table = genuineTable();
+    await mount(openingProp());
+    await deliverDoc('ab-1', doc);
+    const off = view();
+    expect(off.lastCalls).toHaveLength(2);
+    expect(off.ws.length).toBeGreaterThan(0);
+    act(() => root.unmount());
+    root = createRoot(container);
+    priceBox.calls.length = 0;
+    flags.gate = true;
+    await mount(openingProp());
+    expect(shell()).toBe('pending');
+    expect(priceBox.calls).toEqual([]);
+    await deliverDoc('ab-1', doc);
+    expect(view()).toEqual(off);
+  });
+});
+
+describe('F2 — the gated path subscribes no symbols of its own; the socket hook still consumes global price events', () => {
+  // The empty list stops only THIS screen's subscriptions. The real hook keeps
+  // its price listener (the shared manager's events for other subscribers'
+  // symbols), and the non-held view still receives the effective price.
+  it('non-held research gets its effective price, a WebSocket price included; held scoring and the controlled view ignore it', async () => {
+    priceBox.table = genuineTable();
+    wsBox.prices = { CRWD: 111, AAPL: 999 };
+    await mountGated();
+    expect(wsBox.args.every((a) => a.length === 0)).toBe(true);
+    expect(label().kind).toBe('browser'); // scored from qualified REST quotes, not the 999
+    await chatClick({ symbol: 'CRWD' });
+    expect(modalOpen()).toBe('CRWD');
+    expect(lastResearch().wsPrice).toBe(111);
+    await click(symbolEl('AAPL', 'player'));
+    expect(modalOpen()).toBe('AAPL');
+    expect('wsPrice' in lastResearch()).toBe(false);
+    expect(lastResearch().controlledQuote.price).toBe(153);
   });
 });
