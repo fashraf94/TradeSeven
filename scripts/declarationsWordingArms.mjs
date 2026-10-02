@@ -1,19 +1,29 @@
 // scripts/declarationsWordingArms.mjs
 //
 // Declarations wording experiment — the tool arms (round 1 brief §2; round 2
-// adds D2).
+// adds D2; Cockpit Build 1a adds the shipping '1A' arm for the round-3 replay).
 //
 // The arms differ ONLY in the `tools` array of an otherwise byte-identical
 // recorded request. A and B are the HEAD tools themselves
-// (api/_utils/agentEvalToolSchema.js buildTradeDecisionTool). C and D are B
-// with DESCRIPTION overrides only — fields, types, enums, `required` and
-// property order are B's, asserted by assertDescriptionOnlyDiff() before any
-// model call. Any description not listed below keeps B's text.
+// (api/_utils/agentEvalToolSchema.js buildTradeDecisionTool at 'off' and
+// 'shadow'). C, D and D2 are B with DESCRIPTION overrides only — fields, types,
+// enums, `required` and property order are B's, asserted by
+// assertDescriptionOnlyDiff() before any model call. Any description not
+// listed below keeps B's text.
 //
-// This file is experiment-only. It does not edit, and is not imported by,
-// agentEvalToolSchema.js; the winning wording ships later in its own build.
+// Build 1a (spec §3): the D arm's five overrides now LIVE IN the schema module
+// (ARM_D_*), because the shipping 'on' text is D with exactly two edits and the
+// two must share one source. This file imports them, so `armTool('D')` still
+// serializes to the experiment's exact bytes (SHA-256 2a90e67b…, 13,565 chars —
+// the replay comparator), and `armTool('1A')` is the schema module's own 'on'
+// tool. This file is experiment-only: nothing in the product imports it.
 
-import { buildTradeDecisionTool } from '../api/_utils/agentEvalToolSchema.js';
+import {
+  buildTradeDecisionTool, buildArmDTool,
+  ARM_D_DECLARATIONS, ARM_D_HORIZON_PHRASE, ARM_D_SAID, ARM_D_FORK, ARM_D_PLAYER_ASK,
+} from '../api/_utils/agentEvalToolSchema.js';
+
+export { ARM_D_DECLARATIONS, ARM_D_HORIZON_PHRASE, ARM_D_SAID, ARM_D_FORK, ARM_D_PLAYER_ASK };
 
 // ---------------------------------------------------------------- arm C (§2.1)
 
@@ -26,40 +36,12 @@ export const ARM_C_DECLARATIONS =
   'against real prices. They are not shown to the player, request no response, do not execute or schedule a trade, are not ' +
   'supplied to a later check, and do not change this check\'s decision.';
 
-export const ARM_C_HORIZON_PHRASE =
-  'How long the call stands. Choose the horizon your sentence actually means. this_session when the condition is about today: ' +
-  'by the close, holds through the day, on the day. this_battle for a thesis that runs until the battle ends. explicit for a ' +
-  'specific time, with expiresAtMs. next_check only when the call is about the very next 15-minute check, in which case it is ' +
-  'judged once, by the first check that reaches it at or after that slot, from that check\'s own observation. Any call can be ' +
-  'hit before its horizon ends.';
+/** C's horizon text — the same sentence D carries (ARM_D_HORIZON_PHRASE, in the schema module). */
+export const ARM_C_HORIZON_PHRASE = ARM_D_HORIZON_PHRASE;
 
 export const ARM_C_SAID =
   'One sentence that states only what the typed fields state: the symbol, above or below the level, and the horizon you chose. ' +
   'Do not add conditions the fields do not hold, such as closes, holds, or confirmations. Stored only; not shown.';
-
-// ---------------------------------------------------------------- arm D (§2.2)
-
-export const ARM_D_DECLARATIONS =
-  'Optional. The conditional calls you are holding right now. The player sees each one as a tile in their cockpit and can ' +
-  'answer it. Fill anticipationCandidates first, exactly as you would if this field did not exist; this block never replaces ' +
-  'or reduces it. Declare whenever you hold a concrete if-then view on a held name or a bench candidate: a price level that ' +
-  'would make you act, or make you hold. Most checks where a position is under pressure or a candidate is close to your entry ' +
-  'qualify. Leave it null only when you have no conditional view. At most 6 called shots. Every call is graded against real ' +
-  'prices. The player may answer Go, Hold off, or Ask me first; an answer reaches you as a directive at a later check. ' +
-  'Nothing in this block executes a trade by itself, and it does not change this check\'s decision.';
-
-export const ARM_D_HORIZON_PHRASE = ARM_C_HORIZON_PHRASE;
-
-export const ARM_D_SAID =
-  'One sentence the player reads on the tile. It states only what the typed fields state: the symbol, above or below the ' +
-  'level, and the horizon you chose. Do not add conditions the fields do not hold, such as closes, holds, or confirmations.';
-
-export const ARM_D_FORK =
-  'Optional. A choice you want the player\'s read on: 2 to 4 names from this battle that could replace swapOut in one slot. ' +
-  'The player picks one; the pick reaches you as a directive at a later check.';
-
-export const ARM_D_PLAYER_ASK =
-  'Optional. A research question you want the player\'s view on, with 2 to 4 possible answers. The player may answer it.';
 
 // ---------------------------------------------------------------- arm D2 (round 2)
 
@@ -73,7 +55,7 @@ export const ARM_D2_SAID =
 
 /** B with the named description overrides applied. Structure untouched. */
 function withOverrides({ declarations, horizonPhrase, said, fork, playerAsk }) {
-  const tool = structuredClone(buildTradeDecisionTool({ declarations: true }));
+  const tool = structuredClone(buildTradeDecisionTool({ declarations: 'shadow' }));
   const decl = tool.input_schema.properties.declarations;
   const shot = decl.properties.calledShots.items.properties;
   if (declarations !== undefined) decl.description = declarations;
@@ -84,9 +66,10 @@ function withOverrides({ declarations, horizonPhrase, said, fork, playerAsk }) {
   return tool;
 }
 
-/** Round 1 ran A–D; round 2 runs A, D and D2. */
+/** Round 1 ran A–D; round 2 runs A, D and D2; round 3 (not run by this build) compares the shipping 1A text against D's bars. */
 export const ARMS = Object.freeze(['A', 'B', 'C', 'D']);
 export const ARMS_ROUND2 = Object.freeze(['A', 'D', 'D2']);
+export const ARMS_ROUND3 = Object.freeze(['A', 'D', '1A']);
 
 export const ARM_LABELS = Object.freeze({
   A: 'off',
@@ -94,20 +77,20 @@ export const ARM_LABELS = Object.freeze({
   C: 'shadow, revised',
   D: 'on (draft)',
   D2: 'D + said override',
+  '1A': 'on (Build 1a text — D minus the deferred promises)',
 });
 
-/** The tool object for one arm. A and B are the HEAD objects themselves. */
+/** The tool object for one arm. A, B and 1A are the HEAD objects themselves. */
 export function armTool(arm) {
   switch (arm) {
-    case 'A': return buildTradeDecisionTool({ declarations: false });
-    case 'B': return buildTradeDecisionTool({ declarations: true });
+    case 'A': return buildTradeDecisionTool({ declarations: 'off' });
+    case 'B': return buildTradeDecisionTool({ declarations: 'shadow' });
     case 'C': return withOverrides({ declarations: ARM_C_DECLARATIONS, horizonPhrase: ARM_C_HORIZON_PHRASE, said: ARM_C_SAID });
-    case 'D': return withOverrides({
-      declarations: ARM_D_DECLARATIONS, horizonPhrase: ARM_D_HORIZON_PHRASE, said: ARM_D_SAID, fork: ARM_D_FORK, playerAsk: ARM_D_PLAYER_ASK,
-    });
+    case 'D': return buildArmDTool();
     case 'D2': return withOverrides({
       declarations: ARM_D_DECLARATIONS, horizonPhrase: ARM_D_HORIZON_PHRASE, said: ARM_D2_SAID, fork: ARM_D_FORK, playerAsk: ARM_D_PLAYER_ASK,
     });
+    case '1A': return buildTradeDecisionTool({ declarations: 'on' });
     default: throw new Error(`unknown arm ${arm}`);
   }
 }

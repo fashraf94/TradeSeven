@@ -2782,8 +2782,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             ],
             // §3.1: the declarations property rides the tool only at shadow/on;
             // at off this is the TRADE_DECISION_TOOL object itself — the same
-            // reference every import holds, unchanged.
-            tools: [buildTradeDecisionTool({ declarations: callsActive(callsCtx.mode) })],
+            // reference every import holds, unchanged. Build 1a (spec §3): the
+            // RESOLVED mode selects the text — the stored-only shadow text at
+            // 'shadow', the 1a text at 'on' (per-owner).
+            tools: [buildTradeDecisionTool({ declarations: callsCtx.mode })],
             tool_choice: { type: 'tool', name: 'submit_trade_decision' },
           }, { timeout: 20_000, signal: abortCtrl.signal });
         } finally {
