@@ -210,4 +210,15 @@
 
   --ft-game-baggerbomb: var(--ft-amber);
   --ft-game-draft: var(--ft-emerald);
+
+  /* Cockpit Build 2a (spec docs/COCKPIT_BUILD2A_SPEC_V1_0.md §9; ruling
+     R2A-5) — the call-state aliases. Derived from the existing palette, no
+     new colour: the player's answer wears the player's teal (ArenaHeader's
+     side colour), acted is success, a dropped call is the warning amber, and
+     expired / ended / no matching trade read in the muted text base. Gold is
+     reserved and unused. */
+  --ft-call-yours: var(--ft-teal);
+  --ft-call-acted: var(--ft-success);
+  --ft-call-dropped: var(--ft-warning);
+  --ft-call-muted: var(--ft-text-muted);
 }
