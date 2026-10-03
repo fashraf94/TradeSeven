@@ -12,7 +12,7 @@
 // listener calls are exactly the pre-build ones (references captured at the
 // pre-build SHA with SHADOW_OFF_CAPTURE_DIR).
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import React, { act, useLayoutEffect, StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { writeFileSync } from 'node:fs';
@@ -42,7 +42,6 @@ vi.mock('firebase/firestore', () => ({
 vi.mock('../firebase/config', () => ({ db: { name: 'db' } }));
 
 import useAgentBattle from './useAgentBattle';
-import { advanceReceived } from '../screens/battleView/shadowCpuQuoteIntegrity';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -908,6 +907,14 @@ describe('R2 — the received fold runs on every callback', () => {
   // A recording fold: what each callback carried, in order.
   const trail = (prev, data) => [...(prev ?? []), data === null ? null : data.n];
   const FOLD = { integrity: true, receive: trail };
+  // The gate's REAL fold, loaded here rather than at module scope so that the
+  // OFF rows still load at OFF_REFERENCE_SHA (which predates the helper). The
+  // specifier is not a literal, so the transform does not resolve it eagerly.
+  const HELPER = '../screens/battleView/shadowCpuQuoteIntegrity';
+  let advanceReceived;
+  beforeAll(async () => {
+    ({ advanceReceived } = await import(/* @vite-ignore */ HELPER));
+  });
 
   it('two callbacks rendered as one update: both folded, in order, beside the last callback\'s data', () => {
     render('battle-A', { options: FOLD });
