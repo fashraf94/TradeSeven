@@ -24,12 +24,36 @@
 // tile or receipt assertion — and never show a failing one.
 //
 // Pure. No I/O.
+//
+// Cockpit Build 2a (spec docs/COCKPIT_BUILD2A_SPEC_V1_0.md S-3, S-7): the
+// CLIENT imports this module — `renderCallLine`, `renderUpsideLine`,
+// `deadlineText` and `checkLabel` are the cockpit's tile lines, so the tile and
+// the chat calls block read one renderer (BUILD_RULES §9). Every import below
+// is Node-clean AND browser-clean (no `process`, no `Buffer`, no SDK). The
+// `clock: '12h'` option is the client's: 12-hour ET, and a CHECK named by its
+// cron SLOT (D-83 — the Battle View's one rule for naming a check, so the
+// cockpit never calls a check "1:31 PM" that the chat card beside it calls
+// "1:30 PM"). The default, 24-hour clock is the server's and is model-visible:
+// its output is byte-for-byte what it was (copy.test.js pins it).
+//
+// THE UPSIDE LINE (Amendment C-2): an `entry` call on a name already held at
+// mint is an upside call — symbol, side, level and deadline, NO action clause
+// ("AMD above $625.00 by today's close"). `renderCallLine` routes a
+// `heldAtMint` call through `renderUpsideLine` and `renderIntentLine` (the one
+// action-clause renderer here) renders nothing for it.
 
 import { formatPrice } from '../../../src/utils/formatters.js';
+// Zero-import src module (BUILD_RULES §4; guarded by copy.test.js's import of
+// this module): the client's ET clock and its slot rule, so the 12-hour path
+// is the Battle View's own formatting, never a second copy of it.
+import { etTime, etSlotTime } from '../../../src/components/Dashboard/desk/deskCopy.js';
 import { etDateOf } from './horizon.js';
 
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 const nonEmpty = (v) => typeof v === 'string' && v.length > 0;
+
+/** The two clocks a line can render in: the server's (default, model-visible) and the client's. */
+export const CLOCKS = Object.freeze(['24h', '12h']);
 
 /** The pinned price formatter (src/utils/formatters.js:47-50): `$123.45`. */
 export function fmtPrice(level) {
@@ -39,20 +63,35 @@ export function fmtPrice(level) {
 const ET_TIME = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 const ET_WEEKDAY = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'long' });
 
-/** An instant as ET wall-clock `HH:MM` (24-hour), or null. Accepts epoch ms or an ISO string. */
-export function fmtTimeEt(instant) {
-  const ms = typeof instant === 'string' ? Date.parse(instant) : instant;
-  return finite(ms) ? ET_TIME.format(new Date(ms)) : null;
+const msOf = (instant) => (typeof instant === 'string' ? Date.parse(instant) : instant);
+
+/**
+ * An instant as ET wall-clock `HH:MM` (24-hour), or null. Accepts epoch ms or
+ * an ISO string. `clock: '12h'` → the client's `1:31 PM` (deskCopy's etTime).
+ */
+export function fmtTimeEt(instant, { clock = '24h' } = {}) {
+  const ms = msOf(instant);
+  if (!finite(ms)) return null;
+  return clock === '12h' ? etTime(new Date(ms).toISOString()) : ET_TIME.format(new Date(ms));
 }
 
 /** The ET weekday name of an instant, or null. */
 export function fmtWeekdayEt(instant) {
-  const ms = typeof instant === 'string' ? Date.parse(instant) : instant;
+  const ms = msOf(instant);
   return finite(ms) ? ET_WEEKDAY.format(new Date(ms)) : null;
 }
 
-/** "the 10:30 check" from a committed check's promptBuiltAt (ISO string or ms), or null. */
-export function checkLabel(promptBuiltAt) {
+/**
+ * "the 10:30 check" from a committed check's promptBuiltAt (ISO string or ms),
+ * or null. `clock: '12h'` → "the 1:30 PM check", the check named by its SLOT
+ * (deskCopy's etSlotTime, D-83) — the client's label for the same check.
+ */
+export function checkLabel(promptBuiltAt, { clock = '24h' } = {}) {
+  if (clock === '12h') {
+    const ms = msOf(promptBuiltAt);
+    const slot = finite(ms) ? etSlotTime(new Date(ms).toISOString()) : null;
+    return slot ? `the ${slot} check` : null;
+  }
   const t = fmtTimeEt(promptBuiltAt);
   return t ? `the ${t} check` : null;
 }
@@ -63,10 +102,11 @@ export function checkLabel(promptBuiltAt) {
  *   this_session → "by today's close" only when `expiresAt` falls on today's ET
  *                  date (relative to `nowMs`), else "by <Weekday>'s close"
  *   this_battle  → "before the battle ends"
- *   explicit     → "by HH:MM" (ET)
+ *   explicit     → "by HH:MM" (ET; `clock: '12h'` → "by 2:30 PM", the exact
+ *                  minute — a deadline is an instant, never a check slot)
  * Null when the horizon cannot be read.
  */
-export function deadlineText(horizon, { nowMs = Date.now() } = {}) {
+export function deadlineText(horizon, { nowMs = Date.now(), clock = '24h' } = {}) {
   const basis = horizon?.basis;
   const expiresAt = horizon?.expiresAt;
   switch (basis) {
@@ -79,7 +119,7 @@ export function deadlineText(horizon, { nowMs = Date.now() } = {}) {
     case 'this_battle':
       return 'before the battle ends';
     case 'explicit':
-      return finite(expiresAt) ? `by ${fmtTimeEt(expiresAt)}` : null;
+      return finite(expiresAt) ? `by ${fmtTimeEt(expiresAt, { clock })}` : null;
     default:
       return null;
   }
@@ -92,28 +132,54 @@ function renderPickLine(call) {
   return `${call.slot}: ${options.join(' or ')} for ${call.swapOut}`;
 }
 
-/**
- * THE CALL LINE, from the stored record (spec §4). Shots and confirmations:
- * `AMD above $161.00 by today's close`; picks: the request line. Null when a
- * required stored field is missing — never a guess.
- */
-export function renderCallLine(call, { nowMs = Date.now() } = {}) {
-  if (!call || typeof call !== 'object') return null;
-  if (call.kind === 'pick') return renderPickLine(call);
+/** Is this an upside call (Amendment C-2)? Records without the field read as false. */
+export function isUpsideCall(call) {
+  return !!call && typeof call === 'object' && call.kind !== 'pick' && call.heldAtMint === true;
+}
+
+/** symbol · side · level · deadline — the shared core of the call and upside lines. Null when a field is missing. */
+function conditionLine(call, { nowMs, clock }) {
   const side = call.condition?.side;
   const level = call.condition?.level;
   if (!nonEmpty(call.symbol) || (side !== 'above' && side !== 'below') || !finite(level)) return null;
-  const deadline = deadlineText(call.horizon, { nowMs });
+  const deadline = deadlineText(call.horizon, { nowMs, clock });
   return `${call.symbol} ${side} ${fmtPrice(level)}${deadline ? ` ${deadline}` : ''}`;
+}
+
+/**
+ * THE UPSIDE LINE (Amendment C-2): an upside call's symbol, side, level and
+ * deadline — `AMD above $625.00 by today's close` — and NO action clause, ever.
+ * Null for anything that is not an upside call, or when a stored field is
+ * missing.
+ */
+export function renderUpsideLine(call, { nowMs = Date.now(), clock = '24h' } = {}) {
+  if (!isUpsideCall(call)) return null;
+  return conditionLine(call, { nowMs, clock });
+}
+
+/**
+ * THE CALL LINE, from the stored record (spec §4). Shots and confirmations:
+ * `AMD above $161.00 by today's close`; picks: the request line. Null when a
+ * required stored field is missing — never a guess. An upside call is
+ * rendered by renderUpsideLine — never with an action clause (C-2).
+ */
+export function renderCallLine(call, { nowMs = Date.now(), clock = '24h' } = {}) {
+  if (!call || typeof call !== 'object') return null;
+  if (call.kind === 'pick') return renderPickLine(call);
+  if (isUpsideCall(call)) return renderUpsideLine(call, { nowMs, clock });
+  return conditionLine(call, { nowMs, clock });
 }
 
 /**
  * THE INTENT LINE — shots and confirmations only, from the stored
  * `defaultAction` / `direction` / `counterpart`; readers label it intent,
- * never a promise. A pick has none (its `defaultAction` is null).
+ * never a promise. A pick has none (its `defaultAction` is null), and neither
+ * has an upside call: "bring in" a name already held is the action clause
+ * Amendment C-2 forbids.
  */
 export function renderIntentLine(call) {
   if (!call || typeof call !== 'object' || call.kind === 'pick') return null;
+  if (isUpsideCall(call)) return null;
   const act = call.defaultAction === 'act';
   if (!act && call.defaultAction !== 'hold') return null;
   if (!act) return 'Intent: hold';

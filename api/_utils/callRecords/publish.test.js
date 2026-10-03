@@ -15,7 +15,7 @@ import { createCallsContext } from './mode.js';
 import { captureDeclarations } from './validate.js';
 import { bindHorizon, battleExpiryMs } from './horizon.js';
 import { shouldStartHaikuCall, PROMPT_BUILD_CEILING_MS, HAIKU_CALL_CEILING_MS, HAIKU_POST_CALL_ALLOWANCE_MS } from '../agentEvalTransport.js';
-import { FROZEN_NOW, makeTickBattle, makeDeclarations, makeObservation } from '../__fixtures__/tickStampsHarness.js';
+import { FROZEN_NOW, HELD, makeTickBattle, makeDeclarations, makeObservation } from '../__fixtures__/tickStampsHarness.js';
 import { makeCallsDb, storedDoc, storedCollection, callsTouches, QUEUE_COLLECTION } from '../__fixtures__/callRecordsStore.js';
 
 const TIME_BUDGET_MS = 290_000; // agent-evaluate.js TIME_BUDGET_MS
@@ -37,7 +37,7 @@ const committedBattle = (over = {}) => makeTickBattle({
 });
 const candidateOf = (raw = makeDeclarations(), over = {}) => buildMintCandidate({
   battleId: BATTLE_ID, evalId: EVAL_ID, evalSeq: 1, mintedAtMs: MINT, raw, universe: UNIVERSE,
-  observation: makeObservation(), promptBuiltAt: FROZEN_NOW, tickId: `${BATTLE_ID}:1`, battle: committedBattle(), ...over,
+  observation: makeObservation(), promptBuiltAt: FROZEN_NOW, tickId: `${BATTLE_ID}:1`, battle: committedBattle(), held: [...HELD], mintedMode: 'shadow', ...over,
 });
 const far = () => Date.now() + 5_000;
 const publish = (db, candidate, over = {}) => publishDeclarations({

@@ -10,7 +10,9 @@
 // CALL_RECORDS_MODE again during the check:
 //   global 'off'    → 'off'
 //   global 'shadow' → 'shadow'
-//   global 'on'     → 'on' iff ownerId ∈ COCKPIT_ALLOWLIST_UIDS, else 'off'
+//   global 'on'     → 'on' iff ownerId is on the server-side allowlist (the
+//                     COCKPIT_ALLOWLIST_UIDS environment variable, read at
+//                     call time by allowlist.js — Build 2a S-5), else 'off'
 //   anything malformed — an unknown flag value, a non-array allowlist, a
 //   non-string owner, a hermetic test mock that omits a name and throws on
 //   access — → 'off': the only state that changes nothing.
@@ -31,7 +33,10 @@
 // independent of tick capture by construction: nothing here reads a capture
 // context, and capture off changes nothing in it.
 
-import { CALL_RECORDS_MODE, CALL_RECORDS_MODES, COCKPIT_ALLOWLIST_UIDS } from '../../../src/config/featureFlags.js';
+import { CALL_RECORDS_MODE, CALL_RECORDS_MODES } from '../../../src/config/featureFlags.js';
+// Build 2a (spec S-5, ruling R2A-7): the allowlist is server-only, read from
+// the environment at call time — it no longer exists in the client bundle.
+import { readCockpitAllowlist } from './allowlist.js';
 
 /** The fail-closed default. */
 export const CALLS_MODE_OFF = 'off';
@@ -52,10 +57,13 @@ export function resolveGlobalCallRecordsMode() {
   }
 }
 
-/** Is this owner on the cockpit allowlist? A malformed list or owner → false. Never throws. */
+/**
+ * Is this owner on the cockpit allowlist? Read from the environment at THIS
+ * call (allowlist.js), never cached. A malformed list or owner → false. Never throws.
+ */
 export function isCockpitOwnerAllowlisted(ownerId) {
   try {
-    const list = COCKPIT_ALLOWLIST_UIDS;
+    const list = readCockpitAllowlist();
     return typeof ownerId === 'string' && ownerId.length > 0 && Array.isArray(list) && list.includes(ownerId);
   } catch {
     return false;
@@ -123,6 +131,8 @@ export function checkContextOf(battle) {
  *                    `declarationsPhase`);
  *   `universe`     — the battle universe frozen at the prompt seam (the fork
  *                    options' membership test).
+ *   `held`         — Build 2a (Amendment C-2 / C-3): the held set frozen at
+ *                    the SAME seam; null until the model seam runs.
  *
  * @param {object} p
  * @param {string} p.mode            the resolved mode (resolveCallRecordsMode(battle))
@@ -140,6 +150,7 @@ export function createCallsContext({ mode, handlerStartMs }) {
     diag: {},
     declarations: null,
     universe: null,
+    held: null,
   };
 }
 

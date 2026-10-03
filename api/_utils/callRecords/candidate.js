@@ -23,10 +23,36 @@
 // state, stateChangedAt, stateSource, playerResponse, outcome, refused and
 // evidence.availability.
 //
+// Cockpit Build 2a — THE MINT FIELDS (contract Amendment C; spec
+// docs/COCKPIT_BUILD2A_SPEC_V1_0.md S-2). Every new call and record carries
+// what the cockpit needs to say nothing false, each from the check's own seam
+// and never inferred from prompt text:
+//   heldAtMint      shots / confirmations: direction 'entry' on a symbol HELD
+//                   at the model seam (C-2) — an upside call, answerable by no one
+//   counterpart     kept only when USABLE at the seam (C-3); otherwise null and
+//   counterpartRaw  the agent's string, cut to 40 code points (null when the
+//                   counterpart was usable or absent) — audits only, never copy
+//   saidOk          the said lint's verdict on this call's own `said` (C-4)
+//   mintedMode      the check's resolved mode, 'shadow' | 'on' (C-5) — calls and
+//                   the record
+//   watchingSource  the record's kept watch list origin (C-1)
+// The held set and the universe are frozen at the SAME seam (observe.js
+// freezeModelObservation). The seam does not carry cooldown lock status — the
+// bench reaches it as bare symbols — so C-3's lock clause is treated as
+// unknown: a locked bench name is NOT excluded (recorded in the build report;
+// no lock is guessed).
+//
 // Pure: no I/O, no clock (the mint instant is handed in).
 
 import { validateDeclarations, invalidationReason, sortRemovedInSourceOrder, removedRecordFields, DECLARATION_CAPS, jsonBytes } from './validate.js';
 import { bindHorizon, battleExpiryMs } from './horizon.js';
+import { saidPassesLint } from './copy.js';
+
+/** The modes a record can be minted under (Amendment C-5). */
+export const MINTED_MODES = Object.freeze(['shadow', 'on']);
+
+/** counterpartRaw's cap, in Unicode code points (Amendment C-3). */
+export const COUNTERPART_RAW_MAX = 40;
 
 /** The fields a canonical form leaves out — the mutable state of a call. */
 export const MUTABLE_CALL_FIELDS = Object.freeze(['state', 'stateChangedAt', 'stateSource', 'playerResponse', 'outcome', 'refused']);
@@ -138,10 +164,44 @@ function deepFreeze(value) {
   return value;
 }
 
-function composeCall(spec, { battleId, evalId, evalSeq, mintedAtMs, observation, evidence, provenance }) {
+/**
+ * Is a shot's counterpart USABLE at the seam (Amendment C-3)? Exact
+ * membership, the seam's own spelling (the fork options' rule):
+ *   exit  — the replacement: in the check's universe, not held, not the call's
+ *           own symbol (lock status: not known at the seam — see the header);
+ *   entry — the position the entry would replace: held, not the own symbol.
+ * An unknown seam (held or universe null) proves nothing usable.
+ *
+ * @param {{ symbol: string, direction: string, counterpart?: string }} row
+ * @param {{ held: string[]|null, universe: string[]|null }} seam
+ */
+export function counterpartUsable(row, { held, universe }) {
+  const cp = row?.counterpart;
+  if (typeof cp !== 'string' || cp.length === 0) return false;
+  if (!Array.isArray(held) || !Array.isArray(universe)) return false;
+  if (cp === row.symbol) return false;
+  if (row.direction === 'exit') return universe.includes(cp) && !held.includes(cp);
+  if (row.direction === 'entry') return held.includes(cp);
+  return false;
+}
+
+/** The agent's counterpart string, cut to its first 40 code points (never a split surrogate). */
+export function counterpartRawOf(counterpart) {
+  return [...counterpart].slice(0, COUNTERPART_RAW_MAX).join('');
+}
+
+/** C-4: the lint's verdict on one call's own `said`; null when it says nothing. */
+export function saidOkOf(said, basis) {
+  if (typeof said !== 'string' || said.trim().length === 0) return null;
+  return saidPassesLint(said, basis);
+}
+
+function composeCall(spec, { battleId, evalId, evalSeq, mintedAtMs, mintedMode, observation, evidence, provenance, held, universe }) {
   const { n, kind, row, horizon } = spec;
   const isPick = kind === 'pick';
   const reason = isPick ? null : invalidationReason(row, observation);
+  const hasCounterpart = !isPick && typeof row.counterpart === 'string' && row.counterpart.length > 0;
+  const usable = hasCounterpart && counterpartUsable(row, { held, universe });
   const call = {
     callId: callIdOf(battleId, evalId, n),
     kind,
@@ -149,15 +209,20 @@ function composeCall(spec, { battleId, evalId, evalSeq, mintedAtMs, observation,
     evalId,
     evalSeq,
     mintedAt: mintedAtMs,
+    mintedMode,
     symbol: isPick ? null : row.symbol,
     direction: isPick ? null : row.direction,
+    // C-2: shots and confirmations only — an 'entry' on a name held at the seam.
+    ...(isPick ? {} : { heldAtMint: row.direction === 'entry' && Array.isArray(held) && held.includes(row.symbol) }),
     slot: row.slot,
-    counterpart: isPick ? null : (row.counterpart ?? null),
+    counterpart: usable ? row.counterpart : null,
+    counterpartRaw: hasCounterpart && !usable ? counterpartRawOf(row.counterpart) : null,
     ...(isPick ? { swapOut: row.swapOut, options: row.options.map((o) => ({ symbol: o.symbol, why: o.why })) } : {}),
     condition: isPick ? null : { side: row.condition.side, level: row.condition.level },
     horizon: { phrase: isPick ? 'next_check' : row.horizonPhrase, expiresAt: horizon.expiresAtMs, basis: horizon.basis },
     defaultAction: isPick ? null : row.defaultAction,
     said: row.said,
+    saidOk: saidOkOf(row.said, horizon.basis),
     evidence: { ...evidence },
     hypothesisRef: provenance.hypothesisRef ? { ...provenance.hypothesisRef } : null,
     origin: provenance.origin,
@@ -188,18 +253,28 @@ function composeCall(spec, { battleId, evalId, evalSeq, mintedAtMs, observation,
  * @param {string|null} p.promptBuiltAt the committed evaluation's ISO prompt instant
  * @param {string|null} p.tickId   the tick capture id, or null (capture off)
  * @param {object} p.battle        the in-memory battle (frozen context: provenance, expiry)
+ * @param {unknown} [p.topLevelWatching] Amendment C-1: the same tool input's top-level `watching`,
+ *   detached at the tool-result seam (absent → nothing read from the top level)
+ * @param {string[]|null} p.held   Amendment C-2/C-3: the held set frozen at the model seam —
+ *   REQUIRED; `null` is the explicit "unknown" (heldAtMint false, no counterpart usable)
+ * @param {'shadow'|'on'} p.mintedMode Amendment C-5: the check's resolved mode — REQUIRED
  */
-export function buildMintCandidate({ battleId, evalId, evalSeq, mintedAtMs, raw, universe, observation, promptBuiltAt, tickId, battle }) {
+export function buildMintCandidate({ battleId, evalId, evalSeq, mintedAtMs, raw, universe, observation, promptBuiltAt, tickId, battle, topLevelWatching, held, mintedMode }) {
+  // No silent default for a load-bearing seam fact: omission is a defect, and
+  // opting out (null) is an explicit act.
+  if (held === undefined) throw new Error('buildMintCandidate: `held` is required (null when the seam knows no held set)');
+  if (!MINTED_MODES.includes(mintedMode)) throw new Error(`buildMintCandidate: mintedMode must be one of ${MINTED_MODES.join(', ')}`);
   const resolveHorizon = bindHorizon({
     promptBuiltAtMs: typeof promptBuiltAt === 'string' ? Date.parse(promptBuiltAt) : Number.NaN,
     mintedAtMs,
     battleExpiresAtMs: battleExpiryMs(battle),
   });
-  const validation = validateDeclarations(raw, { universe, resolveHorizon });
+  const validation = validateDeclarations(raw, { universe, resolveHorizon, topLevelWatching });
   const removed = [...validation.removed];
   if (!validation.validated) {
     return deepFreeze({ record: null, calls: [], newOpen: [], removed, canonical: { record: null, calls: {} }, publicationBytes: 0 });
   }
+  const heldSet = Array.isArray(held) ? held : null;
 
   const evidence = mintEvidence({ tickId, promptBuiltAt });
   const provenance = resolveProvenance(battle);
@@ -214,7 +289,10 @@ export function buildMintCandidate({ battleId, evalId, evalSeq, mintedAtMs, raw,
   const compose = () => {
     const minted = [];
     const calls = specs.map((spec) => {
-      const { call, reason } = composeCall(spec, { battleId, evalId, evalSeq, mintedAtMs, observation, evidence, provenance });
+      const { call, reason } = composeCall(spec, {
+        battleId, evalId, evalSeq, mintedAtMs, mintedMode, observation, evidence, provenance,
+        held: heldSet, universe: Array.isArray(universe) ? universe : null,
+      });
       minted.push({ callId: call.callId, n: spec.n, kind: spec.kind, state: call.state, reason });
       return call;
     });
@@ -223,7 +301,9 @@ export function buildMintCandidate({ battleId, evalId, evalSeq, mintedAtMs, raw,
       evalId,
       evalSeq,
       mintedAt: mintedAtMs,
+      mintedMode,
       ...block,
+      watchingSource: validation.watchingSource,
       ...removedRecordFields(removed),
       minted,
     };

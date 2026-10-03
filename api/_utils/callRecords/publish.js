@@ -364,6 +364,12 @@ export async function runModelCallsPhase(callsCtx, { db, battle, timeBudgetMs, p
     const candidate = buildMintCandidate({
       battleId, evalId, evalSeq, mintedAtMs,
       raw: callsCtx.declarations.raw,
+      // Build 2a (Amendment C-1, C-2/C-3, C-5): the top-level watch list detached
+      // beside the block, the held set frozen at the model seam (null = unknown),
+      // and the check's resolved mode.
+      topLevelWatching: callsCtx.declarations.topLevelWatching,
+      held: callsCtx.held ?? null,
+      mintedMode: callsCtx.mode,
       universe: callsCtx.universe,
       observation: callsCtx.observation,
       promptBuiltAt,

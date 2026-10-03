@@ -4,12 +4,17 @@
 // (spec docs/COCKPIT_BUILD1A_SPEC_V1_2.md §3, §15.1 "composition (four rows +
 // allowlist row + neighbor isolation)"; contract Amendment B §10). The live
 // values are pinned in src/config/{callRecordsFlags,cockpitFlags}.test.js; here
-// both flags are driven through getters so every state (and a broken one) is
+// the mode is driven through a getter so every state (and a broken one) is
 // proven without touching the source.
+//
+// Cockpit Build 2a (spec S-5): the allowlist is the SERVER-SIDE environment
+// variable COCKPIT_ALLOWLIST_UIDS, read at call time by allowlist.js. These
+// rows drive the REAL reader through process.env (never mocked), so the
+// resolver and the reader are proven together.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
-const flag = vi.hoisted(() => ({ mode: 'off', allow: [], modeThrows: false, allowThrows: false }));
+const flag = vi.hoisted(() => ({ mode: 'off', modeThrows: false }));
 vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => {
   const actual = await importOriginal();
   return {
@@ -18,12 +23,17 @@ vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => {
       if (flag.modeThrows) throw new Error('[vitest] No "CALL_RECORDS_MODE" export is defined on the mock');
       return flag.mode;
     },
-    get COCKPIT_ALLOWLIST_UIDS() {
-      if (flag.allowThrows) throw new Error('[vitest] No "COCKPIT_ALLOWLIST_UIDS" export is defined on the mock');
-      return flag.allow;
-    },
   };
 });
+
+const ENV = 'COCKPIT_ALLOWLIST_UIDS';
+const ENV_BEFORE = process.env[ENV];
+/** The allowlist, as the founder would set it: a list → comma-joined; a string → verbatim; nothing → unset. */
+const setAllow = (value) => {
+  if (Array.isArray(value) && value.length > 0) process.env[ENV] = value.join(',');
+  else if (typeof value === 'string') process.env[ENV] = value;
+  else delete process.env[ENV];
+};
 
 const {
   resolveCallRecordsMode, resolveGlobalCallRecordsMode, isCockpitOwnerAllowlisted, attachCheckContext, checkContextOf, createCallsContext, callsActive,
@@ -33,53 +43,72 @@ const ALLOWED = 'owner-allowed';
 const OTHER = 'owner-other';
 const battleOf = (ownerId, over = {}) => ({ id: `battle-${ownerId}`, ownerId, status: 'active', directive: null, ...over });
 
-afterEach(() => { flag.mode = 'off'; flag.allow = []; flag.modeThrows = false; flag.allowThrows = false; });
+afterEach(() => {
+  flag.mode = 'off'; flag.modeThrows = false;
+  if (ENV_BEFORE === undefined) delete process.env[ENV]; else process.env[ENV] = ENV_BEFORE;
+});
 
 describe('resolveCallRecordsMode(battle) — the composition rows (spec §3)', () => {
   it("global 'off' → 'off' for every battle, allowlisted or not", () => {
-    flag.mode = 'off'; flag.allow = [ALLOWED];
+    flag.mode = 'off'; setAllow([ALLOWED]);
     expect(resolveCallRecordsMode(battleOf(ALLOWED))).toBe('off');
     expect(resolveCallRecordsMode(battleOf(OTHER))).toBe('off');
   });
 
   it("global 'shadow' → 'shadow' for every battle; the allowlist is not consulted", () => {
-    flag.mode = 'shadow'; flag.allow = [ALLOWED];
+    flag.mode = 'shadow'; setAllow([ALLOWED]);
     expect(resolveCallRecordsMode(battleOf(ALLOWED))).toBe('shadow');
     expect(resolveCallRecordsMode(battleOf(OTHER))).toBe('shadow');
-    flag.allowThrows = true; // even a broken allowlist cannot change a shadow resolution
+    setAllow(' , ,'); // even a garbage allowlist cannot change a shadow resolution
     expect(resolveCallRecordsMode(battleOf(ALLOWED))).toBe('shadow');
   });
 
   it("global 'on' → 'on' iff the owner is allowlisted, else 'off' (per-owner off)", () => {
-    flag.mode = 'on'; flag.allow = [ALLOWED];
+    flag.mode = 'on'; setAllow([ALLOWED]);
     expect(resolveCallRecordsMode(battleOf(ALLOWED))).toBe('on');
     expect(resolveCallRecordsMode(battleOf(OTHER))).toBe('off');
   });
 
+  it('the allowlist is read at CALL time: removing the uid is immediate (spec §10.4 rollback)', () => {
+    flag.mode = 'on'; setAllow([ALLOWED, OTHER]);
+    expect(resolveCallRecordsMode(battleOf(ALLOWED))).toBe('on');
+    setAllow([OTHER]);
+    expect(resolveCallRecordsMode(battleOf(ALLOWED))).toBe('off');
+    expect(resolveCallRecordsMode(battleOf(OTHER))).toBe('on');
+    setAllow(undefined);
+    expect(resolveCallRecordsMode(battleOf(OTHER))).toBe('off');
+  });
+
   it("the allowlist row: global 'on' with an EMPTY list resolves every battle 'off' (the shipped state)", () => {
-    flag.mode = 'on'; flag.allow = [];
+    flag.mode = 'on'; setAllow([]);
     expect(resolveCallRecordsMode(battleOf(ALLOWED))).toBe('off');
     expect(resolveCallRecordsMode(battleOf(OTHER))).toBe('off');
   });
 
-  it("malformed → 'off': a non-array allowlist, a non-string / missing owner, a null battle, a throwing allowlist", () => {
+  it("malformed → 'off': an empty or comma-only variable, a near-miss uid, a non-string / missing owner, a null battle", () => {
     flag.mode = 'on';
-    for (const bad of ['owner-allowed', { 0: ALLOWED }, null, undefined, 42]) {
-      flag.allow = bad;
-      expect(resolveCallRecordsMode(battleOf(ALLOWED)), `allowlist ${String(bad)}`).toBe('off');
+    for (const bad of ['', ' ', ',', ' , ,', `${ALLOWED}x`, ALLOWED.toUpperCase()]) {
+      setAllow(bad);
+      expect(resolveCallRecordsMode(battleOf(ALLOWED)), `allowlist ${JSON.stringify(bad)}`).toBe('off');
     }
-    flag.allow = [ALLOWED];
+    setAllow([ALLOWED]);
     for (const owner of [undefined, null, '', 7, { uid: ALLOWED }]) {
       expect(resolveCallRecordsMode(battleOf(owner)), `owner ${String(owner)}`).toBe('off');
     }
     expect(resolveCallRecordsMode(null)).toBe('off');
-    flag.allowThrows = true;
     expect(() => resolveCallRecordsMode(battleOf(ALLOWED))).not.toThrow();
-    expect(resolveCallRecordsMode(battleOf(ALLOWED))).toBe('off');
+  });
+
+  it('the variable is comma-separated and each entry trimmed: " uid-a , owner-allowed ,," admits owner-allowed', () => {
+    flag.mode = 'on';
+    setAllow(` uid-a , ${ALLOWED} ,,`);
+    expect(resolveCallRecordsMode(battleOf(ALLOWED))).toBe('on');
+    expect(resolveCallRecordsMode(battleOf('uid-a'))).toBe('on');
+    expect(resolveCallRecordsMode(battleOf(OTHER))).toBe('off');
   });
 
   it("an unknown global value, or a mock that omits the name, resolves 'off' with or without a battle", () => {
-    flag.allow = [ALLOWED];
+    setAllow([ALLOWED]);
     for (const bogus of ['ON', 'enabled', '', null, true]) {
       flag.mode = bogus;
       expect(resolveCallRecordsMode(battleOf(ALLOWED)), String(bogus)).toBe('off');
@@ -91,7 +120,7 @@ describe('resolveCallRecordsMode(battle) — the composition rows (spec §3)', (
   });
 
   it('WITHOUT a battle the resolver returns the GLOBAL value — the sweep\'s global gate', () => {
-    flag.allow = [];
+    setAllow([]);
     for (const mode of ['off', 'shadow', 'on']) {
       flag.mode = mode;
       expect(resolveCallRecordsMode()).toBe(mode);
@@ -99,7 +128,7 @@ describe('resolveCallRecordsMode(battle) — the composition rows (spec §3)', (
   });
 
   it('isCockpitOwnerAllowlisted: exact string membership only', () => {
-    flag.allow = [ALLOWED];
+    setAllow([ALLOWED]);
     expect(isCockpitOwnerAllowlisted(ALLOWED)).toBe(true);
     expect(isCockpitOwnerAllowlisted(ALLOWED.toUpperCase())).toBe(false);
     expect(isCockpitOwnerAllowlisted(` ${ALLOWED}`)).toBe(false);
@@ -109,7 +138,7 @@ describe('resolveCallRecordsMode(battle) — the composition rows (spec §3)', (
 
 describe('neighbor isolation — two battles in one run never share a resolution or a context', () => {
   it("an allowlisted battle resolves 'on' and its neighbor 'off', each from its own owner, in either order", () => {
-    flag.mode = 'on'; flag.allow = [ALLOWED];
+    flag.mode = 'on'; setAllow([ALLOWED]);
     const a = battleOf(ALLOWED);
     const b = battleOf(OTHER);
     const ctxA = createCallsContext({ mode: resolveCallRecordsMode(a), handlerStartMs: 1 });

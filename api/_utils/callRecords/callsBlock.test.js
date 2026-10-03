@@ -144,3 +144,33 @@ describe('readCallsForBlock / buildCallsBlockForChat — the three bounded queri
     expect(await buildCallsBlockForChat(failing, B, {}, { callsMode: 'on' })).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Cockpit Build 2a — the upside line in the model-visible block (Amendment C-2;
+// spec S-3, §12 lens L2).
+describe('Build 2a — an upside call renders through the upside line, and the block does not move by a byte', () => {
+  const upside = (n, over = {}) => shot(n, { symbol: 'TSLA', heldAtMint: true, counterpart: null, condition: { side: 'above', level: 250 }, ...over });
+
+  it('an upside row is the upside line: id · "TSLA above $250.00 by today\'s close" · state — no direction, no action clause', () => {
+    expect(renderCallsRow(upside(4), { nowMs: NOW })).toBe(`- ${B}:eval_004:call:4 · TSLA above $250.00 by today's close · open`);
+  });
+
+  it('BYTE IDENTITY: an upside row equals the row the same record rendered before the amendment (no heldAtMint) — the model-visible text is unchanged', () => {
+    for (const over of [{}, { state: 'hit' }, { defaultAction: 'hold' }, { horizon: { phrase: 'next_check', expiresAt: NOW + 900_000, basis: 'next_check' } }]) {
+      const withField = upside(5, over);
+      const { heldAtMint: _drop, ...legacy } = withField;
+      expect(renderCallsRow(withField, { nowMs: NOW })).toBe(renderCallsRow(legacy, { nowMs: NOW }));
+    }
+    const block = buildCallsBlock({ open: [upside(6), shot(7)], history: [] }, { nowMs: NOW });
+    const legacyBlock = buildCallsBlock({ open: [(({ heldAtMint: _h, ...rest }) => rest)(upside(6)), shot(7)], history: [] }, { nowMs: NOW });
+    expect(block).toBe(legacyBlock);
+  });
+
+  it('the block takes the upside branch by construction (the renderer is chosen on isUpsideCall)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { resolve, dirname } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const src = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'callsBlock.js'), 'utf8');
+    expect(src).toContain('const line = isUpsideCall(call) ? renderUpsideLine(call, { nowMs }) : renderCallLine(call, { nowMs });');
+  });
+});

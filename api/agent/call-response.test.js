@@ -20,10 +20,12 @@ const state = vi.hoisted(() => ({ uid: 'owner-uid-1', callsMode: 'on', allow: ['
 vi.mock('../_utils/security.js', () => ({ applySecurityMiddleware: () => false }));
 vi.mock('../_utils/authMiddleware.js', () => ({ requireAuth: async () => ({ uid: state.uid }) }));
 vi.mock('firebase-admin/firestore', () => ({ FieldValue: { arrayUnion: (...items) => ({ __op: 'arrayUnion', items }), increment: (n) => ({ __op: 'increment', n }) } }));
+// Cockpit Build 2a (spec S-5): the allowlist is the SERVER-SIDE environment reader now (allowlist.js),
+// no longer a featureFlags export — driven here from the suite's row state, exactly as the getter was.
+vi.mock('../_utils/callRecords/allowlist.js', async (importOriginal) => ({ ...(await importOriginal()), readCockpitAllowlist: () => state.allow }));
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   get CALL_RECORDS_MODE() { return state.callsMode; },
-  get COCKPIT_ALLOWLIST_UIDS() { return state.allow; },
 }));
 vi.mock('../_utils/agentChatBudget.js', async (importOriginal) => ({ ...(await importOriginal()), resolveBudgetDay: async (_db, battle) => state.resolveImpl(battle) }));
 let activeDb = null;
@@ -512,5 +514,47 @@ describe('nothing in the endpoint enforces an answer or trades (spec §1 "Out: e
     const { fileURLToPath } = await import('node:url');
     const src = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'call-response.js'), 'utf8');
     expect(src).not.toMatch(/agentSwapExecution|executeSwapServer|agentEvalToolResultValidation|agent\/decide|agentPromptAssembly|agentEvalPromptAssembly|agentScoring|agentRiskManager|agentGuardrails|archetypeScoring|agentArchetypeConfig|agentBattleService/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cockpit Build 2a — Amendment C-2 and the shared legality table (spec S-4).
+describe('Build 2a: an upside call accepts NO answer, and the legality table has one home', () => {
+  const UPSIDE = `${BATTLE_ID}:eval_001:call:9`;
+  const upside = (over = {}) => shot(UPSIDE, { symbol: 'TSLA', heldAtMint: true, slot: 'star', counterpart: null, condition: { side: 'above', level: 250 }, ...over });
+
+  it('every 1a answer on a heldAtMint call → 400 illegal_answer (reason upside_call), nothing written — whatever its default', async () => {
+    for (const defaultAction of ['act', 'hold']) {
+      activeDb = makeDb({ calls: { [UPSIDE]: upside({ defaultAction }) } });
+      for (const answer of ANSWERS_1A) {
+        resetCallResponseRateLimit();
+        const res = await post(answerBody({ callId: UPSIDE, answer, ...(answer === 'pick' ? { pickSymbol: 'AMD' } : {}) }));
+        expect(res.statusCode, `${defaultAction}/${answer}`).toBe(400);
+        expect(res.body, `${defaultAction}/${answer}`).toEqual({ error: 'illegal_answer', reason: 'upside_call' });
+      }
+      expect(activeDb.__access.writes, defaultAction).toEqual([]);
+    }
+  });
+
+  it('a record minted before the amendment (no heldAtMint) reads as false: its answers are judged exactly as before', async () => {
+    const legacy = shot(UPSIDE, { symbol: 'AMD' });
+    expect('heldAtMint' in legacy).toBe(false);
+    activeDb = makeDb({ calls: { [UPSIDE]: legacy } });
+    const res = await post(answerBody({ callId: UPSIDE, answer: 'go' }));
+    expect(res.statusCode).toBe(200);
+    expect(res.body.playerResponse).toMatchObject({ answer: 'go', kind: 'ack' });
+  });
+
+  it("the endpoint's table IS the shared module's (re-exported, never copied)", async () => {
+    const shared = await import('../_utils/callRecords/answers.js');
+    expect(classifyAnswer).toBe(shared.classifyAnswer);
+    expect(ANSWERS_1A).toBe(shared.ANSWERS_1A);
+    expect(DEFERRED_ANSWERS).toBe(shared.DEFERRED_ANSWERS);
+    const { readFileSync } = await import('node:fs');
+    const { resolve, dirname } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const src = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'call-response.js'), 'utf8');
+    expect(src).not.toMatch(/export function classifyAnswer/);
+    expect(src).toContain("from '../_utils/callRecords/answers.js'");
   });
 });

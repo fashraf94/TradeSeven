@@ -2834,22 +2834,16 @@ export const CALL_RECORDS_MODES = Object.freeze(['off', 'shadow', 'on']);
  * docs/COCKPIT_BUILD1A_SPEC_V1_2.md §3; build report
  * docs/audits/20261002_BUILD1A_ANSWER_LOOP.md).
  *
- * COCKPIT_ALLOWLIST_UIDS — per-battle activation. With CALL_RECORDS_MODE 'on',
- * a battle resolves 'on' iff its `ownerId` is in this list, else 'off'
- * (api/_utils/callRecords/mode.js resolveCallRecordsMode(battle)); at 'off'
- * and at 'shadow' the list is never consulted. Ships EMPTY: at 'on' with an
- * empty list every battle resolves 'off', so no endpoint, no calls block, no
- * heard writer and no sweep transition runs for anyone.
- *
- * RUNWAY: the list is filled by the founder's own PR after Build 1a merges,
- * Amendment B is blessed and the two Build 1a indexes are deployed —
- * never a build PR; each change moves the pin row in
- * src/config/cockpitFlags.test.js in the SAME commit (BUILD_RULES §2). A
- * string[] (not a boolean), so it is pinned DIRECTLY — never a DARK_BY_DESIGN
- * key (the CALL_RECORDS_MODE precedent).
+ * THE PER-BATTLE ALLOWLIST IS NOT HERE ANY MORE (Cockpit Build 2a, spec
+ * docs/COCKPIT_BUILD2A_SPEC_V1_0.md S-5; founder ruling R2A-7). This module
+ * ships to every client, its namespace and source map included, so a uid
+ * written here was public. The list is now the server-only environment
+ * variable COCKPIT_ALLOWLIST_UIDS, parsed at call time by
+ * api/_utils/callRecords/allowlist.js; the client asks
+ * GET /api/agent/cockpit-status whether a battle is cockpit-on and never
+ * learns who is admitted. No src/ module may import that reader
+ * (allowlist.test.js pins it).
  */
-// Pinned by: cockpitFlags.test.js (a string[] — pinned directly, outside flagPinGuard's `*_ENABLED` scan; this value and the pin move together — BUILD_RULES §2).
-export const COCKPIT_ALLOWLIST_UIDS = Object.freeze([]);
 
 /**
  * RESPONSE_FORK_ATTRIBUTION_ENABLED — the dormant response-fork hook (Build 1a
@@ -2868,6 +2862,44 @@ export const COCKPIT_ALLOWLIST_UIDS = Object.freeze([]);
  */
 // Pinned by: cockpitFlags.test.js, events.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const RESPONSE_FORK_ATTRIBUTION_ENABLED = false;
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * COCKPIT BUILD 2a — THE COCKPIT SCREEN, dark (spec
+ * docs/COCKPIT_BUILD2A_SPEC_V1_0.md §10; build report
+ * docs/audits/20261003_BUILD2A_COCKPIT_SCREEN.md).
+ *
+ * COCKPIT_UI_ENABLED — the screen flag. FALSE: every cockpit code path is
+ * unreachable — no status request is sent, no calls / declarations / events
+ * listener is opened, the desktop pane keeps Chat · Bench · Tape and the
+ * phone layout is the shipped one, byte for byte.
+ *
+ * TRUE: the Battle View ASKS THE SERVER whether this battle is cockpit-on
+ * (GET /api/agent/cockpit-status — the server resolves CALL_RECORDS_MODE and
+ * its own allowlist; the client never recomputes the mode from bundled
+ * constants). A battle is cockpit-on only when this flag is true AND the
+ * server answered `{ on: true }`; unknown and errors read as off.
+ *
+ * Read at RENDER scope through isCockpitUiOn() below, never as a module-scope
+ * const in a consumer (the isCharacterPaneOn rule — the featureFlags mock
+ * hazard). The cockpit lives on the character pane's shells, so the accessor
+ * also requires the pane.
+ *
+ * RUNWAY: flips only in the founder's own flip PR (spec §10.3) — one commit
+ * with CALL_RECORDS_MODE = 'on', both pin updates and this flag's
+ * DARK_BY_DESIGN removal — after the build merges, Amendment C is blessed and
+ * the founder has set the COCKPIT_ALLOWLIST_UIDS environment variable to his
+ * own uid in Vercel production. Never a build PR. The flip moves the pin in
+ * cockpitUiFlags.test.js to true AND drops this flag from DARK_BY_DESIGN in
+ * src/config/flagPinGuard.test.js in the same commit.
+ */
+// Pinned by: cockpitUiFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const COCKPIT_UI_ENABLED = false;
+
+/** The cockpit screen gate, read at render: the pane's shells AND the screen flag. */
+export function isCockpitUiOn() {
+  return isCharacterPaneOn() && COCKPIT_UI_ENABLED;
+}
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════

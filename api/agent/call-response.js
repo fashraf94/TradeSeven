@@ -59,6 +59,9 @@ import { requireAuth } from '../_utils/authMiddleware.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { randomUUID } from 'node:crypto';
 import { resolveCallRecordsMode } from '../_utils/callRecords/mode.js';
+// Cockpit Build 2a (spec S-4): the legality table's ONE home, shared with the
+// cockpit's tiles — re-exported here under the names this route always had.
+import { classifyAnswer, isUpsideCall, ANSWERS_1A, DEFERRED_ANSWERS } from '../_utils/callRecords/answers.js';
 import { directiveKindFor, isCallActionEligible, buildCallDirectivePlan } from '../_utils/callRecords/callActions.js';
 import { answerIdOf, eventIdOf, callEventRef, buildCallEvent, createCallEvent } from '../_utils/callRecords/events.js';
 import { renderAnsweredEvent } from '../_utils/callRecords/copy.js';
@@ -78,9 +81,8 @@ import { ARCHETYPE_INTEGRITY_MODE } from '../../src/config/featureFlags.js';
 
 export const config = { maxDuration: 10 };
 
-/** The six 1a answers (Amendment B §1) and the two deferred to 1b (§2). */
-export const ANSWERS_1A = Object.freeze(['go', 'hold', 'go_now', 'pick', 'agree', 'disagree']);
-export const DEFERRED_ANSWERS = Object.freeze(['ask', 'keep']);
+/** The six 1a answers and the two deferred to 1b — from the shared table (answers.js). */
+export { ANSWERS_1A, DEFERRED_ANSWERS, classifyAnswer };
 /** The 409 reasons (spec §5). Only `directive_pending` is ever persisted (Amendment B §5). */
 export const REFUSAL_REASONS = Object.freeze(['directive_pending', 'already_answered', 'expired', 'belief_mismatch', 'budget', 'parent_not_active']);
 /** The per-battle window (spec §5). */
@@ -103,30 +105,6 @@ export function battleRateLimited(key, nowMs = Date.now()) {
 }
 /** Tests only. */
 export function resetCallResponseRateLimit() { windows.clear(); }
-
-/**
- * Which row an answer is for this call (Amendment B §1): 'directive', 'ack',
- * or null when the pairing is illegal in 1a.
- */
-export function classifyAnswer(call, answer) {
-  if (!call || typeof call !== 'object') return null;
-  if (call.kind === 'pick') {
-    if (answer === 'pick') return 'directive';
-    if (answer === 'agree' || answer === 'disagree') return 'ack';
-    return null;
-  }
-  if (call.defaultAction === 'act') {
-    if (answer === 'go') return 'ack';
-    if (answer === 'hold') return 'directive';
-    return null;
-  }
-  if (call.defaultAction === 'hold') {
-    if (answer === 'hold') return 'ack';
-    if (answer === 'go_now') return 'directive';
-    return null;
-  }
-  return null;
-}
 
 /**
  * The call directive's thread exchange — chip-shaped (file-directive.js
@@ -221,7 +199,8 @@ export default async function handler(req, res) {
       if (call.playerResponse) return refused('already_answered');
 
       const row = classifyAnswer(call, answer);
-      if (!row) return { kind: 'illegal_answer', reason: `${answer} is not an answer to this call` };
+      // Amendment C-2: an upside call (an entry on a name held at mint) accepts no answer at all.
+      if (!row) return { kind: 'illegal_answer', reason: isUpsideCall(call) ? 'upside_call' : `${answer} is not an answer to this call` };
       const nowMs = Date.now();
       const filedAt = new Date(nowMs).toISOString();
       const deadline = call.horizon?.expiresAt;

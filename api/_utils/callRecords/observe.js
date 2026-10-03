@@ -98,9 +98,17 @@ export function freezeObservation(callsCtx, spec) {
  * `Date.parse(promptBuiltAt)` (finite-checked), with the rows the prompt showed
  * at an execution price marked. The battle universe the fork options are held
  * to is frozen at the same seam.
+ *
+ * Cockpit Build 2a (Amendment C-2 / C-3; spec S-2): the observation itself
+ * keeps no held/bench distinction (its `symbols` map is the examined union),
+ * so the HELD SET is frozen here too, from the same `heldSymbols` this seam
+ * already receives — the held rows the prompt was built from. It is the only
+ * source of `heldAtMint` and of counterpart usability; nothing is inferred
+ * from prompt text.
  */
 export function freezeModelObservation(callsCtx, { heldSymbols, benchSymbols, promptBuiltAt, replacedSymbols, battle }) {
   if (!callsCtx || !callsActive(callsCtx.mode)) return null;
+  callsCtx.held = Object.freeze((Array.isArray(heldSymbols) ? heldSymbols : []).filter((s) => typeof s === 'string' && s.length > 0));
   callsCtx.universe = Object.freeze([...selectBattleUniverse(battle)]);
   const observedAtMs = typeof promptBuiltAt === 'string' ? Date.parse(promptBuiltAt) : NaN;
   return freezeObservation(callsCtx, {

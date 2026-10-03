@@ -28,10 +28,34 @@
 // A present non-finite `condition.level` is NOT malformed: it is born and
 // minted `invalidated` (see invalidationReason). Reason precedence there:
 // no_observation → level_non_finite → level_implausible.
+//
+// Cockpit Build 2a — THE WATCHING SOURCE (contract Amendment C-1; spec
+// docs/COCKPIT_BUILD2A_SPEC_V1_0.md S-1). The model writes its watch list at
+// the TOP LEVEL of its tool input far more often than inside the block
+// (discovery D-B4: 225 of 386 model calls vs 2). When the block carries no
+// non-empty `watching` ARRAY (absent, null, not an array, or `[]`), the
+// validator reads the tool input's top-level `watching` — only when it is an
+// array — and judges it with exactly the rules `declarations.watching` gets
+// here: each entry a non-empty string (else removed `malformed`, source
+// `watching`), the cap of 6, order kept. A model call with no usable block
+// (absent, null, or not an object) and a usable top-level list is a
+// WATCHING-ONLY declaration: it writes the record and mints no call. Only
+// `watching` is read from the top level; a top-level `fork` / `playerAsk` is
+// never read. The kept list's origin is the record's `watchingSource`.
+//
+// HEAD NOTE (recorded in the build report): Amendment C-1's parenthetical
+// describes the existing rules as "symbols in the check's universe … de-
+// duplicated". The validator applies neither to `declarations.watching` at
+// HEAD (c10f03b0 or 4dfc48d9), so neither is applied to the top-level list:
+// C-1's operative rule is "exactly the rules that apply to
+// declarations.watching", and those are the rules above.
 
 import { CALL_KINDS } from '../tickCapture/captureConfig.js';
 
 export { CALL_KINDS };
+
+/** Where a record's kept `watching` list came from (Amendment C-1); null when it keeps none. */
+export const WATCHING_SOURCES = Object.freeze(['declarations', 'top_level']);
 
 /** The caps (spec §3.2). Characters are Unicode code points. */
 export const DECLARATION_CAPS = Object.freeze({
@@ -57,8 +81,9 @@ export const DECLARATION_CAPS = Object.freeze({
 /**
  * The bytes the document cap reserves for the parts of the stored record the
  * validator does not compose — its identity fields (battleId, evalId, evalSeq,
- * mintedAt) and the `minted` list (≤ 7 entries: 6 shots + 1 fork). The cap is
- * applied to the record AS STORED, not to the typed block alone (review E-2).
+ * mintedAt), Build 2a's two stamps (mintedMode, watchingSource — under 60
+ * bytes together) and the `minted` list (≤ 7 entries: 6 shots + 1 fork). The
+ * cap is applied to the record AS STORED, not to the typed block alone (review E-2).
  */
 export const RECORD_BOOKKEEPING_ALLOWANCE_BYTES = 2_048;
 
@@ -213,6 +238,17 @@ export function kindOfShot(row) {
 }
 
 /**
+ * Does Amendment C-1 read the top-level list for this block? Only when the
+ * block carries no non-empty `watching` ARRAY and the top-level value is an
+ * array. (A block whose own list is a non-empty array keeps it, whatever its
+ * entries turn out to be.)
+ */
+export function readsTopLevelWatching(block, topLevelWatching) {
+  const blockHasList = isPlainObject(block) && Array.isArray(block.watching) && block.watching.length > 0;
+  return !blockHasList && Array.isArray(topLevelWatching);
+}
+
+/**
  * Validate a declarations block.
  *
  * @param {unknown} block the model's `declarations` value (a detached copy)
@@ -220,21 +256,28 @@ export function kindOfShot(row) {
  * @param {string[]} [ctx.universe] the battle universe frozen at the prompt seam (fork options)
  * @param {(phrase: string, expiresAtMs?: number) => ({ expiresAtMs: number, basis: string } | { reason: string })} [ctx.resolveHorizon]
  *   the horizon resolver bound to this check's instants; when absent, horizons are not judged
+ * @param {unknown} [ctx.topLevelWatching] the SAME accepted tool input's top-level `watching`
+ *   (a detached copy) — Amendment C-1; absent (undefined) for every caller that predates it
  * @returns {{
  *   validated: null | { calledShots: object[], watching: string[], playerAsk: object|null, fork: object|null },
  *   removed: Array<{ source: string, index: number|null, reason: string }>,
  *   calls: Array<{ n: number, kind: string, source: 'calledShots'|'fork', index: number|null, row: object, horizon: object|null }>,
  *   phase: 'none' | 'expected',
+ *   watchingSource: 'declarations' | 'top_level' | null,
  * }}
  */
-export function validateDeclarations(block, { universe = [], resolveHorizon = null } = {}) {
+export function validateDeclarations(block, { universe = [], resolveHorizon = null, topLevelWatching = undefined } = {}) {
   const removed = [];
-  const empty = { validated: null, removed, calls: [], phase: 'none' };
-  if (absent(block)) return empty;
-  if (!isPlainObject(block)) {
+  const empty = { validated: null, removed, calls: [], phase: 'none', watchingSource: null };
+  const topLevel = readsTopLevelWatching(block, topLevelWatching);
+  if (absent(block) && !topLevel) return empty;
+  if (!absent(block) && !isPlainObject(block)) {
     removed.push({ source: 'block', index: null, reason: 'malformed_block' });
-    return empty;
+    if (!topLevel) return empty;
   }
+  // From here on `rows` is the block when it is an object, else an empty one:
+  // a watching-only declaration (C-1) judges nothing else.
+  const rows = isPlainObject(block) ? block : {};
 
   // ---- per-row judgement, in source order --------------------------------
   const candidates = []; // { source, index, row, horizon }
@@ -245,11 +288,11 @@ export function validateDeclarations(block, { universe = [], resolveHorizon = nu
     return { ok: true, horizon: resolved };
   };
 
-  if (!absent(block.calledShots)) {
-    if (!Array.isArray(block.calledShots)) {
+  if (!absent(rows.calledShots)) {
+    if (!Array.isArray(rows.calledShots)) {
       removed.push({ source: 'calledShots', index: null, reason: 'malformed' });
     } else {
-      block.calledShots.forEach((raw, index) => {
+      rows.calledShots.forEach((raw, index) => {
         const checked = checkShot(raw);
         if (!checked.ok) { removed.push({ source: 'calledShots', index, reason: checked.reason }); return; }
         const h = judgeHorizon(checked.row.horizonPhrase, checked.row.expiresAtMs);
@@ -259,25 +302,28 @@ export function validateDeclarations(block, { universe = [], resolveHorizon = nu
     }
   }
 
-  if (!absent(block.watching)) {
-    if (!Array.isArray(block.watching)) {
-      removed.push({ source: 'watching', index: null, reason: 'malformed' });
-    } else {
-      block.watching.forEach((raw, index) => {
-        if (!nonEmptyString(raw)) { removed.push({ source: 'watching', index, reason: 'malformed' }); return; }
-        candidates.push({ source: 'watching', index, row: raw, horizon: null });
-      });
-    }
+  // The block's own list is judged as before; a malformed (non-array) one is
+  // still recorded — and, carrying no non-empty array, hands over to the
+  // top-level list (C-1), which is judged by the same per-entry rule.
+  if (!absent(rows.watching) && !Array.isArray(rows.watching)) {
+    removed.push({ source: 'watching', index: null, reason: 'malformed' });
+  }
+  const watchingList = topLevel ? topLevelWatching : (Array.isArray(rows.watching) ? rows.watching : null);
+  if (watchingList) {
+    watchingList.forEach((raw, index) => {
+      if (!nonEmptyString(raw)) { removed.push({ source: 'watching', index, reason: 'malformed' }); return; }
+      candidates.push({ source: 'watching', index, row: raw, horizon: null });
+    });
   }
 
-  if (!absent(block.playerAsk)) {
-    const checked = checkPlayerAsk(block.playerAsk);
+  if (!absent(rows.playerAsk)) {
+    const checked = checkPlayerAsk(rows.playerAsk);
     if (!checked.ok) removed.push({ source: 'playerAsk', index: null, reason: checked.reason });
     else candidates.push({ source: 'playerAsk', index: null, row: checked.row, horizon: null });
   }
 
-  if (!absent(block.fork)) {
-    const checked = checkFork(block.fork, universe);
+  if (!absent(rows.fork)) {
+    const checked = checkFork(rows.fork, universe);
     if (!checked.ok) removed.push({ source: 'fork', index: null, reason: checked.reason });
     else {
       const h = judgeHorizon('next_check');
@@ -320,7 +366,7 @@ export function validateDeclarations(block, { universe = [], resolveHorizon = nu
   sortRemovedInSourceOrder(removed);
 
   const hasContent = kept.calledShots.length > 0 || kept.watching.length > 0 || kept.playerAsk !== null || kept.fork !== null;
-  if (!hasContent) return { validated: null, removed, calls: [], phase: 'none' };
+  if (!hasContent) return { validated: null, removed, calls: [], phase: 'none', watchingSource: null };
 
   // ---- ordinals, after every removal: shots in order, then the fork -------
   const calls = [];
@@ -331,7 +377,9 @@ export function validateDeclarations(block, { universe = [], resolveHorizon = nu
     if (c.source === 'fork') calls.push({ n: calls.length, kind: 'pick', source: 'fork', index: null, row: c.row, horizon: c.horizon });
   }
 
-  return { validated: kept, removed, calls, phase: 'expected' };
+  // C-1: the kept list's origin, or null when the record keeps none.
+  const watchingSource = kept.watching.length === 0 ? null : (topLevel ? 'top_level' : 'declarations');
+  return { validated: kept, removed, calls, phase: 'expected', watchingSource };
 }
 
 /**
@@ -359,16 +407,37 @@ export function invalidationReason(row, observation) {
  * copy to be minted `invalidated`, not silently turned into a malformed null.
  * An uncloneable value is a malformed block.
  *
- * @returns {{ raw: unknown, validation: ReturnType<typeof validateDeclarations>, phase: 'none'|'expected' }}
+ * Amendment C-1: `ctx.topLevelWatching` is the same accepted tool input's
+ * top-level `watching`, detached the same way and carried beside `raw`, so
+ * the mint re-judges exactly what this pass judged. An uncloneable top-level
+ * value is simply not a list (it is no tool field, and nothing else reads it).
+ *
+ * @returns {{ raw: unknown, topLevelWatching: unknown, validation: ReturnType<typeof validateDeclarations>, phase: 'none'|'expected' }}
  */
 export function captureDeclarations(block, ctx = {}) {
+  let topLevelWatching;
+  try {
+    topLevelWatching = Array.isArray(ctx.topLevelWatching) ? structuredClone(ctx.topLevelWatching) : undefined;
+  } catch {
+    topLevelWatching = undefined;
+  }
   let raw;
   try {
     raw = block === undefined ? undefined : structuredClone(block);
   } catch {
-    const validation = { validated: null, removed: [{ source: 'block', index: null, reason: 'malformed_block' }], calls: [], phase: 'none' };
-    return { raw: null, validation, phase: 'none' };
+    if (topLevelWatching === undefined) {
+      const validation = { validated: null, removed: [{ source: 'block', index: null, reason: 'malformed_block' }], calls: [], phase: 'none', watchingSource: null };
+      return { raw: null, topLevelWatching, validation, phase: 'none' };
+    }
+    // An uncloneable block is malformed, and a usable top-level list still
+    // stands on its own (C-1). The stand-in is a non-object, so the mint's
+    // re-judgement records the same `malformed_block` removal.
+    const validation = validateDeclarations(UNCLONEABLE_BLOCK, { ...ctx, topLevelWatching });
+    return { raw: UNCLONEABLE_BLOCK, topLevelWatching, validation, phase: validation.phase };
   }
-  const validation = validateDeclarations(raw, ctx);
-  return { raw, validation, phase: validation.phase };
+  const validation = validateDeclarations(raw, { ...ctx, topLevelWatching });
+  return { raw, topLevelWatching, validation, phase: validation.phase };
 }
+
+/** The non-object stand-in for a block structuredClone refused (see captureDeclarations). */
+const UNCLONEABLE_BLOCK = 'uncloneable_block';

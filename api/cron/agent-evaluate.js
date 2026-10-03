@@ -2858,10 +2858,15 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           // The horizon is judged here against a PROVISIONAL mint instant (now);
           // the mint re-judges it against the real one (an explicit expiry
           // crossed in between is removed there).
+          // Cockpit Build 2a (Amendment C-1): the SAME accepted input's
+          // top-level `watching` rides beside the block — the validator reads
+          // it only when the block carries no non-empty watch list. Top-level
+          // `fork` / `playerAsk` are never handed over.
           callsStep(callsCtx, () => {
             callsCtx.declarations = captureDeclarations(toolUse.input?.declarations, {
               universe: callsCtx.universe,
               resolveHorizon: bindHorizon({ promptBuiltAtMs: Date.parse(promptBuiltAt), mintedAtMs: Date.now(), battleExpiresAtMs: battleExpiryMs(battle) }),
+              topLevelWatching: toolUse.input?.watching,
             });
           });
         } else if (!toolUse) {

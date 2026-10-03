@@ -18,10 +18,12 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const flag = vi.hoisted(() => ({ mode: 'on', allow: ['owner-on'], stamps: true }));
+// Cockpit Build 2a (spec S-5): the allowlist is the SERVER-SIDE environment reader now (allowlist.js),
+// no longer a featureFlags export — driven here from the suite's row state, exactly as the getter was.
+vi.mock('./allowlist.js', async (importOriginal) => ({ ...(await importOriginal()), readCockpitAllowlist: () => flag.allow }));
 vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   get CALL_RECORDS_MODE() { return flag.mode; },
-  get COCKPIT_ALLOWLIST_UIDS() { return flag.allow; },
   get TICK_STAMPS_ENABLED() { return flag.stamps; },
 }));
 

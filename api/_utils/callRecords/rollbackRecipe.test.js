@@ -11,7 +11,10 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { computeCallsEnabledWindow, renderCallsEnabledWindow, isCallsEnabledModelCall, isRegularSessionDate, ROLLBACK_SESSIONS, ROLLBACK_TRIP_RATE, EVALUATIONS_RETENTION_CAP } from './rollbackRecipe.js';
+import {
+  computeCallsEnabledWindow, renderCallsEnabledWindow, isCallsEnabledModelCall, isRegularSessionDate, ROLLBACK_SESSIONS, ROLLBACK_TRIP_RATE, EVALUATIONS_RETENTION_CAP,
+  computeRollbackCheck, renderRollbackCheck, fisherOneSidedGreater, ROLLBACK_CHECK,
+} from './rollbackRecipe.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /** An entry on an ET date (14:30Z = 10:30 ET in September). */
@@ -92,6 +95,115 @@ describe('computeCallsEnabledWindow — the seeded corpus (spec §12)', () => {
     expect(src).toContain("args.includes('--calls-enabled-window')");
     expect(src).toContain('computeCallsEnabledWindow(');
     expect(src).toContain('renderCallsEnabledWindow(');
-    expect(src).toContain("import { computeCallsEnabledWindow, renderCallsEnabledWindow } from '../api/_utils/callRecords/rollbackRecipe.js';");
+    expect(src).toContain("import { computeCallsEnabledWindow, renderCallsEnabledWindow, computeRollbackCheck, renderRollbackCheck } from '../api/_utils/callRecords/rollbackRecipe.js';");
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// Cockpit Build 2a — THE LIVE ROLLBACK CHECK (spec S-9, ruling R2A-19): the
+// allowlisted battles only; TRIP only when total ≥ 150 AND rate > 3 % AND the
+// one-sided Fisher p < 0.05 against round 3's off arm (3 of 386). Synthetic
+// counts at, below and above each bar.
+describe('Build 2a — computeRollbackCheck (spec S-9)', () => {
+  const SESSIONS_5 = ['2026-09-08', '2026-09-09', '2026-09-10', '2026-09-11', '2026-09-14'];
+  /** n calls-enabled model calls, k of them invalid, spread over the five sessions, on one owner's battle. */
+  const battleOf = (ownerId, n, k, id = `b-${ownerId}-${n}-${k}`) => ({
+    id, ownerId,
+    evaluations: Array.from({ length: n }, (_, i) => (i < k ? invalid(SESSIONS_5[i % 5]) : entry(SESSIONS_5[i % 5]))),
+  });
+  const check = (n, k, extra = []) => computeRollbackCheck([battleOf('founder', n, k), ...extra], { allowlist: ['founder'] });
+
+  it("the bars and the baseline are the spec's: 150 · 3 % · p < 0.05 against 3 of 386", () => {
+    expect(ROLLBACK_CHECK).toMatchObject({ minTotal: 150, tripRate: 0.03, alpha: 0.05, baseline: { invalid: 3, total: 386 } });
+  });
+
+  it('THE SAMPLE BAR — at 149 calls nothing trips even at 4 % with p ≈ 0.017; at 150 and 151 it does', () => {
+    const below = check(149, 6);
+    expect(below).toMatchObject({ total: 149, invalid: 6, bars: { minSample: false, rate: true, significant: true }, tripped: false, verdict: 'NO TRIP' });
+    expect(check(150, 6)).toMatchObject({ total: 150, bars: { minSample: true, rate: true, significant: true }, tripped: true, verdict: 'TRIP' });
+    expect(check(151, 6)).toMatchObject({ total: 151, tripped: true, verdict: 'TRIP' });
+  });
+
+  it('THE RATE BAR — exactly 3 % does not trip (p 0.046 notwithstanding); 3.5 % does; 2.5 % does not', () => {
+    expect(check(200, 6)).toMatchObject({ rate: 0.03, bars: { minSample: true, rate: false, significant: true }, tripped: false });
+    expect(check(200, 7)).toMatchObject({ bars: { minSample: true, rate: true, significant: true }, tripped: true });
+    expect(check(200, 5)).toMatchObject({ bars: { rate: false }, tripped: false });
+  });
+
+  it('THE SIGNIFICANCE BAR is enforced on its own: with a noisier baseline, a window over 150 and 3 % that is not significant does not trip', () => {
+    const noisy = { ...ROLLBACK_CHECK, baseline: { invalid: 12, total: 386, label: 'a synthetic baseline' } };
+    const r = computeRollbackCheck([battleOf('founder', 150, 5)], { allowlist: ['founder'], check: noisy });
+    expect(r.bars).toEqual({ minSample: true, rate: true, significant: false });
+    expect(r.p).toBeGreaterThanOrEqual(0.05);
+    expect(r.tripped).toBe(false);
+    // …and at, below and above alpha on the real baseline: p(5/150) = 0.0425 < 0.05 ≤ p(4/150) = 0.1000.
+    expect(fisherOneSidedGreater(5, 150, 3, 386)).toBeLessThan(0.05);
+    expect(fisherOneSidedGreater(4, 150, 3, 386)).toBeGreaterThanOrEqual(0.05);
+  });
+
+  it('on the REAL baseline the significance bar decides only in a narrow band: 5 invalid in 159–166 calls (over 3 %, p ≥ 0.05) — pinned, so a reader knows when it bites', () => {
+    const decidesAlone = [];
+    for (let n = 150; n <= 1000; n += 1) {
+      const k = Math.floor(0.03 * n) + 1; // the smallest count over 3 %
+      if (fisherOneSidedGreater(k, n, 3, 386) >= 0.05) decidesAlone.push(`${k}/${n}`);
+    }
+    expect(decidesAlone).toEqual(['5/159', '5/160', '5/161', '5/162', '5/163', '5/164', '5/165', '5/166']);
+    // At, below and above alpha on the real baseline, through the check itself.
+    expect(check(158, 5)).toMatchObject({ bars: { minSample: true, rate: true, significant: true }, tripped: true });
+    expect(check(159, 5)).toMatchObject({ bars: { minSample: true, rate: true, significant: false }, tripped: false, verdict: 'NO TRIP' });
+    expect(check(167, 6)).toMatchObject({ bars: { minSample: true, rate: true, significant: true }, tripped: true });
+  });
+
+  it("ONLY the allowlisted owners' battles count — another owner's invalid results never move it", () => {
+    const r = check(150, 0, [battleOf('stranger', 150, 40)]);
+    expect(r).toMatchObject({ owners: 1, battles: 1, total: 150, invalid: 0, tripped: false });
+    expect(computeRollbackCheck([battleOf('founder', 150, 9)], { allowlist: [] })).toMatchObject({ owners: 0, battles: 0, total: 0, verdict: 'NO DATA', tripped: false });
+  });
+
+  it('the same window and membership as the recipe: off-mode entries and older sessions are not counted', () => {
+    const b = battleOf('founder', 150, 0);
+    b.evaluations.push({ timestamp: '2026-09-14T14:30:00.000Z', callMs: 800 }, ...['2026-09-01', '2026-09-02'].flatMap((d) => [invalid(d), invalid(d)]));
+    expect(computeRollbackCheck([b], { allowlist: ['founder'] })).toMatchObject({ total: 150, invalid: 0 });
+  });
+
+  it("the tail equals round 3's own: 1A against A, 13 vs 3 of 386 → p = 0.010 (the round-3 report), and equals the experiment's function on a grid", () => {
+    expect(fisherOneSidedGreater(13, 386, 3, 386)).toBeCloseTo(0.010, 3);
+    // The experiment script dispatches on import, so its three functions are evaluated from its source text.
+    const src = readFileSync(resolve(HERE, '../../../scripts/declarations-wording-experiment.mjs'), 'utf8').replace(/\r\n/g, '\n');
+    const start = src.indexOf('const logFact = (() =>');
+    const end = src.indexOf('\n}\n', src.indexOf('export function fisherOneSidedGreater')) + 3;
+    const body = src.slice(start, end).replace('export function fisherOneSidedGreater', 'function fisherOneSidedGreater');
+    // eslint-disable-next-line no-new-func
+    const experiment = new Function(`${body}\nreturn fisherOneSidedGreater;`)();
+    for (const [a, n, b, m] of [[13, 386, 3, 386], [7, 386, 3, 386], [5, 150, 3, 386], [0, 10, 3, 386], [40, 400, 3, 386], [9, 300, 12, 386]]) {
+      expect(fisherOneSidedGreater(a, n, b, m)).toBeCloseTo(experiment(a, n, b, m), 12);
+    }
+  });
+
+  it('counts must be sane integers', () => {
+    expect(() => fisherOneSidedGreater(2, 1, 0, 1)).toThrow();
+    expect(() => fisherOneSidedGreater(1.5, 10, 0, 1)).toThrow();
+    expect(() => fisherOneSidedGreater(-1, 10, 0, 1)).toThrow();
+  });
+
+  it('renderRollbackCheck prints the verdict first, then every count and bar; a trip names the action', () => {
+    const md = renderRollbackCheck(check(150, 6));
+    expect(md.split('\n')[0]).toBe('- Verdict: **TRIP** — remove the uid from COCKPIT_ALLOWLIST_UIDS and report (spec §10.4).');
+    expect(md).toContain('invalid_tool_result 6 of 150');
+    expect(md).toContain('total ≥ 150 — met');
+    expect(md).toContain('rate > 3 % — met');
+    expect(md).toContain('p < 0.05');
+    expect(renderRollbackCheck(computeRollbackCheck([], { allowlist: [] }))).toContain('**NO DATA**');
+  });
+
+  it('the read script carries --rollback-check, reads the allowlist through the server reader, and is read-only', () => {
+    const src = readFileSync(resolve(HERE, '../../../scripts/shadow-read-call-records.mjs'), 'utf8');
+    expect(src).toContain("args.includes('--rollback-check')");
+    expect(src).toContain('computeRollbackCheck(battles, { allowlist: readCockpitAllowlist() })');
+    expect(src).toContain("import { readCockpitAllowlist } from '../api/_utils/callRecords/allowlist.js';");
+    // (`.set(` / `.delete(` appear only on the script's in-memory Maps; no Firestore write exists.)
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    expect(code).not.toMatch(/runTransaction|bulkWriter|\.batch\(|\.update\(|\.create\(/);
   });
 });

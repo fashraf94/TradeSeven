@@ -16,7 +16,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
-  FROZEN_NOW, BASE_ENTRY_KEYS, TIMING_ENTRY_KEYS, CALLS_ENTRY_KEYS,
+  FROZEN_NOW, HELD, BASE_ENTRY_KEYS, TIMING_ENTRY_KEYS, CALLS_ENTRY_KEYS,
   makeTickBattle, makePriceTable, makeRankingsDoc, makeTechDocs, makeIntradayCandles,
   makeHoldResult, makeSwapResult, makeToolUseResponse, makeDeclarations, makeObservation, undefinedPaths,
 } from '../_utils/__fixtures__/tickStampsHarness.js';
@@ -69,12 +69,14 @@ vi.mock('../_utils/learning/captureReceipt.js', () => ({
   classifyEntryAtrSource: vi.fn(() => 'bench_atr'),
   classifyEvidence: vi.fn(() => 'live_agent'),
 }));
+// Cockpit Build 2a (spec S-5): the allowlist is the SERVER-SIDE environment reader now (allowlist.js),
+// no longer a featureFlags export — driven here from the suite's row state, exactly as the getter was.
+vi.mock('../_utils/callRecords/allowlist.js', async (importOriginal) => ({ ...(await importOriginal()), readCockpitAllowlist: () => flagState.allow }));
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => {
   const actual = await importOriginal();
   return {
     ...actual,
     get CALL_RECORDS_MODE() { return flagState.callsMode; },
-    get COCKPIT_ALLOWLIST_UIDS() { return flagState.allow; },
     get TICK_CAPTURE_ENABLED() { return flagState.tickCapture; },
   };
 });
@@ -363,6 +365,53 @@ describe('§3.7 — publication after the evaluation commit, end to end', () => 
   });
 });
 
+// ---------------------------------------------------------------------------
+// Cockpit Build 2a — Amendment C end to end on the REAL check (spec S-1, S-2):
+// the cron hands the validator the block AND the top-level watch list of the
+// same accepted input, freezes the held set at the model seam, and the mint
+// stamps every new field from those seam facts.
+describe('Build 2a — Amendment C end to end on the real check', () => {
+  it('on · a top-level watch list and no block: a WATCHING-ONLY record is written (top_level, mintedMode on), no call is minted', async () => {
+    const { db, entry } = await runTick({ mode: 'on', result: makeHoldResult({ declarations: null, watching: ['MU', 'GME'], fork: null, playerAsk: null }) });
+    expect(entry.declarationsPhase).toBe('expected');
+    const record = storedDoc(db, 'declarations', entry.evalId);
+    expect(record).toMatchObject({ watching: ['MU', 'GME'], watchingSource: 'top_level', mintedMode: 'on', calledShots: [], playerAsk: null, fork: null, minted: [] });
+    expect(storedCollection(db, 'calls')).toEqual({});
+  });
+
+  it('on · a block with its own list keeps it; top-level fork / playerAsk are never read', async () => {
+    const { db, entry } = await runTick({
+      mode: 'on',
+      result: makeHoldResult({
+        declarations: makeDeclarations({ watching: ['JPM'] }),
+        watching: ['MU'],
+        playerAsk: { question: 'Top-level question?', options: ['a', 'b'] },
+        fork: { slot: 'support', swapOut: 'KO', options: [{ symbol: 'AMD', why: 'x' }, { symbol: 'JPM', why: 'y' }], said: 'top-level fork' },
+      }),
+    });
+    const record = storedDoc(db, 'declarations', entry.evalId);
+    expect(record).toMatchObject({ watching: ['JPM'], watchingSource: 'declarations', playerAsk: null, fork: null });
+    expect(Object.values(storedCollection(db, 'calls')).map((c) => c.kind)).toEqual(['called_shot', 'confirmation']);
+  });
+
+  it('shadow · the held set from the model seam: an entry on a HELD name is an upside call; counterparts kept only when usable; saidOk and mintedMode on every call', async () => {
+    const declarations = makeDeclarations({
+      calledShots: [
+        { symbol: 'TSLA', direction: 'entry', slot: 'star', counterpart: 'TBD', condition: { side: 'above', level: 250 }, horizonPhrase: 'this_session', defaultAction: 'hold', said: 'TSLA above $250 by the close.' },
+        { symbol: 'KO', direction: 'exit', slot: 'support', counterpart: 'JPM', condition: { side: 'below', level: 61.5 }, horizonPhrase: 'this_session', defaultAction: 'act', said: 'Out of KO below $61.50 on heavy volume.' },
+      ],
+      watching: [],
+    });
+    const { db, entry } = await runTick({ mode: 'shadow', result: makeHoldResult({ declarations }) });
+    const calls = Object.values(storedCollection(db, 'calls'));
+    expect(calls.map((c) => [c.symbol, c.heldAtMint, c.counterpart, c.counterpartRaw, c.saidOk, c.mintedMode])).toEqual([
+      ['TSLA', true, null, 'TBD', true, 'shadow'],
+      ['KO', false, 'JPM', null, false, 'shadow'],
+    ]);
+    expect(storedDoc(db, 'declarations', entry.evalId)).toMatchObject({ mintedMode: 'shadow', watchingSource: null });
+  });
+});
+
 describe('§3.12 row 6 — the budget on the model path', () => {
   it('admission: 46 s left admits the model at off (44,000 required) and skips it at shadow (48,000 required)', async () => {
     const cronStartTime = Date.parse(FROZEN_NOW) - (TIME_BUDGET_MS - 46_000);
@@ -400,7 +449,7 @@ function earlierCalls(calledShots) {
     raw: { calledShots, watching: [], playerAsk: null, fork: null },
     universe: ['NVDA', 'TSLA', 'MSFT', 'AMZN', 'KO', 'PG', 'BTC', 'AMD', 'JPM'],
     observation: makeObservation({ observedAtMs: EARLIER_MINT_MS - 5_000 }), promptBuiltAt: new Date(EARLIER_MINT_MS - 5_000).toISOString(),
-    tickId: null, battle: makeTickBattle(),
+    tickId: null, battle: makeTickBattle(), held: [...HELD], mintedMode: 'shadow',
   }).calls.map((c) => JSON.parse(JSON.stringify(c)));
 }
 const seedOf = (calls) => ({ calls: Object.fromEntries(calls.map((c) => [c.callId, c])) });
