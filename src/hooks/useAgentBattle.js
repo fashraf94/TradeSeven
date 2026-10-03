@@ -25,7 +25,9 @@ import { db } from '../firebase/config';
  * EVERY callback of the subscription — `receive(previous, data)`, data null
  * for a missing document or an error — whose latest result rides in the
  * envelope as `received`. React may render several callbacks as one update;
- * the fold still sees each of them (R2). Absent, nothing is folded.
+ * the fold still sees each of them (R2). Absent, nothing is folded. It must be
+ * stable (a module-level function: a new identity re-subscribes), pure and
+ * total (a throw would leave the envelope behind the legacy fields).
  *
  * @param {string|null} agentBattleId - The agentBattle document ID (from agent.activeBattleId)
  * @param {{ integrity?: boolean, receive?: Function }} [options]

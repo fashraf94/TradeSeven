@@ -4625,10 +4625,13 @@ describe('F1 review follow-ups B-2 / B-3 / B-4 — malformed fields a gated row 
         expect(shell()).toBeNull();
         expect(label()).toEqual({ kind: 'last-scored', text: expect.stringContaining(STORED_INCOMPLETE) });
         expect(symbollessRow()).toHaveLength(1);
+        const mounted = seen.research.length;
         await click(symbollessRow()[0].previousElementSibling);
         expect(modalOpen()).toBeNull();
+        expect(seen.research.length).toBe(mounted); // nothing mounted, with or without a symbol
         await chatClick({ symbol: bad });
         expect(modalOpen()).toBeNull();
+        expect(seen.research.length).toBe(mounted);
         expect(container.querySelector('[data-board]')).not.toBeNull();
       });
     }
@@ -4779,10 +4782,14 @@ describe('R1 — a position symbol that shadows toString: gated and incomplete, 
       const symbolless = [...container.querySelectorAll('span')]
         .filter((s) => s.textContent === 'Quote unavailable' && !s.hasAttribute('data-row-quote-status'));
       expect(symbolless).toHaveLength(1);
+      // The recorder's count, not only its marker: a modal opened WITHOUT a symbol has no marker.
+      const mounted = seen.research.length;
       await click(symbolless[0].previousElementSibling);
       expect(modalOpen()).toBeNull();
+      expect(seen.research.length).toBe(mounted);
       await chatClick({ symbol: { toString: 'AAPL' } });
       expect(modalOpen()).toBeNull();
+      expect(seen.research.length).toBe(mounted);
       expect(notice()).toBeNull();
     });
 
@@ -4799,7 +4806,7 @@ describe('R1 — a position symbol that shadows toString: gated and incomplete, 
         await mountGated(openingProp(), withCash({ toString: 'CASH' }));
         expect(shell()).toBeNull();
         expect(label()).toEqual({ kind: 'last-scored', text: expect.stringContaining(STORED_INCOMPLETE) });
-        // Negative control: the writers' own cash stamp completes as before.
+        // Negative control: the codebase's own cash stamp ('CASH') completes as before.
         await deliverDoc('ab-1', withCash('CASH'));
         await poll();
         expect(label().kind).toBe('browser');
@@ -4853,17 +4860,24 @@ function otherReturnDoc(side) {
  * React's scheduled render runs after all of them. Node stamps each timer with
  * a fresh millisecond clock: two calls that straddle a millisecond boundary
  * can expire one loop turn apart, and the first then renders alone (the
- * separately rendered case, which the B-1 rows cover). So the clock is let
- * past every expiry before the loop runs again, and the timers phase finds
- * all of them due at once: the coalesced case, every time.
+ * separately rendered case, which `rendered` delivers on purpose). So the
+ * clock is let past every expiry before the loop runs again, and the timers
+ * phase finds all of them due at once: the coalesced case, every time.
+ * `rendered`: each callback committed on its own — the control.
  */
 async function deliverTogether(id, docs, delivery) {
   const l = activeListener('doc', id);
   if (!l) throw new Error(`no active doc listener for ${id}`);
-  if (delivery === 'sdk') {
+  if (delivery === 'rendered') {
+    for (const d of docs) await deliverDoc(id, d);
+  } else if (delivery === 'sdk') {
     let fired = 0;
     const delivered = new Promise((resolve) => {
-      for (const d of docs) setTimeout(() => { l.next(docSnap(id, d)); fired += 1; if (fired === docs.length) resolve(); }, 0);
+      for (const d of docs) {
+        setTimeout(() => {
+          try { l.next(docSnap(id, d)); } finally { fired += 1; if (fired === docs.length) resolve(); }
+        }, 0);
+      }
     });
     const due = performance.now() + 3;
     while (performance.now() < due) { /* every timer above expires before the loop next runs */ }
@@ -4886,7 +4900,9 @@ function watchRow(symbol, side) {
 const pendingSymbols = (batch) => batch.flatMap((p) => p.symbols);
 
 describe('R2 — a received disappearance and same-stock return, rendered as one update', () => {
-  for (const delivery of ['one-act', 'sdk']) {
+  // `rendered` is the control: each callback committed on its own, which the
+  // screen's slot pruning and poll retirement already handled before R2.
+  for (const delivery of ['one-act', 'sdk', 'rendered']) {
     for (const side of ['player', 'cpu']) {
       for (const controller of [true, false]) {
         it(`${side}, controller ${controller ? 'on' : 'off'}, ${delivery}: the returned holding starts without its previous quote, the retired answer is dropped, its own request recovers it`, async () => {
@@ -4904,7 +4920,8 @@ describe('R2 — a received disappearance and same-stock return, rendered as one
           const watch = watchRow(sym, side);
           await deliverTogether('ab-1', [shrunkDoc(side), ACTIVE_DOC], delivery);
           watch.stop();
-          expect(watch.everAbsent()).toBe(false); // ONE render: the shrink never reached the screen
+          // ONE render (the shrink never reached the screen) — unless delivered separately.
+          expect(watch.everAbsent()).toBe(delivery === 'rendered');
           // A new position: no previous quote (no "Last quote" either), incomplete…
           expect(rowStatus(sym)).toEqual(['Quote unavailable']);
           expect(label()).toEqual({ kind: 'last-scored', text: expect.stringContaining(STORED_INCOMPLETE) });

@@ -371,7 +371,8 @@ const isMalformedSymbol = (symbol) => symbol !== undefined && symbol !== null &&
 
 /** A structurally valid portfolio: an object, tier arrays where present, at
  *  least one position, every position cash or a named symbol, and no position
- *  with a malformed symbol — cash included (writers stamp cash 'CASH'). */
+ *  with a malformed symbol — cash included (no agentBattles writer emits cash
+ *  today; the client's user-battle writers stamp the string 'CASH'). */
 function portfolioValid(p) {
   if (!p || typeof p !== 'object' || Array.isArray(p)) return false;
   let positions = 0;
@@ -451,7 +452,8 @@ export function positionLineageKey(asset, { side, tier, slot, startingPrices }) 
  * symbols contained — and the screen hands that same object to every gated
  * consumer. Structural validity is judged on the snapshot AS RECEIVED,
  * so a side with a malformed symbol stays invalid: the comparison incomplete,
- * never an all-cash success, never legacy.
+ * never an all-cash success, never legacy. Judge it from `portfoliosValid`,
+ * never from `data`, where a contained cash position looks well formed.
  *
  * R2: with `received` (advanceReceived's evidence for this subscription), each
  * position's lineage also carries its slot's revision and the context the
