@@ -908,12 +908,13 @@ describe('R2 — the received fold runs on every callback', () => {
   const trail = (prev, data) => [...(prev ?? []), data === null ? null : data.n];
   const FOLD = { integrity: true, receive: trail };
   // The gate's REAL fold, loaded here rather than at module scope so that the
-  // OFF rows still load at OFF_REFERENCE_SHA (which predates the helper). The
-  // specifier is not a literal, so the transform does not resolve it eagerly.
-  const HELPER = '../screens/battleView/shadowCpuQuoteIntegrity';
+  // OFF rows still load at OFF_REFERENCE_SHA (which predates the helper): a
+  // glob that matches nothing there is empty, not an unresolved import, and
+  // here it keeps the suite linked to the helper for watch mode and `related`.
+  const HELPER = import.meta.glob('../screens/battleView/shadowCpuQuoteIntegrity.js');
   let advanceReceived;
   beforeAll(async () => {
-    ({ advanceReceived } = await import(/* @vite-ignore */ HELPER));
+    ({ advanceReceived } = await HELPER['../screens/battleView/shadowCpuQuoteIntegrity.js']());
   });
 
   it('two callbacks rendered as one update: both folded, in order, beside the last callback\'s data', () => {

@@ -397,7 +397,7 @@ describe('R1 — malformed position symbols are contained before any key or deri
     const cash = buildBattleContext(snapshot({ isCash: true, symbol: { toString: 'CASH' } }), { battleId: 'ab-1' });
     expect(cash.data.portfolio.star[0]).toEqual({ isCash: true });
     expect(cash.portfoliosValid).toBe(false);
-    // Controls: the writers' own cash stamp, and a cash position with no symbol, stay valid.
+    // Controls: the codebase's own cash stamp ('CASH'), and a cash position with no symbol, stay valid.
     expect(buildBattleContext(snapshot({ isCash: true, symbol: 'CASH' }), { battleId: 'ab-1' }).portfoliosValid).toBe(true);
     expect(buildBattleContext(snapshot({ isCash: true }), { battleId: 'ab-1' }).portfoliosValid).toBe(true);
   });

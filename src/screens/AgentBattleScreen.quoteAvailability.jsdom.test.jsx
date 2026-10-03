@@ -4625,13 +4625,13 @@ describe('F1 review follow-ups B-2 / B-3 / B-4 — malformed fields a gated row 
         expect(shell()).toBeNull();
         expect(label()).toEqual({ kind: 'last-scored', text: expect.stringContaining(STORED_INCOMPLETE) });
         expect(symbollessRow()).toHaveLength(1);
-        const mounted = seen.research.length;
+        const renders = seen.research.length;
         await click(symbollessRow()[0].previousElementSibling);
         expect(modalOpen()).toBeNull();
-        expect(seen.research.length).toBe(mounted); // nothing mounted, with or without a symbol
+        expect(seen.research.length).toBe(renders); // nothing rendered, with or without a symbol
         await chatClick({ symbol: bad });
         expect(modalOpen()).toBeNull();
-        expect(seen.research.length).toBe(mounted);
+        expect(seen.research.length).toBe(renders);
         expect(container.querySelector('[data-board]')).not.toBeNull();
       });
     }
@@ -4783,13 +4783,13 @@ describe('R1 — a position symbol that shadows toString: gated and incomplete, 
         .filter((s) => s.textContent === 'Quote unavailable' && !s.hasAttribute('data-row-quote-status'));
       expect(symbolless).toHaveLength(1);
       // The recorder's count, not only its marker: a modal opened WITHOUT a symbol has no marker.
-      const mounted = seen.research.length;
+      const renders = seen.research.length;
       await click(symbolless[0].previousElementSibling);
       expect(modalOpen()).toBeNull();
-      expect(seen.research.length).toBe(mounted);
+      expect(seen.research.length).toBe(renders);
       await chatClick({ symbol: { toString: 'AAPL' } });
       expect(modalOpen()).toBeNull();
-      expect(seen.research.length).toBe(mounted);
+      expect(seen.research.length).toBe(renders);
       expect(notice()).toBeNull();
     });
 
@@ -4872,16 +4872,18 @@ async function deliverTogether(id, docs, delivery) {
     for (const d of docs) await deliverDoc(id, d);
   } else if (delivery === 'sdk') {
     let fired = 0;
+    const thrown = [];
     const delivered = new Promise((resolve) => {
       for (const d of docs) {
         setTimeout(() => {
-          try { l.next(docSnap(id, d)); } finally { fired += 1; if (fired === docs.length) resolve(); }
+          try { l.next(docSnap(id, d)); } catch (e) { thrown.push(e); } finally { fired += 1; if (fired === docs.length) resolve(); }
         }, 0);
       }
     });
-    const due = performance.now() + 3;
-    while (performance.now() < due) { /* every timer above expires before the loop next runs */ }
+    // Block the thread for 3 ms of real time (fake timers cannot shorten it), so every timer above expires before the loop next runs.
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3);
     await delivered;
+    if (thrown.length) throw thrown[0]; // a callback that threw fails THIS row, with its own error
     // React's render was scheduled from those callbacks; it and its effects run before this timer.
     await new Promise((resolve) => setTimeout(resolve, 25));
     await flush();
@@ -4899,7 +4901,7 @@ function watchRow(symbol, side) {
 }
 const pendingSymbols = (batch) => batch.flatMap((p) => p.symbols);
 
-describe('R2 — a received disappearance and same-stock return, rendered as one update', () => {
+describe('R2 — a received disappearance and same-stock return, delivered as one update (and a separately committed control)', () => {
   // `rendered` is the control: each callback committed on its own, which the
   // screen's slot pruning and poll retirement already handled before R2.
   for (const delivery of ['one-act', 'sdk', 'rendered']) {
@@ -5063,4 +5065,15 @@ describe('R2 — a received disappearance and same-stock return, rendered as one
       expect(label().kind).toBe('browser');
     });
   }
+
+  it('the document going missing between identical snapshots of a battle with no trades closes an open quote notice too', async () => {
+    const base = { ...ACTIVE_DOC, trades: [] };
+    priceBox.table = without(genuineTable(), 'AAPL');
+    await mountGated(openingProp(), base);
+    await click(symbolEl('AAPL', 'player'));
+    expect(notice()?.symbol).toBe('AAPL');
+    await deliverTogether('ab-1', [null, base], 'one-act');
+    expect(shell()).toBeNull();
+    expect(notice()).toBeNull(); // bound to the battle context, like the non-held view
+  });
 });
