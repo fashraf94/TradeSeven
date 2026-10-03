@@ -34,11 +34,16 @@ const tokens4 = (s) => Math.ceil(String(s).length / 4);
 const tokens3 = (s) => Math.ceil(String(s).length / 3);
 
 describe('buildTradeDecisionTool — declarations OFF is the frozen constant', () => {
-  it('returns the SAME object as TRADE_DECISION_TOOL (identity), for false and for every non-true value', () => {
-    for (const v of [false, undefined, null, 0, 1, 'shadow', 'on', {}]) {
+  it("returns the SAME object as TRADE_DECISION_TOOL (identity) for false, 'off' and every value that is not a mode (Build 1a: 'shadow' / 'on' / true select the declarations tools)", () => {
+    for (const v of [false, undefined, null, 0, 1, 'OFF', 'SHADOW', 'bogus', {}]) {
       expect(buildTradeDecisionTool({ declarations: v }), String(v)).toBe(TRADE_DECISION_TOOL);
     }
+    expect(buildTradeDecisionTool({ declarations: 'off' })).toBe(TRADE_DECISION_TOOL);
     expect(buildTradeDecisionTool()).toBe(TRADE_DECISION_TOOL);
+    // The three mode strings are the Build 1a contract (agentEvalToolSchema.build1a.test.js pins the texts).
+    expect(buildTradeDecisionTool({ declarations: 'shadow' })).toBe(buildTradeDecisionTool({ declarations: true }));
+    expect(buildTradeDecisionTool({ declarations: 'on' })).not.toBe(TRADE_DECISION_TOOL);
+    expect(buildTradeDecisionTool({ declarations: 'on' })).not.toBe(buildTradeDecisionTool({ declarations: 'shadow' }));
   });
 
   it('is byte-identical to the tool captured from the pre-change tree', () => {

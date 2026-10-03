@@ -28,7 +28,11 @@ import { makeCallsDb, storedDoc, storedCollection, callsTouches } from '../_util
 const mocks = vi.hoisted(() => ({ getStockAnalysisData: vi.fn(), fetchIntradayBatch: vi.fn(), create: vi.fn() }));
 const { swapMock } = vi.hoisted(() => ({ swapMock: vi.fn() }));
 const { buildHook } = vi.hoisted(() => ({ buildHook: { throwMessage: null } }));
-const flagState = vi.hoisted(() => ({ callsMode: 'shadow', tickCapture: true }));
+// Build 1a (spec §3): activation is per battle — at 'on' the battle's owner
+// must be allowlisted. The fixture battle's owner is allowlisted by default so
+// every 'on' row below exercises a battle that RESOLVES 'on'; the allowlist row
+// drives a non-allowlisted owner through the same check.
+const flagState = vi.hoisted(() => ({ callsMode: 'shadow', tickCapture: true, allow: ['owner-uid-1'] }));
 
 vi.mock('@anthropic-ai/sdk', () => ({
   default: class AnthropicMock { constructor() { this.messages = { create: (...args) => mocks.create(...args) }; } },
@@ -70,6 +74,7 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => {
   return {
     ...actual,
     get CALL_RECORDS_MODE() { return flagState.callsMode; },
+    get COCKPIT_ALLOWLIST_UIDS() { return flagState.allow; },
     get TICK_CAPTURE_ENABLED() { return flagState.tickCapture; },
   };
 });
@@ -116,8 +121,10 @@ async function runTick({
   breakRefreshAfterSwap = false, buildThrows = null, seed = {}, db: injected = null, beforeModel = null,
   failFinalUpdate = false, swapThrows = null, onSwap = null,
   onFetch = null, onIntraday = null, newsStories = null, swapPriceOf = null,
+  allowlist = ['owner-uid-1'],
 } = {}) {
   flagState.callsMode = mode;
+  flagState.allow = allowlist;
   flagState.tickCapture = capture;
   buildHook.throwMessage = buildThrows;
   mocks.create.mockClear();
@@ -642,6 +649,21 @@ describe('§3.12 row 1 — composition: the four rows, every unrelated flag fixe
     expect(callsTouches(db)).toEqual({ reads: 0, writes: 0, queries: 0 });
   });
 
+  it('the allowlist row (Build 1a §3) — calls on · the owner NOT allowlisted: the battle resolves off — the HEAD tool, the version-1 capture shape, no phase key, the calls data neither read nor written', async () => {
+    const [call] = earlierCalls([KO_OUT]);
+    const { db, tool, entry } = await runTick({ mode: 'on', allowlist: ['somebody-else'], seed: seedOf([call]), result: makeHoldResult({ declarations: makeDeclarations() }) });
+    expect(tool).toBe(TRADE_DECISION_TOOL);
+    expect(capturedPermanent(db)).toMatchObject({ schemaVersion: 1 });
+    expect(capturedPermanent(db)).not.toHaveProperty('calls');
+    expect(callsTouches(db)).toEqual({ reads: 0, writes: 0, queries: 0 });
+    expect(entry).not.toHaveProperty('declarationsPhase');
+    expect(storedDoc(db, 'calls', call.callId).state).toBe('open');
+    // …and with an EMPTY list (the shipped state) the same.
+    const empty = await runTick({ mode: 'on', allowlist: [], seed: seedOf([call]), result: makeHoldResult({ declarations: makeDeclarations() }) });
+    expect(empty.tool).toBe(TRADE_DECISION_TOOL);
+    expect(callsTouches(empty.db)).toEqual({ reads: 0, writes: 0, queries: 0 });
+  });
+
   for (const mode of ['shadow', 'on']) {
     it(`row 2 — calls ${mode} · pilot off: + declarations in the tool, version 2 + calls[] in the capture, the calls data active`, async () => {
       const [call] = earlierCalls([KO_OUT]);
@@ -768,5 +790,77 @@ describe('shadow changes no prompt (contract §9: "nothing rendered")', () => {
     expect(JSON.stringify(b.messages)).toBe(JSON.stringify(a.messages));
     expect(JSON.stringify(b.system)).toBe(JSON.stringify(a.system));
     expect(JSON.stringify(b)).not.toMatch(/callFlips|callsDiag|declarationsPhase/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cockpit Build 1a (spec §7, §11; the four-layer pick proof's model-visible
+// layer): at resolved 'on' an answered call's directive is IN the prompt, the
+// committed entry hears it, and the heard writer stamps the call and writes the
+// event in the model phase. At shadow the same slot is inactive everywhere.
+describe('Build 1a — heard end to end on the real check (spec §7)', () => {
+  const THREAD = 'thread-call-0001';
+  const callSlotFor = (call) => ({
+    text: "Hold off on the AMD entry until today's close.", expiry: 'until_ms', directiveThreadId: THREAD, createdAt: '2026-09-09T14:20:00.000Z',
+    family: 'call', expiresAtMs: call.horizon.expiresAt, basis: 'this_session', callId: call.callId, kind: 'call_hold',
+    action: { direction: 'entry', symbol: 'AMD', slot: 'support', counterpart: 'KO' }, answerId: `${call.callId}:answer:hold:`,
+    filedAt: '2026-09-09T14:20:00.000Z', textVersion: 'callActions.v1',
+  });
+  const answered = (call) => ({ ...call, playerResponse: { answer: 'hold', kind: 'directive', directiveThreadId: THREAD, callId: call.callId, filedAt: '2026-09-09T14:20:00.000Z', heardEvalId: null }, directiveThreadId: THREAD });
+
+  it("at 'on' (allowlisted): the canonical text is in the prompt, the entry's heard stamp names the thread, heardEvalId is stamped and the heard event is written in the model phase", async () => {
+    const [call] = earlierCalls([{ ...AMD_IN, condition: { side: 'above', level: 170 } }]); // not hit at 162
+    const slot = callSlotFor(call);
+    const { db, entry } = await runTick({ mode: 'on', battle: makeTickBattle({ directive: slot, chatExchanges: [] }), seed: seedOf([answered(call)]) });
+    const prompt = JSON.stringify(mocks.create.mock.calls[0][0]);
+    expect(prompt).toContain("Hold off on the AMD entry until today's close.");
+    expect(prompt).toContain(`threadId: ${THREAD}`);
+    expect(entry.heard).toEqual({ directiveThreadId: THREAD, suppressed: null });
+    const after = storedDoc(db, 'calls', call.callId);
+    expect(after.playerResponse.heardEvalId).toBe(entry.evalId);
+    expect(after.state).toBe('open');
+    expect(storedCollection(db, 'callEvents')[`${call.callId}:heard:${entry.evalId}`]).toMatchObject({ kind: 'heard', callIds: [call.callId], text: 'Heard at the 11:00 check', evidence: { evalId: entry.evalId } });
+    expect(db.__store.battle.cronState.callsDiag.heard).toMatchObject({ thread: THREAD, heard: 1 });
+    expect(db.__store.battle.directive).toEqual(slot); // a hold is not retired by hearing
+  });
+
+  it("at 'on': a PICK directive's canonical text reaches the prompt verbatim and is heard — the four-layer proof's model-visible hop for the pick itself (spec §16; review L6-5)", async () => {
+    const pickId = 'battle-tick-1:eval_000:call:7';
+    const nowMs = Date.parse(FROZEN_NOW);
+    const pick = {
+      callId: pickId, kind: 'pick', battleId: 'battle-tick-1', evalId: 'eval_000', evalSeq: 0, mintedAt: EARLIER_MINT_MS,
+      symbol: null, direction: null, slot: 'support', counterpart: null, swapOut: 'KO', options: [{ symbol: 'AMD', why: 'a' }, { symbol: 'JPM', why: 'b' }], condition: null,
+      horizon: { phrase: 'next_check', expiresAt: nowMs + 900_000, basis: 'next_check' }, defaultAction: null, said: 'AMD or JPM for KO.',
+      evidence: { tickId: null, availability: 'off', priceAsOf: null }, hypothesisRef: null, origin: 'agent_initiative',
+      state: 'open', stateChangedAt: EARLIER_MINT_MS, stateSource: 'mint', directiveThreadId: THREAD, outcome: null, refused: null,
+      playerResponse: { answer: 'pick', kind: 'directive', directiveThreadId: THREAD, callId: pickId, filedAt: '2026-09-09T14:20:00.000Z', heardEvalId: null },
+    };
+    const slot = {
+      text: 'Bring in JPM for KO at the next check.', expiry: 'until_ms', directiveThreadId: THREAD, createdAt: '2026-09-09T14:20:00.000Z',
+      family: 'call', expiresAtMs: nowMs + 1_800_000, basis: 'next_check', callId: pickId, kind: 'call_pick',
+      action: { direction: null, symbol: null, slot: 'support', pickSymbol: 'JPM', swapOut: 'KO' }, answerId: `${pickId}:answer:pick:JPM`,
+      filedAt: '2026-09-09T14:20:00.000Z', textVersion: 'callActions.v1',
+    };
+    const { db, entry } = await runTick({ mode: 'on', battle: makeTickBattle({ directive: slot, chatExchanges: [] }), seed: seedOf([pick]) });
+    const prompt = JSON.stringify(mocks.create.mock.calls[0][0]);
+    expect(prompt).toContain('Bring in JPM for KO at the next check.');
+    expect(prompt).toContain(`threadId: ${THREAD}`);
+    expect(entry.heard).toEqual({ directiveThreadId: THREAD, suppressed: null });
+    const after = storedDoc(db, 'calls', pickId);
+    expect(after.playerResponse.heardEvalId).toBe(entry.evalId);
+    expect(after.state).toBe('open'); // the slot (15 min out) has not arrived: not judged, so not retired
+    expect(storedCollection(db, 'callEvents')[`${pickId}:heard:${entry.evalId}`]).toMatchObject({ kind: 'heard', callIds: [pickId] });
+  });
+
+  it("at 'shadow' the same slot is INACTIVE: not in the prompt, no heard stamp, nothing stamped, no event — and the slot untouched", async () => {
+    const [call] = earlierCalls([{ ...AMD_IN, condition: { side: 'above', level: 170 } }]);
+    const slot = callSlotFor(call);
+    const { db, entry } = await runTick({ mode: 'shadow', battle: makeTickBattle({ directive: slot, chatExchanges: [] }), seed: seedOf([answered(call)]) });
+    const prompt = JSON.stringify(mocks.create.mock.calls[0][0]);
+    expect(prompt).not.toContain('Hold off on the AMD entry');
+    expect(entry).not.toHaveProperty('heard');
+    expect(storedDoc(db, 'calls', call.callId).playerResponse.heardEvalId).toBeNull();
+    expect(storedCollection(db, 'callEvents')).toEqual({});
+    expect(db.__store.battle.directive).toEqual(slot);
   });
 });

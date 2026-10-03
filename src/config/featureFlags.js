@@ -2830,6 +2830,47 @@ export const CALL_RECORDS_MODES = Object.freeze(['off', 'shadow', 'on']);
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
+ * COCKPIT BUILD 1a — THE ANSWER LOOP, dark (spec
+ * docs/COCKPIT_BUILD1A_SPEC_V1_2.md §3; build report
+ * docs/audits/20261002_BUILD1A_ANSWER_LOOP.md).
+ *
+ * COCKPIT_ALLOWLIST_UIDS — per-battle activation. With CALL_RECORDS_MODE 'on',
+ * a battle resolves 'on' iff its `ownerId` is in this list, else 'off'
+ * (api/_utils/callRecords/mode.js resolveCallRecordsMode(battle)); at 'off'
+ * and at 'shadow' the list is never consulted. Ships EMPTY: at 'on' with an
+ * empty list every battle resolves 'off', so no endpoint, no calls block, no
+ * heard writer and no sweep transition runs for anyone.
+ *
+ * RUNWAY: the list is filled by the founder's own PR after Build 1a merges,
+ * Amendment B is blessed and the two Build 1a indexes are deployed —
+ * never a build PR; each change moves the pin row in
+ * src/config/cockpitFlags.test.js in the SAME commit (BUILD_RULES §2). A
+ * string[] (not a boolean), so it is pinned DIRECTLY — never a DARK_BY_DESIGN
+ * key (the CALL_RECORDS_MODE precedent).
+ */
+// Pinned by: cockpitFlags.test.js (a string[] — pinned directly, outside flagPinGuard's `*_ENABLED` scan; this value and the pin move together — BUILD_RULES §2).
+export const COCKPIT_ALLOWLIST_UIDS = Object.freeze([]);
+
+/**
+ * RESPONSE_FORK_ATTRIBUTION_ENABLED — the dormant response-fork hook (Build 1a
+ * spec §11; Astra B1R2-9). Build 1a records PROMPT INCLUSION only: a `declared`
+ * call event carries `promptDirectiveThreadId` when the check's committed
+ * `heard` stamp names an unsuppressed thread — "Directive in this check's
+ * prompt: …", never "In response to …". A CAUSAL label requires an explicit
+ * per-fork field in the declarations block (a round-3 schema + nudge change)
+ * and ships behind this flag. False: no causal field and no causal text,
+ * anywhere.
+ *
+ * RUNWAY: flips only after the round-3 replay qualifies the attribution
+ * protocol, in the founder's own one-line PR, never a build PR. The flip moves
+ * the pin in cockpitFlags.test.js to true AND drops this flag from
+ * DARK_BY_DESIGN in src/config/flagPinGuard.test.js in the same commit.
+ */
+// Pinned by: cockpitFlags.test.js, events.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const RESPONSE_FORK_ATTRIBUTION_ENABLED = false;
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
  * FILM ROOM BUILD A — THE TAPE (spec
  * docs/specs/FILM_ROOM_BUILD_A_TAPE_SPEC_V1_2_20260927.md; build report
  * docs/audits/20260927_BUILD_FILM_TAPE_A1.md).

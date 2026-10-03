@@ -28,6 +28,7 @@ const {
   grounding,
   promptBuilder,
   budget,
+  callsFlag,
 } = vi.hoisted(() => ({
   authReturnValue: { current: { uid: 'test-user' } },
   gateArgs: { current: [] },     // pass-through capture of gateDirective's args
@@ -51,6 +52,9 @@ const {
   // the uids it was asked about are captured (the route must ask for the
   // TOKEN's uid, never the body's).
   grounding: { mode: 'off', calls: [] },
+  // Cockpit Build 1a — CALL_RECORDS_MODE and COCKPIT_ALLOWLIST_UIDS, settable per
+  // row; the real values are 'off' and [] (every pre-existing row keeps them).
+  callsFlag: { mode: 'off', allow: [] },
   // The prompt-builder stub: distinguishable per build (old / new), and a
   // per-test way to make one side THROW (the shadow-assembly rows).
   promptBuilder: { throwWhen: null },
@@ -154,6 +158,8 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   // (dark), which is what every pre-existing row keeps.
   get SHOW_IT_ENABLED() { return showIt.on; },
   get DIRECTIVE_FIT_CHECK_ENABLED() { return fitCheckFlag.on; },
+  get CALL_RECORDS_MODE() { return callsFlag.mode; },
+  get COCKPIT_ALLOWLIST_UIDS() { return callsFlag.allow; },
 }));
 
 // The per-day budget module is exercised in agentChatBudget.test.js; here it is
@@ -181,10 +187,12 @@ const { default: handler, GEMMA_TIMEOUT_MS, TURN_DEADLINE_MS, SHADOW_LOG_CAP_MS,
 
 function makeFakeFirestore({
   agent, battle, marketCtx = null, drb = null, voiceCache = null,
+  // Cockpit Build 1a — the battle's call records (null: a sub-collection query throws, as a fake without one would); every calls query is recorded.
+  calls = null, callsQueries = [],
   // Phase E2 — tournament group + pending-claims aggregate, with injectable failures.
   group = null, pendingClaimCount = 0, groupReadError = false, claimsReadError = false,
 }) {
-  const written = { setCalls: [], updateCalls: [] };
+  const written = { setCalls: [], updateCalls: [], batchCommits: [] };
 
   // The claims aggregate query: .where().where().count().get() → { data: () => ({ count }) }.
   const claimsQuery = {
@@ -223,12 +231,44 @@ function makeFakeFirestore({
         update: async (updates) => {
           written.updateCalls.push({ id: docId, updates });
         },
-        collection: (subName) => (subName === 'claims' ? claimsQuery : { where: () => ({}) }),
+        // Build 1a: a sub-collection document ref (the call events the shared writer may create),
+        // and — for `calls` with records injected — a chainable query served from them.
+        collection: (subName) => {
+          if (subName === 'claims') return claimsQuery;
+          const docRef = (subId) => ({ id: subId, path: `${name}/${docId}/${subName}/${subId}` });
+          if (subName !== 'calls' || !Array.isArray(calls)) return { where: () => ({}), doc: docRef };
+          const makeQ = (state) => ({
+            where: (field, op, value) => makeQ({ ...state, filters: [...state.filters, { field, op, value }] }),
+            orderBy: (field, dir = 'asc') => makeQ({ ...state, orders: [...state.orders, { field, dir }] }),
+            limit: (n) => makeQ({ ...state, limit: n }),
+            get: async () => {
+              callsQueries.push(state);
+              let rows = calls.filter((c) => state.filters.every((f) => f.op === '==' && c[f.field] === f.value));
+              for (const o of state.orders) rows = [...rows].sort((a, b) => (o.dir === 'desc' ? b[o.field] - a[o.field] : a[o.field] - b[o.field]));
+              if (state.limit) rows = rows.slice(0, state.limit);
+              return { docs: rows.map((c) => ({ id: c.callId, data: () => ({ ...c }) })), size: rows.length, empty: rows.length === 0 };
+            },
+          });
+          return { ...makeQ({ filters: [], orders: [], limit: null }), doc: docRef };
+        },
       };
     },
   });
 
-  return { db: { collection }, written };
+  // Build 1a: the WriteBatch the shared writer uses on chat's plain path when a
+  // `superseded` event is due — the update and the create commit together.
+  const batch = () => {
+    const ops = [];
+    return {
+      update: (ref, updates) => ops.push({ op: 'update', id: ref.id, updates }),
+      create: (ref, data) => ops.push({ op: 'create', path: ref.path, data }),
+      commit: async () => {
+        written.batchCommits.push(ops);
+        for (const o of ops) if (o.op === 'update') written.updateCalls.push({ id: o.id, updates: o.updates });
+      },
+    };
+  };
+  return { db: { collection, batch }, written };
 }
 
 function makeReqRes(body) {
@@ -280,6 +320,8 @@ beforeEach(() => {
   showIt.on = false;
   grounding.mode = 'off';
   grounding.calls = [];
+  callsFlag.mode = 'off';
+  callsFlag.allow = [];
   promptBuilder.throwWhen = null;
   budget.resolveImpl = () => ({ groupId: 'group-xyz', dayN: 1 });
   budget.readImpl = async () => ({ count: 0, remaining: 10 });
@@ -673,6 +715,66 @@ describe('agent/chat — archetype integrity gate (Phase E1)', () => {
   };
 
   it('flag-OFF is the legacy path: no gate fields, model directive flows through (keystone regression)', async () => {
+    archetypeFlag.mode = 'off';
+    callGemmaVoiceImpl.current = async () => gemma({ response: 'ok', hasDirective: true, directive: { text: 'lean tech', expiry: 'end_of_battle' } });
+    const { res: r0 } = await run();
+    expect(r0.statusCode).toBe(200);
+  });
+
+  // ---- Cockpit Build 1a (spec §6; Amendment B §3): chat's latest-wins replacement, no client belief ----
+  const CALL_SLOT = {
+    text: "Hold off on the AMD entry until today's close.", expiry: 'until_ms', directiveThreadId: 'thread-call-0001', createdAt: '2026-09-09T14:20:00.000Z',
+    family: 'call', expiresAtMs: 4_102_444_800_000, basis: 'this_session', callId: 'battle-1:eval_001:call:0', kind: 'call_hold',
+    action: { direction: 'entry', symbol: 'AMD', slot: 'support', counterpart: 'KO' }, answerId: 'battle-1:eval_001:call:0:answer:hold:',
+    filedAt: '2026-09-09T14:20:00.000Z', textVersion: 'callActions.v1',
+  };
+  const ORDINARY_SLOT = { text: 'Narrow to the single strongest sector(s)', expiry: 'end_of_battle', directiveThreadId: 'thread-tf03-0001', createdAt: '2026-09-09T14:20:00.000Z', adjustmentId: 'TF-03', canonicalTextVersion: 1 };
+
+  it('Build 1a: a chat filing over a CALL-FAMILY slot is latest-wins with NO belief — the exchange is stamped `supersedes` with the call thread; at calls off it is still one plain update, no event', async () => {
+    archetypeFlag.mode = 'off';
+    callsFlag.mode = 'off';
+    callGemmaVoiceImpl.current = async () => gemma({ response: 'ok', hasDirective: true, directive: { text: 'lean tech', expiry: 'end_of_battle' } });
+    const { res, written } = await run({ directive: CALL_SLOT });
+    expect(res.statusCode).toBe(200);
+    expect(res.body.hasDirective).toBe(true);
+    const upd = mainUpdate(written).updates;
+    expect(Object.keys(upd)).toEqual(['chatExchanges', 'chatBudgetUsed', 'recentElicitationTargets', 'directive']);
+    expect(upd.directive.directiveThreadId).not.toBe('thread-call-0001');
+    expect(upd.directive).not.toHaveProperty('family');
+    const ex = exchangeOf(written);
+    expect(ex.supersedes).toEqual({ directiveThreadId: 'thread-call-0001', at: ex.timestamp });
+    expect(written.batchCommits).toEqual([]);
+  });
+
+  it('Build 1a: the same replacement at calls ON for an allowlisted owner commits the update and the `superseded` event in ONE batch', async () => {
+    archetypeFlag.mode = 'off';
+    callsFlag.mode = 'on';
+    callsFlag.allow = ['test-user'];
+    callGemmaVoiceImpl.current = async () => gemma({ response: 'ok', hasDirective: true, directive: { text: 'lean tech', expiry: 'end_of_battle' } });
+    const { res, written } = await run({ directive: CALL_SLOT });
+    expect(res.statusCode).toBe(200);
+    expect(written.batchCommits).toHaveLength(1);
+    const [ops] = written.batchCommits;
+    expect(ops.map((o) => o.op)).toEqual(['update', 'create']);
+    expect(ops[1].path).toBe('agentBattles/battle-1/callEvents/thread-call-0001:superseded');
+    expect(ops[1].data).toMatchObject({ kind: 'superseded', callIds: ['battle-1:eval_001:call:0'], supersededDirectiveThreadId: 'thread-call-0001' });
+    expect(exchangeOf(written).supersedes).toEqual({ directiveThreadId: 'thread-call-0001', at: exchangeOf(written).timestamp });
+  });
+
+  it('Build 1a: replacing an ORDINARY slot writes exactly the pre-build payload — no stamp, no batch, whatever the calls mode', async () => {
+    for (const [mode, allow] of [['off', []], ['on', ['test-user']]]) {
+      archetypeFlag.mode = 'off';
+      callsFlag.mode = mode;
+      callsFlag.allow = allow;
+      callGemmaVoiceImpl.current = async () => gemma({ response: 'ok', hasDirective: true, directive: { text: 'lean tech', expiry: 'end_of_battle' } });
+      const { written } = await run({ directive: ORDINARY_SLOT });
+      expect(Object.keys(mainUpdate(written).updates)).toEqual(['chatExchanges', 'chatBudgetUsed', 'recentElicitationTargets', 'directive']);
+      expect(exchangeOf(written)).not.toHaveProperty('supersedes');
+      expect(written.batchCommits).toEqual([]);
+    }
+  });
+
+  it('flag-OFF is the legacy path: no gate fields, model directive flows through (keystone regression — the original row)', async () => {
     archetypeFlag.mode = 'off';
     callGemmaVoiceImpl.current = async () => gemma({ response: 'ok', hasDirective: true, directive: { text: 'lean tech', expiry: 'end_of_battle' } });
     const { res, written } = await run();
@@ -1937,5 +2039,144 @@ describe('agent/chat — the research follow-up reply lint (Phase C §5)', () =>
     const { res, exchange } = await run(verdict);
     expect(res.body.agentMessage).toBe(verdict);
     expect(exchange.researchLint).toBeUndefined();
+  });
+});
+
+// ==================== Cockpit Build 1a — the history windows' cockpit rule (spec §3) ====================
+
+describe('agent/chat — Cockpit Build 1a: cockpit filings leave the history windows BEFORE the slice unless the battle resolves on', () => {
+  const pair = (n) => ({ userMessage: `Question ${n}?`, agentResponse: `Answer ${n}.`, timestamp: `2026-09-09T14:${String(n).padStart(2, '0')}:00.000Z`, mode: 'battle' });
+  const cockpit = (n) => ({
+    userMessage: null, agentResponse: '', hasDirective: true,
+    directive: { text: "Hold off on the AMD entry until today's close.", expiry: 'until_ms', directiveThreadId: `thread-call-000${n}`, family: 'call' },
+    directiveThreadId: `thread-call-000${n}`, suggestedActions: null, elicitationTarget: 'directive_filed',
+    timestamp: `2026-09-09T14:${String(n + 30).padStart(2, '0')}:00.000Z`, mode: 'battle', messageType: 'directive_filed', source: 'cockpit', groundingVersion: 1,
+  });
+  // Twelve ordinary pairs with two cockpit filings among them: one inside the last ten, one last.
+  const exchanges = [...Array.from({ length: 10 }, (_, i) => pair(i + 1)), cockpit(1), pair(11), pair(12), cockpit(2)];
+  const BATTLE = { ...VALID_BATTLE, chatExchanges: exchanges };
+  const history = (first, count) => Array.from({ length: count }, (_, i) => i + first).flatMap((n) => [{ role: 'user', content: `Question ${n}?` }, { role: 'assistant', content: `Answer ${n}.` }]);
+  const PRE_BUILD = history(3, 10);  // the last ten of the twelve pairs — the filings never counted
+  const CHIP_LIKE = history(5, 8);   // the last ten of fourteen entries: the filings take two slots, then drop out
+  const tagged = (list) => list.map((m) => (m.role === 'assistant' ? { ...m, content: `[user_initiated] ${m.content}` } : m));
+  let gemmaOpts;
+  const run = async () => {
+    gemmaOpts = [];
+    voiceLayerArgs.current = [];
+    callGemmaVoiceImpl.current = async (opts) => { gemmaOpts.push(opts); return '{"response":"ok"}'; };
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: BATTLE });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi' });
+    await handler(req, res);
+    return res;
+  };
+
+  it("calls 'off' (shipped): the model's history is the PRE-BUILD window — the two filings removed before the slice; the prompt builder is told the mode", async () => {
+    callsFlag.mode = 'off';
+    const res = await run();
+    expect(res.statusCode).toBe(200);
+    expect(gemmaOpts[0].conversationHistory).toEqual(PRE_BUILD);
+    expect(voiceLayerArgs.current[0].callsMode).toBe('off');
+  });
+
+  it("calls 'shadow', and 'on' for a NON-allowlisted owner: the same pre-build window", async () => {
+    callsFlag.mode = 'shadow';
+    await run();
+    expect(gemmaOpts[0].conversationHistory).toEqual(PRE_BUILD);
+    expect(voiceLayerArgs.current[0].callsMode).toBe('shadow');
+    callsFlag.mode = 'on';
+    callsFlag.allow = ['somebody-else'];
+    await run();
+    expect(gemmaOpts[0].conversationHistory).toEqual(PRE_BUILD);
+    expect(voiceLayerArgs.current[0].callsMode).toBe('off');
+  });
+
+  it("calls 'on' for the ALLOWLISTED owner: the chip-like window — the filings take their slots and drop out as agent-initiated entries", async () => {
+    callsFlag.mode = 'on';
+    callsFlag.allow = ['test-user'];
+    await run();
+    expect(gemmaOpts[0].conversationHistory).toEqual(CHIP_LIKE);
+    expect(voiceLayerArgs.current[0].callsMode).toBe('on');
+  });
+
+  it("grounded 'on' turns apply the same rule to the grounded window", async () => {
+    grounding.mode = 'on';
+    callsFlag.mode = 'off';
+    await run();
+    expect(gemmaOpts[0].conversationHistory).toEqual(tagged(PRE_BUILD));
+    callsFlag.mode = 'on';
+    callsFlag.allow = ['test-user'];
+    await run();
+    expect(gemmaOpts[0].conversationHistory).toEqual(tagged(CHIP_LIKE));
+  });
+});
+
+// ==================== Cockpit Build 1a — the chat calls block (spec §9) ====================
+
+describe('agent/chat — Cockpit Build 1a: the calls block is read and rendered at resolved on only', () => {
+  const CLOSE = Date.parse('2026-09-09T20:00:00.000Z');
+  const CALLS = [
+    { callId: 'battle-1:eval_001:call:0', kind: 'called_shot', symbol: 'AMD', direction: 'entry', slot: 'support', counterpart: 'KO', condition: { side: 'above', level: 161 }, horizon: { phrase: 'this_session', expiresAt: CLOSE, basis: 'this_session' }, defaultAction: 'act', state: 'open', mintedAt: 10, playerResponse: null, outcome: null },
+    { callId: 'battle-1:eval_001:call:1', kind: 'called_shot', symbol: 'KO', direction: 'exit', slot: 'support', counterpart: 'AMD', condition: { side: 'below', level: 62.5 }, horizon: { phrase: 'this_session', expiresAt: CLOSE, basis: 'this_session' }, defaultAction: 'hold', state: 'hit', mintedAt: 20, playerResponse: null, outcome: { receiptRef: 'r' } },
+  ];
+  let callsQueries;
+  const run = async (body = {}, battleOver = {}) => {
+    callsQueries = [];
+    voiceLayerArgs.current = [];
+    callGemmaVoiceImpl.current = async () => '{"response":"ok"}';
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: { ...VALID_BATTLE, evaluations: [], ...battleOver }, calls: CALLS, callsQueries });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi', ...body });
+    await handler(req, res);
+    return res;
+  };
+
+  it("calls 'off', 'shadow', and 'on' for a NON-allowlisted owner: no calls query at all, callsBlock null — the prompt bytes are the goldens'", async () => {
+    for (const [mode, allow] of [['off', []], ['shadow', ['test-user']], ['on', ['somebody-else']]]) {
+      callsFlag.mode = mode;
+      callsFlag.allow = allow;
+      const res = await run();
+      expect(res.statusCode, mode).toBe(200);
+      expect(callsQueries, mode).toEqual([]);
+      expect(voiceLayerArgs.current[0].callsBlock, mode).toBeNull();
+    }
+  });
+
+  it("calls 'on' for the ALLOWLISTED owner: the four bounded queries are issued in the prologue and the rendered block reaches the prompt builder", async () => {
+    callsFlag.mode = 'on';
+    callsFlag.allow = ['test-user'];
+    const res = await run();
+    expect(res.statusCode).toBe(200);
+    expect(callsQueries).toHaveLength(4);
+    expect(callsQueries[0]).toEqual({ filters: [{ field: 'state', op: '==', value: 'open' }], orders: [{ field: 'mintedAt', dir: 'desc' }], limit: 6 });
+    expect(callsQueries.slice(1).map((q) => q.filters[0].value)).toEqual(['hit', 'expired_unresolved', 'ended_with_battle']);
+    const block = voiceLayerArgs.current[0].callsBlock;
+    expect(block).toContain('CALLS ON THE RECORD');
+    expect(block).toContain("- battle-1:eval_001:call:0 · AMD above $161.00 by");
+    expect(block).toContain("- battle-1:eval_001:call:1 · KO below $62.50 by");
+    expect(block.indexOf('call:0')).toBeLessThan(block.indexOf('call:1')); // open first, then history
+  });
+
+  it("calls 'on' for the ALLOWLISTED owner in REVIEW mode: the block is chat-prologue only — no calls query, callsBlock null (spec §9; review L4-9)", async () => {
+    callsFlag.mode = 'on';
+    callsFlag.allow = ['test-user'];
+    const res = await run({ mode: 'review' }, { status: 'completed' });
+    expect(res.statusCode).toBe(200);
+    expect(callsQueries).toEqual([]);
+    expect(voiceLayerArgs.current[0].callsBlock).toBeNull();
+  });
+
+  it("a calls read that throws degrades to null: the turn still answers 200", async () => {
+    callsFlag.mode = 'on';
+    callsFlag.allow = ['test-user'];
+    callsQueries = [];
+    voiceLayerArgs.current = [];
+    callGemmaVoiceImpl.current = async () => '{"response":"ok"}';
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: VALID_BATTLE, calls: null }); // no calls support: the sub-collection query throws
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi' });
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(voiceLayerArgs.current[0].callsBlock).toBeNull();
   });
 });

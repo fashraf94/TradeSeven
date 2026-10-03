@@ -28,6 +28,8 @@
 import { writeFileSync } from 'node:fs';
 import './loadLocalEnv.js';
 import { getFirebaseAdmin } from '../api/_utils/firebaseAdmin.js';
+// Cockpit Build 1a (spec §12): the rollback recipe, reported under --calls-enabled-window.
+import { computeCallsEnabledWindow, renderCallsEnabledWindow } from '../api/_utils/callRecords/rollbackRecipe.js';
 
 // ---------------------------------------------------------------- constants
 
@@ -126,6 +128,11 @@ async function main() {
   const argOf = (k) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : null; };
   const outPath = argOf('--out');
   const jsonPath = argOf('--json');
+  // Build 1a §12: the rollback recipe — the last five regular ET sessions with
+  // calls-enabled model calls (declarationsPhase present AND a finite callMs),
+  // numerator invalid_tool_result, trip > 3 %, zero data → no trip, with the
+  // retained-window coverage. Read-only; a report, never a flip.
+  const wantCallsEnabledWindow = args.includes('--calls-enabled-window');
   const db = getFirebaseAdmin();
   const readAtMs = Date.now();
 
@@ -447,10 +454,21 @@ async function main() {
     p();
   });
 
+  let callsEnabledWindow = null;
+  if (wantCallsEnabledWindow) {
+    callsEnabledWindow = computeCallsEnabledWindow(battles);
+    p('### H. Rollback recipe (Build 1a §12) — the calls-enabled window');
+    p();
+    p(renderCallsEnabledWindow(callsEnabledWindow));
+    p();
+    tbl(['ET session', 'Model calls', 'invalid_tool_result'], callsEnabledWindow.perDay.map((d) => [d.day, String(d.modelCalls), String(d.invalid)]));
+    p();
+  }
+
   const md = L.join('\n');
   if (outPath) writeFileSync(outPath, md + '\n');
   else console.log(md);
-  if (jsonPath) writeFileSync(jsonPath, JSON.stringify({ readAtMs, base, shad, trig, violations, calls, decls, receipts: Object.fromEntries(receipts), queue, flipsList, diagList, wire, decl, callStats, tickRefs }, null, 2));
+  if (jsonPath) writeFileSync(jsonPath, JSON.stringify({ readAtMs, base, shad, trig, violations, calls, decls, receipts: Object.fromEntries(receipts), queue, flipsList, diagList, wire, decl, callStats, tickRefs, ...(callsEnabledWindow ? { callsEnabledWindow } : {}) }, null, 2));
   console.error(`[shadow-read] battles=${battles.size} shadowEntries=${shadowEntries.length} calls=${calls.length} violations=${violations.length} tripped=${tripped.length}`);
 }
 

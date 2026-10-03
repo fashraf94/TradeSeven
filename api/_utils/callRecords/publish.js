@@ -49,6 +49,12 @@
 import { withTimeout } from '../intraday/evaluatorHook.js';
 import { callsActive } from './mode.js';
 import { buildMintCandidate, canonicalCall, canonicalRecord } from './candidate.js';
+// Build 1a (spec §7, §10, §11): the `declared` event in the publication
+// transaction and the heard phase after the flips — at resolved 'on' only;
+// shadow writes stay Build 0's, byte for byte.
+import { buildCallEvent, createCallEvent } from './events.js';
+import { renderDeclaredEvent, saidPassesLint } from './copy.js';
+import { heardThreadOf, directiveRecordOf } from './threads.js';
 
 /** The admission reserve added to the pre-call requirement at shadow/on (§3.7). */
 export const CALLS_RESERVE_MS = 4_000;
@@ -123,7 +129,7 @@ const finiteNumber = (v) => typeof v === 'number' && Number.isFinite(v);
  *
  * @returns {Promise<{ phaseResult: string, wire: 'written'|'failed'|null, perId: Array<{id:string, result:string, reason?:string}>, confirmedCallIds: string[], ms: number }>}
  */
-export async function publishDeclarations({ db, battleId, candidate, evalSeq, txDeadlineMs, rereadDeadlineMs }) {
+export async function publishDeclarations({ db, battleId, candidate, evalSeq, txDeadlineMs, rereadDeadlineMs, events = null }) {
   const startedMs = Date.now();
   const evalId = candidate.record.evalId;
   const recordId = `declarations/${evalId}`;
@@ -181,6 +187,33 @@ export async function publishDeclarations({ db, battleId, candidate, evalSeq, tx
         const newCallRef = db.collection('agentBattles').doc(battleId).collection('calls').doc(call.callId);
         tx.create(newCallRef, call);
       }
+      // Build 1a (spec §10, §11): the `declared` event, in THIS transaction, at
+      // resolved 'on' only. `promptDirectiveThreadId` records a directive PRESENT
+      // in the declaring check's prompt — prompt inclusion, never causation; no
+      // causal field or text exists in 1a (RESPONSE_FORK_ATTRIBUTION_ENABLED false).
+      // A declarations-only check (watching / playerAsk, no call) declares nothing (review L2-6).
+      if (events?.enabled && candidate.calls.length > 0) {
+        const thread = events.promptDirectiveThreadId ?? null;
+        const lines = [renderDeclaredEvent({ calls: candidate.calls, nowMs: events.nowMs })];
+        // saidOk (spec §10): the lint verdict over the declared calls' own wording — true when every
+        // `said` passes, false when any fails, null when none was said (review L5-8).
+        const verdicts = candidate.calls.filter((c) => typeof c.said === 'string' && c.said.trim()).map((c) => saidPassesLint(c.said, c.horizon?.basis));
+        const saidOk = verdicts.length === 0 ? null : verdicts.every(Boolean);
+        if (thread && events.promptDirectiveText) lines.push(`Directive in this check's prompt: ${events.promptDirectiveText}`);
+        createCallEvent(tx, db, battleId, {
+          kind: 'declared',
+          idParams: { evalId },
+          event: buildCallEvent({
+            kind: 'declared',
+            at: events.nowMs ?? null,
+            callIds: candidate.calls.map((c) => c.callId),
+            text: lines.filter(Boolean).join(' · ') || null,
+            saidOk,
+            evidence: { evalId, promptBuiltAt: events.promptBuiltAt ?? null, checkLabel: events.checkLabel ?? null },
+            ...(thread ? { promptDirectiveThreadId: thread } : {}),
+          }),
+        });
+      }
       if (finiteNumber(nextExpiresAt)) {
         tx.set(publishQueueRef, { battleId, nextExpiresAt, updatedAt: candidate.record.mintedAt }, { merge: true });
       }
@@ -232,7 +265,7 @@ export function removedLogToken(removed) {
 }
 
 /** The bounded diagnostics document (never a reader wire). */
-export function composeCallsDiag({ evalId = null, exit = null, phaseResult = 'none', perId = [], removed = [], flips = null, truncated = false, faults = [], ms = null }) {
+export function composeCallsDiag({ evalId = null, exit = null, phaseResult = 'none', perId = [], removed = [], flips = null, truncated = false, faults = [], ms = null, heard = null }) {
   return {
     evalId,
     exit,
@@ -240,6 +273,8 @@ export function composeCallsDiag({ evalId = null, exit = null, phaseResult = 'no
     perId: perId.slice(0, DIAG_LIST_CAP),
     removed: removed.slice(0, DIAG_LIST_CAP).map((r) => ({ source: r.source, index: r.index ?? null, reason: r.reason })),
     flips: flips ?? null,
+    // Build 1a: the heard phase's bounded diagnostics — present at resolved 'on' only (shadow's document is Build 0's).
+    ...(heard ? { heard } : {}),
     truncated: truncated === true,
     faults: (Array.isArray(faults) ? faults : []).slice(0, DIAG_LIST_CAP),
     ms,
@@ -287,11 +322,19 @@ export function captureRefsFor(candidate, confirmedCallIds) {
  * @param {(ctx: object, opts: { db: object, battle: object, battleId: string, deadlineMs: number }) => Promise<object>} [p.flips]
  *   the flip runner (§3.8: flip.js runCallFlips), injected so this module never imports flip.js
  */
-export async function runModelCallsPhase(callsCtx, { db, battle, timeBudgetMs, promptBuiltAt, tickId, flips = null }) {
+export async function runModelCallsPhase(callsCtx, { db, battle, timeBudgetMs, promptBuiltAt, tickId, flips = null, heardWriter = null, heard = null }) {
   if (!callsCtx || !callsActive(callsCtx.mode) || callsCtx.exit !== 'model_result' || !callsCtx.evalIdentity) return null;
   const battleId = battle.id;
   const { evalId, evalSeq } = callsCtx.evalIdentity;
   const startedMs = Date.now();
+  // Build 1a: events and the heard phase at resolved 'on' only. The prompt's
+  // directive, for the `declared` event's inclusion fact, is the thread the
+  // committed stamp names and the text filed under it (the slot, else the
+  // thread exchange's record).
+  const eventsOn = callsCtx.mode === 'on';
+  const promptThread = eventsOn ? heardThreadOf(heard) : null;
+  const promptText = promptThread ? (directiveRecordOf(battle, promptThread)?.text ?? null) : null;
+  const eventsFor = (nowMs) => (eventsOn ? { enabled: true, promptBuiltAt: promptBuiltAt ?? null, nowMs, promptDirectiveThreadId: promptThread, promptDirectiveText: promptText } : null);
   const expected = callsCtx.declarations?.phase === 'expected';
   const budget = callsBudget({ handlerStartMs: callsCtx.handlerStartMs, timeBudgetMs, nowMs: startedMs, phaseMs: MODEL_PHASE_MS });
   const removedPre = callsCtx.declarations?.validation?.removed ?? [];
@@ -338,6 +381,7 @@ export async function runModelCallsPhase(callsCtx, { db, battle, timeBudgetMs, p
         db, battleId, candidate, evalSeq,
         txDeadlineMs: workDeadlineMs - REREAD_RESERVE_MS,
         rereadDeadlineMs: workDeadlineMs,
+        events: eventsFor(mintedAtMs),
       });
       phaseResult = pub.phaseResult;
       wire = pub.wire;
@@ -347,7 +391,18 @@ export async function runModelCallsPhase(callsCtx, { db, battle, timeBudgetMs, p
   }
 
   const flipResult = typeof flips === 'function'
-    ? await flips(callsCtx, { db, battle, battleId, deadlineMs: workDeadlineMs })
+    ? await flips(callsCtx, { db, battle, battleId, deadlineMs: workDeadlineMs, events: eventsFor(Date.now()) })
+    : null;
+
+  // Build 1a (spec §7): the heard writer and the acted / no-match receipts,
+  // after the flips, under the same deadline, at resolved 'on' only.
+  const heardResult = eventsOn && typeof heardWriter === 'function'
+    ? await heardWriter(callsCtx, {
+      db, battleId, evalId, promptBuiltAt: promptBuiltAt ?? null, heard,
+      executorResult: callsCtx.executorResult ?? null,
+      flippedIds: flipResult?.flippedIds ?? new Set(),
+      deadlineMs: workDeadlineMs,
+    })
     : null;
 
   const fields = {
@@ -356,9 +411,10 @@ export async function runModelCallsPhase(callsCtx, { db, battle, timeBudgetMs, p
     'cronState.callsDiag': composeCallsDiag({
       evalId, exit: callsCtx.exit, phaseResult, perId, removed, flips: flipResult?.diag ?? null,
       truncated: callsCtx.diag.truncated, faults: callsCtx.diag.faults, ms: Date.now() - startedMs,
+      heard: heardResult,
     }),
   };
   const status = await writeCallsStatus({ db, battleId, fields, deadlineMs: budget.deadlineMs });
-  console.log(`[calls] phase battle=${battleId} evalId=${evalId} result=${phaseResult} wire=${wire ?? 'unchanged'} perId=${JSON.stringify(perId)} removed=${removedLogToken(removed)} status=${status} ms=${Date.now() - startedMs}`);
-  return { phaseResult, wire, perId, captureRefs, status, flips: flipResult };
+  console.log(`[calls] phase battle=${battleId} evalId=${evalId} result=${phaseResult} wire=${wire ?? 'unchanged'} perId=${JSON.stringify(perId)} removed=${removedLogToken(removed)} status=${status} ms=${Date.now() - startedMs}${heardResult ? ` heard=${JSON.stringify(heardResult)}` : ''}`);
+  return { phaseResult, wire, perId, captureRefs, status, flips: flipResult, heard: heardResult };
 }

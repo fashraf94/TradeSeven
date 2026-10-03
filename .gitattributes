@@ -3,3 +3,6 @@
 # so it is checked out with LF on every platform, core.autocrlf=true included
 # (branch review BR-5). Deliberately narrow: no repo-wide rule.
 api/_utils/__fixtures__/callRecordsOffGolden.json text eol=lf
+api/_utils/__fixtures__/callRecordsRollbackGolden.json text eol=lf
+api/_utils/__fixtures__/historyWindowPreBuild.json text eol=lf
+api/_utils/callRecords/__fixtures__/saidLintCorpus.json text eol=lf

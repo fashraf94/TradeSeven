@@ -44,6 +44,8 @@ import { withCaptureStore } from './tickCaptureHarness.js';
 export const CALL_SUBCOLLECTIONS = Object.freeze(['calls', 'declarations', 'callObservations']);
 /** The top-level sweep queue. */
 export const QUEUE_COLLECTION = 'callSweepQueue';
+/** Build 1a: the call events subcollection (written at resolved 'on' only; never seeded by the Build 0 rows). */
+export const EVENTS_SUBCOLLECTION = 'callEvents';
 
 const NAME = '__name__';
 /** No legitimate row issues more than a handful of queries; a runaway scan issues thousands. */
@@ -255,7 +257,7 @@ export function makeCallsDb({ seed = {}, abortFirstTransactionWithSeq = null, ..
             ...ref,
             async update(payload) { await ref.update(payload); bump(path); },
             collection: (sub) => {
-              if (!CALL_SUBCOLLECTIONS.includes(sub)) return ref.collection(sub);
+              if (!CALL_SUBCOLLECTIONS.includes(sub) && sub !== EVENTS_SUBCOLLECTION) return ref.collection(sub);
               const collectionPath = `${path}/${sub}`;
               const q = makeQuery(collectionPath);
               return { ...q, doc: (docId) => makeCallsRef(`${collectionPath}/${docId}`, docId) };
@@ -295,7 +297,7 @@ export function makeCallsDb({ seed = {}, abortFirstTransactionWithSeq = null, ..
           async getAll(...refs) { readsBeforeWrites(); return Promise.all(refs.map((r) => tx.get(r))); },
           create(ref, data) { assertNoUndefined(data, `tx.create(${ref.path})`); writes.push({ op: 'create', ref, path: ref.path, data: deepClone(data) }); return tx; },
           set(ref, data, opts) { assertNoUndefined(data, `tx.set(${ref.path})`); writes.push({ op: 'set', ref, path: ref.path, data: deepClone(data), opts }); return tx; },
-          update(ref, data) { assertNoUndefined(data, `tx.update(${ref.path})`); writes.push({ op: 'update', ref, path: ref.path, data: deepClone(data) }); return tx; },
+          update(ref, data) { assertNoUndefined(data, `tx.update(${ref.path})`); if (!data || Object.keys(data).length === 0) throw new Error(`tx.update(${ref.path}): At least one field must be updated.`); writes.push({ op: 'update', ref, path: ref.path, data: deepClone(data) }); return tx; },
         };
         const result = await cb(tx);
         if (hooks.afterTxBody) await hooks.afterTxBody({ attempt, readPaths: [...reads.keys()], writes });

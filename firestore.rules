@@ -497,6 +497,17 @@ service cloud.firestore {
                     && get(/databases/$(database)/documents/agentBattles/$(battleId)).data.ownerId == request.auth.uid;
         allow write: if false;
       }
+      // Cockpit Build 1a (docs/COCKPIT_BUILD1A_SPEC_V1_2.md §10; contract
+      // Amendment B §6): the call EVENTS — every receipt, acknowledgment and
+      // player-facing line about a call, created inside the transaction that
+      // commits its transition (publication, the answer endpoint, the flip, the
+      // heard writer, the sweep). The calls posture exactly: owner read via
+      // the parent, no client write. Proven by test/rules/callEventsDenials.rules.mjs.
+      match /callEvents/{eventId} {
+        allow read: if request.auth != null
+                    && get(/databases/$(database)/documents/agentBattles/$(battleId)).data.ownerId == request.auth.uid;
+        allow write: if false;
+      }
 
       // Film Room Build A — the tape (docs/specs/FILM_ROOM_BUILD_A_TAPE_SPEC_V1_2_20260927.md
       // §5): one document per battle-day and one per symbol under it, written
@@ -959,6 +970,13 @@ service cloud.firestore {
     // the owner of the battle a queue document names (the agentEvalRuns
     // precedent). test/rules/callSweepQueueDenials.rules.mjs asserts it.
     match /callSweepQueue/{battleId} {
+      allow read, write: if false;  // Admin SDK only
+    }
+
+    // Cockpit Build 1a (spec §8): callSweepState/singleton, the sweep's cursor
+    // — scheduling metadata, SERVER-ONLY like the queue it walks.
+    // test/rules/callSweepStateDenials.rules.mjs asserts it.
+    match /callSweepState/{docId} {
       allow read, write: if false;  // Admin SDK only
     }
 

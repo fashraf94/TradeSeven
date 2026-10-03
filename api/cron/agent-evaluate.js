@@ -40,7 +40,10 @@ import { buildTradeDecisionTool } from '../_utils/agentEvalToolSchema.js';
 // Every call site below runs through callsStep — inert at CALL_RECORDS_MODE
 // 'off' (nothing inside it runs), isolated at shadow/on (a calls defect costs
 // the check a record, never a decision, a write or an exit).
-import { resolveCallRecordsMode, createCallsContext, callsActive, callsStep, callsStepAsync } from '../_utils/callRecords/mode.js';
+import { resolveCallRecordsMode, createCallsContext, attachCheckContext, callsActive, callsStep, callsStepAsync } from '../_utils/callRecords/mode.js';
+// Cockpit Build 1a (spec §7): the heard writer — injected into the model phase
+// like the flips, so publish.js imports neither.
+import { runHeardPhase } from '../_utils/callRecords/heard.js';
 import { recordFetchedQuote, freezeObservation, freezeModelObservation, classifyEntryExit, carryExecutorResult, passExaminesHeldPrices } from '../_utils/callRecords/observe.js';
 import { captureDeclarations } from '../_utils/callRecords/validate.js';
 import { bindHorizon, battleExpiryMs } from '../_utils/callRecords/horizon.js';
@@ -904,7 +907,13 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
   // here for the capture context's reason: every exit, the `finally` included,
   // must reach it. The mode is resolved ONCE, here, and never re-read during
   // the check. Independent of tick capture. At 'off' every call site is inert.
-  const callsCtx = createCallsContext({ mode: resolveCallRecordsMode(), handlerStartMs: cronStartTime });
+  const callsCtx = createCallsContext({ mode: resolveCallRecordsMode(battle), handlerStartMs: cronStartTime });
+  // Cockpit Build 1a (spec §3): the CHECK CONTEXT, attached in memory
+  // immediately after resolution and before the control-epoch call — the
+  // per-battle mode and ONE frozen instant that every call-family directive
+  // reader this tick requires (directiveUtils). Non-enumerable, never
+  // persisted; the battle refresh merges into this object and leaves both.
+  attachCheckContext(battle, { mode: callsCtx.mode, nowMs: Date.now() });
   // Capture composition (§3.9): the emitted capture schema, resolved ONCE from
   // the enabled contribution set and read by BOTH composers at finalization
   // (either exit). Calls off → version 1, the pre-build shape; shadow/on →
@@ -2776,8 +2785,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             ],
             // §3.1: the declarations property rides the tool only at shadow/on;
             // at off this is the TRADE_DECISION_TOOL object itself — the same
-            // reference every import holds, unchanged.
-            tools: [buildTradeDecisionTool({ declarations: callsActive(callsCtx.mode) })],
+            // reference every import holds, unchanged. Build 1a (spec §3): the
+            // RESOLVED mode selects the text — the stored-only shadow text at
+            // 'shadow', the 1a text at 'on' (per-owner).
+            tools: [buildTradeDecisionTool({ declarations: callsCtx.mode })],
             tool_choice: { type: 'tool', name: 'submit_trade_decision' },
           }, { timeout: 20_000, signal: abortCtrl.signal });
         } finally {
@@ -4404,6 +4415,11 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         promptBuiltAt,
         tickId: tickCapture.enabled ? (tickCapture.state?.tickId ?? null) : null,
         flips: runCallFlips,
+        // Build 1a (spec §7, §11): the heard writer and the committed entry's
+        // heard stamp — the thread that was IN this check's prompt (never the
+        // model's echo). Inert below resolved 'on'.
+        heardWriter: runHeardPhase,
+        heard: evaluation.heard ?? null,
       })
       : runExitCallsHook(callsCtx, { db, battle, timeBudgetMs: TIME_BUDGET_MS })));
     // Capture references (§3.7/§3.9): CONFIRMED publication results only,
