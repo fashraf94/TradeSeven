@@ -16,8 +16,9 @@
 | Contract coverage | Every accepted v1.6 requirement in the authorized scope is implemented: value-specific provenance, the identified context, C-2 lookup evidence with C-4's cache confirmation, one selected comparison through all four consumers, research containment with the no-body scaffold, and flag-off parity. |
 | Flag | `SHADOW_CPU_QUOTE_INTEGRITY_ENABLED = false`, pinned, `DARK_BY_DESIGN`, no URL / environment / localStorage override; other rollout flags untouched. |
 | Flag-off parity | Pinned by **160 OFF references** captured at the base SHA (every reference added during the review independently re-captured: identical), and since the §12 correction by 4 more: the malformed-portfolio parity rows on the flag-off and excluded paths, captured there too — **164**. With the flag off every consumer takes the shipped path. The one flag-independent change is the additive provenance metadata the contract requires in both states (`quoteOrigin` on proxy records, `isFallback` on the stock fallback; §4.1) — numbers, requests and caching unchanged; every other flag-off change is a value-preserving relocation pinned by those references. |
-| Tests | Full suite on the final tree: **17,041 tests — 16,977 passed, 0 failed, 64 skipped** (the same 64 as the base). Every one of the base SHA's 16,428 tests is present with an **unchanged status**; the build adds 613. The build's 19 suites: **804 tests, all passing** — including both theme guards in full. Re-run with CI's command after the §10 correction: identical, test by test. Under Node 20.20.2, CI's runtime, after the §11 correction: the same result with Chromium available; without Chromium, as in CI, **16,954 passed, 0 failed, 87 skipped**: the same 64 plus 23 Chromium-dependent tests from three files that predate this build (§11). After the §12 correction, at `a0b0c449`: **17,122 tests — 17,035 passed, 0 failed, 87 skipped** without Chromium, 17,058 / 0 / 64 with it; the 81 added tests are the screen's new rows. |
+| Tests | Full suite on the final tree: **17,041 tests — 16,977 passed, 0 failed, 64 skipped** (the same 64 as the base). Every one of the base SHA's 16,428 tests is present with an **unchanged status**; the build adds 613. The build's 19 suites: **804 tests, all passing** — including both theme guards in full. Re-run with CI's command after the §10 correction: identical, test by test. Under Node 20.20.2, CI's runtime, after the §11 correction: the same result with Chromium available; without Chromium, as in CI, **16,954 passed, 0 failed, 87 skipped**: the same 64 plus 23 Chromium-dependent tests from three files that predate this build (§11). After the §12 correction, at `a0b0c449`: **17,122 tests — 17,035 passed, 0 failed, 87 skipped** without Chromium, 17,058 / 0 / 64 with it; the 81 added tests are the screen's new rows. After integrating `main` (§13): **17,374 tests — 17,287 passed, 0 failed, 87 skipped** without Chromium, 17,310 / 0 / 64 with it. |
 | Lint gate (`npm run lint:gate`) | **Failed in CI on the draft PR**: 3 `react-hooks/rules-of-hooks` errors in two of this build's test harnesses, which the build's validation had not linted. **Corrected** (§10) with no change to production code, assertions, OFF references, lint rules or configuration, and no suppression: the gate now reports 0 problems, under Node 22 and under Node 20.20.2 (§11). |
+| Integration with `main` (§13) | `main` at `c10f03b0` merged in cleanly (PRs #924, #926). The whole-file hash row that broke on the merge is replaced by a test of this flag's own block. Unrelated flags' preservation is recorded through the actual diff: against `main` this build adds 55 lines to `featureFlags.js` and 2 to `flagPinGuard.test.js`, and removes none. |
 | Final independent review (F1, F2) | **HOLD resolved.** An admitted battle with a missing or malformed portfolio now stays gated and incomplete without throwing — both sides, controller on and off, every contract case, with the qualified stored pair when one exists. Flag-off and excluded behaviour are unchanged, pinned by four new base-SHA references and a 64-scenario differential review. F2's WebSocket wording is corrected. §12. |
 | Unit suite on CI's runtime (Node 20) | **Failed in CI at `b6931e23`**: one row (`TacticalRow.currentPrice.render.test.jsx`, the click payload) hit `ReferenceError: navigator is not defined` while importing `react-dom/client`. Node 20 has no global `navigator`, while Node 22, which every earlier local run used, does. **Corrected** (§11) in that row's setup only: the browser globals are stubbed before the import and every one is restored exactly afterwards. The full suite now passes under Node 20.20.2. |
 | `vite build` | Passes under Node 22 and under Node 20.20.2, with the same 18 warning lines as a build of the base SHA (§10, §11). |
@@ -52,7 +53,7 @@ Every anchor the contract cites was re-read at `44d0c63e` before any edit (VERIF
 |---|---|---|
 | 1 | `src/config/featureFlags.js` | flag, accessor, docstring, `Pinned by:` — appended after `:2895`; no earlier line changed |
 | 2 | `src/config/flagPinGuard.test.js` | `DARK_BY_DESIGN` entry |
-| 3 | `src/config/shadowCpuQuoteIntegrityFlags.test.js` | new — pin, accessor purity, append-only digest, admission |
+| 3 | `src/config/shadowCpuQuoteIntegrityFlags.test.js` | new — pin, accessor purity, the flag's self-contained block (§13; was an append-only digest), admission |
 | 4–5 | `api/stocks/prices.js`, `api/crypto/prices.js` | value-specific `quoteOrigin` inside the existing record |
 | 6–7 | `api/{stocks,crypto}/prices.quoteOrigin.test.js` | new — real handlers, real server cache |
 | 8 | `src/services/eodhdAPI.js` | origins preserved; stock fallback `isFallback` + `configured-fallback` origins |
@@ -553,6 +554,49 @@ Corrected in §9 and in the verdict's Deviations row. The empty symbol list stop
 - **Document fields outside the portfolio scope**, flag on and off: `trades: {}` throws at `bankedScore` (B-6); a malformed `scoring.thresholds` entry (even a numeric string) throws `baseThreshold.toFixed is not a function` in the real BaggerBomb tab of held research.
 - **Display only:** a numeric-string or boolean entry price shows unformatted in research ("Baseline: $100."); a whitespace-only symbol is polled as `" "` (B-5).
 
-**Pre-merge note (found after the validation, 2026-10-03).** `main` has moved to `e6a84445` (PR #924), which adds a flag inside `src/config/featureFlags.js` and a pin to `src/config/flagPinGuard.test.js`, two files this build also edits. A trial merge is textually clean, and `flagPinGuard.test.js` passes on the merged tree. But one of this build's own rows fails there: `src/config/shadowCpuQuoteIntegrityFlags.test.js:69` hashes the first 164,705 bytes of `featureFlags.js` against the base SHA's file (an append-only check), and #924's addition sits before this build's block (`expected '8a8251e9…' to be '2f5c438c…'`). The `Tests` workflow checks out the pull request merged into `main`, so this row is expected to be red there until it is reconciled. Two ways: merge `main` into the branch and restate the check against the merge base, or make the check over the pre-existing exports rather than a byte prefix. Not changed here: that test file is outside this correction's scope, so it is the founder's decision.
+**Pre-merge note (found after the validation, 2026-10-03).** `main` has moved to `e6a84445` (PR #924), which adds a flag inside `src/config/featureFlags.js` and a pin to `src/config/flagPinGuard.test.js`, two files this build also edits. A trial merge is textually clean, and `flagPinGuard.test.js` passes on the merged tree. But one of this build's own rows fails there: `src/config/shadowCpuQuoteIntegrityFlags.test.js:69` hashes the first 164,705 bytes of `featureFlags.js` against the base SHA's file (an append-only check), and #924's addition sits before this build's block (`expected '8a8251e9…' to be '2f5c438c…'`). The `Tests` workflow checks out the pull request merged into `main`, so this row is expected to be red there until it is reconciled. Two ways: merge `main` into the branch and restate the check against the merge base, or make the check over the pre-existing exports rather than a byte prefix. Not changed here: that test file is outside this correction's scope, so it is the founder's decision. **Resolved in §13** (founder instruction, 2026-10-03).
 
 **Scope.** Unchanged: 38 implementation/support files + this record = 39. This correction edits the screen, the screen suite and this record only.
+
+## 13. Integrating `main`, and the flag-compatibility row
+
+**Founder instruction (2026-10-03).** Fetch and integrate the current `main`, which had advanced again, and repair the compatibility row. Keep the false pin, the override restrictions and the existing behaviour checks. Test this feature's flag directly and record the preservation of unrelated flags through the actual diff, rather than a permanent hash of the shared flag file.
+
+**The merge.** `git fetch origin` (exit 0) put `main` at `c10f03b0`: 22 commits since this branch's base `44d0c63e`, including PR #924 (cockpit build 1a) and PR #926 (declarations wording round 3), across 69 files. It was merged into the branch with a merge commit, `0dd22d13` (parents `c6f9f04f` and `c10f03b0`). The merge was automatic and clean. Two files overlap with this build: `src/config/featureFlags.js` (#924 adds `RESPONSE_FORK_ATTRIBUTION_ENABLED` above this build's block) and `src/config/flagPinGuard.test.js`.
+
+**The failure, reproduced on the merged tree** (Node 20.20.2): `shadowCpuQuoteIntegrityFlags.test.js` › "existing rollout flags are untouched: the pre-build featureFlags.js is a byte-exact prefix (append-only)" — `expected '8a8251e9…' to be '2f5c438c…'`. The other 15 rows of the flag suite and the pin guard passed.
+
+**The repair** (`e1f32ee4`, `src/config/shadowCpuQuoteIntegrityFlags.test.js` only). The whole-file prefix hash is replaced by a row about this flag alone. Its block (the banner docstring through the accessor) exports exactly `SHADOW_CPU_QUOTE_INTEGRITY_ENABLED = false` and `isShadowCpuQuoteIntegrityOn()`, and nothing outside the block mentions either name. No other flag's bytes are read, so other approved work can edit the shared file freely. Unchanged: the false pin ("ships DARK", plus the unmocked accessor), the plain-boolean export, the override restrictions (no URL, storage, environment or `window` read in the accessor; at most four `SHADOW_CPU_QUOTE_INTEGRITY` tokens in the module), the docstring row, the DARK_BY_DESIGN registration row, and every gate-behaviour row.
+
+**Preservation of the unrelated flags, recorded through the actual diff** (`git diff c10f03b0 e1f32ee4`):
+
+| File | Against `main` | Content |
+|---|---|---|
+| `src/config/featureFlags.js` | **+55 / −0** | One hunk, `@@ -2934,3 +2934,58 @@`, after `export const FILM_ROOM_V2_ENABLED = false;`: this flag's docstring, `// Pinned by:` pointer, constant and accessor. No existing line changes |
+| `src/config/flagPinGuard.test.js` | **+2 / −0** | The `SHADOW_CPU_QUOTE_INTEGRITY_ENABLED` entry in `DARK_BY_DESIGN`, after `FILM_ROOM_V2_ENABLED`. No existing line changes |
+
+The live guard for every flag's value remains `flagPinGuard.test.js`, which passes on the merged tree.
+
+**Mutation check of the new row** (Node 20.20.2; flag suite; restore diff 0):
+
+| Mutant (in `featureFlags.js`) | Result |
+|---|---|
+| An override function outside the block that reads the accessor (no `SHADOW_CPU_QUOTE_INTEGRITY` token, so the mention-count row misses it) | Killed, by the new row alone |
+| An extra export inside the block | Killed, by the new row alone |
+| An alias of the constant exported after the block | Killed (the override row and the new row) |
+| The flag flipped to `true` | Killed (the false pin, the unmocked accessor and the new row) |
+| **Control:** an unrelated flag inserted before this block, as #924 did | Survives, as it must; the old prefix row failed exactly here |
+| **Control:** an unrelated flag's value changed | Survives, as it must |
+
+The catalogue's two mutants that use the flag suite, `enable-while-off` and `enable-for-excluded`, are still killed on the merged tree.
+
+**Validation on the merged tree** (`0dd22d13` plus the repair; Node 20.20.2; CI's command; runs sequential):
+
+| Check | Result |
+|---|---|
+| `npm run lint:gate` | exit 0, 0 problems |
+| Full suite, no Chromium (as on CI's runner) | **851 files, 17,374 tests: 17,287 passed, 0 failed, 87 skipped.** Against this branch's last run (`a0b0c449`), test by test: 0 status changes; 257 added — 256 from `main`, all passing, plus the repaired row; 5 gone — the replaced prefix row, plus four tests that `main` itself reworded (the reworded versions pass; none of those files is part of this build) |
+| Full suite, Chromium available | **17,310 passed, 0 failed, 64 skipped**; the only differences from the no-Chromium run are the 23 browser tests of §11 |
+| `vite build` | Passes (✓ built in 19.6 s), with the base SHA's 18 warning lines |
+
+**Scope.** Unchanged: 38 implementation/support files + this record = 39. The merge brings `main`'s own files; this step edits only the flag suite and this record.
