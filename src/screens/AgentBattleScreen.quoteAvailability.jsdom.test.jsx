@@ -4850,13 +4850,25 @@ function otherReturnDoc(side) {
  * all inside a single act, which batches them. `sdk`: each in its own
  * setTimeout(…, 0) outside act — how @firebase/firestore 4.9.2's
  * AsyncObserver dispatches every callback (dist/index.esm.js:17785-17808) — so
- * React's scheduled render runs after all of them.
+ * React's scheduled render runs after all of them. Node stamps each timer with
+ * a fresh millisecond clock: two calls that straddle a millisecond boundary
+ * can expire one loop turn apart, and the first then renders alone (the
+ * separately rendered case, which the B-1 rows cover). So the clock is let
+ * past every expiry before the loop runs again, and the timers phase finds
+ * all of them due at once: the coalesced case, every time.
  */
 async function deliverTogether(id, docs, delivery) {
   const l = activeListener('doc', id);
   if (!l) throw new Error(`no active doc listener for ${id}`);
   if (delivery === 'sdk') {
-    for (const d of docs) setTimeout(() => l.next(docSnap(id, d)), 0);
+    let fired = 0;
+    const delivered = new Promise((resolve) => {
+      for (const d of docs) setTimeout(() => { l.next(docSnap(id, d)); fired += 1; if (fired === docs.length) resolve(); }, 0);
+    });
+    const due = performance.now() + 3;
+    while (performance.now() < due) { /* every timer above expires before the loop next runs */ }
+    await delivered;
+    // React's render was scheduled from those callbacks; it and its effects run before this timer.
     await new Promise((resolve) => setTimeout(resolve, 25));
     await flush();
   } else {
