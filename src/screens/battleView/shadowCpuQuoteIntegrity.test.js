@@ -450,6 +450,8 @@ describe('R2 — the received fold, and the lineage it feeds', () => {
   });
 
   it('the epoch: a truncated history, a trade-count move no slot explains, a missing document, an unreadable snapshot — never an explained move', () => {
+    // Each trigger also on a battle with NO trades, so none passes through the truncation rule.
+    const bare = (over = {}) => data({ trades: [], ...over });
     expect(fold(data(), data({ trades: [] })).epoch).toBe(1);
     expect(fold(data(), data({ scoreState: { tradeCount: 2 } })).epoch).toBe(1);
     const swapped = data({ portfolio: { ...portfolio, star: [{ symbol: 'AMD', swapPrice: 140, swappedInAt: 'x', swappedInDay: 1 }] }, scoreState: { tradeCount: 2 }, trades: [{}, {}] });
@@ -457,10 +459,14 @@ describe('R2 — the received fold, and the lineage it feeds', () => {
     const missing = fold(data(), null);
     expect(missing.epoch).toBe(1);
     expect(Object.keys(missing.revisions).sort()).toEqual(['cpu:star:0', 'player:core:0', 'player:core:1', 'player:star:0']);
-    const unreadable = data({ portfolio: { ...portfolio, star: [{ symbol: 'AAPL', get price() { throw new Error('unreadable'); } }] } });
+    expect(fold(bare(), null).epoch).toBe(1);
+    expect(fold(bare(), null, bare()).epoch).toBe(1);
+    expect(fold(bare(), bare({ scoreState: { tradeCount: 2 } })).epoch).toBe(1);
+    const unreadable = (over) => data({ ...over, portfolio: { ...portfolio, star: [{ symbol: 'AAPL', get price() { throw new Error('unreadable'); } }] } });
     let r = null;
-    expect(() => { r = fold(data(), unreadable); }).not.toThrow();
+    expect(() => { r = fold(data(), unreadable()); }).not.toThrow();
     expect(r.epoch).toBe(1);
+    expect(fold(bare(), unreadable({ trades: [] })).epoch).toBe(1);
   });
 
   it('the coalesced case, pure: reconciling only the final context retires the returning slot WITH the evidence — and cannot without it', () => {

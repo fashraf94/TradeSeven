@@ -514,10 +514,12 @@ export function buildBattleContext(data, { battleId, received = null }) {
  * revision that advances whenever the slot's lineage differs from the previous
  * callback's (absence included) and never restarts within the subscription;
  * battle-wide, an epoch that advances on reconcileLineage's own whole-battle
- * rules (a truncated trade history, a trade-count move no slot explains).
- * Feed- and chat-only callbacks change neither. Pure. It runs for every
- * flag-on callback, excluded battles included, so it never throws: a snapshot
- * it cannot read advances the epoch.
+ * rules (a truncated trade history, a trade-count move no slot explains), on a
+ * missing document or an error (`data` null: the terminal state the screen
+ * would have shown, which closes every battle-bound detail, whatever the trade
+ * history), and on a snapshot it cannot read. Feed- and chat-only callbacks
+ * change neither. Pure. It runs for every flag-on callback, excluded battles
+ * included, so it never throws.
  */
 export function advanceReceived(prev, data) {
   let context = null;
@@ -536,7 +538,8 @@ export function advanceReceived(prev, data) {
     if (revisions === prev.revisions) revisions = { ...prev.revisions };
     revisions[k] = (revisions[k] ?? 0) + 1;
   }
-  const reset = !context || tradesLength < prev.tradesLength || (tradeCount !== prev.tradeCount && revisions === prev.revisions);
+  const reset = !context || data == null || tradesLength < prev.tradesLength
+    || (tradeCount !== prev.tradeCount && revisions === prev.revisions);
   return { slots, revisions, epoch: reset ? prev.epoch + 1 : prev.epoch, tradeCount, tradesLength };
 }
 

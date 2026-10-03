@@ -5017,18 +5017,23 @@ describe('R2 — a received disappearance and same-stock return, rendered as one
     expect(modalOpen()).toBe('AAPL');
   });
 
-  for (const [what, interlude] of [
-    ['a truncated trade history', { ...ACTIVE_DOC, trades: [] }],
-    ['the document going missing', null],
+  for (const [what, base, interlude] of [
+    ['a truncated trade history', ACTIVE_DOC, { ...ACTIVE_DOC, trades: [] }],
+    // A battle with no trades: only the missing document itself can say so.
+    ['the document going missing', { ...ACTIVE_DOC, trades: [] }, null],
   ]) {
-    it(`a whole-battle discontinuity received between identical snapshots — ${what} — invalidates every position`, async () => {
+    it(`a whole-battle discontinuity received between identical snapshots — ${what} — invalidates every position and closes battle-bound details`, async () => {
       priceBox.table = genuineTable();
-      await mountGated();
+      await mountGated(openingProp(), base);
+      await chatClick({ symbol: 'CRWD' }); // a non-held view: bound to the battle context, not to a position
+      expect(modalOpen()).toBe('CRWD');
       priceBox.mode = 'defer';
       await poll();
       const retired = priceBox.pending.splice(0);
-      await deliverTogether('ab-1', [interlude, ACTIVE_DOC], 'one-act');
+      await deliverTogether('ab-1', [interlude, base], 'one-act');
       expect(shell()).toBeNull();
+      // As if the interlude had rendered ("Battle unavailable", §7.2 item 7): the view closes.
+      expect(modalOpen()).toBeNull();
       // Every held row is a new position: none keeps its quote.
       expect(new Set(unavailableRows())).toEqual(new Set([...heldSymbolsOf(PLAYER_PORTFOLIO), ...heldSymbolsOf(CPU_PORTFOLIO)]));
       const fresh = priceBox.pending.splice(0);
