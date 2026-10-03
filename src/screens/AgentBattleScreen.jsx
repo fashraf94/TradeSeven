@@ -14,7 +14,7 @@ import useAgentBattleId from '../hooks/useAgentBattleId';
 import useAgentBattle from '../hooks/useAgentBattle';
 import AnimatedScore from '../components/shared/AnimatedScore';
 import { AgentPresenceMount } from '../components/AgentPresence';
-import { isAgentPresenceOn, isMatchupsBackdropOn, isBattleViewControllerOn, isCharacterPaneOn, isShowItOn, isShadowCpuQuoteIntegrityOn } from '../config/featureFlags';
+import { isAgentPresenceOn, isMatchupsBackdropOn, isBattleViewControllerOn, isCharacterPaneOn, isShowItOn, isShadowCpuQuoteIntegrityOn, isCockpitUiOn, ARCHETYPE_INTEGRITY_MODE } from '../config/featureFlags';
 import { getAuth } from 'firebase/auth';
 // Phase C §1 — the door's count, from the ONE cap display function (D-122).
 import { countResearchUsed } from '../data/researchCap';
@@ -26,7 +26,7 @@ import { getMarketState } from '../utils/marketSchedule';
 import { deriveTurnLine } from './battleView/deriveTurnLine';
 import { selectSymbolRoster } from './battleView/selectSymbolRoster';
 import { countMentions, mergeRecordedTape } from './battleView/scopeTape';
-import { deriveChatMessages } from '../components/Agent/deriveChatMessages';
+import { deriveChatMessages, gateCockpitFilings } from '../components/Agent/deriveChatMessages';
 import useCoarseNow from './battleView/useCoarseNow';
 import { useLandingKey } from './battleView/landing';
 import LandingWash from './battleView/LandingWash';
@@ -70,12 +70,24 @@ import {
   resolveResearchTarget,
 } from './battleView/shadowCpuQuoteIntegrity';
 import CharacterAvatar from './battleView/CharacterAvatar';
-import CharacterPane, { ARCHETYPE_MIN_VIEWPORT_PX } from './battleView/CharacterPane';
+import CharacterPane, { ARCHETYPE_MIN_VIEWPORT_PX, ARCHETYPE_MIN_VIEWPORT_COCKPIT_PX } from './battleView/CharacterPane';
 import PaneBench from './battleView/PaneBench';
 import PaneTape from './battleView/PaneTape';
 import PaneOverflow from './battleView/PaneOverflow';
 import { selectBench } from './battleView/selectBench';
-import { useCharacterPane, PANE_SECTION } from './battleView/useCharacterPane';
+import { useCharacterPane, PANE_SECTION, paneSectionsFor } from './battleView/useCharacterPane';
+// Cockpit Build 2a (COCKPIT_UI_ENABLED — dark). Everything below renders ONLY
+// while the battle is cockpit-on (the flag AND the server's answer); with the
+// flag off no reader runs, no request is sent, and both shells are the
+// shipped ones.
+import { useCockpitStatus } from '../hooks/useCockpitStatus';
+import { useCalls, useMonitoring, useCallEvents, useCallObservation } from '../hooks/useCockpitRecords';
+import { useCockpitAnswer } from '../hooks/useCockpitAnswer';
+import CockpitFeed from './battleView/CockpitFeed';
+import CockpitSheet from './battleView/CockpitSheet';
+import { CockpitSwitch, BoardCockpitTrack, PHONE_SCREEN } from './battleView/BoardCockpit';
+import { buildCockpitFeed, monitoringRow, sheetOf, eventsByCall, latestPromptBuiltAt, checkOf } from './battleView/cockpitModel';
+import { BATTLE_CHAT_BUDGET } from '../../api/_utils/directiveFiling.js';
 import { useBaggerMoment } from './battleView/useBaggerMoment';
 import { baggerMomentFacts, persistedMaxMultiplier, BAGGER_LINE } from './battleView/deriveBaggerMoment';
 import { deriveBubble, baggerBubble } from './battleView/deriveBubble';
@@ -105,6 +117,7 @@ import TermResearchModal from '../components/shared/TermResearchModal';
 import ScoreBreakdownPopover from '../components/draft/ScoreBreakdownPopover';
 import FilmRoomBanner from '../components/FilmRoom/FilmRoomBanner';
 import { CONVICTION_MULTIPLIERS, THRESHOLD_POINTS } from '../constants/baggerBombScoring';
+import { TOURNAMENT_GAME_MODE } from '../constants/leagueTournament';
 import { getEquippedWatchlistLabel } from '../utils/watchlistEquipUI';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -922,6 +935,10 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // the viewport, so a viewport query is a faithful proxy for its width, and
   // the repo has no container-query idiom to reach for instead.
   const paneHasArchetypeRoom = useMinWidth(ARCHETYPE_MIN_VIEWPORT_PX);
+  // Cockpit Build 2a (§5): the same ruling for the four-tab header (a wider
+  // fixed cost, so a wider threshold). Read only while the desktop is
+  // cockpit-on; the shipped three-tab threshold is untouched.
+  const paneHasCockpitArchetypeRoom = useMinWidth(ARCHETYPE_MIN_VIEWPORT_COCKPIT_PX);
 
   // Battle View controller (Phase A), LIVE since the 2026-09-04 flip. Read at
   // RENDER scope, never module scope (the featureFlags mock hazard). The
@@ -1016,25 +1033,9 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // hooks stay unconditional, and a disabled sheet reads peek and resets to
   // peek, so nothing A2 can render open beneath the pane.
   const sheet = useChatSheet(controllerOn && !paneOn, isDesktop ? SHEET_DETENT.HALF : SHEET_DETENT.PEEK);
-  // A3.2 (D-93): two states and a section, not three detents. `lockScroll` is
-  // the mobile shell only — there the pane covers the board; on desktop it is a
-  // column beside a board that must keep scrolling.
-  const pane = useCharacterPane(paneOn, { lockScroll: !isDesktop, openByDefault: isDesktop });
-  // "Is the conversation on screen?" — the one question every door and the
-  // unread mark ask. Under the pane it is the pane, open on Chat.
-  const chatOpen = paneOn
-    ? (pane.open && pane.section === PANE_SECTION.CHAT)
-    : isSheetOpen(sheet.detent);
-  // A3 F1 (the founder's smoke). "Is the RIGHT COLUMN showing?" — a DIFFERENT
-  // question from `chatOpen`, and the two coincide only pane-off. Under the
-  // pane the right column is the PANE, which holds Bench and Tape as well as
-  // the chat; `chatOpen` narrows to the Chat section, so on Bench and Tape it
-  // answered "no" and the desktop layout flipped to a column — the pane
-  // dropped BELOW the board and only Chat stayed beside it. That is the whole
-  // of F1. The two LAYOUT sites ask this; every other `chatOpen` reader really
-  // does mean the conversation (the unread mark, the sheet doors, the chat's
-  // own chrome) and is left alone.
-  const rightColumnOpen = paneOn ? pane.open : chatOpen;
+  // A3.2 (D-93): the pane's machine is called BELOW, after the battle data —
+  // Cockpit Build 2a computes its tab list from whether the battle is
+  // cockpit-on, which only the server's answer for this battle can say.
   // The visible viewport height sizes the mobile sheet's detents AND the
   // desktop page (a fixed 100vh is the large viewport on iOS — review L2-F11).
   const viewportHeight = useViewportHeight(controllerOn);
@@ -1135,10 +1136,63 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     pendingProposal,
     strategyPreset,
     gameplanMeeting,
-    chatExchanges,
+    chatExchanges: recordChatExchanges,
     feedBookmarks,
     loading: battleLoading,
   } = gatedPath ? gatedFields : battleHook;
+
+  // ── Cockpit Build 2a (spec docs/COCKPIT_BUILD2A_SPEC_V1_0.md §4) ──────────
+  //
+  // A battle is COCKPIT-ON only when the screen flag is on AND the server
+  // answered `{ on: true }` for it (R2A-7: the client never recomputes the
+  // mode). The ask runs only while the flag is on and the battle is active;
+  // unknown and errors read off, so nothing below changes until `on` arrives.
+  // Flag off: no request, no listener, and every branch below is the shipped one.
+  const cockpitUiOn = isCockpitUiOn();
+  const cockpitStatus = useCockpitStatus(agentBattleId, {
+    enabled: cockpitUiOn && agentBattle?.status === 'active',
+    battleStatus: agentBattle?.status ?? null,
+  });
+  const cockpitOn = cockpitUiOn && cockpitStatus.on;
+  const cockpitCallsRecords = useCalls(agentBattleId, cockpitOn);
+  const cockpitMonitoringRecord = useMonitoring(agentBattleId, cockpitOn);
+  const cockpitEventsRecords = useCallEvents(agentBattleId, cockpitOn);
+  // THE CLIENT MODE GATE (Build 1a spec docs/COCKPIT_BUILD1A_SPEC_V1_2.md:39,
+  // "Build 2 adds the mode gate to the UI"): a cockpit filing is removed from
+  // the chat's projection unless the battle is cockpit-on — the server's own
+  // history-window rule (chatHistoryWindow.js), so the player's chat and the
+  // agent's context agree. With no cockpit filing in the list (every battle at
+  // HEAD) the SAME array passes through.
+  const chatExchanges = useMemo(() => gateCockpitFilings(recordChatExchanges, cockpitOn), [recordChatExchanges, cockpitOn]);
+  // A3.2 (D-93): two states and a section, not three detents. `lockScroll` is
+  // the mobile shell only — there the pane covers the board; on desktop it is a
+  // column beside a board that must keep scrolling.
+  // Cockpit Build 2a (spec §5): the tab list is COMPUTED from shell × cockpit-on,
+  // and while the desktop is cockpit-on the pane opens on Cockpit (R2A-2). A
+  // remembered section that leaves the list is repaired to its first entry.
+  // Cockpit off, this is the shipped call: Chat · Bench · Tape, opening on Chat.
+  const paneSections = paneSectionsFor({ isDesktop, cockpitOn });
+  const pane = useCharacterPane(paneOn, {
+    lockScroll: !isDesktop,
+    openByDefault: isDesktop,
+    sections: paneSections,
+    defaultSection: cockpitOn && isDesktop ? PANE_SECTION.COCKPIT : PANE_SECTION.CHAT,
+  });
+  // "Is the conversation on screen?" — the one question every door and the
+  // unread mark ask. Under the pane it is the pane, open on Chat.
+  const chatOpen = paneOn
+    ? (pane.open && pane.section === PANE_SECTION.CHAT)
+    : isSheetOpen(sheet.detent);
+  // A3 F1 (the founder's smoke). "Is the RIGHT COLUMN showing?" — a DIFFERENT
+  // question from `chatOpen`, and the two coincide only pane-off. Under the
+  // pane the right column is the PANE, which holds Bench and Tape as well as
+  // the chat; `chatOpen` narrows to the Chat section, so on Bench and Tape it
+  // answered "no" and the desktop layout flipped to a column — the pane
+  // dropped BELOW the board and only Chat stayed beside it. That is the whole
+  // of F1. The two LAYOUT sites ask this; every other `chatOpen` reader really
+  // does mean the conversation (the unread mark, the sheet doors, the chat's
+  // own chrome) and is left alone.
+  const rightColumnOpen = paneOn ? pane.open : chatOpen;
 
   const loading = idLoading || battleLoading;
 
@@ -2139,13 +2193,16 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     statusFeed: agentBattle?.statusFeed,
     evaluations: agentBattle?.evaluations,
     receipts,
-    chatExchanges: agentBattle?.chatExchanges,
+    // Cockpit Build 2a: the same mode gate as the chat (the same array when
+    // there is no cockpit filing), so the tape and the receipts read one list.
+    chatExchanges: gateCockpitFilings(agentBattle?.chatExchanges, cockpitOn),
   }) : null), [
     controllerOn,
     agentBattle?.trades,
     agentBattle?.statusFeed,
     agentBattle?.evaluations,
     agentBattle?.chatExchanges,
+    cockpitOn,
     receipts,
   ]);
 
@@ -2366,12 +2423,139 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
 
   const thisTurnStrip = controllerOn && agentBattle ? (
     <ThisTurnStrip
-      directive={agentBattle.directive ?? null}
+      // Cockpit Build 2a — the mode gate's other half: a CALL-FAMILY slot is
+      // inactive at every reader below `on` (directiveUtils.isDirectiveActive),
+      // so it is not shown as queued unless the battle is cockpit-on. Every
+      // other directive passes through unchanged.
+      directive={cockpitOn || agentBattle.directive?.family !== 'call' ? (agentBattle.directive ?? null) : null}
       receipts={receipts}
       battleStatus={agentBattle.status ?? null}
       turn={turnLine}
     />
   ) : null;
+
+
+  // ── Cockpit Build 2a — the feed, the sheet, the answers (spec §5–§8) ──────
+  //
+  // All of it from records: the readers above (C-5: minted under 'on' only),
+  // the subscribed battle (directive, budget, evaluations) and the shared
+  // renderers. NO OPTIMISTIC STATE: a tap disables its tile until the response
+  // arrives; the tile changes when the listener delivers the record. Every
+  // hook here runs on every render (hazard 44) and does nothing while the
+  // battle is not cockpit-on.
+  const [phoneScreen, setPhoneScreen] = useState(PHONE_SCREEN.BOARD);
+  const [cockpitSheetCallId, setCockpitSheetCallId] = useState(null);
+  const [cockpitShowAllEarlier, setCockpitShowAllEarlier] = useState(false);
+  const [cockpitCheckGone, setCockpitCheckGone] = useState(false);
+  const cockpitScrollRef = useRef(null);
+  const cockpitAnswer = useCockpitAnswer({
+    battleId: agentBattleId,
+    subscribedThreadId: agentBattle?.directive?.directiveThreadId ?? null,
+    onUnavailable: cockpitStatus.recheck,
+  });
+  const cockpitNowMs = now instanceof Date ? now.getTime() : Date.now();
+  const cockpitEventsMap = useMemo(
+    () => (cockpitOn ? eventsByCall(cockpitEventsRecords) : new Map()),
+    [cockpitOn, cockpitEventsRecords],
+  );
+  const cockpitFeed = useMemo(() => (cockpitOn ? buildCockpitFeed({
+    calls: cockpitCallsRecords,
+    events: cockpitEventsRecords,
+    evaluations: agentBattle?.evaluations,
+    directive: agentBattle?.directive ?? null,
+    nowMs: cockpitNowMs,
+    pending: cockpitAnswer.pending,
+    showAllEarlier: cockpitShowAllEarlier,
+    // The answer endpoint's pending predicate reads both (cockpitModel overrideBlockOf);
+    // the integrity mode is read here, at render, and only on the lit path.
+    controlEpochLog: agentBattle?.controlEpochLog ?? null,
+    suppressed: ARCHETYPE_INTEGRITY_MODE !== 'enforce',
+  }) : null), [cockpitOn, cockpitCallsRecords, cockpitEventsRecords, agentBattle?.evaluations, agentBattle?.directive, agentBattle?.controlEpochLog, cockpitNowMs, cockpitAnswer.pending, cockpitShowAllEarlier]);
+  const cockpitMonitoring = useMemo(
+    () => (cockpitOn ? monitoringRow(cockpitMonitoringRecord, agentBattle?.evaluations) : null),
+    [cockpitOn, cockpitMonitoringRecord, agentBattle?.evaluations],
+  );
+  // The sheet follows the CALL it was opened on, so a restatement that re-keys
+  // the thread's tile does not close it.
+  const cockpitSheetTile = cockpitFeed && cockpitSheetCallId
+    ? ([...cockpitFeed.needsYou, ...cockpitFeed.waiting, ...cockpitFeed.earlier].find((t) => t.calls.some((c) => c.callId === cockpitSheetCallId)) ?? null)
+    : null;
+  const cockpitObservation = useCallObservation(
+    agentBattleId,
+    cockpitSheetTile?.call?.callId ?? null,
+    Boolean(cockpitOn && cockpitSheetTile && cockpitSheetTile.call.state !== 'open'),
+  );
+  const cockpitSheet = cockpitSheetTile
+    ? sheetOf(cockpitSheetTile, { eventsMap: cockpitEventsMap, evaluations: agentBattle?.evaluations, observation: cockpitObservation, nowMs: cockpitNowMs })
+    : null;
+  const openCockpitSheet = useCallback((tileId) => { setCockpitCheckGone(false); setCockpitSheetCallId(tileId); }, []);
+  const closeCockpitSheet = useCallback(() => { setCockpitSheetCallId(null); setCockpitCheckGone(false); }, []);
+  // "From the {t} check →" (§7.5): the pane opens on Chat at that check's own
+  // card — the `openCheck` landing `Read the full check` uses, aimed at an
+  // evalId. A card no longer in the chat says so, and nothing scrolls.
+  const handleCockpitOpenCheck = (evalId) => {
+    const invoker = typeof document !== 'undefined' ? document.activeElement : null;
+    const evaluation = (Array.isArray(agentBattle?.evaluations) ? agentBattle.evaluations : []).find((e) => e?.evalId === evalId) ?? null;
+    const id = evaluation ? checkEntryId(evaluation) : null;
+    const present = Boolean(id) && Array.isArray(recordedTape) && recordedTape.some((e) => e?.id === id);
+    if (!present) { setCockpitCheckGone(true); return; }
+    setCockpitSheetCallId(null);
+    setCockpitCheckGone(false);
+    setOpenCheck((prev) => ({ id, nonce: (prev?.nonce ?? 0) + 1 }));
+    setScopeSymbol(null);
+    pane.openPane(PANE_SECTION.CHAT, invoker);
+  };
+  // A Monitoring chip opens the research modal exactly as a board row does.
+  const handleCockpitSymbol = (symbol) => (gatedPath ? handleGatedSymbolClick : handleSymbolClick)({ symbol });
+  const cockpitOutcomeOf = (tile) => (tile ? (cockpitAnswer.outcomes[tile.id] ?? null) : null);
+  const cockpitFeedElement = cockpitOn && cockpitFeed ? (
+    <CockpitFeed
+      feed={cockpitFeed}
+      monitoring={cockpitMonitoring}
+      topRow={isDesktop ? {
+        vintage: BATTLE_VIEW_COPY.cockpitVintage(checkOf(latestPromptBuiltAt(agentBattle?.evaluations)), turnLine?.nextDecisionAt ?? null),
+        // The battle's own counter against its limit (§5). A LEAGUE battle's
+        // answers charge the group's daily budget instead (call-response.js),
+        // which this document does not carry — so no number there, never one
+        // the endpoint does not enforce.
+        messagesLeft: agentBattle?.gameMode === TOURNAMENT_GAME_MODE
+          ? null
+          : BATTLE_VIEW_COPY.cockpitMessagesLeft(Math.max(0, BATTLE_CHAT_BUDGET.limit - (Number.isFinite(agentBattle?.chatBudgetUsed) ? agentBattle.chatBudgetUsed : 0))),
+      } : null}
+      emptyLine={BATTLE_VIEW_COPY.cockpitEmpty(turnLine?.nextDecisionAt ?? null)}
+      outcomes={cockpitAnswer.outcomes}
+      onAnswer={cockpitAnswer.submit}
+      onOpenSheet={openCockpitSheet}
+      onSymbolClick={handleCockpitSymbol}
+      onShowAllEarlier={() => setCockpitShowAllEarlier(true)}
+      showAllEarlier={cockpitShowAllEarlier}
+    />
+  ) : null;
+  const cockpitSheetElement = cockpitOn ? (
+    <CockpitSheet
+      sheet={cockpitSheet}
+      isDesktop={isDesktop}
+      reducedMotion={reducedMotion}
+      outcome={cockpitOutcomeOf(cockpitSheetTile)}
+      checkGoneLine={cockpitCheckGone ? BATTLE_VIEW_COPY.cockpitSheetCheckGone : null}
+      lockRef={cockpitScrollRef}
+      onClose={closeCockpitSheet}
+      onAnswer={cockpitAnswer.submit}
+      onOpenCheck={handleCockpitOpenCheck}
+    />
+  ) : null;
+  // The desktop's Cockpit panel: the feed in its own scroller, the sheet a
+  // modal panel over it, inside the pane (§7.5).
+  const cockpitPanel = cockpitOn && isDesktop ? (
+    <div data-cockpit-panel="desktop" style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <div ref={cockpitScrollRef} data-cockpit-scroll="1" style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingBottom: 20 }}>
+        {cockpitFeedElement}
+      </div>
+      {cockpitSheetElement}
+    </div>
+  ) : null;
+  // The phone's Board · Cockpit (§6): only while cockpit-on; the shipped phone otherwise.
+  const phoneCockpit = Boolean(cockpitOn && controllerOn && paneOn && !isDesktop);
 
   // Memoize enriched research asset to avoid re-renders on every price tick
   const stableResearchAsset = useMemo(() => {
@@ -2701,8 +2885,14 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       onSelectSection={pane.setSection}
       onClose={handleCollapseChat}
       isDesktop={isDesktop}
-      showArchetype={isDesktop && paneHasArchetypeRoom}
+      showArchetype={isDesktop && (cockpitOn ? paneHasCockpitArchetypeRoom : paneHasArchetypeRoom)}
       reducedMotion={reducedMotion}
+      // Cockpit Build 2a (§5): the computed list, the Cockpit panel (desktop
+      // only), and the Chat tab's unread count — only while cockpit-on, so the
+      // shipped pane renders exactly as before.
+      sections={paneSections}
+      cockpit={cockpitPanel}
+      chatUnread={cockpitOn ? paneUnread : 0}
       chat={chat}
       overflow={<PaneOverflow />}
       bench={<PaneBench bench={benchState} onShowIt={showItOn ? handleShowIt : null} researchUsed={researchUsed} researchPending={researchPending} researchError={researchError} />}
@@ -2788,8 +2978,10 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     <div style={{
       // Desktop under the flag: the columns fill the viewport and the board
       // column scrolls, so the chat column has a bounded height. Mobile and
-      // flag-off: the page scrolls as today.
-      ...(controllerOn && isDesktop ? { height: viewportHeight } : { minHeight: '100vh' }),
+      // flag-off: the page scrolls as today. Cockpit Build 2a (§6): the phone
+      // takes the desktop's viewport-high layout while cockpit-on, so the
+      // header, THIS TURN and the switch stay pinned above the two screens.
+      ...(controllerOn && (isDesktop || phoneCockpit) ? { height: viewportHeight } : { minHeight: '100vh' }),
       background: tokens.bgApp || '#0D0E12',
       display: 'flex',
       flexDirection: 'column',
@@ -2820,6 +3012,9 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
         position: 'relative',
         zIndex: 3,
         ...(controllerOn && gameTapeOpen ? { visibility: 'hidden' } : {}),
+        // Cockpit Build 2a (§6): pinned on the phone — a tall book Why? scrolls
+        // inside this region instead of pushing the two screens off the page.
+        ...(phoneCockpit ? { maxHeight: '50%', overflowY: 'auto' } : {}),
       }}>
         {/* Back button bar */}
         <div style={{
@@ -3093,6 +3288,14 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               // so the column has to be its containing block. The layout
               // container has `position: relative`; this one did not.
               ...(paneOn ? { position: 'relative' } : {}),
+            } : (phoneCockpit ? {
+              // Cockpit Build 2a (§6): the pinned region over the track; each
+              // screen carries the mark's clearance and scrolls on its own.
+              flex: '1 1 auto',
+              minWidth: 0,
+              minHeight: 0,
+              display: 'flex',
+              flexDirection: 'column',
             } : {
               flex: '1 1 auto',
               minWidth: 0,
@@ -3109,8 +3312,27 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               // fixed to the viewport at the root. Dropping it returns this
               // column to exactly the shipped pane-off shape — which never had
               // it — so no other absolute descendant can move.
-            }}
+            })}
           >
+            {phoneCockpit ? (
+              <>
+                {/* Cockpit Build 2a (§6) — PINNED: THIS TURN (unchanged in
+                    content) and the Board · Cockpit switch above the track. */}
+                <div data-phone-pinned="1" style={{ flexShrink: 0 }}>
+                  {thisTurnStrip}
+                  <div style={{ padding: '6px 12px 8px' }}>
+                    <CockpitSwitch screen={phoneScreen} onSelect={setPhoneScreen} needsYou={cockpitFeed?.needsYouCount ?? 0} reducedMotion={reducedMotion} />
+                  </div>
+                </div>
+                <BoardCockpitTrack
+                  screen={phoneScreen}
+                  onScreen={setPhoneScreen}
+                  reducedMotion={reducedMotion}
+                  board={<div data-phone-board="1" style={{ paddingBottom: AVATAR_CLEARANCE_PX }}>{boardRows}{closedTrades}</div>}
+                  cockpit={<div data-phone-cockpit="1" style={{ paddingBottom: AVATAR_CLEARANCE_PX }}>{cockpitFeedElement}</div>}
+                />
+              </>
+            ) : (
             <div
               data-board-scroll={isDesktop ? '1' : undefined}
               // A3.1 (review lens 5 F6): the DESKTOP scroller reserves the mark's
@@ -3128,6 +3350,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               {boardRows}
               {closedTrades}
             </div>
+            )}
             {/* The character (A3.1, D-91). One mark per layout, inside the board
                 column and above its scroller, so it stays put while the board
                 scrolls. */}
@@ -3398,6 +3621,9 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
             that with `visibility: hidden`), and it is absent while the pane is
             open (the character stands in the pane's header instead). */}
         {!pane.open && !gameTapeOpen && characterMark}
+        {/* Cockpit Build 2a (§7.5): the phone's modal bottom sheet, at the root
+            for the same stacking reason the mark is here. */}
+        {phoneCockpit ? cockpitSheetElement : null}
         <div
           data-pane-overlay="1"
           data-pane-open={pane.open ? 'true' : 'false'}

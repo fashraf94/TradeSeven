@@ -25,6 +25,29 @@
 // `deriveChatMessages.test.js` instead.
 
 import { GROUNDING_VERSION, DIRECTIVE_FILED_MESSAGE_TYPE, RESEARCH_MESSAGE_TYPE } from '../../data/decisionRecord';
+// Cockpit Build 2a (Build 1a spec docs/COCKPIT_BUILD1A_SPEC_V1_2.md:39): the
+// server's cockpit rule for history windows, ONE home (zero product imports
+// beyond decisionRecord.js) — the client's mode gate is that same rule.
+import { excludeCockpitFilings, isCockpitFiling } from '../../../api/_utils/chatHistoryWindow.js';
+
+/**
+ * THE CLIENT MODE GATE (Cockpit Build 2a; Build 1a spec :39 — "Build 2 adds
+ * the mode gate to the UI"). A cockpit filing — the thread exchange the answer
+ * endpoint writes, `source: 'cockpit'` — is removed from the conversation
+ * unless the battle is cockpit-on, exactly as the server removes it from both
+ * history windows below `on` (chatHistoryWindow.js excludeCockpitFilings), so
+ * the chat the player reads and the context the agent reads agree; a
+ * call-family directive is inactive at every reader below `on`. With no
+ * cockpit filing in the list — every battle while the cockpit has never been
+ * on — the SAME array is returned, so nothing downstream re-derives.
+ *
+ * @param {Array|null} chatExchanges
+ * @param {boolean} cockpitOn  the screen's cockpit-on (flag AND the server's answer)
+ */
+export function gateCockpitFilings(chatExchanges, cockpitOn) {
+  if (cockpitOn || !Array.isArray(chatExchanges) || !chatExchanges.some(isCockpitFiling)) return chatExchanges;
+  return excludeCockpitFilings(chatExchanges, 'off');
+}
 
 /**
  * @param {Array|null} chatExchanges  the subscribed doc's exchanges
@@ -99,6 +122,12 @@ export function deriveChatMessages(chatExchanges) {
       // A chip filing's audit exchange: no narrator words — the ExecutionCard
       // is its whole render, so the bubble body is skipped (review R-04).
       _filed: ex.messageType === DIRECTIVE_FILED_MESSAGE_TYPE,
+      // Cockpit Build 2a (spec §8.2): the answer endpoint's filing carries
+      // `source: 'cockpit'` — kept so its card can say where it came from. (A
+      // cockpit filing reaches this projection only while the battle is
+      // cockpit-on: gateCockpitFilings above removes it otherwise.) Present
+      // only on such a card, so every other message is the object it was.
+      ...(isCockpitFiling(ex) ? { _fromCockpit: true } : {}),
       // Phase C §3 — the research card, as the server composed it. Carried, not
       // recomposed: every string on it is the platform's own (BUILD_RULES §9).
       // Like a chip filing, this exchange has no narrator words, so the bubble

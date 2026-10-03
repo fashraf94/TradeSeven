@@ -122,4 +122,20 @@ describe('the reader is unreachable from src/ (no client module can carry it)', 
     expect(reached, `a client import chain reaches the allowlist reader: ${chain.join(' → ')}`).toBeNull();
   });
 
+  it('the walk is not vacuous: it does reach the server modules the client legitimately imports (copy.js, answers.js)', () => {
+    const roots = srcModules(path.join(REPO, 'src'));
+    const seen = new Set(roots);
+    const stack = [...roots];
+    while (stack.length) {
+      const file = stack.pop();
+      for (const spec of importsOf(file)) {
+        const next = resolveImport(file, spec);
+        if (next && !seen.has(next)) { seen.add(next); stack.push(next); }
+      }
+    }
+    const rel = new Set([...seen].map((f) => path.relative(REPO, f).split(path.sep).join('/')));
+    expect(rel.has('api/_utils/callRecords/copy.js')).toBe(true);
+    expect(rel.has('api/_utils/callRecords/answers.js')).toBe(true);
+    expect(rel.has('api/_utils/callRecords/mode.js')).toBe(false);
+  });
 });

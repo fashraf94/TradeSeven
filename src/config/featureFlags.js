@@ -2837,9 +2837,9 @@ export const CALL_RECORDS_MODES = Object.freeze(['off', 'shadow', 'on']);
  * THE PER-BATTLE ALLOWLIST IS NOT HERE ANY MORE (Cockpit Build 2a, spec
  * docs/COCKPIT_BUILD2A_SPEC_V1_0.md S-5; founder ruling R2A-7). This module
  * ships to every client, its namespace and source map included, so a uid
- * written here was public. The list is now the server-only environment
- * variable COCKPIT_ALLOWLIST_UIDS, parsed at call time by
- * api/_utils/callRecords/allowlist.js; the client asks
+ * written here was public. The list is now a server-only environment
+ * variable (named in api/_utils/callRecords/allowlist.js, never here), parsed
+ * at call time by that module; the client asks
  * GET /api/agent/cockpit-status whether a battle is cockpit-on and never
  * learns who is admitted. No src/ module may import that reader
  * (allowlist.test.js pins it).
@@ -2888,10 +2888,10 @@ export const RESPONSE_FORK_ATTRIBUTION_ENABLED = false;
  * RUNWAY: flips only in the founder's own flip PR (spec §10.3) — one commit
  * with CALL_RECORDS_MODE = 'on', both pin updates and this flag's
  * DARK_BY_DESIGN removal — after the build merges, Amendment C is blessed and
- * the founder has set the COCKPIT_ALLOWLIST_UIDS environment variable to his
- * own uid in Vercel production. Never a build PR. The flip moves the pin in
- * cockpitUiFlags.test.js to true AND drops this flag from DARK_BY_DESIGN in
- * src/config/flagPinGuard.test.js in the same commit.
+ * the founder has set the server-only allowlist variable (allowlist.js names
+ * it) to the founder's own uid in Vercel production. Never a build PR. The
+ * flip moves the pin in cockpitUiFlags.test.js to true AND drops this flag
+ * from DARK_BY_DESIGN in src/config/flagPinGuard.test.js in the same commit.
  */
 // Pinned by: cockpitUiFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const COCKPIT_UI_ENABLED = false;

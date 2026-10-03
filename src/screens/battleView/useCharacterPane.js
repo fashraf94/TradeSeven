@@ -32,25 +32,64 @@
 //
 // HOOKS STAY UNCONDITIONAL (hazard 44). The screen calls this on every render
 // and passes `enabled`; it is never skipped behind a flag test.
+//
+// COCKPIT BUILD 2a (spec docs/COCKPIT_BUILD2A_SPEC_V1_0.md §5): the sections
+// are COMPUTED from shell × cockpit-on (`paneSectionsFor`, the SearchDiscover
+// / BackingDesk precedent) — desktop with the cockpit on shows
+// Cockpit · Chat · Bench · Tape, everything else the shipped Chat · Bench ·
+// Tape. The list's DEFAULT shows until the player (or a door) names a section;
+// a remembered section that is no longer in the list is REPAIRED to the list's
+// first entry (the BackingScreen repair), so a section with no panel never
+// shows. With the shipped list and the Chat default this hook behaves exactly
+// as it did: the off path is the same machine.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-/** The pane's sections, in the order the segmented control shows them. */
+/** The pane's sections. COCKPIT exists only on the desktop list while the battle is cockpit-on. */
 export const PANE_SECTION = Object.freeze({
   CHAT: 'chat',
   BENCH: 'bench',
   TAPE: 'tape',
+  COCKPIT: 'cockpit',
 });
 
+/** The shipped list, in the order the segmented control shows it — the off path. */
 export const PANE_SECTIONS = Object.freeze([
   PANE_SECTION.CHAT,
   PANE_SECTION.BENCH,
   PANE_SECTION.TAPE,
 ]);
 
-/** Is this a section this phase knows? An unknown one is never rendered. */
-export function isPaneSection(value) {
-  return PANE_SECTIONS.includes(value);
+/** The desktop list while the battle is cockpit-on (spec §5): Cockpit first. */
+export const COCKPIT_PANE_SECTIONS = Object.freeze([
+  PANE_SECTION.COCKPIT,
+  PANE_SECTION.CHAT,
+  PANE_SECTION.BENCH,
+  PANE_SECTION.TAPE,
+]);
+
+/**
+ * The pane's sections for a shell. The phone keeps Chat · Bench · Tape behind
+ * the mark whatever the cockpit says (its cockpit is a main screen, §6).
+ */
+export function paneSectionsFor({ isDesktop = false, cockpitOn = false } = {}) {
+  return isDesktop && cockpitOn ? COCKPIT_PANE_SECTIONS : PANE_SECTIONS;
+}
+
+/** Is this a section of the given list? An unknown one is never rendered. */
+export function isPaneSection(value, sections = PANE_SECTIONS) {
+  return sections.includes(value);
+}
+
+/**
+ * The section that SHOWS: the remembered one while it is in the list; else,
+ * when one was remembered, the list's first entry (the repair); else the
+ * list's default. Pure — the hook and its tests share it.
+ */
+export function effectiveSection(chosen, sections = PANE_SECTIONS, defaultSection = PANE_SECTION.CHAT) {
+  if (chosen !== null && sections.includes(chosen)) return chosen;
+  if (chosen !== null) return sections[0];
+  return sections.includes(defaultSection) ? defaultSection : sections[0];
 }
 
 /**
@@ -64,6 +103,10 @@ export function isPaneSection(value) {
  * @param {boolean} [options.openByDefault]  this shell OPENS with the pane
  *   showing, until the player says otherwise. True on desktop (the brief's
  *   resting working state), false on the phone.
+ * @param {string[]} [options.sections]  the computed list (paneSectionsFor);
+ *   the shipped list by default
+ * @param {string} [options.defaultSection]  what shows until a section is
+ *   named — Cockpit on the desktop while cockpit-on, else Chat
  * @returns {{
  *   open: boolean, section: string,
  *   openPane: (section?: string|null, invoker?: any) => void,
@@ -72,9 +115,11 @@ export function isPaneSection(value) {
  *   returnFocusRef: {current: any},
  * }}
  */
-export function useCharacterPane(enabled, { lockScroll = false, openByDefault = false } = {}) {
+export function useCharacterPane(enabled, { lockScroll = false, openByDefault = false, sections = PANE_SECTIONS, defaultSection = PANE_SECTION.CHAT } = {}) {
   const [open, setOpen] = useState(Boolean(openByDefault));
-  const [section, setSectionState] = useState(PANE_SECTION.CHAT);
+  // The REMEMBERED section: null until the player or a door names one — until
+  // then the list's default shows (Build 2a: Cockpit, while cockpit-on).
+  const [section, setSectionState] = useState(null);
   const returnFocusRef = useRef(null);
   // Whether the PLAYER has ever moved the pane. `useChatSheet`'s own
   // `touchedRef`, for the same reason (review L2-F6): a shell's untouched
@@ -94,14 +139,14 @@ export function useCharacterPane(enabled, { lockScroll = false, openByDefault = 
     });
     // A NAMED SECTION WINS over the remembered one. Passing nothing is the
     // "expand" case and restores what was last shown.
-    if (isPaneSection(next)) setSectionState(next);
-  }, []);
+    if (isPaneSection(next, sections)) setSectionState(next);
+  }, [sections]);
 
   const setSection = useCallback((next) => {
-    if (!isPaneSection(next)) return;
+    if (!isPaneSection(next, sections)) return;
     touchedRef.current = true;
     setSectionState(next);
-  }, []);
+  }, [sections]);
 
   const close = useCallback(() => {
     touchedRef.current = true;
@@ -127,7 +172,7 @@ export function useCharacterPane(enabled, { lockScroll = false, openByDefault = 
   useEffect(() => {
     if (enabled) return;
     setOpen(false);
-    setSectionState(PANE_SECTION.CHAT);
+    setSectionState(null);
     touchedRef.current = false;
   }, [enabled]);
 
@@ -145,7 +190,7 @@ export function useCharacterPane(enabled, { lockScroll = false, openByDefault = 
 
   return {
     open: Boolean(enabled && open),
-    section: enabled ? section : PANE_SECTION.CHAT,
+    section: enabled ? effectiveSection(section, sections, defaultSection) : PANE_SECTION.CHAT,
     openPane,
     setSection,
     close,

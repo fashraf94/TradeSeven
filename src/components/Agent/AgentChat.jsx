@@ -434,6 +434,19 @@ function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSendi
           {BATTLE_VIEW_COPY.noChangeStatusLine}
         </div>
       ) : null}
+      {/* Cockpit Build 2a (spec §8.2): a filing the answer endpoint wrote
+          (`source: 'cockpit'`) says where it came from. It reaches this list
+          only while the battle is cockpit-on (the screen's mode gate,
+          deriveChatMessages.js gateCockpitFilings); every other card renders
+          as it always has. */}
+      {message._fromCockpit && message.hasDirective && message.directive ? (
+        <div
+          data-from-cockpit="1"
+          style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'rgba(var(--ft-teal-rgb), 0.85)', marginTop: 6, paddingLeft: 4 }}
+        >
+          {BATTLE_VIEW_COPY.fromCockpit}
+        </div>
+      ) : null}
       {message.hasDirective && message.directive ? (
         <ExecutionCard
           directive={message.directive}
