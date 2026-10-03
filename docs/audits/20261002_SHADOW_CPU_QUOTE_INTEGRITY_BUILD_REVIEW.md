@@ -15,15 +15,16 @@
 |---|---|
 | Contract coverage | Every accepted v1.6 requirement in the authorized scope is implemented: value-specific provenance, the identified context, C-2 lookup evidence with C-4's cache confirmation, one selected comparison through all four consumers, research containment with the no-body scaffold, and flag-off parity. |
 | Flag | `SHADOW_CPU_QUOTE_INTEGRITY_ENABLED = false`, pinned, `DARK_BY_DESIGN`, no URL / environment / localStorage override; other rollout flags untouched. |
-| Flag-off parity | Pinned by **160 OFF references** captured at the base SHA (every reference added during the review independently re-captured: identical), and since the §12 correction by 4 more: the malformed-portfolio parity rows on the flag-off and excluded paths, captured there too — **164**. With the flag off every consumer takes the shipped path. The one flag-independent change is the additive provenance metadata the contract requires in both states (`quoteOrigin` on proxy records, `isFallback` on the stock fallback; §4.1) — numbers, requests and caching unchanged; every other flag-off change is a value-preserving relocation pinned by those references. |
-| Tests | Full suite on the final tree: **17,041 tests — 16,977 passed, 0 failed, 64 skipped** (the same 64 as the base). Every one of the base SHA's 16,428 tests is present with an **unchanged status**; the build adds 613. The build's 19 suites: **804 tests, all passing** — including both theme guards in full. Re-run with CI's command after the §10 correction: identical, test by test. Under Node 20.20.2, CI's runtime, after the §11 correction: the same result with Chromium available; without Chromium, as in CI, **16,954 passed, 0 failed, 87 skipped**: the same 64 plus 23 Chromium-dependent tests from three files that predate this build (§11). After the §12 correction, at `a0b0c449`: **17,122 tests — 17,035 passed, 0 failed, 87 skipped** without Chromium, 17,058 / 0 / 64 with it; the 81 added tests are the screen's new rows. After integrating `main` (§13): **17,374 tests — 17,287 passed, 0 failed, 87 skipped** without Chromium, 17,310 / 0 / 64 with it. |
-| Lint gate (`npm run lint:gate`) | **Failed in CI on the draft PR**: 3 `react-hooks/rules-of-hooks` errors in two of this build's test harnesses, which the build's validation had not linted. **Corrected** (§10) with no change to production code, assertions, OFF references, lint rules or configuration, and no suppression: the gate now reports 0 problems, under Node 22 and under Node 20.20.2 (§11). |
+| Flag-off parity | Pinned by **160 OFF references** captured at the base SHA (every reference added during the review independently re-captured: identical), and since the §12 correction by 4 more: the malformed-portfolio parity rows on the flag-off and excluded paths, captured there too — **164**; and since §14 by 4 more, the same flag-off and excluded paths with a position symbol that shadows `toString` — **168**. With the flag off every consumer takes the shipped path. The one flag-independent change is the additive provenance metadata the contract requires in both states (`quoteOrigin` on proxy records, `isFallback` on the stock fallback; §4.1) — numbers, requests and caching unchanged; every other flag-off change is a value-preserving relocation pinned by those references. |
+| Tests | Full suite on the final tree: **17,041 tests — 16,977 passed, 0 failed, 64 skipped** (the same 64 as the base). Every one of the base SHA's 16,428 tests is present with an **unchanged status**; the build adds 613. The build's 19 suites: **804 tests, all passing** — including both theme guards in full. Re-run with CI's command after the §10 correction: identical, test by test. Under Node 20.20.2, CI's runtime, after the §11 correction: the same result with Chromium available; without Chromium, as in CI, **16,954 passed, 0 failed, 87 skipped**: the same 64 plus 23 Chromium-dependent tests from three files that predate this build (§11). After the §12 correction, at `a0b0c449`: **17,122 tests — 17,035 passed, 0 failed, 87 skipped** without Chromium, 17,058 / 0 / 64 with it; the 81 added tests are the screen's new rows. After integrating `main` (§13): **17,374 tests — 17,287 passed, 0 failed, 87 skipped** without Chromium, 17,310 / 0 / 64 with it. After the R1/R2 correction (§14): **17,439 tests — 17,352 passed, 0 failed, 87 skipped** without Chromium, 17,375 / 0 / 64 with it; the 65 added tests are that correction's rows, and no other test changed status. |
+| Lint gate (`npm run lint:gate`) | **Failed in CI on the draft PR**: 3 `react-hooks/rules-of-hooks` errors in two of this build's test harnesses, which the build's validation had not linted. **Corrected** (§10) with no change to production code, assertions, OFF references, lint rules or configuration, and no suppression: the gate now reports 0 problems, under Node 22 and under Node 20.20.2 (§11), and still after §14. |
 | Integration with `main` (§13) | `main` at `c10f03b0` merged in cleanly (PRs #924, #926). The whole-file hash row that broke on the merge is replaced by a test of this flag's own block. Unrelated flags' preservation is recorded through the actual diff: against `main` this build adds 55 lines to `featureFlags.js` and 2 to `flagPinGuard.test.js`, and removes none. |
 | Final independent review (F1, F2) | **HOLD resolved.** An admitted battle with a missing or malformed portfolio now stays gated and incomplete without throwing — both sides, controller on and off, every contract case, with the qualified stored pair when one exists. Flag-off and excluded behaviour are unchanged, pinned by four new base-SHA references and a 64-scenario differential review. F2's WebSocket wording is corrected. §12. |
+| Final read-only review (R1, R2) (§14) | **HOLD resolved.**<br>**R1:** a position symbol that shadows `toString` (JSON-compatible) no longer crashes the admitted screen. The snapshot is contained before any key or derivation reads it, and the side stays incomplete: never cash, never legacy.<br>**R2:** a disappearance and same-stock return that React renders as one update now retires the old quote, open details and the outstanding answer, because the subscription folds every callback it receives.<br>Both hold on both sides, controller on and off. Flag-off and excluded are unchanged (four new base-SHA references; a byte-identical differential). |
 | Unit suite on CI's runtime (Node 20) | **Failed in CI at `b6931e23`**: one row (`TacticalRow.currentPrice.render.test.jsx`, the click payload) hit `ReferenceError: navigator is not defined` while importing `react-dom/client`. Node 20 has no global `navigator`, while Node 22, which every earlier local run used, does. **Corrected** (§11) in that row's setup only: the browser globals are stubbed before the import and every one is restored exactly afterwards. The full suite now passes under Node 20.20.2. |
-| `vite build` | Passes under Node 22 and under Node 20.20.2, with the same 18 warning lines as a build of the base SHA (§10, §11). |
-| Cumulative adversarial review | Five independent lenses, five refuters and a delta review of the fixes (BUILD_RULES §2). **3 major and 10 minor findings CONFIRMED and fixed** — one major was a regression of the fix round itself, caught by the delta review — each with rows proven red before the fix and green after. 3 findings REFUTED outright; parts of three others refuted or downgraded, each with its reason. The final independent review's F1 (an admitted battle with a malformed portfolio could crash) and F2 (WebSocket wording) are resolved (§12). Its mandatory delta review — three lenses, refuters, and a delta review of the follow-ups — confirmed five further pre-existing gated-path defects (B-1 to B-4, D-1) and one coverage gap (C-3), all fixed, and recorded two document-field crashes as separate tasks. **No confirmed finding is open.** |
-| Mutation evidence | **99 / 99** non-equivalent mutants killed on the final tree (103 in the catalogue: every §8.3 obligation plus the review's own); 3 recorded equivalents and 1 behaviour-preserving control survive as expected; every mutated file restored (sha256 manifest diff: 0 lines). After the §10 correction, the 67 mutants that use the two edited test files were re-run: the same results and the same failing tests. After the §11 correction, under Node 20.20.2: the two catalogue mutants that use the corrected file fail the same tests, and six new mutants aimed at the corrected row are all killed (also under Node 22). After the §12 correction, the 83 mutants that touch the screen or its suite were re-run on the final tree under Node 20.20.2: **78 / 78 non-equivalent killed** (4 recorded equivalents and the control survive). |
+| `vite build` | Passes under Node 22 and under Node 20.20.2, with the same 18 warning lines as a build of the base SHA (§10, §11), and again after §14. |
+| Cumulative adversarial review | Five independent lenses, five refuters and a delta review of the fixes (BUILD_RULES §2). **3 major and 10 minor findings CONFIRMED and fixed** — one major was a regression of the fix round itself, caught by the delta review — each with rows proven red before the fix and green after. 3 findings REFUTED outright; parts of three others refuted or downgraded, each with its reason. The final independent review's F1 (an admitted battle with a malformed portfolio could crash) and F2 (WebSocket wording) are resolved (§12). Its mandatory delta review — three lenses, refuters, and a delta review of the follow-ups — confirmed five further pre-existing gated-path defects (B-1 to B-4, D-1) and one coverage gap (C-3), all fixed, and recorded two document-field crashes as separate tasks. The final read-only review's R1 and R2 are resolved (§14). Their mandatory review was four lenses, refuters, and a delta review with its own refuter; two refuters were re-run on another model after a usage limit. It confirmed one minor product gap and the test-integrity gaps, all fixed; it refuted or recorded the rest, and recorded the remaining hostile-field crashes as separate tasks. **No confirmed finding is open.** |
+| Mutation evidence | **99 / 99** non-equivalent mutants killed on the final tree (103 in the catalogue: every §8.3 obligation plus the review's own); 3 recorded equivalents and 1 behaviour-preserving control survive as expected; every mutated file restored (sha256 manifest diff: 0 lines). After the §10 correction, the 67 mutants that use the two edited test files were re-run: the same results and the same failing tests. After the §11 correction, under Node 20.20.2: the two catalogue mutants that use the corrected file fail the same tests, and six new mutants aimed at the corrected row are all killed (also under Node 22). After the §12 correction, the 83 mutants that touch the screen or its suite were re-run on the final tree under Node 20.20.2: **78 / 78 non-equivalent killed** (4 recorded equivalents and the control survive). After §14, 21 mutants aimed at the R1/R2 repair pieces, and at the tap guard its rows now pin, were run on the final tree: **21 / 21 killed** (restore diff 0). |
 | Browser | The no-body scaffold and the ArenaHeader bar's committed width were verified in Chromium against the real libraries. Everything else that needs a browser, the provider or the Firestore transport is a **pre-activation check** (§9). |
 | Scope | 38 implementation/support files + this record = 39. The four theme-guard files were added by the founder's decision of 2026-10-02 (§2). Nothing else outside the approved scope was touched; no fenced file (BUILD_RULES §1) was edited. |
 | Deviations | Two contract descriptions narrowed to keep the contract's own flag-off rules (C-2 / B-6: lookup evidence only behind the gated screen's opt-in), and one hardening adopted from the review (the gated path subscribes no WebSocket symbols of its own; wording corrected in §12, F2) — §9. |
@@ -58,7 +59,7 @@ Every anchor the contract cites was re-read at `44d0c63e` before any edit (VERIF
 | 6–7 | `api/{stocks,crypto}/prices.quoteOrigin.test.js` | new — real handlers, real server cache |
 | 8 | `src/services/eodhdAPI.js` | origins preserved; stock fallback `isFallback` + `configured-fallback` origins |
 | 9 | `src/services/eodhdAPI.placeholderPrices.test.js` | new — real batch service, real CacheService, deferred network |
-| 10–11 | `src/hooks/useAgentBattle.js` + `.quoteSnapshot.test.jsx` | optional atomic envelope |
+| 10–11 | `src/hooks/useAgentBattle.js` + `.quoteSnapshot.test.jsx` | optional atomic envelope; per-callback received fold (§14) |
 | 12–13 | `src/screens/battleView/shadowCpuQuoteIntegrity.js` + `.test.js` | new — the pure gate |
 | 14–15 | `src/screens/AgentBattleScreen.jsx` + `.quoteAvailability.jsdom.test.jsx` | gated screen; real screen with boundary fakes |
 | 16–17 | `src/components/BaggerBomb/TacticalRow.jsx` + `.currentPrice.render.test.jsx` | availability contract, click side |
@@ -488,7 +489,7 @@ Three independent lenses, each on its own snapshot (parity; gated-path completen
 | A-N1, A-N2 | A malformed opening prop no longer crashes the gated pending shell; an excluded record then renders (controller on) or throws at classification (controller off) | Facts CONFIRMED; the "parity violation" reading REFUTED: the difference lies only in the gated pending state, which by §3.1 builds nothing from the opening prop; after classification the excluded view deep-equals flag-off's | Recorded (behaviour notes) |
 | A-N3 | The gated path no longer calls `enrichAsset` in the discarded memos | CONFIRMED unobservable | — |
 | **B-1** (major) | A slot that vanishes (a malformed tier, or a valid tier that shrinks) and returns holding another position restarts at lineage generation 1; its token repeats the retired one and the retained quote prices the new position — complete, with the wrong price | **CONFIRMED** with the refuter's own repro (shrink and regrow, no malformed data: XOM priced at TSLA's `$255.00`, comparison `browser`); the in-flight-answer route REFUTED (the poll effect's cleanup drops it) | **Fixed** (below) |
-| **B-2** (major) | A position whose symbol is not a string throws at render (an object) or crashes the screen on a row tap (a number, boolean or array) | **CONFIRMED**; flag-off identical | **Fixed** (gated) |
+| **B-2** (major) | A position whose symbol is not a string throws at render (an object) or crashes the screen on a row tap (a number, boolean or array) | **CONFIRMED**; flag-off identical | **Fixed** (gated): the row and the tap only; the context and the turn line still coerced a `toString`-shadowing symbol (R1, fixed in §14) |
 | **B-3** (minor) | A cash position with an object `previousAsset` throws at render | **CONFIRMED**; flag-off identical | **Fixed** (gated) |
 | **B-4** (minor) | `isCash: 1` with a symbol is held and scored, yet its row reads CASH 0 pts (BUILD_RULES §9) | **CONFIRMED** (legacy also polls it, but scores and shows it consistently as cash) | **Fixed** (gated) |
 | B-5 (note) | A whitespace-only symbol passes the helper's rule and is polled as `" "` | CONFIRMED; no throw, incomplete | Not fixed (the helper's rule; residual) |
@@ -501,12 +502,12 @@ Three independent lenses, each on its own snapshot (parity; gated-path completen
 | Lens D (delta review of the follow-ups) | No regression; B-1…B-4 fixed on both sides; flag-off and excluded untouched | — | Verified sound |
 | **D-1** (minor) | A held position with a non-string `name` reaches the controlled research view; the real modal renders it as text | **CONFIRMED** with the real modal: "Objects are not valid as a React child". The cited site was wrong: with `version={2}` the text renders in `src/components/Research/ChartHeader.jsx:59`, and after a "Why?" tap in `src/components/Research/WhyMovingPopup.jsx:438` | **Fixed** (gated) |
 | D-2 (nit) | The B-4 row's title misdescribed its reference | CONFIRMED | Fixed |
-| D-3, D-4 (notes) | A numeric `previousAsset` is now hidden on gated cash rows; a slot that returns with the same position also starts empty until the immediate re-poll | — | Recorded (intended) |
+| D-3, D-4 (notes) | A numeric `previousAsset` is now hidden on gated cash rows; a slot that returns with the same position also starts empty until the immediate re-poll | — | Recorded (intended); held only when the disappearance rendered on its own (R2, fixed in §14) |
 
 None of B-1…B-6 or D-1 is a regression of the F1 fix: each behaves identically on `1e2ac4e2`. B-1's malformed-interlude route was unreachable there only because the screen crashed first.
 
 **The follow-up fixes** (screen only; never reached flag-off or for an excluded battle):
-- **B-1:** when the lineage changes within the same battle generation, only the quotes whose slot the new lineage still has are kept (`keepLiveSlots`, `src/screens/AgentBattleScreen.jsx:320`, call `:1155`); a returning slot starts empty. The helper's token can still repeat for a returning slot (`reconcileLineage` forgets vanished slots); with no retained evidence and the poll effect's cleanup cutting in-flight answers, nothing can match it — a helper-side tombstone is recorded as a separate task (the helper is outside this correction's files).
+- **B-1:** when the lineage changes within the same battle generation, only the quotes whose slot the new lineage still has are kept (`keepLiveSlots`, `src/screens/AgentBattleScreen.jsx:320`, call `:1155`); a returning slot starts empty. The helper's token can still repeat for a returning slot (`reconcileLineage` forgets vanished slots); with no retained evidence and the poll effect's cleanup cutting in-flight answers, nothing can match it — a helper-side tombstone is recorded as a separate task (the helper is outside this correction's files). *Qualified in §14:* this covers separately rendered transitions only; a disappearance and return that React rendered as one update kept the old quote (R2).
 - **B-2, B-3, B-4:** gated rows go through `gatedRowAsset` (`:334`, call `:1196`), which drops a non-string symbol, drops a non-string cash `previousAsset`, and sets a truthy-but-not-true `isCash` to false; a well-formed position comes back as the same object. The gated tap handler requires a string symbol (`:1710`).
 - **D-1:** the controlled research view's name falls back to the symbol unless it is a non-empty string (`:2399`).
 
@@ -550,7 +551,7 @@ Corrected in §9 and in the verdict's Deviations row. The empty symbol list stop
 ### Residuals and separate tasks added by this correction
 
 - **Shipped (flag-off) behaviour, preserved by design:** the legacy path still throws on these malformed inputs — a non-array tier with the controller on, a non-string symbol (render or tap), an object cash `previousAsset`, an object `name` in research. Fixing the shipped path is a separate task.
-- **The helper's repeating token** for a returning slot (above): harmless now, worth a tombstone in `reconcileLineage` (separate task).
+- **The helper's repeating token** for a returning slot (above): harmless for separately rendered transitions, worth a tombstone in `reconcileLineage` (separate task). *Qualified in §14:* the coalesced case was R2.
 - **Document fields outside the portfolio scope**, flag on and off: `trades: {}` throws at `bankedScore` (B-6); a malformed `scoring.thresholds` entry (even a numeric string) throws `baseThreshold.toFixed is not a function` in the real BaggerBomb tab of held research.
 - **Display only:** a numeric-string or boolean entry price shows unformatted in research ("Baseline: $100."); a whitespace-only symbol is polled as `" "` (B-5).
 
@@ -600,3 +601,217 @@ The catalogue's two mutants that use the flag suite, `enable-while-off` and `ena
 | `vite build` | Passes (✓ built in 19.6 s), with the base SHA's 18 warning lines |
 
 **Scope.** Unchanged: 38 implementation/support files + this record = 39. The merge brings `main`'s own files; this step edits only the flag suite and this record.
+
+## 14. Fourth correction: the final read-only review's R1 and R2
+
+**Founder instruction (2026-10-03).** The scope of PR #925 is frozen. This is a bounded closure patch for R1 and R2 of the founder-supplied final read-only review at `b8d060df`, and that review is the repair contract. v1.6 is unchanged and needs no new revision.
+- **Allowed:** the client hook, the gate helper, the screen and their tests.
+- **Unchanged by instruction:** flag-off and excluded behaviour, the flag (`false`), trade writers, entry rules, scoring formulas, settlement and caching.
+- **Not in this patch:** indirect-override hardening, general malformed-document cleanup, activation work.
+
+**Freshness.** `git fetch origin` first (exit 0). Branch `claude/shadow-cpu-quote-integrity-v16` at `b8d060df`, with a clean tree. `main` is at `c10f03b0`, unchanged since §13 and already contained in the branch.
+
+**Commits.**
+
+| Commit | Content |
+|---|---|
+| `04835291` | Both repairs and their regression rows |
+| `21548dfc` | The SDK-delivery rows made deterministic |
+| `ab60e6ea` | A received missing document always advances the epoch |
+| `ec620033` | The hook suite's fold import made lazy |
+| `06ba3e74` | The test-integrity findings and wording |
+| `9d72692f` | The delta review's test findings |
+| _(the next commit)_ | This record |
+
+The flag stays `false`.
+
+### R1 — a malformed position symbol could still crash the admitted screen
+
+**Contract.** §3.1: an admitted battle with a missing or malformed portfolio stays gated and incomplete, and never escapes to legacy. §5.2: it is never an all-cash success.
+
+**Reproduced before any edit.** The run used a scratch copy of the screen suite with the real screen and the real subscription hooks, under Node 20.20.2. The document crosses the suite's JSON boundary, so every value below is JSON-compatible.
+
+| At `b8d060df` | Result |
+|---|---|
+| A held position's symbol `{ toString: 'AAPL' }`, `{ toString: null }`, `{ toString: {}, valueOf: 1 }` or `[{ toString: 'AAPL' }]`; player or CPU; controller on or off | **16 / 16 throw** `TypeError: Cannot convert object to primitive value` when the snapshot arrives |
+| A cash position whose symbol is such an object (either side, either controller state) | **4 / 4 throw** |
+| Such an object as a cash `previousAsset` or a held `name` | No throw: §12's B-3 and D-1 guards already contain these |
+| Flag off or excluded, controller on / off | Throws / renders. This is the shipped path, which this patch leaves unchanged |
+
+**Cause** (VERIFIED at `b8d060df`).
+- The lineage key looked up the raw symbol in the starting-price map (`positionLineageKey`, `src/screens/battleView/shadowCpuQuoteIntegrity.js:391–395` at `b8d060df`).
+- The context builder called that key before the screen's row sanitizer ran.
+- Behind it, the turn line's adapter does the same lookup over the subscribed document (`src/adapters/baggerbombAdapter.js:193`, through `src/screens/battleView/deriveTurnLine.js:138` and `src/screens/AgentBattleScreen.jsx:1635`). This happens on the player side with the controller on.
+
+§12's B-2 guard contained a malformed symbol only at the row and the tap. It came too late for the context, and it never reached the turn line or any other reader of the subscribed document.
+
+**The fix.** The admitted snapshot is contained once, before anything reads it, and every gated consumer reads the contained copy.
+- **`containSymbols`** (`shadowCpuQuoteIntegrity.js:402`) copies the snapshot. It drops `symbol` from every position in the two portfolios' array tiers whose symbol is present but not a string (`isMalformedSymbol`, `:370`). A well-formed snapshot comes back as the same object.
+- **`buildBattleContext`** (`:463`) builds everything from that copy and returns it as `ctx.data`.
+  - Structural validity is still judged on the snapshot **as received** (`:499`).
+  - `portfolioValid` now rejects a malformed symbol on any position, cash included (`:386`).
+  - So a side with a malformed symbol stays invalid, and the comparison stays incomplete: the qualified stored pair, else "Comparison unavailable". It is never complete, never all-cash, never legacy.
+- **`positionLineageKey`** (`:437–438`) uses a symbol as a key only if it is a string.
+- **The screen** builds the context first (`AgentBattleScreen.jsx:1113–1118`). `gatedContext.data` is the identified snapshot (`:1123`), which is the gated path's `agentBattle`. The rows, the turn line, the chat roster and every panel read only that.
+
+Flag-off and excluded battles never build the context. The shipped path still throws on this input, exactly as at the base SHA. Four new references captured at `44d0c63e` (`hostileSymbol*`) pin that outcome; a reviewer re-captured them independently and they are identical.
+
+### R2 — a received disappearance and same-stock return, rendered as one update
+
+**Contract.**
+- §3.2: if continuity cannot be established, invalidate position state conservatively; a callback must match the position context; identity-bound details close.
+- §7.2 item 7.
+- The review's acceptance criterion: a **received** discontinuity invalidates retained observations, details and pending answers even when React coalesces the display updates, and unrelated feed-only updates must not restart polling.
+
+**Reproduced before any edit.**
+1. After the first quotes, a poll was left outstanding.
+2. The core tier then shrank by one slot and the same position returned. These arrived as two callbacks, delivered two ways:
+   - each in its own `setTimeout(…, 0)` outside `act`, which is how `@firebase/firestore` 4.9.2's `AsyncObserver` dispatches (`dist/index.esm.js:17785–17808`);
+   - both inside one `act`.
+3. Finally the outstanding request answered with a qualified $777.
+
+| At `b8d060df`, both delivery modes | After the return | After the late answer | New requests |
+|---|---|---|---|
+| Player TSLA or CPU ORCL, controller on or off (8) | Browser comparison; the old $255 kept | **$777 applied** ("You lead by 3348" / "CPU leads by 8200") | **0** |
+| Another stock returning (XOM), the control (8) | "Quote unavailable"; last scored, incomplete | Unchanged | 2 |
+
+**Cause** (VERIFIED, as the review traced).
+- The hook replaced its envelope on each callback (`src/hooks/useAgentBattle.js:71–80` at `b8d060df`).
+- The screen reconciled the lineage only from the envelope it rendered, and the final snapshot equalled the last one rendered.
+- So there was no lineage change and no new poll key. The old poll effect stayed alive, and the old token stayed valid.
+
+**The fix.** The evidence is gathered where every callback is seen: in the subscription.
+- **`advanceReceived`** (`shadowCpuQuoteIntegrity.js:526`) is a pure fold over the callbacks one subscription receives.
+  - It keeps a **per-slot revision**. The revision advances whenever a slot's lineage differs from the previous callback's, absence included, and never restarts within the subscription.
+  - It keeps a battle-wide **epoch**, which advances (`:543`) on:
+    - `reconcileLineage`'s own whole-battle rules (a truncated trade history, or a trade-count move that no slot explains);
+    - a missing document or an error, whatever the trade history (`data` null: the terminal state the screen would have shown);
+    - a snapshot it cannot read.
+  - It never throws, because it runs for every flag-on callback, excluded battles included.
+- **The hook** runs the fold on every callback (`useAgentBattle.js:84`, and the error path at `:101`). It does so through an optional `receive` (`:36`) that only the gated screen passes, and returns the result in its envelope as `received` (`:142`).
+  - Without the option nothing is folded and nothing else changes.
+  - `:119` adds `receive` to the effect's inputs. The value is a stable module function, or `null`.
+- **The screen** passes the fold on the gated call only (`AgentBattleScreen.jsx:1091`) and gives the envelope's `received` to the context (`:1116`).
+  - Each position's lineage key carries its slot's revision (`shadowCpuQuoteIntegrity.js:486`).
+  - A received epoch change invalidates every position (`reconcileLineage`, `:559`).
+
+So a slot that vanished and returned inside one render now gets a new lineage generation, and the existing guards act on it:
+- The retained quote no longer matches its token.
+- Open details close: held research, the breakdown and Why? (§7.2 item 7).
+- The poll key changes, so the old effect is retired and its answer is dropped (`active`, plus `applyQuoteArrival`'s token check).
+- A request for the returned holding goes out at once.
+
+A received whole-battle discontinuity also closes the context-bound details (a non-held research view, the quote notice), just as its rendered counterpart, the "Battle unavailable" shell, does.
+
+Feed-, chat- and score-only callbacks change no revision and no epoch. They cause no restart and no extra request, and the 60 s cadence holds.
+
+The review's point is confirmed: a helper tombstone alone could not fix this, because the screen's lineage never saw the intermediate snapshot. The fold's monotonic revision is that tombstone, kept at the subscription boundary, where nothing is coalesced.
+
+### Earlier statements in this record that R1 and R2 qualify (§12)
+
+- **B-2 "Fixed (gated)":** the row and tap guards did not reach the context builder or the turn line, so R1's shape still crashed. It is now contained at the context.
+- **D-4, "a slot that returns with the same position also starts empty until the immediate re-poll":** this held only when the disappearance itself rendered. When React rendered the disappearance and the return as one update, the slot kept its previous quote (R2). It now holds in both cases.
+- **The B-1 bullet and the residual that call the helper's repeating token harmless:** this is true only for separately rendered transitions, where the slot pruning and the poll effect's retirement cover it (the review's 16 / 16 controls); the coalesced case was R2. The token can still repeat for a slot whose disappearance rendered. That case stays covered by those two guards, and the new `rendered` control rows pin it. Making the token itself monotonic remains a separate hardening task.
+
+### Regression rows
+
+| Suite | New rows | What they pin |
+|---|---|---|
+| Screen (`src/screens/AgentBattleScreen.quoteAvailability.jsdom.test.jsx:4739` onward) | **51** | **R1** (26):<ul><li>the 16-case matrix (4 shapes × both sides × controller on and off): gated, incomplete with the stored pair, only well-formed positions polled, no socket symbols;</li><li>a tap on the contained row and a chat payload carrying the symbol open nothing, checked by the research recorder's count and not only its marker (2);</li><li>a cash position with a malformed symbol stays incomplete, with the `'CASH'` stamp as the negative control (4);</li><li>flag-off and excluded parity against base-SHA references (4).</li></ul>**R2** (25):<ul><li>same-stock return × both sides × controller × three deliveries (12): one `act`; SDK-style `setTimeout`s; and `rendered`, the control. Each checks: no previous quote; incomplete; its own request out; the retired $777 dropped; recovery to the exact earlier comparison; and a check that the shrink never reached the screen (or did, for `rendered`);</li><li>different-stock controls (4);</li><li>feed and chat updates, alone and coalesced, with no request and the 60 s cadence kept (2);</li><li>held research, breakdown and Why? on the returning holding close (3);</li><li>a held view on an unchanged position stays open (1);</li><li>whole-battle discontinuities (a truncated history; a missing document on a battle with no trades) retire every position and close a non-held view (2);</li><li>a missing document on a battle with no trades also closes an open quote notice (1).</li></ul> |
+| Gate helper (`src/screens/battleView/shadowCpuQuoteIntegrity.test.js:364`, `:418`) | **10** | Containment, both sides and cash; same-object identity; the string-only key; the fold's first-callback, revision, feed-only and epoch rules, each epoch trigger also on a battle with no trades; the pure coalesced case; epoch invalidation |
+| Hook (`src/hooks/useAgentBattle.quoteSnapshot.test.jsx:906`) | **4** | The fold runs on every callback, including two rendered as one update; missing and error fold as null; retired subscriptions fold nothing; the real fold advances a vanished-and-returned slot twice and feed-only callbacks not at all; nothing changes without the option |
+
+The eight earlier B-2 rows gained the same recorder-count assertion (refuter 2's D-F3 note).
+
+**Fail-before evidence.** The final test files were run against `b8d060df`'s three product files:
+- **50 of the 65 new rows fail**, each with its defect's own signature:
+  - R1 rows: `Cannot convert object to primitive value`;
+  - same-stock rows: the previous quote kept;
+  - detail rows: views still open;
+  - whole-battle and quote-notice rows: no invalidation;
+  - hook rows: no `received`.
+- The other **15 are labelled controls** that pass on both trees: 4 parity, 4 `rendered`, 4 different-stock, 2 feed-cadence and the unchanged-position row.
+- All 338 earlier rows of the three suites pass on both trees.
+
+### Mutation (negative controls)
+
+Each repair piece was removed or bent in an isolated snapshot of the final tree (`9d72692f`, Node 20.20.2), and the three suites were run against it: 403 rows, or the screen's 274 for screen-only mutants. Every mutated file was restored (manifest diff: 0 lines).
+
+| Mutant | What it removes | Rows that fail |
+|---|---|---|
+| `r1-no-containment` | `buildBattleContext` reads the raw snapshot | 8: the player/controller-on matrix (the turn line's adapter), the tap row and the cash row; 2 helper rows |
+| `r1-raw-lineage-symbol` | The lineage key coerces the raw symbol (containment still upstream) | 1 helper row; unreachable from the screen while containment runs |
+| `r1-no-containment-raw-key` | Both of the above: the pre-repair helper | 25: the whole R1 matrix, both tap rows and all four cash rows; 3 helper rows |
+| `r1-no-opponent-containment` | Only the player portfolio is contained | 1 helper row |
+| `r1-validity-on-contained` / `r1-validity-no-malformed-check` | Validity judged on the contained copy / without the malformed-symbol rule | 5 each: the four cash rows and a helper row |
+| `r1-screen-reads-raw-snapshot` | The screen hands the raw snapshot to its consumers | 6 |
+| `r1-tap-guard-removed` / `r1-tap-guard-admits-missing` | The gated tap and chat handler accepts any symbol / admits a missing one | 10 each: the two R1 tap rows and the eight B-2 rows. The second mutant survived all 269 rows before the recorder-count fix |
+| `r2-hook-no-fold` | The subscription stops folding its callbacks | 17: 14 screen rows and 3 hook rows |
+| `r2-hook-error-no-fold` | An error callback is not folded | 1 hook row; an error ends the subscription, so nothing follows it on screen |
+| `r2-screen-no-receive` | The screen stops passing the fold | 14 |
+| `r2-no-revision-in-lineage` | Slot revisions are ignored | 12: the same-stock, detail and Why? rows; the pure coalesced row |
+| `r2-reconcile-ignores-epoch` | A received epoch change is ignored | 4: both whole-battle rows, the quote-notice row and a helper row |
+| `r2-no-tombstone` | A vanished slot loses its revision | 5: the detail rows' second round trip, a hook row, 2 helper rows |
+| `r2-fold-ignores-absence` | Absence never advances a revision | 3 |
+| `r2-no-truncation-epoch` / `r2-no-unexplained-epoch` / `r2-unreadable-no-epoch` / `r2-missing-no-epoch` | One epoch trigger at a time | 3 / 1 / 1 / 3 |
+| `r2-fold-throws` | The fold no longer guards an unreadable snapshot | 1 |
+
+**21 / 21 killed** on `9d72692f`, as on `06ba3e74` before the delta review's test fixes. A first pass on `04835291` (18 mutants) killed all 18 as well. In that pass two `sdk`-delivery rows failed incidentally under two unrelated mutants, at the check that the shrink never rendered. That failure is lens D's F1, root-caused and fixed in `21548dfc`; the final pass shows no incidental failure. The review lenses ran their own mutants too: lens A 5, lens B 4, lens D 21, and refuters 1–3 their own. Every repair piece has at least one killing row; the one non-equivalent survivor they found (the fold's `!context` trigger, lens D F2) is fixed.
+
+### The adversarial review (BUILD_RULES §2)
+
+Four independent lenses (input handling, lifecycle, parity, test integrity) each ran on its own snapshot of `04835291`. Every finding then went to a refuter instructed to refute it with a concrete repro. The follow-up fixes got a delta review on a snapshot of `06ba3e74`, and its findings went to a refuter of their own.
+- Every reviewer worked on a path-distinct snapshot, read-only on git and on the shared working tree; mutations were restored and sha256-verified.
+- Two refuters stopped at once on the reviewer model's usage limit (HTTP 429) before doing any work. Both were re-run on another model from fresh snapshots, as were the delta review and its refuter.
+- Two refuters disclosed one write outside their snapshots: vitest's git-ignored results cache under the shared `node_modules`. No tracked file was touched.
+
+| Finding | Claim | Refutation | Disposition |
+|---|---|---|---|
+| Lens A (input) | Containment holds: 202 probe rows (11 more symbol shapes, array positions and tiers, both sides, hostile opening props, hostile-after-healthy with details open, hostile on an R2 returning slot, mobile shell); 25 adversarial fold inputs never throw; no gated reader can still coerce a position symbol | — | Verified sound |
+| A nit 1 | "Writers stamp cash 'CASH'" is loose: no `agentBattles` writer emits cash | CONFIRMED (wording) | Fixed (`06ba3e74`) |
+| A nit 2 | `ctx.data` makes a contained cash position look valid | REFUTED as a defect: the only completeness verdict reads raw-snapshot validity, pinned by 4 screen and 1 helper rows | Docstring note |
+| A question | The hook calls `receive` unguarded | Answered: the fold is total (59 hostile inputs). A non-total fold would leave the envelope stale | Docstring: stable, pure, total |
+| Lens B (lifecycle) | No received sequence leaks a retired holding: 51 screen probes, 14,723 pure sequences, its own mutants; feed-, score- and evaluation-only writes change nothing (identical with the pre-patch files) | — | Verified sound |
+| **B F1** (minor) | A missing or error interlude advanced the epoch only if the battle had trades, so in a coalesced interlude on a zero-trade battle a non-held research view stayed open where the rendered path closes it | **CONFIRMED** (12-cell matrix) | **Fixed** (`ab60e6ea`) |
+| B F2 (nit) | admitted → excluded → admitted as one update keeps quotes | REFUTED as a defect: positions are continuous; §3.2's triggers do not include an admission interlude; no writer toggles admission within a render | Recorded |
+| B F3 (nit) | A coalesced held↔non-held crossing leaves a non-held view open | Rendered/coalesced difference CONFIRMED; §7.2 violation REFUTED: no rendered frame had it held, and reopening gives the identical view | Recorded |
+| B F4 (question) | A new `receive` identity re-subscribes without a generation bump | REFUTED as a defect in this patch: unreachable (one caller, a module function) | Docstring note |
+| Lens C (parity) | Flag-off and excluded unchanged: 23 + 3 base-SHA references re-captured; traces byte-identical with the pre-patch tree; authority boundaries hold; well-formed gated path unchanged | — | Verified sound |
+| **C N1** (nit) | The hook suite's module-level helper import broke its own base-SHA re-capture recipe | **CONFIRMED**. The lens's suggested literal dynamic import fails the same way | **Fixed**: the R2 block loads the helper lazily (`ec620033`; since `9d72692f` through `import.meta.glob`, delta N2); the recipe captures 3 / 3 matching |
+| C O1 | An excluded battle with a non-string symbol stops polling | PARTIALLY CONFIRMED: identical before this patch; with the real socket hook both routes crash identically | Separate task |
+| Lens D (test integrity) | 49 / 60 new rows fail pre-repair with their own signatures; the 4 parity references are genuine base captures; 20 / 21 of its mutants killed | — | Verified sound |
+| **D F1** (major) | The SDK-delivery rows were timing-flaky at their coalescing check (two `setTimeout`s straddling a millisecond expire a loop turn apart) | **CONFIRMED** at `04835291`; also seen in this record's own first mutation pass | **Fixed** (`21548dfc`). Under the straddle: 6 / 6 and 20 / 20 green; 800 / 800 R2 runs under load; a forced split still turns the check red |
+| **D F2** (minor) | The fold's "unreadable snapshot" trigger had no row that could fail | **CONFIRMED** | **Fixed** (`ab60e6ea`, zero-trade row) |
+| **D F3** (minor) | The tap half of the R1 tap row was blind to a symbol-less modal | **CONFIRMED, stronger**: a guard admitting a missing symbol passed all 269 rows | **Fixed** (`06ba3e74`), also in the 8 B-2 rows |
+| D F4 (notes) | Containment, the string key and the error-path fold are each detected at one level only | REFUTED as a gap: each has a killing row, and the one-level detection is structural | — |
+| Refuter 2 nits | The delivery helper's comment credited B-1 with the separately rendered case; a throwing callback timed out | CONFIRMED | Fixed: the `rendered` control mode (`06ba3e74`). Fail-fast on a throwing callback: `06ba3e74`'s version was incomplete (delta F1), so it was fixed in `9d72692f` |
+| Delta review (`04835291..06ba3e74`) | The follow-ups do what they claim, with one exception (F1). The `data == null` rule changes only a coalesced missing or error interlude on a battle with no trades: 88,740 pure callback sequences, and 20 real-screen scenarios byte-identical except those 4 cases. The `rendered` control is live; the lazy import binds the real fold; flag-off rows pass 37 / 37 | — | Verified sound |
+| **Delta F1** (minor) | The "fails fast" claim was false: a callback that threw under `sdk` delivery escaped as a run-level unhandled error, and the row could pass | **CONFIRMED**. The reviewer's fix still swallowed a falsy throw | **Fixed** (`9d72692f`): throws are collected and the first rethrown, so the row fails with the callback's own error |
+| **Delta N1** (nit) | The spin was unbounded: a faked `performance` clock would hang the worker | **CONFIRMED** (latent: nothing fakes it today). A bare iteration cap would pass only by burning about 3.5 s | **Fixed** (`9d72692f`): a 3 ms `Atomics.wait` on real time; a forced split still fails exactly the coalescing check |
+| **Delta N2** (nit) | The non-literal import hid the hook suite from watch mode and `vitest related` | **CONFIRMED** | **Fixed** (`9d72692f`): `import.meta.glob`, which keeps the link and the base-SHA recipe (3 / 3 identical) |
+| **Delta N3** (nits) | Leftover wording: the helper suite's cash-stamp comment, a render count named `mounted`, and the R2 title's "rendered" catching every row in a `rendered` filter | **CONFIRMED** | **Fixed** (`9d72692f`) |
+| **Delta Q1** | Nothing pinned the quote notice closing in the coalesced no-trade case; the notice's closure line had no guarding row at all | **CONFIRMED** | **Fixed** (`9d72692f`): one row, red without the epoch rule and on the `b8d060df` product, green at head |
+
+### Validation
+
+Final tree `9d72692f` (code identical to this record's commit), Node 20.20.2, CI's command, runs sequential:
+
+| Check | Result |
+|---|---|
+| `npm run lint:gate` | exit 0, 0 problems. Full ESLint on the six files: the same pre-existing findings as at `b8d060df`, none new |
+| The three suites | Screen **274 / 274**, gate helper **114 / 114**, hook **15 / 15** |
+| Full suite, no Chromium (as on CI's runner) | **851 files, 17,439 tests: 17,352 passed, 0 failed, 87 skipped.** Against §13's run, test by test: 0 missing, 0 status changes, 65 added (this correction's rows) |
+| Full suite, Chromium available | **17,375 passed, 0 failed, 64 skipped**; the only differences from the no-Chromium run are the 23 browser tests of §11 |
+| `vite build` | Passes (✓ built in 19.0 s). The same 18 warning lines as §13's build; one prints in a different position |
+| Base-SHA re-capture recipes | Screen suite: 23 / 23 references match at `44d0c63e` (a reviewer's run). Hook suite: 3 / 3 match with its own recipe since `ec620033`/`9d72692f` |
+| Flag | `SHADOW_CPU_QUOTE_INTEGRITY_ENABLED = false` (`src/config/featureFlags.js:2986`); `featureFlags.js` byte-identical to `b8d060df` |
+
+### Residuals and separate tasks
+
+- **Hostile non-symbol fields on the gated path** (lens A §5; refuter 2 confirmed 8 of 12 as pre-existing, identical with the flag off). An object that shadows `toString` in `swapPrice`, a starting price, a threshold, a `thresholdHistory` multiplier, `trades[].lockedPoints`, `scoreState.tradeCount`, `timing.currentTradingDay`, `activatedAt` or `agentContext.archetype` throws. So does a string `trades`, or an object `agentContext.agentName` or `status`. The portfolio fields fall under §3.1's "malformed portfolios", but they are outside this patch's boundary.
+- **The legacy path with a non-string position symbol** (lens C O1, re-scoped by its refuter). With the real socket hook, flag off or excluded with the controller on, it crashes at `useWebSocketPrices.js:53` / `stockHelpers.js:58`. Where rendering survives, it silences the poll (`AgentBattleScreen.jsx:155`). The suite cannot see the crash because it mocks the socket hook. This is inherited and identical on both routes.
+- **The helper's token repetition** for a slot whose disappearance rendered (above, and the final review's follow-up 2). It is still covered by the screen's two guards, now pinned by the `rendered` rows.
+- **The indirect-override flag test** (the final review's follow-up 1). Untouched, as instructed.
+- **Activation** stays a separate founder decision. The final review's prerequisites are unchanged.
+
+**Scope.** Unchanged: 38 implementation/support files + this record = 39. This correction edits the hook, the gate helper, the screen, their three suites and this record.
