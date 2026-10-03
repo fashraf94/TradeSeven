@@ -144,6 +144,10 @@
     "src/screens/battleView/useIntradayView.js": {
       "count": 0,
       "authority": "Intraday Data Build 1 (contract \u00a78.1 / \u00a79.1) \u2014 the Why? panel's one-get hook for the diagnostic view. A data hook: no element, no colour, no motion. Zero raw transition literals."
+    },
+    "src/screens/battleView/shadowCpuQuoteIntegrity.js": {
+      "count": 0,
+      "authority": "Shadow vs CPU quote integrity, dark build (contract v1.6 file 12) \u2014 the gated screen's pure helper: quote interpretation, eligibility, lineage and the one selected comparison. Pure functions: no element, no colour, no motion. Zero raw transition literals; registered in the commit that introduces it (hazard 34)."
     }
   }
 }

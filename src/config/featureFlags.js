@@ -2934,3 +2934,58 @@ export const FILM_TAPE_WRITE_ENABLED = true;
  */
 // Pinned by: filmTapeFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const FILM_ROOM_V2_ENABLED = false;
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * SHADOW VERSUS CPU — QUOTE INTEGRITY (contract
+ * SHADOW_CPU_PLACEHOLDER_PRICE_SPEC_V1_6.md, founder-authorized dark build;
+ * build record docs/audits/20261002_SHADOW_CPU_QUOTE_INTEGRITY_BUILD_REVIEW.md).
+ *
+ * SHADOW_CPU_QUOTE_INTEGRITY_ENABLED — the ONE gate over the Shadow-vs-CPU
+ * battle screen's quote-integrity path: value-specific quote provenance read
+ * in the screen, an identified battle/position context, the discriminated
+ * comparison every score consumer reads, lookup-evidence identity states, and
+ * the controlled held-research view. DEFAULT false: the build merges dark.
+ *
+ * What is NOT behind this flag, on purpose: the PRODUCER metadata — the two
+ * proxies' `quoteOrigin` and the stock fallback's `isFallback` marker
+ * (api/stocks/prices.js, api/crypto/prices.js, src/services/eodhdAPI.js). It
+ * ships live while the flag is dark so caches acquire it before any read
+ * depends on it; every existing key, number, type, cache decision and request
+ * stays byte-identical (OFF-2, OFF-3). The new optional props on the shared
+ * components are inert unless the gated screen passes them.
+ *
+ * Flag OFF (shipped): the screen, its hooks, its consumers and the research
+ * modal behave exactly as at the pre-build SHA 44d0c63e — pinned frame by
+ * frame, request by request and digest by digest in the OFF suites the build
+ * record lists. Flag ON: only admitted battles (explicit gameMode
+ * 'baggerbomb_agent', opponent.odUserId 'cpu', no group stamp) take the gated
+ * path; everything else is the legacy path after its own snapshot arrives.
+ *
+ * FLIP (R-11): its own founder PR, never a build PR, and NO EARLIER than the
+ * first regular US stock-market open after the founder confirms the complete
+ * additive metadata path is live in production (both proxies plus client
+ * preservation and the fallback markers, flag still false) — record the
+ * deployed version/time and the next actual America/New_York open. A preview
+ * or a producer-PR merge alone is not that confirmation. No flush, TTL change
+ * or warm-up request is authorized. The flip commit reconciles, together: this
+ * value, the pin in src/config/shadowCpuQuoteIntegrityFlags.test.js, this
+ * docstring's default prose, the `Pinned by:` pointer, and the DARK_BY_DESIGN
+ * entry in src/config/flagPinGuard.test.js (BUILD_RULES §2). ROLLBACK is the
+ * same reconciliation back to false; the additive metadata can remain, and the
+ * legacy defect returns with it.
+ *
+ * NO OVERRIDE of any kind — no URL parameter, no localStorage key, no
+ * environment variable. The accessor below is a plain constant read, unlike
+ * isAgentPresenceOn (:1345); the pin suite asserts its source stays that way.
+ *
+ * Read it at RENDER scope through isShadowCpuQuoteIntegrityOn(), never as a
+ * module-scope const (the Pass 1 featureFlags vi.mock hazard).
+ */
+// Pinned by: shadowCpuQuoteIntegrityFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const SHADOW_CPU_QUOTE_INTEGRITY_ENABLED = false;
+
+/** The ONE consumer seam for the quote-integrity gate: the flag, and nothing else. */
+export function isShadowCpuQuoteIntegrityOn() {
+  return SHADOW_CPU_QUOTE_INTEGRITY_ENABLED;
+}

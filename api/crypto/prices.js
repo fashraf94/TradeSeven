@@ -4,6 +4,21 @@
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { getFromCache, setInCache, setCacheHeaders, CACHE_TIERS } from '../_utils/serverCache.js';
 
+/**
+ * Shadow vs CPU quote integrity (SHADOW_CPU_PLACEHOLDER_PRICE_SPEC_V1_6.md
+ * §4.1): which branch of the UNCHANGED selection produced each field — the
+ * crypto twin of api/stocks/prices.js's quoteOriginOf, term for term with
+ * `item.close || item.previousClose || 0` and `item.previousClose || 0`.
+ * Additive only; it rides inside the cached record.
+ */
+function quoteOriginOf(item) {
+  return {
+    version: 1,
+    price: item.close ? 'provider-close' : item.previousClose ? 'provider-previous-close' : 'missing',
+    previousClose: item.previousClose ? 'provider-previous-close' : 'missing',
+  };
+}
+
 export default async function handler(req, res) {
   // Apply security middleware (CORS, security headers, rate limiting, preflight)
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 60, windowMs: 60000 } })) {
@@ -66,7 +81,8 @@ export default async function handler(req, res) {
           high: item.high,
           low: item.low,
           volume: item.volume,
-          timestamp: item.timestamp
+          timestamp: item.timestamp,
+          quoteOrigin: quoteOriginOf(item),
         };
       }
     });

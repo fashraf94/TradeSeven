@@ -100,6 +100,10 @@ const GUARDED_FILES = [
   'src/screens/battleView/PaneOverflow.jsx',
   // Intraday Data Build 1 (§9.1): the Why? panel's one-get hook — no colour, no motion.
   'src/screens/battleView/useIntradayView.js',
+  // Shadow vs CPU quote integrity (dark build, spec v1.6 file 12): the gated screen's
+  // pure helper — no element, no colour, no motion. Registered in the commit that
+  // introduces it (hazard 34).
+  'src/screens/battleView/shadowCpuQuoteIntegrity.js',
 ];
 
 /**

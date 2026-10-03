@@ -119,6 +119,12 @@ export default function CharacterAvatar({
   // and has no viewport to miss.
   viewportInset = 0,
   reducedMotion = false,
+  // Shadow vs CPU quote integrity (contract §5.3 R-7/V-4): the ONE selected
+  // comparison. Undefined is the legacy mark exactly. Available → the face's
+  // duel is exactly the selected pair; unavailable → both score keys are
+  // OMITTED (neutral standing — never null, which the binding reads as 0).
+  // The open button, its name, the unread badge and the bubble are unchanged.
+  comparison = undefined,
 }) {
   const count = Number.isFinite(unread) && unread > 0 ? unread : 0;
   // NOTHING NEW → THE AVATAR STANDS ALONE (brief §5, state 8). The bubble is
@@ -258,13 +264,17 @@ export default function CharacterAvatar({
           <AgentPresenceMount
             surface="duel"
             agent={agentBattle}
-            duel={{
-              playerScore: playerScore ?? (agentBattle?.scoreState?.currentScore || 0),
-              opponentScore: opponentScore ?? (agentBattle?.scoreState?.opponentScore || 0),
-              // WITHHELD (hazard 41). The mount drops events for a static face
-              // anyway; passing null says so at the call site too.
-              statusFeed: null,
-            }}
+            duel={comparison !== undefined
+              ? (comparison.available
+                ? { playerScore: comparison.pair[0], opponentScore: comparison.pair[1], statusFeed: null }
+                : { statusFeed: null })
+              : {
+                playerScore: playerScore ?? (agentBattle?.scoreState?.currentScore || 0),
+                opponentScore: opponentScore ?? (agentBattle?.scoreState?.opponentScore || 0),
+                // WITHHELD (hazard 41). The mount drops events for a static face
+                // anyway; passing null says so at the call site too.
+                statusFeed: null,
+              }}
             size={faceSize}
             enableEnvironment={false}
             reactivityLevel="static"

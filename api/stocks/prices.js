@@ -10,6 +10,25 @@ import { applySecurityMiddleware } from '../_utils/security.js';
 import { getFromCache, setInCache, setCacheHeaders, CACHE_TIERS } from '../_utils/serverCache.js';
 import { normalizeSymbolForEODHD, denormalizeSymbolFromEODHD } from '../_utils/symbolNormalize.js';
 
+/**
+ * Shadow vs CPU quote integrity (SHADOW_CPU_PLACEHOLDER_PRICE_SPEC_V1_6.md
+ * §4.1): which branch of the UNCHANGED selection produced each field — never a
+ * judgement of whether the number looks plausible. `price` mirrors
+ * `item.close || item.previousClose || 0` term for term (truthiness, not
+ * finiteness: a truthy "NA" close is still the close the expression chose);
+ * `previousClose` mirrors `item.previousClose || 0`. Additive metadata only:
+ * no number, key, default or cache decision changes. It rides INSIDE the
+ * cached record, so a server-cache hit returns exactly what was computed here
+ * and is never decorated from the already-collapsed price.
+ */
+function quoteOriginOf(item) {
+  return {
+    version: 1,
+    price: item.close ? 'provider-close' : item.previousClose ? 'provider-previous-close' : 'missing',
+    previousClose: item.previousClose ? 'provider-previous-close' : 'missing',
+  };
+}
+
 /** Safely convert a Unix epoch timestamp (seconds) to a Date. Returns null if invalid. */
 function safeDateFromEpoch(timestamp) {
   const ts = Number(timestamp);
@@ -115,7 +134,8 @@ async function handleCurrentPrices(req, res, symbols, API_KEY, noCache) {
           high: item.high || 0,
           low: item.low || 0,
           volume: item.volume,
-          timestamp: item.timestamp || null
+          timestamp: item.timestamp || null,
+          quoteOrigin: quoteOriginOf(item),
         };
         // Track oldest timestamp for data age reporting
         if (item.timestamp && (!oldestTimestamp || item.timestamp < oldestTimestamp)) {

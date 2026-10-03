@@ -27,6 +27,21 @@ import { motionToken } from '../../theme/motion';
 const DEFAULT_HISTORY = { maxMultiplier: 0, minMultiplier: 0 };
 
 /**
+ * Shadow vs CPU quote integrity (contract SHADOW_CPU_PLACEHOLDER_PRICE_SPEC_V1_6.md
+ * §7.1; build record docs/audits/20261002_SHADOW_CPU_QUOTE_INTEGRITY_BUILD_REVIEW.md).
+ * The OPTIONAL availability contract: the gated screen marks a held position
+ * whose current quote is not qualified with `asset.quoteAvailability =
+ * { status: 'unavailable', label, lastQuoteLabel }` and hands NO current-derived
+ * field. Such a side branches BEFORE any numeric formatting or arithmetic: the
+ * symbol (still a research door), the tier badge, the recorded entry and the
+ * persisted footer stay; the percent, the current price, points, badges, fuse,
+ * proximity, heat, radiance and crossing callbacks are withheld together —
+ * never rendered from substituted zeros. Absent (every legacy caller): the
+ * row renders exactly as shipped.
+ */
+const isQuoteUnavailable = (asset) => asset?.quoteAvailability?.status === 'unavailable';
+
+/**
  * The inputs ProximityLabel was always fed for a side, resolved with the same
  * defaults AssetSide destructures — so computing here is the same number the
  * label rendered before Phase A lifted the math (hazard 15: one call, one
@@ -72,6 +87,10 @@ function AssetSide({
   // flag-off and never passed to the opponent's side, so both the shipped
   // markup and the CPU column are untouched.
   showCurrentPrice = false,
+  // Shadow vs CPU quote integrity (§7.2 item 1): rows carry no side today, so
+  // the gated screen opts in to a second click argument naming it. Absent:
+  // the click callbacks receive exactly the asset, as shipped.
+  reportClickSide = false,
 }) {
   // Computed once per side when the row did not hand one down (the standalone
   // AssetSide path). Placed before the early returns so the hook order is the
@@ -82,10 +101,10 @@ function AssetSide({
   // same number the row's % shows (BUILD_RULES §9). No in-repo caller mutates
   // an asset today; the contract is kept equal to the shipped one regardless.
   const ownProximity = useMemo(() => {
-    if (proximity || !asset || asset.isCash) return null;
+    if (proximity || !asset || asset.isCash || isQuoteUnavailable(asset)) return null;
     return computeProximity(proximityInputs(asset));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [proximity, !!asset, asset?.isCash, asset?.priceChange, asset?.thresholdPriceChange, asset?.baseATR, asset?.history, asset?.dailyLevels, asset?.currentPrice]);
+  }, [proximity, !!asset, asset?.isCash, asset?.priceChange, asset?.thresholdPriceChange, asset?.baseATR, asset?.history, asset?.dailyLevels, asset?.currentPrice, asset?.quoteAvailability?.status]);
   const resolvedProximity = proximity ?? ownProximity;
 
   // Destructured here, above the early returns, so the two memos below can be
@@ -233,6 +252,62 @@ function AssetSide({
     );
   }
 
+  const sideArg = reportClickSide ? [{ side: isRight ? 'cpu' : 'player' }] : [];
+
+  if (isQuoteUnavailable(asset)) {
+    const qa = asset.quoteAvailability;
+    // Dollars are the player's convention (D-85): a dated last quote shows on
+    // the player's side only; the CPU side gets the plain status.
+    const status = !isRight && qa.lastQuoteLabel ? qa.lastQuoteLabel : qa.label;
+    return (
+      <div
+        // Its own key: entering or leaving this branch REMOUNTS the side, so a
+        // recovered row is built fresh — no attribute, style or child state
+        // (counters, fuse, radiance) carried across the unavailable stretch.
+        key="quote-unavailable"
+        data-quote-unavailable={asset.symbol}
+        style={{
+          flex: 1,
+          padding: '12px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+          textAlign: isRight ? 'right' : 'left',
+          ...(dimmed ? { opacity: 0.4, filter: 'grayscale(30%)', pointerEvents: 'none' } : {}),
+        }}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: isRight ? 'flex-end' : 'flex-start', gap: '4px' }}>
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onSymbolClick) onSymbolClick(asset, ...sideArg);
+            }}
+            style={{
+              fontWeight: 700,
+              fontSize: '14px',
+              color: onSymbolClick ? '#14b8a6' : HOLO_COLORS.textPrimary,
+              cursor: onSymbolClick ? 'pointer' : 'default',
+              display: 'inline-block',
+              padding: '2px 6px',
+              margin: '-2px -6px',
+              borderRadius: '4px',
+            }}
+          >
+            {symbol}
+          </div>
+          <span data-row-quote-status={asset.symbol} style={{ fontSize: '12px', fontWeight: 600, color: HOLO_COLORS.textMuted }}>
+            {status}
+          </span>
+          {!isRight && qa.entryLabel && (
+            <span data-row-entry={asset.symbol} style={{ fontSize: '11px', color: HOLO_COLORS.textMuted, fontVariantNumeric: 'tabular-nums' }}>
+              {qa.entryLabel}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   const isPositive = priceChange >= 0;
   const priceColor = priceChange === 0
     ? HOLO_COLORS.textMuted
@@ -343,7 +418,7 @@ function AssetSide({
           <div
             onClick={(e) => {
               e.stopPropagation();
-              if (onSymbolClick) onSymbolClick(asset);
+              if (onSymbolClick) onSymbolClick(asset, ...sideArg);
             }}
             style={{
               fontWeight: 700,
@@ -450,7 +525,7 @@ function AssetSide({
           <div
             onClick={(e) => {
               e.stopPropagation();
-              if (onPointsClick) onPointsClick(asset);
+              if (onPointsClick) onPointsClick(asset, ...sideArg);
             }}
             style={{
               cursor: onPointsClick ? 'pointer' : 'default',
@@ -565,6 +640,7 @@ AssetSide.propTypes = {
   whyName: PropTypes.string,
   whyId: PropTypes.string,
   showCurrentPrice: PropTypes.bool,
+  reportClickSide: PropTypes.bool,
 };
 
 // Tier-specific badge colors
@@ -657,17 +733,20 @@ export default function TacticalRow({
   baggerBurst = false,
   baggerFooter = null,
   reducedMotion = false,
+  // Shadow vs CPU quote integrity: name the side in the click callbacks'
+  // second argument (§7.2 item 1). Absent: exactly the shipped callbacks.
+  reportClickSide = false,
 }) {
   // The left side's proximity, computed ONCE here and handed to both the
   // label (through AssetSide) and the Why? panel — never derived twice beside
   // a rendered number (hazard 15). The right side computes its own in
   // AssetSide, once.
   const leftProximity = useMemo(() => {
-    if (!leftAsset || leftAsset.isCash) return null;
+    if (!leftAsset || leftAsset.isCash || isQuoteUnavailable(leftAsset)) return null;
     return computeProximity(proximityInputs(leftAsset));
   // Value-keyed, like the pre-lift label (see AssetSide's memo above).
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [!!leftAsset, leftAsset?.isCash, leftAsset?.priceChange, leftAsset?.thresholdPriceChange, leftAsset?.baseATR, leftAsset?.history, leftAsset?.dailyLevels, leftAsset?.currentPrice]);
+  }, [!!leftAsset, leftAsset?.isCash, leftAsset?.priceChange, leftAsset?.thresholdPriceChange, leftAsset?.baseATR, leftAsset?.history, leftAsset?.dailyLevels, leftAsset?.currentPrice, leftAsset?.quoteAvailability?.status]);
 
   return (
     <>
@@ -726,6 +805,7 @@ export default function TacticalRow({
         whyName={whyName}
         whyId={whyId}
         showCurrentPrice={showCurrentPrice}
+        {...(reportClickSide ? { reportClickSide: true } : {})}
       />
 
       {/* Center Allocation Badge */}
@@ -742,6 +822,7 @@ export default function TacticalRow({
         onSymbolClick={onSymbolClick}
         onPointsClick={onPointsClick}
         dimmed={opponentDimmed}
+        {...(reportClickSide ? { reportClickSide: true } : {})}
       />
     </motion.div>
     {/* THE FOOTER (A3.6, D-97). Persisted scoring, so it stays — the burst is
@@ -819,6 +900,7 @@ TacticalRow.propTypes = {
   baggerBurst: PropTypes.bool,
   baggerFooter: PropTypes.string,
   reducedMotion: PropTypes.bool,
+  reportClickSide: PropTypes.bool,
 };
 
 TacticalRow.defaultProps = {

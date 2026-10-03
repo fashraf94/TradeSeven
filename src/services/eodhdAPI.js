@@ -103,6 +103,29 @@ const fetchWithTimeout = async (url, timeout = 30000) => {
 };
 
 // ============================================
+// QUOTE PROVENANCE (Shadow vs CPU quote integrity)
+// ============================================
+// SHADOW_CPU_PLACEHOLDER_PRICE_SPEC_V1_6.md §4.1. The proxies attach
+// `quoteOrigin` to every record; the batch paths below carry it through
+// normalization and into the cache UNCHANGED (never re-derived from the
+// collapsed number), and the configured fallbacks say what they are. This is
+// additive metadata only: every existing field, number, type, cache key, TTL,
+// request and error path is byte-identical, and nothing here interprets it —
+// interpretation is gated in the battle screen.
+
+/** Carry the proxy's provenance through normalization, exactly as received. */
+const withQuoteOrigin = (normalized, priceData) => (
+  priceData && priceData.quoteOrigin !== undefined
+    ? { ...normalized, quoteOrigin: priceData.quoteOrigin }
+    : normalized
+);
+
+/** A stock fallback fabricates its price, previous close and open. */
+const stockFallbackOrigin = () => ({ version: 1, price: 'configured-fallback', previousClose: 'configured-fallback' });
+/** A crypto fallback fabricates only its price; it has no previous close. */
+const cryptoFallbackOrigin = () => ({ version: 1, price: 'configured-fallback', previousClose: 'missing' });
+
+// ============================================
 // STOCK FUNCTIONS (via Vercel Proxy)
 // ============================================
 
@@ -151,7 +174,7 @@ export async function getMultipleStockPrices(symbols) {
 
       // Cache each result and add to result object
       Object.entries(data.prices).forEach(([symbol, priceData]) => {
-        const normalized = {
+        const normalized = withQuoteOrigin({
           price: parseFloat(priceData.price) || 0,
           previousClose: parseFloat(priceData.previousClose) || 0,
           open: parseFloat(priceData.open) || 0,
@@ -160,7 +183,7 @@ export async function getMultipleStockPrices(symbols) {
           high: parseFloat(priceData.high) || 0,
           low: parseFloat(priceData.low) || 0,
           timestamp: priceData.timestamp || null,
-        };
+        }, priceData);
 
         // Cache with LIGHT tier (2-minute TTL)
         cacheService.set('prices', symbol, normalized);
@@ -177,7 +200,9 @@ export async function getMultipleStockPrices(symbols) {
             previousClose: FALLBACK_STOCK_PRICES[symbol] || 100,
             open: FALLBACK_STOCK_PRICES[symbol] || 100,
             change: 0,
-            percentChange: 0
+            percentChange: 0,
+            isFallback: true,
+            quoteOrigin: stockFallbackOrigin(),
           };
         }
       }
@@ -198,7 +223,9 @@ export async function getMultipleStockPrices(symbols) {
         previousClose: fallbackPrice,
         open: fallbackPrice,
         change: 0,
-        percentChange: 0
+        percentChange: 0,
+        isFallback: true,
+        quoteOrigin: stockFallbackOrigin(),
       };
     }
     return result;
@@ -310,14 +337,14 @@ export async function getMultipleCryptoPrices(symbols) {
       Object.entries(data.prices).forEach(([symbol, priceData]) => {
         const price = parseFloat(priceData.price);
         if (price > 0) {
-          const normalized = {
+          const normalized = withQuoteOrigin({
             price: price,
             previousClose: parseFloat(priceData.previousClose) || 0,
             change24h: parseFloat(priceData.changePercent) || 0,
             high: parseFloat(priceData.high) || 0,
             low: parseFloat(priceData.low) || 0,
             timestamp: priceData.timestamp || null,
-          };
+          }, priceData);
 
           // Cache with LIGHT tier (5-minute TTL)
           cacheService.set('crypto', symbol, normalized);
@@ -338,7 +365,8 @@ export async function getMultipleCryptoPrices(symbols) {
           result[symbol] = {
             price: fallbackPrice,
             change24h: 0,
-            isFallback: true
+            isFallback: true,
+            quoteOrigin: cryptoFallbackOrigin(),
           };
         }
       }
@@ -364,7 +392,8 @@ export async function getMultipleCryptoPrices(symbols) {
       result[symbol] = {
         price: fallbackPrice,
         change24h: 0,
-        isFallback: true
+        isFallback: true,
+        quoteOrigin: cryptoFallbackOrigin(),
       };
     }
     console.warn(`[EODHD] ${symbolsToFetch.length} prices using fallbacks due to error`);

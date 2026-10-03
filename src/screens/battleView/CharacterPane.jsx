@@ -197,6 +197,11 @@ export default function CharacterPane({
   bench = null,
   tape = null,
   overflow = null,
+  // Shadow vs CPU quote integrity (contract §5.3 R-7/V-4): the ONE selected
+  // comparison, or undefined for the legacy pane. Only the face's duel input
+  // reads it — the selected pair, or both score keys OMITTED when unavailable.
+  // Name, archetype, sections, close and the chat/bench/tape are untouched.
+  comparison = undefined,
 }) {
   const regionRef = React.useRef(null);
   const wasOpenRef = React.useRef(open);
@@ -293,11 +298,15 @@ export default function CharacterPane({
             <AgentPresenceMount
               surface="duel"
               agent={agentBattle}
-              duel={{
-                playerScore: playerScore ?? (agentBattle?.scoreState?.currentScore || 0),
-                opponentScore: opponentScore ?? (agentBattle?.scoreState?.opponentScore || 0),
-                statusFeed: null,
-              }}
+              duel={comparison !== undefined
+                ? (comparison.available
+                  ? { playerScore: comparison.pair[0], opponentScore: comparison.pair[1], statusFeed: null }
+                  : { statusFeed: null })
+                : {
+                  playerScore: playerScore ?? (agentBattle?.scoreState?.currentScore || 0),
+                  opponentScore: opponentScore ?? (agentBattle?.scoreState?.opponentScore || 0),
+                  statusFeed: null,
+                }}
               size={PANE_FACE_PX}
               enableEnvironment={false}
               reactivityLevel="static"
