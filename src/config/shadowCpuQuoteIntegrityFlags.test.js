@@ -14,7 +14,6 @@
 // Deliberately pins ONLY this flag (the tickStampsFlags.test.js precedent).
 
 import { readFileSync } from 'node:fs';
-import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
@@ -66,16 +65,25 @@ describe('OFF-1 — the Shadow vs CPU quote-integrity flag is dark, pinned and o
     expect(GUARD).toMatch(/^ {2}SHADOW_CPU_QUOTE_INTEGRITY_ENABLED:\n {4}'Shadow vs CPU quote integrity/m);
   });
 
-  it('existing rollout flags are untouched: the pre-build featureFlags.js is a byte-exact prefix (append-only)', () => {
-    // Captured from 44d0c63e. A value pin on a neighbour would couple that
-    // flag's docstring to this suite (flagPinGuard's Pinned-by rule), so the
-    // claim is made over the bytes instead: every existing flag, accessor and
-    // docstring is exactly as it was, and this flag only follows them.
-    const BASE_LENGTH = 164705;
-    const BASE_SHA256 = '2f5c438ca42ccfc8239b6021d7c16f3ffdec62a718e49c8371ccae39a8de8ac6';
-    const bytes = readFileSync(path.join(HERE, 'featureFlags.js'));
-    expect(createHash('sha256').update(bytes.subarray(0, BASE_LENGTH)).digest('hex')).toBe(BASE_SHA256);
-    expect(bytes.subarray(BASE_LENGTH).toString('utf8')).toContain('export const SHADOW_CPU_QUOTE_INTEGRITY_ENABLED = false;');
+  it('this flag is one self-contained block: only the constant and its accessor, and nothing outside it reads either', () => {
+    // About THIS flag only. featureFlags.js is shared, so no other flag's bytes
+    // are pinned here (a whole-file hash conflicted with other approved work).
+    // That the unrelated flags are untouched is recorded through the actual
+    // diff instead: against main, this build only ADDS this block and one
+    // DARK_BY_DESIGN entry (build record §13).
+    const banner = SRC.indexOf(' * SHADOW VERSUS CPU — QUOTE INTEGRITY');
+    expect(banner).toBeGreaterThan(-1);
+    const start = SRC.lastIndexOf('/**', banner);
+    const accessor = SRC.indexOf('export function isShadowCpuQuoteIntegrityOn()', banner);
+    expect(accessor).toBeGreaterThan(banner);
+    const end = SRC.indexOf('\n}', accessor) + 2;
+    const block = SRC.slice(start, end);
+    expect(block.match(/^export .*$/gm)).toEqual([
+      'export const SHADOW_CPU_QUOTE_INTEGRITY_ENABLED = false;',
+      'export function isShadowCpuQuoteIntegrityOn() {',
+    ]);
+    const outside = SRC.slice(0, start) + SRC.slice(end);
+    expect(outside).not.toMatch(/SHADOW_CPU_QUOTE_INTEGRITY|isShadowCpuQuoteIntegrityOn/);
   });
 });
 
