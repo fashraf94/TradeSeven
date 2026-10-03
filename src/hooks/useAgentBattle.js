@@ -21,11 +21,17 @@ import { db } from '../firebase/config';
  * override the document id. The envelope never pairs a new ID with an old
  * callback's data, and a retired subscription cannot write it.
  *
+ * `options.receive` (the gate's, with `integrity` only): a pure fold run on
+ * EVERY callback of the subscription — `receive(previous, data)`, data null
+ * for a missing document or an error — whose latest result rides in the
+ * envelope as `received`. React may render several callbacks as one update;
+ * the fold still sees each of them (R2). Absent, nothing is folded.
+ *
  * @param {string|null} agentBattleId - The agentBattle document ID (from agent.activeBattleId)
- * @param {{ integrity?: boolean }} [options]
+ * @param {{ integrity?: boolean, receive?: Function }} [options]
  * @returns {{ battle: Object|null, statusFeed: Array, loading: boolean, error: string|null, integrity?: Object }}
  */
-const useAgentBattle = (agentBattleId, { integrity = false } = {}) => {
+const useAgentBattle = (agentBattleId, { integrity = false, receive = null } = {}) => {
   console.log('[useAgentBattle] Subscribing to:', agentBattleId);
   const [battle, setBattle] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -54,6 +60,8 @@ const useAgentBattle = (agentBattleId, { integrity = false } = {}) => {
     // legacy setters are untouched.
     const generation = track.generation;
     let active = true;
+    // What this subscription has received, folded per callback (R2).
+    let received = null;
 
     setLoading(true);
     const battleRef = doc(db, 'agentBattles', agentBattleId);
@@ -70,13 +78,16 @@ const useAgentBattle = (agentBattleId, { integrity = false } = {}) => {
         setError(null);
         if (integrity && active) {
           const exists = snapshot.exists();
+          const data = exists ? snapshot.data() : null;
+          if (receive) received = receive(received, data);
           setEnvelope({
             generation,
             requestedId: agentBattleId,
             status: exists ? 'ready' : 'missing',
             snapshotId: snapshot.id,
-            data: exists ? snapshot.data() : null,
+            data,
             error: null,
+            received,
           });
         }
       },
@@ -85,6 +96,7 @@ const useAgentBattle = (agentBattleId, { integrity = false } = {}) => {
         setError(err.message);
         setLoading(false);
         if (integrity && active) {
+          if (receive) received = receive(received, null);
           setEnvelope({
             generation,
             requestedId: agentBattleId,
@@ -92,6 +104,7 @@ const useAgentBattle = (agentBattleId, { integrity = false } = {}) => {
             snapshotId: null,
             data: null,
             error: { code: err?.code ?? null, message: err?.message ?? null },
+            received,
           });
         }
       }
@@ -101,7 +114,7 @@ const useAgentBattle = (agentBattleId, { integrity = false } = {}) => {
       active = false;
       unsubscribe();
     };
-  }, [agentBattleId, track.generation, integrity]);
+  }, [agentBattleId, track.generation, integrity, receive]);
 
   const statusFeed = battle?.statusFeed || [];
   const executionMode = battle?.executionMode || 'copilot';
@@ -124,6 +137,7 @@ const useAgentBattle = (agentBattleId, { integrity = false } = {}) => {
     snapshotId: live ? envelope.snapshotId : null,
     data: live ? envelope.data : null,
     error: live ? envelope.error : null,
+    received: live ? envelope.received : null,
   };
   return result;
 };

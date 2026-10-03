@@ -391,7 +391,7 @@ const record = () => ({
   presence: [...seen.presence],
 });
 
-// BEGIN GENERATED OFF REFERENCES — captured at the pre-build SHA 44d0c63eba4e3099552d3ec3dbde6a89660a7e06 (19 entries; loadingReturn and swapTransition added after the first capture, and the four malformedTier* parity rows for the F1 correction, all captured at the same SHA).
+// BEGIN GENERATED OFF REFERENCES — captured at the pre-build SHA 44d0c63eba4e3099552d3ec3dbde6a89660a7e06 (23 entries; loadingReturn and swapTransition added after the first capture, the four malformedTier* parity rows for the F1 correction, and the four hostileSymbol* parity rows for the R1 correction, all captured at the same SHA).
 // Regenerate ONLY by re-running this file's OFF rows at that SHA with
 // SHADOW_OFF_CAPTURE_DIR set; never by blessing build output.
 const OFF = {
@@ -2313,6 +2313,18 @@ const OFF = {
  },
  "malformedTierExcludedCpu": {
   "thrown": "(portfolio[tier] || []).forEach is not a function"
+ },
+ "hostileSymbolFlagOffPlayer": {
+  "thrown": "Cannot convert object to primitive value"
+ },
+ "hostileSymbolFlagOffCpu": {
+  "thrown": "Cannot convert object to primitive value"
+ },
+ "hostileSymbolExcludedPlayer": {
+  "thrown": "Cannot convert object to primitive value"
+ },
+ "hostileSymbolExcludedCpu": {
+  "thrown": "Cannot convert object to primitive value"
  }
 };
 // END GENERATED OFF REFERENCES
@@ -4701,6 +4713,320 @@ describe('F1 delta review D-1 — the controlled research view never receives a 
       expect(modalOpen()).toBe('AAPL');
       expect(lastResearch().controlledQuote.posKey).toBe('player:star:0');
       expect(lastResearch().asset.name).toBe(shown);
+    });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The final read-only review at b8d060df (BUILD_RULES §2): two confirmed P2
+// failures, each reproduced on this real screen before any change.
+//   R1  a position symbol that shadows `toString` with data — it survives the
+//       JSON boundary — threw "Cannot convert object to primitive value": in
+//       the lineage key's starting-price lookup, and behind it in the turn
+//       line's adapter (player side, controller on). The context now contains
+//       malformed symbols before any key or derivation reads them, and every
+//       gated consumer reads that contained snapshot.
+//   R2  a disappearance and a same-stock return that React renders as ONE
+//       update (two subscription callbacks) kept the old quote and admitted
+//       the retired request's answer. The subscription now folds every callback
+//       it receives (advanceReceived) and the lineage carries that evidence.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Symbols that shadow `toString` with data. Each survives the JSON round trip. */
+const HOSTILE_SYMBOLS = {
+  'toString shadowed by a string': { toString: 'AAPL' },
+  'toString null': { toString: null },
+  'toString an object, valueOf a number': { toString: {}, valueOf: 1 },
+  'an array holding a shadowing object': [{ toString: 'AAPL' }],
+};
+/** ACTIVE_DOC with one side's first star position holding `symbol`. */
+function hostileDoc(side, symbol, base = ACTIVE_DOC) {
+  const doc = JSON.parse(JSON.stringify(base));
+  const owner = side === 'player' ? doc.portfolio : doc.opponent.portfolio;
+  owner.star = [{ ...owner.star[0], symbol }, owner.star[1]];
+  return doc;
+}
+
+describe('R1 — a position symbol that shadows toString: gated and incomplete, never a throw', () => {
+  for (const side of ['player', 'cpu']) {
+    for (const controller of [true, false]) {
+      for (const [what, symbol] of Object.entries(HOSTILE_SYMBOLS)) {
+        it(`${side}, controller ${controller ? 'on' : 'off'}: ${what}`, async () => {
+          priceBox.table = genuineTable();
+          flags.controller = controller;
+          const doc = hostileDoc(side, symbol);
+          await mountGated(openingProp(), doc);
+          expect(shell()).toBeNull();
+          expect(container.querySelector('[data-board]') !== null).toBe(controller);
+          // Incomplete, so the qualified stored pair — never an escape to legacy.
+          expect(label()).toEqual({ kind: 'last-scored', text: expect.stringContaining(STORED_INCOMPLETE) });
+          expect(label().text).toContain('You lead by 9.30');
+          // The well-formed positions are polled; the contained one is not.
+          expect(new Set(requestedSymbols())).toEqual(new Set([...heldSymbolsOf(doc.portfolio), ...heldSymbolsOf(doc.opponent.portfolio)]));
+          expect(requestedSymbols()).not.toContain(side === 'player' ? 'AAPL' : 'GOOGL');
+          expect(wsBox.args.every((a) => a.length === 0)).toBe(true);
+          await poll();
+          expect(label().kind).toBe('last-scored');
+        });
+      }
+    }
+  }
+
+  for (const side of ['player', 'cpu']) {
+    it(`${side}: a tap on the contained row, and a chat payload carrying that symbol, open nothing`, async () => {
+      priceBox.table = genuineTable();
+      await mountGated(openingProp(), hostileDoc(side, HOSTILE_SYMBOLS['toString shadowed by a string']));
+      const symbolless = [...container.querySelectorAll('span')]
+        .filter((s) => s.textContent === 'Quote unavailable' && !s.hasAttribute('data-row-quote-status'));
+      expect(symbolless).toHaveLength(1);
+      await click(symbolless[0].previousElementSibling);
+      expect(modalOpen()).toBeNull();
+      await chatClick({ symbol: { toString: 'AAPL' } });
+      expect(modalOpen()).toBeNull();
+      expect(notice()).toBeNull();
+    });
+
+    for (const controller of [true, false]) {
+      it(`${side}, controller ${controller ? 'on' : 'off'}: a CASH position whose symbol shadows toString is contained, and the side stays incomplete — never an all-cash success`, async () => {
+        priceBox.table = genuineTable();
+        flags.controller = controller;
+        const withCash = (symbol) => {
+          const doc = JSON.parse(JSON.stringify(ACTIVE_DOC));
+          const owner = side === 'player' ? doc.portfolio : doc.opponent.portfolio;
+          owner.support = [owner.support[0], owner.support[1], { isCash: true, symbol }];
+          return doc;
+        };
+        await mountGated(openingProp(), withCash({ toString: 'CASH' }));
+        expect(shell()).toBeNull();
+        expect(label()).toEqual({ kind: 'last-scored', text: expect.stringContaining(STORED_INCOMPLETE) });
+        // Negative control: the writers' own cash stamp completes as before.
+        await deliverDoc('ab-1', withCash('CASH'));
+        await poll();
+        expect(label().kind).toBe('browser');
+      });
+    }
+  }
+});
+
+describe('R1 — parity: the same documents on the shipped path are untouched (flag off, or excluded)', () => {
+  // Negative controls as well: where the gated containment does not apply,
+  // the same input reaches the shipped path exactly as it did at the base SHA
+  // — pinned by references captured there.
+  const routes = { FlagOff: false, Excluded: true };
+  for (const [route, gate] of Object.entries(routes)) {
+    for (const side of ['player', 'cpu']) {
+      const name = `hostileSymbol${route}${side === 'player' ? 'Player' : 'Cpu'}`;
+      it(`OFF ${name}: controller on, ${side} star symbol { toString: 'AAPL' } — the shipped outcome`, async () => {
+        priceBox.table = genuineTable();
+        const base = gate ? { ...ACTIVE_DOC, groupId: 'group-1' } : ACTIVE_DOC; // a group stamp is excluded (§3.1)
+        flags.gate = gate;
+        await mount(openingProp());
+        let thrown = null;
+        try { await deliverDoc('ab-1', hostileDoc(side, { toString: 'AAPL' }, base)); } catch (e) { thrown = String(e?.message ?? e); }
+        offReference(name, { thrown }, OFF[name]);
+      });
+    }
+  }
+});
+
+/** The returning slot on each side: core:1 (TSLA for the player, ORCL for the CPU). */
+const RETURNING = { player: 'TSLA', cpu: 'ORCL' };
+/** One side's core tier shrunk to its first slot — a valid snapshot. */
+function shrunkDoc(side, base = ACTIVE_DOC) {
+  const doc = JSON.parse(JSON.stringify(base));
+  const owner = side === 'player' ? doc.portfolio : doc.opponent.portfolio;
+  owner.core = [owner.core[0]];
+  return doc;
+}
+/** That tier regrown with ANOTHER stock in the returning slot. */
+function otherReturnDoc(side) {
+  const doc = JSON.parse(JSON.stringify(ACTIVE_DOC));
+  const owner = side === 'player' ? doc.portfolio : doc.opponent.portfolio;
+  owner.core = [owner.core[0], { symbol: 'XOM', price: 100 }];
+  return doc;
+}
+/**
+ * Several subscription callbacks that React renders as ONE update. `one-act`:
+ * all inside a single act, which batches them. `sdk`: each in its own
+ * setTimeout(…, 0) outside act — how @firebase/firestore 4.9.2's
+ * AsyncObserver dispatches every callback (dist/index.esm.js:17785-17808) — so
+ * React's scheduled render runs after all of them.
+ */
+async function deliverTogether(id, docs, delivery) {
+  const l = activeListener('doc', id);
+  if (!l) throw new Error(`no active doc listener for ${id}`);
+  if (delivery === 'sdk') {
+    for (const d of docs) setTimeout(() => l.next(docSnap(id, d)), 0);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    await flush();
+  } else {
+    await act(async () => { for (const d of docs) l.next(docSnap(id, d)); });
+    await flush();
+  }
+}
+/** Watches the DOM: did `symbol`'s row on `side` ever leave the screen? (It would, had the shrink rendered.) */
+function watchRow(symbol, side) {
+  let absent = false;
+  const observer = new MutationObserver(() => { if (!symbolEl(symbol, side)) absent = true; });
+  observer.observe(container, { childList: true, subtree: true });
+  return { everAbsent: () => absent, stop: () => observer.disconnect() };
+}
+const pendingSymbols = (batch) => batch.flatMap((p) => p.symbols);
+
+describe('R2 — a received disappearance and same-stock return, rendered as one update', () => {
+  for (const delivery of ['one-act', 'sdk']) {
+    for (const side of ['player', 'cpu']) {
+      for (const controller of [true, false]) {
+        it(`${side}, controller ${controller ? 'on' : 'off'}, ${delivery}: the returned holding starts without its previous quote, the retired answer is dropped, its own request recovers it`, async () => {
+          priceBox.table = genuineTable();
+          flags.controller = controller;
+          await mountGated();
+          const sym = RETURNING[side];
+          const before = label();
+          expect(before.kind).toBe('browser');
+          expect(rowStatus(sym)).toEqual([]);
+          priceBox.mode = 'defer';
+          await poll(); // the pre-disappearance request, outstanding
+          const retired = priceBox.pending.splice(0);
+          expect(pendingSymbols(retired)).toContain(sym);
+          const watch = watchRow(sym, side);
+          await deliverTogether('ab-1', [shrunkDoc(side), ACTIVE_DOC], delivery);
+          watch.stop();
+          expect(watch.everAbsent()).toBe(false); // ONE render: the shrink never reached the screen
+          // A new position: no previous quote (no "Last quote" either), incomplete…
+          expect(rowStatus(sym)).toEqual(['Quote unavailable']);
+          expect(label()).toEqual({ kind: 'last-scored', text: expect.stringContaining(STORED_INCOMPLETE) });
+          // …and its own request is already out.
+          const fresh = priceBox.pending.splice(0);
+          expect(pendingSymbols(fresh)).toContain(sym);
+          // The retired request answers late with a qualified $777: dropped.
+          await act(async () => { for (const p of retired) p.resolve({ ...p.build(), [sym]: quote(sym, { price: 777 }) }); });
+          await flush();
+          expect(rowStatus(sym)).toEqual(['Quote unavailable']);
+          expect(label().kind).toBe('last-scored');
+          // Its own answer recovers it — the same comparison as before the gap.
+          await act(async () => { for (const p of fresh) p.resolve(p.build()); });
+          await flush();
+          expect(rowStatus(sym)).toEqual([]);
+          expect(label()).toEqual(before);
+        });
+      }
+    }
+  }
+
+  for (const side of ['player', 'cpu']) {
+    for (const controller of [true, false]) {
+      it(`${side}, controller ${controller ? 'on' : 'off'}: different-stock control — another stock returning in one update starts empty and never takes the retired answer`, async () => {
+        priceBox.table = { ...genuineTable(), XOM: quote('AAPL', { price: 112, previousClose: 111 }) };
+        flags.controller = controller;
+        await mountGated();
+        priceBox.mode = 'defer';
+        await poll();
+        const retired = priceBox.pending.splice(0);
+        await deliverTogether('ab-1', [shrunkDoc(side), otherReturnDoc(side)], 'one-act');
+        expect(rowStatus('XOM')).toEqual(['Quote unavailable']);
+        expect(label().kind).toBe('last-scored');
+        const fresh = priceBox.pending.splice(0);
+        expect(pendingSymbols(fresh)).toContain('XOM');
+        await act(async () => { for (const p of retired) p.resolve({ ...p.build(), XOM: quote('AAPL', { price: 777, previousClose: 111 }) }); });
+        await flush();
+        expect(rowStatus('XOM')).toEqual(['Quote unavailable']);
+        await act(async () => { for (const p of fresh) p.resolve(p.build()); });
+        await flush();
+        expect(rowStatus('XOM')).toEqual([]);
+        expect(label().kind).toBe('browser');
+      });
+    }
+  }
+
+  for (const controller of [true, false]) {
+    it(`controller ${controller ? 'on' : 'off'}: ordinary feed and chat updates — alone or several in one update — keep every quote, issue no request and keep the 60 s cadence`, async () => {
+      priceBox.table = genuineTable();
+      flags.controller = controller;
+      await mountGated();
+      const before = { label: label(), rows: unavailableRows() };
+      const calls = priceBox.calls.length;
+      const feed = (n) => ({
+        ...ACTIVE_DOC,
+        statusFeed: Array.from({ length: n }, (_, i) => ({ type: 'thought', text: `tick ${i}`, timestamp: '2026-10-01T16:4' + (i % 10) + ':00.000Z' })),
+        chatExchanges: Array.from({ length: n }, (_, i) => ({ user: `q${i}`, agent: `a${i}` })),
+      });
+      await deliverDoc('ab-1', feed(1));
+      await deliverTogether('ab-1', [feed(2), feed(3), feed(4)], 'one-act');
+      await deliverTogether('ab-1', [feed(5), feed(6)], 'sdk');
+      expect(priceBox.calls.length).toBe(calls);
+      expect({ label: label(), rows: unavailableRows() }).toEqual(before);
+      await act(async () => { vi.advanceTimersByTime(59999); });
+      await flush();
+      expect(priceBox.calls.length).toBe(calls);
+      await act(async () => { vi.advanceTimersByTime(1); });
+      await flush();
+      expect(priceBox.calls.length).toBe(calls + 2); // one poll: the stock and crypto batches
+    });
+  }
+
+  for (const side of ['player', 'cpu']) {
+    it(`${side}: the open controlled research view and the open breakdown of the returning holding close; recovery reopens neither`, async () => {
+      priceBox.table = genuineTable();
+      await mountGated();
+      const sym = RETURNING[side];
+      await click(symbolEl(sym, side));
+      expect(modalOpen()).toBe(sym);
+      expect(lastResearch().controlledQuote.posKey).toBe(`${side}:core:1`);
+      await deliverTogether('ab-1', [shrunkDoc(side), ACTIVE_DOC], 'one-act');
+      expect(modalOpen()).toBeNull();
+      await poll();
+      expect(rowStatus(sym)).toEqual([]);
+      expect(modalOpen()).toBeNull();
+      await click(pointsEl(sym, side));
+      expect(container.querySelector(`[data-test-breakdown="${sym}"]`)).not.toBeNull();
+      await deliverTogether('ab-1', [shrunkDoc(side), ACTIVE_DOC], 'sdk');
+      expect(container.querySelector('[data-test-breakdown]')).toBeNull();
+      await poll();
+      expect(container.querySelector('[data-test-breakdown]')).toBeNull();
+    });
+  }
+
+  it('player: an open Why? panel on the returning holding closes', async () => {
+    priceBox.table = genuineTable();
+    await mountGated();
+    await click(container.querySelector('[role="button"][aria-label="Why? TSLA"]'));
+    expect(container.querySelector('#why-core-1-heading')).not.toBeNull();
+    await deliverTogether('ab-1', [shrunkDoc('player'), ACTIVE_DOC], 'one-act');
+    expect(container.querySelector('#why-core-1-heading')).toBeNull();
+  });
+
+  it('a held research view on an UNCHANGED position stays open through the same update', async () => {
+    priceBox.table = genuineTable();
+    await mountGated();
+    await click(symbolEl('AAPL', 'player'));
+    expect(modalOpen()).toBe('AAPL');
+    await deliverTogether('ab-1', [shrunkDoc('player'), ACTIVE_DOC], 'one-act');
+    expect(modalOpen()).toBe('AAPL');
+  });
+
+  for (const [what, interlude] of [
+    ['a truncated trade history', { ...ACTIVE_DOC, trades: [] }],
+    ['the document going missing', null],
+  ]) {
+    it(`a whole-battle discontinuity received between identical snapshots — ${what} — invalidates every position`, async () => {
+      priceBox.table = genuineTable();
+      await mountGated();
+      priceBox.mode = 'defer';
+      await poll();
+      const retired = priceBox.pending.splice(0);
+      await deliverTogether('ab-1', [interlude, ACTIVE_DOC], 'one-act');
+      expect(shell()).toBeNull();
+      // Every held row is a new position: none keeps its quote.
+      expect(new Set(unavailableRows())).toEqual(new Set([...heldSymbolsOf(PLAYER_PORTFOLIO), ...heldSymbolsOf(CPU_PORTFOLIO)]));
+      const fresh = priceBox.pending.splice(0);
+      await act(async () => { for (const p of retired) p.resolve(p.build()); });
+      await flush();
+      expect(label().kind).toBe('last-scored');
+      await act(async () => { for (const p of fresh) p.resolve(p.build()); });
+      await flush();
+      expect(unavailableRows()).toEqual([]);
+      expect(label().kind).toBe('browser');
     });
   }
 });

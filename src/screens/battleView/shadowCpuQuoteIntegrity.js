@@ -362,8 +362,16 @@ export function resolveGate({ integrityOn, directId, lookup, envelope, requested
 
 const TIER_KEYS = ['star', 'core', 'support'];
 
+/**
+ * A position symbol is a string or absent. Anything else — an object (whose
+ * `toString` the data itself can shadow, so using it as a key or as text
+ * throws), an array, a number, a boolean — is MALFORMED (R1).
+ */
+const isMalformedSymbol = (symbol) => symbol !== undefined && symbol !== null && typeof symbol !== 'string';
+
 /** A structurally valid portfolio: an object, tier arrays where present, at
- *  least one position, every position cash or a named symbol. */
+ *  least one position, every position cash or a named symbol, and no position
+ *  with a malformed symbol — cash included (writers stamp cash 'CASH'). */
 function portfolioValid(p) {
   if (!p || typeof p !== 'object' || Array.isArray(p)) return false;
   let positions = 0;
@@ -374,6 +382,7 @@ function portfolioValid(p) {
     for (const a of list) {
       if (a === null || a === undefined) continue;
       if (typeof a !== 'object') return false;
+      if (isMalformedSymbol(a.symbol)) return false;
       if (a.isCash !== true && !(typeof a.symbol === 'string' && a.symbol.length > 0)) return false;
       positions += 1;
     }
@@ -382,13 +391,50 @@ function portfolioValid(p) {
 }
 
 /**
+ * R1: the snapshot as every gated consumer reads it. A position whose symbol
+ * is malformed is copied WITHOUT its `symbol`, before the lineage, the rows,
+ * the turn line's adapter, the chat roster or any panel can turn it into a key
+ * or text. Only the array tiers of the two portfolios hold positions; the rest
+ * of the snapshot is untouched, and a well-formed one comes back as the SAME
+ * object.
+ */
+function containSymbols(data) {
+  const containPortfolio = (p) => {
+    if (!p || typeof p !== 'object' || Array.isArray(p)) return p;
+    let out = p;
+    for (const tier of TIER_KEYS) {
+      const list = p[tier];
+      if (!Array.isArray(list) || !list.some((a) => a && typeof a === 'object' && isMalformedSymbol(a.symbol))) continue;
+      if (out === p) out = { ...p };
+      out[tier] = list.map((a) => {
+        if (!a || typeof a !== 'object' || !isMalformedSymbol(a.symbol)) return a;
+        const position = { ...a };
+        delete position.symbol;
+        return position;
+      });
+    }
+    return out;
+  };
+  if (!data || typeof data !== 'object') return data;
+  const portfolio = containPortfolio(data.portfolio);
+  const opponent = data.opponent && typeof data.opponent === 'object' ? data.opponent : null;
+  const opponentPortfolio = opponent ? containPortfolio(opponent.portfolio) : undefined;
+  if (portfolio === data.portfolio && (!opponent || opponentPortfolio === opponent.portfolio)) return data;
+  const out = { ...data };
+  if (portfolio !== data.portfolio) out.portfolio = portfolio;
+  if (opponent && opponentPortfolio !== opponent.portfolio) out.opponent = { ...opponent, portfolio: opponentPortfolio };
+  return out;
+}
+
+/**
  * One position's lineage: side, tier/slot, symbol and the recorded entry and
  * swap identity. A same-symbol re-entry at an identical price still differs
  * (swappedInAt), and the nightly rewrite (swapPrice and swappedInDay removed,
  * swappedInAt kept) changes it too — a NEW position generation (A-5/V-8).
+ * Only a string symbol is ever used as a key (R1).
  */
 export function positionLineageKey(asset, { side, tier, slot, startingPrices }) {
-  const sym = asset?.symbol ?? null;
+  const sym = typeof asset?.symbol === 'string' ? asset.symbol : null;
   return JSON.stringify([
     side, tier, slot, sym, asset?.isCash === true,
     asset?.price ?? null, asset?.swapPrice ?? null, asset?.swappedInAt ?? null, asset?.swappedInDay ?? null,
@@ -400,10 +446,22 @@ export function positionLineageKey(asset, { side, tier, slot, startingPrices }) 
  * The immutable screen context built from ONE matching snapshot's data: both
  * portfolios, recorded starting prices, thresholds/history, activation, trades,
  * stored scores, and the positions with their lineage. No opening-prop source.
+ *
+ * R1: everything here is read from `data` — the snapshot with its malformed
+ * symbols contained — and the screen hands that same object to every gated
+ * consumer. Structural validity is judged on the snapshot AS RECEIVED,
+ * so a side with a malformed symbol stays invalid: the comparison incomplete,
+ * never an all-cash success, never legacy.
+ *
+ * R2: with `received` (advanceReceived's evidence for this subscription), each
+ * position's lineage also carries its slot's revision and the context the
+ * battle-wide epoch, so a discontinuity the subscription received reaches
+ * reconcileLineage even when React rendered it as one update.
  */
-export function buildBattleContext(data, { battleId }) {
-  const playerPortfolio = data?.portfolio;
-  const cpuPortfolio = data?.opponent?.portfolio;
+export function buildBattleContext(data, { battleId, received = null }) {
+  const contained = containSymbols(data);
+  const playerPortfolio = contained?.portfolio;
+  const cpuPortfolio = contained?.opponent?.portfolio;
   const startingPrices = (playerPortfolio && typeof playerPortfolio === 'object' && playerPortfolio.startingPrices
     && typeof playerPortfolio.startingPrices === 'object') ? playerPortfolio.startingPrices : {};
   const positions = [];
@@ -413,15 +471,17 @@ export function buildBattleContext(data, { battleId }) {
       const list = Array.isArray(p[tier]) ? p[tier] : [];
       list.forEach((asset, slot) => {
         if (!asset || typeof asset !== 'object') return;
+        const posKey = `${side}:${tier}:${slot}`;
+        const lineageKey = positionLineageKey(asset, { side, tier, slot, startingPrices });
         positions.push({
-          posKey: `${side}:${tier}:${slot}`,
+          posKey,
           side,
           tier,
           slot,
           asset,
           symbol: typeof asset.symbol === 'string' ? asset.symbol : null,
           isCash: asset.isCash === true,
-          lineageKey: positionLineageKey(asset, { side, tier, slot, startingPrices }),
+          lineageKey: received ? `${lineageKey}#${received.revisions[posKey] ?? 0}` : lineageKey,
         });
       });
     }
@@ -431,9 +491,10 @@ export function buildBattleContext(data, { battleId }) {
   const held = positions.filter((p) => !p.isCash && p.symbol);
   return {
     battleId,
+    data: contained,
     playerPortfolio,
     cpuPortfolio,
-    portfoliosValid: portfolioValid(playerPortfolio) && portfolioValid(cpuPortfolio),
+    portfoliosValid: portfolioValid(data?.portfolio) && portfolioValid(data?.opponent?.portfolio),
     startingPrices,
     thresholds: data?.scoring?.thresholds && typeof data.scoring.thresholds === 'object' ? data.scoring.thresholds : {},
     positions,
@@ -441,22 +502,60 @@ export function buildBattleContext(data, { battleId }) {
     requiredSymbols: [...new Set(held.map((p) => p.symbol))],
     tradeCount: data?.scoreState?.tradeCount ?? null,
     tradesLength: Array.isArray(data?.trades) ? data.trades.length : 0,
+    epoch: received ? received.epoch : 0,
   };
+}
+
+/**
+ * R2: the discontinuities ONE subscription has received, folded callback by
+ * callback. The subscription runs this on EVERY callback, so what React renders
+ * as one update — a slot that vanishes and returns holding the same stock, a
+ * history truncated in between — still reaches the lineage. Per slot, a
+ * revision that advances whenever the slot's lineage differs from the previous
+ * callback's (absence included) and never restarts within the subscription;
+ * battle-wide, an epoch that advances on reconcileLineage's own whole-battle
+ * rules (a truncated trade history, a trade-count move no slot explains).
+ * Feed- and chat-only callbacks change neither. Pure. It runs for every
+ * flag-on callback, excluded battles included, so it never throws: a snapshot
+ * it cannot read advances the epoch.
+ */
+export function advanceReceived(prev, data) {
+  let context = null;
+  try {
+    context = buildBattleContext(data, { battleId: null });
+  } catch {
+    context = null;
+  }
+  const slots = context ? Object.fromEntries(context.positions.map((p) => [p.posKey, p.lineageKey])) : {};
+  const tradeCount = context ? context.tradeCount : null;
+  const tradesLength = context ? context.tradesLength : 0;
+  if (!prev) return { slots, revisions: {}, epoch: 0, tradeCount, tradesLength };
+  let revisions = prev.revisions;
+  for (const k of new Set([...Object.keys(prev.slots), ...Object.keys(slots)])) {
+    if (prev.slots[k] === slots[k]) continue;
+    if (revisions === prev.revisions) revisions = { ...prev.revisions };
+    revisions[k] = (revisions[k] ?? 0) + 1;
+  }
+  const reset = !context || tradesLength < prev.tradesLength || (tradeCount !== prev.tradeCount && revisions === prev.revisions);
+  return { slots, revisions, epoch: reset ? prev.epoch + 1 : prev.epoch, tradeCount, tradesLength };
 }
 
 /**
  * Advance the battle/position generations from one context to the next.
  * Returns the SAME object when nothing changed (safe for render-time state
  * adjustment). Conservative: a new battle or subscription, a truncated trade
- * history, or a trade-count change that no slot's lineage explains
- * invalidates every position; otherwise only the slots whose lineage changed.
+ * history, a trade-count change that no slot's lineage explains, or a received
+ * epoch change (R2) invalidates every position; otherwise only the slots whose
+ * lineage changed.
  */
 export function reconcileLineage(prev, { battleKey, context }) {
   const posEntries = context.positions.map((p) => [p.posKey, p.lineageKey]);
-  if (!prev || prev.battleKey !== battleKey || context.tradesLength < prev.tradesLength) {
+  const epoch = context.epoch ?? 0;
+  if (!prev || prev.battleKey !== battleKey || context.tradesLength < prev.tradesLength || epoch !== (prev.epoch ?? 0)) {
     return {
       battleKey,
       battleGeneration: (prev?.battleGeneration ?? 0) + 1,
+      epoch,
       tradeCount: context.tradeCount,
       tradesLength: context.tradesLength,
       positions: Object.fromEntries(posEntries.map(([k, l]) => [k, { lineageKey: l, gen: 1 }])),
@@ -477,6 +576,7 @@ export function reconcileLineage(prev, { battleKey, context }) {
     return {
       battleKey,
       battleGeneration: prev.battleGeneration + 1,
+      epoch,
       tradeCount: context.tradeCount,
       tradesLength: context.tradesLength,
       positions: Object.fromEntries(posEntries.map(([k, l]) => [k, { lineageKey: l, gen: (prev.positions[k]?.gen ?? 0) + 1 }])),

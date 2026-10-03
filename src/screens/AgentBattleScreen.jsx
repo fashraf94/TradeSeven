@@ -61,6 +61,7 @@ import {
   gatedRequestedId,
   resolveGate,
   buildBattleContext,
+  advanceReceived,
   reconcileLineage,
   positionToken,
   applyQuoteArrival,
@@ -1085,7 +1086,9 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   const requestedId = integrityOn
     ? (gatedRequestedId({ directId, lookup }) ?? (excludedLookupError ? queriedId : null))
     : legacyBattleId;
-  const battleHook = useAgentBattle(requestedId, ...(integrityOn ? [{ integrity: true }] : []));
+  // Gated, the subscription also folds every callback it receives (R2), so a
+  // position discontinuity survives callbacks React renders as one update.
+  const battleHook = useAgentBattle(requestedId, ...(integrityOn ? [{ integrity: true, receive: advanceReceived }] : []));
 
   // ── Quote integrity: admission and terminal states (§3.1, R-5, C-2) ───────
   if (excludedFor !== null && excludedFor !== requestedId) setExcludedFor(null);
@@ -1099,11 +1102,25 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // or an admitted battle. Excluded and flag-off take the shipped path whole.
   const gatedPath = integrityOn && gate.mode !== 'legacy' && gate.mode !== 'excluded';
   const admitted = gatedPath && gate.mode === 'admitted';
-  // The identified snapshot: that callback's data with the AUTHORITATIVE
+  // ── Quote integrity: the identified context ──────────────────────────────
+  //
+  // Gated path only (§3.2). ONE context from the admitted snapshot feeds rows,
+  // completeness, requests and details — never the opening prop, whatever the
+  // controller and pane flags say. It is built FIRST, before anything reads
+  // the snapshot: its `data` is the snapshot with every malformed position
+  // symbol contained (R1), and the subscription's received evidence rides into
+  // each position's lineage (R2).
+  const admittedData = admitted ? envelope.data : null;
+  const admittedReceived = admitted ? envelope.received : null;
+  const gatedContext = useMemo(
+    () => (admitted ? buildBattleContext(admittedData, { battleId: requestedId, received: admittedReceived }) : null),
+    [admitted, admittedData, admittedReceived, requestedId],
+  );
+  // The identified snapshot: that context's data with the AUTHORITATIVE
   // document id (a data field named `id` cannot override it). It is the
-  // `agentBattle` of the gated path, so the turn line, Why? and the
-  // comparison's stored time read one object (V-12).
-  const identifiedData = admitted ? envelope.data : null;
+  // `agentBattle` of the gated path, so the turn line, Why?, the chat roster,
+  // every panel and the comparison's stored time read one object (V-12).
+  const identifiedData = gatedContext ? gatedContext.data : null;
   const identifiedId = admitted ? envelope.snapshotId : null;
   const identifiedBattle = useMemo(
     () => (identifiedData ? { ...identifiedData, id: identifiedId } : null),
@@ -1130,18 +1147,13 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     lastSeenFeedLengthRef.current = statusFeed.length;
   }
 
-  // ── Quote integrity: the identified context, lineage and quote evidence ──
+  // ── Quote integrity: lineage and quote evidence ──────────────────────────
   //
-  // Gated path only (§3.2, §4.2–§4.3). ONE context from the admitted snapshot
-  // feeds rows, completeness, requests and details — never the opening prop,
-  // whatever the controller and pane flags say. Each held position carries a
-  // lineage generation; its quote evidence is keyed by that identity, so a
-  // swap, a same-symbol re-entry, the nightly rewrite, a battle change or a
-  // subscription reset starts it EMPTY and a retired request cannot write it.
-  const gatedContext = useMemo(
-    () => (admitted ? buildBattleContext(identifiedData, { battleId: requestedId }) : null),
-    [admitted, identifiedData, requestedId],
-  );
+  // Gated path only (§3.2, §4.2–§4.3). Each held position of the identified
+  // context carries a lineage generation; its quote evidence is keyed by that
+  // identity, so a swap, a same-symbol re-entry, the nightly rewrite, a
+  // battle change, a subscription reset or a received discontinuity starts it
+  // EMPTY and a retired request cannot write it.
   const gatedBattleKey = admitted ? `${requestedId}|${envelope.generation}` : null;
   const [quoteBook, setQuoteBook] = useState(EMPTY_QUOTE_BOOK);
   if (integrityOn) {

@@ -42,6 +42,7 @@ vi.mock('firebase/firestore', () => ({
 vi.mock('../firebase/config', () => ({ db: { name: 'db' } }));
 
 import useAgentBattle from './useAgentBattle';
+import { advanceReceived } from '../screens/battleView/shadowCpuQuoteIntegrity';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -894,5 +895,77 @@ describe('ON — the atomic envelope from the existing subscription', () => {
     deliver(docSnap('battle-A', DOC_A));
     expect(Object.keys(commits[commits.length - 1])).not.toContain('integrity');
     expect(Object.keys(commits[commits.length - 1])).toEqual(LEGACY_KEYS);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// R2 (final read-only review at b8d060df) — the gate's `receive` fold runs on
+// EVERY callback the subscription delivers, callbacks React renders as one
+// update included, so nothing the subscription received is lost to batching.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('R2 — the received fold runs on every callback', () => {
+  // A recording fold: what each callback carried, in order.
+  const trail = (prev, data) => [...(prev ?? []), data === null ? null : data.n];
+  const FOLD = { integrity: true, receive: trail };
+
+  it('two callbacks rendered as one update: both folded, in order, beside the last callback\'s data', () => {
+    render('battle-A', { options: FOLD });
+    const l = current();
+    act(() => {
+      l.next(docSnap('battle-A', { ...DOC_A, n: 1 }));
+      l.next(docSnap('battle-A', { ...DOC_A, n: 2 }));
+    });
+    expect(env().received).toEqual([1, 2]);
+    expect(env().data.n).toBe(2);
+  });
+
+  it('a missing document and an error fold as null; a retired subscription folds nothing; a new one starts over', () => {
+    render('battle-A', { options: FOLD });
+    deliver(docSnap('battle-A', { ...DOC_A, n: 1 }));
+    deliver(docSnap('battle-A', null));
+    expect(env().received).toEqual([1, null]);
+    const retired = current();
+    render('battle-B', { options: FOLD });
+    expect(env().received).toBeNull(); // pending: no evidence yet
+    act(() => { retired.next(docSnap('battle-A', { ...DOC_A, n: 9 })); });
+    deliver(docSnap('battle-B', { ...DOC_B, n: 3 }));
+    expect(env().received).toEqual([3]);
+    fail({ message: 'boom', code: 'internal' });
+    expect(env().received).toEqual([3, null]);
+  });
+
+  it('with the gate\'s fold: a slot that vanishes and returns in one update advances its revision twice; feed-only callbacks advance nothing', () => {
+    const core = [{ symbol: 'MSFT', price: 400 }, { symbol: 'TSLA', price: 250 }];
+    const doc = (slots, feed = []) => ({ ...DOC_A, portfolio: { star: [{ symbol: 'AAPL', price: 150 }], core: slots }, statusFeed: feed });
+    render('battle-A', { options: { integrity: true, receive: advanceReceived } });
+    deliver(docSnap('battle-A', doc(core)));
+    expect(env().received).toMatchObject({ revisions: {}, epoch: 0 });
+    const l = current();
+    act(() => {
+      l.next(docSnap('battle-A', doc([core[0]])));
+      l.next(docSnap('battle-A', doc(core)));
+    });
+    expect(env().received.revisions).toEqual({ 'player:core:1': 2 });
+    act(() => {
+      l.next(docSnap('battle-A', doc(core, [{ action: 'hold' }])));
+      l.next(docSnap('battle-A', doc(core, [{ action: 'hold' }, { action: 'buy' }])));
+    });
+    expect(env().received.revisions).toEqual({ 'player:core:1': 2 });
+    expect(env().received.epoch).toBe(0);
+  });
+
+  it('without `receive` nothing is folded; the listener call and the legacy fields are the same either way', () => {
+    render('battle-A', { options: ON });
+    deliver(docSnap('battle-A', DOC_A));
+    expect(env().received).toBeNull();
+    const plain = legacyView(commits[commits.length - 1]).values;
+    act(() => root.unmount());
+    root = createRoot(container);
+    commits = [];
+    render('battle-A', { options: FOLD });
+    deliver(docSnap('battle-A', DOC_A));
+    expect(legacyView(commits[commits.length - 1]).values).toEqual(plain);
+    expect(fsBox.log.filter(([kind]) => kind === 'subscribe').map(([, , arity, id]) => [arity, id])).toEqual([[3, 'battle-A'], [3, 'battle-A']]);
   });
 });

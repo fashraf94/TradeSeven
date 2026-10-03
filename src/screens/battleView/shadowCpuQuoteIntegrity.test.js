@@ -22,6 +22,7 @@ import {
   resolveGate,
   positionLineageKey,
   buildBattleContext,
+  advanceReceived,
   reconcileLineage,
   positionToken,
   applyQuoteArrival,
@@ -357,6 +358,128 @@ describe('§3.2 — context, lineage and conservative invalidation', () => {
     expect(truncated.battleGeneration).toBe(t1.battleGeneration + 1);
     const resubscribed = reconcileLineage(t1, { battleKey: 'ab-1#2', context: buildBattleContext(data(), { battleId: 'ab-1' }) });
     expect(resubscribed.battleGeneration).toBe(t1.battleGeneration + 1);
+  });
+});
+
+describe('R1 — malformed position symbols are contained before any key or derivation reads them', () => {
+  // A symbol that shadows `toString` with data survives the JSON boundary and
+  // throws when used as a key or as text (the final read-only review's R1).
+  const HOSTILE = [{ toString: 'AAPL' }, { toString: null }, { toString: {}, valueOf: 1 }, [{ toString: 'AAPL' }], 42, true];
+  const snapshot = (position, cpuPosition = { symbol: 'GOOGL', price: 160 }) => ({
+    portfolio: { star: [position, { symbol: 'NVDA', price: 900 }], startingPrices: { AAPL: 150, NVDA: 900 } },
+    opponent: { odUserId: 'cpu', portfolio: { star: [cpuPosition] } },
+    scoreState: { tradeCount: 1 },
+    trades: [{}],
+  });
+
+  it('player side: the symbol is copied out of the context\'s data, nothing else moves, the side is invalid, nothing throws', () => {
+    for (const symbol of HOSTILE) {
+      const raw = snapshot({ symbol, price: 150 });
+      const ctx = buildBattleContext(raw, { battleId: 'ab-1' });
+      expect(ctx.data.portfolio.star[0]).toEqual({ price: 150 });
+      expect(ctx.data.portfolio.star[1]).toBe(raw.portfolio.star[1]);
+      expect(ctx.data.portfolio.startingPrices).toBe(raw.portfolio.startingPrices);
+      expect(ctx.data.opponent).toBe(raw.opponent);
+      expect(raw.portfolio.star[0].symbol).toBe(symbol); // the snapshot itself is never mutated
+      expect(ctx.positions[0]).toMatchObject({ posKey: 'player:star:0', symbol: null, isCash: false });
+      expect(ctx.requiredSymbols).toEqual(['NVDA', 'GOOGL']);
+      expect(ctx.portfoliosValid).toBe(false);
+    }
+  });
+
+  it('CPU side and cash positions too: contained, and still invalid — a cash position is never a way round it', () => {
+    const cpu = snapshot({ symbol: 'AAPL', price: 150 }, { symbol: { toString: 'GOOGL' }, price: 160 });
+    const cpuCtx = buildBattleContext(cpu, { battleId: 'ab-1' });
+    expect(cpuCtx.data.opponent.portfolio.star[0]).toEqual({ price: 160 });
+    expect(cpuCtx.data.opponent.odUserId).toBe('cpu');
+    expect(cpuCtx.data.portfolio).toBe(cpu.portfolio);
+    expect(cpuCtx.portfoliosValid).toBe(false);
+    const cash = buildBattleContext(snapshot({ isCash: true, symbol: { toString: 'CASH' } }), { battleId: 'ab-1' });
+    expect(cash.data.portfolio.star[0]).toEqual({ isCash: true });
+    expect(cash.portfoliosValid).toBe(false);
+    // Controls: the writers' own cash stamp, and a cash position with no symbol, stay valid.
+    expect(buildBattleContext(snapshot({ isCash: true, symbol: 'CASH' }), { battleId: 'ab-1' }).portfoliosValid).toBe(true);
+    expect(buildBattleContext(snapshot({ isCash: true }), { battleId: 'ab-1' }).portfoliosValid).toBe(true);
+  });
+
+  it('a well-formed snapshot is the SAME object, so nothing downstream sees a new identity', () => {
+    const raw = snapshot({ symbol: 'AAPL', price: 150 });
+    expect(buildBattleContext(raw, { battleId: 'ab-1' }).data).toBe(raw);
+    expect(buildBattleContext(null, { battleId: 'ab-1' }).data).toBeNull();
+  });
+
+  it('the lineage key never coerces a symbol: a malformed one keys like an absent one', () => {
+    const k = (symbol) => positionLineageKey({ symbol, price: 150 }, { side: 'player', tier: 'star', slot: 0, startingPrices: { AAPL: 150 } });
+    for (const symbol of HOSTILE) expect(k(symbol)).toBe(k(undefined));
+    expect(k('AAPL')).not.toBe(k(undefined));
+  });
+});
+
+describe('R2 — the received fold, and the lineage it feeds', () => {
+  const portfolio = {
+    star: [{ symbol: 'AAPL', price: 150 }],
+    core: [{ symbol: 'MSFT', price: 400 }, { symbol: 'TSLA', price: 250 }],
+    startingPrices: { AAPL: 150, MSFT: 400 },
+  };
+  const data = (over = {}) => ({ portfolio, opponent: { odUserId: 'cpu', portfolio: { star: [{ symbol: 'GOOGL', price: 160 }] } }, scoreState: { tradeCount: 1 }, trades: [{}], ...over });
+  const shrunk = data({ portfolio: { ...portfolio, core: [portfolio.core[0]] } });
+  const fold = (...snapshots) => snapshots.reduce((prev, d) => advanceReceived(prev, d), null);
+  const contextOf = (d, received) => buildBattleContext(d, { battleId: 'ab-1', received });
+
+  it('the first callback: no revisions, epoch 0; the same content again: the same revisions object and epoch', () => {
+    const r1 = fold(data());
+    expect(r1).toMatchObject({ revisions: {}, epoch: 0, tradeCount: 1, tradesLength: 1 });
+    const r2 = advanceReceived(r1, data());
+    expect(r2.revisions).toBe(r1.revisions);
+    expect(r2.epoch).toBe(0);
+  });
+
+  it('a vanished slot advances; its return advances again — a revision never restarts within the subscription', () => {
+    expect(fold(data(), shrunk).revisions).toEqual({ 'player:core:1': 1 });
+    expect(fold(data(), shrunk, data()).revisions).toEqual({ 'player:core:1': 2 });
+    expect(fold(data(), shrunk, data(), shrunk, data()).revisions).toEqual({ 'player:core:1': 4 });
+    const other = data({ portfolio: { ...portfolio, core: [portfolio.core[0], { symbol: 'TSLA', price: 251 }] } });
+    expect(fold(data(), other, data()).revisions).toEqual({ 'player:core:1': 2 });
+  });
+
+  it('feed-, chat- and score-only changes advance nothing', () => {
+    const r1 = fold(data());
+    const r2 = advanceReceived(r1, data({ statusFeed: [{ a: 1 }], chatExchanges: [{}], scoreState: { tradeCount: 1, currentScore: 5 } }));
+    expect(r2.revisions).toBe(r1.revisions);
+    expect(r2.epoch).toBe(0);
+  });
+
+  it('the epoch: a truncated history, a trade-count move no slot explains, a missing document, an unreadable snapshot — never an explained move', () => {
+    expect(fold(data(), data({ trades: [] })).epoch).toBe(1);
+    expect(fold(data(), data({ scoreState: { tradeCount: 2 } })).epoch).toBe(1);
+    const swapped = data({ portfolio: { ...portfolio, star: [{ symbol: 'AMD', swapPrice: 140, swappedInAt: 'x', swappedInDay: 1 }] }, scoreState: { tradeCount: 2 }, trades: [{}, {}] });
+    expect(fold(data(), swapped).epoch).toBe(0);
+    const missing = fold(data(), null);
+    expect(missing.epoch).toBe(1);
+    expect(Object.keys(missing.revisions).sort()).toEqual(['cpu:star:0', 'player:core:0', 'player:core:1', 'player:star:0']);
+    const unreadable = data({ portfolio: { ...portfolio, star: [{ symbol: 'AAPL', get price() { throw new Error('unreadable'); } }] } });
+    let r = null;
+    expect(() => { r = fold(data(), unreadable); }).not.toThrow();
+    expect(r.epoch).toBe(1);
+  });
+
+  it('the coalesced case, pure: reconciling only the final context retires the returning slot WITH the evidence — and cannot without it', () => {
+    const t1 = reconcileLineage(null, { battleKey: 'ab-1#1', context: contextOf(data(), fold(data())) });
+    const t2 = reconcileLineage(t1, { battleKey: 'ab-1#1', context: contextOf(data(), fold(data(), shrunk, data())) });
+    expect(t2.positions['player:core:1'].gen).toBe(2);
+    expect(positionToken(t2, 'player:core:1')).not.toBe(positionToken(t1, 'player:core:1'));
+    expect(t2.positions['player:core:0']).toBe(t1.positions['player:core:0']);
+    expect(t2.battleGeneration).toBe(t1.battleGeneration);
+    // The pre-R2 lineage: the same final context is indistinguishable.
+    const bare = reconcileLineage(null, { battleKey: 'ab-1#1', context: contextOf(data()) });
+    expect(reconcileLineage(bare, { battleKey: 'ab-1#1', context: contextOf(data()) })).toBe(bare);
+  });
+
+  it('a received epoch change invalidates every position; unchanged evidence keeps the SAME lineage object', () => {
+    const t1 = reconcileLineage(null, { battleKey: 'ab-1#1', context: contextOf(data(), fold(data())) });
+    const t2 = reconcileLineage(t1, { battleKey: 'ab-1#1', context: contextOf(data(), fold(data(), data({ trades: [] }), data())) });
+    expect(t2.battleGeneration).toBe(t1.battleGeneration + 1);
+    expect(reconcileLineage(t1, { battleKey: 'ab-1#1', context: contextOf(data(), fold(data(), data())) })).toBe(t1);
   });
 });
 
