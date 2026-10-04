@@ -16,17 +16,9 @@ vi.mock('../../../services/liveDraftActions', () => ({
   releaseSlot: () => Promise.resolve({}),
   mapSlotActionError: () => 'error',
 }));
-// AutoDraftFallback pulls the lobby actions (fetchWithAuth → env-gated Firebase
-// client) — stubbed for the same reason as the slot actions above.
-vi.mock('../../../services/tournamentLobbyActions', () => ({
-  quickPlay: () => Promise.resolve({}),
-  mapLobbyError: () => 'error',
-}));
-
 const LiveDraftAwaiting = (await import('./LiveDraftAwaiting')).default;
 const LiveDraftGlimpse = (await import('./LiveDraftGlimpse')).default;
 const LiveDraftPicker = (await import('./LiveDraftPicker')).default;
-const AutoDraftFallback = (await import('./AutoDraftFallback')).default;
 const SlotCenter = (await import('./SlotCenter')).default;
 
 // useTheme() token names, still used by the picker / auto-draft / SlotCenter
@@ -109,20 +101,12 @@ describe('LiveDraftPicker', () => {
   });
 });
 
-describe('AutoDraftFallback', () => {
-  it('composes the fallback lane — and NEVER says "training" (it forms a real ranked group)', () => {
-    const html = renderToString(<AutoDraftFallback tokens={tokens} />);
-    expect(html).toContain('Auto-draft');
-    expect(html).toContain('we draft your board Monday');
-    expect(html).not.toMatch(/training/i);
-  });
-});
-
 describe('SlotCenter', () => {
-  it('composes the no-game center: picker + Auto-draft below + the demoted bracket footnote', () => {
+  it('composes the no-game center: scheduled picker + the demoted bracket footnote', () => {
     const html = renderToString(<SlotCenter currentUserId="u1" />);
     expect(html).toContain('Pick a draft slot');
-    expect(html).toContain('Auto-draft');
+    expect(html).not.toContain('Auto-draft');
+    expect(html).toContain('If you miss it, your picks are drafted automatically.');
     expect(html).toContain('opens when the season locks');
   });
 });

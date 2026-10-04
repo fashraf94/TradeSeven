@@ -29,6 +29,7 @@ export default function LiveDraftPicker({ tokens, currentUserId, displayName = n
   const [pending, setPending] = useState(false);
 
   const load = useCallback(async () => {
+    setError(null); setSlots(null);
     try { const r = await fetchSchedule(); setSlots(Array.isArray(r?.slots) ? r.slots : []); }
     catch (e) { setError(mapSlotActionError(e)); setSlots([]); }
   }, [fetchSchedule]);
@@ -38,7 +39,11 @@ export default function LiveDraftPicker({ tokens, currentUserId, displayName = n
   // route the user into the game surface they just left.
   const run = async (fn, { entered = false } = {}) => {
     setPending(true); setError(null);
-    try { await fn(); await load(); if (entered && onEntered) onEntered(); }
+    try {
+      await fn();
+      if (entered && onEntered) onEntered();
+      else await load();
+    }
     catch (e) { setError(mapSlotActionError(e)); }
     finally { setPending(false); }
   };
@@ -47,11 +52,14 @@ export default function LiveDraftPicker({ tokens, currentUserId, displayName = n
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: '-0.01em' }}>Pick a draft slot</div>
       <p style={{ color: tokens.textMuted, fontSize: 13, margin: 0, lineHeight: 1.5 }}>
-        Claim a seat and the live draft fires at slot time. Empty seats fill with CPUs — a slot with at least one human always drafts.
+        Choose a draft time. If you miss it, your picks are drafted automatically. Empty seats fill with CPUs.
       </p>
 
       {error && (
-        <div style={{ color: '#ffd7de', background: '#3a1320', border: '1px solid #fb7185', borderRadius: 8, padding: '8px 12px', fontSize: 13 }}>{error}</div>
+        <div role="alert" style={{ color: tokens.textMuted, background: tokens.bgCard, border: `1px solid ${tokens.borderDivider}`, borderRadius: 8, padding: '8px 12px', fontSize: 13 }}>
+          {error}
+          <button onClick={load} disabled={pending} style={{ ...ghostBtn(tokens, !pending), marginLeft: 8 }}>Retry slots</button>
+        </div>
       )}
 
       {slots == null ? (

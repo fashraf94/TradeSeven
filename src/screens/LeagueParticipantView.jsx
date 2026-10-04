@@ -2,11 +2,12 @@
 //
 // The League participant flow — extracted verbatim from the original
 // LeagueScreen (P5) so the redesign front door (LeagueScreen) can render it
-// unchanged when the redesign flag is OFF (byte-identical, regression-safe) and
+// when the redesign flag is OFF and
 // push it full-screen when "Open my game" is tapped with the flag ON.
 //
 // States: signed-out / no active group → the coming-soon poster (or LeagueLobby
-// when LEAGUE_LOBBY_ENABLED); FORMING → the board-commit flow; BATTLE → the
+// when enrollment is available); FORMING → scheduled lobby, legacy weekly
+// waiting, or bracket board-commit flow; BATTLE → the
 // playback theater + locked board + group feed. Reads only (tournamentGroups is
 // client-read-only by rules).
 
@@ -20,9 +21,9 @@ import GroupFeed from '../components/Tournament/GroupFeed';
 import Flat6BattleView from '../components/Tournament/Flat6BattleView';
 import ClaimFlipWindow from '../components/Tournament/ClaimFlipWindow';
 import RoundBoundaryView from '../components/Tournament/RoundBoundaryView';
-import LeagueLobby from '../components/Tournament/LeagueLobby';
 import DraftBoardRoom from '../components/League/draft/DraftBoardRoom';
-import LiveDraftPicker from '../components/League/liveDraft/LiveDraftPicker';
+import SlotCenter from '../components/League/liveDraft/SlotCenter';
+import LegacyWeeklyWaiting from '../components/League/liveDraft/LegacyWeeklyWaiting';
 import LiveDraftGlimpse from '../components/League/liveDraft/LiveDraftGlimpse';
 import LiveDraftAwaiting from '../components/League/liveDraft/LiveDraftAwaiting';
 import { releaseSlot } from '../services/liveDraftActions';
@@ -212,20 +213,16 @@ export default function LeagueParticipantView({ agentLoadout = null, onOpenForge
       : null;
     // P10b — the lobby front door replaces the dead "no active group" poster
     // for a signed-in, loaded player with no group, ONLY when the flag is on.
-    // Flag-off renders the poster below byte-unchanged (regression-safe); the
-    // signed-out / still-loading states keep their copy either way.
+    // Both enrollment flags off show the unavailable poster below; signed-out
+    // and still-loading states keep their own copy either way.
     if (uid && loaded && !group && (LEAGUE_LOBBY_ENABLED || LEAGUE_LIVE_DRAFT)) {
-      // Competitive Live Draft: the slot picker sits behind the same "Enter
-      // tournament" no-group surface. Flag-off LEAGUE_LIVE_DRAFT this reduces to
-      // the existing LeagueLobby path (byte-identical).
+      // The same scheduled entry as the redesigned desktop/mobile lobby.
+      // The retired Quick Play/create/join lobby must not reopen this old path.
       return (
         <div style={page}>
           {voidedNotice}
           {recapEntry}
-          {LEAGUE_LIVE_DRAFT && (
-            <LiveDraftPicker tokens={tokens} currentUserId={uid} displayName={user?.displayName} />
-          )}
-          {LEAGUE_LOBBY_ENABLED && <LeagueLobby uid={uid} displayName={user?.displayName} />}
+          <SlotCenter currentUserId={uid} displayName={user?.displayName} />
         </div>
       );
     }
@@ -245,7 +242,7 @@ export default function LeagueParticipantView({ agentLoadout = null, onOpenForge
             ? 'Sign in to see your tournament.'
             : !loaded
               ? 'Checking your tournament…'
-              : 'No active tournament group yet. When your group forms, your draft board lives here.'}
+              : 'Scheduled draft enrollment is unavailable right now. Please check back later.'}
         </p>
       </div>
     );
@@ -349,6 +346,14 @@ export default function LeagueParticipantView({ agentLoadout = null, onOpenForge
         />
       );
     }
+  }
+
+  // Existing weekly registrations retain their identity and server resolution.
+  // The metadata XOR distinguishes base weeks from bracket rounds; Training
+  // Pods and scheduled drafts own their existing routes. Never infer a slot.
+  if (group.status === GROUP_STATUS.FORMING && group.isLiveDraft !== true
+      && group.isTraining !== true && group.baseLayerWeek && !group.bracketGameId) {
+    return <LegacyWeeklyWaiting group={group} />;
   }
 
   return (

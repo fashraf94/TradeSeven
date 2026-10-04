@@ -301,48 +301,48 @@
     "length": 63481
   },
   "landing/bracket/off/unseated-mounted": {
-    "sha256": "26e1a220ba61604ee2e698060eddf0d87cd8b021bf803363815a85d22b39571f",
-    "length": 60828
+    "sha256": "19d3e98503a964ce0891d985191b243f375c68672c0d4d3698415059ceaa5398",
+    "length": 60093
   },
   "landing/bracket/off/unseated-ssr": {
-    "sha256": "1179d017c8eba4b5ad880bc6da8216341c68f402813561f618cf079bed70d9bf",
-    "length": 59653
+    "sha256": "ec81ea72c2c66ada8a1dc96bcfaa5c7818bb4e9a7e2425d1f3130c2d6d86044f",
+    "length": 59017
   },
   "landing/bracket/on/seated-mounted": {
     "sha256": "19732890a1ebd2f4e6255e9ae332e346938bd668b5d27d70db99cdd489989d6f",
     "length": 66525
   },
   "landing/bracket/on/unseated-mounted": {
-    "sha256": "c997865e35f4ab889626d8b9d29990f777ca1f7a7701a79245b740d8d0c800e7",
-    "length": 63872
+    "sha256": "dfa4783384e96b3629d9371f737b7a8452fd7b72e762e254dcfbfdcd4a897040",
+    "length": 63137
   },
   "landing/bracket/on/unseated-ssr": {
-    "sha256": "673341e3daec78a239bfa121a024d18755fcc8452167bd3675def2110501911f",
-    "length": 59659
+    "sha256": "463f095780e40a2ec723d3af5bba22584a54b4edd03d16e58c8126d0cac883b9",
+    "length": 59023
   },
   "landing/no-bracket/off/seated-mounted": {
     "sha256": "1869ce3cb0346ec315123d012cf45e0057f49b815ff74041774c2cc5b59b8ffd",
     "length": 27578
   },
   "landing/no-bracket/off/unseated-mounted": {
-    "sha256": "b811df3e76482f4f717a0474878667da10db91447d48315e6913ccf8228c5b89",
-    "length": 24925
+    "sha256": "645d74341ca3a88403b8e4d93196b18e5329a81477b1abea155f233c5e9c0d13",
+    "length": 24190
   },
   "landing/no-bracket/off/unseated-ssr": {
-    "sha256": "53916e42816dc5345eef14e59c70a94d78970b61768059192f6c28f25e09a3d7",
-    "length": 23472
+    "sha256": "fd32684dcd10d9f56f0ed0a1c1c923450cbc413c49bf6eb2427abc2dc75568c2",
+    "length": 22836
   },
   "landing/no-bracket/on/seated-mounted": {
     "sha256": "db2b8f20fd4f1083008c8f49e47a6e9cf0bb7eae8eb6df3d8f20f2498074eacd",
     "length": 30618
   },
   "landing/no-bracket/on/unseated-mounted": {
-    "sha256": "346bee26e4828ba9fc83dc24afbedc001a19dada6282383aad66140e19767a0d",
-    "length": 27965
+    "sha256": "e1e1f7890c574cb9ec4b29eb0c4be40070dfb0d2e03418164c6a2e679286b976",
+    "length": 27230
   },
   "landing/no-bracket/on/unseated-ssr": {
-    "sha256": "3655cc7a49f98b10bff98d779fd9c1fddfad98d2a0aca7158065a6cb42759bcc",
-    "length": 23474
+    "sha256": "b5de725b5d3be9edc68f06380dd2fbf5bdbbcf4ff13f2cd516be277942baeacd",
+    "length": 22838
   },
   "lobby-tabbed/bracket/seated/between": {
     "sha256": "20e651aa27820db1baa889a8a8d054df88d2630da18ac958ea22ad7c1baa9102",
@@ -505,12 +505,12 @@
     "length": 8371
   },
   "slot-center/mounted": {
-    "sha256": "e895cf4d222ccc8ee977bf32e31f28cb148a79af4e65e57d922cd21dd42d87df",
-    "length": 2713
+    "sha256": "2dda05f6d4ee13af3b2cb03864a63545d014a118dea61ec5beb0feae23b1e1c3",
+    "length": 1978
   },
   "slot-center/ssr": {
-    "sha256": "b13479439fd602636f147c3814a6e69b1261a97516f530e57758ae2a3fc1f932",
-    "length": 1450
+    "sha256": "07966d2594c0ecc28c9010fa4dc55414d0284eaef0942f4eadc1ee832798ce50",
+    "length": 814
   },
   "spectate/final-with-results": {
     "sha256": "2837b07296f3adc435c0f3299099cbd486966fa583af0a65537197d12428e8fb",

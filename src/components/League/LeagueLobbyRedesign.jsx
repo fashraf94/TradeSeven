@@ -157,12 +157,12 @@ function MyGameBar({ onOpenMyGame }) {
 // Room ("While you wait", src/components/League/WhileYouWait.jsx) replaces the old
 // bracket-funnel / forthcoming panel (BOTH seated sub-states) as the primary
 // content, keeping the honest one-line bracket footnote. SlotCenter owns the
-// LEAGUE_LIVE_DRAFT gate internally (P2c) so flag-off still keeps the Auto-draft
-// entry affordance.
+// LEAGUE_LIVE_DRAFT gate internally; flag-off shows scheduled enrollment as
+// unavailable.
 //
 // `backingSlot` — the Backing strip — rides the centre's OWN slot, as on the
 // desktop lobby (N3, the desktop review record; the desktop brief's "resolve
-// it on both"): directly under the draft-slot picker and the Auto-draft card
+// it on both"): directly under the draft-slot picker
 // (SlotCenter), or directly under the waiting room's headline and hero
 // (WhileYouWait), never below "Watch a live game" or the bracket line. Both
 // render it bare, so a strip that renders null (the flag dark, the list
@@ -232,7 +232,7 @@ function LobbyFooter() {
 // same output, FollowRail included.
 // Backing Beta PR 4 — `backingSlot` (design brief rev2 §1 / rev3 §1): the
 // landing strip's mount, DIRECTLY UNDER whatever occupies the ranked-entry
-// position — the draft-slot picker and the Auto-draft card, or the waiting
+// position — the draft-slot picker, or the waiting
 // room's headline and hero — never below "Watch a live game" or the bracket
 // line: it rides the centre's own slot (BracketFunnelSection → SlotCenter /
 // WhileYouWait), the desktop lobby's placement mirrored (N3, the desktop

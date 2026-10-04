@@ -18,7 +18,7 @@
 //
 // THE DESKTOP PLACEMENT (Backing desktop layouts — founder rulings): on the
 // desktop landing the strip sits in the CENTRE column, directly under the
-// draft-slot picker and the Auto-draft card (unseated) or directly under the
+// draft-slot picker (unseated) or directly under the
 // waiting room's headline and hero (seated) — never below "Watch a live game"
 // or the bracket line, never in a side rail. The seated rows mount the lobby
 // (jsdom, the group subscription answering) — a seat only exists once the
@@ -28,7 +28,7 @@
 // THE MOBILE PLACEMENT (Backing pre-flip fixes 2 — N3, the desktop review
 // record; the desktop brief's "resolve it on both"): the mobile strip rides
 // the same centre slot — directly under the draft-slot picker and the
-// Auto-draft card (unseated) or directly under the waiting room's hero
+// draft-slot picker (unseated) or directly under the waiting room's hero
 // (seated) — never below "Watch a live game" or the bracket line, and it
 // mounts once the seat subscription has answered (the desktop's WIRE-7 rule),
 // so the mobile rows MOUNT the landing too. MUTATION CHECK (the build's B):
@@ -119,7 +119,6 @@ const RIGHT_RAIL = 'class="ld-rail-right"';
 const LEFT_RAIL = 'class="lg-scroll ld-rail-left"';
 const STRIP_MARK = 'data-backing="strip"';
 const PICKER = 'Pick a draft slot';
-const AUTO_DRAFT = 'Can’t make a slot?';
 const BRACKET_LINE = 'The monthly bracket opens when the season locks';
 const WATCH = 'Watch a live game';
 const HERO = 'Solo · Training Pod';
@@ -151,7 +150,7 @@ afterEach(async () => {
 });
 
 describe('no bracket — the strip and the weekly pods lead; no funnel frame, placeholder or reserved space', () => {
-  it('mobile — unseated: directly under the draft-slot picker and the Auto-draft card, above the bracket line and the field (N3)', async () => {
+  it('mobile — unseated: directly under the draft-slot picker, above the bracket line and the field (N3)', async () => {
     hooked.state = NO_BRACKET;
     hooked.pods = podsResponse();
     // Mounted: the strip mounts once the seat subscription has answered (N3 /
@@ -165,11 +164,11 @@ describe('no bracket — the strip and the weekly pods lead; no funnel frame, pl
     for (const m of FUNNEL_MARKERS) expect(on, `funnel marker "${m}" on the no-bracket landing`).not.toContain(m);
     const strip = at(on, STRIP_MARK);
     expect(strip, 'under the draft-slot picker').toBeGreaterThan(at(on, PICKER));
-    expect(strip, 'under the Auto-draft card').toBeGreaterThan(at(on, AUTO_DRAFT));
+    expect(on).not.toContain('Auto-draft');
     expect(strip, 'above the bracket line').toBeLessThan(at(on, BRACKET_LINE));
     expect(strip, 'above the field').toBeLessThan(at(on, 'The field · weekly base-layer groups'));
-    // Directly under: nothing of the landing's own sits between the Auto-draft card's close and the strip's slot.
-    expect(on).toMatch(/Auto-draft<\/button><\/div><\/div><div data-backing="strip-slot"[^>]*><button[^>]*data-backing="strip"/);
+    // Directly under: nothing of the landing's own sits between the draft-slot picker's close and the strip's slot.
+    expect(on).toMatch(/No draft slots scheduled right now\.<\/div><\/div><div data-backing="strip-slot"[^>]*><button[^>]*data-backing="strip"/);
     // No empty slot wrapper: the wrapper exists only around a rendered strip…
     expect(on).not.toMatch(/data-backing="strip-slot"[^>]*><\/div>/);
     // …and nothing rides inside the slot ahead of the strip (a placeholder
@@ -199,7 +198,7 @@ describe('no bracket — the strip and the weekly pods lead; no funnel frame, pl
     expect(excise(on)).toBe(off);
   });
 
-  it('desktop — unseated: in the centre, directly under the draft-slot picker and the Auto-draft card, above the bracket line', async () => {
+  it('desktop — unseated: in the centre, directly under the draft-slot picker, above the bracket line', async () => {
     hooked.state = NO_BRACKET;
     hooked.pods = podsResponse();
     // Mounted: the strip mounts once the seat subscription has answered (the
@@ -213,10 +212,10 @@ describe('no bracket — the strip and the weekly pods lead; no funnel frame, pl
     for (const m of ['YOUR PATH TO THE TROPHY', 'Round 1 · 16', 'FINAL 4']) expect(on).not.toContain(m);
     const strip = expectInCentre(on);
     expect(strip, 'under the draft-slot picker').toBeGreaterThan(at(on, PICKER));
-    expect(strip, 'under the Auto-draft card').toBeGreaterThan(at(on, AUTO_DRAFT));
+    expect(on).not.toContain('Auto-draft');
     expect(strip, 'above the bracket line').toBeLessThan(at(on, BRACKET_LINE));
-    // Directly under: nothing of the landing's own sits between the Auto-draft card's close and the strip's slot.
-    expect(on).toMatch(/Auto-draft<\/button><\/div><\/div><div data-backing="strip-slot"><div data-backing="strip-card"[^>]*><div data-backing="strip-edge"[^>]*><\/div><button[^>]*data-backing="strip"/);
+    // Directly under: nothing of the landing's own sits between the draft-slot picker's close and the strip's slot.
+    expect(on).toMatch(/No draft slots scheduled right now\.<\/div><\/div><div data-backing="strip-slot"><div data-backing="strip-card"[^>]*><div data-backing="strip-edge"[^>]*><\/div><button[^>]*data-backing="strip"/);
     // The desktop door, not the mobile strip: the accent edge and — the window open — the primary action.
     expect(on).toContain('data-strip-layout="desktop"');
     expect(on).toContain('data-backing="strip-edge"');
@@ -260,9 +259,9 @@ describe('a bracket exists — the composition is unchanged by the mount; nothin
     const off = (await mount(React.createElement(LeagueHome, props))).innerHTML;
     expect(on).toMatch(/data-backing="strip-slot"[^>]*><button[^>]*data-backing="strip"/);
     expect(excise(on)).toBe(off);
-    // Under the Auto-draft card, above the bracket line; the group card and the field still render, in their places, after it.
+    // Under the draft-slot picker, above the bracket line; the group card and the field still render, in their places, after it.
     const strip = at(on, STRIP_MARK);
-    expect(strip).toBeGreaterThan(at(on, AUTO_DRAFT));
+    expect(strip).toBeGreaterThan(at(on, PICKER));
     expect(strip).toBeLessThan(at(on, BRACKET_LINE));
     expect(at(on, 'Your group ·')).toBeGreaterThan(strip);
     expect(at(on, 'The field · weekly base-layer groups')).toBeGreaterThan(strip);
@@ -287,7 +286,7 @@ describe('a bracket exists — the composition is unchanged by the mount; nothin
     const off = (await mount(React.createElement(LeagueLobbyDesktop, props))).innerHTML;
     expect(excise(on)).toBe(off);
     const strip = expectInCentre(on);
-    expect(strip).toBeGreaterThan(at(on, AUTO_DRAFT));
+    expect(strip).toBeGreaterThan(at(on, PICKER));
     expect(strip).toBeLessThan(at(on, BRACKET_LINE));
     hooked.myGroup = { id: 'wk-real-1', status: 'battle' };
     flag.on = true;

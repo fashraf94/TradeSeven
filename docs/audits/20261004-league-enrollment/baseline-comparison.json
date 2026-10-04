@@ -1,0 +1,37 @@
+{
+  "BaselineCommit": "23842a837d6027537344d0c9f595c471c55a1c8a",
+  "BranchFailureCount": 71,
+  "BaselineFailureCount": 75,
+  "ReproducedFailureIdentities": 71,
+  "Unreproduced": [],
+  "BaselineOnly": [
+    {
+      "Id": "src/components/League/backing/backingDark.test.jsx > flag OFF — the League renders as it does today > EVERY other enumerated host, MOUNTED dark with effects running — the pitch home, the desktop lobby, the identity panel, the pod sheet — opens NO backing read and makes NO request (DARK-3 / DARK-R-1)",
+      "Message": "Error: Test timed out in 5000ms."
+    },
+    {
+      "Id": "src/components/League/backing/backingDark.test.jsx > flag OFF — the League renders as it does today > DARK-M1 — nothing LISTENS for a stake and no close TIMER is armed while dark (neither is a read, so the rows above cannot see them): the bare strip, the mobile landing, the desktop lobby and the Backing screen, mounted with effects running; lit, the same mounts do both",
+      "Message": "Error: Test timed out in 5000ms."
+    },
+    {
+      "Id": "src/components/League/backing/backingDark.test.jsx > flag OFF — the League renders as it does today > DARK-N2 / DARK-R-1 — while dark, BOTH mobile lobbies render byte-identically with the real strip in their slot and with NO slot at all — seated and unseated, with and without a bracket: no host-side wrapper, however named, survives the strip's null render",
+      "Message": "Error: Test timed out in 5000ms."
+    },
+    {
+      "Id": "src/components/League/backing/backingDark.test.jsx > flag ON — the same mounts light up (the pin is not vacuous) > desktop: \"Back a team\" opens the Backing screen on the WINDOW, whatever the strip's own section — and the host is a dialog that Escape closes (PLACE-1, PLACE-7)",
+      "Message": "Error: Test timed out in 5000ms."
+    }
+  ],
+  "RootNormalizedMessageDifferences": [
+    {
+      "Id": "src/data/decisionRecord.test.js > decisionRecord — zero-import and Node-loadable (the property api/ relies on) > loads under plain Node",
+      "BranchMessage": "AssertionError: expected 'ERR_UNSUPPORTED_ESM_URL_SCHEME' to be 'LOADED' // Object.is equality",
+      "BaselineMessage": "Error: Command failed: C:\\Program Files\\nodejs\\node.exe --input-type=module -e import('C:\\Users\\fashr\\.codex\\visualizations\\2026\\10\\04\\01a108c6-c26d-79b1-935a-b4d90fc56957\\league-review\\baseline\\src\\data\\decisionRecord.js').then(() => console.log('LOADED')).catch((e) => console.log(e.code || 'FAILED'))"
+    },
+    {
+      "Id": "src/data/decisionRecord.test.js > decisionRecord — zero-import and Node-loadable (the property api/ relies on) > battleViewCopy.js does NOT load under plain Node — the finding that justifies the extraction (hazard 26)",
+      "BranchMessage": "AssertionError: expected 'ERR_UNSUPPORTED_ESM_URL_SCHEME' to be 'ERR_MODULE_NOT_FOUND' // Object.is equality",
+      "BaselineMessage": "Error: Command failed: C:\\Program Files\\nodejs\\node.exe --input-type=module -e import('C:\\Users\\fashr\\.codex\\visualizations\\2026\\10\\04\\01a108c6-c26d-79b1-935a-b4d90fc56957\\league-review\\baseline\\src\\screens\\battleView\\battleViewCopy.js').then(() => console.log('LOADED')).catch((e) => console.log(e.code || 'FAILED'))"
+    }
+  ]
+}

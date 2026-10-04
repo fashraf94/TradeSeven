@@ -8,24 +8,24 @@
     "length": 95809
   },
   "desktop-lobby/bracket/unseated-mounted": {
-    "sha256": "48d047643bbe4204ef07a90f7d6c297fd63ffe5979272875eeec6852863e372e",
-    "length": 92326
+    "sha256": "64a47da642d2d8bea7cd77b9002e9d74742d702eef8ebab6eac2b8b181353578",
+    "length": 91591
   },
   "desktop-lobby/bracket/unseated-ssr": {
-    "sha256": "a27e2d24bb6afbd4dc473f910114f9da7db7f6848c5d7bae3ea1ad21a0e6ea6a",
-    "length": 94299
+    "sha256": "40b65366b826059163f395cf1747ef24665fec849bf42562ce4c641994102b34",
+    "length": 93663
   },
   "desktop-lobby/no-bracket/seated-mounted": {
     "sha256": "cb907dfd25cdc1b0be1e80a52f9e5e3dfe151ff62f8c69109a13f9826a53cea4",
     "length": 27351
   },
   "desktop-lobby/no-bracket/unseated-mounted": {
-    "sha256": "c480389b4cbbca1137ce81509c2418689ccc7f02b41628f433a28dd89c8f32ba",
-    "length": 23868
+    "sha256": "f6a1a9e7ab8be449c4838b72f252f36d6dc9e788012167f494e971e79fa711c5",
+    "length": 23133
   },
   "desktop-lobby/no-bracket/unseated-ssr": {
-    "sha256": "2d56369fe8950c156c0ab6defbd1d75ec17373c871721dce87e718ba4aae1302",
-    "length": 23655
+    "sha256": "e1397b5bd60bc1437b8f13d0c7aa890f99c46199d259194ec3b98a0a5183a8ff",
+    "length": 23019
   },
   "identity-panel": {
     "sha256": "cd80f2897d1b20b2a349f598caa928820ae488c304a90eeaf576477c11eccfdc",

@@ -38,7 +38,7 @@ import {
 } from './LeagueDeskParts';
 import DeskSeasonRail from './DeskSeasonRail';
 // Backing desktop layouts — the strip is the desktop landing's door: in the
-// CENTRE column, directly under the draft-slot picker and the Auto-draft card
+// CENTRE column, directly under the draft-slot picker
 // (unseated), or directly under the waiting room's headline and hero (seated)
 // — never below "Watch a live game" or the bracket line (founder rulings). The
 // Backing screen opens full-window, in its three-column desktop layout.
@@ -206,8 +206,8 @@ export function DeskLobby({
               in a game → the Seated Waiting Room ("While you wait") replaces the
               old bracket-funnel / forthcoming panel (both sub-states) as the
               primary content, keeping the honest one-line bracket footnote.
-              SlotCenter owns the LEAGUE_LIVE_DRAFT gate internally (P2c) so
-              flag-off still keeps the Auto-draft entry affordance. The Backing
+              SlotCenter owns the LEAGUE_LIVE_DRAFT gate internally, so
+              flag-off shows scheduled enrollment as unavailable. The Backing
               strip rides the centre's own slot (backingSlot) in both. */}
           <div className="lg-scroll ld-center">
             {!activeGroup ? (

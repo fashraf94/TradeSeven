@@ -58,12 +58,12 @@ const LeagueLobbyDesktop = (await import('./LeagueLobbyDesktop')).default;
 const { DeskTrainingPanel, ActiveTrainingGameCard } = await import('./LeagueDeskParts');
 
 describe('LeagueLobbyDesktop render smoke', () => {
-  it('composes the no-game entry center (slot picker + Auto-draft + footnote) + leaderboard', () => {
+  it('composes the no-game entry center (slot picker + footnote) + leaderboard', () => {
     // SSR runs no effects, so activeGroup stays null → the no-game center: the
-    // slot picker IS the entry, Auto-draft below, the bracket line a footnote.
+    // slot picker IS the entry, the bracket line a footnote.
     const html = renderToString(<LeagueLobbyDesktop onOpenMyGame={() => {}} onOpenTrainingPod={() => {}} hasAgent agentLoadout={null} />);
     expect(html).toContain('Pick a draft slot');            // the picker center
-    expect(html).toContain('Auto-draft');                   // the fallback lane below the slots
+    expect(html).not.toContain('Auto-draft');               // retired ranked shortcut
     expect(html).toContain('opens when the season locks');  // the demoted footnote (copy preserved)
     expect(html).toContain('Leaderboard');                  // the right-rail default
     expect(html).not.toContain('Enter tournament');         // stub CTA retired (P3)

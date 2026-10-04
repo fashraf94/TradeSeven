@@ -34,12 +34,8 @@ export const LX = {
   cut:    CMD.gold,    // the cut line
 };
 
-// Call-site token map for the liveDraft entry surfaces (LiveDraftPicker /
-// AutoDraftFallback) when they mount in the League lobby center. Those
-// components consume the live-app useTheme() token NAMES; this maps them onto
-// the League obsidian palette in ONE shared const so the desktop and mobile
-// mounts can't drift (the participant-view mount keeps passing real useTheme()
-// tokens — the components themselves are untouched).
+// Token map for LiveDraftPicker in the shared SlotCenter. Maps useTheme token
+// names to the League obsidian palette for desktop, mobile and direct entry.
 export const PICKER_TOKENS = {
   teal: CMD.teal,
   bgCard: CMD.surface,

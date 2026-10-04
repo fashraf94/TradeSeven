@@ -81,6 +81,7 @@ describe('League lobby — honest display under the real adapter (fixture-leak f
     const html = render(<LeagueLobbyDesktop onOpenMyGame={() => {}} onOpenTrainingPod={() => {}} hasAgent agentLoadout={null} />);
     // the honest forthcoming bracket replaces the funnel
     expect(html).toContain('opens when the season locks'); // the demoted footnote (copy preserved)
+    expect(html).not.toContain('Auto-draft');
     expect(html).toContain('Pick a draft slot');            // the no-game center is the slot picker
     expect(html).not.toContain('YOUR PATH TO THE TROPHY'); // funnel (and its hero eyebrow) is gone
     // the leaderboard shows REAL members, not the 16 demo players
@@ -93,6 +94,7 @@ describe('League lobby — honest display under the real adapter (fixture-leak f
     hooked.ret = { state: coldStart, loading: false, isFixtures: true };
     const html = render(<LeagueLobbyDesktop onOpenMyGame={() => {}} onOpenTrainingPod={() => {}} hasAgent agentLoadout={null} />);
     expect(html).toContain('opens when the season locks'); // the demoted footnote (copy preserved)
+    expect(html).not.toContain('Auto-draft');
     expect(html).toContain('Pick a draft slot');            // the no-game center is the slot picker
     expect(html).toContain('Standings appear once'); // the honest empty leaderboard
     FIXTURE_NAMES.forEach((n) => expect(html).not.toContain(n));
@@ -102,6 +104,7 @@ describe('League lobby — honest display under the real adapter (fixture-leak f
     hooked.ret = { state: baseLayerOnly, loading: false, isFixtures: false };
     const html = render(<LeagueHome onOpenMyGame={() => {}} onOpenTrainingPod={() => {}} hasAgent agentLoadout={null} />);
     expect(html).toContain('opens when the season locks'); // the demoted footnote (copy preserved)
+    expect(html).not.toContain('Auto-draft');
     expect(html).toContain('Pick a draft slot');            // the no-game center is the slot picker
     expect(html).not.toContain('16 → 8 → 4'); // no fixture bracket-count copy
     FIXTURE_NAMES.forEach((n) => expect(html).not.toContain(n));
@@ -111,6 +114,7 @@ describe('League lobby — honest display under the real adapter (fixture-leak f
     hooked.ret = { state: coldStart, loading: false, isFixtures: true };
     const html = render(<LeagueHome onOpenMyGame={() => {}} onOpenTrainingPod={() => {}} hasAgent agentLoadout={null} />);
     expect(html).toContain('opens when the season locks'); // the demoted footnote (copy preserved)
+    expect(html).not.toContain('Auto-draft');
     expect(html).toContain('Pick a draft slot');            // the no-game center is the slot picker
     expect(html).toContain('Weekly groups appear here'); // the honest empty field state
     FIXTURE_NAMES.forEach((n) => expect(html).not.toContain(n));
