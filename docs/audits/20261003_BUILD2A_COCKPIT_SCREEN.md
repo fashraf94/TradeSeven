@@ -431,7 +431,7 @@ It was first built on `b6e120b7` (`d58fb39e`) and rebased onto `cca32e6d` after 
 
 ## 12. Where things are
 
-- **This report:** `docs/audits/20261003_BUILD2A_COCKPIT_SCREEN.md`. **Out-of-repo copy** (BUILD_RULES §3): `C:\Users\fashr\AppData\Local\Temp\claude\C--Users-fashr-portfolio-duel\ff2b1fea-5396-449d-a63c-cfd4ce540dae\scratchpad\20261003_BUILD2A_COCKPIT_SCREEN.md`.
+- **This report:** `docs/audits/20261003_BUILD2A_COCKPIT_SCREEN.md`. **Out-of-repo copy** (BUILD_RULES §3): `…/scratchpad/20261003_BUILD2A_COCKPIT_SCREEN.md`.
 - **Review repros:** the reviewers' scratch files under the session scratchpad (`review/V1…V5`).
 - **The battery:** `mutation/battery.mjs`, `mutations.json`, `out/results.json`; the follow-up runs are in `kill/`.
 - **The PR:** opened from `claude/cockpit-build2a-screen` to `main`. No merge, no flip, no CI watching.
