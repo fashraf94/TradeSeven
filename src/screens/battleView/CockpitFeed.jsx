@@ -132,7 +132,7 @@ export function AnswerButtons({ buttons, onAnswer }) {
           data-cockpit-answer={b.answer}
           data-cockpit-row={b.row}
           aria-disabled={b.disabled ? 'true' : undefined}
-          onClick={(e) => { e.stopPropagation(); if (!b.disabled) onAnswer?.(b.callId, b.answer); }}
+          onClick={() => { if (!b.disabled) onAnswer?.(b.callId, b.answer); }}
           style={chipStyle(b.disabled)}
         >
           <span style={labelSpan(12)}>{b.label}</span>

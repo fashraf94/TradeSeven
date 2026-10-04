@@ -226,6 +226,19 @@ describe('§7.3 — one call at a time: the answer endpoint\'s own predicate', (
     expect(t.blockedLine).not.toContain('force');
   });
 
+  it('the slot\'s OWN call never waits on its own directive — the endpoint exempts `thisCallId` (mutation battery C17)', () => {
+    // Two listeners, two clocks: the battle document's slot already names this
+    // call while its record still reads unanswered. The endpoint would not
+    // answer 409 directive_pending for it, so the tile does not wait on it.
+    const slotCall = call({ symbol: 'NVDA' });
+    const t = tileFor(feed([slotCall], { directive: slotFor(slotCall) }), slotCall);
+    expect(buttonsOf(t)).toEqual([
+      { answer: 'go', label: 'Go if it triggers', row: 'ack', disabled: false },
+      { answer: 'hold', label: 'Hold off · 1 message', row: 'directive', disabled: false },
+    ]);
+    expect(t.blockedLine).toBeNull();
+  });
+
   it('a slot whose call is not among the loaded calls blocks with the active line (no claim about hearing)', () => {
     const other = call({ symbol: 'MU' });
     const t = tileFor(feed([other], { directive: slotFor({ callId: 'b:eval_001:call:9' }) }), other);
@@ -577,6 +590,18 @@ describe('§7.2 — folding (Amendment C-6)', () => {
     expect(t.tag).toMatchObject({ fact: 'event:acted', text: 'Acted at the 11:00 AM check' });
     expect(t.buttons).toEqual([]);
     expect(t.answerLine).toBe('You said hold off · 10:33 AM, on the 10:30 AM wording');
+  });
+
+  it('an act on an EARLIER wording with no answer on it is still the thread\'s tag — never the newer call\'s "Live" (review L6-1; mutation battery C11)', () => {
+    // The flip's whole-trade match stamped the older call; nothing was answered,
+    // so there is no live directive to carry the tag there.
+    const a = call({ outcome: { actedEvalId: 'eval_012' } });
+    const b = restated(a);
+    const t = allTiles(feed([a, b]))[0];
+    expect(t.call.callId).toBe(b.callId);
+    expect(t.tag).toMatchObject({ fact: 'event:acted', text: 'Acted at the 11:00 AM check' });
+    expect(t.buttons).toEqual([]);
+    expect(t.group).toBe(COCKPIT_GROUP.WAITING);
   });
 
   it('a call with no finite deadline offers nothing (the endpoint\'s guard: !finite(deadline) → 409 expired)', () => {

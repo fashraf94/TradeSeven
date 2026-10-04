@@ -181,6 +181,28 @@ describe('the track — native scroll-snap; the switch scrolls it, a swipe moves
     }
   });
 
+  it('a settled swipe the parent ADOPTS is never answered with a programmatic scroll — even resting short of the snap point, finger down; the next switch change still scrolls (review L5-2; mutation battery C72)', () => {
+    vi.useFakeTimers();
+    try {
+      let select = null;
+      function Controlled() {
+        const [screen, setScreen] = React.useState(PHONE_SCREEN.BOARD);
+        select = setScreen;
+        return <BoardCockpitTrack screen={screen} onScreen={setScreen} board={<div data-b="1">board</div>} cockpit={<div data-c="1">cockpit</div>} />;
+      }
+      act(() => { root.render(<Controlled />); });
+      const track = sized();
+      scrollTo(track, 390); // the finger holds still 10 px short of the snap point
+      settleBy(track, 'idle');
+      expect(track.getAttribute('data-board-cockpit-screen')).toBe('cockpit');
+      expect(track.scrollTo).not.toHaveBeenCalled(); // the browser's snap finishes the gesture, not a scroll that fights the finger
+      act(() => { select(PHONE_SCREEN.BOARD); }); // the switch — the swipe's latch is spent
+      expect(track.scrollTo).toHaveBeenCalledWith({ left: 0, behavior: 'smooth' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('a hesitant drag past halfway that comes back never flips the selection', () => {
     vi.useFakeTimers();
     try {

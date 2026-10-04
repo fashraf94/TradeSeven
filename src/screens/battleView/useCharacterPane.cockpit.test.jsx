@@ -86,6 +86,14 @@ describe('the hook — default, doors, repair', () => {
     expect(api.section).toBe('chat');
   });
 
+  it('effectiveSection: the repair is the list\'s FIRST entry (§5), not its default, where the two differ (mutation battery C37)', () => {
+    // Every shipped list puts its default first (Cockpit · … while on, Chat · …
+    // otherwise), so at the screen the two rules agree; this row is what
+    // separates them and pins the spec's wording.
+    expect(effectiveSection(PANE_SECTION.COCKPIT, [PANE_SECTION.BENCH, PANE_SECTION.CHAT, PANE_SECTION.TAPE], PANE_SECTION.CHAT)).toBe(PANE_SECTION.BENCH);
+    expect(effectiveSection('not-a-section', [PANE_SECTION.TAPE, PANE_SECTION.CHAT], PANE_SECTION.CHAT)).toBe(PANE_SECTION.TAPE);
+  });
+
   it('REPAIR: a remembered Cockpit, once the battle is no longer cockpit-on, shows the list\'s first entry — and comes back with the cockpit', () => {
     mount({ isDesktop: true, cockpitOn: true });
     act(() => api.setSection(PANE_SECTION.COCKPIT));
