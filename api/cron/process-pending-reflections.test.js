@@ -16,6 +16,11 @@ const flagState = { metricsEnabled: false, writesEnabled: true, continuityEnable
 vi.mock('../_utils/wireFlags.js', () => ({
   getWireFlags: () => ({ ...flagState }),
 }));
+// THE CALLS MODE — CALL_RECORDS_MODE pinned 'off' EXPLICITLY (hermetic across
+// the cockpit flip: this suite's call-sweep row is the OFF path's response
+// shape, which must hold in every live state of the flag; the
+// agent-evaluate.callRecords.offGolden precedent).
+vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({ ...(await importOriginal()), CALL_RECORDS_MODE: 'off' }));
 
 let fakeDb;
 vi.mock('../_utils/firebaseAdmin.js', () => ({
@@ -182,7 +187,7 @@ describe('budget floor + flag gate', () => {
 });
 
 describe('Cockpit Build 1a — the call sweep rides LAST and is invisible below global on (spec §8, §15.7)', () => {
-  it("at CALL_RECORDS_MODE 'off' (the live default) the response carries NO callSweep key — the handler's response shape is the pre-build one (mutation M52)", async () => {
+  it("at CALL_RECORDS_MODE 'off' (pinned above — the live value is 'on' since the cockpit flip) the response carries NO callSweep key — the handler's response shape is the pre-build one (mutation M52)", async () => {
     const res = makeRes();
     await handler(cronReq(), res);
     expect(res.statusCode).toBe(200);

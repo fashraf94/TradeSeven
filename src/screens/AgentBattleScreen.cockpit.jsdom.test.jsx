@@ -8,7 +8,7 @@
 // fakes: the HTTP routes (a stubbed fetch), Firestore (a recorder that serves
 // the cockpit's four subcollections from fixtures) and the flag ACCESSOR.
 //
-//   off   COCKPIT_UI_ENABLED as shipped (false): no status request, no
+//   off   COCKPIT_UI_ENABLED off (forced — it ships true since the flip): no status request, no
 //         listener, Chat · Bench · Tape on desktop, the shipped phone
 //   on    the server says { on: true }: the desktop pane computes Cockpit ·
 //         Chat · Bench · Tape and opens on Cockpit; "Chat · {n}"; the remembered
@@ -225,9 +225,9 @@ const cockpitListeners = () => FS.listeners.filter((p) => /\/(calls|declarations
 
 // ---------------------------------------------------------------------------
 
-describe('OFF PATH — COCKPIT_UI_ENABLED as shipped (false)', () => {
+describe('OFF PATH — COCKPIT_UI_ENABLED off', () => {
   it('desktop: Chat · Bench · Tape, opening on Chat; no status request; no listener; no cockpit markup', async () => {
-    FLAG.cockpit = null; // the real accessor over the real flag
+    FLAG.cockpit = false; // the flag off (it ships true since the flip)
     await mount();
     expect(tabs()).toEqual(['chat', 'bench', 'tape']);
     expect(shownSection()).toBe('chat');
@@ -239,7 +239,7 @@ describe('OFF PATH — COCKPIT_UI_ENABLED as shipped (false)', () => {
   });
 
   it('phone: the shipped layout — no switch, no track; no request, no listener', async () => {
-    FLAG.cockpit = null;
+    FLAG.cockpit = false;
     setShell(false);
     await mount();
     expect(q('[data-board-cockpit-switch]')).toBeNull();
@@ -437,7 +437,7 @@ describe('ON — the mode gate (Build 1a spec :39): cockpit filings and the call
   });
 
   it('not cockpit-on: the filing is not in the chat, and the call slot is not shown as This turn\'s directive', async () => {
-    FLAG.cockpit = null;
+    FLAG.cockpit = false;
     DOC = { ...LIVE_DOC, chatExchanges: [FILING], directive: CALL_SLOT };
     await mount();
     expect(q('[data-from-cockpit]')).toBeNull();
@@ -566,8 +566,8 @@ describe('REVIEW — the unread chain and the first paint (L3-1, L4-2, L4-7, L4-
     expect(q('[data-pane-tab="chat"]').textContent).toBe('Chat · 1');
   });
 
-  it('OFF PATH: with the flag as shipped, the Chat tab never carries a count (a new reply while Bench shows reads "Chat")', async () => {
-    FLAG.cockpit = null;
+  it('OFF PATH: with the flag off, the Chat tab never carries a count (a new reply while Bench shows reads "Chat")', async () => {
+    FLAG.cockpit = false;
     await mount();
     await click(q('[data-pane-tab="bench"]'));
     DOC = { ...LIVE_DOC, evaluations: [CHECK, { ...CHECK, evalId: 'eval_006', timestamp: '2026-09-01T16:59:02.000Z' }] };
@@ -754,7 +754,7 @@ describe('REVIEW — the phone sheet and layout (L5-1, L5-4, L5-8, L5-11)', () =
   });
 
   it('cockpit OFF on the phone: the shipped page layout (min-height 100vh, no fixed height, no floor)', async () => {
-    FLAG.cockpit = null;
+    FLAG.cockpit = false;
     await mount();
     expect([...container.querySelectorAll('div')].some((d) => d.style.minHeight === '480px')).toBe(false);
     expect([...container.querySelectorAll('div')].some((d) => d.style.minHeight === '100vh')).toBe(true);
@@ -774,8 +774,8 @@ describe('REVIEW — the phone sheet and layout (L5-1, L5-4, L5-8, L5-11)', () =
 });
 
 describe('REVIEW — the off path does no cockpit work (L3-4)', () => {
-  it('with the flag as shipped no (min-width: 1410px) query is ever subscribed', async () => {
-    FLAG.cockpit = null;
+  it('with the flag off no (min-width: 1410px) query is ever subscribed', async () => {
+    FLAG.cockpit = false;
     const queries = [];
     const base = window.matchMedia;
     window.matchMedia = (query) => { queries.push(String(query)); return base(query); };
@@ -787,7 +787,7 @@ describe('REVIEW — the off path does no cockpit work (L3-4)', () => {
 
 describe('REVIEW — receipts read the UNGATED exchanges (L3-9)', () => {
   it('a chat directive a cockpit filing replaced reads "Replaced" even while the gate hides the filing', async () => {
-    FLAG.cockpit = null; // the gate closed: the filing is not shown
+    FLAG.cockpit = false; // the gate closed: the filing is not shown
     const slot = { family: 'call', text: "Hold off on AMD until today's close", expiry: 'until_ms', expiresAtMs: CLOSE, directiveThreadId: 't-call', createdAt: '2026-09-01T16:50:00.000Z', callId: OPEN.callId, kind: 'call_hold' };
     DOC = { ...LIVE_DOC, chatExchanges: [chipFiling('2026-09-01T14:10:00.000Z', 't-chip'), cockpitFiling('2026-09-01T16:50:00.000Z', 't-call')], directive: slot };
     await mount();

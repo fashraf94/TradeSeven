@@ -185,8 +185,12 @@ const DARK_BY_DESIGN = {
   // lines back together. FILM_ROOM_V2_ENABLED (below) stays dark.
   RESPONSE_FORK_ATTRIBUTION_ENABLED:
     'Cockpit Build 1a (spec §11, Astra B1R2-9) — the response-fork hook\'s CAUSAL attribution ("In response to …"). Build 1a records prompt inclusion only; the causal field needs the round-3 declarations schema + nudge and its replay gate, then flips in the founder\'s own one-line PR, never a build PR. The flip moves the pin in cockpitFlags.test.js to true AND removes this entry in the same commit',
-  COCKPIT_UI_ENABLED:
-    'Cockpit Build 2a (spec docs/COCKPIT_BUILD2A_SPEC_V1_0.md §10) — the cockpit screen: the desktop Cockpit tab, the phone Board · Cockpit switch, the tiles and their readers. Built dark; flips only in the founder\'s own flip PR (§10.3) with CALL_RECORDS_MODE = \'on\', after the build merges, Amendment C is blessed and COCKPIT_ALLOWLIST_UIDS holds his uid in Vercel production — never a build PR. The flip moves the pin in cockpitUiFlags.test.js to true AND removes this entry in the same commit',
+  // COCKPIT_UI_ENABLED intentionally ABSENT: the cockpit screen flipped true in
+  // the founder's flip PR (Build 2a spec §10.3, with CALL_RECORDS_MODE 'on') —
+  // the deliberate flip drops it here in the same commit, per the guard's own
+  // "if DELIBERATE" instruction. Its pin in cockpitUiFlags.test.js asserts the
+  // live true value AND, turned around, that this entry is gone — a rollback
+  // moves both lines back together.
   FILM_ROOM_V2_ENABLED:
     'Film Room Build A — the screen flag (spec §7, A2): in A1 it gates only the Stage 3 branch of the hub helper getReviewAvailability (src/utils/reviewAvailability.js); A2 adds FilmRoomScreenV2 behind it. Flips only after A2 builds and Flash has read five real tape days through scripts/export-film-tape.js (spec §10 flip 2), in its own founder PR, never a build PR. The flip moves the pin in filmTapeFlags.test.js to true AND turns that file\'s registration row around to assert this entry is gone',
   SHADOW_CPU_QUOTE_INTEGRITY_ENABLED:
