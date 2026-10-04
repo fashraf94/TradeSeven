@@ -83,6 +83,8 @@ import { useCharacterPane, PANE_SECTION, paneSectionsFor } from './battleView/us
 import { useCockpitStatus } from '../hooks/useCockpitStatus';
 import { useCalls, useMonitoring, useCallEvents, useCallObservation } from '../hooks/useCockpitRecords';
 import { useCockpitAnswer } from '../hooks/useCockpitAnswer';
+// SMOKE BRANCH ONLY: ?cockpitFixtures=1 feeds in-memory records (never merged).
+import { cockpitSmokeVariant, buildCockpitSmoke } from './cockpitSmokeFixtures';
 import CockpitFeed from './battleView/CockpitFeed';
 import CockpitSheet from './battleView/CockpitSheet';
 import { CockpitSwitch, BoardCockpitTrack, PHONE_SCREEN } from './battleView/BoardCockpit';
@@ -1167,19 +1169,27 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // unknown and errors read off, so nothing below changes until `on` arrives.
   // Flag off: no request, no listener, and every branch below is the shipped one.
   const cockpitUiOn = isCockpitUiOn();
+  // SMOKE: the fixture mode bypasses the status check and every reader.
+  const cockpitSmoke = cockpitUiOn ? cockpitSmokeVariant() : null;
   const cockpitStatus = useCockpitStatus(agentBattleId, {
     // Only for the battle the subscribed document IS (an in-place switch keeps
     // the previous document while the next loads — review L3-6).
-    enabled: cockpitUiOn && agentBattle?.status === 'active' && (agentBattle?.id == null || agentBattle.id === agentBattleId),
+    enabled: cockpitUiOn && !cockpitSmoke && agentBattle?.status === 'active' && (agentBattle?.id == null || agentBattle.id === agentBattleId),
     battleStatus: agentBattle?.status ?? null,
   });
-  const cockpitOn = cockpitUiOn && cockpitStatus.on;
+  const cockpitOn = cockpitUiOn && (Boolean(cockpitSmoke) || cockpitStatus.on);
   // The readers say what they know (review L3-2): no empty state, tag or
   // receipt is drawn until the calls AND the events are READY; a failed read
   // is its own line.
-  const cockpitCallsRead = useCalls(agentBattleId, cockpitOn);
-  const cockpitMonitoringRead = useMonitoring(agentBattleId, cockpitOn);
-  const cockpitEventsRead = useCallEvents(agentBattleId, cockpitOn);
+  const cockpitCallsLive = useCalls(agentBattleId, cockpitOn && !cockpitSmoke);
+  const cockpitMonitoringLive = useMonitoring(agentBattleId, cockpitOn && !cockpitSmoke);
+  const cockpitEventsLive = useCallEvents(agentBattleId, cockpitOn && !cockpitSmoke);
+  const cockpitSmokeData = useMemo(() => (cockpitSmoke
+    ? buildCockpitSmoke({ battleId: agentBattleId ?? 'smoke', evaluations: agentBattle?.evaluations, nowMs: Date.now(), variant: cockpitSmoke })
+    : null), [cockpitSmoke, agentBattleId, agentBattle?.evaluations]);
+  const cockpitCallsRead = cockpitSmokeData ? { status: 'ready', value: cockpitSmokeData.calls } : cockpitCallsLive;
+  const cockpitMonitoringRead = cockpitSmokeData ? { status: 'ready', value: cockpitSmokeData.monitoring } : cockpitMonitoringLive;
+  const cockpitEventsRead = cockpitSmokeData ? { status: 'ready', value: cockpitSmokeData.events } : cockpitEventsLive;
   const cockpitReadStatuses = [cockpitCallsRead.status, cockpitEventsRead.status, cockpitMonitoringRead.status];
   const cockpitReadStatus = cockpitReadStatuses.includes('error')
     ? 'error'
@@ -2499,8 +2509,10 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   const cockpitSheetTileIdRef = useRef(null);
   const cockpitAnswer = useCockpitAnswer({
     battleId: agentBattleId,
-    subscribedThreadId: agentBattle?.directive?.directiveThreadId ?? null,
+    subscribedThreadId: (cockpitSmokeData?.directive ?? agentBattle?.directive)?.directiveThreadId ?? null,
     onUnavailable: cockpitStatus.recheck,
+    // SMOKE: answers go to the fixtures' scripted responses, never the endpoint.
+    ...(cockpitSmokeData ? { post: cockpitSmokeData.post } : {}),
   });
   const cockpitNowMs = now instanceof Date ? now.getTime() : Date.now();
   const cockpitEventsMap = useMemo(
@@ -2511,7 +2523,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     calls: cockpitCallsRead.value,
     events: cockpitEventsRead.value,
     evaluations: agentBattle?.evaluations,
-    directive: agentBattle?.directive ?? null,
+    directive: cockpitSmokeData?.directive ?? agentBattle?.directive ?? null,
     nowMs: cockpitNowMs,
     pending: cockpitAnswer.pending,
     // Each tile's refusal line, chosen from the body and dropped once stale (cockpitModel refusalLineOf).
@@ -2521,7 +2533,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     // the integrity mode is read here, at render, and only on the lit path.
     controlEpochLog: agentBattle?.controlEpochLog ?? null,
     suppressed: ARCHETYPE_INTEGRITY_MODE !== 'enforce',
-  }) : null), [cockpitOn, cockpitCallsRead.value, cockpitEventsRead.value, agentBattle?.evaluations, agentBattle?.directive, agentBattle?.controlEpochLog, cockpitNowMs, cockpitAnswer.pending, cockpitAnswer.outcomes, cockpitShowAllEarlier]);
+  }) : null), [cockpitOn, cockpitCallsRead.value, cockpitEventsRead.value, agentBattle?.evaluations, agentBattle?.directive, cockpitSmokeData, agentBattle?.controlEpochLog, cockpitNowMs, cockpitAnswer.pending, cockpitAnswer.outcomes, cockpitShowAllEarlier]);
   const cockpitMonitoring = useMemo(
     () => (cockpitOn && cockpitMonitoringRead.status === 'ready' ? monitoringRow(cockpitMonitoringRead.value, agentBattle?.evaluations) : null),
     [cockpitOn, cockpitMonitoringRead.status, cockpitMonitoringRead.value, agentBattle?.evaluations],
@@ -2531,11 +2543,14 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   const cockpitSheetTile = cockpitFeed && cockpitSheetCallId
     ? ([...cockpitFeed.needsYou, ...cockpitFeed.waiting, ...cockpitFeed.earlier].find((t) => t.calls.some((c) => c.callId === cockpitSheetCallId)) ?? null)
     : null;
-  const cockpitObservation = useCallObservation(
+  const cockpitObservationLive = useCallObservation(
     agentBattleId,
     cockpitSheetTile?.call?.callId ?? null,
-    Boolean(cockpitOn && cockpitSheetTile && cockpitSheetTile.call.state !== 'open'),
+    Boolean(cockpitOn && !cockpitSmoke && cockpitSheetTile && cockpitSheetTile.call.state !== 'open'),
   );
+  const cockpitObservation = cockpitSmokeData
+    ? (cockpitSmokeData.observations[cockpitSheetTile?.call?.callId] ?? null)
+    : cockpitObservationLive;
   const cockpitSheet = cockpitSheetTile
     ? sheetOf(cockpitSheetTile, { eventsMap: cockpitEventsMap, evaluations: agentBattle?.evaluations, observation: cockpitObservation, nowMs: cockpitNowMs })
     : null;

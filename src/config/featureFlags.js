@@ -2893,8 +2893,10 @@ export const RESPONSE_FORK_ATTRIBUTION_ENABLED = false;
  * flip moves the pin in cockpitUiFlags.test.js to true AND drops this flag
  * from DARK_BY_DESIGN in src/config/flagPinGuard.test.js in the same commit.
  */
+// SMOKE BRANCH ONLY (claude/cockpit-build2a-smoke, never merged): lit for the
+// preview. The build branch ships it false.
 // Pinned by: cockpitUiFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const COCKPIT_UI_ENABLED = false;
+export const COCKPIT_UI_ENABLED = true;
 
 /** The cockpit screen gate, read at render: the pane's shells AND the screen flag. */
 export function isCockpitUiOn() {
