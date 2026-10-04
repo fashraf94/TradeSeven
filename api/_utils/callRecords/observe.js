@@ -93,6 +93,23 @@ export function freezeObservation(callsCtx, spec) {
 }
 
 /**
+ * The persisted-bench names on COOLDOWN at an instant (Amendment C-3's lock
+ * clause): a bench asset whose `cooldownUntil` is after `atMs` — the very
+ * objects, and the very test, the prompt renders "locked until …" from
+ * (agentEvalPromptAssembly buildBenchCSV; the swap refuses them,
+ * agentSwapExecution validateTradeDecision). The hot bench carries no
+ * cooldown. An unreadable instant → null: lock status unknown, nothing guessed.
+ */
+export function benchCooldownLocked(battle, atMs) {
+  if (!(typeof atMs === 'number' && Number.isFinite(atMs))) return null;
+  const bench = battle?.portfolio?.bench;
+  const assets = [...(Array.isArray(bench?.stocks) ? bench.stocks : []), ...(bench?.crypto && typeof bench.crypto === 'object' ? [bench.crypto] : [])];
+  return assets
+    .filter((a) => a && typeof a.symbol === 'string' && a.symbol.length > 0 && a.cooldownUntil && Date.parse(a.cooldownUntil) > atMs)
+    .map((a) => a.symbol);
+}
+
+/**
  * THE MODEL SEAM (§3.4 model-result / transport-failed rows): the held rows and
  * the flattened augmented bench the prompt was built from, observed at
  * `Date.parse(promptBuiltAt)` (finite-checked), with the rows the prompt showed
@@ -102,15 +119,19 @@ export function freezeObservation(callsCtx, spec) {
  * Cockpit Build 2a (Amendment C-2 / C-3; spec S-2): the observation itself
  * keeps no held/bench distinction (its `symbols` map is the examined union),
  * so the HELD SET is frozen here too, from the same `heldSymbols` this seam
- * already receives — the held rows the prompt was built from. It is the only
- * source of `heldAtMint` and of counterpart usability; nothing is inferred
- * from prompt text.
+ * already receives — the held rows the prompt was built from — and so is the
+ * COOLDOWN-LOCKED set, from the same `battle` bench the prompt rendered at
+ * `promptBuiltAt` (review L1-3: the seam does know lock status). They are the
+ * only sources of `heldAtMint` and of counterpart usability; nothing is
+ * inferred from prompt text.
  */
 export function freezeModelObservation(callsCtx, { heldSymbols, benchSymbols, promptBuiltAt, replacedSymbols, battle }) {
   if (!callsCtx || !callsActive(callsCtx.mode)) return null;
   callsCtx.held = Object.freeze((Array.isArray(heldSymbols) ? heldSymbols : []).filter((s) => typeof s === 'string' && s.length > 0));
   callsCtx.universe = Object.freeze([...selectBattleUniverse(battle)]);
   const observedAtMs = typeof promptBuiltAt === 'string' ? Date.parse(promptBuiltAt) : NaN;
+  const locked = benchCooldownLocked(battle, observedAtMs);
+  callsCtx.locked = locked === null ? null : Object.freeze(locked);
   return freezeObservation(callsCtx, {
     source: 'model_prompt',
     observedAtMs,

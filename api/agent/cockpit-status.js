@@ -21,8 +21,10 @@
 //
 // It answers for the caller's own battle only, so it is no oracle on who is
 // admitted: a non-owner learns nothing but 403. One document read; no write.
-// Cache-Control: no-store on every answer — a rollback (the uid removed from
-// the environment) must reach the next ask, never a cached `on: true`.
+// Cache-Control: no-store on every answer — after a rollback (the uid removed
+// from the environment and production redeployed: Vercel applies environment
+// changes to new deployments only) the next ask must reach the new value,
+// never a cached `on: true`.
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { applySecurityMiddleware } from '../_utils/security.js';

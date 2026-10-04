@@ -19,8 +19,10 @@
 // USAGE (repo root):
 //   node scripts/shadow-read-call-records.mjs [--out docs/audits/<date>_CALL_RECORDS_SHADOW_READ_1.md] [--json <path>]
 //        [--calls-enabled-window]   Build 1a §12: the rollback recipe over every battle
-//        [--rollback-check]         Build 2a S-9: the live check over the allowlisted battles
-//                                   (needs COCKPIT_ALLOWLIST_UIDS in .env.local or the shell)
+//        [--rollback-check --since=<ISO>]  Build 2a S-9: the live check over the allowlisted battles,
+//                                   counting only entries at/after --since (the flip's production
+//                                   deploy; required) — needs COCKPIT_ALLOWLIST_UIDS in .env.local
+//                                   or the shell
 //
 // WHAT IT CANNOT READ: Vercel function logs. The `[calls] phase … removed=`,
 // `[calls] call_conflict`, `[calls] truncation_event` and `[calls] flips …`
@@ -142,7 +144,14 @@ async function main() {
   const wantCallsEnabledWindow = args.includes('--calls-enabled-window');
   // Build 2a §10.4: TRIP only at total ≥ 150, rate > 3 % AND one-sided Fisher p < 0.05 against
   // round 3's off baseline (3 of 386). Read-only; prints the verdict and the counts; no action.
+  // --since=<ISO> — REQUIRED with --rollback-check (review L1-1 / V1, fail closed): the flip's
+  // production deploy instant, so no entry from any earlier era (a shadow week, a prior 'on'
+  // period) pools with the live text's. The fixed shadow-era floor stands behind it.
   const wantRollbackCheck = args.includes('--rollback-check');
+  const sinceArg = args.find((a) => a.startsWith('--since='));
+  const sinceMs = sinceArg ? Date.parse(sinceArg.slice('--since='.length)) : null;
+  if (wantRollbackCheck && !sinceArg) throw new Error('--rollback-check needs --since=<ISO instant> — the production deploy of the flip PR');
+  if (sinceArg && !Number.isFinite(sinceMs)) throw new Error(`--since needs an ISO instant, got "${sinceArg}"`);
   const db = getFirebaseAdmin();
   const readAtMs = Date.now();
 
@@ -477,7 +486,7 @@ async function main() {
 
   let rollbackCheck = null;
   if (wantRollbackCheck) {
-    rollbackCheck = computeRollbackCheck(battles, { allowlist: readCockpitAllowlist() });
+    rollbackCheck = computeRollbackCheck(battles, { allowlist: readCockpitAllowlist(), nowMs: readAtMs, sinceMs });
     p('### I. Live rollback check (Build 2a S-9) — the allowlisted battles');
     p();
     p(renderRollbackCheck(rollbackCheck));
@@ -492,6 +501,8 @@ async function main() {
   if (jsonPath) writeFileSync(jsonPath, JSON.stringify({ readAtMs, base, shad, trig, violations, calls, decls, receipts: Object.fromEntries(receipts), queue, flipsList, diagList, wire, decl, callStats, tickRefs, ...(callsEnabledWindow ? { callsEnabledWindow } : {}), ...(rollbackCheck ? { rollbackCheck } : {}) }, null, 2));
   console.error(`[shadow-read] battles=${battles.size} shadowEntries=${shadowEntries.length} calls=${calls.length} violations=${violations.length} tripped=${tripped.length}`);
   if (rollbackCheck) console.error(`[rollback-check] verdict=${rollbackCheck.verdict} invalid=${rollbackCheck.invalid} total=${rollbackCheck.total} p=${rollbackCheck.p === null ? 'n/a' : rollbackCheck.p.toFixed(4)} owners=${rollbackCheck.owners}`);
+  // An unset allowlist measured nothing — never a quiet exit 0 that reads like "no trip" (review L1-6).
+  if (rollbackCheck?.verdict === 'NO ALLOWLIST') process.exitCode = 2;
 }
 
 const invokedDirectly = process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/').split('/').pop());

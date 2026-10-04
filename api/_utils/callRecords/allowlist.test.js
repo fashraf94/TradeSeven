@@ -42,7 +42,7 @@ describe('readCockpitAllowlist — the environment, read at CALL time', () => {
     expect(readCockpitAllowlist()).toEqual([]);
   });
 
-  it('every call reads the variable anew: set, changed, removed — each visible on the next call (a rollback is immediate)', () => {
+  it('every call reads the variable anew: set, changed, removed — each visible on the next call (no module cache; on Vercel a change reaches new deployments)', () => {
     process.env.COCKPIT_ALLOWLIST_UIDS = 'uid-a';
     expect(readCockpitAllowlist()).toEqual(['uid-a']);
     process.env.COCKPIT_ALLOWLIST_UIDS = 'uid-a, uid-b';

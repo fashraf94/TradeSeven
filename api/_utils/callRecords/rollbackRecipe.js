@@ -21,14 +21,25 @@
 //
 // Cockpit Build 2a — THE LIVE ROLLBACK CHECK (spec
 // docs/COCKPIT_BUILD2A_SPEC_V1_0.md S-9; founder ruling R2A-19), reported
-// under the read script's --rollback-check. The same window and membership as
-// the recipe above, over the ALLOWLISTED owners' battles only (the server-side
-// allowlist, allowlist.js). It TRIPS only when all three hold:
+// under the read script's --rollback-check, over the ALLOWLISTED owners'
+// battles only (the server-side allowlist, allowlist.js). Its own window, not
+// the recipe's (review L1-1):
+//   Window     the last FIVE regular ET sessions BY THE CALENDAR, ending at the
+//              run's own ET date — never "the last five with data", which can
+//              reach back any distance.
+//   Floor      no session before ROLLBACK_CHECK.notBefore — the first session
+//              after the shadow era (CALL_RECORDS_MODE 'shadow' from the flip
+//              64ecd855 to the rollback 4d8c498f, 2026-10-01), whose entries
+//              carry `declarationsPhase` from the SHADOW tool text; and, with
+//              --since, no entry before that instant (the flip's deploy).
+//   Membership the recipe's (`declarationsPhase` present, a finite `callMs`).
+// It TRIPS only when all three hold:
 //   1. total ≥ 150 calls-enabled model calls (a minimum sample);
 //   2. rate > 3 %;
 //   3. one-sided Fisher exact p < 0.05 against round 3's off baseline — arm A,
 //      3 invalid of 386 (docs/audits/20261002_DECLARATIONS_WORDING_ROUND3.md §5.4).
-// Read-only: it prints the verdict and the counts; it takes no action.
+// Read-only: it prints the verdict and the counts; it takes no action. An
+// unset allowlist is its own verdict (NO ALLOWLIST), never "no data".
 
 import { getSessionForDate } from '../marketSchedule.js';
 import { etDateOf } from './horizon.js';
@@ -37,12 +48,16 @@ export const ROLLBACK_SESSIONS = 5;
 export const ROLLBACK_TRIP_RATE = 0.03;
 export const EVALUATIONS_RETENTION_CAP = 150;
 
-/** The live check's three bars (S-9) and its baseline — round 3's arm A (the off text). */
+/** The live check's three bars (S-9), its baseline — round 3's arm A (the off text) — and its floor. */
 export const ROLLBACK_CHECK = Object.freeze({
   minTotal: 150,
   tripRate: 0.03,
   alpha: 0.05,
   baseline: Object.freeze({ invalid: 3, total: 386, label: "round 3's off arm (A), 3 of 386" }),
+  // The first regular ET session after the shadow era (the rollback 4d8c498f
+  // landed 2026-10-01): earlier entries carry `declarationsPhase` from the
+  // shadow tool and never count toward the live 'on' text's rate.
+  notBefore: '2026-10-02',
 });
 
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -144,22 +159,72 @@ export function fisherOneSidedGreater(liveBad, liveN, refBad, refN) {
   return Math.min(1, p);
 }
 
+/** The calendar date before an ET date string — date arithmetic only, no clock. */
+function previousDate(etDate) {
+  const [y, m, d] = etDate.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d) - 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
+ * The last `sessions` regular ET sessions BY THE CALENDAR, ending at the ET
+ * date of `nowMs` (inclusive when it is a session), oldest first. A walk of
+ * at most 40 days (a calendar outside its maintained years yields fewer).
+ */
+export function lastRegularSessions(nowMs, sessions = ROLLBACK_SESSIONS) {
+  if (!finite(nowMs)) return [];
+  const days = [];
+  let day = etDateOf(nowMs);
+  for (let i = 0; i < 40 && days.length < sessions; i += 1) {
+    if (isRegularSessionDate(day)) days.unshift(day);
+    day = previousDate(day);
+  }
+  return days;
+}
+
 /**
  * The live check over the allowlisted owners' battles. Pure.
  *
  * @param {object[]|Map} battles   `{ id, ownerId, evaluations }` (or a Map id → data)
- * @param {{ allowlist: string[] }} p  the admitted owner uids (allowlist.js readCockpitAllowlist())
+ * @param {object} p
+ * @param {string[]} p.allowlist   the admitted owner uids (allowlist.js readCockpitAllowlist())
+ * @param {number} [p.nowMs]       the run's instant — the window ends at its ET date
+ * @param {number|null} [p.sinceMs] --since: no entry before this instant (the flip's deploy)
+ * @param {string} [p.notBefore]   no session before this ET date (default: the end of the shadow era)
  * @returns {{ owners: number, battles: number, window: object, total: number, invalid: number, rate: number|null,
  *            p: number|null, bars: { minSample: boolean, rate: boolean, significant: boolean }, tripped: boolean,
- *            verdict: 'TRIP'|'NO TRIP'|'NO DATA' }}
+ *            verdict: 'TRIP'|'NO TRIP'|'NO DATA'|'NO ALLOWLIST' }}
  */
-export function computeRollbackCheck(battles, { allowlist, sessions = ROLLBACK_SESSIONS, check = ROLLBACK_CHECK } = {}) {
+export function computeRollbackCheck(battles, {
+  allowlist, nowMs = Date.now(), sinceMs = null, notBefore = ROLLBACK_CHECK.notBefore, sessions = ROLLBACK_SESSIONS, check = ROLLBACK_CHECK,
+} = {}) {
   const owners = new Set((Array.isArray(allowlist) ? allowlist : []).filter((u) => typeof u === 'string' && u.length > 0));
   const list = battles instanceof Map ? [...battles.entries()].map(([id, b]) => ({ id, ...b })) : (Array.isArray(battles) ? battles : []);
   const admitted = list.filter((b) => typeof b?.ownerId === 'string' && owners.has(b.ownerId));
-  const window = computeCallsEnabledWindow(admitted, { sessions, tripRate: check.tripRate });
-  const total = window.modelCalls;
-  const invalid = window.invalid;
+  const days = lastRegularSessions(nowMs, sessions).filter((d) => typeof notBefore !== 'string' || d >= notBefore);
+  const perDay = new Map(days.map((d) => [d, { day: d, modelCalls: 0, invalid: 0 }]));
+  const floorMs = finite(sinceMs) ? sinceMs : -Infinity;
+  const truncatedBattles = [];
+  for (const b of admitted) {
+    const evaluations = Array.isArray(b?.evaluations) ? b.evaluations : [];
+    if (evaluations.length >= EVALUATIONS_RETENTION_CAP) truncatedBattles.push(b.id ?? '?');
+    for (const e of evaluations) {
+      if (!isCallsEnabledModelCall(e)) continue;
+      const ms = entryMs(e);
+      if (ms === null || ms < floorMs || ms > nowMs) continue;
+      const row = perDay.get(etDateOf(ms));
+      if (!row) continue;
+      row.modelCalls += 1;
+      if (e?.haikuError?.failureClass === 'invalid_tool_result') row.invalid += 1;
+    }
+  }
+  const rows = days.map((d) => perDay.get(d));
+  const window = {
+    days, notBefore, sinceMs: finite(sinceMs) ? sinceMs : null,
+    perDay: rows,
+    coverage: { battles: admitted.length, truncatedBattles },
+  };
+  const total = rows.reduce((s, r) => s + r.modelCalls, 0);
+  const invalid = rows.reduce((s, r) => s + r.invalid, 0);
   const rate = total > 0 ? invalid / total : null;
   const p = total > 0 ? fisherOneSidedGreater(invalid, total, check.baseline.invalid, check.baseline.total) : null;
   const bars = {
@@ -178,7 +243,7 @@ export function computeRollbackCheck(battles, { allowlist, sessions = ROLLBACK_S
     p,
     bars,
     tripped,
-    verdict: total === 0 ? 'NO DATA' : (tripped ? 'TRIP' : 'NO TRIP'),
+    verdict: owners.size === 0 ? 'NO ALLOWLIST' : (total === 0 ? 'NO DATA' : (tripped ? 'TRIP' : 'NO TRIP')),
   };
 }
 
@@ -186,9 +251,16 @@ export function computeRollbackCheck(battles, { allowlist, sessions = ROLLBACK_S
 export function renderRollbackCheck(result, { check = ROLLBACK_CHECK } = {}) {
   const pct = (v) => (v === null ? 'n/a' : `${(100 * v).toFixed(2)}%`);
   const yes = (b) => (b ? 'met' : 'not met');
+  // A Vercel environment change reaches only NEW deployments: removing the uid
+  // takes effect when production is redeployed (review L1-2).
+  const action = {
+    TRIP: ' — remove the uid from COCKPIT_ALLOWLIST_UIDS, redeploy production, and report (spec §10.4).',
+    'NO ALLOWLIST': ' — COCKPIT_ALLOWLIST_UIDS is not set in this shell or .env.local; nothing was measured.',
+  }[result.verdict] ?? '';
+  const floor = `not before ${result.window.notBefore ?? '—'}${result.window.sinceMs !== null && result.window.sinceMs !== undefined ? `, since ${new Date(result.window.sinceMs).toISOString()}` : ''}`;
   return [
-    `- Verdict: **${result.verdict}**${result.verdict === 'TRIP' ? ' — remove the uid from COCKPIT_ALLOWLIST_UIDS and report (spec §10.4).' : ''}`,
-    `- Allowlisted owners ${result.owners}; their battles ${result.battles}; window ${result.window.days.length ? result.window.days.join(', ') : 'none'}.`,
+    `- Verdict: **${result.verdict}**${action}`,
+    `- Allowlisted owners ${result.owners}; their battles ${result.battles}; window ${result.window.days.length ? result.window.days.join(', ') : 'none'} (the last ${ROLLBACK_SESSIONS} regular sessions by the calendar, ${floor}).`,
     `- invalid_tool_result ${result.invalid} of ${result.total} calls-enabled model calls (rate ${pct(result.rate)}).`,
     `- Bars (all three must hold to trip): total ≥ ${check.minTotal} — ${yes(result.bars.minSample)}; rate > ${(100 * check.tripRate).toFixed(0)} % — ${yes(result.bars.rate)}; one-sided Fisher p < ${check.alpha} against ${check.baseline.label} — ${yes(result.bars.significant)} (p = ${result.p === null ? 'n/a' : result.p.toFixed(4)}).`,
     `- Coverage: ${result.window.coverage.truncatedBattles.length} of the allowlisted battles at the 150-entry retention cap — a truncated history may undercount.`,

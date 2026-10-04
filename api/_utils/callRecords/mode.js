@@ -151,6 +151,8 @@ export function createCallsContext({ mode, handlerStartMs }) {
     declarations: null,
     universe: null,
     held: null,
+    // Amendment C-3: the persisted-bench names on cooldown at promptBuiltAt (observe.js), null = unknown.
+    locked: null,
   };
 }
 

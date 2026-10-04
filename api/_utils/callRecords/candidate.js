@@ -36,11 +36,11 @@
 //   mintedMode      the check's resolved mode, 'shadow' | 'on' (C-5) — calls and
 //                   the record
 //   watchingSource  the record's kept watch list origin (C-1)
-// The held set and the universe are frozen at the SAME seam (observe.js
-// freezeModelObservation). The seam does not carry cooldown lock status — the
-// bench reaches it as bare symbols — so C-3's lock clause is treated as
-// unknown: a locked bench name is NOT excluded (recorded in the build report;
-// no lock is guessed).
+// The held set, the universe and the cooldown-locked set are frozen at the
+// SAME seam (observe.js freezeModelObservation): the lock set from the very
+// bench objects the prompt rendered "locked until …" from, at promptBuiltAt
+// (review L1-3). An unknown lock set (null) excludes nothing — no lock is
+// guessed.
 //
 // Pure: no I/O, no clock (the mint instant is handed in).
 
@@ -168,19 +168,20 @@ function deepFreeze(value) {
  * Is a shot's counterpart USABLE at the seam (Amendment C-3)? Exact
  * membership, the seam's own spelling (the fork options' rule):
  *   exit  — the replacement: in the check's universe, not held, not the call's
- *           own symbol (lock status: not known at the seam — see the header);
+ *           own symbol, and not cooldown-locked where the seam knows lock
+ *           status (`locked` — null when it does not);
  *   entry — the position the entry would replace: held, not the own symbol.
  * An unknown seam (held or universe null) proves nothing usable.
  *
  * @param {{ symbol: string, direction: string, counterpart?: string }} row
- * @param {{ held: string[]|null, universe: string[]|null }} seam
+ * @param {{ held: string[]|null, universe: string[]|null, locked?: string[]|null }} seam
  */
-export function counterpartUsable(row, { held, universe }) {
+export function counterpartUsable(row, { held, universe, locked = null }) {
   const cp = row?.counterpart;
   if (typeof cp !== 'string' || cp.length === 0) return false;
   if (!Array.isArray(held) || !Array.isArray(universe)) return false;
   if (cp === row.symbol) return false;
-  if (row.direction === 'exit') return universe.includes(cp) && !held.includes(cp);
+  if (row.direction === 'exit') return universe.includes(cp) && !held.includes(cp) && !(Array.isArray(locked) && locked.includes(cp));
   if (row.direction === 'entry') return held.includes(cp);
   return false;
 }
@@ -196,12 +197,12 @@ export function saidOkOf(said, basis) {
   return saidPassesLint(said, basis);
 }
 
-function composeCall(spec, { battleId, evalId, evalSeq, mintedAtMs, mintedMode, observation, evidence, provenance, held, universe }) {
+function composeCall(spec, { battleId, evalId, evalSeq, mintedAtMs, mintedMode, observation, evidence, provenance, held, universe, locked }) {
   const { n, kind, row, horizon } = spec;
   const isPick = kind === 'pick';
   const reason = isPick ? null : invalidationReason(row, observation);
   const hasCounterpart = !isPick && typeof row.counterpart === 'string' && row.counterpart.length > 0;
-  const usable = hasCounterpart && counterpartUsable(row, { held, universe });
+  const usable = hasCounterpart && counterpartUsable(row, { held, universe, locked });
   const call = {
     callId: callIdOf(battleId, evalId, n),
     kind,
@@ -259,7 +260,7 @@ function composeCall(spec, { battleId, evalId, evalSeq, mintedAtMs, mintedMode, 
  *   REQUIRED; `null` is the explicit "unknown" (heldAtMint false, no counterpart usable)
  * @param {'shadow'|'on'} p.mintedMode Amendment C-5: the check's resolved mode — REQUIRED
  */
-export function buildMintCandidate({ battleId, evalId, evalSeq, mintedAtMs, raw, universe, observation, promptBuiltAt, tickId, battle, topLevelWatching, held, mintedMode }) {
+export function buildMintCandidate({ battleId, evalId, evalSeq, mintedAtMs, raw, universe, observation, promptBuiltAt, tickId, battle, topLevelWatching, held, locked = null, mintedMode }) {
   // No silent default for a load-bearing seam fact: omission is a defect, and
   // opting out (null) is an explicit act.
   if (held === undefined) throw new Error('buildMintCandidate: `held` is required (null when the seam knows no held set)');
@@ -291,7 +292,7 @@ export function buildMintCandidate({ battleId, evalId, evalSeq, mintedAtMs, raw,
     const calls = specs.map((spec) => {
       const { call, reason } = composeCall(spec, {
         battleId, evalId, evalSeq, mintedAtMs, mintedMode, observation, evidence, provenance,
-        held: heldSet, universe: Array.isArray(universe) ? universe : null,
+        held: heldSet, universe: Array.isArray(universe) ? universe : null, locked: Array.isArray(locked) ? locked : null,
       });
       minted.push({ callId: call.callId, n: spec.n, kind: spec.kind, state: call.state, reason });
       return call;

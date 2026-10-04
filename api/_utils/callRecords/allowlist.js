@@ -14,9 +14,11 @@
 //   "uid-1, uid-2,,uid-3 "          → ['uid-1', 'uid-2', 'uid-3']
 //                                     (split on commas, each trimmed, empties dropped)
 //
-// READ AT CALL TIME, never at module scope: a rollback is removing the uid
-// from the variable (spec §10.4), and every request then resolves against the
-// value the function instance sees — nothing is cached here. Never throws.
+// READ AT CALL TIME, never at module scope: every request resolves against the
+// value the function instance sees — nothing is cached here. Never throws. A
+// rollback is removing the uid from the variable AND redeploying production
+// (spec §10.4): Vercel applies an environment change to new deployments only,
+// so the running deployment keeps the value it was built with (review L1-2).
 //
 // SERVER ONLY. No module under src/ may import this file (allowlist.test.js
 // walks src/ and pins it), so the client cannot learn who is admitted — it

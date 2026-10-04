@@ -69,7 +69,7 @@ describe('resolveCallRecordsMode(battle) — the composition rows (spec §3)', (
     expect(resolveCallRecordsMode(battleOf(OTHER))).toBe('off');
   });
 
-  it('the allowlist is read at CALL time: removing the uid is immediate (spec §10.4 rollback)', () => {
+  it('the allowlist is read at CALL time: the next resolution sees the value the instance has (spec §10.4 rollback, after the redeploy)', () => {
     flag.mode = 'on'; setAllow([ALLOWED, OTHER]);
     expect(resolveCallRecordsMode(battleOf(ALLOWED))).toBe('on');
     setAllow([OTHER]);

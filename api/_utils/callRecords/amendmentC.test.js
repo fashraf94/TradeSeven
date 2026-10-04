@@ -23,7 +23,9 @@ import { validateDeclarations, captureDeclarations, readsTopLevelWatching, WATCH
 import { buildMintCandidate, counterpartUsable, counterpartRawOf, saidOkOf, MINTED_MODES, COUNTERPART_RAW_MAX } from './candidate.js';
 import { runModelCallsPhase } from './publish.js';
 import { createCallsContext } from './mode.js';
-import { freezeModelObservation } from './observe.js';
+import { freezeModelObservation, benchCooldownLocked } from './observe.js';
+import { renderCallActionText, isCallActionEligible } from './callActions.js';
+import { planFlip } from './flip.js';
 import { bindHorizon, battleExpiryMs } from './horizon.js';
 import { saidPassesLint } from './copy.js';
 import { FROZEN_NOW, HELD, makeTickBattle, makeDeclarations, makeObservation } from '../__fixtures__/tickStampsHarness.js';
@@ -273,9 +275,47 @@ describe('C-3 — counterpart usability (the discovery\'s D-B5 classes)', () => 
     expect(one(exit('KO'))).toMatchObject({ counterpart: null, counterpartRaw: 'KO' });
   });
 
-  it('exit: a universe name not held → USABLE, kept, counterpartRaw null (lock status is not known at the seam — never guessed)', () => {
+  it('exit: a universe name not held → USABLE, kept, counterpartRaw null (with no lock known)', () => {
     expect(one(exit('JPM'))).toMatchObject({ counterpart: 'JPM', counterpartRaw: null });
     expect(one(exit('AMD'))).toMatchObject({ counterpart: 'AMD', counterpartRaw: null });
+  });
+
+  it('exit: a bench name COOLDOWN-LOCKED at the seam → unusable (C-3 "not cooldown-locked where the seam knows lock status" — review L1-3)', () => {
+    const call = mint({ calledShots: [exit('AMD')] }, { locked: ['AMD'] }).calls[0];
+    expect(call).toMatchObject({ counterpart: null, counterpartRaw: 'AMD' });
+    // Lock status unknown (null) excludes nothing; a lock on ANOTHER name changes nothing.
+    expect(mint({ calledShots: [exit('AMD')] }, { locked: null }).calls[0].counterpart).toBe('AMD');
+    expect(mint({ calledShots: [exit('AMD')] }, { locked: ['JPM'] }).calls[0].counterpart).toBe('AMD');
+    // The lock clause is an EXIT rule: an entry's counterpart is a held name, never a bench one.
+    expect(mint({ calledShots: [entry('KO')] }, { locked: ['KO'] }).calls[0].counterpart).toBe('KO');
+  });
+
+  it('the seam freezes the lock set from the very bench the prompt rendered, at promptBuiltAt — cooldownUntil after it is locked, before it is not; the hot bench never is', () => {
+    const battle = makeTickBattle();
+    battle.portfolio = {
+      ...battle.portfolio,
+      bench: {
+        stocks: [
+          { symbol: 'AMD', cooldownUntil: new Date(PROMPT_MS + 3_600_000).toISOString() },
+          { symbol: 'JPM', cooldownUntil: new Date(PROMPT_MS - 1).toISOString() },
+          { symbol: 'PG' },
+        ],
+        crypto: { symbol: 'BTC', cooldownUntil: new Date(PROMPT_MS + 60_000).toISOString() },
+      },
+    };
+    battle.watchlist = { hotBench: ['MSFT'] };
+    expect(benchCooldownLocked(battle, PROMPT_MS)).toEqual(['AMD', 'BTC']);
+    expect(benchCooldownLocked(battle, Number.NaN)).toBeNull();
+    const ctx = createCallsContext({ mode: 'shadow', handlerStartMs: 1 });
+    freezeModelObservation(ctx, { heldSymbols: ['NVDA'], benchSymbols: ['AMD', 'JPM', 'PG', 'BTC'], promptBuiltAt: FROZEN_NOW, replacedSymbols: [], battle });
+    expect(ctx.locked).toEqual(['AMD', 'BTC']);
+    expect(Object.isFrozen(ctx.locked)).toBe(true);
+    const unreadable = createCallsContext({ mode: 'shadow', handlerStartMs: 1 });
+    freezeModelObservation(unreadable, { heldSymbols: [], benchSymbols: [], promptBuiltAt: 'not a time', replacedSymbols: [], battle });
+    expect(unreadable.locked).toBeNull();
+    const off = createCallsContext({ mode: 'off', handlerStartMs: 1 });
+    freezeModelObservation(off, { heldSymbols: [], benchSymbols: [], promptBuiltAt: FROZEN_NOW, replacedSymbols: [], battle });
+    expect(off.locked).toBeNull();
   });
 
   it('entry: a HELD name other than the own symbol (the position it would replace) → USABLE, kept', () => {
@@ -306,6 +346,35 @@ describe('C-3 — counterpart usability (the discovery\'s D-B5 classes)', () => 
     expect(counterpartUsable({ symbol: 'NVDA', direction: 'exit', counterpart: 'JPM' }, { held: HELD, universe: UNIVERSE })).toBe(true);
     expect(counterpartUsable({ symbol: 'NVDA', direction: 'exit', counterpart: 'JPM' }, { held: null, universe: UNIVERSE })).toBe(false);
     expect(counterpartUsable({ symbol: 'NVDA', direction: 'exit', counterpart: 'JPM' }, { held: HELD, universe: null })).toBe(false);
+    expect(counterpartUsable({ symbol: 'NVDA', direction: 'exit', counterpart: 'JPM' }, { held: HELD, universe: UNIVERSE, locked: ['JPM'] })).toBe(false);
+  });
+
+  // C-3 changes what `counterpart` MEANS for its non-renderer consumers too
+  // (review L1-5 / L2-2, disclosed in the build report): each is pinned here
+  // so the change is a decision, not a side effect. All three act only at
+  // shadow / on — nothing here runs at 'off'.
+  it('consumer 1 — the canonical call_go text the model reads: an UNUSABLE counterpart is not named ("…exit." rather than "…exit for TBD.")', () => {
+    const tbd = one(exit('TBD'));
+    const jpm = one(exit('JPM'));
+    const now = MINT + 1000;
+    expect(renderCallActionText('call_go', tbd, { nowMs: now })).toMatch(/go ahead and exit\.$/);
+    expect(renderCallActionText('call_go', jpm, { nowMs: now })).toMatch(/go ahead and exit for JPM\.$/);
+  });
+
+  it('consumer 2 — the acted match: a nulled counterpart no longer blocks a whole-trade match on the call\'s own leg', () => {
+    const tbd = one(exit('TBD'));
+    const observation = { observedAtMs: MINT + 60_000, source: 'model_prompt', symbols: { NVDA: { px: 120 } } };
+    const executorResult = { type: 'swap', symbolOut: 'NVDA', symbolIn: 'AMD', tier: 'star', slotIndex: 0 };
+    const plan = planFlip({ ...tbd, state: 'open' }, { observation, evalId: 'eval_002', executorResult });
+    expect(plan).toMatchObject({ acted: true });
+  });
+
+  it('consumer 3 — go_now eligibility on an ENTRY: a nulled (unusable) counterpart no longer refuses counterpart_not_held', () => {
+    const jpm = one(entry('JPM')); // JPM is not held → C-3 nulls it
+    expect(jpm.counterpart).toBeNull();
+    const battle = committedBattle();
+    expect(isCallActionEligible('call_go', jpm, battle)).toEqual({ ok: true });
+    expect(isCallActionEligible('call_go', { ...jpm, counterpart: 'JPM' }, battle)).toEqual({ ok: false, reason: 'counterpart_not_held' });
   });
 });
 

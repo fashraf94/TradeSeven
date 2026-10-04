@@ -89,7 +89,7 @@ export const RECORD_BOOKKEEPING_ALLOWANCE_BYTES = 2_048;
 
 /** The typed removal reasons. */
 export const REMOVAL_REASONS = Object.freeze([
-  'malformed_block',            // the block itself is not an object — nothing born, no record
+  'malformed_block',            // the block itself is not an object — no call is born (C-1: a valid top-level watching list still writes a watching-only record)
   'malformed',                  // a required field absent or wrong-typed; an optional one wrong-typed
   'oversize',                   // a string, a count or the document cap exceeded
   'too_few_options',            // a fork or a playerAsk with fewer than two options

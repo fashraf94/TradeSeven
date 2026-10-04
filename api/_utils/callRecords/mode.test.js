@@ -68,6 +68,8 @@ describe('createCallsContext — the spec §3.3 shape', () => {
       universe: null,
       // Build 2a (Amendment C-2 / C-3): the held set, frozen at the model seam beside the universe.
       held: null,
+      // Build 2a (Amendment C-3, review L1-3): the bench names on cooldown at promptBuiltAt.
+      locked: null,
     });
   });
 

@@ -369,6 +369,7 @@ export async function runModelCallsPhase(callsCtx, { db, battle, timeBudgetMs, p
       // and the check's resolved mode.
       topLevelWatching: callsCtx.declarations.topLevelWatching,
       held: callsCtx.held ?? null,
+      locked: callsCtx.locked ?? null,
       mintedMode: callsCtx.mode,
       universe: callsCtx.universe,
       observation: callsCtx.observation,

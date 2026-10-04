@@ -13,7 +13,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   computeCallsEnabledWindow, renderCallsEnabledWindow, isCallsEnabledModelCall, isRegularSessionDate, ROLLBACK_SESSIONS, ROLLBACK_TRIP_RATE, EVALUATIONS_RETENTION_CAP,
-  computeRollbackCheck, renderRollbackCheck, fisherOneSidedGreater, ROLLBACK_CHECK,
+  computeRollbackCheck, renderRollbackCheck, fisherOneSidedGreater, ROLLBACK_CHECK, lastRegularSessions,
 } from './rollbackRecipe.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -107,12 +107,15 @@ describe('computeCallsEnabledWindow — the seeded corpus (spec §12)', () => {
 // counts at, below and above each bar.
 describe('Build 2a — computeRollbackCheck (spec S-9)', () => {
   const SESSIONS_5 = ['2026-09-08', '2026-09-09', '2026-09-10', '2026-09-11', '2026-09-14'];
+  // The synthetic window: the run at the close of Mon Sep 14, its floor before the
+  // window (the shipped floor — the end of the shadow era — has its own rows below).
+  const AT_SEP_14 = { nowMs: Date.parse('2026-09-14T21:00:00.000Z'), notBefore: '2026-09-01' };
   /** n calls-enabled model calls, k of them invalid, spread over the five sessions, on one owner's battle. */
-  const battleOf = (ownerId, n, k, id = `b-${ownerId}-${n}-${k}`) => ({
+  const battleOf = (ownerId, n, k, id = `b-${ownerId}-${n}-${k}`, sessions = SESSIONS_5) => ({
     id, ownerId,
-    evaluations: Array.from({ length: n }, (_, i) => (i < k ? invalid(SESSIONS_5[i % 5]) : entry(SESSIONS_5[i % 5]))),
+    evaluations: Array.from({ length: n }, (_, i) => (i < k ? invalid(sessions[i % sessions.length]) : entry(sessions[i % sessions.length]))),
   });
-  const check = (n, k, extra = []) => computeRollbackCheck([battleOf('founder', n, k), ...extra], { allowlist: ['founder'] });
+  const check = (n, k, extra = []) => computeRollbackCheck([battleOf('founder', n, k), ...extra], { allowlist: ['founder'], ...AT_SEP_14 });
 
   it("the bars and the baseline are the spec's: 150 · 3 % · p < 0.05 against 3 of 386", () => {
     expect(ROLLBACK_CHECK).toMatchObject({ minTotal: 150, tripRate: 0.03, alpha: 0.05, baseline: { invalid: 3, total: 386 } });
@@ -133,7 +136,7 @@ describe('Build 2a — computeRollbackCheck (spec S-9)', () => {
 
   it('THE SIGNIFICANCE BAR is enforced on its own: with a noisier baseline, a window over 150 and 3 % that is not significant does not trip', () => {
     const noisy = { ...ROLLBACK_CHECK, baseline: { invalid: 12, total: 386, label: 'a synthetic baseline' } };
-    const r = computeRollbackCheck([battleOf('founder', 150, 5)], { allowlist: ['founder'], check: noisy });
+    const r = computeRollbackCheck([battleOf('founder', 150, 5)], { allowlist: ['founder'], check: noisy, ...AT_SEP_14 });
     expect(r.bars).toEqual({ minSample: true, rate: true, significant: false });
     expect(r.p).toBeGreaterThanOrEqual(0.05);
     expect(r.tripped).toBe(false);
@@ -158,13 +161,72 @@ describe('Build 2a — computeRollbackCheck (spec S-9)', () => {
   it("ONLY the allowlisted owners' battles count — another owner's invalid results never move it", () => {
     const r = check(150, 0, [battleOf('stranger', 150, 40)]);
     expect(r).toMatchObject({ owners: 1, battles: 1, total: 150, invalid: 0, tripped: false });
-    expect(computeRollbackCheck([battleOf('founder', 150, 9)], { allowlist: [] })).toMatchObject({ owners: 0, battles: 0, total: 0, verdict: 'NO DATA', tripped: false });
   });
 
-  it('the same window and membership as the recipe: off-mode entries and older sessions are not counted', () => {
-    const b = battleOf('founder', 150, 0);
-    b.evaluations.push({ timestamp: '2026-09-14T14:30:00.000Z', callMs: 800 }, ...['2026-09-01', '2026-09-02'].flatMap((d) => [invalid(d), invalid(d)]));
-    expect(computeRollbackCheck([b], { allowlist: ['founder'] })).toMatchObject({ total: 150, invalid: 0 });
+  it('NO ALLOWLIST is its own verdict — an unset allowlist measured nothing, never "no data" (review L1-6)', () => {
+    const r = computeRollbackCheck([battleOf('founder', 150, 9)], { allowlist: [], ...AT_SEP_14 });
+    expect(r).toMatchObject({ owners: 0, battles: 0, total: 0, verdict: 'NO ALLOWLIST', tripped: false });
+    expect(computeRollbackCheck([], { allowlist: ['founder'], ...AT_SEP_14 })).toMatchObject({ owners: 1, total: 0, verdict: 'NO DATA' });
+    expect(renderRollbackCheck(r).split('\n')[0]).toBe('- Verdict: **NO ALLOWLIST** — COCKPIT_ALLOWLIST_UIDS is not set in this shell or .env.local; nothing was measured.');
+  });
+
+  it('THE CALENDAR WINDOW (review L1-1): the last five regular sessions ending at the run, never "the last five with data"', () => {
+    expect(lastRegularSessions(AT_SEP_14.nowMs)).toEqual(SESSIONS_5);
+    // Over a weekend and the Labor Day holiday: Fri Sep 4 · Tue 8 · Wed 9 · Thu 10 · Fri 11, run on Sat Sep 12.
+    expect(lastRegularSessions(Date.parse('2026-09-12T15:00:00.000Z'))).toEqual(['2026-09-04', '2026-09-08', '2026-09-09', '2026-09-10', '2026-09-11']);
+    // Older sessions WITH data stay out, however empty the window is: two quiet sessions do not pull Sep 1–2 in.
+    const b = battleOf('founder', 30, 0, 'b', ['2026-09-10', '2026-09-11', '2026-09-14']);
+    b.evaluations.push(...['2026-09-01', '2026-09-02'].flatMap((d) => [invalid(d), invalid(d)]));
+    b.evaluations.push({ timestamp: '2026-09-14T14:30:00.000Z', callMs: 800 }); // an off-mode check: no stamp
+    const r = computeRollbackCheck([b], { allowlist: ['founder'], ...AT_SEP_14 });
+    expect(r.window.days).toEqual(SESSIONS_5);
+    expect(r).toMatchObject({ total: 30, invalid: 0 });
+    expect(r.window.perDay.map((d) => d.modelCalls)).toEqual([0, 0, 10, 10, 10]);
+  });
+
+  it('THE SHADOW ERA NEVER COUNTS (review L1-1): sessions before the floor are dropped, so shadow-tool entries cannot dilute the live rate', () => {
+    expect(ROLLBACK_CHECK.notBefore).toBe('2026-10-02');
+    // The reviewer's repro: four shadow sessions (130 calls, 1 invalid each) and two live sessions (11 of 260).
+    const shadowDays = ['2026-09-28', '2026-09-29', '2026-09-30', '2026-10-01'];
+    const liveDays = ['2026-10-06', '2026-10-07'];
+    const evaluations = [
+      ...shadowDays.flatMap((d) => Array.from({ length: 130 }, (_, i) => (i === 0 ? invalid(d) : entry(d)))),
+      ...liveDays.flatMap((d, j) => Array.from({ length: 130 }, (_, i) => (i < (j === 0 ? 6 : 5) ? invalid(d) : entry(d)))),
+    ];
+    const r = computeRollbackCheck([{ id: 'b', ownerId: 'founder', evaluations }], { allowlist: ['founder'], nowMs: Date.parse('2026-10-07T21:00:00.000Z') });
+    expect(r.window.days).toEqual(['2026-10-02', '2026-10-05', '2026-10-06', '2026-10-07']);
+    expect(r).toMatchObject({ total: 260, invalid: 11, verdict: 'TRIP' });
+    expect(r.p).toBeLessThan(0.01);
+    // Without the floor, even the calendar window admits a shadow session (Oct 1) …
+    const unfloored = computeRollbackCheck([{ id: 'b', ownerId: 'founder', evaluations }], { allowlist: ['founder'], nowMs: Date.parse('2026-10-07T21:00:00.000Z'), notBefore: null });
+    expect(unfloored.window.days).toEqual(['2026-10-01', '2026-10-02', '2026-10-05', '2026-10-06', '2026-10-07']);
+    expect(unfloored).toMatchObject({ total: 390, invalid: 12 });
+    // … and the recipe's "with data" window — what the live check used to reuse — takes three
+    // shadow sessions and pools to the reviewer's NO TRIP (14 of 650, p = 0.0712): the masking.
+    const withData = computeCallsEnabledWindow([{ id: 'b', evaluations }]);
+    expect(withData.days).toEqual(['2026-09-29', '2026-09-30', '2026-10-01', '2026-10-06', '2026-10-07']);
+    expect({ total: withData.modelCalls, invalid: withData.invalid }).toEqual({ total: 650, invalid: 14 });
+    expect(fisherOneSidedGreater(14, 650, 3, 386)).toBeGreaterThan(0.05);
+  });
+
+  it('--since adds a floor INSTANT: entries before the flip\'s deploy on the same day do not count', () => {
+    const day = '2026-10-07';
+    const evaluations = [
+      ...Array.from({ length: 4 }, () => invalid(day)), // 14:30Z — before the deploy
+      entry(day, { timestamp: '2026-10-07T18:00:00.000Z', promptBuiltAt: '2026-10-07T18:00:00.000Z' }),
+    ];
+    const at = { allowlist: ['founder'], nowMs: Date.parse('2026-10-07T21:00:00.000Z') };
+    expect(computeRollbackCheck([{ id: 'b', ownerId: 'founder', evaluations }], at)).toMatchObject({ total: 5, invalid: 4 });
+    const since = Date.parse('2026-10-07T17:00:00.000Z');
+    const r = computeRollbackCheck([{ id: 'b', ownerId: 'founder', evaluations }], { ...at, sinceMs: since });
+    expect(r).toMatchObject({ total: 1, invalid: 0 });
+    expect(r.window.sinceMs).toBe(since);
+    expect(renderRollbackCheck(r)).toContain('since 2026-10-07T17:00:00.000Z');
+  });
+
+  it('an entry stamped after the run instant is not counted (the window ends at the run)', () => {
+    const r = computeRollbackCheck([{ id: 'b', ownerId: 'founder', evaluations: [entry('2026-09-14', { timestamp: '2026-09-14T22:00:00.000Z' })] }], { allowlist: ['founder'], ...AT_SEP_14 });
+    expect(r.total).toBe(0);
   });
 
   it("the tail equals round 3's own: 1A against A, 13 vs 3 of 386 → p = 0.010 (the round-3 report), and equals the experiment's function on a grid", () => {
@@ -189,18 +251,23 @@ describe('Build 2a — computeRollbackCheck (spec S-9)', () => {
 
   it('renderRollbackCheck prints the verdict first, then every count and bar; a trip names the action', () => {
     const md = renderRollbackCheck(check(150, 6));
-    expect(md.split('\n')[0]).toBe('- Verdict: **TRIP** — remove the uid from COCKPIT_ALLOWLIST_UIDS and report (spec §10.4).');
+    // A Vercel environment change reaches new deployments only (review L1-2): the action names the redeploy.
+    expect(md.split('\n')[0]).toBe('- Verdict: **TRIP** — remove the uid from COCKPIT_ALLOWLIST_UIDS, redeploy production, and report (spec §10.4).');
     expect(md).toContain('invalid_tool_result 6 of 150');
     expect(md).toContain('total ≥ 150 — met');
     expect(md).toContain('rate > 3 % — met');
     expect(md).toContain('p < 0.05');
-    expect(renderRollbackCheck(computeRollbackCheck([], { allowlist: [] }))).toContain('**NO DATA**');
+    expect(renderRollbackCheck(computeRollbackCheck([], { allowlist: ['founder'], ...AT_SEP_14 }))).toContain('**NO DATA**');
+    expect(md).toContain('the last 5 regular sessions by the calendar, not before 2026-09-01');
   });
 
   it('the read script carries --rollback-check, reads the allowlist through the server reader, and is read-only', () => {
     const src = readFileSync(resolve(HERE, '../../../scripts/shadow-read-call-records.mjs'), 'utf8');
     expect(src).toContain("args.includes('--rollback-check')");
-    expect(src).toContain('computeRollbackCheck(battles, { allowlist: readCockpitAllowlist() })');
+    expect(src).toContain('computeRollbackCheck(battles, { allowlist: readCockpitAllowlist(), nowMs: readAtMs, sinceMs })');
+    expect(src).toContain("if (rollbackCheck?.verdict === 'NO ALLOWLIST') process.exitCode = 2;");
+    // --since is REQUIRED with --rollback-check: no run can silently pool an earlier era (fail closed).
+    expect(src).toContain("if (wantRollbackCheck && !sinceArg) throw new Error('--rollback-check needs --since=<ISO instant>");
     expect(src).toContain("import { readCockpitAllowlist } from '../api/_utils/callRecords/allowlist.js';");
     // (`.set(` / `.delete(` appear only on the script's in-memory Maps; no Firestore write exists.)
     const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');

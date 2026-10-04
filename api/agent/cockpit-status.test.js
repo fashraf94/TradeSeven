@@ -90,7 +90,7 @@ describe('the answer — the server\'s own resolution, for the owner alone', () 
     }
   });
 
-  it('a rollback (the uid removed from the environment) is visible on the very next ask', async () => {
+  it('a rollback (the uid removed from the environment the instance sees) is visible on the very next ask — no cache', async () => {
     expect((await get()).body).toEqual({ on: true });
     process.env.COCKPIT_ALLOWLIST_UIDS = '';
     expect((await get()).body).toEqual({ on: false });

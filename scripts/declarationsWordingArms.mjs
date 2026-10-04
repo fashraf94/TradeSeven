@@ -35,9 +35,6 @@ import {
   buildTradeDecisionTool, buildArmDTool,
   ARM_D_DECLARATIONS, ARM_D_HORIZON_PHRASE, ARM_D_SAID, ARM_D_FORK, ARM_D_PLAYER_ASK,
 } from '../api/_utils/agentEvalToolSchema.js';
-// Round 3 only: read through the namespace, so a later rename of these two exports fails
-// assertRound3Arms() instead of breaking this module's load (and rounds 1–2 with it).
-import * as schema from '../api/_utils/agentEvalToolSchema.js';
 
 export { ARM_D_DECLARATIONS, ARM_D_HORIZON_PHRASE, ARM_D_SAID, ARM_D_FORK, ARM_D_PLAYER_ASK };
 
