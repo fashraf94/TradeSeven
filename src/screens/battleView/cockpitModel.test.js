@@ -79,6 +79,11 @@ const ack = (c, filedAt = '2026-09-09T14:32:10.000Z') => ({ answer: c.defaultAct
 const directive = (c, { heardEvalId = null, filedAt = '2026-09-09T14:33:00.000Z', answer = 'hold' } = {}) => ({
   answer, kind: 'directive', directiveThreadId: `th-${c.callId}`, callId: c.callId, filedAt, heardEvalId,
 });
+/** The battle's slot holding the call directive the answer endpoint filed for `c` (the same thread as directive(c)). */
+const slotFor = (c, over = {}) => ({
+  family: 'call', text: "Hold off on AMD until today's close", expiry: 'until_ms', expiresAtMs: CLOSE,
+  directiveThreadId: `th-${c.callId}`, createdAt: '2026-09-09T14:33:00.000Z', callId: c.callId, kind: 'call_hold', ...over,
+});
 const feed = (calls, over = {}) => buildCockpitFeed({ calls, events: [], evaluations: EVALS, directive: null, nowMs: NOW, ...over });
 const allTiles = (f) => [...f.needsYou, ...f.waiting, ...f.earlier];
 const tileFor = (f, c) => allTiles(f).find((t) => t.calls.some((x) => x.callId === c.callId));
@@ -175,10 +180,6 @@ describe('§7.3 — the matrix, every row; the buttons are the shared legality t
 
 describe('§7.3 — one call at a time: the answer endpoint\'s own predicate', () => {
   const pendingCall = call({ playerResponse: null });
-  const slotFor = (c, over = {}) => ({
-    family: 'call', text: "Hold off on AMD until today's close", expiry: 'until_ms', expiresAtMs: CLOSE,
-    directiveThreadId: `th-${c.callId}`, createdAt: '2026-09-09T14:33:00.000Z', callId: c.callId, kind: 'call_hold', ...over,
-  });
 
   it('PARITY: on every row of the table, the tile blocks exactly when isCallDirectivePendingAt would refuse', () => {
     const base = slotFor(pendingCall);
@@ -297,7 +298,7 @@ describe('§7.3 — one call at a time: the answer endpoint\'s own predicate', (
 // ---------------------------------------------------------------------------
 
 describe('§7.4 — every state tag row, from record facts only', () => {
-  const tagOf = (c, events = []) => callTag(c, { events, evaluations: EVALS, nowMs: NOW });
+  const tagOf = (c, events = [], over = {}) => callTag(c, { events, evaluations: EVALS, nowMs: NOW, ...over });
   const ev = (c, kind, promptBuiltAt, at = T('2026-09-09T15:01:00.000Z')) => ({ kind, at, callIds: [c.callId], text: '', evidence: promptBuiltAt ? { evalId: 'eval_012', promptBuiltAt, checkLabel: null } : {} });
 
   it('open, no answer → "Live" (neutral)', () => {
@@ -307,9 +308,18 @@ describe('§7.4 — every state tag row, from record facts only', () => {
     const c = call(); c.playerResponse = ack(c);
     expect(tagOf(c)).toEqual({ fact: 'answer:ack', tone: 'yoursOutline', text: 'You agreed · 10:32 AM' });
   });
-  it('a directive filed, not heard → "Filed · not yet heard" (teal)', () => {
+  it('a directive filed, not heard, STILL the battle\'s current one (the slot\'s live thread is its own) → "Filed · not yet heard" (teal)', () => {
     const c = call(); c.playerResponse = directive(c);
-    expect(tagOf(c)).toEqual({ fact: 'answer:directive', tone: 'yours', text: 'Filed · not yet heard' });
+    expect(tagOf(c, [], { slotThreadId: c.playerResponse.directiveThreadId })).toEqual({ fact: 'answer:directive', tone: 'yours', text: 'Filed · not yet heard' });
+  });
+  it('a directive filed, not heard, that the slot does NOT hold → "Filed · not heard" (muted) — never "not yet" without the slot saying so (founder ruling Oct 4)', () => {
+    const c = call(); c.playerResponse = directive(c);
+    const notHeard = { fact: 'answer:directive_left_slot', tone: 'muted', text: 'Filed · not heard' };
+    expect(tagOf(c)).toEqual(notHeard); // no slot thread handed in → no promise
+    expect(tagOf(c, [], { slotThreadId: 'th-a-later-filing' })).toEqual(notHeard);
+    // A record without its thread id never matches, not even an empty slot.
+    const bare = call(); bare.playerResponse = { ...directive(bare), directiveThreadId: null };
+    expect(tagOf(bare, [], { slotThreadId: null })).toEqual(notHeard);
   });
   it('a directive heard → "Heard at the {t} check" (teal), the check the record names', () => {
     const c = call(); c.playerResponse = directive(c, { heardEvalId: 'eval_011' });
@@ -392,6 +402,60 @@ describe('§7.4 — every state tag row, from record facts only', () => {
   });
 });
 
+describe('"Filed · not yet heard" ONLY while the directive is still the battle\'s current one (founder ruling Oct 4; review L6-11 c)', () => {
+  // A cockpit answer as the endpoint files it: the call's playerResponse and the battle's slot, one thread.
+  const filed = () => { const c = call({ symbol: 'NVDA' }); c.playerResponse = directive(c); return c; };
+  const tagIn = (c, over = {}) => tileFor(feed([c], over), c).tag;
+  const NOT_YET = { fact: 'answer:directive', tone: 'yours', text: 'Filed · not yet heard' };
+  const NOT_HEARD = { fact: 'answer:directive_left_slot', tone: 'muted', text: 'Filed · not heard' };
+
+  it('in the slot and live → "Filed · not yet heard", up to the last instant of the slot\'s lifetime', () => {
+    const c = filed();
+    expect(tagIn(c, { directive: slotFor(c) })).toEqual(NOT_YET);
+    expect(tagIn(c, { directive: slotFor(c), nowMs: CLOSE })).toEqual(NOT_YET); // the endpoint's own bound: nowMs > expiresAtMs
+  });
+
+  it('REPLACED before any check heard it — the slot holds a later filing (chat, chip, another call\'s answer) → "Filed · not heard"', () => {
+    const c = filed();
+    const chat = { text: 'Lean defensive', directiveThreadId: 'th-chat-1', expiry: 'end_of_battle', createdAt: '2026-09-09T14:50:00.000Z' };
+    expect(tagIn(c, { directive: chat })).toEqual(NOT_HEARD);
+    expect(tagIn(c, { directive: slotFor({ callId: 'b:eval_011:call:77' }) })).toEqual(NOT_HEARD);
+  });
+
+  it('CLEARED — the slot emptied, or its thread killed by a control epoch → "Filed · not heard"', () => {
+    const c = filed();
+    expect(tagIn(c, { directive: null })).toEqual(NOT_HEARD);
+    const killed = [{ suppressedDirectiveIds: [c.playerResponse.directiveThreadId] }];
+    expect(tagIn(c, { directive: slotFor(c), controlEpochLog: killed })).toEqual(NOT_HEARD);
+    // Another thread's kill leaves this one current.
+    expect(tagIn(c, { directive: slotFor(c), controlEpochLog: [{ suppressedDirectiveIds: ['th-other'] }] })).toEqual(NOT_YET);
+  });
+
+  it('EXPIRED — past the slot\'s lifetime, still in it → "Filed · not heard"', () => {
+    const c = filed();
+    expect(tagIn(c, { directive: slotFor(c), nowMs: CLOSE + 1 })).toEqual(NOT_HEARD);
+  });
+
+  it('a slot the renderer suppresses is never heard → "Filed · not heard" (the same predicate as the override block)', () => {
+    const c = filed();
+    expect(tagIn(c, { directive: slotFor(c), suppressed: true })).toEqual(NOT_HEARD);
+  });
+
+  it('the event-backed facts still come first: a replacement with its event reads "Replaced…", a hearing "Heard…", wherever the slot is', () => {
+    const c = filed();
+    const events = [{ kind: 'superseded', at: T('2026-09-09T14:50:00.000Z'), callIds: [c.callId], text: '', evidence: {} }];
+    expect(tagIn(c, { events, directive: null })).toMatchObject({ fact: 'event:superseded', text: 'Replaced by a later instruction' });
+    const h = call({ symbol: 'NVDA' }); h.playerResponse = directive(h, { heardEvalId: 'eval_011' });
+    expect(tagIn(h, { directive: null }).text).toBe('Heard at the 10:45 AM check');
+  });
+
+  it('the sheet wears the same tag as its tile', () => {
+    const c = filed();
+    const t = tileFor(feed([c], { directive: null }), c);
+    expect(sheetOf(t, { evaluations: EVALS, nowMs: NOW }).tag).toEqual(NOT_HEARD);
+  });
+});
+
 describe('§7.4 — THE COVERAGE: the one table maps every fact the writers can emit at HEAD', () => {
   // The call states, read from the writers themselves so a new state reds here
   // until the table has its row: candidate.js mints open | invalidated, flip.js
@@ -441,7 +505,8 @@ describe('§7.4 — THE COVERAGE: the one table maps every fact the writers can 
     const known = new Set([
       ...['ended_with_battle', 'expired_unresolved', 'hit', 'invalidated', 'open'].map((s) => `state:${s}`),
       ...CALL_EVENT_KINDS.map((k) => `event:${k}`),
-      'answer:ack', 'answer:directive',
+      // The filed directive's two rows: still the slot's (playerResponse + battle.directive), or gone from it.
+      'answer:ack', 'answer:directive', 'answer:directive_left_slot',
     ]);
     expect(Object.keys(COCKPIT_FACT_TAGS).filter((k) => !known.has(k))).toEqual([]);
   });
@@ -532,11 +597,13 @@ describe('§7.2 — folding (Amendment C-6)', () => {
     const a = call();
     a.playerResponse = directive(a, { answer: 'hold', filedAt: '2026-09-09T14:33:00.000Z' });
     const b = restated(a);
-    const t = allTiles(feed([a, b]))[0];
+    const t = allTiles(feed([a, b], { directive: slotFor(a) }))[0];
     expect(t.buttons).toEqual([]);
     expect(t.group).toBe(COCKPIT_GROUP.WAITING);
     expect(t.answerLine).toBe('You said hold off · 10:33 AM, on the 10:30 AM wording');
+    // The thread's tag is the live member's, read against the slot: still its own → not yet heard.
     expect(t.tag.text).toBe('Filed · not yet heard');
+    expect(allTiles(feed([a, b], { directive: null }))[0].tag.text).toBe('Filed · not heard');
   });
 
   it('a single call with a live directive answer shows that answer too (a thread of one)', () => {
