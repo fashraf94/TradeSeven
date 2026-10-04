@@ -14,7 +14,7 @@ import { buildReceipt, receiptPathOf } from './receipt.js';
 import { buildMintCandidate, MUTABLE_CALL_FIELDS } from './candidate.js';
 import { createCallsContext } from './mode.js';
 import { TAIL_RESERVE_MS, NON_MODEL_PHASE_MS } from './publish.js';
-import { FROZEN_NOW, makeTickBattle, makeDeclarations, makeObservation, makeExecutorResult } from '../__fixtures__/tickStampsHarness.js';
+import { FROZEN_NOW, HELD, makeTickBattle, makeDeclarations, makeObservation, makeExecutorResult } from '../__fixtures__/tickStampsHarness.js';
 import { makeCallsDb, storedDoc, storedCollection, callsTouches, MAX_CALLS_QUERIES } from '../__fixtures__/callRecordsStore.js';
 
 const TIME_BUDGET_MS = 290_000;
@@ -35,7 +35,7 @@ function earlierCalls(raw = liveDeclarations(), { evalId = 'eval_000', mintedAtM
   return buildMintCandidate({
     battleId: BATTLE_ID, evalId, evalSeq: 0, mintedAtMs, raw, universe: UNIVERSE,
     observation: makeObservation({ observedAtMs: mintedAtMs - 5_000 }), promptBuiltAt: new Date(mintedAtMs - 5_000).toISOString(),
-    tickId: null, battle: makeTickBattle(),
+    tickId: null, battle: makeTickBattle(), held: [...HELD], mintedMode: 'shadow',
   }).calls.map((c) => JSON.parse(JSON.stringify(c)));
 }
 const seedOf = (calls) => ({ calls: Object.fromEntries(calls.map((c) => [c.callId, c])) });

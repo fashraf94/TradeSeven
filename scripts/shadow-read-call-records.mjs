@@ -18,6 +18,11 @@
 //
 // USAGE (repo root):
 //   node scripts/shadow-read-call-records.mjs [--out docs/audits/<date>_CALL_RECORDS_SHADOW_READ_1.md] [--json <path>]
+//        [--calls-enabled-window]   Build 1a §12: the rollback recipe over every battle
+//        [--rollback-check --since=<ISO>]  Build 2a S-9: the live check over the allowlisted battles,
+//                                   counting only entries at/after --since (the flip's production
+//                                   deploy; required) — needs COCKPIT_ALLOWLIST_UIDS in .env.local
+//                                   or the shell
 //
 // WHAT IT CANNOT READ: Vercel function logs. The `[calls] phase … removed=`,
 // `[calls] call_conflict`, `[calls] truncation_event` and `[calls] flips …`
@@ -29,7 +34,11 @@ import { writeFileSync } from 'node:fs';
 import './loadLocalEnv.js';
 import { getFirebaseAdmin } from '../api/_utils/firebaseAdmin.js';
 // Cockpit Build 1a (spec §12): the rollback recipe, reported under --calls-enabled-window.
-import { computeCallsEnabledWindow, renderCallsEnabledWindow } from '../api/_utils/callRecords/rollbackRecipe.js';
+// Cockpit Build 2a (spec S-9): the live rollback check, reported under --rollback-check —
+// the allowlisted owners' battles only, the allowlist read from the environment exactly as
+// the server reads it (COCKPIT_ALLOWLIST_UIDS; .env.local via loadLocalEnv.js, or the shell).
+import { computeCallsEnabledWindow, renderCallsEnabledWindow, computeRollbackCheck, renderRollbackCheck } from '../api/_utils/callRecords/rollbackRecipe.js';
+import { readCockpitAllowlist } from '../api/_utils/callRecords/allowlist.js';
 
 // ---------------------------------------------------------------- constants
 
@@ -133,6 +142,16 @@ async function main() {
   // numerator invalid_tool_result, trip > 3 %, zero data → no trip, with the
   // retained-window coverage. Read-only; a report, never a flip.
   const wantCallsEnabledWindow = args.includes('--calls-enabled-window');
+  // Build 2a §10.4: TRIP only at total ≥ 150, rate > 3 % AND one-sided Fisher p < 0.05 against
+  // round 3's off baseline (3 of 386). Read-only; prints the verdict and the counts; no action.
+  // --since=<ISO> — REQUIRED with --rollback-check (review L1-1 / V1, fail closed): the flip's
+  // production deploy instant, so no entry from any earlier era (a shadow week, a prior 'on'
+  // period) pools with the live text's. The fixed shadow-era floor stands behind it.
+  const wantRollbackCheck = args.includes('--rollback-check');
+  const sinceArg = args.find((a) => a.startsWith('--since='));
+  const sinceMs = sinceArg ? Date.parse(sinceArg.slice('--since='.length)) : null;
+  if (wantRollbackCheck && !sinceArg) throw new Error('--rollback-check needs --since=<ISO instant> — the production deploy of the flip PR');
+  if (sinceArg && !Number.isFinite(sinceMs)) throw new Error(`--since needs an ISO instant, got "${sinceArg}"`);
   const db = getFirebaseAdmin();
   const readAtMs = Date.now();
 
@@ -465,11 +484,25 @@ async function main() {
     p();
   }
 
+  let rollbackCheck = null;
+  if (wantRollbackCheck) {
+    rollbackCheck = computeRollbackCheck(battles, { allowlist: readCockpitAllowlist(), nowMs: readAtMs, sinceMs });
+    p('### I. Live rollback check (Build 2a S-9) — the allowlisted battles');
+    p();
+    p(renderRollbackCheck(rollbackCheck));
+    p();
+    tbl(['ET session', 'Model calls', 'invalid_tool_result'], rollbackCheck.window.perDay.map((d) => [d.day, String(d.modelCalls), String(d.invalid)]));
+    p();
+  }
+
   const md = L.join('\n');
   if (outPath) writeFileSync(outPath, md + '\n');
   else console.log(md);
-  if (jsonPath) writeFileSync(jsonPath, JSON.stringify({ readAtMs, base, shad, trig, violations, calls, decls, receipts: Object.fromEntries(receipts), queue, flipsList, diagList, wire, decl, callStats, tickRefs, ...(callsEnabledWindow ? { callsEnabledWindow } : {}) }, null, 2));
+  if (jsonPath) writeFileSync(jsonPath, JSON.stringify({ readAtMs, base, shad, trig, violations, calls, decls, receipts: Object.fromEntries(receipts), queue, flipsList, diagList, wire, decl, callStats, tickRefs, ...(callsEnabledWindow ? { callsEnabledWindow } : {}), ...(rollbackCheck ? { rollbackCheck } : {}) }, null, 2));
   console.error(`[shadow-read] battles=${battles.size} shadowEntries=${shadowEntries.length} calls=${calls.length} violations=${violations.length} tripped=${tripped.length}`);
+  if (rollbackCheck) console.error(`[rollback-check] verdict=${rollbackCheck.verdict} invalid=${rollbackCheck.invalid} total=${rollbackCheck.total} p=${rollbackCheck.p === null ? 'n/a' : rollbackCheck.p.toFixed(4)} owners=${rollbackCheck.owners}`);
+  // An unset allowlist measured nothing — never a quiet exit 0 that reads like "no trip" (review L1-6).
+  if (rollbackCheck?.verdict === 'NO ALLOWLIST') process.exitCode = 2;
 }
 
 const invokedDirectly = process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/').split('/').pop());

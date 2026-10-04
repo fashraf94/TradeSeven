@@ -2,10 +2,16 @@
 //
 // Cockpit Build 1a — THE TOOL TEXT (spec docs/COCKPIT_BUILD1A_SPEC_V1_2.md §3,
 // §15.2): the three-mode builder, 'off' base-identical, 'shadow'/'on' with
-// identical non-description structure, the 1a text pinned by hash, and D's
+// identical non-description structure, the 'on' text pinned by hash, and D's
 // experimental bytes still reproducible for the replay (Astra B1R2-10,
-// B1R2-11). The 1a text is MODEL-VISIBLE: the pins below are what the
-// fenced-class review confirms (the hash and the exact two-sentence delta).
+// B1R2-11). The 'on' text is MODEL-VISIBLE: the pins below are what the
+// fenced-class review confirms (the hash and the exact three-leaf delta from D).
+//
+// Cockpit Build 2a (spec docs/COCKPIT_BUILD2A_SPEC_V1_0.md S-8, ruling R2A-17):
+// the 'on' text is now round 3's 1A-C — the Build 1a text (its two edits) plus
+// the corrected answer sentence and the fork's player-facing `said`. The
+// pre-port Build 1a text survives as the frozen round-3 arm '1A' (81499cbc…),
+// pinned below beside the live text.
 //
 // Dependency-surface guard (BUILD_RULES §4): the imports of the schema module
 // and of scripts/declarationsWordingArms.mjs are never mocked.
@@ -18,9 +24,11 @@ import { fileURLToPath } from 'node:url';
 import {
   buildTradeDecisionTool, buildArmDTool, TRADE_DECISION_TOOL, DECLARATIONS_PROPERTY, DECLARATIONS_MODES,
   ARM_D_DECLARATIONS, ARM_D_HORIZON_PHRASE, ARM_D_SAID, ARM_D_FORK, ARM_D_PLAYER_ASK, ARM_D_OVERRIDES,
-  TEXT_1A_DECLARATIONS, TEXT_1A_PLAYER_ASK, TEXT_1A_OVERRIDES, D_SENTENCE_REPLACED, TEXT_1A_SENTENCE,
+  TEXT_1A_DECLARATIONS, TEXT_1A_PLAYER_ASK, TEXT_1A_OVERRIDES, D_SENTENCE_REPLACED, TEXT_1A_SENTENCE, TEXT_1A_FORK_SAID,
 } from './agentEvalToolSchema.js';
-import { armTool, stripDescriptions, assertDescriptionOnlyDiff, ARMS_ROUND3, ARM_LABELS } from '../../scripts/declarationsWordingArms.mjs';
+import {
+  armTool, stripDescriptions, assertDescriptionOnlyDiff, ARMS_ROUND3, ARM_LABELS, FROZEN_1A_DECLARATIONS, FROZEN_1A_SENTENCE, ARM_1AC_FORK_SAID,
+} from '../../scripts/declarationsWordingArms.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CRON = readFileSync(resolve(HERE, '../cron/agent-evaluate.js'), 'utf8');
@@ -31,10 +39,13 @@ const ser = (v) => JSON.stringify(v);
 const D_SHA256 = '2a90e67b34a8b1fa2f4d1ad38f3e978858e47b395dfb6762a3c554e2126a3ee3';
 const D_CHARS = 13565;
 const D_BYTES = 13575;
-/** THE 1a TEXT — pinned by hash and length (build report §4). */
-const TEXT_1A_SHA256 = '81499cbcf2655ceba51a5b721d33ff918ce21382a4c3b76d9cc34e6bae1f1806';
-const TEXT_1A_CHARS = 13595;
-const TEXT_1A_BYTES = 13605;
+/** THE 'on' TEXT — round 3's 1A-C since Build 2a (S-8), pinned by hash and length. */
+const TEXT_1A_SHA256 = '7388755a59d31522417f0a7501ec4d7c6601dd1f8138a70da8659c467ee293a6';
+const TEXT_1A_CHARS = 13623;
+const TEXT_1A_BYTES = 13633;
+/** THE PRE-PORT Build 1a text — round 3's frozen '1A' arm (the Build 1a build report's pin). */
+const FROZEN_1A_SHA256 = '81499cbcf2655ceba51a5b721d33ff918ce21382a4c3b76d9cc34e6bae1f1806';
+const FROZEN_1A_CHARS = 13595;
 
 /** Every differing leaf between two serialized trees, by dotted path. */
 function leafDiff(a, b, path = '') {
@@ -98,7 +109,7 @@ describe('buildTradeDecisionTool — three modes (spec §3)', () => {
   });
 });
 
-describe('the 1a text — D with exactly two edits, pinned by hash (spec §3; Astra B1R2-10)', () => {
+describe("the 'on' text — D with three description edits (Build 1a's two + the 1A-C port), pinned by hash", () => {
   it(`serializes to SHA-256 ${TEXT_1A_SHA256.slice(0, 8)}…, ${TEXT_1A_CHARS} chars / ${TEXT_1A_BYTES} UTF-8 bytes (JSON.stringify, no whitespace)`, () => {
     const s = ser(on());
     expect(sha(s)).toBe(TEXT_1A_SHA256);
@@ -106,20 +117,41 @@ describe('the 1a text — D with exactly two edits, pinned by hash (spec §3; As
     expect(Buffer.byteLength(s, 'utf8')).toBe(TEXT_1A_BYTES);
   });
 
-  it('differs from D in EXACTLY two leaves — the block description and the playerAsk description — with the exact sentences', () => {
+  it("differs from D in EXACTLY three leaves — the block, the playerAsk and the fork's `said` description — with the exact sentences", () => {
     const diff = leafDiff(JSON.parse(ser(buildArmDTool())), JSON.parse(ser(on())));
     expect(diff.map((d) => d.path)).toEqual([
       'input_schema.properties.declarations.description',
       'input_schema.properties.declarations.properties.playerAsk.description',
+      'input_schema.properties.declarations.properties.fork.properties.said.description',
     ]);
     expect(diff[0]).toEqual({ path: 'input_schema.properties.declarations.description', before: ARM_D_DECLARATIONS, after: TEXT_1A_DECLARATIONS });
     expect(diff[1]).toEqual({ path: 'input_schema.properties.declarations.properties.playerAsk.description', before: ARM_D_PLAYER_ASK, after: TEXT_1A_PLAYER_ASK });
+    expect(diff[2]).toEqual({
+      path: 'input_schema.properties.declarations.properties.fork.properties.said.description',
+      before: shadow().input_schema.properties.declarations.properties.fork.properties.said.description,
+      after: TEXT_1A_FORK_SAID,
+    });
   });
 
-  it('edit 1: the block drops "Ask me first" — the sentence is replaced, nothing else in the block moves', () => {
+  it("is round 3's 1A-C byte for byte, and differs from the frozen pre-port 1A at exactly the two 1A-C leaves (S-8)", () => {
+    expect(ser(on())).toBe(ser(armTool('1A-C')));
+    const diff = leafDiff(JSON.parse(ser(armTool('1A'))), JSON.parse(ser(on())));
+    expect(diff.map((d) => d.path)).toEqual([
+      'input_schema.properties.declarations.description',
+      'input_schema.properties.declarations.properties.fork.properties.said.description',
+    ]);
+    expect(diff[0].before).toBe(FROZEN_1A_DECLARATIONS);
+    expect(diff[0].after).toBe(TEXT_1A_DECLARATIONS);
+    expect(diff[1].after).toBe(ARM_1AC_FORK_SAID);
+    expect(TEXT_1A_FORK_SAID).toBe(ARM_1AC_FORK_SAID);
+  });
+
+  it('edit 1: the block drops "Ask me first" and (1A-C) says an answer reaches the agent only when it changes the default — the sentence is replaced, nothing else in the block moves', () => {
     expect(ARM_D_DECLARATIONS).toContain(D_SENTENCE_REPLACED);
     expect(D_SENTENCE_REPLACED).toBe('The player may answer Go, Hold off, or Ask me first; an answer reaches you as a directive at a later check.');
-    expect(TEXT_1A_SENTENCE).toBe('The player may answer Go or Hold off; an answer reaches you as a directive at a later check.');
+    expect(TEXT_1A_SENTENCE).toBe('The player may answer Go or Hold off; an answer that changes your default reaches you as a directive at a later check.');
+    expect(FROZEN_1A_SENTENCE).toBe('The player may answer Go or Hold off; an answer reaches you as a directive at a later check.');
+    expect(FROZEN_1A_DECLARATIONS.replace(FROZEN_1A_SENTENCE, TEXT_1A_SENTENCE)).toBe(TEXT_1A_DECLARATIONS);
     expect(ARM_D_DECLARATIONS.replace(D_SENTENCE_REPLACED, TEXT_1A_SENTENCE)).toBe(TEXT_1A_DECLARATIONS);
     expect(TEXT_1A_DECLARATIONS).not.toMatch(/ask me first/i);
     expect(TEXT_1A_DECLARATIONS).toContain(TEXT_1A_SENTENCE);
@@ -131,18 +163,19 @@ describe('the 1a text — D with exactly two edits, pinned by hash (spec §3; As
     expect(TEXT_1A_PLAYER_ASK).not.toMatch(/may answer it/);
   });
 
-  it('the other three D overrides ship unchanged in the 1a text (horizonPhrase, said, fork)', () => {
+  it("the other three D overrides ship unchanged in the 'on' text (horizonPhrase, said, fork)", () => {
     const shot = on().input_schema.properties.declarations.properties.calledShots.items.properties;
     expect(shot.horizonPhrase.description).toBe(ARM_D_HORIZON_PHRASE);
     expect(shot.said.description).toBe(ARM_D_SAID);
     expect(on().input_schema.properties.declarations.properties.fork.description).toBe(ARM_D_FORK);
-    expect(TEXT_1A_OVERRIDES).toEqual({ ...ARM_D_OVERRIDES, declarations: TEXT_1A_DECLARATIONS, playerAsk: TEXT_1A_PLAYER_ASK });
+    expect(TEXT_1A_OVERRIDES).toEqual({ ...ARM_D_OVERRIDES, declarations: TEXT_1A_DECLARATIONS, playerAsk: TEXT_1A_PLAYER_ASK, forkSaid: TEXT_1A_FORK_SAID });
   });
 
-  it('the 1a text names the answers 1a actually accepts and no deferred one; no description names a 20-day level', () => {
+  it("the 'on' text names the answers 1a actually accepts and no deferred one; no description names a 20-day level", () => {
     const s = ser(on());
     expect(s).not.toMatch(/Ask me first/);
-    expect(s).toMatch(/an answer reaches you as a directive at a later check/);
+    expect(s).toMatch(/an answer that changes your default reaches you as a directive at a later check/);
+    expect(s).not.toMatch(/an answer reaches you as a directive/);
     expect(s).not.toMatch(/20-day/);
   });
 });
@@ -155,11 +188,13 @@ describe("D's experimental bytes remain reproducible — the replay comparator (
     expect(Buffer.byteLength(s, 'utf8')).toBe(D_BYTES);
   });
 
-  it("the experiment's arms module imports the D text from the schema module: armTool('D') is those bytes, armTool('1A') is the 'on' tool, A/B are the off/shadow objects", () => {
+  it("the experiment's arms module imports the D text from the schema module: armTool('D') is those bytes, armTool('1A') is the FROZEN pre-port text, A/B are the off/shadow objects", () => {
     expect(ser(armTool('D'))).toBe(ser(buildArmDTool()));
     expect(sha(ser(armTool('D')))).toBe(D_SHA256);
-    expect(ser(armTool('1A'))).toBe(ser(on()));
-    expect(armTool('1A')).toBe(on());
+    // Build 2a (S-8): '1A' is frozen at the pre-port bytes so round 3 stays re-runnable; the live tool is 1A-C.
+    expect(sha(ser(armTool('1A')))).toBe(FROZEN_1A_SHA256);
+    expect(ser(armTool('1A')).length).toBe(FROZEN_1A_CHARS);
+    expect(armTool('1A')).not.toBe(on());
     expect(armTool('A')).toBe(TRADE_DECISION_TOOL);
     expect(armTool('B')).toBe(shadow());
     expect(assertDescriptionOnlyDiff(['C', 'D', 'D2', '1A'])).toEqual({ C: true, D: true, D2: true, '1A': true });

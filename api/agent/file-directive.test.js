@@ -46,6 +46,9 @@ vi.mock('../_utils/authMiddleware.js', () => ({ requireAuth: async () => ({ uid:
 // settable per row — the RESOLUTION itself is the real one (featureFlags.js's
 // resolveVoiceGroundingMode), so the 'canary' rows exercise the shipped
 // allowlist rule rather than a test double's idea of it.
+// Cockpit Build 2a (spec S-5): the allowlist is the SERVER-SIDE environment reader now (allowlist.js),
+// no longer a featureFlags export — driven here from the suite's row state, exactly as the getter was.
+vi.mock('../_utils/callRecords/allowlist.js', async (importOriginal) => ({ ...(await importOriginal()), readCockpitAllowlist: () => state.allow }));
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => {
   const actual = await importOriginal();
   return {
@@ -55,7 +58,6 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => {
       return actual.resolveVoiceGroundingMode(state.mode, uid, state.canaryUids);
     },
     get CALL_RECORDS_MODE() { return state.callsMode; },
-    get COCKPIT_ALLOWLIST_UIDS() { return state.allow; },
   };
 });
 vi.mock('../_utils/agentChatBudget.js', async (importOriginal) => ({

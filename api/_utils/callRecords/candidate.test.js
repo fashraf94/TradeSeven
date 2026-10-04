@@ -11,13 +11,15 @@ import {
 } from './candidate.js';
 import { DECLARATION_CAPS, jsonBytes } from './validate.js';
 import { buildResolvedAgentManifest } from '../resolvedAgentManifest.js';
-import { FROZEN_NOW, makeTickBattle, makeDeclarations, makeObservation } from '../__fixtures__/tickStampsHarness.js';
+import { FROZEN_NOW, HELD, makeTickBattle, makeDeclarations, makeObservation } from '../__fixtures__/tickStampsHarness.js';
 
 const UNIVERSE = ['NVDA', 'TSLA', 'MSFT', 'AMZN', 'KO', 'PG', 'BTC', 'AMD', 'JPM'];
 const MINT = Date.parse(FROZEN_NOW) + 20_000;
 const base = (over = {}) => ({
   battleId: 'battle-tick-1', evalId: 'eval_001', evalSeq: 1, mintedAtMs: MINT, raw: makeDeclarations(),
   universe: UNIVERSE, observation: makeObservation(), promptBuiltAt: FROZEN_NOW, tickId: 'battle-tick-1:1', battle: makeTickBattle(),
+  // Build 2a (Amendment C-2/C-3, C-5): the held set frozen at the model seam, and the check's mode.
+  held: [...HELD], mintedMode: 'shadow',
   ...over,
 });
 
@@ -49,8 +51,8 @@ describe('ids, ordinals, kinds', () => {
   it('the wire fields: playerResponse / directiveThreadId / outcome / refused start null; the call wire is not widened', () => {
     const [call] = buildMintCandidate(base()).calls;
     expect(Object.keys(call)).toEqual([
-      'callId', 'kind', 'battleId', 'evalId', 'evalSeq', 'mintedAt', 'symbol', 'direction', 'slot', 'counterpart', 'condition',
-      'horizon', 'defaultAction', 'said', 'evidence', 'hypothesisRef', 'origin', 'state', 'stateChangedAt', 'stateSource',
+      'callId', 'kind', 'battleId', 'evalId', 'evalSeq', 'mintedAt', 'mintedMode', 'symbol', 'direction', 'heldAtMint', 'slot', 'counterpart', 'counterpartRaw', 'condition',
+      'horizon', 'defaultAction', 'said', 'saidOk', 'evidence', 'hypothesisRef', 'origin', 'state', 'stateChangedAt', 'stateSource',
       'playerResponse', 'directiveThreadId', 'outcome', 'refused',
     ]);
     expect(call.playerResponse).toBeNull();
@@ -213,7 +215,9 @@ describe('built ONCE, frozen, canonical', () => {
 
   it('the declarations record is the typed block as declared, its removals, and what it minted', () => {
     const c = buildMintCandidate(base({ raw: { ...makeDeclarations(), playerAsk: { question: 'Hold AMD?', options: ['yes', 'no'] } } }));
-    expect(Object.keys(c.record)).toEqual(['battleId', 'evalId', 'evalSeq', 'mintedAt', 'calledShots', 'watching', 'playerAsk', 'fork', 'removed', 'minted']);
+    expect(Object.keys(c.record)).toEqual(['battleId', 'evalId', 'evalSeq', 'mintedAt', 'mintedMode', 'calledShots', 'watching', 'playerAsk', 'fork', 'watchingSource', 'removed', 'minted']);
+    expect(c.record.mintedMode).toBe('shadow');
+    expect(c.record.watchingSource).toBe('declarations');
     expect(c.record.calledShots).toEqual(makeDeclarations().calledShots);
     expect(c.record.watching).toEqual(['JPM']);
     expect(c.record.playerAsk).toEqual({ question: 'Hold AMD?', options: ['yes', 'no'] });

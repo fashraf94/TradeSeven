@@ -3,17 +3,18 @@
 // Cockpit Build 1a — THE FLAG PINS (BUILD_RULES §2; spec
 // docs/COCKPIT_BUILD1A_SPEC_V1_2.md §3, §11).
 //
-//   COCKPIT_ALLOWLIST_UIDS — a string[] (the per-battle activation list), so
-//     the flag-pin guard — which scans `*_ENABLED = true|false` only — cannot
-//     see it and DARK_BY_DESIGN cannot hold it. Pinned HERE, directly: the
-//     CALL_RECORDS_MODE precedent. Ships EMPTY.
+//   COCKPIT_ALLOWLIST_UIDS — MOVED SERVER-SIDE by Cockpit Build 2a (spec
+//     docs/COCKPIT_BUILD2A_SPEC_V1_0.md S-5, ruling R2A-7): it is now the
+//     environment variable read at call time by api/_utils/callRecords/
+//     allowlist.js (pinned by allowlist.test.js), and this module's pins say
+//     only that featureFlags.js no longer carries it — so no uid can ship in
+//     the client bundle.
 //   RESPONSE_FORK_ATTRIBUTION_ENABLED — a boolean, DARK_BY_DESIGN (the guard
 //     keeps its loud tripwire). Ships false.
 //
-// RUNWAY (stated where the pins live): the allowlist is filled by the founder's
-// own PR after Build 1a merges, Amendment B is blessed and the two Build 1a
-// indexes are deployed — never a build PR; each change moves the first row below
-// in the same commit. The attribution flag flips only after the round-3 replay
+// RUNWAY (stated where the pins live): the allowlist is set by the founder in
+// the Vercel production environment (spec §10.3) — never in the repo. The
+// attribution flag flips only after the round-3 replay
 // qualifies the attribution protocol; its flip moves the second row to true AND
 // drops its DARK_BY_DESIGN entry (the fourth row turns around with it).
 //
@@ -25,44 +26,41 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
-import { COCKPIT_ALLOWLIST_UIDS, RESPONSE_FORK_ATTRIBUTION_ENABLED, CALL_RECORDS_MODE } from './featureFlags.js';
+import * as flags from './featureFlags.js';
+import { RESPONSE_FORK_ATTRIBUTION_ENABLED, CALL_RECORDS_MODE } from './featureFlags.js';
 import { resolveCallRecordsMode, isCockpitOwnerAllowlisted } from '../../api/_utils/callRecords/mode.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(HERE, 'featureFlags.js'), 'utf8');
 const GUARD = readFileSync(path.join(HERE, 'flagPinGuard.test.js'), 'utf8');
 
-describe('COCKPIT_ALLOWLIST_UIDS — the pin (BUILD_RULES §2)', () => {
-  it('ships EMPTY and frozen — the row that moves when the founder admits an owner', () => {
-    // THE ROW THAT MOVES. Filling the list is the founder's own PR, never a build PR.
-    expect(COCKPIT_ALLOWLIST_UIDS).toEqual([]);
-    expect(Object.isFrozen(COCKPIT_ALLOWLIST_UIDS)).toBe(true);
+describe('COCKPIT_ALLOWLIST_UIDS — server-side only (Build 2a S-5, ruling R2A-7)', () => {
+  it('featureFlags.js no longer exports it — the client bundle carries no allowlist', () => {
+    expect('COCKPIT_ALLOWLIST_UIDS' in flags).toBe(false);
+    expect(SRC).not.toMatch(/export const COCKPIT_ALLOWLIST_UIDS\b/);
   });
 
-  it('every entry is a non-empty string (a malformed list resolves nobody)', () => {
-    expect(Array.isArray(COCKPIT_ALLOWLIST_UIDS)).toBe(true);
-    for (const uid of COCKPIT_ALLOWLIST_UIDS) expect(typeof uid === 'string' && uid.length > 0).toBe(true);
+  it('the module says where it went: the environment variable and its server-only reader', () => {
+    expect(SRC).toContain('THE PER-BATTLE ALLOWLIST IS NOT HERE ANY MORE');
+    expect(SRC).toContain('api/_utils/callRecords/allowlist.js');
+    expect(SRC).toContain('GET /api/agent/cockpit-status');
   });
 
-  it('the docstring carries the direct-pin pointer and the runway', () => {
-    const idx = SRC.indexOf('export const COCKPIT_ALLOWLIST_UIDS = ');
-    expect(idx).toBeGreaterThan(0);
-    const window = SRC.slice(Math.max(0, idx - 2500), idx);
-    expect(window).toContain('Pinned by: cockpitFlags.test.js');
-    expect(window).toContain('RUNWAY:');
-    expect(window).toContain('never a build PR');
-    expect(window).toContain('never a DARK_BY_DESIGN key');
-  });
-
-  it('is NEVER a DARK_BY_DESIGN key (a string[] fails that registry)', () => {
+  it('is NEVER a DARK_BY_DESIGN key', () => {
     expect(GUARD).not.toMatch(/COCKPIT_ALLOWLIST_UIDS\s*:/);
   });
 
-  it('with the live flags nobody is allowlisted and every battle resolves the global value', () => {
-    expect(isCockpitOwnerAllowlisted('owner-uid-1')).toBe(false);
-    expect(isCockpitOwnerAllowlisted('')).toBe(false);
-    expect(resolveCallRecordsMode({ ownerId: 'owner-uid-1' })).toBe(CALL_RECORDS_MODE === 'on' ? 'off' : CALL_RECORDS_MODE);
-    expect(resolveCallRecordsMode()).toBe(CALL_RECORDS_MODE);
+  it('with the variable unset (the shipped state) nobody is allowlisted and every battle resolves the global value', () => {
+    const before = process.env.COCKPIT_ALLOWLIST_UIDS;
+    delete process.env.COCKPIT_ALLOWLIST_UIDS;
+    try {
+      expect(isCockpitOwnerAllowlisted('owner-uid-1')).toBe(false);
+      expect(isCockpitOwnerAllowlisted('')).toBe(false);
+      expect(resolveCallRecordsMode({ ownerId: 'owner-uid-1' })).toBe(CALL_RECORDS_MODE === 'on' ? 'off' : CALL_RECORDS_MODE);
+      expect(resolveCallRecordsMode()).toBe(CALL_RECORDS_MODE);
+    } finally {
+      if (before === undefined) delete process.env.COCKPIT_ALLOWLIST_UIDS; else process.env.COCKPIT_ALLOWLIST_UIDS = before;
+    }
   });
 });
 

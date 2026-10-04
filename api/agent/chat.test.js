@@ -149,6 +149,9 @@ const realGemmaClient = await vi.importActual('../_utils/gemmaClient.js');
 // Phase E1 — flip ARCHETYPE_INTEGRITY_MODE per-test via a live getter (real flags
 // preserved). chat.js reads the flag inside the handler, so the getter takes
 // effect at call time. Default 'off' so every pre-existing test stays flag-OFF.
+// Cockpit Build 2a (spec S-5): the allowlist is the SERVER-SIDE environment reader now (allowlist.js),
+// no longer a featureFlags export — driven here from the suite's row state, exactly as the getter was.
+vi.mock('../_utils/callRecords/allowlist.js', async (importOriginal) => ({ ...(await importOriginal()), readCockpitAllowlist: () => callsFlag.allow }));
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   get ARCHETYPE_INTEGRITY_MODE() { return archetypeFlag.mode; },
@@ -159,7 +162,6 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   get SHOW_IT_ENABLED() { return showIt.on; },
   get DIRECTIVE_FIT_CHECK_ENABLED() { return fitCheckFlag.on; },
   get CALL_RECORDS_MODE() { return callsFlag.mode; },
-  get COCKPIT_ALLOWLIST_UIDS() { return callsFlag.allow; },
 }));
 
 // The per-day budget module is exercised in agentChatBudget.test.js; here it is

@@ -925,6 +925,195 @@ export const BATTLE_VIEW_COPY = Object.freeze({
     if (receipt.state === 'expired') return BATTLE_VIEW_COPY.expired;
     return null;
   },
+
+  // ── The cockpit (Cockpit Build 2a, spec docs/COCKPIT_BUILD2A_SPEC_V1_0.md §8) ─
+  // Every string the cockpit renders. Times arrive ALREADY FORMATTED by the
+  // shared renderer (api/_utils/callRecords/copy.js, 12-hour clock — a check
+  // named by its slot, D-83), so a check reads the same on a tile, in the
+  // sheet and on its chat card. The record's own field for the watch list is
+  // shown as "Monitoring" (ruling R2A-6); the honesty rules above bind here
+  // too: nothing says the agent held, nothing claims comprehension.
+  cockpitTab: 'Cockpit',
+  // The Chat tab while another section shows and the chain counts unread
+  // (spec §5; the `Bookmarks · n` precedent).
+  // Capped at 9+ — the widest label the four-tab width budget was measured at
+  // (CharacterPane PANE_HEADER_FIXED_COCKPIT_PX: "Chat · 9+" 338.4 px).
+  paneSectionChatUnread: (n) => (Number.isFinite(n) && n > 0 ? `Chat · ${n > 9 ? '9+' : n}` : 'Chat'),
+  cockpitSwitchName: 'Board or cockpit',
+  cockpitSwitchBoard: 'Board',
+  cockpitSwitchCockpit: (n) => (Number.isFinite(n) && n > 0 ? `Cockpit · ${n}` : 'Cockpit'),
+
+  // Group headers (§7.1, §8.1).
+  cockpitGroupNeedsYou: '⚡ Needs you',
+  cockpitGroupWaiting: '⏱ Waiting on the check',
+  cockpitGroupMonitoring: '👁 Monitoring',
+  cockpitGroupEarlier: 'Earlier',
+  cockpitShowAll: (n) => (Number.isFinite(n) ? `Show all · ${n}` : 'Show all'),
+  cockpitMonitoringFrom: (check) => (check ? `From ${check}` : null),
+  cockpitMonitoringChipName: (symbol) => (symbol ? `Research ${symbol}` : null),
+
+  // The top row (§5): the prices' vintage, the next check, the budget.
+  cockpitVintage: (check, next) => {
+    if (!check) return null;
+    const nextTime = slotLabel(next);
+    return nextTime ? `Prices as of ${check} · next ~${nextTime}` : `Prices as of ${check}`;
+  },
+  cockpitMessagesLeft: (n) => (Number.isFinite(n) ? `${n} ${n === 1 ? 'message' : 'messages'} left` : null),
+  // A failed read says so — never "No calls yet" for records it could not see (review L3-2).
+  cockpitReadError: "Couldn't load your agent's calls right now.",
+  cockpitEmpty: (next) => {
+    const nextTime = slotLabel(next);
+    return nextTime
+      ? `No calls yet. Your agent declares calls at its checks — next one ~${nextTime}.`
+      : 'No calls yet. Your agent declares calls at its checks.';
+  },
+
+  // Kind labels and the eyebrow (§7.3, §8.1).
+  cockpitKindCalledShot: 'Called shot',
+  cockpitKindConfirmation: 'Confirmation',
+  cockpitKindUpside: 'Upside call',
+  cockpitEyebrowFrom: (check) => (check ? `from ${check}` : null),
+  cockpitRestated: (check) => (check ? `Restated at ${check}` : 'Restated'),
+  // The sheet's earliest wording of a folded thread (review L6-3).
+  cockpitCalledAt: (check) => (check ? `Called at ${check}` : 'Called'),
+
+  // The buttons (§7.3; R2A-11: every override shows its cost).
+  cockpitAnswerGoIfTriggers: 'Go if it triggers',
+  cockpitAnswerConfirm: 'Confirm',
+  cockpitAnswerHold: 'Hold',
+  cockpitAnswerHoldOff: 'Hold off · 1 message',
+  cockpitAnswerGoInstead: 'Go instead · 1 message',
+  cockpitSending: 'Sending…',
+  cockpitWaitingHeard: 'Waiting · your last answer hasn\'t been heard yet.',
+  // HEAD's endpoint keeps a HEARD call directive pending until it expires
+  // (directiveUtils.js isCallDirectivePendingAt): the line for that case — and
+  // for any case the records cannot place — so the one above is never shown
+  // without the record saying the answer is unheard. "Active", not "in force":
+  // the agent is coached, not compelled (review L6-8).
+  cockpitWaitingActive: (time) => (time
+    ? `Waiting · your last answer stays active until ${time}.`
+    : 'Waiting · your last answer is still active.'),
+  cockpitOneAtATime: 'One call at a time.',
+  // A folded thread's live directive answer (Amendment C-6), naming the wording it was given on.
+  cockpitThreadAnswer: (answer, filedTime, wordingCheck) => {
+    const word = answer === 'hold' ? 'hold off' : answer === 'go_now' ? 'go instead' : null;
+    if (!word) return null;
+    const head = filedTime ? `You said ${word} · ${filedTime}` : `You said ${word}`;
+    return wordingCheck ? `${head}, on the ${wordingCheck} wording` : head;
+  },
+  // An agreement given on an EARLIER wording of a folded thread (review L6-2).
+  cockpitThreadAgreed: (filedTime, wordingCheck) => {
+    const head = filedTime ? `You agreed · ${filedTime}` : 'You agreed';
+    return wordingCheck ? `${head}, on the ${wordingCheck} wording` : head;
+  },
+
+  // The sheet (§7.5).
+  cockpitSheetName: 'Call details',
+  cockpitSheetClose: 'Close',
+  cockpitSheetLevel: 'Level',
+  cockpitSheetDeadline: 'Deadline',
+  cockpitSheetPrice: 'Price',
+  cockpitSheetLevelValue: (side, price) => (price && (side === 'above' || side === 'below') ? `${side} ${price}` : null),
+  cockpitSheetPriceValue: (price, check) => (price ? (check ? `${price} · as of ${check}` : price) : null),
+  cockpitSheetDefault: (intent) => (intent ? `If you say nothing · ${intent}` : null),
+  // The agent's default as an INTENT, never a promise (Build 1a §4): "bring in
+  // AMD for KO", "exit MU for AMAT", "hold". An upside call has none (C-2).
+  // (copy.js renderIntentLine words the same fact without the symbol and has
+  // no consumer; S-7 does not list it for the client — review L6-10, recorded.)
+  cockpitIntent: (defaultAction, direction, symbol, counterpart) => {
+    if (defaultAction === 'hold') return 'intent: hold';
+    if (defaultAction !== 'act' || !symbol) return null;
+    const verb = direction === 'exit' ? 'exit' : direction === 'entry' ? 'bring in' : null;
+    if (!verb) return null;
+    return `intent: ${verb} ${symbol}${counterpart ? ` for ${counterpart}` : ''}`;
+  },
+  cockpitSheetReceipts: 'Receipts',
+  cockpitSheetFromCheck: (check) => (check ? `From ${check} →` : null),
+  cockpitSheetCheckGone: 'That check is no longer in the chat',
+  cockpitReceiptFiled: (time) => (time ? `Filed ${time}` : 'Filed'),
+  cockpitReceiptReplaced: (time) => (time ? `Replaced by a later answer · ${time}` : 'Replaced by a later answer'),
+  cockpitObservedHit: (price, check) => (price ? (check ? `Hit at ${price} · ${check}` : `Hit at ${price}`) : null),
+  cockpitObservedExpired: (price, check) => (price ? (check ? `Expired at ${price} · ${check}` : `Expired at ${price}`) : null),
+
+  // From the cockpit (§8.2): the label on a chat directive card whose exchange
+  // the answer endpoint wrote (`source: 'cockpit'`).
+  fromCockpit: 'From the cockpit',
 });
+
+/**
+ * THE COCKPIT'S FACT TABLE — Cockpit Build 2a (spec §7.4). ONE table, every
+ * record fact the call-records writers can emit at HEAD, each mapped to the
+ * tag it shows or, deliberately, to `null` (the fact shows no tag of its own).
+ * A fact with no row here renders NO tag — never a guessed one —
+ * and cockpitModel.test.js asserts the table covers every kind the writers
+ * emit (the call states of candidate / flip / sweep, every CALL_EVENT_KINDS
+ * entry of events.js, and both playerResponse kinds of the answer endpoint).
+ *
+ * Tones (§9, ruling R2A-5): `yours` / `yoursOutline` — the player's answer
+ * (teal; an agreement outlined) · `acted` (emerald) · `dropped` (amber) ·
+ * `muted` (expired / ended / no matching trade / replaced) · `neutral` (live).
+ * Gold is reserved; nothing here uses it.
+ *
+ * Every row renders from the record alone: `check` is a check label from the
+ * shared renderer ("the 1:30 PM check"), `time` an exact filing minute,
+ * `deadline` the call's own deadline phrase. A row whose time is missing says
+ * the bare fact — never a guessed time.
+ */
+export const COCKPIT_FACT_TAGS = Object.freeze({
+  // The call's state (candidate.js mints open | invalidated; flip.js hit |
+  // expired_unresolved; sweep.js expired_unresolved | ended_with_battle).
+  'state:open': Object.freeze({ tone: 'neutral', text: () => 'Live' }),
+  'state:hit': Object.freeze({ tone: 'neutral', text: ({ check } = {}) => (check ? `Hit at ${check}` : 'Hit') }),
+  // The bare fact: the call record carries no reason (no_observation /
+  // level_non_finite / level_implausible live only in the declarations
+  // record's minted[]), so the spec's "· price line out of range" would be a
+  // guess for two of the three (review L6-4 — a founder ruling, recorded).
+  'state:invalidated': Object.freeze({ tone: 'dropped', text: () => 'Dropped' }),
+  'state:expired_unresolved': Object.freeze({ tone: 'muted', text: ({ deadline } = {}) => (deadline ? `Expired · ${deadline}` : 'Expired') }),
+  'state:ended_with_battle': Object.freeze({ tone: 'muted', text: () => 'Battle ended' }),
+  // The answer on the call (call-response.js playerResponse.kind).
+  'answer:ack': Object.freeze({ tone: 'yoursOutline', text: ({ time } = {}) => (time ? `You agreed · ${time}` : 'You agreed') }),
+  'answer:directive': Object.freeze({ tone: 'yours', text: () => 'Filed · not yet heard' }),
+  // The call events (events.js CALL_EVENT_KINDS).
+  'event:declared': null, // the mint — the eyebrow's "from the {t} check" already says it
+  'event:answered': null, // the answer's own receipt — the tag reads the call's playerResponse
+  'event:heard': Object.freeze({ tone: 'yours', text: ({ check } = {}) => (check ? `Heard at ${check}` : 'Heard') }),
+  'event:acted': Object.freeze({ tone: 'acted', text: ({ check } = {}) => (check ? `Acted at ${check}` : 'Acted') }),
+  'event:no_matching_trade': Object.freeze({ tone: 'muted', text: ({ check } = {}) => (check ? `No matching trade at ${check}` : 'No matching trade') }),
+  'event:expired': Object.freeze({ tone: 'muted', text: ({ deadline } = {}) => (deadline ? `Expired · ${deadline}` : 'Expired') }),
+  'event:ended_with_battle': Object.freeze({ tone: 'muted', text: () => 'Battle ended' }),
+  'event:superseded': Object.freeze({ tone: 'muted', text: () => 'Replaced by a later answer' }),
+});
+
+/**
+ * One plain line per refusal (spec §8.3, ruling R2A-8), chosen from the
+ * response BODY — never the chip's status-only mapper (decisionRecord.js
+ * filingFailureLine). Every line but the last says nothing was filed, because
+ * the server proved it; the last never does, because the server may have
+ * committed. `null` status = no response at all.
+ */
+export function cockpitRefusalLine(status, body = null, { pendingLine = null } = {}) {
+  const reason = body && typeof body === 'object' ? body.reason : null;
+  const error = body && typeof body === 'object' ? body.error : null;
+  if (status === 409) {
+    switch (reason) {
+      case 'already_answered': return 'You\'ve already answered this call.';
+      case 'expired': return 'This call\'s deadline has passed — nothing was filed.';
+      case 'parent_not_active': return 'This battle isn\'t active — nothing was filed.';
+      case 'belief_mismatch': return 'Your agent\'s instructions changed a moment ago — nothing was filed. Check the tile and try again.';
+      // The spec's line by default; the tile's own slot line when it knows
+      // the answer in force was already heard (cockpitModel overrideBlockOf).
+      case 'directive_pending': return `${typeof pendingLine === 'string' && pendingLine ? pendingLine : BATTLE_VIEW_COPY.cockpitWaitingHeard} ${BATTLE_VIEW_COPY.cockpitOneAtATime}`;
+      case 'budget': return 'No messages left — nothing was filed.';
+      default: return 'Couldn\'t confirm your answer. Check the tile before trying again.';
+    }
+  }
+  if (status === 429) return 'Too many taps — try again in a minute.';
+  if (status === 404 && error === 'cockpit_unavailable') return 'The cockpit is off for this battle — nothing was filed.';
+  if (status === 400) return 'That answer isn\'t available for this call — nothing was filed.';
+  if (status === 403) return 'Only the battle\'s owner can answer its calls.';
+  if (status === 401) return 'Sign in again to answer.';
+  return 'Couldn\'t confirm your answer. Check the tile before trying again.';
+}
 
 export default BATTLE_VIEW_COPY;
