@@ -387,6 +387,7 @@ It was first built on `b6e120b7` (`d58fb39e`) and rebased onto `cca32e6d` after 
 5. **The rollback check after the flip:**
    - Have `COCKPIT_ALLOWLIST_UIDS` locally in `.env.local`; `vercel env pull` defaults to development, and an empty allowlist now answers `NO ALLOWLIST` with exit code 2.
    - Run `node scripts/shadow-read-call-records.mjs --rollback-check --since=<ISO instant of the flip PR's production deploy>`. Without `--since` it refuses to run.
+   - **When it trips** (founder ruling Oct 4, §13): only when all three bars hold — at least **60** calls-enabled model calls, a rate **above 3 %**, and a one-sided Fisher **p < 0.05** against round 3's qualified 1A-C rate, **7 of 386** (the live 'on' text's own). 4 of 60, 5 of 75 and 6 of 100 trip; 3 of 60, 4 of 75 and 5 of 100 do not (`rollbackRecipe.test.js` pins all six).
    - On `TRIP`: remove the uid from `COCKPIT_ALLOWLIST_UIDS`, redeploy production, and report (spec §10.4).
    - A rollback that only flips the UI flag is not the prescribed path (L3-9).
 

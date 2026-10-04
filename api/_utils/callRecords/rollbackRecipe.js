@@ -33,11 +33,17 @@
 //              carry `declarationsPhase` from the SHADOW tool text; and, with
 //              --since, no entry before that instant (the flip's deploy).
 //   Membership the recipe's (`declarationsPhase` present, a finite `callMs`).
-// It TRIPS only when all three hold:
-//   1. total ≥ 150 calls-enabled model calls (a minimum sample);
+// It TRIPS only when all three hold (founder ruling Oct 4, which moved S-9's
+// floor from 150 and its baseline from arm A's 3 of 386):
+//   1. total ≥ 60 calls-enabled model calls (a minimum sample);
 //   2. rate > 3 %;
-//   3. one-sided Fisher exact p < 0.05 against round 3's off baseline — arm A,
-//      3 invalid of 386 (docs/audits/20261002_DECLARATIONS_WORDING_ROUND3.md §5.4).
+//   3. one-sided Fisher exact p < 0.05 against the live 'on' text's own
+//      qualified rate — round 3's 1A-C arm, 7 invalid of 386
+//      (docs/audits/20261002_DECLARATIONS_WORDING_ROUND3.md §5.4).
+// The trip points (rollbackRecipe.test.js pins them): 4 of 60, 5 of 75 and
+// 6 of 100 trip; 3 of 60, 4 of 75 and 5 of 100 do not. Against this baseline
+// the significance bar is the one that decides — no count at or under 3 % is
+// significant — and the rate bar stands behind it.
 // Read-only: it prints the verdict and the counts; it takes no action. An
 // unset allowlist is its own verdict (NO ALLOWLIST), never "no data".
 
@@ -48,12 +54,16 @@ export const ROLLBACK_SESSIONS = 5;
 export const ROLLBACK_TRIP_RATE = 0.03;
 export const EVALUATIONS_RETENTION_CAP = 150;
 
-/** The live check's three bars (S-9), its baseline — round 3's arm A (the off text) — and its floor. */
+/**
+ * The live check's three bars (S-9 as the founder's Oct 4 ruling set them),
+ * its baseline — round 3's qualified 1A-C arm, the very text the live 'on'
+ * tool carries (S-8) — and its floor.
+ */
 export const ROLLBACK_CHECK = Object.freeze({
-  minTotal: 150,
+  minTotal: 60,
   tripRate: 0.03,
   alpha: 0.05,
-  baseline: Object.freeze({ invalid: 3, total: 386, label: "round 3's off arm (A), 3 of 386" }),
+  baseline: Object.freeze({ invalid: 7, total: 386, label: "round 3's qualified 1A-C arm, 7 of 386" }),
   // The first regular ET session after the shadow era (the rollback 4d8c498f
   // landed 2026-10-01): earlier entries carry `declarationsPhase` from the
   // shadow tool and never count toward the live 'on' text's rate.

@@ -142,8 +142,9 @@ async function main() {
   // numerator invalid_tool_result, trip > 3 %, zero data → no trip, with the
   // retained-window coverage. Read-only; a report, never a flip.
   const wantCallsEnabledWindow = args.includes('--calls-enabled-window');
-  // Build 2a §10.4: TRIP only at total ≥ 150, rate > 3 % AND one-sided Fisher p < 0.05 against
-  // round 3's off baseline (3 of 386). Read-only; prints the verdict and the counts; no action.
+  // Build 2a §10.4: TRIP only at total ≥ 60, rate > 3 % AND one-sided Fisher p < 0.05 against
+  // round 3's qualified 1A-C rate (7 of 386) — founder ruling Oct 4; 4 of 60, 5 of 75 and 6 of
+  // 100 trip. Read-only; prints the verdict and the counts; no action.
   // --since=<ISO> — REQUIRED with --rollback-check (review L1-1 / V1, fail closed): the flip's
   // production deploy instant, so no entry from any earlier era (a shadow week, a prior 'on'
   // period) pools with the live text's. The fixed shadow-era floor stands behind it.
