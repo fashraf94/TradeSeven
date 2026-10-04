@@ -298,7 +298,15 @@ describe('A4 — the unread-dot clear and the door, at the source (the mounted r
     // the newest RENDERED entry's stamp — the feed no longer feeds the stream
     // and six of its actions render as nothing. Still inside an effect keyed
     // on the visibility, never during render (rulings §3.9).
-    expect(source).toMatch(/useEffect\(\(\) => \{\n\s+if \(!chatVisible\) return;\n\s+setSeenFeed\(\{ length: tapeCount, stamp: newestTapeStamp \}\);\n\s+\}, \[chatVisible, tapeCount, newestTapeStamp\]\);/);
+    //
+    // Cockpit Build 2a (review L4-2): the mark also WAITS while the cockpit
+    // status is being asked — the first paint is the off layout, and marking
+    // then would hide the chat's unread count behind Cockpit. With the flag off
+    // nothing is ever pending (useCockpitStatus: `pending` needs `enabled`, and
+    // the screen's `enabled` needs the flag), so the flag-off effect is the
+    // shipped one; its mounted rows are unchanged.
+    expect(source).toMatch(/useEffect\(\(\) => \{\n\s+if \(!chatVisible \|\| cockpitStatusPending\) return;\n\s+setSeenFeed\(\{ length: tapeCount, stamp: newestTapeStamp \}\);\n\s+\}, \[chatVisible, tapeCount, newestTapeStamp, cockpitStatusPending\]\);/);
+    expect(source).toContain('const cockpitStatusPending = cockpitStatus.pending;');
     expect((source.match(/setSeenFeed\(/g) || []).length).toBe(1);
     // …and `statusFeed` is no longer what the FLAG path counts. It survives on
     // one line only: the shipped flag-off comparison.

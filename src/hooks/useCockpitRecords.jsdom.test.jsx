@@ -58,9 +58,26 @@ function Probe({ battleId, enabled, callId = null, observe = false }) {
   };
   return null;
 }
-// The readers import firebase lazily (a dynamic import resolves on the module
-// loader, not in a microtask), so settling waits real turns of the loop.
-const settle = async () => { for (let i = 0; i < 10; i += 1) await act(async () => { await new Promise((r) => setTimeout(r, 0)); }); };
+// The readers import firebase lazily. A dynamic import resolves on the module
+// loader, not in a microtask, and under a full parallel run that can outlast
+// any fixed number of turns (it did, at 3595158d) — so settling first waits for
+// the SAME two modules to finish loading, then lets the readers' continuations
+// run; a listener is found by polling for it.
+const settle = async () => {
+  await act(async () => { await Promise.all([import('firebase/firestore'), import('../firebase/config')]); });
+  for (let i = 0; i < 10; i += 1) await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+};
+const listenerFor = async (path) => {
+  let found = null;
+  await act(async () => {
+    found = await vi.waitFor(() => {
+      const l = fs.state.listeners.find((x) => x.q.path === path);
+      if (!l) throw new Error(`no listener on ${path} yet`);
+      return l;
+    }, { timeout: 5000, interval: 5 });
+  });
+  return found;
+};
 const render = async (props) => { await act(async () => { root.render(<Probe {...props} />); }); await settle(); };
 
 beforeEach(() => {
@@ -95,13 +112,13 @@ describe('a list reader says what it KNOWS (review L3-2): loading and failed are
     expect(out.calls).toEqual({ status: 'loading', value: null });
     await settle();
     expect(out.calls).toEqual({ status: 'loading', value: null }); // the double delivers nothing for an unseeded path
-    const callsListener = fs.state.listeners.find((l) => l.q.path === 'agentBattles/ab-1/calls');
+    const callsListener = await listenerFor('agentBattles/ab-1/calls');
     await act(async () => { callsListener.next({ docs: [] }); });
     expect(out.calls).toEqual({ status: 'ready', value: [] });
   });
   it('a listener error → error, no value', async () => {
     await render({ battleId: 'ab-1', enabled: true });
-    const listener = fs.state.listeners.find((l) => l.q.path === 'agentBattles/ab-1/callEvents');
+    const listener = await listenerFor('agentBattles/ab-1/callEvents');
     await act(async () => { listener.error(new Error('permission-denied')); });
     expect(out.events).toEqual({ status: 'error', value: null });
   });
@@ -115,7 +132,7 @@ describe('on — one field ordered, limited, live; C-5 at the boundary', () => {
       { id: 'c3', callId: 'c3' },
     ];
     await render({ battleId: 'ab-1', enabled: true });
-    const callsQuery = fs.state.listeners.find((l) => l.q.path === 'agentBattles/ab-1/calls').q;
+    const callsQuery = (await listenerFor('agentBattles/ab-1/calls')).q;
     expect(callsQuery.constraints).toEqual([{ type: 'orderBy', field: 'mintedAt', dir: 'desc' }, { type: 'limit', n: CALLS_LIMIT }]);
     expect(CALLS_LIMIT).toBe(60);
     expect(out.calls.status).toBe('ready');
@@ -125,7 +142,7 @@ describe('on — one field ordered, limited, live; C-5 at the boundary', () => {
   it('callEvents: orderBy(at, desc), limit(150), every event kept (the model groups them)', async () => {
     fs.state.docs['agentBattles/ab-1/callEvents'] = [{ id: 'e1', kind: 'heard', callIds: ['c1'] }];
     await render({ battleId: 'ab-1', enabled: true });
-    const q = fs.state.listeners.find((l) => l.q.path === 'agentBattles/ab-1/callEvents').q;
+    const q = (await listenerFor('agentBattles/ab-1/callEvents')).q;
     expect(q.constraints).toEqual([{ type: 'orderBy', field: 'at', dir: 'desc' }, { type: 'limit', n: CALL_EVENTS_LIMIT }]);
     expect(CALL_EVENTS_LIMIT).toBe(150);
     expect(out.events).toEqual({ status: 'ready', value: [{ id: 'e1', kind: 'heard', callIds: ['c1'] }] });
@@ -148,7 +165,7 @@ describe('on — one field ordered, limited, live; C-5 at the boundary', () => {
 
   it('a listener error after delivery → error, the old list withdrawn — never a stale guess', async () => {
     await render({ battleId: 'ab-1', enabled: true });
-    const callsListener = fs.state.listeners.find((l) => l.q.path === 'agentBattles/ab-1/calls');
+    const callsListener = await listenerFor('agentBattles/ab-1/calls');
     await act(async () => { callsListener.next({ docs: [{ id: 'c1', data: () => ({ callId: 'c1', mintedMode: 'on' }) }] }); });
     expect(out.calls.value).toHaveLength(1);
     await act(async () => { callsListener.error(new Error('permission-denied')); });
@@ -160,7 +177,7 @@ describe('Monitoring — the newest declarations record, from either source (C-1
   it('orderBy(evalSeq, desc), limit(1); the list leaves as `symbols` when the block filled it', async () => {
     fs.state.docs['agentBattles/ab-1/declarations'] = [{ id: 'd1', evalId: 'eval_011', mintedAt: 5, mintedMode: 'on', watching: ['AMD', 'JPM'], watchingSource: 'block' }];
     await render({ battleId: 'ab-1', enabled: true });
-    const q = fs.state.listeners.find((l) => l.q.path === 'agentBattles/ab-1/declarations').q;
+    const q = (await listenerFor('agentBattles/ab-1/declarations')).q;
     expect(q.constraints).toEqual([{ type: 'orderBy', field: 'evalSeq', dir: 'desc' }, { type: 'limit', n: 1 }]);
     expect(out.monitoring).toEqual({ status: 'ready', value: { symbols: ['AMD', 'JPM'], evalId: 'eval_011', mintedAt: 5 } });
   });
