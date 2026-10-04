@@ -328,9 +328,18 @@ describe('§7.4 — every state tag row, from record facts only', () => {
     expect(tagOf(c, [ev(c, 'heard', P1100), ev(c, 'no_matching_trade', P1100)]))
       .toEqual({ fact: 'event:no_matching_trade', tone: 'muted', text: 'No matching trade at the 11:00 AM check' });
   });
-  it('an answer replaced by a later one → "Replaced by a later answer" (muted)', () => {
+  it('an answer replaced by a later instruction → "Replaced by a later instruction" (muted)', () => {
     const c = call(); c.playerResponse = directive(c);
-    expect(tagOf(c, [ev(c, 'superseded', null)])).toEqual({ fact: 'event:superseded', tone: 'muted', text: 'Replaced by a later answer' });
+    expect(tagOf(c, [ev(c, 'superseded', null)])).toEqual({ fact: 'event:superseded', tone: 'muted', text: 'Replaced by a later instruction' });
+  });
+  it('the replacement names no source — a chat or chip filing replaces a cockpit answer too — so the tag and the receipt say "instruction", never "answer" (founder ruling Oct 4)', () => {
+    // The event a CHAT filing writes over a cockpit answer (directiveWriter.js): nothing in it says who filed.
+    const c = call(); c.playerResponse = directive(c);
+    const fromChat = { ...ev(c, 'superseded', null, T('2026-09-09T14:50:00.000Z')), extra: { supersededBy: 'th-chat-1', supersededDirectiveThreadId: c.playerResponse.directiveThreadId } };
+    expect(tagOf(c, [fromChat]).text).toBe('Replaced by a later instruction');
+    expect(receiptLineOf(fromChat, c, { nowMs: NOW })).toBe('Replaced by a later instruction · 10:50 AM');
+    expect(receiptLineOf({ kind: 'superseded' }, c, { nowMs: NOW })).toBe('Replaced by a later instruction');
+    for (const text of [tagOf(c, [fromChat]).text, receiptLineOf(fromChat, c, { nowMs: NOW })]) expect(text).not.toMatch(/\banswer\b/);
   });
   it('expired_unresolved → "Expired · {deadline}" (muted)', () => {
     const c = call({ state: 'expired_unresolved' });
@@ -372,7 +381,7 @@ describe('§7.4 — every state tag row, from record facts only', () => {
     const h = call(); h.playerResponse = directive(h, { heardEvalId: 'eval_012' });
     expect(tagOf(h, [ev(h, 'superseded', null, T('2026-09-09T14:50:00.000Z'))]).text).toBe('Heard at the 11:00 AM check');
     // … and a replacement after the hearing reads Replaced.
-    expect(tagOf(h, [ev(h, 'superseded', null, T('2026-09-09T15:02:00.000Z'))]).text).toBe('Replaced by a later answer');
+    expect(tagOf(h, [ev(h, 'superseded', null, T('2026-09-09T15:02:00.000Z'))]).text).toBe('Replaced by a later instruction');
   });
 
   it('a fact with no row renders NO tag: an unknown state, an unknown fact, a deliberately tagless event', () => {
@@ -807,7 +816,7 @@ describe('§7.5 — the sheet, from records alone', () => {
     expect(receiptLineOf({ kind: 'no_matching_trade', evidence: { promptBuiltAt: P1100 } }, c, { nowMs: NOW })).toBe('No matching trade at the 11:00 AM check');
     expect(receiptLineOf({ kind: 'expired' }, c, { nowMs: NOW })).toBe("Expired · by today's close");
     expect(receiptLineOf({ kind: 'ended_with_battle' }, c, { nowMs: NOW })).toBe('Battle ended');
-    expect(receiptLineOf({ kind: 'superseded', at: T('2026-09-09T14:50:00.000Z') }, c, { nowMs: NOW })).toBe('Replaced by a later answer · 10:50 AM');
+    expect(receiptLineOf({ kind: 'superseded', at: T('2026-09-09T14:50:00.000Z') }, c, { nowMs: NOW })).toBe('Replaced by a later instruction · 10:50 AM');
     expect(receiptLineOf({ kind: 'declared' }, c, { nowMs: NOW })).toBeNull();
     expect(receiptLineOf({ kind: 'mystery' }, c, { nowMs: NOW })).toBeNull();
   });

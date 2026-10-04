@@ -1031,7 +1031,10 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   cockpitSheetFromCheck: (check) => (check ? `From ${check} →` : null),
   cockpitSheetCheckGone: 'That check is no longer in the chat',
   cockpitReceiptFiled: (time) => (time ? `Filed ${time}` : 'Filed'),
-  cockpitReceiptReplaced: (time) => (time ? `Replaced by a later answer · ${time}` : 'Replaced by a later answer'),
+  // "Instruction", not "answer": a chat or chip filing replaces a cockpit
+  // answer too, and the `superseded` event does not say which wrote it
+  // (founder ruling Oct 4; review L6-11 a).
+  cockpitReceiptReplaced: (time) => (time ? `Replaced by a later instruction · ${time}` : 'Replaced by a later instruction'),
   cockpitObservedHit: (price, check) => (price ? (check ? `Hit at ${price} · ${check}` : `Hit at ${price}`) : null),
   cockpitObservedExpired: (price, check) => (price ? (check ? `Expired at ${price} · ${check}` : `Expired at ${price}`) : null),
 
@@ -1082,7 +1085,8 @@ export const COCKPIT_FACT_TAGS = Object.freeze({
   'event:no_matching_trade': Object.freeze({ tone: 'muted', text: ({ check } = {}) => (check ? `No matching trade at ${check}` : 'No matching trade') }),
   'event:expired': Object.freeze({ tone: 'muted', text: ({ deadline } = {}) => (deadline ? `Expired · ${deadline}` : 'Expired') }),
   'event:ended_with_battle': Object.freeze({ tone: 'muted', text: () => 'Battle ended' }),
-  'event:superseded': Object.freeze({ tone: 'muted', text: () => 'Replaced by a later answer' }),
+  // Any later filing — chat, chip or cockpit — writes this event (directiveWriter.js), so the tag names none of them.
+  'event:superseded': Object.freeze({ tone: 'muted', text: () => 'Replaced by a later instruction' }),
 });
 
 /**
