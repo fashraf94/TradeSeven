@@ -1,9 +1,16 @@
-# Call Record Field Contract V1.4 — Amendment C
+# Call Record Field Contract V1.4 — Amendment C (revision 2)
 
-**Date:** 2026-10-03 · **Author:** Fable · **Status:** draft for blessing (framework chat). Blessing gates the Build 2a **merge**, not the build.
+**Date:** 2026-10-03 · **Revision 2:** 2026-10-04 · **Author:** Fable · **Status:** draft for blessing (framework chat). Blessing gates the Build 2a **merge**.
 **Builds on:** `docs/CALL_RECORD_FIELD_CONTRACT_V1_4.md` + Amendment A (`docs/design/COCKPIT_SPEC_V1_3_AMENDMENT_A.md`) + Amendment B rev 2 (`docs/CALL_RECORD_FIELD_CONTRACT_V1_4_AMENDMENT_B.md`).
-**Evidence:** the Build 2 discovery, `docs/audits/20261002_PHASE0_BUILD2_COCKPIT.md` (cited D-A1…D-A11, D-B1…D-B10), and round 3, `docs/audits/20261002_DECLARATIONS_WORDING_ROUND3.md`.
+**Evidence:** the Build 2 discovery, `docs/audits/20261002_PHASE0_BUILD2_COCKPIT.md` (cited D-A1…D-A11, D-B1…D-B10); round 3, `docs/audits/20261002_DECLARATIONS_WORDING_ROUND3.md`; the Build 2a report, `docs/audits/20261003_BUILD2A_COCKPIT_SCREEN.md` (cited 2A-§n and its finding ids).
 **Scope:** C-1 to C-6 have writers and readers in Build 2a. C-7 and C-8 are **reserved for Build 2b**: defined and blessed now, with no writer or reader until 2b.
+
+**What revision 2 changes** (all from the Build 2a review, 2A-§11; no field is added or removed):
+- C-1: the validation clause now describes HEAD's actual rules for `declarations.watching` (2A L1-4).
+- C-3: the cooldown-locked set's source is named; "usable" is the enumerated list only; the clause lists its knock-on effects on model-visible directive text and on the acted match (2A L1-3, L1-5, L2-2).
+- C-6: the thread key adds `defaultAction` (2A framework-chat item).
+- C-8: names the single-slot question Build 2b must resolve.
+- Standing conditions: one override at a time is recorded as the rule for 2a.
 
 ---
 
@@ -24,7 +31,7 @@ It also stamps the mode a record was minted under, so a screen can tell live-coc
 
 **Today:** the cron hands the calls validator `toolUse.input?.declarations` only (`api/cron/agent-evaluate.js:2862`).
 
-**Rule:** when the `declarations` object carries no non-empty `watching` array, the validator reads the tool input's **top-level** `watching`, if it is an array, and validates it with exactly the rules that apply to `declarations.watching` (symbols in the check's universe, the existing cap of 6, de-duplicated, order kept).
+**Rule:** when the `declarations` object carries no non-empty `watching` array, the validator reads the tool input's **top-level** `watching`, if it is an array, and validates it with **exactly the rules that apply to `declarations.watching` at HEAD**. (At HEAD those rules apply no universe check and no de-duplication. This amendment does not add either; adding them would change shadow and on records and needs its own clause.)
 
 - A model call with no usable `declarations` object but a valid top-level `watching` list becomes a **watching-only declaration**: it writes the declarations record and mints no call.
 - Only `watching` is read from the top level. Top-level `fork` and `playerAsk` stay ignored.
@@ -50,21 +57,26 @@ Records without the field (minted before this amendment) are read as `heldAtMint
 
 ## C-3 · Counterpart usability
 
-**Rule:** at mint, `counterpart` is kept only when it is **usable**:
-- **On an exit:** a symbol in the check's universe that the swap could bring in — not held at the seam, not the call's own symbol, and not cooldown-locked where the seam knows lock status.
+**Rule:** at mint, `counterpart` is kept only when it is **usable**. Usable means exactly the following, and nothing else:
+- **On an exit:** a symbol in the check's universe that is not held at the seam, is not the call's own symbol, and is not cooldown-locked. The locked set is frozen at the same model seam, from the battle's bench as of the check's `promptBuiltAt`.
 - **On an entry:** a symbol held at the seam (the position the entry would replace), other than the call's own symbol.
 
-Otherwise `counterpart` is stored as `null`, and the agent's original string, trimmed to 40 characters, is kept in the new field **`counterpartRaw`** (null when the counterpart was usable or absent).
+Watchlist-only names and stock↔crypto pairs are **not** excluded by this clause, even though the swap would refuse them; they stay usable as written.
 
-Renderers read only `counterpart`. `counterpartRaw` exists for audits and the Film Room, never for player-facing copy.
+Otherwise `counterpart` is stored as `null`, and the agent's original string, trimmed to 40 code points, is kept in the new field **`counterpartRaw`** (null when the counterpart was usable or absent). Renderers read only `counterpart`. `counterpartRaw` exists for audits and the Film Room, never for player-facing copy.
+
+**Knock-on effects (reviewed in Build 2a, 2A L1-5 / L2-2; pinned by `amendmentC.test.js`):**
+- **Model-visible directive text:** the `call_go` / `call_hold` text the agent reads omits an unusable counterpart ("…exit for TBD." becomes "…exit.").
+- **The acted match:** the flip's acted match no longer requires a counterpart that was stored as null. An exit whose counterpart was "X or Y" is acted by a committed trade that exits its symbol, whichever name comes in.
+- **Answer eligibility:** an entry whose named counterpart was not held loses it, and its legal answers follow the Build 1a legality table for an entry without a counterpart.
 
 ---
 
 ## C-4 · Per-call said verdict
 
-**Rule:** every newly minted call carries **`saidOk: true | false | null`** — the said lint's verdict on that call's own `said` (`null` when it has no `said`). The lint is the existing one (`api/_utils/callRecords/copy.js:256-258`), unchanged.
+**Rule:** every newly minted call carries **`saidOk: true | false | null`** — the said lint's verdict on that call's own `said` (`null` when it has no `said`). The lint is the existing one (`api/_utils/callRecords/copy.js`), unchanged.
 
-A display shows a call's `said` only when `saidOk === true`, labelled as the agent's own, unverified wording. The declared event's per-check `saidOk` (`publish.js:198-201`) is unchanged.
+A display shows a call's `said` only when `saidOk === true`, labelled as the agent's own, unverified wording, and never on an upside call. The declared event's per-check `saidOk` is unchanged.
 
 ---
 
@@ -79,14 +91,14 @@ A display shows a call's `said` only when `saidOk === true`, labelled as the age
 
 ## C-6 · Restated calls (a display rule; records unchanged)
 
-**Rule:** two **open** calls in one battle on one ET trading day belong to one **thread** when their `symbol`, `direction`, `slot` and `condition.side` match and their levels are within **1%** of each other (measured against the newer call's level).
+**Rule:** two **open** calls in one battle on one ET trading day belong to one **thread** when their `symbol`, `direction`, `slot`, `condition.side` and **`defaultAction`** match and their levels are within **1%** of each other (measured against the newer call's level).
 
 - A display shows **one tile per thread**, carrying the newest call's wording.
 - Each call keeps its own record, answer, receipts and grading. Nothing is merged in Firestore.
-- While any call in a thread carries a **live directive answer** (a filed directive whose call is still open), displays offer no new answer on that thread and show that answer, naming the wording it was given on.
+- While any call in a thread carries a **live directive answer**, displays offer no new answer on that thread and show that answer, naming the wording it was given on.
 - Resolved calls never join a thread.
 
-Basis: about 1 kept called shot in 11 repeats the previous check's (D-B6).
+Basis: about 1 kept called shot in 11 repeats the previous check's (D-B6). `defaultAction` is in the key so that a Confirmation the player agreed to never folds with a later "I'll hold" call.
 
 ---
 
@@ -107,6 +119,7 @@ A new call-directive action, **`call_replace`**, in a new registry version **`ca
 - **Slot:** `{ expiry: 'until_ms', expiresAtMs, symbol: OUT, pickSymbol: IN, kind, callId }`, where `expiresAtMs` is the originating exit call's horizon.
 - **Receipts:** heard, as today; **acted** when an executed swap has outgoing OUT and incoming IN; **no matching trade** otherwise.
 - Its canonical text is model-visible and goes through fenced-class coordinated review in Build 2b.
+- **Open for 2b:** Build 1a gives the agent one directive slot, and a heard call directive holds it until its deadline. Build 2b's spec must say how a replacement pick coexists with an override already in the slot before `call_replace` has a writer.
 
 **No writer or reader in 2a.**
 
@@ -119,7 +132,7 @@ A new call-directive action, **`call_replace`**, in a new registry version **`ca
 | `declarations/{evalId}` | `watchingSource` | `'declarations' \| 'top_level' \| null` | C-1 | 2a |
 | `declarations/{evalId}` | `mintedMode` | `'shadow' \| 'on'` | C-5 | 2a |
 | `calls/{callId}` | `heldAtMint` | `boolean` | C-2 | 2a |
-| `calls/{callId}` | `counterpartRaw` | `string (≤ 40) \| null` | C-3 | 2a |
+| `calls/{callId}` | `counterpartRaw` | `string (≤ 40 code points) \| null` | C-3 | 2a |
 | `calls/{callId}` | `saidOk` | `boolean \| null` | C-4 | 2a |
 | `calls/{callId}` | `mintedMode` | `'shadow' \| 'on'` | C-5 | 2a |
 | `calls/{callId}` (pick) | `origin` | `'declared' \| 'assembled'` | C-7 | 2b |
@@ -130,10 +143,11 @@ Changed meaning, no new field: `calls/{callId}.counterpart` (C-3, usable names o
 
 ---
 
-## Standing conditions (restated, unchanged)
+## Standing conditions (restated)
 
-- There is no "held" fact. No display says "Held off" or claims the agent held because of an answer (Build 1a, `heard.js:22`).
+- There is no "held" fact. No display says "Held off" or claims the agent held because of an answer (Build 1a, `heard.js`).
 - There is no "Asking you" state until the ask route ships (Build 1b).
+- **One override at a time** (Build 1a's single directive slot): a heard call directive keeps the slot until its deadline; displays follow the endpoint's predicate and say so.
 - Tiles and chat lines render from record fields; a `said` is shown only when it passes the lint.
 - Records are frozen in place on rollback; nothing is deleted or rewritten.
 - Model-visible text changes go through fenced-class coordinated review (contract V1.4 §2).
