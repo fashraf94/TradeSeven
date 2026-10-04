@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Tailwind v4 detects sources across the whole project, and nothing loads
+   tailwind.config.js's `content` list (there is no @config). docs/ is prose:
+   a Windows path in an audit once parsed as a CSS escape past U+10FFFF and
+   failed the build (PR #928). Never scan it. */
+@source not "../docs";
+
 /* Prevent iOS auto-zoom on input focus */
 input,
 select,
