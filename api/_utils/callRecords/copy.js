@@ -10,9 +10,11 @@
 // result's `symbolOut` / `symbolIn`, a committed check's `promptBuiltAt`. An
 // acted line is never derived from intent; a declaration is never an acted
 // receipt; a pick has a request line and NO intent line (its stored
-// `defaultAction` is null). Readers label an intent line "intent", never a
-// promise. A check's time is the instant its prompt was built ("at the 10:30
-// check") — no executor timestamp exists, so none is invented.
+// `defaultAction` is null). This module renders no intent line: the one
+// reader that shows a call's default as intent — never a promise — words it
+// itself (src/screens/battleView/battleViewCopy.js cockpitIntent). A check's
+// time is the instant its prompt was built ("at the 10:30 check") — no
+// executor timestamp exists, so none is invented.
 //
 // THE LINT is the round-2 lexical rule, copied VERBATIM from
 // scripts/declarations-wording-experiment.mjs:376-397 (copy.test.js proves the
@@ -39,8 +41,9 @@
 // THE UPSIDE LINE (Amendment C-2): an `entry` call on a name already held at
 // mint is an upside call — symbol, side, level and deadline, NO action clause
 // ("AMD above $625.00 by today's close"). `renderCallLine` routes a
-// `heldAtMint` call through `renderUpsideLine` and `renderIntentLine` (the one
-// action-clause renderer here) renders nothing for it.
+// `heldAtMint` call through `renderUpsideLine`. (`renderIntentLine`, the
+// action-clause renderer that stood here, had no consumer and is retired —
+// founder ruling Oct 4, Build 2a review L6-10.)
 
 import { formatPrice } from '../../../src/utils/formatters.js';
 // Zero-import src module (BUILD_RULES §4; guarded by copy.test.js's import of
@@ -168,23 +171,6 @@ export function renderCallLine(call, { nowMs = Date.now(), clock = '24h' } = {})
   if (call.kind === 'pick') return renderPickLine(call);
   if (isUpsideCall(call)) return renderUpsideLine(call, { nowMs, clock });
   return conditionLine(call, { nowMs, clock });
-}
-
-/**
- * THE INTENT LINE — shots and confirmations only, from the stored
- * `defaultAction` / `direction` / `counterpart`; readers label it intent,
- * never a promise. A pick has none (its `defaultAction` is null), and neither
- * has an upside call: "bring in" a name already held is the action clause
- * Amendment C-2 forbids.
- */
-export function renderIntentLine(call) {
-  if (!call || typeof call !== 'object' || call.kind === 'pick') return null;
-  if (isUpsideCall(call)) return null;
-  const act = call.defaultAction === 'act';
-  if (!act && call.defaultAction !== 'hold') return null;
-  if (!act) return 'Intent: hold';
-  const counterpart = nonEmpty(call.counterpart) ? ` for ${call.counterpart}` : '';
-  return `Intent: ${call.direction === 'exit' ? `exit${counterpart}` : `bring in${counterpart}`}`;
 }
 
 // ---------------------------------------------------------------------------

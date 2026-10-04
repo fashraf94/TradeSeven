@@ -17,8 +17,9 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as copyModule from './copy.js';
 import {
-  fmtPrice, fmtTimeEt, fmtWeekdayEt, checkLabel, deadlineText, renderCallLine, renderIntentLine, renderUpsideLine, isUpsideCall, CLOCKS,
+  fmtPrice, fmtTimeEt, fmtWeekdayEt, checkLabel, deadlineText, renderCallLine, renderUpsideLine, isUpsideCall, CLOCKS,
   renderDeclaredEvent, renderAnsweredEvent, renderHeardEvent, renderActedEvent, renderNoMatchingTradeEvent,
   renderExpiredEvent, renderEndedWithBattleEvent, renderSupersededEvent, EXPIRY_REASON_TEXT, ANSWER_WORDS,
   saidFlagsRound2, saidLintTerms, saidPassesLint, renderSaidLine, SAID_LINT_LABELS, SAID_UNVERIFIED_LABEL,
@@ -70,7 +71,7 @@ describe('the formatters (spec §4)', () => {
   });
 });
 
-describe('renderCallLine / renderIntentLine — stored paths only (spec §4; Astra B1R-13, B1R2-11)', () => {
+describe('renderCallLine — stored paths only (spec §4; Astra B1R-13, B1R2-11)', () => {
   it('a shot renders from condition.side / condition.level / horizon.* — never from top-level fields', () => {
     expect(renderCallLine(shot(), { nowMs: NOW })).toBe("AMD above $161.00 by today's close");
     const wrongPaths = { ...shot(), condition: null, side: 'above', level: 161 };
@@ -79,20 +80,14 @@ describe('renderCallLine / renderIntentLine — stored paths only (spec §4; Ast
     expect(renderCallLine(noHorizon, { nowMs: NOW })).toBe('AMD above $161.00');
   });
 
-  it('a pick renders its REQUEST line from options[].symbol and swapOut, and has NO intent line (defaultAction is null)', () => {
+  it('a pick renders its REQUEST line from options[].symbol and swapOut', () => {
     expect(renderCallLine(pick(), { nowMs: NOW })).toBe('support: AMD or JPM for KO');
-    expect(renderIntentLine(pick())).toBeNull();
-    expect(renderIntentLine({ ...pick(), defaultAction: 'hold' })).toBeNull(); // a pick never has an intent line, whatever a field says
     expect(renderCallLine({ ...pick(), options: [] }, { nowMs: NOW })).toBeNull();
   });
 
-  it('the intent line labels intent, from defaultAction / direction / counterpart', () => {
-    expect(renderIntentLine(shot())).toBe('Intent: bring in for KO');
-    expect(renderIntentLine(shot({ counterpart: null }))).toBe('Intent: bring in');
-    expect(renderIntentLine(shot({ direction: 'exit', symbol: 'KO', counterpart: 'AMD' }))).toBe('Intent: exit for AMD');
-    expect(renderIntentLine(shot({ defaultAction: 'hold' }))).toBe('Intent: hold');
-    expect(renderIntentLine(shot({ defaultAction: 'maybe' }))).toBeNull();
-    expect(renderIntentLine(null)).toBeNull();
+  it('renderIntentLine is RETIRED (founder ruling Oct 4; review L6-10): no consumer ever read it, and its exit wording dropped the symbol — the one intent line is the cockpit sheet\'s', () => {
+    expect(copyModule).not.toHaveProperty('renderIntentLine');
+    expect(Object.keys(copyModule).filter((k) => /intent/i.test(k))).toEqual([]);
   });
 
   it("deadline: next_check → 'by the next check'; this_battle → 'before the battle ends'; explicit → 'by HH:MM'", () => {
@@ -357,11 +352,5 @@ describe('Build 2a — the upside line (Amendment C-2)', () => {
     expect(renderCallLine(upside({ counterpart: 'KO', defaultAction: 'act' }), { nowMs: NOW })).not.toMatch(/bring|exit|for KO|Intent|then/i);
     expect(renderCallLine(shot(), { nowMs: NOW })).toBe("AMD above $161.00 by today's close");
     expect(renderCallLine(pick())).toBe('support: AMD or JPM for KO');
-  });
-
-  it('renderIntentLine — the one action-clause renderer — says nothing for an upside call', () => {
-    expect(renderIntentLine(upside({ counterpart: 'KO', defaultAction: 'act' }))).toBeNull();
-    expect(renderIntentLine(upside({ defaultAction: 'hold' }))).toBeNull();
-    expect(renderIntentLine(shot())).toBe('Intent: bring in for KO');
   });
 });

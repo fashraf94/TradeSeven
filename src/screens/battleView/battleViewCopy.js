@@ -1018,8 +1018,8 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   cockpitSheetDefault: (intent) => (intent ? `If you say nothing · ${intent}` : null),
   // The agent's default as an INTENT, never a promise (Build 1a §4): "bring in
   // AMD for KO", "exit MU for AMAT", "hold". An upside call has none (C-2).
-  // (copy.js renderIntentLine words the same fact without the symbol and has
-  // no consumer; S-7 does not list it for the client — review L6-10, recorded.)
+  // The one intent renderer: copy.js's symbol-less renderIntentLine had no
+  // consumer and is retired (founder ruling Oct 4; review L6-10).
   cockpitIntent: (defaultAction, direction, symbol, counterpart) => {
     if (defaultAction === 'hold') return 'intent: hold';
     if (defaultAction !== 'act' || !symbol) return null;
