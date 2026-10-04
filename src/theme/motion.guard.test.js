@@ -104,6 +104,13 @@ const GUARDED_FILES = [
   // pure helper — no element, no colour, no motion. Registered in the commit that
   // introduces it (hazard 34).
   'src/screens/battleView/shadowCpuQuoteIntegrity.js',
+  // Cockpit Build 2a (spec §9) — the cockpit's pure model and its three surfaces,
+  // token-only and motion-token-only from birth; registered in the commit that
+  // introduces them (hazard 34).
+  'src/screens/battleView/cockpitModel.js',
+  'src/screens/battleView/CockpitFeed.jsx',
+  'src/screens/battleView/CockpitSheet.jsx',
+  'src/screens/battleView/BoardCockpit.jsx',
 ];
 
 /**

@@ -23,10 +23,17 @@
 // ≤ 1,200 chars, whole-row truncation with "… n more"; priority: open rows,
 // then history.
 //
+// Cockpit Build 2a (Amendment C-2; spec S-3): an upside call (`heldAtMint`)
+// renders through `renderUpsideLine` — symbol, side, level, deadline, no
+// action clause. The row never carried one (it holds no direction or intent),
+// so an upside row's bytes equal the call line's for the same record
+// (callsBlock.test.js pins the equality) — the model-visible block does not
+// move by a byte.
+//
 // Model-visible prose: registered in PROMPT_CONTRIBUTING_MODULES.
 
 import { withTimeout } from '../intraday/evaluatorHook.js';
-import { renderCallLine, checkLabel, ANSWER_WORDS } from './copy.js';
+import { renderCallLine, renderUpsideLine, isUpsideCall, checkLabel, ANSWER_WORDS } from './copy.js';
 import { selectedPickOf } from './threads.js';
 
 export const CALLS_BLOCK_CHAR_CAP = 1_200;
@@ -69,7 +76,7 @@ export function renderCallFact(call, { evaluations = [] } = {}) {
 
 /** One row: id · line · state · answer · fact. Null when the call cannot be rendered. */
 export function renderCallsRow(call, { nowMs = Date.now(), evaluations = [], battle = null } = {}) {
-  const line = renderCallLine(call, { nowMs });
+  const line = isUpsideCall(call) ? renderUpsideLine(call, { nowMs }) : renderCallLine(call, { nowMs });
   if (!line || !nonEmpty(call?.callId)) return null;
   const parts = [call.callId, line, call.state ?? 'unknown'];
   const answer = call.playerResponse?.answer;

@@ -45,6 +45,14 @@
 //
 // HAZARD 48. index.css forces every <button> to 16px !important, so every label
 // in this file sizes an inner <span>, as ChatSheet's handle does.
+//
+// COCKPIT BUILD 2a (spec docs/COCKPIT_BUILD2A_SPEC_V1_0.md §5): the tab list
+// is the screen's COMPUTED list (`sections`, from paneSectionsFor) — on the
+// desktop while the battle is cockpit-on it is Cockpit · Chat · Bench · Tape
+// and the Cockpit panel exists beside the other three, hidden like them, never
+// unmounted. While another section shows and the chain counts unread, the Chat
+// tab reads "Chat · {n}". With the shipped list (the default) every node this
+// component renders is the one it rendered before.
 
 import React from 'react';
 import { motion } from 'framer-motion';
@@ -61,6 +69,7 @@ const SECTION_LABEL = {
   [PANE_SECTION.CHAT]: COPY.paneSectionChat,
   [PANE_SECTION.BENCH]: COPY.paneSectionBench,
   [PANE_SECTION.TAPE]: COPY.paneSectionTape,
+  [PANE_SECTION.COCKPIT]: COPY.cockpitTab,
 };
 
 const tabId = (section) => `pane-tab-${section}`;
@@ -89,8 +98,27 @@ const PANE_FACE_PX = 36;
    The breakpoint is DERIVED, not chosen, so a reader can check it and a test can
    import it rather than restating a number: */
 
-/** The header's fixed cost: 28 padding + 36 face + 20 gaps + 243 controls. */
+/**
+ * The header's fixed cost with the SHIPPED three tabs: 28 padding + 36 face +
+ * 20 gaps + 243 controls (tabs + overflow + collapse). Unchanged by Build 2a:
+ * with the cockpit off the archetype line keeps its shipped threshold.
+ */
 export const PANE_HEADER_FIXED_PX = 327;
+
+/**
+ * Cockpit Build 2a (spec §5) — the same cost with FOUR tabs at their widest:
+ * the Cockpit tab (+ its 2 px gap) and the Chat tab at its widest label,
+ * "Chat · 9+" (unread is counted while another section shows, and the label
+ * caps at 9+ — battleViewCopy paneSectionChatUnread). MEASURED, not estimated:
+ * the controls group rendered in Chromium with this file's styles and the
+ * app's button font (index.css sets only the size, so buttons take the UA
+ * face) — three tabs measure 242.3 px, reproducing the shipped 243; four tabs
+ * measure 338.1 px with "Chat · 99" and 338.4 px with "Chat · 9+" (311.7 px
+ * with plain "Chat"; the review re-measured all three). Rounded up as 243
+ * was: controls 339, so 28 + 36 + 20 + 339. (Measured on Windows Chromium,
+ * where the button face is Arial.)
+ */
+export const PANE_HEADER_FIXED_COCKPIT_PX = 423;
 
 /** The widest archetype display name at `nowrap` — `Fundamental Investor`. */
 export const PANE_ARCHETYPE_MIN_PX = 141;
@@ -108,6 +136,11 @@ export const ARCHETYPE_MIN_VIEWPORT_PX = Math.ceil(
   (PANE_HEADER_FIXED_PX + PANE_ARCHETYPE_MIN_PX) / PANE_VIEWPORT_SHARE,
 );
 
+/** The same threshold while the desktop pane carries the Cockpit tab (Build 2a §5). */
+export const ARCHETYPE_MIN_VIEWPORT_COCKPIT_PX = Math.ceil(
+  (PANE_HEADER_FIXED_COCKPIT_PX + PANE_ARCHETYPE_MIN_PX) / PANE_VIEWPORT_SHARE,
+);
+
 /** The label span every control wraps its text in (hazard 48). */
 const labelSpan = (size = 12, weight = 700) => ({
   fontSize: size,
@@ -116,17 +149,22 @@ const labelSpan = (size = 12, weight = 700) => ({
   lineHeight: 1.2,
 });
 
-function SegmentedControl({ section, onSelect }) {
+function SegmentedControl({ section, onSelect, sections = PANE_SECTIONS, chatUnread = 0 }) {
   const onKeyDown = (e) => {
-    const i = PANE_SECTIONS.indexOf(section);
+    const i = sections.indexOf(section);
     if (i < 0) return;
     // The tablist keyboard contract: left/right wrap, Home/End jump. Without
     // it the roles above would be a promise the widget does not keep.
-    if (e.key === 'ArrowRight') { e.preventDefault(); onSelect(PANE_SECTIONS[(i + 1) % PANE_SECTIONS.length]); }
-    else if (e.key === 'ArrowLeft') { e.preventDefault(); onSelect(PANE_SECTIONS[(i - 1 + PANE_SECTIONS.length) % PANE_SECTIONS.length]); }
-    else if (e.key === 'Home') { e.preventDefault(); onSelect(PANE_SECTIONS[0]); }
-    else if (e.key === 'End') { e.preventDefault(); onSelect(PANE_SECTIONS[PANE_SECTIONS.length - 1]); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); onSelect(sections[(i + 1) % sections.length]); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); onSelect(sections[(i - 1 + sections.length) % sections.length]); }
+    else if (e.key === 'Home') { e.preventDefault(); onSelect(sections[0]); }
+    else if (e.key === 'End') { e.preventDefault(); onSelect(sections[sections.length - 1]); }
   };
+  // Build 2a §5: the Chat tab counts unread while another section shows (the
+  // screen passes a count only while the battle is cockpit-on).
+  const labelOf = (s) => (s === PANE_SECTION.CHAT && section !== PANE_SECTION.CHAT && chatUnread > 0
+    ? COPY.paneSectionChatUnread(chatUnread)
+    : SECTION_LABEL[s]);
 
   return (
     <div
@@ -143,7 +181,7 @@ function SegmentedControl({ section, onSelect }) {
         border: `1px solid rgba(var(--ft-scrim-rgb), 0.08)`,
       }}
     >
-      {PANE_SECTIONS.map((s) => {
+      {sections.map((s) => {
         const selected = s === section;
         return (
           <button
@@ -169,7 +207,7 @@ function SegmentedControl({ section, onSelect }) {
               color: selected ? cssVar('teal') : cssVar('text-muted'),
             }}
           >
-            <span style={labelSpan()}>{SECTION_LABEL[s]}</span>
+            <span style={labelSpan()}>{labelOf(s)}</span>
           </button>
         );
       })}
@@ -202,6 +240,13 @@ export default function CharacterPane({
   // reads it — the selected pair, or both score keys OMITTED when unavailable.
   // Name, archetype, sections, close and the chat/bench/tape are untouched.
   comparison = undefined,
+  // Cockpit Build 2a (§5): the computed tab list, the Cockpit panel's content,
+  // and the Chat tab's unread count (non-zero only while cockpit-on).
+  sections = PANE_SECTIONS,
+  cockpit = null,
+  chatUnread = 0,
+  // True only while the desktop's cockpit sheet is open (modal within the pane).
+  controlsInert = false,
 }) {
   const regionRef = React.useRef(null);
   const wasOpenRef = React.useRef(open);
@@ -365,8 +410,8 @@ export default function CharacterPane({
             three labels are the thing the player aims at, and a control that
             gives up width first turns three tabs into three slivers. The name
             beside it wraps instead. */}
-        <div data-pane-controls="1" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-          <SegmentedControl section={section} onSelect={onSelectSection} />
+        <div data-pane-controls="1" inert={controlsInert || undefined} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          <SegmentedControl section={section} onSelect={onSelectSection} sections={sections} chatUnread={chatUnread} />
           {overflow}
           <button
             type="button"
@@ -392,11 +437,10 @@ export default function CharacterPane({
         </div>
       </div>
 
-      {/* The three sections. All three exist; the unselected two are hidden. */}
+      {/* The sections. All of them exist; the unselected ones are hidden. With
+          the shipped list these are the same three panels, in the same order. */}
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-        {panel(PANE_SECTION.CHAT, chat)}
-        {panel(PANE_SECTION.BENCH, bench)}
-        {panel(PANE_SECTION.TAPE, tape)}
+        {sections.map((s) => panel(s, { [PANE_SECTION.CHAT]: chat, [PANE_SECTION.BENCH]: bench, [PANE_SECTION.TAPE]: tape, [PANE_SECTION.COCKPIT]: cockpit }[s] ?? null))}
       </div>
     </motion.section>
   );

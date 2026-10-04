@@ -47,6 +47,11 @@ const SEMANTIC = {
   '--ft-warning': { alias: 'var(--ft-amber)', resolvesTo: '#f59e0b' },
   '--ft-game-baggerbomb': { alias: 'var(--ft-amber)', resolvesTo: '#f59e0b' },
   '--ft-game-draft': { alias: 'var(--ft-emerald)', resolvesTo: '#10b981' },
+  // Cockpit Build 2a (spec §9, ruling R2A-5): the call-state aliases — two of them two-hop chains.
+  '--ft-call-yours': { alias: 'var(--ft-teal)', resolvesTo: '#5eead4' },
+  '--ft-call-acted': { alias: 'var(--ft-success)', resolvesTo: '#10b981' },
+  '--ft-call-dropped': { alias: 'var(--ft-warning)', resolvesTo: '#f59e0b' },
+  '--ft-call-muted': { alias: 'var(--ft-text-muted)', resolvesTo: '#6e7681' },
 };
 
 const rawProp = (name) =>
@@ -68,13 +73,16 @@ describe('defines-all-tokens (A1)', () => {
     ).toEqual([]);
   });
 
-  it('has a baseline that covers the whole locked list — 39 tokens', () => {
+  it('has a baseline that covers the whole locked list — 43 tokens', () => {
+    // 43 since Cockpit Build 2a, which added the four --ft-call-* state ALIASES
+    // (spec §9) — aliases of shipped tokens, no new colour; the hex / triplet
+    // split below does not move.
     // 37 at the Delight Task 1 lock; 39 since Battle View A3.0, which added
     // --ft-copper and --ft-copper-rgb (D-96). That was a TOKEN ADDITION of a
     // value the repo already shipped twice under legacy names (CMD.copper,
     // DARK_TOKENS.warmCopper), not a new colour — but the count is pinned so
     // that even an addition has to be a deliberate, reviewed line.
-    expect(Object.keys(BASELINE)).toHaveLength(39);
+    expect(Object.keys(BASELINE)).toHaveLength(43);
   });
 });
 
@@ -126,7 +134,7 @@ describe('semantic-bindings (A2b)', () => {
     }
   );
 
-  it('covers exactly the 7 locked semantic tokens', () => {
+  it('covers exactly the 11 locked semantic tokens (7, plus Build 2a\'s four --ft-call-* aliases)', () => {
     const aliasesInBaseline = Object.entries(BASELINE).filter(([, v]) => isAlias(v)).map(([n]) => n);
     expect(aliasesInBaseline.sort()).toEqual(Object.keys(SEMANTIC).sort());
   });

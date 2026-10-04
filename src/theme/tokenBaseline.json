@@ -42,5 +42,9 @@
   "--ft-danger": "var(--ft-red)",
   "--ft-warning": "var(--ft-amber)",
   "--ft-game-baggerbomb": "var(--ft-amber)",
-  "--ft-game-draft": "var(--ft-emerald)"
+  "--ft-game-draft": "var(--ft-emerald)",
+  "--ft-call-yours": "var(--ft-teal)",
+  "--ft-call-acted": "var(--ft-success)",
+  "--ft-call-dropped": "var(--ft-warning)",
+  "--ft-call-muted": "var(--ft-text-muted)"
 }

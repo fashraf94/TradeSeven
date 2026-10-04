@@ -7,8 +7,10 @@
 // counts 23 / 60, SHA-256 pinned.
 //
 // Dependency-surface guard (BUILD_RULES §4): the import of ./copy.js — which
-// imports src/utils/formatters.js — is the runtime guard that the formatter
-// stays Node-clean; it is never mocked.
+// imports src/utils/formatters.js and (Build 2a S-7) the zero-import
+// src/components/Dashboard/desk/deskCopy.js — is the runtime guard that both
+// stay Node-clean; it is never mocked. Build 2a also imports copy.js from the
+// CLIENT: the vite build is that half of the guard.
 
 import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
@@ -16,7 +18,7 @@ import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  fmtPrice, fmtTimeEt, fmtWeekdayEt, checkLabel, deadlineText, renderCallLine, renderIntentLine,
+  fmtPrice, fmtTimeEt, fmtWeekdayEt, checkLabel, deadlineText, renderCallLine, renderIntentLine, renderUpsideLine, isUpsideCall, CLOCKS,
   renderDeclaredEvent, renderAnsweredEvent, renderHeardEvent, renderActedEvent, renderNoMatchingTradeEvent,
   renderExpiredEvent, renderEndedWithBattleEvent, renderSupersededEvent, EXPIRY_REASON_TEXT, ANSWER_WORDS,
   saidFlagsRound2, saidLintTerms, saidPassesLint, renderSaidLine, SAID_LINT_LABELS, SAID_UNVERIFIED_LABEL,
@@ -287,5 +289,79 @@ describe('the lint — the round-2 rule, verbatim (spec §4; Astra B1R-12, B1R2-
       expect(volumeRows.length).toBeGreaterThan(0);
       for (const row of volumeRows) expect(saidLintTerms(row.said.replace(/volume/gi, 'size'), row.basis)).not.toEqual(row.terms);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cockpit Build 2a — the upside line (Amendment C-2, spec S-3) and the client
+// clock (spec S-7). The server's 24-hour output is model-visible: it must not
+// move by a byte.
+describe('Build 2a — the 24-hour label is byte-identical; the 12-hour label names the slot', () => {
+  // HEAD's formatter, restated as the oracle (the copy.js of 4dfc48d9, verbatim).
+  const HEAD_TIME = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const headCheckLabel = (instant) => {
+    const ms = typeof instant === 'string' ? Date.parse(instant) : instant;
+    return Number.isFinite(ms) ? `the ${HEAD_TIME.format(new Date(ms))} check` : null;
+  };
+
+  it('checkLabel() and checkLabel(x, { clock: "24h" }) equal HEAD\'s output on every instant of a dense grid (DST both ways, midnight, the minute boundary)', () => {
+    const start = T('2026-01-01T00:00:00.000Z');
+    for (let i = 0; i < 2000; i += 1) {
+      const ms = start + i * 4_391_117; // ~73 min steps over ~100 days, odd seconds
+      expect(checkLabel(ms)).toBe(headCheckLabel(ms));
+      expect(checkLabel(new Date(ms).toISOString(), { clock: '24h' })).toBe(headCheckLabel(ms));
+    }
+    for (const iso of ['2026-03-08T06:59:59.000Z', '2026-03-08T07:00:00.000Z', '2026-11-01T05:59:59.000Z', '2026-11-01T06:00:00.000Z', '2026-09-10T04:05:00.000Z']) {
+      expect(checkLabel(iso)).toBe(headCheckLabel(iso));
+    }
+    expect(checkLabel('2026-09-09T17:31:20.000Z')).toBe('the 13:31 check');
+    expect(CLOCKS).toEqual(['24h', '12h']);
+  });
+
+  it('the client clock: "the 1:30 PM check" — 12-hour ET, the check named by its SLOT (D-83), exactly as the Battle View names it', () => {
+    expect(checkLabel('2026-09-09T17:31:20.000Z', { clock: '12h' })).toBe('the 1:30 PM check');
+    expect(checkLabel('2026-09-09T17:44:59.000Z', { clock: '12h' })).toBe('the 1:30 PM check');
+    expect(checkLabel('2026-09-09T17:45:00.000Z', { clock: '12h' })).toBe('the 1:45 PM check');
+    expect(checkLabel(T('2026-09-09T13:30:04.000Z'), { clock: '12h' })).toBe('the 9:30 AM check');
+    expect(checkLabel(null, { clock: '12h' })).toBeNull();
+    expect(checkLabel('garbage', { clock: '12h' })).toBeNull();
+  });
+
+  it('a deadline is an INSTANT: the 12-hour explicit deadline keeps its exact minute; the server text is unchanged', () => {
+    const horizon = { basis: 'explicit', expiresAt: T('2026-09-09T18:31:00.000Z') };
+    expect(deadlineText(horizon)).toBe('by 14:31');
+    expect(deadlineText(horizon, { clock: '12h' })).toBe('by 2:31 PM');
+    expect(fmtTimeEt(horizon.expiresAt, { clock: '12h' })).toBe('2:31 PM');
+    expect(deadlineText({ basis: 'this_session', expiresAt: T('2026-09-09T20:00:00.000Z') }, { nowMs: NOW, clock: '12h' })).toBe("by today's close");
+  });
+});
+
+describe('Build 2a — the upside line (Amendment C-2)', () => {
+  const upside = (over = {}) => shot({ symbol: 'TSLA', heldAtMint: true, counterpart: null, condition: { side: 'above', level: 250 }, ...over });
+
+  it('renderUpsideLine: symbol, side, level, deadline — "TSLA above $250.00 by today\'s close" — and no action clause', () => {
+    expect(renderUpsideLine(upside(), { nowMs: NOW })).toBe("TSLA above $250.00 by today's close");
+    expect(renderUpsideLine(upside({ horizon: { phrase: 'explicit', basis: 'explicit', expiresAt: T('2026-09-09T18:31:00.000Z') } }), { nowMs: NOW, clock: '12h' })).toBe('TSLA above $250.00 by 2:31 PM');
+  });
+
+  it('renderUpsideLine renders ONLY an upside call: a plain shot, a pick, a legacy record, a broken record → null', () => {
+    expect(renderUpsideLine(shot(), { nowMs: NOW })).toBeNull();
+    expect(renderUpsideLine(pick({ heldAtMint: true }), { nowMs: NOW })).toBeNull();
+    expect(renderUpsideLine(upside({ condition: null }), { nowMs: NOW })).toBeNull();
+    expect(renderUpsideLine(null)).toBeNull();
+    expect(isUpsideCall(upside())).toBe(true);
+  });
+
+  it('renderCallLine routes an upside call through the upside line — never an action clause — and leaves every other call as it was', () => {
+    expect(renderCallLine(upside(), { nowMs: NOW })).toBe(renderUpsideLine(upside(), { nowMs: NOW }));
+    expect(renderCallLine(upside({ counterpart: 'KO', defaultAction: 'act' }), { nowMs: NOW })).not.toMatch(/bring|exit|for KO|Intent|then/i);
+    expect(renderCallLine(shot(), { nowMs: NOW })).toBe("AMD above $161.00 by today's close");
+    expect(renderCallLine(pick())).toBe('support: AMD or JPM for KO');
+  });
+
+  it('renderIntentLine — the one action-clause renderer — says nothing for an upside call', () => {
+    expect(renderIntentLine(upside({ counterpart: 'KO', defaultAction: 'act' }))).toBeNull();
+    expect(renderIntentLine(upside({ defaultAction: 'hold' }))).toBeNull();
+    expect(renderIntentLine(shot())).toBe('Intent: bring in for KO');
   });
 });

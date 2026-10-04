@@ -83,6 +83,10 @@
     "src/screens/battleView/useBaggerMoment.js": {},
     "src/screens/battleView/PaneOverflow.jsx": {},
     "src/screens/battleView/useIntradayView.js": {},
-    "src/screens/battleView/shadowCpuQuoteIntegrity.js": {}
+    "src/screens/battleView/shadowCpuQuoteIntegrity.js": {},
+    "src/screens/battleView/cockpitModel.js": {},
+    "src/screens/battleView/CockpitFeed.jsx": {},
+    "src/screens/battleView/CockpitSheet.jsx": {},
+    "src/screens/battleView/BoardCockpit.jsx": {}
   }
 }

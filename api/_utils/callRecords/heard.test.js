@@ -11,7 +11,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { makeCallsFirestore, stored, storedUnder, touches } from '../__fixtures__/callsFirestore.js';
-import { makeTickBattle, makeDeclarations, makeObservation, FROZEN_NOW } from '../__fixtures__/tickStampsHarness.js';
+import { makeTickBattle, makeDeclarations, makeObservation, FROZEN_NOW, HELD } from '../__fixtures__/tickStampsHarness.js';
 import { runHeardPhase, planHeard, heardThreadOf, legMatches, executorResultPresent, answerIsLate, selectedPickOf, directiveRecordOf } from './heard.js';
 import { runCallFlips, resetFlipIndexMemo } from './flip.js';
 import { publishDeclarations, runModelCallsPhase } from './publish.js';
@@ -271,7 +271,7 @@ describe('the events the Build 0 phase creates inside its transactions at resolv
   const committedBattle = (over = {}) => makeTickBattle({ cronState: { ...makeTickBattle().cronState, evalSeq: 1 }, directive: callSlot(), chatExchanges: [exchangeFor(callSlot())], ...over });
   const candidateOf = () => buildMintCandidate({
     battleId: BATTLE_ID, evalId: EVAL, evalSeq: 1, mintedAtMs: NOW + 20_000, raw: makeDeclarations(), universe: UNIVERSE,
-    observation: makeObservation(), promptBuiltAt: PROMPT_AT, tickId: `${BATTLE_ID}:1`, battle: committedBattle(),
+    observation: makeObservation(), promptBuiltAt: PROMPT_AT, tickId: `${BATTLE_ID}:1`, battle: committedBattle(), held: [...HELD], mintedMode: 'on',
   });
   const far = () => Date.now() + 5_000;
 
@@ -294,7 +294,7 @@ describe('the events the Build 0 phase creates inside its transactions at resolv
 
   it('a declarations-only check (watching, no call) publishes its record but DECLARES nothing: no declared event (review L2-6)', async () => {
     const db = makeCallsFirestore({ docs: { [`agentBattles/${BATTLE_ID}`]: committedBattle() } });
-    const candidate = buildMintCandidate({ battleId: BATTLE_ID, evalId: EVAL, evalSeq: 1, mintedAtMs: NOW + 20_000, raw: { calledShots: [], watching: ['AMD'], playerAsk: null, fork: null }, universe: UNIVERSE, observation: makeObservation(), promptBuiltAt: PROMPT_AT, tickId: null, battle: committedBattle() });
+    const candidate = buildMintCandidate({ battleId: BATTLE_ID, evalId: EVAL, evalSeq: 1, mintedAtMs: NOW + 20_000, raw: { calledShots: [], watching: ['AMD'], playerAsk: null, fork: null }, universe: UNIVERSE, observation: makeObservation(), promptBuiltAt: PROMPT_AT, tickId: null, battle: committedBattle(), held: [...HELD], mintedMode: 'on' });
     expect(candidate.calls).toEqual([]);
     await publishDeclarations({ db, battleId: BATTLE_ID, candidate, evalSeq: 1, txDeadlineMs: far(), rereadDeadlineMs: far() + 500, events: { enabled: true, nowMs: NOW + 20_000, promptBuiltAt: PROMPT_AT, promptDirectiveThreadId: THREAD, promptDirectiveText: 'x' } });
     expect(events(db)).toEqual({});

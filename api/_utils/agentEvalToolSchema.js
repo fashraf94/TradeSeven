@@ -369,7 +369,8 @@ const TRADE_DECISION_TOOL_WITH_DECLARATIONS = deepFreeze({
 // THE D ARM — the declarations-wording experiment's draft 'on' text (round 1
 // brief §2.2; docs/audits/20261001_DECLARATIONS_WORDING_ROUND2.md). Its five
 // description overrides live HERE now, verbatim, because the shipping text is D
-// with exactly two edits and the two must share one source; the experiment's
+// with three description edits (Build 1a's two, and Build 2a's 1A-C port — see
+// below) and they must share one source; the experiment's
 // scripts/declarationsWordingArms.mjs imports them, so `armTool('D')` still
 // serializes to the experiment's exact bytes — SHA-256
 // 2a90e67b34a8b1fa2f4d1ad38f3e978858e47b395dfb6762a3c554e2126a3ee3, 13,565 chars
@@ -410,38 +411,55 @@ export const ARM_D_OVERRIDES = Object.freeze({
 });
 
 /**
- * THE 1a TEXT = D with EXACTLY TWO EDITS (Build 1a spec §3; Astra B1R2-10 —
- * D teaches capabilities 1a defers). The block drops "Ask me first" (deferred
- * to 1b); `playerAsk` promises no answer (the research tile is read-only in
- * 1a). Every other description is D's, byte for byte. The 1a serialization is
- * pinned by hash in agentEvalToolSchema.build1a.test.js and the build report;
- * round 3 re-qualifies it against D's bars.
+ * THE 'on' TEXT = D with THREE DESCRIPTION EDITS.
+ *
+ * Build 1a (spec §3; Astra B1R2-10 — D teaches capabilities 1a defers) made
+ * two: the block drops "Ask me first" (deferred to 1b); `playerAsk` promises no
+ * answer (the research tile is read-only). Those two alone are the "1A" text
+ * round 3 replayed (SHA-256 81499cbc…, 13,595 chars) — frozen as its own arm
+ * in scripts/declarationsWordingArms.mjs so round 3 stays re-runnable.
+ *
+ * Cockpit Build 2a (spec docs/COCKPIT_BUILD2A_SPEC_V1_0.md S-8, founder ruling
+ * R2A-17) ports round 3's 1A-C — the exact diff in the Build 2 discovery
+ * (docs/audits/20261002_PHASE0_BUILD2_COCKPIT.md A9) — which corrects the two
+ * inaccuracies the Build 1a review found: the block's answer sentence now says
+ * an answer reaches the agent only when it CHANGES its default
+ * (TEXT_1A_SENTENCE), and the fork's `said` is now the text the player reads
+ * (TEXT_1A_FORK_SAID; the shadow tool keeps the shared stored-only text). The
+ * serialization is SHA-256 7388755a…, 13,623 chars — pinned in
+ * agentEvalToolSchema.build1a.test.js. Every other description is D's, byte
+ * for byte. Model-visible: fenced-class coordinated review.
  */
 export const D_SENTENCE_REPLACED =
   'The player may answer Go, Hold off, or Ask me first; an answer reaches you as a directive at a later check.';
 export const TEXT_1A_SENTENCE =
-  'The player may answer Go or Hold off; an answer reaches you as a directive at a later check.';
+  'The player may answer Go or Hold off; an answer that changes your default reaches you as a directive at a later check.';
 export const TEXT_1A_DECLARATIONS =
   'Optional. The conditional calls you are holding right now. The player sees each one as a tile in their cockpit and can ' +
   'answer it. Fill anticipationCandidates first, exactly as you would if this field did not exist; this block never replaces ' +
   'or reduces it. Declare whenever you hold a concrete if-then view on a held name or a bench candidate: a price level that ' +
   'would make you act, or make you hold. Most checks where a position is under pressure or a candidate is close to your entry ' +
   'qualify. Leave it null only when you have no conditional view. At most 6 called shots. Every call is graded against real ' +
-  'prices. The player may answer Go or Hold off; an answer reaches you as a directive at a later check. ' +
+  'prices. The player may answer Go or Hold off; an answer that changes your default reaches you as a directive at a later check. ' +
   'Nothing in this block executes a trade by itself, and it does not change this check\'s decision.';
 export const TEXT_1A_PLAYER_ASK =
   'Optional. A research question you want the player\'s view on, with 2 to 4 possible answers. Stored and shown to the ' +
   'player; no answer is expected in this version.';
 
-/** The 1a overrides: D's, with the two edits. */
-export const TEXT_1A_OVERRIDES = Object.freeze({ ...ARM_D_OVERRIDES, declarations: TEXT_1A_DECLARATIONS, playerAsk: TEXT_1A_PLAYER_ASK });
+export const TEXT_1A_FORK_SAID =
+  'One sentence the player reads with this choice. State only the slot, the options and why each fits; add no conditions.';
+
+/** The 'on' overrides: D's, with the three edits (block, playerAsk, the fork's `said`). */
+export const TEXT_1A_OVERRIDES = Object.freeze({ ...ARM_D_OVERRIDES, declarations: TEXT_1A_DECLARATIONS, playerAsk: TEXT_1A_PLAYER_ASK, forkSaid: TEXT_1A_FORK_SAID });
 
 /**
- * The shadow tool with five description overrides applied — structure, fields,
- * enums, `required` and key order untouched (the experiment's own method).
- * Returns an UNFROZEN deep clone; callers freeze what they keep.
+ * The shadow tool with five description overrides applied — six when
+ * `forkSaid` is given (the 'on' text since the 1A-C port; D carries none) —
+ * structure, fields, enums, `required` and key order untouched (the
+ * experiment's own method). Returns an UNFROZEN deep clone; callers freeze
+ * what they keep.
  */
-function withDescriptionOverrides(base, { declarations, horizonPhrase, said, fork, playerAsk }) {
+function withDescriptionOverrides(base, { declarations, horizonPhrase, said, fork, playerAsk, forkSaid }) {
   const tool = structuredClone(base);
   const decl = tool.input_schema.properties.declarations;
   const shot = decl.properties.calledShots.items.properties;
@@ -450,10 +468,11 @@ function withDescriptionOverrides(base, { declarations, horizonPhrase, said, for
   shot.said.description = said;
   decl.properties.fork.description = fork;
   decl.properties.playerAsk.description = playerAsk;
+  if (forkSaid !== undefined) decl.properties.fork.properties.said.description = forkSaid;
   return tool;
 }
 
-/** THE 'on' TOOL — the 1a text, built once, deep-frozen, sharing no object with the shadow or off tool. */
+/** THE 'on' TOOL — the 'on' text (1A-C since Build 2a), built once, deep-frozen, sharing no object with the shadow or off tool. */
 const TRADE_DECISION_TOOL_1A = deepFreeze(withDescriptionOverrides(TRADE_DECISION_TOOL_WITH_DECLARATIONS, TEXT_1A_OVERRIDES));
 
 /** D's exact experimental tool (a fresh clone each call) — the replay comparator, never what the cron sends. */
@@ -468,7 +487,7 @@ export const DECLARATIONS_MODES = Object.freeze(['off', 'shadow', 'on']);
  * The evaluation tool for one check, by the check's RESOLVED mode (Build 1a
  * spec §3): 'off' → the base literal itself (identity, not a copy); 'shadow'
  * → the base plus the declarations property with the BR-3/C2 (stored-only)
- * text; 'on' → the same structure with the 1a text. Anything else → 'off'.
+ * text; 'on' → the same structure with the 'on' text (1A-C). Anything else → 'off'.
  * Build 0 boolean compatibility, explicit: `true` meant the shadow tool and
  * still does; `false` is 'off'.
  *

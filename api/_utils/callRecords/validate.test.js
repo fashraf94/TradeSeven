@@ -29,18 +29,18 @@ const run = (block, ctx = {}) => validateDeclarations(block, { universe: UNIVERS
 describe('absent, null and non-object blocks', () => {
   it('absent or null → phase none, nothing born, nothing removed', () => {
     for (const block of [undefined, null]) {
-      expect(run(block)).toEqual({ validated: null, removed: [], calls: [], phase: 'none' });
+      expect(run(block)).toEqual({ validated: null, removed: [], calls: [], phase: 'none', watchingSource: null });
     }
   });
 
   it('a non-object block → malformed_block: nothing born, no record', () => {
     for (const block of ['declarations', 42, true, [], [shot()]]) {
-      expect(run(block)).toEqual({ validated: null, removed: [{ source: 'block', index: null, reason: 'malformed_block' }], calls: [], phase: 'none' });
+      expect(run(block)).toEqual({ validated: null, removed: [{ source: 'block', index: null, reason: 'malformed_block' }], calls: [], phase: 'none', watchingSource: null });
     }
   });
 
   it('an object with nothing in it → none (no typed content survives)', () => {
-    expect(run({})).toEqual({ validated: null, removed: [], calls: [], phase: 'none' });
+    expect(run({})).toEqual({ validated: null, removed: [], calls: [], phase: 'none', watchingSource: null });
     expect(run({ calledShots: [], watching: [], playerAsk: null, fork: null }).phase).toBe('none');
   });
 });

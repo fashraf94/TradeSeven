@@ -148,6 +148,22 @@
     "src/screens/battleView/shadowCpuQuoteIntegrity.js": {
       "count": 0,
       "authority": "Shadow vs CPU quote integrity, dark build (contract v1.6 file 12) \u2014 the gated screen's pure helper: quote interpretation, eligibility, lineage and the one selected comparison. Pure functions: no element, no colour, no motion. Zero raw transition literals; registered in the commit that introduces it (hazard 34)."
+    },
+    "src/screens/battleView/cockpitModel.js": {
+      "count": 0,
+      "authority": "Cockpit Build 2a (spec \u00a77) \u2014 the cockpit's PURE view model: records in, tiles out. No element, no colour, no motion; zero raw transition literals, and none is reachable here. Registered in the commit that introduces it (hazard 34)."
+    },
+    "src/screens/battleView/CockpitFeed.jsx": {
+      "count": 0,
+      "authority": "Cockpit Build 2a (spec \u00a77, \u00a79) \u2014 the cockpit feed: group headers, tiles, Monitoring, Earlier. It animates nothing of its own; zero raw transition literals from birth. Registered in the commit that introduces it (hazard 34)."
+    },
+    "src/screens/battleView/CockpitSheet.jsx": {
+      "count": 0,
+      "authority": "Cockpit Build 2a (spec \u00a77.5, ruling R2A-4) \u2014 the cockpit sheet: its one entrance consumes the vocabulary, transition={motionToken('smooth', { reducedMotion })} (instant under reduced motion); zero raw transition literals from birth. Registered in the commit that introduces it (hazard 34)."
+    },
+    "src/screens/battleView/BoardCockpit.jsx": {
+      "count": 0,
+      "authority": "Cockpit Build 2a (spec \u00a76, ruling R2A-4) \u2014 the phone's Board \u00b7 Cockpit switch and track: the sliding thumb is a Framer layoutId on transition={motionToken('smooth', { reducedMotion })} (instant under reduced motion), and the track scrolls natively (scroll-snap, never a CSS transition); zero raw transition literals from birth. Registered in the commit that introduces it (hazard 34)."
     }
   }
 }
