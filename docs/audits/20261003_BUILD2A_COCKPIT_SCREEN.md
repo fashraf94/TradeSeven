@@ -83,7 +83,7 @@ Branch diff vs `4dfc48d9` (code head): 77 files, +8,951 / −324.
 - **The rollback check:** `scripts/shadow-read-call-records.mjs --rollback-check --since=<ISO instant>`.
   - **Window:** the calendar's last five trading sessions, with a floor at `2026-10-02` (the end of the shadow era), so shadow-era calls never pool with 'on' calls (L1-1).
   - **`--since` is required.** The check fails closed without it.
-  - **Trip rule:** trips only at ≥ 150 calls, a rate above 3 %, and a one-sided Fisher p < 0.05 against 3/386.
+  - **Trip rule** (as the founder's Oct 4 ruling set it, this report's §13; the build shipped 150 and 3/386): trips only at ≥ 60 calls, a rate above 3 %, and a one-sided Fisher p < 0.05 against 7/386, round 3's qualified 1A-C rate.
   - **Verdicts:** `NO ALLOWLIST` is its own verdict, with exit code 2 (L1-6).
 
 ### 2.2 The model-visible text (S-8)
@@ -387,13 +387,15 @@ It was first built on `b6e120b7` (`d58fb39e`) and rebased onto `cca32e6d` after 
 5. **The rollback check after the flip:**
    - Have `COCKPIT_ALLOWLIST_UIDS` locally in `.env.local`; `vercel env pull` defaults to development, and an empty allowlist now answers `NO ALLOWLIST` with exit code 2.
    - Run `node scripts/shadow-read-call-records.mjs --rollback-check --since=<ISO instant of the flip PR's production deploy>`. Without `--since` it refuses to run.
-   - **When it trips** (founder ruling Oct 4, §13): only when all three bars hold — at least **60** calls-enabled model calls, a rate **above 3 %**, and a one-sided Fisher **p < 0.05** against round 3's qualified 1A-C rate, **7 of 386** (the live 'on' text's own). 4 of 60, 5 of 75 and 6 of 100 trip; 3 of 60, 4 of 75 and 5 of 100 do not (`rollbackRecipe.test.js` pins all six).
+   - **When it trips** (founder ruling Oct 4, this report's §13): only when all three bars hold — at least **60** calls-enabled model calls, a rate **above 3 %**, and a one-sided Fisher **p < 0.05** against round 3's qualified 1A-C rate, **7 of 386** (the live 'on' text's own). 4 of 60, 5 of 75 and 6 of 100 trip; 3 of 60, 4 of 75 and 5 of 100 do not (`rollbackRecipe.test.js` pins all six).
    - On `TRIP`: remove the uid from `COCKPIT_ALLOWLIST_UIDS`, redeploy production, and report (spec §10.4).
    - A rollback that only flips the UI flag is not the prescribed path (L3-9).
 
 ---
 
 ## 11. For the founder and the framework chat
+
+*Oct 4: the founder ruled on every item below, and Amendment C revision 2 answers items 15–18. See this report's §13.*
 
 **Founder rulings (the spec's text is binding; the build deviates or the text needs a fix):**
 1. **§7.4 "Dropped · price line out of range" → bare "Dropped" (L6-4).** The call record carries no reason. `validate.js` can drop for `no_observation`, which the old tag would misstate, and the reason lives only in the declarations record's `minted[]`.
@@ -411,7 +413,7 @@ It was first built on `b6e120b7` (`d58fb39e`) and rebased onto `cca32e6d` after 
 11. **L3-5:** "Battle ended" (§7.4) cannot show. The cockpit needs an active battle, and `ended_with_battle` is written only once the battle is not active (§4 vs §7.4).
 12. **L3-6:** after a rollback, an open tab stays cockpit-on until a reload, a status change or a 404.
 13. **N2:** the status endpoint's 404 for a missing battle vs 403 for another owner's reveals whether a battle exists. This matches `call-response.js`; no change.
-14. **N1:** one battle cannot reach the 150-call sample bar in a five-session window, so the rollback check's power comes from pooling allowlisted battles.
+14. **N1:** one battle cannot reach the 150-call sample bar in a five-session window, so the rollback check's power comes from pooling allowlisted battles. *Still true at the Oct 4 ruling's 60-call minimum (this report's §13): an agent battle lasts one trading day (`api/_utils/agentBattleService.js`, `fullday`) and the evaluate cron runs at most 36 times a weekday (`vercel.json`), so one battle gives at most 36 calls.*
 
 **At the amendment's blessing:**
 
@@ -436,3 +438,179 @@ It was first built on `b6e120b7` (`d58fb39e`) and rebased onto `cca32e6d` after 
 - **Review repros:** the reviewers' scratch files under the session scratchpad (`review/V1…V5`).
 - **The battery:** `mutation/battery.mjs`, `mutations.json`, `out/results.json`; the follow-up runs are in `kill/`.
 - **The PR:** opened from `claude/cockpit-build2a-screen` to `main`. No merge, no flip, no CI watching.
+
+---
+
+## 13. Founder rulings (Oct 4)
+
+**PR #928 merged before this polish.** It merged at `74e00a86` (merge commit `23842a83`, Oct 4, 16:05 CDT). The polish commits sit on `claude/cockpit-build2a-screen` above that head, `321e1ab2` to this section's commit.
+
+### 13.1 In one table
+
+| What | Result |
+|---|---|
+| Rulings recorded as approved | §11 items 1–5, 7, 8, 10–13 and 19 (§13.2); items 6 and 9 through changes 1, 2 and 4; changes 1–5 (§13.3) |
+| Amendment C revision 2 | Committed byte for byte. The new pin is `4329b8f3…` (§13.4) |
+| Changes 1–5 | Built, each with tests (§13.3) |
+| BUILD_RULES §2 review | Required: the polish reached 10 files at `bd5f8e0c`, and 13 with the fixes. 4 lenses and 3 refuting verifiers. 15 findings: 10 CONFIRMED, 4 PARTIAL, 1 REFUTED; none MAJOR. 7 fixed, 1 settled by keeping the ruling's literal rule, 6 recorded for the founder and the amendment's blessing, and the refuted one needs nothing (§13.5) |
+| Mutation battery | 27 of 27 at `bd5f8e0c`, then 32 of 32 after the fixes. Each mutation was killed by the rows written for it (§13.6) |
+| Full suite and build | At the code head `57482715`: the failure set equals the base's, 16 files / 32 tests; `vite build` exit 0 (§13.7) |
+| The flip | Prepared as a draft PR, one commit (§13.8) |
+
+### 13.2 Approved as built (§11's items, now rulings)
+
+| Ruling | What stands | §11 |
+|---|---|---|
+| Bare "Dropped" | The call record carries no reason, so the tag says only the fact | 1 (L6-4) |
+| One override at a time follows the endpoint | A heard call directive keeps blocking until its deadline; the line says "stays active until {t}" | 2 |
+| "You agreed · {t}, on the {t} wording" | An agreement given on an earlier wording is an answer line, never the newer wording's tag | 3 (L6-2) |
+| Acted on any thread member | `outcome.actedEvalId` on any call of a thread is the thread's tag, "Acted at the {t} check" | 4 (L6-1) |
+| Allowlist removal needs a production redeploy | The spec §10.4 erratum: an environment change reaches new deployments only | 5 |
+| `text-secondary` for small muted text | The `--ft-call-muted` alias stays as specified | 8 (L5-9) |
+| The check link lands on the trade card on a swap check | D-89's intended redirect | 7 (L4-10) |
+| The +12 kB eager bundle | The cockpit copy and `BoardCockpit` load for every user | 10 (L3-8) |
+| L3-5, L3-6 and N2 as they are | "Battle ended" cannot show; an open tab stays cockpit-on until a reload, a status change or a 404; the status endpoint's 404 vs 403 matches `call-response.js` | 11, 12, 13 |
+| L2-1 deferred | The live 'on' text's description of features 2a hides is fixed in Build 2b's text revision, with a replay | 19 |
+
+### 13.3 Changes 1–5
+
+| # | Change | Commits | Tests |
+|---|---|---|---|
+| 1 | "Replaced by a later answer" becomes "Replaced by a later instruction", on the tag and on its receipt. Any later filing (chat, chip or cockpit) writes the `superseded` event, and the event does not say which (L6-11 a) | `426f9770` | The tag and receipt pins move; a new row files the replacement from chat and pins both lines |
+| 2 | A filed directive no check has heard reads "Filed · not yet heard" only while it is still the battle's current one: the slot holds its thread, live, by the answer endpoint's own pending predicate (now one function, `liveCallSlotOf`). Killed, expired, suppressed or gone from the slot, it reads "Filed · not heard" (L6-11 c). A replacement whose event has loaded still reads "Replaced by a later instruction". Teal, like every state of the player's answer (ruling R2A-5). THIS TURN shows a call slot only while the same predicate holds it live (§13.5, P1-4) | `4a468f1d`, `57482715` | Model rows for every way out of the slot; four mounted rows in which the tile, THIS TURN and the one-call-at-a-time block read one predicate |
+| 3 | Amendment C-6 rev 2: the thread key adds `defaultAction`, and a call without one never folds | `ca573ac4` | The key row; the reversed-default row, now two tiles; the missing-part row |
+| 4 | `copy.js renderIntentLine` retired. Its only importer at HEAD was its own test file, and its wording dropped the call's own symbol (L6-10). The Build 1a spec's line carries a supersession note | `d6dc308e` | Its tests removed; one row pins that the module exports no intent renderer |
+| 5 | `--rollback-check`: the minimum sample moves from 150 to 60 calls, and the baseline from 3/386 to 7/386, round 3's qualified 1A-C rate (the live 'on' text's own). The rate bar (> 3 %) and the one-sided Fisher p < 0.05 stay | `bd5f8e0c` | The six trip points: 3/60 no trip (p 0.139), 4/60 trip (0.047); 4/75 no (0.086), 5/75 trip (0.031); 5/100 no (0.078), 6/100 trip (0.032). The sample, rate and significance bars each on their own. The shadow-era repro, re-cut |
+
+**Which bar bites under change 5 (pinned):**
+- Against 7 of 386 the significance bar decides at every sample size from the minimum: the smallest count over 3 % is never significant from 60 to 1,000 calls.
+- No count at or under 3 % is ever significant from 60 to 5,000 calls, so the rate bar stands behind the significance bar. Its own enforcement is shown on a quieter, synthetic baseline.
+- The shadow-era repro (L1-1) moves from 11 to 12 invalid of 260, because 11/260 no longer trips (p 0.058). It now shows the floor's point directly: without the `2026-10-02` floor, one shadow session dilutes the trip away (13 of 390, p 0.13).
+
+### 13.4 Amendment C revision 2
+
+- Committed byte for byte at `321e1ab2`: SHA-256 `4329b8f3bf69575ea0562be08aaafb49cf697045b934769b882b39e3368d1e21`, 10,702 bytes, matching on the attachment and on the committed blob. This replaces §1's revision-1 pin (`7f56e4af…`).
+- The review checked every sentence of revision 2 against the code. C-1 to C-5 are accurate. What the blessing should weigh is in §13.9.
+
+### 13.5 The review (BUILD_RULES §2)
+
+**Trigger:** 10 files on `74e00a86..bd5f8e0c`. The fixes took it to 13.
+
+**Isolation:** each reviewer and verifier worked on its own `git archive` snapshot of `bd5f8e0c` (LF), with node_modules as a junction, read-only on git and on the working tree. Product files touched for a repro were restored byte-exact (SHA-256 checked).
+
+**Ids:** this review's ids are P1-n to P4-n. The L1-n to L6-n ids elsewhere in this report belong to Build 2a's own review.
+
+**Lenses (4):**
+- **P1:** change 2's slot logic.
+- **P2:** Amendment C revision 2 and change 3.
+- **P3:** change 5's math.
+- **P4:** copy and honesty, the retirement, test integrity, flag-off.
+
+**Refuting verifiers (3).** Each was told to refute with an executed repro:
+- **PV1:** P1-1, P1-3, P1-4, P1-5.
+- **PV2:** P1-2, P1-6, P1-7, P4-4.
+- **PV3:** P2-2 to P2-5, P3-1, P3-2, P4-5.
+
+| Id | Sev. | Finding | Verdict | Disposition |
+|---|---|---|---|---|
+| P1-4 = P4-2 | MINOR | While cockpit-on, THIS TURN took the raw call slot, so an expired-but-unretired or killed directive showed as queued above a tile reading "Filed · not heard" (§9) | CONFIRMED (PV1, mounted) | **Fixed** (`57482715`): a call slot reaches the strip only while `liveCallSlotOf` holds it live. Flag-off is unchanged |
+| P1-5 | NOTE | Nothing guarded the screen's slot wiring: `directive: null` passed every screen test | CONFIRMED (PV1: 635 tests pass under the mutation) | **Fixed:** four mounted rows |
+| P1-6 = P4-6 | NOTE | The new row was muted (#6e7681 at 9.5 px, about 4.2:1). R2A-5 says teal for "filed", and spec §7.4 maps "directive filed, not heard" to teal | CONFIRMED (PV2) | **Fixed:** teal |
+| P4-4 | NOTE | Two comments and one test title said a replaced directive reads "Filed · not heard". At 'on' every replacement writes its event in the same commit, so it reads "Replaced…" | CONFIRMED (PV2) | **Fixed** |
+| P3-1 | MINOR | §2.1's trip rule and §11's N1 still stated 150 and 3/386; §10 cited a §13 that did not yet exist | PARTIAL (PV3): the stale lines are confirmed. "N1 is false at 60" is refuted: a battle lasts one trading day and the evaluate cron runs at most 36 times a weekday | **Fixed** in this section's commit |
+| P3-2 | NOTE | "Floor" named both the session floor and the minimum sample | CONFIRMED (PV3) | **Fixed** |
+| P4-5 | NOTE | The docs still carried the old copy, `renderIntentLine` and the open items | PARTIAL (PV3): the specs are byte-pinned and deviations go in this report (precedent); §9's table is accurate for the smoke build it names. The Build 1a spec's line and §11's open items are confirmed | **Fixed:** §11's opening note, this section, the Build 1a spec's supersession note |
+| P1-3 | MINOR | "An empty slot means the directive left" is wrong while the battle and its calls arrive through separate listeners | PARTIAL (PV1): only retirement empties a call slot, confirmed. The mixed state rendering is refuted: one remote event, one React commit, 20 of 20 in headless Chromium. WebKit and Firefox untested | **Literal rule kept.** A deadline-gated "empty means current" variant was tried and withdrawn: under clock skew it says "not yet heard" for a slot the sweep already retired. The row is retitled and pins the retirement state |
+| P1-1 = P2-1 = P4-3 | MINOR | C-6's "live directive answer" means a filed directive on an open call, not the slot's. A thread whose directive left the slot still offers no answer on its restated call, though the endpoint would accept both. Revision 2 dropped revision 1's definition without listing it | CONFIRMED (PV1: endpoint 200 on both) | **Recorded** (§13.9, 1) |
+| P1-2 = P4-1 | MINOR | The tile reads the call's `heardEvalId`, which can lag the battle's evaluation stamp that the chat card reads. In the lag the tile says "Filed · not heard" while the chat says "Heard at …" | CONFIRMED (PV2). The lag predates the polish (before it, the tile said "not yet heard"); the polish changes the words for the left-slot part | **Recorded** (§13.9, 2) |
+| P1-7 | NOTE | The `directive_pending` refusal line outlives the slot; the 60 s clock delays the flip | CONFIRMED (PV2). The refusal half is wider than claimed (up to about 90 s) and is new with the tag; the clock half predates the polish | **Recorded** (§13.9, 3) |
+| P2-3 | NOTE | C-3's knock-on bullets misdescribe two mechanisms | CONFIRMED (PV3) | **Recorded** (§13.9, 5) |
+| P2-4 | NOTE | "A heard call directive keeps the slot until its deadline" is too strong | PARTIAL (PV3): the chat and chip half is out of the bullet's scope (Amendment B.3); "until its deadline" stands corrected | **Recorded** (§13.9, 6) |
+| P2-5 | NOTE | C-2 says "400 `illegal_answer` for every answer", but ask and keep answer 400 `deferred` | CONFIRMED (PV3; N5) | **Recorded** (§13.9, 7) |
+| P2-2 | NOTE | C-6 defines threads by pairs, but the code folds the connected set | REFUTED (PV3): "belong … when" is a sufficient condition. With one tile per thread, the connected set is the finest partition C-6 allows (1,500 random sets) | No change |
+
+**Checked and clean:**
+- The `overrideBlockOf` refactor is behaviour-identical (the 512-row parity table).
+- Thread ids are minted fresh for every filing, so a directive that left the slot can never re-match it.
+- The client's live predicate matches what the cron hears.
+- Change 1 is true for every writer.
+- Change 4 has zero references left anywhere.
+- With the flag off, every changed export is unreachable and THIS TURN's value is unchanged.
+- Change 5's math was re-derived three independent ways (exact BigInt, scipy, `Fraction`), agreeing within 4.4e-14.
+- Change 3 reads revision 2 correctly, and its rows kill every mutation tried.
+
+### 13.6 Mutation battery
+
+**Harness:** `battery2.mjs`. CONTROL runs first. Each mutation runs alone on a snapshot. A mutation counts as killed only when the rows written for it are among the tests that fail, read from the JSON reporter by full name.
+
+**Runs:**
+- **At `bd5f8e0c`:** 27 mutations over changes 1–5; all 27 killed by their own rows.
+- **At `57482715`:** 32 mutations: the 27, re-aimed, plus P1-3's and the screen's THIS TURN and slot wiring. All 32 killed by their own rows; CONTROL was 210 tests green.
+
+### 13.7 Tests and builds
+
+On this Windows machine the suite runs on `git -c core.autocrlf=false archive` snapshots, as in §6.1.
+
+| Tree | Exit | Test Files | Tests |
+|---|---|---|---|
+| base `4dfc48d9` (§6.1) | 1 | 16 failed · 829 passed · 6 skipped (851) | 32 failed · 17,320 passed · 87 skipped (17,439) |
+| **code head `57482715`** | **1** | **16 failed · 847 passed · 6 skipped (869)** | **32 failed · 17,854 passed · 87 skipped (17,973)** |
+
+- **The failure sets are identical**, file for file and test for test. The polish adds 18 tests (Build 2a's head had 17,955).
+- **Ten workers** (`--maxWorkers=10`, on a tree read once beforehand). At the default parallelism the slowest film-tape files and one screen suite timed out (7 tests, every one "Test timed out in 5000ms"). Those four files pass alone, 153 of 153.
+- **`vite build`** (the same snapshot): exit 0, with the same four pre-existing CSS warnings. The main chunk is 4,630,398 B (Build 2a's head: 4,630,984 B).
+- **This section's commit is docs only.** The build and the suite on the exact pushed heads are reported with the PRs.
+
+### 13.8 The flip, prepared as a draft
+
+**Where:** branch `claude/cockpit-build2a-flip`, one commit on this polish's head, opened as a **draft** PR to `main`: "flip: cockpit on (allowlisted owners only)". Merge it only after this polish is on `main`, and only after `COCKPIT_ALLOWLIST_UIDS` is set in Vercel production.
+
+**What the one commit changes:**
+- `CALL_RECORDS_MODE = 'on'` and `COCKPIT_UI_ENABLED = true`.
+- Both pins (`callRecordsFlags.test.js`, `cockpitUiFlags.test.js`). The UI flag's accessor row and registration row are turned around.
+- The `DARK_BY_DESIGN` entry is dropped (`flagPinGuard.test.js`).
+- The docstrings' "shipped" marker moves.
+- The tests that pinned the pre-flip state. A dry run of the flip on this head found 23 tests in 6 files:
+  - the two flag rows;
+  - the reflections cron suite's "'off' (the live default)" row, now hermetic: the suite pins `CALL_RECORDS_MODE: 'off'` in its own flag mock, as the other cron suites do;
+  - the cockpit screen suite's 7 off-path rows, which read the shipped accessor and now force it off;
+  - 13 rows in the pane, layout and quote-availability suites (the unread marker, the character's bubble, the chat sheet, the faces' inputs), written against the cockpit-off screen. They now pin the accessor off. The lit-flag, server-says-off path stays covered by the cockpit suite.
+
+**With the variable empty, every battle resolves 'off'** (`api/_utils/callRecords/mode.js`): no tool-schema change, no call records, no cockpit. Two things still change for everyone:
+- **Every Battle View asks `GET /api/agent/cockpit-status` once**, and the server answers off. The chat's seen-marker waits for that answer, up to the 8 s timeout (L4-2).
+- **The 15-minute call sweep opens its global gate.** It reads its cursor and pages its queue and the last seven days of battles. It skips every battle that resolves off, and it settles away queue rows whose battle no longer exists.
+
+### 13.9 Open for the founder and the framework chat
+
+1. **(P1-1) C-6's "live directive answer".**
+   - Revision 2 dropped revision 1's definition, "(a filed directive whose call is still open)". The code still uses it.
+   - So a thread whose directive left the slot offers no answer on its restated call, though the endpoint would accept both answers.
+   - Choose: restore the definition (the code already conforms), or define "live" by the slot (a code change).
+2. **(P1-2) One source for "heard".**
+   - The tile reads the call's `heardEvalId`; the chat card reads the battle's evaluation stamps.
+   - The call's stamp can lag until the next 15-minute sweep: the heard phase ends unconfirmed, a transport failure follows the prompt, or the phase is skipped on budget.
+   - In that window the tile says "Filed · not heard" (before the polish, "not yet heard") while the chat says "Heard at …".
+   - Choose: read one source, or use the server's own words, "not confirmed heard".
+3. **(P1-7) The refusal line and the coarse clock.**
+   - The `directive_pending` line ("…hasn't been heard yet. One call at a time.") can stand for up to about 90 s after the pending directive leaves the slot: the 30 s grace runs on the 60 s clock. The tile beside it then reads "Filed · not heard".
+   - The 60 s clock can also keep "not yet heard", and the override block, up to 60 s past expiry.
+4. **(P1-2 residual) "Not yet heard" after the last check.** It still shows for a current directive that no check can hear before its lifetime ends, for example one filed after the session's last check.
+5. **(P2-3) C-3's knock-on bullets.**
+   - `call_hold`'s text never names a counterpart; only `call_go`'s text changes.
+   - Legality has no counterpart dimension. What changes is the eligibility guard `counterpart_not_held`, for both `call_go` and `call_hold` on an entry.
+   - The `amendmentC.test.js` pin covers `call_go` only.
+6. **(P2-4) "A heard call directive keeps the slot until its deadline."** A kill or an acted retirement ends it sooner. For a next_check call, the predicate runs 15 minutes past the deadline.
+7. **(P2-5) C-2's "400 `illegal_answer` for every answer".** Ask and keep answer 400 `deferred` before the call is read (N5).
+8. **`copy.js renderSaidLine`.** It has no consumer and lacks the upside exclusion: the same retire-or-fix choice as `renderIntentLine`.
+9. **The event reader's window.** It keeps 150 events. A long-lived open call whose `superseded` event falls outside it reads "Filed · not heard" rather than "Replaced…".
+10. **Line cites.** Revision 2's C-1 line cites have drifted: `agent-evaluate.js:2862` is now `:2866-2870`.
+
+### 13.10 What else changed in this report
+
+- §2.1's trip-rule line, §10 item 5 (when it trips), §11's opening note, and §11 item 14 (N1 is still true at 60).
+- §9's smoke coverage table is accurate for the smoke build it names, `2f2accb2`. The rebased smoke shows the new copy:
+  - "Replaced by a later instruction".
+  - `?cockpitFixtures=1`: the unheard QCOM answer reads "Filed · not heard", because no slot holds it.
+  - `=pending`: the same answer reads "Filed · not yet heard".
+- **Out-of-repo copy** (BUILD_RULES §3): `…/scratchpad/20261003_BUILD2A_COCKPIT_SCREEN.md`, in this session's scratchpad.
+- **The review's scratch files:** `…/scratchpad/review/` (`L1`–`L4` for the lenses, `V1`–`V3` for the verifiers, each with its `review-scratch/`), and `battery2.mjs` with `mutations.json` and `mutations3.json` beside it.
