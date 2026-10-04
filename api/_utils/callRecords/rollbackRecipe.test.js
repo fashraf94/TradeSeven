@@ -124,7 +124,8 @@ describe('Build 2a — computeRollbackCheck (spec S-9)', () => {
   });
 
   // THE TRIP POINTS (founder ruling Oct 4), through the check itself: every one
-  // is over 60 calls and over 3 %, so the significance bar decides each pair.
+  // is at or over the 60-call minimum sample and over 3 %, so the significance
+  // bar decides each pair.
   it.each([
     [3, 60, false], [4, 60, true],
     [4, 75, false], [5, 75, true],
@@ -145,7 +146,7 @@ describe('Build 2a — computeRollbackCheck (spec S-9)', () => {
     expect(check(61, 4)).toMatchObject({ total: 61, tripped: true, verdict: 'TRIP' });
   });
 
-  it('THE SIGNIFICANCE BAR decides on its own against the real baseline: from the floor to 1,000 calls, the smallest count over 3 % is never significant — pinned, so a reader knows which bar bites', () => {
+  it('THE SIGNIFICANCE BAR decides on its own against the real baseline: from the 60-call minimum sample to 1,000 calls, the smallest count over 3 % is never significant — pinned, so a reader knows which bar bites', () => {
     const { invalid: refBad, total: refN } = ROLLBACK_CHECK.baseline;
     for (let n = ROLLBACK_CHECK.minTotal; n <= 1000; n += 1) {
       const k = Math.floor(0.03 * n) + 1; // the smallest count over 3 %

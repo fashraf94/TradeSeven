@@ -34,7 +34,7 @@
 //              --since, no entry before that instant (the flip's deploy).
 //   Membership the recipe's (`declarationsPhase` present, a finite `callMs`).
 // It TRIPS only when all three hold (founder ruling Oct 4, which moved S-9's
-// floor from 150 and its baseline from arm A's 3 of 386):
+// minimum sample from 150 calls and its baseline from arm A's 3 of 386):
 //   1. total ≥ 60 calls-enabled model calls (a minimum sample);
 //   2. rate > 3 %;
 //   3. one-sided Fisher exact p < 0.05 against the live 'on' text's own

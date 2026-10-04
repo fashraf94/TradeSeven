@@ -85,7 +85,7 @@ describe('renderCallLine — stored paths only (spec §4; Astra B1R-13, B1R2-11)
     expect(renderCallLine({ ...pick(), options: [] }, { nowMs: NOW })).toBeNull();
   });
 
-  it('renderIntentLine is RETIRED (founder ruling Oct 4; review L6-10): no consumer ever read it, and its exit wording dropped the symbol — the one intent line is the cockpit sheet\'s', () => {
+  it('renderIntentLine is RETIRED (founder ruling Oct 4; review L6-10): no consumer ever read it, and its wording dropped the call\'s own symbol ("Intent: bring in for KO", "Intent: exit for AMD") — the one intent line is the cockpit sheet\'s', () => {
     expect(copyModule).not.toHaveProperty('renderIntentLine');
     expect(Object.keys(copyModule).filter((k) => /intent/i.test(k))).toEqual([]);
   });

@@ -182,9 +182,16 @@ export function factTag(fact, params = {}) {
  *   that order; then the answer itself (filed · agreed); else Live.
  * A filed directive reads "not yet heard" ONLY while it is still the battle's
  * current one — `slotThreadId`, the slot's live thread (liveCallSlotOf), is
- * its own (founder ruling Oct 4). Replaced, cleared or expired before any
- * check heard it, it reads "not heard": no hearing is promised that cannot
- * come (review L6-11 c). Without the slot's thread nothing is promised either.
+ * its own (founder ruling Oct 4). Killed, expired or suppressed in the slot,
+ * gone from it, or the slot taken by a later filing whose `superseded` event
+ * has not loaded, it reads "not heard": no hearing is promised that cannot
+ * come (review L6-11 c). A replacement whose event HAS loaded reads "Replaced
+ * by a later instruction" — the event comes first. An EMPTY slot is safe to
+ * read this way: only the sweep empties a slot no check heard, past its
+ * lifetime, and the heard pass's retirement reaches the client in the same
+ * remote event as its own hearing, which Chromium commits as one render
+ * (measured; WebKit and Firefox untested — polish review P1-3). Without the
+ * slot's thread nothing is promised.
  * An unknown state → no tag.
  */
 export function callTag(call, { events = [], evaluations = [], nowMs, slotThreadId = null } = {}) {
@@ -292,7 +299,7 @@ export function liveCallSlotOf({ directive, nowMs, controlEpochLog = null, suppr
  * the endpoint keeps refusing — until it expires, and an expired one blocks
  * nothing even if it was never heard. So the buttons follow the endpoint, and
  * the line says which case it is: the call is loaded and unheard → the
- * spec's line; heard, or its call not loaded → "in force until {t}" (never a
+ * spec's line; heard, or its call not loaded → "stays active until {t}" (never a
  * claim about hearing the client cannot see).
  *
  * @returns {{ callId: string|null, line: string } | null}  null = nothing blocked

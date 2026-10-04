@@ -1055,8 +1055,7 @@ export const BATTLE_VIEW_COPY = Object.freeze({
  *
  * Tones (§9, ruling R2A-5): `yours` / `yoursOutline` — the player's answer
  * (teal; an agreement outlined) · `acted` (emerald) · `dropped` (amber) ·
- * `muted` (expired / ended / no matching trade / replaced / filed, not heard)
- * · `neutral` (live).
+ * `muted` (expired / ended / no matching trade / replaced) · `neutral` (live).
  * Gold is reserved; nothing here uses it.
  *
  * Every row renders from the record alone: `check` is a check label from the
@@ -1079,13 +1078,15 @@ export const COCKPIT_FACT_TAGS = Object.freeze({
   // The answer on the call (call-response.js playerResponse.kind).
   'answer:ack': Object.freeze({ tone: 'yoursOutline', text: ({ time } = {}) => (time ? `You agreed · ${time}` : 'You agreed') }),
   // A filed directive no check has heard, by where it stands (founder ruling
-  // Oct 4): "not yet heard" ONLY while it is still the battle's current one —
-  // the slot holds its thread, live (cockpitModel liveCallSlotOf). Replaced,
-  // cleared or expired before any check heard it → "not heard", muted with
-  // the other facts that are over: no hearing is promised that cannot come
-  // (review L6-11 c).
+  // Oct 4): "not yet heard" ONLY while it is still the battle's current one
+  // (cockpitModel callTag — the slot holds its thread, live). Killed, expired
+  // or suppressed before any check heard it — or replaced while its
+  // `superseded` event is not loaded (once it is, the tile reads "Replaced by
+  // a later instruction") — it reads "not heard": no hearing is promised that
+  // cannot come (review L6-11 c). Teal, as every state of the player's answer
+  // is (ruling R2A-5: filed, heard, agreed).
   'answer:directive': Object.freeze({ tone: 'yours', text: () => 'Filed · not yet heard' }),
-  'answer:directive_left_slot': Object.freeze({ tone: 'muted', text: () => 'Filed · not heard' }),
+  'answer:directive_left_slot': Object.freeze({ tone: 'yours', text: () => 'Filed · not heard' }),
   // The call events (events.js CALL_EVENT_KINDS).
   'event:declared': null, // the mint — the eyebrow's "from the {t} check" already says it
   'event:answered': null, // the answer's own receipt — the tag reads the call's playerResponse

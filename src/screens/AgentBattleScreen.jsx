@@ -86,7 +86,7 @@ import { useCockpitAnswer } from '../hooks/useCockpitAnswer';
 import CockpitFeed from './battleView/CockpitFeed';
 import CockpitSheet from './battleView/CockpitSheet';
 import { CockpitSwitch, BoardCockpitTrack, PHONE_SCREEN } from './battleView/BoardCockpit';
-import { buildCockpitFeed, monitoringRow, sheetOf, eventsByCall, latestPromptBuiltAt, checkOf } from './battleView/cockpitModel';
+import { buildCockpitFeed, monitoringRow, sheetOf, eventsByCall, latestPromptBuiltAt, checkOf, liveCallSlotOf } from './battleView/cockpitModel';
 import { BATTLE_CHAT_BUDGET } from '../../api/_utils/directiveFiling.js';
 import { useBaggerMoment } from './battleView/useBaggerMoment';
 import { baggerMomentFacts, persistedMaxMultiplier, BAGGER_LINE } from './battleView/deriveBaggerMoment';
@@ -2469,13 +2469,28 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   const hasCommandDot = hasPendingProposal || hasNewFeedEntries;
   const commandDotColor = hasPendingProposal ? '#f59e0b' : '#5eead4';
 
+  // Cockpit Build 2a — the strip's slot, the mode gate's other half: a
+  // CALL-FAMILY slot is inactive at every reader below `on`
+  // (directiveUtils.isDirectiveActive), so it is not shown as queued unless the
+  // battle is cockpit-on — and then only while it is LIVE, by the very
+  // predicate the tile's "Filed · not yet heard" reads (cockpitModel
+  // liveCallSlotOf, on the feed's own clock and kill log; BUILD_RULES §9): an
+  // expired slot the sweep has not retired yet, or a killed one, is not
+  // outstanding for the next check (polish review P1-4). Every other
+  // directive passes through unchanged.
+  const thisTurnDirective = agentBattle?.directive?.family !== 'call'
+    ? (agentBattle?.directive ?? null)
+    : (cockpitOn
+      ? liveCallSlotOf({
+        directive: agentBattle.directive,
+        nowMs: now instanceof Date ? now.getTime() : Date.now(),
+        controlEpochLog: agentBattle.controlEpochLog ?? null,
+        suppressed: ARCHETYPE_INTEGRITY_MODE !== 'enforce',
+      })
+      : null);
   const thisTurnStrip = controllerOn && agentBattle ? (
     <ThisTurnStrip
-      // Cockpit Build 2a — the mode gate's other half: a CALL-FAMILY slot is
-      // inactive at every reader below `on` (directiveUtils.isDirectiveActive),
-      // so it is not shown as queued unless the battle is cockpit-on. Every
-      // other directive passes through unchanged.
-      directive={cockpitOn || agentBattle.directive?.family !== 'call' ? (agentBattle.directive ?? null) : null}
+      directive={thisTurnDirective}
       receipts={receipts}
       battleStatus={agentBattle.status ?? null}
       turn={turnLine}

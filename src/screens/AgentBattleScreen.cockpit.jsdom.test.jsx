@@ -445,6 +445,50 @@ describe('ON — the mode gate (Build 1a spec :39): cockpit filings and the call
   });
 });
 
+describe('ON — a filed answer, the slot and THIS TURN read ONE predicate (founder ruling Oct 4; polish review P1-4, P1-5 — BUILD_RULES §9)', () => {
+  // OPEN answered "Hold off" from the cockpit: its record and the battle's slot, one thread, as the endpoint writes them.
+  const SLOT = { family: 'call', text: "Hold off on AMD until today's close", expiry: 'until_ms', expiresAtMs: CLOSE, directiveThreadId: 't-call', createdAt: '2026-09-01T16:50:00.000Z', callId: OPEN.callId, kind: 'call_hold' };
+  const FILED = { ...OPEN, directiveThreadId: 't-call', playerResponse: { answer: 'hold', kind: 'directive', directiveThreadId: 't-call', callId: OPEN.callId, filedAt: '2026-09-01T16:50:00.000Z', heardEvalId: null } };
+  const tagOf = (call) => q(`[data-cockpit-tile="${call.callId}"] [data-cockpit-tag]`)?.textContent ?? null;
+  const strip = () => q('[data-this-turn]');
+  const goneHold = () => q(`[data-cockpit-tile="${GONE.callId}"] [data-cockpit-answer="hold"]`);
+  beforeEach(() => { FS.docs['agentBattles/ab-1/calls'] = [FILED, GONE, RESOLVED, SHADOW]; });
+
+  it('the slot holds it, live: the tile reads "Filed · not yet heard", THIS TURN carries it, and the other call\'s override waits (one call at a time)', async () => {
+    DOC = { ...LIVE_DOC, directive: SLOT };
+    await mount();
+    expect(tagOf(FILED)).toBe('Filed · not yet heard');
+    expect(strip().getAttribute('data-this-turn')).toBe('filed');
+    expect(strip().textContent).toContain("Hold off on AMD until today's close");
+    expect(goneHold().getAttribute('aria-disabled')).toBe('true');
+    expect(q(`[data-cockpit-tile="${GONE.callId}"] [data-cockpit-blocked]`).textContent).toBe("Waiting · your last answer hasn't been heard yet.");
+  });
+
+  it('KILLED by a control epoch: the tile reads "Filed · not heard" and THIS TURN is empty — never one surface saying it is over while the other queues it', async () => {
+    DOC = { ...LIVE_DOC, directive: SLOT, controlEpochLog: [{ epochKey: 'k-1', suppressedDirectiveIds: ['t-call'], suppressedLeanIds: [] }] };
+    await mount();
+    expect(tagOf(FILED)).toBe('Filed · not heard');
+    expect(strip().getAttribute('data-this-turn')).toBe('empty');
+    expect(strip().textContent).not.toContain('Hold off on AMD');
+    expect(goneHold().getAttribute('aria-disabled')).toBeNull();
+  });
+
+  it('PAST ITS LIFETIME, not yet retired by the sweep: "Filed · not heard" and THIS TURN is empty', async () => {
+    DOC = { ...LIVE_DOC, directive: { ...SLOT, expiresAtMs: T('2026-09-01T16:59:00.000Z') } };
+    await mount();
+    expect(tagOf(FILED)).toBe('Filed · not heard');
+    expect(strip().getAttribute('data-this-turn')).toBe('empty');
+  });
+
+  it('an ordinary (non-call) directive in the slot passes to THIS TURN unchanged, and the cockpit answer it replaced reads "Filed · not heard" until its event loads', async () => {
+    DOC = { ...LIVE_DOC, directive: { text: 'Lean defensive', directiveThreadId: 't-chat', expiry: 'end_of_battle', createdAt: '2026-09-01T16:55:00.000Z' } };
+    await mount();
+    expect(strip().getAttribute('data-this-turn')).toBe('filed');
+    expect(strip().textContent).toContain('Lean defensive');
+    expect(tagOf(FILED)).toBe('Filed · not heard');
+  });
+});
+
 describe('ON — phone: Board · Cockpit', () => {
   beforeEach(() => setShell(false));
 
