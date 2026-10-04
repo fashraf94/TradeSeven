@@ -13,10 +13,18 @@
 //                      the CharacterPane SegmentedControl contract.
 //   BoardCockpitTrack  two full-width screens on ONE horizontal track with
 //                      native scroll-snap (`scrollSnapType: 'x mandatory'`, the
-//                      ArchetypePicker precedent). A swipe moves the switch; a
-//                      tap on the switch scrolls the track (`smooth`, or `auto`
-//                      under reduced motion). Each screen scrolls on its own.
-//                      Board is the default.
+//                      ArchetypePicker precedent). Board is the default.
+//                      A tap on the switch scrolls the track (`smooth`, or
+//                      `auto` under reduced motion; the FIRST position is set
+//                      without animation, so a remount never glides). A swipe
+//                      moves the switch only when the track SETTLES — on
+//                      `scrollend`, or after a short idle where the browser has
+//                      none — never at the halfway point while the finger is
+//                      still down, and a settled swipe is never answered with a
+//                      programmatic scroll: the selection always names the
+//                      screen that is showing (review L5-2). Each screen
+//                      scrolls on its own; the cockpit screen's scroller is
+//                      locked declaratively while the sheet is open.
 //
 // HAZARD 48: every label sizes an inner <span>.
 
@@ -28,6 +36,8 @@ import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
 
 export const PHONE_SCREEN = Object.freeze({ BOARD: 'board', COCKPIT: 'cockpit' });
 export const PHONE_SCREENS = Object.freeze([PHONE_SCREEN.BOARD, PHONE_SCREEN.COCKPIT]);
+/** The idle after the last scroll event that counts as "settled" where `scrollend` is missing. */
+export const TRACK_SETTLE_IDLE_MS = 120;
 
 const tabId = (screen) => `board-cockpit-tab-${screen}`;
 const panelId = (screen) => `board-cockpit-panel-${screen}`;
@@ -88,9 +98,9 @@ export function CockpitSwitch({ screen, onSelect, needsYou = 0, reducedMotion = 
               border: 'none',
               background: 'transparent',
               cursor: 'pointer',
-              minHeight: 34,
+              minHeight: 36,
               padding: '0 12px',
-              color: selected ? cssVar('text-primary') : cssVar('text-muted'),
+              color: selected ? cssVar('text-primary') : cssVar('text-secondary'),
             }}
           >
             {selected ? (
@@ -120,37 +130,64 @@ export function CockpitSwitch({ screen, onSelect, needsYou = 0, reducedMotion = 
  * The two-screen track. `screen` is the selected screen; `onScreen` is told
  * when a SWIPE settles on the other one. A change of `screen` from outside
  * (the switch) scrolls the track.
+ *
+ * @param {boolean} [props.lockCockpit]  the cockpit screen's scroller holds still (the sheet is open)
  */
-export function BoardCockpitTrack({ screen, onScreen, reducedMotion = false, board, cockpit, cockpitScrollRef = null }) {
+export function BoardCockpitTrack({ screen, onScreen, reducedMotion = false, board, cockpit, cockpitScrollRef = null, lockCockpit = false }) {
   const trackRef = React.useRef(null);
-  const settling = React.useRef(false);
   const index = Math.max(0, PHONE_SCREENS.indexOf(screen));
+  const screenRef = React.useRef(screen);
+  screenRef.current = screen;
+  const onScreenRef = React.useRef(onScreen);
+  onScreenRef.current = onScreen;
+  const fromSwipe = React.useRef(false);
+  const positioned = React.useRef(false);
+  const idle = React.useRef(null);
 
-  // The switch moved the selection: scroll the track there (instant under reduced motion).
+  // The SWITCH moved the selection: scroll the track there. A selection the
+  // track itself reported (a settled swipe) is already on screen. The first
+  // position is set without animation.
   React.useEffect(() => {
     const el = trackRef.current;
     if (!el) return;
+    if (fromSwipe.current) { fromSwipe.current = false; positioned.current = true; return; }
     const left = index * el.clientWidth;
+    const first = !positioned.current;
+    positioned.current = true;
     if (Math.abs(el.scrollLeft - left) < 2) return;
-    settling.current = true;
-    if (typeof el.scrollTo === 'function') el.scrollTo({ left, behavior: reducedMotion ? 'auto' : 'smooth' });
+    const behavior = first || reducedMotion ? 'auto' : 'smooth';
+    if (typeof el.scrollTo === 'function') el.scrollTo({ left, behavior });
     else el.scrollLeft = left;
   }, [index, reducedMotion]);
 
-  // A swipe settled: the nearer screen becomes the selection.
-  const onScroll = () => {
+  // SETTLED: the screen the track rests on becomes the selection.
+  const settle = React.useCallback(() => {
+    if (idle.current) { clearTimeout(idle.current); idle.current = null; }
     const el = trackRef.current;
     if (!el || el.clientWidth <= 0) return;
-    const nearest = Math.round(el.scrollLeft / el.clientWidth);
-    if (settling.current) {
-      if (nearest === index) settling.current = false;
-      return;
+    const nearest = PHONE_SCREENS[Math.min(PHONE_SCREENS.length - 1, Math.max(0, Math.round(el.scrollLeft / el.clientWidth)))];
+    if (nearest && nearest !== screenRef.current) {
+      fromSwipe.current = true;
+      onScreenRef.current?.(nearest);
     }
-    const next = PHONE_SCREENS[Math.min(PHONE_SCREENS.length - 1, Math.max(0, nearest))];
-    if (next && next !== screen) onScreen?.(next);
+  }, []);
+
+  React.useEffect(() => {
+    const el = trackRef.current;
+    if (!el) return undefined;
+    el.addEventListener('scrollend', settle);
+    return () => {
+      el.removeEventListener('scrollend', settle);
+      if (idle.current) { clearTimeout(idle.current); idle.current = null; }
+    };
+  }, [settle]);
+
+  const onScroll = () => {
+    if (idle.current) clearTimeout(idle.current);
+    idle.current = setTimeout(settle, TRACK_SETTLE_IDLE_MS);
   };
 
-  const panel = (s, content, ref = null) => (
+  const panel = (s, content, { ref = null, locked = false } = {}) => (
     <div
       key={s}
       ref={ref}
@@ -163,7 +200,7 @@ export function BoardCockpitTrack({ screen, onScreen, reducedMotion = false, boa
       // accessibility tree while it is not the selection.
       inert={s !== screen}
       aria-hidden={s !== screen ? 'true' : undefined}
-      style={{ flex: '0 0 100%', minWidth: 0, minHeight: 0, overflowY: 'auto', scrollSnapAlign: 'start', scrollSnapStop: 'always' }}
+      style={{ flex: '0 0 100%', minWidth: 0, minHeight: 0, overflowY: locked ? 'hidden' : 'auto', scrollSnapAlign: 'start', scrollSnapStop: 'always' }}
     >
       {content}
     </div>
@@ -188,7 +225,7 @@ export function BoardCockpitTrack({ screen, onScreen, reducedMotion = false, boa
       }}
     >
       {panel(PHONE_SCREEN.BOARD, board)}
-      {panel(PHONE_SCREEN.COCKPIT, cockpit, cockpitScrollRef)}
+      {panel(PHONE_SCREEN.COCKPIT, cockpit, { ref: cockpitScrollRef, locked: lockCockpit })}
     </div>
   );
 }

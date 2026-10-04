@@ -42,7 +42,7 @@ vi.mock('firebase/firestore', () => ({
 }));
 vi.mock('../firebase/config', () => ({ db: { name: 'db' } }));
 
-import { useCalls, useMonitoring, useCallEvents, useCallObservation, CALLS_LIMIT, CALL_EVENTS_LIMIT } from './useCockpitRecords';
+import { useCalls, useMonitoring, useCallEvents, useCallObservation, CALLS_LIMIT, CALL_EVENTS_LIMIT, READER_OFF } from './useCockpitRecords';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -79,12 +79,31 @@ afterEach(() => {
   container.remove();
 });
 
-describe('off — no listener, no read, null out', () => {
-  it('disabled: nothing is opened and every reader returns null', async () => {
+describe('off — no listener, no read, nothing out', () => {
+  it('disabled: nothing is opened; every list reader says OFF (the shared frozen state), the observation null', async () => {
     await render({ battleId: 'ab-1', enabled: false, callId: 'c1', observe: false });
     expect(fs.onSnapshot).not.toHaveBeenCalled();
     expect(fs.getDoc).not.toHaveBeenCalled();
-    expect(out).toEqual({ calls: null, monitoring: null, events: null, observation: null });
+    expect(out).toEqual({ calls: { status: 'off', value: null }, monitoring: { status: 'off', value: null }, events: { status: 'off', value: null }, observation: null });
+    expect(out.calls).toBe(READER_OFF);
+  });
+});
+
+describe('a list reader says what it KNOWS (review L3-2): loading and failed are never an empty list', () => {
+  it('asked but nothing delivered → loading; a snapshot → ready with the list (an empty snapshot is a real empty list)', async () => {
+    await act(async () => { root.render(<Probe battleId="ab-1" enabled />); });
+    expect(out.calls).toEqual({ status: 'loading', value: null });
+    await settle();
+    expect(out.calls).toEqual({ status: 'loading', value: null }); // the double delivers nothing for an unseeded path
+    const callsListener = fs.state.listeners.find((l) => l.q.path === 'agentBattles/ab-1/calls');
+    await act(async () => { callsListener.next({ docs: [] }); });
+    expect(out.calls).toEqual({ status: 'ready', value: [] });
+  });
+  it('a listener error → error, no value', async () => {
+    await render({ battleId: 'ab-1', enabled: true });
+    const listener = fs.state.listeners.find((l) => l.q.path === 'agentBattles/ab-1/callEvents');
+    await act(async () => { listener.error(new Error('permission-denied')); });
+    expect(out.events).toEqual({ status: 'error', value: null });
   });
 });
 
@@ -99,7 +118,8 @@ describe('on — one field ordered, limited, live; C-5 at the boundary', () => {
     const callsQuery = fs.state.listeners.find((l) => l.q.path === 'agentBattles/ab-1/calls').q;
     expect(callsQuery.constraints).toEqual([{ type: 'orderBy', field: 'mintedAt', dir: 'desc' }, { type: 'limit', n: CALLS_LIMIT }]);
     expect(CALLS_LIMIT).toBe(60);
-    expect(out.calls.map((c) => c.callId)).toEqual(['c1']);
+    expect(out.calls.status).toBe('ready');
+    expect(out.calls.value.map((c) => c.callId)).toEqual(['c1']);
   });
 
   it('callEvents: orderBy(at, desc), limit(150), every event kept (the model groups them)', async () => {
@@ -108,7 +128,7 @@ describe('on — one field ordered, limited, live; C-5 at the boundary', () => {
     const q = fs.state.listeners.find((l) => l.q.path === 'agentBattles/ab-1/callEvents').q;
     expect(q.constraints).toEqual([{ type: 'orderBy', field: 'at', dir: 'desc' }, { type: 'limit', n: CALL_EVENTS_LIMIT }]);
     expect(CALL_EVENTS_LIMIT).toBe(150);
-    expect(out.events).toEqual([{ id: 'e1', kind: 'heard', callIds: ['c1'] }]);
+    expect(out.events).toEqual({ status: 'ready', value: [{ id: 'e1', kind: 'heard', callIds: ['c1'] }] });
   });
 
   it('every query orders by exactly one field (no composite index)', async () => {
@@ -120,19 +140,19 @@ describe('on — one field ordered, limited, live; C-5 at the boundary', () => {
   it('teardown unsubscribes every listener; turning off returns null', async () => {
     fs.state.docs['agentBattles/ab-1/calls'] = [{ id: 'c1', callId: 'c1', mintedMode: 'on' }];
     await render({ battleId: 'ab-1', enabled: true });
-    expect(out.calls).toHaveLength(1);
+    expect(out.calls.value).toHaveLength(1);
     await render({ battleId: 'ab-1', enabled: false });
     expect(fs.state.unsubs).toBe(3);
-    expect(out.calls).toBeNull();
+    expect(out.calls).toEqual({ status: 'off', value: null });
   });
 
-  it('a listener error reads as nothing — never a guess', async () => {
+  it('a listener error after delivery → error, the old list withdrawn — never a stale guess', async () => {
     await render({ battleId: 'ab-1', enabled: true });
     const callsListener = fs.state.listeners.find((l) => l.q.path === 'agentBattles/ab-1/calls');
     await act(async () => { callsListener.next({ docs: [{ id: 'c1', data: () => ({ callId: 'c1', mintedMode: 'on' }) }] }); });
-    expect(out.calls).toHaveLength(1);
+    expect(out.calls.value).toHaveLength(1);
     await act(async () => { callsListener.error(new Error('permission-denied')); });
-    expect(out.calls).toBeNull();
+    expect(out.calls).toEqual({ status: 'error', value: null });
   });
 });
 
@@ -142,26 +162,26 @@ describe('Monitoring — the newest declarations record, from either source (C-1
     await render({ battleId: 'ab-1', enabled: true });
     const q = fs.state.listeners.find((l) => l.q.path === 'agentBattles/ab-1/declarations').q;
     expect(q.constraints).toEqual([{ type: 'orderBy', field: 'evalSeq', dir: 'desc' }, { type: 'limit', n: 1 }]);
-    expect(out.monitoring).toEqual({ symbols: ['AMD', 'JPM'], evalId: 'eval_011', mintedAt: 5 });
+    expect(out.monitoring).toEqual({ status: 'ready', value: { symbols: ['AMD', 'JPM'], evalId: 'eval_011', mintedAt: 5 } });
   });
 
   it('…and the same when the top-level field filled it', async () => {
     fs.state.docs['agentBattles/ab-1/declarations'] = [{ id: 'd2', evalId: 'eval_012', mintedAt: 6, mintedMode: 'on', watching: ['NVDA'], watchingSource: 'top_level' }];
     await render({ battleId: 'ab-1', enabled: true });
-    expect(out.monitoring).toEqual({ symbols: ['NVDA'], evalId: 'eval_012', mintedAt: 6 });
+    expect(out.monitoring).toEqual({ status: 'ready', value: { symbols: ['NVDA'], evalId: 'eval_012', mintedAt: 6 } });
   });
 
   it('the record\'s own field name never leaves the reader; a record minted at shadow or before the amendment → null', async () => {
     fs.state.docs['agentBattles/ab-1/declarations'] = [{ id: 'd3', evalId: 'eval_013', mintedMode: 'shadow', watching: ['NVDA'] }];
     await render({ battleId: 'ab-1', enabled: true });
-    expect(out.monitoring).toBeNull();
+    expect(out.monitoring).toEqual({ status: 'ready', value: null });
     fs.state.docs['agentBattles/ab-2/declarations'] = [{ id: 'd4', evalId: 'eval_013', watching: ['NVDA'] }];
     await render({ battleId: 'ab-2', enabled: true });
-    expect(out.monitoring).toBeNull();
+    expect(out.monitoring).toEqual({ status: 'ready', value: null });
     fs.state.docs['agentBattles/ab-3/declarations'] = [{ id: 'd5', evalId: 'eval_013', mintedMode: 'on', watching: ['NVDA', '', 7] }];
     await render({ battleId: 'ab-3', enabled: true });
-    expect(Object.keys(out.monitoring)).toEqual(['symbols', 'evalId', 'mintedAt']);
-    expect(out.monitoring.symbols).toEqual(['NVDA']);
+    expect(Object.keys(out.monitoring.value)).toEqual(['symbols', 'evalId', 'mintedAt']);
+    expect(out.monitoring.value.symbols).toEqual(['NVDA']);
   });
 });
 

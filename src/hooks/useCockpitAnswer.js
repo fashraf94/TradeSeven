@@ -12,14 +12,16 @@
 //   plain line for it (battleViewCopy.js cockpitRefusalLine).
 //   THE BELIEF is the subscribed battle.directive.directiveThreadId — except
 //   after a 409 belief_mismatch, when the server's currentDirectiveThreadId is
-//   adopted until the subscription moves past the value it corrected.
+//   adopted until the subscription moves past the value it corrected; the
+//   adoption is then DROPPED (and it never crosses battles), so a slot that
+//   later returns to the corrected value is read fresh (review L3-3).
 //   A 404 cockpit_unavailable asks the screen to re-run the status check.
 //
 // Firebase auth: the static getAuth import the screen already makes (see
 // useCockpitStatus.js — a lazy import of the auth package costs the main
 // chunk 69 KB).
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { getAuth } from 'firebase/auth';
 
 export const CALL_RESPONSE_PATH = '/api/agent/call-response';
@@ -54,12 +56,17 @@ export async function postCallAnswer({ battleId, callId, answer, expectedDirecti
  */
 export function useCockpitAnswer({ battleId, subscribedThreadId = null, onUnavailable = null, post = postCallAnswer }) {
   const [pending, setPending] = useState(null);       // { callId, answer } | null
-  const [outcomes, setOutcomes] = useState({});       // callId → { status, body }
-  const [override, setOverride] = useState(null);     // { value, basis } | null
+  const [outcomes, setOutcomes] = useState({});       // callId → { status, body, at, callId }
+  const [override, setOverride] = useState(null);     // { value, basis, battleId } | null
   const inFlight = useRef(false);
 
-  // The adopted belief holds only while the subscription still shows the value it corrected.
-  const belief = override && override.basis === subscribedThreadId ? override.value : subscribedThreadId;
+  // The adopted belief holds only while the subscription still shows the value
+  // it corrected, on the battle it was adopted on.
+  const holds = Boolean(override) && override.basis === subscribedThreadId && override.battleId === battleId;
+  const belief = holds ? override.value : subscribedThreadId;
+  useEffect(() => {
+    if (override && !holds) setOverride(null);
+  }, [override, holds]);
 
   const submit = useCallback(async (callId, answer) => {
     if (inFlight.current || !battleId || !callId || !answer) return;
@@ -70,9 +77,9 @@ export function useCockpitAnswer({ battleId, subscribedThreadId = null, onUnavai
     inFlight.current = false;
     setPending(null);
     if (status === 200) return;
-    setOutcomes((prev) => ({ ...prev, [callId]: { status, body } }));
+    setOutcomes((prev) => ({ ...prev, [callId]: { status, body, at: Date.now(), callId } }));
     if (status === 409 && body?.reason === 'belief_mismatch' && Object.prototype.hasOwnProperty.call(body, 'currentDirectiveThreadId')) {
-      setOverride({ value: body.currentDirectiveThreadId ?? null, basis: subscribedThreadId });
+      setOverride({ value: body.currentDirectiveThreadId ?? null, basis: subscribedThreadId, battleId });
     }
     if (status === 404 && body?.error === 'cockpit_unavailable' && typeof onUnavailable === 'function') onUnavailable();
   }, [battleId, belief, post, subscribedThreadId, onUnavailable]);

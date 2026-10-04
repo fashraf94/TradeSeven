@@ -50,8 +50,8 @@ const CALL = {
   defaultAction: 'act', said: 'AMD above $161 by the close.', saidOk: true, evidence: { priceAsOf: '2026-09-09T14:30:20.000Z' },
   state: 'open', stateChangedAt: T('2026-09-09T14:31:00.000Z'), playerResponse: null,
 };
-const sheetFor = (call = CALL, events = []) => {
-  const f = buildCockpitFeed({ calls: [call], events, evaluations: EVALS, directive: null, nowMs: NOW });
+const sheetFor = (call = CALL, events = [], outcomes = {}) => {
+  const f = buildCockpitFeed({ calls: [call], events, evaluations: EVALS, directive: null, nowMs: NOW, outcomes });
   const tile = [...f.needsYou, ...f.waiting, ...f.earlier][0];
   return sheetOf(tile, { eventsMap: eventsByCall(events), evaluations: EVALS, nowMs: NOW });
 };
@@ -122,25 +122,24 @@ describe('§7.5 — a MODAL: labelled, focus in / trapped / back, Escape, scroll
     expect(document.activeElement).toBe(focusables.at(-1));
   });
 
-  it('PHONE: a bottom sheet fixed to the viewport; the body is locked while open and given back its own value', () => {
-    render({ sheet: sheetFor(), isDesktop: false });
+  it('PHONE: a bottom sheet fixed to the viewport, its bottom padding clearing the browser chrome (the mark\'s F3 inset)', () => {
+    render({ sheet: sheetFor(), isDesktop: false, bottomInset: 34 });
     expect(q('[data-cockpit-sheet-layer]').getAttribute('data-cockpit-sheet-layer')).toBe('mobile');
     expect(q('[data-cockpit-sheet-layer]').style.position).toBe('fixed');
-    expect(document.body.style.overflow).toBe('hidden');
-    render({ sheet: null, isDesktop: false });
-    expect(document.body.style.overflow).toBe('scroll');
+    expect(q('[data-cockpit-sheet]').style.padding).toBe('14px 16px 52px');
   });
 
-  it('DESKTOP: a panel inside the pane; the feed\'s own scroller is locked, never the body', () => {
-    const scroller = document.createElement('div');
-    scroller.style.overflow = 'auto';
-    const lockRef = { current: scroller };
-    render({ sheet: sheetFor(), isDesktop: true, lockRef });
+  it('DESKTOP: a panel inside the pane (absolute), no chrome inset', () => {
+    render({ sheet: sheetFor(), isDesktop: true, bottomInset: 34 });
     expect(q('[data-cockpit-sheet-layer]').style.position).toBe('absolute');
-    expect(scroller.style.overflow).toBe('hidden');
+    expect(q('[data-cockpit-sheet]').style.padding).toBe('14px 16px 18px');
+  });
+
+  it('THE SHEET WRITES NO STYLE on the body or any scroller — the screen locks its own scroller declaratively (review L4-1, L5-1)', () => {
+    render({ sheet: sheetFor(), isDesktop: false });
     expect(document.body.style.overflow).toBe('scroll');
-    render({ sheet: null, isDesktop: true, lockRef });
-    expect(scroller.style.overflow).toBe('auto');
+    render({ sheet: null, isDesktop: false });
+    expect(document.body.style.overflow).toBe('scroll');
   });
 
   it('the backdrop and the close button both close', () => {
@@ -164,7 +163,7 @@ describe('§7.5 — the contents, top to bottom, from records alone', () => {
     expect(container.textContent).not.toContain('AMD above $161 by the close.');
   });
 
-  it('facts, the default as an intent, receipts oldest first', () => {
+  it('facts, the default as an intent, receipts oldest first (by the check each names)', () => {
     const c = { ...CALL, playerResponse: { kind: 'directive', answer: 'hold', callId: CALL.callId, directiveThreadId: 'th', filedAt: '2026-09-09T14:33:00.000Z', heardEvalId: 'eval_011' } };
     const events = [
       { kind: 'heard', at: T('2026-09-09T14:46:00.000Z'), callIds: [c.callId], evidence: { evalId: 'eval_011', promptBuiltAt: '2026-09-09T14:45:20.000Z' } },
@@ -189,9 +188,9 @@ describe('§7.5 — the contents, top to bottom, from records alone', () => {
     expect(q('[data-cockpit-check-gone]').getAttribute('role')).toBe('status');
   });
 
-  it('the same buttons as the tile; a refusal line in a polite live region, read from the body', () => {
+  it('the same buttons as the tile; a refusal line in a polite live region, the one the model chose from the body', () => {
     const onAnswer = vi.fn();
-    render({ sheet: sheetFor(), onAnswer, outcome: { status: 403, body: { error: 'forbidden' } } });
+    render({ sheet: sheetFor(CALL, [], { [CALL.callId]: { status: 403, body: { error: 'forbidden' }, at: NOW, callId: CALL.callId } }), onAnswer });
     expect([...container.querySelectorAll('[data-cockpit-answer]')].map((b) => b.textContent)).toEqual(['Go if it triggers', 'Hold off · 1 message']);
     click(q('[data-cockpit-answer="go"]'));
     expect(onAnswer).toHaveBeenCalledWith(CALL.callId, 'go');
@@ -221,5 +220,77 @@ describe('R2A-4 — the one existing motion token; instant under reduced motion'
     const panel = q('[data-cockpit-sheet]');
     expect(JSON.parse(panel.getAttribute('data-motion-transition'))).toEqual(JSON.parse(JSON.stringify(motionToken('smooth', { reducedMotion: true }))));
     expect(JSON.parse(panel.getAttribute('data-motion-initial'))).toBe(false);
+  });
+});
+
+describe('focus that never falls to <body> (review L4-3, L5-5)', () => {
+  it('no aria-roledescription: the dialog announces as a dialog, named by its title', () => {
+    render({ sheet: sheetFor() });
+    expect(q('[role="dialog"]').hasAttribute('aria-roledescription')).toBe(false);
+  });
+
+  it('a focus the page LOST while the sheet is open (an answered tile\'s buttons disappearing) comes back into the sheet', () => {
+    render({ sheet: sheetFor() });
+    act(() => { document.activeElement.blur(); });
+    expect(document.activeElement).toBe(document.body);
+    render({ sheet: sheetFor() }); // the next record lands
+    expect(q('[role="dialog"]').contains(document.activeElement)).toBe(true);
+  });
+
+  it('Escape and Tab from a lost focus still work: Escape closes, Tab enters the sheet', () => {
+    const onClose = vi.fn();
+    render({ sheet: sheetFor(), onClose });
+    act(() => { document.activeElement.blur(); });
+    act(() => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })); });
+    expect(q('[role="dialog"]').contains(document.activeElement)).toBe(true);
+    act(() => { document.activeElement.blur(); });
+    act(() => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('Tab and Shift+Tab from the dialog element itself stay inside', () => {
+    render({ sheet: sheetFor() });
+    const dialog = q('[role="dialog"]');
+    const focusables = [...dialog.querySelectorAll('button:not([disabled])')];
+    act(() => { dialog.focus(); });
+    key(dialog, 'Tab', { shiftKey: true });
+    expect(document.activeElement).toBe(focusables.at(-1));
+    act(() => { dialog.focus(); });
+    key(dialog, 'Tab');
+    expect(document.activeElement).toBe(focusables[0]);
+  });
+
+  it('on close, focus goes back to the opener when it can take it; else to the screen\'s fallback (the regrouped tile), never <body>', () => {
+    const fallback = document.createElement('button');
+    document.body.appendChild(fallback);
+    opener.focus();
+    render({ sheet: sheetFor(), restoreFocus: () => fallback });
+    opener.remove(); // the tile regrouped: its opener is gone
+    render({ sheet: null, restoreFocus: () => fallback });
+    expect(document.activeElement).toBe(fallback);
+    fallback.remove();
+  });
+
+  it('an opener inside a HIDDEN panel (the pane moved to Chat for the check link) is not focused; the fallback is', () => {
+    const hiddenPanel = document.createElement('div');
+    hiddenPanel.hidden = true;
+    const inner = document.createElement('button');
+    hiddenPanel.appendChild(inner);
+    document.body.appendChild(hiddenPanel);
+    const fallback = document.createElement('button');
+    document.body.appendChild(fallback);
+    inner.focus();
+    render({ sheet: sheetFor(), restoreFocus: () => fallback });
+    render({ sheet: null, restoreFocus: () => fallback });
+    expect(document.activeElement).toBe(fallback);
+    hiddenPanel.remove();
+    fallback.remove();
+  });
+
+  it('the check link sizes its own span (hazard 48: index.css forces every <button> to 16 px)', () => {
+    render({ sheet: sheetFor() });
+    const span = q('[data-cockpit-check-link] span');
+    expect(span.style.fontSize).toBe('11px');
+    expect(parseInt(q('[data-cockpit-check-link]').style.minHeight, 10)).toBeGreaterThanOrEqual(36);
   });
 });

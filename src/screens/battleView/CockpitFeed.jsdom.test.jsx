@@ -127,14 +127,17 @@ describe('§7.3 — a tile: dot · eyebrow · tag · line · at most two buttons
     expect(onOpenSheet).toHaveBeenCalledWith(c.callId);
   });
 
-  it('while sending: both buttons disabled, the pressed one reads "Sending…", a tap does nothing', () => {
+  it('while sending: both buttons wait (aria-disabled — the pressed one KEEPS focus, review L5-5), the pressed one reads "Sending…", a tap does nothing', () => {
     const c = call();
     const onAnswer = vi.fn();
     render({ feed: feedOf([c], { pending: { callId: c.callId, answer: 'go' } }), onAnswer });
     const buttons = qa('[data-cockpit-answer]');
-    expect(buttons.map((b) => [b.textContent, b.disabled])).toEqual([['Sending…', true], ['Hold off · 1 message', true]]);
+    expect(buttons.map((b) => [b.textContent, b.getAttribute('aria-disabled')])).toEqual([['Sending…', 'true'], ['Hold off · 1 message', 'true']]);
+    expect(buttons.every((b) => b.disabled === false)).toBe(true); // never the real `disabled`, which drops focus to <body>
+    buttons[0].focus();
     click(buttons[0]);
     expect(onAnswer).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(buttons[0]);
   });
 
   it('one call at a time: the override is disabled with its line; agreeing stays tappable', () => {
@@ -146,8 +149,10 @@ describe('§7.3 — a tile: dot · eyebrow · tag · line · at most two buttons
     render({ feed: feedOf([slotCall, other], { directive }), onAnswer });
     const tile = q(`[data-cockpit-tile="${other.callId}"]`);
     const [agree, override] = tile.querySelectorAll('[data-cockpit-answer]');
-    expect(override.disabled).toBe(true);
-    expect(agree.disabled).toBe(false);
+    expect(override.getAttribute('aria-disabled')).toBe('true');
+    expect(agree.hasAttribute('aria-disabled')).toBe(false);
+    click(override);
+    expect(onAnswer).not.toHaveBeenCalled();
     expect(tile.querySelector('[data-cockpit-blocked]').textContent).toBe("Waiting · your last answer hasn't been heard yet.");
     click(agree);
     expect(onAnswer).toHaveBeenCalledWith(other.callId, 'go');
@@ -163,10 +168,10 @@ describe('§7.3 — a tile: dot · eyebrow · tag · line · at most two buttons
 });
 
 describe('§8.3 — the line under a tile: one plain line from the BODY, in a polite live region', () => {
-  it('a refusal renders under its own tile only, role="status" aria-live="polite"', () => {
+  it('a refusal renders under its own tile only, role="status" aria-live="polite" — the line the model chose', () => {
     const c = call();
     const d = call({ symbol: 'MU' });
-    render({ feed: feedOf([c, d]), outcomes: { [c.callId]: { status: 409, body: { error: 'refused', reason: 'budget' } } } });
+    render({ feed: feedOf([c, d], { outcomes: { [c.callId]: { status: 409, body: { error: 'refused', reason: 'budget' }, at: NOW, callId: c.callId } } }) });
     const region = q(`[data-cockpit-tile="${c.callId}"] [role="status"]`);
     expect(region.getAttribute('aria-live')).toBe('polite');
     expect(region.textContent).toBe('No messages left — nothing was filed.');
@@ -175,7 +180,7 @@ describe('§8.3 — the line under a tile: one plain line from the BODY, in a po
 
   it('no response at all → the line that never says nothing was filed', () => {
     const c = call();
-    render({ feed: feedOf([c]), outcomes: { [c.callId]: { status: null, body: null } } });
+    render({ feed: feedOf([c], { outcomes: { [c.callId]: { status: null, body: null, at: NOW, callId: c.callId } } }) });
     expect(q('[role="status"]').textContent).toBe("Couldn't confirm your answer. Check the tile before trying again.");
   });
 });
@@ -228,5 +233,59 @@ describe('§9 — tokens only: the four state aliases carry the tones', () => {
     unknown.earlier = unknown.earlier.map((t) => ({ ...t, tag: null }));
     render({ feed: unknown });
     expect(q(`[data-cockpit-tile="${d.callId}"] [data-cockpit-tag]`)).toBeNull();
+  });
+});
+
+describe('nothing is claimed before the records arrive (review L3-2)', () => {
+  it('LOADING: no empty line, no tile — the top row and Monitoring may show', () => {
+    render({ feed: feedOf([call()]), status: 'loading', topRow: { vintage: 'Prices as of the 11:00 AM check', messagesLeft: '7 messages left' } });
+    expect(q('[data-cockpit-empty]')).toBeNull();
+    expect(qa('[data-cockpit-tile]')).toHaveLength(0);
+    expect(q('[data-cockpit-top-row]')).toBeTruthy();
+    expect(q('[data-cockpit-feed]').getAttribute('data-cockpit-status')).toBe('loading');
+  });
+  it('ERROR: one neutral line — never "No calls yet" for records the reader could not see', () => {
+    render({ feed: feedOf([]), status: 'error' });
+    expect(q('[data-cockpit-read-error]').textContent).toBe(COPY.cockpitReadError);
+    expect(q('[data-cockpit-empty]')).toBeNull();
+  });
+  it('READY with nothing: the empty line', () => {
+    render({ feed: feedOf([]), status: 'ready' });
+    expect(q('[data-cockpit-empty]')).toBeTruthy();
+    expect(q('[data-cockpit-read-error]')).toBeNull();
+  });
+});
+
+describe('keyboard and pointer: the focus ring, the dialog door, Show all, target sizes (review L5-3, L5-5, L5-10, L5-11d)', () => {
+  it('the tile body is a plain button reset by hand — never `all: unset`, which takes the focus ring — and announces its dialog', () => {
+    const c = call();
+    render({ feed: feedOf([c]) });
+    const open = q('[data-cockpit-tile-open]');
+    expect(open.getAttribute('style')).not.toMatch(/(^|;)\s*all\s*:/);
+    expect(open.style.outline).toBe('');
+    expect(open.getAttribute('aria-haspopup')).toBe('dialog');
+  });
+  it('"Show all" moves focus to the first tile it revealed (it removes itself when pressed)', () => {
+    const resolved = Array.from({ length: 12 }, (_, i) => call({ symbol: `S${i}`, state: 'hit', stateChangedAt: T('2026-09-09T14:40:00.000Z') + i }));
+    let expanded = false;
+    const props = () => ({ feed: feedOf(resolved, { showAllEarlier: expanded }), showAllEarlier: expanded, onShowAllEarlier: () => { expanded = true; } });
+    render(props());
+    click(q('[data-cockpit-show-all]'));
+    render(props());
+    const tiles = qa('[data-cockpit-tile-group="earlier"] [data-cockpit-tile-open]');
+    expect(tiles).toHaveLength(12);
+    expect(document.activeElement).toBe(tiles[10]);
+  });
+  it('chips and buttons are at least 36 px tall; Earlier tiles are not dimmed by opacity (the muted text stays legible)', () => {
+    const c = call();
+    const d = call({ symbol: 'MU', state: 'hit', stateChangedAt: T('2026-09-09T14:50:00.000Z') });
+    render({ feed: feedOf([c, d]), monitoring: monitoringRow({ symbols: ['JPM'], evalId: 'eval_011' }, EVALS) });
+    expect(parseInt(q('[data-cockpit-monitoring-symbol]').style.minHeight, 10)).toBeGreaterThanOrEqual(36);
+    expect(qa('[data-cockpit-answer]').every((b) => parseInt(b.style.minHeight, 10) >= 36)).toBe(true);
+    expect(q(`[data-cockpit-tile="${d.callId}"]`).style.opacity).toBe('');
+  });
+  it('the sections are plain groupings: no duplicate landmark names beside their headings', () => {
+    render({ feed: feedOf([call()]) });
+    expect(qa('section').every((sec) => !sec.hasAttribute('aria-label'))).toBe(true);
   });
 });

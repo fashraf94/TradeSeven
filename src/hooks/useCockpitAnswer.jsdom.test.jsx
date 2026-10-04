@@ -85,7 +85,8 @@ describe('the hook — no optimistic state', () => {
     const post = vi.fn(async () => ({ status: 409, body: { error: 'refused', reason: 'expired' } }));
     render({ post });
     await act(async () => { await hook.submit('c1', 'hold'); });
-    expect(hook.outcomes).toEqual({ c1: { status: 409, body: { error: 'refused', reason: 'expired' } } });
+    // The outcome carries when it happened and for which call (the model drops it once stale).
+    expect(hook.outcomes).toEqual({ c1: { status: 409, body: { error: 'refused', reason: 'expired' }, at: expect.any(Number), callId: 'c1' } });
     let release;
     post.mockImplementationOnce(() => new Promise((r) => { release = r; }));
     let done;
@@ -144,5 +145,30 @@ describe('the hook — no optimistic state', () => {
     render({ post });
     await act(async () => { await hook.submit(null, 'go'); await hook.submit('c1', null); });
     expect(post).not.toHaveBeenCalled();
+  });
+});
+
+describe('the adopted belief is DROPPED once the subscription moves past it (review L3-3)', () => {
+  it('null → 409 (current T1) → the subscription reaches T1 → the slot clears to null: the belief is null again, not the stale T1', async () => {
+    const post = vi.fn(async () => ({ status: 409, body: { error: 'refused', reason: 'belief_mismatch', currentDirectiveThreadId: 'T1' } }));
+    render({ subscribedThreadId: null, post });
+    await act(async () => { await hook.submit('c1', 'hold'); });
+    expect(hook.belief).toBe('T1');
+    await act(async () => { render({ subscribedThreadId: 'T1', post }); });
+    expect(hook.belief).toBe('T1');
+    await act(async () => { render({ subscribedThreadId: null, post }); }); // retireCallDirective cleared the slot
+    expect(hook.belief).toBeNull();
+    post.mockResolvedValueOnce({ status: 200, body: {} });
+    await act(async () => { await hook.submit('c2', 'hold'); });
+    expect(post).toHaveBeenLastCalledWith(expect.objectContaining({ expectedDirectiveThreadId: null }));
+  });
+
+  it('an adoption never crosses battles', async () => {
+    const post = vi.fn(async () => ({ status: 409, body: { error: 'refused', reason: 'belief_mismatch', currentDirectiveThreadId: 'T9' } }));
+    render({ battleId: 'ab-1', subscribedThreadId: null, post });
+    await act(async () => { await hook.submit('c1', 'hold'); });
+    expect(hook.belief).toBe('T9');
+    await act(async () => { render({ battleId: 'ab-2', subscribedThreadId: null, post }); });
+    expect(hook.belief).toBeNull();
   });
 });

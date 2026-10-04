@@ -16,7 +16,7 @@ import { createRoot } from 'react-dom/client';
 let USER = { getIdToken: vi.fn(async () => 'token-1') };
 vi.mock('firebase/auth', () => ({ getAuth: () => ({ currentUser: USER }) }));
 
-import { useCockpitStatus, requestCockpitStatus, COCKPIT_STATUS_PATH } from './useCockpitStatus';
+import { useCockpitStatus, requestCockpitStatus, COCKPIT_STATUS_PATH, COCKPIT_STATUS_TIMEOUT_MS } from './useCockpitStatus';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -71,7 +71,7 @@ describe('enabled — the server answers, the screen renders the answer', () => 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const [url, init] = fetchSpy.mock.calls[0];
     expect(url).toBe(`${COCKPIT_STATUS_PATH}?battleId=ab%201`);
-    expect(init).toEqual({ method: 'GET', headers: { Authorization: 'Bearer token-1' }, cache: 'no-store' });
+    expect(init).toEqual({ method: 'GET', headers: { Authorization: 'Bearer token-1' }, cache: 'no-store', signal: expect.any(AbortSignal) });
     expect(latest.on).toBe(true);
   });
 
@@ -133,5 +133,41 @@ describe('enabled — the server answers, the screen renders the answer', () => 
     expect(latest.on).toBe(true);
     await render({ battleId: 'ab-2', enabled: false, battleStatus: 'active' });
     expect(latest.on).toBe(false);
+  });
+});
+
+describe('pending — asked, and no answer for THIS battle yet (the screen holds the chat\'s seen-marker meanwhile)', () => {
+  it('pending while the answer is in flight; settled either way afterwards; never pending while disabled', async () => {
+    let release;
+    vi.stubGlobal('fetch', vi.fn(() => new Promise((r) => { release = r; })));
+    await act(async () => { root.render(<Probe battleId="ab-1" enabled battleStatus="active" />); });
+    expect(latest.pending).toBe(true);
+    await act(async () => { release({ ok: true, status: 200, json: async () => ({ on: false }) }); await Promise.resolve(); await Promise.resolve(); });
+    expect(latest.pending).toBe(false);
+    expect(latest.on).toBe(false);
+    await render({ battleId: 'ab-1', enabled: false, battleStatus: 'active' });
+    expect(latest.pending).toBe(false);
+  });
+});
+
+describe('a hung request never holds the screen (review V3 on L4-2)', () => {
+  it('no answer within COCKPIT_STATUS_TIMEOUT_MS → the request is aborted and reads off; pending clears', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const fetchSpy = vi.fn((url, init) => new Promise((resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+      }));
+      vi.stubGlobal('fetch', fetchSpy);
+      await act(async () => { root.render(<Probe battleId="ab-1" enabled battleStatus="active" />); });
+      await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+      expect(latest.pending).toBe(true);
+      expect(fetchSpy.mock.calls[0][1].signal).toBeTruthy();
+      await act(async () => { vi.advanceTimersByTime(COCKPIT_STATUS_TIMEOUT_MS + 1); });
+      await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
+      expect(latest.pending).toBe(false);
+      expect(latest.on).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

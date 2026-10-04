@@ -4,24 +4,32 @@
 // §5 top row, §7 tiles, §8 copy, §9 styling). One component for both shells:
 // the desktop pane's Cockpit tab and the phone's Cockpit screen.
 //
-// IT RENDERS THE MODEL AND NOTHING ELSE. Every tile, tag, line and button
-// arrives from cockpitModel.js (records in, tiles out); this file only lays
-// them out, in the shipped language — group headers in the tier-header
-// treatment, a state dot per tile, the transparent teal-outline chip
-// (WhyPanel's "Ask a follow-up · 1 message"), tokens only (`--ft-*`, the four
-// `--ft-call-*` state aliases). No motion of its own.
+// IT RENDERS THE MODEL AND NOTHING ELSE. Every tile, tag, line, button and
+// refusal line arrives from cockpitModel.js (records in, tiles out); this file
+// only lays them out, in the shipped language — group headers in the
+// tier-header treatment, a state dot per tile, the transparent teal-outline
+// chip (WhyPanel's "Ask a follow-up · 1 message"), tokens only (`--ft-*`, the
+// four `--ft-call-*` state aliases). No motion of its own.
 //
 // A TAP ON A BUTTON answers through the screen (no optimistic state: the
 // tile changes when the listener delivers the record); a tap on the tile's
 // body opens its sheet. A refusal shows one line under its tile, in a polite
-// live region (§7.3).
+// live region (§7.3). A button that waits (an answer in flight, or the one-
+// call-at-a-time block) is `aria-disabled`, never `disabled`: a pressed button
+// keeps focus while it sends (review L5-5).
+//
+// NOTHING IS CLAIMED BEFORE THE RECORDS ARRIVE (review L3-2): while the
+// readers load, the feed shows no empty line and no tile; a failed read shows
+// one neutral line, never "No calls yet".
 //
 // HAZARD 48: index.css forces every <button> to 16px !important, so every
-// label sizes an inner <span>.
+// label sizes an inner <span>. The tile body is a plain button reset by hand —
+// never `all: unset`, which would also take the keyboard focus ring (review
+// L5-3).
 
 import React from 'react';
 import { cssVar } from '../../theme/cssTokens';
-import { BATTLE_VIEW_COPY as COPY, cockpitRefusalLine } from './battleViewCopy';
+import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
 
 const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
 
@@ -38,6 +46,18 @@ export function toneColor(tone) {
 }
 
 const labelSpan = (size, weight = 600) => ({ fontSize: size, fontWeight: weight, lineHeight: 1.2 });
+
+/** A button reset by hand (no `all: unset`): the browser keeps its focus ring. */
+export const plainButton = Object.freeze({
+  background: 'transparent',
+  border: 'none',
+  margin: 0,
+  padding: 0,
+  color: 'inherit',
+  font: 'inherit',
+  textAlign: 'left',
+  cursor: 'pointer',
+});
 
 function GroupHeader({ label, count = null, dim = false, groupKey }) {
   return (
@@ -62,7 +82,9 @@ function GroupHeader({ label, count = null, dim = false, groupKey }) {
         fontWeight: 800,
         letterSpacing: '0.12em',
         textTransform: 'uppercase',
-        color: dim ? cssVar('text-muted') : cssVar('teal'),
+        // Small text at the muted base is under 4.5:1 here; the secondary text
+        // token keeps the dim header legible (review L5-9).
+        color: dim ? cssVar('text-secondary') : cssVar('teal'),
       }}
       >
         {label}
@@ -72,7 +94,7 @@ function GroupHeader({ label, count = null, dim = false, groupKey }) {
           fontFamily: MONO,
           fontSize: 10,
           fontWeight: 700,
-          color: dim ? cssVar('text-muted') : cssVar('teal'),
+          color: dim ? cssVar('text-secondary') : cssVar('teal'),
           background: `rgba(var(--ft-teal-rgb), ${dim ? 0.05 : 0.12})`,
           padding: '2px 8px',
           borderRadius: 6,
@@ -109,7 +131,7 @@ export function AnswerButtons({ buttons, onAnswer }) {
           type="button"
           data-cockpit-answer={b.answer}
           data-cockpit-row={b.row}
-          disabled={b.disabled}
+          aria-disabled={b.disabled ? 'true' : undefined}
           onClick={(e) => { e.stopPropagation(); if (!b.disabled) onAnswer?.(b.callId, b.answer); }}
           style={chipStyle(b.disabled)}
         >
@@ -143,9 +165,9 @@ export function StateTag({ tag }) {
   );
 }
 
-function Tile({ tile, outcome, onAnswer, onOpenSheet, dim = false }) {
+function Tile({ tile, onAnswer, onOpenSheet }) {
   const dot = toneColor(tile.tag?.tone);
-  const refusal = outcome ? cockpitRefusalLine(outcome.status, outcome.body, { pendingLine: tile.pendingLine }) : null;
+  const refusal = tile.refusalLine ?? null;
   const openSheet = () => onOpenSheet?.(tile.id);
   return (
     <div
@@ -158,7 +180,6 @@ function Tile({ tile, outcome, onAnswer, onOpenSheet, dim = false }) {
         padding: '10px 12px 12px',
         borderBottom: `1px solid rgba(var(--ft-scrim-rgb), 0.07)`,
         background: `rgba(var(--ft-shadow-rgb), 0.18)`,
-        opacity: dim ? 0.7 : 1,
       }}
     >
       <div style={{ width: 10, flexShrink: 0, display: 'flex', justifyContent: 'center', paddingTop: 5 }}>
@@ -168,8 +189,9 @@ function Tile({ tile, outcome, onAnswer, onOpenSheet, dim = false }) {
         <button
           type="button"
           data-cockpit-tile-open="1"
+          aria-haspopup="dialog"
           onClick={openSheet}
-          style={{ all: 'unset', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}
+          style={{ ...plainButton, display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0, width: '100%' }}
         >
           <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, minWidth: 0 }}>
             <span style={{
@@ -186,7 +208,7 @@ function Tile({ tile, outcome, onAnswer, onOpenSheet, dim = false }) {
             >
               {tile.kindLabel}
               {tile.eyebrow ? (
-                <span style={{ color: cssVar('text-muted'), fontWeight: 500, letterSpacing: '0.02em', textTransform: 'none' }}>
+                <span style={{ color: cssVar('text-secondary'), fontWeight: 500, letterSpacing: '0.02em', textTransform: 'none' }}>
                   {' · '}
                   {tile.eyebrow}
                 </span>
@@ -198,7 +220,7 @@ function Tile({ tile, outcome, onAnswer, onOpenSheet, dim = false }) {
             {tile.line}
           </span>
           {tile.restated ? (
-            <span data-cockpit-restated="1" style={{ fontFamily: MONO, fontSize: 10.5, color: cssVar('text-muted') }}>{tile.restated}</span>
+            <span data-cockpit-restated="1" style={{ fontFamily: MONO, fontSize: 10.5, color: cssVar('text-secondary') }}>{tile.restated}</span>
           ) : null}
           {tile.answerLine ? (
             <span data-cockpit-thread-answer="1" style={{ fontSize: 12, color: cssVar('call-yours') }}>{tile.answerLine}</span>
@@ -220,7 +242,7 @@ function MonitoringRow({ row, onSymbolClick }) {
   if (!row) return null;
   return (
     <div data-cockpit-monitoring="1" style={{ padding: '10px 12px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {row.from ? <span style={{ fontFamily: MONO, fontSize: 10.5, color: cssVar('text-muted') }}>{row.from}</span> : null}
+      {row.from ? <span style={{ fontFamily: MONO, fontSize: 10.5, color: cssVar('text-secondary') }}>{row.from}</span> : null}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
         {row.chips.map((chip) => (
           <button
@@ -229,7 +251,7 @@ function MonitoringRow({ row, onSymbolClick }) {
             data-cockpit-monitoring-symbol={chip.symbol}
             aria-label={COPY.cockpitMonitoringChipName(chip.symbol)}
             onClick={() => onSymbolClick?.(chip.symbol)}
-            style={{ ...chipStyle(false), minHeight: 32, padding: '4px 12px' }}
+            style={{ ...chipStyle(false), padding: '4px 12px' }}
           >
             <span style={labelSpan(12, 700)}>{chip.symbol}</span>
           </button>
@@ -241,27 +263,41 @@ function MonitoringRow({ row, onSymbolClick }) {
 
 /**
  * @param {object} props
- * @param {object} props.feed         buildCockpitFeed(...)
+ * @param {object} props.feed         buildCockpitFeed(...) — every tile carries its own refusal line
+ * @param {'loading'|'ready'|'error'} [props.status]  the calls + events readers' state (review L3-2)
  * @param {object|null} props.monitoring  monitoringRow(...)
  * @param {{ vintage: string|null, messagesLeft: string|null }|null} props.topRow  desktop only
- * @param {string} props.emptyLine    the empty state's line
- * @param {object} props.outcomes     callId → { status, body } (the last refusal per call)
+ * @param {string} props.emptyLine    the empty state's line (shown only once the records are READY)
  */
 export default function CockpitFeed({
   feed,
+  status = 'ready',
   monitoring = null,
   topRow = null,
   emptyLine = null,
-  outcomes = {},
   onAnswer,
   onOpenSheet,
   onSymbolClick,
   onShowAllEarlier,
   showAllEarlier = false,
 }) {
-  const hasCalls = feed && (feed.needsYou.length + feed.waiting.length + feed.earlierTotal) > 0;
+  const rootRef = React.useRef(null);
+  const focusAfterExpand = React.useRef(null);
+  const ready = status === 'ready';
+  const hasCalls = ready && feed && (feed.needsYou.length + feed.waiting.length + feed.earlierTotal) > 0;
+
+  // "Show all" removes itself when pressed: focus moves to the first tile it
+  // revealed, never to <body> (review L5-5).
+  React.useEffect(() => {
+    if (!showAllEarlier || focusAfterExpand.current === null) return;
+    const index = focusAfterExpand.current;
+    focusAfterExpand.current = null;
+    const tiles = rootRef.current?.querySelectorAll('[data-cockpit-tile-group="earlier"] [data-cockpit-tile-open]');
+    tiles?.[index]?.focus?.();
+  }, [showAllEarlier]);
+
   return (
-    <div data-cockpit-feed="1" style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+    <div ref={rootRef} data-cockpit-feed="1" data-cockpit-status={status} style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
       {topRow ? (
         <div
           data-cockpit-top-row="1"
@@ -283,36 +319,39 @@ export default function CockpitFeed({
           ) : null}
         </div>
       ) : null}
-      {!hasCalls && !monitoring ? (
+      {status === 'error' ? (
+        <div data-cockpit-read-error="1" style={{ padding: '18px 14px', fontSize: 13, color: cssVar('text-secondary'), lineHeight: 1.45 }}>{COPY.cockpitReadError}</div>
+      ) : null}
+      {ready && !hasCalls && !monitoring ? (
         <div data-cockpit-empty="1" style={{ padding: '18px 14px', fontSize: 13, color: cssVar('text-secondary'), lineHeight: 1.45 }}>{emptyLine}</div>
       ) : null}
-      {feed && feed.needsYou.length > 0 ? (
-        <section aria-label={COPY.cockpitGroupNeedsYou}>
+      {ready && feed && feed.needsYou.length > 0 ? (
+        <section>
           <GroupHeader groupKey="needsYou" label={COPY.cockpitGroupNeedsYou} count={feed.needsYou.length} />
-          {feed.needsYou.map((t) => <Tile key={t.id} tile={t} outcome={outcomes[t.id]} onAnswer={onAnswer} onOpenSheet={onOpenSheet} />)}
+          {feed.needsYou.map((t) => <Tile key={t.id} tile={t} onAnswer={onAnswer} onOpenSheet={onOpenSheet} />)}
         </section>
       ) : null}
-      {feed && feed.waiting.length > 0 ? (
-        <section aria-label={COPY.cockpitGroupWaiting}>
+      {ready && feed && feed.waiting.length > 0 ? (
+        <section>
           <GroupHeader groupKey="waiting" label={COPY.cockpitGroupWaiting} />
-          {feed.waiting.map((t) => <Tile key={t.id} tile={t} outcome={outcomes[t.id]} onAnswer={onAnswer} onOpenSheet={onOpenSheet} />)}
+          {feed.waiting.map((t) => <Tile key={t.id} tile={t} onAnswer={onAnswer} onOpenSheet={onOpenSheet} />)}
         </section>
       ) : null}
       {monitoring ? (
-        <section aria-label={COPY.cockpitGroupMonitoring}>
+        <section>
           <GroupHeader groupKey="monitoring" label={COPY.cockpitGroupMonitoring} />
           <MonitoringRow row={monitoring} onSymbolClick={onSymbolClick} />
         </section>
       ) : null}
-      {feed && feed.earlierTotal > 0 ? (
-        <section aria-label={COPY.cockpitGroupEarlier}>
+      {ready && feed && feed.earlierTotal > 0 ? (
+        <section>
           <GroupHeader groupKey="earlier" label={COPY.cockpitGroupEarlier} count={feed.earlierTotal} dim />
-          {feed.earlier.map((t) => <Tile key={t.id} tile={t} outcome={outcomes[t.id]} onAnswer={onAnswer} onOpenSheet={onOpenSheet} dim />)}
+          {feed.earlier.map((t) => <Tile key={t.id} tile={t} onAnswer={onAnswer} onOpenSheet={onOpenSheet} />)}
           {!showAllEarlier && feed.earlierTotal > feed.earlier.length ? (
             <button
               type="button"
               data-cockpit-show-all="1"
-              onClick={onShowAllEarlier}
+              onClick={() => { focusAfterExpand.current = feed.earlier.length; onShowAllEarlier?.(); }}
               style={{ ...chipStyle(false), margin: '10px 12px 4px', alignSelf: 'flex-start' }}
             >
               <span style={labelSpan(12)}>{COPY.cockpitShowAll(feed.earlierTotal)}</span>

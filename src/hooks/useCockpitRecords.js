@@ -12,10 +12,16 @@
 //   useCallObservation(battleId, callId) callObservations/{callId}, ONE get
 //
 // EVERY QUERY ORDERS BY ONE FIELD — no composite index. Each reader gates
-// INSIDE its effect, tears its listener down on teardown, and returns null
-// while off (the useMasteryProfile / useIntradayView precedents); firebase is
-// imported lazily on the lit path only, so with the cockpit off this module
-// loads nothing firebase-adjacent and opens nothing.
+// INSIDE its effect and tears its listener down on teardown (the
+// useMasteryProfile / useIntradayView precedents); firebase is imported lazily
+// on the lit path only, so with the cockpit off this module loads nothing
+// firebase-adjacent and opens nothing.
+//
+// A LIST READER SAYS WHAT IT KNOWS (review L3-2): `{ status, value }` with
+// status 'off' (not asked), 'loading' (asked, nothing delivered yet), 'ready'
+// (a snapshot delivered — value is the list) or 'error' (the listener or the
+// load failed). "Not delivered" and "failed" are never an empty list: the
+// screen shows no empty state, tag or receipt until a reader is ready.
 //
 // C-5 AT THE BOUNDARY: only records minted under 'on' leave this module —
 // records without the field predate Amendment C and are never shown.
@@ -46,9 +52,12 @@ function firestore() {
   return firestoreLoad;
 }
 
-/** A live, one-field-ordered list under agentBattles/{battleId}/{sub}; null while off. */
-const IDLE = Object.freeze({ key: null, value: null });
+/** The reader states. OFF / LOADING are shared frozen objects, so an idle reader never adds a render. */
+export const READER_OFF = Object.freeze({ status: 'off', value: null });
+export const READER_LOADING = Object.freeze({ status: 'loading', value: null });
+const IDLE = Object.freeze({ key: null, status: 'off', value: null });
 
+/** A live, one-field-ordered list under agentBattles/{battleId}/{sub}: `{ status, value }`. */
 function useLiveList(battleId, enabled, sub, orderField, max, project) {
   const [state, setState] = useState(IDLE);
   const key = enabled && typeof battleId === 'string' && battleId ? `${battleId}|${sub}` : null;
@@ -64,11 +73,11 @@ function useLiveList(battleId, enabled, sub, orderField, max, project) {
         if (cancelled) return;
         unsub = onSnapshot(
           query(collection(db, 'agentBattles', battleId, sub), orderBy(orderField, 'desc'), limit(max)),
-          (snap) => setState({ key, value: project(snap.docs.map((d) => ({ id: d.id, ...d.data() }))) }),
-          () => setState({ key, value: null }), // permission / transport → nothing shown, never a guess
+          (snap) => setState({ key, status: 'ready', value: project(snap.docs.map((d) => ({ id: d.id, ...d.data() }))) }),
+          () => setState({ key, status: 'error', value: null }), // permission / transport → said, never a guess
         );
       } catch {
-        if (!cancelled) setState({ key, value: null });
+        if (!cancelled) setState({ key, status: 'error', value: null });
       }
     })();
     return () => { cancelled = true; if (unsub) unsub(); };
@@ -76,7 +85,9 @@ function useLiveList(battleId, enabled, sub, orderField, max, project) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, battleId, sub, orderField, max]);
 
-  return key && state.key === key ? state.value : null;
+  if (!key) return READER_OFF;
+  if (state.key !== key) return READER_LOADING;
+  return state.status === 'ready' ? { status: 'ready', value: state.value } : { status: state.status, value: null };
 }
 
 const projectCalls = (docs) => docs.filter(minted);
@@ -88,23 +99,23 @@ const projectMonitoring = (docs) => {
   return { symbols, evalId: typeof newest.evalId === 'string' ? newest.evalId : null, mintedAt: newest.mintedAt ?? null };
 };
 
-/** The battle's newest 60 calls minted under 'on', newest first; null while off. */
+/** The battle's newest 60 calls minted under 'on', newest first: `{ status, value }`. */
 export function useCalls(battleId, enabled) {
   return useLiveList(battleId, enabled, 'calls', 'mintedAt', CALLS_LIMIT, projectCalls);
 }
 
 /**
  * The newest declarations record, when it was minted under 'on':
- * `{ symbols, evalId, mintedAt }` (the record's watch list as `symbols`), or
- * null — while off, or when the newest record predates the amendment or was
- * minted at shadow. The record carries no promptBuiltAt; the screen resolves
- * the check's time from the battle's own evaluations by `evalId`.
+ * `{ status, value }` with value `{ symbols, evalId, mintedAt }` (the record's
+ * watch list as `symbols`), or null — when the newest record predates the
+ * amendment or was minted at shadow. The record carries no promptBuiltAt; the
+ * screen resolves the check's time from the battle's own evaluations by `evalId`.
  */
 export function useMonitoring(battleId, enabled) {
   return useLiveList(battleId, enabled, 'declarations', 'evalSeq', 1, projectMonitoring);
 }
 
-/** The battle's newest 150 call events, newest first (the model groups them by callIds); null while off. */
+/** The battle's newest 150 call events, newest first (the model groups them by callIds): `{ status, value }`. */
 export function useCallEvents(battleId, enabled) {
   return useLiveList(battleId, enabled, 'callEvents', 'at', CALL_EVENTS_LIMIT, projectEvents);
 }

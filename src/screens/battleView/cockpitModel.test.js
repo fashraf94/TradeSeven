@@ -22,7 +22,7 @@ import {
   COCKPIT_GROUP, THREAD_LEVEL_TOLERANCE, EARLIER_SHOWN, MONITORING_MAX,
   cockpitCalls, eventsByCall, promptBuiltAtOf, latestPromptBuiltAt, threadKeyOf, levelsWithin, foldThreads,
   factTag, callTag, kindLabelOf, answerLabelOf, overrideBlockOf, tileOf, buildCockpitFeed, monitoringRow,
-  receiptLineOf, observationLineOf, citedPriceOf, sheetOf, checkOf,
+  receiptLineOf, observationLineOf, citedPriceOf, sheetOf, checkOf, refusalLineOf, PENDING_REFUSAL_GRACE_MS,
 } from './cockpitModel';
 import { BATTLE_VIEW_COPY as COPY, COCKPIT_FACT_TAGS, cockpitRefusalLine } from './battleViewCopy';
 import { tileAnswersFor } from '../../../api/_utils/callRecords/answers.js';
@@ -220,14 +220,16 @@ describe('§7.3 — one call at a time: the answer endpoint\'s own predicate', (
     const other = call({ symbol: 'MU' });
     const t = tileFor(feed([slotCall, other], { directive: slotFor(slotCall) }), other);
     expect(t.buttons.find((b) => b.row === 'directive').disabled).toBe(true);
-    expect(t.blockedLine).toBe('Waiting · your last answer is in force until 4:00 PM.');
+    expect(t.blockedLine).toBe('Waiting · your last answer stays active until 4:00 PM.');
     expect(t.blockedLine).not.toContain('heard');
+    // "Active", never "in force": the agent is coached, not compelled (review L6-8).
+    expect(t.blockedLine).not.toContain('force');
   });
 
-  it('a slot whose call is not among the loaded calls blocks with the in-force line (no claim about hearing)', () => {
+  it('a slot whose call is not among the loaded calls blocks with the active line (no claim about hearing)', () => {
     const other = call({ symbol: 'MU' });
     const t = tileFor(feed([other], { directive: slotFor({ callId: 'b:eval_001:call:9' }) }), other);
-    expect(t.blockedLine).toBe('Waiting · your last answer is in force until 4:00 PM.');
+    expect(t.blockedLine).toBe('Waiting · your last answer stays active until 4:00 PM.');
   });
 
   it('nothing blocks once the slot expires, when it is killed, when the renderer suppresses it, or when it is not a call directive', () => {
@@ -247,17 +249,35 @@ describe('§7.3 — one call at a time: the answer endpoint\'s own predicate', (
     }
   });
 
-  it('the 409 directive_pending line under a tile reads the same slot: the spec\'s line, or the in-force one once heard', () => {
+  it('the 409 directive_pending line claims only what the records show (review L6-5)', () => {
     const slotCall = call({ symbol: 'NVDA' });
     slotCall.playerResponse = directive(slotCall);
     const other = call({ symbol: 'MU' });
-    const unheard = tileFor(feed([slotCall, other], { directive: slotFor(slotCall) }), other);
-    expect(cockpitRefusalLine(409, { error: 'refused', reason: 'directive_pending' }, { pendingLine: unheard.pendingLine }))
-      .toBe("Waiting · your last answer hasn't been heard yet. One call at a time.");
+    const body = { error: 'refused', reason: 'directive_pending', pendingDirectiveThreadId: `th-${slotCall.callId}`, pendingCallId: slotCall.callId };
+    const outcome = { status: 409, body, at: NOW, callId: other.callId };
+    const lineFor = (calls, over = {}) => tileFor(feed(calls, { directive: slotFor(slotCall), outcomes: { [other.callId]: outcome }, ...over }), other).refusalLine;
+    // The pending call is loaded and unheard → the spec's line.
+    expect(lineFor([slotCall, other])).toBe("Waiting · your last answer hasn't been heard yet. One call at a time.");
+    // …heard → the active line, with the slot's own time.
     slotCall.playerResponse = directive(slotCall, { heardEvalId: 'eval_011' });
-    const heard = tileFor(feed([slotCall, other], { directive: slotFor(slotCall) }), other);
-    expect(cockpitRefusalLine(409, { error: 'refused', reason: 'directive_pending' }, { pendingLine: heard.pendingLine }))
-      .toBe('Waiting · your last answer is in force until 4:00 PM. One call at a time.');
+    expect(lineFor([slotCall, other])).toBe('Waiting · your last answer stays active until 4:00 PM. One call at a time.');
+    // …not among the loaded calls → no claim about hearing at all.
+    expect(lineFor([other])).toBe('Waiting · your last answer stays active until 4:00 PM. One call at a time.');
+    expect(lineFor([other], { directive: null })).toBe('Waiting · your last answer is still active. One call at a time.');
+  });
+
+  it('a directive_pending refusal stands while the block does; once the client sees no block it ages out (clock skew grace)', () => {
+    const slotCall = call({ symbol: 'NVDA' });
+    slotCall.playerResponse = directive(slotCall);
+    const other = call({ symbol: 'MU' });
+    const body = { error: 'refused', reason: 'directive_pending', pendingDirectiveThreadId: `th-${slotCall.callId}`, pendingCallId: slotCall.callId };
+    const at = NOW;
+    const tile = (nowMs, dir = slotFor(slotCall)) => tileFor(feed([slotCall, other], { directive: dir, nowMs, outcomes: { [other.callId]: { status: 409, body, at, callId: other.callId } } }), other);
+    expect(tile(NOW + 60_000).refusalLine).toContain('One call at a time.'); // still blocked
+    expect(PENDING_REFUSAL_GRACE_MS).toBe(30_000);
+    expect(tile(NOW + 10_000, null).refusalLine).toContain('One call at a time.'); // no block seen, but fresh
+    expect(tile(NOW + PENDING_REFUSAL_GRACE_MS + 1, null).refusalLine).toBeNull(); // no block, aged out
+    expect(tile(CLOSE + PENDING_REFUSAL_GRACE_MS + 1).refusalLine).toBeNull(); // the directive expired
   });
 });
 
@@ -265,7 +285,7 @@ describe('§7.3 — one call at a time: the answer endpoint\'s own predicate', (
 
 describe('§7.4 — every state tag row, from record facts only', () => {
   const tagOf = (c, events = []) => callTag(c, { events, evaluations: EVALS, nowMs: NOW });
-  const ev = (c, kind, promptBuiltAt, at = T('2026-09-09T15:01:00.000Z')) => ({ kind, at, callIds: [c.callId], text: '', evidence: { evalId: 'eval_012', promptBuiltAt, checkLabel: null } });
+  const ev = (c, kind, promptBuiltAt, at = T('2026-09-09T15:01:00.000Z')) => ({ kind, at, callIds: [c.callId], text: '', evidence: promptBuiltAt ? { evalId: 'eval_012', promptBuiltAt, checkLabel: null } : {} });
 
   it('open, no answer → "Live" (neutral)', () => {
     expect(tagOf(call())).toEqual({ fact: 'state:open', tone: 'neutral', text: 'Live' });
@@ -306,8 +326,8 @@ describe('§7.4 — every state tag row, from record facts only', () => {
   it('ended_with_battle → "Battle ended" (muted)', () => {
     expect(tagOf(call({ state: 'ended_with_battle' }))).toEqual({ fact: 'state:ended_with_battle', tone: 'muted', text: 'Battle ended' });
   });
-  it('invalidated → "Dropped · price line out of range" (amber)', () => {
-    expect(tagOf(call({ state: 'invalidated' }))).toEqual({ fact: 'state:invalidated', tone: 'dropped', text: 'Dropped · price line out of range' });
+  it('invalidated → "Dropped" (amber) — the bare fact: the call record carries no reason (review L6-4)', () => {
+    expect(tagOf(call({ state: 'invalidated' }))).toEqual({ fact: 'state:invalidated', tone: 'dropped', text: 'Dropped' });
   });
   it('a missing time says the bare fact — never a guessed time', () => {
     const c = call(); c.playerResponse = { ...ack(c), filedAt: null };
@@ -315,6 +335,33 @@ describe('§7.4 — every state tag row, from record facts only', () => {
     const h = call(); h.playerResponse = directive(h, { heardEvalId: 'eval_gone' });
     expect(tagOf(h).text).toBe('Heard');
   });
+  it('an OPEN call the agent already acted on → "Acted at the {t} check" (emerald), whoever stamped it (review L6-1)', () => {
+    // The flip's whole-trade match on an open call: outcome.actedEvalId, no event.
+    const flipped = call({ outcome: { actedEvalId: 'eval_012' } });
+    expect(tagOf(flipped)).toEqual({ fact: 'event:acted', tone: 'acted', text: 'Acted at the 11:00 AM check' });
+    // The heard pass: a directive answer heard and acted, with its acted event.
+    const heardActed = call({ outcome: { actedEvalId: 'eval_011' } });
+    heardActed.playerResponse = directive(heardActed, { heardEvalId: 'eval_011', answer: 'go_now' });
+    expect(tagOf(heardActed, [ev(heardActed, 'heard', P1045), ev(heardActed, 'acted', P1045)])).toMatchObject({ fact: 'event:acted', text: 'Acted at the 10:45 AM check' });
+    // …and it outranks an earlier no-matching-trade receipt.
+    const later = call({ outcome: { actedEvalId: 'eval_012' } });
+    later.playerResponse = directive(later, { heardEvalId: 'eval_011' });
+    expect(tagOf(later, [ev(later, 'no_matching_trade', P1045)]).text).toBe('Acted at the 11:00 AM check');
+  });
+
+  it('the open call\'s other answer facts: the NEWEST by its check wins, ties in the order replaced · no matching trade · heard', () => {
+    const c = call(); c.playerResponse = directive(c, { heardEvalId: 'eval_011' });
+    // Heard at 10:45, no matching trade at 11:00 → the newer fact.
+    expect(tagOf(c, [ev(c, 'no_matching_trade', P1100)]).text).toBe('No matching trade at the 11:00 AM check');
+    // The same check: no matching trade outranks heard.
+    expect(tagOf(c, [ev(c, 'no_matching_trade', P1045)]).text).toBe('No matching trade at the 10:45 AM check');
+    // Heard at 11:00 after a replacement at 10:50 → Heard (the newer fact) …
+    const h = call(); h.playerResponse = directive(h, { heardEvalId: 'eval_012' });
+    expect(tagOf(h, [ev(h, 'superseded', null, T('2026-09-09T14:50:00.000Z'))]).text).toBe('Heard at the 11:00 AM check');
+    // … and a replacement after the hearing reads Replaced.
+    expect(tagOf(h, [ev(h, 'superseded', null, T('2026-09-09T15:02:00.000Z'))]).text).toBe('Replaced by a later answer');
+  });
+
   it('a fact with no row renders NO tag: an unknown state, an unknown fact, a deliberately tagless event', () => {
     expect(callTag(call({ state: 'frozen' }), { evaluations: EVALS, nowMs: NOW })).toBeNull();
     expect(factTag('state:frozen')).toBeNull();
@@ -484,9 +531,57 @@ describe('§7.2 — folding (Amendment C-6)', () => {
     const b = restated(a);
     const t = allTiles(feed([a, b]))[0];
     expect(t.group).toBe(COCKPIT_GROUP.WAITING);
-    expect(t.tag.text).toBe('You agreed · 10:32 AM');
     expect(t.buttons.map((x) => [x.answer, x.callId])).toEqual([['go', b.callId], ['hold', b.callId]]);
-    expect(t.answerLine).toBeNull();
+    // The agreement is NOT worn by the newer wording (review L6-2): the tag is the
+    // newest call's own, and the agreement is an answer line naming its wording.
+    expect(t.tag.text).toBe('Live');
+    expect(t.answerLine).toBe('You agreed · 10:32 AM, on the 10:30 AM wording');
+  });
+
+  it('an agreement over a REVERSED default (a Confirmed exit folded with a hold-default shot) never reads as agreement with the new wording (review L6-2)', () => {
+    const conf = call({ kind: 'confirmation', direction: 'exit', symbol: 'KO', counterpart: null, condition: { side: 'below', level: 60 } });
+    conf.playerResponse = ack(conf);
+    const shot = restated(conf, { kind: 'called_shot', defaultAction: 'hold', condition: { side: 'below', level: 60.3 } });
+    const t = allTiles(feed([conf, shot]))[0];
+    expect(t.kindLabel).toBe('Called shot');
+    expect(t.tag.text).toBe('Live');
+    expect(t.answerLine).toBe('You agreed · 10:32 AM, on the 10:30 AM wording');
+    expect(t.buttons.map((b) => b.label)).toEqual(['Hold', 'Go instead · 1 message']);
+  });
+
+  it('an open call past its deadline offers nothing (the endpoint refuses every answer then: 409 expired — review L6-7); it waits on the check', () => {
+    const next = call({ horizon: { phrase: 'next_check', expiresAt: T('2026-09-09T15:00:00.000Z'), basis: 'next_check' } });
+    const t = tileFor(feed([next]), next); // NOW is 11:05, the deadline 11:00
+    expect(t.buttons).toEqual([]);
+    expect(t.group).toBe(COCKPIT_GROUP.WAITING);
+    expect(t.tag.text).toBe('Live'); // the record still says open — no guessed state
+    const before = tileFor(feed([next], { nowMs: T('2026-09-09T14:59:59.000Z') }), next);
+    expect(before.buttons.map((b) => b.answer)).toEqual(['go', 'hold']);
+    const atDeadline = tileFor(feed([next], { nowMs: T('2026-09-09T15:00:00.000Z') }), next);
+    expect(atDeadline.buttons).toEqual([]); // the endpoint refuses at deadline <= now
+  });
+
+  it('an open call the agent already acted on offers nothing and waits', () => {
+    const c = call({ outcome: { actedEvalId: 'eval_012' } });
+    const t = tileFor(feed([c]), c);
+    expect(t.buttons).toEqual([]);
+    expect(t.group).toBe(COCKPIT_GROUP.WAITING);
+  });
+
+  it('an act on ANY call of a thread is the thread\'s tag, and no answer follows it — even over a live directive (the agent heard "hold off" and traded anyway)', () => {
+    const a = call();
+    a.playerResponse = directive(a, { heardEvalId: 'eval_011' });
+    a.outcome = { actedEvalId: 'eval_012' };
+    const b = restated(a);
+    const t = allTiles(feed([a, b]))[0];
+    expect(t.tag).toMatchObject({ fact: 'event:acted', text: 'Acted at the 11:00 AM check' });
+    expect(t.buttons).toEqual([]);
+    expect(t.answerLine).toBe('You said hold off · 10:33 AM, on the 10:30 AM wording');
+  });
+
+  it('a call with no finite deadline offers nothing (the endpoint\'s guard: !finite(deadline) → 409 expired)', () => {
+    const c = call({ horizon: { phrase: 'this_session', expiresAt: null, basis: 'this_session' } });
+    expect(tileFor(feed([c]), c).buttons).toEqual([]);
   });
 
   it('the newest call already answered offers nothing more (the endpoint would answer 409 already_answered)', () => {
@@ -636,12 +731,40 @@ describe('§7.5 — the sheet, from records alone', () => {
     expect(sheetOf(tileFor(feed([up]), up), { evaluations: EVALS, nowMs: NOW }).defaultLine).toBeNull();
   });
 
+  it('an upside call never shows its own sentence, even when the lint passed it (C-2 removes the action clause everywhere — review L6-9)', () => {
+    const up = call({ heldAtMint: true, said: 'AMD above $161 by the close, so I add to it for KO.', saidOk: true });
+    expect(sheetOf(tileFor(feed([up]), up), { evaluations: EVALS, nowMs: NOW }).said).toBeNull();
+  });
+
   it('receipts from callEvents, OLDEST FIRST: Filed → Heard → Acted, each with its time; the declaration is not a receipt', () => {
     const c = call({ state: 'hit', stateChangedAt: T('2026-09-09T15:00:30.000Z'), outcome: { actedEvalId: 'eval_012' } });
     c.playerResponse = directive(c, { heardEvalId: 'eval_011' });
     const events = evs(c);
     const s = sheetOf(tileFor(feed([c], { events }), c), { eventsMap: eventsByCall(events), evaluations: EVALS, nowMs: NOW });
     expect(s.receipts.map((r) => r.text)).toEqual(['Filed 10:33 AM', 'Heard at the 10:45 AM check', 'Acted at the 11:00 AM check']);
+  });
+
+  it('an act the flip recorded WITHOUT an event still reads as a receipt — from the record\'s own outcome.actedEvalId (review L6-1 / V2)', () => {
+    const c = call({ state: 'expired_unresolved', stateChangedAt: T('2026-09-09T20:05:00.000Z'), outcome: { actedEvalId: 'eval_012' } });
+    const s = sheetOf(tileFor(feed([c]), c), { evaluations: EVALS, nowMs: NOW });
+    expect(s.receipts.map((r) => r.text)).toEqual(['Acted at the 11:00 AM check']);
+    // …and never twice when the acted event exists.
+    const d = call({ outcome: { actedEvalId: 'eval_012' } });
+    const events = [{ kind: 'acted', at: T('2026-09-09T15:01:00.000Z'), callIds: [d.callId], evidence: { evalId: 'eval_012', promptBuiltAt: P1100 } }];
+    expect(sheetOf(tileFor(feed([d], { events }), d), { eventsMap: eventsByCall(events), evaluations: EVALS, nowMs: NOW }).receipts.map((r) => r.text)).toEqual(['Acted at the 11:00 AM check']);
+  });
+
+  it('receipts are ordered by the CHECK each names, not the writer\'s instant (a sweep-repaired "heard" carries the sweep\'s time — review L6-11)', () => {
+    const c = call({ state: 'expired_unresolved', stateChangedAt: T('2026-09-09T20:05:00.000Z') });
+    c.playerResponse = directive(c, { heardEvalId: 'eval_011' });
+    const events = [
+      { kind: 'answered', at: T('2026-09-09T14:33:00.000Z'), callIds: [c.callId] },
+      { kind: 'expired', at: T('2026-09-09T20:05:00.000Z'), callIds: [c.callId], evidence: {} },
+      // repaired by the sweep at 4:10 PM, naming the 10:45 check
+      { kind: 'heard', at: T('2026-09-09T20:10:00.000Z'), callIds: [c.callId], evidence: { evalId: 'eval_011', promptBuiltAt: P1045 } },
+    ];
+    const s = sheetOf(tileFor(feed([c], { events }), c), { eventsMap: eventsByCall(events), evaluations: EVALS, nowMs: NOW });
+    expect(s.receipts.map((r) => r.text)).toEqual(['Filed 10:33 AM', 'Heard at the 10:45 AM check', "Expired · by today's close"]);
   });
 
   it('a resolved call adds its observed price from callObservations ("Hit at $609.80 · the 1:45 PM check")', () => {
@@ -664,12 +787,17 @@ describe('§7.5 — the sheet, from records alone', () => {
     expect(receiptLineOf({ kind: 'mystery' }, c, { nowMs: NOW })).toBeNull();
   });
 
-  it('a folded thread lists each earlier wording with its own time; the check link names the newest call\'s check', () => {
+  it('a folded thread lists each EARLIER wording with its own time — the original "Called at…", the rest "Restated at…" (review L6-3)', () => {
     const a = call();
     const b = restated(a);
     const s = sheetOf(allTiles(feed([a, b]))[0], { evaluations: EVALS, nowMs: NOW });
-    expect(s.restated).toEqual([{ key: b.callId, check: 'Restated at the 10:45 AM check', line: "AMD above $162.00 by today's close" }]);
+    expect(s.title).toBe("AMD above $162.00 by today's close");
+    expect(s.restated).toEqual([{ key: a.callId, check: 'Called at the 10:30 AM check', line: "AMD above $161.00 by today's close" }]);
     expect(s.checkLink).toEqual({ evalId: 'eval_011', label: 'From the 10:45 AM check →' });
+    // Three wordings: the middle one is a restatement, the oldest the original.
+    const c = restated(a, { evalId: 'eval_012', evalSeq: 12, mintedAt: T('2026-09-09T15:01:00.000Z'), condition: { side: 'above', level: 162.5 }, evidence: { priceAsOf: P1100 } });
+    const s3 = sheetOf(allTiles(feed([a, b, c]))[0], { evaluations: EVALS, nowMs: NOW });
+    expect(s3.restated.map((r) => [r.key, r.check])).toEqual([[b.callId, 'Restated at the 10:45 AM check'], [a.callId, 'Called at the 10:30 AM check']]);
   });
 
   it('the sheet carries the tile\'s buttons, blocked line and pending line — the same answers as the tile', () => {
@@ -695,11 +823,12 @@ describe('tap state — no optimistic state; the pressed button reads "Sending�
     expect(t.group).toBe(COCKPIT_GROUP.NEEDS_YOU);
     expect(t.tag.text).toBe('Live');
   });
-  it('another tile is untouched by this tile\'s tap', () => {
+  it('while ANY answer is in flight every button waits — the hook sends one at a time, so a tap elsewhere is never silently dropped (review L3-7)', () => {
     const c = call();
     const d = call({ symbol: 'MU' });
     const t = tileFor(feed([c, d], { pending: { callId: c.callId, answer: 'go' } }), d);
-    expect(t.buttons.every((b) => !b.disabled)).toBe(true);
+    expect(t.buttons.every((b) => b.disabled)).toBe(true);
+    expect(t.buttons.map((b) => b.label)).toEqual(['Go if it triggers', 'Hold off · 1 message']); // only the pressed one reads "Sending…"
   });
 });
 
@@ -722,6 +851,37 @@ describe('eventsByCall — grouped by every call id an event names, oldest first
 });
 
 // ---------------------------------------------------------------------------
+
+describe('the refusal line under a tile — chosen from the body, dropped once it no longer describes the tile (review L6-5, L6-6)', () => {
+  const outcomeFor = (c, status, body) => ({ status, body, at: NOW, callId: c.callId });
+
+  it('every tile carries its refusal line from the outcomes the screen holds; a tile without one has none', () => {
+    const c = call();
+    const d = call({ symbol: 'MU' });
+    const f = feed([c, d], { outcomes: { [c.callId]: outcomeFor(c, 409, { error: 'refused', reason: 'budget' }) } });
+    expect(tileFor(f, c).refusalLine).toBe('No messages left — nothing was filed.');
+    expect(tileFor(f, d).refusalLine).toBeNull();
+  });
+
+  it('a refusal under a call that has since RESOLVED is dropped: "deadline has passed" never sits under "Hit at …"', () => {
+    const c = call({ state: 'hit', stateChangedAt: T('2026-09-09T15:00:30.000Z') });
+    const f = feed([c], { outcomes: { [c.callId]: outcomeFor(c, 409, { error: 'refused', reason: 'expired' }) } });
+    expect(tileFor(f, c).tag.text).toBe('Hit at the 11:00 AM check');
+    expect(tileFor(f, c).refusalLine).toBeNull();
+  });
+
+  it('a refusal under a call that has since been ANSWERED is dropped (the tile shows the answer)', () => {
+    const c = call(); c.playerResponse = ack(c);
+    const f = feed([c], { outcomes: { [c.callId]: outcomeFor(c, 409, { error: 'refused', reason: 'already_answered' }) } });
+    expect(tileFor(f, c).refusalLine).toBeNull();
+  });
+
+  it('refusalLineOf is total: no tile or no outcome → null', () => {
+    expect(refusalLineOf(null, { status: 409, body: {} })).toBeNull();
+    const c = call();
+    expect(refusalLineOf(tileFor(feed([c]), c), null)).toBeNull();
+  });
+});
 
 describe('§8.3 — every refusal row, from a mocked response BODY (R2A-8)', () => {
   const rows = [

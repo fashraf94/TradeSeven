@@ -107,14 +107,16 @@ export const PANE_HEADER_FIXED_PX = 327;
 
 /**
  * Cockpit Build 2a (spec §5) — the same cost with FOUR tabs at their widest:
- * the Cockpit tab (+ its 2 px gap) and the Chat tab reading "Chat · 99"
- * (unread is counted while another section shows). MEASURED, not estimated:
+ * the Cockpit tab (+ its 2 px gap) and the Chat tab at its widest label,
+ * "Chat · 9+" (unread is counted while another section shows, and the label
+ * caps at 9+ — battleViewCopy paneSectionChatUnread). MEASURED, not estimated:
  * the controls group rendered in Chromium with this file's styles and the
  * app's button font (index.css sets only the size, so buttons take the UA
  * face) — three tabs measure 242.3 px, reproducing the shipped 243; four tabs
- * measure 338.1 px with "Chat · 99" (311.7 px with plain "Chat"). Rounded up
- * as 243 was: controls 339, so 28 + 36 + 20 + 339. A three-digit unread count
- * would need ~7 px more.
+ * measure 338.1 px with "Chat · 99" and 338.4 px with "Chat · 9+" (311.7 px
+ * with plain "Chat"; the review re-measured all three). Rounded up as 243
+ * was: controls 339, so 28 + 36 + 20 + 339. (Measured on Windows Chromium,
+ * where the button face is Arial.)
  */
 export const PANE_HEADER_FIXED_COCKPIT_PX = 423;
 
@@ -243,6 +245,8 @@ export default function CharacterPane({
   sections = PANE_SECTIONS,
   cockpit = null,
   chatUnread = 0,
+  // True only while the desktop's cockpit sheet is open (modal within the pane).
+  controlsInert = false,
 }) {
   const regionRef = React.useRef(null);
   const wasOpenRef = React.useRef(open);
@@ -406,7 +410,7 @@ export default function CharacterPane({
             three labels are the thing the player aims at, and a control that
             gives up width first turns three tabs into three slivers. The name
             beside it wraps instead. */}
-        <div data-pane-controls="1" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+        <div data-pane-controls="1" inert={controlsInert || undefined} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
           <SegmentedControl section={section} onSelect={onSelectSection} sections={sections} chatUnread={chatUnread} />
           {overflow}
           <button

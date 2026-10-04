@@ -29,7 +29,7 @@ vi.mock('../services/agentService', () => ({ submitDailyGrades: vi.fn(), addFeed
 
 // FIRESTORE: a recorder. The cockpit's readers are the only callers of these
 // functions on this screen; anything else falls through to the real module.
-const FS = vi.hoisted(() => ({ docs: {}, listeners: [], gets: [] }));
+const FS = vi.hoisted(() => ({ docs: {}, listeners: [], gets: [], next: {}, error: {} }));
 vi.mock('firebase/firestore', async (importOriginal) => {
   const actual = await importOriginal();
   return {
@@ -38,8 +38,10 @@ vi.mock('firebase/firestore', async (importOriginal) => {
     query: vi.fn((ref, ...constraints) => ({ __path: ref.__path, constraints })),
     orderBy: vi.fn((field, dir) => ({ field, dir })),
     limit: vi.fn((n) => ({ n })),
-    onSnapshot: vi.fn((q, next) => {
+    onSnapshot: vi.fn((q, next, error) => {
       FS.listeners.push(q.__path);
+      FS.next[q.__path] = next;
+      FS.error[q.__path] = error;
       const docs = FS.docs[q.__path];
       if (docs) next({ docs: docs.map((d) => ({ id: d.callId ?? d.id ?? 'x', data: () => d })) });
       return () => {};
@@ -181,7 +183,10 @@ beforeEach(() => {
   AUTH.user = { getIdToken: async () => 'token-1' };
   FS.listeners = [];
   FS.gets = [];
+  FS.next = {};
+  FS.error = {};
   seedRecords();
+  delete window.visualViewport;
   fetchSpy = vi.fn(async (url) => {
     const u = String(url);
     if (u.startsWith('/api/agent/cockpit-status')) return json(200, { on: STATUS_ON });
@@ -294,18 +299,26 @@ describe('ON — desktop: the Cockpit tab', () => {
   });
 
   it('"Chat · {n}" while another section shows and the chain counts unread; plain "Chat" once Chat shows', async () => {
-    // The first paint is the off layout (unknown reads off), so the chat was
-    // on screen and the existing tape is seen; what arrives WHILE Cockpit
-    // shows is what the Chat tab counts — the chain stays keyed to Chat.
+    // The seen-marker WAITS while the status is asked (review L4-2): the first
+    // paint is the off layout, so without the wait the check card that
+    // predates the load would be marked seen and then hidden behind Cockpit.
+    // A fresh mount counts everything as unseen (the A4 rule).
     await mount();
     expect(shownSection()).toBe('cockpit');
-    expect(q('[data-pane-tab="chat"]').textContent).toBe('Chat');
+    expect(q('[data-pane-tab="chat"]').textContent).toBe('Chat · 1');
     DOC = { ...LIVE_DOC, evaluations: [CHECK, { ...CHECK, evalId: 'eval_006', timestamp: '2026-09-01T16:59:02.000Z', promptBuiltAt: '2026-09-01T16:58:20.000Z' }] };
     await rerender();
-    expect(q('[data-pane-tab="chat"]').textContent).toBe('Chat · 1');
+    expect(q('[data-pane-tab="chat"]').textContent).toBe('Chat · 2');
     await click(q('[data-pane-tab="chat"]'));
     expect(shownSection()).toBe('chat');
     expect(q('[data-pane-tab="chat"]').textContent).toBe('Chat');
+  });
+
+  it('the label caps at "Chat · 9+" — the widest label the width budget was measured at', async () => {
+    const many = Array.from({ length: 14 }, (_, i) => ({ ...CHECK, evalId: `eval_1${String(i).padStart(2, '0')}`, timestamp: new Date(T('2026-09-01T15:00:00.000Z') + i * 60_000).toISOString() }));
+    DOC = { ...LIVE_DOC, evaluations: [...many, CHECK] };
+    await mount();
+    expect(q('[data-pane-tab="chat"]').textContent).toBe('Chat · 9+');
   });
 
   it('REPAIR: the battle stops being cockpit-on while Cockpit shows → the list\'s first entry (Chat), and the cockpit is gone', async () => {
@@ -479,5 +492,177 @@ describe('ON — phone: Board · Cockpit', () => {
     const layer = q('[data-cockpit-sheet-layer]');
     expect(layer.getAttribute('data-cockpit-sheet-layer')).toBe('mobile');
     expect(layer.style.position).toBe('fixed');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The review's fixes, mounted (docs/audits — the Build 2a review record).
+
+const chipFiling = (iso, id) => ({
+  userMessage: null, agentResponse: '', hasDirective: true, messageType: 'directive_filed', source: 'chip',
+  directive: { text: 'Widen the spread', expiry: 'end_of_battle', directiveThreadId: id }, directiveThreadId: id,
+  timestamp: iso, groundingVersion: 1, elicitationTarget: 'directive_filed', mode: 'battle',
+});
+const cockpitFiling = (iso, id) => buildCockpitExchange({
+  record: { text: "Hold off on AMD until today's close", expiry: 'until_ms', directiveThreadId: id, kind: 'call_hold' },
+  directiveThreadId: id, createdAt: iso, callId: OPEN.callId,
+});
+const deliver = async (path, docs) => {
+  await act(async () => { FS.next[path]?.({ docs: docs.map((d) => ({ id: d.callId ?? d.id ?? 'x', data: () => d })) }); });
+  await settle();
+};
+
+describe('REVIEW — the unread chain and the first paint (L3-1, L4-2, L4-7, L4-8)', () => {
+  it('the count NEVER counts the player\'s own cockpit answers — the old ones the gate admits on load, or a new one', async () => {
+    DOC = { ...LIVE_DOC, chatExchanges: [cockpitFiling('2026-09-01T16:40:00.000Z', 't-a'), cockpitFiling('2026-09-01T16:50:00.000Z', 't-b')] };
+    await mount();
+    expect(q('[data-pane-tab="chat"]').textContent).toBe('Chat · 1'); // the check card only
+    DOC = { ...DOC, chatExchanges: [...DOC.chatExchanges, cockpitFiling('2026-09-01T16:58:00.000Z', 't-c')] };
+    await rerender();
+    expect(q('[data-pane-tab="chat"]').textContent).toBe('Chat · 1');
+  });
+
+  it('OFF PATH: with the flag as shipped, the Chat tab never carries a count (a new reply while Bench shows reads "Chat")', async () => {
+    FLAG.cockpit = null;
+    await mount();
+    await click(q('[data-pane-tab="bench"]'));
+    DOC = { ...LIVE_DOC, evaluations: [CHECK, { ...CHECK, evalId: 'eval_006', timestamp: '2026-09-01T16:59:02.000Z' }] };
+    await rerender();
+    expect(q('[data-pane-tab="chat"]').textContent).toBe('Chat');
+  });
+
+  it('PHONE, cockpit on: the overlay keeps the shipped tabs AND the shipped label — no count there (§6)', async () => {
+    setShell(false);
+    await mount();
+    await click(q('[data-character-mark]'));
+    await click(q('[data-pane-tab="bench"]'));
+    DOC = { ...LIVE_DOC, evaluations: [CHECK, { ...CHECK, evalId: 'eval_006', timestamp: '2026-09-01T16:59:02.000Z' }] };
+    await rerender();
+    expect(tabs()).toEqual(['chat', 'bench', 'tape']);
+    expect(q('[data-pane-tab="chat"]').textContent).toBe('Chat');
+  });
+});
+
+describe('REVIEW — nothing claimed before the records arrive (L3-2)', () => {
+  it('records not yet delivered → no empty line; a failed read → its own line, never "No calls yet"', async () => {
+    FS.docs = {};
+    await mount();
+    expect(q('[data-cockpit-feed]').getAttribute('data-cockpit-status')).toBe('loading');
+    expect(q('[data-cockpit-empty]')).toBeNull();
+    await act(async () => { FS.error['agentBattles/ab-1/calls']?.(new Error('permission-denied')); });
+    await settle();
+    expect(q('[data-cockpit-read-error]')).toBeTruthy();
+    expect(q('[data-cockpit-empty]')).toBeNull();
+  });
+});
+
+describe('REVIEW — the desktop sheet (L4-1, L4-4, L5-7)', () => {
+  it('the feed scroller holds still DECLARATIVELY while the sheet is open, and scrolls again after (no shorthand written)', async () => {
+    await mount();
+    const scroller = q('[data-cockpit-scroll]');
+    expect(scroller.style.overflowY).toBe('auto');
+    await click(q(`[data-cockpit-tile="${OPEN.callId}"] [data-cockpit-tile-open]`));
+    expect(scroller.style.overflowY).toBe('hidden');
+    expect(scroller.hasAttribute('inert')).toBe(true);
+    await click(q('[data-cockpit-sheet-close]'));
+    expect(scroller.style.overflowY).toBe('auto');
+    expect(scroller.hasAttribute('inert')).toBe(false);
+    expect(scroller.style.overflow).toBe('');
+  });
+
+  it('the pane\'s tabs and collapse wait (inert) while the sheet is open; a section change away from Cockpit closes it', async () => {
+    await mount();
+    await click(q(`[data-cockpit-tile="${OPEN.callId}"] [data-cockpit-tile-open]`));
+    expect(q('[data-pane-controls]').hasAttribute('inert')).toBe(true);
+    await click(q('[data-pane-tab="chat"]')); // a door can still move the pane
+    expect(q('[data-cockpit-sheet]')).toBeNull();
+    expect(q('[data-pane-controls]').hasAttribute('inert')).toBe(false);
+    await click(q('[data-pane-tab="cockpit"]'));
+    expect(q('[data-cockpit-sheet]')).toBeNull(); // never re-shown by itself
+  });
+
+  it('a sheet whose call LEAVES the feed closes — and never re-opens by itself when the call comes back', async () => {
+    await mount();
+    await click(q(`[data-cockpit-tile="${GONE.callId}"] [data-cockpit-tile-open]`));
+    expect(q('[data-cockpit-sheet]')).toBeTruthy();
+    await deliver('agentBattles/ab-1/calls', [OPEN, RESOLVED]);
+    expect(q('[data-cockpit-sheet]')).toBeNull();
+    await deliver('agentBattles/ab-1/calls', [OPEN, GONE, RESOLVED]);
+    expect(q(`[data-cockpit-tile="${GONE.callId}"]`)).toBeTruthy();
+    expect(q('[data-cockpit-sheet]')).toBeNull();
+  });
+});
+
+describe('REVIEW — the phone sheet and layout (L5-1, L5-4, L5-8, L5-11)', () => {
+  beforeEach(() => setShell(false));
+
+  it('while the sheet is open the mark steps aside and everything behind it is inert; both come back on close', async () => {
+    await mount();
+    q('[data-board-cockpit-track]').scrollTo = vi.fn();
+    await click(q('[data-board-cockpit-tab="cockpit"]'));
+    expect(q('[data-character-mark]')).toBeTruthy();
+    await click(q(`[data-cockpit-tile="${OPEN.callId}"] [data-cockpit-tile-open]`));
+    expect(q('[data-character-mark]')).toBeNull();
+    expect(q('[data-layout]').hasAttribute('inert')).toBe(true);
+    expect(q('[data-board-cockpit-panel="cockpit"]').style.overflowY).toBe('hidden');
+    await click(q('[data-cockpit-sheet-close]'));
+    expect(q('[data-character-mark]')).toBeTruthy();
+    expect(q('[data-layout]').hasAttribute('inert')).toBe(false);
+    expect(q('[data-board-cockpit-panel="cockpit"]').style.overflowY).toBe('auto');
+  });
+
+  it('the phone root takes the viewport-high layout with a floor, and pinch-zoom does not shrink it', async () => {
+    await mount();
+    const root = [...container.querySelectorAll('div')].find((d) => d.style.minHeight === '480px');
+    expect(root).toBeTruthy();
+    expect(root.style.height).toBe(`${window.innerHeight}px`);
+    // Zoomed 2×: the visual viewport halves, the layout must not.
+    window.visualViewport = { height: Math.round(window.innerHeight / 2), scale: 2, addEventListener() {}, removeEventListener() {} };
+    await act(async () => { window.dispatchEvent(new Event('resize')); }); // the zoom's own resize
+    await settle();
+    const zoomed = [...container.querySelectorAll('div')].find((d) => d.style.minHeight === '480px');
+    expect(zoomed.style.height).toBe(`${Math.round(window.innerHeight / 2) * 2}px`);
+  });
+
+  it('cockpit OFF on the phone: the shipped page layout (min-height 100vh, no fixed height, no floor)', async () => {
+    FLAG.cockpit = null;
+    await mount();
+    expect([...container.querySelectorAll('div')].some((d) => d.style.minHeight === '480px')).toBe(false);
+    expect([...container.querySelectorAll('div')].some((d) => d.style.minHeight === '100vh')).toBe(true);
+  });
+
+  it('when the cockpit goes away the phone returns to Board, so a later return never lands on a stale screen', async () => {
+    await mount();
+    q('[data-board-cockpit-track]').scrollTo = vi.fn();
+    await click(q('[data-board-cockpit-tab="cockpit"]'));
+    expect(q('[data-board-cockpit-tab="cockpit"]').getAttribute('aria-selected')).toBe('true');
+    FLAG.cockpit = false;
+    await rerender();
+    FLAG.cockpit = true;
+    await rerender();
+    expect(q('[data-board-cockpit-tab="board"]').getAttribute('aria-selected')).toBe('true');
+  });
+});
+
+describe('REVIEW — the off path does no cockpit work (L3-4)', () => {
+  it('with the flag as shipped no (min-width: 1410px) query is ever subscribed', async () => {
+    FLAG.cockpit = null;
+    const queries = [];
+    const base = window.matchMedia;
+    window.matchMedia = (query) => { queries.push(String(query)); return base(query); };
+    await mount();
+    expect(queries.some((q2) => q2.includes('1410'))).toBe(false);
+    window.matchMedia = base;
+  });
+});
+
+describe('REVIEW — receipts read the UNGATED exchanges (L3-9)', () => {
+  it('a chat directive a cockpit filing replaced reads "Replaced" even while the gate hides the filing', async () => {
+    FLAG.cockpit = null; // the gate closed: the filing is not shown
+    const slot = { family: 'call', text: "Hold off on AMD until today's close", expiry: 'until_ms', expiresAtMs: CLOSE, directiveThreadId: 't-call', createdAt: '2026-09-01T16:50:00.000Z', callId: OPEN.callId, kind: 'call_hold' };
+    DOC = { ...LIVE_DOC, chatExchanges: [chipFiling('2026-09-01T14:10:00.000Z', 't-chip'), cockpitFiling('2026-09-01T16:50:00.000Z', 't-call')], directive: slot };
+    await mount();
+    expect(q('[data-from-cockpit]')).toBeNull();
+    expect(q('[data-pane-section="chat"]').textContent).toContain('Replaced 12:50 PM');
   });
 });

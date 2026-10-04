@@ -7,14 +7,25 @@
 // PANEL inside the pane on desktop.
 //
 //   MODAL      role="dialog" + aria-modal, labelled by its title; focus moves
-//              in on open, Tab cycles inside (trapped), Escape closes, and focus
-//              returns to the control that opened it; the scroller beneath is
-//              locked while it is open (the phone: the body; the desktop: the
-//              feed's own scroller, handed in by the screen).
+//              in on open; Tab cycles inside (trapped — also from the panel
+//              itself); Escape closes, from inside the sheet or from a focus
+//              the page lost; a focus that fell to <body> (an answered tile's
+//              buttons disappearing) comes back into the sheet (review L5-5).
+//   FOCUS BACK on close to the control that opened it when it can still take
+//              focus (connected, not inside a hidden or inert subtree), else
+//              to the screen's own fallback (`restoreFocus`) — the tile that
+//              now shows the call, never <body> (review L4-3, L5-5).
+//   SCROLL     the sheet locks nothing itself: the screen renders the
+//              scroller beneath with `overflowY: 'hidden'` while the sheet is
+//              open, declaratively — a style mutation here wiped the
+//              scroller's own `overflow-y` in a real browser and froze the
+//              feed after the first close (review L4-1), and a body lock
+//              interleaved with the pane's own (review L5-1).
 //   CONTENT    from cockpitModel.sheetOf — the plain line, the agent's own
 //              words ONLY when the record's saidOk is true (under the
 //              unverified label), the facts, the default as an intent, the
-//              receipts, the restatements, the check-card link, the buttons.
+//              receipts, the restatements, the check-card link, the buttons,
+//              and the refusal line the model chose.
 //   MOTION     the existing `smooth` token; `instant` under reduced motion.
 //
 // HAZARD 48: every label sizes an inner <span>.
@@ -24,38 +35,47 @@ import { motion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { cssVar } from '../../theme/cssTokens';
 import { motionToken } from '../../theme/motion';
-import { BATTLE_VIEW_COPY as COPY, cockpitRefusalLine } from './battleViewCopy';
-import { AnswerButtons, StateTag } from './CockpitFeed';
+import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
+import { AnswerButtons, StateTag, plainButton } from './CockpitFeed';
 
 const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
 const FOCUSABLE = 'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
+/** Can this element still take focus where the player would see it? */
+function canTakeFocus(el) {
+  return Boolean(el && typeof el.focus === 'function' && el.isConnected && !el.closest('[hidden], [inert]'));
+}
 
 /**
  * @param {object} props
  * @param {object|null} props.sheet   cockpitModel.sheetOf(...) — null renders nothing
  * @param {boolean} props.isDesktop
  * @param {boolean} props.reducedMotion
- * @param {object|null} props.outcome { status, body } — the last refusal for this call
  * @param {string|null} props.checkGoneLine  shown after a tap on the check link found no card
- * @param {{ current: HTMLElement|null }} [props.lockRef]  the desktop scroller to lock
+ * @param {number} [props.bottomInset]  the phone's browser-chrome inset (the mark's F3 value)
+ * @param {() => (HTMLElement|null)} [props.restoreFocus]  where focus goes when the opener cannot take it
  */
 export default function CockpitSheet({
   sheet,
   isDesktop = false,
   reducedMotion = false,
-  outcome = null,
   checkGoneLine = null,
-  lockRef = null,
+  bottomInset = 0,
+  restoreFocus = null,
   onClose,
   onAnswer,
   onOpenCheck,
 }) {
   const panelRef = React.useRef(null);
   const returnRef = React.useRef(null);
+  const restoreRef = React.useRef(restoreFocus);
+  restoreRef.current = restoreFocus;
+  const closeRef = React.useRef(onClose);
+  closeRef.current = onClose;
   const open = Boolean(sheet);
   const titleId = 'cockpit-sheet-title';
 
-  // FOCUS IN on open, BACK on close — the element that held focus when the sheet opened.
+  // FOCUS IN on open, BACK on close.
   React.useEffect(() => {
     if (!open) return undefined;
     returnRef.current = typeof document !== 'undefined' ? document.activeElement : null;
@@ -64,34 +84,58 @@ export default function CockpitSheet({
     return () => {
       const back = returnRef.current;
       returnRef.current = null;
-      if (back && typeof back.focus === 'function' && back.isConnected) back.focus();
+      // Focus something else already placed (the chat's check-card landing
+      // focuses its card in the same commit) is left where it is.
+      const active = typeof document !== 'undefined' ? document.activeElement : null;
+      if (active && active !== document.body && active.isConnected) return;
+      if (canTakeFocus(back)) { back.focus(); return; }
+      const fallback = typeof restoreRef.current === 'function' ? restoreRef.current() : null;
+      if (canTakeFocus(fallback)) fallback.focus();
     };
   }, [open]);
 
-  // SCROLL LOCK — the previous value restored, never assumed '' (the pane's own rule).
+  // A focus the page LOST (to <body>) while the sheet is open comes back in.
   React.useEffect(() => {
-    if (!open) return undefined;
-    const target = isDesktop ? lockRef?.current : (typeof document !== 'undefined' ? document.body : null);
-    if (!target) return undefined;
-    const previous = target.style.overflow;
-    target.style.overflow = 'hidden';
-    return () => { target.style.overflow = previous; };
-  }, [open, isDesktop, lockRef]);
+    if (!open || typeof document === 'undefined') return;
+    const active = document.activeElement;
+    if ((!active || active === document.body) && panelRef.current) panelRef.current.focus();
+  });
+
+  // Escape and Tab from a lost focus — the panel's own handler covers focus inside.
+  React.useEffect(() => {
+    if (!open || typeof document === 'undefined') return undefined;
+    const onDocKey = (e) => {
+      const active = document.activeElement;
+      const lost = !active || active === document.body;
+      if (!lost) return;
+      if (e.key === 'Escape') { e.preventDefault(); closeRef.current?.(); return; }
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const nodes = [...(panelRef.current?.querySelectorAll(FOCUSABLE) ?? [])];
+        (nodes[0] || panelRef.current)?.focus?.();
+      }
+    };
+    document.addEventListener('keydown', onDocKey);
+    return () => document.removeEventListener('keydown', onDocKey);
+  }, [open]);
 
   if (!open) return null;
 
   const onKeyDown = (e) => {
-    if (e.key === 'Escape') { e.preventDefault(); onClose?.(); return; }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose?.(); return; }
     if (e.key !== 'Tab') return;
     const nodes = [...(panelRef.current?.querySelectorAll(FOCUSABLE) ?? [])];
     if (nodes.length === 0) { e.preventDefault(); return; }
     const first = nodes[0];
     const last = nodes[nodes.length - 1];
-    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    const active = document.activeElement;
+    // From the panel itself (focus came back to it), Tab and Shift+Tab stay inside too.
+    if (active === panelRef.current) { e.preventDefault(); (e.shiftKey ? last : first).focus(); return; }
+    if (e.shiftKey && active === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
   };
 
-  const refusal = outcome ? cockpitRefusalLine(outcome.status, outcome.body, { pendingLine: sheet.pendingLine }) : null;
+  const refusal = sheet.refusalLine ?? null;
 
   return (
     <div
@@ -117,7 +161,6 @@ export default function CockpitSheet({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        aria-roledescription={COPY.cockpitSheetName}
         data-cockpit-sheet="1"
         tabIndex={-1}
         onKeyDown={onKeyDown}
@@ -132,7 +175,7 @@ export default function CockpitSheet({
           background: cssVar('bg-card-holo'),
           border: `1px solid rgba(var(--ft-scrim-rgb), 0.12)`,
           borderRadius: isDesktop ? 14 : '18px 18px 0 0',
-          padding: '14px 16px 18px',
+          padding: isDesktop ? '14px 16px 18px' : `14px 16px ${18 + (Number.isFinite(bottomInset) && bottomInset > 0 ? bottomInset : 0)}px`,
           display: 'flex',
           flexDirection: 'column',
           gap: 12,
@@ -143,7 +186,7 @@ export default function CockpitSheet({
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
             <span style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase', fontWeight: 700, color: cssVar('teal') }}>
               {sheet.kindLabel}
-              {sheet.eyebrow ? <span style={{ color: cssVar('text-muted'), fontWeight: 500, textTransform: 'none', letterSpacing: '0.02em' }}>{' · '}{sheet.eyebrow}</span> : null}
+              {sheet.eyebrow ? <span style={{ color: cssVar('text-secondary'), fontWeight: 500, textTransform: 'none', letterSpacing: '0.02em' }}>{' · '}{sheet.eyebrow}</span> : null}
             </span>
             <h2 id={titleId} style={{ margin: 0, fontSize: 16, fontWeight: 800, lineHeight: 1.3 }}>{sheet.title}</h2>
             <StateTag tag={sheet.tag} />
@@ -159,13 +202,13 @@ export default function CockpitSheet({
           </button>
         </div>
 
-        {sheet.restatedLine ? <span style={{ fontFamily: MONO, fontSize: 10.5, color: cssVar('text-muted') }}>{sheet.restatedLine}</span> : null}
+        {sheet.restatedLine ? <span style={{ fontFamily: MONO, fontSize: 10.5, color: cssVar('text-secondary') }}>{sheet.restatedLine}</span> : null}
         {sheet.answerLine ? <span style={{ fontSize: 12, color: cssVar('call-yours') }}>{sheet.answerLine}</span> : null}
 
         {sheet.said ? (
           <figure data-cockpit-said="1" style={{ margin: 0, padding: '8px 10px', borderLeft: `2px solid ${cssVar('call-yours')}`, background: `rgba(var(--ft-teal-rgb), 0.05)` }}>
             <blockquote style={{ margin: 0, fontSize: 13, lineHeight: 1.5, fontStyle: 'italic', color: cssVar('text-secondary') }}>{sheet.said.text}</blockquote>
-            <figcaption style={{ marginTop: 4, fontFamily: MONO, fontSize: 9.5, color: cssVar('text-muted') }}>{sheet.said.label}</figcaption>
+            <figcaption style={{ marginTop: 4, fontFamily: MONO, fontSize: 9.5, color: cssVar('text-secondary') }}>{sheet.said.label}</figcaption>
           </figure>
         ) : null}
 
@@ -173,7 +216,7 @@ export default function CockpitSheet({
           <dl data-cockpit-facts="1" style={{ margin: 0, display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
             {sheet.facts.map((f) => (
               <div key={f.key} data-cockpit-fact={f.key}>
-                <dt style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: cssVar('text-muted') }}>{f.label}</dt>
+                <dt style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: cssVar('text-secondary') }}>{f.label}</dt>
                 <dd style={{ margin: '3px 0 0', fontFamily: MONO, fontSize: 12.5 }}>{f.value}</dd>
               </div>
             ))}
@@ -184,7 +227,7 @@ export default function CockpitSheet({
 
         {sheet.receipts.length > 0 ? (
           <div data-cockpit-receipts="1" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: cssVar('text-muted') }}>{COPY.cockpitSheetReceipts}</span>
+            <span style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: cssVar('text-secondary') }}>{COPY.cockpitSheetReceipts}</span>
             <ol style={{ margin: 0, paddingLeft: 16, display: 'flex', flexDirection: 'column', gap: 3 }}>
               {sheet.receipts.map((r) => <li key={r.key} data-cockpit-receipt="1" style={{ fontFamily: MONO, fontSize: 11.5, color: cssVar('text-secondary') }}>{r.text}</li>)}
             </ol>
@@ -194,8 +237,8 @@ export default function CockpitSheet({
         {sheet.restated.length > 0 ? (
           <div data-cockpit-restatements="1" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {sheet.restated.map((r) => (
-              <div key={r.key} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <span style={{ fontFamily: MONO, fontSize: 10.5, color: cssVar('text-muted') }}>{r.check}</span>
+              <div key={r.key} data-cockpit-restatement="1" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <span style={{ fontFamily: MONO, fontSize: 10.5, color: cssVar('text-secondary') }}>{r.check}</span>
                 <span style={{ fontSize: 12.5, color: cssVar('text-secondary') }}>{r.line}</span>
               </div>
             ))}
@@ -207,9 +250,9 @@ export default function CockpitSheet({
             type="button"
             data-cockpit-check-link={sheet.checkLink.evalId}
             onClick={() => onOpenCheck?.(sheet.checkLink.evalId)}
-            style={{ all: 'unset', cursor: 'pointer', alignSelf: 'flex-start', minHeight: 28, fontFamily: MONO, fontSize: 11, fontWeight: 600, color: cssVar('teal') }}
+            style={{ ...plainButton, alignSelf: 'flex-start', minHeight: 36, display: 'flex', alignItems: 'center' }}
           >
-            <span>{sheet.checkLink.label}</span>
+            <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, lineHeight: 1.2, color: cssVar('teal') }}>{sheet.checkLink.label}</span>
           </button>
         ) : null}
         {checkGoneLine ? <span role="status" data-cockpit-check-gone="1" style={{ fontSize: 11.5, color: cssVar('text-secondary') }}>{checkGoneLine}</span> : null}

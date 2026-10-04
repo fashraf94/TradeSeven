@@ -35,7 +35,7 @@ import { tileAnswersFor } from '../../../api/_utils/callRecords/answers.js';
 import { etDateOf } from '../../../api/_utils/callRecords/horizon.js';
 import { deriveKilledDirectiveIds } from '../../../api/_utils/controlPromptRenderer.js';
 import { etTime, etSlotTime } from '../../components/Dashboard/desk/deskCopy';
-import { BATTLE_VIEW_COPY as COPY, COCKPIT_FACT_TAGS } from './battleViewCopy';
+import { BATTLE_VIEW_COPY as COPY, COCKPIT_FACT_TAGS, cockpitRefusalLine } from './battleViewCopy';
 
 export const COCKPIT_GROUP = Object.freeze({
   NEEDS_YOU: 'needsYou',
@@ -167,10 +167,15 @@ export function factTag(fact, params = {}) {
 }
 
 /**
- * The tag for ONE call, from its record facts, in a fixed precedence:
- *   terminal state first (acted · hit · expired · ended · dropped), then, for
- *   an open call, the newest fact about its answer (replaced · no matching
- *   trade · heard · filed · agreed), else Live. An unknown state → no tag.
+ * The tag for ONE call, from its record facts:
+ *   a terminal state first (acted · hit · expired · ended · dropped);
+ *   an OPEN call the agent already acted on (`outcome.actedEvalId` — the
+ *   flip's whole-trade match and the heard pass both stamp it on a call that
+ *   stays open) → Acted, first (review L6-1);
+ *   then the NEWEST of the event-backed facts about its answer — replaced ·
+ *   no matching trade · heard — by the check (or instant) each names, ties in
+ *   that order; then the answer itself (filed · agreed); else Live.
+ * An unknown state → no tag.
  */
 export function callTag(call, { events = [], evaluations = [], nowMs } = {}) {
   if (!call || typeof call !== 'object') return null;
@@ -191,11 +196,27 @@ export function callTag(call, { events = [], evaluations = [], nowMs } = {}) {
     case 'invalidated': return factTag('state:invalidated');
     case 'open': {
       const pr = call.playerResponse;
-      if (kinds.has('superseded')) return factTag('event:superseded');
-      if (kinds.has('no_matching_trade')) return factTag('event:no_matching_trade', { check: checkOf(lastOf('no_matching_trade')?.evidence?.promptBuiltAt) });
+      const actedEvalId = call.outcome?.actedEvalId;
+      if (nonEmpty(actedEvalId)) {
+        const at = promptBuiltAtOf(evaluations, actedEvalId) ?? isoOf(lastOf('acted')?.evidence?.promptBuiltAt);
+        return factTag('event:acted', { check: checkOf(at) });
+      }
+      const facts = [];
+      const superseded = lastOf('superseded');
+      if (superseded) facts.push({ ms: msOf(superseded.at), rank: 0, tag: () => factTag('event:superseded') });
+      const noMatch = lastOf('no_matching_trade');
+      if (noMatch) {
+        const at = noMatch.evidence?.promptBuiltAt;
+        facts.push({ ms: msOf(at) ?? msOf(noMatch.at), rank: 1, tag: () => factTag('event:no_matching_trade', { check: checkOf(at) }) });
+      }
       if (pr?.kind === 'directive' && nonEmpty(pr.heardEvalId)) {
-        const at = promptBuiltAtOf(evaluations, pr.heardEvalId) ?? isoOf(lastOf('heard')?.evidence?.promptBuiltAt);
-        return factTag('event:heard', { check: checkOf(at) });
+        const heard = lastOf('heard');
+        const at = promptBuiltAtOf(evaluations, pr.heardEvalId) ?? isoOf(heard?.evidence?.promptBuiltAt);
+        facts.push({ ms: msOf(at) ?? msOf(heard?.at), rank: 2, tag: () => factTag('event:heard', { check: checkOf(at) }) });
+      }
+      if (facts.length > 0) {
+        facts.sort((a, b) => (b.ms ?? -Infinity) - (a.ms ?? -Infinity) || a.rank - b.rank);
+        return facts[0].tag();
       }
       if (pr?.kind === 'directive') return factTag('answer:directive');
       if (pr?.kind === 'ack') return factTag('answer:ack', { time: etTime(isoOf(pr.filedAt)) });
@@ -257,7 +278,7 @@ export function overrideBlockOf({ directive, calls, nowMs, controlEpochLog = nul
   const unheard = Boolean(call) && !nonEmpty(call.playerResponse?.heardEvalId);
   return {
     callId,
-    line: unheard ? COPY.cockpitWaitingHeard : COPY.cockpitWaitingInForce(etTime(isoOf(directive.expiresAtMs))),
+    line: unheard ? COPY.cockpitWaitingHeard : COPY.cockpitWaitingActive(etTime(isoOf(directive.expiresAtMs))),
   };
 }
 
@@ -271,14 +292,22 @@ const answeredCall = (c) => Boolean(c?.playerResponse && typeof c.playerResponse
 /**
  * One tile for a thread (or a resolved call, which is a thread of one).
  *
+ *   tag      the live directive answer's call when the thread holds one (its
+ *            filed / heard state is the thread's operative fact), else the
+ *            NEWEST call's own — an agreement on an EARLIER wording is never
+ *            worn by the newer one (review L6-2); it is an answer line instead
  *   buttons  the NEWEST call's legal answers (§7.2) — none while any call in
  *            the thread carries a live directive answer (C-6), none when the
- *            newest call is already answered (the endpoint would refuse it:
- *            409 already_answered), none on a resolved call
+ *            newest call is already answered (409 already_answered), none once
+ *            the agent acted on it, none past its deadline (the endpoint
+ *            refuses every answer then: 409 expired — review L6-7), none on a
+ *            resolved call. While ANY answer is in flight every button waits
+ *            (one answer at a time; the hook drops a second tap — review L3-7)
  *   group    Earlier when resolved; Needs you when there are buttons and no
  *            answer anywhere on the thread (§7.1); otherwise Waiting — the
  *            answered threads (an agreement on an earlier wording still lets
- *            the restated call be answered, C-6) and the upside calls
+ *            the restated call be answered, C-6) and the calls with no answer
+ *            to give (upside, acted, past the deadline)
  *
  * @param {object[]} thread  calls, newest first
  * @param {object} ctx       { eventsMap, evaluations, nowMs, block, pending: { callId, answer } | null }
@@ -287,28 +316,38 @@ export function tileOf(thread, { eventsMap = new Map(), evaluations = [], nowMs,
   const newest = thread[0];
   const oldest = thread[thread.length - 1];
   const live = liveDirectiveMember(thread);
-  const ack = thread.find((c) => c.playerResponse?.kind === 'ack') ?? null;
   const threadAnswered = thread.some(answeredCall);
-  const tagSource = live ?? ack ?? newest;
+  // The agent acting on ANY call of the thread is the thread's weightiest fact
+  // (review L6-1 / V2): it is the tag, and no answer is offered after it.
+  const actedMember = thread.find((c) => nonEmpty(c.outcome?.actedEvalId)) ?? null;
+  const tagSource = actedMember ?? live ?? newest;
   const tag = callTag(tagSource, { events: eventsMap.get(tagSource.callId) ?? [], evaluations, nowMs });
-  const legal = newest.state === 'open' && !live && !answeredCall(newest) ? tileAnswersFor(newest) : [];
+  // The endpoint's own guard (call-response.js: `!finite(deadline) || deadline <= nowMs` → 409 expired).
+  const deadline = newest.horizon?.expiresAt;
+  const answerable = finite(deadline) && finite(nowMs) && deadline > nowMs;
+  const legal = newest.state === 'open' && !live && !answeredCall(newest) && !actedMember && answerable ? tileAnswersFor(newest) : [];
   // The endpoint exempts the slot's own call (`thisCallId`); every other call's override waits.
   const blocked = Boolean(block) && block.callId !== newest.callId;
-  const sendingThis = pending && thread.some((c) => c.callId === pending.callId);
+  const sendingThis = Boolean(pending) && thread.some((c) => c.callId === pending.callId);
   const buttons = legal.map(({ answer, row }) => ({
     answer,
     row,
     callId: newest.callId,
     label: sendingThis && pending.answer === answer ? COPY.cockpitSending : answerLabelOf(newest, answer),
-    disabled: Boolean(sendingThis) || (row === 'directive' && blocked),
+    disabled: Boolean(pending) || (row === 'directive' && blocked),
   }));
   let group = COCKPIT_GROUP.WAITING;
   if (newest.state !== 'open') group = COCKPIT_GROUP.EARLIER;
   else if (buttons.length > 0 && !threadAnswered) group = COCKPIT_GROUP.NEEDS_YOU;
-  // C-6: a live directive answer is shown, naming the wording it was given on.
-  const answerLine = live
-    ? COPY.cockpitThreadAnswer(live.playerResponse.answer, etTime(isoOf(live.playerResponse.filedAt)), etSlotTime(isoOf(live.evidence?.priceAsOf)))
-    : null;
+  // C-6: a live directive answer is shown, naming the wording it was given on;
+  // so is an agreement given on an EARLIER wording of the thread.
+  const olderAck = !live && !answeredCall(newest) ? (thread.slice(1).find((c) => c.playerResponse?.kind === 'ack') ?? null) : null;
+  let answerLine = null;
+  if (live) {
+    answerLine = COPY.cockpitThreadAnswer(live.playerResponse.answer, etTime(isoOf(live.playerResponse.filedAt)), etSlotTime(isoOf(live.evidence?.priceAsOf)));
+  } else if (olderAck) {
+    answerLine = COPY.cockpitThreadAgreed(etTime(isoOf(olderAck.playerResponse.filedAt)), etSlotTime(isoOf(olderAck.evidence?.priceAsOf)));
+  }
   return {
     id: newest.callId,
     group,
@@ -323,8 +362,6 @@ export function tileOf(thread, { eventsMap = new Map(), evaluations = [], nowMs,
     answerLine,
     buttons,
     blockedLine: blocked && buttons.some((b) => b.row === 'directive') ? block.line : null,
-    // The line a 409 directive_pending shows under this tile (§8.3), from the same slot.
-    pendingLine: block ? block.line : null,
   };
 }
 
@@ -335,17 +372,18 @@ export function tileOf(thread, { eventsMap = new Map(), evaluations = [], nowMs,
  * @returns {{ needsYou: object[], waiting: object[], earlier: object[], earlierTotal: number, needsYouCount: number, empty: boolean }}
  */
 export function buildCockpitFeed({
-  calls, events, evaluations, directive, nowMs, pending = null, showAllEarlier = false, controlEpochLog = null, suppressed = false,
+  calls, events, evaluations, directive, nowMs, pending = null, outcomes = {}, showAllEarlier = false, controlEpochLog = null, suppressed = false,
 } = {}) {
   const shown = cockpitCalls(calls).filter((c) => c.kind !== 'pick');
   const eventsMap = eventsByCall(events);
   const block = overrideBlockOf({ directive, calls: shown, nowMs, controlEpochLog, suppressed });
   const ctx = { eventsMap, evaluations, nowMs, block, pending };
-  const openTiles = foldThreads(shown).map((t) => tileOf(t.calls, ctx));
+  const withRefusal = (tile) => ({ ...tile, refusalLine: refusalLineOf(tile, outcomes?.[tile.id] ?? null, { calls: shown, directive, block, nowMs }) });
+  const openTiles = foldThreads(shown).map((t) => withRefusal(tileOf(t.calls, ctx)));
   const resolved = shown
     .filter((c) => c.state !== 'open')
     .sort((a, b) => (msOf(b.stateChangedAt) ?? 0) - (msOf(a.stateChangedAt) ?? 0) || newestFirst(a, b))
-    .map((c) => tileOf([c], ctx));
+    .map((c) => withRefusal(tileOf([c], ctx)));
   const needsYou = openTiles.filter((t) => t.group === COCKPIT_GROUP.NEEDS_YOU);
   const waiting = openTiles.filter((t) => t.group === COCKPIT_GROUP.WAITING);
   return {
@@ -422,9 +460,21 @@ export function sheetOf(tile, { eventsMap = new Map(), evaluations = [], observa
   const call = tile.call;
   const upside = isUpsideCall(call);
   const cited = citedPriceOf(call, evaluations);
-  const receipts = tile.calls
-    .flatMap((c) => (eventsMap.get(c.callId) ?? []).map((ev) => ({ ev, c })))
-    .sort((a, b) => (msOf(a.ev.at) ?? 0) - (msOf(b.ev.at) ?? 0))
+  // Each receipt at the CHECK it names when it names one (a sweep-repaired
+  // `heard` carries the sweep's instant as `at` — review L6-11), else its
+  // instant; oldest first.
+  const orderOf = (ev) => msOf(ev?.evidence?.promptBuiltAt) ?? msOf(ev?.at) ?? 0;
+  const rows = tile.calls.flatMap((c) => (eventsMap.get(c.callId) ?? []).map((ev) => ({ ev, c, ms: orderOf(ev) })));
+  // The flip's whole-trade match stamps `outcome.actedEvalId` WITHOUT an event:
+  // the record's own fact still reads as a receipt (review L6-1 / V2).
+  for (const c of tile.calls) {
+    const actedEvalId = c.outcome?.actedEvalId;
+    if (!nonEmpty(actedEvalId) || (eventsMap.get(c.callId) ?? []).some((ev) => ev?.kind === 'acted')) continue;
+    const at = promptBuiltAtOf(evaluations, actedEvalId);
+    rows.push({ ev: { kind: 'acted', at: msOf(at), evidence: { evalId: actedEvalId, promptBuiltAt: at } }, c, ms: msOf(at) ?? Number.MAX_SAFE_INTEGER });
+  }
+  const receipts = rows
+    .sort((a, b) => a.ms - b.ms)
     .map(({ ev, c }) => ({ key: `${c.callId}|${ev.kind}|${msOf(ev.at) ?? ''}`, text: receiptLineOf(ev, c, { evaluations, nowMs }) }))
     .filter((r) => r.text);
   const observed = observationLineOf(call, observation);
@@ -434,8 +484,10 @@ export function sheetOf(tile, { eventsMap = new Map(), evaluations = [], observa
     kindLabel: tile.kindLabel,
     eyebrow: tile.eyebrow,
     tag: tile.tag,
-    // C-4: shown ONLY when the record's own verdict passed, under the unverified label.
-    said: call.saidOk === true && nonEmpty(call.said) ? { label: SAID_UNVERIFIED_LABEL, text: call.said } : null,
+    // C-4: shown ONLY when the record's own verdict passed, under the unverified
+    // label — and never on an upside call, whose own sentence may carry the
+    // action clause C-2 removes everywhere else (review L6-9).
+    said: !upside && call.saidOk === true && nonEmpty(call.said) ? { label: SAID_UNVERIFIED_LABEL, text: call.said } : null,
     facts: [
       { key: 'level', label: COPY.cockpitSheetLevel, value: COPY.cockpitSheetLevelValue(call.condition?.side, finite(call.condition?.level) ? fmtPrice(call.condition.level) : null) },
       { key: 'deadline', label: COPY.cockpitSheetDeadline, value: deadlineText(call.horizon, { nowMs, ...CLOCK }) },
@@ -444,14 +496,59 @@ export function sheetOf(tile, { eventsMap = new Map(), evaluations = [], observa
     // C-2: an upside call has no action clause anywhere — no default line.
     defaultLine: upside ? null : COPY.cockpitSheetDefault(COPY.cockpitIntent(call.defaultAction, call.direction, call.symbol, call.counterpart ?? null)),
     receipts,
-    restated: tile.calls.length > 1
-      ? tile.calls.slice(0, -1).map((c) => ({ key: c.callId, check: COPY.cockpitRestated(checkOf(c.evidence?.priceAsOf)), line: renderCallLine(c, { nowMs, ...CLOCK }) }))
-      : [],
+    // The thread's EARLIER wordings (the title is the newest), newest first,
+    // each with its own check: the original "Called at…", the rest "Restated
+    // at…" (review L6-3).
+    restated: tile.calls.slice(1).map((c, i, older) => ({
+      key: c.callId,
+      check: i === older.length - 1 ? COPY.cockpitCalledAt(checkOf(c.evidence?.priceAsOf)) : COPY.cockpitRestated(checkOf(c.evidence?.priceAsOf)),
+      line: renderCallLine(c, { nowMs, ...CLOCK }),
+    })),
     checkLink: nonEmpty(call.evalId) ? { evalId: call.evalId, label: COPY.cockpitSheetFromCheck(checkOf(call.evidence?.priceAsOf)) } : null,
     buttons: tile.buttons,
     blockedLine: tile.blockedLine,
-    pendingLine: tile.pendingLine ?? null,
+    refusalLine: tile.refusalLine ?? null,
     answerLine: tile.answerLine,
     restatedLine: tile.restated,
   };
+}
+
+/** How long a directive_pending refusal stands on its own word once the client no longer sees the block (clock skew, propagation). */
+export const PENDING_REFUSAL_GRACE_MS = 30_000;
+
+/**
+ * The line a refusal shows under its tile (§8.3), from the response BODY —
+ * or null once it no longer describes the tile (review L6-5, L6-6):
+ *   - the refused call has resolved or been answered since (the endpoint's
+ *     409 `expired` also stands for a call that stopped being open — a tap
+ *     that raced a hit must not leave "deadline has passed" under "Hit at …");
+ *   - a directive_pending refusal once the client sees no block any more and
+ *     the refusal is older than PENDING_REFUSAL_GRACE_MS (the directive
+ *     expired, was heard and retired, or left the slot).
+ * A directive_pending line claims only what the records show: "hasn't been
+ * heard yet" when the pending call (body.pendingCallId) is loaded and
+ * unheard; otherwise the evidence-free "still active" line, with the slot's
+ * own time when the slot is that directive.
+ *
+ * @param {object} tile
+ * @param {{ status: number|null, body: object|null, at?: number, callId?: string }|null} outcome
+ */
+export function refusalLineOf(tile, outcome, { calls = [], directive = null, block = null, nowMs } = {}) {
+  if (!tile || !outcome) return null;
+  const call = tile.calls.find((c) => c.callId === outcome.callId) ?? tile.call;
+  if (call.state !== 'open' || answeredCall(call)) return null;
+  const body = outcome.body && typeof outcome.body === 'object' ? outcome.body : null;
+  let pendingLine = null;
+  if (outcome.status === 409 && body?.reason === 'directive_pending') {
+    const age = finite(outcome.at) && finite(nowMs) ? nowMs - outcome.at : 0;
+    if (!block && age > PENDING_REFUSAL_GRACE_MS) return null;
+    const pendingCall = nonEmpty(body.pendingCallId) ? (calls.find((c) => c.callId === body.pendingCallId) ?? null) : null;
+    if (pendingCall && !nonEmpty(pendingCall.playerResponse?.heardEvalId)) {
+      pendingLine = COPY.cockpitWaitingHeard;
+    } else {
+      const slotIsIt = directive?.family === 'call' && nonEmpty(body.pendingDirectiveThreadId) && directive.directiveThreadId === body.pendingDirectiveThreadId;
+      pendingLine = COPY.cockpitWaitingActive(slotIsIt && finite(directive.expiresAtMs) ? etTime(isoOf(directive.expiresAtMs)) : null);
+    }
+  }
+  return cockpitRefusalLine(outcome.status, body, { pendingLine });
 }

@@ -27,13 +27,17 @@ import { getAuth } from 'firebase/auth';
 
 /** The route the server answers on. */
 export const COCKPIT_STATUS_PATH = '/api/agent/cockpit-status';
+/** An answer that has not come in this long reads off — the screen never waits on a hung request. */
+export const COCKPIT_STATUS_TIMEOUT_MS = 8_000;
 
 /**
  * Ask the server once. Resolves to `true` only for a 200 `{ on: true }`;
- * anything else — no user, a refusal, a network failure, a malformed body —
- * resolves to `false`. Never throws.
+ * anything else — no user, a refusal, a network failure, a malformed body, no
+ * answer within COCKPIT_STATUS_TIMEOUT_MS — resolves to `false`. Never throws.
  */
 export async function requestCockpitStatus(battleId) {
+  const abort = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = abort ? setTimeout(() => abort.abort(), COCKPIT_STATUS_TIMEOUT_MS) : null;
   try {
     const user = getAuth().currentUser;
     if (!user) return false;
@@ -42,19 +46,24 @@ export async function requestCockpitStatus(battleId) {
       method: 'GET',
       headers: { Authorization: `Bearer ${idToken}` },
       cache: 'no-store',
+      ...(abort ? { signal: abort.signal } : {}),
     });
     if (!res.ok) return false;
     const body = await res.json().catch(() => null);
     return body?.on === true;
   } catch {
     return false;
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
 /**
  * @param {string|null} battleId
  * @param {{ enabled: boolean, battleStatus?: string|null }} options
- * @returns {{ on: boolean, recheck: () => void }}
+ * @returns {{ on: boolean, pending: boolean, recheck: () => void }}
+ *   `pending`: asked, and no answer for THIS battle yet — the screen holds the
+ *   chat's seen-marker meanwhile (the first paint is the off layout)
  */
 export function useCockpitStatus(battleId, { enabled = false, battleStatus = null } = {}) {
   const [answer, setAnswer] = useState({ battleId: null, on: false });
@@ -77,7 +86,11 @@ export function useCockpitStatus(battleId, { enabled = false, battleStatus = nul
 
   const recheck = useCallback(() => setNonce((n) => n + 1), []);
   // Only an answer for THIS battle counts, and only while the gate is open.
-  return { on: wanted && answer.battleId === battleId && answer.on === true, recheck };
+  return {
+    on: wanted && answer.battleId === battleId && answer.on === true,
+    pending: wanted && answer.battleId !== battleId,
+    recheck,
+  };
 }
 
 export default useCockpitStatus;

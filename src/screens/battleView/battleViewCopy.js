@@ -936,11 +936,12 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   cockpitTab: 'Cockpit',
   // The Chat tab while another section shows and the chain counts unread
   // (spec §5; the `Bookmarks · n` precedent).
-  paneSectionChatUnread: (n) => (Number.isFinite(n) && n > 0 ? `Chat · ${n}` : 'Chat'),
+  // Capped at 9+ — the widest label the four-tab width budget was measured at
+  // (CharacterPane PANE_HEADER_FIXED_COCKPIT_PX: "Chat · 9+" 338.4 px).
+  paneSectionChatUnread: (n) => (Number.isFinite(n) && n > 0 ? `Chat · ${n > 9 ? '9+' : n}` : 'Chat'),
   cockpitSwitchName: 'Board or cockpit',
   cockpitSwitchBoard: 'Board',
   cockpitSwitchCockpit: (n) => (Number.isFinite(n) && n > 0 ? `Cockpit · ${n}` : 'Cockpit'),
-  cockpitRegionName: 'The cockpit',
 
   // Group headers (§7.1, §8.1).
   cockpitGroupNeedsYou: '⚡ Needs you',
@@ -958,6 +959,8 @@ export const BATTLE_VIEW_COPY = Object.freeze({
     return nextTime ? `Prices as of ${check} · next ~${nextTime}` : `Prices as of ${check}`;
   },
   cockpitMessagesLeft: (n) => (Number.isFinite(n) ? `${n} ${n === 1 ? 'message' : 'messages'} left` : null),
+  // A failed read says so — never "No calls yet" for records it could not see (review L3-2).
+  cockpitReadError: "Couldn't load your agent's calls right now.",
   cockpitEmpty: (next) => {
     const nextTime = slotLabel(next);
     return nextTime
@@ -971,6 +974,8 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   cockpitKindUpside: 'Upside call',
   cockpitEyebrowFrom: (check) => (check ? `from ${check}` : null),
   cockpitRestated: (check) => (check ? `Restated at ${check}` : 'Restated'),
+  // The sheet's earliest wording of a folded thread (review L6-3).
+  cockpitCalledAt: (check) => (check ? `Called at ${check}` : 'Called'),
 
   // The buttons (§7.3; R2A-11: every override shows its cost).
   cockpitAnswerGoIfTriggers: 'Go if it triggers',
@@ -980,18 +985,25 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   cockpitAnswerGoInstead: 'Go instead · 1 message',
   cockpitSending: 'Sending…',
   cockpitWaitingHeard: 'Waiting · your last answer hasn\'t been heard yet.',
-  // HEAD's endpoint keeps a HEARD call directive in force until it expires
-  // (directiveUtils.js isCallDirectivePendingAt): the line for that case, so
-  // the one above is never shown once the record says the answer was heard.
-  cockpitWaitingInForce: (time) => (time
-    ? `Waiting · your last answer is in force until ${time}.`
-    : 'Waiting · your last answer is still in force.'),
+  // HEAD's endpoint keeps a HEARD call directive pending until it expires
+  // (directiveUtils.js isCallDirectivePendingAt): the line for that case — and
+  // for any case the records cannot place — so the one above is never shown
+  // without the record saying the answer is unheard. "Active", not "in force":
+  // the agent is coached, not compelled (review L6-8).
+  cockpitWaitingActive: (time) => (time
+    ? `Waiting · your last answer stays active until ${time}.`
+    : 'Waiting · your last answer is still active.'),
   cockpitOneAtATime: 'One call at a time.',
   // A folded thread's live directive answer (Amendment C-6), naming the wording it was given on.
   cockpitThreadAnswer: (answer, filedTime, wordingCheck) => {
     const word = answer === 'hold' ? 'hold off' : answer === 'go_now' ? 'go instead' : null;
     if (!word) return null;
     const head = filedTime ? `You said ${word} · ${filedTime}` : `You said ${word}`;
+    return wordingCheck ? `${head}, on the ${wordingCheck} wording` : head;
+  },
+  // An agreement given on an EARLIER wording of a folded thread (review L6-2).
+  cockpitThreadAgreed: (filedTime, wordingCheck) => {
+    const head = filedTime ? `You agreed · ${filedTime}` : 'You agreed';
     return wordingCheck ? `${head}, on the ${wordingCheck} wording` : head;
   },
 
@@ -1006,6 +1018,8 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   cockpitSheetDefault: (intent) => (intent ? `If you say nothing · ${intent}` : null),
   // The agent's default as an INTENT, never a promise (Build 1a §4): "bring in
   // AMD for KO", "exit MU for AMAT", "hold". An upside call has none (C-2).
+  // (copy.js renderIntentLine words the same fact without the symbol and has
+  // no consumer; S-7 does not list it for the client — review L6-10, recorded.)
   cockpitIntent: (defaultAction, direction, symbol, counterpart) => {
     if (defaultAction === 'hold') return 'intent: hold';
     if (defaultAction !== 'act' || !symbol) return null;
@@ -1050,7 +1064,11 @@ export const COCKPIT_FACT_TAGS = Object.freeze({
   // expired_unresolved; sweep.js expired_unresolved | ended_with_battle).
   'state:open': Object.freeze({ tone: 'neutral', text: () => 'Live' }),
   'state:hit': Object.freeze({ tone: 'neutral', text: ({ check } = {}) => (check ? `Hit at ${check}` : 'Hit') }),
-  'state:invalidated': Object.freeze({ tone: 'dropped', text: () => 'Dropped · price line out of range' }),
+  // The bare fact: the call record carries no reason (no_observation /
+  // level_non_finite / level_implausible live only in the declarations
+  // record's minted[]), so the spec's "· price line out of range" would be a
+  // guess for two of the three (review L6-4 — a founder ruling, recorded).
+  'state:invalidated': Object.freeze({ tone: 'dropped', text: () => 'Dropped' }),
   'state:expired_unresolved': Object.freeze({ tone: 'muted', text: ({ deadline } = {}) => (deadline ? `Expired · ${deadline}` : 'Expired') }),
   'state:ended_with_battle': Object.freeze({ tone: 'muted', text: () => 'Battle ended' }),
   // The answer on the call (call-response.js playerResponse.kind).

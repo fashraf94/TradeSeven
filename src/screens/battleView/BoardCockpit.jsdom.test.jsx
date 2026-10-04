@@ -28,7 +28,7 @@ vi.mock('framer-motion', async () => {
   return { motion: { div: pass('div'), span: pass('span') }, AnimatePresence: ({ children }) => children };
 });
 
-import { CockpitSwitch, BoardCockpitTrack, PHONE_SCREEN } from './BoardCockpit';
+import { CockpitSwitch, BoardCockpitTrack, PHONE_SCREEN, TRACK_SETTLE_IDLE_MS } from './BoardCockpit';
 import { motionToken } from '../../theme/motion';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -52,6 +52,11 @@ const key = (el, k) => act(() => { el.dispatchEvent(new KeyboardEvent('keydown',
 
 describe('the switch — "Board" · "Cockpit · {n}"', () => {
   const renderSwitch = (props) => act(() => { root.render(<CockpitSwitch screen={PHONE_SCREEN.BOARD} onSelect={() => {}} {...props} />); });
+
+  it('each tab is at least 36 px tall (review L5-10)', () => {
+    renderSwitch({});
+    expect(qa('[role="tab"]').every((t) => parseInt(t.style.minHeight, 10) >= 36)).toBe(true);
+  });
 
   it('labels: Board, and Cockpit with the Needs-you count — no count at 0', () => {
     renderSwitch({ needsYou: 3 });
@@ -152,28 +157,93 @@ describe('the track — native scroll-snap; the switch scrolls it, a swipe moves
     expect(track.scrollTo).toHaveBeenCalledWith({ left: 400, behavior: 'auto' });
   });
 
-  it('a swipe that settles on the other screen moves the switch', () => {
-    const onScreen = vi.fn();
-    renderTrack({ onScreen });
-    const track = sized();
-    track.scrollLeft = 390;
-    act(() => { track.dispatchEvent(new Event('scroll', { bubbles: true })); });
-    expect(onScreen).toHaveBeenCalledWith('cockpit');
+  const scrollTo = (track, left) => act(() => { track.scrollLeft = left; track.dispatchEvent(new Event('scroll', { bubbles: true })); });
+  const settleBy = (track, how) => act(() => {
+    if (how === 'scrollend') track.dispatchEvent(new Event('scrollend'));
+    else vi.advanceTimersByTime(TRACK_SETTLE_IDLE_MS + 1);
   });
 
-  it('a switch-driven scroll in flight does not bounce the selection back on its intermediate frames', () => {
-    const onScreen = vi.fn();
-    renderTrack({ onScreen });
-    const track = sized();
-    renderTrack({ onScreen, screen: PHONE_SCREEN.COCKPIT });
-    track.scrollLeft = 120; // mid-flight, nearer the board
-    act(() => { track.dispatchEvent(new Event('scroll', { bubbles: true })); });
-    expect(onScreen).not.toHaveBeenCalled();
-    track.scrollLeft = 400; // arrived
-    act(() => { track.dispatchEvent(new Event('scroll', { bubbles: true })); });
-    track.scrollLeft = 10; // a real swipe back afterwards does move it
-    act(() => { track.dispatchEvent(new Event('scroll', { bubbles: true })); });
-    expect(onScreen).toHaveBeenCalledWith('board');
+  it('a swipe moves the switch only when the track SETTLES — on scrollend, or after the idle where the browser has none (review L5-2)', () => {
+    vi.useFakeTimers();
+    try {
+      for (const how of ['scrollend', 'idle']) {
+        const onScreen = vi.fn();
+        renderTrack({ onScreen, screen: PHONE_SCREEN.BOARD });
+        const track = sized();
+        scrollTo(track, 390);
+        expect(onScreen).not.toHaveBeenCalled(); // never mid-gesture
+        settleBy(track, how);
+        expect(onScreen).toHaveBeenCalledWith('cockpit');
+        expect(track.scrollTo).not.toHaveBeenCalled(); // a settled swipe is never answered with a programmatic scroll
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a hesitant drag past halfway that comes back never flips the selection', () => {
+    vi.useFakeTimers();
+    try {
+      const onScreen = vi.fn();
+      renderTrack({ onScreen });
+      const track = sized();
+      scrollTo(track, 250); // past halfway, finger still down
+      scrollTo(track, 100);
+      scrollTo(track, 0); // released back on Board
+      settleBy(track, 'idle');
+      expect(onScreen).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a switch-driven scroll that the player interrupts back to Board ends with Board selected — the selection names what shows', () => {
+    vi.useFakeTimers();
+    try {
+      const onScreen = vi.fn();
+      renderTrack({ onScreen });
+      const track = sized();
+      renderTrack({ onScreen, screen: PHONE_SCREEN.COCKPIT }); // the switch asked for Cockpit
+      expect(track.scrollTo).toHaveBeenCalledWith({ left: 400, behavior: 'smooth' });
+      scrollTo(track, 120); // mid-flight, then the player drags back
+      scrollTo(track, 0);
+      settleBy(track, 'scrollend');
+      expect(onScreen).toHaveBeenCalledWith('board');
+      // An arrival that lands where the selection already is changes nothing.
+      onScreen.mockClear();
+      renderTrack({ onScreen, screen: PHONE_SCREEN.COCKPIT });
+      scrollTo(track, 400);
+      settleBy(track, 'scrollend');
+      expect(onScreen).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('the FIRST position is set without animation (a remount on Cockpit never glides)', () => {
+    const proto = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth');
+    const scrollToSpy = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get() { return 400; } });
+    HTMLElement.prototype.scrollTo = scrollToSpy;
+    try {
+      renderTrack({ screen: PHONE_SCREEN.COCKPIT });
+      expect(scrollToSpy).toHaveBeenCalledWith({ left: 400, behavior: 'auto' });
+      scrollToSpy.mockClear();
+      q('[data-board-cockpit-track]').scrollLeft = 400; // the browser arrived
+      renderTrack({ screen: PHONE_SCREEN.BOARD });
+      expect(scrollToSpy).toHaveBeenCalledWith({ left: 0, behavior: 'smooth' });
+    } finally {
+      if (proto) Object.defineProperty(HTMLElement.prototype, 'clientWidth', proto);
+      delete HTMLElement.prototype.scrollTo;
+    }
+  });
+
+  it('while the sheet is open the cockpit screen\'s scroller holds still (declaratively); the board screen is untouched', () => {
+    renderTrack({ lockCockpit: true });
+    expect(q('[data-board-cockpit-panel="cockpit"]').style.overflowY).toBe('hidden');
+    expect(q('[data-board-cockpit-panel="board"]').style.overflowY).toBe('auto');
+    renderTrack({ lockCockpit: false });
+    expect(q('[data-board-cockpit-panel="cockpit"]').style.overflowY).toBe('auto');
   });
 
   it('the cockpit screen hands its scroller to the screen (the sheet locks it)', () => {
