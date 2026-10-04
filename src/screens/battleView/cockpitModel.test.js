@@ -530,7 +530,7 @@ describe('§7.4 — THE COVERAGE: the one table maps every fact the writers can 
 // ---------------------------------------------------------------------------
 
 describe('§7.2 — folding (Amendment C-6)', () => {
-  it('THE KEY: same ET day, symbol, direction, slot and side fold; any one part different keeps them apart', () => {
+  it('THE KEY (rev 2): same ET day, symbol, direction, slot, side and default action fold; any one part different keeps them apart', () => {
     const a = call();
     const b = restated(a);
     expect(foldThreads([a, b])).toHaveLength(1);
@@ -540,8 +540,10 @@ describe('§7.2 — folding (Amendment C-6)', () => {
       restated(a, { slot: 'core' }),
       restated(a, { condition: { side: 'below', level: 162 } }),
       restated(a, { mintedAt: T('2026-09-10T14:46:00.000Z') }), // the next ET trading day
+      restated(a, { defaultAction: 'hold' }), // Amendment C revision 2
     ];
     for (const v of variants) expect(foldThreads([a, v])).toHaveLength(2);
+    expect(threadKeyOf(restated(a, { defaultAction: 'hold' }))).not.toBe(threadKeyOf(a));
   });
 
   it('the ET day is ET\'s, not UTC\'s: 11:30 PM ET and 9:45 AM ET the next day never fold', () => {
@@ -627,15 +629,25 @@ describe('§7.2 — folding (Amendment C-6)', () => {
     expect(t.answerLine).toBe('You agreed · 10:32 AM, on the 10:30 AM wording');
   });
 
-  it('an agreement over a REVERSED default (a Confirmed exit folded with a hold-default shot) never reads as agreement with the new wording (review L6-2)', () => {
+  it('a Confirmation the player agreed to NEVER folds with a later hold-default call — the default action is in the key (Amendment C rev 2; review L6-2)', () => {
     const conf = call({ kind: 'confirmation', direction: 'exit', symbol: 'KO', counterpart: null, condition: { side: 'below', level: 60 } });
     conf.playerResponse = ack(conf);
     const shot = restated(conf, { kind: 'called_shot', defaultAction: 'hold', condition: { side: 'below', level: 60.3 } });
-    const t = allTiles(feed([conf, shot]))[0];
-    expect(t.kindLabel).toBe('Called shot');
-    expect(t.tag.text).toBe('Live');
-    expect(t.answerLine).toBe('You agreed · 10:32 AM, on the 10:30 AM wording');
-    expect(t.buttons.map((b) => b.label)).toEqual(['Hold', 'Go instead · 1 message']);
+    const f = feed([conf, shot]);
+    expect(allTiles(f)).toHaveLength(2);
+    // The hold-default shot is its own call: live, unanswered, both of its own answers offered.
+    const s = tileFor(f, shot);
+    expect(s.calls.map((c) => c.callId)).toEqual([shot.callId]);
+    expect(s.kindLabel).toBe('Called shot');
+    expect(s.tag.text).toBe('Live');
+    expect(s.answerLine).toBeNull();
+    expect(s.buttons.map((b) => b.label)).toEqual(['Hold', 'Go instead · 1 message']);
+    expect(s.group).toBe(COCKPIT_GROUP.NEEDS_YOU);
+    // The agreement stays on the Confirmation it was given to.
+    const c = tileFor(f, conf);
+    expect(c.calls.map((x) => x.callId)).toEqual([conf.callId]);
+    expect(c.tag.text).toBe('You agreed · 10:32 AM');
+    expect(c.group).toBe(COCKPIT_GROUP.WAITING);
   });
 
   it('an open call past its deadline offers nothing (the endpoint refuses every answer then: 409 expired — review L6-7); it waits on the check', () => {
@@ -704,11 +716,16 @@ describe('§7.2 — folding (Amendment C-6)', () => {
     expect(tiles[0].calls.map((x) => x.callId)).toEqual([c.callId, b.callId, a.callId]);
   });
 
-  it('a call missing a key part never folds (its own tile)', () => {
+  it('a call missing a key part never folds (its own tile) — the default action included', () => {
     const a = call();
     const b = restated(a, { slot: null });
     expect(threadKeyOf(b)).toBeNull();
     expect(foldThreads([a, b])).toHaveLength(2);
+    // Two calls that both lack a default action are not "the same default".
+    const x = call({ defaultAction: null });
+    const y = restated(x, { defaultAction: null });
+    expect(threadKeyOf(y)).toBeNull();
+    expect(foldThreads([x, y])).toHaveLength(2);
   });
 });
 

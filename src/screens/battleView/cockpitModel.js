@@ -12,10 +12,10 @@
 // nothing is optimistic: a tile changes when a record does.
 //
 //   groups      ⚡ Needs you · ⏱ Waiting on the check · 👁 Monitoring · Earlier (§7.1)
-//   folding     open calls → threads, Amendment C-6 (same ET day, symbol,
-//               direction, slot, side; levels within 1 % of the newer call's) —
-//               one tile per thread, the newest call's wording; nothing merged
-//               in a record
+//   folding     open calls → threads, Amendment C-6 rev 2 (same ET day,
+//               symbol, direction, slot, side, default action; levels within
+//               1 % of the newer call's) — one tile per thread, the newest
+//               call's wording; nothing merged in a record
 //   tags        §7.4 — record facts only, by a fixed precedence below
 //   buttons     §7.3 — at most two: the agreeing answer, then the override
 //               (one message); none on an upside call (C-2) or a pick (not
@@ -108,12 +108,17 @@ export function latestPromptBuiltAt(evaluations) {
 // ---------------------------------------------------------------------------
 // Folding (Amendment C-6)
 
-/** The C-6 key of an OPEN call: ET day, symbol, direction, slot, side. Null when a part is missing. */
+/**
+ * The C-6 key of an OPEN call: ET day, symbol, direction, slot, side and
+ * default action (Amendment C revision 2 — so a Confirmation the player
+ * agreed to never folds with a later "I'll hold" call). Null when a part is
+ * missing.
+ */
 export function threadKeyOf(call) {
   const minted = msOf(call?.mintedAt);
   const side = call?.condition?.side;
-  if (minted === null || !nonEmpty(call?.symbol) || !nonEmpty(call?.direction) || !nonEmpty(call?.slot) || !nonEmpty(side)) return null;
-  return `${etDateOf(minted)}|${call.symbol}|${call.direction}|${call.slot}|${side}`;
+  if (minted === null || !nonEmpty(call?.symbol) || !nonEmpty(call?.direction) || !nonEmpty(call?.slot) || !nonEmpty(side) || !nonEmpty(call?.defaultAction)) return null;
+  return `${etDateOf(minted)}|${call.symbol}|${call.direction}|${call.slot}|${side}|${call.defaultAction}`;
 }
 
 /** Are two calls' levels within 1 % of each other, measured against the NEWER call's level? */
