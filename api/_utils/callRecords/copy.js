@@ -309,13 +309,12 @@ export function saidPassesLint(said, basis) {
   return typeof said === 'string' && said.length > 0 && saidLintTerms(said, basis).length === 0;
 }
 
-/** The label a passing `said` is shown under — and the only way it is shown. */
+/**
+ * The label a passing `said` is shown under — and the only way it is shown.
+ * Its one reader is the cockpit sheet (src/screens/battleView/cockpitModel.js
+ * sheetOf), which shows a `said` only from the record's own `saidOk` verdict
+ * and never on an upside call. (`renderSaidLine`, the line renderer that stood
+ * here, had no consumer and lacked that upside exclusion — retired, founder
+ * ruling Oct 5.)
+ */
 export const SAID_UNVERIFIED_LABEL = "agent's own wording (unverified)";
-
-/** The `said` line for a reader: labelled unverified when it passes; null (never shown) when it fails. */
-export function renderSaidLine(call) {
-  const said = call?.said;
-  const basis = call?.horizon?.basis ?? call?.horizon?.phrase;
-  if (!saidPassesLint(said, basis)) return null;
-  return `${SAID_UNVERIFIED_LABEL}: "${said}"`;
-}

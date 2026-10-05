@@ -22,7 +22,7 @@ import {
   fmtPrice, fmtTimeEt, fmtWeekdayEt, checkLabel, deadlineText, renderCallLine, renderUpsideLine, isUpsideCall, CLOCKS,
   renderDeclaredEvent, renderAnsweredEvent, renderHeardEvent, renderActedEvent, renderNoMatchingTradeEvent,
   renderExpiredEvent, renderEndedWithBattleEvent, renderSupersededEvent, EXPIRY_REASON_TEXT, ANSWER_WORDS,
-  saidFlagsRound2, saidLintTerms, saidPassesLint, renderSaidLine, SAID_LINT_LABELS, SAID_UNVERIFIED_LABEL,
+  saidFlagsRound2, saidLintTerms, saidPassesLint, SAID_LINT_LABELS, SAID_UNVERIFIED_LABEL,
 } from './copy.js';
 import { sessionCloseAfter, etDateOf } from './horizon.js';
 import { formatPrice } from '../../../src/utils/formatters.js';
@@ -226,12 +226,13 @@ describe('the lint — the round-2 rule, verbatim (spec §4; Astra B1R-12, B1R2-
     expect(SAID_LINT_LABELS).toHaveLength(13);
   });
 
-  it("a passing said is shown ONLY under the label \"agent's own wording (unverified)\"; a failing one is never shown", () => {
-    expect(renderSaidLine(shot())).toBe(`${SAID_UNVERIFIED_LABEL}: "AMD above $161 by the close."`);
-    expect(renderSaidLine(shot({ said: 'AMD closes above $161 on volume.' }))).toBeNull();
-    expect(renderSaidLine(shot({ said: null }))).toBeNull();
-    expect(renderSaidLine({ ...shot(), horizon: { phrase: 'next_check', basis: 'next_check', expiresAt: NOW } })).toBeNull(); // "by the close" under next_check fails
+  it("the label a passing said is shown under is \"agent's own wording (unverified)\" (its one reader: the cockpit sheet)", () => {
     expect(SAID_UNVERIFIED_LABEL).toBe("agent's own wording (unverified)");
+  });
+
+  it('renderSaidLine is RETIRED (founder ruling Oct 5): no consumer ever read it, and it lacked the upside exclusion — the sheet shows a said only from the record\'s saidOk, never on an upside call', () => {
+    expect(copyModule).not.toHaveProperty('renderSaidLine');
+    expect(Object.keys(copyModule).filter((k) => /^render.*said/i.test(k))).toEqual([]);
   });
 
   describe('THE CORPUS — derived from the local raw round-2 records (saidLintCorpus.json)', () => {
