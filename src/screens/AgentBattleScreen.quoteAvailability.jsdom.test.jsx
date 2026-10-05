@@ -48,6 +48,11 @@ vi.mock('./../config/featureFlags', async (importOriginal) => ({
   isCharacterPaneOn: () => flags.controller && flags.pane,
   isShowItOn: () => false,
   isShadowCpuQuoteIntegrityOn: () => flags.gate,
+  // The COCKPIT OFF, explicitly (the cockpit flip): this suite pins the screen it
+  // was written against. With the real accessor on, the screen asks the status
+  // endpoint and the seen-marker waits for the answer (Build 2a L4-2) — that
+  // path is AgentBattleScreen.cockpit.jsdom.test.jsx's.
+  isCockpitUiOn: () => false,
 }));
 
 // ── Firestore at the module boundary, under the REAL hooks ──────────────────

@@ -41,6 +41,11 @@ vi.mock('../config/featureFlags', async (importOriginal) => ({
   // THE PANE ON — what this file is for. The flag itself ships false; mocking
   // the ACCESSOR (never the constant) is the seam the flag docstring names.
   isCharacterPaneOn: () => true,
+  // The COCKPIT OFF, explicitly (the cockpit flip): this suite pins the screen it
+  // was written against. With the real accessor on, the screen asks the status
+  // endpoint and the seen-marker waits for the answer (Build 2a L4-2) — that
+  // path is AgentBattleScreen.cockpit.jsdom.test.jsx's.
+  isCockpitUiOn: () => false,
 }));
 vi.mock('../services/eodhdAPI', () => ({
   stockAPI: {

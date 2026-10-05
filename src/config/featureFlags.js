@@ -2786,7 +2786,7 @@ export const EVAL_DEFERRED_BEAT_ENABLED = false;
  * CALL_RECORDS_MODE — a STRING TRI-STATE, resolved ONCE per evaluation check
  * by resolveCallRecordsMode() (api/_utils/callRecords/mode.js), carried in the
  * check's calls context and never re-read mid-check:
- *   'off'    (shipped) — no `declarations` property in the evaluation tool
+ *   'off'    — no `declarations` property in the evaluation tool
  *            schema; no admission reserve; no observation snapshot; no read or
  *            write of `declarations/`, `calls/`, `callObservations/` or
  *            `callSweepQueue/`; no `declarationsPhase` on any entry and no
@@ -2800,9 +2800,10 @@ export const EVAL_DEFERRED_BEAT_ENABLED = false;
  *            after the evaluation commit), encounter flips and receipts run,
  *            capture carries `calls[]` references — and NOTHING is rendered:
  *            chat, tiles and the endpoint are unchanged.
- *   'on'     Build 1/2 surfaces read the records (the chat calls block, the
- *            answer endpoint, the cockpit tiles). Build 0 ships no reader, so
- *            'on' behaves as 'shadow' here.
+ *   'on'     (shipped — the cockpit flip, Build 2a spec §10.3) Build 1/2
+ *            surfaces read the records (the chat calls block, the answer
+ *            endpoint, the cockpit tiles), for the allowlisted owners'
+ *            battles only: every other battle resolves 'off' (mode.js).
  *
  * RUNWAY: 'off' → 'shadow' is its own one-line founder PR after this build
  * merges AND the `calls` composite index (firestore.indexes.json) is deployed —
@@ -2823,7 +2824,7 @@ export const EVAL_DEFERRED_BEAT_ENABLED = false;
  * precedent).
  */
 // Pinned by: callRecordsFlags.test.js (a STRING tri-state — pinned directly, outside flagPinGuard's `*_ENABLED` scan; this value and the pin move together — BUILD_RULES §2).
-export const CALL_RECORDS_MODE = 'off';
+export const CALL_RECORDS_MODE = 'on';
 
 /** The three founder-walked states, in walk order. */
 export const CALL_RECORDS_MODES = Object.freeze(['off', 'shadow', 'on']);
@@ -2865,8 +2866,8 @@ export const RESPONSE_FORK_ATTRIBUTION_ENABLED = false;
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- * COCKPIT BUILD 2a — THE COCKPIT SCREEN, dark (spec
- * docs/COCKPIT_BUILD2A_SPEC_V1_0.md §10; build report
+ * COCKPIT BUILD 2a — THE COCKPIT SCREEN, built dark and lit by the founder's
+ * flip PR (spec docs/COCKPIT_BUILD2A_SPEC_V1_0.md §10; build report
  * docs/audits/20261003_BUILD2A_COCKPIT_SCREEN.md).
  *
  * COCKPIT_UI_ENABLED — the screen flag. FALSE: every cockpit code path is
@@ -2894,7 +2895,7 @@ export const RESPONSE_FORK_ATTRIBUTION_ENABLED = false;
  * from DARK_BY_DESIGN in src/config/flagPinGuard.test.js in the same commit.
  */
 // Pinned by: cockpitUiFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const COCKPIT_UI_ENABLED = false;
+export const COCKPIT_UI_ENABLED = true;
 
 /** The cockpit screen gate, read at render: the pane's shells AND the screen flag. */
 export function isCockpitUiOn() {
