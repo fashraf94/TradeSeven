@@ -1,6 +1,6 @@
-# Call Record Field Contract V1.4 — Amendment C (revision 2)
+# Call Record Field Contract V1.4 — Amendment C (revision 3)
 
-**Date:** 2026-10-03 · **Revision 2:** 2026-10-04 · **Author:** Fable · **Status:** draft for blessing (framework chat). Blessing gates the Build 2a **merge**.
+**Date:** 2026-10-03 · **Revision 2:** 2026-10-04 · **Revision 3:** 2026-10-05 · **Author:** Fable · **Status:** draft for blessing (framework chat). Blessing gates the Build 2a **merge**.
 **Builds on:** `docs/CALL_RECORD_FIELD_CONTRACT_V1_4.md` + Amendment A (`docs/design/COCKPIT_SPEC_V1_3_AMENDMENT_A.md`) + Amendment B rev 2 (`docs/CALL_RECORD_FIELD_CONTRACT_V1_4_AMENDMENT_B.md`).
 **Evidence:** the Build 2 discovery, `docs/audits/20261002_PHASE0_BUILD2_COCKPIT.md` (cited D-A1…D-A11, D-B1…D-B10); round 3, `docs/audits/20261002_DECLARATIONS_WORDING_ROUND3.md`; the Build 2a report, `docs/audits/20261003_BUILD2A_COCKPIT_SCREEN.md` (cited 2A-§n and its finding ids).
 **Scope:** C-1 to C-6 have writers and readers in Build 2a. C-7 and C-8 are **reserved for Build 2b**: defined and blessed now, with no writer or reader until 2b.
@@ -11,6 +11,12 @@
 - C-6: the thread key adds `defaultAction` (2A framework-chat item).
 - C-8: names the single-slot question Build 2b must resolve.
 - Standing conditions: one override at a time is recorded as the rule for 2a.
+
+**What revision 3 changes** (founder rulings of 2026-10-05 on the Build 2a polish review, 2A-§13.9; no field is added or removed). Each rewritten passage states what the code does and cites the tests that pin it:
+- C-2: names the exact refusals an upside call returns: `400 illegal_answer` (reason `upside_call`) for the six Build 1a answers, and `400 deferred` for `ask` and `keep` (2A P2-5).
+- C-3: the knock-on bullets are corrected. Only the `call_go` text names a counterpart. The whole-trade match checks the other leg only against a stored counterpart. Legality has no counterpart dimension; the `counterpart_not_held` check covers `call_go` and `call_hold` on an entry (2A P2-3).
+- C-6: defines a **live** directive answer: its directive is still the battle's current directive, by the same live-slot test the tile uses for "Filed · not yet heard". Once it leaves the slot, the thread offers answers on its newest call again (2A P1-1).
+- C-8 and Standing conditions: "a heard call directive keeps the slot until its deadline" is replaced by what the code does. A live call directive refuses another call's directive answer while it stays live; chat and chip filings replace it at any time; the heard pass and the sweep retire it; a kill ends its liveness (2A P2-4).
 
 ---
 
@@ -47,7 +53,7 @@ It also stamps the mode a record was minted under, so a screen can tell live-coc
 
 A call with `heldAtMint: true` is an **upside call**:
 - It is displayed with the upside line: symbol, side, level and deadline, with **no action clause** (e.g. "AMD above $625 by today's close").
-- It accepts **no answers**: `POST /api/agent/call-response` returns `400 illegal_answer` for every answer on it.
+- It accepts **no answers**. `POST /api/agent/call-response` returns `400 illegal_answer` with reason `upside_call` for each of the six Build 1a answers on it (`go`, `hold`, `go_now`, `pick`, `agree`, `disagree`), whatever its `defaultAction`, and writes nothing. That check follows the ones every request meets: the wire, the rate limit, the battle, its owner and mode, and the call's existence. The two answers deferred to Build 1b, `ask` and `keep`, never reach the call: they return `400 deferred` before anything is read, as on every call. Pinned by `call-response.test.js`: "every 1a answer on a heldAtMint call → 400 illegal_answer (reason upside_call), nothing written — whatever its default" and "ask and keep → 400 deferred, nothing read, nothing written (Amendment B §2)".
 - It is graded like any call (hit, expired, ended with battle, invalidated).
 - Every renderer of calls — the cockpit tile and the chat calls block — uses the upside line for it.
 
@@ -66,9 +72,9 @@ Watchlist-only names and stock↔crypto pairs are **not** excluded by this claus
 Otherwise `counterpart` is stored as `null`, and the agent's original string, trimmed to 40 code points, is kept in the new field **`counterpartRaw`** (null when the counterpart was usable or absent). Renderers read only `counterpart`. `counterpartRaw` exists for audits and the Film Room, never for player-facing copy.
 
 **Knock-on effects (reviewed in Build 2a, 2A L1-5 / L2-2; pinned by `amendmentC.test.js`):**
-- **Model-visible directive text:** the `call_go` / `call_hold` text the agent reads omits an unusable counterpart ("…exit for TBD." becomes "…exit.").
-- **The acted match:** the flip's acted match no longer requires a counterpart that was stored as null. An exit whose counterpart was "X or Y" is acted by a committed trade that exits its symbol, whichever name comes in.
-- **Answer eligibility:** an entry whose named counterpart was not held loses it, and its legal answers follow the Build 1a legality table for an entry without a counterpart.
+- **Model-visible directive text:** only the `call_go` text names a counterpart, and only a stored one: "…go ahead and exit for JPM." or "…bring it in for KO.". With `counterpart` null it ends "…go ahead and exit." or "…bring it in.", so an unusable counterpart is no longer named ("…exit for TBD." becomes "…exit."). The `call_hold` text, "Hold off on the {symbol} {entry|exit} until {deadline}.", never names a counterpart, and C-3 changes nothing in it. Pinned by `amendmentC.test.js` ("consumer 1 — …", "rev 3 — the rest of each consumer: …") and `callActions.test.js` ("hold: …", "go_now: …").
+- **The acted match:** the whole-trade match (`flip.js` `matchesWholeTrade`, which decides `acted` for the flip and for the heard pass) checks the trade's other leg only against a non-null `counterpart`. With `counterpart` null, a committed trade in the call's slot acts an exit when it takes the call's symbol out, whatever comes in, and an entry when it brings the call's symbol in, whatever goes out. So an exit whose counterpart was "X or Y" is acted by any committed trade in its slot that exits its symbol. Pinned by `amendmentC.test.js` ("consumer 2 — …", "rev 3 — the rest of each consumer: …") and `flip.test.js` ("entry: incoming symbol + resolved slot + declared counterpart").
+- **Answer eligibility:** the legality table (`answers.js`) has no counterpart dimension, so C-3 changes no call's legal answers. It changes the filing check (`callActions.js` `isCallActionEligible`): a `call_go` or `call_hold` on an entry is refused `400 ineligible_action`, reason `counterpart_not_held`, when its stored counterpart is not held in the call's slot at filing. A counterpart stored null skips that check, so an entry whose named counterpart was not held at mint is never refused for it. Pinned by `amendmentC.test.js` ("consumer 3 — …", "rev 3 — the rest of each consumer: …") and `callActions.test.js` ("call_hold / call_go on an ENTRY: …").
 
 ---
 
@@ -95,7 +101,7 @@ A display shows a call's `said` only when `saidOk === true`, labelled as the age
 
 - A display shows **one tile per thread**, carrying the newest call's wording.
 - Each call keeps its own record, answer, receipts and grading. Nothing is merged in Firestore.
-- While any call in a thread carries a **live directive answer**, displays offer no new answer on that thread and show that answer, naming the wording it was given on.
+- While any call in a thread carries a **live directive answer**, displays offer no new answer on that thread and show that answer, naming the wording it was given on. A directive answer is **live** while its directive is still the battle's current directive: the slot holds a live call directive whose thread is the answer's own. This is the same live-slot test the tile uses for "Filed · not yet heard" (`cockpitModel.js` `liveCallSlotOf`, the endpoint's pending predicate without its same-call exemption). Once the directive leaves the slot or stops being live there (replaced, retired, killed, suppressed or past its lifetime), the thread offers answers on its newest call again, under the rules every tile follows, and still shows the earlier answer, naming its wording. Pinned by `cockpitModel.test.js`: "THE LIVE-ANSWER RULE: …" and "C-6 rev 3 — once the answer LEAVES the slot …".
 - Resolved calls never join a thread.
 
 Basis: about 1 kept called shot in 11 repeats the previous check's (D-B6). `defaultAction` is in the key so that a Confirmation the player agreed to never folds with a later "I'll hold" call.
@@ -119,7 +125,7 @@ A new call-directive action, **`call_replace`**, in a new registry version **`ca
 - **Slot:** `{ expiry: 'until_ms', expiresAtMs, symbol: OUT, pickSymbol: IN, kind, callId }`, where `expiresAtMs` is the originating exit call's horizon.
 - **Receipts:** heard, as today; **acted** when an executed swap has outgoing OUT and incoming IN; **no matching trade** otherwise.
 - Its canonical text is model-visible and goes through fenced-class coordinated review in Build 2b.
-- **Open for 2b:** Build 1a gives the agent one directive slot, and a heard call directive holds it until its deadline. Build 2b's spec must say how a replacement pick coexists with an override already in the slot before `call_replace` has a writer.
+- **Open for 2b:** Build 1a gives the agent one directive slot. A live call directive in it refuses another call's directive answer (`409 directive_pending`) for as long as it stays live, and a chat or chip filing can replace it at any time (Standing conditions, "One override at a time", which cites the pinning tests). Build 2b's spec must say how a replacement pick coexists with an override already in the slot before `call_replace` has a writer.
 
 **No writer or reader in 2a.**
 
@@ -147,7 +153,11 @@ Changed meaning, no new field: `calls/{callId}.counterpart` (C-3, usable names o
 
 - There is no "held" fact. No display says "Held off" or claims the agent held because of an answer (Build 1a, `heard.js`).
 - There is no "Asking you" state until the ask route ships (Build 1b).
-- **One override at a time** (Build 1a's single directive slot): a heard call directive keeps the slot until its deadline; displays follow the endpoint's predicate and say so.
+- **One override at a time** (Build 1a's single directive slot). While the slot holds a **live** call directive, the answer endpoint refuses a directive answer on any other call with `409 directive_pending`; acknowledgments never meet that check (`directiveUtils.js` `isCallDirectivePendingAt`). Live means: call-family; at or before its lifetime end (the horizon's expiry, plus 15 minutes for `next_check`); its thread not killed by a control epoch; and not suppressed (integrity mode not `'enforce'`). Displays follow the same predicate (`cockpitModel.js` `liveCallSlotOf`) and say so. Pinned by `directiveUtils.build1a.test.js` ("pending: a live call-family slot of a DIFFERENT call …", "not pending: …"), `callActions.test.js` ("the lifetime: the horizon expiry, plus 15 minutes for next_check only …"), `call-response.test.js` ("ANOTHER call-family directive pending in the slot → 409 directive_pending …", "an ACKNOWLEDGMENT on another call is accepted while a call directive is pending …", "the pending guard carries the renderer's suppression state …") and `cockpitModel.test.js` ("PARITY: on every row of the table, the tile blocks exactly when isCallDirectivePendingAt would refuse"). Hearing consumes nothing, but the directive does not always keep the slot until its lifetime ends:
+  - **Replaced:** a chat filing (latest-wins) or a chip filing (with a matching belief) replaces it at any time, stamping `supersedes` and, at 'on', writing a `superseded` event (Amendment B §3). Pinned by `chat.test.js` ("Build 1a: a chat filing over a CALL-FAMILY slot is latest-wins with NO belief …", "Build 1a: the same replacement at calls ON …") and `file-directive.test.js` ("with the right belief at calls off: replaced-prior …", "at calls ON for an allowlisted owner …").
+  - **Retired by the heard pass** (compare-and-clear): when the check's committed trade acts on a `call_go` or `call_pick` directive, or trades a pick's slot for something other than the selection. A `call_hold` stays even when the agent makes the trade, and hearing alone retires nothing. Pinned by `heard.test.js` ("heard is first-confirmed; …", "a go directive acted on is retired; …", "ACTED: … a hold directive is not retired", "a PICK whose slot was traded for the OTHER option …").
+  - **Retired by the sweep** once its lifetime has ended. Pinned by `sweep.test.js` ("a call-family slot past its lifetime is retired by compare-and-clear; …").
+  - **Killed:** a kill ends its liveness without clearing it, and another call's directive answer can then replace it. Pinned by `call-response.test.js` ("a pending call-family slot whose thread the control epoch KILLED no longer blocks …").
 - Tiles and chat lines render from record fields; a `said` is shown only when it passes the lint.
 - Records are frozen in place on rollback; nothing is deleted or rewritten.
 - Model-visible text changes go through fenced-class coordinated review (contract V1.4 §2).

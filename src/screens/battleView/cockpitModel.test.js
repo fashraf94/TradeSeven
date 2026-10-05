@@ -621,7 +621,7 @@ describe('§7.2 — folding (Amendment C-6)', () => {
     expect(allTiles(feed([a, b], { directive: slotFor(a), controlEpochLog: killed }))[0].tag.text).toBe('Filed · not heard');
   });
 
-  it('C-6 rev 3 — once the answer LEAVES the slot (killed, expired, replaced, the slot emptied) the thread offers answers on its newest call again; the answer it left behind stays its tag and its answer line', () => {
+  it('C-6 rev 3 — once the answer LEAVES the slot (killed, expired, suppressed, replaced, the slot emptied) the thread offers answers on its newest call again; the answer it left behind stays its tag and its answer line', () => {
     const a = call();
     a.playerResponse = directive(a, { answer: 'hold', filedAt: '2026-09-09T14:33:00.000Z' });
     const b = restated(a);
@@ -636,6 +636,8 @@ describe('§7.2 — folding (Amendment C-6)', () => {
       ['killed', { directive: slotFor(a), controlEpochLog: killed }, 'Filed · not heard'],
       // NOW is 11:05: the slot's life ended at 11:00; the restated call's deadline is the close.
       ['expired', { directive: slotFor(a, { expiresAtMs: T('2026-09-09T15:00:00.000Z') }) }, 'Filed · not heard'],
+      // Integrity mode not 'enforce': the renderer never shows it, so the endpoint never holds it pending.
+      ['suppressed', { directive: slotFor(a), suppressed: true }, 'Filed · not heard'],
       ['replaced, its event loaded', { directive: chat, events: superseded }, 'Replaced by a later instruction'],
       ['the slot emptied', { directive: null }, 'Filed · not heard'],
     ];
