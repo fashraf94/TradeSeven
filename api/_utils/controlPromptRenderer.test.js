@@ -440,6 +440,21 @@ describe('recordControlEpochIfNeeded — the cron orchestrator (key → should �
     expect(battle.controlEpochLog).toEqual([entry]);
   });
 
+  it('a KILL writes the log and nothing else: the killed directive stays in the battle\'s slot, no longer live (Amendment C rev 3, standing conditions)', async () => {
+    const battle = makeBattle();
+    const updates = [];
+    const battleRef = { update: async (u) => { updates.push(u); } };
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await recordControlEpochIfNeeded({
+      battleRef, battle, arrayUnion: fakeArrayUnion, modes: MODES,
+      resolveControls, directive: DIRECTIVE, deploySha: 'sha-1',
+    });
+    logSpy.mockRestore();
+    expect(updates).toHaveLength(1);
+    expect(updates[0].controlEpochLog.__arrayUnion.suppressedDirectiveIds).toEqual(['thread-123']); // the kill
+    expect(Object.keys(updates[0])).toEqual(['controlEpochLog']); // the only field written: `directive` untouched
+  });
+
   it('a repeat tick inside the same epoch is a silent no-op (no write, null return)', async () => {
     const battle = makeBattle([{ epochKey: computeEpochKey(MODES), suppressedDirectiveIds: [] }]);
     const battleRef = { update: vi.fn() };

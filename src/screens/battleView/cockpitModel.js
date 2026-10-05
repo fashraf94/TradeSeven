@@ -12,15 +12,17 @@
 // nothing is optimistic: a tile changes when a record does.
 //
 //   groups      ⚡ Needs you · ⏱ Waiting on the check · 👁 Monitoring · Earlier (§7.1)
-//   folding     open calls → threads, Amendment C-6 (same ET day, symbol,
-//               direction, slot, side; levels within 1 % of the newer call's) —
-//               one tile per thread, the newest call's wording; nothing merged
-//               in a record
+//   folding     open calls → threads, Amendment C-6 rev 2 (same ET day,
+//               symbol, direction, slot, side, default action; levels within
+//               1 % of the newer call's) — one tile per thread, the newest
+//               call's wording; nothing merged in a record
 //   tags        §7.4 — record facts only, by a fixed precedence below
 //   buttons     §7.3 — at most two: the agreeing answer, then the override
 //               (one message); none on an upside call (C-2) or a pick (not
 //               shown in 2a), none on a call already answered, none on a
-//               thread holding a live directive answer (C-6); overrides
+//               thread holding a LIVE directive answer (C-6 rev 3: its
+//               directive still the battle's current one, live in the
+//               slot); overrides
 //               disabled while the answer endpoint would refuse them
 //               (`overrideBlockOf` — the endpoint's own pending predicate)
 //
@@ -108,12 +110,17 @@ export function latestPromptBuiltAt(evaluations) {
 // ---------------------------------------------------------------------------
 // Folding (Amendment C-6)
 
-/** The C-6 key of an OPEN call: ET day, symbol, direction, slot, side. Null when a part is missing. */
+/**
+ * The C-6 key of an OPEN call: ET day, symbol, direction, slot, side and
+ * default action (Amendment C revision 2 — so a Confirmation the player
+ * agreed to never folds with a later "I'll hold" call). Null when a part is
+ * missing.
+ */
 export function threadKeyOf(call) {
   const minted = msOf(call?.mintedAt);
   const side = call?.condition?.side;
-  if (minted === null || !nonEmpty(call?.symbol) || !nonEmpty(call?.direction) || !nonEmpty(call?.slot) || !nonEmpty(side)) return null;
-  return `${etDateOf(minted)}|${call.symbol}|${call.direction}|${call.slot}|${side}`;
+  if (minted === null || !nonEmpty(call?.symbol) || !nonEmpty(call?.direction) || !nonEmpty(call?.slot) || !nonEmpty(side) || !nonEmpty(call?.defaultAction)) return null;
+  return `${etDateOf(minted)}|${call.symbol}|${call.direction}|${call.slot}|${side}|${call.defaultAction}`;
 }
 
 /** Are two calls' levels within 1 % of each other, measured against the NEWER call's level? */
@@ -175,9 +182,21 @@ export function factTag(fact, params = {}) {
  *   then the NEWEST of the event-backed facts about its answer — replaced ·
  *   no matching trade · heard — by the check (or instant) each names, ties in
  *   that order; then the answer itself (filed · agreed); else Live.
+ * A filed directive reads "not yet heard" ONLY while it is still the battle's
+ * current one — `slotThreadId`, the slot's live thread (liveCallSlotOf), is
+ * its own (founder ruling Oct 4). Killed, expired or suppressed in the slot,
+ * gone from it, or the slot taken by a later filing whose `superseded` event
+ * has not loaded, it reads "not heard": no hearing is promised that cannot
+ * come (review L6-11 c). A replacement whose event HAS loaded reads "Replaced
+ * by a later instruction" — the event comes first. An EMPTY slot is safe to
+ * read this way: only the sweep empties a slot no check heard, past its
+ * lifetime, and the heard pass's retirement reaches the client in the same
+ * remote event as its own hearing, which Chromium commits as one render
+ * (measured; WebKit and Firefox untested — polish review P1-3). Without the
+ * slot's thread nothing is promised.
  * An unknown state → no tag.
  */
-export function callTag(call, { events = [], evaluations = [], nowMs } = {}) {
+export function callTag(call, { events = [], evaluations = [], nowMs, slotThreadId = null } = {}) {
   if (!call || typeof call !== 'object') return null;
   const deadline = deadlineText(call.horizon, { nowMs, ...CLOCK });
   const kinds = new Set(events.map((e) => e?.kind));
@@ -218,7 +237,10 @@ export function callTag(call, { events = [], evaluations = [], nowMs } = {}) {
         facts.sort((a, b) => (b.ms ?? -Infinity) - (a.ms ?? -Infinity) || a.rank - b.rank);
         return facts[0].tag();
       }
-      if (pr?.kind === 'directive') return factTag('answer:directive');
+      if (pr?.kind === 'directive') {
+        const current = nonEmpty(pr.directiveThreadId) && pr.directiveThreadId === slotThreadId;
+        return factTag(current ? 'answer:directive' : 'answer:directive_left_slot');
+      }
       if (pr?.kind === 'ack') return factTag('answer:ack', { time: etTime(isoOf(pr.filedAt)) });
       return factTag('state:open');
     }
@@ -247,57 +269,105 @@ export function answerLabelOf(call, answer) {
 }
 
 /**
- * "One call at a time" (§7.3) — THE ANSWER ENDPOINT'S OWN PREDICATE, restated.
- * The endpoint refuses an override with 409 `directive_pending` while
- * `isCallDirectivePendingAt` (api/_utils/directiveUtils.js:136-150) holds: the
- * slot is a call-family directive with text and a thread, not past its
- * `expiresAtMs`, not killed (the battle's `controlEpochLog`), not suppressed
- * (integrity mode not 'enforce'), and for a different call. The client cannot
- * import that module (it reaches the calls mode and the server allowlist), so
- * the predicate is restated here and a parity test runs both on one table
- * (cockpitModel.test.js).
- *
- * HEAD DIFFERS FROM THE SPEC'S WORDING ("whose call has no
- * playerResponse.heardEvalId"): a HEARD call directive stays in force — and
- * the endpoint keeps refusing — until it expires, and an expired one blocks
- * nothing even if it was never heard. So the buttons follow the endpoint, and
- * the line says which case it is: the call is loaded and unheard → the
- * spec's line; heard, or its call not loaded → "in force until {t}" (never a
- * claim about hearing the client cannot see).
- *
- * @returns {{ callId: string|null, line: string } | null}  null = nothing blocked
+ * The battle's slot when it holds a LIVE call directive, else null — the
+ * answer endpoint's pending predicate without its `thisCallId` exemption: a
+ * call-family directive with text and a thread, not past its `expiresAtMs`,
+ * not killed, not suppressed. ONE predicate, two readers: the override block
+ * below, and the tag — a filed directive is "not yet heard" only while this
+ * slot is its own (callTag; founder ruling Oct 4).
  */
-export function overrideBlockOf({ directive, calls, nowMs, controlEpochLog = null, suppressed = false } = {}) {
+export function liveCallSlotOf({ directive, nowMs, controlEpochLog = null, suppressed = false } = {}) {
   if (!directive || typeof directive !== 'object' || directive.family !== 'call') return null;
   if (suppressed === true) return null;
   if (!directive.text || !directive.directiveThreadId) return null;
   if (!finite(nowMs) || !finite(directive.expiresAtMs) || nowMs > directive.expiresAtMs) return null;
   if (deriveKilledDirectiveIds(controlEpochLog).includes(directive.directiveThreadId)) return null;
-  const callId = nonEmpty(directive.callId) ? directive.callId : null;
+  return directive;
+}
+
+/**
+ * "One call at a time" (§7.3) — THE ANSWER ENDPOINT'S OWN PREDICATE, restated.
+ * The endpoint refuses an override with 409 `directive_pending` while
+ * `isCallDirectivePendingAt` (api/_utils/directiveUtils.js:136-150) holds: the
+ * slot is a call-family directive with text and a thread, not past its
+ * `expiresAtMs`, not killed (the battle's `controlEpochLog`), not suppressed
+ * (the renderer suppresses every directive unless the integrity mode is
+ * 'enforce'), and for a different call. The client cannot
+ * import that module (it reaches the calls mode and the server allowlist), so
+ * the predicate is restated here and a parity test runs both on one table
+ * (cockpitModel.test.js).
+ *
+ * HEAD DIFFERS FROM THE SPEC'S WORDING ("whose call has no
+ * playerResponse.heardEvalId"): hearing consumes nothing, so a HEARD call
+ * directive keeps the endpoint refusing while it stays live — until it
+ * expires, is replaced (a chat or chip filing), is retired (an acted go or
+ * pick) or is killed (Amendment C rev 3, standing conditions) — and an expired
+ * one blocks nothing even if it was never heard. So the buttons follow the endpoint, and
+ * the line says which case it is: the call is loaded and unheard → the
+ * spec's line; heard, or its call not loaded → "stays active until {t}" (never a
+ * claim about hearing the client cannot see).
+ *
+ * @returns {{ callId: string|null, line: string } | null}  null = nothing blocked
+ */
+export function overrideBlockOf({ directive, calls, nowMs, controlEpochLog = null, suppressed = false } = {}) {
+  const slot = liveCallSlotOf({ directive, nowMs, controlEpochLog, suppressed });
+  if (!slot) return null;
+  const callId = nonEmpty(slot.callId) ? slot.callId : null;
   const call = callId ? (Array.isArray(calls) ? calls : []).find((c) => c?.callId === callId) ?? null : null;
   const unheard = Boolean(call) && !nonEmpty(call.playerResponse?.heardEvalId);
   return {
     callId,
-    line: unheard ? COPY.cockpitWaitingHeard : COPY.cockpitWaitingActive(etTime(isoOf(directive.expiresAtMs))),
+    line: unheard ? COPY.cockpitWaitingHeard : COPY.cockpitWaitingActive(etTime(isoOf(slot.expiresAtMs))),
   };
-}
-
-/** Does any call in the thread carry a live directive answer (a filed directive on an open call)? */
-function liveDirectiveMember(thread) {
-  return thread.find((c) => c.state === 'open' && c.playerResponse?.kind === 'directive') ?? null;
 }
 
 const answeredCall = (c) => Boolean(c?.playerResponse && typeof c.playerResponse === 'object');
 
 /**
+ * Amendment C-6 rev 3: a LIVE directive answer is one whose directive is
+ * still the battle's current directive — the slot's live thread
+ * (liveCallSlotOf) is its own, the very test "Filed · not yet heard" reads —
+ * on ANY call of the thread, not only the newest answered one (review Q1-2).
+ * Only a live answer holds the thread's answers back; once its directive
+ * leaves the slot, the thread offers answers on its newest call again (the
+ * endpoint accepts the agreement; an override still waits on another call's
+ * live directive — `overrideBlockOf`).
+ */
+function liveDirectiveMember(thread, slotThreadId) {
+  if (!nonEmpty(slotThreadId)) return null;
+  return thread.find((c) => c.state === 'open' && c.playerResponse?.kind === 'directive' && c.playerResponse.directiveThreadId === slotThreadId) ?? null;
+}
+
+/**
+ * The thread's MOST RECENT answer (by its filing instant; on a tie, the
+ * newer wording's), or null. Once a directive answer leaves the slot the
+ * newest call can be answered again, so the answer the tile shows is the
+ * latest one given, never an older one it replaced (review Q1-1).
+ */
+function latestAnswerMember(thread) {
+  let latest = null;
+  for (const c of thread) {
+    if (!answeredCall(c)) continue;
+    if (!latest || (msOf(c.playerResponse.filedAt) ?? -Infinity) > (msOf(latest.playerResponse.filedAt) ?? -Infinity)) latest = c;
+  }
+  return latest;
+}
+
+/**
  * One tile for a thread (or a resolved call, which is a thread of one).
  *
- *   tag      the live directive answer's call when the thread holds one (its
- *            filed / heard state is the thread's operative fact), else the
- *            NEWEST call's own — an agreement on an EARLIER wording is never
- *            worn by the newer one (review L6-2); it is an answer line instead
+ *   tag      the call the agent ACTED on, when any (review L6-1); else the
+ *            LIVE directive answer's call when the thread holds one; else
+ *            the call of the thread's most recent answer when that answer is
+ *            a directive, live or not (its filed / heard / replaced state is
+ *            the thread's operative fact); else the NEWEST call's own — an
+ *            agreement on an EARLIER wording is never worn by the newer one
+ *            (review L6-2); it is an answer line instead. An answer that a
+ *            later answer followed is no longer shown (review Q1-1)
  *   buttons  the NEWEST call's legal answers (§7.2) — none while any call in
- *            the thread carries a live directive answer (C-6), none when the
+ *            the thread carries a LIVE directive answer (C-6 rev 3: its
+ *            directive still the battle's current one, liveCallSlotOf; once it
+ *            leaves the slot the newest call is answerable again), none when the
  *            newest call is already answered (409 already_answered), none once
  *            the agent acted on it, none past its deadline (the endpoint
  *            refuses every answer then: 409 expired — review L6-7), none on a
@@ -305,23 +375,32 @@ const answeredCall = (c) => Boolean(c?.playerResponse && typeof c.playerResponse
  *            (one answer at a time; the hook drops a second tap — review L3-7)
  *   group    Earlier when resolved; Needs you when there are buttons and no
  *            answer anywhere on the thread (§7.1); otherwise Waiting — the
- *            answered threads (an agreement on an earlier wording still lets
- *            the restated call be answered, C-6) and the calls with no answer
- *            to give (upside, acted, past the deadline)
+ *            answered threads (an agreement on an earlier wording, or a
+ *            directive answer that left the slot, still lets the restated
+ *            call be answered, C-6 rev 3) and the calls with no answer to
+ *            give (upside, acted, past the deadline)
  *
  * @param {object[]} thread  calls, newest first
- * @param {object} ctx       { eventsMap, evaluations, nowMs, block, pending: { callId, answer } | null }
+ * @param {object} ctx       { eventsMap, evaluations, nowMs, block, pending: { callId, answer } | null,
+ *                             slotThreadId: the slot's live thread (liveCallSlotOf) | null }
  */
-export function tileOf(thread, { eventsMap = new Map(), evaluations = [], nowMs, block = null, pending = null } = {}) {
+export function tileOf(thread, { eventsMap = new Map(), evaluations = [], nowMs, block = null, pending = null, slotThreadId = null } = {}) {
   const newest = thread[0];
   const oldest = thread[thread.length - 1];
-  const live = liveDirectiveMember(thread);
+  // Only a LIVE directive answer (C-6 rev 3: still the battle's current
+  // directive) holds the newest call's answers back, and it is the answer the
+  // tile shows. Otherwise the tile shows the thread's most recent answer: a
+  // directive one as its tag and answer line, live or not; an agreement on an
+  // earlier wording as an answer line.
+  const live = liveDirectiveMember(thread, slotThreadId);
+  const shown = live ?? latestAnswerMember(thread);
+  const filed = shown && shown.state === 'open' && shown.playerResponse.kind === 'directive' ? shown : null;
   const threadAnswered = thread.some(answeredCall);
   // The agent acting on ANY call of the thread is the thread's weightiest fact
   // (review L6-1 / V2): it is the tag, and no answer is offered after it.
   const actedMember = thread.find((c) => nonEmpty(c.outcome?.actedEvalId)) ?? null;
-  const tagSource = actedMember ?? live ?? newest;
-  const tag = callTag(tagSource, { events: eventsMap.get(tagSource.callId) ?? [], evaluations, nowMs });
+  const tagSource = actedMember ?? filed ?? newest;
+  const tag = callTag(tagSource, { events: eventsMap.get(tagSource.callId) ?? [], evaluations, nowMs, slotThreadId });
   // The endpoint's own guard (call-response.js: `!finite(deadline) || deadline <= nowMs` → 409 expired).
   const deadline = newest.horizon?.expiresAt;
   const answerable = finite(deadline) && finite(nowMs) && deadline > nowMs;
@@ -339,12 +418,13 @@ export function tileOf(thread, { eventsMap = new Map(), evaluations = [], nowMs,
   let group = COCKPIT_GROUP.WAITING;
   if (newest.state !== 'open') group = COCKPIT_GROUP.EARLIER;
   else if (buttons.length > 0 && !threadAnswered) group = COCKPIT_GROUP.NEEDS_YOU;
-  // C-6: a live directive answer is shown, naming the wording it was given on;
-  // so is an agreement given on an EARLIER wording of the thread.
-  const olderAck = !live && !answeredCall(newest) ? (thread.slice(1).find((c) => c.playerResponse?.kind === 'ack') ?? null) : null;
+  // C-6: the shown directive answer names the wording it was given on, live or
+  // not; so does an agreement given on an EARLIER wording, while the newest
+  // call is unanswered.
+  const olderAck = !filed && shown && shown !== newest && !answeredCall(newest) && shown.playerResponse.kind === 'ack' ? shown : null;
   let answerLine = null;
-  if (live) {
-    answerLine = COPY.cockpitThreadAnswer(live.playerResponse.answer, etTime(isoOf(live.playerResponse.filedAt)), etSlotTime(isoOf(live.evidence?.priceAsOf)));
+  if (filed) {
+    answerLine = COPY.cockpitThreadAnswer(filed.playerResponse.answer, etTime(isoOf(filed.playerResponse.filedAt)), etSlotTime(isoOf(filed.evidence?.priceAsOf)));
   } else if (olderAck) {
     answerLine = COPY.cockpitThreadAgreed(etTime(isoOf(olderAck.playerResponse.filedAt)), etSlotTime(isoOf(olderAck.evidence?.priceAsOf)));
   }
@@ -377,7 +457,9 @@ export function buildCockpitFeed({
   const shown = cockpitCalls(calls).filter((c) => c.kind !== 'pick');
   const eventsMap = eventsByCall(events);
   const block = overrideBlockOf({ directive, calls: shown, nowMs, controlEpochLog, suppressed });
-  const ctx = { eventsMap, evaluations, nowMs, block, pending };
+  // The slot's live thread, by the block's own predicate: a filed directive is "not yet heard" only while it is this one.
+  const slotThreadId = liveCallSlotOf({ directive, nowMs, controlEpochLog, suppressed })?.directiveThreadId ?? null;
+  const ctx = { eventsMap, evaluations, nowMs, block, pending, slotThreadId };
   const withRefusal = (tile) => ({ ...tile, refusalLine: refusalLineOf(tile, outcomes?.[tile.id] ?? null, { calls: shown, directive, block, nowMs }) });
   const openTiles = foldThreads(shown).map((t) => withRefusal(tileOf(t.calls, ctx)));
   const resolved = shown
@@ -515,6 +597,27 @@ export function sheetOf(tile, { eventsMap = new Map(), evaluations = [], observa
 
 /** How long a directive_pending refusal stands on its own word once the client no longer sees the block (clock skew, propagation). */
 export const PENDING_REFUSAL_GRACE_MS = 30_000;
+
+/**
+ * The refusals no tile shows any more — the record behind the tile changed
+ * (its call resolved or was answered: refusalLineOf says nothing then), the
+ * line aged out (a directive_pending refusal past its grace), or the call left
+ * the feed (no tile is its own: folded under a restatement, whose tile carries
+ * the newest call's outcome only, or no longer read). The screen drops these
+ * outcomes, so a cleared line never comes back
+ * on a tile that resurfaces (founder ruling Oct 5). Without a feed nothing is
+ * known, and nothing is stale.
+ *
+ * @param {object|null} feed   buildCockpitFeed(...)
+ * @param {object} outcomes    callId → outcome (useCockpitAnswer)
+ * @returns {string[]}         the callIds whose outcome to drop
+ */
+export function staleRefusalIds(feed, outcomes) {
+  const ids = Object.keys(outcomes && typeof outcomes === 'object' ? outcomes : {});
+  if (!feed || ids.length === 0) return [];
+  const shown = new Set([...feed.needsYou, ...feed.waiting, ...feed.earlier].filter((t) => t.refusalLine).map((t) => t.id));
+  return ids.filter((id) => !shown.has(id));
+}
 
 /**
  * The line a refusal shows under its tile (§8.3), from the response BODY —

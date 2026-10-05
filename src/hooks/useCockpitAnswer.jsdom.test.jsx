@@ -95,6 +95,21 @@ describe('the hook — no optimistic state', () => {
     await act(async () => { release({ status: 200, body: {} }); await done; });
   });
 
+  it('dropOutcomes drops exactly the named outcomes — the screen\'s "no tile shows it" (founder ruling Oct 5); unknown ids change nothing', async () => {
+    const post = vi.fn(async () => ({ status: 409, body: { error: 'refused', reason: 'budget' } }));
+    render({ post });
+    await act(async () => { await hook.submit('c1', 'hold'); });
+    await act(async () => { await hook.submit('c2', 'hold'); });
+    const before = hook.outcomes;
+    expect(Object.keys(before).sort()).toEqual(['c1', 'c2']);
+    act(() => hook.dropOutcomes(['c9']));
+    expect(hook.outcomes).toBe(before); // the same object: nothing was dropped, nothing re-renders
+    act(() => hook.dropOutcomes(['c1']));
+    expect(hook.outcomes).toEqual({ c2: { status: 409, body: { error: 'refused', reason: 'budget' }, at: expect.any(Number), callId: 'c2' } });
+    act(() => hook.dropOutcomes([]));
+    expect(Object.keys(hook.outcomes)).toEqual(['c2']);
+  });
+
   it('one tap in flight at a time: a second submit while the first is pending sends nothing', async () => {
     let release;
     const post = vi.fn(() => new Promise((r) => { release = r; }));

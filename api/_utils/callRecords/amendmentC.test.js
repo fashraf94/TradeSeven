@@ -25,7 +25,8 @@ import { runModelCallsPhase } from './publish.js';
 import { createCallsContext } from './mode.js';
 import { freezeModelObservation, benchCooldownLocked } from './observe.js';
 import { renderCallActionText, isCallActionEligible } from './callActions.js';
-import { planFlip } from './flip.js';
+import { planFlip, matchesWholeTrade } from './flip.js';
+import { classifyAnswer, ANSWERS_1A } from './answers.js';
 import { bindHorizon, battleExpiryMs } from './horizon.js';
 import { saidPassesLint } from './copy.js';
 import { FROZEN_NOW, HELD, makeTickBattle, makeDeclarations, makeObservation } from '../__fixtures__/tickStampsHarness.js';
@@ -375,6 +376,32 @@ describe('C-3 — counterpart usability (the discovery\'s D-B5 classes)', () => 
     const battle = committedBattle();
     expect(isCallActionEligible('call_go', jpm, battle)).toEqual({ ok: true });
     expect(isCallActionEligible('call_go', { ...jpm, counterpart: 'JPM' }, battle)).toEqual({ ok: false, reason: 'counterpart_not_held' });
+  });
+
+  // Amendment C revision 3 (founder ruling Oct 5; 2A P2-3): the rest of each
+  // consumer, so every claim of the knock-on bullets is pinned here.
+  it('rev 3 — the rest of each consumer: the call_hold text never names a counterpart; legality has no counterpart dimension and counterpart_not_held refuses call_hold too; on an ENTRY a nulled counterpart matches whatever goes out', () => {
+    const now = MINT + 1000;
+    const hold = renderCallActionText('call_hold', one(exit('JPM')), { nowMs: now });
+    expect(hold).toMatch(/^Hold off on the NVDA exit until /);
+    expect(hold).not.toMatch(/JPM/);
+    expect(renderCallActionText('call_hold', one(exit('TBD')), { nowMs: now })).toBe(hold);
+    const nulled = one(entry('JPM')); // JPM is not held → C-3 nulls it
+    expect(nulled.counterpart).toBeNull();
+    const named = { ...nulled, counterpart: 'JPM' };
+    expect(classifyAnswer(nulled, 'hold')).toBe('directive');
+    expect(classifyAnswer({ ...nulled, defaultAction: 'hold' }, 'go_now')).toBe('directive');
+    // Every default, direction and kind: a nulled counterpart and a named one classify every 1a answer alike (review Q4-2).
+    for (const defaultAction of ['act', 'hold']) for (const direction of ['entry', 'exit']) for (const kind of ['called_shot', 'confirmation']) {
+      const base = { ...nulled, defaultAction, direction, kind };
+      for (const answer of ANSWERS_1A) expect(classifyAnswer(base, answer), `${defaultAction}/${direction}/${kind}/${answer}`).toBe(classifyAnswer({ ...base, counterpart: 'JPM' }, answer));
+    }
+    const battle = committedBattle();
+    expect(isCallActionEligible('call_hold', nulled, battle)).toEqual({ ok: true });
+    expect(isCallActionEligible('call_hold', named, battle)).toEqual({ ok: false, reason: 'counterpart_not_held' });
+    const amdInForPg = { type: 'swap', symbolIn: 'AMD', symbolOut: 'PG', tier: 'support', slotIndex: 1 };
+    expect(matchesWholeTrade(nulled, amdInForPg)).toBe(true);
+    expect(matchesWholeTrade({ ...nulled, counterpart: 'KO' }, amdInForPg)).toBe(false);
   });
 });
 

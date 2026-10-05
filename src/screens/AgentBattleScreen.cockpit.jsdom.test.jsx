@@ -445,6 +445,50 @@ describe('ON — the mode gate (Build 1a spec :39): cockpit filings and the call
   });
 });
 
+describe('ON — a filed answer, the slot and THIS TURN read ONE predicate (founder ruling Oct 4; polish review P1-4, P1-5 — BUILD_RULES §9)', () => {
+  // OPEN answered "Hold off" from the cockpit: its record and the battle's slot, one thread, as the endpoint writes them.
+  const SLOT = { family: 'call', text: "Hold off on AMD until today's close", expiry: 'until_ms', expiresAtMs: CLOSE, directiveThreadId: 't-call', createdAt: '2026-09-01T16:50:00.000Z', callId: OPEN.callId, kind: 'call_hold' };
+  const FILED = { ...OPEN, directiveThreadId: 't-call', playerResponse: { answer: 'hold', kind: 'directive', directiveThreadId: 't-call', callId: OPEN.callId, filedAt: '2026-09-01T16:50:00.000Z', heardEvalId: null } };
+  const tagOf = (call) => q(`[data-cockpit-tile="${call.callId}"] [data-cockpit-tag]`)?.textContent ?? null;
+  const strip = () => q('[data-this-turn]');
+  const goneHold = () => q(`[data-cockpit-tile="${GONE.callId}"] [data-cockpit-answer="hold"]`);
+  beforeEach(() => { FS.docs['agentBattles/ab-1/calls'] = [FILED, GONE, RESOLVED, SHADOW]; });
+
+  it('the slot holds it, live: the tile reads "Filed · not yet heard", THIS TURN carries it, and the other call\'s override waits (one call at a time)', async () => {
+    DOC = { ...LIVE_DOC, directive: SLOT };
+    await mount();
+    expect(tagOf(FILED)).toBe('Filed · not yet heard');
+    expect(strip().getAttribute('data-this-turn')).toBe('filed');
+    expect(strip().textContent).toContain("Hold off on AMD until today's close");
+    expect(goneHold().getAttribute('aria-disabled')).toBe('true');
+    expect(q(`[data-cockpit-tile="${GONE.callId}"] [data-cockpit-blocked]`).textContent).toBe("Waiting · your last answer hasn't been heard yet.");
+  });
+
+  it('KILLED by a control epoch: the tile reads "Filed · not heard" and THIS TURN is empty — never one surface saying it is over while the other queues it', async () => {
+    DOC = { ...LIVE_DOC, directive: SLOT, controlEpochLog: [{ epochKey: 'k-1', suppressedDirectiveIds: ['t-call'], suppressedLeanIds: [] }] };
+    await mount();
+    expect(tagOf(FILED)).toBe('Filed · not heard');
+    expect(strip().getAttribute('data-this-turn')).toBe('empty');
+    expect(strip().textContent).not.toContain('Hold off on AMD');
+    expect(goneHold().getAttribute('aria-disabled')).toBeNull();
+  });
+
+  it('PAST ITS LIFETIME, not yet retired by the sweep: "Filed · not heard" and THIS TURN is empty', async () => {
+    DOC = { ...LIVE_DOC, directive: { ...SLOT, expiresAtMs: T('2026-09-01T16:59:00.000Z') } };
+    await mount();
+    expect(tagOf(FILED)).toBe('Filed · not heard');
+    expect(strip().getAttribute('data-this-turn')).toBe('empty');
+  });
+
+  it('an ordinary (non-call) directive in the slot passes to THIS TURN unchanged, and the cockpit answer it replaced reads "Filed · not heard" until its event loads', async () => {
+    DOC = { ...LIVE_DOC, directive: { text: 'Lean defensive', directiveThreadId: 't-chat', expiry: 'end_of_battle', createdAt: '2026-09-01T16:55:00.000Z' } };
+    await mount();
+    expect(strip().getAttribute('data-this-turn')).toBe('filed');
+    expect(strip().textContent).toContain('Lean defensive');
+    expect(tagOf(FILED)).toBe('Filed · not heard');
+  });
+});
+
 describe('ON — phone: Board · Cockpit', () => {
   beforeEach(() => setShell(false));
 
@@ -540,6 +584,91 @@ describe('REVIEW — the unread chain and the first paint (L3-1, L4-2, L4-7, L4-
     await rerender();
     expect(tabs()).toEqual(['chat', 'bench', 'tape']);
     expect(q('[data-pane-tab="chat"]').textContent).toBe('Chat');
+  });
+});
+
+describe('a refusal line clears for good when the record behind its tile changes (founder ruling Oct 5)', () => {
+  // The next check restates OPEN: the same key, a level within 1 % — the thread's newest call.
+  const RESTATED = callRec({ callId: 'ab-1:eval_006:call:0', evalId: 'eval_006', evalSeq: 6, mintedAt: T('2026-09-01T16:58:00.000Z'), condition: { side: 'above', level: 161.5 } });
+  // The tile's live region is always there; it carries a line only while data-cockpit-refusal is "1".
+  const refusalOn = (call) => q(`[data-cockpit-tile="${call.callId}"] [data-cockpit-refusal="1"]`)?.textContent ?? null;
+
+  it('a call folded under a restatement takes its refusal with it — and does NOT get it back when it resurfaces as its own tile', async () => {
+    ANSWER = { status: 409, body: { error: 'refused', reason: 'budget' } };
+    await mount();
+    await click(q(`[data-cockpit-tile="${OPEN.callId}"] [data-cockpit-answer="hold"]`));
+    expect(refusalOn(OPEN)).toBe('No messages left — nothing was filed.');
+    await deliver('agentBattles/ab-1/calls', [RESTATED, OPEN, GONE, RESOLVED, SHADOW]);
+    expect(q(`[data-cockpit-tile="${OPEN.callId}"]`)).toBeNull(); // folded: the tile is the restatement's
+    expect(refusalOn(RESTATED)).toBeNull();
+    // The restatement resolves; OPEN is its own tile again — without the old line.
+    await deliver('agentBattles/ab-1/calls', [{ ...RESTATED, state: 'hit', stateChangedAt: T('2026-09-01T16:59:30.000Z') }, OPEN, GONE, RESOLVED, SHADOW]);
+    expect(q(`[data-cockpit-tile="${OPEN.callId}"]`)).toBeTruthy();
+    expect(refusalOn(OPEN)).toBeNull();
+  });
+
+  it('a refusal clears when its call is answered (the model hides an answered call\'s line; the prune then forgets the outcome)', async () => {
+    ANSWER = { status: 409, body: { error: 'refused', reason: 'budget' } };
+    await mount();
+    await click(q(`[data-cockpit-tile="${OPEN.callId}"] [data-cockpit-answer="hold"]`));
+    expect(refusalOn(OPEN)).toBe('No messages left — nothing was filed.');
+    await deliver('agentBattles/ab-1/calls', [{ ...OPEN, playerResponse: { answer: 'go', kind: 'ack', callId: OPEN.callId, filedAt: '2026-09-01T16:59:00.000Z' } }, GONE, RESOLVED, SHADOW]);
+    expect(q(`[data-cockpit-tile="${OPEN.callId}"]`)).toBeTruthy();
+    expect(refusalOn(OPEN)).toBeNull();
+  });
+
+  // The coarse clock refreshes on a visibility change (battleView/useCoarseNow.js).
+  const tick = async (iso) => {
+    vi.setSystemTime(new Date(iso));
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    await settle();
+  };
+  const sheetRefusal = () => q('[data-cockpit-sheet-refusal="1"]')?.textContent ?? null;
+
+  it('a "one call at a time" line that aged out is gone for good: a block that shows later does not bring it back — the block line says it instead (review Q4-1)', async () => {
+    const SLOT_GONE = { family: 'call', text: "Hold off on the MU exit until today's close", expiry: 'until_ms', expiresAtMs: CLOSE, directiveThreadId: 't-gone', createdAt: '2026-09-01T16:50:00.000Z', callId: GONE.callId, kind: 'call_hold' };
+    await mount();
+    ANSWER = { status: 409, body: { error: 'refused', reason: 'directive_pending', pendingDirectiveThreadId: 't-gone', pendingCallId: GONE.callId } };
+    await click(q(`[data-cockpit-tile="${OPEN.callId}"] [data-cockpit-answer="hold"]`));
+    const line = refusalOn(OPEN);
+    expect(line).toMatch(/One call at a time\.$/);
+    await tick('2026-09-01T17:00:20.000Z'); // inside the 30 s grace: it stands
+    expect(refusalOn(OPEN)).toBe(line);
+    await tick('2026-09-01T17:00:45.000Z'); // past it, with nothing blocking: it goes
+    expect(refusalOn(OPEN)).toBeNull();
+    DOC = { ...LIVE_DOC, directive: SLOT_GONE }; // later, another call's directive is live in the slot
+    await rerender();
+    expect(q(`[data-cockpit-tile="${OPEN.callId}"] [data-cockpit-blocked]`)).toBeTruthy();
+    expect(refusalOn(OPEN)).toBeNull();
+  });
+
+  it('a standing line survives the cockpit going off and on while its record is unchanged: nothing is pruned until the calls are read again (review Q2-2)', async () => {
+    ANSWER = { status: 409, body: { error: 'refused', reason: 'budget' } };
+    await mount();
+    await click(q(`[data-cockpit-tile="${OPEN.callId}"] [data-cockpit-answer="hold"]`));
+    expect(refusalOn(OPEN)).toBe('No messages left — nothing was filed.');
+    FLAG.cockpit = false;
+    await rerender();
+    expect(q('[data-cockpit-feed]')).toBeNull();
+    FLAG.cockpit = true;
+    await rerender();
+    expect(refusalOn(OPEN)).toBe('No messages left — nothing was filed.');
+  });
+
+  it('a failed events read does not stop the prune: a refusal made in the open sheet does not come back after a fold and a resurface (review Q2-1)', async () => {
+    await mount();
+    await click(q(`[data-cockpit-tile="${OPEN.callId}"] [data-cockpit-tile-open]`));
+    await act(async () => { FS.error['agentBattles/ab-1/callEvents']?.(new Error('permission-denied')); });
+    await settle();
+    expect(q('[data-cockpit-feed]').getAttribute('data-cockpit-status')).toBe('error');
+    ANSWER = { status: 409, body: { error: 'refused', reason: 'budget' } };
+    await click(q('[data-cockpit-sheet] [data-cockpit-answer="hold"]'));
+    expect(sheetRefusal()).toBe('No messages left — nothing was filed.');
+    await deliver('agentBattles/ab-1/calls', [RESTATED, OPEN, GONE, RESOLVED, SHADOW]);
+    await deliver('agentBattles/ab-1/calls', [{ ...RESTATED, state: 'hit', stateChangedAt: T('2026-09-01T16:59:30.000Z') }, OPEN, GONE, RESOLVED, SHADOW]);
+    expect(q('[data-cockpit-sheet]')).toBeTruthy();
+    expect(sheetRefusal()).toBeNull();
   });
 });
 

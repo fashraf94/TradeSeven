@@ -9,7 +9,8 @@
 //   the listener delivers the record the server wrote.
 //   THE BODY IS READ on every failure (never the chip's status-only mapper):
 //   the outcome { status, body } is kept per call, and the screen renders one
-//   plain line for it (battleViewCopy.js cockpitRefusalLine).
+//   plain line for it (battleViewCopy.js cockpitRefusalLine) — until the
+//   screen drops it, once no tile shows the line (dropOutcomes).
 //   THE BELIEF is the subscribed battle.directive.directiveThreadId — except
 //   after a 409 belief_mismatch, when the server's currentDirectiveThreadId is
 //   adopted until the subscription moves past the value it corrected; the
@@ -84,7 +85,21 @@ export function useCockpitAnswer({ battleId, subscribedThreadId = null, onUnavai
     if (status === 404 && body?.error === 'cockpit_unavailable' && typeof onUnavailable === 'function') onUnavailable();
   }, [battleId, belief, post, subscribedThreadId, onUnavailable]);
 
-  return { pending, outcomes, submit, belief };
+  // A refusal line clears for good once the record behind its tile changes or
+  // the call leaves the feed: the screen names the outcomes no tile shows any
+  // more (cockpitModel staleRefusalIds) and they are dropped here, so none
+  // comes back on a tile that resurfaces (founder ruling Oct 5).
+  const dropOutcomes = useCallback((callIds) => {
+    if (!Array.isArray(callIds) || callIds.length === 0) return;
+    setOutcomes((prev) => {
+      if (!callIds.some((id) => Object.prototype.hasOwnProperty.call(prev, id))) return prev;
+      const next = { ...prev };
+      for (const id of callIds) delete next[id];
+      return next;
+    });
+  }, []);
+
+  return { pending, outcomes, submit, belief, dropOutcomes };
 }
 
 export default useCockpitAnswer;

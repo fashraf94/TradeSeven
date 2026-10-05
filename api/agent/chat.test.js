@@ -183,6 +183,7 @@ vi.mock('firebase-admin/firestore', () => ({
 
 // Dependency-surface guard (BUILD_RULES §4): this file's import of the module under test is the runtime guard that its api → src imports stay Node-clean. Never mock it.
 const { default: handler, GEMMA_TIMEOUT_MS, TURN_DEADLINE_MS, SHADOW_LOG_CAP_MS, SHADOW_SETTLE_DEADLINE_MS } = await import('./chat.js');
+const { isCallDirectivePendingAt } = await import('../_utils/directiveUtils.js');
 
 
 // ==================== Test fixture helpers ====================
@@ -760,6 +761,23 @@ describe('agent/chat — archetype integrity gate (Phase E1)', () => {
     expect(ops.map((o) => o.op)).toEqual(['update', 'create']);
     expect(ops[1].path).toBe('agentBattles/battle-1/callEvents/thread-call-0001:superseded');
     expect(ops[1].data).toMatchObject({ kind: 'superseded', callIds: ['battle-1:eval_001:call:0'], supersededDirectiveThreadId: 'thread-call-0001' });
+    expect(exchangeOf(written).supersedes).toEqual({ directiveThreadId: 'thread-call-0001', at: exchangeOf(written).timestamp });
+  });
+
+  it('Amendment C rev 3: at ENFORCE and calls ON the call slot is LIVE (the endpoint\'s own predicate holds) — and a chat filing still replaces it, its update and the `superseded` event in ONE batch', async () => {
+    archetypeFlag.mode = 'enforce';
+    callsFlag.mode = 'on';
+    callsFlag.allow = ['test-user'];
+    expect(isCallDirectivePendingAt({ directive: CALL_SLOT, mode: 'on', nowMs: Date.now(), killedIds: [], thisCallId: null, suppressed: false })).toBe(true);
+    callGemmaVoiceImpl.current = async () => gemma({ response: 'ok', _archetypeProposal: { classification: 'in_archetype', selectedAdjustmentId: 'TF-02' } });
+    const { res, written } = await run({ directive: CALL_SLOT });
+    expect(res.statusCode).toBe(200);
+    expect(written.batchCommits).toHaveLength(1);
+    const [ops] = written.batchCommits;
+    expect(ops.map((o) => o.op)).toEqual(['update', 'create']);
+    expect(ops[0].updates.directive).toMatchObject({ text: TF02 }); // the slot itself is replaced
+    expect(ops[0].updates.directive.directiveThreadId).not.toBe('thread-call-0001');
+    expect(ops[1].path).toBe('agentBattles/battle-1/callEvents/thread-call-0001:superseded');
     expect(exchangeOf(written).supersedes).toEqual({ directiveThreadId: 'thread-call-0001', at: exchangeOf(written).timestamp });
   });
 

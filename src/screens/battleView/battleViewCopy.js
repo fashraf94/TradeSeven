@@ -985,8 +985,9 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   cockpitAnswerGoInstead: 'Go instead · 1 message',
   cockpitSending: 'Sending…',
   cockpitWaitingHeard: 'Waiting · your last answer hasn\'t been heard yet.',
-  // HEAD's endpoint keeps a HEARD call directive pending until it expires
-  // (directiveUtils.js isCallDirectivePendingAt): the line for that case — and
+  // HEAD's endpoint keeps a HEARD call directive pending while it stays live —
+  // until it expires, is replaced, retired or killed (directiveUtils.js
+  // isCallDirectivePendingAt; Amendment C rev 3): the line for that case — and
   // for any case the records cannot place — so the one above is never shown
   // without the record saying the answer is unheard. "Active", not "in force":
   // the agent is coached, not compelled (review L6-8).
@@ -994,7 +995,7 @@ export const BATTLE_VIEW_COPY = Object.freeze({
     ? `Waiting · your last answer stays active until ${time}.`
     : 'Waiting · your last answer is still active.'),
   cockpitOneAtATime: 'One call at a time.',
-  // A folded thread's live directive answer (Amendment C-6), naming the wording it was given on.
+  // A folded thread's directive answer, live or not (Amendment C-6 rev 3), naming the wording it was given on.
   cockpitThreadAnswer: (answer, filedTime, wordingCheck) => {
     const word = answer === 'hold' ? 'hold off' : answer === 'go_now' ? 'go instead' : null;
     if (!word) return null;
@@ -1018,8 +1019,8 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   cockpitSheetDefault: (intent) => (intent ? `If you say nothing · ${intent}` : null),
   // The agent's default as an INTENT, never a promise (Build 1a §4): "bring in
   // AMD for KO", "exit MU for AMAT", "hold". An upside call has none (C-2).
-  // (copy.js renderIntentLine words the same fact without the symbol and has
-  // no consumer; S-7 does not list it for the client — review L6-10, recorded.)
+  // The one intent renderer: copy.js's symbol-less renderIntentLine had no
+  // consumer and is retired (founder ruling Oct 4; review L6-10).
   cockpitIntent: (defaultAction, direction, symbol, counterpart) => {
     if (defaultAction === 'hold') return 'intent: hold';
     if (defaultAction !== 'act' || !symbol) return null;
@@ -1031,7 +1032,10 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   cockpitSheetFromCheck: (check) => (check ? `From ${check} →` : null),
   cockpitSheetCheckGone: 'That check is no longer in the chat',
   cockpitReceiptFiled: (time) => (time ? `Filed ${time}` : 'Filed'),
-  cockpitReceiptReplaced: (time) => (time ? `Replaced by a later answer · ${time}` : 'Replaced by a later answer'),
+  // "Instruction", not "answer": a chat or chip filing replaces a cockpit
+  // answer too, and the `superseded` event does not say which wrote it
+  // (founder ruling Oct 4; review L6-11 a).
+  cockpitReceiptReplaced: (time) => (time ? `Replaced by a later instruction · ${time}` : 'Replaced by a later instruction'),
   cockpitObservedHit: (price, check) => (price ? (check ? `Hit at ${price} · ${check}` : `Hit at ${price}`) : null),
   cockpitObservedExpired: (price, check) => (price ? (check ? `Expired at ${price} · ${check}` : `Expired at ${price}`) : null),
 
@@ -1047,7 +1051,8 @@ export const BATTLE_VIEW_COPY = Object.freeze({
  * A fact with no row here renders NO tag — never a guessed one —
  * and cockpitModel.test.js asserts the table covers every kind the writers
  * emit (the call states of candidate / flip / sweep, every CALL_EVENT_KINDS
- * entry of events.js, and both playerResponse kinds of the answer endpoint).
+ * entry of events.js, and both playerResponse kinds of the answer endpoint —
+ * a filed directive in two rows, by whether the battle's slot still holds it).
  *
  * Tones (§9, ruling R2A-5): `yours` / `yoursOutline` — the player's answer
  * (teal; an agreement outlined) · `acted` (emerald) · `dropped` (amber) ·
@@ -1073,7 +1078,16 @@ export const COCKPIT_FACT_TAGS = Object.freeze({
   'state:ended_with_battle': Object.freeze({ tone: 'muted', text: () => 'Battle ended' }),
   // The answer on the call (call-response.js playerResponse.kind).
   'answer:ack': Object.freeze({ tone: 'yoursOutline', text: ({ time } = {}) => (time ? `You agreed · ${time}` : 'You agreed') }),
+  // A filed directive no check has heard, by where it stands (founder ruling
+  // Oct 4): "not yet heard" ONLY while it is still the battle's current one
+  // (cockpitModel callTag — the slot holds its thread, live). Killed, expired
+  // or suppressed before any check heard it — or replaced while its
+  // `superseded` event is not loaded (once it is, the tile reads "Replaced by
+  // a later instruction") — it reads "not heard": no hearing is promised that
+  // cannot come (review L6-11 c). Teal, as every state of the player's answer
+  // is (ruling R2A-5: filed, heard, agreed).
   'answer:directive': Object.freeze({ tone: 'yours', text: () => 'Filed · not yet heard' }),
+  'answer:directive_left_slot': Object.freeze({ tone: 'yours', text: () => 'Filed · not heard' }),
   // The call events (events.js CALL_EVENT_KINDS).
   'event:declared': null, // the mint — the eyebrow's "from the {t} check" already says it
   'event:answered': null, // the answer's own receipt — the tag reads the call's playerResponse
@@ -1082,7 +1096,8 @@ export const COCKPIT_FACT_TAGS = Object.freeze({
   'event:no_matching_trade': Object.freeze({ tone: 'muted', text: ({ check } = {}) => (check ? `No matching trade at ${check}` : 'No matching trade') }),
   'event:expired': Object.freeze({ tone: 'muted', text: ({ deadline } = {}) => (deadline ? `Expired · ${deadline}` : 'Expired') }),
   'event:ended_with_battle': Object.freeze({ tone: 'muted', text: () => 'Battle ended' }),
-  'event:superseded': Object.freeze({ tone: 'muted', text: () => 'Replaced by a later answer' }),
+  // Any later filing — chat, chip or cockpit — writes this event (directiveWriter.js), so the tag names none of them.
+  'event:superseded': Object.freeze({ tone: 'muted', text: () => 'Replaced by a later instruction' }),
 });
 
 /**

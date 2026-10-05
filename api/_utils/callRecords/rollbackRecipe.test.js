@@ -101,10 +101,11 @@ describe('computeCallsEnabledWindow — the seeded corpus (spec §12)', () => {
 
 
 // ---------------------------------------------------------------------------
-// Cockpit Build 2a — THE LIVE ROLLBACK CHECK (spec S-9, ruling R2A-19): the
-// allowlisted battles only; TRIP only when total ≥ 150 AND rate > 3 % AND the
-// one-sided Fisher p < 0.05 against round 3's off arm (3 of 386). Synthetic
-// counts at, below and above each bar.
+// Cockpit Build 2a — THE LIVE ROLLBACK CHECK (spec S-9, ruling R2A-19; bars
+// moved by the founder's Oct 4 ruling): the allowlisted battles only; TRIP
+// only when total ≥ 60 AND rate > 3 % AND the one-sided Fisher p < 0.05
+// against round 3's qualified 1A-C arm (7 of 386). Synthetic counts at, below
+// and above each bar, and the founder's six trip points.
 describe('Build 2a — computeRollbackCheck (spec S-9)', () => {
   const SESSIONS_5 = ['2026-09-08', '2026-09-09', '2026-09-10', '2026-09-11', '2026-09-14'];
   // The synthetic window: the run at the close of Mon Sep 14, its floor before the
@@ -117,45 +118,56 @@ describe('Build 2a — computeRollbackCheck (spec S-9)', () => {
   });
   const check = (n, k, extra = []) => computeRollbackCheck([battleOf('founder', n, k), ...extra], { allowlist: ['founder'], ...AT_SEP_14 });
 
-  it("the bars and the baseline are the spec's: 150 · 3 % · p < 0.05 against 3 of 386", () => {
-    expect(ROLLBACK_CHECK).toMatchObject({ minTotal: 150, tripRate: 0.03, alpha: 0.05, baseline: { invalid: 3, total: 386 } });
+  it("the bars and the baseline are the founder's Oct 4 ruling: 60 · 3 % · p < 0.05 against round 3's qualified 1A-C rate, 7 of 386", () => {
+    expect(ROLLBACK_CHECK).toMatchObject({ minTotal: 60, tripRate: 0.03, alpha: 0.05, baseline: { invalid: 7, total: 386 } });
+    expect(ROLLBACK_CHECK.baseline.label).toBe("round 3's qualified 1A-C arm, 7 of 386");
   });
 
-  it('THE SAMPLE BAR — at 149 calls nothing trips even at 4 % with p ≈ 0.017; at 150 and 151 it does', () => {
-    const below = check(149, 6);
-    expect(below).toMatchObject({ total: 149, invalid: 6, bars: { minSample: false, rate: true, significant: true }, tripped: false, verdict: 'NO TRIP' });
-    expect(check(150, 6)).toMatchObject({ total: 150, bars: { minSample: true, rate: true, significant: true }, tripped: true, verdict: 'TRIP' });
-    expect(check(151, 6)).toMatchObject({ total: 151, tripped: true, verdict: 'TRIP' });
+  // THE TRIP POINTS (founder ruling Oct 4), through the check itself: every one
+  // is at or over the 60-call minimum sample and over 3 %, so the significance
+  // bar decides each pair.
+  it.each([
+    [3, 60, false], [4, 60, true],
+    [4, 75, false], [5, 75, true],
+    [5, 100, false], [6, 100, true],
+  ])('THE TRIP POINTS — %i invalid of %i calls → trips: %s', (k, n, trips) => {
+    expect(check(n, k)).toMatchObject({
+      total: n, invalid: k,
+      bars: { minSample: true, rate: true, significant: trips },
+      tripped: trips, verdict: trips ? 'TRIP' : 'NO TRIP',
+    });
   });
 
-  it('THE RATE BAR — exactly 3 % does not trip (p 0.046 notwithstanding); 3.5 % does; 2.5 % does not', () => {
-    expect(check(200, 6)).toMatchObject({ rate: 0.03, bars: { minSample: true, rate: false, significant: true }, tripped: false });
-    expect(check(200, 7)).toMatchObject({ bars: { minSample: true, rate: true, significant: true }, tripped: true });
-    expect(check(200, 5)).toMatchObject({ bars: { rate: false }, tripped: false });
+  it('THE SAMPLE BAR — at 59 calls nothing trips, even at 4 invalid (6.8 %, p ≈ 0.045: both other bars met); at 60 and 61 it does', () => {
+    const below = check(59, 4);
+    expect(below).toMatchObject({ total: 59, invalid: 4, bars: { minSample: false, rate: true, significant: true }, tripped: false, verdict: 'NO TRIP' });
+    expect(below.p).toBeCloseTo(0.045, 3);
+    expect(check(60, 4)).toMatchObject({ total: 60, bars: { minSample: true, rate: true, significant: true }, tripped: true, verdict: 'TRIP' });
+    expect(check(61, 4)).toMatchObject({ total: 61, tripped: true, verdict: 'TRIP' });
   });
 
-  it('THE SIGNIFICANCE BAR is enforced on its own: with a noisier baseline, a window over 150 and 3 % that is not significant does not trip', () => {
-    const noisy = { ...ROLLBACK_CHECK, baseline: { invalid: 12, total: 386, label: 'a synthetic baseline' } };
-    const r = computeRollbackCheck([battleOf('founder', 150, 5)], { allowlist: ['founder'], check: noisy, ...AT_SEP_14 });
-    expect(r.bars).toEqual({ minSample: true, rate: true, significant: false });
-    expect(r.p).toBeGreaterThanOrEqual(0.05);
-    expect(r.tripped).toBe(false);
-    // …and at, below and above alpha on the real baseline: p(5/150) = 0.0425 < 0.05 ≤ p(4/150) = 0.1000.
-    expect(fisherOneSidedGreater(5, 150, 3, 386)).toBeLessThan(0.05);
-    expect(fisherOneSidedGreater(4, 150, 3, 386)).toBeGreaterThanOrEqual(0.05);
-  });
-
-  it('on the REAL baseline the significance bar decides only in a narrow band: 5 invalid in 159–166 calls (over 3 %, p ≥ 0.05) — pinned, so a reader knows when it bites', () => {
-    const decidesAlone = [];
-    for (let n = 150; n <= 1000; n += 1) {
+  it('THE SIGNIFICANCE BAR decides on its own against the real baseline: from the 60-call minimum sample to 1,000 calls, the smallest count over 3 % is never significant — pinned, so a reader knows which bar bites', () => {
+    const { invalid: refBad, total: refN } = ROLLBACK_CHECK.baseline;
+    for (let n = ROLLBACK_CHECK.minTotal; n <= 1000; n += 1) {
       const k = Math.floor(0.03 * n) + 1; // the smallest count over 3 %
-      if (fisherOneSidedGreater(k, n, 3, 386) >= 0.05) decidesAlone.push(`${k}/${n}`);
+      expect(fisherOneSidedGreater(k, n, refBad, refN), `${k}/${n}`).toBeGreaterThanOrEqual(0.05);
     }
-    expect(decidesAlone).toEqual(['5/159', '5/160', '5/161', '5/162', '5/163', '5/164', '5/165', '5/166']);
-    // At, below and above alpha on the real baseline, through the check itself.
-    expect(check(158, 5)).toMatchObject({ bars: { minSample: true, rate: true, significant: true }, tripped: true });
-    expect(check(159, 5)).toMatchObject({ bars: { minSample: true, rate: true, significant: false }, tripped: false, verdict: 'NO TRIP' });
-    expect(check(167, 6)).toMatchObject({ bars: { minSample: true, rate: true, significant: true }, tripped: true });
+    // The smallest count that trips, at a few sample sizes (n + 1 = none does).
+    const smallestTrip = (n) => { let k = 0; while (k <= n && !check(n, k).tripped) k += 1; return k; };
+    expect([60, 75, 100, 150, 200].map(smallestTrip)).toEqual([4, 5, 6, 8, 10]);
+  });
+
+  it('THE RATE BAR is enforced on its own: against a quieter synthetic baseline, exactly 3 % (p = 0.0015) does not trip; 3.5 % does; 2.5 % does not — and on the real baseline no count at or under 3 % is ever significant (60 to 5,000 calls), so there it stands behind the significance bar', () => {
+    const quiet = { ...ROLLBACK_CHECK, baseline: { invalid: 0, total: 386, label: 'a synthetic baseline' } };
+    const at = (n, k) => computeRollbackCheck([battleOf('founder', n, k)], { allowlist: ['founder'], check: quiet, ...AT_SEP_14 });
+    expect(at(200, 6)).toMatchObject({ rate: 0.03, bars: { minSample: true, rate: false, significant: true }, tripped: false, verdict: 'NO TRIP' });
+    expect(at(200, 7)).toMatchObject({ bars: { minSample: true, rate: true, significant: true }, tripped: true });
+    expect(at(200, 5)).toMatchObject({ bars: { rate: false, significant: true }, tripped: false });
+    const { invalid: refBad, total: refN } = ROLLBACK_CHECK.baseline;
+    for (let n = ROLLBACK_CHECK.minTotal; n <= 5000; n += 1) {
+      const k = Math.floor(0.03 * n); // the largest count at or under 3 %
+      if (k > 0) expect(fisherOneSidedGreater(k, n, refBad, refN), `${k}/${n}`).toBeGreaterThanOrEqual(0.05);
+    }
   });
 
   it("ONLY the allowlisted owners' battles count — another owner's invalid results never move it", () => {
@@ -186,27 +198,30 @@ describe('Build 2a — computeRollbackCheck (spec S-9)', () => {
 
   it('THE SHADOW ERA NEVER COUNTS (review L1-1): sessions before the floor are dropped, so shadow-tool entries cannot dilute the live rate', () => {
     expect(ROLLBACK_CHECK.notBefore).toBe('2026-10-02');
-    // The reviewer's repro: four shadow sessions (130 calls, 1 invalid each) and two live sessions (11 of 260).
+    // The reviewer's repro — four shadow sessions (130 calls, 1 invalid each) and two live
+    // sessions — re-cut for the 7 of 386 baseline: the live sessions carry 12 of 260 (the
+    // repro's 11 of 260 no longer trips on its own, p = 0.058).
     const shadowDays = ['2026-09-28', '2026-09-29', '2026-09-30', '2026-10-01'];
     const liveDays = ['2026-10-06', '2026-10-07'];
     const evaluations = [
       ...shadowDays.flatMap((d) => Array.from({ length: 130 }, (_, i) => (i === 0 ? invalid(d) : entry(d)))),
-      ...liveDays.flatMap((d, j) => Array.from({ length: 130 }, (_, i) => (i < (j === 0 ? 6 : 5) ? invalid(d) : entry(d)))),
+      ...liveDays.flatMap((d) => Array.from({ length: 130 }, (_, i) => (i < 6 ? invalid(d) : entry(d)))),
     ];
     const r = computeRollbackCheck([{ id: 'b', ownerId: 'founder', evaluations }], { allowlist: ['founder'], nowMs: Date.parse('2026-10-07T21:00:00.000Z') });
     expect(r.window.days).toEqual(['2026-10-02', '2026-10-05', '2026-10-06', '2026-10-07']);
-    expect(r).toMatchObject({ total: 260, invalid: 11, verdict: 'TRIP' });
-    expect(r.p).toBeLessThan(0.01);
-    // Without the floor, even the calendar window admits a shadow session (Oct 1) …
+    expect(r).toMatchObject({ total: 260, invalid: 12, verdict: 'TRIP' });
+    expect(r.p).toBeCloseTo(0.035, 3);
+    // Without the floor, even the calendar window admits a shadow session (Oct 1) — and
+    // that one session's 130 calls dilute the trip away (13 of 390, p = 0.13): the masking.
     const unfloored = computeRollbackCheck([{ id: 'b', ownerId: 'founder', evaluations }], { allowlist: ['founder'], nowMs: Date.parse('2026-10-07T21:00:00.000Z'), notBefore: null });
     expect(unfloored.window.days).toEqual(['2026-10-01', '2026-10-02', '2026-10-05', '2026-10-06', '2026-10-07']);
-    expect(unfloored).toMatchObject({ total: 390, invalid: 12 });
+    expect(unfloored).toMatchObject({ total: 390, invalid: 13, verdict: 'NO TRIP' });
     // … and the recipe's "with data" window — what the live check used to reuse — takes three
-    // shadow sessions and pools to the reviewer's NO TRIP (14 of 650, p = 0.0712): the masking.
+    // shadow sessions and pools further (15 of 650, 2.3 %).
     const withData = computeCallsEnabledWindow([{ id: 'b', evaluations }]);
     expect(withData.days).toEqual(['2026-09-29', '2026-09-30', '2026-10-01', '2026-10-06', '2026-10-07']);
-    expect({ total: withData.modelCalls, invalid: withData.invalid }).toEqual({ total: 650, invalid: 14 });
-    expect(fisherOneSidedGreater(14, 650, 3, 386)).toBeGreaterThan(0.05);
+    expect({ total: withData.modelCalls, invalid: withData.invalid }).toEqual({ total: 650, invalid: 15 });
+    expect(fisherOneSidedGreater(15, 650, ROLLBACK_CHECK.baseline.invalid, ROLLBACK_CHECK.baseline.total)).toBeGreaterThan(0.05);
   });
 
   it('--since adds a floor INSTANT: entries before the flip\'s deploy on the same day do not count', () => {
@@ -250,13 +265,13 @@ describe('Build 2a — computeRollbackCheck (spec S-9)', () => {
   });
 
   it('renderRollbackCheck prints the verdict first, then every count and bar; a trip names the action', () => {
-    const md = renderRollbackCheck(check(150, 6));
+    const md = renderRollbackCheck(check(60, 4));
     // A Vercel environment change reaches new deployments only (review L1-2): the action names the redeploy.
     expect(md.split('\n')[0]).toBe('- Verdict: **TRIP** — remove the uid from COCKPIT_ALLOWLIST_UIDS, redeploy production, and report (spec §10.4).');
-    expect(md).toContain('invalid_tool_result 6 of 150');
-    expect(md).toContain('total ≥ 150 — met');
+    expect(md).toContain('invalid_tool_result 4 of 60');
+    expect(md).toContain('total ≥ 60 — met');
     expect(md).toContain('rate > 3 % — met');
-    expect(md).toContain('p < 0.05');
+    expect(md).toContain("p < 0.05 against round 3's qualified 1A-C arm, 7 of 386 — met (p = 0.0472)");
     expect(renderRollbackCheck(computeRollbackCheck([], { allowlist: ['founder'], ...AT_SEP_14 }))).toContain('**NO DATA**');
     expect(md).toContain('the last 5 regular sessions by the calendar, not before 2026-09-01');
   });

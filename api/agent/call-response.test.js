@@ -423,6 +423,17 @@ describe('rows 7–8: directive answers — the guards in order, then one commit
     expect(stored(activeDb, `agentBattles/${BATTLE_ID}`).chatExchanges[1].supersedes.directiveThreadId).toBe(pendingThread);
   });
 
+  it('an ACKNOWLEDGMENT on another call is accepted while a call directive is pending: the pending check guards the directive rows only, and the slot is untouched (Amendment C rev 3, standing conditions)', async () => {
+    const first = await post(answerBody({ callId: HOLD_CALL, answer: 'go_now' }));
+    expect(first.statusCode).toBe(200);
+    const pendingThread = first.body.directiveThreadId;
+    const res = await post(answerBody({ callId: CALL, answer: 'go', expectedDirectiveThreadId: null }));
+    expect(res.statusCode).toBe(200);
+    expect(res.body.playerResponse).toMatchObject({ answer: 'go', kind: 'ack' });
+    expect(stored(activeDb, P('calls', CALL)).refused).toBeNull();
+    expect(stored(activeDb, `agentBattles/${BATTLE_ID}`).directive.directiveThreadId).toBe(pendingThread);
+  });
+
   it('no refusal but directive_pending is ever persisted: expired, belief_mismatch, parent_not_active, budget, already_answered leave `refused` null', async () => {
     activeDb = makeDb({ battle: makeTickBattle({ directive: null, chatBudgetUsed: 10 }) });
     expect((await post(answerBody())).body).toEqual({ error: 'refused', reason: 'budget' });
