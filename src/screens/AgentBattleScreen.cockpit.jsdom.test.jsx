@@ -587,6 +587,37 @@ describe('REVIEW — the unread chain and the first paint (L3-1, L4-2, L4-7, L4-
   });
 });
 
+describe('a refusal line clears for good when the record behind its tile changes (founder ruling Oct 5)', () => {
+  // The next check restates OPEN: the same key, a level within 1 % — the thread's newest call.
+  const RESTATED = callRec({ callId: 'ab-1:eval_006:call:0', evalId: 'eval_006', evalSeq: 6, mintedAt: T('2026-09-01T16:58:00.000Z'), condition: { side: 'above', level: 161.5 } });
+  // The tile's live region is always there; it carries a line only while data-cockpit-refusal is "1".
+  const refusalOn = (call) => q(`[data-cockpit-tile="${call.callId}"] [data-cockpit-refusal="1"]`)?.textContent ?? null;
+
+  it('a call folded under a restatement takes its refusal with it — and does NOT get it back when it resurfaces as its own tile', async () => {
+    ANSWER = { status: 409, body: { error: 'refused', reason: 'budget' } };
+    await mount();
+    await click(q(`[data-cockpit-tile="${OPEN.callId}"] [data-cockpit-answer="hold"]`));
+    expect(refusalOn(OPEN)).toBe('No messages left — nothing was filed.');
+    await deliver('agentBattles/ab-1/calls', [RESTATED, OPEN, GONE, RESOLVED, SHADOW]);
+    expect(q(`[data-cockpit-tile="${OPEN.callId}"]`)).toBeNull(); // folded: the tile is the restatement's
+    expect(refusalOn(RESTATED)).toBeNull();
+    // The restatement resolves; OPEN is its own tile again — without the old line.
+    await deliver('agentBattles/ab-1/calls', [{ ...RESTATED, state: 'hit', stateChangedAt: T('2026-09-01T16:59:30.000Z') }, OPEN, GONE, RESOLVED, SHADOW]);
+    expect(q(`[data-cockpit-tile="${OPEN.callId}"]`)).toBeTruthy();
+    expect(refusalOn(OPEN)).toBeNull();
+  });
+
+  it('a refusal clears when its call is answered', async () => {
+    ANSWER = { status: 409, body: { error: 'refused', reason: 'budget' } };
+    await mount();
+    await click(q(`[data-cockpit-tile="${OPEN.callId}"] [data-cockpit-answer="hold"]`));
+    expect(refusalOn(OPEN)).toBe('No messages left — nothing was filed.');
+    await deliver('agentBattles/ab-1/calls', [{ ...OPEN, playerResponse: { answer: 'go', kind: 'ack', callId: OPEN.callId, filedAt: '2026-09-01T16:59:00.000Z' } }, GONE, RESOLVED, SHADOW]);
+    expect(q(`[data-cockpit-tile="${OPEN.callId}"]`)).toBeTruthy();
+    expect(refusalOn(OPEN)).toBeNull();
+  });
+});
+
 describe('REVIEW — nothing claimed before the records arrive (L3-2)', () => {
   it('records not yet delivered → no empty line; a failed read → its own line, never "No calls yet"', async () => {
     FS.docs = {};

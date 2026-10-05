@@ -22,7 +22,7 @@ import {
   COCKPIT_GROUP, THREAD_LEVEL_TOLERANCE, EARLIER_SHOWN, MONITORING_MAX,
   cockpitCalls, eventsByCall, promptBuiltAtOf, latestPromptBuiltAt, threadKeyOf, levelsWithin, foldThreads,
   factTag, callTag, kindLabelOf, answerLabelOf, overrideBlockOf, tileOf, buildCockpitFeed, monitoringRow,
-  receiptLineOf, observationLineOf, citedPriceOf, sheetOf, checkOf, refusalLineOf, PENDING_REFUSAL_GRACE_MS,
+  receiptLineOf, observationLineOf, citedPriceOf, sheetOf, checkOf, refusalLineOf, PENDING_REFUSAL_GRACE_MS, staleRefusalIds,
 } from './cockpitModel';
 import { BATTLE_VIEW_COPY as COPY, COCKPIT_FACT_TAGS, cockpitRefusalLine } from './battleViewCopy';
 import { tileAnswersFor } from '../../../api/_utils/callRecords/answers.js';
@@ -1035,6 +1035,29 @@ describe('the refusal line under a tile — chosen from the body, dropped once i
     const c = call(); c.playerResponse = ack(c);
     const f = feed([c], { outcomes: { [c.callId]: outcomeFor(c, 409, { error: 'refused', reason: 'already_answered' }) } });
     expect(tileFor(f, c).refusalLine).toBeNull();
+  });
+
+  it('staleRefusalIds — the refusals no tile shows any more, which the screen drops for good (founder ruling Oct 5): the call resolved, was answered, left the feed, or the line aged out', () => {
+    const c = call();
+    const d = call({ symbol: 'MU' });
+    const budget = { error: 'refused', reason: 'budget' };
+    const outcomes = { [c.callId]: outcomeFor(c, 409, budget), [d.callId]: outcomeFor(d, 409, budget) };
+    const sorted = (ids) => [...ids].sort();
+    // Both standing: nothing is stale.
+    expect(staleRefusalIds(feed([c, d], { outcomes }), outcomes)).toEqual([]);
+    // State and response: c resolved, d answered.
+    const hit = { ...c, state: 'hit', stateChangedAt: T('2026-09-09T15:00:30.000Z') };
+    const answered = { ...d, playerResponse: ack(d) };
+    expect(sorted(staleRefusalIds(feed([hit, answered], { outcomes }), outcomes))).toEqual(sorted([c.callId, d.callId]));
+    // Leaving the feed: c folded under a restatement (the tile is the newer call's), d no longer read.
+    expect(sorted(staleRefusalIds(feed([restated(c), c], { outcomes }), outcomes))).toEqual(sorted([c.callId, d.callId]));
+    // A directive_pending refusal stands through its grace, then is stale.
+    const pend = { [c.callId]: { status: 409, body: { error: 'refused', reason: 'directive_pending', pendingDirectiveThreadId: 'th-x' }, at: NOW, callId: c.callId } };
+    expect(staleRefusalIds(feed([c], { outcomes: pend, nowMs: NOW + 10_000 }), pend)).toEqual([]);
+    expect(staleRefusalIds(feed([c], { outcomes: pend, nowMs: NOW + PENDING_REFUSAL_GRACE_MS + 1 }), pend)).toEqual([c.callId]);
+    // Without a feed nothing is known, so nothing is stale; no outcomes, nothing to drop.
+    expect(staleRefusalIds(null, outcomes)).toEqual([]);
+    expect(staleRefusalIds(feed([c]), {})).toEqual([]);
   });
 
   it('refusalLineOf is total: no tile or no outcome → null', () => {

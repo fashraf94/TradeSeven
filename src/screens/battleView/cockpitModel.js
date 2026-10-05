@@ -575,6 +575,26 @@ export function sheetOf(tile, { eventsMap = new Map(), evaluations = [], observa
 export const PENDING_REFUSAL_GRACE_MS = 30_000;
 
 /**
+ * The refusals no tile shows any more — the record behind the tile changed
+ * (its call resolved or was answered: refusalLineOf says nothing then), the
+ * line aged out (a directive_pending refusal past its grace), or the call left
+ * the feed (no tile carries it: folded under a restatement, or no longer
+ * read). The screen drops these outcomes, so a cleared line never comes back
+ * on a tile that resurfaces (founder ruling Oct 5). Without a feed nothing is
+ * known, and nothing is stale.
+ *
+ * @param {object|null} feed   buildCockpitFeed(...)
+ * @param {object} outcomes    callId → outcome (useCockpitAnswer)
+ * @returns {string[]}         the callIds whose outcome to drop
+ */
+export function staleRefusalIds(feed, outcomes) {
+  const ids = Object.keys(outcomes && typeof outcomes === 'object' ? outcomes : {});
+  if (!feed || ids.length === 0) return [];
+  const shown = new Set([...feed.needsYou, ...feed.waiting, ...feed.earlier].filter((t) => t.refusalLine).map((t) => t.id));
+  return ids.filter((id) => !shown.has(id));
+}
+
+/**
  * The line a refusal shows under its tile (§8.3), from the response BODY —
  * or null once it no longer describes the tile (review L6-5, L6-6):
  *   - the refused call has resolved or been answered since (the endpoint's

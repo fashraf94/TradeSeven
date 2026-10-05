@@ -86,7 +86,7 @@ import { useCockpitAnswer } from '../hooks/useCockpitAnswer';
 import CockpitFeed from './battleView/CockpitFeed';
 import CockpitSheet from './battleView/CockpitSheet';
 import { CockpitSwitch, BoardCockpitTrack, PHONE_SCREEN } from './battleView/BoardCockpit';
-import { buildCockpitFeed, monitoringRow, sheetOf, eventsByCall, latestPromptBuiltAt, checkOf, liveCallSlotOf } from './battleView/cockpitModel';
+import { buildCockpitFeed, monitoringRow, sheetOf, eventsByCall, latestPromptBuiltAt, checkOf, liveCallSlotOf, staleRefusalIds } from './battleView/cockpitModel';
 import { BATTLE_CHAT_BUDGET } from '../../api/_utils/directiveFiling.js';
 import { useBaggerMoment } from './battleView/useBaggerMoment';
 import { baggerMomentFacts, persistedMaxMultiplier, BAGGER_LINE } from './battleView/deriveBaggerMoment';
@@ -2537,6 +2537,17 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     controlEpochLog: agentBattle?.controlEpochLog ?? null,
     suppressed: ARCHETYPE_INTEGRITY_MODE !== 'enforce',
   }) : null), [cockpitOn, cockpitCallsRead.value, cockpitEventsRead.value, agentBattle?.evaluations, agentBattle?.directive, agentBattle?.controlEpochLog, cockpitNowMs, cockpitAnswer.pending, cockpitAnswer.outcomes, cockpitShowAllEarlier]);
+  // A refusal line clears for good once the record behind its tile changes —
+  // the call resolved or was answered — or the call leaves the feed (founder
+  // ruling Oct 5): its outcome is dropped as soon as no tile shows it, so it
+  // never comes back on a tile that resurfaces. Only while the records are
+  // read; a loading or failed read proves nothing about them.
+  const cockpitStaleRefusals = JSON.stringify(cockpitOn && cockpitReadStatus === 'ready' ? staleRefusalIds(cockpitFeed, cockpitAnswer.outcomes) : []);
+  const dropCockpitOutcomes = cockpitAnswer.dropOutcomes;
+  useEffect(() => {
+    const stale = JSON.parse(cockpitStaleRefusals);
+    if (stale.length > 0) dropCockpitOutcomes(stale);
+  }, [cockpitStaleRefusals, dropCockpitOutcomes]);
   const cockpitMonitoring = useMemo(
     () => (cockpitOn && cockpitMonitoringRead.status === 'ready' ? monitoringRow(cockpitMonitoringRead.value, agentBattle?.evaluations) : null),
     [cockpitOn, cockpitMonitoringRead.status, cockpitMonitoringRead.value, agentBattle?.evaluations],
