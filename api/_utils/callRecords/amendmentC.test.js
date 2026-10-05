@@ -390,7 +390,12 @@ describe('C-3 — counterpart usability (the discovery\'s D-B5 classes)', () => 
     expect(nulled.counterpart).toBeNull();
     const named = { ...nulled, counterpart: 'JPM' };
     expect(classifyAnswer(nulled, 'hold')).toBe('directive');
-    for (const answer of ANSWERS_1A) expect(classifyAnswer(nulled, answer), answer).toBe(classifyAnswer(named, answer));
+    expect(classifyAnswer({ ...nulled, defaultAction: 'hold' }, 'go_now')).toBe('directive');
+    // Every default, direction and kind: a nulled counterpart and a named one classify every 1a answer alike (review Q4-2).
+    for (const defaultAction of ['act', 'hold']) for (const direction of ['entry', 'exit']) for (const kind of ['called_shot', 'confirmation']) {
+      const base = { ...nulled, defaultAction, direction, kind };
+      for (const answer of ANSWERS_1A) expect(classifyAnswer(base, answer), `${defaultAction}/${direction}/${kind}/${answer}`).toBe(classifyAnswer({ ...base, counterpart: 'JPM' }, answer));
+    }
     const battle = committedBattle();
     expect(isCallActionEligible('call_hold', nulled, battle)).toEqual({ ok: true });
     expect(isCallActionEligible('call_hold', named, battle)).toEqual({ ok: false, reason: 'counterpart_not_held' });

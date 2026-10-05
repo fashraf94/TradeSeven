@@ -2540,9 +2540,11 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // A refusal line clears for good once the record behind its tile changes —
   // the call resolved or was answered — or the call leaves the feed (founder
   // ruling Oct 5): its outcome is dropped as soon as no tile shows it, so it
-  // never comes back on a tile that resurfaces. Only while the records are
-  // read; a loading or failed read proves nothing about them.
-  const cockpitStaleRefusals = JSON.stringify(cockpitOn && cockpitReadStatus === 'ready' ? staleRefusalIds(cockpitFeed, cockpitAnswer.outcomes) : []);
+  // never comes back on a tile that resurfaces. Only while the CALLS are read:
+  // a loading or failed calls read proves nothing about them, while a refusal
+  // line never depends on the events or monitoring reads, so their failure
+  // must not stop it (review Q2-1).
+  const cockpitStaleRefusals = JSON.stringify(cockpitOn && cockpitCallsRead.status === 'ready' ? staleRefusalIds(cockpitFeed, cockpitAnswer.outcomes) : []);
   const dropCockpitOutcomes = cockpitAnswer.dropOutcomes;
   useEffect(() => {
     const stale = JSON.parse(cockpitStaleRefusals);

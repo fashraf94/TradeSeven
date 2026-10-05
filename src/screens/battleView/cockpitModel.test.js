@@ -215,7 +215,7 @@ describe('§7.3 — one call at a time: the answer endpoint\'s own predicate', (
     expect(t.blockedLine).toBe(COPY.cockpitWaitingHeard);
   });
 
-  it('HEAD DIFFERS FROM THE SPEC\'S WORDING: a HEARD call directive still blocks until it expires — and the line never says "not heard"', () => {
+  it('HEAD DIFFERS FROM THE SPEC\'S WORDING: hearing consumes nothing — a HEARD call directive still blocks while it stays live (Amendment C rev 3) — and the line never says "not heard"', () => {
     const slotCall = call({ symbol: 'NVDA' });
     slotCall.playerResponse = directive(slotCall, { heardEvalId: 'eval_011' });
     const other = call({ symbol: 'MU' });
@@ -621,7 +621,7 @@ describe('§7.2 — folding (Amendment C-6)', () => {
     expect(allTiles(feed([a, b], { directive: slotFor(a), controlEpochLog: killed }))[0].tag.text).toBe('Filed · not heard');
   });
 
-  it('C-6 rev 3 — once the answer LEAVES the slot (killed, expired, suppressed, replaced, the slot emptied) the thread offers answers on its newest call again; the answer it left behind stays its tag and its answer line', () => {
+  it('C-6 rev 3 — once the answer LEAVES the slot (killed, expired, suppressed, replaced by chat or by another call, the slot emptied) the thread offers answers on its newest call again; the answer it left behind stays its tag and its answer line', () => {
     const a = call();
     a.playerResponse = directive(a, { answer: 'hold', filedAt: '2026-09-09T14:33:00.000Z' });
     const b = restated(a);
@@ -649,11 +649,79 @@ describe('§7.2 — folding (Amendment C-6)', () => {
       expect({ why, line: t.answerLine }).toEqual({ why, line: 'You said hold off · 10:33 AM, on the 10:30 AM wording' });
       expect(t.group).toBe(COCKPIT_GROUP.WAITING); // an answered thread waits, as with an agreement on an earlier wording (L6-2)
     }
+    // Replaced by ANOTHER call's answer, live in the slot, its superseded event loaded (review Q1-3): the
+    // agreement is offered; the override waits on that call (the one-call-at-a-time block).
+    const x = call({ symbol: 'KO', direction: 'exit', counterpart: null, condition: { side: 'below', level: 62 } });
+    x.playerResponse = directive(x, { answer: 'hold', filedAt: '2026-09-09T14:55:00.000Z' });
+    const viaX = tileFor(feed([a, b, x], { directive: slotFor(x), events: superseded }), a);
+    expect(buttonsOf(viaX)).toEqual([offered[0], { ...offered[1], disabled: true }]);
+    expect(viaX.blockedLine).toBe(COPY.cockpitWaitingHeard);
+    expect(viaX.tag.text).toBe('Replaced by a later instruction');
+    expect(viaX.answerLine).toBe('You said hold off · 10:33 AM, on the 10:30 AM wording');
     // The control: while the answer is still the battle's current directive, nothing is offered.
     expect(allTiles(feed([a, b], { directive: slotFor(a) }))[0].buttons).toEqual([]);
   });
 
-  it('a single call with a live directive answer shows that answer too (a thread of one)', () => {
+  it('C-6 rev 3 — once the newest call is answered AFTER the directive left the slot, the tile wears that answer; the older directive is no longer its tag or its line (review Q1-1)', () => {
+    const killed = (c) => [{ suppressedDirectiveIds: [c.playerResponse.directiveThreadId] }];
+    // Default act: "hold off" on A at 10:33, killed; the player agrees on B's wording at 11:01.
+    const a = call();
+    a.playerResponse = directive(a, { answer: 'hold', filedAt: '2026-09-09T14:33:00.000Z' });
+    const b = restated(a);
+    b.playerResponse = ack(b, '2026-09-09T15:01:00.000Z');
+    const t = allTiles(feed([a, b], { directive: slotFor(a), controlEpochLog: killed(a) }))[0];
+    expect(t.calls.map((c) => c.callId)).toEqual([b.callId, a.callId]);
+    expect(t.tag.text).toBe('You agreed · 11:01 AM');
+    expect(t.answerLine).toBeNull();
+    expect(t.buttons).toEqual([]);
+    expect(t.group).toBe(COCKPIT_GROUP.WAITING);
+    // Default hold: "go instead" on A, killed; "Hold" on B is the agreement — never "You said go instead".
+    const a2 = call({ defaultAction: 'hold' });
+    a2.playerResponse = directive(a2, { answer: 'go_now', filedAt: '2026-09-09T14:34:00.000Z' });
+    const b2 = restated(a2);
+    b2.playerResponse = ack(b2, '2026-09-09T15:01:00.000Z');
+    const t2 = allTiles(feed([a2, b2], { directive: slotFor(a2), controlEpochLog: killed(a2) }))[0];
+    expect(t2.tag.text).toBe('You agreed · 11:01 AM');
+    expect(t2.answerLine).toBeNull();
+  });
+
+  it('C-6 rev 3 — with a third wording unanswered, the agreement given after the left-slot directive is the answer line (review Q1-1)', () => {
+    const a = call();
+    a.playerResponse = directive(a, { answer: 'hold', filedAt: '2026-09-09T14:33:00.000Z' });
+    const b = restated(a);
+    b.playerResponse = ack(b, '2026-09-09T14:47:00.000Z');
+    const c = restated(a, { evalId: 'eval_012', evalSeq: 12, mintedAt: T('2026-09-09T15:01:00.000Z'), condition: { side: 'above', level: 162.5 }, evidence: { tickId: 'tick-12', availability: 'unresolved', priceAsOf: P1100 } });
+    const t = allTiles(feed([a, b, c], { directive: null }))[0];
+    expect(t.calls.map((x) => x.callId)).toEqual([c.callId, b.callId, a.callId]);
+    expect(t.answerLine).toBe('You agreed · 10:47 AM, on the 10:45 AM wording');
+    expect(t.buttons.map((x) => x.answer)).toEqual(['go', 'hold']);
+    expect(t.group).toBe(COCKPIT_GROUP.WAITING);
+  });
+
+  it('C-6 — a LIVE directive answer on ANY member holds the thread and is the answer shown, though a newer member carries one that left the slot (review Q1-2); with neither live, the answer filed LAST is shown', () => {
+    // A ($161) and C ($163.85) are 1.7 % apart: two tiles. C's "hold off" (10:47) is killed; A's (10:50) files
+    // and is live. D ($162.40) is within 1 % of both and bridges them at the 11:00 check.
+    const a = call();
+    const c = call({ evalId: 'eval_011', evalSeq: 11, mintedAt: T('2026-09-09T14:46:00.000Z'), condition: { side: 'above', level: 163.85 }, evidence: { tickId: 'tick-11', availability: 'unresolved', priceAsOf: P1045 } });
+    c.playerResponse = directive(c, { answer: 'hold', filedAt: '2026-09-09T14:47:00.000Z' });
+    a.playerResponse = directive(a, { answer: 'hold', filedAt: '2026-09-09T14:50:00.000Z' });
+    const killedC = [{ suppressedDirectiveIds: [c.playerResponse.directiveThreadId] }];
+    expect(allTiles(feed([a, c], { directive: slotFor(a), controlEpochLog: killedC }))).toHaveLength(2);
+    const d = call({ evalId: 'eval_012', evalSeq: 12, mintedAt: T('2026-09-09T15:01:00.000Z'), condition: { side: 'above', level: 162.4 }, evidence: { tickId: 'tick-12', availability: 'unresolved', priceAsOf: P1100 } });
+    const t = allTiles(feed([a, c, d], { directive: slotFor(a), controlEpochLog: killedC }))[0];
+    expect(t.calls.map((x) => x.callId)).toEqual([d.callId, c.callId, a.callId]);
+    expect(t.buttons).toEqual([]);
+    expect(t.tag.text).toBe('Filed · not yet heard');
+    expect(t.answerLine).toBe('You said hold off · 10:50 AM, on the 10:30 AM wording');
+    // Both killed: D is answerable again, and the answer shown is the one filed last (A's, 10:50), not the newer wording's (C's, 10:47).
+    const killedBoth = [{ suppressedDirectiveIds: [c.playerResponse.directiveThreadId, a.playerResponse.directiveThreadId] }];
+    const t2 = allTiles(feed([a, c, d], { directive: slotFor(a), controlEpochLog: killedBoth }))[0];
+    expect(t2.buttons.map((x) => x.answer)).toEqual(['go', 'hold']);
+    expect(t2.tag.text).toBe('Filed · not heard');
+    expect(t2.answerLine).toBe('You said hold off · 10:50 AM, on the 10:30 AM wording');
+  });
+
+  it('a single call\'s directive answer is shown too, live or not (a thread of one)', () => {
     const a = call({ defaultAction: 'hold' });
     a.playerResponse = directive(a, { answer: 'go_now', filedAt: '2026-09-09T14:34:00.000Z' });
     const t = allTiles(feed([a]))[0];
@@ -714,7 +782,8 @@ describe('§7.2 — folding (Amendment C-6)', () => {
     expect(t.group).toBe(COCKPIT_GROUP.WAITING);
   });
 
-  it('an act on ANY call of a thread is the thread\'s tag, and no answer follows it — even over a live directive (the agent heard "hold off" and traded anyway)', () => {
+  it('an act on ANY call of a thread is the thread\'s tag, and no answer follows it — even over a filed directive (the agent heard "hold off" and traded anyway)', () => {
+    // No slot: the directive is not live (C-6 rev 3), so the acted guard alone withholds the buttons here.
     const a = call();
     a.playerResponse = directive(a, { heardEvalId: 'eval_011' });
     a.outcome = { actedEvalId: 'eval_012' };

@@ -985,8 +985,9 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   cockpitAnswerGoInstead: 'Go instead · 1 message',
   cockpitSending: 'Sending…',
   cockpitWaitingHeard: 'Waiting · your last answer hasn\'t been heard yet.',
-  // HEAD's endpoint keeps a HEARD call directive pending until it expires
-  // (directiveUtils.js isCallDirectivePendingAt): the line for that case — and
+  // HEAD's endpoint keeps a HEARD call directive pending while it stays live —
+  // until it expires, is replaced, retired or killed (directiveUtils.js
+  // isCallDirectivePendingAt; Amendment C rev 3): the line for that case — and
   // for any case the records cannot place — so the one above is never shown
   // without the record saying the answer is unheard. "Active", not "in force":
   // the agent is coached, not compelled (review L6-8).
@@ -994,7 +995,7 @@ export const BATTLE_VIEW_COPY = Object.freeze({
     ? `Waiting · your last answer stays active until ${time}.`
     : 'Waiting · your last answer is still active.'),
   cockpitOneAtATime: 'One call at a time.',
-  // A folded thread's live directive answer (Amendment C-6), naming the wording it was given on.
+  // A folded thread's directive answer, live or not (Amendment C-6 rev 3), naming the wording it was given on.
   cockpitThreadAnswer: (answer, filedTime, wordingCheck) => {
     const word = answer === 'hold' ? 'hold off' : answer === 'go_now' ? 'go instead' : null;
     if (!word) return null;
