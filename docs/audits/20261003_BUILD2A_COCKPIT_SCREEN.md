@@ -605,7 +605,127 @@ On this Windows machine the suite runs on `git -c core.autocrlf=false archive` s
 9. **The event reader's window.** It keeps 150 events. A long-lived open call whose `superseded` event falls outside it reads "Filed · not heard" rather than "Replaced…".
 10. **Line cites.** Revision 2's C-1 line cites have drifted: `agent-evaluate.js:2862` is now `:2866-2870`.
 
-### 13.10 What else changed in this report
+### 13.10 Founder rulings (Oct 5)
+
+The founder approved the last fixes on Oct 5. They sit on `claude/cockpit-build2a-screen` above `88b93cc5`, from `f1fa317b` to this section's commit, and reach `main` through PR #930.
+
+| What | Result |
+|---|---|
+| Amendment C revision 3 | C-6 defines a live directive answer by the slot. C-2, C-3's knock-on bullets, C-8 and the standing condition now state what the code does, each citing the tests that pin it. Every other byte of revision 2 is unchanged (`a6e372bb`, corrected by the review at `68dc3c89`) |
+| C-6 rev 3 in the tile | A thread whose answer left the slot offers answers on its newest call again (`7df41399`). After the review, a live answer on any call of the thread holds it, and otherwise the tile shows the thread's most recent answer (`68dc3c89`) |
+| The refusal line | Clears for good when its call resolves, is answered or leaves the feed (`26be3e35`). After the review, the prune reads the calls alone (`68dc3c89`) |
+| `copy.js renderSaidLine` | Retired: still no consumer (`f1fa317b`) |
+| Accepted as they are | The tile/chat "heard" lag; the flip's per-view status check; the sweep's skip pass |
+| §13.9's items | 1, 5, 6, 7 and 8 resolved; 2 accepted; 3, 4, 9 and 10 still open |
+| BUILD_RULES §2 review | Required: 11 files at `a6e372bb`, 15 with the fixes and this section. 4 lenses and 3 refuting verifiers. 23 findings after merging duplicates: 18 CONFIRMED, 5 PARTIAL, none refuted outright; none MAJOR after verification. 16 fixed (`68dc3c89`), 6 recorded for the founder, 1 needs nothing |
+| Mutation battery | 18 of 18 at `a6e372bb`; 29 of 29 at `68dc3c89`. Each mutation was killed by the rows written for it |
+| Full suite and build | On the exact pushed heads, reported with the PRs (this section's commit is docs only) |
+| The flip | Rebased onto this head; still one commit, still a draft (#931) |
+
+#### Amendment C revision 3
+
+- **The file:** `docs/CALL_RECORD_FIELD_CONTRACT_V1_4_AMENDMENT_C.md`. Written at `a6e372bb` and corrected by the review at `68dc3c89`: SHA-256 `1bc733ca76aa544302122be809c8ee83ef5d46904266e6d48dd80f648617312f`, 18,806 bytes (LF). Revision 2 was `4329b8f3…` (§13.4).
+- **What changed, and only there:** the title and the date line, a "What revision 3 changes" list, C-2's answers bullet, C-3's three knock-on bullets, C-6's live-answer bullet, C-8's "Open for 2b" and the standing condition "One override at a time". A `git diff` against revision 2 has exactly these hunks.
+- **Every cited test exists and pins its claim.** A script resolves each of the 36 quoted titles to exactly one row. The review added the five pins nothing covered:
+  - `amendmentC.test.js` "rev 3 — the rest of each consumer";
+  - `call-response.test.js` "an ACKNOWLEDGMENT on another call is accepted while a call directive is pending";
+  - `api/agent/chat.test.js` "Amendment C rev 3: at ENFORCE and calls ON the call slot is LIVE";
+  - `controlPromptRenderer.test.js` "a KILL writes the log and nothing else";
+  - a suppressed slot in `cockpitModel.test.js`'s "C-6 rev 3" row.
+- **Left as they are, since the ruling named the passages:** the header's Status ("Blessing gates the Build 2a merge", stale since #928 merged) and C-1's line cites (§13.9 item 10).
+- **The 2a spec still says "every answer → 400 `illegal_answer`"** for an upside call (S-4, §11). Revision 3's C-2 governs. The spec is byte-pinned, as N5 and §13.9 item 7 recorded.
+
+#### The code
+
+| Ruling | What the code does now | Commits | Tests |
+|---|---|---|---|
+| 2a. C-6 rev 3 | `tileOf` (`src/screens/battleView/cockpitModel.js`): only a LIVE directive answer, on any call of the thread, holds the newest call's buttons back, and it is the answer shown. Otherwise the tile shows the thread's most recent answer: a directive answer as its tag and answer line, live or not; an agreement on an earlier wording as its answer line; the newest call's own answer as its tag | `7df41399`, `68dc3c89` | Model rows for each way out of the slot (killed, expired, suppressed, replaced by chat or by another call, emptied); an agreement after a left-slot directive, on both defaults; a third wording; an older member's live answer; the answer filed last |
+| 2b. The refusal line | `staleRefusalIds` names every kept refusal no tile shows any more. The screen drops them through `useCockpitAnswer`'s `dropOutcomes`, only while the calls are read. A line that cleared because its call resolved, was answered, aged out or left the feed cannot come back | `26be3e35`, `68dc3c89` | One model row, one hook row, five mounted rows |
+| 2c. `renderSaidLine` | Retired. Its only importer was its own test file. `SAID_UNVERIFIED_LABEL` stays: its one reader is the cockpit sheet, which shows a `said` only from the record's `saidOk` and never on an upside call | `f1fa317b` | Its tests removed; one row pins that no said renderer is exported |
+
+**2b's scope, read literally.** A line clears when its own call's record changes state or response, or the call leaves the feed. Two cases stay outside it:
+- **A `directive_pending` line whose blocking directive leaves the slot.** The refused call's record does not change, so the line still ages out on its 30 s grace, read on the 60 s clock (§13.9 item 3, still open). What did change: once aged out, it no longer returns when a block shows again. The block line says the same thing.
+- **The agent acting on the refused call (Q2-4).** An acted stamp changes the record but is not in the ruling's list, so the line stays under "Acted …". Recorded for the founder.
+
+#### Accepted as they are (founder, Oct 5)
+
+1. **The tile/chat "heard" lag** (§13.9 item 2, P1-2). The tile reads the call's `heardEvalId`; the chat card reads the battle's evaluation stamps. For up to 15 minutes the tile can say "Filed · not heard" while the chat says "Heard at …". They converge by the next check.
+2. **The flip's per-view status check** (§13.8). Every Battle View asks `GET /api/agent/cockpit-status` once, and the chat's seen-marker waits for the answer, up to 8 s.
+3. **The sweep's skip pass** (§13.8). The 15-minute call sweep reads its cursor, pages its queue and the last seven days of battles, and skips every battle that resolves off.
+
+#### §13.9's items, now
+
+| # | Item | Now |
+|---|---|---|
+| 1 | C-6's "live directive answer" (P1-1) | **Resolved:** revision 3 defines it by the slot, and the tile follows (2a) |
+| 2 | One source for "heard" (P1-2) | **Accepted** as it is |
+| 3 | The refusal line and the coarse clock (P1-7) | **Open.** 2b does not reach it (above). The C-6 hold-back is now a third reader of the 60 s clock: for up to 60 s after a slot's lifetime ends, the tile withholds answers the endpoint would accept (Q1-6) |
+| 4 | "Not yet heard" after the last check | **Open** |
+| 5 | C-3's knock-on bullets (P2-3) | **Resolved:** revision 3 |
+| 6 | "Keeps the slot until its deadline" (P2-4) | **Resolved:** revision 3's standing condition and C-8 |
+| 7 | C-2's 400 code (P2-5) | **Resolved:** revision 3 |
+| 8 | `renderSaidLine` | **Retired** (2c) |
+| 9 | The event reader's window | **Open** |
+| 10 | Line cites (C-1's `agent-evaluate.js:2862`) | **Open:** revision 3 changed only the passages the ruling named |
+
+#### The review (BUILD_RULES §2)
+
+**Trigger:** 11 files on `88b93cc5..a6e372bb`; 15 with the fixes and this section.
+
+**Isolation:** each lens and each verifier worked on its own `git archive` snapshot of `a6e372bb` (LF), with node_modules as a junction, read-only on git and on the working tree. Every mutated file was restored byte-exact (SHA-256). vitest's run-order cache (`node_modules/.vite/vitest/…/results.json`) is written through the junction by any run; nothing else under node_modules was.
+
+**Ids:** Q1-n to Q4-n for the lenses, QV1 to QV3 for the verifiers.
+
+**Lenses (4):**
+- **Q1:** C-6 rev 3 in the code.
+- **Q2:** the refusal line's lifecycle.
+- **Q3:** revision 3 against the code, sentence by sentence, and its cites.
+- **Q4:** breadth: the retirement, test integrity, honesty, flag-off, comments.
+
+**Refuting verifiers (3).** Each was told to refute with an executed repro:
+- **QV1:** Q1-1 to Q1-4, Q1-6, Q4-7.
+- **QV2:** Q2-1 to Q2-7, with Q4-1 and Q4-4.
+- **QV3:** Q3-1, Q3-2, Q3-5 to Q3-8, Q4-2, Q4-5 with Q1-5, Q4-6, Q4-8.
+
+| Id | Lens sev. | Finding | Verdict (verifier's sev.) | Disposition |
+|---|---|---|---|---|
+| Q1-1 = Q3-3 = Q4-3 | MAJOR / MINOR / MINOR | Once a left-slot directive's thread offered answers again, an agreement on the newest call left the old directive as the tile's tag and answer line; the agreement showed only in the sheet's receipts. Every line was true of its record, but the one answer the tile stated was the opposite of the one just accepted | CONFIRMED, MINOR (QV1: 12 of 12 end to end, through the real endpoint) | **Fixed** (`68dc3c89`): the tile shows the most recent answer |
+| Q1-2 = Q3-4 | MINOR / NOTE | Only the newest filed directive was tested for live. With an older member's directive live and a newer one's gone, the thread offered an agreement and showed the replaced answer, while THIS TURN showed the live one | CONFIRMED, MINOR (reachable from tiles alone; Q3-4's "stale client only" refuted) | **Fixed:** any member's live answer holds the thread |
+| Q1-3 | MINOR | The rev 3 row had no "replaced by another call's live directive" case; a mutant holding every filed thread back while any call slot was live survived 840 tests | CONFIRMED, MINOR | **Fixed:** the case is in the row |
+| Q3-1 | MINOR | The chat rows cited for "replaces a live call directive" run at integrity 'off', where the slot is suppressed, so not live; a chat that refused a live slot passed 325 tests | CONFIRMED, MINOR | **Fixed:** a row at 'enforce' with calls on, now cited |
+| Q4-2 | MINOR | "Legality has no counterpart dimension" was pinned for one fixture; a counterpart dimension on confirmations or on act-default exits survived 1,234 tests | CONFIRMED, broader, MINOR | **Fixed:** the row covers every default, direction and kind |
+| Q2-1 | MINOR | The prune waited for all three reads, though a refusal line reads only the calls: with the sheet open across a failed events or declarations read, an old line came back after a fold and a resurface | CONFIRMED, NOTE (it needs one listener refused while the others are served) | **Fixed:** gated on the calls read; a mounted row |
+| Q2-2 = Q4-4 | MINOR / NOTE | No row pinned the read guard | CONFIRMED, NOTE (Q4-4's recheck example refuted: a recheck never restarts the readers) | **Fixed:** a mounted row (the readers restarting) |
+| Q2-3 = Q4-1 | NOTE / MINOR | The mounted "answered" row cannot fail without the drop; the case where the drop matters most, an aged-out `directive_pending` line returning under a later block, had no screen row | CONFIRMED, NOTE | **Fixed:** that row; the answered row's title says what it pins |
+| Q3-2 = Q4-9 | MINOR / NOTE | "not suppressed (integrity mode not 'enforce')" reads two ways | PARTIAL, NOTE (ambiguous, not backwards) | **Fixed:** reworded; "Live means" lists every condition |
+| Q3-5 | NOTE | C-2 omitted the repeat and `already_answered` checks that come first | PARTIAL, NOTE (unreachable on an upside call) | **Fixed** |
+| Q3-6 | NOTE | "A kill ends its liveness without clearing it" was unpinned: a kill that cleared the slot passed 1,377 tests | CONFIRMED, NOTE | **Fixed:** a pin |
+| Q3-7 | NOTE | Comments, test titles and report lines still said a heard directive blocks "until it expires" | CONFIRMED, NOTE | **Fixed** in the code and the titles; the report lines are noted in §13.11 |
+| Q3-8 | NOTE | Six wording points | PARTIAL, NOTE (item 1 refuted) | **Fixed** (items 2–5); item 6, the header's Status, is noted above |
+| Q4-5 + Q1-5 | NOTE | Touched docblocks that no longer matched the code | PARTIAL, NOTE ((c) refuted) | **Fixed** |
+| Q4-6 | NOTE | `overrideBlockOf`'s docblock said "until it expires" | CONFIRMED, NOTE | **Fixed** |
+| Q4-7 | NOTE | Two titles said "live directive" with no slot | CONFIRMED, NOTE (QV1: retitle, do not add a slot, or the acted guard goes unguarded) | **Fixed** |
+| Q1-4 | NOTE | A tile can show its own "You said hold off …" beside "Waiting · your last answer hasn't been heard yet.", which is about another call's answer | CONFIRMED, NOTE (dense, not false) | **Recorded** for the founder: the block line could name the pending call |
+| Q1-6 | NOTE | The C-6 hold-back runs on the 60 s clock | CONFIRMED, NOTE (it errs on the safe side) | **Recorded** with §13.9 item 3 |
+| Q2-4 | NOTE | When the agent acts on a refused open call, the line stays under "Acted …"; a "try again" line can also stand on a tile with no buttons past the deadline | CONFIRMED, NOTE | **Recorded** for the founder: does an acted stamp count as "the record behind its tile changes"? |
+| Q2-5 | NOTE | A refusal that lands after its call folded is never shown, and is now dropped at once. "Sending…" and then no line predates the round | CONFIRMED, NOTE | **Recorded:** within the ruling (the call left the feed) |
+| Q2-6 | NOTE | An in-place battle switch through a cockpit-on battle drops the first battle's lines; through a cockpit-off one it keeps them | CONFIRMED, NOTE (no UI path found for an in-place switch) | **Recorded** |
+| Q2-7 | NOTE | `26be3e35`'s message gives no before-and-after for the aged-out `directive_pending` line | PARTIAL, NOTE | **Recorded** here (2b's scope) |
+| Q4-8 | NOTE | Two `copy.test.js` titles carry rationale their rows do not assert | CONFIRMED (literal), no action | **No change:** the Oct 4 `renderIntentLine` precedent |
+
+**Outside the round, for separate tasking (QV1's aside).** The deadline guard (L6-7) also reads the 60 s clock. Up to 60 s behind a call's deadline, the tile still offers both answers, and the endpoint refuses them with 409 `expired`.
+
+#### Mutation battery
+
+The harness is `battery2.mjs`, as in §13.6: CONTROL first, each mutation alone on a snapshot, killed only when the rows written for it are among the failures.
+- **At `a6e372bb`:** 18 mutations (2a ×5, 2b ×6, 2c ×2, revision 3's pins ×5). All 18 killed by their own rows; CONTROL was 281 tests green.
+- **At `68dc3c89`:** 29 mutations: the 18, re-aimed at the fixed code, plus 11 for the review's rows (P01 to P11, including QV3's two legality mutants). All 29 killed by their own rows; CONTROL was 420 tests green.
+
+#### Tests and builds
+
+This section's commit is docs only. The suite and `vite build` on the exact pushed heads of #930 and #931 are reported with the PRs, as in §13.7.
+
+### 13.11 What else changed in this report
 
 - §2.1's trip-rule line, §10 item 5 (when it trips), §11's opening note, and §11 item 14 (N1 is still true at 60).
 - §9's smoke coverage table is accurate for the smoke build it names, `2f2accb2`. The rebased smoke shows the new copy:
@@ -614,3 +734,5 @@ On this Windows machine the suite runs on `git -c core.autocrlf=false archive` s
   - `=pending`: the same answer reads "Filed · not yet heard".
 - **Out-of-repo copy** (BUILD_RULES §3): `…/scratchpad/20261003_BUILD2A_COCKPIT_SCREEN.md`, in this session's scratchpad.
 - **The review's scratch files:** `…/scratchpad/review/` (`L1`–`L4` for the lenses, `V1`–`V3` for the verifiers, each with its `review-scratch/`), and `battery2.mjs` with `mutations.json` and `mutations3.json` beside it.
+- **Superseded by revision 3 (Oct 5):** the Oct 3–4 lines that say a heard call directive blocks "until it expires" or "until its deadline": §3's deviations table, §9's smoke table, §11 item 2 and §13.2 ruling 2. They stand as the record of their dates; revision 3's standing condition states what the code does.
+- **The Oct 5 review's scratch files:** `…/scratchpad/review-oct5/` (`Q1`–`Q4` for the lenses, with `Qn-findings.md`; `V1`–`V3` for the verifiers, with `Vn-verdicts.md` and `Vn-work/`), and `mutations4.json` and `mutations5.json` with `battery4.log` and `battery5.log`.
