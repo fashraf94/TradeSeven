@@ -20,7 +20,8 @@
 //   buttons     §7.3 — at most two: the agreeing answer, then the override
 //               (one message); none on an upside call (C-2) or a pick (not
 //               shown in 2a), none on a call already answered, none on a
-//               thread holding a live directive answer (C-6); overrides
+//               thread holding a LIVE directive answer (C-6 rev 3: its
+//               directive still the battle's current one); overrides
 //               disabled while the answer endpoint would refuse them
 //               (`overrideBlockOf` — the endpoint's own pending predicate)
 //
@@ -316,9 +317,22 @@ export function overrideBlockOf({ directive, calls, nowMs, controlEpochLog = nul
   };
 }
 
-/** Does any call in the thread carry a live directive answer (a filed directive on an open call)? */
-function liveDirectiveMember(thread) {
+/** The thread's filed directive answer (a directive on an open call), live or not — the tile shows it either way. */
+function filedDirectiveMember(thread) {
   return thread.find((c) => c.state === 'open' && c.playerResponse?.kind === 'directive') ?? null;
+}
+
+/**
+ * Amendment C-6 rev 3: a LIVE directive answer is one whose directive is
+ * still the battle's current directive — the slot's live thread
+ * (liveCallSlotOf) is its own, the very test "Filed · not yet heard" reads.
+ * Only a live answer holds the thread's answers back; once its directive
+ * leaves the slot, the thread offers answers on its newest call again (the
+ * endpoint accepts them: nothing is pending for another call).
+ */
+function liveDirectiveMember(thread, slotThreadId) {
+  const filed = filedDirectiveMember(thread);
+  return filed && nonEmpty(filed.playerResponse.directiveThreadId) && filed.playerResponse.directiveThreadId === slotThreadId ? filed : null;
 }
 
 const answeredCall = (c) => Boolean(c?.playerResponse && typeof c.playerResponse === 'object');
@@ -326,12 +340,15 @@ const answeredCall = (c) => Boolean(c?.playerResponse && typeof c.playerResponse
 /**
  * One tile for a thread (or a resolved call, which is a thread of one).
  *
- *   tag      the live directive answer's call when the thread holds one (its
- *            filed / heard state is the thread's operative fact), else the
- *            NEWEST call's own — an agreement on an EARLIER wording is never
- *            worn by the newer one (review L6-2); it is an answer line instead
+ *   tag      the filed directive answer's call when the thread holds one, live
+ *            or not (its filed / heard / replaced state is the thread's
+ *            operative fact), else the NEWEST call's own — an agreement on an
+ *            EARLIER wording is never worn by the newer one (review L6-2); it
+ *            is an answer line instead
  *   buttons  the NEWEST call's legal answers (§7.2) — none while any call in
- *            the thread carries a live directive answer (C-6), none when the
+ *            the thread carries a LIVE directive answer (C-6 rev 3: its
+ *            directive still the battle's current one, liveCallSlotOf; once it
+ *            leaves the slot the newest call is answerable again), none when the
  *            newest call is already answered (409 already_answered), none once
  *            the agent acted on it, none past its deadline (the endpoint
  *            refuses every answer then: 409 expired — review L6-7), none on a
@@ -350,12 +367,16 @@ const answeredCall = (c) => Boolean(c?.playerResponse && typeof c.playerResponse
 export function tileOf(thread, { eventsMap = new Map(), evaluations = [], nowMs, block = null, pending = null, slotThreadId = null } = {}) {
   const newest = thread[0];
   const oldest = thread[thread.length - 1];
-  const live = liveDirectiveMember(thread);
+  // The thread's filed directive answer is its tag and its answer line, live or
+  // not; only a LIVE one (C-6 rev 3: still the battle's current directive)
+  // holds the newest call's answers back.
+  const filed = filedDirectiveMember(thread);
+  const live = liveDirectiveMember(thread, slotThreadId);
   const threadAnswered = thread.some(answeredCall);
   // The agent acting on ANY call of the thread is the thread's weightiest fact
   // (review L6-1 / V2): it is the tag, and no answer is offered after it.
   const actedMember = thread.find((c) => nonEmpty(c.outcome?.actedEvalId)) ?? null;
-  const tagSource = actedMember ?? live ?? newest;
+  const tagSource = actedMember ?? filed ?? newest;
   const tag = callTag(tagSource, { events: eventsMap.get(tagSource.callId) ?? [], evaluations, nowMs, slotThreadId });
   // The endpoint's own guard (call-response.js: `!finite(deadline) || deadline <= nowMs` → 409 expired).
   const deadline = newest.horizon?.expiresAt;
@@ -374,12 +395,12 @@ export function tileOf(thread, { eventsMap = new Map(), evaluations = [], nowMs,
   let group = COCKPIT_GROUP.WAITING;
   if (newest.state !== 'open') group = COCKPIT_GROUP.EARLIER;
   else if (buttons.length > 0 && !threadAnswered) group = COCKPIT_GROUP.NEEDS_YOU;
-  // C-6: a live directive answer is shown, naming the wording it was given on;
-  // so is an agreement given on an EARLIER wording of the thread.
-  const olderAck = !live && !answeredCall(newest) ? (thread.slice(1).find((c) => c.playerResponse?.kind === 'ack') ?? null) : null;
+  // C-6: the filed directive answer is shown, live or not, naming the wording
+  // it was given on; so is an agreement given on an EARLIER wording.
+  const olderAck = !filed && !answeredCall(newest) ? (thread.slice(1).find((c) => c.playerResponse?.kind === 'ack') ?? null) : null;
   let answerLine = null;
-  if (live) {
-    answerLine = COPY.cockpitThreadAnswer(live.playerResponse.answer, etTime(isoOf(live.playerResponse.filedAt)), etSlotTime(isoOf(live.evidence?.priceAsOf)));
+  if (filed) {
+    answerLine = COPY.cockpitThreadAnswer(filed.playerResponse.answer, etTime(isoOf(filed.playerResponse.filedAt)), etSlotTime(isoOf(filed.evidence?.priceAsOf)));
   } else if (olderAck) {
     answerLine = COPY.cockpitThreadAgreed(etTime(isoOf(olderAck.playerResponse.filedAt)), etSlotTime(isoOf(olderAck.evidence?.priceAsOf)));
   }

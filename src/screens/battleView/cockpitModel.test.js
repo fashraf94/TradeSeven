@@ -621,6 +621,36 @@ describe('§7.2 — folding (Amendment C-6)', () => {
     expect(allTiles(feed([a, b], { directive: slotFor(a), controlEpochLog: killed }))[0].tag.text).toBe('Filed · not heard');
   });
 
+  it('C-6 rev 3 — once the answer LEAVES the slot (killed, expired, replaced, the slot emptied) the thread offers answers on its newest call again; the answer it left behind stays its tag and its answer line', () => {
+    const a = call();
+    a.playerResponse = directive(a, { answer: 'hold', filedAt: '2026-09-09T14:33:00.000Z' });
+    const b = restated(a);
+    const offered = [
+      { answer: 'go', label: 'Go if it triggers', row: 'ack', disabled: false },
+      { answer: 'hold', label: 'Hold off · 1 message', row: 'directive', disabled: false },
+    ];
+    const killed = [{ suppressedDirectiveIds: [a.playerResponse.directiveThreadId] }];
+    const chat = { text: 'Lean defensive', directiveThreadId: 'th-chat-1', expiry: 'end_of_battle', createdAt: '2026-09-09T14:50:00.000Z' };
+    const superseded = [{ kind: 'superseded', at: T('2026-09-09T14:50:00.000Z'), callIds: [a.callId], text: '', evidence: {} }];
+    const cases = [
+      ['killed', { directive: slotFor(a), controlEpochLog: killed }, 'Filed · not heard'],
+      // NOW is 11:05: the slot's life ended at 11:00; the restated call's deadline is the close.
+      ['expired', { directive: slotFor(a, { expiresAtMs: T('2026-09-09T15:00:00.000Z') }) }, 'Filed · not heard'],
+      ['replaced, its event loaded', { directive: chat, events: superseded }, 'Replaced by a later instruction'],
+      ['the slot emptied', { directive: null }, 'Filed · not heard'],
+    ];
+    for (const [why, over, tag] of cases) {
+      const t = allTiles(feed([a, b], over))[0];
+      expect({ why, buttons: buttonsOf(t) }).toEqual({ why, buttons: offered });
+      expect(t.buttons.every((x) => x.callId === b.callId)).toBe(true);
+      expect({ why, tag: t.tag.text }).toEqual({ why, tag });
+      expect({ why, line: t.answerLine }).toEqual({ why, line: 'You said hold off · 10:33 AM, on the 10:30 AM wording' });
+      expect(t.group).toBe(COCKPIT_GROUP.WAITING); // an answered thread waits, as with an agreement on an earlier wording (L6-2)
+    }
+    // The control: while the answer is still the battle's current directive, nothing is offered.
+    expect(allTiles(feed([a, b], { directive: slotFor(a) }))[0].buttons).toEqual([]);
+  });
+
   it('a single call with a live directive answer shows that answer too (a thread of one)', () => {
     const a = call({ defaultAction: 'hold' });
     a.playerResponse = directive(a, { answer: 'go_now', filedAt: '2026-09-09T14:34:00.000Z' });
