@@ -182,6 +182,24 @@ export function replayLogicVersionOf(builtFrom) {
 }
 
 /**
+ * BA-38 — the identity replay logic version 1 gave a replay (A1 through
+ * Amendment C: an unprefixed hash of the action's values, the checks it
+ * samples, their evidence for the bought name, and the two sectors — no sale
+ * prices). FROZEN: it must keep computing exactly what the A1 code wrote, so
+ * the candle pass can tell a stored version-1 replay built from the inputs the
+ * tape holds now (a logic change only — review AD2-1) from one whose inputs
+ * changed since (review AD2-3). If actionValues, checkValues or
+ * evidenceValues ever change, this keeps their version-1 definitions.
+ */
+export function replayBuiltFromV1(tape, action, session) {
+  const later = laterChecks(tape?.checks, action, session);
+  const sectors = isObj(tape?.comparables?.sectors) ? tape.comparables.sectors : {};
+  return unitHash(['replay', actionValues(action), later.map(checkValues),
+    later.map((c) => evidenceValues(isObj(c.evidence) ? c.evidence[action.symbolIn] : null)),
+    [orNull(sectors[action.symbolOut]), orNull(sectors[action.symbolIn])]]);
+}
+
+/**
  * BA-31 — what one action's replay is built from: the action's own values, the
  * recorded sale prices its split reads (BA-38), the checks it samples, the
  * evidence the reconciliation reads at them, and the sector each leg is

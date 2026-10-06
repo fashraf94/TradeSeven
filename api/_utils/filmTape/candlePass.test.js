@@ -253,7 +253,7 @@ describe('the write — targeted, and safe against the close pass in either orde
     return stableStringify(c);
   };
 
-  it('rewrites only actions[].replay, plans[].price, passes.candles, coverage.replay and coverage.series', async () => {
+  it('rewrites only actions[].replay, plans[].price, passes.candles, coverage.replay, coverage.series and numberClasses (the declaration, BA-38)', async () => {
     const fx = await capturedDay();
     const t = makeTapeDb(seedDay({}, fx));
     await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT });

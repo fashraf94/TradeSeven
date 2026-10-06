@@ -31,17 +31,20 @@
 //     `changedInputs` names what changed, and the output built before the
 //     change stays, labelled, until replaced.
 //   · A replay built by an earlier REPLAY LOGIC (BA-38: its builtFrom names
-//     the version) is not an input change: inside the window a written,
-//     partial or failed pass is re-queued with reason `replay_logic_updated`
-//     and the next candle run rebuilds it; outside the window the pass keeps
-//     its status. Either way, until it is rebuilt the replay itself says so
-//     (`note`: REPLAY_VERSION_NOTE).
+//     the version) is not an input change: inside the window a `written` pass
+//     is re-queued with reason `replay_logic_updated` and the next candle run
+//     rebuilds it — once: a partial or failed pass is already queued, and a
+//     terminal one is never re-queued (BA-32), so no re-merge resets a retry's
+//     attempts (review AD2-N1). Outside the window the pass keeps its status.
+//     Either way, until it is rebuilt the replay itself says so (`note`:
+//     REPLAY_VERSION_NOTE), and so does the replay section's coverage — at
+//     most `partial`, with whether a candle pass is still to come (review
+//     AD2-2; the candle pass's own coverage rule says the same).
 //   · Nothing changed → no write at all, so the stored bytes stand.
 
 import { createHash } from 'node:crypto';
 import { COVERAGE_RANK, CANDLE_COVERAGE_SECTIONS, REPLAY_VERSION_NOTE } from '../../../src/constants/filmTape.js';
 import { orderChecks, afterOf, subsequentTradesInSlot, battleResultOf } from './tapeAssemble.js';
-import { resolveBattleResult } from './battleResult.js';
 import { candleInputFingerprint, changedInputParts, replayLogicVersionOf, REPLAY_LOGIC_VERSION } from './candleInputs.js';
 import { toMs, etDayBounds } from './tapeTime.js';
 
@@ -331,8 +334,15 @@ function mergeCoverage(section, storedDoc, newCov, carried, { limits = [], depen
 function keySet(rows) { return new Set((Array.isArray(rows) ? rows : []).map((r) => r?.key).filter(Boolean)); }
 
 /** Two completion blocks that tell the same completion: status, instant, final score and result value. */
-const sameCompletion = (a, b) => stableStringify([a?.status ?? null, a?.completedAt ?? null, a?.final ?? null, a?.result?.value ?? null])
-  === stableStringify([b?.status ?? null, b?.completedAt ?? null, b?.final ?? null, b?.result?.value ?? null]);
+/**
+ * Two completion blocks that tell the same completion: status, instant, final
+ * score and result value — where a block with no result value (BA-39:
+ * `unavailable`, a missing score) contradicts no other's (review AD3-1: a
+ * stored result the battle document has since lost still stands).
+ */
+const sameCompletion = (a, b) => stableStringify([a?.status ?? null, a?.completedAt ?? null, a?.final ?? null])
+  === stableStringify([b?.status ?? null, b?.completedAt ?? null, b?.final ?? null])
+  && (a?.result?.value == null || b?.result?.value == null || a.result.value === b.result.value);
 
 /**
  * BA-27 (amended) — which document's completion block the tape keeps. The
@@ -365,10 +375,13 @@ function battleWinner(stored, assembled, canonicalBattle) {
  *   document inside the write transaction (writeTapeDay.js, BA-27 amended)
  *   `resolveResult`: the comparison completion uses (BA-4) — the one the
  *   assembly used — by which the result is recomputed from the merged final
- *   scores (BA-39)
+ *   scores (BA-39). The caller hands it in (writeTapeDay.js): the merge
+ *   imports no evaluator, so the candle pass, which imports this module for
+ *   its serializers, does not load one (review AD3-2). A derivation without
+ *   it throws.
  * @returns {{ doc: object, changed: boolean, carried: object }}
  */
-export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonicalBattle = false, resolveResult = resolveBattleResult }) {
+export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonicalBattle = false, resolveResult = null }) {
   // The read's limits (BA-26 amended) steer the coverage merge; they are never stored.
   const { readLimits = {}, ...assembled } = isObj(assembledIn) ? assembledIn : {};
   const isSkipped = assembled?.passes?.close?.status === 'skipped_mode';
@@ -443,7 +456,10 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
       status: block.status ?? null,
       stored: block.result?.basis === 'stored' ? block.result.value : null,
       final,
-      derive: (f) => resolveResult({ gameMode: merged.gameMode ?? stored.gameMode ?? null, scoreState: { currentScore: f.total, opponentScore: f.opponent } }),
+      derive: (f) => {
+        if (typeof resolveResult !== 'function') throw new Error('mergeTape: ctx.resolveResult is required to derive a battle result (BA-39)');
+        return resolveResult({ gameMode: merged.gameMode ?? stored.gameMode ?? null, scoreState: { currentScore: f.total, opponentScore: f.opponent } });
+      },
     }),
     // BA-39: the platform's words at completion move with the block; a block
     // recorded before they were copied takes them from the other read of the
@@ -501,12 +517,15 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
       observed: sectionDependsOn(section, assembled),
     });
   }
+  // BA-38 (review AD2-2): the replays an earlier replay logic built, by swap.
+  const outdated = (merged.actions || []).filter((a) => builtByEarlierLogic(a?.replay)).map((a) => `${a.symbolOut} → ${a.symbolIn}`);
   for (const section of CANDLE_COVERAGE_SECTIONS) {
     let cov = isObj(stored.coverage?.[section]) && stored.passes?.candles?.reason !== 'close_pass_failed'
       ? stored.coverage[section]
       : assembled.coverage?.[section];
     const changed = merged.passes.candles?.changedInputs;
     if (Array.isArray(changed) && changed.length && isObj(cov) && cov.status !== 'unavailable') cov = builtBefore(cov, changed, withinWindow, merged.passes.candles?.status);
+    if (section === 'replay' && outdated.length && isObj(cov) && cov.status !== 'unavailable') cov = versionLabelled(cov, outdated, withinWindow, merged.passes.candles?.status);
     merged.coverage[section] = cov;
   }
 
@@ -549,8 +568,10 @@ function mergeCandles(stored, assembled, merged, { withinWindow }) {
     // the window retryable work is re-queued so the next candle run rebuilds
     // it; outside it, or for a terminal pass (BA-32), the status stands — the
     // replay's own note says what it lacks (versionNoted).
+    // Once (review AD2-N1): only a `written` pass needs re-queueing; a partial
+    // or failed one is already queued and keeps its attempt count.
     const outdated = (merged.actions || []).some((a) => builtByEarlierLogic(a?.replay));
-    if (outdated && withinWindow && ['written', 'partial', 'failed'].includes(sc.status)) return { ...sc, status: 'pending', reason: 'replay_logic_updated', attempts: 0 };
+    if (outdated && withinWindow && sc.status === 'written') return { ...sc, status: 'pending', reason: 'replay_logic_updated', attempts: 0 };
     return sc;
   }
   const reason = grewActions || grewPlans || improved ? 'sources_changed' : 'inputs_changed';
@@ -571,7 +592,7 @@ const PART_ORDER = ['checks', 'evidence', 'actions', 'salePrices', 'plans', 'sym
 const BUILT_BEFORE = 'built before the candle inputs changed';
 
 /** Whether a candle pass is still to come for this output, in the label's words — never for a terminal pass (BA-32). */
-function rebuildOutlook(withinWindow, status) {
+export function rebuildOutlook(withinWindow, status) {
   if (status === 'exhausted') return 'its attempts are spent, not rebuilt';
   if (status === 'expired' || !withinWindow) return 'outside its retry window, not rebuilt';
   return 'awaiting the next candle pass';
@@ -589,6 +610,28 @@ function builtBefore(cov, changed, withinWindow, status) {
   const kept = at === -1 ? note : note.slice(0, at).replace(/;\s*$/, '');
   const label = `${BUILT_BEFORE} (${changed.join(', ')}) — ${rebuildOutlook(withinWindow, status)}`;
   return { ...cov, status: cov.status === 'complete' ? 'partial' : cov.status, note: [kept, label].filter(Boolean).join('; ') };
+}
+
+/** BA-38 — the words both writers use for a replay an earlier replay logic built (review AD2-2). */
+export const VERSION_LABEL = 'replay built by an earlier replay version';
+
+/**
+ * BA-38 — the replay section's label over replays an earlier replay logic
+ * built: the swaps, what they lack, and whether a candle pass is still to
+ * come. ONE wording for both writers (the candle pass's coverage and this
+ * merge's), so neither rewrites the other's (BUILD_RULES §9; review AD2-2).
+ */
+export const versionLabel = (pairs, outlook) => `${VERSION_LABEL} (${pairs.join(', ')}), the reconciliation split not computed — ${outlook}`;
+
+/**
+ * BA-38 (review AD2-2) — label the replay section over replays an earlier
+ * replay logic built: at most `partial`, by versionLabel. Replaces an earlier
+ * such label (the merge's, or the candle pass's own), never stacks it.
+ */
+function versionLabelled(cov, pairs, withinWindow, status) {
+  const kept = (typeof cov.note === 'string' ? cov.note : '').split('; ').filter((part) => part && !part.startsWith(VERSION_LABEL));
+  const label = versionLabel(pairs, rebuildOutlook(withinWindow, status));
+  return { ...cov, status: cov.status === 'complete' ? 'partial' : cov.status, note: [...kept, label].join('; ') };
 }
 
 function finish(stored, doc, nowIso, carried) {

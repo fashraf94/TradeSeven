@@ -261,9 +261,12 @@ export function replayAction({ action, checks, barsBySymbol, session, sectors = 
   });
 
   // BA-38 — the sale, split by cause. The rescore is the ghost leg's own call
-  // at the swap (its recorded inputs and history, the swap price as baseline)
-  // with the recorded exit price in place of the rebuilt one.
+  // at the swap — its recorded inputs, history and threshold baseline (the
+  // sold position's entry under its recorded basis) — with the recorded exit
+  // price in place of the rebuilt one.
   const exitPx = isNum(action.exitPrice) ? action.exitPrice : null;
+  // A recorded input the split reads, named as lockedPoints is — no fetch can supply it, so it is never retryable (review AD4-8).
+  if (exitPx === null) missingInputs.push('exitPrice');
   const outAt = saleSample(barsOut, action.symbolOut, swapMs);
   const rescored = inputs.ghost && exitPx !== null
     ? scoreAt({ inputs: inputs.ghost, symbol: action.symbolOut, price: exitPx, history: historyOf(inputs.ghost), tierStamp }).totalPoints
@@ -284,6 +287,12 @@ export function replayAction({ action, checks, barsBySymbol, session, sectors = 
     recordedPx: fillPx, rebuiltPx: inAt.rebuiltPx, barClosedAt: inAt.barClosedAt,
     missingInputs: [...(fillPx === null ? ['inBasis.price'] : []), ...(inAt.missing ? [inAt.missing] : [])],
   });
+  // BA-24 (review AD1-1): a price at the swap instant that no leg samples — the
+  // bought name's always, the sold name's when no ghost leg is built — is a
+  // sample of the replay: a stale one is named, and retryable while a later
+  // fetch could supply it. (A missing bar set is already named, as bars:SYM.)
+  if (!ghostRun && barsOut && outAt.missing) missSample(outAt.missing, swapMs);
+  if (barsIn && inAt.missing) missSample(inAt.missing, swapMs);
 
   // Reconciliation — the bought name against its first recorded evidence.
   let boughtVsEvidence = null;
@@ -364,6 +373,24 @@ export function replayHasFact(r) {
     || Boolean(r.reconciliation?.boughtVsEvidence)
     || isNum(r.reconciliation?.soldAtSale?.rebuiltPx) || isNum(r.reconciliation?.boughtAtSale?.rebuiltPx)
     || [...Object.values(r.marketChangeAfter || {}), ...Object.values(r.sectorChangeAfter || {})].some(isNum);
+}
+
+/**
+ * BA-38 (review AD2-1) — does `fresh` hold every market fact `stored` holds:
+ * each scored point of each leg, each comparable, the bought name against its
+ * evidence? Two replays built from the same inputs sample the same instants,
+ * so their legs line up entry by entry.
+ */
+export function replayCovers(fresh, stored) {
+  if (!stored) return true;
+  if (!fresh) return false;
+  const fl = legSamples(fresh);
+  const sl = legSamples(stored);
+  const legCovered = (s, f) => !Array.isArray(s) || s.every((e, i) => !hasPoint(e) || (Array.isArray(f) && hasPoint(f[i])));
+  const keyedCovered = (s, f) => Object.entries(s || {}).every(([k, v]) => !isNum(v) || isNum(f?.[k]));
+  return legCovered(sl.ghost, fl.ghost) && legCovered(sl.bought, fl.bought)
+    && keyedCovered(stored.marketChangeAfter, fresh.marketChangeAfter) && keyedCovered(stored.sectorChangeAfter, fresh.sectorChangeAfter)
+    && (!stored.reconciliation?.boughtVsEvidence || Boolean(fresh.reconciliation?.boughtVsEvidence));
 }
 
 /**
@@ -514,6 +541,10 @@ export function mergeReplay(stored, fresh, { symbolOut, symbolIn }) {
   };
   legGap(symbolOut, 'ghost', ghost, { s: sl.ghost, f: fl.ghost });
   legGap(symbolIn, 'bought', bought, { s: sl.bought, f: fl.bought });
+  // BA-24 (review AD1-1): a price at the swap no merged leg samples keeps its
+  // name while the merged split has no value for it.
+  if (!isNum(boughtAtSale?.rebuiltPx) && named.includes(`price:${symbolIn}@swap`)) keep.add(`price:${symbolIn}@swap`);
+  if (!ghost && !isNum(soldAtSale?.rebuiltPx) && named.includes(`price:${symbolOut}@swap`)) keep.add(`price:${symbolOut}@swap`);
   for (const [symbol, value] of Object.entries({ ...marketChangeAfter, ...sectorChangeAfter })) {
     if (isNum(value)) continue;
     const priced = named.filter((n) => n === `price:${symbol}@swap` || n === `price:${symbol}@close`);

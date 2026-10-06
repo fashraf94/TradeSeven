@@ -30,6 +30,7 @@ import { runClosePass } from './closePass.js';
 import { getReviewAvailability } from '../../../src/utils/reviewAvailability.js';
 import { scanProtectedStoreWrites } from '../compositionProtectedStoresScan.js';
 import { stableStringify, mergeTape } from './tapeMerge.js';
+import { resolveBattleResult } from './battleResult.js';
 import { assembleTape } from './tapeAssemble.js';
 import { etDayBounds } from './tapeTime.js';
 import { formatTapeMarkdown } from './tapeExport.js';
@@ -687,9 +688,10 @@ describe('F7 — BA-27: a stale assembly can add facts; it can never move the ba
     const fx = await completedDay();
     fx.battle.scoreState = { ...fx.battle.scoreState, currentScore: 42 };
     const active = { ...structuredClone(fx.battle), status: 'active', completedAt: null };
-    const completedDoc = mergeTape(null, assembleFrom(fx, fx.battle, NIGHT), { nowIso: new Date(NIGHT).toISOString(), withinWindow: true }).doc;
+    // Amendment D (review AD3-2): a merge that derives a result is handed the comparison, as writeTapeDay hands it.
+    const completedDoc = mergeTape(null, assembleFrom(fx, fx.battle, NIGHT), { nowIso: new Date(NIGHT).toISOString(), withinWindow: true, resolveResult: resolveBattleResult }).doc;
     expect(completedDoc.battle).toMatchObject({ status: 'completed', final: { total: 42 }, result: { value: 'win' } });
-    const { doc } = mergeTape(completedDoc, assembleFrom(fx, active, NIGHT - 60_000), { nowIso: new Date(NIGHT + 60_000).toISOString(), withinWindow: true });
+    const { doc } = mergeTape(completedDoc, assembleFrom(fx, active, NIGHT - 60_000), { nowIso: new Date(NIGHT + 60_000).toISOString(), withinWindow: true, resolveResult: resolveBattleResult });
     expect(doc.battle).toEqual(completedDoc.battle);                      // status, completedAt, final, result — one unit
     expect(doc.battleStatusAtWrite).toBe('completed');
   });

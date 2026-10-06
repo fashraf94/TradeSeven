@@ -17,6 +17,10 @@
 // spreading the real one.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
 
 const flags = vi.hoisted(() => ({ writer: true }));
 vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => ({
@@ -29,10 +33,11 @@ vi.mock('../agentScoring.js', async (importOriginal) => {
 });
 
 import { calculateAssetScoreServer } from '../agentScoring.js';
-import { replayAction } from './tapeReplay.js';
-import { replayBuiltFrom } from './candleInputs.js';
+import { replayAction, mergeReplay, replayHasFact } from './tapeReplay.js';
+import * as candleInputs from './candleInputs.js';
+import { replayBuiltFrom, actionValues, checkValues, evidenceValues, laterChecks } from './candleInputs.js';
 import { writeTapeDay } from './writeTapeDay.js';
-import { runCandlePass } from './candlePass.js';
+import { runCandlePass, keepUnit } from './candlePass.js';
 import { runBackfill } from './closePass.js';
 import { sessionBars } from './bars.js';
 import { sessionFor } from './tapeTime.js';
@@ -239,8 +244,9 @@ async function enrichedDay() {
 
 /**
  * The tape as the A1 replay logic (version 1, Amendments A–C) left it: no sale
- * split and no locked basis on any replay, an unprefixed builtFrom, and an
- * input fingerprint without the sale part.
+ * split and no locked basis on any replay, the builtFrom the A1 code gave it
+ * (a1ReplayBuiltFrom — the genuine version-1 identity, pinned against the A1
+ * code's own output below), and an input fingerprint without the sale part.
  */
 function asVersionOne(tape) {
   const t = structuredClone(tape);
@@ -248,7 +254,7 @@ function asVersionOne(tape) {
     if (!a.replay) continue;
     const { soldAtSale: _s, boughtAtSale: _b, ...reconciliation } = a.replay.reconciliation;
     const { lockedBasis: _l, lockedBasisNote: _n, ...rest } = a.replay;
-    a.replay = { ...rest, reconciliation, builtFrom: String(rest.builtFrom).replace(/^replay-v\d+:/, '') };
+    a.replay = { ...rest, reconciliation, builtFrom: a1ReplayBuiltFrom(t, a, sessionFor(D)) };
   }
   if (t.passes?.candles?.inputFingerprint) delete t.passes.candles.inputFingerprint.salePrices;
   return t;
@@ -396,9 +402,17 @@ const COMPLETED_AT = '2026-09-24T20:05:00.000Z';
 const DRAW_TEXT = 'Battle complete. Agent: +0.0 pts vs CPU: +0.0 pts. Result: Draw.';
 const completionEntry = (over = {}) => ({ timestamp: COMPLETED_AT, message: DRAW_TEXT, action: 'battle_complete', source: 'system', score: 0, ...over });
 
-/** The ogbLF shape over the completed fixture day: final 0, the opponent's score never written, the platform's completion in its feed. */
+/**
+ * The ogbLF shape over the completed fixture day: no check was ever admitted (no
+ * tick, no evaluation, no tickSeq minted — review AD3-3: every scored tick
+ * writes the opponent's score), final 0, the opponent's score never written,
+ * and the platform's completion in its feed.
+ */
 async function neverScoredDay({ battleId = 'b-never-scored', feed = null } = {}) {
   const fx = await completedDay({ battleId });
+  fx.ticks = [];
+  fx.battle.evaluations = [];
+  fx.battle.cronState = { tickSeq: 0 };
   const { opponentScore: _never, ...scoreState } = fx.battle.scoreState;
   fx.battle.scoreState = { ...scoreState, currentScore: 0 };
   fx.battle.statusFeed = feed ?? [
@@ -458,12 +472,12 @@ describe('BA-39 (Q2) — a battle result is derived only from two recorded final
     const tape = tapeOf(t, fx.battleId);
     // no canonical re-read: on equal lifecycle rank the stored completion block stands (BA-27 amended) — its result does not
     const drawn = { ...tape, battle: { ...tape.battle, result: { value: 'draw', basis: 'derived' } } };
-    expect(mergeTape(drawn, structuredClone(tape), { nowIso: new Date(NIGHT + 60_000).toISOString(), withinWindow: true }).doc.battle.result)
+    expect(mergeTape(drawn, structuredClone(tape), { nowIso: new Date(NIGHT + 60_000).toISOString(), withinWindow: true, resolveResult: resolveBattleResult }).doc.battle.result)
       .toEqual({ value: null, basis: 'unavailable', note: 'opponent score never recorded' });
     // a stored block whose derived result disagrees with its own final scores: the scores decide
     const scored = { ...tape, battle: { ...tape.battle, final: { total: 9, opponent: 50, at: COMPLETED_AT }, result: { value: 'win', basis: 'derived' } } };
     const assembled = { ...structuredClone(tape), battle: { ...scored.battle } };
-    expect(mergeTape(scored, assembled, { nowIso: new Date(NIGHT + 60_000).toISOString(), withinWindow: true }).doc.battle.result)
+    expect(mergeTape(scored, assembled, { nowIso: new Date(NIGHT + 60_000).toISOString(), withinWindow: true, resolveResult: resolveBattleResult }).doc.battle.result)
       .toEqual({ value: 'loss', basis: 'derived' });
   });
 
@@ -474,7 +488,7 @@ describe('BA-39 (Q2) — a battle result is derived only from two recorded final
     await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT });
     const tape = tapeOf(t, fx.battleId);
     expect(tape.battle.result).toEqual({ value: 'draw', basis: 'stored' });
-    expect(mergeTape(tape, structuredClone(tape), { nowIso: new Date(NIGHT + 60_000).toISOString(), withinWindow: true }).doc.battle.result)
+    expect(mergeTape(tape, structuredClone(tape), { nowIso: new Date(NIGHT + 60_000).toISOString(), withinWindow: true, resolveResult: resolveBattleResult }).doc.battle.result)
       .toEqual({ value: 'draw', basis: 'stored' });
   });
 
@@ -500,7 +514,7 @@ describe('BA-39 (Q2) — battle.completionMessage: the platform\'s own words at 
     expect(tapeOf(t, fx.battleId).battle.completionMessage).toEqual({ text: DRAW_TEXT, at: COMPLETED_AT });
   });
 
-  it('Q2: verbatim means byte for byte — spacing kept; the LAST battle_complete entry (a repair writes another); no other action\'s message', async () => {
+  it('Q2: verbatim means byte for byte — spacing kept; the LAST battle_complete entry, should the feed ever hold more than one; no other action\'s message', async () => {
     const odd = '  Battle complete.  Agent: +0.0 pts vs CPU: +0.0 pts.\nResult: Draw. ';
     const fx = await neverScoredDay({
       feed: [
@@ -531,5 +545,273 @@ describe('BA-39 (Q2) — battle.completionMessage: the platform\'s own words at 
     expect(md).toContain('result: — (basis `unavailable`) · “opponent score never recorded”');
     expect(md).toContain(`- Platform recorded at completion: “${DRAW_TEXT}” — at 4:05 PM ET · \`${COMPLETED_AT}\``);
     expect(md).not.toContain('UNCLASSIFIED');
+  });
+});
+
+// ── The §2 review's confirmed findings (build report §11.6) ──────────────────
+//
+// Each row below was red at e8e2bdc3, the reviewed code head, unless it is
+// marked GUARD (it passes there and pins the rule a surviving mutant broke).
+// The finding ids are this review's own (AD1-n … AD4-n).
+
+/** The identity the A1 replay logic (version 1, through Amendment C) gave a replay — its formula, frozen here independently of the code under test. */
+function a1ReplayBuiltFrom(tape, action, session) {
+  const later = laterChecks(tape.checks, action, session);
+  const sectors = tape.comparables && typeof tape.comparables.sectors === 'object' ? tape.comparables.sectors : {};
+  const orNull = (v) => (v === undefined ? null : v);
+  const ev = (c) => (c.evidence && typeof c.evidence === 'object' && !Array.isArray(c.evidence) ? c.evidence[action.symbolIn] : null);
+  return createHash('sha256').update(JSON.stringify(['replay', actionValues(action), later.map(checkValues),
+    later.map((c) => evidenceValues(ev(c))), [orNull(sectors[action.symbolOut]), orNull(sectors[action.symbolIn])]])).digest('hex').slice(0, 16);
+}
+/** All bars but one symbol's (a failed fetch for that symbol). */
+const barsWithout = (...gone) => Object.fromEntries(Object.entries(allBars()).filter(([s]) => !gone.includes(s)));
+const morningWith = (t, bars, at) => runCandlePass({ db: t.db, fetchCandles: fetcherOf(bars).fetchCandles, clock: () => at, startMs: at });
+const legsOf = (r) => ({ ghost: r.ghost, bought: r.bought, holdPath: r.holdPath, swapPath: r.swapPath, gapPoints: r.gapPoints, closedLegDelta: r.reconciliation.closedLegDelta, marketChangeAfter: r.marketChangeAfter, sectorChangeAfter: r.sectorChangeAfter });
+const LATER_MORNING = NEXT_MORNING + 86_400_000;
+const LATER_INSIDE = INSIDE + 86_400_000;
+
+describe('§2 review — the A1 identity the version check compares with', () => {
+  it('the frozen A1 formula reproduces the identities the A1 code wrote for the fixture day (read off the base code, 1ae6d9f4)', async () => {
+    const { fx, t } = await enrichedDay();
+    const tape = tapeOf(t, fx.battleId);
+    const session = sessionFor(D);
+    const byKey = Object.fromEntries(tape.actions.map((a) => [a.symbolOut, a1ReplayBuiltFrom(tape, a, session)]));
+    expect(byKey).toEqual({ AMD: '2a65a5b0d8496b1c', MSFT: '172078dd9aebfee5' });
+    for (const a of tape.actions) expect(candleInputs.replayBuiltFromV1?.(tape, a, session), a.key).toBe(byKey[a.symbolOut]);
+  });
+});
+
+describe('§2 review — AD1-1: a price at the sale that no leg samples is a sample of the replay (BA-24)', () => {
+  it('AD1-1: a stale price for the bought name at the swap instant is named in the replay\'s missing inputs, and retryable', () => {
+    const r = replayDrga({}, { MU: bars2(holed2(MU_BAR, '16:05', '16:20')) });
+    expect(r.missingInputs).toContain('price:MU@swap');
+    expect(r.retryableInputs).toContain('price:MU@swap');
+  });
+
+  it('AD1-1: so is the sold name\'s, when no ghost leg is built to sample it', () => {
+    const r = replayDrga({ replayInputs: { ghost: null, bought: muInputs() }, replayMissing: ['ghost.atr'] }, { GOOGL: bars2(holed2(353.07, '16:05', '16:20')) });
+    expect(r.missingInputs).toContain('price:GOOGL@swap');
+    expect(r.retryableInputs).toContain('price:GOOGL@swap');
+  });
+
+  it('AD1-1: through the passes — a stale fill price at the swap keeps the replay section from reading complete', async () => {
+    const fx = await capturedDay();
+    const t = makeTapeDb(seedDay({}, fx));
+    await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT });
+    // NFLX has no bar 16:24–16:30Z: at the 16:30:05 swap its last completed minute closed 16:24:00, six minutes stale
+    const holedNflx = flatRows(D, PRICES.NFLX).filter((r) => r.timestamp * 1000 < Date.parse(`${D}T16:24:00.000Z`) || r.timestamp * 1000 >= Date.parse(`${D}T16:30:00.000Z`));
+    await morningWith(t, { ...allBars(), NFLX: holedNflx }, MORNING);
+    const tape = tapeOf(t, fx.battleId);
+    const nflx = tape.actions.find((a) => a.symbolIn === 'NFLX');
+    expect(nflx.replay.reconciliation.boughtAtSale).toMatchObject({ rebuiltPx: null, missingInputs: ['price:NFLX@swap'] });
+    expect(nflx.replay.missingInputs).toContain('price:NFLX@swap');
+    expect(tape.coverage.replay.status).not.toBe('complete');
+  });
+
+  it('AD1-1: a merge keeps the name while neither attempt priced the fill at the swap, and drops it once one did', () => {
+    const stale = replayDrga({}, { MU: bars2(holed2(MU_BAR, '16:05', '16:20')) });
+    const staleToo = replayDrga({}, { MU: bars2(holed2(MU_BAR, '16:04', '16:20')) });
+    const priced = replayDrga();
+    const both = mergeReplay(stale, staleToo, { symbolOut: 'GOOGL', symbolIn: 'MU' });
+    expect(both.reconciliation.boughtAtSale.rebuiltPx).toBeNull();
+    expect(both.missingInputs).toContain('price:MU@swap');
+    const one = mergeReplay(stale, priced, { symbolOut: 'GOOGL', symbolIn: 'MU' });
+    expect(one.reconciliation.boughtAtSale.rebuiltPx).toBe(MU_BAR);
+    expect(one.missingInputs).not.toContain('price:MU@swap');
+  });
+});
+
+describe('§2 review — AD1-2: the split\'s merge rule and its fact', () => {
+  it('AD1-2 GUARD: a saved stale null for the fill\'s price keeps its bar age against a fresh attempt with no bars at all (BA-24, the L1-4 rule)', () => {
+    const stored = replayDrga({}, { MU: bars2(holed2(MU_BAR, '16:05', '16:20')) });
+    const noMu = drgaBars();
+    delete noMu.MU;
+    const fresh = replayAction({ action: drga(), checks: [], barsBySymbol: noMu, session: S2 });
+    const merged = mergeReplay(stored, fresh, { symbolOut: 'GOOGL', symbolIn: 'MU' });
+    expect(merged.reconciliation.boughtAtSale).toEqual({ recordedPx: MU_FILL, rebuiltPx: null, barClosedAt: '2026-09-22T16:05:00.000Z', pxDelta: null, missingInputs: ['price:MU@swap'] });
+  });
+
+  it('AD1-2 GUARD: a current replay whose only fact is a price at the sale wins over a stale one (BA-31)', () => {
+    const stale = { ...replayDrga(), builtFrom: 'replay-v2:old' };
+    const onlyFill = replayAction({ action: drga({ replayInputs: { ghost: null, bought: null }, replayMissing: ['ghost.atr', 'bought.atr'] }), checks: [], barsBySymbol: { MU: bars2(flatRows(D2, MU_BAR)) }, session: S2 });
+    expect(onlyFill.reconciliation.boughtAtSale.rebuiltPx).toBe(MU_BAR);
+    const kept = keepUnit(stale, { ...onlyFill, builtFrom: 'replay-v2:new' }, { merge: (s, f) => mergeReplay(s, f, { symbolOut: 'GOOGL', symbolIn: 'MU' }), hasFact: replayHasFact });
+    expect(kept.builtFrom).toBe('replay-v2:new');
+  });
+});
+
+describe('§2 review — AD2-1: a logic change is not an input change, so a poorer rebuild never replaces a version-1 replay built from the same inputs', () => {
+  it('AD2-1: one sold name\'s failed fetch keeps the version-1 replay whole and the pass queued; a good morning then rebuilds it', async () => {
+    const { fx, t } = await enrichedDay();
+    const v1 = asVersionOne(tapeOf(t, fx.battleId));
+    t.store.set(tapePath(fx.battleId), v1);
+    await refresh(t, INSIDE);
+    await morningWith(t, barsWithout('AMD'), NEXT_MORNING);
+    let tape = tapeOf(t, fx.battleId);
+    const amd = tape.actions.find((a) => a.symbolOut === 'AMD');
+    const before = v1.actions.find((a) => a.symbolOut === 'AMD').replay;
+    expect(legsOf(amd.replay)).toEqual(legsOf(before));                        // nothing the version-1 replay held is lost
+    expect(amd.replay.builtFrom).toBe(before.builtFrom);
+    expect(amd.replay.note).toBe(VERSION_NOTE);
+    expect(tape.passes.candles.status).not.toBe('written');
+    expect(tape.coverage.replay.note).toContain('replay built by an earlier replay version');
+    await morningWith(t, allBars(), LATER_MORNING);
+    tape = tapeOf(t, fx.battleId);
+    const rebuilt = tape.actions.find((a) => a.symbolOut === 'AMD');
+    expect(rebuilt.replay.builtFrom).toBe(replayBuiltFrom(tape, rebuilt, sessionFor(D)));
+    expect(rebuilt.replay.reconciliation.soldAtSale.recordedPx).toBe(rebuilt.exitPrice);
+    expect(tape.passes.candles.status).toBe('written');
+  });
+
+  it('AD2-1: so does a comparable\'s — SPY\'s failed fetch keeps both replays\' market change', async () => {
+    const { fx, t } = await enrichedDay();
+    const v1 = asVersionOne(tapeOf(t, fx.battleId));
+    t.store.set(tapePath(fx.battleId), v1);
+    await refresh(t, INSIDE);
+    await morningWith(t, barsWithout('SPY'), NEXT_MORNING);
+    for (const a of tapeOf(t, fx.battleId).actions) {
+      expect(a.replay.marketChangeAfter, a.key).toEqual(v1.actions.find((x) => x.key === a.key).replay.marketChangeAfter);
+    }
+  });
+});
+
+describe('§2 review — AD2-2: over a version-1 replay the replay section says so', () => {
+  it('AD2-2: coverage.replay is at most partial and names the earlier version — inside the window awaiting the next candle pass, outside it not rebuilt; the pass status is unchanged outside', async () => {
+    const inside = await enrichedDay();
+    inside.t.store.set(tapePath(inside.fx.battleId), asVersionOne(tapeOf(inside.t, inside.fx.battleId)));
+    await refresh(inside.t, INSIDE);
+    const a = tapeOf(inside.t, inside.fx.battleId).coverage.replay;
+    expect(a.status).toBe('partial');
+    expect(a.note).toMatch(/replay built by an earlier replay version \(AMD → TSLA, MSFT → NFLX\), the reconciliation split not computed — awaiting the next candle pass/);
+    const outside = await enrichedDay();
+    outside.t.store.set(tapePath(outside.fx.battleId), asVersionOne(tapeOf(outside.t, outside.fx.battleId)));
+    await refresh(outside.t, OUTSIDE);
+    const b = tapeOf(outside.t, outside.fx.battleId);
+    expect(b.passes.candles.status).toBe('written');
+    expect(b.coverage.replay.status).toBe('partial');
+    expect(b.coverage.replay.note).toMatch(/replay built by an earlier replay version \(AMD → TSLA, MSFT → NFLX\), the reconciliation split not computed — outside its retry window, not rebuilt/);
+    expect((await refresh(outside.t, OUTSIDE + 60_000)).unchanged.map((x) => x.battleId)).toEqual([outside.fx.battleId]);
+  });
+});
+
+describe('§2 review — AD2-3 and AD2-5: a kept version-1 replay is named for what it is', () => {
+  it('AD2-3: a version-1 replay whose inputs also changed is named as built before its inputs changed — never only as an earlier version', async () => {
+    const { fx, t } = await enrichedDay();
+    t.store.set(tapePath(fx.battleId), asVersionOne(tapeOf(t, fx.battleId)));
+    const receiptPath = [...t.store.keys()].find((k) => k.startsWith(`learningReceipts/${fx.battleId}/receipts/`) && t.store.get(k).symbolOut === 'AMD');
+    const receipt = t.store.get(receiptPath);
+    t.store.set(receiptPath, { ...receipt, guardrailReplay: { ...receipt.guardrailReplay, outgoingBaseATR: 1.0 } });
+    await refresh(t, INSIDE);
+    expect(tapeOf(t, fx.battleId).passes.candles).toMatchObject({ status: 'pending', reason: 'inputs_changed' });
+    await morningWith(t, {}, NEXT_MORNING);                                       // every fetch fails: nothing is rebuilt
+    const note = tapeOf(t, fx.battleId).coverage.replay.note;
+    expect(note).toContain('replay built before its inputs changed, kept (not rebuilt this attempt): AMD → TSLA');
+    expect(note).toContain('replay built by an earlier replay version (MSFT → NFLX), the reconciliation split not computed — awaiting the next candle pass');
+    expect(note).not.toMatch(/earlier replay version \([^)]*AMD/);
+  });
+
+  it('AD2-5 GUARD: a candle pass that keeps a version-1 replay with unchanged inputs labels it an earlier version, never a changed input', async () => {
+    const { fx, t } = await enrichedDay();
+    t.store.set(tapePath(fx.battleId), asVersionOne(tapeOf(t, fx.battleId)));
+    await refresh(t, INSIDE);
+    await morningWith(t, {}, NEXT_MORNING);
+    const note = tapeOf(t, fx.battleId).coverage.replay.note;
+    // one wording for both writers (review AD2-2): the merge's and the candle pass's labels are the same words
+    expect(note).toContain('replay built by an earlier replay version (AMD → TSLA, MSFT → NFLX), the reconciliation split not computed — awaiting the next candle pass');
+    expect(note).not.toContain('replay built before its inputs changed');
+  });
+
+  it('AD2-5 GUARD: inside the window an exhausted version-1 day stays exhausted, and a pending pass keeps its reason (BA-32)', async () => {
+    const { fx, t } = await enrichedDay();
+    const v1 = asVersionOne(tapeOf(t, fx.battleId));
+    t.store.set(tapePath(fx.battleId), { ...v1, passes: { ...v1.passes, candles: { ...v1.passes.candles, status: 'exhausted', reason: 'attempts_exhausted', attempts: 3 } } });
+    await refresh(t, INSIDE);
+    expect(tapeOf(t, fx.battleId).passes.candles).toMatchObject({ status: 'exhausted', reason: 'attempts_exhausted', attempts: 3 });
+    t.store.set(tapePath(fx.battleId), { ...v1, passes: { ...v1.passes, candles: { ...v1.passes.candles, status: 'pending', reason: 'inputs_changed', attempts: 0 } } });
+    await refresh(t, INSIDE);
+    expect(tapeOf(t, fx.battleId).passes.candles).toMatchObject({ status: 'pending', reason: 'inputs_changed' });
+  });
+});
+
+describe('§2 review — AD2-N1: the version re-queue happens once', () => {
+  it('AD2-N1: a version-1 day a run could not rebuild is not re-queued again — a later refresh resets no attempts and writes nothing', async () => {
+    const { fx, t } = await enrichedDay();
+    t.store.set(tapePath(fx.battleId), asVersionOne(tapeOf(t, fx.battleId)));
+    await refresh(t, INSIDE);
+    await morningWith(t, {}, NEXT_MORNING);                                       // nothing rebuilt
+    const after = tapeOf(t, fx.battleId).passes.candles;
+    expect(after.attempts).toBe(1);
+    const r = await refresh(t, LATER_INSIDE);
+    expect(r.unchanged.map((x) => x.battleId)).toEqual([fx.battleId]);
+    expect(tapeOf(t, fx.battleId).passes.candles).toMatchObject({ status: after.status, attempts: 1 });
+  });
+});
+
+describe('§2 review — AD3-1 and AD3-2: the result rule in the merge', () => {
+  it('AD3-1: a stored result stands on a canonical re-read after the battle document loses it — a missing score is no contradiction', async () => {
+    const fx = await neverScoredDay();
+    fx.battle.result = 'draw';
+    const t = makeTapeDb(seedDay({}, fx));
+    await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT });
+    expect(tapeOf(t, fx.battleId).battle.result).toEqual({ value: 'draw', basis: 'stored' });
+    const battle = t.store.get(`agentBattles/${fx.battleId}`);
+    delete battle.result;
+    t.store.set(`agentBattles/${fx.battleId}`, battle);
+    await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT + 60_000 });
+    expect(tapeOf(t, fx.battleId).battle.result).toEqual({ value: 'draw', basis: 'stored' });
+  });
+
+  it('AD3-2: the merge takes the comparison from its caller and imports no evaluator, so the candle cron\'s module graph stays the tape\'s own', async () => {
+    const src = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'tapeMerge.js'), 'utf8');
+    expect(src).not.toMatch(/from '\.\/battleResult\.js'|agent-evaluate/);
+    const { fx, t } = await (async () => { const f = await completedDay(); return { fx: f, t: makeTapeDb(seedDay({}, f)) }; })();
+    await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT });
+    const tape = tapeOf(t, fx.battleId);
+    expect(() => mergeTape(tape, structuredClone(tape), { nowIso: new Date(NIGHT + 60_000).toISOString(), withinWindow: true })).toThrow(/resolveResult/);
+  });
+});
+
+describe('§2 review — AD4-3, AD4-8 and AD4-2: a split\'s missing parts, merged, named and printed', () => {
+  it('AD4-3 GUARD: two attempts that both lacked the sold name\'s price at the swap merge to a null that still names its input', () => {
+    const stale = replayDrga({}, { GOOGL: bars2(holed2(353.07, '16:05', '16:20')) });
+    const staleToo = replayDrga({}, { GOOGL: bars2(holed2(353.07, '16:04', '16:20')) });
+    const merged = mergeReplay(stale, staleToo, { symbolOut: 'GOOGL', symbolIn: 'MU' });
+    expect(merged.reconciliation.soldAtSale).toMatchObject({ rebuiltPx: null, priceDelta: null, missingInputs: ['price:GOOGL@swap'] });
+    const fills = mergeReplay(replayDrga({}, { MU: bars2(holed2(MU_BAR, '16:05', '16:20')) }), replayDrga({}, { MU: bars2(holed2(MU_BAR, '16:04', '16:20')) }), { symbolOut: 'GOOGL', symbolIn: 'MU' });
+    expect(fills.reconciliation.boughtAtSale).toMatchObject({ rebuiltPx: null, missingInputs: ['price:MU@swap'] });
+  });
+
+  it('AD4-8: a missing exit price is named in the replay\'s missing inputs, as lockedPoints is — never retryable; the replay section is not complete', async () => {
+    const r = replayDrga({ exitPrice: null });
+    expect(r.missingInputs).toContain('exitPrice');
+    expect(r.retryableInputs).not.toContain('exitPrice');
+    const fx = await capturedDay();
+    fx.battle.trades = fx.battle.trades.map((tr) => (tr.symbolOut === 'AMD' ? { ...tr, exitPrice: undefined } : tr));
+    const t = makeTapeDb(seedDay({}, fx));
+    await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT });
+    await morning(t);
+    const tape = tapeOf(t, fx.battleId);
+    expect(tape.actions.find((a) => a.symbolOut === 'AMD').replay.missingInputs).toEqual(['exitPrice']);
+    expect(tape.coverage.replay.status).toBe('partial');
+    expect(tape.passes.candles.status).toBe('written');                         // a recorded input no fetch can supply
+  });
+
+  it('AD4-2: the read-out of a split with null parts — every null printed —, never 0; each missing input named; a stale bar\'s age; no verdict', async () => {
+    const fx = await capturedDay();
+    fx.battle.trades = fx.battle.trades.map((tr) => (tr.symbolOut === 'AMD' ? { ...tr, exitPrice: undefined } : tr));
+    const t = makeTapeDb(seedDay({}, fx));
+    await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT });
+    // MSFT and NFLX have no bar 16:15–16:35Z: at the 16:30:05 swap both prices are stale
+    const hole = (p) => flatRows(D, p).filter((r) => r.timestamp * 1000 < Date.parse(`${D}T16:15:00.000Z`) || r.timestamp * 1000 >= Date.parse(`${D}T16:35:00.000Z`));
+    await morningWith(t, { ...allBars(), MSFT: hole(PRICES.MSFT), NFLX: hole(PRICES.NFLX) }, MORNING);
+    const lines = formatTapeMarkdown(tapeOf(t, fx.battleId), []).split('\n');
+    for (const line of [
+      '    - the sale, split by cause: recorded exit — vs rebuilt 144 (market) (bar closed 10:30 AM ET), delta — · rescored at the recorded exit — · inputsDelta — + priceDelta — = closedLegDelta -57.5 (rebuilt) · missing inputs: `exitPrice`',
+      '    - the fill: recorded 240 (recorded) vs rebuilt 242 (market) (bar closed 10:30 AM ET), delta 2 (rebuilt)',
+      '    - the sale, split by cause: recorded exit 423.1 (recorded) vs rebuilt — (last bar closed 12:15 PM ET), delta — · rescored at the recorded exit 15 (rebuilt) · inputsDelta 6.75 (rebuilt) + priceDelta — = closedLegDelta — · missing inputs: `price:MSFT@swap`',
+      '    - the fill: recorded 700 (recorded) vs rebuilt — (last bar closed 12:15 PM ET), delta — · missing inputs: `price:NFLX@swap`',
+      '    - missing inputs: `exitPrice`',
+      '    - missing inputs: `price:MSFT@swap`, `price:NFLX@swap`',
+    ]) expect(lines, line).toContain(line);
   });
 });
