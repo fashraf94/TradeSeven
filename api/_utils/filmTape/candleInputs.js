@@ -12,7 +12,9 @@
 //                           reads; per action both legs' replay-input values
 //                           (entry, ATR, tier, direction, threshold history,
 //                           baseline), lockedPoints, the swap instant and
-//                           subsequentTradesInSlot; per plan its id, instant
+//                           subsequentTradesInSlot; per action the recorded
+//                           sale prices its split reads (exit, bought entry —
+//                           BA-38, `salePrices`); per plan its id, instant
 //                           and symbol; the symbol-role set and the sector
 //                           each symbol is compared with. Never a candle-owned
 //                           field (replay, price, series) and never provenance
@@ -36,6 +38,20 @@
 //                           it equals the hash of its inputs on the tape now,
 //                           so a unit kept from an earlier attempt is known
 //                           for what it is (the review's DF2).
+//
+// THE REPLAY LOGIC VERSION (BA-38): a replay's builtFrom also names the replay
+// logic that built it (`replay-v2:<hash>`; the unprefixed hashes of A1 through
+// Amendment C are version 1). A logic change is NOT an input change: the
+// fingerprint never carries the version, so bumping it re-queues nothing by
+// itself — the close pass's merge reads each stored replay's version
+// (replayLogicVersionOf) and re-queues the pass inside the window, or labels
+// the replay outside it (tapeMerge.js mergeCandles).
+//
+// THE SALE PRICES (BA-38): the split reads the trade's exit price and the
+// bought entry (inBasis.price), so both are in the replay's identity and in
+// the fingerprint's `salePrices` part. A stored fingerprint written before that
+// part existed has no such part; a part the stored fingerprint lacks was not
+// recorded when the output was built, so it is no change (changedInputParts).
 //   laterChecks, scoredCheck — the checks a replay samples, shared with the
 //                           replay itself (tapeReplay.js) so the identity and
 //                           the replay can never disagree on them.
@@ -74,7 +90,7 @@ export function symbolPlan(tape) {
 }
 
 /** The fingerprint's parts, in the words the tape uses to name what changed. */
-export const CANDLE_INPUT_PARTS = Object.freeze(['checks', 'evidence', 'actions', 'plans', 'symbols']);
+export const CANDLE_INPUT_PARTS = Object.freeze(['checks', 'evidence', 'actions', 'salePrices', 'plans', 'symbols']);
 
 const digest = (list) => createHash('sha256')
   .update(JSON.stringify([...list].sort((a, b) => (JSON.stringify(a) < JSON.stringify(b) ? -1 : 1))))
@@ -98,6 +114,8 @@ const legValues = (leg) => (isObj(leg)
 export const actionValues = (a) => [orNull(a.key), orNull(a.at), orNull(a.tickSeq), orNull(a.symbolOut), orNull(a.symbolIn),
   orNull(a.replayReason), Array.isArray(a.replayMissing) ? a.replayMissing : [],
   legValues(a.replayInputs?.ghost), legValues(a.replayInputs?.bought), orNull(a.lockedPoints), orNull(a.subsequentTradesInSlot)];
+/** BA-38 — the recorded prices the sale's split reads: the trade's exit price and the bought entry. */
+export const saleValues = (a) => [orNull(a.key), orNull(a.exitPrice), orNull(a.inBasis?.price)];
 /** What a plan's price reads: its id, its instant, its symbol. */
 export const planValues = (p) => [orNull(p.key), orNull(p.at), orNull(p.symbol)];
 
@@ -114,6 +132,7 @@ export function candleInputFingerprint(tape) {
     evidence: digest(checks.filter((c) => isObj(c.evidence)).map((c) => [orNull(c.key), orNull(c.at),
       Object.keys(c.evidence).sort().map((s) => [s, evidenceValues(c.evidence[s])])])),
     actions: digest(rows(tape?.actions).map(actionValues)),
+    salePrices: digest(rows(tape?.actions).map(saleValues)),
     plans: digest(rows(tape?.plans).map(planValues)),
     symbols: digest([
       ...symbolPlan(tape || {}).map((e) => ['role', e.symbol, e.roles.join('+')]),
@@ -148,16 +167,32 @@ export function laterChecks(checks, action, session) {
 }
 
 /**
+ * BA-38 — the replay logic version. Bump it whenever replayAction's output
+ * changes meaning or shape; every replay built by an earlier version is then
+ * re-queued inside its candle window, or labelled outside it. Version 1 is A1
+ * through Amendment C (an unprefixed builtFrom); version 2 adds the sale's
+ * split (reconciliation.soldAtSale, boughtAtSale) and the locked basis.
+ */
+export const REPLAY_LOGIC_VERSION = 2;
+const REPLAY_VERSION_TAG = /^replay-v(\d+):/;
+/** The replay logic version a replay's builtFrom names — 1 for the unprefixed A1 hashes. */
+export function replayLogicVersionOf(builtFrom) {
+  const m = typeof builtFrom === 'string' ? REPLAY_VERSION_TAG.exec(builtFrom) : null;
+  return m ? Number(m[1]) : 1;
+}
+
+/**
  * BA-31 — what one action's replay is built from: the action's own values, the
- * checks it samples, the evidence the reconciliation reads at them, and the
- * sector each leg is compared with.
+ * recorded sale prices its split reads (BA-38), the checks it samples, the
+ * evidence the reconciliation reads at them, and the sector each leg is
+ * compared with — under the replay logic version that builds it (BA-38).
  */
 export function replayBuiltFrom(tape, action, session) {
   const later = laterChecks(tape?.checks, action, session);
   const sectors = isObj(tape?.comparables?.sectors) ? tape.comparables.sectors : {};
-  return unitHash(['replay', actionValues(action), later.map(checkValues),
+  return `replay-v${REPLAY_LOGIC_VERSION}:${unitHash(['replay', actionValues(action), saleValues(action), later.map(checkValues),
     later.map((c) => evidenceValues(isObj(c.evidence) ? c.evidence[action.symbolIn] : null)),
-    [orNull(sectors[action.symbolOut]), orNull(sectors[action.symbolIn])]]);
+    [orNull(sectors[action.symbolOut]), orNull(sectors[action.symbolIn])]])}`;
 }
 
 /** BA-31 — what one plan's price is built from: its id, instant and symbol. */
@@ -167,8 +202,13 @@ export const priceBuiltFrom = (plan) => unitHash(['price', planValues(plan)]);
 export const seriesBuiltFrom = (tape, symbol) => unitHash(['series', symbol,
   rows(tape?.checks).filter(isCheck).map((c) => [Number.isInteger(c.tickSeq) ? c.tickSeq : null, c.at])]);
 
-/** The parts of two fingerprints that differ, in CANDLE_INPUT_PARTS order. */
+/**
+ * The parts of two fingerprints that differ, in CANDLE_INPUT_PARTS order. A
+ * part the stored fingerprint does not have was not recorded when its output
+ * was built (`salePrices`, added by BA-38), so it is no change: what the old
+ * output lacks is the replay logic version's business, not an input's.
+ */
 export function changedInputParts(before, now) {
   if (!isObj(before) || !isObj(now)) return [];
-  return CANDLE_INPUT_PARTS.filter((k) => before[k] !== now[k]);
+  return CANDLE_INPUT_PARTS.filter((k) => k in before && before[k] !== now[k]);
 }

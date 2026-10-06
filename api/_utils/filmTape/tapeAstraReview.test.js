@@ -521,6 +521,7 @@ describe('F4 — BA-25: when the candle pass\'s inputs change, its output is re-
     const enriched = structuredClone(tapeOf(t, fx.battleId));
     expect(enriched.passes.candles.inputFingerprint).toEqual({
       checks: expect.any(String), evidence: expect.any(String), actions: expect.any(String), plans: expect.any(String), symbols: expect.any(String),
+      salePrices: expect.any(String),                                     // BA-38: the recorded sale prices the split reads
     });
     expect((await write(t, fx, MORNING + 3_600_000)).status).toBe('unchanged');
     expect(stableStringify(tapeOf(t, fx.battleId))).toBe(stableStringify(enriched));

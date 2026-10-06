@@ -133,6 +133,8 @@ function sectionChecks(doc) {
 
 /** A null sample shows how old its bar was (BA-24): "— (last bar closed 10:31 AM ET)". */
 const staleNote = (point) => (point && point.barClosedAt ? ` (last bar closed ${etClock(point.barClosedAt)})` : '');
+/** BA-38 — the bar a price at the sale stands on: "(bar closed 12:16 PM ET)"; for a null price, its stale bar. */
+const barClosed = (sample) => (sample?.barClosedAt ? ` (${typeof sample.rebuiltPx === 'number' ? 'bar' : 'last bar'} closed ${etClock(sample.barClosedAt)})` : '');
 
 function pathLine(doc, i, key, r) {
   const path = r[key];
@@ -152,9 +154,28 @@ function replayLines(doc, i, r) {
     `    - bought name, scored from the swap: at the close ${labelled(doc, p('bought', 'atClose'), r.bought?.atClose)} · banked by the sale ${labelled(doc, p('lockedPoints'), r.lockedPoints)}`,
     `    - hold path: ${pathLine(doc, i, 'holdPath', r)}`,
     `    - swap path: ${pathLine(doc, i, 'swapPath', r)}`,
-    `    - gap at the close (banked + bought − sold): ${labelled(doc, p('gapPoints'), r.gapPoints)}`,
+    // BA-38: the gap combines both bases, so its label carries the basis note.
+    `    - gap at the close (banked + bought − sold): ${labelled(doc, p('gapPoints'), r.gapPoints)}${r.lockedBasisNote ? ` — ${quoted(r.lockedBasisNote)}` : ''}`,
     `    - reconciliation — agreement at the sale, not accuracy afterward: closedLegDelta ${labelled(doc, p('reconciliation', 'closedLegDelta'), r.reconciliation?.closedLegDelta)}`,
   ];
+  // BA-38 — the sale split by its two causes, the fill beside its rebuilt
+  // price, and the basis of what was banked. priceDelta is reported, not judged.
+  const sold = r.reconciliation?.soldAtSale;
+  if (sold) {
+    const s = (...rest) => p('reconciliation', 'soldAtSale', ...rest);
+    out.push(`    - the sale, split by cause: recorded exit ${labelled(doc, s('recordedPx'), sold.recordedPx)} vs rebuilt ${labelled(doc, s('rebuiltPx'), sold.rebuiltPx)}${barClosed(sold)}, delta ${labelled(doc, s('pxDelta'), sold.pxDelta)}`
+      + ` · rescored at the recorded exit ${labelled(doc, s('rescoredAtRecordedPx'), sold.rescoredAtRecordedPx)}`
+      + ` · inputsDelta ${labelled(doc, s('inputsDelta'), sold.inputsDelta)} + priceDelta ${labelled(doc, s('priceDelta'), sold.priceDelta)} = closedLegDelta ${labelled(doc, p('reconciliation', 'closedLegDelta'), r.reconciliation?.closedLegDelta)}`
+      + `${(sold.missingInputs || []).length ? ` · missing inputs: ${sold.missingInputs.map(code).join(', ')}` : ''}`);
+  }
+  const fill = r.reconciliation?.boughtAtSale;
+  if (fill) {
+    const f = (...rest) => p('reconciliation', 'boughtAtSale', ...rest);
+    out.push(`    - the fill: recorded ${labelled(doc, f('recordedPx'), fill.recordedPx)} vs rebuilt ${labelled(doc, f('rebuiltPx'), fill.rebuiltPx)}${barClosed(fill)}, delta ${labelled(doc, f('pxDelta'), fill.pxDelta)}`
+      + `${(fill.missingInputs || []).length ? ` · missing inputs: ${fill.missingInputs.map(code).join(', ')}` : ''}`);
+  }
+  if (r.lockedBasis) out.push(`    - banked points and the bought entry: basis ${code(r.lockedBasis)} — ${quoted(r.lockedBasisNote)}`);
+  if (r.note) out.push(`    - note: ${quoted(r.note)}`);
   const bve = r.reconciliation?.boughtVsEvidence;
   if (bve) {
     const b = (...rest) => p('reconciliation', 'boughtVsEvidence', ...rest);

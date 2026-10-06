@@ -37,6 +37,23 @@
 // compares the rebuilt price of the bought name with the price the platform
 // recorded in the first later evidence stamp that carries it.
 //
+// THE SALE, SPLIT BY CAUSE (BA-38): the platform banks a sale, and records the
+// bought entry, at its own quote — about 15–20 minutes delayed — while the
+// replay prices the same instant from completed 1-minute bars. closedLegDelta
+// mixes those two vintages with any genuine scoring-input difference, so
+// `reconciliation.soldAtSale` separates them: the trade's exit price
+// (recordedPx) against the sold name's price at the swap instant (rebuiltPx,
+// BA-24, with its bar's close time), and the IMPORTED scorer run with the
+// ghost leg's own inputs at the recorded price (rescoredAtRecordedPx — the same
+// call the ghost leg makes at the swap, at another price; no local scoring
+// math). inputsDelta = rescoredAtRecordedPx − lockedPoints is the input
+// difference; priceDelta = ghost.atSwap − rescoredAtRecordedPx is the price
+// vintage; when every part exists they sum to closedLegDelta exactly. A part
+// that cannot be computed is null, and the split names the input it lacks —
+// never 0. `boughtAtSale` sets the fill (inBasis.price) beside the bought
+// name's price at the same instant. `lockedBasis` names the platform quote's
+// basis with its fixed note (src/constants/filmTape.js).
+//
 // A RETRY MERGES POINT BY POINT (BA-36, mergeReplay): two replays built from
 // the same inputs (one `builtFrom`) are merged sample by sample, leg by leg —
 // a saved point is never replaced by null, a saved null is no fact and gives
@@ -51,6 +68,7 @@
 // composition.
 
 import { calculateAssetScoreServer } from '../agentScoring.js';
+import { LOCKED_BASIS, LOCKED_BASIS_NOTE } from '../../../src/constants/filmTape.js';
 import { sampleAt, sampleCanExist, pctChange } from './bars.js';
 import { toMs } from './tapeTime.js';
 import { scoredCheck, laterChecks } from './candleInputs.js';
@@ -96,31 +114,90 @@ export function composeLegs({ ghostPts, boughtPts, locked, swap }) {
   };
 }
 
+/** A leg's threshold history as its inputs record it — where its scorer's history starts. */
+const historyOf = (inputs) => ({ maxMultiplier: inputs.thresholdHistory.maxMultiplier, minMultiplier: inputs.thresholdHistory.minMultiplier });
+
+/**
+ * One sample of a leg, scored by the IMPORTED scorer at `price` with the
+ * history carried in: the call the live evaluator makes, from the leg's
+ * recorded inputs. Used for every replay sample and for the sale's rescore
+ * at the recorded price (BA-38), so the two can differ only by the price.
+ */
+function scoreAt({ inputs, symbol, price, history, tierStamp }) {
+  const priceChange = ((price - inputs.entryPrice) / inputs.entryPrice) * 100;
+  const base = inputs.thresholdBaseline.value;
+  const thresholdPriceChange = ((price - base) / base) * 100;
+  // The rebuild carries the MODE-RESOLVED tier stamp, as every live caller
+  // does (flat6TierStamp.passthrough.test.js): null for a tiered battle — the
+  // only mode the tape replays (BA-3) — so the scorer resolves
+  // CONVICTION_MULTIPLIERS[tier] exactly as the live evaluator did.
+  return calculateAssetScoreServer(
+    { symbol, baseATR: inputs.atr, tier: inputs.tier, direction: inputs.direction ?? null, tierMultiplier: tierStamp ?? null },
+    priceChange, history, {}, thresholdPriceChange,
+  );
+}
+
 /**
  * Score one leg along the samples. Returns per-sample points (null where no
  * price) and the value at the close.
  */
 function runLeg({ inputs, symbol, bars, samples, tierStamp }) {
-  let history = { maxMultiplier: inputs.thresholdHistory.maxMultiplier, minMultiplier: inputs.thresholdHistory.minMultiplier };
+  let history = historyOf(inputs);
   const out = [];
   for (const s of samples) {
     const p = sampleAt(bars, s.atMs);
     if (!p || !p.valid) { out.push({ ...s, points: null, missing: true, staleBarClosedAt: p ? p.barClosedAt : null }); continue; }
-    const priceChange = ((p.price - inputs.entryPrice) / inputs.entryPrice) * 100;
-    const base = inputs.thresholdBaseline.value;
-    const thresholdPriceChange = ((p.price - base) / base) * 100;
-    // The rebuild carries the MODE-RESOLVED tier stamp, as every live caller
-    // does (flat6TierStamp.passthrough.test.js): null for a tiered battle — the
-    // only mode the tape replays (BA-3) — so the scorer resolves
-    // CONVICTION_MULTIPLIERS[tier] exactly as the live evaluator did.
-    const r = calculateAssetScoreServer(
-      { symbol, baseATR: inputs.atr, tier: inputs.tier, direction: inputs.direction ?? null, tierMultiplier: tierStamp ?? null },
-      priceChange, history, {}, thresholdPriceChange,
-    );
+    const r = scoreAt({ inputs, symbol, price: p.price, history, tierStamp });
     history = { maxMultiplier: r.history.maxMultiplier, minMultiplier: r.history.minMultiplier };
     out.push({ ...s, points: r.totalPoints, price: p.price, missing: false });
   }
   return out;
+}
+
+/**
+ * A price at the swap instant (BA-24): the last completed minute's close and
+ * its bar's close time when that minute is fresh; a stale bar gives a null
+ * price with its close time beside it; no completed minute, or no bars, gives
+ * neither. `missing` names the input a null price lacks.
+ */
+function saleSample(bars, symbol, atMs) {
+  if (!bars) return { rebuiltPx: null, barClosedAt: null, missing: `bars:${symbol}` };
+  const p = sampleAt(bars, atMs);
+  if (p?.valid) return { rebuiltPx: p.price, barClosedAt: iso(p.barClosedAt), missing: null };
+  return { rebuiltPx: null, barClosedAt: p ? iso(p.barClosedAt) : null, missing: `price:${symbol}@swap` };
+}
+
+/**
+ * BA-38 — the sale split by its two causes, from its parts: the recorded exit
+ * price, the sold name's price at the swap instant (and its bar's close
+ * time), the rescore at the recorded price, lockedPoints, and the rebuilt
+ * ghost at the swap. Every difference is null unless both of its operands
+ * exist; `missingInputs` names what the null parts lack. One composition, used
+ * by the build and by a merge (BA-36), so a merged split is stated exactly as
+ * a built one.
+ */
+export function composeSoldAtSale({ recordedPx, rebuiltPx, barClosedAt, rescored, locked, ghostAtSwap, missingInputs }) {
+  return {
+    recordedPx: isNum(recordedPx) ? recordedPx : null,
+    rebuiltPx: isNum(rebuiltPx) ? rebuiltPx : null,
+    barClosedAt: barClosedAt ?? null,
+    pxDelta: isNum(rebuiltPx) && isNum(recordedPx) ? round2(rebuiltPx - recordedPx) : null,
+    rescoredAtRecordedPx: isNum(rescored) ? rescored : null,
+    inputsDelta: isNum(rescored) && isNum(locked) ? round2(rescored - locked) : null,
+    priceDelta: isNum(ghostAtSwap) && isNum(rescored) ? round2(ghostAtSwap - rescored) : null,
+    missingInputs: [...new Set(missingInputs || [])],
+  };
+}
+
+/** BA-38 — the fill (inBasis.price) beside the bought name's price at the swap instant. */
+export function composeBoughtAtSale({ recordedPx, rebuiltPx, barClosedAt, missingInputs }) {
+  return {
+    recordedPx: isNum(recordedPx) ? recordedPx : null,
+    rebuiltPx: isNum(rebuiltPx) ? rebuiltPx : null,
+    barClosedAt: barClosedAt ?? null,
+    pxDelta: isNum(rebuiltPx) && isNum(recordedPx) ? round2(rebuiltPx - recordedPx) : null,
+    missingInputs: [...new Set(missingInputs || [])],
+  };
 }
 
 /**
@@ -183,6 +260,31 @@ export function replayAction({ action, checks, barsBySymbol, session, sectors = 
     swap: { tickSeq: samples[0].tickSeq, at: iso(samples[0].atMs) },
   });
 
+  // BA-38 — the sale, split by cause. The rescore is the ghost leg's own call
+  // at the swap (its recorded inputs and history, the swap price as baseline)
+  // with the recorded exit price in place of the rebuilt one.
+  const exitPx = isNum(action.exitPrice) ? action.exitPrice : null;
+  const outAt = saleSample(barsOut, action.symbolOut, swapMs);
+  const rescored = inputs.ghost && exitPx !== null
+    ? scoreAt({ inputs: inputs.ghost, symbol: action.symbolOut, price: exitPx, history: historyOf(inputs.ghost), tierStamp }).totalPoints
+    : null;
+  const ghostNamed = (action.replayMissing || []).filter((n) => n.startsWith('ghost.'));
+  const soldAtSale = composeSoldAtSale({
+    recordedPx: exitPx, rebuiltPx: outAt.rebuiltPx, barClosedAt: outAt.barClosedAt, rescored, locked, ghostAtSwap: legs.ghost?.atSwap ?? null,
+    missingInputs: [
+      ...(exitPx === null ? ['exitPrice'] : []),
+      ...(inputs.ghost ? [] : (ghostNamed.length ? ghostNamed : ['replayInputs.ghost'])),
+      ...(locked === null ? ['lockedPoints'] : []),
+      ...(outAt.missing ? [outAt.missing] : []),
+    ],
+  });
+  const fillPx = isNum(action.inBasis?.price) ? action.inBasis.price : null;
+  const inAt = saleSample(barsIn, action.symbolIn, swapMs);
+  const boughtAtSale = composeBoughtAtSale({
+    recordedPx: fillPx, rebuiltPx: inAt.rebuiltPx, barClosedAt: inAt.barClosedAt,
+    missingInputs: [...(fillPx === null ? ['inBasis.price'] : []), ...(inAt.missing ? [inAt.missing] : [])],
+  });
+
   // Reconciliation — the bought name against its first recorded evidence.
   let boughtVsEvidence = null;
   if (barsIn && inputs.bought) {
@@ -231,13 +333,15 @@ export function replayAction({ action, checks, barsBySymbol, session, sectors = 
     label: REPLAY_LABEL,
     closeAt: iso(session.closeMs),
     lockedPoints: locked,
+    lockedBasis: LOCKED_BASIS,
+    lockedBasisNote: LOCKED_BASIS_NOTE,
     subsequentTradesInSlot: action.subsequentTradesInSlot ?? null,
     ghost: legs.ghost,
     bought: legs.bought,
     holdPath: legs.holdPath,
     swapPath: legs.swapPath,
     gapPoints: legs.gapPoints,
-    reconciliation: { closedLegDelta: legs.closedLegDelta, boughtVsEvidence },
+    reconciliation: { closedLegDelta: legs.closedLegDelta, boughtVsEvidence, soldAtSale, boughtAtSale },
     marketChangeAfter,
     sectorChangeAfter,
     missingInputs: [...new Set(missingInputs)],
@@ -252,12 +356,13 @@ export const replayRank = (r) => (r ? (r.gapPoints !== null ? 1000 : 0) + ((r.gh
 
 const hasPoint = (e) => isNum(e?.points);
 
-/** Does a replay hold any fact — a scored point, a reconciliation, a comparable (BA-31: a unit that "exists")? */
+/** Does a replay hold any fact — a scored point, a reconciliation, a price at the sale, a comparable (BA-31: a unit that "exists")? */
 export function replayHasFact(r) {
   if (!r) return false;
   const legs = legSamples(r);
   return [legs.ghost, legs.bought].some((list) => Array.isArray(list) && list.some(hasPoint))
     || Boolean(r.reconciliation?.boughtVsEvidence)
+    || isNum(r.reconciliation?.soldAtSale?.rebuiltPx) || isNum(r.reconciliation?.boughtAtSale?.rebuiltPx)
     || [...Object.values(r.marketChangeAfter || {}), ...Object.values(r.sectorChangeAfter || {})].some(isNum);
 }
 
@@ -338,6 +443,18 @@ function legNames(symbol, leg, merged, sides, named) {
   return out;
 }
 
+/**
+ * BA-38 — which attempt's price at the sale a merge keeps, by the leg rule: a
+ * saved price is never replaced by null; a saved null gives way to a price,
+ * or to a null whose stale bar it lacks; where both hold a price the more
+ * complete replay's stands. Returns 's' or 'f'.
+ */
+function saleSide(s, f, storedWins) {
+  const px = (x) => isNum(x?.rebuiltPx);
+  if (px(s)) return !px(f) || storedWins ? 's' : 'f';
+  return px(f) || !s?.barClosedAt || (f?.barClosedAt && !storedWins) ? 'f' : 's';
+}
+
 /** Keyed market changes (marketChangeAfter, sectorChangeAfter), key by key, by the same rule. */
 function mergeKeyed(s, f, storedWins) {
   const out = {};
@@ -372,6 +489,21 @@ export function mergeReplay(stored, fresh, { symbolOut, symbolIn }) {
   const sB = stored.reconciliation?.boughtVsEvidence ?? null;
   const fB = fresh.reconciliation?.boughtVsEvidence ?? null;
   const boughtVsEvidence = !sB ? fB : (!fB ? sB : (storedWins ? sB : fB));
+  // BA-38 — the sale's split, composed from the merged parts as a build
+  // composes it: the sold name's price at the swap from the attempt whose swap
+  // point the merged ghost leg kept (the same sample), the rescore and the
+  // recorded prices from the action (the same on both: one builtFrom).
+  const sS = stored.reconciliation?.soldAtSale ?? null;
+  const fS = fresh.reconciliation?.soldAtSale ?? null;
+  const soldFrom = (ghost ? ghost.from[0] : saleSide(sS, fS, storedWins)) === 's' ? (sS ?? fS) : (fS ?? sS);
+  const soldAtSale = soldFrom ? composeSoldAtSale({
+    recordedPx: soldFrom.recordedPx, rebuiltPx: soldFrom.rebuiltPx, barClosedAt: soldFrom.barClosedAt,
+    rescored: soldFrom.rescoredAtRecordedPx, locked, ghostAtSwap: legs.ghost?.atSwap ?? null, missingInputs: soldFrom.missingInputs,
+  }) : null;
+  const sF = stored.reconciliation?.boughtAtSale ?? null;
+  const fF = fresh.reconciliation?.boughtAtSale ?? null;
+  const boughtFrom = saleSide(sF, fF, storedWins) === 's' ? (sF ?? fF) : (fF ?? sF);
+  const boughtAtSale = boughtFrom ? composeBoughtAtSale(boughtFrom) : null;
 
   const named = [...new Set([...(fresh.missingInputs || []), ...(stored.missingInputs || [])])];
   const keep = new Set(named.filter((n) => !n.startsWith('bars:') && !n.startsWith('price:')));
@@ -398,7 +530,7 @@ export function mergeReplay(stored, fresh, { symbolOut, symbolIn }) {
     holdPath: legs.holdPath,
     swapPath: legs.swapPath,
     gapPoints: legs.gapPoints,
-    reconciliation: { closedLegDelta: legs.closedLegDelta, boughtVsEvidence },
+    reconciliation: { closedLegDelta: legs.closedLegDelta, boughtVsEvidence, soldAtSale, boughtAtSale },
     marketChangeAfter,
     sectorChangeAfter,
     missingInputs,

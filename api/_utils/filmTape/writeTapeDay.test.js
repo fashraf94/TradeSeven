@@ -29,6 +29,7 @@ import {
 } from './__fixtures__/tapeFixtures.js';
 import { numbersWithClasses, formatNumberPath, COVERAGE_SECTIONS, CANDLE_COVERAGE_SECTIONS, PROVENANCE_CLASSES } from '../../../src/constants/filmTape.js';
 import { stableStringify } from './tapeMerge.js';
+import { REPLAY_LOGIC_VERSION } from './candleInputs.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
@@ -462,7 +463,8 @@ describe('BA-19 — merge-monotone', () => {
     const candleWrite = async (db) => {
       const cur = t.store.get(path);
       await db.collection('agentBattles').doc(fx.battleId).collection('tape').doc(fx.etDate).update({
-        actions: cur.actions.map((a) => ({ ...a, replay: { basis: 'rebuilt_1m_at_checks', gapPoints: 1.5 } })),
+        // a replay the current replay logic built (BA-38: its builtFrom names the version)
+        actions: cur.actions.map((a) => ({ ...a, replay: { basis: 'rebuilt_1m_at_checks', gapPoints: 1.5, builtFrom: `replay-v${REPLAY_LOGIC_VERSION}:stub` } })),
         plans: cur.plans.map((p) => ({ ...p, price: { atPlan: { value: 701, at: 'x', basis: 'last_completed_minute' }, atClose: { value: 705, at: 'y', basis: 'last_completed_minute' } } })),
         'passes.candles': { ...cur.passes.candles, status: 'written', attempts: 1, writtenAt: 'candles-at' },
         'coverage.replay': { status: 'complete', span: null, sources: ['eodhd_1m'], preservedFrom: null, note: 'CANDLE' },
@@ -489,7 +491,7 @@ describe('BA-19 — merge-monotone', () => {
     inject = async (db) => {
       const cur = t.store.get(path);
       await db.collection('agentBattles').doc(fx.battleId).collection('tape').doc(fx.etDate).update({
-        actions: cur.actions.map((a) => ({ ...a, replay: { basis: 'rebuilt_1m_at_checks', gapPoints: 2.5 } })),
+        actions: cur.actions.map((a) => ({ ...a, replay: { basis: 'rebuilt_1m_at_checks', gapPoints: 2.5, builtFrom: `replay-v${REPLAY_LOGIC_VERSION}:stub` } })),
       });
     };
     await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: NOW + 120_000 });

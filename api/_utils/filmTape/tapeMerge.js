@@ -30,12 +30,18 @@
 //     (`expired`, `exhausted`) keeps its status (BA-32). Every way,
 //     `changedInputs` names what changed, and the output built before the
 //     change stays, labelled, until replaced.
+//   · A replay built by an earlier REPLAY LOGIC (BA-38: its builtFrom names
+//     the version) is not an input change: inside the window a written,
+//     partial or failed pass is re-queued with reason `replay_logic_updated`
+//     and the next candle run rebuilds it; outside the window the pass keeps
+//     its status. Either way, until it is rebuilt the replay itself says so
+//     (`note`: REPLAY_VERSION_NOTE).
 //   · Nothing changed → no write at all, so the stored bytes stand.
 
 import { createHash } from 'node:crypto';
-import { COVERAGE_RANK, CANDLE_COVERAGE_SECTIONS } from '../../../src/constants/filmTape.js';
+import { COVERAGE_RANK, CANDLE_COVERAGE_SECTIONS, REPLAY_VERSION_NOTE } from '../../../src/constants/filmTape.js';
 import { orderChecks, afterOf, subsequentTradesInSlot } from './tapeAssemble.js';
-import { candleInputFingerprint, changedInputParts } from './candleInputs.js';
+import { candleInputFingerprint, changedInputParts, replayLogicVersionOf, REPLAY_LOGIC_VERSION } from './candleInputs.js';
 import { toMs, etDayBounds } from './tapeTime.js';
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -387,7 +393,8 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
   // before a refresh re-read the day — keeps the tier and slot the tape
   // recorded, so the count, and the candle input identity built from it
   // (BA-31), do not move (review R2-2).
-  merged.actions = merged.actions.map((row, _, rows) => ({ ...row, subsequentTradesInSlot: subsequentTradesInSlot(row, rows) }));
+  // BA-38: a replay an earlier replay logic built says so until it is rebuilt.
+  merged.actions = merged.actions.map((row, _, rows) => ({ ...row, subsequentTradesInSlot: subsequentTradesInSlot(row, rows), replay: versionNoted(row.replay) }));
 
   // Object sections: value units are never swapped for an emptier read.
   const sScore = isObj(stored.score) ? stored.score : {};
@@ -483,6 +490,15 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
   return finish(stored, merged, nowIso, carried);
 }
 
+/** BA-38 — was this replay built by an earlier replay logic than the one that builds replays now? */
+const builtByEarlierLogic = (replay) => isObj(replay) && replayLogicVersionOf(replay.builtFrom) < REPLAY_LOGIC_VERSION;
+
+/** BA-38 — a replay an earlier replay logic built, with the note that says so (replacing, never stacking). */
+function versionNoted(replay) {
+  if (!builtByEarlierLogic(replay) || replay.note === REPLAY_VERSION_NOTE) return replay ?? null;
+  return { ...replay, note: REPLAY_VERSION_NOTE };
+}
+
 function mergeCandles(stored, assembled, merged, { withinWindow }) {
   const sc = stored.passes?.candles;
   if (!isObj(sc) || sc.reason === 'close_pass_failed') return assembled.passes.candles;
@@ -501,7 +517,15 @@ function mergeCandles(stored, assembled, merged, { withinWindow }) {
   if (grewPlans) parts.push('plans');
   const changed = [...new Set(parts)].sort((a, b) => PART_ORDER.indexOf(a) - PART_ORDER.indexOf(b));
   // Nothing was built yet (never processed): nothing to re-queue or label.
-  if (!changed.length || (!isObj(sc.inputFingerprint) && !['written', 'partial', 'failed'].includes(sc.status))) return sc;
+  if (!changed.length || (!isObj(sc.inputFingerprint) && !['written', 'partial', 'failed'].includes(sc.status))) {
+    // BA-38: a replay an earlier replay logic built is no input change. Inside
+    // the window retryable work is re-queued so the next candle run rebuilds
+    // it; outside it, or for a terminal pass (BA-32), the status stands — the
+    // replay's own note says what it lacks (versionNoted).
+    const outdated = (merged.actions || []).some((a) => builtByEarlierLogic(a?.replay));
+    if (outdated && withinWindow && ['written', 'partial', 'failed'].includes(sc.status)) return { ...sc, status: 'pending', reason: 'replay_logic_updated', attempts: 0 };
+    return sc;
+  }
   const reason = grewActions || grewPlans || improved ? 'sources_changed' : 'inputs_changed';
   // Retryable work inside the window is re-queued. A TERMINAL pass never is
   // (BA-32; the BA-25 reading): no candle query selects it again.
@@ -516,7 +540,7 @@ function mergeCandles(stored, assembled, merged, { withinWindow }) {
   return { ...sc, changedInputs: changed };
 }
 
-const PART_ORDER = ['checks', 'evidence', 'actions', 'plans', 'symbols'];
+const PART_ORDER = ['checks', 'evidence', 'actions', 'salePrices', 'plans', 'symbols'];
 const BUILT_BEFORE = 'built before the candle inputs changed';
 
 /** Whether a candle pass is still to come for this output, in the label's words — never for a terminal pass (BA-32). */
