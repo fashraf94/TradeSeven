@@ -373,7 +373,12 @@ export function formatTapeMarkdown(doc, seriesDocs = []) {
         + `${isNum(dc?.reference) ? ` · against ${labelled(doc, s('dayChange', 'reference'), dc.reference)}${dc.referenceEtDate ? ` of ${code(dc.referenceEtDate)}` : ''}` : ''}`,
       '', "## Battle (shown apart from the day's score)",
       `- status ${doc.battle?.status ?? '—'} · completed ${code(doc.battle?.completedAt)} · result: ${doc.battle?.result?.value ?? '—'} (basis ${doc.battle?.result?.basis ? code(doc.battle.result.basis) : '—'})`
+        + (doc.battle?.result?.note ? ` · ${quoted(doc.battle.result.note)}` : '')
         + (doc.battle?.final ? ` · final ${labelled(doc, ['battle', 'final', 'total'], doc.battle.final.total)} vs ${labelled(doc, ['battle', 'final', 'opponent'], doc.battle.final.opponent)}` : ''),
+      // BA-39: the platform's own words at completion, labelled as the platform's — never the agent's.
+      ...(doc.battle?.completionMessage
+        ? [`- Platform recorded at completion: ${quoted(doc.battle.completionMessage.text)} — at ${etClock(doc.battle.completionMessage.at)} · ${code(doc.battle.completionMessage.at)}`]
+        : []),
       '', sectionChecks(doc), '', sectionActions(doc), '', sectionDirectives(doc), '', sectionPlans(doc), '', sectionCalls(doc),
       '', sectionRationale(doc), '', sectionEvidence(doc), '', sectionReplay(doc), '', sectionSeries(doc, seriesDocs),
       '', '## Comparables and diagnostics',

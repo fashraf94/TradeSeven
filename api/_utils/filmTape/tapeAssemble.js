@@ -747,21 +747,59 @@ export function buildScore({ battle, etDate, tickRowsScored, rawTickBySeq, entry
   return { lastCheck, firstCheck, dayChange };
 }
 
+/** BA-39 — what a missing final score is called in a result's note. */
+const SCORE_NAMES = Object.freeze({ total: 'agent score', opponent: 'opponent score' });
+
+/**
+ * BA-39 — a battle's result from its completion block's own facts. A `stored`
+ * result (a result field the platform wrote) wins. Otherwise a result is
+ * derived only for a completed battle whose two final scores are both
+ * recorded finite numbers, by `derive` — the comparison completion uses,
+ * over those two scores. A missing score gives no result: null, basis
+ * `unavailable`, and a note naming the missing score — never a draw read
+ * from a score that was never written. One rule, used by the assembly and by
+ * every merge (tapeMerge.js recomputes it from the merged final scores).
+ */
+export function battleResultOf({ status, stored = null, final = null, derive = null }) {
+  if (stored) return { value: stored, basis: 'stored' };
+  if (status !== 'completed') return { value: null, basis: 'not_completed' };
+  const missing = ['total', 'opponent'].filter((k) => num(final?.[k]) === null);
+  if (missing.length) return { value: null, basis: 'unavailable', note: `${missing.map((k) => SCORE_NAMES[k]).join(' and ')} never recorded` };
+  return { value: derive ? derive(final) : null, basis: 'derived' };
+}
+
+/**
+ * BA-39 — the platform's own words at completion: the last `battle_complete`
+ * statusFeed entry's message, copied verbatim with its time (the completion
+ * writes it with `timestamp`, agent-evaluate.js completeBattle). Recorded
+ * platform text — never the agent's words. Null when the feed holds none.
+ */
+export function completionMessageOf(battle) {
+  const feed = Array.isArray(battle?.statusFeed) ? battle.statusFeed : [];
+  for (let i = feed.length - 1; i >= 0; i -= 1) {
+    const e = feed[i];
+    if (isObj(e) && e.action === 'battle_complete' && typeof e.message === 'string') return { text: e.message, at: str(e.timestamp) };
+  }
+  return null;
+}
+
 export function buildBattleBlock({ battle, resolveResult }) {
   const status = str(battle?.status);
   const completed = status === 'completed';
   const stored = ['win', 'loss', 'draw'].includes(battle?.result) ? battle.result : null;
-  let result;
-  if (stored) result = { value: stored, basis: 'stored' };
-  else if (completed) result = { value: resolveResult ? resolveResult(battle) : null, basis: 'derived' };
-  else result = { value: null, basis: 'not_completed' };
+  const final = completed
+    ? { total: num(battle?.scoreState?.currentScore), opponent: num(battle?.scoreState?.opponentScore), at: str(battle?.completedAt) }
+    : null;
+  // BA-39: the comparison runs over the two recorded final scores, and only when both exist.
+  const derive = resolveResult
+    ? (f) => resolveResult({ ...battle, scoreState: { ...(isObj(battle?.scoreState) ? battle.scoreState : {}), currentScore: f.total, opponentScore: f.opponent } })
+    : null;
   return {
     status,
     completedAt: str(battle?.completedAt),
-    final: completed
-      ? { total: num(battle?.scoreState?.currentScore), opponent: num(battle?.scoreState?.opponentScore), at: str(battle?.completedAt) }
-      : null,
-    result,
+    final,
+    result: battleResultOf({ status, stored, final, derive }),
+    completionMessage: completed ? completionMessageOf(battle) : null,
   };
 }
 

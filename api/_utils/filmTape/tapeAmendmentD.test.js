@@ -38,7 +38,10 @@ import { sessionBars } from './bars.js';
 import { sessionFor } from './tapeTime.js';
 import { formatTapeMarkdown } from './tapeExport.js';
 import { makeTapeDb } from './__fixtures__/tapeFirestore.js';
-import { seedDay, capturedDay } from './__fixtures__/tapeFixtures.js';
+import { seedDay, capturedDay, completedDay } from './__fixtures__/tapeFixtures.js';
+import { buildBattleBlock } from './tapeAssemble.js';
+import { mergeTape } from './tapeMerge.js';
+import { resolveBattleResult } from './battleResult.js';
 import { flatRows, fetcherOf } from './__fixtures__/tapeBars.js';
 import { numbersWithClasses, formatNumberPath, PROVENANCE_CLASSES } from '../../../src/constants/filmTape.js';
 
@@ -378,5 +381,155 @@ describe('BA-38 (Q1) — the replay logic version: a logic change is not an inpu
     const amd = tapeOf(t, fx.battleId).actions.find((a) => a.symbolOut === 'AMD');
     expect(amd.replay.reconciliation.soldAtSale.recordedPx).toBe(144.9);
     expect(amd.replay.builtFrom).toBe(replayBuiltFrom(tapeOf(t, fx.battleId), amd, sessionFor(D)));
+  });
+});
+
+// ── BA-39 (Q2) — no result from a missing score; the platform's own words ────
+//
+// ogbLFLndtIumeO0zZVT9 (discovery report §2): deployed after the close, never
+// scored, completed the next morning as 0 vs an opponent score that was never
+// written. The platform's completion read the missing operand as 0, wrote
+// "… Result: Draw." to its statusFeed and a draw to the agent's record, and
+// no `result` field — so the tape derived a draw from a missing score.
+
+const COMPLETED_AT = '2026-09-24T20:05:00.000Z';
+const DRAW_TEXT = 'Battle complete. Agent: +0.0 pts vs CPU: +0.0 pts. Result: Draw.';
+const completionEntry = (over = {}) => ({ timestamp: COMPLETED_AT, message: DRAW_TEXT, action: 'battle_complete', source: 'system', score: 0, ...over });
+
+/** The ogbLF shape over the completed fixture day: final 0, the opponent's score never written, the platform's completion in its feed. */
+async function neverScoredDay({ battleId = 'b-never-scored', feed = null } = {}) {
+  const fx = await completedDay({ battleId });
+  const { opponentScore: _never, ...scoreState } = fx.battle.scoreState;
+  fx.battle.scoreState = { ...scoreState, currentScore: 0 };
+  fx.battle.statusFeed = feed ?? [
+    { timestamp: '2026-09-24T12:00:00.000Z', message: 'Agent opened the conversation.', action: 'first_message' },
+    completionEntry(),
+  ];
+  return fx;
+}
+
+describe('BA-39 (Q2) — a battle result is derived only from two recorded final scores', () => {
+  it('Q2: final 0 vs an absent opponent gives result null, basis unavailable, with a note naming the missing score — the comparison is never run', () => {
+    const resolveResult = vi.fn(() => 'draw');
+    const battle = { status: 'completed', completedAt: COMPLETED_AT, gameMode: 'baggerbomb_agent', scoreState: { currentScore: 0 } };
+    const block = buildBattleBlock({ battle, resolveResult });
+    expect(block.final).toEqual({ total: 0, opponent: null, at: COMPLETED_AT });
+    expect(block.result).toEqual({ value: null, basis: 'unavailable', note: 'opponent score never recorded' });
+    expect(resolveResult).not.toHaveBeenCalled();
+    expect(buildBattleBlock({ battle: { ...battle, scoreState: { opponentScore: 3 } }, resolveResult }).result)
+      .toEqual({ value: null, basis: 'unavailable', note: 'agent score never recorded' });
+    expect(buildBattleBlock({ battle: { ...battle, scoreState: {} }, resolveResult }).result)
+      .toEqual({ value: null, basis: 'unavailable', note: 'agent score and opponent score never recorded' });
+    expect(resolveResult).not.toHaveBeenCalled();
+  });
+
+  it('Q2 GUARD: two recorded scores — 0 vs 0 included — still give the comparison completion uses', () => {
+    const battle = { status: 'completed', completedAt: COMPLETED_AT, gameMode: 'baggerbomb_agent', scoreState: { currentScore: 0, opponentScore: 0 } };
+    expect(buildBattleBlock({ battle, resolveResult: resolveBattleResult }).result).toEqual({ value: 'draw', basis: 'derived' });
+    expect(buildBattleBlock({ battle: { ...battle, scoreState: { currentScore: 46, opponentScore: 36 } }, resolveResult: resolveBattleResult }).result)
+      .toEqual({ value: 'win', basis: 'derived' });
+  });
+
+  it('Q2: through the writer — the never-scored battle\'s tape records no result, and says which score is missing', async () => {
+    const fx = await neverScoredDay();
+    const t = makeTapeDb(seedDay({}, fx));
+    await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT });
+    const tape = tapeOf(t, fx.battleId);
+    expect(tape.battle.final).toEqual({ total: 0, opponent: null, at: COMPLETED_AT });
+    expect(tape.battle.result).toEqual({ value: null, basis: 'unavailable', note: 'opponent score never recorded' });
+  });
+
+  it('Q2: a stored tape that already carries the derived "draw", re-merged, becomes unavailable', async () => {
+    const fx = await neverScoredDay();
+    const t = makeTapeDb(seedDay({}, fx));
+    await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT });
+    // the tape as the first close pass wrote it on 2026-09-28: a draw derived from the missing operand
+    const stored = tapeOf(t, fx.battleId);
+    t.store.set(tapePath(fx.battleId), { ...stored, battle: { status: 'completed', completedAt: COMPLETED_AT, final: { total: 0, opponent: null, at: COMPLETED_AT }, result: { value: 'draw', basis: 'derived' } } });
+    const r = await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT + 60_000 });
+    expect(r.status).toBe('written');
+    expect(tapeOf(t, fx.battleId).battle.result).toEqual({ value: null, basis: 'unavailable', note: 'opponent score never recorded' });
+  });
+
+  it('Q2: the result is recomputed from the merged final scores on every merge — never kept by rank, even when the stored block wins the tie', async () => {
+    const fx = await neverScoredDay();
+    const t = makeTapeDb(seedDay({}, fx));
+    await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT });
+    const tape = tapeOf(t, fx.battleId);
+    // no canonical re-read: on equal lifecycle rank the stored completion block stands (BA-27 amended) — its result does not
+    const drawn = { ...tape, battle: { ...tape.battle, result: { value: 'draw', basis: 'derived' } } };
+    expect(mergeTape(drawn, structuredClone(tape), { nowIso: new Date(NIGHT + 60_000).toISOString(), withinWindow: true }).doc.battle.result)
+      .toEqual({ value: null, basis: 'unavailable', note: 'opponent score never recorded' });
+    // a stored block whose derived result disagrees with its own final scores: the scores decide
+    const scored = { ...tape, battle: { ...tape.battle, final: { total: 9, opponent: 50, at: COMPLETED_AT }, result: { value: 'win', basis: 'derived' } } };
+    const assembled = { ...structuredClone(tape), battle: { ...scored.battle } };
+    expect(mergeTape(scored, assembled, { nowIso: new Date(NIGHT + 60_000).toISOString(), withinWindow: true }).doc.battle.result)
+      .toEqual({ value: 'loss', basis: 'derived' });
+  });
+
+  it('Q2 GUARD: a stored basis — a result field the platform wrote — still wins, missing score or not', async () => {
+    const fx = await neverScoredDay();
+    fx.battle.result = 'draw';
+    const t = makeTapeDb(seedDay({}, fx));
+    await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT });
+    const tape = tapeOf(t, fx.battleId);
+    expect(tape.battle.result).toEqual({ value: 'draw', basis: 'stored' });
+    expect(mergeTape(tape, structuredClone(tape), { nowIso: new Date(NIGHT + 60_000).toISOString(), withinWindow: true }).doc.battle.result)
+      .toEqual({ value: 'draw', basis: 'stored' });
+  });
+
+  it('Q2: a final day written before the fix is re-merged once by the backfill, then reads already done', async () => {
+    const fx = await neverScoredDay();
+    const t = makeTapeDb(seedDay({}, fx));
+    await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT });
+    const stored = tapeOf(t, fx.battleId);
+    t.store.set(tapePath(fx.battleId), { ...stored, battle: { status: 'completed', completedAt: COMPLETED_AT, final: { total: 0, opponent: null, at: COMPLETED_AT }, result: { value: 'draw', basis: 'derived' } } });
+    const first = await runBackfill({ db: t.db, clock: () => INSIDE, startMs: INSIDE, dates: [D] });
+    expect(first.written.map((x) => x.battleId)).toEqual([fx.battleId]);
+    expect(tapeOf(t, fx.battleId).battle.result.basis).toBe('unavailable');
+    const second = await runBackfill({ db: t.db, clock: () => INSIDE + 60_000, startMs: INSIDE + 60_000, dates: [D] });
+    expect(second.alreadyDone.map((x) => x.battleId)).toEqual([fx.battleId]);
+  });
+});
+
+describe('BA-39 (Q2) — battle.completionMessage: the platform\'s own words at completion, verbatim', () => {
+  it('Q2: the battle_complete statusFeed message is copied verbatim with its time', async () => {
+    const fx = await neverScoredDay();
+    const t = makeTapeDb(seedDay({}, fx));
+    await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT });
+    expect(tapeOf(t, fx.battleId).battle.completionMessage).toEqual({ text: DRAW_TEXT, at: COMPLETED_AT });
+  });
+
+  it('Q2: verbatim means byte for byte — spacing kept; the LAST battle_complete entry (a repair writes another); no other action\'s message', async () => {
+    const odd = '  Battle complete.  Agent: +0.0 pts vs CPU: +0.0 pts.\nResult: Draw. ';
+    const fx = await neverScoredDay({
+      feed: [
+        completionEntry({ timestamp: '2026-09-24T20:00:30.000Z', message: 'Battle complete. Agent: +1.0 pts vs CPU: +0.0 pts. Result: Win.' }),
+        completionEntry({ message: odd }),
+        { timestamp: '2026-09-24T20:06:00.000Z', message: 'Something after.', action: 'hold', source: 'system' },
+      ],
+    });
+    const t = makeTapeDb(seedDay({}, fx));
+    await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT });
+    expect(tapeOf(t, fx.battleId).battle.completionMessage).toEqual({ text: odd, at: COMPLETED_AT });
+  });
+
+  it('Q2: no battle_complete entry, or a battle still active — no completion message', async () => {
+    const fx = await neverScoredDay({ feed: [{ timestamp: '2026-09-24T12:00:00.000Z', message: 'Agent opened the conversation.', action: 'first_message' }] });
+    const t = makeTapeDb(seedDay({}, fx));
+    await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT });
+    expect(tapeOf(t, fx.battleId).battle.completionMessage).toBeNull();
+    const active = buildBattleBlock({ battle: { status: 'active', statusFeed: [completionEntry()] }, resolveResult: resolveBattleResult });
+    expect(active.completionMessage).toBeNull();
+  });
+
+  it('Q2: the read-out prints "Platform recorded at completion: “…”" with its time, beside the tape\'s "unavailable" and the missing score', async () => {
+    const fx = await neverScoredDay();
+    const t = makeTapeDb(seedDay({}, fx));
+    await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT });
+    const md = formatTapeMarkdown(tapeOf(t, fx.battleId), []);
+    expect(md).toContain('result: — (basis `unavailable`) · “opponent score never recorded”');
+    expect(md).toContain(`- Platform recorded at completion: “${DRAW_TEXT}” — at 4:05 PM ET · \`${COMPLETED_AT}\``);
+    expect(md).not.toContain('UNCLASSIFIED');
   });
 });

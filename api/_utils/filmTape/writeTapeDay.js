@@ -135,7 +135,8 @@ export async function writeTapeDay(battleId, etDate, opts = {}) {
       doc = stableStringify(now) === stableStringify(battle) ? assembled : assembleFrom(now);
       canonicalBattle = true;
     }
-    const { doc: merged, changed } = mergeTape(stored, doc, { nowIso, withinWindow, canonicalBattle });
+    // BA-39: the merge recomputes the result with the same comparison the assembly used.
+    const { doc: merged, changed } = mergeTape(stored, doc, { nowIso, withinWindow, canonicalBattle, resolveResult: opts.resolveResult ?? resolveBattleResult });
     if (changed) tx.set(ref, merged);
     outcome = { doc: merged, changed };
   });

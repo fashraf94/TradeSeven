@@ -40,7 +40,8 @@
 
 import { createHash } from 'node:crypto';
 import { COVERAGE_RANK, CANDLE_COVERAGE_SECTIONS, REPLAY_VERSION_NOTE } from '../../../src/constants/filmTape.js';
-import { orderChecks, afterOf, subsequentTradesInSlot } from './tapeAssemble.js';
+import { orderChecks, afterOf, subsequentTradesInSlot, battleResultOf } from './tapeAssemble.js';
+import { resolveBattleResult } from './battleResult.js';
 import { candleInputFingerprint, changedInputParts, replayLogicVersionOf, REPLAY_LOGIC_VERSION } from './candleInputs.js';
 import { toMs, etDayBounds } from './tapeTime.js';
 
@@ -208,7 +209,11 @@ function mergeUnit(storedUnit, newUnit, rank) {
   return rank(newUnit) >= rank(storedUnit) ? newUnit : storedUnit;
 }
 
-const RESULT_RANK = { not_completed: 0, derived: 1, stored: 2 };
+// BA-39: `unavailable` (no result from a missing score) is the tape's own
+// reading of the final scores, as `derived` is; only a stored result outranks
+// them. The rank decides between blocks that tell the SAME completion; the
+// result itself is recomputed from the merged final scores on every merge.
+const RESULT_RANK = { not_completed: 0, unavailable: 1, derived: 1, stored: 2 };
 /** BA-27 — a battle's lifecycle only moves forward: completed is terminal. */
 const LIFECYCLE_RANK = Object.freeze({ active: 1, completed: 2 });
 export const lifecycleRank = (status) => LIFECYCLE_RANK[status] ?? 0;
@@ -355,12 +360,15 @@ function battleWinner(stored, assembled, canonicalBattle) {
  *
  * @param {object|null} stored     the tape as read inside the write transaction
  * @param {object} assembled       tapeAssemble.js output for this run
- * @param {{ nowIso: string, withinWindow: boolean, canonicalBattle?: boolean }} ctx
+ * @param {{ nowIso: string, withinWindow: boolean, canonicalBattle?: boolean, resolveResult?: Function }} ctx
  *   `canonicalBattle`: the assembled battle block was re-read from the battle
  *   document inside the write transaction (writeTapeDay.js, BA-27 amended)
+ *   `resolveResult`: the comparison completion uses (BA-4) — the one the
+ *   assembly used — by which the result is recomputed from the merged final
+ *   scores (BA-39)
  * @returns {{ doc: object, changed: boolean, carried: object }}
  */
-export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonicalBattle = false }) {
+export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonicalBattle = false, resolveResult = resolveBattleResult }) {
   // The read's limits (BA-26 amended) steer the coverage merge; they are never stored.
   const { readLimits = {}, ...assembled } = isObj(assembledIn) ? assembledIn : {};
   const isSkipped = assembled?.passes?.close?.status === 'skipped_mode';
@@ -422,7 +430,26 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
   // backward, and never rewind a recorded completion (battleWinner).
   const winner = battleWinner(stored, assembled, canonicalBattle) === 'stored' ? stored : assembled;
   const block = isObj(winner.battle) ? winner.battle : {};
-  merged.battle = { status: block.status ?? null, completedAt: block.completedAt ?? null, final: block.final ?? null, result: block.result ?? null };
+  const other = winner === stored ? assembled.battle : stored.battle;
+  const final = block.final ?? null;
+  merged.battle = {
+    status: block.status ?? null,
+    completedAt: block.completedAt ?? null,
+    final,
+    // BA-39: the result is RECOMPUTED from the merged final scores on every
+    // merge — never kept by rank alone — by the comparison completion uses; a
+    // stored basis (a result field the platform wrote) still wins.
+    result: battleResultOf({
+      status: block.status ?? null,
+      stored: block.result?.basis === 'stored' ? block.result.value : null,
+      final,
+      derive: (f) => resolveResult({ gameMode: merged.gameMode ?? stored.gameMode ?? null, scoreState: { currentScore: f.total, opponentScore: f.opponent } }),
+    }),
+    // BA-39: the platform's words at completion move with the block; a block
+    // recorded before they were copied takes them from the other read of the
+    // same completion.
+    completionMessage: block.completionMessage ?? (sameCompletion(block, other) ? other?.completionMessage : null) ?? null,
+  };
   merged.battleStatusAtWrite = winner.battleStatusAtWrite ?? block.status ?? null;
   merged.comparables = {
     market: assembled.comparables?.market ?? stored.comparables?.market ?? [],
