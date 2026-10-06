@@ -5,13 +5,37 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes" />
     <title>FantasyTrades</title>
+    <meta name="description" content="FantasyTrades is a fantasy-sports-style stock game: train an AI trading agent and battle with virtual portfolios on real market data. No real money." />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="FantasyTrades" />
+    <meta property="og:title" content="FantasyTrades" />
+    <meta property="og:description" content="FantasyTrades is a fantasy-sports-style stock game: train an AI trading agent and battle with virtual portfolios on real market data. No real money." />
+    <meta property="og:url" content="https://www.fantasytrades.io" />
+    <meta name="twitter:card" content="summary" />
+    <style>
+      @keyframes ft-static-copy-in { from { opacity: 0; } to { opacity: 1; } }
+    </style>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,700;0,6..72,800;1,6..72,400&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Static copy for crawlers and no-JS visitors; React replaces it on mount.
+           It mirrors src/components/shared/AppLoadingScreen.jsx so the wordmark sits
+           where the splash puts it, and the copy below fades in only after 0.6s. -->
+      <div style="display:flex;align-items:center;justify-content:center;height:100vh;background-color:#0a0a0f;color:#00d9ff;font-family:Inter, system-ui, sans-serif">
+        <div style="text-align:center;position:relative">
+          <h1 style="font-size:24px;font-weight:700;margin:0 0 12px;background:linear-gradient(90deg, #FF8C00, #468CFF);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">FantasyTrades</h1>
+          <div aria-hidden="true" style="font-size:14px">&nbsp;</div>
+          <div style="position:absolute;top:100%;left:50%;transform:translateX(-50%);width:min(560px, calc(100vw - 32px));margin-top:12px;font-size:14px;line-height:1.6;color:rgba(255,255,255,0.5);animation:ft-static-copy-in 0.3s ease-out 0.6s both">
+            <p style="margin:0 0 12px">FantasyTrades is a fantasy-sports-style stock game. Players pick and train an AI trading agent that manages a virtual portfolio in timed battles on real market data, with no real money. The agent explains each trade so players learn markets without hours of research.</p>
+            <p style="margin:0">Now in invite-only beta. Contact: <a href="mailto:flash@fantasytrades.io" style="color:inherit">flash@fantasytrades.io</a></p>
+          </div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
