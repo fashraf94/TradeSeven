@@ -41,6 +41,9 @@ vi.mock('../hooks/useAgentBattleId', () => ({ default: () => ({ agentBattleId: n
 vi.mock('../hooks/useWebSocketPrices', () => ({ useWebSocketPrices: () => ({ prices: {}, status: 'disconnected' }) }));
 vi.mock('../config/featureFlags', async (importOriginal) => ({
   ...(await importOriginal()),
+  // Legacy regression coverage for rollback and excluded battles; ON rows are
+  // in AgentBattleScreen.quoteAvailability.jsdom.test.jsx.
+  isShadowCpuQuoteIntegrityOn: () => false,
   // PRESENCE ON — the whole point of this file. It ships true
   // (featureFlags.js:1216), so this is the production shape, not a hypothetical.
   isAgentPresenceOn: () => true,

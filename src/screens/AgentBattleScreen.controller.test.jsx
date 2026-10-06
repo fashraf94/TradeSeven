@@ -36,6 +36,9 @@ vi.mock('../hooks/useAgentBattleId', () => ({
 }));
 vi.mock('../config/featureFlags', async (importOriginal) => ({
   ...(await importOriginal()),
+  // Legacy regression coverage for rollback and excluded battles; ON rows are
+  // in AgentBattleScreen.quoteAvailability.jsdom.test.jsx.
+  isShadowCpuQuoteIntegrityOn: () => false,
   isAgentPresenceOn: () => false,
   isMatchupsBackdropOn: () => false,
   // Read at render time by the screen, so one module can be toggled per test.

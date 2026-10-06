@@ -4,12 +4,10 @@
 // SHADOW_CPU_PLACEHOLDER_PRICE_SPEC_V1_6.md §3.1, OFF-1; build record
 // docs/audits/20261002_SHADOW_CPU_QUOTE_INTEGRITY_BUILD_REVIEW.md).
 //
-// SHADOW_CPU_QUOTE_INTEGRITY_ENABLED ships FALSE by design: the build merges
-// dark and the founder flips it in its own PR (no earlier than R-11's
-// condition). The flag-pin guard (flagPinGuard.test.js) tracks the first row
-// against the live value and, because the flag sits in DARK_BY_DESIGN there, an
-// accidental flip fails loudly with the runway note; a DELIBERATE flip moves
-// that row to `true` and drops the DARK_BY_DESIGN entry in the same commit.
+// SHADOW_CPU_QUOTE_INTEGRITY_ENABLED is TRUE in the activation candidate.
+// R-11 still blocks release until production confirmation and the following
+// regular market open. The flag-pin guard tracks the first row against the
+// live value; this pin and the DARK_BY_DESIGN removal move with the constant.
 //
 // Deliberately pins ONLY this flag (the tickStampsFlags.test.js precedent).
 
@@ -24,14 +22,14 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(HERE, 'featureFlags.js'), 'utf8');
 const GUARD = readFileSync(path.join(HERE, 'flagPinGuard.test.js'), 'utf8');
 
-describe('OFF-1 — the Shadow vs CPU quote-integrity flag is dark, pinned and override-free', () => {
-  it('ships DARK: SHADOW_CPU_QUOTE_INTEGRITY_ENABLED is false at merge', () => {
+describe('activation — the Shadow vs CPU quote-integrity flag is enabled, pinned and override-free', () => {
+  it('the activation candidate enables SHADOW_CPU_QUOTE_INTEGRITY_ENABLED', () => {
     // THE ROW THAT MOVES WITH THE FLIP, in the flip PR's own commit.
-    expect(SHADOW_CPU_QUOTE_INTEGRITY_ENABLED).toBe(false);
+    expect(SHADOW_CPU_QUOTE_INTEGRITY_ENABLED).toBe(true);
   });
 
-  it('the accessor is actually false, unmocked', () => {
-    expect(isShadowCpuQuoteIntegrityOn()).toBe(false);
+  it('the accessor is actually true, unmocked', () => {
+    expect(isShadowCpuQuoteIntegrityOn()).toBe(true);
   });
 
   it('is a plain boolean export the flag-pin guard can scan', () => {
@@ -58,19 +56,19 @@ describe('OFF-1 — the Shadow vs CPU quote-integrity flag is dark, pinned and o
     expect(window).toContain('Pinned by: shadowCpuQuoteIntegrityFlags.test.js');
     expect(window).toContain('DARK_BY_DESIGN');
     expect(window).toContain('R-11');
-    expect(window).toContain('DEFAULT false');
+    expect(window).toContain('DEFAULT true');
   });
 
-  it('the guard registers it as dark by design, with a runway note', () => {
-    expect(GUARD).toMatch(/^ {2}SHADOW_CPU_QUOTE_INTEGRITY_ENABLED:\n {4}'Shadow vs CPU quote integrity/m);
+  it('the enabled flag is absent from the dark-by-design registry', () => {
+    expect(GUARD).not.toMatch(/^ {2}SHADOW_CPU_QUOTE_INTEGRITY_ENABLED:/m);
   });
 
   it('this flag is one self-contained block: only the constant and its accessor, and nothing outside it reads either', () => {
     // About THIS flag only. featureFlags.js is shared, so no other flag's bytes
     // are pinned here (a whole-file hash conflicted with other approved work).
     // That the unrelated flags are untouched is recorded through the actual
-    // diff instead: against main, this build only ADDS this block and one
-    // DARK_BY_DESIGN entry (build record §13).
+    // diff instead: this candidate changes only this flag's block and removes
+    // its DARK_BY_DESIGN entry. The original build's diff is in audit §13.
     const banner = SRC.indexOf(' * SHADOW VERSUS CPU — QUOTE INTEGRITY');
     expect(banner).toBeGreaterThan(-1);
     const start = SRC.lastIndexOf('/**', banner);
@@ -79,7 +77,7 @@ describe('OFF-1 — the Shadow vs CPU quote-integrity flag is dark, pinned and o
     const end = SRC.indexOf('\n}', accessor) + 2;
     const block = SRC.slice(start, end);
     expect(block.match(/^export .*$/gm)).toEqual([
-      'export const SHADOW_CPU_QUOTE_INTEGRITY_ENABLED = false;',
+      'export const SHADOW_CPU_QUOTE_INTEGRITY_ENABLED = true;',
       'export function isShadowCpuQuoteIntegrityOn() {',
     ]);
     const outside = SRC.slice(0, start) + SRC.slice(end);

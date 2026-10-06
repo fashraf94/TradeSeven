@@ -26,6 +26,9 @@ vi.mock('../hooks/useAgentBattleId', () => ({ default: () => ({ agentBattleId: n
 vi.mock('../hooks/useWebSocketPrices', () => ({ useWebSocketPrices: () => ({ prices: {}, status: 'disconnected' }) }));
 vi.mock('../config/featureFlags', async (importOriginal) => ({
   ...(await importOriginal()),
+  // Legacy regression coverage for rollback and excluded battles; ON rows are
+  // in AgentBattleScreen.quoteAvailability.jsdom.test.jsx.
+  isShadowCpuQuoteIntegrityOn: () => false,
   isAgentPresenceOn: () => false,
   isMatchupsBackdropOn: () => false,
   isBattleViewControllerOn: () => true,

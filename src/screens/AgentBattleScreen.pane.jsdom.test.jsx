@@ -35,6 +35,9 @@ vi.mock('../hooks/useWebSocketPrices', () => ({
 }));
 vi.mock('../config/featureFlags', async (importOriginal) => ({
   ...(await importOriginal()),
+  // Legacy regression coverage for rollback and excluded battles; ON rows are
+  // in AgentBattleScreen.quoteAvailability.jsdom.test.jsx.
+  isShadowCpuQuoteIntegrityOn: () => false,
   isAgentPresenceOn: () => false,
   isMatchupsBackdropOn: () => false,
   isBattleViewControllerOn: () => true,
