@@ -52,7 +52,9 @@
 // WRITE: ONE transaction on the tape that writes the series documents under
 // tape/{etDate}/series/{symbol} and rewrites only `actions[].replay`,
 // `plans[].price`, `passes.candles`, `coverage.replay` and `coverage.series`
-// — every other field of every row is written back exactly as read inside the
+// — and `numberClasses`, the declaration of every number it writes (BA-21;
+// BA-38 added replay numbers a declaration stored before it lacks) — every
+// other field of every row is written back exactly as read inside the
 // transaction, so a close pass that commits first is kept, and one that
 // commits second keeps these (tapeMerge.js never takes candle fields from its
 // own read). A close pass that GREW the tape's symbol set mid-run leaves it
@@ -79,20 +81,32 @@
 // current with the tape's inputs wins whole, and a stale one is kept only when
 // no current unit holds a fact. A unit that keeps any earlier fact carries
 // `preservedFrom`, and so does its section's coverage.
+//
+// THE REPLAY LOGIC VERSION (BA-38): a replay's builtFrom names the replay
+// logic that built it. A logic change is not an input change: a stored
+// version-1 replay built from the inputs the tape holds now (its builtFrom
+// equals replayBuiltFromV1) holds facts as current as a rebuild's, so a
+// rebuild replaces it whole only when it holds every fact the stored one
+// holds (replayCovers) — a fetch that failed for one symbol never drops them
+// (review AD2-1). Kept, it is stale by version: its coverage says "built by an
+// earlier replay version", and the pass stays queued. A version-1 replay whose
+// inputs ALSO changed is stale by input, and is named so (BA-31, review AD2-3).
 
 import { resolveModeConfig } from '../../../src/constants/agentGameModes.js';
 import { isCryptoSymbol } from '../marketDataCache.js';
 import {
-  TAPE_VERSION, SERIES_NUMBER_CLASSES, CANDLE_SELECTABLE_STATUSES, CANDLE_MAX_ATTEMPTS,
+  TAPE_VERSION, SERIES_NUMBER_CLASSES, TAPE_NUMBER_CLASSES, CANDLE_SELECTABLE_STATUSES, CANDLE_MAX_ATTEMPTS,
   NON_CHECK_STATES, SERIES_INTERVAL, SERIES_SUBCOLLECTION, TAPE_SUBCOLLECTION,
 } from '../../../src/constants/filmTape.js';
 import { FILM_TAPE_WRITE_ENABLED } from '../../../src/config/featureFlags.js';
 import { sessionBars, sampleAt, sampleCanExist, expectedSeriesBars, sessionOpenOf, aggregate10m } from './bars.js';
-import { replayAction, REPLAY_LABEL, mergeReplay, replayHasFact } from './tapeReplay.js';
+import { replayAction, REPLAY_LABEL, mergeReplay, replayHasFact, replayCovers } from './tapeReplay.js';
 import { coverageOf } from './tapeAssemble.js';
-import { sanitizeForFirestore, stableStringify } from './tapeMerge.js';
+import { sanitizeForFirestore, stableStringify, versionLabel, rebuildOutlook } from './tapeMerge.js';
 import { tapeRef } from './tapeSources.js';
-import { symbolPlan, candleInputFingerprint, replayBuiltFrom, priceBuiltFrom, seriesBuiltFrom } from './candleInputs.js';
+import {
+  symbolPlan, candleInputFingerprint, replayBuiltFrom, replayBuiltFromV1, priceBuiltFrom, seriesBuiltFrom, replayLogicVersionOf, REPLAY_LOGIC_VERSION,
+} from './candleInputs.js';
 
 export { symbolPlan };
 import { etDateOf, sessionFor, sessionsBack, candleWindowStart, toMs } from './tapeTime.js';
@@ -214,7 +228,7 @@ const staleLabel = (what, names) => `${what} built before its inputs changed, ke
 /** The earliest `preservedFrom` among units that kept an earlier attempt's facts (BA-36), or null. */
 const earliestPreserved = (units) => units.map((u) => u?.preservedFrom).filter(Boolean).sort()[0] ?? null;
 
-function replayCoverage(tape, replays, session, stale = []) {
+function replayCoverage(tape, replays, session, stale = [], outdated = [], passStatus = null) {
   const actions = Array.isArray(tape.actions) ? tape.actions : [];
   if (!actions.length) return coverageOf('complete', { sources: ['eodhd_1m'], note: `no actions this day · ${REPLAY_LABEL}` });
   const outOfScope = actions.filter((a) => a.replayReason === 'crypto_not_supported').length;
@@ -226,7 +240,10 @@ function replayCoverage(tape, replays, session, stale = []) {
   if (missing.length) reasons.push(`missing inputs: ${missing.join(', ')}`);
   // BA-31: a replay is complete only while it is current — built from the inputs the tape holds now.
   if (stale.length) reasons.push(staleLabel('replay', stale.map((a) => `${a.symbolOut} → ${a.symbolIn}`)));
-  const whole = full === inScope && !outOfScope && !stale.length;
+  // BA-38: a replay an earlier replay logic built is no input change — said as what it is.
+  // The merge's own wording (tapeMerge.js versionLabel), so the two writers never rewrite each other (review AD2-2).
+  if (outdated.length) reasons.push(versionLabel(outdated.map((a) => `${a.symbolOut} → ${a.symbolIn}`), rebuildOutlook(true, passStatus)));
+  const whole = full === inScope && !outOfScope && !stale.length && !outdated.length;
   const status = whole ? 'complete' : (full > 0 || [...replays.values()].some((r) => r && (r.ghost || r.bought)) ? 'partial' : 'unavailable');
   const spanFrom = actions.map((a) => toMs(a.at)).filter((v) => v !== null).sort((a, b) => a - b)[0];
   const cov = coverageOf(status, {
@@ -353,16 +370,17 @@ function seriesCoverage(requested, missing, gapsBySymbol, session, keptFrom = []
  * lacks an input a later fetch could supply — bars obtained on different
  * mornings, or a stale sample (BA-24) — so the pass is not `written` yet.
  */
-export function nextCandleState({ prev, requested, missing, incomplete = [], retryable = false, stale = false, inputFingerprint = null, nowIso }) {
+export function nextCandleState({ prev, requested, missing, incomplete = [], retryable = false, stale = false, outdated = false, inputFingerprint = null, nowIso }) {
   const attempts = (Number.isInteger(prev?.attempts) ? prev.attempts : 0) + 1;
   let status;
   let reason = null;
-  if (missing.length === 0 && incomplete.length === 0 && !retryable && !stale) status = 'written';
+  if (missing.length === 0 && incomplete.length === 0 && !retryable && !stale && !outdated) status = 'written';
   else if (attempts >= CANDLE_MAX_ATTEMPTS) { status = 'exhausted'; reason = 'attempts_exhausted'; }   // BA-32: terminal
   else if (missing.length > 0 && missing.length === requested.length) { status = 'failed'; reason = 'fetch_failed'; }
   else if (missing.length > 0) { status = 'partial'; reason = 'symbols_missing'; }
   else if (incomplete.length > 0) { status = 'partial'; reason = 'bars_incomplete'; }
   else if (stale) { status = 'partial'; reason = 'built_before_inputs_changed'; }   // BA-31: a kept unit not rebuilt
+  else if (outdated) { status = 'partial'; reason = 'replay_logic_updated'; }          // BA-38: a kept replay an earlier logic built
   else { status = 'partial'; reason = 'replay_incomplete'; }
   return {
     status, writtenAt: nowIso, attempts, reason, source: 'eodhd_1m', symbolsRequested: requested, symbolsMissing: missing, symbolsIncomplete: incomplete,
@@ -530,15 +548,22 @@ export async function processTape({ db, ref, tape, nowMs, fetchCandles, memo, us
     const prev = cur.passes?.candles;
     const since = prev?.writtenAt ?? null;
     const replays = new Map();
-    const stale = { replays: [], prices: [] };
+    const stale = { replays: [], prices: [], versions: [] };
     const actions = (Array.isArray(cur.actions) ? cur.actions : []).map((a) => {
       const builtFrom = replayBuiltFrom(cur, a, session);
       const built = replayAction({ action: a, checks: cur.checks, barsBySymbol, session, sectors: cur.comparables?.sectors || {}, tierStamp: resolveModeConfig(cur.gameMode).flatMultiplier });
-      const kept = keepUnit(a.replay ?? null, built ? { ...built, builtFrom } : null, {
-        merge: (s, f) => mergeReplay(s, f, { symbolOut: a.symbolOut, symbolIn: a.symbolIn }), hasFact: replayHasFact, since,
-      });
+      const fresh = built ? { ...built, builtFrom } : null;
+      const stored = a.replay ?? null;
+      // BA-38: built by an earlier replay logic from the inputs the tape holds now — a logic change only.
+      const versionOnly = (r) => isObj(r) && replayLogicVersionOf(r.builtFrom) < REPLAY_LOGIC_VERSION && r.builtFrom === replayBuiltFromV1(cur, a, session);
+      const kept = versionOnly(stored) && fresh && !replayCovers(fresh, stored)
+        ? stored                                                        // review AD2-1: never replaced by a poorer rebuild
+        : keepUnit(stored, fresh, {
+          merge: (s, f) => mergeReplay(s, f, { symbolOut: a.symbolOut, symbolIn: a.symbolIn }), hasFact: replayHasFact, since,
+        });
       replays.set(a.key, kept);
-      if (kept && kept.builtFrom !== builtFrom) stale.replays.push(a);
+      // BA-31 / BA-38: a kept replay built from other inputs is stale; one an earlier logic built from these inputs is outdated (review AD2-3).
+      if (kept && kept.builtFrom !== builtFrom) (versionOnly(kept) ? stale.versions : stale.replays).push(a);
       return { ...a, replay: kept };
     });
     const plans = (Array.isArray(cur.plans) ? cur.plans : []).map((p) => {
@@ -583,14 +608,15 @@ export async function processTape({ db, ref, tape, nowMs, fetchCandles, memo, us
     }
     const candles = nextCandleState({
       prev, requested, missing, incomplete: Object.keys(gapsBySymbol).sort(), retryable,
-      stale: stale.replays.length > 0 || stale.prices.length > 0, inputFingerprint: candleInputFingerprint(cur), nowIso,
+      stale: stale.replays.length > 0 || stale.prices.length > 0, outdated: stale.versions.length > 0, inputFingerprint: candleInputFingerprint(cur), nowIso,
     });
     for (const { entry, doc } of writes) tx.set(seriesRef(entry.symbol), doc);
     tx.update(ref, sanitizeForFirestore({
       actions,
       plans,
+      numberClasses: TAPE_NUMBER_CLASSES,
       'passes.candles': candles,
-      'coverage.replay': replayCoverage(cur, replays, session, stale.replays),
+      'coverage.replay': replayCoverage(cur, replays, session, stale.replays, stale.versions, candles.status),
       'coverage.series': seriesCoverage(requested, missing, gapsBySymbol, session, keptFrom, stale.prices,
         plans.filter((p) => Array.isArray(p.price?.missingInputs) && p.price.missingInputs.length > 0), plans.map((p) => p.price)),
     }));

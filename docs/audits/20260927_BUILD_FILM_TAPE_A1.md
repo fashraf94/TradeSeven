@@ -7,6 +7,24 @@
 
 ## Executive verdict (for Flash)
 
+> **Update, 2026-10-06: smoke fixes, spec V1.2 Amendment D.** The first smoke's discovery report
+> asked two questions; Fable ruled on both, and both are fixed, each red first. **§11** records the
+> round:
+>
+> - **BA-38 (Q1):** each replay splits `closedLegDelta` into `inputsDelta` (a real scoring-input
+>   difference) and `priceDelta` (the platform's delayed quote against the 1-minute bar). The DRgA
+>   case reads −7 = 0 + −7. Each replay names the replay logic that built it; older replays are
+>   rebuilt inside the candle window and labelled outside it.
+> - **BA-39 (Q2):** no result from a missing score. ogbLF's tape will read `unavailable`, "opponent
+>   score never recorded", beside the platform's own completion message.
+> - **The smoke check is amended:** "inputsDelta = 0 on every action; priceDelta reported, not
+>   judged."
+> - **The round's §2 review** found one major defect (AD2-1: a version re-queue could let a poorer
+>   rebuild drop facts). It is fixed, as is every other confirmed finding in this round's code. 52
+>   mutants, all red. The write census is still seven.
+> - **After deploy:** run the refresh once (§11.10 item 1). Four small items for you or the spec
+>   author are in §11.10.
+
 > **Update, 2026-09-28 (round 3): spec V1.2 Amendment C.** Fable ruled on the four items §9.11 left
 > open. All four are done, each red first, and the controls stayed 16 / 16 at every commit. **§10**
 > records the round:
@@ -2692,6 +2710,253 @@ file.
 | Mutation | **58 mutants at `b52b842e`: 55 red, and three equivalent.** These are §10.9's 56 plus X34i and X34j. The three survivors are X36b, X36o and X36q, as argued in §10.9. No verdict changed from §10.9's runs, and no result rests on a timeout or a file that failed to load |
 | Write census | Seven sites, in the same functions; C15 and both F9 census rows pass. `keepSeries` grew by seven lines, so the candle pass's sites moved: `candlePass.js:478` (`markRetryWindowElapsed`), `:588` and `:589` (`processTape`), and `:768` (`runCandlePass`). The writer's stay at `writeTapeDay.js:139`, `:164` and `:170` |
 | Fence, flags, deploys | No BUILD_RULES §1 file edited. Flags, crons, rules and indexes are unchanged, and nothing is deployed. There is no PR, no merge, no flag flip and no index deploy |
+
+---
+
+## 11. Smoke fixes (Amendment D)
+
+Spec V1.2 Amendment D (`docs/specs/FILM_ROOM_BUILD_A_TAPE_SPEC_V1_2_AMENDMENT_D_20261002.md`)
+answers two questions from the first smoke's discovery report
+(`docs/audits/20261002_FILM_TAPE_FIRST_SMOKE_DISCOVERY.md`):
+
+- **Q1 → BA-38.** The reconciliation names its two causes, and each replay records which replay
+  logic built it.
+- **Q2 → BA-39.** No battle result is derived from a missing score, and the tape copies the
+  platform's own words at completion.
+
+Where Amendment D and an earlier amendment differ, Amendment D governs. Founder-authorized (Flash,
+2026-10-02). No BUILD_RULES §1 file was edited, no production call was made and no flag changed.
+
+### 11.0 Verdict for Flash
+
+| | |
+|---|---|
+| **What changed** | **BA-38:** every replay now splits `closedLegDelta` into `inputsDelta` (a real scoring-input difference) and `priceDelta` (the platform's delayed quote against the 1-minute bar), sets the fill beside its rebuilt price, and names its locked basis. The DRgA case reads exactly as the report predicted: −7 = 0 + −7. **BA-39:** a battle whose opponent score was never written now reads result `unavailable`, "opponent score never recorded", instead of a derived draw; the platform's own completion message is copied beside it, labelled as the platform's. |
+| **The smoke check, amended** | "closedLegDelta small" is replaced by **"inputsDelta = 0 on every action; priceDelta reported, not judged"**. A non-zero inputsDelta is a finding. |
+| **Review (BUILD_RULES §2)** | Required: the branch diff was 16 files and 1,505 lines at the reviewed head `e8e2bdc3`. Four lenses, a refuter for each, each on its own snapshot tree. **One major finding, confirmed and fixed (AD2-1):** a version re-queue could let a poorer rebuild drop facts an older replay held. Every other confirmed finding is fixed or pinned by a row; §11.6 has the full CONFIRMED / REFUTED table. |
+| **Verification** | Linux full suite at the code tip: 871 files, 18,048 tests, 0 failed (the baseline plus exactly the new file's 46 rows). Rules suite on the emulator: 20 files, 354 tests, all passed. `lint:gate`: exit 0. `vite build`: exit 0 on the pushed head (recorded in the PR). Mutation: 52 mutants, all red. The write census is still seven sites. |
+| **What you do after deploy** | Run the refresh once (§11.10): `backfill=2026-09-21..<last closed session>&refresh=1`. Days still inside the candle window rebuild their replays, with the split, at the next 07:00 ET candle run. Older days keep their replay and say the split was not computed. |
+| **For you or the spec author** | Four small items in §11.10: one changed HUMAN REVIEW note, one class-label question, and two readings to confirm. None blocks the merge. |
+
+### 11.1 Gate
+
+| Item | Result |
+|---|---|
+| Fetch, base and branch | `git fetch origin` first. `origin/main` = `1ae6d9f4806da355398a92c65f7a0601170d16f0`; the Shadow vs CPU quote-integrity PR (#925) is in it (merge `4dfc48d9`). Branch `claude/film-tape-smoke-fixes-amendment-d`, cut from `origin/main`. Tracked tree clean; six untracked files of the founder's (`tape-0922.md`, `tape-0928.md`, `lifecycle-ogbL.txt`, two census JSONs, one audit draft) were present before the session and were not touched |
+| The discovery branch | `origin/claude/elegant-hypatia-pms6j5` (`302e35e4`) merged with `--no-ff` as `c0bbcd42`: **no conflict**, exactly its two files (the report and `scripts/inspect-battle-lifecycle.js`) |
+| Amendment D, committed first (docs only) | `00832741`, verbatim between the prompt's markers (sha256 `bcd00f43…`, 3,843 bytes) |
+| Baseline at `00832741`, Linux | **Full suite: 870 files, 18,002 tests: 17,915 passed, 87 skipped, 0 failed; exit 0.** Run in WSL Ubuntu (Node 22.22.2) with `TZ=UTC`, as CI runs. The same run in WSL's local time zone (America/Chicago) fails 7 rows in 3 time-zone-dependent files (`dateUtils`, `StockChart.controlledSession`, `AgentBattleScreen.flagOff.golden`); every suite run in this round used `TZ=UTC` |
+| Rules suite | **20 files, 354 tests, all passed; exit 0.** Disclosure: WSL has no Java, so the emulator suite ran on Windows (Java 21, Firestore emulator v1.21.0) in an LF `git archive` snapshot of `00832741` |
+| Discovery report §1 and §2 | Read in full before any code. §1.3's numbers reproduce with the real scorer: −17 at 355.66, −24 at 353.07, −24 anywhere in 352.89–353.24 |
+
+### 11.2 One row per ruling
+
+"Red first" means the row failed before its ruling's fix. Every new row is in
+`api/_utils/filmTape/tapeAmendmentD.test.js`. A row marked **GUARD** passes on both sides; it pins
+the other side of its rule. §11.7 names the mutants.
+
+| Ruling | Commits | The fix | Red-first rows |
+|---|---|---|---|
+| **BA-38** (Q1) | `bfdd6fbf`, `e8e2bdc3`; review fixes in `c09c9e4e` | **The split** (`tapeReplay.js`). `scoreAt` (`:126`) is the one call every replay sample makes, and the rescore makes the same call at the recorded exit price: the ghost leg's recorded inputs, history and baseline, through the **imported** `calculateAssetScoreServer` (no local math, BUILD_RULES §4). `composeSoldAtSale` (`:179`) gives `recordedPx`, `rebuiltPx` and `barClosedAt` (BA-24, `saleSample` `:163`), `pxDelta`, `rescoredAtRecordedPx`, `inputsDelta` and `priceDelta`; a part without both operands is null and its input is named. `composeBoughtAtSale` (`:193`) does the same for the fill. `lockedBasis` and its fixed note sit on every replay; the read-out's gap line carries the note. A merge (BA-36) composes the split from the merged parts, taking the sold price from the attempt whose swap point the merged ghost leg kept. <br>**The version** (`candleInputs.js`). `REPLAY_LOGIC_VERSION = 2` (`:176`); `replayBuiltFrom` now returns `replay-v2:<hash>` and hashes the recorded sale prices too (`saleValues` `:118`). An unprefixed builtFrom reads as version 1 (`replayLogicVersionOf` `:179`). The fingerprint gains a `salePrices` part; a stored fingerprint without it is not read as changed (`changedInputParts` `:229`). <br>**The merge** (`tapeMerge.js`). A `written` pass inside the window whose replays an earlier logic built is re-queued, reason `replay_logic_updated`, attempts 0 (`mergeCandles` `:548`). Outside the window the status stands. Either way the replay carries the note "built by an earlier replay version; the reconciliation split was not computed" (`versionNoted` `:543`), and the replay section's coverage says so. <br>**The candle pass** writes the number-class declaration with the numbers it writes. | 15 of 16 red at `00832741`: the DRgA split; the sum in cents across five inputs and prices; ATR 1.0 → inputsDelta −30; the scorer call itself; the scorer swapped (+5) moves the rescore; a stale and a missing bar → priceDelta null, named; a missing exit, ghost input or lockedPoints → null, named; boughtAtSale; the locked basis; a real tape day's split and its nine classes; the read-out lines; builtFrom carries the version; inside the window: re-queued, then rebuilt; outside: status unchanged, the note; a corrected exit price is an input change. **GUARD:** a tape whose declaration predates the split gets the current one from the candle pass |
+| **BA-39** (Q2) | `a473912f`; review fixes in `c09c9e4e` | **The rule** (`tapeAssemble.js`). `battleResultOf` (`:763`): a stored result wins; otherwise a result is derived only for a completed battle whose two final scores are recorded finite numbers, by the comparison completion uses (the imported `resolveCompletionDisposition`), over those two scores. A missing score gives `{ value: null, basis: 'unavailable', note: 'opponent score never recorded' }` (or "agent score…", or both). <br>**The merge** recomputes the result from the merged final scores on every merge (`tapeMerge.js` `mergeTape` `:384`), with the comparison the caller hands in; a `stored` basis still wins. <br>**The platform's words.** `completionMessageOf` (`:777`): the last `battle_complete` statusFeed entry's message, verbatim, with its `timestamp`, as `battle.completionMessage { text, at }`. The read-out prints "Platform recorded at completion: “…”" with its time. | 9 of 11 red at `bfdd6fbf`: 0 vs an absent opponent → unavailable, never compared; through the writer; a stored derived draw becomes unavailable on re-merge; recomputed even when the stored block wins the tie, and from its own final scores; a pre-fix final day re-merged once, then already done; the message verbatim with its time; byte for byte, the last entry, no other action's message; none without the entry or before completion; the read-out lines. **GUARDs:** 0 vs 0 still a draw; a stored basis still wins |
+
+### 11.3 The new classes (BA-21)
+
+Nine new numeric paths, each declared once in `src/constants/filmTape.js` and pinned by the
+declaration golden in `tapeExport.test.js`:
+
+| Path under `actions[].replay.reconciliation` | Class |
+|---|---|
+| `soldAtSale.recordedPx`, `boughtAtSale.recordedPx` | recorded |
+| `soldAtSale.rebuiltPx`, `boughtAtSale.rebuiltPx` | market |
+| `soldAtSale.pxDelta`, `soldAtSale.rescoredAtRecordedPx`, `soldAtSale.inputsDelta`, `soldAtSale.priceDelta`, `boughtAtSale.pxDelta` | rebuilt |
+
+BA-39 adds no number: the result's note and the completion message are strings. The read-out
+prints every new number through `labelled()`; the digit scan finds no stray digit and nothing
+UNCLASSIFIED on a tape with the split, a version note, an `unavailable` result and a completion
+message, nor on one with null parts (review lens 4).
+
+### 11.4 Existing rows that changed, and why
+
+| Row | Change | Why |
+|---|---|---|
+| `tapeExport.test.js` — the declaration golden | +9 paths | §11.3 |
+| `tapeAstraReview.test.js` F4 — the fingerprint's parts | + `salePrices` | BA-38: the split reads the exit price and the fill |
+| `tapeAmendmentC.test.js` — an action recorded a month on | `changedInputs` `['actions', 'symbols']` → `['actions', 'salePrices', 'symbols']` | a new action brings its own sale prices |
+| `writeTapeDay.test.js` — "the close pass never erases candle fields" | the planted stub replays carry `builtFrom: replay-v2:stub` | a replay with no builtFrom is one an earlier logic built; without the version the merge would re-queue for a reason unrelated to the row |
+| `writeTapeDay.test.js` — the §4 document and an active battle's block | + `completionMessage` | BA-39's new field |
+| `tapeReplay.test.js` — the synthetic action | carries `exitPrice: 101` and `inBasis.price: 50`, the prices its worked example trades at; the scorer is called 10 times, not 9 (the rescore); the worked example now asserts inputsDelta 0, priceDelta 0 | a real action row carries both |
+| `tapeReplay.test.js` — a swap before the first minute | the bought **leg** still has no swap sample (now asserted on its samples); the fill's price at the swap is named | review AD1-1 |
+| `tapeAstraReview.test.js` F7, `tapeAstraDelta.test.js` (BA-27 tie, no canonical read) | direct `mergeTape` calls on a completed battle pass `resolveResult` | review AD3-2: the merge takes the comparison from its caller |
+| `candlePass.test.js` — "rewrites only…" | title names `numberClasses` | the candle write now writes it |
+
+### 11.5 Readings and bounds, stated
+
+1. **The version is in builtFrom, readable.** `replay-v2:<hash>`. A replay with no builtFrom, or an
+   unprefixed one, is version 1. `replayBuiltFromV1` (`candleInputs.js:194`) is the A1 formula,
+   frozen, pinned against the identities the A1 code itself wrote for the fixture day.
+2. **A logic change is not an input change, end to end.** The fingerprint never carries the version.
+   A version-1 replay built from the inputs the tape holds now is replaced only by a rebuild that
+   holds every fact it holds (`replayCovers`, `tapeReplay.js:384`); until then it is kept whole and
+   the pass stays queued (review AD2-1).
+3. **Re-queued once.** Only a `written` pass is re-queued for the version. A `partial` or `failed`
+   pass is already queued and keeps its attempt count; a terminal pass (`expired`, `exhausted`) is
+   never re-queued — BA-32's reading, which Amendment D does not address (review AD2-4, AD2-N1).
+4. **The note and the coverage.** The version note stays on the replay until a rebuild replaces it,
+   inside the window as well as outside. The replay section's coverage over such replays is at most
+   `partial` and says whether a candle pass is still to come; the merge and the candle pass use one
+   wording (review AD2-2). Outside the window the **pass** status is unchanged, as the amendment says.
+5. **Which prices count as samples.** A price at the swap instant that no leg samples (the fill's,
+   always; the sold name's when no ghost leg is built) is a sample of the replay under BA-24: a stale
+   one is named in the replay's missing inputs and is retryable. A missing exit price is named as
+   `lockedPoints` is, and never retryable: no fetch can supply it (review AD1-1, AD4-8).
+6. **The two rebuilt-classed numbers that use no bars.** `rescoredAtRecordedPx` and `inputsDelta`
+   are computed from recorded values only, yet the amendment classes them `rebuilt`, whose label
+   reads "rebuilt from 1-minute bars at the battle's check times". The code follows the amendment;
+   the label question is §11.10 item 3.
+7. **The gap label.** Built in the read-out (the only display in Build A): the gap line carries the
+   basis note verbatim. The stored `replay.label` (BA-11's text) is unchanged; the note is stored
+   beside it as `lockedBasisNote`, for A2 to show with the gap.
+8. **The completion message** is the last `battle_complete` entry. The platform writes at most one;
+   "last" is defensive. A block recorded before the message was copied takes it from the other read
+   of the same completion.
+9. **The comparison is handed in.** `mergeTape` imports no evaluator; `writeTapeDay` passes the
+   comparison it assembled with, and a derivation without one throws. So the candle cron, which
+   imports the merge module for its serializers, does not load the evaluator (review AD3-2).
+10. **The candle pass writes the declaration.** A tape whose stored `numberClasses` predates the
+    split gets the current one with the new numbers, so no stored number is ever undeclared. The
+    allowlist's HUMAN REVIEW note for that write site (`processTape::update`) now names the field;
+    the site, its key and its count are unchanged.
+11. **The first refresh rewrites every written day once.** Each gains the new declaration and the
+    battle block's `completionMessage` field, so the first post-deploy refresh lists every written
+    tiered day as `refreshed`; a second run lists them `unchanged`.
+
+### 11.6 The §2 adversarial review — the written record
+
+**How it ran.** The diff met the threshold (16 files and 1,505 lines against `main` at `e8e2bdc3`; 21 files with the fixes and this report). Four lenses
+reviewed the code head `e8e2bdc3`, and every finding went to a refuter told to refute it with a
+repro. Eight subagents in all, each on its own `git archive` snapshot tree (LF, `node_modules`
+junctioned in), read-only on git and on the shared tree. Finding ids are this round's own
+(AD1-n … AD4-n).
+
+| Lens | Subject |
+|---|---|
+| AD1 | BA-38's split: the scorer call, the identity, nulls and names, sampling, classes |
+| AD2 | the replay logic version, the merge and the candle lifecycle |
+| AD3 | BA-39: the result rule and the completion message |
+| AD4 | test integrity (71 mutants), the read-out and the declarations |
+
+| Id | Lens severity | Verdict | Disposition |
+|---|---|---|---|
+| AD2-1 | major | **CONFIRMED**, wider than reported: any one of the ~14 symbols a run fetches failing after a version re-queue dropped facts a version-1 replay held, permanently once the attempts ran out | **Fixed** (`c09c9e4e`): kept whole until a rebuild covers it. 2 rows, red at `e8e2bdc3` |
+| AD2-2 / AD4-7 | minor | **CONFIRMED** | **Fixed**: coverage at most partial, one wording. 1 row |
+| AD2-3 | minor | **CONFIRMED** | **Fixed**: input-stale named as such. 1 row |
+| AD2-N1 / AD4-6 | minor (found by the AD2 refuter; not independently refuted) | — | **Fixed**: re-queued once. 1 row |
+| AD2-5 / AD4-1 / AD4-4 | minor (test gap) | **CONFIRMED** | 2 GUARD rows; the status edge D7 is now the intended behaviour (§11.5 item 3) |
+| AD2-4 | minor (spec) | **REFUTED**: BA-32's terminal reading carries over; D is silent | Pinned by a GUARD row; §11.10 item 4 |
+| AD2-6 | nit | **CONFIRMED, latent**: unreachable at the head (no cross-version merge) | Not fixed: the AD2-1 fix keeps or replaces whole, so it stays unreachable |
+| AD2-7 / AD4-9 | nit | **CONFIRMED** | Fixed (title) |
+| AD1-1 | minor | **CONFIRMED, narrowed** to prices no leg samples | **Fixed**: named and retryable; the merge keeps the name. 4 rows |
+| AD1-2 | minor | **CONFIRMED, narrowed** (two killable survivors) | 2 GUARD rows |
+| AD1-3 | nit | **REFUTED** as a reading | §11.5 item 7 |
+| AD1-4 | nit | **CONFIRMED** | Fixed (comment) |
+| AD3-1 | minor | **CONFIRMED** (a): a stored result was dropped on a canonical re-read when a score was missing (latent: nothing writes `agentBattles.result` today). **REFUTED** (b) | **Fixed**: a missing score contradicts no stored result. 1 row |
+| AD3-2 | minor | **CONFIRMED, as a nit** (cold start and bundle, 29 → 174 modules) | **Fixed**: comparison handed in. 1 row |
+| AD3-3 | nit | **CONFIRMED** | Fixed: the fixture has no admitted check; the row title |
+| AD3-4, AD3-5 | nit | **REFUTED** | — |
+| AD4-2 | major | **CONFIRMED, as minor** (display pins; the code was right) | 1 row pins the null-part lines by equality |
+| AD4-3 | minor | **CONFIRMED** | 1 GUARD row |
+| AD4-8 | minor | **CONFIRMED**: `exitPrice` was not named at the replay level, unlike `lockedPoints` | **Fixed**. 1 row |
+| AD4-5 | minor | **REFUTED**: unreachable (no writer evicts the entry) | — |
+| AD4-10 | nit (spec) | **CONFIRMED** | §11.10 item 3 |
+| AD4-11 | nit | **REFUTED** | — |
+
+**Tally.** 23 distinct findings (28 reports: five of AD4's restate AD2's). **16 CONFIRMED, 6 REFUTED**, and one new finding a refuter raised (AD2-N1), fixed without a refuter of its own. Of the 17 to act on: 11 fixed in code, 4 closed by rows, 1 latent and unreachable (AD2-6), 1 routed to the spec author (AD4-10). The one major (AD2-1) is confirmed and fixed.
+
+**Red first.** The 16 review rows ran at `e8e2bdc3` before the fixes: 12 red; the 4 GUARD rows
+passed there and are each red under the mutant they name (§11.7). One disclosure: the AD2-5 label
+GUARD was run red-first in its first wording ("…, kept (not rebuilt this attempt): …"). The AD2-2
+fix then gave both writers one wording, and the row's expected text moved with it, so the row as
+committed no longer passes at `e8e2bdc3`; it still kills its mutant (`LS-AD2-M2`). The three rows
+added after AD4's refutation were run before the AD4-8 fix: AD4-8 red; AD4-2 red only on its
+replay-level `exitPrice` line, which is AD4-8's; AD4-3 a GUARD. The full suite was rerun after the
+fixes (§11.9).
+
+### 11.7 Mutation results
+
+The mutants ran one at a time in an LF copy of the code tip `c09c9e4e` (a snapshot tree in the
+session scratchpad), against `tapeAmendmentD.test.js` (46 rows); after each, the file was restored
+and checked byte for byte, and the tree was compared with the commit at the end. **52 mutants, all red; no survivor.** The prompt's eight rules each have at least one. Two ran against a second file as well: `M38-merge-a` with `tapeAmendmentC.test.js` (89 rows, red there), `M39-merge-b` with `tapeAstraDelta.test.js` (105 rows). The mutant definitions are in the session scratchpad (`mutants.py`), each a one-line replacement asserted to match exactly once.
+
+| Rule | Mutants | Red rows each |
+|---|---|---|
+| BA-38: the split sums to closedLegDelta | `M38-sum-a`, `M38-sum-b` | 6, 5 |
+| BA-38: inputsDelta uses the imported scorer, with the ghost leg's own inputs | `M38-scorer-a`, `M38-scorer-b` | 4, 1 |
+| BA-38: null propagation, never 0, the input named | `M38-null-a`, `M38-null-b`, `M38-null-c`, `M38-null-d` | 4, 4, 3, 2 |
+| BA-38: the version re-queue (reason, the version in builtFrom) | `M38-ver-a`, `M38-ver-b`, `M38-ver-c` | 2, 1, 1 |
+| BA-38: outside the window the status is unchanged; the note | `M38-out-a`, `M38-out-b`, `M38-out-c` | 2, 3, 2 |
+| BA-38: the sale prices in the identity and the fingerprint; the declaration; the merged split; the read-out | `M38-sale-a`, `M38-sale-b`, `M38-decl-a`, `M38-merge-a`, `M38-readout-a`, `M38-readout-b` | 1, 1, 1, 1, 2, 1 |
+| BA-39: the result needs both operands; never 0 | `M39-op-a`, `M39-op-b`, `M39-op-c` | 6, 1, 6 |
+| BA-39: recomputed on every merge; a stored basis still wins | `M39-merge-a`, `M39-merge-b`, `M39-merge-c` | 2, 3, 2 |
+| BA-39: the completion message verbatim (trim, first entry, time, other actions); its label | `M39-msg-a`, `M39-msg-b`, `M39-msg-c`, `M39-msg-d`, `M39-readout-a` | 1, 1, 3, 2, 1 |
+| Review fixes (AD2-1, AD2-3, AD2-2, AD2-N1, AD1-1, AD3-1, AD3-2, AD4-8) | `MR-AD2-1a`, `MR-AD2-1b`, `MR-AD2-3`, `MR-AD2-2`, `MR-AD2-N1`, `MR-AD1-1a`, `MR-AD1-1b`, `MR-AD1-1c`, `MR-AD3-1`, `MR-AD3-2`, `MR-AD4-8a`, `MR-AD4-8b` | 2, 2, 1, 1, 1, 4, 1, 1, 1, 1, 2, 1 |
+| The lenses' surviving mutants, against the GUARD rows added for them (AD1 M1/M2, AD2 M1/M2, AD4 A6/R6/R7/R8/R11) | `LS-AD1-M1`, `LS-AD1-M2`, `LS-AD2-M1`, `LS-AD2-M2`, `LS-AD4-A6`, `LS-AD4-R6`, `LS-AD4-R7`, `LS-AD4-R8`, `LS-AD4-R11` | 1, 1, 2, 4, 1, 1, 1, 1, 1 |
+
+### 11.8 The write census: still seven
+
+No write site was added, moved or removed. The candle pass's targeted update now also writes
+`numberClasses` (§11.5 item 10). C15 and the census rows pass at the tip.
+
+### 11.9 Verification at the tip
+
+| Check | Result |
+|---|---|
+| Full suite, Linux (WSL Ubuntu, Node 22.22.2, `TZ=UTC`, JSON reporter) | At the code tip `c09c9e4e`: **871 files, 18,048 tests: 17,961 passed, 87 skipped, 0 failed; exit 0.** The baseline at `00832741` was 870 files and 18,002 tests (17,915 passed, 87 skipped, 0 failed). The difference is exactly `tapeAmendmentD.test.js`, 46 rows. Intermediate runs: BA-38's diff 871 / 18,018, BA-39's 871 / 18,029, both 0 failed |
+| Rules suite on the emulator | **20 files, 354 tests, all passed; exit 0** (Windows, LF snapshot of `c09c9e4e`; WSL has no Java) |
+| `npm run lint:gate` | **exit 0** (LF snapshot of `c09c9e4e`) |
+| `vite build` | Run on an LF `git archive` of the pushed head, after the commit that adds this section; the PR records the result |
+| Fence | `git diff --name-only 1ae6d9f4..HEAD` names no BUILD_RULES §1 file. Called, never edited: `calculateAssetScoreServer` (`agentScoring.js`), and `resolveCompletionDisposition` (`agent-evaluate.js`, through `battleResult.js`) |
+| Flags and crons | No flag changed. `vercel.json` unchanged (43 entries) |
+| On Windows | The CRLF working tree fails 3 files at load (`scripts/export-film-tape.test.js`, `film-tape-backfill.e2e`, `tapeWiring`: a shebang script on a CRLF checkout). They pass on the LF snapshot and on Linux |
+
+### 11.10 For Flash and the spec author
+
+1. **After merge and deploy: the refresh.** One request, single-secret pattern as in #919 (`$s`
+   holds the secret; `ADMIN_SECRET` falls back to `CRON_SECRET` when unset, `adminSecretAuth.js:27`):
+
+   ```powershell
+   Invoke-RestMethod -Method Get -TimeoutSec 330 -Uri "https://www.fantasytrades.io/api/cron/film-tape-close?backfill=2026-09-21..2026-10-06&refresh=1" -Headers @{ Authorization = "Bearer $s"; "x-admin-secret" = $s } | ConvertTo-Json -Depth 6
+   ```
+
+   Replace `2026-10-06` with the last session whose 4 PM ET close has passed when you run it (a
+   range reaching an open session returns `400 range_not_closed`).
+   - `refreshed`: days the re-merge changed. On this first run expect **every written tiered day**
+     here (§11.5 item 11).
+   - `unchanged`: nothing to change. A second run lists the same days here.
+   - `alreadyDone`: flat6 or tournament days (`skipped_mode`).
+   - `complete: false` with `resumeFrom`: the 300 s budget ran out. Send the request again with the
+     range starting at `resumeFrom.etDate`.
+   - Days **inside the candle window** are re-queued (`passes.candles` `pending`,
+     `replay_logic_updated`) and rebuild their replays, with the split, at the **next 07:00 ET
+     candle run**. Which days: a run on 2026-10-07 serves 2026-09-23 onward, on 2026-10-08
+     2026-09-24 onward (`tapeTime.js` `candleWindowStart`). **2026-09-21 and 2026-09-22 (the DRgA
+     day) are already outside**: they keep their replays, with the note that the split was not
+     computed.
+   - BA-39 needs no window: every completed battle's final day gets the new result rule and the
+     completion message from this refresh (ogbLF's 2026-09-28 tape: `unavailable`, "opponent score
+     never recorded", and "Platform recorded at completion").
+2. **HUMAN REVIEW note.** `api/_utils/compositionProtectedStoresAllowlist.json`,
+   `processTape::update`: the note now names `numberClasses` (`e8e2bdc3`). Please re-read it.
+3. **Spec author: the `rebuilt` label (AD4-10).** `rescoredAtRecordedPx` and `inputsDelta` use no
+   bars but carry the class whose label says "rebuilt from 1-minute bars". Either the label text
+   widens, or the two numbers move to `derived`.
+4. **Readings to confirm.** (a) An `exhausted` day inside the window keeps its status and its note
+   (BA-32); Amendment D does not say otherwise (AD2-4). (b) The gap label is the read-out's gap line;
+   the stored `replay.label` is unchanged (AD1-3).
+
+**Not changed, by the amendment's routing.** The quote delay itself (the Intraday arc), the quote
+timestamp on trades (fenced executor), the born-finished battles and the completion's
+missing-score-as-zero rule (the Command Center arc).
 
 ---
 

@@ -29,6 +29,7 @@ import {
 } from './__fixtures__/tapeFixtures.js';
 import { numbersWithClasses, formatNumberPath, COVERAGE_SECTIONS, CANDLE_COVERAGE_SECTIONS, PROVENANCE_CLASSES } from '../../../src/constants/filmTape.js';
 import { stableStringify } from './tapeMerge.js';
+import { REPLAY_LOGIC_VERSION } from './candleInputs.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
@@ -73,7 +74,8 @@ describe('the §4 document', () => {
       expect(['complete', 'partial', 'unavailable']).toContain(tape.coverage[s].status);
     }
     expect(Object.keys(tape.score).sort()).toEqual(['dayChange', 'firstCheck', 'lastCheck']);
-    expect(Object.keys(tape.battle).sort()).toEqual(['completedAt', 'final', 'result', 'status']);
+    // Amendment D (BA-39): the block also carries the platform's own words at completion.
+    expect(Object.keys(tape.battle).sort()).toEqual(['completedAt', 'completionMessage', 'final', 'result', 'status']);
     expect(tape).not.toHaveProperty('readLimits');                     // the read's limits steer the merge; never stored
     expect(tape.comparables.market).toEqual(['SPY', 'RSP']);
     expect(tape.diagnostics).toEqual({ intradayViews: 'absent' });
@@ -359,7 +361,7 @@ describe('score and battle (BA-4)', () => {
     expect(tape.score.lastCheck).toMatchObject({ tickSeq: 25, at: '2026-09-24T19:45:20.000Z', total: 35, opponent: 10, bankedBadgePoints: 0 });
     expect(tape.score.firstCheck).toMatchObject({ tickSeq: 1, total: 11 });
     expect(tape.score.dayChange).toEqual({ value: 35, basis: 'battle_start', reference: 0 });
-    expect(tape.battle).toEqual({ status: 'active', completedAt: null, final: null, result: { value: null, basis: 'not_completed' } });
+    expect(tape.battle).toEqual({ status: 'active', completedAt: null, final: null, result: { value: null, basis: 'not_completed' }, completionMessage: null });
   });
 
   it('a completed battle: final from the completion scores and the result by completion\'s own comparison (derived)', async () => {
@@ -462,7 +464,8 @@ describe('BA-19 — merge-monotone', () => {
     const candleWrite = async (db) => {
       const cur = t.store.get(path);
       await db.collection('agentBattles').doc(fx.battleId).collection('tape').doc(fx.etDate).update({
-        actions: cur.actions.map((a) => ({ ...a, replay: { basis: 'rebuilt_1m_at_checks', gapPoints: 1.5 } })),
+        // a replay the current replay logic built (BA-38: its builtFrom names the version)
+        actions: cur.actions.map((a) => ({ ...a, replay: { basis: 'rebuilt_1m_at_checks', gapPoints: 1.5, builtFrom: `replay-v${REPLAY_LOGIC_VERSION}:stub` } })),
         plans: cur.plans.map((p) => ({ ...p, price: { atPlan: { value: 701, at: 'x', basis: 'last_completed_minute' }, atClose: { value: 705, at: 'y', basis: 'last_completed_minute' } } })),
         'passes.candles': { ...cur.passes.candles, status: 'written', attempts: 1, writtenAt: 'candles-at' },
         'coverage.replay': { status: 'complete', span: null, sources: ['eodhd_1m'], preservedFrom: null, note: 'CANDLE' },
@@ -489,7 +492,7 @@ describe('BA-19 — merge-monotone', () => {
     inject = async (db) => {
       const cur = t.store.get(path);
       await db.collection('agentBattles').doc(fx.battleId).collection('tape').doc(fx.etDate).update({
-        actions: cur.actions.map((a) => ({ ...a, replay: { basis: 'rebuilt_1m_at_checks', gapPoints: 2.5 } })),
+        actions: cur.actions.map((a) => ({ ...a, replay: { basis: 'rebuilt_1m_at_checks', gapPoints: 2.5, builtFrom: `replay-v${REPLAY_LOGIC_VERSION}:stub` } })),
       });
     };
     await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: NOW + 120_000 });

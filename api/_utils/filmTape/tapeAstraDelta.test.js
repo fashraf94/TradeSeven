@@ -1103,6 +1103,7 @@ describe('DF7 — BA-27 amended: on equal lifecycle rank the battle re-read in t
     // battle document gone at the re-read) is pinned on the merge directly (§9 mutation run).
     const { assembleTape } = await import('./tapeAssemble.js');
     const { mergeTape } = await import('./tapeMerge.js');
+    const { resolveBattleResult } = await import('./battleResult.js');
     const { etDayBounds } = await import('./tapeTime.js');
     const fx = await completedDay();
     const t = world(fx);
@@ -1116,7 +1117,8 @@ describe('DF7 — BA-27 amended: on equal lifecycle rank the battle re-read in t
       declarationsRead: { ok: true, present: new Set(fx.declarations) },
     });
     expect(assembled.battle).toMatchObject({ status: 'completed', completedAt: '2026-09-24T19:55:00.000Z' });
-    const { doc } = mergeTape(stored, assembled, { nowIso: iso(NIGHT + 60_000), withinWindow: true });
+    // Amendment D (review AD3-2): a merge that derives a result is handed the comparison, as writeTapeDay hands it.
+    const { doc } = mergeTape(stored, assembled, { nowIso: iso(NIGHT + 60_000), withinWindow: true, resolveResult: resolveBattleResult });
     expect(doc.battle).toEqual(stored.battle);
     expect(doc.battleStatusAtWrite).toBe(stored.battleStatusAtWrite);
   });

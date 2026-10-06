@@ -30,8 +30,9 @@ const legInputs = (entryPrice, over = {}) => ({
   entryPrice, atr: 10, tier: 'support', direction: null,
   thresholdHistory: { maxMultiplier: 0, minMultiplier: 0 }, thresholdBaseline: { value: entryPrice, basis: 'starting_price' }, sources: {}, ...over,
 });
+// Amendment D (BA-38): the row carries the recorded exit and fill its split reads — 101 and 50, the prices the worked example trades at.
 const action = (over = {}) => ({
-  key: 'swap:k', tickSeq: 7, at: utc('15:00:30'), symbolOut: 'OUTX', symbolIn: 'INX', lockedPoints: 10,
+  key: 'swap:k', tickSeq: 7, at: utc('15:00:30'), symbolOut: 'OUTX', symbolIn: 'INX', lockedPoints: 10, exitPrice: 101, inBasis: { price: 50, at: utc('15:00:30') },
   replayInputs: { ghost: legInputs(100), bought: legInputs(50, { thresholdBaseline: { value: 50, basis: 'swap_price' } }) },
   replayMissing: [], replayReason: null, subsequentTradesInSlot: 0, ...over,
 });
@@ -58,6 +59,8 @@ describe('the worked example — gapPoints = (lockedPoints + bought.atClose) −
     expect(r.swapPath.at(-1).points).toBe(10);
     expect(r).toMatchObject({ basis: 'rebuilt_1m_at_checks', horizon: 'close', hypothetical: true, label: REPLAY_LABEL, lockedPoints: 10 });
     expect(r.missingInputs).toEqual([]);
+    // Amendment D (BA-38): the sale reconciles exactly — no input difference, no price vintage
+    expect(r.reconciliation.soldAtSale).toMatchObject({ recordedPx: 101, rebuiltPx: 101, rescoredAtRecordedPx: 10, inputsDelta: 0, priceDelta: 0 });
   });
 
   it('the bought name rallying after the swap shows up on the swap path; the sold one falling on the hold path', () => {
@@ -148,9 +151,12 @@ describe('never guessed — a missing input is named and its numbers are null', 
     expect(early.reconciliation.closedLegDelta).toBeNull();
     expect(early.ghost.series).toEqual([{ tickSeq: 1, at: utc('13:30:50'), points: null }, { tickSeq: 2, at: utc('13:45:20'), points: 10 }]);
     expect(early.holdPath[0]).toEqual({ tickSeq: 7, at: utc('13:30:10'), points: null });
-    // the bought name is scored FROM the swap: it has no swap sample to miss (review L2-F2)
+    // the bought LEG is scored FROM the swap: it has no swap sample (review L2-F2) — its samples are the later checks, then the close
+    expect(early.bought.series.map((p) => p.at)).toEqual([utc('13:30:50'), utc('13:45:20')]);
     expect(early.missingInputs).toEqual(expect.arrayContaining(['price:OUTX@swap', 'price:OUTX@1', 'price:INX@1']));
-    expect(early.missingInputs).not.toContain('price:INX@swap');
+    // Amendment D (BA-38, review AD1-1): the bought name's price AT the swap instant is the split's fill sample — named, no minute had completed
+    expect(early.reconciliation.boughtAtSale).toMatchObject({ rebuiltPx: null, barClosedAt: null, missingInputs: ['price:INX@swap'] });
+    expect(early.missingInputs).toContain('price:INX@swap');
     expect(early.retryableInputs).toEqual([]);             // nothing a later fetch could supply
     expect(early.gapPoints).toBe(0);                       // the close is still known
   });
@@ -188,8 +194,9 @@ describe('reconciliation and comparables', () => {
 describe('THE SCORER IS THE IMPORTED ONE (BUILD_RULES §4)', () => {
   it('every rebuilt point comes from calculateAssetScoreServer, called with the leg\'s own inputs and empty extremes', () => {
     replayAction({ action: action(), checks: CHECKS, barsBySymbol: { OUTX: bars(flatRows(D, 101)), INX: bars(flatRows(D, 50)), ...COMPARABLES() }, session: S });
-    // the sold leg: swap + 3 scored later checks + close; the bought leg: 3 later checks + close
-    expect(calculateAssetScoreServer).toHaveBeenCalledTimes(9);
+    // the sold leg: swap + 3 scored later checks + close; the bought leg: 3 later checks + close;
+    // and (Amendment D, BA-38) the sale's rescore at the recorded exit price
+    expect(calculateAssetScoreServer).toHaveBeenCalledTimes(10);
     const [asset, priceChange, history, extremes, thresholdPriceChange] = calculateAssetScoreServer.mock.calls[0];
     // a tiered battle's mode-resolved stamp is null — the scorer resolves CONVICTION_MULTIPLIERS[tier] as live
     expect(asset).toEqual({ symbol: 'OUTX', baseATR: 10, tier: 'support', direction: null, tierMultiplier: null });

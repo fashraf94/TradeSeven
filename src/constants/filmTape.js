@@ -112,6 +112,17 @@ export const CLOSE_PASS_MAX_DURATION_S = 300;
 export const CANDLE_PASS_SCHEDULE_UTC = '0 11 * * 2-6';
 export const CANDLE_PASS_UTC_HOUR = 11;
 
+// ── BA-38 (Amendment D): the two vintages of the sale ───────────────────────
+// The platform banks a sale and records the bought entry at its own quote,
+// delayed about 15–20 minutes; the replay rebuilds the same instant from
+// completed 1-minute bars (BA-11). Each replay records the basis of what was
+// banked, with this fixed note — and the gap carries the same note, because
+// the gap combines both bases.
+export const LOCKED_BASIS = 'eodhd_realtime_delayed';
+export const LOCKED_BASIS_NOTE = "Banked points and the bought entry use the platform's quote, delayed about 15–20 minutes; rebuilt values use completed 1-minute bars.";
+/** BA-38 — the note a replay built by an earlier replay logic carries where no candle pass will rebuild it. */
+export const REPLAY_VERSION_NOTE = 'built by an earlier replay version; the reconciliation split was not computed';
+
 /** BA-17 — the one piece of metadata the hub may learn. */
 export const REVIEW_AVAILABILITY = Object.freeze(['ready', 'pending', 'unavailable']);
 /** The existing Film Room route: the App screen id (src/App.jsx `screen === 'filmRoom'`). */
@@ -220,6 +231,18 @@ export const TAPE_NUMBER_CLASSES = Object.freeze({
   'actions[].replay.reconciliation.boughtVsEvidence.rebuiltChg': 'rebuilt',
   'actions[].replay.reconciliation.boughtVsEvidence.pxDelta': 'rebuilt',
   'actions[].replay.reconciliation.boughtVsEvidence.chgDelta': 'rebuilt',
+  // BA-38 — the sale split by its two causes: the recorded prices are the
+  // platform's, the prices at the swap instant are bars alone, and every
+  // difference or rescore mixes the two
+  'actions[].replay.reconciliation.soldAtSale.recordedPx': 'recorded',
+  'actions[].replay.reconciliation.soldAtSale.rebuiltPx': 'market',
+  'actions[].replay.reconciliation.soldAtSale.pxDelta': 'rebuilt',
+  'actions[].replay.reconciliation.soldAtSale.rescoredAtRecordedPx': 'rebuilt',
+  'actions[].replay.reconciliation.soldAtSale.inputsDelta': 'rebuilt',
+  'actions[].replay.reconciliation.soldAtSale.priceDelta': 'rebuilt',
+  'actions[].replay.reconciliation.boughtAtSale.recordedPx': 'recorded',
+  'actions[].replay.reconciliation.boughtAtSale.rebuiltPx': 'market',
+  'actions[].replay.reconciliation.boughtAtSale.pxDelta': 'rebuilt',
   'actions[].replay.marketChangeAfter.*': 'market',
   'actions[].replay.sectorChangeAfter.*': 'market',
   // directives

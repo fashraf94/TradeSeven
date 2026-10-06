@@ -397,8 +397,9 @@ describe('BA-25 amended (R3-3) — outside the candle window, a written pass who
     t.store.set(`agentBattles/${fx.battleId}`, battle);
     await write(t, fx, Date.parse('2026-10-26T02:15:30.000Z'));
     const tape = tapeOf(t, fx.battleId);
-    expect(tape.passes.candles).toMatchObject({ status: 'expired', reason: 'inputs_changed_outside_window', changedInputs: ['actions', 'symbols'] });
-    expect(tape.coverage.replay.note).toMatch(/built before the candle inputs changed \(actions, symbols\) — outside its retry window, not rebuilt/);
+    // Amendment D: a new action also brings the sale prices its split reads (BA-38, `salePrices`).
+    expect(tape.passes.candles).toMatchObject({ status: 'expired', reason: 'inputs_changed_outside_window', changedInputs: ['actions', 'salePrices', 'symbols'] });
+    expect(tape.coverage.replay.note).toMatch(/built before the candle inputs changed \(actions, salePrices, symbols\) — outside its retry window, not rebuilt/);
   });
 
   it('GUARD: the ruling is for a WRITTEN pass — a partial pass whose inputs change outside the window keeps its status, the change recorded, and the next sweep closes it out (retry_window_elapsed) — round-3 review L3-5', async () => {
