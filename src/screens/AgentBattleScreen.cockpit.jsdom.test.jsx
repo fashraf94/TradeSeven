@@ -107,10 +107,16 @@ const LIVE_DOC = {
 };
 let DOC = LIVE_DOC;
 vi.mock('../hooks/useAgentBattle', () => ({
-  default: () => ({
+  default: (requestedId, { integrity = false } = {}) => ({
     battle: DOC, statusFeed: [], executionMode: 'copilot', pendingProposal: null,
     strategyPreset: 'balanced', gameplanMeeting: null, chatExchanges: DOC.chatExchanges,
     feedBookmarks: [], loading: false,
+    // The real screen now requests identity evidence before classifying this
+    // fixture as excluded or admitted. Keep the shipped integrity accessor.
+    ...(integrity ? { integrity: {
+      requestedId, generation: 1, status: DOC ? 'ready' : 'missing',
+      snapshotId: requestedId, data: DOC, error: null, received: null,
+    } } : {}),
   }),
 }));
 
@@ -266,6 +272,20 @@ describe('OFF PATH — COCKPIT_UI_ENABLED off', () => {
 });
 
 describe('ON — desktop: the Cockpit tab', () => {
+  it.each([['desktop', true], ['phone', false]])('the shipped integrity flag admits a CPU battle alongside Cockpit on %s', async (_, desktop) => {
+    DOC = { ...LIVE_DOC, gameMode: 'baggerbomb_agent', opponent: { ...LIVE_DOC.opponent, odUserId: 'cpu' } };
+    setShell(desktop);
+    await mount();
+    const comparison = q('[data-comparison-label]');
+    expect(comparison).toBeTruthy();
+    expect(comparison.textContent).toContain('Last scored');
+    expect(comparison.textContent).toContain('browser quotes incomplete');
+    expect(statusCalls()).toHaveLength(1);
+    expect(qa('[data-cockpit-tile-group="needsYou"]').map((t) => t.getAttribute('data-cockpit-tile')))
+      .toEqual([OPEN.callId, GONE.callId]);
+    expect(cockpitListeners().sort()).toEqual(['agentBattles/ab-1/callEvents', 'agentBattles/ab-1/calls', 'agentBattles/ab-1/declarations']);
+  });
+
   it('asks the server for THIS battle, then computes Cockpit · Chat · Bench · Tape and opens on Cockpit', async () => {
     await mount();
     expect(statusCalls()).toHaveLength(1);

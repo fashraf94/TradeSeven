@@ -2978,17 +2978,18 @@ export const FILM_ROOM_V2_ENABLED = false;
  * battle screen's quote-integrity path: value-specific quote provenance read
  * in the screen, an identified battle/position context, the discriminated
  * comparison every score consumer reads, lookup-evidence identity states, and
- * the controlled held-research view. DEFAULT false: the build merges dark.
+ * the controlled held-research view. DEFAULT true in the activation candidate;
+ * production release remains blocked until the R-11 evidence is recorded.
  *
  * What is NOT behind this flag, on purpose: the PRODUCER metadata — the two
  * proxies' `quoteOrigin` and the stock fallback's `isFallback` marker
  * (api/stocks/prices.js, api/crypto/prices.js, src/services/eodhdAPI.js). It
- * ships live while the flag is dark so caches acquire it before any read
+ * shipped live during the dark build so caches acquire it before any read
  * depends on it; every existing key, number, type, cache decision and request
  * stays byte-identical (OFF-2, OFF-3). The new optional props on the shared
  * components are inert unless the gated screen passes them.
  *
- * Flag OFF (shipped): the screen, its hooks, its consumers and the research
+ * Flag OFF (rollback): the screen, its hooks, its consumers and the research
  * modal behave exactly as at the pre-build SHA 44d0c63e — pinned frame by
  * frame, request by request and digest by digest in the OFF suites the build
  * record lists. Flag ON: only admitted battles (explicit gameMode
@@ -3016,7 +3017,7 @@ export const FILM_ROOM_V2_ENABLED = false;
  * module-scope const (the Pass 1 featureFlags vi.mock hazard).
  */
 // Pinned by: shadowCpuQuoteIntegrityFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const SHADOW_CPU_QUOTE_INTEGRITY_ENABLED = false;
+export const SHADOW_CPU_QUOTE_INTEGRITY_ENABLED = true;
 
 /** The ONE consumer seam for the quote-integrity gate: the flag, and nothing else. */
 export function isShadowCpuQuoteIntegrityOn() {

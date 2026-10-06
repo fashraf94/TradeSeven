@@ -50,6 +50,9 @@ vi.mock('../hooks/useAgentBattleId', () => ({
 // Flags OFF → no canvas backdrop, no presence face (both would touch the DOM).
 vi.mock('../config/featureFlags', async (importOriginal) => ({
   ...(await importOriginal()),
+  // Legacy regression coverage for rollback and excluded battles; ON rows are
+  // in AgentBattleScreen.quoteAvailability.jsdom.test.jsx.
+  isShadowCpuQuoteIntegrityOn: () => false,
   isAgentPresenceOn: () => false,
   isMatchupsBackdropOn: () => false,
   // Phase A: the controller stays dark here — this suite characterizes the

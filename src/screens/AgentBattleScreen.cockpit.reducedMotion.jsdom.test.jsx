@@ -98,10 +98,16 @@ const LIVE_DOC = {
 };
 let DOC = LIVE_DOC;
 vi.mock('../hooks/useAgentBattle', () => ({
-  default: () => ({
+  default: (requestedId, { integrity = false } = {}) => ({
     battle: DOC, statusFeed: [], executionMode: 'copilot', pendingProposal: null,
     strategyPreset: 'balanced', gameplanMeeting: null, chatExchanges: DOC.chatExchanges,
     feedBookmarks: [], loading: false,
+    // The real screen now requests identity evidence before classifying this
+    // fixture as excluded. Keep the shipped integrity accessor.
+    ...(integrity ? { integrity: {
+      requestedId, generation: 1, status: DOC ? 'ready' : 'missing',
+      snapshotId: requestedId, data: DOC, error: null, received: null,
+    } } : {}),
   }),
 }));
 

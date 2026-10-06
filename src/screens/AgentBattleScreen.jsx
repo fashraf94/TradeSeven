@@ -48,7 +48,7 @@ import { derivePeekLine } from './battleView/derivePeekLine';
 import { useChatSheet, useViewportHeight, viewportInsetFrom, isSheetOpen, SHEET_PEEK_PX, SHEET_DETENT } from './battleView/useChatSheet';
 import { computeTugOfWarWidth } from './battleView/computeTugOfWarWidth';
 import ArenaHeader, { SwitchCounter } from './battleView/ArenaHeader';
-// Shadow vs CPU quote integrity (SHADOW_CPU_QUOTE_INTEGRITY_ENABLED — dark).
+// Shadow vs CPU quote integrity (SHADOW_CPU_QUOTE_INTEGRITY_ENABLED).
 // The pure gate; read only when isShadowCpuQuoteIntegrityOn() is true. Contract
 // SHADOW_CPU_PLACEHOLDER_PRICE_SPEC_V1_6.md; build record
 // docs/audits/20261002_SHADOW_CPU_QUOTE_INTEGRITY_BUILD_REVIEW.md.
@@ -973,9 +973,9 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // render scope, never the constant. Dark today, so every door below is absent
   // whole and the two panels render exactly as they do at HEAD.
   const showItOn = isShowItOn();
-  // Shadow vs CPU quote integrity — DARK (SHADOW_CPU_QUOTE_INTEGRITY_ENABLED).
-  // The accessor at render scope, like the three above. False: every gated
-  // line below is inert and the screen is the shipped one.
+  // Shadow vs CPU quote integrity (SHADOW_CPU_QUOTE_INTEGRITY_ENABLED).
+  // Read the accessor at render scope. True: identified, admitted CPU battles
+  // use the integrity path. False: the legacy rollback path remains intact.
   const integrityOn = isShadowCpuQuoteIntegrityOn();
   const prefersReducedMotion = useReducedMotion();
   const reducedMotion = Boolean(prefersReducedMotion);
