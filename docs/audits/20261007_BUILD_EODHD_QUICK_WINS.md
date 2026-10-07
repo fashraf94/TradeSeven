@@ -2,10 +2,13 @@
 
 **Branches:**
 - `perf/eodhd-quick-wins` — the build. It merges dark: nothing changes until the flip.
-- `flip/eodhd-quick-wins` — one commit that turns the flag on, cut from the finished build.
+- `flip/eodhd-quick-wins` — one commit that turns the flag on, cut from the finished build. Since the main sync it also carries a merge of the synced build. The flip's own change is unchanged (§9).
 
 **Built from:** `origin/main` = `6cef568677c3145b5b68394e4795fb5dbf3502b1` ("Merge pull request #936 from fashraf94/backing/qa-fixes"). `git fetch origin` was run first.
-**Rulings:** Fable and Flash, 2026-10-07, after the Step 1 STOP report.
+**Synced with main:** after the hand-back, #937 (pilot P1a) merged to main at `2519d1c8`. Both branches were then synced with main by merge, not rebase, as ruled: the build in merge `12db9ba7` and the flip in merge `dcb474e4`. Two same-spot conflicts were resolved by keeping both blocks (§9).
+**Rulings:** Fable and Flash, 2026-10-07:
+- after the Step 1 STOP report, the re-scoping;
+- after the hand-back, the four §8 decisions (all accepted as-is) and the main sync.
 **Review record:** `docs/audits/20261007_EODHD_QUICK_WINS_BUILD_REVIEW.md` (BUILD_RULES §2).
 **Executed by:** Claude Code (Opus 5.5). **Date:** 2026-10-07.
 
@@ -26,7 +29,7 @@
 
 \* QW-1's saving depends on one number nobody has measured: how often EODHD's live `previousClose` exactly equals its own `/eod/` raw close. If they routinely differ, QW-1 saves nearly nothing, but it never changes a number either. The smoke log line in §7 measures it on day one.
 
-**Invariant.** No change alters a scored number, a banked score, a baseline, a threshold check or an agent decision input. Each change carries its proof tests. Two residuals and two founder decisions are listed in §8.
+**Invariant.** No change alters a scored number, a banked score, a baseline, a threshold check or an agent decision input. Each change carries its proof tests. §8 lists two residuals and two founder decisions; the founders accepted all four as-is on 2026-10-07.
 
 **Even with every quick win, the server side at 40 games stays at ≈ 236,400–240,600 calls a day, 2.4× the budget.** The Price Authority work is still required.
 
@@ -186,7 +189,7 @@
   - After: about 13.5 concurrent tabs → 2.7 polls a minute → P = 1 − e^−2.7 = 0.93 → 390 × 0.93 × 87 = 31,657.
   - **Saving ≈ 60,200.**
 - Off-hours crypto now collapses to at most 33 a minute across all tabs (not modelled).
-- **Minus a give-back:** with the flag on, battle screens and baseline captures no longer find the App poll's per-tab entries, so they fetch their own (review E2-5; not quantified; a founder decision in §8).
+- **Minus a give-back:** with the flag on, battle screens and baseline captures no longer find the App poll's per-tab entries, so they fetch their own (review E2-5; not quantified; accepted as-is by the founders, §8).
 
 ### 2.4 QW-6: index intelligence fetches daily histories once per session (bullet 1)
 
@@ -309,7 +312,7 @@ From the STOP report, unchanged.
    - Sites at the base `6cef5686`: `src/App.jsx:5867`, `:6040`, `:6045`, `:6215`, `:6220`, `:6446-6453`. At this build: `:5865`, `:6038`, `:6043`, `:6213`, `:6218`, `:6444-6451`.
    - Also `:6900` (the V4 portfolio map) and `BattleViewScreen.jsx:156`, `:163`.
    - Review EV2 adds: in the classic battle flow the **creator's** entry price is the popular-list price itself (`handleCreateBattle`). The list's vintage is therefore a scored baseline there.
-2. **E2-5 (founder decision §8).** With the flag on, the classic join (`getStockPrice`) and `capturePreviousClosePrices` (`src/utils/priceCapture.js:127-150`) no longer read the App poll's warm per-tab entries.
+2. **E2-5 (accepted as-is, §8; option (c) carried forward as PA-8).** With the flag on, the classic join (`getStockPrice`) and `capturePreviousClosePrices` (`src/utils/priceCapture.js:127-150`) no longer read the App poll's warm per-tab entries.
    - Normally: a fresher starting price than today's.
    - In a vendor outage: the configured fallback constant. Today that hazard applies only to symbols that are not cached.
 3. **The QW-1 residual** (§8, EV1): a vendor rewrite of an already-published prior-session raw close after the cache write. EODHD back-adjusts raw daily closes for spinoffs (`docs/discovery/SESSION5_6_PHASE_B_REPORT.md:209`). Bounded by the 4 h TTL.
@@ -323,7 +326,7 @@ From the STOP report, unchanged.
    - the orchestrator's uncapped deploy retries (`tournamentOrchestrator.js:509-511`; tournament ledger);
    - the open fan-out routes (`earnings/resolve-tournament.js:182-183`, `sync-queue.js:105-109`, `verify-batch.js:44-49`, `options/resolve-tournament.js:205-215`; security register).
 9. **Windows-only test failures** (memory list): on this Windows checkout the same 8 rows fail on the untouched base as on the build. Linux is the record.
-10. **A scratch copy to delete:** verifier EV3 left `scratchpad/ev3-repro/b8/node_modules` as a 595 MB copy (not a link). It sits outside the repo and is safe to delete as an ordinary folder.
+10. **A scratch copy (deleted):** verifier EV3 left `scratchpad/ev3-repro/b8/node_modules` as a 595 MB copy (not a link), outside the repo. It was deleted after the first push, along with the session's other scratch trees.
 
 ---
 
@@ -370,15 +373,24 @@ From the STOP report, unchanged.
 
 ---
 
-## 8. Decisions for the founder (from the review)
+## 8. Founder decisions (from the review), ruled 2026-10-07
 
-1. **E2-5.** With the flag on, the "never write the per-tab cache" ruling moves classic-battle join baselines: fresher normally, the configured fallback constant in a vendor outage. Options:
-   - (a) accept;
+**Ruling (Fable and Flash, 2026-10-07): all four accepted as-is.** The build ships as reviewed. None of the alternatives below was built.
+
+1. **E2-5: accepted.** With the flag on, the "never write the per-tab cache" ruling moves classic-battle join baselines: fresher normally, the configured fallback constant in a vendor outage. Options were:
+   - (a) accept: **ruled**;
    - (b) seed the per-tab cache from the shared list with a TTL shortened by the list's age;
-   - (c) separately, make baseline captures reject `isFallback` records (this also changes flag-off behaviour).
-2. **E3-3.** With the flag on, a first mandate book created between two fires of a slot evaluates against that slot's later snapshot. Remedy: create the first book outside any slot or close window, or accept.
-3. **The QW-1 residual.** Accept (bounded by the 4 h TTL; measurable through `prev_close_mismatch`), or shorten the served age.
-4. **The QW-6 residual.** Accept (bounded by 4 h), or exclude symbols with a corporate action dated today.
+   - (c) separately, make baseline captures reject `isFallback` records (this also changes flag-off behaviour): **not built; carried forward as PA-8** (below).
+2. **E3-3: accepted.** With the flag on, a first mandate book created between two fires of a slot evaluates against that slot's later snapshot. The remedy offered was to create the first book outside any slot or close window.
+3. **The QW-1 residual: accepted.** It is bounded by the 4 h TTL and measurable through `prev_close_mismatch`. The alternative was to shorten the served age.
+4. **The QW-6 residual: accepted.** It is bounded by 4 h. The alternative was to exclude symbols with a corporate action dated today.
+
+### PA-8 (Price Authority carry-forward): baseline captures reject fallback prices
+
+- **What:** decision 1's option (c). A baseline capture would refuse a quote record marked `isFallback`, instead of storing the configured fallback constant as a starting price or a previous-close baseline. The captures are the classic join's starting price (`getStockPrice`) and the previous-close capture (`capturePreviousClosePrices`, `src/utils/priceCapture.js:127-150`).
+- **Why it is carried forward, not built here:** it changes flag-off behaviour too. Today, a vendor outage at join time can already store the fallback constant for a symbol that is not cached (review EV2 repro: AAPL's configured 240 stored as both the starting price and the previous-close baseline). That makes it a settlement change, not a spend cut, so it belongs to the Price Authority work.
+- **Related, recorded separately:** Observation 1 in §6 (the `startingPrices[sym] || asset.price` fallback).
+- **Ruled:** record only; do not build (Fable and Flash, 2026-10-07).
 
 ---
 
@@ -391,8 +403,20 @@ From the STOP report, unchanged.
 - **First run** on the first build commit `8c5f56b8`: 2 failed. These were the repo guards `indexIntelligenceHygiene` A-0 and `compositionProtectedStores` DENY-BY-DEFAULT, fixed in `cfe281cc`.
 - **Flag-on preview** (whole suite with the flag `true`): only the three flip-map rows fail (`eodhdQuickWinsFlags` pin, `flagPinGuard` live-value, `flagPinGuard` DARK_BY_DESIGN integrity).
 - **Flip branch suite:** `flip/eodhd-quick-wins` = `e7e25e45`, one commit on top of the build at `38c1b533`. Linux, CI-shaped: `EXIT=0`, ` Test Files  875 passed | 6 skipped (881)`, `      Tests  18114 passed | 87 skipped (18201)`. The flip commit reconciles the value pin, the registration row and the DARK_BY_DESIGN entry, so the three flip-map rows that failed in the flag-on preview pass.
-- **`vite build`** on LF `git archive` trees: exit 0 for the build at `38c1b533` and for the flip head `e7e25e45`. Both bundles contain `/market/popular`. The build branch's final, docs-only commit, which records these results, was built again before the push; the result is in the handover.
+- **`vite build`** on LF `git archive` trees: exit 0 for the build at `38c1b533` and for the flip head `e7e25e45`. Both bundles contain `/market/popular`. The build branch's final docs-only commit, `f382a5bc`, records these results. It was built again before the first push: exit 0.
 - **CI lint gate** (`npm run lint:gate`): exit 0.
+- **Main sync (2026-10-07, after the hand-back).** #937 (pilot P1a) merged to main at `2519d1c8` after the first push. Both branches were synced by merge, as ruled.
+  - **Build: merge `12db9ba7`** (parents `f382a5bc` and `2519d1c8`). There were two conflicts. Each was a same-spot append, and each was resolved by keeping both blocks:
+    - `src/config/featureFlags.js`: main's PILOT P1a block comes first, verbatim. The EODHD QUICK WINS block follows under its own copy of the shared header. Main's file is an exact prefix of the result, and the appended text is exactly the build's block.
+    - `api/_utils/compositionProtectedStoresAllowlist.json`: `_notes_pilot_p1a`, then `_notes_eodhd_quick_wins`. Every top-level key and every `allowedWriteSites` entry equals the three-way result over merge base `6cef5686`.
+    - `src/config/flagPinGuard.test.js` merged automatically. Both DARK_BY_DESIGN entries are present.
+    - The diff from `2519d1c8` to `12db9ba7` is 29 files, +4,051 / −158, the same as the build's own diff from `6cef5686` to `f382a5bc`.
+  - **Flip: merge `dcb474e4`** (parents `e7e25e45` and `12db9ba7`). There were no conflicts. With zero context, the diff from the synced build to the synced flip is line-for-line identical to the original flip commit against its parent (patch-id `5cd119ef`).
+  - **Synced build `12db9ba7`**, Linux, CI-shaped: `EXIT=0`, ` Test Files  886 passed | 6 skipped (892)`, `      Tests  18435 passed | 87 skipped (18522)`. The 11 extra test files are exactly the 11 that #937 added.
+  - **Synced flip `dcb474e4`**, Linux, CI-shaped: `EXIT=0`, ` Test Files  886 passed | 6 skipped (892)`, `      Tests  18435 passed | 87 skipped (18522)`. As before the sync, the counts match the build's: the flip moves three assertions and adds none.
+  - **`vite build`** (LF `git archive`): exit 0 on `12db9ba7` and on `dcb474e4`. Both bundles contain `/market/popular`.
+  - **CI lint gate:** exit 0 on both.
+  - This docs-only commit, which records the sync and the §8 rulings, was built again before the push. The result is in the handover.
 - **Review:** 5 lenses (E1–E5), 4 independent verifiers (EV1–EV4), 26 findings, 25 CONFIRMED and 1 REFUTED (E4-6; E2-5's premise was also refuted). Every finding a code change can close is fixed. 21 named mutants, all killed; the P2 red-then-green evidence is quoted in review record §6. See the review record.
 
 *End of report. Pushed, not merged; no PR opened (as instructed).*
