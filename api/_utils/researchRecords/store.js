@@ -152,14 +152,17 @@ export const researchRefsOf = (records) => records.map((r) => researchRefOf(r.re
 /**
  * What the Forge's Idea panel is given: the list's OWN research first (the
  * dialogue / screener / manual record it was saved from), then its analysis
- * sessions newest first — so no number of analysis opens can push the
- * research behind the idea out of view (reviews R4-1 / R1-4). At most
- * RESEARCH_SUMMARIES_MAX.
+ * sessions the agent worked on (a completed model turn), newest first, then
+ * the ones opened and left — so neither analysis opens nor the cap can push
+ * the research behind the idea, or the newest worked analysis, out of view
+ * (reviews R4-1 / R1-4; mutation lens R5). At most RESEARCH_SUMMARIES_MAX.
  */
 export function researchSummariesOf(records) {
-  const newestFirst = [...records].reverse();
+  const newestFirst = [...records].reverse().map(recordSummaryOf);
+  const analysis = newestFirst.filter((s) => s.origin === 'analysis');
   return [
-    ...newestFirst.filter((r) => r.origin !== 'analysis'),
-    ...newestFirst.filter((r) => r.origin === 'analysis'),
-  ].slice(0, RESEARCH_SUMMARIES_MAX).map(recordSummaryOf);
+    ...newestFirst.filter((s) => s.origin !== 'analysis'),
+    ...analysis.filter((s) => s.completions > 0),
+    ...analysis.filter((s) => !(s.completions > 0)),
+  ].slice(0, RESEARCH_SUMMARIES_MAX);
 }

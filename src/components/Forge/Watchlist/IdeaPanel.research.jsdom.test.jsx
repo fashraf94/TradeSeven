@@ -173,6 +173,24 @@ describe('the player\'s own "researched" (founder ruling D4)', () => {
   });
 });
 
+describe('mutation-lens rows (R5)', () => {
+  it('R5-21 a load failure after the gate admitted the player shows the error card and no research block (never stale lines)', async () => {
+    freshRoot();
+    svc.listHypothesisVersions.mockRejectedValue(Object.assign(new Error('boom'), { status: 500, code: 'server_error', body: { error: 'server_error', message: 'x' } }));
+    await act(async () => { root.render(<IdeaPanel watchlistId="wl-1" tokens={DARK_TOKENS} />); });
+    await flush();
+    expect(container.textContent).toContain(PANEL_COPY.loadFailed);
+    expect(q('idea-research')).toBeNull();
+  });
+  it('R5-26 "Mark researched" is styled as the forward move, not as a closing one', async () => {
+    await show(answer([v(1, { status: 'draft', stateReason: 'player_authored' })], []));
+    const mark = button(ACTION_LABELS.mark_researched);
+    const reject = button(ACTION_LABELS.reject);
+    expect(mark.style.color).toBeTruthy();
+    expect(mark.style.color).not.toBe(reject.style.color);
+  });
+});
+
 describe('gate off — nothing new renders', () => {
   it('flag off: nothing at all, no request', async () => {
     state.on = false;

@@ -75,6 +75,8 @@ describe('symbols', () => {
     const many = Array.from({ length: SYMBOLS_MAX + 5 }, (_, i) => ({ symbol: `S${i}`, outcome: null, reason: null }));
     expect(capSymbols(many)).toEqual({ symbols: many.slice(0, SYMBOLS_MAX), symbolsTruncated: true });
     expect(capSymbols(many.slice(0, 3))).toEqual({ symbols: many.slice(0, 3), symbolsTruncated: false });
+    // Exactly the cap is not truncated (R5-16).
+    expect(capSymbols(many.slice(0, SYMBOLS_MAX))).toEqual({ symbols: many.slice(0, SYMBOLS_MAX), symbolsTruncated: false });
   });
   it('stage counts come from the FULL cohort even when the stored list is truncated', () => {
     const candidates = Array.from({ length: SYMBOLS_MAX + 20 }, (_, i) => ({ symbol: `S${i}`, status: i % 2 ? 'removed' : 'kept' }));
@@ -119,6 +121,9 @@ describe('the dialogue funnel', () => {
 describe('the screener funnel', () => {
   const screen = (symbols, universeSize = 6, matchCount = symbols.length + 1, resultType = 'stocks') => screenEntryOf({
     atIso: NOW, resultType, universeSize, matchCount, results: symbols.map((symbol) => ({ symbol })),
+  });
+  it('screenEntryOf: a value that is not a count is recorded as null, never 0 (R5-28)', () => {
+    expect(screenEntryOf({ atIso: NOW, resultType: 'stocks', universeSize: undefined, matchCount: -1, results: [] })).toMatchObject({ universeSize: null, matchedPreLimit: null, returned: 0 });
   });
   it('screenEntryOf: the screen\'s own values; an industry roll-up records no symbols', () => {
     expect(screen(['NVDA', 'nvda', 'AMD'])).toEqual({ at: NOW, resultType: 'stocks', universeSize: 6, matchedPreLimit: 4, returned: 2, symbols: ['NVDA', 'AMD'] });
@@ -196,6 +201,11 @@ describe('the analysis and manual funnels', () => {
     const later = analysisFunnel({ symbols: ['QQQQ'], digest: { size: 1, covered: 0, offUniverse: ['QQQQ'] }, prior: { stages: { selectedForInvestigation: 150, investigationsCompleted: 140 }, symbols: [] } });
     expect(later.stages).toEqual({ selectedForInvestigation: 150, investigationsCompleted: 140 });
     expect(later.symbols).toEqual([{ symbol: 'QQQQ', outcome: 'data_missing', reason: 'off_universe', offUniverse: true }]);
+  });
+  it('a member once covered STAYS covered when it later drops out of the universe — the cohort never contradicts its stage (R5-15)', () => {
+    const prior = { stages: { selectedForInvestigation: 1, investigationsCompleted: 1 }, symbols: [{ symbol: 'NVDA', outcome: null, reason: null }] };
+    const f = analysisFunnel({ symbols: ['NVDA'], digest: { size: 1, covered: 0, offUniverse: ['NVDA'] }, prior });
+    expect(f).toEqual({ stages: { selectedForInvestigation: 1, investigationsCompleted: 1 }, symbols: [{ symbol: 'NVDA', outcome: null, reason: null }] });
   });
   it('manual: no stage, no cohort', () => {
     expect(manualFunnel()).toEqual({ stages: {}, symbols: [] });
@@ -287,6 +297,9 @@ describe('the record and its patches', () => {
     expect(p).toMatchObject({ state: 'completed', terminalReason: 'saved_to_list', endedAt: LATER, watchlistId: 'wl-1', hypothesisVersion: 1, stages: { eligible: 1 } });
     for (const s of ['completed', 'abandoned', 'failed']) expect(closePatch({ ...base(), state: s }, { state: 'abandoned', terminalReason: 'user_close', atIso: LATER, funnel: manualFunnel() })).toBeNull();
     expect(() => closePatch(base(), { state: 'open', terminalReason: 'x', atIso: LATER, funnel: manualFunnel() })).toThrow();
+    // A close needs its reason and its time (R5-29).
+    expect(() => closePatch(base(), { state: 'completed', terminalReason: '', atIso: LATER, funnel: dialogueFunnel({ candidates: [] }) })).toThrow();
+    expect(() => closePatch(base(), { state: 'completed', terminalReason: 'saved_to_list', atIso: null, funnel: dialogueFunnel({ candidates: [] }) })).toThrow();
   });
   it('the Forge summary carries counts, completed model turns and state — never the cohort, the budget or the rest of telemetry', () => {
     expect(recordSummaryOf(base())).toEqual({

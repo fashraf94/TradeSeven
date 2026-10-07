@@ -493,7 +493,7 @@ describe('row 7 — abandon', () => {
 
 // ════════════════════════════════════════════════════════════════════════════
 describe('§2 review fixes — turn accounting and a closed record', () => {
-  it('a throw AFTER the turn persisted is not also a failure (review R2-4)', async () => {
+  it('a throw AFTER the turn persisted is not also a failure (review R2-4: the persisting guard covers it)', async () => {
     setDb({ 'indexIntelligence/stockRankings': rankingsDoc() });
     await screenFirst();
     state.logThrows = true; // the post-persist logger throws synchronously
@@ -512,7 +512,7 @@ describe('§2 review fixes — turn accounting and a closed record', () => {
     expect(res.statusCode).toBe(500);
     // The committed turn counted once as a completion; the ambiguous error added no failure.
     expect(rec(DIALOGUE_RW).telemetry).toMatchObject({ attempts: before.telemetry.attempts + 1, completions: before.telemetry.completions + 1, failures: 0 });
-    expect(console.warn.mock.calls.some(([m]) => /turn outcome unknown/.test(m))).toBe(true);
+    expect(console.warn.mock.calls.some(([m]) => /outcome unknown/.test(m))).toBe(true);
   });
   it('a CLOSED record never moves: screener turns after the save leave it exactly as it closed (review R1-1)', async () => {
     setDb({ 'indexIntelligence/stockRankings': rankingsDoc() });
@@ -534,5 +534,123 @@ describe('§2 review fixes — turn accounting and a closed record', () => {
     const r = rec(ANALYSIS_RW);
     expect(r.stages).toMatchObject({ selectedForInvestigation: 4, investigationsCompleted: 3 });
     expect(r.symbols.map((s) => `${s.symbol}:${s.outcome}`)).toEqual(['NVDA:null', 'AMD:null', 'ZZZZ:data_missing', 'AVGO:null']);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// The mutation lens's (R5) gaps — every turn exit on every host, not one host per exit.
+describe('mutation-lens rows (R5) — every turn exit, on every host', () => {
+  const ambiguousCommit = () => {
+    activeDb.__hooks.afterCommit = async () => { activeDb.__hooks.afterCommit = null; const e = new Error('4 DEADLINE_EXCEEDED'); e.code = 4; throw e; };
+  };
+  const failRead = (collectionName) => () => {
+    const orig = activeDb.collection;
+    activeDb.collection = (name) => (name === collectionName
+      ? { doc: () => ({ get: async () => { throw new Error('14 UNAVAILABLE'); } }) }
+      : orig(name));
+  };
+  beforeEach(() => { vi.spyOn(console, 'warn').mockImplementation(() => {}); vi.spyOn(console, 'error').mockImplementation(() => {}); });
+
+  // ── screener ──
+  it('R5-1 screener: the rankings document vanishes during the call → 503, a failure', async () => {
+    setDb({ 'indexIntelligence/stockRankings': rankingsDoc() });
+    await screenFirst();
+    const res = await screenNext(ok(screenReply(), { during: () => activeDb.doc('indexIntelligence/stockRankings').delete() }));
+    expect(res.statusCode).toBe(503);
+    expect(rec(SCREENER_RW).telemetry).toMatchObject({ attempts: 2, completions: 1, failures: 1, cancellations: 0 });
+  });
+  it('R5-2 screener: a concurrent turn used the budget → 409, a CANCELLATION (not a failure)', async () => {
+    setDb({ 'indexIntelligence/stockRankings': rankingsDoc() });
+    await screenFirst();
+    const res = await screenNext(ok(screenReply(), { during: () => activeDb.doc(`researchSessions/${SCREENER_SESSION}`).update({ messagesUsed: 30 }) }));
+    expect(res.statusCode).toBe(409);
+    expect(rec(SCREENER_RW).telemetry).toMatchObject({ attempts: 2, completions: 1, failures: 0, cancellations: 1 });
+  });
+  it('R5-3 screener: a store read fails after the call, before the persist step → the catch-all counts a failure', async () => {
+    setDb({ 'indexIntelligence/stockRankings': rankingsDoc() });
+    await screenFirst();
+    const res = await screenNext(ok(screenReply(), { during: failRead('indexIntelligence') }));
+    expect(res.statusCode).toBe(500);
+    expect(stored(activeDb, `researchWork/${SCREENER_RW}`).telemetry).toMatchObject({ attempts: 2, completions: 1, failures: 1 });
+  });
+  it('R5-4 / R5-5 screener: an ambiguous commit is counted once (as the completion it was)', async () => {
+    setDb({ 'indexIntelligence/stockRankings': rankingsDoc() });
+    await screenFirst();
+    ambiguousCommit();
+    const res = await screenNext(ok(screenReply()));
+    expect(res.statusCode).toBe(500);
+    expect(rec(SCREENER_RW).telemetry).toMatchObject({ attempts: 2, completions: 2, failures: 0 });
+  });
+  it('R5-6 screener: a continuing turn moves the budget to the host\'s own count', async () => {
+    setDb({ 'indexIntelligence/stockRankings': rankingsDoc() });
+    await screenFirst();
+    await screenNext(ok(screenReply()));
+    expect(rec(SCREENER_RW).budget).toEqual({ currency: 'persisted_messages', allotted: 30, used: 2 });
+  });
+  it('R5-22 screener: a failed FIRST turn reads no record (there is none to read)', async () => {
+    setDb({ 'indexIntelligence/stockRankings': rankingsDoc() });
+    await screenFirst(failed());
+    expect(activeDb.__access.reads.filter((p) => p.startsWith('researchWork/'))).toEqual([]);
+    expect(records()).toEqual({});
+  });
+
+  // ── dialogue ──
+  it('R5-7 dialogue: a continuing model failure is a failure', async () => {
+    setDb(dialogueDocs());
+    await dialogueFirst();
+    await dialogueNext(failed());
+    expect(rec(DIALOGUE_RW).telemetry).toMatchObject({ attempts: 2, completions: 1, failures: 1 });
+  });
+  it('R5-8 dialogue: an unparseable reply is a failure', async () => {
+    setDb(dialogueDocs());
+    await dialogueFirst();
+    await dialogueNext(ok('no json here'));
+    expect(rec(DIALOGUE_RW).telemetry).toMatchObject({ attempts: 2, completions: 1, failures: 1 });
+  });
+
+  // ── analysis ──
+  const openAnalysis = async () => {
+    setDb({ 'indexIntelligence/stockRankings': rankingsDoc(), 'watchlists/wl-1': savedList() });
+    await call(analysisHandler, { body: { watchlistId: 'wl-1' } });
+  };
+  const ask = (reply) => { if (reply) state.replies.push(reply); return call(analysisHandler, { body: { watchlistId: 'wl-1', sessionId: ANALYSIS_SESSION, userMessage: 'What do these share?' } }); };
+  it('R5-9 analysis: a concurrent turn used the budget → 409, a cancellation', async () => {
+    await openAnalysis();
+    const res = await ask(ok(analysisReply(), { during: () => activeDb.doc(`analysisSessions/${ANALYSIS_SESSION}`).update({ messagesUsed: 30 }) }));
+    expect(res.statusCode).toBe(409);
+    expect(rec(ANALYSIS_RW).telemetry).toMatchObject({ attempts: 1, completions: 0, cancellations: 1 });
+  });
+  it('R5-10 analysis: a FIRST turn that is a message mints a record that already counts its model turn', async () => {
+    setDb({ 'indexIntelligence/stockRankings': rankingsDoc(), 'watchlists/wl-1': savedList() });
+    state.replies.push(ok(analysisReply(), { usage: { input: 3, output: 4 }, during: later(200) }));
+    await call(analysisHandler, { body: { watchlistId: 'wl-1', userMessage: 'What do these share?' } });
+    expect(rec(ANALYSIS_RW).telemetry).toMatchObject({ attempts: 1, completions: 1, elapsedMs: 200, tokens: { input: 3, output: 4 } });
+    expect(rec(ANALYSIS_RW).budget.used).toBe(1);
+  });
+  it('R5-11 analysis: an unparseable reply is a failure', async () => {
+    await openAnalysis();
+    await ask(ok('no json here'));
+    expect(rec(ANALYSIS_RW).telemetry).toMatchObject({ attempts: 1, completions: 0, failures: 1 });
+  });
+  it('R5-12 analysis: a store read that fails BEFORE the model call is not a model turn', async () => {
+    await openAnalysis();
+    failRead('indexIntelligence')();
+    const res = await ask(null);
+    expect(res.statusCode).toBe(500);
+    expect(stored(activeDb, `researchWork/${ANALYSIS_RW}`).telemetry).toMatchObject({ attempts: 0, failures: 0 });
+  });
+  it('R5-13 / R5-14 analysis: an ambiguous commit is counted once', async () => {
+    await openAnalysis();
+    ambiguousCommit();
+    const res = await ask(ok(analysisReply()));
+    expect(res.statusCode).toBe(500);
+    expect(rec(ANALYSIS_RW).telemetry).toMatchObject({ attempts: 1, completions: 1, failures: 0 });
+  });
+
+  // ── the screener create ──
+  it('R5-20 a malformed screener session id is never used as a path (no session read)', async () => {
+    setDb({ 'indexIntelligence/stockRankings': rankingsDoc() });
+    await call(watchlistsHandler, { body: { tickers: [{ symbol: 'NVDA' }], name: 'x', sourceScreenSpec: null, screenerSessionId: 'bad/id' } });
+    expect(activeDb.__access.reads.filter((p) => p.startsWith('researchSessions/'))).toEqual([]);
   });
 });

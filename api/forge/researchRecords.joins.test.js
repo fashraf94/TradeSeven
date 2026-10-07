@@ -152,6 +152,34 @@ describe('row 8 — the joins', () => {
     expect(txReads.length).toBeGreaterThan(0);
     expect(txReads.filter((p) => p.startsWith('researchWork/'))).toEqual([]);
   });
+  it('past the read bound, the list\'s OWN record is still cited first and shown first — both callers pass the id the list names (R5-18 / R5-19)', async () => {
+    const docs = {
+      'watchlists/wl-1': savedList({ researchWorkId: 'wl_wl-1' }),
+      'researchWork/wl_wl-1': { researchWorkId: 'wl_wl-1', userId: OWNER, origin: 'manual', state: 'completed', watchlistId: 'wl-1', createdAt: '2026-10-01T00:00:00.000Z', telemetry: { completions: 0 } },
+    };
+    // 200 analysis records whose ids sort before the list's own (the bounded query returns them and not it).
+    for (let i = 0; i < 200; i++) {
+      const id = `as_${String(i).padStart(3, '0')}`;
+      docs[`researchWork/${id}`] = { researchWorkId: id, userId: OWNER, origin: 'analysis', state: 'open', watchlistId: 'wl-1', createdAt: NOW, telemetry: { completions: 0 } };
+    }
+    setDb(docs);
+    const v = await createVersion('wl-1', { expectedVersion: 0, statement: 'An idea' });
+    expect(v.body.version.evidenceRefs[0]).toEqual(ref('wl_wl-1'));
+    const got = await call(versionsHandler, { method: 'GET', query: { id: 'wl-1' } });
+    expect(got.body.research[0].researchWorkId).toBe('wl_wl-1');
+  });
+  it('another player\'s list: no research is read before the refusal (R5-24)', async () => {
+    setDb({ 'watchlists/wl-9': savedList({ watchlistId: 'wl-9', userId: OTHER }) });
+    const v = await createVersion('wl-9', { expectedVersion: 0, statement: 'Not mine' });
+    expect(v.statusCode).toBe(403);
+    expect(activeDb.__access.queries.filter((q) => q.collectionPath === 'researchWork')).toEqual([]);
+  });
+  it('a screener-linked list\'s first version reads no dialogue session (R5-25: a session id alone is not a dialogue)', async () => {
+    setDb({ 'watchlists/wl-1': savedList({ sourceSessionId: 'rs-1', sourceDropId: null, sourceScreenSpec: { filters: [] } }) });
+    const v = await createVersion('wl-1', { expectedVersion: 0, statement: 'From a screen' });
+    expect(v.body.version.origin).toBe('screener');
+    expect(activeDb.__access.reads.filter((p) => p.startsWith('watchlistSessions/'))).toEqual([]);
+  });
   it('a record whose subject is ANOTHER list is never cited, even if a list names it', async () => {
     setDb({
       'watchlists/wl-2': savedList({ watchlistId: 'wl-2', researchWorkId: 'rs_s1' }),

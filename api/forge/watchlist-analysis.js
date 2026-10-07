@@ -324,12 +324,13 @@ export default async function handler(req, res) {
   // Pilot P2: resolved once, no I/O. `turn` follows this request's model call
   // so every exit — the catch-all included — can record what it came to.
   const recordsOn = hypothesisRecordsOnFor(user.uid);
-  const turn = { recordId: null, continuing: false, called: false, persisting: false, persisted: false, elapsedMs: null, usage: null };
+  const turn = { recordId: null, continuing: false, called: false, persisting: false, elapsedMs: null, usage: null };
   const noteTurn = async (kind) => {
-    if (!turn.recordId || !turn.continuing || !turn.called || turn.persisted) return; // a persisted turn is never also a failure (review R2-4)
-    // A failure out of the persist step itself is ambiguous — the transaction may have committed (reviews R1-11 / R2-6):
-    // its outcome is unknown, so it is logged and never counted (a lost-concurrency cancellation is certain and is).
-    if (kind === 'failure' && turn.persisting) { console.warn('[researchRecords] turn outcome unknown (the persist step threw); not counted'); return; }
+    if (!turn.recordId || !turn.continuing || !turn.called) return;
+    // From the persist step on, a failure is never counted: a throw out of the step is ambiguous — the
+    // transaction may have committed (reviews R1-11 / R2-6) — and a throw after it follows a turn that is
+    // already counted (review R2-4). Logged, not counted. A lost-concurrency cancellation is certain and is.
+    if (kind === 'failure' && turn.persisting) { console.warn('[researchRecords] turn already counted or its outcome unknown (a throw from the persist step on); not counted'); return; }
     await recordTurnOutcome(db, {
       researchWorkId: turn.recordId, uid: user.uid, kind, elapsedMs: turn.elapsedMs, usage: turn.usage,
       atIso: new Date().toISOString(), label: 'analysis',
@@ -649,8 +650,6 @@ export default async function handler(req, res) {
         throw txErr;
       }
     }
-
-    turn.persisted = true; // Pilot P2: the turn is in the store — a later throw is not a failed turn
 
     // 12. Shadow log (fire-and-forget). Scratchpad lives ONLY here.
     logConversation({

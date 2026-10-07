@@ -61,6 +61,11 @@ describe('recordTurnOutcome — awaited, bounded, never thrown', () => {
     expect(await recordTurnOutcome(db, { researchWorkId: 'not-an-id', uid: 'u1', kind: 'failure', atIso: NOW, label: 't' })).toBe('skipped');
     expect(db.__access.writes).toEqual([]);
   });
+  it('a CLOSED record is skipped — it never moves (R5-23)', async () => {
+    const db = makeCallsFirestore({ docs: { 'researchWork/rs_1': rec('rs_1', { origin: 'screener', state: 'completed' }) } });
+    expect(await recordTurnOutcome(db, { researchWorkId: 'rs_1', uid: 'u1', kind: 'failure', atIso: NOW, label: 't' })).toBe('skipped');
+    expect(db.__access.writes).toEqual([]);
+  });
 });
 
 describe('readListResearch — attached = the subject is this list; one bounded query', () => {
@@ -101,12 +106,19 @@ describe('what versions cite and what the Forge is given', () => {
     expect(researchRefsOf(records).map((r) => r.id)).toEqual(records.map((r) => r.researchWorkId));
     expect(researchRefsOf(records)[0]).toEqual({ kind: 'researchWork', id: 'ws_own' });
   });
-  it('the Forge gets the list\'s own research first, then analysis newest first, at most RESEARCH_SUMMARIES_MAX', () => {
+  it('the Forge gets the list\'s own research first, then analysis newest first — at most 20 (R5-17: the number itself)', () => {
     const out = researchSummariesOf(records);
-    expect(out).toHaveLength(RESEARCH_SUMMARIES_MAX);
+    expect(RESEARCH_SUMMARIES_MAX).toBe(20);
+    expect(out).toHaveLength(20);
     expect(out[0].researchWorkId).toBe('ws_own');
     expect(out[1].researchWorkId).toBe('as_24');
     expect(out.every((s) => 'completions' in s && !('symbols' in s) && !('telemetry' in s))).toBe(true);
+  });
+  it('a WORKED analysis comes before any number of newer opened-and-left ones, so the cap can never hide it (R5 observation)', () => {
+    const worked = rec('as_worked', { createdAt: '2026-10-07T10:30:00.000Z', telemetry: { ...emptyTelemetry(), completions: 1 } });
+    const opened = Array.from({ length: 30 }, (_, i) => rec(`as_o${String(i).padStart(2, '0')}`, { createdAt: `2026-10-07T12:${String(i).padStart(2, '0')}:00.000Z` }));
+    const out = researchSummariesOf([records[0], worked, ...opened]);
+    expect(out.map((s) => s.researchWorkId).slice(0, 3)).toEqual(['ws_own', 'as_worked', 'as_o29']);
   });
 });
 
