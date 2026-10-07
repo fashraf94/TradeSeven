@@ -107,10 +107,12 @@ describe('the player transition table (spec §2.5; acceptance row 4)', () => {
     reject: { draft: 'player_rejected', researched: 'player_rejected', waiting_for_evidence: 'player_rejected' },
     cancel: { draft: 'player_cancelled', researched: 'player_cancelled', ready: 'player_cancelled', waiting_for_evidence: 'player_cancelled' },
     retire: Object.fromEntries(HYPOTHESIS_STATUSES.filter((s) => !['retired', 'rejected', 'cancelled'].includes(s)).map((s) => [s, 'player_retired'])),
+    // Pilot P2 — founder ruling D4 (spec Amendment B): the player's own draft → researched.
+    mark_researched: { draft: 'player_marked_researched' },
   };
-  const TARGET = { ready: 'ready', wait: 'waiting_for_evidence', reject: 'rejected', cancel: 'cancelled', retire: 'retired' };
+  const TARGET = { ready: 'ready', wait: 'waiting_for_evidence', reject: 'rejected', cancel: 'cancelled', retire: 'retired', mark_researched: 'researched' };
 
-  it('the actions are exactly ready, wait, reject, cancel, retire (reaffirm creates a version instead)', () => {
+  it('the actions are exactly ready, wait, reject, cancel, retire, mark_researched (reaffirm creates a version instead)', () => {
     expect(Object.keys(PLAYER_TRANSITIONS).sort()).toEqual(Object.keys(EXPECTED).sort());
   });
   for (const action of Object.keys(EXPECTED)) {
@@ -136,6 +138,9 @@ describe('the player transition table (spec §2.5; acceptance row 4)', () => {
     expect(legalActionsFor('review_due', { hasSuccessor: true })).toEqual(['retire']);
     expect(legalActionsFor('researched')).toEqual(['ready', 'wait', 'reject', 'cancel', 'retire']);
     expect(legalActionsFor('researched', { isCurrent: false })).toEqual(['reject', 'cancel', 'retire']);
+    // P2 / D4: a current draft can be marked researched; a superseded one can only be closed.
+    expect(legalActionsFor('draft')).toEqual(['reject', 'cancel', 'retire', 'mark_researched']);
+    expect(legalActionsFor('draft', { isCurrent: false })).toEqual(['reject', 'cancel', 'retire']);
     expect(legalActionsFor('retired')).toEqual([]);
   });
 });
@@ -170,12 +175,15 @@ describe('horizon capture and origin at save (spec §2.5, §2.8; acceptance row 
       expect(buildSaveVersion({ session: { anatomy }, watchlistId: 'wl-1', userId: 'u-1', sessionId: 's-1', nowIso: NOW })).toBeNull();
     }
   });
-  it('originOf: session-derived → signaldrop | theme (from the session); sourceScreenSpec → screener; else manual', () => {
-    expect(originOf({ sourceSessionId: 's-1' }, {})).toBe('signaldrop');
-    expect(originOf({ sourceSessionId: 's-1' }, { source: 'theme' })).toBe('theme');
+  it('originOf: dialogue list (session + drop) → signaldrop | theme (from the session); sourceScreenSpec or a screener session → screener; else manual', () => {
+    expect(originOf({ sourceSessionId: 's-1', sourceDropId: 'd-1' }, {})).toBe('signaldrop');
+    expect(originOf({ sourceSessionId: 's-1', sourceDropId: 'd-1' }, { source: 'theme' })).toBe('theme');
     expect(originOf({ sourceSessionId: null, sourceScreenSpec: { filters: [] } })).toBe('screener');
     expect(originOf({ sourceSessionId: null, sourceScreenSpec: null })).toBe('manual');
     expect(originOf({ sourceSessionId: null })).toBe('manual');
+    // Pilot P2: a list linked to a SCREENER session names it too, but no drop — screener, even with the spec dropped.
+    expect(originOf({ sourceSessionId: 'rs-1', sourceDropId: null, sourceScreenSpec: null })).toBe('screener');
+    expect(originOf({ sourceSessionId: 'rs-1', sourceDropId: null, sourceScreenSpec: { filters: [] } }, { source: 'theme' })).toBe('screener');
   });
 });
 

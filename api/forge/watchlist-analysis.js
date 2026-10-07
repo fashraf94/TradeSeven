@@ -35,6 +35,20 @@ import { extractTickerSymbols } from '../_utils/watchlistEquip.js';
 import { isValidForgeId, FORGE_ID_REGEX, FORGE_ID_MAX_LEN } from '../_utils/idValidation.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { logConversation } from '../_utils/shadowLogger.js';
+// Pilot P2 — the research record (pilot spec §3; the P2 build prompt). Gate on
+// for the caller only: a new session mints its record in the same write that
+// creates it, with the list and its current hypothesis version as subject
+// (the version itself is never touched); a successful continuing turn updates
+// it inside the turn transaction; a failed or discarded turn records itself in
+// a separate awaited write that never changes the answer. The analysis host
+// has no terminal writer, so its record stays open — none is added. Gate off
+// → every write, response and model-call argument here is what it was.
+import { hypothesisRecordsOnFor } from '../_utils/hypothesisRecords/gate.js';
+import {
+  HOST_COLLECTIONS, researchWorkIdFor, isResearchWorkId, isOwnedRecord, currentVersionOfList, buildRecord, budgetOf,
+  emptyTelemetry, applyTurn, analysisFunnel, turnPatch,
+} from '../_utils/researchRecords/model.js';
+import { mintWithHost, recordTurnOutcome, researchWorkRefOf, safely } from '../_utils/researchRecords/store.js';
 
 export const config = { maxDuration: 30 };
 
@@ -307,6 +321,22 @@ export default async function handler(req, res) {
 
   const db = getFirebaseAdmin();
 
+  // Pilot P2: resolved once, no I/O. `turn` follows this request's model call
+  // so every exit — the catch-all included — can record what it came to.
+  const recordsOn = hypothesisRecordsOnFor(user.uid);
+  const turn = { recordId: null, continuing: false, called: false, persisting: false, elapsedMs: null, usage: null };
+  const noteTurn = async (kind) => {
+    if (!turn.recordId || !turn.continuing || !turn.called) return;
+    // From the persist step on, a failure is never counted: a throw out of the step is ambiguous — the
+    // transaction may have committed (reviews R1-11 / R2-6) — and a throw after it follows a turn that is
+    // already counted (review R2-4). Logged, not counted. A lost-concurrency cancellation is certain and is.
+    if (kind === 'failure' && turn.persisting) { console.warn('[researchRecords] turn already counted or its outcome unknown (a throw from the persist step on); not counted'); return; }
+    await recordTurnOutcome(db, {
+      researchWorkId: turn.recordId, uid: user.uid, kind, elapsedMs: turn.elapsedMs, usage: turn.usage,
+      atIso: new Date().toISOString(), label: 'analysis',
+    });
+  };
+
   try {
     // 1. Load the watchlist (ownership + soft-delete gone).
     const wlSnap = await db.collection('watchlists').doc(watchlistId).get();
@@ -368,6 +398,39 @@ export default async function handler(req, res) {
     const messagesUsed = session.messagesUsed || 0;
     const messageBudget = session.messageBudget || MESSAGE_BUDGET;
 
+    // Pilot P2: a new session will mint its record (id derived from the
+    // session); a continuing one feeds the record it carries, if any.
+    if (recordsOn) {
+      turn.recordId = isNewSession
+        ? researchWorkIdFor({ collection: HOST_COLLECTIONS.analysis, id: sessionRef.id })
+        : (isResearchWorkId(session.researchWorkId) ? session.researchWorkId : null);
+      turn.continuing = !isNewSession;
+    }
+    // The record a NEW session mints: the list as subject, with the version
+    // current in the SAME list snapshot the session's cohort comes from (the
+    // read at the top of this request — review R2-7: the record's subject and
+    // its funnel describe one list state), the digest's own counts as its
+    // funnel. No record → the plain write this route always made.
+    // `modelTurn`: whether this first write follows a model call (a message
+    // turn) or none (an open turn: the record starts with no attempt).
+    const mintNew = async (hostDoc, { digest, nowIso, modelTurn, messagesUsedAfter }) => {
+      const record = turn.recordId ? safely('analysis', () => buildRecord({
+        researchWorkId: turn.recordId, userId: user.uid, origin: 'analysis',
+        host: { collection: HOST_COLLECTIONS.analysis, id: sessionRef.id }, createdAt: nowIso,
+        watchlistId, hypothesisVersion: currentVersionOfList(watchlist),
+        funnel: analysisFunnel({ symbols, digest }),
+        budget: budgetOf({ messageBudget, messagesUsed: messagesUsedAfter }),
+        telemetry: modelTurn
+          ? applyTurn(emptyTelemetry(), { kind: 'completion', elapsedMs: turn.elapsedMs, usage: turn.usage, atIso: nowIso })
+          : emptyTelemetry(),
+      })) : null;
+      if (record) {
+        await mintWithHost(db, { hostRef: sessionRef, hostDoc: { ...hostDoc, researchWorkId: record.researchWorkId }, record });
+      } else {
+        await sessionRef.set(hostDoc);
+      }
+    };
+
     // 3. Tier-1: read the rankings universe ONCE.
     const rankingsDoc = await db.collection('indexIntelligence').doc('stockRankings').get();
     if (!rankingsDoc.exists) {
@@ -385,7 +448,7 @@ export default async function handler(req, res) {
       const rows = buildCohortRows({ symbols, rankingsBySymbol }); // Tier-1 only on open
       const nowIso = new Date().toISOString();
       if (isNewSession) {
-        await sessionRef.set({ ...session, updatedAt: nowIso });
+        await mintNew({ ...session, updatedAt: nowIso }, { digest, nowIso, modelTurn: false, messagesUsedAfter: messagesUsed });
       }
       return res.status(200).json({
         sessionId: sessionRef.id,
@@ -459,20 +522,27 @@ export default async function handler(req, res) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 25000);
     let gemmaResult;
+    const callStartedMs = Date.now();
     try {
       gemmaResult = await callGemmaVoiceWithRetry({
         systemPrompt,
         conversationHistory,
         userMessage: sanitizedMessage,
         signal: controller.signal,
+        // Pilot P2: the provider's token counts, only for a recorded turn.
+        ...(turn.recordId ? { includeUsage: true } : {}),
       });
     } finally {
       clearTimeout(timeoutId);
     }
+    turn.called = true;
+    turn.elapsedMs = Date.now() - callStartedMs;
+    turn.usage = gemmaResult?.usage ?? null;
 
     // 8b. Gemma failure → graceful (this turn doesn't burn budget).
     if (!gemmaResult.success) {
       console.error('[WatchlistAnalysis] Gemma call failed:', gemmaResult.error);
+      await noteTurn('failure');
       return res.status(gemmaResult.aborted ? 504 : 200).json({
         sessionId: sessionRef.id,
         message: 'I hit a snag analyzing that — could you ask again?',
@@ -490,6 +560,7 @@ export default async function handler(req, res) {
     const parsed = parseVoiceLayerResponse(gemmaResult.content);
     if (parsed?.parseError === true) {
       console.error('[WatchlistAnalysis] parse failed:', parsed.errorReason);
+      await noteTurn('failure');
       return res.status(200).json({
         sessionId: sessionRef.id,
         message: 'I hit a snag analyzing that — could you ask again?',
@@ -519,14 +590,15 @@ export default async function handler(req, res) {
       timestamp: nowIso,
     };
 
+    turn.persisting = true; // Pilot P2: from here a thrown error may follow a committed turn
     // 11. Persist. New session: set; continuing: transaction re-checks budget.
     if (isNewSession) {
-      await sessionRef.set({
+      await mintNew({
         ...session,
         exchanges: [exchange],
         messagesUsed: 1,
         updatedAt: nowIso,
-      });
+      }, { digest, nowIso, modelTurn: true, messagesUsedAfter: 1 });
     } else {
       try {
         await db.runTransaction(async (tx) => {
@@ -537,11 +609,22 @@ export default async function handler(req, res) {
           if ((fresh.messagesUsed || 0) >= (fresh.messageBudget || MESSAGE_BUDGET)) {
             throw new Error('__concurrency:budget_consumed');
           }
+          // Pilot P2: the session's record, read before any write.
+          const recordRef = turn.recordId ? researchWorkRefOf(db, turn.recordId) : null;
+          const recordSnap = recordRef ? await tx.get(recordRef) : null;
           tx.update(sessionRef, {
             exchanges: FieldValue.arrayUnion(exchange),
             messagesUsed: FieldValue.increment(1),
             updatedAt: nowIso,
           });
+          const record = recordSnap?.exists ? recordSnap.data() : null;
+          const patch = isOwnedRecord(record, user.uid) ? safely('analysis', () => turnPatch(record, {
+            kind: 'completion', elapsedMs: turn.elapsedMs, usage: turn.usage, atIso: nowIso,
+            budget: budgetOf({ messageBudget: fresh.messageBudget || MESSAGE_BUDGET, messagesUsed: (fresh.messagesUsed || 0) + 1 }),
+            // Cumulative over the session: the record so far is the prior (review R1-8).
+            funnel: analysisFunnel({ symbols, digest, prior: record }),
+          })) : null;
+          if (patch) tx.update(recordRef, patch);
         });
       } catch (txErr) {
         if (typeof txErr?.message === 'string' && txErr.message.startsWith('__concurrency:')) {
@@ -549,6 +632,8 @@ export default async function handler(req, res) {
           if (reason === 'not_owner') {
             return res.status(403).json({ error: 'Not authorized for this session' });
           }
+          // Pilot P2: the model answered but the turn was discarded — a cancellation.
+          await noteTurn('cancellation');
           return res.status(409).json({
             sessionId: sessionRef.id,
             message: 'Your thread was modified by another request — try that again.',
@@ -603,6 +688,7 @@ export default async function handler(req, res) {
     });
   } catch (error) {
     console.error('[WatchlistAnalysis] Error:', error);
+    await noteTurn('failure'); // Pilot P2: only a recorded turn that reached the model
     const isAbort = error?.name === 'AbortError';
     return res.status(isAbort ? 504 : 500).json({
       sessionId: null,

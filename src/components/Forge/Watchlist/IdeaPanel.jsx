@@ -23,22 +23,32 @@
 // and replays idempotently (review L2-1 / L4-2); a 409 conflict closes it.
 // Lifecycle sentences are table C verbatim (ideaCopy.js), filled only from
 // the version's own record. Colors are the existing theme tokens only.
+//
+// Pilot P2: the panel also says what research stands behind the list — the
+// research it came from, and its newest analysis session the agent worked on
+// (ideaCopy.js researchLinesOf), every number a
+// stage count from the record — and, when the player marked the current
+// version researched themselves (founder ruling D4), says so in words
+// distinct from research done with the agent. It arrives with the version
+// list, behind the same gate: nothing new renders when the panel does not.
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { isHypothesisRecordsOn } from '../../../config/featureFlags';
-import { HORIZON_ENUMS, TERMINAL_STATUSES, legalActionsFor } from '../../../constants/hypothesisRecords';
+import { HORIZON_ENUMS, TERMINAL_STATUSES, STATE_REASONS, legalActionsFor } from '../../../constants/hypothesisRecords';
 import {
   listHypothesisVersions, createHypothesisVersion, transitionHypothesis, reaffirmHypothesis, newOpId,
 } from '../../../services/hypothesisVersionService';
 import {
   LIFECYCLE_LINES, fillLine, ideaSymbolOf, windowTextOf, formatIdeaDate,
-  STATUS_LABELS, ACTION_LABELS, HORIZON_LABELS, HORIZON_SOURCE_LABELS, PANEL_COPY,
+  STATUS_LABELS, ACTION_LABELS, HORIZON_LABELS, HORIZON_SOURCE_LABELS, PANEL_COPY, RESEARCH_COPY, researchLinesOf, noResearchRecorded,
 } from './ideaCopy';
 import SectionLabel from './SectionLabel';
 
 const STATEMENT_MAX = 1000;
 const MISSING_EVIDENCE_MAX = 300;
 const CLOSING = ['reject', 'cancel', 'retire'];
+/** Moves that carry the idea forward (styled as the primary action). */
+const FORWARD = ['ready', 'reaffirm', 'mark_researched'];
 /** Typed errors the routes raise only AFTER the gate admitted the caller — proof the gate is on. */
 const POST_GATE_ERRORS = new Set(['not_found', 'forbidden', 'server_error', 'pointer_corrupt', 'invalid_watchlist_id', 'invalid_version']);
 /** Refusals that mean the editor's request can no longer apply as opened. */
@@ -75,13 +85,17 @@ export default function IdeaPanel({ watchlistId, tokens }) {
   const enabled = isHypothesisRecordsOn();
   // pending (first answer not in) | hidden | ready | error (only once the gate is known on)
   const [phase, setPhase] = useState(enabled ? 'pending' : 'hidden');
-  const [record, setRecord] = useState({ currentVersion: 0, versions: [] });
+  const [record, setRecord] = useState({ currentVersion: 0, versions: [], research: null });
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(null); // { tone: 'ok' | 'error', text }
   const [editor, setEditor] = useState(null); // { mode, opId, expectedVersion, targetVersion, baseStatement, statement, horizonEnum }
   const [pending, setPending] = useState(null); // { action, version, expectedStatus, missingEvidence }
 
-  const adopt = (data) => setRecord({ currentVersion: data.currentVersion || 0, versions: Array.isArray(data.versions) ? data.versions : [] });
+  const adopt = (data) => setRecord({
+    currentVersion: data.currentVersion || 0,
+    versions: Array.isArray(data.versions) ? data.versions : [],
+    research: Array.isArray(data.research) ? data.research : null, // absent = not known, never "none"
+  });
 
   /** Reload after a move (the gate is already known on): a failure now is said, not hidden. */
   const reload = useCallback(async () => {
@@ -166,6 +180,9 @@ export default function IdeaPanel({ watchlistId, tokens }) {
   const actions = current ? legalActionsFor(current.status, { isCurrent: true, hasSuccessor: current.successorVersion != null }) : [];
   const canSaveNew = !current || current.status !== 'review_due';
   const line = lifecycleLineFor(current);
+  const researchLines = researchLinesOf(record.research, { watchlistId });
+  const showNoResearch = researchLines.length === 0 && noResearchRecorded(record.research, current);
+  const playerMarked = current?.stateReason === STATE_REASONS.playerMarkedResearched;
 
   return (
     <div data-testid="idea-panel">
@@ -212,6 +229,19 @@ export default function IdeaPanel({ watchlistId, tokens }) {
           </div>
         )}
 
+        {phase === 'ready' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 10 }} data-testid="idea-research">
+            {playerMarked && <div style={meta(tokens)} data-testid="idea-player-marked">{RESEARCH_COPY.playerMarked}</div>}
+            {showNoResearch && <div style={meta(tokens)} data-testid="idea-research-none">{RESEARCH_COPY.none}</div>}
+            {researchLines.map((r) => (
+              <div key={r.id} style={meta(tokens)} data-testid="idea-research-line">
+                {r.line}
+                {r.state && <span data-testid="idea-research-state">{` · ${r.state}`}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+
         {notice && <div style={{ ...banner(tokens, notice.tone === 'ok' ? tokens.teal : tokens.red), marginTop: 10 }} data-testid="idea-notice">{notice.text}</div>}
 
         {phase === 'ready' && current && !editor && (
@@ -222,7 +252,7 @@ export default function IdeaPanel({ watchlistId, tokens }) {
                 type="button"
                 disabled={busy}
                 onClick={() => (a === 'reaffirm' ? openEditor('reaffirm') : askAction(a, current))}
-                style={btn(a === 'ready' || a === 'reaffirm' ? tokens.teal : tokens.textPrimary, a === 'ready' || a === 'reaffirm' ? tokens.teal : tokens.borderInput, busy)}
+                style={btn(FORWARD.includes(a) ? tokens.teal : tokens.textPrimary, FORWARD.includes(a) ? tokens.teal : tokens.borderInput, busy)}
               >
                 {ACTION_LABELS[a]}
               </button>

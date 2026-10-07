@@ -24,6 +24,13 @@
 //       the response body is still arriving — callers gate their timeout
 //       response on that flag.
 //       Never throws except if options.signal was aborted before the call.
+//       OPT-IN `includeUsage: true` (Pilot P2, research-record telemetry): a
+//       successful result also carries `usage: { input, output } | null` —
+//       the provider's own token counts for the call, or null when they are
+//       not known (none returned, or an earlier attempt of this call failed
+//       and its consumption was never reported). The request sent is
+//       identical either way, and a caller that does not opt in gets the
+//       result object it always got.
 //   parseVoiceLayerResponse(rawText)
 //     — 4-tier JSON extractor with a safe plaintext fallback. Returns an
 //       object shaped like the Voice Layer OUTPUT_FORMAT schema.
@@ -82,6 +89,7 @@ async function _callGemmaOnce({
   signal,
   temperature,
   maxTokens,
+  includeUsage = false,
 }) {
   const messages = [
     { role: 'system', content: systemPrompt },
@@ -220,7 +228,20 @@ async function _callGemmaOnce({
   }
 
   emitLatency('ok', response.status);
-  return { ok: true, content };
+  return includeUsage ? { ok: true, content, usage: providerUsageOf(data) } : { ok: true, content };
+}
+
+/**
+ * The provider's token counts from an OpenRouter chat-completions body
+ * (`usage.prompt_tokens` / `usage.completion_tokens`), or null when either is
+ * absent or not a non-negative integer. Read only — never estimated.
+ */
+function providerUsageOf(data) {
+  const u = data?.usage;
+  const count = (v) => Number.isSafeInteger(v) && v >= 0;
+  return u && count(u.prompt_tokens) && count(u.completion_tokens)
+    ? { input: u.prompt_tokens, output: u.completion_tokens }
+    : null;
 }
 
 /**
@@ -313,7 +334,10 @@ export async function callGemmaVoiceWithRetry(options) {
     }
 
     if (result.ok) {
-      return { success: true, content: result.content };
+      if (options?.includeUsage !== true) return { success: true, content: result.content };
+      // A retried call's earlier attempt may have consumed tokens the provider
+      // never reported, so only a first-attempt success has a known total.
+      return { success: true, content: result.content, usage: attempt === 1 ? result.usage : null };
     }
 
     // HTTP-level error — retry only if transient

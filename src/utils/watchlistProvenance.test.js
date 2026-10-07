@@ -17,9 +17,14 @@ describe('getWatchlistProvenance', () => {
       .toEqual({ label: 'ATLAS', count: 1 });
   });
 
-  it('sourceSessionId present -> ATLAS', () => {
-    expect(getWatchlistProvenance({ sourceSessionId: 'sess-1', tickers: [] }))
+  it('a dialogue list (session AND drop, as every dialogue save writes) -> ATLAS', () => {
+    expect(getWatchlistProvenance({ sourceSessionId: 'sess-1', sourceDropId: 'drop-1', tickers: [] }))
       .toEqual({ label: 'ATLAS', count: 0 });
+  });
+
+  it('Pilot P2: a session WITHOUT a drop (a screener-linked list) is not a dialogue list -> MANUAL, as before the link', () => {
+    expect(getWatchlistProvenance({ sourceSessionId: 'rs-1', sourceDropId: null, sourceScreenSpec: { filters: [] }, tickers: [1, 2] }))
+      .toEqual({ label: 'MANUAL', count: 2 });
   });
 
   it('no source markers -> MANUAL', () => {

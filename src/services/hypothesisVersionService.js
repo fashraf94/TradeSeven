@@ -40,7 +40,7 @@ export function newOpId() {
   return `op-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-/** The list's versions, newest first: { watchlistId, currentVersion, versions[] }. */
+/** The list's versions, newest first, and its research summaries: { watchlistId, currentVersion, versions[], research[] }. */
 export function listHypothesisVersions(watchlistId) {
   return send(`${base(watchlistId)}/hypothesis-versions`, { method: 'GET' });
 }
@@ -54,7 +54,7 @@ export function createHypothesisVersion(watchlistId, { opId, expectedVersion, st
   return send(`${base(watchlistId)}/hypothesis-versions`, { method: 'POST', body: JSON.stringify(body) });
 }
 
-/** One move on a version: ready | wait | reject | cancel | retire. */
+/** One move on a version: ready | wait | reject | cancel | retire | mark_researched. */
 export function transitionHypothesis(watchlistId, { version, action, expectedStatus, missingEvidence }) {
   const body = { version, action, expectedStatus, ...(missingEvidence !== undefined ? { missingEvidence } : {}) };
   return send(`${base(watchlistId)}/hypothesis-transition`, { method: 'POST', body: JSON.stringify(body) });

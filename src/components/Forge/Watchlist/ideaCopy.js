@@ -12,6 +12,7 @@
 // sentences; none uses table E's forbidden vocabulary (ideaCopy.test.js scans).
 
 import { HORIZON_WINDOW_SESSIONS } from '../../../constants/hypothesisRecords';
+import { RESEARCH_STAGES } from '../../../constants/researchRecords';
 
 /** Table C, verbatim. */
 export const LIFECYCLE_LINES = Object.freeze({
@@ -92,7 +93,112 @@ export const ACTION_LABELS = Object.freeze({
   cancel: 'Cancel idea',
   retire: 'Retire',
   reaffirm: 'Reaffirm',
+  mark_researched: 'Mark researched', // Pilot P2 / founder ruling D4
 });
+
+// ── Pilot P2 — the research line (the P2 build prompt's "Forge copy",
+// approve-by-default). Every number is a stage count from the research
+// record itself; a stage the record holds as null (its host has no such
+// stage) is not shown at all — never as 0 (BUILD_RULES §9).
+
+export const RESEARCH_COPY = Object.freeze({
+  lead: 'Researched with your agent:',
+  stillOpen: 'Research still open',
+  endedEarly: 'Research ended early',
+  playerMarked: 'You marked this researched.',
+  none: 'No research recorded for this idea yet.',
+});
+
+/** Each stage's word (the line's pipeline order is RESEARCH_STAGES). */
+export const STAGE_LABELS = Object.freeze({
+  universeSize: 'screened',
+  matchedPreLimit: 'matched',
+  shortlisted: 'returned',
+  // The analysis stages say what they are — the saved set, and the members the
+  // session had ranking data for — never "investigated" (reviews R4-3 / R1-3).
+  selectedForInvestigation: 'in the set',
+  investigationsCompleted: 'with data',
+  eligible: 'kept',
+});
+/** A dialogue's shortlist is the candidates the agent proposed. */
+export const DIALOGUE_SHORTLIST_LABEL = 'candidates';
+const DIALOGUE_ORIGINS = Object.freeze(['signaldrop', 'theme']);
+
+/**
+ * The stages each origin's line shows, in pipeline order — the copy's own
+ * shapes: the screener's "screened · matched · returned · kept", the
+ * dialogue's "candidates · kept" (its selection always equals what the save
+ * kept, so the record keeps it and the line does not repeat it — reviews
+ * R4-2 / R1-7), the analysis session's "in the set · with data". A stage the
+ * record holds as null is never shown, not even here.
+ */
+export const LINE_STAGES = Object.freeze({
+  signaldrop: Object.freeze(['shortlisted', 'eligible']),
+  theme: Object.freeze(['shortlisted', 'eligible']),
+  screener: Object.freeze(['universeSize', 'matchedPreLimit', 'shortlisted', 'eligible']),
+  analysis: Object.freeze(['selectedForInvestigation', 'investigationsCompleted']),
+  manual: Object.freeze([]),
+});
+
+const isCount = (v) => Number.isSafeInteger(v) && v >= 0;
+
+/**
+ * "Researched with your agent: 500 screened · 37 matched · 25 returned · 25 kept"
+ * from one research summary — its origin's stages that the record holds, in
+ * pipeline order. Null when there is nothing to say: a manual record (the
+ * player wrote the list), a record no model turn completed (nothing was
+ * researched WITH the agent — an analysis view opened and left), or a
+ * screener record that recorded no screen.
+ */
+export function researchLineOf(summary) {
+  const stages = summary?.stages || {};
+  const shown = LINE_STAGES[summary?.origin] || [];
+  if (!(isCount(summary?.completions) && summary.completions > 0)) return null;
+  if (summary.origin === 'screener' && !(stages.universeSize > 0)) return null;
+  const parts = RESEARCH_STAGES.filter((k) => shown.includes(k) && isCount(stages[k])).map((k) => {
+    const label = k === 'shortlisted' && DIALOGUE_ORIGINS.includes(summary.origin) ? DIALOGUE_SHORTLIST_LABEL : STAGE_LABELS[k];
+    return `${stages[k]} ${label}`;
+  });
+  return parts.length ? `${RESEARCH_COPY.lead} ${parts.join(' · ')}` : null;
+}
+
+/** The session state, said only when the research did not complete. */
+export function researchStateOf(summary) {
+  if (summary?.state === 'open') return RESEARCH_COPY.stillOpen;
+  if (summary?.state === 'abandoned' || summary?.state === 'failed') return RESEARCH_COPY.endedEarly;
+  return null;
+}
+
+export const RESEARCH_LINES_MAX = 2;
+
+/**
+ * The lines the panel shows for a list: the research the list itself came
+ * from first, then — at most one — its newest analysis session that the agent
+ * worked on. Only records whose subject IS this list (a record closed against
+ * another list describes that list's save — review R4-4 / R1-1).
+ */
+export function researchLinesOf(research, { watchlistId = null } = {}) {
+  const lines = (Array.isArray(research) ? research : [])
+    .filter((s) => s && (watchlistId === null || s.watchlistId === watchlistId))
+    .map((s) => ({ id: s.researchWorkId, origin: s.origin, line: researchLineOf(s), state: researchStateOf(s) }))
+    .filter((r) => r.line);
+  const own = lines.filter((r) => r.origin !== 'analysis');
+  const analysis = lines.find((r) => r.origin === 'analysis');
+  return [...own, ...(analysis ? [analysis] : [])].slice(0, RESEARCH_LINES_MAX)
+    .map(({ id, line, state }) => ({ id, line, state }));
+}
+
+/**
+ * "No research recorded for this idea yet." — said only when it is literally
+ * true and about an idea that exists (review R4-7): the server answered with
+ * the list's research (not merely an older answer without it), the list has
+ * NO research record at all (a manual list has its own record), a current
+ * version exists, and that version is not already marked researched by the
+ * dialogue it came from.
+ */
+export function noResearchRecorded(research, current) {
+  return Array.isArray(research) && research.length === 0 && !!current && current.stateReason !== 'dialogue_completed';
+}
 
 /** The panel's own prompts and notes (UI copy; no lifecycle claims). */
 export const PANEL_COPY = Object.freeze({

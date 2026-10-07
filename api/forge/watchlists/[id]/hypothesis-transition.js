@@ -4,13 +4,15 @@
 // prompt's "Player transitions"). ONE route, one transaction per request:
 //
 //   POST /api/forge/watchlists/{id}/hypothesis-transition
-//     { version, action: 'ready' | 'wait' | 'reject' | 'cancel' | 'retire',
+//     { version, action: 'ready' | 'wait' | 'reject' | 'cancel' | 'retire' | 'mark_researched',
 //       expectedStatus, missingEvidence? }                → { watchlistId, version }
 //         researched → ready (player_ready) · waiting_for_evidence → ready
 //         (evidence_supplied) · researched → waiting_for_evidence
 //         (awaiting_evidence; `missingEvidence` required) · draft | researched
 //         | waiting_for_evidence → rejected · any pre-deploy → cancelled ·
-//         any non-terminal → retired
+//         any non-terminal → retired · draft → researched
+//         (player_marked_researched — Pilot P2, founder ruling D4; the
+//         current version only)
 //     { version, action: 'reaffirm', opId, expectedVersion,
 //       statement?, horizonEnum?, activation?, invalidation? } → { watchlistId, idempotent, version }
 //         review_due → a NEW version v{n+1} in `ready` (same or edited

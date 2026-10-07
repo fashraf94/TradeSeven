@@ -6,7 +6,9 @@
 // player).
 //
 //   GET  /api/forge/watchlists/{id}/hypothesis-versions
-//        → { watchlistId, currentVersion, versions[] }   newest first
+//        → { watchlistId, currentVersion, versions[], research[] }   newest first
+//        (Pilot P2: research[] = the list's research-record summaries —
+//        api/_utils/researchRecords/model.js recordSummaryOf)
 //   GET  /api/forge/watchlists/{id}/hypothesis-versions?version=n
 //        → { watchlistId, currentVersion, version }
 //   POST /api/forge/watchlists/{id}/hypothesis-versions
@@ -46,7 +48,7 @@ export default async function handler(req, res) {
         const out = await readVersion(db, { uid: user.uid, watchlistId, version: requireVersion(raw) });
         return res.status(200).json({ watchlistId, ...out });
       }
-      const out = await listVersions(db, { uid: user.uid, watchlistId });
+      const out = await listVersions(db, { uid: user.uid, watchlistId, withResearch: true });
       return res.status(200).json({ watchlistId, ...out });
     } catch (err) {
       return sendHypothesisError(res, err, 'list');
