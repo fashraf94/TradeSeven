@@ -30,7 +30,12 @@
 //   • when the run holds a live quote for the symbol (intraday mode), that
 //     bar's raw close agrees with the quote's previousClose (review E1-1's
 //     rule: a glitched or corrected bar is re-fetched, never served);
-//   • the calendar answers at all (null outside the maintained horizon).
+//   • the calendar answers at all — a date with no session record (outside the
+//     maintained horizon) or no prior session is never served (review EV3);
+//   • the symbol trades on the NYSE calendar the rule is stated in: `.INDX`
+//     symbols (TNX — bond-market hours and holidays) are always fetched fresh
+//     and never stored (review EV3 on E3-1: a bond-market early close can
+//     publish a today-dated TNX bar while NYSE is still in session).
 // Anything else fetches fresh, as before, and writes through only a series that
 // itself passes the date rule. A store read or write failure is logged and
 // never costs the run its data: the fresh fetch is used as today.
@@ -45,6 +50,8 @@ import { PRIOR_CLOSE_AGREEMENT_TOLERANCE } from './marketDataCache.js';
 export const INDEX_HISTORY_COLLECTION = 'indexHistoryCache';
 /** The QW-1 rule's TTL (marketDataCache CACHE_TTL.daily). */
 export const HISTORY_STORE_MAX_AGE_MS = 4 * 60 * 60 * 1000;
+/** Symbols outside the NYSE calendar (indices on other venues' hours): never stored. */
+const NON_NYSE_CALENDAR = /.INDX$/i;
 
 function toMillis(value) {
   if (value == null) return NaN;
@@ -90,8 +97,10 @@ export function checkStoredHistory(doc, { daysBack, etToday, expected, nowMs = D
  *   summary:() => string }}
  */
 export function createSessionHistoryStore(db, { etToday, now = () => Date.now() }) {
-  const expected = getPreviousSessionDate(etToday);
-  const closeMs = getSessionForDate(etToday)?.closeMs ?? null;
+  const session = getSessionForDate(etToday);
+  // Fail closed (review EV3): no session record for the date → no store at all.
+  const expected = session ? getPreviousSessionDate(etToday) : null;
+  const closeMs = session?.closeMs ?? null;
   const stats = { served: 0, fetched: 0, stored: 0, reasons: {} };
 
   async function load(eodhdSymbol, daysBack, fetchFresh, { previousClose = null } = {}) {
@@ -99,6 +108,8 @@ export function createSessionHistoryStore(db, { etToday, now = () => Date.now() 
     let reason = 'miss';
     if (!expected) {
       reason = 'calendar_missing';
+    } else if (NON_NYSE_CALENDAR.test(eodhdSymbol)) {
+      reason = 'non_nyse_calendar';
     } else if (closeMs != null && now() >= closeMs) {
       reason = 'after_close';
     } else {

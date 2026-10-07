@@ -205,9 +205,9 @@ describe('QW-6 — outputs are identical whether histories come from the store o
     const histories = 5 + 1 + 11 + 12; // indices + TNX + sector ETFs + stocks
     expect(a.eod).toBe(histories);
     expect(b.eod).toBe(histories);
-    expect(c.eod).toBe(0);
+    expect(c.eod).toBe(1); // TNX.INDX only: a non-NYSE calendar is never stored (review EV3)
     expect(fs.docs.get('indexHistoryCache/AAPL.US')).toEqual(expect.objectContaining({ etDate: '2026-10-07', newestBarDate: PRIOR, daysBack: 252, dropped: 1 }));
-    expect(fs.docs.get('indexHistoryCache/TNX.INDX')).toEqual(expect.objectContaining({ daysBack: 30 }));
+    expect(fs.docs.get('indexHistoryCache/TNX.INDX')).toBeUndefined();
     expect(fs.docs.get('indexHistoryCache/XLK.US')).toEqual(expect.objectContaining({ daysBack: 50, dropped: 1 }));
   });
 
@@ -217,7 +217,7 @@ describe('QW-6 — outputs are identical whether histories come from the store o
     await run();                     // the pre-market wake fills the store
     const c = await run('intraday');
     expect(c.outputs).toEqual(a.outputs);
-    expect(c.eod).toBe(0);
+    expect(c.eod).toBe(1); // TNX.INDX only
     expect(c.rt).toBe(a.rt);
     expect(c.rt).toBeGreaterThan(0);
   });
@@ -258,7 +258,7 @@ describe('QW-6 review rows (docs/audits/20261007_EODHD_QUICK_WINS_BUILD_REVIEW.m
     vi.setSystemTime(new Date('2026-10-07T10:30:00.000Z'));
     await run();
     vi.setSystemTime(new Date('2026-10-07T14:00:00.000Z')); // 3.5 h — served
-    expect((await run('intraday')).eod).toBe(0);
+    expect((await run('intraday')).eod).toBe(1); // TNX.INDX only
     vi.setSystemTime(new Date('2026-10-07T15:00:00.000Z')); // 4.5 h — re-fetched
     expect((await run('intraday')).eod).toBe(29);
   });
@@ -270,6 +270,6 @@ describe('QW-6 review rows (docs/audits/20261007_EODHD_QUICK_WINS_BUILD_REVIEW.m
     doc.rows[0] = { ...doc.rows[0], rawClose: doc.rows[0].rawClose * 0.96 }; // a glitched copy
     fs.docs.set('indexHistoryCache/AAPL.US', doc);
     const c = await run('intraday');
-    expect(c.eod).toBe(1);                         // only the glitched symbol
+    expect(c.eod).toBe(2);                         // the glitched symbol + TNX.INDX (never stored)
   });
 });

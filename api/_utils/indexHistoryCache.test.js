@@ -141,3 +141,26 @@ describe('createSessionHistoryStore — the session clock (review E3-1)', () => 
     expect(r.source).toBe('store');
   });
 });
+
+describe('createSessionHistoryStore — calendar hardening (review EV3)', () => {
+  it('a .INDX symbol (TNX: bond-market calendar) is never served or stored', async () => {
+    const db = fakeDb();
+    db.docs.set(`${INDEX_HISTORY_COLLECTION}/TNX.INDX`, stored({ symbol: 'TNX.INDX', daysBack: 30 }));
+    const store = createSessionHistoryStore(db, { etToday: ET_TODAY });
+    const fetchFresh = vi.fn(async () => ({ rows: rows(PRIOR), dropped: 0 }));
+    const r = await store.load('TNX.INDX', 30, fetchFresh);
+    expect(r.source).toBe('fetched');
+    expect(fetchFresh).toHaveBeenCalledTimes(1);
+    expect(store.stats.reasons).toEqual({ non_nyse_calendar: 1 });
+    expect(store.stats.stored).toBe(0);
+  });
+
+  it('a date with no session record fails closed even when a prior session exists (2028-01-01 → 2027-12-31)', async () => {
+    const db = fakeDb();
+    const store = createSessionHistoryStore(db, { etToday: '2028-01-01' });
+    expect(store.expected).toBeNull();
+    const r = await store.load('AAPL.US', 252, async () => ({ rows: rows('2027-12-31'), dropped: 0 }));
+    expect(r.source).toBe('fetched');
+    expect(db.docs.size).toBe(0);
+  });
+});
