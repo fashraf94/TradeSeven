@@ -150,12 +150,24 @@ describe('row 1 — the gate', () => {
       process.env[ENV] = 'someone-else';
       const db = seedList();
       const res = await go();
-      if (label.startsWith('DELETE')) { expect(res.statusCode).toBe(405); return; }
+      // Every method, the unsupported one included: the allowlist answers before the method check (review L3-1).
       expect(res.statusCode).toBe(404);
       expect(res.body).toEqual({ error: 'disabled' });
       expect(db.__access).toEqual({ reads: [], writes: [], queries: [] });
     });
   }
+  it('flag on, an allowlisted caller with an unsupported method → 405 (the method is checked only once the gate is on)', async () => {
+    seedList();
+    const res = await call(versionsHandler, { method: 'DELETE' });
+    expect(res.statusCode).toBe(405);
+  });
+  it('flag on, NO verified token → 401 before the allowlist (the gate is per verified uid; the house order)', async () => {
+    state.user = null;
+    const db = seedList();
+    const res = await versions({ method: 'GET' });
+    expect(res.statusCode).toBe(401);
+    expect(db.__access).toEqual({ reads: [], writes: [], queries: [] });
+  });
   it('an empty or missing allowlist resolves OFF for everyone', async () => {
     for (const v of [undefined, '', '  ,  ']) {
       if (v === undefined) delete process.env[ENV]; else process.env[ENV] = v;
@@ -607,6 +619,21 @@ describe('the list and read routes', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.currentVersion).toBe(3);
     expect(res.body.versions.map((v) => v.version)).toEqual([3, 2, 1]);
+  });
+  it('GET reads the pointer and the versions from ONE snapshot: a create landing between the reads never yields a stale pointer (review L2-4)', async () => {
+    const db = seedList();
+    let landed = false;
+    db.__hooks.afterTxBody = async () => {
+      if (landed) return;
+      landed = true;
+      db.__hooks.afterTxBody = null;
+      await db.doc(vPath(2)).create(withHash(version(2, { status: 'draft' })));
+      await db.doc('watchlists/wl-1').update({ currentHypothesisVersion: 2, hypothesisVersionCount: 2 });
+    };
+    const res = await versions({ method: 'GET' });
+    expect(res.statusCode).toBe(200);
+    expect(res.body.currentVersion).toBe(2);
+    expect(res.body.versions[0].version).toBe(2);
   });
   it('GET on a list with no version → currentVersion 0 and an empty list', async () => {
     makeDb({ 'watchlists/wl-1': list() });

@@ -62,14 +62,16 @@ describe('placeholders are filled from the record, never invented', () => {
   it('a line with no placeholder is returned unchanged', () => {
     expect(fillLine(LIFECYCLE_LINES.reaffirmed)).toBe(LIFECYCLE_LINES.reaffirmed);
   });
-  it('[SYM]: the version\'s own condition symbols first; else a list of one to three tickers; else null', () => {
+  it('[SYM]: ONLY the version\'s own condition symbols (one to three), else null — never the parent list\'s tickers (review L1-2 / L4-6)', () => {
     const cond = (symbol) => ({ symbol, side: 'above', level: 1, basis: 'daily_close' });
-    expect(ideaSymbolOf({ activation: [cond('NVDA')], invalidation: [cond('NVDA')] }, [{ symbol: 'AMD' }])).toBe('NVDA');
+    expect(ideaSymbolOf({ activation: [cond('NVDA')], invalidation: [cond('NVDA')] })).toBe('NVDA');
     expect(ideaSymbolOf({ activation: [cond('NVDA'), cond('AMD')], invalidation: [] })).toBe('NVDA / AMD');
-    expect(ideaSymbolOf({ activation: [], invalidation: [] }, [{ symbol: 'IWM' }])).toBe('IWM');
-    expect(ideaSymbolOf({ activation: [], invalidation: [] }, [{ symbol: 'A' }, { symbol: 'B' }, { symbol: 'C' }, { symbol: 'D' }])).toBeNull();
-    expect(ideaSymbolOf({ activation: ['A', 'B', 'C', 'D'].map(cond), invalidation: [] }, [{ symbol: 'IWM' }])).toBeNull();
-    expect(ideaSymbolOf({}, [])).toBeNull();
+    expect(ideaSymbolOf({ activation: ['A', 'B', 'C', 'D'].map(cond), invalidation: [] })).toBeNull();
+    expect(ideaSymbolOf({ activation: [], invalidation: [] })).toBeNull();
+    expect(ideaSymbolOf({})).toBeNull();
+    // A second argument (a list's tickers) is not a source at all.
+    expect(ideaSymbolOf({ activation: [], invalidation: [] }, [{ symbol: 'IWM' }])).toBeNull();
+    expect(ideaSymbolOf.length).toBe(1);
   });
   it('[window]: the companion §6 window for the recorded enum; null for unspecified', () => {
     expect(windowTextOf('intraday')).toBe('Intraday, 2 trading sessions');

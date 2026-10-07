@@ -78,6 +78,14 @@ describe('the gate', () => {
     expect(db.__access.writes).toEqual([]);
     expect(stored(db, rowPath('wl-a'))).not.toBeNull();
   });
+  it('flag ON but NOBODY admitted (empty allowlist) → the gate is off for every owner: return before ANY read (review L2-2)', async () => {
+    for (const v of ['', '  ,  ']) {
+      process.env[ENV] = v;
+      const db = store({ [rowPath('wl-a')]: row('wl-a'), [versionPath('wl-a')]: version('wl-a') });
+      expect(await run(db)).toEqual({ skipped: 'disabled', reads: 0 });
+      expect(db.__access).toEqual({ reads: [], writes: [], queries: [] });
+    }
+  });
   it('starved (less than the floor left in the handler) → no read at all', async () => {
     const db = store({ [rowPath('wl-a')]: row('wl-a'), [versionPath('wl-a')]: version('wl-a') });
     const res = await run(db, { handlerStartMs: Date.now() - 50_000 + REVIEW_STARVATION_MS - 500 });
@@ -258,6 +266,33 @@ describe('budget, failures and the cursor', () => {
     const second = await run(db, { handlerStartMs: Date.now(), nowMs: Date.now() });
     expect(second).toMatchObject({ cursorBefore: 'wl-b:1', battleLive: 1, cursorAfter: null, cut: false });
     expect(stored(db, 'hypothesisReviewState/cursor')).toMatchObject({ lastDocId: null });
+  });
+  it('rows the pass never consumes (an owner off the allowlist) do not starve the rows behind them: the DUE cursor persists and the next tick resumes after them (review L2-2)', async () => {
+    const docs = {};
+    for (let i = 0; i < REVIEW_PAGE + 5; i++) {
+      const wl = `wl-off-${String(i).padStart(2, '0')}`;
+      docs[rowPath(wl)] = row(wl, { userId: 'delisted-owner', dueAtMs: NOW - 100_000 + i });
+    }
+    docs[rowPath('wl-live')] = row('wl-live', { dueAtMs: NOW - 1 });
+    docs[versionPath('wl-live')] = version('wl-live');
+    const db = store(docs);
+    // Tick 1: the budget runs out after the first page of de-listed rows.
+    let pages = 0;
+    db.__hooks.afterQuery = async ({ collectionPath }) => {
+      if (collectionPath === REVIEW_QUEUE_COLLECTION && ++pages === 2) vi.setSystemTime(NOW + 60_000);
+    };
+    const first = await run(db, { handlerStartMs: NOW });
+    expect(first).toMatchObject({ cut: true, skippedOff: REVIEW_PAGE, horizonElapsed: 0 });
+    expect(first.dueCursorAfter).toEqual({ dueAtMs: NOW - 100_000 + REVIEW_PAGE - 1, id: `wl-off-${String(REVIEW_PAGE - 1).padStart(2, '0')}:1` });
+    expect(stored(db, 'hypothesisReviewState/cursor')).toMatchObject({ dueLastDocId: first.dueCursorAfter.id });
+    // Tick 2: resumes AFTER them — the allowlisted row is reached and judged; the cursor wraps.
+    db.__hooks.afterQuery = null;
+    vi.setSystemTime(NOW + 900_000);
+    const second = await run(db, { handlerStartMs: Date.now(), nowMs: Date.now() });
+    expect(second).toMatchObject({ horizonElapsed: 1, skippedOff: 5, cut: false, dueCursorAfter: null });
+    expect(stored(db, versionPath('wl-live')).status).toBe('review_due');
+    // The de-listed rows are kept: re-listing the owner resumes their judged-once reviews.
+    expect(Object.keys(Object.fromEntries([...db.__docs].filter(([p]) => p.startsWith(`${REVIEW_QUEUE_COLLECTION}/wl-off-`))))).toHaveLength(REVIEW_PAGE + 5);
   });
   it('the steady empty state writes nothing (no cursor churn)', async () => {
     const db = store({});

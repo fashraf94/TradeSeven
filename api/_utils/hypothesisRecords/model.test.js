@@ -5,6 +5,10 @@
 // 4 (the transition table, every legal pair and every illegal one) and 6
 // (horizon capture at save) at the model layer; the routes and the save path
 // prove the same through the transactions (watchlists.hypothesisRecords.test.js).
+//
+// Dependency-surface guard (BUILD_RULES §4): model.js imports the src/ module
+// src/constants/hypothesisRecords.js; this test's un-mocked import of model.js
+// is the runtime guard that the edge stays Node-clean. Never mocked.
 
 import { describe, it, expect } from 'vitest';
 import {
@@ -181,5 +185,26 @@ describe('the parent pointer', () => {
     expect(currentVersionOf({ currentHypothesisVersion: null })).toBe(0);
     expect(currentVersionOf({ currentHypothesisVersion: 4 })).toBe(4);
     for (const bad of [0, -1, 1.5, '2', true]) expect(() => currentVersionOf({ currentHypothesisVersion: bad })).toThrow();
+  });
+});
+
+describe('table E — the routes\' player-facing words use no forbidden vocabulary (review L4-8)', () => {
+  // docs/specs/MODE_TRUTH_LANGUAGE_TABLES_V1.md §E. The panel shows a typed refusal's message verbatim,
+  // so every string literal in the route modules is scanned, not only the exported copy.
+  const FORBIDDEN = [
+    /\bhedge/i, /\btrim/i, /\bpartial/i, /\bscale (in|out)\b/i, /take some off/i, /cash position/i, /move to cash/i,
+    /sit in cash/i, /wait for the market to/i, /probably|likely fine/i, /guaranteed/i, /can'?t lose/i,
+  ];
+  it('ROUTE_COPY and every quoted literal in store.js, http.js and model.js', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { ROUTE_COPY } = await import('./store.js');
+    const literals = ['store.js', 'http.js', 'model.js']
+      .map((f) => readFileSync(new URL(`./${f}`, import.meta.url), 'utf8'))
+      // Quoted runs (an escaped quote splits a literal into fragments — each fragment is still scanned).
+      .flatMap((src) => [...src.matchAll(/'([^'\n]*)'/g), ...src.matchAll(/`([^`]*)`/g)].map((m) => m[1]));
+    const all = [...Object.values(ROUTE_COPY), ...literals];
+    expect(all.length).toBeGreaterThan(50);
+    const hits = all.flatMap((s) => FORBIDDEN.filter((re) => re.test(s)).map((re) => `${re} in "${s}"`));
+    expect(hits).toEqual([]);
   });
 });

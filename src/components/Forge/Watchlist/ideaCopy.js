@@ -43,18 +43,19 @@ export function fillLine(line, { sym = null, window = null, condition = null } =
 }
 
 /**
- * [SYM] from the record: the symbols the version's own conditions name;
- * else the list's tickers when it holds one to three. Otherwise null — the
- * line is not rendered rather than naming a symbol the idea never did.
+ * [SYM] from the RECORD — the version's own typed conditions, and nothing
+ * else: one to three distinct symbols, else null (the line is not rendered).
+ * Never the parent list's tickers: they are mutable, not part of the version,
+ * and in the editor they are the live, unsaved input (spec §2.6 "no reader
+ * resolves the current saved list as historical meaning"; BUILD_RULES §9;
+ * review L1-2 / L4-6). P1a writes no conditions, so the review lines wait for
+ * P1b to supply a frozen source (the deploying battle's snapshot).
  */
-export function ideaSymbolOf(version, listTickers = []) {
+export function ideaSymbolOf(version) {
   const fromConditions = [...(version?.activation || []), ...(version?.invalidation || [])]
     .map((c) => c?.symbol).filter((s) => typeof s === 'string' && s);
   const distinct = [...new Set(fromConditions)];
-  if (distinct.length >= 1 && distinct.length <= 3) return distinct.join(' / ');
-  if (distinct.length > 3) return null;
-  const tickers = [...new Set((listTickers || []).map((t) => (typeof t === 'string' ? t : t?.symbol)).filter((s) => typeof s === 'string' && s))];
-  return tickers.length >= 1 && tickers.length <= 3 ? tickers.join(' / ') : null;
+  return distinct.length >= 1 && distinct.length <= 3 ? distinct.join(' / ') : null;
 }
 
 export const HORIZON_LABELS = Object.freeze({
@@ -100,9 +101,13 @@ export const PANEL_COPY = Object.freeze({
   writeFirst: 'Write the idea',
   saveNew: 'Save as a new version',
   editorHint: 'Editing never changes a saved version — it creates the next one.',
+  draftHint: 'The new version starts as a draft.',
   statementPlaceholder: 'State the idea in a sentence or two',
   horizonPick: 'Time-frame',
   horizonKeep: 'Keep the current time-frame',
+  // A first version inherits the list's default (a SignalDrop list's parsed
+  // time-frame, else none) — the panel cannot see it, so it never names one (review L4-4).
+  horizonDefault: 'Default for this list',
   missingEvidencePrompt: 'What evidence is missing?',
   confirm: 'Confirm',
   keep: 'Keep',
@@ -110,10 +115,14 @@ export const PANEL_COPY = Object.freeze({
   save: 'Save',
   cancelEdit: 'Back',
   history: 'Versions',
-  superseded: 'A newer version exists — this one stays in the record as it was.',
   waitingOn: 'Waiting on',
   loadFailed: 'The idea record could not be loaded.',
   retry: 'Retry',
+  moveFailed: 'That change did not go through. Try again.',
+  saved: 'Saved',
+  statusSince: 'Status since',
+  firstDeployed: 'First deployed',
+  reviewDue: 'Review due',
 });
 
 const ET_DATE = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', year: 'numeric' });

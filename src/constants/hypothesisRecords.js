@@ -27,7 +27,12 @@ export const HORIZON_SOURCES = Object.freeze(['parse', 'theme_default', 'default
 /** Window N, in trading sessions after the anchor session (companion §6, blessed slots H1–H4). */
 export const HORIZON_WINDOW_SESSIONS = Object.freeze({ intraday: 2, swing: 10, positional: 30, longterm: 60 });
 
-/** The typed reasons P1a writes (spec §2.5 table; reject/cancel carry the typed player reason). */
+/**
+ * The typed reasons P1a writes (spec §2.5 table; reject/cancel carry the typed
+ * player reason). The table's `superseded` (reaffirmation) is never written as
+ * a stateReason: the due version's state is KEPT (status, reason, clock) and
+ * the supersession is carried by its `successorVersion` pointer.
+ */
 export const STATE_REASONS = Object.freeze({
   dialogueCompleted: 'dialogue_completed',
   playerAuthored: 'player_authored',

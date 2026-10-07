@@ -47,7 +47,7 @@ export class HypothesisRouteError extends Error {
   }
 }
 
-const COPY = Object.freeze({
+export const ROUTE_COPY = Object.freeze({
   not_found: 'Watchlist not found.',
   forbidden: 'Not authorized for this watchlist.',
   version_not_found: 'That version of the idea does not exist.',
@@ -58,7 +58,7 @@ const COPY = Object.freeze({
   origin_unresolved: 'The dialogue this list came from could not be found, so the idea\'s origin is unknown.',
   pointer_corrupt: 'This list\'s version pointer is unreadable.',
 });
-const fail = (status, code, extra) => new HypothesisRouteError(status, code, COPY[code], extra);
+const fail = (status, code, extra) => new HypothesisRouteError(status, code, ROUTE_COPY[code], extra);
 
 const nonEmpty = (v) => typeof v === 'string' && v.length > 0;
 
@@ -232,19 +232,27 @@ export async function transitionVersion(db, { uid, watchlistId, version, action,
   });
 }
 
-/** A list's versions, newest first, with the parent pointer. */
+/**
+ * A list's versions, newest first, with the parent pointer — read from ONE
+ * consistent snapshot (a read-only transaction), so a version created
+ * between the two reads can never appear beside a stale pointer (review L2-4).
+ */
 export async function listVersions(db, { uid, watchlistId, limit = LIST_LIMIT }) {
-  const parent = ownedParent(await watchlistRefOf(db, watchlistId).get(), uid);
-  const currentVersion = pointerOf(parent);
-  const snap = await versionsColOf(db, watchlistId).orderBy('version', 'desc').limit(limit).get();
-  return { currentVersion, versions: snap.docs.map((d) => d.data()) };
+  return db.runTransaction(async (tx) => {
+    const parent = ownedParent(await tx.get(watchlistRefOf(db, watchlistId)), uid);
+    const currentVersion = pointerOf(parent);
+    const snap = await tx.get(versionsColOf(db, watchlistId).orderBy('version', 'desc').limit(limit));
+    return { currentVersion, versions: snap.docs.map((d) => d.data()) };
+  }, { readOnly: true });
 }
 
-/** One version of a list. */
+/** One version of a list, with the pointer from the same snapshot. */
 export async function readVersion(db, { uid, watchlistId, version }) {
-  const parent = ownedParent(await watchlistRefOf(db, watchlistId).get(), uid);
-  const currentVersion = pointerOf(parent);
-  const snap = await versionRefOf(db, watchlistId, version).get();
-  if (!snap?.exists) throw fail(404, 'version_not_found');
-  return { currentVersion, version: snap.data() };
+  return db.runTransaction(async (tx) => {
+    const parent = ownedParent(await tx.get(watchlistRefOf(db, watchlistId)), uid);
+    const currentVersion = pointerOf(parent);
+    const snap = await tx.get(versionRefOf(db, watchlistId, version));
+    if (!snap?.exists) throw fail(404, 'version_not_found');
+    return { currentVersion, version: snap.data() };
+  }, { readOnly: true });
 }

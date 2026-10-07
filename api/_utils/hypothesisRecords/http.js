@@ -7,8 +7,13 @@
 //
 // THE GATE ORDER: security middleware (headers, CORS, preflight, rate limit)
 // → the FLAG (off → 404 { error: 'disabled' } before auth, before any read)
-// → the method → auth → the ALLOWLIST (off for this caller → the same 404).
-// So a caller the gate resolves off for cannot tell the routes exist.
+// → auth (no verified token → 401: the gate is per verified uid, the house
+// order of every per-uid gated route — backing/event.js, cockpit-status.js)
+// → the ALLOWLIST (off for this caller → the same 404, whatever the method)
+// → the method → the id. What holds: an authenticated caller the gate
+// resolves off for gets 404 { error: 'disabled' } for every request, before
+// any read, and no answer anywhere depends on who else is admitted (review
+// L3-1). The flag's own value is public (it ships in the client bundle).
 
 import { applySecurityMiddleware } from '../security.js';
 import { requireAuth } from '../authMiddleware.js';
@@ -28,14 +33,14 @@ export async function gateHypothesisRoute(req, res, { methods, rateLimit }) {
     res.status(404).json({ ...DISABLED_BODY });
     return null;
   }
-  if (!methods.includes(req.method)) {
-    res.status(405).json({ error: 'Method not allowed' });
-    return null;
-  }
   const user = await requireAuth(req, res);
   if (!user) return null;
   if (!isHypothesisOwnerAllowlisted(user.uid)) {
     res.status(404).json({ ...DISABLED_BODY });
+    return null;
+  }
+  if (!methods.includes(req.method)) {
+    res.status(405).json({ error: 'Method not allowed' });
     return null;
   }
   const watchlistId = req.query?.id;

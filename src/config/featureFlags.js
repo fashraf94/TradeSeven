@@ -3039,12 +3039,14 @@ export function isShadowCpuQuoteIntegrityOn() {
  * Nothing the agent sees or trades reads any of it.
  *
  * TRUE is not enough on its own: the gate resolves ON only for owners on the
- * cockpit's server-side allowlist (COCKPIT_ALLOWLIST_UIDS, read at call time
- * by api/_utils/callRecords/allowlist.js — api/_utils/hypothesisRecords/gate.js).
- * Off for a caller: every new route answers `404 { error: 'disabled' }`, the
- * save path creates no version and writes no pointer, the review pass returns
- * before any read, and the panel renders nothing (the client short-circuits
- * on this constant before any request). DEFAULT false: the build merges dark,
+ * cockpit's server-side allowlist (the server-only variable that
+ * api/_utils/callRecords/allowlist.js names and reads at call time —
+ * api/_utils/hypothesisRecords/gate.js). Off for a caller: every new route
+ * answers `404 { error: 'disabled' }`, the save path creates no version and
+ * writes no pointer, the review pass returns before any read, and the panel
+ * renders nothing (the client short-circuits on this constant before any
+ * request, and otherwise shows nothing until the server admits the player).
+ * DEFAULT false: the build merges dark,
  * and with it false every existing route, write and cron output is
  * byte-identical to the pre-build main.
  *
@@ -3053,7 +3055,10 @@ export function isShadowCpuQuoteIntegrityOn() {
  * deployed. The flip moves the pin in src/config/hypothesisRecordsFlags.test.js
  * to true and drops the DARK_BY_DESIGN entry in src/config/flagPinGuard.test.js
  * in the same commit (BUILD_RULES §2). Rollback is the same line back to false:
- * written versions stay, unread and unwritten.
+ * nothing new is read or written; what was written stays — the versions
+ * (still owner-readable under the rules, read by no app code) and the two
+ * pointer fields on the lists that got one, which the existing owner GETs
+ * return as part of the list document (review L3-6).
  *
  * Read it at RENDER/CALL scope through isHypothesisRecordsOn(), never as a
  * module-scope const in a consumer (the featureFlags vi.mock hazard).

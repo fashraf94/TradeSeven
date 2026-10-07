@@ -63,6 +63,10 @@ export const MUTABLE_CALL_FIELDS = Object.freeze(['state', 'stateChangedAt', 'st
  * absent snapshot is agent_initiative, never unresolved). Pilot P1a adds
  * `hypothesis_snapshot_mismatch`: a frozen `equippedHypothesis` sibling whose
  * `watchlistId` is not the frozen snapshot's (pilot spec §2.6; Phase 0 Q4).
+ * `snapshot_corrupt` also covers a MALFORMED sibling beside a valid snapshot —
+ * the frozen hypothesis is part of the frozen equipped provenance (spec §2.4),
+ * as the snapshot's own version key was before P1a; the contract has no
+ * separate reason for it, and none is invented here (review L1-8).
  */
 export const PROVENANCE_REASONS = Object.freeze(['snapshot_corrupt', 'config_hash_missing', 'hypothesis_snapshot_mismatch']);
 

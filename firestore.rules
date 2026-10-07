@@ -1201,9 +1201,13 @@ service cloud.firestore {
     // on the version's OWN denormalized userId (written from the parent at
     // creation and never changed), so the query must filter on it. `list`
     // only, on purpose: a recursive match also covers every direct path, and a
-    // `get` granted here would bypass the parent check above (a version under
-    // a missing parent would become readable). Direct gets stay with the
-    // nested rule. Writes stay denied above. Index: firestore.indexes.json
+    // `get` granted here would bypass the parent check above. Direct gets stay
+    // with the nested rule (a get of a version under a missing parent is
+    // denied). What this block does admit, by design: any query — collection
+    // group or one list's subcollection — constrained to the caller's own
+    // userId, which returns that caller's own versions wherever they sit
+    // (review L3-3). No other user's version can match: every writer stamps
+    // the parent owner's uid. Writes stay denied above. Index: firestore.indexes.json
     // hypothesisVersions COLLECTION_GROUP (userId ASC, status ASC, stateChangedAt DESC).
     match /{path=**}/hypothesisVersions/{versionId} {
       allow list: if request.auth != null

@@ -24,8 +24,8 @@ import SaveStateIndicator from './SaveStateIndicator';
 import TickerSearchAdd from './TickerSearchAdd';
 import CommitModal from './CommitModal';
 import UncommitModal from './UncommitModal';
-// Pilot P1a: the player's versioned idea — renders nothing unless the
-// hypothesis-records gate resolves on for this player.
+// Pilot P1a: the player's versioned idea — renders nothing until the server
+// confirms the hypothesis-records gate is on for this player.
 import IdeaPanel from './IdeaPanel';
 
 const TICKER_CAP = 40;
@@ -256,7 +256,7 @@ export default function WatchlistEditor({ watchlistId, onClose }) {
               </div>
             )}
 
-            <IdeaPanel watchlistId={watchlistId} tokens={tokens} listTickers={tickers} />
+            <IdeaPanel watchlistId={watchlistId} tokens={tokens} />
 
             <div>
               <SectionLabel tokens={tokens}>Thesis</SectionLabel>

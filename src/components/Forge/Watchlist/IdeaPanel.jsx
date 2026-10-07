@@ -3,19 +3,26 @@
 // Pilot P1a — the "Idea" panel on the saved-watchlist screen (pilot spec
 // docs/specs/20260923_BAGGERBOMB_PARTNERSHIP_PILOT_SPEC_V1_4.md §2.1–§2.5):
 // the current version's statement, time-frame, status and dates, the version
-// history, and the moves legal for that status — including "save as a new
+// history, and the moves legal for each version — including "save as a new
 // version", the only way content ever changes.
 //
-// GATED TWICE: HYPOTHESIS_RECORDS_ENABLED false → the panel renders nothing
-// and makes no request; true → it asks the server, and a `disabled` answer
-// (this player is off the cockpit allowlist) also renders nothing.
+// GATED TWICE, and it NEVER GUESSES (review L4-1; the useCockpitStatus.js
+// precedent for the same allowlist): HYPOTHESIS_RECORDS_ENABLED false → the
+// panel renders nothing and makes no request; true → it renders NOTHING until
+// the server's first answer proves the gate is on for this player. A
+// `disabled` answer hides it; so does a first-load failure that comes before
+// the gate's verdict (rate limit, network, an untyped error) — only an error
+// the server can raise AFTER admitting the player shows the error card.
 //
 // The offered moves come from the SAME table the routes enforce
 // (src/constants/hypothesisRecords.js legalActionsFor). The server is the
-// authority: after every move the panel reloads the record rather than
-// patching it locally, and a typed refusal (409) is shown and reloaded.
-// Lifecycle sentences are table C verbatim (ideaCopy.js). Colors are the
-// existing theme tokens only.
+// authority: after every move the panel reloads the record (and stays busy
+// until it has), and a typed refusal is shown. An editor captures its
+// request — opId, the pointer it was opened against, the version it targets —
+// when it OPENS, so a retry after a lost response is the identical request
+// and replays idempotently (review L2-1 / L4-2); a 409 conflict closes it.
+// Lifecycle sentences are table C verbatim (ideaCopy.js), filled only from
+// the version's own record. Colors are the existing theme tokens only.
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { isHypothesisRecordsOn } from '../../../config/featureFlags';
@@ -32,18 +39,28 @@ import SectionLabel from './SectionLabel';
 const STATEMENT_MAX = 1000;
 const MISSING_EVIDENCE_MAX = 300;
 const CLOSING = ['reject', 'cancel', 'retire'];
+/** Typed errors the routes raise only AFTER the gate admitted the caller — proof the gate is on. */
+const POST_GATE_ERRORS = new Set(['not_found', 'forbidden', 'server_error', 'pointer_corrupt', 'invalid_watchlist_id', 'invalid_version']);
+/** Refusals that mean the editor's request can no longer apply as opened. */
+const STALE_REQUEST = new Set(['version_conflict', 'op_conflict', 'illegal_transition']);
 
-/** The table-C sentence for a version's state, or null when none applies or a placeholder has no value. */
-export function lifecycleLineFor(version, listTickers) {
-  if (!version) return null;
-  const sym = ideaSymbolOf(version, listTickers);
-  if (version.status === 'review_due') {
-    if (version.stateReason === 'horizon_elapsed') return fillLine(LIFECYCLE_LINES.reviewDueHorizon, { sym, window: windowTextOf(version.horizonEnum) });
-    if (version.stateReason === 'battle_ended') return fillLine(LIFECYCLE_LINES.reviewDueBattleEnded, { sym });
-    return null;
-  }
-  if (version.status === 'invalidated') return fillLine(LIFECYCLE_LINES.invalidated, { sym, condition: version.stateReason });
+/**
+ * The table-C sentence for a version's state, or null when none applies or a
+ * placeholder has no recorded value. `invalidated` renders nothing in P1a:
+ * [typed condition] is the MET condition on the record, which P3/P4 define —
+ * a raw reason code is never put into a blessed sentence (review L1-6).
+ */
+export function lifecycleLineFor(version) {
+  if (!version || version.status !== 'review_due') return null;
+  const sym = ideaSymbolOf(version);
+  if (version.stateReason === 'horizon_elapsed') return fillLine(LIFECYCLE_LINES.reviewDueHorizon, { sym, window: windowTextOf(version.horizonEnum) });
+  if (version.stateReason === 'battle_ended') return fillLine(LIFECYCLE_LINES.reviewDueBattleEnded, { sym });
   return null;
+}
+
+/** A refusal's words: the server's typed message, else the panel's fallback (never a raw browser string). */
+function messageOf(err) {
+  return typeof err?.status === 'number' && err?.body && typeof err.body.message === 'string' ? err.body.message : PANEL_COPY.moveFailed;
 }
 
 function statusColor(tokens, status) {
@@ -54,19 +71,22 @@ function statusColor(tokens, status) {
   return tokens.purpleText;
 }
 
-export default function IdeaPanel({ watchlistId, tokens, listTickers = [] }) {
+export default function IdeaPanel({ watchlistId, tokens }) {
   const enabled = isHypothesisRecordsOn();
-  const [phase, setPhase] = useState(enabled ? 'loading' : 'hidden'); // loading | hidden | error | ready
+  // pending (first answer not in) | hidden | ready | error (only once the gate is known on)
+  const [phase, setPhase] = useState(enabled ? 'pending' : 'hidden');
   const [record, setRecord] = useState({ currentVersion: 0, versions: [] });
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(null); // { tone: 'ok' | 'error', text }
-  const [editor, setEditor] = useState(null); // { mode: 'create' | 'reaffirm', opId, statement, horizonEnum }
-  const [pending, setPending] = useState(null); // { action, missingEvidence? } awaiting a confirm
+  const [editor, setEditor] = useState(null); // { mode, opId, expectedVersion, targetVersion, baseStatement, statement, horizonEnum }
+  const [pending, setPending] = useState(null); // { action, version, expectedStatus, missingEvidence }
 
-  const load = useCallback(async () => {
+  const adopt = (data) => setRecord({ currentVersion: data.currentVersion || 0, versions: Array.isArray(data.versions) ? data.versions : [] });
+
+  /** Reload after a move (the gate is already known on): a failure now is said, not hidden. */
+  const reload = useCallback(async () => {
     try {
-      const data = await listHypothesisVersions(watchlistId);
-      setRecord({ currentVersion: data.currentVersion || 0, versions: Array.isArray(data.versions) ? data.versions : [] });
+      adopt(await listHypothesisVersions(watchlistId));
       setPhase('ready');
     } catch (err) {
       setPhase(err?.code === 'disabled' ? 'hidden' : 'error');
@@ -76,77 +96,92 @@ export default function IdeaPanel({ watchlistId, tokens, listTickers = [] }) {
   useEffect(() => {
     if (!enabled) return undefined;
     let cancelled = false;
-    setPhase('loading');
+    setPhase('pending');
     listHypothesisVersions(watchlistId)
       .then((data) => {
         if (cancelled) return;
-        setRecord({ currentVersion: data.currentVersion || 0, versions: Array.isArray(data.versions) ? data.versions : [] });
+        adopt(data);
         setPhase('ready');
       })
       .catch((err) => {
-        if (!cancelled) setPhase(err?.code === 'disabled' ? 'hidden' : 'error');
+        if (cancelled) return;
+        // Only an error raised after the gate admitted this player proves the panel belongs here.
+        setPhase(POST_GATE_ERRORS.has(err?.code) ? 'error' : 'hidden');
       });
     return () => { cancelled = true; };
   }, [enabled, watchlistId]);
 
-  if (!enabled || phase === 'hidden') return null;
+  if (!enabled || phase === 'hidden' || phase === 'pending') return null;
 
   const current = record.versions.find((v) => v.version === record.currentVersion) || null;
-  const run = async (fn, okText = null) => {
+
+  const run = async (fn, { okText = null, fromEditor = false } = {}) => {
     setBusy(true);
     setNotice(null);
+    let hidden = false;
     try {
-      await fn();
+      const out = await fn();
       setEditor(null);
       setPending(null);
       if (okText) setNotice({ tone: 'ok', text: okText });
+      return out;
     } catch (err) {
-      if (err?.code === 'disabled') { setPhase('hidden'); return; }
-      setNotice({ tone: 'error', text: err?.message || 'That change did not go through.' });
+      if (err?.code === 'disabled') { hidden = true; setPhase('hidden'); return undefined; }
+      setNotice({ tone: 'error', text: messageOf(err) });
+      setPending(null);
+      // A request that can no longer apply closes its editor; a lost response keeps it for an identical retry.
+      if (fromEditor && STALE_REQUEST.has(err?.code)) setEditor(null);
+      return undefined;
     } finally {
+      if (!hidden) await reload();
       setBusy(false);
-      await load();
     }
   };
 
   const openEditor = (mode) => {
     setPending(null);
     setNotice(null);
-    setEditor({ mode, opId: newOpId(), statement: current?.statement || '', horizonEnum: '' });
+    const base = current?.statement || '';
+    setEditor({
+      mode, opId: newOpId(), expectedVersion: record.currentVersion, targetVersion: current?.version ?? null,
+      baseStatement: base, statement: base, horizonEnum: '',
+    });
   };
+  const editorChanged = editor && (editor.statement.trim() !== editor.baseStatement.trim() || editor.horizonEnum !== '');
+  const canSubmit = editor && !busy && editor.statement.trim() !== '' && (editor.mode === 'reaffirm' || editorChanged);
   const submitEditor = () => {
-    const { mode, opId, statement, horizonEnum } = editor;
+    const { mode, opId, expectedVersion, targetVersion, baseStatement, statement, horizonEnum } = editor;
     const picked = horizonEnum ? { horizonEnum } : {};
     if (mode === 'reaffirm') {
-      const edited = statement.trim() !== (current?.statement || '') ? { statement } : {};
-      return run(() => reaffirmHypothesis(watchlistId, { version: current.version, opId, expectedVersion: record.currentVersion, ...edited, ...picked }), LIFECYCLE_LINES.reaffirmed);
+      const edited = statement.trim() !== baseStatement.trim() ? { statement } : {};
+      return run(() => reaffirmHypothesis(watchlistId, { version: targetVersion, opId, expectedVersion, ...edited, ...picked }), { okText: LIFECYCLE_LINES.reaffirmed, fromEditor: true });
     }
-    return run(() => createHypothesisVersion(watchlistId, { opId, expectedVersion: record.currentVersion, statement, ...picked }));
+    return run(() => createHypothesisVersion(watchlistId, { opId, expectedVersion, statement, ...picked }), { fromEditor: true });
   };
-  const doAction = (action, missingEvidence) => run(() => transitionHypothesis(watchlistId, {
-    version: current.version, action, expectedStatus: current.status, ...(action === 'wait' ? { missingEvidence } : {}),
+  const doAction = ({ action, version, expectedStatus, missingEvidence }) => run(() => transitionHypothesis(watchlistId, {
+    version, action, expectedStatus, ...(action === 'wait' ? { missingEvidence } : {}),
   }));
+  const askAction = (action, v) => setPending({ action, version: v.version, expectedStatus: v.status, missingEvidence: '' });
 
   const actions = current ? legalActionsFor(current.status, { isCurrent: true, hasSuccessor: current.successorVersion != null }) : [];
   const canSaveNew = !current || current.status !== 'review_due';
-  const line = lifecycleLineFor(current, listTickers);
+  const line = lifecycleLineFor(current);
 
   return (
     <div data-testid="idea-panel">
       <SectionLabel tokens={tokens}>{PANEL_COPY.title}</SectionLabel>
       <div style={card(tokens)}>
-        {phase === 'loading' && <p style={muted(tokens)}>Loading…</p>}
         {phase === 'error' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <p style={muted(tokens)}>{PANEL_COPY.loadFailed}</p>
-            <button type="button" onClick={() => { setPhase('loading'); load(); }} style={btn(tokens.textPrimary, tokens.borderInput, false)}>{PANEL_COPY.retry}</button>
+            <button type="button" disabled={busy} onClick={() => { setBusy(true); reload().finally(() => setBusy(false)); }} style={btn(tokens.textPrimary, tokens.borderInput, busy)}>{PANEL_COPY.retry}</button>
           </div>
         )}
 
         {phase === 'ready' && !current && !editor && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <p style={muted(tokens)}>{PANEL_COPY.empty}</p>
-            <button type="button" onClick={() => openEditor('create')} style={btn(tokens.teal, tokens.teal, false)}>{PANEL_COPY.writeFirst}</button>
+            <button type="button" disabled={busy} onClick={() => openEditor('create')} style={btn(tokens.teal, tokens.teal, busy)}>{PANEL_COPY.writeFirst}</button>
           </div>
         )}
 
@@ -164,10 +199,10 @@ export default function IdeaPanel({ watchlistId, tokens, listTickers = [] }) {
             <p style={prose(tokens)} data-testid="idea-statement">{current.statement}</p>
             <div style={meta(tokens)} data-testid="idea-dates">
               {[
-                ['Saved', formatIdeaDate(current.createdAt)],
-                ['Status since', formatIdeaDate(current.stateChangedAt)],
-                ['First deployed', formatIdeaDate(current.firstDeployedAt)],
-                ['Review due', formatIdeaDate(current.reviewDueAt)],
+                [PANEL_COPY.saved, formatIdeaDate(current.createdAt)],
+                [PANEL_COPY.statusSince, formatIdeaDate(current.stateChangedAt)],
+                [PANEL_COPY.firstDeployed, formatIdeaDate(current.firstDeployedAt)],
+                [PANEL_COPY.reviewDue, formatIdeaDate(current.reviewDueAt)],
               ].filter(([, v]) => v).map(([k, v]) => `${k} ${v}`).join(' · ')}
             </div>
             {current.status === 'waiting_for_evidence' && current.missingEvidence && (
@@ -186,7 +221,7 @@ export default function IdeaPanel({ watchlistId, tokens, listTickers = [] }) {
                 key={a}
                 type="button"
                 disabled={busy}
-                onClick={() => (a === 'reaffirm' ? openEditor('reaffirm') : setPending({ action: a, missingEvidence: '' }))}
+                onClick={() => (a === 'reaffirm' ? openEditor('reaffirm') : askAction(a, current))}
                 style={btn(a === 'ready' || a === 'reaffirm' ? tokens.teal : tokens.textPrimary, a === 'ready' || a === 'reaffirm' ? tokens.teal : tokens.borderInput, busy)}
               >
                 {ACTION_LABELS[a]}
@@ -216,10 +251,10 @@ export default function IdeaPanel({ watchlistId, tokens, listTickers = [] }) {
               <button
                 type="button"
                 disabled={busy || (pending.action === 'wait' && !pending.missingEvidence.trim())}
-                onClick={() => doAction(pending.action, pending.missingEvidence)}
+                onClick={() => doAction(pending)}
                 style={btn(tokens.teal, tokens.teal, busy || (pending.action === 'wait' && !pending.missingEvidence.trim()))}
               >
-                {PANEL_COPY.confirm}: {ACTION_LABELS[pending.action]}
+                {PANEL_COPY.confirm}: {ACTION_LABELS[pending.action]}{pending.version !== record.currentVersion ? ` v${pending.version}` : ''}
               </button>
               <button type="button" disabled={busy} onClick={() => setPending(null)} style={btn(tokens.textMuted, tokens.borderInput, busy)}>{PANEL_COPY.keep}</button>
             </div>
@@ -245,18 +280,13 @@ export default function IdeaPanel({ watchlistId, tokens, listTickers = [] }) {
                 aria-label={PANEL_COPY.horizonPick}
                 style={{ ...input(tokens), padding: '4px 8px' }}
               >
-                <option value="">{current ? PANEL_COPY.horizonKeep : HORIZON_LABELS.unspecified}</option>
+                <option value="">{current ? PANEL_COPY.horizonKeep : PANEL_COPY.horizonDefault}</option>
                 {HORIZON_ENUMS.map((h) => <option key={h} value={h}>{HORIZON_LABELS[h]}</option>)}
               </select>
             </label>
-            <p style={meta(tokens)}>{PANEL_COPY.editorHint}</p>
+            <p style={meta(tokens)}>{PANEL_COPY.editorHint}{editor.mode === 'create' ? ` ${PANEL_COPY.draftHint}` : ''}</p>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                type="button"
-                disabled={busy || !editor.statement.trim()}
-                onClick={submitEditor}
-                style={btn(tokens.teal, tokens.teal, busy || !editor.statement.trim())}
-              >
+              <button type="button" disabled={!canSubmit} onClick={submitEditor} style={btn(tokens.teal, tokens.teal, !canSubmit)}>
                 {editor.mode === 'reaffirm' ? ACTION_LABELS.reaffirm : PANEL_COPY.save}
               </button>
               <button type="button" disabled={busy} onClick={() => setEditor(null)} style={btn(tokens.textMuted, tokens.borderInput, busy)}>{PANEL_COPY.cancelEdit}</button>
@@ -266,14 +296,30 @@ export default function IdeaPanel({ watchlistId, tokens, listTickers = [] }) {
 
         {phase === 'ready' && record.versions.length > 0 && (
           <div style={{ marginTop: 14 }} data-testid="idea-history">
-            <div style={historyLabel(tokens)}>{PANEL_COPY.history} ({record.versions.length})</div>
+            <div style={historyLabel(tokens)}>{PANEL_COPY.history} ({record.currentVersion})</div>
             <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {record.versions.map((v) => (
-                <li key={v.version} style={{ fontSize: 12, lineHeight: 1.5, color: v.version === record.currentVersion ? tokens.textSecondary : tokens.textFaint }}>
-                  v{v.version} · {STATUS_LABELS[v.status] || v.status} · {formatIdeaDate(v.createdAt)}
-                  {v.successorVersion != null ? ` · → v${v.successorVersion}` : ''} — {excerpt(v.statement)}
-                </li>
-              ))}
+              {record.versions.map((v) => {
+                const isCurrent = v.version === record.currentVersion;
+                // A superseded version that is still open can be closed here (the routes accept it).
+                const closing = isCurrent ? [] : legalActionsFor(v.status, { isCurrent: false });
+                return (
+                  <li key={v.version} style={{ fontSize: 12, lineHeight: 1.5, color: isCurrent ? tokens.textSecondary : tokens.textFaint }} data-testid={`idea-history-v${v.version}`}>
+                    <span>
+                      v{v.version} · {STATUS_LABELS[v.status] || v.status} · {formatIdeaDate(v.createdAt)}
+                      {v.successorVersion != null ? ` · → v${v.successorVersion}` : ''} — {excerpt(v.statement)}
+                    </span>
+                    {closing.length > 0 && !editor && (
+                      <span style={{ display: 'inline-flex', gap: 6, marginLeft: 8 }}>
+                        {closing.map((a) => (
+                          <button key={a} type="button" disabled={busy} onClick={() => askAction(a, v)} style={{ ...btn(tokens.textMuted, tokens.borderInput, busy), padding: '1px 8px', fontSize: 11 }}>
+                            {ACTION_LABELS[a]}
+                          </button>
+                        ))}
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}

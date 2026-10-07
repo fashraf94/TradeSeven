@@ -34,6 +34,21 @@ export function isHypothesisOwnerAllowlisted(uid) {
   }
 }
 
+/**
+ * Is the gate on for ANYONE? The flag AND a non-empty allowlist. With the
+ * flag on and nobody admitted the gate resolves off for every owner, so the
+ * review pass returns before any read (review L2-2). Never throws.
+ */
+export function hypothesisRecordsOnForAnyone() {
+  if (!hypothesisRecordsFlagOn()) return false;
+  try {
+    const list = readCockpitAllowlist();
+    return Array.isArray(list) && list.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 /** The gate for one caller: the flag AND the allowlist. Never throws. */
 export function hypothesisRecordsOnFor(uid) {
   return hypothesisRecordsFlagOn() && isHypothesisOwnerAllowlisted(uid);

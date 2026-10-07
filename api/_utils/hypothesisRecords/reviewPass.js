@@ -12,7 +12,8 @@
 // INERT UNTIL P1b: P1b arms queue rows at activation. This build ships the
 // pass, the queue shape and `armReviewRow` (used only by tests here).
 //
-// THE GATE: the flag off → return BEFORE ANY READ. The flag on → each row's
+// THE GATE: the flag off, or no owner admitted at all → return BEFORE ANY
+// READ (the gate is off for everyone). Otherwise each row's
 // owner must be on the cockpit allowlist, else the row is read, counted
 // `skippedOff`, and nothing else is read or written for it (the call sweep's
 // per-owner-off posture, Amendment B §B.10).
@@ -23,14 +24,15 @@
 // `callSweepQueue`, whose orphan handling would delete a version-keyed row on
 // first visit (Phase 0 §5.3).
 //
-// TWO PHASES per invocation, each bounded by the deadline:
-//   'due'          rows with dueAtMs <= now (dueAtMs ASC, __name__ ASC), paged
-//                  from the head every invocation — a processed row is deleted,
-//                  so the head always moves; a failed row is retried next time;
-//   'unspecified'  rows with dueAtMs == null (__name__ ASC) from the persisted
-//                  `{ lastDocId }` cursor (hypothesisReviewState/cursor), so a
-//                  long tail of live battles cannot starve the rows behind it;
-//                  a short page wraps the cursor to the start.
+// TWO PHASES per invocation, each bounded by the deadline and each paged from
+// its own PERSISTED cursor in hypothesisReviewState/cursor (the call sweep's
+// precedent; review L2-2), so rows the pass never consumes — an owner off the
+// allowlist, a malformed row, one that keeps failing — are passed over rather
+// than re-read from the head every tick, and cannot starve the rows behind
+// them; a short page wraps a cursor to the start, where they are retried:
+//   'due'          rows with dueAtMs <= now (dueAtMs ASC, __name__ ASC) from
+//                  `{ dueLastDueAtMs, dueLastDocId }`;
+//   'unspecified'  rows with dueAtMs == null (__name__ ASC) from `{ lastDocId }`.
 // Each transition is ONE bounded transaction (the call sweep's boundedTx
 // shape): fresh reads of the row and the version (and, for an unspecified row,
 // the battle); it acts ONLY if the version is still `activated`, then writes
@@ -41,7 +43,7 @@
 // re-reads and judges once (spec §2.5 "judged once").
 
 import { withTimeout } from '../intraday/evaluatorHook.js';
-import { hypothesisRecordsFlagOn, isHypothesisOwnerAllowlisted } from './gate.js';
+import { hypothesisRecordsOnForAnyone, isHypothesisOwnerAllowlisted } from './gate.js';
 import { STATE_REASONS, versionDocId, isVersionNumber, WATCHLISTS_COLLECTION, VERSIONS_SUBCOLLECTION } from './model.js';
 
 export const REVIEW_QUEUE_COLLECTION = 'hypothesisReviewQueue';
@@ -167,8 +169,9 @@ async function reviewOne({ db, rowId, row, nowMs, nowIso, deadlineMs }) {
  * @param {{ db: object, handlerStartMs: number, nowMs?: number }} p
  */
 export async function runHypothesisReviewPass({ db, handlerStartMs, nowMs = Date.now() }) {
-  // THE GLOBAL GATE — before any read.
-  if (!hypothesisRecordsFlagOn()) return { skipped: 'disabled', reads: 0 };
+  // THE GLOBAL GATE — before any read. Flag off, or flag on with NOBODY admitted: the gate resolves off
+  // for every owner, so the pass returns before any read (review L2-2).
+  if (!hypothesisRecordsOnForAnyone()) return { skipped: 'disabled', reads: 0 };
   const deadlineMs = reviewDeadline({ nowMs, handlerStartMs });
   const summary = {
     skipped: null, starved: false, availableMs: deadlineMs - nowMs, rows: 0,
@@ -210,27 +213,39 @@ export async function runHypothesisReviewPass({ db, handlerStartMs, nowMs = Date
 
   let cursorId = null;
   let cursorAfter = null;
+  let dueBefore = null;
+  let dueAfter = null;
+  let stateRead = false;
   try {
-    // Phase 'due' — from the head, paged within this invocation.
-    let after = null;
+    // The cursors, one document: { dueLastDueAtMs, dueLastDocId } for the 'due' phase and
+    // { lastDocId } for the 'unspecified' phase. Each wraps to the start on a short page.
+    const stateSnap = await withTimeout(reviewStateRef(db).get(), Math.max(1, deadlineMs - Date.now()), 'hypothesis_review_cursor');
+    const state = stateSnap?.exists && isPlainObject(stateSnap.data()) ? stateSnap.data() : {};
+    stateRead = true;
+    cursorId = nonEmpty(state.lastDocId) ? state.lastDocId : null;
+    dueBefore = finite(state.dueLastDueAtMs) && nonEmpty(state.dueLastDocId) ? { dueAtMs: state.dueLastDueAtMs, id: state.dueLastDocId } : null;
+    summary.cursorBefore = cursorId;
+    summary.dueCursorBefore = dueBefore;
+    cursorAfter = cursorId;
+    dueAfter = dueBefore;
+
+    // Phase 'due' — from its persisted cursor (review L2-2): rows the pass never consumes (an owner off
+    // the allowlist, a malformed row, a row that keeps failing) are passed over, not re-read from the
+    // head every tick, so they cannot starve the rows behind them; the next wrap retries them.
     for (;;) {
       if (Date.now() >= deadlineMs) { summary.cut = true; break; }
       let q = db.collection(REVIEW_QUEUE_COLLECTION).where('dueAtMs', '<=', nowMs).orderBy('dueAtMs', 'asc').orderBy('__name__', 'asc');
-      if (after) q = q.startAfter(after.dueAtMs, after.id);
+      if (dueAfter) q = q.startAfter(dueAfter.dueAtMs, dueAfter.id);
       const page = await withTimeout(q.limit(REVIEW_PAGE).get(), Math.max(1, deadlineMs - Date.now()), 'hypothesis_review_due_page');
       const docs = page?.docs || [];
       const { cut, last } = await walk(docs);
+      if (last) dueAfter = { dueAtMs: last.data().dueAtMs, id: last.id };
       if (cut) { summary.cut = true; break; }
-      if (docs.length < REVIEW_PAGE) break;
-      after = { dueAtMs: last.data().dueAtMs, id: last.id };
+      if (docs.length < REVIEW_PAGE) { dueAfter = null; break; }
     }
 
-    // Phase 'unspecified' — from the persisted cursor.
+    // Phase 'unspecified' — from its persisted cursor.
     if (!summary.cut) {
-      const stateSnap = await withTimeout(reviewStateRef(db).get(), Math.max(1, deadlineMs - Date.now()), 'hypothesis_review_cursor');
-      cursorId = stateSnap?.exists && nonEmpty(stateSnap.data()?.lastDocId) ? stateSnap.data().lastDocId : null;
-      summary.cursorBefore = cursorId;
-      cursorAfter = cursorId;
       for (;;) {
         if (Date.now() >= deadlineMs) { summary.cut = true; break; }
         let q = db.collection(REVIEW_QUEUE_COLLECTION).where('dueAtMs', '==', null).orderBy('__name__', 'asc');
@@ -248,15 +263,22 @@ export async function runHypothesisReviewPass({ db, handlerStartMs, nowMs = Date
     summary.error = String(err?.message || err).slice(0, 200);
   }
 
-  // The cursor, written only when it moved (no write in the steady empty state).
-  if (cursorAfter !== cursorId) {
+  // The cursors, written only when one moved (no write in the steady empty state, none if the state was never read).
+  const dueMoved = JSON.stringify(dueAfter) !== JSON.stringify(dueBefore);
+  if (stateRead && (cursorAfter !== cursorId || dueMoved)) {
     try {
-      await withTimeout(reviewStateRef(db).set({ lastDocId: cursorAfter, updatedAt: nowMs }), Math.max(250, deadlineMs - Date.now()), 'hypothesis_review_cursor_write');
+      await withTimeout(reviewStateRef(db).set({
+        lastDocId: cursorAfter,
+        dueLastDueAtMs: dueAfter ? dueAfter.dueAtMs : null,
+        dueLastDocId: dueAfter ? dueAfter.id : null,
+        updatedAt: nowMs,
+      }), Math.max(250, deadlineMs - Date.now()), 'hypothesis_review_cursor_write');
     } catch (err) {
       summary.cursorWrite = isTimeout(err) ? 'unconfirmed' : 'failed';
     }
   }
   summary.cursorAfter = cursorAfter;
+  summary.dueCursorAfter = dueAfter;
   summary.ms = Date.now() - nowMs;
   console.log(`[hypothesis] review ${JSON.stringify(summary)}`);
   return summary;

@@ -12,9 +12,10 @@
 //     everything);
 //   · another authenticated user, a privileged-claims context and an
 //     unauthenticated client are denied both;
-//   · a version under a MISSING parent list is unreadable — even by the uid it
-//     names (fails closed; the collection-group block grants `list` only, so
-//     it cannot widen a direct get);
+//   · a version under a MISSING parent list cannot be fetched directly by
+//     anyone, nor listed unconstrained (the collection-group block grants
+//     `list` only, so it cannot widen a direct get); a list constrained to the
+//     caller's OWN userId does return it — the posture, pinned (review L3-3);
 //   · nobody — the owner included — can create, update, merge or delete;
 //   · the collection-group query admits the owner's query constrained to
 //     their own userId and denies anyone else's or an unconstrained one;
@@ -101,10 +102,17 @@ describe('watchlists/{watchlistId}/hypothesisVersions/{versionId} — read mirro
     await assertFails(getDoc(doc(asAnon(), VERSION)));
     await assertFails(getDocs(collection(asAnon(), `${LIST}/hypothesisVersions`)));
   });
-  it('a version whose parent list is missing is unreadable — even by the uid it names (fails closed)', async () => {
+  it('a version whose parent list is missing: a direct get is denied to everyone, and so is an unconstrained list', async () => {
     await assertFails(getDoc(doc(asOwner(), ORPHAN_VERSION)));
     await assertFails(getDoc(doc(asOther(), ORPHAN_VERSION)));
     await assertFails(getDocs(collection(asOwner(), `${ORPHAN_LIST}/hypothesisVersions`)));
+  });
+  it("the posture as it is (review L3-3): a list constrained to the caller's OWN userId returns their versions wherever they sit — an orphan included — and never anyone else's", async () => {
+    const own = await assertSucceeds(getDocs(query(collection(asOwner(), `${ORPHAN_LIST}/hypothesisVersions`), where('userId', '==', OWNER_UID))));
+    expect(own.docs.map((d) => d.ref.path)).toEqual([ORPHAN_VERSION]);
+    await assertFails(getDocs(query(collection(asOther(), `${ORPHAN_LIST}/hypothesisVersions`), where('userId', '==', OWNER_UID))));
+    const mine = await getDocs(query(collection(asOther(), `${ORPHAN_LIST}/hypothesisVersions`), where('userId', '==', OTHER_UID)));
+    expect(mine.docs).toEqual([]);
   });
 });
 
