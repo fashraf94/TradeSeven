@@ -26,6 +26,10 @@ import { runEditorialReview, EDITORIAL_MIN_BUDGET_MS } from '../_utils/wireEdito
 // Cockpit Build 1a (spec §8): the call sweep — the LAST tenant, under the
 // handler's remaining protected budget; inert before any read below global 'on'.
 import { runCallSweep } from '../_utils/callRecords/sweep.js';
+// Pilot P1a (founder decision D2): the hypothesis review pass — the FIFTH
+// tenant, after the call sweep; with HYPOTHESIS_RECORDS_ENABLED false it
+// returns before any read and the response carries no new key.
+import { runHypothesisReviewPass } from '../_utils/hypothesisRecords/reviewPass.js';
 
 export const config = { maxDuration: 60 };
 
@@ -170,6 +174,20 @@ export default async function handler(req, res) {
       callSweep = { action: 'error', error: String(sweepErr?.message || sweepErr) };
     }
 
+    // ---- 7. Pilot P1a — the hypothesis review pass (rider, LAST; D2) ----
+    // Fifth tenant, after the call sweep: its own slice, min(now + 8 s,
+    // handlerStart + 50 s) — never past this handler's TIME_BUDGET_MS. Flag
+    // off → it returns before any read and the response carries no new key
+    // (byte-identical). A pass failure can never break the reflections
+    // (isolating try/catch; the pass itself never throws).
+    let hypothesisReview = null;
+    try {
+      hypothesisReview = await runHypothesisReviewPass({ db, handlerStartMs: startTime });
+    } catch (reviewErr) {
+      console.error(`${LOG_PREFIX} Hypothesis review failed (isolated):`, reviewErr?.message || reviewErr);
+      hypothesisReview = { action: 'error', error: String(reviewErr?.message || reviewErr) };
+    }
+
     const duration = Date.now() - startTime;
     console.log(`${LOG_PREFIX} Complete in ${duration}ms:`, summary);
     return res.status(200).json({
@@ -178,6 +196,7 @@ export default async function handler(req, res) {
       wireSweep,
       ...(editorial ? { editorial } : {}),
       ...(callSweep && !callSweep.skipped ? { callSweep } : {}),
+      ...(hypothesisReview && !hypothesisReview.skipped ? { hypothesisReview } : {}),
       duration,
     });
   } catch (err) {
