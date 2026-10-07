@@ -76,6 +76,8 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => {
   const actual = await importOriginal();
   return {
     ...actual,
+    // Pilot P6: SWAP_IDENTITY_MODE pinned 'off' too — this suite's fixture is the off shape (writer arguments, trade rows, entry keys), so the founder's flip moves no line here.
+    SWAP_IDENTITY_MODE: 'off',
     get CALL_RECORDS_MODE() { return flagState.callsMode; },
     get TICK_CAPTURE_ENABLED() { return flagState.tickCapture; },
   };

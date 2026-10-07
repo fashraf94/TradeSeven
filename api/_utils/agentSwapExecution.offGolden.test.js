@@ -18,7 +18,8 @@
 // purpose after writing, and refuses CI.
 //
 // THE FOUR WAYS IN — each must reproduce the fixture exactly:
-//   1. the pre-P6 call: ten arguments, the flag's own 'off' (the fixture's way);
+//   1. the pre-P6 call: ten arguments, the default mode (the flag, pinned
+//      'off' below — the fixture's way);
 //   2. 'off' named explicitly WITH a belief that would mismatch every slot —
 //      'off' compares nothing, so the belief changes nothing;
 //   3. an unknown mode ('ENFORCE') — resolves to 'off';
@@ -39,6 +40,10 @@ import { fileURLToPath } from 'node:url';
 
 const fetchMock = vi.hoisted(() => vi.fn());
 vi.mock('./marketDataCache.js', () => ({ getStockAnalysisData: fetchMock }));
+// The flag pinned 'off' (hermetic across the founder's flips): ways 1 and 4
+// take the executor's DEFAULT mode, and this suite is the off contract whatever
+// the live value is.
+vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({ ...(await importOriginal()), SWAP_IDENTITY_MODE: 'off' }));
 
 import { executeSwapServer as executeSwap } from './agentSwapExecution.js';
 
@@ -232,7 +237,7 @@ describe('the executor at SWAP_IDENTITY_MODE off — byte-identical to the froze
 
   for (const name of Object.keys(SCENARIOS)) {
     describe(name, () => {
-      it('1 — the pre-P6 call (ten arguments, the flag\'s own value)', async () => {
+      it('1 — the pre-P6 call (ten arguments, the default mode: the flag, pinned off)', async () => {
         expect(JSON.stringify(await run(name))).toBe(JSON.stringify(golden.scenarios[name]));
       });
 

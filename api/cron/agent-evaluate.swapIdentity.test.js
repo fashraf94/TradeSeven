@@ -320,6 +320,13 @@ describe('A8 / C2 — the model route: HOLD, downgraded, the prefix kept, the ty
     await runTick({ result: makeSwapResult() });
     expect(carry.calls).toBe(1);
   });
+
+  it('calls shadow + identity on: the entry ends `…, declarationsPhase, executionRefusal` — both conditional keys, the calls key first', async () => {
+    flags.calls = 'shadow';
+    flags.swapIdentity = 'shadow';
+    const { entry } = await runTick({ result: makeSwapResult() });
+    expect(Object.keys(entry).slice(-2)).toEqual(['declarationsPhase', ...SWAP_IDENTITY_ENTRY_KEYS]);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

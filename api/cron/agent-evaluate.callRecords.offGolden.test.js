@@ -96,7 +96,8 @@ vi.mock('../_utils/learning/captureReceipt.js', () => ({
 // contract must hold in every live state of the flag); capture switchable.
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => {
   const actual = await importOriginal();
-  return { ...actual, CALL_RECORDS_MODE: 'off', get TICK_CAPTURE_ENABLED() { return flagState.tickCapture; } };
+  // Pilot P6: SWAP_IDENTITY_MODE pinned 'off' too — this suite's fixture is the off shape (writer arguments, trade rows, entry keys), so the founder's flip moves no line here.
+  return { ...actual, CALL_RECORDS_MODE: 'off', SWAP_IDENTITY_MODE: 'off', get TICK_CAPTURE_ENABLED() { return flagState.tickCapture; } };
 });
 
 const { processAgentBattle } = await import('./agent-evaluate.js');
