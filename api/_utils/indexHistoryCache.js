@@ -51,7 +51,7 @@ export const INDEX_HISTORY_COLLECTION = 'indexHistoryCache';
 /** The QW-1 rule's TTL (marketDataCache CACHE_TTL.daily). */
 export const HISTORY_STORE_MAX_AGE_MS = 4 * 60 * 60 * 1000;
 /** Symbols outside the NYSE calendar (indices on other venues' hours): never stored. */
-const NON_NYSE_CALENDAR = /.INDX$/i;
+const NON_NYSE_CALENDAR = /\.INDX$/i;
 
 function toMillis(value) {
   if (value == null) return NaN;

@@ -164,3 +164,13 @@ describe('createSessionHistoryStore — calendar hardening (review EV3)', () => 
     expect(db.docs.size).toBe(0);
   });
 });
+
+describe('createSessionHistoryStore — the .INDX match is a literal dot', () => {
+  it('a symbol merely ENDING in "INDX" (no dot) is an ordinary NYSE symbol and is served', async () => {
+    const db = fakeDb();
+    db.docs.set(`${INDEX_HISTORY_COLLECTION}/FINDX.US`, stored({ symbol: 'FINDX.US' }));
+    db.docs.set(`${INDEX_HISTORY_COLLECTION}/FINDX`, stored({ symbol: 'FINDX' }));
+    const store = createSessionHistoryStore(db, { etToday: ET_TODAY });
+    expect((await store.load('FINDX', 252, vi.fn())).source).toBe('store');
+  });
+});
