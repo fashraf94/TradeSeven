@@ -205,8 +205,9 @@ The server caches named here are defined in `api/_utils/serverCache.js`:
 - **Every browser price request goes through same-origin `/api/*` routes** (§2.3).
   - The 20 `api/_utils` modules that `src/` imports carry no `process.env` key read that Vite would inline.
 - **The former leak is closed.** `/api/ws-config` used to return a vendor socket URL with the key embedded (`KEYSTONE_PRELOCK_FINDINGS.md:110`, `:114-115`). It now reads no EODHD env var and returns `{ available: false, transport: 'rest' }` (`api/ws-config.js:4-16`, `:40`). **Whether that key was rotated afterwards is UNKNOWN.**
-- **One conditional risk (ASSUMED from Vite's documented behaviour; a build would confirm it).** Bare `import.meta.env` references emit the whole client env object. Examples: `src/services/apiMonitor.js:23`, `:51`; `priceSnapshotService.js:19`; `volatilityService.js:7`; `src/utils/debug.js:45-46`; `leagueSignals.js:28`.
-  - If anyone ever defined a `VITE_`-prefixed EODHD variable in Vercel, it would ship even though no code reads it.
+- **One conditional risk.** Bare `import.meta.env` references emit the whole client env object. Examples: `src/services/apiMonitor.js:23`, `:51`; `priceSnapshotService.js:19`; `volatilityService.js:7`; `src/utils/debug.js:45-46`; `leagueSignals.js:28`.
+  - **VERIFIED in a local `vite build` of this report's commit.** The main bundle carries the inlined object `{BASE_URL:"/",DEV:!1,MODE:"production",PROD:!0,SSR:!1}`, and neither `api_token=` nor `eodhd_api` appears in any built asset. That local build had no `.env` file, so no `VITE_*` keys appear in the object.
+  - On Vercel, every `VITE_*` variable present at build time would join that object. If anyone ever defined a `VITE_`-prefixed EODHD variable there, it would ship even though no code reads it.
   - Whether such a variable exists in Vercel is UNKNOWN from the repo.
 
 ### Q-03. Cache bypasses, forced refreshes and clears that precede a call
