@@ -21,6 +21,9 @@ import { getStockAnalysisData } from './marketDataCache.js';
 
 function makeBattleData(overrides = {}) {
   return {
+    // Every agentBattles doc is created active (agentBattleService); the P6
+    // identity check refuses a battle that is not (founder decision D3).
+    status: 'active',
     portfolio: {
       star: [{ symbol: 'MU', name: 'Micron', baseATR: 2.5, isCrypto: false, swapPrice: 100 }],
       core: [],
@@ -109,6 +112,9 @@ describe('executeSwapServer — Phase 4 snapshot threading', () => {
 // exercise the swapPrice short-circuit).
 function heldBattleData() {
   return {
+    // Every agentBattles doc is created active (agentBattleService); the P6
+    // identity check refuses a battle that is not (founder decision D3).
+    status: 'active',
     activatedAt: '2020-01-01T12:00:00.000Z', // far past → isActivationDay false (day 2+)
     portfolio: {
       star: [{ symbol: 'MU', name: 'Micron', baseATR: 2.5, isCrypto: false }], // NO swapPrice
