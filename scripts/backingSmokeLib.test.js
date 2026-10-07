@@ -19,12 +19,19 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
-  FALLBACK_USER_POOL, SMOKE_STAKES, SMOKE_TOOL, addDays, addRun, buildSmokeGroup, buildSyntheticWeek, devTargetVerdict,
+  FALLBACK_USER_POOL, SMOKE_AGENTS, SMOKE_STAKES, SMOKE_TOOL, addDays, addRun, buildSmokeAgents, buildSmokeGroup, buildSyntheticWeek, devTargetVerdict,
   emptyManifest, latestRun, ledgerInvariant, parseArgs, readOnlyHandle, removeRun, runFromLiveGroup, runStamp, smokeEligibilityFor, smokeIds,
   syntheticToken, upcomingBattleWeek, validSmokeRun,
 } from './backingSmokeLib.js';
 import { SMOKE_POD_TOOL, smokeListablePod } from '../api/_utils/backingPools.js';
 import { makeVersionedDb } from '../api/_utils/__fixtures__/versionedFirestore.js';
+import { makeInMemoryDb } from '../api/_utils/__fixtures__/inMemoryFirestore.js';
+import { agentSweepTargets } from './backingSmokeSweep.js';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import { looksLikeAccountId } from '../api/_utils/backingTeamLabels.js';
+import { getArchetypeDefinition } from '../api/_utils/archetypeRegistry.js';
 import { poolEligible } from '../api/_utils/backingWeek.js';
 import { BACKING_POOLS_COLLECTION, BACKING_STAKES_COLLECTION, POOL_STATUS, VOID_REASONS, closePool, materializePool, poolIdFor, walletIdFor as _unused } from '../api/_utils/backingPools.js';
 import { BACKING_WALLETS_COLLECTION, walletIdFor } from '../api/_utils/backingWallet.js';
@@ -32,7 +39,7 @@ import { SETTLEMENT_SOURCE, agentLayerAbsent, refundPool, settlePool, settlement
 import { placeStake } from '../api/_utils/backingStake.js';
 import { ELIGIBILITY_COLLECTION } from '../api/_utils/eligibility.js';
 import { TERMS_VERSION } from '../src/constants/eligibility.js';
-import { GROUP_STATUS, getWeeklyComposite, isWeekBanked } from '../src/constants/leagueTournament.js';
+import { GROUP_STATUS, getWeeklyComposite, isCloneAgentId, isWeekBanked } from '../src/constants/leagueTournament.js';
 
 void _unused;
 
@@ -87,12 +94,105 @@ describe('the seed', () => {
     const ids = smokeIds(STAMP);
     expect(SMOKE_TOOL).toBe(SMOKE_POD_TOOL);
     const doc = buildSmokeGroup({ ids, nowIso: NOW.toISOString(), userPool: [] });
-    expect(doc.smoke).toEqual({ tool: SMOKE_TOOL, stamp: STAMP, createdAt: NOW.toISOString(), backerUids: ids.backerUids });
+    // …and, since the QA rounds 1–3 build (item E), the seats' agent ids, so a rebuilt run can sweep them too.
+    expect(doc.smoke).toEqual({ tool: SMOKE_TOOL, stamp: STAMP, createdAt: NOW.toISOString(), backerUids: ids.backerUids, agentIds: ids.agentIds });
     expect(smokeListablePod({ id: ids.groupId, ...doc })).toBe(true);
     expect(smokeListablePod({ id: ids.groupId, ...doc, smoke: undefined })).toBe(false);
     const named = buildSmokeGroup({ ids, nowIso: NOW.toISOString(), userPool: [], founderUid: FOUNDER });
     expect(named.smoke.founderUid).toBe(FOUNDER);
     expect(buildSmokeGroup({ ids, nowIso: NOW.toISOString(), userPool: [], founderUid: '' }).smoke.founderUid).toBeUndefined();
+  });
+});
+
+describe('item E (the backing QA rounds 1–3) — the seats\' agents', () => {
+  const ids = smokeIds(STAMP);
+  const nowIso = NOW.toISOString();
+
+  it('the seed gives each synthetic seat an AGENT shaped like a real agent doc: a plain name (never id-shaped), an archetype the registry knows, a small loadout, the seat uid as owner, isDev and the smoke marker', () => {
+    const agents = buildSmokeAgents({ ids, nowIso });
+    expect(agents.map((a) => a.id)).toEqual(ids.agentIds);
+    expect(ids.agentIds.every((id) => id.startsWith('smk_agent_') && !id.startsWith('dev-') && !isCloneAgentId(id))).toBe(true);
+    expect(SMOKE_AGENTS).toHaveLength(2);
+    agents.forEach(({ id, doc }, i) => {
+      expect(doc.ownerId).toBe(ids.seatUids[i]);
+      expect(doc.name).toBe(SMOKE_AGENTS[i].name);
+      expect(looksLikeAccountId(doc.name, [doc.ownerId, id]), doc.name).toBe(false);
+      expect(getArchetypeDefinition(doc.archetype)?.displayName, doc.archetype).toEqual(expect.any(String));
+      expect(doc.equippedTraits).toHaveLength(2);
+      expect(doc.activeRules).toHaveLength(3);
+      expect(doc).toMatchObject({ isDev: true, smoke: { tool: SMOKE_TOOL, stamp: STAMP, createdAt: nowIso, groupId: ids.groupId }, stats: { gamesPlayed: 0 }, equippedBundleIds: [], memory: [], directives: [] });
+      for (const key of ['ownerId', 'name', 'archetype', 'config', 'activeRules', 'equippedTraits', 'equippedBundleIds', 'stats', 'createdAt', 'updatedAt']) expect(doc, key).toHaveProperty(key);
+      expect(doc.isTrainingClone).toBeUndefined();
+      expect(doc.isCasualClone).toBeUndefined();
+    });
+    expect(agents[0].doc.name).not.toBe(agents[1].doc.name);
+  });
+
+  it('cleanup\'s agent sweep (scripts/backingSmokeSweep.js — the function the script runs) names exactly this run\'s two, each admitted by the verdict: a real player\'s agent and ANOTHER run\'s smoke agent are never targets; a pre-build manifest (no recorded ids) still finds them by owner', async () => {
+    const other = smokeIds('20260101_zzzzzz');
+    const { db, store } = makeInMemoryDb({
+      ...Object.fromEntries(buildSmokeAgents({ ids, nowIso }).map(({ id, doc }) => [`agents/${id}`, doc])),
+      ...Object.fromEntries(buildSmokeAgents({ ids: other, nowIso }).map(({ id, doc }) => [`agents/${id}`, doc])),
+      'agents/real-1': { ownerId: FOUNDER, name: 'Prime', archetype: 'analyst' },
+    });
+    const run = { groupId: ids.groupId, poolId: ids.poolId, backerUids: ids.backerUids, seatUids: ids.seatUids, agentIds: ids.agentIds, uids: [] };
+    const targets = await agentSweepTargets(db, run);
+    const expected = ids.agentIds.map((id) => `agents/${id}`).sort();
+    expect(Object.keys(targets).sort()).toEqual(expected);
+    for (const [p, { ref, data }] of Object.entries(targets)) {
+      expect(ref.path).toBe(p);
+      expect(data).toEqual(store.get(p));
+      expect(devTargetVerdict(p, data, run).ok, p).toBe(true);
+    }
+    // The belt: a run whose recorded ids are gone (a manifest from before this build) is swept by its seats' uids alone…
+    expect(Object.keys(await agentSweepTargets(db, { ...run, agentIds: [] })).sort()).toEqual(expected);
+    expect(Object.keys(await agentSweepTargets(db, { ...run, agentIds: undefined })).sort()).toEqual(expected);
+    // …and by its ids alone when it has no seat list; neither → none.
+    expect(Object.keys(await agentSweepTargets(db, { ...run, seatUids: [] })).sort()).toEqual(expected);
+    expect(Object.keys(await agentSweepTargets(db, { ...run, agentIds: [], seatUids: [] }))).toEqual([]);
+    // The other run's agents and the real one are never in this run's sweep, and would be REFUSED under it anyway.
+    for (const id of other.agentIds) expect(devTargetVerdict(`agents/${id}`, store.get(`agents/${id}`), run).ok).toBe(false);
+    expect(devTargetVerdict('agents/real-1', store.get('agents/real-1'), run).ok).toBe(false);
+  });
+});
+
+describe('the script itself — source-text tripwires over scripts/backing-smoke.js (R3-1 / R5-1: the lib cannot run the script, so its ORDER is pinned by its text)', () => {
+  const SCRIPT = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'backing-smoke.js'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+  const fn = (name, next) => {
+    const start = SCRIPT.indexOf(`async function ${name}(`);
+    const end = next ? SCRIPT.indexOf(`async function ${next}(`) : SCRIPT.length;
+    expect(start, `${name} is defined`).toBeGreaterThan(-1);
+    expect(end, `${next} follows ${name}`).toBeGreaterThan(start);
+    return SCRIPT.slice(start, end);
+  };
+
+  it('seed: the composition write-epoch fence is checked BEFORE the first write — the pod and the agents alike (MUTATION: move the fence below the pod write, or drop it → reds)', () => {
+    const seed = fn('seed', 'advance');
+    const fence = seed.indexOf('await assertWriteEpochOpen(db)');
+    const podWrite = seed.indexOf('.doc(ids.groupId).set(groupDoc)');
+    const agentsWrite = seed.indexOf("collection('agents').doc(id).set(doc)");
+    expect(fence).toBeGreaterThan(-1);
+    expect(podWrite).toBeGreaterThan(-1);
+    expect(agentsWrite).toBeGreaterThan(-1);
+    expect(fence).toBeLessThan(podWrite);
+    expect(fence).toBeLessThan(agentsWrite);
+    expect(seed).toContain('EpochClosedError');
+  });
+
+  it('cleanup: the agents come from the ONE sweep the suite drives, each through the verdict; the dev namespace is deleted BEFORE the fence and only the agents behind it (MUTATION: drop the sweep call, the consider loop, or move the fence above the plain delete → reds)', () => {
+    const cleanup = fn('cleanup', null);
+    expect(cleanup).toContain('await agentSweepTargets(db, run)');
+    expect(cleanup).toContain('for (const { ref, data } of Object.values(agentTargets)) consider(ref, data)');
+    const plainDelete = cleanup.indexOf('await deleteAll(plain)');
+    const fence = cleanup.indexOf('await assertWriteEpochOpen(db)');
+    const agentDelete = cleanup.indexOf('await deleteAll(agentsToDelete)');
+    expect(plainDelete).toBeGreaterThan(-1);
+    expect(fence).toBeGreaterThan(plainDelete);
+    expect(agentDelete).toBeGreaterThan(fence);
+    expect(cleanup).toContain('EpochClosedError');
+    // The script never re-implements the sweep beside the shared one.
+    expect(cleanup).not.toContain("where('ownerId'");
   });
 });
 
@@ -159,7 +259,7 @@ describe('the synthetic eligibility checker', () => {
 });
 
 describe('the cleanup verdict (mutation check 4: a non-dev target reds these rows)', () => {
-  const run = { groupId: 'smk_1', poolId: 'dev-smk_1', backerUids: ['smk_backer_1_1'], uids: ['smk_backer_1_1', FOUNDER] };
+  const run = { groupId: 'smk_1', poolId: 'dev-smk_1', backerUids: ['smk_backer_1_1'], seatUids: ['smk_seat_a_1', 'smk_seat_b_1'], uids: ['smk_backer_1_1', FOUNDER] };
   const ok = (p, d) => expect(devTargetVerdict(p, d, run).ok, p).toBe(true);
   const refused = (p, d, why) => { const v = devTargetVerdict(p, d, run); expect(v.ok, p).toBe(false); if (why) expect(v.reason).toMatch(why); };
   it('admits exactly this run\'s dev-namespaced documents', () => {
@@ -170,6 +270,21 @@ describe('the cleanup verdict (mutation check 4: a non-dev target reds these row
     ok('backingEvents/dev:bev_window_viewed_x', { userId: FOUNDER, isDev: true });
     ok('tournamentGroups/smk_1', { isDev: true, smoke: { tool: SMOKE_TOOL } });
     ok('tournamentGroups/smk_1/boards/x', { isDev: true, smoke: { tool: SMOKE_TOOL } });
+    ok('agents/smk_agent_a_1', { smoke: { tool: SMOKE_TOOL }, ownerId: 'smk_seat_a_1' });
+  });
+
+  it('item E — an `agents` document is admitted ONLY with the smoke marker AND an owner among this run\'s seats (MUTATION: drop the marker check → the first refusal admits; drop the owner check → the fourth admits)', () => {
+    ok('agents/smk_agent_b_1', { smoke: { tool: SMOKE_TOOL }, ownerId: 'smk_seat_b_1', isDev: true });
+    refused('agents/smk_agent_a_1', { ownerId: 'smk_seat_a_1', isDev: true }, /without the smoke marker/);
+    refused('agents/smk_agent_a_1', { smoke: { tool: 'some-other-tool' }, ownerId: 'smk_seat_a_1' }, /without the smoke marker/);
+    refused('agents/smk_agent_a_1', { smoke: {}, ownerId: 'smk_seat_a_1' }, /without the smoke marker/);
+    refused('agents/smk_agent_a_other', { smoke: { tool: SMOKE_TOOL }, ownerId: 'smk_seat_a_OTHER_RUN' }, /outside this run's seats/);
+    refused('agents/real-agent', { smoke: { tool: SMOKE_TOOL }, ownerId: FOUNDER }, /outside this run's seats/);
+    refused('agents/real-agent', { ownerId: FOUNDER, name: 'Prime' }, /without the smoke marker/);
+    refused('agents/smk_agent_a_1/rules/r1', { smoke: { tool: SMOKE_TOOL }, ownerId: 'smk_seat_a_1' }, /unexpected subcollection/);
+    // A run with no seat list admits no agent at all — the owner check cannot pass vacuously.
+    expect(devTargetVerdict('agents/smk_agent_a_1', { smoke: { tool: SMOKE_TOOL }, ownerId: 'smk_seat_a_1' }, { ...run, seatUids: undefined }).ok).toBe(false);
+    expect(devTargetVerdict('agents/smk_agent_a_1', { smoke: { tool: SMOKE_TOOL }, ownerId: 'smk_seat_a_1' }, { ...run, seatUids: [] }).ok).toBe(false);
   });
   it('REFUSES a pool, wallet, stake, event, pod or collection outside the dev namespace or outside this run', () => {
     refused('backingPools/smk_1', {}, /outside the dev namespace/);
@@ -214,6 +329,14 @@ describe('the cleanup verdict (mutation check 4: a non-dev target reds these row
 });
 
 describe('a run rebuilt from the LIVE pod (cleanup --pod on a machine without the manifest — SCRIPT-07)', () => {
+  it('item E — the rebuilt run carries the marker\'s agent ids (none for a pod seeded before the smoke wrote agents)', () => {
+    const ids = smokeIds(STAMP);
+    const doc = buildSmokeGroup({ ids, nowIso: NOW.toISOString(), userPool: [] });
+    expect(runFromLiveGroup(ids.groupId, doc).agentIds).toEqual(ids.agentIds);
+    expect(runFromLiveGroup(ids.groupId, { ...doc, smoke: { ...doc.smoke, agentIds: undefined } }).agentIds).toEqual([]);
+    expect(runFromLiveGroup(ids.groupId, { ...doc, smoke: { ...doc.smoke, agentIds: ['ok', 42] } }).agentIds).toEqual(['ok']);
+  });
+
   const ids = smokeIds(STAMP);
   const doc = buildSmokeGroup({ ids, nowIso: NOW.toISOString(), userPool: [], founderUid: FOUNDER });
   it('rebuilds exactly the manifest\'s shape from a marked isDev pod, marked `recovered`', () => {
@@ -330,6 +453,8 @@ describe('the walk — seed, the founder\'s stake, close, the synthetic week, se
 
   async function seedOn(DB) {
     await DB.db.collection('tournamentGroups').doc(ids.groupId).set(groupDoc);
+    // The seats' agents (item E), as the script writes them after the pod.
+    for (const { id, doc } of buildSmokeAgents({ ids, nowIso })) await DB.db.collection('agents').doc(id).set(doc);
     const group = { id: ids.groupId, ...groupDoc };
     const m = await materializePool(DB.db, group, NOW, { allowDev: true });
     expect(m.created).toBe(true);
@@ -360,10 +485,11 @@ describe('the walk — seed, the founder\'s stake, close, the synthetic week, se
   });
 
   // EVERY path the harness saw written, through the cleanup verdict: a dev
-  // pool, a dev wallet, a stake of the dev pod (naming the dev pool), or the
-  // dev pod itself — nothing else, ever (the dev-only row; DEV-7: run after
-  // the seed, after advance and after refund alike).
-  const run = { groupId: ids.groupId, poolId: ids.poolId, backerUids: ids.backerUids, uids: [...ids.backerUids, FOUNDER] };
+  // pool, a dev wallet, a stake of the dev pod (naming the dev pool), the dev
+  // pod itself, or — item E, named deliberately — a smoke-marked AGENT owned
+  // by one of the dev pod's synthetic seats; nothing else, ever (the dev-only
+  // row; DEV-7: run after the seed, after advance and after refund alike).
+  const run = { groupId: ids.groupId, poolId: ids.poolId, backerUids: ids.backerUids, seatUids: ids.seatUids, agentIds: ids.agentIds, uids: [...ids.backerUids, FOUNDER] };
   function expectOnlyDevWrites(DB, atLeast) {
     const written = [...new Set(DB.writeLog.map(([, p]) => p))];
     expect(written.length).toBeGreaterThanOrEqual(atLeast);
@@ -375,10 +501,14 @@ describe('the walk — seed, the founder\'s stake, close, the synthetic week, se
     }
     expect(written.some((p) => p.startsWith(`${ELIGIBILITY_COLLECTION}/`))).toBe(false);
     expect(written.some((p) => /^backingPools\/(?!dev-)/.test(p) || /^backingWallets\/(?!dev-)/.test(p))).toBe(false);
+    // The agents written are EXACTLY the two seats' — each marked, each owned by its seat; no other agent, ever.
+    const agents = written.filter((p) => p.startsWith('agents/')).sort();
+    expect(agents).toEqual(ids.agentIds.map((id) => `agents/${id}`).sort());
+    for (const p of agents) expect(DB.store.get(p)).toMatchObject({ smoke: { tool: SMOKE_TOOL }, isDev: true, ownerId: expect.stringMatching(/^smk_seat_/) });
     return written;
   }
 
-  it('the walk writes NOTHING outside the dev namespace — every written path is a dev pool, a dev wallet, a stake of the dev pod, or the dev pod itself; the founder\'s eligibility is READ, never written', async () => {
+  it('the walk writes NOTHING outside the dev namespace — every written path is a dev pool, a dev wallet, a stake of the dev pod, the dev pod itself, or one of its two seats\' smoke agents; the founder\'s eligibility is READ, never written', async () => {
     const DB = makeVersionedDb(founderWorld());
     await seedOn(DB);
     await founderStakes(DB, ids.seatUids[1], 100, 'founder-1');

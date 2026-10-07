@@ -758,6 +758,10 @@ function DeskScreenStage({ state, onNote, onLeagueNav, onOpenTape }) {
   const inPlay = week ? week.inPlay : nothingInPlay;
   const now = week ? week.now : PREVIEW_NOW;
   const [view, setView] = useState(cfg.view ?? LIST);
+  // The real screen's per-entry counter (BUG-001): every "Back" / "Add" mounts a fresh stake control —
+  // and its pending guard (R2-2): nothing unmounts a control whose request is in flight.
+  const [stakeEntry, setStakeEntry] = useState(0);
+  const stakePending = useRef(false);
   const [section, setSection] = useState(null);
   const [eligibility, setEligibility] = useState(cfg.attested === false ? ELIGIBILITY.REQUIRED : ELIGIBILITY.ATTESTED);
   const [pitchText, setPitchText] = useState(OWN_CARD.team.pitch ?? '');
@@ -770,6 +774,7 @@ function DeskScreenStage({ state, onNote, onLeagueNav, onOpenTape }) {
       onNote(NOTHING_SAVED);
       if (cfg.refuse) throw Object.assign(new Error(cfg.refuse), { code: cfg.refuse });
       const already = pods.find((p) => p.groupId === view.groupId)?.myStakes.filter((x) => x.teamOdUserId === teamOdUserId && x.status === 'live').reduce((n, x) => n + x.amount, 0) ?? 0;
+      // The FIXTURE plays the server: `allowanceRemaining` is the server's post-debit balance here, never a client figure (the client takes the reply's — StakeControl's receiptAllowance).
       return { ok: true, replay: false, topUp: already > 0, added: amount, stake: { stakeId: `preview-stake-${requests.current}`, teamOdUserId, amount: already + amount, status: 'live' }, allowanceRemaining: wallet.left - amount };
     },
   }), [cfg, onNote, pods, view.groupId, wallet]);
@@ -806,11 +811,13 @@ function DeskScreenStage({ state, onNote, onLeagueNav, onOpenTape }) {
           pod={view.groupId ? pods.find((p) => p.groupId === view.groupId) ?? null : null}
           section={current}
           sections={sections}
-          onSection={(next) => { setSection(next); if (next !== DESK_SECTION.WINDOW) setView(LIST); }}
+          onSection={(next) => { if (stakePending.current) return; setSection(next); if (next !== DESK_SECTION.WINDOW) setView(LIST); }}
           onBack={onLeagueNav}
-          onOpenSeat={(groupId, odUserId) => setView({ kind: 'card', groupId, odUserId })}
-          onToStake={() => setView((v) => ({ ...v, kind: 'stake' }))}
-          onToCard={() => setView((v) => ({ ...v, kind: 'card' }))}
+          onOpenSeat={(groupId, odUserId) => { if (stakePending.current) return; setView({ kind: 'card', groupId, odUserId }); }}
+          onToStake={() => { if (stakePending.current) return; setStakeEntry((n) => n + 1); setView((v) => ({ ...v, kind: 'stake' })); }}
+          stakeEntry={stakeEntry}
+          onPending={(p) => { stakePending.current = p === true; }}
+          onToCard={() => { if (stakePending.current) return; setView((v) => ({ ...v, kind: 'card' })); }}
           onBacked={() => onNote(NOTHING_SAVED)}
           onOpenTape={onOpenTape}
           results={results}

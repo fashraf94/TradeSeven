@@ -622,3 +622,25 @@ describe('the PR 4 review record — FAB-7, DOM-4, DOM-7, FAB-14 (docs/audits/20
     expect(knownFactsFrom({ rp: 0, tier: 1, tierName: 'Rookie', appliedGroups: { a: 1 }, history: [{ placement: 3 }] }).rp).toBe(0);
   });
 });
+
+// ═══ THE BACKING QA ROUNDS 1–3 (docs/audits/20261007_BACKING_QA_FIXES_BUILD_REPORT.md), item E ═══
+describe('a SMOKE seat\'s card, with the seed\'s agent (scripts/backingSmokeLib.js buildSmokeAgents)', () => {
+  it('shows the agent\'s name as the label, its archetype tag, its stated approach and its loadout COUNTS — through the same owner lookup a real seat takes; the loadout\'s contents never leave the server', async () => {
+    const { buildSmokeAgents, buildSmokeGroup, smokeIds } = await import('../../scripts/backingSmokeLib.js');
+    const ids = smokeIds('20260922_abc123');
+    const nowIso = '2026-09-22T14:00:00.000Z';
+    DB.store.set(`tournamentGroups/${ids.groupId}`, buildSmokeGroup({ ids, nowIso, userPool: [] }));
+    for (const { id, doc } of buildSmokeAgents({ ids, nowIso })) DB.store.set(`agents/${id}`, doc);
+    const res = await get({ groupId: ids.groupId, odUserId: ids.seatUids[0] });
+    expect(res.statusCode).toBe(200);
+    expect(res.body.team).toMatchObject({ displayName: 'Smoke Rival A', label: 'Smoke Scout', secondary: 'Smoke Rival A', isCpu: false });
+    expect(res.body.team.agent).toMatchObject({ name: 'Smoke Scout', archetype: 'analyst', archetypeLabel: 'Fundamental Investor', traitCount: 2, ruleCount: 3 });
+    expect(typeof res.body.team.agent.approach).toBe('string');
+    expect(res.body.lastWeek).toBeNull();
+    expect(JSON.stringify(res.body)).not.toMatch(/ruleId|traitId|Hold the six|hardness/);
+    // The other seat, its own agent.
+    const b = await get({ groupId: ids.groupId, odUserId: ids.seatUids[1] });
+    expect(b.body.team).toMatchObject({ displayName: 'Smoke Rival B', label: 'Smoke Sentry' });
+    expect(b.body.team.agent).toMatchObject({ name: 'Smoke Sentry', archetype: 'momentum_chaser', archetypeLabel: 'Trend Follower' });
+  });
+});

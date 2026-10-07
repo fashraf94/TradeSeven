@@ -39,11 +39,17 @@
 //
 // A POD CANCELLED AFTER ITS POOL CLOSED (WIRE-R-2, the desktop review record)
 // — its group `voided` or `expired`, or gone — never reads "plays Monday":
-// its card says "This pod was cancelled — your stake will be returned." until
-// the refund lands, then the refund's own words (the pool's `refundReason`,
-// the results card's sentence). No standing, no day trail, no book and no
-// tape for it: a week it will not play. Derived from the group status this
-// surface already reads (`podCancellation`); no new read.
+// its card says "This pod was cancelled. Your stake will be refunded to your
+// record." (WEEK.cancelled) until the refund lands, then the refund's own
+// words (the pool's `refundReason`, the results card's sentence). No
+// standing, no day trail, no book and no tape for it: a week it will not
+// play. Derived from the group status this surface already reads
+// (`podCancellation`); no new read.
+//
+// WHERE REFUNDED POINTS GO (the backing QA round 3): beside every refunded or
+// void outcome — the refund landed, or a pool that closed `insufficient` /
+// `refunded` — the card carries RESULTS.toRecord: a refund restores the
+// RECORD, never this week's spendable allowance (`creditRefund`, spec §2).
 
 import React from 'react';
 import { GROUP_STATUS, computeComposite } from '../../../constants/leagueTournament';
@@ -168,6 +174,10 @@ export function weekCardModel({ groupId, stakes, pool, group, labelsById, battle
   const statusLabel = cancellation ? (cancellation.refunded ? RESULTS.outcome.refunded : WEEK.status.cancelled)
     : settled ? WEEK.settled : groupAnswered !== true ? null
       : settling ? WEEK.status.settling : group?.status === GROUP_STATUS.BATTLE ? WEEK.status.battle : WEEK.status.awaiting;
+  // A refunded or VOID outcome — the cancellation's refund landed, or the pool
+  // itself closed `insufficient` / `refunded` — carries where the points went.
+  const refunded = cancellation?.refunded === true;
+  const voidOutcome = refunded || pool?.status === 'refunded' || pool?.status === 'insufficient';
   const reveal = teams.map((id) => {
     // The two layers, named apart — the SERVER's `player` and `agent`,
     // never guessed from a lone label (RAWID-R-2): a label with no
@@ -177,12 +187,22 @@ export function weekCardModel({ groupId, stakes, pool, group, labelsById, battle
     const battle = battles?.[id] ?? null;
     return { id, name, agentName: agent ?? CARD.agentFallbackName(name), picks: humanPicksFor(group, id), six: agentSixFor(battle) };
   });
-  return { podName, named, settled, standing, amounts, stakeStatus, teams, first, trail, through, statusLabel, reveal, cancelled: cancellation != null, notice };
+  return { podName, named, settled, standing, amounts, stakeStatus, teams, first, trail, through, statusLabel, reveal, cancelled: cancellation != null, notice, refunded, voidOutcome };
 }
 
-/** A cancelled pod's one line — the cancellation, then the refund (WIRE-R-2). */
+/** Where refunded points go — RESULTS.toRecord, beside every refunded / void outcome (the backing QA round 3). */
+function RefundNote() {
+  return <div data-backing="week-refund-note" style={{ fontSize: 11.5, color: LTOKENS.ink3, lineHeight: 1.45, marginTop: 4 }}>{RESULTS.toRecord}</div>;
+}
+
+/** A cancelled pod's one line — the cancellation, then the refund (WIRE-R-2) — and, once refunded, where the points went. */
 function CancelledNotice({ m, size = 12.5 }) {
-  return <div data-backing="week-cancelled" style={{ fontSize: size, color: LTOKENS.ink2, lineHeight: 1.45 }}>{m.notice}</div>;
+  return (
+    <div data-backing="week-cancelled" style={{ fontSize: size, color: LTOKENS.ink2, lineHeight: 1.45 }}>
+      {m.notice}
+      {m.refunded && <RefundNote />}
+    </div>
+  );
 }
 
 /** The status tag's colour: gold once settled or refunded, quiet while a cancelled pod's refund is on its way. */
@@ -252,6 +272,7 @@ function WeekCard({ groupId, stakes, pool, group, groupAnswered, labelsById, acc
         {m.teams.map((id) => (
           <Mono key={id} style={{ fontSize: 12, color: LTOKENS.ink }}>{WEEK.stakeRow(m.named(id).label, m.amounts.get(id), m.stakeStatus(id))}</Mono>
         ))}
+        {!m.cancelled && m.voidOutcome && <RefundNote />}
       </div>
 
       {m.cancelled ? <CancelledNotice m={m} /> : (
@@ -297,6 +318,7 @@ function WeekCardDesk({ groupId, stakes, pool, group, groupAnswered, labelsById,
           {m.teams.map((id) => (
             <Mono key={id} style={{ fontSize: 13, fontWeight: 600, color: LTOKENS.ink }}>{WEEK.stakeRow(m.named(id).label, m.amounts.get(id), m.stakeStatus(id))}</Mono>
           ))}
+          {!m.cancelled && m.voidOutcome && <RefundNote />}
         </div>
       </div>
 

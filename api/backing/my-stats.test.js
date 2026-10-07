@@ -152,3 +152,92 @@ describe('OWNER ONLY — the token is the only identity (mutation check 5)', () 
     expect(res.body).toEqual({ error: 'server_error', message: 'Could not load your backing record.' });
   });
 });
+
+// ═══ THE BACKING QA ROUNDS 1–3 (docs/audits/20261007_BACKING_QA_FIXES_BUILD_REPORT.md), item F ═══
+describe('BUG-002 (the backing QA round 2) — a SMOKE session reads the DEV record; every other caller the production one', () => {
+  const SMOKE = 'founder-smoke';
+  const devWorld = () => ({
+    ...world(),
+    // The smoke session's DEV wallet — the one the stake route debited — and its settled dev pool (the tester's own numbers: 150 on A paid 257, 100 on B lost, net +7).
+    [`backingWallets/dev-${SMOKE}`]: { careerNet: 7, seasons: { '2026-09': { net: 7 } }, allowanceRemaining: 800, lastAllowanceWeek: '2026-W41', appliedEntries: {} },
+    // …and a PRODUCTION wallet of the same uid, which the dev record must never read.
+    [`backingWallets/${SMOKE}`]: { careerNet: 5000, seasons: { '2026-09': { net: 5000 } }, allowanceRemaining: 0, lastAllowanceWeek: '2026-W41', appliedEntries: {} },
+    'backingStakes/d1': { userId: SMOKE, groupId: 'smk_1', poolId: 'dev-smk_1', teamOdUserId: 'smk_seat_a', amount: 150, status: 'won', payout: 257, weekKey: '2026-W40' },
+    'backingStakes/d2': { userId: SMOKE, groupId: 'smk_1', poolId: 'dev-smk_1', teamOdUserId: 'smk_seat_b', amount: 100, status: 'lost', payout: 0, weekKey: '2026-W40' },
+    // A PRODUCTION pool the same uid backed — never in the dev record.
+    'backingStakes/p1': { userId: SMOKE, groupId: 'g-a', teamOdUserId: 'od-a', amount: 250, status: 'won', payout: 500, weekKey: '2026-W40' },
+    'backingPools/dev-smk_1': resolved({ winnerOdUserIds: ['smk_seat_a'], teams: [{ odUserId: 'smk_seat_a', isCpu: false }, { odUserId: 'smk_seat_b', isCpu: false }, { odUserId: 'cpu-98', isCpu: true }] }),
+  });
+  const smokeOn = () => { vi.stubEnv('VERCEL_ENV', 'preview'); vi.stubEnv('BACKING_SMOKE_ENABLED', 'true'); vi.stubEnv('BACKING_SMOKE_UIDS', SMOKE); };
+  const walletReads = () => DB.readLog.filter(([, p]) => p.startsWith('backingWallets/')).map(([, p]) => p);
+  afterEach(() => { vi.unstubAllEnvs(); });
+
+  it('row 1 — a smoke session with a settled dev pool SEES it: net, pools backed, pools won — and the net is the DEV wallet\'s careerNet (MUTATION: drop the smoke branch → the empty production record, this reds)', async () => {
+    DB = makeInMemoryDb(devWorld()); state.uid = SMOKE; smokeOn();
+    const res = await get();
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({ viewerUid: SMOKE, namespace: 'dev', net: { career: 7 }, career: { poolsBacked: 1, poolsWon: 1, stakedBp: 250, paidBp: 257, weeksPlayed: 1 } });
+    expect(res.body.net.career).toBe(DB.store.get(`backingWallets/dev-${SMOKE}`).careerNet);
+    expect(res.body.seasons['2026-09']).toMatchObject({ net: 7, poolsBacked: 1, poolsWon: 1 });
+    expect(walletReads()).toEqual([`backingWallets/dev-${SMOKE}`]);
+  });
+
+  it('row 2 — a NON-smoke caller with the same data is unchanged: the production wallet, the dev pool skipped and counted; a production deployment ignores the env vars', async () => {
+    DB = makeInMemoryDb(devWorld()); state.uid = SMOKE;
+    const res = await get();
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({ namespace: 'production', net: { career: 5000 }, devPoolsSkipped: 1, productionPoolsSkipped: 0, career: { poolsBacked: 1, poolsWon: 1, stakedBp: 250, paidBp: 500 } });
+    expect(walletReads()).toEqual([`backingWallets/${SMOKE}`]);
+    vi.stubEnv('VERCEL_ENV', 'production'); vi.stubEnv('BACKING_SMOKE_ENABLED', 'true'); vi.stubEnv('BACKING_SMOKE_UIDS', SMOKE);
+    DB = makeInMemoryDb(devWorld());
+    expect((await get()).body).toMatchObject({ namespace: 'production', net: { career: 5000 }, devPoolsSkipped: 1 });
+    expect(walletReads()).toEqual([`backingWallets/${SMOKE}`]);
+  });
+
+  it('row 3 — a smoke session\'s record NEVER counts a production pool: the production stake (won, 500 paid) is skipped and counted, none of its figures present (MUTATION: count both namespaces → this reds)', async () => {
+    DB = makeInMemoryDb(devWorld()); state.uid = SMOKE; smokeOn();
+    const res = await get();
+    expect(res.body).toMatchObject({ namespace: 'dev', productionPoolsSkipped: 1, devPoolsSkipped: 0, career: { poolsBacked: 1, paidBp: 257, stakedBp: 250 } });
+    expect(res.body.career.poolsBacked).not.toBe(2);
+    expect(res.body.career.paidBp).not.toBe(757);
+    expect(JSON.stringify(res.body)).not.toContain('5000');
+    expect(JSON.stringify(res.body)).not.toContain('g-a');
+  });
+
+  it('row 4 (R5-3) — the namespace is decided for the TOKEN\'s uid: with the smoke env on and `?uid=<the allowlisted uid>`, a non-allowlisted token still gets the production record and reads only its own production wallet', async () => {
+    DB = makeInMemoryDb(devWorld()); state.uid = UID; smokeOn();
+    for (const query of [{ uid: SMOKE }, { userId: SMOKE }, { odUserId: SMOKE }]) {
+      DB = makeInMemoryDb(devWorld());
+      const res = await get(query);
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toMatchObject({ viewerUid: UID, namespace: 'production', net: { career: 250 } });
+      expect(walletReads()).toEqual([`backingWallets/${UID}`]);
+      expect(JSON.stringify(res.body)).not.toContain(SMOKE);
+    }
+  });
+
+  it('row 5 (R3-2) — a dev record\'s baseline reads DEV rank docs only, and a production record never reads one: the two namespaces never meet in the accuracy figure', async () => {
+    // A dev pool whose seats are REAL uids with production history: the dev record must not see that history.
+    const mixed = () => ({
+      ...devWorld(),
+      'backingStakes/d3': { userId: SMOKE, groupId: 'smk_3', poolId: 'dev-smk_3', teamOdUserId: 'od-a', amount: 100, status: 'won', payout: 180, weekKey: '2026-W40' },
+      'backingPools/dev-smk_3': resolved({ winnerOdUserIds: ['od-a'], teams: [{ odUserId: 'od-a', isCpu: false }, { odUserId: 'od-b', isCpu: false }, { odUserId: 'cpu-97', isCpu: true }] }),
+    });
+    DB = makeInMemoryDb(mixed()); state.uid = SMOKE; smokeOn();
+    const res = await get();
+    expect(res.statusCode).toBe(200);
+    const rankReads = DB.readLog.filter(([, p]) => p.startsWith('tournamentRanks/')).map(([, p]) => p).sort();
+    expect(rankReads.every((p) => p.startsWith('tournamentRanks/dev-')), rankReads.join(', ')).toBe(true);
+    expect(rankReads).toContain('tournamentRanks/dev-od-a');
+    expect(rankReads).not.toContain('tournamentRanks/od-a');
+    // No dev history exists → the pool is EXCLUDED from the comparison, never scored from production history (which would have given pools: 1).
+    expect(res.body.accuracy.career).toMatchObject({ pools: 0, excluded: 2 });
+    // The production record of the same uid reads production ranks only (the dev pools are skipped before their teams are gathered).
+    DB = makeInMemoryDb(mixed()); state.uid = SMOKE; vi.unstubAllEnvs();
+    const prod = await get();
+    const prodReads = DB.readLog.filter(([, p]) => p.startsWith('tournamentRanks/')).map(([, p]) => p);
+    expect(prodReads.length).toBeGreaterThan(0);
+    expect(prodReads.some((p) => p.startsWith('tournamentRanks/dev-'))).toBe(false);
+    expect(prod.body.namespace).toBe('production');
+  });
+});

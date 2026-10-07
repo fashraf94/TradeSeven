@@ -30,6 +30,18 @@
 // build's. The seal row (PodList.test.jsx) renders this screen over a leaky
 // open pool and asserts no figure reaches it.
 //
+// THE STAKE CONTROL IS REMOUNTED ON EVERY ENTRY (the backing QA rounds 1–3,
+// BUG-001): the control holds its own `result` and renders the receipt from
+// it, and this layout keeps it mounted for as long as `view.kind === 'stake'`
+// — so "Add to your N on {team}" on the card, which only sets the view to the
+// `stake` it already is, changed nothing and the receipt stayed. The host
+// now hands in `stakeEntry`, a counter it bumps on EVERY "Back" / "Add"
+// (onToStake), and the control is keyed on it and on the seat: each entry is
+// a fresh control — a fresh top-up form over the stake the pod list now
+// carries, or a fresh first form for another seat — and the receipt is never
+// special-cased. Mobile is untouched: its stake view only mounts after
+// leaving the card.
+//
 // Tokens only (BUILD_RULES §10) — the League's obsidian map and alpha(); no
 // inline `transition={{` literal (§11); the scoped <style> block follows the
 // desktop lobby's LD_STYLE house pattern.
@@ -225,7 +237,7 @@ function CardEmpty({ accent }) {
 function WindowView(props) {
   const {
     accent, uid, pods, state, windowState, wallet, eligibility, myPitch, view, cardQuery, pod,
-    sections, section, onSection, onBack, onOpenSeat, onToStake, onToCard, onBacked, onOpenTape, services,
+    sections, section, onSection, onBack, onOpenSeat, onToStake, onToCard, onBacked, onOpenTape, services, stakeEntry = 0, onPending = null,
   } = props;
   // The chip is the WINDOW's: shown while any listed pool is open, reading
   // that window's close — its gate and its words from one derivation, never
@@ -240,7 +252,10 @@ function WindowView(props) {
   // moves (PLACE-3, the desktop review record).
   const cardCol = React.useRef(null);
   const rightCol = React.useRef(null);
-  const moved = view.kind !== 'list' && view.groupId && view.odUserId ? `${view.kind}:${view.groupId}:${view.odUserId}` : null;
+  // …and a NEW ENTRY into the control is a move too (R2-1, the QA rounds 1–3
+  // review): "Add" from the receipt keeps the view at `stake`, so the entry
+  // count rides the key, or the fresh form would mount below the fold unseen.
+  const moved = view.kind !== 'list' && view.groupId && view.odUserId ? `${view.kind}:${view.groupId}:${view.odUserId}${view.kind === 'stake' ? `:${stakeEntry}` : ''}` : null;
   React.useEffect(() => {
     if (!moved || typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
     if (!window.matchMedia('(max-width: 980px)').matches) return;
@@ -301,7 +316,9 @@ function WindowView(props) {
       <div ref={rightCol} className="lg-scroll bkd-col bkd-right" data-desk-col="right">
         {staking ? (
           <div data-backing="desk-stake">
+            {/* Keyed per ENTRY and per seat (BUG-001): every "Back" / "Add" mounts a fresh control. */}
             <StakeControl
+              key={`${stakeEntry}:${view.groupId}:${view.odUserId}`}
               card={card}
               pod={pod}
               wallet={wallet}
@@ -312,6 +329,7 @@ function WindowView(props) {
               onBacked={onBacked}
               onClose={onToCard}
               onCancel={onToCard}
+              onPending={onPending}
             />
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginTop: 14 }}>
               <Icon name="lock" size={11} color={LTOKENS.ink3} />
@@ -388,13 +406,18 @@ function ResultsView({ accent, results, myStats, onOpenTape, header }) {
  * preview page owns `view` / `section` and passes the handlers.
  *   view    — { kind: 'list' | 'card' | 'stake', groupId, odUserId } (the mobile screen's own)
  *   section — 'window' | 'week' | 'results'
+ *   stakeEntry — the host's count of entries into the stake control (bumped on
+ *             every onToStake); the control is keyed on it, so each entry is a
+ *             fresh control and a receipt never outlives its entry (BUG-001).
+ *   onPending — the control reports a request in flight (true/false) so the
+ *             host can hold the seam still until the reply lands (R2-2).
  */
 export default function BackingDesk({
   accent = LX.energy, uid = null,
   pods, state, windowState, inPlay, wallet, eligibility, myPitch = null,
   view, cardQuery = null, pod = null,
   section = DESK_SECTION.WINDOW, sections = [DESK_SECTION.WINDOW, DESK_SECTION.RESULTS], onSection,
-  onBack, onOpenSeat, onToStake, onToCard, onBacked, onOpenTape,
+  onBack, onOpenSeat, onToStake, onToCard, onBacked, onOpenTape, stakeEntry = 0, onPending = null,
   results = null, myStats = null, now = new Date(), services = null, battlesByGroup = null,
 }) {
   const header = (
@@ -412,7 +435,7 @@ export default function BackingDesk({
           accent={accent} uid={uid} pods={pods ?? { pods: [], data: null, loading: false, error: null }} state={state} windowState={windowState}
           wallet={wallet} eligibility={eligibility} myPitch={myPitch} view={view ?? { kind: 'list', groupId: null, odUserId: null }} cardQuery={cardQuery} pod={pod}
           sections={sections} section={section} onSection={onSection} onBack={onBack} onOpenSeat={onOpenSeat}
-          onToStake={onToStake} onToCard={onToCard} onBacked={onBacked} onOpenTape={onOpenTape} services={services}
+          onToStake={onToStake} onToCard={onToCard} onBacked={onBacked} onOpenTape={onOpenTape} services={services} stakeEntry={stakeEntry} onPending={onPending}
         />
       )}
     </div>

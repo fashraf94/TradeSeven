@@ -21,6 +21,16 @@
 // the tape → the known facts (completed history only) → the CTA. The CTA reads
 // "your pod" on the viewer's own pod (never disabled), "closed" once the pool
 // has closed, and opens the stake control while the pool is open.
+//
+// AN AGENT-LESS SEAT (the backing QA rounds 1–3, OBS-001): the projection's
+// `agent: null` — the owner has no agent document, or only clones (the label
+// resolver's `primaryAgentDocFrom`). Then NO line on this card speaks of an
+// approach, a loadout or "{player}'s agent" as if one existed: the agent row
+// is named as the seat (CARD.agentSeat) over "No agent on this seat yet.",
+// the first-week and no-tape bodies name what IS there, and the CTA — like
+// the stake title — names the player alone. `agentFallbackName` is kept for
+// the other case: an agent that EXISTS but whose name the belt refused
+// (RAWID-2), where "{player}'s agent" is true.
 
 import React from 'react';
 import { LTOKENS, LX, alpha } from '../leagueTokens';
@@ -44,7 +54,7 @@ function LayerRow({ glyph, name, role, mark, children, last }) {
       <div style={{ minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 5 }}>
           <span style={{ fontSize: 15, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.01em' }}>{name}</span>
-          <Mono style={{ fontSize: 9.5, color: LTOKENS.ink3, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{role}</Mono>
+          {role && <Mono style={{ fontSize: 9.5, color: LTOKENS.ink3, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{role}</Mono>}
           {mark}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>{children}</div>
@@ -62,7 +72,7 @@ function PitchView({ text }) {
 /** A first week: no tape AND no completed week on the record (FAB-13). */
 const isFirstWeek = (card) => !card.lastWeek && !(card.known?.weeksPlayed > 0);
 
-export function TeamUnit({ card, agentName, myPitch, accent }) {
+export function TeamUnit({ card, agentName, myPitch, accent, hasAgent = true }) {
   const { team, seat } = card;
   const firstWeek = isFirstWeek(card);
   const isYou = seat.isViewer;
@@ -100,8 +110,8 @@ export function TeamUnit({ card, agentName, myPitch, accent }) {
       <LayerRow
         last
         glyph={agentGlyph}
-        name={agentName}
-        role={CARD.agentRole}
+        name={hasAgent ? agentName : CARD.agentSeat}
+        role={hasAgent ? CARD.agentRole : null}
         mark={agent?.archetypeLabel ? <Tag color={LTOKENS.ink3}>{agent.archetypeLabel}</Tag> : null}
       >
         {agent ? (
@@ -177,7 +187,7 @@ export function TwoLayerBook({ humanLabel, agentLabel, humanRows, agentRows }) {
 }
 
 // ── the tape block ──────────────────────────────────────────────────────────
-export function TapeBlock({ card, pod, agentName, onOpenTape }) {
+export function TapeBlock({ card, pod, agentName, onOpenTape, hasAgent = true }) {
   const { team, lastWeek } = card;
   const agent = team.agent;
   if (team.isCpu) {
@@ -192,7 +202,7 @@ export function TapeBlock({ card, pod, agentName, onOpenTape }) {
     return (
       <div data-backing="tape-none">
         <TapeHead color={LTOKENS.ink3} lead title={CARD.tape.noTapeTitle} sub={CARD.tape.noTapeSub} />
-        <div style={box}><div style={body}>{CARD.tape.noTapeBody}</div></div>
+        <div style={box}><div style={body}>{hasAgent ? CARD.tape.noTapeBody : CARD.tape.noTapeBodySolo}</div></div>
       </div>
     );
   }
@@ -201,7 +211,7 @@ export function TapeBlock({ card, pod, agentName, onOpenTape }) {
       <div data-backing="tape-first-week">
         <TapeHead color={LTOKENS.gold} lead title={CARD.tape.firstWeekTitle} sub={CARD.tape.firstWeekSub} />
         <div style={goldBox}>
-          <div style={body}>{CARD.tape.firstWeekBody({ hasPitch: Boolean(team.pitch), agentName, traits: agent?.traitCount, rules: agent?.ruleCount, formationPath: pod?.formationPath ?? null, poolOpen: pod?.pool?.status === 'open' })}</div>
+          <div style={body}>{CARD.tape.firstWeekBody({ hasPitch: Boolean(team.pitch), agentName, traits: agent?.traitCount, rules: agent?.ruleCount, formationPath: pod?.formationPath ?? null, poolOpen: pod?.pool?.status === 'open', hasAgent })}</div>
         </div>
       </div>
     );
@@ -215,7 +225,7 @@ export function TapeBlock({ card, pod, agentName, onOpenTape }) {
         <TapeHead lead title={CARD.tape.lastWeekTitle} sub={CARD.tape.lastWeekSub(lastWeek.placement, lastWeek.seatCount, lastWeek.composite)} />
         <TwoLayerBook
           humanLabel={CARD.tape.humanCol(team.displayName)}
-          agentLabel={CARD.tape.agentCol(lastWeek.agent?.agentName ?? agentName)}
+          agentLabel={CARD.tape.agentCol(lastWeek.agent?.agentName ?? (hasAgent ? agentName : CARD.agentSeat))}
           humanRows={humanRows}
           agentRows={agentRows}
         />
@@ -238,7 +248,7 @@ export function TapeBlock({ card, pod, agentName, onOpenTape }) {
 }
 
 // ── CTA ─────────────────────────────────────────────────────────────────────
-export function BackButton({ card, pod, agentName, accent, onBack }) {
+export function BackButton({ card, pod, agentName, accent, onBack, hasAgent = true }) {
   const { seat, team } = card;
   const open = pod?.pool?.status === 'open';
   const myStake = stakedOnTeam(pod, card.odUserId);
@@ -257,8 +267,10 @@ export function BackButton({ card, pod, agentName, accent, onBack }) {
     );
   }
   // A top-up names the team by its single label (D-af — Amendment C §C1); the
-  // first stake keeps the card's human-and-agent unit.
-  const label = myStake > 0 ? CARD.cta.addTo(myStake, teamLabelOf(team.label)) : CARD.cta.back(team.displayName, agentName);
+  // first stake keeps the card's human-and-agent unit — or, with no agent on
+  // the seat, the player alone (OBS-001).
+  const label = myStake > 0 ? CARD.cta.addTo(myStake, teamLabelOf(team.label))
+    : hasAgent ? CARD.cta.back(team.displayName, agentName) : CARD.cta.backSolo(team.displayName);
   return (
     <button
       type="button"
@@ -274,15 +286,18 @@ export function BackButton({ card, pod, agentName, accent, onBack }) {
 
 // ── the card ────────────────────────────────────────────────────────────────
 export default function TeamCard({ card, pod, accent = LX.energy, onBack, onOpenTape, myPitch = null }) {
+  // The seat HAS an agent when the projection carries one (a CPU seat always
+  // does); its name falls back only when the agent exists unnamed (RAWID-2).
+  const hasAgent = card.team.agent != null;
   const agentName = card.team.agent?.name ?? CARD.agentFallbackName(card.team.displayName);
   const podName = baseGroupName(card.groupId);
   return (
-    <div data-backing="team-card" data-seat={card.odUserId} style={{ display: 'flex', flexDirection: 'column', gap: 14, fontFamily: 'inherit' }}>
+    <div data-backing="team-card" data-seat={card.odUserId} {...(hasAgent ? {} : { 'data-agentless': 'true' })} style={{ display: 'flex', flexDirection: 'column', gap: 14, fontFamily: 'inherit' }}>
       <Mono style={{ fontSize: 10, color: LTOKENS.ink3, letterSpacing: '0.1em', textTransform: 'uppercase', paddingRight: 36 }}>{CARD.podLine(podName, card.seat.index, card.seat.count)}</Mono>
-      <TeamUnit card={card} agentName={agentName} myPitch={card.seat.isViewer ? myPitch : null} accent={accent} />
-      <TapeBlock card={card} pod={pod} agentName={agentName} onOpenTape={onOpenTape} />
+      <TeamUnit card={card} agentName={agentName} myPitch={card.seat.isViewer ? myPitch : null} accent={accent} hasAgent={hasAgent} />
+      <TapeBlock card={card} pod={pod} agentName={agentName} onOpenTape={onOpenTape} hasAgent={hasAgent} />
       <KnownStrip card={card} />
-      <BackButton card={card} pod={pod} agentName={agentName} accent={accent} onBack={onBack} />
+      <BackButton card={card} pod={pod} agentName={agentName} accent={accent} onBack={onBack} hasAgent={hasAgent} />
     </div>
   );
 }

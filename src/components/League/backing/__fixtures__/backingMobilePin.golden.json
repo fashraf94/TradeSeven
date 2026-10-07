@@ -445,16 +445,16 @@
     "length": 19677
   },
   "results-card/insufficient": {
-    "sha256": "7426adcc29c04134a7b4ef9102521e923561a51214d96cba2f7f7907bfefc6e1",
-    "length": 12024
+    "sha256": "a9e874f1334754c63ecb0cd98c73cec41c6a65a2ebbec8c05f8de3f74bdc55bb",
+    "length": 12206
   },
   "results-card/loss": {
     "sha256": "3c87f231349ffba05f0c27545a4d9aae002cda7b53f7e661377c21eec41c1678",
     "length": 12877
   },
   "results-card/refunded": {
-    "sha256": "d839860c100a833eb546d83626ddb8bf29f8f8867a5ff53c8e9bd0b560fe3dc0",
-    "length": 11994
+    "sha256": "e7f2cb2d63b50db26f894abad3291a83cbc5b9ed2b362e94295557060a4b5211",
+    "length": 12176
   },
   "results-card/settling": {
     "sha256": "060ff1bb9706b9dd86f1621c66e55476eb96713d4e486a32405a1e79a727d7d8",
@@ -485,23 +485,23 @@
     "length": 23422
   },
   "screen/list-mounted": {
-    "sha256": "0617d08acda4775a7b25f979bc08aa2ebd4bdb60ddee30ee159a310a9139e4c1",
-    "length": 107072
+    "sha256": "6fefd1b054428706bbd92ac6be9a04692dcbdd554f8fba8c3e427847b4ed27b7",
+    "length": 107271
   },
   "screen/list-ssr": {
-    "sha256": "3aab31c45cacab8221f0eec1d5205e0df92e2cf6791d3a6dae4cd230251bef3d",
-    "length": 105604
+    "sha256": "bae3e6683e8a11a0bbe8805469a9bf7d3681a823bdf118033818515f57f390b8",
+    "length": 105786
   },
   "screen/stake-attest": {
     "sha256": "d741fd8eb55d54a6db46b33daf15897f41459bcc64d90f3fd43466e016787aa5",
     "length": 4848
   },
   "screen/stake-attested": {
-    "sha256": "83ec4ae8edceb79faaee39fb8fa1cb5908bffe7ef693f6dd0fd28eeda82c5025",
+    "sha256": "d9b650de082aa06401f2585f95521dc98c2ba9c20eda08eba72f4c34769d18a8",
     "length": 8200
   },
   "screen/stake-top-up": {
-    "sha256": "68a323f3afff4dad86e6641a9d57aee7dfb504e7d0476bff3be9d548fafe22f6",
+    "sha256": "f677cf6928d925fd8f8a49b58b6cec7f35e75fbbf5636e27475c257aceeb0580",
     "length": 8371
   },
   "slot-center/mounted": {
@@ -525,28 +525,28 @@
     "length": 2526
   },
   "stake/attested": {
-    "sha256": "23fbc6e08289b1e522ec414653896089438f2dedd32ddd7f09a2b6270572e274",
+    "sha256": "c446af66cbe7f8d4fea858669237802a40c1bd3830119f1c6fe5b2c2b7bc4534",
     "length": 5572
   },
   "stake/backed": {
-    "sha256": "956f7a72cefe7e7077e4604919e21f20ffae9e139d7268d27cfc8c2c2d88e508",
-    "length": 1061
+    "sha256": "1d6ec53142eaacd109341c83a94ea24fb3660f23689bd4b5d3af61999eaff16d",
+    "length": 1306
   },
   "stake/checking": {
     "sha256": "47180710b48e63a9c3c7206801823e34ec167870c3bb0de27fe56dee3a65419c",
     "length": 203
   },
   "stake/refused": {
-    "sha256": "19adee280d8262d39f37bb56a1c666493c2c49483bf2e31ecb1cf734e5b2e9ae",
+    "sha256": "204d808dcb58dd52a0970f11925f30df670a6da1c9558e43c80e58f699b28ce6",
     "length": 6326
   },
   "stake/top-up": {
-    "sha256": "b9402b57839b6ff1566fccde5a35552aa299f8080bd21bd034724a722a6e6360",
+    "sha256": "6d41acfb5011c74864760c5c0c55a32c1321a01c2a2a6479f6f113c2f499e89b",
     "length": 5726
   },
   "stake/topped-up": {
-    "sha256": "702fab75518a1eeb49ca25fe51791647077b0f7944682fba2d8fa02bf750da67",
-    "length": 1310
+    "sha256": "562a2e98d84d42e3d2a6461d0cc29d43acfe3fa45ab2c7d0a120cd4e9f331785",
+    "length": 1555
   },
   "stake/wallet-pending": {
     "sha256": "11cd1af6e7a8779c3ebca6e6236d06c1f2c2b52b299a72944083c67742781967",
@@ -597,8 +597,8 @@
     "length": 16358
   },
   "week/settled": {
-    "sha256": "8fbcf2cd67095b9dca147c7939dd0c27feff34640ce9b9e9be719efc7d8e5655",
-    "length": 18889
+    "sha256": "14227e05fcf792610cc83348d748410c165a2bc59160e7b0486770a9cd37165e",
+    "length": 19068
   },
   "while-you-wait/mobile/battle": {
     "sha256": "bdf1f1127c03695aefb5d860580dc2671437340316a5d4b997ba4f617c252036",

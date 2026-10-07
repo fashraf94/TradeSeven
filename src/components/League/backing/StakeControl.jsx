@@ -41,8 +41,24 @@
 //     total is `already + amount` — the two figures this control already
 //     holds, the ones Confirm sends — never a pool figure. Mobile (the
 //     default) is the markup main ships (backingMobilePin.test.jsx).
+//   · THE BACKING QA ROUNDS 1–3 (docs/audits/20261007_BACKING_QA_FIXES_BUILD_REPORT.md):
+//     NEVER DEFAULT TO THE MAXIMUM (founder ruling) — the pre-chosen preset is
+//     the SMALLEST that fits, the minimum stake below that, nothing below
+//     that; THE RECEIPT SHOWS THE ALLOWANCE LEFT — the server's figure only
+//     (`receiptAllowance`): the reply's `allowanceRemaining`, else the wallet
+//     record once its snapshot carries this stake's debit, else nothing (the
+//     FAB-10 posture — never a client `left − amount`, never a stale figure);
+//     and an AGENT-LESS seat's title names the player alone (OBS-001). The
+//     control itself holds `result` and renders the receipt from it; a host
+//     that wants a FRESH form after a receipt REMOUNTS it (BackingDesk's
+//     per-entry key — BUG-001), never asks it to reset — and never while a
+//     request is in flight: the control reports one through `onPending`
+//     (true around placeStake and the attestation call, false on the reply
+//     and on its own unmount), and the host holds the seam still until then
+//     (R2-2, the review record), so a reply always lands on the control that
+//     sent it and a second Confirm can never ride a first.
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { MIN_STAKE_BP, PER_TEAM_CAP_BP } from '../../../constants/backing';
 import { LTOKENS, LX, alpha, MONO } from '../leagueTokens';
 import { Eyebrow, Mono, Icon } from '../LeagueParts';
@@ -53,6 +69,25 @@ import { Disclosures, MonoAttr, PointsMeter } from './BackingParts';
 import { ATTEST, CARD, DESK, SCREEN, STAKE, STAKE_PRESETS, bp, refusalMessage } from './backingCopy';
 import { stakedOnTeam } from './backingStakes';
 import { teamLabelOf } from './backingStripState';
+
+/**
+ * The allowance the RECEIPT shows — the server's number, or nothing:
+ *   1. the stake reply's own `allowanceRemaining` (the wallet the stake
+ *      transaction committed; null on a replayed request);
+ *   2. else the wallet record's `left`, ONLY once its snapshot carries every
+ *      debit the reply's stake document names (`appliedEntries`, the ledger's
+ *      once-only guard) — a snapshot still lagging the stake is a stale
+ *      pre-stake figure and shows as nothing (FAB-10), never as `left − amount`.
+ * Pure over the reply and the wallet hook's state.
+ */
+export function receiptAllowance(reply, wallet) {
+  if (Number.isFinite(reply?.allowanceRemaining)) return Math.max(0, Math.floor(reply.allowanceRemaining));
+  if (wallet?.known !== true || !Number.isFinite(wallet?.left)) return null;
+  const debits = Array.isArray(reply?.stake?.debits) ? reply.stake.debits : [];
+  const applied = wallet?.wallet?.appliedEntries;
+  if (debits.length === 0 || !applied || typeof applied !== 'object') return null;
+  return debits.every((d) => typeof d?.entryId === 'string' && applied[d.entryId] !== undefined) ? wallet.left : null;
+}
 
 /** Client-side pre-check of an amount — the server decides; this only saves a round trip. */
 export function validateAmount(amount, { capLeft, allowanceLeft }) {
@@ -107,12 +142,29 @@ function TopUpPanel({ label, already, adding, capLeft, accent }) {
   );
 }
 
-export default function StakeControl({ card, pod, wallet, eligibility, accent = LX.energy, onBacked, onClose, services = null, layout = 'mobile', onCancel = null }) {
+export default function StakeControl({ card, pod, wallet, eligibility, accent = LX.energy, onBacked, onClose, services = null, layout = 'mobile', onCancel = null, onPending = null }) {
   const place = services?.placeStake ?? placeStake;
   const nextRequestId = services?.newRequestId ?? newRequestId;
   const attest = services?.attestEligibility ?? attestEligibility;
+  // A request in flight, reported to the host (R2-2): set before the call,
+  // cleared on its reply — and on this control's unmount, so a host is never
+  // left waiting on a control that is gone. The callback rides a ref so the
+  // unmount cleanup needs no dependency on it.
+  const onPendingRef = useRef(onPending);
+  onPendingRef.current = onPending;
+  const pendingRef = useRef(false);
+  const setPending = (pending) => {
+    if (pendingRef.current === pending) return;
+    pendingRef.current = pending;
+    onPendingRef.current?.(pending);
+  };
+  useEffect(() => () => { if (pendingRef.current) { pendingRef.current = false; onPendingRef.current?.(false); } }, []);
+  const attestPending = async (...args) => { setPending(true); try { return await attest(...args); } finally { setPending(false); } };
   const name = card.team.displayName;
+  // An agent-less seat (OBS-001) is titled by the player alone; the fallback
+  // name is for an agent that exists unnamed (RAWID-2), as on the card.
   const agentName = card.team.agent?.name ?? CARD.agentFallbackName(name);
+  const title = card.team.agent != null ? STAKE.title(name, agentName) : STAKE.titleSolo(name);
   // The seat's single-label name (D-af): the server's, off the team card.
   const label = teamLabelOf(card.team.label);
   const already = stakedOnTeam(pod, card.odUserId);
@@ -124,10 +176,12 @@ export default function StakeControl({ card, pod, wallet, eligibility, accent = 
   const allowanceLeft = walletKnown ? wallet.left : 0;
   const maxAmount = Math.min(capLeft, allowanceLeft);
 
-  // The largest preset the allowance and the cap admit; below the smallest
-  // preset the minimum stake, when it fits; otherwise nothing is pre-chosen
-  // and Confirm waits for an amount (never "Confirm 0 BP").
-  const defaultPreset = useMemo(() => [...STAKE_PRESETS].reverse().find((p) => p <= maxAmount) ?? (maxAmount >= MIN_STAKE_BP ? MIN_STAKE_BP : null), [maxAmount]);
+  // The SMALLEST preset the allowance and the cap admit — never the largest:
+  // 500 is half the weekly allowance, and a pre-chosen maximum is a stake the
+  // viewer did not choose (founder ruling, the backing QA rounds 1–3). Below
+  // the smallest preset the minimum stake, when it fits; otherwise nothing is
+  // pre-chosen and Confirm waits for an amount (never "Confirm 0 BP").
+  const defaultPreset = useMemo(() => STAKE_PRESETS.find((p) => p <= maxAmount) ?? (maxAmount >= MIN_STAKE_BP ? MIN_STAKE_BP : null), [maxAmount]);
   const [preset, setPreset] = useState(defaultPreset);
   const [touched, setTouched] = useState(false);
   // Until the viewer chooses, the pre-chosen preset follows the allowance and
@@ -146,6 +200,7 @@ export default function StakeControl({ card, pod, wallet, eligibility, accent = 
     if (problem) { setError(problem); return; }
     const requestId = nextRequestId();
     setBusy(true);
+    setPending(true);
     setError(null);
     try {
       const body = await place({ groupId: card.groupId, teamOdUserId: card.odUserId, amount, requestId });
@@ -161,6 +216,7 @@ export default function StakeControl({ card, pod, wallet, eligibility, accent = 
       setError(refusalMessage(err?.code));
     } finally {
       setBusy(false);
+      setPending(false);
     }
   };
 
@@ -179,7 +235,7 @@ export default function StakeControl({ card, pod, wallet, eligibility, accent = 
     const step = (
       <AttestationStep
         accent={accent}
-        attest={attest}
+        attest={attestPending}
         onAttested={() => { setNeedsAttest(false); setError(null); eligibility?.refresh?.(); }}
       />
     );
@@ -195,6 +251,8 @@ export default function StakeControl({ card, pod, wallet, eligibility, accent = 
     const backedAmount = result.stake.amount;
     // The reply's own name for the team — the server confirmed THIS stake.
     const backedLabel = teamLabelOf(result.teamLabel ?? card.team.label);
+    // The allowance left — the server's number or nothing (receiptAllowance).
+    const left = receiptAllowance(result, wallet);
     return (
       <div data-backing="backed" style={{ borderRadius: 16, padding: '16px 15px', background: `linear-gradient(160deg, ${alpha(accent, 0.12)}, ${LTOKENS.surface} 64%)`, border: `1px solid ${alpha(accent, 0.3)}`, textAlign: 'center' }}>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 17, fontWeight: 700, color: LTOKENS.ink }}>
@@ -204,6 +262,7 @@ export default function StakeControl({ card, pod, wallet, eligibility, accent = 
           <MonoAttr data-backing="topped-up" style={{ display: 'block', marginTop: 6, fontSize: 11, color: LTOKENS.ink2 }}>{STAKE.toppedUp(result.added)}</MonoAttr>
         )}
         <div style={{ fontSize: 12.5, color: LTOKENS.ink2, lineHeight: 1.45, marginTop: 6 }}>{STAKE.backedSub}</div>
+        {left != null && <MonoAttr data-backing="backed-left" style={{ display: 'block', marginTop: 6, fontSize: 11, color: LTOKENS.ink2 }}>{STAKE.remaining(left)}</MonoAttr>}
         {result?.replay === true && <Mono style={{ display: 'block', marginTop: 6, fontSize: 10, color: LTOKENS.ink3 }}>{STAKE.replayed}</Mono>}
         <button type="button" className="lg-tap" onClick={onClose} style={{ all: 'unset', cursor: 'pointer', marginTop: 14, padding: '10px 16px', borderRadius: 11, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair2}`, fontSize: 13, fontWeight: 600, color: LTOKENS.ink }}>{STAKE.another}</button>
       </div>
@@ -219,7 +278,7 @@ export default function StakeControl({ card, pod, wallet, eligibility, accent = 
       <div data-backing="stake-control" data-layout="desktop" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div>
           <Eyebrow color={accent} style={{ marginBottom: 5 }}>{STAKE.eyebrow}</Eyebrow>
-          <div style={{ fontSize: 18, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.01em', lineHeight: 1.15 }}>{STAKE.title(name, agentName)}</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.01em', lineHeight: 1.15 }}>{title}</div>
         </div>
 
         {topUp && <TopUpPanel label={label} already={already} adding={adding} capLeft={capLeft} accent={accent} />}
@@ -295,7 +354,7 @@ export default function StakeControl({ card, pod, wallet, eligibility, accent = 
     <div data-backing="stake-control" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div>
         <Eyebrow color={accent} style={{ marginBottom: 5 }}>{STAKE.eyebrow}</Eyebrow>
-        <div style={{ fontSize: 18, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.01em', lineHeight: 1.15 }}>{STAKE.title(name, agentName)}</div>
+        <div style={{ fontSize: 18, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.01em', lineHeight: 1.15 }}>{title}</div>
         {already > 0 && (
           <div data-backing="top-up-note" style={{ fontSize: 12.5, color: LTOKENS.ink2, lineHeight: 1.45, marginTop: 5 }}>{STAKE.addsTo(already, label)}</div>
         )}
