@@ -192,7 +192,8 @@ async function fetchHistoryRows(eohdSymbol, daysBack) {
   // a raw fallback, `rawClose` raw — and DROPS a row whose close/high/low is
   // not a finite number rather than letting it sum as a silent 0.
   const { rows, dropped } = mapDailyRows(data);
-  return { rows: rows.reverse(), dropped };
+  const ohlcv = rows.reverse();
+  return { rows: ohlcv, dropped };
 }
 
 async function fetchOHLCV(eohdSymbol, daysBack = 252) {

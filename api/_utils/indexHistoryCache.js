@@ -64,7 +64,11 @@ export function createSessionHistoryStore(db, { etToday }) {
   const stats = { served: 0, fetched: 0, stored: 0, reasons: {} };
 
   async function load(eodhdSymbol, daysBack, fetchFresh) {
-    const ref = db.collection(INDEX_HISTORY_COLLECTION).doc(eodhdSymbol);
+    // The literal (not INDEX_HISTORY_COLLECTION) keeps this write statically
+    // resolvable for the protected-store scan (compositionProtectedStoresScan.js),
+    // the mandateUniverseSnapshot precedent: a non-protected literal needs no
+    // allowlist entry.
+    const ref = db.collection('indexHistoryCache').doc(eodhdSymbol);
     let reason = expected ? 'miss' : 'calendar_missing';
     if (expected) {
       try {

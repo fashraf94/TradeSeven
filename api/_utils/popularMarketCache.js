@@ -114,8 +114,11 @@ const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function readPopularList(db, kind, { fetchList, now = () => Date.now(), sleep = defaultSleep, owner = randomOwner() } = {}) {
   if (!POPULAR_KINDS.includes(kind)) throw new Error(`unknown popular list: ${kind}`);
   const id = popularDocId(kind);
-  const docRef = db.collection(POPULAR_CACHE_COLLECTION).doc(id);
-  const leaseRef = db.collection(POPULAR_LEASE_COLLECTION).doc(id);
+  // Literal collection names (not the constants above) keep these refs
+  // statically resolvable for the protected-store scan
+  // (compositionProtectedStoresScan.js) — the mandateUniverseSnapshot precedent.
+  const docRef = db.collection('marketDataCache').doc(id);
+  const leaseRef = db.collection('marketDataLeases').doc(id);
   const deadline = now() + POPULAR_MARKET_WAIT_MS;
   let waited = false;
 
