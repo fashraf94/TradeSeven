@@ -52,4 +52,18 @@ Rule: absence of proof is stated as absence, never rendered as confidence and ne
 
 Never rendered, in any surface: **hedge, trim, partial, scale in/out, take some off, cash position, move to cash, sit in cash, wait for the market to [vague], probably/likely fine, guaranteed, can't lose** — and any claim of an action the mode cannot perform, any "chose to hold" when the hold was a block or a failure (the record's dimensions — intent, override, executed action, failure — each render as themselves), and any confidence statement without its cited facts.
 
-*V1 — wording blessed by the founder 24 Sep 2026. Amendments version-bump; only the blessed version ships.*
+## F. Execution refusals (V1.1 — 7 Oct 2026)
+
+**V1.1 — 7 Oct 2026:** table F added, wording set by founder decision D5 (Pilot P6, the swap identity check; pilot spec §7). Tables A–E are unchanged.
+
+The executor's typed refusals: the trade reached the book after the belief it was built on stopped being true, so no trade was made. A refusal is the **failure** dimension — never a protective outcome (§A), never an intent (§B), never "chose to hold". **`[SYM]` is filled from `verification.expected.symbol`** — the stock the decision was about — **never from the slot's current occupant**; `[SYM2]` is the incoming stock the caller was placing.
+
+| Wire value | Player line |
+|---|---|
+| `outgoing_identity_mismatch` (agent, proposal or meeting) | "The agent tried to swap [SYM] for [SYM2], but [SYM] had already left that slot. No trade was made." |
+| `outgoing_identity_mismatch` (protective) | "Protection was set to sell [SYM], but [SYM] had already left that slot. No trade was made." |
+| `battle_not_active` | "This trade arrived after the battle ended. No trade was made." |
+
+Rules: the protective line renders refusals from the risk route and the suppression-path guardrail pass; every other caller renders the agent line. The server writes these lines (feed beats, history rows) only at `SWAP_IDENTITY_MODE ≠ off`; client labels are unchanged by V1.1. None of §E's words appear.
+
+*V1 — wording blessed by the founder 24 Sep 2026. Amendments version-bump; only the blessed version ships. V1.1 — 7 Oct 2026: table F (founder decision D5).*

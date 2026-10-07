@@ -139,8 +139,21 @@ describe('agent-evaluate cron — Phase 4 technical snapshot writes', () => {
     //   - copilot-expired-auto-execute    (in scope: forwards proposal.snapshot)
     //   - gameplan-rotation               (out of scope per Phase 4 plan)
     //   - R11 suppression pass            (in scope: snapshot built inline, passed — Ask 3)
-    const inScopeSites = source.match(/executeSwapServer\([\s\S]+?(snapshot|proposal\.snapshot \|\| null)\s*\)/g) || [];
+    // Pilot P6 (spec §7) moved this pin: the snapshot is still the 10th
+    // argument, and the ONLY thing after it is the swap identity options
+    // spread — empty at SWAP_IDENTITY_MODE 'off', so the call keeps exactly
+    // its pre-P6 ten arguments there (the off goldens record every argument).
+    // Matched on the code with line comments removed.
+    const code = source.replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
+    const inScopeSites = code.match(/executeSwapServer\([\s\S]+?(snapshot|proposal\.snapshot \|\| null),\s*\.\.\.swapIdentityOptions\(swapIdentityMode, expectedOut\w+\([^\n]*\)\)\s*\)/g) || [];
     expect(inScopeSites.length).toBe(5);
+    // The gameplan rotation passes no snapshot (nine arguments): its options
+    // are padded into the eleventh place, the snapshot's own default in the tenth.
+    const gameplanSites = code.match(/evaluationId: gameplanEvalId \},\s*\.\.\.swapIdentityOptions\(swapIdentityMode, expectedOutOfStored\(swap\.symbolOut, swap, 'swappedInAt'\), \{ padSnapshot: true \}\)\s*\)/g) || [];
+    expect(gameplanSites.length).toBe(1);
+    // One options spread per call site — every one of the six hands the executor its belief.
+    expect((code.match(/\.\.\.swapIdentityOptions\(swapIdentityMode, /g) || []).length).toBe(6);
+    expect((code.match(/await executeSwapServer\(/g) || []).length).toBe(6);
   });
 
   it('forwards proposal.snapshot through the copilot-approved and expired-auto-execute paths', () => {
@@ -152,8 +165,9 @@ describe('agent-evaluate cron — Phase 4 technical snapshot writes', () => {
   it('threads currentScore into handlePendingProposal and captures scoreAtVeto / scoreAtResolution', () => {
     // Function signature receives currentScore
     expect(source).toMatch(/async function handlePendingProposal\([^)]*currentScore[^)]*\)/);
-    // Call site passes it (P2 appended tournamentCtx after it — lock both)
-    expect(source).toMatch(/handlePendingProposal\([^)]*currentScore, tournamentCtx\)/);
+    // Call site passes it (P2 appended tournamentCtx after it, Pilot P6 the
+    // check's swapIdentityMode — lock all three)
+    expect(source).toMatch(/handlePendingProposal\([^)]*currentScore, tournamentCtx, swapIdentityMode\)/);
 
     // Veto site captures scoreAtVeto
     expect(source).toMatch(/scoreAtVeto:\s*typeof currentScore === 'number'/);

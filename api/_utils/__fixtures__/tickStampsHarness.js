@@ -131,6 +131,19 @@ export const BASE_ENTRY_KEYS = Object.freeze([
  */
 export const CALLS_ENTRY_KEYS = Object.freeze(['declarationsPhase']);
 
+/**
+ * Pilot P6 (spec §7.2) — the entry key the swap identity check adds, in its
+ * OWN list for CALLS_ENTRY_KEYS's reason: it is CONDITIONAL — present on every
+ * entry the cron writes when SWAP_IDENTITY_MODE !== 'off' (the executor's typed
+ * refusal of the check's swap, `{ reason, verificationId, verification, line }`,
+ * or null when nothing was refused), and ABSENT on every entry at 'off'. The
+ * flag-off goldens assert its absence; agent-evaluate.swapIdentity.test.js
+ * asserts its presence and position at shadow/enforce. Composed after the
+ * calls key, so an entry at calls on + identity on ends
+ * `…, declarationsPhase, executionRefusal`.
+ */
+export const SWAP_IDENTITY_ENTRY_KEYS = Object.freeze(['executionRefusal']);
+
 export function makeDirective(overrides = {}) {
   return {
     text: 'Require stronger confirmation before entering',
