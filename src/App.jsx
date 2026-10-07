@@ -13,6 +13,7 @@ import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattl
 // EODHD API - All-in-one provider for stocks and crypto (replaces Finnhub + CoinGecko)
 import { stockAPI, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews, getStockNews, fetchLatestEarnings, fetchHistoricalOHLCV } from './services/eodhdAPI';
 import { captureBattlePrices } from './utils/priceCapture';
+import { loadPopularMarketData } from './services/popularMarketLoader';
 // WebSocket → Cache bridge (flushes WS prices to cacheService so REST calls are skipped)
 import { startWsCacheBridge } from './services/wsCacheBridge';
 import './firebase/config';
@@ -3447,13 +3448,10 @@ export default function PortfolioDuel() {
       setLoadingMarketData(true);
 
       try {
-        // Fetch real stock prices
-        const stocks = await stockAPI.getPopularStocks();
-        setStocksData(stocks);
-
-        // Fetch real crypto prices
-        const crypto = await stockAPI.getPopularCrypto();
-        setCryptoData(crypto);
+        // Stock list, then crypto list (src/services/popularMarketLoader.js —
+        // flag off: the per-symbol batch helpers exactly as before; EODHD Quick
+        // Wins QW-4 flag on: both lists from the shared /api/market/popular).
+        await loadPopularMarketData(setStocksData, setCryptoData);
       } catch (error) {
         console.error('Error loading market data:', error);
         setStocksData([]);

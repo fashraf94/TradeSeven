@@ -1,13 +1,23 @@
 // api/health.js — Lightweight health check endpoint for monitoring
 // GET /api/health → JSON status report with service checks
 //
-// Checks: EODHD API, Firebase Firestore, Claude API key, memory cache
-// Each external check has a 3-second timeout via AbortController
+// Checks: Firebase Firestore, Claude API key, memory cache — and EODHD only on
+// GET /api/health?deep=1. Each external check has a 3-second timeout via
+// AbortController.
+//
+// EODHD Quick Wins QW-3 (2026-10-07): the EODHD probe is a paid /real-time/
+// call, and the keep-warm workflow (.github/workflows/main.yml) pings this
+// route 216 times a day. Without ?deep=1 the response reports EODHD as
+// `not_checked` and makes no vendor request; the overall status is then
+// judged on the checks that did run. Not behind EODHD_QUICK_WINS_ENABLED.
 
 import { applySecurityMiddleware } from './_utils/security.js';
 import { setCacheHeaders, getCacheSize } from './_utils/serverCache.js';
 
 const CHECK_TIMEOUT_MS = 3000;
+
+// QW-3: what the EODHD row reports when ?deep=1 is absent. No vendor call.
+const EODHD_NOT_CHECKED = Object.freeze({ status: 'not_checked', note: 'EODHD probe runs only on ?deep=1 (paid call)' });
 
 // ==================== INDIVIDUAL CHECKS ====================
 
@@ -125,9 +135,12 @@ export default async function handler(req, res) {
   // CDN cache for 30 seconds
   setCacheHeaders(res, 30);
 
+  // QW-3: the paid EODHD probe runs only when asked for explicitly.
+  const deep = req.query?.deep === '1';
+
   // Run external checks in parallel
   const [eodhdResult, firebaseResult] = await Promise.allSettled([
-    checkEodhd(),
+    deep ? checkEodhd() : Promise.resolve(EODHD_NOT_CHECKED),
     checkFirebase(),
   ]);
 
@@ -138,8 +151,9 @@ export default async function handler(req, res) {
     cache: checkCache(),
   };
 
-  // Determine overall status
-  const checkStatuses = [checks.eodhd.status, checks.firebase.status, checks.claude.status];
+  // Determine overall status over the checks that ran — an EODHD check that
+  // was not requested is neither ok nor a degradation.
+  const checkStatuses = [...(deep ? [checks.eodhd.status] : []), checks.firebase.status, checks.claude.status];
   const allOk = checkStatuses.every(s => s === 'ok');
 
   return res.status(200).json({

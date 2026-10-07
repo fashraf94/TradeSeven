@@ -68,7 +68,10 @@ import { formatEtDate } from '../_utils/tournamentTime.js';
 // Fundamental Wire (Commit 1, dark) — Node-clean api→src edge, ratified by the
 // three existing cron importers of featureFlags.js (BUILD_RULES §4; the runtime
 // guard is the real import in compute-index-intelligence.fundamentalsMirror.test.js).
-import { FUNDAMENTAL_MIRROR_ENABLED } from '../../src/config/featureFlags.js';
+import { FUNDAMENTAL_MIRROR_ENABLED, EODHD_QUICK_WINS_ENABLED } from '../../src/config/featureFlags.js';
+// EODHD Quick Wins QW-6: the per-session daily-history store (one doc per symbol).
+import { createSessionHistoryStore } from '../_utils/indexHistoryCache.js';
+import { getETDate, formatDateString } from '../_utils/marketSchedule.js';
 
 const ARCHETYPES = ['momentum_chaser', 'contrarian', 'diversifier', 'degen', 'analyst', 'guardian'];
 
@@ -107,6 +110,21 @@ let intradayQuotes = null;
 // reason as `intradayQuotes`.
 let droppedRows = 0;
 
+// EODHD Quick Wins QW-6: this invocation's per-session history store, or null
+// with the flag off (then every history is fetched fresh, as before). Reset
+// every invocation, same warm-container reason as `intradayQuotes`.
+let historyStore = null;
+
+// The flag, read at CALL time inside a fail-safe: a hermetic featureFlags mock
+// that omits the name throws on access under vitest, and that must read as OFF.
+function eodhdQuickWinsOn() {
+  try {
+    return EODHD_QUICK_WINS_ENABLED === true;
+  } catch {
+    return false;
+  }
+}
+
 // ───────────────────────────────────────────────
 // Logging
 // ───────────────────────────────────────────────
@@ -141,7 +159,9 @@ function formatDate(date) {
   return date.toISOString().split('T')[0];
 }
 
-async function fetchOHLCV(eohdSymbol, daysBack = 252) {
+// The vendor half of fetchOHLCV: one `/eod/` request, mapped and reversed to
+// newest-first. QW-6 stores exactly this output per session (see historyStore).
+async function fetchHistoryRows(eohdSymbol, daysBack) {
   const fromDate = new Date();
   fromDate.setDate(fromDate.getDate() - Math.ceil(daysBack * 1.5)); // overshoot for weekends/holidays
   const url = `https://eodhd.com/api/eod/${eohdSymbol}?period=d&from=${formatDate(fromDate)}&fmt=json&api_token=${EODHD_API_KEY}`;
@@ -172,7 +192,16 @@ async function fetchOHLCV(eohdSymbol, daysBack = 252) {
   // a raw fallback, `rawClose` raw — and DROPS a row whose close/high/low is
   // not a finite number rather than letting it sum as a silent 0.
   const { rows, dropped } = mapDailyRows(data);
-  const ohlcv = rows.reverse();
+  return { rows: rows.reverse(), dropped };
+}
+
+async function fetchOHLCV(eohdSymbol, daysBack = 252) {
+  // QW-6: with the flag on, a history already fetched this session is served
+  // from the per-session store (api/_utils/indexHistoryCache.js) under the
+  // session-currency rule; anything else is the fresh fetch above, as before.
+  const { rows: ohlcv, dropped } = historyStore
+    ? await historyStore.load(eohdSymbol, daysBack, () => fetchHistoryRows(eohdSymbol, daysBack))
+    : await fetchHistoryRows(eohdSymbol, daysBack);
   droppedRows += dropped;
   // Per symbol, every run (marketDataCache.js:370-372 pattern). A dropped row is
   // a row the indicators will never see, so it is never silent: a symbol that
@@ -721,10 +750,17 @@ export default async function handler(req, res) {
   // Reset module-level intraday state every invocation (warm-container safety).
   intradayQuotes = null;
   droppedRows = 0;
+  historyStore = null;
   log(`Starting index intelligence computation... (mode=${intraday ? 'intraday' : 'premarket'})`);
 
   try {
     const db = getFirebaseAdmin();
+
+    // QW-6: the per-session history store, flag on only. etToday is the ET
+    // session date this run computes for (pre-market and intraday alike).
+    if (eodhdQuickWinsOn()) {
+      historyStore = createSessionHistoryStore(db, { etToday: formatDateString(getETDate()) });
+    }
 
     // Archetype Rank V2 (P-11): the snapshot ops toggle, read once at run start.
     // Absent doc ⇒ off; a read failure ⇒ off + logged. Never affects the run.
@@ -1617,6 +1653,9 @@ export default async function handler(req, res) {
         markStage('snapshot');
       }
     }
+
+    // QW-6: one line per run for the founder's smoke read (flag on only).
+    if (historyStore) log(historyStore.summary());
 
     // Step 7 — Return Summary
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);

@@ -3022,3 +3022,42 @@ export const SHADOW_CPU_QUOTE_INTEGRITY_ENABLED = false;
 export function isShadowCpuQuoteIntegrityOn() {
   return SHADOW_CPU_QUOTE_INTEGRITY_ENABLED;
 }
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * EODHD QUICK WINS (census docs/audits/20261007_EODHD_CALL_CENSUS.md; build
+ * report docs/audits/20261007_BUILD_EODHD_QUICK_WINS.md).
+ *
+ * EODHD_QUICK_WINS_ENABLED — the ONE gate over four spend cuts that change
+ * WHEN data is fetched, never what any player sees scored:
+ *   • QW-1 api/cron/agent-evaluate.js — the four evaluator price sites stop
+ *     forcing a fresh 90-day daily series. The series may come from the shared
+ *     cache only under the session-currency rule
+ *     (api/_utils/marketDataCache.js isDailySeriesSessionCurrent); the
+ *     real-time quote is fetched live on every call, as before.
+ *   • QW-4 GET /api/market/popular + src/services/popularMarketLoader.js — the
+ *     app-wide 5-minute popular-list poll becomes one shared fetch per 60 s
+ *     (Firestore marketDataCache/{stocks,crypto}_popular, one lease per list).
+ *     The new path never writes the per-tab price cache.
+ *   • QW-6 api/cron/compute-index-intelligence.js — daily histories are
+ *     fetched once per session date (indexHistoryCache/{symbol}) and reused.
+ *   • QW-7 api/cron/mandate-evaluate.js — no snapshot build while there are
+ *     zero active mandate books AND zero open batches.
+ * DEFAULT false: the build merges dark and every path above is the pre-build
+ * code. NOT behind this flag: QW-3 (the keep-warm workflow and the ?deep=1
+ * EODHD probe in api/health.js) ships live.
+ *
+ * Read at CALL time, inside a fail-safe at every consumer: a hermetic
+ * featureFlags mock that omits the name throws on access under vitest, and
+ * that must read as OFF (the TICK_STAMPS_ENABLED precedent).
+ *
+ * Registered DARK_BY_DESIGN in flagPinGuard.test.js. FLIP MAP (the flip
+ * reconciles these in the SAME commit — BUILD_RULES §2): this value; in
+ * src/config/eodhdQuickWinsFlags.test.js the value pin moves to true and the
+ * registration row turns around to assert the DARK_BY_DESIGN entry is GONE;
+ * the DARK_BY_DESIGN entry is dropped; this paragraph's DEFAULT line. Crons do
+ * not run on preview: QW-1, QW-6 and QW-7 are observable only in production
+ * after the founder's merge; QW-4 is visible on a preview.
+ */
+// Pinned by: eodhdQuickWinsFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const EODHD_QUICK_WINS_ENABLED = false;

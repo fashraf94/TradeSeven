@@ -126,6 +126,65 @@ const stockFallbackOrigin = () => ({ version: 1, price: 'configured-fallback', p
 const cryptoFallbackOrigin = () => ({ version: 1, price: 'configured-fallback', previousClose: 'missing' });
 
 // ============================================
+// RECORD BUILDERS (one source for the batch helpers and the shared
+// popular-list path — EODHD Quick Wins QW-4)
+// ============================================
+
+/** A stock proxy record → the normalized record every price consumer reads. */
+const normalizeStockQuote = (priceData) => withQuoteOrigin({
+  price: parseFloat(priceData.price) || 0,
+  previousClose: parseFloat(priceData.previousClose) || 0,
+  open: parseFloat(priceData.open) || 0,
+  change: parseFloat(priceData.change) || 0,
+  percentChange: parseFloat(priceData.changePercent) || 0,
+  high: parseFloat(priceData.high) || 0,
+  low: parseFloat(priceData.low) || 0,
+  timestamp: priceData.timestamp || null,
+}, priceData);
+
+/** The configured fallback for a stock the proxy did not price. */
+const stockFallbackQuote = (symbol) => {
+  const fallbackPrice = FALLBACK_STOCK_PRICES[symbol] || 100;
+  return {
+    price: fallbackPrice,
+    previousClose: fallbackPrice,
+    open: fallbackPrice,
+    change: 0,
+    percentChange: 0,
+    isFallback: true,
+    quoteOrigin: stockFallbackOrigin(),
+  };
+};
+
+/** A crypto proxy record → the normalized record, or null when it carries no positive price. */
+const normalizeCryptoQuote = (priceData) => {
+  const price = parseFloat(priceData.price);
+  if (!(price > 0)) return null;
+  return withQuoteOrigin({
+    price: price,
+    previousClose: parseFloat(priceData.previousClose) || 0,
+    change24h: parseFloat(priceData.changePercent) || 0,
+    high: parseFloat(priceData.high) || 0,
+    low: parseFloat(priceData.low) || 0,
+    timestamp: priceData.timestamp || null,
+  }, priceData);
+};
+
+/** The configured fallback for a crypto the proxy did not price (checks multiple key formats). */
+const cryptoFallbackQuote = (symbol) => {
+  const fallbackPrice = FALLBACK_CRYPTO_PRICES[symbol] ||
+                        FALLBACK_CRYPTO_PRICES[symbol.toLowerCase()] ||
+                        FALLBACK_CRYPTO_PRICES[symbol.toUpperCase()] ||
+                        1;
+  return {
+    price: fallbackPrice,
+    change24h: 0,
+    isFallback: true,
+    quoteOrigin: cryptoFallbackOrigin(),
+  };
+};
+
+// ============================================
 // STOCK FUNCTIONS (via Vercel Proxy)
 // ============================================
 
@@ -174,16 +233,7 @@ export async function getMultipleStockPrices(symbols) {
 
       // Cache each result and add to result object
       Object.entries(data.prices).forEach(([symbol, priceData]) => {
-        const normalized = withQuoteOrigin({
-          price: parseFloat(priceData.price) || 0,
-          previousClose: parseFloat(priceData.previousClose) || 0,
-          open: parseFloat(priceData.open) || 0,
-          change: parseFloat(priceData.change) || 0,
-          percentChange: parseFloat(priceData.changePercent) || 0,
-          high: parseFloat(priceData.high) || 0,
-          low: parseFloat(priceData.low) || 0,
-          timestamp: priceData.timestamp || null,
-        }, priceData);
+        const normalized = normalizeStockQuote(priceData);
 
         // Cache with LIGHT tier (2-minute TTL)
         cacheService.set('prices', symbol, normalized);
@@ -195,15 +245,7 @@ export async function getMultipleStockPrices(symbols) {
       // Fill in any missing symbols with fallbacks
       for (const symbol of symbolsToFetch) {
         if (!result[symbol]) {
-          result[symbol] = {
-            price: FALLBACK_STOCK_PRICES[symbol] || 100,
-            previousClose: FALLBACK_STOCK_PRICES[symbol] || 100,
-            open: FALLBACK_STOCK_PRICES[symbol] || 100,
-            change: 0,
-            percentChange: 0,
-            isFallback: true,
-            quoteOrigin: stockFallbackOrigin(),
-          };
+          result[symbol] = stockFallbackQuote(symbol);
         }
       }
 
@@ -217,16 +259,7 @@ export async function getMultipleStockPrices(symbols) {
 
     // Return fallbacks for symbols we couldn't fetch
     for (const symbol of symbolsToFetch) {
-      const fallbackPrice = FALLBACK_STOCK_PRICES[symbol] || 100;
-      result[symbol] = {
-        price: fallbackPrice,
-        previousClose: fallbackPrice,
-        open: fallbackPrice,
-        change: 0,
-        percentChange: 0,
-        isFallback: true,
-        quoteOrigin: stockFallbackOrigin(),
-      };
+      result[symbol] = stockFallbackQuote(symbol);
     }
     return result;
   }
@@ -262,7 +295,11 @@ export async function getStockPrice(symbol) {
  */
 export async function getPopularStocks() {
   const prices = await getMultipleStockPrices(POPULAR_STOCK_SYMBOLS);
+  return buildPopularStockItems(prices);
+}
 
+/** Normalized stock records → the popular-stock list items App.jsx consumes. */
+function buildPopularStockItems(prices) {
   return POPULAR_STOCK_SYMBOLS.map(symbol => {
     const price = parseFloat(prices[symbol]?.price) || FALLBACK_STOCK_PRICES[symbol] || 100;
     const percentChange = parseFloat(prices[symbol]?.percentChange) || 0;
@@ -335,17 +372,8 @@ export async function getMultipleCryptoPrices(symbols) {
 
       // Cache each result and add to result object
       Object.entries(data.prices).forEach(([symbol, priceData]) => {
-        const price = parseFloat(priceData.price);
-        if (price > 0) {
-          const normalized = withQuoteOrigin({
-            price: price,
-            previousClose: parseFloat(priceData.previousClose) || 0,
-            change24h: parseFloat(priceData.changePercent) || 0,
-            high: parseFloat(priceData.high) || 0,
-            low: parseFloat(priceData.low) || 0,
-            timestamp: priceData.timestamp || null,
-          }, priceData);
-
+        const normalized = normalizeCryptoQuote(priceData);
+        if (normalized) {
           // Cache with LIGHT tier (5-minute TTL)
           cacheService.set('crypto', symbol, normalized);
           result[symbol] = normalized;
@@ -358,16 +386,7 @@ export async function getMultipleCryptoPrices(symbols) {
       for (const symbol of symbolsToFetch) {
         if (!result[symbol]) {
           missing.push(symbol);
-          const fallbackPrice = FALLBACK_CRYPTO_PRICES[symbol] ||
-                                FALLBACK_CRYPTO_PRICES[symbol.toLowerCase()] ||
-                                FALLBACK_CRYPTO_PRICES[symbol.toUpperCase()] ||
-                                1;
-          result[symbol] = {
-            price: fallbackPrice,
-            change24h: 0,
-            isFallback: true,
-            quoteOrigin: cryptoFallbackOrigin(),
-          };
+          result[symbol] = cryptoFallbackQuote(symbol);
         }
       }
 
@@ -385,16 +404,7 @@ export async function getMultipleCryptoPrices(symbols) {
 
     // Return fallbacks for symbols we couldn't fetch (check multiple key formats)
     for (const symbol of symbolsToFetch) {
-      const fallbackPrice = FALLBACK_CRYPTO_PRICES[symbol] ||
-                            FALLBACK_CRYPTO_PRICES[symbol.toLowerCase()] ||
-                            FALLBACK_CRYPTO_PRICES[symbol.toUpperCase()] ||
-                            1;
-      result[symbol] = {
-        price: fallbackPrice,
-        change24h: 0,
-        isFallback: true,
-        quoteOrigin: cryptoFallbackOrigin(),
-      };
+      result[symbol] = cryptoFallbackQuote(symbol);
     }
     console.warn(`[EODHD] ${symbolsToFetch.length} prices using fallbacks due to error`);
     return result;
@@ -442,7 +452,11 @@ export async function getCryptoPrice(symbol) {
  */
 export async function getPopularCrypto() {
   const prices = await getMultipleCryptoPrices(POPULAR_CRYPTO_SYMBOLS);
+  return buildPopularCryptoItems(prices);
+}
 
+/** Normalized crypto records → the popular-crypto list items App.jsx consumes. */
+function buildPopularCryptoItems(prices) {
   return POPULAR_CRYPTO_SYMBOLS.map(symbol => {
     const price = parseFloat(prices[symbol]?.price) || FALLBACK_CRYPTO_PRICES[symbol] || 1;
     const change24h = parseFloat(prices[symbol]?.change24h) || 0;
@@ -462,6 +476,78 @@ export async function getPopularCrypto() {
       communityData: generateCommunityData(symbol, price, change24h)
     };
   });
+}
+
+/**
+ * EODHD Quick Wins QW-4 — both popular lists from ONE shared route.
+ *
+ * GET /api/market/popular serves the whole stock and crypto lists from a
+ * Firestore cache shared by every tab (api/_utils/popularMarketCache.js), so N
+ * tabs cost one upstream fetch per list per 60 s instead of one each. The
+ * records are the per-symbol routes' own records, normalized and turned into
+ * list items by the SAME builders getPopularStocks / getPopularCrypto use, and
+ * a list the route could not price falls back exactly as a failed batch call
+ * does — so App.jsx receives today's shape, field for field.
+ *
+ * Deliberately NOT written to the per-tab price cache (founder ruling, Oct 7):
+ * the battle screens' price paths read that cache, and an entry filled here
+ * would carry the shared copy's age into them. They keep fetching their own.
+ * Never throws.
+ *
+ * @returns {Promise<{stocks: Array, crypto: Array}>}
+ */
+export async function getPopularMarketData() {
+  let payload = null;
+  try {
+    const response = await fetchWithTimeout(`${API_BASE}/market/popular`);
+    if (!response.ok) {
+      throw new Error(`Proxy error: ${response.status}`);
+    }
+    payload = await response.json();
+    if (!payload?.success) {
+      throw new Error(payload?.error || 'Unknown proxy error');
+    }
+    apiMonitor.track('/api/market/popular', { lists: ['stocks', 'crypto'] }, 'eodhdAPI.getPopularMarketData');
+    console.log(`[EODHD] Popular lists via shared route (stocks: ${payload.source?.stocks}, crypto: ${payload.source?.crypto})`);
+  } catch (error) {
+    console.warn('[EODHD] Popular list fetch failed:', error.message);
+    payload = null;
+  }
+
+  const stockSymbols = POPULAR_STOCK_SYMBOLS.map(s => s.toUpperCase());
+  const stockPrices = {};
+  if (payload?.stocks?.prices) {
+    Object.entries(payload.stocks.prices).forEach(([symbol, priceData]) => {
+      stockPrices[symbol] = normalizeStockQuote(priceData);
+    });
+  }
+  for (const symbol of stockSymbols) {
+    if (!stockPrices[symbol]) stockPrices[symbol] = stockFallbackQuote(symbol);
+  }
+
+  const cryptoSymbols = POPULAR_CRYPTO_SYMBOLS.map(s => s.toUpperCase());
+  const cryptoPrices = {};
+  if (payload?.crypto?.prices) {
+    Object.entries(payload.crypto.prices).forEach(([symbol, priceData]) => {
+      const normalized = normalizeCryptoQuote(priceData);
+      if (normalized) cryptoPrices[symbol] = normalized;
+    });
+  }
+  const missingCrypto = [];
+  for (const symbol of cryptoSymbols) {
+    if (!cryptoPrices[symbol]) {
+      if (payload?.crypto?.prices) missingCrypto.push(symbol);
+      cryptoPrices[symbol] = cryptoFallbackQuote(symbol);
+    }
+  }
+  if (missingCrypto.length > 0) {
+    console.warn(`[EODHD] Using fallbacks for:`, missingCrypto);
+  }
+
+  return {
+    stocks: buildPopularStockItems(stockPrices),
+    crypto: buildPopularCryptoItems(cryptoPrices),
+  };
 }
 
 /**
@@ -1169,6 +1255,7 @@ export const stockAPI = {
   getCryptoPrice,
   getPopularStocks,
   getPopularCrypto,
+  getPopularMarketData,
   getCryptoExtendedData,
   getMultipleStockPrices,
   getMultipleCryptoPrices,

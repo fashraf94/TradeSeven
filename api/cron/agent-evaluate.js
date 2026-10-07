@@ -93,7 +93,7 @@ import { TEMPO_DIAL_BANDS } from '../_utils/tempoDialBands.js';
 // NO-EDIT).
 import { clampHftConfig, resolveTempoDial, desiredTempoOf } from '../_utils/tempoDialClamp.js';
 import { buildSwapProvenance } from '../_utils/swapProvenance.js';
-import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED, LEARNING_L1_CAPTURE_ENABLED, LEARNING_L1_CAPTURE_EXPANSION_ENABLED, REGIME_STAMP_ENABLED, PROFIT_TARGET_EXECUTOR_ENABLED, TICK_STAMPS_ENABLED, ANTICIPATION_THRESHOLD_LINT_MODE, INTRADAY_DIAGNOSTIC_ENABLED, TICK_CAPTURE_ENABLED, EVAL_DEFERRED_BEAT_ENABLED, getVoiceGroundingMode } from '../../src/config/featureFlags.js';
+import { ARCHETYPE_INTEGRITY_MODE, STANDING_LEANS_ENABLED, TEMPO_DIAL_ENABLED, LEARNING_L1_CAPTURE_ENABLED, LEARNING_L1_CAPTURE_EXPANSION_ENABLED, REGIME_STAMP_ENABLED, PROFIT_TARGET_EXECUTOR_ENABLED, TICK_STAMPS_ENABLED, ANTICIPATION_THRESHOLD_LINT_MODE, INTRADAY_DIAGNOSTIC_ENABLED, TICK_CAPTURE_ENABLED, EVAL_DEFERRED_BEAT_ENABLED, EODHD_QUICK_WINS_ENABLED, getVoiceGroundingMode } from '../../src/config/featureFlags.js';
 // Voice-layer grounding §5 (hazard 27): the in-process dedupe of one tick's
 // anticipation queue, applied only when the note is code-composed.
 import { dedupeAnticipationQueue } from '../_utils/voiceLayerGrounding.js';
@@ -803,6 +803,32 @@ function buildPoolEmptyFeedEntry({ message, symbolOut, symbolIn = null, regime =
   };
 }
 
+// QW-1 (EODHD Quick Wins, docs/audits/20261007_BUILD_EODHD_QUICK_WINS.md): the
+// four evaluator price sites share ONE fetch shape. Flag off — the forced
+// refresh, byte-for-byte what they passed before. Flag on — the daily series
+// may come from the shared cache under the session-currency rule
+// (marketDataCache.js dailySeriesCurrency); the real-time quote is still
+// fetched live on every call. The flag is read at CALL time inside a
+// fail-safe: a hermetic featureFlags mock that omits the name throws on access
+// under vitest, and that must read as OFF. The policy literal is local (not
+// imported) for the same reason — hermetic marketDataCache mocks omit it — and
+// agent-evaluate.qw1.test.js pins it equal to DAILY_POLICY_SESSION_CURRENT.
+export const EVALUATOR_DAILY_POLICY = 'session_current';
+
+function eodhdQuickWinsOn() {
+  try {
+    return EODHD_QUICK_WINS_ENABLED === true;
+  } catch {
+    return false;
+  }
+}
+
+export function evaluatorQuoteOptions() {
+  return eodhdQuickWinsOn()
+    ? { fields: ['daily', 'price'], dailyPolicy: EVALUATOR_DAILY_POLICY }
+    : { forceRefresh: true, fields: ['daily', 'price'] };
+}
+
 export async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(), tournamentGroupCache = new Map(), masteryFlagView = DARK_FLAG_VIEW, intradayContext = null) {
   const battleRef = db.collection('agentBattles').doc(battle.id);
 
@@ -1039,7 +1065,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     await Promise.all(
       allSymbols.map(async (symbol) => {
         try {
-          const data = await getStockAnalysisData(symbol, { forceRefresh: true, fields: ['daily', 'price'] });
+          const data = await getStockAnalysisData(symbol, evaluatorQuoteOptions());
           if (data?.price) {
             prices[symbol] = data.price;
             // Calls (§3.3): the DETACHED fetched quote, before any replacement.
@@ -1449,7 +1475,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         if (newTickersNeedingPrices.length > 0) {
           await Promise.allSettled(newTickersNeedingPrices.map(async (symbol) => {
             try {
-              const data = await getStockAnalysisData(symbol, { forceRefresh: true, fields: ['daily', 'price'] });
+              const data = await getStockAnalysisData(symbol, evaluatorQuoteOptions());
               if (data?.price) {
                 prices[symbol] = data.price;
                 callsStep(callsCtx, () => recordFetchedQuote(callsCtx, symbol, data.price, Date.now()));
@@ -2483,7 +2509,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           // Fetch price if not already fetched
           if (!prices[ticker]) {
             try {
-              const data = await getStockAnalysisData(ticker, { forceRefresh: true, fields: ['daily', 'price'] });
+              const data = await getStockAnalysisData(ticker, evaluatorQuoteOptions());
               if (data?.price) {
                 prices[ticker] = data.price;
                 callsStep(callsCtx, () => recordFetchedQuote(callsCtx, ticker, data.price, Date.now()));
@@ -4730,7 +4756,7 @@ async function fetchPricesForProposal(proposal) {
   const prices = {};
   await Promise.all(symbols.map(async (symbol) => {
     try {
-      const data = await getStockAnalysisData(symbol, { forceRefresh: true, fields: ['daily', 'price'] });
+      const data = await getStockAnalysisData(symbol, evaluatorQuoteOptions());
       if (data?.price) prices[symbol] = data.price;
     } catch (err) {
       console.warn(`${LOG_PREFIX} Price fetch for proposal symbol ${symbol} failed:`, err.message);

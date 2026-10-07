@@ -25,6 +25,7 @@ import {
   MANDATE_EVAL_ENABLED,
   MANDATE_CLOSE_ENABLED,
   MANDATE_TRANSPORT_MODE,
+  EODHD_QUICK_WINS_ENABLED,
 } from '../../src/config/featureFlags.js';
 import {
   MANDATE_SWEEP_PAGE_SIZE,
@@ -45,7 +46,7 @@ import { executeDecision, disposeSubmission } from '../_utils/mandateExecution.j
 import { markFor } from '../_utils/mandateUniverseSnapshot.js';
 import { resolveRegime } from '../_utils/mandateRegime.js';
 import { priceUsage, telemetryPatch } from '../_utils/modelPriceTable.js';
-import { harvestOpenBatches, submitMandateBatch } from '../_utils/mandateBatchTransport.js';
+import { harvestOpenBatches, submitMandateBatch, MANDATE_BATCH_COLLECTION } from '../_utils/mandateBatchTransport.js';
 
 // §6.2 telemetryPatch moved to modelPriceTable.js in P5 (the batch harvest
 // bills without importing a cron entrypoint); re-exported here so existing
@@ -62,6 +63,33 @@ export const config = { maxDuration: 300 };
 const TIME_BUDGET_MS = 290_000; // 10s buffer under maxDuration for cleanup/response
 const LOG_PREFIX = '[MandateEvaluate]';
 const MANDATES_COLLECTION = 'mandates';
+
+// ── EODHD Quick Wins QW-7 (docs/audits/20261007_BUILD_EODHD_QUICK_WINS.md) ────
+// Both sweeps build a platform snapshot (`/real-time/` for every candidate, plus
+// the daily slow layer's splits, dividends and fundamentals) before they look at
+// a single book — ≈ 816 vendor calls a day, paid with zero books (census §3
+// Q-04 row 38). With EODHD_QUICK_WINS_ENABLED on, a fire whose snapshot is not
+// yet built stops BEFORE that build when there is nothing to mark: zero active
+// books AND zero open batches. An open batch can outlive its book's `active`
+// status, and it is harvested against the snapshot, so it keeps the build.
+// With books (or a batch) present, every step is the pre-build path.
+// The flag is read at CALL time inside a fail-safe: a hermetic featureFlags
+// mock that omits the name throws on access under vitest, and that must read
+// as OFF.
+function eodhdQuickWinsOn() {
+  try {
+    return EODHD_QUICK_WINS_ENABLED === true;
+  } catch {
+    return false;
+  }
+}
+
+async function nothingToMark(db, activeSnap) {
+  if (!eodhdQuickWinsOn()) return false;
+  if ((activeSnap?.docs || []).length > 0) return false;
+  const openSnap = await db.collection(MANDATE_BATCH_COLLECTION).where('status', '==', 'open').limit(1).get();
+  return (openSnap?.docs || []).length === 0;
+}
 
 // ── Held-ticker union across active books (§3.0 build set input) ─────────────
 export function unionHeldTickers(bookDocs) {
@@ -285,6 +313,11 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
     let snapshot = (await snapRef.get()).data() || null;
     if (!snapshot) {
       const activeSnap = await db.collection(MANDATES_COLLECTION).where('status', '==', 'active').get();
+      // QW-7: nothing to mark → no snapshot build, so no vendor call.
+      if (await nothingToMark(db, activeSnap)) {
+        console.log(`${LOG_PREFIX} QW7 NO_BOOKS | ${tick.tickKey} — zero active books and zero open batches; snapshot build skipped (no EODHD call)`);
+        return res.status(200).json({ ok: true, noop: true, reason: 'no_active_books', ...summary });
+      }
       const heldTickers = unionHeldTickers(activeSnap.docs.map((d) => d.data()));
       const daily = await ensureDailySnapshot(db, { date: tick.date, heldTickers, now });
       const dailyDoc = (await daily.ref.get()).data();
@@ -660,25 +693,35 @@ export async function runCloseSweep(req, res, { now, closeTick, db = getFirebase
     // preClose tick's intraday marks (§3.6 "the session's official close").
     const snapRef = db.collection(SNAPSHOT_COLLECTION).doc(closeTick.closeKey);
     let closeSnapshot = (await snapRef.get()).data() || null;
+    // QW-7: nothing to close → no close snapshot (no vendor call) and no book
+    // page. Unlike the eval sweep this does NOT return: the completion block
+    // below (retention cleanup, the calendar-horizon probe) runs on a zero-book
+    // day today, and still does.
+    let noBooksToClose = false;
     if (!closeSnapshot) {
       const activeSnap = await db.collection(MANDATES_COLLECTION).where('status', '==', 'active').get();
-      const heldTickers = unionHeldTickers(activeSnap.docs.map((d) => d.data()));
-      // Idempotent daily slow layer — normally already built by the day's first
-      // eval fire; a zero-eval day (all books slow-tier + missed slots) builds
-      // it here so the close still has sector/cap/CA context.
-      const daily = await ensureDailySnapshot(db, { date, heldTickers, now });
-      const dailyDoc = (await daily.ref.get()).data();
-      try {
-        const built = await ensureUniverseSnapshot(db, {
-          tickKey: closeTick.closeKey, sessionDate: date, heldTickers, now, dailyDoc,
-        });
-        closeSnapshot = built.snapshot;
-      } catch (snapErr) {
-        // No close snapshot → no marks; better to defer to the next generous
-        // fire in the window than to mark from nothing. Books stay unclosed and
-        // the missed-marks alert fires if the whole window passes.
-        console.error(`${LOG_PREFIX} close snapshot build failed — deferring: ${snapErr.message}`);
-        return res.status(200).json({ ok: true, noop: true, reason: 'close_snapshot_failed', ...summary });
+      noBooksToClose = await nothingToMark(db, activeSnap);
+      if (noBooksToClose) {
+        console.log(`${LOG_PREFIX} QW7 NO_BOOKS | ${closeTick.closeKey} — zero active books and zero open batches; close snapshot skipped (no EODHD call)`);
+      } else {
+        const heldTickers = unionHeldTickers(activeSnap.docs.map((d) => d.data()));
+        // Idempotent daily slow layer — normally already built by the day's first
+        // eval fire; a zero-eval day (all books slow-tier + missed slots) builds
+        // it here so the close still has sector/cap/CA context.
+        const daily = await ensureDailySnapshot(db, { date, heldTickers, now });
+        const dailyDoc = (await daily.ref.get()).data();
+        try {
+          const built = await ensureUniverseSnapshot(db, {
+            tickKey: closeTick.closeKey, sessionDate: date, heldTickers, now, dailyDoc,
+          });
+          closeSnapshot = built.snapshot;
+        } catch (snapErr) {
+          // No close snapshot → no marks; better to defer to the next generous
+          // fire in the window than to mark from nothing. Books stay unclosed and
+          // the missed-marks alert fires if the whole window passes.
+          console.error(`${LOG_PREFIX} close snapshot build failed — deferring: ${snapErr.message}`);
+          return res.status(200).json({ ok: true, noop: true, reason: 'close_snapshot_failed', ...summary });
+        }
       }
     }
 
@@ -696,7 +739,10 @@ export async function runCloseSweep(req, res, { now, closeTick, db = getFirebase
     // 3. Bounded page, least-recently-ATTEMPTED first (INV-1/C21-1: throwers
     //    rotate behind the frontier; healthy books get their first attempt
     //    before any thrower gets its second).
-    const pageSnap = await db.collection(MANDATES_COLLECTION)
+    // QW-7: with nothing to close the page is empty by construction — and it is
+    // never read, so a book activated in between cannot be closed against the
+    // snapshot that was not built (the next fire in the window builds it).
+    const pageSnap = noBooksToClose ? { docs: [] } : await db.collection(MANDATES_COLLECTION)
       .where('status', '==', 'active')
       .orderBy('health.lastCloseAttemptAt', 'asc')
       .orderBy('__name__', 'asc')

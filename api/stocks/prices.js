@@ -29,6 +29,37 @@ function quoteOriginOf(item) {
   };
 }
 
+/**
+ * The EODHD real-time path segment for a client symbol list ("AAPL,BRK.B" →
+ * "AAPL.US,BRK-B.US"). Exported with the two builders below so the shared
+ * popular-list route (api/market/popular.js, EODHD Quick Wins QW-4) requests
+ * and files records EXACTLY as this route does — one source, never a copy.
+ */
+export function stockRealtimeSymbolList(symbolsCsv) {
+  return symbolsCsv.split(',').map(s => `${normalizeSymbolForEODHD(s.trim().replace(/\.US$/i, ''))}.US`).join(',');
+}
+
+/** The key a real-time item is filed under ("BRK-B.US" → "BRK.B"). */
+export function stockPriceKey(item) {
+  return denormalizeSymbolFromEODHD(item.code.replace('.US', ''));
+}
+
+/** One EODHD real-time item → the record this route returns. */
+export function formatStockPriceRecord(item) {
+  return {
+    price: item.close || item.previousClose || 0,
+    previousClose: item.previousClose || 0,
+    open: item.open || 0,
+    change: item.change || 0,
+    changePercent: item.change_p || 0,
+    high: item.high || 0,
+    low: item.low || 0,
+    volume: item.volume,
+    timestamp: item.timestamp || null,
+    quoteOrigin: quoteOriginOf(item),
+  };
+}
+
 /** Safely convert a Unix epoch timestamp (seconds) to a Date. Returns null if invalid. */
 function safeDateFromEpoch(timestamp) {
   const ts = Number(timestamp);
@@ -90,7 +121,7 @@ async function handleCurrentPrices(req, res, symbols, API_KEY, noCache) {
   }
 
   try {
-    const symbolList = symbols.split(',').map(s => `${normalizeSymbolForEODHD(s.trim().replace(/\.US$/i, ''))}.US`).join(',');
+    const symbolList = stockRealtimeSymbolList(symbols);
     const url = `https://eodhd.com/api/real-time/${symbolList}?api_token=${API_KEY}&fmt=json`;
 
     console.log('[API] Fetching stock prices:', symbolList);
@@ -124,19 +155,8 @@ async function handleCurrentPrices(req, res, symbols, API_KEY, noCache) {
     let oldestTimestamp = null;
     dataArray.forEach(item => {
       if (item && item.code) {
-        const symbol = denormalizeSymbolFromEODHD(item.code.replace('.US', ''));
-        prices[symbol] = {
-          price: item.close || item.previousClose || 0,
-          previousClose: item.previousClose || 0,
-          open: item.open || 0,
-          change: item.change || 0,
-          changePercent: item.change_p || 0,
-          high: item.high || 0,
-          low: item.low || 0,
-          volume: item.volume,
-          timestamp: item.timestamp || null,
-          quoteOrigin: quoteOriginOf(item),
-        };
+        const symbol = stockPriceKey(item);
+        prices[symbol] = formatStockPriceRecord(item);
         // Track oldest timestamp for data age reporting
         if (item.timestamp && (!oldestTimestamp || item.timestamp < oldestTimestamp)) {
           oldestTimestamp = item.timestamp;

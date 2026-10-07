@@ -17,7 +17,7 @@ import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getFromCache, setInCache } from './serverCache.js';
 import { calculateAllIndicators } from './technicalCalculations.js';
-import { isMarketOpen, isPreMarketWindow, getEffectiveTTLMs, getMarketState, isEarlyCloseDay } from './marketSchedule.js';
+import { isMarketOpen, isPreMarketWindow, getEffectiveTTLMs, getMarketState, isEarlyCloseDay, getPreviousSessionDate, getETDate, formatDateString } from './marketSchedule.js';
 import { VALID_CRYPTO_SYMBOLS } from './agentCryptoAssets.js';
 
 // ============================================
@@ -544,6 +544,79 @@ async function fetchEarnings(eohdSymbol, apiKey) {
 }
 
 // ============================================
+// QW-1 (EODHD Quick Wins): the session-currency rule for the daily series
+// ============================================
+
+/**
+ * The `dailyPolicy` the evaluator passes when EODHD_QUICK_WINS_ENABLED is on
+ * (api/cron/agent-evaluate.js evaluatorQuoteOptions). Under it the daily series
+ * may be served from the shared cache — but ONLY while the regular session is
+ * open, ONLY when the cached series is TTL-fresh, and ONLY when its newest bar
+ * is exactly the prior completed session. Anything else re-fetches and writes
+ * through, and a series that failed the rule is never served, not even as a
+ * stale fallback. The real-time quote is never cached, as before.
+ *
+ * Why exactly-the-prior-session and not "newest completed bar": a cached series
+ * holding a today-dated (partial) bar would hand the quote-failure fallback
+ * below a different `daily[0]` than a fresh fetch, so it is refused outright.
+ * Guard 2 (baselineValidation.js selectPriorSessionBar) already ignores any bar
+ * dated on/after today, so a series that passes gives it the identical
+ * reference a fresh fetch gives. If EODHD ever adds a partial bar mid-session,
+ * this rule degrades to today's cost, never to a different number.
+ */
+export const DAILY_POLICY_SESSION_CURRENT = 'session_current';
+
+/** The UTC calendar date before `utcDate` ('YYYY-MM-DD'), or null if malformed. */
+export function previousUtcDate(utcDate) {
+  if (typeof utcDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(utcDate)) return null;
+  const [y, m, d] = utcDate.split('-').map(Number);
+  const prev = new Date(Date.UTC(y, m - 1, d - 1));
+  return Number.isNaN(prev.getTime()) ? null : prev.toISOString().slice(0, 10);
+}
+
+/**
+ * QW-1 — is a newest-first daily series current for THIS session?
+ *
+ * Current means `daily[0].date` equals the prior completed session: for a stock
+ * `getPreviousSessionDate(etToday)` from the calendar of record
+ * (src/utils/marketCalendar.js via marketSchedule.js), for crypto (24/7,
+ * UTC-dated bars) the previous UTC date. A null calendar answer (outside the
+ * maintained horizon) is NOT current — the caller re-fetches, never guesses.
+ *
+ * @param {Array<{date:string}>} daily - newest-first daily rows
+ * @param {{isCrypto:boolean, etToday:string, utcToday:string}} ctx
+ * @returns {{current:boolean, newest:(string|null), expected:(string|null), reason:(string|null)}}
+ */
+export function dailySeriesCurrency(daily, { isCrypto, etToday, utcToday }) {
+  const newest = Array.isArray(daily) && daily.length > 0 && typeof daily[0]?.date === 'string'
+    ? daily[0].date
+    : null;
+  const expected = isCrypto ? previousUtcDate(utcToday) : getPreviousSessionDate(etToday);
+  if (!expected) return { current: false, newest, expected: null, reason: 'calendar_missing' };
+  if (!newest) return { current: false, newest, expected, reason: 'empty' };
+  if (newest < expected) return { current: false, newest, expected, reason: 'stale_session' };
+  if (newest > expected) return { current: false, newest, expected, reason: 'current_day_bar' };
+  return { current: true, newest, expected, reason: null };
+}
+
+/** QW-1 — boolean form of dailySeriesCurrency, for callers that need only the verdict. */
+export function isDailySeriesSessionCurrent(daily, ctx) {
+  return dailySeriesCurrency(daily, ctx).current;
+}
+
+/**
+ * The price a failed real-time call falls back to: the newest daily close,
+ * flagged. ONE builder, so the quote-failure path below and the QW-1 re-fetch
+ * after it produce the same object. Undefined when there is no daily row.
+ */
+function dailyFallbackPrice(daily) {
+  if (daily && daily.length > 0) {
+    return { current: daily[0].close, fallback: true };
+  }
+  return undefined;
+}
+
+// ============================================
 // MAIN EXPORT: getStockAnalysisData
 // ============================================
 
@@ -555,10 +628,12 @@ async function fetchEarnings(eohdSymbol, apiKey) {
  * @param {boolean} options.forceRefresh - Bypass cache entirely
  * @param {string[]} options.fields - Only fetch specific fields (e.g., ['price', 'technicals'])
  * @param {string} options.type - Explicit 'crypto' or 'stock' type
+ * @param {string} [options.dailyPolicy] - DAILY_POLICY_SESSION_CURRENT (QW-1) or
+ *   absent. Ignored when forceRefresh is true.
  * @returns {object} Analysis data with cache status and stale data indicators
  */
 export async function getStockAnalysisData(symbol, options = {}) {
-  const { forceRefresh = false, fields = null, type = null } = options;
+  const { forceRefresh = false, fields = null, type = null, dailyPolicy = null } = options;
 
   const clean = getCleanSymbol(symbol);
   const isCrypto = type === 'crypto' || isCryptoSymbol(symbol);
@@ -584,6 +659,15 @@ export async function getStockAnalysisData(symbol, options = {}) {
 
   // Stale data tracking for fallback
   const staleBackup = {};
+
+  // QW-1: the session-currency policy, resolved ONCE per call. Outside the
+  // regular session (`currencyCtx` null) the daily series is fetched fresh
+  // exactly as `forceRefresh` would fetch it — the policy never reads the cache
+  // there. `forceRefresh` always wins.
+  const sessionPolicy = dailyPolicy === DAILY_POLICY_SESSION_CURRENT && !forceRefresh;
+  const currencyCtx = sessionPolicy && isMarketOpen()
+    ? { isCrypto, etToday: formatDateString(getETDate()), utcToday: new Date().toISOString().slice(0, 10) }
+    : null;
 
   // Fetch non-technical fields in parallel
   const nonTechnicalFields = requestedFields.filter(f => f !== 'technicals');
@@ -618,8 +702,30 @@ export async function getStockAnalysisData(symbol, options = {}) {
     const docKey = `${clean}_${fieldType}`;
     const ttlMs = CACHE_TTL[fieldType];
 
-    // Check cache unless force refresh
-    if (!forceRefresh) {
+    if (fieldType === 'daily' && sessionPolicy) {
+      // QW-1: serve the cache only under the session-currency rule. NOTHING
+      // from the cache enters staleBackup here: a series that failed the rule
+      // must never come back as a stale fallback (a failed fetch then leaves no
+      // series, exactly as a failed forced refresh does).
+      let reason = 'session_closed';
+      if (currencyCtx) {
+        const cached = await getCachedData(db, docKey, ttlMs, { isCrypto });
+        if (cached.data && !cached.isStale) {
+          const currency = dailySeriesCurrency(cached.data, currencyCtx);
+          if (currency.current) {
+            result.daily = cached.data;
+            result.cacheStatus.daily = 'hit';
+            console.log(`[MarketDataCache] QW1 DAILY_SERVED | key=${docKey} | newest=${currency.newest} | expected=${currency.expected} | source=${cached.source}`);
+            return;
+          }
+          reason = `${currency.reason} | newest=${currency.newest} | expected=${currency.expected}`;
+        } else {
+          reason = cached.data ? 'ttl_stale' : 'miss';
+        }
+      }
+      console.log(`[MarketDataCache] QW1 DAILY_REFETCH | key=${docKey} | reason=${reason}`);
+    } else if (!forceRefresh) {
+      // Check cache unless force refresh
       const cached = await getCachedData(db, docKey, ttlMs, { isCrypto });
       if (cached.data && !cached.isStale) {
         result[fieldType] = cached.data;
@@ -683,6 +789,32 @@ export async function getStockAnalysisData(symbol, options = {}) {
   // Get real-time price if requested
   if (!fields || fields.includes('price')) {
     await fetchRealTimePrice(eohdSymbol, apiKey, result);
+
+    // QW-1: a failed quote falls back to `daily[0].close`. When this call
+    // served the series from cache, re-fetch it first, so the fallback reads
+    // exactly the bar a forced refresh would have handed it — the end state is
+    // the forced-refresh path's own: a fresh series (or none, if the re-fetch
+    // fails) and the fallback built from it.
+    if (sessionPolicy && result.errors.price && result.cacheStatus.daily === 'hit') {
+      const docKey = `${clean}_daily`;
+      console.log(`[MarketDataCache] QW1 DAILY_REFETCH | key=${docKey} | reason=quote_failed_fallback`);
+      delete result.price;
+      try {
+        const freshDaily = await fetchDailyOHLCV(eohdSymbol, apiKey);
+        result.daily = freshDaily;
+        result.cacheStatus.daily = 'fresh';
+        setCachedData(db, docKey, freshDaily, 'daily').catch(err =>
+          console.error(`[MarketDataCache] Background cache write failed for ${docKey}:`, err.message)
+        );
+      } catch (err) {
+        console.error(`[MarketDataCache] Fetch failed for daily (${clean}):`, err.message);
+        result.errors.daily = err.message;
+        delete result.daily;
+        delete result.cacheStatus.daily;
+      }
+      const fallback = dailyFallbackPrice(result.daily);
+      if (fallback) result.price = fallback;
+    }
   }
 
   return result;
@@ -764,12 +896,8 @@ async function fetchRealTimePrice(eohdSymbol, apiKey, result) {
     result.errors.price = err.message;
 
     // Use latest close from OHLCV as fallback
-    if (result.daily && result.daily.length > 0) {
-      result.price = {
-        current: result.daily[0].close,
-        fallback: true,
-      };
-    }
+    const fallback = dailyFallbackPrice(result.daily);
+    if (fallback) result.price = fallback;
   }
 }
 

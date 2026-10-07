@@ -19,6 +19,37 @@ function quoteOriginOf(item) {
   };
 }
 
+/**
+ * The EODHD real-time path segment for a client symbol list ("BTC,ETH" →
+ * "BTC-USD.CC,ETH-USD.CC"). Exported with the two builders below so the shared
+ * popular-list route (api/market/popular.js, EODHD Quick Wins QW-4) requests
+ * and files records EXACTLY as this route does — one source, never a copy.
+ */
+export function cryptoRealtimeSymbolList(symbolsCsv) {
+  return symbolsCsv.split(',').map(s => `${s.trim()}-USD.CC`).join(',');
+}
+
+/** The key a real-time item is filed under ("BTC-USD.CC" → "BTC"). */
+export function cryptoPriceKey(item) {
+  return item.code.split('-')[0];
+}
+
+/** One EODHD real-time item → the record this route returns. */
+export function formatCryptoPriceRecord(item) {
+  return {
+    price: item.close || item.previousClose || 0,
+    previousClose: item.previousClose || 0,
+    open: item.open || 0,
+    change: item.change || 0,
+    changePercent: item.change_p || 0,
+    high: item.high,
+    low: item.low,
+    volume: item.volume,
+    timestamp: item.timestamp,
+    quoteOrigin: quoteOriginOf(item),
+  };
+}
+
 export default async function handler(req, res) {
   // Apply security middleware (CORS, security headers, rate limiting, preflight)
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 60, windowMs: 60000 } })) {
@@ -52,7 +83,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const symbolList = symbols.split(',').map(s => `${s.trim()}-USD.CC`).join(',');
+    const symbolList = cryptoRealtimeSymbolList(symbols);
     const url = `https://eodhd.com/api/real-time/${symbolList}?api_token=${API_KEY}&fmt=json`;
 
     console.log('[API] Fetching crypto prices:', symbolList);
@@ -71,19 +102,8 @@ export default async function handler(req, res) {
 
     dataArray.forEach(item => {
       if (item && item.code) {
-        const symbol = item.code.split('-')[0]; // "BTC-USD.CC" -> "BTC"
-        prices[symbol] = {
-          price: item.close || item.previousClose || 0,
-          previousClose: item.previousClose || 0,
-          open: item.open || 0,
-          change: item.change || 0,
-          changePercent: item.change_p || 0,
-          high: item.high,
-          low: item.low,
-          volume: item.volume,
-          timestamp: item.timestamp,
-          quoteOrigin: quoteOriginOf(item),
-        };
+        const symbol = cryptoPriceKey(item); // "BTC-USD.CC" -> "BTC"
+        prices[symbol] = formatCryptoPriceRecord(item);
       }
     });
 
