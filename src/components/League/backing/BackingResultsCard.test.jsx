@@ -16,7 +16,7 @@ import { describe, it, expect } from 'vitest';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
 import BackingResultsCard, { BackingResultsCardDesk, stakeOutcomeWords } from './BackingResultsCard';
-import { DESK, RESULTS } from './backingCopy';
+import { DESK, RESULTS, WEEK } from './backingCopy';
 import { findForbiddenTerm } from '../../../constants/backingLexicon';
 
 // D-af (Amendment C §C1): the projection names every team — `label` the
@@ -157,6 +157,20 @@ describe('a refunded, insufficient or settling pool is stated plainly', () => {
       expect(t).not.toContain('had they won');
       expect(t).not.toContain('Winner');
     }
+  });
+
+  it('item G (the backing QA round 3) — beside EVERY refunded / void outcome the card says the BP went to the RECORD, not the week\'s allowance — mobile and desktop; never on a settled pool; the lexicon holds (MUTATION: dropping the note from either voided block reds this)', () => {
+    const deskText = (pod) => renderToString(<BackingResultsCardDesk pod={pod} />).replace(/<[^>]+>/g, ' ').replace(/&#x27;/g, '’').replace(/\s+/g, ' ');
+    for (const pod of [voided('refunded', 'group_voided'), voided('refunded', 'admin'), voided('insufficient', null)]) {
+      expect(render(pod)).toContain('data-backing="results-refund-note"');
+      expect(text(pod)).toContain(RESULTS.toRecord);
+      expect(deskText(pod)).toContain(RESULTS.toRecord);
+      expect(text(pod)).toContain('Refunded BP go back to your record, not to this week’s allowance.');
+    }
+    expect(render(settled())).not.toContain('results-refund-note');
+    expect(text(settled())).not.toContain(RESULTS.toRecord);
+    expect(deskText(settled())).not.toContain(RESULTS.toRecord);
+    for (const line of [RESULTS.toRecord, WEEK.cancelled]) expect(findForbiddenTerm(line), line).toBeNull();
   });
 
   it('insufficient: the participation-minimum statement', () => {

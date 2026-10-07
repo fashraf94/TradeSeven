@@ -318,3 +318,62 @@ describe('the PR 4 review record — refutation pass (R-A-6)', () => {
     expect(html).toContain('BACKING CLOSED FOR THE WEEK');
   });
 });
+
+// ═══ THE BACKING QA ROUNDS 1–3 (docs/audits/20261007_BACKING_QA_FIXES_BUILD_REPORT.md) ═══
+describe('item D (OBS-001) — an AGENT-LESS seat says what is there, not what is not', () => {
+  const agentless = () => { const c = firstWeek(); c.team.agent = null; c.team.label = 'Draco'; c.team.secondary = null; return c; };
+  const text = (html) => html.replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/&#x27;/g, '’').replace(/\s+/g, ' ');
+
+  it('first week: the body names the pitch and the known facts — no approach, no loadout, no "{player}’s agent"; the CTA names the player alone; the agent row is the seat', () => {
+    const html = render(agentless());
+    const t = text(html);
+    expect(html).toContain('data-agentless="true"');
+    expect(t).toContain('What you have: their pitch and the known facts below. The three-stock draft lands Monday — after this pool closes.');
+    expect(t).toContain('No agent on this seat yet.');
+    expect(t).toContain('Agent seat');
+    expect(t).toContain('Back Draco');
+    expect(t).not.toContain('Back Draco &');
+    for (const gone of ['approach', 'loadout', '’s agent', 'contents private']) expect(t, gone).not.toContain(gone);
+    expect(html).not.toContain('data-backing="approach"');
+    expect(html).not.toContain('data-backing="loadout"');
+  });
+
+  it('…and with no pitch either: the known facts alone', () => {
+    const c = agentless(); c.team.pitch = null;
+    const t = text(render(c));
+    expect(t).toContain('What you have: the known facts below — no pitch yet.');
+    expect(t).not.toContain('’s agent');
+  });
+
+  it('no tape (completed weeks, none readable): the pitch and the known facts — no approach', () => {
+    const c = agentless(); c.known = { rp: 100, tier: 1, tierName: 'Rookie', weeksPlayed: 1, priorFinishes: [3] };
+    const html = render(c);
+    expect(html).toContain('data-backing="tape-none"');
+    const t = text(html);
+    expect(t).toContain('Judge the team as stated: the pitch and the known facts below.');
+    expect(t).not.toContain('the approach');
+    expect(t).not.toContain('’s agent');
+  });
+
+  it('a slot pod and a closed pool keep their draft sentences on the agent-less body too', () => {
+    expect(text(render(agentless(), openPod({ formationPath: 'slot', slotId: 'wed-1900' })))).toContain('What you have: their pitch and the known facts below. The three-stock draft lands at the slot’s fire — the moment this pool closes.');
+    expect(text(render(agentless(), openPod({ pool: { status: 'closed', closesAt: '2026-09-28T03:59:59.000Z' } })))).toContain('This pool has closed; the three-stock draft follows.');
+  });
+
+  it('MUTATION — the seat WITH an agent reads as before: the approach, the loadout counts, the two-name CTA, no "Agent seat" (so the agent-less branch is the only change)', () => {
+    const html = render(firstWeek());
+    expect(html).not.toContain('data-agentless');
+    expect(html).toContain('a 3-trait, 5-rule loadout');
+    expect(html).toContain('Back Draco &amp; Tarn');
+    expect(html).toContain('Tarn’s stated approach');
+    expect(html).not.toContain('Agent seat');
+  });
+
+  it('an agent that EXISTS but is unnamed (the belt refused an id-shaped name, RAWID-2) keeps "{player}’s agent" — that one is true', () => {
+    const c = firstWeek(); c.team.agent = { ...c.team.agent, name: null };
+    const t = text(render(c));
+    expect(t).toContain('Draco’s agent’s stated approach');
+    expect(t).toContain('Back Draco & Draco’s agent');
+    expect(t).not.toContain('Agent seat');
+  });
+});

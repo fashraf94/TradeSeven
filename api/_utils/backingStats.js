@@ -39,7 +39,11 @@
 // battle-Monday month; the "current season" is the ET month of `now`. DEV
 // POOLS ARE SKIPPED (§6's namespace): a founder smoke's dev stakes debit a
 // `dev-` wallet, and mixing them into a production record would be two
-// ledgers in one number. The skip is counted, not silent.
+// ledgers in one number. The skip is counted, not silent. ONE NAMESPACE PER
+// RECORD: a caller may instead ask for the DEV record (`namespace: 'dev'` —
+// the my-stats route, for a smoke session, whose wallet and pools are all
+// dev; BUG-002, the backing QA round 2), and then PRODUCTION pools are the
+// ones skipped. The two never meet in one figure.
 //
 // READS, bounded — and one write every pool reader makes. My stats: the
 // viewer's own stakes (one query), one pool per distinct pod, one rank doc per
@@ -401,12 +405,19 @@ function netEffectOf(stake) {
 }
 const emptyAccuracy = () => ({ pools: 0, youWon: 0, baselineWon: 0, both: 0, excluded: 0 });
 
+/** The two namespaces a record can be computed in — never both in one. */
+export const STATS_NAMESPACE = Object.freeze({ PRODUCTION: 'production', DEV: 'dev' });
+
 /**
  * MY STATS, pure. `stakes` are the viewer's own; `poolsByGroup` is groupId →
  * { poolId, pool }; `ranksByTeam` is odUserId → rank doc for the baseline;
- * `wallet` is the viewer's production wallet document (or null).
+ * `wallet` is the viewer's wallet document of the SAME namespace (or null):
+ * the production wallet with `namespace: 'production'` (the default — dev
+ * pools skipped), the `dev-{uid}` wallet with `namespace: 'dev'` (production
+ * pools skipped). The skipped side is counted, never mixed in.
  */
-export function computeMyStats({ stakes = [], poolsByGroup = new Map(), ranksByTeam = new Map(), wallet = null, now = new Date(), excluded = new Set() } = {}) {
+export function computeMyStats({ stakes = [], poolsByGroup = new Map(), ranksByTeam = new Map(), wallet = null, now = new Date(), excluded = new Set(), namespace = STATS_NAMESPACE.PRODUCTION } = {}) {
+  const devRecord = namespace === STATS_NAMESPACE.DEV;
   const season = currentSeasonKey(now);
   const career = emptyMine();
   const seasons = {};
@@ -414,6 +425,7 @@ export function computeMyStats({ stakes = [], poolsByGroup = new Map(), ranksByT
   const weeksCareer = new Set();
   const weeksBySeason = {};
   let devPoolsSkipped = 0;
+  let productionPoolsSkipped = 0;
   let unknownPools = 0;
   // NET BP FOLLOWS ONE DEFINITION IN BOTH COLUMNS (§2: Σ payouts + Σ refunds
   // − Σ stakes, an in-play stake counted from the moment it is placed). The
@@ -439,7 +451,10 @@ export function computeMyStats({ stakes = [], poolsByGroup = new Map(), ranksByT
     let mine = mineAll;
     const located = poolsByGroup.get(groupId) ?? null;
     if (!located?.pool) { unknownPools += 1; continue; }
-    if (located.isDev === true || (typeof located.poolId === 'string' && located.poolId.startsWith('dev-'))) { devPoolsSkipped += 1; continue; }
+    // THE OTHER NAMESPACE'S POOL IS SKIPPED, whichever record this is.
+    const devPool = located.isDev === true || (typeof located.poolId === 'string' && located.poolId.startsWith('dev-'));
+    if (devPool && !devRecord) { devPoolsSkipped += 1; continue; }
+    if (!devPool && devRecord) { productionPoolsSkipped += 1; continue; }
     const pool = located.pool;
     const monthKey = monthKeyOfPool(pool);
     const bucket = monthKey ? (seasons[monthKey] ??= emptyMine(monthKey)) : null;
@@ -522,6 +537,7 @@ export function computeMyStats({ stakes = [], poolsByGroup = new Map(), ranksByT
 
   return {
     label: BETA_STATS_LABEL,
+    namespace: devRecord ? STATS_NAMESPACE.DEV : STATS_NAMESPACE.PRODUCTION,
     seasonKey: season,
     net: { career: careerNet, season: netFor(season) },
     career: { ...career, net: careerNet },
@@ -530,6 +546,7 @@ export function computeMyStats({ stakes = [], poolsByGroup = new Map(), ranksByT
     accuracy: { career: accuracy.career, season: accuracy.seasons[season] ?? emptyAccuracy(), seasons: accuracy.seasons },
     excludedStakes,
     devPoolsSkipped,
+    productionPoolsSkipped,
     unknownPools,
   };
 }

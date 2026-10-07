@@ -309,13 +309,39 @@ describe('WIRE-R-2 — a pod CANCELLED after its pool closed never reads "plays 
     ['EXPIRED', group({ status: 'expired', dailyScores: {} })],
     ['GONE (the group read answered with no document)', null],
   ]) {
-    it(`${name}: the card reads "This pod was cancelled — your stake will be returned." until the refund lands — mobile and desktop`, () => {
+    it(`${name}: the card reads "This pod was cancelled. Your stake will be refunded to your record." until the refund lands — mobile and desktop`, () => {
       expectCancelledCard(render({ inPlay: cancelledPod({ g }) }));
       expectCancelledCard(render({ inPlay: cancelledPod({ g }), layout: 'desktop' }));
       // A held pool (resolving) is cancelled the same way.
       expectCancelledCard(render({ inPlay: cancelledPod({ g, pool: { status: 'resolving' } }) }));
     });
   }
+
+  it('item G (the backing QA round 3) — the cancelled line says WHERE the points go ("refunded to your record"), never that they come back to spend; no refund line until the refund lands', () => {
+    expect(WEEK.cancelled).toBe('This pod was cancelled. Your stake will be refunded to your record.');
+    expect(WEEK.cancelled).not.toMatch(/returned|back to you|spend/i);
+    const t = text(render({ inPlay: cancelledPod({ g: group({ status: 'voided' }) }) }));
+    expect(t).toContain(WEEK.cancelled);
+    expect(t).not.toContain(RESULTS.toRecord);
+  });
+
+  it('item G — once the refund lands, and on every VOID outcome, the card says the BP went to the record, not the allowance — mobile and desktop; never on a settled pool (MUTATION: dropping RefundNote reds this)', () => {
+    expect(RESULTS.toRecord).toBe('Refunded BP go back to your record, not to this week’s allowance.');
+    for (const layout of ['mobile', 'desktop']) {
+      const landed = render({ inPlay: cancelledPod({ g: group({ status: 'voided' }), pool: { status: 'refunded', refundReason: 'group_voided' }, stakeOver: { status: 'voided' } }), layout });
+      expect(landed, layout).toContain('data-backing="week-refund-note"');
+      expect(text(landed), layout).toContain(RESULTS.reason.group_voided);
+      expect(text(landed), layout).toContain(RESULTS.toRecord);
+      // A pool that closed below the floor (void, not cancelled) says so too…
+      const insufficient = render({ inPlay: cancelledPod({ g: group({ status: 'complete' }), pool: { status: 'insufficient' }, stakeOver: { status: 'voided' } }), layout });
+      expect(insufficient, layout).toContain('data-backing="week-refund-note"');
+      expect(text(insufficient), layout).toContain(RESULTS.toRecord);
+      // …and a settled (resolved) pool does not.
+      const resolved = render({ inPlay: cancelledPod({ g: group({ status: 'complete' }), pool: { status: 'resolved' }, stakeOver: { status: 'won' } }), layout });
+      expect(resolved, layout).not.toContain('week-refund-note');
+      expect(text(resolved), layout).not.toContain(RESULTS.toRecord);
+    }
+  });
 
   it('a pod whose group read has NOT landed is not taken for a missing one — it reads as it did (nothing guessed)', () => {
     const html = render({ inPlay: cancelledPod({ answered: false }) });

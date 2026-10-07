@@ -120,6 +120,13 @@ function BackingScreenLive({ uid, accent, viewport, onBack, onOpenTape, initialS
   const eligibility = useEligibility(uid, Boolean(uid));
   const myPitch = useMyPitch(uid, Boolean(uid));
   const [view, setView] = useState({ kind: 'list', groupId: null, odUserId: null });
+  // Desktop only (BUG-001, the backing QA rounds 1–3): how many times the
+  // viewer has entered the stake control. The desktop layout keeps the
+  // control mounted for the whole `stake` view, and the card's "Add to your N
+  // on {team}" sets the view to the `stake` it already is — so, keyed on this
+  // count, every "Back" / "Add" mounts a FRESH control instead of leaving the
+  // last receipt in place. Mobile's control mounts fresh by its own view swap.
+  const [stakeEntry, setStakeEntry] = useState(0);
   const cardQuery = useTeamCard(view.groupId, view.odUserId, view.kind !== 'list');
   // Desktop only: the section asked for — the strip's own (the section its
   // state points to, or the window for "Back a team") and then the viewer's
@@ -236,7 +243,9 @@ function BackingScreenLive({ uid, accent, viewport, onBack, onOpenTape, initialS
         onSection={onSection}
         onBack={onBack}
         onOpenSeat={(groupId, odUserId) => setView((v) => (v.kind === 'card' && v.groupId === groupId && v.odUserId === odUserId ? v : { kind: 'card', groupId, odUserId }))}
-        onToStake={() => setView((v) => ({ ...v, kind: 'stake' }))}
+        // Every entry is a new one — the view may already be `stake` (BUG-001).
+        onToStake={() => { setStakeEntry((n) => n + 1); setView((v) => ({ ...v, kind: 'stake' })); }}
+        stakeEntry={stakeEntry}
         onToCard={toCard}
         onBacked={onBacked}
         onOpenTape={onOpenTape}

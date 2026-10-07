@@ -135,6 +135,8 @@ export default function BackingResultsCard({ pod, accent = LX.energy, onOpenTape
         <div data-backing="results-reason" style={{ marginBottom: 10, padding: '9px 11px', borderRadius: 11, background: alpha(LTOKENS.bg, 0.5), border: `1px dashed ${LTOKENS.hair2}` }}>
           <div style={{ fontSize: 12.5, color: LTOKENS.ink, lineHeight: 1.45 }}>{RESULTS.reason[reasonKey] ?? RESULTS.reasonFallback}</div>
           <div style={{ fontSize: 11.5, color: LTOKENS.ink3, lineHeight: 1.45, marginTop: 3 }}>{RESULTS.neutral}</div>
+          {/* Where the points went (the backing QA round 3): the record, never this week's allowance. */}
+          <div data-backing="results-refund-note" style={{ fontSize: 11.5, color: LTOKENS.ink3, lineHeight: 1.45, marginTop: 3 }}>{RESULTS.toRecord}</div>
         </div>
       )}
       {pod.outcome === 'settling' && (
@@ -221,6 +223,7 @@ export function BackingResultsCardDesk({ pod, accent = LX.energy, onOpenTape = n
         <div data-backing="results-reason" style={{ marginBottom: 12, padding: '9px 11px', borderRadius: 11, background: alpha(LTOKENS.bg, 0.5), border: `1px dashed ${LTOKENS.hair2}` }}>
           <div style={{ fontSize: 12.5, color: LTOKENS.ink, lineHeight: 1.45 }}>{RESULTS.reason[reasonKey] ?? RESULTS.reasonFallback}</div>
           <div style={{ fontSize: 11.5, color: LTOKENS.ink3, lineHeight: 1.45, marginTop: 3 }}>{RESULTS.neutral}</div>
+          <div data-backing="results-refund-note" style={{ fontSize: 11.5, color: LTOKENS.ink3, lineHeight: 1.45, marginTop: 3 }}>{RESULTS.toRecord}</div>
         </div>
       )}
       {pod.outcome === 'settling' && (

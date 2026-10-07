@@ -12,6 +12,12 @@
 //     own factory (createTournamentGroupDoc), stamped for the UPCOMING battle
 //     week (D-SEEDWEEK: the week the pool will belong to, never the formation
 //     week), marked `isDev` and carrying the smoke marker;
+//   · the two synthetic seats' AGENTS (the backing QA rounds 1–3, item E) —
+//     one `agents/{smk_agent_…}` document per pretend human seat, shaped like
+//     a real agent doc: a plain name (never id-shaped), an archetype the
+//     registry knows, a small loadout (the counts the team card shows), the
+//     seat uid as `ownerId`, `isDev` and the smoke marker — so the card shows
+//     the agent-name label, the archetype tag and the counts in a browser;
 //   · the synthetic five-day week `advance` banks — five entries in the
 //     banking writer's own shape, every human seat with a NON-ZERO agent half
 //     (D-ae: an all-zero agent layer holds settlement), one named winner;
@@ -38,6 +44,19 @@ export const SMOKE_PREFIX = 'smk_';
 export const SMOKE_TOOL = SMOKE_POD_TOOL;
 /** The two synthetic human seats' names — the pod's own `seatNames`, so the labels resolve without a users/ document. */
 export const SMOKE_SEAT_NAMES = Object.freeze(['Smoke Rival A', 'Smoke Rival B']);
+/**
+ * The two seats' agents (item E): a plain name the label belt accepts
+ * (`looksLikeAccountId` false — not a uid's shape, not a CPU id) and an
+ * archetype `getArchetypeDefinition` knows, so the card's tag and the
+ * backing-safe approach resolve. The loadout is decoration shaped as the card
+ * COUNTS it (team-card.js projectAgent: `equippedTraits.length`,
+ * `activeRules.length`); no rule ever runs — the pod never drafts, and the
+ * orchestrator never reads a smoke pod.
+ */
+export const SMOKE_AGENTS = Object.freeze([
+  Object.freeze({ name: 'Smoke Scout', archetype: 'analyst' }),
+  Object.freeze({ name: 'Smoke Sentry', archetype: 'momentum_chaser' }),
+]);
 /** Two CPU seats, numbered far above any lobby's reservation. */
 export const SMOKE_CPU_NS = Object.freeze([98, 99]);
 /** The synthetic backers' stakes: two backers, two teams, so the founder's own stake makes three backers on two teams. */
@@ -78,6 +97,8 @@ export function smokeIds(stamp) {
     seatUids: [`${SMOKE_PREFIX}seat_a_${stamp}`, `${SMOKE_PREFIX}seat_b_${stamp}`],
     backerUids: [`${SMOKE_PREFIX}backer_1_${stamp}`, `${SMOKE_PREFIX}backer_2_${stamp}`],
     cpuIds: SMOKE_CPU_NS.map((n) => cpuUserId(n)),
+    // The seats' agents (item E): document ids, never clone-shaped (isCloneAgentId).
+    agentIds: [`${SMOKE_PREFIX}agent_a_${stamp}`, `${SMOKE_PREFIX}agent_b_${stamp}`],
   };
 }
 
@@ -121,9 +142,57 @@ export function buildSmokeGroup({ ids, nowIso, userPool, founderUid = null }) {
       stamp: ids.stamp,
       createdAt: nowIso,
       backerUids: [...ids.backerUids],
+      // …and its seats' agents (item E), so a rebuilt run can name them too.
+      agentIds: [...ids.agentIds],
       ...(typeof founderUid === 'string' && founderUid.length > 0 ? { founderUid } : {}),
     },
   };
+}
+
+/**
+ * The two seats' agent documents (item E): `[{ id, doc }]`, one per synthetic
+ * human seat, `ownerId` the seat's uid. Shaped like the live `createAgent`
+ * document (src/services/agentService.js) at its server defaults — the
+ * fields the team card projects (name, archetype, equippedTraits,
+ * activeRules) carry the smoke's values; everything else is the zero shape —
+ * plus `isDev` and the smoke marker the cleanup verdict demands.
+ */
+export function buildSmokeAgents({ ids, nowIso }) {
+  return SMOKE_AGENTS.map((plan, i) => ({
+    id: ids.agentIds[i],
+    doc: {
+      ownerId: ids.seatUids[i],
+      name: plan.name,
+      archetype: plan.archetype,
+      archetypeDrift: null,
+      config: { risk: 50, concentration: 50, momentum: 50 },
+      personality: {},
+      avatarColors: ['#5eead4', '#a855f7'],
+      primaryColor: null,
+      memory: [],
+      consolidatedInsight: '',
+      directives: [],
+      // A SMALL LOADOUT — the counts the card shows (two traits, three rules).
+      activeRules: [
+        { ruleId: `${ids.agentIds[i]}_rule_1`, text: 'Hold the six through the first close.', category: 'exit', hardness: 'soft', source: SMOKE_TOOL },
+        { ruleId: `${ids.agentIds[i]}_rule_2`, text: 'No more than two names in one sector.', category: 'risk', hardness: 'soft', source: SMOKE_TOOL },
+        { ruleId: `${ids.agentIds[i]}_rule_3`, text: 'Swap only on a close below the Monday low.', category: 'exit', hardness: 'soft', source: SMOKE_TOOL },
+      ],
+      equippedTraits: [{ traitId: `${ids.agentIds[i]}_trait_patience` }, { traitId: `${ids.agentIds[i]}_trait_breadth` }],
+      equippedBundleIds: [],
+      equippedWatchlistId: null,
+      equippedWatchlistName: null,
+      equippedAt: null,
+      starterKitCompleted: false,
+      stats: { wins: 0, losses: 0, gamesPlayed: 0, totalScore: 0, avgScore: 0, currentStreak: 0, bestStreak: 0 },
+      evolutionCycle: 0,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      lastDeployedAt: null,
+      isDev: true,
+      smoke: { tool: SMOKE_TOOL, stamp: ids.stamp, createdAt: nowIso, groupId: ids.groupId },
+    },
+  }));
 }
 
 /**
@@ -151,6 +220,8 @@ export function runFromLiveGroup(groupId, group) {
     seatUids: players.filter((pl) => pl?.isCpu !== true && !isCpuUserId(pl?.odUserId)).map((pl) => pl.odUserId),
     cpuIds: players.filter((pl) => pl?.isCpu === true || isCpuUserId(pl?.odUserId)).map((pl) => pl.odUserId),
     backerUids,
+    // The seats' agents, from the marker (item E) — none for a pod seeded before it.
+    agentIds: Array.isArray(group.smoke.agentIds) ? group.smoke.agentIds.filter((a) => typeof a === 'string') : [],
     founderUid: typeof group.smoke.founderUid === 'string' ? group.smoke.founderUid : null,
     uids: [...backerUids],
     stakes: [],
@@ -308,11 +379,14 @@ export function ledgerInvariant(wallet, entries) {
  *   backingStakes/<id>[/private/meta]    the (parent) document's groupId is this run's pod AND its poolId this run's dev pool
  *   backingEvents/<id>                   a dev-marked event of one of this run's users
  *   tournamentGroups/<id>[/<sub>/<d>]    this run's pod, `isDev: true`, carrying the smoke marker
+ *   agents/<id>                          a seat's agent (item E): carries the smoke marker AND its
+ *                                        `ownerId` is one of THIS run's seat uids — both, or refused;
+ *                                        never a subcollection (the smoke writes none)
  *   anything else                        refused
  *
  * @param {string} path
  * @param {Object|null} doc the document's data (for a subcollection doc, its PARENT's data where the rule needs it)
- * @param {{groupId: string, poolId: string, uids: string[]}} run
+ * @param {{groupId: string, poolId: string, uids: string[], seatUids?: string[]}} run
  */
 export function devTargetVerdict(path, doc, run) {
   const parts = typeof path === 'string' ? path.split('/') : [];
@@ -351,6 +425,14 @@ export function devTargetVerdict(path, doc, run) {
       if (id !== run.groupId) return no("not this run's pod");
       if (doc?.isDev !== true) return no('a pod that is not isDev');
       if (doc?.smoke?.tool !== SMOKE_TOOL) return no('a pod without the smoke marker');
+      return { ok: true };
+    case 'agents':
+      // Item E: the marker AND the owner — a real player's agent carries
+      // neither; an agent the smoke marked for ANOTHER run's seat is that
+      // run's to sweep, not this one's.
+      if (sub !== undefined) return no('an unexpected subcollection');
+      if (doc?.smoke?.tool !== SMOKE_TOOL) return no('an agent without the smoke marker');
+      if (!Array.isArray(run?.seatUids) || !run.seatUids.includes(doc?.ownerId)) return no("an agent owned by a uid outside this run's seats");
       return { ok: true };
     default:
       return no('a collection this script never touches');

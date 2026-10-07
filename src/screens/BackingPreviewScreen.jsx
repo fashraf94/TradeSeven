@@ -758,6 +758,8 @@ function DeskScreenStage({ state, onNote, onLeagueNav, onOpenTape }) {
   const inPlay = week ? week.inPlay : nothingInPlay;
   const now = week ? week.now : PREVIEW_NOW;
   const [view, setView] = useState(cfg.view ?? LIST);
+  // The real screen's per-entry counter (BUG-001): every "Back" / "Add" mounts a fresh stake control.
+  const [stakeEntry, setStakeEntry] = useState(0);
   const [section, setSection] = useState(null);
   const [eligibility, setEligibility] = useState(cfg.attested === false ? ELIGIBILITY.REQUIRED : ELIGIBILITY.ATTESTED);
   const [pitchText, setPitchText] = useState(OWN_CARD.team.pitch ?? '');
@@ -809,7 +811,8 @@ function DeskScreenStage({ state, onNote, onLeagueNav, onOpenTape }) {
           onSection={(next) => { setSection(next); if (next !== DESK_SECTION.WINDOW) setView(LIST); }}
           onBack={onLeagueNav}
           onOpenSeat={(groupId, odUserId) => setView({ kind: 'card', groupId, odUserId })}
-          onToStake={() => setView((v) => ({ ...v, kind: 'stake' }))}
+          onToStake={() => { setStakeEntry((n) => n + 1); setView((v) => ({ ...v, kind: 'stake' })); }}
+          stakeEntry={stakeEntry}
           onToCard={() => setView((v) => ({ ...v, kind: 'card' }))}
           onBacked={() => onNote(NOTHING_SAVED)}
           onOpenTape={onOpenTape}

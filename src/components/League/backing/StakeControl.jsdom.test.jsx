@@ -35,7 +35,7 @@ vi.mock('../../../services/backingService', () => ({
   BackingApiError: class BackingApiError extends Error { constructor(code) { super(code); this.code = code; } },
 }));
 
-const { default: StakeControl, validateAmount } = await import('./StakeControl');
+const { default: StakeControl, receiptAllowance, validateAmount } = await import('./StakeControl');
 const { stakedOnTeam } = await import('./backingStakes');
 const { REFUSALS, STAKE } = await import('./backingCopy');
 
@@ -90,12 +90,27 @@ describe('the control, attested', () => {
     expect(html).not.toContain('aria-expanded');
   });
 
-  it('presets 100 / 250 / 500, the largest affordable selected by default; a tap changes the Confirm amount', async () => {
+  it('presets 100 / 250 / 500, the SMALLEST that fits selected by default — never the largest (founder ruling, the QA rounds 1–3 build, item B); a tap changes the Confirm amount', async () => {
     const { container } = await mount();
     expect([...container.querySelectorAll('[data-preset]')].map((b) => b.getAttribute('data-preset'))).toEqual(['100', '250', '500']);
-    expect(confirmButton(container).textContent).toBe('Confirm 500 BP');
+    expect(confirmButton(container).textContent).toBe('Confirm 100 BP');
+    expect(q(container, '[data-preset="100"]').getAttribute('style')).toContain('rgb(');
+    // The largest fits (1,000 left, nothing on the team) and is NOT pre-chosen.
+    expect(q(container, '[data-preset="500"]').disabled).toBe(false);
+    expect(confirmButton(container).textContent).not.toBe('Confirm 500 BP');
     await click(q(container, '[data-preset="250"]'));
     expect(confirmButton(container).textContent).toBe('Confirm 250 BP');
+  });
+
+  it('item B, the ladder: 100 when 100 fits; only less than 100 → the minimum stake (50) when it fits; less than 50 → nothing pre-chosen and Confirm waits (MUTATION: the old `reverse().find` default reds the first expectation)', async () => {
+    expect(confirmButton((await mount({ wallet: { known: true, left: 100, total: 1000 } })).container).textContent).toBe('Confirm 100 BP');
+    expect(confirmButton((await mount({ wallet: { known: true, left: 99, total: 1000 } })).container).textContent).toBe('Confirm 50 BP');
+    expect(confirmButton((await mount({ wallet: { known: true, left: 50, total: 1000 } })).container).textContent).toBe('Confirm 50 BP');
+    const none = await mount({ wallet: { known: true, left: 49, total: 1000 } });
+    expect(confirmButton(none.container).textContent).toBe(STAKE.confirmNone);
+    expect(confirmButton(none.container).disabled).toBe(true);
+    // The cap bounds it the same way: 450 on the team leaves 50 → the minimum.
+    expect(confirmButton((await mount({ pod: pod([{ stakeId: 's1', teamOdUserId: 'od-a', amount: 450, status: 'live' }]) })).container).textContent).toBe('Confirm 50 BP');
   });
 
   it('shows the allowance and the per-team cap from the wallet state and the viewer’s own stakes', async () => {
@@ -203,9 +218,9 @@ describe('D-ag — one stake per team per backer: a repeat backing TOPS UP (Amen
     expect(note).not.toBeNull();
     expect(note.textContent).toBe('Adds to your 150 BP on Kestrel.');
     expect(note.textContent).toBe(STAKE.addsTo(150, 'Kestrel'));
-    // The cap is on the TOTAL: 150 already, so 350 is the most this Confirm can add.
+    // The cap is on the TOTAL: 150 already, so 350 is the most this Confirm can add — and the smallest preset is pre-chosen (item B).
     expect(q(container, '[data-preset="500"]').disabled).toBe(true);
-    expect(confirmButton(container).textContent).toBe('Confirm 250 BP');
+    expect(confirmButton(container).textContent).toBe('Confirm 100 BP');
   });
 
   it('with no live stake on this team there is nothing to add to — no top-up sentence (a voided stake, or one on another team, is not this team\'s)', async () => {
@@ -219,6 +234,7 @@ describe('D-ag — one stake per team per backer: a repeat backing TOPS UP (Amen
   it('a top-up reply: "Backed" shows the stake\'s NEW total, and says what this Confirm added', async () => {
     svc.placeStake.mockResolvedValue({ replay: false, topUp: true, added: 250, stake: { id: 'stk_1', amount: 400 }, teamLabel: { label: 'Kestrel', secondary: 'Mira' }, pool: { status: 'open' }, allowanceRemaining: 600 });
     const { container } = await mount({ pod: pod([{ stakeId: 'stk_1', teamOdUserId: 'od-a', amount: 150, status: 'live' }]) });
+    await click(q(container, '[data-preset="250"]'));
     await click(confirmButton(container));
     await settle();
     expect(svc.placeStake.mock.calls[0][0]).toEqual({ groupId: 'g1', teamOdUserId: 'od-a', amount: 250, requestId: 'req-1' });
@@ -349,13 +365,16 @@ describe('the PR 4 review record — FAB-10, FAB-11, FAB-16 (docs/audits/2026092
 });
 
 describe('the PR 4 review record — refutation pass (R-A-8)', () => {
-  it('a wallet that becomes known after the control mounted still pre-chooses the largest affordable preset', async () => {
+  it('a wallet that becomes known after the control mounted still pre-chooses the default preset — the smallest that fits (item B), following the allowance and the cap until the viewer chooses', async () => {
     const { container, props } = await mount({ wallet: { known: false, left: null, total: 1000 } });
     expect(q(container, '[data-backing="wallet-checking"]')).not.toBeNull();
     const { root } = roots[roots.length - 1];
     await act(async () => { root.render(<StakeControl {...props} wallet={{ known: true, left: 1000, total: 1000 }} />); });
-    expect(confirmButton(container).textContent).toBe('Confirm 500 BP');
-    expect(q(container, '[data-preset="500"]').getAttribute('style')).toContain('rgb(');
+    expect(confirmButton(container).textContent).toBe('Confirm 100 BP');
+    expect(q(container, '[data-preset="100"]').getAttribute('style')).toContain('rgb(');
+    // The allowance shrinks under the viewer before they choose: the default follows it down to the minimum.
+    await act(async () => { root.render(<StakeControl {...props} wallet={{ known: true, left: 80, total: 1000 }} />); });
+    expect(confirmButton(container).textContent).toBe('Confirm 50 BP');
   });
 });
 
@@ -379,19 +398,21 @@ describe('the desktop layout — the same control, laid out as designed', () => 
     const { container } = await desk({ pod: topUpPod(), wallet: { known: true, left: 750, total: 1000 } });
     expect(q(container, '[data-backing="top-up"]')).not.toBeNull();
     expect(q(container, '[data-backing="top-up-held"]').textContent).toBe('250 BP');
-    expect(q(container, '[data-backing="top-up-adding"]').textContent).toBe('+250');
-    expect(q(container, '[data-backing="top-up-total"]').textContent).toBe('500');
+    // The smallest preset is pre-chosen (item B): +100, a new total of 350.
+    expect(q(container, '[data-backing="top-up-adding"]').textContent).toBe('+100');
+    expect(q(container, '[data-backing="top-up-total"]').textContent).toBe('350');
     expect(container.textContent).toContain(`of ${PER_TEAM_CAP_BP}`);
     // The presets read as additions; the one over the cap is disabled.
     expect([...container.querySelectorAll('[data-preset]')].map((b) => b.textContent)).toEqual(['+100', '+250', '+500']);
     expect(q(container, '[data-preset="500"]').disabled).toBe(true);
     // The confirm line rides the Confirm button itself, verbatim.
     expect(q(confirmButton(container), '[data-backing="top-up-note"]').textContent).toBe(STAKE.addsTo(250, 'Kestrel'));
-    expect(confirmButton(container).textContent).toContain('Confirm 250 BP');
+    expect(confirmButton(container).textContent).toContain('Confirm 100 BP');
     // The new total follows the amount chosen — the two figures Confirm sends.
-    await click(q(container, '[data-preset="100"]'));
-    expect(q(container, '[data-backing="top-up-adding"]').textContent).toBe('+100');
-    expect(q(container, '[data-backing="top-up-total"]').textContent).toBe('350');
+    await click(q(container, '[data-preset="250"]'));
+    expect(q(container, '[data-backing="top-up-adding"]').textContent).toBe('+250');
+    expect(q(container, '[data-backing="top-up-total"]').textContent).toBe('500');
+    expect(confirmButton(container).textContent).toContain('Confirm 250 BP');
   });
 
   it('a first stake has no top-up panel and no "Adds to" line', async () => {
@@ -404,6 +425,7 @@ describe('the desktop layout — the same control, laid out as designed', () => 
   it('Confirm is the same Confirm: a fresh requestId, "Backed" only from the server, the top-up\'s new total from the reply', async () => {
     svc.placeStake.mockResolvedValue({ ok: true, replay: false, topUp: true, added: 250, teamLabel: 'Kestrel', stake: { stakeId: 's1', teamOdUserId: 'od-a', amount: 500, status: 'live' }, allowanceRemaining: 500 });
     const { container } = await desk({ pod: topUpPod(), wallet: { known: true, left: 750, total: 1000 } });
+    await click(q(container, '[data-preset="250"]'));
     await click(confirmButton(container));
     await settle();
     expect(svc.placeStake).toHaveBeenCalledTimes(1);
@@ -428,5 +450,64 @@ describe('the desktop layout — the same control, laid out as designed', () => 
     expect(q(container, '[data-backing="stake-cancel"]')).toBeNull();
     expect(q(confirmButton(container), '[data-backing="top-up-note"]')).toBeNull();
     expect(q(container, '[data-backing="top-up-note"]').textContent).toBe(STAKE.addsTo(250, 'Kestrel'));
+  });
+});
+
+// ═══ THE BACKING QA ROUNDS 1–3 (docs/audits/20261007_BACKING_QA_FIXES_BUILD_REPORT.md) ═══
+describe('item C — the receipt shows the allowance left: the SERVER\'s number, or nothing', () => {
+  const debits = [{ entryId: 'stake:dbt_1', amount: 250, at: 'x' }];
+
+  it('the reply\'s own balance — the post-stake figure, never the wallet\'s pre-stake one (MUTATION: rendering `wallet.left` or `left − amount` reds this row — the wallet mock still says 1,000)', async () => {
+    svc.placeStake.mockResolvedValue({ replay: false, stake: { id: 'stk_1', amount: 250, debits }, pool: { status: 'open' }, allowanceRemaining: 750 });
+    const { container } = await mount({ wallet: { known: true, left: 1000, total: 1000, wallet: { appliedEntries: {} } } });
+    await click(q(container, '[data-preset="250"]'));
+    await click(confirmButton(container));
+    await settle();
+    const left = q(container, '[data-backing="backed-left"]');
+    expect(left).not.toBeNull();
+    expect(left.textContent).toBe(STAKE.remaining(750));
+    expect(left.textContent).toBe('750 BP left this week');
+    expect(q(container, '[data-backing="backed"]').textContent).not.toContain('1,000');
+  });
+
+  it('a reply without a balance (a replayed request): the wallet record ONLY once its snapshot carries this stake\'s debit; a lagging snapshot shows NOTHING — never the old figure', async () => {
+    svc.placeStake.mockResolvedValue({ replay: true, stake: { id: 'stk_1', amount: 250, debits }, allowanceRemaining: null });
+    const lagging = await mount({ wallet: { known: true, left: 1000, total: 1000, wallet: { appliedEntries: {} } } });
+    await click(confirmButton(lagging.container));
+    await settle();
+    expect(q(lagging.container, '[data-backing="backed"]')).not.toBeNull();
+    expect(q(lagging.container, '[data-backing="backed-left"]')).toBeNull();
+    expect(lagging.container.textContent).not.toContain('left this week');
+    // The snapshot catches up — it carries the debit — and its own figure shows.
+    const { root } = roots[roots.length - 1];
+    await act(async () => { root.render(<StakeControl {...lagging.props} wallet={{ known: true, left: 750, total: 1000, wallet: { appliedEntries: { 'stake:dbt_1': 'x' } } }} />); });
+    expect(q(lagging.container, '[data-backing="backed-left"]').textContent).toBe('750 BP left this week');
+  });
+
+  it('receiptAllowance, pure: the reply first; the wallet only when known and EVERY debit of the reply\'s stake is on its ledger; else null — never arithmetic', () => {
+    expect(receiptAllowance({ allowanceRemaining: 750 }, { known: true, left: 1000 })).toBe(750);
+    expect(receiptAllowance({ allowanceRemaining: 0 }, null)).toBe(0);
+    expect(receiptAllowance({ allowanceRemaining: null, stake: { debits } }, { known: true, left: 750, wallet: { appliedEntries: { 'stake:dbt_1': 'x' } } })).toBe(750);
+    expect(receiptAllowance({ allowanceRemaining: null, stake: { debits } }, { known: true, left: 1000, wallet: { appliedEntries: {} } })).toBeNull();
+    expect(receiptAllowance({ allowanceRemaining: null, stake: { debits } }, { known: false, left: null, wallet: null })).toBeNull();
+    expect(receiptAllowance({ allowanceRemaining: null, stake: { amount: 250 } }, { known: true, left: 750, wallet: { appliedEntries: { 'stake:dbt_1': 'x' } } })).toBeNull();
+    expect(receiptAllowance({ allowanceRemaining: null, stake: { debits: [...debits, { entryId: 'stake:dbt_2', amount: 100 }] } }, { known: true, left: 650, wallet: { appliedEntries: { 'stake:dbt_1': 'x' } } })).toBeNull();
+    expect(receiptAllowance(null, { known: true, left: 1000 })).toBeNull();
+  });
+});
+
+describe('item D — an agent-less seat\'s title names the player alone', () => {
+  it('"Back Mira" — never "& Mira’s agent" — on both layouts; an agent that exists UNNAMED keeps the fallback (RAWID-2)', async () => {
+    const solo = card(); solo.team.agent = null; solo.team.label = 'Mira'; solo.team.secondary = null;
+    const mobile = await mount({ card: solo });
+    expect(q(mobile.container, '[data-backing="stake-control"]').textContent).toContain(STAKE.titleSolo('Mira'));
+    expect(mobile.container.textContent).toContain('Back Mira');
+    expect(mobile.container.textContent).not.toContain('’s agent');
+    const desk = await mount({ card: solo, layout: 'desktop', onCancel: vi.fn() });
+    expect(desk.container.textContent).toContain('Back Mira');
+    expect(desk.container.textContent).not.toContain('’s agent');
+    const unnamed = card(); unnamed.team.agent = { ...unnamed.team.agent, name: null };
+    const named = await mount({ card: unnamed });
+    expect(named.container.textContent).toContain('Back Mira & Mira’s agent');
   });
 });

@@ -211,6 +211,12 @@ export const CARD = Object.freeze({
   agentRole: 'agent · runs 6',
   agentFallbackName: (displayName) => `${displayName}’s agent`,
   noAgent: 'No agent on this seat yet.',
+  // A seat with NO agent (the projection's `agent: null` — the owner has no
+  // agent document, or only clones): the agent row is named as the SEAT, never
+  // as "{player}'s agent" — a name for something that does not exist (the
+  // backing QA rounds 1–3, OBS-001). `agentFallbackName` stays for an agent
+  // that EXISTS but whose name the label belt refused as id-shaped (RAWID-2).
+  agentSeat: 'Agent seat',
   // The house's seat, as it is actually played: the three come off a fixed
   // board (a ranked-pool slice, no archetype in it — leagueTournament.js
   // buildCpuUserBoard), the six by the archetype's rankings; the house also
@@ -254,11 +260,16 @@ export const CARD = Object.freeze({
     // When the three land depends on how the pod formed: a lobby pod drafts
     // on its Monday; a live-draft (slot) pod drafts at its fire, the instant
     // its pool closes (spec §4; FAB-4, the PR 4 review record).
-    firstWeekBody: ({ hasPitch, agentName, traits, rules, formationPath, poolOpen = true }) => {
-      const loadout = Number.isInteger(traits) && Number.isInteger(rules) ? `a ${traits}-trait, ${rules}-rule loadout` : 'a loadout whose contents stay private';
+    // AGENT-LESS (`hasAgent: false` — the projection's `agent: null`; the
+    // backing QA rounds 1–3, OBS-001): the line names what IS there — the
+    // pitch and the known facts — and nothing about an approach, a loadout or
+    // an agent that does not exist.
+    firstWeekBody: ({ hasPitch, agentName, traits, rules, formationPath, poolOpen = true, hasAgent = true }) => {
       // Once the pool has closed the draft is no longer "after this pool closes" (R-A-6).
       const draft = !poolOpen ? 'This pool has closed; the three-stock draft follows.'
         : formationPath === 'slot' ? 'The three-stock draft lands at the slot’s fire — the moment this pool closes.' : 'The three-stock draft lands Monday — after this pool closes.';
+      if (!hasAgent) return `${hasPitch ? 'What you have: their pitch and the known facts below.' : 'What you have: the known facts below — no pitch yet.'} ${draft}`;
+      const loadout = Number.isInteger(traits) && Number.isInteger(rules) ? `a ${traits}-trait, ${rules}-rule loadout` : 'a loadout whose contents stay private';
       return `What you have: ${hasPitch ? 'their pitch' : 'no pitch yet'}, ${agentName}’s stated approach, and ${loadout}. ${draft}`;
     },
     // A team with completed weeks whose tape could not be read: said plainly,
@@ -266,6 +277,8 @@ export const CARD = Object.freeze({
     noTapeTitle: 'No tape on file',
     noTapeSub: 'Completed weeks exist; none could be read back.',
     noTapeBody: 'Judge the team as stated: the pitch, the approach, the known facts below.',
+    // …and the agent-less seat's (OBS-001): no approach to judge.
+    noTapeBodySolo: 'Judge the team as stated: the pitch and the known facts below.',
     cpuTitle: 'CPU seat · no history',
     cpuSub: (archetypeLabel) => `The ${archetypeLabel} archetype runs the six`,
     cpuBody: 'The house picks three from a fixed board; the agent runs its six by the archetype’s rankings. No owner behind the seat.',
@@ -291,6 +304,8 @@ export const CARD = Object.freeze({
     closed: 'BACKING CLOSED FOR THE WEEK',
     backedPrefix: (amount) => `BACKED · ${bp(amount)} BP · `,
     back: (name, agentName) => `Back ${name} & ${agentName}`,
+    // The agent-less seat's CTA (OBS-001): the player alone — never "& {player}'s agent".
+    backSolo: (name) => `Back ${name}`,
     addTo: (amount, name) => `Add to your ${bp(amount)} on ${name}`,
   }),
 });
@@ -353,6 +368,8 @@ export const STAKE_PRESETS = Object.freeze([100, 250, 500]);
 export const STAKE = Object.freeze({
   eyebrow: 'Back this team',
   title: (name, agentName) => `Back ${name} & ${agentName}`,
+  // The agent-less seat's title (OBS-001): the player alone.
+  titleSolo: (name) => `Back ${name}`,
   presets: 'Amount',
   custom: 'Custom amount',
   customPlaceholder: (max) => `${MIN_STAKE_BP}–${bp(max)}`,
@@ -479,9 +496,13 @@ export const WEEK = Object.freeze({
     // own words for a refunded pool (RESULTS.outcome.refunded).
     cancelled: 'Cancelled',
   }),
-  // The card's line for that pod until the refund lands (the build prompt's
-  // words, verbatim); then the refund's own reason (RESULTS.reason).
-  cancelled: 'This pod was cancelled — your stake will be returned.',
+  // The card's line for that pod until the refund lands; then the refund's
+  // own reason (RESULTS.reason). It says WHERE the points go: a refund
+  // restores the RECORD — careerNet and the season net — and never this
+  // week's spendable allowance (`creditRefund`, backingWallet.js, spec §2;
+  // the backing QA round 3: "will be returned" read as points to spend).
+  // Placeholder words counsel may revise at the flip — one constant, one home.
+  cancelled: 'This pod was cancelled. Your stake will be refunded to your record.',
 });
 
 // ==================== THE RESULTS CARD (Surface E — PR 5) ====================
@@ -552,6 +573,13 @@ export const RESULTS = Object.freeze({
   }),
   reasonFallback: 'Every stake in this pool was refunded.',
   neutral: 'Refunds are score-neutral: your record shows no change from this pool.',
+  // Beside EVERY refunded / void outcome — the results card and Your Backing:
+  // where the points go. A refund credits the RECORD and never this week's
+  // allowance (`creditRefund` leaves `allowanceRemaining` alone — spec §2;
+  // the backing QA round 3: the tester's allowance stayed at 800, correctly,
+  // and nothing on screen said so). Placeholder words counsel may revise at
+  // the flip — one constant, one home.
+  toRecord: 'Refunded BP go back to your record, not to this week’s allowance.',
   settling: 'This pod is complete; its pool settles shortly.',
   // A closed pool whose pod is STILL PLAYING (the Spectate path can ask for
   // one): the truth, never "complete" (HON-3).

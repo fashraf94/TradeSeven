@@ -7,11 +7,14 @@
 //
 //   seed     create an isDev lobby pod stamped for the UPCOMING battle week
 //            (D-SEEDWEEK — the week the pool will belong to, not the
-//            formation week), two synthetic human seats + two CPU seats,
-//            materialize its pool (`dev-{groupId}`), and place two synthetic
-//            backers' stakes THROUGH THE REAL STAKE PRIMITIVE (placeStake) —
-//            so the founder's own stake, on the preview, makes three backers
-//            on two teams.
+//            formation week), two synthetic human seats + two CPU seats, one
+//            smoke-marked AGENT per synthetic seat (a plain name, an
+//            archetype, a small loadout — so the team card shows the
+//            agent-name label, the tag and the counts; the backing QA rounds
+//            1–3, item E), materialize its pool (`dev-{groupId}`), and place
+//            two synthetic backers' stakes THROUGH THE REAL STAKE PRIMITIVE
+//            (placeStake) — so the founder's own stake, on the preview, makes
+//            three backers on two teams.
 //   advance  with the founder's stake in: close the pool at a simulated
 //            instant, bank a synthetic five-day week into the dev group so one
 //            team wins, move it to `complete`, and settle through the real
@@ -44,9 +47,18 @@
 //                                                stake's `groupId` is this pod's
 //   backingWallets/dev-{uid} (+ entries/*)       every backer's DEV wallet
 //   backingEvents/stake_confirmed:dev:…, dev:bev_…   the smoke's telemetry, dev-marked
+//   agents/smk_agent_…                       the two synthetic seats' agents — isDev,
+//                                            smoke-marked, owned by the seat uids (never
+//                                            by a real player); the ONLY agents this
+//                                            script writes or deletes, and the cleanup
+//                                            verdict admits one only with the marker AND
+//                                            an owner among this run's seats
 // NEVER: eligibility/* (the founder's attestation is his real consent record,
-// written by the attest door on the preview and left alone), users/*, agents/*,
-// agentBattles/*, tournamentRanks/*, anything the orchestrator reads.
+// written by the attest door on the preview and left alone), users/*, any
+// other agents/* document, agentBattles/*, tournamentRanks/*, anything the
+// orchestrator reads. The agent writes and deletes pass the composition
+// write-epoch fence (assertWriteEpochOpen — zero I/O while that fence is dark),
+// as every admin-CLI writer of a protected store does.
 //
 // Needs the same creds as the serverless functions — FIREBASE_PROJECT_ID /
 // FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY — from .env.local in the repo
@@ -83,12 +95,14 @@ import { SETTLEMENT_SOURCE, refundPool, settlePool, winningSet } from '../api/_u
 import { STAKE_META_DOC, STAKE_PRIVATE_SUBCOLLECTION, placeStake } from '../api/_utils/backingStake.js';
 import { hashFingerprint } from '../api/_utils/backingFingerprint.js';
 import { BACKING_EVENTS_COLLECTION } from '../api/_utils/backingEvents.js';
+import { assertWriteEpochOpen } from '../api/_utils/compositionWriteEpoch.js';
 import { TOURNAMENT_GROUPS_COLLECTION, GROUP_STATUS, isWeekBanked } from '../src/constants/leagueTournament.js';
 import {
   MANIFEST_RELATIVE,
   SMOKE_STAKES,
   SMOKE_TOOL,
   addRun,
+  buildSmokeAgents,
   buildSmokeGroup,
   buildSyntheticWeek,
   devTargetVerdict,
@@ -227,6 +241,7 @@ async function seed(db) {
   try { userPool = await fetchRankedUserPool(db); } catch (err) { say(`(the ranked universe is unreadable — ${err.message}; using the fallback list)`); }
   const groupDoc = buildSmokeGroup({ ids, nowIso, userPool, founderUid: flags.founder });
   const group = { id: ids.groupId, ...groupDoc };
+  const agents = buildSmokeAgents({ ids, nowIso });
 
   // THE WINDOW MUST BE OPEN AND LONG ENOUGH — the same rule the production
   // path applies, run BEFORE anything is written, so a Sunday seed refuses
@@ -249,6 +264,7 @@ async function seed(db) {
   say(`Pod:      tournamentGroups/${ids.groupId}   (isDev, forming, lobby)`);
   say(`Pool:     backingPools/${ids.poolId}   closes ${et(eligibility.closesAt)} (${eligibility.closeReason})`);
   say(`Seats:    ${nameOf(group, ids.seatUids[0])} (${ids.seatUids[0]}), ${nameOf(group, ids.seatUids[1])} (${ids.seatUids[1]}), ${ids.cpuIds.join(', ')}`);
+  say(`Agents:   ${agents.map(({ id, doc }) => `agents/${id} — ${doc.name} (${doc.archetype}) for ${nameOf(group, doc.ownerId)}`).join('; ')}`);
   say(`Backers:  ${ids.backerUids[0]} → ${bp(SMOKE_STAKES[0].amount)} on ${nameOf(group, ids.seatUids[SMOKE_STAKES[0].seat])}; ${ids.backerUids[1]} → ${bp(SMOKE_STAKES[1].amount)} on ${nameOf(group, ids.seatUids[SMOKE_STAKES[1].seat])}`);
   say(`Wallets:  backingWallets/dev-${ids.backerUids[0]}, backingWallets/dev-${ids.backerUids[1]}  (yours: backingWallets/dev-${flags.founder ?? '<your uid>'}, once you back a team)`);
   say(`Deadline: back a team on the preview BEFORE the pool closes — ${et(eligibility.closesAt)}; with only the two test backers it would close as insufficient.`);
@@ -258,11 +274,19 @@ async function seed(db) {
   await db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(ids.groupId).set(groupDoc);
   const run = {
     groupId: ids.groupId, poolId: ids.poolId, stamp: ids.stamp, createdAt: nowIso,
-    battleMondayEtDate, baseLayerWeek, seatUids: ids.seatUids, cpuIds: ids.cpuIds, backerUids: ids.backerUids,
+    battleMondayEtDate, baseLayerWeek, seatUids: ids.seatUids, cpuIds: ids.cpuIds, backerUids: ids.backerUids, agentIds: ids.agentIds,
     founderUid: flags.founder ?? null, uids: [...ids.backerUids], stakes: [],
   };
   writeManifest(addRun(readManifest(), run));
   say(''); say(`✓ pod written and recorded in ${MANIFEST_PATH}`);
+
+  // 1b. The seats' agents (item E) — a protected store, so through the
+  //     composition write-epoch fence like every admin-CLI writer of one.
+  await assertWriteEpochOpen(db);
+  for (const { id, doc } of agents) {
+    await db.collection('agents').doc(id).set(doc);
+    say(`✓ agent written: agents/${id} — ${doc.name} (${doc.archetype}), owned by ${nameOf(group, doc.ownerId)}`);
+  }
 
   // 2. The pool — the real lazy open, dev opt-in.
   const materialized = await materializePool(db, group, now, { allowDev: true });
@@ -468,6 +492,14 @@ async function status(db) {
   rule();
   if (group == null) { say('The pod no longer exists (cleaned up?).'); return; }
   say(`Pod:      status ${group.status}, isDev ${group.isDev === true}, week ${group.baseLayerWeek}, banked days ${Object.keys(group.dailyScores ?? {}).filter((k) => /^day\d+$/.test(k)).length}`);
+  // The seats' agents (item E): the run's ids, each read back as it stands.
+  const agentIds = Array.isArray(run.agentIds) ? run.agentIds : [];
+  if (agentIds.length === 0) say('Agents:   none recorded for this run (a pod seeded before the smoke wrote agents)');
+  for (const id of agentIds) {
+    const snap = await db.collection('agents').doc(id).get();
+    const a = snap.exists ? snap.data() : null;
+    say(`Agent:    agents/${id} — ${a ? `${a.name} (${a.archetype}), owner ${nameOf(group, a.ownerId)}, ${a.equippedTraits?.length ?? 0} traits · ${a.activeRules?.length ?? 0} rules${a.smoke?.tool === SMOKE_TOOL ? ', smoke-marked' : ', NO SMOKE MARKER'}` : 'missing'}`);
+  }
   const poolSnap = await poolRefFor(db, group).get();
   if (!poolSnap.exists) { say(`Pool:     none at backingPools/${run.poolId}`); return; }
   const pool = poolSnap.data();
@@ -574,6 +606,23 @@ async function cleanup(db) {
       entries.forEach((d) => consider(d.ref, d.data()));
       if (wSnap.exists) consider(wRef, wSnap.data());
     }
+    // The seats' agents (item E): the run's recorded ids, and — belt — every
+    // `agents` document owned by one of this run's seat uids, each through the
+    // verdict (the marker AND the owner; a document missing either refuses
+    // the whole run). A seat uid is minted per run, so the owner query names
+    // nothing but this run's.
+    const seatUids = Array.isArray(run.seatUids) ? run.seatUids.filter((u) => typeof u === 'string' && u.length > 0) : [];
+    const agentTargets = {}; // path → { ref, data } (a plain object: the protected-store scan reads any `.set(` as a write)
+    for (const id of Array.isArray(run.agentIds) ? run.agentIds : []) {
+      const ref = db.collection('agents').doc(id);
+      const snap = await ref.get();
+      if (snap.exists) agentTargets[ref.path] = { ref, data: snap.data() };
+    }
+    if (seatUids.length > 0) {
+      const owned = await db.collection('agents').where('ownerId', 'in', seatUids).get();
+      owned.forEach((d) => { if (!agentTargets[d.ref.path]) agentTargets[d.ref.path] = { ref: d.ref, data: d.data() }; });
+    }
+    for (const { ref, data } of Object.values(agentTargets)) consider(ref, data);
     // The pool and its sealed totals.
     const poolRef = db.collection(BACKING_POOLS_COLLECTION).doc(run.poolId);
     const totalsRef = poolRef.collection('private').doc('totals');
@@ -602,9 +651,12 @@ async function cleanup(db) {
     say(`${targets.length} document(s) to delete:`);
     for (const t of targets) say(`  - ${t.path}`);
     for (const uid of kept) say(`  · kept: backingWallets/${walletIdFor(uid, { dev: true })} (+ ledger) and the dev-marked events that do not name this pod — still named by run ${stayingUids.get(uid)}; that run's cleanup sweeps them`);
-    say('  (never: eligibility/* — your attestation is your real consent record and stays)');
+    say('  (never: eligibility/* — your attestation is your real consent record and stays; never an agents/* document without the smoke marker or owned by anyone but this run\'s seats)');
     if (flags.dryRun) { say(''); say('Dry run: nothing was deleted.'); continue; }
 
+    // The agents among the targets are a protected store: the write-epoch
+    // fence, as for the seed (zero I/O while dark).
+    if (Object.keys(agentTargets).length > 0) await assertWriteEpochOpen(db);
     for (let i = 0; i < targets.length; i += 400) {
       const batch = db.batch();
       for (const t of targets.slice(i, i + 400)) batch.delete(t.ref);

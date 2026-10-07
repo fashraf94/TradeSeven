@@ -190,7 +190,7 @@ function expectState(page, state) {
       if (state.variant === 'attest') { expect(s.querySelector('[data-backing="attestation"]')).not.toBeNull(); expect(s.querySelector('[data-backing="stake-control"]')).toBeNull(); }
       if (state.variant === 'attested') expect(s.querySelector('[data-backing="stake-control"]')).not.toBeNull();
       if (state.variant === 'refusal') { expect(s.querySelector('[data-backing="stake-error"]')?.textContent).toBe(REFUSALS.pool_closed); expect(s.querySelector('[data-backing="backed"]')).toBeNull(); expect(noteText(page)).toBe(NOTHING_SAVED); }
-      if (state.variant === 'backed') { expect(s.querySelector('[data-backing="backed"]')?.textContent).toContain('Backed · 500 BP'); expect(noteText(page)).toBe(NOTHING_SAVED); }
+      if (state.variant === 'backed') { expect(s.querySelector('[data-backing="backed"]')?.textContent).toContain('Backed · 100 BP'); expect(noteText(page)).toBe(NOTHING_SAVED); }
       break;
     }
     case 'results': {
@@ -414,7 +414,7 @@ function expectDeskState(page, state) {
       if (state.screen === 'attest') { expect(right.querySelector('[data-backing="attestation"]')).not.toBeNull(); expect(right.querySelector('[data-backing="stake-control"]')).toBeNull(); }
       if (state.screen === 'stake') { expect(right.querySelector('[data-backing="stake-control"][data-layout="desktop"]')).not.toBeNull(); expect(right.innerHTML.indexOf('data-backing="confirm"')).toBeGreaterThan(right.innerHTML.indexOf('data-backing="disclosures"')); }
       if (state.screen === 'top-up') { expect(right.querySelector('[data-backing="top-up"]')).not.toBeNull(); expect(right.textContent).toContain('Adds to your 250 BP on Kestrel.'); }
-      if (state.screen === 'backed') { expect(right.querySelector('[data-backing="backed"]')?.textContent).toContain('Backed · 500 BP on Tarn'); expect(noteText(page)).toBe(NOTHING_SAVED); }
+      if (state.screen === 'backed') { expect(right.querySelector('[data-backing="backed"]')?.textContent).toContain('Backed · 100 BP on Tarn'); expect(noteText(page)).toBe(NOTHING_SAVED); }
       if (state.screen === 'refusal') { expect(right.querySelector('[data-backing="stake-error"]')?.textContent).toBe(REFUSALS.pool_closed); expect(right.querySelector('[data-backing="backed"]')).toBeNull(); }
       // The seal, at desktop width: no revealed view for an open pool, anywhere on the screen.
       expect(s.querySelector('[data-backing="revealed"]')).toBeNull();

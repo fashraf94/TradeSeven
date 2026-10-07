@@ -41,7 +41,7 @@ node scripts/backing-smoke.js seed --founder=<your uid>
 
 (`--founder` records your uid on the test pod, so `status` and `cleanup` know your dev wallet even before you back a team. Type your uid in place of `<your uid>`.)
 
-*What you should see:* a block headed **SEED** that names the pod (`tournamentGroups/smk_…`), its pool (`backingPools/dev-smk_…`), the two test seats (**Smoke Rival A**, **Smoke Rival B**) and two CPUs, two test backers who have already backed one team each, a **Deadline** line naming Sunday's close, and a **NEXT** list. The pod is stamped for the **upcoming** battle week — the week the preview's pod list shows.
+*What you should see:* a block headed **SEED** that names the pod (`tournamentGroups/smk_…`), its pool (`backingPools/dev-smk_…`), the two test seats (**Smoke Rival A**, **Smoke Rival B**) with their two test agents (**Smoke Scout**, **Smoke Sentry** — `agents/smk_agent_…`, so the team card has an agent name, an archetype and loadout counts to show) and two CPUs, two test backers who have already backed one team each, a **Deadline** line naming Sunday's close, and a **NEXT** list. The pod is stamped for the **upcoming** battle week — the week the preview's pod list shows.
 
 *If it refuses:* it says `REFUSED (nothing written)` and the reason. The usual one is `window_too_short`: the backing window closes Sunday 11:59 PM ET and a pool needs a full day, so **run this on a Monday (after 9:30 AM ET) through Saturday** and try again.
 
@@ -52,7 +52,7 @@ Add `--dry-run` to any writing command to see what it would do without doing it.
 1. Open the preview link and sign in with your normal account (the one whose uid you pasted).
 2. Go to the **League** tab.
 
-*What you should see:* a strip that reads **"Backing open · 1 pod"** with **"Closes Sun 11:59 PM ET"**, and pod rows whose footer reads **"Tap a seat · Predictions"** (instead of "Tap a seat to spectate"). Tap the strip: the Backing screen opens with **one pod** listed — **Smoke Rival A**, **Smoke Rival B**, **CPU — Contrarian**, **CPU — Diversifier**. The row reads **"Pool needs support"** and **"Backers 2 of 3 · Team spread: threshold met"**, with two of the three chairs filled, the **SEALED** lockup and no pot figure.
+*What you should see:* a strip that reads **"Backing open · 1 pod"** with **"Closes Sun 11:59 PM ET"**, and pod rows whose footer reads **"Tap a seat · Predictions"** (instead of "Tap a seat to spectate"). Tap the strip: the Backing screen opens with **one pod** listed — its two human seats labelled by their agents' names, **Smoke Scout** (Smoke Rival A beside it) and **Smoke Sentry** (Smoke Rival B), then **CPU — Contrarian**, **CPU — Diversifier**. The row reads **"Pool needs support"** and **"Backers 2 of 3 · Team spread: threshold met"**, with two of the three chairs filled, the **SEALED** lockup and no pot figure.
 
 *If the strip says more than 1 pod:* an earlier test pod was not cleaned up. Run `node scripts/backing-smoke.js status` and `cleanup --pod=<that pod's id>` first.
 
@@ -60,19 +60,19 @@ Add `--dry-run` to any writing command to see what it would do without doing it.
 
 ## 4. Attest
 
-1. Tap a seat — **Smoke Rival A**, say. Its team card opens. Tap the button at the bottom: **"Back Smoke Rival A & Smoke Rival A’s agent"**.
+1. Tap a seat — **Smoke Scout** (Smoke Rival A), say. Its team card opens: the player and the agent as one team, the agent's archetype tag (**Fundamental Investor**), its stated approach and **"2 traits · 3 rules · contents private"**. Tap the button at the bottom: **"Back Smoke Rival A & Smoke Scout"**.
 2. The stake screen opens under the heading **"Back this team"**. The first time, the attestation step is shown instead of the amounts: two statements — **"I confirm that I am 18 years of age or older."** and **"I have read and accept the FantasyTrades Backing Beta terms."** Tick both, then **Continue**.
 
-*What you should see:* the step closes and the stake control appears: the **100 / 250 / 500** presets, the points meter reading **1,000 BP** with **"of 1,000 BP · resets Monday"**, and the three disclosure lines. You will not be asked again on the refund walk.
+*What you should see:* the step closes and the stake control appears: the **100 / 250 / 500** presets with **100 already chosen** (the smallest that fits — never the largest), the points meter reading **1,000 BP** with **"of 1,000 BP · resets Monday"**, and the three disclosure lines. You will not be asked again on the refund walk.
 
 *What you just recorded, plainly:* the attestation is written once, to your account, as your real consent record. The step says **"Draft terms · pending counsel review"** because the terms it shows are the **draft** ones (version `beta-2026-09-draft`). When counsel's final terms land, the site will ask you to accept those too, and your record keeps the draft acceptance in its history. That is by design — it is not a fault.
 
 ## 5. Back a team, then top it up
 
-1. Choose **100**, then **"Confirm 100 BP"**.
-2. *What you should see:* **"Backed · 100 BP on Smoke Rival A"**. Go back to the list: the row now reads **"Pool qualified"**, **"Backers: threshold met · Team spread: threshold met"** and **"Your backing: 100 BP"**; the chairs have given way to a check mark; still **SEALED** — no pot, no per-team figures. The points meter now reads **900 BP** (during the smoke it reads your **dev** wallet, the one the test stakes draw from).
-3. Back **the same team** again: tap Smoke Rival A's seat, then its **"Back …"** button. The control says **"Adds to your 100 BP on Smoke Rival A."** — **150** is not a preset, so type **150** into **"Custom amount"**, then **"Confirm 150 BP"**.
-4. *What you should see:* **"Your backing: 250 BP"** on the row, and the points meter at **750 BP**.
+1. **100** is already chosen; press **"Confirm 100 BP"**.
+2. *What you should see:* **"Backed · 100 BP on Smoke Scout"** (the team is named by its agent) with **"900 BP left this week"** under it — the server's figure from the stake's own reply. Go back to the list: the row now reads **"Pool qualified"**, **"Backers: threshold met · Team spread: threshold met"** and **"Your backing: 100 BP"**; the chairs have given way to a check mark; still **SEALED** — no pot, no per-team figures. The points meter now reads **900 BP** (during the smoke it reads your **dev** wallet, the one the test stakes draw from).
+3. Back **the same team** again. On a desktop window you can do it **straight from the receipt**: the card is still in the centre column, and its button now reads **"Add to your 100 on Smoke Scout"** — press it and a fresh top-up form opens in the right column (on a phone, go back to the card first, then press the same button). The control says **"Adds to your 100 BP on Smoke Scout."** — **150** is not a preset, so type **150** into **"Custom amount"**, then **"Confirm 150 BP"**.
+4. *What you should see:* **"Backed · 250 BP on Smoke Scout"**, **"Added 150 BP to your stake."** and **"750 BP left this week"**; then **"Your backing: 250 BP"** on the row, and the points meter at **750 BP**.
 
 Optional check from the terminal:
 
@@ -98,7 +98,7 @@ node scripts/backing-smoke.js advance
 
 1. Refresh the preview and open the **League** tab.
 2. *What you should see:* the strip now reads the between-weeks line, **"Last week’s result …"**. Tap it: the **results card** shows the winner's block with **"Pot 600 BP · 3 backers"**, the winning team's **"paid ×1.33"**, and for the others **"×4.00 had they won"** or **"no backers"**; each backed team's line reads like **"2 backers · 75% of BP in this pool backed them"**. **Your Backing** tags the pod **"Settled"** and lists your stake as **"Smoke Rival A · 250 BP · settled"**. Tap **"Open the tape"** on either card: the pod's spectate view opens, and its final state carries the same results card (the two test seats read as generic players there — they have no profile).
-3. Your private record: open the **Dashboard**, your agent's panel (on a desktop window the Backing screen's results section shows the same block). **"Your backing · beta stats"** stays at zero — dev pools are excluded from the stats by design. The one-line scouting pitch editor sits beside it and is live for you too. **Leave it alone during the smoke**: it is not part of the walk, and a saved line is a real record on your account (see "What the smoke writes").
+3. Your private record: open the **Dashboard**, your agent's panel (on a desktop window the Backing screen's results section shows the same block). During the smoke **"Your backing · beta stats"** reads your **dev** record — the record of this walk, never your real one — so after `advance` it shows the settled pool: **1 pool backed**, **1 won** or **0 won** (whichever team you backed), and a net equal to the `careerNet` the `status` command prints for your dev wallet. (Before this build the panel read your production record and stayed at zero all walk — that was the QA round 2 finding.) The one-line scouting pitch editor sits beside it and is live for you too. **Leave it alone during the smoke**: it is not part of the walk, and a saved line is a real record on your account (see "What the smoke writes").
 
 ## 8. The refund walk
 
@@ -118,7 +118,7 @@ node scripts/backing-smoke.js advance
 
    *What you should see:* `✓ pool closed: closed`, `✓ pod voided`, `✓ refunded: 3 stakes voided (group_voided)`, then **REFUNDS** — every stake `VOIDED (group_voided)` — and **WALLETS** with `careerNet 0 BP` for everyone and `ledger OK`.
 
-4. On the preview: **Your Backing** tags the pod **"Refunded · stakes void"**, explains **"This pod was voided during its week, so every stake was refunded."**, and lists your stake as **"… · 100 BP · void"**. Nothing you did counts against you.
+4. On the preview: **Your Backing** tags the pod **"Refunded · stakes void"**, explains **"This pod was voided during its week, so every stake was refunded."**, adds **"Refunded BP go back to your record, not to this week’s allowance."**, and lists your stake as **"… · 100 BP · void"**. Nothing you did counts against you — and your points meter does **not** go back up: a refund restores your **record** (the net), never the week's spendable allowance. That is by design, and the line now says so.
 
 ## 9. Clean up
 
@@ -126,7 +126,7 @@ node scripts/backing-smoke.js advance
 node scripts/backing-smoke.js cleanup --founder=<your uid>
 ```
 
-*What you should see:* the list of documents to delete — the pod, its pool, the stakes, the dev wallets (yours included), the smoke's telemetry — and `✓ deleted N document(s)`. Your attestation (`eligibility/<your uid>`) is never on the list: it is your real consent record and stays.
+*What you should see:* the list of documents to delete — the pod, its two seats' agents, its pool, the stakes, the dev wallets (yours included), the smoke's telemetry — and `✓ deleted N document(s)`. Your attestation (`eligibility/<your uid>`) is never on the list: it is your real consent record and stays. Nor is any agent but the two the seed made: an `agents` document is deleted only when it carries the smoke marker **and** is owned by one of this run's two test seats.
 
 *If a line starts with `· kept:`:* another test pod is still seeded and names the same wallet (yours), so this run leaves the wallet and the events that do not name this pod alone; the last pod's `cleanup` sweeps them. Clean that pod up too (`cleanup --pod=<its id>`, or plain `cleanup` for every pod in the list).
 
@@ -166,6 +166,7 @@ Vercel → **Settings** → **Environment Variables** → delete **`BACKING_SMOK
 Everything a run writes lives in the **dev namespace**, and `cleanup` removes it:
 
 - the pod `tournamentGroups/smk_…` (marked `isDev`, ignored by every production job);
+- its two test seats' agents `agents/smk_agent_…` (marked `isDev` and smoke-marked, owned by the test seats — never by you or any real player, so no one's Forge or dashboard can see them; `cleanup` deletes exactly these two and refuses any `agents` document without the marker or owned by anyone outside the run);
 - its pool `backingPools/dev-smk_…` and the sealed totals under it;
 - the stakes on that pod (their ids are hashes; each names the dev pod and its dev pool) and their sealed meta;
 - every backer's **dev** wallet `backingWallets/dev-<uid>` and its ledger — including yours;
@@ -184,11 +185,11 @@ Nothing else: the production pod list, pools, wallets and events are never touch
 
 | Command | Does | Writes |
 | --- | --- | --- |
-| `seed` | Creates the dev pod for the upcoming week, opens its pool, places the two test backers' stakes through the real stake code | yes (dev namespace) |
+| `seed` | Creates the dev pod for the upcoming week and its two test seats' agents, opens its pool, places the two test backers' stakes through the real stake code | yes (dev namespace) |
 | `advance` | Closes the pool, banks a test week, completes the pod, settles through the real settlement code, prints every payout | yes (dev namespace) |
 | `refund` | Closes the pool, cancels the pod, refunds through the real refund code, prints every refund | yes (dev namespace) |
-| `status` | Prints the pod, the pool, every stake, every dev wallet and whether its ledger adds up | no — its database handle throws on any write |
-| `cleanup` | Deletes everything the runs created; refuses if anything is outside the dev namespace; keeps a wallet another seeded run still names | deletes (dev namespace only) |
+| `status` | Prints the pod, its two agents, the pool, every stake, every dev wallet and whether its ledger adds up | no — its database handle throws on any write |
+| `cleanup` | Deletes everything the runs created (the two agents included); refuses if anything is outside the dev namespace or, for an agent, unmarked or owned by anyone outside the run; keeps a wallet another seeded run still names | deletes (dev namespace only) |
 
 **One test pod at a time.** Run `cleanup` before you `seed` again: every run draws on the same dev wallet of yours, and the script keeps the walk simple by assuming one live pod. (If two are ever live, `cleanup` keeps the shared wallet until the last one is cleaned, and says so.)
 
