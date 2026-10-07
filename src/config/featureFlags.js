@@ -3022,3 +3022,73 @@ export const SHADOW_CPU_QUOTE_INTEGRITY_ENABLED = false;
 export function isShadowCpuQuoteIntegrityOn() {
   return SHADOW_CPU_QUOTE_INTEGRITY_ENABLED;
 }
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * PILOT P1a — VERSIONED HYPOTHESIS RECORDS, record-only (pilot spec
+ * docs/specs/20260923_BAGGERBOMB_PARTNERSHIP_PILOT_SPEC_V1_4.md §2; Phase 0
+ * docs/audits/20261005_PHASE0_PILOT_P1_P2_RECORDS.md; build report
+ * docs/audits/20261007_BUILD_PILOT_P1A_HYPOTHESIS_RECORDS.md).
+ *
+ * HYPOTHESIS_RECORDS_ENABLED — the ONE gate over the player's versioned idea
+ * records: `watchlists/{watchlistId}/hypothesisVersions/v{n}`, the parent
+ * pointer (`currentHypothesisVersion`, `hypothesisVersionCount`), the owner
+ * routes under api/forge/watchlists/[id]/hypothesis-*.js, the automatic v1 at
+ * dialogue save, the review pass (the fifth tenant of
+ * api/cron/process-pending-reflections.js) and the Forge "Idea" panel.
+ * Nothing the agent sees or trades reads any of it.
+ *
+ * TRUE is not enough on its own: the gate resolves ON only for owners on the
+ * cockpit's server-side allowlist (COCKPIT_ALLOWLIST_UIDS, read at call time
+ * by api/_utils/callRecords/allowlist.js — api/_utils/hypothesisRecords/gate.js).
+ * Off for a caller: every new route answers `404 { error: 'disabled' }`, the
+ * save path creates no version and writes no pointer, the review pass returns
+ * before any read, and the panel renders nothing (the client short-circuits
+ * on this constant before any request). DEFAULT false: the build merges dark,
+ * and with it false every existing route, write and cron output is
+ * byte-identical to the pre-build main.
+ *
+ * FLIP: its own founder PR, never a build PR, after the hypothesisVersions
+ * collection-group index (firestore.indexes.json) and the rules blocks are
+ * deployed. The flip moves the pin in src/config/hypothesisRecordsFlags.test.js
+ * to true and drops the DARK_BY_DESIGN entry in src/config/flagPinGuard.test.js
+ * in the same commit (BUILD_RULES §2). Rollback is the same line back to false:
+ * written versions stay, unread and unwritten.
+ *
+ * Read it at RENDER/CALL scope through isHypothesisRecordsOn(), never as a
+ * module-scope const in a consumer (the featureFlags vi.mock hazard).
+ */
+// Pinned by: hypothesisRecordsFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const HYPOTHESIS_RECORDS_ENABLED = false;
+
+/** The ONE consumer seam for the hypothesis-records flag (the allowlist half is server-only). */
+export function isHypothesisRecordsOn() {
+  return HYPOTHESIS_RECORDS_ENABLED;
+}
+
+/**
+ * PILOT_JOURNEY_MODE — the pilot's journey flag (spec §10.1), a STRING
+ * TRI-STATE:
+ *   'off'      — the pilot contributes nothing to any schema, prompt or store
+ *                (contribution-relative, spec §6: only with every arc's flags
+ *                off is the baseline byte-identical to today).
+ *   'advisory' — isolated store only (spec §9.2): the harness exercises the
+ *                pilot path against an injected namespace; zero ordinary live
+ *                writes.
+ *   'live'     — ordinary paths, allowlist-gated per mode (spec §9.5).
+ * NOTHING READS IT IN P1a. P1b (deploy carriage behind this flag — founder
+ * decision D3, 7 Oct 2026) is its first reader. Unknown values must resolve to
+ * 'off' at every future reader (fail closed).
+ *
+ * RUNWAY: 'off' → 'advisory' → 'live', each its own founder PR after the
+ * package that reads it lands, never a build PR; each step moves the pin row
+ * in src/config/pilotJourneyModeFlags.test.js in the same commit (BUILD_RULES
+ * §2). A string tri-state, so it is pinned DIRECTLY — never a DARK_BY_DESIGN
+ * key (the flag-pin guard scans `*_ENABLED = true|false` only; the
+ * CALL_RECORDS_MODE precedent).
+ */
+// Pinned by: pilotJourneyModeFlags.test.js (a STRING tri-state — pinned directly, outside flagPinGuard's `*_ENABLED` scan; this value and the pin move together — BUILD_RULES §2).
+export const PILOT_JOURNEY_MODE = 'off';
+
+/** The three spec states, in walk order. */
+export const PILOT_JOURNEY_MODES = Object.freeze(['off', 'advisory', 'live']);

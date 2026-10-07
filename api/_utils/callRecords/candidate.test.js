@@ -131,17 +131,45 @@ describe('§3.12 row 12 — provenance (the complete origin rule)', () => {
   it('LEGACY: a frozen watchlist + a config hash, no version → { watchlistId, equippedConfigHash }, equipped', () => {
     expect(resolveProvenance(withCtx(snap, HASH))).toEqual({ hypothesisRef: { watchlistId: 'wl-1', equippedConfigHash: HASH }, origin: 'equipped' });
   });
-  it('VERSIONED (synthetic — HEAD never writes a version): { watchlistId, hypothesisVersion }, equipped', () => {
-    expect(resolveProvenance(withCtx({ ...snap, hypothesisVersion: 3 }, HASH))).toEqual({ hypothesisRef: { watchlistId: 'wl-1', hypothesisVersion: 3 }, origin: 'equipped' });
+  // Pilot P1a (spec §2.4, §2.6; Phase 0 Q4): the versioned branch reads the
+  // frozen SIBLING agentContext.equippedHypothesis, never the hashed snapshot.
+  // No producer writes the sibling until P1b, so these rows are synthetic.
+  const withSibling = (equippedWatchlist, equippedHypothesis, equippedConfigHash = HASH) => makeTickBattle({
+    agentContext: { ...makeTickBattle().agentContext, equippedWatchlist, equippedHypothesis },
+    resolvedAgentManifest: { equippedConfigHash },
   });
-  it('UNRESOLVED only for a PRESENT but unusable snapshot: a corrupt snapshot; a corrupt version; a watchlist without a hash (ruling A-1)', () => {
+  it('VERSIONED (synthetic — P1b writes the sibling): a sibling naming the snapshot\'s list → { watchlistId, hypothesisVersion }, equipped', () => {
+    expect(resolveProvenance(withSibling(snap, { watchlistId: 'wl-1', hypothesisVersion: 3, contentHash: 'c'.repeat(64) })))
+      .toEqual({ hypothesisRef: { watchlistId: 'wl-1', hypothesisVersion: 3 }, origin: 'equipped' });
+    // …with or without a config hash: the sibling is the version's provenance.
+    expect(resolveProvenance(withSibling(snap, { watchlistId: 'wl-1', hypothesisVersion: 1 }, undefined)))
+      .toEqual({ hypothesisRef: { watchlistId: 'wl-1', hypothesisVersion: 1 }, origin: 'equipped' });
+  });
+  it('MISMATCH: a sibling naming ANOTHER list than the frozen snapshot → provenance_unresolved (hypothesis_snapshot_mismatch), never a ref', () => {
+    const res = resolveProvenance(withSibling(snap, { watchlistId: 'wl-OTHER', hypothesisVersion: 3 }));
+    expect(res).toEqual({ hypothesisRef: null, origin: 'provenance_unresolved', provenanceReason: 'hypothesis_snapshot_mismatch' });
+    const [call] = buildMintCandidate(base({ battle: withSibling(snap, { watchlistId: 'wl-OTHER', hypothesisVersion: 3 }) })).calls;
+    expect(call).toMatchObject({ hypothesisRef: null, origin: 'provenance_unresolved', provenanceReason: 'hypothesis_snapshot_mismatch' });
+  });
+  it('the snapshot\'s own `hypothesisVersion` key is NOT a version source — with no sibling the legacy branch runs unchanged', () => {
+    expect(resolveProvenance(withCtx({ ...snap, hypothesisVersion: 3 }, HASH))).toEqual({ hypothesisRef: { watchlistId: 'wl-1', equippedConfigHash: HASH }, origin: 'equipped' });
+    expect(resolveProvenance(withCtx({ ...snap, hypothesisVersion: 'v2' }, HASH))).toEqual({ hypothesisRef: { watchlistId: 'wl-1', equippedConfigHash: HASH }, origin: 'equipped' });
+  });
+  it('H1 still comes first: a sibling without a frozen snapshot is agent_initiative (no snapshot → no watchlist provenance)', () => {
+    for (const watchlist of [undefined, null]) {
+      expect(resolveProvenance(withSibling(watchlist, { watchlistId: 'wl-1', hypothesisVersion: 3 }))).toEqual({ hypothesisRef: null, origin: 'agent_initiative' });
+    }
+  });
+  it('UNRESOLVED only for a PRESENT but unusable snapshot: a corrupt snapshot; a corrupt sibling; a watchlist without a hash (ruling A-1)', () => {
     expect(resolveProvenance(withCtx({ name: 'no id', tickers: [] }, HASH))).toEqual({ hypothesisRef: null, origin: 'provenance_unresolved', provenanceReason: 'snapshot_corrupt' });
     expect(resolveProvenance(withCtx('wl-1', HASH)).provenanceReason).toBe('snapshot_corrupt');
     expect(resolveProvenance(withCtx({ ...snap, tickers: 'NVDA' }, HASH)).provenanceReason).toBe('snapshot_corrupt');
-    expect(resolveProvenance(withCtx({ ...snap, hypothesisVersion: 'v2' }, HASH)).provenanceReason).toBe('snapshot_corrupt');
+    for (const bad of [{ watchlistId: 'wl-1', hypothesisVersion: 'v2' }, { watchlistId: 'wl-1', hypothesisVersion: 0 }, { watchlistId: 'wl-1' }, { hypothesisVersion: 3 }, 'v3', [3]]) {
+      expect(resolveProvenance(withSibling(snap, bad)).provenanceReason).toBe('snapshot_corrupt');
+    }
     expect(resolveProvenance(withCtx(snap, undefined))).toEqual({ hypothesisRef: null, origin: 'provenance_unresolved', provenanceReason: 'config_hash_missing' });
-    // The reason vocabulary names present-but-unusable snapshots only.
-    expect(PROVENANCE_REASONS).toEqual(['snapshot_corrupt', 'config_hash_missing']);
+    // The reason vocabulary names present-but-unusable provenance only.
+    expect(PROVENANCE_REASONS).toEqual(['snapshot_corrupt', 'config_hash_missing', 'hypothesis_snapshot_mismatch']);
   });
   it('NO watchlist snapshot (absent or null) → agent_initiative, hypothesisRef null — with or without a config hash (ruling A-1)', () => {
     for (const [watchlist, hash] of [[undefined, undefined], [null, undefined], [undefined, HASH], [null, HASH]]) {
