@@ -265,3 +265,22 @@ describe('QW-7 (review E3-6) — the gate adds no read where it must not', () =>
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
+
+// ── Review E5-2: the close-sweep page guard ──────────────────────────────────
+
+describe('QW-7 (review E5-2) — a book activated between the probe and the page read is not closed against the unbuilt snapshot', () => {
+  it('close sweep: zero books at the probe, one book at the page read → no close, no closeBook call', async () => {
+    flag.on = true;
+    const db = makeMandateFakeDb({ 'archetypeVintages/analyst_x': VINTAGE });
+    const col = db.collection;
+    db.collection = (name) => (name === 'mandateBatches'
+      ? { where: () => ({ limit: () => ({ get: async () => { await col('mandates').doc('m1').set(seedBook('m1')); return { docs: [] }; } }) }) }
+      : col(name));
+    const closeSpy = vi.fn(async () => ({ closed: true, row: { partial: false }, streamRecord: {}, rows: [], monthEstUsd: 0, alerts: [] }));
+    closeBookImpl = closeSpy;
+    const out = await closeSweep(db);
+    expect(builds.universe).toHaveLength(0);
+    expect(closeSpy).not.toHaveBeenCalled();
+    expect(out.body.closed).toBe(0);
+  });
+});

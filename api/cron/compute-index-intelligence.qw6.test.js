@@ -26,6 +26,7 @@
 // quotes are still fetched every run.
 
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
+import { isMarketHoliday } from '../../src/utils/marketCalendar.js';
 
 const flag = vi.hoisted(() => ({ on: false }));
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => {
@@ -87,27 +88,32 @@ const PRIOR = '2026-10-06';
 function seedOf(sym) { let h = 7; for (const c of sym) h = (h * 31 + c.charCodeAt(0)) % 9973; return h; }
 // The vendor's newest bar: PRIOR unless a test makes it time-aware (E3-1 rows).
 const vendorClock = { newest: () => PRIOR };
+// A bar is a function of its DATE (never of its position in the answer), and
+// NYSE holidays have none — so two answers that end on different days carry the
+// SAME bar for every date they share, as the real vendor does (review E5-1: a
+// position-derived stub and a Thanksgiving bar let the prior-close check mask
+// the after-close rule).
 function rawBarsOldestFirst(sym, newestDate = vendorClock.newest()) {
   const s = seedOf(sym);
   const out = [];
   const d = new Date(`${newestDate}T12:00:00Z`);
-  let i = 0;
   while (out.length < 380) {
     const dow = d.getUTCDay();
-    if (dow !== 0 && dow !== 6) {
-      const close = +(40 + (s % 60) + Math.sin((i + s) / 7) * 6 + Math.cos(i / 17) * 3 - i * 0.02).toFixed(2);
+    const date = d.toISOString().slice(0, 10);
+    if (dow !== 0 && dow !== 6 && !isMarketHoliday(date)) {
+      const k = Math.round(d.getTime() / 86_400_000); // absolute day index
+      const close = +(40 + (s % 60) + Math.sin((k + s) / 7) * 6 + Math.cos(k / 17) * 3 + (k % 400) * 0.01).toFixed(2);
+      // One malformed row (AAPL, XLK) that trips mapDailyRows' drop rule, so
+      // droppedRows is non-zero and its replay from the store is actually tested.
+      const malformed = (sym === 'AAPL.US' || sym === 'XLK.US') && date === '2026-08-03';
       out.push({
-        date: d.toISOString().slice(0, 10), open: +(close - 0.3).toFixed(2), high: +(close + 1.2).toFixed(2),
-        low: +(close - 1.4).toFixed(2), close, adjusted_close: +(close * 0.99).toFixed(4),
-        volume: 500_000 + ((i * 7919 + s) % 300_000),
+        date, open: +(close - 0.3).toFixed(2), high: +(close + 1.2).toFixed(2),
+        low: +(close - 1.4).toFixed(2), close: malformed ? null : close, adjusted_close: malformed ? null : +(close * 0.99).toFixed(4),
+        volume: 500_000 + ((k * 7919 + s) % 300_000),
       });
-      i++;
     }
     d.setUTCDate(d.getUTCDate() - 1);
   }
-  // One malformed row per symbol type that trips mapDailyRows' drop rule, so
-  // droppedRows is non-zero and its replay from the store is actually tested.
-  if (sym === 'AAPL.US' || sym === 'XLK.US') out[40] = { ...out[40], close: null, adjusted_close: null };
   return out.reverse();
 }
 let eodCalls;
@@ -245,8 +251,8 @@ describe('QW-6 review rows (docs/audits/20261007_EODHD_QUICK_WINS_BUILD_REVIEW.m
     vi.setSystemTime(new Date('2026-11-27T19:00:00.000Z'));
     const a = await run('intraday');
     flag.on = true;
-    vi.setSystemTime(new Date('2026-11-27T10:30:00.000Z'));
-    await run();                                   // the pre-market wake fills the store
+    vi.setSystemTime(new Date('2026-11-27T16:00:00.000Z')); // 11:00 ET, in session — inside the 4 h TTL at 19:00Z, so only the after-close rule can refuse it (review E5-1)
+    await run();                                   // an in-session wake fills the store
     vi.setSystemTime(new Date('2026-11-27T19:00:00.000Z'));
     const c = await run('intraday');
     expect(c.eod).toBe(29);                        // after the close: every history fetched fresh
