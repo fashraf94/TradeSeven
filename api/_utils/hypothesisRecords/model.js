@@ -27,21 +27,22 @@
 // by P1b; they are null on every version this build creates.
 
 import { canonicalContentHash } from '../canonicalHash.js';
+// The vocabulary the Forge renders from — statuses, horizons, the transition
+// table — lives in ONE Node-clean src/ module (BUILD_RULES §4; this file's
+// test imports are the dependency-surface guard) and is re-exported here.
+import {
+  HYPOTHESIS_STATUSES, TERMINAL_STATUSES, PRE_DEPLOY_STATUSES, HORIZON_ENUMS, HORIZON_SOURCES, STATE_REASONS,
+  PLAYER_TRANSITIONS, PLAYER_ACTIONS, CLOSING_ACTIONS, legalTransition, legalActionsFor,
+} from '../../../src/constants/hypothesisRecords.js';
+
+export {
+  HYPOTHESIS_STATUSES, TERMINAL_STATUSES, PRE_DEPLOY_STATUSES, HORIZON_ENUMS, HORIZON_SOURCES, STATE_REASONS,
+  PLAYER_TRANSITIONS, PLAYER_ACTIONS, CLOSING_ACTIONS, legalTransition, legalActionsFor,
+};
 
 export const WATCHLISTS_COLLECTION = 'watchlists';
 export const VERSIONS_SUBCOLLECTION = 'hypothesisVersions';
 
-export const HYPOTHESIS_STATUSES = Object.freeze([
-  'draft', 'researched', 'ready', 'waiting_for_evidence', 'activated',
-  'invalidated', 'review_due', 'retired', 'rejected', 'cancelled',
-]);
-/** No transition leaves these (spec §2.5: retired, and the pre-deploy terminals). */
-export const TERMINAL_STATUSES = Object.freeze(['retired', 'rejected', 'cancelled']);
-/** Statuses a version can hold before its first deploy (spec §2.5 "any pre-deploy"). */
-export const PRE_DEPLOY_STATUSES = Object.freeze(['draft', 'researched', 'ready', 'waiting_for_evidence']);
-
-export const HORIZON_ENUMS = Object.freeze(['intraday', 'swing', 'positional', 'longterm', 'unspecified']);
-export const HORIZON_SOURCES = Object.freeze(['parse', 'theme_default', 'default', 'player']);
 export const ORIGINS = Object.freeze(['signaldrop', 'theme', 'screener', 'manual']);
 export const STATE_SOURCES = Object.freeze(['player', 'research', 'deploy', 'review_pass']);
 export const CONDITION_SIDES = Object.freeze(['above', 'below']);
@@ -60,59 +61,7 @@ export const IDENTITY_FIELDS = Object.freeze(['version', 'watchlistId', 'userId'
 export const STATEMENT_MAX_LEN = 1000;
 export const MISSING_EVIDENCE_MAX_LEN = 300;
 export const CONDITIONS_MAX_COUNT = 10;
-const SYMBOL_RE = /^[A-Z0-9][A-Z0-9.\-]{0,11}$/;
-
-/** The typed reasons this build writes (spec §2.5 table; reject/cancel carry the typed player reason). */
-export const STATE_REASONS = Object.freeze({
-  dialogueCompleted: 'dialogue_completed',
-  playerAuthored: 'player_authored',
-  reaffirmed: 'reaffirmed',
-  playerReady: 'player_ready',
-  awaitingEvidence: 'awaiting_evidence',
-  evidenceSupplied: 'evidence_supplied',
-  playerRejected: 'player_rejected',
-  playerCancelled: 'player_cancelled',
-  playerRetired: 'player_retired',
-  horizonElapsed: 'horizon_elapsed',
-  battleEnded: 'battle_ended',
-});
-
-const NON_TERMINAL = HYPOTHESIS_STATUSES.filter((s) => !TERMINAL_STATUSES.includes(s));
-const fromEach = (statuses, reason) => Object.freeze(Object.fromEntries(statuses.map((s) => [s, reason])));
-
-/**
- * The PLAYER transitions (spec §2.5; the build prompt's list), action → target
- * status and the typed reason per legal prior status. Anything not listed is
- * an illegal transition. `reaffirm` is not here: it creates a version
- * (createReaffirmation in store.js) and never changes the due version's status.
- */
-export const PLAYER_TRANSITIONS = Object.freeze({
-  ready: Object.freeze({ to: 'ready', from: Object.freeze({ researched: STATE_REASONS.playerReady, waiting_for_evidence: STATE_REASONS.evidenceSupplied }) }),
-  wait: Object.freeze({ to: 'waiting_for_evidence', from: fromEach(['researched'], STATE_REASONS.awaitingEvidence) }),
-  reject: Object.freeze({ to: 'rejected', from: fromEach(['draft', 'researched', 'waiting_for_evidence'], STATE_REASONS.playerRejected) }),
-  cancel: Object.freeze({ to: 'cancelled', from: fromEach(PRE_DEPLOY_STATUSES, STATE_REASONS.playerCancelled) }),
-  retire: Object.freeze({ to: 'retired', from: fromEach(NON_TERMINAL, STATE_REASONS.playerRetired) }),
-});
-export const PLAYER_ACTIONS = Object.freeze([...Object.keys(PLAYER_TRANSITIONS), 'reaffirm']);
-/** Actions that may close a SUPERSEDED version; the rest act on the current version only. */
-export const CLOSING_ACTIONS = Object.freeze(['reject', 'cancel', 'retire']);
-
-/**
- * The legal player transition from `status` by `action`, or null.
- * @returns {{ to: string, reason: string } | null}
- */
-export function legalTransition(status, action) {
-  const t = Object.prototype.hasOwnProperty.call(PLAYER_TRANSITIONS, action) ? PLAYER_TRANSITIONS[action] : null;
-  if (!t || typeof status !== 'string' || !Object.prototype.hasOwnProperty.call(t.from, status)) return null;
-  return { to: t.to, reason: t.from[status] };
-}
-
-/** The actions legal from a status (the Forge renders exactly these). */
-export function legalActionsFor(status, { isCurrent = true, hasSuccessor = false } = {}) {
-  const out = Object.keys(PLAYER_TRANSITIONS).filter((a) => legalTransition(status, a) && (isCurrent || CLOSING_ACTIONS.includes(a)));
-  if (status === 'review_due' && isCurrent && !hasSuccessor) out.push('reaffirm');
-  return out;
-}
+const SYMBOL_RE = /^[A-Z0-9][A-Z0-9.-]{0,11}$/;
 
 export const versionDocId = (n) => `v${n}`;
 

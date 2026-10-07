@@ -22,10 +22,10 @@
 // load-bearing silent default).
 
 import { getSessionForDate } from '../marketSchedule.js';
-import { HORIZON_ENUMS } from './model.js';
+// Window N per enum (companion §6 slots H1–H4) — the one table the Forge also renders from.
+import { HORIZON_ENUMS, HORIZON_WINDOW_SESSIONS } from '../../../src/constants/hypothesisRecords.js';
 
-/** Window N, in trading sessions after the anchor (companion §6 slots H1–H4). */
-export const HORIZON_WINDOW_SESSIONS = Object.freeze({ intraday: 2, swing: 10, positional: 30, longterm: 60 });
+export { HORIZON_WINDOW_SESSIONS };
 
 /** Calendar days a walk may cover before it is called runaway (60 sessions ≈ 87 days; holidays included). */
 const MAX_WALK_DAYS = 200;
