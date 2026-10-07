@@ -24,6 +24,9 @@ import SaveStateIndicator from './SaveStateIndicator';
 import TickerSearchAdd from './TickerSearchAdd';
 import CommitModal from './CommitModal';
 import UncommitModal from './UncommitModal';
+// Pilot P1a: the player's versioned idea — renders nothing unless the
+// hypothesis-records gate resolves on for this player.
+import IdeaPanel from './IdeaPanel';
 
 const TICKER_CAP = 40;
 const NAME_MAX = 100;
@@ -252,6 +255,8 @@ export default function WatchlistEditor({ watchlistId, onClose }) {
                 This watchlist is committed. Tap “Edit” to unlock it for changes.
               </div>
             )}
+
+            <IdeaPanel watchlistId={watchlistId} tokens={tokens} listTickers={tickers} />
 
             <div>
               <SectionLabel tokens={tokens}>Thesis</SectionLabel>
