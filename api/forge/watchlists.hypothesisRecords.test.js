@@ -303,15 +303,16 @@ describe('row 6 — horizon capture for the manual and screener origins, and a p
     }
   });
   it('a session-derived list with no version yet (its thesis was empty at save) → the session\'s horizon and origin', async () => {
-    let db = makeDb({ 'watchlists/wl-1': list({ sourceSessionId: 's-1' }), 'watchlistSessions/s-1': session({ parseResult: { parse: { timeHorizon: 'positional' } } }) });
+    // (A dialogue list names its session AND its drop — P2 tells it from a screener-linked list that way.)
+    let db = makeDb({ 'watchlists/wl-1': list({ sourceSessionId: 's-1', sourceDropId: 'drop-1' }), 'watchlistSessions/s-1': session({ parseResult: { parse: { timeHorizon: 'positional' } } }) });
     await first();
     expect(stored(db, vPath(1))).toMatchObject({ origin: 'signaldrop', horizonEnum: 'positional', horizonSource: 'parse', status: 'draft' });
-    db = makeDb({ 'watchlists/wl-1': list({ sourceSessionId: 's-1' }), 'watchlistSessions/s-1': session({ source: 'theme' }) });
+    db = makeDb({ 'watchlists/wl-1': list({ sourceSessionId: 's-1', sourceDropId: 'drop-1' }), 'watchlistSessions/s-1': session({ source: 'theme' }) });
     await first();
     expect(stored(db, vPath(1))).toMatchObject({ origin: 'theme', horizonEnum: 'unspecified', horizonSource: 'theme_default' });
   });
   it('a session-derived list whose session is gone → 409 origin_unresolved (an origin is never guessed)', async () => {
-    const db = makeDb({ 'watchlists/wl-1': list({ sourceSessionId: 's-gone' }) });
+    const db = makeDb({ 'watchlists/wl-1': list({ sourceSessionId: 's-gone', sourceDropId: 'drop-1' }) });
     const res = await first();
     expect(res.statusCode).toBe(409);
     expect(res.body.error).toBe('origin_unresolved');
@@ -660,7 +661,8 @@ describe('the list and read routes', () => {
   it('GET on a list with no version → currentVersion 0 and an empty list', async () => {
     makeDb({ 'watchlists/wl-1': list() });
     const res = await versions({ method: 'GET' });
-    expect(res.body).toEqual({ watchlistId: 'wl-1', currentVersion: 0, versions: [] });
+    // Pilot P2: the list's research summaries ride the same answer (none here).
+    expect(res.body).toEqual({ watchlistId: 'wl-1', currentVersion: 0, versions: [], research: [] });
   });
   it('GET ?version=n → one version; a missing one → 404 version_not_found; a malformed one → 400', async () => {
     seedList({}, [{}, {}]);

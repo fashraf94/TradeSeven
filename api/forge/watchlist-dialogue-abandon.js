@@ -26,6 +26,15 @@ import { requireAuth } from '../_utils/authMiddleware.js';
 import { logSignalDrops } from '../_utils/shadowLogger.js';
 import { FORGE_ID_REGEX, FORGE_ID_MAX_LEN, isValidForgeId } from '../_utils/idValidation.js';
 import { waitUntil } from '@vercel/functions';
+// Pilot P2 — the research record (pilot spec §3; the P2 build prompt). When
+// the gate is on for the caller and the session carries a record, a
+// `user_close` abandon ends that record `abandoned` (reason: the host's own
+// `user_close`) with its open candidates `cancelled`, in THIS transaction. A
+// `finalize_intent` leaves the record open (the save will close it). Gate off
+// → this route reads and writes exactly what it did.
+import { hypothesisRecordsOnFor } from '../_utils/hypothesisRecords/gate.js';
+import { isResearchWorkId, isOwnedRecord, dialogueFunnel, closePatch } from '../_utils/researchRecords/model.js';
+import { researchWorkRefOf, safely } from '../_utils/researchRecords/store.js';
 
 export const config = { maxDuration: 10 };
 
@@ -83,6 +92,7 @@ export default async function handler(req, res) {
   const db = getFirebaseAdmin();
   const sessionRef = db.collection('watchlistSessions').doc(sessionId);
   const nowIso = new Date().toISOString();
+  const recordsOn = hypothesisRecordsOnFor(user.uid); // Pilot P2: resolved once, no I/O
 
   try {
     // Read-then-write inside a transaction. Sentinel errors translate to HTTP
@@ -110,12 +120,24 @@ export default async function handler(req, res) {
         };
       }
 
+      // Pilot P2: the session's record, read before any write.
+      const recordRef = recordsOn && reason === 'user_close' && isResearchWorkId(data.researchWorkId)
+        ? researchWorkRefOf(db, data.researchWorkId)
+        : null;
+      const recordSnap = recordRef ? await tx.get(recordRef) : null;
+
       tx.update(sessionRef, {
         status: targetStatus,
         abandonReason: reason,
         abandonedAt: nowIso,
         updatedAt: nowIso,
       });
+      const record = recordSnap?.exists ? recordSnap.data() : null;
+      const patch = isOwnedRecord(record, user.uid) ? safely('abandon', () => closePatch(record, {
+        state: 'abandoned', terminalReason: reason, atIso: nowIso,
+        funnel: dialogueFunnel({ candidates: data.candidateTickers, terminalReason: reason }),
+      })) : null;
+      if (patch) tx.update(recordRef, patch);
       return {
         idempotent: false,
         previousStatus: 'active',

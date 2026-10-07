@@ -136,3 +136,5 @@ The shared validation seam: current-state identity, mode eligibility, controls, 
 Founder blesses: the setup thresholds and horizon translation table (companion 1); the language-table wording (companion 2, `MODE_TRUTH_LANGUAGE_TABLES_V1.md`); the parse-binding flip; each live-allowlist addition (case I + §9.5 freeze prerequisite per mode); the `live` flip after an accepted qualification report. **Hard gates:** P3/P4 build prompts wait for companion 1's blessing; player-facing wording waits for companion 2; the contract gate is satisfied — V1.4 is committed and pinned in the header. Everything else is approve-by-default plumbing under the adopted rulings.
 
 *V1.4 — self-contained; supersedes V1–V1.3; Astra round 4's four changes applied; blessed by the founder 24 Sep 2026; Amendment A pins contract V1.4. Build prompts issue from this version.*
+
+**Amendment B — 7 Oct 2026 (founder ruling D4):** §2.5 gains a second actor for `draft → researched`: the player, recorded as `player_marked_researched`.

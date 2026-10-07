@@ -35,6 +35,10 @@ import {
   PLAYER_TRANSITIONS, PLAYER_ACTIONS, CLOSING_ACTIONS, legalTransition, legalActionsFor,
 } from '../../../src/constants/hypothesisRecords.js';
 
+// Pilot P2: a version cites the research behind it as a typed evidence ref
+// `{ kind: 'researchWork', id }` (the research record's id scheme lives there).
+import { RESEARCH_EVIDENCE_KIND, isResearchWorkId, researchRefOf } from '../researchRecords/model.js';
+
 export {
   HYPOTHESIS_STATUSES, TERMINAL_STATUSES, PRE_DEPLOY_STATUSES, HORIZON_ENUMS, HORIZON_SOURCES, STATE_REASONS,
   PLAYER_TRANSITIONS, PLAYER_ACTIONS, CLOSING_ACTIONS, legalTransition, legalActionsFor,
@@ -118,6 +122,26 @@ export function normalizeMissingEvidence(raw) {
 }
 
 /**
+ * One evidence ref: `{ kind: 'researchWork', id }` naming a research record
+ * (Pilot P2 — the only kind any writer produces). Exactly those two keys.
+ */
+export const isEvidenceRef = (r) => isPlainObject(r)
+  && Object.keys(r).length === 2 && r.kind === RESEARCH_EVIDENCE_KIND && isResearchWorkId(r.id);
+
+/** Union of evidence-ref lists, first-seen order, each ref once. */
+export function mergeEvidenceRefs(...lists) {
+  const out = [];
+  const seen = new Set();
+  for (const list of lists) {
+    for (const r of Array.isArray(list) ? list : []) {
+      const key = isEvidenceRef(r) ? `${r.kind}:${r.id}` : null;
+      if (key && !seen.has(key)) { seen.add(key); out.push({ kind: r.kind, id: r.id }); }
+    }
+  }
+  return out;
+}
+
+/**
  * The content object, validated in full. Every field is required here — the
  * callers resolve inheritance first. Throws HypothesisInputError.
  */
@@ -126,7 +150,7 @@ export function buildContent(c) {
   if (!HORIZON_ENUMS.includes(c.horizonEnum)) throw new HypothesisInputError('invalid_horizon', `horizonEnum must be one of ${HORIZON_ENUMS.join(', ')}.`);
   if (!HORIZON_SOURCES.includes(c.horizonSource)) throw new HypothesisInputError('invalid_horizon', 'horizonSource is not a known source.');
   if (!ORIGINS.includes(c.origin)) throw new HypothesisInputError('invalid_origin');
-  if (!Array.isArray(c.evidenceRefs) || !c.evidenceRefs.every(nonEmptyString)) throw new HypothesisInputError('invalid_evidence_refs');
+  if (!Array.isArray(c.evidenceRefs) || !c.evidenceRefs.every(isEvidenceRef)) throw new HypothesisInputError('invalid_evidence_refs');
   if (!(c.publishedAt === null || nonEmptyString(c.publishedAt))) throw new HypothesisInputError('invalid_published_at');
   return {
     statement: normalizeStatement(c.statement),
@@ -134,7 +158,7 @@ export function buildContent(c) {
     horizonSource: c.horizonSource,
     activation: normalizeConditions(c.activation),
     invalidation: normalizeConditions(c.invalidation),
-    evidenceRefs: [...c.evidenceRefs],
+    evidenceRefs: c.evidenceRefs.map((r) => ({ kind: r.kind, id: r.id })),
     publishedAt: c.publishedAt,
     origin: c.origin,
   };
@@ -193,14 +217,26 @@ export function currentVersionOf(watchlist) {
 }
 
 /**
+ * A list saved from a DIALOGUE session: it names the session and the drop
+ * that started it (the save path writes both, server-trusted). Pilot P2: a
+ * list saved from a screener session also names its session in
+ * `sourceSessionId` (a researchSessions id) but never a drop — so the session
+ * id alone no longer says "dialogue".
+ */
+export const isDialogueList = (watchlist) => isPlainObject(watchlist)
+  && nonEmptyString(watchlist.sourceSessionId) && nonEmptyString(watchlist.sourceDropId);
+
+/**
  * The origin of a saved list (spec §2.8), from the list itself and — for a
- * session-derived list — the dialogue session's own discriminant (`source:
- * 'theme'` lives only on the session; a paste session carries none).
+ * dialogue list — the dialogue session's own discriminant (`source: 'theme'`
+ * lives only on the session; a paste session carries none). A list linked to
+ * a screener session (P2) is screener-origin even when its screen spec was
+ * dropped by the size guard.
  */
 export function originOf(watchlist, session = null) {
   const w = isPlainObject(watchlist) ? watchlist : {};
-  if (nonEmptyString(w.sourceSessionId)) return isPlainObject(session) && session.source === 'theme' ? 'theme' : 'signaldrop';
-  if (w.sourceScreenSpec != null) return 'screener';
+  if (isDialogueList(w)) return isPlainObject(session) && session.source === 'theme' ? 'theme' : 'signaldrop';
+  if (w.sourceScreenSpec != null || nonEmptyString(w.sourceSessionId)) return 'screener';
   return 'manual';
 }
 
@@ -221,9 +257,11 @@ export function sessionHorizonOf(session) {
  * The automatic v1 at dialogue save (the build prompt; spec §2.5, §2.8): the
  * anatomy thesis as the statement, the session's horizon, status `researched`
  * with reason `dialogue_completed` — the completed dialogue IS the research.
- * Null when the thesis is empty (no version is created).
+ * Pilot P2: when the session carries a research record, v1 cites it
+ * (`evidenceRefs: [{ kind: 'researchWork', id }]`); with none, v1 cites
+ * nothing, exactly as before. Null when the thesis is empty (no version).
  */
-export function buildSaveVersion({ session, watchlistId, userId, sessionId, nowIso }) {
+export function buildSaveVersion({ session, watchlistId, userId, sessionId, nowIso, researchWorkId = null }) {
   const thesis = isPlainObject(session?.anatomy) && typeof session.anatomy.thesis === 'string' ? session.anatomy.thesis.trim() : '';
   if (!thesis) return null;
   const origin = session.source === 'theme' ? 'theme' : 'signaldrop';
@@ -235,7 +273,9 @@ export function buildSaveVersion({ session, watchlistId, userId, sessionId, nowI
     content: {
       statement: thesis.slice(0, STATEMENT_MAX_LEN),
       ...sessionHorizonOf(session),
-      activation: [], invalidation: [], evidenceRefs: [], publishedAt: null, origin,
+      activation: [], invalidation: [],
+      evidenceRefs: researchWorkId === null ? [] : [researchRefOf(researchWorkId)],
+      publishedAt: null, origin,
     },
     status: 'researched', stateSource: 'research', stateReason: STATE_REASONS.dialogueCompleted,
   });

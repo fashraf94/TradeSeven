@@ -283,6 +283,10 @@ const ScreenerView = ({ onOpenResearch, isMobile }) => {
           tickers,
           name: saveName.trim().slice(0, 100),
           sourceScreenSpec: screen.appliedSpec || null,
+          // Pilot P2: the screener session this screen ran in, so the saved list
+          // can name its research record. The server links it only when the
+          // research-record gate is on for this player; otherwise it is ignored.
+          ...(sessionId ? { screenerSessionId: sessionId } : {}),
         }),
       });
       const createData = await createRes.json().catch(() => null);
@@ -308,7 +312,7 @@ const ScreenerView = ({ onOpenResearch, isMobile }) => {
       setSaveError('Connection issue — check your network and try again.');
       setSaveStatus('error');
     }
-  }, [screen, saveName, saveStatus]);
+  }, [screen, saveName, saveStatus, sessionId]);
 
   const canSend = !isSending && inputText.trim().length > 0;
   const canSaveScreen =

@@ -36,6 +36,18 @@ import { callGemmaVoiceWithRetry, parseVoiceLayerResponse } from '../_utils/gemm
 import { screenStocks, screenIndustries } from '../_utils/screenStocks.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { logConversation } from '../_utils/shadowLogger.js';
+// Pilot P2 — the research record (pilot spec §3; the P2 build prompt). Only
+// when the gate resolves on for the caller: a new session mints its record in
+// the same write that creates it; a continuing session's successful turn
+// updates it inside the turn transaction; a failed or discarded turn records
+// itself in a separate awaited write that never changes the answer. Gate off
+// → every write, response and model-call argument here is what it was.
+import { hypothesisRecordsOnFor } from '../_utils/hypothesisRecords/gate.js';
+import {
+  HOST_COLLECTIONS, researchWorkIdFor, isResearchWorkId, isOwnedRecord, buildRecord, budgetOf, emptyTelemetry,
+  applyTurn, screenEntryOf, screenerFunnel, turnPatch,
+} from '../_utils/researchRecords/model.js';
+import { mintWithHost, recordTurnOutcome, researchWorkRefOf, safely } from '../_utils/researchRecords/store.js';
 
 export const config = { maxDuration: 30 };
 
@@ -142,6 +154,18 @@ export default async function handler(req, res) {
 
   const db = getFirebaseAdmin();
 
+  // Pilot P2: resolved once, no I/O. `turn` follows this request's model call
+  // so every exit — the catch-all included — can record what it came to.
+  const recordsOn = hypothesisRecordsOnFor(user.uid);
+  const turn = { recordId: null, continuing: false, called: false, elapsedMs: null, usage: null };
+  const noteTurn = async (kind) => {
+    if (!turn.recordId || !turn.continuing || !turn.called) return;
+    await recordTurnOutcome(db, {
+      researchWorkId: turn.recordId, uid: user.uid, kind, elapsedMs: turn.elapsedMs, usage: turn.usage,
+      atIso: new Date().toISOString(), label: 'screener',
+    });
+  };
+
   try {
     // 5. Load or create session (scoped to user.uid)
     const sessionsCol = db.collection('researchSessions');
@@ -177,6 +201,15 @@ export default async function handler(req, res) {
 
     const messagesUsed = session.messagesUsed || 0;
     const messageBudget = session.messageBudget || MESSAGE_BUDGET;
+
+    // Pilot P2: a new session will mint its record (id derived from the
+    // session); a continuing one feeds the record it carries, if any.
+    if (recordsOn) {
+      turn.recordId = isNewSession
+        ? researchWorkIdFor({ collection: HOST_COLLECTIONS.screener, id: sessionRef.id })
+        : (isResearchWorkId(session.researchWorkId) ? session.researchWorkId : null);
+      turn.continuing = !isNewSession;
+    }
 
     // 6. Soft budget cap → graceful "fresh screen" message, NOT an error.
     if (messagesUsed >= messageBudget) {
@@ -214,20 +247,27 @@ export default async function handler(req, res) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 25000);
     let gemmaResult;
+    const callStartedMs = Date.now();
     try {
       gemmaResult = await callGemmaVoiceWithRetry({
         systemPrompt,
         conversationHistory,
         userMessage: sanitizedMessage,
         signal: controller.signal,
+        // Pilot P2: the provider's token counts, only for a recorded turn.
+        ...(turn.recordId ? { includeUsage: true } : {}),
       });
     } finally {
       clearTimeout(timeoutId);
     }
+    turn.called = true;
+    turn.elapsedMs = Date.now() - callStartedMs;
+    turn.usage = gemmaResult?.usage ?? null;
 
     // 10b. Gemma failure → graceful 200 (this turn doesn't burn budget).
     if (!gemmaResult.success) {
       console.error('[ScreenerChat] Gemma call failed:', gemmaResult.error);
+      await noteTurn('failure');
       return res.status(gemmaResult.aborted ? 504 : 200).json({
         sessionId: isNewSession ? null : sessionRef.id,
         message: 'I hit a snag building that screen — could you try that again?',
@@ -246,6 +286,7 @@ export default async function handler(req, res) {
         '| raw:',
         String(parsed.rawText || '').slice(0, 300),
       );
+      await noteTurn('failure');
       return res.status(200).json({
         sessionId: isNewSession ? null : sessionRef.id,
         message: 'I hit a snag building that screen — could you try that again?',
@@ -272,11 +313,13 @@ export default async function handler(req, res) {
     const nowIso = new Date().toISOString();
     let responsePayload;
     let exchange;
+    let screenTelemetry = null; // Pilot P2: this turn's screen, for a recorded session
 
     if (shouldScreen) {
       // 13. Read the universe ONCE (decide.js:122 pattern).
       const rankingsDoc = await db.collection('indexIntelligence').doc('stockRankings').get();
       if (!rankingsDoc.exists) {
+        await noteTurn('failure');
         return res.status(503).json({
           error: 'Stock rankings not available. The daily ranking job may not have run yet.',
         });
@@ -320,6 +363,15 @@ export default async function handler(req, res) {
         matchCount: screen.matchCount,
         timestamp: nowIso,
       };
+      if (turn.recordId) {
+        screenTelemetry = safely('screener', () => screenEntryOf({
+          atIso: nowIso,
+          resultType: responsePayload.resultType,
+          universeSize: screen.universeSize,
+          matchCount: screen.matchCount,
+          results: screen.results,
+        }));
+      }
     } else {
       // Clarifying turn (rare) — message only, no screen run.
       responsePayload = {
@@ -342,13 +394,33 @@ export default async function handler(req, res) {
     const nextLatestSpec = shouldScreen ? responsePayload.appliedSpec : (session.latestSpec || null);
 
     if (isNewSession) {
-      await sessionRef.set({
+      const hostDoc = {
         ...session,
         exchanges: [exchange],
         latestSpec: nextLatestSpec,
         messagesUsed: 1,
         updatedAt: nowIso,
-      });
+      };
+      // Pilot P2: the record is created in the SAME commit as the session, and
+      // the session carries its id. No record (gate off, or a record that
+      // could not be built) → exactly the write this path always made.
+      const record = turn.recordId ? safely('screener', () => {
+        const telemetry = applyTurn(emptyTelemetry({ screens: true }), {
+          kind: 'completion', elapsedMs: turn.elapsedMs, usage: turn.usage, atIso: nowIso, screen: screenTelemetry,
+        });
+        return buildRecord({
+          researchWorkId: turn.recordId, userId: user.uid, origin: 'screener',
+          host: { collection: HOST_COLLECTIONS.screener, id: sessionRef.id }, createdAt: nowIso,
+          funnel: screenerFunnel({ screens: telemetry.screens }),
+          budget: budgetOf({ messageBudget, messagesUsed: 1 }),
+          telemetry,
+        });
+      }) : null;
+      if (record) {
+        await mintWithHost(db, { hostRef: sessionRef, hostDoc: { ...hostDoc, researchWorkId: record.researchWorkId }, record });
+      } else {
+        await sessionRef.set(hostDoc);
+      }
     } else {
       // Continuing turn: transaction re-reads fresh state and re-checks budget
       // so concurrent turns can't interleave their increments past the cap
@@ -366,12 +438,23 @@ export default async function handler(req, res) {
           if ((fresh.messagesUsed || 0) >= (fresh.messageBudget || MESSAGE_BUDGET)) {
             throw new Error('__concurrency:budget_consumed');
           }
+          // Pilot P2: the session's record, read before any write.
+          const recordRef = turn.recordId ? researchWorkRefOf(db, turn.recordId) : null;
+          const recordSnap = recordRef ? await tx.get(recordRef) : null;
           tx.update(sessionRef, {
             exchanges: FieldValue.arrayUnion(exchange),
             latestSpec: nextLatestSpec,
             messagesUsed: FieldValue.increment(1),
             updatedAt: nowIso,
           });
+          const record = recordSnap?.exists ? recordSnap.data() : null;
+          const patch = isOwnedRecord(record, user.uid) ? safely('screener', () => turnPatch(record, {
+            kind: 'completion', elapsedMs: turn.elapsedMs, usage: turn.usage, atIso: nowIso, screen: screenTelemetry,
+            budget: budgetOf({ messageBudget: fresh.messageBudget || MESSAGE_BUDGET, messagesUsed: (fresh.messagesUsed || 0) + 1 }),
+            // While open, the record follows the latest stock screen (this one's included).
+            funnel: screenTelemetry?.resultType === 'stocks' ? (t) => screenerFunnel({ screens: t.screens }) : null,
+          })) : null;
+          if (patch) tx.update(recordRef, patch);
         });
       } catch (txErr) {
         if (typeof txErr?.message === 'string' && txErr.message.startsWith('__concurrency:')) {
@@ -380,6 +463,8 @@ export default async function handler(req, res) {
             return res.status(403).json({ error: 'Not authorized for this session' });
           }
           console.warn(`[ScreenerChat] concurrent_modification: ${reason} (session ${sessionRef.id})`);
+          // Pilot P2: the model answered but the turn was discarded — a cancellation.
+          await noteTurn('cancellation');
           return res.status(409).json({
             sessionId: sessionRef.id,
             message: 'Your screen was modified by another request — try that again.',
@@ -421,6 +506,7 @@ export default async function handler(req, res) {
   } catch (error) {
     // Catch-all — always return valid JSON in the shape the client expects.
     console.error('[ScreenerChat] Error:', error);
+    await noteTurn('failure'); // Pilot P2: only a recorded turn that reached the model
     const isAbort = error?.name === 'AbortError';
     return res.status(isAbort ? 504 : 500).json({
       sessionId: null,

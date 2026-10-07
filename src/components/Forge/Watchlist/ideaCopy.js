@@ -12,6 +12,7 @@
 // sentences; none uses table E's forbidden vocabulary (ideaCopy.test.js scans).
 
 import { HORIZON_WINDOW_SESSIONS } from '../../../constants/hypothesisRecords';
+import { RESEARCH_STAGES } from '../../../constants/researchRecords';
 
 /** Table C, verbatim. */
 export const LIFECYCLE_LINES = Object.freeze({
@@ -92,7 +93,67 @@ export const ACTION_LABELS = Object.freeze({
   cancel: 'Cancel idea',
   retire: 'Retire',
   reaffirm: 'Reaffirm',
+  mark_researched: 'Mark researched', // Pilot P2 / founder ruling D4
 });
+
+// ── Pilot P2 — the research line (the P2 build prompt's "Forge copy",
+// approve-by-default). Every number is a stage count from the research
+// record itself; a stage the record holds as null (its host has no such
+// stage) is not shown at all — never as 0 (BUILD_RULES §9).
+
+export const RESEARCH_COPY = Object.freeze({
+  lead: 'Researched with your agent:',
+  stillOpen: 'Research still open',
+  endedEarly: 'Research ended early',
+  playerMarked: 'You marked this researched.',
+  none: 'No research recorded for this idea yet.',
+});
+
+/** Each stage's word, in the line's pipeline order (RESEARCH_STAGES). */
+export const STAGE_LABELS = Object.freeze({
+  universeSize: 'screened',
+  matchedPreLimit: 'matched',
+  shortlisted: 'returned',
+  selectedForInvestigation: 'selected',
+  investigationsCompleted: 'investigated',
+  eligible: 'kept',
+});
+/** A dialogue's shortlist is the candidates the agent proposed. */
+export const DIALOGUE_SHORTLIST_LABEL = 'candidates';
+const DIALOGUE_ORIGINS = Object.freeze(['signaldrop', 'theme']);
+
+const isCount = (v) => Number.isSafeInteger(v) && v >= 0;
+
+/**
+ * "Researched with your agent: 500 screened · 37 matched · 25 returned · 25 kept"
+ * from one research summary — present stages only, in pipeline order. Null when
+ * the record has no stage at all (a manual record: the player wrote the list).
+ */
+export function researchLineOf(summary) {
+  const stages = summary?.stages || {};
+  const parts = RESEARCH_STAGES.filter((k) => isCount(stages[k])).map((k) => {
+    const label = k === 'shortlisted' && DIALOGUE_ORIGINS.includes(summary.origin) ? DIALOGUE_SHORTLIST_LABEL : STAGE_LABELS[k];
+    return `${stages[k]} ${label}`;
+  });
+  return parts.length ? `${RESEARCH_COPY.lead} ${parts.join(' · ')}` : null;
+}
+
+/** The session state, said only when the research did not complete. */
+export function researchStateOf(summary) {
+  if (summary?.state === 'open') return RESEARCH_COPY.stillOpen;
+  if (summary?.state === 'abandoned' || summary?.state === 'failed') return RESEARCH_COPY.endedEarly;
+  return null;
+}
+
+export const RESEARCH_LINES_MAX = 3;
+
+/** The lines the panel shows: one per research summary that has a line, newest first (the server's order), at most three. */
+export function researchLinesOf(research) {
+  return (Array.isArray(research) ? research : [])
+    .map((s) => ({ id: s?.researchWorkId, line: researchLineOf(s), state: researchStateOf(s) }))
+    .filter((r) => r.line)
+    .slice(0, RESEARCH_LINES_MAX);
+}
 
 /** The panel's own prompts and notes (UI copy; no lifecycle claims). */
 export const PANEL_COPY = Object.freeze({

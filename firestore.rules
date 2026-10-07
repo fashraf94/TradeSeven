@@ -1226,6 +1226,21 @@ service cloud.firestore {
       allow read, write: if false;  // Admin SDK only
     }
 
+    // Pilot P2 (docs/specs/20260923_BAGGERBOMB_PARTNERSHIP_PILOT_SPEC_V1_4.md
+    // §3): researchWork/{researchWorkId}, one research record per research run,
+    // written only by the research hosts through the Admin SDK (the screener
+    // chat, the watchlist dialogue and its abandon route, the analysis
+    // sessions, the watchlist create and save paths). Read by its owner on the
+    // record's own userId; no client write for anyone. Proven by
+    // test/rules/researchWorkDenials.rules.mjs (npm run test:rules). Index:
+    // firestore.indexes.json researchWork (userId ASC, createdAt DESC) — the
+    // Command Center's research list.
+    match /researchWork/{researchWorkId} {
+      allow read: if request.auth != null
+                  && resource.data.userId == request.auth.uid;
+      allow write: if false;
+    }
+
     // Phase 5: Workshop Mode — compiled theses produced by
     // /api/forge/compile-dimensions.js. Immutable audit record of each
     // successful thesis → dimensions translation. Server-only writes.

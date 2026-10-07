@@ -31,8 +31,12 @@
 import {
   WATCHLISTS_COLLECTION, VERSIONS_SUBCOLLECTION, CLOSING_ACTIONS, STATE_REASONS,
   versionDocId, legalTransition, contentOf, buildVersionDoc,
-  currentVersionOf, originOf, sessionHorizonOf, opFingerprintOf,
+  currentVersionOf, originOf, sessionHorizonOf, opFingerprintOf, isDialogueList, mergeEvidenceRefs,
 } from './model.js';
+// Pilot P2 — a version the player creates cites every research record already
+// attached to its list (the research → version join runs from the version's
+// evidenceRefs and from each record's subject; no record is written here).
+import { readListResearch, researchRefsOf, researchSummariesOf } from '../researchRecords/store.js';
 
 export const LIST_LIMIT = 100;
 
@@ -59,8 +63,6 @@ export const ROUTE_COPY = Object.freeze({
   pointer_corrupt: 'This list\'s version pointer is unreadable.',
 });
 const fail = (status, code, extra) => new HypothesisRouteError(status, code, ROUTE_COPY[code], extra);
-
-const nonEmpty = (v) => typeof v === 'string' && v.length > 0;
 
 export const watchlistRefOf = (db, watchlistId) => db.collection(WATCHLISTS_COLLECTION).doc(watchlistId);
 export const versionsColOf = (db, watchlistId) => watchlistRefOf(db, watchlistId).collection(VERSIONS_SUBCOLLECTION);
@@ -105,13 +107,13 @@ function applyOverrides(base, payload) {
 
 /**
  * The content a list's FIRST player-authored version starts from: the
- * list's origin, and — for a session-derived list — the session's horizon
- * (spec §2.5; a theme session is the constant `unspecified`), else
- * `unspecified` / `default`. A session-derived list whose session is gone
- * fails closed (origin_unresolved): an origin is never guessed.
+ * list's origin, and — for a dialogue list — the session's horizon (spec
+ * §2.5; a theme session is the constant `unspecified`), else `unspecified` /
+ * `default`. A dialogue list whose session is gone fails closed
+ * (origin_unresolved): an origin is never guessed.
  */
 function firstVersionDefaults(parent, sessionSnap) {
-  const sessionDerived = nonEmpty(parent.sourceSessionId);
+  const sessionDerived = isDialogueList(parent);
   const session = sessionSnap?.exists ? sessionSnap.data() : null;
   if (sessionDerived && !session) throw fail(409, 'origin_unresolved');
   const origin = originOf(parent, session);
@@ -139,9 +141,10 @@ export async function createPlayerVersion(db, { uid, watchlistId, opId, expected
     const current = pointerOf(parent);
     const opSnap = await tx.get(versionsColOf(db, watchlistId).where('opId', '==', opId).limit(1));
     const baseSnap = current > 0 ? await tx.get(versionRefOf(db, watchlistId, current)) : null;
-    const sessionSnap = current === 0 && nonEmpty(parent.sourceSessionId)
+    const sessionSnap = current === 0 && isDialogueList(parent)
       ? await tx.get(db.collection('watchlistSessions').doc(parent.sourceSessionId))
       : null;
+    const research = await readListResearch(db, { uid, watchlistId, listResearchWorkId: parent.researchWorkId ?? null, tx });
 
     const replay = replayOf(opSnap, opFingerprint);
     if (replay) return { idempotent: true, version: replay };
@@ -150,7 +153,8 @@ export async function createPlayerVersion(db, { uid, watchlistId, opId, expected
     if (current > 0 && !base) throw fail(500, 'pointer_corrupt');
     if (base?.status === 'review_due') throw fail(409, 'illegal_transition', { status: base.status, use: 'reaffirm' });
 
-    const content = applyOverrides(base ? contentOf(base) : firstVersionDefaults(parent, sessionSnap), payload);
+    const inherited = applyOverrides(base ? contentOf(base) : firstVersionDefaults(parent, sessionSnap), payload);
+    const content = { ...inherited, evidenceRefs: mergeEvidenceRefs(inherited.evidenceRefs, researchRefsOf(research)) };
     const next = current + 1;
     const doc = buildVersionDoc({
       version: next, watchlistId, userId: uid, opId, opFingerprint, createdAt: nowIso, content,
@@ -177,6 +181,7 @@ export async function reaffirmVersion(db, { uid, watchlistId, version, opId, exp
     const current = pointerOf(parent);
     const opSnap = await tx.get(versionsColOf(db, watchlistId).where('opId', '==', opId).limit(1));
     const dueSnap = await tx.get(versionRefOf(db, watchlistId, version));
+    const research = await readListResearch(db, { uid, watchlistId, listResearchWorkId: parent.researchWorkId ?? null, tx });
 
     const replay = replayOf(opSnap, opFingerprint);
     if (replay) return { idempotent: true, version: replay };
@@ -188,9 +193,10 @@ export async function reaffirmVersion(db, { uid, watchlistId, version, opId, exp
     }
 
     const next = current + 1;
+    const inherited = applyOverrides(contentOf(due), payload);
     const doc = buildVersionDoc({
       version: next, watchlistId, userId: uid, opId, opFingerprint, createdAt: nowIso,
-      content: applyOverrides(contentOf(due), payload),
+      content: { ...inherited, evidenceRefs: mergeEvidenceRefs(inherited.evidenceRefs, researchRefsOf(research)) },
       status: 'ready', stateSource: 'player', stateReason: STATE_REASONS.reaffirmed,
     });
     tx.create(versionRefOf(db, watchlistId, next), doc);
@@ -237,12 +243,18 @@ export async function transitionVersion(db, { uid, watchlistId, version, action,
  * consistent snapshot (a read-only transaction), so a version created
  * between the two reads can never appear beside a stale pointer (review L2-4).
  */
-export async function listVersions(db, { uid, watchlistId, limit = LIST_LIMIT }) {
+export async function listVersions(db, { uid, watchlistId, limit = LIST_LIMIT, withResearch = false }) {
   return db.runTransaction(async (tx) => {
     const parent = ownedParent(await tx.get(watchlistRefOf(db, watchlistId)), uid);
     const currentVersion = pointerOf(parent);
     const snap = await tx.get(versionsColOf(db, watchlistId).orderBy('version', 'desc').limit(limit));
-    return { currentVersion, versions: snap.docs.map((d) => d.data()) };
+    const out = { currentVersion, versions: snap.docs.map((d) => d.data()) };
+    // Pilot P2 — the Idea panel's research line: the list's research
+    // summaries (newest first), from the same snapshot.
+    if (withResearch) {
+      out.research = researchSummariesOf(await readListResearch(db, { uid, watchlistId, listResearchWorkId: parent.researchWorkId ?? null, tx }));
+    }
+    return out;
   }, { readOnly: true });
 }
 

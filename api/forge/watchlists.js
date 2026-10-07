@@ -45,6 +45,16 @@ import { waitUntil } from '@vercel/functions';
 // in the save transaction — only when the gate resolves on for the saver.
 import { hypothesisRecordsOnFor } from '../_utils/hypothesisRecords/gate.js';
 import { buildSaveVersion, VERSIONS_SUBCOLLECTION, versionDocId } from '../_utils/hypothesisRecords/model.js';
+// Pilot P2 (spec §3): the research record behind each list — under the same
+// gate. A dialogue save closes the session's record (completed /
+// saved_to_list) and its v1 cites it; a screener create links the screener
+// session and closes ITS record; a manual create mints a record of its own
+// (completed / player_authored). Gate off → each path writes what it wrote.
+import {
+  TERMINAL_REASONS, researchWorkIdFor, isResearchWorkId, isOwnedRecord, buildRecord, emptyTelemetry,
+  dialogueFunnel, screenerFunnel, manualFunnel, closePatch,
+} from '../_utils/researchRecords/model.js';
+import { mintWithHost, researchWorkRefOf, safely } from '../_utils/researchRecords/store.js';
 
 export const config = { maxDuration: 10 };
 
@@ -187,7 +197,21 @@ async function handleManualCreate({ res, user }) {
       committedAt: null,
     };
 
-    await watchlistRef.set(watchlistDoc);
+    // Pilot P2: a manual list is research the player authored — its record is
+    // created in the same commit as the list, already completed, every stage
+    // null (no host, no budget, no model call). Gate off → the plain write.
+    const record = hypothesisRecordsOnFor(user.uid) ? safely('manual', () => buildRecord({
+      researchWorkId: researchWorkIdFor({ collection: 'watchlists', id: watchlistRef.id }),
+      userId: user.uid, origin: 'manual', host: null, createdAt: nowIso,
+      watchlistId: watchlistRef.id, hypothesisVersion: null,
+      funnel: manualFunnel(), budget: null, telemetry: emptyTelemetry(),
+      state: 'completed', terminalReason: TERMINAL_REASONS.playerAuthored, endedAt: nowIso,
+    })) : null;
+    if (record) {
+      await mintWithHost(db, { hostRef: watchlistRef, hostDoc: { ...watchlistDoc, researchWorkId: record.researchWorkId }, record });
+    } else {
+      await watchlistRef.set(watchlistDoc);
+    }
 
     waitUntil(
       logSignalDrops({
@@ -297,7 +321,37 @@ async function handleCreateFromTickers({ req, res, user }) {
       committedAt: null,
     };
 
-    await watchlistRef.set(watchlistDoc);
+    // Pilot P2: the screener sends the session the screen came from. With the
+    // gate on for the caller and a session they own, the list names it
+    // (`sourceSessionId`) and its research record (`researchWorkId`, null when
+    // the session has none), and an open record closes as completed /
+    // saved_to_list against the screen whose results were saved — one
+    // transaction. Otherwise (gate off, no id, not theirs) → the plain write,
+    // `sourceSessionId: null` exactly as before.
+    const screenerSessionId = typeof body.screenerSessionId === 'string' && isValidForgeId(body.screenerSessionId)
+      && hypothesisRecordsOnFor(user.uid) ? body.screenerSessionId : null;
+    if (screenerSessionId) {
+      await db.runTransaction(async (tx) => {
+        const sessionSnap = await tx.get(db.collection('researchSessions').doc(screenerSessionId));
+        const session = sessionSnap.exists ? sessionSnap.data() : null;
+        const owned = session?.userId === user.uid;
+        const recordRef = owned && isResearchWorkId(session.researchWorkId) ? researchWorkRefOf(db, session.researchWorkId) : null;
+        const recordSnap = recordRef ? await tx.get(recordRef) : null;
+        const stored = recordSnap?.exists ? recordSnap.data() : null;
+        const record = isOwnedRecord(stored, user.uid) && stored.researchWorkId === session.researchWorkId ? stored : null;
+        tx.set(watchlistRef, owned
+          ? { ...watchlistDoc, sourceSessionId: screenerSessionId, researchWorkId: record ? record.researchWorkId : null }
+          : watchlistDoc);
+        const patch = record ? safely('screener-save', () => closePatch(record, {
+          state: 'completed', terminalReason: TERMINAL_REASONS.savedToList, atIso: nowIso,
+          funnel: screenerFunnel({ screens: record.telemetry?.screens, saved: tickers.map((t) => t.symbol) }),
+          subject: { watchlistId: watchlistRef.id, hypothesisVersion: null },
+        })) : null;
+        if (patch) tx.update(recordRef, patch);
+      });
+    } else {
+      await watchlistRef.set(watchlistDoc);
+    }
 
     waitUntil(
       logSignalDrops({
@@ -415,6 +469,17 @@ async function handleSignalDerivedCreate({ res, user, sessionId, agentId, dropId
         throw new Error(SENTINEL_PREFIX + 'invalid_status');
       }
 
+      // Pilot P2 — the session's research record (gate on, and the session
+      // carries one), read before any write.
+      const researchRef = hypothesisOn && isResearchWorkId(session.researchWorkId)
+        ? researchWorkRefOf(db, session.researchWorkId)
+        : null;
+      const researchSnap = researchRef ? await tx.get(researchRef) : null;
+      const storedResearch = researchSnap?.exists ? researchSnap.data() : null;
+      const research = isOwnedRecord(storedResearch, user.uid) && storedResearch.researchWorkId === session.researchWorkId
+        ? storedResearch
+        : null;
+
       // Build watchlist content from session.
       // Ticker filter per D-9.2: keep proposed + kept, drop removed.
       // Ticker shape per D-9.9: strip slot/status/proposedAt/proposedAtPhase.
@@ -459,13 +524,19 @@ async function handleSignalDerivedCreate({ res, user, sessionId, agentId, dropId
       // from the session's parse, a theme session `unspecified`; status
       // `researched`, reason `dialogue_completed`) and the parent pointer, in
       // THIS transaction. An empty thesis creates no version and no pointer.
+      // Pilot P2: v1 cites the research record (evidenceRefs), and the list
+      // names it.
       const hypothesisV1 = hypothesisOn
-        ? buildSaveVersion({ session, watchlistId: watchlistRef.id, userId: user.uid, sessionId, nowIso })
+        ? buildSaveVersion({
+          session, watchlistId: watchlistRef.id, userId: user.uid, sessionId, nowIso,
+          researchWorkId: research ? research.researchWorkId : null,
+        })
         : null;
       if (hypothesisV1) {
         watchlistDoc.currentHypothesisVersion = 1;
         watchlistDoc.hypothesisVersionCount = 1;
       }
+      if (research) watchlistDoc.researchWorkId = research.researchWorkId;
 
       // Per audit A-A-1: tx.set, not tx.create. Auto-id collisions are
       // mathematically negligible (~120 bits entropy from .doc()).
@@ -478,6 +549,14 @@ async function handleSignalDerivedCreate({ res, user, sessionId, agentId, dropId
         dropListId: watchlistRef.id,
         updatedAt: nowIso,
       });
+      // Pilot P2: the record closes completed / saved_to_list — eligible = the
+      // symbols this save carries — and attaches to the list and its v1.
+      const researchPatch = research ? safely('save', () => closePatch(research, {
+        state: 'completed', terminalReason: TERMINAL_REASONS.savedToList, atIso: nowIso,
+        funnel: dialogueFunnel({ candidates: session.candidateTickers, saved: tickers.map((t) => t.symbol) }),
+        subject: { watchlistId: watchlistRef.id, hypothesisVersion: hypothesisV1 ? 1 : null },
+      })) : null;
+      if (researchPatch) tx.update(researchRef, researchPatch);
 
       return {
         idempotent: false,

@@ -43,6 +43,11 @@ export const STATE_REASONS = Object.freeze({
   playerRejected: 'player_rejected',
   playerCancelled: 'player_cancelled',
   playerRetired: 'player_retired',
+  // Pilot P2 / founder ruling D4 (spec Amendment B): the PLAYER's draft →
+  // researched, kept distinct from research done with the agent (the spec's
+  // automatic `research_complete`, which no P2 writer produces: no host
+  // completes research on a draft's content).
+  playerMarkedResearched: 'player_marked_researched',
   horizonElapsed: 'horizon_elapsed',
   battleEnded: 'battle_ended',
 });
@@ -51,10 +56,11 @@ const NON_TERMINAL = HYPOTHESIS_STATUSES.filter((s) => !TERMINAL_STATUSES.includ
 const fromEach = (statuses, reason) => Object.freeze(Object.fromEntries(statuses.map((s) => [s, reason])));
 
 /**
- * The PLAYER transitions (spec §2.5; the P1a build prompt's list): action →
- * target status and the typed reason per legal prior status. Anything not
- * listed is an illegal transition. `reaffirm` is not here: it creates a
- * version and never changes the due version's status.
+ * The PLAYER transitions (spec §2.5; the P1a build prompt's list; P2 adds
+ * `mark_researched`, founder ruling D4 / spec Amendment B): action → target
+ * status and the typed reason per legal prior status. Anything not listed is
+ * an illegal transition. `reaffirm` is not here: it creates a version and
+ * never changes the due version's status.
  */
 export const PLAYER_TRANSITIONS = Object.freeze({
   ready: Object.freeze({ to: 'ready', from: Object.freeze({ researched: STATE_REASONS.playerReady, waiting_for_evidence: STATE_REASONS.evidenceSupplied }) }),
@@ -62,6 +68,7 @@ export const PLAYER_TRANSITIONS = Object.freeze({
   reject: Object.freeze({ to: 'rejected', from: fromEach(['draft', 'researched', 'waiting_for_evidence'], STATE_REASONS.playerRejected) }),
   cancel: Object.freeze({ to: 'cancelled', from: fromEach(PRE_DEPLOY_STATUSES, STATE_REASONS.playerCancelled) }),
   retire: Object.freeze({ to: 'retired', from: fromEach(NON_TERMINAL, STATE_REASONS.playerRetired) }),
+  mark_researched: Object.freeze({ to: 'researched', from: fromEach(['draft'], STATE_REASONS.playerMarkedResearched) }),
 });
 export const PLAYER_ACTIONS = Object.freeze([...Object.keys(PLAYER_TRANSITIONS), 'reaffirm']);
 /** Actions that may close a SUPERSEDED version; the rest act on the current version only. */

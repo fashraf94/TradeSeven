@@ -37,6 +37,20 @@ import { logSignalDrops } from '../_utils/shadowLogger.js';
 import { FORGE_ID_REGEX, FORGE_ID_MAX_LEN, isValidForgeId } from '../_utils/idValidation.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { waitUntil } from '@vercel/functions';
+// Pilot P2 — the research record (pilot spec §3; the P2 build prompt). This
+// file changes ONLY to mint the record and record telemetry: no prompt input,
+// prompt byte or candidate rule moves. Gate on for the caller only — a new
+// session mints its record in the same write that creates it; a successful
+// continuing turn updates it inside the turn transaction; a failed or
+// discarded turn records itself in a separate awaited write that never
+// changes the answer. Gate off → every write, response and model-call
+// argument here is what it was.
+import { hypothesisRecordsOnFor } from '../_utils/hypothesisRecords/gate.js';
+import {
+  HOST_COLLECTIONS, researchWorkIdFor, isResearchWorkId, isOwnedRecord, dialogueOriginOf, buildRecord, budgetOf,
+  emptyTelemetry, applyTurn, dialogueFunnel, turnPatch,
+} from '../_utils/researchRecords/model.js';
+import { mintWithHost, recordTurnOutcome, researchWorkRefOf, safely } from '../_utils/researchRecords/store.js';
 
 export const config = { maxDuration: 30 };
 
@@ -804,6 +818,18 @@ export default async function handler(req, res) {
 
   const db = getFirebaseAdmin();
 
+  // Pilot P2: resolved once, no I/O. `turn` follows this request's model call
+  // so every exit — the catch-all included — can record what it came to.
+  const recordsOn = hypothesisRecordsOnFor(user.uid);
+  const turn = { recordId: null, continuing: false, called: false, elapsedMs: null, usage: null };
+  const noteTurn = async (kind) => {
+    if (!turn.recordId || !turn.continuing || !turn.called) return;
+    await recordTurnOutcome(db, {
+      researchWorkId: turn.recordId, uid: user.uid, kind, elapsedMs: turn.elapsedMs, usage: turn.usage,
+      atIso: new Date().toISOString(), label: 'dialogue',
+    });
+  };
+
   try {
     // 5. Read agent doc + verify ownership
     const agentRef = db.collection('agents').doc(agentId);
@@ -1002,6 +1028,15 @@ export default async function handler(req, res) {
       };
     }
 
+    // Pilot P2: a new session will mint its record (id derived from the
+    // session); a continuing one feeds the record it carries, if any.
+    if (recordsOn) {
+      turn.recordId = isNewSession
+        ? researchWorkIdFor({ collection: HOST_COLLECTIONS.dialogue, id: sessionRef.id })
+        : (isResearchWorkId(session.researchWorkId) ? session.researchWorkId : null);
+      turn.continuing = !isNewSession;
+    }
+
     // 7. Budget check — happens BEFORE we count this turn
     const currentMessagesUsed = session.messagesUsed || 0;
     const messageBudget = session.messageBudget || MESSAGE_BUDGET;
@@ -1076,16 +1111,22 @@ export default async function handler(req, res) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), GEMMA_TIMEOUT_MS);
     let gemmaResult;
+    const callStartedMs = Date.now();
     try {
       gemmaResult = await callGemmaVoiceWithRetry({
         systemPrompt,
         conversationHistory,
         userMessage,
         signal: controller.signal,
+        // Pilot P2: the provider's token counts, only for a recorded turn.
+        ...(turn.recordId ? { includeUsage: true } : {}),
       });
     } finally {
       clearTimeout(timeoutId);
     }
+    turn.called = true;
+    turn.elapsedMs = Date.now() - callStartedMs;
+    turn.usage = gemmaResult?.usage ?? null;
 
     // 14. Structured-error path (Gemma failed but session preserved)
     // Mirrors workshop-chat's contract: 200 (or 504 on abort) with a
@@ -1134,6 +1175,7 @@ export default async function handler(req, res) {
       }
 
       // Continuing-turn failure: shadow log + 200 with preserved state.
+      await noteTurn('failure');
       waitUntil(
         logSignalDrops({
           stage: 'dialogue',
@@ -1216,6 +1258,7 @@ export default async function handler(req, res) {
         });
       }
 
+      await noteTurn('failure');
       return res.status(200).json({
         sessionId: sessionRef.id,
         error: true,
@@ -1329,7 +1372,7 @@ export default async function handler(req, res) {
         nowIso,
       );
       updatedAnatomy = applyAnatomyUpdates(session.anatomy, normalized.anatomyUpdates);
-      await sessionRef.set({
+      const hostDoc = {
         ...session,
         phase: transition.newPhase,
         exchanges: [userExchange, agentExchange],
@@ -1337,7 +1380,22 @@ export default async function handler(req, res) {
         anatomy: updatedAnatomy,
         messagesUsed: 1,
         updatedAt: nowIso,
-      });
+      };
+      // Pilot P2: the record is created in the SAME commit as the session, and
+      // the session carries its id. No record (gate off, or a record that
+      // could not be built) → exactly the write this path always made.
+      const record = turn.recordId ? safely('dialogue', () => buildRecord({
+        researchWorkId: turn.recordId, userId: user.uid, origin: dialogueOriginOf(session),
+        host: { collection: HOST_COLLECTIONS.dialogue, id: sessionRef.id }, createdAt: nowIso,
+        funnel: dialogueFunnel({ candidates: updatedCandidateTickers }),
+        budget: budgetOf({ messageBudget, messagesUsed: 1 }),
+        telemetry: applyTurn(emptyTelemetry(), { kind: 'completion', elapsedMs: turn.elapsedMs, usage: turn.usage, atIso: nowIso }),
+      })) : null;
+      if (record) {
+        await mintWithHost(db, { hostRef: sessionRef, hostDoc: { ...hostDoc, researchWorkId: record.researchWorkId }, record });
+      } else {
+        await sessionRef.set(hostDoc);
+      }
     } else {
       try {
         const txResult = await db.runTransaction(async (tx) => {
@@ -1358,6 +1416,9 @@ export default async function handler(req, res) {
           if (freshSession.phase !== currentPhase) {
             throw new Error('__concurrency:phase_advanced');
           }
+          // Pilot P2: the session's record, read before any write.
+          const recordRef = turn.recordId ? researchWorkRefOf(db, turn.recordId) : null;
+          const recordSnap = recordRef ? await tx.get(recordRef) : null;
 
           const freshList = applyCandidateTickerUpdates(
             freshSession.candidateTickers || [],
@@ -1378,6 +1439,16 @@ export default async function handler(req, res) {
             messagesUsed: FieldValue.increment(1),
             updatedAt: nowIso,
           });
+          const record = recordSnap?.exists ? recordSnap.data() : null;
+          const patch = isOwnedRecord(record, user.uid) ? safely('dialogue', () => turnPatch(record, {
+            kind: 'completion', elapsedMs: turn.elapsedMs, usage: turn.usage, atIso: nowIso,
+            budget: budgetOf({
+              messageBudget: freshSession.messageBudget || MESSAGE_BUDGET,
+              messagesUsed: (freshSession.messagesUsed || 0) + 1,
+            }),
+            funnel: dialogueFunnel({ candidates: freshList }),
+          })) : null;
+          if (patch) tx.update(recordRef, patch);
 
           return { freshList, freshAnatomy };
         });
@@ -1392,6 +1463,8 @@ export default async function handler(req, res) {
           console.warn(
             `[watchlist-dialogue] concurrent_modification: ${reason} (session ${sessionRef.id})`,
           );
+          // Pilot P2: the model answered but the turn was discarded — a cancellation.
+          await noteTurn('cancellation');
           return res.status(409).json({
             error: 'concurrent_modification',
             errorReason: reason,
@@ -1469,6 +1542,7 @@ export default async function handler(req, res) {
     });
   } catch (error) {
     console.error('[watchlist-dialogue] Error:', error);
+    await noteTurn('failure'); // Pilot P2: only a recorded turn that reached the model
     const isAbort = error?.name === 'AbortError';
     return res.status(isAbort ? 504 : 500).json({
       error: true,
