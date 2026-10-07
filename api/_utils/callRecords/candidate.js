@@ -60,9 +60,15 @@ export const MUTABLE_CALL_FIELDS = Object.freeze(['state', 'stateChangedAt', 'st
 /**
  * Provenance reasons (contract §4 `provenance_unresolved`): each names a
  * watchlist snapshot that is PRESENT but unusable (founder ruling A-1 — an
- * absent snapshot is agent_initiative, never unresolved).
+ * absent snapshot is agent_initiative, never unresolved). Pilot P1a adds
+ * `hypothesis_snapshot_mismatch`: a frozen `equippedHypothesis` sibling whose
+ * `watchlistId` is not the frozen snapshot's (pilot spec §2.6; Phase 0 Q4).
+ * `snapshot_corrupt` also covers a MALFORMED sibling beside a valid snapshot —
+ * the frozen hypothesis is part of the frozen equipped provenance (spec §2.4),
+ * as the snapshot's own version key was before P1a; the contract has no
+ * separate reason for it, and none is invented here (review L1-8).
  */
-export const PROVENANCE_REASONS = Object.freeze(['snapshot_corrupt', 'config_hash_missing']);
+export const PROVENANCE_REASONS = Object.freeze(['snapshot_corrupt', 'config_hash_missing', 'hypothesis_snapshot_mismatch']);
 
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const nonEmptyString = (v) => typeof v === 'string' && v.length > 0;
@@ -113,11 +119,12 @@ export function canonicalRecord(record) {
  * complete origin rule, as amended by founder ruling A-1, 2026-09-24). Never
  * fetches; never infers origin from a null ref.
  *
- *   valid snapshot + a validated version       → versioned { watchlistId, hypothesisVersion }, equipped
- *   valid snapshot + hash (no version)         → legacy { watchlistId, equippedConfigHash }, equipped
- *   valid snapshot, no hash, no version        → null, provenance_unresolved ('config_hash_missing')
- *   a corrupt snapshot (or a corrupt version)  → null, provenance_unresolved ('snapshot_corrupt')
- *   NO snapshot (absent or null)               → null, agent_initiative — whatever the config hash says
+ *   valid snapshot + a validated sibling version → versioned { watchlistId, hypothesisVersion }, equipped
+ *   valid snapshot + a sibling for ANOTHER list  → null, provenance_unresolved ('hypothesis_snapshot_mismatch')
+ *   valid snapshot + hash (no sibling)           → legacy { watchlistId, equippedConfigHash }, equipped
+ *   valid snapshot, no hash, no sibling          → null, provenance_unresolved ('config_hash_missing')
+ *   a corrupt snapshot (or a corrupt sibling)    → null, provenance_unresolved ('snapshot_corrupt')
+ *   NO snapshot (absent or null)                 → null, agent_initiative — whatever the config hash says
  *
  * Ruling A-1: the manifest's equippedConfigHash exists on every battle created
  * with the manifest write on — it hashes `equippedWatchlist: null` as well — so
@@ -125,10 +132,13 @@ export function canonicalRecord(record) {
  * reserved for a snapshot that is PRESENT but unusable (review A-1: the
  * contract's "hash without watchlist" case made agent_initiative unreachable).
  *
- * The VERSIONED branch reads `agentContext.equippedWatchlist.hypothesisVersion`
- * (a positive integer). HEAD's producer never writes one
- * (watchlistEquip.js buildEquippedSnapshot → { watchlistId, name, tickers }),
- * so that branch is exercised by a synthetic fixture only.
+ * The VERSIONED branch (pilot P1a; spec §2.4, §2.6; Phase 0 Q4) reads the
+ * frozen SIBLING `agentContext.equippedHypothesis.{hypothesisVersion,
+ * watchlistId}` — never the hashed snapshot, which P1b leaves byte-for-byte
+ * as it is (spec §2.4). The sibling must name the SAME list as the snapshot.
+ * No producer writes the sibling until P1b, so on every battle today the
+ * sibling is absent and the legacy and H1 branches run exactly as before; a
+ * `hypothesisVersion` key inside the snapshot is not a version source.
  */
 export function resolveProvenance(battle) {
   const snapshot = battle?.agentContext?.equippedWatchlist;
@@ -139,10 +149,14 @@ export function resolveProvenance(battle) {
   if (!isPlainObject(snapshot) || !nonEmptyString(snapshot.watchlistId) || !Array.isArray(snapshot.tickers)) {
     return { hypothesisRef: null, origin: 'provenance_unresolved', provenanceReason: 'snapshot_corrupt' };
   }
-  const version = snapshot.hypothesisVersion;
-  if (version !== undefined && version !== null) {
-    if (!(Number.isInteger(version) && version > 0)) {
+  const sibling = battle?.agentContext?.equippedHypothesis;
+  if (sibling !== undefined && sibling !== null) {
+    const version = isPlainObject(sibling) ? sibling.hypothesisVersion : undefined;
+    if (!isPlainObject(sibling) || !nonEmptyString(sibling.watchlistId) || !(Number.isInteger(version) && version > 0)) {
       return { hypothesisRef: null, origin: 'provenance_unresolved', provenanceReason: 'snapshot_corrupt' };
+    }
+    if (sibling.watchlistId !== snapshot.watchlistId) {
+      return { hypothesisRef: null, origin: 'provenance_unresolved', provenanceReason: 'hypothesis_snapshot_mismatch' };
     }
     return { hypothesisRef: { watchlistId: snapshot.watchlistId, hypothesisVersion: version }, origin: 'equipped' };
   }

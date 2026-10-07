@@ -139,7 +139,15 @@ describe('the posture is written down, not only inherited', () => {
   it('ONE block for the collection, saying exactly `allow read, write: if false;` — a grant appended inside it fails here', () => {
     expect(ruleBlocks(RULES_TEXT, /\/agentEvalRuns\/\{[^}/]+\}/)).toEqual([['allow read, write: if false;']]);
   });
-  it('the only wildcard-first path is the root default-deny, which says the same', () => {
-    expect(ruleBlocks(RULES_TEXT, /\/\{[^\n]*?\}/)).toEqual([['allow read, write: if false;']]);
+  it('no wildcard-first path can grant it: the root default-deny (which says the same), and recursive matches pinned to ANOTHER named collection', () => {
+    // Pilot P1a's collection-group read `/{path=**}/hypothesisVersions/{versionId}` is wildcard-first but its
+    // last collection segment is fixed, so it matches hypothesisVersions documents and nothing else (the
+    // default-suite copy of this row: api/cron/agent-evaluate.evalRun.test.js).
+    const heads = [...RULES_TEXT.matchAll(/match (\/\{[^\n]*?\}) \{/g)].map((m) => m[1]);
+    expect(heads).toEqual(['/{path=**}/hypothesisVersions/{versionId}', '/{document=**}']);
+    for (const head of heads.filter((h) => h !== '/{document=**}')) {
+      expect(head).toMatch(/^\/\{[a-z]+=\*\*\}\/(?!agentEvalRuns\/)[A-Za-z]+\/\{[^}/]+\}$/);
+    }
+    expect(ruleBlocks(RULES_TEXT, /\/\{document=\*\*\}/)).toEqual([['allow read, write: if false;']]);
   });
 });
