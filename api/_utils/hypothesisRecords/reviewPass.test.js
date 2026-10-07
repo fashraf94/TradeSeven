@@ -204,6 +204,63 @@ describe('judged once — fresh reads, compare-and-set on `activated`', () => {
   });
 });
 
+describe('the due boundary and the ROW\'s fresh re-read (review L5-4, L5-5)', () => {
+  it('dueAtMs === now is due — at the decision and at the query', async () => {
+    const r = normalizeReviewRow(row('wl-a'));
+    expect(decideReview({ row: r, version: { status: 'activated' }, nowMs: r.dueAtMs })).toEqual({ act: 'transition', reason: 'horizon_elapsed' });
+    const db = store({ [rowPath('wl-a')]: row('wl-a', { dueAtMs: NOW }), [versionPath('wl-a')]: version('wl-a') });
+    expect((await run(db)).horizonElapsed).toBe(1);
+    expect(stored(db, versionPath('wl-a')).status).toBe('review_due');
+  });
+  it('a row RE-ARMED later between the query and the transaction is judged from its fresh read: not due, nothing written', async () => {
+    const db = store({ [rowPath('wl-a')]: row('wl-a'), [versionPath('wl-a')]: version('wl-a') });
+    db.__hooks.afterQuery = async ({ collectionPath }) => {
+      if (collectionPath !== REVIEW_QUEUE_COLLECTION) return;
+      db.__hooks.afterQuery = null;
+      db.__docs.set(rowPath('wl-a'), row('wl-a', { dueAtMs: NOW + 3_600_000 }));
+    };
+    const res = await run(db);
+    expect(res).toMatchObject({ notDue: 1, horizonElapsed: 0 });
+    expect(stored(db, versionPath('wl-a')).status).toBe('activated');
+    expect(stored(db, rowPath('wl-a'))).not.toBeNull();
+  });
+  it('a row CONSUMED between the query and the transaction is passed over silently — not counted malformed, nothing written', async () => {
+    const db = store({ [rowPath('wl-a')]: row('wl-a'), [versionPath('wl-a')]: version('wl-a') });
+    db.__hooks.afterQuery = async ({ collectionPath }) => {
+      if (collectionPath !== REVIEW_QUEUE_COLLECTION) return;
+      db.__hooks.afterQuery = null;
+      db.__docs.delete(rowPath('wl-a'));
+    };
+    const res = await run(db);
+    expect(res).toMatchObject({ malformed: 0, horizonElapsed: 0, staleDeleted: 0 });
+    expect(db.__access.writes.filter((w) => w.path !== 'hypothesisReviewState/cursor')).toEqual([]);
+  });
+});
+
+describe('the in-attempt deadline — UNCONFIRMED, never a late write (review L5-6)', () => {
+  it('an attempt whose reads overran its slice writes nothing and is counted unconfirmed', async () => {
+    const db = store({ [rowPath('wl-a')]: row('wl-a'), [versionPath('wl-a')]: version('wl-a') });
+    const orig = db.runTransaction.bind(db);
+    db.runTransaction = (cb) => orig(async (tx) => {
+      const getAll = tx.getAll;
+      tx.getAll = async (...refs) => { const out = await getAll(...refs); vi.setSystemTime(Date.now() + 2_000); return out; };
+      return cb(tx);
+    });
+    const res = await run(db);
+    expect(res).toMatchObject({ unconfirmed: 1, horizonElapsed: 0 });
+    expect(stored(db, versionPath('wl-a')).status).toBe('activated');
+    expect(stored(db, rowPath('wl-a'))).not.toBeNull();
+  });
+  it('an attempt that STARTS past its deadline reads nothing of the version', async () => {
+    const db = store({ [rowPath('wl-a')]: row('wl-a'), [versionPath('wl-a')]: version('wl-a') });
+    const orig = db.runTransaction.bind(db);
+    db.runTransaction = (cb) => { vi.setSystemTime(Date.now() + 2_000); return orig(cb); };
+    const res = await run(db);
+    expect(res).toMatchObject({ unconfirmed: 1, horizonElapsed: 0 });
+    expect(db.__access.reads).not.toContain(versionPath('wl-a'));
+  });
+});
+
 describe('budget, failures and the cursor', () => {
   it('a FAILED transaction is counted, never thrown; the rest of the queue still runs and the failed row stays for the next tick', async () => {
     const db = store({

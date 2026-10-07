@@ -114,6 +114,13 @@ describe('the gate — nothing renders until the server proves the gate is on fo
       expect(container.innerHTML).toBe('');
     });
   }
+  for (const [status, code] of [[404, 'not_found'], [403, 'forbidden']]) {
+    it(`a first-load ${code} (raised only after the gate admitted the player) shows the error card (review L5-9)`, async () => {
+      svc.listHypothesisVersions.mockRejectedValue(httpError(status, code));
+      await mount();
+      expect(container.textContent).toContain(PANEL_COPY.loadFailed);
+    });
+  }
   it('a first-load error the server raises only AFTER admitting the player (server_error) is said, with a retry', async () => {
     svc.listHypothesisVersions.mockRejectedValueOnce(httpError(500, 'server_error'));
     await mount();
@@ -146,6 +153,17 @@ describe('the record — current version, dates, history', () => {
     expect(q('idea-history').textContent).toContain(`${PANEL_COPY.history} (2)`);
     expect(q('idea-history-v2').textContent).toBe('v2 · Ready · Oct 7, 2026 — Idea number 2');
     expect(q('idea-history-v1').textContent).toBe('v1 · Retired · Oct 7, 2026 · → v2 — Idea number 1');
+  });
+  it('the current version is the one the POINTER names, not the newest in the page (review L5-9)', async () => {
+    svc.listHypothesisVersions.mockResolvedValue(answer([v(1, { status: 'ready' }), v(2, { status: 'draft' })], 1));
+    await mount();
+    expect(q('idea-statement').textContent).toBe('Idea number 1');
+    expect(q('idea-status').textContent).toBe('v1 · Ready');
+  });
+  it('the saved-watchlist screen mounts the panel (source tripwire — no suite renders WatchlistEditor; review L5-1)', () => {
+    const src = readFileSync(resolve(HERE, 'WatchlistEditor.jsx'), 'utf8');
+    expect(src).toMatch(/import IdeaPanel from '\.\/IdeaPanel';/);
+    expect(src).toMatch(/<IdeaPanel watchlistId=\{watchlistId\} tokens=\{tokens\} \/>/);
   });
   it('the history count is the pointer, not the page (a list past the page cap still counts true)', async () => {
     svc.listHypothesisVersions.mockResolvedValue(answer([v(150, { status: 'draft' }), v(149, { status: 'retired', successorVersion: 150 })], 150));
@@ -338,6 +356,25 @@ describe('review due and reaffirmation — table C verbatim, filled only from th
     expect(button(ACTION_LABELS.reaffirm).disabled).toBe(false); // same content is a legal reaffirmation
     await click(button(ACTION_LABELS.reaffirm));
     expect(svc.reaffirmHypothesis).toHaveBeenCalledWith('wl-1', { version: 1, opId: 'op-fixed', expectedVersion: 1 });
+    expect(q('idea-notice').textContent).toBe(LIFECYCLE_LINES.reaffirmed);
+  });
+  it('a reaffirm RETRY after a lost response is the identical request — same opId, target and pointer as opened (review L5-2)', async () => {
+    let n = 0;
+    svc.newOpId.mockImplementation(() => `op-${++n}`);
+    svc.listHypothesisVersions
+      .mockResolvedValueOnce(answer([v(1, { status: 'review_due', stateReason: 'horizon_elapsed' })], 1))
+      // The first reaffirm committed server-side; its response was lost. The reload already shows v2.
+      .mockResolvedValue(answer([v(1, { status: 'review_due', stateReason: 'horizon_elapsed', successorVersion: 2 }), v(2, { status: 'ready' })], 2));
+    svc.reaffirmHypothesis.mockRejectedValueOnce(networkError()).mockResolvedValueOnce({ idempotent: true });
+    await mount();
+    await click(button(ACTION_LABELS.reaffirm));
+    await click(q('idea-editor').querySelector('button'));
+    expect(q('idea-editor')).not.toBeNull();
+    await click(q('idea-editor').querySelector('button'));
+    expect(svc.reaffirmHypothesis.mock.calls.map((c) => c[1])).toEqual([
+      { version: 1, opId: 'op-1', expectedVersion: 1 },
+      { version: 1, opId: 'op-1', expectedVersion: 1 },
+    ]);
     expect(q('idea-notice').textContent).toBe(LIFECYCLE_LINES.reaffirmed);
   });
   it('Reaffirm with an edited statement sends it; the target is the version the editor opened on', async () => {

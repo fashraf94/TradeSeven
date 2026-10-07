@@ -407,6 +407,18 @@ describe('row 2 — allocation', () => {
     expect(stored(db, vPath(2)).statement).toBe('the racer');
     expect(stored(db, vPath(3))).toBeNull();
   });
+  it('a well-formed pointer naming a MISSING version → 500 pointer_corrupt, nothing written — never first-version defaults (review L5-7)', async () => {
+    const db = makeDb({ 'watchlists/wl-1': list({ currentHypothesisVersion: 2, hypothesisVersionCount: 2 }), [vPath(1)]: withHash(version(1)) });
+    const res = await versions({ body: { opId: 'op-1', expectedVersion: 2, statement: 'edit' } });
+    expect([res.statusCode, res.body.error]).toEqual([500, 'pointer_corrupt']);
+    expect(db.__access.writes).toEqual([]);
+  });
+  it('the statement is REQUIRED on create: a body with only a time-frame pick → 400 invalid_statement, nothing written (review L5-8)', async () => {
+    const db = seedList();
+    const res = await versions({ body: { opId: 'op-1', expectedVersion: 1, horizonEnum: 'longterm' } });
+    expect([res.statusCode, res.body.error]).toEqual([400, 'invalid_statement']);
+    expect(db.__access.writes).toEqual([]);
+  });
   it('a corrupt parent pointer is a 500, never a silent reset to v1', async () => {
     const db = seedList({ currentHypothesisVersion: 'two' });
     const res = await edit();
@@ -594,6 +606,16 @@ describe('row 5 — reaffirmation', () => {
     const second = await transition({ version: 1, action: 'reaffirm', opId: 'op-re-2', expectedVersion: 2 });
     expect([second.statusCode, second.body.error]).toEqual([409, 'illegal_transition']);
     expect(stored(db, vPath(3))).toBeNull();
+  });
+  it('each reaffirm guard holds ALONE (review L5-7): a due version that already has a successor, and a due version that is not current, are refused', async () => {
+    let db = seedList({ currentHypothesisVersion: 1, hypothesisVersionCount: 1 }, [{ ...DUE, successorVersion: 2 }]);
+    let res = await reaffirm();
+    expect([res.statusCode, res.body.error]).toEqual([409, 'illegal_transition']);
+    expect(db.__access.writes).toEqual([]);
+    db = seedList({}, [DUE, { status: 'draft' }]);
+    res = await transition({ version: 1, action: 'reaffirm', opId: 'op-re', expectedVersion: 2 });
+    expect([res.statusCode, res.body.error]).toEqual([409, 'illegal_transition']);
+    expect(db.__access.writes).toEqual([]);
   });
   it('allocation rules hold for reaffirm: replay → idempotent; same opId other payload → op_conflict; stale pointer → version_conflict', async () => {
     const db = seedList({}, [DUE]);

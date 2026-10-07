@@ -115,6 +115,15 @@ describe('the fifth tenant — the hypothesis review pass', () => {
     expect(res.body).toMatchObject({ succeeded: 1, hypothesisReview: { action: 'error', error: 'injected review failure' } });
     expect(stored(db, 'agentBattles/b-done').pendingReflection).toBe(false);
   });
+  it('the pass is budgeted from the HANDLER\'s start, not its own (review L5-3): a slow reflection tick shrinks its slice', async () => {
+    state.flagOn = true;
+    let passArgs = null;
+    state.passImpl = async (args) => { passArgs = args; return { skipped: 'disabled', reads: 0 }; };
+    reflectMock.mockImplementationOnce(async () => { vi.setSystemTime(Date.now() + 30_000); }); // 30 s of the budget gone
+    await handler(cronReq(), makeRes());
+    expect(passArgs).not.toBeNull();
+    expect(passArgs.handlerStartMs).toBe(NOW);
+  });
   it('the pass is the LAST tenant: it runs after the call sweep, inside the handler\'s try', () => {
     const sweep = CRON_SRC.indexOf('await runCallSweep(');
     const review = CRON_SRC.indexOf('await runHypothesisReviewPass(');

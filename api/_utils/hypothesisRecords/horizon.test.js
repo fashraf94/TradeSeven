@@ -64,7 +64,10 @@ describe('deploys outside regular hours anchor on the NEXT regular session', () 
     expect(anchorSessionOf(t).etDate).toBe('2026-10-12');
     expect(computeReviewDueAt('intraday', t)).toBe(utc('2026-10-14T20:00:00Z'));
   });
-  it('the ET date governs, not the UTC date: Fri Oct 9 21:30 ET is Sat in UTC, still after Friday\'s close → anchor Mon Oct 12', () => {
+  // (Review L5-10: a UTC-date walk is an equivalent mutant inside the maintained calendar — UTC runs
+  // ahead of ET only after the 16:00 close, so the walk lands on the same session; this row pins the
+  // weekend crossing, and the east-of-UTC defect is caught by the close-boundary rows above.)
+  it('a Friday-evening deploy that is already Saturday in UTC (Fri Oct 9 21:30 ET) anchors on the next regular session, Mon Oct 12', () => {
     expect(anchorSessionOf(utc('2026-10-10T01:30:00Z')).etDate).toBe('2026-10-12');
   });
 });
