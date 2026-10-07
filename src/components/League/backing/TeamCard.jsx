@@ -54,7 +54,7 @@ function LayerRow({ glyph, name, role, mark, children, last }) {
       <div style={{ minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 5 }}>
           <span style={{ fontSize: 15, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.01em' }}>{name}</span>
-          <Mono style={{ fontSize: 9.5, color: LTOKENS.ink3, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{role}</Mono>
+          {role && <Mono style={{ fontSize: 9.5, color: LTOKENS.ink3, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{role}</Mono>}
           {mark}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>{children}</div>
@@ -111,7 +111,7 @@ export function TeamUnit({ card, agentName, myPitch, accent, hasAgent = true }) 
         last
         glyph={agentGlyph}
         name={hasAgent ? agentName : CARD.agentSeat}
-        role={CARD.agentRole}
+        role={hasAgent ? CARD.agentRole : null}
         mark={agent?.archetypeLabel ? <Tag color={LTOKENS.ink3}>{agent.archetypeLabel}</Tag> : null}
       >
         {agent ? (
@@ -225,7 +225,7 @@ export function TapeBlock({ card, pod, agentName, onOpenTape, hasAgent = true })
         <TapeHead lead title={CARD.tape.lastWeekTitle} sub={CARD.tape.lastWeekSub(lastWeek.placement, lastWeek.seatCount, lastWeek.composite)} />
         <TwoLayerBook
           humanLabel={CARD.tape.humanCol(team.displayName)}
-          agentLabel={CARD.tape.agentCol(lastWeek.agent?.agentName ?? agentName)}
+          agentLabel={CARD.tape.agentCol(lastWeek.agent?.agentName ?? (hasAgent ? agentName : CARD.agentSeat))}
           humanRows={humanRows}
           agentRows={agentRows}
         />

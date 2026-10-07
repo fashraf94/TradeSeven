@@ -40,7 +40,7 @@ import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { POOL_STATUS } from '../_utils/backingPools.js';
 import { walletRef } from '../_utils/backingWallet.js';
-import { STATS_NAMESPACE, computeMyStats, readExcludedStakeIds, readPoolsFor, readRanksFor, readStakesWhere } from '../_utils/backingStats.js';
+import { STATS_NAMESPACE, computeMyStats, isDevPool, readExcludedStakeIds, readPoolsFor, readRanksFor, readStakesWhere } from '../_utils/backingStats.js';
 import { backingLitFor, smokeOverrideFor } from '../_utils/backingSmoke.js';
 
 export const config = { maxDuration: 30 };
@@ -79,14 +79,19 @@ export default async function handler(req, res) {
     const excluded = await readExcludedStakeIds(db, stakes.map((s) => s.id));
 
     // 5b. The pools those stakes name, then the rank docs of every human team
-    // of every settled pool (the baseline's source), read once each.
+    // of every settled pool OF THIS RECORD'S NAMESPACE (the baseline's
+    // source), read once each — in that namespace: the fold skips the other
+    // namespace's pools, so their teams' ranks are never read, and a dev
+    // record's baseline is judged against the dev rank docs, never the
+    // production ones (the QA rounds 1–3 review, R3-2).
     const poolsByGroup = await readPoolsFor(db, stakes.map((s) => s.groupId));
     const humanTeams = new Set();
-    for (const { pool } of poolsByGroup.values()) {
-      if (pool?.status !== POOL_STATUS.RESOLVED) continue;
+    for (const located of poolsByGroup.values()) {
+      const { pool } = located;
+      if (pool?.status !== POOL_STATUS.RESOLVED || isDevPool(located) !== smoke) continue;
       for (const t of Array.isArray(pool.teams) ? pool.teams : []) if (t?.isCpu !== true) humanTeams.add(t.odUserId);
     }
-    const ranksByTeam = await readRanksFor(db, [...humanTeams]);
+    const ranksByTeam = await readRanksFor(db, [...humanTeams], { dev: smoke });
 
     // 5c. The pure fold — in this record's one namespace.
     const stats = computeMyStats({ stakes, poolsByGroup, ranksByTeam, wallet, now, excluded, namespace });

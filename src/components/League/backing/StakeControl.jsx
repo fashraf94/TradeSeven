@@ -51,9 +51,14 @@
 //     and an AGENT-LESS seat's title names the player alone (OBS-001). The
 //     control itself holds `result` and renders the receipt from it; a host
 //     that wants a FRESH form after a receipt REMOUNTS it (BackingDesk's
-//     per-entry key — BUG-001), never asks it to reset.
+//     per-entry key — BUG-001), never asks it to reset — and never while a
+//     request is in flight: the control reports one through `onPending`
+//     (true around placeStake and the attestation call, false on the reply
+//     and on its own unmount), and the host holds the seam still until then
+//     (R2-2, the review record), so a reply always lands on the control that
+//     sent it and a second Confirm can never ride a first.
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { MIN_STAKE_BP, PER_TEAM_CAP_BP } from '../../../constants/backing';
 import { LTOKENS, LX, alpha, MONO } from '../leagueTokens';
 import { Eyebrow, Mono, Icon } from '../LeagueParts';
@@ -137,10 +142,24 @@ function TopUpPanel({ label, already, adding, capLeft, accent }) {
   );
 }
 
-export default function StakeControl({ card, pod, wallet, eligibility, accent = LX.energy, onBacked, onClose, services = null, layout = 'mobile', onCancel = null }) {
+export default function StakeControl({ card, pod, wallet, eligibility, accent = LX.energy, onBacked, onClose, services = null, layout = 'mobile', onCancel = null, onPending = null }) {
   const place = services?.placeStake ?? placeStake;
   const nextRequestId = services?.newRequestId ?? newRequestId;
   const attest = services?.attestEligibility ?? attestEligibility;
+  // A request in flight, reported to the host (R2-2): set before the call,
+  // cleared on its reply — and on this control's unmount, so a host is never
+  // left waiting on a control that is gone. The callback rides a ref so the
+  // unmount cleanup needs no dependency on it.
+  const onPendingRef = useRef(onPending);
+  onPendingRef.current = onPending;
+  const pendingRef = useRef(false);
+  const setPending = (pending) => {
+    if (pendingRef.current === pending) return;
+    pendingRef.current = pending;
+    onPendingRef.current?.(pending);
+  };
+  useEffect(() => () => { if (pendingRef.current) { pendingRef.current = false; onPendingRef.current?.(false); } }, []);
+  const attestPending = async (...args) => { setPending(true); try { return await attest(...args); } finally { setPending(false); } };
   const name = card.team.displayName;
   // An agent-less seat (OBS-001) is titled by the player alone; the fallback
   // name is for an agent that exists unnamed (RAWID-2), as on the card.
@@ -181,6 +200,7 @@ export default function StakeControl({ card, pod, wallet, eligibility, accent = 
     if (problem) { setError(problem); return; }
     const requestId = nextRequestId();
     setBusy(true);
+    setPending(true);
     setError(null);
     try {
       const body = await place({ groupId: card.groupId, teamOdUserId: card.odUserId, amount, requestId });
@@ -196,6 +216,7 @@ export default function StakeControl({ card, pod, wallet, eligibility, accent = 
       setError(refusalMessage(err?.code));
     } finally {
       setBusy(false);
+      setPending(false);
     }
   };
 
@@ -214,7 +235,7 @@ export default function StakeControl({ card, pod, wallet, eligibility, accent = 
     const step = (
       <AttestationStep
         accent={accent}
-        attest={attest}
+        attest={attestPending}
         onAttested={() => { setNeedsAttest(false); setError(null); eligibility?.refresh?.(); }}
       />
     );

@@ -312,11 +312,22 @@ export function flaggedStakeIds(stakes, poolsByGroup) {
     .map((s) => s.id);
 }
 
-/** The rank documents of many human teams (production namespace): odUserId → rank doc | null. */
-export async function readRanksFor(db, odUserIds) {
+/** Is a located pool (`{ poolId, pool, isDev }`) the DEV namespace's? One predicate for the fold and its callers. */
+export function isDevPool(located) {
+  return located?.isDev === true || (typeof located?.poolId === 'string' && located.poolId.startsWith('dev-'));
+}
+
+/**
+ * The rank documents of many human teams, in ONE namespace: the production
+ * rank docs by default, the `dev-` ones for a dev record (`{ dev: true }` —
+ * the rank writer keeps a dev doc per uid for dev pods, `rankDocId`'s own
+ * option). odUserId → rank doc | null. A record's baseline is judged in the
+ * record's namespace, never across (the QA rounds 1–3 review, R3-2).
+ */
+export async function readRanksFor(db, odUserIds, { dev = false } = {}) {
   const ids = [...new Set((Array.isArray(odUserIds) ? odUserIds : []).filter((id) => typeof id === 'string' && id.length > 0 && !isCpuUserId(id)))];
   const entries = await Promise.all(ids.map(async (odUserId) => {
-    const snap = await db.collection(TOURNAMENT_RANKS_COLLECTION).doc(rankDocId(odUserId)).get();
+    const snap = await db.collection(TOURNAMENT_RANKS_COLLECTION).doc(rankDocId(odUserId, { dev })).get();
     return [odUserId, snap.exists ? snap.data() : null];
   }));
   return new Map(entries);
@@ -452,7 +463,7 @@ export function computeMyStats({ stakes = [], poolsByGroup = new Map(), ranksByT
     const located = poolsByGroup.get(groupId) ?? null;
     if (!located?.pool) { unknownPools += 1; continue; }
     // THE OTHER NAMESPACE'S POOL IS SKIPPED, whichever record this is.
-    const devPool = located.isDev === true || (typeof located.poolId === 'string' && located.poolId.startsWith('dev-'));
+    const devPool = isDevPool(located);
     if (devPool && !devRecord) { devPoolsSkipped += 1; continue; }
     if (!devPool && devRecord) { productionPoolsSkipped += 1; continue; }
     const pool = located.pool;

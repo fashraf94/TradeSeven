@@ -102,7 +102,8 @@ describe('the control, attested', () => {
     expect(confirmButton(container).textContent).toBe('Confirm 250 BP');
   });
 
-  it('item B, the ladder: 100 when 100 fits; only less than 100 → the minimum stake (50) when it fits; less than 50 → nothing pre-chosen and Confirm waits (MUTATION: the old `reverse().find` default reds the first expectation)', async () => {
+  it('item B, the ladder: the smallest preset when two fit (250 left → 100, never 250); 100 when only 100 fits; only less than 100 → the minimum stake (50) when it fits; less than 50 → nothing pre-chosen and Confirm waits (MUTATION: the old `reverse().find` default reds the 250 case — R4-1)', async () => {
+    expect(confirmButton((await mount({ wallet: { known: true, left: 250, total: 1000 } })).container).textContent).toBe('Confirm 100 BP');
     expect(confirmButton((await mount({ wallet: { known: true, left: 100, total: 1000 } })).container).textContent).toBe('Confirm 100 BP');
     expect(confirmButton((await mount({ wallet: { known: true, left: 99, total: 1000 } })).container).textContent).toBe('Confirm 50 BP');
     expect(confirmButton((await mount({ wallet: { known: true, left: 50, total: 1000 } })).container).textContent).toBe('Confirm 50 BP');
@@ -457,9 +458,9 @@ describe('the desktop layout — the same control, laid out as designed', () => 
 describe('item C — the receipt shows the allowance left: the SERVER\'s number, or nothing', () => {
   const debits = [{ entryId: 'stake:dbt_1', amount: 250, at: 'x' }];
 
-  it('the reply\'s own balance — the post-stake figure, never the wallet\'s pre-stake one (MUTATION: rendering `wallet.left` or `left − amount` reds this row — the wallet mock still says 1,000)', async () => {
+  it('the reply\'s own balance — the post-stake figure, never the wallet\'s pre-stake one and never arithmetic on it (MUTATION: rendering `wallet.left` shows 900, `left − amount` shows 650; the reply says 750 — R4-2)', async () => {
     svc.placeStake.mockResolvedValue({ replay: false, stake: { id: 'stk_1', amount: 250, debits }, pool: { status: 'open' }, allowanceRemaining: 750 });
-    const { container } = await mount({ wallet: { known: true, left: 1000, total: 1000, wallet: { appliedEntries: {} } } });
+    const { container } = await mount({ wallet: { known: true, left: 900, total: 1000, wallet: { appliedEntries: {} } } });
     await click(q(container, '[data-preset="250"]'));
     await click(confirmButton(container));
     await settle();
@@ -467,7 +468,8 @@ describe('item C — the receipt shows the allowance left: the SERVER\'s number,
     expect(left).not.toBeNull();
     expect(left.textContent).toBe(STAKE.remaining(750));
     expect(left.textContent).toBe('750 BP left this week');
-    expect(q(container, '[data-backing="backed"]').textContent).not.toContain('1,000');
+    expect(q(container, '[data-backing="backed"]').textContent).not.toContain('900');
+    expect(q(container, '[data-backing="backed"]').textContent).not.toContain('650');
   });
 
   it('a reply without a balance (a replayed request): the wallet record ONLY once its snapshot carries this stake\'s debit; a lagging snapshot shows NOTHING — never the old figure', async () => {
@@ -492,6 +494,8 @@ describe('item C — the receipt shows the allowance left: the SERVER\'s number,
     expect(receiptAllowance({ allowanceRemaining: null, stake: { debits } }, { known: false, left: null, wallet: null })).toBeNull();
     expect(receiptAllowance({ allowanceRemaining: null, stake: { amount: 250 } }, { known: true, left: 750, wallet: { appliedEntries: { 'stake:dbt_1': 'x' } } })).toBeNull();
     expect(receiptAllowance({ allowanceRemaining: null, stake: { debits: [...debits, { entryId: 'stake:dbt_2', amount: 100 }] } }, { known: true, left: 650, wallet: { appliedEntries: { 'stake:dbt_1': 'x' } } })).toBeNull();
+    // EVERY debit, not the last one (R5-2): the last applied, the first not → still nothing.
+    expect(receiptAllowance({ allowanceRemaining: null, stake: { debits: [...debits, { entryId: 'stake:dbt_2', amount: 100 }] } }, { known: true, left: 650, wallet: { appliedEntries: { 'stake:dbt_2': 'x' } } })).toBeNull();
     expect(receiptAllowance(null, { known: true, left: 1000 })).toBeNull();
   });
 });

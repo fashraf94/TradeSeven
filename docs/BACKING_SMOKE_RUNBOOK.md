@@ -60,7 +60,7 @@ Add `--dry-run` to any writing command to see what it would do without doing it.
 
 ## 4. Attest
 
-1. Tap a seat — **Smoke Scout** (Smoke Rival A), say. Its team card opens: the player and the agent as one team, the agent's archetype tag (**Fundamental Investor**), its stated approach and **"2 traits · 3 rules · contents private"**. Tap the button at the bottom: **"Back Smoke Rival A & Smoke Scout"**.
+1. Tap a seat — **Smoke Scout** (Smoke Rival A), say. Its team card opens: the player and the agent as one team, the agent's archetype tag (**Fundamental Investor**), its stated approach and **"2 traits · 3 rules · contents private · may change nightly"**. Tap the button at the bottom: **"Back Smoke Rival A & Smoke Scout"**.
 2. The stake screen opens under the heading **"Back this team"**. The first time, the attestation step is shown instead of the amounts: two statements — **"I confirm that I am 18 years of age or older."** and **"I have read and accept the FantasyTrades Backing Beta terms."** Tick both, then **Continue**.
 
 *What you should see:* the step closes and the stake control appears: the **100 / 250 / 500** presets with **100 already chosen** (the smallest that fits — never the largest), the points meter reading **1,000 BP** with **"of 1,000 BP · resets Monday"**, and the three disclosure lines. You will not be asked again on the refund walk.
@@ -97,8 +97,8 @@ node scripts/backing-smoke.js advance
 ## 7. See the results and Your Backing
 
 1. Refresh the preview and open the **League** tab.
-2. *What you should see:* the strip now reads the between-weeks line, **"Last week’s result …"**. Tap it: the **results card** shows the winner's block with **"Pot 600 BP · 3 backers"**, the winning team's **"paid ×1.33"**, and for the others **"×4.00 had they won"** or **"no backers"**; each backed team's line reads like **"2 backers · 75% of BP in this pool backed them"**. **Your Backing** tags the pod **"Settled"** and lists your stake as **"Smoke Rival A · 250 BP · settled"**. Tap **"Open the tape"** on either card: the pod's spectate view opens, and its final state carries the same results card (the two test seats read as generic players there — they have no profile).
-3. Your private record: open the **Dashboard**, your agent's panel (on a desktop window the Backing screen's results section shows the same block). During the smoke **"Your backing · beta stats"** reads your **dev** record — the record of this walk, never your real one — so after `advance` it shows the settled pool: **1 pool backed**, **1 won** or **0 won** (whichever team you backed), and a net equal to the `careerNet` the `status` command prints for your dev wallet. (Before this build the panel read your production record and stayed at zero all walk — that was the QA round 2 finding.) The one-line scouting pitch editor sits beside it and is live for you too. **Leave it alone during the smoke**: it is not part of the walk, and a saved line is a real record on your account (see "What the smoke writes").
+2. *What you should see:* the strip now reads the between-weeks line, **"Last week’s result …"**. Tap it: the **results card** shows the winner's block with **"Pot 600 BP · 3 backers"**, the winning team's **"paid ×1.33"**, and for the others **"×4.00 had they won"** or **"no backers"**; each backed team's line reads like **"2 backers · 75% of BP in this pool backed them"**. **Your Backing** tags the pod **"Settled"** and lists your stake as **"Smoke Scout · 250 BP · settled"** (every team is named by its agent, here too). Tap **"Open the tape"** on either card: the pod's spectate view opens, and its final state carries the same results card (the two test seats read as generic players there — they have no profile).
+3. Your private record: open the **Dashboard**, your agent's panel (on a desktop window the Backing screen's results section shows the same block). During the smoke **"Your backing · beta stats"** reads your **dev** record — the record of this walk, never your real one — so after `advance` it shows the settled pool: **1 pool backed**, **1 won** or **0 won** (whichever team you backed), and a net equal to the `careerNet` the `status` command prints for your dev wallet. (Before this build the panel read your production record and stayed at zero all walk — that was the QA round 2 finding.) The **"As a team"** tab beside it stays on your **production** trainer record during the walk: you are never a seat in the test pod, so it has nothing of the walk to show. The one-line scouting pitch editor sits beside it and is live for you too. **Leave it alone during the smoke**: it is not part of the walk, and a saved line is a real record on your account (see "What the smoke writes").
 
 ## 8. The refund walk
 
@@ -160,6 +160,7 @@ Vercel → **Settings** → **Environment Variables** → delete **`BACKING_SMOK
 | `advance` or `refund` fails with `wallet_missing` | A dev wallet the run's stakes draw on was deleted (an older version of the script cleaning up a different run) | `cleanup` this pod, `seed` again, back a team again |
 | `advance` or `refund` says the pod is not `forming` | The pod already advanced or was refunded — each pod takes one ending | `cleanup`, then `seed` again |
 | Any command says CREDENTIALS NOT READY | `.env.local` is missing one of the three `FIREBASE_…` lines | Fix the file as the message says and run the same command again |
+| `seed` says the composition write epoch is closed, or `cleanup` says the two agents were KEPT | The composition runbook is holding the write epoch (a freeze or a rollback window); the test agents are a protected store, so the script will not write or delete them meanwhile | `seed`: wait and seed again once it reopens (nothing was written). `cleanup`: everything else was swept and the run stays in the manifest — run `cleanup --pod=<id>` again after it reopens |
 
 ## What the smoke writes, and where
 
@@ -180,6 +181,8 @@ Two documents can be written outside that list, both **yours** and both **real**
 Nothing else: the production pod list, pools, wallets and events are never touched, and the two code switches stay off.
 
 **While a test pod exists, do not press the dev-duty buttons** (the admin surface that drives the tournament pipeline over dev pods, `run-duty`). The scheduled jobs ignore the test pod; that surface would not. Run `cleanup` first.
+
+**While a test pod exists, the whole-collection `agents` maintenance scripts count its two test agents** (the archetype and mastery censuses, the directive migration, the composition migration scan, the rule-compat cleanup — each dry-run or read-only unless told otherwise, none scheduled). Run them after `cleanup`, or read their counts knowing two `smk_agent_…` documents are in the set.
 
 ## The commands
 

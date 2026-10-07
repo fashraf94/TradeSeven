@@ -37,7 +37,7 @@
 // the results section's own hook. Mobile's markup is main's
 // (backingMobilePin.test.jsx).
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useBackingLit } from '../../../hooks/useBackingLit';
 import { FINE_PRINT } from '../../../constants/backing';
 import { LTOKENS, LX, alpha } from '../leagueTokens';
@@ -127,6 +127,14 @@ function BackingScreenLive({ uid, accent, viewport, onBack, onOpenTape, initialS
   // count, every "Back" / "Add" mounts a FRESH control instead of leaving the
   // last receipt in place. Mobile's control mounts fresh by its own view swap.
   const [stakeEntry, setStakeEntry] = useState(0);
+  // R2-2 (the QA rounds 1–3 review): while a Confirm — or an attestation — is
+  // in flight the control reports it here, and the desktop handlers that
+  // would unmount it (a new entry, another seat, back to the card, a section
+  // tab) wait, so the reply lands on the control that sent it and the receipt
+  // renders; a second Confirm can never ride a first one. The control clears
+  // the flag on its reply and on its own unmount, so nothing waits for ever.
+  const stakePending = useRef(false);
+  const onPending = (pending) => { stakePending.current = pending === true; };
   const cardQuery = useTeamCard(view.groupId, view.odUserId, view.kind !== 'list');
   // Desktop only: the section asked for — the strip's own (the section its
   // state points to, or the window for "Back a team") and then the viewer's
@@ -222,6 +230,7 @@ function BackingScreenLive({ uid, accent, viewport, onBack, onOpenTape, initialS
   if (desktop) {
     // Leaving the window section ends a card visit (team_card_opened records on leaving the card).
     const onSection = (next) => {
+      if (stakePending.current) return;
       setDeskSection(next);
       if (next !== DESK_SECTION.WINDOW && view.kind !== 'list') toList();
     };
@@ -242,11 +251,12 @@ function BackingScreenLive({ uid, accent, viewport, onBack, onOpenTape, initialS
         sections={sections}
         onSection={onSection}
         onBack={onBack}
-        onOpenSeat={(groupId, odUserId) => setView((v) => (v.kind === 'card' && v.groupId === groupId && v.odUserId === odUserId ? v : { kind: 'card', groupId, odUserId }))}
-        // Every entry is a new one — the view may already be `stake` (BUG-001).
-        onToStake={() => { setStakeEntry((n) => n + 1); setView((v) => ({ ...v, kind: 'stake' })); }}
+        onOpenSeat={(groupId, odUserId) => { if (stakePending.current) return; setView((v) => (v.kind === 'card' && v.groupId === groupId && v.odUserId === odUserId ? v : { kind: 'card', groupId, odUserId })); }}
+        // Every entry is a new one — the view may already be `stake` (BUG-001) — unless a request is in flight (R2-2).
+        onToStake={() => { if (stakePending.current) return; setStakeEntry((n) => n + 1); setView((v) => ({ ...v, kind: 'stake' })); }}
         stakeEntry={stakeEntry}
-        onToCard={toCard}
+        onPending={onPending}
+        onToCard={() => { if (stakePending.current) return; toCard(); }}
         onBacked={onBacked}
         onOpenTape={onOpenTape}
       />

@@ -26,6 +26,10 @@ import {
 import { SMOKE_POD_TOOL, smokeListablePod } from '../api/_utils/backingPools.js';
 import { makeVersionedDb } from '../api/_utils/__fixtures__/versionedFirestore.js';
 import { makeInMemoryDb } from '../api/_utils/__fixtures__/inMemoryFirestore.js';
+import { agentSweepTargets } from './backingSmokeSweep.js';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import { looksLikeAccountId } from '../api/_utils/backingTeamLabels.js';
 import { getArchetypeDefinition } from '../api/_utils/archetypeRegistry.js';
 import { poolEligible } from '../api/_utils/backingWeek.js';
@@ -124,7 +128,7 @@ describe('item E (the backing QA rounds 1–3) — the seats\' agents', () => {
     expect(agents[0].doc.name).not.toBe(agents[1].doc.name);
   });
 
-  it('cleanup\'s agent sweep — the run\'s ids plus every agent owned by its seats, each through the verdict — names exactly this run\'s two: a real player\'s agent and ANOTHER run\'s smoke agent are never targets', async () => {
+  it('cleanup\'s agent sweep (scripts/backingSmokeSweep.js — the function the script runs) names exactly this run\'s two, each admitted by the verdict: a real player\'s agent and ANOTHER run\'s smoke agent are never targets; a pre-build manifest (no recorded ids) still finds them by owner', async () => {
     const other = smokeIds('20260101_zzzzzz');
     const { db, store } = makeInMemoryDb({
       ...Object.fromEntries(buildSmokeAgents({ ids, nowIso }).map(({ id, doc }) => [`agents/${id}`, doc])),
@@ -132,14 +136,63 @@ describe('item E (the backing QA rounds 1–3) — the seats\' agents', () => {
       'agents/real-1': { ownerId: FOUNDER, name: 'Prime', archetype: 'analyst' },
     });
     const run = { groupId: ids.groupId, poolId: ids.poolId, backerUids: ids.backerUids, seatUids: ids.seatUids, agentIds: ids.agentIds, uids: [] };
-    const owned = await db.collection('agents').where('ownerId', 'in', run.seatUids).get();
-    const paths = new Set(run.agentIds.map((id) => `agents/${id}`));
-    owned.docs.forEach((d) => paths.add(`agents/${d.id}`));
-    expect([...paths].sort()).toEqual(ids.agentIds.map((id) => `agents/${id}`).sort());
-    for (const p of paths) expect(devTargetVerdict(p, store.get(p), run).ok, p).toBe(true);
-    // The other run's agents and the real one would be REFUSED under this run — never swept by it.
+    const targets = await agentSweepTargets(db, run);
+    const expected = ids.agentIds.map((id) => `agents/${id}`).sort();
+    expect(Object.keys(targets).sort()).toEqual(expected);
+    for (const [p, { ref, data }] of Object.entries(targets)) {
+      expect(ref.path).toBe(p);
+      expect(data).toEqual(store.get(p));
+      expect(devTargetVerdict(p, data, run).ok, p).toBe(true);
+    }
+    // The belt: a run whose recorded ids are gone (a manifest from before this build) is swept by its seats' uids alone…
+    expect(Object.keys(await agentSweepTargets(db, { ...run, agentIds: [] })).sort()).toEqual(expected);
+    expect(Object.keys(await agentSweepTargets(db, { ...run, agentIds: undefined })).sort()).toEqual(expected);
+    // …and by its ids alone when it has no seat list; neither → none.
+    expect(Object.keys(await agentSweepTargets(db, { ...run, seatUids: [] })).sort()).toEqual(expected);
+    expect(Object.keys(await agentSweepTargets(db, { ...run, agentIds: [], seatUids: [] }))).toEqual([]);
+    // The other run's agents and the real one are never in this run's sweep, and would be REFUSED under it anyway.
     for (const id of other.agentIds) expect(devTargetVerdict(`agents/${id}`, store.get(`agents/${id}`), run).ok).toBe(false);
     expect(devTargetVerdict('agents/real-1', store.get('agents/real-1'), run).ok).toBe(false);
+  });
+});
+
+describe('the script itself — source-text tripwires over scripts/backing-smoke.js (R3-1 / R5-1: the lib cannot run the script, so its ORDER is pinned by its text)', () => {
+  const SCRIPT = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'backing-smoke.js'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+  const fn = (name, next) => {
+    const start = SCRIPT.indexOf(`async function ${name}(`);
+    const end = next ? SCRIPT.indexOf(`async function ${next}(`) : SCRIPT.length;
+    expect(start, `${name} is defined`).toBeGreaterThan(-1);
+    expect(end, `${next} follows ${name}`).toBeGreaterThan(start);
+    return SCRIPT.slice(start, end);
+  };
+
+  it('seed: the composition write-epoch fence is checked BEFORE the first write — the pod and the agents alike (MUTATION: move the fence below the pod write, or drop it → reds)', () => {
+    const seed = fn('seed', 'advance');
+    const fence = seed.indexOf('await assertWriteEpochOpen(db)');
+    const podWrite = seed.indexOf('.doc(ids.groupId).set(groupDoc)');
+    const agentsWrite = seed.indexOf("collection('agents').doc(id).set(doc)");
+    expect(fence).toBeGreaterThan(-1);
+    expect(podWrite).toBeGreaterThan(-1);
+    expect(agentsWrite).toBeGreaterThan(-1);
+    expect(fence).toBeLessThan(podWrite);
+    expect(fence).toBeLessThan(agentsWrite);
+    expect(seed).toContain('EpochClosedError');
+  });
+
+  it('cleanup: the agents come from the ONE sweep the suite drives, each through the verdict; the dev namespace is deleted BEFORE the fence and only the agents behind it (MUTATION: drop the sweep call, the consider loop, or move the fence above the plain delete → reds)', () => {
+    const cleanup = fn('cleanup', null);
+    expect(cleanup).toContain('await agentSweepTargets(db, run)');
+    expect(cleanup).toContain('for (const { ref, data } of Object.values(agentTargets)) consider(ref, data)');
+    const plainDelete = cleanup.indexOf('await deleteAll(plain)');
+    const fence = cleanup.indexOf('await assertWriteEpochOpen(db)');
+    const agentDelete = cleanup.indexOf('await deleteAll(agentsToDelete)');
+    expect(plainDelete).toBeGreaterThan(-1);
+    expect(fence).toBeGreaterThan(plainDelete);
+    expect(agentDelete).toBeGreaterThan(fence);
+    expect(cleanup).toContain('EpochClosedError');
+    // The script never re-implements the sweep beside the shared one.
+    expect(cleanup).not.toContain("where('ownerId'");
   });
 });
 

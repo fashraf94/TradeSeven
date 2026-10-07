@@ -333,9 +333,27 @@ describe('item D (OBS-001) — an AGENT-LESS seat says what is there, not what i
     expect(t).toContain('Agent seat');
     expect(t).toContain('Back Draco');
     expect(t).not.toContain('Back Draco &');
-    for (const gone of ['approach', 'loadout', '’s agent', 'contents private']) expect(t, gone).not.toContain(gone);
+    for (const gone of ['approach', 'loadout', '’s agent', 'contents private', 'agent · runs 6']) expect(t, gone).not.toContain(gone);
     expect(html).not.toContain('data-backing="approach"');
     expect(html).not.toContain('data-backing="loadout"');
+  });
+
+  it('a recorded week on an agent-less seat (R1-3): the book column is headed "Agent seat · 6", never "{player}’s agent · 6" — whether the battle record has no agent block or an unprintable name', () => {
+    for (const agentRecord of [null, { agentName: null, swaps: 0, picks: [], trades: [] }]) {
+      const c = veteran();
+      c.team.agent = null; c.team.label = 'Mira'; c.team.secondary = null;
+      c.lastWeek = { ...c.lastWeek, agent: agentRecord };
+      const html = render(c);
+      const t = text(html);
+      expect(html).toContain('data-backing="tape-last-week"');
+      expect(t).toContain('Agent seat · 6');
+      expect(t).not.toContain('’s agent');
+      expect(t).not.toContain('agent · runs 6');
+      expect(t).toContain('No agent on this seat yet.');
+    }
+    // The recorded name wins when the record carries one, agent-less seat or not.
+    const named = veteran(); named.team.agent = null; named.team.label = 'Mira'; named.team.secondary = null;
+    expect(text(render(named))).toContain('Kestrel · 6');
   });
 
   it('…and with no pitch either: the known facts alone', () => {

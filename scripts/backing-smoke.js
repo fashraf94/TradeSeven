@@ -57,8 +57,14 @@
 // written by the attest door on the preview and left alone), users/*, any
 // other agents/* document, agentBattles/*, tournamentRanks/*, anything the
 // orchestrator reads. The agent writes and deletes pass the composition
-// write-epoch fence (assertWriteEpochOpen — zero I/O while that fence is dark),
-// as every admin-CLI writer of a protected store does.
+// write-epoch fence first (assertWriteEpochOpen — the fence is LIVE:
+// COMPOSITION_EPOCH_FENCE_ENABLED has been true since the 2026-08-16
+// activation, so each call is one read of composition/writeEpoch and an
+// EpochClosedError while the composition runbook holds the epoch closed), as
+// every admin-CLI writer of a protected store does: `seed` checks it BEFORE
+// its first write and refuses with nothing written; `cleanup` deletes the dev
+// namespace unconditionally and only the two agents behind it, keeping the
+// run in the manifest until they are gone too (the QA rounds 1–3 review, R3-1).
 //
 // Needs the same creds as the serverless functions — FIREBASE_PROJECT_ID /
 // FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY — from .env.local in the repo
@@ -95,7 +101,8 @@ import { SETTLEMENT_SOURCE, refundPool, settlePool, winningSet } from '../api/_u
 import { STAKE_META_DOC, STAKE_PRIVATE_SUBCOLLECTION, placeStake } from '../api/_utils/backingStake.js';
 import { hashFingerprint } from '../api/_utils/backingFingerprint.js';
 import { BACKING_EVENTS_COLLECTION } from '../api/_utils/backingEvents.js';
-import { assertWriteEpochOpen } from '../api/_utils/compositionWriteEpoch.js';
+import { EpochClosedError, assertWriteEpochOpen } from '../api/_utils/compositionWriteEpoch.js';
+import { agentSweepTargets } from './backingSmokeSweep.js';
 import { TOURNAMENT_GROUPS_COLLECTION, GROUP_STATUS, isWeekBanked } from '../src/constants/leagueTournament.js';
 import {
   MANIFEST_RELATIVE,
@@ -257,6 +264,16 @@ async function seed(db) {
   if (new Date(eligibility.opensAt).getTime() > now.getTime()) {
     stop(3, `REFUSED (nothing written): the backing week for ${battleMondayEtDate} opens at ${eligibility.opensAt}; run this after that instant.`);
   }
+  // THE COMPOSITION WRITE-EPOCH FENCE, before anything is written: the two
+  // agents are a protected store, and the fence is live — refused with
+  // nothing written while the composition runbook holds the epoch closed (a
+  // dry run says so too: one read, no write).
+  try {
+    await assertWriteEpochOpen(db);
+  } catch (err) {
+    if (!(err instanceof EpochClosedError)) throw err;
+    stop(3, `REFUSED (nothing written): the composition write epoch is ${typeof err.state === 'string' ? err.state : 'not open'} — the composition runbook holds it. Seed again once it reopens.`);
+  }
 
   rule();
   say(`${DRY}SEED — a dev pod for the battle week of Monday ${battleMondayEtDate} (label ${baseLayerWeek})`);
@@ -280,9 +297,8 @@ async function seed(db) {
   writeManifest(addRun(readManifest(), run));
   say(''); say(`✓ pod written and recorded in ${MANIFEST_PATH}`);
 
-  // 1b. The seats' agents (item E) — a protected store, so through the
-  //     composition write-epoch fence like every admin-CLI writer of one.
-  await assertWriteEpochOpen(db);
+  // 1b. The seats' agents (item E) — a protected store; the write-epoch fence
+  //     was checked above, before the pod was written.
   for (const { id, doc } of agents) {
     await db.collection('agents').doc(id).set(doc);
     say(`✓ agent written: agents/${id} — ${doc.name} (${doc.archetype}), owned by ${nameOf(group, doc.ownerId)}`);
@@ -606,22 +622,12 @@ async function cleanup(db) {
       entries.forEach((d) => consider(d.ref, d.data()));
       if (wSnap.exists) consider(wRef, wSnap.data());
     }
-    // The seats' agents (item E): the run's recorded ids, and — belt — every
-    // `agents` document owned by one of this run's seat uids, each through the
-    // verdict (the marker AND the owner; a document missing either refuses
-    // the whole run). A seat uid is minted per run, so the owner query names
-    // nothing but this run's.
-    const seatUids = Array.isArray(run.seatUids) ? run.seatUids.filter((u) => typeof u === 'string' && u.length > 0) : [];
-    const agentTargets = {}; // path → { ref, data } (a plain object: the protected-store scan reads any `.set(` as a write)
-    for (const id of Array.isArray(run.agentIds) ? run.agentIds : []) {
-      const ref = db.collection('agents').doc(id);
-      const snap = await ref.get();
-      if (snap.exists) agentTargets[ref.path] = { ref, data: snap.data() };
-    }
-    if (seatUids.length > 0) {
-      const owned = await db.collection('agents').where('ownerId', 'in', seatUids).get();
-      owned.forEach((d) => { if (!agentTargets[d.ref.path]) agentTargets[d.ref.path] = { ref: d.ref, data: d.data() }; });
-    }
+    // The seats' agents (item E): the ONE sweep the suite drives too
+    // (scripts/backingSmokeSweep.js) — the run's recorded ids and every
+    // `agents` document owned by one of this run's seat uids — each through
+    // the verdict (the marker AND the owner; a document missing either
+    // refuses the whole run).
+    const agentTargets = await agentSweepTargets(db, run);
     for (const { ref, data } of Object.values(agentTargets)) consider(ref, data);
     // The pool and its sealed totals.
     const poolRef = db.collection(BACKING_POOLS_COLLECTION).doc(run.poolId);
@@ -654,16 +660,40 @@ async function cleanup(db) {
     say('  (never: eligibility/* — your attestation is your real consent record and stays; never an agents/* document without the smoke marker or owned by anyone but this run\'s seats)');
     if (flags.dryRun) { say(''); say('Dry run: nothing was deleted.'); continue; }
 
-    // The agents among the targets are a protected store: the write-epoch
-    // fence, as for the seed (zero I/O while dark).
-    if (Object.keys(agentTargets).length > 0) await assertWriteEpochOpen(db);
-    for (let i = 0; i < targets.length; i += 400) {
-      const batch = db.batch();
-      for (const t of targets.slice(i, i + 400)) batch.delete(t.ref);
-      await batch.commit();
+    // TWO SWEEPS (the QA rounds 1–3 review, R3-1): the dev namespace — the
+    // pod, the pool, the stakes, the wallets, the events — is deleted
+    // unconditionally; the two agents, a protected store, only behind the
+    // composition write-epoch fence (live: one read, a throw while the
+    // composition runbook holds the epoch closed). A closed epoch therefore
+    // never leaves a smoke pod in the database: everything else is swept, the
+    // agents are KEPT, and the run stays in the manifest so the next
+    // `cleanup` — once the epoch reopens — finds them by their ids and by
+    // their owners' uids, deletes them and removes the run.
+    const agentPaths = new Set(Object.keys(agentTargets));
+    const plain = targets.filter((t) => !agentPaths.has(t.path));
+    const agentsToDelete = targets.filter((t) => agentPaths.has(t.path));
+    const deleteAll = async (list) => {
+      for (let i = 0; i < list.length; i += 400) {
+        const batch = db.batch();
+        for (const t of list.slice(i, i + 400)) batch.delete(t.ref);
+        await batch.commit();
+      }
+    };
+    await deleteAll(plain);
+    say(`✓ deleted ${plain.length} dev-namespace document(s)`);
+    if (agentsToDelete.length > 0) {
+      try {
+        await assertWriteEpochOpen(db);
+      } catch (err) {
+        if (!(err instanceof EpochClosedError)) throw err;
+        say(`· the ${agentsToDelete.length} agent document(s) were KEPT: the composition write epoch is ${typeof err.state === 'string' ? err.state : 'not open'} (the composition runbook holds it). Run \`cleanup --pod=${run.groupId}\` again once it reopens; the run stays in the manifest until then.`);
+        continue;
+      }
+      await deleteAll(agentsToDelete);
+      say(`✓ deleted ${agentsToDelete.length} agent document(s)`);
     }
     writeManifest(removeRun(readManifest(), run.groupId));
-    say(`✓ deleted ${targets.length} document(s); run ${run.groupId} removed from the manifest`);
+    say(`✓ run ${run.groupId} removed from the manifest`);
   }
   rule();
 }

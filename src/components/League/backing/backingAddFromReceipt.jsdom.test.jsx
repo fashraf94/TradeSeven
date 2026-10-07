@@ -35,7 +35,7 @@ import { createRoot } from 'react-dom/client';
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const flag = vi.hoisted(() => ({ on: true }));
-const server = vi.hoisted(() => ({ stakes: [], calls: [] }));
+const server = vi.hoisted(() => ({ stakes: [], calls: [], hold: false, release: null }));
 
 vi.mock('../../../config/featureFlags', async (importOriginal) => ({
   ...(await importOriginal()),
@@ -63,6 +63,8 @@ vi.mock('../../../services/backingService', () => {
     }),
     placeStake: vi.fn(async ({ teamOdUserId, amount }) => {
       server.calls.push('placeStake');
+      // A held request stays in flight until the row releases it (R2-2).
+      if (server.hold) await new Promise((resolve) => { server.release = resolve; });
       const label = teamOdUserId === 'od-a' ? 'Kestrel' : 'Shadow';
       const prior = server.stakes.find((s) => s.teamOdUserId === teamOdUserId);
       const total = (prior?.amount ?? 0) + amount;
@@ -141,6 +143,8 @@ beforeEach(() => {
   flag.on = true;
   server.stakes = [];
   server.calls = [];
+  server.hold = false;
+  server.release = null;
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
   vi.setSystemTime(NOW);
   vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -211,6 +215,63 @@ describe('BUG-001 — desktop: "Add to your N on {team}" straight from the recei
     expect(fresh.querySelector('[data-backing="top-up"]')).toBeNull();
     expect(right(c).querySelector('[data-backing="backed"]')).toBeNull();
     expect(fresh.querySelector('[data-backing="confirm"]').textContent).toContain('Confirm 100 BP');
+  });
+
+  it('R2-2 — a Confirm IN FLIGHT is never abandoned by the seam: Add, another seat, "Back to the card" and a section tab all wait; the reply lands on the control that sent it, ONE request; then Add works (MUTATION: drop the pending guard in BackingScreen → this reds — the busy control is replaced and the receipt never renders)', async () => {
+    const c = await mount(<BackingScreen uid="viewer-1" viewport="desktop" onBack={() => {}} onOpenTape={() => {}} />);
+    await press(seat(c, 'Kestrel'));
+    await press(centre(c).querySelector('[data-backing="cta-back"]'));
+    await press(right(c).querySelector('[data-preset="250"]'));
+    server.hold = true;
+    await press(right(c).querySelector('[data-backing="confirm"]'));
+    expect(right(c).querySelector('[data-backing="confirm"]').textContent).toContain(STAKE.confirming);
+    expect(server.release, 'the request is in flight').not.toBeNull();
+    // Every desktop handler that would unmount the busy control waits.
+    await press(centre(c).querySelector('[data-backing="cta-back"]'));
+    expect(right(c).querySelector('[data-backing="confirm"]').textContent, 'Add did not replace the busy control').toContain(STAKE.confirming);
+    await press(seat(c, 'Shadow'));
+    expect(centre(c).querySelector('[data-backing="team-card"]').getAttribute('data-seat'), 'another seat did not open').toBe('od-a');
+    await press(right(c).querySelector('[data-backing="stake-cancel"]'));
+    expect(right(c).querySelector('[data-backing="confirm"]'), '"Back to the card" waited').not.toBeNull();
+    const tab = c.querySelector('[data-desk-section="results"]');
+    if (tab) { await press(tab); expect(right(c).querySelector('[data-backing="confirm"]'), 'the section tab waited').not.toBeNull(); }
+    // The reply lands on the control that sent it.
+    await act(async () => { server.release(); });
+    await flush();
+    expect(right(c).querySelector('[data-backing="backed"]')).not.toBeNull();
+    expect(right(c).textContent).toContain('Backed · 250 BP on Kestrel');
+    expect(server.calls.filter((x) => x === 'placeStake')).toHaveLength(1);
+    // …and the seam is free again: Add from the receipt opens the fresh top-up form.
+    server.hold = false;
+    await press(centre(c).querySelector('[data-backing="cta-back"]'));
+    expect(right(c).querySelector('[data-backing="backed"]')).toBeNull();
+    expect(right(c).querySelector('[data-backing="top-up-note"]').textContent).toBe(STAKE.addsTo(250, 'Kestrel'));
+  });
+
+  it('R2-1 — STACKED (a ≤980px desktop window): every entry into the control brings the right column into view, Add from the receipt included; a pods refresh moves nothing (MUTATION: drop the entry count from `moved` in BackingDesk → the third scroll never happens)', async () => {
+    const scrolls = [];
+    const hadMatchMedia = Object.getOwnPropertyDescriptor(window, 'matchMedia');
+    Object.defineProperty(window, 'matchMedia', { configurable: true, writable: true, value: (q) => ({ matches: q === '(max-width: 980px)', media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }) });
+    const proto = window.HTMLElement.prototype;
+    const hadScroll = Object.getOwnPropertyDescriptor(proto, 'scrollIntoView');
+    proto.scrollIntoView = function scrollIntoView() { scrolls.push(this.getAttribute('data-desk-col')); };
+    try {
+      const c = await mount(<BackingScreen uid="viewer-1" viewport="desktop" onBack={() => {}} onOpenTape={() => {}} />);
+      await press(seat(c, 'Kestrel'));
+      expect(scrolls).toEqual(['card']);
+      await press(centre(c).querySelector('[data-backing="cta-back"]'));
+      expect(scrolls).toEqual(['card', 'right']);
+      await press(right(c).querySelector('[data-preset="250"]'));
+      await press(right(c).querySelector('[data-backing="confirm"]'));
+      expect(right(c).querySelector('[data-backing="backed"]')).not.toBeNull();
+      expect(scrolls, 'the pods refresh after the stake moves nothing').toEqual(['card', 'right']);
+      await press(centre(c).querySelector('[data-backing="cta-back"]'));
+      expect(right(c).querySelector('[data-backing="top-up-note"]')).not.toBeNull();
+      expect(scrolls, 'Add from the receipt brings the fresh form into view').toEqual(['card', 'right', 'right']);
+    } finally {
+      if (hadScroll) Object.defineProperty(proto, 'scrollIntoView', hadScroll); else delete proto.scrollIntoView;
+      if (hadMatchMedia) Object.defineProperty(window, 'matchMedia', hadMatchMedia); else delete window.matchMedia;
+    }
   });
 
   it('re-entering the SAME seat from the receipt through "Back another team" then Back still opens fresh (the pre-fix workaround keeps working)', async () => {
