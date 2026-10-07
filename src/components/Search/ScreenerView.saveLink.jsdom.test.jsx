@@ -69,4 +69,41 @@ describe('Save as watchlist sends the screener session it came from', () => {
       screenerSessionId: 'rs-session-7',
     });
   });
+
+  it('a later failed turn that resets the composer\'s session still saves the screen on display with ITS session (review R4-9: the link comes from the response that produced the results)', async () => {
+    let chatCalls = 0;
+    fetchWithAuth.mockImplementation(async (url) => {
+      if (url === '/api/screener/chat') {
+        chatCalls += 1;
+        // Turn 2 hits the catch-all: sessionId null, error — the client drops its session but keeps the screen.
+        return chatCalls === 1 ? json(200, { ...screened, suggestedActions: ['Narrow it down'] }) : json(500, { sessionId: null, message: 'Something went wrong on my end.', suggestedActions: null, screened: false, error: true });
+      }
+      if (url === '/api/forge/watchlists') return json(200, { watchlistId: 'wl-9', status: 'draft' });
+      return json(200, {});
+    });
+    await act(async () => { root.render(<ScreenerView onOpenResearch={() => {}} isMobile={false} />); });
+    await flush();
+    await click(buttonWith('Top BaggerBomb fit'));
+    await click(buttonWith('Narrow it down')); // a refinement chip: the failing turn
+    expect(chatCalls).toBe(2);
+    await click(buttonWith('Save as watchlist'));
+    await click(buttonWith('Save & finalize'));
+    const create = fetchWithAuth.mock.calls.find(([url]) => url === '/api/forge/watchlists');
+    expect(JSON.parse(create[1].body).screenerSessionId).toBe('rs-session-7');
+  });
+
+  it('a screen that arrived without a session id sends none', async () => {
+    fetchWithAuth.mockImplementation(async (url) => {
+      if (url === '/api/screener/chat') return json(200, { ...screened, sessionId: undefined });
+      if (url === '/api/forge/watchlists') return json(200, { watchlistId: 'wl-9', status: 'draft' });
+      return json(200, {});
+    });
+    await act(async () => { root.render(<ScreenerView onOpenResearch={() => {}} isMobile={false} />); });
+    await flush();
+    await click(buttonWith('Top BaggerBomb fit'));
+    await click(buttonWith('Save as watchlist'));
+    await click(buttonWith('Save & finalize'));
+    const create = fetchWithAuth.mock.calls.find(([url]) => url === '/api/forge/watchlists');
+    expect('screenerSessionId' in JSON.parse(create[1].body)).toBe(false);
+  });
 });

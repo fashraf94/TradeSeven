@@ -323,9 +323,10 @@ async function handleCreateFromTickers({ req, res, user }) {
 
     // Pilot P2: the screener sends the session the screen came from. With the
     // gate on for the caller and a session they own, the list names it
-    // (`sourceSessionId`) and its research record (`researchWorkId`, null when
-    // the session has none), and an open record closes as completed /
-    // saved_to_list against the screen whose results were saved — one
+    // (`sourceSessionId`) and the research record this save closes
+    // (`researchWorkId`: the session's open record, which closes as completed /
+    // saved_to_list against the screen whose results were saved; null when the
+    // session has none or an earlier save already closed it) — one
     // transaction. Otherwise (gate off, no id, not theirs) → the plain write,
     // `sourceSessionId: null` exactly as before.
     const screenerSessionId = typeof body.screenerSessionId === 'string' && isValidForgeId(body.screenerSessionId)
@@ -339,14 +340,18 @@ async function handleCreateFromTickers({ req, res, user }) {
         const recordSnap = recordRef ? await tx.get(recordRef) : null;
         const stored = recordSnap?.exists ? recordSnap.data() : null;
         const record = isOwnedRecord(stored, user.uid) && stored.researchWorkId === session.researchWorkId ? stored : null;
-        tx.set(watchlistRef, owned
-          ? { ...watchlistDoc, sourceSessionId: screenerSessionId, researchWorkId: record ? record.researchWorkId : null }
-          : watchlistDoc);
+        // The record closes against THIS list only while it is open. A record an
+        // earlier save from the same session already closed describes THAT
+        // list's save, so this list names the session but no record
+        // (researchWorkId null) — never another list's numbers (reviews R1-1 / R4-4).
         const patch = record ? safely('screener-save', () => closePatch(record, {
           state: 'completed', terminalReason: TERMINAL_REASONS.savedToList, atIso: nowIso,
           funnel: screenerFunnel({ screens: record.telemetry?.screens, saved: tickers.map((t) => t.symbol) }),
           subject: { watchlistId: watchlistRef.id, hypothesisVersion: null },
         })) : null;
+        tx.set(watchlistRef, owned
+          ? { ...watchlistDoc, sourceSessionId: screenerSessionId, researchWorkId: patch ? record.researchWorkId : null }
+          : watchlistDoc);
         if (patch) tx.update(recordRef, patch);
       });
     } else {

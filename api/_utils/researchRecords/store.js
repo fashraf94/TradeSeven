@@ -20,8 +20,17 @@ import {
   RESEARCH_WORK_COLLECTION, isOwnedRecord, isResearchWorkId, researchRefOf, turnPatch, recordSummaryOf,
 } from './model.js';
 
-/** A list cites at most this many research records (the earliest first: the list's own research leads). */
-export const LIST_RESEARCH_MAX = 100;
+/**
+ * A list's research is read in ONE bounded equality query (reviews R2-1 /
+ * R4-5): every analysis view opened on a list is a session and so a record,
+ * and an unbounded read would grow with each open. Past this many attached
+ * records the read is a deterministic subset (document-id order; the list's
+ * own record is always read by its id) — a bound the Command Center arc can
+ * lift with a (watchlistId, createdAt) composite if lists ever get there.
+ */
+export const LIST_RESEARCH_READ_MAX = 200;
+/** The Forge is given at most this many research summaries. */
+export const RESEARCH_SUMMARIES_MAX = 20;
 
 export const researchWorkRefOf = (db, researchWorkId) => db.collection(RESEARCH_WORK_COLLECTION).doc(researchWorkId);
 
@@ -59,60 +68,98 @@ export async function mintWithHost(db, { hostRef, hostDoc, record }) {
 }
 
 /**
+ * How long a failed turn waits for its record write (review R2-2). The write
+ * runs after the model call — on the timeout path, in the last seconds of a
+ * 30 s function — so it is awaited (BUILD_RULES §5) but BOUNDED: one
+ * transaction attempt, at most this long. Past it the turn answers exactly as
+ * it would have, and the record write is reported as unconfirmed (logged) —
+ * never left to replace the turn's answer with the platform's timeout.
+ */
+export const TURN_OUTCOME_DEADLINE_MS = 1500;
+
+/**
  * Fold one failed or discarded turn into its record's telemetry: a fresh read,
- * the owner check, one update. Never throws — a failure is logged and the
- * turn's own answer stands exactly as it was.
+ * the owner check, one update — one attempt, within TURN_OUTCOME_DEADLINE_MS.
+ * Never throws — a failure (or an unconfirmed write) is logged and the turn's
+ * own answer stands exactly as it was.
  *
  * @param {{ researchWorkId: string, uid: string, kind: 'failure'|'cancellation', elapsedMs: number|null, usage?: object|null, atIso: string, label: string }} p
- * @returns {Promise<boolean>} whether the record was updated
+ * @returns {Promise<'recorded'|'skipped'|'unconfirmed'|'failed'>}
  */
-export async function recordTurnOutcome(db, { researchWorkId, uid, kind, elapsedMs, usage = null, atIso, label }) {
+export async function recordTurnOutcome(db, { researchWorkId, uid, kind, elapsedMs, usage = null, atIso, label, deadlineMs = TURN_OUTCOME_DEADLINE_MS }) {
+  let timer = null;
   try {
-    if (!isResearchWorkId(researchWorkId)) return false;
+    if (!isResearchWorkId(researchWorkId)) return 'skipped';
     const ref = researchWorkRefOf(db, researchWorkId);
-    return await db.runTransaction(async (tx) => {
+    const write = db.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
       const record = snap.exists ? snap.data() : null;
-      if (!isOwnedRecord(record, uid)) return false;
-      tx.update(ref, turnPatch(record, { kind, elapsedMs, usage, atIso }));
-      return true;
-    });
+      if (!isOwnedRecord(record, uid)) return 'skipped';
+      const patch = turnPatch(record, { kind, elapsedMs, usage, atIso });
+      if (!patch) return 'skipped'; // a closed record never moves
+      tx.update(ref, patch);
+      return 'recorded';
+    }, { maxAttempts: 1 });
+    const deadline = new Promise((resolve) => { timer = setTimeout(() => resolve('unconfirmed'), deadlineMs); });
+    const outcome = await Promise.race([write, deadline]);
+    if (outcome === 'unconfirmed') {
+      // The write may still land; the turn does not wait for it. Its eventual failure is logged, never thrown.
+      write.catch((err) => console.error(`[researchRecords:${label}] late turn-outcome write failed:`, err?.message || err));
+      console.error(`[researchRecords:${label}] turn outcome unconfirmed after ${deadlineMs} ms (the turn's answer is unchanged)`);
+    }
+    return outcome;
   } catch (err) {
     console.error(`[researchRecords:${label}] turn outcome not recorded (the turn's answer is unchanged):`, err?.message || err);
-    return false;
+    return 'failed';
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
 const byCreated = (a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : (a.researchWorkId < b.researchWorkId ? -1 : 1));
 
 /**
- * The research records attached to a list, oldest first: those whose subject is
- * the list (a dialogue or screener record it was saved from, its manual
- * record, every analysis session run on it) plus the record the list itself
- * names (`researchWorkId` — a second list saved from one screener session
- * names a record whose subject is the first). The caller's own records only.
- * Reads through `tx` when given (a transaction's reads come before its writes).
+ * The research records ATTACHED to a list, oldest first. A record is attached
+ * to a list when its subject is that list: the dialogue or screener record the
+ * list was saved from, its manual record, every analysis session run on it.
+ * The record the list itself names (`researchWorkId`) is always one of them —
+ * read by its id too, in case the bounded query left it out. The caller's own
+ * records only. Reads through `tx` when given (a transaction's reads come
+ * before its writes).
  *
- * @returns {Promise<object[]>} stored records, at most LIST_RESEARCH_MAX
+ * @returns {Promise<object[]>} stored records, at most LIST_RESEARCH_READ_MAX + 1
  */
 export async function readListResearch(db, { uid, watchlistId, listResearchWorkId = null, tx = null }) {
   const get = (refOrQuery) => (tx ? tx.get(refOrQuery) : refOrQuery.get());
-  const snap = await get(db.collection(RESEARCH_WORK_COLLECTION).where('watchlistId', '==', watchlistId));
+  const attached = (r) => isOwnedRecord(r, uid) && isResearchWorkId(r.researchWorkId) && r.watchlistId === watchlistId;
+  const snap = await get(db.collection(RESEARCH_WORK_COLLECTION).where('watchlistId', '==', watchlistId).limit(LIST_RESEARCH_READ_MAX));
   const byId = new Map();
   for (const d of snap.docs) {
     const r = d.data();
-    if (isOwnedRecord(r, uid) && isResearchWorkId(r.researchWorkId)) byId.set(r.researchWorkId, r);
+    if (attached(r)) byId.set(r.researchWorkId, r);
   }
   if (isResearchWorkId(listResearchWorkId) && !byId.has(listResearchWorkId)) {
     const own = await get(researchWorkRefOf(db, listResearchWorkId));
     const r = own.exists ? own.data() : null;
-    if (isOwnedRecord(r, uid) && r.researchWorkId === listResearchWorkId) byId.set(r.researchWorkId, r);
+    if (attached(r) && r.researchWorkId === listResearchWorkId) byId.set(r.researchWorkId, r);
   }
-  return [...byId.values()].sort(byCreated).slice(0, LIST_RESEARCH_MAX);
+  return [...byId.values()].sort(byCreated);
 }
 
-/** The evidence refs for a list's research, in the order readListResearch returns them. */
+/** The evidence refs a new version cites: every record read for the list, oldest first (the list's own research leads). */
 export const researchRefsOf = (records) => records.map((r) => researchRefOf(r.researchWorkId));
 
-/** What the Forge's Idea panel is given: the list's research summaries, newest first. */
-export const researchSummariesOf = (records) => records.map(recordSummaryOf).reverse();
+/**
+ * What the Forge's Idea panel is given: the list's OWN research first (the
+ * dialogue / screener / manual record it was saved from), then its analysis
+ * sessions newest first — so no number of analysis opens can push the
+ * research behind the idea out of view (reviews R4-1 / R1-4). At most
+ * RESEARCH_SUMMARIES_MAX.
+ */
+export function researchSummariesOf(records) {
+  const newestFirst = [...records].reverse();
+  return [
+    ...newestFirst.filter((r) => r.origin !== 'analysis'),
+    ...newestFirst.filter((r) => r.origin === 'analysis'),
+  ].slice(0, RESEARCH_SUMMARIES_MAX).map(recordSummaryOf);
+}

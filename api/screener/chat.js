@@ -157,9 +157,12 @@ export default async function handler(req, res) {
   // Pilot P2: resolved once, no I/O. `turn` follows this request's model call
   // so every exit — the catch-all included — can record what it came to.
   const recordsOn = hypothesisRecordsOnFor(user.uid);
-  const turn = { recordId: null, continuing: false, called: false, elapsedMs: null, usage: null };
+  const turn = { recordId: null, continuing: false, called: false, persisting: false, persisted: false, elapsedMs: null, usage: null };
   const noteTurn = async (kind) => {
-    if (!turn.recordId || !turn.continuing || !turn.called) return;
+    if (!turn.recordId || !turn.continuing || !turn.called || turn.persisted) return; // a persisted turn is never also a failure (review R2-4)
+    // A failure out of the persist step itself is ambiguous — the transaction may have committed (reviews R1-11 / R2-6):
+    // its outcome is unknown, so it is logged and never counted (a lost-concurrency cancellation is certain and is).
+    if (kind === 'failure' && turn.persisting) { console.warn('[researchRecords] turn outcome unknown (the persist step threw); not counted'); return; }
     await recordTurnOutcome(db, {
       researchWorkId: turn.recordId, uid: user.uid, kind, elapsedMs: turn.elapsedMs, usage: turn.usage,
       atIso: new Date().toISOString(), label: 'screener',
@@ -389,6 +392,7 @@ export default async function handler(req, res) {
       };
     }
 
+    turn.persisting = true; // Pilot P2: from here a thrown error may follow a committed turn
     // 15. Persist. latestSpec carries forward only a screened spec (so a
     //     refinement has something to mutate); a clarifying turn leaves it.
     const nextLatestSpec = shouldScreen ? responsePayload.appliedSpec : (session.latestSpec || null);
@@ -477,6 +481,8 @@ export default async function handler(req, res) {
         throw txErr;
       }
     }
+
+    turn.persisted = true; // Pilot P2: the turn is in the store — a later throw is not a failed turn
 
     // 16. Shadow log (fire-and-forget). The scratchpad lives ONLY here — never
     //     in the response or the session doc.

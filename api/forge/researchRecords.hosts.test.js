@@ -28,7 +28,7 @@ import {
 import { RESEARCH_STAGES, STAGES_BY_ORIGIN, SYMBOL_OUTCOMES } from '../_utils/researchRecords/model.js';
 import { mintWithHost } from '../_utils/researchRecords/store.js';
 
-const state = vi.hoisted(() => ({ flagOn: true, replies: [], calls: [] }));
+const state = vi.hoisted(() => ({ flagOn: true, replies: [], calls: [], logThrows: false }));
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => {
   const real = await importOriginal();
   return { ...real, get HYPOTHESIS_RECORDS_ENABLED() { return state.flagOn; } };
@@ -37,7 +37,11 @@ let activeDb = null;
 vi.mock('../_utils/firebaseAdmin.js', () => ({ getFirebaseAdmin: () => activeDb }));
 vi.mock('../_utils/security.js', () => ({ applySecurityMiddleware: () => false }));
 vi.mock('../_utils/authMiddleware.js', () => ({ requireAuth: async () => ({ uid: 'owner-1' }) }));
-vi.mock('../_utils/shadowLogger.js', () => ({ logSignalDrops: async () => {}, logConversation: async () => true }));
+vi.mock('../_utils/shadowLogger.js', () => ({
+  logSignalDrops: async () => {},
+  // A synchronous throw AFTER the turn persisted (review R2-4's probe).
+  logConversation: (...args) => { if (state.logThrows) throw new Error('logger down'); return Promise.resolve(args.length > 0); },
+}));
 vi.mock('@vercel/functions', () => ({ waitUntil: (p) => p }));
 vi.mock('firebase-admin/firestore', () => ({
   FieldValue: { arrayUnion: (...items) => ({ __op: 'arrayUnion', items }), increment: (n) => ({ __op: 'increment', n }) },
@@ -117,6 +121,7 @@ beforeEach(() => {
   state.flagOn = true;
   state.calls = [];
   state.replies = [];
+  state.logThrows = false;
   activeDb = null;
 });
 afterEach(() => {
@@ -394,14 +399,15 @@ describe('row 5 — the screener → list link', () => {
   const create = (over = {}) => call(watchlistsHandler, {
     body: { tickers: [{ symbol: 'NVDA' }, { symbol: 'AMD' }], name: 'Chips', sourceScreenSpec: { filters: [] }, screenerSessionId: SCREENER_SESSION, ...over },
   });
-  it('gate on: the list names the screener session and its record; a second list from the same session links it too, the record stays as first closed', async () => {
+  it('gate on: the list names the screener session and the record its save closes; a SECOND list from the same session names the session but no record (reviews R1-1 / R4-4)', async () => {
     setDb({ 'indexIntelligence/stockRankings': rankingsDoc() });
     await screenFirst();
     const first = await create();
     expect(stored(activeDb, `watchlists/${first.body.watchlistId}`)).toMatchObject({ sourceSessionId: SCREENER_SESSION, researchWorkId: SCREENER_RW, sourceDropId: null });
     const closed = rec(SCREENER_RW);
     const second = await create({ tickers: [{ symbol: 'AVGO' }] });
-    expect(stored(activeDb, `watchlists/${second.body.watchlistId}`)).toMatchObject({ sourceSessionId: SCREENER_SESSION, researchWorkId: SCREENER_RW });
+    // The record describes the FIRST save; the second list never borrows its numbers.
+    expect(stored(activeDb, `watchlists/${second.body.watchlistId}`)).toMatchObject({ sourceSessionId: SCREENER_SESSION, researchWorkId: null });
     expect(rec(SCREENER_RW)).toEqual(closed); // subject set once; a closed record never moves
   });
   it('gate off: sourceSessionId null exactly as before, and no researchWorkId key', async () => {
@@ -482,5 +488,51 @@ describe('row 7 — abandon', () => {
     const save = await call(watchlistsHandler, { body: { sessionId: DIALOGUE_SESSION, agentId: AGENT_ID, dropId: DROP_ID } });
     expect(save.statusCode).toBe(200);
     expect(rec(DIALOGUE_RW)).toMatchObject({ state: 'completed', terminalReason: 'saved_to_list' });
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+describe('§2 review fixes — turn accounting and a closed record', () => {
+  it('a throw AFTER the turn persisted is not also a failure (review R2-4)', async () => {
+    setDb({ 'indexIntelligence/stockRankings': rankingsDoc() });
+    await screenFirst();
+    state.logThrows = true; // the post-persist logger throws synchronously
+    const res = await screenNext(ok(screenReply()));
+    expect(res.statusCode).toBe(500); // the host's own catch-all answer, as on main
+    expect(rec(SCREENER_RW).telemetry).toMatchObject({ attempts: 2, completions: 2, failures: 0 });
+  });
+  it('a persist step that throws without saying whether it committed is NOT counted — the outcome is unknown (reviews R1-11 / R2-6)', async () => {
+    setDb(dialogueDocs());
+    await dialogueFirst();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const before = rec(DIALOGUE_RW);
+    // The turn's transaction commits, then its promise rejects (an ambiguous commit).
+    activeDb.__hooks.afterCommit = async () => { activeDb.__hooks.afterCommit = null; const e = new Error('4 DEADLINE_EXCEEDED'); e.code = 4; throw e; };
+    const res = await dialogueNext(ok(dialogueReply({ candidateTickerUpdates: [] })));
+    expect(res.statusCode).toBe(500);
+    // The committed turn counted once as a completion; the ambiguous error added no failure.
+    expect(rec(DIALOGUE_RW).telemetry).toMatchObject({ attempts: before.telemetry.attempts + 1, completions: before.telemetry.completions + 1, failures: 0 });
+    expect(console.warn.mock.calls.some(([m]) => /turn outcome unknown/.test(m))).toBe(true);
+  });
+  it('a CLOSED record never moves: screener turns after the save leave it exactly as it closed (review R1-1)', async () => {
+    setDb({ 'indexIntelligence/stockRankings': rankingsDoc() });
+    await screenFirst();
+    await call(watchlistsHandler, { body: { tickers: [{ symbol: 'NVDA' }], name: 'x', sourceScreenSpec: { filters: [] }, screenerSessionId: SCREENER_SESSION } });
+    const closed = rec(SCREENER_RW);
+    vi.setSystemTime(new Date('2026-10-07T15:00:00.000Z'));
+    await screenNext(ok(screenReply()));
+    await screenNext(failed());
+    expect(rec(SCREENER_RW)).toEqual(closed);
+    expect(stored(activeDb, `researchSessions/${SCREENER_SESSION}`).messagesUsed).toBe(2); // the host itself carries on
+  });
+  it('analysis is cumulative over its session: a member the player drops mid-session stays counted (review R1-8)', async () => {
+    setDb({ 'indexIntelligence/stockRankings': rankingsDoc(), 'watchlists/wl-1': savedList() }); // NVDA, AMD, ZZZZ (off-universe)
+    await call(analysisHandler, { body: { watchlistId: 'wl-1' } });
+    await activeDb.collection('watchlists').doc('wl-1').update({ tickers: [{ symbol: 'AMD' }, { symbol: 'AVGO' }] });
+    state.replies.push(ok(analysisReply()));
+    await call(analysisHandler, { body: { watchlistId: 'wl-1', sessionId: ANALYSIS_SESSION, userMessage: 'And now?' } });
+    const r = rec(ANALYSIS_RW);
+    expect(r.stages).toMatchObject({ selectedForInvestigation: 4, investigationsCompleted: 3 });
+    expect(r.symbols.map((s) => `${s.symbol}:${s.outcome}`)).toEqual(['NVDA:null', 'AMD:null', 'ZZZZ:data_missing', 'AVGO:null']);
   });
 });

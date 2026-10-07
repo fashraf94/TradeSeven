@@ -228,15 +228,27 @@ export function screenEntryOf({ atIso, resultType, universeSize, matchCount, res
   };
 }
 
-/** The stock screen whose results were saved: the latest one returning every saved symbol, else the latest with the most overlap (>0). */
+/**
+ * The stock screen whose results were saved, latest first among equals: a
+ * screen that returned EXACTLY the saved symbols; else one that returned every
+ * saved symbol (a superset — the save dropped some); else the one with the most
+ * overlap (>0); else none. Exact before superset (review R1-5): a later, wider
+ * screen the player never saw must not claim a save of an earlier one.
+ */
 export function savedScreenOf(screens, savedSymbols) {
   const stock = (Array.isArray(screens) ? screens : []).filter((s) => isPlainObject(s) && s.resultType === 'stocks' && Array.isArray(s.symbols));
+  const saved = new Set(savedSymbols);
+  const latest = (pred) => { for (let i = stock.length - 1; i >= 0; i--) if (pred(stock[i])) return stock[i]; return null; };
+  const overlapOf = (s) => s.symbols.filter((sym) => saved.has(sym)).length;
+  if (saved.size === 0) return null;
+  const exact = latest((s) => overlapOf(s) === saved.size && new Set(s.symbols).size === saved.size);
+  if (exact) return exact;
+  const superset = latest((s) => overlapOf(s) === saved.size);
+  if (superset) return superset;
   let best = null;
   let bestOverlap = 0;
   for (let i = stock.length - 1; i >= 0; i--) {
-    const set = new Set(stock[i].symbols);
-    const overlap = savedSymbols.filter((s) => set.has(s)).length;
-    if (overlap === savedSymbols.length && overlap > 0) return stock[i];
+    const overlap = overlapOf(stock[i]);
     if (overlap > bestOverlap) { best = stock[i]; bestOverlap = overlap; }
   }
   return best;
@@ -269,8 +281,11 @@ export function screenerFunnel({ screens, saved = null }) {
   }
   return {
     stages: {
-      universeSize: ref && isCount(ref.universeSize) ? ref.universeSize : 0,
-      matchedPreLimit: ref && isCount(ref.matchedPreLimit) ? ref.matchedPreLimit : 0,
+      // The referenced screen's own values, passed through as recorded — a
+      // malformed one fails stagesFor (never silently 0, review R1-6). No
+      // screen at all is 0: nothing recorded was screened.
+      universeSize: ref ? ref.universeSize : 0,
+      matchedPreLimit: ref ? ref.matchedPreLimit : 0,
       shortlisted: returned.length,
       eligible: savedSyms ? savedSyms.length : 0,
     },
@@ -287,18 +302,46 @@ export function screenerFunnel({ screens, saved = null }) {
  * decided outcome (the analysis decides no eligibility, and its session never
  * closes). No universe, match, shortlist or eligibility stage.
  *
- * @param {{ symbols: string[], digest: { size: number, covered: number, offUniverse: string[] } }} p
+ * CUMULATIVE over the session (review R1-8; spec §3 "each symbol counted once
+ * per stage it reached within the declared research run"): given the record so
+ * far (`prior`), a member stays in the cohort after the player drops it from
+ * the list, and a member once covered stays covered — so no stage ever
+ * decreases. At mint (no prior) this is exactly the digest's own counts.
+ *
+ * @param {{ symbols: string[], digest: { size: number, covered: number, offUniverse: string[] }, prior?: object|null }} p
  */
-export function analysisFunnel({ symbols, digest }) {
+export function analysisFunnel({ symbols, digest, prior = null }) {
   const off = new Set(uniqueSymbols(digest?.offUniverse));
+  const current = uniqueSymbols(symbols);
+  if (!isPlainObject(prior)) {
+    return {
+      stages: {
+        selectedForInvestigation: digest?.size,
+        investigationsCompleted: digest?.covered,
+      },
+      symbols: current.map((symbol) => (off.has(symbol)
+        ? entry(symbol, 'data_missing', SYMBOL_REASONS.offUniverse, { offUniverse: true })
+        : entry(symbol, null, null))),
+    };
+  }
+  const covered = new Map(); // symbol → reached investigationsCompleted in this run
+  for (const e of Array.isArray(prior.symbols) ? prior.symbols : []) {
+    const s = normalizeSymbol(e?.symbol);
+    if (s && !covered.has(s)) covered.set(s, e.outcome !== 'data_missing');
+  }
+  for (const s of current) covered.set(s, covered.get(s) === true || !off.has(s));
+  const order = [...covered.keys()];
+  const coveredCount = order.filter((s) => covered.get(s)).length;
+  const priorCount = (k) => (isCount(prior.stages?.[k]) ? prior.stages[k] : 0);
   return {
     stages: {
-      selectedForInvestigation: digest?.size,
-      investigationsCompleted: digest?.covered,
+      // A truncated prior cohort cannot be re-counted from its stored list: the stage never decreases.
+      selectedForInvestigation: Math.max(order.length, priorCount('selectedForInvestigation')),
+      investigationsCompleted: Math.max(coveredCount, priorCount('investigationsCompleted')),
     },
-    symbols: uniqueSymbols(symbols).map((symbol) => (off.has(symbol)
-      ? entry(symbol, 'data_missing', SYMBOL_REASONS.offUniverse, { offUniverse: true })
-      : entry(symbol, null, null))),
+    symbols: order.map((symbol) => (covered.get(symbol)
+      ? entry(symbol, null, null)
+      : entry(symbol, 'data_missing', SYMBOL_REASONS.offUniverse, { offUniverse: true }))),
   };
 }
 
@@ -348,8 +391,10 @@ export function applyTurn(telemetry, { kind, elapsedMs, usage = null, atIso, scr
     failures: count('failures') + (kind === 'failure' ? 1 : 0),
     cancellations: count('cancellations') + (kind === 'cancellation' ? 1 : 0),
     elapsedMs: count('elapsedMs') + (Number.isFinite(elapsedMs) && elapsedMs > 0 ? Math.round(elapsedMs) : 0),
-    firstTurnAt: nonEmptyString(t.firstTurnAt) ? t.firstTurnAt : atIso,
-    lastTurnAt: atIso,
+    // Interleaved turns can commit out of order: the first and last turn times
+    // only ever widen (ISO-8601 UTC strings compare in time order) — review R2-5.
+    firstTurnAt: nonEmptyString(t.firstTurnAt) && t.firstTurnAt < atIso ? t.firstTurnAt : atIso,
+    lastTurnAt: nonEmptyString(t.lastTurnAt) && t.lastTurnAt > atIso ? t.lastTurnAt : atIso,
     tokens: prior && u ? { input: prior.input + u.input, output: prior.output + u.output } : TOKENS_UNKNOWN,
   };
   if (Array.isArray(t.screens) || screen) {
@@ -401,17 +446,20 @@ export function subjectPatch(record, { watchlistId, hypothesisVersion = null }) 
 }
 
 /**
- * A successful (or failed, or cancelled) turn's patch: telemetry always; the
- * host's budget when given; the funnel only while the record is open — a
- * closed record's funnel is the one it closed with. `funnel` may be a
- * function of the turn's new telemetry (the screener's funnel is read from
- * its screens, this turn's included).
+ * A successful (or failed, or cancelled) turn's patch: telemetry, the host's
+ * budget when given, and the funnel. Only while the record is OPEN: a closed
+ * record never moves — not its funnel, not its telemetry (review R1-1: a
+ * screener session used after its save no longer runs the record's
+ * `lastTurnAt` past its `endedAt`). Null for a closed record (no write).
+ * `funnel` may be a function of the turn's new telemetry (the screener's
+ * funnel is read from its screens, this turn's included).
  */
 export function turnPatch(record, { kind, elapsedMs, usage = null, atIso, budget = null, funnel = null, screen = null }) {
-  const patch = { telemetry: applyTurn(record?.telemetry, { kind, elapsedMs, usage, atIso, screen }), updatedAt: atIso };
+  if (record?.state !== 'open') return null;
+  const patch = { telemetry: applyTurn(record.telemetry, { kind, elapsedMs, usage, atIso, screen }), updatedAt: atIso };
   if (budget) patch.budget = budget;
   const f = typeof funnel === 'function' ? funnel(patch.telemetry) : funnel;
-  if (f && record?.state === 'open') {
+  if (f) {
     patch.stages = stagesFor(record.origin, f.stages);
     Object.assign(patch, capSymbols(f.symbols));
   }
@@ -436,7 +484,13 @@ export function closePatch(record, { state, terminalReason, atIso, funnel, subje
   };
 }
 
-/** What the Forge is shown of a record: identity, subject, funnel counts and terminal — never the cohort or telemetry. */
+/**
+ * What the Forge is shown of a record: identity, subject, funnel counts,
+ * terminal — and how many model turns completed (`completions`), the only
+ * telemetry the panel needs: a record no model turn completed (an analysis
+ * view opened and left) is not "researched with your agent" (review R4-1 /
+ * R1-3). Never the cohort, the budget or the rest of the telemetry.
+ */
 export function recordSummaryOf(record) {
   return {
     researchWorkId: record.researchWorkId,
@@ -445,6 +499,7 @@ export function recordSummaryOf(record) {
     watchlistId: record.watchlistId ?? null,
     hypothesisVersion: record.hypothesisVersion ?? null,
     stages: Object.fromEntries(RESEARCH_STAGES.map((k) => [k, isCount(record.stages?.[k]) ? record.stages[k] : null])),
+    completions: isCount(record.telemetry?.completions) ? record.telemetry.completions : 0,
     state: record.state,
     terminalReason: record.terminalReason ?? null,
     endedAt: record.endedAt ?? null,

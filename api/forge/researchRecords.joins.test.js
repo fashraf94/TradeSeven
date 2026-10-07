@@ -126,18 +126,39 @@ describe('row 8 — the joins', () => {
       }
     }
   });
-  it('screener lists: v1 cites the record the list names — for a second list too, whose record\'s subject is the first', async () => {
+  it('screener lists: v1 cites the record its list was saved against; a second list from the same session cites none (the record is the first save\'s — reviews R1-1 / R4-4)', async () => {
     setDb({ 'indexIntelligence/stockRankings': rankingsDoc() });
     state.replies.push({ success: true, content: screenReply() });
     await call(screenerHandler, { body: { userMessage: 'strong chips' } });
     const make = async (tickers) => (await call(watchlistsHandler, { body: { tickers, name: 'x', sourceScreenSpec: { filters: [] }, screenerSessionId: 'researchSessions-auto-1' } })).body.watchlistId;
     const first = await make([{ symbol: 'NVDA' }]);
     const second = await make([{ symbol: 'AMD' }]);
-    for (const wl of [first, second]) {
-      const v = await createVersion(wl, { expectedVersion: 0, statement: 'Screened strength persists' });
-      expect(v.body.version).toMatchObject({ origin: 'screener', evidenceRefs: [ref('rs_researchSessions-auto-1')] });
-    }
+    const v1 = await createVersion(first, { expectedVersion: 0, statement: 'Screened strength persists' });
+    expect(v1.body.version).toMatchObject({ origin: 'screener', evidenceRefs: [ref('rs_researchSessions-auto-1')] });
+    const v2 = await createVersion(second, { expectedVersion: 0, statement: 'Screened strength persists' });
+    expect(v2.body.version).toMatchObject({ origin: 'screener', evidenceRefs: [] });
     expect(stored(activeDb, 'researchWork/rs_researchSessions-auto-1').watchlistId).toBe(first);
+  });
+  it('version creation reads the list\'s research BEFORE its transaction — no record is in the transaction\'s read set (review R2-3)', async () => {
+    setDb({
+      'watchlists/wl-1': savedList({ researchWorkId: 'wl_wl-1' }),
+      'researchWork/wl_wl-1': { researchWorkId: 'wl_wl-1', userId: OWNER, origin: 'manual', state: 'completed', watchlistId: 'wl-1', createdAt: NOW },
+      'researchWork/as_1': { researchWorkId: 'as_1', userId: OWNER, origin: 'analysis', state: 'open', watchlistId: 'wl-1', createdAt: NOW },
+    });
+    const txReads = [];
+    activeDb.__hooks.afterTxBody = async ({ readPaths }) => { txReads.push(...readPaths); };
+    const v = await createVersion('wl-1', { expectedVersion: 0, statement: 'An idea' });
+    expect(v.body.version.evidenceRefs).toEqual([ref('as_1'), ref('wl_wl-1')].sort((a, b) => (a.id < b.id ? -1 : 1)));
+    expect(txReads.length).toBeGreaterThan(0);
+    expect(txReads.filter((p) => p.startsWith('researchWork/'))).toEqual([]);
+  });
+  it('a record whose subject is ANOTHER list is never cited, even if a list names it', async () => {
+    setDb({
+      'watchlists/wl-2': savedList({ watchlistId: 'wl-2', researchWorkId: 'rs_s1' }),
+      'researchWork/rs_s1': { researchWorkId: 'rs_s1', userId: OWNER, origin: 'screener', state: 'completed', watchlistId: 'wl-1', createdAt: NOW },
+    });
+    const v = await createVersion('wl-2', { expectedVersion: 0, statement: 'An idea' });
+    expect(v.body.version.evidenceRefs).toEqual([]);
   });
   it('a reaffirmed version cites the list\'s research too; another player\'s record is never cited', async () => {
     const due = {
@@ -156,7 +177,7 @@ describe('row 8 — the joins', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.version.evidenceRefs).toEqual([ref('wl_wl-1')]);
   });
-  it('the Forge read carries the list\'s research summaries, newest first — counts and state only, never the cohort or telemetry', async () => {
+  it('the Forge read carries the list\'s research summaries — its own research first, then analysis sessions newest first; counts, completed turns and state, never the cohort or the rest of telemetry', async () => {
     setDb({ 'indexIntelligence/stockRankings': rankingsDoc() });
     const wl = (await call(watchlistsHandler, { body: {} })).body.watchlistId;
     await activeDb.collection('watchlists').doc(wl).update({ tickers: [{ symbol: 'NVDA' }, { symbol: 'ZZZZ' }] });
@@ -166,14 +187,14 @@ describe('row 8 — the joins', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.research).toEqual([
       {
-        researchWorkId: analysisRw, origin: 'analysis', createdAt: '2026-10-07T15:00:00.000Z', watchlistId: wl, hypothesisVersion: null,
-        stages: { universeSize: null, matchedPreLimit: null, shortlisted: null, selectedForInvestigation: 2, investigationsCompleted: 1, eligible: null },
-        state: 'open', terminalReason: null, endedAt: null,
-      },
-      {
         researchWorkId: `wl_${wl}`, origin: 'manual', createdAt: NOW, watchlistId: wl, hypothesisVersion: null,
         stages: { universeSize: null, matchedPreLimit: null, shortlisted: null, selectedForInvestigation: null, investigationsCompleted: null, eligible: null },
-        state: 'completed', terminalReason: 'player_authored', endedAt: NOW,
+        completions: 0, state: 'completed', terminalReason: 'player_authored', endedAt: NOW,
+      },
+      {
+        researchWorkId: analysisRw, origin: 'analysis', createdAt: '2026-10-07T15:00:00.000Z', watchlistId: wl, hypothesisVersion: null,
+        stages: { universeSize: null, matchedPreLimit: null, shortlisted: null, selectedForInvestigation: 2, investigationsCompleted: 1, eligible: null },
+        completions: 0, state: 'open', terminalReason: null, endedAt: null,
       },
     ]);
   });

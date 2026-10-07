@@ -141,6 +141,20 @@ describe('the screener funnel', () => {
     expect(f.stages).toEqual({ universeSize: 6, matchedPreLimit: 4, shortlisted: 3, eligible: 2 });
     expect(f.symbols.map((s) => `${s.symbol}:${s.outcome}:${s.reason}`)).toEqual(['NVDA:eligible:saved_to_list', 'AMD:eligible:saved_to_list', 'AVGO:rejected:not_saved']);
   });
+  it('a screen that returned EXACTLY the saved symbols beats a later, wider one the player never saw (review R1-5)', () => {
+    const shown = screen(['A', 'B', 'C'], 6, 3);
+    const wider = screen(['A', 'B', 'C', 'D', 'E'], 6, 400); // committed server-side; the client timed out and still showed `shown`
+    expect(savedScreenOf([shown, wider], ['A', 'B', 'C'])).toBe(shown);
+    // With no exact match, the latest superset; then the most overlap.
+    expect(savedScreenOf([shown, wider], ['A', 'B'])).toBe(wider);
+    expect(savedScreenOf([screen(['A', 'X']), screen(['B', 'Y'])], ['A', 'Z'])).toEqual(screen(['A', 'X']));
+    expect(savedScreenOf([shown], [])).toBeNull();
+    expect(screenerFunnel({ screens: [shown, wider], saved: ['A', 'B', 'C'] }).stages).toEqual({ universeSize: 6, matchedPreLimit: 3, shortlisted: 3, eligible: 3 });
+  });
+  it('a malformed screen value is never silently 0 — the funnel refuses (review R1-6)', () => {
+    const bad = { ...screen(['A']), universeSize: null };
+    expect(() => stagesFor('screener', screenerFunnel({ screens: [bad], saved: ['A'] }).stages)).toThrow(/universeSize/);
+  });
   it('a saved symbol no recorded screen returned joins flagged addedAtSave (eligible without the screening stages)', () => {
     const a = screen(['NVDA', 'AMD'], 6, 2);
     const f = screenerFunnel({ screens: [a], saved: ['NVDA', 'TSLA'] });
@@ -166,6 +180,22 @@ describe('the analysis and manual funnels', () => {
         { symbol: 'ZZZZ', outcome: 'data_missing', reason: 'off_universe', offUniverse: true },
       ],
     });
+  });
+  it('analysis is CUMULATIVE over the session: a dropped member stays, a covered member stays covered, no stage decreases (review R1-8)', () => {
+    const first = analysisFunnel({ symbols: ['NVDA', 'ZZZZ'], digest: { size: 2, covered: 1, offUniverse: ['ZZZZ'] } });
+    const prior = { stages: { selectedForInvestigation: 2, investigationsCompleted: 1 }, symbols: first.symbols };
+    // The player dropped NVDA and added AMD; ZZZZ now has data.
+    const next = analysisFunnel({ symbols: ['ZZZZ', 'AMD'], digest: { size: 2, covered: 2, offUniverse: [] }, prior });
+    expect(next.stages).toEqual({ selectedForInvestigation: 3, investigationsCompleted: 3 });
+    expect(next.symbols).toEqual([
+      { symbol: 'NVDA', outcome: null, reason: null },
+      { symbol: 'ZZZZ', outcome: null, reason: null },
+      { symbol: 'AMD', outcome: null, reason: null },
+    ]);
+    // A member never covered stays data_missing; a truncated prior's larger counts are kept.
+    const later = analysisFunnel({ symbols: ['QQQQ'], digest: { size: 1, covered: 0, offUniverse: ['QQQQ'] }, prior: { stages: { selectedForInvestigation: 150, investigationsCompleted: 140 }, symbols: [] } });
+    expect(later.stages).toEqual({ selectedForInvestigation: 150, investigationsCompleted: 140 });
+    expect(later.symbols).toEqual([{ symbol: 'QQQQ', outcome: 'data_missing', reason: 'off_universe', offUniverse: true }]);
   });
   it('manual: no stage, no cohort', () => {
     expect(manualFunnel()).toEqual({ stages: {}, symbols: [] });
@@ -197,6 +227,11 @@ describe('budget and telemetry', () => {
     expect(t.tokens).toBe(TOKENS_UNKNOWN); // unknown is for good — never a partial sum
     expect(() => applyTurn(t, { kind: 'retry', atIso: NOW })).toThrow();
     expect(() => applyTurn(t, { kind: 'failure' })).toThrow();
+  });
+  it('turns committing out of order never move the first/last turn times backwards (review R2-5)', () => {
+    let t = applyTurn(emptyTelemetry(), { kind: 'completion', atIso: '2026-10-07T14:00:06.000Z' });
+    t = applyTurn(t, { kind: 'failure', atIso: '2026-10-07T14:00:05.000Z' });
+    expect(t).toMatchObject({ firstTurnAt: '2026-10-07T14:00:05.000Z', lastTurnAt: '2026-10-07T14:00:06.000Z', attempts: 2 });
   });
   it('applyTurn keeps at most SCREENS_MAX screens (the latest)', () => {
     let t = emptyTelemetry({ screens: true });
@@ -233,13 +268,13 @@ describe('the record and its patches', () => {
     expect(subjectPatch(base(), { watchlistId: 'wl-1', hypothesisVersion: 0 })).toEqual({ watchlistId: 'wl-1', hypothesisVersion: null });
     expect(subjectPatch({ ...base(), watchlistId: 'wl-0' }, { watchlistId: 'wl-1', hypothesisVersion: 2 })).toEqual({});
   });
-  it('turnPatch: telemetry always; the funnel only while open', () => {
+  it('turnPatch: telemetry, budget and funnel while open; a CLOSED record never moves — no patch at all (review R1-1)', () => {
     const f = dialogueFunnel({ candidates: [{ symbol: 'NVDA', status: 'kept' }, { symbol: 'AMD', status: 'kept' }] });
     const open = turnPatch(base(), { kind: 'completion', elapsedMs: 5, atIso: LATER, funnel: f, budget: budgetOf({ messageBudget: 20, messagesUsed: 2 }) });
-    expect(open).toMatchObject({ updatedAt: LATER, budget: { used: 2 }, stages: { shortlisted: 2 } });
-    const closed = turnPatch({ ...base(), state: 'completed' }, { kind: 'completion', elapsedMs: 5, atIso: LATER, funnel: f });
-    expect('stages' in closed).toBe(false);
-    expect(closed.telemetry.attempts).toBe(1);
+    expect(open).toMatchObject({ updatedAt: LATER, budget: { used: 2 }, stages: { shortlisted: 2 }, telemetry: { attempts: 1 } });
+    for (const state of ['completed', 'abandoned', 'failed']) {
+      expect(turnPatch({ ...base(), state }, { kind: 'completion', elapsedMs: 5, atIso: LATER, funnel: f })).toBeNull();
+    }
     // A funnel may be a function of the turn's new telemetry.
     const viaFn = turnPatch(base(), { kind: 'completion', atIso: LATER, funnel: (t) => { expect(t.attempts).toBe(1); return f; } });
     expect(viaFn.stages.shortlisted).toBe(2);
@@ -253,12 +288,15 @@ describe('the record and its patches', () => {
     for (const s of ['completed', 'abandoned', 'failed']) expect(closePatch({ ...base(), state: s }, { state: 'abandoned', terminalReason: 'user_close', atIso: LATER, funnel: manualFunnel() })).toBeNull();
     expect(() => closePatch(base(), { state: 'open', terminalReason: 'x', atIso: LATER, funnel: manualFunnel() })).toThrow();
   });
-  it('the Forge summary carries counts and state — never the cohort, the budget or telemetry', () => {
+  it('the Forge summary carries counts, completed model turns and state — never the cohort, the budget or the rest of telemetry', () => {
     expect(recordSummaryOf(base())).toEqual({
       researchWorkId: 'ws_s', origin: 'signaldrop', createdAt: NOW, watchlistId: null, hypothesisVersion: null,
       stages: { universeSize: null, matchedPreLimit: null, shortlisted: 1, selectedForInvestigation: 1, investigationsCompleted: null, eligible: 0 },
-      state: 'open', terminalReason: null, endedAt: null,
+      completions: 0, state: 'open', terminalReason: null, endedAt: null,
     });
+    const worked = { ...base(), telemetry: applyTurn(emptyTelemetry(), { kind: 'completion', atIso: NOW }) };
+    expect(recordSummaryOf(worked).completions).toBe(1);
+    expect(recordSummaryOf({ ...base(), telemetry: { completions: 'x' } }).completions).toBe(0);
   });
   it('isOwnedRecord and currentVersionOfList never throw', () => {
     expect(isOwnedRecord(base(), 'u')).toBe(true);

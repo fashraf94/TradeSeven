@@ -122,6 +122,22 @@ function firstVersionDefaults(parent, sessionSnap) {
 }
 
 /**
+ * Pilot P2 — the research records attached to the list, read BEFORE a
+ * version-creating transaction (review R2-3): records are append-only facts
+ * the version only cites, so reading them inside the transaction would only
+ * tie a player's save to every analysis turn that touches an open record.
+ * "Attached at creation" = attached when the request was made. A missing or
+ * foreign parent cites nothing here; the transaction then answers the
+ * parent's own refusal (not_found / forbidden).
+ */
+async function attachedResearchOf(db, { uid, watchlistId }) {
+  const snap = await watchlistRefOf(db, watchlistId).get();
+  const parent = snap?.exists ? snap.data() : null;
+  if (!parent || parent.userId !== uid) return [];
+  return readListResearch(db, { uid, watchlistId, listResearchWorkId: parent.researchWorkId ?? null });
+}
+
+/**
  * Create a new player version (a manual / screener v1 in `draft`, or "save as
  * a new version" of an existing idea, also `draft` — getting a draft to
  * `researched` is P2's job). Refused while the current version is
@@ -134,6 +150,7 @@ function firstVersionDefaults(parent, sessionSnap) {
  * @returns {Promise<{ idempotent: boolean, version: object }>}
  */
 export async function createPlayerVersion(db, { uid, watchlistId, opId, expectedVersion, payload, nowIso }) {
+  const research = await attachedResearchOf(db, { uid, watchlistId });
   const opFingerprint = opFingerprintOf({ kind: 'create', payload: { expectedVersion, ...payload } });
   return db.runTransaction(async (tx) => {
     const parentRef = watchlistRefOf(db, watchlistId);
@@ -144,7 +161,6 @@ export async function createPlayerVersion(db, { uid, watchlistId, opId, expected
     const sessionSnap = current === 0 && isDialogueList(parent)
       ? await tx.get(db.collection('watchlistSessions').doc(parent.sourceSessionId))
       : null;
-    const research = await readListResearch(db, { uid, watchlistId, listResearchWorkId: parent.researchWorkId ?? null, tx });
 
     const replay = replayOf(opSnap, opFingerprint);
     if (replay) return { idempotent: true, version: replay };
@@ -174,6 +190,7 @@ export async function createPlayerVersion(db, { uid, watchlistId, opId, expected
  * and clock (firstDeployedAt, reviewDueAt) stay exactly as they were.
  */
 export async function reaffirmVersion(db, { uid, watchlistId, version, opId, expectedVersion, payload, nowIso }) {
+  const research = await attachedResearchOf(db, { uid, watchlistId });
   const opFingerprint = opFingerprintOf({ kind: 'reaffirm', payload: { expectedVersion, version, ...payload } });
   return db.runTransaction(async (tx) => {
     const parentRef = watchlistRefOf(db, watchlistId);
@@ -181,7 +198,6 @@ export async function reaffirmVersion(db, { uid, watchlistId, version, opId, exp
     const current = pointerOf(parent);
     const opSnap = await tx.get(versionsColOf(db, watchlistId).where('opId', '==', opId).limit(1));
     const dueSnap = await tx.get(versionRefOf(db, watchlistId, version));
-    const research = await readListResearch(db, { uid, watchlistId, listResearchWorkId: parent.researchWorkId ?? null, tx });
 
     const replay = replayOf(opSnap, opFingerprint);
     if (replay) return { idempotent: true, version: replay };
@@ -207,8 +223,9 @@ export async function reaffirmVersion(db, { uid, watchlistId, version, opId, exp
 }
 
 /**
- * One player transition (ready | wait | reject | cancel | retire) as a
- * compare-and-set on the status the caller saw.
+ * One player transition (ready | wait | reject | cancel | retire |
+ * mark_researched — Pilot P2, founder ruling D4) as a compare-and-set on the
+ * status the caller saw.
  *
  * @returns {Promise<{ version: object }>}
  */

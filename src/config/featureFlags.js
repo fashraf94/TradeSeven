@@ -3036,6 +3036,12 @@ export function isShadowCpuQuoteIntegrityOn() {
  * routes under api/forge/watchlists/[id]/hypothesis-*.js, the automatic v1 at
  * dialogue save, the review pass (the fifth tenant of
  * api/cron/process-pending-reflections.js) and the Forge "Idea" panel.
+ * Pilot P2 (build report docs/audits/20261007_BUILD_PILOT_P2_RESEARCH_RECORDS.md)
+ * puts the RESEARCH RECORDS behind the same switch: `researchWork/{id}`
+ * minted and updated by the screener chat, the watchlist dialogue (and its
+ * abandon route), the analysis sessions and the watchlist create/save paths;
+ * the `researchWorkId` stamp on those hosts and on new lists; the research
+ * refs on new versions; `mark_researched`; and the panel's research line.
  * Nothing the agent sees or trades reads any of it.
  *
  * TRUE is not enough on its own: the gate resolves ON only for owners on the
@@ -3051,14 +3057,19 @@ export function isShadowCpuQuoteIntegrityOn() {
  * byte-identical to the pre-build main.
  *
  * FLIP: its own founder PR, never a build PR, after the hypothesisVersions
- * collection-group index (firestore.indexes.json) and the rules blocks are
- * deployed. The flip moves the pin in src/config/hypothesisRecordsFlags.test.js
+ * collection-group index and the researchWork composite (firestore.indexes.json)
+ * and the rules blocks are deployed (the P2 report's flip checklist covers both
+ * builds). The flip moves the pin in src/config/hypothesisRecordsFlags.test.js
  * to true and drops the DARK_BY_DESIGN entry in src/config/flagPinGuard.test.js
  * in the same commit (BUILD_RULES §2). Rollback is the same line back to false:
  * nothing new is read or written; what was written stays — the versions
  * (still owner-readable under the rules, read by no app code) and the two
  * pointer fields on the lists that got one, which the existing owner GETs
- * return as part of the list document (review L3-6).
+ * return as part of the list document (review L3-6). P2 adds to what stays:
+ * the research records (owner-readable, read by no app code once off; an open
+ * one simply stays open) and the `researchWorkId` stamp on the sessions and
+ * lists that got one (the screener-linked lists also keep their
+ * `sourceSessionId`).
  *
  * Read it at RENDER/CALL scope through isHypothesisRecordsOn(), never as a
  * module-scope const in a consumer (the featureFlags vi.mock hazard).

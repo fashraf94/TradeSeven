@@ -205,6 +205,10 @@ const ScreenerView = ({ onOpenResearch, isMobile }) => {
       matchCount: typeof data?.matchCount === 'number' ? data.matchCount : null,
       universeSize: typeof data?.universeSize === 'number' ? data.universeSize : null,
       dataAsOf: data?.dataAsOf || null,
+      // Pilot P2: the session these results came from, from the SAME response
+      // (BUILD_RULES §9) — a later reset of the composer's session never
+      // detaches the screen on display from the session that produced it.
+      sessionId: typeof data?.sessionId === 'string' ? data.sessionId : null,
     });
   }, [sessionId]);
 
@@ -283,10 +287,11 @@ const ScreenerView = ({ onOpenResearch, isMobile }) => {
           tickers,
           name: saveName.trim().slice(0, 100),
           sourceScreenSpec: screen.appliedSpec || null,
-          // Pilot P2: the screener session this screen ran in, so the saved list
-          // can name its research record. The server links it only when the
-          // research-record gate is on for this player; otherwise it is ignored.
-          ...(sessionId ? { screenerSessionId: sessionId } : {}),
+          // Pilot P2: the screener session this screen ran in (carried on the
+          // screen itself), so the saved list can name its research record. The
+          // server links it only when the research-record gate is on for this
+          // player; otherwise it is ignored.
+          ...(screen.sessionId ? { screenerSessionId: screen.sessionId } : {}),
         }),
       });
       const createData = await createRes.json().catch(() => null);
@@ -312,7 +317,7 @@ const ScreenerView = ({ onOpenResearch, isMobile }) => {
       setSaveError('Connection issue — check your network and try again.');
       setSaveStatus('error');
     }
-  }, [screen, saveName, saveStatus, sessionId]);
+  }, [screen, saveName, saveStatus]);
 
   const canSend = !isSending && inputText.trim().length > 0;
   const canSaveScreen =

@@ -24,8 +24,9 @@
 // Lifecycle sentences are table C verbatim (ideaCopy.js), filled only from
 // the version's own record. Colors are the existing theme tokens only.
 //
-// Pilot P2: the panel also says what research stands behind the list — one
-// line per research record (ideaCopy.js researchLinesOf), every number a
+// Pilot P2: the panel also says what research stands behind the list — the
+// research it came from, and its newest analysis session the agent worked on
+// (ideaCopy.js researchLinesOf), every number a
 // stage count from the record — and, when the player marked the current
 // version researched themselves (founder ruling D4), says so in words
 // distinct from research done with the agent. It arrives with the version
@@ -39,7 +40,7 @@ import {
 } from '../../../services/hypothesisVersionService';
 import {
   LIFECYCLE_LINES, fillLine, ideaSymbolOf, windowTextOf, formatIdeaDate,
-  STATUS_LABELS, ACTION_LABELS, HORIZON_LABELS, HORIZON_SOURCE_LABELS, PANEL_COPY, RESEARCH_COPY, researchLinesOf,
+  STATUS_LABELS, ACTION_LABELS, HORIZON_LABELS, HORIZON_SOURCE_LABELS, PANEL_COPY, RESEARCH_COPY, researchLinesOf, noResearchRecorded,
 } from './ideaCopy';
 import SectionLabel from './SectionLabel';
 
@@ -84,7 +85,7 @@ export default function IdeaPanel({ watchlistId, tokens }) {
   const enabled = isHypothesisRecordsOn();
   // pending (first answer not in) | hidden | ready | error (only once the gate is known on)
   const [phase, setPhase] = useState(enabled ? 'pending' : 'hidden');
-  const [record, setRecord] = useState({ currentVersion: 0, versions: [], research: [] });
+  const [record, setRecord] = useState({ currentVersion: 0, versions: [], research: null });
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(null); // { tone: 'ok' | 'error', text }
   const [editor, setEditor] = useState(null); // { mode, opId, expectedVersion, targetVersion, baseStatement, statement, horizonEnum }
@@ -93,7 +94,7 @@ export default function IdeaPanel({ watchlistId, tokens }) {
   const adopt = (data) => setRecord({
     currentVersion: data.currentVersion || 0,
     versions: Array.isArray(data.versions) ? data.versions : [],
-    research: Array.isArray(data.research) ? data.research : [],
+    research: Array.isArray(data.research) ? data.research : null, // absent = not known, never "none"
   });
 
   /** Reload after a move (the gate is already known on): a failure now is said, not hidden. */
@@ -179,7 +180,8 @@ export default function IdeaPanel({ watchlistId, tokens }) {
   const actions = current ? legalActionsFor(current.status, { isCurrent: true, hasSuccessor: current.successorVersion != null }) : [];
   const canSaveNew = !current || current.status !== 'review_due';
   const line = lifecycleLineFor(current);
-  const researchLines = researchLinesOf(record.research);
+  const researchLines = researchLinesOf(record.research, { watchlistId });
+  const showNoResearch = researchLines.length === 0 && noResearchRecorded(record.research, current);
   const playerMarked = current?.stateReason === STATE_REASONS.playerMarkedResearched;
 
   return (
@@ -230,7 +232,7 @@ export default function IdeaPanel({ watchlistId, tokens }) {
         {phase === 'ready' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 10 }} data-testid="idea-research">
             {playerMarked && <div style={meta(tokens)} data-testid="idea-player-marked">{RESEARCH_COPY.playerMarked}</div>}
-            {researchLines.length === 0 && <div style={meta(tokens)} data-testid="idea-research-none">{RESEARCH_COPY.none}</div>}
+            {showNoResearch && <div style={meta(tokens)} data-testid="idea-research-none">{RESEARCH_COPY.none}</div>}
             {researchLines.map((r) => (
               <div key={r.id} style={meta(tokens)} data-testid="idea-research-line">
                 {r.line}
@@ -240,7 +242,7 @@ export default function IdeaPanel({ watchlistId, tokens }) {
           </div>
         )}
 
-        {notice &&<div style={{ ...banner(tokens, notice.tone === 'ok' ? tokens.teal : tokens.red), marginTop: 10 }} data-testid="idea-notice">{notice.text}</div>}
+        {notice && <div style={{ ...banner(tokens, notice.tone === 'ok' ? tokens.teal : tokens.red), marginTop: 10 }} data-testid="idea-notice">{notice.text}</div>}
 
         {phase === 'ready' && current && !editor && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }} data-testid="idea-actions">
