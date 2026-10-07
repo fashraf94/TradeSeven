@@ -40,7 +40,7 @@ describe('Spec 1 mandate flags — merge-dark pins track live values (§7 / BUIL
     expect(MANDATE_FOUNDER_CREATE_ENABLED).toBe(true);
   });
 
-  it('transport defaults to the safest direct mode (string enum, not a boolean gate)', () => {
-    expect(MANDATE_TRANSPORT_MODE).toBe('direct');
+  it('transport runs in batch mode (Config PR-D; string enum, not a boolean gate)', () => {
+    expect(MANDATE_TRANSPORT_MODE).toBe('batch');
   });
 });
