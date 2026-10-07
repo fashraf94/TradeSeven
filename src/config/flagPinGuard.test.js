@@ -203,6 +203,8 @@ const DARK_BY_DESIGN = {
   // rollback moves both lines back together.
   SHADOW_CPU_QUOTE_INTEGRITY_ENABLED:
     'Shadow vs CPU quote integrity (SHADOW_CPU_PLACEHOLDER_PRICE_SPEC_V1_6.md; build record docs/audits/20261002_SHADOW_CPU_QUOTE_INTEGRITY_BUILD_REVIEW.md) — built dark; the producer metadata (quoteOrigin, the stock isFallback marker) ships live while this stays false. Flips only in the founder\'s own PR, never a build PR, and no earlier than the first regular US market open after the founder confirms the complete additive metadata path is live in production (R-11). The flip moves the pin in shadowCpuQuoteIntegrityFlags.test.js to true and drops this entry in the same commit; no URL, localStorage or environment override exists',
+  HYPOTHESIS_RECORDS_ENABLED:
+    'Pilot P1a — versioned hypothesis records, record-only (pilot spec V1.4 §2; build report docs/audits/20261007_BUILD_PILOT_P1A_HYPOTHESIS_RECORDS.md). Built dark: with it false every existing route, write and cron output is byte-identical to the pre-build main, and even true it resolves on only for owners on the cockpit allowlist (COCKPIT_ALLOWLIST_UIDS). Flips only in the founder\'s own PR, never a build PR, after the hypothesisVersions collection-group index and the rules blocks are deployed. The flip moves the pin in hypothesisRecordsFlags.test.js to true and drops this entry in the same commit',
   // ANTICIPATION_THRESHOLD_LINT_MODE intentionally ABSENT, and it must stay
   // absent: it is a STRING TRI-STATE ('off' | 'shadow' | 'on'), so buildFlagMap
   // above never sees it (the scan is `*_ENABLED = true|false`) and the

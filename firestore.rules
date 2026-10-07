@@ -1181,6 +1181,49 @@ service cloud.firestore {
       allow read: if request.auth != null
                   && resource.data.userId == request.auth.uid;
       allow create, update, delete: if false;
+
+      // Pilot P1a (docs/specs/20260923_BAGGERBOMB_PARTNERSHIP_PILOT_SPEC_V1_4.md
+      // §2.1; founder decision D1): the player's versioned idea records,
+      // written only by the owner routes and the save transaction through the
+      // Admin SDK. Read by the parent list's owner (resolved through the
+      // parent's userId — a parent rule never reaches a subcollection; the
+      // agentBattles calls precedent); no client write for anyone. Proven by
+      // test/rules/hypothesisVersionsDenials.rules.mjs (npm run test:rules).
+      match /hypothesisVersions/{versionId} {
+        allow read: if request.auth != null
+                    && get(/databases/$(database)/documents/watchlists/$(watchlistId)).data.userId == request.auth.uid;
+        allow write: if false;
+      }
+    }
+
+    // Pilot P1a — the cross-list view (the Command Center's "ideas across my
+    // lists" query): a collection-group QUERY of hypothesisVersions, admitted
+    // on the version's OWN denormalized userId (written from the parent at
+    // creation and never changed), so the query must filter on it. `list`
+    // only, on purpose: a recursive match also covers every direct path, and a
+    // `get` granted here would bypass the parent check above. Direct gets stay
+    // with the nested rule (a get of a version under a missing parent is
+    // denied). What this block does admit, by design: any query — collection
+    // group or one list's subcollection — constrained to the caller's own
+    // userId, which returns that caller's own versions wherever they sit
+    // (review L3-3). No other user's version can match: every writer stamps
+    // the parent owner's uid. Writes stay denied above. Index: firestore.indexes.json
+    // hypothesisVersions COLLECTION_GROUP (userId ASC, status ASC, stateChangedAt DESC).
+    match /{path=**}/hypothesisVersions/{versionId} {
+      allow list: if request.auth != null
+                  && resource.data.userId == request.auth.uid;
+    }
+
+    // Pilot P1a (founder decision D2): hypothesisReviewQueue/{watchlistId}:{version},
+    // the review pass's queue (armed by P1b at activation), and
+    // hypothesisReviewState/{docId}, its cursor. SERVER-ONLY: no client verb,
+    // not even for the owner of the idea a row names (the callSweepQueue
+    // precedent). test/rules/hypothesisReviewQueueDenials.rules.mjs asserts both.
+    match /hypothesisReviewQueue/{rowId} {
+      allow read, write: if false;  // Admin SDK only
+    }
+    match /hypothesisReviewState/{docId} {
+      allow read, write: if false;  // Admin SDK only
     }
 
     // Phase 5: Workshop Mode — compiled theses produced by

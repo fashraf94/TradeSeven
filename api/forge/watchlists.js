@@ -41,6 +41,10 @@ import {
   NOTES_MAX_LEN,
 } from '../_utils/watchlistValidation.js';
 import { waitUntil } from '@vercel/functions';
+// Pilot P1a (spec §2.1, §2.5): the automatic v1 of the player's idea, written
+// in the save transaction — only when the gate resolves on for the saver.
+import { hypothesisRecordsOnFor } from '../_utils/hypothesisRecords/gate.js';
+import { buildSaveVersion, VERSIONS_SUBCOLLECTION, versionDocId } from '../_utils/hypothesisRecords/model.js';
 
 export const config = { maxDuration: 10 };
 
@@ -379,6 +383,9 @@ async function handleSignalDerivedCreate({ res, user, sessionId, agentId, dropId
   }
 
   // ── Transaction body ────────────────────────────────────────────
+  // Pilot P1a: resolved ONCE, before the transaction, with no I/O. Off → the
+  // body below writes exactly what it wrote before the build.
+  const hypothesisOn = hypothesisRecordsOnFor(user.uid);
   let txResult;
   try {
     txResult = await db.runTransaction(async (tx) => {
@@ -448,9 +455,24 @@ async function handleSignalDerivedCreate({ res, user, sessionId, agentId, dropId
         committedAt: null,
       };
 
+      // Pilot P1a — the idea's v1 (statement = the anatomy thesis; horizon
+      // from the session's parse, a theme session `unspecified`; status
+      // `researched`, reason `dialogue_completed`) and the parent pointer, in
+      // THIS transaction. An empty thesis creates no version and no pointer.
+      const hypothesisV1 = hypothesisOn
+        ? buildSaveVersion({ session, watchlistId: watchlistRef.id, userId: user.uid, sessionId, nowIso })
+        : null;
+      if (hypothesisV1) {
+        watchlistDoc.currentHypothesisVersion = 1;
+        watchlistDoc.hypothesisVersionCount = 1;
+      }
+
       // Per audit A-A-1: tx.set, not tx.create. Auto-id collisions are
       // mathematically negligible (~120 bits entropy from .doc()).
       tx.set(watchlistRef, watchlistDoc);
+      if (hypothesisV1) {
+        tx.create(watchlistRef.collection(VERSIONS_SUBCOLLECTION).doc(versionDocId(1)), hypothesisV1);
+      }
       tx.update(sessionRef, {
         status: 'completed',
         dropListId: watchlistRef.id,

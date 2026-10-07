@@ -711,8 +711,15 @@ describe('firestore.rules — agentEvalRuns is server-only (source tripwire)', (
     expect(named.map((l) => l.trim())).toEqual(['match /agentEvalRuns/{runId} {']);
   });
 
-  it('no wildcard-first path can grant it either: the only one is the root default-deny', () => {
-    // `/{a}` or `/{a}/{b}/…` — any path whose FIRST segment is a wildcard could name the collection.
-    expect(ruleBlocks(rules, /\/\{[^\n]*?\}/)).toEqual([['allow read, write: if false;']]);
+  it('no wildcard-first path can grant it either: the root default-deny, and recursive matches pinned to ANOTHER named collection', () => {
+    // `/{a}` or `/{a}/{b}/…` — any path whose FIRST segment is a wildcard could name the collection — unless
+    // its LAST collection segment is a fixed name: pilot P1a's collection-group read
+    // `/{path=**}/hypothesisVersions/{versionId}` matches hypothesisVersions documents and nothing else.
+    const heads = [...rules.matchAll(/match (\/\{[^\n]*?\}) \{/g)].map((m) => m[1]);
+    expect(heads).toEqual(['/{path=**}/hypothesisVersions/{versionId}', '/{document=**}']);
+    for (const head of heads.filter((h) => h !== '/{document=**}')) {
+      expect(head).toMatch(/^\/\{[a-z]+=\*\*\}\/(?!agentEvalRuns\/)[A-Za-z]+\/\{[^}/]+\}$/);
+    }
+    expect(ruleBlocks(rules, /\/\{document=\*\*\}/)).toEqual([['allow read, write: if false;']]);
   });
 });

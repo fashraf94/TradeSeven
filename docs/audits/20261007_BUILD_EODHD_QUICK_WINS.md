@@ -390,8 +390,8 @@ From the STOP report, unchanged.
   - **Code-final head `70c5b7f8`** (the last code or test change; every commit after it is docs-only): `EXIT=0`, ` Test Files  875 passed | 6 skipped (881)`, `      Tests  18114 passed | 87 skipped (18201)`.
 - **First run** on the first build commit `8c5f56b8`: 2 failed. These were the repo guards `indexIntelligenceHygiene` A-0 and `compositionProtectedStores` DENY-BY-DEFAULT, fixed in `cfe281cc`.
 - **Flag-on preview** (whole suite with the flag `true`): only the three flip-map rows fail (`eodhdQuickWinsFlags` pin, `flagPinGuard` live-value, `flagPinGuard` DARK_BY_DESIGN integrity).
-- **Flip branch suite:** FLIP_SUITE_PLACEHOLDER
-- **`vite build`** on the LF archive of the pushed head: VITE_PLACEHOLDER
+- **Flip branch suite:** `flip/eodhd-quick-wins` = `e7e25e45`, one commit on top of the build at `38c1b533`. Linux, CI-shaped: `EXIT=0`, ` Test Files  875 passed | 6 skipped (881)`, `      Tests  18114 passed | 87 skipped (18201)`. The flip commit reconciles the value pin, the registration row and the DARK_BY_DESIGN entry, so the three flip-map rows that failed in the flag-on preview pass.
+- **`vite build`** on LF `git archive` trees: exit 0 for the build at `38c1b533` and for the flip head `e7e25e45`. Both bundles contain `/market/popular`. The build branch's final, docs-only commit, which records these results, was built again before the push; the result is in the handover.
 - **CI lint gate** (`npm run lint:gate`): exit 0.
 - **Review:** 5 lenses (E1–E5), 4 independent verifiers (EV1–EV4), 26 findings, 25 CONFIRMED and 1 REFUTED (E4-6; E2-5's premise was also refuted). Every finding a code change can close is fixed. 21 named mutants, all killed; the P2 red-then-green evidence is quoted in review record §6. See the review record.
 
