@@ -200,8 +200,11 @@ async function fetchOHLCV(eohdSymbol, daysBack = 252) {
   // QW-6: with the flag on, a history already fetched this session is served
   // from the per-session store (api/_utils/indexHistoryCache.js) under the
   // session-currency rule; anything else is the fresh fetch above, as before.
+  // In intraday mode the run's live quote vouches for a stored bar (its
+  // previousClose must agree with the bar's raw close — review E1-1's rule).
+  const liveQuote = intradayQuotes ? intradayQuotes.get(canonicalRtKey(eohdSymbol)) : null;
   const { rows: ohlcv, dropped } = historyStore
-    ? await historyStore.load(eohdSymbol, daysBack, () => fetchHistoryRows(eohdSymbol, daysBack))
+    ? await historyStore.load(eohdSymbol, daysBack, () => fetchHistoryRows(eohdSymbol, daysBack), { previousClose: liveQuote?.previousClose ?? null })
     : await fetchHistoryRows(eohdSymbol, daysBack);
   droppedRows += dropped;
   // Per symbol, every run (marketDataCache.js:370-372 pattern). A dropped row is

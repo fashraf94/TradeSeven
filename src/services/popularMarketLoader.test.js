@@ -20,7 +20,9 @@
 //     on success, with a symbol the vendor withholds, with one list down, and
 //     with everything down (today's fallbacks);
 //   • a hermetic featureFlags mock that omits the flag reads as OFF, never throws;
-//   • App.jsx's market effect calls the loader (source pin — no test imports App.jsx).
+//   • a dark route (404: rollback or deploy skew) falls back to the per-symbol path;
+//   • App.jsx's market effect calls the loader (source pin; App.xpModal.jsdom.test.jsx
+//     mounts App.jsx with a stubbed stockAPI, so it cannot pin this wiring).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -198,6 +200,31 @@ describe('QW-4 client — App.jsx receives the identical lists, field for field'
     for (const k of ['symbol', 'name', 'price', 'change24h', 'percentChange', 'priceChange7d', 'priceChange30d', 'volatility', 'week52High', 'week52Low', 'marketCap', 'volume24h', 'communityData']) {
       expect(crypto[0]).toHaveProperty(k);
     }
+  });
+});
+
+describe('QW-4 client (review E2-2 / E4-3) — a dark route never strands a flag-on tab on fallbacks', () => {
+  it('a 404 (flag rolled back, or a deploy skew) runs the per-symbol path for that poll — the lists equal the flag-off lists', async () => {
+    const offOut = await load();
+    cacheService.clearAll();
+    flag.on = true;
+    const inner = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (input, opts) => {
+      if (String(input) === '/api/market/popular') {
+        clientRequests.push(String(input));
+        return { ok: false, status: 404, json: async () => ({ error: 'Not found' }) };
+      }
+      return inner(input, opts);
+    });
+    const before = clientRequests.length;
+    const out = await load();
+    const reqs = clientRequests.slice(before);
+    expect(reqs[0]).toBe('/api/market/popular');
+    expect(reqs[1]).toMatch(/^\/api\/stocks\/prices\?symbols=/);
+    expect(reqs[2]).toMatch(/^\/api\/crypto\/prices\?symbols=/);
+    expect(out.stocks).toEqual(offOut.stocks);
+    expect(out.crypto).toEqual(offOut.crypto);
+    expect(out.stocks.find((s) => s.symbol === 'AAPL').price).toBe(40.5); // a real price, not a fallback
   });
 });
 

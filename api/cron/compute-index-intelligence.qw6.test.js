@@ -85,10 +85,12 @@ vi.mock('firebase-admin/firestore', () => {
 // ── The vendor: deterministic bars per symbol, quotes for intraday mode ─────
 const PRIOR = '2026-10-06';
 function seedOf(sym) { let h = 7; for (const c of sym) h = (h * 31 + c.charCodeAt(0)) % 9973; return h; }
-function rawBarsOldestFirst(sym) {
+// The vendor's newest bar: PRIOR unless a test makes it time-aware (E3-1 rows).
+const vendorClock = { newest: () => PRIOR };
+function rawBarsOldestFirst(sym, newestDate = vendorClock.newest()) {
   const s = seedOf(sym);
   const out = [];
-  const d = new Date(`${PRIOR}T12:00:00Z`);
+  const d = new Date(`${newestDate}T12:00:00Z`);
   let i = 0;
   while (out.length < 380) {
     const dow = d.getUTCDay();
@@ -130,7 +132,12 @@ function installVendor() {
         json: async () => codes.map((code) => {
           const s = seedOf(code);
           const close = +(41 + (s % 60) + 0.7).toFixed(2);
-          return { code, close, open: close - 0.4, high: close + 0.9, low: close - 1.1, previousClose: close - 0.5, change: 0.5, change_p: 1.1, volume: 123456 };
+          // The quote's previousClose is the vendor's own prior-session close —
+          // the newest COMPLETED bar's raw close, as the real feed reports it.
+          const bars = rawBarsOldestFirst(code);
+          const completed = bars.filter((b) => b.date < new Date().toISOString().slice(0, 10));
+          const previousClose = completed[completed.length - 1].close;
+          return { code, close, open: close - 0.4, high: close + 0.9, low: close - 1.1, previousClose, change: 0.5, change_p: 1.1, volume: 123456 };
         }),
       };
     }
@@ -145,6 +152,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  vendorClock.newest = () => PRIOR;
   fs.docs.clear();
   fs.writes.length = 0;
   flag.on = false;
@@ -226,5 +234,42 @@ describe('QW-6 — outputs are identical whether histories come from the store o
     await run();
     await run();
     expect([...fs.docs.keys()].some((k) => k.startsWith('indexHistoryCache/'))).toBe(false);
+  });
+});
+
+describe('QW-6 review rows (docs/audits/20261007_EODHD_QUICK_WINS_BUILD_REVIEW.md)', () => {
+  it('E3-1 — after an EARLY close the store is skipped, so a vendor that already publishes the same-day bar gives flag-on = flag-off', async () => {
+    // Fri 2026-11-27: early close 13:00 ET (18:00Z); prior session Wed 11-25.
+    // The vendor publishes today's bar from 18:30Z (the reviewer's assumption).
+    vendorClock.newest = () => (Date.now() >= Date.parse('2026-11-27T18:30:00Z') ? '2026-11-27' : '2026-11-25');
+    vi.setSystemTime(new Date('2026-11-27T19:00:00.000Z'));
+    const a = await run('intraday');
+    flag.on = true;
+    vi.setSystemTime(new Date('2026-11-27T10:30:00.000Z'));
+    await run();                                   // the pre-market wake fills the store
+    vi.setSystemTime(new Date('2026-11-27T19:00:00.000Z'));
+    const c = await run('intraday');
+    expect(c.eod).toBe(29);                        // after the close: every history fetched fresh
+    expect(c.outputs).toEqual(a.outputs);
+  });
+
+  it('E3-5 — a stored history older than the 4 h TTL is re-fetched within the session', async () => {
+    flag.on = true;
+    vi.setSystemTime(new Date('2026-10-07T10:30:00.000Z'));
+    await run();
+    vi.setSystemTime(new Date('2026-10-07T14:00:00.000Z')); // 3.5 h — served
+    expect((await run('intraday')).eod).toBe(0);
+    vi.setSystemTime(new Date('2026-10-07T15:00:00.000Z')); // 4.5 h — re-fetched
+    expect((await run('intraday')).eod).toBe(29);
+  });
+
+  it('E1-1 rule — in intraday mode a stored bar the live quote does not vouch for is re-fetched', async () => {
+    flag.on = true;
+    await run();
+    const doc = fs.docs.get('indexHistoryCache/AAPL.US');
+    doc.rows[0] = { ...doc.rows[0], rawClose: doc.rows[0].rawClose * 0.96 }; // a glitched copy
+    fs.docs.set('indexHistoryCache/AAPL.US', doc);
+    const c = await run('intraday');
+    expect(c.eod).toBe(1);                         // only the glitched symbol
   });
 });

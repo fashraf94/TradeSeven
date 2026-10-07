@@ -14,7 +14,9 @@
 // Dependency-surface guard (BUILD_RULES §4): this file imports the route
 // UNMOCKED, and the route imports src/data/assets.js and src/config/featureFlags.js
 // — if a browser-only dependency ever entered that graph, this import would
-// explode in the Node test environment. Never mock those two imports here.
+// explode in the Node test environment. featureFlags is only PARTIALLY mocked
+// (importOriginal spreads the real module, then one getter), and assets is not
+// mocked at all — keep it that way.
 //
 // Proofs: N simulated tabs → ONE upstream fetch per list, independent of N; the
 // records are field-for-field the per-symbol routes' own; TTL, market-closed
@@ -29,8 +31,10 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => {
   const real = await importOriginal();
   return { ...real, get EODHD_QUICK_WINS_ENABLED() { return flag.on; } };
 });
-const dbBox = vi.hoisted(() => ({ db: null }));
-vi.mock('../_utils/firebaseAdmin.js', () => ({ getFirebaseAdmin: () => dbBox.db }));
+const dbBox = vi.hoisted(() => ({ db: null, throws: false }));
+vi.mock('../_utils/firebaseAdmin.js', () => ({
+  getFirebaseAdmin: () => { if (dbBox.throws) throw new Error('no Firebase credentials'); return dbBox.db; },
+}));
 vi.mock('../_utils/security.js', () => ({ applySecurityMiddleware: () => false }));
 
 const { default: handler, popularStockSymbols, popularCryptoSymbols } = await import('./popular.js');
@@ -53,6 +57,8 @@ const GET = (query = {}) => ({ method: 'GET', query, headers: {} });
 // ── The vendor: one real-time list request returns one item per code ─────────
 let upstream;          // { stocks: n, crypto: n }
 let vendorDown;        // { stocks: bool, crypto: bool }
+let vendorEmpty;       // { stocks: bool, crypto: bool } — a 200 with no items
+let vendorWithholds;   // true → AMZN and DOGE are left out of every answer (a partial list)
 function itemFor(code, i) {
   const base = 50 + i * 3.1;
   const item = {
@@ -68,20 +74,24 @@ function itemFor(code, i) {
 function installVendor() {
   upstream = { stocks: 0, crypto: 0 };
   vendorDown = { stocks: false, crypto: false };
+  vendorEmpty = { stocks: false, crypto: false };
+  vendorWithholds = true;
   globalThis.fetch = vi.fn(async (url) => {
     const m = String(url).match(/\/api\/real-time\/([^?]+)\?/);
     const codes = decodeURIComponent(m[1]).split(',');
     const kind = codes[0].endsWith('.CC') ? 'crypto' : 'stocks';
     upstream[kind]++;
     if (vendorDown[kind]) return { ok: false, status: 503, json: async () => null };
+    if (vendorEmpty[kind]) return { ok: true, status: 200, json: async () => [] };
     // One code is never returned, so a consumer's fallback path is exercised.
-    const items = codes.filter((c) => c !== 'AMZN.US' && c !== 'DOGE-USD.CC').map(itemFor);
+    const items = codes.filter((c) => !vendorWithholds || (c !== 'AMZN.US' && c !== 'DOGE-USD.CC')).map(itemFor);
     return { ok: true, status: 200, json: async () => items };
   });
 }
 
 beforeEach(() => {
   flag.on = true;
+  dbBox.throws = false;
   dbBox.db = makeMandateFakeDb();
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date(OPEN));
@@ -169,6 +179,7 @@ describe('QW-4 — the records are the per-symbol routes\' own, field for field'
 
 describe('QW-4 — market-aware TTL (today\'s client rule)', () => {
   it('market closed: stocks freeze until the next open, crypto still refreshes every 60 s', async () => {
+    vendorWithholds = false; // a COMPLETE list — only those may freeze
     vi.setSystemTime(new Date('2026-10-07T23:00:00.000Z')); // 19:00 ET
     await handler(GET(), makeRes());
     vi.setSystemTime(new Date('2026-10-08T01:00:00.000Z')); // 21:00 ET
@@ -177,6 +188,7 @@ describe('QW-4 — market-aware TTL (today\'s client rule)', () => {
   });
 
   it('overnight the stock list holds while its age is inside the time left to the open (the client\'s getEffectiveTTL rule)', async () => {
+    vendorWithholds = false; // a COMPLETE list — only those may freeze
     vi.setSystemTime(new Date('2026-10-08T02:00:00.000Z')); // 22:00 ET
     await handler(GET(), makeRes());
     vi.setSystemTime(new Date('2026-10-08T03:00:00.000Z')); // 23:00 ET — 1 h old, 10.5 h to the open
@@ -217,12 +229,26 @@ describe('QW-4 — the lease', () => {
     expect(fetchList).not.toHaveBeenCalled();
   });
 
-  it('a waiter gives up after POPULAR_MARKET_WAIT_MS without ever fetching', async () => {
+  it('a waiter that sees no fresh write within POPULAR_MARKET_WAIT_MS fails OPEN: one direct, uncached fetch', async () => {
     const db = makeMandateFakeDb({ 'marketDataLeases/stocks_popular': { owner: 'holder', expiresAtMs: Date.now() + 10 * POPULAR_MARKET_WAIT_MS } });
     let t = Date.now();
-    await expect(readPopularList(db, 'stocks', { fetchList, now: () => t, sleep: async () => { t += 5_000; } }))
-      .rejects.toThrow(/held the lease/);
-    expect(fetchList).not.toHaveBeenCalled();
+    const r = await readPopularList(db, 'stocks', { fetchList, now: () => t, sleep: async () => { t += 5_000; } });
+    expect(r.source).toBe('direct');
+    expect(fetchList).toHaveBeenCalledTimes(1);
+    expect(db._get('marketDataCache/stocks_popular')).toBeUndefined(); // the holder's lease is respected: nothing written
+  });
+
+  it('a holder whose lease was taken over mid-fetch does NOT overwrite the newer list (review E2-4)', async () => {
+    const db = makeMandateFakeDb();
+    const slowFetch = async () => {
+      // While "fetching", the lease expires and another instance takes it over.
+      await db.collection('marketDataLeases').doc('stocks_popular').set({ owner: 'other', expiresAtMs: Date.now() + 60_000 });
+      return { prices: { AAPL: { price: 1 } }, count: 1 };
+    };
+    const r = await readPopularList(db, 'stocks', { fetchList: slowFetch });
+    expect(r.source).toBe('fetched');            // this request is still served
+    expect(db._get('marketDataCache/stocks_popular')).toBeUndefined(); // but writes nothing
+    expect(db._get('marketDataLeases/stocks_popular').owner).toBe('other'); // and leaves the new owner's lease alone
   });
 
   it('a failed fetch releases the lease, so the next caller can take it', async () => {
@@ -275,5 +301,132 @@ describe('QW-4 — the route\'s edges', () => {
     const res = makeRes();
     await handler({ method: 'POST', query: {}, headers: {} }, res);
     expect(res.statusCode).toBe(405);
+  });
+});
+
+// ── Review E2 rows (docs/audits/20261007_EODHD_QUICK_WINS_BUILD_REVIEW.md) ────
+
+/** The Admin SDK rejects `undefined` anywhere in a written value; the shared fake does not. */
+function strictDb(db) {
+  const check = (v, at = '') => {
+    if (v === undefined) throw new Error(`Cannot use "undefined" as a Firestore value (found in field "${at}")`);
+    if (v && typeof v === 'object' && !(v instanceof Date)) for (const [k, x] of Object.entries(v)) check(x, at ? `${at}.${k}` : k);
+  };
+  const run = db.runTransaction;
+  db.runTransaction = (fn, opts) => run((tx) => fn({ ...tx, set: (ref, data, o) => { check(data); return tx.set(ref, data, o); } }), opts);
+  return db;
+}
+
+describe('QW-4 (review E2-6a) — the stored list is Firestore-valid', () => {
+  it('on a strict fake that rejects undefined, the list is written and the second poll is a cache HIT', async () => {
+    dbBox.db = strictDb(makeMandateFakeDb());
+    await handler(GET(), makeRes());
+    const second = makeRes();
+    await handler(GET(), second);
+    expect(second.body.source).toEqual({ stocks: 'cache', crypto: 'cache' });
+    expect(upstream).toEqual({ stocks: 1, crypto: 1 });
+  });
+});
+
+describe('QW-4 (review E2-1) — off hours, only a SETTLED list freezes', () => {
+  it('a list written in session is not served after the close; the first poll after the settle point refetches, and that one holds', async () => {
+    vendorWithholds = false; // a COMPLETE list — only those may freeze
+    vi.setSystemTime(new Date('2026-10-07T19:59:30.000Z')); // 15:59:30 ET — in session
+    await handler(GET(), makeRes());
+    vi.setSystemTime(new Date('2026-10-07T20:40:00.000Z')); // 16:40 ET — closed, settled
+    await handler(GET(), makeRes());
+    expect(upstream.stocks).toBe(2);
+    vi.setSystemTime(new Date('2026-10-07T23:00:00.000Z')); // 19:00 ET
+    await handler(GET(), makeRes());
+    expect(upstream.stocks).toBe(2);
+  });
+
+  it('a list written inside the settle window keeps the plain 60 s', async () => {
+    vi.setSystemTime(new Date('2026-10-07T20:10:00.000Z')); // 16:10 ET
+    await handler(GET(), makeRes());
+    vi.setSystemTime(new Date('2026-10-07T20:12:00.000Z')); // 16:12 ET
+    await handler(GET(), makeRes());
+    expect(upstream.stocks).toBe(2);
+  });
+
+  it('a PARTIAL list (the vendor left a symbol out) never freezes — the client re-requests a missing symbol every poll', async () => {
+    vi.setSystemTime(new Date('2026-10-07T23:00:00.000Z')); // 19:00 ET, settled
+    await handler(GET(), makeRes());
+    vi.setSystemTime(new Date('2026-10-07T23:10:00.000Z'));
+    await handler(GET(), makeRes());
+    expect(upstream.stocks).toBe(2);
+  });
+
+  it('an EMPTY list never freezes', async () => {
+    vendorEmpty.stocks = true;
+    vi.setSystemTime(new Date('2026-10-07T23:00:00.000Z')); // 19:00 ET
+    await handler(GET(), makeRes());
+    vi.setSystemTime(new Date('2026-10-07T23:10:00.000Z'));
+    await handler(GET(), makeRes());
+    expect(upstream.stocks).toBe(2);
+  });
+
+  it('an early-close day settles from 13:00 ET', async () => {
+    vendorWithholds = false; // a COMPLETE list — only those may freeze
+    vi.setSystemTime(new Date('2026-11-27T18:40:00.000Z')); // Fri 13:40 ET, early close 13:00
+    await handler(GET(), makeRes());
+    vi.setSystemTime(new Date('2026-11-27T20:00:00.000Z'));
+    await handler(GET(), makeRes());
+    expect(upstream.stocks).toBe(1);
+  });
+});
+
+describe('QW-4 (review E2-3) — Firestore fails OPEN', () => {
+  it('a Firestore read error: each list fetched directly, uncached, and served', async () => {
+    const db = makeMandateFakeDb();
+    db.collection = () => ({ doc: () => ({ get: async () => { throw new Error('14 UNAVAILABLE'); } }) });
+    dbBox.db = db;
+    const res = makeRes();
+    await handler(GET(), res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.source).toEqual({ stocks: 'direct', crypto: 'direct' });
+    expect(res.body.stocks.count).toBeGreaterThan(0);
+    expect(upstream).toEqual({ stocks: 1, crypto: 1 });
+  });
+
+  it('no Firestore handle at all (credentials missing): direct, uncached, served', async () => {
+    dbBox.throws = true;
+    const res = makeRes();
+    await handler(GET(), res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.source).toEqual({ stocks: 'direct', crypto: 'direct' });
+  });
+
+  it('a write failure after a paid fetch still serves the list (and the next poll fetches again)', async () => {
+    const db = makeMandateFakeDb();
+    const run = db.runTransaction;
+    db.runTransaction = (fn, o) => run((tx) => fn({ ...tx, set: (ref, d, op) => { if (ref.path.startsWith('marketDataCache/')) throw new Error('write denied'); return tx.set(ref, d, op); } }), o);
+    dbBox.db = db;
+    const res = makeRes();
+    await handler(GET(), res);
+    expect(res.body.source).toEqual({ stocks: 'fetched', crypto: 'fetched' });
+    expect(res.body.stocks.count).toBeGreaterThan(0);
+    await handler(GET(), makeRes());
+    expect(upstream).toEqual({ stocks: 2, crypto: 2 });
+  });
+});
+
+describe('QW-4 (review E2-4) — the vendor fetch is bounded below the lease', () => {
+  it('a hung vendor is aborted at POPULAR_VENDOR_TIMEOUT_MS (< the lease) and the lists report unavailable', async () => {
+    const { POPULAR_VENDOR_TIMEOUT_MS } = await import('./popular.js');
+    const { POPULAR_MARKET_LEASE_MS } = await import('../_utils/popularMarketCache.js');
+    expect(POPULAR_VENDOR_TIMEOUT_MS).toBeLessThan(POPULAR_MARKET_LEASE_MS);
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    vi.setSystemTime(new Date(OPEN));
+    globalThis.fetch = vi.fn((url, { signal } = {}) => new Promise((_, reject) => {
+      signal?.addEventListener('abort', () => { const e = new Error('aborted'); e.name = 'AbortError'; reject(e); });
+    }));
+    const res = makeRes();
+    const done = handler(GET(), res);
+    await vi.advanceTimersByTimeAsync(POPULAR_VENDOR_TIMEOUT_MS + 1);
+    await done;
+    expect(res.statusCode).toBe(502);
+    expect(res.body.errors.stocks).toMatch(/did not answer within/);
+    expect(dbBox.db._get('marketDataLeases/stocks_popular')).toBeUndefined(); // released
   });
 });

@@ -21,7 +21,7 @@
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { setCacheHeaders, CACHE_TIERS } from '../_utils/serverCache.js';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
-import { readPopularList } from '../_utils/popularMarketCache.js';
+import { readPopularList, POPULAR_MARKET_LEASE_MS } from '../_utils/popularMarketCache.js';
 import { stockRealtimeSymbolList, stockPriceKey, formatStockPriceRecord } from '../stocks/prices.js';
 import { cryptoRealtimeSymbolList, cryptoPriceKey, formatCryptoPriceRecord } from '../crypto/prices.js';
 import { getStockSymbols, getCryptoSymbols } from '../../src/data/assets.js';
@@ -45,11 +45,29 @@ export function popularCryptoSymbols() {
   return getCryptoSymbols().map((s) => s.toUpperCase());
 }
 
+/**
+ * The vendor fetch is bounded BELOW the lease (review E2-4): a holder can never
+ * outlive its lease while waiting on a hung vendor, so no second instance pays
+ * for the same list, and a hung call cannot hold the request to maxDuration.
+ */
+export const POPULAR_VENDOR_TIMEOUT_MS = 10_000;
+if (POPULAR_VENDOR_TIMEOUT_MS >= POPULAR_MARKET_LEASE_MS) throw new Error('vendor timeout must be below the lease');
+
 async function fetchRealtimeList(symbolList, apiKey, keyOf, formatRecord) {
   const url = `https://eodhd.com/api/real-time/${symbolList}?api_token=${apiKey}&fmt=json`;
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`EODHD responded with ${response.status}`);
-  const data = await response.json();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), POPULAR_VENDOR_TIMEOUT_MS);
+  let data;
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) throw new Error(`EODHD responded with ${response.status}`);
+    data = await response.json();
+  } catch (err) {
+    if (err?.name === 'AbortError') throw new Error(`EODHD did not answer within ${POPULAR_VENDOR_TIMEOUT_MS}ms`);
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
   const prices = {};
   for (const item of Array.isArray(data) ? data : [data]) {
     if (item && item.code) prices[keyOf(item)] = formatRecord(item);
@@ -74,6 +92,8 @@ export default async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
+  // Dark: 404 with no Firestore read and no vendor call (the repo's dark-route
+  // order — middleware, method, flag — as api/mandate/escape.js).
   if (!eodhdQuickWinsOn()) {
     return res.status(404).json({ error: 'Not found' });
   }
@@ -83,10 +103,17 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'API not configured' });
   }
 
-  const db = getFirebaseAdmin();
+  // Fail-open (review E2-3): no Firestore handle → each list is fetched
+  // directly, uncached, exactly as a tab fetched it before.
+  let db = null;
+  try {
+    db = getFirebaseAdmin();
+  } catch (err) {
+    console.error(`[PopularMarket] Firestore unavailable (fetching direct): ${err.message}`);
+  }
   const [stocks, crypto] = await Promise.allSettled([
-    readPopularList(db, 'stocks', { fetchList: () => fetchPopularStocks(apiKey) }),
-    readPopularList(db, 'crypto', { fetchList: () => fetchPopularCrypto(apiKey) }),
+    readPopularList(db, 'stocks', { fetchList: () => fetchPopularStocks(apiKey), expectedCount: popularStockSymbols().length }),
+    readPopularList(db, 'crypto', { fetchList: () => fetchPopularCrypto(apiKey), expectedCount: popularCryptoSymbols().length }),
   ]);
 
   const errors = {};

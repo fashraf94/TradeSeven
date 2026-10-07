@@ -99,6 +99,9 @@ const { stockAPIStub, USER } = vi.hoisted(() => ({
     getQuote: async () => null,
     getPopularStocks: async () => [],
     getPopularCrypto: async () => [],
+    // EODHD Quick Wins QW-4: the flag-on market poll (src/services/popularMarketLoader.js).
+    // Without it the flipped app would run its market effect's error path here.
+    getPopularMarketData: async () => ({ stocks: [], crypto: [] }),
   },
   // The authenticated user the modal reads. Level 3 Expert on 2,000 XP —
   // an (xp, rank) pair the game can actually produce: determineRank(2000)

@@ -196,3 +196,72 @@ describe('QW-7 — ONE book: flag OFF and flag ON are indistinguishable', () => 
     expect(snapshotOf(onDb)).toEqual(snapshotOf(offDb));
   });
 });
+
+// ── Review rows (docs/audits/20261007_EODHD_QUICK_WINS_BUILD_REVIEW.md) ──────
+
+/** Record every collection the sweep touches, in order. */
+function counting(db) {
+  const seen = [];
+  const col = db.collection;
+  db.collection = (name) => { seen.push(name); return col(name); };
+  return { db, seen };
+}
+
+describe('QW-7 (review E3-4 / E4-5) — the open-batch probe fails SAFE', () => {
+  const failingBatches = () => {
+    const db = makeMandateFakeDb();
+    const col = db.collection;
+    db.collection = (name) => (name === 'mandateBatches'
+      ? { where: () => ({ limit: () => ({ get: async () => { throw new Error('14 UNAVAILABLE'); } }) }) }
+      : col(name));
+    return db;
+  };
+
+  it('eval sweep: a probe error reads as "something to mark" — it builds as before, no 500', async () => {
+    flag.on = true;
+    const out = await evalSweep(failingBatches());
+    expect(out.code).toBe(200);
+    expect(builds.universe).toHaveLength(1);
+  });
+
+  it('close sweep: a probe error builds as before and still completes (retention runs)', async () => {
+    flag.on = true;
+    const out = await closeSweep(failingBatches());
+    expect(out.code).toBe(200);
+    expect(builds.universe).toHaveLength(1);
+    expect(retentionSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('QW-7 (review E3-6) — the gate adds no read where it must not', () => {
+  const seeded = () => makeMandateFakeDb({ 'archetypeVintages/analyst_x': VINTAGE, 'mandates/m1': seedBook('m1') });
+
+  it('ONE book: flag ON touches exactly the collections flag OFF touches, in the same order (eval and close)', async () => {
+    const off = counting(seeded());
+    await evalSweep(off.db);
+    await closeSweep(off.db);
+    flag.on = true;
+    const on = counting(seeded());
+    await evalSweep(on.db);
+    await closeSweep(on.db);
+    expect(on.seen).toEqual(off.seen);
+    expect(on.seen).not.toContain('mandateBatches');
+  });
+
+  it('flag OFF with ZERO books never probes the batches', async () => {
+    const off = counting(makeMandateFakeDb());
+    await evalSweep(off.db);
+    await closeSweep(off.db);
+    expect(off.seen).not.toContain('mandateBatches');
+  });
+
+  it('zero books under BATCH transport: still no build and no vendor call', async () => {
+    flag.on = true;
+    const db = makeMandateFakeDb();
+    const { req, res, captured } = fakeReqRes();
+    await runEvalSweep(req, res, { now: EVAL_NOW, tick: EVAL_TICK, db, transport: 'batch' });
+    expect(captured.body).toEqual(expect.objectContaining({ noop: true, reason: 'no_active_books' }));
+    expect(builds.universe).toHaveLength(0);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});

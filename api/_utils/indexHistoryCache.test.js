@@ -31,7 +31,7 @@ function fakeDb({ failRead = false, failWrite = false } = {}) {
     }),
   };
 }
-const stored = (over = {}) => ({ symbol: 'AAPL.US', daysBack: 252, etDate: ET_TODAY, newestBarDate: PRIOR, rows: rows(PRIOR), dropped: 2, ...over });
+const stored = (over = {}) => ({ symbol: 'AAPL.US', daysBack: 252, etDate: ET_TODAY, newestBarDate: PRIOR, rows: rows(PRIOR), dropped: 2, fetchedAt: new Date(), ...over });
 
 beforeEach(() => {
   vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -47,6 +47,14 @@ describe('checkStoredHistory — the session-currency rule on a stored history',
     expect(checkStoredHistory(stored({ rows: rows(ET_TODAY) }), ctx).reason).toBe('current_day_bar');
     expect(checkStoredHistory(stored({ rows: [] }), ctx).reason).toBe('empty');
     expect(checkStoredHistory(stored(), { ...ctx, expected: null }).reason).toBe('calendar_missing');
+    expect(checkStoredHistory(stored({ fetchedAt: new Date(Date.now() - 5 * 3600_000) }), ctx).reason).toBe('ttl_stale');
+    expect(checkStoredHistory(stored({ fetchedAt: undefined }), ctx).reason).toBe('ttl_stale');
+    // A live quote must vouch for the newest raw close (rows(PRIOR)[0] has no rawClose → refused).
+    expect(checkStoredHistory(stored(), { ...ctx, previousClose: 100 }).reason).toBe('prev_close_mismatch');
+    const vouched = stored({ rows: [{ date: PRIOR, close: 100, rawClose: 100 }] });
+    expect(checkStoredHistory(vouched, { ...ctx, previousClose: 100 })).toEqual({ ok: true, reason: null });
+    expect(checkStoredHistory(vouched, { ...ctx, previousClose: 100.004 }).reason).toBe('prev_close_mismatch'); // exact agreement
+    expect(checkStoredHistory(vouched, { ...ctx, previousClose: 101 }).reason).toBe('prev_close_mismatch');
   });
 });
 
@@ -109,5 +117,27 @@ describe('createSessionHistoryStore — load', () => {
   it('a vendor failure propagates exactly as today\'s fetch does', async () => {
     const store = createSessionHistoryStore(fakeDb(), { etToday: ET_TODAY });
     await expect(store.load('AAPL.US', 252, async () => { throw new Error('EODHD AAPL.US: HTTP 500'); })).rejects.toThrow('HTTP 500');
+  });
+});
+
+describe('createSessionHistoryStore — the session clock (review E3-1)', () => {
+  it('once the session has closed, the store is neither read nor written', async () => {
+    const db = fakeDb();
+    db.docs.set(`${INDEX_HISTORY_COLLECTION}/AAPL.US`, stored());
+    const after = Date.parse('2026-10-07T20:00:01Z'); // 16:00:01 ET
+    const store = createSessionHistoryStore(db, { etToday: ET_TODAY, now: () => after });
+    const fetchFresh = vi.fn(async () => ({ rows: rows(PRIOR), dropped: 0 }));
+    const r = await store.load('AAPL.US', 252, fetchFresh);
+    expect(r.source).toBe('fetched');
+    expect(store.stats.reasons).toEqual({ after_close: 1 });
+  });
+
+  it('a non-trading day has no close to pass, so the store still serves (no holiday bar exists)', async () => {
+    const db = fakeDb();
+    db.docs.set(`${INDEX_HISTORY_COLLECTION}/AAPL.US`, stored({ etDate: '2026-11-26', rows: rows('2026-11-25') }));
+    const store = createSessionHistoryStore(db, { etToday: '2026-11-26' }); // Thanksgiving
+    expect(store.closeMs).toBeNull();
+    const r = await store.load('AAPL.US', 252, vi.fn());
+    expect(r.source).toBe('store');
   });
 });

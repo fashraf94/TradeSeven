@@ -87,8 +87,15 @@ function eodhdQuickWinsOn() {
 async function nothingToMark(db, activeSnap) {
   if (!eodhdQuickWinsOn()) return false;
   if ((activeSnap?.docs || []).length > 0) return false;
-  const openSnap = await db.collection(MANDATE_BATCH_COLLECTION).where('status', '==', 'open').limit(1).get();
-  return (openSnap?.docs || []).length === 0;
+  // The probe fails SAFE (review E3-4 / E4-5): any error reads as "something to
+  // mark", so the fire takes the pre-build path instead of a 500.
+  try {
+    const openSnap = await db.collection(MANDATE_BATCH_COLLECTION).where('status', '==', 'open').limit(1).get();
+    return (openSnap?.docs || []).length === 0;
+  } catch (err) {
+    console.error(`${LOG_PREFIX} QW7 open-batch probe failed (building as before): ${err.message}`);
+    return false;
+  }
 }
 
 // ── Held-ticker union across active books (§3.0 build set input) ─────────────

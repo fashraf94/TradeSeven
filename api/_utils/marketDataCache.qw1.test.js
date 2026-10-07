@@ -102,8 +102,8 @@ beforeEach(() => {
   vendor = {
     eod: { 'AAPL.US': rawBars(PRIOR), 'BTC-USD.CC': rawBars(PRIOR, 62, 60000) },
     rt: {
-      'AAPL.US': { code: 'AAPL.US', close: 104.2, previousClose: 99.0, change: 5.2, change_p: 5.25, high: 105, low: 98.7, volume: 5e6, timestamp: 1791385200 },
-      'BTC-USD.CC': { code: 'BTC-USD.CC', close: 61000, previousClose: 60100, change: 900, change_p: 1.5, high: 61500, low: 59800, volume: 1e4, timestamp: 1791385200 },
+      'AAPL.US': { code: 'AAPL.US', close: 104.2, previousClose: 100.0, change: 5.2, change_p: 5.25, high: 105, low: 98.7, volume: 5e6, timestamp: 1791385200 },
+      'BTC-USD.CC': { code: 'BTC-USD.CC', close: 61000, previousClose: 60000, change: 900, change_p: 1.5, high: 61500, low: 59800, volume: 1e4, timestamp: 1791385200 },
     },
   };
   installVendor();
@@ -279,6 +279,115 @@ describe('QW-1 — a failed quote re-fetches the series before the fallback is b
     expect(eodCalls()).toHaveLength(0);
     expect(r.price.fallback).toBeUndefined();
     expect(r.price.current).toBe(104.2);
+  });
+});
+
+describe('QW-1 (review E1-1) — a served series must agree with the live quote, or it is re-fetched', () => {
+  /** The cached copy is the vendor's series with the newest bar's raw close replaced. */
+  async function seedWithNewestRawClose(rawClose) {
+    const mdc0 = await freshMdc();
+    const rows = mdc0.mapDailyRows(rawBars(PRIOR)).rows;
+    rows[0] = { ...rows[0], rawClose };
+    seedDaily('AAPL', rows);
+  }
+  const guard2 = (r) => resolveBadgeBaseline({ daily: r.daily, previousClose: r.price.previousClose, isCrypto: false, baseATR: 2.5, etToday: '2026-10-07', utcToday: '2026-10-07' });
+
+  it('R1 — a vendor CORRECTION after the write (cached 100, vendor and quote now 103): re-fetched, Guard 2 identical to the forced path', async () => {
+    await seedWithNewestRawClose(100);
+    const corrected = rawBars(PRIOR);
+    corrected[0] = { ...corrected[0], close: 103 };
+    vendor.eod['AAPL.US'] = corrected;
+    vendor.rt['AAPL.US'] = { ...vendor.rt['AAPL.US'], previousClose: 103 };
+    const r = await (await freshMdc()).getStockAnalysisData('AAPL', POLICY);
+    expect(eodCalls()).toHaveLength(1);
+    expect(r.cacheStatus.daily).toBe('fresh');
+    const forced = await (await freshMdc()).getStockAnalysisData('AAPL', FORCED);
+    expect(guard2(r)).toEqual(guard2(forced));
+    expect(guard2(r)).toEqual(expect.objectContaining({ value: 103, fired: false }));
+    expect({ daily: r.daily, price: r.price }).toEqual({ daily: forced.daily, price: forced.price });
+  });
+
+  it('R2 — a GLITCHED read some other writer stored (cached 96, true 100): re-fetched, so Guard 2 never substitutes the glitch', async () => {
+    await seedWithNewestRawClose(96);
+    const r = await (await freshMdc()).getStockAnalysisData('AAPL', POLICY);
+    expect(eodCalls()).toHaveLength(1);
+    expect(r.daily[0].rawClose).toBe(100);
+    expect(guard2(r)).toEqual(expect.objectContaining({ value: 100, fired: false }));
+  });
+
+  it('a cached bar with NO raw close is never served (Guard 2 would fall to the adjusted close)', async () => {
+    await seedWithNewestRawClose(null);
+    await (await freshMdc()).getStockAnalysisData('AAPL', POLICY);
+    expect(eodCalls()).toHaveLength(1);
+  });
+
+  it('a quote with no previousClose cannot vouch: re-fetched, and the live price is kept', async () => {
+    const mdc0 = await freshMdc();
+    seedDaily('AAPL', mdc0.mapDailyRows(rawBars(PRIOR)).rows);
+    vendor.rt['AAPL.US'] = { ...vendor.rt['AAPL.US'], previousClose: null };
+    const r = await (await freshMdc()).getStockAnalysisData('AAPL', POLICY);
+    expect(eodCalls()).toHaveLength(1);
+    expect(r.price.current).toBe(104.2);
+    expect(r.price.fallback).toBeUndefined();
+  });
+
+  it('a mismatch whose re-fetch FAILS leaves no series and the live price — the forced path\'s end state', async () => {
+    await seedWithNewestRawClose(96);
+    vendor.eod['AAPL.US'] = { status: 503 };
+    const r = await (await freshMdc()).getStockAnalysisData('AAPL', POLICY);
+    const forced = await (await freshMdc()).getStockAnalysisData('AAPL', FORCED);
+    expect({ daily: r.daily, price: r.price, errors: r.errors, status: r.cacheStatus.daily })
+      .toEqual({ daily: forced.daily, price: forced.price, errors: forced.errors, status: forced.cacheStatus.daily });
+  });
+
+  it('agreement is EXACT, so a served series can never make Guard 2 fire whatever the baseATR', async () => {
+    const { PRIOR_CLOSE_AGREEMENT_TOLERANCE } = await freshMdc();
+    expect(PRIOR_CLOSE_AGREEMENT_TOLERANCE).toBe(0);
+    // Even at a pathological baseATR (agent-evaluate derives some from atrPercentile × 8):
+    const g2 = resolveBadgeBaseline({ daily: [{ date: PRIOR, rawClose: 100, close: 100 }], previousClose: 100, isCrypto: false, baseATR: 0.0001, etToday: '2026-10-07', utcToday: '2026-10-07' });
+    expect(g2.fired).toBe(false);
+  });
+
+  it('an exact match is served; a rounding-only difference is re-fetched (cost, never a different number)', async () => {
+    await seedWithNewestRawClose(100);
+    const served = await (await freshMdc()).getStockAnalysisData('AAPL', POLICY);
+    expect(eodCalls()).toHaveLength(0);
+    expect(served.cacheStatus.daily).toBe('hit');
+    await seedWithNewestRawClose(100.004);
+    const refetched = await (await freshMdc()).getStockAnalysisData('AAPL', POLICY);
+    expect(eodCalls()).toHaveLength(1);
+    expect(refetched.cacheStatus.daily).toBe('fresh');
+  });
+});
+
+describe('QW-1 (review E1-2) — no refusal reason ever falls back to the refused copy', () => {
+  it('a TTL-stale CURRENT doc + a vendor 503 → no series, nothing stale', async () => {
+    const mdc0 = await freshMdc();
+    seedDaily('AAPL', mdc0.mapDailyRows(rawBars(PRIOR)).rows, 5 * 3600_000);
+    vendor.eod['AAPL.US'] = { status: 503 };
+    const r = await (await freshMdc()).getStockAnalysisData('AAPL', POLICY);
+    expect(r.daily).toBeUndefined();
+    expect(r.staleFields).toEqual([]);
+    expect(r.cacheStatus.daily).toBeUndefined();
+  });
+
+  it('a today-dated (partial) doc + a vendor 503 → no series, nothing stale', async () => {
+    const mdc0 = await freshMdc();
+    seedDaily('AAPL', mdc0.mapDailyRows(rawBars('2026-10-07')).rows);
+    vendor.eod['AAPL.US'] = { status: 503 };
+    const r = await (await freshMdc()).getStockAnalysisData('AAPL', POLICY);
+    expect(r.daily).toBeUndefined();
+    expect(r.staleFields).toEqual([]);
+  });
+
+  it('a closed session + a vendor 503 → no series, nothing stale (the cache is not even read)', async () => {
+    vi.setSystemTime(new Date('2026-10-07T22:00:00.000Z'));
+    const mdc0 = await freshMdc();
+    seedDaily('AAPL', mdc0.mapDailyRows(rawBars(PRIOR)).rows, 60 * 60_000);
+    vendor.eod['AAPL.US'] = { status: 503 };
+    const r = await (await freshMdc()).getStockAnalysisData('AAPL', POLICY);
+    expect(r.daily).toBeUndefined();
+    expect(r.staleFields).toEqual([]);
   });
 });
 

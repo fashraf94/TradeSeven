@@ -3033,8 +3033,8 @@ export function isShadowCpuQuoteIntegrityOn() {
  *   • QW-1 api/cron/agent-evaluate.js — the four evaluator price sites stop
  *     forcing a fresh 90-day daily series. The series may come from the shared
  *     cache only under the session-currency rule
- *     (api/_utils/marketDataCache.js isDailySeriesSessionCurrent); the
- *     real-time quote is fetched live on every call, as before.
+ *     (api/_utils/marketDataCache.js dailySeriesCurrency + priorCloseAgrees);
+ *     the real-time quote is fetched live on every call, as before.
  *   • QW-4 GET /api/market/popular + src/services/popularMarketLoader.js — the
  *     app-wide 5-minute popular-list poll becomes one shared fetch per 60 s
  *     (Firestore marketDataCache/{stocks,crypto}_popular, one lease per list).

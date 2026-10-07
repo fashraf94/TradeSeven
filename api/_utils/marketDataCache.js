@@ -551,8 +551,10 @@ async function fetchEarnings(eohdSymbol, apiKey) {
  * The `dailyPolicy` the evaluator passes when EODHD_QUICK_WINS_ENABLED is on
  * (api/cron/agent-evaluate.js evaluatorQuoteOptions). Under it the daily series
  * may be served from the shared cache — but ONLY while the regular session is
- * open, ONLY when the cached series is TTL-fresh, and ONLY when its newest bar
- * is exactly the prior completed session. Anything else re-fetches and writes
+ * open, ONLY when the cached series is TTL-fresh, ONLY when its newest bar is
+ * exactly the prior completed session (dailySeriesCurrency), and — once the
+ * live quote is in — ONLY when that bar's raw close agrees with the quote's
+ * previousClose (priorCloseAgrees). Anything else re-fetches and writes
  * through, and a series that failed the rule is never served, not even as a
  * stale fallback. The real-time quote is never cached, as before.
  *
@@ -560,9 +562,20 @@ async function fetchEarnings(eohdSymbol, apiKey) {
  * holding a today-dated (partial) bar would hand the quote-failure fallback
  * below a different `daily[0]` than a fresh fetch, so it is refused outright.
  * Guard 2 (baselineValidation.js selectPriorSessionBar) already ignores any bar
- * dated on/after today, so a series that passes gives it the identical
- * reference a fresh fetch gives. If EODHD ever adds a partial bar mid-session,
- * this rule degrades to today's cost, never to a different number.
+ * dated on/after today and reads that bar's raw close; with the agreement
+ * check a served series can never make it fire, so it accepts previousClose
+ * exactly as a forced refresh of the same bars does. If EODHD ever adds a
+ * partial bar mid-session, this rule degrades to today's cost, never to a
+ * different number.
+ *
+ * Stated bounds (review E1-3): "TTL-fresh" is the L2 document's 4 h, but an L1
+ * (in-memory) copy promoted from it restarts its own 5-minute clock, so a doc
+ * can be served up to ~4 h 05 min after it was written. And the one residual a
+ * cache cannot close: if the vendor rewrites an already-published prior-session
+ * raw close AFTER the write so that it no longer matches its own live
+ * previousClose, a forced refresh would see the rewrite (and Guard 2 would act
+ * on it) while the served copy — which still agrees with previousClose — does
+ * not, until the TTL expires.
  */
 export const DAILY_POLICY_SESSION_CURRENT = 'session_current';
 
@@ -599,9 +612,25 @@ export function dailySeriesCurrency(daily, { isCrypto, etToday, utcToday }) {
   return { current: true, newest, expected, reason: null };
 }
 
-/** QW-1 — boolean form of dailySeriesCurrency, for callers that need only the verdict. */
-export function isDailySeriesSessionCurrent(daily, ctx) {
-  return dailySeriesCurrency(daily, ctx).current;
+/**
+ * QW-1 (review E1-1) — how closely a served series' newest raw close must
+ * match the live quote's previousClose: EXACTLY (relative tolerance 0). Both
+ * are the vendor's print of the same official close. Exact agreement makes
+ * Guard 2's error 0, so a served series can never make it fire WHATEVER the
+ * baseATR — and agent-evaluate derives some from atrPercentile × 8, which can
+ * sit far below 1%, so no non-zero tolerance carries that guarantee (review
+ * EV1). A rounding-only difference costs one re-fetch, never a different
+ * number; the QW1 DAILY_REFETCH reason=prev_close_mismatch log line counts it.
+ */
+export const PRIOR_CLOSE_AGREEMENT_TOLERANCE = 0;
+
+/** Does the newest bar's raw close agree with the live quote's previousClose? */
+export function priorCloseAgrees(daily, price) {
+  const rawClose = Array.isArray(daily) ? daily[0]?.rawClose : undefined;
+  const previousClose = price?.previousClose;
+  if (!Number.isFinite(rawClose) || rawClose <= 0) return false;
+  if (!Number.isFinite(previousClose) || previousClose <= 0) return false;
+  return Math.abs(rawClose - previousClose) / previousClose <= PRIOR_CLOSE_AGREEMENT_TOLERANCE;
 }
 
 /**
@@ -795,25 +824,43 @@ export async function getStockAnalysisData(symbol, options = {}) {
     // exactly the bar a forced refresh would have handed it — the end state is
     // the forced-refresh path's own: a fresh series (or none, if the re-fetch
     // fails) and the fallback built from it.
-    if (sessionPolicy && result.errors.price && result.cacheStatus.daily === 'hit') {
-      const docKey = `${clean}_daily`;
-      console.log(`[MarketDataCache] QW1 DAILY_REFETCH | key=${docKey} | reason=quote_failed_fallback`);
-      delete result.price;
-      try {
-        const freshDaily = await fetchDailyOHLCV(eohdSymbol, apiKey);
-        result.daily = freshDaily;
-        result.cacheStatus.daily = 'fresh';
-        setCachedData(db, docKey, freshDaily, 'daily').catch(err =>
-          console.error(`[MarketDataCache] Background cache write failed for ${docKey}:`, err.message)
-        );
-      } catch (err) {
-        console.error(`[MarketDataCache] Fetch failed for daily (${clean}):`, err.message);
-        result.errors.daily = err.message;
-        delete result.daily;
-        delete result.cacheStatus.daily;
+    //
+    // And when the quote SUCCEEDED, a cache-served series is kept only if the
+    // live quote vouches for it: its newest bar's raw close must agree with the
+    // quote's previousClose (PRIOR_CLOSE_AGREEMENT_TOLERANCE). The date rule
+    // alone cannot see a vendor correction of that bar, or a glitched read some
+    // other `_daily` writer stored; Guard 2 (baselineValidation.js) would then
+    // substitute the cached raw close for every battle until the TTL ran out.
+    // With the check, Guard 2 can only fire on a FRESH series — on a served one
+    // the two closes agree, so it accepts previousClose exactly as a forced
+    // refresh of the same bars would (review E1-1).
+    if (sessionPolicy && result.cacheStatus.daily === 'hit') {
+      const quoteFailed = !!result.errors.price;
+      if (quoteFailed || !priorCloseAgrees(result.daily, result.price)) {
+        const docKey = `${clean}_daily`;
+        const reason = quoteFailed
+          ? 'quote_failed_fallback'
+          : `prev_close_mismatch | rawClose=${result.daily?.[0]?.rawClose} | previousClose=${result.price?.previousClose}`;
+        console.log(`[MarketDataCache] QW1 DAILY_REFETCH | key=${docKey} | reason=${reason}`);
+        if (quoteFailed) delete result.price;
+        try {
+          const freshDaily = await fetchDailyOHLCV(eohdSymbol, apiKey);
+          result.daily = freshDaily;
+          result.cacheStatus.daily = 'fresh';
+          setCachedData(db, docKey, freshDaily, 'daily').catch(err =>
+            console.error(`[MarketDataCache] Background cache write failed for ${docKey}:`, err.message)
+          );
+        } catch (err) {
+          console.error(`[MarketDataCache] Fetch failed for daily (${clean}):`, err.message);
+          result.errors.daily = err.message;
+          delete result.daily;
+          delete result.cacheStatus.daily;
+        }
+        if (quoteFailed) {
+          const fallback = dailyFallbackPrice(result.daily);
+          if (fallback) result.price = fallback;
+        }
       }
-      const fallback = dailyFallbackPrice(result.daily);
-      if (fallback) result.price = fallback;
     }
   }
 

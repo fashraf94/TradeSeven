@@ -147,7 +147,10 @@ describe('QW-1 — the REAL tick (site :1068 for every symbol of the battle)', (
     for (const [, opts] of calls) expect(opts).toEqual({ fields: ['daily', 'price'], dailyPolicy: 'session_current' });
   });
 
-  it('flag OFF and ON write the identical score set for identical fetch results', async () => {
+  // WIRING identity only: both flag states get the SAME mocked fetch result, so this
+  // proves no other branch of the tick reads the flag. The cache-vs-fresh identity of
+  // the fetch itself is proven in api/_utils/marketDataCache.qw1.test.js (review E1-2).
+  it('wiring: flag OFF and ON write the identical score set when the fetch returns the same result', async () => {
     const run = async (on) => {
       flag.on = on;
       mocks.getStockAnalysisData.mockReset();

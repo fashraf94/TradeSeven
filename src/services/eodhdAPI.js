@@ -494,12 +494,21 @@ function buildPopularCryptoItems(prices) {
  * would carry the shared copy's age into them. They keep fetching their own.
  * Never throws.
  *
- * @returns {Promise<{stocks: Array, crypto: Array}>}
+ * Returns NULL when the route answers 404 — the server is dark (a flag
+ * rollback, or a deploy where the client bundle is newer than the server).
+ * The caller then runs the per-symbol path for that poll instead of showing
+ * configured fallback prices until a reload (review E2-2 / E4-3).
+ *
+ * @returns {Promise<{stocks: Array, crypto: Array}|null>}
  */
 export async function getPopularMarketData() {
   let payload = null;
   try {
     const response = await fetchWithTimeout(`${API_BASE}/market/popular`);
+    if (response.status === 404) {
+      console.warn('[EODHD] Shared popular route is dark (404) — using the per-symbol path');
+      return null;
+    }
     if (!response.ok) {
       throw new Error(`Proxy error: ${response.status}`);
     }

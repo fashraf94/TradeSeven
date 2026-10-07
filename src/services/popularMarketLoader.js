@@ -11,6 +11,8 @@
 //              helpers (and the per-tab price cache they fill).
 //   flag ON  — both lists from GET /api/market/popular in one call, then both
 //              handed over. That path never writes the per-tab price cache.
+//              A 404 (the route is dark: a rollback or a deploy skew) runs the
+//              flag-off sequence for that poll instead (review E2-2 / E4-3).
 // The flag is read at CALL time inside a fail-safe: a hermetic featureFlags
 // mock that omits the name throws on access under vitest, and that must read
 // as OFF. The visibility gate and the 5-minute interval stay in App.jsx.
@@ -32,10 +34,14 @@ function eodhdQuickWinsOn() {
  */
 export async function loadPopularMarketData(onStocks, onCrypto) {
   if (eodhdQuickWinsOn()) {
-    const { stocks, crypto } = await stockAPI.getPopularMarketData();
-    onStocks(stocks);
-    onCrypto(crypto);
-    return;
+    const shared = await stockAPI.getPopularMarketData();
+    // null = the route is dark (404: a rollback or a deploy skew) — fall
+    // through to the per-symbol path for this poll rather than fallback prices.
+    if (shared) {
+      onStocks(shared.stocks);
+      onCrypto(shared.crypto);
+      return;
+    }
   }
 
   // Fetch real stock prices
