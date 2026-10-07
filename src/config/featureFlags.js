@@ -3043,21 +3043,24 @@ export function isShadowCpuQuoteIntegrityOn() {
  *     fetched once per session date (indexHistoryCache/{symbol}) and reused.
  *   • QW-7 api/cron/mandate-evaluate.js — no snapshot build while there are
  *     zero active mandate books AND zero open batches.
- * DEFAULT false: the build merges dark and every path above is the pre-build
- * code. NOT behind this flag: QW-3 (the keep-warm workflow and the ?deep=1
- * EODHD probe in api/health.js) ships live.
+ * FLIPPED true (flip/eodhd-quick-wins, 2026-10-07): every path above is live.
+ * ROLLBACK is the same reconciliation back to false (value, pin, registration
+ * row, DARK_BY_DESIGN entry, this line); open tabs on the flag-on bundle then
+ * fall back to the per-symbol path by themselves (the route answers 404).
+ * NOT behind this flag: QW-3 (the keep-warm workflow and the ?deep=1 EODHD
+ * probe in api/health.js), live since the build merged.
  *
  * Read at CALL time, inside a fail-safe at every consumer: a hermetic
  * featureFlags mock that omits the name throws on access under vitest, and
  * that must read as OFF (the TICK_STAMPS_ENABLED precedent).
  *
- * Registered DARK_BY_DESIGN in flagPinGuard.test.js. FLIP MAP (the flip
- * reconciles these in the SAME commit — BUILD_RULES §2): this value; in
- * src/config/eodhdQuickWinsFlags.test.js the value pin moves to true and the
+ * No longer registered DARK_BY_DESIGN in flagPinGuard.test.js. FLIP MAP (the
+ * flip reconciled these in the SAME commit — BUILD_RULES §2): this value; in
+ * src/config/eodhdQuickWinsFlags.test.js the value pin moved to true and the
  * registration row turns around to assert the DARK_BY_DESIGN entry is GONE;
- * the DARK_BY_DESIGN entry is dropped; this paragraph's DEFAULT line. Crons do
+ * the DARK_BY_DESIGN entry was dropped; this paragraph's DEFAULT line. Crons do
  * not run on preview: QW-1, QW-6 and QW-7 are observable only in production
  * after the founder's merge; QW-4 is visible on a preview.
  */
 // Pinned by: eodhdQuickWinsFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const EODHD_QUICK_WINS_ENABLED = false;
+export const EODHD_QUICK_WINS_ENABLED = true;

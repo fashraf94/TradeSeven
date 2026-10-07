@@ -5,10 +5,10 @@
 // precedent: one pin, a Pinned-by pointer the flag-pin guard keeps honest, and a
 // DARK_BY_DESIGN registration that a deliberate flip drops in the same commit.
 //
-// EODHD_QUICK_WINS_ENABLED ships FALSE: the build merges dark and the flip lands
-// from its own branch. Because it sits in DARK_BY_DESIGN, an accidental flip
-// fails the guard loudly with the runway note; a DELIBERATE flip moves the first
-// row below to `true` and turns the registration row around, in the same commit.
+// EODHD_QUICK_WINS_ENABLED is FLIPPED true (flip/eodhd-quick-wins). The flip
+// moved the first row below to `true` and turned the registration row around
+// to assert the DARK_BY_DESIGN entry is gone — in the same commit as the value
+// (BUILD_RULES §2). A rollback moves both rows back together.
 //
 // This file is the pin, not a behaviour test: each change's flag-off and flag-on
 // rows live beside its own code (marketDataCache.qw1, agent-evaluate.qw1,
@@ -26,9 +26,9 @@ const SRC = readFileSync(path.join(HERE, 'featureFlags.js'), 'utf8');
 const GUARD = readFileSync(path.join(HERE, 'flagPinGuard.test.js'), 'utf8');
 
 describe('EODHD_QUICK_WINS_ENABLED — the pin (BUILD_RULES §2)', () => {
-  it('ships DARK: EODHD_QUICK_WINS_ENABLED is false at merge — the flip lands from its own branch', () => {
-    // THE ROW THAT MOVES WITH THE FLIP, in the flip's own commit.
-    expect(EODHD_QUICK_WINS_ENABLED).toBe(false);
+  it('is LIVE: EODHD_QUICK_WINS_ENABLED is true after the flip', () => {
+    // THE ROW THAT MOVED WITH THE FLIP, in the flip's own commit.
+    expect(EODHD_QUICK_WINS_ENABLED).toBe(true);
   });
 
   it('is a plain boolean export the flag-pin guard can scan, with a Pinned-by pointer naming this file', () => {
@@ -39,10 +39,10 @@ describe('EODHD_QUICK_WINS_ENABLED — the pin (BUILD_RULES §2)', () => {
     expect(preceding).toContain('Pinned by: eodhdQuickWinsFlags.test.js');
   });
 
-  it('is registered DARK_BY_DESIGN in the guard — the entry a deliberate flip drops in the same commit', () => {
-    // Keyed on the entry form (`FLAG:` at the start of a line), so a comment
-    // that merely names the flag cannot satisfy it.
-    expect(GUARD).toMatch(/^\s*EODHD_QUICK_WINS_ENABLED:/m);
+  it('is NO LONGER registered DARK_BY_DESIGN in the guard — the flip dropped the entry in the same commit', () => {
+    // Keyed on the entry form (`FLAG:` at the start of a line), so the guard's
+    // "intentionally ABSENT" comment naming the flag does not count as an entry.
+    expect(GUARD).not.toMatch(/^\s*EODHD_QUICK_WINS_ENABLED:/m);
   });
 
   const block = () => SRC.slice(SRC.indexOf('EODHD QUICK WINS (census'), SRC.indexOf('export const EODHD_QUICK_WINS_ENABLED'));
