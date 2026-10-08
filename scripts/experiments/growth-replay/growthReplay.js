@@ -42,7 +42,7 @@
 
 import { hash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, renameSync, createWriteStream } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, renameSync, createWriteStream, unlinkSync } from 'node:fs';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
@@ -65,7 +65,7 @@ const SPLIT_HALF_DRAWS = 200;
 const PILOT_BILLABLE_MAX = 10;
 const PILOT_ATTEMPT_MAX = 16; // validation rejections (HTTP 400) are unbilled; listed separately
 const BATCH_MAX_REQUESTS = 10_000;
-const BATCH_MAX_BYTES = 100 * 1024 * 1024;
+const BATCH_MAX_BYTES = 100_000_000; // the prompt's 100 MB, decimal (review C5)
 // Each create uploads at most this much: a smaller upload is less likely to time out
 // on a home connection after the server has already created the batch (an orphan).
 const BATCH_TARGET_BYTES = 40 * 1024 * 1024;
@@ -190,46 +190,77 @@ export function primaryCheckoutRoot(projectRoot) {
   return null;
 }
 
-/** Lookup order: the real environment, then this tree's .env.local, then the primary checkout's. Nothing is copied. */
+/**
+ * Lookup order: the real environment, then this tree's .env.local, then the
+ * primary checkout's. Nothing is copied. `rank` records where each key came
+ * from (0 = environment, 1.. = file order) so a credential can be chosen as a
+ * WHOLE from the highest-priority source (review C11).
+ */
 function loadEnv() {
   const files = [path.join(PROJECT_ROOT, '.env.local')];
   const primary = primaryCheckoutRoot(PROJECT_ROOT);
   if (primary) files.push(path.join(primary, '.env.local'));
   const merged = {};
+  const rank = {};
   const used = [];
-  for (const f of files) {
-    if (!existsSync(f)) continue;
+  files.forEach((f, i) => {
+    if (!existsSync(f)) return;
     used.push(f);
-    for (const [k, v] of Object.entries(parseEnvText(readFileSync(f, 'utf8')))) if (merged[k] === undefined) merged[k] = v;
-  }
-  for (const [k, v] of Object.entries(process.env)) if (v !== undefined && v !== '') merged[k] = v;
-  return { env: merged, used };
+    for (const [k, v] of Object.entries(parseEnvText(readFileSync(f, 'utf8')))) if (merged[k] === undefined) { merged[k] = v; rank[k] = i + 1; }
+  });
+  for (const [k, v] of Object.entries(process.env)) if (v !== undefined && v !== '') { merged[k] = v; rank[k] = 0; }
+  return { env: merged, rank, used };
+}
+
+/** Error text is printed only after this: an API key or a PEM body never reaches the console (review C4). */
+export function redactSecrets(text) {
+  return String(text)
+    .replace(/sk-ant-[^\s"'`]*/g, 'sk-ant-[REDACTED]')
+    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(-----END [A-Z ]*PRIVATE KEY-----|$)/g, '[REDACTED PRIVATE KEY]')
+    .replace(/"private_key"\s*:\s*"[^"]*"?/g, '"private_key":"[REDACTED]"');
 }
 
 function stop(message, code = 2) {
-  console.error(`\nSTOP: ${message}`);
+  console.error(`\nSTOP: ${redactSecrets(message)}`);
+  releaseLock();
   process.exit(code);
 }
 
 /** The variable the production brain call site reads (api/cron/agent-evaluate.js:229). */
+const KEY_FORMAT = /^sk-ant-[A-Za-z0-9_-]+$/;
 function anthropicKey(env) {
   const key = env.CLAUDE_API_KEY;
   if (typeof key !== 'string' || !key.startsWith('sk-ant-')) stop('CLAUDE_API_KEY is not set (checked the environment, this tree\'s .env.local, then the primary checkout\'s .env.local).');
+  // A key with a stray newline or quote would otherwise reach a fetch Headers error verbatim.
+  if (!KEY_FORMAT.test(key)) stop('CLAUDE_API_KEY is malformed (unexpected characters; value not printed).');
   return key;
 }
 
-async function openFirestore(env) {
-  let sa = null;
-  if (env.FIREBASE_ADMIN_CREDENTIALS) {
-    sa = JSON.parse(env.FIREBASE_ADMIN_CREDENTIALS);
-  } else if (env.FIREBASE_PROJECT_ID && env.FIREBASE_CLIENT_EMAIL && env.FIREBASE_PRIVATE_KEY) {
-    sa = { project_id: env.FIREBASE_PROJECT_ID, client_email: env.FIREBASE_CLIENT_EMAIL, private_key: env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') };
-  } else {
-    stop('FIREBASE_ADMIN_CREDENTIALS is not set (checked the environment, this tree\'s .env.local, then the primary checkout\'s .env.local).');
+/** The service account, chosen as a whole from the highest-priority source; every failure is a fixed message. */
+function serviceAccount(env, rank = {}) {
+  const hasJson = Boolean(env.FIREBASE_ADMIN_CREDENTIALS);
+  const hasSplit = Boolean(env.FIREBASE_PROJECT_ID && env.FIREBASE_CLIENT_EMAIL && env.FIREBASE_PRIVATE_KEY);
+  const splitRank = Math.max(rank.FIREBASE_PROJECT_ID ?? 9, rank.FIREBASE_CLIENT_EMAIL ?? 9, rank.FIREBASE_PRIVATE_KEY ?? 9);
+  const useJson = hasJson && (!hasSplit || (rank.FIREBASE_ADMIN_CREDENTIALS ?? 9) <= splitRank);
+  if (useJson) {
+    let sa = null;
+    try { sa = JSON.parse(env.FIREBASE_ADMIN_CREDENTIALS); } catch { sa = null; }
+    if (!sa || typeof sa !== 'object' || Array.isArray(sa) || typeof sa.private_key !== 'string' || typeof sa.project_id !== 'string') {
+      stop('FIREBASE_ADMIN_CREDENTIALS is not a service-account JSON object (value not printed).');
+    }
+    return sa;
   }
+  if (hasSplit) return { project_id: env.FIREBASE_PROJECT_ID, client_email: env.FIREBASE_CLIENT_EMAIL, private_key: env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') };
+  return stop('FIREBASE_ADMIN_CREDENTIALS is not set (checked the environment, this tree\'s .env.local, then the primary checkout\'s .env.local).');
+}
+
+async function openFirestore(env, rank) {
+  const sa = serviceAccount(env, rank);
   const { initializeApp, cert } = await import('firebase-admin/app');
   const { getFirestore } = await import('firebase-admin/firestore');
-  const app = initializeApp({ credential: cert(sa) }, 'growth-replay');
+  let credential;
+  try { credential = cert(sa); } catch { stop('the Firebase service account was rejected by firebase-admin (value not printed).'); }
+  const app = initializeApp({ credential }, 'growth-replay');
   console.log(`[growth-replay] Firestore project_id: ${sa.project_id}`);
   return { db: getFirestore(app), projectId: sa.project_id };
 }
@@ -370,10 +401,31 @@ export function applyVariant(req, variant, { donorPart = null } = {}) {
   throw new Error(`unknown variant ${variant}`);
 }
 
-/** Everything outside messages[0].content and messages[2].content must be byte-identical. */
-export function assertOnlySpansMoved(before, after) {
+/**
+ * Everything outside the variant's targeted spans must be byte-identical (review A4: the
+ * check now reaches INSIDE the two message contents, not just around them). For each
+ * edited content, the changed region — between the common prefix and the common suffix
+ * of before/after — must lie within the span the variant targets in the BEFORE text;
+ * a content the variant does not target must be unchanged.
+ */
+export function assertOnlySpansMoved(before, after, variant) {
   const strip = (r) => JSON.stringify({ ...r, messages: r.messages.map((m, i) => (i === 0 || i === 2 ? { ...m, content: null } : m)) });
   if (strip(before) !== strip(after)) throw new Error('an edit moved bytes outside the targeted message contents');
+  const identity = parseIdentity(before.messages[0].content);
+  const leans = findLeans(before.messages[2].content);
+  const allowed = {
+    0: variant === 'loadout' ? identity.rules : (variant === 'strip' || variant === 'swap') ? identity.learned : null,
+    2: variant === 'loadout' && leans.status === 'present' ? leans.span : null,
+  };
+  for (const i of [0, 2]) {
+    const a = before.messages[i].content; const b = after.messages[i].content;
+    if (a === b) continue;
+    const span = allowed[i];
+    if (!span) throw new Error(`${variant}: messages[${i}] changed but the variant targets nothing there`);
+    let p = 0; while (p < a.length && p < b.length && a[p] === b[p]) p += 1;
+    let s = 0; while (s < a.length - p && s < b.length - p && a[a.length - 1 - s] === b[b.length - 1 - s]) s += 1;
+    if (p < span.start || a.length - s > span.end) throw new Error(`${variant}: messages[${i}] changed outside its targeted span`);
+  }
 }
 
 /** The ladder request: only `model` changes, plus the fields the pilot proved a model rejects. */
@@ -452,7 +504,9 @@ export function validationSchema(schema, { strict = false } = {}) {
 }
 
 export function decisionKey(message, schema, { strict = false } = {}) {
-  const block = Array.isArray(message?.content) ? message.content.find((b) => b?.type === 'tool_use' && b?.name === PROD_TOOL_NAME) : null;
+  // The FIRST tool_use block of any name, exactly as production reads it
+  // (agent-evaluate.js:2935, review A7); a wrong-named block fails validation there too.
+  const block = Array.isArray(message?.content) ? message.content.find((b) => b?.type === 'tool_use') : null;
   if (!block) return { coarse: MALFORMED, fine: MALFORMED, why: 'no_tool_use' };
   const v = validateToolInput(block.input, validationSchema(schema, { strict }));
   if (!v.valid) return { coarse: MALFORMED, fine: MALFORMED, why: `invalid:${v.field}` };
@@ -474,10 +528,15 @@ export function originalKey(perm) {
 
 export function counts(keys) { const c = {}; for (const k of keys) inc(c, k); return c; }
 
-/** Most frequent key; ties broken by the lexically smallest key (applied identically everywhere). */
-export function modal(c) {
+/**
+ * Most frequent key; ties broken by the lexically smallest key (applied identically
+ * everywhere). `largest: true` is the opposite deterministic rule, used only for the
+ * tie-rule sensitivity check (review B9).
+ */
+export function modal(c, { largest = false } = {}) {
   let best = null; let bestN = -1;
-  for (const k of sortedKeys(c)) if (c[k] > bestN) { best = k; bestN = c[k]; }
+  const order = largest ? sortedKeys(c).reverse() : sortedKeys(c);
+  for (const k of order) if (c[k] > bestN) { best = k; bestN = c[k]; }
   return best;
 }
 
@@ -496,11 +555,12 @@ export function tvDistance(a, b) {
  * Arm 2 test. ticks: [{ base: [keys], variant: [keys] }]. T = mean TV distance;
  * the null permutes condition labels WITHIN each tick (group sizes kept).
  */
-export function permutationTest(ticks, { permutations = PERMUTATIONS, seed = SEED } = {}) {
+export function permutationTest(ticks, { permutations = PERMUTATIONS, seed = SEED, tieLargest = false } = {}) {
   const usable = ticks.filter((t) => t.base.length && t.variant.length);
   if (!usable.length) return null;
+  const md = (c) => modal(c, { largest: tieLargest });
   const obsTv = usable.map((t) => tvDistance(counts(t.base), counts(t.variant)));
-  const obsFlip = usable.map((t) => (modal(counts(t.base)) !== modal(counts(t.variant)) ? 1 : 0));
+  const obsFlip = usable.map((t) => (md(counts(t.base)) !== md(counts(t.variant)) ? 1 : 0));
   const T = mean(obsTv);
   const flip = mean(obsFlip);
   const rand = rng(seed);
@@ -513,7 +573,7 @@ export function permutationTest(ticks, { permutations = PERMUTATIONS, seed = SEE
       const a = counts(pool.slice(0, t.base.length));
       const b = counts(pool.slice(t.base.length));
       sT += tvDistance(a, b);
-      sF += modal(a) !== modal(b) ? 1 : 0;
+      sF += md(a) !== md(b) ? 1 : 0;
     }
     nullT.push(sT / usable.length);
     nullFlip.push(sF / usable.length);
@@ -525,9 +585,33 @@ export function permutationTest(ticks, { permutations = PERMUTATIONS, seed = SEE
   return {
     ticks: usable.length,
     T, nullMean: mean(nullT), nullP95: p95, p: (exceed + 1) / (permutations + 1),
-    flipRate: flip, nullFlipRate: nullFlipMean, excessFlip: flip - nullFlipMean,
+    flipRate: flip, flips: obsFlip.reduce((s, x) => s + x, 0), nullFlipRate: nullFlipMean, excessFlip: flip - nullFlipMean,
     perTickTv: obsTv,
   };
+}
+
+/**
+ * Descriptive noise floor for the modal-flip rate (review B1): the flip rate two
+ * groups of the given sizes would show if BOTH were drawn from each tick's own
+ * baseline distribution (a parametric bootstrap of 'no effect'). Unlike the
+ * permutation null, it does not pool in the variant, so it does not grow with the
+ * effect being measured. Reported beside the frozen excess-flip figure; it sets no label.
+ */
+export function noEffectFlipFloor(baseLists, { nA = 10, nB = 10, draws = 500, seed = SEED } = {}) {
+  const rand = rng(seed + 41);
+  const per = [];
+  for (const keys of baseLists) {
+    if (!keys.length) continue;
+    let flips = 0;
+    for (let d = 0; d < draws; d += 1) {
+      const a = []; const b = [];
+      for (let i = 0; i < nA; i += 1) a.push(keys[Math.floor(rand() * keys.length)]);
+      for (let i = 0; i < nB; i += 1) b.push(keys[Math.floor(rand() * keys.length)]);
+      if (modal(counts(a)) !== modal(counts(b))) flips += 1;
+    }
+    per.push(flips / draws);
+  }
+  return mean(per);
 }
 
 /** The frozen arm-2 labels. */
@@ -596,10 +680,24 @@ export function drawSample(eligible, { target = TARGET_N, seed = SEED } = {}) {
       }
       return got;
     };
-    const a = pick('action', Math.floor(n / 2));
-    const h = pick('hold', n - a);
-    if (a + h < n) pick('action', n - a - h); // holds ran short: top up with actions
-    return picks.length === n ? picks : null;
+    // Two greedy orders (review B6): actions first (the original), and holds first, which
+    // cannot spend a hold-supplying battle's cap on actions. The more balanced wins; a tie
+    // keeps actions-first, so a corpus that drew its sample under the original rule redraws it.
+    const run = (first) => {
+      for (const key of Object.keys(taken)) delete taken[key];
+      for (const key of Object.keys(ptr)) delete ptr[key];
+      picks.length = 0;
+      const second = first === 'action' ? 'hold' : 'action';
+      const x = pick(first, first === 'action' ? Math.floor(n / 2) : n - Math.floor(n / 2));
+      const y = pick(second, n - x);
+      if (x + y < n) pick(first, n - x - y);
+      return picks.length === n ? picks.map((p, i) => ({ ...p, order: i })) : null;
+    };
+    const balance = (ps) => (ps ? Math.abs(ps.filter((p) => p.cls === 'action').length - n / 2) : Infinity);
+    const actionFirst = run('action');
+    const holdFirst = run('hold');
+    if (!actionFirst && !holdFirst) return null;
+    return balance(holdFirst) < balance(actionFirst) ? holdFirst : actionFirst;
   };
   const maxN = Math.min(target, sorted.length);
   for (let n = maxN; n >= Math.min(MIN_N, maxN); n -= 1) {
@@ -614,13 +712,13 @@ export function drawSample(eligible, { target = TARGET_N, seed = SEED } = {}) {
   return { picks: [], n: 0, cap: 0, capLifted: false };
 }
 
-/** Proportional reduction to n ticks: keep the action/hold split, take each class in pick order. */
+/**
+ * Reduction to n ticks for a budget cut: a seeded REDRAW from the sample under the same
+ * rules (round-robin, 15%-of-n cap, balance), so the cap holds at the smaller n (review B5).
+ */
 export function reduceSample(picks, n) {
   if (n >= picks.length) return picks;
-  const act = picks.filter((p) => p.cls === 'action');
-  const hold = picks.filter((p) => p.cls === 'hold');
-  const nA = Math.round((act.length * n) / picks.length);
-  return [...act.slice(0, nA), ...hold.slice(0, n - nA)].sort((a, b) => a.order - b.order);
+  return drawSample(picks, { target: n, seed: SEED + 51 }).picks;
 }
 
 /** Seeded donor per arm-2 tick: a DIFFERENT agent whose learned text differs; same archetype preferred. */
@@ -719,12 +817,27 @@ export function isSpendLimitError(status, json, text = '') {
   return false;
 }
 
+/** The key is only ever sent to the Anthropic origin (review C12: results_url is checked too). */
+function anthropicUrl(urlPath) {
+  const url = new URL(urlPath, ANTHROPIC);
+  if (url.origin !== ANTHROPIC) stop(`refusing to send the API key to ${url.origin}`);
+  return url.href;
+}
+
 async function api(apiKey, method, urlPath, body) {
-  const res = await fetch(urlPath.startsWith('http') ? urlPath : `${ANTHROPIC}${urlPath}`, {
-    method,
-    headers: { 'x-api-key': apiKey, 'anthropic-version': ANTHROPIC_VERSION, 'content-type': 'application/json' },
-    body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
-  });
+  let res;
+  try {
+    res = await fetch(anthropicUrl(urlPath), {
+      method,
+      headers: { 'x-api-key': apiKey, 'anthropic-version': ANTHROPIC_VERSION, 'content-type': 'application/json' },
+      body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
+    });
+  } catch (err) {
+    // A fetch-level error can quote header values; a fixed message never can (review C4).
+    const e = new Error(`network error on ${method} ${urlPath.split('?')[0]}: ${redactSecrets(err?.cause?.code || err?.name || 'unknown')}`);
+    e.transient = true;
+    throw e;
+  }
   const text = await res.text();
   let json = null;
   try { json = JSON.parse(text); } catch { json = null; }
@@ -751,9 +864,39 @@ const RUNS_ROOT = path.join(os.homedir(), 'growth-replay-runs');
 const runDir = (runId) => path.join(RUNS_ROOT, runId);
 const readJson = (p) => JSON.parse(readFileSync(p, 'utf8'));
 function writeJsonAtomic(p, value) {
-  const tmp = `${p}.tmp`;
+  const tmp = `${p}.${process.pid}.tmp`;
   writeFileSync(tmp, JSON.stringify(value, null, 1));
   renameSync(tmp, p);
+}
+
+/**
+ * One command at a time per run (review C3): every command that writes the
+ * manifest takes this lock, created exclusively; `status` never writes it.
+ */
+let heldLock = null;
+function acquireLock(dir, cmd) {
+  const p = path.join(dir, 'run.lock');
+  try {
+    writeFileSync(p, JSON.stringify({ cmd, pid: process.pid, at: new Date().toISOString() }), { flag: 'wx' });
+  } catch (err) {
+    if (err?.code === 'EEXIST') stop(`another growth-replay command holds ${p} (${readFileSync(p, 'utf8')}). If none is running, remove that file and retry.`);
+    throw err;
+  }
+  heldLock = p;
+  process.once('exit', releaseLock);
+}
+function releaseLock() {
+  if (!heldLock) return;
+  try { unlinkSync(heldLock); } catch { /* already gone */ }
+  heldLock = null;
+}
+
+/** Which code ran (review C10): the script's own SHA-256 and HEAD, logged per command. */
+function stampCommand(manifest, cmd) {
+  (manifest.commandLog || (manifest.commandLog = [])).push({
+    cmd, at: new Date().toISOString(), headSha: headSha(),
+    scriptSha256: sha256Bytes(readFileSync(fileURLToPath(import.meta.url))),
+  });
 }
 function resolveRun(flags) {
   const id = flags.run || (existsSync(path.join(RUNS_ROOT, 'latest.txt')) ? readFileSync(path.join(RUNS_ROOT, 'latest.txt'), 'utf8').trim() : null);
@@ -776,10 +919,10 @@ function headSha() {
 // ---------------------------------------------------------------- plan (gate + corpus + sample; no spend)
 
 async function plan() {
-  const { env, used } = loadEnv();
+  const { env, rank, used } = loadEnv();
   console.log(`[growth-replay] env files read (names only): ${used.length ? used.map((f) => path.basename(path.dirname(f)) + '/' + path.basename(f)).join(', ') : 'none'}`);
   anthropicKey(env); // the STOP rule fires before any read if the key is missing
-  const { db, projectId } = await openFirestore(env);
+  const { db, projectId } = await openFirestore(env, rank);
   const reader = makeReader(db);
   const floorMs = Date.parse(CAPTURE_FLOOR_ISO);
 
@@ -839,6 +982,14 @@ async function plan() {
       inc(crossCheck.leansVsBattleLeans, `${a.leans.status}|battleLeans=${(b.agentContext?.standingLeans || []).length > 0}`);
 
       if (a.problems.length || a.identity.status === 'ambiguous' || a.identity.status === 'unparseable' || a.leans.status === 'ambiguous') { inc(g2.excluded, 'request_shape_or_sections_unparsed'); continue; }
+      // Fail closed when a parsed span disagrees with the battle's own snapshot (review A2/A3): a
+      // header-shaped string inside free text (an insight, a directive) could otherwise be taken
+      // for a real section. Every tick of the 2026-10-08 run agreed (crossCheck in the manifest).
+      if (Boolean(a.identity.rules) !== ((b.agentContext?.activeRules || []).length > 0)
+        || (a.leans.status === 'present') !== ((b.agentContext?.standingLeans || []).length > 0)
+        || (a.identity.status === 'learned') !== Boolean(b.agentContext?.consolidatedInsight)) {
+        inc(g2.excluded, 'sections_disagree_with_battle_snapshot'); continue;
+      }
       const orig = originalKey(t);
       if (orig.fine == null) { inc(g2.excluded, 'original_decision_unreadable'); continue; }
       const part = learnedPartText(req, a.identity);
@@ -871,13 +1022,13 @@ async function plan() {
   const runId = `gr-${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}`;
   const dir = runDir(runId);
   mkdirSync(dir, { recursive: true });
-  writeFileSync(path.join(RUNS_ROOT, 'latest.txt'), runId);
 
   const manifest = {
     runId, createdAt: new Date().toISOString(), headSha: headSha(), seed: SEED, projectId,
     captureFloor: CAPTURE_FLOOR_ISO, battlesWalked: battles.length,
     gate: { g2, shape, crossCheck, corpus },
   };
+  stampCommand(manifest, 'plan');
 
   const gateFail = [];
   const prodModels = Object.keys(shape.models);
@@ -927,6 +1078,8 @@ async function plan() {
   };
   manifest.gate.outcome = { stop: false, prodModels };
   writeJsonAtomic(path.join(dir, 'manifest.json'), manifest);
+  // Only a run that passed its gate becomes the default target of later commands (review C12).
+  writeFileSync(path.join(RUNS_ROOT, 'latest.txt'), runId);
 
   const smp = manifest.sample.ticks;
   console.log(JSON.stringify({
@@ -950,8 +1103,13 @@ function seededPick(list, rand) { return list[Math.floor(rand() * list.length)];
 
 async function pilot(flags) {
   const { dir, manifestPath } = resolveRun(flags);
+  acquireLock(dir, 'pilot');
   const manifest = readJson(manifestPath);
-  if (manifest.pilot && !flags.force) stop('this run already has a pilot record (pass --force to redo it, which spends again).');
+  // A new pilot replaces the run plan, whose task indices the batches' custom ids point into (review C2).
+  if (manifest.batches?.length) stop('this run already has batches — a new pilot would remap their custom ids. Start a new run with `plan`.');
+  if ((manifest.pilot || manifest.pilotInProgress) && !flags.force) stop('this run already has a pilot record (complete or interrupted). Pass --force to run another, which spends again.');
+  const priorPilotSpendUsd = (manifest.pilot?.pilotSpendUsdTotal ?? manifest.pilot?.pilotSpendUsd ?? 0) + (manifest.pilotInProgress?.spendUsd ?? 0);
+  stampCommand(manifest, 'pilot');
   const { env } = loadEnv();
   const apiKey = anthropicKey(env);
   const sources = loadSources(dir);
@@ -981,11 +1139,18 @@ async function pilot(flags) {
 
   const calls = [];
   let billable = 0; let attempts = 0;
+  const priceOfCall = (model) => (model === 'prod' ? PRICES[priceKeyOf(prodId)] : PRICES[model]);
+  const spendOf = (list) => list.filter((c) => c.status === 200).reduce((s, c) => {
+    const p = priceOfCall(c.model);
+    return s + (c.usage.input_tokens * p.stdIn + c.usage.output_tokens * p.stdOut) / 1e6;
+  }, 0);
+  const startedAt = new Date().toISOString();
   const send = async (label, model, req, meta) => {
     if (billable >= PILOT_BILLABLE_MAX || attempts >= PILOT_ATTEMPT_MAX) return { skipped: 'pilot cap' };
     attempts += 1;
     const t0 = Date.now();
-    const r = await api(apiKey, 'POST', '/v1/messages', req);
+    let r;
+    try { r = await api(apiKey, 'POST', '/v1/messages', req); } catch (err) { r = { status: 'network', json: { error: { type: 'network', message: err.message } }, requestId: null }; }
     const row = { label, model, status: r.status, ms: Date.now() - t0, requestId: r.requestId, ...meta };
     if (r.status === 200) {
       billable += 1;
@@ -999,17 +1164,28 @@ async function pilot(flags) {
     }
     calls.push(row);
     writeFileSync(path.join(dir, 'pilot-responses.jsonl'), `${JSON.stringify({ ...row, response: r.json })}\n`, { flag: 'a' });
+    // Progress is on disk after EVERY call, so an interrupted pilot can never be re-run blind (review C9).
+    manifest.pilotInProgress = { startedAt, billable, attempts, spendUsd: spendOf(calls), calls: calls.map(({ label: l, status: s, model: mo }) => ({ label: l, status: s, model: mo })) };
+    writeJsonAtomic(manifestPath, manifest);
     return row;
   };
+  const transient = (row) => row.status === 'network' || row.status === 429 || (typeof row.status === 'number' && row.status >= 500);
 
   for (const t of prodTicks) await send(`prod:${t.k}`, 'prod', batchParams(sources[t.k].request), { k: t.k, arm: 'base' });
 
   const ladderTick = prodTicks[0];
   for (const m of ladder) {
-    for (let tries = 0; tries < 4; tries += 1) {
+    let retriedTransient = false;
+    for (let tries = 0; tries < 5; tries += 1) {
       const req = ladderRequest(sources[ladderTick.k].request, m.modelId, m.dropParams);
       const row = await send(`ladder:${m.key}`, m.key, req, { k: ladderTick.k, arm: 'ladder', dropParams: [...m.dropParams] });
       if (row.skipped || row.status === 200) break;
+      if (transient(row)) {
+        // A transient failure says nothing about the request shape: retry once, then call it unavailable, never "rejected".
+        if (!retriedTransient) { retriedTransient = true; await new Promise((res) => setTimeout(res, 10_000)); continue; }
+        m.unavailable = `HTTP ${row.status}: ${row.errorMessage}`;
+        break;
+      }
       if (row.status !== 400) { m.rejected = `HTTP ${row.status}: ${row.errorMessage}`; break; }
       const param = SAMPLING_PARAMS.find((p) => !m.dropParams.includes(p) && Object.hasOwn(req, p) && row.errorMessage.includes(p));
       if (param) { m.dropParams.push(param); continue; }
@@ -1024,7 +1200,7 @@ async function pilot(flags) {
     for (const v of ['strip', 'swap', 'loadout']) {
       if (v === 'loadout' && !memTick.hasEquipped) { edits[v] = { skipped: 'pilot tick has nothing equipped' }; continue; }
       const { request, removed, added } = applyVariant(src, v, { donorPart: v === 'swap' ? donorTexts[memTick.donor.learnedHash] : null });
-      assertOnlySpansMoved(src, request);
+      assertOnlySpansMoved(src, request, v);
       edits[v] = { removed, added };
       await send(`memory:${v}`, 'prod', batchParams(request), { k: memTick.k, arm: 'memory', variant: v });
     }
@@ -1038,17 +1214,20 @@ async function pilot(flags) {
     row.cacheWrite += c.usage.cache_creation_input_tokens || 0; row.cacheRead += c.usage.cache_read_input_tokens || 0;
   }
   const summary = Object.fromEntries(Object.entries(perModel).map(([k, v]) => [k, { n: v.n, meanInput: mean(v.input), meanOutput: mean(v.output), cacheWriteTokens: v.cacheWrite, cacheReadTokens: v.cacheRead }]));
-  const pilotSpendUsd = calls.filter((c) => c.status === 200).reduce((s, c) => {
-    const p = c.model === 'prod' ? PRICES[priceKeyOf(prodId)] : PRICES[c.model];
-    return s + (c.usage.input_tokens * p.stdIn + c.usage.output_tokens * p.stdOut) / 1e6;
-  }, 0);
-  for (const m of ladder) if (m.rejected) skipped.push({ target: m.display, reason: `rejected the request in the pilot: ${m.rejected}` });
+  const pilotSpendUsd = spendOf(calls);
+  for (const m of ladder) {
+    if (m.rejected) skipped.push({ target: m.display, reason: `rejected the request in the pilot: ${m.rejected}` });
+    else if (m.unavailable) skipped.push({ target: m.display, reason: `unavailable during the pilot (transient, retried once): ${m.unavailable}` });
+  }
 
   manifest.pilot = {
     at: new Date().toISOString(), prodId, prodPriceKey: priceKeyOf(prodId), modelsListed: models.length,
     ladder: ladder.map((m) => ({ ...m })), skipped, billable, attempts, calls,
     perModel: summary, edits, memTick: memTick?.k ?? null, pilotSpendUsd,
+    // Every pilot this run has paid for, including an interrupted or replaced one (review C2/C9).
+    pilotSpendUsdTotal: priorPilotSpendUsd + pilotSpendUsd,
   };
+  delete manifest.pilotInProgress;
   writeJsonAtomic(manifestPath, manifest);
   const runPlan = computeRunPlan(manifest);
   manifest.runPlan = runPlan;
@@ -1079,7 +1258,7 @@ function computeRunPlan(manifest) {
   const est = { pilot: {}, conservative: {} };
   est.pilot.prod = { input: prodEst.meanInput, output: prodEst.meanOutput, maxTokens, cacheMultiplier };
   est.conservative.prod = { input: Math.max(prodEst.meanInput, capIn ?? 0), output: Math.max(prodEst.meanOutput, capOut ?? 0), maxTokens, cacheMultiplier };
-  const ladder = pl.ladder.filter((m) => !m.rejected && pl.perModel[m.key]);
+  const ladder = pl.ladder.filter((m) => !m.rejected && !m.unavailable && pl.perModel[m.key]);
   for (const m of ladder) {
     const ratio = pl.perModel[m.key].meanInput / prodPilotIn; // the same tick on both models: the tokenizer ratio
     const e = { input: prodEst.meanInput * ratio, output: pl.perModel[m.key].meanOutput, maxTokens, cacheMultiplier };
@@ -1138,23 +1317,104 @@ function requestFor(task, sources, manifest, donorTexts) {
   if (arm === 'memory') {
     const t = manifest.sample.ticks.find((x) => x.k === k);
     const { request } = applyVariant(src, variant, { donorPart: variant === 'swap' ? donorTexts[t.donor.learnedHash] : null });
-    assertOnlySpansMoved(src, request);
+    assertOnlySpansMoved(src, request, variant);
     return batchParams(request);
   }
   const lad = manifest.runPlan.ladderIds[model];
   return ladderRequest(src, lad.modelId, lad.dropParams);
 }
 
+/** Chunk request lines: ≤10,000 requests and ≤ BATCH_TARGET_BYTES per upload (the hard limits are asserted in batchBody). */
+function chunkLines(lines) {
+  const chunks = [];
+  let cur = []; let bytes = 0;
+  for (const l of lines) {
+    const b = Buffer.byteLength(l.json, 'utf8') + 1;
+    if (cur.length && (cur.length >= BATCH_MAX_REQUESTS || bytes + b > BATCH_TARGET_BYTES)) { chunks.push(cur); cur = []; bytes = 0; }
+    cur.push(l); bytes += b;
+  }
+  if (cur.length) chunks.push(cur);
+  return chunks;
+}
+
+function batchBody(chunk) {
+  const body = `{"requests":[${chunk.map((l) => l.json).join(',')}]}`;
+  if (chunk.length > BATCH_MAX_REQUESTS || Buffer.byteLength(body, 'utf8') > BATCH_MAX_BYTES) stop(`a batch body exceeds the per-batch limit (${chunk.length} requests, ${Buffer.byteLength(body, 'utf8')} bytes)`);
+  return body;
+}
+
+const totalOf = (counts) => Object.values(counts || {}).reduce((s, x) => s + (Number(x) || 0), 0);
+
+/**
+ * Review C1 — an interrupted create. The intent (task indices, size, time) is
+ * written BEFORE every POST; if a command died between the POST and recording
+ * the batch id, this lists recent batches and adopts the one the attempt made.
+ * Zero matches means nothing was created and the tasks are simply unsent;
+ * more than one means a human must decide.
+ */
+async function reconcilePending(apiKey, manifest, manifestPath) {
+  const p = manifest.pendingCreate;
+  if (!p) return;
+  const known = new Set((manifest.batches || []).map((b) => b.batchId));
+  const r = await api(apiKey, 'GET', '/v1/messages/batches?limit=100');
+  if (r.status !== 200) stop(`could not list batches to reconcile an interrupted create (HTTP ${r.status}); nothing was sent`);
+  const since = Date.parse(p.at) - 120_000;
+  const cands = (r.json?.data || []).filter((b) => !known.has(b.id) && Date.parse(b.created_at) >= since && totalOf(b.request_counts) === p.count);
+  if (cands.length > 1) stop(`an interrupted create left ${cands.length} candidate batches (${cands.map((b) => b.id).join(', ')}); reconcile manifest.pendingCreate by hand`);
+  manifest.batches = manifest.batches || [];
+  if (cands.length === 1) {
+    manifest.batches.push({ batchId: cands[0].id, createdAt: cands[0].created_at, count: p.count, bytes: p.bytes, taskIdx: p.taskIdx, status: cands[0].processing_status, kind: p.kind, adoptedAfterInterruptedCreate: true });
+    console.log(`[growth-replay] adopted ${cands[0].id}, created by an interrupted ${p.kind} attempt (${p.count} requests)`);
+  } else {
+    console.log(`[growth-replay] the interrupted ${p.kind} attempt created no batch; its ${p.count} request(s) are unsent`);
+  }
+  delete manifest.pendingCreate;
+  writeJsonAtomic(manifestPath, manifest);
+}
+
+/** Create one batch with the intent on disk before the POST and the id on disk right after it. */
+async function createRecordedBatch(apiKey, manifest, manifestPath, chunk, kind) {
+  if (Date.now() > Date.parse(CAPS.deadlineIso)) stop(`the batch deadline ${CAPS.deadlineIso} has passed; ${(manifest.batches || []).length} batch(es) exist.`);
+  const body = batchBody(chunk);
+  const bytes = Buffer.byteLength(body, 'utf8');
+  manifest.pendingCreate = { kind, at: new Date().toISOString(), count: chunk.length, bytes, bodySha256: sha256Utf8(body), taskIdx: chunk.map((l) => l.i) };
+  writeJsonAtomic(manifestPath, manifest);
+  const r = await api(apiKey, 'POST', '/v1/messages/batches', body);
+  if (r.status !== 200 || typeof r.json?.id !== 'string') stop(`batch create returned HTTP ${r.status}: ${String(r.json?.error?.message ?? '').slice(0, 300)} (the pending record stays; the next submit or collect reconciles it)`);
+  manifest.batches = manifest.batches || [];
+  manifest.batches.push({ batchId: r.json.id, createdAt: new Date().toISOString(), count: chunk.length, bytes, taskIdx: chunk.map((l) => l.i), status: r.json.processing_status, kind });
+  delete manifest.pendingCreate;
+  writeJsonAtomic(manifestPath, manifest);
+  console.log(`[growth-replay] created ${r.json.id} (${kind}, ${chunk.length} requests)`);
+}
+
+/** Planned and worst-case USD of the stored plan, RE-COMPUTED from its tasks at the current prices (review C2). */
+function planCost(manifest) {
+  const rp = manifest.runPlan;
+  const priceOf = (key) => PRICES[key === 'prod' ? manifest.pilot.prodPriceKey : key];
+  const tasks = rp.tasks.map(([k, arm, variant, model, rep]) => ({ k, arm, variant, model, rep }));
+  const a = costOf(tasks, rp.est.pilot, priceOf);
+  const b = costOf(tasks, rp.est.conservative, priceOf);
+  return { planned: Math.max(a.planned, b.planned), worst: Math.max(a.worst, b.worst) };
+}
+
 async function submit(flags) {
   if (!flags.go) stop('submit needs --go (the founder\'s checkpoint answer).');
   const { dir, manifestPath } = resolveRun(flags);
+  acquireLock(dir, 'submit');
   const manifest = readJson(manifestPath);
   const rp = manifest.runPlan;
   if (!rp) stop('no run plan — run `pilot` first.');
   if (rp.over) stop('the plan is over a cap after every cut.');
-  if (rp.cost.planned > CAPS.plannedUsd || rp.cost.worst > CAPS.worstUsd) stop(`plan over cap: planned $${rp.cost.planned.toFixed(2)}, worst $${rp.cost.worst.toFixed(2)}`);
+  // Every task is submitted at most once (plus one retry of an UNBILLED server error), so the
+  // plan's cost bounds cumulative batch spend; the pilot's spend is added on top.
+  const cost = planCost(manifest);
+  const pilotUsd = manifest.pilot?.pilotSpendUsdTotal ?? manifest.pilot?.pilotSpendUsd ?? 0;
+  if (cost.planned + pilotUsd > CAPS.plannedUsd || cost.worst + pilotUsd > CAPS.worstUsd) stop(`plan over cap: planned $${(cost.planned + pilotUsd).toFixed(2)}, worst $${(cost.worst + pilotUsd).toFixed(2)} (pilot included)`);
+  stampCommand(manifest, 'submit');
   const { env } = loadEnv();
   const apiKey = anthropicKey(env);
+  await reconcilePending(apiKey, manifest, manifestPath);
   const sources = loadSources(dir);
   const donorTexts = readJson(path.join(dir, 'donor-learned-texts.json'));
   manifest.batches = manifest.batches || [];
@@ -1178,30 +1438,16 @@ async function submit(flags) {
   });
   if (uniqueLines.length) writeFileSync(path.join(reqDir, `unique-requests-${Date.now()}.jsonl`), `${uniqueLines.join('\n')}\n`);
 
-  // Chunk: ≤10,000 requests and ≤100 MB per batch (uploads kept to ~40 MB).
-  const chunks = [];
-  let cur = []; let bytes = 0;
-  for (const l of lines) {
-    const b = Buffer.byteLength(l.json, 'utf8') + 1;
-    if (cur.length && (cur.length >= BATCH_MAX_REQUESTS || bytes + b > Math.min(BATCH_TARGET_BYTES, BATCH_MAX_BYTES - 1024))) { chunks.push(cur); cur = []; bytes = 0; }
-    cur.push(l); bytes += b;
-  }
-  if (cur.length) chunks.push(cur);
+  // Seeded shuffle before chunking (review B8): no condition sits alone in its own batches, so a
+  // batch-level difference cannot masquerade as an edit effect. custom_id still maps to the task.
+  const chunks = chunkLines(shuffle(lines, rng(SEED + 31)));
   console.log(`[growth-replay] ${lines.length} request(s) to submit in ${chunks.length} batch(es)`);
-
-  for (const chunk of chunks) {
-    if (Date.now() > Date.parse(CAPS.deadlineIso)) stop(`the batch deadline ${CAPS.deadlineIso} has passed; ${manifest.batches.length} batch(es) were created.`);
-    const body = `{"requests":[${chunk.map((l) => l.json).join(',')}]}`;
-    const r = await api(apiKey, 'POST', '/v1/messages/batches', body);
-    if (r.status !== 200) stop(`batch create returned HTTP ${r.status}: ${String(r.json?.error?.message ?? '').slice(0, 300)}`);
-    manifest.batches.push({ batchId: r.json.id, createdAt: new Date().toISOString(), count: chunk.length, bytes: Buffer.byteLength(body, 'utf8'), taskIdx: chunk.map((l) => l.i), status: r.json.processing_status, kind: 'main' });
-    writeJsonAtomic(manifestPath, manifest); // written after EVERY create: no batch is ever orphaned
-    console.log(`[growth-replay] created ${r.json.id} (${chunk.length} requests)`);
-  }
+  for (const chunk of chunks) await createRecordedBatch(apiKey, manifest, manifestPath, chunk, 'main');
 }
 
 // ---------------------------------------------------------------- status
 
+/** Read-only: it reports batch states and never writes the manifest (review C3). */
 async function status(flags) {
   const { manifestPath } = resolveRun(flags);
   const { env } = loadEnv();
@@ -1213,12 +1459,9 @@ async function status(flags) {
     for (const b of manifest.batches || []) {
       if (b.deleted) { rows.push({ batchId: b.batchId, status: 'deleted (results on disk)' }); continue; }
       const r = await api(apiKey, 'GET', `/v1/messages/batches/${b.batchId}`);
-      b.status = r.json?.processing_status ?? `HTTP ${r.status}`;
-      b.requestCounts = r.json?.request_counts ?? null;
-      b.resultsUrl = r.json?.results_url ?? null;
-      rows.push({ batchId: b.batchId, status: b.status, counts: b.requestCounts });
+      rows.push({ batchId: b.batchId, status: r.json?.processing_status ?? `HTTP ${r.status}`, counts: r.json?.request_counts ?? null });
     }
-    writeJsonAtomic(manifestPath, manifest);
+    if (manifest.pendingCreate) rows.push({ pendingCreate: `${manifest.pendingCreate.kind} at ${manifest.pendingCreate.at} — run submit or collect to reconcile` });
     console.log(`[growth-replay] ${new Date().toISOString()} ${JSON.stringify(rows)}`);
     const allEnded = rows.every((r) => r.status === 'ended' || String(r.status).startsWith('deleted'));
     if (!flags.wait || allEnded) { if (flags.wait) console.log(allEnded ? 'ALL ENDED' : ''); return; }
@@ -1230,23 +1473,33 @@ async function status(flags) {
 // ---------------------------------------------------------------- collect
 
 const RETRYABLE_ERRORS = new Set(['api_error', 'overloaded_error', 'timeout_error']);
+const isSpendLimitResult = (line, errMsg) => /enforced_spend_limit_reached/.test(line) || errMsg.startsWith('You have reached your specified API usage limits');
 
 async function collect(flags) {
   const { dir, manifestPath } = resolveRun(flags);
+  acquireLock(dir, 'collect');
   const manifest = readJson(manifestPath);
+  stampCommand(manifest, 'collect');
   const { env } = loadEnv();
   const apiKey = anthropicKey(env);
+  await reconcilePending(apiKey, manifest, manifestPath);
   const resDir = path.join(dir, 'results');
   mkdirSync(resDir, { recursive: true });
-  const outcomes = manifest.outcomes || {};
+  manifest.outcomes = manifest.outcomes || {};
+  const outcomes = manifest.outcomes;
 
   for (const b of manifest.batches || []) {
     if (b.resultsSaved) continue;
     const r = await api(apiKey, 'GET', `/v1/messages/batches/${b.batchId}`);
-    if (r.json?.processing_status !== 'ended') { console.log(`[growth-replay] ${b.batchId} is ${r.json?.processing_status} — not collected yet`); continue; }
+    if (r.json?.processing_status !== 'ended') { console.log(`[growth-replay] ${b.batchId} is ${r.json?.processing_status ?? `HTTP ${r.status}`} — not collected yet`); continue; }
     const file = path.join(resDir, `${b.batchId}.jsonl`);
-    const res = await fetch(r.json.results_url, { headers: { 'x-api-key': apiKey, 'anthropic-version': ANTHROPIC_VERSION } });
-    if (!res.ok) stop(`results download for ${b.batchId} returned HTTP ${res.status}`);
+    let res;
+    try {
+      res = await fetch(anthropicUrl(r.json.results_url), { headers: { 'x-api-key': apiKey, 'anthropic-version': ANTHROPIC_VERSION } });
+    } catch (err) {
+      stop(`results download for ${b.batchId} failed: ${err?.cause?.code || err?.name || 'network error'} (the batch is kept)`);
+    }
+    if (!res.ok) stop(`results download for ${b.batchId} returned HTTP ${res.status} (the batch is kept)`);
     await pipeline(Readable.fromWeb(res.body), createWriteStream(`${file}.tmp`));
     renameSync(`${file}.tmp`, file);
     const resultLines = readFileSync(file, 'utf8').split('\n').filter((l) => l.trim());
@@ -1257,47 +1510,45 @@ async function collect(flags) {
       const type = row.result?.type;
       const errType = row.result?.error?.error?.type ?? row.result?.error?.type ?? null;
       const errMsg = String(row.result?.error?.error?.message ?? row.result?.error?.message ?? '');
-      if (type === 'errored' && (/enforced_spend_limit_reached/.test(line) || errMsg.startsWith('You have reached your specified API usage limits'))) {
-        writeJsonAtomic(manifestPath, { ...manifest, outcomes });
-        stop('a result reports the API spend limit. Nothing further was submitted.', 3);
-      }
-      const prev = outcomes[i];
-      if (prev?.type === 'succeeded') continue;
+      // A spend-limit result blocks NEW spend (no retry batch), never saving or deleting what is already paid for (review C6).
+      if (type === 'errored' && isSpendLimitResult(line, errMsg)) manifest.spendLimitHit = { batchId: b.batchId, at: new Date().toISOString() };
+      if (outcomes[i]?.type === 'succeeded') continue;
       outcomes[i] = { type, batchId: b.batchId, errType };
     }
     b.resultsSaved = true; b.resultLines = resultLines.length;
-    writeJsonAtomic(manifestPath, { ...manifest, outcomes });
+    writeJsonAtomic(manifestPath, manifest);
+    console.log(`[growth-replay] ${b.batchId}: ${resultLines.length} results saved`);
+  }
+
+  // Delete every batch whose results are safely on disk — retried on every collect until it succeeds (review C7).
+  for (const b of manifest.batches || []) {
+    if (!b.resultsSaved || b.deleted) continue;
     const del = await api(apiKey, 'DELETE', `/v1/messages/batches/${b.batchId}`);
     b.deleted = del.status === 200;
     b.deleteStatus = del.status;
-    writeJsonAtomic(manifestPath, { ...manifest, outcomes });
-    console.log(`[growth-replay] ${b.batchId}: ${resultLines.length} results saved; deleted on Anthropic's side: ${b.deleted}`);
+    writeJsonAtomic(manifestPath, manifest);
+    console.log(`[growth-replay] ${b.batchId}: deleted on Anthropic's side: ${b.deleted}${b.deleted ? '' : ` (HTTP ${del.status}; the next collect retries)`}`);
   }
-  manifest.outcomes = outcomes;
-  writeJsonAtomic(manifestPath, manifest);
 
-  // One retry of server-errored requests, in a follow-up batch (caps + deadline still apply).
+  const summary = {};
+  for (const o of Object.values(outcomes)) inc(summary, `${o.type}${o.errType ? `:${o.errType}` : ''}`);
   const allSaved = (manifest.batches || []).every((b) => b.resultsSaved);
+  console.log(`[growth-replay] outcomes: ${JSON.stringify(summary)}; all batches saved: ${allSaved}`);
+  if (manifest.spendLimitHit) stop(`a result reports the API spend limit (batch ${manifest.spendLimitHit.batchId}). Results are saved; no retry batch was created.`, 3);
+
+  // One retry of server-errored requests. Errored requests are not billed and each task is
+  // retried at most once, so cumulative spend stays inside the plan the caps were checked on.
   const retryable = Object.entries(outcomes).filter(([, o]) => o.type === 'errored' && RETRYABLE_ERRORS.has(o.errType)).map(([i]) => Number(i));
   const already = new Set((manifest.batches || []).filter((b) => b.kind === 'retry').flatMap((b) => b.taskIdx));
   const toRetry = retryable.filter((i) => !already.has(i));
-  if (allSaved && toRetry.length && !flags.noRetry) {
-    if (Date.now() > Date.parse(CAPS.deadlineIso)) { console.log(`[growth-replay] ${toRetry.length} server-errored request(s) NOT retried: past the batch deadline`); return; }
-    const sources = loadSources(dir);
-    const donorTexts = readJson(path.join(dir, 'donor-learned-texts.json'));
-    const reqs = toRetry.map((i) => JSON.stringify({ custom_id: `gr_${String(i).padStart(6, '0')}`, params: requestFor(manifest.runPlan.tasks[i], sources, manifest, donorTexts) }));
-    const body = `{"requests":[${reqs.join(',')}]}`;
-    if (Buffer.byteLength(body, 'utf8') > BATCH_MAX_BYTES || reqs.length > BATCH_MAX_REQUESTS) stop('the retry batch exceeds the per-batch limits');
-    const r = await api(apiKey, 'POST', '/v1/messages/batches', body);
-    if (r.status !== 200) stop(`retry batch create returned HTTP ${r.status}`);
-    manifest.batches.push({ batchId: r.json.id, createdAt: new Date().toISOString(), count: reqs.length, bytes: Buffer.byteLength(body, 'utf8'), taskIdx: toRetry, status: r.json.processing_status, kind: 'retry' });
-    writeJsonAtomic(manifestPath, manifest);
-    console.log(`[growth-replay] retry batch ${r.json.id} created for ${reqs.length} server-errored request(s); run status --wait, then collect again`);
-  } else {
-    const summary = {};
-    for (const o of Object.values(outcomes)) inc(summary, `${o.type}${o.errType ? `:${o.errType}` : ''}`);
-    console.log(`[growth-replay] outcomes: ${JSON.stringify(summary)}; all batches saved: ${allSaved}`);
-  }
+  if (!allSaved || !toRetry.length || flags.noRetry) return;
+  if (Date.now() > Date.parse(CAPS.deadlineIso)) { console.log(`[growth-replay] ${toRetry.length} server-errored request(s) NOT retried: past the batch deadline`); return; }
+  if (!toRetry.every((i) => outcomes[i]?.type === 'errored' && Array.isArray(manifest.runPlan.tasks[i]))) stop('retry set is not a subset of errored plan tasks');
+  const sources = loadSources(dir);
+  const donorTexts = readJson(path.join(dir, 'donor-learned-texts.json'));
+  const lines = toRetry.map((i) => ({ i, json: JSON.stringify({ custom_id: `gr_${String(i).padStart(6, '0')}`, params: requestFor(manifest.runPlan.tasks[i], sources, manifest, donorTexts) }) }));
+  for (const chunk of chunkLines(lines)) await createRecordedBatch(apiKey, manifest, manifestPath, chunk, 'retry');
+  console.log(`[growth-replay] retry batch(es) created for ${toRetry.length} server-errored request(s); run status --wait, then collect again`);
 }
 
 // ---------------------------------------------------------------- analyze
@@ -1357,6 +1608,8 @@ async function analyze(flags) {
   }));
 
   const sampleKeys = rp.sampleKeys;
+  // An arm with more than 5% of its requests missing carries INCOMPLETE on its label (review C8/B10).
+  const markIncomplete = (conds, label) => (conds.some((c) => completeness[c]?.status === 'INCOMPLETE') ? `INCOMPLETE (${label})` : label);
   const computeArms = (keys) => {
     // ---- Arm 1 ----
     const arm1Rows = [];
@@ -1394,11 +1647,12 @@ async function analyze(flags) {
       originalAction: arm1Summary(arm1Rows.filter((r) => r.cls === 'action')),
       originalHold: arm1Summary(arm1Rows.filter((r) => r.cls === 'hold')),
     };
-    arm1.label = arm1Label(arm1.all.meanAgreementFine);
+    arm1.label = markIncomplete(['base'], arm1Label(arm1.all.meanAgreementFine));
 
     // ---- Arm 2 ----
     const arm2 = {};
     const perTickMove = {};
+    let floor = null;
     for (const v of rp.variants) {
       const cond = `memory:${v}`;
       const rows = [];
@@ -1409,7 +1663,15 @@ async function analyze(flags) {
       }
       const res = permutationTest(rows, { seed: SEED + 11 });
       if (res) {
-        res.label = arm2Label(res);
+        res.label = markIncomplete(['base', cond], arm2Label(res));
+        // Descriptive context for the frozen excess figure (review B1): the raw flips, and the flip
+        // rate expected with NO effect (both groups drawn from each tick's own baseline).
+        if (floor == null) floor = noEffectFlipFloor(rows.map((r) => r.base), { nA: rp.repeats.base, nB: rp.repeats.memory });
+        res.noEffectFlipFloor = floor;
+        res.flipsBeyondNoEffectFloor = res.flipRate - floor;
+        // The opposite deterministic tie rule (review B9): the label's sensitivity to tie-breaking.
+        const tie = permutationTest(rows, { seed: SEED + 11, tieLargest: true });
+        res.tieRuleSensitivity = { excessFlip: tie.excessFlip, flipRate: tie.flipRate, label: arm2Label(tie) };
         rows.forEach((r, i) => { (perTickMove[r.k] || (perTickMove[r.k] = {}))[v] = res.perTickTv[i]; });
         delete res.perTickTv;
         res.coarse = (() => { const c = permutationTest(rows.map((r) => ({ base: r.base.map(toCoarse), variant: r.variant.map(toCoarse) })), { seed: SEED + 12 }); if (c) { c.label = arm2Label(c); delete c.perTickTv; } return c; })();
@@ -1446,14 +1708,17 @@ async function analyze(flags) {
         const list = keys[k]?.[cond];
         if (!list?.length || !prodModal[k]) continue;
         const cf = counts(list.map((x) => x.fine)); const cc = counts(list.map((x) => x.coarse));
-        rows.push({ agreeFine: modal(cf) === prodModal[k].fine ? 1 : 0, agreeCoarse: modal(cc) === prodModal[k].coarse ? 1 : 0, self: cf[modal(cf)] / list.length, action: list.filter((x) => x.coarse === 'SWAP').length / list.length, malformed: list.filter((x) => x.fine === MALFORMED).length / list.length });
+        rows.push({ prodCoarse: prodModal[k].coarse, agreeFine: modal(cf) === prodModal[k].fine ? 1 : 0, agreeCoarse: modal(cc) === prodModal[k].coarse ? 1 : 0, self: cf[modal(cf)] / list.length, action: list.filter((x) => x.coarse === 'SWAP').length / list.length, malformed: list.filter((x) => x.fine === MALFORMED).length / list.length });
       }
+      // Agreement split by production's own usual call (review B4): an overall figure is mostly the hold base rate.
+      const byProdCall = Object.fromEntries(Object.entries(groupBy(rows, (r) => r.prodCoarse)).map(([c, list]) => [c, { ticks: list.length, agreeFine: mean(list.map((r) => r.agreeFine)), agreeCoarse: mean(list.map((r) => r.agreeCoarse)) }]));
       const u = usage[cond];
       const p = PRICES[m.key];
       const mi = u ? mean(u.input) : null; const mo = u ? mean(u.output) : null;
       arm3[m.key] = {
-        model: rp.ladderIds[m.key].modelId, ticks: rows.length,
+        model: rp.ladderIds[m.key].modelId, ticks: rows.length, status: completeness[cond]?.status ?? 'missing',
         modalAgreementWithProdFine: mean(rows.map((r) => r.agreeFine)), modalAgreementWithProdCoarse: mean(rows.map((r) => r.agreeCoarse)),
+        agreementByProductionCall: byProdCall,
         selfAgreement: mean(rows.map((r) => r.self)), actionRate: mean(rows.map((r) => r.action)), malformedRate: mean(rows.map((r) => r.malformed)),
         meanInputTokens: mi, meanOutputTokens: mo,
         costPerDecisionStdUsd: mi == null ? null : (mi * p.stdIn + mo * p.stdOut) / 1e6,
@@ -1547,7 +1812,12 @@ function writeExhibits(dir, manifest, sources, donorTexts, keys, perTickMove) {
 
 // ---------------------------------------------------------------- selftest
 
-/** Synthetic arm-2 data: pure noise must read "no measurable effect"; a planted 30% shift must read "moves decisions". */
+/**
+ * The selftest that gates analyze. Synthetic arm-2 data: pure noise must read "no
+ * measurable effect", a planted 30% shift "moves decisions", a small consistent shift
+ * "measurable but small"; the noise false-positive rate must be calibrated; and every
+ * statistic, bar, sampler and budget rule has a known-answer row (review B2).
+ */
 export function runSelftest() {
   const rand = rng(SEED ^ 0x51f7e57);
   const KEYS = ['HOLD', 'SWAP:AAA>BBB', 'SWAP:CCC>DDD', MALFORMED];
@@ -1567,14 +1837,104 @@ export function runSelftest() {
   // Calibration: how often pure noise crosses p < 0.05 over 20 fresh datasets (expected ≈ 5%).
   let falsePositives = 0;
   for (let i = 0; i < 20; i += 1) if (permutationTest(makeDataset(0), { seed: SEED + 100 + i, permutations: 500 }).p < 0.05) falsePositives += 1;
+  // A small, consistent shift that changes the mix but rarely the usual call: must read "measurable but small".
+  const smallShift = [];
+  for (let i = 0; i < 150; i += 1) {
+    smallShift.push({ base: Array.from({ length: 10 }, () => draw([9, 1, 0, 0])), variant: Array.from({ length: 10 }, () => draw([7, 3, 0, 0])) });
+  }
+  const small = permutationTest(smallShift, { seed: SEED + 23 });
+
+  // ---- known answers (review B2: each row names the defect it can catch) ----
+  const checks = {};
+  const near = (a, b, tol) => Math.abs(a - b) <= tol;
+  // TV distance: half the L1 distance between the two distributions.
+  checks.tvSeparated = tvDistance({ A: 10 }, { B: 10 }) === 1;
+  checks.tvIdentical = tvDistance({ A: 5, B: 5 }, { A: 5, B: 5 }) === 0;
+  checks.tvPartial = near(tvDistance({ A: 7, B: 3 }, { A: 4, B: 6 }), 0.3, 1e-12);
+  checks.tvUnequalSizes = near(tvDistance({ A: 10 }, { A: 2, B: 3 }), 0.6, 1e-12);
+  // Modal tie rule: lexically smallest; the opposite rule only on request.
+  checks.modalTie = modal({ B: 5, A: 5 }) === 'A' && modal({ B: 5, A: 5 }, { largest: true }) === 'B';
+  // The permutation null rests on an unbiased shuffle: all 6 orders of [0,1,2] near 1/6 each (a cyclic-only
+  // shuffle never yields the identity).
+  const orders = {}; const sr = rng(SEED + 27);
+  for (let i = 0; i < 6000; i += 1) inc(orders, shuffle([0, 1, 2], sr).join(''));
+  checks.shuffleUniform = Object.keys(orders).length === 6 && Object.values(orders).every((c) => c >= 850 && c <= 1150);
+  // One fully separated tick (10×A vs 10×B): the exact within-tick null. a = #A in the first
+  // group ~ Hypergeometric(20, 10, 10); null TV = |2a−10|/10; null flip = 1 − P(a = 5).
+  const choose = (n, k) => { let r = 1; for (let i = 1; i <= k; i += 1) r = (r * (n - k + i)) / i; return r; };
+  const pa = (a) => (choose(10, a) * choose(10, 10 - a)) / choose(20, 10);
+  let exactNullTv = 0; for (let a = 0; a <= 10; a += 1) exactNullTv += pa(a) * (Math.abs(2 * a - 10) / 10);
+  const exactNullFlip = 1 - pa(5);
+  const sep = permutationTest([{ base: Array(10).fill('A'), variant: Array(10).fill('B') }], { seed: SEED + 24, permutations: 4000 });
+  checks.separatedObserved = sep.T === 1 && sep.flipRate === 1 && sep.p === 1 / 4001;
+  checks.separatedNullMean = near(sep.nullMean, exactNullTv, 0.01);
+  checks.separatedNullFlip = near(sep.nullFlipRate, exactNullFlip, 0.02) && near(sep.excessFlip, 1 - exactNullFlip, 0.02);
+  // Its exact null distribution puts the 95th percentile at TV 0.4 (cumulative 0.34 / 0.82 / 0.97 at 0 / 0.2 / 0.4).
+  checks.separatedNullP95 = near(sep.nullP95, 0.4, 1e-9);
+  // Unequal group sizes (10 vs 5) must be kept by the permutation: exact null TV for 10×A + 5×B split 10/5.
+  let exactUneq = 0;
+  for (let a = 5; a <= 10; a += 1) { // a = #A in the size-10 group; the size-5 group holds 10 − a A's
+    const p = (choose(10, a) * choose(5, 10 - a)) / choose(15, 10);
+    exactUneq += p * tvDistance({ A: a, B: 10 - a }, { A: 10 - a, B: 5 - (10 - a) });
+  }
+  const uneq = permutationTest([{ base: Array(10).fill('A'), variant: Array(5).fill('B') }], { seed: SEED + 25, permutations: 4000 });
+  checks.unequalSizesNull = near(uneq.nullMean, exactUneq, 0.01);
+  // Identical ticks with different content: the null must stay WITHIN each tick (exactly 0), and p = 1.
+  const ident = permutationTest([{ base: Array(10).fill('A'), variant: Array(10).fill('A') }, { base: Array(10).fill('B'), variant: Array(10).fill('B') }], { seed: SEED + 26, permutations: 200 });
+  checks.withinTickNull = ident.T === 0 && ident.nullMean === 0 && ident.nullP95 === 0 && ident.p === 1 && arm2Label(ident) === 'no measurable effect';
+  // The frozen bars, at their exact boundaries.
+  checks.arm2Bars = arm2Label({ p: 0.05, excessFlip: 0.9 }) === 'no measurable effect'
+    && arm2Label({ p: 0.0499, excessFlip: 0.05 }) === 'moves decisions'
+    && arm2Label({ p: 0.0499, excessFlip: 0.0499 }) === 'measurable but small';
+  checks.arm1Bars = arm1Label(0.90) === 'steady' && arm1Label(0.8999) === 'wobbly' && arm1Label(0.75) === 'wobbly' && arm1Label(0.7499) === 'noisy';
+  // Split-half: [A×10] → 1; [A×5, B×5] → 0 exactly; [A×6, B×4] → P(3 A's in a half of 5) = 120/252.
+  checks.splitHalf = splitHalfAgreement([Array(10).fill('A')]) === 1
+    && splitHalfAgreement([[...Array(5).fill('A'), ...Array(5).fill('B')]]) === 0
+    && near(splitHalfAgreement([[...Array(6).fill('A'), ...Array(4).fill('B')]], { draws: 2000 }), 120 / 252, 0.04);
+  // Sampling: the 15% cap binds and lifts only to reach 60; balance prefers 50/50 where supply allows.
+  const mk = (b, cls, n) => Array.from({ length: n }, (_, i) => ({ k: `${b}__${cls}${String(i).padStart(3, '0')}`, battleId: b, cls }));
+  const capped = drawSample([...mk('B1', 'hold', 100), ...['b2', 'b3', 'b4', 'b5', 'b6'].flatMap((b) => mk(b, 'hold', 4))], { target: 100 });
+  checks.sampleCapLifts = capped.n === 60 && capped.capLifted === true && capped.picks.filter((p) => p.battleId === 'B1').length === 40;
+  const balanced = drawSample([...['A1', 'A2', 'A3', 'A4'].flatMap((b) => mk(b, 'action', 15)), ...['H1', 'H2', 'H3'].flatMap((b) => [...mk(b, 'action', 15), ...mk(b, 'hold', 15)])], { target: 100 });
+  const perBattle = (ps) => Math.max(...Object.values(ps.reduce((o, p) => inc(o, p.battleId), {})));
+  checks.sampleBalance = balanced.n === 100 && balanced.picks.filter((p) => p.cls === 'hold').length === 45 && perBattle(balanced.picks) <= 15;
+  // One battle supplies every action, so the full sample opens with its 45 picks: a prefix cut would keep all 45.
+  const lopsided = drawSample([...mk('X', 'action', 60), ...['d1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8', 'd9'].flatMap((b) => mk(b, 'hold', 40))], { target: 300 });
+  const reduced = reduceSample(lopsided.picks, 120);
+  checks.reduceKeepsCap = lopsided.n === 300 && reduced.length === 120 && perBattle(reduced) <= Math.floor(BATTLE_CAP_SHARE * 120);
+  // Donors: never the same agent, never the same text; same archetype first.
+  const pool = [
+    { k: 'p1', agentId: 'x', archetype: 'tf', learnedHash: 'h1' }, { k: 'p2', agentId: 'y', archetype: 'tf', learnedHash: 'h2' },
+    { k: 'p3', agentId: 'z', archetype: 'ct', learnedHash: 'h3' }, { k: 'p4', agentId: 'w', archetype: 'tf', learnedHash: 'h1' },
+  ];
+  const donors = assignDonors([{ k: 't1', agentId: 'x', archetype: 'tf', learnedHash: 'h1' }, { k: 't2', agentId: 'z', archetype: 'ct', learnedHash: 'h3' }], pool);
+  // The target agent itself holds a different text (h4): it must still never be its own donor.
+  const selfPool = [{ k: 'q1', agentId: 'x', archetype: 'tf', learnedHash: 'h1' }, { k: 'q2', agentId: 'x', archetype: 'tf', learnedHash: 'h4' }, { k: 'q3', agentId: 'z', archetype: 'ct', learnedHash: 'h3' }];
+  const selfDonor = assignDonors([{ k: 't3', agentId: 'x', archetype: 'tf', learnedHash: 'h1' }], selfPool);
+  checks.donors = donors.t1?.agentId === 'y' && donors.t1?.pairing === 'donor_same_archetype'
+    && donors.t2 && donors.t2.agentId !== 'z' && donors.t2.learnedHash !== 'h3' && donors.t2.pairing === 'donor_other_archetype'
+    && selfDonor.t3?.agentId === 'z' && selfDonor.t3?.pairing === 'donor_other_archetype';
+  // Cost: the worst case prices output at max_tokens.
+  const oneTask = costOf([{ k: 'a', arm: 'base', variant: 'verbatim', model: 'm', rep: 1 }], { m: { input: 1000, output: 100, maxTokens: 1000, cacheMultiplier: 1 } }, () => ({ batchIn: 1, batchOut: 1 }));
+  checks.costWorst = near(oneTask.planned, 1100 / 1e6, 1e-15) && near(oneTask.worst, 2000 / 1e6, 1e-15);
+  // The cut order: loadout first, then Opus repeats, then N, then Opus — stopping as soon as both caps hold.
+  const cutCase = (evaluate) => fitToCaps({ fullN: 300, hasOpus: true, evaluate }, { caps: { plannedUsd: 100, worstUsd: 200 } });
+  const priced = (cfg) => ({ cost: { planned: (cfg.loadout ? 60 : 40) + (cfg.opus ? (cfg.opusRepeats ? 30 : 50) : 0) + cfg.n / 10, worst: 150 } });
+  checks.cutOrder = cutCase(priced).cuts.join('|') === 'dropped the loadout variant|Opus repeats reduced to 3'
+    && cutCase(() => ({ cost: { planned: 10, worst: 10 } })).cuts.length === 0
+    && cutCase(() => ({ cost: { planned: 1e9, worst: 1e9 } })).over === true;
+
   const res = {
     noise: { T: round(noise.T), nullMean: round(noise.nullMean), nullP95: round(noise.nullP95), p: round(noise.p), excessFlip: round(noise.excessFlip), label: arm2Label(noise) },
     planted: { T: round(planted.T), nullMean: round(planted.nullMean), nullP95: round(planted.nullP95), p: round(planted.p), excessFlip: round(planted.excessFlip), label: arm2Label(planted) },
+    smallShift: { T: round(small.T), nullMean: round(small.nullMean), p: round(small.p), excessFlip: round(small.excessFlip), label: arm2Label(small) },
     noiseFalsePositivesOf20: falsePositives,
-    arm1Labels: { '0.95': arm1Label(0.95), '0.80': arm1Label(0.80), '0.50': arm1Label(0.50) },
+    checks,
   };
   res.pass = res.noise.label === 'no measurable effect' && res.planted.label === 'moves decisions'
-    && res.arm1Labels['0.95'] === 'steady' && res.arm1Labels['0.80'] === 'wobbly' && res.arm1Labels['0.50'] === 'noisy';
+    && res.smallShift.label === 'measurable but small'
+    && falsePositives <= 3 // Binomial(20, 0.05): P(≥ 4) ≈ 1.6% for a calibrated test
+    && Object.values(checks).every(Boolean);
   return res;
 }
 
@@ -1616,5 +1976,5 @@ async function main() {
 
 // CLI entrypoint only — importing this module runs nothing.
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
-  main().catch((err) => { console.error(err?.stack || String(err)); process.exit(1); });
+  main().catch((err) => { console.error(redactSecrets(err?.stack || String(err))); releaseLock(); process.exit(1); });
 }
