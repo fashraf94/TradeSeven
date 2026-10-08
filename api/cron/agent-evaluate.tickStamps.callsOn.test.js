@@ -33,6 +33,12 @@ const { buildHook } = vi.hoisted(() => ({ buildHook: { throwMessage: null } }));
 // every 'on' row below exercises a battle that RESOLVES 'on'; the allowlist row
 // drives a non-allowlisted owner through the same check.
 const flagState = vi.hoisted(() => ({ callsMode: 'shadow', tickCapture: true, allow: ['owner-uid-1'] }));
+// Integrity build F1: both launch guards read the server-owned launch mode, never
+// the battle's executionMode. The proposal_pending path drives the DORMANT
+// proposal path, so it runs with the mode mocked to 'copilot'; every other row
+// runs at the launch mode.
+const authority = vi.hoisted(() => ({ mode: 'autopilot' }));
+vi.mock('../_utils/executionAuthority.js', () => ({ get LAUNCH_EXECUTION_MODE() { return authority.mode; } }));
 
 vi.mock('@anthropic-ai/sdk', () => ({
   default: class AnthropicMock { constructor() { this.messages = { create: (...args) => mocks.create(...args) }; } },
@@ -126,8 +132,10 @@ async function runTick({
   failFinalUpdate = false, swapThrows = null, onSwap = null,
   onFetch = null, onIntraday = null, newsStories = null, swapPriceOf = null,
   allowlist = ['owner-uid-1'],
+  dormantProposalPath = false,
 } = {}) {
   flagState.callsMode = mode;
+  authority.mode = dormantProposalPath ? 'copilot' : 'autopilot';
   flagState.allow = allowlist;
   flagState.tickCapture = capture;
   buildHook.throwMessage = buildThrows;
@@ -240,7 +248,7 @@ const NO_ENTRY_PATHS = {
     battle: makeTickBattle({ evaluations: [{ evalId: 'eval_1', timestamp: '2026-09-09T14:45:00.000Z', decision: 'HOLD', symbolOut: null, symbolIn: null, tier: null, rationale: 'held', hypothesis: null }] }),
     prices: flatPrices(), rankingsDoc: quietRankingsDoc(),
   }),
-  proposal_pending: () => ({ battle: makeTickBattle({ executionMode: 'copilot', pendingProposal: { proposalId: 'p1', symbolOut: 'KO', symbolIn: 'AMD', tier: 'support', slotIndex: 0, mode: 'copilot', expiresAt: '2026-09-09T23:00:00.000Z' } }) }),
+  proposal_pending: () => ({ battle: makeTickBattle({ executionMode: 'copilot', pendingProposal: { proposalId: 'p1', symbolOut: 'KO', symbolIn: 'AMD', tier: 'support', slotIndex: 0, mode: 'copilot', expiresAt: '2026-09-09T23:00:00.000Z' } }), dormantProposalPath: true }),
   gameplan_pending: () => ({ battle: makeTickBattle({ gameplanMeeting: { status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', swaps: [] } }) }),
   gameplan_created: () => ({ battle: makeTickBattle({ cronState: { ...makeTickBattle().cronState, lastGameplanDate: null } }) }),
   cpu_passive: () => ({ battle: makeTickBattle({ isCpu: true }) }),

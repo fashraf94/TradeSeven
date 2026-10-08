@@ -261,3 +261,66 @@ describe('S5 — rows the mutation lens proved', () => {
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Integrity build, Part C item 1 (founder sign-off on PR #940): at enforce the
+// executor refuses a swap on a battle that is not exactly 'active' BEFORE it
+// compares the identity, so §2 counts such a verification apart — never under
+// its verdict, never as a clean match.
+describe('Part C — a verification on an inactive battle is "enforce would refuse: battle_not_active"', () => {
+  const { _about: _statusAbout, ...STATUS_FIXTURE } = JSON.parse(readFileSync(resolve(HERE, '__fixtures__/swapIdentityCensusBattleStatus.json'), 'utf8'));
+  const result = computeSwapIdentityCensus(STATUS_FIXTURE);
+
+  it('a matching identity on a completed battle, a missing status and an absent key are each counted apart, per caller', () => {
+    expect(result.byCaller.risk.verification).toMatchObject({ present: 2, match: 0, mismatch: 0, battle_not_active: 2, symbol_and_entry: 2 });
+    expect(result.byCaller.meeting.verification).toMatchObject({ present: 1, mismatch: 0, battle_not_active: 1, symbol_only: 1 });
+    expect(result.battleNotActive).toEqual([
+      { battleId: 'b-ended', caller: 'risk', verificationId: 'b-ended:risk_stop_loss_KO_1791385200000:verify', battleStatus: 'completed', verdict: 'match' },
+      { battleId: 'b-ended', caller: 'meeting', verificationId: 'b-ended:gameplan_PG_JPM_1791385300000:verify', battleStatus: null, verdict: 'mismatch' },
+      { battleId: 'b-ended', caller: 'risk', verificationId: 'b-ended:risk_vwap_failure_NVDA_1791385400000:verify', battleStatus: null, verdict: 'match' },
+    ]);
+  });
+
+  it('a verification on an active battle still counts under its verdict; the mismatch list holds active battles only', () => {
+    expect(result.byCaller.suppression.verification).toMatchObject({ present: 1, match: 1, battle_not_active: 0 });
+    expect(result.verificationMismatches).toEqual([]);
+  });
+
+  it('the executor/census cross-check still runs on every executor verification (the inactive mismatch is a symbol mismatch, not a disagreement)', () => {
+    expect(result.disagreements).toEqual([]);
+    const planted = structuredClone(STATUS_FIXTURE);
+    planted['b-ended'].trades[1].verification.verdict = 'match'; // believed PG, committed XOM, says match
+    expect(computeSwapIdentityCensus(planted).disagreements).toHaveLength(1);
+  });
+
+  it('the report carries the column and lists the rows', () => {
+    const md = renderCensus(result);
+    expect(md).toMatch(/\| Caller \| Rows with verification \| match \| mismatch \| not_checked \| enforce would refuse: battle_not_active \|/);
+    expect(md).toMatch(/\| risk \| 2 \| 0 \| 0 \| 0 \| 2 \|/);
+    expect(md).toMatch(/\| b-ended \| risk \| b-ended:risk_stop_loss_KO_1791385200000:verify \| completed \| match \|/);
+    expect(md).toMatch(/a matching identity on an ended battle is not a clean match/);
+  });
+
+  it('the P6 fixture (every verification on an active battle) is unchanged: nothing counted apart', () => {
+    const p6 = computeSwapIdentityCensus(FIXTURE);
+    for (const caller of CALLERS) expect(p6.byCaller[caller].verification.battle_not_active, caller).toBe(0);
+    expect(p6.battleNotActive).toEqual([]);
+  });
+});
+
+// Integrity build (review I1-4 / I1-9): a launch-guard clear is never a belief, and every cell is escaped.
+describe('integrity build — the launch-guard row is no belief; cells are escaped', () => {
+  it('a launch-guard row carrying the evaluation id of the trade lends no belief (it never executed)', () => {
+    const trade = { evaluationId: 'eval_001', symbolIn: 'AMD', symbolOut: 'KO', entryMode: 'autopilot' };
+    const planted = { evaluations: [], proposalHistory: [{ evalId: 'eval_001', evaluationMetadata: { evaluationId: 'eval_001' }, symbolIn: 'AMD', symbolOut: 'PG', resolution: 'auto_executed', systemNote: 'launch_guard_clear' }] };
+    expect(beliefOfTrade(trade, planted)).toEqual({ caller: 'model', belief: null, ambiguous: false });
+    const real = { evaluations: [], proposalHistory: [{ ...planted.proposalHistory[0], systemNote: undefined }] };
+    expect(beliefOfTrade(trade, real)).toEqual({ caller: 'proposal', belief: 'PG', ambiguous: false });
+  });
+
+  it('a value with a pipe or a newline cannot break the tables of the report', () => {
+    const md = renderCensus(computeSwapIdentityCensus({ 'b|1': { trades: [{ evaluationId: 'risk_stop_loss_KO_1', symbolOut: 'A|B', symbolIn: 'AMD', swappedOutAt: '2026-10-08T15:00:00.000Z' }] } }));
+    expect(md).toMatch(/\| b\\\|1 \| risk \| risk_stop_loss_KO_1 \| KO \| A\\\|B \|/);
+    expect(md).not.toMatch(/\| b\|1 \|/);
+  });
+});

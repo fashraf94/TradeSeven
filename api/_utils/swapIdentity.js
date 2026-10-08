@@ -14,7 +14,7 @@
 //     already read (risk, model, suppression) or from the identity stored at
 //     creation (proposal `outgoingSwappedInAt`, meeting leg `swappedInAt`);
 //     a record stored without it is checked by symbol only, and says so;
-//   - the refusal record and the player lines (MODE_TRUTH_LANGUAGE_TABLES V1.1
+//   - the refusal record and the player lines (MODE_TRUTH_LANGUAGE_TABLES V1.2
 //     table F). [SYM] is ALWAYS the belief — verification.expected.symbol —
 //     never the slot's current occupant.
 
@@ -67,15 +67,30 @@ export function expectedOutOfPosition(position) {
   return { symbol: typeof position.symbol === 'string' ? position.symbol : null, swappedInAt: position.swappedInAt ?? null };
 }
 
+/** The longest symbol a stored belief may name (a ticker or a crypto pair is far shorter). */
+export const BELIEF_SYMBOL_MAX = 64;
+/** The longest entry instant a stored belief may carry (an ISO timestamp is 24). */
+export const BELIEF_INSTANT_MAX = 40;
+
 /**
  * A belief stored at creation. `record[key]` present (null included — a
  * creation-time position) → symbol AND entry instant; absent (a legacy or
  * client-written record) → symbol only. A missing symbol stays null, so the
  * executor reads it as a mismatch — a malformed belief never passes.
+ *
+ * The record is owner-writable (a pending proposal, a meeting leg), and the
+ * executor records the belief on the trade row as `verification.expected`
+ * (integrity build, review I3-1 / I1-6 / I4-4): the symbol is a string of at
+ * most BELIEF_SYMBOL_MAX, and the instant counts only as a string of at most
+ * BELIEF_INSTANT_MAX or null — anything else is treated as absent (symbol only),
+ * never carried onto the row.
  */
 export function expectedOutOfStored(symbol, record, key) {
-  const belief = { symbol: typeof symbol === 'string' && symbol ? symbol : null };
-  if (record && typeof record === 'object' && Object.hasOwn(record, key)) belief.swappedInAt = record[key] ?? null;
+  const belief = { symbol: typeof symbol === 'string' && symbol && symbol.length <= BELIEF_SYMBOL_MAX ? symbol : null };
+  if (record && typeof record === 'object' && Object.hasOwn(record, key)) {
+    const instant = record[key] ?? null;
+    if (instant === null || (typeof instant === 'string' && instant.length <= BELIEF_INSTANT_MAX)) belief.swappedInAt = instant;
+  }
   return belief;
 }
 
@@ -90,19 +105,25 @@ export function isSwapRefusal(err) {
 }
 
 /**
- * Table F (MODE_TRUTH_LANGUAGE_TABLES V1.1) — the player lines, verbatim. The
- * typed fields govern; these lines render them.
+ * Table F (MODE_TRUTH_LANGUAGE_TABLES V1.2) — the player lines, verbatim. The
+ * typed fields govern; these lines render them. V1.2 (7 Oct 2026, founder Q2 on
+ * PR #940): the profit-target line — an equipped profit target is the player's
+ * own standing order, not protection.
  */
 export const REFUSAL_LINES = Object.freeze({
   outgoing_identity_mismatch: Object.freeze({
     agent: 'The agent tried to swap [SYM] for [SYM2], but [SYM] had already left that slot. No trade was made.',
     protective: 'Protection was set to sell [SYM], but [SYM] had already left that slot. No trade was made.',
+    profit_target: 'Your profit target was set to sell [SYM], but [SYM] had already left that slot. No trade was made.',
   }),
   battle_not_active: 'This trade arrived after the battle ended. No trade was made.',
 });
 
-/** The two speakers of table F's mismatch line. */
-export const REFUSAL_KINDS = Object.freeze(['agent', 'protective']);
+/** The three speakers of table F's mismatch line. */
+export const REFUSAL_KINDS = Object.freeze(['agent', 'protective', 'profit_target']);
+
+/** The exit reason of an equipped profit-target exit (the trade's own `exitReason`, on either route). */
+export const PROFIT_TARGET_EXIT_REASON = 'guardrail_profitTarget';
 
 /**
  * The swap sources (the trade's own receipt `source`, buildSwapReceiptSource)
@@ -113,11 +134,14 @@ export const REFUSAL_KINDS = Object.freeze(['agent', 'protective']);
  * (stagnation), a proposal, a meeting leg — renders the agent line. The
  * speaker comes from the provenance the trade carries, never from which
  * caller happened to run it (review S2-1 / S4-1; BUILD_RULES §9).
+ * V1.2: an equipped PROFIT TARGET (exitReason guardrail_profitTarget) renders
+ * its own line, on the model route and the suppression pass alike.
  */
 export const PROTECTIVE_SOURCES = Object.freeze(['risk_manager', 'guardrail']);
 
-/** The table F speaker for a swap of this receipt source. */
-export function refusalKindOf(source) {
+/** The table F speaker for a swap of this receipt source and exit reason. */
+export function refusalKindOf(source, exitReason = null) {
+  if (exitReason === PROFIT_TARGET_EXIT_REASON) return 'profit_target';
   return PROTECTIVE_SOURCES.includes(source) ? 'protective' : 'agent';
 }
 
@@ -132,9 +156,10 @@ const filled = (v) => typeof v === 'string' && v.trim().length > 0;
 export function refusalLine(reason, { kind = 'agent', symbol = null, symbolIn = null } = {}) {
   if (reason === 'battle_not_active') return REFUSAL_LINES.battle_not_active;
   if (reason !== 'outgoing_identity_mismatch') return null;
-  const protective = kind === 'protective';
-  if (!filled(symbol) || (!protective && !filled(symbolIn))) return null;
-  const template = REFUSAL_LINES.outgoing_identity_mismatch[protective ? 'protective' : 'agent'];
+  // The protective and profit-target lines name only the stock that was to be sold.
+  const sellOnly = kind === 'protective' || kind === 'profit_target';
+  if (!filled(symbol) || (!sellOnly && !filled(symbolIn))) return null;
+  const template = REFUSAL_LINES.outgoing_identity_mismatch[sellOnly ? kind : 'agent'];
   return template.replaceAll('[SYM2]', symbolIn ?? '').replaceAll('[SYM]', symbol);
 }
 

@@ -42,6 +42,14 @@ const guardrailHook = vi.hoisted(() => ({ result: null, throws: null }));
 const carry = vi.hoisted(() => ({ calls: 0 }));
 /** Forces an archetype STAGNATION verdict for the named held symbols; the real evaluator runs otherwise. */
 const riskHook = vi.hoisted(() => ({ stagnant: [] }));
+/**
+ * Integrity build F1: both launch guards read the server-owned launch mode
+ * (api/_utils/executionAuthority.js), never the battle's owner-writable
+ * executionMode. The rows here that build a co-pilot battle exist to drive the
+ * DORMANT proposal paths (C3/C4), so runTick mocks the launch mode to 'copilot'
+ * for exactly those battles; every other row runs at the launch mode.
+ */
+const authority = vi.hoisted(() => ({ mode: 'autopilot' }));
 
 vi.mock('@anthropic-ai/sdk', () => ({
   default: class AnthropicMock { constructor() { this.messages = { create: (...args) => mocks.create(...args) }; } },
@@ -98,6 +106,7 @@ vi.mock('../_utils/tournamentAgentLedger.js', () => ({
   reserveSymbol: vi.fn(), confirmSwap: vi.fn(), releaseReservation: vi.fn(),
 }));
 vi.mock('../_utils/firebaseAdmin.js', () => ({ getFirebaseAdmin: () => ({}) }));
+vi.mock('../_utils/executionAuthority.js', () => ({ get LAUNCH_EXECUTION_MODE() { return authority.mode; } }));
 vi.mock('../_utils/voiceLayerAnticipation.js', async (importOriginal) => ({ ...(await importOriginal()), generateAnticipation: vi.fn(async () => null) }));
 vi.mock('../_utils/voiceLayerTradeNarration.js', async (importOriginal) => ({ ...(await importOriginal()), generateTradeNarration: vi.fn(async () => null) }));
 vi.mock('../_utils/shadowLogger.js', async (importOriginal) => ({ ...(await importOriginal()), logEvaluation: vi.fn(async () => false), logVisionTransition: vi.fn(async () => false), logAnticipation: vi.fn(async () => false) }));
@@ -156,6 +165,7 @@ const APPROVED_PROPOSAL = (overrides = {}) => ({
 const EXPIRED_PROPOSAL = (overrides = {}) => APPROVED_PROPOSAL({ resolvedAt: null, resolution: null, resolvedBy: null, ...overrides });
 
 async function runTick({ battle = makeTickBattle(), result = makeHoldResult(), prices = makePriceTable(), mutateStore = null, throwReadsAfterCommit = false } = {}) {
+  authority.mode = battle.executionMode === 'copilot' ? 'copilot' : 'autopilot'; // the dormant-path mock (header)
   mocks.getStockAnalysisData.mockImplementation(async (symbol) => (prices[symbol] ? { price: prices[symbol], daily: [] } : {}));
   mocks.fetchIntradayBatch.mockImplementation(async () => ({ NVDA: makeIntradayCandles() }));
   mocks.create.mockImplementation(async () => makeToolUseResponse(result));
@@ -369,7 +379,11 @@ describe('A8 / C3 — an approved proposal executed on a later tick', () => {
   it('enforce: the stored belief (KO, creation-time) no longer holds the slot → refused; the history row carries the typed refusal', async () => {
     flags.swapIdentity = 'enforce';
     exec.before = once(moveKoSlot);
-    const { stored, feed } = await runTick({ battle: copilot(APPROVED_PROPOSAL()) });
+    // Integrity F2: the evaluation id (and so the verification id) comes from the
+    // server's own log — the entry that decided this proposal, as the creation
+    // tick wrote it. A proposal the log does not hold gets null (proposalForgery suite).
+    const deciding = { evalId: 'eval_prev', timestamp: '2026-09-09T14:40:00.000Z', decision: 'PROPOSAL', symbolOut: 'KO', symbolIn: 'AMD', tier: 'support', rationale: 'rotate', hypothesis: 'AMD leads' };
+    const { stored, feed } = await runTick({ battle: { ...copilot(APPROVED_PROPOSAL()), evaluations: [deciding] } });
     expect(exec.calls[0][10]).toEqual({ identityMode: 'enforce', expectedOut: { symbol: 'KO', swappedInAt: null } });
     const row = stored.proposalHistory.at(-1);
     expect(row).toMatchObject({ proposalId: 'prop_001', resolution: 'approved', executionFailed: true });
@@ -851,7 +865,8 @@ describe('A11 — the creation sites store the identity (mode ≠ off only)', ()
     const literal = CRON_SOURCE.slice(CRON_SOURCE.indexOf('pendingProposalUpdate = {'), CRON_SOURCE.indexOf("decision = 'PROPOSAL';"));
     expect(literal).toMatch(/\.\.\.\(swapIdentityActive\(swapIdentityMode\)\s*\?\s*\{ outgoingSwappedInAt: storedIdentityOf\(battle\.portfolio\?\.\[validation\.resolvedTier\]\?\.\[validation\.resolvedSlotIndex\]\) \}\s*:\s*\{\}\)/);
     // The launch guard that makes it unreachable today is still in place (D6: removal belongs to the authority arc).
-    expect(CRON_SOURCE).toMatch(/if \(mode !== 'autopilot'\) \{[\s\S]{0,200}mode = 'autopilot';/);
+    // Integrity F1: it forces the server-owned launch mode, never the battle's executionMode.
+    expect(CRON_SOURCE).toMatch(/const mode = LAUNCH_EXECUTION_MODE;[\s\S]{0,200}if \(\(battle\.executionMode \|\| 'autopilot'\) !== mode\) \{/);
   });
 });
 
@@ -928,5 +943,45 @@ describe('S5-7 (hardening): at off the mode gates every record on C3–C6 too', 
     expect(exec.calls).toHaveLength(1);
     expect(stored.gameplanMeetingHistory.at(-1)).toEqual(meeting);
     expect(feed.filter((e) => e.refusalReason)).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Integrity build, Part C item 2 — table F V1.2 (founder sign-off Q2 on PR #940):
+// an equipped PROFIT TARGET whose swap is refused speaks the profit-target line —
+// on the model route (the entry's refusal record) and the suppression pass (the
+// feed beat) alike. The stops keep the protective line (S2-1 above).
+describe('V1.2 — a refused profit-target exit speaks the profit-target line on either route', () => {
+  const PROFIT_TARGET_KO = 'Your profit target was set to sell KO, but KO had already left that slot. No trade was made.';
+  const withProfitTarget = (over = {}) => makeTickBattle({
+    agentContext: { ...makeTickBattle().agentContext, deployedGuardrails: [{ type: 'profitTarget', value: 1, unit: '%', enforcement: 'hard' }] },
+    ...over,
+  });
+  const FORCED_PT = { decision: 'SWAP', symbolOut: 'KO', symbolIn: 'AMD', sourceNote: 'guardrail_profitTarget', statusMessage: 'Target hit on KO.', overrides: [] };
+
+  it('the model route: the entry\'s refusal record carries the profit-target line', async () => {
+    flags.swapIdentity = 'enforce';
+    guardrailHook.result = FORCED_PT;
+    exec.before = once(moveKoSlot);
+    const { entry } = await runTick({ battle: withProfitTarget(), result: makeHoldResult() });
+    expect(entry.guardrailSourceNote).toBe('guardrail_profitTarget');
+    expect(entry.decision).toBe('HOLD');
+    expect(entry.executionRefusal).toMatchObject({ reason: 'outgoing_identity_mismatch', line: PROFIT_TARGET_KO });
+  });
+
+  it('the suppression pass: the beat carries the profit-target line', async () => {
+    flags.swapIdentity = 'enforce';
+    guardrailHook.result = FORCED_PT;
+    exec.before = once(moveKoSlot);
+    const { feed } = await runTick({ battle: withProfitTarget({ gameplanMeeting: { status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', suggestedSwaps: [] } }) });
+    expect(feed.findLast((e) => e.action === 'risk_swap_failed')).toMatchObject({ message: PROFIT_TARGET_KO, refusalReason: 'outgoing_identity_mismatch', triggeredBy: 'guardrail_profitTarget' });
+  });
+
+  it('a refused STOP on the same routes still speaks the protective line', async () => {
+    flags.swapIdentity = 'enforce';
+    guardrailHook.result = { ...FORCED_PT, sourceNote: 'guardrail_stopLoss' };
+    exec.before = once(moveKoSlot);
+    const { feed } = await runTick({ battle: withProfitTarget({ gameplanMeeting: { status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', suggestedSwaps: [] } }) });
+    expect(feed.findLast((e) => e.action === 'risk_swap_failed').message).toBe(PROTECTIVE_KO);
   });
 });

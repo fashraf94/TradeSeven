@@ -50,6 +50,12 @@ const mocks = vi.hoisted(() => ({ getStockAnalysisData: vi.fn(), fetchIntradayBa
 const { swapMock } = vi.hoisted(() => ({ swapMock: vi.fn() }));
 const { buildHook } = vi.hoisted(() => ({ buildHook: { throwMessage: null } }));
 const flagState = vi.hoisted(() => ({ tickCapture: true }));
+// Integrity build F1: both launch guards read the server-owned launch mode, never
+// the battle's executionMode. The proposal_pending row drives the DORMANT
+// proposal path, so it runs with the mode mocked to 'copilot' (byte-identical to
+// the frozen fixture); every other row runs at the launch mode.
+const authority = vi.hoisted(() => ({ mode: 'autopilot' }));
+vi.mock('../_utils/executionAuthority.js', () => ({ get LAUNCH_EXECUTION_MODE() { return authority.mode; } }));
 
 vi.mock('@anthropic-ai/sdk', () => ({
   default: class AnthropicMock { constructor() { this.messages = { create: (...args) => mocks.create(...args) }; } },
@@ -233,6 +239,7 @@ const SCENARIOS = {
       executionMode: 'copilot',
       pendingProposal: { proposalId: 'p1', symbolOut: 'KO', symbolIn: 'AMD', tier: 'support', slotIndex: 0, mode: 'copilot', expiresAt: '2026-09-09T23:00:00.000Z' },
     }),
+    dormantProposalPath: true,
   }),
   gameplan_pending: () => ({ battle: makeTickBattle({ gameplanMeeting: { status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', swaps: [] } }) }),
   gameplan_pending_with_pass: () => ({ battle: withGuardrail({ gameplanMeeting: { status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', swaps: [] } }) }),
@@ -247,9 +254,10 @@ async function runScenario(name) {
   const {
     battle = makeTickBattle(), result = makeHoldResult(), prices = makePriceTable(), rankingsDoc = makeRankingsDoc(),
     capture = true, cronStartTime = Date.now(), modelThrows = null, modelResponse = null,
-    breakRefreshAfterSwap = false, buildThrows = null, failFinalUpdate = false,
+    breakRefreshAfterSwap = false, buildThrows = null, failFinalUpdate = false, dormantProposalPath = false,
   } = SCENARIOS[name]();
   flagState.tickCapture = capture;
+  authority.mode = dormantProposalPath ? 'copilot' : 'autopilot';
   buildHook.throwMessage = buildThrows;
   for (const get of Object.values(WRITERS)) get().mockClear();
   mocks.getStockAnalysisData.mockImplementation(async (symbol) => (prices[symbol] ? { price: prices[symbol], daily: [] } : {}));

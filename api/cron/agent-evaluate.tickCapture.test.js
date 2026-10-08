@@ -44,6 +44,12 @@ const { riskHook } = vi.hoisted(() => ({ riskHook: { lockSymbols: [] } }));
 /** Forces the tournament ledger to deny the reserve, the G1 path. */
 const { ledgerHook } = vi.hoisted(() => ({ ledgerHook: { denyReservation: null } }));
 const flagState = vi.hoisted(() => ({ tickCapture: true }));
+// Integrity build F1: both launch guards read the server-owned launch mode, never
+// the battle's executionMode. The proposal_pending exit drives the DORMANT
+// proposal path, so it runs with the mode mocked to 'copilot'; every other row
+// runs at the launch mode.
+const authority = vi.hoisted(() => ({ mode: 'autopilot' }));
+vi.mock('../_utils/executionAuthority.js', () => ({ get LAUNCH_EXECUTION_MODE() { return authority.mode; } }));
 
 vi.mock('@anthropic-ai/sdk', () => ({
   default: class AnthropicMock { constructor() { this.messages = { create: (...args) => mocks.create(...args) }; } },
@@ -184,8 +190,10 @@ async function runTick({
   swapThrows = null,
   denyReservation = null,
   db: injectedDb = null,
+  dormantProposalPath = false,
 } = {}) {
   flagState.tickCapture = capture;
+  authority.mode = dormantProposalPath ? 'copilot' : 'autopilot';
   guardrailHook.throwMessage = guardrailHook.throwMessage ?? null;
   riskHook.lockSymbols = lockSymbols ?? [];
   ledgerHook.denyReservation = denyReservation ?? null;
@@ -277,6 +285,7 @@ describe('C-8 — every exit in the Phase 0 exit map, flag OFF and ON', () => {
           executionMode: 'copilot',
           pendingProposal: { proposalId: 'p1', symbolOut: 'KO', symbolIn: 'AMD', tier: 'support', slotIndex: 0, mode: 'copilot', expiresAt: '2026-09-09T23:00:00.000Z' },
         }),
+        dormantProposalPath: true,
       }),
     },
     {

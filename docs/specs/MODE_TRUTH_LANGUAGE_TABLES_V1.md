@@ -1,6 +1,6 @@
 # Mode-Truth Language Tables — V1 (Companion 2 to the Pilot Spec)
 
-**Date:** 23 September 2026 · **Author:** Fable (per R3) · **Status:** **Blessed by founder, 24 Sep 2026** (all five tables, walked through with Fable, no edits) — the only source player-facing strings ship from. **V1.1 — 7 Oct 2026:** table F added (founder decision D5); A–E unchanged. · **Destination:** `docs/specs/`.
+**Date:** 23 September 2026 · **Author:** Fable (per R3) · **Status:** **Blessed by founder, 24 Sep 2026** (all five tables, walked through with Fable, no edits) — the only source player-facing strings ship from. **V1.1 — 7 Oct 2026:** table F added (founder decision D5); A–E unchanged. **V1.2 — 7 Oct 2026:** table F gains the profit-target line (founder sign-off Q2 on PR #940); A–E and F's other rows unchanged. · **Destination:** `docs/specs/`.
 **Scope:** BaggerBomb v1 — every player-facing sentence the agent, tiles, and Film Room use for protective outcomes, intent, hypothesis lifecycle, and evidence availability. **The typed fields govern; these lines render them.** A rendered line that claims beyond its typed fields is a loggable divergence. Placeholders in `[brackets]` are filled from the record, never invented.
 
 ## A. Protective-action outcomes (wire enum → player line)
@@ -52,9 +52,11 @@ Rule: absence of proof is stated as absence, never rendered as confidence and ne
 
 Never rendered, in any surface: **hedge, trim, partial, scale in/out, take some off, cash position, move to cash, sit in cash, wait for the market to [vague], probably/likely fine, guaranteed, can't lose** — and any claim of an action the mode cannot perform, any "chose to hold" when the hold was a block or a failure (the record's dimensions — intent, override, executed action, failure — each render as themselves), and any confidence statement without its cited facts.
 
-## F. Execution refusals (V1.1 — 7 Oct 2026)
+## F. Execution refusals (V1.1, V1.2 — 7 Oct 2026)
 
 **V1.1 — 7 Oct 2026:** table F added, wording set by founder decision D5 (Pilot P6, the swap identity check; pilot spec §7). Tables A–E are unchanged.
+
+**V1.2 — 7 Oct 2026:** the profit-target row added (founder sign-off Q2 on PR #940 — an equipped profit target is the player's own standing order, not protection, so it no longer renders "Protection was set to sell…"). The other three rows are unchanged.
 
 The executor's typed refusals: the trade reached the book after the belief it was built on stopped being true, so no trade was made. A refusal is the **failure** dimension — never a protective outcome (§A), never an intent (§B), never "chose to hold". **`[SYM]` is filled from `verification.expected.symbol`** — the stock the decision was about — **never from the slot's current occupant**; `[SYM2]` is the incoming stock the caller was placing.
 
@@ -62,8 +64,9 @@ The executor's typed refusals: the trade reached the book after the belief it wa
 |---|---|
 | `outgoing_identity_mismatch` (agent, proposal or meeting) | "The agent tried to swap [SYM] for [SYM2], but [SYM] had already left that slot. No trade was made." |
 | `outgoing_identity_mismatch` (protective) | "Protection was set to sell [SYM], but [SYM] had already left that slot. No trade was made." |
+| `outgoing_identity_mismatch` (profit target) | "Your profit target was set to sell [SYM], but [SYM] had already left that slot. No trade was made." |
 | `battle_not_active` | "This trade arrived after the battle ended. No trade was made." |
 
-Rules: the speaker follows the trade's own provenance (its receipt `source`), never the route that ran it. The **protective** line renders refusals of the deterministic exits — the risk manager's protective exits and the equipped guardrails (stop, trailing stop, profit target), on the model route and the suppression pass alike. The **agent** line renders every swap the agent itself decided — a model swap, an archetype (stagnation) exit, a proposal, a meeting leg. The server writes these lines (feed beats, history rows, the evaluation entry's refusal record) only at `SWAP_IDENTITY_MODE ≠ off`; a line whose placeholder the record cannot fill is not written. Client labels are unchanged by V1.1. None of §E's words appear.
+Rules: the speaker follows the trade's own provenance (its receipt `source`, and for the profit target its `exitReason`), never the route that ran it. The **protective** line renders refusals of the deterministic protective exits — the risk manager's protective exits and the equipped stops (stop, trailing stop), on the model route and the suppression pass alike. The **profit target** line (V1.2) renders the refusal of an equipped profit target (`exitReason: guardrail_profitTarget`), on either route. The **agent** line renders every swap the agent itself decided — a model swap, an archetype (stagnation) exit, a proposal, a meeting leg. The server writes these lines (feed beats, history rows, the evaluation entry's refusal record) only at `SWAP_IDENTITY_MODE ≠ off`; a line whose placeholder the record cannot fill is not written. Client labels are unchanged by V1.1 and V1.2. None of §E's words appear.
 
-*V1 — wording blessed by the founder 24 Sep 2026. Amendments version-bump; only the blessed version ships. V1.1 — 7 Oct 2026: table F (founder decision D5).*
+*V1 — wording blessed by the founder 24 Sep 2026. Amendments version-bump; only the blessed version ships. V1.1 — 7 Oct 2026: table F (founder decision D5). V1.2 — 7 Oct 2026: table F's profit-target line (founder sign-off Q2 on PR #940).*

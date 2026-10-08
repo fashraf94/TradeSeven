@@ -2,7 +2,7 @@
 //
 // Pilot P6 — the caller side of the swap identity check: the options the cron
 // hands the executor, the beliefs, the refusal records, and table F
-// (docs/specs/MODE_TRUTH_LANGUAGE_TABLES_V1.md, V1.1) — shipped VERBATIM (read
+// (docs/specs/MODE_TRUTH_LANGUAGE_TABLES_V1.md, V1.2) — shipped VERBATIM (read
 // from the spec file, compared byte for byte), filled only from the record,
 // and free of table E's forbidden vocabulary.
 //
@@ -16,8 +16,8 @@ import { dirname, resolve } from 'node:path';
 import { describe, it, expect, vi as viS5 } from 'vitest';
 import {
   SWAP_IDENTITY_OFF, currentSwapIdentityMode, swapIdentityActive, swapIdentityOptions,
-  expectedOutOfPosition, expectedOutOfStored, storedIdentityOf, isSwapRefusal,
-  REFUSAL_LINES, REFUSAL_KINDS, PROTECTIVE_SOURCES, refusalKindOf, refusalLine, refusalRecord, departedLegRecord, refusalFeedFields,
+  expectedOutOfPosition, expectedOutOfStored, storedIdentityOf, isSwapRefusal, BELIEF_SYMBOL_MAX, BELIEF_INSTANT_MAX,
+  REFUSAL_LINES, REFUSAL_KINDS, PROTECTIVE_SOURCES, PROFIT_TARGET_EXIT_REASON, refusalKindOf, refusalLine, refusalRecord, departedLegRecord, refusalFeedFields,
 } from './swapIdentity.js';
 import { SwapRefusalError, SWAP_REFUSAL_REASONS } from './agentSwapExecution.js';
 import { SWAP_IDENTITY_MODE } from '../../src/config/featureFlags.js';
@@ -46,13 +46,14 @@ const VERIFICATION = Object.freeze({
 const refusal = (reason = 'outgoing_identity_mismatch', verification = VERIFICATION) =>
   new SwapRefusalError(reason, verification, `Swap refused (${reason}): …`);
 
-describe('table F, verbatim (V1.1, founder decision D5)', () => {
+describe('table F, verbatim (V1.1, founder decision D5; V1.2, founder Q2 on PR #940)', () => {
   const F = tableF();
 
-  it('the spec\'s table F has exactly the three rows the server ships', () => {
+  it('the spec\'s table F has exactly the four rows the server ships', () => {
     expect(Object.keys(F)).toEqual([
       '`outgoing_identity_mismatch` (agent, proposal or meeting)',
       '`outgoing_identity_mismatch` (protective)',
+      '`outgoing_identity_mismatch` (profit target)',
       '`battle_not_active`',
     ]);
   });
@@ -60,6 +61,8 @@ describe('table F, verbatim (V1.1, founder decision D5)', () => {
   it('each shipped line equals its table row byte for byte', () => {
     expect(REFUSAL_LINES.outgoing_identity_mismatch.agent).toBe(F['`outgoing_identity_mismatch` (agent, proposal or meeting)']);
     expect(REFUSAL_LINES.outgoing_identity_mismatch.protective).toBe(F['`outgoing_identity_mismatch` (protective)']);
+    expect(REFUSAL_LINES.outgoing_identity_mismatch.profit_target).toBe(F['`outgoing_identity_mismatch` (profit target)']);
+    expect(REFUSAL_LINES.outgoing_identity_mismatch.profit_target).toBe('Your profit target was set to sell [SYM], but [SYM] had already left that slot. No trade was made.');
     expect(REFUSAL_LINES.battle_not_active).toBe(F['`battle_not_active`']);
     expect(Object.isFrozen(REFUSAL_LINES)).toBe(true);
     expect(Object.isFrozen(REFUSAL_LINES.outgoing_identity_mismatch)).toBe(true);
@@ -67,11 +70,14 @@ describe('table F, verbatim (V1.1, founder decision D5)', () => {
 
   it('the table names every reason the executor can raise, and nothing else', () => {
     expect(Object.keys(REFUSAL_LINES).sort()).toEqual([...SWAP_REFUSAL_REASONS].sort());
-    expect(REFUSAL_KINDS).toEqual(['agent', 'protective']);
+    expect(REFUSAL_KINDS).toEqual(['agent', 'protective', 'profit_target']);
+    expect(Object.keys(REFUSAL_LINES.outgoing_identity_mismatch)).toEqual(REFUSAL_KINDS);
   });
 
-  it('the V1.1 note is dated and tables A–E keep their places', () => {
+  it('the V1.1 and V1.2 notes are dated and tables A–E keep their places', () => {
     expect(TABLES).toContain('**V1.1 — 7 Oct 2026:**');
+    expect(TABLES).toContain('**V1.2 — 7 Oct 2026:** the profit-target row added');
+    expect(TABLES).toContain('**V1.2 — 7 Oct 2026:** table F gains the profit-target line');
     const order = ['## A.', '## B.', '## C.', '## D.', '## E.', '## F.'].map((h) => TABLES.indexOf(h));
     expect(order.every((i) => i > 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
@@ -86,8 +92,10 @@ describe('table E — no forbidden vocabulary in table F, filled or not', () => 
   it('the templates and every rendering', () => {
     const all = [
       REFUSAL_LINES.outgoing_identity_mismatch.agent, REFUSAL_LINES.outgoing_identity_mismatch.protective, REFUSAL_LINES.battle_not_active,
+      REFUSAL_LINES.outgoing_identity_mismatch.profit_target,
       refusalLine('outgoing_identity_mismatch', { kind: 'agent', symbol: 'KO', symbolIn: 'AMD' }),
       refusalLine('outgoing_identity_mismatch', { kind: 'protective', symbol: 'KO' }),
+      refusalLine('outgoing_identity_mismatch', { kind: 'profit_target', symbol: 'KO' }),
       refusalLine('battle_not_active'),
     ];
     const hits = all.flatMap((s) => FORBIDDEN.filter((re) => re.test(s)).map((re) => `${re} in "${s}"`));
@@ -102,6 +110,13 @@ describe('placeholders are filled from the record, never invented', () => {
     expect(refusalLine('outgoing_identity_mismatch', { kind: 'protective', symbol: 'KO', symbolIn: 'AMD' }))
       .toBe('Protection was set to sell KO, but KO had already left that slot. No trade was made.');
     expect(refusalLine('battle_not_active', { kind: 'protective' })).toBe('This trade arrived after the battle ended. No trade was made.');
+    // V1.2: the profit target names only the stock it was set to sell.
+    expect(refusalLine('outgoing_identity_mismatch', { kind: 'profit_target', symbol: 'KO', symbolIn: 'AMD' }))
+      .toBe('Your profit target was set to sell KO, but KO had already left that slot. No trade was made.');
+    expect(refusalLine('outgoing_identity_mismatch', { kind: 'profit_target', symbol: 'KO', symbolIn: null }))
+      .toBe('Your profit target was set to sell KO, but KO had already left that slot. No trade was made.');
+    expect(refusalLine('outgoing_identity_mismatch', { kind: 'profit_target', symbol: null })).toBeNull();
+    expect(refusalLine('battle_not_active', { kind: 'profit_target' })).toBe('This trade arrived after the battle ended. No trade was made.');
   });
 
   it('a missing value → null (no line), never a blank or a guess', () => {
@@ -150,10 +165,22 @@ describe('the refusal records', () => {
   it('the speaker follows the trade\'s provenance (its receipt source), never the route that ran it (review S2-1 / S4-1)', () => {
     expect(PROTECTIVE_SOURCES).toEqual(['risk_manager', 'guardrail']);
     expect(refusalKindOf('risk_manager')).toBe('protective');
-    expect(refusalKindOf('guardrail')).toBe('protective'); // an equipped stop, trailing stop or profit target — model route or suppression pass
+    expect(refusalKindOf('guardrail')).toBe('protective'); // an equipped stop or trailing stop — model route or suppression pass (a profit target passes its exitReason: the V1.2 row below)
     for (const source of ['haiku', 'archetype', 'gameplan_meeting', 'proposal_system', undefined, null]) {
       expect(refusalKindOf(source)).toBe('agent');
     }
+  });
+
+  it('V1.2: an equipped profit target (its exitReason) speaks the profit-target line; the stops stay protective', () => {
+    expect(PROFIT_TARGET_EXIT_REASON).toBe('guardrail_profitTarget');
+    expect(refusalKindOf('guardrail', 'guardrail_profitTarget')).toBe('profit_target');
+    for (const reason of ['guardrail_stopLoss', 'guardrail_trailingStop', null, undefined]) {
+      expect(refusalKindOf('guardrail', reason)).toBe('protective');
+    }
+    expect(refusalKindOf('risk_manager', 'stop_loss')).toBe('protective');
+    expect(refusalKindOf('haiku', 'haiku_decision')).toBe('agent');
+    expect(refusalFeedFields(refusal(), { kind: refusalKindOf('guardrail', 'guardrail_profitTarget') }).message)
+      .toBe('Your profit target was set to sell KO, but KO had already left that slot. No trade was made.');
   });
 
   it('isSwapRefusal: only the executor\'s typed refusal (a reason it can raise, with its verification)', () => {
@@ -205,6 +232,16 @@ describe('the beliefs', () => {
     expect(expectedOutOfStored(undefined, { swappedInAt: null }, 'swappedInAt')).toEqual({ symbol: null, swappedInAt: null }); // a malformed record never passes
   });
 
+  it('integrity build (review I3-1 / I1-6): a stored belief is type-checked — the instant only as a string ≤ 40 or null, the symbol only as a string ≤ 64; anything else is dropped (symbol only), never carried onto the row', () => {
+    for (const planted of [9999, { lockedPoints: 9999 }, 'S'.repeat(BELIEF_INSTANT_MAX + 1), true, ['x']]) {
+      expect(expectedOutOfStored('KO', { swappedInAt: planted }, 'swappedInAt'), JSON.stringify(planted).slice(0, 20)).toEqual({ symbol: 'KO' });
+    }
+    expect(expectedOutOfStored('KO', { swappedInAt: 'S'.repeat(BELIEF_INSTANT_MAX) }, 'swappedInAt')).toEqual({ symbol: 'KO', swappedInAt: 'S'.repeat(BELIEF_INSTANT_MAX) });
+    expect(expectedOutOfStored('K'.repeat(BELIEF_SYMBOL_MAX + 1), { swappedInAt: null }, 'swappedInAt')).toEqual({ symbol: null, swappedInAt: null });
+    expect(expectedOutOfStored('K'.repeat(BELIEF_SYMBOL_MAX), {}, 'swappedInAt')).toEqual({ symbol: 'K'.repeat(BELIEF_SYMBOL_MAX) });
+    expect([BELIEF_SYMBOL_MAX, BELIEF_INSTANT_MAX]).toEqual([64, 40]);
+  });
+
   it('what a creation site stores: the entry instant of the position it read, null for a creation-time one', () => {
     expect(storedIdentityOf({ symbol: 'KO', swappedInAt: '2026-10-07T14:00:00.000Z' })).toBe('2026-10-07T14:00:00.000Z');
     expect(storedIdentityOf({ symbol: 'NVDA' })).toBeNull();
@@ -232,6 +269,15 @@ describe('S5 — rows the mutation lens proved', () => {
     } finally {
       viS5.doUnmock('../../src/config/featureFlags.js');
       viS5.resetModules();
+    }
+  });
+});
+
+// ── I5 (mutation lens) proposed rows ─────────────────────────────────────────
+describe('I5 — mutation-lens rows', () => {
+  it('I5-F: a stored belief symbol is a string — an array or a length-bearing object names no symbol', () => {
+    for (const planted of [['KO'], { length: 2 }]) {
+      expect(expectedOutOfStored(planted, { outgoingSwappedInAt: null }, 'outgoingSwappedInAt')).toEqual({ symbol: null, swappedInAt: null });
     }
   });
 });

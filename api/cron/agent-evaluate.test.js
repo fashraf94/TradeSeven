@@ -135,8 +135,8 @@ describe('agent-evaluate cron — Phase 4 technical snapshot writes', () => {
     // 6 call sites total in agent-evaluate.js:
     //   - autopilot direct                (in scope: snapshot built inline, passed)
     //   - risk-triggered swap             (in scope: snapshot built inline, passed)
-    //   - copilot-approved-execute        (in scope: forwards proposal.snapshot)
-    //   - copilot-expired-auto-execute    (in scope: forwards proposal.snapshot)
+    //   - copilot-approved-execute        (integrity F2: passes null — the stored snapshot is owner-writable)
+    //   - copilot-expired-auto-execute    (integrity F2: passes null — the stored snapshot is owner-writable)
     //   - gameplan-rotation               (out of scope per Phase 4 plan)
     //   - R11 suppression pass            (in scope: snapshot built inline, passed — Ask 3)
     // Pilot P6 (spec §7) moved this pin: the snapshot is still the 10th
@@ -145,21 +145,23 @@ describe('agent-evaluate cron — Phase 4 technical snapshot writes', () => {
     // its pre-P6 ten arguments there (the off goldens record every argument).
     // Matched on the code with line comments removed.
     const code = source.replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
-    const inScopeSites = code.match(/executeSwapServer\([\s\S]+?(snapshot|proposal\.snapshot \|\| null),\s*\.\.\.swapIdentityOptions\(swapIdentityMode, expectedOut\w+\([^\n]*\)\)\s*\)/g) || [];
+    const inScopeSites = code.match(/executeSwapServer\([\s\S]+?(snapshot|null),\s*\.\.\.swapIdentityOptions\(swapIdentityMode, expectedOut\w+\([^\n]*\)\)\s*\)/g) || [];
     expect(inScopeSites.length).toBe(5);
     // The gameplan rotation passes no snapshot (nine arguments): its options
     // are padded into the eleventh place, the snapshot's own default in the tenth.
-    const gameplanSites = code.match(/evaluationId: gameplanEvalId \},\s*\.\.\.swapIdentityOptions\(swapIdentityMode, expectedOutOfStored\(swap\.symbolOut, swap, 'swappedInAt'\), \{ padSnapshot: true \}\)\s*\)/g) || [];
+    const gameplanSites = code.match(/evaluationId: gameplanEvalId \}\),\s*\.\.\.swapIdentityOptions\(swapIdentityMode, expectedOutOfStored\(swap\.symbolOut, swap, 'swappedInAt'\), \{ padSnapshot: true \}\)\s*\)/g) || [];
     expect(gameplanSites.length).toBe(1);
     // One options spread per call site — every one of the six hands the executor its belief.
     expect((code.match(/\.\.\.swapIdentityOptions\(swapIdentityMode, /g) || []).length).toBe(6);
     expect((code.match(/await executeSwapServer\(/g) || []).length).toBe(6);
   });
 
-  it('forwards proposal.snapshot through the copilot-approved and expired-auto-execute paths', () => {
-    const forwardingPattern = /proposal\.snapshot \|\| null/g;
-    const matches = source.match(forwardingPattern) || [];
-    expect(matches.length).toBe(2);
+  it('integrity F2: the copilot-approved and expired-auto-execute paths never forward the stored proposal.snapshot (owner-writable numbers) — they pass null', () => {
+    // Before the integrity build both paths forwarded `proposal.snapshot || null`
+    // onto trades[i].snapshot; the proposal is owner-writable, so a planted
+    // snapshot's numbers landed on the trade row.
+    expect(source).not.toMatch(/proposal\.snapshot \|\| null/);
+    expect((source.match(/null, \/\/ F2: the stored snapshot is owner-writable — never a trade row's numbers/g) || []).length).toBe(2);
   });
 
   it('threads currentScore into handlePendingProposal and captures scoreAtVeto / scoreAtResolution', () => {
@@ -517,7 +519,9 @@ describe('agent-evaluate cron — Corpus Capture Patch W1/W2 L1 capture wiring',
     // gameplan class
     expect(joined).toMatch(/source: 'gameplan_meeting',\s*\n\s*exitReason: 'gameplan_rotation',/);
     // proposal class ×2 (approved + expired): source haiku, exitReason from metadata
-    const proposalPairs = joined.match(/source: 'haiku',\s*\n\s*exitReason: proposal\.evaluationMetadata\?\.exitReason \?\? 'haiku_decision',/g) || [];
+    // Integrity F2 (review I2-1): the exit reason is the row's own — the stored one is owner-writable.
+    const proposalPairs = joined.match(/source: 'haiku',\s*\n\s*exitReason: 'haiku_decision',/g) || [];
+    expect(joined).not.toMatch(/proposal\.evaluationMetadata\?\.exitReason/);
     expect(proposalPairs.length).toBe(2);
     // R11 suppression-pass class (Ask 3): source guardrail, exitReason from the
     // guardrail sourceNote — a member of the closed enum by construction.
@@ -530,21 +534,27 @@ describe('agent-evaluate cron — Corpus Capture Patch W1/W2 L1 capture wiring',
     expect(isolations.length).toBe(6);
   });
 
-  it('flag #4 hardening (#5 per-key merge): both proposal metadata fallbacks synthesize the floor then let present keys override — no truthy-{} bypass', () => {
+  it('flag #4 hardening: both proposal metadata fallbacks keep the synthesized floor — and (integrity F2) the stored metadata can no longer override it', () => {
     // #5 (adversarial review): a whole-object `|| {}` fallback is bypassed by a
-    // truthy empty/partial metadata object. The fix spreads the synthesized
-    // floor FIRST and merges `...(proposal.evaluationMetadata || {})` LAST.
+    // truthy empty/partial metadata object, so the synthesized floor is always
+    // spread. The #5 per-key merge then let `...(proposal.evaluationMetadata || {})`
+    // override it LAST — and the proposal is owner-writable, so a planted
+    // `lockedPoints` / price / symbol landed on the trade row (integrity build
+    // Part A). F2: only the stored metadata's descriptive strings ride, capped
+    // (`...proposalDescriptiveMetadata(proposal),`); the server supplies the ids
+    // and the day after them.
     expect(source).not.toMatch(/proposal\.evaluationMetadata \|\| \{\},/); // no whole-object fallback
+    expect(source).not.toMatch(/\.\.\.\(proposal\.evaluationMetadata \|\| \{\}\)/); // no raw merge
     const floors = source.match(/\.\.\.buildSwapReceiptSource\(\{ source: 'haiku', archetype: null \}\)/g) || [];
     expect(floors.length).toBe(2); // the two proposal-execution fallbacks (archetype:null variant)
-    const mergeTails = source.match(/\.\.\.\(proposal\.evaluationMetadata \|\| \{\}\),/g) || [];
-    expect(mergeTails.length).toBe(2); // present keys override the floor at both sites
+    const descriptiveTails = source.match(/\.\.\.proposalDescriptiveMetadata\(proposal\),/g) || [];
+    expect(descriptiveTails.length).toBe(2);
     // Tripwire restore: the fallback objects must NOT absorb a §14 dial-
     // provenance spread (the tempo-dial suite's 4-count would otherwise still
     // pass if one migrated off an origin path into a fallback object). Each
-    // merged fallback spans from its floor spread to its merge tail.
+    // fallback spans from its floor spread to its descriptive tail.
     const spans = source.split(/\.\.\.buildSwapReceiptSource\(\{ source: 'haiku', archetype: null \}\)/).slice(1)
-      .map(s => s.slice(0, s.indexOf('...(proposal.evaluationMetadata || {}),')));
+      .map(s => s.slice(0, s.indexOf('...proposalDescriptiveMetadata(proposal),')));
     expect(spans.length).toBe(2);
     for (const span of spans) {
       expect(span).not.toContain('buildSwapProvenance');
@@ -653,8 +663,9 @@ describe('agent-evaluate cron — adversarial-review fixes (#3/#8/#9/#10)', () =
     expect(classifierCalls.length).toBe(6); // 5 new + 1 autopilot
   });
 
-  it('#9: both proposal captures pass decisionAtMs = proposal.createdAt (predicate instant ≠ execution timestamp)', () => {
-    const overrides = source.match(/decisionAtMs: proposal\.createdAt \?\? null,/g) || [];
+  it('#9: both proposal captures pass a decision instant ≠ the execution timestamp — integrity F2: the server\'s own (the deciding evaluation entry), never the owner-writable proposal.createdAt', () => {
+    expect(source).not.toMatch(/decisionAtMs: proposal\.createdAt/);
+    const overrides = source.match(/decisionAtMs: serverDecision\?\.timestamp \?\? null,/g) || [];
     expect(overrides.length).toBe(2);
     // receipt.timestamp stays the execution instant at both proposal sites.
     expect(source).toMatch(/timestamp: approvedSwapResult\.closedTrade\?\.swappedOutAt \|\| null,/);
