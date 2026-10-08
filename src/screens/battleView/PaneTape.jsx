@@ -39,6 +39,7 @@ import { cssVar } from '../../theme/cssTokens';
 import { TAPE_KIND } from './buildTape';
 import { TradeCard } from './TapeCards';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
+import { feedBeatWithoutLine } from '../../data/decisionRecord';
 
 const mono = {
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
@@ -85,7 +86,10 @@ export default function PaneTape({
     const matched = [];
     feed.forEach((entry, index) => {
       const id = entryIdOf(entry, index);
-      if (set.has(id)) matched.push({ id, entry });
+      // Table G (V1.4): an unconfirmed beat with no line is never a row —
+      // the log does not render it, and `No details available` beside it
+      // would be a card for a beat that says nothing.
+      if (set.has(id) && !feedBeatWithoutLine(entry)) matched.push({ id, entry });
     });
     return matched.reverse(); // newest first, as the shipped view orders them
   }, [feedBookmarks, statusFeed]);

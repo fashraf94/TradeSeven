@@ -43,7 +43,7 @@ import { BAGGER_TIERS } from '../../constants/baggerBombScoring';
 // The persisted record's SHARED renderer (BUILD_RULES §9) — the same functions
 // the Battle View's check card and the narrator's YOUR RECORD block render a
 // check through, so this pane cannot show one check a second way.
-import { renderMotive, renderHypothesis, HYPOTHESIS_LABEL } from '../../data/decisionRecord';
+import { renderMotive, renderHypothesis, HYPOTHESIS_LABEL, feedBeatWithoutLine } from '../../data/decisionRecord';
 
 const PRICE_POLL_INTERVAL = 60000;
 const FEED_LIMIT = 8;
@@ -190,7 +190,11 @@ export default function Flat6BattleView({
   const scoreColor = scorePositive ? tokens.emerald : tokens.red;
 
   const doubleDowns = ctx.tournament?.doubleDownSymbols || [];
-  const feed = (battle.statusFeed || []).slice(-FEED_LIMIT).reverse();
+  // Table G (V1.4): a beat whose outcome could not be confirmed and that has
+  // no line of its own is not a line here — the fallback below printed its
+  // raw action (`risk_swap_failed`), to the owner and spectators alike.
+  // Dropped before the window, so it never costs a visible line.
+  const feed = (battle.statusFeed || []).filter((e) => !feedBeatWithoutLine(e)).slice(-FEED_LIMIT).reverse();
 
   // WHY visibility: concealed server-side for non-owner active reads
   // (_whyConcealed). Otherwise the reasoning is present (owner live, or anyone

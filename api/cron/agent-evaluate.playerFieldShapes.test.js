@@ -185,10 +185,10 @@ describe('what the malformed values become', () => {
     expect(stored.gameplanMeetingHistory[0]).toEqual(prior[0]);
   });
 
-  it('an inherited-name preset trades on the balanced table and stamps the capped label', async () => {
+  it('an inherited-name preset trades on the balanced table and stamps the preset that governed (enforce readiness, Q4 — was the capped label)', async () => {
     const { stored } = await runTick(makeTickBattle({ ...BATTLE_FOR.suggestedSwaps([{ symbolOut: 'KO', symbolIn: 'AMD', rationale: 'r' }]), strategyPreset: 'constructor' }));
     expect(stored.trades).toHaveLength(1);
-    expect(stored.trades[0].entryPreset).toBe('constructor'); // a capped string label — the TABLE was balanced
+    expect(stored.trades[0].entryPreset).toBe('balanced'); // the TABLE was balanced, and so is the label now
   });
 
   it('a meeting that is not an object reads as no meeting: the server may create a real one over it', async () => {

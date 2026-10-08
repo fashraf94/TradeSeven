@@ -52,6 +52,10 @@ const LABEL_COLOR = {
   // a swap that did not go through — so it wears the same colour; only the
   // subject of the sentence differs (the guardrail, not the agent).
   [WHY_KIND.GUARDRAIL_FAILED]: cssVar('amber'),
+  // Table G (V1.4): an outcome that could not be confirmed is neither a swap
+  // nor a hold, so it wears the not-as-argued colour, never teal.
+  [WHY_KIND.UNCONFIRMED]: cssVar('amber'),
+  [WHY_KIND.GUARDRAIL_UNCONFIRMED]: cssVar('amber'),
   [WHY_KIND.SWAPPED]: cssVar('teal'),
   [WHY_KIND.HELD]: cssVar('text-secondary'),
   [WHY_KIND.ABSENT]: cssVar('text-muted'),

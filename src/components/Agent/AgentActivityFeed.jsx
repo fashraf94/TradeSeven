@@ -19,7 +19,7 @@ import GameplanMeetingCard from './GameplanMeetingCard';
 // key, so `regime: 'constructor'` resolved to a function and threw in
 // `hexToRgba` before any fallback could fire. The accessor tests the closed
 // list, so the feeds and the Why? panel now agree on which tokens are ruled.
-import { regimeLabel } from '../../data/decisionRecord';
+import { regimeLabel, feedBeatUnconfirmed, feedBeatWithoutLine } from '../../data/decisionRecord';
 
 // ── Label Maps (strategy + colours; regime is shared) ─────────────────────────
 
@@ -110,7 +110,10 @@ function getEntryTier(entry) {
 
 function getEntryConfig(entry, tokens) {
   const type = entry.type;
-  const action = entry.action;
+  // Table G (V1.4): a beat whose outcome could not be confirmed names no
+  // outcome — its action ('hold') is not a word this card may say, so it
+  // takes the neutral label below.
+  const action = feedBeatUnconfirmed(entry) ? null : entry.action;
 
   // Type-based config (preferred)
   if (type) {
@@ -656,11 +659,13 @@ const AgentActivityFeed = ({
   // Reverse feed: newest first. Exclude trade_narration entries — they
   // are rendered as Gemma chat messages in AgentChat. Showing them as
   // generic 'Update' cards here too duplicates content next to the
-  // existing swap row.
+  // existing swap row. Table G (V1.4): an unconfirmed beat with no line of
+  // its own (the risk loop's / R11 pass's `message: null`) is not rendered —
+  // it was an 'Update' card with no body.
   const reversedFeed = useMemo(() =>
     [...statusFeed]
       .reverse()
-      .filter(e => (e.message || e.action || e.type) && e.action !== 'trade_narration'),
+      .filter(e => (e.message || e.action || e.type) && e.action !== 'trade_narration' && !feedBeatWithoutLine(e)),
     [statusFeed]
   );
 

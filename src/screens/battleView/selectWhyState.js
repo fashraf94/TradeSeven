@@ -7,7 +7,9 @@
 // join in deriveTurnLine.js — applied again here, so a caller that hands in a
 // stale entry still gets the absence state). `rationale` is rendered verbatim.
 //
-// THE ORDER OF THE BRANCHES IS THE RULE (hazard 2, Phase 0 V2 §Q1): seven
+// THE ORDER OF THE BRANCHES IS THE RULE (hazard 2, Phase 0 V2 §Q1). One
+// state precedes it: an entry whose outcome could not be confirmed (table G —
+// see the branch). Then: seven
 // sites in agent-evaluate.js downgrade a SWAP to HOLD without rewriting the
 // rationale, so an entry with `downgraded === true` carries a swap argument
 // under a HOLD decision. Rendering that rationale under "Held" would put the
@@ -33,11 +35,13 @@ import {
   GUARDRAIL_FORCED_EXIT,
   guardrailForcedExit,
   renderMotive,
+  executionOutcomeUnconfirmed,
 } from '../../data/decisionRecord';
 
 export {
   SWAP_FAILED_PREFIX, ENGINE_MOTIVE_PREFIXES, TEXT_DECIDES_SOURCES, isEngineAuthoredMotive,
   GUARDRAIL_SOURCE_PREFIX, GUARDRAIL_FORCED_EXIT, guardrailForcedExit, renderMotive,
+  executionOutcomeUnconfirmed,
 };
 
 export const WHY_KIND = Object.freeze({
@@ -45,6 +49,9 @@ export const WHY_KIND = Object.freeze({
   DOWNGRADED: 'downgraded',
   FAILED: 'failed',
   GUARDRAIL_FAILED: 'guardrailFailed',
+  // Table G (V1.4): the executor threw and its read-back failed.
+  UNCONFIRMED: 'unconfirmed',
+  GUARDRAIL_UNCONFIRMED: 'guardrailUnconfirmed',
   HELD: 'held',
   SWAPPED: 'swapped',
 });
@@ -157,6 +164,35 @@ export function selectWhyState(evaluation, symbol, lastScoredAt) {
   // "whose words" from a string this module has already rewritten is the
   // drift BUILD_RULES §9 exists to forbid, so it does not.
   const rationale = renderMotive(evaluation.rationale);
+
+  // AN OUTCOME THAT COULD NOT BE CONFIRMED comes before every decision state
+  // (table G, V1.4 — founder decision Q3, option (a)). The cron stamps
+  // `executionOutcome: 'unknown'` when the executor threw and its own fresh
+  // read of the battle failed (integrity follow-up 2, Part D): the entry is a
+  // downgraded HOLD WITHOUT the thrown-swap prefix, so the branches below
+  // would call it `held by a guardrail` — or, guardrail-forced, `it did not go
+  // through`. Neither is known. Checked ahead of `downgraded` rather than
+  // inside it, so no state below — `Held` and `Swapped` included — can ever
+  // render for a marked entry. The subject follows the D-70 gate exactly as
+  // the fourth and fifth states do; the footer names only whose words follow
+  // (the one motive-author rule, read from the RAW rationale), because the
+  // other footers' outcome clauses are unproven here.
+  if (executionOutcomeUnconfirmed(evaluation)) {
+    const forcedExit = guardrailForcedExit(evaluation);
+    const author = isEngineAuthoredMotive(evaluation.rationale) ? COPY.motiveSystem : COPY.motiveAgent;
+    if (forcedExit) {
+      return {
+        ...base,
+        kind: WHY_KIND.GUARDRAIL_UNCONFIRMED,
+        label: COPY.guardrailForcedUnconfirmedLabel,
+        rationale,
+        footer: author,
+        symbolOut: cleanText(forcedExit.symbol),
+        symbolIn: cleanText(forcedExit.replacementSymbol),
+      };
+    }
+    return { ...base, kind: WHY_KIND.UNCONFIRMED, label: COPY.unconfirmedLabel, rationale, footer: author };
+  }
 
   // Downgraded FIRST — see the header. Two reasons carry the same flag
   // (D-66): a thrown executeSwapServer stamps `validationErrors[0]` with the

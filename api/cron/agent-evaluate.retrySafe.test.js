@@ -598,3 +598,45 @@ describe('K5 — C6: a refresh that comes back with NO document is no read (M5-2
     expect(legs[1]).toMatchObject({ executionOutcome: 'not_run' });
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enforce readiness (table G, V1.4): the model route's OWN status beat on a
+// check whose outcome could not be confirmed is `action: 'hold'` with the
+// model's words — it now carries the entry's marker, so no client reads that
+// `hold` as a hold anyone can vouch for (the Why? panel says "its outcome could
+// not be confirmed" for the same check; BUILD_RULES §9). The key is absent on
+// every other beat, so every other record keeps its bytes.
+describe('enforce readiness — the model route’s status beat carries the entry’s marker, and only on an unknown outcome', () => {
+  const statusBeat = (r) => r.feed.find((e) => e.source === 'haiku' && e.evalId === r.entry?.evalId) ?? null;
+  for (const mode of ['off', 'shadow', 'enforce']) {
+    it(`${mode}: unknown → the beat keeps the model's words and carries \`executionOutcome: 'unknown'\``, async () => {
+      flags.swapIdentity = mode;
+      exec.mode = 'ambiguous';
+      exec.failReadAfterThrow = true;
+      const r = await runTick({ battle: makeTickBattle(), result: makeSwapResult() });
+      expect(r.entry.executionOutcome).toBe('unknown');
+      const beat = statusBeat(r);
+      expect(beat, 'the model route wrote its status beat').not.toBeNull();
+      expect(beat).toMatchObject({ action: 'hold', message: makeSwapResult().status_feed_update, executionOutcome: 'unknown' });
+    });
+
+    it(`${mode}: a trade read back as landed → no marker key on the beat`, async () => {
+      flags.swapIdentity = mode;
+      exec.mode = 'ambiguous';
+      const landed = await runTick({ battle: makeTickBattle(), result: makeSwapResult() });
+      expect(landed.entry.decision).toBe('SWAP');
+      expect(statusBeat(landed)).not.toBeNull();
+      expect(statusBeat(landed)).not.toHaveProperty('executionOutcome');
+    });
+
+    it(`${mode}: a real failure (nothing committed) → the thrown-swap prefix, and no marker key on the beat`, async () => {
+      flags.swapIdentity = mode;
+      exec.mode = 'refuse';
+      exec.refusal = new Error('Asset no longer available in slot');
+      const failed = await runTick({ battle: makeTickBattle(), result: makeSwapResult() });
+      expect(failed.entry.validationErrors[0]).toMatch(/^Swap execution failed/);
+      expect(statusBeat(failed)).not.toBeNull();
+      expect(statusBeat(failed)).not.toHaveProperty('executionOutcome');
+    });
+  }
+});

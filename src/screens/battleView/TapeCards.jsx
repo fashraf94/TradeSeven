@@ -63,6 +63,8 @@ export const LABEL_COLOR = {
   [WHY_KIND.DOWNGRADED]: cssVar('amber'),
   [WHY_KIND.FAILED]: cssVar('amber'),
   [WHY_KIND.GUARDRAIL_FAILED]: cssVar('amber'),
+  [WHY_KIND.UNCONFIRMED]: cssVar('amber'),
+  [WHY_KIND.GUARDRAIL_UNCONFIRMED]: cssVar('amber'),
   [WHY_KIND.SWAPPED]: cssVar('teal'),
   [WHY_KIND.HELD]: cssVar('text-secondary'),
   [WHY_KIND.ABSENT]: cssVar('text-muted'),

@@ -69,7 +69,7 @@ import { proposalHistoryBase, launchGuardRecord, meetingHistoryBase } from '../_
 // read of an owner-writable field through a reader that type-checks it;
 // Part D — the fresh read after an executor throw (a trade that landed is
 // never recorded as refused or failed).
-import { serverMeetingCopy, meetingCopyOf, meetingMatchesCopy, planApprovedLegs, heldLegRecord, meetingWaitUntilMs, HELD_LEG_RECORD_MAX, LEG_NOT_RUN } from '../_utils/meetingCopy.js';
+import { serverMeetingCopy, meetingCopyOf, meetingMatchesCopy, planApprovedLegs, heldLegRecord, legRationaleSource, meetingWaitUntilMs, HELD_LEG_RECORD_MAX, LEG_NOT_RUN } from '../_utils/meetingCopy.js';
 import { presetKeyOf, meetingOf, meetingLegsOf, historyListOf } from '../_utils/playerFieldReaders.js';
 import { executorCallOf, swapResultAfterThrow, executionOutcomeOf, executionOutcomeUnknown, landedAfterErrorOf, landedAfterErrorFields, EXECUTION_OUTCOME_UNKNOWN, EXECUTION_NOT_LANDED } from '../_utils/landedTrade.js';
 // P2 League Tournament — agent-market exclusivity (Spec §1.2). Every use is
@@ -1980,9 +1980,11 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         // everything else here is a protective risk-manager exit. EXACT same mapping
         // as the statusFeed push below.
         const swapSource = riskResult.reason === 'stagnation' ? 'archetype' : 'risk_manager';
-        // F2: built through the allowlist; the battle's preset is
-        // owner-writable, so it reaches the row only as a capped string. The
-        // mode is the one that governed (integrity follow-up 2, Q4).
+        // F2: built through the allowlist. The preset and the mode are the
+        // ones that governed: `presetKeyOf` — the key of the server's preset
+        // table this check ran under, 'balanced' for a malformed or unknown
+        // value (enforce readiness, founder Q4) — and the launch mode
+        // (integrity follow-up 2, Q4).
         const evaluationMetadata = executorMetadata({
           id: riskTradeId,
           action: 'SWAP',
@@ -2000,7 +2002,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           entryRegime: stockRegimes[score.symbol] || null,
           entryMarketPosture: marketPosture,
           entryConviction: 0,
-          entryPreset: clientToken(battle.strategyPreset) || 'balanced',
+          entryPreset: presetKeyOf(battle.strategyPreset),
           entryMode: LAUNCH_EXECUTION_MODE,
           exitReason: riskResult.reason,
           ...buildSwapReceiptSource({ source: swapSource, archetype: ctx.archetype }),
@@ -3597,8 +3599,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             // source:'haiku'. haikuSwapReason's only non-'haiku_decision' values are
             // the two guardrail_* reasons (computed above).
             const swapSource = haikuSwapReason === 'haiku_decision' ? 'haiku' : 'guardrail';
-            // F2: built through the allowlist (the preset as a capped string; the
-            // mode is the one that governed — integrity follow-up 2, Q4).
+            // F2: built through the allowlist (the preset and the mode are the
+            // ones that governed — enforce readiness and integrity follow-up 2, Q4).
             const evaluationMetadata = executorMetadata({
               id: `trade_${String((battle.scoreState?.tradeCount || 0) + 1).padStart(3, '0')}`,
               action: 'SWAP',
@@ -3610,7 +3612,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
               entryRegime: stockRegimes[haikuResult.symbolOut] || null,
               entryMarketPosture: marketPosture,
               entryConviction: haikuResult.conviction || 0,
-              entryPreset: clientToken(battle.strategyPreset) || 'balanced',
+              entryPreset: presetKeyOf(battle.strategyPreset),
               entryMode: LAUNCH_EXECUTION_MODE,
               // §3.1 A2: guardrail-forced swaps stamp their true guardrail_* reason
               // (computed above), so trades[].exitReason carries the protective
@@ -4072,6 +4074,12 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         directiveThreadId: haikuResult?.directiveThreadId || null,
         // Phase 8: structured reasoning for the Game Tape / Film Room UI.
         trade_reasoning: haikuResult?.trade_reasoning || null,
+        // Enforce readiness (table G, V1.4): the check's swap outcome could
+        // not be confirmed (Part D), so this beat's `hold` is the record's
+        // placeholder, not a hold anyone can vouch for — the beat carries the
+        // entry's marker, and no client renders an outcome word for it. Absent
+        // otherwise, so every other beat keeps its keys.
+        ...(executionOutcome ? { executionOutcome } : {}),
       });
     }
 
@@ -5055,7 +5063,7 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
               // Follow-up 2 (Q4): `entryMode` is the mode that governed.
               freshPrices, executorMetadata({
                 ...buildSwapReceiptSource({ source: 'haiku', archetype: null }),
-                entryPreset: clientToken(battle.strategyPreset) || 'balanced',
+                entryPreset: presetKeyOf(battle.strategyPreset),
                 entryMode: LAUNCH_EXECUTION_MODE,
                 exitReason: 'haiku_decision',
                 ...proposalDescriptiveMetadata(proposal),
@@ -5326,7 +5334,7 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
             // (Q4): `entryMode` is the mode that governed.
             freshPrices, executorMetadata({
               ...buildSwapReceiptSource({ source: 'haiku', archetype: null }),
-              entryPreset: clientToken(battle.strategyPreset) || 'balanced',
+              entryPreset: presetKeyOf(battle.strategyPreset),
               entryMode: LAUNCH_EXECUTION_MODE,
               exitReason: 'haiku_decision',
               ...proposalDescriptiveMetadata(proposal),
@@ -5708,8 +5716,8 @@ export async function runSuppressionDeterministicPass({
     }
 
     // F3 provenance purity: constructed from scratch — nothing model-side.
-    // Integrity F2: through the allowlist (the preset as a capped string; the
-    // mode is the one that governed — follow-up 2, Q4).
+    // Integrity F2: through the allowlist (the preset and the mode are the
+    // ones that governed — enforce readiness and follow-up 2, Q4).
     const evaluationMetadata = executorMetadata({
       id: `trade_${String((battle.scoreState?.tradeCount || 0) + 1).padStart(3, '0')}`,
       action: 'SWAP',
@@ -5721,7 +5729,7 @@ export async function runSuppressionDeterministicPass({
       entryRegime: stockRegimes[deterministicResult.symbolOut] || null,
       entryMarketPosture: marketPosture,
       entryConviction: 0,
-      entryPreset: clientToken(battle.strategyPreset) || 'balanced',
+      entryPreset: presetKeyOf(battle.strategyPreset),
       entryMode: LAUNCH_EXECUTION_MODE,
       exitReason: deterministicExitReason,
       swapMotive: null,
@@ -6120,10 +6128,12 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
         const l1GameplanOutgoingPosition = LEARNING_L1_CAPTURE_ENABLED && LEARNING_L1_CAPTURE_EXPANSION_ENABLED
           ? (battle.portfolio?.[slot.tier]?.[slot.slotIndex] || null)
           : null;
-        // Integrity F2: the meeting is owner-writable — the leg's rationale rides
-        // as a capped string; the evaluation id is built from the server's own
-        // symbols (the slot's occupant and the bench asset the lookups above
-        // returned — the same strings the leg named, by construction).
+        // Integrity F2: the meeting is owner-writable — the evaluation id is
+        // built from the server's own symbols (the slot's occupant and the bench
+        // asset the lookups above returned — the same strings the leg named, by
+        // construction). Enforce readiness (founder Q4): the leg's rationale is
+        // the COPY's, capped as always; a copy stored before that build holds
+        // none, and its leg keeps the meeting's own rationale, capped, as before.
         // Follow-up 2: `entryMode` is the mode that governed (Q4); the executor
         // call has its own catch — a trade that landed before the throw
         // finishes this success path (Part D).
@@ -6134,9 +6144,9 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
             db, battle.id, battle,
             slot.tier, slot.slotIndex,
             benchAsset, currentDay, prices,
-            executorMetadata({ id: tradeId, action: 'SWAP', trigger: 'gameplan_rotation', rationale: clientText(swap.rationale), tradingDay: currentDay,
+            executorMetadata({ id: tradeId, action: 'SWAP', trigger: 'gameplan_rotation', rationale: clientText(legRationaleSource(run, swap)), tradingDay: currentDay,
               entryRegime: null, entryMarketPosture: null, entryConviction: 0,
-              entryPreset: clientToken(battle.strategyPreset) || 'balanced', entryMode: LAUNCH_EXECUTION_MODE, exitReason: 'gameplan_rotation',
+              entryPreset: presetKeyOf(battle.strategyPreset), entryMode: LAUNCH_EXECUTION_MODE, exitReason: 'gameplan_rotation',
               // Phase 6 (§4.6) — receipt source. LIVE: meeting approval has no launch
               // guard (only its client card is unmounted — integrity build report §5).
               // NB: this is handleGameplanMeeting (separate fn) — `ctx` is not in scope

@@ -67,7 +67,7 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
 }));
 
 const { processAgentBattle } = await import('./agent-evaluate.js');
-const { HELD_LEG_RECORD_MAX, LEG_NOT_PROPOSED } = await import('../_utils/meetingCopy.js');
+const { HELD_LEG_RECORD_MAX, LEG_NOT_PROPOSED, serverMeetingCopy, legRationaleSource } = await import('../_utils/meetingCopy.js');
 
 async function runTick(battle, prices = makePriceTable()) {
   mocks.getStockAnalysisData.mockImplementation(async (symbol) => (prices[symbol] ? { price: prices[symbol], daily: [] } : {}));
@@ -125,14 +125,17 @@ describe('the copy is written with the meeting — one update, server values onl
       expect(u['cronState.gameplanMeeting']).toEqual({
         meetingId: meeting.id, createdAt: meeting.createdAt, expiresAt: meeting.expiresAt,
         // The meeting's own legs as the server built them: P6 stamps the entry instant only at
-        // mode ≠ off (the fixture's positions are creation-time: null) — review K2-2.
+        // mode ≠ off (the fixture's positions are creation-time: null) — review K2-2. Enforce
+        // readiness (founder Q4): each leg's rationale too, the server's own sentence.
         legs: meeting.suggestedSwaps.map((l) => (mode === 'off'
-          ? { symbolOut: l.symbolOut, symbolIn: l.symbolIn }
-          : { symbolOut: l.symbolOut, symbolIn: l.symbolIn, swappedInAt: null })),
+          ? { symbolOut: l.symbolOut, symbolIn: l.symbolIn, rationale: l.rationale }
+          : { symbolOut: l.symbolOut, symbolIn: l.symbolIn, rationale: l.rationale, swappedInAt: null })),
       });
-      // No player value can be in it: every leg string is a ticker the server proposed.
-      expect(Object.keys(u['cronState.gameplanMeeting'].legs[0])).toEqual(mode === 'off' ? ['symbolOut', 'symbolIn'] : ['symbolOut', 'symbolIn', 'swappedInAt']);
-      expect(u['cronState.gameplanMeeting'].legs).toEqual(meeting.suggestedSwaps.map((l) => (Object.hasOwn(l, 'swappedInAt') ? { symbolOut: l.symbolOut, symbolIn: l.symbolIn, swappedInAt: l.swappedInAt } : { symbolOut: l.symbolOut, symbolIn: l.symbolIn })));
+      // No player value can be in it: every leg string is a ticker the server proposed, and
+      // the rationale is the detector's own sentence.
+      expect(Object.keys(u['cronState.gameplanMeeting'].legs[0])).toEqual(mode === 'off' ? ['symbolOut', 'symbolIn', 'rationale'] : ['symbolOut', 'symbolIn', 'rationale', 'swappedInAt']);
+      expect(u['cronState.gameplanMeeting'].legs).toEqual(meeting.suggestedSwaps.map((l) => (Object.hasOwn(l, 'swappedInAt') ? { symbolOut: l.symbolOut, symbolIn: l.symbolIn, rationale: l.rationale, swappedInAt: l.swappedInAt } : { symbolOut: l.symbolOut, symbolIn: l.symbolIn, rationale: l.rationale })));
+      for (const leg of u['cronState.gameplanMeeting'].legs) expect(leg.rationale).toMatch(/ has tech score /);
     });
   }
 
@@ -529,5 +532,75 @@ describe('K5 — meetingCopy.js pins each layer of the match on its own (nit: M5
     expect(planApprovedLegs(real, legs, copy)).toEqual([{ index: 0, leg: forged.suggestedSwaps[0], run: copy.legs[1] }]);
     expect(meetingWaitUntilMs(real, copy)).toBe(Date.parse('2099-01-01T00:00:00.000Z'));
     expect(meetingMatchesCopy(Object.assign([], { id: 'gpm_1' }), copy)).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enforce readiness (founder Q4 — review K1-2 of follow-up 2): a matched leg's
+// trade row carries the COPY's rationale. Acceptance 3. The byte-identical half
+// for an unedited server meeting is in agent-evaluate.meetingCopy.baseline.test.js.
+describe('enforce readiness — the matched leg’s rationale is the server’s copy', () => {
+  const SERVER_WORDS = 'KO down 1.2%, AMD (Technology) has tech score 80.';
+  const PLANTED = 'PLANTED — the player rewrote this leg’s reasoning. '.repeat(40); // > 1000 chars
+  const copyLeg = (over = {}) => ({ symbolOut: 'KO', symbolIn: 'AMD', rationale: SERVER_WORDS, swappedInAt: null, ...over });
+  const tradeOf = (stored) => stored.trades.find((t) => t.symbolIn === 'AMD') ?? null;
+
+  for (const mode of MODES) {
+    it(`${mode}: a planted rationale on the meeting never reaches the row — the copy's own words do`, async () => {
+      flags.swapIdentity = mode;
+      const { stored } = await runTick(withCopy(approvedMeeting([{ ...KO_AMD, rationale: PLANTED }]), [copyLeg()]));
+      const row = tradeOf(stored);
+      expect(row, 'the leg traded').not.toBeNull();
+      expect(row.rationale).toBe(SERVER_WORDS);
+      expect(JSON.stringify(stored.trades)).not.toContain('PLANTED');
+      // The executor was handed the copy's words, not the meeting's.
+      expect(JSON.stringify(exec.calls)).not.toContain('PLANTED');
+    });
+  }
+
+  it('a non-string planted rationale (an object, a number) changes nothing either', async () => {
+    for (const planted of [{ lockedPoints: 9999 }, 9999, ['x']]) {
+      exec.calls = [];
+      const { stored } = await runTick(withCopy(approvedMeeting([{ ...KO_AMD, rationale: planted }]), [copyLeg()]));
+      expect(tradeOf(stored).rationale, JSON.stringify(planted)).toBe(SERVER_WORDS);
+    }
+  });
+
+  it('a copy that stored no words for the leg (`rationale: null`) gives the row none — the meeting’s are never used for it', async () => {
+    const { stored } = await runTick(withCopy(approvedMeeting([{ ...KO_AMD, rationale: PLANTED }]), [copyLeg({ rationale: null })]));
+    expect(tradeOf(stored).rationale).toBeNull();
+  });
+
+  it('a copy stored BEFORE this build (no `rationale` key) keeps today’s behaviour: the meeting’s rationale, capped at 1000', async () => {
+    const legacy = { symbolOut: 'KO', symbolIn: 'AMD', swappedInAt: null };
+    const { stored } = await runTick(withCopy(approvedMeeting([{ ...KO_AMD, rationale: PLANTED }]), [legacy]));
+    expect(tradeOf(stored).rationale).toBe(PLANTED.slice(0, 1000));
+    const unedited = await runTick(withCopy(approvedMeeting([{ ...KO_AMD, rationale: SERVER_WORDS }]), [legacy]));
+    expect(tradeOf(unedited.stored).rationale).toBe(SERVER_WORDS);
+  });
+
+  it('an unedited server meeting with a new copy writes the same row as with a pre-build copy (the stored words ARE the meeting’s)', async () => {
+    const meeting = () => approvedMeeting([{ ...KO_AMD, rationale: SERVER_WORDS }]);
+    const withWords = await runTick(withCopy(meeting(), [copyLeg()]));
+    const rowNew = JSON.stringify(withWords.stored.trades);
+    exec.calls = [];
+    const legacy = await runTick(withCopy(meeting(), [{ symbolOut: 'KO', symbolIn: 'AMD', swappedInAt: null }]));
+    expect(rowNew).toBe(JSON.stringify(legacy.stored.trades));
+  });
+
+  it('the pure helpers: the copy stores each leg’s rationale capped; a matched leg reads the copy’s when it has the key', () => {
+    const copy = serverMeetingCopy({ id: 'gpm_1', createdAt: 'c', expiresAt: 'e', suggestedSwaps: [
+      { symbolOut: 'KO', symbolIn: 'AMD', rationale: 'w'.repeat(1500) },
+      { symbolOut: 'PG', symbolIn: 'NVDA', rationale: { not: 'text' }, swappedInAt: null },
+    ] });
+    expect(copy.legs).toEqual([
+      { symbolOut: 'KO', symbolIn: 'AMD', rationale: 'w'.repeat(1000) },
+      { symbolOut: 'PG', symbolIn: 'NVDA', rationale: null, swappedInAt: null },
+    ]);
+    expect(Object.keys(copy.legs[1])).toEqual(['symbolOut', 'symbolIn', 'rationale', 'swappedInAt']);
+    expect(legRationaleSource({ rationale: 'server' }, { rationale: 'meeting' })).toBe('server');
+    expect(legRationaleSource({ rationale: null }, { rationale: 'meeting' })).toBeNull();
+    expect(legRationaleSource({ symbolOut: 'KO' }, { rationale: 'meeting' })).toBe('meeting');
+    expect(legRationaleSource({ symbolOut: 'KO' }, null)).toBeUndefined();
   });
 });

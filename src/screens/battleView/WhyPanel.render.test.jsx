@@ -816,3 +816,36 @@ describe('Phase B — what the check saw', () => {
     expect(html).not.toContain('data-evidence');
   });
 });
+
+// Enforce readiness — table G (V1.4): the panel as a player reads it, for the
+// model route's marked entry (Part D: a downgraded HOLD with no thrown-swap
+// prefix and `executionOutcome: 'unknown'`) — both panels, both variants.
+describe('table G (V1.4) — an outcome that could not be confirmed', () => {
+  const UNKNOWN = { ...DOWNGRADED, validationErrors: [], executionOutcome: 'unknown' };
+  const UNKNOWN_FORCED = {
+    ...UNKNOWN,
+    rationale: 'Guardrail override (guardrail_stopLoss): Guardrail override: stop-loss at 8% breached on SLB (-9.24%). Forcing exit → DVN.',
+    guardrailSourceNote: 'guardrail_stopLoss',
+    guardrailOverrides: [{ type: 'stopLoss', symbol: 'SLB', action: 'forced_exit', replacementSymbol: 'DVN' }],
+  };
+  const FALSE = ['held by a guardrail', 'did not go through', 'the system held it', 'stayed as it was', '>Held<', 'null', 'undefined'];
+
+  for (const [name, render] of [['row', renderRow], ['book', renderBook]]) {
+    it(`${name} panel, the agent's swap: the table G label, the author line, the words — and none of the false claims`, () => {
+      const html = render(UNKNOWN);
+      expect(html).toContain('Argued for a swap · its outcome could not be confirmed');
+      expect(html).toContain('data-why-kind="unconfirmed"');
+      expect(html).toContain('The agent&#x27;s own words');
+      expect(html).toContain('has lost its bid and DVN is showing the stronger tape');
+      for (const f of FALSE) expect(html, f).not.toContain(f);
+    });
+
+    it(`${name} panel, a guardrail-forced swap: the guardrail variant, the system as author`, () => {
+      const html = render(UNKNOWN_FORCED);
+      expect(html).toContain('A guardrail called for a swap · its outcome could not be confirmed');
+      expect(html).toContain('data-why-kind="guardrailUnconfirmed"');
+      expect(html).toContain('The system&#x27;s reason');
+      for (const f of FALSE) expect(html, f).not.toContain(f);
+    });
+  }
+});

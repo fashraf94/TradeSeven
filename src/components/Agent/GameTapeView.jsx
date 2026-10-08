@@ -18,6 +18,7 @@ import {
   Layers,
 } from 'lucide-react';
 import AgentActivityFeed from './AgentActivityFeed';
+import { feedBeatUnconfirmed, feedBeatWithoutLine } from '../../data/decisionRecord';
 import { addFeedBookmark, removeFeedBookmark } from '../../services/agentService';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -397,7 +398,7 @@ function BookmarkedRow({ entry, onUnbookmark, onCitationTap, tokens }) {
             color: tokens.amber || '#f59e0b',
             marginBottom: 3,
           }}>
-            {entry?.action || entry?.type || 'Update'}
+            {(feedBeatUnconfirmed(entry) ? null : entry?.action) || entry?.type || 'Update'}
             {entry?.symbolOut && entry?.symbolIn && (
               <span style={{ color: tokens.textMuted || '#94a3b8', marginLeft: 6 }}>
                 {entry.symbolOut} → {entry.symbolIn}
@@ -491,7 +492,8 @@ const GameTapeView = ({
     const bookmarkSet = new Set(feedBookmarks);
     const matched = [];
     statusFeed.forEach((entry, index) => {
-      if (bookmarkSet.has(getEntryId(entry, index))) matched.push(entry);
+      // Table G (V1.4): an unconfirmed beat with no line is never a row.
+      if (bookmarkSet.has(getEntryId(entry, index)) && !feedBeatWithoutLine(entry)) matched.push(entry);
     });
     return matched.reverse(); // newest first
   }, [feedBookmarks, statusFeed]);

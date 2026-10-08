@@ -84,3 +84,22 @@ describe('filterUnansweredProposals', () => {
     expect(filterUnansweredProposals({})).toEqual([]);
   });
 });
+
+// Enforce readiness — table G (V1.4), acceptance 2: the unanswered-proposal card
+// says "You didn't respond to this proposal … The agent held its position." That
+// is true only of a `lapsed` row, so every row the integrity follow-up 2 build
+// can write — the unconfirmed outcome included — must render nothing here.
+describe('filterUnansweredProposals — the integrity follow-up 2 rows (table G)', () => {
+  it('auto_execution_unknown, a marked or landed approval, a failed auto-execution and a launch-guard clear are never an unanswered proposal', () => {
+    const rows = [
+      { id: 'p1', resolution: 'auto_execution_unknown', executionOutcome: 'unknown' },
+      { id: 'p2', resolution: 'approved', executionOutcome: 'unknown' },
+      { id: 'p3', resolution: 'approved', executionLanded: 'confirmed_after_error' },
+      { id: 'p4', resolution: 'auto_executed', executionLanded: 'confirmed_after_error' },
+      { id: 'p5', resolution: 'auto_execution_failed' },
+      { id: 'p6', resolution: 'launch_guard_cleared', systemNote: 'launch_guard_clear' },
+      { id: 'p7', resolution: 'lapsed' },
+    ];
+    expect(filterUnansweredProposals(rows).map((p) => p.id)).toEqual(['p7']);
+  });
+});
