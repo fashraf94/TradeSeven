@@ -9,8 +9,8 @@
 //             the Deep dive opens; never a battle-document subscription — the
 //             route already holds the battle (filmRoomData.js)
 //   header    back, the day's pills, the title, the depth control, ONE
-//             number-kind legend (BA-42), and the day picker for a
-//             multi-day battle
+//             number-kind legend (BA-42), the day picker for a multi-day
+//             battle, and the named EMPTY later-release regions (BA-47)
 //   body      the first-open notice once per viewer (BA-49), then Glance,
 //             Study or Deep dive; a day with no tape says so, and names a
 //             scheduled pass only when one is actually scheduled (§7)
@@ -69,6 +69,15 @@ export function noTapeLine(battle, etDate, nowMs) {
   }
   if (validFinalTradingDay(battle) === etDate && closePassWillTape(battle, nowMs)) return COPY.noTapeLater;
   return COPY.noTapeUnavailable;
+}
+
+function Reserved({ names, region }) {
+  // BA-47: named, EMPTY regions for the later release — nothing renders in them.
+  return (
+    <div data-reserved-region={region} aria-hidden="true">
+      {names.map((n) => <div key={n} data-reserved-slot={n} />)}
+    </div>
+  );
 }
 
 function FirstOpenNotice({ onDismiss }) {
@@ -140,6 +149,7 @@ export default function FilmRoomScreenV2({ battle, onBack, viewerId = null, read
             <span style={pill()}><When>{etDateLabel(day, { short: true }) ?? ''}</When> · {complete ? COPY.battleComplete : COPY.battleActive}</span>
           </div>
         </div>
+        <Reserved region="header" names={COPY.reservedHeader} />
         <div style={{ display: 'flex', alignItems: desktop ? 'center' : 'stretch', flexDirection: desktop ? 'row' : 'column', gap: desktop ? 16 : 10 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
             <h1 style={{ margin: 0, fontSize: desktop ? 18 : 16, fontWeight: 800, letterSpacing: '-0.01em', color: C.ink, lineHeight: 1.1 }}>{COPY.title}</h1>
@@ -163,6 +173,9 @@ export default function FilmRoomScreenV2({ battle, onBack, viewerId = null, read
         {notice ? <FirstOpenNotice onDismiss={() => setNotice(false)} /> : null}
         {content}
       </main>
+      <footer style={{ padding: 0 }}>
+        <Reserved region="footer" names={COPY.reservedFooter} />
+      </footer>
     </div>
   );
 }
