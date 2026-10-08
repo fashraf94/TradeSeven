@@ -268,8 +268,9 @@ describe('the class each printed number carries is its own field\'s (review L4-F
       'actions[].replay.reconciliation.soldAtSale.recordedPx': 'recorded',
       'actions[].replay.reconciliation.soldAtSale.rebuiltPx': 'market',
       'actions[].replay.reconciliation.soldAtSale.pxDelta': 'rebuilt',
-      'actions[].replay.reconciliation.soldAtSale.rescoredAtRecordedPx': 'rebuilt',
-      'actions[].replay.reconciliation.soldAtSale.inputsDelta': 'rebuilt',
+      // BA-48 (Amendment E, AD4-10 resolved): every operand recorded → derived
+      'actions[].replay.reconciliation.soldAtSale.rescoredAtRecordedPx': 'derived',
+      'actions[].replay.reconciliation.soldAtSale.inputsDelta': 'derived',
       'actions[].replay.reconciliation.soldAtSale.priceDelta': 'rebuilt',
       'actions[].replay.reconciliation.boughtAtSale.recordedPx': 'recorded',
       'actions[].replay.reconciliation.boughtAtSale.rebuiltPx': 'market',

@@ -140,7 +140,8 @@ export const FILM_ROOM_ROUTE = 'filmRoom';
 //
 // The rule for mixed arithmetic: from recorded values alone → `derived`; from
 // bars alone → `market`; from bars and recorded values together (a scored
-// replay, a reconciliation) → `rebuilt`.
+// replay, a reconciliation) → `rebuilt`. A value takes its least-certain
+// operand's class (BA-48, Amendment E).
 export const TAPE_NUMBER_CLASSES = Object.freeze({
   // the tape's own bookkeeping
   tapeVersion: 'recorded',
@@ -232,13 +233,18 @@ export const TAPE_NUMBER_CLASSES = Object.freeze({
   'actions[].replay.reconciliation.boughtVsEvidence.pxDelta': 'rebuilt',
   'actions[].replay.reconciliation.boughtVsEvidence.chgDelta': 'rebuilt',
   // BA-38 — the sale split by its two causes: the recorded prices are the
-  // platform's, the prices at the swap instant are bars alone, and every
-  // difference or rescore mixes the two
+  // platform's, the prices at the swap instant are bars alone, and the price
+  // differences mix the two. BA-48 (Amendment E, AD4-10 resolved): the rescore
+  // at the recorded exit and the inputs part read NO bar — the imported scorer
+  // over the ghost leg's recorded inputs at the recorded exit price, and that
+  // minus the recorded lockedPoints — so every operand is recorded: `derived`.
+  // A tape written before this change keeps its stored declaration; every
+  // reader labels by the tape's own `numberClasses`.
   'actions[].replay.reconciliation.soldAtSale.recordedPx': 'recorded',
   'actions[].replay.reconciliation.soldAtSale.rebuiltPx': 'market',
   'actions[].replay.reconciliation.soldAtSale.pxDelta': 'rebuilt',
-  'actions[].replay.reconciliation.soldAtSale.rescoredAtRecordedPx': 'rebuilt',
-  'actions[].replay.reconciliation.soldAtSale.inputsDelta': 'rebuilt',
+  'actions[].replay.reconciliation.soldAtSale.rescoredAtRecordedPx': 'derived',
+  'actions[].replay.reconciliation.soldAtSale.inputsDelta': 'derived',
   'actions[].replay.reconciliation.soldAtSale.priceDelta': 'rebuilt',
   'actions[].replay.reconciliation.boughtAtSale.recordedPx': 'recorded',
   'actions[].replay.reconciliation.boughtAtSale.rebuiltPx': 'market',
