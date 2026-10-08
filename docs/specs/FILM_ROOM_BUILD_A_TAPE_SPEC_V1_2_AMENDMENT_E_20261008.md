@@ -44,3 +44,17 @@ Take-home cards, the pattern counter, the Ledger, retiring the legacy proposal w
 
 ## Exit criterion for review (fixed now)
 One review of the draft PR. A finding blocks the merge only if: a rendered number shows the wrong class or none; a verdict, ranking or forbidden word appears; a stated fact contradicts the tape; a non-owner can read a tape or series document; the off or non-allowlisted path is not byte-identical to legacy; or the hub helper returns anything but its three keys. Everything else goes to a backlog in the review and does not block.
+
+## Addendum — founder rulings on the A2 build report (2026-10-08)
+
+- **R1 — digits inside stored notes.** Stored coverage notes and missing-input lists render verbatim as the tape's own words, as quotation, without markers. The counts inside them become classed fields when a later build touches the tape writers (backlog for the cards build).
+- **R2 — held by default.** The screen's wording "no usable model result · the system held by default" is adopted. F3's "model call failed" waits until the tape records the failure class.
+- **R3 — the mode and DARK_BY_DESIGN.** `FILM_ROOM_V2_MODE` is pinned directly and named in the DARK_BY_DESIGN block, per the `CALL_RECORDS_MODE` precedent. Adopted as built.
+- **R4 — BA-42 applies to claims, not to scaffolding or sequence.**
+  - (a) A number the screen computes is allowed when it is declared in `SCREEN_AGGREGATE_CLASSES` with a class by the least-certain-operand rule: section counts and "n of m" are `derived`; swap ordinals are `derived` and express sequence only; open-to-close change and session volume computed from series bars are `market`.
+  - (b) Chart scaffolding (gridlines, axis tick labels, a percent axis, time ticks) carries no per-tick marker; each axis names its class once in its caption.
+  - (c) The day change shows its stored reference value with that value's own marker.
+  - (d) Display names (company names) may come from the app's existing symbol directory; absent that, the symbol alone.
+- **R5 — "takeaway".** Not a verdict word. The forbidden list stands as written; the surviving mutant L2 is accepted.
+- **R6 — rationale preview.** A clamped preview of the first lines with "Read more" satisfies BA-46's "collapsed by default".
+- **The admitted owner's first open.** Showing the legacy screen for up to 8 s while the verdict lands, under `'allowlist'` only, is accepted; it follows from the byte-identity requirement and disappears at `'on'`.
